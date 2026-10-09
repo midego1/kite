@@ -309,11 +309,16 @@ async function updateFolder(
 	if (target.mailbox.permission !== "full_access") return { type: "forbidden" };
 	if (keys.some((key) => key !== "name"))
 		return { type: "invalidProperties", properties: keys.filter((key) => key !== "name") };
-	if (typeof patch.name === "string" && patch.name.trim()) {
+	if (!("name" in patch)) return null;
+	const name = typeof patch.name === "string" ? patch.name.trim() : "";
+	if (!name || name.length > 80) return { type: "invalidProperties", properties: ["name"] };
+	try {
 		await ctx.db
 			.update(folders)
-			.set({ name: patch.name.trim() })
+			.set({ name })
 			.where(and(eq(folders.id, target.folderId), eq(folders.mailboxId, target.mailbox.id)));
+	} catch {
+		return { type: "invalidProperties", properties: ["name"], description: "A folder with that name already exists" };
 	}
 	return null;
 }

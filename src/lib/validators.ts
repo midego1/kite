@@ -353,7 +353,8 @@ export const routingRuleSchema = z.object({
 /**
  * Rules run against every inbound message, including its whole body, so a pattern that can
  * backtrack catastrophically would stall mail intake. Nested quantifiers such as `(a+)+` and
- * backreferences are the usual causes, so both are refused along with long patterns.
+ * backreferences are the usual causes, so both are refused along with long patterns. This
+ * is a heuristic: ambiguous alternation such as `(a|aa)+` still passes.
  */
 function regexPatternProblem(pattern: string): string | null {
 	try {

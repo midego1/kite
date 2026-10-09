@@ -193,6 +193,19 @@ test("JMAP delegates without full access cannot change, delete or rename shared 
 	expect(after.message.folderId).toBe(folder.id);
 	expect(after.message.starred).toBe(false);
 
+	const ownFolder = await json<{ id: string }>(
+		await mate.post("/api/folders", { data: { mailboxId: own.id, name: `Own ${token}` } }),
+	);
+	const ownFolderRef = `${own.id}~f~${ownFolder.id}`;
+	const [blank, tooLong, valid] = await jmap(key, [
+		["Mailbox/set", { accountId, update: { [ownFolderRef]: { name: "   " } } }, "b"],
+		["Mailbox/set", { accountId, update: { [ownFolderRef]: { name: "x".repeat(81) } } }, "l"],
+		["Mailbox/set", { accountId, update: { [ownFolderRef]: { name: `Renamed ${token}` } } }, "v"],
+	]);
+	expect((blank.notUpdated as Record<string, { type: string }>)[ownFolderRef]?.type).toBe("invalidProperties");
+	expect((tooLong.notUpdated as Record<string, { type: string }>)[ownFolderRef]?.type).toBe("invalidProperties");
+	expect(valid.updated).toHaveProperty([ownFolderRef]);
+
 	await mate.dispose();
 	await admin.dispose();
 });
@@ -206,7 +219,7 @@ test("public booking requests are rate limited per IP", async () => {
 		statuses.push(response.status());
 	}
 	// Other specs may have spent part of this minute's budget, so only the shape is fixed.
-	expect(statuses[0]).toBe(404);
+	expect(statuses.every((status) => status === 404 || status === 429)).toBe(true);
 	expect(statuses.at(-1)).toBe(429);
 	await api.dispose();
 });

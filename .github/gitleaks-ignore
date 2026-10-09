@@ -1,15 +1,8 @@
-# Reviewed synthetic encryption round-trip key in tests/security-hardening.test.mjs.
-# Exact historical fingerprint only. The one path-level exception is in .gitleaks.toml.
-0a71454a85d5ea84ffe1a343be0002a2959db42c:tests/security-hardening.test.mjs:generic-api-key:118
+# Reviewed false positives in the first commit of this repository. Exact fingerprints only;
+# the one path-level exception is in .gitleaks.toml.
 
-# Reviewed false positives: line 14 of the log-context test in 37ed06de reads a property of a
-# synthetic inbound fixture, and d04a5c36 quoted that line in a comment here. Neither is a
-# credential. Exact historical fingerprints only.
-37ed06de7b2ea10786f0bae956d943aa9800b1a2:tests/queue-log-context.test.mjs:generic-api-key:14
-d04a5c3640cd3fdf2ffebba0ff9afa956a87c392:.github/gitleaks-ignore:generic-api-key:5
+# The synthetic encryption round-trip key in the secret box test.
+59ac91fc219013db97dd4e2b73150a7e0b3bfce7:tests/security-hardening.test.mjs:generic-api-key:156
 
-# Reviewed false positives: the RFC 6455 section 1.3 sample Sec-WebSocket-Key nonce in the
-# realtime upgrade probes. It is a public per-connection nonce, not a credential.
-# Exact historical fingerprints only.
-3a97700c2caae284d94aa228550482f2d0f7db1a:e2e/support/realtime-probe.mjs:generic-api-key:14
-0c390b440c7c61f659866b57e550e7ba119b6123:e2e/13-security.spec.ts:generic-api-key:106
+# A property read of a synthetic inbound fixture in the log-context test, not a credential.
+59ac91fc219013db97dd4e2b73150a7e0b3bfce7:tests/queue-log-context.test.mjs:generic-api-key:14

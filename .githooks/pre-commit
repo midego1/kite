@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+node scripts/docs-check.mjs
+node scripts/quality/check.mjs format --staged

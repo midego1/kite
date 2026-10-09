@@ -1,0 +1,5 @@
+CREATE TABLE `import_jobs` (`id` text PRIMARY KEY NOT NULL, `user_id` text NOT NULL REFERENCES `users`(`id`) ON DELETE cascade, `mailbox_id` text NOT NULL REFERENCES `mailboxes`(`id`) ON DELETE cascade, `label` text NOT NULL, `destination` text NOT NULL, `host` text NOT NULL, `port` integer NOT NULL, `secure` integer DEFAULT 1 NOT NULL, `username` text NOT NULL, `password` text DEFAULT '' NOT NULL, `folder` text NOT NULL, `max_messages` integer, `status` text DEFAULT 'pending' NOT NULL, `total` integer, `processed` integer DEFAULT 0 NOT NULL, `imported` integer DEFAULT 0 NOT NULL, `skipped` integer DEFAULT 0 NOT NULL, `cursor_uid` integer, `attempts` integer DEFAULT 0 NOT NULL, `lease_until` integer, `last_error` text, `errors` text DEFAULT '[]' NOT NULL, `created_at` integer NOT NULL, `updated_at` integer NOT NULL, `started_at` integer, `finished_at` integer);
+--> statement-breakpoint
+CREATE INDEX `import_jobs_user_idx` ON `import_jobs` (`user_id`, `created_at`);
+--> statement-breakpoint
+CREATE INDEX `import_jobs_status_idx` ON `import_jobs` (`status`, `updated_at`);

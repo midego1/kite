@@ -1,0 +1,29 @@
+{
+	"$schema": "https://unpkg.com/knip/schema.json",
+	"workspaces": {
+		".": {
+			"entry": [
+				"worker.ts",
+				"server/index.ts",
+				"scripts/**/*.mjs",
+				"tests/**/*.test.mjs",
+				"e2e/**/*.spec.ts",
+				"src/app/**/{page,layout,route,loading,error,not-found,global-error,template,default}.{ts,tsx}"
+			],
+			"project": [
+				"src/**/*.{ts,tsx}",
+				"server/**/*.ts",
+				"worker*.ts",
+				"scripts/**/*.mjs",
+				"tests/**/*.mjs",
+				"e2e/**/*.ts",
+				"*.{ts,mjs}"
+			],
+			"ignore": ["cloudflare-env.d.ts", "next-env.d.ts"]
+		},
+		"deploy/cloudflare-email-relay": {
+			"entry": ["src/index.ts", "tests/**/*.test.mjs"],
+			"project": ["src/**/*.ts", "tests/**/*.mjs"]
+		}
+	}
+}

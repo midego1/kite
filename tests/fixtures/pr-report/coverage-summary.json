@@ -1,0 +1,31 @@
+{
+	"aggregate": {
+		"lines": 86.9,
+		"branches": 94.1,
+		"functions": 99.1,
+		"thresholds": { "lines": 80, "branches": 90, "functions": 95 },
+		"passed": true,
+		"failures": []
+	},
+	"files": [
+		{
+			"file": "src/lib/logger.mjs",
+			"lines": 100,
+			"branches": 90.5,
+			"functions": 100,
+			"thresholds": { "lines": 90, "branches": 80, "functions": 90 },
+			"passed": true,
+			"failures": []
+		},
+		{
+			"file": "src/lib/weak-utils.ts",
+			"lines": 50,
+			"branches": 40,
+			"functions": 60,
+			"thresholds": { "branches": 70, "functions": 80 },
+			"passed": false,
+			"failures": ["branches"]
+		}
+	],
+	"passed": false
+}

@@ -1,0 +1,22 @@
+{
+	"name": "kite-email-relay",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev",
+		"test": "node ../../scripts/relay-tests.mjs",
+		"typecheck": "tsc --noEmit",
+		"check": "npm run typecheck && npm test",
+		"test:list": "node ../../scripts/relay-tests.mjs --list"
+	},
+	"devDependencies": {
+		"wrangler": "^4.127.1",
+		"@cloudflare/workers-types": "^5.20260828.1",
+		"typescript": "^5.7.4"
+	},
+	"engines": {
+		"node": ">=22.21.0"
+	}
+}

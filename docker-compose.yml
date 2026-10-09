@@ -1,0 +1,16 @@
+services:
+  kite:
+    build: .
+    image: kite:local
+    restart: unless-stopped
+    ports:
+      - "3000:3000" # web app and JMAP
+      - "25:25" # inbound SMTP (point your domain's MX here)
+    env_file: .env.docker
+    volumes:
+      # The volume name predates the rename to Kite; renaming it would start
+      # existing installs on an empty volume.
+      - mailflare-data:/data
+
+volumes:
+  mailflare-data:

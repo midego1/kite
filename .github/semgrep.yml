@@ -1,0 +1,24 @@
+# Offline rules: no hosted registry/config fetch or code upload.
+rules:
+  - id: kite-no-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Do not evaluate dynamic code in mail processing or request handlers.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+  - id: kite-no-disabled-tls
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: TLS certificate verification must remain enabled.
+    pattern-either:
+      - pattern: "{ ..., rejectUnauthorized: false, ... }"
+      - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+  - id: kite-no-shell-exec
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Mail and request processing must not invoke a shell; review typed subprocess APIs if required.
+    pattern-either:
+      - pattern: exec(...)
+      - pattern: execSync(...)
+      - pattern: "spawn(..., { ..., shell: true, ... })"

@@ -1,0 +1,8 @@
+{
+	"findings": {
+		"lint:src/a.ts:complexity:Function 'a' has a complexity.:occurrence=1": 25,
+		"lint:src/b.ts:max-lines:x:occurrence=1": 400
+	},
+	"newDebt": [["lint:src/a.ts:complexity:Function 'a' has a complexity.:occurrence=1", 25]],
+	"existingDebt": 1
+}

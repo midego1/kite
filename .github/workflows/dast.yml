@@ -1,0 +1,65 @@
+name: DAST baseline
+# Report-only: never a required check and never fails the run on findings.
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dast
+  cancel-in-progress: true
+jobs:
+  zap-baseline:
+    name: ZAP baseline against the e2e server
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      KITE_PERSIST_DIR: .wrangler/e2e-state
+      KITE_VITE_CACHE_DIR: .wrangler/e2e-vite-cache
+      ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:2.17.0@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare the isolated e2e state
+        run: node e2e/prepare-state.mjs
+      - name: Start the dev server on port 3200
+        run: |
+          npx vite dev --port 3200 --strictPort > "$RUNNER_TEMP/dev-server.log" 2>&1 &
+          for _ in $(seq 1 120); do
+            if curl --silent --fail --output /dev/null http://localhost:3200/login; then exit 0; fi
+            sleep 3
+          done
+          cat "$RUNNER_TEMP/dev-server.log"
+          exit 1
+      - name: Seed demo data
+        run: >-
+          curl --silent --show-error --fail --max-time 180 -X POST
+          -H 'Origin: http://localhost:3200' http://localhost:3200/api/seed
+      - name: Run ZAP baseline (report only)
+        run: |
+          set -o pipefail
+          mkdir -p zap-reports
+          chmod 777 zap-reports
+          cp .zap/baseline.conf zap-reports/baseline.conf
+          docker run --rm --network host -v "$PWD/zap-reports:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-baseline.py -t http://localhost:3200/login -m 2 -I -c baseline.conf -r zap.html -J zap.json 2>&1 | tee zap-reports/zap.log
+      - name: Summarize findings
+        if: always()
+        run: node scripts/ci/zap-summary.mjs zap-reports/zap.log zap-reports/zap.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: zap-reports
+          path: |
+            zap-reports/zap.html
+            zap-reports/zap.json
+          if-no-files-found: warn
+          retention-days: 30

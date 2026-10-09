@@ -1,0 +1,18 @@
+{
+	"name": "Kite mission development",
+	"remoteUser": "node",
+	"forwardPorts": [3000, 3200],
+	"containerEnv": {
+		"NEXT_TELEMETRY_DISABLED": "1",
+		"LOG_LEVEL": "debug"
+	},
+	"postCreateCommand": "npm run setup:mission && npm run hooks:install",
+	"customizations": {
+		"vscode": {
+			"extensions": ["dbaeumer.vscode-eslint", "ms-playwright.playwright"]
+		}
+	},
+	"build": {
+		"dockerfile": "Dockerfile"
+	}
+}

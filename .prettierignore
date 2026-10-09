@@ -1,0 +1,33 @@
+# Dependencies and build or test output
+node_modules/
+.next/
+.next-node/
+.vinext/
+.wrangler/
+dist/
+data/
+coverage/
+test-results/
+playwright-report/
+mailflare-landing/
+
+# Generated files
+cloudflare-env.d.ts
+next-env.d.ts
+src/lib/migrations/bundle.json
+package-lock.json
+scripts/quality/*baseline.json
+
+# Migrations (SQL and drizzle-kit meta JSON) are kept byte-for-byte as generated
+drizzle/migrations/
+
+# Deployment config; reformatting only creates churn in installs that copy it
+wrangler.jsonc
+wrangler.jsonc.example
+
+# Static assets
+public/
+screenshots/
+
+# Prose is not reformatted, to avoid churn in the docs
+*.md

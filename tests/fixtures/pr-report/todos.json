@@ -1,0 +1,7 @@
+{
+	"linked": [{ "file": "src/a.ts", "line": 3, "marker": "task", "issue": 12 }],
+	"unlinked": [
+		{ "file": "src/b.ts", "line": 9, "marker": "task", "issue": null },
+		{ "file": "src/c.ts", "line": 1, "marker": "task", "issue": null }
+	]
+}

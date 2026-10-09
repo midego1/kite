@@ -1,0 +1,9 @@
+# Gitleaks configuration: the default rules plus one reviewed path exception.
+title = "Kite gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Quality debt baseline. Earlier revisions recorded format:<path>:<sha256> content checksums of public source files, which match generic-api-key; the file holds no credentials."
+paths = ['''^scripts/quality/baseline\.json$''']

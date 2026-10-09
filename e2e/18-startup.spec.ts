@@ -1,10 +1,13 @@
 import { expect, test } from "@playwright/test";
+import { RELEASE_VERSION } from "./support/constants";
 
 test("a stale offline hint cannot pause the session check indefinitely", async ({ page }) => {
 	await page.addInitScript(() => Object.defineProperty(navigator, "onLine", { get: () => false }));
 	await page.goto("/inbox");
 	await expect(page.getByRole("button", { name: "Compose", exact: true })).toBeVisible({ timeout: 15_000 });
-	await expect(page.getByText(/Kite v\d{4}\.\d{2}\.\d{2} \([a-f0-9]{7}\)/)).toBeVisible();
+	await expect(
+		page.getByText(new RegExp(`Kite v${RELEASE_VERSION.replaceAll(".", "\\.")} \\([a-f0-9]{7}\\)`)),
+	).toBeVisible();
 	await expect(page.getByLabel("Loading", { exact: true })).not.toHaveClass(/opacity-100/);
 });
 

@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { STORAGE_STATE } from "./support/constants";
+import { RELEASE_VERSION, STORAGE_STATE } from "./support/constants";
 import { apiContext } from "./support/helpers";
 
 const WRITE_TOOLS = [
@@ -85,7 +85,7 @@ test("a read-only MCP key reports the app version, lists only read tools and sea
 	});
 	expect(init.result?.serverInfo).toMatchObject({
 		name: "kite",
-		version: expect.stringMatching(/^\d{4}\.\d{2}\.\d{2}$/),
+		version: RELEASE_VERSION,
 	});
 
 	const tools = await listToolNames(key);

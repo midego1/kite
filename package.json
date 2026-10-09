@@ -49,6 +49,7 @@
 		"hooks:install": "node scripts/install-hooks.mjs",
 		"precommit:check": "node scripts/docs-check.mjs && node scripts/quality/check.mjs format --staged",
 		"release:notes": "node scripts/release-notes.mjs",
+		"release:prepare": "node scripts/release-prepare.mjs",
 		"test:list": "playwright test --list && npm --workspace kite-email-relay run test:list"
 	},
 	"cloudflare": {

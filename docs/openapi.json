@@ -2,7 +2,7 @@
 	"openapi": "3.1.0",
 	"info": {
 		"title": "Kite API",
-		"version": "0.5.0",
+		"version": "0.5.0.1",
 		"description": "Generated from src/app/api/v1/**/route.ts by scripts/docs-generate.mjs. See docs/api.md."
 	},
 	"servers": [{ "url": "/" }],

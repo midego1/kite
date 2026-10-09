@@ -25,10 +25,10 @@ async function sourceOperations() {
 }
 
 test("document header", async () => {
-	const pkg = JSON.parse(await readFile(path.join(repositoryRoot, "package.json"), "utf8"));
+	const version = (await readFile(path.join(repositoryRoot, "VERSION"), "utf8")).trim();
 	assert.equal(document.openapi, "3.1.0");
 	assert.equal(document.info.title, "Kite API");
-	assert.equal(document.info.version, pkg.version);
+	assert.equal(document.info.version, version);
 	assert.deepEqual(document.servers, [{ url: "/" }]);
 });
 
@@ -107,7 +107,7 @@ test("generator refuses a v1 route without a scope", async () => {
 	try {
 		await mkdir(path.join(dir, "scripts"), { recursive: true });
 		await mkdir(path.join(dir, "src/app/api/v1/zz"), { recursive: true });
-		await writeFile(path.join(dir, "package.json"), '{"version":"0.0.0"}');
+		await writeFile(path.join(dir, "VERSION"), "2026.01.01.0\n");
 		await writeFile(
 			path.join(dir, "src/app/api/v1/zz/route.ts"),
 			"export async function GET() { return new Response(); }\n",

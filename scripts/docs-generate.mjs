@@ -199,7 +199,7 @@ function operationFor(method, route, analysis, filename) {
 }
 
 export async function renderOpenApi() {
-	const packageJson = JSON.parse(await readFile(path.join(repositoryRoot, "package.json"), "utf8"));
+	const version = (await readFile(path.join(repositoryRoot, "VERSION"), "utf8")).trim();
 	const paths = {};
 	for (const filename of await listRouteFiles(path.join(apiRoot, "v1"))) {
 		const source = await parseSource(filename);
@@ -214,7 +214,7 @@ export async function renderOpenApi() {
 		openapi: "3.1.0",
 		info: {
 			title: "Kite API",
-			version: packageJson.version,
+			version,
 			description: "Generated from src/app/api/v1/**/route.ts by scripts/docs-generate.mjs. See docs/api.md.",
 		},
 		servers: [{ url: "/" }],

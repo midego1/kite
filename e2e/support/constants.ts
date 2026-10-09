@@ -1,3 +1,8 @@
+import { readFileSync } from "node:fs";
+
+/** The release the app under test embeds (scripts/build-version.mjs). */
+export const RELEASE_VERSION = readFileSync(new URL("../../VERSION", import.meta.url), "utf8").trim();
+
 export const E2E_PORT = Number(process.env.E2E_PORT ?? 3200);
 export const BASE_URL = `http://localhost:${E2E_PORT}`;
 export const E2E_PERSIST_DIR = ".wrangler/e2e-state";

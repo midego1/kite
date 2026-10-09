@@ -7,6 +7,7 @@ import { ESLint } from "eslint";
 import prettier from "prettier";
 import ts from "typescript";
 import { findTodoMarkers, isScannedFile } from "./todo-utils.mjs";
+import { packageVersion } from "../version-utils.mjs";
 
 const update = process.argv.includes("--update-baseline");
 // --staged checks the index copy of staged files only, for the pre-commit hook.
@@ -227,10 +228,8 @@ if (!formatOnly) {
 	const root = JSON.parse(await fs.readFile("package.json"));
 	const relay = JSON.parse(await fs.readFile("deploy/cloudflare-email-relay/package.json"));
 	const version = (await fs.readFile("VERSION", "utf8")).trim();
-	if (!/^\d+\.\d+\.\d+\.\d+$/.test(version) || version.split(".").slice(0, 3).join(".") !== root.version)
-		throw new Error(
-			`VERSION ${version} must have four numeric segments and match package.json ${root.version} in its first three`,
-		);
+	if (packageVersion(version) !== root.version)
+		throw new Error(`package.json ${root.version} must be ${packageVersion(version)} for VERSION ${version}`);
 	const allDeps = (pkg) => ({ ...pkg.dependencies, ...pkg.devDependencies });
 	for (const [name, range] of Object.entries(allDeps(relay)))
 		if (allDeps(root)[name] && range !== allDeps(root)[name])

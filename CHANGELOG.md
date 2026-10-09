@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [calendar versions](https://calver.org/), `YYYY.MM.DD.N`: the UTC date a release was prepared and a counter for that day's releases, starting at 0 (see [Releasing](docs/releasing.md)).
 
 ## [Unreleased]
 
@@ -33,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Resizing the message list follows the mouse without lag.
 - Message lists use indexes and cursor paging; large lookups are chunked under D1's parameter limit.
 - MCP lists only the tools a key's scopes allow and reports the real app version.
+- Calendar versions (`YYYY.MM.DD.N`) from `VERSION`, prepared with `npm run release:prepare`. The sidebar, the database card, MCP and the OpenAPI document show the release instead of the build date.
 
 ### Security
 

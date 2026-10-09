@@ -4,12 +4,14 @@
 
 The Deploy to Cloudflare flow can deploy the Worker, but its deployment token is not exposed to Kite at runtime. Create a separate Cloudflare API token and set it as `CF_TOKEN`.
 
-Verify the token:
+Verify the token. The deployment guide creates an Account API token, which is checked under the account ID shown on the account's overview page:
 
 ```bash
-curl "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+curl "https://api.cloudflare.com/client/v4/accounts/<account-id>/tokens/verify" \
   -H "Authorization: Bearer <CF_TOKEN>"
 ```
+
+A token created under My Profile → API Tokens is a user token; check it at `https://api.cloudflare.com/client/v4/user/tokens/verify` instead.
 
 The response should report `success: true` and an active status. Check that:
 

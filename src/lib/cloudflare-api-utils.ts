@@ -57,7 +57,7 @@ export function getCloudflareAuthHint(errors: CfApiError[], path = "") {
 	);
 	if (!hasAuthError) return "";
 
-	return ' Verify CF_TOKEN with `curl https://api.cloudflare.com/client/v4/user/tokens/verify -H "Authorization: Bearer <token>"`. Use the token secret value without `Bearer`, or use CF_API_KEY plus CF_EMAIL for a Global API Key.';
+	return ' Verify CF_TOKEN with `curl https://api.cloudflare.com/client/v4/accounts/<account-id>/tokens/verify -H "Authorization: Bearer <token>"` for an Account API token, or `/client/v4/user/tokens/verify` for a user token. Use the token secret value without `Bearer`, or use CF_API_KEY plus CF_EMAIL for a Global API Key.';
 }
 
 export function getEmailWorkerName(): string {

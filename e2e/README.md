@@ -33,7 +33,7 @@ When you run the suite over and over, `E2E_REUSE_SERVER=1` reuses a server that 
 | --- | --- |
 | `01-auth` | Wrong password; sign in, reload, sign out (session revoked on the server); signing in again after the server revoked the session behind an open tab; foreign-origin and cross-site POSTs rejected with 403 (both the dev server's guard and the app's own CSRF check) |
 | `02-navigation` | Sidebar Inbox, Starred, Sent, Snoozed, Drafts, Trash: client-side navigation (a `window` marker survives), URL and document title |
-| `03-reading` | HTML in an iframe whose `sandbox` lacks `allow-scripts`, no script runs, remote images held back until **Show images**; a reply and its original shown as one conversation |
+| `03-reading` | HTML in an iframe whose `sandbox` lacks `allow-scripts`, no script runs, remote images held back until **Show images**; in light and dark mode the frame declares its document's color-scheme (so its canvas stays transparent) and shows the whole message; a reply and its original shown as one conversation |
 | `04-compose` | Settings > Inbox > Sending (preview + 10 s undo) through the UI, the preview dialog (recipient, subject, HTML in an iframe), Undo restores the composer, sending again reaches Sent exactly once; with the preview off, the message is sent directly |
 | `05-organise` | Star and unstar; archive and trash with the Undo toast; Delete forever from Trash behind the confirm dialog (Cancel keeps the message, confirming deletes it) |
 | `06-search` | Seeded subject found and the list narrowed; empty state for a query with no matches |

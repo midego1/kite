@@ -50,9 +50,17 @@ export function hasOwnBackground(html: string): boolean {
 	return OWN_BACKGROUND.test(html);
 }
 
+/**
+ * The color-scheme the frame document declares. The `<iframe>` element has to declare the same one:
+ * when they differ, Chromium paints an opaque canvas (#121212 for dark) behind the mail.
+ */
+export function emailFrameColorScheme(html: string, options: EmailFrameDocumentOptions = {}): "dark" | "light" {
+	return options.dark && !hasOwnBackground(html) ? "dark" : "light";
+}
+
 export function buildEmailFrameDocument(html: string, options: EmailFrameDocumentOptions = {}): string {
 	const inverted = !!options.dark && !options.original && hasOwnBackground(html);
-	const dark = !!options.dark && !hasOwnBackground(html);
+	const dark = emailFrameColorScheme(html, options) === "dark";
 	const lightCanvas = !!options.dark && !dark && !inverted;
 	const colorStyles =
 		(dark ? DARK_STYLES : LIGHT_STYLES) +

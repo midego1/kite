@@ -208,6 +208,18 @@ test("designed mail is rendered light and inverted in dark mode, with media inve
 	}
 	assert.doesNotMatch(frame.buildEmailFrameDocument('<td bgcolor="#fff">x</td>'), /html\{background:#fff\}/);
 });
+test("the iframe element declares the same color-scheme as the frame document", () => {
+	for (const [html, options] of [
+		["<p>Plain reply</p>", { dark: true }],
+		["<p>Plain reply</p>", {}],
+		['<div style="background-color: #fff">Hi</div>', { dark: true }],
+		['<div style="background-color: #fff">Hi</div>', { dark: true, original: true }],
+	]) {
+		const scheme = frame.emailFrameColorScheme(html, options);
+		assert.match(frame.buildEmailFrameDocument(html, options), new RegExp(`html\\{color-scheme:${scheme}\\}`));
+	}
+	assert.equal(frame.emailFrameColorScheme("<p>Plain reply</p>", { dark: true }), "dark");
+});
 
 test("production CSP allows inline scripts only by nonce", () => {
 	const production = headers.buildContentSecurityPolicy({ nonce: "abc123" });

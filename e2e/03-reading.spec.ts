@@ -47,6 +47,40 @@ test("renders HTML in a sandboxed frame and holds remote images until asked", as
 	await expect.poll(() => imageRequests).toBeGreaterThan(0);
 });
 
+for (const theme of ["light", "dark"]) {
+	test(`in ${theme} mode the message frame is transparent and shows the whole message`, async ({ page }) => {
+		const api = await apiContext(STORAGE_STATE);
+		const subject = `Frame ${theme} ${uniqueToken()}`;
+		await deliverInbound(api, {
+			from: `"Plain Sender" <plain@outside.test>`,
+			to: SUPPORT_ADDRESS,
+			subject,
+			html: "<p>First paragraph.</p><ul><li>One</li><li>Two</li></ul><p>Best,<br>Last line</p>",
+		});
+		await api.dispose();
+		await page.addInitScript((value) => localStorage.setItem("kite-theme", value), theme);
+
+		await page.goto("/inbox");
+		await openMessage(page, subject);
+		const frame = page.getByTitle("Message body");
+		await expect(frame.contentFrame().getByText(/Last line/)).toBeAttached();
+		// A frame whose color-scheme differs from its document's gets an opaque canvas, and padding on
+		// the frame shrinks its viewport below the measured height, cutting off the last line.
+		await expect
+			.poll(() =>
+				frame.evaluate((element: HTMLIFrameElement) => {
+					const root = element.contentDocument!.documentElement;
+					return {
+						scheme: getComputedStyle(element).colorScheme,
+						documentScheme: getComputedStyle(root).colorScheme,
+						clipped: element.contentWindow!.innerHeight < root.scrollHeight,
+					};
+				}),
+			)
+			.toEqual({ scheme: theme, documentScheme: theme, clipped: false });
+	});
+}
+
 test("your own reply does not make a read conversation unread", async () => {
 	const api = await apiContext(STORAGE_STATE);
 	const token = uniqueToken();

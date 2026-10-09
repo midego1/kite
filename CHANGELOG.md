@@ -53,6 +53,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Starring a message from a conversation thread now shows the correct state.
 - Bulk actions, Clear selection and Empty Trash/Spam return to the folder list instead of re-opening the message that was open behind the selection, and a message that leaves the list no longer stays selected.
 - Icon-sized buttons now get their intended size.
+- In dark mode, plain emails no longer sit in a black box with their last line cut off: the message frame now declares the same color-scheme as the message and has no padding outside its measured height.
 
 ## [0.5.0.1] - 2026-10-07
 

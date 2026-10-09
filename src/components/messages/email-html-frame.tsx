@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ImageOff, Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { buildEmailFrameDocument, EMAIL_FRAME_SANDBOX, hasOwnBackground } from "./email-html-frame-utils";
+import {
+	buildEmailFrameDocument,
+	EMAIL_FRAME_SANDBOX,
+	emailFrameColorScheme,
+	hasOwnBackground,
+} from "./email-html-frame-utils";
 import type { EmailHtmlFrameProps, RemoteImagesNoticeProps } from "./email-html-frame-types";
 
 function subscribeToTheme(onChange: () => void) {
@@ -98,7 +103,7 @@ export function EmailHtmlFrame({ html, title = "Message body", muted, className 
 				sandbox={EMAIL_FRAME_SANDBOX}
 				referrerPolicy="no-referrer"
 				srcDoc={srcDoc}
-				style={{ height }}
+				style={{ height, colorScheme: emailFrameColorScheme(html, { dark }) }}
 				className={cn("block w-full border-0 bg-transparent", designed && "rounded-lg", className)}
 			/>
 		</>

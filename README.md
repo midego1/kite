@@ -53,7 +53,7 @@ This version started from [Mailflare by hieunc229](https://github.com/hieunc229/
 | | Original Mailflare | This version |
 | --- | --- | --- |
 | **Features** | Pro and Team features need a paid license key | Every feature is free; access is set by roles and mailbox sharing |
-| **Updates** | Checks for and pulls updates from the original repository | Never phones home; you deploy from your own repository |
+| **Updates** | Checks for and pulls updates from the original repository | No update check, license check or telemetry; a new version runs only after you deploy it. Apart from the services you configure, Kite contacts only Gravatar (contact avatars) and Cloudflare's public DNS resolver (DNS checks); see [Privacy](docs/privacy.md) |
 | **Email display** | Email HTML inserted directly into the page | Sandboxed frame with no scripts; remote images blocked until you allow them |
 | **Sessions and requests** | Session token also kept in `localStorage`; CSP allows inline scripts | Session only in an `HttpOnly` cookie, central CSRF checks, nonce-based CSP |
 | **Stored secrets** | Provider keys stored as plain text | Provider keys and IMAP passwords encrypted with AES-GCM (`APP_ENCRYPTION_KEY`) |

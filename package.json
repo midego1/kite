@@ -106,7 +106,7 @@
 		"react-markdown": "^10.1.0",
 		"react-server-dom-webpack": "^19.2.6",
 		"remark-gfm": "^4.0.1",
-		"sass": "^1.105.0",
+		"sass": "^1.105.1",
 		"smtp-server": "^3.19.12",
 		"tailwind-merge": "^3.6.0",
 		"vinext": "1.1.0",

@@ -40,6 +40,10 @@ issues should also be raised privately with the responsible operator/vendor.
 - Dependabot checks both npm packages weekly with a seven-day version-update
   cooldown. Security updates bypass cooldown, subject to GitHub's separately
   enabled security-update settings. GitHub Actions are checked weekly.
+- `.coderabbit.yaml` configures CodeRabbit's advisory pull request review, which also
+  runs Betterleaks, TruffleHog, OSV-Scanner and the repository's Semgrep rules on the
+  diff. It only reviews once the CodeRabbit GitHub app is installed on the repository,
+  and it is never a required check.
 - CODEOWNERS routes review to `@midego1`; it does not enforce review or protect
   `main`. Branch rules, required checks, private reporting, GitHub secret scanning,
   and hosted code scanning are account settings and remain operator work.

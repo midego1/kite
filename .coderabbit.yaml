@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit reads AGENTS.md and CLAUDE.md on its own; the instructions below only
+# point it at the rules that are easiest to break in a diff.
+language: en-US
+early_access: false
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  in_progress_fortune: false
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+
+  # Generated or byte-for-byte files; their sources and checks are reviewed instead.
+  path_filters:
+    - "!**/package-lock.json"
+    - "!cloudflare-env.d.ts"
+    - "!next-env.d.ts"
+    - "!docs/openapi.json"
+    - "!drizzle/migrations/meta/**"
+    - "!scripts/quality/*baseline.json"
+    - "!screenshots/**"
+
+  path_instructions:
+    - path: "src/app/api/**"
+      instructions: >-
+        Route files must not import requireUser (it throws, which surfaces as a 500); use
+        requireSessionUser or requireSessionAdmin from src/lib/api/auth.ts. Message and mailbox
+        queries must be scoped by the accessible mailbox IDs from src/lib/mailboxes/access.ts, not by
+        userId. Failures return NextResponse.json({ error }, { status }).
+    - path: "drizzle/migrations/**"
+      instructions: >-
+        Migrations are kept exactly as generated, so do not suggest formatting. A migration that
+        creates, renames or drops a table must update BACKUP_TABLES and INTERNAL_TABLES
+        (src/lib/backups/export.ts), BACKUP_TABLE_GROUPS (src/lib/backups/table-groups.ts) and
+        DatabaseBackupTable (src/lib/backups/types.d.ts) in the same pull request, and a dropped table
+        belongs in RETIRED_BACKUP_TABLES so older backups still restore. Flag edits to a migration that
+        already exists on main.
+    - path: "**/wrangler.jsonc*"
+      instructions: >-
+        Cloudflare resource names must not change (Worker and D1 kite, R2 kite-raw, queues kite-*,
+        dataset kite_metrics). The Worker name, the WORKER_SELF_REFERENCE service and
+        getEmailWorkerName() in src/lib/cloudflare-api-utils.ts must agree. Flag anything that looks
+        like a secret; secrets belong in Worker secrets, not vars.
+    - path: "worker.ts"
+      instructions: >-
+        message.forward() and message.setReject() only exist in the email handler, so forward and
+        reject routing must stay there and never move to the queue consumer. The email handler stores
+        raw MIME in R2 and enqueues; it must not parse mail inline. RealtimeHub must stay exported.
+    - path: "src/lib/security/secret-box.ts"
+      instructions: >-
+        HKDF_INFO must never change: stored provider secrets were encrypted with it and would become
+        unreadable.
+    - path: "src/components/**"
+      instructions: >-
+        Use Tailwind's blue-* palette rather than hard-coded colours so the Kite and Classic styles and
+        dark mode all work. A dialog with more than a few fields needs max-h-[calc(100vh-4rem)]
+        overflow-y-auto. React hooks must not live in modules a Server Component imports. A
+        user-visible change needs an e2e spec change under e2e/.
+    - path: "e2e/**"
+      instructions: >-
+        Test data must be invented: no real names, addresses, domains, tokens or mail. A spec must run
+        against the isolated e2e database and need no Cloudflare credentials.
+    - path: "tests/**"
+      instructions: >-
+        Test data must be invented: no real names, addresses, domains, tokens or mail. Unit tests must
+        not need Workers bindings; anything that reaches D1 or R2 belongs in a script under scripts/.
+    - path: "scripts/screenshots/**"
+      instructions: >-
+        The screenshots are published in the README, so every seeded name, address, domain and message
+        must be invented.
+
+  tools:
+    semgrep:
+      enabled: true
+      config_file: .github/semgrep.yml
+    gitleaks:
+      enabled: true
+    trufflehog:
+      enabled: true
+    osvScanner:
+      enabled: true
+    # Prettier and ESLint are the repository's formatter and linter, and Markdown and SQL are
+    # deliberately left unformatted, so these would only add style noise.
+    biome:
+      enabled: false
+    markdownlint:
+      enabled: false
+    languagetool:
+      enabled: false
+    sqlfluff:
+      enabled: false
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "CONTRIBUTING.md"
+      - "SECURITY.md"
+
+chat:
+  auto_reply: true

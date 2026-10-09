@@ -9,9 +9,9 @@ credit reporters with their permission. This is a target, not a guaranteed SLA.
 ## Report a vulnerability
 
 Do not put exploit details, real mail, credentials, or backups in public issues.
-If the repository's Security tab offers **Report a vulnerability**, use its
-[private advisory form](https://github.com/midego1/kite/security/advisories/new). This document does not enable GitHub private reporting.
-If the form is unavailable, open a minimal public issue asking `@midego1` for a
+Report it privately through the Security tab's **Report a vulnerability** button
+([private advisory form](https://github.com/midego1/kite/security/advisories/new)).
+If the form is ever unavailable, open a minimal public issue asking `@midego1` for a
 private reporting channel, with no vulnerability details or sensitive evidence.
 Wait for that channel before sharing details.
 
@@ -44,9 +44,15 @@ issues should also be raised privately with the responsible operator/vendor.
   runs Betterleaks, TruffleHog, OSV-Scanner and the repository's Semgrep rules on the
   diff. It only reviews once the CodeRabbit GitHub app is installed on the repository,
   and it is never a required check.
-- CODEOWNERS routes review to `@midego1`; it does not enforce review or protect
-  `main`. Branch rules, required checks, private reporting, GitHub secret scanning,
-  and hosted code scanning are account settings and remain operator work.
+- CODEOWNERS routes review to `@midego1`. A repository ruleset protects `main`:
+  changes land through squash-merged pull requests with a code-owner approval,
+  resolved review threads and passing required checks (Mission validation, Node build,
+  docs, Gitleaks and the source security rules); force pushes and deletion are
+  blocked. A second ruleset protects `v*` release tags.
+- GitHub private vulnerability reporting, secret scanning with push protection,
+  Dependabot alerts and Dependabot security updates are enabled. Workflows from
+  outside contributors need approval before they run, and the default workflow
+  token is read-only. Hosted code scanning is not enabled.
 
 Never deploy or apply remote migrations during agent validation. A push to
 `main` deploys production. Use synthetic local data and review

@@ -5,13 +5,29 @@ import { parseBookingTimeRanges, parseBookingWeekdays } from "@/lib/booking/util
 import type { BookingEventRecord } from "@/lib/booking/types";
 import { getEnv } from "@/lib/cloudflare";
 import { parseBookingHostIds } from "@/lib/booking/hosts";
+import type { PublicBookingSubmission, ValidBookingSubmission } from "./types";
 
-export function parseBookingGuestEmails(value: unknown, bookerEmail: string): string[] | null {
+function parseBookingGuestEmails(value: unknown, bookerEmail: string): string[] | null {
 	if (value === undefined || value === "") return [];
 	if (typeof value !== "string" || value.length > 2000) return null;
 	const emails = value.split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
 	if (emails.length > 20 || emails.some((email) => email.length > 254 || !/^\S+@\S+\.\S+$/.test(email))) return null;
 	return [...new Set(emails.filter((email) => email !== bookerEmail))];
+}
+
+export function parseBookingSubmission(
+	value: unknown,
+): ValidBookingSubmission | { error: string } {
+	const body = (value && typeof value === "object" ? value : {}) as PublicBookingSubmission;
+	const name = typeof body.name === "string" ? body.name.trim() : "";
+	const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+	const validContact = name && name.length <= 120 && /^\S+@\S+\.\S+$/.test(email) && email.length <= 254;
+	if (!validContact || typeof body.startsAt !== "string") return { error: "Enter your name, email, and a time." };
+	const guestEmails = parseBookingGuestEmails(body.guestEmails, email);
+	const notes = typeof body.notes === "string" ? body.notes.trim() : "";
+	if (!guestEmails || notes.length > 2000 || (body.notes !== undefined && typeof body.notes !== "string"))
+		return { error: "Check the guest emails and meeting notes." };
+	return { name, email, startsAt: body.startsAt, guestEmails, notes };
 }
 
 export async function loadPublicBookingEvent(eventId: string, username?: string | null) {

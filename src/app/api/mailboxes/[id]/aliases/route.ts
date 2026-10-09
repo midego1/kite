@@ -6,12 +6,18 @@ import { requireSessionUser } from "@/lib/api/auth";
 import type { SessionUser } from "@/lib/auth/types";
 import { getEnv } from "@/lib/cloudflare";
 import { deleteEmailRoutingRuleForAddress, ensureEmailRoutingRuleToWorker } from "@/lib/cloudflare-api";
+import { isAddressDelivered } from "@/lib/email/routing";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { createMailboxAliasSchema } from "@/lib/validators";
 import type { MailboxRouteParams } from "../types";
 
+/**
+ * Aliases claim addresses on every domain the owner holds, so editing them needs the same
+ * right as creating a mailbox there, not just full access to this one.
+ */
 async function getManagedMailbox(db: ReturnType<typeof getDb>, user: SessionUser, mailboxId: string) {
+	if (user.role !== "admin" && !user.canManageMailboxes) return null;
 	const access = await getMailboxAccessLevel(db, user, mailboxId);
 	if (!access?.canManage) return null;
 	const [mailbox] = await db
@@ -104,6 +110,9 @@ export async function POST(request: Request, { params }: MailboxRouteParams) {
 		.limit(1);
 	if (existingAlias) {
 		return NextResponse.json({ error: "An alias already uses this address" }, { status: 409 });
+	}
+	if (await isAddressDelivered(db, domain.id, `${localPart}@${domain.hostname}`)) {
+		return NextResponse.json({ error: "This address already delivers to a mailbox" }, { status: 409 });
 	}
 
 	const aliasId = newId("als");

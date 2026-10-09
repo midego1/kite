@@ -13,6 +13,7 @@ await build({
 	stdin: {
 		contents: `
 			export { domainRoutingRuleSchema } from "./src/lib/validators.ts";
+			export { emailWriteAccess } from "./src/lib/jmap/email-access.ts";
 			export { emptyRuleInput, ruleToInput } from "./src/components/settings/domain-routing/utils.ts";
 		`,
 		resolveDir: root,
@@ -29,7 +30,7 @@ await build({
 	packages: "external",
 	logLevel: "silent",
 });
-const { domainRoutingRuleSchema, emptyRuleInput, ruleToInput } = await import(
+const { domainRoutingRuleSchema, emailWriteAccess, emptyRuleInput, ruleToInput } = await import(
 	pathToFileURL(join(directory, "entry.mjs")).href
 );
 
@@ -83,4 +84,35 @@ test("forward rules still require a valid forwarding address", () => {
 	const forward = dialogPayload({ action: "forward", forwardTo: " team@example.com " });
 	assert.equal(fieldErrors(forward), null);
 	assert.equal(domainRoutingRuleSchema.parse(forward).forwardTo, "team@example.com");
+});
+
+test("regex rules refuse patterns that can backtrack catastrophically on a message body", () => {
+	const regexProblem = (matchValue) =>
+		fieldErrors(dialogPayload({ action: "reject", matchOperator: "regex", matchValue }))?.matchValue?.[0] ?? null;
+	for (const pattern of ["^invoice-\\d+@", "(foo|bar)@example\\.com$", "a{2,4}", "(ab)+c", "(a+)?b"]) {
+		assert.equal(regexProblem(pattern), null, pattern);
+	}
+	for (const pattern of ["(a+)+$", "(\\w*)*@", "(x{1,9}){2,}", "(.*a){3}"]) {
+		assert.match(regexProblem(pattern) ?? "", /Nested repetition/, pattern);
+	}
+	assert.match(regexProblem("(a)\\1") ?? "", /Backreferences/);
+	assert.match(regexProblem("(?<x>a)\\k<x>") ?? "", /Backreferences/);
+	assert.match(regexProblem("a".repeat(201)) ?? "", /200 characters/);
+	assert.match(regexProblem("(") ?? "", /valid regular expression/);
+});
+
+test("JMAP delegates without full access may only change their own drafts", () => {
+	const mailboxes = [
+		{ id: "full", permission: "full_access" },
+		{ id: "sendas", permission: "send_as" },
+		{ id: "read", permission: "read_only" },
+	];
+	const { writable, canChange } = emailWriteAccess(mailboxes, "me");
+	assert.deepEqual([...writable].sort(), ["full", "sendas"]);
+	const row = (status, userId) => ({ status, userId });
+	assert.equal(canChange(row("received", "someone"), "full"), true);
+	assert.equal(canChange(row("received", "someone"), "sendas"), false);
+	assert.equal(canChange(row("draft", "someone"), "sendas"), false);
+	assert.equal(canChange(row("draft", "me"), "sendas"), true);
+	assert.equal(canChange(row("draft", "me"), "read"), false);
 });

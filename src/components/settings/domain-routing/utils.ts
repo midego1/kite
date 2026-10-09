@@ -33,26 +33,19 @@ async function readJson<T>(res: Response): Promise<T> {
 
 export async function fetchDomainRules(
 	domainId: string,
-	mailboxId?: string,
 ): Promise<{ rules: DomainRule[]; mailboxes: DomainRuleMailbox[] }> {
-	const params = new URLSearchParams({ domainId });
-	if (mailboxId) params.set("mailboxId", mailboxId);
-	const res = await authFetch(`/api/routing-rules/domain?${params}`);
+	const res = await authFetch(`/api/routing-rules/domain?${new URLSearchParams({ domainId })}`);
 	const json = await readJson<{ rules: DomainRule[]; mailboxes: DomainRuleMailbox[] }>(res);
 	return { rules: json.rules ?? [], mailboxes: json.mailboxes ?? [] };
 }
 
-function domainRuleUrl(id: string | null, mailboxId?: string): string {
-	const params = new URLSearchParams();
-	if (mailboxId) params.set("mailboxId", mailboxId);
-	const queryString = params.toString();
-	const query = queryString ? `?${queryString}` : "";
-	return `/api/routing-rules/domain${id ? `/${id}` : ""}${query}`;
+function domainRuleUrl(id: string | null): string {
+	return `/api/routing-rules/domain${id ? `/${id}` : ""}`;
 }
 
-export async function createDomainRule(input: DomainRuleInput, mailboxId?: string) {
+export async function createDomainRule(input: DomainRuleInput) {
 	return readJson(
-		await authFetch(domainRuleUrl(null, mailboxId), {
+		await authFetch(domainRuleUrl(null), {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(input),
@@ -60,9 +53,9 @@ export async function createDomainRule(input: DomainRuleInput, mailboxId?: strin
 	);
 }
 
-export async function updateDomainRule(id: string, input: DomainRuleInput, mailboxId?: string) {
+export async function updateDomainRule(id: string, input: DomainRuleInput) {
 	return readJson(
-		await authFetch(domainRuleUrl(id, mailboxId), {
+		await authFetch(domainRuleUrl(id), {
 			method: "PATCH",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(input),
@@ -70,8 +63,8 @@ export async function updateDomainRule(id: string, input: DomainRuleInput, mailb
 	);
 }
 
-export async function deleteDomainRule(id: string, mailboxId?: string) {
-	return readJson(await authFetch(domainRuleUrl(id, mailboxId), { method: "DELETE" }));
+export async function deleteDomainRule(id: string) {
+	return readJson(await authFetch(domainRuleUrl(id), { method: "DELETE" }));
 }
 
 export function describeRule(rule: DomainRule, mailboxes: DomainRuleMailbox[], hostname: string): string {

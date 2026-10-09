@@ -37,6 +37,11 @@
 			"namespace_id": "1002",
 			"simple": { "limit": 120, "period": 60 },
 		},
+		{
+			"name": "BOOKING_RATE_LIMIT",
+			"namespace_id": "1003",
+			"simple": { "limit": 5, "period": 60 },
+		},
 	],
 	"observability": {
 		"enabled": true,

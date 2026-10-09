@@ -1,0 +1,50 @@
+{
+	"gated": [
+		"src/lib/alerts/active-utils.ts",
+		"src/lib/alerts/delivery-utils.ts",
+		"src/lib/alerts/rules-utils.ts",
+		"src/lib/alerts/webhook-utils.ts",
+		"src/components/alerts-banner-utils.ts",
+		"src/lib/logger.mjs",
+		"src/lib/metrics.mjs",
+		"src/lib/metrics-route-utils.ts",
+		"src/lib/trace.mjs",
+		"worker-utils.ts",
+		"src/lib/agent/step-limit-utils.ts",
+		"src/lib/agent/tool-history-utils.ts",
+		"src/lib/auth/client-utils.ts",
+		"src/lib/auth/setup-token-utils.ts",
+		"src/lib/auth/user-lookup-utils.ts",
+		"src/lib/backups/backup-writer-utils.ts",
+		"src/lib/backups/restore-utils.ts",
+		"src/lib/email/trash-retention-utils.ts",
+		"src/lib/email/undo-send-utils.ts",
+		"src/lib/import/imap-utils.ts",
+		"src/lib/jmap/email-import-utils.ts",
+		"src/lib/mailboxes/delete-utils.ts",
+		"src/lib/maintenance/pruning-utils.ts",
+		"src/lib/messages/cursor-utils.ts",
+		"src/lib/messages/permanent-delete-utils.ts",
+		"src/lib/profile/identity-utils.ts"
+	],
+	"ungated": {
+		"src/lib/auth/password-reset-utils.ts": "no unit test bundles it; covered only through the e2e suite",
+		"src/lib/auth/setup-utils.ts": "no unit test bundles it; covered only through the e2e suite",
+		"src/lib/cloudflare-api-utils.ts": "bundled transitively (functions 85.7%, branches 31.6%); no direct test yet",
+		"src/lib/email/cloud-attachment-utils.ts": "no unit test bundles it; covered only through the e2e suite",
+		"src/lib/email/post-delivery-utils.ts": "bundled transitively, no direct test",
+		"src/lib/email/reply-content-utils.ts": "bundled transitively, no direct test (functions 35%)",
+		"src/lib/messages/drag-utils.ts": "browser drag-and-drop helpers; no unit test bundles it",
+		"src/lib/search/query-utils.ts": "bundled transitively; branches 42.5% until the search grammar has its own test",
+		"src/lib/seed-utils.ts": "demo-data helper used only by the seed route; no unit test bundles it"
+	},
+	"thresholds": {
+		"aggregate": { "lines": 80, "branches": 90, "functions": 95 },
+		"perFile": { "branches": 70, "functions": 80 }
+	},
+	"overrides": {
+		"src/lib/logger.mjs": { "lines": 90, "branches": 80, "functions": 90 },
+		"src/lib/metrics.mjs": { "lines": 90, "branches": 80, "functions": 90 },
+		"src/lib/trace.mjs": { "lines": 90, "branches": 80, "functions": 90 }
+	}
+}

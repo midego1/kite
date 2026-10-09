@@ -1,0 +1,36 @@
+# First-run setup token. Production refuses to create the first admin without it;
+# open /setup?setup_token=<value> or enter it on the setup page. Development stays open unless set,
+# so remove this line from your local .dev.vars if you do not want to enter it. Listed here
+# uncommented so the Deploy to Cloudflare button asks for it. Production refuses this example
+# value and anything shorter than 16 characters; use e.g. `openssl rand -hex 32`.
+SETUP_TOKEN=a-long-random-string
+
+# Optional: encrypts provider keys and webhook secrets stored in D1 (AES-GCM).
+# Existing plaintext values keep working and are encrypted the next time they are saved.
+# Keep it safe: losing or changing it makes the encrypted values unreadable.
+# APP_ENCRYPTION_KEY=a-long-random-string
+
+# Preferred: scoped API token.
+# This is an app runtime token, not the Cloudflare deploy/build token.
+CF_TOKEN=your_api_token_with_zone_email_permissions
+
+# Legacy Global API Key alternative. Use this only instead of CF_TOKEN.
+# CF_EMAIL=you@example.com
+# CF_API_KEY=your_global_api_key
+
+# The Worker uses the AI binding in wrangler.jsonc. Override its chat/draft model if needed.
+# AI_MODEL=@cf/moonshotai/kimi-k2.5
+
+# Optional: send and receive through Resend or Amazon SES instead of Cloudflare.
+# These can also be entered in Admin > Domains; values saved there take precedence.
+# RESEND_API_KEY=re_...
+# AWS_ACCESS_KEY_ID=AKIA...
+# AWS_SECRET_ACCESS_KEY=your_secret_access_key
+# AWS_REGION=us-east-1
+# Public HTTPS address. Receiving through Resend or SES needs it, and password
+# reset links are only sent when it is set.
+# APP_URL=https://mail.example.com
+
+# Development and tests only: lets the alert webhook (Admin > Alerts) post over http
+# to a loopback address such as http://127.0.0.1:3290/hook. Ignored in production.
+# ALERT_WEBHOOK_ALLOW_INSECURE=1

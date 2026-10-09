@@ -1,0 +1,10 @@
+{
+	"path": ["src", "server", "worker.ts", "worker-utils.ts", "deploy/cloudflare-email-relay/src"],
+	"format": ["typescript", "tsx", "javascript"],
+	"minLines": 10,
+	"minTokens": 100,
+	"mode": "weak",
+	"reporters": ["json"],
+	"output": "test-results/quality/duplicates",
+	"ignore": ["**/*.d.ts", "**/node_modules/**", "src/lib/migrations/bundle.json"]
+}

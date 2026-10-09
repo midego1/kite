@@ -1,0 +1,30 @@
+name: Implementation task
+description: A bounded improvement with acceptance criteria
+title: "[Task] "
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Problem and intended outcome
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options: [P2 - normal, P0 - immediate incident, P1 - blocks release, P3 - optional improvement]
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria and validation
+      description: Observable behavior, synthetic test scenarios, docs and migration requirements.
+    validations:
+      required: true

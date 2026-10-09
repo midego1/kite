@@ -1,0 +1,19 @@
+{
+	"vulnerabilities": {
+		"old-lib": {
+			"name": "old-lib",
+			"severity": "low",
+			"via": [
+				{
+					"source": 2,
+					"name": "old-lib",
+					"title": "Old",
+					"url": "https://github.com/advisories/GHSA-old1-old1-old1",
+					"severity": "low"
+				}
+			],
+			"fixAvailable": false
+		}
+	},
+	"metadata": { "vulnerabilities": { "critical": 0, "high": 0, "moderate": 0, "low": 1, "total": 1 } }
+}

@@ -1,0 +1,16 @@
+node_modules
+.next
+.next-node
+.vinext
+.wrangler
+dist
+data
+coverage
+*.log
+.git
+.github
+.dev.vars
+.env
+.env.*
+!.env.docker.example
+screenshots

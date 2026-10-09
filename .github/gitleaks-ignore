@@ -1,0 +1,4 @@
+# Exact Gitleaks fingerprints (commit:file:rule:line) of reviewed false positives.
+# Empty: the reviewed synthetic values in tests carry inline `gitleaks:allow` comments
+# instead, because fingerprints change whenever history is rewritten. The one
+# path-level exception is in .gitleaks.toml.

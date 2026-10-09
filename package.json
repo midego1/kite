@@ -1,0 +1,155 @@
+{
+	"name": "kite",
+	"version": "2026.10.9",
+	"private": true,
+	"scripts": {
+		"dev": "npm run db:bundle && vite dev --port 3000",
+		"build": "npm run db:bundle && vite build",
+		"build:next": "npm run db:bundle && KITE_RUNTIME=node next build",
+		"start": "vite preview --port 3000",
+		"lint": "eslint .",
+		"typecheck": "npm run db:bundle && tsc --noEmit",
+		"test": "npm run test:app && npm run test:relay",
+		"check": "npm run typecheck && npm run typecheck:relay && npm run lint && npm run test",
+		"test:e2e": "playwright test",
+		"deploy": "npm run build && npm run deploy:worker",
+		"deploy:worker": "wrangler deploy",
+		"deploy:local": "npm run deploy",
+		"upload": "npm run build && wrangler versions upload",
+		"preview": "npm run build && vite preview --port 3000",
+		"cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts",
+		"db:bundle": "node scripts/generate-migration-bundle.mjs",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate:local": "wrangler d1 migrations apply DB --local",
+		"db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+		"migrate": "wrangler d1 migrations apply DB",
+		"db:seed": "curl -X POST http://localhost:3000/api/seed",
+		"build:node": "npm run db:bundle && KITE_RUNTIME=node next build && node scripts/build-server.mjs",
+		"start:node": "KITE_RUNTIME=node NODE_ENV=production node dist/server.mjs",
+		"dev:node": "npm run db:bundle && node scripts/build-server.mjs && KITE_RUNTIME=node node dist/server.mjs",
+		"test:app": "node --test tests/*.test.mjs",
+		"test:relay": "node scripts/relay-tests.mjs",
+		"setup:mission": "npm ci && npm run db:bundle && npx playwright install --with-deps chromium",
+		"check:mission": "node scripts/quality/timings.mjs",
+		"test:relay:integration": "node scripts/relay-smoke.mjs",
+		"typecheck:relay": "tsc --noEmit -p deploy/cloudflare-email-relay/tsconfig.json",
+		"format": "prettier --write .",
+		"format:check": "node scripts/quality/check.mjs format",
+		"quality:check": "node scripts/quality/check.mjs",
+		"quality:baseline": "node scripts/quality/check.mjs --update-baseline",
+		"quality:duplicates": "jscpd --config .jscpd.json --baseline scripts/quality/duplicates-baseline.json --fail-on-new-clones --fail-on-empty",
+		"quality:dead-code": "node scripts/quality/knip.mjs --reporter json --no-progress",
+		"quality:report": "node scripts/quality/report.mjs",
+		"quality:timings": "node scripts/quality/timings.mjs",
+		"docs:generate": "node scripts/docs-generate.mjs",
+		"docs:check": "node scripts/docs-check.mjs",
+		"test:coverage:app": "node scripts/quality/coverage.mjs",
+		"test:coverage:relay": "node scripts/relay-tests.mjs --coverage",
+		"test:coverage": "npm run test:coverage:app && npm run test:coverage:relay",
+		"hooks:install": "node scripts/install-hooks.mjs",
+		"precommit:check": "node scripts/docs-check.mjs && node scripts/quality/check.mjs format --staged",
+		"release:notes": "node scripts/release-notes.mjs",
+		"release:prepare": "node scripts/release-prepare.mjs",
+		"screenshots": "playwright test -c playwright.screenshots.config.ts",
+		"test:list": "playwright test --list && npm --workspace kite-email-relay run test:list"
+	},
+	"cloudflare": {
+		"bindings": {
+			"CF_TOKEN": {
+				"description": "Runtime Cloudflare API token Kite uses to manage DNS and Email Routing for your domains; Cloudflare's deploy token is not passed to the app. Create it under **Manage Account \u2192 Account API Tokens** with `DNS Edit`, `Zone Read`, `Zone Settings Edit` and `Email Routing Rules Edit` for the zones you will connect, plus account-level `Email Sending Edit` to send mail. Paste only the token secret, without `Bearer`. See [Deployment](https://github.com/midego1/kite/blob/main/docs/deployment.md#step-1-set-up-cf_token)."
+			},
+			"SETUP_TOKEN": {
+				"description": "A long random string of your own, at least 16 characters, for example from `openssl rand -hex 32`. Kite refuses the example value. Until the first admin account exists, setup only runs with it: open `/setup?setup_token=<value>` after the deploy."
+			},
+			"TURNSTILE_SECRET_KEY": {
+				"description": "Cloudflare Turnstile secret key used to verify login and first-run registration challenges. Pair with NEXT_PUBLIC_TURNSTILE_SITE_KEY at build time."
+			},
+			"NEXT_PUBLIC_TURNSTILE_SITE_KEY": {
+				"description": "Cloudflare Turnstile public site key used by the login and first-run registration widgets."
+			},
+			"CF_EMAIL": {
+				"description": "Legacy Global API Key auth only. Use this with `CF_API_KEY` instead of `CF_TOKEN`."
+			},
+			"CF_API_KEY": {
+				"description": "Legacy Global API Key auth only. Prefer `CF_TOKEN` for new deployments."
+			}
+		}
+	},
+	"license": "SEE LICENSE IN LICENSE",
+	"engines": {
+		"node": ">=22.21.0"
+	},
+	"dependencies": {
+		"@ai-sdk/openai-compatible": "^3.0.55",
+		"@modelcontextprotocol/server": "^2.1.0",
+		"@radix-ui/react-dialog": "^1.1.15",
+		"@radix-ui/react-dropdown-menu": "^2.1.16",
+		"@radix-ui/react-label": "^2.1.8",
+		"@radix-ui/react-slot": "^1.2.4",
+		"@tanstack/react-query": "^5.100.11",
+		"@vinext/cloudflare": "1.1.0",
+		"ai": "^7.0.113",
+		"bcryptjs": "^3.0.3",
+		"better-sqlite3": "^13.0.3",
+		"class-variance-authority": "^0.7.1",
+		"clsx": "^2.1.1",
+		"drizzle-orm": "^0.45.2",
+		"lucide-react": "^1.16.0",
+		"nanoid": "^5.1.16",
+		"next": "16.4.0",
+		"nodemailer": "^10.0.9",
+		"postal-mime": "^2.7.4",
+		"qrcode": "^1.5.4",
+		"react": "^19.2.6",
+		"react-dom": "^19.2.6",
+		"react-hot-toast": "^2.6.1",
+		"react-markdown": "^10.1.0",
+		"react-server-dom-webpack": "^19.2.6",
+		"remark-gfm": "^4.0.1",
+		"sass": "^1.105.0",
+		"smtp-server": "^3.19.12",
+		"tailwind-merge": "^3.6.0",
+		"vinext": "1.1.0",
+		"workers-ai-provider": "^4.0.0",
+		"ws": "^8.21.0",
+		"zod": "^4.4.3"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "^1.61.0",
+		"@cloudflare/workers-types": "^5.20260828.1",
+		"@playwright/test": "^1.63.0",
+		"@tailwindcss/postcss": "^4",
+		"@types/bcryptjs": "^2.4.6",
+		"@types/better-sqlite3": "^9.6.0",
+		"@types/node": "^20.19.41",
+		"@types/nodemailer": "^8.0.1",
+		"@types/qrcode": "^1.5.6",
+		"@types/react": "^19.1.7",
+		"@types/react-dom": "^19.1.7",
+		"@types/smtp-server": "^3.5.13",
+		"@types/ws": "^8.18.2",
+		"@vitejs/plugin-react": "^6.0.0",
+		"@vitejs/plugin-rsc": "^0.5.34",
+		"drizzle-kit": "^0.31.10",
+		"esbuild": "^0.28.2",
+		"eslint": "^9",
+		"eslint-config-next": "16.4.0",
+		"jscpd": "^5.4.0",
+		"knip": "^6.40.0",
+		"prettier": "^3.9.9",
+		"tailwindcss": "^4",
+		"tsx": "^4.23.13",
+		"typescript": "^5.7.4",
+		"vite": "^8.0.0",
+		"wrangler": "^4.127.1"
+	},
+	"overrides": {
+		"@esbuild-kit/core-utils": {
+			"esbuild": "^0.25.4"
+		}
+	},
+	"type": "module",
+	"workspaces": [
+		"deploy/cloudflare-email-relay"
+	]
+}

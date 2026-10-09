@@ -1,0 +1,266 @@
+{
+	"openapi": "3.1.0",
+	"info": {
+		"title": "Kite API",
+		"version": "2026.10.09.0",
+		"description": "Generated from src/app/api/v1/**/route.ts by scripts/docs-generate.mjs. See docs/api.md."
+	},
+	"servers": [{ "url": "/" }],
+	"paths": {
+		"/api/v1/accounts/{id}": {
+			"get": {
+				"operationId": "getAccountsId",
+				"security": [{ "bearerAuth": ["accounts"] }],
+				"x-requires-admin": true,
+				"parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"401": { "$ref": "#/components/responses/Error" },
+					"404": { "$ref": "#/components/responses/Error" }
+				}
+			},
+			"patch": {
+				"operationId": "patchAccountsId",
+				"security": [{ "bearerAuth": ["accounts"] }],
+				"x-requires-admin": true,
+				"parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+				"requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"400": { "$ref": "#/components/responses/Error" },
+					"401": { "$ref": "#/components/responses/Error" },
+					"403": { "$ref": "#/components/responses/Error" },
+					"404": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/api/v1/accounts": {
+			"get": {
+				"operationId": "getAccounts",
+				"security": [{ "bearerAuth": ["accounts"] }],
+				"x-requires-admin": true,
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"401": { "$ref": "#/components/responses/Error" }
+				}
+			},
+			"post": {
+				"operationId": "postAccounts",
+				"security": [{ "bearerAuth": ["accounts"] }],
+				"x-requires-admin": true,
+				"requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"400": { "$ref": "#/components/responses/Error" },
+					"401": { "$ref": "#/components/responses/Error" },
+					"403": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/api/v1/domains/{id}/dns": {
+			"get": {
+				"operationId": "getDomainsIdDns",
+				"security": [{ "bearerAuth": ["domains"] }],
+				"x-requires-admin": true,
+				"parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"401": { "$ref": "#/components/responses/Error" },
+					"404": { "$ref": "#/components/responses/Error" },
+					"500": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/api/v1/domains/{id}/dns/setup": {
+			"post": {
+				"operationId": "postDomainsIdDnsSetup",
+				"security": [{ "bearerAuth": ["domains"] }],
+				"x-requires-admin": true,
+				"parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+				"requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"400": { "$ref": "#/components/responses/Error" },
+					"401": { "$ref": "#/components/responses/Error" },
+					"403": { "$ref": "#/components/responses/Error" },
+					"404": { "$ref": "#/components/responses/Error" },
+					"409": { "$ref": "#/components/responses/Error" },
+					"500": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/api/v1/domains/{id}": {
+			"delete": {
+				"operationId": "deleteDomainsId",
+				"security": [{ "bearerAuth": ["domains"] }],
+				"x-requires-admin": true,
+				"parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"400": { "$ref": "#/components/responses/Error" },
+					"401": { "$ref": "#/components/responses/Error" },
+					"403": { "$ref": "#/components/responses/Error" }
+				}
+			},
+			"get": {
+				"operationId": "getDomainsId",
+				"security": [{ "bearerAuth": ["domains"] }],
+				"x-requires-admin": true,
+				"parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"401": { "$ref": "#/components/responses/Error" },
+					"404": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/api/v1/domains": {
+			"get": {
+				"operationId": "getDomains",
+				"security": [{ "bearerAuth": ["domains"] }],
+				"x-requires-admin": true,
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"401": { "$ref": "#/components/responses/Error" }
+				}
+			},
+			"post": {
+				"operationId": "postDomains",
+				"security": [{ "bearerAuth": ["domains"] }],
+				"x-requires-admin": true,
+				"requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"400": { "$ref": "#/components/responses/Error" },
+					"401": { "$ref": "#/components/responses/Error" },
+					"403": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/api/v1/mailboxes/{id}": {
+			"delete": {
+				"operationId": "deleteMailboxesId",
+				"security": [{ "bearerAuth": ["mailboxes"] }],
+				"x-requires-admin": true,
+				"parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"401": { "$ref": "#/components/responses/Error" },
+					"404": { "$ref": "#/components/responses/Error" },
+					"502": { "$ref": "#/components/responses/Error" }
+				}
+			},
+			"get": {
+				"operationId": "getMailboxesId",
+				"security": [{ "bearerAuth": ["mailboxes"] }],
+				"x-requires-admin": true,
+				"parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"401": { "$ref": "#/components/responses/Error" },
+					"404": { "$ref": "#/components/responses/Error" }
+				}
+			},
+			"patch": {
+				"operationId": "patchMailboxesId",
+				"security": [{ "bearerAuth": ["mailboxes"] }],
+				"x-requires-admin": true,
+				"parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+				"requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"400": { "$ref": "#/components/responses/Error" },
+					"401": { "$ref": "#/components/responses/Error" },
+					"404": { "$ref": "#/components/responses/Error" },
+					"502": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/api/v1/mailboxes": {
+			"get": {
+				"operationId": "getMailboxes",
+				"security": [{ "bearerAuth": ["mailboxes"] }],
+				"x-requires-admin": true,
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"401": { "$ref": "#/components/responses/Error" }
+				}
+			},
+			"post": {
+				"operationId": "postMailboxes",
+				"security": [{ "bearerAuth": ["mailboxes"] }],
+				"x-requires-admin": true,
+				"requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+				"responses": {
+					"201": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"400": { "$ref": "#/components/responses/Error" },
+					"401": { "$ref": "#/components/responses/Error" },
+					"404": { "$ref": "#/components/responses/Error" },
+					"409": { "$ref": "#/components/responses/Error" },
+					"502": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/api/v1/messages": {
+			"get": {
+				"operationId": "getMessages",
+				"security": [{ "bearerAuth": ["read"] }],
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"400": { "$ref": "#/components/responses/Error" },
+					"401": { "$ref": "#/components/responses/Error" },
+					"404": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/api/v1/send": {
+			"post": {
+				"operationId": "postSend",
+				"security": [{ "bearerAuth": ["send"] }],
+				"requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"400": { "$ref": "#/components/responses/Error" },
+					"401": { "$ref": "#/components/responses/Error" },
+					"404": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		}
+	},
+	"components": {
+		"securitySchemes": {
+			"bearerAuth": {
+				"type": "http",
+				"scheme": "bearer",
+				"description": "API key from Settings → API keys (personal scopes: send, read, jmap, calendar:read, calendar:write) or Admin → API keys (admin scopes: domains, accounts, mailboxes; owner must keep the admin role). Scope lists: src/lib/api/scopes.ts."
+			}
+		},
+		"responses": {
+			"Error": {
+				"description": "Error. Validation failures return the flattened Zod error in `error`.",
+				"content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+			}
+		},
+		"schemas": {
+			"Error": {
+				"type": "object",
+				"required": ["error"],
+				"properties": {
+					"error": { "oneOf": [{ "type": "string" }, { "$ref": "#/components/schemas/ValidationError" }] },
+					"code": { "type": "string" },
+					"records": { "type": "array", "items": {} }
+				}
+			},
+			"ValidationError": {
+				"type": "object",
+				"properties": {
+					"formErrors": { "type": "array", "items": { "type": "string" } },
+					"fieldErrors": {
+						"type": "object",
+						"additionalProperties": { "type": "array", "items": { "type": "string" } }
+					}
+				}
+			}
+		}
+	}
+}

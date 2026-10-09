@@ -1,0 +1,33 @@
+name: Bug report
+description: Reproducible app or email relay failure
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Use synthetic mail. Remove addresses, message bodies, tokens and backup data. Report vulnerabilities privately as described in SECURITY.md."
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Application, Email relay, Backup and restore, Developer workflow, Documentation]
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include commit/version and local or deployed environment. Use example.com addresses.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence and checks tried
+      description: Request ID, time window, test commands and results; no real mail or secrets.

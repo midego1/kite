@@ -1,0 +1,24 @@
+{
+	"action": "completed",
+	"check_run": {
+		"id": 1000000001,
+		"name": "Workers Builds: kite",
+		"head_sha": "0123456789abcdef0123456789abcdef01234567",
+		"external_id": "22222222-3333-4444-8555-666666666666",
+		"status": "completed",
+		"conclusion": "failure",
+		"details_url": "https://dash.cloudflare.com/00000000000000000000000000000000/workers/services/view/kite/production/builds/22222222-3333-4444-8555-666666666666",
+		"output": {
+			"title": "Build failed",
+			"summary": "**Build Status:** failure\n\nVersion ID: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\n",
+			"text": null
+		},
+		"app": {
+			"slug": "cloudflare-workers-and-pages",
+			"name": "Cloudflare Workers and Pages"
+		}
+	},
+	"repository": {
+		"full_name": "example/kite"
+	}
+}

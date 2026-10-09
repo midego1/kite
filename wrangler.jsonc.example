@@ -1,0 +1,98 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "kite",
+	"main": "./worker.ts",
+	"compatibility_date": "2026-05-20",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"binding": "ASSETS",
+		"not_found_handling": "none",
+	},
+	"images": {
+		"binding": "IMAGES",
+	},
+	"services": [
+		{
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "kite",
+		},
+	],
+	"triggers": {
+		"crons": ["0 2 * * *", "*/5 * * * *"],
+	},
+	"ratelimits": [
+		{
+			"name": "LOGIN_RATE_LIMIT",
+			"namespace_id": "1001",
+			"simple": {
+				"limit": 20,
+				"period": 60,
+			},
+		},
+		{
+			"name": "AGENT_RATE_LIMIT",
+			"namespace_id": "1002",
+			"simple": { "limit": 120, "period": 60 },
+		},
+	],
+	"observability": {
+		"enabled": true,
+	},
+	"upload_source_maps": true,
+	"send_email": [
+		{
+			"name": "EMAIL",
+			"remote": true,
+		},
+	],
+	"ai": { "binding": "AI" },
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "kite",
+			"migrations_dir": "drizzle/migrations",
+		},
+	],
+	"r2_buckets": [
+		{
+			"binding": "BUCKET",
+			"bucket_name": "kite-raw",
+		},
+	],
+	"queues": {
+		"producers": [
+			{
+				"binding": "INBOUND_QUEUE",
+				"queue": "kite-inbound",
+			},
+			{
+				"binding": "OUTBOUND_QUEUE",
+				"queue": "kite-outbound",
+			},
+			{
+				"binding": "AGENT_QUEUE",
+				"queue": "kite-agent",
+			},
+		],
+		"consumers": [
+			{
+				"queue": "kite-inbound",
+				"max_batch_size": 5,
+				"max_retries": 3,
+			},
+			{
+				"queue": "kite-outbound",
+				"max_batch_size": 5,
+				"max_retries": 3,
+			},
+			{
+				"queue": "kite-agent",
+				"max_batch_size": 1,
+				"max_retries": 3,
+			},
+		],
+	},
+}

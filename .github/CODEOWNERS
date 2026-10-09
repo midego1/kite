@@ -1,0 +1,10 @@
+# Review routing; requiring approval still needs a GitHub ruleset.
+* @midego1
+/.github/ @midego1
+/worker.ts @midego1
+/src/lib/auth/ @midego1
+/src/lib/backups/ @midego1
+/drizzle/migrations/ @midego1
+/deploy/cloudflare-email-relay/ @midego1
+/SECURITY.md @midego1
+/docs/pii-handling.md @midego1

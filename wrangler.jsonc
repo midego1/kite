@@ -1,0 +1,192 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "kite",
+	"main": "./worker.ts",
+	"compatibility_date": "2026-05-20",
+	"keep_vars": true,
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"binding": "ASSETS",
+		"not_found_handling": "none",
+	},
+	"images": {
+		"binding": "IMAGES",
+	},
+	"services": [
+		{
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "kite",
+		},
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "REALTIME",
+				"class_name": "RealtimeHub",
+			},
+		],
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"RealtimeHub",
+			],
+		},
+	],
+	"triggers": {
+		"crons": ["0 2 * * *", "*/5 * * * *"],
+	},
+	"analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "kite_metrics" }],
+	"version_metadata": { "binding": "CF_VERSION_METADATA" },
+	"ratelimits": [
+		{
+			"name": "LOGIN_RATE_LIMIT",
+			"namespace_id": "1001",
+			"simple": {
+				"limit": 20,
+				"period": 60,
+			},
+		},
+		{
+			"name": "AGENT_RATE_LIMIT",
+			"namespace_id": "1002",
+			"simple": { "limit": 120, "period": 60 },
+		},
+	],
+	"observability": {
+		"enabled": true,
+		// Sampled traces show per-request D1/R2/fetch spans without tracing every request.
+		"traces": {
+			"enabled": true,
+			"head_sampling_rate": 0.1,
+		},
+	},
+	"upload_source_maps": true,
+	"send_email": [
+		{
+			"name": "EMAIL",
+			"remote": false,
+		},
+	],
+	"ai": { "binding": "AI", "remote": true },
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "kite",
+			"database_id": "9889a007-57f9-48b8-aceb-76a9be137915",
+			"migrations_dir": "drizzle/migrations",
+		},
+	],
+	"r2_buckets": [
+		{
+			"binding": "BUCKET",
+			"bucket_name": "kite-raw",
+			"preview_bucket_name": "kite-raw",
+		},
+	],
+	"queues": {
+		"producers": [
+			{
+				"binding": "INBOUND_QUEUE",
+				"queue": "kite-inbound",
+			},
+			{
+				"binding": "OUTBOUND_QUEUE",
+				"queue": "kite-outbound",
+			},
+			{
+				"binding": "AGENT_QUEUE",
+				"queue": "kite-agent",
+			},
+		],
+		"consumers": [
+			{
+				"queue": "kite-inbound",
+				"max_batch_size": 5,
+				"max_retries": 3,
+			},
+			{
+				"queue": "kite-outbound",
+				"max_batch_size": 5,
+				"max_retries": 3,
+			},
+			{
+				"queue": "kite-agent",
+				"max_batch_size": 1,
+				"max_retries": 3,
+			},
+		],
+	},
+	// Worker Previews (`npx wrangler preview`, or Workers Builds preview builds of non-production branches) do not
+	// inherit any binding. These point at the production database, bucket and queues on purpose, so a branch can be
+	// tried with the real accounts, domains and mail. Production keeps the routes, email handler, crons and queue
+	// consumers, so work a Preview queues (scheduled sends, imports) runs on production. REALTIME gets its own namespace in
+	// every Preview, so live updates from newly delivered mail do not reach it. Never apply migrations from a Preview:
+	// they would change the production database.
+	"previews": {
+		"services": [
+			{
+				"binding": "WORKER_SELF_REFERENCE",
+				"service": "kite",
+			},
+		],
+		"durable_objects": {
+			"bindings": [
+				{
+					"name": "REALTIME",
+					"class_name": "RealtimeHub",
+				},
+			],
+		},
+		"images": { "binding": "IMAGES" },
+		"ai": { "binding": "AI" },
+		"version_metadata": { "binding": "CF_VERSION_METADATA" },
+		"analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "kite_metrics_preview" }],
+		"ratelimits": [
+			{
+				"name": "LOGIN_RATE_LIMIT",
+				"namespace_id": "1101",
+				"simple": { "limit": 20, "period": 60 },
+			},
+			{
+				"name": "AGENT_RATE_LIMIT",
+				"namespace_id": "1102",
+				"simple": { "limit": 120, "period": 60 },
+			},
+		],
+		"send_email": [{ "name": "EMAIL" }],
+		"d1_databases": [
+			{
+				"binding": "DB",
+				"database_name": "kite",
+				"database_id": "9889a007-57f9-48b8-aceb-76a9be137915",
+			},
+		],
+		"r2_buckets": [
+			{
+				"binding": "BUCKET",
+				"bucket_name": "kite-raw",
+			},
+		],
+		"queues": {
+			"producers": [
+				{
+					"binding": "INBOUND_QUEUE",
+					"queue": "kite-inbound",
+				},
+				{
+					"binding": "OUTBOUND_QUEUE",
+					"queue": "kite-outbound",
+				},
+				{
+					"binding": "AGENT_QUEUE",
+					"queue": "kite-agent",
+				},
+			],
+		},
+	},
+}

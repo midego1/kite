@@ -1,0 +1,11 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "kite-email-relay",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-05-20",
+	// Set with `wrangler secret put`: KITE_URL (https://mail.example.com) and
+	// INBOUND_WEBHOOK_SECRET (same value as on the self-hosted server).
+	// Same dataset as the app; rows are told apart by the service blob.
+	"analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "kite_metrics" }],
+	"observability": { "enabled": true }
+}

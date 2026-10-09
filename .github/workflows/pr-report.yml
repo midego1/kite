@@ -1,0 +1,101 @@
+name: PR report
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: pr-report-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  report:
+    name: PR report
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install pinned Semgrep
+        run: pipx install semgrep==1.179.0
+      - name: Semgrep findings (same rules and targets as Security scans)
+        env:
+          SEMGREP_SEND_METRICS: "off"
+        run: |
+          mkdir -p test-results/review
+          semgrep scan --config .github/semgrep.yml --metrics=off --disable-version-check --json \
+            --output test-results/review/semgrep.json src server worker.ts deploy/cloudflare-email-relay/src || true
+      - name: npm audit for head and base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p test-results/review
+          npm audit --omit=dev --json > test-results/review/audit-head.json || true
+          base_dir="$RUNNER_TEMP/base"
+          mkdir -p "$base_dir/deploy/cloudflare-email-relay"
+          git show "$BASE_SHA:package.json" > "$base_dir/package.json"
+          git show "$BASE_SHA:package-lock.json" > "$base_dir/package-lock.json"
+          git show "$BASE_SHA:deploy/cloudflare-email-relay/package.json" > "$base_dir/deploy/cloudflare-email-relay/package.json"
+          (cd "$base_dir" && npm audit --omit=dev --package-lock-only --json) > test-results/review/audit-base.json || true
+      - name: Quality summary
+        run: npm run quality:check || true
+      - name: Duplication check outcome
+        run: |
+          mkdir -p test-results/quality
+          if npm run quality:duplicates; then status=pass; else status=fail; fi
+          printf '{"status":"%s"}\n' "$status" > test-results/quality/duplicates.json
+      - name: Coverage summary
+        run: npm run test:coverage || true
+      - name: Build the report
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: >-
+          node scripts/review/pr-report.mjs --base "$BASE_SHA" --inputs test-results
+          --summary-file "$GITHUB_STEP_SUMMARY" > test-results/review/report.md
+      - name: Record the pull request number
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: echo "$PR_NUMBER" > test-results/review/pr-number.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pr-report
+          path: |
+            test-results/review/report.md
+            test-results/review/pr-number.txt
+          retention-days: 7
+
+  comment:
+    name: PR report comment
+    needs: report
+    if: needs.report.result == 'success' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: pr-report
+      - name: Create or update the report comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          pr=$(tr -dc '0-9' < pr-number.txt)
+          id=$(gh api --paginate "repos/$REPO/issues/$pr/comments" --jq '.[] | select(.user.login=="github-actions[bot]" and (.body|contains("<!-- kite-pr-report -->"))) | .id' | head -n1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@report.md
+          else
+            gh api "repos/$REPO/issues/$pr/comments" -F body=@report.md
+          fi

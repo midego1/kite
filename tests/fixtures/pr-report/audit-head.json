@@ -1,0 +1,34 @@
+{
+	"vulnerabilities": {
+		"left-pad": {
+			"name": "left-pad",
+			"severity": "high",
+			"via": [
+				{
+					"source": 1,
+					"name": "left-pad",
+					"title": "VIA_SENTINEL details",
+					"url": "https://github.com/advisories/GHSA-aaaa-bbbb-cccc",
+					"severity": "high",
+					"range": "<2.0.0"
+				}
+			],
+			"fixAvailable": true
+		},
+		"old-lib": {
+			"name": "old-lib",
+			"severity": "low",
+			"via": [
+				{
+					"source": 2,
+					"name": "old-lib",
+					"title": "Old",
+					"url": "https://github.com/advisories/GHSA-old1-old1-old1",
+					"severity": "low"
+				}
+			],
+			"fixAvailable": false
+		}
+	},
+	"metadata": { "vulnerabilities": { "critical": 0, "high": 1, "moderate": 0, "low": 1, "total": 2 } }
+}

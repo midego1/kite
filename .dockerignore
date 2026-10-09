@@ -13,4 +13,4 @@ coverage
 .env
 .env.*
 !.env.docker.example
-docs/screenshots
+screenshots

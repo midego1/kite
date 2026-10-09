@@ -47,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Type errors now fail the Next.js build, and `noImplicitAny` is enabled.
 - `ws` is declared as a runtime dependency of the self-hosted server instead of being pulled in transitively by a development dependency.
 - The demo video is no longer stored in the repository.
+- New README screenshots of invented demo data, captured by `npm run screenshots` against the isolated e2e server.
 
 ### Fixed
 

@@ -26,8 +26,11 @@ advisory PR report.
 
 ## Screenshots
 
-| ![Inbox](/screenshots/1.png)<br>Inbox | ![Manage domains](/screenshots/2.png)<br>Manage domains | ![Manage inboxes](/screenshots/3.png)<br>Manage inboxes |
+| ![Inbox with a message open](/screenshots/inbox.png)<br>Inbox | ![Inbox in dark mode](/screenshots/inbox-dark.png)<br>Dark mode | ![Replying to a message](/screenshots/compose.png)<br>Reply |
 | --- | --- | --- |
+| ![Week view of the calendar](/screenshots/calendar.png)<br>Calendar | ![Domain DNS checks](/screenshots/domains.png)<br>Domain setup | ![Mailboxes on a domain](/screenshots/mailboxes.png)<br>Mailboxes |
+
+The screenshots show invented demo data. `npm run screenshots` takes them again against the same isolated, seeded server the browser tests use (`scripts/screenshots/readme.capture.ts`).
 
 ## What you can do
 

@@ -240,58 +240,15 @@ export const mailboxSet: JmapMethodHandler = async (ctx, args) => {
 	}
 
 	for (const [id, patch] of Object.entries((args.update ?? {}) as Record<string, Record<string, unknown>>)) {
-		const ref = decodeMailboxRef(id);
-		const mailbox = ref && accessible.find((row) => row.id === ref.mailboxId);
-		if (!ref || !mailbox) {
-			notUpdated[id] = { type: "notFound" };
-			continue;
-		}
-		const keys = Object.keys(patch).filter((key) => key !== "isSubscribed" && key !== "sortOrder");
-		if (ref.kind !== "folder") {
-			notUpdated[id] = keys.length
-				? { type: "forbidden", description: "System mailboxes cannot be changed" }
-				: undefined!;
-			if (!keys.length) updated[id] = null;
-			continue;
-		}
-		if (keys.some((key) => key !== "name")) {
-			notUpdated[id] = { type: "invalidProperties", properties: keys.filter((key) => key !== "name") };
-			continue;
-		}
-		if (typeof patch.name === "string" && patch.name.trim()) {
-			await ctx.db
-				.update(folders)
-				.set({ name: patch.name.trim() })
-				.where(and(eq(folders.id, ref.folderId), eq(folders.mailboxId, mailbox.id)));
-		}
-		updated[id] = null;
+		const failure = await updateFolder(ctx, accessible, id, patch);
+		if (failure) notUpdated[id] = failure;
+		else updated[id] = null;
 	}
 
 	for (const id of (args.destroy ?? []) as string[]) {
-		const ref = decodeMailboxRef(id);
-		const mailbox = ref && accessible.find((row) => row.id === ref.mailboxId);
-		if (!ref || !mailbox) {
-			notDestroyed[id] = { type: "notFound" };
-			continue;
-		}
-		if (ref.kind !== "folder" || mailbox.permission !== "full_access") {
-			notDestroyed[id] = { type: "forbidden" };
-			continue;
-		}
-		if (args.onDestroyRemoveEmails) {
-			await ctx.db.update(messages).set({ status: "trash", folderId: null }).where(eq(messages.folderId, ref.folderId));
-		} else {
-			const [inUse] = await ctx.db
-				.select({ n: count() })
-				.from(messages)
-				.where(and(eq(messages.folderId, ref.folderId), isNull(messages.snoozedUntil)));
-			if ((inUse?.n ?? 0) > 0) {
-				notDestroyed[id] = { type: "mailboxHasEmail" };
-				continue;
-			}
-		}
-		await ctx.db.delete(folders).where(and(eq(folders.id, ref.folderId), eq(folders.mailboxId, mailbox.id)));
-		destroyed.push(id);
+		const failure = await destroyFolder(ctx, accessible, id, !!args.onDestroyRemoveEmails);
+		if (failure) notDestroyed[id] = failure;
+		else destroyed.push(id);
 	}
 
 	return {
@@ -317,4 +274,69 @@ export function pick(item: Record<string, unknown>, properties: string[] | null 
 export function ensureJmapError(error: unknown): never {
 	if (error instanceof JmapError) throw error;
 	throw error;
+}
+
+type SetError = { type: string; description?: string; properties?: string[] };
+
+/**
+ * Resolves a folder Mailbox id to a folder that really belongs to that mailbox, so a folder
+ * id from one mailbox paired with another mailbox's id never reaches a query.
+ */
+async function resolveFolder(ctx: JmapContext, accessible: AccessibleMailbox[], id: string) {
+	const ref = decodeMailboxRef(id);
+	const mailbox = ref && accessible.find((row) => row.id === ref.mailboxId);
+	if (!ref || !mailbox) return null;
+	if (ref.kind !== "folder") return { mailbox, folderId: null };
+	const [folder] = await ctx.db
+		.select({ id: folders.id })
+		.from(folders)
+		.where(and(eq(folders.id, ref.folderId), eq(folders.mailboxId, mailbox.id)))
+		.limit(1);
+	return folder ? { mailbox, folderId: folder.id } : null;
+}
+
+async function updateFolder(
+	ctx: JmapContext,
+	accessible: AccessibleMailbox[],
+	id: string,
+	patch: Record<string, unknown>,
+): Promise<SetError | null> {
+	const target = await resolveFolder(ctx, accessible, id);
+	if (!target) return { type: "notFound" };
+	const keys = Object.keys(patch).filter((key) => key !== "isSubscribed" && key !== "sortOrder");
+	if (!keys.length) return null;
+	if (!target.folderId) return { type: "forbidden", description: "System mailboxes cannot be changed" };
+	if (target.mailbox.permission !== "full_access") return { type: "forbidden" };
+	if (keys.some((key) => key !== "name"))
+		return { type: "invalidProperties", properties: keys.filter((key) => key !== "name") };
+	if (typeof patch.name === "string" && patch.name.trim()) {
+		await ctx.db
+			.update(folders)
+			.set({ name: patch.name.trim() })
+			.where(and(eq(folders.id, target.folderId), eq(folders.mailboxId, target.mailbox.id)));
+	}
+	return null;
+}
+
+async function destroyFolder(
+	ctx: JmapContext,
+	accessible: AccessibleMailbox[],
+	id: string,
+	removeEmails: boolean,
+): Promise<SetError | null> {
+	const target = await resolveFolder(ctx, accessible, id);
+	if (!target) return { type: "notFound" };
+	if (!target.folderId || target.mailbox.permission !== "full_access") return { type: "forbidden" };
+	const inFolder = and(eq(messages.folderId, target.folderId), eq(messages.mailboxId, target.mailbox.id));
+	if (removeEmails) {
+		await ctx.db.update(messages).set({ status: "trash", folderId: null }).where(inFolder);
+	} else {
+		const [inUse] = await ctx.db
+			.select({ n: count() })
+			.from(messages)
+			.where(and(inFolder, isNull(messages.snoozedUntil)));
+		if ((inUse?.n ?? 0) > 0) return { type: "mailboxHasEmail" };
+	}
+	await ctx.db.delete(folders).where(and(eq(folders.id, target.folderId), eq(folders.mailboxId, target.mailbox.id)));
+	return null;
 }

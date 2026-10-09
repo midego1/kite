@@ -82,17 +82,7 @@ export async function resolveInboundAddress(
 	}
 
 	// Phase 2 — a real mailbox always wins over a catch-all.
-	const exactMailboxes = await db
-		.select()
-		.from(mailboxes)
-		.where(and(eq(mailboxes.domainId, domain.id), eq(mailboxes.disabled, false)));
-	const exactMailbox = exactMailboxes.find(
-		(mailbox) => normalizeRecipientLocalPart(mailbox.localPart) === parsed.localPart,
-	);
-	const mailbox =
-		exactMailbox ??
-		(await resolveMailboxAlias(db, domain.id, parsed.localPart)) ??
-		(await resolveMailboxDomainAlias(db, parsed.localPart, parsed.normalizedAddress));
+	const mailbox = await findAddressMailbox(db, domain.id, parsed);
 
 	if (mailbox) {
 		return {
@@ -126,6 +116,32 @@ export async function resolveInboundAddress(
 	}
 
 	return null;
+}
+
+/** The mailbox an address on `domainId` delivers to: exact mailbox, then alias, then use-all-domains mailbox. */
+async function findAddressMailbox(
+	db: AppDatabase,
+	domainId: string,
+	parsed: { localPart: string; normalizedAddress: string },
+) {
+	const exactMailboxes = await db
+		.select()
+		.from(mailboxes)
+		.where(and(eq(mailboxes.domainId, domainId), eq(mailboxes.disabled, false)));
+	return (
+		exactMailboxes.find((mailbox) => normalizeRecipientLocalPart(mailbox.localPart) === parsed.localPart) ??
+		(await resolveMailboxAlias(db, domainId, parsed.localPart)) ??
+		(await resolveMailboxDomainAlias(db, parsed.localPart, parsed.normalizedAddress))
+	);
+}
+
+/**
+ * Whether inbound mail for `address` already reaches a mailbox, matched the way delivery
+ * resolves it (dots and `+tags` ignored, use-all-domains mailboxes included).
+ */
+export async function isAddressDelivered(db: AppDatabase, domainId: string, address: string): Promise<boolean> {
+	const parsed = parseRecipientAddress(address);
+	return !parsed || !!(await findAddressMailbox(db, domainId, parsed));
 }
 
 async function listDomainRules(db: AppDatabase, domainId: string): Promise<RuleRow[]> {

@@ -350,6 +350,24 @@ export const routingRuleSchema = z.object({
 	priority: z.number().int().default(0),
 });
 
+/**
+ * Rules run against every inbound message, including its whole body, so a pattern that can
+ * backtrack catastrophically would stall mail intake. Nested quantifiers such as `(a+)+` and
+ * backreferences are the usual causes, so both are refused along with long patterns.
+ */
+function regexPatternProblem(pattern: string): string | null {
+	try {
+		new RegExp(pattern);
+	} catch {
+		return "Enter a valid regular expression";
+	}
+	if (pattern.length > 200) return "Regular expressions are limited to 200 characters";
+	if (/\\[1-9k]/.test(pattern)) return "Backreferences are not supported";
+	if (/\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)[+*{]/.test(pattern))
+		return "Nested repetition like (a+)+ is not supported";
+	return null;
+}
+
 export const domainRoutingRuleSchema = z
 	.object({
 		domainId: z.string().min(1),
@@ -392,15 +410,8 @@ export const domainRoutingRuleSchema = z
 			});
 		}
 		if (value.matchOperator === "regex") {
-			try {
-				new RegExp(value.matchValue);
-			} catch {
-				ctx.addIssue({
-					code: "custom",
-					path: ["matchValue"],
-					message: "Enter a valid regular expression",
-				});
-			}
+			const message = regexPatternProblem(value.matchValue);
+			if (message) ctx.addIssue({ code: "custom", path: ["matchValue"], message });
 		}
 	});
 

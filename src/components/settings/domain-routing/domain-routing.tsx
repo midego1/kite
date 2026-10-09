@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CardGridSkeleton } from "@/components/page-skeletons";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import type { DomainRoutingProps, DomainRule, DomainRuleInput } from "./types";
 import {
 	ACTION_LABELS,
@@ -39,6 +40,7 @@ const ACTION_ICONS = {
 export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 	const qc = useQueryClient();
 	const { selectedMailbox, isLoading: isMailboxLoading } = useSelectedMailbox();
+	const currentUser = useCurrentUser();
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editing, setEditing] = useState<DomainRule | null>(null);
 	const [form, setForm] = useState<DomainRuleInput>(emptyRuleInput(""));
@@ -46,14 +48,14 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 
 	const domainId = domain?.id ?? selectedMailbox?.domainId ?? "";
 	const mailboxId = selectedMailbox?.id ?? "";
-	const mailboxAccessId = domain ? undefined : mailboxId;
-	const canManage = !!domain || selectedMailbox?.permission === "full_access";
-	const rulesQueryKey = ["domain-rules", domainId, mailboxAccessId ?? "admin"] as const;
+	// Domain rules apply to every address on the domain, so only admins manage them.
+	const canManage = !!domain || currentUser?.role === "admin";
+	const rulesQueryKey = ["domain-rules", domainId] as const;
 
 	const rules = useQuery({
 		queryKey: rulesQueryKey,
 		enabled: !!domainId && (!!domain || !!mailboxId) && canManage,
-		queryFn: () => fetchDomainRules(domainId, mailboxAccessId),
+		queryFn: () => fetchDomainRules(domainId),
 	});
 
 	const hostname = domain?.hostname ?? selectedMailbox?.hostname ?? "";
@@ -62,9 +64,7 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 	const save = useMutation({
 		mutationFn: () => {
 			const payload: DomainRuleInput = { ...form, domainId };
-			return editing
-				? updateDomainRule(editing.id, payload, mailboxAccessId)
-				: createDomainRule(payload, mailboxAccessId);
+			return editing ? updateDomainRule(editing.id, payload) : createDomainRule(payload);
 		},
 		onSuccess: () => {
 			setDialogOpen(false);
@@ -76,13 +76,12 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 	});
 
 	const remove = useMutation({
-		mutationFn: (id: string) => deleteDomainRule(id, mailboxAccessId),
+		mutationFn: (id: string) => deleteDomainRule(id),
 		onSuccess: () => qc.invalidateQueries({ queryKey: rulesQueryKey }),
 	});
 
 	const toggle = useMutation({
-		mutationFn: (rule: DomainRule) =>
-			updateDomainRule(rule.id, { ...ruleToInput(rule), enabled: !rule.enabled }, mailboxAccessId),
+		mutationFn: (rule: DomainRule) => updateDomainRule(rule.id, { ...ruleToInput(rule), enabled: !rule.enabled }),
 		onSuccess: () => qc.invalidateQueries({ queryKey: rulesQueryKey }),
 	});
 
@@ -139,7 +138,7 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 			) : !canManage ? (
 				<Card>
 					<CardContent className="pt-6 text-sm text-neutral-500">
-						Full access to the selected inbox is required to manage domain routing.
+						Domain routing is managed by an admin. Use inbox rules below to sort mail in your own inbox.
 					</CardContent>
 				</Card>
 			) : (

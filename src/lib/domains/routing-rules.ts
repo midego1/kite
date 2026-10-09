@@ -2,7 +2,6 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { domains, mailboxes, routingRules } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/types";
-import { getMailboxAccessLevel, listAccessibleMailboxes } from "@/lib/mailboxes/access";
 
 export type DomainRuleInput = {
 	domainId: string;
@@ -27,28 +26,11 @@ export async function listDomainRules(db: AppDatabase, domainId: string) {
 		.orderBy(desc(routingRules.priority), asc(routingRules.createdAt));
 }
 
-export async function getManagedDomainMailbox(
-	db: AppDatabase,
-	user: Pick<SessionUser, "id" | "email" | "role">,
-	mailboxId: string,
-	domainId: string,
-) {
-	const access = await getMailboxAccessLevel(db, user, mailboxId);
-	if (!access?.canManage || access.mailbox.domainId !== domainId) return null;
-	return access.mailbox;
-}
-
-export async function listManagedDomainMailboxes(
-	db: AppDatabase,
-	user: Pick<SessionUser, "id" | "email" | "role">,
-	domainId: string,
-) {
-	const accessible = await listAccessibleMailboxes(db, user);
-	return accessible
-		.filter((mailbox) => mailbox.domainId === domainId && mailbox.permission === "full_access")
-		.map(({ id, localPart, displayName, disabled }) => ({ id, localPart, displayName, disabled }))
-		.sort((a, b) => a.localPart.localeCompare(b.localPart));
-}
+/**
+ * Domain rules affect every address on the domain (a reject rule runs before any mailbox
+ * lookup), so only an admin of the domain may read or change them.
+ */
+export const DOMAIN_RULES_ADMIN_ONLY = "Only an admin of this domain can manage domain routing";
 
 export async function getAdminDomain(
 	db: AppDatabase,
@@ -85,16 +67,6 @@ export async function assertAdminRuleMailbox(db: AppDatabase, mailboxId: string,
 		.where(and(eq(mailboxes.id, mailboxId), eq(mailboxes.domainId, domainId)))
 		.limit(1);
 	return !!mailbox;
-}
-
-/** A rule can deliver only to an inbox that the caller can fully manage. */
-export async function assertRuleMailbox(
-	db: AppDatabase,
-	user: Pick<SessionUser, "id" | "email" | "role">,
-	mailboxId: string,
-	domainId: string,
-): Promise<boolean> {
-	return !!(await getManagedDomainMailbox(db, user, mailboxId, domainId));
 }
 
 export function toRuleColumns(input: DomainRuleInput) {

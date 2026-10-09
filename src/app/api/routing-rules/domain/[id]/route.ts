@@ -6,20 +6,18 @@ import { requireSessionUser } from "@/lib/api/auth";
 import { getEnv } from "@/lib/cloudflare";
 import { domainRoutingRuleSchema } from "@/lib/validators";
 import {
-	assertRuleMailbox,
 	assertAdminRuleMailbox,
+	DOMAIN_RULES_ADMIN_ONLY,
 	getAdminDomain,
-	getManagedDomainMailbox,
 	toRuleColumns,
 } from "@/lib/domains/routing-rules";
 import type { DomainRoutingRuleRouteParams } from "./types";
 
-/** Loads a domain-scope rule the caller is allowed to administer. */
+/** Loads a domain-scope rule on a domain the caller administers. */
 async function loadRule(request: Request, id: string) {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return { error: auth.error } as const;
-	const user = auth.user;
 	const db = getDb(env);
 	const [rule] = await db
 		.select()
@@ -29,14 +27,11 @@ async function loadRule(request: Request, id: string) {
 	if (!rule) {
 		return { error: NextResponse.json({ error: "Rule not found" }, { status: 404 }) } as const;
 	}
-
-	const mailboxId = new URL(request.url).searchParams.get("mailboxId");
-	const adminDomain = !mailboxId ? await getAdminDomain(db, user, rule.domainId) : null;
-	if (!adminDomain && (!mailboxId || !(await getManagedDomainMailbox(db, user, mailboxId, rule.domainId)))) {
-		return { error: NextResponse.json({ error: "Domain or mailbox access is required" }, { status: 403 }) } as const;
+	if (!(await getAdminDomain(db, auth.user, rule.domainId))) {
+		return { error: NextResponse.json({ error: DOMAIN_RULES_ADMIN_ONLY }, { status: 403 }) } as const;
 	}
 
-	return { env, db, user, rule, adminDomain, error: null } as const;
+	return { db, rule, error: null } as const;
 }
 
 export async function PATCH(request: Request, { params }: DomainRoutingRuleRouteParams) {
@@ -50,14 +45,11 @@ export async function PATCH(request: Request, { params }: DomainRoutingRuleRoute
 	if (!parsed.success) {
 		return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 	}
-
-	const destinationAllowed = parsed.data.mailboxId
-		? loaded.adminDomain
-			? await assertAdminRuleMailbox(loaded.db, parsed.data.mailboxId, loaded.rule.domainId)
-			: await assertRuleMailbox(loaded.db, loaded.user, parsed.data.mailboxId, loaded.rule.domainId)
-		: true;
-	if (!destinationAllowed) {
-		return NextResponse.json({ error: "Mailbox access is required for the destination" }, { status: 403 });
+	if (
+		parsed.data.mailboxId &&
+		!(await assertAdminRuleMailbox(loaded.db, parsed.data.mailboxId, loaded.rule.domainId))
+	) {
+		return NextResponse.json({ error: "The destination mailbox is not on this domain" }, { status: 403 });
 	}
 
 	await loaded.db.update(routingRules).set(toRuleColumns(parsed.data)).where(eq(routingRules.id, id));

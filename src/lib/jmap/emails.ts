@@ -16,6 +16,7 @@ import { importFlags, parseReceivedAt, resolveDraftsMailbox } from "./email-impo
 import { filterToSql, mailboxRefCondition, sortToSql } from "./email-query";
 import { getEmailState } from "./state";
 import { listAccessibleMailboxIdSet, listJmapMailboxes } from "./access";
+import { emailWriteAccess } from "./email-access";
 import { deleteUpload, readUpload, storeRawDraftMime } from "./blobs";
 import type {
 	Comparator,
@@ -349,9 +350,7 @@ export const emailSet: JmapMethodHandler = async (ctx, args) => {
 	const oldState = await getEmailState(ctx);
 	if (args.ifInState && args.ifInState !== oldState) return { type: "stateMismatch" };
 	const accessible = await listAccessibleMailboxIdSet(ctx);
-	const writable = new Set(
-		(await listJmapMailboxes(ctx)).filter((row) => row.permission !== "read_only").map((row) => row.id),
-	);
+	const { writable, canChange } = emailWriteAccess(await listJmapMailboxes(ctx), ctx.auth.userId);
 	const created: Record<string, unknown> = {};
 	const notCreated: Record<string, unknown> = {};
 	const updated: Record<string, null> = {};
@@ -384,7 +383,7 @@ export const emailSet: JmapMethodHandler = async (ctx, args) => {
 			notUpdated[id] = { type: "notFound" };
 			continue;
 		}
-		if (!writable.has(row.mailboxId)) {
+		if (!canChange(row, row.mailboxId)) {
 			notUpdated[id] = { type: "forbidden" };
 			continue;
 		}
@@ -416,7 +415,7 @@ export const emailSet: JmapMethodHandler = async (ctx, args) => {
 			notDestroyed[id] = { type: "notFound" };
 			continue;
 		}
-		if (!writable.has(row.mailboxId)) {
+		if (!canChange(row, row.mailboxId)) {
 			notDestroyed[id] = { type: "forbidden" };
 			continue;
 		}
@@ -550,9 +549,7 @@ export const emailImport: JmapMethodHandler = async (ctx, args) => {
 	if (args.ifInState && args.ifInState !== oldState) return { type: "stateMismatch" };
 	const emails = (args.emails ?? {}) as Record<string, Record<string, unknown>>;
 	if (Object.keys(emails).length > LIMITS.maxObjectsInSet) throw new JmapError("requestTooLarge");
-	const writable = new Set(
-		(await listJmapMailboxes(ctx)).filter((row) => row.permission !== "read_only").map((row) => row.id),
-	);
+	const { writable } = emailWriteAccess(await listJmapMailboxes(ctx), ctx.auth.userId);
 	const created: Record<string, unknown> = {};
 	const notCreated: Record<string, unknown> = {};
 

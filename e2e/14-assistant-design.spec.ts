@@ -53,7 +53,7 @@ async function mockAssistant(page: Page) {
 					toAddr: "sophie@example.com",
 					subject: "Re: Files to review",
 					textBody:
-						"Hi Sophie,\n\nThanks for sharing, this looks great! I'll review the files today and send you my feedback.\n\nBest,\nMichiel",
+						"Hi Sophie,\n\nThanks for sharing, this looks great! I'll review the files today and send you my feedback.\n\nBest,\nAlex",
 					htmlBody: null,
 				},
 			},

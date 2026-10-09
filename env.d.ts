@@ -24,6 +24,7 @@ interface CloudflareEnv {
 	CF_VERSION_METADATA?: WorkerVersionMetadata;
 	LOGIN_RATE_LIMIT?: RateLimit;
 	AGENT_RATE_LIMIT?: RateLimit;
+	BOOKING_RATE_LIMIT?: RateLimit;
 	CF_TOKEN?: string;
 	CF_API_KEY?: string;
 	CF_EMAIL?: string;

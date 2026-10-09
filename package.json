@@ -108,7 +108,7 @@
 		"remark-gfm": "^4.0.1",
 		"sass": "^1.105.0",
 		"smtp-server": "^3.19.12",
-		"tailwind-merge": "^3.6.0",
+		"tailwind-merge": "^3.7.0",
 		"vinext": "1.1.0",
 		"workers-ai-provider": "^4.0.0",
 		"ws": "^8.21.0",

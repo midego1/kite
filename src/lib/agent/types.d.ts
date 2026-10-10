@@ -35,4 +35,6 @@ export type AgentToolContext = {
 	mailboxId: string;
 	origin: "chat" | "auto" | "mcp";
 	timeZone?: string;
+	/** Id for the next draft this context creates, chosen up front so an audited action can find it again. */
+	draftId?: string;
 };

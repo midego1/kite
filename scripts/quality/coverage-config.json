@@ -10,6 +10,7 @@
 		"src/lib/metrics-route-utils.ts",
 		"src/lib/trace.mjs",
 		"worker-utils.ts",
+		"src/lib/agent/auto-read/actions-utils.ts",
 		"src/lib/agent/auto-read/draft-guard-utils.ts",
 		"src/lib/agent/auto-read/facts-utils.ts",
 		"src/lib/agent/auto-read/model-call-utils.ts",

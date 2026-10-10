@@ -40,6 +40,8 @@ export type SendEmailInput = {
 	/** Future delivery time. Values at or before the current time send immediately. */
 	scheduledAt?: string | Date;
 	publicOrigin?: string;
+	/** Caller-chosen id for the stored message, so a retried caller can find the row it already wrote. */
+	messageId?: string;
 };
 
 const MAX_RECIPIENTS = 50;
@@ -69,6 +71,10 @@ function toRecipientList(value: string | string[] | undefined): string[] {
 		result.push(entry.trim());
 	}
 	return result;
+}
+
+function chooseMessageId(input: SendEmailInput): string {
+	return input.messageId ?? newId("msg");
 }
 
 export async function sendEmail(
@@ -118,7 +124,7 @@ export async function sendEmail(
 		throw new Error("Headers exceed Cloudflare's 16 KB limit");
 	}
 
-	const messageId = newId("msg");
+	const messageId = chooseMessageId(input);
 	const requestedSchedule = input.scheduledAt ? new Date(input.scheduledAt) : null;
 	const scheduledAt = requestedSchedule && requestedSchedule.getTime() > Date.now() ? requestedSchedule : null;
 	const snippet = buildSnippet(input.text ?? null, input.html ?? null);

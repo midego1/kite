@@ -31,7 +31,9 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/migrations`                                | GET, POST              | [source](../src/app/api/admin/migrations/route.ts)                                |
 | `/api/admin/resend-key`                                | DELETE, GET, PUT       | [source](../src/app/api/admin/resend-key/route.ts)                                |
 | `/api/admin/search-index`                              | GET, POST              | [source](../src/app/api/admin/search-index/route.ts)                              |
+| `/api/agent/actions/[id]/undo`                         | POST                   | [source](../src/app/api/agent/actions/[id]/undo/route.ts)                         |
 | `/api/agent/actions/confirm`                           | POST                   | [source](../src/app/api/agent/actions/confirm/route.ts)                           |
+| `/api/agent/actions`                                   | GET                    | [source](../src/app/api/agent/actions/route.ts)                                   |
 | `/api/agent/approvals/[id]/confirm`                    | POST                   | [source](../src/app/api/agent/approvals/[id]/confirm/route.ts)                    |
 | `/api/agent/approvals/[id]`                            | GET                    | [source](../src/app/api/agent/approvals/[id]/route.ts)                            |
 | `/api/agent/approvals`                                 | POST                   | [source](../src/app/api/agent/approvals/route.ts)                                 |

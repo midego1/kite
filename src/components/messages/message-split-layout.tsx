@@ -39,6 +39,10 @@ function useClearSelectionOnOpen(
 	if (useKeyChanged(openMessageId) && openMessageId && selectedMessages.length > 0) setSelectedMessages([]);
 }
 
+/**
+ * Arranges the message list and reading pane using the user's layout and sizing preferences.
+ * Manages checkbox selection and clears it when a new message is opened.
+ */
 export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps) {
 	const pathname = usePathname();
 	const [selectedMessages, setSelectedMessages] = useState<SelectedMessage[]>([]);

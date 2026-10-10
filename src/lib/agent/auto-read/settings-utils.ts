@@ -1,0 +1,232 @@
+import { z } from "zod";
+import type {
+	AutoReadCapabilities,
+	AutoReadInstallSettings,
+	AutoReadProviderSummary,
+	AutonomyLevel,
+	MailboxAgentSettingsContext,
+	MailboxAgentSettingsState,
+	StoredMailboxAgentSettings,
+} from "./settings-types";
+
+const AUTONOMY_LEVELS = ["off", "suggest", "act", "auto"] as const;
+const AVAILABLE_AUTONOMY_LEVELS: readonly AutonomyLevel[] = ["off", "suggest"];
+const CAPABILITY_KEYS = ["calendar", "reply", "summary", "phishing"] as const;
+const MAX_MUTED_SENDERS = 500;
+const MAX_SPEND_CAP_MICROS = 1_000_000_000_000;
+
+export const DEFAULT_INSTALL_SPEND_CAP_MICROS = 2_000_000;
+
+export const mailboxAgentSettingsUpdateSchema = z.object({
+	mailboxId: z.string().min(1),
+	enabled: z.boolean().optional(),
+	modelId: z.string().max(200).nullable().optional(),
+	autoDraftEnabled: z.boolean().optional(),
+	reviewerUserId: z.string().nullable().optional(),
+	instructions: z.string().max(4_000).optional(),
+	dailyLimit: z.number().int().min(1).max(100).optional(),
+	autonomy: z.enum(AUTONOMY_LEVELS).optional(),
+	capabilities: z
+		.object({
+			calendar: z.boolean().optional(),
+			reply: z.boolean().optional(),
+			summary: z.boolean().optional(),
+			phishing: z.boolean().optional(),
+			mutedSenders: z.array(z.string().trim().min(1).max(320)).max(MAX_MUTED_SENDERS).optional(),
+		})
+		.optional(),
+	triageModelId: z.string().max(200).nullable().optional(),
+	autoReadDailyLimit: z.number().int().min(1).max(1_000).optional(),
+	dailySpendCapMicros: z.number().int().min(0).max(MAX_SPEND_CAP_MICROS).nullable().optional(),
+	pausedUntil: z.iso.datetime({ offset: true }).nullable().optional(),
+});
+
+type MailboxAgentSettingsUpdate = z.infer<typeof mailboxAgentSettingsUpdateSchema>;
+
+const SETTINGS_ERRORS: Record<string, string> = {
+	autonomy: "Choose a valid autonomy level",
+	capabilities: "Invalid capabilities",
+	triageModelId: "Choose a configured triage model",
+	autoReadDailyLimit: "The daily automatic reading limit must be between 1 and 1000",
+	dailySpendCapMicros: "The spend cap must be empty or zero or more",
+	pausedUntil: "The pause end must be an ISO date",
+	dailyLimit: "The daily draft limit must be between 1 and 100",
+	instructions: "Instructions can be at most 4000 characters",
+};
+
+/** A short message naming the first invalid field of a settings update. */
+export function describeSettingsError(error: z.ZodError): string {
+	const field = error.issues[0]?.path[0];
+	return (typeof field === "string" && SETTINGS_ERRORS[field]) || "Invalid settings";
+}
+
+/** Act with undo and Full auto exist in the schema but cannot be chosen yet. */
+export function autonomyError(autonomy: AutonomyLevel | undefined): string | null {
+	if (autonomy === undefined || AVAILABLE_AUTONOMY_LEVELS.includes(autonomy)) return null;
+	return "This autonomy level is not available yet";
+}
+
+function defaultCapabilities(mailboxType: MailboxAgentSettingsContext["mailboxType"]): AutoReadCapabilities {
+	return { calendar: mailboxType !== "shared", reply: true, summary: true, phishing: true, mutedSenders: [] };
+}
+
+function normalizeMutedSenders(values: unknown[]): string[] {
+	const senders = new Set<string>();
+	for (const value of values) {
+		if (typeof value !== "string") continue;
+		const sender = value.trim().toLowerCase();
+		if (sender) senders.add(sender);
+	}
+	return [...senders].slice(-MAX_MUTED_SENDERS);
+}
+
+function parseCapabilities(value: string | null, fallback: AutoReadCapabilities): AutoReadCapabilities {
+	let parsed: unknown = null;
+	try {
+		parsed = value ? JSON.parse(value) : null;
+	} catch {
+		parsed = null;
+	}
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { ...fallback };
+	const record = parsed as Record<string, unknown>;
+	const capabilities = { ...fallback };
+	for (const key of CAPABILITY_KEYS) if (typeof record[key] === "boolean") capabilities[key] = record[key];
+	capabilities.mutedSenders = Array.isArray(record.mutedSenders) ? normalizeMutedSenders(record.mutedSenders) : [];
+	return capabilities;
+}
+
+/** Toggles replace stored values; muted senders are only ever added, so a stale settings form cannot unmute anyone. */
+function mergeCapabilities(
+	current: AutoReadCapabilities,
+	input: MailboxAgentSettingsUpdate["capabilities"],
+): AutoReadCapabilities {
+	const merged = { ...current };
+	for (const key of CAPABILITY_KEYS) merged[key] = input?.[key] ?? current[key];
+	merged.mutedSenders = normalizeMutedSenders([...current.mutedSenders, ...(input?.mutedSenders ?? [])]);
+	return merged;
+}
+
+function storedAutonomy(value: string): AutonomyLevel {
+	return (AUTONOMY_LEVELS as readonly string[]).includes(value) ? (value as AutonomyLevel) : "off";
+}
+
+/** The effective settings of a mailbox, filling in defaults when it has never saved any. */
+export function resolveMailboxAgentSettings(
+	row: StoredMailboxAgentSettings | undefined,
+	context: MailboxAgentSettingsContext,
+): MailboxAgentSettingsState {
+	const capabilities = defaultCapabilities(context.mailboxType);
+	if (!row)
+		return {
+			mailboxId: context.mailboxId,
+			modelId: null,
+			autoDraftEnabled: false,
+			reviewerUserId: context.ownerUserId,
+			instructions: "",
+			dailyLimit: 25,
+			autonomy: "off",
+			capabilities,
+			triageModelId: null,
+			autoReadDailyLimit: 200,
+			dailySpendCapMicros: null,
+			pausedUntil: null,
+		};
+	return {
+		mailboxId: row.mailboxId,
+		modelId: row.modelId,
+		autoDraftEnabled: row.autoDraftEnabled,
+		reviewerUserId: row.reviewerUserId,
+		instructions: row.instructions,
+		dailyLimit: row.dailyLimit,
+		autonomy: storedAutonomy(row.autonomy),
+		capabilities: parseCapabilities(row.capabilities, capabilities),
+		triageModelId: row.triageModelId,
+		autoReadDailyLimit: row.autoReadDailyLimit,
+		dailySpendCapMicros: row.dailySpendCapMicros,
+		pausedUntil: row.pausedUntil,
+	};
+}
+
+function pick<T>(input: T | undefined, current: T): T {
+	return input === undefined ? current : input;
+}
+
+function parsePausedUntil(input: string | null | undefined, current: Date | null): Date | null {
+	if (input === undefined) return current;
+	return input === null ? null : new Date(input);
+}
+
+/** Applies a partial update; fields the request leaves out keep their current value. */
+export function applyMailboxAgentSettingsUpdate(
+	current: MailboxAgentSettingsState,
+	input: MailboxAgentSettingsUpdate,
+): MailboxAgentSettingsState {
+	return {
+		mailboxId: current.mailboxId,
+		modelId: pick(input.modelId, current.modelId),
+		autoDraftEnabled: pick(input.autoDraftEnabled, current.autoDraftEnabled),
+		reviewerUserId: pick(input.reviewerUserId, current.reviewerUserId),
+		instructions: pick(input.instructions, current.instructions),
+		dailyLimit: pick(input.dailyLimit, current.dailyLimit),
+		autonomy: pick(input.autonomy, current.autonomy),
+		capabilities: mergeCapabilities(current.capabilities, input.capabilities),
+		triageModelId: pick(input.triageModelId, current.triageModelId),
+		autoReadDailyLimit: pick(input.autoReadDailyLimit, current.autoReadDailyLimit),
+		dailySpendCapMicros: pick(input.dailySpendCapMicros, current.dailySpendCapMicros),
+		pausedUntil: parsePausedUntil(input.pausedUntil, current.pausedUntil),
+	};
+}
+
+export function configuredModelId(id: string | null, models: string[], fallback: string | null): string | null {
+	return id && models.includes(id) ? id : fallback;
+}
+
+/** Rejects a requested chat or triage model the provider no longer lists. */
+export function unknownModelError(input: MailboxAgentSettingsUpdate, models: string[]): string | null {
+	if (input.modelId && !models.includes(input.modelId)) return "Choose a configured model";
+	if (input.triageModelId && !models.includes(input.triageModelId)) return SETTINGS_ERRORS.triageModelId;
+	return null;
+}
+
+const PRESET_LABELS: Record<AutoReadProviderSummary["preset"], string> = {
+	openai: "OpenAI",
+	openrouter: "OpenRouter",
+	groq: "Groq",
+	custom: "a custom provider",
+};
+
+/** The name shown in "Message content is sent to …". */
+function providerLabel(config: AutoReadProviderSummary): string {
+	if (config.provider === "cloudflare") return "Workers AI";
+	if (config.preset !== "custom") return PRESET_LABELS[config.preset];
+	try {
+		return new URL(config.baseUrl).hostname || PRESET_LABELS.custom;
+	} catch {
+		return PRESET_LABELS.custom;
+	}
+}
+
+export function autoReadInstallFlags(install: AutoReadInstallSettings, provider: AutoReadProviderSummary) {
+	return {
+		autoReadAvailable: install.agentEnabled && install.autoReadEnabled,
+		externalProviderBlocked: provider.provider === "compatible" && !install.externalAutoReadAllowed,
+		providerLabel: providerLabel(provider),
+	};
+}
+
+const AUTO_READ_ADMIN_KEYS = ["autoReadEnabled", "externalAutoReadAllowed", "dailySpendCapMicros"];
+
+export const autoReadAdminSchema = z
+	.object({
+		autoReadEnabled: z.boolean().optional(),
+		externalAutoReadAllowed: z.boolean().optional(),
+		dailySpendCapMicros: z.number().int().min(0).max(MAX_SPEND_CAP_MICROS).optional(),
+	})
+	.strict();
+
+/** True for a non-empty body whose keys are all install-wide automatic reading settings. */
+export function isAutoReadAdminBody(body: unknown): boolean {
+	if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+	const keys = Object.keys(body);
+	return keys.length > 0 && keys.every((key) => AUTO_READ_ADMIN_KEYS.includes(key));
+}

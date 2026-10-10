@@ -7,11 +7,14 @@ type AdminAgentState = {
 		preset: string;
 		baseUrl: string;
 		models: string[];
-		rates: Record<string, { input: number | null; output: number | null }>;
+		rates: Record<string, { input: number | null; output: number | null; reasoningEffort?: string }>;
 		source: "saved" | "environment" | "default";
 	};
 	assistantEnabled: boolean;
 	cloudflareAvailable: boolean;
+	autoReadEnabled: boolean;
+	externalAutoReadAllowed: boolean;
+	dailySpendCapMicros: number;
 };
 
 export const FAKE_API_KEY = "fake-model-key";
@@ -34,8 +37,8 @@ export async function readAdminAgent(api: APIRequestContext): Promise<AdminAgent
 }
 
 /**
- * Points the install's assistant at the fake model and returns a function that puts the previous
- * provider back. A provider that was never saved, or a compatible one whose key is unknown here,
+ * Points the install's assistant at the fake model, with automatic reading on and allowed to use it,
+ * and returns a function that puts the previous provider and automatic reading flags back. A provider that was never saved, or a compatible one whose key is unknown here,
  * cannot be restored through the API; the Cloudflare provider is saved instead when it is available.
  */
 export async function useFakeProvider(api: APIRequestContext, fake: FakeModel): Promise<() => Promise<void>> {
@@ -44,7 +47,17 @@ export async function useFakeProvider(api: APIRequestContext, fake: FakeModel): 
 	expect(enabled.ok(), await enabled.text()).toBe(true);
 	const saved = await api.put("/api/admin/agent", { data: fakeProviderSettings(fake) });
 	expect(saved.ok(), await saved.text()).toBe(true);
+	const autoRead = await api.put("/api/admin/agent", {
+		data: { autoReadEnabled: true, externalAutoReadAllowed: true },
+	});
+	expect(autoRead.ok(), await autoRead.text()).toBe(true);
 	return async () => {
+		await api.put("/api/admin/agent", {
+			data: {
+				autoReadEnabled: previous.autoReadEnabled,
+				externalAutoReadAllowed: previous.externalAutoReadAllowed,
+			},
+		});
 		if (previous.cloudflareAvailable && previous.config.provider === "cloudflare") {
 			await api.put("/api/admin/agent", {
 				data: {

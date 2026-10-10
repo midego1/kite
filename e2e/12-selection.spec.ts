@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, openMessage, uniqueToken } from "./support/helpers";
 
 async function deliverMany(labels: string[]): Promise<string[]> {
 	const api = await apiContext(STORAGE_STATE);
@@ -49,7 +49,7 @@ test("opening a message while others are selected shows it in the reading pane",
 	await rowFor(page, first).getByRole("checkbox").check();
 	await expect(page.getByText("1 selected")).toBeVisible();
 
-	await page.getByRole("main").getByText(second, { exact: true }).click();
+	await openMessage(page, second);
 	await expect(page.getByRole("heading", { level: 1, name: second })).toBeVisible();
 	await expect(page.getByText("1 selected")).toHaveCount(0);
 	await expect(rowFor(page, first).getByRole("checkbox")).not.toBeChecked();

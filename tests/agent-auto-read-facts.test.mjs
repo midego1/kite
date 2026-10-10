@@ -123,7 +123,11 @@ test("display-name spoofing of a known contact", () => {
 	assert.equal(findSpoofedContact("ceo@corp.test", "Grace Hopper", contacts), null, "the real contact is not a spoof");
 	assert.equal(findSpoofedContact("x@evil.test", "ceo@corp.test", contacts), "ceo@corp.test", "address as name");
 	assert.equal(findSpoofedContact("x@evil.test", "Inbound Only", contacts), null, "inbound contacts do not count");
-	assert.equal(findSpoofedContact("x@evil.test", "Al", contacts), null, "very short names are ignored");
+	assert.equal(findSpoofedContact("x@evil.test", "Al", contacts), "pal@friend.test", "short names count too");
+	assert.equal(findSpoofedContact("x@evil.test", " al ", contacts), "pal@friend.test");
+	assert.equal(findSpoofedContact("pal@friend.test", "Al", contacts), null);
+	const short = collectFacts({ message: message({ fromAddr: "Al <x@evil.test>" }), contacts });
+	assert.ok(short.phishingSignals.includes("display_name_spoof"));
 	assert.equal(findSpoofedContact("x@evil.test", null, contacts), null);
 	assert.equal(collectFacts({ message: message({ fromAddr: "x@evil.test" }), contacts }).spoofedContact, null);
 });

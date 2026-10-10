@@ -75,7 +75,7 @@ export function isCalendarAttachment(attachment: Pick<FactsAttachment, "filename
 	);
 }
 
-function normalizeDisplayName(name: string | null | undefined): string {
+export function normalizeDisplayName(name: string | null | undefined): string {
 	return (name ?? "").normalize("NFKC").replace(/["'`]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
@@ -98,7 +98,7 @@ export function findSpoofedContact(
 	for (const contact of contacts) {
 		const email = contact.email.trim().toLowerCase();
 		if (!isTrustedContact(contact) || email === senderAddress) continue;
-		if (name === email || (name.length >= 3 && name === normalizeDisplayName(contact.displayName))) return email;
+		if (name === email || name === normalizeDisplayName(contact.displayName)) return email;
 	}
 	return null;
 }

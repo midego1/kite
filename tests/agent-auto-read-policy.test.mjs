@@ -130,9 +130,15 @@ test("Full auto sends only to the sender or organizer, once per thread, for auth
 	assert.equal(send({ recipient: "attacker@evil.test" }).rule, "recipient_not_sender_or_organizer");
 	assert.equal(send({ recipient: undefined }).rule, "recipient_not_sender_or_organizer");
 	assert.equal(send({ recipient: " GRACE@corp.test " }).allowed, true);
-	const organizerSend = send({ recipient: "boss@corp.test", organizer: "Boss@corp.test" }, { action: "send_rsvp" });
-	assert.equal(organizerSend.allowed, true, "the ICS organizer may receive the RSVP");
+	const organizerSend = send({ recipient: "Grace@corp.test", organizer: " GRACE@corp.test" }, { action: "send_rsvp" });
+	assert.equal(organizerSend.allowed, true, "the organizer, being the authenticated sender, may receive the RSVP");
+	const otherOrganizer = send({ recipient: "boss@corp.test", organizer: "Boss@corp.test" }, { action: "send_rsvp" });
+	assert.equal(otherOrganizer.rule, "organizer_not_sender", "an organizer other than the sender disables Full auto");
+	const toSender = send({ recipient: "grace@corp.test", organizer: "boss@corp.test" }, { action: "send_rsvp" });
+	assert.equal(toSender.rule, "organizer_not_sender");
 	assert.equal(send({ recipient: "boss@corp.test", organizer: null }, { action: "send_rsvp" }).allowed, false);
+	assert.equal(send({ organizer: null }, { action: "send_rsvp" }).rule, "organizer_not_sender");
+	assert.equal(send({ organizer: "boss@corp.test" }).allowed, true, "replies do not depend on the organizer");
 	assert.equal(send({ threadAutoSendsLast24h: 1 }).rule, "thread_send_limit");
 	assert.equal(send({ fullAutoAllowed: false }).rule, "full_auto_not_allowed");
 	assert.equal(send({}, { policy: { ...policy, allowedActions: ["move"] } }).rule, "action_not_in_sender_policy");
@@ -262,6 +268,20 @@ test("planSuggestions: phishing forces Suggest, suppresses the reply, and model 
 		settings: settings(),
 	});
 	assert.deepEqual(kinds(unflaggedReasons), ["reply"], "reasons without the flag add nothing");
+
+	const flaggedWithoutReasons = planSuggestions({
+		facts: facts(),
+		triage: triage({ suspicious: { flagged: true, reasons: [] } }),
+		settings: settings(),
+	});
+	assert.deepEqual(kinds(flaggedWithoutReasons), ["phishing"], "a bare model flag warns and suppresses the reply");
+	assert.deepEqual(flaggedWithoutReasons[0].payload.reasons, ["model_flagged"]);
+	const flaggedAndSuspicious = planSuggestions({
+		facts: facts({ suspicious: true }),
+		triage: triage({ suspicious: { flagged: true, reasons: [] } }),
+		settings: settings(),
+	});
+	assert.deepEqual(flaggedAndSuspicious[0].payload.reasons, ["suspicious_verdict", "model_flagged"]);
 
 	const capabilityOff = settings({ capabilities: { ...capabilities, phishing: false } });
 	assert.deepEqual(

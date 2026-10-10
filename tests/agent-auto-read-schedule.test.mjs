@@ -136,6 +136,27 @@ test("delivering the same message twice leaves one triage job, also for a copy u
 	assert.equal(jobs(db)[0].source_message_id, first);
 });
 
+test("two stored copies of one Message-ID scheduled at the same time leave one triage job", async (t) => {
+	const { db, env, sent } = await setup(t);
+	const first = insertMessage(db, { providerMessageId: "<race@example.net>" });
+	const second = insertMessage(db, { providerMessageId: "<race@example.net>" });
+	const other = insertMessage(db, { mailboxId: "mailbox-b", providerMessageId: "<race@example.net>" });
+	await Promise.all([
+		scheduleAgentWork(env, workInput(first)),
+		scheduleAgentWork(env, workInput(second)),
+		scheduleAgentWork(env, workInput(other, { mailboxId: "mailbox-b" })),
+	]);
+	const created = jobs(db);
+	assert.equal(created.filter((job) => job.mailbox_id === "mailbox-a").length, 1);
+	assert.equal(created.filter((job) => job.mailbox_id === "mailbox-b").length, 1, "dedupe is per mailbox");
+	assert.equal(sent.length, 2);
+
+	const untagged = [insertMessage(db), insertMessage(db)];
+	db.db.prepare("UPDATE messages SET provider_message_id = NULL WHERE id IN (?, ?)").run(...untagged);
+	await Promise.all(untagged.map((id) => scheduleAgentWork(env, workInput(id))));
+	assert.equal(jobs(db).length, 4, "copies without a Message-ID are not merged");
+});
+
 test("ineligible mail gets no triage job", async (t) => {
 	const { db, env, sent } = await setup(t);
 	const cases = [

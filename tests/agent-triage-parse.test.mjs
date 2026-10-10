@@ -7,6 +7,8 @@ import { build } from "esbuild";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
 import { REPAIR_MARKER, TRIAGE_SYSTEM_MARKER } from "../src/lib/agent/auto-read/request-markers.ts";
 import { collectFacts } from "../src/lib/agent/auto-read/facts-utils.ts";
+import { planSuggestions } from "../src/lib/agent/auto-read/policy-utils.ts";
+import { parseSuggestionPayload } from "../src/lib/agent/auto-read/suggestion-utils.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = makeBundleDirectory("kite-agent-triage-");
@@ -135,6 +137,43 @@ test("long text is truncated and tasks are capped at five", () => {
 	assert.deepEqual(parsed.result.suspicious.reasons, ["credential_request", "payment_change"]);
 	const emoji = parseTriageOutput(JSON.stringify({ ...valid, summary: "😀".repeat(300) }), now);
 	assert.equal(Array.from(emoji.result.summary).length, 280, "truncation never splits a character");
+});
+
+const planSettings = {
+	capabilities: { calendar: true, reply: true, summary: true, phishing: true, mutedSenders: [] },
+	canDraftReply: true,
+	filed: false,
+	threadMessageCount: 3,
+};
+const cleanFacts = () =>
+	collectFacts({
+		message: {
+			fromAddr: "Ada <ada@example.com>",
+			subject: "Hi",
+			textBody: "Body",
+			spamVerdict: "inbox",
+			spamSignals: null,
+		},
+	});
+
+test("a model flag without reasons survives parsing as a phishing warning and suppresses the reply", () => {
+	const parsed = parseTriageOutput(JSON.stringify({ ...valid, suspicious: { flagged: true } }), now);
+	assert.deepEqual(parsed.result.suspicious, { flagged: true, reasons: [] });
+	const planned = planSuggestions({ facts: cleanFacts(), triage: parsed.result, settings: planSettings });
+	assert.deepEqual(
+		planned.map((item) => item.kind),
+		["phishing", "summary"],
+	);
+	assert.deepEqual(parseSuggestionPayload("phishing", planned[0].payload), { reasons: ["model_flagged"] });
+});
+
+test("a truncated emoji summary is still a valid summary payload", () => {
+	for (const summary of ["😀".repeat(300), `${"a".repeat(279)}😀`, "👩‍💻".repeat(100)]) {
+		const parsed = parseTriageOutput(JSON.stringify({ ...valid, needsReply: false, summary }), now);
+		const planned = planSuggestions({ facts: cleanFacts(), triage: parsed.result, settings: planSettings });
+		const [item] = planned.filter((entry) => entry.kind === "summary");
+		assert.deepEqual(parseSuggestionPayload("summary", item.payload), { text: parsed.result.summary }, summary);
+	}
 });
 
 test("due dates in the past, more than a year away or unparseable are dropped", () => {

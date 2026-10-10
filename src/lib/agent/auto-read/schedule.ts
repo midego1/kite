@@ -1,6 +1,6 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
-import { agentJobs, mailboxAgentSettings, mailboxes, messages, users } from "@/db/schema";
+import { agentJobs, mailboxAgentSettings, mailboxes, users } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
@@ -21,28 +21,35 @@ async function reviewerCanRead(db: AppDatabase, reviewerUserId: string, mailboxI
 	return !!reviewer && !reviewer.disabled && !!(await getMailboxAccessLevel(db, reviewer, mailboxId))?.canRead;
 }
 
-/** The same message delivered again under a new raw key is stored twice; only the first copy is triaged. */
-async function alreadyTriagedCopy(db: AppDatabase, mailboxId: string, sourceMessageId: string) {
-	const [source] = await db
-		.select({ providerMessageId: messages.providerMessageId })
-		.from(messages)
-		.where(eq(messages.id, sourceMessageId))
-		.limit(1);
-	if (!source?.providerMessageId) return false;
-	const [copy] = await db
-		.select({ id: agentJobs.id })
-		.from(agentJobs)
-		.innerJoin(messages, eq(messages.id, agentJobs.sourceMessageId))
-		.where(
-			and(
-				eq(agentJobs.mailboxId, mailboxId),
-				eq(agentJobs.kind, "triage"),
-				eq(messages.providerMessageId, source.providerMessageId),
-				ne(agentJobs.sourceMessageId, sourceMessageId),
-			),
+/**
+ * The same message delivered again under a new raw key is stored twice; only the first copy is
+ * triaged. The copy check and the insert are one statement, so two copies scheduled at the same
+ * time cannot both see no job and insert one each. A message without a Message-ID matches nothing.
+ */
+const INSERT_TRIAGE_JOB = `INSERT INTO agent_jobs (id, kind, mailbox_id, source_message_id, reviewer_user_id, status, attempts, next_attempt_at, created_at)
+SELECT ?, 'triage', ?, ?, ?, 'pending', 0, ?, ?
+WHERE NOT EXISTS (
+	SELECT 1 FROM agent_jobs existing JOIN messages stored ON stored.id = existing.source_message_id
+	WHERE existing.mailbox_id = ? AND existing.kind = 'triage' AND existing.source_message_id <> ?
+	AND stored.provider_message_id = (SELECT provider_message_id FROM messages WHERE id = ?)
+)
+ON CONFLICT (mailbox_id, source_message_id, kind) DO NOTHING`;
+
+async function insertTriageJob(env: CloudflareEnv, input: AgentWorkInput, reviewerUserId: string) {
+	const now = Math.floor(Date.now() / 1000);
+	await env.DB.prepare(INSERT_TRIAGE_JOB)
+		.bind(
+			newId("ajob"),
+			input.mailboxId,
+			input.sourceMessageId,
+			reviewerUserId,
+			now,
+			now,
+			input.mailboxId,
+			input.sourceMessageId,
+			input.sourceMessageId,
 		)
-		.limit(1);
-	return !!copy;
+		.run();
 }
 
 async function triageAllowed(env: CloudflareEnv, input: AgentWorkInput, settings: MailboxSettings) {
@@ -53,8 +60,7 @@ async function triageAllowed(env: CloudflareEnv, input: AgentWorkInput, settings
 	if (!mailbox) return false;
 	const ownAddresses = await getMailboxDomainAddresses(db, mailbox);
 	if (triageMessageGate({ ...input, ownAddresses })) return false;
-	if (!(await reviewerCanRead(db, settings.reviewerUserId || input.ownerUserId, input.mailboxId))) return false;
-	return !(await alreadyTriagedCopy(db, input.mailboxId, input.sourceMessageId));
+	return reviewerCanRead(db, settings.reviewerUserId || input.ownerUserId, input.mailboxId);
 }
 
 /**
@@ -75,16 +81,7 @@ export async function scheduleAgentWork(env: CloudflareEnv, input: AgentWorkInpu
 		return;
 	}
 	if (!(await triageAllowed(env, input, settings))) return;
-	await db
-		.insert(agentJobs)
-		.values({
-			id: newId("ajob"),
-			kind: "triage",
-			mailboxId: input.mailboxId,
-			sourceMessageId: input.sourceMessageId,
-			reviewerUserId: settings.reviewerUserId || input.ownerUserId,
-		})
-		.onConflictDoNothing({ target: [agentJobs.mailboxId, agentJobs.sourceMessageId, agentJobs.kind] });
+	await insertTriageJob(env, input, settings.reviewerUserId || input.ownerUserId);
 	const [job] = await db
 		.select({ id: agentJobs.id, status: agentJobs.status })
 		.from(agentJobs)

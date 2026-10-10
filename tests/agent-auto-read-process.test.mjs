@@ -117,6 +117,7 @@ function insertJob(
 		mailboxId = "mailbox-a",
 		kind = "triage",
 		status = "pending",
+		reviewer = "owner",
 	} = {},
 ) {
 	const id = `message-${++count}`;
@@ -128,9 +129,9 @@ function insertJob(
 	const jobId = `job-${count}`;
 	db.db
 		.prepare(
-			"INSERT INTO agent_jobs (id, mailbox_id, source_message_id, reviewer_user_id, kind, status, next_attempt_at, created_at) VALUES (?, ?, ?, 'owner', ?, ?, 1, ?)",
+			"INSERT INTO agent_jobs (id, mailbox_id, source_message_id, reviewer_user_id, kind, status, next_attempt_at, created_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)",
 		)
-		.run(jobId, mailboxId, id, kind, status, nowSeconds());
+		.run(jobId, mailboxId, id, reviewer, kind, status, nowSeconds(), status === "completed" ? nowSeconds() : null);
 	return { jobId, messageId: id };
 }
 
@@ -373,7 +374,9 @@ test("the daily limit counts completed triage jobs since midnight UTC, not draft
 	db.db.exec("UPDATE mailbox_agent_settings SET auto_read_daily_limit = 1 WHERE mailbox_id = 'mailbox-a'");
 	insertJob(db, { kind: "draft", status: "completed" });
 	const yesterday = insertJob(db, { status: "completed" });
-	db.db.prepare("UPDATE agent_jobs SET created_at = ? WHERE id = ?").run(nowSeconds() - 2 * 86_400, yesterday.jobId);
+	db.db
+		.prepare("UPDATE agent_jobs SET created_at = ?, completed_at = ? WHERE id = ?")
+		.run(nowSeconds() - 2 * 86_400, nowSeconds() - 2 * 86_400, yesterday.jobId);
 	const first = insertJob(db);
 	const second = insertJob(db);
 	const other = insertJob(db, { mailboxId: "mailbox-b" });
@@ -385,6 +388,92 @@ test("the daily limit counts completed triage jobs since midnight UTC, not draft
 	assert.equal(jobOf(db, other.jobId).status, "completed", "the limit is per mailbox");
 	assert.equal(requests.length, 2);
 	assert.deepEqual(usageOfJob(db, second.jobId), []);
+});
+
+const completedAtOf = (db, id) =>
+	db.db.prepare("SELECT completed_at FROM agent_jobs WHERE id = ?").get(id).completed_at;
+
+test("the daily limit counts by completion time: across midnight and for a recovered backlog", async (t) => {
+	const dayStart = Math.floor(Date.now() / 86_400_000) * 86_400;
+	for (const createdAt of [dayStart - 60, dayStart - 3 * 86_400]) {
+		const { db, env } = await setup(t);
+		db.db.exec("UPDATE mailbox_agent_settings SET auto_read_daily_limit = 1 WHERE mailbox_id = 'mailbox-a'");
+		const carried = insertJob(db);
+		db.db.prepare("UPDATE agent_jobs SET created_at = ? WHERE id = ?").run(createdAt, carried.jobId);
+		const before = nowSeconds();
+		await processAgentTriageJob(env, carried.jobId);
+		assert.equal(jobOf(db, carried.jobId).status, "completed");
+		assert.ok(completedAtOf(db, carried.jobId) >= before, "completion time is recorded");
+		const next = insertJob(db);
+		await processAgentTriageJob(env, next.jobId);
+		assert.deepEqual([jobOf(db, next.jobId).status, jobOf(db, next.jobId).reason], ["skipped", "daily_limit"]);
+	}
+	const { db, env } = await setup(t);
+	db.db.exec("UPDATE mailbox_agent_settings SET auto_read_daily_limit = 1 WHERE mailbox_id = 'mailbox-a'");
+	const lateYesterday = insertJob(db, { status: "completed" });
+	db.db
+		.prepare("UPDATE agent_jobs SET created_at = ?, completed_at = ? WHERE id = ?")
+		.run(dayStart - 120, dayStart - 1, lateYesterday.jobId);
+	const today = insertJob(db);
+	await processAgentTriageJob(env, today.jobId);
+	assert.equal(jobOf(db, today.jobId).status, "completed", "a job completed before midnight counts for that day");
+});
+
+test("spoofing checks use the mailbox owner's contacts when a delegated reviewer triages", async (t) => {
+	const { db, env } = await setup(t);
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('reviewer', 'reviewer@example.com', 'hash', 'Reviewer', 1);
+		UPDATE mailboxes SET type = 'shared' WHERE id = 'mailbox-a';
+		INSERT INTO mailbox_access (id, mailbox_id, user_id, permission, created_at) VALUES ('access-1', 'mailbox-a', 'reviewer', 'read_only', 1);
+		INSERT INTO contacts (id, user_id, email, display_name, source, created_at) VALUES ('c-owner', 'owner', 'grace@corp.test', 'Grace Hopper', 'manual', 1);
+		INSERT INTO contacts (id, user_id, email, display_name, source, created_at) VALUES ('c-reviewer', 'reviewer', 'alan@corp.test', 'Alan Turing', 'manual', 1);
+	`);
+	const spoof = insertJob(db, { reviewer: "reviewer", from: "Grace Hopper <grace@evil.test>" });
+	await processAgentTriageJob(env, spoof.jobId);
+	assert.equal(jobOf(db, spoof.jobId).status, "completed");
+	const [phishing] = suggestionsOf(db, spoof.messageId).filter((row) => row.kind === "phishing");
+	assert.deepEqual(phishing?.payload.reasons, ["display_name_spoof"]);
+
+	const reviewerOnly = insertJob(db, { reviewer: "reviewer", from: "Alan Turing <alan@evil.test>" });
+	await processAgentTriageJob(env, reviewerOnly.jobId);
+	assert.deepEqual(
+		suggestionsOf(db, reviewerOnly.messageId).filter((row) => row.kind === "phishing"),
+		[],
+		"the reviewer's own contacts are not the mailbox's",
+	);
+});
+
+test("a spoofed contact beyond the first thousand contacts is still found", async (t) => {
+	const { db, env } = await setup(t);
+	const insert = db.db.prepare(
+		"INSERT INTO contacts (id, user_id, email, display_name, source, created_at) VALUES (?, 'owner', ?, ?, 'outbound', 1)",
+	);
+	db.db.transaction(() => {
+		for (let index = 0; index < 1_500; index++)
+			insert.run(`c-${String(index).padStart(5, "0")}`, `person${index}@corp.test`, `Person ${index}`);
+		insert.run("c-zzzzz", "al@corp.test", "Al");
+	})();
+	const spoof = insertJob(db, { from: '"AL" <al@evil.test>' });
+	await processAgentTriageJob(env, spoof.jobId);
+	const [phishing] = suggestionsOf(db, spoof.messageId).filter((row) => row.kind === "phishing");
+	assert.deepEqual(phishing?.payload.reasons, ["display_name_spoof"]);
+
+	const known = insertJob(db, { from: "Person 1499 <person1499@corp.test>" });
+	await processAgentTriageJob(env, known.jobId);
+	assert.deepEqual(suggestionsOf(db, known.messageId), []);
+	const lastRequest = requests.at(-1).body.messages[1].content;
+	assert.match(lastRequest, /Known contact: yes/, "the sender's own contact row is found beyond the window too");
+});
+
+test("an emoji summary of 280 characters is stored intact", async (t) => {
+	const { db, env } = await setup(t);
+	const summary = `${"😀".repeat(279)}✅`;
+	replies = [reply(JSON.stringify({ ...benign, summary: `${summary}${"🙂".repeat(20)}` }))];
+	const { jobId, messageId } = insertJob(db, { text: `Long ${"y".repeat(1_600)}` });
+	await processAgentTriageJob(env, jobId);
+	assert.equal(jobOf(db, jobId).status, "completed");
+	const [stored] = suggestionsOf(db, messageId).filter((row) => row.kind === "summary");
+	assert.equal(stored?.payload.text, summary);
 });
 
 test("the per-mailbox rate limit skips with rate_limited before any request", async (t) => {

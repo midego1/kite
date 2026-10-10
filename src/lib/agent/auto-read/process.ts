@@ -58,7 +58,7 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 		mailboxType: mailbox.type,
 	});
 	if (await triageDailyLimitReached(db, job.mailboxId, settings.autoReadDailyLimit)) return "daily_limit";
-	const context = await loadTriageContext(env, source, job.reviewerUserId);
+	const context = await loadTriageContext(env, source, mailbox.userId);
 	let model: Awaited<ReturnType<typeof runTriageModel>> | null = null;
 	if (needsModel(context.facts, settings.capabilities)) {
 		const config = await getAgentProviderConfig(env);
@@ -94,7 +94,10 @@ export async function processAgentTriageJob(env: CloudflareEnv, jobId: string) {
 	try {
 		const reason = await triage(env, db, job);
 		if (reason) return void (await skipAgentJob(db, jobId, reason));
-		await db.update(agentJobs).set({ status: "completed", leaseUntil: null }).where(eq(agentJobs.id, jobId));
+		await db
+			.update(agentJobs)
+			.set({ status: "completed", leaseUntil: null, completedAt: new Date() })
+			.where(eq(agentJobs.id, jobId));
 	} catch (error) {
 		if (error instanceof SpendCapReachedError) return void (await skipAgentJob(db, jobId, "spend_cap"));
 		await failAndRequeueAgentJob(env, db, job, error);

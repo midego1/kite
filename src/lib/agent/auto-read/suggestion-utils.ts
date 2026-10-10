@@ -12,22 +12,31 @@ const TITLE_MAX_CHARS = 200;
 const BADGE_PRIORITY: readonly SuggestionKind[] = ["phishing", "calendar_invite", "reply", "task", "receipt"];
 
 const isoDate = z.iso.datetime({ offset: true });
+
+/**
+ * Text limits count Unicode code points, the same convention triage truncation uses, so an emoji
+ * (two UTF-16 units) never pushes a truncated model summary over its limit.
+ */
+function text(min: number, max: number) {
+	return z.string().refine((value) => {
+		const length = Array.from(value).length;
+		return length >= min && length <= max;
+	});
+}
 const empty = z.object({});
 
 const calendarInviteSchema = z.object({
-	uid: z.string().min(1).max(1_000),
+	uid: text(1, 1_000),
 	sequence: z.number().int().min(0),
 	method: z.enum(["REQUEST", "CANCEL"]),
-	organizer: z.string().max(320).nullable(),
+	organizer: text(0, 320).nullable(),
 	start: isoDate,
 	end: isoDate,
-	tz: z.string().max(100).nullable(),
-	summary: z.string().max(500),
-	location: z.string().max(500).nullable(),
+	tz: text(0, 100).nullable(),
+	summary: text(0, 500),
+	location: text(0, 500).nullable(),
 	repeats: z.boolean(),
-	conflicts: z
-		.array(z.object({ eventId: z.string(), title: z.string().max(500), start: isoDate, end: isoDate }))
-		.max(20),
+	conflicts: z.array(z.object({ eventId: z.string(), title: text(0, 500), start: isoDate, end: isoDate })).max(20),
 	proposals: z.array(z.object({ start: isoDate, end: isoDate })).max(5),
 	organizerMatchesSender: z.boolean(),
 	authPassed: z.boolean(),
@@ -36,9 +45,9 @@ const calendarInviteSchema = z.object({
 const PAYLOAD_SCHEMAS: { [K in SuggestionKind]: z.ZodType<SuggestionPayloads[K]> } = {
 	calendar_invite: calendarInviteSchema,
 	reply: z.object({ urgency: z.enum(["none", "low", "high"]) }),
-	summary: z.object({ text: z.string().min(1).max(280) }),
-	phishing: z.object({ reasons: z.array(z.string().min(1).max(60)).min(1).max(20) }),
-	task: z.object({ title: z.string().min(1).max(120), dueAt: isoDate.optional() }),
+	summary: z.object({ text: text(1, 280) }),
+	phishing: z.object({ reasons: z.array(text(1, 60)).min(1).max(20) }),
+	task: z.object({ title: text(1, 120), dueAt: isoDate.optional() }),
 	receipt: empty as z.ZodType<Record<string, never>>,
 	label: empty as z.ZodType<Record<string, never>>,
 	unsubscribe: empty as z.ZodType<Record<string, never>>,

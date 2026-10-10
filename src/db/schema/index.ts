@@ -1,6 +1,5 @@
-import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
-import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable(
 	"users",
@@ -897,6 +896,7 @@ export const agentJobs = sqliteTable(
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),
+		completedAt: integer("completed_at", { mode: "timestamp" }),
 	},
 	(t) => [
 		uniqueIndex("agent_jobs_source_idx").on(t.mailboxId, t.sourceMessageId, t.kind),

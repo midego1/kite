@@ -1,15 +1,15 @@
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { contacts, messageAttachments, messages } from "@/db/schema";
+import { messageAttachments, messages } from "@/db/schema";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { readRawHeaders } from "@/lib/email/raw-headers";
 import { collectFacts } from "./facts-utils";
 import type { MessageFacts } from "./facts-types";
+import { loadTrustedContacts } from "./trusted-contacts";
 
 type SourceMessage = typeof messages.$inferSelect;
 
 const THREAD_WINDOW = 20;
-const CONTACTS_WINDOW = 1_000;
 
 export type TriageContext = {
 	source: SourceMessage;
@@ -31,14 +31,16 @@ async function threadRows(env: CloudflareEnv, source: SourceMessage) {
 
 /**
  * Everything triage reads about a message: the stored row, its raw headers (headers are not kept
- * on the row), attachments, and the reviewer's own manual or outbound contacts for spoofing checks.
+ * on the row), attachments, and the mailbox owner's manual or outbound contacts for spoofing
+ * checks. Mailbox contacts live under the owner even when a delegated reviewer triages.
  */
 export async function loadTriageContext(
 	env: CloudflareEnv,
 	source: SourceMessage,
-	reviewerUserId: string,
+	ownerUserId: string,
 ): Promise<TriageContext> {
 	const db = getDb(env);
+	const sender = collectFacts({ message: source });
 	const [headers, attachments, trustedContacts, thread] = await Promise.all([
 		readRawHeaders(env, source.rawR2Key),
 		db
@@ -49,11 +51,7 @@ export async function loadTriageContext(
 			})
 			.from(messageAttachments)
 			.where(eq(messageAttachments.messageId, source.id)),
-		db
-			.select({ email: contacts.email, displayName: contacts.displayName, source: contacts.source })
-			.from(contacts)
-			.where(and(eq(contacts.userId, reviewerUserId), ne(contacts.source, "inbound")))
-			.limit(CONTACTS_WINDOW),
+		loadTrustedContacts(db, ownerUserId, { address: sender.senderAddress, name: sender.senderName }),
 		threadRows(env, source),
 	]);
 	const bodyText = source.textBody || htmlToReadableText(source.htmlBody);

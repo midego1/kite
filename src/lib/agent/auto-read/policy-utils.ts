@@ -76,6 +76,11 @@ function recipientAllowed(facts: MessageFacts, context: ExecutionContext): boole
 	);
 }
 
+function organizerIsSender(facts: MessageFacts, context: ExecutionContext): boolean {
+	const organizer = normalizeAddress(context.organizer);
+	return !!organizer && organizer === facts.senderAddress;
+}
+
 function rsvpRule(context: ExecutionContext): string | null {
 	if (!context.rsvp) return "rsvp_missing";
 	// Accept only when free and decline only when busy, so an automatic RSVP never contradicts the calendar.
@@ -95,6 +100,8 @@ function sendRule(
 	if (!policy) return "sender_not_allowlisted";
 	if (!policy.allowedActions.includes(action)) return "action_not_in_sender_policy";
 	if (policy.requireAuth && !facts.authPassed) return "sender_not_authenticated";
+	// Spec §7.2: an invite whose organizer is not the authenticated sender never gets an automatic RSVP.
+	if (action === "send_rsvp" && !organizerIsSender(facts, context)) return "organizer_not_sender";
 	if (!recipientAllowed(facts, context)) return "recipient_not_sender_or_organizer";
 	if ((context.threadAutoSendsLast24h ?? 0) >= 1) return "thread_send_limit";
 	if (action === "send_reply") return policy.templateRule?.trim() ? null : "no_template_rule";
@@ -135,9 +142,14 @@ export function allowedToExecute(
 	return rule ? block(rule) : { allowed: true, rule: `${effective}_allows_${action}`, level: effective };
 }
 
+/** Stands in for a model flag that came without a reason, so the flag still warns and blocks the reply. */
+const MODEL_FLAGGED_REASON = "model_flagged";
+
 function phishingReasons(facts: MessageFacts, triage: PlanInput["triage"]): string[] {
-	const modelReasons = triage?.suspicious.flagged ? triage.suspicious.reasons : [];
-	return [...new Set<string>([...facts.phishingSignals, ...modelReasons])];
+	const flagged = !!triage?.suspicious.flagged;
+	const modelReasons = triage && flagged ? triage.suspicious.reasons : [];
+	const generic = flagged && modelReasons.length === 0 ? [MODEL_FLAGGED_REASON] : [];
+	return [...new Set<string>([...facts.phishingSignals, ...modelReasons, ...generic])];
 }
 
 function wantsSummary(input: PlanInput): boolean {

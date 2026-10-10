@@ -119,7 +119,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 		if (already) {
 			await db
 				.update(agentJobs)
-				.set({ status: "completed", draftId: already.draftId, leaseUntil: null })
+				.set({ status: "completed", draftId: already.draftId, leaseUntil: null, completedAt: new Date() })
 				.where(eq(agentJobs.id, jobId));
 			return;
 		}
@@ -208,7 +208,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 		)) as { draftId: string };
 		await db
 			.update(agentJobs)
-			.set({ status: "completed", draftId: result.draftId, leaseUntil: null })
+			.set({ status: "completed", draftId: result.draftId, leaseUntil: null, completedAt: new Date() })
 			.where(eq(agentJobs.id, jobId));
 		await notifyUsersOfNewMessage(env, [reviewer.id], {
 			type: "agent_draft",

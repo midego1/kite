@@ -107,6 +107,11 @@ test("payloads are validated per kind", () => {
 	assert.equal(parseSuggestionPayload("reply", { urgency: "urgent" }), null);
 	assert.deepEqual(parseSuggestionPayload("summary", { text: "Short" }), { text: "Short" });
 	assert.equal(parseSuggestionPayload("summary", { text: "x".repeat(281) }), null);
+	const emoji = "😀".repeat(280);
+	assert.deepEqual(parseSuggestionPayload("summary", { text: emoji }), { text: emoji }, "lengths count characters");
+	assert.equal(parseSuggestionPayload("summary", { text: "😀".repeat(281) }), null);
+	assert.deepEqual(parseSuggestionPayload("task", { title: "📅".repeat(120) }), { title: "📅".repeat(120) });
+	assert.equal(parseSuggestionPayload("task", { title: "📅".repeat(121) }), null);
 	assert.equal(parseSuggestionPayload("phishing", { reasons: [] }), null);
 	assert.deepEqual(parseSuggestionPayload("phishing", { reasons: ["suspicious_verdict"] }), {
 		reasons: ["suspicious_verdict"],

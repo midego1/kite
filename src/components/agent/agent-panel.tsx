@@ -35,6 +35,8 @@ import { ConversationSkeleton } from "./conversation-skeleton";
 import { QueuedAgentMessages } from "./queued-messages";
 import { SendReview } from "./send-review";
 import { AgentStepLimitSetting } from "./step-limit-setting";
+import { AutoReadSettings } from "./auto-read-settings";
+import { legacyAgentSettingsBody } from "./auto-read-settings-utils";
 import type { ReviewSnapshot } from "./send-review-types";
 import { approveAgentAction, requestDraftReview } from "./client-actions";
 import type {
@@ -489,7 +491,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 			const response = await authFetch("/api/agent/settings", {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(settings),
+				body: JSON.stringify(legacyAgentSettingsBody(settings)),
 			});
 			if (!response.ok)
 				throw new Error(((await response.json()) as AgentErrorResponse).error || "Could not save settings");
@@ -920,6 +922,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 							<Button type="button" size="sm" disabled={!canManage || busy} onClick={() => void saveSettings()}>
 								Save settings
 							</Button>
+							<AutoReadSettings key={settings.mailboxId} mailboxId={settings.mailboxId} />
 						</>
 					)}
 					<p className="text-xs text-neutral-500">

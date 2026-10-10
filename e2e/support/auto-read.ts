@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, type APIResponse } from "@playwright/test";
+import { expect, type APIRequestContext, type APIResponse, type Page } from "@playwright/test";
 import { DOMAIN } from "./constants";
 import { apiSignIn } from "./helpers";
 
@@ -72,4 +72,32 @@ export async function readMailboxSettings(api: APIRequestContext, mailboxId: str
 export function autoReadFields(body: MailboxSettingsBody) {
 	const { autonomy, capabilities, triageModelId, autoReadDailyLimit, dailySpendCapMicros, pausedUntil } = body.settings;
 	return { autonomy, capabilities, triageModelId, autoReadDailyLimit, dailySpendCapMicros, pausedUntil };
+}
+
+/** Makes the mailbox picker start on this mailbox for every page load in the context. */
+export async function selectMailbox(page: Page, mailboxId: string) {
+	await page.addInitScript((id) => localStorage.setItem("selected-mailbox-id", id), mailboxId);
+}
+
+/** Opens the assistant settings from the inbox and returns the "Automatic reading" section. */
+export async function openAutoReadSection(page: Page) {
+	await page.goto("/inbox");
+	const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+	await expect(toggle).toBeVisible();
+	// The full-page loader can cover the header for a while when the dev server is busy compiling.
+	if ((await toggle.getAttribute("aria-label")) === "Open email assistant") await toggle.click({ timeout: 45_000 });
+	const panel = page.locator("#email-assistant-panel");
+	await panel.getByRole("button", { name: "Assistant settings" }).click();
+	const section = panel.getByRole("region", { name: "Automatic reading" });
+	await expect(section).toBeVisible();
+	return section;
+}
+
+export function collectConsoleErrors(page: Page): string[] {
+	const errors: string[] = [];
+	page.on("console", (message) => {
+		if (message.type() === "error") errors.push(message.text());
+	});
+	page.on("pageerror", (error) => errors.push(error.message));
+	return errors;
 }

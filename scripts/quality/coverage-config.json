@@ -11,6 +11,7 @@
 		"src/lib/trace.mjs",
 		"worker-utils.ts",
 		"src/lib/agent/auto-read/settings-utils.ts",
+		"src/lib/agent/model-rates-utils.ts",
 		"src/lib/agent/provider-url-utils.ts",
 		"src/lib/agent/reasoning-effort-utils.ts",
 		"src/lib/agent/step-limit-utils.ts",

@@ -43,6 +43,22 @@ test("Shift-click selects every message between two checkboxes", async ({ page }
 	await expect(page.getByText("1 selected")).toBeVisible();
 });
 
+test("opening a message while others are selected shows it in the reading pane", async ({ page }) => {
+	const [first, second] = await deliverMany(["Open first", "Open second"]);
+	await page.goto("/inbox");
+	await rowFor(page, first).getByRole("checkbox").check();
+	await expect(page.getByText("1 selected")).toBeVisible();
+
+	await page.getByRole("main").getByText(second, { exact: true }).click();
+	await expect(page.getByRole("heading", { level: 1, name: second })).toBeVisible();
+	await expect(page.getByText("1 selected")).toHaveCount(0);
+	await expect(rowFor(page, first).getByRole("checkbox")).not.toBeChecked();
+
+	// Selecting again while a message is open brings the selection pane back.
+	await rowFor(page, first).getByRole("checkbox").check();
+	await expect(page.getByText("1 selected")).toBeVisible();
+});
+
 test("trashing a selected message from its row removes it from the selection", async ({ page }) => {
 	const subjects = await deliverMany(["Pick one", "Pick two"]);
 

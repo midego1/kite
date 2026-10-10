@@ -77,7 +77,7 @@ function normalizeMutedSenders(values: unknown[]): string[] {
 		const sender = value.trim().toLowerCase();
 		if (sender) senders.add(sender);
 	}
-	return [...senders].slice(-MAX_MUTED_SENDERS);
+	return [...senders];
 }
 
 function parseCapabilities(value: string | null, fallback: AutoReadCapabilities): AutoReadCapabilities {
@@ -104,6 +104,31 @@ function mergeCapabilities(
 	for (const key of CAPABILITY_KEYS) merged[key] = input?.[key] ?? current[key];
 	merged.mutedSenders = normalizeMutedSenders([...current.mutedSenders, ...(input?.mutedSenders ?? [])]);
 	return merged;
+}
+
+/** Muted senders are never evicted, so an update that would exceed the limit is refused as a whole. */
+export function mutedSendersError(
+	current: MailboxAgentSettingsState,
+	input: MailboxAgentSettingsUpdate,
+): string | null {
+	if (!input.capabilities?.mutedSenders?.length) return null;
+	const merged = mergeCapabilities(current.capabilities, input.capabilities).mutedSenders;
+	return merged.length > MAX_MUTED_SENDERS ? `A mailbox can mute at most ${MAX_MUTED_SENDERS} senders` : null;
+}
+
+/**
+ * Automatic reading only needs a reviewer who can read the mailbox; reply drafts check send permission when
+ * they run. Send permission is demanded up front only when an update turns auto-drafting on or hands it to a
+ * different reviewer, so pausing or stopping never depends on the reviewer's current access.
+ */
+export function requiredReviewerAccess(
+	current: MailboxAgentSettingsState,
+	next: MailboxAgentSettingsState,
+	ownerUserId: string,
+): "send" | "read" | null {
+	const changed = (next.reviewerUserId || ownerUserId) !== (current.reviewerUserId || ownerUserId);
+	if (next.autoDraftEnabled && (changed || !current.autoDraftEnabled)) return "send";
+	return changed ? "read" : null;
 }
 
 function storedAutonomy(value: string): AutonomyLevel {

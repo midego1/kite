@@ -188,6 +188,43 @@ test("saving capabilities never drops muted senders", () => {
 	assert.deepEqual(merge(undefined), current.capabilities);
 });
 
+test("muted senders over capacity are refused instead of evicting existing ones", () => {
+	const base = settings.resolveMailboxAgentSettings(undefined, personal);
+	const full = Array.from({ length: 500 }, (_, index) => `s${index}@x.test`);
+	const current = { ...base, capabilities: { ...base.capabilities, mutedSenders: full } };
+	const update = (mutedSenders) => parseUpdate({ capabilities: { mutedSenders } }).data;
+	assert.match(settings.mutedSendersError(current, update(["new@x.test"])), /500/);
+	assert.equal(settings.mutedSendersError(current, update(["S0@x.test", "s499@x.test"])), null);
+	assert.equal(settings.mutedSendersError(current, parseUpdate({ autonomy: "off" }).data), null);
+	const merged = settings.applyMailboxAgentSettingsUpdate(current, update(["new@x.test"])).capabilities.mutedSenders;
+	assert.equal(merged[0], "s0@x.test");
+	assert.equal(merged.length, 501);
+	const almost = { ...base, capabilities: { ...base.capabilities, mutedSenders: full.slice(1) } };
+	assert.equal(settings.mutedSendersError(almost, update(["new@x.test"])), null);
+});
+
+test("the reviewer needs send permission only when an update turns on or re-points auto-drafting", () => {
+	const current = { ...settings.resolveMailboxAgentSettings(undefined, shared), reviewerUserId: null };
+	const apply = (body, from = current) => settings.applyMailboxAgentSettingsUpdate(from, parseUpdate(body).data);
+	const required = (body, from = current) => settings.requiredReviewerAccess(from, apply(body, from), "u1");
+	for (const body of [
+		{ autonomy: "suggest" },
+		{ autonomy: "off" },
+		{ pausedUntil: "2026-10-11T12:00:00.000Z" },
+		{ pausedUntil: null },
+		{ capabilities: { reply: false } },
+		{ autoReadDailyLimit: 5, dailySpendCapMicros: 0, triageModelId: null },
+		{ reviewerUserId: "u1" },
+	])
+		assert.equal(required(body), null, JSON.stringify(body));
+	assert.equal(required({ autoDraftEnabled: true }), "send");
+	assert.equal(required({ reviewerUserId: "u2" }), "read");
+	const drafting = { ...current, autoDraftEnabled: true };
+	assert.equal(required({ autonomy: "off", autoDraftEnabled: true }, drafting), null);
+	assert.equal(required({ reviewerUserId: "u2" }, drafting), "send");
+	assert.equal(required({ autoDraftEnabled: false, reviewerUserId: "u2" }, drafting), "read");
+});
+
 test("configured model checks fall back or reject unknown ids", () => {
 	assert.equal(settings.configuredModelId("a", ["a", "b"], null), "a");
 	assert.equal(settings.configuredModelId("z", ["a", "b"], "a"), "a");

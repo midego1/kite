@@ -283,6 +283,74 @@ test.describe("automatic reading settings API", () => {
 			await Promise.all([reader.api.dispose(), sender.api.dispose(), outsider.api.dispose()]);
 		}
 	});
+
+	test("the owner can pause and turn off automatic reading after the reviewer lost send permission", async () => {
+		const token = uniqueToken("arv");
+		const sharedId = await createSharedMailbox(api, `arv${token}`);
+		const reviewer = await createSignedInAccount(api, `arvr${token}`);
+		const restore = await useFakeProvider(api, fake);
+		try {
+			await shareMailbox(api, sharedId, reviewer.id, "send_on_behalf");
+			await okJson(
+				await api.put("/api/agent/settings", {
+					data: { mailboxId: sharedId, reviewerUserId: reviewer.id, autonomy: "suggest" },
+				}),
+			);
+			await shareMailbox(api, sharedId, reviewer.id, "read_only");
+
+			const pausedUntil = new Date(Math.floor(Date.now() / 1000 + 3_600) * 1000).toISOString();
+			for (const data of [
+				{ pausedUntil },
+				{ pausedUntil: null },
+				{ capabilities: { reply: false }, autoReadDailyLimit: 9, dailySpendCapMicros: 0, triageModelId: "fake-triage" },
+				{ autonomy: "off" },
+				{ autonomy: "suggest" },
+			])
+				await okJson(await api.put("/api/agent/settings", { data: { mailboxId: sharedId, ...data } }));
+			expect(autoReadFields(await readMailboxSettings(api, sharedId))).toMatchObject({
+				autonomy: "suggest",
+				capabilities: { reply: false },
+				autoReadDailyLimit: 9,
+				pausedUntil: null,
+			});
+
+			const drafts = await api.put("/api/agent/settings", { data: { mailboxId: sharedId, autoDraftEnabled: true } });
+			expect(drafts.status()).toBe(400);
+			expect(((await drafts.json()) as { error: string }).error).toContain("send permission");
+			expect((await readMailboxSettings(api, sharedId)).settings.autoDraftEnabled).toBe(false);
+		} finally {
+			await reviewer.api.dispose();
+			await restore();
+		}
+	});
+
+	test("muted senders over capacity are refused and nothing changes", async () => {
+		const sharedId = await createSharedMailbox(api, `arm${uniqueToken("arm")}`);
+		const full = Array.from({ length: 500 }, (_, index) => `muted${index}@outside.test`);
+		await okJson(
+			await api.put("/api/agent/settings", { data: { mailboxId: sharedId, capabilities: { mutedSenders: full } } }),
+		);
+		const before = autoReadFields(await readMailboxSettings(api, sharedId));
+		expect(before.capabilities.mutedSenders).toHaveLength(500);
+
+		const overflow = await api.put("/api/agent/settings", {
+			data: {
+				mailboxId: sharedId,
+				autonomy: "suggest",
+				capabilities: { summary: false, mutedSenders: ["new@outside.test"] },
+			},
+		});
+		expect(overflow.status()).toBe(400);
+		expect(((await overflow.json()) as { error: string }).error).toContain("500");
+		expect(autoReadFields(await readMailboxSettings(api, sharedId))).toEqual(before);
+
+		await okJson(
+			await api.put("/api/agent/settings", {
+				data: { mailboxId: sharedId, capabilities: { mutedSenders: ["MUTED0@outside.test"] } },
+			}),
+		);
+		expect((await readMailboxSettings(api, sharedId)).settings.capabilities.mutedSenders).toEqual(full);
+	});
 });
 
 test.describe("admin automatic reading settings", () => {
@@ -348,6 +416,73 @@ test.describe("admin automatic reading settings", () => {
 			autoReadEnabled: before.autoReadEnabled,
 			externalAutoReadAllowed: before.externalAutoReadAllowed,
 		});
+	});
+
+	test("useFakeProvider puts a compatible starting provider back completely", async () => {
+		const original = await readAdminAgent(api);
+		const starting = await startFakeModel();
+		const restoreOriginal = await useFakeProvider(api, starting);
+		try {
+			const startingKey = "starting-provider-key";
+			await okJson(
+				await api.put("/api/admin/agent", {
+					data: {
+						provider: "compatible",
+						preset: "custom",
+						baseUrl: starting.url,
+						apiKey: startingKey,
+						model: "start-a, start-b",
+						rates: {
+							"start-a": { input: 1, output: 2, reasoningEffort: "low" },
+							"start-b": { input: null, output: null },
+						},
+					},
+				}),
+			);
+			await okJson(
+				await api.put("/api/admin/agent", {
+					data: { autoReadEnabled: false, externalAutoReadAllowed: false, dailySpendCapMicros: 1234 },
+				}),
+			);
+			await okJson(await api.put("/api/admin/agent", { data: { enabled: false } }));
+			const before = await readAdminAgent(api);
+			expect(before.config).toMatchObject({ provider: "compatible", baseUrl: starting.url, hasApiKey: true });
+
+			const restore = await useFakeProvider(api, fake, { previousApiKey: startingKey });
+			expect(await readAdminAgent(api)).toMatchObject({
+				assistantEnabled: true,
+				autoReadEnabled: true,
+				externalAutoReadAllowed: true,
+				config: { baseUrl: fake.url, models: ["fake-triage", "fake-draft"] },
+			});
+			await restore();
+			expect(await readAdminAgent(api)).toEqual(before);
+
+			// A key is stored for the restored provider: listing models without one reaches the starting server.
+			starting.clearRequests();
+			await okJson(
+				await api.post("/api/admin/agent/models", {
+					data: { provider: "compatible", preset: "custom", baseUrl: starting.url },
+				}),
+			);
+			expect(starting.requests().map((request) => request.path)).toEqual(["/models"]);
+
+			// A compatible provider whose key is unknown is refused before anything changes.
+			await okJson(
+				await api.put("/api/admin/agent", {
+					data: { provider: "compatible", preset: "openai", baseUrl: "", apiKey: "unknown-key", model: "gpt-x" },
+				}),
+			);
+			const unknown = await readAdminAgent(api);
+			await expect(useFakeProvider(api, fake)).rejects.toThrow(/cannot restore/);
+			expect(await readAdminAgent(api)).toEqual(unknown);
+		} finally {
+			await restoreOriginal();
+			await starting.close();
+		}
+		// Restoring saves the provider, so one that came from the environment or the defaults reads back as saved.
+		const restored = await readAdminAgent(api);
+		expect({ ...restored, config: { ...restored.config, source: original.config.source } }).toEqual(original);
 	});
 
 	test("a reasoning effort can be saved per model, and none is refused", async () => {
@@ -1030,7 +1165,10 @@ test.describe("triage scheduling", () => {
 			await okJson(await api.put("/api/admin/agent", { data: { autoReadEnabled: true } }));
 			const heldAgain = await holdPendingJob("m");
 			await okJson(await api.put("/api/admin/agent", { data: { enabled: false } }));
-			expect((await triageJobOf(account, heldAgain.id))?.status).toBe("skipped");
+			expect(await triageJobOf(account, heldAgain.id)).toMatchObject({
+				status: "skipped",
+				reason: "assistant_disabled",
+			});
 			await expectNoTriage(account, slowFake, "masternew");
 			expect(slowFake.requests().filter((request) => [held.id, heldAgain.id].includes(request.emailId!))).toEqual([]);
 			await settleSlowJobs();

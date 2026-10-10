@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { agentJobs, agentSendApprovals, appSettings } from "@/db/schema";
@@ -74,10 +74,15 @@ async function saveAssistantEnabled(env: CloudflareEnv, enabled: boolean) {
 			set: { agentEnabled: enabled, updatedAt: new Date() },
 		});
 	if (!enabled) {
+		const pending = eq(agentJobs.status, "pending");
+		await db
+			.update(agentJobs)
+			.set({ status: "skipped", reason: "assistant_disabled" })
+			.where(and(pending, eq(agentJobs.kind, "triage")));
 		await db
 			.update(agentJobs)
 			.set({ status: "skipped", reason: "Assistant disabled" })
-			.where(eq(agentJobs.status, "pending"));
+			.where(and(pending, ne(agentJobs.kind, "triage")));
 		await db.update(agentSendApprovals).set({ status: "cancelled" }).where(eq(agentSendApprovals.status, "pending"));
 	}
 	return Response.json({ assistantEnabled: enabled }, { headers: { "Cache-Control": "no-store" } });

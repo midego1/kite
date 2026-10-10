@@ -242,8 +242,8 @@ test("skipping pending jobs touches only the given mailbox and kind", async (t) 
 	insertJob(db, { id: "a-triage", kind: "triage" });
 	insertJob(db, { id: "a-draft", kind: "draft" });
 	insertJob(db, { id: "b-triage", mailboxId: "mailbox-b", kind: "triage" });
-	await skipPendingMailboxJobs(env, "mailbox-a", "triage", "Automatic reading turned off");
-	assert.equal(statusOf(db, "a-triage").status, "skipped");
+	await skipPendingMailboxJobs(env, "mailbox-a", "triage", "autonomy_off");
+	assert.deepEqual(statusOf(db, "a-triage"), { status: "skipped", reason: "autonomy_off" });
 	assert.equal(statusOf(db, "a-draft").status, "pending");
 	assert.equal(statusOf(db, "b-triage").status, "pending");
 	await skipPendingMailboxJobs(env, "mailbox-a", "draft", "Auto-drafting disabled");

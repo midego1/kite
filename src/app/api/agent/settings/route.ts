@@ -17,6 +17,8 @@ import {
 	configuredModelId,
 	describeSettingsError,
 	mailboxAgentSettingsUpdateSchema,
+	mutedSendersError,
+	requiredReviewerAccess,
 	resolveMailboxAgentSettings,
 	unknownModelError,
 } from "@/lib/agent/auto-read/settings-utils";
@@ -49,10 +51,12 @@ async function listReviewers(db: AppDatabase, mailboxId: string) {
 	return reviewers;
 }
 
-async function reviewerCanSend(db: AppDatabase, reviewerId: string, mailboxId: string) {
+async function reviewerError(db: AppDatabase, reviewerId: string, mailboxId: string, required: "send" | "read") {
 	const [reviewer] = await db.select().from(users).where(eq(users.id, reviewerId)).limit(1);
-	if (!reviewer || reviewer.disabled) return false;
-	return !!(await getMailboxAccessLevel(db, reviewer, mailboxId))?.canSendOnBehalf;
+	const access = reviewer && !reviewer.disabled ? await getMailboxAccessLevel(db, reviewer, mailboxId) : null;
+	if (required === "send" && !access?.canSendOnBehalf) return "Reviewer needs mailbox send permission";
+	if (required === "read" && !access?.canRead) return "Reviewer needs access to the mailbox";
+	return null;
 }
 
 export async function GET(request: Request) {
@@ -109,10 +113,14 @@ export async function PUT(request: Request) {
 	const db = getDb(env);
 	const access = await getMailboxAccessLevel(db, user, parsed.data.mailboxId);
 	if (!access?.canManage) return Response.json({ error: "Mailbox not found or permission denied" }, { status: 403 });
-	const next = applyMailboxAgentSettingsUpdate(await currentSettings(db, access), parsed.data);
+	const current = await currentSettings(db, access);
+	const mutedError = mutedSendersError(current, parsed.data);
+	if (mutedError) return Response.json({ error: mutedError }, { status: 400 });
+	const next = applyMailboxAgentSettingsUpdate(current, parsed.data);
 	const reviewerId = next.reviewerUserId || access.mailbox.userId;
-	if (!(await reviewerCanSend(db, reviewerId, access.mailbox.id)))
-		return Response.json({ error: "Reviewer needs mailbox send permission" }, { status: 400 });
+	const required = requiredReviewerAccess(current, next, access.mailbox.userId);
+	const reviewerProblem = required && (await reviewerError(db, reviewerId, access.mailbox.id, required));
+	if (reviewerProblem) return Response.json({ error: reviewerProblem }, { status: 400 });
 	if (next.autoDraftEnabled && access.mailbox.autoReplyEnabled)
 		return Response.json({ error: "Disable the out-of-office auto-reply before enabling AI drafts" }, { status: 400 });
 	const { models } = await getAgentProviderPublicConfig(env);
@@ -132,6 +140,6 @@ export async function PUT(request: Request) {
 		.values(values)
 		.onConflictDoUpdate({ target: mailboxAgentSettings.mailboxId, set: { ...updates, updatedAt: new Date() } });
 	if (!next.autoDraftEnabled) await skipPendingMailboxJobs(env, mailboxId, "draft", "Auto-drafting disabled");
-	if (next.autonomy === "off") await skipPendingMailboxJobs(env, mailboxId, "triage", "Automatic reading turned off");
+	if (next.autonomy === "off") await skipPendingMailboxJobs(env, mailboxId, "triage", "autonomy_off");
 	return Response.json({ ok: true });
 }

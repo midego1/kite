@@ -9,6 +9,8 @@ type AdminAgentState = {
 		models: string[];
 		rates: Record<string, { input: number | null; output: number | null; reasoningEffort?: string }>;
 		source: "saved" | "environment" | "default";
+		hasApiKey: boolean;
+		configured: boolean;
 	};
 	assistantEnabled: boolean;
 	cloudflareAvailable: boolean;
@@ -36,39 +38,64 @@ export async function readAdminAgent(api: APIRequestContext): Promise<AdminAgent
 	return (await response.json()) as AdminAgentState;
 }
 
+function isLoopbackUrl(url: string): boolean {
+	try {
+		return ["127.0.0.1", "localhost", "[::1]"].includes(new URL(url).hostname);
+	} catch {
+		return false;
+	}
+}
+
 /**
- * Points the install's assistant at the fake model, with automatic reading on and allowed to use it,
- * and returns a function that puts the previous provider and automatic reading flags back. A provider that was never saved, or a compatible one whose key is unknown here,
- * cannot be restored through the API; the Cloudflare provider is saved instead when it is available.
+ * The provider body that saves `state` again, or null when the API cannot recreate it. The API never returns
+ * a saved key, so a compatible provider is restorable only when its key is known: passed in, or the fake key
+ * for a loopback provider, which only these helpers configure.
  */
-export async function useFakeProvider(api: APIRequestContext, fake: FakeModel): Promise<() => Promise<void>> {
+function restorableProvider(state: AdminAgentState, previousApiKey?: string): Record<string, unknown> | null {
+	const { config } = state;
+	const model = config.models.join(", ");
+	if (config.provider === "cloudflare")
+		return state.cloudflareAvailable
+			? { provider: "cloudflare", preset: "openai", baseUrl: "", model, rates: config.rates }
+			: null;
+	const apiKey = previousApiKey ?? (isLoopbackUrl(config.baseUrl) ? FAKE_API_KEY : undefined);
+	if (!config.hasApiKey || !apiKey) return null;
+	return { provider: "compatible", preset: config.preset, baseUrl: config.baseUrl, apiKey, model, rates: config.rates };
+}
+
+async function putAdminAgent(api: APIRequestContext, data: Record<string, unknown>) {
+	const response = await api.put("/api/admin/agent", { data });
+	expect(response.ok(), await response.text()).toBe(true);
+}
+
+/**
+ * Points the install's assistant at the fake model, with automatic reading on and allowed to use it, and
+ * returns a function that saves the previous provider, automatic reading settings and master switch again.
+ * It throws before changing anything when the previous provider cannot be recreated through the API (a
+ * compatible provider with an unknown key, or Cloudflare without the binding); pass `previousApiKey` for a
+ * compatible provider whose key the caller knows.
+ */
+export async function useFakeProvider(
+	api: APIRequestContext,
+	fake: FakeModel,
+	options: { previousApiKey?: string } = {},
+): Promise<() => Promise<void>> {
 	const previous = await readAdminAgent(api);
-	const enabled = await api.put("/api/admin/agent", { data: { enabled: true } });
-	expect(enabled.ok(), await enabled.text()).toBe(true);
-	const saved = await api.put("/api/admin/agent", { data: fakeProviderSettings(fake) });
-	expect(saved.ok(), await saved.text()).toBe(true);
-	const autoRead = await api.put("/api/admin/agent", {
-		data: { autoReadEnabled: true, externalAutoReadAllowed: true },
-	});
-	expect(autoRead.ok(), await autoRead.text()).toBe(true);
+	const provider = restorableProvider(previous, options.previousApiKey);
+	if (!provider)
+		throw new Error(
+			`useFakeProvider cannot restore the current ${previous.config.provider} provider; pass previousApiKey or start from a restorable one`,
+		);
+	await putAdminAgent(api, { enabled: true });
+	await putAdminAgent(api, fakeProviderSettings(fake));
+	await putAdminAgent(api, { autoReadEnabled: true, externalAutoReadAllowed: true });
 	return async () => {
-		await api.put("/api/admin/agent", {
-			data: {
-				autoReadEnabled: previous.autoReadEnabled,
-				externalAutoReadAllowed: previous.externalAutoReadAllowed,
-			},
+		await putAdminAgent(api, provider);
+		await putAdminAgent(api, {
+			autoReadEnabled: previous.autoReadEnabled,
+			externalAutoReadAllowed: previous.externalAutoReadAllowed,
+			dailySpendCapMicros: previous.dailySpendCapMicros,
 		});
-		if (previous.cloudflareAvailable && previous.config.provider === "cloudflare") {
-			await api.put("/api/admin/agent", {
-				data: {
-					provider: "cloudflare",
-					preset: "openai",
-					baseUrl: "",
-					model: previous.config.models.join(", "),
-					rates: previous.config.rates,
-				},
-			});
-		}
-		await api.put("/api/admin/agent", { data: { enabled: previous.assistantEnabled } });
+		await putAdminAgent(api, { enabled: previous.assistantEnabled });
 	};
 }

@@ -1,6 +1,7 @@
 import { and, eq, lt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { agentConversations, agentSendApprovals } from "@/db/schema";
+import { expireOpenSuggestions } from "./auto-read/suggestion-lifecycle";
 import { recoverAgentJobs } from "./jobs/recovery";
 
 export async function runAgentMaintenance(env: CloudflareEnv) {
@@ -22,5 +23,6 @@ export async function runAgentMaintenance(env: CloudflareEnv) {
 	await db
 		.delete(agentConversations)
 		.where(lt(agentConversations.updatedAt, new Date(Date.now() - 30 * 24 * 60 * 60_000)));
+	await expireOpenSuggestions(env, now);
 	await recoverAgentJobs(env);
 }

@@ -30,8 +30,10 @@ const applied = (values = {}) => ({
 	...values,
 });
 
-test("the registry covers dismiss and create_draft with a 7-day undo window", () => {
-	assert.deepEqual(Object.keys(ACTION_REGISTRY).sort(), ["create_draft", "dismiss"]);
+test("the registry covers dismiss, create_draft and move (mark as spam) with a 7-day undo window", () => {
+	assert.deepEqual(Object.keys(ACTION_REGISTRY).sort(), ["create_draft", "dismiss", "move"]);
+	assert.deepEqual(ACTION_REGISTRY.move.variants, ["spam"]);
+	assert.equal(getUndoRule(ACTION_REGISTRY.move, "spam").windowMs, DEFAULT_UNDO_WINDOW_MS);
 	assert.equal(getActionMeta("send_reply"), null);
 	assert.equal(getUndoRule(ACTION_REGISTRY.dismiss, "").windowMs, DEFAULT_UNDO_WINDOW_MS);
 	assert.equal(

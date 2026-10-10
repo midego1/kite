@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { domains, mailboxAccess, mailboxes } from "@/db/schema";
-import type { NewMessageNotification, AgentDraftNotification } from "./types";
+import type { RealtimePayload } from "./types";
 
 export function getSessionTokenFromRequest(request: Request): string | undefined {
 	const cookie = request.headers.get("Cookie");
@@ -50,7 +50,7 @@ export async function getMailboxNotificationUserIds(
 export async function notifyUsersOfNewMessage(
 	env: CloudflareEnv,
 	userIds: string[],
-	payload: NewMessageNotification | AgentDraftNotification,
+	payload: RealtimePayload,
 ): Promise<void> {
 	// Next dev uses a bindings-only proxy; realtime delivery runs in worker.ts.
 	if (!env.REALTIME) return;

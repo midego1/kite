@@ -16,8 +16,9 @@ import {
 import { startFakeModel } from "./support/fake-model";
 import { QUESTION_DRAFT_BODY } from "./support/fake-model-scenarios";
 import type { FakeModel } from "./support/fake-model-types";
+import type { InboundMail } from "./support/helpers-types";
 import { apiContext, deliverInbound, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
-import { readActions, readJobs, waitForFinishedJob } from "./support/triage";
+import { readActions, readJobs, readSuggestions, waitForFinishedJob } from "./support/triage";
 
 let fake: FakeModel;
 let api: APIRequestContext;
@@ -1516,6 +1517,227 @@ test.describe("reply suggestions", () => {
 		} finally {
 			await stopAutoRead(account.api, account.mailboxId);
 			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	const suggestionUrl = (id: string, action: "accept" | "dismiss") => `/api/agent/suggestions/${id}/${action}`;
+
+	async function deliverQuestion(api: APIRequestContext, to: string, from: string, extra: Partial<InboundMail> = {}) {
+		const token = uniqueToken("sgq");
+		const subject = uniqueToken("sgs");
+		await postInbound(api, { from, to, subject, text: `Can you confirm ${token}? [[scenario:question]]`, ...extra });
+		return { token, message: await waitForMessage(api, subject, { status: "received" }) };
+	}
+
+	async function suggestionsFor(api: APIRequestContext, mailboxId: string, messageId: string) {
+		return (await readSuggestions(api, { mailboxId, messageId })).suggestions;
+	}
+
+	test("the suggestion APIs answer only full-access users, and suggestions stay actionable after autonomy is off", async () => {
+		const token = uniqueToken("sga");
+		const localPart = `sga${token}`;
+		const sharedId = await createSharedMailbox(api, localPart);
+		const manager = await createSignedInAccount(api, `sgam${token}`);
+		const reader = await createSignedInAccount(api, `sgar${token}`);
+		const helper = await createSignedInAccount(api, `sgah${token}`);
+		const stranger = await createSignedInAccount(api, `sgax${token}`);
+		const restore = await useFakeProvider(api, fake);
+		try {
+			await shareMailbox(api, sharedId, manager.id, "full_access");
+			await shareMailbox(api, sharedId, reader.id, "read_only");
+			await shareMailbox(api, sharedId, helper.id, "send_on_behalf");
+			await okJson(await api.put("/api/agent/settings", { data: { mailboxId: sharedId, autonomy: "suggest" } }));
+			const to = `${localPart}@${DOMAIN}`;
+			const { message } = await deliverQuestion(api, to, "Customer <customer@outside.test>");
+			expect((await waitForFinishedJob(api, sharedId, message.id, "triage")).status).toBe("completed");
+			const reply = (await suggestionsFor(api, sharedId, message.id)).find((item) => item.kind === "reply");
+			expect(reply).toMatchObject({ status: "open", draftId: expect.any(String) });
+			const replyId = reply!.id;
+			expect((await suggestionsFor(manager.api, sharedId, message.id)).map((item) => item.id)).toContain(replyId);
+			const across = await readSuggestions(manager.api);
+			expect(across.suggestions.map((item) => item.id)).toContain(replyId);
+			expect(across.mailboxes).toContainEqual(expect.objectContaining({ id: sharedId, autonomy: "suggest" }));
+
+			for (const client of [reader.api, helper.api, stranger.api]) {
+				expect((await client.get(`/api/agent/suggestions?mailboxId=${sharedId}`)).status()).toBe(404);
+				const accept = await client.post(suggestionUrl(replyId, "accept"), { data: { option: "review" } });
+				expect(accept.status()).toBe(404);
+				expect((await client.post(suggestionUrl(replyId, "dismiss"), { data: {} })).status()).toBe(404);
+				expect((await readSuggestions(client)).suggestions.map((item) => item.id)).not.toContain(replyId);
+			}
+			expect((await suggestionsFor(api, sharedId, message.id)).find((item) => item.id === replyId)?.status).toBe(
+				"open",
+			);
+			const accepted = await okJson(
+				await manager.api.post(suggestionUrl(replyId, "accept"), { data: { option: "review" } }),
+			);
+			expect(accepted).toEqual({ status: "open", draftId: reply!.draftId, url: `/drafts/${reply!.draftId}` });
+
+			await okJson(await api.put("/api/agent/settings", { data: { mailboxId: sharedId, autonomy: "off" } }));
+			const off = await deliverQuestion(api, to, "Customer <customer@outside.test>");
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+			expect((await readJobs(api, sharedId)).filter((job) => job.sourceMessageId === off.message.id)).toEqual([]);
+			expect(kindsMentioning(off.token)).toEqual([]);
+			expect(await suggestionsFor(api, sharedId, off.message.id)).toEqual([]);
+			const stillOpen = await readSuggestions(api, { mailboxId: sharedId, status: "open" });
+			expect(stillOpen.suggestions.map((item) => item.id)).toContain(replyId);
+
+			const dismissed = await okJson<{ status: string; actionId: string; mutedSender: string | null }>(
+				await manager.api.post(suggestionUrl(replyId, "dismiss"), { data: { muteSender: true } }),
+			);
+			expect(dismissed).toEqual({
+				status: "dismissed",
+				actionId: expect.any(String),
+				mutedSender: "customer@outside.test",
+			});
+			const repeated = await okJson<{ actionId: string }>(await manager.api.post(suggestionUrl(replyId, "dismiss")));
+			expect(repeated.actionId).toBe(dismissed.actionId);
+			expect((await readMailboxSettings(api, sharedId)).settings.capabilities.mutedSenders).toContain(
+				"customer@outside.test",
+			);
+			const dismissRows = (await readActions(manager.api, sharedId)).filter((row) => row.action === "dismiss");
+			expect(dismissRows).toEqual([
+				expect.objectContaining({ initiator: "user", status: "applied", suggestionId: replyId }),
+			]);
+
+			await okJson(await manager.api.post(`/api/agent/actions/${dismissed.actionId}/undo`));
+			expect((await suggestionsFor(api, sharedId, message.id)).find((item) => item.id === replyId)?.status).toBe(
+				"open",
+			);
+			expect((await readMailboxSettings(api, sharedId)).settings.capabilities.mutedSenders).not.toContain(
+				"customer@outside.test",
+			);
+		} finally {
+			await stopAutoRead(api, sharedId);
+			for (const account of [manager, reader, helper, stranger]) await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("mark_spam moves a phishing message, a newer thread message supersedes a reply, and a muted sender is skipped", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("sgb");
+		try {
+			const phishSubject = uniqueToken("sgbp");
+			await postInbound(account.api, {
+				from: "Bank <alerts@bank.test>",
+				to: account.address,
+				subject: phishSubject,
+				text: "Please verify your account. [[scenario:fyi]]",
+				html: `<p>Please verify your account. [[scenario:fyi]]</p><p><a href="https://login.evil.test/account">https://bank.example.com/account</a></p>`,
+			});
+			const phishing = await waitForMessage(account.api, phishSubject, { status: "received" });
+			expect((await waitForFinishedJob(account.api, account.mailboxId, phishing.id, "triage")).status).toBe(
+				"completed",
+			);
+			const warning = (await suggestionsFor(account.api, account.mailboxId, phishing.id)).find(
+				(item) => item.kind === "phishing",
+			);
+			expect(warning?.status).toBe("open");
+			const marked = await okJson<{ status: string; actionId: string }>(
+				await account.api.post(suggestionUrl(warning!.id, "accept"), { data: { option: "mark_spam" } }),
+			);
+			expect(marked.status).toBe("accepted");
+			await waitForMessage(account.api, phishSubject, { status: "spam" });
+			expect((await suggestionsFor(account.api, account.mailboxId, phishing.id))[0]?.status).toBe("accepted");
+			expect(
+				(await account.api.post(suggestionUrl(warning!.id, "accept"), { data: { option: "review" } })).status(),
+			).toBe(400);
+
+			const providerId = `<${uniqueToken("sgba")}@outside.test>`;
+			const first = await deliverQuestion(account.api, account.address, "Customer <customer@outside.test>", {
+				messageId: providerId,
+			});
+			await waitForFinishedJob(account.api, account.mailboxId, first.message.id, "triage");
+			const second = await deliverQuestion(account.api, account.address, "Customer <customer@outside.test>", {
+				inReplyTo: providerId,
+			});
+			await waitForFinishedJob(account.api, account.mailboxId, second.message.id, "triage");
+			const replyOf = async (messageId: string) =>
+				(await suggestionsFor(account.api, account.mailboxId, messageId)).find((item) => item.kind === "reply");
+			expect((await replyOf(first.message.id))?.status).toBe("superseded");
+			const newest = await replyOf(second.message.id);
+			expect(newest?.status).toBe("open");
+			const open = await readSuggestions(account.api, { mailboxId: account.mailboxId, status: "open" });
+			expect(open.suggestions.filter((item) => item.kind === "reply").map((item) => item.id)).toEqual([newest!.id]);
+
+			await okJson(await account.api.post(suggestionUrl(newest!.id, "dismiss"), { data: { muteSender: true } }));
+			const muted = await deliverQuestion(account.api, account.address, "Customer <customer@outside.test>");
+			const other = await deliverQuestion(account.api, account.address, "Other <other@outside.test>");
+			for (const item of [muted, other])
+				await waitForFinishedJob(account.api, account.mailboxId, item.message.id, "triage");
+			expect(await suggestionsFor(account.api, account.mailboxId, muted.message.id)).toEqual([]);
+			expect(kindsMentioning(muted.token)).toEqual([]);
+			expect((await replyOf(other.message.id))?.status).toBe("open");
+		} finally {
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("agent_suggestion realtime events reach full-access users only", async ({ browser }) => {
+		const token = uniqueToken("sgc");
+		const localPart = `sgc${token}`;
+		const sharedId = await createSharedMailbox(api, localPart);
+		const manager = await createSignedInAccount(api, `sgcm${token}`);
+		const reader = await createSignedInAccount(api, `sgcr${token}`);
+		const restore = await useFakeProvider(api, fake);
+		const contexts = await Promise.all(
+			[manager, reader].map(async (account) =>
+				browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() }),
+			),
+		);
+		try {
+			await shareMailbox(api, sharedId, manager.id, "full_access");
+			await shareMailbox(api, sharedId, reader.id, "read_only");
+			await okJson(await api.put("/api/agent/settings", { data: { mailboxId: sharedId, autonomy: "suggest" } }));
+			const [managerPage, readerPage] = await Promise.all(contexts.map((context) => context.newPage()));
+			for (const page of [managerPage, readerPage]) {
+				await page.goto("/api/agent/suggestions");
+				await page.evaluate(
+					() =>
+						new Promise<void>((resolve, reject) => {
+							const events: unknown[] = [];
+							(window as unknown as { realtimeEvents: unknown[] }).realtimeEvents = events;
+							const socket = new WebSocket(`${location.origin.replace(/^http/, "ws")}/api/realtime`);
+							socket.onmessage = (event) => events.push(JSON.parse(String(event.data)));
+							socket.onopen = () => resolve();
+							socket.onerror = () => reject(new Error("realtime socket failed"));
+						}),
+				);
+			}
+			const events = (page: Page) =>
+				page.evaluate(
+					() => (window as unknown as { realtimeEvents: { type?: string; messageId?: string }[] }).realtimeEvents,
+				);
+			const { message } = await deliverQuestion(api, `${localPart}@${DOMAIN}`, "Customer <customer@outside.test>");
+			expect((await waitForFinishedJob(api, sharedId, message.id, "triage")).status).toBe("completed");
+			const reply = (await suggestionsFor(api, sharedId, message.id)).find((item) => item.kind === "reply");
+			await expect
+				.poll(async () => (await events(managerPage)).filter((event) => event.type === "agent_suggestion"), {
+					timeout: 15_000,
+				})
+				.toContainEqual({
+					type: "agent_suggestion",
+					mailboxId: sharedId,
+					messageId: message.id,
+					suggestionId: reply!.id,
+					kind: "reply",
+				});
+			// The read-only sharer's socket works (it hears about the new mail) but carries no suggestion events.
+			await expect
+				.poll(async () => (await events(readerPage)).some((event) => event.type === "new_message"), {
+					timeout: 15_000,
+				})
+				.toBe(true);
+			expect((await events(readerPage)).filter((event) => event.type === "agent_suggestion")).toEqual([]);
+		} finally {
+			await Promise.all(contexts.map((context) => context.close()));
+			await stopAutoRead(api, sharedId);
+			await manager.api.dispose();
+			await reader.api.dispose();
 			await restore();
 		}
 	});

@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { getUserMailRevision } from "./revision";
-import type { NewMessageNotification, AgentDraftNotification, RevisionPing, RevisionNotification } from "./types";
+import type { RealtimePayload, RevisionPing, RevisionNotification } from "./types";
 
 /** Several devices of one user checking within this window share a single D1 read. */
 const REVISION_CACHE_MS = 5_000;
@@ -42,7 +42,7 @@ export class RealtimeHub extends DurableObject<CloudflareEnv> {
 		}
 
 		if (url.pathname === "/notify" && request.method === "POST") {
-			const payload = (await request.json()) as NewMessageNotification | AgentDraftNotification;
+			const payload = (await request.json()) as RealtimePayload;
 			const message = JSON.stringify(payload);
 			this.cachedRevision = null;
 

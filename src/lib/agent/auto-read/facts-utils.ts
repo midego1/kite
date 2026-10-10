@@ -24,6 +24,11 @@ function senderParts(value: string): { address: string; name: string | null } {
 	return { address: angle[2].trim().toLowerCase(), name: name || null };
 }
 
+/** The lowercased address of a From header, as triage and muted senders compare it. */
+export function senderAddressOf(from: string): string {
+	return senderParts(from).address;
+}
+
 function lowerHeaders(headers?: Record<string, string>): Record<string, string> {
 	return Object.fromEntries(
 		Object.entries(headers ?? {}).map(([key, value]) => [key.toLowerCase(), String(value).toLowerCase()]),

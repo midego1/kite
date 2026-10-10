@@ -2,7 +2,7 @@
 export class AgentActionError extends Error {
 	constructor(
 		message: string,
-		readonly status: 403 | 404 | 409,
+		readonly status: 400 | 403 | 404 | 409,
 	) {
 		super(message);
 		this.name = "AgentActionError";

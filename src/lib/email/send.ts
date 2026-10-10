@@ -15,6 +15,7 @@ import { getOutboundAttachmentMaxMb } from "@/lib/email/attachment-policy";
 import { getOutboundProviderConfig, sendThroughProvider } from "@/lib/email/outbound-provider";
 import { prepareCloudflareAttachments } from "@/lib/email/cloud-attachment-utils";
 import { runPostDeliveryStep } from "@/lib/email/post-delivery-utils";
+import { supersedeAfterSentReply } from "@/lib/agent/auto-read/suggestion-lifecycle";
 import { recordMetric } from "@/lib/metrics.mjs";
 import { isNodeRuntime } from "@/lib/runtime";
 
@@ -288,6 +289,7 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 			})
 			.where(eq(messages.id, messageId));
 	});
+	await runPostDeliveryStep(`agent reply suggestions for ${messageId}`, () => supersedeAfterSentReply(env, messageId));
 	await runPostDeliveryStep(`sent job status for ${jobId}`, () =>
 		db.update(outboundJobs).set({ status: "sent", updatedAt: new Date() }).where(eq(outboundJobs.id, jobId)),
 	);

@@ -28,6 +28,12 @@ export const ACTION_REGISTRY: Partial<Record<AgentActionType, ActionMeta>> = {
 		variants: [""],
 		undo: { "*": { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "manage", actingUserOnly: false } },
 	},
+	// "Mark as spam" from a phishing warning. Inverse: move the message back and reopen the warning.
+	move: {
+		executePermission: "manage",
+		variants: ["spam"],
+		undo: { "*": { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "manage", actingUserOnly: false } },
+	},
 	// Inverse: discard the draft, unless a person edited or sent it. Drafts are private to their user.
 	create_draft: {
 		executePermission: "send_on_behalf",

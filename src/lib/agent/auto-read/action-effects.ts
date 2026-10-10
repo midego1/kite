@@ -8,7 +8,10 @@ import { runEmailTool } from "../tools";
 import { AgentActionError } from "./action-error";
 import type { ActionEffect, AgentActionRow } from "./actions-types";
 import { parseActionState } from "./actions-utils";
+import { unmuteSender } from "./muted-senders";
 import type { AgentActionType } from "./policy-types";
+import { notifySuggestionsQuietly } from "./suggestion-events";
+import { restoreMarkedSpam } from "./suggestion-effects";
 
 type SuggestionStatus = (typeof agentSuggestions.$inferSelect)["status"];
 
@@ -81,6 +84,10 @@ async function reopenSuggestion(env: CloudflareEnv, row: AgentActionRow): Promis
 		.update(agentSuggestions)
 		.set({ status, decidedAt: null, decidedByUserId: null })
 		.where(and(eq(agentSuggestions.id, row.suggestionId), eq(agentSuggestions.status, "dismissed")));
+	// Only a sender this dismiss muted is recorded in `after`, so an older mute survives the undo.
+	const mutedSender = parseActionState(row.after)?.mutedSender;
+	if (typeof mutedSender === "string") await unmuteSender(env, row.mailboxId, mutedSender);
+	await notifySuggestionsQuietly(env, [row.suggestionId]);
 }
 
 /** Discards the agent's draft. A draft a person edited, queued or sent is left alone and the undo refused. */
@@ -128,4 +135,5 @@ export const INVERSE_EFFECTS: Partial<
 > = {
 	dismiss: reopenSuggestion,
 	create_draft: discardDraft,
+	move: restoreMarkedSpam,
 };

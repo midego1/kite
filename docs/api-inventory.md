@@ -45,6 +45,9 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/agent/jobs`                                      | GET                    | [source](../src/app/api/agent/jobs/route.ts)                                      |
 | `/api/agent/mcp-keys`                                  | DELETE, GET, POST      | [source](../src/app/api/agent/mcp-keys/route.ts)                                  |
 | `/api/agent/settings`                                  | GET, PUT               | [source](../src/app/api/agent/settings/route.ts)                                  |
+| `/api/agent/suggestions/[id]/accept`                   | POST                   | [source](../src/app/api/agent/suggestions/[id]/accept/route.ts)                   |
+| `/api/agent/suggestions/[id]/dismiss`                  | POST                   | [source](../src/app/api/agent/suggestions/[id]/dismiss/route.ts)                  |
+| `/api/agent/suggestions`                               | GET                    | [source](../src/app/api/agent/suggestions/route.ts)                               |
 | `/api/api-keys`                                        | DELETE, GET, POST      | [source](../src/app/api/api-keys/route.ts)                                        |
 | `/api/attachment-policy`                               | GET                    | [source](../src/app/api/attachment-policy/route.ts)                               |
 | `/api/audit-logs`                                      | GET                    | [source](../src/app/api/audit-logs/route.ts)                                      |

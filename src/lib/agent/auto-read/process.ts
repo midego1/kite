@@ -12,6 +12,7 @@ import { createReplySuggestion } from "./reply-suggestion";
 import { isPaused } from "./schedule-utils";
 import type { AutoReadInstallSettings } from "./settings-types";
 import { resolveMailboxAgentSettings } from "./settings-utils";
+import { settleTriageSuggestions } from "./suggestion-lifecycle";
 import { storeTriageSuggestions } from "./suggestions";
 import { loadTriageContext } from "./triage-context";
 import { runTriageModel, SpendCapReachedError } from "./triage-run";
@@ -97,6 +98,7 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 			model: model?.modelId ?? null,
 			installCapMicros: install.dailySpendCapMicros,
 		});
+	await settleTriageSuggestions(env, job.mailboxId, source);
 	return null;
 }
 

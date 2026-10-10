@@ -60,3 +60,27 @@ export async function readActions(api: APIRequestContext, mailboxId: string): Pr
 	);
 	return actions;
 }
+
+type SuggestionRow = {
+	id: string;
+	mailboxId: string;
+	messageId: string;
+	kind: string;
+	status: string;
+	draftId: string | null;
+	payload: Record<string, unknown>;
+};
+
+export type SuggestionList = {
+	suggestions: SuggestionRow[];
+	mailboxes: { id: string; address: string; autonomy: string }[];
+};
+
+/** `GET /api/agent/suggestions`; without a mailbox it lists open suggestions across full-access mailboxes. */
+export async function readSuggestions(
+	api: APIRequestContext,
+	query: { mailboxId?: string; status?: string; messageId?: string } = {},
+): Promise<SuggestionList> {
+	const params = new URLSearchParams(Object.entries(query).filter((entry): entry is [string, string] => !!entry[1]));
+	return okJson<SuggestionList>(await api.get(`/api/agent/suggestions?${params}`));
+}

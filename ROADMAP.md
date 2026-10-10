@@ -2,7 +2,9 @@
 
 Planned work, grouped into milestones. Each milestone is sized to run as one [Factory Mission](https://docs.factory.ai/cli/features/missions): it lists features with acceptance criteria, and every feature ends with the same validation. Items within a milestone are independent unless noted.
 
-Shipped work is listed in the [changelog](CHANGELOG.md).
+Shipped work is listed in the [changelog](CHANGELOG.md). Suggest features and vote on them in [Ideas](https://github.com/midego1/kite/discussions/categories/ideas).
+
+Approved specs, in the order they will be built: [automatic mail reading agent](docs/specs/auto-agent.md), [storing attachments once](docs/specs/attachments-once.md), and [Drive and storage](docs/specs/drive-storage.md).
 
 ## Working on this repository
 
@@ -82,6 +84,8 @@ Make the app usable for Arabic, Hebrew, Persian and Urdu mail and users.
 
 ## Milestone 5: Agents
 
+Automatic reading of incoming mail, with suggestions and an audit log (item 2), is specified in [docs/specs/auto-agent.md](docs/specs/auto-agent.md).
+
 1. **Email-addressable agents**: an address such as `assistant@your-domain` routes mail to the AI assistant, which can reply, file or draft within the permissions of its owner. Built on the existing routing rules and the agent queue; the Cloudflare Agents SDK is evaluated first.
 2. **Agent audit log**: every action an agent takes is recorded and visible to the mailbox owner, with undo where possible.
 
@@ -134,7 +138,7 @@ Google treats full Gmail access (`https://mail.google.com/`) as a restricted sco
 
 ## Milestone 7: Drive and storage
 
-Files next to mail, on storage the operator chooses. Today every object (raw MIME, attachments, backups) goes through the one `BUCKET` binding with `get`, `put` and `delete`; the Node runtime already swaps R2 for a folder (`server/runtime/file-bucket.ts`), and `src/lib/aws/` already signs S3 requests.
+Files next to mail, on storage the operator chooses. Today every object (raw MIME, attachments, backups) goes through the one `BUCKET` binding with `get`, `put` and `delete`; the Node runtime already swaps R2 for a folder (`server/runtime/file-bucket.ts`), and `src/lib/aws/` already signs S3 requests. Items 1 to 3 are specified in [docs/specs/drive-storage.md](docs/specs/drive-storage.md); storing attachments once ([docs/specs/attachments-once.md](docs/specs/attachments-once.md)) comes first and cuts mail storage by about a third.
 
 1. **Storage providers**
    - R2 stays the default. An admin can add an S3-compatible store (AWS S3, Backblaze B2, Wasabi, Hetzner, MinIO) behind the same interface. Credentials are encrypted with `APP_ENCRYPTION_KEY` and checked before saving, like the AWS settings.

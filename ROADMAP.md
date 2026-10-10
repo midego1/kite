@@ -132,7 +132,30 @@ Google treats full Gmail access (`https://mail.google.com/`) as a restricted sco
 
 **Not planned: two-way sync.** Mirroring reads, moves and deletes back to the provider needs conflict handling, an always-open IMAP connection that Workers cannot hold, and per-provider quirks, for little gain once new mail arrives and replies go out from the right address.
 
+## Milestone 7: Drive and storage
+
+Files next to mail, on storage the operator chooses. Today every object (raw MIME, attachments, backups) goes through the one `BUCKET` binding with `get`, `put` and `delete`; the Node runtime already swaps R2 for a folder (`server/runtime/file-bucket.ts`), and `src/lib/aws/` already signs S3 requests.
+
+1. **Storage providers**
+   - R2 stays the default. An admin can add an S3-compatible store (AWS S3, Backblaze B2, Wasabi, Hetzner, MinIO) behind the same interface. Credentials are encrypted with `APP_ENCRYPTION_KEY` and checked before saving, like the AWS settings.
+   - Large uploads and downloads go straight between the browser and the store through short-lived signed URLs, so they are not limited by the Worker request size.
+   - Test: unit tests for the S3 adapter against recorded responses; e2e against a local S3-compatible server.
+2. **Drive (optional)**
+   - Folders, upload, download, rename, move, trash, and share links with an expiry. An **All attachments** view lists files that arrived by mail.
+   - Off until an admin turns it on; a per-user permission and quota decide who can use it and how much. When off, it is hidden and its API answers 404.
+   - New tables go into the backup lists (see `AGENTS.md`); file contents stay in storage.
+   - Test: e2e for upload, folders, sharing and the off switch, in Kite, Classic and dark mode.
+3. **Cold storage**
+   - Raw mail, attachments and Drive files older than a chosen age move automatically to cheaper storage: R2's Infrequent Access class (through R2 lifecycle rules) or a second S3-compatible store (moved by a scheduled job that records where each object lives).
+   - Opening a cold message or file fetches it from there with no extra step. The settings show what reading cold data costs: Infrequent Access bills every read and keeps objects for at least 30 days, and some archive classes (such as S3 Glacier Flexible Retrieval and Deep Archive) need a restore before an object can be read.
+   - Optional: move message bodies of old mail out of D1 into storage to stay under its 10 GB limit, keeping the search index.
+   - Test: unit tests for the age rules; e2e moves an old message and still opens and searches it.
+4. **External storage** (needs 2)
+   - WebDAV first (Nextcloud, ownCloud, most NAS), shown as a linked folder. Google Drive and OneDrive follow, each with the install's own OAuth app, as in milestone 6.
+
 ## Ideas, not yet planned
 
 - Offline reading with a service worker.
 - A keyboard shortcut overview.
+- Modules an admin can turn on or off (Drive, Calendar, Booking).
+- Extensions as separate services that use the API, webhooks and a sandboxed panel, so an extension cannot reach data it was not given. A directory of extensions would come later.

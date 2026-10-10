@@ -147,7 +147,7 @@ Files next to mail, on storage the operator chooses. Today every object (raw MIM
    - Test: e2e for upload, folders, sharing and the off switch, in Kite, Classic and dark mode.
 3. **Cold storage**
    - Raw mail, attachments and Drive files older than a chosen age move automatically to cheaper storage: R2's Infrequent Access class (through R2 lifecycle rules) or a second S3-compatible store (moved by a scheduled job that records where each object lives).
-   - Opening a cold message or file fetches it from there with no extra step. The settings show what reading cold data costs: Infrequent Access bills every read and keeps objects for at least 30 days, and archive classes also delay retrieval.
+   - Opening a cold message or file fetches it from there with no extra step. The settings show what reading cold data costs: Infrequent Access bills every read and keeps objects for at least 30 days, and some archive classes (such as S3 Glacier Flexible Retrieval and Deep Archive) need a restore before an object can be read.
    - Optional: move message bodies of old mail out of D1 into storage to stay under its 10 GB limit, keeping the search index.
    - Test: unit tests for the age rules; e2e moves an old message and still opens and searches it.
 4. **External storage** (needs 2)

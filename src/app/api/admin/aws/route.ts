@@ -51,7 +51,11 @@ export async function PUT(request: Request) {
 		const report = await validateAwsConfig(parsed.data);
 		if (!report.sending && !report.receiving) {
 			return Response.json(
-				{ error: "These credentials work but have no SES permissions. Attach the policy shown below.", report },
+				{
+					error: "These credentials work but have no SES permissions. Attach the policy shown below.",
+					report,
+					policy: AWS_IAM_POLICY,
+				},
 				{ status: 400 },
 			);
 		}

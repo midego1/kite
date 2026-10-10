@@ -6,7 +6,7 @@ import { getDb } from "@/db";
 import { agentSendApprovals, apiKeys, mcpKeyMailboxes } from "@/db/schema";
 import { requireSessionUser } from "@/lib/api/auth";
 import { generateApiKey, parseScopes, scopesToJson } from "@/lib/api-keys";
-import { API_KEY_SCOPES } from "@/lib/api/scopes";
+import { API_KEY_MAX_MAILBOXES, API_KEY_SCOPES } from "@/lib/api/scopes";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
@@ -14,7 +14,7 @@ import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 const createKeySchema = z.object({
 	name: z.string().trim().min(1).max(100),
 	scopes: z.array(z.enum([...API_KEY_SCOPES])).min(1),
-	mailboxIds: z.array(z.string().min(1)).max(30),
+	mailboxIds: z.array(z.string().min(1)).max(API_KEY_MAX_MAILBOXES),
 });
 
 export async function GET(request: Request) {

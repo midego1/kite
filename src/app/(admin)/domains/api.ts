@@ -1,6 +1,18 @@
 import { authFetch } from "@/lib/auth/client";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 
+/** A rejected response that keeps its parsed body, for callers that need more than `error`. */
+export class ApiError extends Error {
+	constructor(
+		message: string,
+		readonly status: number,
+		readonly data: unknown,
+	) {
+		super(message);
+		this.name = "ApiError";
+	}
+}
+
 export async function requestJson<T>(url: string, method: string, body?: unknown): Promise<T> {
 	const response = await authFetch(url, {
 		method,
@@ -9,7 +21,7 @@ export async function requestJson<T>(url: string, method: string, body?: unknown
 		cache: "no-store",
 	});
 	const data = (await response.json()) as T & { error?: string };
-	if (!response.ok) throw new Error(data.error ?? "Request failed");
+	if (!response.ok) throw new ApiError(data.error ?? "Request failed", response.status, data);
 	return data;
 }
 

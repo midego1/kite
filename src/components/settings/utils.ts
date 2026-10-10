@@ -1,6 +1,7 @@
 import type { MailboxOption } from "@/components/mailbox-provider";
 import { clearMailboxesCache } from "@/components/mailbox-provider-utils";
 import { authFetch } from "@/lib/auth/client";
+import { apiErrorMessage } from "./email-clients-settings-utils";
 import type {
 	CurrentMailboxFormResponse,
 	ForwardingEmailResponse,
@@ -110,15 +111,15 @@ export async function updatePassword(currentPassword: string, newPassword: strin
 	}
 }
 
-/** An API key limited to the JMAP scope, for external mail apps. */
-export async function createJmapApiKey(name: string): Promise<string> {
+/** An API key limited to the JMAP scope and the given mailboxes, for external mail apps. */
+export async function createJmapApiKey(name: string, mailboxIds: string[]): Promise<string> {
 	const res = await authFetch("/api/api-keys", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ name, scopes: ["jmap"] }),
+		body: JSON.stringify({ name, scopes: ["jmap"], mailboxIds }),
 	});
-	const data = (await res.json()) as { key?: string; error?: unknown };
-	if (!res.ok || !data.key) throw new Error(typeof data.error === "string" ? data.error : "Could not create a key");
+	const data = (await res.json().catch(() => ({}))) as { key?: string; error?: unknown };
+	if (!res.ok || !data.key) throw new Error(apiErrorMessage(data.error, "Could not create a key"));
 	window.dispatchEvent(new Event("kite:api-keys-changed"));
 	return data.key;
 }

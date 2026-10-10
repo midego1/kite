@@ -13,18 +13,17 @@ const SOURCE_PATTERN = /^(src\/|server\/|worker-utils\.ts$)/;
  * through `realpathSync` and made repo-relative. Records outside the
  * application source (stdin entries, node_modules, tests) are dropped.
  *
- * Every test file bundles its own copy of a module, so a source file has one
- * record per bundle. Line numbers from different bundles do not line up (Node
- * maps them through each inline source map), so records are not summed; for
- * each metric the record with the largest denominator represents the file
- * (ties go to the most hits). Choosing by ratio would let an empty or
- * tree-shaken record hide a module that is under-tested.
- *
- * Node also merges coverage for one source path into a single record, and a
- * bundle whose source map places a function on a different line adds a second
- * `FN` entry for it (with that bundle's hits, possibly zero). Functions are
- * therefore counted by name, keeping the highest hit count, instead of
- * trusting `FNF`/`FNH`; records without `FN` lines keep their totals.
+ * A source file can have several records (one per coverage run that loaded
+ * it). Lines are merged by line number (`DA`) and functions by name (`FN` /
+ * `FNDA`), keeping the highest hit count, so the result does not depend on
+ * record order: a run that bundled a module without calling it cannot hide a
+ * run that did. A bundle whose source map places a function on a different
+ * line adds a second `FN` entry for it, which is why functions are keyed by
+ * name. Branch indices are positional per record and cannot be lined up, so
+ * for branches (and for records that only carry `LH`/`LF`/`FNH`/`FNF` totals)
+ * the record with the largest denominator represents the file, ties going to
+ * the most hits. Choosing by ratio would let an empty or tree-shaken record
+ * hide a module that is under-tested.
  */
 export function parseLcov(text, { root, base = root, exists = fs.existsSync, realpath = fs.realpathSync } = {}) {
 	const realRoot = realpath(root);
@@ -40,7 +39,7 @@ export function parseLcov(text, { root, base = root, exists = fs.existsSync, rea
 			const relative = path.relative(realRoot, resolved).split(path.sep).join("/");
 			current = null;
 			if (SOURCE_PATTERN.test(relative) && exists(resolved)) {
-				current = { lines: [0, 0], branches: [0, 0], functions: [0, 0], named: new Map() };
+				current = { lines: [0, 0], branches: [0, 0], functions: [0, 0], named: new Map(), numbered: new Map() };
 				if (!records.has(relative)) records.set(relative, []);
 				records.get(relative).push(current);
 			}
@@ -52,8 +51,13 @@ export function parseLcov(text, { root, base = root, exists = fs.existsSync, rea
 		if (key === "FN" || key === "FNDA") {
 			const [first, ...rest] = line.slice(colon + 1).split(",");
 			const name = rest.join(",");
-			if (key === "FNDA") current.named.set(name, Math.max(current.named.get(name) ?? 0, Number(first)));
-			else if (!current.named.has(name)) current.named.set(name, 0);
+			if (key === "FNDA") keepMax(current.named, name, Number(first));
+			else keepMax(current.named, name, 0);
+			continue;
+		}
+		if (key === "DA") {
+			const [lineNumber, hits] = line.slice(colon + 1).split(",");
+			keepMax(current.numbered, lineNumber, Number(hits));
 			continue;
 		}
 		const value = Number(line.slice(colon + 1));
@@ -64,20 +68,33 @@ export function parseLcov(text, { root, base = root, exists = fs.existsSync, rea
 		else if (key === "FNH") current.functions[0] = value;
 		else if (key === "FNF") current.functions[1] = value;
 	}
-	for (const list of records.values()) {
-		for (const record of list) {
-			if (record.named.size > 0) {
-				record.functions = [[...record.named.values()].filter((hits) => hits > 0).length, record.named.size];
-			}
-		}
-	}
 	const files = new Map();
 	for (const [file, list] of records) {
-		const best = (metric) =>
-			list.map((record) => record[metric]).reduce((a, b) => (b[1] > a[1] || (b[1] === a[1] && b[0] > a[0]) ? b : a));
-		files.set(file, { lines: best("lines"), branches: best("branches"), functions: best("functions") });
+		files.set(file, {
+			lines: mergeCounters(list, "lines", "numbered"),
+			branches: bestCounters(list.map((record) => record.branches)),
+			functions: mergeCounters(list, "functions", "named"),
+		});
 	}
 	return files;
+}
+
+function keepMax(map, key, hits) {
+	map.set(key, Math.max(map.get(key) ?? 0, hits));
+}
+
+function bestCounters(counters) {
+	return counters.reduce((a, b) => (b[1] > a[1] || (b[1] === a[1] && b[0] > a[0]) ? b : a));
+}
+
+/** Merges keyed hit counts across records (max per key); falls back to the best totals when no record has keys. */
+function mergeCounters(list, metric, keyed) {
+	const merged = new Map();
+	for (const record of list) {
+		for (const [key, hits] of record[keyed]) keepMax(merged, key, hits);
+	}
+	if (merged.size === 0) return bestCounters(list.map((record) => record[metric]));
+	return [[...merged.values()].filter((hits) => hits > 0).length, merged.size];
 }
 
 export function percent([hit, total]) {

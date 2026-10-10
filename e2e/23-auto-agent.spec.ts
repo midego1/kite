@@ -17,7 +17,7 @@ import { startFakeModel } from "./support/fake-model";
 import { QUESTION_DRAFT_BODY } from "./support/fake-model-scenarios";
 import type { FakeModel } from "./support/fake-model-types";
 import { apiContext, deliverInbound, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
-import { readJobs, waitForFinishedJob } from "./support/triage";
+import { readActions, readJobs, waitForFinishedJob } from "./support/triage";
 
 let fake: FakeModel;
 let api: APIRequestContext;
@@ -1140,12 +1140,15 @@ test.describe("triage scheduling", () => {
 		);
 
 	async function deliverQuestion(account: { api: APIRequestContext; address: string }, prefix: string, text?: string) {
-		return deliverInbound(account.api, {
+		const subject = uniqueToken(prefix);
+		await postInbound(account.api, {
 			from: "Customer <customer@outside.test>",
 			to: account.address,
-			subject: uniqueToken(prefix),
+			subject,
 			text: text ?? "Can you confirm the order? [[scenario:question]]",
 		});
+		// A question gets a reply draft ("Re: <subject>"), which must not be mistaken for the inbound copy.
+		return waitForMessage(account.api, subject, { status: "received" });
 	}
 
 	/** Delivers mail that gets no triage job and proves it, including that the model saw nothing. */
@@ -1307,6 +1310,211 @@ test.describe("triage scheduling", () => {
 			expect((await waitForFinishedJob(account.api, account.mailboxId, allowed.id, "triage")).status).toBe("completed");
 			expect(requestsFor(allowed.id, "triage")).toHaveLength(1);
 		} finally {
+			await account.api.dispose();
+			await restore();
+		}
+	});
+});
+
+test.describe("reply suggestions", () => {
+	const chatRequests = () => fake.requests().filter((request) => request.path.endsWith("/chat/completions"));
+	/** Request kinds whose prompt contains the token; draft prompts carry only body text, so tokens go in the body. */
+	const kindsMentioning = (token: string) =>
+		chatRequests()
+			.filter((request) => JSON.stringify(request.body).includes(token))
+			.map((request) => request.kind)
+			.sort();
+
+	async function suggestAccount(prefix: string) {
+		const username = `${prefix}${uniqueToken("")}`;
+		const account = await createSignedInAccount(api, username);
+		await okJson(
+			await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, autonomy: "suggest" } }),
+		);
+		return { ...account, address: `${username}@${DOMAIN}` };
+	}
+
+	/** Turns automatic reading off and waits until the mailbox has no pending or running job. */
+	async function stopAutoRead(api: APIRequestContext, mailboxId: string) {
+		await okJson(
+			await api.put("/api/agent/settings", { data: { mailboxId, autonomy: "off", autoDraftEnabled: false } }),
+		);
+		await expect
+			.poll(async () => (await readJobs(api, mailboxId)).some((job) => ["pending", "running"].includes(job.status)), {
+				timeout: 30_000,
+			})
+			.toBe(false);
+	}
+
+	/** Delivers a mail and returns the stored inbound copy (never the agent's "Re:" draft). */
+	async function deliverReceived(account: { api: APIRequestContext; address: string }, token: string, text: string) {
+		const subject = uniqueToken(token);
+		await postInbound(account.api, { from: "Customer <customer@outside.test>", to: account.address, subject, text });
+		return waitForMessage(account.api, subject, { status: "received" });
+	}
+
+	const draftIds = async (api: APIRequestContext) =>
+		(await okJson<{ messages: { id: string }[] }>(await api.get("/api/messages?status=draft&limit=100"))).messages.map(
+			(message) => message.id,
+		);
+
+	test("a question gets a reply draft saved by an applied agent create_draft action, with attributed usage", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("rsq");
+		try {
+			const token = uniqueToken("rsqbody");
+			const message = await deliverReceived(account, "rsq", `Can you confirm ${token}? [[scenario:question]]`);
+			const job = await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage");
+			expect(job.status).toBe("completed");
+			expect(kindsMentioning(token)).toEqual(["draft", "triage"]);
+
+			const actions = await readActions(account.api, account.mailboxId);
+			expect(actions).toEqual([
+				expect.objectContaining({
+					initiator: "agent",
+					action: "create_draft",
+					status: "applied",
+					messageId: message.id,
+					suggestionId: expect.any(String),
+					after: { draftId: expect.any(String) },
+				}),
+			]);
+			const draftId = actions[0].after!.draftId as string;
+			const draft = await okJson(await account.api.get(`/api/messages/${draftId}`));
+			expect(JSON.stringify(draft)).toContain(QUESTION_DRAFT_BODY);
+			expect(await draftIds(account.api)).toContain(draftId);
+
+			const { rows } = await okJson<{
+				rows: { source: string; mailboxId: string | null; jobId: string | null; reserved: unknown }[];
+			}>(await api.get("/api/admin/ai-usage"));
+			const usage = rows.filter((row) => row.jobId === job.id);
+			expect(usage.map((row) => row.source).sort()).toEqual(["auto_draft", "auto_triage"]);
+			for (const row of usage) {
+				expect(row.mailboxId).toBe(account.mailboxId);
+				expect(row.reserved).toBeFalsy();
+			}
+		} finally {
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("phishing and rule-filed questions get triage but no reply draft", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("rsp");
+		try {
+			const folder = await okJson<{ id: string }>(
+				await account.api.post("/api/folders", { data: { mailboxId: account.mailboxId, name: uniqueToken("Filed") } }),
+			);
+			const filedToken = uniqueToken("rsfiled");
+			await okJson(
+				await account.api.post("/api/routing-rules", {
+					data: {
+						mailboxId: account.mailboxId,
+						matchField: "content",
+						matchOperator: "contains",
+						matchValue: filedToken,
+						destination: `folder:${folder.id}`,
+					},
+				}),
+			);
+			const phishToken = uniqueToken("rsphish");
+			const phishSubject = uniqueToken("rsp");
+			await postInbound(account.api, {
+				from: "Customer <customer@outside.test>",
+				to: account.address,
+				subject: phishSubject,
+				text: `Can you confirm ${phishToken}? [[scenario:question]]`,
+				html: `<p>Can you confirm ${phishToken}? [[scenario:question]]</p><p><a href="https://login.evil.test/account">https://bank.example/account</a></p>`,
+			});
+			const phishing = await waitForMessage(account.api, phishSubject);
+			const filedSubject = uniqueToken("rsf");
+			await postInbound(account.api, {
+				from: "Customer <customer@outside.test>",
+				to: account.address,
+				subject: filedSubject,
+				text: `Can you confirm ${filedToken}? [[scenario:question]]`,
+			});
+			const filed = await waitForMessage(account.api, filedSubject, { folderId: folder.id });
+			for (const message of [phishing, filed])
+				expect((await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage")).status).toBe(
+					"completed",
+				);
+			expect(kindsMentioning(phishToken)).toEqual(["triage"]);
+			expect(kindsMentioning(filedToken)).toEqual(["triage"]);
+			expect(await readActions(account.api, account.mailboxId)).toEqual([]);
+			expect(await draftIds(account.api)).toEqual([]);
+		} finally {
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("a reviewer without send permission gets triage but no reply draft", async () => {
+		const token = uniqueToken("rsv");
+		const localPart = `rsv${token}`;
+		const sharedId = await createSharedMailbox(api, localPart);
+		const reviewer = await createSignedInAccount(api, `rsvr${token}`);
+		const restore = await useFakeProvider(api, fake);
+		try {
+			await shareMailbox(api, sharedId, reviewer.id, "send_on_behalf");
+			await okJson(
+				await api.put("/api/agent/settings", {
+					data: { mailboxId: sharedId, reviewerUserId: reviewer.id, autonomy: "suggest" },
+				}),
+			);
+			await shareMailbox(api, sharedId, reviewer.id, "read_only");
+			const bodyToken = uniqueToken("rsvbody");
+			const subject = uniqueToken("rsvq");
+			await postInbound(api, {
+				from: "Customer <customer@outside.test>",
+				to: `${localPart}@${DOMAIN}`,
+				subject,
+				text: `Can you confirm ${bodyToken}? [[scenario:question]]`,
+			});
+			const message = await waitForMessage(api, subject);
+			const job = await waitForFinishedJob(reviewer.api, sharedId, message.id, "triage");
+			expect(job.status).toBe("completed");
+			expect(kindsMentioning(bodyToken)).toEqual(["triage"]);
+			expect(await readActions(api, sharedId)).toEqual([]);
+		} finally {
+			await stopAutoRead(api, sharedId);
+			await reviewer.api.dispose();
+			await restore();
+		}
+	});
+
+	test("hostile extra keys cause no action, and a draft with an attacker address is blocked by the guard", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("rsh");
+		try {
+			const extra = await deliverReceived(account, "rshx", "Quarterly figures. [[scenario:hostile-extra-keys]]");
+			expect((await waitForFinishedJob(account.api, account.mailboxId, extra.id, "triage")).status).toBe("completed");
+			const stored = await okJson(await account.api.get(`/api/messages/${extra.id}`));
+			expect(JSON.stringify(stored)).toContain('"status":"received"');
+			expect(await readActions(account.api, account.mailboxId)).toEqual([]);
+
+			const hostile = await deliverReceived(account, "rsha", "Can you confirm? [[scenario:hostile-draft-attacker]]");
+			expect((await waitForFinishedJob(account.api, account.mailboxId, hostile.id, "triage")).status).toBe("completed");
+			const actions = await readActions(account.api, account.mailboxId);
+			expect(actions).toEqual([
+				expect.objectContaining({
+					initiator: "agent",
+					action: "create_draft",
+					status: "blocked",
+					reason: "draft_guard",
+					messageId: hostile.id,
+					suggestionId: null,
+				}),
+			]);
+			expect(JSON.stringify(actions)).not.toContain("evil.test");
+			expect(await draftIds(account.api)).toEqual([]);
+			const sent = await okJson<{ messages: unknown[] }>(await account.api.get("/api/messages?status=sent&limit=20"));
+			expect(sent.messages).toEqual([]);
+		} finally {
+			await stopAutoRead(account.api, account.mailboxId);
 			await account.api.dispose();
 			await restore();
 		}

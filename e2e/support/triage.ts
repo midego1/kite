@@ -41,3 +41,22 @@ export async function waitForFinishedJob(
 		.toMatch(/^(completed|skipped|failed)$/);
 	return found!;
 }
+
+export type AgentActionRow = {
+	id: string;
+	initiator: "agent" | "user";
+	action: string;
+	status: string;
+	reason: string | null;
+	suggestionId: string | null;
+	messageId: string | null;
+	after: Record<string, unknown> | null;
+};
+
+/** The mailbox's audit log as a full-access user sees it in Activity. */
+export async function readActions(api: APIRequestContext, mailboxId: string): Promise<AgentActionRow[]> {
+	const { actions } = await okJson<{ actions: AgentActionRow[] }>(
+		await api.get(`/api/agent/actions?mailboxId=${encodeURIComponent(mailboxId)}`),
+	);
+	return actions;
+}

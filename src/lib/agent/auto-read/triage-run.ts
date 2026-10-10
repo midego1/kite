@@ -1,9 +1,8 @@
-import type { LanguageModelUsage } from "ai";
 import { getAgentModel } from "../model";
 import type { AgentProviderConfig } from "../provider-types";
 import { buildModelCallOptions, chooseTriageModelId, runTriageAttempt } from "./model-call-utils";
 import type { MailboxAgentSettingsState } from "./settings-types";
-import { reconcileAiSpend, reserveAiSpend } from "./spend";
+import { withReservedSpend } from "./spend";
 import type { TriageContext } from "./triage-context";
 import { generateTriageText } from "./triage-model";
 import type { TriagePrompt, TriageResult } from "./triage-types";
@@ -60,26 +59,22 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 			reasoningEffort: selection.reasoningEffort,
 		}),
 		generate: async (request, options) => {
-			const reservation = await reserveAiSpend({
-				env,
-				details: selection,
-				source: "auto_triage",
-				mailboxId: job.mailboxId,
-				jobId: job.id,
-				promptChars: promptChars(request),
-				maxOutputTokens: options.maxOutputTokens,
-				installCapMicros: input.installCapMicros,
-				mailboxCapMicros: settings.dailySpendCapMicros,
-			});
-			if (!reservation) throw new SpendCapReachedError();
-			let usage: LanguageModelUsage | undefined;
-			try {
-				const reply = await generateTriageText(selection.model, request, options);
-				usage = reply.usage;
-				return reply;
-			} finally {
-				await reconcileAiSpend({ env, reservation, rates: selection.rates, usage });
-			}
+			const reply = await withReservedSpend(
+				{
+					env,
+					details: selection,
+					source: "auto_triage",
+					mailboxId: job.mailboxId,
+					jobId: job.id,
+					promptChars: promptChars(request),
+					maxOutputTokens: options.maxOutputTokens,
+					installCapMicros: input.installCapMicros,
+					mailboxCapMicros: settings.dailySpendCapMicros,
+				},
+				() => generateTriageText(selection.model, request, options),
+			);
+			if (!reply) throw new SpendCapReachedError();
+			return reply;
 		},
 	});
 	return { result, modelId: selection.modelId };

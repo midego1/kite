@@ -1,3 +1,4 @@
+import type { LanguageModelUsage } from "ai";
 import { newId } from "@/lib/ids";
 import type { ReconcileAiSpendInput, ReserveAiSpendInput, SpendReservation } from "./spend-types";
 import { UNKNOWN_RATES_INPUT_TOKEN_CAP, actualSpend, estimateSpend, utcDayStartSeconds } from "./spend-utils";
@@ -56,6 +57,26 @@ export async function reserveAiSpend(input: ReserveAiSpendInput): Promise<SpendR
 				);
 	const result = await statement.run();
 	return result.meta.changes > 0 ? { id, ...estimate } : null;
+}
+
+/**
+ * Reserves the call's estimated cost, runs it and reconciles the reservation with the usage it
+ * reported (none when it threw). Returns null without calling when a cap would be exceeded.
+ */
+export async function withReservedSpend<T extends { usage: LanguageModelUsage | undefined }>(
+	input: ReserveAiSpendInput,
+	call: () => Promise<T>,
+): Promise<T | null> {
+	const reservation = await reserveAiSpend(input);
+	if (!reservation) return null;
+	let usage: LanguageModelUsage | undefined;
+	try {
+		const result = await call();
+		usage = result.usage;
+		return result;
+	} finally {
+		await reconcileAiSpend({ env: input.env, reservation, rates: input.details.rates, usage });
+	}
 }
 
 /** Replaces a reservation's estimate with the call's actual usage and releases it. */

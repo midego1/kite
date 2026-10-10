@@ -8,6 +8,7 @@ import { needsModel } from "./facts-utils";
 import { getAutoReadInstallSettings } from "./install-settings";
 import { planSuggestions } from "./policy-utils";
 import { allowAutoReadRequest, triageDailyLimitReached } from "./quota";
+import { createReplySuggestion } from "./reply-suggestion";
 import { isPaused } from "./schedule-utils";
 import type { AutoReadInstallSettings } from "./settings-types";
 import { resolveMailboxAgentSettings } from "./settings-utils";
@@ -84,6 +85,18 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 		},
 	});
 	await storeTriageSuggestions({ env, job, source, planned, model: model?.modelId ?? null });
+	const reply = planned.find((suggestion) => suggestion.kind === "reply");
+	if (reply)
+		await createReplySuggestion({
+			env,
+			job,
+			source,
+			settings,
+			facts: context.facts,
+			suggestion: reply,
+			model: model?.modelId ?? null,
+			installCapMicros: install.dailySpendCapMicros,
+		});
 	return null;
 }
 

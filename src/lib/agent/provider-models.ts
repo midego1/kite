@@ -70,7 +70,7 @@ export async function listCompatibleAgentModels(
 	env: CloudflareEnv,
 	input: { preset: AgentProviderPreset; baseUrl: string; apiKey?: string },
 ) {
-	const baseUrl = resolveAgentBaseUrl(input.preset, input.baseUrl);
+	const baseUrl = resolveAgentBaseUrl(input.preset, input.baseUrl, env);
 	const saved = await getAgentProviderConfig(env);
 	const key =
 		input.apiKey?.trim() ||

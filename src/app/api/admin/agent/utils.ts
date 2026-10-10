@@ -91,7 +91,7 @@ export async function PUT(request: Request) {
 	let apiKey: string | null = null;
 	if (input.provider === "compatible") {
 		try {
-			baseUrl = resolveAgentBaseUrl(input.preset, input.baseUrl);
+			baseUrl = resolveAgentBaseUrl(input.preset, input.baseUrl, access.env);
 		} catch {
 			return Response.json({ error: "Enter a valid HTTPS provider base URL" }, { status: 400 });
 		}

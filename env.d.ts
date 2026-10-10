@@ -41,6 +41,8 @@ interface CloudflareEnv {
 	OPERATIONAL_ALERTS?: string;
 	/** Dev/test only: "1" or "true" lets the alert webhook use plain http to loopback hosts; ignored in production. */
 	ALERT_WEBHOOK_ALLOW_INSECURE?: string;
+	/** Dev/test only: "1" lets a custom AI provider be http://127.0.0.1 or http://localhost (the fake model); ignored in production. */
+	AI_ALLOW_INSECURE_LOOPBACK?: string;
 	/** When set, first-run setup and the first registration must present this token. */
 	SETUP_TOKEN?: string;
 	/** Base64 32-byte key; when set, provider secrets in app_settings are stored encrypted. */

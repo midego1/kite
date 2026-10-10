@@ -1,7 +1,7 @@
 import { expect, request, type APIRequestContext, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { BASE_URL } from "./constants";
-import type { InboundMail, StoredMessage } from "./helpers-types";
+import type { InboundAttachment, InboundMail, StoredMessage } from "./helpers-types";
 
 /** A lowercase word that FTS5 indexes as a single token, for finding test data again. */
 export function uniqueToken(prefix = "e2e"): string {
@@ -56,23 +56,14 @@ export async function apiSignIn(email: string, password: string): Promise<APIReq
 	return api;
 }
 
-function buildMime(mail: InboundMail): string {
-	const headers = [
-		`From: ${mail.from}`,
-		`To: ${mail.to}`,
-		`Subject: ${mail.subject}`,
-		`Message-ID: ${mail.messageId ?? `<${randomUUID()}@e2e.test>`}`,
-		`Date: ${new Date().toUTCString()}`,
-		"MIME-Version: 1.0",
-	];
-	if (mail.inReplyTo) headers.push(`In-Reply-To: ${mail.inReplyTo}`, `References: ${mail.inReplyTo}`);
+const newBoundary = () => `b${randomUUID().replace(/-/g, "")}`;
+
+/** The body as MIME lines, starting with its Content-Type header. */
+function bodyPart(mail: InboundMail): string[] {
 	const text = mail.text ?? "E2E message body.";
-	if (!mail.html) {
-		return [...headers, "Content-Type: text/plain; charset=utf-8", "", text, ""].join("\r\n");
-	}
-	const boundary = `b${randomUUID().replace(/-/g, "")}`;
+	if (!mail.html) return ["Content-Type: text/plain; charset=utf-8", "", text];
+	const boundary = newBoundary();
 	return [
-		...headers,
 		`Content-Type: multipart/alternative; boundary="${boundary}"`,
 		"",
 		`--${boundary}`,
@@ -83,6 +74,40 @@ function buildMime(mail: InboundMail): string {
 		"Content-Type: text/html; charset=utf-8",
 		"",
 		mail.html,
+		`--${boundary}--`,
+	];
+}
+
+function attachmentPart(attachment: InboundAttachment): string[] {
+	const base64 = Buffer.from(attachment.content).toString("base64");
+	return [
+		`Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
+		`Content-Disposition: attachment; filename="${attachment.filename}"`,
+		"Content-Transfer-Encoding: base64",
+		"",
+		...(base64.match(/.{1,76}/g) ?? []),
+	];
+}
+
+function buildMime(mail: InboundMail): string {
+	const headers = [
+		`From: ${mail.from}`,
+		`To: ${mail.to}`,
+		`Subject: ${mail.subject}`,
+		`Message-ID: ${mail.messageId ?? `<${randomUUID()}@e2e.test>`}`,
+		`Date: ${new Date().toUTCString()}`,
+		"MIME-Version: 1.0",
+		...Object.entries(mail.headers ?? {}).map(([name, value]) => `${name}: ${value}`),
+	];
+	if (mail.inReplyTo) headers.push(`In-Reply-To: ${mail.inReplyTo}`, `References: ${mail.inReplyTo}`);
+	if (!mail.attachments?.length) return [...headers, ...bodyPart(mail), ""].join("\r\n");
+	const boundary = newBoundary();
+	const parts = [bodyPart(mail), ...mail.attachments.map(attachmentPart)];
+	return [
+		...headers,
+		`Content-Type: multipart/mixed; boundary="${boundary}"`,
+		"",
+		...parts.flatMap((part) => [`--${boundary}`, ...part]),
 		`--${boundary}--`,
 		"",
 	].join("\r\n");

@@ -10,6 +10,7 @@
 		"src/lib/metrics-route-utils.ts",
 		"src/lib/trace.mjs",
 		"worker-utils.ts",
+		"src/lib/agent/provider-url-utils.ts",
 		"src/lib/agent/step-limit-utils.ts",
 		"src/lib/agent/tool-history-utils.ts",
 		"src/lib/auth/client-utils.ts",

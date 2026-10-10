@@ -92,7 +92,7 @@ Auth is `CF_TOKEN` (preferred) or the legacy `CF_EMAIL` + `CF_API_KEY` pair.
 
 ### Schema and the dual-migration gotcha
 
-Schema lives in one file: `src/db/schema/index.ts` (21 tables). Migrations are generated into `drizzle/migrations/`. Note that `drizzle-kit generate` currently prompts interactively about a snapshot rename conflict, so recent migrations were hand-written to match the generated style.
+Schema lives in `src/db/schema/index.ts`, plus `src/db/schema/agent-auto-read.ts` for the automatic-reading tables (suggestions, the agent action log, sender policies), which imports the core tables and is merged into the Drizzle `schema` object in `src/db/index.ts`. Migrations are generated into `drizzle/migrations/`. Note that `drizzle-kit generate` currently prompts interactively about a snapshot rename conflict, so recent migrations were hand-written to match the generated style.
 
 `npm run db:bundle` packages the SQL files for the Worker. `/api/setup/prepare` and the admin migration endpoint use the shared runner in `src/lib/migrations/service.ts`; migration files remain the only schema history to maintain. Build, deploy, preview, and development scripts generate the bundle before loading application code.
 

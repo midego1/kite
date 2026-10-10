@@ -474,6 +474,14 @@ export const calendarEvents = sqliteTable(
 		timeZone: text("time_zone"),
 		startsAt: integer("starts_at", { mode: "timestamp" }).notNull(),
 		endsAt: integer("ends_at", { mode: "timestamp" }).notNull(),
+		/** UID of the iCalendar invite this event was accepted from; kept exactly as the organizer sent it. */
+		icalUid: text("ical_uid"),
+		icalSequence: integer("ical_sequence"),
+		organizer: text("organizer"),
+		sourceMessageId: text("source_message_id").references(() => messages.id, { onDelete: "set null" }),
+		status: text("status", { enum: ["confirmed", "tentative"] })
+			.notNull()
+			.default("confirmed"),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),
@@ -481,7 +489,10 @@ export const calendarEvents = sqliteTable(
 			.notNull()
 			.$defaultFn(() => new Date()),
 	},
-	(t) => [index("calendar_events_user_starts_idx").on(t.userId, t.startsAt)],
+	(t) => [
+		index("calendar_events_user_starts_idx").on(t.userId, t.startsAt),
+		index("calendar_events_ical_uid_idx").on(t.userId, t.icalUid),
+	],
 );
 
 export const bookingEvents = sqliteTable(
@@ -731,6 +742,14 @@ export const appSettings = sqliteTable("app_settings", {
 	agentApiKey: text("agent_api_key"),
 	agentModel: text("agent_model"),
 	agentModelRates: text("agent_model_rates"),
+	/** Install-wide kill switch for automatic reading. */
+	agentAutoReadEnabled: integer("agent_auto_read_enabled", { mode: "boolean" }).notNull().default(true),
+	agentFullAutoAllowed: integer("agent_full_auto_allowed", { mode: "boolean" }).notNull().default(false),
+	agentDailySpendCapMicros: integer("agent_daily_spend_cap_micros").notNull().default(2_000_000),
+	/** Automatic reading sends message content to an external OpenAI-compatible provider only when allowed. */
+	agentExternalAutoReadAllowed: integer("agent_external_auto_read_allowed", { mode: "boolean" })
+		.notNull()
+		.default(false),
 	/** Operational alert webhook; sealed with APP_ENCRYPTION_KEY because the URL is the credential. */
 	alertWebhookUrl: text("alert_webhook_url"),
 	/** Payload format override; null means detect it from the URL. */
@@ -772,6 +791,16 @@ export const mailboxAgentSettings = sqliteTable("mailbox_agent_settings", {
 	reviewerUserId: text("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
 	instructions: text("instructions").notNull().default(""),
 	dailyLimit: integer("daily_limit").notNull().default(25),
+	autonomy: text("autonomy", { enum: ["off", "suggest", "act", "auto"] })
+		.notNull()
+		.default("off"),
+	/** JSON: per-capability switches (calendar, reply, summary, phishing) plus `mutedSenders`. */
+	capabilities: text("capabilities").notNull().default('{"calendar":true,"reply":true,"summary":true,"phishing":true}'),
+	triageModelId: text("triage_model_id"),
+	autoReadDailyLimit: integer("auto_read_daily_limit").notNull().default(200),
+	dailySpendCapMicros: integer("daily_spend_cap_micros"),
+	pausedUntil: integer("paused_until", { mode: "timestamp" }),
+	fullAutoHoldMinutes: integer("full_auto_hold_minutes").notNull().default(10),
 	updatedAt: integer("updated_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),
@@ -790,8 +819,15 @@ export const aiUsage = sqliteTable(
 		inputTokens: integer("input_tokens"),
 		outputTokens: integer("output_tokens"),
 		costUsdMicros: integer("cost_usd_micros"),
+		mailboxId: text("mailbox_id").references(() => mailboxes.id, { onDelete: "set null" }),
+		jobId: text("job_id"),
+		/** True while the row holds a spend reservation that has not been reconciled with actual usage. */
+		reserved: integer("reserved", { mode: "boolean" }).notNull().default(false),
 	},
-	(t) => [index("ai_usage_created_idx").on(t.createdAt)],
+	(t) => [
+		index("ai_usage_created_idx").on(t.createdAt),
+		index("ai_usage_mailbox_created_idx").on(t.mailboxId, t.createdAt),
+	],
 );
 
 export const agentConversations = sqliteTable(
@@ -855,12 +891,15 @@ export const agentJobs = sqliteTable(
 		leaseUntil: integer("lease_until", { mode: "timestamp" }),
 		draftId: text("draft_id").references(() => messages.id, { onDelete: "set null" }),
 		reason: text("reason"),
+		kind: text("kind", { enum: ["draft", "triage"] })
+			.notNull()
+			.default("draft"),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),
 	},
 	(t) => [
-		uniqueIndex("agent_jobs_source_idx").on(t.mailboxId, t.sourceMessageId),
+		uniqueIndex("agent_jobs_source_idx").on(t.mailboxId, t.sourceMessageId, t.kind),
 		index("agent_jobs_due_idx").on(t.status, t.nextAttemptAt),
 	],
 );
@@ -928,41 +967,3 @@ export const mcpKeyMailboxes = sqliteTable(
 	},
 	(t) => [uniqueIndex("mcp_key_mailbox_idx").on(t.keyId, t.mailboxId)],
 );
-
-export const schema = {
-	users,
-	domains,
-	mailboxes,
-	mailboxAliases,
-	autoReplyDeliveries,
-	mailboxAccess,
-	contacts,
-	folders,
-	apiKeys,
-	messages,
-	spamTokenStats,
-	spamReputation,
-	spamFeedback,
-	messageAttachments,
-	sharedAttachmentLinks,
-	outboundJobs,
-	emailTemplates,
-	calendarEvents,
-	bookingEvents,
-	routingRules,
-	webhooks,
-	webhookDeliveries,
-	sessions,
-	auditLogs,
-	backupSettings,
-	backups,
-	appSettings,
-	mailboxAgentSettings,
-	aiUsage,
-	agentConversations,
-	agentChatMessages,
-	agentJobs,
-	agentDraftMetadata,
-	agentSendApprovals,
-	mcpKeyMailboxes,
-};

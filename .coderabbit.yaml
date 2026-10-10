@@ -11,6 +11,14 @@ reviews:
   poem: false
   in_progress_fortune: false
   collapse_walkthrough: true
+  # Comments are added only where the reason is not obvious (CONTRIBUTING.md), so a coverage
+  # percentage would push for comments that restate the code.
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+  finishing_touches:
+    docstrings:
+      enabled: false
   auto_review:
     enabled: true
     drafts: false

@@ -15,6 +15,7 @@
 		"src/lib/agent/auto-read/model-call-utils.ts",
 		"src/lib/agent/auto-read/policy-utils.ts",
 		"src/lib/agent/auto-read/settings-utils.ts",
+		"src/lib/agent/auto-read/spend-utils.ts",
 		"src/lib/agent/auto-read/suggestion-utils.ts",
 		"src/lib/agent/auto-read/triage-utils.ts",
 		"src/lib/agent/model-rates-utils.ts",

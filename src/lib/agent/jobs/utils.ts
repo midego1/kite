@@ -169,7 +169,14 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 			prompt: `Reply to the latest inbound email in this conversation:\n${thread.slice(-24_000)}`,
 			maxOutputTokens: 900,
 			onStepFinish: async ({ usage }) => {
-				await recordAiUsage({ env, details: selection, usage, source: "auto_draft" });
+				await recordAiUsage({
+					env,
+					details: selection,
+					usage,
+					source: "auto_draft",
+					mailboxId: job.mailboxId,
+					jobId: job.id,
+				});
 			},
 		});
 		const body = generated.text.trim();

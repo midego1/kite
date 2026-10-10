@@ -459,8 +459,12 @@ test("activity lists actions newest first, including blocked and failed, and rec
 		],
 	);
 	assert.deepEqual(
-		activity.skippedJobs.map((job) => [job.id, job.reason]),
-		[["job-skip", "daily_limit"]],
+		activity.actions.map((action) => action.subject),
+		["Figures", "Figures", "Figures"],
+	);
+	assert.deepEqual(
+		activity.skippedJobs.map((job) => [job.id, job.reason, job.subject]),
+		[["job-skip", "daily_limit", "Figures"]],
 	);
 });
 

@@ -2256,4 +2256,243 @@ test.describe("reply suggestions", () => {
 			await restore();
 		}
 	});
+
+	const activityRow = (page: Page, id: string) => page.locator(`[data-activity-action="${id}"]`);
+	const activityIds = (page: Page) =>
+		page
+			.locator("[data-activity-action]")
+			.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-activity-action")));
+
+	/** Sends an agent draft the way the composer's review does: approval, then confirmation. */
+	async function sendAgentDraft(api: APIRequestContext, draftId: string) {
+		const { draft } = await okJson<{ draft: { agent: { revision: number } | null } }>(
+			await api.get(`/api/drafts/${draftId}`),
+		);
+		const { approvalId } = await okJson<{ approvalId: string }>(
+			await api.post("/api/agent/approvals", { data: { draftId, expectedRevision: draft.agent!.revision } }),
+		);
+		// The send is a new message; the draft itself moves to trash.
+		const { messageId } = await okJson<{ messageId: string }>(
+			await api.post(`/api/agent/approvals/${approvalId}/confirm`),
+		);
+		await expect
+			.poll(
+				async () => {
+					const sent = await okJson<{ messages: { id: string }[] }>(
+						await api.get("/api/messages?status=sent&limit=50"),
+					);
+					return sent.messages.some((message) => message.id === messageId);
+				},
+				{ timeout: 30_000 },
+			)
+			.toBe(true);
+		return messageId;
+	}
+
+	test("Activity lists agent and user actions in both places, opens targets and undoes a dismiss and a draft", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("act");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const dismissed = await deliverQuestion(account.api, account.address, "Customer <customer@outside.test>");
+			const drafted = await deliverQuestion(account.api, account.address, "Client <client@outside.test>");
+			const sent = await deliverQuestion(account.api, account.address, "Buyer <buyer@outside.test>");
+			const hostile = await deliverReceived(account, "acth", "Can you confirm? [[scenario:hostile-draft-attacker]]");
+			for (const message of [dismissed.message, drafted.message, sent.message, hostile])
+				expect((await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage")).status).toBe(
+					"completed",
+				);
+			const replyFor = async (messageId: string) =>
+				(await suggestionsFor(account.api, account.mailboxId, messageId)).find((item) => item.kind === "reply")!;
+			const dismissedReply = await replyFor(dismissed.message.id);
+			const sentReply = await replyFor(sent.message.id);
+			await okJson(await account.api.post(suggestionUrl(dismissedReply.id, "dismiss"), { data: {} }));
+			const sentMessageId = await sendAgentDraft(account.api, sentReply.draftId!);
+
+			const actions = await readActions(account.api, account.mailboxId);
+			const find = (messageId: string, action: string) =>
+				actions.find((row) => row.messageId === messageId && row.action === action)!;
+			const dismissRow = find(dismissed.message.id, "dismiss");
+			const dismissedDraftRow = find(dismissed.message.id, "create_draft");
+			const draftRow = find(drafted.message.id, "create_draft");
+			const sentDraftRow = find(sent.message.id, "create_draft");
+			const blockedRow = find(hostile.id, "create_draft");
+			expect(dismissRow).toMatchObject({ initiator: "user", status: "applied" });
+			expect(dismissedDraftRow).toMatchObject({ initiator: "agent", status: "applied" });
+			expect(blockedRow).toMatchObject({ initiator: "agent", status: "blocked", reason: "draft_guard" });
+
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+			await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "off"));
+			await page.goto("/kite-activity");
+			await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+			await expect(activityRow(page, dismissRow.id)).toBeVisible();
+			expect(await activityIds(page)).toEqual(actions.map((row) => row.id));
+			await expect(activityRow(page, dismissRow.id)).toContainText("User");
+			await expect(activityRow(page, dismissRow.id)).toContainText("Dismissed a suggestion");
+			await expect(activityRow(page, dismissedDraftRow.id)).toContainText("Kite");
+			await expect(activityRow(page, dismissedDraftRow.id)).toContainText("Drafted a reply");
+			await expect(activityRow(page, dismissedDraftRow.id)).toContainText("Allowed in Suggest mode");
+			await expect(activityRow(page, blockedRow.id)).toHaveClass(/opacity-70/);
+			await expect(activityRow(page, blockedRow.id).locator("[data-activity-status]")).toHaveText("Blocked");
+			await expect(activityRow(page, blockedRow.id)).toContainText("Blocked: the draft mentioned an address or link");
+			await expect(activityRow(page, blockedRow.id).getByRole("button", { name: "Undo" })).toBeDisabled();
+			await expect(activityRow(page, draftRow.id).getByRole("button", { name: "Undo" })).toBeEnabled();
+
+			await activityRow(page, dismissedDraftRow.id).locator("[data-activity-target]").click();
+			await expect(page).toHaveURL(new RegExp(`/drafts/${dismissedDraftRow.after!.draftId}$`));
+			await expect(page.getByLabel("Subject")).toHaveValue(`Re: ${dismissed.message.subject}`);
+			await page.getByRole("button", { name: "Close composer" }).click();
+			await page.goto("/kite-activity");
+			await activityRow(page, dismissRow.id).locator("[data-activity-target]").click();
+			await expect(page).toHaveURL(new RegExp(`/inbox/${dismissed.message.id}$`));
+			await expect(page.getByRole("heading", { name: dismissed.message.subject! })).toBeVisible();
+			await page.goBack();
+
+			const openBefore = (await readSuggestions(account.api, { status: "open" })).suggestions.length;
+			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openBefore}$`));
+			const undone = page.waitForResponse(
+				(response) => response.url().endsWith(`/api/agent/actions/${dismissRow.id}/undo`),
+				{ timeout: 60_000 },
+			);
+			await activityRow(page, dismissRow.id).getByRole("button", { name: "Undo" }).click();
+			expect((await undone).status()).toBe(200);
+			await expect(activityRow(page, dismissRow.id).locator("[data-activity-status]")).toHaveText("Undone");
+			await expect(activityRow(page, dismissRow.id).getByRole("button", { name: "Undo" })).toBeDisabled();
+			expect((await suggestionsFor(account.api, account.mailboxId, dismissed.message.id))[0]?.status).toBe("open");
+			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openBefore + 1}$`));
+
+			const undoDraft = page.waitForResponse(
+				(response) => response.url().endsWith(`/api/agent/actions/${draftRow.id}/undo`),
+				{ timeout: 60_000 },
+			);
+			await activityRow(page, draftRow.id).getByRole("button", { name: "Undo" }).click();
+			expect((await undoDraft).status()).toBe(200);
+			await expect(activityRow(page, draftRow.id).locator("[data-activity-status]")).toHaveText("Undone");
+			expect(await draftIds(account.api)).not.toContain(draftRow.after!.draftId);
+			await openReader(page, drafted.message);
+			await expect(replyBlock(page)).toContainText("The drafted reply is gone.");
+			await expect(replyBlock(page).getByRole("button", { name: "Review draft" })).toHaveCount(0);
+
+			// The draft that was sent stays sent: the undo is refused and the row stays applied.
+			await page.goto("/kite-activity");
+			const refused = page.waitForResponse(
+				(response) => response.url().endsWith(`/api/agent/actions/${sentDraftRow.id}/undo`),
+				{ timeout: 60_000 },
+			);
+			await activityRow(page, sentDraftRow.id).getByRole("button", { name: "Undo" }).click();
+			expect((await refused).status()).toBe(409);
+			await expect(page.getByRole("alert")).toContainText("already sent");
+			await expect(activityRow(page, sentDraftRow.id).locator("[data-activity-status]")).toHaveText("Done");
+			const sentList = await okJson<{ messages: { id: string; subject: string | null }[] }>(
+				await account.api.get("/api/messages?status=sent&limit=50"),
+			);
+			expect(sentList.messages.find((message) => message.id === sentMessageId)?.subject).toBe(
+				`Re: ${sent.message.subject}`,
+			);
+
+			// The assistant settings show the same rows on their Activity tab.
+			const current = await readActions(account.api, account.mailboxId);
+			await page.goto("/inbox");
+			const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+			if ((await toggle.getAttribute("aria-label")) === "Open email assistant") await toggle.click({ timeout: 45_000 });
+			const panel = page.locator("#email-assistant-panel");
+			await panel.getByRole("button", { name: "Assistant settings" }).click();
+			await panel.getByRole("tab", { name: "Activity" }).click();
+			await expect(activityRow(page, dismissRow.id)).toBeVisible();
+			expect(await activityIds(page)).toEqual(current.map((row) => row.id));
+			await panel.getByRole("tab", { name: "Settings" }).click();
+			await expect(panel.getByRole("region", { name: "Automatic reading" })).toBeVisible();
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("Activity shows skip reasons in plain words, and only full-access users see a mailbox's log", async ({
+		browser,
+	}) => {
+		const token = uniqueToken("acs");
+		const localPart = `acs${token}`;
+		const sharedId = await createSharedMailbox(api, localPart);
+		const reader = await createSignedInAccount(api, `acsr${token}`);
+		const helper = await createSignedInAccount(api, `acsh${token}`);
+		const manager = await createSignedInAccount(api, `acsm${token}`);
+		const stranger = await createSignedInAccount(api, `acsx${token}`);
+		const restore = await useFakeProvider(api, fake);
+		const contexts: Awaited<ReturnType<typeof browser.newContext>>[] = [];
+		try {
+			await shareMailbox(api, sharedId, reader.id, "read_only");
+			await shareMailbox(api, sharedId, helper.id, "send_on_behalf");
+			await shareMailbox(api, sharedId, manager.id, "full_access");
+			await okJson(
+				await api.put("/api/agent/settings", {
+					data: { mailboxId: sharedId, autonomy: "suggest", autoReadDailyLimit: 1 },
+				}),
+			);
+			const first = await deliverQuestion(api, `${localPart}@${DOMAIN}`, "Customer <customer@outside.test>");
+			const second = await deliverQuestion(api, `${localPart}@${DOMAIN}`, "Customer <customer@outside.test>");
+			expect((await waitForFinishedJob(api, sharedId, first.message.id, "triage")).status).toBe("completed");
+			const skipped = await waitForFinishedJob(api, sharedId, second.message.id, "triage");
+			expect(skipped).toMatchObject({ status: "skipped", reason: "daily_limit" });
+			const actions = await readActions(api, sharedId);
+			expect(actions.length).toBeGreaterThan(0);
+
+			for (const outsider of [reader, helper, stranger]) {
+				const response = await outsider.api.get(`/api/agent/actions?mailboxId=${sharedId}`);
+				expect(response.status()).toBe(404);
+				expect(JSON.stringify(await response.json())).not.toContain(actions[0].id);
+			}
+			expect((await readActions(manager.api, sharedId)).map((row) => row.id)).toEqual(actions.map((row) => row.id));
+
+			const managerContext = await browser.newContext({
+				baseURL: BASE_URL,
+				storageState: await manager.api.storageState(),
+			});
+			contexts.push(managerContext);
+			const page = await managerContext.newPage();
+			await selectMailbox(page, sharedId);
+			await page.goto("/kite-activity");
+			await expect(activityRow(page, actions[0].id)).toBeVisible();
+			expect(await activityIds(page)).toEqual(actions.map((row) => row.id));
+			const skippedRow = page.locator(`[data-activity-skipped="${skipped.id}"]`);
+			await expect(skippedRow).toContainText("Paused: daily limit reached");
+			await expect(skippedRow).toContainText(second.message.subject!);
+			await expect(page.locator("[data-agent-activity]")).not.toContainText("daily_limit");
+
+			const readerContext = await browser.newContext({
+				baseURL: BASE_URL,
+				storageState: await reader.api.storageState(),
+			});
+			contexts.push(readerContext);
+			const readerPage = await readerContext.newPage();
+			await selectMailbox(readerPage, sharedId);
+			await readerPage.goto("/kite-activity");
+			await expect(readerPage.locator(`[data-agent-activity="${reader.mailboxId}"]`)).toBeVisible();
+			await expect(readerPage.locator("[data-activity-action]")).toHaveCount(0);
+			await expect(readerPage.locator(`[data-agent-activity="${sharedId}"]`)).toHaveCount(0);
+			await readerPage.goto("/inbox");
+			const toggle = readerPage.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+			if ((await toggle.getAttribute("aria-label")) === "Open email assistant") await toggle.click({ timeout: 45_000 });
+			const panel = readerPage.locator("#email-assistant-panel");
+			await panel.getByRole("button", { name: "Assistant settings" }).click();
+			await panel.getByRole("tab", { name: "Activity" }).click();
+			await expect(
+				panel.getByText("Only people with full access to this mailbox can see Kite's activity."),
+			).toBeVisible();
+			await expect(panel.locator("[data-activity-action]")).toHaveCount(0);
+		} finally {
+			await Promise.all(contexts.map((context) => context.close()));
+			await stopAutoRead(api, sharedId);
+			for (const account of [reader, helper, manager, stranger]) await account.api.dispose();
+			await restore();
+		}
+	});
 });

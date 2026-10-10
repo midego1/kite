@@ -5,6 +5,7 @@
 		"src/lib/alerts/rules-utils.ts",
 		"src/lib/alerts/webhook-utils.ts",
 		"src/components/alerts-banner-utils.ts",
+		"src/components/agent/agent-activity-utils.ts",
 		"src/components/agent/suggestion-card-utils.ts",
 		"src/lib/logger.mjs",
 		"src/lib/metrics.mjs",

@@ -55,7 +55,7 @@ These are stored on `mailbox_agent_settings.autonomy`. Changing them requires `c
 
 | Level | May do | Never does |
 | --- | --- | --- |
-| **Off** | Nothing. No model calls. Existing chat still works. | — |
+| **Off** | No automatic reading, so no triage jobs and no triage model calls. Existing chat still works. A mailbox that still has the legacy `auto_draft_enabled` toggle on keeps today's auto-draft job, which makes one draft model call per eligible message (§5.1). | Create suggestions or take actions. |
 | **Suggest only** (the default when the feature is turned on) | Create `agent_suggestions`. Create inert agent drafts (as today's auto-draft does, marked `origin: "auto"`). Show warnings. Every action runs only on a user click. | Change message state, write to the calendar, send. |
 | **Act with undo** | Everything in Suggest. Also, automatically: apply a folder or label, archive, mark read, set a reminder (`snoozed_until`), and place a calendar hold for invites with no conflict. Each action is written to `agent_actions` with its inverse and an undo window (default 7 days). | Send, trash, mark spam, delete, write outside the mailbox or reviewer calendar. |
 | **Full auto (approved senders and rules)** | Everything in Act with undo. Also, **only** for senders that match `agent_sender_policies`, pass SPF/DKIM/DMARC alignment and have the action enabled in their policy: send an RSVP (accept when free, decline when busy if the policy allows it) and send a reply drafted under an approved template rule. Sends go through `sendEmail` with `scheduledAt = now + holdMinutes` (default 10), so they are visible and undoable in Sent/Scheduled. | Send to any address that is not the original sender or organizer. Send more than 1 automatic message per thread per 24 hours, or more than the daily cap. Forward. Run when the message is `suspicious`. |
@@ -100,15 +100,16 @@ processInboundMessage (src/lib/email/inbound.ts)
 worker.ts queue() / server/index.ts agentQueue consumer
   └─ processAgentTriageJob(env, jobId)                                 src/lib/agent/auto-read/process.ts
        1 claim lease (same SQL as processAgentDraftJob: one running job per mailbox)
-       2 re-check gates, reviewer access, caps (count + spend), supersede (newer message in thread)
+       2 re-check gates, reviewer access, count caps, supersede (newer message in thread)
        3 facts = collectFacts(message)       D: ics, list headers, spam signals, auth, bulk, contact known   (pure: facts-utils.ts)
-       4 if needsModel(facts, capabilities): triage = runTriageModel(...)  generateText → zod TriageResult   (triage.ts)
+       4 if needsModel(facts, capabilities): reserveAiSpend(...) (§7, item 8; no row → skip with reason),
+            then triage = runTriageModel(...)  generateText → zod TriageResult   (triage.ts)
        5 plan = planSuggestions(facts, triage, settings, policies)    pure, policy-utils.ts
        6 for each planned item: upsert agent_suggestions (unique message_id+kind)
-            capability extras: calendar → availability (code); reply → draft via existing generation + draft_reply
-       7 for items the level allows to run automatically: executeAction() → agent_actions row first, then apply
+            capability extras: calendar → availability (code); reply → reserveAiSpend, then draft via existing generation + draft_reply
+       7 for items the level allows to run automatically: executeAction() → agent_actions row (pending) first, then apply
        8 notifyUsersOfNewMessage(reviewer + mailbox users, {type:"agent_suggestion", ...})
-       9 job completed; usage recorded with mailboxId/jobId
+       9 job completed; each reservation was reconciled with actual usage (mailboxId/jobId) right after its call
 ```
 
 ### 5.2 Modules (new files unless stated)
@@ -164,7 +165,7 @@ One hand-written migration `drizzle/migrations/0060_add_agent_auto_read.sql` plu
 - `agent_jobs`:
   - `kind` text `draft|triage`, default `draft`.
   - Replace the unique index `agent_jobs_source_idx` with `(mailbox_id, source_message_id, kind)`. Use DROP INDEX then CREATE UNIQUE INDEX, since SQLite allows this without rebuilding the table.
-- `ai_usage`: `mailbox_id` (FK `mailboxes`, ON DELETE SET NULL) and `job_id` text, both nullable, plus an index `(mailbox_id, created_at)`. `recordAiUsage` takes optional `mailboxId`/`jobId`.
+- `ai_usage`: `mailbox_id` (FK `mailboxes`, ON DELETE SET NULL) and `job_id` text, both nullable, plus an index `(mailbox_id, created_at)`. `recordAiUsage` takes optional `mailboxId`/`jobId`. Also `reserved` boolean, default 0: 1 while the row holds a spend reservation that has not been reconciled yet (§7, item 8).
 - `calendar_events`: `ical_uid`, `ical_sequence` int, `organizer`, `source_message_id` (FK `messages`, SET NULL), all nullable, plus an index `(user_id, ical_uid)`.
 
 **New tables**
@@ -173,8 +174,9 @@ One hand-written migration `drizzle/migrations/0060_add_agent_auto_read.sql` plu
   - Columns: `id`; `mailbox_id` (FK cascade); `message_id` (FK `messages` cascade); `thread_id`; `job_id` (FK `agent_jobs` SET NULL); `reviewer_user_id` (FK `users` cascade); `kind` (`calendar_invite|reply|summary|phishing|task|receipt|label|unsubscribe|follow_up`); `status` (`open|accepted|dismissed|expired|superseded|auto_applied`); `title` (code-generated from a template, max 200); `payload` (JSON, validated by a per-kind zod schema in `src/lib/agent/auto-read/suggestion-types.d.ts`); `draft_id` (FK `messages` SET NULL); `confidence` int; `model`; `created_at`; `decided_at`; `decided_by_user_id` (FK SET NULL); `expires_at`.
   - Indexes: unique `(message_id, kind)`, `(mailbox_id, status, created_at)`.
 - `agent_actions` (the audit log; Roadmap 5.2):
-  - Columns: `id`; `mailbox_id` (FK cascade); `suggestion_id` (FK SET NULL); `message_id` (FK SET NULL); `job_id`; `initiator` (`agent|user`); `acting_user_id` (FK SET NULL; whose permission was used); `autonomy`; `action` (`create_draft|move|mark_read|set_folder|remind|create_event|delete_event|send_rsvp|send_reply|unsubscribe|dismiss`); `status` (`applied|undone|failed|blocked`); `before` JSON; `after` JSON; `reason` (the policy rule ID that allowed or blocked it); `undo_until`; `undone_at`; `undone_by_user_id`; `created_at`.
-  - Indexes: `(mailbox_id, created_at)`, unique `(suggestion_id, action)`. The unique index makes execution idempotent.
+  - Columns: `id`; `mailbox_id` (FK cascade); `suggestion_id` (FK SET NULL); `message_id` (FK SET NULL); `job_id`; `initiator` (`agent|user`); `acting_user_id` (FK SET NULL; whose permission was used); `autonomy`; `action` (`create_draft|move|mark_read|set_folder|remind|create_event|delete_event|send_rsvp|send_reply|unsubscribe|dismiss`); `variant` text, default `''` (the outcome for actions that have more than one, for example the PARTSTAT `accepted|declined` of `send_rsvp`); `status` (`pending|applied|undone|failed|blocked`); `before` JSON; `after` JSON; `reason` (the policy rule ID that allowed or blocked it); `undo_until`; `undone_at`; `undone_by_user_id`; `created_at`; `updated_at`.
+  - Indexes: `(mailbox_id, created_at)`, and a partial unique index `(suggestion_id, action, variant) WHERE status IN ('pending','applied')`. The unique index makes execution idempotent. Because it covers only live rows, Accept and Decline on the same invite are distinct keys, and an outcome can be applied again after its earlier action was undone or failed. A later REPLY replaces an earlier one, so sending the opposite RSVP sets the earlier `send_rsvp` row to `undone`; that is what lets Accept, then "Send decline instead", then "Accept instead" each run once.
+  - Execution: the executor inserts the row as `pending` (with any id the side effect will use, see §9) before the side effect, then sets `applied` or `failed`. If the insert conflicts with an `applied` row, the action is skipped. If it conflicts with a `pending` row whose `updated_at` is older than the 10-minute job lease, the crash left it unfinished: the executor takes the row over and resumes it. Resuming first checks whether the side effect already happened (the state already equals `after`, the event or the queued message already exists) and only applies what is missing. A fresh `pending` row belongs to a run in progress, so a user click on it gets 409.
   - Blocked attempts are recorded too, for example when the model proposed something the policy refused.
 - `agent_sender_policies`:
   - Columns: `id`; `mailbox_id` (FK cascade); `pattern` (`addr@x` or `@domain`, normalised); `require_auth` boolean, default 1; `allowed_actions` JSON (`["send_rsvp","send_reply","move"]`); `template_rule` text, nullable (the approved reply template text for `send_reply`); `created_by_user_id`; `created_at`.
@@ -209,10 +211,20 @@ One hand-written migration `drizzle/migrations/0060_add_agent_auto_read.sql` plu
    - Per mailbox: `auto_read_daily_limit` triage jobs per day; existing `daily_limit` drafts per day; `daily_spend_cap_micros`.
    - Install-wide: `agent_daily_spend_cap_micros`, summed from `ai_usage.cost_usd_micros` since 00:00 UTC.
    - When rates are unknown, a token cap of 2M input tokens per day stands in for the spend cap.
+   - **Atomic reservation.** The per-mailbox lease does not stop jobs in different mailboxes from passing a check against recorded usage at the same time. So before **each** model call (triage and draft), `reserveAiSpend` inserts the `ai_usage` row up front with `reserved = 1`, the estimated input tokens (prompt characters / 4), `maxOutputTokens` as the output tokens and the cost at the model's rates, in one conditional statement:
+
+     ```sql
+     INSERT INTO ai_usage (...) SELECT ... WHERE
+       (SELECT coalesce(sum(cost_usd_micros),0) FROM ai_usage WHERE created_at >= ?dayStart) + ?estimate <= ?installCap
+       AND (?mailboxCap IS NULL OR (SELECT coalesce(sum(cost_usd_micros),0) FROM ai_usage
+            WHERE mailbox_id = ?mailboxId AND created_at >= ?dayStart) + ?estimate <= ?mailboxCap)
+     ```
+
+     When rates are unknown, the same statement compares `sum(input_tokens)` with the token cap instead. Zero rows changed means the cap is reached and the job is skipped without calling the model. After the call, the same row is updated with the actual tokens and cost and `reserved = 0`; a failed call sets the cost to what was billed (0 when nothing was). A row left reserved by a crash keeps its estimate, so the cap errs on the side of stopping. Chat and other callers keep using `recordAiUsage`, and their recorded rows count towards the same sums.
    - `AGENT_RATE_LIMIT` limits bursts per mailbox.
    - When a cap is hit, the job is skipped with a reason, and the Activity view shows "Paused: daily limit reached".
-9. **Kill switches.** Global: `agent_enabled` stops everything, and `agent_auto_read_enabled` stops only automatic reading. Per mailbox: `autonomy=off` or `paused_until`, and the "Pause for 24 hours" button in the card menu. Full auto turns itself off (`autonomy → act` plus an audit row) when more than 3 automatic sends are undone within 7 days, or when more than 20 actions run in 1 hour.
-10. **Audit.** Every applied, blocked or failed action is written to `agent_actions` **before** its side effect (status `applied` is set after success; a failure is recorded as `failed`). Mailbox users with full access (`canManage`) can see the log. Undo requires the permission the original action used.
+9. **Kill switches.** Global: `agent_enabled` stops everything, and `agent_auto_read_enabled` stops only automatic reading. Per mailbox: `autonomy=off` (the legacy auto-draft toggle is separate, §3) or `paused_until`, and the "Pause for 24 hours" button in the card menu. Full auto turns itself off (`autonomy → act` plus an audit row) when more than 3 automatic sends are undone within 7 days, or when more than 20 actions run in 1 hour.
+10. **Audit.** Every applied, blocked or failed action is written to `agent_actions` **before** its side effect, as `pending` (status `applied` is set after success; a failure is recorded as `failed`; a `pending` row left by a crash is resumed, see §6). Mailbox users with full access (`canManage`) can see the log. Undo requires the permission the original action used.
 11. **Permissions.** The acting identity is `reviewer_user_id`, re-validated on each job, as `processAgentDraftJob` does. Suggestions are visible only to users with full access (`canManage`) on the mailbox, and only they can accept them. Agent drafts belong to the reviewer (`messages.user_id`), as today.
 12. **Privacy.** Workers AI keeps content on Cloudflare's network, and Cloudflare says it does not train on customer inputs; link the current Workers AI privacy page in the docs. An OpenAI-compatible provider receives **every incoming email** in auto mode, which is a much larger exposure than chat. Automatic reading therefore refuses to run with a `compatible` provider unless the primary admin sets `agent_external_auto_read_allowed`. The settings section names the provider ("Message content is sent to OpenRouter"). The Node runtime always uses an external provider, so it needs the same opt-in. Prompts and responses are not stored, except suggestion payloads and drafts. Bodies sent to the model are trimmed: triage gets the latest message up to 8,000 characters plus thread subject lines; drafting gets the existing 24,000-character window.
 13. **Testing injection resistance** (see §11.3).
@@ -245,8 +257,8 @@ Model routing:
 - **Idempotency.**
   - Unique `agent_jobs (mailbox, source, kind)`.
   - Unique `agent_suggestions (message_id, kind)`, upserted.
-  - Unique `agent_actions (suggestion_id, action)`. The executor inserts the row first and skips the action when the row already exists.
-  - Sends go through `sendEmail` with an `outbound_jobs` row, and the action row records `outboundJobId`.
+  - Partial unique `agent_actions (suggestion_id, action, variant)` over `pending` and `applied` rows. The executor inserts a `pending` row first, skips the action when an `applied` row exists, and resumes a stale `pending` row left by a crash (§6).
+  - Sends go through `sendEmail` with an `outbound_jobs` row, and the action row records `outboundJobId`. `sendEmail` gains an optional caller-chosen `messageId`: the executor generates it, stores it in the `pending` row, and passes it in. A resumed send therefore finds the existing `messages` and `outbound_jobs` rows and only marks the action `applied`; the `messages` primary key prevents a second copy.
   - A redelivered inbound message hits the existing duplicate-raw-key branch, which calls `scheduleAgentWork` again (a no-op because of the unique index).
 - **Ordering.** Queues do not guarantee order. Correctness rests on three checks:
   1. the per-mailbox single running lease (the existing `NOT EXISTS` clause);
@@ -319,7 +331,7 @@ There is no server-side model stub today, so add one:
 
 New spec `e2e/21-auto-agent.spec.ts`:
 
-1. With the setting off, no suggestion appears and the fake model receives no request.
+1. With the setting off and legacy auto-draft off, no suggestion appears and the fake model receives no request.
 2. Suggest mode with an invite at a free time: the card shows "No conflicts". Accept creates a calendar event (checked through `/api/calendar/events`) and a Sent message with `invite.ics` METHOD:REPLY. Undo removes the event.
 3. An invite that overlaps a seeded event: the conflict is listed. Propose new time opens a draft containing the computed slots.
 4. A plain question mail: a reply draft is created (with the fake body), the row badge is visible, and For you lists it.
@@ -358,11 +370,11 @@ Work on `mission/auto-agent`. Every feature ends with `npm run check`, `npm run 
 
 - Work: `scheduleAgentWork` hooked into both call sites in `inbound.ts`; the `agent.triage` queue kind in `worker.ts`, `server/index.ts`, `worker-utils.ts` and `env.d.ts`; `processAgentTriageJob` with leases, caps, the spend check, supersede and recovery; facts, triage parsing and the policy modules; `recordAiUsage` with `mailboxId`; the fake-model e2e infrastructure and the loopback flag.
 - Acceptance:
-  - Every inbound message in an enabled mailbox gets exactly one triage job, even when delivered twice.
+  - Every eligible inbound message in an enabled mailbox (the gates in §5.1 and the skip rules in §9) gets exactly one triage job, even when delivered twice. Ineligible messages (spam, trash, own address, automatic mail, recovery older than 30 minutes) get none.
   - Spam, bulk and own mail never reach the model.
-  - The caps stop jobs with a recorded reason.
+  - The caps stop jobs with a recorded reason, and concurrent jobs in different mailboxes cannot pass the install-wide cap together (the reservation in §7, item 8).
   - The flow works on Node (the consumer is registered).
-- Tests: policy, parse and facts unit tests; e2e scenarios 1, 6 and 9.
+- Tests: policy, parse and facts unit tests; a `SqliteDatabase` unit test where two mailboxes reserve against an install-wide cap that fits only one call; e2e scenarios 1, 6 and 9.
 
 **C. Audit log and undo (Roadmap 5.2)**
 
@@ -371,7 +383,7 @@ Work on `mission/auto-agent`. Every feature ends with `npm run check`, `npm run 
   - Every agent and user decision on a suggestion appears in the log.
   - Undo restores the previous state, and is refused once `undo_until` has passed or without permission.
   - Blocked attempts are visible.
-- Tests: unit tests for the inverse of each action; e2e scenario 7.
+- Tests: unit tests for the inverse of each action, for resuming a stale `pending` row without repeating a side effect that already happened, and for Accept → Decline → Accept on one invite; e2e scenario 7.
 
 **D. Suggestions UI**
 

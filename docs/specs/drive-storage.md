@@ -128,7 +128,7 @@ Drive code and the migration job use `getStorage(env)` from `src/lib/storage/ind
   - Hetzner: `<region>.your-objectstorage.com`.
   - R2: `<accountId>.r2.cloudflarestorage.com`, region `auto`.
   - MinIO / other: custom host, path addressing.
-- `get` with `range` (offset/length/suffix), `head`, `put`, `delete` (ignore 404; batches of 10 in parallel as upstream), multipart (`create`, `uploadPart`, `complete`, `abort`, plus `listParts` for diagnostics), `list` (ListObjectsV2), and `copy` (CopyObject within one store; used for "Save to Drive" when source and target store are the same).
+- `get` with `range` (offset/length/suffix), `head`, `put`, `delete` (ignore 404; batches of 10 in parallel as upstream), multipart (`create`, `uploadPart`, `complete`, `abort`, plus `listParts` for diagnostics), `list` (ListObjectsV2), and `copy` (CopyObject within one store; used for "Save to Drive" when source and target store are the same and the attachment is stored as its own object).
 - **Streaming instead of buffering.** Extend `signAwsRequest` with `payloadHash?: "UNSIGNED-PAYLOAD"` and let `awsRequest` take a `ReadableStream` body with a known `contentLength`. On Workers, pipe through `FixedLengthStream(length)`. On Node, pass `duplex: "half"` and `Content-Length`. Without a known length, buffer up to 32 MiB and refuse anything larger. This also requires a URL scheme option (`http` for MinIO in dev) and support for path-style hosts.
 - Map `httpMetadata` to `Content-Type`/`Content-Disposition`/`Cache-Control`, and `customMetadata` to `x-amz-meta-*`. **Percent-encode metadata values.** S3 headers are ASCII-only, and `inbound.ts:280` stores `from`/`to`, which can contain UTF-8. Decode the values on read.
 - Keep upstream's check for a `<Error>` document inside a `200` response on CompleteMultipartUpload (B2 and AWS can both do this).
@@ -168,7 +168,9 @@ Plug-in points (both runtimes):
   3. Put/get/delete of a probe object under `healthcheck/` (port upstream `health.ts` `testStorage`).
   4. Create and abort a multipart upload.
   5. Fetch a presigned GET of the probe, which catches clock skew and signature-style problems.
-  6. CORS preflight: `OPTIONS` with `Origin: <app origin>`, `Access-Control-Request-Method: PUT`, `Access-Control-Request-Headers: content-type`. Expect `Access-Control-Allow-Origin` and `Expose-Headers: ETag`.
+  6. CORS, in two requests:
+     - Preflight: `OPTIONS` with `Origin: <app origin>`, `Access-Control-Request-Method: PUT`, `Access-Control-Request-Headers: content-type`. Expect `Access-Control-Allow-Origin` matching the app origin, `Access-Control-Allow-Methods` including `PUT` and `Access-Control-Allow-Headers` including `content-type`.
+     - Actual request: a presigned `PUT` of a probe object under `healthcheck/` with the same `Origin` and a `Content-Type` header. Expect `Access-Control-Allow-Origin` and `Access-Control-Expose-Headers` including `ETag` on this response, because browsers apply `Expose-Headers` only to the actual response, and step 3 of the direct upload flow (4.7) reads the ETag. Delete the probe afterwards.
   7. Report each failing step with the permission or policy that fixes it (the same pattern as `AWS_IAM_POLICY`): `s3:GetObject`, `PutObject`, `DeleteObject`, `ListBucket`, `AbortMultipartUpload`, `ListMultipartUploadParts`. Offer **Apply CORS** (PutBucketCors) on AWS, R2, MinIO and Wasabi, and show a CORS JSON snippet for B2 and others.
   8. Recommend (and on AWS/MinIO, offer to add) a lifecycle rule `AbortIncompleteMultipartUpload` after 7 days. R2 aborts by default after 7 days. This extends `putExpiryLifecycle` in `src/lib/aws/s3.ts` into a general lifecycle writer.
 - **R2 direct mode.** The default R2 bucket can presign only if the admin adds R2 S3-API credentials (account id + R2 token key pair). This is saved as a store row with `same_as_binding = 1`: server-side operations still use the binding, and the credentials are used only to sign browser URLs. Without them, R2 uploads are proxied (4.7).
@@ -293,7 +295,7 @@ CREATE TABLE `drive_links` (                 -- replaces upstream drive_items.li
 	`token_hash` text NOT NULL,                -- SHA-256 of the 32-byte random token (base64url)
 	`token_sealed` text,                       -- sealed token so the owner can copy it again; null without APP_ENCRYPTION_KEY (shown once)
 	`password_hash` text,                      -- optional, same hasher as account passwords
-	`expires_at` integer,                      -- null only when the admin allows links without expiry
+	`expires_at` integer NOT NULL,             -- every link expires (section 14)
 	`download_count` integer DEFAULT 0 NOT NULL, `last_accessed_at` integer,
 	`revoked_at` integer,
 	`created_by_user_id` text REFERENCES `users`(`id`) ON DELETE set null,
@@ -310,7 +312,7 @@ ALTER TABLE `users` ADD `can_use_drive` integer DEFAULT false NOT NULL;
 ALTER TABLE `users` ADD `drive_quota_bytes` integer;                 -- null = app default
 ALTER TABLE `app_settings` ADD `drive_enabled` integer DEFAULT false NOT NULL;
 ALTER TABLE `app_settings` ADD `drive_default_quota_bytes` integer;  -- null = unlimited
-ALTER TABLE `app_settings` ADD `drive_link_max_days` integer DEFAULT 30 NOT NULL; -- 0 = public links off; -1 = no expiry allowed
+ALTER TABLE `app_settings` ADD `drive_link_max_days` integer DEFAULT 30 NOT NULL; -- 0 = public links off; otherwise 1-365, never unlimited
 ALTER TABLE `app_settings` ADD `drive_trash_retention_days` integer DEFAULT 30 NOT NULL;
 ```
 (Separate the statements with `--> statement-breakpoint`.)
@@ -323,9 +325,9 @@ Usage is `SUM(size)` over the owner's `drive_items`, **including** trashed items
 
 ```sql
 INSERT INTO drive_items (...) SELECT ... WHERE
-  (SELECT coalesce(sum(size),0) FROM drive_items WHERE owner_id = ?1) + ?size <= ?limit
+  ?limit IS NULL OR (SELECT coalesce(sum(size),0) FROM drive_items WHERE owner_id = ?1) + ?size <= ?limit
 ```
-Zero rows changed means `413 { error: "Not enough Drive storage left for this file" }`. The effective limit is `users.drive_quota_bytes ?? app_settings.drive_default_quota_bytes`, and null means unlimited.
+Zero rows changed means `413 { error: "Not enough Drive storage left for this file" }`. The effective limit is `users.drive_quota_bytes ?? app_settings.drive_default_quota_bytes`, and null means unlimited. The explicit `?limit IS NULL` branch is required: without it, `sum + size <= NULL` is NULL and every upload would be refused.
 
 ### Backup lists (same change as each migration, per `AGENTS.md`)
 
@@ -373,7 +375,7 @@ The Drive gate is `requireDriveUser(request, { mutation })` in `src/lib/drive/au
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET/PATCH /api/admin/drive` | `drive_enabled`, default quota, link max days, trash retention, `grantAll: true` (gives every enabled account access). Admin (`isAdmin`) |
+| `GET/PATCH /api/admin/drive` | `drive_enabled`, default quota, link max days (0 or 1-365; any other value is 400), trash retention, `grantAll: true` (gives every enabled account access). Admin (`isAdmin`) |
 | `PATCH /api/accounts/[id]` | extend with `canUseDrive`, `driveQuotaBytes` (existing `canManageUsers` rules) |
 | `GET /api/auth/me` | add `features: { drive: boolean }` (global switch AND user permission) |
 
@@ -387,11 +389,11 @@ The Drive gate is `requireDriveUser(request, { mutation })` in `src/lib/drive/au
 | `POST /api/drive/items/bulk` | `{ ids, action: trash | restore | delete | move, parentId? }` (≤ 100 ids) |
 | `GET /api/drive/files/[id]/content` | stream, Range, or presigned redirect (4.7) |
 | `GET/POST/DELETE /api/drive/items/[id]/shares` | people sharing (owner or edit role may share with view; only the owner grants edit); the user picker lists active accounts on the install |
-| `GET/POST /api/drive/items/[id]/links`, `PATCH/DELETE /api/drive/links/[id]` | create `{ expiresInDays, password? }` (bounded by `drive_link_max_days`), list, revoke; the response includes the URL only when it can be shown (see `token_sealed`) |
+| `GET/POST /api/drive/items/[id]/links`, `PATCH/DELETE /api/drive/links/[id]` | create `{ expiresInDays, password? }` (`expiresInDays` is required, from 1 to `drive_link_max_days`), list, revoke; `PATCH` may change the expiry within the same bound but never clear it; the response includes the URL only when it can be shown (see `token_sealed`) |
 | `POST /api/drive/uploads`, `POST /api/drive/uploads/[id]/part-urls`, `PUT /api/drive/uploads/[id]/parts/[n]`, `POST /api/drive/uploads/[id]/complete`, `DELETE /api/drive/uploads/[id]` | upload lifecycle (4.7); `DELETE` aborts |
 | `GET /api/drive/attachments?types=&cursor=` | All attachments (port upstream `listDriveAttachments` minus the trash, scoped by `listAccessibleMailboxes`, cursor pagination) |
 | `GET /api/drive/attachments/[id]/content` | stream via the existing attachment access check (`getAttachmentForUser` in `src/lib/email/attachments.ts`) |
-| `POST /api/drive/attachments/[id]/save` | `{ parentId }` copies into Drive (quota-checked; same store: `copy`, else stream get→put) |
+| `POST /api/drive/attachments/[id]/save` | `{ parentId }` copies into Drive (quota-checked; an `object` row on the same store: `copy`; otherwise, including every raw-backed row, stream the bytes from the attachment accessor (`openAttachment`, [storing attachments once](attachments-once.md)) → put) |
 
 ### Public links (phase 2, no session, under the CSRF-exempt `/api/public`)
 
@@ -418,7 +420,7 @@ All screens must work in Kite, Classic and dark mode, use the `blue-*` palette, 
    - A "Where data lives" table (Mail, Drive, Backups, each with a store select) and a **Switch** confirm dialog. The dialog explains the cost (source egress, destination writes), the "copy existing data" checkbox and the note that **Preview deployments share this setting**.
    - A migration progress card (objects and bytes, errors, Cancel, Finish, Delete from old store).
    - Usage per class.
-2. **Admin → General: Drive card**, or a section on the Storage page: switch, "Give all accounts access", default quota (GB, empty = unlimited), maximum link lifetime (days / links off / allow no expiry), trash retention days.
+2. **Admin → General: Drive card**, or a section on the Storage page: switch, "Give all accounts access", default quota (GB, empty = unlimited), maximum link lifetime (1-365 days, or links off; there is no "no expiry" option), trash retention days.
 3. **Admin → Accounts → [id]** (`src/app/(admin)/accounts/[id]`): a "Can use Drive" toggle, a quota override and a usage bar.
 4. **Drive app** (`src/app/(drive)/layout.tsx`, modelled on `(calendar)`; routes `/drive`, `/drive/f/[folderId]`, `/drive/shared`, `/drive/attachments`, `/drive/trash`).
    - Left nav with a usage bar. Toolbar: New folder, Upload files, Upload folder. Breadcrumbs. List view with name, owner, modified and size, plus type filter chips (port `categories.ts`).
@@ -456,7 +458,7 @@ All screens must work in Kite, Classic and dark mode, use the `blue-*` palette, 
    - Presigned GETs carry forced `response-content-type` and `response-content-disposition=attachment`.
 5. **Public links:**
    - The token is 32 random bytes, compared by SHA-256 hash.
-   - Expiry is required unless the admin allows otherwise. Links can be revoked and are re-checked on every request.
+   - Expiry is always required and bounded by `drive_link_max_days`. Links can be revoked and are re-checked on every request.
    - Password attempts are rate limited.
    - Every failure answers with the same 404.
    - The page and API never read or set `ep_session`, and never expose the owner email, owner id, store, bucket or object keys.
@@ -496,7 +498,7 @@ Flow (`src/lib/storage/migration.ts`, with a pure planner in `migration-utils.ts
 2. Save the route `store_id = B`, `previous_store_id = A` and insert a `storage_migrations` row (`queued`). From then on, new writes go to B (other isolates follow within 30 s) and reads use the chain B → A → default.
 3. The job runs on the existing queues: `OUTBOUND_QUEUE` message `{ kind: "storage.migrate", jobId }`, re-enqueued after each batch, the same way `isMailboxPurgeMessage` works in `worker.ts`. The `*/5` cron restarts a stalled job. On Node, use the in-process queue. Batches are at most 50 objects or 256 MiB, and objects over 64 MiB are copied as multipart. The adapter streams with known lengths taken from `R2Object.size`.
 4. Keys come from D1, not from bucket listing:
-   - mail: `messages.raw_r2_key`, `message_attachments.r2_key`, `drafts/`, `imports/`
+   - mail: `messages.raw_r2_key`, `message_attachments.r2_key`, `drafts/`, `imports/`. Attachment keys come only from rows with `storage = 'object'`, de-duplicated because those rows can share a key. Raw-backed rows (`storage = 'raw'`, [storing attachments once](attachments-once.md)) carry the sentinel `r2_key` `raw:<id>`, which is not an object; their bytes live inside the raw and move with `messages.raw_r2_key`. The planner never treats a `raw:` key as an object key. Because the copy reads attachment keys directly, add `src/lib/storage/migration.ts` to the allowlist of `tests/attachment-storage-boundary.test.mjs`.
    - drive: `drive_items.object_key WHERE store_id = A`
    - backups: `backups.r2_key`
 
@@ -574,7 +576,7 @@ Acceptance:
 
 Tests:
 - `tests/storage-sigv4-presign.test.mjs`: AWS's published query-string presign example and `UNSIGNED-PAYLOAD` canonical requests.
-- `tests/storage-s3-bucket.test.mjs` against `tests/support/fake-s3.mjs`. This is an in-process `node:http` server that verifies SigV4 with a known secret, handles virtual and path hosts, Range, multipart, ListObjectsV2, CopyObject and CORS preflight, and serves recorded fixtures `tests/fixtures/s3/*.xml`: NoSuchKey, AccessDenied, SignatureDoesNotMatch, InvalidPart, and the 200-with-`<Error>` on complete.
+- `tests/storage-s3-bucket.test.mjs` against `tests/support/fake-s3.mjs`. This is an in-process `node:http` server that verifies SigV4 with a known secret, handles virtual and path hosts, Range, multipart, ListObjectsV2, CopyObject, CORS preflight and CORS headers on actual responses, and serves recorded fixtures `tests/fixtures/s3/*.xml`: NoSuchKey, AccessDenied, SignatureDoesNotMatch, InvalidPart, and the 200-with-`<Error>` on complete.
 - `tests/storage-router.test.mjs` (classification, chain reads, dual delete, cache TTL, config-failure fallback).
 - `tests/storage-config.test.mjs` (sealing required, presets, endpoint guard with the dev flags on and off).
 - `tests/file-bucket-multipart.test.mjs`.
@@ -603,7 +605,7 @@ Acceptance:
 - Kite, Classic and dark mode are checked.
 
 Tests:
-- `tests/drive-utils.test.mjs` (names, inline-safe types, disposition, byte ranges, part plan, quota math, link token hashing and expiry).
+- `tests/drive-utils.test.mjs` (names, inline-safe types, disposition, byte ranges, part plan, quota math including an unlimited (null) limit, link token hashing and expiry).
 - `tests/drive-access.test.mjs` (SQLite: inherited roles, trashed ancestors, public subtree, the recursive CTE).
 - `tests/drive-retention.test.mjs`.
 - Extend backup coverage and retired-table tests.
@@ -681,7 +683,7 @@ Approved by the maintainer on 2026-10-10.
 1. A restore keeps the live `storage_stores` / `storage_routes` rows (section 5); the small change to restore planning is accepted.
 2. Admins get Drive only through the explicit "Give all accounts access" action, not automatically when the switch is turned on.
 3. `system` objects (avatars, branding) stay pinned to the default store in v1.
-4. Links always expire; the default maximum is 30 days (`drive_link_max_days = 30`).
+4. Links always expire; the default maximum is 30 days (`drive_link_max_days = 30`). Admins can change the maximum (1-365 days) or turn links off (0), but cannot allow links without expiry.
 5. The dynamic `connect-src` with exact store origins is accepted, so direct browser uploads stay.
 
 Follow-up, not part of this work: tightening the broad `img-src https:` (this design does not need it).

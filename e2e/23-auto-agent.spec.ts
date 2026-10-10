@@ -476,6 +476,28 @@ test.describe("admin automatic reading settings", () => {
 			const unknown = await readAdminAgent(api);
 			await expect(useFakeProvider(api, fake)).rejects.toThrow(/cannot restore/);
 			expect(await readAdminAgent(api)).toEqual(unknown);
+
+			// A loopback provider is no exception: its key is never guessed, so the helper refuses it too.
+			await okJson(
+				await api.put("/api/admin/agent", {
+					data: {
+						provider: "compatible",
+						preset: "custom",
+						baseUrl: starting.url,
+						apiKey: "another-loopback-key",
+						model: "start-a",
+					},
+				}),
+			);
+			await okJson(
+				await api.put("/api/admin/agent", {
+					data: { autoReadEnabled: false, externalAutoReadAllowed: false },
+				}),
+			);
+			const loopback = await readAdminAgent(api);
+			expect(loopback.config).toMatchObject({ provider: "compatible", baseUrl: starting.url, hasApiKey: true });
+			await expect(useFakeProvider(api, fake)).rejects.toThrow(/key saved for .* is unknown; pass previousApiKey/);
+			expect(await readAdminAgent(api)).toEqual(loopback);
 		} finally {
 			await restoreOriginal();
 			await starting.close();

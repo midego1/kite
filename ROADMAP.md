@@ -2,7 +2,9 @@
 
 Planned work, grouped into milestones. Each milestone is sized to run as one [Factory Mission](https://docs.factory.ai/cli/features/missions): it lists features with acceptance criteria, and every feature ends with the same validation. Items within a milestone are independent unless noted.
 
-Shipped work is listed in the [changelog](CHANGELOG.md).
+Shipped work is listed in the [changelog](CHANGELOG.md). Suggest features and vote on them in [Ideas](https://github.com/midego1/kite/discussions/categories/ideas).
+
+Approved specs, in the order they will be built: [automatic mail reading agent](docs/specs/auto-agent.md), [storing attachments once](docs/specs/attachments-once.md), and [Drive and storage](docs/specs/drive-storage.md).
 
 ## Working on this repository
 
@@ -82,6 +84,8 @@ Make the app usable for Arabic, Hebrew, Persian and Urdu mail and users.
 
 ## Milestone 5: Agents
 
+Automatic reading of incoming mail, with suggestions and an audit log (item 2), is specified in [docs/specs/auto-agent.md](docs/specs/auto-agent.md).
+
 1. **Email-addressable agents**: an address such as `assistant@your-domain` routes mail to the AI assistant, which can reply, file or draft within the permissions of its owner. Built on the existing routing rules and the agent queue; the Cloudflare Agents SDK is evaluated first.
 2. **Agent audit log**: every action an agent takes is recorded and visible to the mailbox owner, with undo where possible.
 
@@ -134,7 +138,7 @@ Google treats full Gmail access (`https://mail.google.com/`) as a restricted sco
 
 ## Milestone 7: Drive and storage
 
-Files next to mail, on storage the operator chooses. Today every object (raw MIME, attachments, backups) goes through the one `BUCKET` binding with `get`, `put` and `delete`; the Node runtime already swaps R2 for a folder (`server/runtime/file-bucket.ts`), and `src/lib/aws/` already signs S3 requests.
+Files next to mail, on storage the operator chooses. Today every object (raw MIME, attachments, backups) goes through the one `BUCKET` binding with `get`, `put` and `delete`; the Node runtime already swaps R2 for a folder (`server/runtime/file-bucket.ts`), and `src/lib/aws/` already signs S3 requests. Items 1 to 3 are specified in [docs/specs/drive-storage.md](docs/specs/drive-storage.md); storing attachments once ([docs/specs/attachments-once.md](docs/specs/attachments-once.md)) comes first and cuts mail storage by about a third.
 
 1. **Storage providers**
    - R2 stays the default. An admin can add an S3-compatible store (AWS S3, Backblaze B2, Wasabi, Hetzner, MinIO) behind the same interface. Credentials are encrypted with `APP_ENCRYPTION_KEY` and checked before saving, like the AWS settings.
@@ -152,6 +156,23 @@ Files next to mail, on storage the operator chooses. Today every object (raw MIM
    - Test: unit tests for the age rules; e2e moves an old message and still opens and searches it.
 4. **External storage** (needs 2)
    - WebDAV first (Nextcloud, ownCloud, most NAS), shown as a linked folder. Google Drive and OneDrive follow, each with the install's own OAuth app, as in milestone 6.
+
+## Milestone 8: Sender screening
+
+Mail from a sender you have not approved waits in a Screener instead of the Inbox, as in HEY. Off by default; turned on per mailbox under Settings → Inbox.
+
+1. **Screener**
+   - The first message from an unknown sender goes to a Screener view instead of the Inbox: no notification, no auto-reply and no agent run. The sidebar shows how many senders are waiting.
+   - For each sender: **Yes** moves their waiting mail to the Inbox and lets future mail in; **No** sends future mail quietly to a Screened out folder. The sender is never told.
+   - Decisions can be changed later under Settings → Screened senders.
+   - Test: e2e delivers mail from a new sender and checks it lands in the Screener, that Yes moves it and the next message arrives in the Inbox, and that No sends the next one to Screened out.
+2. **Who counts as known**
+   - People you have written to, your contacts, and replies in threads you started skip the Screener. Turning screening on offers to approve everyone you already have mail from.
+   - A whole domain can be approved or screened out at once.
+   - Test: unit tests for the known-sender rules; e2e checks that a reply to your own message skips the Screener.
+3. **Fits with the rest**
+   - The spam filter runs first. On shared mailboxes, users with full access decide. The automatic reading agent skips screened mail and can suggest Yes or No.
+   - Decisions live in a per-mailbox table that goes into the backup lists (see `AGENTS.md`). Works on Workers and the Node runtime.
 
 ## Ideas, not yet planned
 

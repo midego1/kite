@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { AwsCapabilityReport, AwsConfigStatus } from "@/lib/aws/aws-types";
-import { requestJson } from "./api";
+import { ApiError, requestJson } from "./api";
+import { missingPermissionsReport, refusedAwsSave } from "./aws-credentials-panel-utils";
 import { StatusRow } from "./status-row";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 
@@ -43,6 +44,8 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 	const [region, setRegion] = useState("us-east-1");
 	const [busy, setBusy] = useState<"save" | "check" | "remove" | null>(null);
 	const [error, setError] = useState("");
+	/** The report of credentials a save refused, kept so the IAM policy can be shown under the error. */
+	const [refused, setRefused] = useState<AwsCapabilityReport | null>(null);
 
 	useEffect(() => {
 		let active = true;
@@ -80,6 +83,7 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 	async function run(kind: "save" | "check" | "remove", action: () => Promise<void>) {
 		setBusy(kind);
 		setError("");
+		setRefused(null);
 		try {
 			await action();
 		} catch (err) {
@@ -95,7 +99,14 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 				"/api/admin/aws",
 				"PUT",
 				{ accessKeyId, secretAccessKey, region },
-			);
+			).catch((err: unknown) => {
+				const refusal = err instanceof ApiError ? refusedAwsSave(err.data) : null;
+				if (refusal) {
+					setRefused(refusal.report);
+					if (refusal.policy) setPolicy(refusal.policy);
+				}
+				throw err;
+			});
 			setStatus(data.status);
 			setReport(data.report);
 			setEditing(false);
@@ -129,6 +140,7 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 	const configured = !!status?.configured;
 	const showForm = status !== null && (!configured || editing);
 	const fromEnvironment = status?.source === "environment";
+	const missingReport = missingPermissionsReport({ refused, report, configured, editing });
 
 	return (
 		<div className="space-y-2">
@@ -155,7 +167,11 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 										variant="outline"
 										className="bg-white"
 										disabled={busy !== null}
-										onClick={() => setEditing(true)}
+										onClick={() => {
+											setEditing(true);
+											setError("");
+											setRefused(null);
+										}}
 									>
 										Replace
 									</Button>
@@ -227,6 +243,7 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 										onClick={() => {
 											setEditing(false);
 											setError("");
+											setRefused(null);
 										}}
 									>
 										Cancel
@@ -273,12 +290,17 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 					</>
 				)}
 			</ul>
-			{configured && !editing && report && report.missing.length > 0 && (
-				<details className="rounded-lg bg-white px-3 py-2 text-xs text-neutral-600">
+			{error && (
+				<p role="alert" className="text-xs text-red-600">
+					{error}
+				</p>
+			)}
+			{missingReport && (
+				<details open={refused !== null} className="rounded-lg bg-white px-3 py-2 text-xs text-neutral-600">
 					<summary className="cursor-pointer font-medium text-neutral-800">
 						Missing permissions and the IAM policy that grants them
 					</summary>
-					<p className="mt-2">Missing: {report.missing.join(", ")}</p>
+					<p className="mt-2">Missing: {missingReport.missing.join(", ")}</p>
 					<pre className="mt-2 max-h-64 overflow-auto rounded bg-neutral-50 p-2">{JSON.stringify(policy, null, 2)}</pre>
 				</details>
 			)}
@@ -286,11 +308,6 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 				<p className="text-xs text-neutral-500">
 					Create an IAM user with programmatic access in the AWS console and attach a policy with the permissions Kite
 					needs (shown after you save, if any are missing). Credentials are checked with AWS before they are stored.
-				</p>
-			)}
-			{error && (
-				<p role="alert" className="text-xs text-red-600">
-					{error}
 				</p>
 			)}
 		</div>

@@ -393,7 +393,7 @@ The Drive gate is `requireDriveUser(request, { mutation })` in `src/lib/drive/au
 | `POST /api/drive/uploads`, `POST /api/drive/uploads/[id]/part-urls`, `PUT /api/drive/uploads/[id]/parts/[n]`, `POST /api/drive/uploads/[id]/complete`, `DELETE /api/drive/uploads/[id]` | upload lifecycle (4.7); `DELETE` aborts |
 | `GET /api/drive/attachments?types=&cursor=` | All attachments (port upstream `listDriveAttachments` minus the trash, scoped by `listAccessibleMailboxes`, cursor pagination) |
 | `GET /api/drive/attachments/[id]/content` | stream via the existing attachment access check (`getAttachmentForUser` in `src/lib/email/attachments.ts`) |
-| `POST /api/drive/attachments/[id]/save` | `{ parentId }` copies into Drive (quota-checked; an `object` row on the same store: `copy`; otherwise, including every raw-backed row, stream the bytes from the attachment accessor (`openAttachment`, [storing attachments once](attachments-once.md)) → put) |
+| `POST /api/drive/attachments/[id]/save` | `{ parentId }` first checks that the caller can read the source attachment with the same rule as the content route (`getAttachmentForUser`) and can edit `parentId`, answering 404 otherwise; then copies into Drive (quota-checked; an `object` row on the same store: `copy`; otherwise, including every raw-backed row, stream the bytes from the attachment accessor (`openAttachment`, [storing attachments once](attachments-once.md)) → put) |
 
 ### Public links (phase 2, no session, under the CSRF-exempt `/api/public`)
 

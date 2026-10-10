@@ -7,4 +7,7 @@ export const API_KEY_SCOPES = ["send", "read", "jmap", "calendar:read", "calenda
 
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 
+/** Most mailboxes one personal API key (including an app password) may be granted. */
+export const API_KEY_MAX_MAILBOXES = 30;
+
 export const ADMIN_API_KEY_SCOPES = ["domains", "accounts", "mailboxes"] as const;

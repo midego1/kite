@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useSuggestionList } from "@/hooks/use-suggestion-list";
 import type { CardSuggestion, SuggestionCardProps } from "./suggestion-card-types";
 import { cardSections, hasCardContent, suggestionCardUrl } from "./suggestion-card-utils";
+import { usePhishingToast } from "./use-phishing-toast";
 
 const SuggestionCardBody = dynamic(() => import("./suggestion-card-body").then((module) => module.SuggestionCardBody), {
 	ssr: false,
@@ -17,6 +18,7 @@ export function SuggestionCard({ mailboxId, messageId, threadId }: SuggestionCar
 	const { data, reload } = useSuggestionList<{ suggestions?: CardSuggestion[] }>(
 		suggestionCardUrl(messageId, threadId),
 	);
+	usePhishingToast(data?.suggestions ?? null, messageId);
 	const sections = cardSections(data?.suggestions ?? [], mailboxId);
 	if (!hasCardContent(sections)) return null;
 	return <SuggestionCardBody sections={sections} onChanged={reload} />;

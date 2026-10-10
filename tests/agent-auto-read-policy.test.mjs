@@ -343,3 +343,24 @@ test("planSuggestions: invites, muted senders", () => {
 		"phishing",
 	]);
 });
+
+test("planSuggestions: each failed SPF, DKIM or DMARC check is a phishing reason and suppresses the reply", () => {
+	for (const failed of ["spf_failed", "dkim_failed", "dmarc_failed"]) {
+		const failing = collectFacts({
+			message: {
+				fromAddr: "Grace Hopper <grace@corp.test>",
+				subject: "Hello",
+				textBody: "Body",
+				spamVerdict: "inbox",
+				spamSignals: signals(failed),
+			},
+		});
+		const planned = planSuggestions({
+			facts: failing,
+			triage: triage({ suspicious: { flagged: false, reasons: [] } }),
+			settings: settings(),
+		});
+		assert.deepEqual(kinds(planned), ["phishing"], failed);
+		assert.deepEqual(planned[0].payload.reasons, [failed]);
+	}
+});

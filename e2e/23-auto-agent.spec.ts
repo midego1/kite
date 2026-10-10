@@ -2495,4 +2495,326 @@ test.describe("reply suggestions", () => {
 			await restore();
 		}
 	});
+
+	const phishingBlock = (page: Page) => readerCard(page).locator('[data-suggestion-block="phishing"]');
+	const LINK_MISMATCH_HTML = (text: string) =>
+		`<p>${text}</p><p><a href="https://login.evil.test/account">https://bank.example.com/account</a></p>`;
+	const PLAIN_LINK_MISMATCH = "A link shows one web address but opens a different one.";
+	const PHISHING_TOAST = "Kite warns that the message you are reading looks like phishing.";
+
+	/** Delivers a mail, waits until its triage job completes, and returns the stored message. */
+	async function deliverTriaged(
+		account: { api: APIRequestContext; address: string; mailboxId: string },
+		mail: Omit<InboundMail, "to" | "subject">,
+	) {
+		const subject = uniqueToken("phb");
+		await postInbound(account.api, { ...mail, to: account.address, subject });
+		const message = await waitForMessage(account.api, subject, { status: "received" });
+		expect((await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage")).status).toBe("completed");
+		return message;
+	}
+
+	/** Background and border colours of the banner as sRGB, read through a canvas so oklch values compare. */
+	async function bannerColors(page: Page) {
+		return phishingBlock(page).evaluate((element) => {
+			const style = getComputedStyle(element);
+			const context = document.createElement("canvas").getContext("2d")!;
+			const rgb = (color: string) => {
+				context.clearRect(0, 0, 1, 1);
+				context.fillStyle = color;
+				context.fillRect(0, 0, 1, 1);
+				return Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3));
+			};
+			return { background: rgb(style.backgroundColor), border: rgb(style.borderTopColor) };
+		});
+	}
+	const isRed = ([red, green, blue]: number[]) => red - Math.max(green, blue) >= 8;
+
+	test("the phishing banner gives plain-word reasons in red in every style, and Mark as spam moves the message with Undo", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("phb");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			await okJson(
+				await account.api.patch("/api/contacts", {
+					data: { mailboxId: account.mailboxId, address: "grace@corp.test", displayName: "Grace Hopper" },
+				}),
+			);
+			const mismatch = await deliverTriaged(account, {
+				from: "Bank <alerts@bank.test>",
+				text: "Please verify your account. [[scenario:fyi]]",
+				html: LINK_MISMATCH_HTML("Please verify your account. [[scenario:fyi]]"),
+			});
+			const modelFlagged = await deliverTriaged(account, {
+				from: "Support <support@service.test>",
+				text: "Confirm your password today. [[scenario:phishing]]",
+			});
+			const spoof = await deliverTriaged(account, {
+				from: "Grace Hopper <grace@evil.test>",
+				text: "Quick note from me. [[scenario:fyi]]",
+			});
+			const long = "Our supplier changed banks this quarter and the details are below. ".repeat(30);
+			const wire = await deliverTriaged(account, {
+				from: "Finance <cfo@finance.test>",
+				text: `${long} [[scenario:hostile-wire-money]]`,
+				html: LINK_MISMATCH_HTML(`${long} [[scenario:hostile-wire-money]]`),
+			});
+			const warningOf = async (messageId: string) =>
+				(await suggestionsFor(account.api, account.mailboxId, messageId)).find((item) => item.kind === "phishing")!;
+			expect((await warningOf(mismatch.id)).payload.reasons).toEqual(["displayed_link_mismatch"]);
+			expect((await warningOf(modelFlagged.id)).payload.reasons).toEqual(["credential_request", "urgency_pressure"]);
+			expect((await warningOf(spoof.id)).payload.reasons).toEqual(["display_name_spoof"]);
+			const wireKinds = (await suggestionsFor(account.api, account.mailboxId, wire.id)).map((item) => item.kind);
+			expect(wireKinds.sort()).toEqual(["phishing", "summary"]);
+			expect((await warningOf(wire.id)).payload.reasons).toContain("displayed_link_mismatch");
+			expect(await draftIds(account.api)).toEqual([]);
+
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+			await page.addInitScript(() => {
+				localStorage.setItem("kite-conversation-view", "off");
+				localStorage.setItem("kite-reading-pane", "none");
+			});
+
+			await openReader(page, modelFlagged);
+			await expect(phishingBlock(page)).toContainText("It asks for a password or other login details.");
+			await expect(phishingBlock(page)).toContainText("It pressures you to act quickly.");
+			await openReader(page, spoof);
+			await expect(phishingBlock(page)).toContainText(
+				"The sender uses the name of one of your contacts, but from a different address.",
+			);
+
+			await openReader(page, wire);
+			const summary = readerCard(page).locator("[data-suggestion-summary]");
+			await expect(summary).toContainText("Wire $48,000 to the new supplier account today");
+			await expect(summary.locator("a")).toHaveCount(0);
+			expect(await summary.getByRole("button").allTextContents()).toEqual(["", "Why?"]);
+			await expect(summary.getByRole("button", { name: "More Kite actions" })).toHaveCount(1);
+			await expect(phishingBlock(page)).toContainText(PLAIN_LINK_MISMATCH);
+			await expect(replyBlock(page)).toHaveCount(0);
+			await expect(readerCard(page).locator("a")).toHaveCount(0);
+
+			for (const style of [
+				{ theme: "light", classic: false },
+				{ theme: "light", classic: true },
+				{ theme: "dark", classic: false },
+			]) {
+				await page.evaluate(({ theme, classic }) => {
+					localStorage.setItem("kite-theme", theme);
+					if (classic) localStorage.setItem("kite-style", "classic");
+					else localStorage.removeItem("kite-style");
+				}, style);
+				await openReader(page, mismatch);
+				await expect(phishingBlock(page)).toContainText(PLAIN_LINK_MISMATCH);
+				await expect(phishingBlock(page).getByRole("button", { name: "Mark as spam" })).toBeVisible();
+				const colors = await bannerColors(page);
+				expect(isRed(colors.background) && isRed(colors.border), JSON.stringify({ style, colors })).toBe(true);
+			}
+			await page.evaluate(() => {
+				localStorage.setItem("kite-theme", "light");
+				localStorage.removeItem("kite-style");
+			});
+			await openReader(page, mismatch);
+
+			const warning = await warningOf(mismatch.id);
+			const openBefore = (await readSuggestions(account.api, { status: "open" })).suggestions.length;
+			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openBefore}$`));
+			const accepted = page.waitForResponse((response) =>
+				response.url().endsWith(`/api/agent/suggestions/${warning.id}/accept`),
+			);
+			await phishingBlock(page).getByRole("button", { name: "Mark as spam" }).click();
+			expect((await accepted).status()).toBe(200);
+			await expect(phishingBlock(page)).toHaveCount(0);
+			await waitForMessage(account.api, mismatch.subject!, { status: "spam" });
+			expect((await warningOf(mismatch.id)).status).toBe("accepted");
+			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openBefore - 1}$`));
+			const toast = page.getByRole("status").filter({ hasText: "Moved to Spam" });
+			const undone = page.waitForResponse((response) => /\/api\/agent\/actions\/[^/]+\/undo$/.test(response.url()));
+			await toast.getByRole("button", { name: "Undo" }).click();
+			expect((await undone).status()).toBe(200);
+			await waitForMessage(account.api, mismatch.subject!, { status: "received" });
+			expect((await warningOf(mismatch.id)).status).toBe("open");
+			await expect(phishingBlock(page)).toHaveCount(1);
+			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openBefore}$`));
+			// The warning was already known when the message was opened, so it comes back without a toast.
+			await expect(page.getByText(PHISHING_TOAST)).toHaveCount(0);
+
+			// A warning that appears while its message is open is announced; one for another message is not.
+			const spoofDismissed = await okJson<{ actionId: string }>(
+				await account.api.post(suggestionUrl((await warningOf(spoof.id)).id, "dismiss"), { data: {} }),
+			);
+			const otherDismissed = await okJson<{ actionId: string }>(
+				await account.api.post(suggestionUrl((await warningOf(modelFlagged.id)).id, "dismiss"), { data: {} }),
+			);
+			await openReader(page, spoof);
+			await expect(phishingBlock(page)).toHaveCount(0);
+			const otherReload = page.waitForResponse((response) =>
+				response.url().includes("/api/agent/suggestions?status=open&"),
+			);
+			await okJson(await account.api.post(`/api/agent/actions/${otherDismissed.actionId}/undo`));
+			await otherReload;
+			await expect(page.getByText(PHISHING_TOAST)).toHaveCount(0);
+			await okJson(await account.api.post(`/api/agent/actions/${spoofDismissed.actionId}/undo`));
+			await expect(phishingBlock(page)).toHaveCount(1, { timeout: 15_000 });
+			await expect(page.getByText(PHISHING_TOAST)).toBeVisible();
+
+			const sent = await okJson<{ messages: unknown[] }>(await account.api.get("/api/messages?status=sent&limit=50"));
+			expect(sent.messages).toEqual([]);
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("the ⋯ menu dismisses once with Undo like Activity, mutes a sender and pauses the mailbox", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("mnu");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const alice = await deliverQuestion(account.api, account.address, "Alice <alice@external.test>");
+			const carol = await deliverQuestion(account.api, account.address, "Carol <carol@external.test>");
+			const dave = await deliverQuestion(account.api, account.address, "Dave <dave@external.test>");
+			for (const item of [alice, carol, dave])
+				expect((await waitForFinishedJob(account.api, account.mailboxId, item.message.id, "triage")).status).toBe(
+					"completed",
+				);
+			const replyOf = async (messageId: string) =>
+				(await suggestionsFor(account.api, account.mailboxId, messageId)).find((item) => item.kind === "reply");
+			const carolReply = (await replyOf(carol.message.id))!;
+			const daveReply = (await replyOf(dave.message.id))!;
+			const dismissRows = async (suggestionId: string) =>
+				(await readActions(account.api, account.mailboxId)).filter(
+					(row) => row.action === "dismiss" && row.suggestionId === suggestionId,
+				);
+
+			// Two identical dismiss requests back to back record one applied action and no server error.
+			const responses = await Promise.all([
+				account.api.post(suggestionUrl(daveReply.id, "dismiss"), { data: {} }),
+				account.api.post(suggestionUrl(daveReply.id, "dismiss"), { data: {} }),
+			]);
+			for (const response of responses) expect([200, 409]).toContain(response.status());
+			expect((await dismissRows(daveReply.id)).map((row) => row.status)).toEqual(["applied"]);
+
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+			await page.addInitScript(() => {
+				localStorage.setItem("kite-conversation-view", "off");
+				localStorage.setItem("kite-reading-pane", "right");
+			});
+			await page.goto("/inbox");
+			await page.getByRole("link").filter({ hasText: carol.message.subject! }).click();
+			await expect(page).toHaveURL(new RegExp(`/inbox/${carol.message.id}$`));
+			await expect(replyBlock(page)).toHaveAttribute("data-suggestion-id", carolReply.id);
+			const badges = page.locator("[data-suggestion-badge]");
+			await expect(badges).toHaveCount(2);
+			const openBefore = (await readSuggestions(account.api, { status: "open" })).suggestions.length;
+			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openBefore}$`));
+
+			await replyBlock(page).getByRole("button", { name: "More Kite actions" }).click();
+			await expect(page.getByRole("menuitem")).toHaveText([
+				"Dismiss",
+				"Don't suggest this for this sender",
+				"Pause Kite for this mailbox",
+			]);
+			const dismissPosts: string[] = [];
+			page.on("request", (request) => {
+				if (request.method() === "POST" && request.url().endsWith(`/api/agent/suggestions/${carolReply.id}/dismiss`))
+					dismissPosts.push(request.url());
+			});
+			const dismissed = page.waitForResponse((response) =>
+				response.url().endsWith(`/api/agent/suggestions/${carolReply.id}/dismiss`),
+			);
+			await page.getByRole("menuitem", { name: "Dismiss" }).dblclick();
+			expect((await dismissed).status()).toBe(200);
+			await expect(replyBlock(page)).toHaveCount(0);
+			await expect(badges).toHaveCount(1);
+			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openBefore - 1}$`));
+			const [dismissRow] = await dismissRows(carolReply.id);
+			expect((await dismissRows(carolReply.id)).map((row) => row.status)).toEqual(["applied"]);
+			expect(dismissPosts).toHaveLength(1);
+
+			const toast = page.getByRole("status").filter({ hasText: "Suggestion dismissed" });
+			const undone = page.waitForResponse((response) =>
+				response.url().endsWith(`/api/agent/actions/${dismissRow.id}/undo`),
+			);
+			await toast.getByRole("button", { name: "Undo" }).click();
+			expect((await undone).status()).toBe(200);
+			await expect(replyBlock(page)).toHaveAttribute("data-suggestion-id", carolReply.id);
+			await expect(badges).toHaveCount(2);
+			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openBefore}$`));
+			const { actions } = await okJson<{ actions: { id: string; status: string; undoneByUserId: string | null }[] }>(
+				await account.api.get(`/api/agent/actions?mailboxId=${account.mailboxId}`),
+			);
+			expect(actions.find((row) => row.id === dismissRow.id)).toMatchObject({
+				status: "undone",
+				undoneByUserId: account.id,
+			});
+			await page.goto("/kite-activity");
+			await expect(activityRow(page, dismissRow.id).locator("[data-activity-status]")).toHaveText("Undone");
+
+			await openReader(page, alice.message);
+			await replyBlock(page).getByRole("button", { name: "More Kite actions" }).click();
+			const muted = page.waitForResponse((response) => response.url().includes("/dismiss"));
+			await page.getByRole("menuitem", { name: "Don't suggest this for this sender" }).click();
+			expect((await muted).status()).toBe(200);
+			await expect(
+				page.getByRole("status").filter({ hasText: "Kite will not suggest anything for this sender" }),
+			).toBeVisible();
+			const capabilities = (await readMailboxSettings(account.api, account.mailboxId)).settings.capabilities;
+			expect(capabilities.mutedSenders).toEqual(["alice@external.test"]);
+			const aliceAgain = await deliverQuestion(account.api, account.address, "Alice <alice@external.test>");
+			const bob = await deliverQuestion(account.api, account.address, "Bob <bob@external.test>");
+			for (const item of [aliceAgain, bob])
+				await waitForFinishedJob(account.api, account.mailboxId, item.message.id, "triage");
+			expect(await suggestionsFor(account.api, account.mailboxId, aliceAgain.message.id)).toEqual([]);
+			expect((await replyOf(bob.message.id))?.status).toBe("open");
+
+			await openReader(page, bob.message);
+			const openIds = (await readSuggestions(account.api, { status: "open" })).suggestions.map((item) => item.id);
+			await replyBlock(page).getByRole("button", { name: "More Kite actions" }).click();
+			const paused = page.waitForResponse(
+				(response) => response.url().endsWith("/api/agent/settings") && response.request().method() === "PUT",
+			);
+			await page.getByRole("menuitem", { name: "Pause Kite for this mailbox" }).click();
+			expect((await paused).status()).toBe(200);
+			await expect(page.getByRole("status").filter({ hasText: "Kite is paused for this mailbox" })).toBeVisible();
+			const { pausedUntil } = (await readMailboxSettings(account.api, account.mailboxId)).settings;
+			expect(Math.abs(new Date(pausedUntil!).getTime() - (Date.now() + 24 * 60 * 60 * 1000))).toBeLessThan(
+				5 * 60 * 1000,
+			);
+			await expect(replyBlock(page)).toHaveCount(1);
+			expect((await readSuggestions(account.api, { status: "open" })).suggestions.map((item) => item.id)).toEqual(
+				openIds,
+			);
+			const whilePaused = await deliverQuestion(account.api, account.address, "Erin <erin@external.test>");
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+			expect(
+				(await readJobs(account.api, account.mailboxId)).filter(
+					(job) => job.sourceMessageId === whilePaused.message.id,
+				),
+			).toEqual([]);
+			expect(kindsMentioning(whilePaused.token)).toEqual([]);
+			expect(await suggestionsFor(account.api, account.mailboxId, whilePaused.message.id)).toEqual([]);
+			const section = await openAutoReadSection(page);
+			await expect(section.getByText(/^Paused until/)).toBeVisible();
+			await expect(section.getByRole("button", { name: "Resume" })).toBeVisible();
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
 });

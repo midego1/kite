@@ -20,9 +20,16 @@ await build({
 	target: "node22",
 	logLevel: "silent",
 });
-const { cardSections, hasCardContent, suggestionCardUrl, summaryText, whyDetails } = await import(
-	pathToFileURL(join(outDir, "suggestion-card.mjs")).href
-);
+const {
+	cardSections,
+	hasCardContent,
+	newPhishingWarnings,
+	pauseEnd,
+	phishingReasonTexts,
+	suggestionCardUrl,
+	summaryText,
+	whyDetails,
+} = await import(pathToFileURL(join(outDir, "suggestion-card.mjs")).href);
 
 const item = (id, kind, extra = {}) => ({
 	id,
@@ -88,4 +95,63 @@ test("Why? explains the policy reason and names the model", () => {
 	assert.equal(unknown.reason, "Kite's rules for this mailbox suggested this.");
 	assert.equal(unknown.model, "Found by Kite's rules, without a model.");
 	assert.match(whyDetails(item("s1", "summary", { payload: { reason: "long_thread" } })).reason, /summarised/);
+});
+
+test("phishing reasons read in plain words, deterministic ones first, without repeats", () => {
+	const texts = phishingReasonTexts(
+		item("p1", "phishing", {
+			payload: {
+				reasons: [
+					"displayed_link_mismatch",
+					"suspicious_verdict",
+					"ip_address_url",
+					"punycode_url",
+					"spf_failed",
+					"dkim_failed",
+					"dmarc_failed",
+					"display_name_spoof",
+					"credential_request",
+					"payment_change",
+					"urgency_pressure",
+					"spoofed_identity",
+					"unexpected_attachment",
+					"model_flagged",
+				],
+			},
+		}),
+	);
+	assert.equal(texts.length, 14);
+	assert.equal(texts[0], "A link shows one web address but opens a different one.");
+	assert.match(texts[4], /SPF failed/);
+	assert.match(texts[7], /name of one of your contacts/);
+	for (const text of texts) assert.doesNotMatch(text, /_/);
+	assert.deepEqual(phishingReasonTexts(item("p1", "phishing", { payload: { reasons: ["new_one", "toString", 4] } })), [
+		"Kite found another warning sign.",
+	]);
+	assert.deepEqual(phishingReasonTexts(item("p1", "phishing", { payload: {} })), []);
+});
+
+test("a pause lasts 24 hours from the click", () => {
+	assert.equal(pauseEnd(new Date("2026-10-11T08:00:00.000Z")), "2026-10-12T08:00:00.000Z");
+});
+
+test("only phishing warnings that appear for the open message while it is open are new", () => {
+	const first = newPhishingWarnings([item("p1", "phishing"), item("r1", "reply")], "msg-1", null);
+	assert.deepEqual([...first.known], ["p1"]);
+	assert.deepEqual(first.fresh, []);
+	const later = newPhishingWarnings(
+		[
+			item("p2", "phishing"),
+			item("p1", "phishing"),
+			item("p3", "phishing", { messageId: "msg-0" }),
+			item("p4", "phishing", { status: "accepted" }),
+		],
+		"msg-1",
+		first.known,
+	);
+	assert.deepEqual(
+		later.fresh.map((warning) => warning.id),
+		["p2"],
+	);
+	assert.deepEqual(newPhishingWarnings([item("p2", "phishing")], "msg-1", later.known).fresh, []);
 });

@@ -3,25 +3,15 @@
 import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
-import { ChevronDown, ShieldAlert, Sparkles } from "lucide-react";
+import { ChevronDown, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMessageListVisibility } from "@/components/messages/message-list-visibility";
-import { dispatchAgentSuggestionChanged } from "@/hooks/message-realtime-utils";
-import { authFetch } from "@/lib/auth/client";
 import { useAssistantOpen } from "./assistant-open-state";
+import { announceSuggestionChange, postSuggestion } from "./suggestion-card-actions";
+import { SuggestionCardMenu } from "./suggestion-card-menu";
 import type { CardSuggestion, SuggestionCardBodyProps } from "./suggestion-card-types";
 import { summaryText, whyDetails } from "./suggestion-card-utils";
-
-async function postSuggestion(id: string, action: "accept" | "dismiss", body: object) {
-	const response = await authFetch(`/api/agent/suggestions/${encodeURIComponent(id)}/${action}`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
-	const data = (await response.json().catch(() => ({}))) as { error?: string; url?: string };
-	if (!response.ok) throw new Error(data.error || "Kite could not do that. Try again.");
-	return data;
-}
+import { PhishingBlock } from "./suggestion-phishing-block";
 
 function WhyDisclosure({ suggestion }: { suggestion: CardSuggestion }) {
 	const [open, setOpen] = useState(false);
@@ -64,8 +54,7 @@ function ReplyBlock({ suggestion, onChanged }: { suggestion: CardSuggestion; onC
 				return;
 			}
 			await postSuggestion(suggestion.id, "dismiss", { discardDraft: true });
-			dispatchAgentSuggestionChanged({ mailboxId: suggestion.mailboxId, suggestionId: suggestion.id });
-			window.dispatchEvent(new Event("kite:messages-changed"));
+			announceSuggestionChange(suggestion);
 			onChanged();
 		} catch (caught) {
 			setError(caught instanceof Error ? caught.message : String(caught));
@@ -76,7 +65,10 @@ function ReplyBlock({ suggestion, onChanged }: { suggestion: CardSuggestion; onC
 
 	return (
 		<div data-suggestion-block="reply" data-suggestion-id={suggestion.id} className="mt-3 first:mt-0">
-			<p className="font-medium text-neutral-900">{suggestion.title}</p>
+			<div className="flex items-start justify-between gap-2">
+				<p className="font-medium text-neutral-900">{suggestion.title}</p>
+				<SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />
+			</div>
 			<p className="text-neutral-600">
 				{suggestion.draftId ? "Kite drafted a reply. Review it before you send." : "The drafted reply is gone."}
 			</p>
@@ -100,23 +92,6 @@ function ReplyBlock({ suggestion, onChanged }: { suggestion: CardSuggestion; onC
 	);
 }
 
-function PhishingBlock({ suggestion }: { suggestion: CardSuggestion }) {
-	return (
-		<div
-			data-suggestion-block="phishing"
-			data-suggestion-id={suggestion.id}
-			role="alert"
-			className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-red-900 first:mt-0"
-		>
-			<p className="flex items-center gap-2 font-medium">
-				<ShieldAlert aria-hidden className="h-4 w-4 text-red-600" />
-				{suggestion.title}
-			</p>
-			<WhyDisclosure suggestion={suggestion} />
-		</div>
-	);
-}
-
 /** The reader card: the conversation summary, then one block per suggestion. */
 export function SuggestionCardBody({ sections, onChanged }: SuggestionCardBodyProps) {
 	const { visible: messageListVisible } = useMessageListVisibility();
@@ -135,7 +110,10 @@ export function SuggestionCardBody({ sections, onChanged }: SuggestionCardBodyPr
 				</p>
 				{summary && (
 					<div data-suggestion-summary className="mb-3 border-b border-blue-200 pb-3 last:mb-0 last:border-0 last:pb-0">
-						<p className="text-neutral-800">{summaryText(summary)}</p>
+						<div className="flex items-start justify-between gap-2">
+							<p className="whitespace-pre-line text-neutral-800">{summaryText(summary)}</p>
+							<SuggestionCardMenu suggestion={summary} onChanged={onChanged} />
+						</div>
 						<WhyDisclosure suggestion={summary} />
 					</div>
 				)}
@@ -143,7 +121,13 @@ export function SuggestionCardBody({ sections, onChanged }: SuggestionCardBodyPr
 					suggestion.kind === "reply" ? (
 						<ReplyBlock key={suggestion.id} suggestion={suggestion} onChanged={onChanged} />
 					) : (
-						<PhishingBlock key={suggestion.id} suggestion={suggestion} />
+						<PhishingBlock
+							key={suggestion.id}
+							suggestion={suggestion}
+							onChanged={onChanged}
+							menu={<SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />}
+							why={<WhyDisclosure suggestion={suggestion} />}
+						/>
 					),
 				)}
 			</section>

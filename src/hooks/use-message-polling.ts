@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AUTH_SESSION_CHANGED_EVENT, getClientSessionKey } from "@/lib/auth/client";
 import type { MessageRealtimeState, NewMessageEvent, RealtimeChannelMessage } from "./message-realtime-types";
 import {
+	dispatchAgentSuggestionChanged,
 	getRealtimeWebSocketUrl,
 	getReconnectDelay,
 	parseNewMessageEvent,
@@ -73,6 +74,7 @@ export function useMessagePolling(): MessageRealtimeState {
 					changed?: boolean;
 					draftId?: string;
 					mailboxId?: string;
+					suggestionId?: string;
 				};
 				if (parsed.type === "revision" && typeof parsed.revision === "string") {
 					revision = parsed.revision;
@@ -84,6 +86,13 @@ export function useMessagePolling(): MessageRealtimeState {
 				}
 				if (parsed.type === "agent_draft" && parsed.draftId && parsed.mailboxId) {
 					window.dispatchEvent(new CustomEvent("kite:agent-draft", { detail: parsed }));
+					dispatchMessagesChanged();
+					if (fromSocket) channel?.postMessage({ type: "notification", payload } satisfies RealtimeChannelMessage);
+					return;
+				}
+				// Without this branch the event would fall through to parseNewMessageEvent and be dropped.
+				if (parsed.type === "agent_suggestion" && parsed.mailboxId) {
+					dispatchAgentSuggestionChanged(parsed);
 					dispatchMessagesChanged();
 					if (fromSocket) channel?.postMessage({ type: "notification", payload } satisfies RealtimeChannelMessage);
 					return;

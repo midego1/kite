@@ -3,7 +3,14 @@ import type { SuggestionCount, SuggestionKind } from "./suggestion-types";
 /** Kinds that earn a row chip, most important first. Summaries and the other kinds never show one. */
 const BADGE_PRIORITY: readonly SuggestionKind[] = ["phishing", "calendar_invite", "reply", "task", "receipt"];
 
-const LIST_ORDER: readonly SuggestionKind[] = [...BADGE_PRIORITY, "summary", "label", "unsubscribe", "follow_up"];
+/** Every kind, most important first; rows and For you list kinds in this order. */
+export const SUGGESTION_KIND_ORDER: readonly SuggestionKind[] = [
+	...BADGE_PRIORITY,
+	"summary",
+	"label",
+	"unsubscribe",
+	"follow_up",
+];
 
 /** The inbox chip: the highest-priority open kind, plus how many other chip-worthy suggestions exist. */
 export function pickSuggestionBadge(counts: readonly SuggestionCount[]): { kind: SuggestionKind; more: number } | null {
@@ -38,7 +45,7 @@ export function groupSuggestionCounts(
 		result.set(
 			row.id,
 			Array.from(totals, ([kind, count]) => ({ kind, count })).sort(
-				(a, b) => LIST_ORDER.indexOf(a.kind) - LIST_ORDER.indexOf(b.kind),
+				(a, b) => SUGGESTION_KIND_ORDER.indexOf(a.kind) - SUGGESTION_KIND_ORDER.indexOf(b.kind),
 			),
 		);
 	}

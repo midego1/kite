@@ -1889,4 +1889,174 @@ test.describe("reply suggestions", () => {
 			await restore();
 		}
 	});
+
+	const forYouItem = (page: Page) => page.locator('[data-reorder-id="/for-you"]');
+	const mainNavIds = (page: Page) =>
+		page.locator('[data-reorder-list="main"]').evaluateAll((items) => items.map((item) => item.dataset.reorderId));
+
+	async function deliverPhishing(api: APIRequestContext, to: string, sender: string) {
+		const subject = uniqueToken("fyp");
+		await postInbound(api, {
+			from: `Bank <${sender}>`,
+			to,
+			subject,
+			text: "Please verify your account. [[scenario:fyi]]",
+			html: `<p>Please verify your account. [[scenario:fyi]]</p><p><a href="https://login.evil.test/account">https://bank.example.com/account</a></p>`,
+		});
+		return waitForMessage(api, subject, { status: "received" });
+	}
+
+	test("For you groups open suggestions by kind, follows realtime and bulk Dismiss, and hides when every mailbox is off", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("fyu");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			// The reader asks for the sender's avatar, which is a 404 for senders without one.
+			const failed: string[] = [];
+			page.on("response", (response) => {
+				if (response.status() >= 400 && !response.url().includes("/api/contacts/avatar"))
+					failed.push(`${response.status()} ${response.url()}`);
+			});
+			await selectMailbox(page, account.mailboxId);
+			// An API sign-in leaves no client session key, and the realtime socket only connects with one.
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+			await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "off"));
+			await page.goto("/inbox");
+			await expect(forYouItem(page)).toBeVisible();
+			const ids = await mainNavIds(page);
+			expect(ids.indexOf("/for-you")).toBe(ids.indexOf("/inbox") + 1);
+			await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you$/);
+
+			// Delivered while the inbox is open: the count and row chips arrive over realtime, without a reload.
+			const firstReply = await deliverQuestion(account.api, account.address, "Customer <customer@outside.test>");
+			const firstPhish = await deliverPhishing(account.api, account.address, "alerts@bank.test");
+			const secondReply = await deliverQuestion(account.api, account.address, "Client <client@outside.test>");
+			const secondPhish = await deliverPhishing(account.api, account.address, "notice@bank.test");
+			const messages = [firstReply.message, firstPhish, secondReply.message, secondPhish];
+			for (const message of messages)
+				expect((await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage")).status).toBe(
+					"completed",
+				);
+			const dismissed = await deliverQuestion(account.api, account.address, "Other <other@outside.test>");
+			expect((await waitForFinishedJob(account.api, account.mailboxId, dismissed.message.id, "triage")).status).toBe(
+				"completed",
+			);
+			const closed = (await suggestionsFor(account.api, account.mailboxId, dismissed.message.id))[0];
+			await okJson(await account.api.post(suggestionUrl(closed.id, "dismiss"), { data: {} }));
+
+			await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you\s*4$/, { timeout: 15_000 });
+			await expect(rowBadge(page, secondReply.message.subject!)).toHaveText("Reply", { timeout: 15_000 });
+			await expect(rowBadge(page, secondPhish.subject!)).toHaveText("Phishing");
+
+			const listed = page.waitForResponse((response) => response.url().includes("/api/agent/suggestions?status=open"));
+			await forYouItem(page).getByRole("link").click();
+			await expect(page).toHaveURL(/\/for-you$/);
+			await listed;
+			const sections = page.getByRole("region");
+			await expect(page.getByRole("heading", { level: 2 })).toHaveText([
+				/^Possible phishing\s*\(2\)$/,
+				/^Replies to review\s*\(2\)$/,
+			]);
+			const entrySubjects = (name: RegExp) =>
+				sections
+					.filter({ has: page.getByRole("heading", { name }) })
+					.locator("[data-for-you-entry] a span:first-child");
+			await expect(entrySubjects(/Possible phishing/)).toHaveText([secondPhish.subject!, firstPhish.subject!]);
+			await expect(entrySubjects(/Replies to review/)).toHaveText([
+				secondReply.message.subject!,
+				firstReply.message.subject!,
+			]);
+			await expect(page.getByText(dismissed.message.subject!)).toHaveCount(0);
+
+			await page.getByRole("checkbox", { name: `Select ${firstReply.message.subject}` }).check();
+			await page.getByRole("checkbox", { name: `Select ${firstPhish.subject}` }).check();
+			await page.getByRole("button", { name: "Dismiss (2)" }).click();
+			await expect(page.locator("[data-for-you-entry]")).toHaveCount(2);
+			await expect(page.getByText(firstReply.message.subject!)).toHaveCount(0);
+			await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you\s*2$/);
+			const userDismissals = (await readActions(account.api, account.mailboxId)).filter(
+				(action) => action.initiator === "user" && action.action === "dismiss",
+			);
+			expect(userDismissals).toHaveLength(3);
+
+			await page.getByRole("link", { name: new RegExp(secondReply.message.subject!) }).click();
+			await expect(page).toHaveURL(new RegExp(`/inbox/${secondReply.message.id}$`));
+			await page.goto("/inbox");
+			await expect(rowBadge(page, firstReply.message.subject!)).toHaveCount(0);
+			await expect(rowBadge(page, firstPhish.subject!)).toHaveCount(0);
+			await expect(rowBadge(page, secondReply.message.subject!)).toHaveText("Reply");
+
+			await okJson(
+				await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, autonomy: "off" } }),
+			);
+			await page.reload();
+			await expect(page.getByRole("link", { name: "Inbox" }).first()).toBeVisible();
+			await expect(forYouItem(page)).toHaveCount(0);
+			await okJson(
+				await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, autonomy: "suggest" } }),
+			);
+			await page.reload();
+			await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you\s*2$/);
+			expect(failed).toEqual([]);
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("read-only and send-on-behalf sharers see no suggestion UI for a shared mailbox", async ({ browser }) => {
+		const token = uniqueToken("fys");
+		const localPart = `fys${token}`;
+		const sharedId = await createSharedMailbox(api, localPart);
+		const reader = await createSignedInAccount(api, `fysr${token}`);
+		const helper = await createSignedInAccount(api, `fysh${token}`);
+		const restore = await useFakeProvider(api, fake);
+		const contexts: Awaited<ReturnType<typeof browser.newContext>>[] = [];
+		try {
+			await shareMailbox(api, sharedId, reader.id, "read_only");
+			await shareMailbox(api, sharedId, helper.id, "send_on_behalf");
+			await okJson(await api.put("/api/agent/settings", { data: { mailboxId: sharedId, autonomy: "suggest" } }));
+			const question = await deliverQuestion(api, `${localPart}@${DOMAIN}`, "Customer <customer@outside.test>");
+			const phish = await deliverPhishing(api, `${localPart}@${DOMAIN}`, "alerts@bank.test");
+			for (const message of [question.message, phish])
+				expect((await waitForFinishedJob(api, sharedId, message.id, "triage")).status).toBe("completed");
+			expect((await readSuggestions(api, { mailboxId: sharedId, status: "open" })).suggestions).toHaveLength(2);
+
+			for (const sharer of [reader, helper]) {
+				// Their own mailbox is on Suggest only, so For you is shown, but nothing from the shared mailbox counts.
+				await okJson(
+					await sharer.api.put("/api/agent/settings", { data: { mailboxId: sharer.mailboxId, autonomy: "suggest" } }),
+				);
+				const context = await browser.newContext({ baseURL: BASE_URL, storageState: await sharer.api.storageState() });
+				contexts.push(context);
+				const page = await context.newPage();
+				const errors = collectConsoleErrors(page);
+				await selectMailbox(page, sharedId);
+				await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "off"));
+				await page.goto("/inbox");
+				await expect(page.getByRole("link").filter({ hasText: question.message.subject! })).toBeVisible();
+				await expect(page.getByRole("link").filter({ hasText: phish.subject! })).toBeVisible();
+				await expect(page.locator("[data-suggestion-badge]")).toHaveCount(0);
+				await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you$/);
+				await forYouItem(page).getByRole("link").click();
+				await expect(page).toHaveURL(/\/for-you$/);
+				await expect(page.getByText("Nothing needs your attention right now.")).toBeVisible();
+				await expect(page.locator("[data-for-you-entry]")).toHaveCount(0);
+				expect(errors).toEqual([]);
+				await stopAutoRead(sharer.api, sharer.mailboxId);
+			}
+		} finally {
+			await Promise.all(contexts.map((context) => context.close()));
+			await stopAutoRead(api, sharedId);
+			for (const account of [reader, helper]) await account.api.dispose();
+			await restore();
+		}
+	});
 });

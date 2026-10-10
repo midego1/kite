@@ -760,6 +760,25 @@ test.describe("triage scheduling", () => {
 		await okJson(await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, ...data } }));
 	}
 
+	/**
+	 * Stops the mailbox's automatic work and waits (up to 30 s, without failing) until none of its jobs is pending
+	 * or running. Turning both switches off skips queued jobs and retries, so a test's leftover job cannot send
+	 * requests to whatever provider the next test configures, nor hold the agent queue while that test runs.
+	 */
+	async function quiesce(account: { api: APIRequestContext; mailboxId: string }) {
+		await setAutonomy(account, { autonomy: "off", autoDraftEnabled: false });
+		const deadline = Date.now() + 30_000;
+		while (Date.now() < deadline) {
+			const jobs = await readJobs(account.api, account.mailboxId);
+			if (!jobs.some((job) => job.status === "pending" || job.status === "running")) return;
+			await new Promise((resolve) => setTimeout(resolve, 500));
+		}
+	}
+
+	/** Chat requests whose prompt contains the token (a test's own subject or body text), so other tests' requests never count. */
+	const requestsMentioning = (token: string) =>
+		modelRequests().filter((request) => JSON.stringify(request.body).includes(token));
+
 	test("eligible mail gets exactly one triage job, even when it is delivered twice", async () => {
 		const restore = await useFakeProvider(api, fake);
 		const account = await suggestAccount("trg");
@@ -788,7 +807,7 @@ test.describe("triage scheduling", () => {
 			const triage = (await readJobs(account.api, account.mailboxId)).filter((row) => row.kind === "triage");
 			expect(triage).toEqual([expect.objectContaining({ id: job.id, sourceMessageId: first.id })]);
 			expect(
-				modelRequests()
+				requestsMentioning(subject)
 					.filter((request) => request.kind === "triage")
 					.map((request) => request.emailId),
 			).toEqual([first.id]);
@@ -854,7 +873,7 @@ test.describe("triage scheduling", () => {
 				const job = await waitForFinishedJob(account.api, account.mailboxId, stored.id, "triage");
 				expect(job.status).toBe("completed");
 			}
-			expect(modelRequests()).toEqual([]);
+			expect(requestsMentioning(token)).toEqual([]);
 		} finally {
 			await account.api.dispose();
 			await restore();
@@ -872,7 +891,7 @@ test.describe("triage scheduling", () => {
 				from: "Customer <customer@outside.test>",
 				to: account.address,
 				subject,
-				text: "Can you confirm Tuesday? [[scenario:question]]",
+				text: `Can you confirm Tuesday (${subject})? [[scenario:question]]`,
 			});
 			await expect
 				.poll(async () => (await readJobs(account.api, account.mailboxId)).map((row) => `${row.kind}:${row.status}`), {
@@ -882,7 +901,7 @@ test.describe("triage scheduling", () => {
 			const [job] = await readJobs(account.api, account.mailboxId);
 			expect(job).toMatchObject({ status: "completed", draftId: expect.any(String) });
 			expect((await readJobs(account.api, account.mailboxId)).map((row) => row.kind)).toEqual(["draft"]);
-			const kinds = modelRequests().map((request) => request.kind);
+			const kinds = requestsMentioning(subject).map((request) => request.kind);
 			expect(kinds.length).toBeGreaterThan(0);
 			expect(kinds.every((kind) => kind === "draft")).toBe(true);
 			const drafts = await okJson<{ messages: { id: string }[] }>(
@@ -911,6 +930,7 @@ test.describe("triage scheduling", () => {
 			text,
 		});
 		const cleanup = async () => {
+			await quiesce(account);
 			await account.api.dispose();
 			await restore();
 		};
@@ -1043,10 +1063,11 @@ test.describe("triage scheduling", () => {
 
 	test("the retry route re-runs a failed triage job as triage and a failed draft job as a draft", async () => {
 		test.setTimeout(180_000);
+		const bodyToken = uniqueToken("tr5body");
 		const { account, message, cleanup } = await deliverForTriage(
 			await useFakeProvider(api, fake),
 			"tr5",
-			"Hello [[scenario:http-500]]",
+			`Hello ${bodyToken} [[scenario:http-500]]`,
 		);
 		try {
 			const failed = await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage", 60_000);
@@ -1056,14 +1077,15 @@ test.describe("triage scheduling", () => {
 			const origin = { Origin: BASE_URL };
 			await okJson(await account.api.post(`/api/agent/jobs/${failed.id}/retry`, { headers: origin }));
 			await expect.poll(() => requestsFor(message.id, "triage").length, { timeout: 30_000 }).toBeGreaterThan(0);
-			expect(modelRequests().filter((request) => request.kind === "draft")).toEqual([]);
+			expect(requestsMentioning(bodyToken).filter((request) => request.kind === "draft")).toEqual([]);
 
 			await setAutonomy(account, { autonomy: "off", autoDraftEnabled: true });
+			const draftToken = uniqueToken("draft500");
 			await postInbound(account.api, {
 				from: "Customer <customer@outside.test>",
 				to: account.address,
-				subject: uniqueToken("draft500"),
-				text: "Can you confirm? [[scenario:http-500]]",
+				subject: draftToken,
+				text: `Can you confirm ${draftToken}? [[scenario:http-500]]`,
 			});
 			let draftJob: Awaited<ReturnType<typeof readJobs>>[number] | undefined;
 			await expect
@@ -1078,9 +1100,11 @@ test.describe("triage scheduling", () => {
 			fake.clearRequests();
 			await okJson(await account.api.post(`/api/agent/jobs/${draftJob!.id}/retry`, { headers: origin }));
 			await expect
-				.poll(() => modelRequests().filter((request) => request.kind === "draft").length, { timeout: 30_000 })
+				.poll(() => requestsMentioning(draftToken).filter((request) => request.kind === "draft").length, {
+					timeout: 30_000,
+				})
 				.toBeGreaterThan(0);
-			expect(modelRequests().filter((request) => request.kind === "triage")).toEqual([]);
+			expect(requestsMentioning(draftToken).filter((request) => request.kind === "triage")).toEqual([]);
 		} finally {
 			await cleanup();
 		}
@@ -1121,30 +1145,33 @@ test.describe("triage scheduling", () => {
 		const job = await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage");
 		expect(job).toMatchObject({ status: "skipped", reason });
 		expect(requestsFor(message.id)).toEqual([]);
+		expect(requestsMentioning(message.subject!)).toEqual([]);
 	}
 
 	test("the kill switch and the master switch skip a pending triage job and schedule none for new mail", async () => {
 		test.setTimeout(120_000);
-		const slowFake = await startFakeModel({ slowMs: 8_000 });
+		// Slow replies wait until the test releases them; 45 s only caps a forgotten one below the 60 s call timeout.
+		const slowFake = await startFakeModel({ slowMs: 45_000 });
 		const restore = await useFakeProvider(api, slowFake);
 		const account = await suggestAccount("trk");
+		const slowJobs: string[] = [];
 		/** Holds the mailbox lease with a slow triage call so the next mail's triage job stays pending. */
 		const holdPendingJob = async (prefix: string) => {
 			const slow = await deliverQuestion(account, `${prefix}slow`, "Hello [[scenario:slow]]");
+			slowJobs.push(slow.id);
 			await expect
 				.poll(() => slowFake.requests().some((request) => request.emailId === slow.id), { timeout: 30_000 })
 				.toBe(true);
 			const pending = await deliverQuestion(account, `${prefix}held`, "Hello [[scenario:fyi]]");
-			expect((await triageJobOf(account, pending.id))?.status).toBe("pending");
-			slowJobs.push(slow.id);
+			await expect.poll(async () => (await triageJobOf(account, pending.id))?.status).toBe("pending");
 			return pending;
 		};
-		// The slow calls finish on their own; waiting keeps their requests away from later tests.
-		const settleSlowJobs = async () => {
+		/** Answers the held slow calls; they passed every gate before the switch flipped, so they complete. */
+		const finishSlowJobs = async () => {
+			slowFake.releaseDelayed();
 			for (const id of slowJobs.splice(0))
 				expect((await waitForFinishedJob(account.api, account.mailboxId, id, "triage")).status).toBe("completed");
 		};
-		const slowJobs: string[] = [];
 		try {
 			await setAutonomy(account, { autonomy: "suggest" });
 			const held = await holdPendingJob("k");
@@ -1161,7 +1188,7 @@ test.describe("triage scheduling", () => {
 			});
 			await expectNoTriage(account, slowFake, "killnew");
 
-			await settleSlowJobs();
+			await finishSlowJobs();
 			await okJson(await api.put("/api/admin/agent", { data: { autoReadEnabled: true } }));
 			const heldAgain = await holdPendingJob("m");
 			await okJson(await api.put("/api/admin/agent", { data: { enabled: false } }));
@@ -1171,11 +1198,18 @@ test.describe("triage scheduling", () => {
 			});
 			await expectNoTriage(account, slowFake, "masternew");
 			expect(slowFake.requests().filter((request) => [held.id, heldAgain.id].includes(request.emailId!))).toEqual([]);
-			await settleSlowJobs();
+			await finishSlowJobs();
 		} finally {
-			await account.api.dispose();
-			await restore();
-			await slowFake.close();
+			// After a failure a slow call may still be held or queued; keep releasing until the mailbox is idle.
+			const releasing = setInterval(() => slowFake.releaseDelayed(), 250);
+			try {
+				await quiesce(account);
+			} finally {
+				clearInterval(releasing);
+				await account.api.dispose();
+				await restore();
+				await slowFake.close();
+			}
 		}
 	});
 
@@ -1206,7 +1240,7 @@ test.describe("triage scheduling", () => {
 			const first = await deliverQuestion(account, "limit1");
 			expect((await waitForFinishedJob(account.api, account.mailboxId, first.id, "triage")).status).toBe("completed");
 			await expectSkipped(account, "limit2", "daily_limit");
-			expect(modelRequests().filter((request) => request.kind === "triage")).toHaveLength(1);
+			expect(requestsFor(first.id, "triage")).toHaveLength(1);
 		} finally {
 			await account.api.dispose();
 			await restore();
@@ -1243,7 +1277,6 @@ test.describe("triage scheduling", () => {
 			await setAutonomy(account, { autonomy: "suggest" });
 			await okJson(await api.put("/api/admin/agent", { data: { externalAutoReadAllowed: false } }));
 			await expectSkipped(account, "external", "external_provider_not_allowed");
-			expect(modelRequests()).toEqual([]);
 
 			await okJson(await api.put("/api/admin/agent", { data: { externalAutoReadAllowed: true } }));
 			const allowed = await deliverQuestion(account, "allowed", "Figures attached. [[scenario:fyi]]");

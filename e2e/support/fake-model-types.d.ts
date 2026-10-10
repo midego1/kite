@@ -47,5 +47,7 @@ export type FakeModel = {
 	resetDefaultScenario: () => void;
 	/** Scenarios used, in order, for the next chat requests ahead of any marker or default. */
 	enqueueScenario: (...names: string[]) => void;
+	/** Answers every reply that is waiting out its `slow` delay now; later slow requests wait again. */
+	releaseDelayed: () => void;
 	close: () => Promise<void>;
 };

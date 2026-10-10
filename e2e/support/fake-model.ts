@@ -119,8 +119,21 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 	const calls = new Map<string, number>();
 	const queue: string[] = [];
 	const slowMs = options.slowMs ?? 20_000;
+	const delayed = new Set<() => void>();
 	let defaultScenario = "default";
 	let nextId = 1;
+
+	function delay(ms: number) {
+		return new Promise<void>((resolve) => {
+			const finish = () => {
+				clearTimeout(timer);
+				delayed.delete(finish);
+				resolve();
+			};
+			const timer = setTimeout(finish, ms);
+			delayed.add(finish);
+		});
+	}
 
 	function record(request: IncomingMessage, path: string, fields: Partial<FakeRecordedRequest>) {
 		const entry: FakeRecordedRequest = {
@@ -152,7 +165,7 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 		calls.set(callKey, callNumber);
 		const entry = record(request, path, { kind, scenario, emailId, body: parsed });
 		const reply = scenarioReply(FAKE_SCENARIOS[scenario], kind, { callNumber, slowMs });
-		if (reply.delayMs) await new Promise((resolve) => setTimeout(resolve, reply.delayMs));
+		if (reply.delayMs) await delay(reply.delayMs);
 		if (reply.status && reply.status >= 400)
 			return sendJson(response, reply.status, {
 				error: { message: `Fake model failure (${scenario})`, type: "server_error", code: reply.status },
@@ -222,6 +235,9 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 		},
 		enqueueScenario: (...names) => {
 			queue.push(...names);
+		},
+		releaseDelayed: () => {
+			for (const finish of [...delayed]) finish();
 		},
 		close: () =>
 			new Promise<void>((resolve, reject) => {

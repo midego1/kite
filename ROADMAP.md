@@ -157,6 +157,23 @@ Files next to mail, on storage the operator chooses. Today every object (raw MIM
 4. **External storage** (needs 2)
    - WebDAV first (Nextcloud, ownCloud, most NAS), shown as a linked folder. Google Drive and OneDrive follow, each with the install's own OAuth app, as in milestone 6.
 
+## Milestone 8: Sender screening
+
+Mail from a sender you have not approved waits in a Screener instead of the Inbox, as in HEY. Off by default; turned on per mailbox under Settings → Inbox.
+
+1. **Screener**
+   - The first message from an unknown sender goes to a Screener view instead of the Inbox: no notification, no auto-reply and no agent run. The sidebar shows how many senders are waiting.
+   - For each sender: **Yes** moves their waiting mail to the Inbox and lets future mail in; **No** sends future mail quietly to a Screened out folder. The sender is never told.
+   - Decisions can be changed later under Settings → Screened senders.
+   - Test: e2e delivers mail from a new sender and checks it lands in the Screener, that Yes moves it and the next message arrives in the Inbox, and that No sends the next one to Screened out.
+2. **Who counts as known**
+   - People you have written to, your contacts, and replies in threads you started skip the Screener. Turning screening on offers to approve everyone you already have mail from.
+   - A whole domain can be approved or screened out at once.
+   - Test: unit tests for the known-sender rules; e2e checks that a reply to your own message skips the Screener.
+3. **Fits with the rest**
+   - The spam filter runs first. On shared mailboxes, users with full access decide. The automatic reading agent skips screened mail and can suggest Yes or No.
+   - Decisions live in a per-mailbox table that goes into the backup lists (see `AGENTS.md`). Works on Workers and the Node runtime.
+
 ## Ideas, not yet planned
 
 - Offline reading with a service worker.

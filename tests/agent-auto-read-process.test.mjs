@@ -83,7 +83,9 @@ async function setup(t, { rates = { "fake-triage": { input: 0.05, output: 0.3 } 
 		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 1);
 		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
 		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'a', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-b', 'owner', 'domain-1', 'b', 1);
 		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, updated_at) VALUES ('mailbox-a', 1, 'suggest', 1);
+		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, updated_at) VALUES ('mailbox-b', 1, 'suggest', 1);
 		INSERT OR IGNORE INTO app_settings (id, updated_at) VALUES ('default', 1);
 	`);
 	db.db
@@ -105,19 +107,30 @@ async function setup(t, { rates = { "fake-triage": { input: 0.05, output: 0.3 } 
 }
 
 let count = 0;
-function insertJob(db, { text = "Could you send the figures?", spamVerdict = "inbox", rawR2Key = null, from } = {}) {
+function insertJob(
+	db,
+	{
+		text = "Could you send the figures?",
+		spamVerdict = "inbox",
+		rawR2Key = null,
+		from,
+		mailboxId = "mailbox-a",
+		kind = "triage",
+		status = "pending",
+	} = {},
+) {
 	const id = `message-${++count}`;
 	db.db
 		.prepare(
-			"INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, spam_verdict, raw_r2_key, created_at) VALUES (?, 'owner', 'mailbox-a', 'inbound', ?, 'a@example.com', 'Figures', ?, 'received', ?, ?, ?)",
+			"INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, spam_verdict, raw_r2_key, created_at) VALUES (?, 'owner', ?, 'inbound', ?, 'a@example.com', 'Figures', ?, 'received', ?, ?, ?)",
 		)
-		.run(id, from ?? "Customer <customer@example.net>", text, spamVerdict, rawR2Key, nowSeconds());
+		.run(id, mailboxId, from ?? "Customer <customer@example.net>", text, spamVerdict, rawR2Key, nowSeconds());
 	const jobId = `job-${count}`;
 	db.db
 		.prepare(
-			"INSERT INTO agent_jobs (id, mailbox_id, source_message_id, reviewer_user_id, kind, status, next_attempt_at, created_at) VALUES (?, 'mailbox-a', ?, 'owner', 'triage', 'pending', 1, ?)",
+			"INSERT INTO agent_jobs (id, mailbox_id, source_message_id, reviewer_user_id, kind, status, next_attempt_at, created_at) VALUES (?, ?, ?, 'owner', ?, ?, 1, ?)",
 		)
-		.run(jobId, id, nowSeconds());
+		.run(jobId, mailboxId, id, kind, status, nowSeconds());
 	return { jobId, messageId: id };
 }
 
@@ -324,4 +337,103 @@ test("Workers AI gets JSON mode through the SDK and thinking off, and fenced JSO
 	assert.equal(inputs.max_tokens, 400);
 	assert.equal(inputs.tools, undefined);
 	assert.equal(inputs.reasoning_effort, undefined);
+});
+
+const usageOfJob = (db, jobId) =>
+	db.db.prepare("SELECT mailbox_id, source, reserved FROM ai_usage WHERE job_id = ?").all(jobId);
+
+test("the master switch, the kill switch and a pause skip without a model request", async (t) => {
+	const cases = [
+		["UPDATE app_settings SET agent_enabled = 0", "assistant_disabled"],
+		["UPDATE app_settings SET agent_auto_read_enabled = 0", "kill_switch"],
+		[`UPDATE mailbox_agent_settings SET paused_until = ${nowSeconds() + 86_400}`, "paused"],
+	];
+	for (const [statement, reason] of cases) {
+		const { db, env } = await setup(t);
+		db.db.exec(statement);
+		const { jobId } = insertJob(db);
+		await processAgentTriageJob(env, jobId);
+		assert.deepEqual([jobOf(db, jobId).status, jobOf(db, jobId).reason], ["skipped", reason]);
+		assert.deepEqual(usageOfJob(db, jobId), []);
+	}
+	assert.equal(requests.length, 0);
+});
+
+test("a pause that has ended no longer blocks triage", async (t) => {
+	const { db, env } = await setup(t);
+	db.db.exec(`UPDATE mailbox_agent_settings SET paused_until = ${nowSeconds() - 60}`);
+	const { jobId } = insertJob(db);
+	await processAgentTriageJob(env, jobId);
+	assert.equal(jobOf(db, jobId).status, "completed");
+	assert.equal(requests.length, 1);
+});
+
+test("the daily limit counts completed triage jobs since midnight UTC, not draft jobs", async (t) => {
+	const { db, env } = await setup(t);
+	db.db.exec("UPDATE mailbox_agent_settings SET auto_read_daily_limit = 1 WHERE mailbox_id = 'mailbox-a'");
+	insertJob(db, { kind: "draft", status: "completed" });
+	const yesterday = insertJob(db, { status: "completed" });
+	db.db.prepare("UPDATE agent_jobs SET created_at = ? WHERE id = ?").run(nowSeconds() - 2 * 86_400, yesterday.jobId);
+	const first = insertJob(db);
+	const second = insertJob(db);
+	const other = insertJob(db, { mailboxId: "mailbox-b" });
+	await processAgentTriageJob(env, first.jobId);
+	await processAgentTriageJob(env, second.jobId);
+	await processAgentTriageJob(env, other.jobId);
+	assert.equal(jobOf(db, first.jobId).status, "completed");
+	assert.deepEqual([jobOf(db, second.jobId).status, jobOf(db, second.jobId).reason], ["skipped", "daily_limit"]);
+	assert.equal(jobOf(db, other.jobId).status, "completed", "the limit is per mailbox");
+	assert.equal(requests.length, 2);
+	assert.deepEqual(usageOfJob(db, second.jobId), []);
+});
+
+test("the per-mailbox rate limit skips with rate_limited before any request", async (t) => {
+	const { db, env } = await setup(t);
+	const keys = [];
+	env.AGENT_RATE_LIMIT = {
+		limit: async ({ key }) => {
+			keys.push(key);
+			return { success: false };
+		},
+	};
+	const { jobId } = insertJob(db);
+	await processAgentTriageJob(env, jobId);
+	assert.deepEqual([jobOf(db, jobId).status, jobOf(db, jobId).reason], ["skipped", "rate_limited"]);
+	assert.deepEqual(keys, ["auto-read:mailbox-a"]);
+	assert.equal(requests.length, 0);
+	assert.deepEqual(usageOfJob(db, jobId), []);
+});
+
+test("a mailbox spend cap below one estimate skips with spend_cap and reserves nothing", async (t) => {
+	const { db, env } = await setup(t);
+	db.db.exec("UPDATE mailbox_agent_settings SET daily_spend_cap_micros = 1 WHERE mailbox_id = 'mailbox-a'");
+	const capped = insertJob(db);
+	const other = insertJob(db, { mailboxId: "mailbox-b" });
+	await processAgentTriageJob(env, capped.jobId);
+	await processAgentTriageJob(env, other.jobId);
+	assert.deepEqual([jobOf(db, capped.jobId).status, jobOf(db, capped.jobId).reason], ["skipped", "spend_cap"]);
+	assert.deepEqual(usageOfJob(db, capped.jobId), []);
+	assert.equal(jobOf(db, other.jobId).status, "completed", "the mailbox cap only applies to its mailbox");
+	assert.deepEqual(usageOfJob(db, other.jobId), [{ mailbox_id: "mailbox-b", source: "auto_triage", reserved: 0 }]);
+	assert.equal(requests.length, 1);
+});
+
+test("the install spend cap counts spend from every mailbox and source", async (t) => {
+	const { db, env } = await setup(t);
+	db.db
+		.prepare(
+			"INSERT INTO ai_usage (id, created_at, provider, model, source, input_tokens, output_tokens, cost_usd_micros, mailbox_id, reserved) VALUES ('chat-1', ?, 'compatible', 'fake-triage', 'chat', 1000, 100, 150, 'mailbox-a', 0)",
+		)
+		.run(nowSeconds());
+	db.db.exec("UPDATE app_settings SET agent_daily_spend_cap_micros = 200");
+	const capped = insertJob(db, { mailboxId: "mailbox-b" });
+	await processAgentTriageJob(env, capped.jobId);
+	assert.deepEqual([jobOf(db, capped.jobId).status, jobOf(db, capped.jobId).reason], ["skipped", "spend_cap"]);
+	assert.equal(requests.length, 0);
+
+	db.db.exec("UPDATE app_settings SET agent_daily_spend_cap_micros = 2000000");
+	const raised = insertJob(db, { mailboxId: "mailbox-b" });
+	await processAgentTriageJob(env, raised.jobId);
+	assert.equal(jobOf(db, raised.jobId).status, "completed");
+	assert.equal(requests.length, 1);
 });

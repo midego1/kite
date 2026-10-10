@@ -950,4 +950,170 @@ test.describe("triage scheduling", () => {
 			await cleanup();
 		}
 	});
+
+	const triageJobOf = async (account: { api: APIRequestContext; mailboxId: string }, messageId: string) =>
+		(await readJobs(account.api, account.mailboxId)).find(
+			(row) => row.kind === "triage" && row.sourceMessageId === messageId,
+		);
+
+	async function deliverQuestion(account: { api: APIRequestContext; address: string }, prefix: string, text?: string) {
+		return deliverInbound(account.api, {
+			from: "Customer <customer@outside.test>",
+			to: account.address,
+			subject: uniqueToken(prefix),
+			text: text ?? "Can you confirm the order? [[scenario:question]]",
+		});
+	}
+
+	/** Delivers mail that gets no triage job and proves it, including that the model saw nothing. */
+	async function expectNoTriage(
+		account: { api: APIRequestContext; mailboxId: string; address: string },
+		models: FakeModel,
+		prefix: string,
+	) {
+		const message = await deliverQuestion(account, prefix);
+		await settle();
+		expect(await triageJobOf(account, message.id)).toBeUndefined();
+		expect(models.requests().filter((request) => request.emailId === message.id)).toEqual([]);
+	}
+
+	async function expectSkipped(
+		account: { api: APIRequestContext; mailboxId: string; address: string },
+		prefix: string,
+		reason: string,
+	) {
+		const message = await deliverQuestion(account, prefix);
+		const job = await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage");
+		expect(job).toMatchObject({ status: "skipped", reason });
+		expect(requestsFor(message.id)).toEqual([]);
+	}
+
+	test("the kill switch and the master switch skip a pending triage job and schedule none for new mail", async () => {
+		test.setTimeout(120_000);
+		const slowFake = await startFakeModel({ slowMs: 8_000 });
+		const restore = await useFakeProvider(api, slowFake);
+		const account = await suggestAccount("trk");
+		/** Holds the mailbox lease with a slow triage call so the next mail's triage job stays pending. */
+		const holdPendingJob = async (prefix: string) => {
+			const slow = await deliverQuestion(account, `${prefix}slow`, "Hello [[scenario:slow]]");
+			await expect
+				.poll(() => slowFake.requests().some((request) => request.emailId === slow.id), { timeout: 30_000 })
+				.toBe(true);
+			const pending = await deliverQuestion(account, `${prefix}held`, "Hello [[scenario:fyi]]");
+			expect((await triageJobOf(account, pending.id))?.status).toBe("pending");
+			slowJobs.push(slow.id);
+			return pending;
+		};
+		// The slow calls finish on their own; waiting keeps their requests away from later tests.
+		const settleSlowJobs = async () => {
+			for (const id of slowJobs.splice(0))
+				expect((await waitForFinishedJob(account.api, account.mailboxId, id, "triage")).status).toBe("completed");
+		};
+		const slowJobs: string[] = [];
+		try {
+			await setAutonomy(account, { autonomy: "suggest" });
+			const held = await holdPendingJob("k");
+			await okJson(await api.put("/api/admin/agent", { data: { autoReadEnabled: false } }));
+			expect(await triageJobOf(account, held.id)).toMatchObject({ status: "skipped", reason: "kill_switch" });
+			const settings = await okJson<{ autoReadAvailable: boolean }>(
+				await account.api.get(`/api/agent/settings?mailboxId=${account.mailboxId}`),
+			);
+			expect(settings.autoReadAvailable).toBe(false);
+			const admin = await readAdminAgent(api);
+			expect(admin).toMatchObject({
+				assistantEnabled: true,
+				config: { provider: "compatible", baseUrl: slowFake.url },
+			});
+			await expectNoTriage(account, slowFake, "killnew");
+
+			await settleSlowJobs();
+			await okJson(await api.put("/api/admin/agent", { data: { autoReadEnabled: true } }));
+			const heldAgain = await holdPendingJob("m");
+			await okJson(await api.put("/api/admin/agent", { data: { enabled: false } }));
+			expect((await triageJobOf(account, heldAgain.id))?.status).toBe("skipped");
+			await expectNoTriage(account, slowFake, "masternew");
+			expect(slowFake.requests().filter((request) => [held.id, heldAgain.id].includes(request.emailId!))).toEqual([]);
+			await settleSlowJobs();
+		} finally {
+			await account.api.dispose();
+			await restore();
+			await slowFake.close();
+		}
+	});
+
+	test("a paused mailbox makes no model request until it is resumed", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("trp");
+		try {
+			await setAutonomy(account, {
+				autonomy: "suggest",
+				pausedUntil: new Date(Date.now() + 24 * 3_600_000).toISOString(),
+			});
+			await expectNoTriage(account, fake, "paused");
+			await setAutonomy(account, { pausedUntil: null });
+			const resumed = await deliverQuestion(account, "resumed");
+			expect((await waitForFinishedJob(account.api, account.mailboxId, resumed.id, "triage")).status).toBe("completed");
+			expect(requestsFor(resumed.id, "triage")).toHaveLength(1);
+		} finally {
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("the daily triage limit skips the next message without a model request", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("trd");
+		try {
+			await setAutonomy(account, { autonomy: "suggest", autoReadDailyLimit: 1 });
+			const first = await deliverQuestion(account, "limit1");
+			expect((await waitForFinishedJob(account.api, account.mailboxId, first.id, "triage")).status).toBe("completed");
+			await expectSkipped(account, "limit2", "daily_limit");
+			expect(modelRequests().filter((request) => request.kind === "triage")).toHaveLength(1);
+		} finally {
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("a mailbox spend cap and the install spend cap skip with spend_cap before any request", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const { dailySpendCapMicros: installCap } = await readAdminAgent(api);
+		const account = await suggestAccount("trc");
+		try {
+			await setAutonomy(account, { autonomy: "suggest", dailySpendCapMicros: 1 });
+			await expectSkipped(account, "mailboxcap", "spend_cap");
+
+			await setAutonomy(account, { dailySpendCapMicros: null });
+			await okJson(await api.put("/api/admin/agent", { data: { dailySpendCapMicros: 1 } }));
+			await expectSkipped(account, "installcap", "spend_cap");
+
+			await okJson(await api.put("/api/admin/agent", { data: { dailySpendCapMicros: installCap } }));
+			const raised = await deliverQuestion(account, "raisedcap");
+			expect((await waitForFinishedJob(account.api, account.mailboxId, raised.id, "triage")).status).toBe("completed");
+			expect(requestsFor(raised.id, "triage")).toHaveLength(1);
+		} finally {
+			await okJson(await api.put("/api/admin/agent", { data: { dailySpendCapMicros: installCap } }));
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("an external provider without the opt-in receives nothing, and with it triages", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("tre");
+		try {
+			await setAutonomy(account, { autonomy: "suggest" });
+			await okJson(await api.put("/api/admin/agent", { data: { externalAutoReadAllowed: false } }));
+			await expectSkipped(account, "external", "external_provider_not_allowed");
+			expect(modelRequests()).toEqual([]);
+
+			await okJson(await api.put("/api/admin/agent", { data: { externalAutoReadAllowed: true } }));
+			const allowed = await deliverQuestion(account, "allowed", "Figures attached. [[scenario:fyi]]");
+			expect((await waitForFinishedJob(account.api, account.mailboxId, allowed.id, "triage")).status).toBe("completed");
+			expect(requestsFor(allowed.id, "triage")).toHaveLength(1);
+		} finally {
+			await account.api.dispose();
+			await restore();
+		}
+	});
 });

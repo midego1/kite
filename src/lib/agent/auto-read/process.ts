@@ -7,6 +7,7 @@ import { getAgentProviderConfig } from "../provider";
 import { needsModel } from "./facts-utils";
 import { getAutoReadInstallSettings } from "./install-settings";
 import { planSuggestions } from "./policy-utils";
+import { allowAutoReadRequest, triageDailyLimitReached } from "./quota";
 import { isPaused } from "./schedule-utils";
 import type { AutoReadInstallSettings } from "./settings-types";
 import { resolveMailboxAgentSettings } from "./settings-utils";
@@ -56,11 +57,13 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 		ownerUserId: mailbox.userId,
 		mailboxType: mailbox.type,
 	});
+	if (await triageDailyLimitReached(db, job.mailboxId, settings.autoReadDailyLimit)) return "daily_limit";
 	const context = await loadTriageContext(env, source, job.reviewerUserId);
 	let model: Awaited<ReturnType<typeof runTriageModel>> | null = null;
 	if (needsModel(context.facts, settings.capabilities)) {
 		const config = await getAgentProviderConfig(env);
 		if (config.provider === "compatible" && !install.externalAutoReadAllowed) return "external_provider_not_allowed";
+		if (!(await allowAutoReadRequest(env, job.mailboxId))) return "rate_limited";
 		model = await runTriageModel({
 			env,
 			job,

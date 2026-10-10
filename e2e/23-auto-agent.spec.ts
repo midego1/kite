@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { DRAFT_SYSTEM_MARKER } from "../src/lib/agent/auto-read/request-markers";
-import { BASE_URL, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { BASE_URL, DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { FAKE_API_KEY, fakeProviderSettings, readAdminAgent, useFakeProvider } from "./support/agent";
 import {
 	autoReadFields,
@@ -16,7 +16,8 @@ import {
 import { startFakeModel } from "./support/fake-model";
 import { QUESTION_DRAFT_BODY } from "./support/fake-model-scenarios";
 import type { FakeModel } from "./support/fake-model-types";
-import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { readJobs, waitForFinishedJob } from "./support/triage";
 
 let fake: FakeModel;
 let api: APIRequestContext;
@@ -605,6 +606,151 @@ test.describe("automatic reading settings UI", () => {
 			expect(errors).toEqual([]);
 		} finally {
 			await api.put("/api/admin/agent", { data: { dailySpendCapMicros: before.dailySpendCapMicros } });
+			await restore();
+		}
+	});
+});
+
+test.describe("triage scheduling", () => {
+	const settle = () => new Promise((resolve) => setTimeout(resolve, 1500));
+	const modelRequests = () => fake.requests().filter((request) => request.path.endsWith("/chat/completions"));
+
+	async function suggestAccount(prefix: string) {
+		const username = `${prefix}${uniqueToken("")}`;
+		const account = await createSignedInAccount(api, username);
+		return { ...account, address: `${username}@${DOMAIN}` };
+	}
+
+	async function setAutonomy(account: { api: APIRequestContext; mailboxId: string }, data: Record<string, unknown>) {
+		await okJson(await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, ...data } }));
+	}
+
+	test("eligible mail gets exactly one triage job, even when it is delivered twice", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("trg");
+		try {
+			await setAutonomy(account, { autonomy: "suggest" });
+			const subject = uniqueToken("triagetwice");
+			const mail = {
+				from: "Customer <customer@outside.test>",
+				to: account.address,
+				subject,
+				text: "Could you confirm the order?",
+				messageId: `<${subject}@outside.test>`,
+			};
+			const first = await deliverInbound(account.api, mail);
+			const job = await waitForFinishedJob(account.api, account.mailboxId, first.id, "triage");
+			expect(job.status).toBe("completed");
+
+			await postInbound(account.api, mail);
+			await expect
+				.poll(async () => {
+					const response = await account.api.get(`/api/messages?q=${subject}&limit=20`);
+					return ((await response.json()) as { messages: unknown[] }).messages.length;
+				})
+				.toBe(2);
+			await settle();
+			const triage = (await readJobs(account.api, account.mailboxId)).filter((row) => row.kind === "triage");
+			expect(triage).toEqual([expect.objectContaining({ id: job.id, sourceMessageId: first.id })]);
+		} finally {
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("bounces, the mailbox's own address and auto-submitted mail get no job", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("trn");
+		try {
+			await setAutonomy(account, { autonomy: "suggest" });
+			const token = uniqueToken("ineligible");
+			const senders = [account.address, "MAILER-DAEMON@relay.outside.test", "postmaster@relay.outside.test"];
+			for (const [index, from] of senders.entries())
+				await postInbound(account.api, { from, to: account.address, subject: `${token} ${index}`, text: "Hi" });
+			await postInbound(account.api, {
+				from: "Out Of Office <person@outside.test>",
+				to: account.address,
+				subject: `${token} auto`,
+				text: "I am away.",
+				headers: { "Auto-Submitted": "auto-replied" },
+			});
+			const barrier = await deliverInbound(account.api, {
+				from: "Customer <customer@outside.test>",
+				to: account.address,
+				subject: `${token} barrier`,
+				text: "A real question.",
+			});
+			await waitForFinishedJob(account.api, account.mailboxId, barrier.id, "triage");
+			await waitForMessage(account.api, `${token} auto`);
+			await settle();
+			expect((await readJobs(account.api, account.mailboxId)).map((job) => job.sourceMessageId)).toEqual([barrier.id]);
+		} finally {
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("list, bulk and no-reply mail is triaged without a model request", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("trb");
+		try {
+			await setAutonomy(account, { autonomy: "suggest" });
+			const token = uniqueToken("bulk");
+			const mails: { from: string; subject: string; headers: Record<string, string> }[] = [
+				{
+					from: "Team List <team@lists.outside.test>",
+					subject: `${token} list`,
+					headers: { "List-Id": "<team.lists.outside.test>", "List-Unsubscribe": "<https://outside.test/u>" },
+				},
+				{ from: "News <news@outside.test>", subject: `${token} bulk`, headers: { Precedence: "bulk" } },
+				{ from: "Vendor <no-reply@vendor.example>", subject: `${token} noreply`, headers: {} },
+			];
+			for (const mail of mails) {
+				const stored = await deliverInbound(account.api, {
+					...mail,
+					to: account.address,
+					text: "Weekly update [[scenario:question]]",
+				});
+				const job = await waitForFinishedJob(account.api, account.mailboxId, stored.id, "triage");
+				expect(job.status).toBe("completed");
+			}
+			expect(modelRequests()).toEqual([]);
+		} finally {
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("autonomy off with auto-draft on keeps the legacy draft job and no triage", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("trl");
+		try {
+			await setAutonomy(account, { autonomy: "off", autoDraftEnabled: true });
+			const subject = uniqueToken("legacy");
+			// The draft can be listed before the inbound copy, so the job is found by kind rather than by message.
+			await postInbound(account.api, {
+				from: "Customer <customer@outside.test>",
+				to: account.address,
+				subject,
+				text: "Can you confirm Tuesday? [[scenario:question]]",
+			});
+			await expect
+				.poll(async () => (await readJobs(account.api, account.mailboxId)).map((row) => `${row.kind}:${row.status}`), {
+					timeout: 30_000,
+				})
+				.toEqual(["draft:completed"]);
+			const [job] = await readJobs(account.api, account.mailboxId);
+			expect(job).toMatchObject({ status: "completed", draftId: expect.any(String) });
+			expect((await readJobs(account.api, account.mailboxId)).map((row) => row.kind)).toEqual(["draft"]);
+			const kinds = modelRequests().map((request) => request.kind);
+			expect(kinds.length).toBeGreaterThan(0);
+			expect(kinds.every((kind) => kind === "draft")).toBe(true);
+			const drafts = await okJson<{ messages: { id: string }[] }>(
+				await account.api.get("/api/messages?status=draft&limit=20"),
+			);
+			expect(drafts.messages.map((message) => message.id)).toContain(job.draftId);
+		} finally {
+			await account.api.dispose();
 			await restore();
 		}
 	});

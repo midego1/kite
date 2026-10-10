@@ -17,11 +17,12 @@ export function isWebhookRetryMessage(payload: unknown): payload is WebhookRetry
 }
 
 export type QueueMessageKind =
-	"inbound" | "webhook_retry" | "outbound" | "agent_draft" | "import" | "mailbox_purge" | "unknown";
+	"inbound" | "webhook_retry" | "outbound" | "agent_draft" | "agent_triage" | "import" | "mailbox_purge" | "unknown";
 
 const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"email.scheduled": "outbound",
 	"agent.draft": "agent_draft",
+	"agent.triage": "agent_triage",
 	"import.imap": "import",
 	"mailbox.purge": "mailbox_purge",
 };

@@ -934,7 +934,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 						.slice(0, 5)
 						.map((job) => (
 							<p key={job.id} className="text-xs">
-								{job.status}: {job.reason}
+								{job.kind === "triage" ? "Automatic reading" : "Auto-draft"} {job.status}: {job.reason}
 								{job.status === "failed" && (
 									<button type="button" className="ml-2 text-blue-700 underline" onClick={() => void retryJob(job.id)}>
 										Retry

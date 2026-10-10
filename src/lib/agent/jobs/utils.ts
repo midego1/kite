@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, or, sql } from "drizzle-orm";
 import { generateText } from "ai";
 import { getDb } from "@/db";
 import { agentDraftMetadata, agentJobs, mailboxAgentSettings, mailboxes, messages, users } from "@/db/schema";
@@ -9,7 +9,7 @@ import { newId } from "@/lib/ids";
 import { getAgentModel } from "../model";
 import { getAgentEnabled } from "../provider";
 import { recordAiUsage } from "@/lib/ai/usage";
-import { agentProviderErrorMessage } from "../errors";
+import { claimAgentJob, failAgentJob, skipAgentJob } from "./lease";
 import { runEmailTool } from "../tools";
 import { notifyUsersOfNewMessage } from "@/lib/realtime/utils";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
@@ -62,31 +62,22 @@ export async function scheduleAutoDraft(
 	const [job] = await db
 		.select({ id: agentJobs.id, status: agentJobs.status })
 		.from(agentJobs)
-		.where(and(eq(agentJobs.mailboxId, input.mailboxId), eq(agentJobs.sourceMessageId, input.sourceMessageId)))
+		.where(
+			and(
+				eq(agentJobs.mailboxId, input.mailboxId),
+				eq(agentJobs.sourceMessageId, input.sourceMessageId),
+				eq(agentJobs.kind, "draft"),
+			),
+		)
 		.limit(1);
 	if (job?.status === "pending") await env.AGENT_QUEUE?.send({ kind: "agent.draft", jobId: job.id });
 }
 
 export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 	const db = getDb(env);
-	const [job] = await db.select().from(agentJobs).where(eq(agentJobs.id, jobId)).limit(1);
-	if (!job || job.status === "completed" || job.status === "skipped" || job.status === "failed") return;
-	const now = new Date();
-	if (job.nextAttemptAt > now || (job.status === "running" && job.leaseUntil && job.leaseUntil > now)) return;
-	const claimed = await db
-		.update(agentJobs)
-		.set({ status: "running", attempts: job.attempts + 1, leaseUntil: new Date(Date.now() + 10 * 60_000) })
-		.where(
-			and(
-				eq(agentJobs.id, jobId),
-				or(eq(agentJobs.status, "pending"), and(eq(agentJobs.status, "running"), lt(agentJobs.leaseUntil, now))),
-				sql`NOT EXISTS (SELECT 1 FROM agent_jobs active WHERE active.mailbox_id = ${job.mailboxId} AND active.id <> ${jobId} AND active.status = 'running' AND active.lease_until > ${Math.floor(now.getTime() / 1000)})`,
-			),
-		)
-		.returning({ id: agentJobs.id });
-	if (!claimed.length) return;
-	const skip = async (reason: string) =>
-		db.update(agentJobs).set({ status: "skipped", reason, leaseUntil: null }).where(eq(agentJobs.id, jobId));
+	const job = await claimAgentJob(db, jobId);
+	if (!job) return;
+	const skip = (reason: string) => skipAgentJob(db, jobId, reason);
 	try {
 		if (!(await getAgentEnabled(env))) return void (await skip("Assistant disabled"));
 		const [settings] = await db
@@ -112,7 +103,12 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 			.select({ count: sql<number>`count(*)` })
 			.from(agentJobs)
 			.where(
-				and(eq(agentJobs.mailboxId, job.mailboxId), eq(agentJobs.status, "completed"), gte(agentJobs.createdAt, since)),
+				and(
+					eq(agentJobs.mailboxId, job.mailboxId),
+					eq(agentJobs.kind, "draft"),
+					eq(agentJobs.status, "completed"),
+					gte(agentJobs.createdAt, since),
+				),
 			);
 		if ((usage?.count ?? 0) >= settings.dailyLimit) return void (await skip("Daily draft limit reached"));
 		const [already] = await db
@@ -220,31 +216,6 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 			draftId: result.draftId,
 		});
 	} catch (error) {
-		const attempts = job.attempts + 1;
-		await db
-			.update(agentJobs)
-			.set({
-				status: attempts >= 3 ? "failed" : "pending",
-				nextAttemptAt: new Date(Date.now() + Math.min(60_000, 5_000 * 2 ** attempts)),
-				leaseUntil: null,
-				reason: agentProviderErrorMessage(error).slice(0, 300),
-			})
-			.where(eq(agentJobs.id, jobId));
+		await failAgentJob(db, job, error);
 	}
-}
-
-export async function recoverAgentDraftJobs(env: CloudflareEnv) {
-	const db = getDb(env);
-	const now = new Date();
-	const due = await db
-		.select({ id: agentJobs.id })
-		.from(agentJobs)
-		.where(
-			or(
-				and(eq(agentJobs.status, "pending"), lte(agentJobs.nextAttemptAt, now)),
-				and(eq(agentJobs.status, "running"), lt(agentJobs.leaseUntil, now)),
-			),
-		)
-		.limit(20);
-	await Promise.allSettled(due.map(({ id }) => processAgentDraftJob(env, id)));
 }

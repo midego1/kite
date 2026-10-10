@@ -4,7 +4,11 @@ interface CloudflareEnv {
 	BUCKET: R2Bucket;
 	INBOUND_QUEUE: Queue<import("./src/lib/email/inbound").InboundQueueMessage>;
 	// The agent queue also carries background IMAP import jobs.
-	AGENT_QUEUE?: Queue<{ kind: "agent.draft"; jobId: string } | import("./src/lib/import/jobs").ImportJobQueueMessage>;
+	AGENT_QUEUE?: Queue<
+		| { kind: "agent.draft"; jobId: string }
+		| { kind: "agent.triage"; jobId: string }
+		| import("./src/lib/import/jobs").ImportJobQueueMessage
+	>;
 	AI?: Ai;
 	AI_MODEL?: string;
 	AI_BASE_URL?: string;

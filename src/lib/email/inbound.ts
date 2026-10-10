@@ -20,7 +20,7 @@ import { analyzeSpam } from "@/lib/spam/engine";
 import { getReputationKeys } from "@/lib/spam/analyzers/reputation";
 import { recordReputationObservation } from "@/lib/spam/repository";
 import { getMailboxNotificationUserIds, notifyUsersOfNewMessage } from "@/lib/realtime/utils";
-import { scheduleAutoDraft } from "@/lib/agent/jobs/utils";
+import { scheduleAgentWork } from "@/lib/agent/auto-read/schedule";
 
 export type InboundQueueMessage = {
 	from: string;
@@ -61,8 +61,8 @@ export async function processInboundMessage(env: CloudflareEnv, payload: Inbound
 	if (stored) {
 		try {
 			const [existing] = await db.select().from(messages).where(eq(messages.id, stored.id)).limit(1);
-			if (existing && Date.now() - existing.createdAt.getTime() < 30 * 60_000)
-				await scheduleAutoDraft(env, {
+			if (existing)
+				await scheduleAgentWork(env, {
 					mailboxId: decision.mailbox.mailboxId,
 					sourceMessageId: existing.id,
 					ownerUserId: decision.mailbox.userId,
@@ -72,9 +72,10 @@ export async function processInboundMessage(env: CloudflareEnv, payload: Inbound
 					folderId: existing.folderId,
 					spamVerdict: existing.spamVerdict,
 					spamAnalysisError: existing.spamAnalysisError,
+					recoveryReceivedAt: existing.createdAt,
 				});
 		} catch (error) {
-			console.error("Auto-draft recovery failed", error);
+			console.error("Agent work recovery failed", error);
 		}
 		return;
 	}
@@ -259,7 +260,7 @@ export async function processInboundMessage(env: CloudflareEnv, payload: Inbound
 		spamVerdict: spamAnalysis?.verdict,
 	});
 	try {
-		await scheduleAutoDraft(env, {
+		await scheduleAgentWork(env, {
 			mailboxId: decision.mailbox.mailboxId,
 			sourceMessageId: messageId,
 			ownerUserId: decision.mailbox.userId,
@@ -271,7 +272,7 @@ export async function processInboundMessage(env: CloudflareEnv, payload: Inbound
 			spamAnalysisError,
 		});
 	} catch (error) {
-		console.error("Auto-draft scheduling failed", error);
+		console.error("Agent work scheduling failed", error);
 	}
 }
 

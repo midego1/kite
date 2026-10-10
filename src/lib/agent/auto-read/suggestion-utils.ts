@@ -1,15 +1,8 @@
 import { z } from "zod";
-import type {
-	SuggestionContent,
-	SuggestionCount,
-	SuggestionKind,
-	SuggestionPayloads,
-	TaskSuggestionPayload,
-} from "./suggestion-types";
+import type { SuggestionContent, SuggestionKind, SuggestionPayloads, TaskSuggestionPayload } from "./suggestion-types";
 
 export const SUGGESTION_EXPIRY_DAYS = 14;
 const TITLE_MAX_CHARS = 200;
-const BADGE_PRIORITY: readonly SuggestionKind[] = ["phishing", "calendar_invite", "reply", "task", "receipt"];
 
 const isoDate = z.iso.datetime({ offset: true });
 
@@ -100,14 +93,4 @@ export function suggestionTitle(suggestion: SuggestionContent): string {
 
 export function suggestionExpiresAt(createdAt: Date): Date {
 	return new Date(createdAt.getTime() + SUGGESTION_EXPIRY_DAYS * 24 * 60 * 60_000);
-}
-
-/** The inbox chip: the highest-priority open kind, plus how many other chip-worthy suggestions exist. */
-export function pickSuggestionBadge(counts: SuggestionCount[]): { kind: SuggestionKind; more: number } | null {
-	const total = (kind: SuggestionKind) =>
-		counts.filter((entry) => entry.kind === kind).reduce((sum, entry) => sum + Math.max(0, entry.count), 0);
-	const kind = BADGE_PRIORITY.find((candidate) => total(candidate) > 0);
-	if (!kind) return null;
-	const all = BADGE_PRIORITY.reduce((sum, candidate) => sum + total(candidate), 0);
-	return { kind, more: all - 1 };
 }

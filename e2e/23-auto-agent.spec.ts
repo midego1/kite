@@ -1741,4 +1741,152 @@ test.describe("reply suggestions", () => {
 			await restore();
 		}
 	});
+
+	type ListedRow = { id: string; subject: string | null; agentSuggestions?: { kind: string; count: number }[] };
+
+	async function listRows(api: APIRequestContext, query: string) {
+		return (await okJson<{ messages: ListedRow[] }>(await api.get(`/api/messages?${query}`))).messages;
+	}
+
+	/** The badge inside the list row whose link carries the subject. */
+	const rowBadge = (page: Page, subject: string) =>
+		page.getByRole("link").filter({ hasText: subject }).locator("[data-suggestion-badge]");
+
+	test("inbox rows show the highest-priority suggestion chip, summaries get none, and conversations aggregate", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("sgr");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const long = ` ${"The figures are attached for your review. ".repeat(45)}`;
+			const question = await deliverQuestion(account.api, account.address, "Customer <customer@outside.test>", {
+				text: `Can you confirm the totals? [[scenario:question]]${long}`,
+			});
+			const summarySubject = uniqueToken("sgrs");
+			await postInbound(account.api, {
+				from: "Reports <reports@outside.test>",
+				to: account.address,
+				subject: summarySubject,
+				text: `Quarterly figures. [[scenario:fyi]]${long}`,
+			});
+			const summaryOnly = await waitForMessage(account.api, summarySubject, { status: "received" });
+			const phishSubject = uniqueToken("sgrp");
+			const phishId = `<${uniqueToken("sgrp")}@bank.test>`;
+			await postInbound(account.api, {
+				from: "Bank <alerts@bank.test>",
+				to: account.address,
+				subject: phishSubject,
+				messageId: phishId,
+				text: "Please verify your account. [[scenario:fyi]]",
+				html: `<p>Please verify your account. [[scenario:fyi]]</p><p><a href="https://login.evil.test/account">https://bank.example.com/account</a></p>`,
+			});
+			const phishing = await waitForMessage(account.api, phishSubject, { status: "received" });
+			for (const message of [question.message, summaryOnly, phishing])
+				expect((await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage")).status).toBe(
+					"completed",
+				);
+			const followUp = await deliverQuestion(account.api, account.address, "Bank <alerts@bank.test>", {
+				inReplyTo: phishId,
+			});
+			expect((await waitForFinishedJob(account.api, account.mailboxId, followUp.message.id, "triage")).status).toBe(
+				"completed",
+			);
+
+			const flat = await listRows(account.api, `mailboxId=${account.mailboxId}&status=received&limit=50`);
+			const byId = new Map(flat.map((row) => [row.id, row]));
+			expect(byId.get(question.message.id)?.agentSuggestions).toEqual([
+				{ kind: "reply", count: 1 },
+				{ kind: "summary", count: 1 },
+			]);
+			expect(byId.get(summaryOnly.id)?.agentSuggestions).toEqual([{ kind: "summary", count: 1 }]);
+			expect(byId.get(phishing.id)?.agentSuggestions).toEqual([{ kind: "phishing", count: 1 }]);
+			expect(byId.get(followUp.message.id)?.agentSuggestions).toEqual([{ kind: "reply", count: 1 }]);
+			const grouped = await listRows(
+				account.api,
+				`mailboxId=${account.mailboxId}&status=received&limit=50&group=thread`,
+			);
+			const threadRow = grouped.find((row) => row.id === followUp.message.id);
+			expect(threadRow?.agentSuggestions).toEqual([
+				{ kind: "phishing", count: 1 },
+				{ kind: "reply", count: 1 },
+			]);
+			expect(grouped.some((row) => row.id === phishing.id)).toBe(false);
+
+			const page = await context.newPage();
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "off"));
+			await page.goto("/inbox");
+			await expect(rowBadge(page, question.message.subject!)).toHaveAttribute("data-suggestion-badge", "reply");
+			await expect(rowBadge(page, question.message.subject!)).toHaveText("Reply");
+			await expect(rowBadge(page, phishSubject)).toHaveAttribute("data-suggestion-badge", "phishing");
+			await expect(rowBadge(page, phishSubject)).toHaveText("Phishing");
+			await expect(rowBadge(page, followUp.message.subject!)).toHaveText("Reply");
+			await expect(page.getByRole("link").filter({ hasText: summarySubject })).toBeVisible();
+			await expect(rowBadge(page, summarySubject)).toHaveCount(0);
+
+			await page.evaluate(() => localStorage.setItem("kite-conversation-view", "on"));
+			const conversation = await context.newPage();
+			await conversation.goto("/inbox");
+			const threadBadge = rowBadge(conversation, followUp.message.subject!);
+			await expect(threadBadge).toHaveAttribute("data-suggestion-badge", "phishing");
+			await expect(threadBadge).toHaveText("Phishing+1");
+			await expect(threadBadge).toHaveAttribute("aria-label", "Kite suggestion: Phishing, 1 more");
+
+			const reply = (await suggestionsFor(account.api, account.mailboxId, followUp.message.id)).find(
+				(item) => item.kind === "reply",
+			);
+			await okJson(await account.api.post(suggestionUrl(reply!.id, "dismiss"), { data: {} }));
+			const afterDismiss = await listRows(
+				account.api,
+				`mailboxId=${account.mailboxId}&status=received&limit=50&group=thread`,
+			);
+			expect(afterDismiss.find((row) => row.id === followUp.message.id)?.agentSuggestions).toEqual([
+				{ kind: "phishing", count: 1 },
+			]);
+			await conversation.reload();
+			await expect(rowBadge(conversation, followUp.message.subject!)).toHaveText("Phishing");
+		} finally {
+			await context.close();
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("/api/messages returns agentSuggestions only to users with full access", async () => {
+		const token = uniqueToken("sgl");
+		const localPart = `sgl${token}`;
+		const sharedId = await createSharedMailbox(api, localPart);
+		const manager = await createSignedInAccount(api, `sglm${token}`);
+		const reader = await createSignedInAccount(api, `sglr${token}`);
+		const helper = await createSignedInAccount(api, `sglh${token}`);
+		const restore = await useFakeProvider(api, fake);
+		try {
+			await shareMailbox(api, sharedId, manager.id, "full_access");
+			await shareMailbox(api, sharedId, reader.id, "read_only");
+			await shareMailbox(api, sharedId, helper.id, "send_on_behalf");
+			await okJson(await api.put("/api/agent/settings", { data: { mailboxId: sharedId, autonomy: "suggest" } }));
+			const { message } = await deliverQuestion(api, `${localPart}@${DOMAIN}`, "Customer <customer@outside.test>");
+			expect((await waitForFinishedJob(api, sharedId, message.id, "triage")).status).toBe("completed");
+			for (const query of [
+				`mailboxId=${sharedId}&status=received`,
+				`mailboxId=${sharedId}&status=received&group=thread`,
+			]) {
+				for (const client of [api, manager.api]) {
+					const row = (await listRows(client, query)).find((item) => item.id === message.id);
+					expect(row?.agentSuggestions).toEqual([{ kind: "reply", count: 1 }]);
+				}
+				for (const client of [reader.api, helper.api]) {
+					const rows = await listRows(client, query);
+					expect(rows.map((item) => item.id)).toContain(message.id);
+					expect(rows.filter((item) => "agentSuggestions" in item)).toEqual([]);
+				}
+			}
+		} finally {
+			await stopAutoRead(api, sharedId);
+			for (const account of [manager, reader, helper]) await account.api.dispose();
+			await restore();
+		}
+	});
 });

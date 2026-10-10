@@ -13,6 +13,7 @@ import { buildSearchConditions } from "@/lib/search/conditions";
 import { getRequestTimeZone } from "@/lib/time/utils";
 import { queryInChunks } from "@/db/chunk-utils";
 import { decodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor-utils";
+import { loadRowSuggestions } from "@/lib/agent/auto-read/message-suggestions";
 import { afterCursor, getMessageListColumns, loadConversationPage } from "./utils";
 import type { ListMessage } from "./types";
 
@@ -211,6 +212,7 @@ export async function GET(request: Request) {
 			),
 		),
 	);
+	const rowSuggestions = await loadRowSuggestions(db, accessibleMailboxes, rows, threadMessageIds);
 	// `Message.textBody`/`htmlBody` are optional on the wire type and the
 	// reading pane loads them from /api/messages/[id]/thread, so they are
 	// neither selected nor sent here.
@@ -227,6 +229,7 @@ export async function GET(request: Request) {
 			toContactName: contactMap?.get(normalizeEmailAddress(getFirstEmailAddressEntry(message.toAddr))) ?? null,
 			threadCount: (message.threadId && threadCounts.get(message.threadId)?.total) || 1,
 			threadUnread: (message.threadId && threadCounts.get(message.threadId)?.unread) || 0,
+			...rowSuggestions(message.id),
 			...(groupByThread
 				? { threadMessageIds: threadMessageIds.get(message.threadId ?? message.id) ?? [message.id] }
 				: {}),

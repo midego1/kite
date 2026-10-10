@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	parseSuggestionPayload,
-	pickSuggestionBadge,
 	SUGGESTION_EXPIRY_DAYS,
 	suggestionExpiresAt,
 	suggestionTitle,
@@ -24,45 +23,6 @@ const invite = {
 	organizerMatchesSender: true,
 	authPassed: false,
 };
-
-test("badge priority is phishing > calendar_invite > reply > task > receipt, and summaries get no chip", () => {
-	assert.equal(pickSuggestionBadge([]), null);
-	assert.equal(pickSuggestionBadge([{ kind: "summary", count: 3 }]), null);
-	assert.deepEqual(
-		pickSuggestionBadge([
-			{ kind: "reply", count: 1 },
-			{ kind: "phishing", count: 1 },
-			{ kind: "summary", count: 1 },
-		]),
-		{ kind: "phishing", more: 1 },
-	);
-	assert.deepEqual(
-		pickSuggestionBadge([
-			{ kind: "receipt", count: 1 },
-			{ kind: "calendar_invite", count: 2 },
-		]),
-		{ kind: "calendar_invite", more: 2 },
-	);
-	assert.deepEqual(
-		pickSuggestionBadge([
-			{ kind: "receipt", count: 1 },
-			{ kind: "task", count: 1 },
-		]),
-		{ kind: "task", more: 1 },
-	);
-	assert.deepEqual(pickSuggestionBadge([{ kind: "reply", count: 1 }]), { kind: "reply", more: 0 });
-	assert.deepEqual(
-		pickSuggestionBadge([
-			{ kind: "receipt", count: 1 },
-			{ kind: "label", count: 4 },
-		]),
-		{
-			kind: "receipt",
-			more: 0,
-		},
-	);
-	assert.equal(pickSuggestionBadge([{ kind: "reply", count: 0 }]), null);
-});
 
 test("suggestions expire after 14 days", () => {
 	assert.equal(SUGGESTION_EXPIRY_DAYS, 14);

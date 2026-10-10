@@ -734,11 +734,13 @@ test.describe("automatic reading settings UI", () => {
 			await killSwitch.click();
 			expect((await saved).status()).toBe(200);
 			await expect(killSwitch).toHaveAttribute("aria-checked", "false");
+			await cap.fill("1.00");
 			saved = adminPut();
 			await optIn.click();
 			expect((await saved).status()).toBe(200);
 			await expect(optIn).toHaveAttribute("aria-checked", "true");
-			await cap.fill("1.00");
+			await expect(cap).toBeEnabled();
+			await expect(cap).toHaveValue("1.00");
 			saved = adminPut();
 			await page.getByRole("button", { name: "Save spend cap" }).click();
 			expect((await saved).status()).toBe(200);

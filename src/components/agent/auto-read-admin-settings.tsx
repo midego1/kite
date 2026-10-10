@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { AutoReadAdminValues, AutoReadStatus } from "./auto-read-settings-types";
 import {
+	capInputAfterSave,
 	loadAutoReadAdmin,
 	microsToDollarInput,
 	parseDollarInput,
@@ -70,7 +71,7 @@ export function AutoReadAdminSettings() {
 		try {
 			const saved = await saveAutoReadAdmin(update);
 			setValues(saved);
-			setCap(microsToDollarInput(saved.dailySpendCapMicros));
+			setCap((input) => capInputAfterSave(input, values, update, saved));
 			setStatus({ tone: "ok", text: "Automatic reading settings saved." });
 		} catch (error) {
 			setStatus({ tone: "error", text: error instanceof Error ? error.message : "Could not save" });

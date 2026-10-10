@@ -138,6 +138,21 @@ export async function saveAutoReadAdmin(values: Partial<AutoReadAdminValues>): P
 	);
 }
 
+/**
+ * The spend cap input after a save: the saved value when that save sent the cap or the input still showed the
+ * previous saved value, otherwise the unsaved text the admin typed.
+ */
+export function capInputAfterSave(
+	input: string,
+	previous: AutoReadAdminValues | null,
+	update: Partial<AutoReadAdminValues>,
+	saved: AutoReadAdminValues,
+): string {
+	const clean = !previous || input === microsToDollarInput(previous.dailySpendCapMicros);
+	if ("dailySpendCapMicros" in update || clean) return microsToDollarInput(saved.dailySpendCapMicros);
+	return input;
+}
+
 function pickAutoReadAdmin(data: AutoReadAdminValues): AutoReadAdminValues {
 	return {
 		autoReadEnabled: data.autoReadEnabled,

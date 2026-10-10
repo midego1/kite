@@ -170,6 +170,27 @@ test("the legacy settings body leaves out every automatic reading field", () => 
 	]);
 });
 
+test("an unrelated admin save keeps an unsaved spend cap and a cap save shows the saved value", () => {
+	const previous = { autoReadEnabled: true, externalAutoReadAllowed: false, dailySpendCapMicros: 2_000_000 };
+	const saved = { ...previous, externalAutoReadAllowed: true };
+	assert.equal(ui.capInputAfterSave("1.00", previous, { externalAutoReadAllowed: true }, saved), "1.00");
+	assert.equal(ui.capInputAfterSave("", previous, { autoReadEnabled: false }, saved), "");
+	assert.equal(
+		ui.capInputAfterSave("2.00", previous, { autoReadEnabled: false }, { ...saved, dailySpendCapMicros: 3_000_000 }),
+		"3.00",
+	);
+	assert.equal(
+		ui.capInputAfterSave(
+			"1",
+			previous,
+			{ dailySpendCapMicros: 1_000_000 },
+			{ ...saved, dailySpendCapMicros: 1_000_000 },
+		),
+		"1.00",
+	);
+	assert.equal(ui.capInputAfterSave("9", null, { autoReadEnabled: true }, saved), "2.00");
+});
+
 test("published catalog rates merge per model and keep a saved reasoning effort", () => {
 	const current = {
 		"fake-triage": { input: 1, output: 2, reasoningEffort: "minimal" },

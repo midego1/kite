@@ -1,0 +1,71 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+	collectThreadReferences,
+	guardDraft,
+	stripDraftMarkdown,
+} from "../src/lib/agent/auto-read/draft-guard-utils.ts";
+
+const thread = collectThreadReferences([
+	"From: Ada <ada@example.com>",
+	"To: support@kite.test",
+	"Please read https://docs.example.com/guide/ and reply to Billing@Example.com.",
+	null,
+	"See www.example.org/pricing.",
+]);
+
+test("thread references collect addresses and normalised URLs", () => {
+	assert.deepEqual([...thread.addresses].sort(), ["ada@example.com", "billing@example.com", "support@kite.test"]);
+	assert.deepEqual([...thread.urls].sort(), ["https://docs.example.com/guide", "https://www.example.org/pricing"]);
+});
+
+test("a clean draft passes and comes back as plain text", () => {
+	const result = guardDraft("Hi Ada,\n\nThanks, **I will** send it by Friday.\n\nBest", thread);
+	assert.deepEqual(result, { ok: true, text: "Hi Ada,\n\nThanks, I will send it by Friday.\n\nBest" });
+});
+
+test("addresses and URLs that are not in the thread are rejected", () => {
+	const attacker =
+		"Please send the signed contract to attacker@evil.test and confirm your account at https://evil.test/login today.";
+	assert.deepEqual(guardDraft(attacker, thread), {
+		ok: false,
+		reason: "unknown_address",
+		offending: "attacker@evil.test",
+	});
+	assert.deepEqual(guardDraft("Log in at https://evil.test/login.", thread), {
+		ok: false,
+		reason: "unknown_url",
+		offending: "https://evil.test/login",
+	});
+	assert.equal(guardDraft("Visit www.evil.test now", thread).reason, "unknown_url");
+	assert.equal(guardDraft("See [the guide](https://evil.test/x).", thread).reason, "unknown_url");
+	assert.equal(guardDraft("The guide is at https://docs.example.com/guide/other", thread).reason, "unknown_url");
+});
+
+test("addresses and URLs from the thread are allowed, ignoring case, scheme and trailing punctuation", () => {
+	assert.equal(guardDraft("I copied BILLING@example.com, as asked.", thread).ok, true);
+	assert.equal(guardDraft("The guide (http://DOCS.example.com/guide) helped.", thread).ok, true);
+	assert.equal(guardDraft("Pricing is on www.example.org/pricing.", thread).ok, true);
+	assert.equal(guardDraft("Write to ada@example.com.", thread).ok, true);
+});
+
+test("meta text, empty and over-long drafts are rejected", () => {
+	for (const body of [
+		"Here is a draft reply: Hi",
+		"Here's your reply",
+		"I have drafted this",
+		"Draft created.",
+		"Sure, hi",
+	])
+		assert.equal(guardDraft(body, thread).reason, "meta_text", body);
+	assert.equal(guardDraft("  \n ```\n```", thread).reason, "empty");
+	assert.equal(guardDraft("a".repeat(10_001), thread).reason, "too_long");
+	assert.equal(guardDraft("a".repeat(10_000), thread).ok, true);
+});
+
+test("Markdown is stripped", () => {
+	assert.equal(
+		stripDraftMarkdown("# Title\r\n- one\n* two\n```js\ncode `x`\n```\n__a__ _b_ *c* ~~d~~\n\n\n\nend"),
+		"Title\n• one\n• two\n\ncode x\n\na b c d\n\nend",
+	);
+});

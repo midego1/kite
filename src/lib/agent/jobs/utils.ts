@@ -14,24 +14,9 @@ import { runEmailTool } from "../tools";
 import { notifyUsersOfNewMessage } from "@/lib/realtime/utils";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
 import { DRAFT_SYSTEM_MARKER } from "../auto-read/request-markers";
+import { isAutomaticMessage } from "../auto-read/facts-utils";
 
 export type AgentDraftQueueMessage = { kind: "agent.draft"; jobId: string };
-
-function isAutomaticMessage(from: string, headers?: Record<string, string>) {
-	const address = normalizeEmailAddress(from);
-	if (/^(mailer-daemon|postmaster|no-?reply|do-?not-?reply)@/i.test(address)) return true;
-	const values = Object.fromEntries(
-		Object.entries(headers ?? {}).map(([key, value]) => [key.toLowerCase(), value.toLowerCase()]),
-	);
-	return !!(
-		values["list-id"] ||
-		values["x-autoreply"] ||
-		values["x-autorespond"] ||
-		values["x-auto-response-suppress"] ||
-		(values["auto-submitted"] && values["auto-submitted"] !== "no") ||
-		/^(bulk|junk|list)$/.test(values.precedence ?? "")
-	);
-}
 
 export async function scheduleAutoDraft(
 	env: CloudflareEnv,

@@ -9,8 +9,11 @@ export async function getAgentModel(env: CloudflareEnv, requestedModel?: string 
 	const modelId = requestedModel && config.models.includes(requestedModel) ? requestedModel : config.model;
 	const details = {
 		modelId,
+		/** The label usage rows record: "cloudflare" or the compatible preset. */
 		provider: config.provider === "cloudflare" ? "cloudflare" : config.preset,
+		providerKind: config.provider,
 		rates: config.rates[modelId],
+		reasoningEffort: config.rates[modelId]?.reasoningEffort ?? null,
 	};
 	if (config.provider === "cloudflare")
 		return env.AI ? { model: createWorkersAI({ binding: env.AI })(modelId), ...details } : null;

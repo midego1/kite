@@ -9,7 +9,7 @@ import { newId } from "@/lib/ids";
 import { getAgentModel } from "../model";
 import { getAgentEnabled } from "../provider";
 import { recordAiUsage } from "@/lib/ai/usage";
-import { claimAgentJob, failAgentJob, skipAgentJob } from "./lease";
+import { claimAgentJob, failAndRequeueAgentJob, skipAgentJob } from "./lease";
 import { runEmailTool } from "../tools";
 import { notifyUsersOfNewMessage } from "@/lib/realtime/utils";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
@@ -216,6 +216,6 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 			draftId: result.draftId,
 		});
 	} catch (error) {
-		await failAgentJob(db, job, error);
+		await failAndRequeueAgentJob(env, db, job, error);
 	}
 }

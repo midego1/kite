@@ -273,6 +273,10 @@ test("recovery re-runs due and lease-expired jobs under their own kind", async (
 
 test("an agent.triage message is processed as a triage job and completes", async (t) => {
 	const { db, env } = await setup(t);
+	// No capability needs the model, so the job settles from facts alone without a provider.
+	db.db.exec(
+		`UPDATE mailbox_agent_settings SET capabilities = '{"calendar":false,"reply":false,"summary":false,"phishing":false}'`,
+	);
 	insertJob(db, { id: "triage-1", kind: "triage" });
 	assert.equal(await processAgentQueueMessage(env, { kind: "agent.triage", jobId: "triage-1" }), true);
 	assert.deepEqual(statusOf(db, "triage-1"), { status: "completed", reason: null });

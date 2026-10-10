@@ -1,0 +1,327 @@
+import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import test, { after, beforeEach } from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "esbuild";
+import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+import { REPAIR_MARKER, TRIAGE_SYSTEM_MARKER } from "../src/lib/agent/auto-read/request-markers.ts";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const outDir = makeBundleDirectory("kite-agent-auto-read-process-");
+after(() => rmSync(outDir, { recursive: true, force: true }));
+
+// import.meta.resolve (rather than a joined path) lets knip see which modules this test uses. No source
+// maps: the bundle pulls in much of the app, and mapped zero-hit copies would distort the coverage gate.
+await build({
+	entryPoints: {
+		process: fileURLToPath(import.meta.resolve("../src/lib/agent/auto-read/process.ts")),
+		runtime: join(root, "server/runtime/sqlite-database.ts"),
+		migrate: join(root, "server/runtime/migrate.ts"),
+	},
+	outdir: outDir,
+	outExtension: { ".js": ".mjs" },
+	bundle: true,
+	platform: "node",
+	format: "esm",
+	target: "node22",
+	logLevel: "silent",
+	packages: "external",
+	tsconfig: join(root, "tsconfig.json"),
+});
+const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
+const { processAgentTriageJob } = await load("process");
+const { SqliteDatabase } = await load("runtime");
+const { applyMigrations } = await load("migrate");
+
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+const benign = {
+	category: "fyi",
+	needsReply: false,
+	urgency: "none",
+	summary: "The quarterly figures are published.",
+	tasks: [],
+	suspicious: { flagged: false, reasons: [] },
+};
+const reply = (content, finishReason = "stop") => ({ content, finishReason });
+
+/** Model replies, consumed in order; each entry is a reply or an HTTP status for an error. */
+let replies = [];
+let requests = [];
+const realFetch = globalThis.fetch;
+after(() => {
+	globalThis.fetch = realFetch;
+});
+beforeEach(() => {
+	replies = [];
+	requests = [];
+	globalThis.fetch = async (url, init) => {
+		const body = JSON.parse(init.body);
+		requests.push({ url: String(url), body });
+		const next = replies.shift() ?? reply(JSON.stringify(benign));
+		if (typeof next === "number")
+			return new Response(JSON.stringify({ error: { message: "upstream failure" } }), {
+				status: next,
+				headers: { "Content-Type": "application/json" },
+			});
+		return Response.json({
+			id: "chatcmpl-1",
+			object: "chat.completion",
+			created: 0,
+			model: body.model,
+			choices: [{ index: 0, message: { role: "assistant", content: next.content }, finish_reason: next.finishReason }],
+			usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 },
+		});
+	};
+});
+
+async function setup(t, { rates = { "fake-triage": { input: 0.05, output: 0.3 } }, externalAllowed = 1 } = {}) {
+	const db = new SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await applyMigrations(db, join(root, "drizzle/migrations"));
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'a', 1);
+		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, updated_at) VALUES ('mailbox-a', 1, 'suggest', 1);
+		INSERT OR IGNORE INTO app_settings (id, updated_at) VALUES ('default', 1);
+	`);
+	db.db
+		.prepare(
+			"UPDATE app_settings SET agent_enabled = 1, agent_auto_read_enabled = 1, agent_external_auto_read_allowed = ?, agent_provider = 'compatible', agent_preset = 'custom', agent_base_url = 'https://model.test/v1', agent_api_key = 'test-key', agent_model = 'fake-triage, fake-draft', agent_model_rates = ?",
+		)
+		.run(externalAllowed, JSON.stringify(rates));
+	const sent = [];
+	const raw = new Map();
+	const env = {
+		DB: db,
+		AGENT_QUEUE: { send: async (message, options) => void sent.push({ message, options }) },
+		BUCKET: {
+			get: async (key) =>
+				raw.has(key) ? { arrayBuffer: async () => new TextEncoder().encode(raw.get(key)).buffer } : null,
+		},
+	};
+	return { db, env, sent, raw };
+}
+
+let count = 0;
+function insertJob(db, { text = "Could you send the figures?", spamVerdict = "inbox", rawR2Key = null, from } = {}) {
+	const id = `message-${++count}`;
+	db.db
+		.prepare(
+			"INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, spam_verdict, raw_r2_key, created_at) VALUES (?, 'owner', 'mailbox-a', 'inbound', ?, 'a@example.com', 'Figures', ?, 'received', ?, ?, ?)",
+		)
+		.run(id, from ?? "Customer <customer@example.net>", text, spamVerdict, rawR2Key, nowSeconds());
+	const jobId = `job-${count}`;
+	db.db
+		.prepare(
+			"INSERT INTO agent_jobs (id, mailbox_id, source_message_id, reviewer_user_id, kind, status, next_attempt_at, created_at) VALUES (?, 'mailbox-a', ?, 'owner', 'triage', 'pending', 1, ?)",
+		)
+		.run(jobId, id, nowSeconds());
+	return { jobId, messageId: id };
+}
+
+const jobOf = (db, id) =>
+	db.db
+		.prepare("SELECT status, reason, attempts, next_attempt_at AS nextAttemptAt FROM agent_jobs WHERE id = ?")
+		.get(id);
+const suggestionsOf = (db, messageId) =>
+	db.db
+		.prepare(
+			"SELECT kind, status, title, payload, model, job_id AS jobId FROM agent_suggestions WHERE message_id = ? ORDER BY kind",
+		)
+		.all(messageId)
+		.map((row) => ({ ...row, payload: JSON.parse(row.payload) }));
+const makeDue = (db, jobId) => db.db.prepare("UPDATE agent_jobs SET next_attempt_at = 1 WHERE id = ?").run(jobId);
+
+test("triage sends no tools, wraps the mail, and stores summary and phishing suggestions with reason and model", async (t) => {
+	const { db, env } = await setup(t);
+	const { jobId, messageId } = insertJob(db, {
+		text: `Please confirm. ${"x".repeat(1_600)}`,
+		spamVerdict: "suspicious",
+	});
+	replies = [
+		reply(
+			JSON.stringify({
+				...benign,
+				summary: "The sender asks you to confirm your password.",
+				suspicious: { flagged: true, reasons: ["credential_request"] },
+			}),
+		),
+	];
+	await processAgentTriageJob(env, jobId);
+	assert.equal(jobOf(db, jobId).status, "completed");
+	assert.equal(requests.length, 1);
+	const [{ url, body }] = requests;
+	assert.equal(url, "https://model.test/v1/chat/completions");
+	assert.ok(!("tools" in body) && !("tool_choice" in body), "no tools on the automatic path");
+	assert.deepEqual(body.response_format, { type: "json_object" });
+	assert.equal(body.max_tokens, 400);
+	assert.ok(!("reasoning_effort" in body));
+	assert.equal(body.model, "fake-triage");
+	assert.ok(body.messages[0].content.includes(TRIAGE_SYSTEM_MARKER));
+	assert.match(body.messages[1].content, new RegExp(`<<<EMAIL id=${messageId} nonce=(\\w+)>>>[\\s\\S]*<<<END \\1>>>`));
+	assert.deepEqual(suggestionsOf(db, messageId), [
+		{
+			kind: "phishing",
+			status: "open",
+			title: "This message looks like phishing",
+			payload: { reasons: ["suspicious_verdict", "credential_request"], reason: "phishing_signals" },
+			model: "fake-triage",
+			jobId,
+		},
+		{
+			kind: "summary",
+			status: "open",
+			title: "Summary",
+			payload: { text: "The sender asks you to confirm your password.", reason: "long_thread" },
+			model: "fake-triage",
+			jobId,
+		},
+	]);
+	const usage = db.db
+		.prepare("SELECT source, mailbox_id, job_id, reserved, input_tokens, output_tokens FROM ai_usage")
+		.all();
+	assert.deepEqual(usage, [
+		{
+			source: "auto_triage",
+			mailbox_id: "mailbox-a",
+			job_id: jobId,
+			reserved: 0,
+			input_tokens: 120,
+			output_tokens: 30,
+		},
+	]);
+});
+
+test("a per-model reasoning hint is sent with the 1500-token budget", async (t) => {
+	const { db, env } = await setup(t, {
+		rates: { "fake-triage": { input: 0.05, output: 0.3, reasoningEffort: "minimal" } },
+	});
+	const { jobId } = insertJob(db);
+	await processAgentTriageJob(env, jobId);
+	assert.equal(jobOf(db, jobId).status, "completed");
+	assert.equal(requests[0].body.reasoning_effort, "minimal");
+	assert.equal(requests[0].body.max_tokens, 1_500);
+});
+
+test("a length finish fails the attempt without parsing or repair, and the retry succeeds", async (t) => {
+	const { db, env, sent } = await setup(t);
+	const { jobId, messageId } = insertJob(db, { text: `Long ${"y".repeat(1_600)}` });
+	// Complete, valid JSON: only the finish reason says it was cut off, so parsing it would have succeeded.
+	replies = [reply(JSON.stringify(benign), "length")];
+	const before = nowSeconds();
+	await processAgentTriageJob(env, jobId);
+	const failed = jobOf(db, jobId);
+	assert.equal(failed.status, "pending");
+	assert.equal(failed.attempts, 1);
+	assert.match(failed.reason, /output tokens/);
+	assert.ok(failed.nextAttemptAt >= before + 4 && failed.nextAttemptAt <= before + 6, "first backoff is 5 s");
+	assert.equal(requests.length, 1, "no repair request");
+	assert.deepEqual(suggestionsOf(db, messageId), []);
+	assert.deepEqual(sent, [{ message: { kind: "agent.triage", jobId }, options: { delaySeconds: 6 } }]);
+
+	makeDue(db, jobId);
+	await processAgentTriageJob(env, jobId);
+	assert.equal(jobOf(db, jobId).status, "completed");
+	assert.equal(requests.length, 2);
+	assert.equal(suggestionsOf(db, messageId).length, 1);
+});
+
+test("invalid output is repaired once per attempt and the job fails after three attempts", async (t) => {
+	const { db, env, sent } = await setup(t);
+	const { jobId, messageId } = insertJob(db);
+	replies = Array.from({ length: 6 }, () => reply("not json {category: other"));
+	const before = nowSeconds();
+	await processAgentTriageJob(env, jobId);
+	makeDue(db, jobId);
+	await processAgentTriageJob(env, jobId);
+	const second = jobOf(db, jobId);
+	assert.ok(second.nextAttemptAt >= before + 9 && second.nextAttemptAt <= before + 11, "second backoff is 10 s");
+	makeDue(db, jobId);
+	await processAgentTriageJob(env, jobId);
+	const job = jobOf(db, jobId);
+	assert.equal(job.status, "failed");
+	assert.equal(job.attempts, 3);
+	assert.match(job.reason, /valid triage object/);
+	assert.equal(requests.length, 6);
+	assert.deepEqual(
+		requests.map(({ body }) => body.messages.at(-1).content.startsWith(REPAIR_MARKER)),
+		[false, true, false, true, false, true],
+	);
+	assert.deepEqual(suggestionsOf(db, messageId), []);
+	assert.deepEqual(
+		sent.map(({ options }) => options.delaySeconds),
+		[6, 11],
+	);
+	makeDue(db, jobId);
+	await processAgentTriageJob(env, jobId);
+	assert.equal(requests.length, 6, "a failed job is not claimed again");
+});
+
+test("an HTTP error is one request per attempt, with no SDK retries", async (t) => {
+	const { db, env } = await setup(t);
+	const { jobId } = insertJob(db);
+	replies = [500];
+	await processAgentTriageJob(env, jobId);
+	assert.equal(requests.length, 1);
+	assert.equal(jobOf(db, jobId).status, "pending");
+});
+
+test("an external provider without the opt-in, or a spend cap, receives nothing", async (t) => {
+	const blocked = await setup(t, { externalAllowed: 0 });
+	const first = insertJob(blocked.db);
+	await processAgentTriageJob(blocked.env, first.jobId);
+	assert.deepEqual(jobOf(blocked.db, first.jobId).reason, "external_provider_not_allowed");
+
+	const capped = await setup(t);
+	capped.db.exec("UPDATE app_settings SET agent_daily_spend_cap_micros = 0");
+	const second = insertJob(capped.db);
+	await processAgentTriageJob(capped.env, second.jobId);
+	assert.deepEqual(jobOf(capped.db, second.jobId), {
+		status: "skipped",
+		reason: "spend_cap",
+		attempts: 1,
+		nextAttemptAt: 1,
+	});
+	assert.equal(requests.length, 0);
+});
+
+test("list mail is settled from its raw headers without a model request", async (t) => {
+	const { db, env, raw } = await setup(t);
+	raw.set(
+		"raw/list",
+		"From: Team <team@lists.example.net>\r\nList-Id: <team.lists.example.net>\r\nSubject: News\r\n\r\nBody",
+	);
+	const { jobId } = insertJob(db, { rawR2Key: "raw/list", from: "Team <team@lists.example.net>" });
+	await processAgentTriageJob(env, jobId);
+	assert.equal(jobOf(db, jobId).status, "completed");
+	assert.equal(requests.length, 0);
+});
+
+test("Workers AI gets JSON mode through the SDK and thinking off, and fenced JSON is accepted", async (t) => {
+	const { db, env } = await setup(t);
+	db.db.exec("UPDATE app_settings SET agent_provider = 'cloudflare', agent_model = '@cf/test/model'");
+	const runs = [];
+	env.AI = {
+		run: async (model, inputs) => {
+			runs.push({ model, inputs });
+			return {
+				choices: [{ message: { content: `\`\`\`json\n${JSON.stringify(benign)}\n\`\`\`` }, finish_reason: "stop" }],
+				usage: { prompt_tokens: 50, completion_tokens: 20 },
+			};
+		},
+	};
+	const { jobId } = insertJob(db);
+	await processAgentTriageJob(env, jobId);
+	assert.equal(jobOf(db, jobId).status, "completed");
+	assert.equal(runs.length, 1, "fenced JSON needs no repair");
+	const [{ model, inputs }] = runs;
+	assert.equal(model, "@cf/test/model");
+	assert.equal(inputs.response_format.type, "json_schema");
+	assert.ok(inputs.response_format.json_schema.properties.category);
+	assert.deepEqual(inputs.chat_template_kwargs, { thinking: false });
+	assert.equal(inputs.max_tokens, 400);
+	assert.equal(inputs.tools, undefined);
+	assert.equal(inputs.reasoning_effort, undefined);
+});

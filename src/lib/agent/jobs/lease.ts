@@ -2,6 +2,7 @@ import { and, eq, lt, or, sql } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { agentJobs } from "@/db/schema";
 import { agentProviderErrorMessage } from "../errors";
+import { agentJobQueueMessage } from "../queue-utils";
 
 type AgentJobRow = typeof agentJobs.$inferSelect;
 
@@ -36,16 +37,35 @@ export async function skipAgentJob(db: AppDatabase, jobId: string, reason: strin
 	await db.update(agentJobs).set({ status: "skipped", reason, leaseUntil: null }).where(eq(agentJobs.id, jobId));
 }
 
-/** Puts a claimed job back with backoff, or marks it failed after the third attempt. */
-export async function failAgentJob(db: AppDatabase, job: AgentJobRow, error: unknown) {
+/**
+ * Puts a claimed job back with backoff (5 s, then 10 s, at most 60 s), or marks it failed after
+ * the third attempt. `job` is the row as it was before the claim. Returns the backoff in ms when
+ * the job will run again, or null when it failed for good.
+ */
+async function failAgentJob(db: AppDatabase, job: AgentJobRow, error: unknown): Promise<number | null> {
 	const attempts = job.attempts + 1;
+	const backoffMs = Math.min(60_000, 5_000 * 2 ** job.attempts);
+	const failed = attempts >= MAX_ATTEMPTS;
 	await db
 		.update(agentJobs)
 		.set({
-			status: attempts >= MAX_ATTEMPTS ? "failed" : "pending",
-			nextAttemptAt: new Date(Date.now() + Math.min(60_000, 5_000 * 2 ** attempts)),
+			status: failed ? "failed" : "pending",
+			nextAttemptAt: new Date(Date.now() + backoffMs),
 			leaseUntil: null,
 			reason: agentProviderErrorMessage(error).slice(0, 300),
 		})
 		.where(eq(agentJobs.id, job.id));
+	return failed ? null : backoffMs;
+}
+
+/**
+ * Fails the attempt and, when another one is due, queues it for after the backoff so retries do
+ * not wait for the maintenance cron. A delivery that arrives early is refused by the claim.
+ */
+export async function failAndRequeueAgentJob(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow, error: unknown) {
+	const backoffMs = await failAgentJob(db, job, error);
+	if (backoffMs === null) return;
+	await env.AGENT_QUEUE?.send(agentJobQueueMessage(job.kind, job.id), {
+		delaySeconds: Math.ceil(backoffMs / 1000) + 1,
+	});
 }

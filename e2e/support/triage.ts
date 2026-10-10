@@ -27,6 +27,7 @@ export async function waitForFinishedJob(
 	mailboxId: string,
 	messageId: string,
 	kind: AgentJobRow["kind"],
+	timeout = 30_000,
 ): Promise<AgentJobRow> {
 	let found: AgentJobRow | undefined;
 	await expect
@@ -35,7 +36,7 @@ export async function waitForFinishedJob(
 				found = (await jobsForMessage(api, mailboxId, messageId)).find((job) => job.kind === kind);
 				return found?.status ?? "none";
 			},
-			{ timeout: 30_000, intervals: [250, 500, 1000] },
+			{ timeout, intervals: [250, 500, 1000] },
 		)
 		.toMatch(/^(completed|skipped|failed)$/);
 	return found!;

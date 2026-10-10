@@ -27,6 +27,7 @@ const calls = await import(pathToFileURL(join(outDir, "model-call.mjs")).href);
 const {
 	buildModelCallOptions,
 	callWithFallback,
+	chooseTriageModelId,
 	completedText,
 	fallbackOptionsAfterError,
 	runTriageAttempt,
@@ -184,4 +185,45 @@ test("runTriageAttempt makes one repair call, then fails", async () => {
 		(error) => error instanceof TriageOutputError && /category/.test(error.message),
 	);
 	assert.equal(count, 2);
+});
+
+test("a length finish with complete JSON is still never parsed", async () => {
+	let calls = 0;
+	await assert.rejects(
+		runTriageAttempt({
+			prompt,
+			options: buildModelCallOptions({ provider: "cloudflare", kind: "triage" }),
+			generate: async () => {
+				calls += 1;
+				return { text: validTriage, finishReason: "length" };
+			},
+		}),
+		(error) => error instanceof ModelOutputTruncatedError,
+	);
+	assert.equal(calls, 1);
+});
+
+test("Workers AI drops JSON mode once after a 400 about json_schema", () => {
+	const options = buildModelCallOptions({ provider: "cloudflare", kind: "triage" });
+	const next = fallbackOptionsAfterError(options, apiError(400, "json_schema is required"));
+	assert.equal(next.jsonMode, false);
+	assert.deepEqual(next.providerOptions.workersAi, { chat_template_kwargs: { thinking: false } });
+	assert.equal(fallbackOptionsAfterError(next, apiError(400, "json_schema is required")), null);
+});
+
+test("the triage model is the mailbox choice, else the cheapest priced model, else the chat model", () => {
+	const models = ["big", "small", "unpriced"];
+	const rates = {
+		big: { input: 1, output: 4 },
+		small: { input: 0.05, output: 0.3 },
+		unpriced: { input: null, output: 1 },
+	};
+	const choose = (overrides) =>
+		chooseTriageModelId({ triageModelId: null, mailboxModelId: null, models, rates, ...overrides });
+	assert.equal(choose({ triageModelId: "big" }), "big");
+	assert.equal(choose({ triageModelId: "gone" }), "small");
+	assert.equal(choose({}), "small");
+	assert.equal(choose({ rates: {}, mailboxModelId: "unpriced" }), "unpriced");
+	assert.equal(choose({ rates: {}, mailboxModelId: "gone" }), null);
+	assert.equal(choose({ rates: {} }), null);
 });

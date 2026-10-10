@@ -1,5 +1,5 @@
 import type { JSONValue } from "ai";
-import type { AgentProviderKind, AgentReasoningEffort } from "../provider-types";
+import type { AgentModelRates, AgentProviderKind, AgentReasoningEffort } from "../provider-types";
 import { parseAgentReasoningEffort } from "../reasoning-effort-utils";
 import type { TriagePrompt, TriageResult } from "./triage-types";
 import { buildTriageRepairPrompt, parseTriageOutput } from "./triage-utils";
@@ -81,6 +81,34 @@ export function buildModelCallOptions(input: ModelCallInput): ModelCallOptions {
 	return buildOptions({ provider: input.provider, kind: input.kind, reasoningEffort }, input.kind === "triage");
 }
 
+type TriageModelChoice = {
+	triageModelId: string | null;
+	mailboxModelId: string | null;
+	models: string[];
+	rates: Record<string, AgentModelRates>;
+};
+
+function knownCost(rates: AgentModelRates | undefined): number | null {
+	if (!rates || rates.input === null || rates.output === null) return null;
+	return rates.input + rates.output;
+}
+
+/**
+ * The model automatic reading uses: the mailbox's triage model, else the cheapest configured model
+ * with known rates, else the mailbox's chat model, else null for the provider default.
+ */
+export function chooseTriageModelId(choice: TriageModelChoice): string | null {
+	const configured = (id: string | null): id is string => !!id && choice.models.includes(id);
+	if (configured(choice.triageModelId)) return choice.triageModelId;
+	let cheapest: { id: string; cost: number } | null = null;
+	for (const id of choice.models) {
+		const cost = knownCost(choice.rates[id]);
+		if (cost !== null && (!cheapest || cost < cheapest.cost)) cheapest = { id, cost };
+	}
+	if (cheapest) return cheapest.id;
+	return configured(choice.mailboxModelId) ? choice.mailboxModelId : null;
+}
+
 function errorStatus(error: unknown): number | undefined {
 	if (!error || typeof error !== "object") return undefined;
 	const { statusCode, status } = error as { statusCode?: unknown; status?: unknown };
@@ -103,7 +131,8 @@ export function fallbackOptionsAfterError(options: ModelCallOptions, error: unkn
 	const text = errorText(error);
 	if (options.reasoningEffort && /reasoning/i.test(text))
 		return buildOptions({ ...options, reasoningEffort: null }, options.jsonMode);
-	if (options.jsonMode && /response_format|json_object|json mode/i.test(text)) return buildOptions(options, false);
+	if (options.jsonMode && /response_format|json_object|json_schema|json mode/i.test(text))
+		return buildOptions(options, false);
 	return null;
 }
 

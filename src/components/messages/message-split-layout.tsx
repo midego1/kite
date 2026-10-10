@@ -6,6 +6,7 @@ import { useSidebar } from "@/components/sidebar-state";
 import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 import { readColumnWidth, readInitialColumnWidth, saveColumnWidth } from "@/components/column-width-preferences";
 import { ResizeHandle } from "@/components/ui/resize-handle";
+import { useKeyChanged } from "@/hooks/use-synced-state";
 import { BulkMessageSelectionPane } from "./bulk-message-selection-pane";
 import { MessageFolderPage } from "./message-folder-page";
 import { useLeaveOpenMessage } from "./use-leave-open-message";
@@ -26,6 +27,22 @@ import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProp
 const LIST_WIDTH = { fallback: 360, min: 250, max: 1200, reserved: 280 };
 const LIST_HEIGHT = { fallback: 320, min: 120, max: 1200, reserved: 200 };
 
+/**
+ * Opening a message ends a checkbox selection; otherwise the selection pane would keep covering
+ * every message the user clicks.
+ */
+function useClearSelectionOnOpen(
+	openMessageId: string | undefined,
+	selectedMessages: SelectedMessage[],
+	setSelectedMessages: (messages: SelectedMessage[]) => void,
+) {
+	if (useKeyChanged(openMessageId) && openMessageId && selectedMessages.length > 0) setSelectedMessages([]);
+}
+
+/**
+ * Arranges the message list and reading pane using the user's layout and sizing preferences.
+ * Manages checkbox selection and clears it when a new message is opened.
+ */
 export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps) {
 	const pathname = usePathname();
 	const [selectedMessages, setSelectedMessages] = useState<SelectedMessage[]>([]);
@@ -53,6 +70,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 		? pathname.slice(detailPrefix.length).split("/")[0]
 		: undefined;
 	const { visibleMessageId, leaveOpenMessage } = useLeaveOpenMessage(selectedMessageId, config.hrefPrefix);
+	useClearSelectionOnOpen(selectedMessageId, selectedMessages, setSelectedMessages);
 	const clearSelection = () => {
 		setSelectedMessages([]);
 		leaveOpenMessage();

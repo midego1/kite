@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, openMessage, uniqueToken } from "./support/helpers";
 
 async function deliverMany(labels: string[]): Promise<string[]> {
 	const api = await apiContext(STORAGE_STATE);
@@ -40,6 +40,22 @@ test("Shift-click selects every message between two checkboxes", async ({ page }
 	await box(c).click({ modifiers: ["Shift"] });
 	for (const subject of [c, b, a]) await expect(box(subject)).not.toBeChecked();
 	await expect(box(d)).toBeChecked();
+	await expect(page.getByText("1 selected")).toBeVisible();
+});
+
+test("opening a message while others are selected shows it in the reading pane", async ({ page }) => {
+	const [first, second] = await deliverMany(["Open first", "Open second"]);
+	await page.goto("/inbox");
+	await rowFor(page, first).getByRole("checkbox").check();
+	await expect(page.getByText("1 selected")).toBeVisible();
+
+	await openMessage(page, second);
+	await expect(page.getByRole("heading", { level: 1, name: second })).toBeVisible();
+	await expect(page.getByText("1 selected")).toHaveCount(0);
+	await expect(rowFor(page, first).getByRole("checkbox")).not.toBeChecked();
+
+	// Selecting again while a message is open brings the selection pane back.
+	await rowFor(page, first).getByRole("checkbox").check();
 	await expect(page.getByText("1 selected")).toBeVisible();
 });
 

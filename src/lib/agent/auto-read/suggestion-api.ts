@@ -5,7 +5,7 @@ import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import type { SessionUser } from "@/lib/auth/types";
 import { getMailboxAccessLevel, listAccessibleMailboxes } from "@/lib/mailboxes/access";
 import { AgentActionError } from "./action-error";
-import { dismissSuggestionEffect } from "./action-effects";
+import { discardAgentDraft, dismissSuggestionEffect } from "./action-effects";
 import type { ActionEffect, ExecuteActionResult } from "./actions-types";
 import { executeAction } from "./execute";
 import { senderAddressOf } from "./facts-utils";
@@ -137,6 +137,32 @@ export async function acceptSuggestion(env: CloudflareEnv, user: SessionUser, su
 	return { status: "accepted", actionId: result.actionId };
 }
 
+/**
+ * Also deletes the reply's agent draft and unlinks it, so a reopened suggestion offers no stale draft.
+ * A draft a person already edited or sent is kept and reported as `keptDraftId`.
+ */
+function withDraftDiscard(
+	env: CloudflareEnv,
+	effect: ActionEffect,
+	suggestionId: string,
+	draftId: string,
+): ActionEffect {
+	return {
+		...effect,
+		async apply(ids) {
+			const after = await effect.apply(ids);
+			try {
+				await discardAgentDraft(env, draftId);
+			} catch (error) {
+				if (error instanceof AgentActionError && error.status === 409) return { ...after, keptDraftId: draftId };
+				throw error;
+			}
+			await getDb(env).update(agentSuggestions).set({ draftId: null }).where(eq(agentSuggestions.id, suggestionId));
+			return { ...after, discardedDraftId: draftId };
+		},
+	};
+}
+
 function withMute(env: CloudflareEnv, effect: ActionEffect, mailboxId: string, sender: string): ActionEffect {
 	return {
 		...effect,
@@ -155,14 +181,16 @@ export async function dismissSuggestion(
 	env: CloudflareEnv,
 	user: SessionUser,
 	suggestionId: string,
-	options: { muteSender?: boolean } | null,
+	options: { muteSender?: boolean; discardDraft?: boolean } | null,
 ) {
 	const { row, access } = await loadForDecision(env, user, suggestionId);
 	if (!options) throw new AgentActionError("Invalid request", 400);
 	const refusal = dismissRefusal(row.status);
 	if (refusal) throw new AgentActionError(refusal.error, refusal.status);
 	const sender = options.muteSender && row.from ? senderAddressOf(row.from) : null;
-	const base = await dismissSuggestionEffect(env, row.id, user.id);
+	let base = await dismissSuggestionEffect(env, row.id, user.id);
+	if (options.discardDraft && row.kind === "reply" && row.draftId)
+		base = withDraftDiscard(env, base, row.id, row.draftId);
 	const result = settled(
 		await executeAction({
 			env,

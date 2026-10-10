@@ -25,7 +25,9 @@ export function parseStatusFilter(value: string | null, hasMailbox: boolean): Su
 
 export const acceptSuggestionSchema = z.object({ option: z.string().min(1).max(40) });
 
-export const dismissSuggestionSchema = z.object({ muteSender: z.boolean().optional() }).strict();
+export const dismissSuggestionSchema = z
+	.object({ muteSender: z.boolean().optional(), discardDraft: z.boolean().optional() })
+	.strict();
 
 /** Options each kind can be accepted with; calendar invites join in a later milestone. */
 const ACCEPT_OPTIONS: Partial<Record<SuggestionKind, readonly string[]>> = {

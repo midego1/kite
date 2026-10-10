@@ -308,3 +308,35 @@ test("dismissing works after autonomy is turned off, but not once a suggestion i
 	db.db.exec("UPDATE agent_suggestions SET status = 'superseded' WHERE id = 'sugg-reply'");
 	await assert.rejects(dismissSuggestion(env, owner, "sugg-reply", {}), { status: 409 });
 });
+
+test("discarding a reply deletes its unedited agent draft and unlinks it, and undo reopens it without one", async (t) => {
+	const { db, env } = await setup(t);
+	const result = await dismissSuggestion(env, manager, "sugg-reply", { discardDraft: true });
+	assert.equal(result.status, "dismissed");
+	assert.equal(db.db.prepare("SELECT id FROM messages WHERE id = 'draft-a'").get(), undefined);
+	assert.equal(db.db.prepare("SELECT draft_id FROM agent_suggestions WHERE id = 'sugg-reply'").get().draft_id, null);
+	const [row] = actionRows(db).filter((item) => item.action === "dismiss");
+	assert.equal(JSON.parse(row.after).discardedDraftId, "draft-a");
+
+	await undoAgentAction(env, manager, result.actionId);
+	assert.equal(statusOf(db, "sugg-reply"), "open");
+	await assert.rejects(acceptSuggestion(env, owner, "sugg-reply", "review"), { status: 409 });
+});
+
+test("discarding keeps a draft a person edited, and plain dismiss keeps the draft", async (t) => {
+	const { db, env } = await setup(t);
+	db.db.exec(
+		`INSERT INTO agent_draft_metadata (draft_id, mailbox_id, origin, source_message_id, created_at, human_edited_at) VALUES ('draft-a', 'mailbox-a', 'auto', 'msg-a', 1, 2)`,
+	);
+	const result = await dismissSuggestion(env, owner, "sugg-reply", { discardDraft: true });
+	assert.equal(result.status, "dismissed");
+	assert.ok(db.db.prepare("SELECT id FROM messages WHERE id = 'draft-a'").get());
+	const [row] = actionRows(db).filter((item) => item.action === "dismiss");
+	assert.equal(JSON.parse(row.after).keptDraftId, "draft-a");
+
+	db.db.exec(
+		"DELETE FROM agent_draft_metadata; UPDATE agent_suggestions SET status = 'open' WHERE id = 'sugg-summary'",
+	);
+	await dismissSuggestion(env, owner, "sugg-summary", { discardDraft: true });
+	assert.ok(db.db.prepare("SELECT id FROM messages WHERE id = 'draft-a'").get());
+});

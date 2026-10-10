@@ -90,10 +90,16 @@ async function reopenSuggestion(env: CloudflareEnv, row: AgentActionRow): Promis
 	await notifySuggestionsQuietly(env, [row.suggestionId]);
 }
 
-/** Discards the agent's draft. A draft a person edited, queued or sent is left alone and the undo refused. */
 async function discardDraft(env: CloudflareEnv, row: AgentActionRow): Promise<void> {
 	const draftId = parseActionState(row.after)?.draftId;
-	if (typeof draftId !== "string") return;
+	if (typeof draftId === "string") await discardAgentDraft(env, draftId);
+}
+
+/**
+ * Deletes an agent draft with its attachments. A draft a person edited, queued or sent is left alone
+ * and a 409 thrown; a draft that no longer exists is a no-op.
+ */
+export async function discardAgentDraft(env: CloudflareEnv, draftId: string): Promise<void> {
 	const db = getDb(env);
 	const [draft] = await db
 		.select({ status: messages.status, humanEditedAt: agentDraftMetadata.humanEditedAt })

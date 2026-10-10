@@ -2050,12 +2050,209 @@ test.describe("reply suggestions", () => {
 				await expect(page.getByText("Nothing needs your attention right now.")).toBeVisible();
 				await expect(page.locator("[data-for-you-entry]")).toHaveCount(0);
 				expect(errors).toEqual([]);
+				const agentFailures: string[] = [];
+				page.on("response", (response) => {
+					if (response.status() >= 400 && response.url().includes("/api/agent/")) agentFailures.push(response.url());
+				});
+				await openReader(page, question.message);
+				await expect(page.locator("[data-suggestion-card]")).toHaveCount(0);
+				expect(agentFailures).toEqual([]);
 				await stopAutoRead(sharer.api, sharer.mailboxId);
 			}
 		} finally {
 			await Promise.all(contexts.map((context) => context.close()));
 			await stopAutoRead(api, sharedId);
 			for (const account of [reader, helper]) await account.api.dispose();
+			await restore();
+		}
+	});
+
+	const readerCard = (page: Page) => page.locator("[data-suggestion-card]");
+	const replyBlock = (page: Page) => readerCard(page).locator('[data-suggestion-block="reply"]');
+
+	/** Opens a message by URL and waits for its content and the card's suggestion list. */
+	async function openReader(page: Page, message: { id: string; subject: string | null }) {
+		const listed = page.waitForResponse((response) => response.url().includes("/api/agent/suggestions?status=open&"));
+		await page.goto(`/inbox/${message.id}`);
+		await expect(page.getByRole("heading", { name: message.subject! })).toBeVisible();
+		await listed;
+	}
+
+	test("the reader card shows once in both reading layouts, explains itself, opens the draft and discards it", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("rdc");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const long = ` ${"The figures are attached for your review. ".repeat(45)}`;
+			const question = await deliverQuestion(account.api, account.address, "Customer <customer@outside.test>", {
+				text: `Can you confirm the totals? [[scenario:question]]${long}`,
+			});
+			const short = await deliverQuestion(account.api, account.address, "Client <client@outside.test>");
+			const fyiSubject = uniqueToken("rdcf");
+			await postInbound(account.api, {
+				from: "News <news@outside.test>",
+				to: account.address,
+				subject: fyiSubject,
+				text: "A short note. [[scenario:fyi]]",
+			});
+			const fyi = await waitForMessage(account.api, fyiSubject, { status: "received" });
+			for (const message of [question.message, short.message, fyi])
+				expect((await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage")).status).toBe(
+					"completed",
+				);
+			const reply = (await suggestionsFor(account.api, account.mailboxId, question.message.id)).find(
+				(item) => item.kind === "reply",
+			);
+			expect(reply?.draftId).toBeTruthy();
+			const shortReply = (await suggestionsFor(account.api, account.mailboxId, short.message.id)).find(
+				(item) => item.kind === "reply",
+			);
+			expect((await suggestionsFor(account.api, account.mailboxId, short.message.id)).map((item) => item.kind)).toEqual(
+				["reply"],
+			);
+			expect(await suggestionsFor(account.api, account.mailboxId, fyi.id)).toEqual([]);
+
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+			await page.addInitScript(() => {
+				localStorage.setItem("kite-conversation-view", "off");
+				if (!localStorage.getItem("kite-reading-pane")) localStorage.setItem("kite-reading-pane", "right");
+			});
+			await page.goto("/inbox");
+			await page.getByRole("link").filter({ hasText: question.message.subject! }).click();
+			await expect(page).toHaveURL(new RegExp(`/inbox/${question.message.id}$`));
+			await expect(readerCard(page)).toHaveCount(1);
+			await expect(readerCard(page).locator("[data-suggestion-summary]")).toContainText(
+				"The sender asks a question that needs an answer.",
+			);
+			await expect(replyBlock(page)).toHaveCount(1);
+			await expect(replyBlock(page).getByRole("button", { name: "Review draft" })).toBeVisible();
+			await expect(replyBlock(page).getByRole("button", { name: "Discard" })).toBeVisible();
+			const why = replyBlock(page).getByRole("button", { name: "Why?" });
+			await why.click();
+			await expect(why).toHaveAttribute("aria-expanded", "true");
+			await expect(replyBlock(page)).toContainText("The message asks you something that needs an answer.");
+			await expect(replyBlock(page)).toContainText("Read by fake-triage.");
+			await why.click();
+			await expect(why).toHaveAttribute("aria-expanded", "false");
+			await expect(replyBlock(page)).not.toContainText("Read by fake-triage.");
+
+			await openReader(page, short.message);
+			await expect(replyBlock(page)).toHaveCount(1);
+			await expect(readerCard(page).locator("[data-suggestion-summary]")).toHaveCount(0);
+			await openReader(page, fyi);
+			await expect(readerCard(page)).toHaveCount(0);
+
+			await page.evaluate(() => localStorage.setItem("kite-reading-pane", "none"));
+			await openReader(page, question.message);
+			await expect(readerCard(page)).toHaveCount(1);
+			await expect(replyBlock(page)).toHaveCount(1);
+			await replyBlock(page).getByRole("button", { name: "Review draft" }).click();
+			await expect(page).toHaveURL(new RegExp(`/drafts/${reply!.draftId}$`));
+			await expect(page.getByLabel("Subject")).toHaveValue(`Re: ${question.message.subject}`);
+			await expect(page.getByRole("textbox", { name: "Message body" })).toContainText(QUESTION_DRAFT_BODY);
+			await expect(page.locator("form").filter({ has: page.getByLabel("Subject") })).toContainText(
+				"customer@outside.test",
+			);
+			await page.getByRole("button", { name: "Close composer" }).click();
+
+			await openReader(page, short.message);
+			const openBefore = (await readSuggestions(account.api, { status: "open" })).suggestions.length;
+			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openBefore}$`));
+			const dismissed = page.waitForResponse(
+				(response) => response.url().endsWith(`/api/agent/suggestions/${shortReply!.id}/dismiss`) && response.ok(),
+			);
+			await replyBlock(page).getByRole("button", { name: "Discard" }).click();
+			await dismissed;
+			await expect(readerCard(page)).toHaveCount(0);
+			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openBefore - 1}$`));
+			expect((await suggestionsFor(account.api, account.mailboxId, short.message.id))[0]).toMatchObject({
+				status: "dismissed",
+				draftId: null,
+			});
+			expect(await draftIds(account.api)).not.toContain(shortReply!.draftId);
+			expect(await draftIds(account.api)).toContain(reply!.draftId);
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("the reader card shows an earlier message's warning once for the thread and follows supersede", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("rdt");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const phishSubject = uniqueToken("rdtp");
+			const phishId = `<${uniqueToken("rdtp")}@bank.test>`;
+			await postInbound(account.api, {
+				from: "Bank <alerts@bank.test>",
+				to: account.address,
+				subject: phishSubject,
+				messageId: phishId,
+				text: "Please verify your account. [[scenario:fyi]]",
+				html: `<p>Please verify your account. [[scenario:fyi]]</p><p><a href="https://login.evil.test/account">https://bank.example.com/account</a></p>`,
+			});
+			const phishing = await waitForMessage(account.api, phishSubject, { status: "received" });
+			expect((await waitForFinishedJob(account.api, account.mailboxId, phishing.id, "triage")).status).toBe(
+				"completed",
+			);
+			const followUpId = `<${uniqueToken("rdtf")}@bank.test>`;
+			const followUp = await deliverQuestion(account.api, account.address, "Bank <alerts@bank.test>", {
+				inReplyTo: phishId,
+				messageId: followUpId,
+			});
+			expect((await waitForFinishedJob(account.api, account.mailboxId, followUp.message.id, "triage")).status).toBe(
+				"completed",
+			);
+			const firstReply = (await suggestionsFor(account.api, account.mailboxId, followUp.message.id)).find(
+				(item) => item.kind === "reply",
+			);
+			expect(firstReply?.status).toBe("open");
+
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+			await page.addInitScript(() => {
+				localStorage.setItem("kite-conversation-view", "off");
+				localStorage.setItem("kite-reading-pane", "none");
+			});
+			for (const message of [followUp.message, phishing]) {
+				await openReader(page, message);
+				await expect(readerCard(page)).toHaveCount(1);
+				await expect(page.locator('[data-suggestion-block="phishing"]')).toHaveCount(1);
+				await expect(replyBlock(page)).toHaveAttribute("data-suggestion-id", firstReply!.id);
+			}
+
+			// A newer message in the thread arrives while the reader is open: the card follows without a reload.
+			const newer = await deliverQuestion(account.api, account.address, "Bank <alerts@bank.test>", {
+				inReplyTo: followUpId,
+			});
+			expect((await waitForFinishedJob(account.api, account.mailboxId, newer.message.id, "triage")).status).toBe(
+				"completed",
+			);
+			const newerReply = (await suggestionsFor(account.api, account.mailboxId, newer.message.id)).find(
+				(item) => item.kind === "reply",
+			);
+			expect((await suggestionsFor(account.api, account.mailboxId, followUp.message.id))[0]?.status).toBe("superseded");
+			await expect(replyBlock(page)).toHaveAttribute("data-suggestion-id", newerReply!.id, { timeout: 15_000 });
+			await expect(replyBlock(page)).toHaveCount(1);
+			await expect(page.locator('[data-suggestion-block="phishing"]')).toHaveCount(1);
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
 			await restore();
 		}
 	});

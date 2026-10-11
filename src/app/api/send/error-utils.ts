@@ -1,5 +1,8 @@
+import { SEND_LIMIT_ERROR_PREFIX } from "@/lib/email/send-limits-utils";
+
 export function getSendErrorStatus(message: string): number {
 	if (message === "Mailbox is required") return 400;
+	if (message.startsWith(SEND_LIMIT_ERROR_PREFIX)) return 429;
 	if (
 		message.startsWith("Attachments exceed") ||
 		message.startsWith("Subject exceeds") ||

@@ -10,6 +10,8 @@ import { createAuditLog } from "@/lib/mailboxes/audit";
 import { escapeHtml } from "@/lib/auth/password-reset-utils";
 
 const TOKEN_MINUTES = 30;
+/** One reset mail per account in this window, so the public form cannot be used to flood a recovery address. */
+const RESET_REQUEST_COOLDOWN_MS = 60 * 1000;
 
 /**
  * Mail a reset link to the account's recovery address. Silent about whether
@@ -20,6 +22,18 @@ export async function requestPasswordReset(env: CloudflareEnv, email: string, or
 	const db = getDb(env);
 	const [user] = await db.select().from(users).where(eq(users.email, email.trim().toLowerCase())).limit(1);
 	if (!user || user.disabled || !user.resetEmail) return;
+
+	const [recent] = await db
+		.select({ id: passwordResetTokens.id })
+		.from(passwordResetTokens)
+		.where(
+			and(
+				eq(passwordResetTokens.userId, user.id),
+				gt(passwordResetTokens.createdAt, new Date(Date.now() - RESET_REQUEST_COOLDOWN_MS)),
+			),
+		)
+		.limit(1);
+	if (recent) return;
 
 	const token = newId("prt");
 	await db.insert(passwordResetTokens).values({

@@ -81,6 +81,8 @@ export function createNodeRuntime(): NodeRuntime {
 		OPERATIONAL_ALERTS: optional("OPERATIONAL_ALERTS"),
 		ALERT_WEBHOOK_ALLOW_INSECURE: optional("ALERT_WEBHOOK_ALLOW_INSECURE"),
 		APP_ENCRYPTION_KEY: optional("APP_ENCRYPTION_KEY"),
+		SEND_LIMIT_PER_HOUR: optional("SEND_LIMIT_PER_HOUR"),
+		SEND_LIMIT_PER_DAY: optional("SEND_LIMIT_PER_DAY"),
 		RESOLVE_HOST: async (hostname: string) =>
 			(await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address),
 	} as unknown as CloudflareEnv;

@@ -43,8 +43,12 @@ interface CloudflareEnv {
 	ALERT_WEBHOOK_ALLOW_INSECURE?: string;
 	/** When set, first-run setup and the first registration must present this token. */
 	SETUP_TOKEN?: string;
-	/** Base64 32-byte key; when set, provider secrets in app_settings are stored encrypted. */
+	/** Any long random string; when set, provider secrets in app_settings are stored encrypted (AES-GCM, key derived with HKDF). */
 	APP_ENCRYPTION_KEY?: string;
+	/** Most messages one user may send per rolling hour (default 100); "0" removes the limit. */
+	SEND_LIMIT_PER_HOUR?: string;
+	/** Most messages one user may send per rolling day (default 500); "0" removes the limit. */
+	SEND_LIMIT_PER_DAY?: string;
 	/** Self-hosted only: resolves a hostname to its addresses so outbound requests can refuse private ones. */
 	RESOLVE_HOST?: (hostname: string) => Promise<string[]>;
 }

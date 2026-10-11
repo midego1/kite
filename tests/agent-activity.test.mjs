@@ -101,6 +101,20 @@ test("the target opens the agent draft while it exists, otherwise the message", 
 	assert.equal(actionTarget(row({ action: "dismiss", messageId: null })), null);
 });
 
+test("a sent agent draft links to the sent reply, never to the trashed draft", () => {
+	const sent = row({ after: { draftId: "draft-1", sentMessageId: "sent 1" } });
+	assert.deepEqual(actionTarget(sent), { href: "/sent/sent%201", label: "Sent reply: Figures" });
+	assert.deepEqual(actionTarget({ ...sent, subject: "" }), {
+		href: "/sent/sent%201",
+		label: "Sent reply: (No subject)",
+	});
+	assert.doesNotMatch(actionTarget(sent).href, /\/drafts\//);
+	assert.deepEqual(actionTarget(row({ action: "dismiss", after: { sentMessageId: "sent-1" } })), {
+		href: "/inbox/msg-1",
+		label: "Figures",
+	});
+});
+
 test("Undo is enabled only for applied rows inside the undo window", () => {
 	assert.equal(undoDisabledReason(row(), NOW), null);
 	assert.match(undoDisabledReason(row({ status: "blocked", canUndo: false }), NOW), /Blocked/);

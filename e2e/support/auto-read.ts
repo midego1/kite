@@ -2,7 +2,7 @@ import { expect, type APIRequestContext, type APIResponse, type Page } from "@pl
 import { DOMAIN } from "./constants";
 import { apiSignIn } from "./helpers";
 
-const ACCOUNT_PASSWORD = "auto-read-password-123";
+export const AUTO_READ_ACCOUNT_PASSWORD = "auto-read-password-123";
 
 export type MailboxSettingsBody = {
 	settings: Record<string, unknown> & {
@@ -40,10 +40,10 @@ export async function createSignedInAccount(
 	const domainId = await exampleDomainId(admin);
 	const { account } = await okJson<{ account: { id: string } }>(
 		await admin.post("/api/accounts", {
-			data: { username, domainId, password: ACCOUNT_PASSWORD, role, useAllDomains: true },
+			data: { username, domainId, password: AUTO_READ_ACCOUNT_PASSWORD, role, useAllDomains: true },
 		}),
 	);
-	const api = await apiSignIn(`${username}@${DOMAIN}`, ACCOUNT_PASSWORD);
+	const api = await apiSignIn(`${username}@${DOMAIN}`, AUTO_READ_ACCOUNT_PASSWORD);
 	const { mailboxes } = await okJson<{ mailboxes: { id: string; localPart: string }[] }>(
 		await api.get("/api/mailboxes"),
 	);

@@ -76,12 +76,18 @@ export function reasonText(reason: string | null): string | null {
 	return /\s/.test(reason) ? reason : humanize(reason);
 }
 
-/** Where a row's link goes: the agent draft while it exists, otherwise the message the action was about. */
+/**
+ * Where a row's link goes: the sent reply once the agent draft was sent (the draft itself is then in
+ * trash), the agent draft while it exists, otherwise the message the action was about.
+ */
 export function actionTarget(
 	row: Pick<ActivityAction, "action" | "status" | "messageId" | "after" | "subject">,
 ): ActivityTarget | null {
 	const subject = row.subject || "(No subject)";
 	const draftId = row.after?.draftId;
+	const sentMessageId = row.after?.sentMessageId;
+	if (row.action === "create_draft" && typeof sentMessageId === "string")
+		return { href: `/sent/${encodeURIComponent(sentMessageId)}`, label: `Sent reply: ${subject}` };
 	if (row.action === "create_draft" && row.status === "applied" && typeof draftId === "string")
 		return { href: `/drafts/${encodeURIComponent(draftId)}`, label: `Draft reply: ${subject}` };
 	if (!row.messageId) return null;

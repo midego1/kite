@@ -1,8 +1,9 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { DRAFT_SYSTEM_MARKER } from "../src/lib/agent/auto-read/request-markers";
 import { BASE_URL, DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { FAKE_API_KEY, fakeProviderSettings, readAdminAgent, useFakeProvider } from "./support/agent";
 import {
+	AUTO_READ_ACCOUNT_PASSWORD,
 	autoReadFields,
 	collectConsoleErrors,
 	createSharedMailbox,
@@ -17,7 +18,7 @@ import { startFakeModel } from "./support/fake-model";
 import { QUESTION_DRAFT_BODY } from "./support/fake-model-scenarios";
 import type { FakeModel } from "./support/fake-model-types";
 import type { InboundMail } from "./support/helpers-types";
-import { apiContext, deliverInbound, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, deliverInbound, postInbound, signIn, uniqueToken, waitForMessage } from "./support/helpers";
 import { readActions, readJobs, readSuggestions, waitForFinishedJob } from "./support/triage";
 
 let fake: FakeModel;
@@ -2388,6 +2389,14 @@ test.describe("reply suggestions", () => {
 			expect((await refused).status()).toBe(409);
 			await expect(page.getByRole("alert")).toContainText("already sent");
 			await expect(activityRow(page, sentDraftRow.id).locator("[data-activity-status]")).toHaveText("Done");
+			// The draft row is in trash after the send, so the row links to the sent reply instead.
+			expect(sentDraftRow.after).toMatchObject({ draftId: sentReply.draftId, sentMessageId });
+			const sentTarget = activityRow(page, sentDraftRow.id).locator("[data-activity-target]");
+			await expect(sentTarget).toHaveAttribute("href", `/sent/${sentMessageId}`);
+			await expect(sentTarget).toContainText("Sent reply");
+			await sentTarget.click();
+			await expect(page).toHaveURL(new RegExp(`/sent/${sentMessageId}$`));
+			await expect(page.getByRole("heading", { name: `Re: ${sent.message.subject}` })).toBeVisible();
 			const sentList = await okJson<{ messages: { id: string; subject: string | null }[] }>(
 				await account.api.get("/api/messages?status=sent&limit=50"),
 			);
@@ -2809,6 +2818,282 @@ test.describe("reply suggestions", () => {
 			const section = await openAutoReadSection(page);
 			await expect(section.getByText(/^Paused until/)).toBeVisible();
 			await expect(section.getByRole("button", { name: "Resume" })).toBeVisible();
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	/** Collects 5xx answers from the suggestion surfaces' APIs. */
+	function collectServerErrors(page: Page): string[] {
+		const failures: string[] = [];
+		page.on("response", (response) => {
+			if (response.status() >= 500 && /\/api\/(agent\/|messages)/.test(response.url()))
+				failures.push(`${response.status()} ${response.url()}`);
+		});
+		return failures;
+	}
+
+	/** The list row's link; the new-mail toast links to the same message. */
+	const rowLink = (page: Page, subject: string) =>
+		page.getByRole("link").filter({ hasText: subject }).filter({ hasNotText: "New email" });
+
+	test("first run: Suggest only through settings, then the badge, card, Review draft, Dismiss, Activity Undo and live thread updates", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const username = `frn${uniqueToken("")}`;
+		const account = await createSignedInAccount(api, username);
+		const address = `${username}@${DOMAIN}`;
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: { cookies: [], origins: [] } });
+		try {
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			const serverErrors = collectServerErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript(() => {
+				localStorage.setItem("kite-conversation-view", "off");
+				localStorage.setItem("kite-reading-pane", "right");
+			});
+			// A real sign-in, so the realtime socket connects like it does for a person.
+			await signIn(page, address, AUTO_READ_ACCOUNT_PASSWORD);
+			await expect(page).toHaveURL(/\/inbox/);
+			await expect(forYouItem(page)).toHaveCount(0);
+
+			const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+			const panel = page.locator("#email-assistant-panel");
+			const openAssistantSettings = async () => {
+				await expect(toggle).toBeVisible();
+				if ((await toggle.getAttribute("aria-label")) === "Open email assistant")
+					await toggle.click({ timeout: 45_000 });
+				const settingsButton = panel.getByRole("button", { name: "Assistant settings" });
+				if ((await settingsButton.getAttribute("aria-pressed")) !== "true") await settingsButton.click();
+			};
+			const closeAssistant = async () => {
+				await toggle.click();
+				await expect(toggle).toHaveAttribute("aria-label", "Open email assistant");
+			};
+			await openAssistantSettings();
+			const section = panel.getByRole("region", { name: "Automatic reading" });
+			await expect(section).toBeVisible();
+			await expect(section.getByText("Message content is sent to 127.0.0.1.")).toBeVisible();
+			await section.getByRole("radio", { name: "Suggest only" }).check();
+			const saved = settingsPut(page);
+			await section.getByRole("button", { name: "Save automatic reading" }).click();
+			expect((await saved).status()).toBe(200);
+			expect((await readMailboxSettings(account.api, account.mailboxId)).settings.autonomy).toBe("suggest");
+			await closeAssistant();
+
+			// 1. The row gets its chip without a reload.
+			const firstId = `<${uniqueToken("frn")}@outside.test>`;
+			const first = await deliverQuestion(account.api, address, "Customer <customer@outside.test>", {
+				messageId: firstId,
+			});
+			expect((await waitForFinishedJob(account.api, account.mailboxId, first.message.id, "triage")).status).toBe(
+				"completed",
+			);
+			const firstReply = (await suggestionsFor(account.api, account.mailboxId, first.message.id)).find(
+				(item) => item.kind === "reply",
+			)!;
+			await expect(rowBadge(page, first.message.subject!)).toHaveText("Reply", { timeout: 15_000 });
+			await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you\s*1$/, { timeout: 15_000 });
+
+			// 2. The reader card offers Review draft, which opens Kite's draft.
+			await rowLink(page, first.message.subject!).click();
+			await expect(page).toHaveURL(new RegExp(`/inbox/${first.message.id}$`));
+			await expect(replyBlock(page)).toHaveAttribute("data-suggestion-id", firstReply.id);
+			await replyBlock(page).getByRole("button", { name: "Review draft" }).click();
+			await expect(page).toHaveURL(new RegExp(`/drafts/${firstReply.draftId}$`));
+			await expect(page.getByRole("textbox", { name: "Message body" })).toContainText(QUESTION_DRAFT_BODY);
+			await page.getByRole("button", { name: "Close composer" }).click();
+			await expect(page).toHaveURL(/\/drafts$/);
+			await page.locator('[data-reorder-id="/inbox"]').getByRole("link").click();
+			await expect(page).toHaveURL(/\/inbox$/);
+			await rowLink(page, first.message.subject!).click();
+			await expect(page).toHaveURL(new RegExp(`/inbox/${first.message.id}$`));
+
+			// 3. Dismiss from the card shows a toast with Undo.
+			await expect(replyBlock(page)).toHaveAttribute("data-suggestion-id", firstReply.id);
+			await replyBlock(page).getByRole("button", { name: "More Kite actions" }).click();
+			const dismissed = page.waitForResponse((response) =>
+				response.url().endsWith(`/api/agent/suggestions/${firstReply.id}/dismiss`),
+			);
+			await page.getByRole("menuitem", { name: "Dismiss" }).click();
+			expect((await dismissed).status()).toBe(200);
+			await expect(replyBlock(page)).toHaveCount(0);
+			const toast = page.getByRole("status").filter({ hasText: "Suggestion dismissed" });
+			await expect(toast.getByRole("button", { name: "Undo" })).toBeVisible();
+			await expect(rowBadge(page, first.message.subject!)).toHaveCount(0);
+			await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you$/);
+
+			// 4. Activity, reached from the assistant settings, lists the dismiss.
+			await openAssistantSettings();
+			await panel.getByRole("tab", { name: "Activity" }).click();
+			const dismissRow = (await readActions(account.api, account.mailboxId)).find(
+				(row) => row.action === "dismiss" && row.suggestionId === firstReply.id,
+			)!;
+			await expect(activityRow(page, dismissRow.id)).toContainText("Dismissed a suggestion");
+			await expect(activityRow(page, dismissRow.id)).toContainText("User");
+
+			// 5. Undo there restores the suggestion, and the card comes back.
+			const undone = page.waitForResponse((response) =>
+				response.url().endsWith(`/api/agent/actions/${dismissRow.id}/undo`),
+			);
+			await activityRow(page, dismissRow.id).getByRole("button", { name: "Undo" }).click();
+			expect((await undone).status()).toBe(200);
+			await expect(activityRow(page, dismissRow.id).locator("[data-activity-status]")).toHaveText("Undone");
+			await closeAssistant();
+			await expect(replyBlock(page)).toHaveAttribute("data-suggestion-id", firstReply.id, { timeout: 15_000 });
+			await expect(rowBadge(page, first.message.subject!)).toHaveText("Reply");
+			await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you\s*1$/);
+
+			// A newer message in the open thread: the new row, the card and the count follow without a reload.
+			const second = await deliverQuestion(account.api, address, "Customer <customer@outside.test>", {
+				inReplyTo: firstId,
+			});
+			expect((await waitForFinishedJob(account.api, account.mailboxId, second.message.id, "triage")).status).toBe(
+				"completed",
+			);
+			const secondReply = (await suggestionsFor(account.api, account.mailboxId, second.message.id)).find(
+				(item) => item.kind === "reply",
+			)!;
+			await expect(rowBadge(page, second.message.subject!)).toHaveText("Reply", { timeout: 15_000 });
+			await expect(replyBlock(page)).toHaveAttribute("data-suggestion-id", secondReply.id, { timeout: 15_000 });
+			await expect(rowBadge(page, first.message.subject!)).toHaveCount(0);
+			// A thread reply can also carry a summary, so the count follows the API's open list.
+			const openNow = (await readSuggestions(account.api, { status: "open" })).suggestions;
+			expect(openNow.filter((item) => item.kind === "reply").map((item) => item.id)).toEqual([secondReply.id]);
+			expect(openNow.filter((item) => item.messageId === first.message.id)).toEqual([]);
+			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openNow.length}$`));
+			const third = await deliverQuestion(account.api, address, "Client <client@outside.test>");
+			expect((await waitForFinishedJob(account.api, account.mailboxId, third.message.id, "triage")).status).toBe(
+				"completed",
+			);
+			await expect(rowBadge(page, third.message.subject!)).toHaveText("Reply", { timeout: 15_000 });
+			await expect(forYouItem(page).getByRole("link")).toHaveText(
+				new RegExp(`^For you\\s*${(await readSuggestions(account.api, { status: "open" })).suggestions.length}$`),
+				{ timeout: 15_000 },
+			);
+			await expect(page.getByText(PHISHING_TOAST)).toHaveCount(0);
+
+			const text = await page.locator("body").innerText();
+			expect(text).not.toMatch(/mailflare/i);
+			expect(serverErrors).toEqual([]);
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	/** sRGB of a computed colour (oklch included) and the colour a probe with the given classes gets. */
+	async function colorProbe(page: Page, target: Locator, property: "backgroundColor" | "color", probeClass: string) {
+		return target.evaluate(
+			(element, { property, probeClass }) => {
+				const context = document.createElement("canvas").getContext("2d")!;
+				const rgb = (color: string) => {
+					context.clearRect(0, 0, 1, 1);
+					context.fillStyle = color;
+					context.fillRect(0, 0, 1, 1);
+					return Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3));
+				};
+				const probe = document.createElement("span");
+				probe.className = probeClass;
+				document.body.appendChild(probe);
+				const expected = rgb(getComputedStyle(probe)[property]);
+				probe.remove();
+				const style = getComputedStyle(element);
+				return {
+					actual: rgb(style[property]),
+					expected,
+					text: rgb(style.color),
+					background: rgb(style.backgroundColor),
+				};
+			},
+			{ property, probeClass },
+		);
+	}
+
+	/** WCAG contrast ratio of two sRGB colours. */
+	function contrast(a: number[], b: number[]) {
+		const luminance = (rgb: number[]) => {
+			const [r, g, bl] = rgb.map((value) => {
+				const channel = value / 255;
+				return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+			});
+			return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+		};
+		const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+		return (high + 0.05) / (low + 0.05);
+	}
+
+	test("the chip, the reader card and For you use the blue palette in Kite, Classic and dark mode", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("clr");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const question = await deliverQuestion(account.api, account.address, "Customer <customer@outside.test>");
+			expect((await waitForFinishedJob(account.api, account.mailboxId, question.message.id, "triage")).status).toBe(
+				"completed",
+			);
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			const serverErrors = collectServerErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript(() => {
+				localStorage.setItem("kite-conversation-view", "off");
+				localStorage.setItem("kite-reading-pane", "right");
+			});
+			const buttons: Record<string, number[]> = {};
+			for (const style of [
+				{ name: "kite", theme: "light", classic: false },
+				{ name: "classic", theme: "light", classic: true },
+				{ name: "kite-dark", theme: "dark", classic: false },
+				{ name: "classic-dark", theme: "dark", classic: true },
+			]) {
+				await page.addInitScript(({ theme, classic }) => {
+					localStorage.setItem("kite-theme", theme);
+					if (classic) localStorage.setItem("kite-style", "classic");
+					else localStorage.removeItem("kite-style");
+				}, style);
+				await openReader(page, question.message);
+				expect(
+					await page.evaluate(() => ({
+						classic: document.documentElement.dataset.style === "classic",
+						dark: document.documentElement.classList.contains("dark"),
+					})),
+				).toEqual({ classic: style.classic, dark: style.theme === "dark" });
+				const review = replyBlock(page).getByRole("button", { name: "Review draft" });
+				await expect(review).toBeVisible();
+				const button = await colorProbe(page, review, "backgroundColor", "bg-blue-600");
+				expect(button.actual, `${style.name} button`).toEqual(button.expected);
+				expect(contrast(button.text, button.background), `${style.name} button text`).toBeGreaterThan(3);
+				buttons[style.name] = button.actual;
+
+				const chip = rowBadge(page, question.message.subject!);
+				await expect(chip).toHaveText("Reply");
+				const chipColor = await colorProbe(page, chip, "color", "text-blue-700");
+				expect(chipColor.actual, `${style.name} chip`).toEqual(chipColor.expected);
+				expect(contrast(chipColor.text, chipColor.background), `${style.name} chip text`).toBeGreaterThan(3);
+
+				await forYouItem(page).getByRole("link").click();
+				await expect(page).toHaveURL(/\/for-you$/);
+				const icon = page.getByRole("heading", { level: 1 }).locator("svg");
+				await expect(page.locator(`[data-for-you-entry]`)).toHaveCount(1);
+				const iconColor = await colorProbe(page, icon, "color", "text-blue-600");
+				expect(iconColor.actual, `${style.name} For you`).toEqual(iconColor.expected);
+				await expect(page.locator("body")).not.toContainText(/mailflare/i);
+			}
+			expect(buttons.kite).not.toEqual(buttons.classic);
+			expect(buttons["kite-dark"]).not.toEqual(buttons["classic-dark"]);
+			expect(serverErrors).toEqual([]);
 			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
 		} finally {
 			await context.close();

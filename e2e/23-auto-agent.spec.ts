@@ -3767,3 +3767,231 @@ test.describe("calendar invite actions", () => {
 		}
 	});
 });
+
+test.describe("calendar invite card", () => {
+	const ORGANIZER = "alice@partner.test";
+
+	async function inviteAccount(prefix: string) {
+		const username = `${prefix}${uniqueToken("")}`;
+		const account = await createSignedInAccount(api, username);
+		await okJson(
+			await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, autonomy: "suggest" } }),
+		);
+		return { ...account, address: `${username}@${DOMAIN}` };
+	}
+
+	async function stopMailbox(client: APIRequestContext, mailboxId: string) {
+		await okJson(await client.put("/api/agent/settings", { data: { mailboxId, autonomy: "off" } }));
+		await expect
+			.poll(
+				async () => (await readJobs(client, mailboxId)).some((job) => ["pending", "running"].includes(job.status)),
+				{ timeout: 30_000 },
+			)
+			.toBe(false);
+	}
+
+	async function deliver(
+		client: APIRequestContext,
+		mailboxId: string,
+		to: string,
+		options: Parameters<typeof inviteAttachment>[0],
+		text = "Please join.",
+	) {
+		const subject = uniqueToken("card");
+		await postInbound(client, {
+			from: `Alice <${ORGANIZER}>`,
+			to,
+			subject,
+			text,
+			attachments: [inviteAttachment(options)],
+		});
+		const message = await waitForMessage(client, subject, { status: "received" });
+		await waitForFinishedJob(client, mailboxId, message.id, "triage");
+		const { suggestions } = await readSuggestions(client, { mailboxId, messageId: message.id });
+		return { message, suggestion: suggestions.find((item) => item.kind === "calendar_invite")! };
+	}
+
+	async function eventsAround(client: APIRequestContext, start: Date) {
+		const range = new URLSearchParams({
+			start: new Date(start.getTime() - 7 * 86_400_000).toISOString(),
+			end: new Date(start.getTime() + 7 * 86_400_000).toISOString(),
+		});
+		const { events } = await okJson<{ events: { id: string; title: string; icalUid: string | null }[] }>(
+			await client.get(`/api/calendar/events?${range}`),
+		);
+		return events;
+	}
+
+	async function eventsWithUid(client: APIRequestContext, start: Date, uid: string) {
+		return (await eventsAround(client, start)).filter((event) => event.icalUid === uid);
+	}
+
+	async function openInvite(page: Page, message: { id: string; subject: string | null }) {
+		const listed = page.waitForResponse((response) => response.url().includes("/api/agent/suggestions?status=open&"));
+		await page.goto(`/inbox/${message.id}`);
+		await expect(page.getByRole("heading", { name: message.subject! })).toBeVisible();
+		await listed;
+	}
+
+	const inviteBlock = (page: Page) => page.locator('[data-suggestion-card] [data-suggestion-block="calendar_invite"]');
+	const answeredBlock = (page: Page) =>
+		page.locator('[data-suggestion-card] [data-suggestion-block="calendar_answered"]');
+
+	test("the card shows the invite, conflicts, a calendar chip, and Accept, Decline and the switches run once each", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await inviteAccount("icc");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const free = futureAt(30, 10);
+			const freeSummary = uniqueToken("Free slot");
+			const freeUid = `${uniqueToken("uid")}@partner.test`;
+			const first = await deliver(account.api, account.mailboxId, account.address, {
+				uid: freeUid,
+				start: free,
+				minutes: 30,
+				summary: freeSummary,
+			});
+			const busyStart = futureAt(31, 10);
+			const busyTitle = uniqueToken("Design review");
+			await okJson(
+				await account.api.post("/api/calendar/events", {
+					data: {
+						title: busyTitle,
+						startsAt: busyStart.toISOString(),
+						endsAt: new Date(busyStart.getTime() + 3_600_000).toISOString(),
+					},
+				}),
+			);
+			const clash = await deliver(account.api, account.mailboxId, account.address, {
+				uid: `${uniqueToken("uid")}@partner.test`,
+				start: new Date(busyStart.getTime() + 30 * 60_000),
+				summary: uniqueToken("Overlap"),
+			});
+			expect(clash.suggestion.payload).toMatchObject({ conflicts: [expect.objectContaining({ title: busyTitle })] });
+
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+			await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "off"));
+			await page.goto("/inbox");
+			const row = (message: { subject: string | null }) => page.getByRole("link").filter({ hasText: message.subject! });
+			await expect(row(first.message).locator('[data-suggestion-badge="calendar_invite"]')).toBeVisible();
+			await expect(row(clash.message).locator('[data-suggestion-badge="calendar_invite"]')).toBeVisible();
+
+			await openInvite(page, clash.message);
+			await expect(inviteBlock(page)).toHaveCount(1);
+			await expect(inviteBlock(page).locator('[data-invite-conflicts="list"]')).toContainText(busyTitle);
+			await expect(inviteBlock(page)).not.toContainText("No conflicts");
+			await inviteBlock(page).getByRole("button", { name: "Propose new time" }).click();
+			await expect(page).toHaveURL(/\/drafts\/[^/]+$/);
+
+			await openInvite(page, first.message);
+			await expect(inviteBlock(page)).toContainText(freeSummary);
+			await expect(inviteBlock(page)).toContainText("No conflicts");
+			await expect(inviteBlock(page)).toContainText(ORGANIZER);
+			for (const name of ["Accept", "Decline", "Propose new time"])
+				await expect(inviteBlock(page).getByRole("button", { name })).toBeVisible();
+			await inviteBlock(page).getByRole("button", { name: "Decline" }).click();
+			await expect(answeredBlock(page)).toContainText("You declined this invitation.");
+			expect(await eventsWithUid(account.api, free, freeUid)).toHaveLength(0);
+			await answeredBlock(page).getByRole("button", { name: "Accept instead" }).click();
+			await expect(answeredBlock(page)).toContainText("You accepted this invitation.");
+			expect(await eventsWithUid(account.api, free, freeUid)).toHaveLength(1);
+			await answeredBlock(page).getByRole("button", { name: "Send decline instead" }).click();
+			await expect(answeredBlock(page)).toContainText("You declined this invitation.");
+			expect(await eventsWithUid(account.api, free, freeUid)).toHaveLength(0);
+
+			const rsvps = (await readActions(account.api, account.mailboxId)).filter(
+				(action) => action.suggestionId === first.suggestion.id && action.action === "send_rsvp",
+			);
+			expect(rsvps.map((action) => [action.variant, action.status]).sort()).toEqual([
+				["accepted", "undone"],
+				["declined", "applied"],
+				["declined", "undone"],
+			]);
+			expect(errors.filter((message) => !message.includes("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await stopMailbox(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("Accept shows an Undo toast, Activity lists the invite actions, and Undo removes the event", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await inviteAccount("icu");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const start = futureAt(32, 10);
+			const { message, suggestion } = await deliver(account.api, account.mailboxId, account.address, {
+				uid: `${uniqueToken("uid")}@partner.test`,
+				start,
+				summary: uniqueToken("Undo me"),
+			});
+			const page = await context.newPage();
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+			await openInvite(page, message);
+			await inviteBlock(page).getByRole("button", { name: "Accept", exact: true }).click();
+			await expect(page.getByRole("status").filter({ hasText: "Accepted and added to your calendar" })).toBeVisible();
+			expect(await eventsAround(account.api, start)).toHaveLength(1);
+			const actions = (await readActions(account.api, account.mailboxId)).filter(
+				(action) => action.suggestionId === suggestion.id,
+			);
+			expect(actions.map((action) => [action.action, action.status]).sort()).toEqual([
+				["create_event", "applied"],
+				["send_rsvp", "applied"],
+			]);
+			await page.getByRole("button", { name: "Undo" }).click();
+			await expect.poll(async () => (await eventsAround(account.api, start)).length).toBe(0);
+			const after = (await readActions(account.api, account.mailboxId)).find(
+				(action) => action.suggestionId === suggestion.id && action.action === "create_event" && !action.undoOf,
+			);
+			expect(after?.status).toBe("undone");
+		} finally {
+			await context.close();
+			await stopMailbox(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("accepting on a shared mailbox with calendar on creates the event only in the reviewer's calendar", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const local = `icsh${uniqueToken("")}`;
+		const sharedId = await createSharedMailbox(api, local);
+		const other = await createSignedInAccount(api, `icso${uniqueToken("")}`);
+		let start: Date | null = null;
+		try {
+			await shareMailbox(api, sharedId, other.id, "full_access");
+			await okJson(
+				await api.put("/api/agent/settings", {
+					data: { mailboxId: sharedId, autonomy: "suggest", capabilities: { calendar: true } },
+				}),
+			);
+			start = futureAt(33, 10);
+			const { suggestion } = await deliver(api, sharedId, `${local}@${DOMAIN}`, {
+				uid: `${uniqueToken("uid")}@partner.test`,
+				start,
+				summary: uniqueToken("Shared invite"),
+			});
+			expect(suggestion.status).toBe("open");
+			await okJson(await api.post(`/api/agent/suggestions/${suggestion.id}/accept`, { data: { option: "accept" } }));
+			const [event] = await eventsAround(api, start);
+			expect(event.icalUid).toBe((suggestion.payload as { uid: string }).uid);
+			expect(await eventsAround(other.api, start)).toEqual([]);
+		} finally {
+			if (start)
+				for (const event of await eventsAround(api, start)) await api.delete(`/api/calendar/events/${event.id}`);
+			await stopMailbox(api, sharedId);
+			await other.api.dispose();
+			await restore();
+		}
+	});
+});

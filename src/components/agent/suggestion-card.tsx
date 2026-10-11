@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useSuggestionList } from "@/hooks/use-suggestion-list";
 import type { CardSuggestion, SuggestionCardProps } from "./suggestion-card-types";
-import { cardSections, hasCardContent, suggestionCardUrl } from "./suggestion-card-utils";
+import { answeredInviteUrl, cardSections, hasCardContent, suggestionCardUrl } from "./suggestion-card-utils";
 import { usePhishingToast } from "./use-phishing-toast";
 
 const SuggestionCardBody = dynamic(() => import("./suggestion-card-body").then((module) => module.SuggestionCardBody), {
@@ -18,8 +18,15 @@ export function SuggestionCard({ mailboxId, messageId, threadId }: SuggestionCar
 	const { data, reload } = useSuggestionList<{ suggestions?: CardSuggestion[] }>(
 		suggestionCardUrl(messageId, threadId),
 	);
+	const { data: answered, reload: reloadAnswered } = useSuggestionList<{ suggestions?: CardSuggestion[] }>(
+		answeredInviteUrl(messageId, threadId),
+	);
 	usePhishingToast(data?.suggestions ?? null, messageId);
-	const sections = cardSections(data?.suggestions ?? [], mailboxId);
+	const sections = cardSections(data?.suggestions ?? [], mailboxId, answered?.suggestions ?? []);
 	if (!hasCardContent(sections)) return null;
-	return <SuggestionCardBody sections={sections} onChanged={reload} />;
+	const changed = () => {
+		reload();
+		reloadAnswered();
+	};
+	return <SuggestionCardBody sections={sections} onChanged={changed} />;
 }

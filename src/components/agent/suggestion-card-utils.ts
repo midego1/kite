@@ -1,8 +1,8 @@
 import type { SuggestionKind } from "@/lib/agent/auto-read/suggestion-types";
 import type { CardSections, CardSuggestion, WhyDetails } from "./suggestion-card-types";
 
-/** Kinds that get their own block in the reader card, in display order; calendar invites join later. */
-const BLOCK_KINDS: readonly SuggestionKind[] = ["phishing", "reply"];
+/** Kinds that get their own block in the reader card, in display order. */
+const BLOCK_KINDS: readonly SuggestionKind[] = ["phishing", "calendar_invite", "reply"];
 
 const REASON_TEXT: Record<string, string> = {
 	needs_reply: "The message asks you something that needs an answer.",
@@ -43,22 +43,34 @@ export function suggestionCardUrl(messageId: string, threadId: string | null): s
 	return `/api/agent/suggestions?${params}`;
 }
 
+/** The answered invitations of the conversation, which keep offering "Send decline instead" or "Accept instead". */
+export function answeredInviteUrl(messageId: string, threadId: string | null): string {
+	return suggestionCardUrl(messageId, threadId).replace("status=open", "status=accepted");
+}
+
 /**
  * Picks what the card shows from suggestions listed newest first: the newest summary and the newest
  * open suggestion of each block kind, all from the message's own mailbox (thread ids are per mailbox).
  */
-export function cardSections(suggestions: readonly CardSuggestion[], mailboxId: string | null): CardSections {
+export function cardSections(
+	suggestions: readonly CardSuggestion[],
+	mailboxId: string | null,
+	answeredInvites: readonly CardSuggestion[] = [],
+): CardSections {
 	const open = suggestions.filter((item) => item.status === "open" && item.mailboxId === mailboxId);
 	const blocks: CardSuggestion[] = [];
 	for (const kind of BLOCK_KINDS) {
 		const newest = open.find((item) => item.kind === kind);
 		if (newest) blocks.push(newest);
 	}
-	return { summary: open.find((item) => item.kind === "summary") ?? null, blocks };
+	const answered = answeredInvites.find(
+		(item) => item.status === "accepted" && item.kind === "calendar_invite" && item.mailboxId === mailboxId,
+	);
+	return { summary: open.find((item) => item.kind === "summary") ?? null, blocks, answered: answered ?? null };
 }
 
 export function hasCardContent(sections: CardSections): boolean {
-	return sections.summary !== null || sections.blocks.length > 0;
+	return sections.summary !== null || sections.blocks.length > 0 || sections.answered !== null;
 }
 
 export function summaryText(suggestion: CardSuggestion): string {

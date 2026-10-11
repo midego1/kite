@@ -21,6 +21,8 @@ export type CardSuggestion = {
 export type CardSections = {
 	summary: CardSuggestion | null;
 	blocks: CardSuggestion[];
+	/** The newest answered calendar invitation, which still offers its switch (decline instead or accept instead). */
+	answered: CardSuggestion | null;
 };
 
 export type SuggestionCardProps = {

@@ -46,6 +46,8 @@ export type AgentActionRow = {
 	id: string;
 	initiator: "agent" | "user";
 	action: string;
+	variant: string;
+	undoOf: string | null;
 	status: string;
 	reason: string | null;
 	suggestionId: string | null;

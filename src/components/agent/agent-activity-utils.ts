@@ -11,6 +11,7 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 const VARIANT_LABELS: Record<string, string> = {
+	"create_event:update": "Updated a calendar event",
 	"send_rsvp:accepted": "Accepted an invitation",
 	"send_rsvp:declined": "Declined an invitation",
 };

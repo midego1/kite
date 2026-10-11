@@ -78,7 +78,7 @@ test("closed suggestions and other mailboxes' suggestions leave the card empty",
 		[item("r1", "reply", { status: "superseded" }), item("s1", "summary", { mailboxId: "mb-2" })],
 		"mb-1",
 	);
-	assert.deepEqual(sections, { summary: null, blocks: [] });
+	assert.deepEqual(sections, { summary: null, blocks: [], answered: null });
 	assert.equal(hasCardContent(sections), false);
 	assert.equal(hasCardContent(cardSections([item("s1", "summary")], null)), false);
 });

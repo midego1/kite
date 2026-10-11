@@ -11,6 +11,7 @@ import { announceSuggestionChange, postSuggestion } from "./suggestion-card-acti
 import { SuggestionCardMenu } from "./suggestion-card-menu";
 import type { CardSuggestion, SuggestionCardBodyProps } from "./suggestion-card-types";
 import { replyStatusText, summaryText, whyDetails } from "./suggestion-card-utils";
+import { AnsweredInviteBlock, InviteBlock } from "./suggestion-invite-block";
 import { PhishingBlock } from "./suggestion-phishing-block";
 
 function WhyDisclosure({ suggestion }: { suggestion: CardSuggestion }) {
@@ -94,7 +95,7 @@ function ReplyBlock({ suggestion, onChanged }: { suggestion: CardSuggestion; onC
 export function SuggestionCardBody({ sections, onChanged }: SuggestionCardBodyProps) {
 	const { visible: messageListVisible } = useMessageListVisibility();
 	const assistantOpen = useAssistantOpen();
-	const { summary, blocks } = sections;
+	const { summary, blocks, answered } = sections;
 	return (
 		<div className={clsx(messageListVisible || assistantOpen ? "pl-10" : "pl-16", "pr-6 pb-4")}>
 			<section
@@ -115,9 +116,18 @@ export function SuggestionCardBody({ sections, onChanged }: SuggestionCardBodyPr
 						<WhyDisclosure suggestion={summary} />
 					</div>
 				)}
+				{answered && <AnsweredInviteBlock suggestion={answered} onChanged={onChanged} />}
 				{blocks.map((suggestion) =>
 					suggestion.kind === "reply" ? (
 						<ReplyBlock key={suggestion.id} suggestion={suggestion} onChanged={onChanged} />
+					) : suggestion.kind === "calendar_invite" ? (
+						<InviteBlock
+							key={suggestion.id}
+							suggestion={suggestion}
+							onChanged={onChanged}
+							menu={<SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />}
+							why={<WhyDisclosure suggestion={suggestion} />}
+						/>
 					) : (
 						<PhishingBlock
 							key={suggestion.id}

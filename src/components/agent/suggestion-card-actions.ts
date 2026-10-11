@@ -35,7 +35,7 @@ export function announceSuggestionChange(suggestion: Pick<CardSuggestion, "id" |
 }
 
 /** The same request as Undo in Activity, so both record the undo on the action row. */
-async function undoAction(actionId: string) {
+export async function undoAction(actionId: string) {
 	const response = await authFetch(`/api/agent/actions/${encodeURIComponent(actionId)}/undo`, { method: "POST" });
 	await readJson<{ error?: string }>(response, "The action could not be undone.");
 }

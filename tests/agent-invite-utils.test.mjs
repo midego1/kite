@@ -22,9 +22,14 @@ await build({
 	alias: { "@": join(root, "src") },
 	external: ["react", "react-dom", "next", "next/*"],
 });
-const { resolveWorkingHours, inviteVariant, availabilityWindow, overlappingEvents, buildInvitePayload } = await import(
-	pathToFileURL(join(outDir, "invite-utils.mjs")).href
-);
+const {
+	resolveWorkingHours,
+	inviteVariant,
+	availabilityWindow,
+	overlappingEvents,
+	buildInvitePayload,
+	localizeAllDay,
+} = await import(pathToFileURL(join(outDir, "invite-utils.mjs")).href);
 
 const invite = {
 	method: "REQUEST",
@@ -164,6 +169,7 @@ test("the payload carries the full shape, sender match is case-insensitive and C
 		summary: "Sync",
 		location: null,
 		repeats: true,
+		allDay: false,
 		conflicts: [{ eventId: "b", title: "Overlap", start: conflicts[0].startsAt, end: conflicts[0].endsAt }],
 		proposals: proposals.slice(0, 3),
 		organizerMatchesSender: true,
@@ -184,4 +190,14 @@ test("the payload carries the full shape, sender match is case-insensitive and C
 	assert.equal(cancel.organizerMatchesSender, false);
 	assert.equal(cancel.location, "Room 1");
 	assert.equal(cancel.existingEventId, "e1");
+});
+
+test("an all-day invite moves to midnight in the reviewer's zone, other invites are untouched", () => {
+	const day = { ...invite, allDay: true, tz: null, start: "2030-01-08T00:00:00.000Z", end: "2030-01-09T00:00:00.000Z" };
+	const local = localizeAllDay(day, "Europe/Amsterdam");
+	assert.equal(local.start, "2030-01-07T23:00:00.000Z");
+	assert.equal(local.end, "2030-01-08T23:00:00.000Z");
+	assert.equal(local.tz, "Europe/Amsterdam");
+	assert.equal(localizeAllDay(day, null).start, day.start);
+	assert.equal(localizeAllDay(invite, "Europe/Amsterdam"), invite);
 });

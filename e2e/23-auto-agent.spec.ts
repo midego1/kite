@@ -3816,9 +3816,9 @@ test.describe("calendar invite card", () => {
 			start: new Date(start.getTime() - 7 * 86_400_000).toISOString(),
 			end: new Date(start.getTime() + 7 * 86_400_000).toISOString(),
 		});
-		const { events } = await okJson<{ events: { id: string; title: string; icalUid: string | null }[] }>(
-			await client.get(`/api/calendar/events?${range}`),
-		);
+		const { events } = await okJson<{
+			events: { id: string; title: string; startsAt: string; icalUid: string | null }[];
+		}>(await client.get(`/api/calendar/events?${range}`));
 		return events;
 	}
 
@@ -3954,6 +3954,115 @@ test.describe("calendar invite card", () => {
 				(action) => action.suggestionId === suggestion.id && action.action === "create_event" && !action.undoOf,
 			);
 			expect(after?.status).toBe("undone");
+		} finally {
+			await context.close();
+			await stopMailbox(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("update, remove, repeating and all-day invites render their own card, and an unknown TZID gets none", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await inviteAccount("icv");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+			const answer = async (message: { id: string; subject: string | null }, name: string) => {
+				await openInvite(page, message);
+				await expect(inviteBlock(page)).toHaveCount(1);
+				await inviteBlock(page).getByRole("button", { name, exact: true }).click();
+				await expect(answeredBlock(page)).toBeVisible();
+			};
+
+			const start = futureAt(40, 10);
+			const uid = `${uniqueToken("uid")}@partner.test`;
+			const first = await deliver(account.api, account.mailboxId, account.address, {
+				uid,
+				start,
+				summary: "Sync v1",
+				organizer: "ceo@other.test",
+			});
+			await openInvite(page, first.message);
+			await expect(inviteBlock(page).locator("[data-invite-warnings]")).toContainText("Unverified sender");
+			await expect(inviteBlock(page).locator("[data-invite-warnings]")).toContainText("organizer");
+			await inviteBlock(page).getByRole("button", { name: "Accept", exact: true }).click();
+			await expect(answeredBlock(page)).toBeVisible();
+
+			const moved = futureAt(40, 14);
+			const update = await deliver(account.api, account.mailboxId, account.address, {
+				uid,
+				start: moved,
+				sequence: 1,
+				summary: "Sync v2",
+			});
+			await openInvite(page, update.message);
+			await expect(inviteBlock(page).getByRole("button", { name: "Accept", exact: true })).toHaveCount(0);
+			await answer(update.message, "Update event");
+			const [changed, ...others] = await eventsWithUid(account.api, start, uid);
+			expect(others).toHaveLength(0);
+			expect(changed).toMatchObject({ title: "Sync v2", startsAt: moved.toISOString() });
+
+			const cancel = await deliver(account.api, account.mailboxId, account.address, {
+				uid,
+				start: moved,
+				sequence: 2,
+				method: "CANCEL",
+			});
+			await answer(cancel.message, "Remove from calendar");
+			expect(await eventsWithUid(account.api, start, uid)).toHaveLength(0);
+
+			const weekly = await deliver(account.api, account.mailboxId, account.address, {
+				uid: `${uniqueToken("uid")}@partner.test`,
+				start: futureAt(41, 10),
+				rrule: "FREQ=WEEKLY;COUNT=5",
+			});
+			await openInvite(page, weekly.message);
+			await expect(inviteBlock(page).locator("[data-invite-when]")).toContainText("(repeats)");
+
+			const dayStart = futureAt(42, 0);
+			const dayUid = `${uniqueToken("uid")}@partner.test`;
+			const allDay = await deliver(account.api, account.mailboxId, account.address, {
+				uid: dayUid,
+				start: dayStart,
+				allDay: true,
+				summary: "Offsite",
+			});
+			expect(allDay.suggestion.payload).toMatchObject({ allDay: true, conflicts: [] });
+			await openInvite(page, allDay.message);
+			await expect(inviteBlock(page).locator("[data-invite-when]")).toContainText("All day");
+			await expect(inviteBlock(page).locator("[data-invite-when]")).not.toContainText(":");
+			await inviteBlock(page).getByRole("button", { name: "Accept", exact: true }).click();
+			await expect(answeredBlock(page)).toBeVisible();
+			const [offsite] = await eventsWithUid(account.api, dayStart, dayUid);
+			expect(offsite).toMatchObject({ title: "Offsite", startsAt: dayStart.toISOString() });
+
+			for (const tzid of ["W. Europe Standard Time", "Mars/Olympus_Mons"]) {
+				const subject = uniqueToken("tz");
+				await postInbound(account.api, {
+					from: `Alice <${ORGANIZER}>`,
+					to: account.address,
+					subject,
+					text: "Please join.",
+					attachments: [inviteAttachment({ uid: `${uniqueToken("uid")}@partner.test`, start: futureAt(43, 10), tzid })],
+				});
+				const message = await waitForMessage(account.api, subject, { status: "received" });
+				await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage");
+				const { suggestions } = await readSuggestions(account.api, {
+					mailboxId: account.mailboxId,
+					messageId: message.id,
+				});
+				expect(suggestions.filter((item) => item.kind === "calendar_invite")).toEqual([]);
+				await page.goto(`/inbox/${message.id}`);
+				await expect(page.getByRole("heading", { name: subject })).toBeVisible();
+				await expect(page.locator("[data-suggestion-block]")).toHaveCount(0);
+			}
+			expect(errors.filter((message) => !message.includes("Failed to load resource"))).toEqual([]);
 		} finally {
 			await context.close();
 			await stopMailbox(account.api, account.mailboxId);

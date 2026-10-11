@@ -1,5 +1,9 @@
 import type { InboundAttachment } from "./helpers-types";
 
+function icsDate(date: Date): string {
+	return date.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
 function icsStamp(date: Date): string {
 	return date
 		.toISOString()
@@ -23,13 +27,24 @@ export type IcsOptions = {
 	summary?: string;
 	organizer?: string;
 	rrule?: string;
+	/** Writes DTSTART/DTEND as `VALUE=DATE` dates covering the UTC day of `start`. */
+	allDay?: boolean;
+	/** Writes DTSTART/DTEND as local times with this TZID, whatever it is called. */
+	tzid?: string;
 	/** Extra padding bytes, to build an oversize file. */
 	padding?: number;
 };
 
 export function inviteAttachment(options: IcsOptions): InboundAttachment {
 	const method = options.method ?? "REQUEST";
-	const end = new Date(options.start.getTime() + (options.minutes ?? 60) * 60_000);
+	const when = (name: "DTSTART" | "DTEND", value: Date) => {
+		if (options.allDay) return `${name};VALUE=DATE:${icsDate(value)}`;
+		if (options.tzid) return `${name};TZID=${options.tzid}:${icsStamp(value).replace("Z", "")}`;
+		return `${name}:${icsStamp(value)}`;
+	};
+	const end = options.allDay
+		? new Date(options.start.getTime() + 86_400_000)
+		: new Date(options.start.getTime() + (options.minutes ?? 60) * 60_000);
 	const lines = [
 		"BEGIN:VCALENDAR",
 		"VERSION:2.0",
@@ -39,8 +54,8 @@ export function inviteAttachment(options: IcsOptions): InboundAttachment {
 		`UID:${options.uid}`,
 		`SEQUENCE:${options.sequence ?? 0}`,
 		`DTSTAMP:${icsStamp(new Date())}`,
-		`DTSTART:${icsStamp(options.start)}`,
-		`DTEND:${icsStamp(end)}`,
+		when("DTSTART", options.start),
+		when("DTEND", end),
 		`SUMMARY:${options.summary ?? "Planning"}`,
 		`ORGANIZER:mailto:${options.organizer ?? "alice@partner.test"}`,
 		...(options.rrule ? [`RRULE:${options.rrule}`] : []),

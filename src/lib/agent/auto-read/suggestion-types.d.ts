@@ -21,6 +21,8 @@ export type CalendarInvitePayload = {
 	summary: string;
 	location: string | null;
 	repeats: boolean;
+	/** A calendar date: `start` and `end` are midnights in `tz`, and `end` is exclusive. */
+	allDay?: boolean;
 	conflicts: { eventId: string; title: string; start: string; end: string }[];
 	proposals: { start: string; end: string }[];
 	organizerMatchesSender: boolean;

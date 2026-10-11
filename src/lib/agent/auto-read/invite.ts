@@ -10,6 +10,7 @@ import {
 	availabilityWindow,
 	buildInvitePayload,
 	inviteVariant,
+	localizeAllDay,
 	overlappingEvents,
 	resolveWorkingHours,
 	type ScheduleEvent,
@@ -93,21 +94,22 @@ export async function loadCalendarInvite(
 	const db = getDb(env);
 	const [reviewer] = await db.select().from(users).where(eq(users.id, input.reviewerUserId)).limit(1);
 	if (!reviewer) return null;
+	const invite = localizeAllDay(parsed.invite, reviewer.timeZone);
 	const [stored] = await db
 		.select({ id: calendarEvents.id, icalSequence: calendarEvents.icalSequence })
 		.from(calendarEvents)
-		.where(and(eq(calendarEvents.userId, reviewer.id), eq(calendarEvents.icalUid, parsed.invite.uid)))
+		.where(and(eq(calendarEvents.userId, reviewer.id), eq(calendarEvents.icalUid, invite.uid)))
 		.limit(1);
-	const variant = inviteVariant(parsed.invite, stored ?? null);
+	const variant = inviteVariant(invite, stored ?? null);
 	if (!variant) return null;
-	const { from, to } = availabilityWindow(parsed.invite);
-	const conflicts = overlappingEvents(await schedule(env, reviewer, from, to), parsed.invite, variant.existingEventId);
+	const { from, to } = availabilityWindow(invite);
+	const conflicts = overlappingEvents(await schedule(env, reviewer, from, to), invite, variant.existingEventId);
 	return buildInvitePayload({
-		invite: parsed.invite,
+		invite,
 		variant,
 		senderAddress: input.facts.senderAddress,
 		authPassed: input.facts.authPassed,
 		conflicts,
-		proposals: conflicts.length ? await proposals(env, reviewer, parsed.invite, variant.existingEventId) : [],
+		proposals: conflicts.length ? await proposals(env, reviewer, invite, variant.existingEventId) : [],
 	});
 }

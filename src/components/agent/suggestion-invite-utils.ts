@@ -43,6 +43,15 @@ export function formatInviteRange(start: string, end: string, timeZone: string):
 	return `${day}, ${part(from, timeZone, CLOCK)} – ${finish}`;
 }
 
+/** The invite's time line; an all-day invite shows its dates in the zone its midnights were set in, never shifted. */
+export function formatInviteWhen(payload: CalendarInvitePayload, viewerTimeZone: string): string {
+	if (!payload.allDay) return formatInviteRange(payload.start, payload.end, viewerTimeZone);
+	const zone = payload.tz ?? viewerTimeZone;
+	const first = part(new Date(payload.start), zone, DAY);
+	const last = part(new Date(Date.parse(payload.end) - 1), zone, DAY);
+	return `${first === last || Date.parse(payload.end) <= Date.parse(payload.start) ? first : `${first} – ${last}`} · All day`;
+}
+
 export type InviteButton = { option: InviteOption; label: string; primary?: boolean };
 
 /** The answers an open invitation offers; an update or a cancellation replaces Accept and Decline. */

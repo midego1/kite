@@ -29,6 +29,7 @@ const calendarInviteSchema = z.object({
 	summary: text(0, 500),
 	location: text(0, 500).nullable(),
 	repeats: z.boolean(),
+	allDay: z.boolean().optional(),
 	conflicts: z.array(z.object({ eventId: z.string(), title: text(0, 500), start: isoDate, end: isoDate })).max(20),
 	proposals: z.array(z.object({ start: isoDate, end: isoDate })).max(5),
 	organizerMatchesSender: z.boolean(),

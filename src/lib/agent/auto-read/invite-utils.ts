@@ -1,7 +1,7 @@
 import { findConflicts, type WorkHours } from "@/lib/calendar/availability-utils";
 import type { IcsInvite } from "@/lib/calendar/ics-parse-utils";
 import { normalizeEmailAddress } from "@/lib/email/address";
-import { normalizeTimeZone } from "@/lib/time/utils";
+import { dateFromZonedFields, normalizeTimeZone } from "@/lib/time/utils";
 import type { CalendarInvitePayload } from "./suggestion-types";
 
 const INVITE_MARGIN_MS = 30 * 60_000;
@@ -79,6 +79,21 @@ export function inviteVariant(invite: IcsInvite, stored: StoredInviteEvent | nul
 	return invite.sequence > (stored.icalSequence ?? 0) ? { method: "REQUEST", existingEventId: stored.id } : null;
 }
 
+/**
+ * An all-day invite is a calendar date, not an instant: the parser anchors it at midnight UTC, so it
+ * is moved to midnight in the reviewer's zone, which keeps the event on that date in their calendar.
+ */
+export function localizeAllDay(invite: IcsInvite, userTimeZone: string | null): IcsInvite {
+	if (!invite.allDay) return invite;
+	const tz = normalizeTimeZone(userTimeZone);
+	return {
+		...invite,
+		tz,
+		start: dateFromZonedFields(new Date(invite.start), tz).toISOString(),
+		end: dateFromZonedFields(new Date(invite.end), tz).toISOString(),
+	};
+}
+
 /** The range `get_schedule` is asked for: the event plus 30 minutes either side, capped at its 90-day limit. */
 export function availabilityWindow(invite: IcsInvite): { from: Date; to: Date } {
 	const from = new Date(Date.parse(invite.start) - INVITE_MARGIN_MS);
@@ -114,6 +129,7 @@ export function buildInvitePayload(input: {
 		summary: invite.summary,
 		location: invite.location || null,
 		repeats: !!invite.rrule,
+		allDay: invite.allDay,
 		conflicts: cancel
 			? []
 			: input.conflicts

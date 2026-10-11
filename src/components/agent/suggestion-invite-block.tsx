@@ -14,6 +14,7 @@ import { answerInvite } from "./suggestion-invite-actions";
 import {
 	answeredText,
 	formatInviteRange,
+	formatInviteWhen,
 	inviteAnswer,
 	inviteButtons,
 	invitePayload,
@@ -110,7 +111,7 @@ export function InviteBlock({ suggestion, onChanged, menu, why }: BlockProps) {
 				{menu}
 			</div>
 			<p data-invite-when className="mt-1 text-neutral-800">
-				{formatInviteRange(payload.start, payload.end, timeZone)}
+				{formatInviteWhen(payload, timeZone)}
 				{payload.repeats && <span className="ml-1 text-xs text-neutral-600">(repeats)</span>}
 			</p>
 			{payload.organizer && <p className="text-xs text-neutral-600">Organizer: {payload.organizer}</p>}

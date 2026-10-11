@@ -25,6 +25,8 @@ export type CalendarInvitePayload = {
 	proposals: { start: string; end: string }[];
 	organizerMatchesSender: boolean;
 	authPassed: boolean;
+	/** The reviewer's stored event with this UID: set for an update or a removal. */
+	existingEventId?: string | null;
 };
 
 export type TaskSuggestionPayload = { title: string; dueAt?: string };

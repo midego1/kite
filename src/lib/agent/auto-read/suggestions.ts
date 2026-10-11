@@ -6,7 +6,7 @@ import type { PlannedSuggestion, SuggestionKind } from "./suggestion-types";
 import { parseSuggestionPayload, suggestionExpiresAt, suggestionTitle } from "./suggestion-utils";
 
 /** The kinds triage stores so far; reply drafts and invites are created by their own steps. */
-const STORED_KINDS: readonly SuggestionKind[] = ["summary", "phishing"];
+const STORED_KINDS: readonly SuggestionKind[] = ["summary", "phishing", "calendar_invite"];
 
 type StoreInput = {
 	env: CloudflareEnv;
@@ -65,7 +65,7 @@ export async function upsertSuggestion(
 	return row ?? null;
 }
 
-/** Stores the summary and phishing suggestions; the reply suggestion is stored with its draft. */
+/** Stores the summary, phishing and calendar invite suggestions; the reply suggestion is stored with its draft. */
 export async function storeTriageSuggestions(input: StoreInput): Promise<void> {
 	for (const suggestion of input.planned)
 		if (STORED_KINDS.includes(suggestion.kind)) await upsertSuggestion(input, suggestion);

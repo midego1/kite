@@ -6,6 +6,7 @@ import { claimAgentJob, failAndRequeueAgentJob, skipAgentJob } from "../jobs/lea
 import { getAgentProviderConfig } from "../provider";
 import { ExternalProviderNotAllowedError } from "./auto-read-model";
 import { needsModel } from "./facts-utils";
+import { loadCalendarInvite } from "./invite";
 import { getAutoReadInstallSettings } from "./install-settings";
 import { planSuggestions } from "./policy-utils";
 import { allowAutoReadRequest, triageDailyLimitReached } from "./quota";
@@ -79,6 +80,12 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 	const planned = planSuggestions({
 		facts: context.facts,
 		triage: model?.result ?? null,
+		invite: await loadCalendarInvite(env, {
+			messageId: source.id,
+			reviewerUserId: job.reviewerUserId,
+			facts: context.facts,
+			enabled: settings.capabilities.calendar,
+		}),
 		settings: {
 			capabilities: settings.capabilities,
 			canDraftReply: access.canSendOnBehalf,

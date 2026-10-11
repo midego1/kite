@@ -33,6 +33,7 @@ const calendarInviteSchema = z.object({
 	proposals: z.array(z.object({ start: isoDate, end: isoDate })).max(5),
 	organizerMatchesSender: z.boolean(),
 	authPassed: z.boolean(),
+	existingEventId: z.string().nullable().optional(),
 });
 
 const PAYLOAD_SCHEMAS: { [K in SuggestionKind]: z.ZodType<SuggestionPayloads[K]> } = {

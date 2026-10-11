@@ -19,6 +19,7 @@ import { QUESTION_DRAFT_BODY } from "./support/fake-model-scenarios";
 import type { FakeModel } from "./support/fake-model-types";
 import type { InboundMail } from "./support/helpers-types";
 import { apiContext, deliverInbound, postInbound, signIn, uniqueToken, waitForMessage } from "./support/helpers";
+import { futureAt, inviteAttachment } from "./support/invites";
 import { readActions, readJobs, readSuggestions, waitForFinishedJob } from "./support/triage";
 
 let fake: FakeModel;
@@ -3259,6 +3260,233 @@ test.describe("reply suggestions", () => {
 			await context.close();
 			await stopAutoRead(account.api, account.mailboxId);
 			await account.api.dispose();
+			await restore();
+		}
+	});
+});
+
+test.describe("calendar invite detection", () => {
+	const ORGANIZER = "alice@partner.test";
+
+	async function inviteAccount(prefix: string) {
+		const username = `${prefix}${uniqueToken("")}`;
+		const account = await createSignedInAccount(api, username);
+		await okJson(
+			await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, autonomy: "suggest" } }),
+		);
+		return { ...account, address: `${username}@${DOMAIN}` };
+	}
+
+	async function stopMailbox(client: APIRequestContext, mailboxId: string) {
+		await okJson(await client.put("/api/agent/settings", { data: { mailboxId, autonomy: "off" } }));
+		await expect
+			.poll(
+				async () => (await readJobs(client, mailboxId)).some((job) => ["pending", "running"].includes(job.status)),
+				{
+					timeout: 30_000,
+				},
+			)
+			.toBe(false);
+	}
+
+	async function deliverInvite(
+		client: APIRequestContext,
+		to: string,
+		options: Parameters<typeof inviteAttachment>[0],
+		extra: Partial<InboundMail> = {},
+	) {
+		const subject = uniqueToken("inv");
+		await postInbound(client, {
+			from: `Alice <${ORGANIZER}>`,
+			to,
+			subject,
+			text: "Please join.",
+			attachments: [inviteAttachment(options)],
+			...extra,
+		});
+		return waitForMessage(client, subject, { status: "received" });
+	}
+
+	async function invitesFor(client: APIRequestContext, mailboxId: string, messageId: string) {
+		const { suggestions } = await readSuggestions(client, { mailboxId, messageId });
+		return suggestions.filter((suggestion) => suggestion.kind === "calendar_invite");
+	}
+
+	test("an invite yields one calendar_invite suggestion with the full payload and the conflicts for the reviewer", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await inviteAccount("civ");
+		try {
+			const start = futureAt(14, 10);
+			const clash = await okJson<{ event: { id: string } }>(
+				await account.api.post("/api/calendar/events", {
+					data: {
+						title: "Existing review",
+						startsAt: new Date(start.getTime() + 15 * 60_000).toISOString(),
+						endsAt: new Date(start.getTime() + 75 * 60_000).toISOString(),
+					},
+				}),
+			);
+			const uid = `${uniqueToken("uid")}@partner.test`;
+			const message = await deliverInvite(account.api, account.address, { uid, start, summary: "Planning" });
+			expect((await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage")).status).toBe("completed");
+			const [invite] = await invitesFor(account.api, account.mailboxId, message.id);
+			expect(await invitesFor(account.api, account.mailboxId, message.id)).toHaveLength(1);
+			expect(invite.payload).toMatchObject({
+				uid,
+				sequence: 0,
+				method: "REQUEST",
+				organizer: ORGANIZER,
+				start: start.toISOString(),
+				end: new Date(start.getTime() + 3_600_000).toISOString(),
+				tz: null,
+				summary: "Planning",
+				location: null,
+				repeats: false,
+				organizerMatchesSender: true,
+				authPassed: false,
+				conflicts: [expect.objectContaining({ eventId: clash.event.id, title: "Existing review" })],
+			});
+			expect((invite.payload.proposals as unknown[]).length).toBeGreaterThan(0);
+			expect(clash.event.id).toBeTruthy();
+		} finally {
+			await stopMailbox(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("a free invite has no conflicts or proposals, and a different organizer is flagged", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await inviteAccount("cif");
+		try {
+			const message = await deliverInvite(account.api, account.address, {
+				uid: `${uniqueToken("uid")}@partner.test`,
+				start: futureAt(15, 9),
+				organizer: "ceo@other.test",
+				rrule: "FREQ=WEEKLY;COUNT=5",
+			});
+			await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage");
+			const [invite] = await invitesFor(account.api, account.mailboxId, message.id);
+			expect(invite.payload).toMatchObject({
+				conflicts: [],
+				proposals: [],
+				organizerMatchesSender: false,
+				repeats: true,
+			});
+		} finally {
+			await stopMailbox(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("proposed slots follow the reviewer's booking event working hours", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await inviteAccount("civb");
+		try {
+			await okJson(
+				await account.api.post("/api/booking", {
+					data: {
+						name: "Office hours",
+						slug: uniqueToken("oh").toLowerCase(),
+						durationMinutes: 30,
+						weekdays: [2, 4],
+						timeRanges: [{ startTime: "13:00", endTime: "15:00" }],
+						timeZone: "UTC",
+						enabled: true,
+					},
+				}),
+			);
+			const start = futureAt(14, 10);
+			await okJson(
+				await account.api.post("/api/calendar/events", {
+					data: {
+						title: "Busy",
+						startsAt: start.toISOString(),
+						endsAt: new Date(start.getTime() + 3_600_000).toISOString(),
+					},
+				}),
+			);
+			const message = await deliverInvite(account.api, account.address, {
+				uid: `${uniqueToken("uid")}@partner.test`,
+				start,
+				minutes: 30,
+			});
+			await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage");
+			const [invite] = await invitesFor(account.api, account.mailboxId, message.id);
+			const proposals = invite.payload.proposals as { start: string; end: string }[];
+			expect(proposals.length).toBeGreaterThan(0);
+			for (const slot of proposals) {
+				const from = new Date(slot.start);
+				const to = new Date(slot.end);
+				expect([2, 4]).toContain(from.getUTCDay());
+				expect(from.getUTCHours() * 60 + from.getUTCMinutes()).toBeGreaterThanOrEqual(13 * 60);
+				expect(to.getUTCHours() * 60 + to.getUTCMinutes()).toBeLessThanOrEqual(15 * 60);
+			}
+		} finally {
+			await stopMailbox(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("an oversize ICS gives no calendar suggestion and the mail is still delivered", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await inviteAccount("cio");
+		try {
+			const message = await deliverInvite(account.api, account.address, {
+				uid: `${uniqueToken("uid")}@partner.test`,
+				start: futureAt(16, 10),
+				padding: 300 * 1024,
+			});
+			const job = await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage");
+			expect(["completed", "skipped"]).toContain(job.status);
+			const detail = (await (await account.api.get(`/api/messages/${message.id}`)).json()) as {
+				attachments: { filename: string }[];
+			};
+			expect(detail.attachments).toEqual([expect.objectContaining({ filename: "invite.ics" })]);
+			expect(await invitesFor(account.api, account.mailboxId, message.id)).toEqual([]);
+		} finally {
+			await stopMailbox(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("a shared mailbox gets no calendar suggestion until the capability is on, then uses the reviewer's calendar", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const local = `civs${uniqueToken("")}`;
+		const sharedId = await createSharedMailbox(api, local);
+		const address = `${local}@${DOMAIN}`;
+		let eventId: string | null = null;
+		try {
+			await okJson(await api.put("/api/agent/settings", { data: { mailboxId: sharedId, autonomy: "suggest" } }));
+			const off = await deliverInvite(api, address, {
+				uid: `${uniqueToken("uid")}@partner.test`,
+				start: futureAt(17, 10),
+			});
+			await waitForFinishedJob(api, sharedId, off.id, "triage");
+			expect(await invitesFor(api, sharedId, off.id)).toEqual([]);
+
+			await okJson(
+				await api.put("/api/agent/settings", { data: { mailboxId: sharedId, capabilities: { calendar: true } } }),
+			);
+			const start = futureAt(18, 10);
+			const title = uniqueToken("Reviewer block");
+			eventId = (
+				await okJson<{ event: { id: string } }>(
+					await api.post("/api/calendar/events", {
+						data: { title, startsAt: start.toISOString(), endsAt: new Date(start.getTime() + 3_600_000).toISOString() },
+					}),
+				)
+			).event.id;
+			const on = await deliverInvite(api, address, { uid: `${uniqueToken("uid")}@partner.test`, start });
+			await waitForFinishedJob(api, sharedId, on.id, "triage");
+			const [invite] = await invitesFor(api, sharedId, on.id);
+			expect(invite.payload).toMatchObject({ conflicts: [expect.objectContaining({ eventId, title })] });
+		} finally {
+			if (eventId) await api.delete(`/api/calendar/events/${eventId}`);
+			await stopMailbox(api, sharedId);
 			await restore();
 		}
 	});

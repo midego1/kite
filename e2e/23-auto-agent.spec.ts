@@ -3875,6 +3875,30 @@ test.describe("calendar invite card", () => {
 	const answeredBlock = (page: Page) =>
 		page.locator('[data-suggestion-card] [data-suggestion-block="calendar_answered"]');
 
+	test("an invitation without an organizer offers no reply buttons", async ({ browser }) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await inviteAccount("icn");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const { message, suggestion } = await deliver(account.api, account.mailboxId, account.address, {
+				uid: `${uniqueToken("uid")}@partner.test`,
+				start: futureAt(30, 10),
+				organizer: null,
+			});
+			expect(suggestion.payload.organizer).toBeNull();
+			const page = await context.newPage();
+			await openInvite(page, message);
+			await expect(inviteBlock(page)).toBeVisible();
+			for (const name of ["Accept", "Decline", "Propose new time"])
+				await expect(inviteBlock(page).getByRole("button", { name, exact: true })).toHaveCount(0);
+		} finally {
+			await context.close();
+			await stopMailbox(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
 	test("the card shows the invite, conflicts, a calendar chip, and Accept, Decline and the switches run once each", async ({
 		browser,
 	}) => {

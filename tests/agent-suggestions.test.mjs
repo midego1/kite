@@ -8,7 +8,7 @@ import {
 } from "../src/lib/agent/auto-read/suggestion-utils.ts";
 
 const invite = {
-	uid: "abc@google.com",
+	uid: "abc@calendar.test",
 	sequence: 1,
 	method: "REQUEST",
 	organizer: "boss@corp.test",

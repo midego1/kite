@@ -25,7 +25,7 @@ export type IcsOptions = {
 	method?: "REQUEST" | "CANCEL";
 	sequence?: number;
 	summary?: string;
-	organizer?: string;
+	organizer?: string | null;
 	rrule?: string;
 	/** Writes DTSTART/DTEND as `VALUE=DATE` dates covering the UTC day of `start`. */
 	allDay?: boolean;
@@ -59,7 +59,7 @@ export function inviteAttachment(options: IcsOptions): InboundAttachment {
 		when("DTSTART", options.start),
 		options.duration ? `DURATION:${options.duration}` : when("DTEND", end),
 		`SUMMARY:${options.summary ?? "Planning"}`,
-		`ORGANIZER:mailto:${options.organizer ?? "alice@partner.test"}`,
+		...(options.organizer === null ? [] : [`ORGANIZER:mailto:${options.organizer ?? "alice@partner.test"}`]),
 		...(options.rrule ? [`RRULE:${options.rrule}`] : []),
 		...Array.from({ length: Math.ceil((options.padding ?? 0) / 70) }, (_, index) => `X-PAD-${index}:${"a".repeat(60)}`),
 		"END:VEVENT",

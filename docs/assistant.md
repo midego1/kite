@@ -55,9 +55,9 @@ Kite reserves the estimated cost before each call and settles it with the real u
 
 - **Install-wide.** The primary admin can turn automatic reading off for every mailbox with one switch, and can turn external providers off again at any time.
 - **Per mailbox.** Set the level to Off, or use **Pause for 24 hours**. While a mailbox is paused, the settings show the end time and a **Resume** button.
+- **Assistant off.** Turning the email assistant off stops all of it.
 
 When each switch takes effect differs. Kite checks the automatic-reading switch, a mailbox's Off level and pause, and the daily limit when a queued job starts. A job that has not started yet is skipped. A job that is already running may still finish its remaining model calls, such as a repair, a fallback or a reply draft. The external-provider opt-in is checked again before every model request, so turning it off also stops those remaining calls to an external provider.
-- **Assistant off.** Turning the email assistant off stops all of it.
 
 ## Why Kite skipped a message
 

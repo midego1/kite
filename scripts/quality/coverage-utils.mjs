@@ -87,14 +87,17 @@ function bestCounters(counters) {
 	return counters.reduce((a, b) => (b[1] > a[1] || (b[1] === a[1] && b[0] > a[0]) ? b : a));
 }
 
-/** Merges keyed hit counts across records (max per key); falls back to the best totals when no record has keys. */
+/** Merges keyed hits (max per key), retaining larger totals from records without keys. */
 function mergeCounters(list, metric, keyed) {
 	const merged = new Map();
 	for (const record of list) {
 		for (const [key, hits] of record[keyed]) keepMax(merged, key, hits);
 	}
 	if (merged.size === 0) return bestCounters(list.map((record) => record[metric]));
-	return [[...merged.values()].filter((hits) => hits > 0).length, merged.size];
+	return bestCounters([
+		[[...merged.values()].filter((hits) => hits > 0).length, merged.size],
+		...list.filter((record) => record[keyed].size === 0).map((record) => record[metric]),
+	]);
 }
 
 export function percent([hit, total]) {

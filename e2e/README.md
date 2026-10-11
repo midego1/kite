@@ -50,8 +50,10 @@ When you run the suite over and over, `E2E_REUSE_SERVER=1` reuses a server that 
 | `21-app-passwords` | Settings > App passwords: with every mailbox unchecked the button is disabled; an app password for `support@example.com` only is created, listed in Settings > API keys with that mailbox, and a JMAP `Mailbox/get` with it returns only that mailbox's folders; a refused request shows the server's validation error |
 | `22-aws-credentials` | Admin > Domains with the domain shown as sending through Amazon SES (the domain list, SES status and credentials save are answered by the spec, since there is no AWS account): a save refused for missing permissions shows the error, the missing permissions and the IAM policy, expanded, with the form still filled in; a refusal without a capability report shows only the message |
 | `23-auto-agent` | Automatic reading against the fake model (`support/fake-model.ts`, started inside the spec on a random `127.0.0.1` port): scenario replies in the OpenAI shape and the request log; the primary admin lists the fake model's models and saves it as a custom provider over plain http (allowed only because the server runs with `AI_ALLOW_INSECURE_LOOPBACK=1`), while plain http to any other host is refused; `deliverInbound` sends an `.ics` attachment and extra headers that are stored with the message |
+| `24-auto-agent-injection` | Hostile model output and messages cannot trigger forwarding, sending, moving mail or automatic RSVPs; unsafe drafts are blocked and recorded |
+| `25-auto-agent-backup` | Backup and restore of suggestions, actions, sender policies and invitation events, including undone actions and tentative events |
 
-The specs share one database, so they run one at a time in a single worker, in file order (`10-backups` restores the database, so the specs after it only make anonymous calls). Each test creates the data it changes, using a unique token in the subject.
+The specs share one database, so they run one at a time in a single worker, in file order (`10-backups` and `25-auto-agent-backup` restore the database; `25-auto-agent-backup` must run last). Each test creates the data it changes, using a unique token in the subject.
 
 ### Security spec notes
 

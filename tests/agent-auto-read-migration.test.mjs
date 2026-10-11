@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { cpSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { cpSync, readdirSync, rmSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
@@ -50,7 +50,13 @@ const NEW_TABLES = ["agent_suggestions", "agent_actions", "agent_sender_policies
 const DEFAULT_CAPABILITIES = '{"calendar":true,"reply":true,"summary":true,"phishing":true}';
 
 const preMigrationsDir = join(directory, "migrations-before-0060");
-cpSync(migrationsDir, preMigrationsDir, { recursive: true, filter: (source) => !source.endsWith(MIGRATION) });
+cpSync(migrationsDir, preMigrationsDir, {
+	recursive: true,
+	filter: (source) => {
+		const number = basename(source).match(/^(\d+)_.*\.sql$/)?.[1];
+		return number === undefined || Number(number) < 60;
+	},
+});
 
 async function database(t, dir = migrationsDir) {
 	const db = new SqliteDatabase(":memory:");
@@ -93,10 +99,15 @@ async function exportDocument(db) {
 	return JSON.parse(new TextDecoder().decode(await exportDatabaseRecords(db)));
 }
 
-test("upgrading from 0059 backfills autonomy from the legacy auto-draft switch", async (t) => {
+test("upgrading from 0059 keeps automatic reading off and preserves legacy auto-draft", async (t) => {
 	const db = await database(t, preMigrationsDir);
 	seedMailboxes(db);
-	assert.deepEqual(await applyMigrations(db, migrationsDir), [MIGRATION]);
+	assert.deepEqual(
+		await applyMigrations(db, migrationsDir),
+		readdirSync(migrationsDir)
+			.filter((name) => name.endsWith(".sql") && name >= MIGRATION)
+			.sort(),
+	);
 
 	const rows = db.db
 		.prepare(
@@ -112,7 +123,7 @@ test("upgrading from 0059 backfills autonomy from the legacy auto-draft switch",
 		full_auto_hold_minutes: 10,
 	};
 	assert.deepEqual(rows, [
-		{ mailbox_id: "mailbox-a", autonomy: "suggest", auto_draft_enabled: 1, ...defaults },
+		{ mailbox_id: "mailbox-a", autonomy: "off", auto_draft_enabled: 1, ...defaults },
 		{ mailbox_id: "mailbox-b", autonomy: "off", auto_draft_enabled: 0, ...defaults },
 	]);
 });

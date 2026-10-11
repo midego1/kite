@@ -35,7 +35,7 @@ test("Google fixture: folded attendee lines, escapes, nested alarm ignored", () 
 	assert.equal(result.ok, true);
 	const invite = result.invite;
 	assert.equal(invite.method, "REQUEST");
-	assert.equal(invite.uid, "abc123synthetic@google.com");
+	assert.equal(invite.uid, "abc123synthetic@calendar.test");
 	assert.equal(invite.sequence, 2);
 	assert.equal(invite.start, "2026-04-15T13:00:00.000Z");
 	assert.equal(invite.end, "2026-04-15T14:00:00.000Z");

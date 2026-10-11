@@ -75,6 +75,10 @@ export async function scheduleAutoDraft(
 export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 	const db = getDb(env);
 	const job = await claimAgentJob(db, jobId);
+	if (job === "mailbox_busy") {
+		await env.AGENT_QUEUE?.send({ kind: "agent.draft", jobId }, { delaySeconds: 5 });
+		return;
+	}
 	if (!job) return;
 	const skip = (reason: string) => skipAgentJob(db, jobId, reason);
 	try {

@@ -26,7 +26,7 @@ const text = (buffer) => new TextDecoder().decode(buffer);
 const unfold = (value) => value.replace(/\r\n /g, "");
 
 const base = {
-	uid: "ABC-123@google.com",
+	uid: "ABC-123@calendar.test",
 	organizer: "olivia@example.org",
 	attendee: "reviewer@example.com",
 	partstat: "ACCEPTED",
@@ -38,7 +38,7 @@ test("reply is METHOD:REPLY with the organizer's exact UID", () => {
 	const body = text(createCalendarReply(base));
 	const lines = body.split("\r\n");
 	assert.ok(lines.includes("METHOD:REPLY"));
-	assert.ok(lines.includes("UID:ABC-123@google.com"));
+	assert.ok(lines.includes("UID:ABC-123@calendar.test"));
 	assert.ok(!body.includes("@mailflare"));
 	assert.ok(lines.includes("ORGANIZER:mailto:olivia@example.org"));
 	assert.ok(lines.includes("ATTENDEE;PARTSTAT=ACCEPTED:mailto:reviewer@example.com"));

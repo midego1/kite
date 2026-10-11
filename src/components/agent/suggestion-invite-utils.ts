@@ -58,10 +58,11 @@ export type InviteButton = { option: InviteOption; label: string; primary?: bool
 export function inviteButtons(payload: CalendarInvitePayload): InviteButton[] {
 	if (payload.method === "CANCEL") return [{ option: "remove", label: "Remove from calendar", primary: true }];
 	if (payload.existingEventId) return [{ option: "update", label: "Update event", primary: true }];
+	if (!payload.organizer) return [];
 	return [
 		{ option: "accept", label: "Accept", primary: true },
 		{ option: "decline", label: "Decline" },
-		...(payload.organizer ? [{ option: "propose" as const, label: "Propose new time" }] : []),
+		{ option: "propose", label: "Propose new time" },
 	];
 }
 

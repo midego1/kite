@@ -202,3 +202,23 @@ test("a function that no record ever hit stays uncovered", () => {
 	);
 	assert.deepEqual(files.get("src/lib/a-utils.ts").functions, [1, 2]);
 });
+
+test("totals-only records retain a larger denominator alongside keyed records, in either order", () => {
+	const keyed = detailedRecord([1, 0], [1, 1]);
+	const totals = duplicateRecords([3, 10, 0, 0, 1, 5]);
+	for (const records of [
+		[keyed, totals],
+		[totals, keyed],
+	]) {
+		const file = parseLcov(records.join("\n"), { root, exists, realpath }).get("src/lib/a-utils.ts");
+		assert.deepEqual(file.lines, [3, 10]);
+		assert.deepEqual(file.functions, [1, 5]);
+	}
+});
+
+test("a larger keyed union still wins over smaller totals-only records", () => {
+	const lcov = [detailedRecord([1, 1], [1, 1, 0, 0]), duplicateRecords([2, 2, 0, 0, 1, 1])].join("\n");
+	const file = parseLcov(lcov, { root, exists, realpath }).get("src/lib/a-utils.ts");
+	assert.deepEqual(file.lines, [2, 4]);
+	assert.deepEqual(file.functions, [2, 2]);
+});

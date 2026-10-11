@@ -31,18 +31,18 @@ const signals = (...ids) => JSON.stringify(ids.map((id) => ({ id, score: 0, reas
 function facts({ auth = true, suspicious = false, spoof = false, verdict } = {}) {
 	return collectFacts({
 		message: {
-			fromAddr: spoof ? '"Grace Hopper" <grace@evil.test>' : "Grace Hopper <grace@corp.test>",
+			fromAddr: spoof ? '"Mira Fenwick" <mira@evil.test>' : "Mira Fenwick <mira@corp.test>",
 			subject: "Hello",
 			textBody: "Body",
 			spamVerdict: verdict ?? (suspicious ? "suspicious" : "inbox"),
 			spamSignals: auth ? signals("spf_passed", "dkim_passed", "dmarc_passed") : signals("dmarc_failed"),
 		},
-		contacts: [{ email: "grace@corp.test", displayName: "Grace Hopper", source: "manual" }],
+		contacts: [{ email: "mira@corp.test", displayName: "Mira Fenwick", source: "manual" }],
 	});
 }
 
 const policy = {
-	pattern: "grace@corp.test",
+	pattern: "mira@corp.test",
 	requireAuth: true,
 	allowedActions: ["send_rsvp", "send_reply", "move"],
 	templateRule: "Thanks, confirmed.",
@@ -52,8 +52,8 @@ function context(overrides = {}) {
 	return {
 		capabilities: { calendar: true, reply: true },
 		fullAutoAllowed: true,
-		recipient: "grace@corp.test",
-		organizer: "grace@corp.test",
+		recipient: "mira@corp.test",
+		organizer: "mira@corp.test",
 		rsvp: "accepted",
 		hasConflict: false,
 		threadAutoSendsLast24h: 0,
@@ -129,12 +129,12 @@ test("Full auto sends only to the sender or organizer, once per thread, for auth
 	assert.equal(send({}).allowed, true);
 	assert.equal(send({ recipient: "attacker@evil.test" }).rule, "recipient_not_sender_or_organizer");
 	assert.equal(send({ recipient: undefined }).rule, "recipient_not_sender_or_organizer");
-	assert.equal(send({ recipient: " GRACE@corp.test " }).allowed, true);
-	const organizerSend = send({ recipient: "Grace@corp.test", organizer: " GRACE@corp.test" }, { action: "send_rsvp" });
+	assert.equal(send({ recipient: " MIRA@corp.test " }).allowed, true);
+	const organizerSend = send({ recipient: "Mira@corp.test", organizer: " MIRA@corp.test" }, { action: "send_rsvp" });
 	assert.equal(organizerSend.allowed, true, "the organizer, being the authenticated sender, may receive the RSVP");
 	const otherOrganizer = send({ recipient: "boss@corp.test", organizer: "Boss@corp.test" }, { action: "send_rsvp" });
 	assert.equal(otherOrganizer.rule, "organizer_not_sender", "an organizer other than the sender disables Full auto");
-	const toSender = send({ recipient: "grace@corp.test", organizer: "boss@corp.test" }, { action: "send_rsvp" });
+	const toSender = send({ recipient: "mira@corp.test", organizer: "boss@corp.test" }, { action: "send_rsvp" });
 	assert.equal(toSender.rule, "organizer_not_sender");
 	assert.equal(send({ recipient: "boss@corp.test", organizer: null }, { action: "send_rsvp" }).allowed, false);
 	assert.equal(send({ organizer: null }, { action: "send_rsvp" }).rule, "organizer_not_sender");
@@ -146,7 +146,7 @@ test("Full auto sends only to the sender or organizer, once per thread, for auth
 	assert.equal(send({}, { policy: { ...policy, templateRule: "  " } }).rule, "no_template_rule");
 	assert.equal(allowedToExecute("auto", "send_reply", facts(), null, context()).rule, "sender_not_allowlisted");
 	const unverified = collectFacts({
-		message: { fromAddr: "grace@corp.test", subject: "", textBody: "", spamVerdict: "inbox", spamSignals: null },
+		message: { fromAddr: "mira@corp.test", subject: "", textBody: "", spamVerdict: "inbox", spamSignals: null },
 	});
 	assert.equal(send({}, { facts: unverified }).rule, "sender_not_authenticated", "absent signals are not verified");
 	assert.equal(send({}, { facts: unverified, policy: { ...policy, requireAuth: false } }).allowed, true);
@@ -186,8 +186,8 @@ test("cap reached, paused, capabilities and shared mailboxes", () => {
 });
 
 test("sender policies match an exact address before a domain", () => {
-	const policies = [{ pattern: "@corp.test" }, { pattern: "Grace@Corp.test" }];
-	assert.equal(matchSenderPolicy(policies, "grace@corp.test")?.pattern, "Grace@Corp.test");
+	const policies = [{ pattern: "@corp.test" }, { pattern: "Mira@Corp.test" }];
+	assert.equal(matchSenderPolicy(policies, "mira@corp.test")?.pattern, "Mira@Corp.test");
 	assert.equal(matchSenderPolicy(policies, "alan@corp.test")?.pattern, "@corp.test");
 	assert.equal(matchSenderPolicy(policies, "alan@sub.corp.test"), null);
 	assert.equal(matchSenderPolicy(policies, "not-an-address"), null);
@@ -337,7 +337,7 @@ test("planSuggestions: invites, muted senders", () => {
 	]);
 	const noCalendar = settings({ capabilities: { ...capabilities, calendar: false } });
 	assert.deepEqual(kinds(planSuggestions({ facts: facts(), triage: null, settings: noCalendar, invite })), []);
-	const muted = settings({ capabilities: { ...capabilities, mutedSenders: ["grace@corp.test", "grace@evil.test"] } });
+	const muted = settings({ capabilities: { ...capabilities, mutedSenders: ["mira@corp.test", "mira@evil.test"] } });
 	assert.deepEqual(kinds(planSuggestions({ facts: facts(), triage: triage(), settings: muted, invite })), []);
 	assert.deepEqual(kinds(planSuggestions({ facts: facts({ spoof: true }), triage: triage(), settings: muted })), [
 		"phishing",
@@ -348,7 +348,7 @@ test("planSuggestions: each failed SPF, DKIM or DMARC check is a phishing reason
 	for (const failed of ["spf_failed", "dkim_failed", "dmarc_failed"]) {
 		const failing = collectFacts({
 			message: {
-				fromAddr: "Grace Hopper <grace@corp.test>",
+				fromAddr: "Mira Fenwick <mira@corp.test>",
 				subject: "Hello",
 				textBody: "Body",
 				spamVerdict: "inbox",

@@ -113,6 +113,10 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 export async function processAgentTriageJob(env: CloudflareEnv, jobId: string) {
 	const db = getDb(env);
 	const job = await claimAgentJob(db, jobId);
+	if (job === "mailbox_busy") {
+		await env.AGENT_QUEUE?.send({ kind: "agent.triage", jobId }, { delaySeconds: 5 });
+		return;
+	}
 	if (!job) return;
 	try {
 		const reason = await triage(env, db, job);

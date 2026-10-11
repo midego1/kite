@@ -15,6 +15,7 @@ after(() => rmSync(outDir, { recursive: true, force: true }));
 // maps: the bundle pulls in much of the app, and mapped zero-hit copies would distort the coverage gate.
 await build({
 	entryPoints: {
+		draft: fileURLToPath(import.meta.resolve("../src/lib/agent/jobs/utils.ts")),
 		process: fileURLToPath(import.meta.resolve("../src/lib/agent/auto-read/process.ts")),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
@@ -30,6 +31,7 @@ await build({
 	tsconfig: join(root, "tsconfig.json"),
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
+const { processAgentDraftJob } = await load("draft");
 const { processAgentTriageJob } = await load("process");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
@@ -600,5 +602,54 @@ test("the install spend cap counts spend from every mailbox and source", async (
 	const raised = insertJob(db, { mailboxId: "mailbox-b" });
 	await processAgentTriageJob(env, raised.jobId);
 	assert.equal(jobOf(db, raised.jobId).status, "completed");
+	assert.equal(requests.length, 1);
+});
+
+for (const [kind, processJob] of [
+	["triage", processAgentTriageJob],
+	["draft", processAgentDraftJob],
+]) {
+	test(`${kind} retries mailbox contention without spending an attempt, then claims after release`, async (t) => {
+		const { db, env, sent } = await setup(t);
+		const active = insertJob(db, { kind: kind === "draft" ? "triage" : "draft", status: "running" });
+		db.db.prepare("UPDATE agent_jobs SET lease_until = ? WHERE id = ?").run(nowSeconds() + 600, active.jobId);
+		const blocked = insertJob(db, { kind });
+		await processJob(env, blocked.jobId);
+		assert.deepEqual(sent, [
+			{ message: { kind: `agent.${kind}`, jobId: blocked.jobId }, options: { delaySeconds: 5 } },
+		]);
+		assert.equal(jobOf(db, blocked.jobId).status, "pending");
+		assert.equal(jobOf(db, blocked.jobId).attempts, 0);
+		assert.equal(requests.length, 0);
+		db.db.prepare("UPDATE agent_jobs SET status = 'completed', lease_until = NULL WHERE id = ?").run(active.jobId);
+		// Disable processing after the claim so both kinds settle without requiring a model response.
+		db.db.exec("UPDATE app_settings SET agent_enabled = 0");
+		await processJob(env, blocked.jobId);
+		assert.equal(jobOf(db, blocked.jobId).status, "skipped");
+		assert.equal(jobOf(db, blocked.jobId).attempts, 1);
+		assert.equal(sent.length, 1);
+	});
+
+	test(`${kind} does not requeue missing, completed, not-due or already leased jobs`, async (t) => {
+		const { db, env, sent } = await setup(t);
+		const active = insertJob(db, { kind, status: "running" });
+		db.db.prepare("UPDATE agent_jobs SET lease_until = ? WHERE id = ?").run(nowSeconds() + 600, active.jobId);
+		const future = insertJob(db, { kind });
+		db.db.prepare("UPDATE agent_jobs SET next_attempt_at = ? WHERE id = ?").run(nowSeconds() + 600, future.jobId);
+		const done = insertJob(db, { kind, status: "completed" });
+		for (const id of ["missing", active.jobId, future.jobId, done.jobId]) await processJob(env, id);
+		assert.deepEqual(sent, []);
+		assert.equal(jobOf(db, active.jobId).attempts, 0);
+		assert.equal(requests.length, 0);
+	});
+}
+
+test("concurrent deliveries of the same job claim once and never enqueue a contention retry", async (t) => {
+	const { db, env, sent } = await setup(t);
+	const { jobId } = insertJob(db);
+	await Promise.all([processAgentTriageJob(env, jobId), processAgentTriageJob(env, jobId)]);
+	assert.equal(jobOf(db, jobId).attempts, 1);
+	assert.equal(jobOf(db, jobId).status, "completed");
+	assert.deepEqual(sent, []);
 	assert.equal(requests.length, 1);
 });

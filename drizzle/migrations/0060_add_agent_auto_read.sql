@@ -5,7 +5,6 @@ ALTER TABLE `mailbox_agent_settings` ADD `auto_read_daily_limit` integer DEFAULT
 ALTER TABLE `mailbox_agent_settings` ADD `daily_spend_cap_micros` integer;--> statement-breakpoint
 ALTER TABLE `mailbox_agent_settings` ADD `paused_until` integer;--> statement-breakpoint
 ALTER TABLE `mailbox_agent_settings` ADD `full_auto_hold_minutes` integer DEFAULT 10 NOT NULL;--> statement-breakpoint
-UPDATE `mailbox_agent_settings` SET `autonomy` = 'suggest' WHERE `auto_draft_enabled` = 1;--> statement-breakpoint
 ALTER TABLE `app_settings` ADD `agent_auto_read_enabled` integer DEFAULT 1 NOT NULL;--> statement-breakpoint
 ALTER TABLE `app_settings` ADD `agent_full_auto_allowed` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE `app_settings` ADD `agent_daily_spend_cap_micros` integer DEFAULT 2000000 NOT NULL;--> statement-breakpoint

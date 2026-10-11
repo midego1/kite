@@ -244,8 +244,8 @@ test("the provider label names Workers AI, a preset or the custom host", () => {
 	assert.equal(label({ provider: "compatible", preset: "groq", baseUrl: "" }), "Groq");
 	assert.equal(label({ provider: "compatible", preset: "custom", baseUrl: "http://127.0.0.1:3301/v1" }), "127.0.0.1");
 	assert.equal(
-		label({ provider: "compatible", preset: "custom", baseUrl: "https://api.haimaker.ai/v1" }),
-		"api.haimaker.ai",
+		label({ provider: "compatible", preset: "custom", baseUrl: "https://llm.provider.test/v1" }),
+		"llm.provider.test",
 	);
 	assert.equal(label({ provider: "compatible", preset: "custom", baseUrl: "not a url" }), "a custom provider");
 });

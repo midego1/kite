@@ -1,4 +1,4 @@
-import { and, eq, lt, or, sql } from "drizzle-orm";
+import { and, eq, lt, lte, or, sql } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { agentJobs } from "@/db/schema";
 import { agentProviderErrorMessage } from "../errors";
@@ -10,27 +10,31 @@ const LEASE_MS = 10 * 60_000;
 const MAX_ATTEMPTS = 3;
 
 /**
- * Takes the job's 10-minute lease and returns the row as it was before the claim, or null
- * when the job is finished, not due, leased elsewhere, or another job of the same mailbox is
- * running. The mailbox check is kind-agnostic so draft and triage jobs never overlap.
+ * Takes the job's 10-minute lease and returns the row as it was before the claim.
+ * Returns "mailbox_busy" only while this job is still claimable but another job in its mailbox
+ * is running, or null for other unsuccessful claims. Draft and triage jobs never overlap.
  */
-export async function claimAgentJob(db: AppDatabase, jobId: string): Promise<AgentJobRow | null> {
+export async function claimAgentJob(db: AppDatabase, jobId: string): Promise<AgentJobRow | "mailbox_busy" | null> {
 	const [job] = await db.select().from(agentJobs).where(eq(agentJobs.id, jobId)).limit(1);
 	if (!job || job.status === "completed" || job.status === "skipped" || job.status === "failed") return null;
 	const now = new Date();
 	if (job.nextAttemptAt > now || (job.status === "running" && job.leaseUntil && job.leaseUntil > now)) return null;
+	const eligible = and(
+		eq(agentJobs.id, jobId),
+		eq(agentJobs.attempts, job.attempts),
+		lte(agentJobs.nextAttemptAt, now),
+		or(eq(agentJobs.status, "pending"), and(eq(agentJobs.status, "running"), lt(agentJobs.leaseUntil, now))),
+	);
+	const mailboxBusy = sql`EXISTS (SELECT 1 FROM agent_jobs active WHERE active.mailbox_id = ${job.mailboxId} AND active.id <> ${jobId} AND active.status = 'running' AND active.lease_until > ${Math.floor(now.getTime() / 1000)})`;
 	const claimed = await db
 		.update(agentJobs)
 		.set({ status: "running", attempts: job.attempts + 1, leaseUntil: new Date(Date.now() + LEASE_MS) })
-		.where(
-			and(
-				eq(agentJobs.id, jobId),
-				or(eq(agentJobs.status, "pending"), and(eq(agentJobs.status, "running"), lt(agentJobs.leaseUntil, now))),
-				sql`NOT EXISTS (SELECT 1 FROM agent_jobs active WHERE active.mailbox_id = ${job.mailboxId} AND active.id <> ${jobId} AND active.status = 'running' AND active.lease_until > ${Math.floor(now.getTime() / 1000)})`,
-			),
-		)
+		.where(and(eligible, sql`NOT ${mailboxBusy}`))
 		.returning({ id: agentJobs.id });
-	return claimed.length ? job : null;
+	if (claimed.length) return job;
+	// Recheck eligibility after losing the update: another consumer may have claimed this job.
+	const [blocked] = await db.select({ id: agentJobs.id }).from(agentJobs).where(and(eligible, mailboxBusy)).limit(1);
+	return blocked ? "mailbox_busy" : null;
 }
 
 export async function skipAgentJob(db: AppDatabase, jobId: string, reason: string) {

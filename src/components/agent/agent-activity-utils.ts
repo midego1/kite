@@ -78,17 +78,17 @@ export function reasonText(reason: string | null): string | null {
 
 /**
  * Where a row's link goes: the sent reply once the agent draft was sent (the draft itself is then in
- * trash), the agent draft while it exists, otherwise the message the action was about.
+ * trash), the agent draft while this viewer can open it, otherwise the message the action was about.
  */
 export function actionTarget(
-	row: Pick<ActivityAction, "action" | "status" | "messageId" | "after" | "subject">,
+	row: Pick<ActivityAction, "action" | "status" | "messageId" | "after" | "subject" | "draftAvailable">,
 ): ActivityTarget | null {
 	const subject = row.subject || "(No subject)";
 	const draftId = row.after?.draftId;
 	const sentMessageId = row.after?.sentMessageId;
 	if (row.action === "create_draft" && typeof sentMessageId === "string")
 		return { href: `/sent/${encodeURIComponent(sentMessageId)}`, label: `Sent reply: ${subject}` };
-	if (row.action === "create_draft" && row.status === "applied" && typeof draftId === "string")
+	if (row.action === "create_draft" && row.status === "applied" && row.draftAvailable && typeof draftId === "string")
 		return { href: `/drafts/${encodeURIComponent(draftId)}`, label: `Draft reply: ${subject}` };
 	if (!row.messageId) return null;
 	const folder = row.action === "move" && row.status === "applied" ? "spam" : "inbox";

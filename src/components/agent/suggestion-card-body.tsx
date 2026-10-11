@@ -10,7 +10,7 @@ import { useAssistantOpen } from "./assistant-open-state";
 import { announceSuggestionChange, postSuggestion } from "./suggestion-card-actions";
 import { SuggestionCardMenu } from "./suggestion-card-menu";
 import type { CardSuggestion, SuggestionCardBodyProps } from "./suggestion-card-types";
-import { summaryText, whyDetails } from "./suggestion-card-utils";
+import { replyStatusText, summaryText, whyDetails } from "./suggestion-card-utils";
 import { PhishingBlock } from "./suggestion-phishing-block";
 
 function WhyDisclosure({ suggestion }: { suggestion: CardSuggestion }) {
@@ -69,11 +69,9 @@ function ReplyBlock({ suggestion, onChanged }: { suggestion: CardSuggestion; onC
 				<p className="font-medium text-neutral-900">{suggestion.title}</p>
 				<SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />
 			</div>
-			<p className="text-neutral-600">
-				{suggestion.draftId ? "Kite drafted a reply. Review it before you send." : "The drafted reply is gone."}
-			</p>
+			<p className="text-neutral-600">{replyStatusText(suggestion)}</p>
 			<div className="mt-2 flex flex-wrap gap-2">
-				{suggestion.draftId && (
+				{suggestion.draftId && suggestion.canReviewDraft && (
 					<Button size="sm" disabled={busy !== null} onClick={() => void run("review")}>
 						{busy === "review" ? "Opening…" : "Review draft"}
 					</Button>

@@ -108,3 +108,11 @@ export function whyDetails(suggestion: CardSuggestion): WhyDetails {
 		model: suggestion.model ? `Read by ${suggestion.model}.` : "Found by Kite's rules, without a model.",
 	};
 }
+
+/** The reply block's status line. Someone other than the reviewer learns a draft exists, not its text. */
+export function replyStatusText(suggestion: Pick<CardSuggestion, "draftId" | "canReviewDraft">): string {
+	if (!suggestion.draftId) return "The drafted reply is gone.";
+	return suggestion.canReviewDraft
+		? "Kite drafted a reply. Review it before you send."
+		: "Kite drafted a reply. It is in the reviewer's Drafts.";
+}

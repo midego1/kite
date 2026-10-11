@@ -1570,9 +1570,10 @@ test.describe("reply suggestions", () => {
 			expect((await suggestionsFor(api, sharedId, message.id)).find((item) => item.id === replyId)?.status).toBe(
 				"open",
 			);
-			const accepted = await okJson(
-				await manager.api.post(suggestionUrl(replyId, "accept"), { data: { option: "review" } }),
-			);
+			// The draft belongs to the reviewer (the owner here); another full-access user cannot open it.
+			const refused = await manager.api.post(suggestionUrl(replyId, "accept"), { data: { option: "review" } });
+			expect(refused.status()).toBe(403);
+			const accepted = await okJson(await api.post(suggestionUrl(replyId, "accept"), { data: { option: "review" } }));
 			expect(accepted).toEqual({ status: "open", draftId: reply!.draftId, url: `/drafts/${reply!.draftId}` });
 
 			await okJson(await api.put("/api/agent/settings", { data: { mailboxId: sharedId, autonomy: "off" } }));
@@ -2501,6 +2502,87 @@ test.describe("reply suggestions", () => {
 			await Promise.all(contexts.map((context) => context.close()));
 			await stopAutoRead(api, sharedId);
 			for (const account of [reader, helper, manager, stranger]) await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("a full-access user who is not the reviewer sees the draft exists, can only Discard it, and Activity links to the message", async ({
+		browser,
+	}) => {
+		const token = uniqueToken("nrv");
+		const localPart = `nrv${token}`;
+		const sharedId = await createSharedMailbox(api, localPart);
+		const manager = await createSignedInAccount(api, `nrvm${token}`);
+		const restore = await useFakeProvider(api, fake);
+		const contexts: Awaited<ReturnType<typeof browser.newContext>>[] = [];
+		try {
+			await shareMailbox(api, sharedId, manager.id, "full_access");
+			await okJson(await api.put("/api/agent/settings", { data: { mailboxId: sharedId, autonomy: "suggest" } }));
+			const { message } = await deliverQuestion(api, `${localPart}@${DOMAIN}`, "Customer <customer@outside.test>");
+			expect((await waitForFinishedJob(api, sharedId, message.id, "triage")).status).toBe("completed");
+			const reply = (await suggestionsFor(api, sharedId, message.id)).find((item) => item.kind === "reply")!;
+			expect(reply).toMatchObject({ draftId: expect.any(String), canReviewDraft: true });
+			const managerReply = (await suggestionsFor(manager.api, sharedId, message.id)).find(
+				(item) => item.kind === "reply",
+			)!;
+			expect(managerReply).toMatchObject({ draftId: reply.draftId, canReviewDraft: false });
+			const draftRowFor = async (client: APIRequestContext) =>
+				(await readActions(client, sharedId)).find(
+					(row) => row.action === "create_draft" && row.messageId === message.id,
+				)!;
+			expect((await draftRowFor(api)).draftAvailable).toBe(true);
+			expect((await draftRowFor(manager.api)).draftAvailable).toBe(false);
+
+			const managerContext = await browser.newContext({
+				baseURL: BASE_URL,
+				storageState: await manager.api.storageState(),
+			});
+			contexts.push(managerContext);
+			const page = await managerContext.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, sharedId);
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), manager.id);
+			await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "off"));
+
+			// Activity points the non-reviewer at the message, not at a draft they cannot open.
+			const draftRowId = (await draftRowFor(manager.api)).id;
+			await page.goto("/kite-activity");
+			const managerTarget = activityRow(page, draftRowId).locator("[data-activity-target]");
+			await expect(managerTarget).toHaveAttribute("href", `/inbox/${message.id}`);
+			await managerTarget.click();
+			await expect(page).toHaveURL(new RegExp(`/inbox/${message.id}$`));
+			await expect(page.getByRole("heading", { name: message.subject! })).toBeVisible();
+
+			await openReader(page, message);
+			await expect(replyBlock(page)).toContainText("Kite drafted a reply. It is in the reviewer's Drafts.");
+			await expect(replyBlock(page).getByRole("button", { name: "Review draft" })).toHaveCount(0);
+			const dismissed = page.waitForResponse(
+				(response) => response.url().endsWith(`/api/agent/suggestions/${reply.id}/dismiss`),
+				{ timeout: 60_000 },
+			);
+			await replyBlock(page).getByRole("button", { name: "Discard" }).click();
+			expect((await dismissed).status()).toBe(200);
+			await expect(readerCard(page)).toHaveCount(0);
+			expect(await draftIds(api)).not.toContain(reply.draftId);
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+
+			// After the Discard the reviewer's own Activity row also opens the message instead of a missing draft.
+			expect((await draftRowFor(api)).draftAvailable).toBe(false);
+			const ownerContext = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE });
+			contexts.push(ownerContext);
+			const ownerPage = await ownerContext.newPage();
+			await selectMailbox(ownerPage, sharedId);
+			await ownerPage.addInitScript(() => localStorage.setItem("kite-conversation-view", "off"));
+			await ownerPage.goto("/kite-activity");
+			const ownerTarget = activityRow(ownerPage, draftRowId).locator("[data-activity-target]");
+			await expect(ownerTarget).toHaveAttribute("href", `/inbox/${message.id}`);
+			await ownerTarget.click();
+			await expect(ownerPage).toHaveURL(new RegExp(`/inbox/${message.id}$`));
+			await expect(ownerPage.getByRole("heading", { name: message.subject! })).toBeVisible();
+		} finally {
+			await Promise.all(contexts.map((context) => context.close()));
+			await stopAutoRead(api, sharedId);
+			await manager.api.dispose();
 			await restore();
 		}
 	});

@@ -26,6 +26,7 @@ const {
 	newPhishingWarnings,
 	pauseEnd,
 	phishingReasonTexts,
+	replyStatusText,
 	suggestionCardUrl,
 	summaryText,
 	whyDetails,
@@ -154,4 +155,16 @@ test("only phishing warnings that appear for the open message while it is open a
 		["p2"],
 	);
 	assert.deepEqual(newPhishingWarnings([item("p2", "phishing")], "msg-1", later.known).fresh, []);
+});
+
+test("the reply line tells a non-reviewer that a draft exists without offering it", () => {
+	assert.equal(
+		replyStatusText({ draftId: "d", canReviewDraft: true }),
+		"Kite drafted a reply. Review it before you send.",
+	);
+	assert.equal(
+		replyStatusText({ draftId: "d", canReviewDraft: false }),
+		"Kite drafted a reply. It is in the reviewer's Drafts.",
+	);
+	assert.equal(replyStatusText({ draftId: null, canReviewDraft: false }), "The drafted reply is gone.");
 });

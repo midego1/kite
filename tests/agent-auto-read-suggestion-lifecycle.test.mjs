@@ -206,6 +206,7 @@ test("the list is for full-access users; without a mailbox it spans their full-a
 	assert.deepEqual(forManager.mailboxes, [{ id: "mailbox-a", address: "support@example.com", autonomy: "suggest" }]);
 	assert.deepEqual(forManager.suggestions[0].payload, { reasons: ["displayed_link_mismatch"] });
 	assert.deepEqual(forManager.suggestions[0].message, { subject: "Verify", from: "Bank <alerts@bank.test>" });
+	assert.equal(forManager.total, 3);
 	for (const viewer of [reader, helper, stranger])
 		assert.deepEqual((await listSuggestions(env, viewer, { mailboxId: null, status: "open" })).suggestions, []);
 	const forOwner = await listSuggestions(env, owner, { mailboxId: null, status: "open" });
@@ -235,18 +236,79 @@ test("users without full access get 404 from accept and dismiss, and nothing cha
 	assert.deepEqual(mutedSenders(db), ["old@sender.test"]);
 });
 
-test("accepting a reply returns its draft URL and leaves the suggestion open", async (t) => {
+test("accepting a reply returns its draft URL to the reviewer and leaves the suggestion open", async (t) => {
 	const { db, env } = await setup(t);
-	assert.deepEqual(await acceptSuggestion(env, manager, "sugg-reply", "review"), {
+	assert.deepEqual(await acceptSuggestion(env, owner, "sugg-reply", "review"), {
 		status: "open",
 		draftId: "draft-a",
 		url: "/drafts/draft-a",
 	});
 	await assert.rejects(acceptSuggestion(env, manager, "sugg-reply", "mark_spam"), { status: 400 });
 	await assert.rejects(acceptSuggestion(env, manager, "sugg-summary", "review"), { status: 400 });
+	db.db.exec("UPDATE messages SET status = 'trash' WHERE id = 'draft-a'");
+	await assert.rejects(acceptSuggestion(env, owner, "sugg-reply", "review"), { status: 409 });
 	db.db.exec("UPDATE agent_suggestions SET draft_id = NULL WHERE id = 'sugg-reply'");
-	await assert.rejects(acceptSuggestion(env, manager, "sugg-reply", "review"), { status: 409 });
+	await assert.rejects(acceptSuggestion(env, owner, "sugg-reply", "review"), { status: 409 });
 	assert.equal(statusOf(db, "sugg-reply"), "open");
+});
+
+test("the agent draft stays private: only its reviewer may review it, other full-access users may discard it", async (t) => {
+	const { db, env } = await setup(t);
+	const replyFor = async (viewer) =>
+		(await listSuggestions(env, viewer, { mailboxId: "mailbox-a", status: "open" })).suggestions.find(
+			(item) => item.id === "sugg-reply",
+		);
+	assert.equal((await replyFor(owner)).canReviewDraft, true);
+	assert.equal((await replyFor(manager)).canReviewDraft, false);
+	assert.equal((await replyFor(manager)).draftId, "draft-a");
+	for (const id of ["sugg-summary", "sugg-phish"])
+		assert.equal(
+			(await listSuggestions(env, owner, { mailboxId: "mailbox-a", status: "open" })).suggestions.find(
+				(item) => item.id === id,
+			).canReviewDraft,
+			false,
+		);
+	await assert.rejects(acceptSuggestion(env, manager, "sugg-reply", "review"), {
+		status: 403,
+		message: "This draft is in the reviewer's Drafts",
+	});
+
+	// A delegated reviewer owns the draft, so the mailbox owner cannot open it either.
+	db.db.exec("UPDATE messages SET user_id = 'manager' WHERE id = 'draft-a'");
+	assert.equal((await replyFor(manager)).canReviewDraft, true);
+	assert.equal((await replyFor(owner)).canReviewDraft, false);
+	await assert.rejects(acceptSuggestion(env, owner, "sugg-reply", "review"), { status: 403 });
+	assert.equal((await acceptSuggestion(env, manager, "sugg-reply", "review")).url, "/drafts/draft-a");
+
+	const discarded = await dismissSuggestion(env, owner, "sugg-reply", { discardDraft: true });
+	assert.equal(discarded.status, "dismissed");
+	assert.equal(db.db.prepare("SELECT id FROM messages WHERE id = 'draft-a'").get(), undefined);
+});
+
+test("the total counts every match, also past the 200 listed rows, and per kind", async (t) => {
+	const { db, env } = await setup(t);
+	const now = nowSeconds();
+	const insert = db.db.prepare(
+		"INSERT INTO agent_suggestions (id, mailbox_id, message_id, thread_id, reviewer_user_id, kind, status, title, payload, created_at) VALUES (?, ?, ?, ?, 'owner', ?, 'open', 'Bulk', '{}', ?)",
+	);
+	for (let index = 0; index < 201; index += 1) {
+		const mailbox = index % 2 ? "mailbox-b" : "mailbox-a";
+		insertMessage(db, { id: `bulk-msg-${index}`, mailbox_id: mailbox, direction: "inbound", status: "received" });
+		insert.run(`bulk-${index}`, mailbox, `bulk-msg-${index}`, `bulk-thread-${index}`, "summary", now - index);
+	}
+	const open = () => listSuggestions(env, owner, { mailboxId: null, status: "open" });
+	const listed = await open();
+	assert.equal(listed.suggestions.length, 200);
+	assert.equal(listed.total, 205);
+	assert.deepEqual(listed.kindTotals, { phishing: 1, reply: 2, summary: 202 });
+	await dismissSuggestion(env, owner, "bulk-0", {});
+	await dismissSuggestion(env, owner, "bulk-1", {});
+	assert.equal((await open()).total, 203);
+	const forManager = await listSuggestions(env, manager, { mailboxId: null, status: "open" });
+	assert.equal(forManager.total, 103);
+	const small = await listSuggestions(env, owner, { mailboxId: "mailbox-a", status: "all", messageId: "msg-p" });
+	assert.equal(small.total, 1);
+	assert.deepEqual(small.kindTotals, { phishing: 1 });
 });
 
 test("mark_spam moves the message, closes the warning as accepted, applies once and can be undone", async (t) => {

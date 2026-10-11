@@ -1,4 +1,4 @@
-import type { OpenSuggestion, OpenSuggestionsState, SuggestionMailbox } from "./open-suggestions-types";
+import type { OpenSuggestionsState } from "./open-suggestions-types";
 import { useSuggestionList } from "./use-suggestion-list";
 
 /**
@@ -6,8 +6,16 @@ import { useSuggestionList } from "./use-suggestion-list";
  * suggestion or the mail changes. A failed refresh keeps the last list.
  */
 export function useOpenSuggestions(): OpenSuggestionsState & { reload: () => void } {
-	const { data, reload } = useSuggestionList<{ suggestions?: OpenSuggestion[]; mailboxes?: SuggestionMailbox[] }>(
+	const { data, reload } = useSuggestionList<Partial<Omit<OpenSuggestionsState, "loaded">>>(
 		"/api/agent/suggestions?status=open",
 	);
-	return { loaded: data !== null, suggestions: data?.suggestions ?? [], mailboxes: data?.mailboxes ?? [], reload };
+	const suggestions = data?.suggestions ?? [];
+	return {
+		loaded: data !== null,
+		suggestions,
+		total: data?.total ?? suggestions.length,
+		kindTotals: data?.kindTotals ?? {},
+		mailboxes: data?.mailboxes ?? [],
+		reload,
+	};
 }

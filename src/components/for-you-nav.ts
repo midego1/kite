@@ -11,9 +11,9 @@ const FOR_YOU_HREF = "/for-you";
  * full-access mailbox has automatic reading off.
  */
 export function useForYouNav() {
-	const { loaded, suggestions, mailboxes } = useOpenSuggestions();
+	const { loaded, total, mailboxes } = useOpenSuggestions();
 	const visible = loaded && forYouVisible(mailboxes);
-	const link: NavLink = { href: FOR_YOU_HREF, label: "For you", icon: Sparkles, count: suggestions.length };
+	const link: NavLink = { href: FOR_YOU_HREF, label: "For you", icon: Sparkles, count: total };
 	return {
 		withLink(links: NavLink[]): NavLink[] {
 			const inbox = links.findIndex((item) => item.href === "/inbox");

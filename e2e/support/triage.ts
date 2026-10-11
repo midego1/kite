@@ -51,6 +51,7 @@ export type AgentActionRow = {
 	suggestionId: string | null;
 	messageId: string | null;
 	after: Record<string, unknown> | null;
+	draftAvailable: boolean;
 };
 
 /** The mailbox's audit log as a full-access user sees it in Activity. */
@@ -68,11 +69,13 @@ type SuggestionRow = {
 	kind: string;
 	status: string;
 	draftId: string | null;
+	canReviewDraft: boolean;
 	payload: Record<string, unknown>;
 };
 
 export type SuggestionList = {
 	suggestions: SuggestionRow[];
+	total: number;
 	mailboxes: { id: string; address: string; autonomy: string }[];
 };
 

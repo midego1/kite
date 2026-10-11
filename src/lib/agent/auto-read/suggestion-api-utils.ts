@@ -35,7 +35,7 @@ const ACCEPT_OPTIONS: Partial<Record<SuggestionKind, readonly string[]>> = {
 	phishing: ["mark_spam"],
 };
 
-export type AcceptRefusal = { status: 400 | 409; error: string };
+export type AcceptRefusal = { status: 400 | 403 | 409; error: string };
 
 /** Why a suggestion cannot be accepted with this option, or null. */
 export function acceptRefusal(
@@ -51,6 +51,31 @@ export function acceptRefusal(
 	if (suggestion.kind === "reply" && !suggestion.draftId)
 		return { status: 409, error: "The draft for this suggestion no longer exists" };
 	return null;
+}
+
+type DraftOwnership = { draftUserId: string | null; draftStatus: string | null };
+
+/** Agent drafts stay private to the reviewer, so only they can open one from the card. */
+export function canReviewDraft(row: { draftId: string | null } & DraftOwnership, userId: string): boolean {
+	return !!row.draftId && row.draftStatus === "draft" && row.draftUserId === userId;
+}
+
+/** Why `review` is refused for this user, or null. The draft row may be gone already. */
+export function reviewRefusal(draft: DraftOwnership | undefined, userId: string): AcceptRefusal | null {
+	if (!draft || draft.draftStatus !== "draft")
+		return { status: 409, error: "The draft for this suggestion no longer exists" };
+	if (draft.draftUserId !== userId) return { status: 403, error: "This draft is in the reviewer's Drafts" };
+	return null;
+}
+
+export function countByKind(rows: readonly { kind: string }[]): Record<string, number> {
+	const totals: Record<string, number> = {};
+	for (const row of rows) totals[row.kind] = (totals[row.kind] ?? 0) + 1;
+	return totals;
+}
+
+export function sumTotals(totals: Record<string, number>): number {
+	return Object.values(totals).reduce((sum, value) => sum + value, 0);
 }
 
 /** Dismissing is allowed while open; a repeated dismiss is answered by the executor's idempotency. */
@@ -76,10 +101,13 @@ type SuggestionRow = {
 	expiresAt: Date | null;
 	subject: string | null;
 	from: string | null;
-};
+} & DraftOwnership;
 
-/** A suggestion as the API returns it, with its payload parsed and the message's subject and sender. */
-export function toApiSuggestion(row: SuggestionRow) {
+/**
+ * A suggestion as the API returns it, with its payload parsed, the message's subject and sender, and
+ * whether this viewer may open its draft.
+ */
+export function toApiSuggestion(row: SuggestionRow, viewerId: string) {
 	return {
 		id: row.id,
 		mailboxId: row.mailboxId,
@@ -90,6 +118,7 @@ export function toApiSuggestion(row: SuggestionRow) {
 		title: row.title,
 		payload: parseActionState(row.payload) ?? {},
 		draftId: row.draftId,
+		canReviewDraft: canReviewDraft(row, viewerId),
 		model: row.model,
 		createdAt: row.createdAt.toISOString(),
 		decidedAt: row.decidedAt?.toISOString() ?? null,

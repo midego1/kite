@@ -28,7 +28,16 @@ await build({
 	sourcemap: "inline",
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
-const { parseStatusFilter, acceptRefusal, dismissRefusal, toApiSuggestion } = await load("apiUtils");
+const {
+	parseStatusFilter,
+	acceptRefusal,
+	dismissRefusal,
+	toApiSuggestion,
+	canReviewDraft,
+	reviewRefusal,
+	countByKind,
+	sumTotals,
+} = await load("apiUtils");
 const { applyMutedSenderChange } = await load("muteUtils");
 
 test("status filters, accept refusals and muted sender changes", () => {
@@ -81,8 +90,10 @@ test("toApiSuggestion parses the payload and formats dates", () => {
 		expiresAt: null,
 		subject: "Hello",
 		from: "a@b.test",
+		draftUserId: null,
+		draftStatus: null,
 	};
-	assert.deepEqual(toApiSuggestion(base), {
+	assert.deepEqual(toApiSuggestion(base, "u1"), {
 		id: "s1",
 		mailboxId: "m1",
 		messageId: "msg1",
@@ -92,14 +103,34 @@ test("toApiSuggestion parses the payload and formats dates", () => {
 		title: "Summary",
 		payload: { text: "Hi" },
 		draftId: null,
+		canReviewDraft: false,
 		model: "fake",
 		createdAt: "2026-10-01T10:00:00.000Z",
 		decidedAt: null,
 		expiresAt: null,
 		message: { subject: "Hello", from: "a@b.test" },
 	});
-	const decided = toApiSuggestion({ ...base, payload: "[1]", decidedAt: created, expiresAt: created });
+	const decided = toApiSuggestion({ ...base, payload: "[1]", decidedAt: created, expiresAt: created }, "u1");
 	assert.deepEqual(decided.payload, {});
 	assert.equal(decided.decidedAt, "2026-10-01T10:00:00.000Z");
 	assert.equal(decided.expiresAt, "2026-10-01T10:00:00.000Z");
+});
+
+test("only the draft's owner may review it; everyone else may not, and a gone draft is reported", () => {
+	const draft = { draftId: "d", draftUserId: "reviewer", draftStatus: "draft" };
+	assert.equal(canReviewDraft(draft, "reviewer"), true);
+	assert.equal(canReviewDraft(draft, "sharer"), false);
+	assert.equal(canReviewDraft({ ...draft, draftStatus: "sent" }, "reviewer"), false);
+	assert.equal(canReviewDraft({ draftId: null, draftUserId: null, draftStatus: null }, "reviewer"), false);
+	assert.equal(reviewRefusal(draft, "reviewer"), null);
+	assert.deepEqual(reviewRefusal(draft, "sharer"), { status: 403, error: "This draft is in the reviewer's Drafts" });
+	assert.equal(reviewRefusal(undefined, "reviewer").status, 409);
+	assert.equal(reviewRefusal({ ...draft, draftStatus: "trash" }, "reviewer").status, 409);
+});
+
+test("totals per kind add up to the overall total", () => {
+	const totals = countByKind([{ kind: "reply" }, { kind: "summary" }, { kind: "reply" }]);
+	assert.deepEqual(totals, { reply: 2, summary: 1 });
+	assert.equal(sumTotals(totals), 3);
+	assert.equal(sumTotals({}), 0);
 });

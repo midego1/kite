@@ -64,7 +64,7 @@ function ForYouEntry({
 
 /** Open Kite suggestions from every full-access mailbox, grouped by kind, with bulk Dismiss. */
 export function ForYouView() {
-	const { loaded, suggestions, mailboxes, reload } = useOpenSuggestions();
+	const { loaded, suggestions, total, kindTotals, mailboxes, reload } = useOpenSuggestions();
 	const [selected, setSelected] = useState<Set<string>>(new Set());
 	const [dismissing, setDismissing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -128,6 +128,11 @@ export function ForYouView() {
 				</p>
 			)}
 			{!loaded && <p className="mt-6 text-sm text-neutral-500">Loading…</p>}
+			{total > suggestions.length && (
+				<p data-for-you-truncated className="mt-4 text-sm text-neutral-600">
+					Showing the newest {suggestions.length} of {total} suggestions.
+				</p>
+			)}
 			{loaded && suggestions.length === 0 && (
 				<p className="mt-6 rounded-lg border border-dashed border-neutral-200 px-4 py-6 text-center text-sm text-neutral-500">
 					Nothing needs your attention right now.
@@ -144,7 +149,7 @@ export function ForYouView() {
 						className="border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-sm font-semibold text-neutral-800"
 					>
 						{FOR_YOU_KIND_LABELS[group.kind] ?? group.kind}{" "}
-						<span className="font-normal text-neutral-500">({group.items.length})</span>
+						<span className="font-normal text-neutral-500">({kindTotals[group.kind] ?? group.items.length})</span>
 					</h2>
 					<ul className="divide-y divide-neutral-200">
 						{group.items.map((suggestion) => (

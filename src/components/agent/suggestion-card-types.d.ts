@@ -11,6 +11,8 @@ export type CardSuggestion = {
 	title: string;
 	payload: Record<string, unknown>;
 	draftId: string | null;
+	/** Agent drafts are private to the reviewer; other full-access users see that one exists. */
+	canReviewDraft: boolean;
 	model: string | null;
 	createdAt: string;
 };

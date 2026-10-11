@@ -16,6 +16,8 @@ export type ActivityAction = {
 	createdAt: string;
 	canUndo: boolean;
 	subject: string | null;
+	/** Whether this viewer can open the row's draft (it exists, is still a draft and is theirs). */
+	draftAvailable: boolean;
 };
 
 /** A triage job that never ran, with the machine reason it was skipped. */

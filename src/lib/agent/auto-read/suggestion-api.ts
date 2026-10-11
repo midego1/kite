@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "@/db";
 import { mailboxAgentSettings, messages } from "@/db/schema";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
@@ -10,11 +11,20 @@ import type { ActionEffect, ExecuteActionResult } from "./actions-types";
 import { executeAction } from "./execute";
 import { senderAddressOf } from "./facts-utils";
 import { muteSender } from "./muted-senders";
-import { acceptRefusal, dismissRefusal, toApiSuggestion, type SuggestionStatusFilter } from "./suggestion-api-utils";
+import {
+	acceptRefusal,
+	countByKind,
+	dismissRefusal,
+	reviewRefusal,
+	sumTotals,
+	toApiSuggestion,
+	type SuggestionStatusFilter,
+} from "./suggestion-api-utils";
 import { markSpamEffect } from "./suggestion-effects";
 import { notifySuggestionsQuietly } from "./suggestion-events";
 
 const LIST_LIMIT = 200;
+const drafts = alias(messages, "draft");
 
 export type SuggestionListQuery = {
 	mailboxId: string | null;
@@ -32,16 +42,26 @@ async function listedMailboxes(env: CloudflareEnv, user: SessionUser, mailboxId:
 		.map((row) => ({ id: row.id, address: `${row.localPart}@${row.hostname}` }));
 }
 
+/** Every matching suggestion per kind, in one COUNT, for lists cut off at the limit. */
+async function countMatches(env: CloudflareEnv, conditions: SQL[]): Promise<Record<string, number>> {
+	const rows = await getDb(env)
+		.select({ kind: agentSuggestions.kind, total: count() })
+		.from(agentSuggestions)
+		.where(and(...conditions))
+		.groupBy(agentSuggestions.kind);
+	return Object.fromEntries(rows.map((row) => [row.kind, row.total]));
+}
+
 /**
  * Suggestions for users with full access, newest first, plus each listed mailbox's autonomy so the
- * navigation can hide For you when every mailbox is off. Null when the requested mailbox is not one
- * the user has full access to.
+ * navigation can hide For you when every mailbox is off. The list stops at 200 rows; `total` counts
+ * every match and `kindTotals` per kind. Null when the requested mailbox is not one the user has full access to.
  */
 export async function listSuggestions(env: CloudflareEnv, user: SessionUser, query: SuggestionListQuery) {
 	const mailboxes = await listedMailboxes(env, user, query.mailboxId);
 	if (!mailboxes) return null;
 	const ids = mailboxes.map((mailbox) => mailbox.id);
-	if (ids.length === 0) return { suggestions: [], mailboxes: [] };
+	if (ids.length === 0) return { suggestions: [], total: 0, kindTotals: {}, mailboxes: [] };
 	const db = getDb(env);
 	const settings = await db
 		.select({ mailboxId: mailboxAgentSettings.mailboxId, autonomy: mailboxAgentSettings.autonomy })
@@ -69,15 +89,21 @@ export async function listSuggestions(env: CloudflareEnv, user: SessionUser, que
 			expiresAt: agentSuggestions.expiresAt,
 			subject: messages.subject,
 			from: messages.fromAddr,
+			draftUserId: drafts.userId,
+			draftStatus: drafts.status,
 		})
 		.from(agentSuggestions)
 		.leftJoin(messages, eq(messages.id, agentSuggestions.messageId))
+		.leftJoin(drafts, eq(drafts.id, agentSuggestions.draftId))
 		.where(and(...conditions))
 		// Whole-second timestamps: insertion order breaks ties between suggestions from one triage job.
 		.orderBy(desc(agentSuggestions.createdAt), desc(sql`"agent_suggestions"."rowid"`))
 		.limit(LIST_LIMIT);
+	const kindTotals = rows.length < LIST_LIMIT ? countByKind(rows) : await countMatches(env, conditions);
 	return {
-		suggestions: rows.map(toApiSuggestion),
+		suggestions: rows.map((row) => toApiSuggestion(row, user.id)),
+		total: sumTotals(kindTotals),
+		kindTotals,
 		mailboxes: mailboxes.map((mailbox) => ({ ...mailbox, autonomy: autonomy.get(mailbox.id) ?? "off" })),
 	};
 }
@@ -104,21 +130,32 @@ async function loadForDecision(env: CloudflareEnv, user: SessionUser, suggestion
 	return { row, access };
 }
 
+async function reviewDraft(env: CloudflareEnv, user: SessionUser, status: string, draftId: string) {
+	const [draft] = await getDb(env)
+		.select({ draftUserId: messages.userId, draftStatus: messages.status })
+		.from(messages)
+		.where(eq(messages.id, draftId))
+		.limit(1);
+	const refusal = reviewRefusal(draft, user.id);
+	if (refusal) throw new AgentActionError(refusal.error, refusal.status);
+	return { status, draftId, url: `/drafts/${draftId}` };
+}
+
 function settled(result: ExecuteActionResult): ExecuteActionResult {
 	if (result.status === "applied" || result.status === "skipped") return result;
 	throw new AgentActionError(result.reason ?? "The action could not be completed", 409);
 }
 
 /**
- * Accepts a suggestion with one of its options. `review` on a reply only hands back the draft to open;
- * the user sends it from the composer. `mark_spam` on a phishing warning moves the message to Spam
- * through the executor, so it is audited and can be undone.
+ * Accepts a suggestion with one of its options. `review` on a reply only hands back the draft to open,
+ * and only to the reviewer who owns it; the user sends it from the composer. `mark_spam` on a phishing
+ * warning moves the message to Spam through the executor, so it is audited and can be undone.
  */
 export async function acceptSuggestion(env: CloudflareEnv, user: SessionUser, suggestionId: string, option: string) {
 	const { row, access } = await loadForDecision(env, user, suggestionId);
 	const refusal = acceptRefusal(row, option);
 	if (refusal) throw new AgentActionError(refusal.error, refusal.status);
-	if (row.kind === "reply") return { status: row.status, draftId: row.draftId, url: `/drafts/${row.draftId}` };
+	if (row.kind === "reply") return reviewDraft(env, user, row.status, row.draftId!);
 	const result = settled(
 		await executeAction({
 			env,

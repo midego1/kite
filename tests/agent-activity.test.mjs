@@ -52,6 +52,7 @@ const row = (extra = {}) => ({
 	createdAt: "2026-10-11T11:00:00.000Z",
 	canUndo: true,
 	subject: "Figures",
+	draftAvailable: true,
 	...extra,
 });
 
@@ -99,6 +100,13 @@ test("the target opens the agent draft while it exists, otherwise the message", 
 		label: "Figures",
 	});
 	assert.equal(actionTarget(row({ action: "dismiss", messageId: null })), null);
+});
+
+test("a draft the viewer cannot open (discarded, deleted or someone else's) links to the source message", () => {
+	assert.deepEqual(actionTarget(row({ draftAvailable: false })), { href: "/inbox/msg-1", label: "Figures" });
+	assert.equal(actionTarget(row({ draftAvailable: false, messageId: null })), null);
+	const sent = row({ draftAvailable: false, after: { draftId: "draft-1", sentMessageId: "sent-1" } });
+	assert.deepEqual(actionTarget(sent), { href: "/sent/sent-1", label: "Sent reply: Figures" });
 });
 
 test("a sent agent draft links to the sent reply, never to the trashed draft", () => {

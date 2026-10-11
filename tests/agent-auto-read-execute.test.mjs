@@ -449,7 +449,7 @@ test("activity lists actions newest first, including blocked and failed, and rec
 		INSERT INTO agent_jobs (id, mailbox_id, source_message_id, reviewer_user_id, kind, status, reason, next_attempt_at, created_at)
 			VALUES ('job-draft', 'mailbox-a', 'source-1', 'owner', 'draft', 'skipped', 'disabled', 0, ${nowSeconds()});
 	`);
-	const activity = await listAgentActivity(env, "mailbox-a");
+	const activity = await listAgentActivity(env, "mailbox-a", "owner");
 	assert.deepEqual(
 		activity.actions.map((action) => [action.id, action.status, action.canUndo]),
 		[
@@ -466,6 +466,42 @@ test("activity lists actions newest first, including blocked and failed, and rec
 		activity.skippedJobs.map((job) => [job.id, job.reason, job.subject]),
 		[["job-skip", "daily_limit", "Figures"]],
 	);
+});
+
+test("activity marks a draft available only to its owner while it is still a draft", async (t) => {
+	const { db, env } = await setup(t);
+	db.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, created_at) VALUES
+			('draft-live', 'owner', 'mailbox-a', 'outbound', 'support@example.com', 'sam@sender.test', 'Re: Figures', 'draft', 2),
+			('draft-sent', 'owner', 'mailbox-a', 'outbound', 'support@example.com', 'sam@sender.test', 'Re: Figures', 'trash', 2);
+	`);
+	const draftAction = (id, draftId, created) =>
+		insertAction(db, {
+			id,
+			suggestion_id: null,
+			action: "create_draft",
+			initiator: "agent",
+			after: JSON.stringify({ draftId }),
+			created_at: created,
+		});
+	draftAction("live", "draft-live", nowSeconds() - 3);
+	draftAction("gone", "draft-deleted", nowSeconds() - 2);
+	draftAction("trashed", "draft-sent", nowSeconds() - 1);
+	insertAction(db, { id: "plain", created_at: nowSeconds() });
+	const available = async (viewer) =>
+		(await listAgentActivity(env, "mailbox-a", viewer)).actions.map((action) => [action.id, action.draftAvailable]);
+	assert.deepEqual(await available("owner"), [
+		["plain", false],
+		["trashed", false],
+		["gone", false],
+		["live", true],
+	]);
+	assert.deepEqual(await available("manager"), [
+		["plain", false],
+		["trashed", false],
+		["gone", false],
+		["live", false],
+	]);
 });
 
 test("pruning removes agent_actions older than 180 days and keeps younger ones", async (t) => {

@@ -1,6 +1,7 @@
 import { expect, type APIRequestContext, type APIResponse, type Page } from "@playwright/test";
 import { DOMAIN } from "./constants";
-import { apiSignIn } from "./helpers";
+import { readAdminAgent } from "./agent";
+import { apiContext, apiSignIn } from "./helpers";
 
 export const AUTO_READ_ACCOUNT_PASSWORD = "auto-read-password-123";
 
@@ -49,6 +50,8 @@ export async function createSignedInAccount(
 	);
 	const mailbox = mailboxes.find((item) => item.localPart === username);
 	expect(mailbox).toBeDefined();
+	const session = await api.storageState();
+	await trackMailboxSettings(api, mailbox!.id, () => apiContext(session));
 	return { id: account.id, api, mailboxId: mailbox!.id };
 }
 
@@ -57,7 +60,9 @@ export async function createSharedMailbox(admin: APIRequestContext, localPart: s
 	const response = await admin.post("/api/mailboxes", {
 		data: { domainId, localPart, displayName: localPart, type: "shared" },
 	});
-	return (await okJson<{ id: string }>(response)).id;
+	const { id } = await okJson<{ id: string }>(response);
+	await trackMailboxSettings(admin, id, async () => admin);
+	return id;
 }
 
 export async function shareMailbox(admin: APIRequestContext, mailboxId: string, userId: string, permission: string) {
@@ -100,4 +105,76 @@ export function collectConsoleErrors(page: Page): string[] {
 	});
 	page.on("pageerror", (error) => errors.push(error.message));
 	return errors;
+}
+
+const RESTORED_MAILBOX_KEYS = [
+	"autonomy",
+	"capabilities",
+	"triageModelId",
+	"autoReadDailyLimit",
+	"dailySpendCapMicros",
+	"pausedUntil",
+	"autoDraftEnabled",
+	"dailyLimit",
+	"instructions",
+	"reviewerUserId",
+] as const;
+
+type AutoReadSnapshot = {
+	admin: APIRequestContext;
+	adminSettings: Awaited<ReturnType<typeof readAdminAgent>>;
+	mailboxes: Map<string, { settings: Record<string, unknown>; manager: () => Promise<APIRequestContext> }>;
+};
+
+let snapshot: AutoReadSnapshot | null = null;
+
+/** `manager` returns a client allowed to change the mailbox's settings (a personal mailbox is invisible to the admin). */
+async function trackMailboxSettings(
+	reader: APIRequestContext,
+	mailboxId: string,
+	manager: () => Promise<APIRequestContext>,
+) {
+	if (!snapshot || snapshot.mailboxes.has(mailboxId)) return;
+	const { settings } = await readMailboxSettings(reader, mailboxId);
+	snapshot.mailboxes.set(mailboxId, {
+		settings: Object.fromEntries(
+			RESTORED_MAILBOX_KEYS.filter((key) => key in settings).map((key) => [key, settings[key]]),
+		),
+		manager,
+	});
+}
+
+/** Records the admin automatic reading settings; mailboxes created through this module are recorded as they appear. */
+export async function beginAutoReadSnapshot(admin: APIRequestContext) {
+	snapshot = { admin, adminSettings: await readAdminAgent(admin), mailboxes: new Map() };
+}
+
+/**
+ * Puts every recorded mailbox and the admin automatic reading settings back to what they were when the snapshot
+ * began. A mailbox the test deleted, or whose session or access it revoked, is skipped; any other failure fails the test.
+ */
+export async function restoreAutoReadSnapshot() {
+	const current = snapshot;
+	snapshot = null;
+	if (!current) return;
+	const { admin, adminSettings, mailboxes } = current;
+	for (const [mailboxId, { settings, manager }] of mailboxes) {
+		const client = await manager().catch(() => null);
+		if (!client) continue;
+		const response = await client.put("/api/agent/settings", { data: { mailboxId, ...settings } });
+		const [status, body] = [response.status(), await response.text()];
+		if (client !== admin) await client.dispose();
+		if (![401, 403, 404].includes(status)) expect(status, `restore ${mailboxId} -> ${body}`).toBe(200);
+	}
+	const { autoReadEnabled, externalAutoReadAllowed, dailySpendCapMicros, assistantEnabled } = adminSettings;
+	await okJson(
+		await admin.put("/api/admin/agent", { data: { autoReadEnabled, externalAutoReadAllowed, dailySpendCapMicros } }),
+	);
+	await okJson(await admin.put("/api/admin/agent", { data: { enabled: assistantEnabled } }));
+	expect(await readAdminAgent(admin)).toMatchObject({
+		autoReadEnabled,
+		externalAutoReadAllowed,
+		dailySpendCapMicros,
+		assistantEnabled,
+	});
 }

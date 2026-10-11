@@ -5,12 +5,14 @@ import { FAKE_API_KEY, fakeProviderSettings, readAdminAgent, useFakeProvider } f
 import {
 	AUTO_READ_ACCOUNT_PASSWORD,
 	autoReadFields,
+	beginAutoReadSnapshot,
 	collectConsoleErrors,
 	createSharedMailbox,
 	createSignedInAccount,
 	okJson,
 	openAutoReadSection,
 	readMailboxSettings,
+	restoreAutoReadSnapshot,
 	selectMailbox,
 	shareMailbox,
 } from "./support/auto-read";
@@ -35,9 +37,14 @@ test.afterAll(async () => {
 	await fake.close();
 });
 
-test.beforeEach(() => {
+test.beforeEach(async () => {
 	fake.clearRequests();
 	fake.resetDefaultScenario();
+	await beginAutoReadSnapshot(api);
+});
+
+test.afterEach(async () => {
+	await restoreAutoReadSnapshot();
 });
 
 test.describe("fake model provider", () => {
@@ -940,6 +947,35 @@ test.describe("triage scheduling", () => {
 			await restore();
 		}
 	});
+	test("Off with no request: autonomy Off and auto-draft off make no model request, suggestion or draft", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("tro");
+		try {
+			await setAutonomy(account, { autonomy: "off", autoDraftEnabled: false });
+			const token = uniqueToken("offnone");
+			const stored = await deliverQuestion(
+				account,
+				"offnone",
+				`Can you confirm Tuesday (${token})? [[scenario:question]]`,
+			);
+			await settle();
+			await settle();
+			expect(await readJobs(account.api, account.mailboxId)).toEqual([]);
+			expect(requestsMentioning(token)).toEqual([]);
+			expect(
+				(await readSuggestions(account.api, { mailboxId: account.mailboxId, messageId: stored.id })).suggestions,
+			).toEqual([]);
+			expect((await readSuggestions(account.api, { mailboxId: account.mailboxId })).suggestions).toEqual([]);
+			const drafts = await okJson<{ messages: unknown[] }>(
+				await account.api.get("/api/messages?status=draft&limit=20"),
+			);
+			expect(drafts.messages).toEqual([]);
+		} finally {
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
 	type ChatBody = { messages: { role: string; content: string }[]; max_tokens?: number } & Record<string, unknown>;
 	const chatBody = (request: { body: unknown }) => request.body as ChatBody;
 	const requestsFor = (messageId: string, kind?: string) =>

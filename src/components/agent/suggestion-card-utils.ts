@@ -82,6 +82,13 @@ export function pauseEnd(now: Date): string {
 	return new Date(now.getTime() + DAY_MS).toISOString();
 }
 
+/** What Undo of a card Pause restores: an earlier pause that has not ended yet, otherwise no pause. */
+export function pauseUndoValue(previous: string | null | undefined, now: Date): string | null {
+	if (!previous) return null;
+	const end = Date.parse(previous);
+	return Number.isFinite(end) && end > now.getTime() ? previous : null;
+}
+
 /**
  * The open phishing warnings of the open message that were not there before, so a live warning is
  * announced once. `known` is updated in place; null on the first list, which only records what exists.

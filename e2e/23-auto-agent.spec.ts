@@ -1933,6 +1933,16 @@ test.describe("reply suggestions", () => {
 			expect(ids.indexOf("/for-you")).toBe(ids.indexOf("/inbox") + 1);
 			await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you$/);
 
+			// A layout the user saved before For you existed keeps its own order and gets For you below Inbox.
+			const preFeature = ids.filter((id): id is string => !!id && id !== "/for-you");
+			const savedMain = [preFeature.at(-1)!, ...preFeature.slice(0, -1)];
+			const storeLayout = (layout: { main: string[]; more: string[] }) =>
+				page.evaluate((value) => localStorage.setItem("kite:nav:layout", JSON.stringify(value)), layout);
+			await storeLayout({ main: savedMain, more: [] });
+			await page.reload();
+			await expect(forYouItem(page)).toBeVisible();
+			expect(await mainNavIds(page)).toEqual(savedMain.flatMap((id) => (id === "/inbox" ? [id, "/for-you"] : [id])));
+
 			// Delivered while the inbox is open: the count and row chips arrive over realtime, without a reload.
 			const firstReply = await deliverQuestion(account.api, account.address, "Customer <customer@outside.test>");
 			const firstPhish = await deliverPhishing(account.api, account.address, "alerts@bank.test");
@@ -1992,17 +2002,43 @@ test.describe("reply suggestions", () => {
 			await expect(rowBadge(page, firstPhish.subject!)).toHaveCount(0);
 			await expect(rowBadge(page, secondReply.message.subject!)).toHaveText("Reply");
 
+			// A suggestion change that arrives while the tab is hidden is fetched once the tab is shown again.
+			const setVisibility = (state: "hidden" | "visible") =>
+				page.evaluate((value) => {
+					Object.defineProperty(document, "visibilityState", { configurable: true, get: () => value });
+					document.dispatchEvent(new Event("visibilitychange"));
+				}, state);
+			const secondReplySuggestion = (await suggestionsFor(account.api, account.mailboxId, secondReply.message.id)).find(
+				(item) => item.kind === "reply",
+			)!;
+			await setVisibility("hidden");
+			await okJson(await account.api.post(suggestionUrl(secondReplySuggestion.id, "dismiss"), { data: {} }));
+			await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you\s*1$/, { timeout: 15_000 });
+			await expect(rowBadge(page, secondReply.message.subject!)).toHaveText("Reply");
+			await setVisibility("visible");
+			await expect(rowBadge(page, secondReply.message.subject!)).toHaveCount(0);
+
 			await okJson(
 				await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, autonomy: "off" } }),
 			);
 			await page.reload();
 			await expect(page.getByRole("link", { name: "Inbox" }).first()).toBeVisible();
 			await expect(forYouItem(page)).toHaveCount(0);
+			// Moved into an expanded More list, it stays hidden as well.
+			await storeLayout({ main: savedMain, more: ["/for-you"] });
+			await page.evaluate(() => localStorage.setItem("kite:nav:more-open", "true"));
+			const suggestionsLoaded = page.waitForResponse((response) => response.url().includes("/api/agent/suggestions"));
+			await page.reload();
+			await suggestionsLoaded;
+			await expect(page.getByRole("button", { name: "Show less..." })).toBeVisible();
+			await expect(page.locator('[data-reorder-list="more"]').first()).toBeVisible();
+			await expect(forYouItem(page)).toHaveCount(0);
 			await okJson(
 				await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, autonomy: "suggest" } }),
 			);
 			await page.reload();
-			await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you\s*2$/);
+			await expect(forYouItem(page)).toHaveAttribute("data-reorder-list", "more");
+			await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you\s*1$/);
 			expect(failed).toEqual([]);
 			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
 		} finally {
@@ -2767,6 +2803,7 @@ test.describe("reply suggestions", () => {
 	test("the ⋯ menu dismisses once with Undo like Activity, mutes a sender and pauses the mailbox", async ({
 		browser,
 	}) => {
+		test.setTimeout(180_000);
 		const restore = await useFakeProvider(api, fake);
 		const account = await suggestAccount("mnu");
 		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
@@ -2860,7 +2897,7 @@ test.describe("reply suggestions", () => {
 			await page.getByRole("menuitem", { name: "Don't suggest this for this sender" }).click();
 			expect((await muted).status()).toBe(200);
 			await expect(
-				page.getByRole("status").filter({ hasText: "Kite will not suggest anything for this sender" }),
+				page.getByRole("status").filter({ hasText: "Kite will only warn about phishing from this sender" }),
 			).toBeVisible();
 			const capabilities = (await readMailboxSettings(account.api, account.mailboxId)).settings.capabilities;
 			expect(capabilities.mutedSenders).toEqual(["alice@external.test"]);
@@ -2900,6 +2937,47 @@ test.describe("reply suggestions", () => {
 			const section = await openAutoReadSection(page);
 			await expect(section.getByText(/^Paused until/)).toBeVisible();
 			await expect(section.getByRole("button", { name: "Resume" })).toBeVisible();
+
+			// With the settings open next to the reader, a card Pause and its Undo show up there, and Undo
+			// on an already paused mailbox goes back to the earlier pause instead of resuming.
+			const pauseToasts = page.getByRole("status").filter({ hasText: "Kite is paused for this mailbox" });
+			const pauseFromCard = async () => {
+				// A dismissed toast stays in the page while it fades out.
+				await expect(pauseToasts).toHaveCount(0);
+				await replyBlock(page).getByRole("button", { name: "More Kite actions" }).click();
+				const saved = page.waitForResponse(
+					(response) => response.url().endsWith("/api/agent/settings") && response.request().method() === "PUT",
+				);
+				await page.getByRole("menuitem", { name: "Pause Kite for this mailbox" }).click();
+				expect((await saved).status()).toBe(200);
+			};
+			const undoPause = async () => {
+				await expect(pauseToasts).toHaveCount(1);
+				const saved = page.waitForResponse(
+					(response) => response.url().endsWith("/api/agent/settings") && response.request().method() === "PUT",
+				);
+				await pauseToasts.getByRole("button", { name: "Undo" }).click();
+				expect((await saved).status()).toBe(200);
+			};
+			const pausedNow = async () => (await readMailboxSettings(account.api, account.mailboxId)).settings.pausedUntil;
+			await rowLink(page, bob.message.subject!).click();
+			await expect(page).toHaveURL(new RegExp(`/inbox/${bob.message.id}$`));
+			await expect(replyBlock(page)).toHaveCount(1);
+			await new Promise((resolve) => setTimeout(resolve, 1100));
+			await pauseFromCard();
+			expect(new Date((await pausedNow())!).getTime()).toBeGreaterThan(new Date(pausedUntil!).getTime());
+			await undoPause();
+			expect(await pausedNow()).toBe(pausedUntil);
+			await expect(section.getByText(/^Paused until/)).toBeVisible();
+
+			await section.getByRole("button", { name: "Resume" }).click();
+			await expect(section.getByRole("button", { name: "Pause for 24 hours" })).toBeVisible();
+			await pauseFromCard();
+			await expect(section.getByText(/^Paused until/)).toBeVisible();
+			await expect(section.getByRole("button", { name: "Resume" })).toBeVisible();
+			await undoPause();
+			await expect(section.getByRole("button", { name: "Pause for 24 hours" })).toBeVisible();
+			expect(await pausedNow()).toBeNull();
 			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
 		} finally {
 			await context.close();

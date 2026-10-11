@@ -81,6 +81,13 @@ export function autoReadUpdateBody(mailboxId: string, form: AutoReadForm): AutoR
 	};
 }
 
+/** Fired on window when a mailbox's automatic reading settings change outside the settings section. */
+export const AGENT_SETTINGS_CHANGED_EVENT = "kite:agent-settings-changed";
+
+export function dispatchAgentSettingsChanged(mailboxId: string): void {
+	window.dispatchEvent(new CustomEvent(AGENT_SETTINGS_CHANGED_EVENT, { detail: { mailboxId } }));
+}
+
 export function pauseEndFrom(now: number): string {
 	return new Date(now + PAUSE_MS).toISOString();
 }

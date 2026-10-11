@@ -25,6 +25,7 @@ const {
 	hasCardContent,
 	newPhishingWarnings,
 	pauseEnd,
+	pauseUndoValue,
 	phishingReasonTexts,
 	replyStatusText,
 	suggestionCardUrl,
@@ -134,6 +135,16 @@ test("phishing reasons read in plain words, deterministic ones first, without re
 
 test("a pause lasts 24 hours from the click", () => {
 	assert.equal(pauseEnd(new Date("2026-10-11T08:00:00.000Z")), "2026-10-12T08:00:00.000Z");
+});
+
+test("Undo of a card Pause restores an earlier pause that is still running, otherwise none", () => {
+	const now = new Date("2026-10-11T08:00:00.000Z");
+	assert.equal(pauseUndoValue("2026-10-11T22:00:00.000Z", now), "2026-10-11T22:00:00.000Z");
+	assert.equal(pauseUndoValue("2026-10-11T07:00:00.000Z", now), null);
+	assert.equal(pauseUndoValue(now.toISOString(), now), null);
+	assert.equal(pauseUndoValue(null, now), null);
+	assert.equal(pauseUndoValue(undefined, now), null);
+	assert.equal(pauseUndoValue("not a date", now), null);
 });
 
 test("only phishing warnings that appear for the open message while it is open are new", () => {

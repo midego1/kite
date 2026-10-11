@@ -218,7 +218,8 @@ export function DashboardNav({ className }: { className?: string }) {
 					{
 						id: "more",
 						before: minimal ? undefined : <NavToggle expanded={moreOpen} onClick={toggleMore} />,
-						visibleIds: (ordered) => (showAllMoreLinks ? ordered : ordered.filter((id) => isActiveHref(id))),
+						visibleIds: (ordered) =>
+							forYou.visibleIds(showAllMoreLinks ? ordered : ordered.filter((id) => isActiveHref(id))),
 						items: moreLinks.map((link) => ({ id: link.href!, node: <NavItem link={link} /> })),
 					},
 				]}

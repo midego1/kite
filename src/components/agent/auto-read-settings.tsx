@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type {
@@ -10,6 +10,7 @@ import type {
 	AutoReadStatus,
 } from "./auto-read-settings-types";
 import {
+	AGENT_SETTINGS_CHANGED_EVENT,
 	AUTONOMY_OPTIONS,
 	autoReadUpdateBody,
 	CAPABILITY_OPTIONS,
@@ -220,6 +221,27 @@ function AutoReadFields({
 	);
 }
 
+/** Follows a pause set or undone elsewhere (the reader card) without discarding unsaved form edits. */
+function usePauseChangedElsewhere(mailboxId: string, setState: Dispatch<SetStateAction<AutoReadSettingsState | null>>) {
+	useEffect(() => {
+		let active = true;
+		function onChanged(event: Event) {
+			if ((event as CustomEvent<{ mailboxId?: string }>).detail?.mailboxId !== mailboxId) return;
+			loadAutoReadSettings(mailboxId)
+				.then((data) => {
+					const next = toAutoReadState(data, Date.now());
+					if (active) setState((current) => (current && next ? { ...current, pausedUntil: next.pausedUntil } : next));
+				})
+				.catch(() => undefined);
+		}
+		window.addEventListener(AGENT_SETTINGS_CHANGED_EVENT, onChanged);
+		return () => {
+			active = false;
+			window.removeEventListener(AGENT_SETTINGS_CHANGED_EVENT, onChanged);
+		};
+	}, [mailboxId, setState]);
+}
+
 export function AutoReadSettings({ mailboxId }: AutoReadSettingsProps) {
 	const [state, setState] = useState<AutoReadSettingsState | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -229,6 +251,7 @@ export function AutoReadSettings({ mailboxId }: AutoReadSettingsProps) {
 		const next = toAutoReadState(await loadAutoReadSettings(mailboxId), Date.now());
 		setState(next);
 	}, [mailboxId]);
+	usePauseChangedElsewhere(mailboxId, setState);
 
 	useEffect(() => {
 		let active = true;

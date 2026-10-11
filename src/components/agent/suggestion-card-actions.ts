@@ -4,8 +4,9 @@ import toast from "react-hot-toast";
 import { showUndoToast } from "@/components/ui/undo-toast";
 import { dispatchAgentSuggestionChanged } from "@/hooks/message-realtime-utils";
 import { authFetch } from "@/lib/auth/client";
+import { dispatchAgentSettingsChanged, loadAutoReadSettings } from "./auto-read-settings-utils";
 import type { CardSuggestion } from "./suggestion-card-types";
-import { pauseEnd } from "./suggestion-card-utils";
+import { pauseEnd, pauseUndoValue } from "./suggestion-card-utils";
 
 type DecisionResponse = { error?: string; url?: string; actionId?: string; mutedSender?: string | null };
 
@@ -46,22 +47,28 @@ async function savePause(mailboxId: string, pausedUntil: string | null) {
 		body: JSON.stringify({ mailboxId, pausedUntil }),
 	});
 	await readJson<{ error?: string }>(response, "Could not change the pause for this mailbox.");
+	dispatchAgentSettingsChanged(mailboxId);
+}
+
+/** Pauses for a day; Undo goes back to the pause the mailbox already had, if it had one. */
+async function pauseMailbox(mailboxId: string): Promise<() => Promise<void>> {
+	const { settings } = await loadAutoReadSettings(mailboxId);
+	const previous = pauseUndoValue(settings.pausedUntil, new Date());
+	await savePause(mailboxId, pauseEnd(new Date()));
+	return () => savePause(mailboxId, pauseUndoValue(previous, new Date()));
 }
 
 export type CardAction = "dismiss" | "mute" | "pause" | "mark_spam";
 
 const TOAST_TEXT: Record<CardAction, string> = {
 	dismiss: "Suggestion dismissed",
-	mute: "Kite will not suggest anything for this sender",
+	mute: "Kite will only warn about phishing from this sender",
 	pause: "Kite is paused for this mailbox for 24 hours",
 	mark_spam: "Moved to Spam",
 };
 
 async function apply(suggestion: CardSuggestion, action: CardAction): Promise<() => Promise<void>> {
-	if (action === "pause") {
-		await savePause(suggestion.mailboxId, pauseEnd(new Date()));
-		return () => savePause(suggestion.mailboxId, null);
-	}
+	if (action === "pause") return pauseMailbox(suggestion.mailboxId);
 	const { actionId } =
 		action === "mark_spam"
 			? await postSuggestion(suggestion.id, "accept", { option: "mark_spam" })

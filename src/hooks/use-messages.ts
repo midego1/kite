@@ -62,21 +62,34 @@ export function useMessages(
 		} else {
 			void loadMessages(false, true);
 		}
+		// A change while the tab is hidden is not refetched then, and suggestion changes do not move the
+		// mail revision the polling hook checks on return, so the list catches up when the tab is shown.
+		let staleWhileHidden = false;
 		function onMessagesChanged() {
 			clearMessageListCache();
 			clearMessageCountsCache();
-			if (document.visibilityState !== "visible") return;
+			if (document.visibilityState !== "visible") {
+				staleWhileHidden = true;
+				return;
+			}
 			if (refreshTimer) window.clearTimeout(refreshTimer);
 			refreshTimer = window.setTimeout(() => {
 				refreshTimer = null;
 				void loadMessages(true);
 			}, REFRESH_DEBOUNCE_MS);
 		}
+		function onVisibilityChange() {
+			if (!staleWhileHidden || document.visibilityState !== "visible") return;
+			staleWhileHidden = false;
+			onMessagesChanged();
+		}
 		window.addEventListener("kite:messages-changed", onMessagesChanged);
+		document.addEventListener("visibilitychange", onVisibilityChange);
 
 		return () => {
 			cancelled = true;
 			window.removeEventListener("kite:messages-changed", onMessagesChanged);
+			document.removeEventListener("visibilitychange", onVisibilityChange);
 			if (refreshTimer) window.clearTimeout(refreshTimer);
 		};
 	}, [

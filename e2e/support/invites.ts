@@ -31,6 +31,8 @@ export type IcsOptions = {
 	allDay?: boolean;
 	/** Writes DTSTART/DTEND as local times with this TZID, whatever it is called. */
 	tzid?: string;
+	/** Writes DURATION instead of DTEND. */
+	duration?: string;
 	/** Extra padding bytes, to build an oversize file. */
 	padding?: number;
 };
@@ -55,7 +57,7 @@ export function inviteAttachment(options: IcsOptions): InboundAttachment {
 		`SEQUENCE:${options.sequence ?? 0}`,
 		`DTSTAMP:${icsStamp(new Date())}`,
 		when("DTSTART", options.start),
-		when("DTEND", end),
+		options.duration ? `DURATION:${options.duration}` : when("DTEND", end),
 		`SUMMARY:${options.summary ?? "Planning"}`,
 		`ORGANIZER:mailto:${options.organizer ?? "alice@partner.test"}`,
 		...(options.rrule ? [`RRULE:${options.rrule}`] : []),

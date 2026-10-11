@@ -201,3 +201,31 @@ test("an all-day invite moves to midnight in the reviewer's zone, other invites 
 	assert.equal(localizeAllDay(day, null).start, day.start);
 	assert.equal(localizeAllDay(invite, "Europe/Amsterdam"), invite);
 });
+
+test("summary and location are cut to 500 code points, and the invite is kept", () => {
+	const build = (summary, location) =>
+		buildInvitePayload({
+			invite: { ...invite, summary, location },
+			variant: { method: "REQUEST", existingEventId: null },
+			senderAddress: "alice@external.test",
+			authPassed: true,
+			conflicts: [],
+			proposals: [],
+		});
+	const exact = build("a".repeat(500), "b".repeat(500));
+	assert.equal(Array.from(exact.summary).length, 500);
+	assert.equal(Array.from(exact.location).length, 500);
+	const long = build("😀".repeat(501), "é".repeat(600));
+	assert.equal(Array.from(long.summary).length, 500);
+	assert.equal(long.summary, "😀".repeat(500));
+	assert.equal(Array.from(long.location).length, 500);
+});
+
+test("localizeAllDay anchors a UTC-dated payload at midnight in the given zone", () => {
+	const anchored = localizeAllDay(
+		{ allDay: true, start: "2030-01-08T00:00:00.000Z", end: "2030-01-09T00:00:00.000Z", tz: "UTC" },
+		"America/Los_Angeles",
+	);
+	assert.equal(anchored.start, "2030-01-08T08:00:00.000Z");
+	assert.equal(anchored.end, "2030-01-09T08:00:00.000Z");
+});

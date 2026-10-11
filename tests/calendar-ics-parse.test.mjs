@@ -182,3 +182,33 @@ test("only the first VEVENT is read; attendees without an address are skipped", 
 	assert.deepEqual(invite.organizer, { email: "boss@example.com", name: "Quoted; Name" });
 	assert.equal(parseIcsInvite("BEGIN:VEVENT\r\nUID:open").error, "no_event");
 });
+
+test("P1D and P1W add wall-clock days in the DTSTART zone across Amsterdam DST changes", () => {
+	const cases = [
+		["20260328T100000", "P1D", "2026-03-29T08:00:00.000Z"],
+		["20260325T100000", "P1W", "2026-04-01T08:00:00.000Z"],
+		["20261024T100000", "P1D", "2026-10-25T09:00:00.000Z"],
+		["20261018T100000", "P1W", "2026-10-25T09:00:00.000Z"],
+		["20260328T100000", "P1DT2H", "2026-03-29T10:00:00.000Z"],
+	];
+	for (const [start, duration, end] of cases) {
+		const result = parseIcsInvite(
+			wrap(["UID:dur@example.test", `DTSTART;TZID=Europe/Amsterdam:${start}`, `DURATION:${duration}`]),
+		);
+		assert.equal(result.ok, true, `${start} ${duration}`);
+		assert.equal(result.invite.end, end, `${start} ${duration}`);
+	}
+});
+
+test("an unrepresentable DURATION is rejected as invalid_time instead of throwing", () => {
+	for (const tz of ["", ";TZID=Europe/Amsterdam"]) {
+		const result = parseIcsInvite(
+			wrap(["UID:huge@example.test", `DTSTART${tz}:20260328T100000${tz ? "" : "Z"}`, "DURATION:P999999999D"]),
+		);
+		assert.deepEqual(result, { ok: false, error: "invalid_time" });
+	}
+	assert.deepEqual(
+		parseIcsInvite(wrap(["UID:huge@example.test", "DTSTART;VALUE=DATE:20260328", "DURATION:P99999999999W"])),
+		{ ok: false, error: "invalid_time" },
+	);
+});

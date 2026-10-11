@@ -3921,6 +3921,104 @@ test.describe("calendar invite card", () => {
 		}
 	});
 
+	test("an all-day invite accepted on a western device with no saved zone lands on the invited date", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await inviteAccount("icd");
+		const context = await browser.newContext({
+			baseURL: BASE_URL,
+			storageState: await account.api.storageState(),
+			timezoneId: "America/Los_Angeles",
+		});
+		try {
+			const dayStart = futureAt(40, 0);
+			const uid = `${uniqueToken("uid")}@partner.test`;
+			const title = uniqueToken("Offsite");
+			const { message } = await deliver(account.api, account.mailboxId, account.address, {
+				uid,
+				start: dayStart,
+				allDay: true,
+				summary: title,
+			});
+			const page = await context.newPage();
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+			await openInvite(page, message);
+			await inviteBlock(page).getByRole("button", { name: "Accept", exact: true }).click();
+			await expect(answeredBlock(page)).toBeVisible();
+			const [event] = await eventsWithUid(account.api, dayStart, uid);
+			const startsAt = new Date(event.startsAt);
+			expect(
+				startsAt.toLocaleString("en-US", {
+					timeZone: "America/Los_Angeles",
+					hour12: false,
+					hour: "2-digit",
+					minute: "2-digit",
+				}),
+			).toMatch(/^(24|00):00$/);
+			expect(startsAt.toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })).toBe(
+				dayStart.toISOString().slice(0, 10),
+			);
+
+			await page.goto("/calendar");
+			await page.getByRole("combobox", { name: "Calendar view" }).selectOption("month");
+			const label = (date: Date) =>
+				date.toLocaleDateString("en-US", {
+					weekday: "long",
+					month: "long",
+					day: "numeric",
+					year: "numeric",
+					timeZone: "UTC",
+				});
+			const month = page.locator('[aria-label="Monthly calendar"]');
+			const invited = month.getByRole("region", { name: label(dayStart) });
+			for (let step = 0; step < 3 && !(await invited.isVisible()); step++)
+				await page.getByRole("button", { name: "Next month", exact: true }).click();
+			await expect(invited.getByRole("button", { name: new RegExp(title) })).toBeVisible();
+			const before = month.getByRole("region", { name: label(new Date(dayStart.getTime() - 86_400_000)) });
+			await expect(before.getByRole("button", { name: new RegExp(title) })).toHaveCount(0);
+		} finally {
+			await context.close();
+			await stopMailbox(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("an invite with an unrepresentable DURATION gets no calendar suggestion and the job still finishes", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await inviteAccount("ich");
+		try {
+			const subject = uniqueToken("huge");
+			await postInbound(account.api, {
+				from: `Alice <${ORGANIZER}>`,
+				to: account.address,
+				subject,
+				text: "Please join.",
+				attachments: [
+					inviteAttachment({
+						uid: `${uniqueToken("uid")}@partner.test`,
+						start: futureAt(45, 10),
+						duration: "P999999999D",
+					}),
+				],
+			});
+			const message = await waitForMessage(account.api, subject, { status: "received" });
+			const job = await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage");
+			expect(job.status).toBe("completed");
+			const { suggestions } = await readSuggestions(account.api, {
+				mailboxId: account.mailboxId,
+				messageId: message.id,
+			});
+			expect(suggestions.filter((item) => item.kind === "calendar_invite")).toEqual([]);
+		} finally {
+			await stopMailbox(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
 	test("Accept shows an Undo toast, Activity lists the invite actions, and Undo removes the event", async ({
 		browser,
 	}) => {

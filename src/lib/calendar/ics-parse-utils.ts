@@ -1,4 +1,4 @@
-import { dateFromZonedFields, isValidTimeZone } from "@/lib/time/utils";
+import { dateFromZonedFields, isValidTimeZone, zonedDateFields } from "@/lib/time/utils";
 
 export const ICS_MAX_BYTES = 256 * 1024;
 
@@ -118,13 +118,30 @@ function parseInstant(property: Property): { time: number; allDay: boolean; tz: 
 	return { time: dateFromZonedFields(fields, tz).getTime(), allDay: false, tz };
 }
 
-function parseDurationMs(value: string): number {
+function parseDuration(value: string): { negative: boolean; days: number; ms: number } {
 	const match = /^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(value.trim());
 	if (!match || value.trim().endsWith("P") || value.trim().endsWith("T")) throw new IcsError("invalid_time");
 	const [weeks, days, hours, minutes, seconds] = match.slice(2, 7).map((part) => Number(part ?? 0));
-	const sign = match[1];
-	const total = (((weeks * 7 + days) * 24 + hours) * 60 + minutes) * 60_000 + seconds * 1000;
-	return sign === "-" ? -total : total;
+	return { negative: match[1] === "-", days: weeks * 7 + days, ms: (hours * 60 + minutes) * 60_000 + seconds * 1000 };
+}
+
+/** Day and week components are nominal (same wall-clock time in the start zone); hours and below are elapsed. */
+function addDuration(start: ReturnType<typeof parseInstant>, value: string): number {
+	const { negative, days, ms } = parseDuration(value);
+	if (negative) throw new IcsError("invalid_time");
+	try {
+		let time: number;
+		if (start.tz) {
+			const fields = zonedDateFields(new Date(start.time), start.tz);
+			fields.setUTCDate(fields.getUTCDate() + days);
+			time = dateFromZonedFields(fields, start.tz).getTime() + ms;
+		} else time = start.time + days * 86_400_000 + ms;
+		// toISOString throws outside the Date range, so reject an unrepresentable end here.
+		new Date(time).toISOString();
+		return time;
+	} catch {
+		throw new IcsError("invalid_time");
+	}
 }
 
 function firstEventProperties(lines: string[]): Property[] | null {
@@ -168,9 +185,7 @@ function resolveEnd(
 		return end.time;
 	}
 	if (duration) {
-		const ms = parseDurationMs(duration.value);
-		if (ms < 0) throw new IcsError("invalid_time");
-		return start.time + ms;
+		return addDuration(start, duration.value);
 	}
 	return start.time + (start.allDay ? 86_400_000 : 0);
 }

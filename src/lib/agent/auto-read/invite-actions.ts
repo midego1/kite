@@ -21,6 +21,7 @@ import { retireLiveRows, rsvpState } from "./calendar-state";
 import { executeAction } from "./execute";
 import { inviteOptionRefusal, proposalBody, type InviteOption, type Partstat } from "./invite-actions-utils";
 import { proposeSlotsForInvite } from "./invite";
+import { localizeAllDay } from "./invite-utils";
 import { generateProposalIntro } from "./invite-proposal";
 import type { AgentActionType } from "./policy-types";
 import { notifySuggestionsQuietly } from "./suggestion-events";
@@ -46,6 +47,7 @@ async function loadContext(
 	user: SessionUser,
 	access: MailboxAccessLevel,
 	row: InviteRow,
+	deviceTimeZone: string | null,
 ): Promise<Context> {
 	const db = getDb(env);
 	const [suggestion] = await db
@@ -61,7 +63,29 @@ async function loadContext(
 		.where(eq(messages.id, row.messageId))
 		.limit(1);
 	if (!source) throw new AgentActionError("The invitation message no longer exists", 409);
-	return { env, user, access, row, payload, reviewerUserId: suggestion.reviewerUserId, source };
+	return {
+		env,
+		user,
+		access,
+		row,
+		payload: anchorAllDay(payload, user, suggestion.reviewerUserId, deviceTimeZone),
+		reviewerUserId: suggestion.reviewerUserId,
+		source,
+	};
+}
+
+/**
+ * Triage anchors an all-day invite at midnight UTC when the reviewer has no saved zone, but the
+ * calendar then renders in the device zone, so the accepting device's zone decides the date.
+ */
+function anchorAllDay(
+	payload: CalendarInvitePayload,
+	user: SessionUser,
+	reviewerUserId: string,
+	deviceTimeZone: string | null,
+): CalendarInvitePayload {
+	if (!payload.allDay || user.timeZone || user.id !== reviewerUserId || !deviceTimeZone) return payload;
+	return localizeAllDay(payload, deviceTimeZone);
 }
 
 function run(ctx: Context, action: AgentActionType, variant: string, effect: ActionEffect) {
@@ -241,8 +265,9 @@ export async function acceptInvite(
 	access: MailboxAccessLevel,
 	row: InviteRow,
 	option: string,
+	deviceTimeZone: string | null = null,
 ): Promise<InviteResult> {
-	const ctx = await loadContext(env, user, access, row);
+	const ctx = await loadContext(env, user, access, row, deviceTimeZone);
 	const refusal = inviteOptionRefusal({
 		option,
 		status: row.status,

@@ -148,9 +148,15 @@ async function reviewDraft(env: CloudflareEnv, user: SessionUser, status: string
  * and only to the reviewer who owns it; the user sends it from the composer. `mark_spam` on a phishing
  * warning moves the message to Spam through the executor, so it is audited and can be undone.
  */
-export async function acceptSuggestion(env: CloudflareEnv, user: SessionUser, suggestionId: string, option: string) {
+export async function acceptSuggestion(
+	env: CloudflareEnv,
+	user: SessionUser,
+	suggestionId: string,
+	option: string,
+	deviceTimeZone: string | null = null,
+) {
 	const { row, access } = await loadForDecision(env, user, suggestionId);
-	if (row.kind === "calendar_invite") return acceptInvite(env, user, access, row, option);
+	if (row.kind === "calendar_invite") return acceptInvite(env, user, access, row, option, deviceTimeZone);
 	const refusal = acceptRefusal(row, option);
 	if (refusal) throw new AgentActionError(refusal.error, refusal.status);
 	if (row.kind === "reply") return reviewDraft(env, user, row.status, row.draftId!);

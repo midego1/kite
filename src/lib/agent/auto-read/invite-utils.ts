@@ -8,6 +8,13 @@ const INVITE_MARGIN_MS = 30 * 60_000;
 const MAX_WINDOW_MS = 90 * 86_400_000;
 const MAX_CONFLICTS = 20;
 const PROPOSAL_COUNT = 3;
+const DISPLAY_TEXT_MAX = 500;
+
+/** The payload schema counts code points, so cut on them rather than UTF-16 units. */
+function truncateCodePoints(value: string, max: number): string {
+	const points = Array.from(value);
+	return points.length > max ? points.slice(0, max).join("") : value;
+}
 
 export type BookingHoursRow = {
 	weekdays: string;
@@ -83,7 +90,10 @@ export function inviteVariant(invite: IcsInvite, stored: StoredInviteEvent | nul
  * An all-day invite is a calendar date, not an instant: the parser anchors it at midnight UTC, so it
  * is moved to midnight in the reviewer's zone, which keeps the event on that date in their calendar.
  */
-export function localizeAllDay(invite: IcsInvite, userTimeZone: string | null): IcsInvite {
+export function localizeAllDay<T extends Pick<IcsInvite, "start" | "end" | "tz"> & { allDay?: boolean }>(
+	invite: T,
+	userTimeZone: string | null,
+): T {
 	if (!invite.allDay) return invite;
 	const tz = normalizeTimeZone(userTimeZone);
 	return {
@@ -126,8 +136,8 @@ export function buildInvitePayload(input: {
 		start: invite.start,
 		end: invite.end,
 		tz: invite.tz,
-		summary: invite.summary,
-		location: invite.location || null,
+		summary: truncateCodePoints(invite.summary, DISPLAY_TEXT_MAX),
+		location: truncateCodePoints(invite.location, DISPLAY_TEXT_MAX) || null,
 		repeats: !!invite.rrule,
 		allDay: invite.allDay,
 		conflicts: cancel

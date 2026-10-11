@@ -85,7 +85,7 @@ async function loadReal() {
 		stdin: {
 			contents: [
 				`export { buildTriagePrompt, parseTriageOutput } from "${auto}/triage-utils";`,
-				`export { buildModelCallOptions, callWithFallback, completedText, runTriageAttempt, TriageOutputError, COMPATIBLE_PROVIDER_NAME } from "${auto}/model-call-utils";`,
+				`export { buildModelCallOptions, callWithFallback, completedText, runTriageAttempt, TriageOutputError, ModelOutputTruncatedError, COMPATIBLE_PROVIDER_NAME } from "${auto}/model-call-utils";`,
 				`export { guardDraft, collectThreadReferences } from "${auto}/draft-guard-utils";`,
 				`export { allowedToExecute, planSuggestions } from "${auto}/policy-utils";`,
 				`export { collectFacts } from "${auto}/facts-utils";`,
@@ -113,7 +113,18 @@ async function loadReal() {
 const real = await loadReal();
 
 /** One chat completion over REST. Provider options come from the app's own model-call-utils. */
+const latency = { triage: [], draft: [] };
+
 async function callModel(system, messages, options) {
+	const started = performance.now();
+	try {
+		return await requestCompletion(system, messages, options);
+	} finally {
+		latency[options.kind]?.push(Math.round(performance.now() - started));
+	}
+}
+
+async function requestCompletion(system, messages, options) {
 	const chosen =
 		options.provider === "cloudflare"
 			? options.providerOptions.workersAi
@@ -156,6 +167,7 @@ async function runTriage(prompt) {
 		return { status: "ok", result };
 	} catch (error) {
 		if (error instanceof real.TriageOutputError) return { status: "schema_violation", detail: message(error) };
+		if (error instanceof real.ModelOutputTruncatedError) return { status: "output_budget", detail: message(error) };
 		return { status: "error", detail: message(error) };
 	}
 }
@@ -174,10 +186,11 @@ async function runDraft(parsed, thread) {
 		);
 		text = real.completedText(generated).trim();
 	} catch (error) {
-		return { draft: { status: "error", detail: message(error) }, breaches: [] };
+		const status = error instanceof real.ModelOutputTruncatedError ? "output_budget" : "error";
+		return { draft: { status, detail: message(error) }, breaches: [] };
 	}
 	const references = draftReferences(parsed);
-	return classifyDraft(text, references, real.guardDraft(text, references));
+	return classifyDraft(references, real.guardDraft(text, references));
 }
 
 function policyBreaches(facts, triage) {
@@ -245,6 +258,8 @@ const files = readdirSync(values.corpus)
 	.sort();
 const results = [];
 for (const file of files) results.push(await evaluate(file));
-console.log(formatReport(results, { provider: config.provider, model: config.model, reasoningEffort, secrets }));
+console.log(
+	formatReport(results, { provider: config.provider, model: config.model, reasoningEffort, secrets, latency }),
+);
 if (countBreaches(results) > 0) console.error("Policy breach detected.");
 process.exit(exitCodeFor(results));

@@ -400,6 +400,16 @@ test("propose addresses the ICS organizer only, not the From or Reply-To of the 
 	assert.ok(!draft.cc_addr);
 });
 
+test("propose on an invite without an organizer is a 409 that writes no draft or action", async (t) => {
+	const ctx = await setup(t);
+	addSuggestion(ctx.db, "sugg-1", payload({ organizer: null, organizerMatchesSender: false }));
+	await assert.rejects(answer(ctx, "propose"), (error) => error.status === 409);
+	assert.equal(ctx.db.db.prepare("SELECT count(*) AS n FROM messages WHERE status = 'draft'").get().n, 0);
+	assert.equal(actions(ctx.db).length, 0);
+	assert.equal(suggestion(ctx.db).status, "open");
+	assert.equal(ctx.sent.length, 0);
+});
+
 test("undo of an accepted invite by a full-access user who did not send the reply is a 403 that changes nothing", async (t) => {
 	const ctx = await setup(t, { undoSendSeconds: 30 });
 	ctx.db.db.exec(`

@@ -68,6 +68,7 @@ test("times are shown in the viewer's zone, across midnight too", () => {
 test("buttons follow the invitation's shape", () => {
 	const labels = (extra) => invite.inviteButtons(invite.invitePayload(suggestion(extra))).map((button) => button.label);
 	assert.deepEqual(labels({}), ["Accept", "Decline", "Propose new time"]);
+	assert.deepEqual(labels({ organizer: null }), ["Accept", "Decline"]);
 	assert.deepEqual(labels({ existingEventId: "e1" }), ["Update event"]);
 	assert.deepEqual(labels({ method: "CANCEL", existingEventId: "e1" }), ["Remove from calendar"]);
 });

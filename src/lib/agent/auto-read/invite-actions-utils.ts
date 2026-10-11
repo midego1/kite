@@ -18,7 +18,7 @@ export type Partstat = "accepted" | "declined";
 export type RsvpState = Partstat | null;
 
 const NEEDS_SEND: readonly InviteOption[] = ["accept", "decline", "propose", "decline_instead", "accept_instead"];
-const NEEDS_ORGANIZER: readonly InviteOption[] = ["accept", "decline", "decline_instead", "accept_instead"];
+const NEEDS_ORGANIZER: readonly InviteOption[] = ["accept", "decline", "propose", "decline_instead", "accept_instead"];
 const INSTEAD: readonly InviteOption[] = ["decline_instead", "accept_instead"];
 
 export const FALLBACK_PROPOSAL_INTRO =

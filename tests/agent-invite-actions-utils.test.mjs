@@ -58,7 +58,7 @@ test("sending options need the send permission and an organizer", () => {
 		assert.equal(ask({ option, canSend: false }).status, 403, option);
 	assert.equal(ask({ option: "update", payload: payload({ existingEventId: "evt-1" }), canSend: false }), null);
 	assert.equal(ask({ payload: payload({ organizer: null }) }).status, 409);
-	assert.equal(ask({ option: "propose", payload: payload({ organizer: null }) }), null);
+	assert.equal(ask({ option: "propose", payload: payload({ organizer: null }) }).status, 409);
 });
 
 test("decline_instead and accept_instead follow the reply that currently stands", () => {

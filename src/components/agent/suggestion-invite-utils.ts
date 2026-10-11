@@ -61,7 +61,7 @@ export function inviteButtons(payload: CalendarInvitePayload): InviteButton[] {
 	return [
 		{ option: "accept", label: "Accept", primary: true },
 		{ option: "decline", label: "Decline" },
-		{ option: "propose", label: "Propose new time" },
+		...(payload.organizer ? [{ option: "propose" as const, label: "Propose new time" }] : []),
 	];
 }
 

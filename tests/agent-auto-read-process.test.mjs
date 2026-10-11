@@ -301,6 +301,35 @@ test("an external provider without the opt-in, or a spend cap, receives nothing"
 	assert.equal(requests.length, 0);
 });
 
+test("an opt-in revoked or an external provider chosen after the early gate still sends nothing", async (t) => {
+	const revoked = await setup(t);
+	// The rate limiter runs between the early provider gate and the triage request.
+	revoked.env.AGENT_RATE_LIMIT = {
+		limit: async () => {
+			revoked.db.db.exec("UPDATE app_settings SET agent_external_auto_read_allowed = 0");
+			return { success: true };
+		},
+	};
+	const first = insertJob(revoked.db);
+	await processAgentTriageJob(revoked.env, first.jobId);
+	assert.equal(jobOf(revoked.db, first.jobId).status, "skipped");
+	assert.equal(jobOf(revoked.db, first.jobId).reason, "external_provider_not_allowed");
+
+	const switched = await setup(t, { externalAllowed: 0 });
+	switched.db.db.exec("UPDATE app_settings SET agent_provider = 'cloudflare'");
+	switched.env.AGENT_RATE_LIMIT = {
+		limit: async () => {
+			switched.db.db.exec("UPDATE app_settings SET agent_provider = 'compatible'");
+			return { success: true };
+		},
+	};
+	const second = insertJob(switched.db);
+	await processAgentTriageJob(switched.env, second.jobId);
+	assert.equal(jobOf(switched.db, second.jobId).status, "skipped");
+	assert.equal(jobOf(switched.db, second.jobId).reason, "external_provider_not_allowed");
+	assert.equal(requests.length, 0);
+});
+
 test("list mail is settled from its raw headers without a model request", async (t) => {
 	const { db, env, raw } = await setup(t);
 	raw.set(

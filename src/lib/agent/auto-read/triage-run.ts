@@ -1,5 +1,5 @@
-import { getAgentModel } from "../model";
 import type { AgentProviderConfig } from "../provider-types";
+import { selectAutoReadModel } from "./auto-read-model";
 import { buildModelCallOptions, chooseTriageModelId, runTriageAttempt } from "./model-call-utils";
 import type { MailboxAgentSettingsState } from "./settings-types";
 import { withReservedSpend } from "./spend";
@@ -40,8 +40,7 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 		models: config.models,
 		rates: config.rates,
 	});
-	const selection = await getAgentModel(env, requested);
-	if (!selection) throw new Error("AI provider is not configured");
+	const selection = await selectAutoReadModel(env, requested);
 	const prompt = buildTriagePrompt({
 		messageId: context.source.id,
 		from: context.source.fromAddr,

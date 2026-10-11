@@ -310,6 +310,59 @@ test("an agent.triage message is processed as a triage job and completes", async
 	assert.equal(await processAgentQueueMessage(env, { kind: "import.imap", jobId: "import-1" }), false);
 });
 
+function openReplyOn(db, messageId, threadId) {
+	db.db
+		.prepare("UPDATE messages SET thread_id = ?, created_at = ? WHERE id = ?")
+		.run(threadId, nowSeconds() - 60, messageId);
+	db.db
+		.prepare(
+			"INSERT INTO agent_suggestions (id, mailbox_id, message_id, thread_id, reviewer_user_id, kind, status, title, payload, created_at) VALUES (?, 'mailbox-a', ?, ?, 'owner', 'reply', 'open', 'Reply', '{}', ?)",
+		)
+		.run(`sugg-${messageId}`, messageId, threadId, nowSeconds() - 60);
+	return `sugg-${messageId}`;
+}
+
+function newerInThread(db, threadId) {
+	const id = insertMessage(db);
+	db.db.prepare("UPDATE messages SET thread_id = ? WHERE id = ?").run(threadId, id);
+	return id;
+}
+
+const suggestionStatus = (db, id) => db.db.prepare("SELECT status FROM agent_suggestions WHERE id = ?").get(id).status;
+
+test("a newer message in the thread supersedes the older open reply even when its own triage is skipped", async (t) => {
+	const { db, env } = await setup(t);
+	const realFetch = globalThis.fetch;
+	let modelRequests = 0;
+	globalThis.fetch = async () => {
+		modelRequests += 1;
+		throw new Error("no model request expected");
+	};
+	t.after(() => {
+		globalThis.fetch = realFetch;
+	});
+
+	db.db.exec("UPDATE mailbox_agent_settings SET auto_read_daily_limit = 0 WHERE mailbox_id = 'mailbox-a'");
+	const limited = openReplyOn(db, insertMessage(db), "thread-limit");
+	const newer = newerInThread(db, "thread-limit");
+	await scheduleAgentWork(env, workInput(newer));
+	assert.equal(suggestionStatus(db, limited), "superseded");
+	const [{ id: jobId }] = db.db.prepare("SELECT id FROM agent_jobs WHERE source_message_id = ?").all(newer);
+	await processAgentQueueMessage(env, { kind: "agent.triage", jobId });
+	assert.deepEqual(statusOf(db, jobId), { status: "skipped", reason: "daily_limit" });
+
+	db.db.prepare("UPDATE mailbox_agent_settings SET paused_until = ?").run(nowSeconds() + 3600);
+	const paused = openReplyOn(db, insertMessage(db), "thread-paused");
+	await scheduleAgentWork(env, workInput(newerInThread(db, "thread-paused")));
+	assert.equal(suggestionStatus(db, paused), "superseded");
+	assert.equal(jobs(db).length, 1, "a paused mailbox schedules no job");
+
+	const other = openReplyOn(db, insertMessage(db), "thread-other");
+	await scheduleAgentWork(env, workInput(insertMessage(db)));
+	assert.equal(suggestionStatus(db, other), "open", "mail in another thread leaves it open");
+	assert.equal(modelRequests, 0);
+});
+
 test("the queue helpers map kinds both ways and route each body to its handler", async () => {
 	assert.deepEqual(agentJobQueueMessage("triage", "j1"), { kind: "agent.triage", jobId: "j1" });
 	assert.deepEqual(agentJobQueueMessage("draft", "j1"), { kind: "agent.draft", jobId: "j1" });

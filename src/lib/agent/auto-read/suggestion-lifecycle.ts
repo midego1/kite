@@ -48,8 +48,11 @@ export async function supersedeThreadReplies(
 	return closed.map((row) => row.id);
 }
 
-/** Called once a reply is sent: closes the thread's older reply suggestions and tells full-access users. */
-export async function supersedeAfterSentReply(env: CloudflareEnv, messageId: string): Promise<void> {
+/**
+ * Called once a reply is sent or a new inbound message is delivered: closes the thread's older reply
+ * suggestions and tells full-access users.
+ */
+export async function supersedeOlderReplies(env: CloudflareEnv, messageId: string): Promise<void> {
 	const [message] = await getDb(env)
 		.select({ mailboxId: messages.mailboxId, threadId: messages.threadId })
 		.from(messages)

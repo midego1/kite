@@ -31,7 +31,7 @@ await build({
 	tsconfig: join(root, "tsconfig.json"),
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
-const { expireOpenSuggestions, settleTriageSuggestions, supersedeAfterSentReply } = await load("lifecycle");
+const { expireOpenSuggestions, settleTriageSuggestions, supersedeOlderReplies } = await load("lifecycle");
 const { listSuggestions, acceptSuggestion, dismissSuggestion } = await load("api");
 const { undoAgentAction } = await load("execute");
 const { runAgentMaintenance } = await load("maintenance");
@@ -164,10 +164,10 @@ test("a newer inbound message in the thread supersedes only older open reply sug
 
 test("a draft does not supersede, a sent reply does, and only in its own mailbox and thread", async (t) => {
 	const { db, env, notifications } = await setup(t);
-	await supersedeAfterSentReply(env, "draft-a");
+	await supersedeOlderReplies(env, "draft-a");
 	assert.equal(statusOf(db, "sugg-reply"), "open");
 	insertMessage(db, { id: "sent-a", direction: "outbound", status: "sent", from_addr: "support@example.com" });
-	await supersedeAfterSentReply(env, "sent-a");
+	await supersedeOlderReplies(env, "sent-a");
 	assert.equal(statusOf(db, "sugg-reply"), "superseded");
 	assert.equal(statusOf(db, "sugg-other"), "open");
 	assert.ok(notifications.some((item) => item.payload.suggestionId === "sugg-reply"));

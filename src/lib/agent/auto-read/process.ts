@@ -4,6 +4,7 @@ import { agentJobs, mailboxAgentSettings, mailboxes, messages, users } from "@/d
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { claimAgentJob, failAndRequeueAgentJob, skipAgentJob } from "../jobs/lease";
 import { getAgentProviderConfig } from "../provider";
+import { ExternalProviderNotAllowedError } from "./auto-read-model";
 import { needsModel } from "./facts-utils";
 import { getAutoReadInstallSettings } from "./install-settings";
 import { planSuggestions } from "./policy-utils";
@@ -115,6 +116,8 @@ export async function processAgentTriageJob(env: CloudflareEnv, jobId: string) {
 			.where(eq(agentJobs.id, jobId));
 	} catch (error) {
 		if (error instanceof SpendCapReachedError) return void (await skipAgentJob(db, jobId, "spend_cap"));
+		if (error instanceof ExternalProviderNotAllowedError)
+			return void (await skipAgentJob(db, jobId, "external_provider_not_allowed"));
 		await failAndRequeueAgentJob(env, db, job, error);
 	}
 }

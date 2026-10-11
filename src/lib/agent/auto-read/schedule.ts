@@ -8,6 +8,7 @@ import { scheduleAutoDraft } from "../jobs/utils";
 import { agentJobQueueMessage } from "../queue-utils";
 import { getAutoReadInstallSettings } from "./install-settings";
 import { isPaused, triageMessageGate, withinRecoveryWindow } from "./schedule-utils";
+import { supersedeOlderReplies } from "./suggestion-lifecycle";
 
 export type AgentWorkInput = Parameters<typeof scheduleAutoDraft>[1] & {
 	/** Set on the duplicate-raw-key recovery path: when the already stored message was received. */
@@ -76,6 +77,8 @@ export async function scheduleAgentWork(env: CloudflareEnv, input: AgentWorkInpu
 		.where(eq(mailboxAgentSettings.mailboxId, input.mailboxId))
 		.limit(1);
 	if (!settings) return;
+	// Before every gate: the older reply is outdated even when this message is never triaged.
+	await supersedeOlderReplies(env, input.sourceMessageId);
 	if (settings.autonomy === "off") {
 		if (settings.autoDraftEnabled) await scheduleAutoDraft(env, input);
 		return;

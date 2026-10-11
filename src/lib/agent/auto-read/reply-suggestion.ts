@@ -3,8 +3,8 @@ import { getDb } from "@/db";
 import { messages, users } from "@/db/schema";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import { draftPromptChars, generateReplyDraft, loadDraftThread } from "../jobs/draft-generation";
-import { getAgentModel } from "../model";
 import { draftReplyEffect } from "./action-effects";
+import { ExternalProviderNotAllowedError, selectAutoReadModel } from "./auto-read-model";
 import { guardDraft, collectThreadReferences } from "./draft-guard-utils";
 import { executeAction, recordBlockedAction } from "./execute";
 import type { MessageFacts } from "./facts-types";
@@ -19,7 +19,7 @@ import { SpendCapReachedError } from "./triage-run";
 const DRAFT_CALL_TIMEOUT_MS = 60_000;
 
 type SourceMessage = typeof messages.$inferSelect;
-type AgentSelection = NonNullable<Awaited<ReturnType<typeof getAgentModel>>>;
+type AgentSelection = Awaited<ReturnType<typeof selectAutoReadModel>>;
 
 type ReplySuggestionInput = {
 	env: CloudflareEnv;
@@ -109,6 +109,17 @@ async function existingReply(env: CloudflareEnv, messageId: string) {
 	return row ?? null;
 }
 
+/** The draft model, or null after recording that the provider may not read this mail. */
+async function draftModel(input: ReplySuggestionInput): Promise<AgentSelection | null> {
+	try {
+		return await selectAutoReadModel(input.env, input.settings.modelId);
+	} catch (error) {
+		if (!(error instanceof ExternalProviderNotAllowedError)) throw error;
+		await blockDraft(input, "external_provider_not_allowed");
+		return null;
+	}
+}
+
 /** Generates a guarded draft and returns its text, or null after recording why no draft is made. */
 async function guardedDraftText(input: ReplySuggestionInput, selection: AgentSelection): Promise<string | null> {
 	const thread = await loadDraftThread(getDb(input.env), input.job.mailboxId, input.source);
@@ -138,8 +149,8 @@ export async function createReplySuggestion(input: ReplySuggestionInput): Promis
 	if (previous && (previous.status !== "open" || previous.draftId)) return;
 	const [reviewer] = await getDb(env).select().from(users).where(eq(users.id, job.reviewerUserId)).limit(1);
 	if (!reviewer || reviewer.disabled) return;
-	const selection = await getAgentModel(env, settings.modelId);
-	if (!selection) throw new Error("AI provider is not configured");
+	const selection = await draftModel(input);
+	if (!selection) return;
 	const body = await guardedDraftText(input, selection);
 	if (body === null) return;
 	const stored = await upsertSuggestion({ env, job, source, model: input.model }, input.suggestion);

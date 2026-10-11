@@ -58,10 +58,12 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 			reasoningEffort: selection.reasoningEffort,
 		}),
 		generate: async (request, options) => {
+			// The repair and a parameter fallback are new requests, so the opt-in is checked again.
+			const current = await selectAutoReadModel(env, requested);
 			const reply = await withReservedSpend(
 				{
 					env,
-					details: selection,
+					details: current,
 					source: "auto_triage",
 					mailboxId: job.mailboxId,
 					jobId: job.id,
@@ -70,7 +72,7 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 					installCapMicros: input.installCapMicros,
 					mailboxCapMicros: settings.dailySpendCapMicros,
 				},
-				() => generateTriageText(selection.model, request, options),
+				() => generateTriageText(current.model, request, options),
 			);
 			if (!reply) throw new SpendCapReachedError();
 			return reply;

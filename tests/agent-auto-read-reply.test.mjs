@@ -62,7 +62,13 @@ beforeEach(() => {
 		const kind = system.includes(TRIAGE_SYSTEM_MARKER) ? "triage" : "draft";
 		requests.push({ kind, body });
 		if (kind === "triage") afterTriage?.();
-		const next = replies.shift() ?? (kind === "triage" ? JSON.stringify(question) : DRAFT_BODY);
+		let next = replies.shift() ?? (kind === "triage" ? JSON.stringify(question) : DRAFT_BODY);
+		if (typeof next === "function") next = await next();
+		if (typeof next === "object")
+			return new Response(JSON.stringify({ error: { message: next.message } }), {
+				status: next.status,
+				headers: { "Content-Type": "application/json" },
+			});
 		return Response.json({
 			id: "chatcmpl-1",
 			object: "chat.completion",
@@ -290,5 +296,40 @@ test("a draft over the spend cap is recorded as blocked and makes no draft reque
 	assert.deepEqual(
 		actionsFor(db, messageId).map(({ action, status, reason }) => ({ action, status, reason })),
 		[{ action: "create_draft", status: "blocked", reason: "spend_cap" }],
+	);
+});
+
+test("an opt-in revoked while the draft request is pending stops the parameter fallback", async (t) => {
+	const { db, env } = await setup(t, {
+		rates: { "fake-triage": { input: 0.05, output: 0.3, reasoningEffort: "minimal" } },
+	});
+	const { jobId, messageId } = insertJob(db);
+	let arrived;
+	let release;
+	const pending = new Promise((resolve) => (arrived = resolve));
+	const released = new Promise((resolve) => (release = resolve));
+	replies = [
+		JSON.stringify(question),
+		async () => {
+			arrived();
+			await released;
+			return { status: 400, message: "reasoning_effort is not supported by this model" };
+		},
+	];
+	const run = processAgentTriageJob(env, jobId);
+	await pending;
+	db.db.exec("UPDATE app_settings SET agent_external_auto_read_allowed = 0");
+	release();
+	await run;
+	assert.equal(jobStatus(db, jobId), "completed");
+	assert.deepEqual(
+		requests.map((request) => request.kind),
+		["triage", "draft"],
+	);
+	assert.equal(replySuggestion(db, messageId), undefined);
+	assert.deepEqual(drafts(db), []);
+	assert.deepEqual(
+		actionsFor(db, messageId).map(({ action, status, reason }) => ({ action, status, reason })),
+		[{ action: "create_draft", status: "blocked", reason: "external_provider_not_allowed" }],
 	);
 });

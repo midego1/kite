@@ -45,7 +45,10 @@ const benign = {
 };
 const reply = (content, finishReason = "stop") => ({ content, finishReason });
 
-/** Model replies, consumed in order; each entry is a reply or an HTTP status for an error. */
+/**
+ * Model replies, consumed in order; each entry is a reply, an HTTP status or `{ status, message }` for an
+ * error, or a function returning one of those (to hold a request until the test releases it).
+ */
 let replies = [];
 let requests = [];
 const realFetch = globalThis.fetch;
@@ -58,10 +61,12 @@ beforeEach(() => {
 	globalThis.fetch = async (url, init) => {
 		const body = JSON.parse(init.body);
 		requests.push({ url: String(url), body });
-		const next = replies.shift() ?? reply(JSON.stringify(benign));
-		if (typeof next === "number")
-			return new Response(JSON.stringify({ error: { message: "upstream failure" } }), {
-				status: next,
+		let next = replies.shift() ?? reply(JSON.stringify(benign));
+		if (typeof next === "function") next = await next();
+		if (typeof next === "number") next = { status: next, message: "upstream failure" };
+		if (next.status)
+			return new Response(JSON.stringify({ error: { message: next.message } }), {
+				status: next.status,
 				headers: { "Content-Type": "application/json" },
 			});
 		return Response.json({
@@ -328,6 +333,48 @@ test("an opt-in revoked or an external provider chosen after the early gate stil
 	assert.equal(jobOf(switched.db, second.jobId).status, "skipped");
 	assert.equal(jobOf(switched.db, second.jobId).reason, "external_provider_not_allowed");
 	assert.equal(requests.length, 0);
+});
+
+/** A reply the fake model holds back until `release()`; `pending` resolves once the request arrives. */
+function heldReply(answer) {
+	let arrived;
+	let release;
+	const pending = new Promise((resolve) => (arrived = resolve));
+	const released = new Promise((resolve) => (release = resolve));
+	return {
+		pending,
+		release,
+		entry: async () => {
+			arrived();
+			await released;
+			return answer;
+		},
+	};
+}
+
+test("an opt-in revoked while a triage request is pending stops the repair and the parameter fallback", async (t) => {
+	const answers = [
+		reply("not json {category: other"),
+		{ status: 400, message: "response_format json_object is not supported by this model" },
+	];
+	for (const answer of answers) {
+		const { db, env } = await setup(t);
+		const { jobId, messageId } = insertJob(db);
+		const held = heldReply(answer);
+		requests = [];
+		replies = [held.entry];
+		const run = processAgentTriageJob(env, jobId);
+		await held.pending;
+		db.db.exec("UPDATE app_settings SET agent_external_auto_read_allowed = 0");
+		held.release();
+		await run;
+		assert.equal(requests.length, 1, "no second request after the opt-in is revoked");
+		assert.deepEqual(
+			{ status: jobOf(db, jobId).status, reason: jobOf(db, jobId).reason },
+			{ status: "skipped", reason: "external_provider_not_allowed" },
+		);
+		assert.deepEqual(suggestionsOf(db, messageId), []);
+	}
 });
 
 test("list mail is settled from its raw headers without a model request", async (t) => {

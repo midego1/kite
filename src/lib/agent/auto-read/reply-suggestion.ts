@@ -43,10 +43,12 @@ async function generateDraft(input: ReplySuggestionInput, selection: AgentSelect
 		reasoningEffort: selection.reasoningEffort,
 	});
 	const generated = await callWithFallback(options, async (current) => {
+		// A parameter fallback is a new request, so the opt-in is checked again.
+		const model = await selectAutoReadModel(env, settings.modelId);
 		const reply = await withReservedSpend(
 			{
 				env,
-				details: selection,
+				details: model,
 				source: "auto_draft",
 				mailboxId: job.mailboxId,
 				jobId: job.id,
@@ -57,7 +59,7 @@ async function generateDraft(input: ReplySuggestionInput, selection: AgentSelect
 			},
 			() =>
 				generateReplyDraft({
-					model: selection.model,
+					model: model.model,
 					instructions: settings.instructions,
 					thread,
 					maxOutputTokens: current.maxOutputTokens,
@@ -127,8 +129,12 @@ async function guardedDraftText(input: ReplySuggestionInput, selection: AgentSel
 	try {
 		text = await generateDraft(input, selection, thread);
 	} catch (error) {
-		if (!(error instanceof SpendCapReachedError)) throw error;
-		await blockDraft(input, "spend_cap");
+		if (error instanceof SpendCapReachedError) {
+			await blockDraft(input, "spend_cap");
+			return null;
+		}
+		if (!(error instanceof ExternalProviderNotAllowedError)) throw error;
+		await blockDraft(input, "external_provider_not_allowed");
 		return null;
 	}
 	const guarded = guardDraft(text, threadReferences(thread));

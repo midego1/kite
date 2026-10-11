@@ -250,15 +250,27 @@ export function RegisterClient() {
 							</div>
 						)}
 						{checks.map((check) => (
-							<div key={check.key} className="flex items-start gap-3 rounded-2xl bg-neutral-50 px-4 py-3">
+							<div
+								key={check.key}
+								className={`flex items-start gap-3 rounded-2xl px-4 py-3 ${
+									!check.configured && check.severity === "recommended" ? "bg-amber-50" : "bg-neutral-50"
+								}`}
+							>
 								{check.configured ? (
 									<CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+								) : check.severity === "recommended" ? (
+									<AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
 								) : (
 									<XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
 								)}
 								<div>
 									<p className="text-sm font-medium text-neutral-800">{check.key}</p>
-									{!check.configured && <p className="mt-1 text-xs leading-5 text-neutral-500">{check.message}</p>}
+									{!check.configured && (
+										<p className="mt-1 break-words text-xs leading-5 text-neutral-600">
+											{check.severity === "recommended" ? "Recommended: " : ""}
+											{check.message}
+										</p>
+									)}
 								</div>
 							</div>
 						))}

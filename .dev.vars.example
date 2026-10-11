@@ -5,10 +5,12 @@
 # value and anything shorter than 16 characters; use e.g. `openssl rand -hex 32`.
 SETUP_TOKEN=a-long-random-string
 
-# Optional: encrypts provider keys and webhook secrets stored in D1 (AES-GCM).
-# Existing plaintext values keep working and are encrypted the next time they are saved.
-# Keep it safe: losing or changing it makes the encrypted values unreadable.
-# APP_ENCRYPTION_KEY=a-long-random-string
+# Encrypts provider keys and webhook secrets stored in D1 (AES-GCM). Listed here uncommented so the
+# Deploy to Cloudflare button asks for it; replace the example value with a long random string, for
+# example from `openssl rand -hex 32`. First-run setup in production refuses the example value and
+# anything shorter than 16 characters. Existing plaintext values keep working and are encrypted the
+# next time they are saved. Keep a copy: losing or changing it makes the encrypted values unreadable.
+APP_ENCRYPTION_KEY=a-long-random-string
 
 # Preferred: scoped API token.
 # This is an app runtime token, not the Cloudflare deploy/build token.
@@ -28,8 +30,14 @@ CF_TOKEN=your_api_token_with_zone_email_permissions
 # AWS_SECRET_ACCESS_KEY=your_secret_access_key
 # AWS_REGION=us-east-1
 # Public HTTPS address. Receiving through Resend or SES needs it, and password
-# reset links are only sent when it is set.
+# reset links are only sent when it is set. Add it after the first deploy, once you know the address;
+# the setup page shows the exact value to use.
 # APP_URL=https://mail.example.com
+
+# Optional: most messages one user may send per rolling hour and day (defaults 100 and 500; 0 removes
+# a limit). Applies to the composer, the API, JMAP, MCP approvals, invitations and automatic replies.
+# SEND_LIMIT_PER_HOUR=100
+# SEND_LIMIT_PER_DAY=500
 
 # Development and tests only: lets the alert webhook (Admin > Alerts) post over http
 # to a loopback address such as http://127.0.0.1:3290/hook. Ignored in production.

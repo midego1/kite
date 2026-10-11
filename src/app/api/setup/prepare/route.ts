@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { hasAdminAccount } from "@/lib/auth/setup";
 import { requireSetupToken } from "@/lib/auth/setup-token";
 import { getEnv } from "@/lib/cloudflare";
-import { getSetupRequirementChecks } from "@/lib/setup/configuration";
+import { isNodeRuntime } from "@/lib/runtime";
+import { runSetupRequirementChecks } from "@/lib/setup/configuration";
 import { migrateCleanDatabase } from "@/lib/setup/migration";
 
 export async function POST(request: Request) {
@@ -13,9 +14,17 @@ export async function POST(request: Request) {
 	const tokenRejection = requireSetupToken(env, request);
 	if (tokenRejection) return tokenRejection;
 
-	const checks = getSetupRequirementChecks(env);
-	if (checks.some((check) => !check.configured)) {
-		return NextResponse.json({ checks, migrated: false }, { status: 503 });
+	const { checks, blocked } = await runSetupRequirementChecks(env, {
+		// Behind a proxy the self-hosted server sees an internal address, so only Workers can suggest APP_URL.
+		origin: isNodeRuntime(env) ? undefined : new URL(request.url).origin,
+		production: process.env.NODE_ENV === "production",
+	});
+	if (blocked) {
+		const failing = checks.find((check) => !check.configured && check.severity !== "recommended");
+		return NextResponse.json(
+			{ checks, migrated: false, error: failing ? `${failing.key}: ${failing.message}` : undefined },
+			{ status: 503 },
+		);
 	}
 
 	try {

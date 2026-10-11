@@ -17,6 +17,7 @@
 		"src/lib/auth/user-lookup-utils.ts",
 		"src/lib/backups/backup-writer-utils.ts",
 		"src/lib/backups/restore-utils.ts",
+		"src/lib/email/send-limits-utils.ts",
 		"src/lib/email/trash-retention-utils.ts",
 		"src/lib/email/undo-send-utils.ts",
 		"src/lib/import/imap-utils.ts",
@@ -25,7 +26,8 @@
 		"src/lib/maintenance/pruning-utils.ts",
 		"src/lib/messages/cursor-utils.ts",
 		"src/lib/messages/permanent-delete-utils.ts",
-		"src/lib/profile/identity-utils.ts"
+		"src/lib/profile/identity-utils.ts",
+		"src/lib/setup/configuration-utils.ts"
 	],
 	"ungated": {
 		"src/lib/auth/password-reset-utils.ts": "no unit test bundles it; covered only through the e2e suite",

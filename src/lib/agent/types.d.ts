@@ -37,4 +37,6 @@ export type AgentToolContext = {
 	timeZone?: string;
 	/** Id for the next draft this context creates, chosen up front so an audited action can find it again. */
 	draftId?: string;
+	/** Overrides the From/Reply-To address a reply draft goes to (a calendar proposal goes to the ICS organizer). */
+	replyTo?: string;
 };

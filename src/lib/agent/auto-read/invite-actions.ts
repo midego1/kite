@@ -236,6 +236,7 @@ async function propose(ctx: Context, option: InviteOption): Promise<InviteResult
 				mailboxId: ctx.row.mailboxId,
 				sourceMessageId: ctx.row.messageId,
 				body,
+				to: ctx.payload.organizer ?? undefined,
 			}),
 		),
 	);

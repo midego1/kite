@@ -6,6 +6,7 @@ import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { AgentActionError } from "./action-error";
 import { INVERSE_EFFECTS } from "./action-effects";
+import { authorizeCreateEventUndo } from "./calendar-undo";
 import type { ActionMeta, ActionState, AgentActionRow, ExecuteActionInput, ExecuteActionResult } from "./actions-types";
 import {
 	UNDO_VARIANT_PREFIX,
@@ -253,6 +254,7 @@ export async function undoAgentAction(
 	if (refusal) throw new AgentActionError(refusal.error, refusal.status);
 	const inverse = INVERSE_EFFECTS[row.action];
 	if (!inverse) throw new AgentActionError("This action cannot be undone", 409);
+	if (row.action === "create_event") await authorizeCreateEventUndo(env, row, user);
 
 	const claimed = await db
 		.update(agentActions)

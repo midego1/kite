@@ -2,10 +2,12 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { calendarEvents } from "@/db/schema";
 import { agentActions } from "@/db/schema/agent-auto-read";
+import type { SessionUser } from "@/lib/auth/types";
 import { cancelQueuedSend } from "@/lib/email/send";
+import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { AgentActionError } from "./action-error";
 import type { AgentActionRow } from "./actions-types";
-import { parseActionState } from "./actions-utils";
+import { parseActionState, undoRefusal } from "./actions-utils";
 import { reopenIfIdle } from "./calendar-state";
 import { deserializeEventRow, snapshotValues, type EventSnapshot } from "./invite-actions-utils";
 
@@ -14,14 +16,9 @@ function stringField(state: Record<string, unknown> | null, key: string): string
 	return typeof value === "string" ? value : null;
 }
 
-/**
- * Takes the linked "accepted" reply back when it is still queued. A reply already sent stays: the
- * event is removed anyway and the card offers "Send decline instead".
- */
-async function cancelLinkedAcceptance(env: CloudflareEnv, row: AgentActionRow, userId: string): Promise<void> {
-	if (!row.suggestionId) return;
-	const db = getDb(env);
-	const [rsvp] = await db
+async function findLinkedAcceptance(env: CloudflareEnv, row: AgentActionRow): Promise<AgentActionRow | null> {
+	if (!row.suggestionId) return null;
+	const [rsvp] = await getDb(env)
 		.select()
 		.from(agentActions)
 		.where(
@@ -33,11 +30,41 @@ async function cancelLinkedAcceptance(env: CloudflareEnv, row: AgentActionRow, u
 			),
 		)
 		.limit(1);
+	return rsvp ?? null;
+}
+
+/**
+ * Undoing a new event also takes back its queued "accepted" reply, so the undoing user must pass the
+ * same check as undoing that reply directly (send-on-behalf, and the user who sent it). Runs before
+ * the undo claims or changes anything; a 409 for a reply that can no longer be taken back is not
+ * an authorization failure and is left to the undo itself.
+ */
+export async function authorizeCreateEventUndo(
+	env: CloudflareEnv,
+	row: AgentActionRow,
+	user: Pick<SessionUser, "id" | "role">,
+): Promise<void> {
+	if (row.variant === "update") return;
+	const rsvp = await findLinkedAcceptance(env, row);
+	if (!rsvp) return;
+	const access = await getMailboxAccessLevel(getDb(env), user, row.mailboxId);
+	const refusal = access ? undoRefusal(rsvp, user.id, access, new Date()) : null;
+	if (!access || refusal?.status === 403)
+		throw new AgentActionError(refusal?.error ?? "You do not have permission to undo this action", 403);
+}
+
+/**
+ * Takes the linked "accepted" reply back when it is still queued. A reply already sent stays: the
+ * event is removed anyway and the card offers "Send decline instead". The caller was authorized by
+ * `authorizeCreateEventUndo`; the queued message belongs to the user who sent it.
+ */
+async function cancelLinkedAcceptance(env: CloudflareEnv, row: AgentActionRow, userId: string): Promise<void> {
+	const rsvp = await findLinkedAcceptance(env, row);
 	const messageId = stringField(parseActionState(rsvp?.after ?? null), "messageId");
 	if (!rsvp || !rsvp.actingUserId || !messageId) return;
 	if (!(await cancelQueuedSend(env, rsvp.actingUserId, messageId)).ok) return;
 	const now = new Date();
-	await db
+	await getDb(env)
 		.update(agentActions)
 		.set({ status: "undone", undoneAt: now, undoneByUserId: userId, updatedAt: now })
 		.where(and(eq(agentActions.id, rsvp.id), eq(agentActions.status, "applied")));

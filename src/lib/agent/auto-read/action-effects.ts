@@ -60,12 +60,21 @@ export function draftReplyEffect(input: {
 	mailboxId: string;
 	sourceMessageId: string;
 	body: string;
+	/** Address the draft goes to instead of the source's From or Reply-To. */
+	to?: string;
 }): ActionEffect {
 	return {
 		ids: { draftId: newId("msg") },
 		async apply(ids) {
 			const result = (await runEmailTool(
-				{ env: input.env, user: input.reviewer, mailboxId: input.mailboxId, origin: "auto", draftId: ids.draftId },
+				{
+					env: input.env,
+					user: input.reviewer,
+					mailboxId: input.mailboxId,
+					origin: "auto",
+					draftId: ids.draftId,
+					replyTo: input.to,
+				},
 				"draft_reply",
 				{ emailId: input.sourceMessageId, body: input.body },
 			)) as { draftId: string };

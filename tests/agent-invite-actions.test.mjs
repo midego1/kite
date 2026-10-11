@@ -380,6 +380,54 @@ test("propose saves a draft with the stored slots appended and sends nothing", a
 	assert.equal(ctx.db.db.prepare("SELECT count(*) AS n FROM messages WHERE status = 'draft'").get().n, 1);
 });
 
+test("propose addresses the ICS organizer only, not the From or Reply-To of the mail", async (t) => {
+	const ctx = await setup(t);
+	ctx.db.db
+		.prepare(
+			"UPDATE messages SET from_addr = 'Calendar <notifications@service.test>', raw_r2_key = 'raw/source-1.eml' WHERE id = 'source-1'",
+		)
+		.run();
+	await ctx.env.BUCKET.put(
+		"raw/source-1.eml",
+		new TextEncoder().encode(
+			"From: Calendar <notifications@service.test>\r\nReply-To: Assistant <assistant@service.test>\r\nTo: support@example.com\r\nSubject: Planning\r\n\r\nJoin us",
+		),
+	);
+	addSuggestion(ctx.db, "sugg-1", payload({ organizer: "boss@partner.test" }));
+	await answer(ctx, "propose");
+	const draft = ctx.db.db.prepare("SELECT * FROM messages WHERE status = 'draft'").get();
+	assert.equal(draft.to_addr, "boss@partner.test");
+	assert.ok(!draft.cc_addr);
+});
+
+test("undo of an accepted invite by a full-access user who did not send the reply is a 403 that changes nothing", async (t) => {
+	const ctx = await setup(t, { undoSendSeconds: 30 });
+	ctx.db.db.exec(`
+		UPDATE mailboxes SET type = 'shared' WHERE id = 'mailbox-a';
+		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('helper', 'helper@example.com', 'hash', 'Helper', 1);
+		INSERT INTO mailbox_access (id, mailbox_id, user_id, permission, created_at) VALUES ('access-h', 'mailbox-a', 'helper', 'full_access', 1);
+	`);
+	addSuggestion(ctx.db, "sugg-1", payload());
+	await answer(ctx, "accept");
+	const [created] = actions(ctx.db, "action = 'create_event'");
+	const snapshot = () =>
+		JSON.stringify([
+			events(ctx.db),
+			actions(ctx.db),
+			outbound(ctx.db),
+			ctx.db.db.prepare("SELECT * FROM outbound_jobs").all(),
+			suggestion(ctx.db),
+		]);
+	const before = snapshot();
+	await assert.rejects(
+		undoAgentAction(ctx.env, { id: "helper", role: "user" }, created.id),
+		(error) => error.status === 403,
+	);
+	assert.equal(snapshot(), before);
+	assert.equal(events(ctx.db).length, 1);
+	assert.equal(outbound(ctx.db)[0].status, "queued");
+});
+
 test("options that do not fit the invitation or the user are refused without side effects", async (t) => {
 	const ctx = await setup(t);
 	addSuggestion(ctx.db, "sugg-1", payload());

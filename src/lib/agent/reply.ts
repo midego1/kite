@@ -11,8 +11,8 @@ export async function getReplyRecipients(
 	source: typeof messages.$inferSelect,
 	replyAll: boolean,
 ) {
-	let recipient = normalizeEmailAddress(source.fromAddr);
-	if (source.rawR2Key) {
+	let recipient = normalizeEmailAddress(context.replyTo ?? source.fromAddr);
+	if (source.rawR2Key && !context.replyTo) {
 		const object = await context.env.BUCKET.get(source.rawR2Key);
 		if (object) {
 			const parsed = await PostalMime.parse(await object.arrayBuffer());

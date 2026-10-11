@@ -3796,10 +3796,12 @@ test.describe("calendar invite card", () => {
 		to: string,
 		options: Parameters<typeof inviteAttachment>[0],
 		text = "Please join.",
+		mail: { from?: string; headers?: Record<string, string> } = {},
 	) {
 		const subject = uniqueToken("card");
 		await postInbound(client, {
-			from: `Alice <${ORGANIZER}>`,
+			...mail,
+			from: mail.from ?? `Alice <${ORGANIZER}>`,
 			to,
 			subject,
 			text,
@@ -3913,6 +3915,40 @@ test.describe("calendar invite card", () => {
 				["declined", "undone"],
 			]);
 			expect(errors.filter((message) => !message.includes("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await stopMailbox(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("Propose new time drafts to the ICS organizer, not the From or Reply-To of the mail", async ({ browser }) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await inviteAccount("icp");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const invite = await deliver(
+				account.api,
+				account.mailboxId,
+				account.address,
+				{ uid: `${uniqueToken("uid")}@partner.test`, start: futureAt(33, 10), organizer: "boss@partner.test" },
+				"Please join.",
+				{
+					from: "Calendar <notifications@service.test>",
+					headers: { "Reply-To": "Assistant <assistant@service.test>" },
+				},
+			);
+			const page = await context.newPage();
+			await selectMailbox(page, account.mailboxId);
+			await openInvite(page, invite.message);
+			await inviteBlock(page).getByRole("button", { name: "Propose new time" }).click();
+			await expect(page).toHaveURL(/\/drafts\/[^/]+$/);
+			const draftId = page.url().split("/").pop()!;
+			const draft = JSON.stringify(await okJson(await account.api.get(`/api/messages/${draftId}`)));
+			expect(draft).toContain("boss@partner.test");
+			expect(draft).not.toContain("notifications@service.test");
+			expect(draft).not.toContain("assistant@service.test");
 		} finally {
 			await context.close();
 			await stopMailbox(account.api, account.mailboxId);

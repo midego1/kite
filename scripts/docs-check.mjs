@@ -19,6 +19,7 @@ const packageJson = JSON.parse(await readFile(path.join(repositoryRoot, "package
 const contractDocs = [
 	"AGENTS.md",
 	"README.md",
+	"docs/assistant.md",
 	"docs/mission-readiness.md",
 	"docs/operations.md",
 	"docs/pii-handling.md",

@@ -6,9 +6,11 @@ import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import type { SessionUser } from "@/lib/auth/types";
 import { getMailboxAccessLevel, listAccessibleMailboxes } from "@/lib/mailboxes/access";
 import { AgentActionError } from "./action-error";
+import { settled } from "./action-response";
 import { discardAgentDraft, dismissSuggestionEffect } from "./action-effects";
-import type { ActionEffect, ExecuteActionResult } from "./actions-types";
+import type { ActionEffect } from "./actions-types";
 import { executeAction } from "./execute";
+import { acceptInvite } from "./invite-actions";
 import { senderAddressOf } from "./facts-utils";
 import { muteSender } from "./muted-senders";
 import {
@@ -141,11 +143,6 @@ async function reviewDraft(env: CloudflareEnv, user: SessionUser, status: string
 	return { status, draftId, url: `/drafts/${draftId}` };
 }
 
-function settled(result: ExecuteActionResult): ExecuteActionResult {
-	if (result.status === "applied" || result.status === "skipped") return result;
-	throw new AgentActionError(result.reason ?? "The action could not be completed", 409);
-}
-
 /**
  * Accepts a suggestion with one of its options. `review` on a reply only hands back the draft to open,
  * and only to the reviewer who owns it; the user sends it from the composer. `mark_spam` on a phishing
@@ -153,6 +150,7 @@ function settled(result: ExecuteActionResult): ExecuteActionResult {
  */
 export async function acceptSuggestion(env: CloudflareEnv, user: SessionUser, suggestionId: string, option: string) {
 	const { row, access } = await loadForDecision(env, user, suggestionId);
+	if (row.kind === "calendar_invite") return acceptInvite(env, user, access, row, option);
 	const refusal = acceptRefusal(row, option);
 	if (refusal) throw new AgentActionError(refusal.error, refusal.status);
 	if (row.kind === "reply") return reviewDraft(env, user, row.status, row.draftId!);

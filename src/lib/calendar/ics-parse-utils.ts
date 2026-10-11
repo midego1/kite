@@ -2,7 +2,7 @@ import { dateFromZonedFields, isValidTimeZone } from "@/lib/time/utils";
 
 export const ICS_MAX_BYTES = 256 * 1024;
 
-export type IcsAttendee = { email: string; name: string | null; partstat: string | null };
+type IcsAttendee = { email: string; name: string | null; partstat: string | null };
 
 export type IcsInvite = {
 	method: string | null;
@@ -23,8 +23,7 @@ export type IcsInvite = {
 	rrule: string | null;
 };
 
-export type IcsParseError =
-	"too_large" | "no_event" | "missing_uid" | "invalid_time" | "unknown_timezone" | "floating_time";
+type IcsParseError = "too_large" | "no_event" | "missing_uid" | "invalid_time" | "unknown_timezone" | "floating_time";
 export type IcsParseResult = { ok: true; invite: IcsInvite } | { ok: false; error: IcsParseError };
 
 type Property = { name: string; params: Record<string, string>; value: string };

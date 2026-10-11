@@ -15,6 +15,7 @@
 		"src/lib/agent/auto-read/actions-utils.ts",
 		"src/lib/agent/auto-read/draft-guard-utils.ts",
 		"src/lib/agent/auto-read/facts-utils.ts",
+		"src/lib/agent/auto-read/invite-actions-utils.ts",
 		"src/lib/agent/auto-read/invite-utils.ts",
 		"src/lib/agent/auto-read/for-you-utils.ts",
 		"src/lib/agent/auto-read/model-call-utils.ts",

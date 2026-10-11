@@ -34,6 +34,39 @@ export const ACTION_REGISTRY: Partial<Record<AgentActionType, ActionMeta>> = {
 		variants: ["spam"],
 		undo: { "*": { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "manage", actingUserOnly: false } },
 	},
+	// Inverse of a new event: delete it and cancel a still-queued "accepted" reply. Inverse of an update: restore the old fields.
+	create_event: {
+		executePermission: "manage",
+		variants: ["", "update"],
+		undo: {
+			"*": {
+				windowMs: DEFAULT_UNDO_WINDOW_MS,
+				permission: "manage",
+				actingUserOnly: false,
+				inverseAction: "delete_event",
+			},
+			update: { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "manage", actingUserOnly: false },
+		},
+	},
+	// Inverse: recreate the event from the row kept in `before`.
+	delete_event: {
+		executePermission: "manage",
+		variants: [""],
+		undo: {
+			"*": {
+				windowMs: DEFAULT_UNDO_WINDOW_MS,
+				permission: "manage",
+				actingUserOnly: false,
+				inverseAction: "create_event",
+			},
+		},
+	},
+	// Inverse: cancel while still queued; once sent, the opposite reply is sent as its own action.
+	send_rsvp: {
+		executePermission: "send_on_behalf",
+		variants: ["accepted", "declined"],
+		undo: { "*": { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "send_on_behalf", actingUserOnly: true } },
+	},
 	// Inverse: discard the draft, unless a person edited or sent it. Drafts are private to their user.
 	create_draft: {
 		executePermission: "send_on_behalf",

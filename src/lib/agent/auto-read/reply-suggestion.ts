@@ -34,7 +34,11 @@ type ReplySuggestionInput = {
 };
 
 /** One draft request; its estimated cost is reserved first (source auto_draft, the triage job's ids). */
-async function generateDraft(input: ReplySuggestionInput, selection: AgentSelection, thread: SourceMessage[]) {
+export async function generateDraft(
+	input: Pick<ReplySuggestionInput, "env" | "job" | "settings" | "installCapMicros">,
+	selection: AgentSelection,
+	thread: SourceMessage[],
+) {
 	const { env, job, settings } = input;
 	const promptChars = draftPromptChars({ instructions: settings.instructions, thread });
 	const options = buildModelCallOptions({

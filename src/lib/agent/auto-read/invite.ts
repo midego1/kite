@@ -47,7 +47,7 @@ async function schedule(env: CloudflareEnv, reviewer: typeof users.$inferSelect,
 async function proposals(
 	env: CloudflareEnv,
 	reviewer: typeof users.$inferSelect,
-	invite: IcsInvite,
+	invite: Pick<IcsInvite, "allDay" | "start" | "end">,
 	existingEventId: string | null,
 ) {
 	if (invite.allDay) return [];
@@ -63,6 +63,17 @@ async function proposals(
 	const { workHours, tz } = resolveWorkingHours(booking ?? null, reviewer.timeZone);
 	const minutes = Math.max(1, Math.round((Date.parse(invite.end) - Date.parse(invite.start)) / 60_000));
 	return proposeSlots(busyBlocks(events, now, horizon), minutes, workHours, tz, 3, PROPOSAL_HORIZON_DAYS, now);
+}
+
+/** Free slots for an accepted invitation's length when its stored proposals are empty (no conflict was found). */
+export async function proposeSlotsForInvite(
+	env: CloudflareEnv,
+	reviewerUserId: string,
+	payload: Pick<CalendarInvitePayload, "start" | "end" | "existingEventId">,
+) {
+	const [reviewer] = await getDb(env).select().from(users).where(eq(users.id, reviewerUserId)).limit(1);
+	if (!reviewer) return [];
+	return proposals(env, reviewer, { allDay: false, ...payload }, payload.existingEventId ?? null);
 }
 
 /**

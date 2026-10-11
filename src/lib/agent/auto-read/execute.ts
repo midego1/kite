@@ -261,7 +261,7 @@ export async function undoAgentAction(
 		.returning({ id: agentActions.id });
 	if (claimed.length === 0) throw new AgentActionError("Only applied actions can be undone", 409);
 	try {
-		await inverse(env, row);
+		await inverse(env, row, user.id);
 	} catch (error) {
 		await restoreApplied(db, row.id);
 		if (error instanceof AgentActionError) throw error;

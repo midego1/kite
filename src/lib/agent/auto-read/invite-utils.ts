@@ -1,4 +1,4 @@
-import type { WorkHours } from "@/lib/calendar/availability-utils";
+import { findConflicts, type WorkHours } from "@/lib/calendar/availability-utils";
 import type { IcsInvite } from "@/lib/calendar/ics-parse-utils";
 import { normalizeEmailAddress } from "@/lib/email/address";
 import { normalizeTimeZone } from "@/lib/time/utils";
@@ -88,15 +88,8 @@ export function availabilityWindow(invite: IcsInvite): { from: Date; to: Date } 
 
 /** Events that overlap the invite itself, ignoring the stored copy of the invite being updated. */
 export function overlappingEvents(events: ScheduleEvent[], invite: IcsInvite, existingEventId: string | null) {
-	const start = Date.parse(invite.start);
-	const end = Date.parse(invite.end);
-	return events.filter(
-		(event) =>
-			event.seriesId !== existingEventId &&
-			event.id !== existingEventId &&
-			Date.parse(event.startsAt) < end &&
-			Date.parse(event.endsAt) > start,
-	);
+	const others = events.filter((event) => event.seriesId !== existingEventId && event.id !== existingEventId);
+	return findConflicts(others, new Date(invite.start), new Date(invite.end));
 }
 
 export function buildInvitePayload(input: {

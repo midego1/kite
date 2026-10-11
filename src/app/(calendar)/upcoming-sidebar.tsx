@@ -120,20 +120,33 @@ export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }
 								<button
 									key={event.id}
 									type="button"
+									data-status={event.status === "tentative" ? "tentative" : undefined}
 									onClick={() =>
 										onSelect ? onSelect(event) : router.push(`/calendar?event=${encodeURIComponent(event.id)}`)
 									}
 									className="group flex w-full items-start gap-3 text-left"
 								>
 									<span
-										className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-white ring-1 ring-neutral-200"
-										style={{ backgroundColor: normalizeCalendarColor(event.color) }}
+										className={clsx(
+											"mt-0.5 h-4 w-4 shrink-0 rounded-full",
+											event.status === "tentative"
+												? "border-2 border-dashed border-neutral-500 bg-transparent"
+												: "border-2 border-white ring-1 ring-neutral-200",
+										)}
+										style={
+											event.status === "tentative"
+												? undefined
+												: { backgroundColor: normalizeCalendarColor(event.color) }
+										}
 									/>
 									<span className="min-w-0">
 										<span className="block truncate text-sm text-neutral-700 group-hover:text-neutral-950">
 											{event.title}
 										</span>
-										<span className="block text-xs text-neutral-400">{formatEventRange(event)}</span>
+										<span className="block text-xs text-neutral-400">
+											{formatEventRange(event)}
+											{event.status === "tentative" && <span className="ml-1 italic">Tentative</span>}
+										</span>
 									</span>
 								</button>
 							))}

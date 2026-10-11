@@ -49,12 +49,14 @@ Every automatic request is checked against these limits before it runs. Cheaper 
 - **Spend cap for the install.** A daily cap in USD for all mailboxes together, set by the primary admin. Default $2.00 per day.
 - **When model rates are unknown.** If the model has no configured prices, Kite cannot count dollars. It then counts input tokens instead, with a cap of 2,000,000 input tokens per day for the install. Set rates for your model to get a dollar cap.
 
-Kite reserves the estimated cost before each call and settles it with the real usage afterwards, so parallel jobs cannot overspend the cap. When a cap is reached the message is skipped as "daily spend cap reached" and later mail is skipped until 00:00 UTC.
+Kite reserves the estimated cost before each call and settles it with the real usage afterwards, so parallel jobs are counted against the cap before they run. Once reserved and settled spend reaches the cap, Kite starts no new calls: the message is skipped as "daily spend cap reached" and later mail is skipped until 00:00 UTC. The cap is not a guaranteed billing ceiling. Estimates are not exact, so what your provider bills can slightly exceed it.
 
 ## Kill switches
 
-- **Install-wide.** The primary admin can turn automatic reading off for every mailbox with one switch, and can turn external providers off again at any time. Both are read again for every request, so a job already in the queue obeys them.
-- **Per mailbox.** Set the level to Off, or **Pause** automatic reading until a time you choose.
+- **Install-wide.** The primary admin can turn automatic reading off for every mailbox with one switch, and can turn external providers off again at any time.
+- **Per mailbox.** Set the level to Off, or use **Pause for 24 hours**. While a mailbox is paused, the settings show the end time and a **Resume** button.
+
+When each switch takes effect differs. Kite checks the automatic-reading switch, a mailbox's Off level and pause, and the daily limit when a queued job starts. A job that has not started yet is skipped. A job that is already running may still finish its remaining model calls, such as a repair, a fallback or a reply draft. The external-provider opt-in is checked again before every model request, so turning it off also stops those remaining calls to an external provider.
 - **Assistant off.** Turning the email assistant off stops all of it.
 
 ## Why Kite skipped a message

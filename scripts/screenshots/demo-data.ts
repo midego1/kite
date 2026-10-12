@@ -46,11 +46,15 @@ const EVENTS = [
 	{ day: 4, start: "14:00", end: "15:00", title: "Release check-in", color: "blue" },
 ];
 
-const plainText = (html: string) =>
-	html
-		.replace(/<\/(p|li|h2)>/g, "\n")
-		.replace(/<[^>]+>/g, "")
-		.trim();
+function plainText(html: string): string {
+	let text = html.replace(/<\/(p|li|h2)>/g, "\n");
+	// Repeat until stable so removing one tag cannot leave another one behind.
+	for (let previous = ""; previous !== text; ) {
+		previous = text;
+		text = text.replace(/<[^>]*>/g, "");
+	}
+	return text.replace(/[<>]/g, "").trim();
+}
 
 /** Monday of the week the calendar shows, which starts on Sunday, so a Sunday run still lands inside the shown week. */
 function mondayOfThisWeek(): Date {

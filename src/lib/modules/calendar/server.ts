@@ -4,6 +4,8 @@ import { users } from "@/db/schema";
 import { CALENDAR_TOOL_NAMES } from "@/lib/calendar/tool-schemas";
 import type { CalendarToolName } from "@/lib/calendar/tool-types";
 import { toJsonOutput, withCalendarToolRefs } from "@/lib/calendar/tool-ref-utils";
+import { searchCalendarEvents } from "@/lib/calendar/search";
+import { freezeLegacySeriesTimeZone } from "@/lib/calendar/time-zone";
 import { runCalendarTool } from "@/lib/calendar/tools";
 import { getEnv } from "@/lib/cloudflare";
 import { AgentActionError } from "@/lib/agent/auto-read/action-error";
@@ -64,14 +66,34 @@ function toolHandler(name: CalendarToolName): CapabilityHandler {
 	};
 }
 
+const searchHandler: CapabilityHandler = async (input, ctx) => {
+	if (!ctx.viewer) return { items: [] };
+	const { query, limit } = input as { query: string; limit: number };
+	const items = await searchCalendarEvents(getEnv(), {
+		userId: ctx.viewer.userId,
+		timeZone: ctx.timeZone,
+		query,
+		limit,
+	});
+	return { items };
+};
+
+/** `from` is the zone the user's legacy series were being read in; without one there is nothing to freeze. */
+const timeZoneChangedHandler: CapabilityHandler = async (input) => {
+	const { userId, from } = input as { userId: string; from: string | null };
+	if (!from) return { handled: false };
+	await freezeLegacySeriesTimeZone(getEnv(), userId, from);
+	return { handled: true };
+};
+
 export const calendarHandlers: Record<string, CapabilityHandler> = {
 	...Object.fromEntries(CALENDAR_TOOL_NAMES.map((name) => [name, toolHandler(name)])),
-	search: async () => ({ items: [] }),
+	search: searchHandler,
 	resolveRefs: resolveCalendarRefs,
 	invite: inviteStep,
 	answerInvite: answerInviteHandler,
 	createEvent: actionHandler("createEvent"),
 	deleteEvent: actionHandler("deleteEvent"),
 	sendRsvp: actionHandler("sendRsvp"),
-	timeZoneChanged: async () => ({ handled: false }),
+	timeZoneChanged: timeZoneChangedHandler,
 };

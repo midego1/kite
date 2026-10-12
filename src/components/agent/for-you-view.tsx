@@ -10,6 +10,7 @@ import { dispatchAgentSuggestionChanged } from "@/hooks/message-realtime-utils";
 import type { OpenSuggestion } from "@/hooks/open-suggestions-types";
 import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
 import { authFetch } from "@/lib/auth/client";
+import { isSameOriginPath } from "@/lib/modules/path-utils";
 import { FOR_YOU_KIND_LABELS, groupForYou, keepListedSelection } from "@/lib/agent/auto-read/for-you-utils";
 
 async function dismissAll(ids: string[]): Promise<number> {
@@ -37,6 +38,15 @@ function ForYouEntry({
 	onToggle: (id: string) => void;
 }) {
 	const subject = suggestion.message.subject || "(No subject)";
+	const summary = (
+		<>
+			<span className="block truncate text-sm font-medium text-neutral-900">{subject}</span>
+			<span className="block truncate text-sm text-neutral-600">{suggestion.title}</span>
+			<span className="block truncate text-xs text-neutral-500">
+				{[suggestion.message.from, mailbox].filter(Boolean).join(" · ")}
+			</span>
+		</>
+	);
 	return (
 		<li className="flex items-start gap-3 px-4 py-3" data-for-you-entry={suggestion.id}>
 			<Checkbox
@@ -45,16 +55,16 @@ function ForYouEntry({
 				onChange={() => onToggle(suggestion.id)}
 				aria-label={`Select ${subject}`}
 			/>
-			<Link
-				href={`/inbox/${encodeURIComponent(suggestion.messageId)}`}
-				className="min-w-0 flex-1 rounded-md hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-			>
-				<span className="block truncate text-sm font-medium text-neutral-900">{subject}</span>
-				<span className="block truncate text-sm text-neutral-600">{suggestion.title}</span>
-				<span className="block truncate text-xs text-neutral-500">
-					{[suggestion.message.from, mailbox].filter(Boolean).join(" · ")}
-				</span>
-			</Link>
+			{isSameOriginPath(suggestion.messageTarget.href) ? (
+				<Link
+					href={suggestion.messageTarget.href}
+					className="min-w-0 flex-1 rounded-md hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+				>
+					{summary}
+				</Link>
+			) : (
+				<div className="min-w-0 flex-1">{summary}</div>
+			)}
 			<time dateTime={suggestion.createdAt} className="shrink-0 text-xs text-neutral-500">
 				{formatMessageListTimestamp(suggestion.createdAt)}
 			</time>

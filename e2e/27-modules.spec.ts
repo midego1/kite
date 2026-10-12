@@ -2065,3 +2065,247 @@ test("JMAP answers the same session and methods with every module on and every m
 		await api.dispose();
 	}
 });
+
+type SearchSection = {
+	id: string;
+	label: string;
+	items: { ref: { kind: string; id: string }; label: string; sublabel: string; href: string }[];
+};
+
+async function searchSections(api: APIRequestContext, query: string, extra = ""): Promise<SearchSection[]> {
+	const response = await api.get(`/api/search?q=${encodeURIComponent(query)}${extra}`);
+	expect(response.status(), await response.text()).toBe(200);
+	return ((await response.json()) as { sections: SearchSection[] }).sections;
+}
+
+async function createEvent(api: APIRequestContext, title: string, extra: Record<string, unknown> = {}) {
+	const created = await api.post("/api/calendar/events", {
+		data: { title, startsAt: "2031-05-05T10:00:00Z", endsAt: "2031-05-05T11:00:00Z", ...extra },
+	});
+	expect(created.status(), await created.text()).toBeLessThan(300);
+	return ((await created.json()) as { event: { id: string } }).event.id;
+}
+
+test("GET /api/search returns the viewer's own events with refs and links, and nothing for anyone else", async () => {
+	const api = await owner();
+	const member = await createMember(api);
+	const events: { api: APIRequestContext; id: string }[] = [];
+	try {
+		const ownerWord = uniqueToken("ownerword");
+		const memberWord = uniqueToken("memberword");
+		const ownerEvent = await createEvent(api, `Review ${ownerWord}`, { location: "Room 4" });
+		events.push({ api, id: ownerEvent });
+		events.push({ api: member.api, id: await createEvent(member.api, `Review ${memberWord}`) });
+
+		const [section, ...others] = await searchSections(api, ownerWord, "&limit=5");
+		expect(others).toEqual([]);
+		expect(section).toMatchObject({ id: "events", label: "Events" });
+		expect(section!.items).toHaveLength(1);
+		const [item] = section!.items;
+		expect(item).toMatchObject({ ref: { kind: "calendar:event", id: ownerEvent }, label: `Review ${ownerWord}` });
+		expect(item!.sublabel).toContain("Room 4");
+		expect(item!.href).toBe(`/calendar?date=2031-05-05&event=${ownerEvent}`);
+
+		expect(await searchSections(api, memberWord)).toEqual([]);
+		expect(await searchSections(member.api, ownerWord)).toEqual([]);
+		expect((await searchSections(member.api, memberWord))[0]!.items).toHaveLength(1);
+		expect(await searchSections(api, "from:someone has:attachment")).toEqual([]);
+		expect(await searchSections(api, "")).toEqual([]);
+	} finally {
+		for (const { api: client, id } of events) await client.delete(`/api/calendar/events/${id}`);
+		await member.api.dispose();
+		await api.dispose();
+	}
+});
+
+test("event search follows a rename and a delete, and covers description, location and guests", async () => {
+	const api = await owner();
+	let id = "";
+	try {
+		const alpha = uniqueToken("alphaword");
+		const beta = uniqueToken("betaword");
+		const extra = uniqueToken("extraword");
+		const guest = uniqueToken("guestword");
+		const fields = { description: `notes ${extra}`, location: `${extra}hall`, attendees: [`${guest}@example.org`] };
+		id = await createEvent(api, alpha, fields);
+		expect((await searchSections(api, alpha))[0]?.items.map((entry) => entry.ref.id)).toEqual([id]);
+		expect((await searchSections(api, extra))[0]?.items.map((entry) => entry.ref.id)).toEqual([id]);
+		expect((await searchSections(api, `${extra}hall`))[0]?.items.map((entry) => entry.ref.id)).toEqual([id]);
+
+		expect((await searchSections(api, guest))[0]?.items.map((entry) => entry.ref.id)).toEqual([id]);
+
+		const renamed = await api.patch(`/api/calendar/events/${id}`, {
+			data: { title: beta, startsAt: "2031-05-05T10:00:00Z", endsAt: "2031-05-05T11:00:00Z", ...fields },
+		});
+		expect(renamed.status(), await renamed.text()).toBeLessThan(300);
+		expect(await searchSections(api, alpha)).toEqual([]);
+		expect((await searchSections(api, beta))[0]?.items.map((entry) => entry.ref.id)).toEqual([id]);
+
+		expect((await api.delete(`/api/calendar/events/${id}`)).status()).toBeLessThan(300);
+		id = "";
+		expect(await searchSections(api, alpha)).toEqual([]);
+		expect(await searchSections(api, beta)).toEqual([]);
+	} finally {
+		if (id) await api.delete(`/api/calendar/events/${id}`);
+		await api.dispose();
+	}
+});
+
+test("search needs a session: signed-out and key-only requests answer 401", async () => {
+	const api = await owner();
+	const anonymous = await visitor();
+	const keyOnly = await visitor();
+	const created: string[] = [];
+	try {
+		expect((await anonymous.get("/api/search?q=anything")).status()).toBe(401);
+		const key = await api.post("/api/api-keys", {
+			data: { name: "E2E search key", mailboxIds: [], scopes: ["calendar:read"] },
+		});
+		expect(key.status(), await key.text()).toBe(200);
+		const { id, key: secret } = (await key.json()) as { id: string; key: string };
+		created.push(id);
+		const response = await keyOnly.get("/api/search?q=anything", { headers: { Authorization: `Bearer ${secret}` } });
+		expect(response.status()).toBe(401);
+	} finally {
+		await deleteKeys(api, { api: created });
+		await keyOnly.dispose();
+		await anonymous.dispose();
+		await api.dispose();
+	}
+});
+
+test("with Calendar off or the user restricted, search has no Events section and it returns when Calendar is back", async () => {
+	const api = await owner();
+	const member = await createMember(api);
+	let id = "";
+	try {
+		const word = uniqueToken("offword");
+		id = await createEvent(api, word);
+		expect((await searchSections(api, word))[0]?.id).toBe("events");
+
+		await setModuleState(api, { modules: { calendar: false } });
+		expect(await searchSections(api, word)).toEqual([]);
+		await setModuleState(api, { modules: { calendar: true } });
+		expect((await searchSections(api, word))[0]?.id).toBe("events");
+
+		const memberWord = uniqueToken("memberoff");
+		const memberEvent = await createEvent(member.api, memberWord);
+		await setModuleState(api, { access: [{ userId: member.id, moduleId: "calendar", allowed: false }] });
+		expect(await searchSections(member.api, memberWord)).toEqual([]);
+		await setModuleState(api, { access: [{ userId: member.id, moduleId: "calendar", allowed: true }] });
+		expect((await searchSections(member.api, memberWord))[0]?.id).toBe("events");
+		await member.api.delete(`/api/calendar/events/${memberEvent}`);
+	} finally {
+		await restoreModules(api, [member.id]);
+		if (id) await api.delete(`/api/calendar/events/${id}`);
+		await member.api.dispose();
+		await api.dispose();
+	}
+});
+
+test("the mail search dropdown lists Events, opens the chosen event and leaves Enter to the mail search", async ({
+	page,
+}) => {
+	const api = await owner();
+	let id = "";
+	try {
+		const word = uniqueToken("dropword");
+		id = await createEvent(api, `Planning ${word}`, { location: "Harbour" });
+		await page.goto("/inbox");
+		const field = page.getByRole("textbox", { name: /Search mail/ });
+		await field.fill(word);
+		const dropdown = page.getByTestId("search-dropdown");
+		const events = dropdown.locator('[data-search-section="events"]');
+		await expect(events.getByText("Events", { exact: true })).toBeVisible();
+		await expect(events.getByRole("option", { name: new RegExp(`Planning ${word}`) })).toBeVisible();
+
+		// Enter with nothing highlighted keeps the mail search: no navigation, the list is filtered.
+		await field.press("Enter");
+		await expect(page).toHaveURL(/\/inbox/);
+		await expect(page.getByRole("main").getByText("No messages match these filters")).toBeVisible();
+
+		await events.getByRole("option", { name: new RegExp(`Planning ${word}`) }).click();
+		await expect(page).toHaveURL(/\/calendar/);
+		const editor = page.getByRole("dialog", { name: "Edit event" });
+		await expect(editor.getByRole("textbox", { name: "Event name" })).toHaveValue(`Planning ${word}`);
+		await expect(page.getByRole("heading", { level: 1 }).or(page.getByText("May 2031")).first()).toBeVisible();
+	} finally {
+		if (id) await api.delete(`/api/calendar/events/${id}`);
+		await api.dispose();
+	}
+});
+
+test("the dropdown is keyboard driven and gone with Calendar off", async ({ page }) => {
+	const api = await owner();
+	let id = "";
+	try {
+		const word = uniqueToken("keyword");
+		id = await createEvent(api, `Keys ${word}`);
+		await page.goto("/inbox");
+		const field = page.getByRole("textbox", { name: /Search mail/ });
+		await field.fill(word);
+		await expect(page.getByRole("option", { name: new RegExp(`Keys ${word}`) })).toBeVisible();
+		await field.press("Escape");
+		await expect(page.getByTestId("search-dropdown")).toHaveCount(0);
+		await field.fill(`${word} `);
+		await field.fill(word);
+		await field.press("ArrowDown");
+		await expect(page.getByRole("option", { name: new RegExp(`Keys ${word}`) })).toHaveAttribute(
+			"aria-selected",
+			"true",
+		);
+		await field.press("Enter");
+		await expect(page).toHaveURL(/\/calendar/);
+		await expect(
+			page.getByRole("dialog", { name: "Edit event" }).getByRole("textbox", { name: "Event name" }),
+		).toHaveValue(`Keys ${word}`);
+
+		await setModuleState(api, { modules: { calendar: false } });
+		await page.goto("/inbox");
+		await page.getByRole("textbox", { name: /Search mail/ }).fill(word);
+		await expect(page.getByText("No messages match these filters")).toBeVisible();
+		await expect(page.getByTestId("search-dropdown")).toHaveCount(0);
+	} finally {
+		await restoreModules(api);
+		if (id) await api.delete(`/api/calendar/events/${id}`);
+		await api.dispose();
+	}
+});
+
+test("an account made while Booking is off gets its booking username when Booking is back, and account creation never fails for it", async () => {
+	const api = await owner();
+	let member: Awaited<ReturnType<typeof createMember>> | null = null;
+	try {
+		await setModuleState(api, { modules: { booking: false } });
+		member = await createMember(api);
+		await setModuleState(api, { modules: { booking: true } });
+		const lazy = await member.api.get("/api/booking");
+		expect(lazy.status(), await lazy.text()).toBe(200);
+		expect(((await lazy.json()) as { username: string }).username).toMatch(/\S+/);
+
+		const second = await createMember(api);
+		const assigned = await second.api.get("/api/booking");
+		expect(((await assigned.json()) as { username: string }).username).toMatch(/\S+/);
+		await second.api.dispose();
+	} finally {
+		await restoreModules(api);
+		await member?.api.dispose();
+		await api.dispose();
+	}
+});
+
+test("changing the time zone works with Calendar off and still answers the new zone", async () => {
+	const api = await owner();
+	try {
+		const me = await (await api.get("/api/auth/me")).json();
+		const previous = (me.user.timeZone as string | null) ?? null;
+		await setModuleState(api, { modules: { calendar: false } });
+		const changed = await api.patch("/api/settings/time-zone", { data: { timeZone: "Europe/Paris" } });
+		expect(changed.status(), await changed.text()).toBe(200);
+		expect(await changed.json()).toEqual({ timeZone: "Europe/Paris" });
+		await api.patch("/api/settings/time-zone", { data: { timeZone: previous } });
+	} finally {
+		await restoreModules(api);
+		await api.dispose();
+	}
+});

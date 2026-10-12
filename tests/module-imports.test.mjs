@@ -80,10 +80,6 @@ const PENDING = {
 		"The send menu still mounts the template menu and dialog directly until it renders the composer slot (composer slot feature).",
 	"src/components/compose/template-menu.tsx":
 		"The Template submenu is Templates module UI that still sits in the composer folder; it moves to src/components/modules/templates (composer slot feature).",
-	"src/app/api/accounts/create.ts":
-		"Account creation still assigns the booking username itself until the user.created lifecycle hook does it (lifecycle feature).",
-	"src/app/api/auth/register/route.ts":
-		"Registration still assigns the booking username itself until the user.created lifecycle hook does it (lifecycle feature).",
 };
 
 const toPosix = (path) => path.split(sep).join("/");

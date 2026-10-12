@@ -8,6 +8,9 @@ export type OpenSuggestion = {
 	title: string;
 	createdAt: string;
 	message: { subject: string | null; from: string | null };
+	/** The message as a record ref, and where it opens: `href` is null when the viewer cannot open it. */
+	messageRef: { kind: "mail:message"; id: string };
+	messageTarget: { href: string | null; label: string };
 };
 
 export type SuggestionMailbox = { id: string; address: string; autonomy: string };

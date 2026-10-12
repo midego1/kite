@@ -18,7 +18,7 @@ import { readJsonBody } from "@/lib/http/request";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { verifyTurnstileToken } from "@/lib/auth/turnstile";
 import { getDomainProvisioningError } from "@/lib/domains/errors";
-import { ensureBookingUsername } from "@/lib/booking/username";
+import { emitLifecycleEvent } from "@/lib/modules/lifecycle";
 
 export async function POST(request: Request) {
 	const env = getEnv();
@@ -73,7 +73,6 @@ export async function POST(request: Request) {
 	// config would go unnoticed.
 	let changes: DomainProvisioningChanges | null = null;
 	try {
-		await ensureBookingUsername(env, userId, email);
 		const added = await addDomainForUser(env, userId, domainName, {
 			enableRouting: true,
 			enableSending: firstRunParsed.data.enableSending ?? true,
@@ -108,6 +107,8 @@ export async function POST(request: Request) {
 		const failure = getDomainProvisioningError(err, "Domain setup failed", 502);
 		return NextResponse.json({ error: failure.message, code: failure.code }, { status: failure.status });
 	}
+
+	await emitLifecycleEvent({ type: "user.created", userId });
 
 	const response = NextResponse.json({ ok: true, redirect: "/login" });
 	response.headers.set("Cache-Control", "no-store");

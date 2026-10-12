@@ -2,11 +2,11 @@ import { and, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import { domains, mailboxes, messages, outboundJobs, users } from "@/db/schema";
 import { hashPassword } from "@/lib/auth/password";
-import { ensureBookingUsername } from "@/lib/booking/username";
 import { upsertContactFromAddress } from "@/lib/contacts/service";
 import { MANUAL_ZONE_ID } from "@/lib/domains/provision";
 import { buildSnippet } from "@/lib/email/parse";
 import { newId } from "@/lib/ids";
+import { emitLifecycleEvent } from "@/lib/modules/lifecycle";
 import type { SeedMailboxKey, SeedMailboxMap, SeedMessageDefinition } from "@/lib/seed-types";
 
 export const demoCredentials = {
@@ -238,7 +238,7 @@ export async function ensureDemoUser(env: CloudflareEnv) {
 		name: "Demo User",
 		...adminValues,
 	});
-	await ensureBookingUsername(env, id, demoCredentials.email);
+	await emitLifecycleEvent({ type: "user.created", userId: id });
 
 	const [created] = await db.select().from(users).where(eq(users.id, id)).limit(1);
 	return created!;

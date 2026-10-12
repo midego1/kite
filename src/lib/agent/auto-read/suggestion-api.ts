@@ -25,6 +25,7 @@ import {
 } from "./suggestion-api-utils";
 import { markSpamEffect } from "./suggestion-effects";
 import { notifySuggestionsQuietly } from "./suggestion-events";
+import { messageTargets } from "./suggestion-refs";
 import { hiddenKindsFor } from "./suggestion-visibility";
 
 const LIST_LIMIT = 200;
@@ -106,8 +107,17 @@ export async function listSuggestions(env: CloudflareEnv, user: SessionUser, que
 		.orderBy(desc(agentSuggestions.createdAt), desc(sql`"agent_suggestions"."rowid"`))
 		.limit(LIST_LIMIT);
 	const kindTotals = rows.length < LIST_LIMIT ? countByKind(rows) : await countMatches(env, conditions);
+	const targets = await messageTargets(
+		env,
+		user,
+		rows.map((row) => row.messageId),
+	);
 	return {
-		suggestions: rows.map((row) => toApiSuggestion(row, user.id)),
+		suggestions: rows.map((row) => ({
+			...toApiSuggestion(row, user.id),
+			messageRef: { kind: "mail:message" as const, id: row.messageId },
+			messageTarget: targets.get(row.messageId) ?? { href: null, label: row.subject ?? "(No subject)" },
+		})),
 		total: sumTotals(kindTotals),
 		kindTotals,
 		mailboxes: mailboxes.map((mailbox) => ({ ...mailbox, autonomy: autonomy.get(mailbox.id) ?? "off" })),

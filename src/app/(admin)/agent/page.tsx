@@ -14,15 +14,16 @@ import { saveAssistantAvailability } from "@/lib/agent/availability-client";
 import { parseAgentModelIds, toggleAgentModelId } from "@/lib/agent/model-ids";
 import { mergePublishedAgentRates } from "@/lib/agent/model-rates-utils";
 import { AutoReadAdminSettings } from "@/components/agent/auto-read-admin-settings";
-import type { AgentProviderPreset } from "@/lib/agent/provider-types";
+import { HaimakerReferralCard } from "./haimaker-referral-card";
 import type { AgentAdminForm, AgentModelLoadState } from "./types";
 import {
-	baseUrlForPreset,
+	agentModelInputError,
 	loadAgentAdminSettings,
 	loadAgentModels,
 	PROVIDER_PRESETS,
 	saveAgentAdminSettings,
 	saveAgentEnabled,
+	selectAgentProvider,
 	updateAgentModelRate,
 } from "./utils";
 
@@ -77,12 +78,7 @@ export default function AdminAgentPage() {
 
 	const canUseSavedKey = hasSavedKey && savedEndpoint === `${form.preset}|${form.baseUrl}`;
 	const selectedModelIds = parseAgentModelIds(form.model);
-	const modelInputError =
-		form.provider === "compatible" && (!form.baseUrl || (!form.apiKey.trim() && !canUseSavedKey))
-			? form.preset === "custom" && !form.baseUrl
-				? "Enter an HTTPS base URL to load models."
-				: "Enter an API key to load models."
-			: null;
+	const modelInputError = agentModelInputError(form, canUseSavedKey);
 	// Model results belong to the provider settings they were loaded for; any change hides them.
 	const modelsKey = JSON.stringify([form.provider, form.preset, form.baseUrl, form.apiKey, canUseSavedKey]);
 	const currentModelLoad = modelLoad?.key === modelsKey ? modelLoad : null;
@@ -215,20 +211,16 @@ export default function AdminAgentPage() {
 							<select
 								id="agent-provider"
 								className="flex h-10 w-full rounded-md border border-neutral-200 bg-transparent px-3 text-sm shadow-sm shadow-neutral-200/50 focus-visible:border-blue-600 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-								value={form.provider}
+								value={form.provider === "cloudflare" ? "cloudflare" : form.preset}
 								disabled={!loaded}
-								onChange={(event) =>
-									setForm((current) => ({
-										...current,
-										provider: event.target.value as AgentAdminForm["provider"],
-										baseUrl:
-											event.target.value === "compatible" ? baseUrlForPreset(current.preset, current.baseUrl) : "",
-										model: event.target.value === "cloudflare" ? DEFAULT_CLOUDFLARE_MODEL : "",
-									}))
-								}
+								onChange={(event) => setForm((current) => selectAgentProvider(current, event.target.value))}
 							>
+								{PROVIDER_PRESETS.map((item) => (
+									<option key={item.id} value={item.id}>
+										{item.label}
+									</option>
+								))}
 								<option value="cloudflare">Cloudflare Workers AI</option>
-								<option value="compatible">OpenAI-compatible provider</option>
 							</select>
 							{form.provider === "cloudflare" && !cloudflareAvailable && (
 								<p className="text-xs text-amber-700">
@@ -238,30 +230,7 @@ export default function AdminAgentPage() {
 						</div>
 						{form.provider === "compatible" && (
 							<>
-								<div className="space-y-2">
-									<Label htmlFor="agent-preset">Provider template</Label>
-									<select
-										id="agent-preset"
-										className="flex h-10 w-full rounded-md border border-neutral-200 bg-transparent px-3 text-sm shadow-sm shadow-neutral-200/50 focus-visible:border-blue-600 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-										value={form.preset}
-										onChange={(event) => {
-											const preset = event.target.value as AgentProviderPreset;
-											setForm((current) => ({
-												...current,
-												preset,
-												baseUrl: baseUrlForPreset(preset),
-												apiKey: "",
-												model: "",
-											}));
-										}}
-									>
-										{PROVIDER_PRESETS.map((item) => (
-											<option key={item.id} value={item.id}>
-												{item.label}
-											</option>
-										))}
-									</select>
-								</div>
+								{form.preset === "haimaker" && <HaimakerReferralCard />}
 								<div className="space-y-2">
 									<Label htmlFor="agent-url">API base URL</Label>
 									<Input

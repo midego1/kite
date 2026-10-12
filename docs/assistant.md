@@ -32,7 +32,7 @@ When Kite does call the model, the call has no tools. The model reads the messag
 Message content goes to the AI provider you configured for the assistant.
 
 - **Workers AI** (Cloudflare). The content is processed on Cloudflare, which already hosts your Kite install. It is not sent anywhere else.
-- **OpenAI-compatible providers.** The content is sent to the server at the configured base URL, which is outside your install. Automatic reading with an external provider needs a separate opt-in from the primary admin (**Allow external provider for automatic reading** in the install-wide automatic reading settings). Without it, Kite skips the message and says why. Some providers may retain what you send or train on it. Read your provider's terms, or use a provider you run yourself.
+- **External providers.** Anthropic receives content through its native API. Haimaker, OpenAI, OpenRouter, Groq and custom endpoints use an OpenAI-compatible API. The content is sent to the configured provider, outside your install. Automatic reading with an external provider needs a separate opt-in from the primary admin (**Allow external provider for automatic reading** in the install-wide automatic reading settings). Without it, Kite skips the message and says why. Some providers may retain what you send or train on it. Read your provider's terms, or use a provider you run yourself.
 
 What is sent: the message's sender, subject and text, the facts Kite computed and the mailbox's own instructions. Prompts and responses are not stored by Kite. It stores the suggestions and the audit log of what was done, plus token counts and cost for each request. The provider may store more under its own policy.
 

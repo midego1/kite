@@ -1,5 +1,5 @@
 import type { JSONValue } from "ai";
-import type { AgentModelRates, AgentProviderKind, AgentReasoningEffort } from "../provider-types";
+import type { AgentModelRates, AgentProviderKind, AgentProviderPreset, AgentReasoningEffort } from "../provider-types";
 import { parseAgentReasoningEffort } from "../reasoning-effort-utils";
 import type { TriagePrompt, TriageResult } from "./triage-types";
 import { buildTriageRepairPrompt, parseTriageOutput } from "./triage-utils";
@@ -15,6 +15,7 @@ type ModelCallKind = "triage" | "draft";
 
 export type ModelCallOptions = {
 	provider: AgentProviderKind;
+	preset: AgentProviderPreset;
 	kind: ModelCallKind;
 	maxOutputTokens: number;
 	providerOptions: Record<string, Record<string, JSONValue>>;
@@ -25,12 +26,13 @@ export type ModelCallOptions = {
 
 type ModelCallInput = {
 	provider: AgentProviderKind;
+	preset?: AgentProviderPreset;
 	kind: ModelCallKind;
 	/** The per-model hint saved with the provider settings (`rates[modelId].reasoningEffort`). */
 	reasoningEffort?: unknown;
 };
 
-type ModelCallSettings = Pick<ModelCallOptions, "provider" | "kind" | "reasoningEffort">;
+type ModelCallSettings = Pick<ModelCallOptions, "provider" | "preset" | "kind" | "reasoningEffort">;
 
 export type ModelCallResult = { text: string; finishReason: string };
 
@@ -57,6 +59,7 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 		// workers-ai-provider 4 reads "workers-ai"; "workersAi" is the camel-cased key newer versions read.
 		return {
 			provider: "cloudflare",
+			preset: settings.preset,
 			kind: settings.kind,
 			maxOutputTokens: base,
 			providerOptions: { workersAi: options, "workers-ai": options },
@@ -65,8 +68,22 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 		};
 	}
 	const effort = settings.reasoningEffort;
+	if (settings.preset === "anthropic") {
+		return {
+			provider: settings.provider,
+			preset: settings.preset,
+			kind: settings.kind,
+			maxOutputTokens: effort ? base + REASONING_HEADROOM_TOKENS : base,
+			providerOptions: {
+				anthropic: effort && effort !== "minimal" ? { effort } : {},
+			},
+			reasoningEffort: effort,
+			jsonMode,
+		};
+	}
 	return {
 		provider: settings.provider,
+		preset: settings.preset,
 		kind: settings.kind,
 		maxOutputTokens: effort ? base + REASONING_HEADROOM_TOKENS : base,
 		providerOptions: { [COMPATIBLE_PROVIDER_NAME]: { ...json, ...(effort ? { reasoningEffort: effort } : {}) } },
@@ -78,7 +95,10 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 /** Provider-aware options and output budget for one automatic model call (never any tools). */
 export function buildModelCallOptions(input: ModelCallInput): ModelCallOptions {
 	const reasoningEffort = parseAgentReasoningEffort(input.reasoningEffort) ?? null;
-	return buildOptions({ provider: input.provider, kind: input.kind, reasoningEffort }, input.kind === "triage");
+	return buildOptions(
+		{ provider: input.provider, preset: input.preset ?? "openai", kind: input.kind, reasoningEffort },
+		input.kind === "triage",
+	);
 }
 
 type TriageModelChoice = {

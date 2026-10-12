@@ -239,6 +239,8 @@ test("the provider label names Workers AI, a preset or the custom host", () => {
 	const install = { agentEnabled: true, autoReadEnabled: true, externalAutoReadAllowed: true, dailySpendCapMicros: 1 };
 	const label = (provider) => settings.autoReadInstallFlags(install, provider).providerLabel;
 	assert.equal(label({ provider: "cloudflare", preset: "openai", baseUrl: "" }), "Workers AI");
+	assert.equal(label({ provider: "compatible", preset: "haimaker", baseUrl: "" }), "Haimaker.ai");
+	assert.equal(label({ provider: "compatible", preset: "anthropic", baseUrl: "" }), "Anthropic");
 	assert.equal(label({ provider: "compatible", preset: "openrouter", baseUrl: "" }), "OpenRouter");
 	assert.equal(label({ provider: "compatible", preset: "openai", baseUrl: "" }), "OpenAI");
 	assert.equal(label({ provider: "compatible", preset: "groq", baseUrl: "" }), "Groq");

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Kite social preview</title>
+		<style>
+			* {
+				box-sizing: border-box;
+				margin: 0;
+			}
+			body {
+				width: 1280px;
+				height: 640px;
+				overflow: hidden;
+				font-family: "Manrope", "Inter", system-ui, sans-serif;
+				color: #0f172a;
+				background:
+					radial-gradient(
+						circle at 88% 8%,
+						rgba(155, 123, 247, 0.28),
+						transparent 45%
+					),
+					radial-gradient(
+						circle at 0% 100%,
+						rgba(127, 162, 255, 0.3),
+						transparent 50%
+					),
+					#f5f6ff;
+				position: relative;
+			}
+			.copy {
+				position: absolute;
+				left: 72px;
+				top: 0;
+				bottom: 0;
+				width: 560px;
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+			}
+			.brand {
+				display: flex;
+				align-items: center;
+				gap: 22px;
+			}
+			.brand img {
+				width: 92px;
+				height: 92px;
+			}
+			h1 {
+				font-size: 104px;
+				line-height: 1;
+				letter-spacing: -0.04em;
+				font-weight: 800;
+				color: #3730a3;
+			}
+			p.tagline {
+				margin-top: 30px;
+				font-size: 36px;
+				line-height: 1.25;
+				font-weight: 600;
+				letter-spacing: -0.015em;
+			}
+			p.sub {
+				margin-top: 18px;
+				font-size: 23px;
+				line-height: 1.4;
+				color: #475569;
+				font-weight: 500;
+			}
+			.pills {
+				margin-top: 34px;
+				display: flex;
+				gap: 10px;
+				flex-wrap: wrap;
+			}
+			.pills span {
+				background: #4f46e5;
+				color: #fff;
+				font-size: 18px;
+				font-weight: 700;
+				padding: 8px 16px;
+				border-radius: 999px;
+			}
+			.pills span.ghost {
+				background: #fff;
+				color: #3730a3;
+				border: 1.5px solid #c7d2fe;
+			}
+			.shot {
+				position: absolute;
+				left: 690px;
+				top: 96px;
+				width: 640px;
+				height: 480px;
+				border-radius: 18px 0 0 18px;
+				overflow: hidden;
+				background: #fff;
+				border: 1.5px solid #c7d2fe;
+				border-right: 0;
+				box-shadow: 0 30px 70px rgba(55, 48, 163, 0.28);
+			}
+			.shot img {
+				width: 1000px;
+				display: block;
+			}
+			.credit {
+				position: absolute;
+				left: 72px;
+				bottom: 34px;
+				font-size: 17px;
+				font-weight: 600;
+				color: #64748b;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="copy">
+			<div class="brand">
+				<img src="../../public/kite.svg" alt="" />
+				<h1>Kite</h1>
+			</div>
+			<p class="tagline">
+				Self-hosted email for your own domains, on your Cloudflare account.
+			</p>
+			<p class="sub">
+				Receive with Cloudflare Email Routing. Send with Cloudflare, Resend or
+				Amazon SES.
+			</p>
+			<div class="pills">
+				<span>Open source</span>
+				<span class="ghost">AGPL-3.0</span>
+				<span class="ghost">Early beta</span>
+			</div>
+		</div>
+		<div class="shot"><img src="../../screenshots/inbox.png" alt="" /></div>
+		<div class="credit">Based on Mailflare by hieunc229</div>
+	</body>
+</html>

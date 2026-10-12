@@ -1,0 +1,55 @@
+name: Feature request
+description: Suggest a new capability or an improvement to an existing one
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Kite is a small project, so a clear problem description helps more than a design.
+        Please check the [roadmap](https://github.com/midego1/kite/blob/main/ROADMAP.md) and existing issues first, and use Discussions if you only want to talk an idea through. Use synthetic data only: no real addresses, message bodies or tokens.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        [
+          Mail and composer,
+          Domains and providers,
+          Mailboxes and sharing,
+          Calendar and booking,
+          Routing rules,
+          Admin and security,
+          API / JMAP / MCP,
+          Self-hosting (Docker),
+          Documentation,
+          Other,
+        ]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation and what is hard or impossible today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Kite to do?
+      description: The behaviour you would expect. A sketch or an example is enough.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and workarounds
+      description: What you do today, other tools you tried, or other ways this could work.
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to help build it?
+      options: [No, I can test it, Yes, I would open a pull request]
+    validations:
+      required: true

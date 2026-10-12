@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Setup help and questions
+    url: https://github.com/midego1/kite/discussions
+    about: Stuck on setup, DNS or a provider, or not sure whether something is a bug? Ask in Discussions (the Q&A category). Please read docs/deployment.md and docs/troubleshooting.md first.
+  - name: Ideas and early feedback
+    url: https://github.com/midego1/kite/discussions
+    about: Talk an idea through before filing a feature request, or show how you run Kite.
   - name: Security reporting instructions
     url: https://github.com/midego1/kite/blob/main/SECURITY.md
     about: Read the private reporting process before submitting sensitive evidence.

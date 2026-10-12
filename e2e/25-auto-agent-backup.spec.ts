@@ -4,7 +4,7 @@ import { useFakeProvider } from "./support/agent";
 import { createSignedInAccount, okJson } from "./support/auto-read";
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
-import { apiContext, apiSignIn, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, apiSignIn, postInbound, uniqueToken, waitForBackup, waitForMessage } from "./support/helpers";
 import { futureAt, inviteAttachment } from "./support/invites";
 import { readActions, readSuggestions, waitForFinishedJob } from "./support/triage";
 
@@ -28,6 +28,10 @@ test.afterAll(async () => {
 
 async function takeBackup(admin: APIRequestContext): Promise<BackupDocument> {
 	const { backupId } = await okJson<{ backupId: string }>(await admin.post("/api/backups"));
+	// Manual backups are exported by the outbound queue consumer, so the request
+	// only queues the record and the file appears once the job completes.
+	const finished = await waitForBackup(admin, backupId);
+	expect(finished.status, finished.error ?? "").toBe("completed");
 	const download = await admin.get(`/api/backups/${backupId}/download`);
 	expect(download.ok()).toBe(true);
 	return JSON.parse(await download.text()) as BackupDocument;

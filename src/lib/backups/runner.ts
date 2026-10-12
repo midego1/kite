@@ -3,11 +3,15 @@ import { getDb } from "@/db";
 import { backups } from "@/db/schema";
 import { writeBackupObject } from "./backup-writer";
 import { streamDatabaseRecords } from "./export";
-import { createScheduledBackupIfDue, getBackupSettings } from "./service";
+import { createScheduledBackupIfDue, failBackupRecord, getBackupSettings } from "./service";
 import { BACKUP_PREFIX, createBackupFilename } from "./utils";
 
 export async function runDatabaseBackup(env: CloudflareEnv, backupId: string): Promise<void> {
 	const db = getDb(env);
+	const [existing] = await db.select({ status: backups.status }).from(backups).where(eq(backups.id, backupId)).limit(1);
+	// A retried queue message must not export the database twice, and a deleted
+	// record has nowhere to write to.
+	if (!existing || existing.status === "completed") return;
 	try {
 		await db.update(backups).set({ status: "running", startedAt: new Date() }).where(eq(backups.id, backupId));
 
@@ -34,10 +38,7 @@ export async function runDatabaseBackup(env: CloudflareEnv, backupId: string): P
 		await deleteExpiredBackups(env);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Backup failed";
-		await db
-			.update(backups)
-			.set({ status: "failed", error: message, completedAt: new Date() })
-			.where(eq(backups.id, backupId));
+		await failBackupRecord(env, backupId, message);
 		throw error;
 	}
 }

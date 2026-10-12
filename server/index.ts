@@ -19,6 +19,8 @@ import { processOutboundQueue, type OutboundQueueMessage } from "@/lib/email/sen
 import { processWebhookRetry, type WebhookRetryMessage } from "@/lib/email/webhooks";
 import { processMailboxPurge } from "@/lib/mailboxes/delete";
 import { isMailboxPurgeMessage } from "@/lib/mailboxes/delete-utils";
+import { runDatabaseBackup } from "@/lib/backups/runner";
+import { isBackupRunMessage } from "@/lib/backups/queue-utils";
 import { isInboundQueueMessage, isWebhookRetryMessage } from "../worker-utils";
 import { createNodeRuntime } from "./runtime/env";
 import { applyMigrations } from "./runtime/migrate";
@@ -62,6 +64,7 @@ async function main() {
 	runtime.outboundQueue.setConsumer(async (body) => {
 		if (isWebhookRetryMessage(body)) await processWebhookRetry(env, body as WebhookRetryMessage);
 		else if (isMailboxPurgeMessage(body)) await processMailboxPurge(env, body);
+		else if (isBackupRunMessage(body)) await runDatabaseBackup(env, body.backupId);
 		else await processOutboundQueue(env, body as OutboundQueueMessage);
 	});
 	runtime.agentQueue.setConsumer(async (body) => {

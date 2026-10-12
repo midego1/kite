@@ -2,11 +2,64 @@
 
 # Kite
 
-Kite is a self-hosted email inbox for custom domains, built on Cloudflare. It sends and receives through Cloudflare, **Resend** or **Amazon SES**.
+**Kite is a self-hosted email inbox for your own domains that runs in your own Cloudflare account.** It receives mail through Cloudflare Email Routing and sends through Cloudflare, **Resend** or **Amazon SES**. Open source, AGPL-3.0, with every feature free.
 
-Kite is an independent, fully open fork of [Mailflare by hieunc229](https://github.com/hieunc229/mailflare) under the same AGPL-3.0 license: every feature is free, there are no license keys, and it focuses on speed, security and reliability. See [How this version differs](#how-this-version-differs) and the [roadmap](ROADMAP.md).
+[![Status: early beta](https://img.shields.io/badge/status-early%20beta-f59e0b)](#known-limitations)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-4f46e5)](LICENSE)
+
+> **Based on [Mailflare](https://github.com/hieunc229/mailflare) by hieunc229.** Kite is an independent fork under the same AGPL-3.0 license. The foundation is theirs, and the original copyright notices and credits are kept in [NOTICE](NOTICE) and [Credits](#credits). See [How this version differs](#how-this-version-differs).
+
+> **Status: early beta.** Kite is young. It works, it is tested, and a handful of things are still rough or missing (see [Known limitations](#known-limitations)). Please try it and [tell us where it breaks](https://github.com/midego1/kite/issues/new/choose).
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/midego1/kite)
+
+![A short tour of Kite: opening a message, replying with a send preview and undo, the calendar and the domain DNS checks](/docs/assets/demo.gif)
+
+The recording shows invented demo data. `npm run demo:record` makes it again (see [Screenshots](#screenshots)).
+
+## Why Kite
+
+Kite is for developers, indie founders and small teams who already keep domains on Cloudflare and want a real inbox for `you@yourdomain` without paying per seat or running a mail server. It is also for self-hosters who want hackable email with an API.
+
+- **Your mail, your account.** Messages live in your own D1 database and attachments in your own R2 bucket. There is no update check, license check or telemetry.
+- **No server to run.** It deploys with one button to Cloudflare Workers. Receiving through Email Routing is free, and sending uses the free tiers of Resend or Amazon SES, or Cloudflare's own sending on a paid Workers plan. A Docker and SQLite path exists if you would rather run it on a box ([Self-host with Docker](#self-host-with-docker)).
+- **A real inbox, not just forwarding.** Shared mailboxes, search, folders, snooze, undo send, routing rules, a calendar with booking pages, JMAP, an API, webhooks and MCP.
+
+**Not for you (yet) if** you need a native mobile app, an interface in another language, a standard IMAP/SMTP server for desktop mail clients, or a setup with no manual steps. Teams with strict compliance needs should evaluate Kite carefully first.
+
+### Kite compared with the alternatives
+
+| | **Kite** | **Mailflare** (the upstream project) | **Cloudflare Email Routing alone** | **Hosted inboxes** (Google Workspace, Fastmail, Proton, Zoho and others) |
+| --- | --- | --- | --- | --- |
+| What it is | A fork of Mailflare that runs in your Cloudflare account, developed independently | The original self-hosted inbox by hieunc229 | Forwards mail for your domain to an address or a Worker | A managed mailbox service |
+| Inbox and webmail | Yes | Yes | No, forwarding only | Yes, mature, with mobile apps |
+| Sending as your domain | Cloudflare, Resend or Amazon SES, per domain | Cloudflare, Resend or Amazon SES | No sending inbox | Yes |
+| Where your mail lives | Your D1 database and R2 bucket (or SQLite and local files with Docker) | Your Cloudflare account | Passes through, then lives wherever you forward it | The provider's servers |
+| Price model | Free software, every feature included. You pay your own Cloudflare and provider usage | AGPL-3.0 core, with Pro and Team features behind a paid license key | Free | Per user per month |
+| Interface languages | English only | Lists 33 languages in its README | Not applicable | Usually many |
+| Community and maturity | Young project, small community | The original, with a much larger community and its own project site | A Cloudflare product | Established products with support teams |
+| You run it | Yes: you deploy, update and back it up | Yes | Nothing to run | Nothing to run |
+| Deliverability help | Documentation only ([guide](docs/sending-and-deliverability.md)) | Documentation | Not applicable | The strongest of these: support, reputation management and spam filtering at scale |
+| Best when | You want an inbox you control, with an API and no license keys | You want the original project or a multilingual interface | You only need forwarding | You want polish, mobile apps and someone else on call |
+
+Kite builds on Email Routing rather than replacing it: Cloudflare still delivers inbound mail and manages your DNS. Choose Email Routing alone if forwarding is enough, a hosted inbox if you value polish, mobile apps and support over control, and Mailflare if you want the upstream project. The feature-by-feature differences from Mailflare are under [How this version differs](#how-this-version-differs).
+
+## Known limitations
+
+Kite is **early beta**. It is tested, but it has not had the time in the field that older mail software has, and you run it, so you are responsible for updates, backups and your domains' reputation. What the code does and does not do today:
+
+- **English-only interface.** There is no translation support yet; only right-to-left rendering of message content is planned first ([roadmap](ROADMAP.md)). Mailflare ships a multilingual interface.
+- **Cloudflare is required for the default install.** The domain's DNS must be on Cloudflare (even when you send or receive through Resend or Amazon SES), you need an API token with several permissions, and the Worker must be named `kite`. The Docker build can run without Cloudflare credentials, but then you add DNS records by hand.
+- **Cloudflare's own sending has limits.** It needs a paid Workers plan; messages are capped at 5 MiB including attachments (Kite sends larger files as download links), 50 recipients, with daily quotas that start low on new accounts, and Cloudflare describes it as intended for transactional mail. See [sending and deliverability](docs/sending-and-deliverability.md#provider-limits). Use Resend or Amazon SES for heavier sending. New Amazon SES accounts start in a sandbox that only delivers to verified addresses.
+- **A per-user sending allowance.** By default 100 messages an hour and 500 a day per user, so a stolen session or key cannot send unlimited mail. It is configurable with `SEND_LIMIT_PER_HOUR` and `SEND_LIMIT_PER_DAY`.
+- **One service owns a domain's MX records.** Receiving through Cloudflare, Resend or Amazon SES is a per-domain choice, and Kite asks before it replaces existing MX records.
+- **Resend and SES receiving are more limited than Cloudflare's.** Mail that a routing rule would reject is dropped rather than bounced, and forward rules are not applied. Inbound messages are capped at 25 MiB.
+- **No IMAP or SMTP server for desktop clients.** Standard mail apps cannot connect. Kite offers a web app, [JMAP](docs/api.md), an API, webhooks and MCP. IMAP is used only to import mail.
+- **No native mobile app.** The web interface has a mobile layout.
+- **Updates and migrations are manual.** Nothing updates itself: you deploy a new version, then apply database migrations from Admin settings.
+- **No Wrangler D1 export.** `wrangler d1 export` does not work because of the search index; use the in-app backups.
+- **No published third-party security audit.** The security measures are listed under [How this version differs](#how-this-version-differs), and vulnerabilities are handled as described in [SECURITY.md](SECURITY.md).
+- **The sign-in limit is per IP address and API keys are not rate limited.** See [known gaps](docs/sending-and-deliverability.md#known-gaps).
 
 ## Screenshots
 
@@ -14,7 +67,7 @@ Kite is an independent, fully open fork of [Mailflare by hieunc229](https://gith
 | --- | --- | --- |
 | ![Week view of the calendar](/screenshots/calendar.png)<br>Calendar | ![Domain DNS checks](/screenshots/domains.png)<br>Domain setup | ![Mailboxes on a domain](/screenshots/mailboxes.png)<br>Mailboxes |
 
-The screenshots show invented demo data. `npm run screenshots` takes them again against the same isolated, seeded server the browser tests use (`scripts/screenshots/readme.capture.ts`).
+The screenshots and the demo recording show invented demo data. `npm run screenshots` takes the screenshots again against the same isolated, seeded server the browser tests use (`scripts/screenshots/readme.capture.ts`), `npm run demo:record` records the demo (`scripts/screenshots/demo.capture.ts`, needs `ffmpeg`), and `npm run social:preview` renders the 1280x640 repository social preview (`docs/assets/social-preview.png`).
 
 ## What you can do
 
@@ -100,16 +153,20 @@ You choose the provider per domain and can switch anytime (see [Sending and rece
 
 ## Deploy
 
-1. **Deploy the app.** Click **Deploy to Cloudflare**. Keep the app name `kite`. Other Worker names will break the app. Cloudflare creates the database, bucket and queues and asks for `CF_TOKEN` and `SETUP_TOKEN` (any long random string).
-2. **Finish setup.** Open the deployed app at `/setup?setup_token=<your SETUP_TOKEN>` to check the install and create your admin account.
-3. **Connect a domain.** Add a domain from the same Cloudflare account and choose which service receives its mail. Kite sets up Email Routing, or guides you through Resend or Amazon SES. Then create your first mailbox. Add Resend or AWS credentials on the domain page when you need them.
+You need a Cloudflare account with at least one domain whose DNS is on Cloudflare. Plan on about 10 minutes the first time. The steps in detail, with a troubleshooting table, are in the [deployment guide](docs/deployment.md).
 
-**`CF_TOKEN` is required.** Under **Manage Account → Account API Tokens**, create a token with these permissions (step-by-step in [Deployment](docs/deployment.md#step-1-set-up-cf_token)):
+1. **Create `CF_TOKEN`.** In the Cloudflare dashboard, open **Manage Account → Account API Tokens** and create a custom token (Cloudflare does not hand its deploy token to the app). Copy the secret, not the token ID, and no `Bearer`:
+   - Zones you will connect (specified zones, or all zones): **DNS: Edit**, **Zone: Read**, **Zone Settings: Edit**, **Email Routing Rules: Edit**.
+   - Account, only if Cloudflare will send mail: **Email Sending: Edit** (this also needs a paid Workers plan).
+2. **Deploy the app.** Click **Deploy to Cloudflare**. Keep the app name `kite`: Email Routing rules and the Worker's self-binding use that name, and another name breaks receiving mail. Cloudflare creates the database, bucket and queues and asks for three secrets:
+   - `CF_TOKEN`: the token from step 1.
+   - `SETUP_TOKEN`: a long random string, for example from `openssl rand -hex 32`. It guards first-run setup.
+   - `APP_ENCRYPTION_KEY`: another long random string. It encrypts the provider keys Kite stores. Keep a copy: losing or changing it makes them unreadable.
+3. **Add `APP_URL`.** Under the Worker's **Settings → Variables and secrets**, add the variable `APP_URL` with the app's public HTTPS address, for example `https://kite.<your-subdomain>.workers.dev`. Password reset emails and receiving through Resend or Amazon SES need it. It cannot be asked at deploy time because the address does not exist yet; step 4 shows you the exact value.
+4. **Finish setup.** Open `/setup?setup_token=<your SETUP_TOKEN>` on the deployed app. The first screen checks the install and tells you what is missing: a red item must be fixed (for example a `CF_TOKEN` Cloudflare rejects, which Kite proves with a live call, or an example `APP_ENCRYPTION_KEY`), an amber one is a recommendation (for example the `APP_URL` to add). Then create your admin account.
+5. **Connect a domain.** Add a domain from the same Cloudflare account and choose which service receives its mail. Kite sets up Email Routing, or guides you through Resend or Amazon SES. Then create your first mailbox. Add Resend or AWS credentials on the domain page when you need them. Before sending real mail, read [sending and deliverability](docs/sending-and-deliverability.md) for SPF, DKIM and DMARC.
 
-- The zones you will connect: DNS Edit, Zone Read, Zone Settings Edit and Email Routing Rules Edit.
-- The account, if Kite will send mail through Cloudflare: Email Sending Edit.
-
-After the deploy, add the secret `APP_ENCRYPTION_KEY` (another long random string) to encrypt the provider keys Kite stores, and the variable `APP_URL` with the app's public HTTPS address, under the Worker's **Settings → Variables and secrets**.
+If something goes wrong in the first ten minutes, start with the troubleshooting table in the [deployment guide](docs/deployment.md#first-10-minutes-when-something-goes-wrong) and [Troubleshooting](docs/troubleshooting.md), then ask in [Discussions](https://github.com/midego1/kite/discussions) (see [SUPPORT.md](SUPPORT.md)).
 
 ### Deploy with an AI coding agent
 
@@ -194,12 +251,18 @@ GitHub workflows also run the security scans, draft a release from `v*` tags, re
 - [Deployment and configuration](docs/deployment.md)
 - [Privacy and data handling](docs/privacy.md)
 - [Sending and receiving providers (Cloudflare, Resend, Amazon SES)](docs/providers.md)
+- [Sending and deliverability: who can send, abuse protection, SPF, DKIM and DMARC](docs/sending-and-deliverability.md)
+- [Spam protection for incoming mail](docs/spam-protection.md)
 - [API and integrations](docs/api.md), including the [calendar and booking APIs](docs/api.md#calendar-and-booking)
 - [Email assistant and MCP](docs/email-assistant-and-mcp.md)
 - [Operations](docs/operations.md), including [after a deploy](docs/operations.md#after-a-deploy)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Roadmap](ROADMAP.md) and [changelog](CHANGELOG.md)
-- [Contributing](CONTRIBUTING.md) and [security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md), [getting help](SUPPORT.md) and [security policy](SECURITY.md)
+
+## How this was built
+
+Kite is developed with AI coding assistants as well as by hand. The repository contains the instruction files those tools read ([CLAUDE.md](CLAUDE.md) and [AGENTS.md](AGENTS.md)), and some commits are co-authored by AI agents (the history shows `factory-droid[bot]`, and an automated reviewer, CodeRabbit, comments on pull requests). Every change goes through the same gates, whoever wrote it: strict TypeScript, lint, unit tests and browser tests in CI, and a human review before anything is merged to `main`, which deploys production. AI-written code can still contain mistakes, so please report anything that looks wrong.
 
 ## License
 

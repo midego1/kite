@@ -17,7 +17,15 @@ export function isWebhookRetryMessage(payload: unknown): payload is WebhookRetry
 }
 
 export type QueueMessageKind =
-	"inbound" | "webhook_retry" | "outbound" | "agent_draft" | "agent_triage" | "import" | "mailbox_purge" | "unknown";
+	| "inbound"
+	| "webhook_retry"
+	| "outbound"
+	| "agent_draft"
+	| "agent_triage"
+	| "import"
+	| "mailbox_purge"
+	| "backup"
+	| "unknown";
 
 const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"email.scheduled": "outbound",
@@ -25,6 +33,7 @@ const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"agent.triage": "agent_triage",
 	"import.imap": "import",
 	"mailbox.purge": "mailbox_purge",
+	"backup.run": "backup",
 };
 
 // Matches the keys storeRawToR2 and intakeIncomingMail write: a timestamp and a nanoid, no addresses.

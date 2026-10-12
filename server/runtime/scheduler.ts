@@ -1,6 +1,7 @@
 import { createLogger } from "../../src/lib/logger.mjs";
 
 import { runScheduledDatabaseBackup } from "@/lib/backups/runner";
+import { failStaleBackups } from "@/lib/backups/service";
 import { runAgentMaintenance } from "@/lib/agent/maintenance";
 import { runTrashRetention } from "@/lib/email/trash-retention";
 import { runDatabasePruning } from "@/lib/maintenance/pruning";
@@ -18,7 +19,14 @@ export function startScheduler(env: CloudflareEnv) {
 		const now = new Date();
 		if (now.getUTCMinutes() % 5 === 0 && lastAlertMinute !== now.getTime() - (now.getTime() % 60_000)) {
 			lastAlertMinute = now.getTime() - (now.getTime() % 60_000);
-			runOperationalAlerts(env, now).catch((error) => logger.error("alerts.evaluation_failed", { error }));
+			// Recover interrupted backups before evaluating alerts, matching worker.ts.
+			failStaleBackups(env, now)
+				.then((count) => {
+					if (count) logger.warn("backup.stale_marked_failed", { count });
+				})
+				.catch((error) => logger.error("backup.stale_recover_failed", { error }))
+				.then(() => runOperationalAlerts(env, now))
+				.catch((error) => logger.error("alerts.evaluation_failed", { error }));
 		}
 		const day = now.toISOString().slice(0, 10);
 		if (now.getUTCHours() !== 2 || lastRunDay === day) return;

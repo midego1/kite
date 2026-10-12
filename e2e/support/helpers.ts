@@ -1,7 +1,7 @@
 import { expect, request, type APIRequestContext, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { BASE_URL } from "./constants";
-import type { InboundAttachment, InboundMail, StoredMessage } from "./helpers-types";
+import type { InboundAttachment, InboundMail, StoredMessage, BackupRow } from "./helpers-types";
 
 /** A lowercase word that FTS5 indexes as a single token, for finding test data again. */
 export function uniqueToken(prefix = "e2e"): string {
@@ -165,4 +165,31 @@ export async function setSendingSettings(
 ): Promise<void> {
 	const response = await api.patch("/api/settings/sending", { data: settings });
 	expect(response.ok(), await response.text()).toBe(true);
+}
+
+/** Every backup row the admin API lists, newest first. */
+export async function readBackups(api: APIRequestContext): Promise<BackupRow[]> {
+	const response = await api.get("/api/backups");
+	if (!response.ok()) throw new Error(`Failed to read backups: ${response.status()}`);
+	const data = (await response.json()) as { backups: BackupRow[] };
+	return data.backups;
+}
+
+/**
+ * Waits for a backup the admin API queued to finish. `POST /api/backups` only
+ * enqueues it, so the row is unfinished when the request returns and the export
+ * happens on the outbound queue consumer.
+ */
+export async function waitForBackup(api: APIRequestContext, backupId: string): Promise<BackupRow> {
+	let row: BackupRow | undefined;
+	await expect
+		.poll(
+			async () => {
+				row = (await readBackups(api)).find((backup) => backup.id === backupId);
+				return row?.status;
+			},
+			{ timeout: 60_000, intervals: [250, 500, 1000] },
+		)
+		.toMatch(/completed|failed/);
+	return row!;
 }

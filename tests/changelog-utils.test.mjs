@@ -150,6 +150,13 @@ test("HTML and unsafe links stay literal text", () => {
 		{ type: "text", text: "[x](//evil.example/settings)" },
 	]);
 	assert.equal(isAppChangelogHref("//evil.example"), false);
+	// Browsers treat a backslash as a slash, so these would leave the app too.
+	assert.deepEqual(parseInlineMarkdown("[x](/\\evil.example/settings)"), [
+		{ type: "text", text: "[x](/\\evil.example/settings)" },
+	]);
+	assert.equal(isAppChangelogHref("/\\evil.example"), false);
+	assert.equal(isAppChangelogHref("/settings\\..\\\\evil.example"), false);
+	assert.equal(isAppChangelogHref("/settings/inbox"), true);
 	const unsafe = parseInlineMarkdown("[click](javascript:alert('x'))");
 	assert.equal(unsafe.map((token) => token.text).join(""), "[click](javascript:alert('x'))");
 	assert.ok(unsafe.every((token) => token.type === "text"));

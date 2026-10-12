@@ -48,10 +48,15 @@ type InboundNotificationInput = {
  * a column and callers must not log it.
  */
 function buildInboundNewMessageNotification(input: InboundNotificationInput): NewMessageNotification {
-	const oneTimeCode = extractOneTimeCode({
-		subject: input.subject,
-		text: getLatestEmailContent(input.text?.trim() || htmlToReadableText(input.html)),
-	});
+	let oneTimeCode: string | null = null;
+	try {
+		oneTimeCode = extractOneTimeCode({
+			subject: input.subject,
+			text: getLatestEmailContent(input.text?.trim() || htmlToReadableText(input.html)),
+		});
+	} catch {
+		// The message is already stored; a detection failure must not fail delivery.
+	}
 	return {
 		type: "new_message",
 		messageId: input.messageId,

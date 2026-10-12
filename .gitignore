@@ -53,6 +53,7 @@ next-env.d.ts
 # vinext
 /.vinext
 /src/lib/migrations/bundle.json
+/src/lib/changelog/changelog.json
 
 # wrangler files
 .wrangler

@@ -25,6 +25,8 @@ import { runTrashRetention } from "./src/lib/email/trash-retention";
 import { runDatabasePruning } from "./src/lib/maintenance/pruning";
 import { runOperationalAlerts } from "./src/lib/alerts/run";
 import { isImportJobQueueMessage, processImportJob, resumeStalledImportJobs } from "./src/lib/import/jobs";
+import { maybeAutoApplyPendingMigrations } from "./src/lib/migrations/auto-apply";
+import { queueRetryDelaySeconds } from "./src/lib/migrations/pending";
 export { RealtimeHub } from "./src/lib/realtime/hub";
 
 const logger = createLogger("worker");
@@ -157,6 +159,9 @@ export default {
 	},
 
 	async queue(batch: MessageBatch, env: CloudflareEnv): Promise<void> {
+		// With AUTO_APPLY_MIGRATIONS set, pending migrations are applied before the batch runs, so
+		// inbound mail is not queued against a schema that is still a release behind.
+		await maybeAutoApplyPendingMigrations(env);
 		for (const msg of batch.messages) {
 			const started = performance.now();
 			const version = env.CF_VERSION_METADATA?.id ?? "";
@@ -197,7 +202,9 @@ export default {
 					env.METRICS,
 					queueMetric(msg.body, batch.queue, "retry", Math.round(performance.now() - started), msg.attempts, version),
 				);
-				msg.retry({ delaySeconds: 10 });
+				// The consumer retries rather than drops. A failure while migrations are pending waits
+				// longer, so an admin applying them still keeps the message (max_retries is 3 either way).
+				msg.retry({ delaySeconds: await queueRetryDelaySeconds(env.DB) });
 			}
 		}
 	},

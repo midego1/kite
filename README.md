@@ -154,7 +154,7 @@ docker compose up -d --build
 
 ## Local development
 
-Kite uses calendar versions, `YYYY.MM.DD.N`: the UTC date a release was prepared, then a counter for releases prepared that day, starting at 0. The sidebar and database card show the version from `VERSION` with the short Git revision, for example `2026.10.09.0 (985434d)`; a build between releases shows the last release with its own revision. The revision comes from Cloudflare/GitHub build metadata or the local Git checkout, and displays `unknown` when neither is available. See [Releasing](docs/releasing.md).
+Kite uses calendar versions, `YYYY.MM.DD.N`: the UTC date a release was prepared, then a counter for releases prepared that day, starting at 0. The sidebar and database card show the version from `VERSION` with the short Git revision, for example `2026.10.09.0 (985434d)`; a build between releases shows the last release with its own revision. The revision comes from Cloudflare/GitHub build metadata or the local Git checkout, and displays `unknown` when neither is available. The sidebar footer also shows when the build was made and opens the release notes bundled with it. See [Releasing](docs/releasing.md).
 
 ```bash
 cp .dev.vars.example .dev.vars

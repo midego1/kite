@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
 	env: {
 		NEXT_PUBLIC_KITE_BUILD_VERSION: build.version,
 		NEXT_PUBLIC_KITE_BUILD_COMMIT: build.commit,
+		NEXT_PUBLIC_KITE_BUILD_TIME: build.builtAt,
 	},
 	distDir: process.env.KITE_RUNTIME === "node" ? ".next-node" : undefined,
 	turbopack: {

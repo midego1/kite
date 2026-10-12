@@ -72,7 +72,7 @@ A push to `main` deploys the main Worker through the Cloudflare Git integration.
    - `backup.scheduled_failed`: the scheduled backup failed.
    - `alerts.*`: the operational alert run (see [Operational alerts](#operational-alerts)).
 4. Open Metrics and compare requests, errors and CPU time with the period before the deploy.
-5. On the Admin overview, the database card (`src/components/admin-update-card.tsx`, `GET /api/admin/migrations`) shows pending D1 migrations. Apply them from there; deploys never migrate for you.
+5. On the Admin overview, the database card (`src/components/admin-update-card.tsx`, `GET /api/admin/migrations`) shows pending D1 migrations. Apply them from there; deploys never migrate for you. Until they are applied, the mailbox shows the same warning with an **Apply now** button (`GET /api/migrations/pending`), and inbound mail is retried rather than stored. With `AUTO_APPLY_MIGRATIONS=1` the first check or queue batch applies them instead, after saving the usual safety backup.
 6. `GET /api/setup/status` answers 200 when the setup and database reads work. It does not prove queues, R2 or providers.
 7. Send a synthetic message from a mailbox and receive one from outside. Both must arrive. Use only `example.com` style synthetic addresses.
 

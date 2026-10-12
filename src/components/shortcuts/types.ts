@@ -1,4 +1,5 @@
 import type React from "react";
+import type { CommandParamField, CommandParamValues } from "@/lib/modules/module-types";
 
 export type ModifierKey = "ctrl" | "meta" | "alt" | "shift";
 
@@ -16,11 +17,15 @@ export interface CommandItem {
 	id: string;
 	title: string;
 	subtitle?: string;
-	category: "Actions" | "Navigation" | "Settings" | "Mailboxes" | "General";
+	/** The palette group heading. */
+	category: string;
 	icon?: React.ComponentType<{ className?: string }>;
 	shortcut?: string;
 	keywords?: string[];
-	perform: () => void;
+	/** Values the palette asks for before running; none means it runs on selection. */
+	params?: CommandParamField[];
+	/** Returns a message when the command could not run, which the palette shows instead of closing. */
+	perform: (values?: CommandParamValues) => void | string | Promise<void | string>;
 }
 
 export interface ShortcutsSettingsResponse {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MODULE_MANIFESTS } from "@/lib/modules/registry";
+import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import { moduleNavItems } from "@/lib/modules/nav-utils";
 import type { ModuleNavPlacement } from "@/lib/modules/module-types";
 import { resolveNavIcon } from "./client-registry";
@@ -10,7 +10,7 @@ import { useModules } from "./modules-context";
 /** The account menu links that the modules on for this user contribute to `placement`. */
 export function ModuleMenuLinks({ placement, onNavigate }: { placement: ModuleNavPlacement; onNavigate: () => void }) {
 	const { modules } = useModules();
-	return moduleNavItems(MODULE_MANIFESTS, placement, modules).map((item) => {
+	return moduleNavItems(CLIENT_MODULES, placement, modules).map((item) => {
 		const Icon = resolveNavIcon(item.icon);
 		return (
 			<Link

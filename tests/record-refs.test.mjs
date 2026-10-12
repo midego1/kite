@@ -20,9 +20,10 @@ const {
 	["SqliteDatabase", "server/runtime/sqlite-database.ts"],
 	["applyMigrations", "server/runtime/migrate.ts"],
 	[
-		"parseRecordKind, parseRecordRef, formatRecordRef, isSameOriginPath, neutralRefLabel, refTarget, createRefResolver",
+		"parseRecordKind, parseRecordRef, formatRecordRef, neutralRefLabel, refTarget, createRefResolver",
 		"src/lib/modules/record-ref-utils.ts",
 	],
+	["isSameOriginPath", "src/lib/modules/path-utils.ts"],
 	["resolveRecordRefs", "src/lib/modules/record-refs.ts"],
 	["clearModuleStateCache", "src/lib/modules/state.ts"],
 	["MODULE_MANIFESTS", "src/lib/modules/registry.ts"],

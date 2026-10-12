@@ -19,7 +19,7 @@ import { SidebarProvider } from "@/components/sidebar-state";
 import { ShortcutsProvider } from "@/components/shortcuts";
 import { Button } from "@/components/ui/button";
 import clsx from "clsx";
-import { MODULE_MANIFESTS } from "@/lib/modules/registry";
+import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import { moduleNavItems } from "@/lib/modules/nav-utils";
 import { CalendarMobileUpcoming } from "./calendar-mobile-upcoming";
 import { useDashboardState, useLatch } from "../(dashboard)/dashboard-state";
@@ -34,7 +34,7 @@ function CalendarFrame({ children }: { children: React.ReactNode }) {
 	const assistantVisible = assistantEnabled === true && assistantOpen;
 	const assistantLoaded = useLatch(assistantVisible);
 	const { modules } = useModules();
-	const tabs = moduleNavItems(MODULE_MANIFESTS, "module-tabs", modules);
+	const tabs = moduleNavItems(CLIENT_MODULES, "module-tabs", modules);
 
 	useEffect(() => {
 		if (assistantEnabled === false && (assistantOpen || assistantFullSize)) {

@@ -1,3 +1,4 @@
+import { MODULE_IDS } from "./client-data/module-ids";
 import { bookingManifest } from "./booking/manifest";
 import { calendarManifest } from "./calendar/manifest";
 import { importManifest } from "./import/manifest";
@@ -12,7 +13,7 @@ export const MODULE_MANIFESTS: readonly ModuleManifest[] = [
 	importManifest,
 ];
 
-export const MODULE_IDS: readonly ModuleId[] = MODULE_MANIFESTS.map((manifest) => manifest.id);
+export { MODULE_IDS };
 
 /** @public Consumed by tests and the features that wire modules into core surfaces. */
 export function isModuleId(value: unknown): value is ModuleId {

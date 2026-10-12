@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { isSameOriginPath } from "@/lib/modules/record-ref-utils";
+import { isSameOriginPath } from "@/lib/modules/path-utils";
 import type { RecordRefTarget } from "@/lib/modules/record-ref-types";
 
 type RecordRefLinkProps = {

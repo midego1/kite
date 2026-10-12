@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { ModuleId } from "@/lib/modules/module-types";
-import { MODULE_IDS } from "@/lib/modules/registry";
+import { MODULE_IDS } from "@/lib/modules/client-data/module-ids";
 
 type ModulesState = {
 	/** The modules that are on for the signed-in user, in registry order. */

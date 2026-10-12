@@ -1,16 +1,17 @@
 import type { ModuleManifest } from "../module-types";
+import { templatesClientData } from "../client-data/templates";
 
 export const templatesManifest: ModuleManifest = {
 	id: "templates",
-	name: "Email templates",
+	name: templatesClientData.name,
 	description: "Save a message as a template and insert it from the composer's send menu.",
 	runtime: "builtin",
 	dependsOn: [],
 	defaultEnabled: true,
 	pages: [],
 	apiPrefixes: [{ prefix: "/api/templates" }],
-	nav: [],
-	commands: [],
+	nav: templatesClientData.nav,
+	commands: templatesClientData.commands,
 	composerSlots: [{ id: "templates.send-menu", slot: "send-menu", order: 10, label: "Template" }],
 	recordKinds: [{ kind: "templates:template", label: "Email template", unavailableLabel: "Template" }],
 	webhookEvents: [],

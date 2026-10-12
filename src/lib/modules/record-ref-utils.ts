@@ -1,5 +1,6 @@
 import type { ModuleId, RecordKind, RecordRef } from "./module-types";
 import type { RawRefResult, RecordRefTarget, RefResolverDeps, RefViewer, ResolvedRecordRef } from "./record-ref-types";
+import { isSameOriginPath } from "./path-utils";
 import { MODULE_MANIFESTS } from "./registry";
 
 /** Core-owned kinds with the neutral label shown when the record cannot be shown. */
@@ -57,17 +58,6 @@ export function parseRecordRef(value: unknown): RecordRef | null {
 /** @public Consumed by tests and the features that carry refs in payloads and audit metadata. */
 export function formatRecordRef(ref: RecordRef): string {
 	return `${ref.kind}:${ref.id}`;
-}
-
-/** A path on this site: one leading slash, no scheme, no `//` or `/\` host form, no control characters. */
-export function isSameOriginPath(value: unknown): value is string {
-	if (typeof value !== "string" || value.length === 0 || value[0] !== "/") return false;
-	if (value[1] === "/" || value[1] === "\\") return false;
-	for (let index = 0; index < value.length; index++) {
-		const code = value.charCodeAt(index);
-		if (code < 0x20 || code === 0x7f) return false;
-	}
-	return true;
 }
 
 /** The label that names a kind without naming a record, from the manifest for module kinds. */

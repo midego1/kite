@@ -49,12 +49,31 @@ export type UiCommand = {
 	shortcut?: string;
 };
 
+/** What a client command handler may use; it runs in the tab with the user's own session. */
+export type CommandParamValues = Record<string, JsonValue>;
+export type CommandHandlerContext = { navigate: (href: string) => void; params: CommandParamValues };
+export type CommandHandler = (context: CommandHandlerContext) => void | Promise<void>;
+export type CommandParamField = { name: string; required: boolean; hint?: string };
+
+export type CoreShortcutChrome = "togglePalette" | "toggleHelp" | "focusSearch" | "dismiss";
+
+/** A key binding core owns: it runs a listed command, or one of the palette shell's own actions. */
+export type CoreShortcut = {
+	key: string;
+	label: string;
+	category: "Navigation" | "Actions" | "Composing" | "Selection" | "General";
+	modifiers?: ("ctrl" | "meta" | "alt" | "shift")[];
+} & ({ commandId: string; chrome?: undefined } | { chrome: CoreShortcutChrome; commandId?: undefined });
+
 export type ComposerSlotDeclaration = {
 	id: string;
 	slot: "send-menu";
 	order: number;
 	label: string;
 };
+
+/** The part of a manifest that browser code needs: identity, navigation and commands. */
+export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "commands">;
 
 export type ModuleWebhookEvent = { value: string; label: string; hint: string };
 

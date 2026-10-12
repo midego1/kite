@@ -24,7 +24,7 @@ import { resolveNavIcon } from "@/components/modules/client-registry";
 import type { AuthMeUser } from "@/lib/auth/me-client-types";
 import { moduleNavItems } from "@/lib/modules/nav-utils";
 import type { ModuleId } from "@/lib/modules/module-types";
-import { MODULE_MANIFESTS } from "@/lib/modules/registry";
+import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import type { NavItem, NavMode, NavSearchGroup, NavSection } from "./section-nav-types";
 
 /** Core Settings items sit among a module's by this order; Export stays after Import. */
@@ -66,7 +66,7 @@ const settingsNavSections: NavSection[] = [
 
 /** Adds the Settings items the modules declare to their groups, in manifest order among the core ones. */
 function withModuleItems(sections: NavSection[]): NavSection[] {
-	const items = moduleNavItems(MODULE_MANIFESTS, "settings-nav");
+	const items = moduleNavItems(CLIENT_MODULES, "settings-nav");
 	return sections.map((section) => {
 		const added = items.filter((item) => item.group === section.label);
 		if (!added.length) return section;

@@ -14,6 +14,7 @@ import { useSidebar } from "@/components/sidebar-state";
 import { UpcomingSidebar } from "../upcoming-sidebar";
 import { BookingEditor } from "./booking-editor";
 import { BookingListSkeleton } from "./booking-list-skeleton";
+import { useBookingEventFromUrl } from "./use-event-from-url";
 import { visibleBookingEvents } from "./default-events";
 import type { BookingEvent, BookingForm, BookingHost } from "./types";
 import { availabilityLabel, durationLabel, emptyBookingForm, formFromEvent } from "./utils";
@@ -109,6 +110,7 @@ export default function BookingsPage() {
 		setMenuId(null);
 		if (!panelOpen) revealPanel();
 	}
+	useBookingEventFromUrl(events, loading, startEdit);
 	function closeEditor() {
 		setPanelOpen(false);
 	}

@@ -38,6 +38,7 @@ import { UpcomingSidebar } from "../upcoming-sidebar";
 import { DayEvents } from "./day-events";
 import { MonthView } from "./month-view";
 import { CalendarViewOptions, CalendarViewSelect } from "./view-selector";
+import { useCalendarUrlActions } from "./use-url-actions";
 import type { CalendarEvent, CalendarView, EventDragPreview, EventResizeEdge, EventResizeSession } from "./types";
 import {
 	addDays,
@@ -224,6 +225,8 @@ export default function CalendarPage() {
 		setClosingEventEditor(false);
 		setAdding(true);
 	}
+
+	useCalendarUrlActions(setVisibleDate, openNewEvent);
 
 	async function addEvent() {
 		setPendingAction("save");

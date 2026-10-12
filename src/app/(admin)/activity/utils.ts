@@ -1,5 +1,5 @@
 import { authFetch } from "@/lib/auth/client";
-import { MODULE_MANIFESTS } from "@/lib/modules/registry";
+import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import { formatUserDate } from "@/lib/time/utils";
 import type { ActivityLog, ActivityMetadata } from "./types";
 
@@ -33,7 +33,7 @@ export function isModuleActivity(action: string): boolean {
 /** One plain sentence for a module change, or null for any other activity. */
 export function describeModuleActivity(log: ActivityLog, metadata: ActivityMetadata): string | null {
 	if (!isModuleActivity(log.action)) return null;
-	const name = MODULE_MANIFESTS.find((manifest) => manifest.id === metadata.moduleId)?.name ?? "a module";
+	const name = CLIENT_MODULES.find((manifest) => manifest.id === metadata.moduleId)?.name ?? "a module";
 	if (log.action === "module.enabled") return `Turned on ${name}`;
 	if (log.action === "module.disabled") return `Turned off ${name}`;
 	const user = log.targetEmail ?? "a user";

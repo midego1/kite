@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Search, CornerDownLeft } from "lucide-react";
+import toast from "react-hot-toast";
 import type { CommandItem } from "./types";
+import { CommandParamForm } from "./command-palette-params";
 import { filterCommands, groupCommandsByCategory } from "./command-palette-utils";
 import { CommandPaletteItem } from "./command-palette-item";
 
@@ -16,6 +18,9 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 	const [query, setQuery] = useState("");
 	const [selectedIndex, setSelectedIndex] = useState(0);
 	const inputRef = useRef<HTMLInputElement>(null);
+	const [pending, setPending] = useState<CommandItem | null>(null);
+	const [values, setValues] = useState<Record<string, string>>({});
+	const [paramError, setParamError] = useState<string | null>(null);
 
 	useEffect(() => {
 		inputRef.current?.focus();
@@ -25,7 +30,39 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 
 	const activeIndex = Math.min(selectedIndex, Math.max(0, filteredCommands.length - 1));
 
+	const select = (item: CommandItem) => {
+		if (item.params?.length) {
+			setPending(item);
+			setValues({});
+			setParamError(null);
+			return;
+		}
+		const result = item.perform();
+		onClose();
+		void Promise.resolve(result).then((message) => {
+			if (typeof message === "string") toast.error(message);
+		});
+	};
+
+	const submitParams = async () => {
+		if (!pending) return;
+		const entered = Object.fromEntries(Object.entries(values).filter(([, value]) => value.trim() !== ""));
+		const message = await pending.perform(entered);
+		if (typeof message === "string") setParamError(message);
+		else onClose();
+	};
+
 	const handleKeyDown = (e: React.KeyboardEvent) => {
+		if (pending) {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				void submitParams();
+			} else if (e.key === "Escape") {
+				e.preventDefault();
+				setPending(null);
+			}
+			return;
+		}
 		if (e.key === "ArrowDown") {
 			e.preventDefault();
 			setSelectedIndex((prev) => (prev + 1) % (filteredCommands.length || 1));
@@ -34,10 +71,7 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 			setSelectedIndex((prev) => (prev - 1 + filteredCommands.length) % (filteredCommands.length || 1));
 		} else if (e.key === "Enter") {
 			e.preventDefault();
-			if (filteredCommands[activeIndex]) {
-				filteredCommands[activeIndex].perform();
-				onClose();
-			}
+			if (filteredCommands[activeIndex]) select(filteredCommands[activeIndex]);
 		} else if (e.key === "Escape") {
 			e.preventDefault();
 			onClose();
@@ -61,6 +95,7 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 					<input
 						ref={inputRef}
 						type="text"
+						disabled={pending !== null}
 						value={query}
 						onChange={(e) => {
 							setQuery(e.target.value);
@@ -76,7 +111,14 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 
 				{/* Results */}
 				<div className="max-h-80 overflow-y-auto p-2">
-					{filteredCommands.length === 0 ? (
+					{pending ? (
+						<CommandParamForm
+							item={pending}
+							values={values}
+							error={paramError}
+							onChange={(name, value) => setValues((previous) => ({ ...previous, [name]: value }))}
+						/>
+					) : filteredCommands.length === 0 ? (
 						<div className="p-8 text-center text-sm text-neutral-400">
 							No matching commands found for &ldquo;{query}&rdquo;
 						</div>
@@ -96,10 +138,7 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 											key={item.id}
 											item={item}
 											isActive={isCurrent}
-											onSelect={() => {
-												item.perform();
-												onClose();
-											}}
+											onSelect={() => select(item)}
 											onHover={() => setSelectedIndex(itemIndex)}
 										/>
 									);

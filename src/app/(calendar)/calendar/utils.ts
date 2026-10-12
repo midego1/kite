@@ -171,6 +171,16 @@ export function rescheduleCalendarOccurrence(
 	return null;
 }
 
+/** The local start of the day a `?date=YYYY-MM-DD` link names, or null when it is not a real date. */
+export function calendarDateFromParam(value: string | null): Date | null {
+	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "");
+	if (!match) return null;
+	const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+	const fields = new Date(Date.UTC(year, month - 1, day));
+	if (fields.getUTCMonth() !== month - 1 || fields.getUTCDate() !== day) return null;
+	return dateFromZonedFields(fields, getUserTimeZone());
+}
+
 export function startOfDay(value: Date): Date {
 	const fields = zonedDateFields(value, getUserTimeZone());
 	fields.setUTCHours(0, 0, 0, 0);

@@ -1,38 +1,17 @@
 import type { ModuleManifest } from "../module-types";
+import { importClientData } from "../client-data/import";
 
 export const importManifest: ModuleManifest = {
 	id: "import",
-	name: "Mail import",
+	name: importClientData.name,
 	description: "Bring mail in from an IMAP server or from mbox and eml files, including background IMAP jobs.",
 	runtime: "builtin",
 	dependsOn: [],
 	defaultEnabled: true,
 	pages: [{ prefix: "/settings/import" }],
 	apiPrefixes: [{ prefix: "/api/import" }],
-	nav: [
-		{
-			id: "import.settings-nav",
-			label: "Import",
-			href: "/settings/import",
-			icon: "Download",
-			placement: "settings-nav",
-			group: "Mailbox",
-			keywords: ["imap", "migrate"],
-			order: 10,
-		},
-	],
-	commands: [
-		{
-			id: "import.open",
-			moduleId: "import",
-			label: "Import mail",
-			description: "Open the mail import settings",
-			keywords: ["imap", "migrate", "mbox", "eml"],
-			group: "Go to",
-			target: { type: "route", href: "/settings/import" },
-			effect: "navigate",
-		},
-	],
+	nav: importClientData.nav,
+	commands: importClientData.commands,
 	composerSlots: [],
 	recordKinds: [{ kind: "import:job", label: "Import job", unavailableLabel: "Import" }],
 	webhookEvents: [],

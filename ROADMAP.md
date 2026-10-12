@@ -141,7 +141,7 @@ Google treats full Gmail access (`https://mail.google.com/`) as a restricted sco
 Files next to mail, on storage the operator chooses. Today every object (raw MIME, attachments, backups) goes through the one `BUCKET` binding with `get`, `put` and `delete`; the Node runtime already swaps R2 for a folder (`server/runtime/file-bucket.ts`), and `src/lib/aws/` already signs S3 requests. Items 1 to 3 are specified in [docs/specs/drive-storage.md](docs/specs/drive-storage.md); storing attachments once ([docs/specs/attachments-once.md](docs/specs/attachments-once.md)) comes first and cuts mail storage by about a third.
 
 1. **Storage providers**
-   - R2 stays the default. An admin can add an S3-compatible store (AWS S3, Backblaze B2, Wasabi, Hetzner, MinIO) behind the same interface. Credentials are encrypted with `APP_ENCRYPTION_KEY` and checked before saving, like the AWS settings.
+   - R2 stays the default. An admin can add an S3-compatible store (AWS S3, Backblaze B2, Wasabi, Hetzner, MinIO, RustFS) behind the same interface. Credentials are encrypted with `APP_ENCRYPTION_KEY` and checked before saving, like the AWS settings.
    - Large uploads and downloads go straight between the browser and the store through short-lived signed URLs, so they are not limited by the Worker request size.
    - Test: unit tests for the S3 adapter against recorded responses; e2e against a local S3-compatible server.
 2. **Drive (optional)**
@@ -156,6 +156,11 @@ Files next to mail, on storage the operator chooses. Today every object (raw MIM
    - Test: unit tests for the age rules; e2e moves an old message and still opens and searches it.
 4. **External storage** (needs 2)
    - WebDAV first (Nextcloud, ownCloud, most NAS), shown as a linked folder. Google Drive and OneDrive follow, each with the install's own OAuth app, as in milestone 6.
+5. **Your own database** (self-hosted)
+   - The database becomes pluggable like storage: a self-hosted install can run a hosted SQLite-compatible database (libSQL, Turso) instead of the local file, behind the existing `getDb()` seam. D1 on Cloudflare and the SQLite file in Docker stay the defaults; the dialect, the migration history and the FTS5 search index do not change.
+   - Credentials are encrypted with `APP_ENCRYPTION_KEY` and checked before saving, like the AWS settings, and the admin overview shows which database and storage an install uses.
+   - Not planned: Postgres and MySQL engines. SQLite is load-bearing (the D1 dialect, the hand-written migrations, every FTS5 index); a hosted SQLite service gives operators a managed database without rewriting the data layer.
+   - Test: unit tests for the driver seam; an e2e run against a local libSQL server.
 
 ## Milestone 8: Sender screening
 

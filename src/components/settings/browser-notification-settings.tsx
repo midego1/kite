@@ -2,17 +2,25 @@
 
 import { useEffect, useState } from "react";
 import { Switch } from "@/components/ui/switch";
-import { areBrowserNotificationsEnabled, setBrowserNotificationsEnabled } from "@/hooks/message-realtime-utils";
+import {
+	areBrowserNotificationsEnabled,
+	areOneTimeCodesInNotificationsEnabled,
+	ensureNotificationServiceWorker,
+	setBrowserNotificationsEnabled,
+	setOneTimeCodesInNotificationsEnabled,
+} from "@/hooks/message-realtime-utils";
 
 export function BrowserNotificationSettings() {
 	const [permission, setPermission] = useState<NotificationPermission | "unsupported">("unsupported");
 	const [enabled, setEnabled] = useState(false);
+	const [codesEnabled, setCodesEnabled] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		const refresh = () => {
 			setPermission(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
 			setEnabled(areBrowserNotificationsEnabled());
+			setCodesEnabled(areOneTimeCodesInNotificationsEnabled());
 		};
 		refresh();
 		window.addEventListener("focus", refresh);
@@ -22,6 +30,8 @@ export function BrowserNotificationSettings() {
 			window.removeEventListener("storage", refresh);
 		};
 	}, []);
+
+	const notificationsReady = permission === "granted" && enabled;
 
 	return (
 		<div>
@@ -33,7 +43,7 @@ export function BrowserNotificationSettings() {
 					</span>
 				</span>
 				<Switch
-					checked={permission === "granted" && enabled}
+					checked={notificationsReady}
 					disabled={permission === "unsupported" || permission === "denied"}
 					onCheckedChange={(nextEnabled) => {
 						setError(null);
@@ -53,12 +63,37 @@ export function BrowserNotificationSettings() {
 								if (nextPermission !== "granted") return;
 								setBrowserNotificationsEnabled(true);
 								setEnabled(true);
+								// The Copy code action and click handling come from the service worker.
+								await ensureNotificationServiceWorker();
 							} catch {
 								setError("Could not enable browser notifications.");
 							}
 						})();
 					}}
 					aria-label="Enable browser notifications"
+				/>
+			</label>
+			<label className="mt-3 flex items-start gap-3 rounded-xl bg-neutral-50 p-4">
+				<span className="flex-1">
+					<span className="block text-sm font-medium text-neutral-900">Show one-time codes in notifications</span>
+					<span className="mt-1 block text-sm text-neutral-500">
+						When new mail contains a sign-in or verification code, put the code in the notification so one click copies
+						it. Turn this off to keep codes out of the notification.
+					</span>
+				</span>
+				<Switch
+					checked={codesEnabled}
+					disabled={!notificationsReady}
+					onCheckedChange={(nextEnabled) => {
+						setError(null);
+						try {
+							setOneTimeCodesInNotificationsEnabled(nextEnabled);
+							setCodesEnabled(nextEnabled);
+						} catch {
+							setError("Could not save the one-time code preference in this browser.");
+						}
+					}}
+					aria-label="Show one-time codes in notifications"
 				/>
 			</label>
 			{permission === "denied" && (

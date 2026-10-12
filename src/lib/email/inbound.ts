@@ -12,6 +12,8 @@ import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { listMessageAttachments, storeMessageAttachments } from "@/lib/email/attachments";
 import { inboundAttachmentLimitReason } from "@/lib/email/inbound-attachments";
 import { inboundMessageId } from "@/lib/email/inbound-id";
+import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
+import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { getUnsubscribeUrlFromRawR2Key } from "@/lib/email/unsubscribe";
 import { resolveThreadId } from "@/lib/email/threading";
 import { normalizeMessageId } from "@/lib/email/thread-lookup";
@@ -20,6 +22,7 @@ import { analyzeSpam } from "@/lib/spam/engine";
 import { getReputationKeys } from "@/lib/spam/analyzers/reputation";
 import { recordReputationObservation } from "@/lib/spam/repository";
 import { getMailboxNotificationUserIds, notifyUsersOfNewMessage } from "@/lib/realtime/utils";
+import type { NewMessageNotification } from "@/lib/realtime/types";
 import { scheduleAgentWork } from "@/lib/agent/auto-read/schedule";
 
 export type InboundQueueMessage = {
@@ -28,6 +31,37 @@ export type InboundQueueMessage = {
 	rawR2Key: string;
 	headers?: Record<string, string>;
 };
+
+type InboundNotificationInput = {
+	messageId: string;
+	mailboxId: string;
+	from: string;
+	fromName: string | null;
+	subject: string | null;
+	text: string | null;
+	html: string | null;
+};
+
+/**
+ * Builds the realtime new-message payload. The one-time code is detected from
+ * the latest (unquoted) parsed text for this event only: it is never stored in
+ * a column and callers must not log it.
+ */
+function buildInboundNewMessageNotification(input: InboundNotificationInput): NewMessageNotification {
+	const oneTimeCode = extractOneTimeCode({
+		subject: input.subject,
+		text: getLatestEmailContent(input.text?.trim() || htmlToReadableText(input.html)),
+	});
+	return {
+		type: "new_message",
+		messageId: input.messageId,
+		mailboxId: input.mailboxId,
+		from: input.from,
+		fromName: input.fromName,
+		subject: input.subject,
+		...(oneTimeCode ? { oneTimeCode } : {}),
+	};
+}
 
 export async function processInboundMessage(env: CloudflareEnv, payload: InboundQueueMessage): Promise<void> {
 	const db = getDb(env);
@@ -240,14 +274,19 @@ export async function processInboundMessage(env: CloudflareEnv, payload: Inbound
 			decision.mailbox.mailboxId,
 			decision.mailbox.userId,
 		);
-		await notifyUsersOfNewMessage(env, notificationUserIds, {
-			type: "new_message",
-			messageId,
-			mailboxId: decision.mailbox.mailboxId,
-			from: fromAddr,
-			fromName: contact?.displayName ?? null,
-			subject: parsed.subject,
-		});
+		await notifyUsersOfNewMessage(
+			env,
+			notificationUserIds,
+			buildInboundNewMessageNotification({
+				messageId,
+				mailboxId: decision.mailbox.mailboxId,
+				from: fromAddr,
+				fromName: contact?.displayName ?? null,
+				subject: parsed.subject,
+				text: parsed.text,
+				html: parsed.html,
+			}),
+		);
 	}
 	await dispatchWebhooks(env, decision.mailbox.userId, "message.inbound", {
 		messageId,

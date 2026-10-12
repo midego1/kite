@@ -27,7 +27,7 @@ The screenshots show invented demo data. `npm run screenshots` takes them again 
 - **Safer sending**: Preview an email before it goes out and undo a send for a few seconds afterwards.
 - **Organization**: Keep your inbox tidy with search, folders, stars, snooze, archive, spam, and trash, with undo for archive and trash. After a bulk action you return to the message list with the selection cleared.
 - **Routing rules**: Store, forward, reject, or sort incoming mail automatically.
-- **Notifications**: Get live inbox updates and alerts when new mail arrives.
+- **Notifications**: Get live inbox updates and alerts when new mail arrives, and copy a one-time code straight from the notification.
 - **Import, export, contacts**: Move mail in and out, manage contacts, and block unwanted senders.
 - **Admin**: Manage users, permissions, API keys, webhooks, audit logs, and backups. Admin pages share the Settings layout, with the mail sidebar and one side menu that switches between Settings and Admin; there, the top-bar search field finds pages in both menus (on phones, the menu sheet has its own search), and audit logs are under Activity.
 - **AI assistant**: Search your mail, draft replies, and manage calendar events with AI.

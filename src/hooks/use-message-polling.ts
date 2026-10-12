@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { AUTH_SESSION_CHANGED_EVENT, getClientSessionKey } from "@/lib/auth/client";
 import type { MessageRealtimeState, NewMessageEvent, RealtimeChannelMessage } from "./message-realtime-types";
 import {
+	areBrowserNotificationsEnabled,
 	dispatchAgentSuggestionChanged,
+	ensureNotificationServiceWorker,
 	getRealtimeWebSocketUrl,
 	getReconnectDelay,
 	parseNewMessageEvent,
@@ -105,7 +107,7 @@ export function useMessagePolling(): MessageRealtimeState {
 			dispatchMessagesChanged();
 			setNotification(event);
 			if (fromSocket) {
-				showBrowserNewMessageNotification(event);
+				void showBrowserNewMessageNotification(event);
 				channel?.postMessage({ type: "notification", payload } satisfies RealtimeChannelMessage);
 			}
 		}
@@ -243,6 +245,15 @@ export function useMessagePolling(): MessageRealtimeState {
 			channel = new BroadcastChannel("kite:realtime");
 			channel.onmessage = onChannelMessage;
 			channel.postMessage({ type: "status_request" } satisfies RealtimeChannelMessage);
+		}
+		// One-time codes are copied from notification clicks, which need the
+		// service worker registered before the first notification, not after.
+		if (
+			typeof Notification !== "undefined" &&
+			Notification.permission === "granted" &&
+			areBrowserNotificationsEnabled()
+		) {
+			void ensureNotificationServiceWorker();
 		}
 		window.addEventListener(AUTH_SESSION_CHANGED_EVENT, restartForSessionChange);
 		window.addEventListener("storage", onStorageChange);

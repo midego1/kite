@@ -76,6 +76,8 @@ export type ComposerSlotDeclaration = {
 export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "commands"> & {
 	/** Suggestion kinds the module's `suggestion_kind` capabilities declare, so the reader card can pick the module's client chunk without the registry. */
 	suggestionKinds?: readonly string[];
+	/** The key scopes the module adds, so the key forms can list them only while it is on. */
+	keyScopes?: { mcp: readonly { scope: string; mailboxBound: boolean }[]; api: readonly string[] };
 };
 
 export type ModuleWebhookEvent = { value: string; label: string; hint: string };

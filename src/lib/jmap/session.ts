@@ -4,8 +4,10 @@ import type { JmapContext } from "./types";
 /** The Session object (RFC 8620 §2). One account per API key: the key's user. */
 export function buildSession(ctx: JmapContext, sessionState: string) {
 	const base = `${ctx.origin}/jmap`;
+	const moduleCapabilities = ctx.modules?.capabilities ?? {};
 	return {
 		capabilities: {
+			...moduleCapabilities,
 			[CAPABILITY_CORE]: {
 				maxSizeUpload: LIMITS.maxSizeUpload,
 				maxConcurrentUpload: 4,
@@ -25,6 +27,7 @@ export function buildSession(ctx: JmapContext, sessionState: string) {
 				isPersonal: true,
 				isReadOnly: false,
 				accountCapabilities: {
+					...moduleCapabilities,
 					[CAPABILITY_MAIL]: {
 						maxMailboxesPerEmail: 1,
 						maxMailboxDepth: 2,

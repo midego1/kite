@@ -6,14 +6,15 @@ import { getDb } from "@/db";
 import { agentSendApprovals, apiKeys, mcpKeyMailboxes } from "@/db/schema";
 import { requireSessionUser } from "@/lib/api/auth";
 import { generateApiKey, parseScopes, scopesToJson } from "@/lib/api-keys";
-import { API_KEY_MAX_MAILBOXES, API_KEY_SCOPES } from "@/lib/api/scopes";
+import { API_KEY_MAX_MAILBOXES } from "@/lib/api/scopes";
+import { creatableKeyScopes, keyScopesNeedMailbox, refuseDisabledKeyScopes } from "@/lib/modules/key-scopes";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 
 const createKeySchema = z.object({
 	name: z.string().trim().min(1).max(100),
-	scopes: z.array(z.enum([...API_KEY_SCOPES])).min(1),
+	scopes: z.array(z.enum(creatableKeyScopes("api"))).min(1),
 	mailboxIds: z.array(z.string().min(1)).max(API_KEY_MAX_MAILBOXES),
 });
 
@@ -59,10 +60,13 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 	}
 
+	const disabled = await refuseDisabledKeyScopes(env, user, "api", parsed.data.scopes);
+	if (disabled) return disabled;
+
 	const { fullKey, prefix, hash } = generateApiKey();
 	const db = getDb(env);
 	const mailboxIds = [...new Set(parsed.data.mailboxIds)];
-	if (!mailboxIds.length && parsed.data.scopes.some((scope) => !scope.startsWith("calendar:")))
+	if (!mailboxIds.length && keyScopesNeedMailbox("api", parsed.data.scopes))
 		return NextResponse.json({ error: "Choose a mailbox for mail permissions" }, { status: 400 });
 	for (const mailboxId of mailboxIds)
 		if (!(await getMailboxAccessLevel(db, user, mailboxId))?.canRead)

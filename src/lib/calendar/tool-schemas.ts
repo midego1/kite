@@ -77,7 +77,3 @@ export const calendarToolDescriptions: Record<CalendarToolName, string> = {
 };
 
 export const CALENDAR_TOOL_NAMES = Object.keys(calendarToolSchemas) as CalendarToolName[];
-export const calendarToolScope = (name: CalendarToolName) =>
-	name === "create_event" || name === "update_events" || name === "delete_events"
-		? "mcp:calendar-write"
-		: "mcp:calendar-read";

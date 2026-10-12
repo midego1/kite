@@ -431,7 +431,7 @@ test("the client slice equals what the manifests declare", () => {
 	);
 	for (const manifest of MODULE_MANIFESTS) {
 		const slice = CLIENT_MODULES.find((item) => item.id === manifest.id);
-		const { suggestionKinds, ...declared } = slice;
+		const { suggestionKinds, keyScopes, ...declared } = slice;
 		assert.deepEqual(declared, {
 			id: manifest.id,
 			name: manifest.name,
@@ -439,6 +439,10 @@ test("the client slice equals what the manifests declare", () => {
 			commands: manifest.commands,
 		});
 		assert.deepEqual(suggestionKinds ?? [], manifest.id === "calendar" ? ["calendar_invite"] : []);
+		assert.deepEqual(keyScopes ?? { mcp: [], api: [] }, {
+			mcp: manifest.mcpScopes.map(({ scope, mailboxBound }) => ({ scope, mailboxBound })),
+			api: manifest.apiKeyScopes.map((item) => item.scope),
+		});
 	}
 });
 

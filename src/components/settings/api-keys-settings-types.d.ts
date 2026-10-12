@@ -10,5 +10,5 @@ export type ManagedApiKey = {
 	lastUsedAt: string | null;
 };
 
-export type McpKeyScope =
-	"mcp:read" | "mcp:draft" | "mcp:organize" | "mcp:request-send" | "mcp:calendar-read" | "mcp:calendar-write";
+/** A core MCP scope or one a module declares. */
+export type McpKeyScope = string;

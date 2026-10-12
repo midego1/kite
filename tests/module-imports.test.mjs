@@ -74,8 +74,6 @@ const PENDING = {
 		"The queue and cron handlers still call the import job code by hand until dispatchModuleQueueMessage and runModuleCronTasks replace them (queue and cron routing feature).",
 	"server/index.ts":
 		"The Node queue consumer still calls the import job code by hand until dispatchModuleQueueMessage replaces it (queue and cron routing feature).",
-	"src/lib/mcp/server.ts":
-		"MCP still registers the calendar tools from the calendar library until it reads the registry's mcp_tool descriptors (MCP surface feature).",
 	"src/components/compose/new-template-dialog.tsx":
 		"The New template dialog is Templates module UI that still sits in the composer folder; it moves to src/components/modules/templates (composer slot feature).",
 	"src/components/compose/schedule-send-menu.tsx":

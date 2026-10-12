@@ -1,6 +1,35 @@
 import { authFetch } from "@/lib/auth/client";
 import type { ApiKeyScope } from "@/lib/api/scopes";
+import { CLIENT_MODULES } from "@/lib/modules/client-data";
+import {
+	clientScopeDeclarations,
+	isScopeAvailable,
+	scopesNeedMailbox,
+	type KeyScopeKind,
+} from "@/lib/modules/key-scope-utils";
+import type { ModuleId } from "@/lib/modules/module-types";
 import type { ManagedApiKey, McpKeyScope } from "./api-keys-settings-types";
+
+const SCOPE_DECLARATIONS = clientScopeDeclarations(CLIENT_MODULES);
+
+/** The options the signed-in user may pick: core scopes always, a module's only while it is on for them. */
+export function enabledScopeOptions<T extends { value: string }>(
+	kind: KeyScopeKind,
+	options: readonly T[],
+	enabled: readonly ModuleId[],
+): T[] {
+	return options.filter((option) => isScopeAvailable(SCOPE_DECLARATIONS, kind, option.value, enabled));
+}
+
+/** The chosen scopes that are still on offer, so a scope picked before its module was turned off is never submitted. */
+export function enabledScopes(kind: KeyScopeKind, scopes: readonly string[], enabled: readonly ModuleId[]): string[] {
+	return scopes.filter((scope) => isScopeAvailable(SCOPE_DECLARATIONS, kind, scope, enabled));
+}
+
+/** Whether the chosen scopes need at least one allowed mailbox. */
+export function scopesNeedMailboxes(kind: KeyScopeKind, scopes: readonly string[]): boolean {
+	return scopesNeedMailbox(SCOPE_DECLARATIONS, kind, scopes);
+}
 
 export const MCP_KEY_SCOPES: { value: McpKeyScope; label: string; description: string }[] = [
 	{ value: "mcp:read", label: "Read mail", description: "List, search, count, and read messages." },

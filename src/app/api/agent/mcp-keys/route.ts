@@ -6,6 +6,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { generateApiKey, parseScopes, scopesToJson } from "@/lib/api-keys";
 import { ADMIN_API_KEY_SCOPES } from "@/lib/api/scopes";
+import { creatableKeyScopes, keyScopesNeedMailbox, refuseDisabledKeyScopes } from "@/lib/modules/key-scopes";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { newId } from "@/lib/ids";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
@@ -13,11 +14,7 @@ import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 const createSchema = z.object({
 	name: z.string().trim().min(1).max(100),
 	mailboxIds: z.array(z.string()).max(30),
-	scopes: z
-		.array(
-			z.enum(["mcp:read", "mcp:draft", "mcp:organize", "mcp:request-send", "mcp:calendar-read", "mcp:calendar-write"]),
-		)
-		.min(1),
+	scopes: z.array(z.enum(creatableKeyScopes("mcp"))).min(1),
 });
 const ADMIN_SCOPES = new Set<string>(ADMIN_API_KEY_SCOPES);
 
@@ -64,9 +61,11 @@ export async function POST(request: Request) {
 	if (!hasValidSessionMutationOrigin(request)) return Response.json({ error: "Invalid origin" }, { status: 403 });
 	const parsed = createSchema.safeParse(await request.json().catch(() => null));
 	if (!parsed.success) return Response.json({ error: "Invalid key request" }, { status: 400 });
+	const disabled = await refuseDisabledKeyScopes(env, user, "mcp", parsed.data.scopes);
+	if (disabled) return disabled;
 	const db = getDb(env);
 	const mailboxIds = [...new Set(parsed.data.mailboxIds)];
-	if (!mailboxIds.length && parsed.data.scopes.some((scope) => !scope.startsWith("mcp:calendar-")))
+	if (!mailboxIds.length && keyScopesNeedMailbox("mcp", parsed.data.scopes))
 		return Response.json({ error: "Choose a mailbox for mail permissions" }, { status: 400 });
 	for (const mailboxId of mailboxIds)
 		if (!(await getMailboxAccessLevel(db, user, mailboxId))?.canRead)

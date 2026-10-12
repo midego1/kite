@@ -5,6 +5,13 @@ export const calendarClientData: ClientModuleData = {
 	id: "calendar",
 	name: "Calendar",
 	suggestionKinds: ["calendar_invite"],
+	keyScopes: {
+		mcp: [
+			{ scope: "mcp:calendar-read", mailboxBound: false },
+			{ scope: "mcp:calendar-write", mailboxBound: false },
+		],
+		api: ["calendar:read", "calendar:write"],
+	},
 	nav: [
 		{
 			id: "calendar.mailbox-selector",

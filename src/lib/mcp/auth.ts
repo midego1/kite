@@ -4,16 +4,12 @@ import { apiKeys, mcpKeyMailboxes, users } from "@/db/schema";
 import { parseScopes, verifyApiKey } from "@/lib/api-keys";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { ADMIN_API_KEY_SCOPES } from "@/lib/api/scopes";
+import { allKeyScopes, scopeDeclarations } from "@/lib/modules/key-scope-utils";
+import { MODULE_MANIFESTS } from "@/lib/modules/registry";
 import type { McpPrincipal } from "./types";
 
-const MCP_SCOPES = new Set([
-	"mcp:read",
-	"mcp:draft",
-	"mcp:organize",
-	"mcp:request-send",
-	"mcp:calendar-read",
-	"mcp:calendar-write",
-]);
+/** Core scopes plus every module's, on or off, so a key keeps authenticating while its module is off. */
+const MCP_SCOPES = new Set(allKeyScopes(scopeDeclarations(MODULE_MANIFESTS), "mcp"));
 const ADMIN_SCOPES = new Set<string>(ADMIN_API_KEY_SCOPES);
 
 export async function authenticateMcpRequest(env: CloudflareEnv, request: Request): Promise<McpPrincipal | null> {

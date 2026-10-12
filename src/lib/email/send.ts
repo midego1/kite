@@ -6,6 +6,7 @@ import { buildSnippet } from "@/lib/email/parse";
 import { dispatchWebhooks } from "@/lib/email/webhooks";
 import { upsertContactFromAddress } from "@/lib/contacts/service";
 import { getAuthorizedSenderAddress } from "@/lib/email/sender";
+import { assertWithinSendLimits } from "@/lib/email/send-limits";
 import { getEmailAddressList, joinEmailAddressList, splitEmailAddressList } from "@/lib/email/address";
 import { formatMessageIdHeader, normalizeMessageId, parseMessageIdList } from "@/lib/email/threading";
 import { createAuditLog } from "@/lib/mailboxes/audit";
@@ -84,6 +85,7 @@ export async function sendEmail(
 ): Promise<{ messageId: string; scheduled?: boolean }> {
 	const db = getDb(env);
 	const sender = await getAuthorizedSenderAddress(env, input);
+	await assertWithinSendLimits(env, input.userId);
 	const attachments = input.attachments ?? [];
 	validateAttachments(attachments);
 	const maxAttachmentMb = await getOutboundAttachmentMaxMb(env);

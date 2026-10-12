@@ -11,6 +11,19 @@ Set up Kite in four steps:
 3. **Complete setup:** open `/setup` on the deployed app to check the installation and create the first admin account.
 4. **Connect your domain:** add a domain managed by the same Cloudflare account and choose which service receives its mail. Kite configures Email Routing and, when selected, Email Sending, then helps you create the first mailbox. Resend and Amazon SES are alternatives to Cloudflare for receiving and sending; see [Sending and receiving providers](providers.md).
 
+### Everything you have to provide
+
+| Setting | Where | When | Notes |
+| --- | --- | --- | --- |
+| App (Worker) name `kite` | Deploy button's name field | Deploy | Must stay exactly `kite`. Email Routing rules and the Worker's binding to itself use that name, so a different name breaks receiving mail. The setup page warns when a `workers.dev` address does not start with `kite`. |
+| `CF_TOKEN` (secret) | Deploy button | Deploy | Account API token, see step 1. Setup makes a live call to Cloudflare and shows a red error if the token is rejected. |
+| `SETUP_TOKEN` (secret) | Deploy button | Deploy | A long random string, at least 16 characters, not the example value. Opens `/setup`. |
+| `APP_ENCRYPTION_KEY` (secret) | Deploy button | Deploy | A long random string, at least 16 characters, not the example value. First-run setup in production stops until you replace the example. |
+| `APP_URL` (variable) | Worker **Settings → Variables and secrets** | After the first deploy | The public HTTPS address, for example `https://kite.<your-subdomain>.workers.dev`. The setup page shows the exact value. Needed for password reset emails and for receiving through Resend or Amazon SES. |
+| `SEND_LIMIT_PER_HOUR`, `SEND_LIMIT_PER_DAY` (variables) | Worker **Settings → Variables and secrets** | Optional | Per-user sending allowance, default 100 an hour and 500 a day; `0` removes a limit. See [Sending and deliverability](sending-and-deliverability.md#limits-and-abuse-protection). |
+
+Generate random values with `openssl rand -hex 32`, or with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` if you do not have OpenSSL.
+
 ## Step 1: Set up CF_TOKEN
 
 Cloudflare does not pass its own deployment token to the app, so Kite needs a separate token.
@@ -23,6 +36,14 @@ Cloudflare does not pass its own deployment token to the app, so Kite needs a se
    - **Email & Messaging → Email Routing Rules: Edit**
 3. If Kite will send mail through Cloudflare, add a policy for the account with **Email & Messaging → Email Sending: Edit**.
 4. Create the token and copy its secret. You need it in step 2.
+
+Copy-paste checklist for the token:
+
+- [ ] Account API token (Manage Account → Account API Tokens), not a User API token or the Global API Key.
+- [ ] Zone resources include every domain you will connect (or **All zones**).
+- [ ] Zone permissions: **DNS: Edit**, **Zone: Read**, **Zone Settings: Edit**, **Email Routing Rules: Edit**.
+- [ ] Account permission **Email Sending: Edit**, if Cloudflare will send mail.
+- [ ] You copied the secret shown once at the end, not the token ID, and did not add `Bearer`.
 
 Sending through Cloudflare also needs a Workers paid plan and the domain on-boarded under **Compute → Email Service → Email Sending**. After setup, expand the domain under **Admin → Domains** to configure DKIM and DMARC.
 
@@ -38,17 +59,20 @@ Use only the token secret: not the word `Bearer`, and not the token ID. The toke
 4. When Cloudflare asks for secrets, enter:
    - `CF_TOKEN`: the token from step 1.
    - `SETUP_TOKEN`: a long random string of your own, for example from `openssl rand -hex 32`. Until the first admin exists, setup only runs with this token, so nobody else who finds the URL can claim the installation. Kite refuses the example value and anything shorter than 16 characters.
+   - `APP_ENCRYPTION_KEY`: another long random string (replace the example value). It encrypts provider keys and webhook secrets stored in D1. Keep a copy: changing or losing it makes those values unreadable. First-run setup in production refuses the example value and anything shorter than 16 characters; nothing is encrypted yet at that point, so it is safe to replace.
 5. Start the deployment and wait for Cloudflare to finish.
 
-Then, under the Worker's **Settings → Variables and secrets**, add:
+Then, under the Worker's **Settings → Variables and secrets**, add `APP_URL` (variable): the app's public HTTPS address, for example `https://kite.<your-subdomain>.workers.dev`. Cloudflare shows the address when the deploy finishes, and the setup page in step 3 shows the exact value to copy. Password reset links, and receiving through Resend or SES, need it. It cannot be asked for at deploy time because the address does not exist yet.
 
-- `APP_ENCRYPTION_KEY` (secret, recommended): another long random string that encrypts provider keys and webhook secrets stored in D1. Keep a copy: changing or losing it makes those values unreadable.
-- `APP_URL` (variable): the app's public HTTPS address. Password reset links, and receiving through Resend or SES, need it.
+If you installed before `APP_ENCRYPTION_KEY` was asked for at deploy time, add it as a secret under **Variables and secrets** yourself. Keys already stored as plain text keep working and are encrypted the next time they are saved.
 
 ## Step 3: Complete Kite setup
 
 1. Open `/setup?setup_token=<your SETUP_TOKEN>` on the deployed Worker, or open `/setup` and enter the token when asked.
-2. Let Kite check the Cloudflare configuration and initialize the empty D1 database.
+2. Let Kite check the configuration and initialize the empty D1 database. The first screen lists every check:
+   - **Red** items stop setup until you fix them: missing or rejected `CF_TOKEN` (Kite asks Cloudflare for one zone to prove the token works), a missing D1 binding, or an `APP_ENCRYPTION_KEY` that is the example value or too short.
+   - **Amber** items are recommended and do not stop setup: no `APP_ENCRYPTION_KEY`, no `APP_URL` (the message shows the value to use), an `APP_URL` that is not HTTPS or does not match the address you opened, a token that cannot see any zone, or a Worker that does not look like it is named `kite`.
+   - After changing a variable or secret, redeploy if Cloudflare asks you to, reload the page and use **Check again**.
 3. Create the first admin account.
 
 Setup applies the committed migrations through the Worker's D1 binding before creating the first admin account.
@@ -63,6 +87,20 @@ Setup applies the committed migrations through the Worker's D1 binding before cr
 To connect more domains later, open **Admin → Domains**, select **New domain**, enter the hostname and choose the receiving service. With Cloudflare, Kite configures Email Routing and Email Sending automatically. With Resend or Amazon SES, add the provider's credentials and run its setup from the domain page; see [Sending and receiving providers](providers.md). `CF_TOKEN` is still needed in every case, because Cloudflare manages the domain's DNS.
 
 Resend and SES receive mail by calling your app, so set `APP_URL` to the app's public HTTPS address before setting them up for receiving.
+
+## First 10 minutes: when something goes wrong
+
+| What you see | Likely cause | Fix |
+| --- | --- | --- |
+| The Worker is not called `kite` (the setup page shows an amber "Worker name" warning on a `workers.dev` address) | The app name was changed in the deploy form | Deploy again with the name `kite` and delete the other Worker. |
+| `/setup` says "Set a SETUP_TOKEN secret" or "SETUP_TOKEN is the example value" | The secret is missing, short or the example | Set a long random `SETUP_TOKEN` under **Variables and secrets**, redeploy, reload. |
+| Red "Cloudflare API credentials" | `CF_TOKEN` was not set | Add it as a secret and redeploy. |
+| Red "Cloudflare token works" with error 9109 or 10000 | Wrong value (token ID, `Bearer`, a User token) or missing permissions | Recreate the token with the checklist in step 1 and see [Troubleshooting](troubleshooting.md). |
+| Red "Encryption key" | `APP_ENCRYPTION_KEY` is still the example value | Replace it with `openssl rand -hex 32` output. |
+| Amber "Public address" | `APP_URL` is not set | Add the variable shown in the message. |
+| The domain step cannot find your domain | The domain is not an active zone in the token's account, or the token's zone resources leave it out | Add the zone to Cloudflare and wait until it is active, then include it in the token's zone resources. |
+| MX conflict | Another mail service already owns the domain's MX records | Confirm the replacement in the wizard, or keep the other service and do not connect that domain. |
+| D1 error 7404 | `database_id` from another account | See [Troubleshooting](troubleshooting.md#d1-error-7404-database-could-not-be-found). |
 
 ## Manual deployment
 

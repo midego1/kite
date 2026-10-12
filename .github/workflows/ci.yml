@@ -26,19 +26,54 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - name: Run the complete worker validation contract
+      - name: Run the worker validation contract (e2e runs in the sharded E2E jobs)
         run: npm run check:mission
         env:
-          MISSION_SKIP_TASKS: build:node
-      - name: Summarize timings, flaky tests and coverage
+          MISSION_SKIP_TASKS: build:node,test:e2e
+      - name: Summarize timings and coverage
         if: always()
         run: node scripts/quality/ci-summary.mjs >> "$GITHUB_STEP_SUMMARY"
-      - name: Retain timing, coverage, quality and browser evidence
+      - name: Retain timing, coverage and quality evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: mission-validation-evidence
+          path: test-results/
+          retention-days: 14
+
+  e2e:
+    # The suite runs one test at a time against a shared database, so a single
+    # runner needs about 20 minutes. Each shard starts its own dev server and
+    # database and runs a slice of the specs; the shard count is the only knob.
+    name: E2E (shard ${{ matrix.shard }} of 4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run the end-to-end slice
+        run: npm run quality:timings -- test:e2e
+        env:
+          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/4
+      - name: Summarize timings and flaky tests
+        if: always()
+        run: node scripts/quality/ci-summary.mjs >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain timing and browser evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: e2e-evidence-shard-${{ matrix.shard }}
           path: |
             test-results/
             playwright-report/

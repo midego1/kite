@@ -11,7 +11,6 @@ const {
 	MODULE_IDS,
 	isModuleId,
 	getModuleManifest,
-	isEnabledByDefault,
 	MODULE_CAPABILITIES,
 	listCapabilities,
 	findDescriptor,
@@ -20,7 +19,7 @@ const {
 	surfacesAreCombinable,
 	toJsonSchema,
 } = await bundleModules("kite-module-registry-", [
-	["MODULE_MANIFESTS, MODULE_IDS, isModuleId, getModuleManifest, isEnabledByDefault", "src/lib/modules/registry.ts"],
+	["MODULE_MANIFESTS, MODULE_IDS, isModuleId, getModuleManifest", "src/lib/modules/registry.ts"],
 	["MODULE_CAPABILITIES, listCapabilities, findDescriptor", "src/lib/modules/capability-registry.ts"],
 	["SERVER_MODULES", "src/lib/modules/server-registry.ts"],
 	["isInvokableDescriptor, surfacesAreCombinable", "src/lib/modules/capability-utils.ts"],
@@ -56,7 +55,7 @@ test("the registry lists the four builtin modules in a fixed order", () => {
 	assert.throws(() => getModuleManifest("nope"), /Unknown module/);
 });
 
-test("dependencies are known, acyclic and decide the default state", () => {
+test("dependencies are known and acyclic, and every builtin module is on by default", () => {
 	assert.deepEqual(getModuleManifest("booking").dependsOn, ["calendar"]);
 	const visit = (id, trail) => {
 		assert.ok(!trail.includes(id), `cycle through ${[...trail, id].join(" -> ")}`);
@@ -66,7 +65,7 @@ test("dependencies are known, acyclic and decide the default state", () => {
 		}
 	};
 	for (const id of IDS) visit(id, []);
-	for (const id of IDS) assert.equal(isEnabledByDefault(id), true);
+	for (const manifest of MODULE_MANIFESTS) assert.equal(manifest.defaultEnabled, true);
 });
 
 test("page and API prefixes never overlap and never cover export", () => {

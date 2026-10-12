@@ -6,6 +6,7 @@ import type { RestoreBatchLimits, RestorePlan, RestoreTablePlan } from "./restor
 
 const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"users",
+	"user_module_access",
 	"domains",
 	"mailboxes",
 	"mailbox_access",
@@ -24,9 +25,11 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"backup_settings",
 	"backups",
 	"app_settings",
+	"module_settings",
 	"email_templates",
-	"calendar_events",
 	"booking_events",
+	"calendar_events",
+	"booking_appointments",
 	"auto_reply_deliveries",
 	"spam_token_stats",
 	"spam_reputation",
@@ -80,10 +83,11 @@ export function getBackupConfigurationStatus(_env?: CloudflareEnv) {
 /**
  * Tables D1 manages itself, which are intentionally absent from BACKUP_TABLES.
  */
-const INTERNAL_TABLE_PATTERNS = ["sqlite_%", "_cf%", "messages_fts%"];
+const INTERNAL_TABLE_PATTERNS = ["sqlite_%", "_cf%", "messages_fts%", "calendar_events_fts%"];
 /**
- * The search index is derived data: its triggers repopulate it as messages are
- * restored, so it is neither exported nor part of the coverage check.
+ * The search indexes are derived data: their triggers repopulate them as messages
+ * and calendar events are restored, so they are neither exported nor part of the
+ * coverage check.
  */
 const INTERNAL_TABLES = [
 	"d1_migrations",

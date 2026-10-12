@@ -1,3 +1,5 @@
+import type { ModuleId } from "@/lib/modules/module-types";
+
 export type AuthMeUser = {
 	id: string;
 	email: string;
@@ -25,4 +27,6 @@ export type AuthMeResponse = {
 	managesDns: boolean;
 	hasMailboxes: boolean;
 	isSetup: boolean;
+	/** The modules that are on for this user: a display hint, since the server checks again. */
+	modules: ModuleId[];
 };

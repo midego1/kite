@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
+import { MODULE_IDS } from "@/lib/modules/registry";
+import { listEnabledModules } from "@/lib/modules/state";
 import { hasPrimaryDomain, userHasMailboxes } from "@/lib/user";
 import { hasCloudflareCredentials, isNodeRuntime } from "@/lib/runtime";
 
@@ -11,6 +13,12 @@ export async function GET(request: Request) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
+	// A display hint for the client; every server path checks module access again.
+	const modules = listEnabledModules(env, {
+		userId: user.id,
+		role: user.role,
+		isPrimaryAdmin: user.isPrimaryAdmin,
+	}).catch(() => [...MODULE_IDS]);
 	let hasMailboxes = false;
 	let isSetup = true;
 	try {
@@ -41,5 +49,6 @@ export async function GET(request: Request) {
 		managesDns: hasCloudflareCredentials(env),
 		hasMailboxes,
 		isSetup,
+		modules: await modules,
 	});
 }

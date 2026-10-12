@@ -1,28 +1,32 @@
+import { getEnv } from "@/lib/cloudflare";
 import { createLogger } from "@/lib/logger.mjs";
 import { findDescriptor } from "./capability-registry";
 import { bindHostInvoker } from "./host";
 import { createInvoker, type InvokeEntry } from "./invoke-utils";
 import type { CapabilityCallContext, ModuleId } from "./module-types";
-import { isEnabledByDefault } from "./registry";
 import { SERVER_MODULES } from "./server-registry";
+import { isModuleEnabled as isInstallModuleEnabled, isModuleEnabledFor } from "./state";
 
 const log = createLogger("modules");
 
 /** Answers whether a module is on for the viewer (the install when `viewer` is null). */
 type ModuleStateReader = (viewer: CapabilityCallContext["viewer"], moduleId: ModuleId) => Promise<boolean>;
 
-let stateReader: ModuleStateReader | null = null;
+const readStoredModuleState: ModuleStateReader = (viewer, moduleId) =>
+	viewer ? isModuleEnabledFor(getEnv(), viewer, moduleId) : isInstallModuleEnabled(getEnv(), moduleId);
+
+let stateReader: ModuleStateReader = readStoredModuleState;
 
 /**
- * Without a reader every module follows its manifest default, which is how a database without module settings behaves.
- * @public Consumed by tests and the features that wire modules into core surfaces.
+ * Replaces the stored module state, or restores it with `null`.
+ * @public Consumed by tests that run capabilities without a database.
  */
 export function setModuleStateReader(reader: ModuleStateReader | null): void {
-	stateReader = reader;
+	stateReader = reader ?? readStoredModuleState;
 }
 
 export async function isModuleEnabled(viewer: CapabilityCallContext["viewer"], moduleId: ModuleId): Promise<boolean> {
-	return stateReader ? stateReader(viewer, moduleId) : isEnabledByDefault(moduleId);
+	return stateReader(viewer, moduleId);
 }
 
 function lookup(moduleId: ModuleId, name: string): InvokeEntry | null {

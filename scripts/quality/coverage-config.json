@@ -63,6 +63,7 @@
 		"src/lib/modules/invoke-utils.ts",
 		"src/lib/modules/json-utils.ts",
 		"src/lib/modules/schema-utils.ts",
+		"src/lib/modules/state-utils.ts",
 		"src/lib/profile/identity-utils.ts",
 		"src/lib/setup/configuration-utils.ts"
 	],

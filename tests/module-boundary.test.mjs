@@ -342,6 +342,7 @@ test("every call is logged with module, capability, trigger, duration and result
 });
 
 test("the real registry enforces the same contract", async () => {
+	setModuleStateReader(async () => true);
 	const readCtx = ctx({ grants: ["calendar.read"], viewer: { userId: "u1", role: "admin", isPrimaryAdmin: true } });
 	assert.equal((await invokeCapability("nope", "x", {}, readCtx)).error.code, "unknown_capability");
 	assert.equal((await invokeCapability("calendar", "nope", {}, readCtx)).error.code, "unknown_capability");

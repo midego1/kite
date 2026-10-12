@@ -11,6 +11,7 @@ export default defineConfig(({ command }) => ({
 	define: {
 		"process.env.NEXT_PUBLIC_KITE_BUILD_VERSION": JSON.stringify(build.version),
 		"process.env.NEXT_PUBLIC_KITE_BUILD_COMMIT": JSON.stringify(build.commit),
+		"process.env.NEXT_PUBLIC_KITE_BUILD_TIME": JSON.stringify(build.builtAt),
 	},
 	// node_modules can be shared between checkouts; a separate cache keeps concurrent dev servers from re-optimizing each other's deps.
 	...(process.env.KITE_VITE_CACHE_DIR ? { cacheDir: process.env.KITE_VITE_CACHE_DIR } : {}),

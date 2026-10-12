@@ -1,6 +1,9 @@
 "use client";
 
-import { BUILD_VERSION_LABEL } from "@/lib/build-version";
+import { useEffect, useState } from "react";
+import { BUILD_TIME, BUILD_VERSION_LABEL } from "@/lib/build-version";
+import { formatBuildTime } from "@/lib/build-version-utils";
+import { ChangelogDialog } from "./changelog-dialog";
 import { useSidebar } from "./sidebar-state";
 import { useShortcuts } from "./shortcuts";
 import { Keyboard, Palette } from "lucide-react";
@@ -37,6 +40,15 @@ function StyleToggle() {
 export function SidebarFooter() {
 	const { minimal } = useSidebar();
 	const { openHelpModal, shortcutsEnabled, shortcutsPreferenceLoading } = useShortcuts();
+	const [changelogOpen, setChangelogOpen] = useState(false);
+	const [updatedLabel, setUpdatedLabel] = useState<string | null>(null);
+
+	useEffect(() => {
+		// The label follows the browser's locale and time zone, so it cannot be part of the server render.
+		// eslint-disable-next-line react-hooks/set-state-in-effect
+		setUpdatedLabel(formatBuildTime(BUILD_TIME));
+	}, []);
+
 	if (minimal) return null;
 
 	return (
@@ -58,11 +70,22 @@ export function SidebarFooter() {
 				</button>
 			)}
 			<p className="px-1 text-[11px] text-neutral-400">
-				Kite v{BUILD_VERSION_LABEL} ·{" "}
+				<button
+					type="button"
+					onClick={() => setChangelogOpen(true)}
+					title="What's new in Kite"
+					className="rounded text-left text-neutral-500 underline-offset-2 hover:underline hover:text-neutral-700"
+				>
+					Updated {updatedLabel ?? "…"}
+				</button>
+				{" · Kite v"}
+				{BUILD_VERSION_LABEL}
+				{" · "}
 				<a href={SOURCE_CODE_URL} target="_blank" className="hover:underline text-neutral-500" rel="noreferrer">
 					Source code
 				</a>
 			</p>
+			<ChangelogDialog open={changelogOpen} onOpenChange={setChangelogOpen} updatedLabel={updatedLabel} />
 		</div>
 	);
 }

@@ -118,6 +118,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/messages/empty`                                  | POST                   | [source](../src/app/api/messages/empty/route.ts)                                  |
 | `/api/messages/navigation`                             | GET                    | [source](../src/app/api/messages/navigation/route.ts)                             |
 | `/api/messages`                                        | GET                    | [source](../src/app/api/messages/route.ts)                                        |
+| `/api/migrations/pending`                              | GET                    | [source](../src/app/api/migrations/pending/route.ts)                              |
 | `/api/profile/avatar`                                  | DELETE, GET, POST      | [source](../src/app/api/profile/avatar/route.ts)                                  |
 | `/api/public/booking/[eventId]`                        | GET, POST              | [source](../src/app/api/public/booking/[eventId]/route.ts)                        |
 | `/api/public/booking`                                  | GET                    | [source](../src/app/api/public/booking/route.ts)                                  |

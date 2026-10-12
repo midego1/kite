@@ -45,6 +45,6 @@ export type AutoReadInstallSettings = {
 
 export type AutoReadProviderSummary = {
 	provider: "cloudflare" | "compatible";
-	preset: "openai" | "openrouter" | "groq" | "custom";
+	preset: "haimaker" | "anthropic" | "openai" | "openrouter" | "groq" | "custom";
 	baseUrl: string;
 };

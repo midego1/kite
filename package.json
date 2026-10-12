@@ -1,6 +1,6 @@
 {
 	"name": "kite",
-	"version": "2026.10.9",
+	"version": "2026.10.12",
 	"private": true,
 	"scripts": {
 		"dev": "npm run bundles && vite dev --port 3000",
@@ -60,7 +60,7 @@
 	"cloudflare": {
 		"bindings": {
 			"CF_TOKEN": {
-				"description": "Runtime Cloudflare API token Kite uses to manage DNS and Email Routing for your domains; Cloudflare's deploy token is not passed to the app. Create it under **Manage Account \u2192 Account API Tokens** with `DNS Edit`, `Zone Read`, `Zone Settings Edit` and `Email Routing Rules Edit` for the zones you will connect, plus account-level `Email Sending Edit` to send mail. Paste only the token secret, without `Bearer`. See [Deployment](https://github.com/midego1/kite/blob/main/docs/deployment.md#step-1-set-up-cf_token)."
+				"description": "Runtime Cloudflare API token Kite uses to manage DNS and Email Routing for your domains; Cloudflare's deploy token is not passed to the app. Create it under **Manage Account → Account API Tokens** with `DNS Edit`, `Zone Read`, `Zone Settings Edit` and `Email Routing Rules Edit` for the zones you will connect, plus account-level `Email Sending Edit` to send mail. Paste only the token secret, without `Bearer`. See [Deployment](https://github.com/midego1/kite/blob/main/docs/deployment.md#step-1-set-up-cf_token)."
 			},
 			"SETUP_TOKEN": {
 				"description": "A long random string of your own, at least 16 characters, for example from `openssl rand -hex 32`. Kite refuses the example value. Until the first admin account exists, setup only runs with it: open `/setup?setup_token=<value>` after the deploy."
@@ -87,6 +87,7 @@
 		"node": ">=22.21.0"
 	},
 	"dependencies": {
+		"@ai-sdk/anthropic": "^4.0.78",
 		"@ai-sdk/openai-compatible": "^3.0.55",
 		"@modelcontextprotocol/server": "^2.3.1",
 		"@radix-ui/react-dialog": "^1.1.15",

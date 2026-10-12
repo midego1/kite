@@ -214,6 +214,8 @@ export function unknownModelError(input: MailboxAgentSettingsUpdate, models: str
 }
 
 const PRESET_LABELS: Record<AutoReadProviderSummary["preset"], string> = {
+	haimaker: "Haimaker.ai",
+	anthropic: "Anthropic",
 	openai: "OpenAI",
 	openrouter: "OpenRouter",
 	groq: "Groq",

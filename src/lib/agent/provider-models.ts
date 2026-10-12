@@ -1,17 +1,12 @@
 import type { AgentModelOption, AgentModelRates, AgentProviderPreset } from "./provider-types";
 import { getAgentProviderConfig, resolveAgentBaseUrl } from "./provider";
+import { compatibleModelsRequest, parseCompatibleAgentModelOptions, perMillion } from "./provider-models-utils";
 
 export const CLOUDFLARE_TOOL_MODELS: AgentModelOption[] = [
 	{ id: "@cf/moonshotai/kimi-k2.5", name: "Kimi K2.5" },
 	{ id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", name: "Llama 3.3 70B" },
 	{ id: "@cf/qwen/qwen3-30b-a3b-fp8", name: "Qwen3 30B" },
 ];
-
-function perMillion(value: unknown, perToken: boolean): number | null {
-	const price = typeof value === "string" ? Number(value) : value;
-	if (typeof price !== "number" || !Number.isFinite(price) || price < 0) return null;
-	return Number((perToken ? price * 1_000_000 : price).toPrecision(10));
-}
 
 // Workers AI lists prices as [{ unit: "per M input tokens", price, currency: "USD" }, ...] under properties.
 function cloudflareRates(properties: unknown): AgentModelRates | undefined {
@@ -27,14 +22,6 @@ function cloudflareRates(properties: unknown): AgentModelRates | undefined {
 		);
 	const input = perMillion(find("input")?.price, false);
 	const output = perMillion(find("output")?.price, false);
-	return input === null || output === null ? undefined : { input, output };
-}
-
-// OpenRouter publishes pricing.prompt / pricing.completion as USD per token (strings). Other providers omit pricing.
-function openRouterRates(pricing: unknown): AgentModelRates | undefined {
-	if (!pricing || typeof pricing !== "object") return undefined;
-	const input = perMillion((pricing as { prompt?: unknown }).prompt, true);
-	const output = perMillion((pricing as { completion?: unknown }).completion, true);
 	return input === null || output === null ? undefined : { input, output };
 }
 
@@ -76,22 +63,15 @@ export async function listCompatibleAgentModels(
 		input.apiKey?.trim() ||
 		(saved.provider === "compatible" && saved.preset === input.preset && saved.baseUrl === baseUrl ? saved.apiKey : "");
 	if (!key) throw new Error("Enter an API key to load models");
-	const response = await fetch(`${baseUrl}/models`, {
-		headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+	const request = compatibleModelsRequest(input.preset, baseUrl, key);
+	const response = await fetch(request.url, {
+		headers: request.headers,
 		signal: AbortSignal.timeout(10_000),
 		redirect: "manual",
 	});
 	if (!response.ok) throw new Error(`Model list request failed (${response.status})`);
-	const json = (await response.json()) as { data?: { id?: unknown; name?: unknown; pricing?: unknown }[] };
-	const models = (json.data ?? [])
-		.filter((item) => typeof item.id === "string" && item.id.length <= 200)
-		.map((item) => ({
-			id: item.id as string,
-			name: typeof item.name === "string" ? item.name : (item.id as string),
-			rates: input.preset === "openrouter" ? openRouterRates(item.pricing) : undefined,
-		}))
-		.slice(0, 2_000)
-		.sort((a, b) => a.name.localeCompare(b.name));
+	const json = (await response.json()) as { data?: unknown };
+	const models = parseCompatibleAgentModelOptions(json.data, input.preset);
 	if (!models.length) throw new Error("Provider returned no models");
 	return { models, source: "catalog" as const };
 }

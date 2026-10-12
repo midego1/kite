@@ -108,7 +108,7 @@ export function AutoReadAdminSettings() {
 				/>
 				<SwitchRow
 					title="Allow external provider for automatic reading"
-					description="Lets automatic reading send message content to an OpenAI-compatible provider. Workers AI is always allowed."
+					description="Lets automatic reading send message content to the configured external AI provider. Workers AI is always allowed."
 					checked={values?.externalAutoReadAllowed ?? false}
 					disabled={locked}
 					onChange={(externalAutoReadAllowed) => void save({ externalAutoReadAllowed })}

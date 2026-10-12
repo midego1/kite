@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
 	areBrowserNotificationsEnabled,
@@ -8,6 +9,7 @@ import {
 	ensureNotificationServiceWorker,
 	setBrowserNotificationsEnabled,
 	setOneTimeCodesInNotificationsEnabled,
+	showTestBrowserNotification,
 } from "@/hooks/message-realtime-utils";
 
 export function BrowserNotificationSettings() {
@@ -15,6 +17,7 @@ export function BrowserNotificationSettings() {
 	const [enabled, setEnabled] = useState(false);
 	const [codesEnabled, setCodesEnabled] = useState(true);
 	const [error, setError] = useState<string | null>(null);
+	const [testState, setTestState] = useState<"idle" | "sending" | "sent">("idle");
 
 	useEffect(() => {
 		const refresh = () => {
@@ -96,6 +99,35 @@ export function BrowserNotificationSettings() {
 					aria-label="Show one-time codes in notifications"
 				/>
 			</label>
+			<div className="mt-3 flex flex-wrap items-center gap-3 px-4">
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					disabled={!notificationsReady || testState === "sending"}
+					onClick={() => {
+						setError(null);
+						setTestState("sending");
+						void showTestBrowserNotification().then((shown) => {
+							if (shown) {
+								setTestState("sent");
+								return;
+							}
+							setTestState("idle");
+							setError(
+								"Could not show a test notification. Check the browser's site settings and the system notification settings.",
+							);
+						});
+					}}
+				>
+					Send test notification
+				</Button>
+				<span className="text-sm text-neutral-500" role="status">
+					{testState === "sent"
+						? "Test notification sent. If nothing appeared, check the system notification settings for this browser."
+						: "Shows a sample notification to check that they appear on this device."}
+				</span>
+			</div>
 			{permission === "denied" && (
 				<p className="mt-2 px-4 text-sm text-neutral-500">
 					Notifications are blocked. Allow them in your browser&apos;s site settings to enable this option.

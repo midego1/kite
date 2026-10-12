@@ -76,13 +76,21 @@ export function changelogReleaseLabel(release: ChangelogRelease): string {
 }
 
 const INLINE_PATTERN = /(`[^`]+`)|(\*\*[^*]+\*\*)|\[([^\]]+)\]\(([^)\s]+)\)/g;
-/** Only absolute http(s) links become anchors: a repository-relative path means nothing in the app. */
+/** Absolute http(s) links open in a new tab. */
 const SAFE_HREF = /^https?:\/\/[^\s]+$/i;
+/** A path starting with one slash is a page in this app, so the dialog can link straight to a setting. */
+const APP_HREF = /^\/(?!\/)[^\s]*$/;
+
+/** Whether a changelog link points at a page in this app rather than an outside site. */
+export function isAppChangelogHref(href: string): boolean {
+	return APP_HREF.test(href);
+}
 
 /**
  * Splits one item into text, `code`, **strong** and link pieces. The renderer
  * writes each piece as a text node, so HTML in the changelog can never become
- * markup; a link that is not plain http(s) stays literal text.
+ * markup; a link that is neither plain http(s) nor an app path (`/settings/inbox`)
+ * stays literal text, so a repository-relative file path never becomes a link.
  */
 export function parseInlineMarkdown(text: string): ChangelogInline[] {
 	const tokens: ChangelogInline[] = [];
@@ -95,7 +103,7 @@ export function parseInlineMarkdown(text: string): ChangelogInline[] {
 		consumed = index + full.length;
 		if (code) tokens.push({ type: "code", text: code.slice(1, -1) });
 		else if (strong) tokens.push({ type: "strong", text: strong.slice(2, -2) });
-		else if (SAFE_HREF.test(href)) tokens.push({ type: "link", text: linkText, href });
+		else if (SAFE_HREF.test(href) || APP_HREF.test(href)) tokens.push({ type: "link", text: linkText, href });
 		else tokens.push({ type: "text", text: full });
 	}
 	if (consumed < text.length) tokens.push({ type: "text", text: text.slice(consumed) });

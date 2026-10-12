@@ -39,6 +39,20 @@ test("the sidebar footer shows when this build was made and opens the release no
 	await expect(dialog).toBeHidden();
 });
 
+test("a release note that links to a setting opens that page in the app", async ({ page }) => {
+	await openInbox(page);
+	await page.getByRole("button", { name: /^Updated / }).click();
+	const dialog = page.getByRole("dialog", { name: /What's new in Kite/ });
+	const settingLink = dialog.getByRole("link", { name: "Settings → Inbox → Notifications" });
+	await expect(settingLink).toHaveAttribute("href", "/settings/inbox");
+	// An app page opens in this tab, unlike outside links.
+	await expect(settingLink).not.toHaveAttribute("target", "_blank");
+	await settingLink.click();
+	await expect(page).toHaveURL(/\/settings\/inbox$/);
+	await expect(dialog).toBeHidden();
+	await expect(page.getByRole("button", { name: "Send test notification" })).toBeVisible();
+});
+
 test("no database banner while the schema is up to date", async ({ page }) => {
 	await openInbox(page);
 	await expect(page.getByRole("region", { name: "Database updates" })).toHaveCount(0);

@@ -53,6 +53,8 @@
 		"release:notes": "node scripts/release-notes.mjs",
 		"release:prepare": "node scripts/release-prepare.mjs",
 		"screenshots": "playwright test -c playwright.screenshots.config.ts",
+		"social:preview": "node scripts/screenshots/social-preview.mjs",
+		"demo:record": "KITE_RECORD_DEMO=1 playwright test -c playwright.screenshots.config.ts scripts/screenshots/demo.capture.ts && node scripts/screenshots/video-to-gif.mjs",
 		"test:list": "playwright test --list && npm --workspace kite-email-relay run test:list"
 	},
 	"cloudflare": {
@@ -62,6 +64,9 @@
 			},
 			"SETUP_TOKEN": {
 				"description": "A long random string of your own, at least 16 characters, for example from `openssl rand -hex 32`. Kite refuses the example value. Until the first admin account exists, setup only runs with it: open `/setup?setup_token=<value>` after the deploy."
+			},
+			"APP_ENCRYPTION_KEY": {
+				"description": "A long random string that encrypts the provider keys and webhook secrets Kite stores in D1, for example from `openssl rand -hex 32`. Replace the example value. Keep a copy: losing or changing it later makes those stored values unreadable."
 			},
 			"TURNSTILE_SECRET_KEY": {
 				"description": "Cloudflare Turnstile secret key used to verify login and first-run registration challenges. Pair with NEXT_PUBLIC_TURNSTILE_SITE_KEY at build time."

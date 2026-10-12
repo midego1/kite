@@ -78,9 +78,11 @@ Threading: `resolveThreadId` in `src/lib/email/threading.ts` files an inbound or
 
 Both queries filter on `scope`, so any new rule must set it explicitly. `forward` and `reject` are actioned in `worker.ts`, never in the queue consumer.
 
-### Webhook retries ride the outbound queue
+### Webhook retries and manual backups ride the outbound queue
 
-`src/lib/email/webhooks.ts` records every attempt (status, error snippet, duration, `nextRetryAt`) on `webhook_deliveries` and re-enqueues failures onto `OUTBOUND_QUEUE` with a `delaySeconds` backoff rather than adding a third queue binding. `env.d.ts` widens `OUTBOUND_QUEUE` to the union of both payload types accordingly. `runDelivery` is shared by the retry queue and the manual retry endpoint.
+`src/lib/email/webhooks.ts` records every attempt (status, error snippet, duration, `nextRetryAt`) on `webhook_deliveries` and re-enqueues failures onto `OUTBOUND_QUEUE` with a `delaySeconds` backoff rather than adding a third queue binding. `env.d.ts` widens `OUTBOUND_QUEUE` to the union of every payload type accordingly. `runDelivery` is shared by the retry queue and the manual retry endpoint.
+
+`POST /api/backups` records a `queued` row and sends `{ kind: "backup.run", backupId }` (`src/lib/backups/queue-utils.ts`) on `OUTBOUND_QUEUE`; the consumer's `runDatabaseBackup` exports the database, so a large backup never runs inside the admin request (it used to outlive the response timeout and leave the row running forever). `runDatabaseBackup` no-ops on a completed or deleted row, so a retried message cannot export twice. `failStaleBackups` (`src/lib/backups/service.ts`) marks a queued or running backup older than `STALE_BACKUP_AFTER_MS` as failed with `STALE_BACKUP_ERROR`, from the `*/5` cron and from `GET /api/backups`, and `deleteBackup` allows removing an interrupted row.
 
 ### Cloudflare is a live dependency, not just a host
 

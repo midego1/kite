@@ -18,7 +18,9 @@ import { hasValidSessionMutationOrigin } from "./src/lib/auth/origin";
 import { checkCsrf } from "./src/lib/security/csrf";
 import { buildContentSecurityPolicy, createCspNonce, isDocumentPath } from "./src/lib/security/headers";
 import { getAccountForwardingDestination, wasForwardedByKite } from "./src/lib/email/account-forwarding";
-import { runScheduledDatabaseBackup } from "./src/lib/backups/runner";
+import { runDatabaseBackup, runScheduledDatabaseBackup } from "./src/lib/backups/runner";
+import { isBackupRunMessage } from "./src/lib/backups/queue-utils";
+import { failStaleBackups } from "./src/lib/backups/service";
 import { processAgentQueueMessage } from "./src/lib/agent/queue";
 import { runAgentMaintenance } from "./src/lib/agent/maintenance";
 import { runTrashRetention } from "./src/lib/email/trash-retention";
@@ -176,6 +178,8 @@ export default {
 					await processWebhookRetry(env, msg.body as WebhookRetryMessage);
 				} else if (isMailboxPurgeMessage(msg.body)) {
 					await processMailboxPurge(env, msg.body);
+				} else if (isBackupRunMessage(msg.body)) {
+					await runDatabaseBackup(env, msg.body.backupId);
 				} else if (
 					typeof msg.body === "object" &&
 					msg.body !== null &&
@@ -222,10 +226,17 @@ export default {
 		}
 		// Only the 5-minute trigger: both crons fire at 02:00 and a backup may still be running then.
 		if (controller.cron === "*/5 * * * *") {
+			const now = new Date(controller.scheduledTime);
 			ctx.waitUntil(
-				runOperationalAlerts(env, new Date(controller.scheduledTime)).catch((error) =>
-					logger.error("alerts.evaluation_failed", { error }),
-				),
+				// Recover interrupted backups before evaluating alerts, so a backup
+				// that never finished is reported as failed rather than staying quiet.
+				failStaleBackups(env, now)
+					.then((count) => {
+						if (count) logger.warn("backup.stale_marked_failed", { count });
+					})
+					.catch((error) => logger.error("backup.stale_recover_failed", { error }))
+					.then(() => runOperationalAlerts(env, now))
+					.catch((error) => logger.error("alerts.evaluation_failed", { error })),
 			);
 		}
 		ctx.waitUntil(runAgentMaintenance(env));

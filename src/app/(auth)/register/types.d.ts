@@ -10,6 +10,7 @@ export type SetupRequirementCheck = {
 	key: string;
 	configured: boolean;
 	message: string;
+	severity?: "required" | "recommended";
 };
 
 export type SetupPreparationResult = {

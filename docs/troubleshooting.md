@@ -71,6 +71,12 @@ Deploy the complete Worker with `npm run deploy`. A local Next.js server or a so
 
 Also confirm that automatic backups are enabled under **Admin → Backups** and that the Worker has its `DB` and `BUCKET` bindings.
 
+## A manual backup stays in Running
+
+Since a manual backup is exported by the queue consumer, a row that never finishes means the export was interrupted: the invocation was killed, or the `kite-outbound` consumer did not run the message. Kite marks any backup left queued or running for more than 30 minutes as failed with "Backup was interrupted before it finished". The five-minute cron does this, and opening **Admin → Backups** does it too, so it also reports the row as failed next to a Delete button.
+
+Confirm that the `kite-outbound` queue exists and has a consumer (`wrangler.jsonc`), and that the Worker was deployed with the queue's consumer entrypoint. Then start the backup again and watch for the `backup.stale_marked_failed` and `queue.processing_failed` events in Logs.
+
 ## Inbound mail is not arriving
 
 Confirm that:

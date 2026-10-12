@@ -4,6 +4,33 @@ export const BACKUP_SETTINGS_ID = "default";
 export const BACKUP_PREFIX = "backups/database";
 
 /**
+ * How long a backup may stay queued or running before it counts as interrupted.
+ * A Worker invocation is killed without running its own error handler when the
+ * export outlives the platform limits or a deployment replaces it, which leaves
+ * the row unfinished forever. The maintenance cron and the backup list endpoint
+ * apply this, so a stuck row heals within five minutes of the threshold. Half an
+ * hour is far longer than the export of a large database takes, and well under
+ * the daily schedule, so a slow backup is never marked failed while it runs.
+ */
+export const STALE_BACKUP_AFTER_MS = 30 * 60 * 1000;
+export const STALE_BACKUP_ERROR = "Backup was interrupted before it finished";
+
+/**
+ * True for a queued or running backup whose own progress is older than the
+ * threshold. The start time wins over the creation time, because a queued
+ * backup that was picked up is judged by when it started.
+ */
+export function isStaleBackup(
+	backup: { status: string; startedAt: Date | null; createdAt: Date | null },
+	now: Date,
+): boolean {
+	if (backup.status !== "queued" && backup.status !== "running") return false;
+	const since = backup.startedAt ?? backup.createdAt;
+	if (!since) return false;
+	return now.getTime() - since.getTime() > STALE_BACKUP_AFTER_MS;
+}
+
+/**
  * Tables that older backups may contain but that no longer exist. They are
  * stripped before validation so those backups stay restorable, and skipped by
  * the coverage check so a database that has not yet applied the migration

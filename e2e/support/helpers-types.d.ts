@@ -27,3 +27,11 @@ export type StoredMessage = {
 	threadId?: string | null;
 	starred?: boolean;
 };
+
+/** One row of `GET /api/backups`, as the admin Backups page reads it. */
+export type BackupRow = {
+	id: string;
+	status: "queued" | "running" | "completed" | "failed";
+	error: string | null;
+	filename: string | null;
+};

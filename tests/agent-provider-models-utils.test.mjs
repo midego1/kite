@@ -62,3 +62,28 @@ test("Anthropic catalog uses its native authentication and exposes current model
 		[{ id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", rates: undefined }],
 	);
 });
+
+test("OpenRouter catalog converts per-token pricing to USD per million and drops unpriceable models", () => {
+	const request = compatibleModelsRequest("openrouter", "https://openrouter.ai/api/v1", "openrouter-key");
+	assert.equal(request.url, "https://openrouter.ai/api/v1/models");
+	assert.deepEqual(request.headers, {
+		Authorization: "Bearer openrouter-key",
+		Accept: "application/json",
+	});
+
+	const models = parseCompatibleAgentModelOptions(
+		[
+			{
+				id: "deepseek/deepseek-chat",
+				name: "DeepSeek Chat",
+				pricing: { prompt: "0.00000025", completion: "0.000001" },
+			},
+			{ id: "broken/prices", name: "Broken Prices", pricing: { prompt: "not-a-number", completion: 0 } },
+			{ id: "no/pricing", name: "No Pricing" },
+		],
+		"openrouter",
+	);
+	assert.deepEqual(models.find((item) => item.id === "deepseek/deepseek-chat")?.rates, { input: 0.25, output: 1 });
+	assert.equal(models.find((item) => item.id === "broken/prices")?.rates, undefined);
+	assert.equal(models.find((item) => item.id === "no/pricing")?.rates, undefined);
+});

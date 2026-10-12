@@ -38,6 +38,9 @@ export type DatabaseBackupTable =
 	| "agent_jobs"
 	| "agent_draft_metadata"
 	| "agent_send_approvals"
+	| "agent_suggestions"
+	| "agent_actions"
+	| "agent_sender_policies"
 	| "mcp_key_mailboxes"
 	| "ai_usage";
 export type DatabaseRecord = Record<string, string | number | null>;

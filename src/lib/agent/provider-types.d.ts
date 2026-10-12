@@ -1,6 +1,8 @@
 export type AgentProviderKind = "cloudflare" | "compatible";
 export type AgentProviderPreset = "openai" | "openrouter" | "groq" | "custom";
-export type AgentModelRates = { input: number | null; output: number | null };
+export type AgentReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+/** USD per 1M tokens, plus the optional reasoning hint saved with the model. */
+export type AgentModelRates = { input: number | null; output: number | null; reasoningEffort?: AgentReasoningEffort };
 
 export type AgentProviderConfig = {
 	provider: AgentProviderKind;

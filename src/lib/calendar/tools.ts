@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { calendarEvents } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { normalizeTimeZone, zonedDateFields } from "@/lib/time/utils";
+import { busyBlocks } from "./availability-utils";
 import { normalizeCalendarColor } from "./colors";
 import { DEFAULT_REPEAT_DAYS, normalizeCalendarRepeatDays, parseCalendarOccurrenceId } from "./recurrence";
 import { expandToolEvents } from "./tool-occurrences";
@@ -144,12 +145,7 @@ export async function runCalendarTool(
 			};
 		}
 		const duration = (input.durationMinutes as number) * 60_000;
-		const busy = events
-			.map((event) => ({
-				start: Math.max(from.getTime(), Date.parse(event.startsAt)),
-				end: Math.min(to.getTime(), Date.parse(event.endsAt)),
-			}))
-			.sort((a, b) => a.start - b.start);
+		const busy = busyBlocks(events, from, to);
 		const slots: Array<{ startsAt: string; endsAt: string }> = [];
 		let cursor = from.getTime();
 		for (const block of [...busy, { start: to.getTime(), end: to.getTime() }]) {

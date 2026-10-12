@@ -2,19 +2,27 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createWorkersAI } from "workers-ai-provider";
 import { getAgentProviderConfig } from "./provider";
 import { agentTimeContext } from "./time";
+import { COMPATIBLE_PROVIDER_NAME } from "./auto-read/model-call-utils";
 
 export async function getAgentModel(env: CloudflareEnv, requestedModel?: string | null) {
 	const config = await getAgentProviderConfig(env);
 	const modelId = requestedModel && config.models.includes(requestedModel) ? requestedModel : config.model;
 	const details = {
 		modelId,
+		/** The label usage rows record: "cloudflare" or the compatible preset. */
 		provider: config.provider === "cloudflare" ? "cloudflare" : config.preset,
+		providerKind: config.provider,
 		rates: config.rates[modelId],
+		reasoningEffort: config.rates[modelId]?.reasoningEffort ?? null,
 	};
 	if (config.provider === "cloudflare")
 		return env.AI ? { model: createWorkersAI({ binding: env.AI })(modelId), ...details } : null;
 	if (config.baseUrl && config.apiKey && modelId) {
-		const provider = createOpenAICompatible({ name: "kite", baseURL: config.baseUrl, apiKey: config.apiKey });
+		const provider = createOpenAICompatible({
+			name: COMPATIBLE_PROVIDER_NAME,
+			baseURL: config.baseUrl,
+			apiKey: config.apiKey,
+		});
 		return { model: provider.chatModel(modelId), ...details };
 	}
 	return null;

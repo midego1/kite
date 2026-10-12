@@ -19,7 +19,7 @@ import { checkCsrf } from "./src/lib/security/csrf";
 import { buildContentSecurityPolicy, createCspNonce, isDocumentPath } from "./src/lib/security/headers";
 import { getAccountForwardingDestination, wasForwardedByKite } from "./src/lib/email/account-forwarding";
 import { runScheduledDatabaseBackup } from "./src/lib/backups/runner";
-import { processAgentDraftJob } from "./src/lib/agent/jobs/utils";
+import { processAgentQueueMessage } from "./src/lib/agent/queue";
 import { runAgentMaintenance } from "./src/lib/agent/maintenance";
 import { runTrashRetention } from "./src/lib/email/trash-retention";
 import { runDatabasePruning } from "./src/lib/maintenance/pruning";
@@ -163,13 +163,8 @@ export default {
 			try {
 				if (isInboundQueueMessage(msg.body)) {
 					await processInboundMessage(env, msg.body);
-				} else if (
-					typeof msg.body === "object" &&
-					msg.body !== null &&
-					(msg.body as { kind?: unknown }).kind === "agent.draft" &&
-					typeof (msg.body as { jobId?: unknown }).jobId === "string"
-				) {
-					await processAgentDraftJob(env, (msg.body as { jobId: string }).jobId);
+				} else if (await processAgentQueueMessage(env, msg.body)) {
+					// Draft and triage jobs both run through the agent dispatcher.
 				} else if (isImportJobQueueMessage(msg.body)) {
 					await processImportJob(env, msg.body.jobId);
 				} else if (isWebhookRetryMessage(msg.body)) {

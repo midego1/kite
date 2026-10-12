@@ -15,6 +15,7 @@ test("queue messages are described by kind without addresses or headers", () => 
 	assert.deepEqual(describeQueueMessage({ kind: "webhook.retry", deliveryId: "d1" }), { kind: "webhook_retry" });
 	assert.deepEqual(describeQueueMessage({ kind: "email.scheduled", jobId: "j1" }), { kind: "outbound" });
 	assert.deepEqual(describeQueueMessage({ kind: "agent.draft", jobId: "j1" }), { kind: "agent_draft" });
+	assert.deepEqual(describeQueueMessage({ kind: "agent.triage", jobId: "j1" }), { kind: "agent_triage" });
 	assert.deepEqual(describeQueueMessage({ kind: "import.imap", jobId: "j1" }), { kind: "import" });
 	assert.deepEqual(describeQueueMessage({ kind: "mailbox.purge", mailboxId: "m1" }), { kind: "mailbox_purge" });
 	for (const value of [null, "text", 1, {}, { kind: "constructor" }, { kind: "private@example.com" }])

@@ -5,6 +5,7 @@ import { imagesOptimizer } from "@vinext/cloudflare/images/images-optimizer";
 import { getBuildVersion } from "./scripts/build-version.mjs";
 
 const build = getBuildVersion();
+const DEV_ONLY_VARS = ["ALERT_WEBHOOK_ALLOW_INSECURE", "AI_ALLOW_INSECURE_LOOPBACK"] as const;
 
 export default defineConfig(({ command }) => ({
 	define: {
@@ -21,10 +22,13 @@ export default defineConfig(({ command }) => ({
 			// The E2E suite points this at a throwaway directory so it never touches .wrangler/state.
 			...(process.env.KITE_PERSIST_DIR ? { persistState: { path: process.env.KITE_PERSIST_DIR } } : {}),
 			viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
-			// The customizer also runs for `vite build`, which would bake the flag into dist/server/wrangler.json.
+			// The customizer also runs for `vite build`, which would bake the flags into dist/server/wrangler.json.
 			config: () => {
-				const allowInsecure = process.env.ALERT_WEBHOOK_ALLOW_INSECURE;
-				if (command === "serve" && allowInsecure) return { vars: { ALERT_WEBHOOK_ALLOW_INSECURE: allowInsecure } };
+				if (command !== "serve") return;
+				const vars = Object.fromEntries(
+					DEV_ONLY_VARS.flatMap((name) => (process.env[name] ? [[name, process.env[name]]] : [])),
+				);
+				if (Object.keys(vars).length) return { vars };
 			},
 		}),
 	],

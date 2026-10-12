@@ -158,7 +158,7 @@ async function createDraft(
 	const references = source
 		? buildReplyReferences(parseMessageIdList(source.references), source.providerMessageId)
 		: [];
-	const draftId = newId("msg");
+	const draftId = context.draftId ?? newId("msg");
 	await db.insert(messages).values({
 		id: draftId,
 		userId: context.user.id,

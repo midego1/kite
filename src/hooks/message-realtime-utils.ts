@@ -8,6 +8,8 @@ export const REALTIME_REVISION_INTERVAL_MS = 120_000;
 /** Focus and visibility events arrive in bursts; one revision check covers them all. */
 export const REALTIME_FOCUS_CHECK_THROTTLE_MS = 10_000;
 export const REALTIME_RECONNECT_MAX_MS = 30_000;
+/** Fired on window when a Kite suggestion is created, decided or closed (realtime or a local action). */
+export const AGENT_SUGGESTION_EVENT = "kite:agent-suggestion";
 const BROWSER_NOTIFICATIONS_ENABLED_KEY = "kite:browser-notifications-enabled";
 
 export function areBrowserNotificationsEnabled(): boolean {
@@ -20,6 +22,10 @@ export function areBrowserNotificationsEnabled(): boolean {
 
 export function setBrowserNotificationsEnabled(enabled: boolean): void {
 	window.localStorage.setItem(BROWSER_NOTIFICATIONS_ENABLED_KEY, String(enabled));
+}
+
+export function dispatchAgentSuggestionChanged(detail: { mailboxId?: string; suggestionId?: string } = {}): void {
+	window.dispatchEvent(new CustomEvent(AGENT_SUGGESTION_EVENT, { detail }));
 }
 
 export function getRealtimeWebSocketUrl(): string {

@@ -1,3 +1,5 @@
+import type { SuggestionCount } from "@/lib/agent/auto-read/suggestion-types";
+
 export type MessageStatus = "received" | "sent" | "draft" | "queued" | "failed" | "archived" | "trash" | "spam";
 
 export type MessageFolder = "inbox" | "starred" | "snoozed" | "sent" | "drafts" | "archived" | "trash" | "spam";
@@ -41,6 +43,8 @@ export type Message = {
 	threadUnread?: number;
 	/** In conversation view: every message this row stands for within the current folder. */
 	threadMessageIds?: string[];
+	/** Open Kite suggestions per kind over the row's messages; only sent to users with full access. */
+	agentSuggestions?: SuggestionCount[];
 	createdAt: string;
 };
 

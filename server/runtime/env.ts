@@ -80,6 +80,7 @@ export function createNodeRuntime(): NodeRuntime {
 		SETUP_TOKEN: optional("SETUP_TOKEN"),
 		OPERATIONAL_ALERTS: optional("OPERATIONAL_ALERTS"),
 		ALERT_WEBHOOK_ALLOW_INSECURE: optional("ALERT_WEBHOOK_ALLOW_INSECURE"),
+		AI_ALLOW_INSECURE_LOOPBACK: optional("AI_ALLOW_INSECURE_LOOPBACK"),
 		APP_ENCRYPTION_KEY: optional("APP_ENCRYPTION_KEY"),
 		RESOLVE_HOST: async (hostname: string) =>
 			(await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address),

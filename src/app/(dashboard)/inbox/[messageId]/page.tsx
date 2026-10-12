@@ -199,6 +199,7 @@ export default function MessageDetailPage() {
       </div> */}
 				<ConversationThread
 					currentMessageId={message.id}
+					threadId={message.threadId}
 					position={latestMessagesFirst ? "after" : "before"}
 					messages={thread.messages}
 					mailboxId={message.mailboxId}
@@ -358,6 +359,7 @@ export default function MessageDetailPage() {
 				</article>
 				<ConversationThread
 					currentMessageId={message.id}
+					threadId={message.threadId}
 					position={latestMessagesFirst ? "before" : "after"}
 					messages={thread.messages}
 					mailboxId={message.mailboxId}

@@ -91,3 +91,62 @@ test("month view is available from the mobile calendar menu", async ({ page }) =
 	await expect(page.locator('[aria-label="Monthly calendar"]')).toBeVisible();
 	await expect(page.getByRole("button", { name: "Next month", exact: true })).toBeVisible();
 });
+
+test("tentative events carry a Tentative label and dashed border in month, week and the upcoming list", async ({
+	page,
+}) => {
+	await page.clock.install({ time: new Date("2026-01-15T12:00:00Z") });
+	const base = {
+		description: "",
+		location: "",
+		attendees: "",
+		color: "blue",
+		repeat: "none",
+		repeatDays: "[]",
+		repeatAnchorDay: null,
+		repeatUntil: null,
+		excludedOccurrences: "[]",
+		timeZone: "UTC",
+	};
+	await page.route("**/api/calendar/events?*", (route) =>
+		route.fulfill({
+			json: {
+				events: [
+					{
+						...base,
+						id: "hold",
+						title: "Hold for intro",
+						status: "tentative",
+						startsAt: "2026-01-16T10:00:00Z",
+						endsAt: "2026-01-16T11:00:00Z",
+					},
+					{
+						...base,
+						id: "sure",
+						title: "Confirmed sync",
+						status: "confirmed",
+						startsAt: "2026-01-16T13:00:00Z",
+						endsAt: "2026-01-16T14:00:00Z",
+					},
+				],
+			},
+		}),
+	);
+	await page.goto("/calendar");
+	const upcoming = page.locator('[data-status="tentative"]');
+	await expect(upcoming.filter({ hasText: "Hold for intro" }).first()).toContainText("Tentative");
+	await expect(page.getByRole("button", { name: /Confirmed sync/ }).first()).not.toHaveAttribute(
+		"data-status",
+		"tentative",
+	);
+	const week = page.locator('button[data-status="tentative"][title*="Hold for intro"]');
+	await expect(week).toHaveClass(/border-dashed/);
+	await expect(week).toContainText("Tentative");
+	await page.getByRole("combobox", { name: "Calendar view" }).selectOption("month");
+	const month = page.locator('[aria-label="Monthly calendar"]');
+	const chip = month.locator('button[data-status="tentative"]');
+	await expect(chip).toHaveCount(1);
+	await expect(chip).toHaveClass(/border-dashed/);
+	await expect(chip).toContainText("Tentative");
+	await expect(month.getByRole("button", { name: /Confirmed sync/ })).not.toHaveClass(/border-dashed/);
+});

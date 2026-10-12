@@ -1,7 +1,7 @@
 import { Plus } from "lucide-react";
 import { formatUserDate } from "@/lib/time/utils";
 import { normalizeCalendarColor } from "@/lib/calendar/colors";
-import { addDays, dateKey, EVENT_COLOR_CLASSES, monthGridDates } from "./utils";
+import { addDays, dateKey, EVENT_COLOR_CLASSES, monthGridDates, TENTATIVE_EVENT_CLASSES } from "./utils";
 import type { MonthViewProps } from "./month-view-types";
 
 export function MonthView({ date, today, events, onEdit, onAdd, onShowDay }: MonthViewProps) {
@@ -55,13 +55,15 @@ export function MonthView({ date, today, events, onEdit, onAdd, onShowDay }: Mon
 										key={`${event.id}:${event.startsAt}`}
 										type="button"
 										onClick={() => onEdit(event)}
-										title={event.title}
-										className={`block w-full truncate rounded px-1.5 py-1 text-left text-xs ${EVENT_COLOR_CLASSES[normalizeCalendarColor(event.color)]}`}
+										title={event.status === "tentative" ? `${event.title} (Tentative)` : event.title}
+										data-status={event.status === "tentative" ? "tentative" : undefined}
+										className={`block w-full truncate rounded px-1.5 py-1 text-left text-xs ${EVENT_COLOR_CLASSES[normalizeCalendarColor(event.color)]} ${event.status === "tentative" ? TENTATIVE_EVENT_CLASSES : ""}`}
 									>
 										<span className="mr-1 opacity-75">
 											{formatUserDate(new Date(event.startsAt), { hour: "numeric", minute: "2-digit" })}
 										</span>
 										{event.title}
+										{event.status === "tentative" && <span className="ml-1 text-[10px] italic">Tentative</span>}
 									</button>
 								))}
 								{daily.length > 3 && (

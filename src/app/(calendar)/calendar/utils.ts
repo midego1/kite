@@ -20,6 +20,7 @@ export const CALENDAR_GRID_CLASSES: Record<CalendarView, string> = {
 	month: "w-full min-w-140",
 };
 export const UPCOMING_BATCH_SIZE = 14;
+export const TENTATIVE_EVENT_CLASSES = "border border-dashed border-current";
 export const WEEKDAY_OPTIONS = [
 	{ value: 0, label: "Sun" },
 	{ value: 1, label: "Mon" },

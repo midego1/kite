@@ -25,6 +25,7 @@ import {
 import clsx from "clsx";
 import { useMessageListVisibility } from "./message-list-visibility";
 import { useAssistantOpen } from "../agent/assistant-open-state";
+import { SuggestionCard } from "../agent/suggestion-card";
 
 /**
  * The other messages in a conversation, ordered oldest to newest and collapsed
@@ -42,9 +43,15 @@ export function ConversationThread({
 	expandedAll,
 	onExpandedAllChange,
 	showFullRecipientAddresses = false,
+	threadId = null,
 }: ConversationThreadProps) {
 	const slice = partitionThread(messages, currentMessageId, position, latestMessagesFirst);
-	if (slice.length === 0) return null;
+	// The reader mounts one thread above the message and one below; only the upper one carries the card.
+	const card =
+		position === (latestMessagesFirst ? "after" : "before") ? (
+			<SuggestionCard mailboxId={mailboxId} messageId={currentMessageId} threadId={threadId} />
+		) : null;
+	if (slice.length === 0) return card;
 	const firstMessage = slice[0];
 	const lastMessage = slice.at(-1)!;
 	const middleMessages = slice.slice(1, -1);
@@ -52,62 +59,24 @@ export function ConversationThread({
 	const collapsedLabel = `${middleMessages.length} ${position === "before" ? "older" : "newer"} message${middleMessages.length === 1 ? "" : "s"}`;
 
 	return (
-		<section
-			aria-label={
-				position === "before" ? "Earlier messages in this conversation" : "Later messages in this conversation"
-			}
-			className={cn(position === (latestMessagesFirst ? "before" : "after") ? "pb-6" : "")}
-		>
-			<ol
-				className={cn(
-					!collapsed && "divide-y divide-neutral-200/50",
-					latestMessagesFirst ? "border-t" : "border-b",
-					"border-neutral-200",
-				)}
+		<>
+			{card}
+			<section
+				aria-label={
+					position === "before" ? "Earlier messages in this conversation" : "Later messages in this conversation"
+				}
+				className={cn(position === (latestMessagesFirst ? "before" : "after") ? "pb-6" : "")}
 			>
-				<li className={"border-t-0"}>
-					<ConversationMessageCard
-						message={firstMessage}
-						mailboxId={mailboxId}
-						currentAccountName={currentAccountName}
-						ownAddress={ownAddress}
-						ownAddresses={ownAddresses}
-						showFullRecipientAddresses={showFullRecipientAddresses}
-					/>
-				</li>
-				{collapsed ? (
-					<li className="flex items-center justify-center gap-1 py-2 text-center border-y border-neutral-100 h-px my-4">
-						<span className="bg-white px-6 flex flex-row items-center gap-2">
-							<span className="text-sm font-medium text-neutral-600">{collapsedLabel}</span>
-							<button
-								type="button"
-								onClick={() => onExpandedAllChange(true)}
-								aria-label={`Expand ${collapsedLabel}`}
-								title={`Expand ${collapsedLabel}`}
-								className="inline-flex h-6 w-6 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
-							>
-								<ChevronsUpDown className="h-4 w-4" />
-							</button>
-						</span>
-					</li>
-				) : (
-					middleMessages.map((message) => (
-						<li key={message.id}>
-							<ConversationMessageCard
-								message={message}
-								mailboxId={mailboxId}
-								currentAccountName={currentAccountName}
-								ownAddress={ownAddress}
-								ownAddresses={ownAddresses}
-								showFullRecipientAddresses={showFullRecipientAddresses}
-							/>
-						</li>
-					))
-				)}
-				{lastMessage.id !== firstMessage.id && (
-					<li>
+				<ol
+					className={cn(
+						!collapsed && "divide-y divide-neutral-200/50",
+						latestMessagesFirst ? "border-t" : "border-b",
+						"border-neutral-200",
+					)}
+				>
+					<li className={"border-t-0"}>
 						<ConversationMessageCard
-							message={lastMessage}
+							message={firstMessage}
 							mailboxId={mailboxId}
 							currentAccountName={currentAccountName}
 							ownAddress={ownAddress}
@@ -115,9 +84,50 @@ export function ConversationThread({
 							showFullRecipientAddresses={showFullRecipientAddresses}
 						/>
 					</li>
-				)}
-			</ol>
-		</section>
+					{collapsed ? (
+						<li className="flex items-center justify-center gap-1 py-2 text-center border-y border-neutral-100 h-px my-4">
+							<span className="bg-white px-6 flex flex-row items-center gap-2">
+								<span className="text-sm font-medium text-neutral-600">{collapsedLabel}</span>
+								<button
+									type="button"
+									onClick={() => onExpandedAllChange(true)}
+									aria-label={`Expand ${collapsedLabel}`}
+									title={`Expand ${collapsedLabel}`}
+									className="inline-flex h-6 w-6 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+								>
+									<ChevronsUpDown className="h-4 w-4" />
+								</button>
+							</span>
+						</li>
+					) : (
+						middleMessages.map((message) => (
+							<li key={message.id}>
+								<ConversationMessageCard
+									message={message}
+									mailboxId={mailboxId}
+									currentAccountName={currentAccountName}
+									ownAddress={ownAddress}
+									ownAddresses={ownAddresses}
+									showFullRecipientAddresses={showFullRecipientAddresses}
+								/>
+							</li>
+						))
+					)}
+					{lastMessage.id !== firstMessage.id && (
+						<li>
+							<ConversationMessageCard
+								message={lastMessage}
+								mailboxId={mailboxId}
+								currentAccountName={currentAccountName}
+								ownAddress={ownAddress}
+								ownAddresses={ownAddresses}
+								showFullRecipientAddresses={showFullRecipientAddresses}
+							/>
+						</li>
+					)}
+				</ol>
+			</section>
+		</>
 	);
 }
 

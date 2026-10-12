@@ -15,7 +15,6 @@ export const MODULE_MANIFESTS: readonly ModuleManifest[] = [
 
 export { MODULE_IDS };
 
-/** @public Consumed by tests and the features that wire modules into core surfaces. */
 export function isModuleId(value: unknown): value is ModuleId {
 	return typeof value === "string" && (MODULE_IDS as readonly string[]).includes(value);
 }

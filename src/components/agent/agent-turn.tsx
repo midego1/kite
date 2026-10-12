@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 import { ChevronDown, Clock3 } from "lucide-react";
 import type { AgentTurnProps } from "./types";
 import { agentDraftIdFromHref, formatAgentDuration } from "./utils";
-import { AgentPendingActions, AgentToolActivity } from "./tool-activity";
+import { AgentPendingActions, AgentToolActivity, AgentToolLinks } from "./tool-activity";
 import { ASSISTANT_DETAIL_PREFERENCE, ASSISTANT_STEPS_PREFERENCE } from "@/components/appearance-preferences";
 import { AgentDraftActions } from "./draft-card";
 import { KiteAvatar } from "./kite-avatar";
@@ -121,6 +121,11 @@ export function AgentTurnView({
 								approvingId={approvingId}
 							/>
 						))}
+						{turn.activity
+							.filter((item) => item.role === "tool")
+							.map((item) => (
+								<AgentToolLinks key={`${item.id}:links`} item={item} />
+							))}
 						{turn.activity
 							.filter((item) => item.role === "tool")
 							.map((item) => (

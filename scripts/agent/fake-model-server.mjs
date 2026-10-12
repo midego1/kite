@@ -1,5 +1,7 @@
 // Standalone fake OpenAI-compatible model for manual validation: node scripts/agent/fake-model-server.mjs --port 3301
 // Serves the same scenarios as the Playwright specs (e2e/support/fake-model.ts) and listens on 127.0.0.1 only.
+// Answers streamed assistant chat requests too: POST /__fake/chat-script {"steps":[{"toolCalls":[{"name":"open_page","arguments":{"command":"calendar.open"}}]},{"content":"Done"}]}
+// scripts the next chat replies, and GET /__fake/requests lists each request with the tools it offered.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";

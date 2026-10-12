@@ -38,10 +38,7 @@ function lookup(moduleId: ModuleId, name: string): InvokeEntry | null {
 	return { descriptor, handler, inputSchema: schemas.input, outputSchema: schemas.output };
 }
 
-/**
- * The only path from core into module code.
- * @public Consumed by tests and the features that wire modules into core surfaces.
- */
+/** The only path from core into module code. */
 export const invokeCapability = createInvoker({
 	lookup,
 	isEnabled: isModuleEnabled,

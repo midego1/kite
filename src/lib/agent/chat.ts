@@ -8,11 +8,9 @@ import { agentSystemPrompt, getAgentModel } from "./model";
 import { agentProviderErrorMessage } from "./errors";
 import { getAgentEnabled } from "./provider";
 import { recordAiUsage } from "@/lib/ai/usage";
-import { EMAIL_TOOL_NAMES, emailToolDescriptions, emailToolSchemas, runEmailTool } from "./tools";
+import { attachHistoryRefs, buildChatTools, resolveToolResultRefs } from "./chat-tools";
 import type { AgentToolContext } from "./types";
 import { normalizeTimeZone } from "@/lib/time/utils";
-import { CALENDAR_TOOL_NAMES, calendarToolDescriptions, calendarToolSchemas } from "@/lib/calendar/tool-schemas";
-import { runCalendarTool } from "@/lib/calendar/tools";
 import { AGENT_STEP_LIMIT_FALLBACK, agentStepSettings, clampAgentMaxSteps } from "./step-limit-utils";
 import { serializeAgentToolOutput } from "./tool-history-utils";
 
@@ -46,12 +44,13 @@ export async function listAgentConversations(context: AgentToolContext) {
 
 export async function getAgentChatHistory(context: AgentToolContext, conversationId: string) {
 	if (!(await getAgentConversation(context, conversationId))) throw new Error("Conversation not found");
-	return getDb(context.env)
+	const rows = await getDb(context.env)
 		.select()
 		.from(agentChatMessages)
 		.where(eq(agentChatMessages.conversationId, conversationId))
 		.orderBy(asc(agentChatMessages.createdAt))
 		.limit(200);
+	return attachHistoryRefs(context, rows);
 }
 
 export async function createAgentChatStream(
@@ -98,33 +97,14 @@ export async function createAgentChatStream(
 		.filter((row) => row.role === "user" || row.role === "assistant")
 		.map((row) => ({ role: row.role as "user" | "assistant", content: row.content }));
 	prompt.push({ role: "user", content: text });
-	const tools = Object.fromEntries(
-		EMAIL_TOOL_NAMES.map((name) => [
-			name,
-			{
-				description: emailToolDescriptions[name],
-				inputSchema: emailToolSchemas[name],
-				execute: async (input: unknown) => runEmailTool(context, name, input),
-			},
-		]),
-	);
-	const calendarTools = Object.fromEntries(
-		CALENDAR_TOOL_NAMES.map((name) => [
-			name,
-			{
-				description: calendarToolDescriptions[name],
-				inputSchema: calendarToolSchemas[name],
-				execute: async (input: unknown) => runCalendarTool(context, name, input),
-			},
-		]),
-	);
-	const system = agentSystemPrompt(settings?.instructions ?? "", timeZone);
+	const { tools, fragments } = await buildChatTools(context);
+	const system = agentSystemPrompt(settings?.instructions ?? "", timeZone, fragments);
 	const maxSteps = clampAgentMaxSteps(context.user.agentMaxSteps);
 	const result = streamText({
 		model: selection.model,
 		system,
 		messages: prompt,
-		tools: { ...tools, ...calendarTools },
+		tools,
 		stopWhen: stepCountIs(maxSteps),
 		prepareStep: ({ stepNumber }) => agentStepSettings(stepNumber, maxSteps, system),
 		maxOutputTokens: 1200,
@@ -176,7 +156,7 @@ export async function createAgentChatStream(
 							id: part.toolCallId,
 							name: part.toolName,
 							state: "complete",
-							result: part.output,
+							result: await resolveToolResultRefs(context, part.output).catch(() => part.output),
 							recordId,
 						});
 					} else if (part.type === "tool-error") {

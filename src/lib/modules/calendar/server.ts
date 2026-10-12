@@ -3,10 +3,11 @@ import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { CALENDAR_TOOL_NAMES } from "@/lib/calendar/tool-schemas";
 import type { CalendarToolName } from "@/lib/calendar/tool-types";
+import { toJsonOutput, withCalendarToolRefs } from "@/lib/calendar/tool-ref-utils";
 import { runCalendarTool } from "@/lib/calendar/tools";
 import { getEnv } from "@/lib/cloudflare";
 import { pendingHandler } from "../handler-helpers";
-import type { CapabilityHandler, JsonValue } from "../module-types";
+import type { CapabilityHandler } from "../module-types";
 import { resolveCalendarRefs } from "@/lib/calendar/refs";
 
 function toolHandler(name: CalendarToolName): CapabilityHandler {
@@ -15,7 +16,8 @@ function toolHandler(name: CalendarToolName): CapabilityHandler {
 		const env = getEnv();
 		const [user] = await getDb(env).select().from(users).where(eq(users.id, ctx.viewer.userId)).limit(1);
 		if (!user) throw new Error("Viewer not found");
-		return (await runCalendarTool({ env, user, timeZone: ctx.timeZone }, name, input)) as JsonValue;
+		const output = await runCalendarTool({ env, user, timeZone: ctx.timeZone }, name, input);
+		return withCalendarToolRefs(name, toJsonOutput(output));
 	};
 }
 

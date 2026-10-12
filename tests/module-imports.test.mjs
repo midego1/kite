@@ -70,8 +70,6 @@ const PENDING = {
 		"The queue and cron handlers still call the import job code by hand until dispatchModuleQueueMessage and runModuleCronTasks replace them (queue and cron routing feature).",
 	"server/index.ts":
 		"The Node queue consumer still calls the import job code by hand until dispatchModuleQueueMessage replaces it (queue and cron routing feature).",
-	"src/lib/agent/chat.ts":
-		"The assistant still builds its calendar tools from the calendar library until tools are assembled from the registry's assistant_tool descriptors (assistant surface feature).",
 	"src/lib/mcp/server.ts":
 		"MCP still registers the calendar tools from the calendar library until it reads the registry's mcp_tool descriptors (MCP surface feature).",
 	"src/lib/agent/auto-read/action-effects.ts":

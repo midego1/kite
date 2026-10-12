@@ -6,7 +6,6 @@ import type { CapabilityDescriptor, CapabilitySurface, ModuleCapabilities, Modul
 import { templatesCapabilities } from "./templates/capabilities";
 
 /** Same order as `MODULE_MANIFESTS`. */
-/** @public Consumed by tests and the features that wire modules into core surfaces. */
 export const MODULE_CAPABILITIES: readonly ModuleCapabilities[] = [
 	calendarCapabilities,
 	bookingCapabilities,

@@ -18,7 +18,7 @@ function text(min: number, max: number) {
 }
 const empty = z.object({});
 
-const calendarInviteSchema = z.object({
+export const calendarInviteSchema = z.object({
 	uid: text(1, 1_000),
 	sequence: z.number().int().min(0),
 	method: z.enum(["REQUEST", "CANCEL"]),

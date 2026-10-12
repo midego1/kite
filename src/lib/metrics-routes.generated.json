@@ -106,6 +106,7 @@
 	"/api/messages/navigation",
 	"/api/messages",
 	"/api/migrations/pending",
+	"/api/modules",
 	"/api/profile/avatar",
 	"/api/public/booking/[eventId]",
 	"/api/public/booking",

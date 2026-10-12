@@ -1,0 +1,52 @@
+import type { ModuleManifest } from "../module-types";
+
+export const importManifest: ModuleManifest = {
+	id: "import",
+	name: "Mail import",
+	description: "Bring mail in from an IMAP server or from mbox and eml files, including background IMAP jobs.",
+	runtime: "builtin",
+	dependsOn: [],
+	defaultEnabled: true,
+	pages: [{ prefix: "/settings/import" }],
+	apiPrefixes: [{ prefix: "/api/import" }],
+	nav: [
+		{
+			id: "import.settings-nav",
+			label: "Import",
+			href: "/settings/import",
+			icon: "Download",
+			placement: "settings-nav",
+			group: "Mailbox",
+			keywords: ["imap", "migrate"],
+			order: 10,
+		},
+	],
+	commands: [
+		{
+			id: "import.open",
+			moduleId: "import",
+			label: "Import mail",
+			description: "Open the mail import settings",
+			keywords: ["imap", "migrate", "mbox", "eml"],
+			group: "Go to",
+			target: { type: "route", href: "/settings/import" },
+			effect: "navigate",
+		},
+	],
+	composerSlots: [],
+	recordKinds: [{ kind: "import:job", label: "Import job", unavailableLabel: "Import" }],
+	webhookEvents: [],
+	grants: [{ grant: "import.run", label: "Import mail and run import jobs" }],
+	mcpScopes: [],
+	apiKeyScopes: [],
+	jmapCapabilities: [],
+	searchSections: [],
+	messageStatuses: [],
+	queueMessageTypes: [{ kind: "import.imap", queue: "agent", capability: "processImportJob", metricClass: "import" }],
+	cronTasks: [{ name: "resumeStalledImports", schedule: "every_tick", capability: "resumeStalledImports" }],
+	actionLabels: {},
+	reasonTexts: { "module_disabled:import": "Mail import is turned off" },
+	adminNotes: [
+		"Turning this off pauses running imports. They keep their saved source credentials until they finish or are cancelled, and resume within about five minutes of turning it back on.",
+	],
+};

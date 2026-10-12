@@ -16,8 +16,8 @@ import {
 	calendarToolDescriptions,
 	calendarToolSchemas,
 	calendarToolScope,
-	runCalendarTool,
-} from "@/lib/calendar/tools";
+} from "@/lib/calendar/tool-schemas";
+import { runCalendarTool } from "@/lib/calendar/tools";
 
 const scopeByTool: Record<EmailToolName, string> = {
 	list_emails: "mcp:read",

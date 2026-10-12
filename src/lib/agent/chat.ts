@@ -11,12 +11,8 @@ import { recordAiUsage } from "@/lib/ai/usage";
 import { EMAIL_TOOL_NAMES, emailToolDescriptions, emailToolSchemas, runEmailTool } from "./tools";
 import type { AgentToolContext } from "./types";
 import { normalizeTimeZone } from "@/lib/time/utils";
-import {
-	CALENDAR_TOOL_NAMES,
-	calendarToolDescriptions,
-	calendarToolSchemas,
-	runCalendarTool,
-} from "@/lib/calendar/tools";
+import { CALENDAR_TOOL_NAMES, calendarToolDescriptions, calendarToolSchemas } from "@/lib/calendar/tool-schemas";
+import { runCalendarTool } from "@/lib/calendar/tools";
 import { AGENT_STEP_LIMIT_FALLBACK, agentStepSettings, clampAgentMaxSteps } from "./step-limit-utils";
 import { serializeAgentToolOutput } from "./tool-history-utils";
 

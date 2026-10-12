@@ -59,6 +59,10 @@
 		"src/lib/messages/cursor-utils.ts",
 		"src/lib/messages/detail-cache-utils.ts",
 		"src/lib/messages/permanent-delete-utils.ts",
+		"src/lib/modules/capability-utils.ts",
+		"src/lib/modules/invoke-utils.ts",
+		"src/lib/modules/json-utils.ts",
+		"src/lib/modules/schema-utils.ts",
 		"src/lib/profile/identity-utils.ts",
 		"src/lib/setup/configuration-utils.ts"
 	],

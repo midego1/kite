@@ -6,9 +6,16 @@ import type { CardSuggestion, SuggestionCardProps } from "./suggestion-card-type
 import { answeredInviteUrl, cardSections, hasCardContent, suggestionCardUrl } from "./suggestion-card-utils";
 import { usePhishingToast } from "./use-phishing-toast";
 
-const SuggestionCardBody = dynamic(() => import("./suggestion-card-body").then((module) => module.SuggestionCardBody), {
-	ssr: false,
-});
+const SuggestionCardBody = dynamic(
+	// Inline so the server build drops the chunk; see agent-panel-lazy.tsx.
+	() =>
+		(typeof window === "undefined" ? new Promise<never>(() => {}) : import("./suggestion-card-body")).then(
+			(module) => module.SuggestionCardBody,
+		),
+	{
+		ssr: false,
+	},
+);
 
 /**
  * Kite's suggestions for the open conversation, shown once above the thread. The list only covers

@@ -5,7 +5,7 @@ import type { BookingTimeRange } from "@/lib/booking/types";
 import { DEFAULT_FOLDER_COLOR } from "@/lib/folders/colors";
 import { normalizeCalendarColor } from "@/lib/calendar/colors";
 import { slugifyBookingName } from "@/lib/booking/utils";
-import { parseBookingHostIds } from "@/lib/booking/hosts";
+import { parseBookingHostIds } from "@/lib/booking/hosts-utils";
 
 export const WEEKDAYS = [
 	{ value: 0, short: "Sun", label: "Sunday" },

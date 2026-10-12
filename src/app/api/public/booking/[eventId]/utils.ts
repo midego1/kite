@@ -4,7 +4,7 @@ import { bookingEvents, users } from "@/db/schema";
 import { parseBookingTimeRanges, parseBookingWeekdays } from "@/lib/booking/utils";
 import type { BookingEventRecord } from "@/lib/booking/types";
 import { getEnv } from "@/lib/cloudflare";
-import { parseBookingHostIds } from "@/lib/booking/hosts";
+import { parseBookingHostIds } from "@/lib/booking/hosts-utils";
 import type { PublicBookingSubmission, ValidBookingSubmission } from "./types";
 
 function parseBookingGuestEmails(value: unknown, bookerEmail: string): string[] | null {

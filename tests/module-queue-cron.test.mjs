@@ -14,6 +14,7 @@ const {
 	createModuleBackground,
 	runImportJob,
 	resumeStalledImports,
+	resumeStalledImportJobs,
 	setModuleEnabled,
 	setUserModuleAllowed,
 	isModuleEnabled,
@@ -28,6 +29,7 @@ const {
 	["createInvoker", "src/lib/modules/invoke-utils.ts"],
 	["createModuleBackground", "src/lib/modules/background-utils.ts"],
 	["runImportJob, resumeStalledImports", "src/lib/import/background.ts"],
+	["resumeStalledImportJobs", "src/lib/import/jobs.ts"],
 	["setModuleEnabled, setUserModuleAllowed, isModuleEnabled, isModuleEnabledFor", "src/lib/modules/state.ts"],
 	["describeQueueMessage", "worker-utils.ts"],
 ]);
@@ -464,6 +466,83 @@ test("a restricted owner's jobs do not hide an allowed owner's job behind the ba
 		queued.map((entry) => entry.message.jobId),
 		["job-z"],
 	);
+});
+
+function insertJobsInBulk(db, count, { prefix, userId, mailboxId, createdAt }) {
+	const statement = db.db.prepare(
+		`INSERT INTO import_jobs (id, user_id, mailbox_id, label, destination, host, port, secure, username, password, folder, status, total, processed, imported, skipped, cursor_uid, attempts, errors, created_at, updated_at)
+		VALUES (?, ?, ?, 'Old mail', 'system:inbox', ?, 993, 1, ?, 'sealed-password', 'INBOX', 'pending', 500, 40, 38, 2, 1, 1, '[]', ?, 1)`,
+	);
+	for (let index = 0; index < count; index += 1) {
+		const id = `${prefix}${String(index).padStart(4, "0")}`;
+		statement.run(id, userId, mailboxId, `imap.${id}.test`, `${id}@source.test`, createdAt);
+	}
+}
+
+const cronCtx = {
+	viewer: null,
+	requestId: "r",
+	locale: "en",
+	timeZone: "UTC",
+	grants: ["import.run"],
+	trigger: "cron",
+};
+
+test("more than a window of older restricted jobs does not starve a newer allowed owner's job", async (t) => {
+	const { db, env, queued } = await setup(t);
+	insertJobsInBulk(db, 450, { prefix: "job-r", userId: "member", mailboxId: "mailbox-b", createdAt: 10 });
+	insertJob(db, { id: "job-allowed", userId: "owner", mailboxId: "mailbox-a", host: "imap.allowed.test" });
+	db.db.prepare("UPDATE import_jobs SET created_at = 500 WHERE id = 'job-allowed'").run();
+	await setUserModuleAllowed(env, { userId: "member", moduleId: "import", allowed: false, updatedBy: "owner" });
+	const before = readJobs(db);
+
+	await resumeStalledImports(env, cronCtx);
+	assert.deepEqual(
+		queued.map((entry) => entry.message.jobId),
+		["job-allowed"],
+	);
+	assert.deepEqual(
+		readJobs(db).filter((job) => job.id.startsWith("job-r")),
+		before.filter((job) => job.id.startsWith("job-r")),
+		"restricted jobs stay untouched",
+	);
+});
+
+test("paging past a window keeps jobs that share one created_at in order and asks each owner once", async (t) => {
+	const { db, env, queued } = await setup(t);
+	insertJobsInBulk(db, 205, { prefix: "job-a", userId: "member", mailboxId: "mailbox-b", createdAt: 10 });
+	insertJobsInBulk(db, 3, { prefix: "job-b", userId: "owner", mailboxId: "mailbox-a", createdAt: 10 });
+	await setUserModuleAllowed(env, { userId: "member", moduleId: "import", allowed: false, updatedBy: "owner" });
+	const asked = [];
+	await resumeStalledImportJobs(env, cronCtx, async (userId) => {
+		asked.push(userId);
+		return userId === "owner";
+	});
+	assert.deepEqual(asked.sort(), ["member", "owner"]);
+	assert.deepEqual(
+		queued.map((entry) => entry.message.jobId),
+		["job-b0000", "job-b0001", "job-b0002"],
+	);
+});
+
+test("a tick resumes at most ten jobs", async (t) => {
+	const { db, env, queued } = await setup(t);
+	insertJobsInBulk(db, 25, { prefix: "job-ok", userId: "owner", mailboxId: "mailbox-a", createdAt: 10 });
+	await resumeStalledImports(env, cronCtx);
+	assert.equal(queued.length, 10);
+});
+
+test("a tick pages through a bounded number of rows, so a far-away allowed job waits for a later tick", async (t) => {
+	const { db, env, queued } = await setup(t);
+	insertJobsInBulk(db, 2500, { prefix: "job-x", userId: "member", mailboxId: "mailbox-b", createdAt: 5 });
+	insertJobsInBulk(db, 1, { prefix: "job-late", userId: "owner", mailboxId: "mailbox-a", createdAt: 9000 });
+	let asked = 0;
+	await resumeStalledImportJobs(env, cronCtx, async (userId) => {
+		asked += 1;
+		return userId === "owner";
+	});
+	assert.equal(asked, 1, "each owner is asked once across pages");
+	assert.deepEqual(queued, []);
 });
 
 test("the queue metric class of import.imap comes from the manifest and core kinds stay literal", () => {

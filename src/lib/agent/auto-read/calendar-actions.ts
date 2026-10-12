@@ -39,10 +39,13 @@ const rsvpInput = z.object({
 });
 
 export type CalendarActionCall =
-	| { op: "execute"; actionId: string; input?: JsonValue }
+	| { op: "execute"; actionId: string; input?: JsonValue; storedIds?: Record<string, string> }
 	| { op: "undo" | "authorize_undo"; actionId: string; inverse: JsonValue };
 
-/** Ids derived from the action id, so running the same action twice finds what the first run made. */
+/**
+ * Ids derived from the action id, so running the same action twice finds what the first run made.
+ * A row written before module actions existed holds random ids instead, passed back as `storedIds`.
+ */
 function derivedId(prefix: string, actionId: string): string {
 	return `${prefix}_${actionId.replace(/^aact_/, "")}`;
 }
@@ -67,6 +70,7 @@ async function execute(
 	name: CalendarActionName,
 	actionId: string,
 	raw: JsonValue | undefined,
+	storedIds: Record<string, string> = {},
 ): Promise<{ result: ActionState; inverse: JsonValue | null }> {
 	if (name === "createEvent") {
 		const input = createInput.parse(raw);
@@ -85,7 +89,7 @@ async function execute(
 			reviewerUserId: input.reviewerUserId,
 			messageId: input.messageId,
 			payload: input.payload,
-			eventId: derivedId("evt", actionId),
+			eventId: storedIds.eventId ?? derivedId("evt", actionId),
 		});
 		const result = await applyOnce(effect);
 		return { result, inverse: { eventId: String(result.eventId) } };
@@ -107,7 +111,7 @@ async function execute(
 		payload: input.payload,
 		partstat: input.partstat,
 		source: { id: input.sourceMessageId },
-		messageId: derivedId("msg", actionId),
+		messageId: storedIds.messageId ?? derivedId("msg", actionId),
 	});
 	const result = await applyOnce(effect);
 	return { result, inverse: { messageId: String(result.messageId) } };
@@ -157,7 +161,7 @@ export async function runCalendarAction(
 			await undo(env, ctx, name, call.inverse, call.op === "authorize_undo");
 			return { result: {}, inverse: null };
 		}
-		const { result, inverse } = await execute(env, ctx, name, call.actionId, call.input);
+		const { result, inverse } = await execute(env, ctx, name, call.actionId, call.input, call.storedIds);
 		return { result: result as JsonValue, inverse };
 	} catch (error) {
 		return { result: {}, inverse: null, refused: refusal(error) };

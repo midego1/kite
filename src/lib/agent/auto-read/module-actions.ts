@@ -60,12 +60,13 @@ export function moduleEffect(input: {
 }): ActionEffect {
 	let inverse: JsonValue | null = null;
 	return {
-		async apply() {
+		async apply(ids) {
 			const output = await call(input.owner, input.viewer, input.mailboxId, {
 				op: "execute",
 				actionId: input.actionId,
 				suggestion: input.suggestion,
 				input: input.args,
+				...(Object.keys(ids).length > 0 ? { storedIds: ids } : {}),
 			});
 			if (output.refused) throw new Error(output.refused.error);
 			inverse = output.inverse ?? null;

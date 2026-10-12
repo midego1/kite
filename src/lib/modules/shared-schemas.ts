@@ -70,7 +70,14 @@ export const triageStepSchemas: CapabilitySchemas = {
 /** Execute, undo and the pre-undo check share one capability: `op` selects, and the handler must be idempotent by `actionId`. */
 export const actionSchemas: CapabilitySchemas = {
 	input: z.discriminatedUnion("op", [
-		z.object({ op: z.literal("execute"), actionId: z.string(), suggestion: json, input: json.optional() }),
+		z.object({
+			op: z.literal("execute"),
+			actionId: z.string(),
+			suggestion: json,
+			input: json.optional(),
+			/** Effect ids a resumed row already holds (rows written before module actions derive ids from `actionId`); handlers prefer them. */
+			storedIds: z.record(z.string(), z.string()).optional(),
+		}),
 		z.object({ op: z.literal("undo"), actionId: z.string(), inverse: json }),
 		/** Asked before an undo claims anything: a handler that refuses here changes nothing. */
 		z.object({ op: z.literal("authorize_undo"), actionId: z.string(), inverse: json }),

@@ -20,14 +20,19 @@ import { answerInvite } from "@/lib/agent/auto-read/invite-actions";
 import type { CapabilityHandler, JsonValue } from "../module-types";
 import { resolveCalendarRefs } from "@/lib/calendar/refs";
 
-type StepInput = { message: { id: string; from: string }; facts: { authPassed: boolean } };
+type StepInput = {
+	message: { id: string; from: string };
+	facts: { authPassed: boolean };
+	attachments: { id: string; contentType: string; filename: string | null; size: number }[];
+};
 
 /** Reads the invitation attached to the message and offers it as a suggestion of the module's own kind. */
 const inviteStep: CapabilityHandler = async (input, ctx) => {
 	if (!ctx.viewer) throw new Error("The invite step needs a reviewer");
-	const { message, facts } = input as StepInput;
+	const { message, facts, attachments } = input as StepInput;
 	const payload = await loadCalendarInvite(getEnv(), ctx, {
 		messageId: message.id,
+		attachments,
 		reviewerUserId: ctx.viewer.userId,
 		senderAddress: senderAddressOf(message.from),
 		authPassed: facts.authPassed,

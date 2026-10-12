@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { mailboxes } from "@/db/schema";
 import { importJobs } from "@/db/schema/import-jobs";
@@ -298,15 +298,17 @@ async function startNextJobForAccount(env: CloudflareEnv, job: ImportJobRow): Pr
 	if (next) await enqueueImportJob(env, next.id);
 }
 
-/** Stalled jobs looked at per tick; owners that may not import are filtered out of this window, not the limit. */
-const STALLED_WINDOW = 200;
+/** Stalled rows read per page, and the pages one tick may read before it gives up until the next tick. */
+const STALLED_PAGE_SIZE = 200;
+const STALLED_MAX_PAGES = 10;
 const RESUMED_PER_TICK = 10;
 
 /**
  * Cron safety net: re-enqueues active jobs whose run died without handing off
  * (worker eviction, exhausted queue retries). Without a queue binding it runs
  * one job inline so imports still progress. `ownerMayImport` leaves out the jobs of users who
- * are restricted from Import, so they are not picked again on every tick.
+ * are restricted from Import; their rows stay stalled, so candidates are read page by page
+ * (keyset on `createdAt`, `id`) until enough allowed jobs are found instead of stopping at the oldest window.
  */
 export async function resumeStalledImportJobs(
 	env: CloudflareEnv,
@@ -316,24 +318,42 @@ export async function resumeStalledImportJobs(
 	const db = getDb(env);
 	const now = new Date();
 	const stale = new Date(now.getTime() - 2 * 60_000);
-	const candidates = await db
-		.select({ id: importJobs.id, userId: importJobs.userId })
-		.from(importJobs)
-		.where(
-			and(
-				inArray(importJobs.status, [...ACTIVE_STATUSES]),
-				or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
-				lt(importJobs.updatedAt, stale),
-			),
-		)
-		.orderBy(importJobs.createdAt)
-		.limit(STALLED_WINDOW);
+	const stalled = and(
+		inArray(importJobs.status, [...ACTIVE_STATUSES]),
+		or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
+		lt(importJobs.updatedAt, stale),
+	);
 	const allowed = new Map<string, boolean>();
-	for (const userId of new Set(candidates.map((job) => job.userId))) allowed.set(userId, await ownerMayImport(userId));
-	const jobs = candidates.filter((job) => allowed.get(job.userId)).slice(0, RESUMED_PER_TICK);
-	for (const job of jobs) {
-		if (!(await enqueueImportJob(env, job.id))) {
-			await processImportJob(env, job.id, ctx);
+	const jobs: string[] = [];
+	let after: { createdAt: Date; id: string } | null = null;
+	for (let page = 0; page < STALLED_MAX_PAGES && jobs.length < RESUMED_PER_TICK; page += 1) {
+		const candidates: { id: string; userId: string; createdAt: Date }[] = await db
+			.select({ id: importJobs.id, userId: importJobs.userId, createdAt: importJobs.createdAt })
+			.from(importJobs)
+			.where(
+				after
+					? and(
+							stalled,
+							or(
+								gt(importJobs.createdAt, after.createdAt),
+								and(eq(importJobs.createdAt, after.createdAt), gt(importJobs.id, after.id)),
+							),
+						)
+					: stalled,
+			)
+			.orderBy(importJobs.createdAt, importJobs.id)
+			.limit(STALLED_PAGE_SIZE);
+		for (const job of candidates) {
+			if (jobs.length >= RESUMED_PER_TICK) break;
+			if (!allowed.has(job.userId)) allowed.set(job.userId, await ownerMayImport(job.userId));
+			if (allowed.get(job.userId)) jobs.push(job.id);
+		}
+		if (candidates.length < STALLED_PAGE_SIZE) break;
+		after = candidates[candidates.length - 1];
+	}
+	for (const id of jobs) {
+		if (!(await enqueueImportJob(env, id))) {
+			await processImportJob(env, id, ctx);
 			return;
 		}
 	}

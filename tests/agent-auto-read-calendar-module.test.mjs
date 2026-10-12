@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -214,6 +214,36 @@ test("the calendar step reads the invitation through the module and returns one 
 	assert.equal(run.planned[0].autoExecute, false);
 });
 
+test("the invitation is read through the host facade, not core attachment tables or R2", async (t) => {
+	const source = readFileSync(join(root, "src/lib/agent/auto-read/invite.ts"), "utf8");
+	assert.doesNotMatch(source, /messageAttachments|BUCKET/);
+	assert.match(source, /moduleHost\.mail\.readAttachment/);
+	const { env } = await setup(t);
+	let reads = 0;
+	const bucket = env.BUCKET.get;
+	env.BUCKET.get = async (...args) => {
+		reads += 1;
+		return bucket(...args);
+	};
+	assert.equal((await runModuleTriageSteps(stepInput(env))).planned.length, 1);
+	assert.equal(reads, 1, "one read, made by the host");
+});
+
+test("an unreadable invitation (a reviewer without access) or one over the size cap yields no suggestion", async (t) => {
+	const { db, env } = await setup(t);
+	db.db.exec(
+		"INSERT INTO users (id, email, password_hash, name, time_zone, created_at) VALUES ('stranger', 'stranger@example.com', 'hash', 'Stranger', 'UTC', 1)",
+	);
+	const input = stepInput(env);
+	const stranger = { userId: "stranger", role: "user", isPrimaryAdmin: false, timeZone: "UTC" };
+	assert.deepEqual((await runModuleTriageSteps({ ...input, reviewer: stranger })).planned, []);
+
+	db.db.prepare("UPDATE message_attachments SET size = 300000 WHERE id = 'att-1'").run();
+	assert.deepEqual((await runModuleTriageSteps(input)).planned, []);
+	db.db.prepare("UPDATE message_attachments SET size = ? WHERE id = 'att-1'").run(ics().length);
+	assert.equal((await runModuleTriageSteps(input)).planned.length, 1);
+});
+
 test("with Calendar off the step is skipped with the module id and never reads the invitation", async (t) => {
 	const { db, env } = await setup(t);
 	toggle(db, "calendar", false);
@@ -368,6 +398,115 @@ test("a stale pending module action resumes with its action id and the event is 
 	);
 	assert.equal(again.ok, true);
 	assert.equal(events(db).length, 1);
+});
+
+function legacyRow(db, { id, action, after, variant = "" }) {
+	const stale = Math.floor(Date.now() / 1000) - 3600;
+	db.db
+		.prepare(
+			"INSERT INTO agent_actions (id, mailbox_id, suggestion_id, message_id, initiator, acting_user_id, action, variant, status, after, created_at, updated_at) VALUES (?, 'mailbox-a', 'sugg-1', 'source-1', 'user', 'owner', ?, ?, 'pending', ?, ?, ?)",
+		)
+		.run(id, action, variant, JSON.stringify(after), stale, stale);
+}
+
+const rsvpModuleInput = (extra = {}) => ({
+	env: undefined,
+	mailboxId: "mailbox-a",
+	suggestionId: "sugg-1",
+	messageId: "source-1",
+	action: "send_rsvp",
+	variant: "accepted",
+	initiator: "user",
+	actingUserId: "owner",
+	permissions: { canManage: true, canSendOnBehalf: true },
+	module: {
+		input: {
+			partstat: "accepted",
+			payload: payload(),
+			sourceMessageId: "source-1",
+			suggestionId: "sugg-1",
+			mailboxId: "mailbox-a",
+		},
+		viewer: { ...viewer, timeZone: "UTC" },
+	},
+	...extra,
+});
+
+test("a pending RSVP row from the previous release resumes under its stored message id and sends nothing", async (t) => {
+	const { db, env, sent } = await setup(t);
+	addSuggestion(db);
+	legacyRow(db, {
+		id: "aact_legacyrsvp",
+		action: "send_rsvp",
+		variant: "accepted",
+		after: { messageId: "msg_legacy" },
+	});
+	db.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, created_at)
+		VALUES ('msg_legacy', 'owner', 'mailbox-a', 'outbound', 'support@example.com', 'alice@partner.test', 'Accepted: Planning', 'sent', 1);
+	`);
+	const result = await executeAction(rsvpModuleInput({ env }));
+	assert.equal(result.status, "applied");
+	assert.equal(result.actionId, "aact_legacyrsvp");
+	assert.equal(result.after.messageId, "msg_legacy");
+	assert.equal(sent.length, 0);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages WHERE direction = 'outbound'").get().n, 1);
+	const [row] = actions(db, "id = 'aact_legacyrsvp'");
+	assert.equal(row.status, "applied");
+	assert.equal(JSON.parse(row.after).messageId, "msg_legacy");
+	assert.equal(JSON.parse(row.before).messageId, "msg_legacy");
+});
+
+test("a pending RSVP row whose message was never written sends once under the stored id", async (t) => {
+	const { db, env, sent } = await setup(t);
+	addSuggestion(db);
+	legacyRow(db, {
+		id: "aact_legacyrsvp2",
+		action: "send_rsvp",
+		variant: "accepted",
+		after: { messageId: "msg_stored" },
+	});
+	const result = await executeAction(rsvpModuleInput({ env }));
+	assert.equal(result.status, "applied");
+	assert.equal(sent.length, 1);
+	assert.equal(result.after.messageId, "msg_stored");
+	assert.ok(db.db.prepare("SELECT id FROM messages WHERE id = 'msg_stored'").get());
+});
+
+test("a pending create_event row from the previous release resolves to its stored event without a duplicate", async (t) => {
+	const { db, env } = await setup(t);
+	addSuggestion(db);
+	legacyRow(db, { id: "aact_legacyevent", action: "create_event", after: { eventId: "evt_legacy" } });
+	db.db.exec(`
+		INSERT INTO calendar_events (id, user_id, title, starts_at, ends_at, ical_uid, created_at, updated_at)
+		VALUES ('evt_legacy', 'owner', 'Planning', ${START / 1000}, ${(START + 3_600_000) / 1000}, 'uid-1@partner.test', 1, 1);
+	`);
+	const result = await executeAction({
+		env,
+		mailboxId: "mailbox-a",
+		suggestionId: "sugg-1",
+		messageId: "source-1",
+		action: "create_event",
+		initiator: "user",
+		actingUserId: "owner",
+		permissions: { canManage: true, canSendOnBehalf: true },
+		module: {
+			input: { variant: "", payload: payload(), reviewerUserId: "owner", messageId: "source-1" },
+			viewer: { ...viewer, timeZone: "UTC" },
+		},
+	});
+	assert.equal(result.status, "applied");
+	assert.equal(result.after.eventId, "evt_legacy");
+	assert.equal(events(db).length, 1);
+});
+
+test("a new module action stores no ids up front and derives its effect ids from the action id", async (t) => {
+	const { db, env, sent } = await setup(t);
+	addSuggestion(db);
+	const result = await executeAction(rsvpModuleInput({ env }));
+	assert.equal(result.status, "applied");
+	assert.equal(sent.length, 1);
+	assert.equal(result.after.messageId, `msg_${result.actionId.replace(/^aact_/, "")}`);
 });
 
 test("an RSVP repeated with the same action id sends one reply", async (t) => {

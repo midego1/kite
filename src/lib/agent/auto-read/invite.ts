@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { calendarEvents, messageAttachments, users } from "@/db/schema";
+import { calendarEvents, users } from "@/db/schema";
 import { busyBlocks, proposeSlots } from "@/lib/calendar/availability-utils";
 import { ICS_MAX_BYTES, parseIcsInvite, type IcsInvite } from "@/lib/calendar/ics-parse-utils";
 import { runCalendarTool } from "@/lib/calendar/tools";
@@ -21,22 +21,18 @@ import type { CalendarInvitePayload } from "./suggestion-types";
 
 const PROPOSAL_HORIZON_DAYS = 7;
 
-/** The first calendar attachment's text, or null when none exists, it is over the cap, or R2 no longer has it. */
-async function readInviteSource(env: CloudflareEnv, messageId: string): Promise<string | null> {
-	const rows = await getDb(env)
-		.select({
-			filename: messageAttachments.filename,
-			contentType: messageAttachments.contentType,
-			size: messageAttachments.size,
-			r2Key: messageAttachments.r2Key,
-		})
-		.from(messageAttachments)
-		.where(eq(messageAttachments.messageId, messageId));
-	const attachment = rows.find(isCalendarAttachment);
+type InviteAttachment = { id: string; contentType: string; filename: string | null; size: number };
+
+/** The first calendar attachment's text, or null when none exists, it is over the cap, or the host will not read it. */
+async function readInviteSource(
+	ctx: CapabilityCallContext,
+	messageId: string,
+	attachments: InviteAttachment[],
+): Promise<string | null> {
+	const attachment = attachments.find((item) => isCalendarAttachment({ ...item, filename: item.filename ?? "" }));
 	if (!attachment || attachment.size > ICS_MAX_BYTES) return null;
-	const object = await env.BUCKET.get(attachment.r2Key);
-	if (!object || object.size > ICS_MAX_BYTES) return null;
-	return new TextDecoder().decode(await object.arrayBuffer());
+	const content = await moduleHost.mail.readAttachment(ctx, messageId, attachment.id, { maxBytes: ICS_MAX_BYTES });
+	return content && content.encoding === "text" && !content.truncated ? content.content : null;
 }
 
 async function schedule(env: CloudflareEnv, reviewer: typeof users.$inferSelect, from: Date, to: Date) {
@@ -97,9 +93,15 @@ export async function proposeSlotsForInvite(
 export async function loadCalendarInvite(
 	env: CloudflareEnv,
 	ctx: CapabilityCallContext,
-	input: { messageId: string; reviewerUserId: string; senderAddress: string; authPassed: boolean },
+	input: {
+		messageId: string;
+		attachments: InviteAttachment[];
+		reviewerUserId: string;
+		senderAddress: string;
+		authPassed: boolean;
+	},
 ): Promise<CalendarInvitePayload | null> {
-	const source = await readInviteSource(env, input.messageId);
+	const source = await readInviteSource(ctx, input.messageId, input.attachments);
 	if (!source) return null;
 	const parsed = parseIcsInvite(source);
 	if (!parsed.ok) return null;

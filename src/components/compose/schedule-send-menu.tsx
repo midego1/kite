@@ -3,8 +3,7 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useState } from "react";
 import { ChevronDown, X } from "lucide-react";
-import { NewTemplateDialog } from "./new-template-dialog";
-import { TemplateMenu } from "./template-menu";
+import { useComposerSlots } from "./composer-slot";
 import {
 	formatDateTimeLocal,
 	formatScheduledSend,
@@ -14,15 +13,8 @@ import {
 import type { ScheduleSendMenuProps } from "./schedule-send-types";
 import { getUserTimeZone } from "@/lib/time/utils";
 
-export function ScheduleSendMenu({
-	disabled,
-	value,
-	onChange,
-	mailboxId,
-	from,
-	onApplyTemplate,
-}: ScheduleSendMenuProps) {
-	const [newTemplateOpen, setNewTemplateOpen] = useState(false);
+export function ScheduleSendMenu({ disabled, value, onChange, mailboxId, from, applyContent }: ScheduleSendMenuProps) {
+	const slots = useComposerSlots("send-menu", { mailboxId, from, applyContent });
 	// Suggestions are computed from the moment the menu opens.
 	const [openedAt, setOpenedAt] = useState(() => Date.now());
 	const options = getScheduleSendOptions(new Date(openedAt));
@@ -49,8 +41,7 @@ export function ScheduleSendMenu({
 						sideOffset={6}
 						className="z-50 min-w-56 rounded-lg border border-neutral-200 bg-white p-1 text-sm shadow-lg"
 					>
-						<TemplateMenu onApply={onApplyTemplate} onNew={() => setNewTemplateOpen(true)} />
-						<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
+						{slots.menu}
 						<DropdownMenu.Label className="px-3 pb-1 pt-2 text-xs font-medium text-neutral-500">
 							Schedule
 						</DropdownMenu.Label>
@@ -93,7 +84,7 @@ export function ScheduleSendMenu({
 					</DropdownMenu.Content>
 				</DropdownMenu.Portal>
 			</DropdownMenu.Root>
-			<NewTemplateDialog open={newTemplateOpen} onOpenChange={setNewTemplateOpen} mailboxId={mailboxId} from={from} />
+			{slots.overlays}
 		</>
 	);
 }

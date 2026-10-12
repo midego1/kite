@@ -72,8 +72,14 @@ export type ComposerSlotDeclaration = {
 	label: string;
 };
 
+/** What a module declares of the composer slots, as far as listing them goes. */
+export type ComposerSlotSource = { id: ModuleId; composerSlots?: readonly ComposerSlotDeclaration[] };
+export type ListedComposerSlot = ComposerSlotDeclaration & { moduleId: ModuleId };
+
 /** The part of a manifest that browser code needs: identity, navigation and commands. */
 export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "commands"> & {
+	/** Composer slots the module fills, so the composer lists them without loading the module. */
+	composerSlots?: ComposerSlotDeclaration[];
 	/** Suggestion kinds the module's `suggestion_kind` capabilities declare, so the reader card can pick the module's client chunk without the registry. */
 	suggestionKinds?: readonly string[];
 	/** The key scopes the module adds, so the key forms can list them only while it is on. */

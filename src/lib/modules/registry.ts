@@ -25,3 +25,8 @@ export function getModuleManifest(id: ModuleId): ModuleManifest {
 	if (!manifest) throw new Error(`Unknown module ${id}`);
 	return manifest;
 }
+
+/** The message statuses modules own; they never show in ordinary lists. */
+export function moduleOwnedMessageStatuses(): string[] {
+	return [...new Set(MODULE_MANIFESTS.flatMap((manifest) => manifest.messageStatuses))];
+}

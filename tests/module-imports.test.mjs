@@ -56,9 +56,6 @@ const MODULE_CODE = [
 	"src/lib/import",
 	...MODULE_IDS.map((id) => `src/lib/modules/${id}`),
 	...MODULE_IDS.map((id) => `src/components/modules/${id}`),
-	"src/components/compose/template-menu",
-	"src/components/compose/new-template-dialog",
-	"src/components/compose/template-types",
 	...MODULE_OWNED_INVITE_FILES.map((file) => file.replace(/\.ts$/, "")),
 ];
 
@@ -74,12 +71,6 @@ const PENDING = {
 		"The queue and cron handlers still call the import job code by hand until dispatchModuleQueueMessage and runModuleCronTasks replace them (queue and cron routing feature).",
 	"server/index.ts":
 		"The Node queue consumer still calls the import job code by hand until dispatchModuleQueueMessage replaces it (queue and cron routing feature).",
-	"src/components/compose/new-template-dialog.tsx":
-		"The New template dialog is Templates module UI that still sits in the composer folder; it moves to src/components/modules/templates (composer slot feature).",
-	"src/components/compose/schedule-send-menu.tsx":
-		"The send menu still mounts the template menu and dialog directly until it renders the composer slot (composer slot feature).",
-	"src/components/compose/template-menu.tsx":
-		"The Template submenu is Templates module UI that still sits in the composer folder; it moves to src/components/modules/templates (composer slot feature).",
 };
 
 const toPosix = (path) => path.split(sep).join("/");

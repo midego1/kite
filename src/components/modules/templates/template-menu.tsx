@@ -4,14 +4,15 @@ import { useEffect, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { ChevronRight, FileText, Plus, Trash2 } from "lucide-react";
 import { authFetch } from "@/lib/auth/client";
-import { textToHtml } from "./rich-text-utils";
-import type { ComposeTemplate, TemplateMenuProps } from "./template-types";
+import { textToHtml } from "@/components/compose/rich-text-utils";
+import type { ComposerSlotContext } from "../client-registry-types";
+import type { ComposeTemplate } from "./template-types";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 
 const itemClass =
 	"flex cursor-pointer items-center rounded-md px-3 py-2 outline-none hover:bg-neutral-100 focus:bg-neutral-100";
 
-export function TemplateMenu({ onApply, onNew }: TemplateMenuProps) {
+export function TemplateMenu({ applyContent, openOverlay }: ComposerSlotContext & { openOverlay: () => void }) {
 	const [templates, setTemplates] = useState<ComposeTemplate[]>([]);
 
 	useEffect(() => {
@@ -46,8 +47,8 @@ export function TemplateMenu({ onApply, onNew }: TemplateMenuProps) {
 							<DropdownMenu.Item
 								key={template.id}
 								onSelect={() =>
-									onApply({
-										title: template.subject ?? "",
+									applyContent({
+										subject: template.subject ?? "",
 										html: template.htmlBody ?? textToHtml(template.textBody ?? ""),
 									})
 								}
@@ -75,7 +76,7 @@ export function TemplateMenu({ onApply, onNew }: TemplateMenuProps) {
 						))}
 					</div>
 					<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
-					<DropdownMenu.Item onSelect={onNew} className={`${itemClass} text-blue-600`}>
+					<DropdownMenu.Item onSelect={openOverlay} className={`${itemClass} text-blue-600`}>
 						<Plus className="mr-2 h-4 w-4" />
 						New template
 					</DropdownMenu.Item>

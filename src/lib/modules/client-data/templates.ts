@@ -6,4 +6,5 @@ export const templatesClientData: ClientModuleData = {
 	name: "Email templates",
 	nav: [],
 	commands: [],
+	composerSlots: [{ id: "templates.send-menu", slot: "send-menu", order: 10, label: "Template" }],
 };

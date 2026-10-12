@@ -7,10 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth/client";
-import { textToHtml } from "./rich-text-utils";
-import type { NewTemplateDialogProps } from "./template-types";
+import { textToHtml } from "@/components/compose/rich-text-utils";
+import type { ComposerSlotContext } from "../client-registry-types";
 
-export function NewTemplateDialog({ open, onOpenChange, mailboxId, from }: NewTemplateDialogProps) {
+export function NewTemplateDialog({
+	open,
+	onOpenChange,
+	mailboxId,
+	from,
+}: ComposerSlotContext & { open: boolean; onOpenChange: (open: boolean) => void }) {
 	const [title, setTitle] = useState("");
 	const [content, setContent] = useState("");
 	const [saving, setSaving] = useState(false);

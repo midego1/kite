@@ -2309,3 +2309,136 @@ test("changing the time zone works with Calendar off and still answers the new z
 		await api.dispose();
 	}
 });
+
+async function createTemplate(api: APIRequestContext, title: string, text: string): Promise<string> {
+	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as {
+		mailboxes: { id: string; senderAddresses: string[] }[];
+	};
+	const created = await api.post("/api/templates", {
+		data: { mailboxId: mailboxes[0].id, from: mailboxes[0].senderAddresses[0], title, text, html: `<p>${text}</p>` },
+	});
+	expect(created.status(), await created.text()).toBe(201);
+	return ((await created.json()) as { template: { id: string } }).template.id;
+}
+
+/** What the page asks for while the composer's send menu is opened, collected until the returned function is read. */
+function watchTemplateTraffic(page: Page): () => string[] {
+	const seen: string[] = [];
+	page.on("request", (request) => {
+		const path = new URL(request.url()).pathname;
+		if (path.includes("/api/templates") || path.includes("components/modules/templates/")) seen.push(path);
+	});
+	return () => seen;
+}
+
+async function openSendMenu(page: Page) {
+	await page.goto("/inbox");
+	await page.getByRole("button", { name: "Compose" }).click();
+	await page.getByRole("button", { name: "Schedule send options" }).click();
+	const menu = page.getByRole("menu");
+	await expect(menu.getByText("Schedule", { exact: true })).toBeVisible();
+	return menu;
+}
+
+async function expectScheduleOnlyMenu(page: Page, seen: () => string[]) {
+	const menu = await openSendMenu(page);
+	await expect(menu.getByRole("menuitem", { name: "Template" })).toHaveCount(0);
+	await expect(menu.getByText("New template")).toHaveCount(0);
+	await expect(menu.locator("> *").first()).toHaveText("Schedule");
+	await expect(menu.getByRole("menuitem", { name: "Tomorrow morning" })).toBeVisible();
+	await page.waitForTimeout(500);
+	expect(seen()).toEqual([]);
+	await page.keyboard.press("Escape");
+}
+
+async function templateStatusRows(api: APIRequestContext): Promise<{ id: string }[]> {
+	const response = await api.get("/api/messages?status=template");
+	expect(response.status(), await response.text()).toBe(200);
+	return ((await response.json()) as { messages: { id: string }[] }).messages;
+}
+
+test("with Templates off the send menu has only schedule options and no template request or code, and the template still applies when it is back", async ({
+	page,
+}) => {
+	const api = await owner();
+	const word = uniqueToken("tplword");
+	let templateId = "";
+	try {
+		templateId = await createTemplate(api, `Template subject ${word}`, `Template body ${word}`);
+		expect((await templateStatusRows(api)).map((row) => row.id)).toContain(templateId);
+		for (const status of ["received", "sent", "draft", "spam", "trash", "archived"]) {
+			const listed = (await (await api.get(`/api/messages?status=${status}`)).json()) as { messages: { id: string }[] };
+			expect(
+				listed.messages.map((row) => row.id),
+				status,
+			).not.toContain(templateId);
+		}
+		const everything = (await (await api.get(`/api/messages?q=${word}`)).json()) as { messages: unknown[] };
+		expect(everything.messages).toEqual([]);
+
+		await setModuleState(api, { modules: { templates: false } });
+		const seen = watchTemplateTraffic(page);
+		await expectScheduleOnlyMenu(page, seen);
+
+		expect((await api.get("/api/templates")).status()).toBe(404);
+		expect((await api.post("/api/templates", { data: { title: "x", text: "y" } })).status()).toBe(404);
+		const deleted = await api.delete(`/api/templates/${templateId}`);
+		expect(deleted.status()).toBe(404);
+		expect(await deleted.json()).toEqual({ error: "Not found" });
+		expect(await templateStatusRows(api)).toEqual([]);
+		const offLists = (await (await api.get("/api/messages")).json()) as { messages: { id: string }[] };
+		expect(offLists.messages.map((row) => row.id)).not.toContain(templateId);
+
+		await setModuleState(api, { modules: { templates: true } });
+		expect((await templateStatusRows(api)).map((row) => row.id)).toContain(templateId);
+		const menu = await openSendMenu(page);
+		await expect(menu.getByRole("menuitem", { name: "Template" })).toBeVisible();
+		expect(seen()).toContain("/api/templates");
+		// The submenu is opened and picked by keyboard: a teleporting pointer leaves Radix's grace area and closes it.
+		await menu.getByRole("menuitem", { name: "Template" }).focus();
+		await page.keyboard.press("ArrowRight");
+		await expect(page.getByRole("menuitem", { name: "New template" })).toBeVisible();
+		await page.getByRole("menuitem", { name: `Template subject ${word}` }).focus();
+		await page.keyboard.press("Enter");
+		await expect(page.getByLabel("Subject")).toHaveValue(`Template subject ${word}`);
+		await expect(page.getByRole("textbox", { name: "Message body" })).toContainText(`Template body ${word}`);
+	} finally {
+		await restoreModules(api);
+		if (templateId) await api.delete(`/api/templates/${templateId}`);
+		await api.dispose();
+	}
+});
+
+test("a user restricted from Templates loses the slot and the API while the owner keeps both", async ({
+	browser,
+	page,
+}) => {
+	const api = await owner();
+	const member = await createMember(api);
+	const context = await browser.newContext({ baseURL: BASE_URL, storageState: undefined });
+	let templateId = "";
+	try {
+		const word = uniqueToken("tplmember");
+		templateId = await createTemplate(api, `Member template ${word}`, `Body ${word}`);
+		await setModuleState(api, { access: [{ userId: member.id, moduleId: "templates", allowed: false }] });
+
+		const memberPage = await context.newPage();
+		await signIn(memberPage, member.email, MEMBER_PASSWORD);
+		await expect(memberPage).toHaveURL(/\/inbox/);
+		const seen = watchTemplateTraffic(memberPage);
+		await expectScheduleOnlyMenu(memberPage, seen);
+		expect((await member.api.get("/api/templates")).status()).toBe(404);
+		expect(await templateStatusRows(member.api)).toEqual([]);
+
+		expect((await api.get("/api/templates")).status()).toBe(200);
+		expect((await templateStatusRows(api)).map((row) => row.id)).toContain(templateId);
+		const menu = await openSendMenu(page);
+		await expect(menu.getByRole("menuitem", { name: "Template" })).toBeVisible();
+	} finally {
+		await restoreModules(api, [member.id]);
+		if (templateId) await api.delete(`/api/templates/${templateId}`);
+		await context.close();
+		await member.api.dispose();
+		await api.dispose();
+	}
+});

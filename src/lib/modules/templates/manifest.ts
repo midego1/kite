@@ -12,7 +12,7 @@ export const templatesManifest: ModuleManifest = {
 	apiPrefixes: [{ prefix: "/api/templates" }],
 	nav: templatesClientData.nav,
 	commands: templatesClientData.commands,
-	composerSlots: [{ id: "templates.send-menu", slot: "send-menu", order: 10, label: "Template" }],
+	composerSlots: templatesClientData.composerSlots ?? [],
 	recordKinds: [{ kind: "templates:template", label: "Email template", unavailableLabel: "Template" }],
 	webhookEvents: [],
 	grants: [

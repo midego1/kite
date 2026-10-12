@@ -1863,6 +1863,7 @@ async function deleteWebhooks(api: APIRequestContext, ids: string[]) {
 }
 
 const CALENDAR_EVENT_LABELS = ["Calendar event created", "Calendar event updated", "Calendar event deleted"];
+const CALENDAR_EVENTS = ["calendar.event.created", "calendar.event.updated", "calendar.event.deleted"];
 
 test("the webhook picker lists calendar and booking events only while their modules are on", async ({ page }) => {
 	const api = await owner();
@@ -1893,16 +1894,71 @@ test("the webhook picker lists calendar and booking events only while their modu
 
 		await setModuleState(api, { modules: { calendar: false } });
 		expect(await eventLabels()).toEqual(["Inbound message", "Outbound message", "Delivery failure"]);
-		const listed = (await (await api.get("/api/webhooks")).json()) as {
-			eventCatalog: { value: string; available: boolean }[];
-		};
-		expect(listed.eventCatalog.filter((event) => event.available).map((event) => event.value)).toEqual([
+		const catalog = async () =>
+			((await (await api.get("/api/webhooks")).json()) as { eventCatalog: Record<string, unknown>[] }).eventCatalog.map(
+				(event) => event.value,
+			);
+		expect(await catalog()).toEqual(["message.inbound", "message.outbound", "message.failed"]);
+		await setModuleState(api, { modules: { calendar: true } });
+		expect(await catalog()).toEqual(["message.inbound", "message.outbound", "message.failed", ...CALENDAR_EVENTS]);
+		await setModuleState(api, { modules: { booking: true } });
+		expect(await catalog()).toEqual([
 			"message.inbound",
 			"message.outbound",
 			"message.failed",
+			...CALENDAR_EVENTS,
+			"booking.appointment.created",
 		]);
 	} finally {
 		await restoreModules(api);
+		await api.dispose();
+	}
+});
+
+test("the webhook picker follows module changes made through the admin navigation", async ({ page }) => {
+	const api = await owner();
+	const created: string[] = [];
+	const menu = page.getByRole("complementary", { name: "Admin menu" });
+	const openPicker = async () => {
+		await menu.getByRole("link", { name: "Webhooks", exact: true }).click();
+		await expect(page.getByRole("heading", { level: 1, name: "Webhooks" })).toBeVisible();
+		await page.getByRole("button", { name: "Add endpoint" }).click();
+		const dialog = page.getByRole("dialog");
+		await expect(dialog.getByText("Inbound message", { exact: true })).toBeVisible();
+		return dialog;
+	};
+	const labels = (dialog: Locator) => dialog.locator("label span.font-medium").allTextContents();
+	try {
+		await page.goto("/webhooks");
+		let dialog = await openPicker();
+		expect(await labels(dialog)).toContain("Calendar event created");
+		await page.keyboard.press("Escape");
+
+		await menu.getByRole("link", { name: "Modules", exact: true }).click();
+		await expect(page.getByRole("heading", { level: 1, name: "Modules" })).toBeVisible();
+		await moduleSwitch(page, "Calendar").click();
+		await page.getByRole("alertdialog").getByRole("button", { name: "Turn off Calendar" }).click();
+		await expect(moduleSwitch(page, "Calendar")).not.toBeChecked();
+
+		dialog = await openPicker();
+		expect(await labels(dialog)).toEqual(["Inbound message", "Outbound message", "Delivery failure"]);
+		await dialog.getByLabel("Endpoint URL").fill("https://hooks.e2e-modules.invalid/navigation");
+		await dialog.getByRole("button", { name: "Create" }).click();
+		await expect(dialog).toHaveCount(0);
+		const made = (await (await api.get("/api/webhooks")).json()) as { webhooks: { id: string; events: string[] }[] };
+		const mine = made.webhooks.find((hook) => hook.events.length === 3);
+		expect(mine?.events).toEqual(["message.inbound", "message.outbound", "message.failed"]);
+		if (mine) created.push(mine.id);
+
+		await menu.getByRole("link", { name: "Modules", exact: true }).click();
+		await expect(page.getByRole("heading", { level: 1, name: "Modules" })).toBeVisible();
+		await moduleSwitch(page, "Calendar").click();
+		await expect(moduleSwitch(page, "Calendar")).toBeChecked();
+		dialog = await openPicker();
+		expect(await labels(dialog)).toContain("Calendar event created");
+	} finally {
+		await restoreModules(api);
+		await deleteWebhooks(api, created);
 		await api.dispose();
 	}
 });
@@ -1946,7 +2002,11 @@ test("a webhook for a disabled module's event is refused with MODULE_DISABLED, a
 		});
 		expect(added.status()).toBe(400);
 		expect(await added.json()).toMatchObject({ code: "MODULE_DISABLED" });
-		const after = (await (await api.get("/api/webhooks")).json()) as { webhooks: { id: string; events: string[] }[] };
+		const after = (await (await api.get("/api/webhooks")).json()) as {
+			webhooks: { id: string; events: string[] }[];
+			eventCatalog: { value: string }[];
+		};
+		expect(after.eventCatalog.map((event) => event.value)).not.toContain("calendar.event.created");
 		expect(after.webhooks.find((hook) => hook.id === created[0])?.events).toEqual([
 			"message.inbound",
 			"calendar.event.created",

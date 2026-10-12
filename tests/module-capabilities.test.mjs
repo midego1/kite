@@ -10,6 +10,7 @@ const {
 	effectiveModules,
 	scopeDeclarations,
 	clientScopeDeclarations,
+	keyScopeOptions,
 	allKeyScopes,
 	scopeOwner,
 	isScopeAvailable,
@@ -26,7 +27,7 @@ const {
 	["selectCapabilities", "src/lib/modules/capability-utils.ts"],
 	["effectiveModules", "src/lib/modules/state-utils.ts"],
 	[
-		"scopeDeclarations, clientScopeDeclarations, allKeyScopes, scopeOwner, isScopeAvailable, scopesNeedMailbox, scopeRefusal, grantsForMcpScopes, mcpToolsFor",
+		"scopeDeclarations, clientScopeDeclarations, keyScopeOptions, allKeyScopes, scopeOwner, isScopeAvailable, scopesNeedMailbox, scopeRefusal, grantsForMcpScopes, mcpToolsFor",
 		"src/lib/modules/key-scope-utils.ts",
 	],
 	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
@@ -204,4 +205,74 @@ test("MCP keys hold the grants of their scopes, and tools need all of the grants
 test("client scope data matches the manifests", () => {
 	const fromClient = clientScopeDeclarations(CLIENT_MODULES);
 	assert.deepEqual(fromClient, decls);
+});
+
+const CORE_MCP_OPTIONS = CORE_MCP_SCOPES.map((value) => ({ value, label: `core ${value}`, description: "core" }));
+const CORE_API_OPTIONS = CORE_API_KEY_SCOPES.map((value) => ({ value, label: `core ${value}`, description: "core" }));
+const optionPairs = (options) => options.map((option) => [option.value, option.label, option.description]);
+
+test("key form options are the core options followed by the declared options of the modules that are on", () => {
+	const on = enabledWith([]);
+	assert.deepEqual(optionPairs(keyScopeOptions("mcp", CORE_MCP_OPTIONS, CLIENT_MODULES, on)), [
+		...optionPairs(CORE_MCP_OPTIONS),
+		["mcp:calendar-read", "Read calendar", "List, search, and inspect events and free time."],
+		["mcp:calendar-write", "Manage calendar", "Create, update, and delete events."],
+	]);
+	assert.deepEqual(optionPairs(keyScopeOptions("api", CORE_API_OPTIONS, CLIENT_MODULES, on)), [
+		...optionPairs(CORE_API_OPTIONS),
+		["calendar:read", "Read calendar", "Read your calendar events through the API."],
+		["calendar:write", "Manage calendar", "Create, update, and delete your calendar events through the API."],
+	]);
+});
+
+test("key form options drop a module's scopes while it is off and keep the core ones", () => {
+	for (const off of [enabledWith(["calendar"]), []]) {
+		assert.deepEqual(keyScopeOptions("mcp", CORE_MCP_OPTIONS, CLIENT_MODULES, off), CORE_MCP_OPTIONS);
+		assert.deepEqual(keyScopeOptions("api", CORE_API_OPTIONS, CLIENT_MODULES, off), CORE_API_OPTIONS);
+	}
+	const withoutBooking = keyScopeOptions("api", CORE_API_OPTIONS, CLIENT_MODULES, enabledWith(["booking"]));
+	assert.equal(withoutBooking.length, CORE_API_OPTIONS.length + 2);
+});
+
+test("key form options follow whatever the client data declares, in registry order", () => {
+	const modules = [
+		{
+			id: "calendar",
+			name: "Calendar",
+			keyScopes: { mcp: [], api: [{ scope: "a:one", label: "One", description: "1" }] },
+		},
+		{ id: "booking", name: "Booking" },
+		{
+			id: "templates",
+			name: "Templates",
+			keyScopes: { mcp: [{ scope: "mcp:t", mailboxBound: false, label: "T", description: "t" }], api: [] },
+		},
+	];
+	assert.deepEqual(keyScopeOptions("api", [], modules, ["calendar", "booking", "templates"]), [
+		{ value: "a:one", label: "One", description: "1" },
+	]);
+	assert.deepEqual(keyScopeOptions("mcp", [], modules, ["templates"]), [
+		{ value: "mcp:t", label: "T", description: "t" },
+	]);
+	assert.deepEqual(keyScopeOptions("mcp", [], modules, ["calendar"]), []);
+});
+
+test("every client key scope has main's form text and matches a manifest scope", () => {
+	for (const slice of CLIENT_MODULES) {
+		const manifest = MODULE_MANIFESTS.find((item) => item.id === slice.id);
+		for (const item of slice.keyScopes?.mcp ?? []) {
+			assert.ok(item.label && item.description, item.scope);
+			assert.ok(
+				manifest.mcpScopes.some((scope) => scope.scope === item.scope),
+				item.scope,
+			);
+		}
+		for (const item of slice.keyScopes?.api ?? []) {
+			assert.ok(item.label && item.description, item.scope);
+			assert.ok(
+				manifest.apiKeyScopes.some((scope) => scope.scope === item.scope),
+				item.scope,
+			);
+		}
+	}
 });

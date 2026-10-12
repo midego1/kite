@@ -58,13 +58,21 @@ export function webhookEventOwner(catalog: readonly WebhookEventInfo[], value: s
 	return catalog.find((event) => event.value === value)?.moduleId;
 }
 
-/** Core events plus the events of modules in `enabled`. */
+/** Core events plus the events of modules in `enabled`. @public Test-only: `webhookEventOptions` is the production reader. */
 export function availableWebhookEvents(
 	catalog: readonly WebhookEventInfo[],
 	enabled: Iterable<ModuleId>,
 ): WebhookEventInfo[] {
 	const on = new Set(enabled);
 	return catalog.filter((event) => event.moduleId === null || on.has(event.moduleId));
+}
+
+/** What the picker and the API list: the events of modules in `enabled`, without the owner. */
+export function webhookEventOptions(
+	catalog: readonly WebhookEventInfo[],
+	enabled: Iterable<ModuleId>,
+): Pick<WebhookEventInfo, "value" | "label" | "hint">[] {
+	return availableWebhookEvents(catalog, enabled).map(({ value, label, hint }) => ({ value, label, hint }));
 }
 
 export type WebhookEventRefusal = {

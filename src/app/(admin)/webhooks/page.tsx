@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { SectionRowSkeleton } from "@/components/page-skeletons";
+import { useModules } from "@/components/modules/modules-context";
 import type { Webhook, WebhookEvent } from "./types";
 import { createWebhook, deleteWebhook, fetchWebhooks, testWebhook, updateWebhook } from "./utils";
 import { WebhookDeliveries } from "./deliveries";
@@ -29,11 +30,14 @@ export default function WebhooksPage() {
 	const [expanded, setExpanded] = useState<string | null>(null);
 	const [testResult, setTestResult] = useState<Record<string, string>>({});
 
-	const webhooks = useQuery({ queryKey: ["webhooks"], queryFn: fetchWebhooks });
+	const { modules } = useModules();
+	// The catalog depends on the viewer's modules, so a change to them must not reuse a cached list.
+	const webhooks = useQuery({ queryKey: ["webhooks", modules], queryFn: fetchWebhooks });
 	const invalidate = () => qc.invalidateQueries({ queryKey: ["webhooks"] });
 	const hooks = webhooks.data?.webhooks;
-	const pickable = (webhooks.data?.eventCatalog ?? []).filter((event) => event.available);
-	const events = picked ?? pickable.map((event) => event.value);
+	const pickable = webhooks.data?.eventCatalog ?? [];
+	const pickableValues = pickable.map((event) => event.value);
+	const events = (picked ?? pickableValues).filter((value) => pickableValues.includes(value));
 
 	const create = useMutation({
 		mutationFn: () => createWebhook({ url, description: description || undefined, events, maxAttempts }),

@@ -13,6 +13,7 @@ const {
 	WEBHOOK_EVENT_CATALOG,
 	WEBHOOK_EVENT_VALUES,
 	availableWebhookEvents,
+	webhookEventOptions,
 	webhookEventOwner,
 	webhookEventRefusal,
 	moduleDisabledNote,
@@ -39,7 +40,7 @@ const {
 	["MODULE_MANIFESTS", "src/lib/modules/registry.ts"],
 	["effectiveModules", "src/lib/modules/state-utils.ts"],
 	[
-		"CORE_WEBHOOK_EVENTS, WEBHOOK_EVENT_CATALOG, WEBHOOK_EVENT_VALUES, availableWebhookEvents, webhookEventOwner, webhookEventRefusal, moduleDisabledNote",
+		"CORE_WEBHOOK_EVENTS, WEBHOOK_EVENT_CATALOG, WEBHOOK_EVENT_VALUES, availableWebhookEvents, webhookEventOptions, webhookEventOwner, webhookEventRefusal, moduleDisabledNote",
 		"src/lib/modules/webhook-events-utils.ts",
 	],
 	["createWebhookEmitter, WebhookEmitError", "src/lib/modules/webhook-emit-utils.ts"],
@@ -109,6 +110,19 @@ test("the picker lists only the events of modules that are on", () => {
 	]);
 	assert.deepEqual(ids(availableWebhookEvents(WEBHOOK_EVENT_CATALOG, enabledWith(["calendar"]))), MESSAGE_EVENTS);
 	assert.deepEqual(ids(availableWebhookEvents(WEBHOOK_EVENT_CATALOG, [])), MESSAGE_EVENTS);
+});
+
+test("the API catalog holds only the events of modules that are on, as value, label and hint", () => {
+	const listed = (off) => webhookEventOptions(WEBHOOK_EVENT_CATALOG, enabledWith(off));
+	assert.deepEqual(ids(listed([])), ALL_EVENTS);
+	assert.deepEqual(ids(listed(["booking"])), [...MESSAGE_EVENTS, ...CALENDAR_EVENTS]);
+	assert.ok(!ids(listed(["booking"])).includes(BOOKING_EVENT));
+	assert.deepEqual(ids(listed(["calendar"])), MESSAGE_EVENTS);
+	assert.deepEqual(ids(listed(["calendar", "booking"])), MESSAGE_EVENTS);
+	for (const option of listed([])) {
+		assert.deepEqual(Object.keys(option).sort(), ["hint", "label", "value"]);
+	}
+	assert.equal(listed([]).find((option) => option.value === BOOKING_EVENT).label, "Appointment booked");
 });
 
 test("the validators accept every listed event at once and reject unknown ones", () => {

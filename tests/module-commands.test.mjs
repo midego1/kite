@@ -515,10 +515,16 @@ test("the client slice equals what the manifests declare", () => {
 		});
 		assert.deepEqual(composerSlots ?? [], manifest.composerSlots);
 		assert.deepEqual(suggestionKinds ?? [], manifest.id === "calendar" ? ["calendar_invite"] : []);
-		assert.deepEqual(keyScopes ?? { mcp: [], api: [] }, {
-			mcp: manifest.mcpScopes.map(({ scope, mailboxBound }) => ({ scope, mailboxBound })),
-			api: manifest.apiKeyScopes.map((item) => item.scope),
-		});
+		assert.deepEqual(
+			{
+				mcp: (keyScopes?.mcp ?? []).map(({ scope, mailboxBound }) => ({ scope, mailboxBound })),
+				api: (keyScopes?.api ?? []).map((item) => item.scope),
+			},
+			{
+				mcp: manifest.mcpScopes.map(({ scope, mailboxBound }) => ({ scope, mailboxBound })),
+				api: manifest.apiKeyScopes.map((item) => item.scope),
+			},
+		);
 	}
 });
 

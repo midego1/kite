@@ -39,6 +39,7 @@ export default function ModulesPage() {
 			const next: ModuleAdminView = await saveModuleEnabled(entry.id, enabled);
 			queryClient.setQueryData(MODULES_QUERY_KEY, next);
 			void invalidateSession();
+			void queryClient.invalidateQueries({ queryKey: ["webhooks"] });
 		} catch (error) {
 			setErrors((current) => ({
 				...current,

@@ -26,14 +26,12 @@ import type { ApiKeyScope } from "@/lib/api/scopes";
 import type { ManagedApiKey, McpKeyScope } from "./api-keys-settings-types";
 import {
 	createManagedApiKey,
-	enabledScopeOptions,
 	enabledScopes,
 	keyPermissions,
+	keyScopeChoices,
 	loadManagedApiKeys,
-	MCP_KEY_SCOPES,
 	revokeManagedApiKey,
 	scopesNeedMailboxes,
-	STANDARD_KEY_SCOPES,
 } from "./api-keys-settings-utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 
@@ -54,9 +52,7 @@ export function ApiKeysSettings() {
 	const [mailboxIds, setMailboxIds] = useState<string[]>([]);
 	const [newKey, setNewKey] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
-	const scopeOptions = mcpAllowed
-		? enabledScopeOptions("mcp", MCP_KEY_SCOPES, modules)
-		: enabledScopeOptions("api", STANDARD_KEY_SCOPES, modules);
+	const scopeOptions = keyScopeChoices(mcpAllowed ? "mcp" : "api", modules);
 	const chosenScopes = mcpAllowed
 		? enabledScopes("mcp", mcpScopes, modules)
 		: enabledScopes("api", standardScopes, modules);

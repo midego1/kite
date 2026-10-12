@@ -7,10 +7,31 @@ export const calendarClientData: ClientModuleData = {
 	suggestionKinds: ["calendar_invite"],
 	keyScopes: {
 		mcp: [
-			{ scope: "mcp:calendar-read", mailboxBound: false },
-			{ scope: "mcp:calendar-write", mailboxBound: false },
+			{
+				scope: "mcp:calendar-read",
+				mailboxBound: false,
+				label: "Read calendar",
+				description: "List, search, and inspect events and free time.",
+			},
+			{
+				scope: "mcp:calendar-write",
+				mailboxBound: false,
+				label: "Manage calendar",
+				description: "Create, update, and delete events.",
+			},
 		],
-		api: ["calendar:read", "calendar:write"],
+		api: [
+			{
+				scope: "calendar:read",
+				label: "Read calendar",
+				description: "Read your calendar events through the API.",
+			},
+			{
+				scope: "calendar:write",
+				label: "Manage calendar",
+				description: "Create, update, and delete your calendar events through the API.",
+			},
+		],
 	},
 	nav: [
 		{

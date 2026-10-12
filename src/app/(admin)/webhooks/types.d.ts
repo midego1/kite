@@ -1,8 +1,8 @@
 /** An event value from the registry list: the core message events and every module's events. */
 export type WebhookEvent = string;
 
-/** One entry of the registry event list. `available` is false while the owning module is off. */
-export type WebhookEventOption = { value: WebhookEvent; label: string; hint: string; available: boolean };
+/** One event the viewer may subscribe to now. */
+export type WebhookEventOption = { value: WebhookEvent; label: string; hint: string };
 
 export type WebhookDeliveryStats = {
 	total: number;

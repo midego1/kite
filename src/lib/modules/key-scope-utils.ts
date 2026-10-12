@@ -32,9 +32,27 @@ export function clientScopeDeclarations(modules: readonly ClientModuleData[]): S
 	return modules.map((module) => ({
 		id: module.id,
 		name: module.name,
-		mcp: module.keyScopes?.mcp ?? [],
-		api: module.keyScopes?.api ?? [],
+		mcp: (module.keyScopes?.mcp ?? []).map(({ scope, mailboxBound }) => ({ scope, mailboxBound })),
+		api: (module.keyScopes?.api ?? []).map(({ scope }) => scope),
 	}));
+}
+
+/** One checkbox of a key-creation form. */
+export type KeyScopeOption = { value: string; label: string; description: string };
+
+/** The form's core options followed by the declared options of the modules in `enabled`, in registry order. */
+export function keyScopeOptions<T extends KeyScopeOption>(
+	kind: KeyScopeKind,
+	coreOptions: readonly T[],
+	modules: readonly ClientModuleData[],
+	enabled: Iterable<ModuleId>,
+): (T | KeyScopeOption)[] {
+	const on = new Set(enabled);
+	const declared = modules
+		.filter((module) => on.has(module.id))
+		.flatMap((module) => (kind === "mcp" ? module.keyScopes?.mcp : module.keyScopes?.api) ?? [])
+		.map(({ scope, label, description }) => ({ value: scope, label, description }));
+	return [...coreOptions, ...declared];
 }
 
 const scopesOf = (declaration: ScopeDeclaration, kind: KeyScopeKind): string[] =>

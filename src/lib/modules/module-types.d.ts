@@ -76,14 +76,17 @@ export type ComposerSlotDeclaration = {
 export type ComposerSlotSource = { id: ModuleId; composerSlots?: readonly ComposerSlotDeclaration[] };
 export type ListedComposerSlot = ComposerSlotDeclaration & { moduleId: ModuleId };
 
+/** One key scope as the key-creation forms show it. */
+export type KeyScopeText = { scope: string; label: string; description: string };
+
 /** The part of a manifest that browser code needs: identity, navigation and commands. */
 export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "commands"> & {
 	/** Composer slots the module fills, so the composer lists them without loading the module. */
 	composerSlots?: ComposerSlotDeclaration[];
 	/** Suggestion kinds the module's `suggestion_kind` capabilities declare, so the reader card can pick the module's client chunk without the registry. */
 	suggestionKinds?: readonly string[];
-	/** The key scopes the module adds, so the key forms can list them only while it is on. */
-	keyScopes?: { mcp: readonly { scope: string; mailboxBound: boolean }[]; api: readonly string[] };
+	/** The key scopes the module adds, with the form text for each, so the key forms can list them only while it is on. */
+	keyScopes?: { mcp: readonly (KeyScopeText & { mailboxBound: boolean })[]; api: readonly KeyScopeText[] };
 };
 
 export type ModuleWebhookEvent = { value: string; label: string; hint: string };

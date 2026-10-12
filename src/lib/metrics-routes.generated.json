@@ -105,6 +105,7 @@
 	"/api/messages/empty",
 	"/api/messages/navigation",
 	"/api/messages",
+	"/api/migrations/pending",
 	"/api/profile/avatar",
 	"/api/public/booking/[eventId]",
 	"/api/public/booking",

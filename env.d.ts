@@ -44,6 +44,13 @@ interface CloudflareEnv {
 	APP_URL?: string;
 	/** "off" disables operational alert emails; anything else leaves them on. */
 	OPERATIONAL_ALERTS?: string;
+	/**
+	 * "1" or "true" applies pending database migrations by itself, with the same safety backup the
+	 * admin "Apply now" button takes, as soon as the app notices them (see docs/deployment.md).
+	 * Off by default; an environment variable because a stored setting could not be read until the
+	 * migration it would apply had run.
+	 */
+	AUTO_APPLY_MIGRATIONS?: string;
 	/** Dev/test only: "1" or "true" lets the alert webhook use plain http to loopback hosts; ignored in production. */
 	ALERT_WEBHOOK_ALLOW_INSECURE?: string;
 	/** Dev/test only: "1" lets a custom AI provider be http://127.0.0.1 or http://localhost (the fake model); ignored in production. */

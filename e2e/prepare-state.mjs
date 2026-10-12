@@ -14,6 +14,7 @@ if (!target.startsWith(resolve(root, ".wrangler") + "/")) {
 
 rmSync(target, { recursive: true, force: true });
 execFileSync("node", ["scripts/generate-migration-bundle.mjs"], { cwd: root, stdio: "inherit" });
+execFileSync("node", ["scripts/generate-changelog-bundle.mjs"], { cwd: root, stdio: "inherit" });
 execFileSync("npx", ["wrangler", "d1", "migrations", "apply", "DB", "--local", "--persist-to", persistDir], {
 	cwd: root,
 	stdio: "inherit",

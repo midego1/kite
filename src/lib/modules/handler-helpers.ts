@@ -1,11 +1,4 @@
-import type { CapabilityCallContext, CapabilityHandler, JsonValue } from "./module-types";
-
-/** A handler a later change fills in; calling it is a handler error, never a silent success. */
-export function pendingHandler(label: string): CapabilityHandler {
-	return async () => {
-		throw new Error(`${label} is not implemented yet`);
-	};
-}
+import type { CapabilityCallContext, JsonValue } from "./module-types";
 
 export type RefsInput = { refs: { kind: string; id: string }[] };
 export type FoundRef = { href: string | null; label: string };

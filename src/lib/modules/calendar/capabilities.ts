@@ -5,6 +5,8 @@ import { describeCapability, type DescriptorMeta } from "../schema-utils";
 import { calendarSchemas } from "./schemas";
 
 const UNDO_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+/** Proposing times may wait for the model to word the reply. */
+const ANSWER_TIMEOUT_MS = 60_000;
 
 const TOOL_EFFECTS: Record<CalendarToolName, CapabilityEffect> = {
 	get_schedule: "read",
@@ -30,13 +32,24 @@ const tools: CapabilityDescriptor[] = CALENDAR_TOOL_NAMES.map((name) =>
 	}),
 );
 
-const action = (name: string, actionType: string, effect: CapabilityEffect, description: string) =>
+type ActionRules = Pick<
+	NonNullable<CapabilityDescriptor["action"]>,
+	"permission" | "variants" | "actingUserOnly" | "inverseAction" | "inverseSkipVariants"
+>;
+
+const action = (name: string, actionType: string, effect: CapabilityEffect, description: string, rules: ActionRules) =>
 	describe(name, {
 		surfaces: ["action"],
 		description,
 		scopes: ["calendar.write"],
 		effect,
-		action: { actionType, suggestionKind: "calendar_invite", undoable: true, undoWindowMs: UNDO_WINDOW_MS },
+		action: {
+			actionType,
+			suggestionKind: "calendar_invite",
+			undoable: true,
+			undoWindowMs: UNDO_WINDOW_MS,
+			...rules,
+		},
 	});
 
 const webhook = (name: string, value: string, description: string) =>
@@ -67,17 +80,42 @@ export const calendarCapabilities: ModuleCapabilities = {
 			description: "Read a calendar invitation attached to a message and propose how to answer it.",
 			scopes: ["calendar.read"],
 			effect: "read",
-			triage: { order: 10 },
+			triage: { order: 10, requires: "invite_attachment" },
 		}),
 		describe("calendar_invite", {
 			surfaces: ["suggestion_kind"],
 			description: "A calendar invitation with its conflicts and proposed alternative times.",
 			effect: "none",
-			suggestionKind: { kind: "calendar_invite", label: "Invitation", reasonTemplate: "calendar_invite" },
+			suggestionKind: {
+				kind: "calendar_invite",
+				label: "Invitation",
+				reasonTemplate: "calendar_invite",
+				answer: "answerInvite",
+			},
 		}),
-		action("createEvent", "create_event", "create", "Add an invited event to the calendar, or update it."),
-		action("deleteEvent", "delete_event", "delete", "Remove an event from the calendar."),
-		action("sendRsvp", "send_rsvp", "send", "Answer an invitation to its organizer."),
+		describe("answerInvite", {
+			surfaces: ["service"],
+			description: "Answer a calendar invitation suggestion: accept, decline, update, remove or propose times.",
+			scopes: ["calendar.write"],
+			effect: "send",
+			timeoutMs: ANSWER_TIMEOUT_MS,
+		}),
+		action("createEvent", "create_event", "create", "Add an invited event to the calendar, or update it.", {
+			permission: "manage",
+			variants: ["", "update"],
+			inverseAction: "delete_event",
+			inverseSkipVariants: ["update"],
+		}),
+		action("deleteEvent", "delete_event", "delete", "Remove an event from the calendar.", {
+			permission: "manage",
+			variants: [""],
+			inverseAction: "create_event",
+		}),
+		action("sendRsvp", "send_rsvp", "send", "Answer an invitation to its organizer.", {
+			permission: "send_on_behalf",
+			variants: ["accepted", "declined"],
+			actingUserOnly: true,
+		}),
 		describe("timeZoneChanged", {
 			surfaces: ["lifecycle"],
 			description: "Freeze legacy recurring series when a user changes time zone.",

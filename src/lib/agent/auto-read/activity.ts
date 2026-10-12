@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, like, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "@/db";
 import { agentJobs, messages, users } from "@/db/schema";
@@ -9,6 +9,7 @@ import { neutralRefLabel, refTarget } from "@/lib/modules/record-ref-utils";
 import { resolveRecordRefs } from "@/lib/modules/record-refs";
 import { toActivityAction } from "./actions-utils";
 import { calendarActionRef, isCalendarAction } from "./activity-ref-utils";
+import { MODULE_SKIP_PREFIX } from "./module-steps-utils";
 
 const ACTION_LIMIT = 100;
 const SKIPPED_JOB_LIMIT = 20;
@@ -103,7 +104,11 @@ export async function listAgentActivity(
 			and(
 				eq(agentJobs.mailboxId, mailboxId),
 				eq(agentJobs.kind, "triage"),
-				eq(agentJobs.status, "skipped"),
+				// A finished job that skipped a module's step is listed too: its other suggestions were made.
+				or(
+					eq(agentJobs.status, "skipped"),
+					and(eq(agentJobs.status, "completed"), like(agentJobs.reason, `${MODULE_SKIP_PREFIX}%`)),
+				),
 				gte(agentJobs.createdAt, new Date(now.getTime() - SKIPPED_JOB_WINDOW_MS)),
 			),
 		)

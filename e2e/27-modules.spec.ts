@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
 import { ADMIN, BASE_URL, DOMAIN, STORAGE_STATE } from "./support/constants";
 import { readAdminAgent, useFakeProvider as pointAssistantAtFake } from "./support/agent";
 import {
@@ -15,7 +15,9 @@ import {
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
 import { apiContext, postInbound, signIn, uniqueToken, waitForMessage } from "./support/helpers";
-import { waitForFinishedJob } from "./support/triage";
+import { createSignedInAccount, okJson, selectMailbox } from "./support/auto-read";
+import { futureAt, inviteAttachment } from "./support/invites";
+import { readSuggestions, waitForFinishedJob } from "./support/triage";
 import { restoreModules, setModuleState } from "./support/modules";
 
 async function owner(): Promise<APIRequestContext> {
@@ -1424,6 +1426,96 @@ test("assistant controls answer the same with Calendar on and off and gain no mo
 		expect(fake.requests().length).toBeGreaterThan(0);
 	} finally {
 		await restoreModules(api);
+		await cleanup();
+		await api.dispose();
+	}
+});
+
+test("a calendar invitation suggestion is hidden while Calendar is off, no new one is made, and it returns when Calendar is on", async ({
+	browser,
+}) => {
+	const api = await owner();
+	const contexts: BrowserContext[] = [];
+	const { cleanup } = await fakeAssistant(api);
+	const account = await createSignedInAccount(api, `invoff${uniqueToken("")}`);
+	try {
+		await okJson(
+			await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, autonomy: "suggest" } }),
+		);
+		const address = `${(await (await account.api.get("/api/auth/me")).json()).user.email}`;
+		const deliver = async (label: string) => {
+			const subject = uniqueToken(label);
+			await postInbound(account.api, {
+				from: "Alice <alice@partner.test>",
+				to: address,
+				subject,
+				text: "Please join.",
+				attachments: [
+					inviteAttachment({ uid: `${uniqueToken("uid")}@partner.test`, start: futureAt(20, 10), summary: "Planning" }),
+				],
+			});
+			const message = await waitForMessage(account.api, subject, { status: "received" });
+			const job = await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage");
+			return { message, job, subject };
+		};
+		const invitesOf = async (messageId: string) =>
+			(await readSuggestions(account.api, { mailboxId: account.mailboxId, messageId })).suggestions.filter(
+				(item) => item.kind === "calendar_invite",
+			);
+		const rowKinds = async (subject: string) => {
+			const { messages } = await okJson<{
+				messages: { subject: string; agentSuggestions?: { kind: string }[] }[];
+			}>(await account.api.get(`/api/messages?mailboxId=${account.mailboxId}&q=${encodeURIComponent(subject)}`));
+			return (messages.find((item) => item.subject === subject)?.agentSuggestions ?? []).map((item) => item.kind);
+		};
+
+		const first = await deliver("invon");
+		expect(first.job.status).toBe("completed");
+		expect(first.job.reason).toBeNull();
+		const [invite] = await invitesOf(first.message.id);
+		expect(invite).toBeDefined();
+		expect(await rowKinds(first.subject)).toContain("calendar_invite");
+
+		await setModuleState(api, { modules: { calendar: false } });
+		expect(await invitesOf(first.message.id)).toEqual([]);
+		expect(await rowKinds(first.subject)).not.toContain("calendar_invite");
+		const refused = await account.api.post(`/api/agent/suggestions/${invite.id}/accept`, {
+			data: { option: "accept" },
+		});
+		expect(refused.status()).toBe(409);
+		expect(await refused.json()).toMatchObject({ code: "module_disabled" });
+
+		const second = await deliver("invoff");
+		expect(second.job.status).toBe("completed");
+		expect(second.job.reason).toBe("module_disabled:calendar");
+		expect(await invitesOf(second.message.id)).toEqual([]);
+
+		const activity = await okJson<{ skippedJobs: { reason: string | null }[] }>(
+			await account.api.get(`/api/agent/actions?mailboxId=${account.mailboxId}`),
+		);
+		expect(activity.skippedJobs.map((job) => job.reason)).toContain("module_disabled:calendar");
+
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		contexts.push(context);
+		const page = await context.newPage();
+		await selectMailbox(page, account.mailboxId);
+		await page.goto("/kite-activity");
+		const skipped = page.locator(`[data-activity-skipped="${second.job.id}"]`);
+		await expect(skipped).toContainText("Calendar is turned off");
+		await expect(page.locator("[data-agent-activity]")).not.toContainText("module_disabled");
+		await page.goto("/for-you");
+		await expect(page.getByRole("heading", { name: "For you" })).toBeVisible();
+		await expect(page.getByText("Invitations", { exact: true })).toHaveCount(0);
+
+		await setModuleState(api, { modules: { calendar: true } });
+		expect((await invitesOf(first.message.id)).map((item) => item.id)).toEqual([invite.id]);
+		expect(await rowKinds(first.subject)).toContain("calendar_invite");
+		expect(await invitesOf(second.message.id)).toEqual([]);
+	} finally {
+		await Promise.all(contexts.map((context) => context.close()));
+		await restoreModules(api);
+		await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, autonomy: "off" } });
+		await account.api.dispose();
 		await cleanup();
 		await api.dispose();
 	}

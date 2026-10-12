@@ -11,7 +11,8 @@ const isoDate = z.iso.datetime({ offset: true });
  * (two UTF-16 units) never pushes a truncated model summary over its limit.
  */
 function text(min: number, max: number) {
-	return z.string().refine((value) => {
+	// Named, because each bundle names an anonymous function differently and the coverage merge counts those as extra.
+	return z.string().refine(function withinCodePoints(value) {
 		const length = Array.from(value).length;
 		return length >= min && length <= max;
 	});

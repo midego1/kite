@@ -3,7 +3,8 @@ import { getDb } from "@/db";
 import { calendarEvents, domains, mailboxes, messages } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/types";
 import { createCalendarReply } from "@/lib/calendar/utils";
-import { sendEmail } from "@/lib/email/send";
+import { moduleHost } from "@/lib/modules/host";
+import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import { resolveComposerSendTime } from "@/lib/email/undo-send-utils";
 import { newId } from "@/lib/ids";
 import { AgentActionError } from "./action-error";
@@ -57,10 +58,12 @@ export function createEventEffect(input: {
 	reviewerUserId: string;
 	messageId: string;
 	payload: CalendarInvitePayload;
+	/** Fixed by the caller, so a retry with the same id finds the event it already added. */
+	eventId?: string;
 }): ActionEffect {
 	const { env, payload } = input;
 	return {
-		ids: { eventId: newId("evt") },
+		ids: { eventId: input.eventId ?? newId("evt") },
 		async apply(ids) {
 			const existing = await findInviteEvent(env, input.reviewerUserId, { uid: payload.uid });
 			if (existing) return { eventId: existing.id };
@@ -160,12 +163,15 @@ async function messageExists(env: CloudflareEnv, messageId: string): Promise<boo
 
 export type RsvpInput = {
 	env: CloudflareEnv;
+	ctx: CapabilityCallContext;
 	actor: SessionUser;
 	suggestionId: string;
 	mailboxId: string;
 	payload: CalendarInvitePayload;
 	partstat: Partstat;
-	source: { id: string; providerMessageId: string | null };
+	source: { id: string };
+	/** Fixed by the caller, so a retry with the same id finds the message it already wrote. */
+	messageId?: string;
 };
 
 /**
@@ -175,7 +181,7 @@ export type RsvpInput = {
 export function rsvpEffect(input: RsvpInput): ActionEffect {
 	const { env, payload } = input;
 	return {
-		ids: { messageId: newId("msg") },
+		ids: { messageId: input.messageId ?? newId("msg") },
 		async apply(ids) {
 			const attendee = await mailboxAddress(env, input.mailboxId);
 			const file = createCalendarReply({
@@ -186,18 +192,16 @@ export function rsvpEffect(input: RsvpInput): ActionEffect {
 				sequence: payload.sequence,
 				summary: payload.summary,
 			});
-			await sendEmail(env, {
-				userId: input.actor.id,
+			await moduleHost.mail.send(input.ctx, {
 				mailboxId: input.mailboxId,
 				from: attendee,
-				to: payload.organizer!,
+				to: [payload.organizer!],
 				subject: rsvpSubject(input.partstat, payload.summary),
 				text: rsvpText(input.partstat, payload.summary),
-				inReplyTo: input.source.providerMessageId,
-				references: input.source.providerMessageId,
+				inReplyToMessageId: input.source.id,
 				messageId: ids.messageId,
 				scheduledAt: resolveComposerSendTime(undefined, input.actor.undoSendSeconds).scheduledAt,
-				attachments: [{ filename: "invite.ics", type: "text/calendar; method=REPLY; charset=utf-8", content: file }],
+				calendar: { method: "REPLY", content: new TextDecoder().decode(file) },
 			});
 			await retireLiveRows(env, {
 				suggestionId: input.suggestionId,

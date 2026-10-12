@@ -2,13 +2,13 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { ensureBookingUsername } from "@/lib/booking/username";
+import { loadWorkingHours } from "@/lib/booking/working-hours";
 import { getEnv } from "@/lib/cloudflare";
-import { pendingHandler } from "../handler-helpers";
 import type { CapabilityHandler } from "../module-types";
 import { resolveBookingRefs } from "@/lib/booking/refs";
 
 export const bookingHandlers: Record<string, CapabilityHandler> = {
-	workingHours: pendingHandler("The working hours service"),
+	workingHours: async (input) => (await loadWorkingHours(getEnv(), (input as { userId: string }).userId)) ?? null,
 	resolveRefs: resolveBookingRefs,
 	userCreated: async (input) => {
 		const userId = (input as { userId: string }).userId;

@@ -431,7 +431,14 @@ test("the client slice equals what the manifests declare", () => {
 	);
 	for (const manifest of MODULE_MANIFESTS) {
 		const slice = CLIENT_MODULES.find((item) => item.id === manifest.id);
-		assert.deepEqual(slice, { id: manifest.id, name: manifest.name, nav: manifest.nav, commands: manifest.commands });
+		const { suggestionKinds, ...declared } = slice;
+		assert.deepEqual(declared, {
+			id: manifest.id,
+			name: manifest.name,
+			nav: manifest.nav,
+			commands: manifest.commands,
+		});
+		assert.deepEqual(suggestionKinds ?? [], manifest.id === "calendar" ? ["calendar_invite"] : []);
 	}
 });
 

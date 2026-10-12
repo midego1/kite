@@ -38,6 +38,11 @@ function lookup(moduleId: ModuleId, name: string): InvokeEntry | null {
 	return { descriptor, handler, inputSchema: schemas.input, outputSchema: schemas.output };
 }
 
+/** The input schema a capability validates against, for core that must check a payload a module will receive. */
+export function capabilityInputSchema(moduleId: ModuleId, name: string) {
+	return SERVER_MODULES[moduleId]?.schemas[name]?.input ?? null;
+}
+
 /** The only path from core into module code. */
 export const invokeCapability = createInvoker({
 	lookup,

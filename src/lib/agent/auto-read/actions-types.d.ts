@@ -1,4 +1,5 @@
 import type { agentActions } from "@/db/schema/agent-auto-read";
+import type { JsonValue } from "@/lib/modules/module-types";
 import type { MessageFacts } from "./facts-types";
 import type { AgentActionType, ExecutionContext, SenderPolicy } from "./policy-types";
 import type { AutonomyLevel } from "./settings-types";
@@ -47,6 +48,20 @@ export type ActionEffect = {
 	apply(ids: Record<string, string>): Promise<ActionState>;
 	/** For a resumed row: the effect's result when it already happened, otherwise null. */
 	check?(ids: Record<string, string>): Promise<ActionState | null>;
+	/** What `apply` learned that an undo needs; stored on the row in place of `before` when present. */
+	takeInverse?(): JsonValue | null;
+};
+
+/** Who a module action runs for; the module sees only this JSON, never a session. */
+export type ModuleActionViewer = { userId: string; role: string; isPrimaryAdmin: boolean; timeZone: string };
+
+/** An action a module runs: core passes the call through `invokeCapability` and keeps the audit row. */
+export type ModuleActionCall = {
+	/** Everything the module needs beyond the suggestion ids core adds; JSON only. */
+	input: Record<string, JsonValue>;
+	/** The state the action replaces, saved with the pending row before the module runs, so an undo can restore it. */
+	before?: JsonValue;
+	viewer: ModuleActionViewer;
 };
 
 export type ExecuteActionInput = {
@@ -59,9 +74,9 @@ export type ExecuteActionInput = {
 	variant?: string;
 	actingUserId: string;
 	autonomy?: AutonomyLevel | null;
-	effect: ActionEffect;
 	now?: Date;
-} & ({ initiator: "user"; permissions: ActionPermissions } | { initiator: "agent"; gate: AgentGate });
+} & ({ effect: ActionEffect; module?: undefined } | { module: ModuleActionCall; effect?: undefined }) &
+	({ initiator: "user"; permissions: ActionPermissions } | { initiator: "agent"; gate: AgentGate });
 
 export type ExecuteActionResult = {
 	/** `skipped`: an applied row already exists for this suggestion, action and variant. */

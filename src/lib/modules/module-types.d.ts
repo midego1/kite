@@ -73,7 +73,10 @@ export type ComposerSlotDeclaration = {
 };
 
 /** The part of a manifest that browser code needs: identity, navigation and commands. */
-export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "commands">;
+export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "commands"> & {
+	/** Suggestion kinds the module's `suggestion_kind` capabilities declare, so the reader card can pick the module's client chunk without the registry. */
+	suggestionKinds?: readonly string[];
+};
 
 export type ModuleWebhookEvent = { value: string; label: string; hint: string };
 
@@ -145,9 +148,26 @@ export type CapabilityDescriptor = {
 	timeoutMs?: number;
 	search?: { section: string };
 	refs?: { kinds: RecordKind[] };
-	suggestionKind?: { kind: string; label: string; reasonTemplate: string };
-	triage?: { order: number };
-	action?: { actionType: string; suggestionKind?: string; undoable: boolean; undoWindowMs?: number };
+	/** `answer` names the `service` capability that handles an accept click on this kind of suggestion. */
+	suggestionKind?: { kind: string; label: string; reasonTemplate: string; answer?: string };
+	/** `requires` names a fact core checks first: the step is neither run nor recorded as skipped without it. */
+	triage?: { order: number; requires?: "invite_attachment" };
+	action?: {
+		actionType: string;
+		suggestionKind?: string;
+		undoable: boolean;
+		undoWindowMs?: number;
+		/** The mailbox permission executing and undoing need. */
+		permission?: "manage" | "send_on_behalf";
+		/** Allowed `variant` values; `""` for an action with a single outcome. */
+		variants?: string[];
+		/** Only the user who ran the action may undo it. */
+		actingUserOnly?: boolean;
+		/** The action type an undo is recorded as, when it differs from the action. */
+		inverseAction?: string;
+		/** Variants whose undo restores state in place, so they record no inverse action. */
+		inverseSkipVariants?: string[];
+	};
 	event?: { value: string };
 	lifecycle?: { event: "user.created" | "user.time_zone_changed"; dataHook: boolean };
 	cron?: { task: string };

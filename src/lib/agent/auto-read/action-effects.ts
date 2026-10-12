@@ -6,7 +6,6 @@ import type { SessionUser } from "@/lib/auth/types";
 import { newId } from "@/lib/ids";
 import { runEmailTool } from "../tools";
 import { AgentActionError } from "./action-error";
-import { undoCreateEvent, undoDeleteEvent, undoRsvp } from "./calendar-undo";
 import type { ActionEffect, AgentActionRow } from "./actions-types";
 import { parseActionState } from "./actions-utils";
 import { unmuteSender } from "./muted-senders";
@@ -145,14 +144,14 @@ export async function discardAgentDraft(env: CloudflareEnv, draftId: string): Pr
 	await Promise.all(keys.filter((key): key is string => !!key).map((key) => env.BUCKET.delete(key)));
 }
 
-/** The inverse of each undoable action; the registry in actions-utils.ts says who may run it and when. */
+/**
+ * The inverse of each undoable core action; the registry in actions-utils.ts says who may run it and
+ * when. Actions a module owns are undone by that module's capability instead.
+ */
 export const INVERSE_EFFECTS: Partial<
 	Record<AgentActionType, (env: CloudflareEnv, row: AgentActionRow, userId: string) => Promise<void>>
 > = {
 	dismiss: reopenSuggestion,
 	create_draft: discardDraft,
 	move: restoreMarkedSpam,
-	create_event: undoCreateEvent,
-	delete_event: undoDeleteEvent,
-	send_rsvp: undoRsvp,
 };

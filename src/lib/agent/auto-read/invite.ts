@@ -1,11 +1,12 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { bookingEvents, calendarEvents, messageAttachments, users } from "@/db/schema";
+import { calendarEvents, messageAttachments, users } from "@/db/schema";
 import { busyBlocks, proposeSlots } from "@/lib/calendar/availability-utils";
 import { ICS_MAX_BYTES, parseIcsInvite, type IcsInvite } from "@/lib/calendar/ics-parse-utils";
 import { runCalendarTool } from "@/lib/calendar/tools";
+import { moduleHost } from "@/lib/modules/host";
+import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import { isCalendarAttachment } from "./facts-utils";
-import type { MessageFacts } from "./facts-types";
 import {
 	availabilityWindow,
 	buildInvitePayload,
@@ -14,6 +15,7 @@ import {
 	overlappingEvents,
 	resolveWorkingHours,
 	type ScheduleEvent,
+	type ServiceWorkingHours,
 } from "./invite-utils";
 import type { CalendarInvitePayload } from "./suggestion-types";
 
@@ -45,8 +47,23 @@ async function schedule(env: CloudflareEnv, reviewer: typeof users.$inferSelect,
 	return events;
 }
 
+/**
+ * Booking's working hours when Booking is on for the reviewer and has event types, otherwise the
+ * default week; a Booking that is off never fails the step. The question is asked as the reviewer,
+ * whoever is answering the invitation, because it is the reviewer's Booking that decides.
+ */
+async function reviewerWorkingHours(ctx: CapabilityCallContext, reviewer: typeof users.$inferSelect) {
+	const viewer = { userId: reviewer.id, role: reviewer.role, isPrimaryAdmin: reviewer.isPrimaryAdmin };
+	const answer = await moduleHost
+		.invoke({ ...ctx, viewer }, "booking", "workingHours", { userId: reviewer.id })
+		.catch(() => null);
+	const hours = answer?.ok ? (answer.output as ServiceWorkingHours | null) : null;
+	return resolveWorkingHours(hours, reviewer.timeZone);
+}
+
 async function proposals(
 	env: CloudflareEnv,
+	ctx: CapabilityCallContext,
 	reviewer: typeof users.$inferSelect,
 	invite: Pick<IcsInvite, "allDay" | "start" | "end">,
 	existingEventId: string | null,
@@ -55,13 +72,7 @@ async function proposals(
 	const now = new Date();
 	const horizon = new Date(now.getTime() + (PROPOSAL_HORIZON_DAYS + 1) * 86_400_000);
 	const events = (await schedule(env, reviewer, now, horizon)).filter((event) => event.seriesId !== existingEventId);
-	const [booking] = await getDb(env)
-		.select()
-		.from(bookingEvents)
-		.where(and(eq(bookingEvents.userId, reviewer.id), eq(bookingEvents.enabled, true)))
-		.orderBy(asc(bookingEvents.createdAt))
-		.limit(1);
-	const { workHours, tz } = resolveWorkingHours(booking ?? null, reviewer.timeZone);
+	const { workHours, tz } = await reviewerWorkingHours(ctx, reviewer);
 	const minutes = Math.max(1, Math.round((Date.parse(invite.end) - Date.parse(invite.start)) / 60_000));
 	return proposeSlots(busyBlocks(events, now, horizon), minutes, workHours, tz, 3, PROPOSAL_HORIZON_DAYS, now);
 }
@@ -69,12 +80,13 @@ async function proposals(
 /** Free slots for an accepted invitation's length when its stored proposals are empty (no conflict was found). */
 export async function proposeSlotsForInvite(
 	env: CloudflareEnv,
+	ctx: CapabilityCallContext,
 	reviewerUserId: string,
 	payload: Pick<CalendarInvitePayload, "start" | "end" | "existingEventId">,
 ) {
 	const [reviewer] = await getDb(env).select().from(users).where(eq(users.id, reviewerUserId)).limit(1);
 	if (!reviewer) return [];
-	return proposals(env, reviewer, { allDay: false, ...payload }, payload.existingEventId ?? null);
+	return proposals(env, ctx, reviewer, { allDay: false, ...payload }, payload.existingEventId ?? null);
 }
 
 /**
@@ -84,9 +96,9 @@ export async function proposeSlotsForInvite(
  */
 export async function loadCalendarInvite(
 	env: CloudflareEnv,
-	input: { messageId: string; reviewerUserId: string; facts: MessageFacts; enabled: boolean },
+	ctx: CapabilityCallContext,
+	input: { messageId: string; reviewerUserId: string; senderAddress: string; authPassed: boolean },
 ): Promise<CalendarInvitePayload | null> {
-	if (!input.enabled || !input.facts.inviteAttachments.length) return null;
 	const source = await readInviteSource(env, input.messageId);
 	if (!source) return null;
 	const parsed = parseIcsInvite(source);
@@ -107,9 +119,9 @@ export async function loadCalendarInvite(
 	return buildInvitePayload({
 		invite,
 		variant,
-		senderAddress: input.facts.senderAddress,
-		authPassed: input.facts.authPassed,
+		senderAddress: input.senderAddress,
+		authPassed: input.authPassed,
 		conflicts,
-		proposals: conflicts.length ? await proposals(env, reviewer, invite, variant.existingEventId) : [],
+		proposals: conflicts.length ? await proposals(env, ctx, reviewer, invite, variant.existingEventId) : [],
 	});
 }

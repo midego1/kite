@@ -20,6 +20,7 @@ const common = {
 	logLevel: "silent",
 	packages: "external",
 	tsconfig: join(root, "tsconfig.json"),
+	alias: { "cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts") },
 };
 // import.meta.resolve (rather than a joined path) lets knip see which modules this test uses.
 // Only the pure modules get source maps: the database-backed bundles pull in much of the app

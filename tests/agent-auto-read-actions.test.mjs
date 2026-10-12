@@ -1,6 +1,31 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import {
+import { rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import test, { after } from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "esbuild";
+import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const outDir = makeBundleDirectory("kite-agent-auto-read-actions-");
+after(() => rmSync(outDir, { recursive: true, force: true }));
+
+// The registry reads the modules' action descriptors, so the file is bundled rather than imported as source.
+await build({
+	entryPoints: { actions: fileURLToPath(import.meta.resolve("../src/lib/agent/auto-read/actions-utils.ts")) },
+	outdir: outDir,
+	outExtension: { ".js": ".mjs" },
+	bundle: true,
+	sourcemap: "inline",
+	platform: "node",
+	format: "esm",
+	target: "node22",
+	logLevel: "silent",
+	packages: "external",
+	tsconfig: join(root, "tsconfig.json"),
+	alias: { "cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts") },
+});
+const {
 	ACTION_REGISTRY,
 	DEFAULT_UNDO_WINDOW_MS,
 	actionIds,
@@ -14,7 +39,7 @@ import {
 	undoRefusal,
 	undoUntilFor,
 	userExecuteRefusal,
-} from "../src/lib/agent/auto-read/actions-utils.ts";
+} = await import(pathToFileURL(join(outDir, "actions.mjs")).href);
 
 const now = new Date("2026-10-11T12:00:00.000Z");
 const later = new Date(now.getTime() + 60_000);

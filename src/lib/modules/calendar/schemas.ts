@@ -22,12 +22,25 @@ const eventPayload = z.object({
 	}),
 });
 
+const answerInvite: ModuleSchemas[string] = {
+	input: z.object({
+		suggestionId: z.string().min(1),
+		option: z.string().max(40),
+		deviceTimeZone: z.string().nullable(),
+	}),
+	output: z.object({
+		result: z.record(z.string(), z.unknown()).nullable().optional(),
+		refused: z.object({ status: z.number().int(), error: z.string() }).optional(),
+	}),
+};
+
 export const calendarSchemas: ModuleSchemas = {
 	...Object.fromEntries(CALENDAR_TOOL_NAMES.map((name) => [name, { input: calendarToolSchemas[name] }])),
 	search: searchSchemas,
 	resolveRefs: resolveRefsSchemas(["calendar:event"]),
 	invite: triageStepSchemas,
 	calendar_invite: { input: calendarInviteSchema },
+	answerInvite,
 	createEvent: actionSchemas,
 	deleteEvent: actionSchemas,
 	sendRsvp: actionSchemas,

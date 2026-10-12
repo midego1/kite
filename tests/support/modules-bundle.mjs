@@ -8,13 +8,15 @@ import { makeBundleDirectory } from "./bundle-directory.mjs";
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 /**
- * The handler modules reach real services (database, IMAP, calendar tools) that these tests never call.
+ * The handler modules reach real services (database, IMAP, calendar tools, the automatic-reading actions)
+ * that these tests never call.
  * Bundling them would re-bundle gated utility files with different tree-shaking and anonymous function
  * names, which the per-file coverage merge reads as extra uncovered functions, so core-facing imports
  * from a module's server.ts resolve to an inert stub. The `refs` resolvers are the exception: they only
  * read the module's own tables, and the record ref tests run them against a migrated test database.
  */
-const SERVICES = /^@\/(db(\/|$)|lib\/cloudflare$|lib\/calendar\/tools$|lib\/booking\/|lib\/import\/)/;
+const SERVICES =
+	/^@\/(db(\/|$)|lib\/cloudflare$|lib\/calendar\/tools$|lib\/booking\/|lib\/import\/|lib\/agent\/auto-read\/)/;
 const stubServiceImports = {
 	name: "stub-service-imports",
 	setup(build) {

@@ -36,7 +36,7 @@ const { applyMigrations } = await load("migrate");
 
 const START = Date.parse("2030-03-12T10:00:00.000Z");
 const full = { canManage: true, canSendOnBehalf: true };
-const user = { id: "owner", role: "user", timeZone: "UTC", undoSendSeconds: 0 };
+const user = { id: "owner", role: "user", isPrimaryAdmin: false, timeZone: "UTC", undoSendSeconds: 0 };
 
 function payload(extra = {}) {
 	return {
@@ -79,6 +79,7 @@ async function setup(t, { undoSendSeconds = 0 } = {}) {
 		INSERT INTO messages (id, user_id, mailbox_id, direction, provider_message_id, from_addr, to_addr, subject, text_body, status, created_at)
 			VALUES ('source-1', 'owner', 'mailbox-a', 'inbound', '<source-1@partner.test>', 'Alice <alice@partner.test>', 'support@example.com', 'Planning', 'Join us', 'received', 1);
 	`);
+	db.db.prepare("UPDATE users SET undo_send_seconds = ?").run(undoSendSeconds);
 	const objects = new Map();
 	const sent = [];
 	const queued = [];
@@ -97,6 +98,10 @@ async function setup(t, { undoSendSeconds = 0 } = {}) {
 		},
 		OUTBOUND_QUEUE: { send: async (message) => void queued.push(message) },
 	};
+	globalThis.__kiteNodeEnv = env;
+	t.after(() => {
+		delete globalThis.__kiteNodeEnv;
+	});
 	return { db, env, sent, queued, user: { ...user, undoSendSeconds } };
 }
 

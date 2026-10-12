@@ -5,9 +5,17 @@ import type { SessionUser } from "@/lib/auth/types";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { AgentActionError } from "./action-error";
+import { moduleDisabledError } from "./action-response";
 import { INVERSE_EFFECTS } from "./action-effects";
-import { authorizeCreateEventUndo } from "./calendar-undo";
-import type { ActionMeta, ActionState, AgentActionRow, ExecuteActionInput, ExecuteActionResult } from "./actions-types";
+import type {
+	ActionEffect,
+	ActionMeta,
+	ActionState,
+	AgentActionRow,
+	ExecuteActionInput,
+	ExecuteActionResult,
+	ModuleActionViewer,
+} from "./actions-types";
 import {
 	UNDO_VARIANT_PREFIX,
 	actionIds,
@@ -19,9 +27,12 @@ import {
 	undoUntilFor,
 	userExecuteRefusal,
 } from "./actions-utils";
+import { moduleActionOwner, type ModuleActionOwner } from "./module-actions-utils";
+import { moduleEffect, moduleOffReason, undoModuleAction } from "./module-actions";
 import type { AgentActionType } from "./policy-types";
 import { allowedToExecute } from "./policy-utils";
 import type { AutonomyLevel } from "./settings-types";
+import { normalizeTimeZone } from "@/lib/time/utils";
 
 type Db = ReturnType<typeof getDb>;
 
@@ -109,17 +120,28 @@ async function findLiveRow(db: Db, input: ExecuteActionInput, variant: string): 
 async function runEffect(
 	db: Db,
 	input: ExecuteActionInput,
-	run: { id: string; ids: Record<string, string>; meta: ActionMeta; variant: string; reason: string; resume: boolean },
+	run: {
+		id: string;
+		effect: ActionEffect;
+		ids: Record<string, string>;
+		meta: ActionMeta;
+		variant: string;
+		reason: string;
+		resume: boolean;
+	},
 ): Promise<ExecuteActionResult> {
 	const now = input.now ?? new Date();
+	const { effect } = run;
 	try {
-		const existing = run.resume && input.effect.check ? await input.effect.check(run.ids) : null;
-		const after: ActionState = { ...run.ids, ...(existing ?? (await input.effect.apply(run.ids))) };
+		const existing = run.resume && effect.check ? await effect.check(run.ids) : null;
+		const after: ActionState = { ...run.ids, ...(existing ?? (await effect.apply(run.ids))) };
+		const inverse = effect.takeInverse?.() ?? null;
 		await db
 			.update(agentActions)
 			.set({
 				status: "applied",
 				after: JSON.stringify(after),
+				...(inverse === null ? {} : { before: JSON.stringify(inverse) }),
 				undoUntil: undoUntilFor(run.meta, run.variant, now),
 				updatedAt: new Date(),
 			})
@@ -157,38 +179,26 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
 	const now = input.now ?? new Date();
 	const variant = input.variant ?? "";
 	const meta = getActionMeta(input.action);
-	const { refused, rule } = gate(input, meta, variant);
+	const owner = input.module ? moduleActionOwner(input.action) : null;
+	const { refused, rule } = await refusalFor(input, meta, owner, variant);
 	if (refused || !meta) {
 		const reason = refused ?? "action_not_supported";
-		const actionId = await recordBlockedAction({ ...input, variant, reason, before: input.effect.before, now });
+		const actionId = await recordBlockedAction({ ...input, variant, reason, before: input.effect?.before, now });
 		return { status: "blocked", actionId, after: null, reason };
 	}
 	const db = getDb(input.env);
-	const ids = input.effect.ids ?? {};
+	const ids = input.effect?.ids ?? {};
 	const id = newId("aact");
-	const inserted = await db
-		.insert(agentActions)
-		.values({
+	if (await insertPending(db, input, { id, variant, rule, ids, now }))
+		return runEffect(db, input, {
 			id,
-			mailboxId: input.mailboxId,
-			suggestionId: input.suggestionId ?? null,
-			messageId: input.messageId ?? null,
-			jobId: input.jobId ?? null,
-			initiator: input.initiator,
-			actingUserId: input.actingUserId,
-			autonomy: input.autonomy ?? null,
-			action: input.action,
+			effect: effectFor(input, owner, id),
+			ids,
+			meta,
 			variant,
-			status: "pending",
-			before: json(input.effect.before),
-			after: JSON.stringify(ids),
 			reason: rule,
-			createdAt: now,
-			updatedAt: now,
-		})
-		.onConflictDoNothing()
-		.returning({ id: agentActions.id });
-	if (inserted.length > 0) return runEffect(db, input, { id, ids, meta, variant, reason: rule, resume: false });
+			resume: false,
+		});
 
 	const live = await findLiveRow(db, input, variant);
 	if (live?.status === "applied")
@@ -197,11 +207,70 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
 		throw new AgentActionError("This action is already in progress", 409);
 	return runEffect(db, input, {
 		id: live.id,
+		effect: effectFor(input, owner, live.id),
 		ids: actionIds(parseActionState(live.after)),
 		meta,
 		variant,
 		reason: live.reason ?? rule,
 		resume: true,
+	});
+}
+
+/** The reason this call is refused (policy, an unsupported action or its module being off), or null. */
+async function refusalFor(
+	input: ExecuteActionInput,
+	meta: ActionMeta | null,
+	owner: ModuleActionOwner | null,
+	variant: string,
+): Promise<{ refused: string | null; rule: string }> {
+	const { refused, rule } = gate(input, meta, variant);
+	if (refused) return { refused, rule };
+	if (!meta || (input.module && !owner)) return { refused: "action_not_supported", rule };
+	const offReason = input.module && owner ? await moduleOffReason(input.module.viewer, owner) : null;
+	return { refused: offReason, rule };
+}
+
+/** Writes the pending row ahead of the effect; false when a live row for the same action already exists. */
+async function insertPending(
+	db: Db,
+	input: ExecuteActionInput,
+	row: { id: string; variant: string; rule: string; ids: Record<string, string>; now: Date },
+): Promise<boolean> {
+	const inserted = await db
+		.insert(agentActions)
+		.values({
+			id: row.id,
+			mailboxId: input.mailboxId,
+			suggestionId: input.suggestionId ?? null,
+			messageId: input.messageId ?? null,
+			jobId: input.jobId ?? null,
+			initiator: input.initiator,
+			actingUserId: input.actingUserId,
+			autonomy: input.autonomy ?? null,
+			action: input.action,
+			variant: row.variant,
+			status: "pending",
+			before: json(input.effect ? input.effect.before : input.module?.before),
+			after: JSON.stringify(row.ids),
+			reason: row.rule,
+			createdAt: row.now,
+			updatedAt: row.now,
+		})
+		.onConflictDoNothing()
+		.returning({ id: agentActions.id });
+	return inserted.length > 0;
+}
+
+/** The caller's effect, or the module capability that performs this action under the row's id. */
+function effectFor(input: ExecuteActionInput, owner: ModuleActionOwner | null, actionId: string): ActionEffect {
+	if (input.effect) return input.effect;
+	return moduleEffect({
+		owner: owner!,
+		viewer: input.module!.viewer,
+		actionId,
+		mailboxId: input.mailboxId,
+		suggestion: { id: input.suggestionId ?? null, messageId: input.messageId ?? null, mailboxId: input.mailboxId },
+		args: input.module!.input,
 	});
 }
 
@@ -235,6 +304,17 @@ async function writeInverseRow(db: Db, row: AgentActionRow, userId: string, now:
 	return id;
 }
 
+type UndoActor = Pick<SessionUser, "id" | "role"> & Partial<Pick<SessionUser, "isPrimaryAdmin" | "timeZone">>;
+
+function undoViewer(user: UndoActor): ModuleActionViewer {
+	return {
+		userId: user.id,
+		role: user.role,
+		isPrimaryAdmin: user.isPrimaryAdmin ?? false,
+		timeZone: normalizeTimeZone(user.timeZone ?? null),
+	};
+}
+
 /**
  * Undoes an applied action inside its undo window. Users without full access on the mailbox get 404;
  * a full-access user lacking the permission the undo needs gets 403; anything not applied gets 409 and
@@ -242,7 +322,7 @@ async function writeInverseRow(db: Db, row: AgentActionRow, userId: string, now:
  */
 export async function undoAgentAction(
 	env: CloudflareEnv,
-	user: Pick<SessionUser, "id" | "role">,
+	user: UndoActor,
 	actionId: string,
 	now = new Date(),
 ): Promise<{ actionId: string; inverseActionId: string }> {
@@ -252,9 +332,27 @@ export async function undoAgentAction(
 	if (!row || !access?.canManage) throw new AgentActionError("Action not found", 404);
 	const refusal = undoRefusal(row, user.id, access, now);
 	if (refusal) throw new AgentActionError(refusal.error, refusal.status);
+	const owner = moduleActionOwner(row.action);
 	const inverse = INVERSE_EFFECTS[row.action];
-	if (!inverse) throw new AgentActionError("This action cannot be undone", 409);
-	if (row.action === "create_event") await authorizeCreateEventUndo(env, row, user);
+	if (!owner && !inverse) throw new AgentActionError("This action cannot be undone", 409);
+	const viewer = owner ? undoViewer(user) : null;
+	const offReason = owner && viewer ? await moduleOffReason(viewer, owner) : null;
+	if (offReason) {
+		await recordBlockedAction({
+			env,
+			mailboxId: row.mailboxId,
+			suggestionId: row.suggestionId,
+			messageId: row.messageId,
+			action: inverseActionFor(row),
+			variant: `${UNDO_VARIANT_PREFIX}${row.id}`,
+			initiator: "user",
+			actingUserId: user.id,
+			reason: offReason,
+			now,
+		});
+		throw moduleDisabledError(offReason);
+	}
+	if (owner && viewer) await undoModuleAction(owner, viewer, row, true);
 
 	const claimed = await db
 		.update(agentActions)
@@ -263,7 +361,8 @@ export async function undoAgentAction(
 		.returning({ id: agentActions.id });
 	if (claimed.length === 0) throw new AgentActionError("Only applied actions can be undone", 409);
 	try {
-		await inverse(env, row, user.id);
+		if (owner && viewer) await undoModuleAction(owner, viewer, row);
+		else await inverse!(env, row, user.id);
 	} catch (error) {
 		await restoreApplied(db, row.id);
 		if (error instanceof AgentActionError) throw error;

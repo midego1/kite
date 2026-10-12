@@ -3,8 +3,8 @@
 import toast from "react-hot-toast";
 import { showUndoToast } from "@/components/ui/undo-toast";
 import type { InviteOption } from "@/lib/agent/auto-read/invite-actions-utils";
-import { announceSuggestionChange, postSuggestion, undoAction } from "./suggestion-card-actions";
-import type { CardSuggestion } from "./suggestion-card-types";
+import { announceSuggestionChange, postSuggestion, undoAction } from "@/components/agent/suggestion-card-actions";
+import type { CardSuggestion } from "@/components/agent/suggestion-card-types";
 
 /** Answers with a decision on their way; a second click on the same suggestion does nothing. */
 const inFlight = new Set<string>();

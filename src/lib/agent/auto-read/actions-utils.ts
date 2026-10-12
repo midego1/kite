@@ -6,6 +6,7 @@ import type {
 	AgentActionRow,
 	UndoRefusal,
 } from "./actions-types";
+import { MODULE_ACTION_META } from "./module-actions-utils";
 import type { AgentActionType } from "./policy-types";
 
 const MINUTE_MS = 60 * 1000;
@@ -17,11 +18,8 @@ const STALE_PENDING_MS = 10 * MINUTE_MS;
 /** Inverse rows carry `undo:<original id>`, so each undo stays unique under the live-row index. */
 export const UNDO_VARIANT_PREFIX = "undo:";
 
-/**
- * Executor metadata per action type. Actions missing here cannot be executed yet; calendar and send
- * actions join with their own variants (e.g. `send_rsvp` accepted/declined).
- */
-export const ACTION_REGISTRY: Partial<Record<AgentActionType, ActionMeta>> = {
+/** Executor metadata of the actions core owns; modules register theirs from their `action` descriptors. */
+const CORE_ACTIONS: Partial<Record<AgentActionType, ActionMeta>> = {
 	// Inverse: reopen the suggestion.
 	dismiss: {
 		executePermission: "manage",
@@ -34,39 +32,6 @@ export const ACTION_REGISTRY: Partial<Record<AgentActionType, ActionMeta>> = {
 		variants: ["spam"],
 		undo: { "*": { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "manage", actingUserOnly: false } },
 	},
-	// Inverse of a new event: delete it and cancel a still-queued "accepted" reply. Inverse of an update: restore the old fields.
-	create_event: {
-		executePermission: "manage",
-		variants: ["", "update"],
-		undo: {
-			"*": {
-				windowMs: DEFAULT_UNDO_WINDOW_MS,
-				permission: "manage",
-				actingUserOnly: false,
-				inverseAction: "delete_event",
-			},
-			update: { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "manage", actingUserOnly: false },
-		},
-	},
-	// Inverse: recreate the event from the row kept in `before`.
-	delete_event: {
-		executePermission: "manage",
-		variants: [""],
-		undo: {
-			"*": {
-				windowMs: DEFAULT_UNDO_WINDOW_MS,
-				permission: "manage",
-				actingUserOnly: false,
-				inverseAction: "create_event",
-			},
-		},
-	},
-	// Inverse: cancel while still queued; once sent, the opposite reply is sent as its own action.
-	send_rsvp: {
-		executePermission: "send_on_behalf",
-		variants: ["accepted", "declined"],
-		undo: { "*": { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "send_on_behalf", actingUserOnly: true } },
-	},
 	// Inverse: discard the draft, unless a person edited or sent it. Drafts are private to their user.
 	create_draft: {
 		executePermission: "send_on_behalf",
@@ -74,6 +39,12 @@ export const ACTION_REGISTRY: Partial<Record<AgentActionType, ActionMeta>> = {
 		undo: { "*": { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "send_on_behalf", actingUserOnly: true } },
 	},
 };
+
+/**
+ * Executor metadata per action type. An action type missing here cannot be executed, and the module
+ * ones stay listed while their module is off so older rows keep their labels and undo rules.
+ */
+export const ACTION_REGISTRY: Partial<Record<AgentActionType, ActionMeta>> = { ...CORE_ACTIONS, ...MODULE_ACTION_META };
 
 export function getActionMeta(action: string): ActionMeta | null {
 	return ACTION_REGISTRY[action as AgentActionType] ?? null;

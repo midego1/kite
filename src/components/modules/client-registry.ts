@@ -1,4 +1,5 @@
 import { CalendarClock, CalendarDays, Download, Puzzle, type LucideIcon } from "lucide-react";
+import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import type { ModuleId } from "@/lib/modules/module-types";
 import type { ModuleClient } from "./client-registry-types";
 
@@ -21,4 +22,9 @@ const MODULE_CLIENTS: Partial<Record<ModuleId, () => Promise<ModuleClient>>> = {
 /** The module's client chunk, or null when it has none. Call only for a module that is on. */
 export function loadModuleClient(id: ModuleId): Promise<ModuleClient> | null {
 	return MODULE_CLIENTS[id]?.() ?? null;
+}
+
+/** The module that declares this suggestion kind, or null for kinds core draws itself. */
+export function suggestionKindModule(kind: string): ModuleId | null {
+	return CLIENT_MODULES.find((entry) => entry.suggestionKinds?.includes(kind))?.id ?? null;
 }

@@ -16,14 +16,21 @@ export type HostAttachmentContent = { encoding: "text" | "base64"; content: stri
 
 export type HostDraft = {
 	mailboxId: string;
+	/** The From address; empty or missing means the mailbox's own address. */
+	from?: string;
 	to: string[];
 	cc?: string[];
 	subject: string;
 	text: string;
 	html?: string;
+	/** Id of the stored message this one answers; threading headers come from it. */
 	inReplyToMessageId?: string;
+	/** Caller-chosen id for the stored message, so a retried caller finds the row it already wrote. */
+	messageId?: string;
+	/** ISO time for a delayed send; a past time sends at once. */
+	scheduledAt?: string;
 	/** An iCalendar part sent alongside the text, for invitations and RSVP replies. */
-	calendar?: { method: string; content: string };
+	calendar?: { method?: string; content: string };
 };
 
 export type HostImportMessage = { raw: string | number[]; receivedAt?: string };

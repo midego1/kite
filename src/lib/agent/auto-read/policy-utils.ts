@@ -185,8 +185,7 @@ export function planSuggestions(input: PlanInput): PlannedSuggestion[] {
 		planned.push({ kind: "phishing", payload: { reasons }, reason: "phishing_signals", autoExecute: false });
 	// A muted sender keeps phishing warnings but gets no other suggestions.
 	if (settings.capabilities.mutedSenders.includes(facts.senderAddress)) return planned;
-	if (input.invite && settings.capabilities.calendar)
-		planned.push({ kind: "calendar_invite", payload: input.invite, reason: "calendar_invite", autoExecute: false });
+	planned.push(...(input.moduleSuggestions ?? []));
 	if (triage && wantsSummary(input))
 		planned.push({ kind: "summary", payload: { text: triage.summary }, reason: "long_thread", autoExecute: false });
 	if (triage && wantsReply(input, phishing || forcesSuggest(facts)))

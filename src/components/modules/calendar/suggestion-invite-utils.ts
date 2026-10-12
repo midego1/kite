@@ -1,7 +1,7 @@
 import type { InviteOption } from "@/lib/agent/auto-read/invite-actions-utils";
 import type { CalendarInvitePayload } from "@/lib/agent/auto-read/suggestion-types";
-import type { ActivityAction } from "./agent-activity-types";
-import type { CardSuggestion } from "./suggestion-card-types";
+import type { ActivityAction } from "@/components/agent/agent-activity-types";
+import type { CardSuggestion } from "@/components/agent/suggestion-card-types";
 
 type Conflict = CalendarInvitePayload["conflicts"][number];
 

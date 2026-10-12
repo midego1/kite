@@ -16,11 +16,10 @@ function truncateCodePoints(value: string, max: number): string {
 	return points.length > max ? points.slice(0, max).join("") : value;
 }
 
-export type BookingHoursRow = {
-	weekdays: string;
-	timeRanges: string;
-	startTime: string;
-	endTime: string;
+/** What Booking's `workingHours` service answers: weekdays (0 is Sunday), time ranges and a time zone. */
+export type ServiceWorkingHours = {
+	weekdays: number[];
+	timeRanges: { startTime: string; endTime: string }[];
 	timeZone: string;
 };
 
@@ -30,48 +29,19 @@ export type ScheduleEvent = { id: string; seriesId: string; title: string; start
 
 export type InviteVariant = { method: "REQUEST" | "CANCEL"; existingEventId: string | null } | null;
 
-function parseJson(value: string): unknown {
-	try {
-		return JSON.parse(value);
-	} catch {
-		return null;
-	}
-}
-
-const CLOCK = /^\d{1,2}:\d{2}$/;
-
-function parseRanges(value: string, fallback: WorkHours["ranges"]): WorkHours["ranges"] {
-	const parsed = parseJson(value);
-	if (!Array.isArray(parsed)) return fallback;
-	const ranges = parsed.flatMap((range) => {
-		const { startTime, endTime } = (range ?? {}) as { startTime?: unknown; endTime?: unknown };
-		return typeof startTime === "string" && typeof endTime === "string" && CLOCK.test(startTime) && CLOCK.test(endTime)
-			? [{ startTime, endTime }]
-			: [];
-	});
-	return ranges.length ? ranges : fallback;
-}
-
-/** Working hours from the reviewer's first enabled booking event, else Monday to Friday 09:00-17:00 in their zone. */
+/** Working hours from Booking's answer, else Monday to Friday 09:00-17:00 in the reviewer's zone. */
 export function resolveWorkingHours(
-	booking: BookingHoursRow | null,
+	service: ServiceWorkingHours | null,
 	userTimeZone: string | null,
 ): { workHours: WorkHours; tz: string } {
-	if (!booking)
+	if (!service || service.weekdays.length === 0 || service.timeRanges.length === 0)
 		return {
 			workHours: { weekdays: [1, 2, 3, 4, 5], ranges: [{ startTime: "09:00", endTime: "17:00" }] },
 			tz: normalizeTimeZone(userTimeZone),
 		};
-	const parsedDays = parseJson(booking.weekdays);
-	const weekdays = Array.isArray(parsedDays)
-		? parsedDays.filter((day): day is number => Number.isInteger(day) && day >= 0 && day <= 6)
-		: [1, 2, 3, 4, 5];
 	return {
-		workHours: {
-			weekdays,
-			ranges: parseRanges(booking.timeRanges, [{ startTime: booking.startTime, endTime: booking.endTime }]),
-		},
-		tz: normalizeTimeZone(booking.timeZone),
+		workHours: { weekdays: service.weekdays, ranges: service.timeRanges },
+		tz: normalizeTimeZone(service.timeZone),
 	};
 }
 

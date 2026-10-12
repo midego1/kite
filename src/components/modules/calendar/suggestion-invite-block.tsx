@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth/client";
 import type { InviteOption } from "@/lib/agent/auto-read/invite-actions-utils";
 import { getUserTimeZone } from "@/lib/time/utils";
-import { activityUrl } from "./agent-activity-utils";
-import type { ActivityAction, ActivityResponse } from "./agent-activity-types";
-import type { CardSuggestion } from "./suggestion-card-types";
+import { activityUrl } from "@/components/agent/agent-activity-utils";
+import type { ActivityAction, ActivityResponse } from "@/components/agent/agent-activity-types";
+import type { CardSuggestion, SuggestionBlockProps } from "@/components/agent/suggestion-card-types";
 import { answerInvite } from "./suggestion-invite-actions";
 import {
 	answeredText,
@@ -22,7 +22,7 @@ import {
 	type InviteAnswer,
 } from "./suggestion-invite-utils";
 
-type BlockProps = { suggestion: CardSuggestion; onChanged: () => void; menu: ReactNode; why: ReactNode };
+type BlockProps = SuggestionBlockProps;
 
 function useInviteAnswer(onChanged: () => void) {
 	const router = useRouter();

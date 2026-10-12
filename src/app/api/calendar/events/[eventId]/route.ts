@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { calendarEvents } from "@/db/schema";
 import { getEnv } from "@/lib/cloudflare";
+import { sendInvitationMail } from "@/lib/calendar/invitation-mail";
 import { createCalendarInvitation } from "@/lib/calendar/utils";
-import { sendEmail } from "@/lib/email/send";
 import type { CalendarEventInput } from "../types";
 import type { CalendarEventRouteParams as RouteParams } from "./types";
 import { normalizeCalendarColor } from "@/lib/calendar/colors";
@@ -93,20 +93,14 @@ export const PATCH = withModule<RouteParams>("calendar", async function PATCH(re
 			.set({ excludedOccurrences: JSON.stringify([...excluded, occurrence.startsAt.getTime()]), updatedAt: now })
 			.where(eq(calendarEvents.id, existing.id));
 		if (attendees.length && existing.mailboxId && input.from) {
-			const file = createCalendarInvitation({ ...moved, uid: moved.id });
-			await Promise.all(
-				attendees.map((to) =>
-					sendEmail(env, {
-						userId: user.id,
-						mailboxId: existing.mailboxId!,
-						from: input.from!,
-						to,
-						subject: `Updated invitation: ${moved.title}`,
-						text: moved.description || `This event has been updated: ${moved.title}.`,
-						attachments: [{ filename: "invite.ics", type: "text/calendar; charset=utf-8", content: file }],
-					}),
-				),
-			);
+			await sendInvitationMail(user, {
+				mailboxId: existing.mailboxId,
+				from: input.from,
+				attendees,
+				kind: "update",
+				event: moved,
+				file: createCalendarInvitation({ ...moved, uid: moved.id }),
+			});
 		}
 		return NextResponse.json({ ok: true });
 	}
@@ -173,20 +167,14 @@ export const PATCH = withModule<RouteParams>("calendar", async function PATCH(re
 			.where(eq(calendarEvents.id, existing.id));
 	}
 	if (attendees.length && existing.mailboxId && input.from) {
-		const file = createCalendarInvitation({ ...event, uid: existing.id });
-		await Promise.all(
-			attendees.map((to) =>
-				sendEmail(env, {
-					userId: user.id,
-					mailboxId: existing.mailboxId!,
-					from: input.from!,
-					to,
-					subject: `Updated invitation: ${event.title}`,
-					text: event.description || `This event has been updated: ${event.title}.`,
-					attachments: [{ filename: "invite.ics", type: "text/calendar; charset=utf-8", content: file }],
-				}),
-			),
-		);
+		await sendInvitationMail(user, {
+			mailboxId: existing.mailboxId,
+			from: input.from,
+			attendees,
+			kind: "update",
+			event,
+			file: createCalendarInvitation({ ...event, uid: existing.id }),
+		});
 	}
 	return NextResponse.json({ ok: true });
 });

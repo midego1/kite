@@ -1,6 +1,6 @@
 import type { MessageFacts } from "./facts-types";
 import type { AutoReadCapabilities, AutonomyLevel } from "./settings-types";
-import type { CalendarInvitePayload } from "./suggestion-types";
+import type { PlannedSuggestion } from "./suggestion-types";
 import type { TriageResult } from "./triage-types";
 
 export type AgentActionType =
@@ -59,6 +59,6 @@ export type PlanInput = {
 	facts: MessageFacts;
 	triage: TriageResult | null;
 	settings: PlanSettings;
-	/** The parsed and checked invite, when one was attached. */
-	invite?: CalendarInvitePayload | null;
+	/** What the modules' triage steps proposed, already checked by core. */
+	moduleSuggestions?: PlannedSuggestion[];
 };

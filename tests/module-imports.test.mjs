@@ -43,6 +43,10 @@ const MODULE_OWNED_INVITE_FILES = [
 	"src/lib/agent/auto-read/invite-actions-utils.ts",
 	"src/lib/agent/auto-read/calendar-effects.ts",
 	"src/lib/agent/auto-read/calendar-undo.ts",
+	"src/lib/agent/auto-read/calendar-actions.ts",
+	"src/lib/agent/auto-read/calendar-state.ts",
+	"src/lib/agent/auto-read/invite-actions.ts",
+	"src/lib/agent/auto-read/invite-proposal.ts",
 ];
 
 /** Module code that core must not import, as path prefixes from the repo root. */
@@ -72,18 +76,6 @@ const PENDING = {
 		"The Node queue consumer still calls the import job code by hand until dispatchModuleQueueMessage replaces it (queue and cron routing feature).",
 	"src/lib/mcp/server.ts":
 		"MCP still registers the calendar tools from the calendar library until it reads the registry's mcp_tool descriptors (MCP surface feature).",
-	"src/lib/agent/auto-read/action-effects.ts":
-		"Automatic reading still imports calendar undo directly until invite actions run through invoke (automatic reading feature).",
-	"src/lib/agent/auto-read/calendar-state.ts":
-		"This file belongs to the calendar invite actions and still imports their helpers; it moves behind the Calendar module with them (automatic reading feature).",
-	"src/lib/agent/auto-read/execute.ts":
-		"The action executor still imports calendar undo directly until undo runs through invoke (automatic reading feature).",
-	"src/lib/agent/auto-read/invite-actions.ts":
-		"The invite actions are Calendar module code that still lives here; they move behind the Calendar module's action descriptors (automatic reading feature).",
-	"src/lib/agent/auto-read/invite-proposal.ts":
-		"The proposal intro belongs to the invite actions and still imports their helpers; it moves behind the Calendar module with them (automatic reading feature).",
-	"src/lib/agent/auto-read/process.ts":
-		"Triage still calls the calendar invite step directly until it runs the registry's triage_step descriptors (automatic reading feature).",
 	"src/components/compose/new-template-dialog.tsx":
 		"The New template dialog is Templates module UI that still sits in the composer folder; it moves to src/components/modules/templates (composer slot feature).",
 	"src/components/compose/schedule-send-menu.tsx":

@@ -61,18 +61,26 @@ export const triageStepSchemas: CapabilitySchemas = {
 		model: json.nullable(),
 	}),
 	output: z.object({
-		suggestions: z.array(z.object({ kind: z.string(), payload: json, reason: z.string() })).max(3),
+		// Core keeps the first three valid suggestions; the cap here only bounds a runaway answer.
+		suggestions: z.array(z.object({ kind: z.string(), payload: json, reason: z.string() })).max(50),
 		skipped: z.string().optional(),
 	}),
 };
 
-/** Execute and undo share one capability: `op` selects, and the handler must be idempotent by `actionId`. */
+/** Execute, undo and the pre-undo check share one capability: `op` selects, and the handler must be idempotent by `actionId`. */
 export const actionSchemas: CapabilitySchemas = {
 	input: z.discriminatedUnion("op", [
 		z.object({ op: z.literal("execute"), actionId: z.string(), suggestion: json, input: json.optional() }),
 		z.object({ op: z.literal("undo"), actionId: z.string(), inverse: json }),
+		/** Asked before an undo claims anything: a handler that refuses here changes nothing. */
+		z.object({ op: z.literal("authorize_undo"), actionId: z.string(), inverse: json }),
 	]),
-	output: z.object({ result: json, inverse: json.nullable() }),
+	output: z.object({
+		result: json,
+		inverse: json.nullable(),
+		/** The handler declined: core records the action as failed, or refuses the undo with this status. */
+		refused: z.object({ status: z.union([z.literal(403), z.literal(409)]), error: z.string() }).optional(),
+	}),
 };
 
 export function lifecycleSchemas(event: "user.created" | "user.time_zone_changed"): CapabilitySchemas {

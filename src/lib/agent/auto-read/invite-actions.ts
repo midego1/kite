@@ -1,25 +1,29 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { messages } from "@/db/schema";
+import { messages, users } from "@/db/schema";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import type { SessionUser } from "@/lib/auth/types";
+import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
+import { buildCallContext } from "@/lib/modules/capability-utils";
+import type { CapabilityCallContext, JsonValue } from "@/lib/modules/module-types";
 import { normalizeTimeZone } from "@/lib/time/utils";
 import { AgentActionError } from "./action-error";
 import { draftReplyEffect } from "./action-effects";
 import { settled } from "./action-response";
-import type { ActionEffect, ExecuteActionResult } from "./actions-types";
+import type { ActionEffect, ExecuteActionResult, ModuleActionViewer } from "./actions-types";
 import { parseActionState } from "./actions-utils";
-import {
-	createEventEffect,
-	deleteEventEffect,
-	findInviteEvent,
-	rsvpEffect,
-	updateEventEffect,
-} from "./calendar-effects";
+import { findInviteEvent } from "./calendar-effects";
 import { retireLiveRows, rsvpState } from "./calendar-state";
 import { executeAction } from "./execute";
-import { inviteOptionRefusal, proposalBody, type InviteOption, type Partstat } from "./invite-actions-utils";
+import {
+	inviteOptionRefusal,
+	proposalBody,
+	serializeEventRow,
+	snapshotEvent,
+	type InviteOption,
+	type Partstat,
+} from "./invite-actions-utils";
 import { proposeSlotsForInvite } from "./invite";
 import { localizeAllDay } from "./invite-utils";
 import { generateProposalIntro } from "./invite-proposal";
@@ -38,6 +42,8 @@ type Context = {
 	payload: CalendarInvitePayload;
 	reviewerUserId: string;
 	source: { id: string; providerMessageId: string | null };
+	viewer: ModuleActionViewer;
+	capabilityContext: CapabilityCallContext;
 };
 
 type InviteResult = { status: string; option: InviteOption; actionId: string; [key: string]: unknown };
@@ -63,6 +69,12 @@ async function loadContext(
 		.where(eq(messages.id, row.messageId))
 		.limit(1);
 	if (!source) throw new AgentActionError("The invitation message no longer exists", 409);
+	const viewer = {
+		userId: user.id,
+		role: user.role,
+		isPrimaryAdmin: user.isPrimaryAdmin,
+		timeZone: normalizeTimeZone(user.timeZone),
+	};
 	return {
 		env,
 		user,
@@ -71,6 +83,14 @@ async function loadContext(
 		payload: anchorAllDay(payload, user, suggestion.reviewerUserId, deviceTimeZone),
 		reviewerUserId: suggestion.reviewerUserId,
 		source,
+		viewer,
+		capabilityContext: buildCallContext({
+			trigger: "api",
+			viewer: { userId: viewer.userId, role: viewer.role, isPrimaryAdmin: viewer.isPrimaryAdmin },
+			timeZone: viewer.timeZone,
+			mailboxIds: [row.mailboxId],
+			grants: [],
+		}),
 	};
 }
 
@@ -88,49 +108,69 @@ function anchorAllDay(
 	return localizeAllDay(payload, deviceTimeZone);
 }
 
-function run(ctx: Context, action: AgentActionType, variant: string, effect: ActionEffect) {
-	return executeAction({
+const asJson = (value: unknown): JsonValue => JSON.parse(JSON.stringify(value)) as JsonValue;
+
+function base(ctx: Context, action: AgentActionType, variant: string) {
+	return {
 		env: ctx.env,
 		mailboxId: ctx.row.mailboxId,
 		suggestionId: ctx.row.id,
 		messageId: ctx.row.messageId,
 		action,
 		variant,
-		initiator: "user",
+		initiator: "user" as const,
 		actingUserId: ctx.user.id,
 		permissions: ctx.access,
-		effect,
-	});
+	};
+}
+
+function run(ctx: Context, action: AgentActionType, variant: string, effect: ActionEffect) {
+	return executeAction({ ...base(ctx, action, variant), effect });
+}
+
+/** Calendar's own actions run through the Calendar module, which core calls with JSON only. */
+function runCalendar(
+	ctx: Context,
+	action: AgentActionType,
+	variant: string,
+	input: Record<string, JsonValue>,
+	before?: JsonValue,
+) {
+	return executeAction({ ...base(ctx, action, variant), module: { input, before, viewer: ctx.viewer } });
 }
 
 function sendRsvp(ctx: Context, partstat: Partstat): Promise<ExecuteActionResult> {
-	return run(
-		ctx,
-		"send_rsvp",
+	return runCalendar(ctx, "send_rsvp", partstat, {
 		partstat,
-		rsvpEffect({
-			env: ctx.env,
-			actor: ctx.user,
-			suggestionId: ctx.row.id,
-			mailboxId: ctx.row.mailboxId,
-			payload: ctx.payload,
-			partstat,
-			source: ctx.source,
-		}),
+		payload: asJson(ctx.payload),
+		sourceMessageId: ctx.source.id,
+		suggestionId: ctx.row.id,
+		mailboxId: ctx.row.mailboxId,
+	});
+}
+
+function createEvent(ctx: Context, variant: "" | "update" = "", before?: JsonValue): Promise<ExecuteActionResult> {
+	return runCalendar(
+		ctx,
+		"create_event",
+		variant,
+		{
+			variant,
+			payload: asJson(ctx.payload),
+			reviewerUserId: ctx.reviewerUserId,
+			messageId: ctx.row.messageId,
+		},
+		before,
 	);
 }
 
-function createEvent(ctx: Context): Promise<ExecuteActionResult> {
-	return run(
+function deleteEvent(ctx: Context, stored: Awaited<ReturnType<typeof findInviteEvent>> & object) {
+	return runCalendar(
 		ctx,
-		"create_event",
+		"delete_event",
 		"",
-		createEventEffect({
-			env: ctx.env,
-			reviewerUserId: ctx.reviewerUserId,
-			messageId: ctx.row.messageId,
-			payload: ctx.payload,
-		}),
+		{ eventId: stored.id, uid: ctx.payload.uid, reviewerUserId: ctx.reviewerUserId },
+		asJson(serializeEventRow(stored)),
 	);
 }
 
@@ -170,7 +210,7 @@ async function declineInstead(ctx: Context, option: InviteOption): Promise<Invit
 		userId: ctx.user.id,
 	});
 	const stored = await findInviteEvent(ctx.env, ctx.reviewerUserId, { uid: ctx.payload.uid });
-	const removed = stored ? settled(await run(ctx, "delete_event", "", deleteEventEffect(ctx.env, stored))) : null;
+	const removed = stored ? settled(await deleteEvent(ctx, stored)) : null;
 	return { status: "accepted", option, actionId: rsvp.actionId, deleteActionId: removed?.actionId ?? null };
 }
 
@@ -193,8 +233,12 @@ async function acceptInstead(ctx: Context, option: InviteOption): Promise<Invite
 }
 
 async function update(ctx: Context, option: InviteOption): Promise<InviteResult> {
-	const effect = await updateEventEffect({ env: ctx.env, reviewerUserId: ctx.reviewerUserId, payload: ctx.payload });
-	const result = settled(await run(ctx, "create_event", "update", effect));
+	const stored = await findInviteEvent(ctx.env, ctx.reviewerUserId, {
+		id: ctx.payload.existingEventId,
+		uid: ctx.payload.uid,
+	});
+	if (!stored) throw new AgentActionError("The event is no longer on your calendar", 409);
+	const result = settled(await createEvent(ctx, "update", asJson(snapshotEvent(stored))));
 	await closeSuggestion(ctx);
 	return { status: "accepted", option, actionId: result.actionId, eventId: result.after?.eventId ?? null };
 }
@@ -205,7 +249,7 @@ async function remove(ctx: Context, option: InviteOption): Promise<InviteResult>
 		uid: ctx.payload.uid,
 	});
 	if (!stored) throw new AgentActionError("The event is no longer on your calendar", 409);
-	const result = settled(await run(ctx, "delete_event", "", deleteEventEffect(ctx.env, stored)));
+	const result = settled(await deleteEvent(ctx, stored));
 	await closeSuggestion(ctx);
 	return { status: "accepted", option, actionId: result.actionId, eventId: stored.id };
 }
@@ -217,7 +261,7 @@ async function remove(ctx: Context, option: InviteOption): Promise<InviteResult>
 async function propose(ctx: Context, option: InviteOption): Promise<InviteResult> {
 	const slots = ctx.payload.proposals.length
 		? ctx.payload.proposals
-		: await proposeSlotsForInvite(ctx.env, ctx.reviewerUserId, ctx.payload);
+		: await proposeSlotsForInvite(ctx.env, ctx.capabilityContext, ctx.reviewerUserId, ctx.payload);
 	if (slots.length === 0) throw new AgentActionError("No free time was found in the next seven days", 409);
 	const intro = await generateProposalIntro(ctx.env, {
 		suggestionId: ctx.row.id,
@@ -280,4 +324,30 @@ export async function acceptInvite(
 	const result = await HANDLERS[option as InviteOption](ctx, option as InviteOption);
 	await notifySuggestionsQuietly(env, [row.id]);
 	return result;
+}
+
+/**
+ * The `answerInvite` service: the signed-in user's click on a calendar invitation suggestion. The
+ * module checks the user's access to the mailbox again, so a caller cannot widen it.
+ */
+export async function answerInvite(
+	env: CloudflareEnv,
+	ctx: CapabilityCallContext,
+	input: { suggestionId: string; option: string; deviceTimeZone: string | null },
+): Promise<InviteResult> {
+	const db = getDb(env);
+	const [user] = ctx.viewer ? await db.select().from(users).where(eq(users.id, ctx.viewer.userId)).limit(1) : [];
+	const [row] = await db
+		.select({
+			id: agentSuggestions.id,
+			mailboxId: agentSuggestions.mailboxId,
+			messageId: agentSuggestions.messageId,
+			status: agentSuggestions.status,
+		})
+		.from(agentSuggestions)
+		.where(and(eq(agentSuggestions.id, input.suggestionId), eq(agentSuggestions.kind, "calendar_invite")))
+		.limit(1);
+	const access = user && row ? await getMailboxAccessLevel(db, user, row.mailboxId) : null;
+	if (!user || !row || !access?.canManage) throw new AgentActionError("Suggestion not found", 404);
+	return acceptInvite(env, user as SessionUser, access, row, input.option, input.deviceTimeZone);
 }

@@ -1,17 +1,17 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { ChevronDown, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { loadModuleClient, suggestionKindModule } from "@/components/modules/client-registry";
 import { useMessageListVisibility } from "@/components/messages/message-list-visibility";
 import { useAssistantOpen } from "./assistant-open-state";
 import { announceSuggestionChange, postSuggestion } from "./suggestion-card-actions";
 import { SuggestionCardMenu } from "./suggestion-card-menu";
-import type { CardSuggestion, SuggestionCardBodyProps } from "./suggestion-card-types";
+import type { CardSuggestion, ModuleSuggestionCard, SuggestionCardBodyProps } from "./suggestion-card-types";
 import { replyStatusText, summaryText, whyDetails } from "./suggestion-card-utils";
-import { AnsweredInviteBlock, InviteBlock } from "./suggestion-invite-block";
 import { PhishingBlock } from "./suggestion-phishing-block";
 
 function WhyDisclosure({ suggestion }: { suggestion: CardSuggestion }) {
@@ -91,6 +91,46 @@ function ReplyBlock({ suggestion, onChanged }: { suggestion: CardSuggestion; onC
 	);
 }
 
+/** The card a module draws for a kind, loaded with the module's client chunk; null while it loads. */
+function useModuleCard(kind: string): ModuleSuggestionCard | null {
+	const [card, setCard] = useState<ModuleSuggestionCard | null>(null);
+	useEffect(() => {
+		const moduleId = suggestionKindModule(kind);
+		const client = moduleId ? loadModuleClient(moduleId) : null;
+		if (!client) return;
+		let live = true;
+		void client.then((loaded) => {
+			if (live) setCard(loaded.suggestionCards?.[kind] ?? null);
+		});
+		return () => {
+			live = false;
+		};
+	}, [kind]);
+	return card;
+}
+
+function ModuleBlock({
+	suggestion,
+	onChanged,
+	answered = false,
+}: {
+	suggestion: CardSuggestion;
+	onChanged: () => void;
+	answered?: boolean;
+}): ReactNode {
+	const card = useModuleCard(suggestion.kind);
+	if (!card) return null;
+	if (answered) return card.Answered ? <card.Answered suggestion={suggestion} onChanged={onChanged} /> : null;
+	return (
+		<card.Block
+			suggestion={suggestion}
+			onChanged={onChanged}
+			menu={<SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />}
+			why={<WhyDisclosure suggestion={suggestion} />}
+		/>
+	);
+}
+
 /** The reader card: the conversation summary, then one block per suggestion. */
 export function SuggestionCardBody({ sections, onChanged }: SuggestionCardBodyProps) {
 	const { visible: messageListVisible } = useMessageListVisibility();
@@ -116,18 +156,12 @@ export function SuggestionCardBody({ sections, onChanged }: SuggestionCardBodyPr
 						<WhyDisclosure suggestion={summary} />
 					</div>
 				)}
-				{answered && <AnsweredInviteBlock suggestion={answered} onChanged={onChanged} />}
+				{answered && <ModuleBlock answered suggestion={answered} onChanged={onChanged} />}
 				{blocks.map((suggestion) =>
 					suggestion.kind === "reply" ? (
 						<ReplyBlock key={suggestion.id} suggestion={suggestion} onChanged={onChanged} />
-					) : suggestion.kind === "calendar_invite" ? (
-						<InviteBlock
-							key={suggestion.id}
-							suggestion={suggestion}
-							onChanged={onChanged}
-							menu={<SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />}
-							why={<WhyDisclosure suggestion={suggestion} />}
-						/>
+					) : suggestionKindModule(suggestion.kind) ? (
+						<ModuleBlock key={suggestion.id} suggestion={suggestion} onChanged={onChanged} />
 					) : (
 						<PhishingBlock
 							key={suggestion.id}

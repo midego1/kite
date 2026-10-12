@@ -56,13 +56,11 @@ test("working hours default to Monday to Friday 09:00-17:00 in the user zone, UT
 	assert.equal(resolveWorkingHours(null, null).tz, "UTC");
 });
 
-test("working hours follow the booking event weekdays, ranges and zone", () => {
+test("working hours follow the booking service weekdays, ranges and zone", () => {
 	const result = resolveWorkingHours(
 		{
-			weekdays: "[2,4]",
-			timeRanges: '[{"startTime":"13:00","endTime":"15:00"}]',
-			startTime: "09:00",
-			endTime: "17:00",
+			weekdays: [2, 4],
+			timeRanges: [{ startTime: "13:00", endTime: "15:00" }],
 			timeZone: "America/New_York",
 		},
 		"UTC",
@@ -71,13 +69,13 @@ test("working hours follow the booking event weekdays, ranges and zone", () => {
 	assert.equal(result.tz, "America/New_York");
 });
 
-test("malformed booking JSON falls back to the start and end columns", () => {
-	const result = resolveWorkingHours(
-		{ weekdays: "nope", timeRanges: "[]", startTime: "08:00", endTime: "12:00", timeZone: "Not/AZone" },
-		"UTC",
-	);
-	assert.deepEqual(result.workHours, { weekdays: [1, 2, 3, 4, 5], ranges: [{ startTime: "08:00", endTime: "12:00" }] });
-	assert.equal(result.tz, "UTC");
+test("an empty booking answer falls back to the default hours in the user zone", () => {
+	const result = resolveWorkingHours({ weekdays: [], timeRanges: [], timeZone: "America/New_York" }, "Europe/Paris");
+	assert.deepEqual(result.workHours, {
+		weekdays: [1, 2, 3, 4, 5],
+		ranges: [{ startTime: "09:00", endTime: "17:00" }],
+	});
+	assert.equal(result.tz, "Europe/Paris");
 });
 
 test("a new UID is a new event; a higher SEQUENCE updates; equal or lower is ignored", () => {

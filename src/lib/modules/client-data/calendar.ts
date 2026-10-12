@@ -4,6 +4,7 @@ import type { ClientModuleData } from "../module-types";
 export const calendarClientData: ClientModuleData = {
 	id: "calendar",
 	name: "Calendar",
+	suggestionKinds: ["calendar_invite"],
 	nav: [
 		{
 			id: "calendar.mailbox-selector",

@@ -1,4 +1,5 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { createWorkersAI } from "workers-ai-provider";
 import { getAgentProviderConfig } from "./provider";
 import { agentTimeContext } from "./time";
@@ -11,6 +12,7 @@ export async function getAgentModel(env: CloudflareEnv, requestedModel?: string 
 		modelId,
 		/** The label usage rows record: "cloudflare" or the compatible preset. */
 		provider: config.provider === "cloudflare" ? "cloudflare" : config.preset,
+		preset: config.preset,
 		providerKind: config.provider,
 		rates: config.rates[modelId],
 		reasoningEffort: config.rates[modelId]?.reasoningEffort ?? null,
@@ -18,6 +20,10 @@ export async function getAgentModel(env: CloudflareEnv, requestedModel?: string 
 	if (config.provider === "cloudflare")
 		return env.AI ? { model: createWorkersAI({ binding: env.AI })(modelId), ...details } : null;
 	if (config.baseUrl && config.apiKey && modelId) {
+		if (config.preset === "anthropic") {
+			const provider = createAnthropic({ apiKey: config.apiKey, baseURL: config.baseUrl });
+			return { model: provider(modelId), ...details };
+		}
 		const provider = createOpenAICompatible({
 			name: COMPATIBLE_PROVIDER_NAME,
 			baseURL: config.baseUrl,

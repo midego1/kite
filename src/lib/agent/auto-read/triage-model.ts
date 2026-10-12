@@ -48,7 +48,7 @@ export type TriageModelResult = ModelCallResult & { usage: LanguageModelUsage | 
  * the AI SDK's own structured output. Compatible providers get `json_object` from provider options.
  */
 function structuredOutput(options: ModelCallOptions) {
-	return options.provider === "cloudflare" && options.jsonMode
+	return (options.provider === "cloudflare" || options.preset === "anthropic") && options.jsonMode
 		? Output.object({ schema: TRIAGE_JSON_SCHEMA })
 		: undefined;
 }

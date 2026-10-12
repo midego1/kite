@@ -113,6 +113,26 @@ test.describe("fake model provider", () => {
 	});
 });
 
+test("lists Haimaker first and shows its referral card when selected", async ({ page }) => {
+	await page.goto("/agent");
+	const provider = page.getByLabel("Provider", { exact: true });
+	await expect(provider).toBeEnabled();
+	await expect(provider.locator("option").nth(0)).toHaveText("Haimaker.ai");
+	await expect(provider.locator("option").nth(1)).toHaveText("Anthropic");
+	await expect(provider.locator("option").nth(2)).toHaveText("OpenAI");
+	await expect(provider.locator("option").nth(3)).toHaveText("OpenRouter");
+
+	await provider.selectOption("haimaker");
+	await expect(page.getByText("CKQHV8", { exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Copy code" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Copy share link" })).toBeVisible();
+	await expect(page.getByRole("link", { name: "Sign up" })).toHaveAttribute(
+		"href",
+		"https://app.haimaker.ai/sign-up?ref=CKQHV8",
+	);
+	await expect(page.getByText(/DeepSeek, Qwen, GLM, Kimi and MiniMax/)).toBeVisible();
+});
+
 test("inbound mail can carry an .ics attachment and extra headers", async () => {
 	const subject = uniqueToken("invite");
 	const ics = [

@@ -28,6 +28,8 @@ export function formatUsageProvider(value: string) {
 		(
 			{
 				cloudflare: "Cloudflare Workers AI",
+				haimaker: "Haimaker.ai",
+				anthropic: "Anthropic",
 				openai: "OpenAI",
 				openrouter: "OpenRouter",
 				groq: "Groq",

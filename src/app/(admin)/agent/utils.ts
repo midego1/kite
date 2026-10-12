@@ -1,5 +1,5 @@
 import { authFetch } from "@/lib/auth/client";
-import { PROVIDER_BASE_URLS } from "@/lib/agent/provider-constants";
+import { DEFAULT_CLOUDFLARE_MODEL, PROVIDER_BASE_URLS } from "@/lib/agent/provider-constants";
 import type { AgentProviderPreset } from "@/lib/agent/provider-types";
 import type {
 	AgentAdminForm,
@@ -9,14 +9,39 @@ import type {
 } from "./types";
 
 export const PROVIDER_PRESETS: { id: AgentProviderPreset; label: string }[] = [
+	{ id: "haimaker", label: "Haimaker.ai" },
+	{ id: "anthropic", label: "Anthropic" },
 	{ id: "openai", label: "OpenAI" },
 	{ id: "openrouter", label: "OpenRouter" },
 	{ id: "groq", label: "Groq" },
 	{ id: "custom", label: "Custom endpoint" },
 ];
 
-export function baseUrlForPreset(preset: AgentProviderPreset, current = "") {
+function baseUrlForPreset(preset: AgentProviderPreset, current = "") {
 	return preset === "custom" ? current : PROVIDER_BASE_URLS[preset];
+}
+
+export function selectAgentProvider(form: AgentAdminForm, value: string): AgentAdminForm {
+	if (value === "cloudflare")
+		return {
+			...form,
+			provider: "cloudflare",
+			preset: "openai",
+			baseUrl: "",
+			apiKey: "",
+			model: DEFAULT_CLOUDFLARE_MODEL,
+		};
+	const preset = value as AgentProviderPreset;
+	return { ...form, provider: "compatible", preset, baseUrl: baseUrlForPreset(preset), apiKey: "", model: "" };
+}
+
+/** Why the model catalog cannot be loaded yet, or null when the provider settings are complete. */
+export function agentModelInputError(form: AgentAdminForm, canUseSavedKey: boolean): string | null {
+	if (form.provider !== "compatible") return null;
+	if (form.baseUrl && (form.apiKey.trim() || canUseSavedKey)) return null;
+	return form.preset === "custom" && !form.baseUrl
+		? "Enter an HTTPS base URL to load models."
+		: "Enter an API key to load models.";
 }
 
 export function updateAgentModelRate(

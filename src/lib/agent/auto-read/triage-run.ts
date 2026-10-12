@@ -54,6 +54,7 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 		prompt,
 		options: buildModelCallOptions({
 			provider: selection.providerKind,
+			preset: selection.preset,
 			kind: "triage",
 			reasoningEffort: selection.reasoningEffort,
 		}),

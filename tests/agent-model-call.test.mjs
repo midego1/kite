@@ -76,6 +76,19 @@ test("compatible: reasoningEffort only with a hint, never none, and the matching
 	assert.equal(buildModelCallOptions({ provider: "compatible", kind: "draft" }).maxOutputTokens, 900);
 });
 
+test("native Anthropic sends its supported effort hint without OpenAI-only options", () => {
+	const options = buildModelCallOptions({
+		provider: "compatible",
+		preset: "anthropic",
+		kind: "triage",
+		reasoningEffort: "high",
+	});
+	assert.equal(options.preset, "anthropic");
+	assert.equal(options.maxOutputTokens, 1_500);
+	assert.deepEqual(options.providerOptions, { anthropic: { effort: "high" } });
+	assert.equal(options.jsonMode, true);
+});
+
 test("a 400 mentioning reasoning drops the parameter and the reasoning budget", () => {
 	const hinted = buildModelCallOptions({ provider: "compatible", kind: "triage", reasoningEffort: "low" });
 	const next = fallbackOptionsAfterError(

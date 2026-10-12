@@ -63,11 +63,32 @@ Kite is **early beta**. It is tested, but it has not had the time in the field t
 
 ## Screenshots
 
-| ![Inbox with a message open](/screenshots/inbox.png)<br>Inbox | ![Inbox in dark mode](/screenshots/inbox-dark.png)<br>Dark mode | ![Replying to a message](/screenshots/compose.png)<br>Reply |
-| --- | --- | --- |
-| ![Week view of the calendar](/screenshots/calendar.png)<br>Calendar | ![Domain DNS checks](/screenshots/domains.png)<br>Domain setup | ![Mailboxes on a domain](/screenshots/mailboxes.png)<br>Mailboxes |
+<table>
+	<tr>
+		<td align="center" valign="top" width="33.33%">
+			<a href="/screenshots/inbox.png"><img src="/screenshots/inbox.png" width="250" alt="Inbox with a message open"></a><br><b>Inbox</b>
+		</td>
+		<td align="center" valign="top" width="33.33%">
+			<a href="/screenshots/inbox-dark.png"><img src="/screenshots/inbox-dark.png" width="250" alt="Inbox in dark mode"></a><br><b>Dark mode</b>
+		</td>
+		<td align="center" valign="top" width="33.33%">
+			<a href="/screenshots/compose.png"><img src="/screenshots/compose.png" width="250" alt="Replying to a message"></a><br><b>Reply</b>
+		</td>
+	</tr>
+	<tr>
+		<td align="center" valign="top" width="33.33%">
+			<a href="/screenshots/calendar.png"><img src="/screenshots/calendar.png" width="250" alt="Week view of the calendar"></a><br><b>Calendar</b>
+		</td>
+		<td align="center" valign="top" width="33.33%">
+			<a href="/screenshots/domains.png"><img src="/screenshots/domains.png" width="250" alt="Domain DNS checks"></a><br><b>Domain setup</b>
+		</td>
+		<td align="center" valign="top" width="33.33%">
+			<a href="/screenshots/mailboxes.png"><img src="/screenshots/mailboxes.png" width="250" alt="Mailboxes on a domain"></a><br><b>Mailboxes</b>
+		</td>
+	</tr>
+</table>
 
-The screenshots and the demo recording show invented demo data. `npm run screenshots` takes the screenshots again against the same isolated, seeded server the browser tests use (`scripts/screenshots/readme.capture.ts`), `npm run demo:record` records the demo (`scripts/screenshots/demo.capture.ts`, needs `ffmpeg`), and `npm run social:preview` renders the 1280x640 repository social preview (`docs/assets/social-preview.png`).
+Click a screenshot to open it at full size. The screenshots and the demo recording show invented demo data. `npm run screenshots` takes the screenshots again against the same isolated, seeded server the browser tests use (`scripts/screenshots/readme.capture.ts`), `npm run demo:record` records the demo (`scripts/screenshots/demo.capture.ts`, needs `ffmpeg`), and `npm run social:preview` renders the 1280x640 repository social preview (`docs/assets/social-preview.png`).
 
 ## What you can do
 

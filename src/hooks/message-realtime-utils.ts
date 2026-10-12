@@ -1,3 +1,5 @@
+import { requestCopyCode } from "@/components/copy-code-host-utils";
+import { buildNewMessageNotificationParts } from "./new-message-notification-utils";
 import type { NewMessageEvent } from "./message-realtime-types";
 
 export const REALTIME_FALLBACK_INTERVAL_MS = 60_000;
@@ -11,6 +13,8 @@ export const REALTIME_RECONNECT_MAX_MS = 30_000;
 /** Fired on window when a Kite suggestion is created, decided or closed (realtime or a local action). */
 export const AGENT_SUGGESTION_EVENT = "kite:agent-suggestion";
 const BROWSER_NOTIFICATIONS_ENABLED_KEY = "kite:browser-notifications-enabled";
+const NOTIFICATION_CODES_ENABLED_KEY = "kite:notification-codes-enabled";
+const NOTIFICATION_SERVICE_WORKER_URL = "/kite-sw.js";
 
 export function areBrowserNotificationsEnabled(): boolean {
 	try {
@@ -22,6 +26,43 @@ export function areBrowserNotificationsEnabled(): boolean {
 
 export function setBrowserNotificationsEnabled(enabled: boolean): void {
 	window.localStorage.setItem(BROWSER_NOTIFICATIONS_ENABLED_KEY, String(enabled));
+}
+
+/** Whether one-time codes may appear in browser notifications; per browser, default on. */
+export function areOneTimeCodesInNotificationsEnabled(): boolean {
+	try {
+		return window.localStorage.getItem(NOTIFICATION_CODES_ENABLED_KEY) !== "false";
+	} catch {
+		return true;
+	}
+}
+
+export function setOneTimeCodesInNotificationsEnabled(enabled: boolean): void {
+	window.localStorage.setItem(NOTIFICATION_CODES_ENABLED_KEY, String(enabled));
+}
+
+/** NotificationOptions.actions is missing from the generated DOM lib; this is the subset we set. */
+type NotificationOptionsWithActions = NotificationOptions & { actions?: { action: string; title: string }[] };
+
+let notificationServiceWorkerPromise: Promise<ServiceWorkerRegistration | null> | null = null;
+
+/**
+ * Registers the Kite notification service worker, which shows notifications
+ * with a Copy code action and turns clicks into copy or open-message messages.
+ * Registration is idempotent, so repeated calls reuse the browser's registration.
+ */
+export function ensureNotificationServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+	if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return Promise.resolve(null);
+	if (!notificationServiceWorkerPromise) {
+		notificationServiceWorkerPromise = navigator.serviceWorker
+			.register(NOTIFICATION_SERVICE_WORKER_URL, { scope: "/" })
+			.catch(() => {
+				// The plain Notification constructor fallback still works without one.
+				notificationServiceWorkerPromise = null;
+				return null;
+			});
+	}
+	return notificationServiceWorkerPromise;
 }
 
 export function dispatchAgentSuggestionChanged(detail: { mailboxId?: string; suggestionId?: string } = {}): void {
@@ -56,13 +97,14 @@ export function parseNewMessageEvent(value: string): NewMessageEvent | null {
 			from: payload.from,
 			fromName: typeof payload.fromName === "string" ? payload.fromName : null,
 			subject: typeof payload.subject === "string" ? payload.subject : null,
+			oneTimeCode: typeof payload.oneTimeCode === "string" ? payload.oneTimeCode : null,
 		};
 	} catch {
 		return null;
 	}
 }
 
-export function showBrowserNewMessageNotification(event: NewMessageEvent): void {
+export async function showBrowserNewMessageNotification(event: NewMessageEvent): Promise<void> {
 	if (
 		typeof Notification === "undefined" ||
 		Notification.permission !== "granted" ||
@@ -73,14 +115,34 @@ export function showBrowserNewMessageNotification(event: NewMessageEvent): void 
 	}
 
 	try {
-		const notification = new Notification(event.subject || "New email", {
-			body: `From ${event.fromName ?? event.from}`,
+		const parts = buildNewMessageNotificationParts(event, areOneTimeCodesInNotificationsEnabled());
+		const options: NotificationOptionsWithActions = {
+			body: parts.body,
 			icon: "/icon-96.png",
 			tag: event.messageId,
-		});
+			// The service worker (and the plain fallback) reads these on click.
+			data: parts.code
+				? { messageId: event.messageId, code: parts.code, copyOnClick: true }
+				: { messageId: event.messageId },
+		};
+		if (parts.code) options.actions = [{ action: "copy", title: "Copy code" }];
+		// Shown through the service worker when one is available: it supports the
+		// Copy code action and can copy or open the message when the notification
+		// is clicked even if this tab was closed.
+		const registration = await ensureNotificationServiceWorker();
+		if (registration) {
+			try {
+				await registration.showNotification(parts.title, options);
+				return;
+			} catch {
+				// Fall through to the constructor.
+			}
+		}
+		const notification = new Notification(parts.title, options);
 		notification.onclick = () => {
 			window.focus();
-			window.location.assign(`/inbox/${event.messageId}`);
+			if (parts.code) requestCopyCode(parts.code);
+			else window.location.assign(`/inbox/${event.messageId}`);
 			notification.close();
 		};
 	} catch {

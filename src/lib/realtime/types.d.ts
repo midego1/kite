@@ -5,6 +5,8 @@ export interface NewMessageNotification {
 	messageId: string;
 	subject: string | null;
 	type: "new_message";
+	/** One-time code detected at delivery; transient, never persisted in a column. */
+	oneTimeCode?: string;
 }
 
 export interface AgentDraftNotification {

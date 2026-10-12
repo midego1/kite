@@ -50,6 +50,7 @@
 		"src/lib/email/send-limits-utils.ts",
 		"src/lib/email/trash-retention-utils.ts",
 		"src/lib/email/undo-send-utils.ts",
+		"src/lib/email/one-time-code-utils.ts",
 		"src/lib/import/imap-utils.ts",
 		"src/lib/jmap/email-import-utils.ts",
 		"src/lib/mailboxes/delete-utils.ts",

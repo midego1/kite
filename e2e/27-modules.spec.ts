@@ -2372,6 +2372,66 @@ test("a recurring event's search result and link open the editor, on its day and
 	}
 });
 
+test("a recurring series with an excluded start and no occurrence in the loaded range still opens its editor from a link", async ({
+	page,
+}) => {
+	const api = await owner();
+	const ids: string[] = [];
+	const word = uniqueToken("cutword");
+	const at = (day: string) => Date.parse(`2020-01-${day}T10:00:00Z`);
+	// Weekly from Jan 6 (past), first occurrence moved out (excluded), then cut off before the later ones.
+	const seriesCutAt = async (title: string, cutDay: string) => {
+		const id = await createEvent(api, title, {
+			repeat: "weekly",
+			startsAt: "2020-01-06T10:00:00Z",
+			endsAt: "2020-01-06T11:00:00Z",
+		});
+		ids.push(id);
+		const moved = await api.patch(`/api/calendar/events/${id}@${at("06")}`, {
+			data: {
+				title: `Moved ${title}`,
+				startsAt: "2020-01-07T10:00:00Z",
+				endsAt: "2020-01-07T11:00:00Z",
+				moveOccurrenceToPast: true,
+			},
+		});
+		expect(moved.status(), await moved.text()).toBe(200);
+		const cut = await api.delete(`/api/calendar/events/${id}@${at(cutDay)}`);
+		expect(cut.status(), await cut.text()).toBe(200);
+		return id;
+	};
+	try {
+		const partial = await seriesCutAt(`Partial ${word}`, "20");
+		const empty = await seriesCutAt(`Empty ${word}`, "13");
+		const editor = page.getByRole("dialog", { name: "Edit event" });
+		const name = editor.getByRole("textbox", { name: "Event name" });
+
+		// The only surviving occurrence (Jan 13) is outside the range a 2031 link loads.
+		await page.goto(`/calendar?date=2031-05-12&event=${partial}`);
+		await expect(name).toHaveValue(`Partial ${word}`);
+		await expect(editor.getByLabel("From date and time")).toHaveValue(/2020-01-0[56]T/);
+
+		// No occurrence survives at all, with and without a date.
+		await page.goto(`/calendar?event=${empty}`);
+		await expect(name).toHaveValue(`Empty ${word}`);
+
+		await page.goto("/inbox");
+		await page.getByRole("textbox", { name: /Search mail/ }).fill(`Empty ${word}`);
+		await page
+			.getByTestId("search-dropdown")
+			.getByRole("option", { name: new RegExp(`^Empty ${word}`) })
+			.click();
+		await expect(page).toHaveURL(/\/calendar/);
+		await expect(name).toHaveValue(`Empty ${word}`);
+	} finally {
+		const moved = await api.get("/api/calendar/events?start=2020-01-01T00:00:00Z&end=2020-01-31T00:00:00Z");
+		const rows = ((await moved.json()) as { events: { id: string; title: string }[] }).events;
+		for (const row of rows) if (row.title.includes(word)) ids.push(row.id);
+		for (const id of ids) await api.delete(`/api/calendar/events/${id}`);
+		await api.dispose();
+	}
+});
+
 test("the dropdown is keyboard driven and gone with Calendar off", async ({ page }) => {
 	const api = await owner();
 	let id = "";

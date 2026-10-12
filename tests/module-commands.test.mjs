@@ -498,6 +498,44 @@ test("a series id resolves to the occurrence on the given day, then the first on
 	assert.equal(findEventForUrl(events, "series", day), undefined, "a prefix of a series id is not that series");
 });
 
+test("a series id with no loaded occurrence falls back to the stored series row", () => {
+	const row = (id, overrides) => ({
+		id,
+		title: "Standup",
+		startsAt: "2031-03-03T12:00:00.000Z",
+		endsAt: "2031-03-03T13:00:00.000Z",
+		repeat: "weekly",
+		repeatDays: null,
+		repeatUntil: null,
+		excludedOccurrences: null,
+		attendees: "[]",
+		...overrides,
+	});
+	const rangeStart = new Date("2031-06-01T00:00:00.000Z");
+	const rangeEnd = new Date("2031-06-08T00:00:00.000Z");
+	const excludedAll = row("truncated1", {
+		repeatUntil: "2031-03-20T00:00:00.000Z",
+		excludedOccurrences: JSON.stringify(["2031-03-03T12:00:00.000Z"]),
+	});
+	const ended = row("ended1", { repeat: "monthly", repeatUntil: "2031-03-04T00:00:00.000Z" });
+	const visible = row("visible1");
+	const stored = [excludedAll, ended, visible];
+	const events = expandCalendarEvents(stored, rangeStart, rangeEnd);
+	const day = new Date("2031-06-04T12:00:00.000Z");
+
+	assert.equal(findEventForUrl(events, "truncated1", day), undefined, "without the stored rows nothing resolves");
+	assert.equal(findEventForUrl(events, "truncated1", day, stored), excludedAll);
+	assert.equal(findEventForUrl(events, "ended1", null, stored), ended);
+	assert.equal(findEventForUrl(events, "missing", day, stored), undefined);
+	assert.equal(
+		findEventForUrl(events, "visible1", day, stored)?.id.startsWith("visible1@"),
+		true,
+		"a series with a loaded occurrence still opens that occurrence",
+	);
+	assert.equal(findEventForUrl(events, events[0].id, day, stored)?.id, events[0].id, "an exact occurrence id wins");
+	assert.equal(findEventForUrl(events, "truncated", day, stored), undefined, "a prefix of a stored id is not a match");
+});
+
 test("the client slice equals what the manifests declare", () => {
 	assert.deepEqual(CLIENT_MODULE_IDS, MODULE_IDS);
 	assert.deepEqual(

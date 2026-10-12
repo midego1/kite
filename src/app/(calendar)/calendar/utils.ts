@@ -132,11 +132,18 @@ export function expandCalendarEvents(events: CalendarEvent[], rangeStart: Date, 
 /**
  * The event a `/calendar?event=` link names. The id is either a loaded occurrence or a recurring series id
  * (search results and record refs carry the stored id), which resolves to the occurrence on `day`, else the first loaded one.
+ * A series with no occurrence in the loaded range (every one excluded, truncated or outside it) still resolves to its stored row.
  */
-export function findEventForUrl(events: CalendarEvent[], id: string, day: Date | null): CalendarEvent | undefined {
+export function findEventForUrl(
+	events: CalendarEvent[],
+	id: string,
+	day: Date | null,
+	storedRows: CalendarEvent[] = [],
+): CalendarEvent | undefined {
 	const exact = events.find((item) => item.id === id);
 	if (exact) return exact;
 	const occurrences = events.filter((item) => item.id.startsWith(`${id}@`));
+	if (occurrences.length === 0) return storedRows.find((item) => item.id === id);
 	if (!day) return occurrences[0];
 	const dayStart = startOfDay(day).getTime();
 	return occurrences.find((item) => startOfDay(new Date(item.startsAt)).getTime() === dayStart) ?? occurrences[0];

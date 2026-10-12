@@ -4,6 +4,7 @@ import { DEFAULT_FOLDER_COLOR, FOLDER_COLOR_VALUES } from "@/lib/folders/colors"
 import { isUndoSendSeconds } from "@/lib/email/undo-send-utils";
 import { AGENT_MAX_STEPS_MAX, AGENT_MAX_STEPS_MIN } from "@/lib/agent/step-limit-utils";
 import { isPublicHttpUrl } from "@/lib/security/outbound-url";
+import { WEBHOOK_EVENT_VALUES } from "@/lib/modules/webhook-events-utils";
 
 /**
  * Recipients arrive either as one comma-separated header string (the composer)
@@ -422,24 +423,19 @@ const webhookUrlSchema = z
 	.max(2048)
 	.refine(isPublicHttpUrl, "Webhook URLs must be public http or https addresses");
 
+const webhookEventSchema = z.enum(WEBHOOK_EVENT_VALUES);
+
 export const webhookSchema = z.object({
 	url: webhookUrlSchema,
 	description: z.string().trim().max(200).optional(),
-	events: z
-		.array(z.enum(["message.inbound", "message.outbound", "message.failed"]))
-		.min(1)
-		.max(3),
+	events: z.array(webhookEventSchema).min(1).max(WEBHOOK_EVENT_VALUES.length),
 	maxAttempts: z.number().int().min(1).max(10).default(5),
 });
 
 export const webhookUpdateSchema = z.object({
 	url: webhookUrlSchema.optional(),
 	description: z.string().trim().max(200).nullish(),
-	events: z
-		.array(z.enum(["message.inbound", "message.outbound", "message.failed"]))
-		.min(1)
-		.max(3)
-		.optional(),
+	events: z.array(webhookEventSchema).min(1).max(WEBHOOK_EVENT_VALUES.length).optional(),
 	enabled: z.boolean().optional(),
 	maxAttempts: z.number().int().min(1).max(10).optional(),
 	rotateSecret: z.literal(true).optional(),

@@ -71,11 +71,17 @@ async function execute(
 	if (name === "createEvent") {
 		const input = createInput.parse(raw);
 		if (input.variant === "update") {
-			const effect = await updateEventEffect({ env, reviewerUserId: input.reviewerUserId, payload: input.payload });
+			const effect = await updateEventEffect({
+				env,
+				ctx,
+				reviewerUserId: input.reviewerUserId,
+				payload: input.payload,
+			});
 			return { result: await applyOnce(effect), inverse: null };
 		}
 		const effect = createEventEffect({
 			env,
+			ctx,
 			reviewerUserId: input.reviewerUserId,
 			messageId: input.messageId,
 			payload: input.payload,
@@ -88,7 +94,7 @@ async function execute(
 		const input = deleteInput.parse(raw);
 		const stored = await findInviteEvent(env, input.reviewerUserId, { id: input.eventId, uid: input.uid });
 		if (!stored) return { result: { eventId: input.eventId }, inverse: null };
-		return { result: await applyOnce(deleteEventEffect(env, stored)), inverse: null };
+		return { result: await applyOnce(deleteEventEffect(env, stored, ctx)), inverse: null };
 	}
 	const input = rsvpInput.parse(raw);
 	const actor = await actingUser(env, ctx);
@@ -128,9 +134,9 @@ async function undo(
 	const user = { id: ctx.viewer.userId, role: ctx.viewer.role as SessionUser["role"] };
 	if (name === "createEvent") {
 		await authorizeCreateEventUndo(env, row, user);
-		if (!authorizeOnly) await undoCreateEvent(env, row, user.id);
+		if (!authorizeOnly) await undoCreateEvent(env, row, user.id, ctx);
 	} else if (authorizeOnly) return;
-	else if (name === "deleteEvent") await undoDeleteEvent(env, row);
+	else if (name === "deleteEvent") await undoDeleteEvent(env, row, ctx);
 	else await undoRsvp(env, row);
 }
 

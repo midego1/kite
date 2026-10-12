@@ -7,6 +7,7 @@ import { busyBlocks } from "./availability-utils";
 import { normalizeCalendarColor } from "./colors";
 import { DEFAULT_REPEAT_DAYS, normalizeCalendarRepeatDays, parseCalendarOccurrenceId } from "./recurrence";
 import { expandToolEvents } from "./tool-occurrences";
+import { emitCalendarWrites, type CalendarWrite } from "./webhook-events";
 import { calendarToolSchemas, type calendarUpdateSchema } from "./tool-schemas";
 import type { z } from "zod";
 import type { CalendarToolContext, CalendarToolName } from "./tool-types";
@@ -119,6 +120,7 @@ export async function runCalendarTool(
 			repeatAnchorDay: input.repeat === "monthly" ? zonedDateFields(startsAt, timeZone).getUTCDate() : null,
 		};
 		await db.insert(calendarEvents).values(event);
+		await emitCalendarWrites(context.user, [["created", event]]);
 		return { eventId: event.id, status: "created" };
 	}
 	if (name === "update_events") {
@@ -151,15 +153,17 @@ export async function runCalendarTool(
 			)
 				throw new Error("Choose at least one weekday");
 		}
+		const writes: CalendarWrite[] = [];
 		for (const [index, item] of updates.entries()) {
 			const row = existing[index]!;
 			const startsAt = item.startsAt ? new Date(item.startsAt) : row.startsAt;
 			const endsAt = item.endsAt ? new Date(item.endsAt) : row.endsAt;
 			const timeZone = item.timeZone ? normalizeTimeZone(item.timeZone) : normalizeTimeZone(row.timeZone);
+			const title = item.title ?? row.title;
 			await db
 				.update(calendarEvents)
 				.set({
-					title: item.title ?? row.title,
+					title,
 					description: item.description ?? row.description,
 					location: item.location ?? row.location,
 					startsAt,
@@ -174,7 +178,9 @@ export async function runCalendarTool(
 					updatedAt: new Date(),
 				})
 				.where(and(eq(calendarEvents.id, row.id), eq(calendarEvents.userId, context.user.id)));
+			writes.push(["updated", { id: row.id, title, startsAt, endsAt, timeZone }]);
 		}
+		await emitCalendarWrites(context.user, writes);
 		return { eventIds: ids, status: "updated" };
 	}
 	const ids = input.eventIds as string[];
@@ -185,7 +191,7 @@ export async function runCalendarTool(
 			async (eventId) =>
 				(
 					await db
-						.select({ id: calendarEvents.id })
+						.select()
 						.from(calendarEvents)
 						.where(and(eq(calendarEvents.id, eventId), eq(calendarEvents.userId, context.user.id)))
 						.limit(1)
@@ -197,5 +203,9 @@ export async function runCalendarTool(
 		await db
 			.delete(calendarEvents)
 			.where(and(eq(calendarEvents.id, eventId), eq(calendarEvents.userId, context.user.id)));
+	await emitCalendarWrites(
+		context.user,
+		existing.map((row): CalendarWrite => ["deleted", row!]),
+	);
 	return { eventIds: ids, status: "deleted" };
 }

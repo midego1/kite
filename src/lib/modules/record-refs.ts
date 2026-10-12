@@ -1,4 +1,6 @@
+import { getEnv } from "@/lib/cloudflare";
 import { MODULE_CAPABILITIES } from "./capability-registry";
+import { bindHostRefResolver } from "./host";
 import { invokeCapability } from "./invoke";
 import type { CapabilityCallContext, JsonValue, ModuleId, RecordKind, RecordRef } from "./module-types";
 import { createRefResolver } from "./record-ref-utils";
@@ -57,3 +59,18 @@ export async function resolveRecordRefs(
 	});
 	return resolve(viewer, refs);
 }
+
+bindHostRefResolver(async (ctx, refs) => {
+	const resolved = await resolveRecordRefs(getEnv(), ctx.viewer, refs, {
+		timeZone: ctx.timeZone,
+		locale: ctx.locale,
+		requestId: ctx.requestId,
+		trigger: ctx.trigger,
+		grants: ctx.grants,
+	});
+	return resolved.map((ref) =>
+		ref.unavailable
+			? { kind: ref.kind, id: ref.id, unavailable: true, label: ref.label }
+			: { kind: ref.kind, id: ref.id, href: ref.href, label: ref.label },
+	);
+});

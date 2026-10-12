@@ -1,7 +1,8 @@
 import type { CapabilityCallContext, CapabilityResult, JsonValue, ModuleId, RecordRef } from "./module-types";
 
 export type HostResolvedRef =
-	{ kind: string; id: string; href: string | null; label: string } | { kind: string; id: string; unavailable: true };
+	| { kind: string; id: string; href: string | null; label: string }
+	| { kind: string; id: string; unavailable: true; label: string };
 
 export type HostMessageView = {
 	id: string;

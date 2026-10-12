@@ -3,8 +3,10 @@ import { getDb } from "@/db";
 import { calendarEvents } from "@/db/schema";
 import { agentActions } from "@/db/schema/agent-auto-read";
 import type { SessionUser } from "@/lib/auth/types";
+import { emitCalendarWrites } from "@/lib/calendar/webhook-events";
 import { cancelQueuedSend } from "@/lib/email/send";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import { AgentActionError } from "./action-error";
 import type { AgentActionRow } from "./actions-types";
 import { parseActionState, undoRefusal } from "./actions-utils";
@@ -81,7 +83,12 @@ async function cancelLinkedAcceptance(env: CloudflareEnv, row: CalendarUndoInput
 }
 
 /** Undo of `create_event`: removes the event (or puts an updated one back) and, for a new event, cancels a queued reply. */
-export async function undoCreateEvent(env: CloudflareEnv, row: CalendarUndoInput, userId: string): Promise<void> {
+export async function undoCreateEvent(
+	env: CloudflareEnv,
+	row: CalendarUndoInput,
+	userId: string,
+	ctx: CapabilityCallContext,
+): Promise<void> {
 	const db = getDb(env);
 	const eventId = stringField(row.inverse, "eventId") ?? stringField(row.result, "eventId");
 	if (row.variant === "update") {
@@ -91,20 +98,29 @@ export async function undoCreateEvent(env: CloudflareEnv, row: CalendarUndoInput
 			.update(calendarEvents)
 			.set({ ...snapshotValues(before), updatedAt: new Date() })
 			.where(eq(calendarEvents.id, eventId))
-			.returning({ id: calendarEvents.id });
+			.returning();
 		if (restored.length === 0) throw new AgentActionError("The event is no longer on your calendar", 409);
+		await emitCalendarWrites(ctx, [["updated", restored[0]]]);
 	} else {
-		if (eventId) await db.delete(calendarEvents).where(eq(calendarEvents.id, eventId));
+		if (eventId) {
+			const [removed] = await db.delete(calendarEvents).where(eq(calendarEvents.id, eventId)).returning();
+			if (removed) await emitCalendarWrites(ctx, [["deleted", removed]]);
+		}
 		await cancelLinkedAcceptance(env, row, userId);
 	}
 	await reopenIfIdle(env, row.suggestionId);
 }
 
 /** Undo of `delete_event`: recreates the event from the row stored before it was removed. */
-export async function undoDeleteEvent(env: CloudflareEnv, row: CalendarUndoInput): Promise<void> {
+export async function undoDeleteEvent(
+	env: CloudflareEnv,
+	row: CalendarUndoInput,
+	ctx: CapabilityCallContext,
+): Promise<void> {
 	const event = deserializeEventRow(row.inverse);
 	if (!event) throw new AgentActionError("The event could not be restored", 409);
-	await getDb(env).insert(calendarEvents).values(event).onConflictDoNothing();
+	const [restored] = await getDb(env).insert(calendarEvents).values(event).onConflictDoNothing().returning();
+	if (restored) await emitCalendarWrites(ctx, [["created", restored]]);
 	await reopenIfIdle(env, row.suggestionId);
 }
 

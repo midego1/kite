@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { calendarEvents, domains, mailboxes, messages } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/types";
 import { createCalendarReply } from "@/lib/calendar/utils";
+import { emitCalendarWrites } from "@/lib/calendar/webhook-events";
 import { moduleHost } from "@/lib/modules/host";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import { resolveComposerSendTime } from "@/lib/email/undo-send-utils";
@@ -60,6 +61,7 @@ export function createEventEffect(input: {
 	payload: CalendarInvitePayload;
 	/** Fixed by the caller, so a retry with the same id finds the event it already added. */
 	eventId?: string;
+	ctx: CapabilityCallContext;
 }): ActionEffect {
 	const { env, payload } = input;
 	return {
@@ -67,17 +69,14 @@ export function createEventEffect(input: {
 		async apply(ids) {
 			const existing = await findInviteEvent(env, input.reviewerUserId, { uid: payload.uid });
 			if (existing) return { eventId: existing.id };
-			await getDb(env)
-				.insert(calendarEvents)
-				.values(
-					inviteEventValues(payload, {
-						id: ids.eventId!,
-						userId: input.reviewerUserId,
-						messageId: input.messageId,
-						now: new Date(),
-					}),
-				)
-				.onConflictDoNothing();
+			const values = inviteEventValues(payload, {
+				id: ids.eventId!,
+				userId: input.reviewerUserId,
+				messageId: input.messageId,
+				now: new Date(),
+			});
+			await getDb(env).insert(calendarEvents).values(values).onConflictDoNothing();
+			await emitCalendarWrites(input.ctx, [["created", values]]);
 			return { eventId: ids.eventId! };
 		},
 		async check(ids) {
@@ -91,6 +90,7 @@ export async function updateEventEffect(input: {
 	env: CloudflareEnv;
 	reviewerUserId: string;
 	payload: CalendarInvitePayload;
+	ctx: CapabilityCallContext;
 }): Promise<ActionEffect> {
 	const { env, payload } = input;
 	const stored = await findInviteEvent(env, input.reviewerUserId, { id: payload.existingEventId, uid: payload.uid });
@@ -121,6 +121,7 @@ export async function updateEventEffect(input: {
 				)
 				.returning({ id: calendarEvents.id });
 			if (updated.length === 0) throw new Error("A newer version of this event is already on the calendar");
+			await emitCalendarWrites(input.ctx, [["updated", { id: stored.id, ...snapshotValues(next) }]]);
 			return { eventId: ids.eventId! };
 		},
 		async check(ids) {
@@ -131,12 +132,13 @@ export async function updateEventEffect(input: {
 }
 
 /** Deletes the stored event; `before` keeps the whole row so undo can put it back. */
-export function deleteEventEffect(env: CloudflareEnv, stored: EventRow): ActionEffect {
+export function deleteEventEffect(env: CloudflareEnv, stored: EventRow, ctx: CapabilityCallContext): ActionEffect {
 	return {
 		ids: { eventId: stored.id },
 		before: serializeEventRow(stored),
 		async apply(ids) {
 			await getDb(env).delete(calendarEvents).where(eq(calendarEvents.id, ids.eventId!));
+			await emitCalendarWrites(ctx, [["deleted", stored]]);
 			return { eventId: ids.eventId! };
 		},
 		async check(ids) {

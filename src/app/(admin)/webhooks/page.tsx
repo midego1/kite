@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { SectionRowSkeleton } from "@/components/page-skeletons";
 import type { Webhook, WebhookEvent } from "./types";
-import { WEBHOOK_EVENTS, createWebhook, deleteWebhook, fetchWebhooks, testWebhook, updateWebhook } from "./utils";
+import { createWebhook, deleteWebhook, fetchWebhooks, testWebhook, updateWebhook } from "./utils";
 import { WebhookDeliveries } from "./deliveries";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 
@@ -23,7 +23,7 @@ export default function WebhooksPage() {
 	const [url, setUrl] = useState("");
 	const [description, setDescription] = useState("");
 	const [maxAttempts, setMaxAttempts] = useState(5);
-	const [events, setEvents] = useState<WebhookEvent[]>(WEBHOOK_EVENTS.map((e) => e.value));
+	const [picked, setPicked] = useState<WebhookEvent[] | null>(null);
 	const [secret, setSecret] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [expanded, setExpanded] = useState<string | null>(null);
@@ -31,6 +31,9 @@ export default function WebhooksPage() {
 
 	const webhooks = useQuery({ queryKey: ["webhooks"], queryFn: fetchWebhooks });
 	const invalidate = () => qc.invalidateQueries({ queryKey: ["webhooks"] });
+	const hooks = webhooks.data?.webhooks;
+	const pickable = (webhooks.data?.eventCatalog ?? []).filter((event) => event.available);
+	const events = picked ?? pickable.map((event) => event.value);
 
 	const create = useMutation({
 		mutationFn: () => createWebhook({ url, description: description || undefined, events, maxAttempts }),
@@ -38,6 +41,7 @@ export default function WebhooksPage() {
 			setSecret(result.secret);
 			setUrl("");
 			setDescription("");
+			setPicked(null);
 			setError(null);
 			setDialogOpen(false);
 			invalidate();
@@ -70,7 +74,7 @@ export default function WebhooksPage() {
 	});
 
 	function toggleEvent(event: WebhookEvent) {
-		setEvents((prev) => (prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event]));
+		setPicked(events.includes(event) ? events.filter((e) => e !== event) : [...events, event]);
 	}
 
 	return (
@@ -79,7 +83,7 @@ export default function WebhooksPage() {
 				<div>
 					<h1 className="text-2xl font-semibold">Webhooks</h1>
 					<p className="mt-1 text-sm text-neutral-500">
-						Deliver message events to your own endpoints, with automatic retries.
+						Deliver mail and module events to your own endpoints, with automatic retries.
 					</p>
 				</div>
 				<Button
@@ -115,7 +119,7 @@ export default function WebhooksPage() {
 
 			{webhooks.isLoading ? (
 				<SectionRowSkeleton />
-			) : !webhooks.data?.length ? (
+			) : !hooks?.length ? (
 				<Card>
 					<CardContent className="pt-6 text-sm text-neutral-500">
 						No endpoints yet. Add one to start receiving events.
@@ -123,7 +127,7 @@ export default function WebhooksPage() {
 				</Card>
 			) : (
 				<section className="divide-y divide-neutral-100 overflow-hidden rounded-3xl bg-white">
-					{webhooks.data.map((hook) => (
+					{hooks.map((hook) => (
 						<div key={hook.id} className="px-5 py-6 sm:px-6">
 							<div className="flex flex-wrap items-start justify-between gap-4">
 								<div className="min-w-0 flex-1">
@@ -276,7 +280,7 @@ export default function WebhooksPage() {
 						</div>
 						<div className="space-y-2">
 							<Label>Events</Label>
-							{WEBHOOK_EVENTS.map((event) => (
+							{pickable.map((event) => (
 								<label
 									key={event.value}
 									className="flex cursor-pointer items-center justify-between rounded-lg border border-neutral-200 px-3 py-2"

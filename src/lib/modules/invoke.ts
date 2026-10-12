@@ -4,6 +4,8 @@ import { findDescriptor } from "./capability-registry";
 import { bindHostInvoker } from "./host";
 import { createInvoker, type InvokeEntry } from "./invoke-utils";
 import type { CapabilityCallContext, ModuleId } from "./module-types";
+// Loaded for its side effect: it binds `moduleHost.resolveRefs`, and only uses `invokeCapability` when called.
+import "./record-refs";
 import { SERVER_MODULES } from "./server-registry";
 import { isModuleEnabled as isInstallModuleEnabled, isModuleEnabledFor } from "./state";
 
@@ -53,4 +55,4 @@ export const invokeCapability = createInvoker({
 	},
 });
 
-bindHostInvoker(invokeCapability);
+bindHostInvoker(invokeCapability, capabilityInputSchema);

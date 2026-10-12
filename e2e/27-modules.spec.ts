@@ -1808,6 +1808,212 @@ test("the key forms list calendar scopes only while Calendar is on, and existing
 	}
 });
 
+async function deleteWebhooks(api: APIRequestContext, ids: string[]) {
+	for (const id of ids) await api.delete(`/api/webhooks/${id}`);
+}
+
+const CALENDAR_EVENT_LABELS = ["Calendar event created", "Calendar event updated", "Calendar event deleted"];
+
+test("the webhook picker lists calendar and booking events only while their modules are on", async ({ page }) => {
+	const api = await owner();
+	const eventLabels = async () => {
+		await page.goto("/webhooks");
+		await page.getByRole("button", { name: "Add endpoint" }).click();
+		const dialog = page.getByRole("dialog");
+		await expect(dialog.getByText("Inbound message", { exact: true })).toBeVisible();
+		return dialog.locator("label span.font-medium").allTextContents();
+	};
+	try {
+		const on = await eventLabels();
+		expect(on).toEqual([
+			"Inbound message",
+			"Outbound message",
+			"Delivery failure",
+			...CALENDAR_EVENT_LABELS,
+			"Appointment booked",
+		]);
+
+		await setModuleState(api, { modules: { booking: false } });
+		expect(await eventLabels()).toEqual([
+			"Inbound message",
+			"Outbound message",
+			"Delivery failure",
+			...CALENDAR_EVENT_LABELS,
+		]);
+
+		await setModuleState(api, { modules: { calendar: false } });
+		expect(await eventLabels()).toEqual(["Inbound message", "Outbound message", "Delivery failure"]);
+		const listed = (await (await api.get("/api/webhooks")).json()) as {
+			eventCatalog: { value: string; available: boolean }[];
+		};
+		expect(listed.eventCatalog.filter((event) => event.available).map((event) => event.value)).toEqual([
+			"message.inbound",
+			"message.outbound",
+			"message.failed",
+		]);
+	} finally {
+		await restoreModules(api);
+		await api.dispose();
+	}
+});
+
+test("a webhook for a disabled module's event is refused with MODULE_DISABLED, and existing subscriptions keep it", async () => {
+	const api = await owner();
+	const created: string[] = [];
+	const url = "https://hooks.e2e-modules.invalid/receiver";
+	try {
+		await setModuleState(api, { modules: { calendar: false } });
+		const refused = await api.post("/api/webhooks", { data: { url, events: ["calendar.event.created"] } });
+		expect(refused.status(), await refused.text()).toBe(400);
+		expect(await refused.json()).toMatchObject({ code: "MODULE_DISABLED", moduleId: "calendar" });
+		const mixed = await api.post("/api/webhooks", {
+			data: { url, events: ["message.inbound", "calendar.event.deleted"] },
+		});
+		expect(mixed.status()).toBe(400);
+		const core = await api.post("/api/webhooks", { data: { url, events: ["message.inbound"] } });
+		expect(core.status(), await core.text()).toBeLessThan(300);
+
+		await setModuleState(api, { modules: { calendar: true } });
+		const made = await api.post("/api/webhooks", {
+			data: { url, events: ["message.inbound", "calendar.event.created"] },
+		});
+		expect(made.status(), await made.text()).toBeLessThan(300);
+		created.push(((await made.json()) as { id: string }).id);
+		const coreId = (
+			(await (await api.get("/api/webhooks")).json()) as { webhooks: { id: string; url: string; events: string[] }[] }
+		).webhooks.find((hook) => hook.events.length === 1 && hook.events[0] === "message.inbound" && hook.url === url)?.id;
+		if (coreId) created.push(coreId);
+
+		await setModuleState(api, { modules: { calendar: false } });
+		const edited = await api.patch(`/api/webhooks/${created[0]}`, { data: { description: "kept while off" } });
+		expect(edited.status(), await edited.text()).toBeLessThan(300);
+		const same = await api.patch(`/api/webhooks/${created[0]}`, {
+			data: { events: ["message.inbound", "calendar.event.created"] },
+		});
+		expect(same.status(), await same.text()).toBeLessThan(300);
+		const added = await api.patch(`/api/webhooks/${created[0]}`, {
+			data: { events: ["message.inbound", "calendar.event.created", "calendar.event.updated"] },
+		});
+		expect(added.status()).toBe(400);
+		expect(await added.json()).toMatchObject({ code: "MODULE_DISABLED" });
+		const after = (await (await api.get("/api/webhooks")).json()) as { webhooks: { id: string; events: string[] }[] };
+		expect(after.webhooks.find((hook) => hook.id === created[0])?.events).toEqual([
+			"message.inbound",
+			"calendar.event.created",
+		]);
+	} finally {
+		await restoreModules(api);
+		await deleteWebhooks(api, created);
+		await api.dispose();
+	}
+});
+
+type DeliveryRow = { id: string; eventType: string; status: string; error: string | null; payload: string };
+
+async function deliveriesOf(api: APIRequestContext, webhookId: string): Promise<DeliveryRow[]> {
+	const response = await api.get(`/api/webhooks/${webhookId}/deliveries?limit=100`);
+	return ((await response.json()) as { deliveries: DeliveryRow[] }).deliveries;
+}
+
+test("calendar writes and public bookings emit one webhook delivery each with refs, nothing while off, and a dropped retry says why", async () => {
+	const api = await owner();
+	const visitorApi = await visitor();
+	const cleanup = { webhooks: [] as string[], events: [] as string[], bookings: [] as string[] };
+	try {
+		const made = await api.post("/api/webhooks", {
+			data: {
+				url: "https://hooks.e2e-modules.invalid/deliveries",
+				events: [
+					"calendar.event.created",
+					"calendar.event.updated",
+					"calendar.event.deleted",
+					"booking.appointment.created",
+				],
+				maxAttempts: 2,
+			},
+		});
+		expect(made.status(), await made.text()).toBeLessThan(300);
+		const hookId = ((await made.json()) as { id: string }).id;
+		cleanup.webhooks.push(hookId);
+
+		const title = uniqueToken("hook-event");
+		const created = await api.post("/api/calendar/events", {
+			data: { title, startsAt: "2031-05-05T10:00:00Z", endsAt: "2031-05-05T11:00:00Z" },
+		});
+		const eventId = ((await created.json()) as { event: { id: string } }).event.id;
+		cleanup.events.push(eventId);
+		await expect
+			.poll(
+				async () =>
+					(await deliveriesOf(api, hookId)).filter((row) => row.eventType === "calendar.event.created").length,
+			)
+			.toBe(1);
+		const [row] = (await deliveriesOf(api, hookId)).filter((item) => item.eventType === "calendar.event.created");
+		expect(JSON.parse(row!.payload)).toMatchObject({
+			type: "calendar.event.created",
+			data: { ref: { kind: "calendar:event", id: eventId }, event: { id: eventId, title } },
+		});
+
+		const username = (await ownerBooking(api)).username;
+		const slug = uniqueToken("hook-book").toLowerCase();
+		const type = await api.post("/api/booking", {
+			data: {
+				name: "Hook booking",
+				slug,
+				durationMinutes: 30,
+				weekdays: [0, 1, 2, 3, 4, 5, 6],
+				timeRanges: [{ startTime: "09:00", endTime: "17:00" }],
+				timeZone: "UTC",
+				enabled: true,
+			},
+		});
+		expect(type.status(), await type.text()).toBe(200);
+		cleanup.bookings.push(((await type.json()) as { event: { id: string } }).event.id);
+		const page = `/api/public/booking/${slug}?username=${username}`;
+		const { slots } = (await (await visitorApi.get(page)).json()) as { slots: { startsAt: string }[] };
+		const booker = { name: "Hook Booker", email: "hook.booker@example.org", startsAt: slots[0]!.startsAt };
+		const booked = await visitorApi.post(page, { data: booker });
+		expect(booked.status(), await booked.text()).toBe(200);
+		expect((await visitorApi.post(page, { data: booker })).status()).toBe(409);
+		await expect
+			.poll(
+				async () =>
+					(await deliveriesOf(api, hookId)).filter((row) => row.eventType === "booking.appointment.created").length,
+			)
+			.toBe(1);
+		const appointment = (await deliveriesOf(api, hookId)).find(
+			(item) => item.eventType === "booking.appointment.created",
+		)!;
+		expect(JSON.parse(appointment.payload).data).toMatchObject({
+			ref: { kind: "booking:appointment" },
+			appointment: { bookerEmail: "hook.booker@example.org", timeZone: "UTC" },
+		});
+
+		await setModuleState(api, { modules: { calendar: false } });
+		const before = (await deliveriesOf(api, hookId)).length;
+		expect(
+			(
+				await api.post("/api/calendar/events", {
+					data: { title, startsAt: "2031-05-06T10:00:00Z", endsAt: "2031-05-06T11:00:00Z" },
+				})
+			).status(),
+		).toBe(404);
+		const retry = await api.post(`/api/webhooks/${hookId}/deliveries/${row!.id}/retry`);
+		expect(retry.status(), await retry.text()).toBe(200);
+		await expect
+			.poll(async () => (await deliveriesOf(api, hookId)).find((item) => item.id === row!.id)?.error ?? "")
+			.toContain("module_disabled");
+		expect((await deliveriesOf(api, hookId)).length).toBe(before);
+	} finally {
+		await restoreModules(api);
+		for (const id of cleanup.events) await api.delete(`/api/calendar/events/${id}`);
+		for (const id of cleanup.bookings) await api.delete(`/api/booking/${id}`);
+		await deleteWebhooks(api, cleanup.webhooks);
+		await visitorApi.dispose();
+		await api.dispose();
+	}
+});
+
 test("JMAP answers the same session and methods with every module on and every module off", async () => {
 	const api = await owner();
 	const jmap = await visitor();

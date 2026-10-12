@@ -7,10 +7,11 @@ import { assertPublicHttpUrl } from "@/lib/security/outbound-url";
 import { openSetting } from "@/lib/security/secret-box";
 import { recordMetric, statusClass } from "@/lib/metrics.mjs";
 import { isNodeRuntime } from "@/lib/runtime";
+import { isModuleEnabled } from "@/lib/modules/state";
+import { moduleDisabledNote, WEBHOOK_EVENT_CATALOG, webhookEventOwner } from "@/lib/modules/webhook-events-utils";
 
-export type WebhookEventType = "message.inbound" | "message.outbound" | "message.failed";
-
-export const WEBHOOK_EVENT_TYPES: WebhookEventType[] = ["message.inbound", "message.outbound", "message.failed"];
+/** Any event in the registry list: the core message events and every module's events. */
+export type WebhookEventType = string;
 
 /** Retry work is carried on the existing outbound queue so no new binding is required. */
 export type WebhookRetryMessage = {
@@ -90,6 +91,8 @@ async function attemptDelivery(
 	hook: WebhookRow,
 	delivery: PendingDelivery,
 ): Promise<WebhookDeliveryStatus> {
+	if (await dropForDisabledModule(db, delivery, env)) return "failed";
+
 	const attempts = delivery.attempts + 1;
 	const startedAt = Date.now();
 	const now = new Date();
@@ -157,6 +160,25 @@ async function attemptDelivery(
 	}
 
 	return status;
+}
+
+/**
+ * A delivery of a module's event is not sent while that module is off, and the retry that was waiting for it
+ * stops. The row keeps its payload, so a manual retry works once the module is back on.
+ */
+async function dropForDisabledModule(db: AppDatabase, delivery: PendingDelivery, env: CloudflareEnv): Promise<boolean> {
+	const owner = webhookEventOwner(WEBHOOK_EVENT_CATALOG, delivery.eventType);
+	if (!owner || (await isModuleEnabled(env, owner))) return false;
+	await db
+		.update(webhookDeliveries)
+		.set({
+			status: "failed",
+			error: moduleDisabledNote(WEBHOOK_EVENT_CATALOG, delivery.eventType),
+			lastAttemptAt: new Date(),
+			nextRetryAt: null,
+		})
+		.where(eq(webhookDeliveries.id, delivery.id));
+	return true;
 }
 
 async function scheduleRetry(env: CloudflareEnv, deliveryId: string, delaySeconds: number): Promise<void> {

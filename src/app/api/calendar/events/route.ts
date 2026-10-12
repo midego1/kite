@@ -11,6 +11,7 @@ import { DEFAULT_REPEAT_DAYS, normalizeCalendarRepeat, normalizeCalendarRepeatDa
 import type { CalendarEventInput } from "./types";
 import { getRequestTimeZone, normalizeTimeZone } from "@/lib/time/utils";
 import { authorizeCalendarRequest, calendarKeyCanSendInvitations } from "@/lib/calendar/api-auth";
+import { emitCalendarWrites } from "@/lib/calendar/webhook-events";
 import { withModule } from "@/lib/modules/route-guard";
 
 export const GET = withModule("calendar", async (request, { checkUser }) => {
@@ -83,6 +84,7 @@ export const POST = withModule("calendar", async function POST(request, { checkA
 		timeZone: input.timeZone ? normalizeTimeZone(input.timeZone) : getRequestTimeZone(request, user.timeZone),
 	};
 	await getDb(env).insert(calendarEvents).values(savedEvent);
+	await emitCalendarWrites(user, [["created", savedEvent]]);
 	if (attendees.length && input.mailboxId) {
 		await sendInvitationMail(user, {
 			mailboxId: input.mailboxId,

@@ -19,6 +19,7 @@ import {
 import { newId } from "@/lib/ids";
 import { getRequestTimeZone, normalizeTimeZone } from "@/lib/time/utils";
 import { authorizeCalendarRequest, calendarKeyCanSendInvitations } from "@/lib/calendar/api-auth";
+import { emitCalendarWrites } from "@/lib/calendar/webhook-events";
 import { withModule } from "@/lib/modules/route-guard";
 
 export const PATCH = withModule<RouteParams>("calendar", async function PATCH(request, { params, checkAuth }) {
@@ -92,6 +93,10 @@ export const PATCH = withModule<RouteParams>("calendar", async function PATCH(re
 			.update(calendarEvents)
 			.set({ excludedOccurrences: JSON.stringify([...excluded, occurrence.startsAt.getTime()]), updatedAt: now })
 			.where(eq(calendarEvents.id, existing.id));
+		await emitCalendarWrites(user, [
+			["created", moved],
+			["updated", existing],
+		]);
 		if (attendees.length && existing.mailboxId && input.from) {
 			await sendInvitationMail(user, {
 				mailboxId: existing.mailboxId,
@@ -141,11 +146,16 @@ export const PATCH = withModule<RouteParams>("calendar", async function PATCH(re
 	const splitAt = existing.repeat !== "none" ? effectiveFrom : null;
 	if (splitAt && splitAt > existing.startsAt) {
 		const now = new Date();
-		await db.insert(calendarEvents).values({ ...event, id: newId("evt"), createdAt: now, updatedAt: now });
+		const split = { ...event, id: newId("evt"), createdAt: now, updatedAt: now };
+		await db.insert(calendarEvents).values(split);
 		await db
 			.update(calendarEvents)
 			.set({ repeatUntil: splitAt, updatedAt: now })
 			.where(eq(calendarEvents.id, existing.id));
+		await emitCalendarWrites(user, [
+			["created", split],
+			["updated", existing],
+		]);
 	} else {
 		await db
 			.update(calendarEvents)
@@ -165,6 +175,7 @@ export const PATCH = withModule<RouteParams>("calendar", async function PATCH(re
 				updatedAt: new Date(),
 			})
 			.where(eq(calendarEvents.id, existing.id));
+		await emitCalendarWrites(user, [["updated", event]]);
 	}
 	if (attendees.length && existing.mailboxId && input.from) {
 		await sendInvitationMail(user, {
@@ -203,11 +214,15 @@ export const DELETE = withModule<RouteParams>("calendar", async (request, { para
 			(existing.repeatUntil && occurrence.startsAt >= existing.repeatUntil))
 	)
 		return NextResponse.json({ error: "Occurrence not found" }, { status: 404 });
-	if (existing.repeat !== "none" && effectiveFrom && effectiveFrom > existing.startsAt)
+	if (existing.repeat !== "none" && effectiveFrom && effectiveFrom > existing.startsAt) {
 		await db
 			.update(calendarEvents)
 			.set({ repeatUntil: effectiveFrom, updatedAt: new Date() })
 			.where(eq(calendarEvents.id, existing.id));
-	else await db.delete(calendarEvents).where(eq(calendarEvents.id, existing.id));
+		await emitCalendarWrites(user, [["updated", existing]]);
+	} else {
+		await db.delete(calendarEvents).where(eq(calendarEvents.id, existing.id));
+		await emitCalendarWrites(user, [["deleted", existing]]);
+	}
 	return NextResponse.json({ ok: true });
 });

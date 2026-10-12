@@ -235,6 +235,16 @@ test("configured model checks fall back or reject unknown ids", () => {
 	assert.match(settings.unknownModelError({ mailboxId: "m", triageModelId: "z" }, ["a"]), /triage model/);
 });
 
+test("a training-contributor model is refused as the triage model but stays usable for chat", () => {
+	const models = ["muse-spark-1.3", "muse-spark-1.3-contributor"];
+	assert.equal(settings.unknownModelError({ mailboxId: "m" }, models), null);
+	assert.match(
+		settings.unknownModelError({ mailboxId: "m", triageModelId: "muse-spark-1.3-contributor" }, models),
+		/triage model that does not train/,
+	);
+	assert.equal(settings.unknownModelError({ mailboxId: "m", modelId: "muse-spark-1.3-contributor" }, models), null);
+});
+
 test("the provider label names Workers AI, a preset or the custom host", () => {
 	const install = { agentEnabled: true, autoReadEnabled: true, externalAutoReadAllowed: true, dailySpendCapMicros: 1 };
 	const label = (provider) => settings.autoReadInstallFlags(install, provider).providerLabel;
@@ -242,6 +252,7 @@ test("the provider label names Workers AI, a preset or the custom host", () => {
 	assert.equal(label({ provider: "compatible", preset: "openrouter", baseUrl: "" }), "OpenRouter");
 	assert.equal(label({ provider: "compatible", preset: "openai", baseUrl: "" }), "OpenAI");
 	assert.equal(label({ provider: "compatible", preset: "groq", baseUrl: "" }), "Groq");
+	assert.equal(label({ provider: "compatible", preset: "meta", baseUrl: "" }), "Meta");
 	assert.equal(label({ provider: "compatible", preset: "custom", baseUrl: "http://127.0.0.1:3301/v1" }), "127.0.0.1");
 	assert.equal(
 		label({ provider: "compatible", preset: "custom", baseUrl: "https://llm.provider.test/v1" }),

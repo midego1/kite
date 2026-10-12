@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { DEFAULT_CLOUDFLARE_MODEL } from "@/lib/agent/provider-constants";
+import { DEFAULT_CLOUDFLARE_MODEL, TRAINING_MODEL_WARNING } from "@/lib/agent/provider-constants";
 import { saveAssistantAvailability } from "@/lib/agent/availability-client";
 import { parseAgentModelIds, toggleAgentModelId } from "@/lib/agent/model-ids";
 import { mergePublishedAgentRates } from "@/lib/agent/model-rates-utils";
@@ -20,9 +20,11 @@ import {
 	baseUrlForPreset,
 	loadAgentAdminSettings,
 	loadAgentModels,
+	modelListError,
 	PROVIDER_PRESETS,
 	saveAgentAdminSettings,
 	saveAgentEnabled,
+	typedTrainingModel,
 	updateAgentModelRate,
 } from "./utils";
 
@@ -77,12 +79,7 @@ export default function AdminAgentPage() {
 
 	const canUseSavedKey = hasSavedKey && savedEndpoint === `${form.preset}|${form.baseUrl}`;
 	const selectedModelIds = parseAgentModelIds(form.model);
-	const modelInputError =
-		form.provider === "compatible" && (!form.baseUrl || (!form.apiKey.trim() && !canUseSavedKey))
-			? form.preset === "custom" && !form.baseUrl
-				? "Enter an HTTPS base URL to load models."
-				: "Enter an API key to load models."
-			: null;
+	const modelInputError = modelListError(form, canUseSavedKey);
 	// Model results belong to the provider settings they were loaded for; any change hides them.
 	const modelsKey = JSON.stringify([form.provider, form.preset, form.baseUrl, form.apiKey, canUseSavedKey]);
 	const currentModelLoad = modelLoad?.key === modelsKey ? modelLoad : null;
@@ -90,6 +87,7 @@ export default function AdminAgentPage() {
 	const modelSource = currentModelLoad?.source ?? null;
 	const modelsLoading = currentModelLoad?.loading ?? false;
 	const modelError = loaded ? (modelInputError ?? currentModelLoad?.error ?? null) : null;
+	const showsTypedTrainingModel = typedTrainingModel(selectedModelIds, models);
 	useEffect(() => {
 		if (!loaded || modelInputError) return;
 		const controller = new AbortController();
@@ -308,13 +306,20 @@ export default function AdminAgentPage() {
 												}))
 											}
 										/>
-										<span>{item.name === item.id ? item.id : `${item.name} · ${item.id}`}</span>
+										<span className="min-w-0">
+											<span>{item.name === item.id ? item.id : `${item.name} · ${item.id}`}</span>
+											{item.trainsOnData && (
+												<span className="mt-1 block text-xs text-amber-700" data-model-training-warning>
+													{TRAINING_MODEL_WARNING}
+												</span>
+											)}
+										</span>
 									</label>
 								))}
 							</div>
 							{modelSource === "suggested" && (
 								<p className="text-xs text-neutral-500">
-									Showing suggested Cloudflare models because a full catalog is unavailable.
+									Showing suggested models because a full catalog is unavailable.
 								</p>
 							)}
 							{modelError && <p className="text-xs text-amber-700">{modelError}</p>}
@@ -332,6 +337,11 @@ export default function AdminAgentPage() {
 								}
 								required
 							/>
+							{showsTypedTrainingModel && (
+								<p className="text-xs text-amber-700" data-model-training-warning>
+									{TRAINING_MODEL_WARNING}
+								</p>
+							)}
 							<p className="text-xs text-neutral-500">
 								Choose models that support tool calling so the assistant can read mail and create drafts. The first
 								model is the default.

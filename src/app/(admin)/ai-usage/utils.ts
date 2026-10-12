@@ -31,6 +31,7 @@ export function formatUsageProvider(value: string) {
 				openai: "OpenAI",
 				openrouter: "OpenRouter",
 				groq: "Groq",
+				meta: "Meta",
 				custom: "Custom API",
 			} as Record<string, string>
 		)[value] ?? value

@@ -267,6 +267,48 @@ test.describe("automatic reading settings API", () => {
 		}
 	});
 
+	test("a training-contributor model stays configurable for chat but is refused as the triage model", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const owner = await createSignedInAccount(api, `art${uniqueToken("art")}`);
+		try {
+			// The Meta preset lists its models without an API key and without a reachable catalog.
+			const models = await api.post("/api/admin/agent/models", {
+				data: { provider: "compatible", preset: "meta", baseUrl: "" },
+			});
+			expect(models.ok(), await models.text()).toBe(true);
+			expect(await models.json()).toMatchObject({
+				models: [
+					{ id: "muse-spark-1.3", name: "Muse Spark 1.3", rates: { input: 1.25, output: 4.25 } },
+					{ id: "muse-spark-1.3-contributor", trainsOnData: true },
+				],
+				source: "suggested",
+			});
+
+			const settings = fakeProviderSettings(fake);
+			await okJson(
+				await api.put("/api/admin/agent", {
+					data: { ...settings, model: "muse-spark-1.3, muse-spark-1.3-contributor", rates: {} },
+				}),
+			);
+			await okJson(
+				await owner.api.put("/api/agent/settings", {
+					data: { mailboxId: owner.mailboxId, modelId: "muse-spark-1.3-contributor" },
+				}),
+			);
+			const refused = await owner.api.put("/api/agent/settings", {
+				data: { mailboxId: owner.mailboxId, triageModelId: "muse-spark-1.3-contributor" },
+			});
+			expect(refused.status()).toBe(400);
+			expect(((await refused.json()) as { error: string }).error).toContain("does not train");
+			expect((await readMailboxSettings(owner.api, owner.mailboxId)).settings.modelId).toBe(
+				"muse-spark-1.3-contributor",
+			);
+		} finally {
+			await owner.api.dispose();
+			await restore();
+		}
+	});
+
 	test("users without full access cannot change automatic reading", async () => {
 		const token = uniqueToken("arr");
 		const sharedId = await createSharedMailbox(api, `arr${token}`);
@@ -777,6 +819,32 @@ test.describe("automatic reading settings UI", () => {
 			await api.put("/api/admin/agent", { data: { dailySpendCapMicros: before.dailySpendCapMicros } });
 			await restore();
 		}
+	});
+
+	test("the Meta preset offers Muse Spark 1.3 and warns that the contributor model trains on prompts", async ({
+		page,
+	}) => {
+		const errors = collectConsoleErrors(page);
+		const warning = "Meta may use your prompts and replies, including email content, to train its models.";
+		await page.goto("/agent");
+		await page.getByRole("combobox", { name: "Provider" }).selectOption("compatible");
+		await page.getByRole("combobox", { name: "Provider template" }).selectOption("meta");
+		await expect(page.getByLabel("API base URL")).toHaveValue("https://api.meta.ai/v1");
+		// The Meta preset lists its own models, so the picker is usable before an API key is entered.
+		await expect(page.getByText("Showing suggested models because a full catalog is unavailable.")).toBeVisible();
+		const contributor = page.getByRole("checkbox", { name: /Muse Spark 1\.3 \(contributor\)/ });
+		await expect(page.getByRole("checkbox", { name: "Muse Spark 1.3 · muse-spark-1.3" })).toBeVisible();
+		await expect(contributor).toBeVisible();
+		await expect(page.getByText(warning)).toHaveCount(1);
+
+		// Selecting the contributor model keeps exactly one warning; a model typed by hand gets it too.
+		await contributor.check();
+		await expect(page.getByLabel("Or enter model IDs (comma-separated)")).toHaveValue("muse-spark-1.3-contributor");
+		await expect(page.getByText(warning)).toHaveCount(1);
+		await page.getByRole("combobox", { name: "Provider template" }).selectOption("custom");
+		await page.getByLabel("Or enter model IDs (comma-separated)").fill("muse-spark-1.3-contributor");
+		await expect(page.getByText(warning)).toHaveCount(1);
+		expect(errors).toEqual([]);
 	});
 });
 
@@ -1348,6 +1416,25 @@ test.describe("triage scheduling", () => {
 			const allowed = await deliverQuestion(account, "allowed", "Figures attached. [[scenario:fyi]]");
 			expect((await waitForFinishedJob(account.api, account.mailboxId, allowed.id, "triage")).status).toBe("completed");
 			expect(requestsFor(allowed.id, "triage")).toHaveLength(1);
+		} finally {
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("a model that trains on prompts is refused before any request reaches it", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("trm");
+		try {
+			await setAutonomy(account, { autonomy: "suggest" });
+			// The fake provider answers any model name; the contributor ID alone must make Kite refuse the job.
+			const settings = fakeProviderSettings(fake);
+			await okJson(
+				await api.put("/api/admin/agent", {
+					data: { ...settings, model: "muse-spark-1.3-contributor", rates: {} },
+				}),
+			);
+			await expectSkipped(account, "trm", "training_model_not_allowed");
 		} finally {
 			await account.api.dispose();
 			await restore();

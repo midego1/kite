@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The AI assistant has a **Meta (Muse Spark)** provider template (`https://api.meta.ai/v1`) with both Muse Spark 1.3 models, their published rates and reasoning support. Its model picker lists the models before an API key is entered. The cheaper `muse-spark-1.3-contributor` model lets Meta use prompts and replies, including email content, to train its models: the admin page warns about it, and automatic reading refuses it (skip reason "training_model_not_allowed", and the mailbox triage model cannot be set to it), so it can only be used for chat and manual drafting by deliberate choice.
+
 ### Fixed
 
 - Settings > App passwords can create app passwords again. The form now asks which mailboxes the app may use (all of them by default, up to 30) and sends them, and a refused request shows the server's reason instead of "Could not create a key".

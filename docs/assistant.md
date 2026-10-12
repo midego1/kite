@@ -33,6 +33,7 @@ Message content goes to the AI provider you configured for the assistant.
 
 - **Workers AI** (Cloudflare). The content is processed on Cloudflare, which already hosts your Kite install. It is not sent anywhere else.
 - **OpenAI-compatible providers.** The content is sent to the server at the configured base URL, which is outside your install. Automatic reading with an external provider needs a separate opt-in from the primary admin (**Allow external provider for automatic reading** in the install-wide automatic reading settings). Without it, Kite skips the message and says why. Some providers may retain what you send or train on it. Read your provider's terms, or use a provider you run yourself.
+- **Meta (Muse Spark).** The Meta preset offers Muse Spark 1.3 and the cheaper contributor variant. Selecting `muse-spark-1.3-contributor` permits Meta to use your prompts and replies, including email content, to train its models. Kite shows a warning wherever that model can be picked, and automatic reading refuses it, so it can only be used for chat and manual drafting by deliberate choice. The plain `muse-spark-1.3` is not used to train Meta's models.
 
 What is sent: the message's sender, subject and text, the facts Kite computed and the mailbox's own instructions. Prompts and responses are not stored by Kite. It stores the suggestions and the audit log of what was done, plus token counts and cost for each request. The provider may store more under its own policy.
 
@@ -66,6 +67,7 @@ When each switch takes effect differs. Kite checks the automatic-reading switch,
 - Automatic reading is turned off for this install, for this mailbox, or the email assistant is off.
 - Kite is paused for this mailbox.
 - The external AI provider is not allowed to read mail automatically.
+- The model lets its provider train on your prompts and replies, so automatic reading will not use it.
 - Daily limit reached, daily spend cap reached, or rate limited.
 - The message was moved or deleted first.
 - The reviewer can no longer read this mailbox.

@@ -4,7 +4,7 @@ import { messages, users } from "@/db/schema";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import { draftPromptChars, generateReplyDraft, loadDraftThread } from "../jobs/draft-generation";
 import { draftReplyEffect } from "./action-effects";
-import { ExternalProviderNotAllowedError, selectAutoReadModel } from "./auto-read-model";
+import { ExternalProviderNotAllowedError, selectAutoReadModel, TrainingModelNotAllowedError } from "./auto-read-model";
 import { guardDraft, collectThreadReferences } from "./draft-guard-utils";
 import { executeAction, recordBlockedAction } from "./execute";
 import type { MessageFacts } from "./facts-types";
@@ -115,13 +115,14 @@ async function existingReply(env: CloudflareEnv, messageId: string) {
 	return row ?? null;
 }
 
-/** The draft model, or null after recording that the provider may not read this mail. */
+/** The draft model, or null after recording that it may not read this mail. */
 async function draftModel(input: ReplySuggestionInput): Promise<AgentSelection | null> {
 	try {
 		return await selectAutoReadModel(input.env, input.settings.modelId);
 	} catch (error) {
-		if (!(error instanceof ExternalProviderNotAllowedError)) throw error;
-		await blockDraft(input, "external_provider_not_allowed");
+		if (error instanceof ExternalProviderNotAllowedError) await blockDraft(input, "external_provider_not_allowed");
+		else if (error instanceof TrainingModelNotAllowedError) await blockDraft(input, "training_model_not_allowed");
+		else throw error;
 		return null;
 	}
 }
@@ -137,8 +138,9 @@ async function guardedDraftText(input: ReplySuggestionInput, selection: AgentSel
 			await blockDraft(input, "spend_cap");
 			return null;
 		}
-		if (!(error instanceof ExternalProviderNotAllowedError)) throw error;
-		await blockDraft(input, "external_provider_not_allowed");
+		if (error instanceof ExternalProviderNotAllowedError) await blockDraft(input, "external_provider_not_allowed");
+		else if (error instanceof TrainingModelNotAllowedError) await blockDraft(input, "training_model_not_allowed");
+		else throw error;
 		return null;
 	}
 	const guarded = guardDraft(text, threadReferences(thread));

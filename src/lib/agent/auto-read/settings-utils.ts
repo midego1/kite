@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { modelTrainsOnData } from "../model-training-utils";
 import type {
 	AutoReadCapabilities,
 	AutoReadInstallSettings,
@@ -206,10 +207,12 @@ export function configuredModelId(id: string | null, models: string[], fallback:
 	return id && models.includes(id) ? id : fallback;
 }
 
-/** Rejects a requested chat or triage model the provider no longer lists. */
+/** Rejects a requested chat or triage model the provider no longer lists, and a triage model that trains on prompts. */
 export function unknownModelError(input: MailboxAgentSettingsUpdate, models: string[]): string | null {
 	if (input.modelId && !models.includes(input.modelId)) return "Choose a configured model";
 	if (input.triageModelId && !models.includes(input.triageModelId)) return SETTINGS_ERRORS.triageModelId;
+	if (input.triageModelId && modelTrainsOnData(input.triageModelId))
+		return "Choose a triage model that does not train on your prompts";
 	return null;
 }
 
@@ -217,6 +220,7 @@ const PRESET_LABELS: Record<AutoReadProviderSummary["preset"], string> = {
 	openai: "OpenAI",
 	openrouter: "OpenRouter",
 	groq: "Groq",
+	meta: "Meta",
 	custom: "a custom provider",
 };
 

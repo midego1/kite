@@ -33,6 +33,8 @@ const REASON_TEXT: Record<string, string> = {
 	spend_cap: "Paused: daily spend cap reached",
 	kill_switch: "Skipped: automatic reading is turned off for this install",
 	external_provider_not_allowed: "Skipped: the external AI provider is not allowed to read mail automatically",
+	training_model_not_allowed:
+		"Skipped: this model may train on your prompts and replies, so automatic reading will not use it",
 	paused: "Skipped: Kite is paused for this mailbox",
 	rate_limited: "Skipped: rate limited, too many messages at once",
 	autonomy_off: "Skipped: automatic reading is off for this mailbox",

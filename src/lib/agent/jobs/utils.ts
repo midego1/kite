@@ -5,6 +5,7 @@ import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { normalizeEmailAddress } from "@/lib/email/address";
 import { newId } from "@/lib/ids";
 import { getAgentModel } from "../model";
+import { modelTrainsOnData } from "../model-training-utils";
 import { getAgentEnabled } from "../provider";
 import { recordAiUsage } from "@/lib/ai/usage";
 import { claimAgentJob, failAndRequeueAgentJob, skipAgentJob } from "./lease";
@@ -147,6 +148,8 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 		if (newer) return void (await skip("A newer message or sent reply superseded this draft"));
 		const selection = await getAgentModel(env, settings.modelId);
 		if (!selection) throw new Error("AI provider is not configured");
+		// Automatic drafting reads mail on its own, so it refuses a model that trains on what is sent to it.
+		if (modelTrainsOnData(selection.modelId)) return void (await skip("training_model_not_allowed"));
 		const { text: body } = await generateReplyDraft({
 			model: selection.model,
 			instructions: settings.instructions,

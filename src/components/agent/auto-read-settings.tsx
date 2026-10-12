@@ -3,6 +3,7 @@
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { modelTrainsOnData } from "@/lib/agent/model-training-utils";
 import type {
 	AutoReadForm,
 	AutoReadSettingsProps,
@@ -186,8 +187,9 @@ function AutoReadFields({
 				>
 					<option value="">Automatic (cheapest configured model)</option>
 					{state.models.map((model) => (
-						<option key={model} value={model}>
+						<option key={model} value={model} disabled={modelTrainsOnData(model)}>
 							{model}
+							{modelTrainsOnData(model) ? " — may train on your prompts, not allowed here" : ""}
 						</option>
 					))}
 				</select>

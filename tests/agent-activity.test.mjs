@@ -74,6 +74,7 @@ test("skip and block reasons are shown in plain words, never as bare codes", () 
 	assert.match(reasonText("spend_cap"), /spend cap/);
 	assert.match(reasonText("kill_switch"), /turned off for this install/);
 	assert.match(reasonText("external_provider_not_allowed"), /external AI provider is not allowed/);
+	assert.match(reasonText("training_model_not_allowed"), /may train on your prompts and replies/);
 	assert.match(reasonText("paused"), /paused for this mailbox/);
 	assert.match(reasonText("rate_limited"), /rate limited/i);
 	assert.match(reasonText("draft_guard"), /^Blocked: /);

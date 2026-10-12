@@ -1,4 +1,5 @@
 import type { AgentModelOption, AgentModelRates, AgentProviderPreset } from "./provider-types";
+import { mergePresetAgentModels, presetAgentModels } from "./preset-models-utils";
 import { getAgentProviderConfig, resolveAgentBaseUrl } from "./provider";
 
 export const CLOUDFLARE_TOOL_MODELS: AgentModelOption[] = [
@@ -71,27 +72,39 @@ export async function listCompatibleAgentModels(
 	input: { preset: AgentProviderPreset; baseUrl: string; apiKey?: string },
 ) {
 	const baseUrl = resolveAgentBaseUrl(input.preset, input.baseUrl, env);
+	const known = presetAgentModels(input.preset);
 	const saved = await getAgentProviderConfig(env);
 	const key =
 		input.apiKey?.trim() ||
 		(saved.provider === "compatible" && saved.preset === input.preset && saved.baseUrl === baseUrl ? saved.apiKey : "");
-	if (!key) throw new Error("Enter an API key to load models");
-	const response = await fetch(`${baseUrl}/models`, {
-		headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
-		signal: AbortSignal.timeout(10_000),
-		redirect: "manual",
-	});
-	if (!response.ok) throw new Error(`Model list request failed (${response.status})`);
-	const json = (await response.json()) as { data?: { id?: unknown; name?: unknown; pricing?: unknown }[] };
-	const models = (json.data ?? [])
-		.filter((item) => typeof item.id === "string" && item.id.length <= 200)
-		.map((item) => ({
-			id: item.id as string,
-			name: typeof item.name === "string" ? item.name : (item.id as string),
-			rates: input.preset === "openrouter" ? openRouterRates(item.pricing) : undefined,
-		}))
-		.slice(0, 2_000)
-		.sort((a, b) => a.name.localeCompare(b.name));
+	// A preset with known models stays usable without a key or when its catalog is unreachable.
+	if (!key && !known.length) throw new Error("Enter an API key to load models");
+	let catalog: AgentModelOption[] = [];
+	if (key) {
+		try {
+			const response = await fetch(`${baseUrl}/models`, {
+				headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+				signal: AbortSignal.timeout(10_000),
+				redirect: "manual",
+			});
+			if (!response.ok) throw new Error(`Model list request failed (${response.status})`);
+			const json = (await response.json()) as { data?: { id?: unknown; name?: unknown; pricing?: unknown }[] };
+			catalog = (json.data ?? [])
+				.filter((item) => typeof item.id === "string" && item.id.length <= 200)
+				.map((item) => ({
+					id: item.id as string,
+					name: typeof item.name === "string" ? item.name : (item.id as string),
+					rates: input.preset === "openrouter" ? openRouterRates(item.pricing) : undefined,
+				}))
+				.slice(0, 2_000)
+				.sort((a, b) => a.name.localeCompare(b.name));
+			if (!catalog.length) throw new Error("Provider returned no models");
+		} catch (error) {
+			if (!known.length) throw error;
+		}
+	}
+	const models = mergePresetAgentModels(known, catalog);
 	if (!models.length) throw new Error("Provider returned no models");
-	return { models, source: "catalog" as const };
+	// "suggested" also covers a preset whose known models stood in for an unreachable or keyless catalog.
+	return { models, source: (catalog.length ? "catalog" : "suggested") as "catalog" | "suggested" };
 }

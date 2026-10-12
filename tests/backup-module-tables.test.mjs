@@ -19,11 +19,12 @@ const {
 	restoreDatabaseRecords,
 	listEnabledModules,
 	getUserModuleAccess,
+	isModuleEnabled,
 } = await bundleModules("kite-backup-module-tables-", [
 	["SqliteDatabase", "server/runtime/sqlite-database.ts"],
 	["applyMigrations", "server/runtime/migrate.ts"],
 	["assertBackupTablesCoverDatabase, exportDatabaseRecords, restoreDatabaseRecords", "src/lib/backups/export.ts"],
-	["listEnabledModules, getUserModuleAccess", "src/lib/modules/state.ts"],
+	["listEnabledModules, getUserModuleAccess, isModuleEnabled", "src/lib/modules/state.ts"],
 ]);
 
 const scratch = makeBundleDirectory("kite-backup-module-tables-dirs-");
@@ -185,4 +186,42 @@ test("restoring into the same database after changing state brings the saved sta
 	assert.deepEqual(await listEnabledModules(uncached(db), MEMBER), ["import"]);
 	assert.deepEqual(found(db, "renamed"), []);
 	assert.deepEqual(found(db, "cafe"), ["event-1"]);
+});
+
+test("a restore clears the module state cache, so the restoring isolate shows the restored state at once", async (t) => {
+	const source = await database(t);
+	seedAccountData(source);
+	seedModuleState(source);
+	const document = await exportDocument(source);
+
+	const db = await database(t);
+	seedAccountData(db);
+	const env = { DB: db };
+	// Everything is on here, and these reads put that in the isolate cache.
+	assert.equal(await isModuleEnabled(env, "templates"), true);
+	assert.deepEqual(await listEnabledModules(env, MEMBER), ALL);
+
+	await restoreDatabaseRecords(db, encode(document));
+
+	assert.equal(await isModuleEnabled(env, "templates"), false);
+	assert.deepEqual(await listEnabledModules(env, MEMBER), ["import"]);
+	assert.deepEqual(await listEnabledModules(env, null), ["calendar", "booking", "import"]);
+});
+
+test("a failed restore clears the cache too, because part of it may have been written", async (t) => {
+	const db = await database(t);
+	const env = { DB: db };
+	assert.equal(await isModuleEnabled(env, "calendar"), true);
+	db.db.exec("UPDATE module_settings SET enabled = 0 WHERE module_id = 'calendar'");
+	assert.equal(await isModuleEnabled(env, "calendar"), true);
+	await assert.rejects(restoreDatabaseRecords(db, encode({ format: "nope" })));
+	assert.equal(await isModuleEnabled(env, "calendar"), true);
+
+	const failing = Object.create(db);
+	failing.batch = async () => {
+		throw new Error("batch failed");
+	};
+	const document = await exportDocument(db);
+	await assert.rejects(restoreDatabaseRecords(failing, encode(document)), /batch failed/);
+	assert.equal(await isModuleEnabled({ DB: db }, "calendar"), false);
 });

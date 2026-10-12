@@ -1,6 +1,7 @@
 import {
 	Activity,
 	BellRing,
+	Blocks,
 	Bot,
 	DatabaseBackup,
 	Gauge,
@@ -126,6 +127,13 @@ const adminNavSections: NavSection[] = [
 			{ href: "/api-keys", label: "API keys", icon: KeyRound, keywords: "token mcp jmap", permission: "primary" },
 			{ href: "/general", label: "General", icon: Settings, keywords: "workspace instance", permission: "primary" },
 			{ href: "/agent", label: "Agent", icon: Bot, keywords: "assistant ai model", permission: "primary" },
+			{
+				href: "/modules",
+				label: "Modules",
+				icon: Blocks,
+				keywords: "calendar booking templates import turn on off features",
+				permission: "primary",
+			},
 			{
 				href: "/accounts",
 				label: "Accounts",

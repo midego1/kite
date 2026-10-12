@@ -17,6 +17,7 @@ const WARM_UP_ROUTES = [
 	"/backups",
 	"/settings/api-keys",
 	"/alerts",
+	"/modules",
 ];
 
 export default async function globalSetup(config: FullConfig) {

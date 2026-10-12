@@ -21,15 +21,15 @@ async function visitor(): Promise<APIRequestContext> {
 const MEMBER_PASSWORD = "module-member-password-123";
 
 /** A regular account with its own mailbox, signed in on a separate API client. */
-async function createMember(admin: APIRequestContext) {
-	const username = `member${Date.now()}${Math.floor(Math.random() * 1000)}`;
+async function createMember(admin: APIRequestContext, role: "user" | "admin" = "user") {
+	const username = `${role === "admin" ? "adminb" : "member"}${Date.now()}${Math.floor(Math.random() * 1000)}`;
 	const { domains } = await (await admin.get("/api/domains")).json();
 	const created = await admin.post("/api/accounts", {
 		data: {
 			username,
 			domainId: domains.find((item: { hostname: string }) => item.hostname === DOMAIN).id,
 			password: MEMBER_PASSWORD,
-			role: "user",
+			role,
 			useAllDomains: true,
 		},
 	});
@@ -419,6 +419,376 @@ test("a user restricted from Mail import loses it while the owner keeps it, and 
 		await restoreModules(api, memberId ? [memberId] : []);
 		await memberContext.close();
 		await memberApi?.dispose();
+		await api.dispose();
+	}
+});
+
+type AuditRow = { action: string; actorEmail: string | null; metadata: string | null };
+
+async function moduleAuditRows(api: APIRequestContext): Promise<AuditRow[]> {
+	const response = await api.get("/api/audit-logs?limit=200");
+	expect(response.status()).toBe(200);
+	const { auditLogs } = (await response.json()) as { auditLogs: AuditRow[] };
+	return auditLogs.filter((row) => row.action.startsWith("module."));
+}
+
+/** How many rows exist per action and module, so a test can tell which rows its own steps added. */
+function auditKeys(rows: AuditRow[]): Record<string, number> {
+	const counts: Record<string, number> = {};
+	for (const row of rows) {
+		const key = `${row.action} ${JSON.parse(row.metadata ?? "{}").moduleId}`;
+		counts[key] = (counts[key] ?? 0) + 1;
+	}
+	return counts;
+}
+
+const moduleSection = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
+const moduleSwitch = (page: Page, name: string) => moduleSection(page, name).getByRole("switch");
+
+test("the Modules page lists the four modules with their dependencies, capabilities and notes", async ({ page }) => {
+	await page.goto("/modules");
+	await expect(page.getByRole("heading", { level: 1, name: "Modules" })).toBeVisible();
+	await expect(page.locator("[data-module] h2")).toHaveText(["Calendar", "Booking", "Email templates", "Mail import"]);
+	await expect(page.getByRole("heading", { level: 2, name: "Always on" })).toBeVisible();
+	await expect(page.locator("[data-module]").getByRole("switch")).toHaveCount(4);
+	await expect(page.getByText("up to 30 seconds to reach other open sessions")).toBeVisible();
+	await expect(moduleSection(page, "Booking")).toContainText("Depends on Calendar");
+	for (const name of ["Calendar", "Email templates", "Mail import"])
+		await expect(moduleSection(page, name)).not.toContainText("Depends on");
+	await expect(moduleSection(page, "Mail import")).toContainText(
+		"Turning this off pauses running imports. They keep their saved source credentials until they finish or are cancelled, and resume within about five minutes of turning it back on.",
+	);
+	const calendar = moduleSection(page, "Calendar");
+	for (const item of [
+		"get_schedule",
+		"mcp:calendar-read",
+		"mcp:calendar-write",
+		"calendar:read",
+		"calendar:write",
+		"calendar.event.created",
+		"calendar.event.updated",
+		"calendar.event.deleted",
+		"calendar.open",
+		"calendar.go_to_date",
+	])
+		await expect(calendar.getByText(item, { exact: true })).toBeVisible();
+	const booking = moduleSection(page, "Booking");
+	for (const item of ["booking.appointment.created", "booking.open", "booking.open_event_type"])
+		await expect(booking.getByText(item, { exact: true })).toBeVisible();
+	await expect(moduleSection(page, "Mail import").getByText("import.open", { exact: true })).toBeVisible();
+	await expect(moduleSection(page, "Email templates")).toContainText("Adds no assistant tools");
+	await expect(moduleSection(page, "Calendar")).toContainText("Every user has access.");
+});
+
+test("Calendar off asks first, Booking reads Off because Calendar is off and cannot be turned on, and Calendar on restores it", async ({
+	page,
+}) => {
+	const api = await owner();
+	try {
+		const before = (await moduleAuditRows(api)).length;
+		await page.goto("/modules");
+		await moduleSwitch(page, "Calendar").click();
+		const dialog = page.getByRole("alertdialog");
+		await expect(dialog).toContainText("Booking will be turned off too");
+		await dialog.getByRole("button", { name: "Cancel" }).click();
+		await expect(dialog).toHaveCount(0);
+		expect((await (await api.get("/api/admin/modules")).json()).modules[0]).toMatchObject({
+			id: "calendar",
+			enabled: true,
+		});
+		expect(await moduleAuditRows(api)).toHaveLength(before);
+
+		await moduleSwitch(page, "Calendar").click();
+		await page.getByRole("alertdialog").getByRole("button", { name: "Turn off Calendar" }).click();
+		await expect(page.getByTestId("booking-status")).toHaveText("Off because Calendar is off");
+		await expect(moduleSwitch(page, "Calendar")).toHaveAttribute("aria-checked", "false");
+		const stored = (await (await api.get("/api/admin/modules")).json()).modules;
+		expect(stored.map((item: { id: string; enabled: boolean }) => [item.id, item.enabled])).toEqual([
+			["calendar", false],
+			["booking", true],
+			["templates", true],
+			["import", true],
+		]);
+		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual(["templates", "import"]);
+
+		// Booking cannot be turned on while Calendar is off: the API refuses and the page says why.
+		const refused = await api.put("/api/admin/modules", { data: { moduleId: "booking", enabled: true } });
+		expect(refused.status()).toBe(409);
+		expect((await refused.json()).code).toBe("MODULE_DEPENDENCY");
+		await moduleSwitch(page, "Booking").click();
+		await expect(moduleSection(page, "Booking").getByRole("alert")).toContainText("Turn on Calendar first");
+		await expect(page.getByTestId("booking-status")).toHaveText("Off because Calendar is off");
+		expect(await moduleAuditRows(api)).toHaveLength(before + 1);
+
+		await moduleSwitch(page, "Calendar").click();
+		await expect(page.getByTestId("booking-status")).toHaveText("On");
+		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual([
+			"calendar",
+			"booking",
+			"templates",
+			"import",
+		]);
+		await page.goto("/booking");
+		await expect(page.getByText("Page not found")).toHaveCount(0);
+
+		// Booking off before Calendar stays off when Calendar returns.
+		await setModuleState(api, { modules: { booking: false } });
+		await setModuleState(api, { modules: { calendar: false } });
+		await setModuleState(api, { modules: { calendar: true } });
+		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual(["calendar", "templates", "import"]);
+
+		const rows = await moduleAuditRows(api);
+		expect(rows.length).toBeGreaterThan(before);
+		expect(rows.map((row) => row.action)).toEqual(expect.arrayContaining(["module.enabled", "module.disabled"]));
+		expect(rows.every((row) => row.actorEmail === ADMIN.email)).toBe(true);
+	} finally {
+		await restoreModules(api);
+		await api.dispose();
+	}
+});
+
+test("the owner toggles Email templates and Mail import on the page, the state persists and the audit rows follow", async ({
+	page,
+}) => {
+	const api = await owner();
+	try {
+		const before = auditKeys(await moduleAuditRows(api));
+		await page.goto("/modules");
+		for (const name of ["Email templates", "Mail import"]) {
+			const toggle = moduleSwitch(page, name);
+			await toggle.click();
+			await expect(toggle).toHaveAttribute("aria-checked", "false");
+			await page.reload();
+			await expect(moduleSwitch(page, name)).toHaveAttribute("aria-checked", "false");
+		}
+		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual(["calendar", "booking"]);
+		for (const name of ["Email templates", "Mail import"]) {
+			await moduleSwitch(page, name).click();
+			await expect(moduleSwitch(page, name)).toHaveAttribute("aria-checked", "true");
+		}
+		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual([
+			"calendar",
+			"booking",
+			"templates",
+			"import",
+		]);
+
+		const after = auditKeys(await moduleAuditRows(api));
+		const added = Object.entries(after)
+			.map(([key, count]) => [key, count - (before[key] ?? 0)] as const)
+			.filter(([, count]) => count > 0)
+			.sort();
+		expect(added).toEqual([
+			["module.disabled import", 1],
+			["module.disabled templates", 1],
+			["module.enabled import", 1],
+			["module.enabled templates", 1],
+		]);
+
+		await page.goto("/activity");
+		await expect(page.getByText("Turned off Mail import").first()).toBeVisible();
+		await expect(page.getByText("Turned on Email templates").first()).toBeVisible();
+	} finally {
+		await restoreModules(api);
+		await api.dispose();
+	}
+});
+
+test("the module API refuses ids outside the four and bodies it cannot read, and core areas have no switch", async () => {
+	const api = await owner();
+	try {
+		for (const data of [
+			{ moduleId: "mail", enabled: false },
+			{ moduleId: "export", enabled: false },
+			{ moduleId: "calendar" },
+			{ moduleId: "calendar", enabled: "no" },
+			{},
+		]) {
+			const response = await api.put("/api/admin/modules", { data });
+			expect(response.status(), JSON.stringify(data)).toBe(400);
+		}
+		const { modules } = await (await api.get("/api/admin/modules")).json();
+		expect(modules.map((item: { id: string; enabled: boolean }) => [item.id, item.enabled])).toEqual([
+			["calendar", true],
+			["booking", true],
+			["templates", true],
+			["import", true],
+		]);
+		expect(modules[0]).toMatchObject({ dependsOn: [], restrictedUsers: [] });
+		expect(modules[1]).toMatchObject({ dependsOn: [{ id: "calendar", name: "Calendar" }], offBecause: null });
+	} finally {
+		await api.dispose();
+	}
+});
+
+test("a restriction applies to that user only, shows on both admin pages and is audited with a user ref", async ({
+	browser,
+	page,
+}) => {
+	const api = await owner();
+	let restricted: string[] = [];
+	const contexts = [await browser.newContext({ baseURL: BASE_URL, storageState: undefined })];
+	try {
+		const target = await createMember(api);
+		const other = await createMember(api);
+		restricted = [target.id];
+
+		await page.goto(`/accounts/${target.id}/permissions`);
+		const section = page.getByRole("region", { name: "Modules", exact: true });
+		await expect(section).toBeVisible();
+		await expect(section.getByRole("checkbox")).toHaveCount(4);
+		await section.getByRole("checkbox", { name: "Allow Calendar" }).uncheck();
+		await section.getByRole("button", { name: "Save module access" }).click();
+		await expect(section.getByText("Module access updated")).toBeVisible();
+		await page.reload();
+		await expect(
+			page.getByRole("region", { name: "Modules", exact: true }).getByRole("checkbox", { name: "Allow Calendar" }),
+		).not.toBeChecked();
+
+		expect((await (await target.api.get("/api/auth/me")).json()).modules).toEqual(["templates", "import"]);
+		expect((await (await other.api.get("/api/auth/me")).json()).modules).toEqual([
+			"calendar",
+			"booking",
+			"templates",
+			"import",
+		]);
+		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual([
+			"calendar",
+			"booking",
+			"templates",
+			"import",
+		]);
+		expect((await target.api.get("/api/calendar/events")).status()).toBe(404);
+		expect((await other.api.get("/api/calendar/events")).status()).toBe(200);
+		expect((await api.get("/api/calendar/events")).status()).toBe(200);
+
+		const targetPage = await contexts[0].newPage();
+		await signIn(targetPage, target.email, MEMBER_PASSWORD);
+		await expect(targetPage).toHaveURL(/\/inbox/);
+		const menu = await openAccountMenu(targetPage);
+		await expect(menu.getByRole("link", { name: "Calendar", exact: true })).toHaveCount(0);
+		await expectNotFoundPage(targetPage, "/calendar");
+
+		await page.goto("/modules");
+		await expect(moduleSection(page, "Calendar")).toContainText(`1 user is restricted: ${target.email.split("@")[0]}`);
+
+		const rows = (await moduleAuditRows(api)).filter(
+			(row) => row.action === "module.user_access" && JSON.parse(row.metadata ?? "{}").ref?.id === target.id,
+		);
+		expect(rows).toHaveLength(1);
+		expect(JSON.parse(rows[0].metadata ?? "{}")).toEqual({
+			moduleId: "calendar",
+			allowed: false,
+			ref: { kind: "user:user", id: target.id },
+		});
+		await page.goto("/activity");
+		await expect(page.getByText(`Restricted ${target.email} from Calendar`).first()).toBeVisible();
+
+		const lifted = await api.put(`/api/admin/accounts/${target.id}/modules`, {
+			data: { moduleId: "calendar", allowed: true },
+		});
+		expect(lifted.status()).toBe(200);
+		expect((await (await target.api.get("/api/auth/me")).json()).modules).toEqual([
+			"calendar",
+			"booking",
+			"templates",
+			"import",
+		]);
+		await moduleAccessCleanup([target, other]);
+	} finally {
+		await restoreModules(api, restricted);
+		await Promise.all(contexts.map((context) => context.close()));
+		await api.dispose();
+	}
+});
+
+async function moduleAccessCleanup(members: { api: APIRequestContext }[]) {
+	await Promise.all(members.map((member) => member.api.dispose()));
+}
+
+test("the owner's own access cannot be restricted and the owner's permissions page has no Modules section", async ({
+	page,
+}) => {
+	const api = await owner();
+	try {
+		const { user } = await (await api.get("/api/auth/me")).json();
+		const refused = await api.put(`/api/admin/accounts/${user.id}/modules`, {
+			data: { moduleId: "calendar", allowed: false },
+		});
+		expect(refused.status()).toBe(400);
+		expect((await refused.json()).code).toBe("OWNER_ACCESS");
+		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual([
+			"calendar",
+			"booking",
+			"templates",
+			"import",
+		]);
+		await page.goto(`/accounts/${user.id}/permissions`);
+		await expect(page.getByRole("heading", { name: "Permissions" })).toBeVisible();
+		await expect(page.getByRole("region", { name: "Modules", exact: true })).toHaveCount(0);
+	} finally {
+		await api.dispose();
+	}
+});
+
+test("a non-owner admin never sees or reaches Modules, and non-admins and signed-out callers are refused", async ({
+	browser,
+}) => {
+	const api = await owner();
+	const anonymous = await visitor();
+	let adminB: Awaited<ReturnType<typeof createMember>> | null = null;
+	let member: Awaited<ReturnType<typeof createMember>> | null = null;
+	const context = await browser.newContext({ baseURL: BASE_URL, storageState: undefined });
+	try {
+		adminB = await createMember(api, "admin");
+		member = await createMember(api);
+		const page = await context.newPage();
+		await signIn(page, adminB.email, MEMBER_PASSWORD);
+		await expect(page).toHaveURL(/\/inbox/);
+
+		await page.goto("/admin");
+		const menu = page.getByRole("complementary", { name: "Admin menu" });
+		await expect(menu.getByRole("link", { name: "Accounts", exact: true })).toBeVisible();
+		await expect(menu.getByRole("link", { name: "Modules", exact: true })).toHaveCount(0);
+		await page.goto("/modules");
+		await expect(page).toHaveURL(/\/admin$/);
+		await expect(page.getByRole("heading", { level: 1, name: "Modules" })).toHaveCount(0);
+
+		await page.goto(`/accounts/${member.id}/permissions`);
+		await expect(page.getByRole("heading", { name: "Permissions" })).toBeVisible();
+		await expect(page.getByRole("region", { name: "Modules", exact: true })).toHaveCount(0);
+
+		const calls: [string, string, unknown?][] = [
+			["GET", "/api/admin/modules"],
+			["PUT", "/api/admin/modules", { moduleId: "templates", enabled: false }],
+			["PUT", `/api/admin/accounts/${member.id}/modules`, { moduleId: "templates", allowed: false }],
+		];
+		for (const [method, path, data] of calls) {
+			expect((await adminB.api.fetch(path, { method, data })).status(), `admin ${method} ${path}`).toBe(403);
+			expect((await member.api.fetch(path, { method, data })).status(), `member ${method} ${path}`).toBe(403);
+			expect((await anonymous.fetch(path, { method, data })).status(), `anonymous ${method} ${path}`).toBe(401);
+		}
+		expect((await adminB.api.get(`/api/admin/accounts/${member.id}/modules`)).status()).toBe(403);
+
+		const memberPage = await (await browser.newContext({ baseURL: BASE_URL, storageState: undefined })).newPage();
+		await signIn(memberPage, member.email, MEMBER_PASSWORD);
+		await expect(memberPage).toHaveURL(/\/inbox/);
+		await memberPage.goto("/modules");
+		await expect(memberPage.getByRole("heading", { level: 1, name: "Modules" })).toHaveCount(0);
+		await memberPage.context().close();
+
+		const state = (await (await api.get("/api/admin/modules")).json()).modules;
+		expect(
+			state.every(
+				(item: { enabled: boolean; restrictedUsers: unknown[] }) => item.enabled && !item.restrictedUsers.length,
+			),
+		).toBe(true);
+	} finally {
+		await restoreModules(api);
+		await context.close();
+		await adminB?.api.dispose();
+		await member?.api.dispose();
+		await anonymous.dispose();
 		await api.dispose();
 	}
 });

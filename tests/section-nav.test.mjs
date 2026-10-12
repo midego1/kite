@@ -68,6 +68,7 @@ test("Admin holds the AdminNav groups in order, with AI usage and no separate Au
 		"/api-keys",
 		"/general",
 		"/agent",
+		"/modules",
 		"/accounts",
 		"/activity",
 		"/backups",
@@ -111,7 +112,7 @@ test("only admins get the mode switch", () => {
 
 test("permission gates follow role, primary admin and per-user grants", () => {
 	const visible = (user) => hrefs(filterNavSections(adminNavSections, "", user));
-	assert.equal(visible(primary).length, 14);
+	assert.equal(visible(primary).length, 15);
 	assert.ok(visible(primary).includes("/alerts"));
 	assert.deepEqual(visible(admin), ["/admin", "/mailboxes", "/routing", "/accounts"]);
 	assert.deepEqual(visible({ ...admin, canManageDomains: true }), [
@@ -181,6 +182,19 @@ test("Alerts sits in Administration after Backups for the primary admin only", (
 		assert.deepEqual(searchHrefs(query, admin, "admin"), {}, query);
 		assert.deepEqual(searchHrefs(query, member), {}, query);
 	}
+});
+
+test("Modules is an Administration page for the primary admin only", () => {
+	const modules = adminNavSections.flatMap((section) => section.items).find((item) => item.href === "/modules");
+	assert.equal(modules.label, "Modules");
+	assert.equal(modules.permission, "primary");
+	assert.equal(canSee(modules, primary), true);
+	assert.equal(canSee(modules, admin), false);
+	assert.equal(canSee(modules, member), false);
+	assert.equal(getNavMode("/modules"), "admin");
+	assert.equal(findActiveNavItem("admin", "/modules")?.label, "Modules");
+	assert.deepEqual(searchHrefs("modules", primary), { admin: ["/modules"] });
+	for (const user of [admin, member]) assert.deepEqual(searchHrefs("modules", user), {});
 });
 
 test("group landmarks always have a name", () => {

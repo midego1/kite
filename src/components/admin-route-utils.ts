@@ -9,6 +9,7 @@ const primaryOnlyPrefixes = [
 	"/general",
 	"/ai-usage",
 	"/alerts",
+	"/modules",
 ];
 
 /** Whether an admin route is open to the primary admin only. */

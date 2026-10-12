@@ -1,3 +1,4 @@
+import { clearModuleStateCache } from "@/lib/modules/state";
 import type { BackupTableGroupId, DatabaseBackupDocument, DatabaseBackupTable, DatabaseRecord } from "./types";
 import { dropRetiredBackupTables, mergeLegacyMessageBodies, RETIRED_BACKUP_TABLES } from "./utils";
 import { BACKUP_TABLE_GROUPS, getSelectedBackupTables } from "./table-groups";
@@ -299,8 +300,13 @@ export async function prepareDatabaseRestore(
  * snapshot to roll back to if this throws.
  */
 export async function executeDatabaseRestore(db: D1Database, plan: RestorePlan): Promise<void> {
-	for (const chunk of plan.chunks) {
-		await db.batch(chunk.map((statement) => db.prepare(statement.sql).bind(...statement.params)));
+	try {
+		for (const chunk of plan.chunks) {
+			await db.batch(chunk.map((statement) => db.prepare(statement.sql).bind(...statement.params)));
+		}
+	} finally {
+		// The restore rewrites the module tables behind the isolate's 30-second cache, even when it fails part way.
+		clearModuleStateCache();
 	}
 }
 

@@ -16,13 +16,16 @@ const {
 	listEnabledModules,
 	setModuleEnabled,
 	setUserModuleAllowed,
+	clearModuleStateCache,
+	readStoredInstallState,
+	readStoredUserAccess,
 	MODULE_MANIFESTS,
 } = await bundleModules("kite-module-state-", [
 	["SqliteDatabase", "server/runtime/sqlite-database.ts"],
 	["applyMigrations", "server/runtime/migrate.ts"],
 	["effectiveModules, flagsFromRows, isNoSuchTableError", "src/lib/modules/state-utils.ts"],
 	[
-		"getInstallModuleState, getUserModuleAccess, isModuleEnabled, isModuleEnabledFor, listEnabledModules, setModuleEnabled, setUserModuleAllowed",
+		"getInstallModuleState, getUserModuleAccess, isModuleEnabled, isModuleEnabledFor, listEnabledModules, setModuleEnabled, setUserModuleAllowed, clearModuleStateCache, readStoredInstallState, readStoredUserAccess",
 		"src/lib/modules/state.ts",
 	],
 	["MODULE_MANIFESTS", "src/lib/modules/registry.ts"],
@@ -325,4 +328,36 @@ test("a write clears the cache even when it fails", async (t) => {
 		setUserModuleAllowed(env, { userId: "missing-user", moduleId: "calendar", allowed: false, updatedBy: null }),
 	);
 	assert.equal(await isModuleEnabled(env, "calendar"), false);
+});
+
+test("clearModuleStateCache makes the next read ask the database again", async (t) => {
+	const db = await database(t);
+	const env = { DB: db };
+	assert.equal(await isModuleEnabled(env, "calendar"), true);
+	db.db.exec("UPDATE module_settings SET enabled = 0 WHERE module_id = 'calendar'");
+	assert.equal(await isModuleEnabled(env, "calendar"), true);
+	clearModuleStateCache();
+	assert.equal(await isModuleEnabled(env, "calendar"), false);
+});
+
+test("stored state reads skip the cache and say whether migration 0062 is applied", async (t) => {
+	const db = await database(t);
+	const env = { DB: db };
+	assert.equal(await isModuleEnabled(env, "calendar"), true);
+	db.db.exec(`
+		UPDATE module_settings SET enabled = 0 WHERE module_id = 'calendar';
+		INSERT INTO user_module_access (id, user_id, module_id, allowed, updated_at) VALUES ('u1', 'member', 'import', 0, 1);
+	`);
+	const install = await readStoredInstallState(env);
+	assert.equal(install.ready, true);
+	assert.equal(install.flags.get("calendar"), false);
+	assert.equal(install.flags.get("booking"), true);
+	assert.equal((await readStoredUserAccess(env, "member")).flags.get("import"), false);
+	assert.equal((await readStoredUserAccess(env, "owner")).flags.get("import"), true);
+
+	db.db.exec("DROP TABLE user_module_access; DROP TABLE module_settings;");
+	const missing = await readStoredInstallState(env);
+	assert.equal(missing.ready, false);
+	assert.deepEqual([...missing.flags.values()], [true, true, true, true]);
+	assert.equal((await readStoredUserAccess(env, "member")).ready, false);
 });

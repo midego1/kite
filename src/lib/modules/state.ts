@@ -42,32 +42,37 @@ type ManifestFallback = Parameters<typeof flagsFromRows>[2];
 const installFallback: ManifestFallback = (manifest) => manifest.defaultEnabled;
 const accessFallback: ManifestFallback = () => true;
 
+type StoredFlags = { ready: boolean; flags: ModuleFlags };
+
 /** A missing table means the database has not applied migration 0062 yet, which reads as every module on. */
-async function readFlags(read: () => Promise<ModuleFlagRow[]>, fallback: ManifestFallback): Promise<ModuleFlags> {
+async function readStored(read: () => Promise<ModuleFlagRow[]>, fallback: ManifestFallback): Promise<StoredFlags> {
 	try {
-		return flagsFromRows(await read(), MODULE_MANIFESTS, fallback);
+		return { ready: true, flags: flagsFromRows(await read(), MODULE_MANIFESTS, fallback) };
 	} catch (error) {
 		if (!isNoSuchTableError(error)) throw error;
-		return flagsFromRows([], MODULE_MANIFESTS, fallback);
+		return { ready: false, flags: flagsFromRows([], MODULE_MANIFESTS, fallback) };
 	}
 }
 
+async function readFlags(read: () => Promise<ModuleFlagRow[]>, fallback: ManifestFallback): Promise<ModuleFlags> {
+	return (await readStored(read, fallback)).flags;
+}
+
+const installRows = (db: Binding) =>
+	createDb(db).select({ moduleId: moduleSettings.moduleId, flag: moduleSettings.enabled }).from(moduleSettings);
+
+const accessRows = (db: Binding, userId: string) =>
+	createDb(db)
+		.select({ moduleId: userModuleAccess.moduleId, flag: userModuleAccess.allowed })
+		.from(userModuleAccess)
+		.where(eq(userModuleAccess.userId, userId));
+
 function loadInstall(db: Binding): Promise<ModuleFlags> {
-	return readFlags(
-		() => createDb(db).select({ moduleId: moduleSettings.moduleId, flag: moduleSettings.enabled }).from(moduleSettings),
-		installFallback,
-	);
+	return readFlags(() => installRows(db), installFallback);
 }
 
 function loadAccess(db: Binding, userId: string): Promise<ModuleFlags> {
-	return readFlags(
-		() =>
-			createDb(db)
-				.select({ moduleId: userModuleAccess.moduleId, flag: userModuleAccess.allowed })
-				.from(userModuleAccess)
-				.where(eq(userModuleAccess.userId, userId)),
-		accessFallback,
-	);
+	return readFlags(() => accessRows(db, userId), accessFallback);
 }
 
 function installFromIsolate(db: Binding): Promise<ModuleFlags> {
@@ -144,8 +149,28 @@ export async function listEnabledModules(env: StateEnv, viewer: ModuleViewer | n
 	return MODULE_IDS.filter((id) => enabled.has(id));
 }
 
-/** Drops every cached answer in this isolate. Writes call it, so the isolate that handled one sees it at once. */
-function clearModuleStateCache(): void {
+/**
+ * The install flags as stored, bypassing every cache, and whether migration 0062 is applied.
+ * @public Consumed by the admin modules API, which must act on what is stored, not on a 30-second-old answer.
+ */
+export function readStoredInstallState(env: StateEnv): Promise<StoredFlags> {
+	return readStored(() => installRows(env.DB), installFallback);
+}
+
+/**
+ * One user's stored access flags, bypassing every cache.
+ * @public Consumed by the admin modules API.
+ */
+export function readStoredUserAccess(env: StateEnv, userId: string): Promise<StoredFlags> {
+	return readStored(() => accessRows(env.DB, userId), accessFallback);
+}
+
+/**
+ * Drops every cached answer in this isolate. Writes call it, so the isolate that handled one sees it at
+ * once, and so does a backup restore, which rewrites both tables behind the cache.
+ * @public Consumed by the backup restore path.
+ */
+export function clearModuleStateCache(): void {
 	isolateCache = new WeakMap();
 	generation++;
 }

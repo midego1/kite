@@ -5,6 +5,10 @@ export type ActivityMetadata = {
 	device?: string;
 	platform?: string;
 	userAgent?: string;
+	/** Module changes: the module, whether it is on or allowed, and the user a per-user change names. */
+	moduleId?: string;
+	allowed?: boolean;
+	ref?: { kind: string; id: string };
 };
 
 export type ActivityLog = {
@@ -13,4 +17,5 @@ export type ActivityLog = {
 	metadata: string | null;
 	createdAt: string;
 	actorEmail: string | null;
+	targetEmail?: string | null;
 };

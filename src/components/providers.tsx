@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Toaster } from "react-hot-toast";
 import { clearMailboxClientState } from "@/components/mailbox-provider-utils";
 import { BrandingProvider } from "@/components/branding-provider";
+import { CopyCodeHost } from "@/components/copy-code-host";
 import { NewMessagePopup } from "@/components/new-message-popup";
 import { ThemeSync } from "@/components/theme-sync";
 import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
@@ -57,6 +58,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 				{children}
 				<ThemeSync />
 				<ConfirmDialogHost />
+				<CopyCodeHost />
 				<Toaster position="bottom-center" />
 				{realtime.notification && (
 					<NewMessagePopup notification={realtime.notification} onDismiss={realtime.dismissNotification} />

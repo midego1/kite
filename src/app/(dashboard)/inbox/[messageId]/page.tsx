@@ -26,6 +26,8 @@ import { useMessageThread } from "@/components/messages/use-message-thread";
 import { useLatestMessagesFirst } from "@/components/messages/use-latest-messages-first";
 import { useMessageListVisibility } from "@/components/messages/message-list-visibility";
 import { splitEmailAddressList } from "@/lib/email/address";
+import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
+import { OneTimeCodeChip } from "@/components/messages/one-time-code-chip";
 import { RecipientList } from "@/components/messages/recipient-list";
 import { useShowFullRecipientAddresses } from "@/components/messages/use-show-full-recipient-addresses";
 import type { MessageAttachment, MessageDetailResponse } from "./types";
@@ -137,6 +139,9 @@ export default function MessageDetailPage() {
 		true,
 	);
 	const cloudAttachmentResult = extractCloudAttachments(bodyDisplay.latestContent);
+	// The same conservative extractor the server used for the notification, run
+	// on the displayed text so a code that slipped through delivery still copies.
+	const oneTimeCode = extractOneTimeCode({ subject: message.subject, text: bodyDisplay.latestContent });
 	return (
 		<>
 			<div
@@ -187,6 +192,7 @@ export default function MessageDetailPage() {
 				>
 					{message.subject ?? "(no subject)"}
 				</h1>
+				<OneTimeCodeChip code={oneTimeCode} alignWide={!isAnyPanelVisible} />
 				{/* <div className="px-6">
         <div className="mx-auto w-full max-w-[640px]">
           <SpamScoreDetails

@@ -5,6 +5,15 @@ export interface NewMessageEvent {
 	messageId: string;
 	subject: string | null;
 	type: "new_message";
+	/** One-time code the server detected at delivery, or null. */
+	oneTimeCode: string | null;
+}
+
+/** Title, body and code for a browser new-mail notification. */
+export interface NewMessageNotificationParts {
+	title: string;
+	body: string;
+	code: string | null;
 }
 
 export interface MessageRealtimeState {

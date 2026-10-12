@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { Mail, X } from "lucide-react";
 import { getEmailDisplayName } from "@/lib/email/address";
+import { requestCopyCode } from "@/components/copy-code-host-utils";
 import type { NewMessagePopupProps } from "./new-message-popup-types";
 
 export function NewMessagePopup({ notification, onDismiss }: NewMessagePopupProps) {
+	const code = notification.oneTimeCode;
 	return (
 		<div className="fixed right-5 top-5 z-[100] w-[min(380px,calc(100vw-40px))] rounded-xl bg-white p-4 shadow-xl">
 			<div className="flex items-start gap-3">
@@ -28,6 +30,20 @@ export function NewMessagePopup({ notification, onDismiss }: NewMessagePopupProp
 					<span className="sr-only">Dismiss notification</span>
 				</button>
 			</div>
+			{code && (
+				<div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
+					<span className="min-w-0 truncate font-mono text-base font-semibold tracking-[0.2em] text-neutral-900 select-all">
+						{code}
+					</span>
+					<button
+						type="button"
+						onClick={() => requestCopyCode(code)}
+						className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+					>
+						Copy code
+					</button>
+				</div>
+			)}
 		</div>
 	);
 }

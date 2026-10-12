@@ -1,9 +1,12 @@
 import type { ZodType } from "zod";
 import { getEnv } from "@/lib/cloudflare";
+import { importModuleMessages } from "@/lib/email/module-import";
+import { getModuleMessage, readModuleAttachment } from "@/lib/email/module-read";
 import { sendModuleMail } from "@/lib/email/module-send";
 import { dispatchModuleWebhook } from "@/lib/email/module-webhooks";
 import { findDescriptor, MODULE_CAPABILITIES } from "./capability-registry";
 import type { HostResolvedRef, ModuleHost } from "./host-types";
+import { getUserProfile, isModuleEnabledForUser, recordModuleAudit } from "./host-services";
 import type { CapabilityCallContext, CapabilityResult, JsonValue, ModuleId } from "./module-types";
 import { isModuleEnabledFor } from "./state";
 import { createWebhookEmitter } from "./webhook-emit-utils";
@@ -65,30 +68,25 @@ const emitWebhook = createWebhookEmitter({
 	dispatch: (userId, event, payload) => dispatchModuleWebhook(getEnv(), userId, event, payload),
 });
 
-function pending(name: string) {
-	return async (): Promise<never> => {
-		throw new Error(`moduleHost.${name} is not implemented yet`);
-	};
-}
-
-/** @public Consumed by tests and the features that wire modules into core surfaces. */
+/** The only door from module code into core services. */
 export const moduleHost: ModuleHost = {
 	emitWebhook,
 	invoke: async (ctx, moduleId, name, input) => {
 		if (!invoker) throw new Error("moduleHost.invoke is not bound to invokeCapability");
 		return invoker(moduleId, name, input, serviceContext(ctx, moduleId, name));
 	},
-	modules: { isEnabledFor: pending("modules.isEnabledFor") },
+	modules: { isEnabledFor: (_ctx, userId, moduleId) => isModuleEnabledForUser(getEnv(), userId, moduleId) },
 	resolveRefs: async (ctx, refs) => {
 		if (!refResolver) throw new Error("moduleHost.resolveRefs is not bound to resolveRecordRefs");
 		return refResolver(ctx, refs);
 	},
 	mail: {
-		getMessage: pending("mail.getMessage"),
-		readAttachment: pending("mail.readAttachment"),
+		getMessage: (ctx, messageId) => getModuleMessage(getEnv(), ctx, messageId),
+		readAttachment: (ctx, messageId, attachmentId, options) =>
+			readModuleAttachment(getEnv(), ctx, messageId, attachmentId, options),
 		send: (ctx, draft) => sendModuleMail(getEnv(), ctx, draft),
-		importMessages: pending("mail.importMessages"),
+		importMessages: (_ctx, request) => importModuleMessages(getEnv(), request),
 	},
-	users: { getProfile: pending("users.getProfile") },
-	audit: pending("audit"),
+	users: { getProfile: (_ctx, userId) => getUserProfile(getEnv(), userId) },
+	audit: (ctx, action, metadata) => recordModuleAudit(getEnv(), ctx, action, metadata),
 };

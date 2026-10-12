@@ -385,14 +385,15 @@ test("the queue helpers map kinds both ways and route each body to its handler",
 	]);
 });
 
-test("both runtimes hand agent queue bodies to the shared dispatcher before IMAP imports", () => {
+test("both runtimes hand agent queue bodies to the shared dispatcher before module messages", () => {
 	const node = readFileSync(join(root, "server/index.ts"), "utf8");
 	assert.match(
 		node,
-		/agentQueue\.setConsumer\(async \(body\) => \{\s*if \(await processAgentQueueMessage\(env, body\)\) return;\s*if \(isImportJobQueueMessage\(body\)\)/,
+		/agentQueue\.setConsumer\(async \(body\) => \{\s*if \(await processAgentQueueMessage\(env, body\)\) return;\s*await dispatchModuleQueueMessage\(env, "agent", body\)/,
 	);
 	const worker = readFileSync(join(root, "worker.ts"), "utf8");
 	assert.match(worker, /else if \(await processAgentQueueMessage\(env, msg\.body\)\)/);
+	assert.ok(worker.indexOf("processAgentQueueMessage(env, msg.body)") < worker.indexOf("dispatchModuleQueueMessage("));
 	const dispatcher = readFileSync(join(root, "src/lib/agent/queue.ts"), "utf8");
 	assert.match(dispatcher, /triage: \(jobId\) => processAgentTriageJob\(env, jobId\)/);
 });

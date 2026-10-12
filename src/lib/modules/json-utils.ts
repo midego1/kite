@@ -68,7 +68,7 @@ export function jsonValueProblem(value: unknown, label = "value"): string | null
 	return null;
 }
 
-/** @public Consumed by tests and the features that wire modules into core surfaces. */
+/** @public Test-only: production code uses `jsonValueProblem`. */
 export function assertJsonValue(value: unknown, label = "value"): asserts value is JsonValue {
 	const problem = jsonValueProblem(value, label);
 	if (problem) throw new TypeError(problem);

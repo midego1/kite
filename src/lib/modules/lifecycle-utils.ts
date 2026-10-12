@@ -3,7 +3,7 @@ import type { CapabilityCallContext, JsonValue } from "./module-types";
 
 /**
  * Every lifecycle descriptor that declares `type`, whatever its module's state: the invoker decides who may run.
- * @public Consumed by tests.
+ * @public Test-only: used inside this file, exported for tests.
  */
 export function lifecycleTargets(
 	capabilities: LifecycleEmitterDeps["capabilities"],

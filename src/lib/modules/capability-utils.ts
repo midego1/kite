@@ -10,13 +10,12 @@ import type {
 /** Surfaces that only declare something; core never invokes them. */
 const DECLARATION_ONLY: readonly CapabilitySurface[] = ["webhook_event", "suggestion_kind", "jmap_capability"];
 
-/** @public Consumed by tests and the features that wire modules into core surfaces. */
+/** @public Test-only: no production caller yet. */
 export function isInvokableDescriptor(descriptor: Pick<CapabilityDescriptor, "surfaces">): boolean {
 	return descriptor.surfaces.some((surface) => !DECLARATION_ONLY.includes(surface));
 }
 
-/** Only the two tool surfaces describe the same call, so only they may share a descriptor. */
-/** @public Consumed by tests and the features that wire modules into core surfaces. */
+/** Only the two tool surfaces describe the same call, so only they may share a descriptor. @public Test-only: no production caller yet. */
 export function surfacesAreCombinable(surfaces: readonly CapabilitySurface[]): boolean {
 	if (surfaces.length === 0) return false;
 	if (new Set(surfaces).size !== surfaces.length) return false;

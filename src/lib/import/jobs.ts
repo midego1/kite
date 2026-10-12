@@ -7,9 +7,12 @@ import { openSetting, sealSetting } from "@/lib/security/secret-box";
 import { getImportMessageUserId, parseImportDestination } from "./destination";
 import { openImapSession } from "./imap";
 import { chunk, selectRemainingUids } from "./imap-utils";
-import { importMessagesToMailbox } from "./service";
-import type { ImportMessageInput } from "./types";
+import { encodeRawMime } from "@/lib/email/module-import-utils";
+import { moduleHost } from "@/lib/modules/host";
+import type { CapabilityCallContext } from "@/lib/modules/module-types";
+import type { HostImportMessage } from "@/lib/modules/host-types";
 
+/** @public Named by `env.d.ts` to widen the queue payload; Knip does not scan that file. */
 export type ImportJobQueueMessage = { kind: "import.imap"; jobId: string };
 export type ImportJobRow = typeof importJobs.$inferSelect;
 
@@ -26,15 +29,6 @@ const LEASE_MS = 8 * 60_000;
 const MAX_ATTEMPTS = 5;
 const MAX_STORED_ERRORS = 20;
 const ACTIVE_STATUSES = ["pending", "running"] as const;
-
-export function isImportJobQueueMessage(body: unknown): body is ImportJobQueueMessage {
-	return (
-		typeof body === "object" &&
-		body !== null &&
-		(body as { kind?: unknown }).kind === "import.imap" &&
-		typeof (body as { jobId?: unknown }).jobId === "string"
-	);
-}
 
 export async function enqueueImportJob(env: CloudflareEnv, jobId: string, delaySeconds?: number): Promise<boolean> {
 	const queue = env.AGENT_QUEUE;
@@ -113,6 +107,7 @@ export function serializeImportJob(job: ImportJobRow) {
 		imported: job.imported,
 		skipped: job.skipped,
 		lastError: job.lastError,
+		attempts: job.attempts,
 		errors: parseErrors(job.errors),
 		createdAt: job.createdAt.toISOString(),
 		updatedAt: job.updatedAt.toISOString(),
@@ -126,7 +121,7 @@ export function serializeImportJob(job: ImportJobRow) {
  * account run one at a time, because providers such as iCloud and Gmail limit
  * concurrent IMAP connections per account.
  */
-export async function processImportJob(env: CloudflareEnv, jobId: string): Promise<void> {
+export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: CapabilityCallContext): Promise<void> {
 	const db = getDb(env);
 	const now = new Date();
 	const [job] = await db.select().from(importJobs).where(eq(importJobs.id, jobId)).limit(1);
@@ -194,22 +189,22 @@ export async function processImportJob(env: CloudflareEnv, jobId: string): Promi
 			nextFetch = hasTime && index + 1 < chunks.length ? fetchChunk(chunks[index + 1]) : null;
 			nextFetch?.catch(() => undefined);
 
-			const batch: ImportMessageInput[] = [];
+			const batch: HostImportMessage[] = [];
 			for (const uid of uids) {
 				const raw = fetched.get(String(uid));
-				if (raw) batch.push({ filename: `${job.folder}-${uid}.eml`, raw });
+				if (raw) batch.push({ filename: `${job.folder}-${uid}.eml`, raw: encodeRawMime(raw), encoding: "base64" });
 			}
-			const result = await importMessagesToMailbox(env, {
+			const result = await moduleHost.mail.importMessages(ctx, {
 				userId,
 				mailboxId: mailbox.id,
-				destination,
+				destination: job.destination,
 				messages: batch,
 			});
 			const missing = uids.length - batch.length;
 			progress = {
 				processed: progress.processed + uids.length,
 				imported: progress.imported + result.imported,
-				skipped: progress.skipped + result.skipped + missing,
+				skipped: progress.skipped + result.skipped + result.failed + missing,
 				cursorUid: uids[uids.length - 1],
 			};
 			errors = [...errors, ...result.errors].slice(-MAX_STORED_ERRORS);
@@ -303,17 +298,26 @@ async function startNextJobForAccount(env: CloudflareEnv, job: ImportJobRow): Pr
 	if (next) await enqueueImportJob(env, next.id);
 }
 
+/** Stalled jobs looked at per tick; owners that may not import are filtered out of this window, not the limit. */
+const STALLED_WINDOW = 200;
+const RESUMED_PER_TICK = 10;
+
 /**
  * Cron safety net: re-enqueues active jobs whose run died without handing off
  * (worker eviction, exhausted queue retries). Without a queue binding it runs
- * one job inline so imports still progress.
+ * one job inline so imports still progress. `ownerMayImport` leaves out the jobs of users who
+ * are restricted from Import, so they are not picked again on every tick.
  */
-export async function resumeStalledImportJobs(env: CloudflareEnv): Promise<void> {
+export async function resumeStalledImportJobs(
+	env: CloudflareEnv,
+	ctx: CapabilityCallContext,
+	ownerMayImport: (userId: string) => Promise<boolean>,
+): Promise<void> {
 	const db = getDb(env);
 	const now = new Date();
 	const stale = new Date(now.getTime() - 2 * 60_000);
-	const jobs = await db
-		.select({ id: importJobs.id })
+	const candidates = await db
+		.select({ id: importJobs.id, userId: importJobs.userId })
 		.from(importJobs)
 		.where(
 			and(
@@ -323,10 +327,13 @@ export async function resumeStalledImportJobs(env: CloudflareEnv): Promise<void>
 			),
 		)
 		.orderBy(importJobs.createdAt)
-		.limit(10);
+		.limit(STALLED_WINDOW);
+	const allowed = new Map<string, boolean>();
+	for (const userId of new Set(candidates.map((job) => job.userId))) allowed.set(userId, await ownerMayImport(userId));
+	const jobs = candidates.filter((job) => allowed.get(job.userId)).slice(0, RESUMED_PER_TICK);
 	for (const job of jobs) {
 		if (!(await enqueueImportJob(env, job.id))) {
-			await processImportJob(env, job.id);
+			await processImportJob(env, job.id, ctx);
 			return;
 		}
 	}

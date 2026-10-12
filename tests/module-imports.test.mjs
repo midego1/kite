@@ -62,16 +62,8 @@ const MODULE_CODE = [
 /** Exceptions that stay allowed after the move. Each entry needs a written reason. Must stay empty. */
 const ALLOWLIST = {};
 
-/**
- * Core files that still import module code because the change that moves them behind the registry
- * has not landed yet. Each later change deletes its entries; the list must end empty.
- */
-const PENDING = {
-	"worker.ts":
-		"The queue and cron handlers still call the import job code by hand until dispatchModuleQueueMessage and runModuleCronTasks replace them (queue and cron routing feature).",
-	"server/index.ts":
-		"The Node queue consumer still calls the import job code by hand until dispatchModuleQueueMessage replaces it (queue and cron routing feature).",
-};
+/** Core files that still import module code until the change that moves them behind the registry lands. Must stay empty. */
+const PENDING = {};
 
 const toPosix = (path) => path.split(sep).join("/");
 
@@ -124,7 +116,7 @@ test("only invoke.ts imports the server registry, and only the server registry i
 		assert.deepEqual(importersOf(`src/lib/modules/${id}/server`), ["src/lib/modules/server-registry.ts"], id);
 });
 
-test("core files reach module code only through the registry, apart from the pending list", () => {
+test("core files reach module code only through the registry", () => {
 	const violations = {};
 	for (const file of coreFiles) {
 		const found = moduleImports(file);
@@ -137,16 +129,13 @@ test("core files reach module code only through the registry, apart from the pen
 	);
 });
 
-test("pending entries are real: each names a core file that still imports module code and gives a reason", () => {
-	for (const [file, reason] of Object.entries(PENDING)) {
-		assert.ok(coreFiles.includes(file), `${file} is not a core file in the list`);
-		assert.ok(typeof reason === "string" && reason.length > 20, `${file} needs a written reason`);
-		assert.ok(moduleImports(file).length > 0, `${file} no longer imports module code; delete its pending entry`);
-	}
+test("the allowlist and the pending list are empty", () => {
+	assert.deepEqual(ALLOWLIST, {});
+	assert.deepEqual(PENDING, {});
 });
 
-test("the allowlist is empty", () => {
-	assert.deepEqual(ALLOWLIST, {});
+test("every core file in the list exists and is scanned", () => {
+	for (const entry of CORE_PATHS) assert.ok(expand(entry).length > 0, `${entry} matches no file`);
 });
 
 test("core client code reaches module client code only through client-registry.ts", () => {

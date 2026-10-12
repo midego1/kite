@@ -34,9 +34,11 @@ export type HostDraft = {
 	calendar?: { method?: string; content: string };
 };
 
-export type HostImportMessage = { raw: string | number[]; receivedAt?: string };
+/** Raw MIME as a byte array, or as text in `encoding` (UTF-8 unless `base64` is named). */
+export type HostImportMessage = { raw: string | number[]; encoding?: "utf8" | "base64"; filename?: string };
 
-export type HostImportResult = { imported: number; skipped: number; failed: number };
+/** `skipped` counts duplicates, `failed` the messages that could not be read or written, `errors` says why. */
+export type HostImportResult = { imported: number; skipped: number; failed: number; errors: string[] };
 
 export type HostUserProfile = { id: string; name: string; email: string; timeZone: string | null };
 

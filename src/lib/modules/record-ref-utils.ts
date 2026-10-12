@@ -36,7 +36,7 @@ function isRecordKind(value: unknown): value is RecordKind {
 
 /**
  * Splits a known `<namespace>:<type>` kind; anything else, including an unknown kind, is `null`.
- * @public Consumed by tests and the features that carry refs in payloads and audit metadata.
+ * @public Reserved by spec §12 for refs in payloads and audit metadata; tests only today.
  */
 export function parseRecordKind(value: unknown): { namespace: string; type: string } | null {
 	if (!isRecordKind(value)) return null;
@@ -46,7 +46,7 @@ export function parseRecordKind(value: unknown): { namespace: string; type: stri
 
 /**
  * Parses `<namespace>:<type>:<id>`; the id may itself contain colons.
- * @public Consumed by tests and the features that carry refs in payloads and audit metadata.
+ * @public Reserved by spec §12 for refs in payloads and audit metadata; tests only today.
  */
 export function parseRecordRef(value: unknown): RecordRef | null {
 	if (typeof value !== "string") return null;
@@ -55,7 +55,7 @@ export function parseRecordRef(value: unknown): RecordRef | null {
 	return { kind: match[1], id: match[2] };
 }
 
-/** @public Consumed by tests and the features that carry refs in payloads and audit metadata. */
+/** @public Reserved by spec §12 for refs in payloads and audit metadata; tests only today. */
 export function formatRecordRef(ref: RecordRef): string {
 	return `${ref.kind}:${ref.id}`;
 }

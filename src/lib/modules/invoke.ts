@@ -21,7 +21,7 @@ let stateReader: ModuleStateReader = readStoredModuleState;
 
 /**
  * Replaces the stored module state, or restores it with `null`.
- * @public Consumed by tests that run capabilities without a database.
+ * @public Test-only: lets tests run capabilities without a database.
  */
 export function setModuleStateReader(reader: ModuleStateReader | null): void {
 	stateReader = reader ?? readStoredModuleState;

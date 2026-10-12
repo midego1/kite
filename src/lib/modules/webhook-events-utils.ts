@@ -10,7 +10,7 @@ export type WebhookEventInfo = {
 	moduleName: string | null;
 };
 
-/** The message events core has always emitted. @public Consumed by tests. */
+/** The message events core has always emitted. @public Test-only: used inside this file, exported for tests. */
 export const CORE_WEBHOOK_EVENTS: readonly WebhookEventInfo[] = [
 	{
 		value: "message.inbound",
@@ -35,7 +35,7 @@ export const CORE_WEBHOOK_EVENTS: readonly WebhookEventInfo[] = [
 	},
 ];
 
-/** Core events followed by every module's, whether the module is on or off. @public Consumed by tests. */
+/** Core events followed by every module's, whether the module is on or off. @public Test-only: `WEBHOOK_EVENT_CATALOG` below is the production value. */
 export function webhookEventCatalog(
 	manifests: readonly Pick<ModuleManifest, "id" | "name" | "webhookEvents">[],
 ): WebhookEventInfo[] {

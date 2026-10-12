@@ -11,7 +11,7 @@ export type WebhookEmitDeps = {
 	dispatch(userId: string, event: string, payload: Record<string, unknown>): Promise<void>;
 };
 
-/** A module asked to emit something it may not: another module's event or a payload that breaks the event's schema. @public Consumed by tests. */
+/** A module asked to emit something it may not: another module's event or a payload that breaks the event's schema. @public Test-only: thrown here, matched only by tests. */
 export class WebhookEmitError extends Error {}
 
 function isRecord(value: JsonValue): value is Record<string, JsonValue> {

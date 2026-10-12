@@ -101,7 +101,6 @@ const accessForRequest = cache((db: Binding, userId: string, _generation: number
 
 /**
  * The install switch of every module: stored flag, or `defaultEnabled` with no row or no table. Dependencies are not applied.
- * @public Consumed by the admin modules API.
  */
 export function getInstallModuleState(env: StateEnv): Promise<ModuleFlags> {
 	return installForRequest(env.DB, generation);
@@ -109,7 +108,6 @@ export function getInstallModuleState(env: StateEnv): Promise<ModuleFlags> {
 
 /**
  * What a user may use: no row means allowed, and the primary admin is always allowed.
- * @public Consumed by the admin modules API.
  */
 export async function getUserModuleAccess(
 	env: StateEnv,
@@ -129,7 +127,6 @@ async function effectiveFor(env: StateEnv, viewer: ModuleViewer | null): Promise
 
 /**
  * Install level and dependencies only, for callers with no viewer (cron, queue, webhook retries).
- * @public Consumed by the route guards and background dispatch.
  */
 export async function isModuleEnabled(env: StateEnv, id: ModuleId): Promise<boolean> {
 	return (await effectiveFor(env, null)).has(id);
@@ -137,7 +134,6 @@ export async function isModuleEnabled(env: StateEnv, id: ModuleId): Promise<bool
 
 /**
  * Install level, dependencies and the viewer's own access.
- * @public Consumed by the route guards.
  */
 export async function isModuleEnabledFor(env: StateEnv, viewer: ModuleViewer, id: ModuleId): Promise<boolean> {
 	return (await effectiveFor(env, viewer)).has(id);
@@ -151,7 +147,6 @@ export async function listEnabledModules(env: StateEnv, viewer: ModuleViewer | n
 
 /**
  * The install flags as stored, bypassing every cache, and whether migration 0062 is applied.
- * @public Consumed by the admin modules API, which must act on what is stored, not on a 30-second-old answer.
  */
 export function readStoredInstallState(env: StateEnv): Promise<StoredFlags> {
 	return readStored(() => installRows(env.DB), installFallback);
@@ -159,7 +154,6 @@ export function readStoredInstallState(env: StateEnv): Promise<StoredFlags> {
 
 /**
  * One user's stored access flags, bypassing every cache.
- * @public Consumed by the admin modules API.
  */
 export function readStoredUserAccess(env: StateEnv, userId: string): Promise<StoredFlags> {
 	return readStored(() => accessRows(env.DB, userId), accessFallback);
@@ -168,7 +162,6 @@ export function readStoredUserAccess(env: StateEnv, userId: string): Promise<Sto
 /**
  * Drops every cached answer in this isolate. Writes call it, so the isolate that handled one sees it at
  * once, and so does a backup restore, which rewrites both tables behind the cache.
- * @public Consumed by the backup restore path.
  */
 export function clearModuleStateCache(): void {
 	isolateCache = new WeakMap();
@@ -177,7 +170,6 @@ export function clearModuleStateCache(): void {
 
 /**
  * Turns a module on or off for the install.
- * @public Consumed by the admin modules API.
  */
 export async function setModuleEnabled(
 	env: StateEnv,
@@ -196,7 +188,6 @@ export async function setModuleEnabled(
 
 /**
  * Allows or restricts one module for one user.
- * @public Consumed by the admin modules API.
  */
 export async function setUserModuleAllowed(
 	env: StateEnv,

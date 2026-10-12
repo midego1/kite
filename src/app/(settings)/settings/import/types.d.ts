@@ -67,6 +67,7 @@ export type ImportJob = {
 	imported: number;
 	skipped: number;
 	lastError: string | null;
+	attempts: number;
 	errors: string[];
 	createdAt: string;
 	updatedAt: string;

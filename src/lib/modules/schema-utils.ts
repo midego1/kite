@@ -5,8 +5,7 @@ export type CapabilitySchemas = { input: z.ZodType; output?: z.ZodType };
 export type ModuleSchemas = Record<string, CapabilitySchemas>;
 export type DescriptorMeta = Omit<CapabilityDescriptor, "name" | "inputSchema" | "outputSchema">;
 
-/** Input schemas describe what a caller may send (defaults optional); output schemas what a handler returns. */
-/** @public Consumed by tests and the features that wire modules into core surfaces. */
+/** Input schemas describe what a caller may send (defaults optional); output schemas what a handler returns. @public Test-only: used inside this file, exported for tests. */
 export function toJsonSchema(schema: z.ZodType, io: "input" | "output"): JsonSchemaObject {
 	return z.toJSONSchema(schema, { io }) as JsonSchemaObject;
 }

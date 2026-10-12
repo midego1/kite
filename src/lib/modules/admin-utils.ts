@@ -11,7 +11,7 @@ const TOOL_SURFACES = ["assistant_tool", "mcp_tool"] as const;
 
 /**
  * What a module adds to the rest of Kite, read from its manifest and its JSON-only descriptors.
- * @public Consumed by tests; `buildModuleAdminEntries` is the production caller.
+ * @public Test-only: `buildModuleAdminEntries` is the production caller.
  */
 export function summarizeCapabilities(
 	manifest: Pick<ModuleManifest, "mcpScopes" | "apiKeyScopes" | "webhookEvents" | "commands">,
@@ -78,7 +78,7 @@ export function buildModuleAdminEntries(input: {
 
 /**
  * The dependents that are on today, which a confirmation to turn the module off names.
- * @public Consumed by tests; `turnOffWarning` is the production caller.
+ * @public Test-only: `turnOffWarning` is the production caller.
  */
 export function dependentsTurningOff(
 	entry: ModuleAdminEntry,

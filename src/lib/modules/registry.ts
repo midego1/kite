@@ -19,7 +19,7 @@ export function isModuleId(value: unknown): value is ModuleId {
 	return typeof value === "string" && (MODULE_IDS as readonly string[]).includes(value);
 }
 
-/** @public Consumed by tests and the features that wire modules into core surfaces. */
+/** @public Test-only: production code reads `MODULE_MANIFESTS`. */
 export function getModuleManifest(id: ModuleId): ModuleManifest {
 	const manifest = MODULE_MANIFESTS.find((item) => item.id === id);
 	if (!manifest) throw new Error(`Unknown module ${id}`);

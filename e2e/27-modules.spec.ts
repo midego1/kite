@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { ADMIN, BASE_URL, DOMAIN, STORAGE_STATE } from "./support/constants";
 import { readAdminAgent, useFakeProvider as pointAssistantAtFake } from "./support/agent";
 import {
@@ -951,6 +951,56 @@ test("the client commands run: New event opens the dialog on the calendar", asyn
 	await runPaletteCommand(page, "New event");
 	await expect(page).toHaveURL(/\/calendar$/);
 	await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+/** Moves the highlight with ArrowDown until the row with this title is highlighted. */
+async function arrowToPaletteRow(page: Page, search: Locator, title: string) {
+	const row = page.getByRole("button", { name: new RegExp(`^${title}`) });
+	await expect(row).toBeVisible();
+	for (let step = 0; step < 60; step++) {
+		if (/bg-blue-600/.test((await row.getAttribute("class")) ?? "")) return;
+		await search.press("ArrowDown");
+	}
+	throw new Error(`The palette never highlighted ${title}`);
+}
+
+test("with an empty query ArrowDown and Enter run exactly the highlighted command, in every group", async ({
+	page,
+}) => {
+	await page.goto("/inbox");
+	await expect(page.getByRole("button", { name: "Compose" })).toBeVisible();
+	const targets: [string, RegExp][] = [
+		["Go to For you", /\/for-you$/],
+		["Go to Activity", /\/kite-activity$/],
+		["Go to Settings", /\/settings$/],
+		["Open Calendar", /\/calendar$/],
+		["Open Booking", /\/booking$/],
+		["Export mail", /\/settings\/export$/],
+		["Account Settings", /\/settings\/account$/],
+	];
+	for (const [title, path] of targets) {
+		const search = await openPalette(page);
+		await expect(search).toHaveValue("");
+		await arrowToPaletteRow(page, search, title);
+		await search.press("Enter");
+		await expect(page, title).toHaveURL(path);
+		await expect(page.getByText("Page not found")).toHaveCount(0);
+	}
+});
+
+test("ArrowUp from the first row wraps to the last row and Enter runs that command", async ({ page }) => {
+	await page.goto("/inbox");
+	await expect(page.getByRole("button", { name: "Compose" })).toBeVisible();
+	const search = await openPalette(page);
+	const rows = page.locator("div.max-h-80 > div > button");
+	await expect(rows.first()).toHaveClass(/bg-blue-600/);
+	await search.press("ArrowUp");
+	const last = rows.last();
+	await expect(last).toHaveClass(/bg-blue-600/);
+	const title = (await last.locator("span").first().innerText()).trim();
+	expect(title.length).toBeGreaterThan(0);
+	await search.press("Enter");
+	await expect(page.getByPlaceholder(PALETTE_PLACEHOLDER)).toHaveCount(0);
 });
 
 test("Calendar off removes the calendar and booking commands from every palette and they return when it is on", async ({
@@ -2235,6 +2285,33 @@ test("the mail search dropdown lists Events, opens the chosen event and leaves E
 	}
 });
 
+test("a recurring event's search result and link open the editor, on its day and on a later one", async ({ page }) => {
+	const api = await owner();
+	let id = "";
+	try {
+		const word = uniqueToken("weeklyword");
+		id = await createEvent(api, `Standup ${word}`, { repeat: "weekly" });
+		await page.goto("/inbox");
+		const field = page.getByRole("textbox", { name: /Search mail/ });
+		await field.fill(word);
+		const option = page.getByTestId("search-dropdown").getByRole("option", { name: new RegExp(`Standup ${word}`) });
+		await expect(option).toBeVisible();
+		await option.click();
+		await expect(page).toHaveURL(/\/calendar/);
+		const editor = page.getByRole("dialog", { name: "Edit event" });
+		await expect(editor.getByRole("textbox", { name: "Event name" })).toHaveValue(`Standup ${word}`);
+		await page.keyboard.press("Escape");
+
+		// A ref link names the series id and the day of the occurrence to show.
+		await page.goto(`/calendar?date=2031-05-12&event=${id}`);
+		await expect(editor.getByRole("textbox", { name: "Event name" })).toHaveValue(`Standup ${word}`);
+		await expect(editor.getByLabel("From date and time")).toHaveValue(/2031-05-12T/);
+	} finally {
+		if (id) await api.delete(`/api/calendar/events/${id}`);
+		await api.dispose();
+	}
+});
+
 test("the dropdown is keyboard driven and gone with Calendar off", async ({ page }) => {
 	const api = await owner();
 	let id = "";
@@ -2439,6 +2516,72 @@ test("a user restricted from Templates loses the slot and the API while the owne
 		if (templateId) await api.delete(`/api/templates/${templateId}`);
 		await context.close();
 		await member.api.dispose();
+		await api.dispose();
+	}
+});
+
+test("with Templates on the composer loads no template code or data until the send menu is first opened", async ({
+	page,
+}) => {
+	const api = await owner();
+	let templateId = "";
+	try {
+		const word = uniqueToken("lazyword");
+		templateId = await createTemplate(api, `Lazy subject ${word}`, `Lazy body ${word}`);
+		const seen = watchTemplateTraffic(page);
+		await page.goto("/inbox");
+		await page.getByRole("button", { name: "Compose" }).click();
+		const trigger = page.getByRole("button", { name: "Schedule send options" });
+		await expect(trigger).toBeVisible();
+		await page.waitForTimeout(800);
+		expect(seen()).toEqual([]);
+
+		await trigger.click();
+		const menu = page.getByRole("menu");
+		await expect(menu.getByRole("menuitem", { name: "Template" })).toBeVisible();
+		await expect.poll(() => seen().some((path) => path.includes("components/modules/templates/"))).toBe(true);
+		expect(seen()).toContain("/api/templates");
+		await page.keyboard.press("Escape");
+	} finally {
+		if (templateId) await api.delete(`/api/templates/${templateId}`);
+		await api.dispose();
+	}
+});
+
+test("the New template dialog works after the send menu has closed, and an earlier template still applies", async ({
+	page,
+}) => {
+	const api = await owner();
+	const created: string[] = [];
+	try {
+		const word = uniqueToken("dlgword");
+		created.push(await createTemplate(api, `Earlier subject ${word}`, `Earlier body ${word}`));
+		const menu = await openSendMenu(page);
+		await menu.getByRole("menuitem", { name: "Template" }).focus();
+		await page.keyboard.press("ArrowRight");
+		await page.getByRole("menuitem", { name: "New template" }).focus();
+		await page.keyboard.press("Enter");
+		await expect(page.getByRole("menu")).toHaveCount(0);
+		const dialog = page.getByRole("dialog", { name: "New template" });
+		await expect(dialog).toBeVisible();
+		await dialog.getByLabel("Title").fill(`Fresh ${word}`);
+		await dialog.getByLabel("Content").fill(`Fresh body ${word}`);
+		await dialog.getByRole("button", { name: "Save template" }).click();
+		await expect(dialog).toHaveCount(0);
+		const saved = (await templateStatusRows(api)).map((row) => row.id);
+		created.push(...saved.filter((id) => !created.includes(id)));
+		expect(saved.length).toBeGreaterThanOrEqual(2);
+
+		await page.getByRole("button", { name: "Schedule send options" }).click();
+		await page.getByRole("menuitem", { name: "Template" }).focus();
+		await page.keyboard.press("ArrowRight");
+		await expect(page.getByRole("menuitem", { name: `Fresh ${word}` })).toBeVisible();
+		await page.getByRole("menuitem", { name: `Earlier subject ${word}` }).focus();
+		await page.keyboard.press("Enter");
+		await expect(page.getByLabel("Subject")).toHaveValue(`Earlier subject ${word}`);
+		await expect(page.getByRole("textbox", { name: "Message body" })).toContainText(`Earlier body ${word}`);
+	} finally {
+		for (const id of created) await api.delete(`/api/templates/${id}`);
 		await api.dispose();
 	}
 });

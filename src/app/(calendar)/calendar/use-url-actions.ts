@@ -8,8 +8,9 @@ import { calendarDateFromParam } from "./utils";
  * Applies the links the palette builds: `/calendar?date=YYYY-MM-DD` shows that day, and
  * `/calendar?new=event` opens the new event dialog. The params are dropped afterwards so the same
  * command works again. An `event` param stays: the page opens that event once its day has loaded.
+ * Returns whether such a link is still waiting to be applied: a series id resolves against the events loaded for that day.
  */
-export function useCalendarUrlActions(show: (day: Date) => void, openNewEvent: (day?: Date) => void) {
+export function useCalendarUrlActions(show: (day: Date) => void, openNewEvent: (day?: Date) => void): boolean {
 	const router = useRouter();
 	const params = useSearchParams();
 	const date = params.get("date");
@@ -25,4 +26,5 @@ export function useCalendarUrlActions(show: (day: Date) => void, openNewEvent: (
 		// The callbacks change on every render; only a new link should act.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [date, create]);
+	return Boolean(date || create);
 }

@@ -129,6 +129,19 @@ export function expandCalendarEvents(events: CalendarEvent[], rangeStart: Date, 
 	return occurrences.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
 }
 
+/**
+ * The event a `/calendar?event=` link names. The id is either a loaded occurrence or a recurring series id
+ * (search results and record refs carry the stored id), which resolves to the occurrence on `day`, else the first loaded one.
+ */
+export function findEventForUrl(events: CalendarEvent[], id: string, day: Date | null): CalendarEvent | undefined {
+	const exact = events.find((item) => item.id === id);
+	if (exact) return exact;
+	const occurrences = events.filter((item) => item.id.startsWith(`${id}@`));
+	if (!day) return occurrences[0];
+	const dayStart = startOfDay(day).getTime();
+	return occurrences.find((item) => startOfDay(new Date(item.startsAt)).getTime() === dayStart) ?? occurrences[0];
+}
+
 export function nextCalendarOccurrence(event: CalendarEvent, after: Date): Date | null {
 	const first = new Date(event.seriesStartsAt ?? event.startsAt);
 	const until = event.repeatUntil ? new Date(event.repeatUntil).getTime() : Infinity;

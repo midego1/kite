@@ -5,7 +5,7 @@ import { Search, CornerDownLeft } from "lucide-react";
 import toast from "react-hot-toast";
 import type { CommandItem } from "./types";
 import { CommandParamForm } from "./command-palette-params";
-import { filterCommands, groupCommandsByCategory } from "./command-palette-utils";
+import { filterCommands, groupCommandsByCategory, orderCommandsByGroup } from "./command-palette-utils";
 import { CommandPaletteItem } from "./command-palette-item";
 
 interface CommandPaletteProps {
@@ -28,7 +28,10 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 
 	const filteredCommands = useMemo(() => filterCommands(commands, query), [commands, query]);
 
-	const activeIndex = Math.min(selectedIndex, Math.max(0, filteredCommands.length - 1));
+	const grouped = useMemo(() => groupCommandsByCategory(filteredCommands), [filteredCommands]);
+	const orderedCommands = useMemo(() => orderCommandsByGroup(filteredCommands), [filteredCommands]);
+
+	const activeIndex = Math.min(selectedIndex, Math.max(0, orderedCommands.length - 1));
 
 	const select = (item: CommandItem) => {
 		if (item.params?.length) {
@@ -65,20 +68,18 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 		}
 		if (e.key === "ArrowDown") {
 			e.preventDefault();
-			setSelectedIndex((prev) => (prev + 1) % (filteredCommands.length || 1));
+			setSelectedIndex((prev) => (prev + 1) % (orderedCommands.length || 1));
 		} else if (e.key === "ArrowUp") {
 			e.preventDefault();
-			setSelectedIndex((prev) => (prev - 1 + filteredCommands.length) % (filteredCommands.length || 1));
+			setSelectedIndex((prev) => (prev - 1 + orderedCommands.length) % (orderedCommands.length || 1));
 		} else if (e.key === "Enter") {
 			e.preventDefault();
-			if (filteredCommands[activeIndex]) select(filteredCommands[activeIndex]);
+			if (orderedCommands[activeIndex]) select(orderedCommands[activeIndex]);
 		} else if (e.key === "Escape") {
 			e.preventDefault();
 			onClose();
 		}
 	};
-
-	const grouped = useMemo(() => groupCommandsByCategory(filteredCommands), [filteredCommands]);
 
 	let flatIndex = 0;
 

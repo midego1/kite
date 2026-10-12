@@ -18,17 +18,20 @@ const {
 	handlersByCommandId,
 	filterCommands,
 	groupCommandsByCategory,
+	orderCommandsByGroup,
 	calendarDateFromParam,
+	findEventForUrl,
+	expandCalendarEvents,
 } = await bundleModules("kite-module-commands-", [
 	["MODULE_MANIFESTS, MODULE_IDS", "src/lib/modules/registry.ts"],
 	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
 	["MODULE_IDS as CLIENT_MODULE_IDS", "src/lib/modules/client-data/module-ids.ts"],
 	["CORE_COMMANDS, CORE_SHORTCUTS", "src/lib/modules/core-commands.ts"],
 	[
-		"listCommands, listShortcutBindings, commandParamFields, validateCommandParams, fillCommandHref, runCommand, handlersByCommandId, filterCommands, groupCommandsByCategory",
+		"listCommands, listShortcutBindings, commandParamFields, validateCommandParams, fillCommandHref, runCommand, handlersByCommandId, filterCommands, groupCommandsByCategory, orderCommandsByGroup",
 		"src/components/shortcuts/command-palette-utils.ts",
 	],
-	["calendarDateFromParam", "src/app/(calendar)/calendar/utils.ts"],
+	["calendarDateFromParam, findEventForUrl, expandCalendarEvents", "src/app/(calendar)/calendar/utils.ts"],
 ]);
 
 const ALL = ["calendar", "booking", "templates", "import"];
@@ -421,6 +424,78 @@ test("palette filtering matches title, subtitle, category and keywords, and grou
 	assert.deepEqual(ids(filterCommands(items, "actions")), ["b"]);
 	assert.deepEqual(filterCommands(items, "nothing"), []);
 	assert.deepEqual(Object.keys(groupCommandsByCategory(items)), ["Navigation", "Actions"]);
+});
+
+test("the palette's display order is the grouped order, so arrow keys and Enter agree with the rows", () => {
+	const items = [
+		{ id: "compose", title: "Compose", category: "Actions", perform() {} },
+		{ id: "inbox", title: "Go to Inbox", category: "Navigation", perform() {} },
+		{ id: "account", title: "Account Settings", category: "Settings", perform() {} },
+		{ id: "for-you", title: "Go to For you", category: "Navigation", perform() {} },
+		{ id: "settings", title: "Go to Settings", category: "Settings", perform() {} },
+		{ id: "calendar", title: "Open Calendar", category: "Navigation", perform() {} },
+	];
+	assert.deepEqual(ids(orderCommandsByGroup(items)), [
+		"compose",
+		"inbox",
+		"for-you",
+		"calendar",
+		"account",
+		"settings",
+	]);
+	const rows = Object.values(groupCommandsByCategory(items)).flat();
+	assert.deepEqual(ids(orderCommandsByGroup(items)), ids(rows));
+	assert.deepEqual(orderCommandsByGroup([]), []);
+	assert.equal(orderCommandsByGroup(items)[3].id, "calendar");
+});
+
+test("the real palette list keeps one command per row after grouping", () => {
+	const listed = listCommands({ enabled: ALL, handlers: [...CORE_CLIENT] });
+	const items = listed.map((command) => ({
+		id: command.id,
+		title: command.label,
+		category: command.group,
+		perform() {},
+	}));
+	const ordered = orderCommandsByGroup(items);
+	assert.equal(ordered.length, items.length);
+	assert.deepEqual(ids(ordered).sort(), ids(items).sort());
+	assert.notDeepEqual(ids(ordered), ids(items), "the raw list is not group-contiguous, which is why the order matters");
+});
+
+test("a series id resolves to the occurrence on the given day, then the first one, and an exact id still wins", () => {
+	const weekly = {
+		id: "series1",
+		title: "Standup",
+		startsAt: "2031-03-03T12:00:00.000Z",
+		endsAt: "2031-03-03T13:00:00.000Z",
+		repeat: "weekly",
+		repeatDays: null,
+		repeatUntil: null,
+		excludedOccurrences: null,
+		attendees: "[]",
+	};
+	const single = { ...weekly, id: "single1", repeat: "none" };
+	const events = expandCalendarEvents(
+		[weekly, single],
+		new Date("2031-03-01T00:00:00.000Z"),
+		new Date("2031-03-31T00:00:00.000Z"),
+	);
+	assert.ok(
+		events.every((event) => event.id !== "series1"),
+		"series occurrences carry @ ids",
+	);
+	const day = new Date("2031-03-17T12:00:00.000Z");
+	assert.equal(findEventForUrl(events, "series1", day)?.startsAt, "2031-03-17T12:00:00.000Z");
+	assert.equal(findEventForUrl(events, "series1", null)?.startsAt, "2031-03-03T12:00:00.000Z");
+	assert.equal(
+		findEventForUrl(events, "series1", new Date("2031-03-18T12:00:00.000Z"))?.startsAt,
+		"2031-03-03T12:00:00.000Z",
+	);
+	assert.equal(findEventForUrl(events, "single1", day)?.id, "single1");
+	assert.equal(findEventForUrl(events, events[1].id, day)?.id, events[1].id);
+	assert.equal(findEventForUrl(events, "missing", day), undefined);
+	assert.equal(findEventForUrl(events, "series", day), undefined, "a prefix of a series id is not that series");
 });
 
 test("the client slice equals what the manifests declare", () => {

@@ -19,3 +19,8 @@ export function listComposerSlots(
 		)
 		.sort((a, b) => a.order - b.order);
 }
+
+/** The slots whose client chunk to request now: none until the menu has been opened once. */
+export function slotsToLoad(slots: readonly ListedComposerSlot[], opened: boolean): readonly ListedComposerSlot[] {
+	return opened ? slots : [];
+}

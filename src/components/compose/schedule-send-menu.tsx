@@ -14,7 +14,8 @@ import type { ScheduleSendMenuProps } from "./schedule-send-types";
 import { getUserTimeZone } from "@/lib/time/utils";
 
 export function ScheduleSendMenu({ disabled, value, onChange, mailboxId, from, applyContent }: ScheduleSendMenuProps) {
-	const slots = useComposerSlots("send-menu", { mailboxId, from, applyContent });
+	const [menuOpened, setMenuOpened] = useState(false);
+	const slots = useComposerSlots("send-menu", { mailboxId, from, applyContent }, menuOpened);
 	// Suggestions are computed from the moment the menu opens.
 	const [openedAt, setOpenedAt] = useState(() => Date.now());
 	const options = getScheduleSendOptions(new Date(openedAt));
@@ -24,7 +25,9 @@ export function ScheduleSendMenu({ disabled, value, onChange, mailboxId, from, a
 		<>
 			<DropdownMenu.Root
 				onOpenChange={(open) => {
-					if (open) setOpenedAt(Date.now());
+					if (!open) return;
+					setOpenedAt(Date.now());
+					setMenuOpened(true);
 				}}
 			>
 				<DropdownMenu.Trigger

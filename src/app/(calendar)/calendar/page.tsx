@@ -56,6 +56,7 @@ import {
 	eventEndAfterMinutes,
 	eventPosition,
 	expandCalendarEvents,
+	findEventForUrl,
 	formatEventRange,
 	formatHour,
 	formatLocalDateTime,
@@ -195,19 +196,17 @@ export default function CalendarPage() {
 		};
 	}, [today, visibleDate, weekStart, eventsVersion, eventsKey]);
 
+	const urlActionPending = useCalendarUrlActions(setVisibleDate, openNewEvent);
 	useEffect(() => {
-		if (!eventFromUrl) {
-			openedEventFromUrl.current = null;
-			return;
-		}
-		if (openedEventFromUrl.current === eventFromUrl) return;
-		const event = events.find((item) => item.id === eventFromUrl);
+		if (!eventFromUrl) openedEventFromUrl.current = null;
+		if (!eventFromUrl || openedEventFromUrl.current === eventFromUrl || urlActionPending || loading) return;
+		const event = findEventForUrl(events, eventFromUrl, visibleDate);
 		if (!event) return;
 		openedEventFromUrl.current = eventFromUrl;
 		editEvent(event);
 		// Drop the param so picking the same event again re-opens it.
 		router.replace("/calendar");
-	}, [events, eventFromUrl]);
+	}, [events, eventFromUrl, urlActionPending, loading]);
 
 	function openNewEvent(day = visibleDate, startAt?: Date) {
 		const start = startAt ? new Date(startAt) : defaultCalendarStart(day);
@@ -225,8 +224,6 @@ export default function CalendarPage() {
 		setClosingEventEditor(false);
 		setAdding(true);
 	}
-
-	useCalendarUrlActions(setVisibleDate, openNewEvent);
 
 	async function addEvent() {
 		setPendingAction("save");

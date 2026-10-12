@@ -4,13 +4,19 @@ import { join } from "node:path";
 import test from "node:test";
 import { bundleModules, root } from "./support/modules-bundle.mjs";
 
-const { MODULE_MANIFESTS, moduleOwnedMessageStatuses, CLIENT_MODULES, listComposerSlots, messageStatusExclusions } =
-	await bundleModules("kite-module-composer-slots-", [
-		["MODULE_MANIFESTS, moduleOwnedMessageStatuses", "src/lib/modules/registry.ts"],
-		["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
-		["listComposerSlots", "src/lib/modules/composer-slot-utils.ts"],
-		["messageStatusExclusions", "src/lib/modules/message-status-utils.ts"],
-	]);
+const {
+	MODULE_MANIFESTS,
+	moduleOwnedMessageStatuses,
+	CLIENT_MODULES,
+	listComposerSlots,
+	slotsToLoad,
+	messageStatusExclusions,
+} = await bundleModules("kite-module-composer-slots-", [
+	["MODULE_MANIFESTS, moduleOwnedMessageStatuses", "src/lib/modules/registry.ts"],
+	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
+	["listComposerSlots, slotsToLoad", "src/lib/modules/composer-slot-utils.ts"],
+	["messageStatusExclusions", "src/lib/modules/message-status-utils.ts"],
+]);
 
 const read = (path) => readFileSync(join(root, path), "utf8");
 const ALL = ["calendar", "booking", "templates", "import"];
@@ -31,6 +37,16 @@ test("the slot helper lists only enabled modules' send-menu slots, in order", ()
 		["calendar.late"],
 	);
 	assert.equal(listComposerSlots(withSlots, ["templates"], "send-menu")[0].moduleId, "templates");
+});
+
+test("slot chunks are requested only once the menu has been opened", () => {
+	const slots = listComposerSlots(withSlots, ["calendar", "templates"], "send-menu");
+	assert.deepEqual(slotsToLoad(slots, false), []);
+	assert.deepEqual(
+		slotsToLoad(slots, true).map((slot) => slot.id),
+		["templates.send-menu", "calendar.late"],
+	);
+	assert.deepEqual(slotsToLoad([], true), []);
 });
 
 test("ties keep module order and a slot for another placement is not listed", () => {

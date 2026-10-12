@@ -1,8 +1,9 @@
 import type { ReorderableLayout } from "./reorderable-list-types";
 
 /**
- * Saved placement first (dropping ids that no longer exist or repeat), then any item the
- * layout has never seen goes at the end of its default list.
+ * Saved placement first (dropping ids that no longer exist or repeat). An item the layout has never
+ * seen goes into its default list right after its nearest earlier default neighbour that list still
+ * holds, otherwise right before its nearest later one, otherwise at the end.
  */
 export function resolveLayout(defaults: ReorderableLayout, stored: ReorderableLayout): ReorderableLayout {
 	const known = new Set(Object.values(defaults).flat());
@@ -12,9 +13,25 @@ export function resolveLayout(defaults: ReorderableLayout, stored: ReorderableLa
 		layout[listId] = (stored[listId] ?? []).filter((id) => known.has(id) && !placed.has(id) && !!placed.add(id));
 	}
 	for (const [listId, ids] of Object.entries(defaults)) {
-		for (const id of ids) if (!placed.has(id)) layout[listId].push(id);
+		ids.forEach((id, index) => {
+			if (placed.has(id)) return;
+			layout[listId].splice(insertionIndex(layout[listId], ids, index), 0, id);
+			placed.add(id);
+		});
 	}
 	return layout;
+}
+
+function insertionIndex(list: string[], defaults: string[], index: number): number {
+	for (let before = index - 1; before >= 0; before--) {
+		const at = list.indexOf(defaults[before]);
+		if (at >= 0) return at + 1;
+	}
+	for (let after = index + 1; after < defaults.length; after++) {
+		const at = list.indexOf(defaults[after]);
+		if (at >= 0) return at;
+	}
+	return list.length;
 }
 
 /** Take `id` out of whichever list holds it and insert it into `listId` before `beforeId` (end when null). */

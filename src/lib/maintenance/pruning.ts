@@ -9,6 +9,7 @@ import {
 	sessions,
 	webhookDeliveries,
 } from "@/db/schema";
+import { agentActions } from "@/db/schema/agent-auto-read";
 import type { PruningPolicy, PruningResult } from "./pruning-types";
 import {
 	PRUNABLE_OUTBOUND_JOB_STATUSES,
@@ -85,6 +86,7 @@ export async function runDatabasePruning(
 			policy.expiredPasswordResetTokensDays,
 			(cutoff) => lt(passwordResetTokens.expiresAt, cutoff),
 		],
+		["agent_actions", agentActions, policy.agentActionsDays, (cutoff) => lt(agentActions.createdAt, cutoff)],
 	];
 	for (const [name, table, days, where] of jobs) {
 		const cutoff = getRetentionCutoff(now, days);

@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useMessageCounts } from "@/hooks/use-message-counts";
+import { useForYouNav } from "./for-you-nav";
 import { authFetch } from "@/lib/auth/client";
 import { DEFAULT_FOLDER_COLOR, FOLDER_COLOR_OPTIONS } from "@/lib/folders/colors";
 import type { FolderColor } from "@/lib/folders/types";
@@ -88,6 +89,7 @@ export function DashboardNav({ className }: { className?: string }) {
 	const [foldersSectionOpen, toggleFoldersSection] = useSectionOpen("kite:nav:folders-section-open");
 	const { selectedMailbox, isLoading } = useSelectedMailbox();
 	const { counts } = useMessageCounts(selectedMailbox?.id, !isLoading);
+	const forYou = useForYouNav();
 	const [folders, setFolders] = useState<CustomFolder[]>([]);
 	const [newFolderName, setNewFolderName] = useState("");
 	const [newFolderColor, setNewFolderColor] = useState<FolderColor>(DEFAULT_FOLDER_COLOR);
@@ -143,7 +145,9 @@ export function DashboardNav({ className }: { className?: string }) {
 
 	const isActiveHref = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 	const composeLink = linksWithCounts.find((link) => link.href === "/compose");
-	const mainLinks = linksWithCounts.filter((link) => link.href !== "/compose" && !MORE_LINK_HREFS.includes(link.href!));
+	const mainLinks = forYou.withLink(
+		linksWithCounts.filter((link) => link.href !== "/compose" && !MORE_LINK_HREFS.includes(link.href!)),
+	);
 	const moreLinks = linksWithCounts.filter((link) => MORE_LINK_HREFS.includes(link.href!));
 	// The icon rail has no room for text toggles. When collapsed, the page you are on stays listed on its own.
 	const showAllMoreLinks = minimal || moreOpen;
@@ -206,11 +210,16 @@ export function DashboardNav({ className }: { className?: string }) {
 				storageKey="kite:nav:layout"
 				enabled={!minimal}
 				lists={[
-					{ id: "main", items: mainLinks.map((link) => ({ id: link.href!, node: <NavItem link={link} /> })) },
+					{
+						id: "main",
+						visibleIds: forYou.visibleIds,
+						items: mainLinks.map((link) => ({ id: link.href!, node: <NavItem link={link} /> })),
+					},
 					{
 						id: "more",
 						before: minimal ? undefined : <NavToggle expanded={moreOpen} onClick={toggleMore} />,
-						visibleIds: (ordered) => (showAllMoreLinks ? ordered : ordered.filter((id) => isActiveHref(id))),
+						visibleIds: (ordered) =>
+							forYou.visibleIds(showAllMoreLinks ? ordered : ordered.filter((id) => isActiveHref(id))),
 						items: moreLinks.map((link) => ({ id: link.href!, node: <NavItem link={link} /> })),
 					},
 				]}

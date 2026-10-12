@@ -35,6 +35,10 @@ import { ConversationSkeleton } from "./conversation-skeleton";
 import { QueuedAgentMessages } from "./queued-messages";
 import { SendReview } from "./send-review";
 import { AgentStepLimitSetting } from "./step-limit-setting";
+import { AutoReadSettings } from "./auto-read-settings";
+import { AssistantSettingsTabs } from "./assistant-settings-tabs";
+import { reasonText } from "./agent-activity-utils";
+import { legacyAgentSettingsBody } from "./auto-read-settings-utils";
 import type { ReviewSnapshot } from "./send-review-types";
 import { approveAgentAction, requestDraftReview } from "./client-actions";
 import type {
@@ -489,7 +493,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 			const response = await authFetch("/api/agent/settings", {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(settings),
+				body: JSON.stringify(legacyAgentSettingsBody(settings)),
 			});
 			if (!response.ok)
 				throw new Error(((await response.json()) as AgentErrorResponse).error || "Could not save settings");
@@ -847,7 +851,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 				</>
 			)}
 			{view === "settings" && (
-				<div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 text-sm">
+				<AssistantSettingsTabs settings={settings}>
 					<AgentStepLimitSetting />
 					<p className="font-medium text-neutral-800">Mailbox settings</p>
 					{!canManage && <p>Mailbox management permission is required to change these settings.</p>}
@@ -920,6 +924,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 							<Button type="button" size="sm" disabled={!canManage || busy} onClick={() => void saveSettings()}>
 								Save settings
 							</Button>
+							<AutoReadSettings key={settings.mailboxId} mailboxId={settings.mailboxId} />
 						</>
 					)}
 					<p className="text-xs text-neutral-500">
@@ -931,7 +936,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 						.slice(0, 5)
 						.map((job) => (
 							<p key={job.id} className="text-xs">
-								{job.status}: {job.reason}
+								{job.kind === "triage" ? "Automatic reading" : "Auto-draft"} {job.status}: {reasonText(job.reason)}
 								{job.status === "failed" && (
 									<button type="button" className="ml-2 text-blue-700 underline" onClick={() => void retryJob(job.id)}>
 										Retry
@@ -939,7 +944,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 								)}
 							</p>
 						))}
-				</div>
+				</AssistantSettingsTabs>
 			)}
 			{draftReview && (
 				<SendReview

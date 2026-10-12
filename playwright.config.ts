@@ -37,6 +37,8 @@ export default defineConfig({
 			KITE_VITE_CACHE_DIR: E2E_VITE_CACHE_DIR,
 			// Lets specs point the alert webhook at an in-spec http receiver on 127.0.0.1.
 			ALERT_WEBHOOK_ALLOW_INSECURE: "1",
+			// Lets specs point the agent provider at the fake model on 127.0.0.1 (e2e/support/fake-model.ts).
+			AI_ALLOW_INSECURE_LOOPBACK: "1",
 		},
 		// A reused server keeps whatever state earlier runs left behind; opt in only while iterating.
 		reuseExistingServer: process.env.E2E_REUSE_SERVER === "1",

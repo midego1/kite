@@ -13,6 +13,17 @@ export interface AgentDraftNotification {
 	type: "agent_draft";
 }
 
+/** A suggestion was created, updated or closed; sent only to users with full access on the mailbox. */
+export interface AgentSuggestionNotification {
+	mailboxId: string;
+	messageId: string;
+	suggestionId: string;
+	kind: string;
+	type: "agent_suggestion";
+}
+
+export type RealtimePayload = NewMessageNotification | AgentDraftNotification | AgentSuggestionNotification;
+
 export interface MailboxRevisionRow {
 	mailbox_id: string;
 	revision: number;
@@ -32,5 +43,5 @@ export interface RevisionNotification {
 
 export interface RealtimeNotificationRequest {
 	userIds: string[];
-	payload: NewMessageNotification | AgentDraftNotification;
+	payload: RealtimePayload;
 }

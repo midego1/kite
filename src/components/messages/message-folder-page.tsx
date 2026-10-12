@@ -8,6 +8,7 @@ import { Archive, ChevronLeft, ChevronRight, ListFilter, Mail, MailOpen, Trash2 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip } from "@/components/ui/tooltip";
+import { SuggestionBadge } from "@/components/agent/suggestion-badge";
 import { useMailSearch } from "@/components/mail-search/mail-search-context";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { usePageLoading } from "@/components/page-loading";
@@ -188,6 +189,7 @@ function MessageListRow({
 								{(message.threadCount ?? 1) > 1 && (
 									<span className="ml-2 text-xs font-normal text-neutral-500">{message.threadCount}</span>
 								)}
+								<SuggestionBadge suggestions={message.agentSuggestions} />
 							</span>
 							<span
 								className={clsx(
@@ -258,6 +260,7 @@ function MessageListRow({
 				{party}
 
 				{(message.threadCount ?? 1) > 1 && <span className="ml-2 text-xs text-neutral-500">{message.threadCount}</span>}
+				<SuggestionBadge suggestions={message.agentSuggestions} />
 			</span>
 			<span className="truncate text-neutral-700">
 				<span className={unread ? "font-semibold text-neutral-900" : ""}>{rowMessage.subject ?? "(no subject)"}</span>

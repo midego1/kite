@@ -84,6 +84,7 @@ The screenshots and the demo recording show invented demo data. `npm run screens
 - **Import, export, contacts**: Move mail in and out, manage contacts, and block unwanted senders.
 - **Admin**: Manage users, permissions, API keys, webhooks, audit logs, and backups. Admin pages share the Settings layout, with the mail sidebar and one side menu that switches between Settings and Admin; there, the top-bar search field finds pages in both menus (on phones, the menu sheet has its own search), and audit logs are under Activity.
 - **AI assistant**: Search your mail, draft replies, and manage calendar events with AI.
+- **Automatic reading**: Let Kite read new mail and suggest replies, calendar answers, summaries and phishing warnings. Off by default, suggestions only, with spend caps and undo. See [Assistant: automatic reading](docs/assistant.md).
 - **MCP access**: Connect AI clients over MCP, with separate permissions for each key.
 
 ## How this version differs

@@ -12,6 +12,8 @@ import { Switch } from "@/components/ui/switch";
 import { DEFAULT_CLOUDFLARE_MODEL } from "@/lib/agent/provider-constants";
 import { saveAssistantAvailability } from "@/lib/agent/availability-client";
 import { parseAgentModelIds, toggleAgentModelId } from "@/lib/agent/model-ids";
+import { mergePublishedAgentRates } from "@/lib/agent/model-rates-utils";
+import { AutoReadAdminSettings } from "@/components/agent/auto-read-admin-settings";
 import type { AgentProviderPreset } from "@/lib/agent/provider-types";
 import type { AgentAdminForm, AgentModelLoadState } from "./types";
 import {
@@ -101,7 +103,7 @@ export default function AdminAgentPage() {
 							data.models.flatMap((item) => (item.rates ? [[item.id, item.rates]] : [])),
 						);
 						if (Object.keys(published).length)
-							setForm((current) => ({ ...current, rates: { ...current.rates, ...published } }));
+							setForm((current) => ({ ...current, rates: mergePublishedAgentRates(current.rates, published) }));
 					})
 					.catch((error) => {
 						if (!controller.signal.aborted)
@@ -409,6 +411,7 @@ export default function AdminAgentPage() {
 					</form>
 				</CardContent>
 			</Card>
+			<AutoReadAdminSettings />
 		</div>
 	);
 }

@@ -13,7 +13,7 @@ import { getAllowedMutationHosts, isAllowedMutationRequest, requiresCsrfCheck } 
 import { isTrustProxyEnabled, resolveClientIp } from "@/lib/security/client-ip";
 import { buildContentSecurityPolicy, createCspNonce, isDocumentPath } from "@/lib/security/headers";
 import { processInboundMessage } from "@/lib/email/inbound";
-import { processAgentDraftJob } from "@/lib/agent/jobs/utils";
+import { processAgentQueueMessage } from "@/lib/agent/queue";
 import { isImportJobQueueMessage, processImportJob } from "@/lib/import/jobs";
 import { processOutboundQueue, type OutboundQueueMessage } from "@/lib/email/send";
 import { processWebhookRetry, type WebhookRetryMessage } from "@/lib/email/webhooks";
@@ -65,14 +65,8 @@ async function main() {
 		else await processOutboundQueue(env, body as OutboundQueueMessage);
 	});
 	runtime.agentQueue.setConsumer(async (body) => {
-		if (
-			typeof body === "object" &&
-			body !== null &&
-			(body as { kind?: unknown }).kind === "agent.draft" &&
-			typeof (body as { jobId?: unknown }).jobId === "string"
-		)
-			await processAgentDraftJob(env, (body as { jobId: string }).jobId);
-		else if (isImportJobQueueMessage(body)) await processImportJob(env, body.jobId);
+		if (await processAgentQueueMessage(env, body)) return;
+		if (isImportJobQueueMessage(body)) await processImportJob(env, body.jobId);
 	});
 
 	const app = next({ dev, dir: process.cwd(), hostname: host, port });

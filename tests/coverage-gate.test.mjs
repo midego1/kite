@@ -160,6 +160,38 @@ test("a function listed twice by source-map line counts once with its highest hi
 	}
 });
 
+const detailedRecord = (fnHits, lineHits) =>
+	[
+		"SF:src/lib/a-utils.ts",
+		"FN:5,missingColumnFromError",
+		"FN:20,other",
+		`FNDA:${fnHits[0]},missingColumnFromError`,
+		`FNDA:${fnHits[1]},other`,
+		"FNF:2",
+		`FNH:${fnHits.filter((hits) => hits > 0).length}`,
+		...lineHits.map((hits, index) => `DA:${index + 1},${hits}`),
+		`LH:${lineHits.filter((hits) => hits > 0).length}`,
+		`LF:${lineHits.length}`,
+		"BRF:0",
+		"BRH:0",
+		"end_of_record",
+	].join("\n");
+
+test("records for one source merge per line and per function with the highest hits, in either order", () => {
+	const calledHere = detailedRecord([7, 0], [1, 1, 1, 0]);
+	const bundledOnly = detailedRecord([0, 2], [0, 0, 0, 1]);
+	for (const lcov of [`${calledHere}\n${bundledOnly}`, `${bundledOnly}\n${calledHere}`]) {
+		const files = parseLcov(lcov, { root, base: "/repo", exists, realpath });
+		assert.deepEqual(files.get("src/lib/a-utils.ts"), { lines: [4, 4], branches: [0, 0], functions: [2, 2] });
+	}
+});
+
+test("merged records keep lines and functions that no record hit uncovered", () => {
+	const lcov = `${detailedRecord([3, 0], [1, 0, 0, 0])}\n${detailedRecord([0, 0], [0, 0, 1, 0])}`;
+	const files = parseLcov(lcov, { root, base: "/repo", exists, realpath });
+	assert.deepEqual(files.get("src/lib/a-utils.ts"), { lines: [2, 4], branches: [0, 0], functions: [1, 2] });
+});
+
 test("a function that no record ever hit stays uncovered", () => {
 	const files = parseLcov(
 		sourceMapSplit([
@@ -169,4 +201,24 @@ test("a function that no record ever hit stays uncovered", () => {
 		{ root, base: "/repo", exists, realpath },
 	);
 	assert.deepEqual(files.get("src/lib/a-utils.ts").functions, [1, 2]);
+});
+
+test("totals-only records retain a larger denominator alongside keyed records, in either order", () => {
+	const keyed = detailedRecord([1, 0], [1, 1]);
+	const totals = duplicateRecords([3, 10, 0, 0, 1, 5]);
+	for (const records of [
+		[keyed, totals],
+		[totals, keyed],
+	]) {
+		const file = parseLcov(records.join("\n"), { root, exists, realpath }).get("src/lib/a-utils.ts");
+		assert.deepEqual(file.lines, [3, 10]);
+		assert.deepEqual(file.functions, [1, 5]);
+	}
+});
+
+test("a larger keyed union still wins over smaller totals-only records", () => {
+	const lcov = [detailedRecord([1, 1], [1, 1, 0, 0]), duplicateRecords([2, 2, 0, 0, 1, 1])].join("\n");
+	const file = parseLcov(lcov, { root, exists, realpath }).get("src/lib/a-utils.ts");
+	assert.deepEqual(file.lines, [2, 4]);
+	assert.deepEqual(file.functions, [2, 2]);
 });

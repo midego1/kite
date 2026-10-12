@@ -21,6 +21,8 @@ export const PRUNING_POLICY: PruningPolicy = {
 	expiredSessionsDays: 1,
 	expiredLoginChallengesDays: 1,
 	expiredPasswordResetTokensDays: 1,
+	// The agent audit log; undo windows are far shorter, so older rows are history only.
+	agentActionsDays: 180,
 };
 
 export const PRUNABLE_OUTBOUND_JOB_STATUSES = ["sent", "failed", "cancelled"] as const;

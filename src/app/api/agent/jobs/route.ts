@@ -15,6 +15,7 @@ export async function GET(request: Request) {
 	const rows = await getDb(env)
 		.select({
 			id: agentJobs.id,
+			kind: agentJobs.kind,
 			status: agentJobs.status,
 			reason: agentJobs.reason,
 			draftId: agentJobs.draftId,

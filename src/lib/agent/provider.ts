@@ -6,13 +6,16 @@ import { AGENT_SETTINGS_ID, DEFAULT_CLOUDFLARE_MODEL, PROVIDER_BASE_URLS } from 
 import { parseAgentModelIds } from "./model-ids";
 import { parseAgentModelRates } from "./pricing";
 import { openSetting } from "@/lib/security/secret-box";
+import { isAgentLoopbackAllowed, parseCustomAgentBaseUrl } from "./provider-url-utils";
 
-export function resolveAgentBaseUrl(preset: AgentProviderPreset, customUrl: string) {
+export function resolveAgentBaseUrl(
+	preset: AgentProviderPreset,
+	customUrl: string,
+	env?: Pick<CloudflareEnv, "AI_ALLOW_INSECURE_LOOPBACK">,
+) {
 	if (preset !== "custom") return PROVIDER_BASE_URLS[preset];
-	const url = new URL(customUrl.trim());
-	if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash)
-		throw new Error("Custom provider URL must be an HTTPS base URL without credentials or query parameters");
-	return url.toString().replace(/\/$/, "");
+	const allowLoopback = isAgentLoopbackAllowed(env?.AI_ALLOW_INSECURE_LOOPBACK, process.env.NODE_ENV);
+	return parseCustomAgentBaseUrl(customUrl, allowLoopback);
 }
 
 export async function getAgentEnabled(env: CloudflareEnv): Promise<boolean> {
@@ -54,7 +57,7 @@ export async function getAgentProviderConfig(env: CloudflareEnv): Promise<AgentP
 	}
 	if (saved?.provider === "compatible") {
 		const preset = saved.preset || "custom";
-		const baseUrl = resolveAgentBaseUrl(preset, saved.baseUrl || "");
+		const baseUrl = resolveAgentBaseUrl(preset, saved.baseUrl || "", env);
 		const models = parseAgentModelIds(saved.model || "");
 		return {
 			provider: "compatible",

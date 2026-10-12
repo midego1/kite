@@ -14,6 +14,8 @@ export type ConversationThreadProps = {
 	expandedAll: boolean;
 	onExpandedAllChange: (expanded: boolean) => void;
 	showFullRecipientAddresses?: boolean;
+	/** The current message's thread; the Kite suggestion card covers the whole conversation. */
+	threadId?: string | null;
 };
 
 export type ConversationMessageCardProps = {

@@ -4,7 +4,11 @@ interface CloudflareEnv {
 	BUCKET: R2Bucket;
 	INBOUND_QUEUE: Queue<import("./src/lib/email/inbound").InboundQueueMessage>;
 	// The agent queue also carries background IMAP import jobs.
-	AGENT_QUEUE?: Queue<{ kind: "agent.draft"; jobId: string } | import("./src/lib/import/jobs").ImportJobQueueMessage>;
+	AGENT_QUEUE?: Queue<
+		| { kind: "agent.draft"; jobId: string }
+		| { kind: "agent.triage"; jobId: string }
+		| import("./src/lib/import/jobs").ImportJobQueueMessage
+	>;
 	AI?: Ai;
 	AI_MODEL?: string;
 	AI_BASE_URL?: string;
@@ -41,6 +45,8 @@ interface CloudflareEnv {
 	OPERATIONAL_ALERTS?: string;
 	/** Dev/test only: "1" or "true" lets the alert webhook use plain http to loopback hosts; ignored in production. */
 	ALERT_WEBHOOK_ALLOW_INSECURE?: string;
+	/** Dev/test only: "1" lets a custom AI provider be http://127.0.0.1 or http://localhost (the fake model); ignored in production. */
+	AI_ALLOW_INSECURE_LOOPBACK?: string;
 	/** When set, first-run setup and the first registration must present this token. */
 	SETUP_TOKEN?: string;
 	/** Any long random string; when set, provider secrets in app_settings are stored encrypted (AES-GCM, key derived with HKDF). */

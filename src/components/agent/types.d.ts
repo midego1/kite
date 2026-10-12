@@ -87,6 +87,7 @@ export type AgentPanelView = "chat" | "settings";
 export type AgentConversation = { id: string; title: string };
 export type AgentJob = {
 	id: string;
+	kind: "draft" | "triage";
 	status: string;
 	reason: string | null;
 	draftId: string | null;

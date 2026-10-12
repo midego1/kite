@@ -16,6 +16,7 @@ import { getOutboundAttachmentMaxMb } from "@/lib/email/attachment-policy";
 import { getOutboundProviderConfig, sendThroughProvider } from "@/lib/email/outbound-provider";
 import { prepareCloudflareAttachments } from "@/lib/email/cloud-attachment-utils";
 import { runPostDeliveryStep } from "@/lib/email/post-delivery-utils";
+import { supersedeOlderReplies } from "@/lib/agent/auto-read/suggestion-lifecycle";
 import { recordMetric } from "@/lib/metrics.mjs";
 import { isNodeRuntime } from "@/lib/runtime";
 
@@ -41,6 +42,8 @@ export type SendEmailInput = {
 	/** Future delivery time. Values at or before the current time send immediately. */
 	scheduledAt?: string | Date;
 	publicOrigin?: string;
+	/** Caller-chosen id for the stored message, so a retried caller can find the row it already wrote. */
+	messageId?: string;
 };
 
 const MAX_RECIPIENTS = 50;
@@ -70,6 +73,10 @@ function toRecipientList(value: string | string[] | undefined): string[] {
 		result.push(entry.trim());
 	}
 	return result;
+}
+
+function chooseMessageId(input: SendEmailInput): string {
+	return input.messageId ?? newId("msg");
 }
 
 export async function sendEmail(
@@ -120,7 +127,7 @@ export async function sendEmail(
 		throw new Error("Headers exceed Cloudflare's 16 KB limit");
 	}
 
-	const messageId = newId("msg");
+	const messageId = chooseMessageId(input);
 	const requestedSchedule = input.scheduledAt ? new Date(input.scheduledAt) : null;
 	const scheduledAt = requestedSchedule && requestedSchedule.getTime() > Date.now() ? requestedSchedule : null;
 	const snippet = buildSnippet(input.text ?? null, input.html ?? null);
@@ -284,6 +291,7 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 			})
 			.where(eq(messages.id, messageId));
 	});
+	await runPostDeliveryStep(`agent reply suggestions for ${messageId}`, () => supersedeOlderReplies(env, messageId));
 	await runPostDeliveryStep(`sent job status for ${jobId}`, () =>
 		db.update(outboundJobs).set({ status: "sent", updatedAt: new Date() }).where(eq(outboundJobs.id, jobId)),
 	);

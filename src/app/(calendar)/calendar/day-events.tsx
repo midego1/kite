@@ -11,6 +11,7 @@ import {
 	eventPosition,
 	formatEventRange,
 	PAST_EVENT_COLOR_CLASSES,
+	TENTATIVE_EVENT_CLASSES,
 } from "./utils";
 import type { CalendarEvent, EventResizeEdge } from "./types";
 import type { DayEventsProps } from "./day-events-types";
@@ -67,13 +68,19 @@ function DayEventsImpl({
 							onClick={() => onEdit(event)}
 							onDragStart={(dragEvent: DragEvent<HTMLButtonElement>) => onDragStart(dragEvent, event)}
 							onDragEnd={onDragEnd}
-							title={`${event.title} · ${range}`}
-							className={`absolute left-1 right-1 z-10 flex cursor-move flex-col items-start justify-start overflow-hidden rounded-lg pr-2 pl-4 text-left hover:brightness-95 ${isPastEvent ? PAST_EVENT_COLOR_CLASSES[color] : EVENT_COLOR_CLASSES[color]} ${position.height >= 20 ? "py-1.5" : "py-0"} ${activeEventId === event.id ? "opacity-40" : ""}`}
+							title={`${event.title} · ${range}${event.status === "tentative" ? " (Tentative)" : ""}`}
+							data-status={event.status === "tentative" ? "tentative" : undefined}
+							className={`absolute left-1 right-1 z-10 flex cursor-move flex-col items-start justify-start overflow-hidden rounded-lg pr-2 pl-4 text-left hover:brightness-95 ${isPastEvent ? PAST_EVENT_COLOR_CLASSES[color] : EVENT_COLOR_CLASSES[color]} ${position.height >= 20 ? "py-1.5" : "py-0"} ${activeEventId === event.id ? "opacity-40" : ""} ${event.status === "tentative" ? TENTATIVE_EVENT_CLASSES : ""}`}
 							style={{ top: position.top, height: position.height }}
 						>
 							<span className="absolute top-1 left-1 block h-[calc(100%-8px)] w-1 rounded-xl bg-current" />
 							{position.height >= 15 && (
-								<span className="block w-full truncate text-[12px] font-semibold leading-4">{event.title}</span>
+								<span className="block w-full truncate text-[12px] font-semibold leading-4">
+									{event.title}
+									{event.status === "tentative" && (
+										<span className="ml-1 text-[10px] font-normal italic">Tentative</span>
+									)}
+								</span>
 							)}
 							{position.height >= 34 && (
 								<span className="block w-full truncate text-[11px] leading-4 opacity-70">{range}</span>

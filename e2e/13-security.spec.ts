@@ -96,6 +96,33 @@ test("every API route answers 401 or 403 without a session, except the documente
 	expect(violations, `Unexpected statuses:\n${violations.join("\n")}`).toEqual([]);
 });
 
+test("the automatic reading routes answer 401 with no data without a session", async ({ request }) => {
+	const routes = [
+		["GET", "/api/agent/settings?mailboxId=e2e_probe"],
+		["PUT", "/api/agent/settings"],
+		["GET", "/api/agent/suggestions"],
+		["POST", "/api/agent/suggestions/x/accept"],
+		["POST", "/api/agent/suggestions/x/dismiss"],
+		["GET", "/api/agent/actions?mailboxId=e2e_probe"],
+		["POST", "/api/agent/actions/x/undo"],
+		["PUT", "/api/admin/agent"],
+	] as const;
+	const failures: string[] = [];
+	for (const [method, path] of routes) {
+		const response = await request.fetch(path, {
+			method,
+			headers: sameOrigin,
+			data: SAFE_METHODS.has(method) ? undefined : {},
+			maxRedirects: 0,
+			failOnStatusCode: false,
+		});
+		const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+		const keys = body ? Object.keys(body).filter((key) => key !== "error") : [];
+		if (response.status() !== 401 || keys.length) failures.push(`${method} ${path} -> ${response.status()} ${keys}`);
+	}
+	expect(failures).toEqual([]);
+});
+
 test("the realtime endpoint refuses plain requests and unauthenticated upgrades", async ({ request }) => {
 	const login = await request.post("/api/auth/login", {
 		headers: sameOrigin,

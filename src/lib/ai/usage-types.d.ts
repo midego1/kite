@@ -7,4 +7,6 @@ export type RecordAiUsageInput = {
 	details: AiUsageDetails;
 	usage: LanguageModelUsage;
 	source: string;
+	mailboxId?: string | null;
+	jobId?: string | null;
 };

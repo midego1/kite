@@ -76,6 +76,23 @@ test.describe("compose and send", () => {
 		await expect(page.getByRole("main").getByText(subject, { exact: true })).toHaveCount(1);
 	});
 
+	test("keeps the send preview backdrop dark when dark mode is enabled", async ({ page }) => {
+		const api = await apiContext(STORAGE_STATE);
+		await setSendingSettings(api, { previewEnabled: true, undoSeconds: 0 });
+		await api.dispose();
+
+		await page.addInitScript(() => localStorage.setItem("kite-theme", "dark"));
+		await page.goto("/inbox");
+		await fillComposer(page, `Dark preview ${uniqueToken()}`, "Preview backdrop contrast");
+		await page.getByRole("button", { name: "Review send" }).click();
+
+		const dialog = page.getByRole("dialog", { name: "Preview email before sending" });
+		await expect(dialog).toBeVisible();
+		await expect
+			.poll(() => dialog.evaluate((element) => getComputedStyle(element).backgroundColor))
+			.toBe("oklab(0 0 0 / 0.6)");
+	});
+
 	test("sends straight away when the preview is off", async ({ page }) => {
 		const api = await apiContext(STORAGE_STATE);
 		await setSendingSettings(api, { previewEnabled: false, undoSeconds: 0 });

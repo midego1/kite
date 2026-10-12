@@ -442,6 +442,20 @@
       "when": 1788851040028,
       "tag": "0059_add_alert_webhook",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "6",
+      "when": 1788851100028,
+      "tag": "0060_add_agent_auto_read",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "6",
+      "when": 1788851160028,
+      "tag": "0061_add_agent_job_completed_at",
+      "breakpoints": true
     }
   ]
 }

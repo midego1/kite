@@ -4,6 +4,8 @@ import { agentDraftMetadata, agentSendApprovals, messageAttachments, messages } 
 import { getAuthorizedSenderAddress } from "@/lib/email/sender";
 import { loadMessageAttachmentContents } from "@/lib/email/attachments";
 import { sendEmail } from "@/lib/email/send";
+import { runPostDeliveryStep } from "@/lib/email/post-delivery-utils";
+import { recordSentAgentDraft } from "@/lib/agent/auto-read/sent-draft";
 import { newId } from "@/lib/ids";
 import type { SessionUser } from "@/lib/auth/types";
 import type { AgentSendSnapshot } from "./types";
@@ -194,6 +196,9 @@ export async function confirmAgentSend(
 			.update(messages)
 			.set({ status: "trash" })
 			.where(and(eq(messages.id, draft.id), eq(messages.status, "draft")));
+		await runPostDeliveryStep(`agent draft action for ${draft.id}`, () =>
+			recordSentAgentDraft(env, { mailboxId: draft.mailboxId!, draftId: draft.id, sentMessageId: result.messageId }),
+		);
 		return { status: "sent", messageId: result.messageId, scheduled: !!result.scheduled };
 	} catch (error) {
 		await db.update(agentSendApprovals).set({ status: "unknown" }).where(eq(agentSendApprovals.id, approvalId));

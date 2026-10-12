@@ -13,7 +13,7 @@ Kite uses calendar versions, `YYYY.MM.DD.N`: the UTC date a release was prepared
 ## Cutting a release
 
 1. On a branch from an up-to-date `main`, run `npm run release:prepare`. It writes the next version into `VERSION`, `package.json`, `package-lock.json` and `docs/openapi.json`, and moves the entries under "Unreleased" in `CHANGELOG.md` to a heading for the new version. It refuses when "Unreleased" has no entries, or when `VERSION` is dated after today. It commits, tags and pushes nothing.
-2. Review the new changelog section. Name every migration and every setting an operator has to add or change. `npm run release:notes -- <previous tag>` lists the commit subjects since the last release to compare against.
+2. Review the new changelog section. Name every migration and every setting an operator has to add or change. When a note introduces or changes something a user can set, link to the page it lives on with an app path, for example `[Settings → Inbox → Notifications](/settings/inbox)`: the **What's new in Kite** dialog opens such links in the app, while `https://` links open in a new tab and any other link stays plain text. `npm run release:notes -- <previous tag>` lists the commit subjects since the last release to compare against.
 3. Commit as `chore(release): <version>`, open a pull request and merge it. Merging to `main` deploys the Worker through the Cloudflare Git integration.
 4. Tag the merge commit and push only the tag:
 

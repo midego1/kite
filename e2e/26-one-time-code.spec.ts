@@ -201,6 +201,25 @@ test("a copy request the clipboard refuses becomes a dialog with one more Copy",
 	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("337461");
 });
 
+test("Settings can send a test notification while the tab is visible", async ({ page }) => {
+	await page.addInitScript(stubNotifications());
+	await page.goto("/settings/inbox");
+	// The stub hides the tab; a test notification must show regardless.
+	const button = page.getByRole("button", { name: "Send test notification" });
+	await expect(button).toBeEnabled();
+	await button.click();
+	const entry = await lastNotification(page);
+	expect(entry.title).toBe("Kite notifications are working");
+	expect(entry.options?.body).toContain("New email will be announced like this");
+	expect(entry.options?.tag).toBe("kite-test-notification");
+	expect(entry.options?.data).toEqual({ test: true });
+	await expect(page.getByText(/^Test notification sent/)).toBeVisible();
+
+	// With browser notifications turned off, the button is unavailable.
+	await page.getByRole("switch", { name: "Enable browser notifications" }).click();
+	await expect(button).toBeDisabled();
+});
+
 test("turning the code setting off keeps codes out of the notification", async ({ page }) => {
 	await seedRealtimeSession(page);
 	await page.addInitScript(stubNotifications());

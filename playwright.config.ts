@@ -1,13 +1,27 @@
 import { defineConfig, devices } from "@playwright/test";
 import { BASE_URL, E2E_PERSIST_DIR, E2E_PORT, E2E_VITE_CACHE_DIR, STORAGE_STATE } from "./e2e/support/constants";
 
+/** `PLAYWRIGHT_SHARD=2/4` runs one slice of the suite; CI sets it per parallel job. */
+function shardFromEnv(): { current: number; total: number } | undefined {
+	const match = /^(\d+)\/(\d+)$/.exec(process.env.PLAYWRIGHT_SHARD ?? "");
+	if (!match) return undefined;
+	const current = Number(match[1]);
+	const total = Number(match[2]);
+	if (current < 1 || total < 1 || current > total)
+		throw new Error(`Invalid PLAYWRIGHT_SHARD: ${process.env.PLAYWRIGHT_SHARD}`);
+	return { current, total };
+}
+
 export default defineConfig({
 	testDir: "./e2e",
 	outputDir: "test-results/playwright",
 	testMatch: /.*\.spec\.ts$/,
-	// Every spec shares one D1 database, so run them one at a time.
+	// Every spec shares one D1 database, so run them one at a time. Sharding
+	// still works: each shard has its own server and database, and a file is
+	// one unit unless it opts into `mode: "parallel"`.
 	fullyParallel: false,
 	workers: 1,
+	shard: shardFromEnv(),
 	retries: process.env.CI ? 1 : 0,
 	forbidOnly: !!process.env.CI,
 	timeout: 90_000,

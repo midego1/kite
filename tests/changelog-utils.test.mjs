@@ -22,7 +22,7 @@ await build({
 	packages: "external",
 	logLevel: "silent",
 });
-const { changelogReleaseLabel, parseChangelog, parseInlineMarkdown } = await import(
+const { changelogReleaseLabel, isAppChangelogHref, parseChangelog, parseInlineMarkdown } = await import(
 	pathToFileURL(join(bundleDirectory, "changelog.mjs")).href
 );
 
@@ -38,7 +38,7 @@ test("parses the shipped changelog into releases, sections and items", () => {
 	assert.equal(releases[1].date, "2026-10-12");
 	assert.deepEqual(
 		releases[0].sections.map((section) => section.title),
-		["Added"],
+		["Added", "Changed"],
 	);
 	assert.deepEqual(
 		releases[1].sections.map((section) => section.title),
@@ -128,6 +128,12 @@ test("inline markdown becomes text, code, strong and http links", () => {
 		{ type: "text", text: "see " },
 		{ type: "link", text: "Deployment", href: "https://example.com/x#y" },
 	]);
+	assert.deepEqual(parseInlineMarkdown("open [Settings → Inbox](/settings/inbox#notifications)"), [
+		{ type: "text", text: "open " },
+		{ type: "link", text: "Settings → Inbox", href: "/settings/inbox#notifications" },
+	]);
+	assert.equal(isAppChangelogHref("/settings/inbox"), true);
+	assert.equal(isAppChangelogHref("https://example.com/settings"), false);
 	assert.deepEqual(parseInlineMarkdown("`only code`"), [{ type: "code", text: "only code" }]);
 	assert.deepEqual(parseInlineMarkdown(""), []);
 });
@@ -139,6 +145,11 @@ test("HTML and unsafe links stay literal text", () => {
 	assert.deepEqual(parseInlineMarkdown("[Deployment](docs/deployment.md)"), [
 		{ type: "text", text: "[Deployment](docs/deployment.md)" },
 	]);
+	// A protocol-relative URL would leave the app while looking like an app path.
+	assert.deepEqual(parseInlineMarkdown("[x](//evil.example/settings)"), [
+		{ type: "text", text: "[x](//evil.example/settings)" },
+	]);
+	assert.equal(isAppChangelogHref("//evil.example"), false);
 	const unsafe = parseInlineMarkdown("[click](javascript:alert('x'))");
 	assert.equal(unsafe.map((token) => token.text).join(""), "[click](javascript:alert('x'))");
 	assert.ok(unsafe.every((token) => token.type === "text"));

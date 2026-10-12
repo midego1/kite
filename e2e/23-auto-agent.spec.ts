@@ -24,6 +24,12 @@ import { apiContext, deliverInbound, postInbound, signIn, uniqueToken, waitForMe
 import { futureAt, inviteAttachment } from "./support/invites";
 import { readActions, readJobs, readSuggestions, waitForFinishedJob } from "./support/triage";
 
+// Every test snapshots and restores the automatic-reading state in beforeEach
+// and afterEach, so none depends on another. Declaring that lets CI spread this
+// file, by far the longest in the suite, over several shards. With one worker
+// the tests still run one at a time.
+test.describe.configure({ mode: "parallel" });
+
 let fake: FakeModel;
 let api: APIRequestContext;
 

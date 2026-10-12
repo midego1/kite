@@ -1,12 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BUILD_VERSION_LABEL } from "@/lib/build-version";
-import { changelogReleaseLabel, parseInlineMarkdown } from "@/lib/changelog/changelog-utils";
+import { changelogReleaseLabel, isAppChangelogHref, parseInlineMarkdown } from "@/lib/changelog/changelog-utils";
 import type { ChangelogInline, ChangelogRelease } from "@/lib/changelog/types";
 
-function InlineToken({ token }: { token: ChangelogInline }) {
+const LINK_CLASS = "text-blue-700 underline underline-offset-2 hover:text-blue-800";
+
+function InlineToken({ token, onNavigate }: { token: ChangelogInline; onNavigate: () => void }) {
 	if (token.type === "code") {
 		return (
 			<code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[12px] text-neutral-800">{token.text}</code>
@@ -14,13 +17,17 @@ function InlineToken({ token }: { token: ChangelogInline }) {
 	}
 	if (token.type === "strong") return <strong className="font-semibold text-neutral-900">{token.text}</strong>;
 	if (token.type === "link") {
+		// A link into the app (for example the setting a note talks about) opens
+		// in this tab and closes the dialog; outside links open in a new tab.
+		if (isAppChangelogHref(token.href)) {
+			return (
+				<Link href={token.href} className={LINK_CLASS} onClick={onNavigate}>
+					{token.text}
+				</Link>
+			);
+		}
 		return (
-			<a
-				href={token.href}
-				target="_blank"
-				rel="noreferrer"
-				className="text-blue-700 underline underline-offset-2 hover:text-blue-800"
-			>
+			<a href={token.href} target="_blank" rel="noreferrer" className={LINK_CLASS}>
 				{token.text}
 			</a>
 		);
@@ -29,11 +36,13 @@ function InlineToken({ token }: { token: ChangelogInline }) {
 }
 
 /** Every changelog item is written as text nodes, so nothing in the file can become markup. */
-function InlineText({ text }: { text: string }) {
-	return parseInlineMarkdown(text).map((token, index) => <InlineToken key={index} token={token} />);
+function InlineText({ text, onNavigate }: { text: string; onNavigate: () => void }) {
+	return parseInlineMarkdown(text).map((token, index) => (
+		<InlineToken key={index} token={token} onNavigate={onNavigate} />
+	));
 }
 
-function ReleaseNotes({ release }: { release: ChangelogRelease }) {
+function ReleaseNotes({ release, onNavigate }: { release: ChangelogRelease; onNavigate: () => void }) {
 	return (
 		<section className="space-y-3">
 			<div className="sticky top-0 flex items-baseline gap-2 bg-white py-1">
@@ -48,7 +57,7 @@ function ReleaseNotes({ release }: { release: ChangelogRelease }) {
 							<li key={`${section.title}:${index}`} className="flex gap-2 text-sm leading-relaxed text-neutral-700">
 								<span aria-hidden className="mt-2 h-1 w-1 shrink-0 rounded-full bg-blue-400" />
 								<span className="min-w-0 break-words">
-									<InlineText text={item} />
+									<InlineText text={item} onNavigate={onNavigate} />
 								</span>
 							</li>
 						))}
@@ -102,7 +111,7 @@ export function ChangelogDialog({
 					{failed && <p className="text-sm text-neutral-500">Could not load the release notes.</p>}
 					{releases?.length === 0 && <p className="text-sm text-neutral-500">No release notes yet.</p>}
 					{releases?.map((release) => (
-						<ReleaseNotes key={release.name} release={release} />
+						<ReleaseNotes key={release.name} release={release} onNavigate={() => onOpenChange(false)} />
 					))}
 				</div>
 			</DialogContent>

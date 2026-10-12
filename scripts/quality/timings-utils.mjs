@@ -10,8 +10,9 @@ export const DEFAULT_TASKS = [
 	"test:e2e",
 ];
 
-// Only build:node may be skipped: CI runs it in a parallel job, and every other task is evidence the gate needs.
-export const SKIPPABLE_TASKS = ["build:node"];
+// Only tasks CI runs in parallel jobs may be skipped (build:node in "Node build", test:e2e in the
+// sharded "E2E" jobs); every other task is evidence the gate needs.
+export const SKIPPABLE_TASKS = ["build:node", "test:e2e"];
 
 export function parseSkipTasks(value) {
 	const entries = String(value ?? "")

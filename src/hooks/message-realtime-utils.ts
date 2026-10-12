@@ -126,26 +126,68 @@ export async function showBrowserNewMessageNotification(event: NewMessageEvent):
 				: { messageId: event.messageId },
 		};
 		if (parts.code) options.actions = [{ action: "copy", title: "Copy code" }];
-		// Shown through the service worker when one is available: it supports the
-		// Copy code action and can copy or open the message when the notification
-		// is clicked even if this tab was closed.
-		const registration = await ensureNotificationServiceWorker();
-		if (registration) {
-			try {
-				await registration.showNotification(parts.title, options);
-				return;
-			} catch {
-				// Fall through to the constructor.
-			}
-		}
-		const notification = new Notification(parts.title, options);
-		notification.onclick = () => {
-			window.focus();
+		await presentNotification(parts.title, options, () => {
 			if (parts.code) requestCopyCode(parts.code);
 			else window.location.assign(`/inbox/${event.messageId}`);
-			notification.close();
-		};
+		});
 	} catch {
 		// The in-app new message popup still handles this email.
 	}
+}
+
+const TEST_NOTIFICATION_TITLE = "Kite notifications are working";
+const TEST_NOTIFICATION_BODY = "New email will be announced like this while Kite is in a background tab.";
+
+/**
+ * Shows a sample notification on request from Settings, so a user can check
+ * that the browser and the operating system actually display them. Unlike new
+ * mail it is shown while the tab is visible, which is where the user is looking.
+ * Returns false when notifications are unavailable, blocked or turned off.
+ */
+export async function showTestBrowserNotification(): Promise<boolean> {
+	if (
+		typeof Notification === "undefined" ||
+		Notification.permission !== "granted" ||
+		!areBrowserNotificationsEnabled()
+	) {
+		return false;
+	}
+	try {
+		await presentNotification(TEST_NOTIFICATION_TITLE, {
+			body: TEST_NOTIFICATION_BODY,
+			icon: "/icon-96.png",
+			tag: "kite-test-notification",
+			data: { test: true },
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Shown through the service worker when one is available: it supports the
+ * Copy code action and can copy or open the message when the notification is
+ * clicked even if this tab was closed. The plain constructor is the fallback.
+ */
+async function presentNotification(
+	title: string,
+	options: NotificationOptionsWithActions,
+	onClick?: () => void,
+): Promise<void> {
+	const registration = await ensureNotificationServiceWorker();
+	if (registration) {
+		try {
+			await registration.showNotification(title, options);
+			return;
+		} catch {
+			// Fall through to the constructor.
+		}
+	}
+	const notification = new Notification(title, options);
+	notification.onclick = () => {
+		window.focus();
+		onClick?.();
+		notification.close();
+	};
 }

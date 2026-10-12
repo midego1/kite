@@ -38,7 +38,7 @@ test("parses the shipped changelog into releases, sections and items", () => {
 	assert.equal(releases[1].date, "2026-10-09");
 	assert.deepEqual(
 		releases[0].sections.map((section) => section.title),
-		["Added", "Fixed"],
+		["Added", "Changed", "Fixed"],
 	);
 	assert.deepEqual(
 		releases[2].sections.map((section) => section.title),

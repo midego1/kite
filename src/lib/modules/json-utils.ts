@@ -7,10 +7,30 @@ const encoder = new TextEncoder();
 
 function describe(value: unknown): string {
 	if (value === null) return "null";
-	if (Array.isArray(value)) return "array";
+	if (Array.isArray(value) && Object.getPrototypeOf(value) === Array.prototype) return "array";
 	return typeof value === "object"
 		? ((Object.getPrototypeOf(value) as object | null)?.constructor?.name ?? "object")
 		: typeof value;
+}
+
+function isArrayIndex(key: string | symbol, length: number): boolean {
+	if (typeof key !== "string") return false;
+	const index = Number(key);
+	return Number.isInteger(index) && index >= 0 && index < length && String(index) === key;
+}
+
+/** Why an object or array is not plain JSON: a foreign prototype, symbol keys, or properties JSON.stringify would drop. */
+function shapeProblem(value: object, path: string): string | null {
+	const prototype = Object.getPrototypeOf(value) as unknown;
+	if (!Array.isArray(value)) {
+		if (prototype !== Object.prototype && prototype !== null)
+			return `${path} is a ${describe(value)}, which is not JSON`;
+		return Object.getOwnPropertySymbols(value).length ? `${path} has a symbol key` : null;
+	}
+	if (prototype !== Array.prototype) return `${path} is a ${describe(value)}, which is not JSON`;
+	const extra = Reflect.ownKeys(value).find((key) => key !== "length" && !isArrayIndex(key, value.length));
+	// JSON.stringify drops these properties, so a handler could smuggle a function or secret past the scan.
+	return extra === undefined ? null : `${path} has an extra property ${String(extra)}`;
 }
 
 function scan(value: unknown, path: string, depth: number, ancestors: object[]): string | null {
@@ -19,12 +39,8 @@ function scan(value: unknown, path: string, depth: number, ancestors: object[]):
 	if (typeof value !== "object") return `${path} is a ${describe(value)}, which is not JSON`;
 	if (depth >= JSON_MAX_DEPTH) return `${path} is nested deeper than ${JSON_MAX_DEPTH} levels`;
 	if (ancestors.includes(value)) return `${path} contains a cycle`;
-	if (!Array.isArray(value)) {
-		const prototype = Object.getPrototypeOf(value) as unknown;
-		if (prototype !== Object.prototype && prototype !== null)
-			return `${path} is a ${describe(value)}, which is not JSON`;
-		if (Object.getOwnPropertySymbols(value).length) return `${path} has a symbol key`;
-	}
+	const shape = shapeProblem(value, path);
+	if (shape) return shape;
 	ancestors.push(value);
 	try {
 		if (Array.isArray(value)) {

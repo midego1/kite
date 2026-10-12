@@ -702,6 +702,59 @@ test("a restriction applies to that user only, shows on both admin pages and is 
 	}
 });
 
+test("saving access on the permissions page shows in the Modules summary after link navigation, without a reload", async ({
+	page,
+}) => {
+	const api = await owner();
+	let restricted: string[] = [];
+	try {
+		const target = await createMember(api);
+		restricted = [target.id];
+		const name = target.email.split("@")[0];
+
+		await page.goto("/modules");
+		await expect(moduleSection(page, "Calendar")).toContainText("Every user has access.");
+		// Everything below is client-side navigation: a reload would refetch and hide a stale cache.
+		await page.evaluate(() => ((window as unknown as { __noReload: boolean }).__noReload = true));
+		await page.locator('a[href="/accounts"]').first().click();
+		await page.locator(`a[href="/accounts/${target.id}"]`).first().click();
+		await page.locator(`a[href="/accounts/${target.id}/permissions"]`).first().click();
+		const section = page.getByRole("region", { name: "Modules", exact: true });
+		await section.getByRole("checkbox", { name: "Allow Calendar" }).uncheck();
+		await section.getByRole("button", { name: "Save module access" }).click();
+		await expect(section.getByText("Module access updated")).toBeVisible();
+
+		await page.locator('a[href="/modules"]').first().click();
+		await expect(page.getByRole("heading", { level: 1, name: "Modules" })).toBeVisible();
+		await expect(moduleSection(page, "Calendar")).toContainText(`1 user is restricted: ${name}`);
+		expect(await page.evaluate(() => (window as unknown as { __noReload?: boolean }).__noReload)).toBe(true);
+
+		await setModuleState(api, { access: [{ userId: target.id, moduleId: "calendar", allowed: true }] });
+		await target.api.dispose();
+	} finally {
+		await restoreModules(api, restricted);
+		await api.dispose();
+	}
+});
+
+test("PATCH /api/booking/settings keeps 403 for a restricted non-admin and 401 signed out", async () => {
+	const api = await owner();
+	let restricted: string[] = [];
+	try {
+		const target = await createMember(api);
+		restricted = [target.id];
+		await setModuleState(api, { access: [{ userId: target.id, moduleId: "booking", allowed: false }] });
+		const patch = (client: APIRequestContext) =>
+			client.patch("/api/booking/settings", { data: { username: "nobody" }, headers: { Origin: BASE_URL } });
+		expect((await patch(target.api)).status()).toBe(403);
+		expect((await patch(await visitor())).status()).toBe(401);
+		await target.api.dispose();
+	} finally {
+		await restoreModules(api, restricted);
+		await api.dispose();
+	}
+});
+
 async function moduleAccessCleanup(members: { api: APIRequestContext }[]) {
 	await Promise.all(members.map((member) => member.api.dispose()));
 }

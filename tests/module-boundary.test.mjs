@@ -175,6 +175,87 @@ test("input that is not plain JSON is invalid_input", async () => {
 	assert.match(messages[2].error.message, /cycle/);
 });
 
+class ListSubclass extends Array {}
+const withCallback = () => Object.assign([], { callback: () => "x" });
+const withLabel = () => Object.assign([1, 2], { label: "extra" });
+const withSymbol = () => Object.assign([1], { [Symbol("k")]: 1 });
+const sparseExtra = () => Object.assign([1, 2, 3], { 3: 4 }, { "-1": 0, "01": 0, 1.5: 0 });
+const otherPrototype = () => Object.setPrototypeOf([1], null);
+const subclass = () => ListSubclass.from([1, 2]);
+const nonJsonArrays = {
+	"array subclass": subclass,
+	"array with a function property": withCallback,
+	"array with a string property": withLabel,
+	"array with a symbol key": withSymbol,
+	"array with non-index numeric-looking keys": sparseExtra,
+	"array without the Array prototype": otherPrototype,
+};
+
+test("array subclasses and arrays with extra own properties are not JSON, at any depth", () => {
+	for (const [label, make] of Object.entries(nonJsonArrays)) {
+		for (const wrap of [(v) => v, (v) => ({ items: v }), (v) => [[v]], (v) => ({ a: { b: [v] } })]) {
+			assert.notEqual(jsonValueProblem(wrap(make())), null, label);
+		}
+		assert.throws(() => assertJsonValue(make()), TypeError, label);
+	}
+	assert.match(jsonValueProblem(subclass()), /ListSubclass/);
+	assert.match(jsonValueProblem(withCallback(), "input"), /input/);
+	assert.equal(jsonValueProblem([1, [2, { three: [3] }], []]), null);
+});
+
+test("arrays that are subclasses or carry extra properties are invalid_input, including under an unknown-valued schema", async () => {
+	register("anything", async () => ({ ok: true }), {}, { input: z.unknown() });
+	register("anyObject", async () => ({ ok: true }), {}, { input: z.object({ items: z.array(z.unknown()) }) });
+	for (const [label, make] of Object.entries(nonJsonArrays)) {
+		for (const [name, input] of [
+			["noop", make()],
+			["echo", { text: "x", items: make() }],
+			["anything", make()],
+			["anything", { nested: { list: [make()] } }],
+			["anyObject", { items: [make()] }],
+			["anyObject", { items: make() }],
+		]) {
+			const result = await invoke(MODULE, name, input, ctx());
+			assert.equal(result.ok, false, `${label} -> ${name}`);
+			assert.equal(result.error.code, "invalid_input", `${label} -> ${name}`);
+		}
+	}
+	calls.length = 0;
+	assert.equal((await invoke(MODULE, "anything", { nested: { list: [[1, 2]] } }, ctx())).ok, true);
+});
+
+test("arrays that are subclasses or carry extra properties in a handler's output are invalid_output", async () => {
+	register(
+		"outputWith",
+		async (input) => ({ value: input.make === "subclass" ? subclass() : withCallback() }),
+		{},
+		{
+			input: z.object({ make: z.string() }),
+			output: z.object({ value: z.unknown() }),
+		},
+	);
+	register(
+		"outputNoSchema",
+		async (input) => ({ value: [[Object.assign([], input.extra)]] }),
+		{},
+		{
+			input: z.object({ extra: z.record(z.string(), z.unknown()) }),
+		},
+	);
+	for (const make of ["subclass", "callback"]) {
+		const result = await invoke(MODULE, "outputWith", { make }, ctx());
+		assert.equal(result.ok, false, make);
+		assert.equal(result.error.code, "invalid_output", make);
+	}
+	const noSchema = await invoke(MODULE, "outputNoSchema", { extra: { flag: true } }, ctx());
+	assert.equal(noSchema.ok, false);
+	assert.equal(noSchema.error.code, "invalid_output");
+	assert.deepEqual(await invoke(MODULE, "outputNoSchema", { extra: {} }, ctx()), {
+		ok: true,
+		output: { value: [[[]]] },
+	});
+});
+
 test("inputs at the limits are accepted", async () => {
 	assert.equal(jsonValueProblem(deep(32)), null);
 	assert.equal(jsonValueProblem(deep(33)) === null, false);

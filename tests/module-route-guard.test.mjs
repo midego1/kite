@@ -206,6 +206,51 @@ test("a restricted user answers 404 after authentication while others keep acces
 	assert.equal((await call(route, null)).status, 401);
 });
 
+test("a restricted non-admin answers the route's own 403, and 404 only comes once role authorization passes", async (t) => {
+	const db = await database(t);
+	db.db.exec(
+		"INSERT INTO user_module_access (id, user_id, module_id, allowed, updated_at) VALUES ('u1', 'member', 'booking', 0, 1)",
+	);
+	db.db.exec(
+		"INSERT INTO users (id, email, password_hash, name, role, is_primary_admin, created_at) VALUES ('restricted-admin', 'ra@example.com', 'hash', 'RA', 'admin', 0, 1)",
+	);
+	db.db.exec(
+		"INSERT INTO user_module_access (id, user_id, module_id, allowed, updated_at) VALUES ('u2', 'restricted-admin', 'booking', 0, 1)",
+	);
+	const users = { owner: OWNER, member: MEMBER, "restricted-admin": { id: "restricted-admin", role: "admin" } };
+	// The order of src/app/api/booking/settings/route.ts: session, admin role, then checkUser.
+	const route = guardRoute(checksFor(db), "booking", async (request, { checkUser }) => {
+		const user = users[request.headers.get("x-user") ?? ""];
+		if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+		if (user.role !== "admin") return Response.json({ error: "Only administrators" }, { status: 403 });
+		return (await checkUser(user)) ?? Response.json({ ok: true });
+	});
+	assert.equal((await call(route, null)).status, 401);
+	assert.equal((await call(route, "member")).status, 403);
+	await readNotFound(await call(route, "restricted-admin"));
+	assert.equal((await call(route, "owner")).status, 200);
+	const off = await database(t);
+	off.db.exec("UPDATE module_settings SET enabled = 0 WHERE module_id = 'booking'");
+	const offRoute = guardRoute(checksFor(off), "booking", async () =>
+		Response.json({ error: "Unauthorized" }, { status: 401 }),
+	);
+	for (const user of [null, "member", "owner"]) await readNotFound(await call(offRoute, user));
+});
+
+test("no module route runs checkUser before its own role authorization", () => {
+	const ROLE_CHECK = /role\s*!==?\s*["']admin["']|requireSessionAdmin|!isAdmin\(|!isPrimaryAdmin\(/;
+	const offenders = [];
+	for (const { file } of guardedRoutes)
+		for (const { method, text } of methodsOf(readFileSync(file, "utf8"))) {
+			const check = text.indexOf("checkUser(");
+			const role = text.search(ROLE_CHECK);
+			if (check !== -1 && role !== -1 && role > check) offenders.push(`${relative(root, file)} ${method}`);
+		}
+	assert.deepEqual(offenders, []);
+	const settings = readFileSync(join(root, "src/app/api/booking/settings/route.ts"), "utf8");
+	assert.ok(settings.search(ROLE_CHECK) !== -1 && settings.indexOf("checkUser(") > settings.search(ROLE_CHECK));
+});
+
 test("checkAuth folds the user check into the route's own auth result", async (t) => {
 	const db = await database(t);
 	db.db.exec(

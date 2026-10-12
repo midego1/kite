@@ -13,11 +13,11 @@ export const PATCH = withModule("booking", async (request, { checkUser }) => {
 	const env = getEnv();
 	const user = await getCurrentUser(env, request);
 	if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-	const denied = await checkUser(user);
-	if (denied) return denied;
 	if (user.role !== "admin")
 		return NextResponse.json({ error: "Only administrators can change booking usernames." }, { status: 403 });
 	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
+	const denied = await checkUser(user);
+	if (denied) return denied;
 	const body = (await request.json().catch(() => null)) as BookingSettingsInput | null;
 	const username = normalizeBookingUsername(body?.username);
 	if (!username)

@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -7,6 +8,7 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import { authFetch } from "@/lib/auth/client";
 import type { UserModuleAccessView } from "@/lib/modules/admin-types";
 import type { ModuleId } from "@/lib/modules/module-types";
+import { MODULES_QUERY_KEY } from "@/app/(admin)/modules/utils";
 
 type Draft = Partial<Record<ModuleId, boolean>>;
 
@@ -33,6 +35,7 @@ export function ModuleAccessSection({
 }
 
 function ModuleAccessControls({ accountId }: { accountId: string }) {
+	const queryClient = useQueryClient();
 	const [view, setView] = useState<UserModuleAccessView | null>(null);
 	const [draft, setDraft] = useState<Draft>({});
 	const [saving, setSaving] = useState(false);
@@ -62,6 +65,8 @@ function ModuleAccessControls({ accountId }: { accountId: string }) {
 				body: JSON.stringify({ access: Object.fromEntries(changed.map((entry) => [entry.id, draft[entry.id]])) }),
 			});
 			setView(await readView(response, "Unable to save module access"));
+			// The root query client never refetches on mount, so a cached Modules page would keep the old per-user summary.
+			queryClient.removeQueries({ queryKey: MODULES_QUERY_KEY });
 			setDraft({});
 			setMessage("Module access updated");
 		} catch (error) {

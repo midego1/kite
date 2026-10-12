@@ -13,11 +13,12 @@ interface CloudflareEnv {
 	AI_MODEL?: string;
 	AI_BASE_URL?: string;
 	AI_API_KEY?: string;
-	// The outbound queue also carries webhook retries so that scheduled redelivery needs no extra binding.
+	// The outbound queue also carries webhook retries and manual backup exports, so that neither needs an extra binding.
 	OUTBOUND_QUEUE: Queue<
 		| import("./src/lib/email/send").OutboundQueueMessage
 		| import("./src/lib/email/webhooks").WebhookRetryMessage
 		| import("./src/lib/mailboxes/delete-types").MailboxPurgeMessage
+		| import("./src/lib/backups/queue-types").BackupRunMessage
 	>;
 	ASSETS: Fetcher;
 	IMAGES: ImagesBinding;

@@ -70,6 +70,7 @@ A push to `main` deploys the main Worker through the Cloudflare Git integration.
    - `queue.processing_failed`: a queue message failed and will be retried.
    - `inbound.enqueue_failed`: the email handler could not store or enqueue inbound mail.
    - `backup.scheduled_failed`: the scheduled backup failed.
+   - `backup.stale_marked_failed`: a queued or running backup was interrupted and was marked failed.
    - `alerts.*`: the operational alert run (see [Operational alerts](#operational-alerts)).
 4. Open Metrics and compare requests, errors and CPU time with the period before the deploy.
 5. On the Admin overview, the database card (`src/components/admin-update-card.tsx`, `GET /api/admin/migrations`) shows pending D1 migrations. Apply them from there; deploys never migrate for you.

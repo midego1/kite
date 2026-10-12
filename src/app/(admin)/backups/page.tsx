@@ -438,10 +438,12 @@ export default function BackupsPage() {
 					>
 						<div className="min-w-0">
 							<p className="truncate text-sm font-medium text-neutral-900">{backup.filename ?? backup.id}</p>
-							<p className="truncate text-xs text-neutral-500">
-								{getBackupTriggerLabel(backup.trigger)}
-								{backup.error ? `: ${backup.error}` : ""}
-							</p>
+							<p className="truncate text-xs text-neutral-500">{getBackupTriggerLabel(backup.trigger)}</p>
+							{backup.error && (
+								<p className="truncate text-xs text-red-700" title={backup.error}>
+									{backup.error}
+								</p>
+							)}
 						</div>
 						<Badge variant="outline" className={getStatusClass(backup.status)}>
 							{backup.status}

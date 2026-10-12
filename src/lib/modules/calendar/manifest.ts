@@ -24,7 +24,7 @@ export const calendarManifest: ModuleManifest = {
 			href: "/calendar",
 			icon: "CalendarDays",
 			placement: "module-tabs",
-			order: 10,
+			order: 20,
 		},
 	],
 	commands: [

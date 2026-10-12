@@ -8,11 +8,14 @@ import { parseBookingEventInput } from "@/lib/booking/utils";
 import { getEnv } from "@/lib/cloudflare";
 import type { BookingEventRouteContext } from "./types";
 import { validBookingHostIds } from "@/lib/booking/hosts";
+import { withModule } from "@/lib/modules/route-guard";
 
-export async function PATCH(request: Request, { params }: BookingEventRouteContext) {
+export const PATCH = withModule<BookingEventRouteContext>("booking", async (request, { params, checkUser }) => {
 	const env = getEnv();
 	const user = await getCurrentUser(env, request);
 	if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	const denied = await checkUser(user);
+	if (denied) return denied;
 	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
 	const input = parseBookingEventInput(await request.json().catch(() => null));
 	if (!input) return NextResponse.json({ error: "Enter valid booking details and availability." }, { status: 400 });
@@ -48,12 +51,14 @@ export async function PATCH(request: Request, { params }: BookingEventRouteConte
 			return NextResponse.json({ error: "This event link is already in use." }, { status: 409 });
 		throw error;
 	}
-}
+});
 
-export async function DELETE(request: Request, { params }: BookingEventRouteContext) {
+export const DELETE = withModule<BookingEventRouteContext>("booking", async (request, { params, checkUser }) => {
 	const env = getEnv();
 	const user = await getCurrentUser(env, request);
 	if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	const denied = await checkUser(user);
+	if (denied) return denied;
 	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
 	const { eventId } = await params;
 	const [event] = await getDb(env)
@@ -63,4 +68,4 @@ export async function DELETE(request: Request, { params }: BookingEventRouteCont
 	return event
 		? NextResponse.json({ ok: true })
 		: NextResponse.json({ error: "Booking event not found" }, { status: 404 });
-}
+});

@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import type { ModuleId } from "@/lib/modules/module-types";
 
 export type NavMode = "settings" | "admin";
 
@@ -11,6 +12,8 @@ export type NavItem = {
 	/** Extra words the menu search matches. */
 	keywords?: string;
 	permission?: NavPermission;
+	/** Set on items a module contributes; they are hidden while that module is off for the user. */
+	moduleId?: ModuleId;
 };
 
 export type NavSection = {

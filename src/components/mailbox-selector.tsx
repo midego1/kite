@@ -2,19 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-	CalendarDays,
-	Check,
-	ChevronDown,
-	Inbox,
-	LogOut,
-	Settings,
-	ShieldCheck,
-	UserPlus,
-	UsersRound,
-} from "lucide-react";
+import { Check, ChevronDown, Inbox, LogOut, Settings, ShieldCheck, UserPlus, UsersRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
+import { ModuleMenuLinks } from "@/components/modules/module-nav-links";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { ProgressiveAvatarImage } from "@/components/progressive-avatar-image";
 import { isIdentityMailbox } from "@/components/mailbox-provider-utils";
@@ -301,14 +292,8 @@ export function MailboxSelector({ initialUser }: MailboxSelectorProps = {}) {
 							<Inbox size={18} className="text-neutral-600" />
 							Inbox
 						</Link>
-						<Link
-							href="/calendar"
-							onClick={() => setOpen(false)}
-							className="mt-1 flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-[#f2f6fc]"
-						>
-							<CalendarDays size={18} className="text-neutral-600" />
-							Calendar
-						</Link>
+						<ModuleMenuLinks placement="mailbox-selector" onNavigate={() => setOpen(false)} />
+						<ModuleMenuLinks placement="account-menu" onNavigate={() => setOpen(false)} />
 						<Link
 							href="/settings/account"
 							onClick={() => setOpen(false)}

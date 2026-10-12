@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { cn } from "@/lib/utils";
+import { useModules } from "@/components/modules/modules-context";
 import { getNavMode, navModeLabels } from "@/components/settings/section-nav-utils";
 import type { PageSearchResult } from "./page-search-types";
 import {
@@ -36,7 +37,8 @@ export function PageSearchInput() {
 
 	const mode = getNavMode(pathname);
 	const placeholder = pageSearchPlaceholder(mode);
-	const groups = searchPages(query, user, mode);
+	const { modules } = useModules();
+	const groups = searchPages(query, user, mode, modules);
 	const results = flattenPageResults(groups);
 	const expanded = open && query.trim() !== "";
 	const active = expanded ? results[highlight] : undefined;

@@ -12,11 +12,11 @@ export const bookingManifest: ModuleManifest = {
 	nav: [
 		{
 			id: "booking.module-tabs",
-			label: "Booking",
+			label: "Bookings",
 			href: "/booking",
 			icon: "CalendarClock",
 			placement: "module-tabs",
-			order: 20,
+			order: 10,
 		},
 		{
 			id: "booking.account-menu",

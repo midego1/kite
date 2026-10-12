@@ -6,7 +6,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { createCalendarInvitation } from "@/lib/calendar/utils";
 import { sendEmail } from "@/lib/email/send";
 import type { CalendarEventInput } from "../types";
-import type { CalendarEventRouteParams } from "./types";
+import type { CalendarEventRouteParams as RouteParams } from "./types";
 import { normalizeCalendarColor } from "@/lib/calendar/colors";
 import {
 	DEFAULT_REPEAT_DAYS,
@@ -19,10 +19,11 @@ import {
 import { newId } from "@/lib/ids";
 import { getRequestTimeZone, normalizeTimeZone } from "@/lib/time/utils";
 import { authorizeCalendarRequest, calendarKeyCanSendInvitations } from "@/lib/calendar/api-auth";
+import { withModule } from "@/lib/modules/route-guard";
 
-export async function PATCH(request: Request, { params }: CalendarEventRouteParams) {
+export const PATCH = withModule<RouteParams>("calendar", async function PATCH(request, { params, checkAuth }) {
 	const env = getEnv();
-	const { user, key, error } = await authorizeCalendarRequest(env, request, "calendar:write");
+	const { user, key, error } = await checkAuth(authorizeCalendarRequest(env, request, "calendar:write"));
 	if (error) return error;
 	const { eventId } = await params;
 	const occurrence = parseCalendarOccurrenceId(eventId);
@@ -188,11 +189,11 @@ export async function PATCH(request: Request, { params }: CalendarEventRoutePara
 		);
 	}
 	return NextResponse.json({ ok: true });
-}
+});
 
-export async function DELETE(request: Request, { params }: CalendarEventRouteParams) {
+export const DELETE = withModule<RouteParams>("calendar", async (request, { params, checkAuth }) => {
 	const env = getEnv();
-	const { user, error } = await authorizeCalendarRequest(env, request, "calendar:write");
+	const { user, error } = await checkAuth(authorizeCalendarRequest(env, request, "calendar:write"));
 	if (error) return error;
 	const { eventId } = await params;
 	const occurrence = parseCalendarOccurrenceId(eventId);
@@ -221,4 +222,4 @@ export async function DELETE(request: Request, { params }: CalendarEventRoutePar
 			.where(eq(calendarEvents.id, existing.id));
 	else await db.delete(calendarEvents).where(eq(calendarEvents.id, existing.id));
 	return NextResponse.json({ ok: true });
-}
+});

@@ -12,11 +12,14 @@ import { importMessagesToMailbox } from "@/lib/import/service";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { ImapImportRequest } from "./types";
 import { parseImapImportRequest } from "./utils";
+import { withModule } from "@/lib/modules/route-guard";
 
-export async function POST(request: Request) {
+export const POST = withModule("import", async (request, { checkUser }) => {
 	const env = getEnv();
 	const { user, error } = await requireSessionUser(env, request);
 	if (error) return error;
+	const denied = await checkUser(user);
+	if (denied) return denied;
 	let input: ReturnType<typeof parseImapImportRequest>;
 	try {
 		const body = await readJsonBody<ImapImportRequest>(request, 16 * 1024);
@@ -57,4 +60,4 @@ export async function POST(request: Request) {
 	} catch (error) {
 		return NextResponse.json({ error: error instanceof Error ? error.message : "IMAP import failed" }, { status: 502 });
 	}
-}
+});

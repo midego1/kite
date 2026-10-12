@@ -62,6 +62,7 @@
 	"/api/contacts/avatar",
 	"/api/contacts/block",
 	"/api/contacts",
+	"/api/dev/modules",
 	"/api/domains/[id]/dns",
 	"/api/domains/[id]/dns/setup",
 	"/api/domains/[id]/receiving/[provider]",

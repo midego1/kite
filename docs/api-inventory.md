@@ -75,6 +75,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/contacts/avatar`                                 | DELETE, GET, POST      | [source](../src/app/api/contacts/avatar/route.ts)                                 |
 | `/api/contacts/block`                                  | POST                   | [source](../src/app/api/contacts/block/route.ts)                                  |
 | `/api/contacts`                                        | GET, PATCH             | [source](../src/app/api/contacts/route.ts)                                        |
+| `/api/dev/modules`                                     | PUT                    | [source](../src/app/api/dev/modules/route.ts)                                     |
 | `/api/domains/[id]/dns`                                | GET                    | [source](../src/app/api/domains/[id]/dns/route.ts)                                |
 | `/api/domains/[id]/dns/setup`                          | POST                   | [source](../src/app/api/domains/[id]/dns/setup/route.ts)                          |
 | `/api/domains/[id]/receiving/[provider]`               | GET, POST              | [source](../src/app/api/domains/[id]/receiving/[provider]/route.ts)               |

@@ -1,4 +1,5 @@
 import type { AuthMeUser } from "@/lib/auth/me-client-types";
+import type { ModuleId } from "@/lib/modules/module-types";
 import type { NavMode } from "@/components/settings/section-nav-types";
 import { navModeLabels, searchNavAcrossModes } from "@/components/settings/section-nav-utils";
 import type { PageSearchGroup, PageSearchResult } from "./page-search-types";
@@ -8,10 +9,15 @@ export function pageSearchPlaceholder(mode: NavMode): string {
 }
 
 /** Pages from both menus matching `query`, grouped by menu with the current one first; nothing for a blank query. */
-export function searchPages(query: string, user: AuthMeUser | null, mode: NavMode): PageSearchGroup[] {
+export function searchPages(
+	query: string,
+	user: AuthMeUser | null,
+	mode: NavMode,
+	modules?: readonly ModuleId[],
+): PageSearchGroup[] {
 	if (!query.trim()) return [];
 	let index = 0;
-	return searchNavAcrossModes(query, user, mode).map((group) => ({
+	return searchNavAcrossModes(query, user, mode, modules).map((group) => ({
 		mode: group.mode,
 		results: group.sections.flatMap((section) =>
 			section.items.map((item) => ({

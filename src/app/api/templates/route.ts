@@ -8,13 +8,16 @@ import { getEnv } from "@/lib/cloudflare";
 import { newId } from "@/lib/ids";
 import { buildSnippet } from "@/lib/email/parse";
 import { getDraftSender } from "../drafts/utils";
+import { withModule } from "@/lib/modules/route-guard";
 
 // Templates are outbound messages with status "template": they look like drafts
 // in the database but no draft, folder or count query ever selects them.
-export async function GET(request: Request) {
+export const GET = withModule("templates", async (request, { checkUser }) => {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return auth.error;
+	const denied = await checkUser(auth.user);
+	if (denied) return denied;
 	const rows = await getDb(env)
 		.select({ id: messages.id, subject: messages.subject, htmlBody: messages.htmlBody, textBody: messages.textBody })
 		.from(messages)
@@ -22,11 +25,11 @@ export async function GET(request: Request) {
 		.orderBy(desc(messages.createdAt))
 		.limit(200);
 	return NextResponse.json({ templates: rows });
-}
+});
 
-export async function POST(request: Request) {
+export const POST = withModule("templates", async function POST(request, { checkAuth }) {
 	const env = getEnv();
-	const auth = await requireSessionUser(env, request);
+	const auth = await checkAuth(requireSessionUser(env, request));
 	if (auth.error) return auth.error;
 	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
 	const input = (await request.json().catch(() => null)) as {
@@ -64,4 +67,4 @@ export async function POST(request: Request) {
 		{ template: { id, subject: title, htmlBody: html || null, textBody: text || null } },
 		{ status: 201 },
 	);
-}
+});

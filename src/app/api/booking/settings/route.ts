@@ -7,11 +7,14 @@ import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { normalizeBookingUsername } from "@/lib/booking/utils";
 import { getEnv } from "@/lib/cloudflare";
 import type { BookingSettingsInput } from "./types";
+import { withModule } from "@/lib/modules/route-guard";
 
-export async function PATCH(request: Request) {
+export const PATCH = withModule("booking", async (request, { checkUser }) => {
 	const env = getEnv();
 	const user = await getCurrentUser(env, request);
 	if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	const denied = await checkUser(user);
+	if (denied) return denied;
 	if (user.role !== "admin")
 		return NextResponse.json({ error: "Only administrators can change booking usernames." }, { status: 403 });
 	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
@@ -34,4 +37,4 @@ export async function PATCH(request: Request) {
 			return NextResponse.json({ error: "This username is already taken." }, { status: 409 });
 		throw error;
 	}
-}
+});

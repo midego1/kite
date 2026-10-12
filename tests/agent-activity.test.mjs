@@ -123,6 +123,17 @@ test("a sent agent draft links to the sent reply, never to the trashed draft", (
 	});
 });
 
+test("a calendar action's resolved ref is its target, as a link or as plain text", () => {
+	const linked = row({
+		action: "create_event",
+		target: { href: "/calendar?date=2026-10-12&event=evt-1", label: "Offsite" },
+	});
+	assert.deepEqual(actionTarget(linked), { href: "/calendar?date=2026-10-12&event=evt-1", label: "Offsite" });
+	const neutral = row({ action: "create_event", target: { href: null, label: "Calendar event" } });
+	assert.deepEqual(actionTarget(neutral), { href: null, label: "Calendar event" });
+	assert.equal(actionTarget({ ...neutral, messageId: null }).href, null);
+});
+
 test("Undo is enabled only for applied rows inside the undo window", () => {
 	assert.equal(undoDisabledReason(row(), NOW), null);
 	assert.match(undoDisabledReason(row({ status: "blocked", canUndo: false }), NOW), /Blocked/);

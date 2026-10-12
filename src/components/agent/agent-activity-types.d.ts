@@ -18,6 +18,8 @@ export type ActivityAction = {
 	subject: string | null;
 	/** Whether this viewer can open the row's draft (it exists, is still a draft and is theirs). */
 	draftAvailable: boolean;
+	/** Set for calendar actions: the resolved record ref, drawn as a link only when `href` is set. */
+	target?: ActivityTarget;
 };
 
 /** A triage job that never ran, with the machine reason it was skipped. */
@@ -31,7 +33,7 @@ export type ActivitySkippedJob = {
 
 export type ActivityResponse = { actions: ActivityAction[]; skippedJobs: ActivitySkippedJob[] };
 
-export type ActivityTarget = { href: string; label: string };
+export type ActivityTarget = { href: string | null; label: string };
 
 export type ActivityLoadState =
 	| { state: "loading" }

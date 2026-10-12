@@ -1,7 +1,7 @@
 import { getEnv } from "@/lib/cloudflare";
 import { processImportJob, resumeStalledImportJobs } from "@/lib/import/jobs";
-import { unavailableRefsHandler } from "../handler-helpers";
 import type { CapabilityHandler } from "../module-types";
+import { resolveImportRefs } from "@/lib/import/refs";
 
 export const importHandlers: Record<string, CapabilityHandler> = {
 	processImportJob: async (input) => {
@@ -12,5 +12,5 @@ export const importHandlers: Record<string, CapabilityHandler> = {
 		await resumeStalledImportJobs(getEnv());
 		return {};
 	},
-	resolveRefs: unavailableRefsHandler,
+	resolveRefs: resolveImportRefs,
 };

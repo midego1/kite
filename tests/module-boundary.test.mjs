@@ -450,17 +450,17 @@ test("the real registry enforces the same contract", async () => {
 	assert.equal(pending.error.code, "handler_error");
 	assert.doesNotMatch(pending.error.message, /implemented/);
 	assert.deepEqual(
-		await invokeCapability(
-			"templates",
-			"resolveRefs",
-			{ refs: [{ kind: "templates:template", id: "t1" }] },
-			ctx({ grants: ["templates.read"] }),
-		),
-		{
-			ok: true,
-			output: { results: [{ kind: "templates:template", id: "t1", unavailable: true }] },
-		},
+		await invokeCapability("templates", "resolveRefs", { refs: [] }, ctx({ grants: ["templates.read"] })),
+		{ ok: true, output: { results: [] } },
 	);
+	// Without a database the resolver fails, and the failure never carries a message.
+	const noDatabase = await invokeCapability(
+		"templates",
+		"resolveRefs",
+		{ refs: [{ kind: "templates:template", id: "t1" }] },
+		ctx({ grants: ["templates.read"] }),
+	);
+	assert.equal(noDatabase.error.code, "handler_error");
 	setModuleStateReader(async (_viewer, moduleId) => moduleId !== "templates");
 	try {
 		const off = await invokeCapability("templates", "resolveRefs", { refs: [] }, ctx({ grants: ["templates.read"] }));

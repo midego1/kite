@@ -11,14 +11,17 @@ export const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
  * The handler modules reach real services (database, IMAP, calendar tools) that these tests never call.
  * Bundling them would re-bundle gated utility files with different tree-shaking and anonymous function
  * names, which the per-file coverage merge reads as extra uncovered functions, so core-facing imports
- * from a module's server.ts resolve to an inert stub.
+ * from a module's server.ts resolve to an inert stub. The `refs` resolvers are the exception: they only
+ * read the module's own tables, and the record ref tests run them against a migrated test database.
  */
 const SERVICES = /^@\/(db(\/|$)|lib\/cloudflare$|lib\/calendar\/tools$|lib\/booking\/|lib\/import\/)/;
 const stubServiceImports = {
 	name: "stub-service-imports",
 	setup(build) {
 		build.onResolve({ filter: SERVICES }, (args) =>
-			/src\/lib\/modules\/[a-z]+\/server\.ts$/.test(args.importer) ? { path: args.path, namespace: "stub" } : undefined,
+			/src\/lib\/modules\/[a-z]+\/server\.ts$/.test(args.importer) && !args.path.endsWith("/refs")
+				? { path: args.path, namespace: "stub" }
+				: undefined,
 		);
 		build.onLoad({ filter: /.*/, namespace: "stub" }, () => ({
 			contents: "module.exports = new Proxy({}, { get: () => () => undefined });",

@@ -3,12 +3,13 @@ import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { ensureBookingUsername } from "@/lib/booking/username";
 import { getEnv } from "@/lib/cloudflare";
-import { pendingHandler, unavailableRefsHandler } from "../handler-helpers";
+import { pendingHandler } from "../handler-helpers";
 import type { CapabilityHandler } from "../module-types";
+import { resolveBookingRefs } from "@/lib/booking/refs";
 
 export const bookingHandlers: Record<string, CapabilityHandler> = {
 	workingHours: pendingHandler("The working hours service"),
-	resolveRefs: unavailableRefsHandler,
+	resolveRefs: resolveBookingRefs,
 	userCreated: async (input) => {
 		const userId = (input as { userId: string }).userId;
 		const env = getEnv();

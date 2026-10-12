@@ -80,10 +80,12 @@ export function reasonText(reason: string | null): string | null {
 /**
  * Where a row's link goes: the sent reply once the agent draft was sent (the draft itself is then in
  * trash), the agent draft while this viewer can open it, otherwise the message the action was about.
+ * A calendar action carries the record ref the server resolved (a link, or plain text when unavailable).
  */
 export function actionTarget(
-	row: Pick<ActivityAction, "action" | "status" | "messageId" | "after" | "subject" | "draftAvailable">,
+	row: Pick<ActivityAction, "action" | "status" | "messageId" | "after" | "subject" | "draftAvailable" | "target">,
 ): ActivityTarget | null {
+	if (row.target) return row.target;
 	const subject = row.subject || "(No subject)";
 	const draftId = row.after?.draftId;
 	const sentMessageId = row.after?.sentMessageId;

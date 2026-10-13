@@ -12,5 +12,12 @@ export async function GET(request: Request) {
 	// The audit log is for full-access users only; everyone else cannot tell the mailbox has one.
 	if (!mailboxId || !(await getMailboxAccessLevel(getDb(env), user, mailboxId))?.canManage)
 		return Response.json({ error: "Mailbox not found" }, { status: 404 });
-	return Response.json(await listAgentActivity(env, mailboxId, user.id));
+	return Response.json(
+		await listAgentActivity(env, mailboxId, {
+			userId: user.id,
+			role: user.role,
+			isPrimaryAdmin: user.isPrimaryAdmin,
+			timeZone: user.timeZone,
+		}),
+	);
 }

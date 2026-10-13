@@ -1,5 +1,6 @@
 import type { InboundQueueMessage } from "./src/lib/email/inbound";
 import type { WebhookRetryMessage } from "./src/lib/email/webhooks";
+import { MODULE_MANIFESTS } from "./src/lib/modules/registry";
 
 export function isInboundQueueMessage(payload: unknown): payload is InboundQueueMessage {
 	return (
@@ -16,24 +17,21 @@ export function isWebhookRetryMessage(payload: unknown): payload is WebhookRetry
 	);
 }
 
-export type QueueMessageKind =
-	| "inbound"
-	| "webhook_retry"
-	| "outbound"
-	| "agent_draft"
-	| "agent_triage"
-	| "import"
-	| "mailbox_purge"
-	| "backup"
-	| "unknown";
+type CoreQueueMessageKind =
+	"inbound" | "webhook_retry" | "outbound" | "agent_draft" | "agent_triage" | "mailbox_purge" | "backup" | "unknown";
+
+/** Core kinds plus the metric class each module declares for its own queue messages. */
+export type QueueMessageKind = CoreQueueMessageKind | (string & {});
 
 const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"email.scheduled": "outbound",
 	"agent.draft": "agent_draft",
 	"agent.triage": "agent_triage",
-	"import.imap": "import",
 	"mailbox.purge": "mailbox_purge",
 	"backup.run": "backup",
+	...Object.fromEntries(
+		MODULE_MANIFESTS.flatMap((manifest) => manifest.queueMessageTypes.map((entry) => [entry.kind, entry.metricClass])),
+	),
 };
 
 // Matches the keys storeRawToR2 and intakeIncomingMail write: a timestamp and a nanoid, no addresses.

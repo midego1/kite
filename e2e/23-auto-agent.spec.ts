@@ -22,6 +22,7 @@ import type { FakeModel } from "./support/fake-model-types";
 import type { InboundMail } from "./support/helpers-types";
 import { apiContext, deliverInbound, postInbound, signIn, uniqueToken, waitForMessage } from "./support/helpers";
 import { futureAt, inviteAttachment } from "./support/invites";
+import { restoreModules, setModuleState } from "./support/modules";
 import { readActions, readJobs, readSuggestions, waitForFinishedJob } from "./support/triage";
 
 // Every test snapshots and restores the automatic-reading state in beforeEach
@@ -4175,6 +4176,49 @@ test.describe("calendar invite card", () => {
 			);
 			expect(after?.status).toBe("undone");
 		} finally {
+			await context.close();
+			await stopMailbox(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("Activity links the accepted event while Calendar is on and shows a neutral label, not the title, while it is off", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await inviteAccount("icw");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const summary = uniqueToken("Private offsite");
+			const { message, suggestion } = await deliver(account.api, account.mailboxId, account.address, {
+				uid: `${uniqueToken("uid")}@partner.test`,
+				start: futureAt(33, 10),
+				summary,
+			});
+			const page = await context.newPage();
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+			await openInvite(page, message);
+			await inviteBlock(page).getByRole("button", { name: "Accept", exact: true }).click();
+			await expect(page.getByRole("status").filter({ hasText: "Accepted and added to your calendar" })).toBeVisible();
+			const created = (await readActions(account.api, account.mailboxId)).find(
+				(action) => action.suggestionId === suggestion.id && action.action === "create_event",
+			);
+
+			await page.goto("/kite-activity");
+			const target = page.locator(`[data-activity-action="${created!.id}"] [data-activity-target]`);
+			await expect(target).toHaveText(new RegExp(summary));
+			await expect(target).toHaveAttribute("href", /^\/calendar\?date=\d{4}-\d{2}-\d{2}&event=/);
+
+			await setModuleState(api, { modules: { calendar: false } });
+			await page.goto("/kite-activity");
+			const hidden = page.locator(`[data-activity-action="${created!.id}"] [data-activity-target]`);
+			await expect(hidden).toHaveText("Calendar event");
+			expect(await hidden.evaluate((node) => node.tagName)).toBe("SPAN");
+			await expect(page.locator("body")).not.toContainText(summary);
+		} finally {
+			await restoreModules(api);
 			await context.close();
 			await stopMailbox(account.api, account.mailboxId);
 			await account.api.dispose();

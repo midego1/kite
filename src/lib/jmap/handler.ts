@@ -3,6 +3,7 @@ import { authenticateApiRequest, hasScope } from "@/lib/api/key-auth";
 import { LIMITS } from "./constants";
 import { corsHeaders, JmapError, problemResponse } from "./errors";
 import { readBlob, storeUpload } from "./blobs";
+import { loadJmapModules } from "./modules";
 import { processRequest, sessionState, validateRequest } from "./processor";
 import { buildSession } from "./session";
 import { getEmailState, getMailboxState } from "./state";
@@ -48,6 +49,7 @@ export async function handleJmapRequest(request: Request, env: CloudflareEnv): P
 		accountId: auth.userId,
 		origin: env.APP_URL?.trim() || url.origin,
 		createdIds: {},
+		modules: await loadJmapModules(env, auth),
 	};
 
 	if (path === "/jmap/session" && request.method === "GET") {
@@ -65,7 +67,7 @@ export async function handleJmapRequest(request: Request, env: CloudflareEnv): P
 			return problemResponse("notJSON", 400, "Body is not valid JSON");
 		}
 		try {
-			const response = await processRequest(ctx, validateRequest(body));
+			const response = await processRequest(ctx, validateRequest(body, ctx.modules));
 			return new Response(JSON.stringify(response), { headers: JSON_HEADERS });
 		} catch (error) {
 			if (error instanceof JmapError) return problemResponse(error.type, 400, error.message, error.extra);

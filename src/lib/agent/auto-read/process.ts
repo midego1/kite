@@ -2,12 +2,14 @@ import { eq } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { agentJobs, mailboxAgentSettings, mailboxes, messages, users } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { normalizeTimeZone } from "@/lib/time/utils";
 import { claimAgentJob, failAndRequeueAgentJob, skipAgentJob } from "../jobs/lease";
 import { getAgentProviderConfig } from "../provider";
 import { ExternalProviderNotAllowedError } from "./auto-read-model";
 import { needsModel } from "./facts-utils";
-import { loadCalendarInvite } from "./invite";
 import { getAutoReadInstallSettings } from "./install-settings";
+import { joinSkipReasons } from "./module-steps-utils";
+import { runModuleTriageSteps } from "./module-steps";
 import { planSuggestions } from "./policy-utils";
 import { allowAutoReadRequest, triageDailyLimitReached } from "./quota";
 import { createReplySuggestion } from "./reply-suggestion";
@@ -34,16 +36,49 @@ function triageSkipReason(
 	return null;
 }
 
-/** The reviewer's access on the mailbox, or null when the reviewer can no longer read it. */
+/** The reviewer and their access on the mailbox, or null when the reviewer can no longer read it. */
 async function reviewerAccess(db: AppDatabase, job: AgentJobRow) {
 	const [reviewer] = await db.select().from(users).where(eq(users.id, job.reviewerUserId)).limit(1);
 	if (!reviewer || reviewer.disabled) return null;
 	const access = await getMailboxAccessLevel(db, reviewer, job.mailboxId);
-	return access?.canRead ? access : null;
+	return access?.canRead ? { reviewer, access } : null;
 }
 
-/** Triages the claimed job's message; returns a skip reason, or null once its suggestions are stored. */
-async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Promise<string | null> {
+type TriageModelRun = Awaited<ReturnType<typeof runTriageModel>>;
+type ModelStep = { skip: string; model?: undefined } | { skip: null; model: TriageModelRun | null };
+
+/** Makes the one tool-less model call when the message needs it, or names why it cannot be made. */
+async function modelStep(input: {
+	env: CloudflareEnv;
+	job: AgentJobRow;
+	settings: ReturnType<typeof resolveMailboxAgentSettings>;
+	context: Awaited<ReturnType<typeof loadTriageContext>>;
+	install: AutoReadInstallSettings;
+}): Promise<ModelStep> {
+	const { env, job, settings, context, install } = input;
+	if (!needsModel(context.facts, settings.capabilities)) return { skip: null, model: null };
+	const config = await getAgentProviderConfig(env);
+	if (config.provider === "compatible" && !install.externalAutoReadAllowed)
+		return { skip: "external_provider_not_allowed" };
+	if (!(await allowAutoReadRequest(env, job.mailboxId))) return { skip: "rate_limited" };
+	const model = await runTriageModel({
+		env,
+		job,
+		settings,
+		context,
+		config,
+		installCapMicros: install.dailySpendCapMicros,
+	});
+	return { skip: null, model };
+}
+
+type TriageOutcome = { skip: string; note?: undefined } | { skip: null; note: string | null };
+
+/**
+ * Triages the claimed job's message. Either the job is skipped with a reason, or its suggestions are
+ * stored and `note` names the module steps that were due but skipped because their module is off.
+ */
+async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Promise<TriageOutcome> {
 	const install = await getAutoReadInstallSettings(env);
 	const [row] = await db
 		.select()
@@ -52,40 +87,39 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 		.limit(1);
 	const [source] = await db.select().from(messages).where(eq(messages.id, job.sourceMessageId)).limit(1);
 	const skip = triageSkipReason(install, row, source);
-	if (skip || !row || !source) return skip ?? "source_changed";
+	if (skip || !row || !source) return { skip: skip ?? "source_changed" };
 	const [mailbox] = await db.select().from(mailboxes).where(eq(mailboxes.id, job.mailboxId)).limit(1);
-	const access = mailbox && (await reviewerAccess(db, job));
-	if (!mailbox || !access) return "reviewer_unavailable";
+	const reviewed = mailbox && (await reviewerAccess(db, job));
+	if (!mailbox || !reviewed) return { skip: "reviewer_unavailable" };
+	const { reviewer, access } = reviewed;
 	const settings = resolveMailboxAgentSettings(row, {
 		mailboxId: mailbox.id,
 		ownerUserId: mailbox.userId,
 		mailboxType: mailbox.type,
 	});
-	if (await triageDailyLimitReached(db, job.mailboxId, settings.autoReadDailyLimit)) return "daily_limit";
+	if (await triageDailyLimitReached(db, job.mailboxId, settings.autoReadDailyLimit)) return { skip: "daily_limit" };
 	const context = await loadTriageContext(env, source, mailbox.userId);
-	let model: Awaited<ReturnType<typeof runTriageModel>> | null = null;
-	if (needsModel(context.facts, settings.capabilities)) {
-		const config = await getAgentProviderConfig(env);
-		if (config.provider === "compatible" && !install.externalAutoReadAllowed) return "external_provider_not_allowed";
-		if (!(await allowAutoReadRequest(env, job.mailboxId))) return "rate_limited";
-		model = await runTriageModel({
-			env,
-			job,
-			settings,
-			context,
-			config,
-			installCapMicros: install.dailySpendCapMicros,
-		});
-	}
+	const modelRun = await modelStep({ env, job, settings, context, install });
+	if (modelRun.skip) return { skip: modelRun.skip };
+	const { model } = modelRun;
+	const steps = await runModuleTriageSteps({
+		env,
+		job,
+		reviewer: {
+			userId: reviewer.id,
+			role: reviewer.role,
+			isPrimaryAdmin: reviewer.isPrimaryAdmin,
+			timeZone: normalizeTimeZone(reviewer.timeZone),
+		},
+		source,
+		facts: context.facts,
+		capabilities: settings.capabilities,
+		model: model?.result ?? null,
+	});
 	const planned = planSuggestions({
 		facts: context.facts,
 		triage: model?.result ?? null,
-		invite: await loadCalendarInvite(env, {
-			messageId: source.id,
-			reviewerUserId: job.reviewerUserId,
-			facts: context.facts,
-			enabled: settings.capabilities.calendar,
-		}),
+		moduleSuggestions: steps.planned,
 		settings: {
 			capabilities: settings.capabilities,
 			canDraftReply: access.canSendOnBehalf,
@@ -107,7 +141,7 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 			installCapMicros: install.dailySpendCapMicros,
 		});
 	await settleTriageSuggestions(env, job.mailboxId, source);
-	return null;
+	return { skip: null, note: joinSkipReasons(steps.skipped) };
 }
 
 export async function processAgentTriageJob(env: CloudflareEnv, jobId: string) {
@@ -119,11 +153,11 @@ export async function processAgentTriageJob(env: CloudflareEnv, jobId: string) {
 	}
 	if (!job) return;
 	try {
-		const reason = await triage(env, db, job);
-		if (reason) return void (await skipAgentJob(db, jobId, reason));
+		const outcome = await triage(env, db, job);
+		if (outcome.skip) return void (await skipAgentJob(db, jobId, outcome.skip));
 		await db
 			.update(agentJobs)
-			.set({ status: "completed", leaseUntil: null, completedAt: new Date() })
+			.set({ status: "completed", leaseUntil: null, completedAt: new Date(), reason: outcome.note ?? null })
 			.where(eq(agentJobs.id, jobId));
 	} catch (error) {
 		if (error instanceof SpendCapReachedError) return void (await skipAgentJob(db, jobId, "spend_cap"));

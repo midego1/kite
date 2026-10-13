@@ -17,6 +17,8 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 			"password_reset_tokens",
 			"mfa_recovery_codes",
 			"login_challenges",
+			"user_module_access",
+			"booking_appointments",
 		],
 	},
 	{
@@ -57,7 +59,7 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 	{
 		id: "system",
 		label: "App settings and history",
-		tables: ["audit_logs", "backup_settings", "backups", "app_settings"],
+		tables: ["audit_logs", "backup_settings", "backups", "app_settings", "module_settings"],
 	},
 ];
 

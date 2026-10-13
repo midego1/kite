@@ -2,7 +2,7 @@
 
 Status: approved for a Factory Mission; third in order, after [the automatic reading agent](auto-agent.md) and [storing attachments once](attachments-once.md). Written against `main` at `22b1ac3`. Upstream reference: [hieunc229/mailflare](https://github.com/hieunc229/mailflare) commits `83ade98` (S3/B2 bucket), `9f66e13` and `3c90a03` (Drive). Both projects are AGPL-3.0; ported code names its source commit in the commit message.
 
-Migration numbers below assume this work lands first. Earlier Missions will have used some of them, so take the next free numbers when you start and keep `tests/migration-order.test.mjs` passing.
+Migration numbers below assume this work lands first. Earlier Missions will have used some of them, so take the next free numbers when you start and keep `tests/migration-order.test.mjs` passing. Already taken: `0060` and `0061` (automatic reading) and `0062` (the [module platform](module-platform.md)), so phases 1 and 2 take new numbers when they start, and phases 3 and 4 are planned as `0063` and `0064`.
 
 Work on branch `mission/drive-storage`. Never push `main`, never run `npm run deploy`, `db:migrate:remote` or any `wrangler --remote` command. Do not rename `BUCKET` / `kite-raw` or any other Cloudflare resource.
 
@@ -317,7 +317,7 @@ ALTER TABLE `app_settings` ADD `drive_trash_retention_days` integer DEFAULT 30 N
 ```
 (Separate the statements with `--> statement-breakpoint`.)
 
-Later phases: `0062_add_object_locations.sql` (phase 3: `object_locations(key PK, store_id, storage_class, size, moved_at)`, `drive_items.storage_class`, `storage_cold_rules`) and `0063_add_drive_mounts.sql` (phase 4: WebDAV). Renumber if other work lands first. `tests/migration-order.test.mjs` guards the order.
+Later phases: `0063_add_object_locations.sql` (phase 3: `object_locations(key PK, store_id, storage_class, size, moved_at)`, `drive_items.storage_class`, `storage_cold_rules`) and `0064_add_drive_mounts.sql` (phase 4: WebDAV), after the module platform's `0062_add_module_platform.sql`. Renumber if other work lands first. `tests/migration-order.test.mjs` guards the order.
 
 ### Quota rule (atomic)
 
@@ -616,7 +616,7 @@ Tests:
 
 ### Phase 3: Cold storage (6-8 days, plus a 2-day body-offload spike)
 
-Section 10, with migration `0062`. Acceptance:
+Section 10, with migration `0063`. Acceptance:
 - Rules select only matching objects.
 - An R2 IA rewrite or a move to a second store keeps messages and files opening without extra steps.
 - The settings show the cost text and refuse classes that need a restore.
@@ -624,7 +624,7 @@ Section 10, with migration `0062`. Acceptance:
 
 ### Phase 4: External storage, WebDAV (6-9 days)
 
-Section 11, with migration `0063`. Acceptance:
+Section 11, with migration `0064`. Acceptance:
 - Link a WebDAV folder, browse it, download (with Range), upload, rename and delete.
 - Bad credentials or an unreachable host show a clear error.
 - A private host is refused on Workers.

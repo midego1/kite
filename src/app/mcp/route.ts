@@ -13,7 +13,7 @@ async function handle(request: Request) {
 	if (!principal) return new Response("Unauthorized", { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
 	if (!(await allowAgentRequest(env, `mcp:${principal.keyId}`)))
 		return new Response("Rate limit exceeded", { status: 429 });
-	const handler = createKiteMcpHandler(env, principal, url.origin, request.headers.get("Authorization") ?? "");
+	const handler = await createKiteMcpHandler(env, principal, url.origin, request.headers.get("Authorization") ?? "");
 	try {
 		return await handler.fetch(request);
 	} finally {

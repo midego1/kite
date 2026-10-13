@@ -1,10 +1,17 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { LogIn, LogOut } from "lucide-react";
+import { Blocks, LogIn, LogOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchActivity, formatActivityDate, getActivityLabel, getActivityMetadata } from "./utils";
+import {
+	describeModuleActivity,
+	fetchActivity,
+	formatActivityDate,
+	getActivityLabel,
+	getActivityMetadata,
+	isModuleActivity,
+} from "./utils";
 
 export default function ActivityPage() {
 	const activity = useQuery({
@@ -16,14 +23,14 @@ export default function ActivityPage() {
 		<div className="space-y-6">
 			<div>
 				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Activity</h1>
-				<p className="mt-1 text-sm text-neutral-500">Login and logout activity across user accounts.</p>
+				<p className="mt-1 text-sm text-neutral-500">Sign-ins, sign-outs and module changes across user accounts.</p>
 			</div>
 
 			<section className="overflow-x-auto rounded-3xl bg-white">
 				<table className="w-full min-w-[760px] table-fixed text-left">
 					<thead className="border-b border-neutral-100 bg-neutral-50 text-xs font-semibold uppercase tracking-wide text-neutral-500">
 						<tr>
-							<th className="w-32 px-5 py-3">Activity</th>
+							<th className="w-40 px-5 py-3">Activity</th>
 							<th className="px-5 py-3">User</th>
 							<th className="w-64 px-5 py-3">Device</th>
 							<th className="w-48 px-5 py-3">Time</th>
@@ -50,13 +57,15 @@ export default function ActivityPage() {
 						{!activity.isLoading && (activity.data ?? []).length === 0 && (
 							<tr>
 								<td colSpan={4} className="px-5 py-4 text-sm text-neutral-500">
-									No login or logout activity yet
+									No activity yet
 								</td>
 							</tr>
 						)}
 						{(activity.data ?? []).map((log) => {
 							const metadata = getActivityMetadata(log);
-							const Icon = log.action === "auth.logout" ? LogOut : LogIn;
+							const moduleChange = isModuleActivity(log.action);
+							const summary = describeModuleActivity(log, metadata);
+							const Icon = moduleChange ? Blocks : log.action === "auth.logout" ? LogOut : LogIn;
 							return (
 								<tr key={log.id} className="align-top hover:bg-neutral-50/70">
 									<td className="px-5 py-4">
@@ -69,16 +78,26 @@ export default function ActivityPage() {
 										<p className="flex flex-col truncate no-font-mono">
 											<span>{log.actorEmail ?? "(unknown email)"}</span>
 										</p>
-										<small className="text-neutral-500">
-											{metadata.city || "(unknown city)"} • {metadata.country || "(unknown country)"}
-										</small>
+										{summary ? (
+											<small className="text-neutral-500">{summary}</small>
+										) : (
+											<small className="text-neutral-500">
+												{metadata.city || "(unknown city)"} • {metadata.country || "(unknown country)"}
+											</small>
+										)}
 									</td>
 									<td className="px-5 py-4">
-										<p className="flex flex-col truncate no-font-mono">{metadata.device ?? "(unknown device)"}</p>
+										{moduleChange ? (
+											<p className="text-sm text-neutral-500">—</p>
+										) : (
+											<>
+												<p className="flex flex-col truncate no-font-mono">{metadata.device ?? "(unknown device)"}</p>
 
-										<small className="text-neutral-500">
-											{metadata.platform || "(unknown platform)"} • {metadata.ipAddress ?? "(unknown IP)"}
-										</small>
+												<small className="text-neutral-500">
+													{metadata.platform || "(unknown platform)"} • {metadata.ipAddress ?? "(unknown IP)"}
+												</small>
+											</>
+										)}
 									</td>
 									<td className="px-5 py-4 text-sm text-neutral-500">{formatActivityDate(log.createdAt)}</td>
 								</tr>

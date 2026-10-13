@@ -4,7 +4,9 @@ import { useState } from "react";
 import { ChevronLeft, Wrench } from "lucide-react";
 import type { AgentEmailReference, AgentMessage, AgentTurnProps } from "./types";
 import { agentActionProposal, agentToolLabel, draftFromToolContent, parseAgentToolContent } from "./utils";
+import { agentToolLinks } from "./tool-links-utils";
 import { AgentEmailLink } from "./email-link";
+import { RecordRefLink } from "@/components/modules/record-ref-link";
 import type { AssistantDetailPreference } from "@/components/appearance-preferences";
 
 function emailReferences(value: Record<string, unknown>): AgentEmailReference[] {
@@ -150,5 +152,25 @@ export function AgentPendingActions({
 				</button>
 			</div>
 		</div>
+	);
+}
+
+/** Pages and records a tool named, drawn outside the collapsed work details so the user can click them. */
+export function AgentToolLinks({ item }: { item: AgentMessage }) {
+	const links = agentToolLinks(item);
+	if (links.length === 0) return null;
+	return (
+		<ul className="space-y-1 text-sm">
+			{links.map((link, index) => (
+				<li key={`${index}:${link.href ?? link.label}`} className="break-words">
+					<RecordRefLink
+						target={link}
+						className="font-medium text-blue-700 hover:underline"
+						textClassName="text-neutral-600"
+						data-agent-tool-link=""
+					/>
+				</li>
+			))}
+		</ul>
 	);
 }

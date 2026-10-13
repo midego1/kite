@@ -17,22 +17,27 @@ await build({
 	entryPoints: {
 		draft: fileURLToPath(import.meta.resolve("../src/lib/agent/jobs/utils.ts")),
 		process: fileURLToPath(import.meta.resolve("../src/lib/agent/auto-read/process.ts")),
+		state: fileURLToPath(import.meta.resolve("../src/lib/modules/state.ts")),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
 	},
 	outdir: outDir,
 	outExtension: { ".js": ".mjs" },
 	bundle: true,
+	// One copy of the module state cache across the entries, so a toggle in a test is seen by triage.
+	splitting: true,
 	platform: "node",
 	format: "esm",
 	target: "node22",
 	logLevel: "silent",
 	packages: "external",
 	tsconfig: join(root, "tsconfig.json"),
+	alias: { "cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts") },
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { processAgentDraftJob } = await load("draft");
 const { processAgentTriageJob } = await load("process");
+const { clearModuleStateCache } = await load("state");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
 
@@ -110,6 +115,13 @@ async function setup(t, { rates = { "fake-triage": { input: 0.05, output: 0.3 } 
 				raw.has(key) ? { arrayBuffer: async () => new TextEncoder().encode(raw.get(key)).buffer } : null,
 		},
 	};
+	// Module code reads the current environment, as it does in the Worker.
+	globalThis.__kiteNodeEnv = env;
+	clearModuleStateCache();
+	t.after(() => {
+		delete globalThis.__kiteNodeEnv;
+		clearModuleStateCache();
+	});
 	return { db, env, sent, raw };
 }
 
@@ -389,6 +401,78 @@ test("list mail is settled from its raw headers without a model request", async 
 	await processAgentTriageJob(env, jobId);
 	assert.equal(jobOf(db, jobId).status, "completed");
 	assert.equal(requests.length, 0);
+});
+
+const INVITE_ICS = [
+	"BEGIN:VCALENDAR",
+	"VERSION:2.0",
+	"METHOD:REQUEST",
+	"BEGIN:VEVENT",
+	"UID:uid-process@partner.test",
+	"DTSTAMP:20300101T000000Z",
+	"DTSTART:20300312T100000Z",
+	"DTEND:20300312T110000Z",
+	"SUMMARY:Planning",
+	"ORGANIZER:mailto:alice@partner.test",
+	"SEQUENCE:0",
+	"END:VEVENT",
+	"END:VCALENDAR",
+	"",
+].join("\r\n");
+
+function insertInviteJob(db, raw) {
+	const ids = insertJob(db, {
+		text: `Please confirm. ${"x".repeat(1_600)}`,
+		from: "Alice <alice@partner.test>",
+	});
+	raw.set("raw/invite", INVITE_ICS);
+	db.db
+		.prepare(
+			"INSERT INTO message_attachments (id, message_id, filename, content_type, size, r2_key, created_at) VALUES (?, ?, 'invite.ics', 'text/calendar', ?, 'raw/invite', 1)",
+		)
+		.run(`att-${ids.messageId}`, ids.messageId, INVITE_ICS.length);
+	return ids;
+}
+
+test("with Calendar on a long invitation mail gets a calendar_invite and a summary, and triage still sends no tools", async (t) => {
+	const { db, env, raw } = await setup(t);
+	const { jobId, messageId } = insertInviteJob(db, raw);
+	await processAgentTriageJob(env, jobId);
+	assert.equal(jobOf(db, jobId).status, "completed");
+	assert.equal(jobOf(db, jobId).reason, null);
+	assert.deepEqual(
+		suggestionsOf(db, messageId).map((row) => row.kind),
+		["calendar_invite", "summary"],
+	);
+	assert.equal(requests.length, 1);
+	assert.ok(!("tools" in requests[0].body) && !("tool_choice" in requests[0].body));
+});
+
+test("with Calendar off the step is skipped and recorded with the module id, and the other suggestions still appear", async (t) => {
+	const { db, env, raw } = await setup(t);
+	db.db.prepare("UPDATE module_settings SET enabled = 0 WHERE module_id = 'calendar'").run();
+	const { jobId, messageId } = insertInviteJob(db, raw);
+	await processAgentTriageJob(env, jobId);
+	const job = jobOf(db, jobId);
+	assert.equal(job.status, "completed");
+	assert.equal(job.reason, "module_disabled:calendar");
+	assert.deepEqual(
+		suggestionsOf(db, messageId).map((row) => row.kind),
+		["summary"],
+	);
+	assert.equal(requests.length, 1);
+	assert.ok(!("tools" in requests[0].body));
+});
+
+test("a mailbox that turned the calendar capability off records no module skip", async (t) => {
+	const { db, env, raw } = await setup(t);
+	db.db
+		.prepare("UPDATE mailbox_agent_settings SET capabilities = ? WHERE mailbox_id = 'mailbox-a'")
+		.run(JSON.stringify({ calendar: false }));
+	const { jobId, messageId } = insertInviteJob(db, raw);
+	await processAgentTriageJob(env, jobId);
+	assert.equal(jobOf(db, jobId).reason, null);
+	assert.ok(!suggestionsOf(db, messageId).some((row) => row.kind === "calendar_invite"));
 });
 
 test("Workers AI gets JSON mode through the SDK and thinking off, and fenced JSON is accepted", async (t) => {

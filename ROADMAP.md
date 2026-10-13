@@ -4,7 +4,7 @@ Planned work, grouped into milestones. Each milestone is sized to run as one [Fa
 
 Shipped work is listed in the [changelog](CHANGELOG.md). Suggest features and vote on them in [Ideas](https://github.com/midego1/kite/discussions/categories/ideas).
 
-Approved specs, in the order they will be built: [automatic mail reading agent](docs/specs/auto-agent.md), [storing attachments once](docs/specs/attachments-once.md), and [Drive and storage](docs/specs/drive-storage.md).
+Approved specs, in the order they will be built: [automatic mail reading agent](docs/specs/auto-agent.md), [module platform](docs/specs/module-platform.md), [storing attachments once](docs/specs/attachments-once.md), and [Drive and storage](docs/specs/drive-storage.md).
 
 ## Working on this repository
 
@@ -179,9 +179,21 @@ Mail from a sender you have not approved waits in a Screener instead of the Inbo
    - The spam filter runs first. On shared mailboxes, users with full access decide. The automatic reading agent skips screened mail and can suggest Yes or No.
    - Decisions live in a per-mailbox table that goes into the backup lists (see `AGENTS.md`). Works on Workers and the Node runtime.
 
+## Milestone 19: Module platform (builtin modules first, sandboxed apps later)
+
+Taken ahead of the proposed milestones 9–18 in the [complete-suite roadmap](docs/roadmap-complete-suite.md), with an approved [module platform spec](docs/specs/module-platform.md). Modules are built into Kite first; apps from other publishers come later as signed bundles that run sandboxed inside your own Kite, never on someone else's servers.
+
+1. **Builtin modules (in progress on `mission/module-platform`)**
+   - Calendar, Booking (needs Calendar), Email templates and Mail import become modules the owner can turn off for everyone or for some users, from Admin → Modules. Off means absent: no links, commands, tools, events or background work, and its pages and API answer 404. No data is deleted, mailbox export always works, and paused imports resume when Mail import is back on. See [Modules](docs/modules.md).
+   - Core reaches modules only through a registry and one JSON call contract, and the assistant, automatic reading, MCP, API keys, JMAP, webhooks, search, For you, Activity, the command palette, the composer, the queues and cron read the registry instead of hard-coded lists. Same code path on Workers and the Node runtime.
+   - Test: unit tests for the registry, the call contract, the import rules and the guards; `e2e/27-modules.spec.ts` turns every module off and on.
+2. **Sandboxed apps inside your own Kite (later, separate spec)**
+   - Signed bundles the owner installs, run in Dynamic Workers on Cloudflare or a workerd sidecar on Node and Docker, using the same capability descriptors and call contract as builtin modules, with owner-approved grants and network hosts.
+   - An app directory, AI-suggested apps and paid listings follow once sandboxed apps exist.
+
 ## Ideas, not yet planned
 
 - Offline reading with a service worker.
 - A keyboard shortcut overview.
-- Modules an admin can turn on or off (Drive, Calendar, Booking).
-- Extensions as separate services that use the API, webhooks and a sandboxed panel, so an extension cannot reach data it was not given. A directory of extensions would come later.
+- Modules an admin can turn on or off (Drive, Calendar, Booking). Now [milestone 19](#milestone-19-module-platform-builtin-modules-first-sandboxed-apps-later); Drive will be core.
+- ~~Extensions as separate services that use the API, webhooks and a sandboxed panel, so an extension cannot reach data it was not given. A directory of extensions would come later.~~ Superseded by milestone 19: modules are builtin first, and apps run sandboxed inside your own Kite later.

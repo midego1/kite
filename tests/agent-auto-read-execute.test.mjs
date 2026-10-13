@@ -28,6 +28,7 @@ await build({
 	target: "node22",
 	logLevel: "silent",
 	packages: "external",
+	alias: { "cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts") },
 	tsconfig: join(root, "tsconfig.json"),
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
@@ -516,4 +517,74 @@ test("pruning removes agent_actions older than 180 days and keeps younger ones",
 		rows(db).map((row) => row.id),
 		["young"],
 	);
+});
+
+const insertEvent = (db, id, title, userId = "owner") =>
+	db.db
+		.prepare(
+			"INSERT INTO calendar_events (id, user_id, title, description, location, attendees, starts_at, ends_at, created_at, updated_at) VALUES (?, ?, ?, '', '', '[]', 1791806400, 1791810000, 1, 1)",
+		)
+		.run(id, userId, title);
+
+function insertCalendarActions(db) {
+	insertEvent(db, "evt-1", "Quarterly offsite");
+	insertAction(db, {
+		id: "made",
+		action: "create_event",
+		after: JSON.stringify({ eventId: "evt-1" }),
+		created_at: nowSeconds() - 3,
+	});
+	insertAction(db, {
+		id: "removed",
+		action: "delete_event",
+		after: JSON.stringify({ eventId: "evt-gone" }),
+		created_at: nowSeconds() - 2,
+	});
+	insertAction(db, { id: "reply", action: "send_rsvp", variant: "accepted", created_at: nowSeconds() - 1 });
+}
+
+const targetsOf = async (env, viewer) =>
+	Object.fromEntries(
+		(await listAgentActivity(env, "mailbox-a", viewer)).actions.map((action) => [action.id, action.target ?? null]),
+	);
+
+test("activity links calendar actions to their event while Calendar is on and falls back to the invitation for an RSVP", async (t) => {
+	const { db, env } = await setup(t);
+	globalThis.__kiteNodeEnv = env;
+	t.after(() => delete globalThis.__kiteNodeEnv);
+	insertCalendarActions(db);
+	assert.deepEqual(await targetsOf(env, "owner"), {
+		reply: null,
+		removed: { href: null, label: "Calendar event" },
+		made: { href: "/calendar?date=2026-10-12&event=evt-1", label: "Quarterly offsite" },
+	});
+});
+
+test("activity shows calendar actions as plain neutral text, with no event title, while Calendar is off", async (t) => {
+	const { db, env } = await setup(t);
+	globalThis.__kiteNodeEnv = env;
+	t.after(() => delete globalThis.__kiteNodeEnv);
+	insertCalendarActions(db);
+	db.db.exec("UPDATE module_settings SET enabled = 0 WHERE module_id = 'calendar'");
+	const neutral = { href: null, label: "Calendar event" };
+	assert.deepEqual(await targetsOf(env, "owner"), { reply: neutral, removed: neutral, made: neutral });
+	const activity = await listAgentActivity(env, "mailbox-a", "owner");
+	assert.doesNotMatch(JSON.stringify(activity), /Quarterly offsite/);
+	assert.deepEqual(
+		activity.actions.map((action) => action.subject),
+		[null, null, null],
+	);
+});
+
+test("activity never shows another user's event title to a manager of the shared mailbox", async (t) => {
+	const { db, env } = await setup(t);
+	globalThis.__kiteNodeEnv = env;
+	t.after(() => delete globalThis.__kiteNodeEnv);
+	insertCalendarActions(db);
+	const activity = await listAgentActivity(env, "mailbox-a", "manager");
+	assert.deepEqual(activity.actions.find((action) => action.id === "made").target, {
+		href: null,
+		label: "Calendar event",
+	});
+	assert.doesNotMatch(JSON.stringify(activity), /Quarterly offsite/);
 });

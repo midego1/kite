@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import type { AuthGuardProps } from "./auth-guard-types";
 import { getAuthGuardDecision } from "./auth-guard-utils";
 import { LoadingTransition } from "@/components/loading-transition";
+import { ModulesProvider } from "@/components/modules/modules-context";
 import { useAuthMe } from "@/hooks/use-auth-me";
 import { saveUserTimeZonePreference } from "@/lib/time/client";
 
@@ -49,6 +50,9 @@ export function AuthGuard({
 		return () => window.removeEventListener("storage", refreshTimeZone);
 	}, []);
 
-	if (mode === "public") return <>{children}</>;
-	return <LoadingTransition ready={decision.authorized}>{children}</LoadingTransition>;
+	return (
+		<ModulesProvider modules={session.data?.modules}>
+			{mode === "public" ? children : <LoadingTransition ready={decision.authorized}>{children}</LoadingTransition>}
+		</ModulesProvider>
+	);
 }

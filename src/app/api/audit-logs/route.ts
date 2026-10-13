@@ -3,17 +3,13 @@ import { alias } from "drizzle-orm/sqlite-core";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { auditLogs, domains, mailboxes, users } from "@/db/schema";
-import { requireSessionAdmin } from "@/lib/api/auth";
-import { isPrimaryAdmin } from "@/lib/auth/admin";
-import { getEnv } from "@/lib/cloudflare";
+import { authorizeActivityRead } from "@/lib/auth/activity-access";
+import { MODULE_AUDIT_ACTIONS } from "@/lib/modules/admin-utils";
 
 export async function GET(request: Request) {
-	const env = getEnv();
-	const auth = await requireSessionAdmin(env, request, isPrimaryAdmin);
-	if (auth.error) return auth.error;
-
-	const url = new URL(request.url);
-	const limit = Math.min(Number(url.searchParams.get("limit") ?? 100), 200);
+	const access = await authorizeActivityRead(request);
+	if (access.error) return access.error;
+	const { env, limit } = access;
 	const db = getDb(env);
 	const targetUsers = alias(users, "target_users");
 	const rows = await db
@@ -32,7 +28,7 @@ export async function GET(request: Request) {
 		.leftJoin(targetUsers, eq(targetUsers.id, auditLogs.targetUserId))
 		.leftJoin(mailboxes, eq(mailboxes.id, auditLogs.mailboxId))
 		.leftJoin(domains, eq(domains.id, mailboxes.domainId))
-		.where(inArray(auditLogs.action, ["auth.login", "auth.logout"]))
+		.where(inArray(auditLogs.action, ["auth.login", "auth.logout", ...MODULE_AUDIT_ACTIONS]))
 		.orderBy(desc(auditLogs.createdAt))
 		.limit(limit);
 

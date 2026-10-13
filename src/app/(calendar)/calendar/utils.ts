@@ -129,6 +129,26 @@ export function expandCalendarEvents(events: CalendarEvent[], rangeStart: Date, 
 	return occurrences.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
 }
 
+/**
+ * The event a `/calendar?event=` link names. The id is either a loaded occurrence or a recurring series id
+ * (search results and record refs carry the stored id), which resolves to the occurrence on `day`, else the first loaded one.
+ * A series with no occurrence in the loaded range (every one excluded, truncated or outside it) still resolves to its stored row.
+ */
+export function findEventForUrl(
+	events: CalendarEvent[],
+	id: string,
+	day: Date | null,
+	storedRows: CalendarEvent[] = [],
+): CalendarEvent | undefined {
+	const exact = events.find((item) => item.id === id);
+	if (exact) return exact;
+	const occurrences = events.filter((item) => item.id.startsWith(`${id}@`));
+	if (occurrences.length === 0) return storedRows.find((item) => item.id === id);
+	if (!day) return occurrences[0];
+	const dayStart = startOfDay(day).getTime();
+	return occurrences.find((item) => startOfDay(new Date(item.startsAt)).getTime() === dayStart) ?? occurrences[0];
+}
+
 export function nextCalendarOccurrence(event: CalendarEvent, after: Date): Date | null {
 	const first = new Date(event.seriesStartsAt ?? event.startsAt);
 	const until = event.repeatUntil ? new Date(event.repeatUntil).getTime() : Infinity;
@@ -169,6 +189,16 @@ export function rescheduleCalendarOccurrence(
 		next = nextCalendarOccurrence(event, new Date(next.getTime() + 1));
 	}
 	return null;
+}
+
+/** The local start of the day a `?date=YYYY-MM-DD` link names, or null when it is not a real date. */
+export function calendarDateFromParam(value: string | null): Date | null {
+	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "");
+	if (!match) return null;
+	const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+	const fields = new Date(Date.UTC(year, month - 1, day));
+	if (fields.getUTCMonth() !== month - 1 || fields.getUTCDate() !== day) return null;
+	return dateFromZonedFields(fields, getUserTimeZone());
 }
 
 export function startOfDay(value: Date): Date {

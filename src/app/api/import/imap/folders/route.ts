@@ -6,11 +6,14 @@ import { readJsonBody } from "@/lib/http/request";
 import { listImapFolders } from "@/lib/import/imap";
 import type { ImapFolderListRequest } from "./types";
 import { parseImapFolderListRequest } from "./utils";
+import { withModule } from "@/lib/modules/route-guard";
 
-export async function POST(request: Request) {
+export const POST = withModule("import", async (request, { checkUser }) => {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return auth.error;
+	const denied = await checkUser(auth.user);
+	if (denied) return denied;
 	let input: ReturnType<typeof parseImapFolderListRequest>;
 	try {
 		const body = await readJsonBody<ImapFolderListRequest>(request, 16 * 1024);
@@ -32,4 +35,4 @@ export async function POST(request: Request) {
 			{ status: 502 },
 		);
 	}
-}
+});

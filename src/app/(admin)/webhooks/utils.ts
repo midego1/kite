@@ -1,12 +1,6 @@
 import { authFetch } from "@/lib/auth/client";
 import { formatUserDate } from "@/lib/time/utils";
-import type { CreateWebhookInput, UpdateWebhookInput, Webhook, WebhookDelivery, WebhookEvent } from "./types";
-
-export const WEBHOOK_EVENTS: { value: WebhookEvent; label: string; hint: string }[] = [
-	{ value: "message.inbound", label: "Inbound message", hint: "A message was received and stored" },
-	{ value: "message.outbound", label: "Outbound message", hint: "A message was sent" },
-	{ value: "message.failed", label: "Delivery failure", hint: "An outbound message failed" },
-];
+import type { CreateWebhookInput, UpdateWebhookInput, Webhook, WebhookDelivery, WebhookEventOption } from "./types";
 
 export const DELIVERY_STATUS_LABELS = {
 	pending: "Pending",
@@ -24,9 +18,11 @@ async function readJson<T>(res: Response): Promise<T> {
 	return json;
 }
 
-export async function fetchWebhooks(): Promise<Webhook[]> {
-	const json = await readJson<{ webhooks: Webhook[] }>(await authFetch("/api/webhooks"));
-	return json.webhooks ?? [];
+export async function fetchWebhooks(): Promise<{ webhooks: Webhook[]; eventCatalog: WebhookEventOption[] }> {
+	const json = await readJson<{ webhooks: Webhook[]; eventCatalog?: WebhookEventOption[] }>(
+		await authFetch("/api/webhooks"),
+	);
+	return { webhooks: json.webhooks ?? [], eventCatalog: json.eventCatalog ?? [] };
 }
 
 export async function fetchDeliveries(webhookId: string): Promise<WebhookDelivery[]> {

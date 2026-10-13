@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { describeQueueMessage, queueMetric } from "../worker-utils.ts";
 import { createLogger } from "../src/lib/logger.mjs";
+import { bundleModules } from "./support/modules-bundle.mjs";
+
+// worker-utils reads the module manifests, which Node cannot load as raw TypeScript.
+const { describeQueueMessage, queueMetric } = await bundleModules("kite-queue-log-context-", [
+	["describeQueueMessage, queueMetric", "worker-utils.ts"],
+]);
 
 const inbound = {
 	from: "sender@example.com",

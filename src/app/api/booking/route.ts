@@ -9,11 +9,14 @@ import { getEnv } from "@/lib/cloudflare";
 import { newId } from "@/lib/ids";
 import { ensureBookingUsername } from "@/lib/booking/username";
 import { validBookingHostIds } from "@/lib/booking/hosts";
+import { withModule } from "@/lib/modules/route-guard";
 
-export async function GET(request: Request) {
+export const GET = withModule("booking", async (request, { checkUser }) => {
 	const env = getEnv();
 	const user = await getCurrentUser(env, request);
 	if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	const denied = await checkUser(user);
+	if (denied) return denied;
 	const username = await ensureBookingUsername(env, user.id, user.email);
 	const db = getDb(env);
 	const events = await db
@@ -33,12 +36,14 @@ export async function GET(request: Request) {
 		currentUser: { id: user.id, name: user.name, email: user.email, hasAvatar: !!currentUser?.avatarKey },
 		canManageHosts,
 	});
-}
+});
 
-export async function POST(request: Request) {
+export const POST = withModule("booking", async (request, { checkUser }) => {
 	const env = getEnv();
 	const user = await getCurrentUser(env, request);
 	if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	const denied = await checkUser(user);
+	if (denied) return denied;
 	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
 	const input = parseBookingEventInput(await request.json().catch(() => null));
 	if (!input) return NextResponse.json({ error: "Enter valid booking details and availability." }, { status: 400 });
@@ -70,4 +75,4 @@ export async function POST(request: Request) {
 			return NextResponse.json({ error: "This event link is already in use." }, { status: 409 });
 		throw error;
 	}
-}
+});

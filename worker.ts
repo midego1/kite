@@ -26,7 +26,7 @@ import { runAgentMaintenance } from "./src/lib/agent/maintenance";
 import { runTrashRetention } from "./src/lib/email/trash-retention";
 import { runDatabasePruning } from "./src/lib/maintenance/pruning";
 import { runOperationalAlerts } from "./src/lib/alerts/run";
-import { isImportJobQueueMessage, processImportJob, resumeStalledImportJobs } from "./src/lib/import/jobs";
+import { dispatchModuleQueueMessage, runModuleCronTasks } from "./src/lib/modules/background";
 import { maybeAutoApplyPendingMigrations } from "./src/lib/migrations/auto-apply";
 import { queueRetryDelaySeconds } from "./src/lib/migrations/pending";
 export { RealtimeHub } from "./src/lib/realtime/hub";
@@ -172,8 +172,8 @@ export default {
 					await processInboundMessage(env, msg.body);
 				} else if (await processAgentQueueMessage(env, msg.body)) {
 					// Draft and triage jobs both run through the agent dispatcher.
-				} else if (isImportJobQueueMessage(msg.body)) {
-					await processImportJob(env, msg.body.jobId);
+				} else if ((await dispatchModuleQueueMessage(env, batch.queue, msg.body)).handled) {
+					// A module's message kind: the registry routes it and an off module's message is acked.
 				} else if (isWebhookRetryMessage(msg.body)) {
 					await processWebhookRetry(env, msg.body as WebhookRetryMessage);
 				} else if (isMailboxPurgeMessage(msg.body)) {
@@ -241,6 +241,6 @@ export default {
 		}
 		ctx.waitUntil(runAgentMaintenance(env));
 		ctx.waitUntil(runTrashRetention(env, new Date(controller.scheduledTime)));
-		ctx.waitUntil(resumeStalledImportJobs(env));
+		ctx.waitUntil(runModuleCronTasks(env, controller.cron, new Date(controller.scheduledTime)));
 	},
 } satisfies ExportedHandler<CloudflareEnv>;

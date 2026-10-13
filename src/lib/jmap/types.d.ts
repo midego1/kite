@@ -1,5 +1,6 @@
 import type { ApiAuthResult } from "@/lib/api/key-auth-types";
 import type { AppDatabase } from "@/db";
+import type { CapabilityResult, JsonValue, ModuleId } from "@/lib/modules/module-types";
 
 export type JmapId = string;
 
@@ -23,6 +24,15 @@ export type JmapMethodError = { type: string; description?: string; [key: string
 /** RFC 8620 §5.3 SetError: why one object in a /set or /import call was rejected. */
 export type JmapSetError = { type: string; properties?: string[]; description?: string };
 
+/** What the enabled modules add to one JMAP request, merged from their `jmap_capability` and `jmap_method` descriptors. */
+export type JmapModuleSurface = {
+	/** Session capability URN to its capability object. */
+	capabilities: Record<string, JsonValue>;
+	/** JMAP method name to the capability that answers it. */
+	methods: Record<string, { moduleId: ModuleId; name: string }>;
+	call(moduleId: ModuleId, name: string, input: JsonValue): Promise<CapabilityResult>;
+};
+
 export type JmapContext = {
 	env: CloudflareEnv;
 	db: AppDatabase;
@@ -31,6 +41,8 @@ export type JmapContext = {
 	origin: string;
 	/** Client-assigned creation ids resolved so far in this request. */
 	createdIds: Record<string, JmapId>;
+	/** Absent when no module declares anything for this request. */
+	modules?: JmapModuleSurface;
 };
 
 export type JmapMethodHandler = (

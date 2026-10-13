@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq, desc, and, or, count, isNull, isNotNull, inArray, lte, gt, notInArray, ne, sql, sum } from "drizzle-orm";
+import { eq, desc, and, or, count, isNull, isNotNull, inArray, lte, gt, notInArray, sql, sum } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
 import { getCurrentUser } from "@/lib/auth/cookies";
@@ -13,7 +13,9 @@ import { buildSearchConditions } from "@/lib/search/conditions";
 import { getRequestTimeZone } from "@/lib/time/utils";
 import { queryInChunks } from "@/db/chunk-utils";
 import { decodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor-utils";
+import { ownedStatusCondition } from "@/lib/modules/message-status";
 import { loadRowSuggestions } from "@/lib/agent/auto-read/message-suggestions";
+import { hiddenKindsFor } from "@/lib/agent/auto-read/suggestion-visibility";
 import { afterCursor, getMessageListColumns, loadConversationPage } from "./utils";
 import type { ListMessage } from "./types";
 
@@ -71,10 +73,12 @@ export async function GET(request: Request) {
 	if (status) {
 		conditions.push(eq(messages.status, status));
 	}
-	// Composer templates are stored as messages but never listed.
-	if (status !== "template") {
-		conditions.push(ne(messages.status, "template"));
-	}
+	const ownedStatus = await ownedStatusCondition(
+		env,
+		{ userId: user.id, role: user.role, isPrimaryAdmin: user.isPrimaryAdmin },
+		status,
+	);
+	if (ownedStatus) conditions.push(ownedStatus);
 	if (status === "received" && !folderId) {
 		conditions.push(isNull(messages.folderId));
 		conditions.push(or(isNull(messages.snoozedUntil), lte(messages.snoozedUntil, new Date()))!);
@@ -212,7 +216,13 @@ export async function GET(request: Request) {
 			),
 		),
 	);
-	const rowSuggestions = await loadRowSuggestions(db, accessibleMailboxes, rows, threadMessageIds);
+	const rowSuggestions = await loadRowSuggestions(
+		db,
+		accessibleMailboxes,
+		rows,
+		threadMessageIds,
+		await hiddenKindsFor(env, user),
+	);
 	// `Message.textBody`/`htmlBody` are optional on the wire type and the
 	// reading pane loads them from /api/messages/[id]/thread, so they are
 	// neither selected nor sent here.

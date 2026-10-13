@@ -1,24 +1,17 @@
 "use client";
 
-import React, { createContext, useContext, useState, useMemo } from "react";
+import React, { createContext, useCallback, useContext, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import {
-	Inbox,
-	Star,
-	Clock,
-	Send,
-	FileText,
-	Archive,
-	ShieldAlert,
-	Trash2,
-	MailPlus,
-	Settings,
-	HelpCircle,
-} from "lucide-react";
+import toast from "react-hot-toast";
 import { useCompose } from "@/components/compose/compose-context";
+import { useModules } from "@/components/modules/modules-context";
+import type { CommandHandler, CommandParamValues, CoreShortcutChrome, UiCommand } from "@/lib/modules/module-types";
 import type { ShortcutDefinition, CommandItem } from "./types";
+import { COMMAND_ICONS } from "./command-icons";
+import { useCommandHandlerRegistry } from "./command-handlers";
+import { LazyCommandPalette } from "./command-palette-lazy";
+import { commandParamFields, listCommands, listShortcutBindings, runCommand } from "./command-palette-utils";
 import { useHotkeys } from "./use-hotkeys";
-import { CommandPalette } from "./command-palette";
 import { ShortcutsHelpDialog } from "./shortcuts-help-dialog";
 import { useShortcutsEnabled } from "./use-shortcuts-enabled";
 
@@ -33,6 +26,8 @@ interface ShortcutsContextValue {
 	closeHelpModal: () => void;
 	registerShortcut: (shortcut: ShortcutDefinition) => void;
 	registerCommand: (command: CommandItem) => void;
+	/** Offers a handler for a client command until the returned function is called. */
+	registerCommandHandler: (commandId: string, handler: CommandHandler) => () => void;
 	shortcuts: ShortcutDefinition[];
 	commands: CommandItem[];
 }
@@ -58,6 +53,7 @@ export function ShortcutsProvider({
 }) {
 	const router = useRouter();
 	const { openComposer } = useCompose();
+	const { modules } = useModules();
 	const {
 		enabled: shortcutsEnabled,
 		error: shortcutsPreferenceError,
@@ -103,200 +99,82 @@ export function ShortcutsProvider({
 		});
 	};
 
-	// Base navigation and global shortcuts
+	const { handlers: clientHandlers, register: registerCommandHandler } = useCommandHandlerRegistry(
+		modules,
+		isCommandPaletteOpen,
+	);
+	const coreHandlers = useMemo<Record<string, CommandHandler>>(
+		() => ({ compose: () => openComposer(), "show-help": () => setIsHelpModalOpen(true) }),
+		[openComposer],
+	);
+	const handlers = useMemo(() => ({ ...clientHandlers, ...coreHandlers }), [clientHandlers, coreHandlers]);
+
+	// What the palette and the key bindings may offer: core's commands and those of the modules that
+	// are on, so a disabled module's commands and shortcuts are absent whichever layout mounts this.
+	const commands = useMemo(
+		() => listCommands({ enabled: modules, handlers: Object.keys(handlers) }),
+		[modules, handlers],
+	);
+
+	const perform = useCallback(
+		async (command: UiCommand, values?: CommandParamValues) => {
+			const result = await runCommand(command, { navigate: (href) => router.push(href), handlers }, values);
+			return result.ok ? undefined : result.error;
+		},
+		[router, handlers],
+	);
+
 	const baseShortcuts = useMemo<ShortcutDefinition[]>(() => {
-		return [
-			{
-				key: "k",
-				modifiers: ["meta", "ctrl"],
-				label: "Command Palette",
-				category: "General",
-				action: () => setIsCommandPaletteOpen((prev) => !prev),
+		const chrome: Record<CoreShortcutChrome, () => void> = {
+			togglePalette: () => setIsCommandPaletteOpen((prev) => !prev),
+			toggleHelp: () => setIsHelpModalOpen((prev) => !prev),
+			focusSearch: () => {
+				const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Search"]');
+				if (searchInput) {
+					searchInput.focus();
+					searchInput.select();
+				}
 			},
-			{
-				key: "?",
-				label: "Shortcuts Cheat Sheet",
-				category: "General",
-				action: () => setIsHelpModalOpen((prev) => !prev),
+			dismiss: () => {
+				setIsCommandPaletteOpen(false);
+				setIsHelpModalOpen(false);
 			},
-			{
-				key: "c",
-				label: "Compose Email",
-				category: "Composing",
-				action: () => openComposer(),
-			},
-			{
-				key: "/",
-				label: "Search Mail",
-				category: "Navigation",
+		};
+		const bound = listShortcutBindings(commands).map((binding): ShortcutDefinition => {
+			const command = commands.find((item) => item.id === binding.commandId);
+			return {
+				key: binding.key,
+				label: binding.label,
+				category: binding.category,
+				modifiers: binding.modifiers,
 				action: () => {
-					const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Search"]');
-					if (searchInput) {
-						searchInput.focus();
-						searchInput.select();
-					}
+					if (binding.chrome) chrome[binding.chrome]();
+					else if (command) void perform(command).then((message) => message && toast.error(message));
 				},
-			},
-			{
-				key: "g i",
-				label: "Go to Inbox",
-				category: "Navigation",
-				action: () => router.push("/inbox"),
-			},
-			{
-				key: "g s",
-				label: "Go to Starred",
-				category: "Navigation",
-				action: () => router.push("/starred"),
-			},
-			{
-				key: "g z",
-				label: "Go to Snoozed",
-				category: "Navigation",
-				action: () => router.push("/snoozed"),
-			},
-			{
-				key: "g t",
-				label: "Go to Sent",
-				category: "Navigation",
-				action: () => router.push("/sent"),
-			},
-			{
-				key: "g d",
-				label: "Go to Drafts",
-				category: "Navigation",
-				action: () => router.push("/drafts"),
-			},
-			{
-				key: "g a",
-				label: "Go to Archived",
-				category: "Navigation",
-				action: () => router.push("/archived"),
-			},
-			{
-				key: "g !",
-				label: "Go to Spam",
-				category: "Navigation",
-				action: () => router.push("/spam"),
-			},
-			{
-				key: "g x",
-				label: "Go to Trash",
-				category: "Navigation",
-				action: () => router.push("/trash"),
-			},
-			{
-				key: "escape",
-				label: "Dismiss Modal / Clear Focus",
-				category: "General",
-				action: () => {
-					setIsCommandPaletteOpen(false);
-					setIsHelpModalOpen(false);
-				},
-			},
-			...customShortcuts,
-		];
-	}, [router, openComposer, customShortcuts]);
+			};
+		});
+		return [...bound, ...customShortcuts];
+	}, [commands, perform, customShortcuts]);
 
 	useHotkeys(baseShortcuts, { enabled: shortcutsEnabled && !shortcutsPreferenceLoading });
 
-	// Base Command Palette actions
 	const allCommands = useMemo<CommandItem[]>(() => {
-		const builtins: CommandItem[] = [
-			{
-				id: "compose",
-				title: "Compose new message",
-				subtitle: "Open draft editor",
-				category: "Actions",
-				icon: MailPlus,
-				shortcut: "c",
-				perform: () => openComposer(),
-			},
-			{
-				id: "nav-inbox",
-				title: "Go to Inbox",
-				category: "Navigation",
-				icon: Inbox,
-				shortcut: "g i",
-				perform: () => router.push("/inbox"),
-			},
-			{
-				id: "nav-starred",
-				title: "Go to Starred",
-				category: "Navigation",
-				icon: Star,
-				shortcut: "g s",
-				perform: () => router.push("/starred"),
-			},
-			{
-				id: "nav-snoozed",
-				title: "Go to Snoozed",
-				category: "Navigation",
-				icon: Clock,
-				shortcut: "g z",
-				perform: () => router.push("/snoozed"),
-			},
-			{
-				id: "nav-sent",
-				title: "Go to Sent",
-				category: "Navigation",
-				icon: Send,
-				shortcut: "g t",
-				perform: () => router.push("/sent"),
-			},
-			{
-				id: "nav-drafts",
-				title: "Go to Drafts",
-				category: "Navigation",
-				icon: FileText,
-				shortcut: "g d",
-				perform: () => router.push("/drafts"),
-			},
-			{
-				id: "nav-archived",
-				title: "Go to Archived",
-				category: "Navigation",
-				icon: Archive,
-				shortcut: "g a",
-				perform: () => router.push("/archived"),
-			},
-			{
-				id: "nav-spam",
-				title: "Go to Spam",
-				category: "Navigation",
-				icon: ShieldAlert,
-				shortcut: "g !",
-				perform: () => router.push("/spam"),
-			},
-			{
-				id: "nav-trash",
-				title: "Go to Trash",
-				category: "Navigation",
-				icon: Trash2,
-				shortcut: "g x",
-				perform: () => router.push("/trash"),
-			},
-			{
-				id: "settings-account",
-				title: "Account Settings",
-				subtitle: "Profile, password & preferences",
-				category: "Settings",
-				icon: Settings,
-				perform: () => router.push("/settings/account"),
-			},
-			{
-				id: "show-help",
-				title: "Keyboard Shortcuts Cheat Sheet",
-				subtitle: "View all quick keys",
-				category: "General",
-				icon: HelpCircle,
-				shortcut: "?",
-				perform: () => setIsHelpModalOpen(true),
-			},
-		];
-
-		return [...builtins, ...customCommands];
-	}, [router, openComposer, customCommands]);
+		const items = commands.map((command): CommandItem => {
+			const fields = commandParamFields(command);
+			return {
+				id: command.id,
+				title: command.label,
+				subtitle: command.group === "Navigation" ? undefined : command.description,
+				category: command.group,
+				icon: COMMAND_ICONS[command.id],
+				shortcut: command.shortcut,
+				keywords: command.keywords,
+				params: fields.length ? fields : undefined,
+				perform: (values) => perform(command, values),
+			};
+		});
+		return [...items, ...customCommands];
+	}, [commands, perform, customCommands]);
 
 	return (
 		<ShortcutsContext.Provider
@@ -311,6 +189,7 @@ export function ShortcutsProvider({
 				closeHelpModal,
 				registerShortcut,
 				registerCommand,
+				registerCommandHandler,
 				shortcuts: baseShortcuts,
 				commands: allCommands,
 			}}
@@ -318,7 +197,7 @@ export function ShortcutsProvider({
 			{children}
 			{shortcutsEnabled && !shortcutsPreferenceLoading && (
 				<>
-					<CommandPalette isOpen={isCommandPaletteOpen} onClose={closeCommandPalette} commands={allCommands} />
+					{isCommandPaletteOpen && <LazyCommandPalette isOpen onClose={closeCommandPalette} commands={allCommands} />}
 					<ShortcutsHelpDialog isOpen={isHelpModalOpen} onClose={closeHelpModal} shortcuts={baseShortcuts} />
 				</>
 			)}

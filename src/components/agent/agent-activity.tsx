@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { RecordRefLink } from "@/components/modules/record-ref-link";
 import { Button } from "@/components/ui/button";
 import { formatMessageListTimestamp } from "@/components/messages/utils";
 import { AGENT_SUGGESTION_EVENT, dispatchAgentSuggestionChanged } from "@/hooks/message-realtime-utils";
@@ -84,13 +85,12 @@ function ActionRow({
 					<span data-activity-label>{actionLabel(row)}</span>
 				</p>
 				{target && (
-					<Link
-						href={target.href}
+					<RecordRefLink
+						target={target}
 						className="block truncate text-sm text-blue-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-						data-activity-target
-					>
-						{target.label}
-					</Link>
+						textClassName="block truncate text-sm text-neutral-600"
+						data-activity-target=""
+					/>
 				)}
 				{reason && (
 					<p className="text-xs text-neutral-500" data-activity-reason>

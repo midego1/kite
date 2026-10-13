@@ -1,18 +1,16 @@
 import { desc, inArray, eq } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { auditLogs, users } from "@/db/schema";
-import { requireSessionAdmin } from "@/lib/api/auth";
-import { isPrimaryAdmin } from "@/lib/auth/admin";
-import { getEnv } from "@/lib/cloudflare";
+import { authorizeActivityRead } from "@/lib/auth/activity-access";
+import { MODULE_AUDIT_ACTIONS } from "@/lib/modules/admin-utils";
 
 export async function GET(request: Request) {
-	const env = getEnv();
-	const auth = await requireSessionAdmin(env, request, isPrimaryAdmin);
-	if (auth.error) return auth.error;
-
-	const url = new URL(request.url);
-	const limit = Math.min(Number(url.searchParams.get("limit") ?? 100), 200);
+	const access = await authorizeActivityRead(request);
+	if (access.error) return access.error;
+	const { env, limit } = access;
+	const targetUsers = alias(users, "target_users");
 	const rows = await getDb(env)
 		.select({
 			id: auditLogs.id,
@@ -20,10 +18,12 @@ export async function GET(request: Request) {
 			metadata: auditLogs.metadata,
 			createdAt: auditLogs.createdAt,
 			actorEmail: users.email,
+			targetEmail: targetUsers.email,
 		})
 		.from(auditLogs)
 		.leftJoin(users, eq(users.id, auditLogs.actorUserId))
-		.where(inArray(auditLogs.action, ["auth.login", "auth.logout"]))
+		.leftJoin(targetUsers, eq(targetUsers.id, auditLogs.targetUserId))
+		.where(inArray(auditLogs.action, ["auth.login", "auth.logout", ...MODULE_AUDIT_ACTIONS]))
 		.orderBy(desc(auditLogs.createdAt))
 		.limit(limit);
 

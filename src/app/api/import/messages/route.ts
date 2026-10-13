@@ -9,11 +9,14 @@ import { getImportMessageUserId } from "@/lib/import/destination";
 import { importMessagesToMailbox } from "@/lib/import/service";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { parseImportForm } from "./utils";
+import { withModule } from "@/lib/modules/route-guard";
 
-export async function POST(request: Request) {
+export const POST = withModule("import", async (request, { checkUser }) => {
 	const env = getEnv();
 	const { user, error } = await requireSessionUser(env, request);
 	if (error) return error;
+	const denied = await checkUser(user);
+	if (denied) return denied;
 	let input: Awaited<ReturnType<typeof parseImportForm>>;
 	try {
 		input = await parseImportForm(request);
@@ -49,4 +52,4 @@ export async function POST(request: Request) {
 		messages: input.messages,
 	});
 	return NextResponse.json(result);
-}
+});

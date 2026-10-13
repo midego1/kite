@@ -1,3 +1,4 @@
+import type { JsonValue } from "@/lib/modules/module-types";
 import { CAPABILITY_CORE, CAPABILITY_MAIL, CAPABILITY_SUBMISSION, LIMITS } from "./constants";
 import { JmapError } from "./errors";
 import { mailboxChanges, mailboxGet, mailboxQuery, mailboxSet } from "./mailboxes";
@@ -22,8 +23,16 @@ import {
 	identityGet,
 	identitySet,
 } from "./identities";
+import { moduleMethodResult } from "./module-utils";
 import { getEmailState } from "./state";
-import type { JmapContext, JmapInvocation, JmapMethodHandler, JmapRequest, JmapResponse } from "./types";
+import type {
+	JmapContext,
+	JmapInvocation,
+	JmapMethodHandler,
+	JmapModuleSurface,
+	JmapRequest,
+	JmapResponse,
+} from "./types";
 
 const METHODS: Record<string, JmapMethodHandler> = {
 	"Core/echo": async (_ctx, args) => args,
@@ -107,12 +116,21 @@ function resolveCreatedIds(args: Record<string, unknown>, createdIds: Record<str
 	return walk(args) as Record<string, unknown>;
 }
 
+/** The handler for a method a module declares; core never defines these, the module answers through its capability. */
+function moduleHandler(ctx: JmapContext, name: string): JmapMethodHandler | null {
+	const modules = ctx.modules;
+	if (!modules || !Object.hasOwn(modules.methods, name)) return null;
+	const { moduleId, name: capability } = modules.methods[name];
+	return async (_ctx, args) =>
+		moduleMethodResult(await modules.call(moduleId, capability, { args: args as JsonValue, accountId: ctx.accountId }));
+}
+
 export async function processRequest(ctx: JmapContext, request: JmapRequest): Promise<JmapResponse> {
 	const responses: JmapInvocation[] = [];
 	Object.assign(ctx.createdIds, request.createdIds ?? {});
 
 	for (const [name, rawArgs, callId] of request.methodCalls) {
-		const handler = METHODS[name];
+		const handler = Object.hasOwn(METHODS, name) ? METHODS[name] : moduleHandler(ctx, name);
 		if (!handler) {
 			responses.push(["error", { type: "unknownMethod" }, callId]);
 			continue;
@@ -170,12 +188,14 @@ export async function sessionState(ctx: JmapContext): Promise<string> {
 	return getEmailState(ctx);
 }
 
-export function validateRequest(body: unknown): JmapRequest {
+export function validateRequest(body: unknown, modules?: Pick<JmapModuleSurface, "capabilities">): JmapRequest {
 	if (!body || typeof body !== "object") throw new JmapError("notRequest");
 	const request = body as Partial<JmapRequest>;
 	if (!Array.isArray(request.using) || !Array.isArray(request.methodCalls)) throw new JmapError("notRequest");
 	for (const capability of request.using) {
-		if (!SUPPORTED_CAPABILITIES.has(String(capability))) throw new JmapError("unknownCapability", String(capability));
+		const urn = String(capability);
+		if (!SUPPORTED_CAPABILITIES.has(urn) && !Object.hasOwn(modules?.capabilities ?? {}, urn))
+			throw new JmapError("unknownCapability", String(capability));
 	}
 	if (request.methodCalls.length > LIMITS.maxCallsInRequest)
 		throw new JmapError("limit", "Too many method calls", { limit: "maxCallsInRequest" });

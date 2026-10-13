@@ -3,20 +3,32 @@ import { getDb } from "@/db";
 import { calendarEvents } from "@/db/schema";
 import { agentActions } from "@/db/schema/agent-auto-read";
 import type { SessionUser } from "@/lib/auth/types";
+import { emitCalendarWrites } from "@/lib/calendar/webhook-events";
 import { cancelQueuedSend } from "@/lib/email/send";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import { AgentActionError } from "./action-error";
 import type { AgentActionRow } from "./actions-types";
 import { parseActionState, undoRefusal } from "./actions-utils";
 import { reopenIfIdle } from "./calendar-state";
 import { deserializeEventRow, snapshotValues, type EventSnapshot } from "./invite-actions-utils";
 
+/** What core hands back on undo: the inverse the action stored and the original row's outcome. */
+export type CalendarUndoInput = {
+	inverse: Record<string, unknown> | null;
+	result: Record<string, unknown> | null;
+	variant: string;
+	suggestionId: string | null;
+	mailboxId: string;
+	actingUserId: string | null;
+};
+
 function stringField(state: Record<string, unknown> | null, key: string): string | null {
 	const value = state?.[key];
 	return typeof value === "string" ? value : null;
 }
 
-async function findLinkedAcceptance(env: CloudflareEnv, row: AgentActionRow): Promise<AgentActionRow | null> {
+async function findLinkedAcceptance(env: CloudflareEnv, row: CalendarUndoInput): Promise<AgentActionRow | null> {
 	if (!row.suggestionId) return null;
 	const [rsvp] = await getDb(env)
 		.select()
@@ -41,7 +53,7 @@ async function findLinkedAcceptance(env: CloudflareEnv, row: AgentActionRow): Pr
  */
 export async function authorizeCreateEventUndo(
 	env: CloudflareEnv,
-	row: AgentActionRow,
+	row: CalendarUndoInput,
 	user: Pick<SessionUser, "id" | "role">,
 ): Promise<void> {
 	if (row.variant === "update") return;
@@ -58,7 +70,7 @@ export async function authorizeCreateEventUndo(
  * event is removed anyway and the card offers "Send decline instead". The caller was authorized by
  * `authorizeCreateEventUndo`; the queued message belongs to the user who sent it.
  */
-async function cancelLinkedAcceptance(env: CloudflareEnv, row: AgentActionRow, userId: string): Promise<void> {
+async function cancelLinkedAcceptance(env: CloudflareEnv, row: CalendarUndoInput, userId: string): Promise<void> {
 	const rsvp = await findLinkedAcceptance(env, row);
 	const messageId = stringField(parseActionState(rsvp?.after ?? null), "messageId");
 	if (!rsvp || !rsvp.actingUserId || !messageId) return;
@@ -71,36 +83,50 @@ async function cancelLinkedAcceptance(env: CloudflareEnv, row: AgentActionRow, u
 }
 
 /** Undo of `create_event`: removes the event (or puts an updated one back) and, for a new event, cancels a queued reply. */
-export async function undoCreateEvent(env: CloudflareEnv, row: AgentActionRow, userId: string): Promise<void> {
+export async function undoCreateEvent(
+	env: CloudflareEnv,
+	row: CalendarUndoInput,
+	userId: string,
+	ctx: CapabilityCallContext,
+): Promise<void> {
 	const db = getDb(env);
-	const eventId = stringField(parseActionState(row.after), "eventId");
+	const eventId = stringField(row.inverse, "eventId") ?? stringField(row.result, "eventId");
 	if (row.variant === "update") {
-		const before = parseActionState(row.before) as EventSnapshot | null;
+		const before = row.inverse as EventSnapshot | null;
 		if (!eventId || !before) throw new AgentActionError("The event could not be restored", 409);
 		const restored = await db
 			.update(calendarEvents)
 			.set({ ...snapshotValues(before), updatedAt: new Date() })
 			.where(eq(calendarEvents.id, eventId))
-			.returning({ id: calendarEvents.id });
+			.returning();
 		if (restored.length === 0) throw new AgentActionError("The event is no longer on your calendar", 409);
+		await emitCalendarWrites(ctx, [["updated", restored[0]]]);
 	} else {
-		if (eventId) await db.delete(calendarEvents).where(eq(calendarEvents.id, eventId));
+		if (eventId) {
+			const [removed] = await db.delete(calendarEvents).where(eq(calendarEvents.id, eventId)).returning();
+			if (removed) await emitCalendarWrites(ctx, [["deleted", removed]]);
+		}
 		await cancelLinkedAcceptance(env, row, userId);
 	}
 	await reopenIfIdle(env, row.suggestionId);
 }
 
 /** Undo of `delete_event`: recreates the event from the row stored before it was removed. */
-export async function undoDeleteEvent(env: CloudflareEnv, row: AgentActionRow): Promise<void> {
-	const event = deserializeEventRow(parseActionState(row.before));
+export async function undoDeleteEvent(
+	env: CloudflareEnv,
+	row: CalendarUndoInput,
+	ctx: CapabilityCallContext,
+): Promise<void> {
+	const event = deserializeEventRow(row.inverse);
 	if (!event) throw new AgentActionError("The event could not be restored", 409);
-	await getDb(env).insert(calendarEvents).values(event).onConflictDoNothing();
+	const [restored] = await getDb(env).insert(calendarEvents).values(event).onConflictDoNothing().returning();
+	if (restored) await emitCalendarWrites(ctx, [["created", restored]]);
 	await reopenIfIdle(env, row.suggestionId);
 }
 
 /** Undo of `send_rsvp`: only a reply still waiting in the outbound queue can be taken back. */
-export async function undoRsvp(env: CloudflareEnv, row: AgentActionRow): Promise<void> {
-	const messageId = stringField(parseActionState(row.after), "messageId");
+export async function undoRsvp(env: CloudflareEnv, row: CalendarUndoInput): Promise<void> {
+	const messageId = stringField(row.inverse, "messageId") ?? stringField(row.result, "messageId");
 	const cancelled = row.actingUserId && messageId ? await cancelQueuedSend(env, row.actingUserId, messageId) : null;
 	if (!cancelled?.ok) throw new AgentActionError("The reply was already sent, so Kite left it", 409);
 	await reopenIfIdle(env, row.suggestionId);

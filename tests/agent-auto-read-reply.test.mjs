@@ -26,6 +26,7 @@ await build({
 	logLevel: "silent",
 	packages: "external",
 	tsconfig: join(root, "tsconfig.json"),
+	alias: { "cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts") },
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { processAgentTriageJob } = await load("process");

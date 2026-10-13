@@ -1,20 +1,17 @@
+import { splitSkipReasons } from "@/lib/agent/auto-read/module-steps-utils";
+import { MODULE_MANIFESTS } from "@/lib/modules/registry";
 import type { ActivityAction, ActivityTarget } from "./agent-activity-types";
 
+/** Labels of the actions core owns; each module's manifest adds its own, keyed `type` or `type:variant`. */
 const ACTION_LABELS: Record<string, string> = {
 	dismiss: "Dismissed a suggestion",
 	create_draft: "Drafted a reply",
 	move: "Moved the message to spam",
-	create_event: "Added an event to the calendar",
-	delete_event: "Removed an event from the calendar",
-	update_event: "Updated a calendar event",
-	send_rsvp: "Answered an invitation",
 };
 
-const VARIANT_LABELS: Record<string, string> = {
-	"create_event:update": "Updated a calendar event",
-	"send_rsvp:accepted": "Accepted an invitation",
-	"send_rsvp:declined": "Declined an invitation",
-};
+/** Kept whether or not the module is on, so older rows stay readable. */
+const MODULE_ACTION_LABELS: Record<string, string> = Object.assign({}, ...MODULE_MANIFESTS.map((m) => m.actionLabels));
+const MODULE_REASON_TEXT: Record<string, string> = Object.assign({}, ...MODULE_MANIFESTS.map((m) => m.reasonTexts));
 
 const STATUS_LABELS: Record<ActivityAction["status"], string> = {
 	pending: "In progress",
@@ -26,6 +23,7 @@ const STATUS_LABELS: Record<ActivityAction["status"], string> = {
 
 /** Plain words for the machine reasons stored on actions and skipped jobs. */
 const REASON_TEXT: Record<string, string> = {
+	...MODULE_REASON_TEXT,
 	user_click: "Chosen by a person",
 	undo: "Undo requested",
 	draft_guard: "Blocked: the draft mentioned an address or link that is not in the conversation",
@@ -59,7 +57,11 @@ export function statusLabel(status: ActivityAction["status"]): string {
 }
 
 export function actionLabel(row: Pick<ActivityAction, "action" | "variant" | "undoOf">): string {
-	const label = VARIANT_LABELS[`${row.action}:${row.variant}`] ?? ACTION_LABELS[row.action] ?? humanize(row.action);
+	const label =
+		MODULE_ACTION_LABELS[`${row.action}:${row.variant}`] ??
+		ACTION_LABELS[row.action] ??
+		MODULE_ACTION_LABELS[row.action] ??
+		humanize(row.action);
 	return row.undoOf ? `Undid: ${label.charAt(0).toLowerCase()}${label.slice(1)}` : label;
 }
 
@@ -72,6 +74,9 @@ function humanize(code: string): string {
 export function reasonText(reason: string | null): string | null {
 	if (!reason) return null;
 	if (REASON_TEXT[reason]) return REASON_TEXT[reason];
+	const parts = splitSkipReasons(reason);
+	if (parts.length > 1 && parts.every((part) => REASON_TEXT[part]))
+		return parts.map((part) => REASON_TEXT[part]).join(", ");
 	const allowed = ALLOWED_RULE.exec(reason);
 	if (allowed) return `Allowed in ${LEVEL_NAMES[allowed[1]]} mode`;
 	return /\s/.test(reason) ? reason : humanize(reason);
@@ -80,10 +85,12 @@ export function reasonText(reason: string | null): string | null {
 /**
  * Where a row's link goes: the sent reply once the agent draft was sent (the draft itself is then in
  * trash), the agent draft while this viewer can open it, otherwise the message the action was about.
+ * A calendar action carries the record ref the server resolved (a link, or plain text when unavailable).
  */
 export function actionTarget(
-	row: Pick<ActivityAction, "action" | "status" | "messageId" | "after" | "subject" | "draftAvailable">,
+	row: Pick<ActivityAction, "action" | "status" | "messageId" | "after" | "subject" | "draftAvailable" | "target">,
 ): ActivityTarget | null {
+	if (row.target) return row.target;
 	const subject = row.subject || "(No subject)";
 	const draftId = row.after?.draftId;
 	const sentMessageId = row.after?.sentMessageId;

@@ -4,6 +4,7 @@ import { mobilePrimaryActionAboveNavClass } from "@/components/page-header-utils
 import { useEffect, useState } from "react";
 import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
+import { useModules } from "@/components/modules/modules-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -25,16 +26,18 @@ import type { ApiKeyScope } from "@/lib/api/scopes";
 import type { ManagedApiKey, McpKeyScope } from "./api-keys-settings-types";
 import {
 	createManagedApiKey,
+	enabledScopes,
 	keyPermissions,
+	keyScopeChoices,
 	loadManagedApiKeys,
-	MCP_KEY_SCOPES,
 	revokeManagedApiKey,
-	STANDARD_KEY_SCOPES,
+	scopesNeedMailboxes,
 } from "./api-keys-settings-utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 
 export function ApiKeysSettings() {
 	const { mailboxes, selectedMailbox } = useSelectedMailbox();
+	const { modules } = useModules();
 	const [keys, setKeys] = useState<ManagedApiKey[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [busy, setBusy] = useState(false);
@@ -49,6 +52,10 @@ export function ApiKeysSettings() {
 	const [mailboxIds, setMailboxIds] = useState<string[]>([]);
 	const [newKey, setNewKey] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
+	const scopeOptions = keyScopeChoices(mcpAllowed ? "mcp" : "api", modules);
+	const chosenScopes = mcpAllowed
+		? enabledScopes("mcp", mcpScopes, modules)
+		: enabledScopes("api", standardScopes, modules);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -82,7 +89,7 @@ export function ApiKeysSettings() {
 			const secret = await createManagedApiKey({
 				name: name.trim(),
 				mcpAllowed,
-				scopes: mcpAllowed ? mcpScopes : standardScopes,
+				scopes: chosenScopes,
 				mailboxIds,
 			});
 			setNewKey(secret);
@@ -193,7 +200,7 @@ export function ApiKeysSettings() {
 								</label>
 								<fieldset className="space-y-2">
 									<legend className="text-sm font-medium">Permissions</legend>
-									{(mcpAllowed ? MCP_KEY_SCOPES : STANDARD_KEY_SCOPES).map((scope) => (
+									{scopeOptions.map((scope) => (
 										<label key={scope.value} className="flex items-start gap-3 py-2 text-sm">
 											<Checkbox
 												checked={
@@ -253,11 +260,8 @@ export function ApiKeysSettings() {
 									disabled={
 										busy ||
 										!name.trim() ||
-										(!mailboxIds.length &&
-											(mcpAllowed
-												? mcpScopes.some((scope) => !scope.startsWith("mcp:calendar-"))
-												: standardScopes.some((scope) => !scope.startsWith("calendar:")))) ||
-										(mcpAllowed ? !mcpScopes.length : !standardScopes.length)
+										(!mailboxIds.length && scopesNeedMailboxes(mcpAllowed ? "mcp" : "api", chosenScopes)) ||
+										!chosenScopes.length
 									}
 								>
 									<KeyRound className="h-4 w-4" />

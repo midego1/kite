@@ -895,9 +895,9 @@ export function ComposeForm({
 										onChange={setScheduledAt}
 										mailboxId={selectedMailbox?.id}
 										from={fromAddr}
-										onApplyTemplate={({ title, html: templateHtml }) => {
-											setSubject((current) => (current.trim() ? current : title));
-											setHtml((current) => (hasMeaningfulHtml(current) ? `${current}${templateHtml}` : templateHtml));
+										applyContent={({ subject: contentSubject, html: contentHtml }) => {
+											setSubject((current) => (current.trim() ? current : contentSubject));
+											setHtml((current) => (hasMeaningfulHtml(current) ? `${current}${contentHtml}` : contentHtml));
 										}}
 									/>
 								</div>

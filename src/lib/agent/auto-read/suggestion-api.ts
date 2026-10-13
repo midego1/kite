@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, inArray, notInArray, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "@/db";
 import { mailboxAgentSettings, messages } from "@/db/schema";
@@ -10,8 +10,9 @@ import { settled } from "./action-response";
 import { discardAgentDraft, dismissSuggestionEffect } from "./action-effects";
 import type { ActionEffect } from "./actions-types";
 import { executeAction } from "./execute";
-import { acceptInvite } from "./invite-actions";
 import { senderAddressOf } from "./facts-utils";
+import { answerSuggestion } from "./module-actions";
+import { MODULE_ANSWERERS } from "./module-actions-utils";
 import { muteSender } from "./muted-senders";
 import {
 	acceptRefusal,
@@ -24,6 +25,8 @@ import {
 } from "./suggestion-api-utils";
 import { markSpamEffect } from "./suggestion-effects";
 import { notifySuggestionsQuietly } from "./suggestion-events";
+import { messageTargets } from "./suggestion-refs";
+import { hiddenKindsFor } from "./suggestion-visibility";
 
 const LIST_LIMIT = 200;
 const drafts = alias(messages, "draft");
@@ -71,6 +74,8 @@ export async function listSuggestions(env: CloudflareEnv, user: SessionUser, que
 		.where(inArray(mailboxAgentSettings.mailboxId, ids));
 	const autonomy = new Map(settings.map((row) => [row.mailboxId, row.autonomy]));
 	const conditions: SQL[] = [inArray(agentSuggestions.mailboxId, ids)];
+	const hidden = await hiddenKindsFor(env, user);
+	if (hidden.length > 0) conditions.push(notInArray(agentSuggestions.kind, hidden));
 	if (query.status !== "all") conditions.push(eq(agentSuggestions.status, query.status));
 	if (query.messageId) conditions.push(eq(agentSuggestions.messageId, query.messageId));
 	if (query.threadId) conditions.push(eq(agentSuggestions.threadId, query.threadId));
@@ -102,8 +107,17 @@ export async function listSuggestions(env: CloudflareEnv, user: SessionUser, que
 		.orderBy(desc(agentSuggestions.createdAt), desc(sql`"agent_suggestions"."rowid"`))
 		.limit(LIST_LIMIT);
 	const kindTotals = rows.length < LIST_LIMIT ? countByKind(rows) : await countMatches(env, conditions);
+	const targets = await messageTargets(
+		env,
+		user,
+		rows.map((row) => row.messageId),
+	);
 	return {
-		suggestions: rows.map((row) => toApiSuggestion(row, user.id)),
+		suggestions: rows.map((row) => ({
+			...toApiSuggestion(row, user.id),
+			messageRef: { kind: "mail:message" as const, id: row.messageId },
+			messageTarget: targets.get(row.messageId) ?? { href: null, label: row.subject ?? "(No subject)" },
+		})),
 		total: sumTotals(kindTotals),
 		kindTotals,
 		mailboxes: mailboxes.map((mailbox) => ({ ...mailbox, autonomy: autonomy.get(mailbox.id) ?? "off" })),
@@ -156,7 +170,8 @@ export async function acceptSuggestion(
 	deviceTimeZone: string | null = null,
 ) {
 	const { row, access } = await loadForDecision(env, user, suggestionId);
-	if (row.kind === "calendar_invite") return acceptInvite(env, user, access, row, option, deviceTimeZone);
+	const answerer = MODULE_ANSWERERS[row.kind];
+	if (answerer) return answerSuggestion(answerer, user, row, option, deviceTimeZone);
 	const refusal = acceptRefusal(row, option);
 	if (refusal) throw new AgentActionError(refusal.error, refusal.status);
 	if (row.kind === "reply") return reviewDraft(env, user, row.status, row.draftId!);

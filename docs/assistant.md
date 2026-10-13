@@ -69,6 +69,7 @@ When each switch takes effect differs. Kite checks the automatic-reading switch,
 - Daily limit reached, daily spend cap reached, or rate limited.
 - The message was moved or deleted first.
 - The reviewer can no longer read this mailbox.
+- A module the step needs is turned off, for example "Calendar is turned off". Kite records this with the reason code `module_disabled` and the module, skips only that step and still runs the others.
 
 ## Activity and Undo
 
@@ -83,6 +84,13 @@ When a message carries an invitation (ICS), the reader card shows the event and 
 - Replies go to the organizer named in the invitation only, never to other attendees. If the invitation names no organizer, Kite does not offer a reply.
 - Accepting adds the event to your calendar and sends the RSVP. An updated invitation offers **Update event**, and a cancellation offers **Remove from calendar**.
 - If Kite cannot confirm who sent the invitation (no passing DKIM or DMARC result), the card shows an **Unverified sender** warning. It also warns when the organizer's address differs from the sender's. Check both before you reply.
+- Invitation handling is part of the Calendar module (see [Modules](modules.md)). A mailbox's calendar capability switch turns it off for automatic reading in that mailbox only. When the owner turns Calendar off, or restricts it for you, Kite skips the invitation step with `module_disabled`, hides invitation suggestions and their counts, and refuses to accept them or to undo an invitation action until Calendar is back on. Nothing is deleted. Proposed times use the working hours of your first enabled booking page when Booking is on, and Monday to Friday, 09:00 to 17:00 in your time zone otherwise.
+
+## Assistant chat and modules
+
+Chat offers the core email tools plus the tools of the modules that are on for you. The calendar tools (`get_schedule`, `search_events`, `get_event`, `create_event`, `update_events`, `delete_events`, `find_free_time`, `get_calendars`) and the calendar part of the instructions belong to the Calendar module. They follow only the Calendar module and your own module access, not a mailbox's calendar capability switch. With Calendar off for you, chat has no calendar tools.
+
+The `open_page` tool gives you a link to a page in Kite, such as the inbox, Settings or a date in Calendar. The model can only pick from the pages that are on for you, and Kite builds the link itself, so it always points inside Kite. Nothing opens until you click the link. `open_page` exists only in chat. Automatic reading never gets tools.
 
 ## Evaluating a model
 

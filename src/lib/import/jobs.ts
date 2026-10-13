@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { mailboxes } from "@/db/schema";
 import { importJobs } from "@/db/schema/import-jobs";
@@ -7,9 +7,12 @@ import { openSetting, sealSetting } from "@/lib/security/secret-box";
 import { getImportMessageUserId, parseImportDestination } from "./destination";
 import { openImapSession } from "./imap";
 import { chunk, selectRemainingUids } from "./imap-utils";
-import { importMessagesToMailbox } from "./service";
-import type { ImportMessageInput } from "./types";
+import { encodeRawMime } from "@/lib/email/module-import-utils";
+import { moduleHost } from "@/lib/modules/host";
+import type { CapabilityCallContext } from "@/lib/modules/module-types";
+import type { HostImportMessage } from "@/lib/modules/host-types";
 
+/** @public Named by `env.d.ts` to widen the queue payload; Knip does not scan that file. */
 export type ImportJobQueueMessage = { kind: "import.imap"; jobId: string };
 export type ImportJobRow = typeof importJobs.$inferSelect;
 
@@ -26,15 +29,6 @@ const LEASE_MS = 8 * 60_000;
 const MAX_ATTEMPTS = 5;
 const MAX_STORED_ERRORS = 20;
 const ACTIVE_STATUSES = ["pending", "running"] as const;
-
-export function isImportJobQueueMessage(body: unknown): body is ImportJobQueueMessage {
-	return (
-		typeof body === "object" &&
-		body !== null &&
-		(body as { kind?: unknown }).kind === "import.imap" &&
-		typeof (body as { jobId?: unknown }).jobId === "string"
-	);
-}
 
 export async function enqueueImportJob(env: CloudflareEnv, jobId: string, delaySeconds?: number): Promise<boolean> {
 	const queue = env.AGENT_QUEUE;
@@ -113,6 +107,7 @@ export function serializeImportJob(job: ImportJobRow) {
 		imported: job.imported,
 		skipped: job.skipped,
 		lastError: job.lastError,
+		attempts: job.attempts,
 		errors: parseErrors(job.errors),
 		createdAt: job.createdAt.toISOString(),
 		updatedAt: job.updatedAt.toISOString(),
@@ -126,7 +121,7 @@ export function serializeImportJob(job: ImportJobRow) {
  * account run one at a time, because providers such as iCloud and Gmail limit
  * concurrent IMAP connections per account.
  */
-export async function processImportJob(env: CloudflareEnv, jobId: string): Promise<void> {
+export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: CapabilityCallContext): Promise<void> {
 	const db = getDb(env);
 	const now = new Date();
 	const [job] = await db.select().from(importJobs).where(eq(importJobs.id, jobId)).limit(1);
@@ -194,22 +189,22 @@ export async function processImportJob(env: CloudflareEnv, jobId: string): Promi
 			nextFetch = hasTime && index + 1 < chunks.length ? fetchChunk(chunks[index + 1]) : null;
 			nextFetch?.catch(() => undefined);
 
-			const batch: ImportMessageInput[] = [];
+			const batch: HostImportMessage[] = [];
 			for (const uid of uids) {
 				const raw = fetched.get(String(uid));
-				if (raw) batch.push({ filename: `${job.folder}-${uid}.eml`, raw });
+				if (raw) batch.push({ filename: `${job.folder}-${uid}.eml`, raw: encodeRawMime(raw), encoding: "base64" });
 			}
-			const result = await importMessagesToMailbox(env, {
+			const result = await moduleHost.mail.importMessages(ctx, {
 				userId,
 				mailboxId: mailbox.id,
-				destination,
+				destination: job.destination,
 				messages: batch,
 			});
 			const missing = uids.length - batch.length;
 			progress = {
 				processed: progress.processed + uids.length,
 				imported: progress.imported + result.imported,
-				skipped: progress.skipped + result.skipped + missing,
+				skipped: progress.skipped + result.skipped + result.failed + missing,
 				cursorUid: uids[uids.length - 1],
 			};
 			errors = [...errors, ...result.errors].slice(-MAX_STORED_ERRORS);
@@ -303,30 +298,62 @@ async function startNextJobForAccount(env: CloudflareEnv, job: ImportJobRow): Pr
 	if (next) await enqueueImportJob(env, next.id);
 }
 
+/** Stalled rows read per page, and the pages one tick may read before it gives up until the next tick. */
+const STALLED_PAGE_SIZE = 200;
+const STALLED_MAX_PAGES = 10;
+const RESUMED_PER_TICK = 10;
+
 /**
  * Cron safety net: re-enqueues active jobs whose run died without handing off
  * (worker eviction, exhausted queue retries). Without a queue binding it runs
- * one job inline so imports still progress.
+ * one job inline so imports still progress. `ownerMayImport` leaves out the jobs of users who
+ * are restricted from Import; their rows stay stalled, so candidates are read page by page
+ * (keyset on `createdAt`, `id`) until enough allowed jobs are found instead of stopping at the oldest window.
  */
-export async function resumeStalledImportJobs(env: CloudflareEnv): Promise<void> {
+export async function resumeStalledImportJobs(
+	env: CloudflareEnv,
+	ctx: CapabilityCallContext,
+	ownerMayImport: (userId: string) => Promise<boolean>,
+): Promise<void> {
 	const db = getDb(env);
 	const now = new Date();
 	const stale = new Date(now.getTime() - 2 * 60_000);
-	const jobs = await db
-		.select({ id: importJobs.id })
-		.from(importJobs)
-		.where(
-			and(
-				inArray(importJobs.status, [...ACTIVE_STATUSES]),
-				or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
-				lt(importJobs.updatedAt, stale),
-			),
-		)
-		.orderBy(importJobs.createdAt)
-		.limit(10);
-	for (const job of jobs) {
-		if (!(await enqueueImportJob(env, job.id))) {
-			await processImportJob(env, job.id);
+	const stalled = and(
+		inArray(importJobs.status, [...ACTIVE_STATUSES]),
+		or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
+		lt(importJobs.updatedAt, stale),
+	);
+	const allowed = new Map<string, boolean>();
+	const jobs: string[] = [];
+	let after: { createdAt: Date; id: string } | null = null;
+	for (let page = 0; page < STALLED_MAX_PAGES && jobs.length < RESUMED_PER_TICK; page += 1) {
+		const candidates: { id: string; userId: string; createdAt: Date }[] = await db
+			.select({ id: importJobs.id, userId: importJobs.userId, createdAt: importJobs.createdAt })
+			.from(importJobs)
+			.where(
+				after
+					? and(
+							stalled,
+							or(
+								gt(importJobs.createdAt, after.createdAt),
+								and(eq(importJobs.createdAt, after.createdAt), gt(importJobs.id, after.id)),
+							),
+						)
+					: stalled,
+			)
+			.orderBy(importJobs.createdAt, importJobs.id)
+			.limit(STALLED_PAGE_SIZE);
+		for (const job of candidates) {
+			if (jobs.length >= RESUMED_PER_TICK) break;
+			if (!allowed.has(job.userId)) allowed.set(job.userId, await ownerMayImport(job.userId));
+			if (allowed.get(job.userId)) jobs.push(job.id);
+		}
+		if (candidates.length < STALLED_PAGE_SIZE) break;
+		after = candidates[candidates.length - 1];
+	}
+	for (const id of jobs) {
+		if (!(await enqueueImportJob(env, id))) {
+			await processImportJob(env, id, ctx);
 			return;
 		}
 	}

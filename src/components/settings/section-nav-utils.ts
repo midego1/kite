@@ -1,9 +1,9 @@
 import {
 	Activity,
 	BellRing,
+	Blocks,
 	Bot,
 	DatabaseBackup,
-	Download,
 	Gauge,
 	Globe2,
 	Inbox,
@@ -20,8 +20,15 @@ import {
 	Users,
 	Webhook,
 } from "lucide-react";
+import { resolveNavIcon } from "@/components/modules/client-registry";
 import type { AuthMeUser } from "@/lib/auth/me-client-types";
+import { moduleNavItems } from "@/lib/modules/nav-utils";
+import type { ModuleId } from "@/lib/modules/module-types";
+import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import type { NavItem, NavMode, NavSearchGroup, NavSection } from "./section-nav-types";
+
+/** Core Settings items sit among a module's by this order; Export stays after Import. */
+const EXPORT_ORDER = 20;
 
 const settingsNavSections: NavSection[] = [
 	{
@@ -53,12 +60,30 @@ const settingsNavSections: NavSection[] = [
 	},
 	{
 		label: "Mailbox",
-		items: [
-			{ href: "/settings/import", label: "Import", icon: Download, keywords: "imap migrate" },
-			{ href: "/settings/export", label: "Export", icon: Upload, keywords: "backup download" },
-		],
+		items: [{ href: "/settings/export", label: "Export", icon: Upload, keywords: "backup download" }],
 	},
 ];
+
+/** Adds the Settings items the modules declare to their groups, in manifest order among the core ones. */
+function withModuleItems(sections: NavSection[]): NavSection[] {
+	const items = moduleNavItems(CLIENT_MODULES, "settings-nav");
+	return sections.map((section) => {
+		const added = items.filter((item) => item.group === section.label);
+		if (!added.length) return section;
+		const core = section.items.map((item) => ({ item, order: EXPORT_ORDER }));
+		const fromModules = added.map((entry) => ({
+			order: entry.order,
+			item: {
+				href: entry.href,
+				label: entry.label,
+				icon: resolveNavIcon(entry.icon),
+				keywords: entry.keywords?.join(" "),
+				moduleId: entry.moduleId,
+			} satisfies NavItem,
+		}));
+		return { ...section, items: [...fromModules, ...core].sort((a, b) => a.order - b.order).map(({ item }) => item) };
+	});
+}
 
 // Every admin item carries a permission so that searching from Settings never shows one to a member.
 const adminNavSections: NavSection[] = [
@@ -103,6 +128,13 @@ const adminNavSections: NavSection[] = [
 			{ href: "/general", label: "General", icon: Settings, keywords: "workspace instance", permission: "primary" },
 			{ href: "/agent", label: "Agent", icon: Bot, keywords: "assistant ai model", permission: "primary" },
 			{
+				href: "/modules",
+				label: "Modules",
+				icon: Blocks,
+				keywords: "calendar booking templates import turn on off features",
+				permission: "primary",
+			},
+			{
 				href: "/accounts",
 				label: "Accounts",
 				icon: Users,
@@ -142,7 +174,10 @@ const adminNavSections: NavSection[] = [
 	},
 ];
 
-const sectionsByMode: Record<NavMode, NavSection[]> = { settings: settingsNavSections, admin: adminNavSections };
+const sectionsByMode: Record<NavMode, NavSection[]> = {
+	settings: withModuleItems(settingsNavSections),
+	admin: adminNavSections,
+};
 
 export const navModeLabels: Record<NavMode, string> = { settings: "Settings", admin: "Admin" };
 
@@ -171,7 +206,8 @@ export function findActiveNavItem(mode: NavMode, pathname: string): NavItem | un
 		.find((item) => isActiveNavPath(pathname, item.href));
 }
 
-function canSeeNavItem(item: NavItem, user: AuthMeUser | null): boolean {
+function canSeeNavItem(item: NavItem, user: AuthMeUser | null, modules?: readonly ModuleId[]): boolean {
+	if (item.moduleId && modules && !modules.includes(item.moduleId)) return false;
 	if (!item.permission) return true;
 	if (!user || user.role !== "admin") return false;
 	if (item.permission === "primary") return user.isPrimaryAdmin;
@@ -180,13 +216,19 @@ function canSeeNavItem(item: NavItem, user: AuthMeUser | null): boolean {
 	return true;
 }
 
-export function filterNavSections(sections: NavSection[], query: string, user: AuthMeUser | null): NavSection[] {
+/** `modules` is what the user has on; omitted, every module's items are listed. */
+export function filterNavSections(
+	sections: NavSection[],
+	query: string,
+	user: AuthMeUser | null,
+	modules?: readonly ModuleId[],
+): NavSection[] {
 	const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
 	return sections
 		.map((section) => ({
 			...section,
 			items: section.items.filter((item) => {
-				if (!canSeeNavItem(item, user)) return false;
+				if (!canSeeNavItem(item, user, modules)) return false;
 				const haystack = `${item.label} ${item.keywords ?? ""} ${section.label}`.toLowerCase();
 				return terms.every((term) => haystack.includes(term));
 			}),
@@ -195,9 +237,14 @@ export function filterNavSections(sections: NavSection[], query: string, user: A
 }
 
 /** Matches from both modes, the current mode first; groups with no visible match are left out. */
-export function searchNavAcrossModes(query: string, user: AuthMeUser | null, currentMode: NavMode): NavSearchGroup[] {
+export function searchNavAcrossModes(
+	query: string,
+	user: AuthMeUser | null,
+	currentMode: NavMode,
+	modules?: readonly ModuleId[],
+): NavSearchGroup[] {
 	return [currentMode, otherNavMode(currentMode)]
-		.map((mode) => ({ mode, sections: filterNavSections(navSectionsFor(mode), query, user) }))
+		.map((mode) => ({ mode, sections: filterNavSections(navSectionsFor(mode), query, user, modules) }))
 		.filter((group) => group.sections.length > 0);
 }
 

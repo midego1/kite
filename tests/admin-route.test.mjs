@@ -36,8 +36,10 @@ test("owner-only admin routes and their children require the primary admin", () 
 		"/general",
 		"/ai-usage",
 		"/alerts",
+		"/modules",
 		"/webhooks/abc",
 		"/alerts/x",
+		"/modules/anything",
 	])
 		assert.equal(requiresPrimaryAdmin(path), true, path);
 });
@@ -48,6 +50,14 @@ test("routes any admin may open do not require the primary admin", () => {
 });
 
 test("a prefix only matches whole path segments", () => {
-	for (const path of ["/agents", "/backupsx", "/generalized", "/alertsx", "/settings/api-keys"])
+	for (const path of [
+		"/agents",
+		"/backupsx",
+		"/generalized",
+		"/alertsx",
+		"/modulesx",
+		"/settings/api-keys",
+		"/settings/modules",
+	])
 		assert.equal(requiresPrimaryAdmin(path), false, path);
 });

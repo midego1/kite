@@ -1,3 +1,4 @@
+import type { ComponentType, ReactNode } from "react";
 import type { SuggestionKind, SuggestionStatus } from "@/lib/agent/auto-read/suggestion-types";
 
 /** A suggestion as `GET /api/agent/suggestions` returns it, limited to what the reader card uses. */
@@ -37,3 +38,17 @@ export type SuggestionCardBodyProps = {
 };
 
 export type WhyDetails = { reason: string; model: string };
+
+/** What a module's card block receives; `menu` and `why` are the shared card chrome the block places itself. */
+export type SuggestionBlockProps = {
+	suggestion: CardSuggestion;
+	onChanged: () => void;
+	menu: ReactNode;
+	why: ReactNode;
+};
+
+/** How a module draws one of its suggestion kinds: the open block and, optionally, the block for an answered one. */
+export type ModuleSuggestionCard = {
+	Block: ComponentType<SuggestionBlockProps>;
+	Answered?: ComponentType<Pick<SuggestionBlockProps, "suggestion" | "onChanged">>;
+};

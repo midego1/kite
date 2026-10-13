@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { ChevronLeft, LifeBuoy, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useModules } from "@/components/modules/modules-context";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import type { AuthMeUser } from "@/lib/auth/me-client-types";
 import { SOURCE_CODE_URL } from "@/lib/source-code";
@@ -122,12 +123,13 @@ function NavResults({ groups, mode, pathname }: { groups: NavSearchGroup[]; mode
 export function SectionNav({ mode: modeProp }: { mode?: NavMode }) {
 	const pathname = usePathname();
 	const user = useCurrentUser();
+	const { modules } = useModules();
 	const [query, setQuery] = useState("");
 	const mode = modeProp ?? getNavMode(pathname);
 	const title = navModeLabels[mode];
 	const groups: NavSearchGroup[] = query.trim()
-		? searchNavAcrossModes(query, user, mode)
-		: [{ mode, sections: filterNavSections(navSectionsFor(mode), "", user) }];
+		? searchNavAcrossModes(query, user, mode, modules)
+		: [{ mode, sections: filterNavSections(navSectionsFor(mode), "", user, modules) }];
 
 	return (
 		<SectionNavSheet

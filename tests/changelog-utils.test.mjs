@@ -38,7 +38,7 @@ test("parses the shipped changelog into releases, sections and items", () => {
 	assert.equal(releases[1].date, "2026-10-13");
 	assert.deepEqual(
 		releases[0].sections.map((section) => section.title),
-		["Added", "Changed", "Fixed"],
+		["Changes", "Added", "Changed", "Fixed"],
 	);
 	assert.deepEqual(
 		releases[1].sections.map((section) => section.title),
@@ -68,8 +68,8 @@ test("a note above the first ### heading keeps its own section", () => {
 test("every bullet in the file reaches the dialog", () => {
 	const bullets = markdown.split("\n").filter((line) => /^\s*[-*]\s+\S/.test(line)).length;
 	const items = parseChangelog(markdown).flatMap((release) => release.sections.flatMap((section) => section.items));
-	// The five releases that open with a paragraph add one item each.
-	assert.equal(items.length, bullets + 5);
+	// The six releases that open with a paragraph add one item each.
+	assert.equal(items.length, bullets + 6);
 	for (const item of items) assert.ok(item.trim().length > 0);
 });
 

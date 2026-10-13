@@ -13,6 +13,7 @@ import { readJsonBody } from "@/lib/http/request";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { sealSetting } from "@/lib/security/secret-box";
+import { listWebhookEvents, refuseDisabledWebhookEvents } from "@/lib/modules/webhook-events";
 
 export async function GET(request: Request) {
 	const env = getEnv();
@@ -35,6 +36,7 @@ export async function GET(request: Request) {
 		.groupBy(webhookDeliveries.webhookId, webhookDeliveries.status);
 
 	return NextResponse.json({
+		eventCatalog: await listWebhookEvents(env, user),
 		webhooks: rows.map((w) => ({
 			id: w.id,
 			url: w.url,
@@ -66,6 +68,8 @@ export async function POST(request: Request) {
 	if (!parsed.success) {
 		return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 	}
+	const refused = await refuseDisabledWebhookEvents(env, user, parsed.data.events);
+	if (refused) return refused;
 
 	const secret = newId("whsec");
 	const db = getDb(env);

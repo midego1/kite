@@ -4,18 +4,22 @@ import { getDb } from "@/db";
 import { calendarEvents } from "@/db/schema";
 import { getEnv } from "@/lib/cloudflare";
 import { newId } from "@/lib/ids";
-import { sendEmail } from "@/lib/email/send";
+import { sendInvitationMail } from "@/lib/calendar/invitation-mail";
 import { createCalendarInvitation } from "@/lib/calendar/utils";
 import { normalizeCalendarColor } from "@/lib/calendar/colors";
 import { DEFAULT_REPEAT_DAYS, normalizeCalendarRepeat, normalizeCalendarRepeatDays } from "@/lib/calendar/recurrence";
 import type { CalendarEventInput } from "./types";
 import { getRequestTimeZone, normalizeTimeZone } from "@/lib/time/utils";
 import { authorizeCalendarRequest, calendarKeyCanSendInvitations } from "@/lib/calendar/api-auth";
+import { emitCalendarWrites } from "@/lib/calendar/webhook-events";
+import { withModule } from "@/lib/modules/route-guard";
 
-export async function GET(request: Request) {
+export const GET = withModule("calendar", async (request, { checkUser }) => {
 	const env = getEnv();
 	const { user, error } = await authorizeCalendarRequest(env, request, "calendar:read");
 	if (error) return error;
+	const denied = await checkUser(user);
+	if (denied) return denied;
 	const url = new URL(request.url);
 	const start = new Date(url.searchParams.get("start") ?? Date.now());
 	const end = new Date(url.searchParams.get("end") ?? start.getTime() + 31 * 86_400_000);
@@ -31,11 +35,11 @@ export async function GET(request: Request) {
 		)
 		.orderBy(calendarEvents.startsAt);
 	return NextResponse.json({ events });
-}
+});
 
-export async function POST(request: Request) {
+export const POST = withModule("calendar", async function POST(request, { checkAuth }) {
 	const env = getEnv();
-	const { user, key, error } = await authorizeCalendarRequest(env, request, "calendar:write");
+	const { user, key, error } = await checkAuth(authorizeCalendarRequest(env, request, "calendar:write"));
 	if (error) return error;
 	const input = (await request.json()) as CalendarEventInput;
 	const startsAt = new Date(input.startsAt);
@@ -80,21 +84,16 @@ export async function POST(request: Request) {
 		timeZone: input.timeZone ? normalizeTimeZone(input.timeZone) : getRequestTimeZone(request, user.timeZone),
 	};
 	await getDb(env).insert(calendarEvents).values(savedEvent);
+	await emitCalendarWrites(user, [["created", savedEvent]]);
 	if (attendees.length && input.mailboxId) {
-		const calendarFile = createCalendarInvitation({ ...event, uid: event.id });
-		await Promise.all(
-			attendees.map((to) =>
-				sendEmail(env, {
-					userId: user.id,
-					mailboxId: input.mailboxId!,
-					from: input.from ?? "",
-					to,
-					subject: `Invitation: ${event.title}`,
-					text: event.description || `You are invited to ${event.title}.`,
-					attachments: [{ filename: "invite.ics", type: "text/calendar; charset=utf-8", content: calendarFile }],
-				}),
-			),
-		);
+		await sendInvitationMail(user, {
+			mailboxId: input.mailboxId,
+			from: input.from,
+			attendees,
+			kind: "invitation",
+			event,
+			file: createCalendarInvitation({ ...event, uid: event.id }),
+		});
 	}
 	return NextResponse.json({ event: savedEvent });
-}
+});

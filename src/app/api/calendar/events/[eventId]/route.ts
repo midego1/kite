@@ -3,10 +3,10 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { calendarEvents } from "@/db/schema";
 import { getEnv } from "@/lib/cloudflare";
+import { sendInvitationMail } from "@/lib/calendar/invitation-mail";
 import { createCalendarInvitation } from "@/lib/calendar/utils";
-import { sendEmail } from "@/lib/email/send";
 import type { CalendarEventInput } from "../types";
-import type { CalendarEventRouteParams } from "./types";
+import type { CalendarEventRouteParams as RouteParams } from "./types";
 import { normalizeCalendarColor } from "@/lib/calendar/colors";
 import {
 	DEFAULT_REPEAT_DAYS,
@@ -19,10 +19,12 @@ import {
 import { newId } from "@/lib/ids";
 import { getRequestTimeZone, normalizeTimeZone } from "@/lib/time/utils";
 import { authorizeCalendarRequest, calendarKeyCanSendInvitations } from "@/lib/calendar/api-auth";
+import { emitCalendarWrites } from "@/lib/calendar/webhook-events";
+import { withModule } from "@/lib/modules/route-guard";
 
-export async function PATCH(request: Request, { params }: CalendarEventRouteParams) {
+export const PATCH = withModule<RouteParams>("calendar", async function PATCH(request, { params, checkAuth }) {
 	const env = getEnv();
-	const { user, key, error } = await authorizeCalendarRequest(env, request, "calendar:write");
+	const { user, key, error } = await checkAuth(authorizeCalendarRequest(env, request, "calendar:write"));
 	if (error) return error;
 	const { eventId } = await params;
 	const occurrence = parseCalendarOccurrenceId(eventId);
@@ -91,21 +93,19 @@ export async function PATCH(request: Request, { params }: CalendarEventRoutePara
 			.update(calendarEvents)
 			.set({ excludedOccurrences: JSON.stringify([...excluded, occurrence.startsAt.getTime()]), updatedAt: now })
 			.where(eq(calendarEvents.id, existing.id));
+		await emitCalendarWrites(user, [
+			["created", moved],
+			["updated", existing],
+		]);
 		if (attendees.length && existing.mailboxId && input.from) {
-			const file = createCalendarInvitation({ ...moved, uid: moved.id });
-			await Promise.all(
-				attendees.map((to) =>
-					sendEmail(env, {
-						userId: user.id,
-						mailboxId: existing.mailboxId!,
-						from: input.from!,
-						to,
-						subject: `Updated invitation: ${moved.title}`,
-						text: moved.description || `This event has been updated: ${moved.title}.`,
-						attachments: [{ filename: "invite.ics", type: "text/calendar; charset=utf-8", content: file }],
-					}),
-				),
-			);
+			await sendInvitationMail(user, {
+				mailboxId: existing.mailboxId,
+				from: input.from,
+				attendees,
+				kind: "update",
+				event: moved,
+				file: createCalendarInvitation({ ...moved, uid: moved.id }),
+			});
 		}
 		return NextResponse.json({ ok: true });
 	}
@@ -146,11 +146,16 @@ export async function PATCH(request: Request, { params }: CalendarEventRoutePara
 	const splitAt = existing.repeat !== "none" ? effectiveFrom : null;
 	if (splitAt && splitAt > existing.startsAt) {
 		const now = new Date();
-		await db.insert(calendarEvents).values({ ...event, id: newId("evt"), createdAt: now, updatedAt: now });
+		const split = { ...event, id: newId("evt"), createdAt: now, updatedAt: now };
+		await db.insert(calendarEvents).values(split);
 		await db
 			.update(calendarEvents)
 			.set({ repeatUntil: splitAt, updatedAt: now })
 			.where(eq(calendarEvents.id, existing.id));
+		await emitCalendarWrites(user, [
+			["created", split],
+			["updated", existing],
+		]);
 	} else {
 		await db
 			.update(calendarEvents)
@@ -170,29 +175,24 @@ export async function PATCH(request: Request, { params }: CalendarEventRoutePara
 				updatedAt: new Date(),
 			})
 			.where(eq(calendarEvents.id, existing.id));
+		await emitCalendarWrites(user, [["updated", event]]);
 	}
 	if (attendees.length && existing.mailboxId && input.from) {
-		const file = createCalendarInvitation({ ...event, uid: existing.id });
-		await Promise.all(
-			attendees.map((to) =>
-				sendEmail(env, {
-					userId: user.id,
-					mailboxId: existing.mailboxId!,
-					from: input.from!,
-					to,
-					subject: `Updated invitation: ${event.title}`,
-					text: event.description || `This event has been updated: ${event.title}.`,
-					attachments: [{ filename: "invite.ics", type: "text/calendar; charset=utf-8", content: file }],
-				}),
-			),
-		);
+		await sendInvitationMail(user, {
+			mailboxId: existing.mailboxId,
+			from: input.from,
+			attendees,
+			kind: "update",
+			event,
+			file: createCalendarInvitation({ ...event, uid: existing.id }),
+		});
 	}
 	return NextResponse.json({ ok: true });
-}
+});
 
-export async function DELETE(request: Request, { params }: CalendarEventRouteParams) {
+export const DELETE = withModule<RouteParams>("calendar", async (request, { params, checkAuth }) => {
 	const env = getEnv();
-	const { user, error } = await authorizeCalendarRequest(env, request, "calendar:write");
+	const { user, error } = await checkAuth(authorizeCalendarRequest(env, request, "calendar:write"));
 	if (error) return error;
 	const { eventId } = await params;
 	const occurrence = parseCalendarOccurrenceId(eventId);
@@ -214,11 +214,15 @@ export async function DELETE(request: Request, { params }: CalendarEventRoutePar
 			(existing.repeatUntil && occurrence.startsAt >= existing.repeatUntil))
 	)
 		return NextResponse.json({ error: "Occurrence not found" }, { status: 404 });
-	if (existing.repeat !== "none" && effectiveFrom && effectiveFrom > existing.startsAt)
+	if (existing.repeat !== "none" && effectiveFrom && effectiveFrom > existing.startsAt) {
 		await db
 			.update(calendarEvents)
 			.set({ repeatUntil: effectiveFrom, updatedAt: new Date() })
 			.where(eq(calendarEvents.id, existing.id));
-	else await db.delete(calendarEvents).where(eq(calendarEvents.id, existing.id));
+		await emitCalendarWrites(user, [["updated", existing]]);
+	} else {
+		await db.delete(calendarEvents).where(eq(calendarEvents.id, existing.id));
+		await emitCalendarWrites(user, [["deleted", existing]]);
+	}
 	return NextResponse.json({ ok: true });
-}
+});

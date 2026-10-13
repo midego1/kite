@@ -38,6 +38,7 @@ import { UpcomingSidebar } from "../upcoming-sidebar";
 import { DayEvents } from "./day-events";
 import { MonthView } from "./month-view";
 import { CalendarViewOptions, CalendarViewSelect } from "./view-selector";
+import { useCalendarUrlActions } from "./use-url-actions";
 import type { CalendarEvent, CalendarView, EventDragPreview, EventResizeEdge, EventResizeSession } from "./types";
 import {
 	addDays,
@@ -55,6 +56,7 @@ import {
 	eventEndAfterMinutes,
 	eventPosition,
 	expandCalendarEvents,
+	findEventForUrl,
 	formatEventRange,
 	formatHour,
 	formatLocalDateTime,
@@ -76,6 +78,7 @@ const eventFieldClass =
 
 export default function CalendarPage() {
 	const [events, setEvents] = useState<CalendarEvent[]>([]);
+	const storedRows = useRef<CalendarEvent[]>([]);
 	const [loadedEventsKey, setLoadedEventsKey] = useState<string | null>(null);
 	const [eventsVersion, setEventsVersion] = useState(0);
 	const [currentTime, setCurrentTime] = useState(() => Date.now());
@@ -181,7 +184,7 @@ export default function CalendarPage() {
 				return response.json() as Promise<{ events?: CalendarEvent[] }>;
 			})
 			.then((data) => {
-				if (active) setEvents(expandCalendarEvents(data.events ?? [], start, end));
+				if (active) setEvents(expandCalendarEvents((storedRows.current = data.events ?? []), start, end));
 			})
 			.catch(() => {
 				if (active) toast.error("Could not load calendar events.");
@@ -194,19 +197,17 @@ export default function CalendarPage() {
 		};
 	}, [today, visibleDate, weekStart, eventsVersion, eventsKey]);
 
+	const urlActionPending = useCalendarUrlActions(setVisibleDate, openNewEvent);
 	useEffect(() => {
-		if (!eventFromUrl) {
-			openedEventFromUrl.current = null;
-			return;
-		}
-		if (openedEventFromUrl.current === eventFromUrl) return;
-		const event = events.find((item) => item.id === eventFromUrl);
+		if (!eventFromUrl) openedEventFromUrl.current = null;
+		if (!eventFromUrl || openedEventFromUrl.current === eventFromUrl || urlActionPending || loading) return;
+		const event = findEventForUrl(events, eventFromUrl, visibleDate, storedRows.current);
 		if (!event) return;
 		openedEventFromUrl.current = eventFromUrl;
 		editEvent(event);
 		// Drop the param so picking the same event again re-opens it.
 		router.replace("/calendar");
-	}, [events, eventFromUrl]);
+	}, [events, eventFromUrl, urlActionPending, loading]);
 
 	function openNewEvent(day = visibleDate, startAt?: Date) {
 		const start = startAt ? new Date(startAt) : defaultCalendarStart(day);

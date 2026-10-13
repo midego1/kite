@@ -9,13 +9,15 @@ import { FAKE_SCENARIOS, scenarioReply } from "./fake-model-scenarios";
 import type {
 	FakeModel,
 	FakeModelOptions,
+	FakeChatStep,
 	FakeModelReply,
 	FakeRecordedRequest,
+	FakeRecordedTool,
 	FakeRequestKind,
 } from "./fake-model-types";
 
 type ChatMessage = { role?: unknown; content?: unknown };
-type ChatBody = { model?: unknown; messages?: unknown };
+type ChatBody = { model?: unknown; messages?: unknown; stream?: unknown; tools?: unknown };
 
 const SCENARIO_MARKER = /\[\[scenario:([\w-]+)\]\]/g;
 const EMAIL_ID = /<<<EMAIL id=([^\s>]+)/;
@@ -85,10 +87,72 @@ function parseJson(raw: string): unknown {
 
 const tokens = (value: string) => Math.max(1, Math.ceil(value.length / 4));
 
-function completion(id: number, body: ChatBody, reply: FakeModelReply, promptChars: number) {
-	const content = reply.content ?? "";
+function toolCallsOf(id: number, reply: FakeModelReply) {
+	return (reply.toolCalls ?? []).map((call, index) => ({
+		id: `call_fake_${id}_${index}`,
+		type: "function",
+		function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) },
+	}));
+}
+
+function recordedTools(body: ChatBody): FakeRecordedTool[] {
+	if (!Array.isArray(body.tools)) return [];
+	return body.tools.map((tool: { function?: { name?: unknown; description?: unknown; parameters?: unknown } }) => ({
+		name: typeof tool?.function?.name === "string" ? tool.function.name : "",
+		description: typeof tool?.function?.description === "string" ? tool.function.description : null,
+		parameters: tool?.function?.parameters ?? null,
+	}));
+}
+
+function finishReason(reply: FakeModelReply) {
+	return reply.toolCalls?.length ? "tool_calls" : (reply.finishReason ?? "stop");
+}
+
+function usageOf(content: string, promptChars: number) {
 	const promptTokens = Math.max(1, Math.ceil(promptChars / 4));
 	const completionTokens = tokens(content);
+	return {
+		prompt_tokens: promptTokens,
+		completion_tokens: completionTokens,
+		total_tokens: promptTokens + completionTokens,
+	};
+}
+
+/** The OpenAI streaming wire format: one delta chunk per part, a finish chunk, a usage chunk, then `[DONE]`. */
+function completionStream(id: number, body: ChatBody, reply: FakeModelReply, promptChars: number): string {
+	const model = typeof body.model === "string" ? body.model : FAKE_MODELS[0];
+	const chunk = (choice: unknown, extra: Record<string, unknown> = {}) =>
+		`data: ${JSON.stringify({
+			id: `chatcmpl-fake-${id}`,
+			object: "chat.completion.chunk",
+			created: Math.floor(Date.now() / 1000),
+			model,
+			choices: choice === null ? [] : [choice],
+			...extra,
+		})}\n\n`;
+	const content = reply.content ?? "";
+	const calls = toolCallsOf(id, reply);
+	return [
+		chunk({ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }),
+		...(content ? [chunk({ index: 0, delta: { content }, finish_reason: null })] : []),
+		...(calls.length
+			? [
+					chunk({
+						index: 0,
+						delta: { tool_calls: calls.map((call, index) => ({ index, ...call })) },
+						finish_reason: null,
+					}),
+				]
+			: []),
+		chunk({ index: 0, delta: {}, finish_reason: finishReason(reply) }),
+		chunk(null, { usage: usageOf(content, promptChars) }),
+		"data: [DONE]\n\n",
+	].join("");
+}
+
+function completion(id: number, body: ChatBody, reply: FakeModelReply, promptChars: number) {
+	const content = reply.content ?? "";
+	const calls = toolCallsOf(id, reply);
 	return {
 		id: `chatcmpl-fake-${id}`,
 		object: "chat.completion",
@@ -97,15 +161,11 @@ function completion(id: number, body: ChatBody, reply: FakeModelReply, promptCha
 		choices: [
 			{
 				index: 0,
-				message: { role: "assistant", content },
-				finish_reason: reply.finishReason ?? "stop",
+				message: { role: "assistant", content, ...(calls.length ? { tool_calls: calls } : {}) },
+				finish_reason: finishReason(reply),
 			},
 		],
-		usage: {
-			prompt_tokens: promptTokens,
-			completion_tokens: completionTokens,
-			total_tokens: promptTokens + completionTokens,
-		},
+		usage: usageOf(content, promptChars),
 	};
 }
 
@@ -118,19 +178,24 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 	const recorded: FakeRecordedRequest[] = [];
 	const calls = new Map<string, number>();
 	const queue: string[] = [];
+	const chatScript: FakeChatStep[] = [];
 	const slowMs = options.slowMs ?? 20_000;
 	const delayed = new Set<() => void>();
 	let defaultScenario = "default";
 	let nextId = 1;
 
 	function delay(ms: number) {
+		// Only the two scripted slow replies reach here: the 20s default and the 45s
+		// "slow" triage scenario. Quantize the request to those fixed durations, so
+		// a timer can never run for anything an incoming request asked for.
+		const bounded = ms > 30_000 ? 45_000 : ms > 0 ? 20_000 : 0;
 		return new Promise<void>((resolve) => {
 			const finish = () => {
 				clearTimeout(timer);
 				delayed.delete(finish);
 				resolve();
 			};
-			const timer = setTimeout(finish, ms);
+			const timer = setTimeout(finish, bounded);
 			delayed.add(finish);
 		});
 	}
@@ -144,6 +209,8 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 			kind: null,
 			scenario: null,
 			emailId: null,
+			stream: false,
+			tools: [],
 			body: null,
 			...fields,
 		};
@@ -163,14 +230,19 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 		const callKey = `${kind}:${emailId ?? messageText(messages[messages.length - 1] ?? {})}`;
 		const callNumber = (calls.get(callKey) ?? 0) + 1;
 		calls.set(callKey, callNumber);
-		const entry = record(request, path, { kind, scenario, emailId, body: parsed });
-		const reply = scenarioReply(FAKE_SCENARIOS[scenario], kind, { callNumber, slowMs });
+		const stream = body.stream === true;
+		const entry = record(request, path, { kind, scenario, emailId, stream, tools: recordedTools(body), body: parsed });
+		const scripted = kind === "other" ? chatScript.shift() : undefined;
+		const reply = scripted ?? scenarioReply(FAKE_SCENARIOS[scenario], kind, { callNumber, slowMs });
 		if (reply.delayMs) await delay(reply.delayMs);
 		if (reply.status && reply.status >= 400)
 			return sendJson(response, reply.status, {
 				error: { message: `Fake model failure (${scenario})`, type: "server_error", code: reply.status },
 			});
-		sendJson(response, 200, completion(entry.id, body, reply, messages.map(messageText).join("").length));
+		const promptChars = messages.map(messageText).join("").length;
+		if (!stream) return sendJson(response, 200, completion(entry.id, body, reply, promptChars));
+		response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store" });
+		response.end(completionStream(entry.id, body, reply, promptChars));
 	}
 
 	async function scenarioControl(request: IncomingMessage, response: ServerResponse) {
@@ -182,6 +254,16 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 			defaultScenario = name;
 		}
 		sendJson(response, 200, { defaultScenario, scenarios: Object.keys(FAKE_SCENARIOS) });
+	}
+
+	async function chatScriptControl(request: IncomingMessage, response: ServerResponse) {
+		if (request.method === "DELETE") chatScript.length = 0;
+		if (request.method === "POST") {
+			const steps = (parseJson(await readBody(request)) as { steps?: unknown } | null)?.steps;
+			if (!Array.isArray(steps)) return sendJson(response, 400, { error: "Send { steps: [...] }" });
+			chatScript.push(...(steps as FakeChatStep[]));
+		}
+		sendJson(response, 200, { queued: chatScript.length });
 	}
 
 	function requestsControl(request: IncomingMessage, response: ServerResponse) {
@@ -196,6 +278,7 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 		const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname.replace(/^\/v1(?=\/)/, "");
 		if (path === "/__fake/requests") return requestsControl(request, response);
 		if (path === "/__fake/scenario") return scenarioControl(request, response);
+		if (path === "/__fake/chat-script") return chatScriptControl(request, response);
 		if (path === "/models" && request.method === "GET") {
 			record(request, path, {});
 			return sendJson(response, 200, {
@@ -225,6 +308,7 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 		clearRequests: () => {
 			recorded.length = 0;
 			calls.clear();
+			chatScript.length = 0;
 		},
 		setDefaultScenario: (name) => {
 			if (!FAKE_SCENARIOS[name]) throw new Error(`Unknown fake model scenario: ${name}`);
@@ -235,6 +319,9 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 		},
 		enqueueScenario: (...names) => {
 			queue.push(...names);
+		},
+		scriptChat: (...steps) => {
+			chatScript.push(...steps);
 		},
 		releaseDelayed: () => {
 			for (const finish of [...delayed]) finish();

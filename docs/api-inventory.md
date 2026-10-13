@@ -19,6 +19,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/accounts/[id]/transfer-primary`                  | POST                   | [source](../src/app/api/accounts/[id]/transfer-primary/route.ts)                  |
 | `/api/accounts`                                        | GET, POST              | [source](../src/app/api/accounts/route.ts)                                        |
 | `/api/activity`                                        | GET                    | [source](../src/app/api/activity/route.ts)                                        |
+| `/api/admin/accounts/[id]/modules`                     | GET, PUT               | [source](../src/app/api/admin/accounts/[id]/modules/route.ts)                     |
 | `/api/admin/agent/models`                              | POST                   | [source](../src/app/api/admin/agent/models/route.ts)                              |
 | `/api/admin/agent`                                     | GET, PUT               | [source](../src/app/api/admin/agent/route.ts)                                     |
 | `/api/admin/ai-usage`                                  | GET                    | [source](../src/app/api/admin/ai-usage/route.ts)                                  |
@@ -29,6 +30,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/aws`                                       | DELETE, GET, POST, PUT | [source](../src/app/api/admin/aws/route.ts)                                       |
 | `/api/admin/general`                                   | GET, PUT               | [source](../src/app/api/admin/general/route.ts)                                   |
 | `/api/admin/migrations`                                | GET, POST              | [source](../src/app/api/admin/migrations/route.ts)                                |
+| `/api/admin/modules`                                   | GET, PUT               | [source](../src/app/api/admin/modules/route.ts)                                   |
 | `/api/admin/resend-key`                                | DELETE, GET, PUT       | [source](../src/app/api/admin/resend-key/route.ts)                                |
 | `/api/admin/search-index`                              | GET, POST              | [source](../src/app/api/admin/search-index/route.ts)                              |
 | `/api/agent/actions/[id]/undo`                         | POST                   | [source](../src/app/api/agent/actions/[id]/undo/route.ts)                         |
@@ -126,6 +128,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/routing-rules/domain/[id]`                       | DELETE, PATCH          | [source](../src/app/api/routing-rules/domain/[id]/route.ts)                       |
 | `/api/routing-rules/domain`                            | GET, POST              | [source](../src/app/api/routing-rules/domain/route.ts)                            |
 | `/api/routing-rules`                                   | GET, POST              | [source](../src/app/api/routing-rules/route.ts)                                   |
+| `/api/search`                                          | GET                    | [source](../src/app/api/search/route.ts)                                          |
 | `/api/seed`                                            | POST                   | [source](../src/app/api/seed/route.ts)                                            |
 | `/api/send`                                            | POST                   | [source](../src/app/api/send/route.ts)                                            |
 | `/api/send/undo`                                       | POST                   | [source](../src/app/api/send/undo/route.ts)                                       |

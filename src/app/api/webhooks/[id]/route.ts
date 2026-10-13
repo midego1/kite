@@ -9,6 +9,7 @@ import type { WebhookRouteParams } from "./types";
 import { newId } from "@/lib/ids";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { sealSetting } from "@/lib/security/secret-box";
+import { refuseDisabledWebhookEvents } from "@/lib/modules/webhook-events";
 
 export async function GET(request: Request, { params }: WebhookRouteParams) {
 	const { id } = await params;
@@ -39,6 +40,15 @@ export async function PATCH(request: Request, { params }: WebhookRouteParams) {
 	if (!parsed.success) {
 		return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 	}
+
+	// Only an event the webhook does not already hold can be refused, so unrelated edits keep a disabled module's event.
+	const refused = await refuseDisabledWebhookEvents(
+		loaded.env,
+		loaded.user,
+		parsed.data.events ?? [],
+		parseWebhookEvents(loaded.hook.events),
+	);
+	if (refused) return refused;
 
 	const updates: Partial<typeof webhooks.$inferInsert> = {};
 	if (parsed.data.url !== undefined) updates.url = parsed.data.url;

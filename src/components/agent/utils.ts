@@ -257,37 +257,10 @@ export const AGENT_TOOL_LABELS: Record<string, { running: string; completed: str
 		completed: "Prepared draft removal",
 		description: "Prepared an assistant draft removal for approval.",
 	},
-	get_schedule: {
-		running: "Getting schedule...",
-		completed: "Got schedule",
-		description: "Read calendar events in the requested range.",
-	},
-	search_events: {
-		running: "Searching events...",
-		completed: "Searched events",
-		description: "Searched calendar events.",
-	},
-	get_event: { running: "Reading event...", completed: "Read event", description: "Read a calendar event." },
-	create_event: { running: "Creating event...", completed: "Created event", description: "Created a calendar event." },
-	update_events: {
-		running: "Updating events...",
-		completed: "Updated events",
-		description: "Updated calendar events.",
-	},
-	delete_events: {
-		running: "Deleting events...",
-		completed: "Deleted events",
-		description: "Deleted calendar events.",
-	},
-	find_free_time: {
-		running: "Finding free time...",
-		completed: "Found free time",
-		description: "Checked calendar availability.",
-	},
-	get_calendars: {
-		running: "Getting calendars...",
-		completed: "Got calendars",
-		description: "Listed available calendars.",
+	open_page: {
+		running: "Preparing a link...",
+		completed: "Prepared a link",
+		description: "Prepared a link to a page in Kite. Nothing was opened.",
 	},
 };
 
@@ -300,8 +273,31 @@ export function activeAgentTool(messages: AgentMessage[]): AgentMessage | null {
 	return null;
 }
 
+const TOOL_VERBS: Record<string, [string, string]> = {
+	get: ["Getting", "Got"],
+	search: ["Searching", "Searched"],
+	create: ["Creating", "Created"],
+	update: ["Updating", "Updated"],
+	delete: ["Deleting", "Deleted"],
+	find: ["Finding", "Found"],
+	list: ["Listing", "Listed"],
+	read: ["Reading", "Read"],
+};
+
+/** Labels for a tool a module contributes, worked out from its name so core holds no per-module text. */
+function moduleToolLabel(name: string): { running: string; completed: string } {
+	const [verb, ...rest] = name.split("_");
+	const object = rest.join(" ");
+	const forms = TOOL_VERBS[verb];
+	if (!forms) return { running: `Using ${name.replace(/_/g, " ")}...`, completed: `Used ${name.replace(/_/g, " ")}` };
+	return {
+		running: `${forms[0]}${object ? ` ${object}` : ""}...`,
+		completed: `${forms[1]}${object ? ` ${object}` : ""}`,
+	};
+}
+
 export function activeAgentToolLabel(name: string | null | undefined): string {
-	return AGENT_TOOL_LABELS[name ?? ""]?.running ?? "Using tool...";
+	return AGENT_TOOL_LABELS[name ?? ""]?.running ?? (name ? moduleToolLabel(name).running : "Using tool...");
 }
 
 export function agentEmailHref(email: Pick<AgentEmailReference, "id" | "status" | "url">): string {
@@ -355,15 +351,19 @@ export function agentActionProposal(content: string): AgentActionProposal | null
 		: null;
 }
 
+function toolDisplay(name: string | null | undefined) {
+	const known = AGENT_TOOL_LABELS[name ?? ""];
+	if (known || !name) return known;
+	return { ...moduleToolLabel(name), description: `Used the ${name.replace(/_/g, " ")} tool.` };
+}
+
 export function agentToolLabel(
 	name: string | null | undefined,
 	state: AgentMessage["toolState"],
 	content: string,
 ): { label: string; description: string } {
-	const fallback = (name ?? "Tool").replace(/_/g, " ");
-	const display = AGENT_TOOL_LABELS[name ?? ""];
-	if (!display)
-		return { label: fallback.charAt(0).toUpperCase() + fallback.slice(1), description: "Used an email tool." };
+	const display = toolDisplay(name);
+	if (!display) return { label: "Tool", description: "Used a tool." };
 	if (state === "running") return { label: display.running, description: display.description };
 	const result = parseAgentToolContent(content);
 	const emails = Array.isArray(result?.emails)

@@ -10,9 +10,12 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = makeBundleDirectory("kite-agent-invite-card-");
 after(() => rmSync(outDir, { recursive: true, force: true }));
 
-for (const name of ["suggestion-invite-utils", "suggestion-card-utils"])
+for (const [name, directory] of [
+	["suggestion-invite-utils", "modules/calendar"],
+	["suggestion-card-utils", "agent"],
+])
 	await build({
-		entryPoints: [join(root, `src/components/agent/${name}.ts`)],
+		entryPoints: [join(root, `src/components/${directory}/${name}.ts`)],
 		outfile: join(outDir, `${name}.mjs`),
 		bundle: true,
 		platform: "node",

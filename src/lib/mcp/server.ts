@@ -11,13 +11,14 @@ import type { EmailToolName } from "@/lib/agent/types";
 import type { McpPrincipal } from "./types";
 import { registerAdminMcpTools } from "./admin-tools";
 import { BUILD_VERSION } from "@/lib/build-version";
-import {
-	CALENDAR_TOOL_NAMES,
-	calendarToolDescriptions,
-	calendarToolSchemas,
-	calendarToolScope,
-	runCalendarTool,
-} from "@/lib/calendar/tools";
+import { listCapabilities } from "@/lib/modules/capability-registry";
+import { buildCallContext } from "@/lib/modules/capability-utils";
+import { capabilityInputSchema, invokeCapability } from "@/lib/modules/invoke";
+import { grantsForMcpScopes, mcpToolsFor } from "@/lib/modules/key-scope-utils";
+import type { JsonValue } from "@/lib/modules/module-types";
+import { MODULE_MANIFESTS } from "@/lib/modules/registry";
+import { listEnabledModules } from "@/lib/modules/state";
+import { normalizeTimeZone } from "@/lib/time/utils";
 
 const scopeByTool: Record<EmailToolName, string> = {
 	list_emails: "mcp:read",
@@ -35,34 +36,59 @@ const scopeByTool: Record<EmailToolName, string> = {
 	discard_draft: "mcp:draft",
 };
 
+const CORE_TOOL_NAMES = new Set<string>([
+	...EMAIL_TOOL_NAMES,
+	"list_mailboxes",
+	"update_draft",
+	"request_send",
+	"get_send_request",
+	"manage_domains",
+	"manage_accounts",
+	"manage_mailboxes",
+]);
+
 function output(value: unknown, isError = false) {
 	return { content: [{ type: "text" as const, text: JSON.stringify(value) }], isError };
 }
 
-export function createKiteMcpHandler(
+export async function createKiteMcpHandler(
 	env: CloudflareEnv,
 	principal: McpPrincipal,
 	baseUrl: string,
 	authorization: string,
 ) {
+	const viewer = {
+		userId: principal.user.id,
+		role: principal.user.role,
+		isPrimaryAdmin: principal.user.isPrimaryAdmin,
+	};
+	const enabled = await listEnabledModules(env, viewer);
+	const grants = grantsForMcpScopes(MODULE_MANIFESTS, principal.scopes);
+	const moduleTools = mcpToolsFor(listCapabilities("mcp_tool", enabled), grants);
+	const callContext = buildCallContext({
+		trigger: "mcp",
+		viewer,
+		timeZone: normalizeTimeZone(principal.user.timeZone),
+		mailboxIds: principal.mailboxIds,
+		grants,
+	});
 	return createMcpHandler(
 		() => {
 			const server = new McpServer({ name: "kite", version: BUILD_VERSION });
 			const has = (scope: string) => principal.scopes.includes(scope);
 			if (principal.scopes.some((scope) => scope.startsWith("mcp:"))) {
-				for (const name of CALENDAR_TOOL_NAMES) {
-					if (!has(calendarToolScope(name))) continue;
+				const taken = new Set(CORE_TOOL_NAMES);
+				for (const { moduleId, descriptor } of moduleTools) {
+					const inputSchema = capabilityInputSchema(moduleId, descriptor.name);
+					// A module can never replace a core tool, or another module's tool, by reusing its name.
+					if (!inputSchema || taken.has(descriptor.name)) continue;
+					taken.add(descriptor.name);
 					server.registerTool(
-						name,
-						{ description: calendarToolDescriptions[name], inputSchema: calendarToolSchemas[name] },
+						descriptor.name,
+						{ description: descriptor.description, inputSchema },
 						async (args: unknown) => {
-							if (!principal.scopes.includes(calendarToolScope(name)))
-								return output({ error: "Permission denied" }, true);
-							try {
-								return output(await runCalendarTool({ env, user: principal.user }, name, args));
-							} catch (error) {
-								return output({ error: error instanceof Error ? error.message : "Calendar tool failed" }, true);
-							}
+							const result = await invokeCapability(moduleId, descriptor.name, args as JsonValue, callContext);
+							return result.ok ? output(result.output) : output({ error: result.error.message }, true);
 						},
 					);
 				}

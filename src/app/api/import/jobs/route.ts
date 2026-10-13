@@ -10,19 +10,24 @@ import { createImportJob, listImportJobs, serializeImportJob } from "@/lib/impor
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { parseImapImportRequest } from "../imap/utils";
 import type { ImapImportJobRequest } from "./types";
+import { withModule } from "@/lib/modules/route-guard";
 
-export async function GET(request: Request) {
+export const GET = withModule("import", async (request, { checkUser }) => {
 	const env = getEnv();
 	const user = await getCurrentUser(env, request);
 	if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+	const denied = await checkUser(user);
+	if (denied) return denied;
 	const jobs = await listImportJobs(env, user.id);
 	return Response.json({ jobs: jobs.map(serializeImportJob), queue: !!env.AGENT_QUEUE });
-}
+});
 
-export async function POST(request: Request) {
+export const POST = withModule("import", async (request, { checkUser }) => {
 	const env = getEnv();
 	const user = await getCurrentUser(env, request);
 	if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+	const denied = await checkUser(user);
+	if (denied) return denied;
 	if (!hasValidSessionMutationOrigin(request)) return Response.json({ error: "Invalid origin" }, { status: 403 });
 
 	let body: ImapImportJobRequest;
@@ -62,4 +67,4 @@ export async function POST(request: Request) {
 		maxMessages,
 	});
 	return Response.json({ job: serializeImportJob(job) }, { status: 201 });
-}
+});

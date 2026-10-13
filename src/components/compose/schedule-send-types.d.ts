@@ -9,5 +9,5 @@ export type ScheduleSendMenuProps = {
 	onChange: (value: Date | null) => void;
 	mailboxId?: string | null;
 	from: string;
-	onApplyTemplate: (template: { title: string; html: string }) => void;
+	applyContent: (content: { subject: string; html: string }) => void;
 };

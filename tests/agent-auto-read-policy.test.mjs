@@ -330,15 +330,18 @@ test("planSuggestions: summaries need three messages or a long body", () => {
 	assert.deepEqual(kinds(planSuggestions({ facts: long, triage: triage({ needsReply: false }), settings: off })), []);
 });
 
-test("planSuggestions: invites, muted senders", () => {
-	const invite = { uid: "u1", sequence: 0, method: "REQUEST" };
-	assert.deepEqual(kinds(planSuggestions({ facts: facts(), triage: null, settings: settings(), invite })), [
+test("planSuggestions: module suggestions, muted senders", () => {
+	const moduleSuggestions = [
+		{ kind: "calendar_invite", payload: { uid: "u1" }, reason: "calendar_invite", autoExecute: false },
+	];
+	assert.deepEqual(kinds(planSuggestions({ facts: facts(), triage: null, settings: settings(), moduleSuggestions })), [
 		"calendar_invite",
 	]);
-	const noCalendar = settings({ capabilities: { ...capabilities, calendar: false } });
-	assert.deepEqual(kinds(planSuggestions({ facts: facts(), triage: null, settings: noCalendar, invite })), []);
 	const muted = settings({ capabilities: { ...capabilities, mutedSenders: ["mira@corp.test", "mira@evil.test"] } });
-	assert.deepEqual(kinds(planSuggestions({ facts: facts(), triage: triage(), settings: muted, invite })), []);
+	assert.deepEqual(
+		kinds(planSuggestions({ facts: facts(), triage: triage(), settings: muted, moduleSuggestions })),
+		[],
+	);
 	assert.deepEqual(kinds(planSuggestions({ facts: facts({ spoof: true }), triage: triage(), settings: muted })), [
 		"phishing",
 	]);

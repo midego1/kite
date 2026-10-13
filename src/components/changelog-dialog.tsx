@@ -82,7 +82,7 @@ export function ChangelogDialog({
 	const [failed, setFailed] = useState(false);
 
 	useEffect(() => {
-		if (!open || releases) return;
+		if (!open || releases || typeof window === "undefined") return;
 		let active = true;
 		void import("@/lib/changelog/changelog-bundle")
 			.then((module) => {

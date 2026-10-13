@@ -14,7 +14,7 @@ import { isTrustProxyEnabled, resolveClientIp } from "@/lib/security/client-ip";
 import { buildContentSecurityPolicy, createCspNonce, isDocumentPath } from "@/lib/security/headers";
 import { processInboundMessage } from "@/lib/email/inbound";
 import { processAgentQueueMessage } from "@/lib/agent/queue";
-import { isImportJobQueueMessage, processImportJob } from "@/lib/import/jobs";
+import { dispatchModuleQueueMessage } from "@/lib/modules/background";
 import { processOutboundQueue, type OutboundQueueMessage } from "@/lib/email/send";
 import { processWebhookRetry, type WebhookRetryMessage } from "@/lib/email/webhooks";
 import { processMailboxPurge } from "@/lib/mailboxes/delete";
@@ -60,16 +60,19 @@ async function main() {
 
 	runtime.inboundQueue.setConsumer(async (body) => {
 		if (isInboundQueueMessage(body)) await processInboundMessage(env, body);
+		else await dispatchModuleQueueMessage(env, "inbound", body);
 	});
 	runtime.outboundQueue.setConsumer(async (body) => {
 		if (isWebhookRetryMessage(body)) await processWebhookRetry(env, body as WebhookRetryMessage);
 		else if (isMailboxPurgeMessage(body)) await processMailboxPurge(env, body);
 		else if (isBackupRunMessage(body)) await runDatabaseBackup(env, body.backupId);
-		else await processOutboundQueue(env, body as OutboundQueueMessage);
+		else if ((await dispatchModuleQueueMessage(env, "outbound", body)).handled) {
+			// A module's own message kind, routed through the registry.
+		} else await processOutboundQueue(env, body as OutboundQueueMessage);
 	});
 	runtime.agentQueue.setConsumer(async (body) => {
 		if (await processAgentQueueMessage(env, body)) return;
-		if (isImportJobQueueMessage(body)) await processImportJob(env, body.jobId);
+		await dispatchModuleQueueMessage(env, "agent", body);
 	});
 
 	const app = next({ dev, dir: process.cwd(), hostname: host, port });

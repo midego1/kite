@@ -185,9 +185,10 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 	let nextId = 1;
 
 	function delay(ms: number) {
-		// Scenarios come from test requests, so bound the timer before it is set. The
-		// slowest scripted reply is the 45s "slow" scenario, so the cap sits above that.
-		const bounded = Math.min(Math.max(0, ms), 120_000);
+		// Only the two scripted slow replies reach here: the 20s default and the 45s
+		// "slow" triage scenario. Quantize the request to those fixed durations, so
+		// a timer can never run for anything an incoming request asked for.
+		const bounded = ms > 30_000 ? 45_000 : ms > 0 ? 20_000 : 0;
 		return new Promise<void>((resolve) => {
 			const finish = () => {
 				clearTimeout(timer);

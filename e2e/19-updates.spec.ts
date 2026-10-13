@@ -43,7 +43,8 @@ test("a release note that links to a setting opens that page in the app", async 
 	await openInbox(page);
 	await page.getByRole("button", { name: /^Updated / }).click();
 	const dialog = page.getByRole("dialog", { name: /What's new in Kite/ });
-	const settingLink = dialog.getByRole("link", { name: "Settings → Inbox → Notifications" });
+	// Several notes may link to the same setting; any of them must behave the same.
+	const settingLink = dialog.getByRole("link", { name: "Settings → Inbox → Notifications" }).first();
 	await expect(settingLink).toHaveAttribute("href", "/settings/inbox");
 	// An app page opens in this tab, unlike outside links.
 	await expect(settingLink).not.toHaveAttribute("target", "_blank");

@@ -41,8 +41,11 @@ export function setOneTimeCodesInNotificationsEnabled(enabled: boolean): void {
 	window.localStorage.setItem(NOTIFICATION_CODES_ENABLED_KEY, String(enabled));
 }
 
-/** NotificationOptions.actions is missing from the generated DOM lib; this is the subset we set. */
-type NotificationOptionsWithActions = NotificationOptions & { actions?: { action: string; title: string }[] };
+/** NotificationOptions.actions and renotify are missing from the generated DOM lib; this is the subset we set. */
+type NotificationOptionsWithActions = NotificationOptions & {
+	actions?: { action: string; title: string }[];
+	renotify?: boolean;
+};
 
 let notificationServiceWorkerPromise: Promise<ServiceWorkerRegistration | null> | null = null;
 
@@ -157,6 +160,9 @@ export async function showTestBrowserNotification(): Promise<boolean> {
 			body: TEST_NOTIFICATION_BODY,
 			icon: "/icon-96.png",
 			tag: "kite-test-notification",
+			// Without it, a click while the previous test is still in the notification centre only replaces it
+			// silently, so the button looks broken.
+			renotify: true,
 			data: { test: true },
 		});
 		return true;

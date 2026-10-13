@@ -78,8 +78,11 @@ export function changelogReleaseLabel(release: ChangelogRelease): string {
 const INLINE_PATTERN = /(`[^`]+`)|(\*\*[^*]+\*\*)|\[([^\]]+)\]\(([^)\s]+)\)/g;
 /** Absolute http(s) links open in a new tab. */
 const SAFE_HREF = /^https?:\/\/[^\s]+$/i;
-/** A path starting with one slash is a page in this app, so the dialog can link straight to a setting. */
-const APP_HREF = /^\/(?!\/)[^\s]*$/;
+/**
+ * A path starting with one slash is a page in this app, so the dialog can link straight to a setting.
+ * Backslashes are refused anywhere: browsers read `\` as `/`, so `/\host` would leave the app.
+ */
+const APP_HREF = /^\/(?!\/)[^\s\\]*$/;
 
 /** Whether a changelog link points at a page in this app rather than an outside site. */
 export function isAppChangelogHref(href: string): boolean {

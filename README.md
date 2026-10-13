@@ -107,6 +107,7 @@ Click a screenshot to open it at full size. The screenshots and the demo recordi
 - **AI assistant**: Search your mail, draft replies, and manage calendar events with AI.
 - **Automatic reading**: Let Kite read new mail and suggest replies, calendar answers, summaries and phishing warnings. Off by default, suggestions only, with spend caps and undo. See [Assistant: automatic reading](docs/assistant.md).
 - **MCP access**: Connect AI clients over MCP, with separate permissions for each key.
+- **Switchable modules**: Calendar, Booking pages, Email templates and Mail import are modules the owner can turn off for the whole install or per user, from the Modules admin page. What is off disappears from the menus, pages and APIs, and nothing is deleted. See [Modules](docs/modules.md).
 
 ## How this version differs
 
@@ -276,6 +277,7 @@ GitHub workflows also run the security scans, draft a release from `v*` tags, re
 - [Spam protection for incoming mail](docs/spam-protection.md)
 - [API and integrations](docs/api.md), including the [calendar and booking APIs](docs/api.md#calendar-and-booking)
 - [Email assistant and MCP](docs/email-assistant-and-mcp.md)
+- [Modules: turning Calendar, Booking, templates and import off](docs/modules.md)
 - [Operations](docs/operations.md), including [after a deploy](docs/operations.md#after-a-deploy)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Roadmap](ROADMAP.md) and [changelog](CHANGELOG.md)

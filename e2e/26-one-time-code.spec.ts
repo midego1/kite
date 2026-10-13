@@ -212,6 +212,7 @@ test("Settings can send a test notification while the tab is visible", async ({ 
 	expect(entry.title).toBe("Kite notifications are working");
 	expect(entry.options?.body).toContain("New email will be announced like this");
 	expect(entry.options?.tag).toBe("kite-test-notification");
+	expect((entry.options as { renotify?: boolean } | undefined)?.renotify).toBe(true);
 	expect(entry.options?.data).toEqual({ test: true });
 	await expect(page.getByText(/^Test notification sent/)).toBeVisible();
 

@@ -32,30 +32,34 @@ test("parses the shipped changelog into releases, sections and items", () => {
 	const releases = parseChangelog(markdown);
 	assert.deepEqual(
 		releases.map((release) => release.name),
-		["Unreleased", "2026.10.12.1", "2026.10.12.0", "2026.10.09.1", "2026.10.09.0"],
+		["Unreleased", "2026.10.13.0", "2026.10.12.1", "2026.10.12.0", "2026.10.09.1", "2026.10.09.0"],
 	);
 	assert.equal(releases[0].date, null);
-	assert.equal(releases[1].date, "2026-10-12");
+	assert.equal(releases[1].date, "2026-10-13");
 	assert.deepEqual(
 		releases[0].sections.map((section) => section.title),
 		[],
 	);
 	assert.deepEqual(
 		releases[1].sections.map((section) => section.title),
-		["Changes", "Added", "Changed"],
+		["Changes", "Fixed"],
 	);
 	assert.deepEqual(
 		releases[2].sections.map((section) => section.title),
+		["Changes", "Added", "Changed"],
+	);
+	assert.deepEqual(
+		releases[3].sections.map((section) => section.title),
 		["Changes", "Added", "Changed", "Fixed"],
 	);
 	assert.deepEqual(
-		releases[4].sections.map((section) => section.title),
+		releases[5].sections.map((section) => section.title),
 		["Changes", "Added", "Changed", "Security", "Fixed"],
 	);
 });
 
 test("a note above the first ### heading keeps its own section", () => {
-	const september = parseChangelog(markdown)[3];
+	const september = parseChangelog(markdown)[4];
 	assert.equal(september.name, "2026.10.09.1");
 	assert.equal(september.sections[0].title, "Changes");
 	assert.match(september.sections[0].items[0], /^No database migrations\./);
@@ -64,8 +68,8 @@ test("a note above the first ### heading keeps its own section", () => {
 test("every bullet in the file reaches the dialog", () => {
 	const bullets = markdown.split("\n").filter((line) => /^\s*[-*]\s+\S/.test(line)).length;
 	const items = parseChangelog(markdown).flatMap((release) => release.sections.flatMap((section) => section.items));
-	// The four releases that open with a paragraph add one item each.
-	assert.equal(items.length, bullets + 4);
+	// The five releases that open with a paragraph add one item each.
+	assert.equal(items.length, bullets + 5);
 	for (const item of items) assert.ok(item.trim().length > 0);
 });
 
@@ -114,7 +118,7 @@ test("markdown without release headings has nothing to show", () => {
 test("the newest release heading is titled for the dialog", () => {
 	const releases = parseChangelog(markdown);
 	assert.equal(changelogReleaseLabel(releases[0]), "Unreleased changes");
-	assert.equal(changelogReleaseLabel(releases[1]), "2026.10.12.1");
+	assert.equal(changelogReleaseLabel(releases[1]), "2026.10.13.0");
 });
 
 test("inline markdown becomes text, code, strong and http links", () => {

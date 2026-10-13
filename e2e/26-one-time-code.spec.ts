@@ -221,6 +221,38 @@ test("Settings can send a test notification while the tab is visible", async ({ 
 	await expect(button).toBeDisabled();
 });
 
+test("Settings can send a test code notification whose click copies the code", async ({ page }) => {
+	await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+	await page.addInitScript(stubNotifications());
+	await page.goto("/settings/inbox");
+	const button = page.getByRole("button", { name: "Send test code" });
+	await expect(button).toBeEnabled();
+	await button.click();
+	const entry = await lastNotification(page);
+	const code = (entry.options?.data as { code?: string } | undefined)?.code ?? "";
+	expect(code).toMatch(/^\d{6}$/);
+	expect(entry.title).toBe(`${code} · Test sign-in code`);
+	expect(entry.options?.body).toBe("From Kite · Click to copy");
+	expect(entry.options?.tag).toBe("kite-test-code-notification");
+	expect((entry.options as { renotify?: boolean } | undefined)?.renotify).toBe(true);
+	expect(entry.options?.data).toEqual({ test: true, code, copyOnClick: true });
+	expect(entry.options?.actions).toEqual([{ action: "copy", title: "Copy code" }]);
+	await expect(page.getByText(`Test code ${code} sent.`, { exact: false })).toBeVisible();
+
+	// A click on the notification makes the service worker post this message to the tab (public/kite-sw.js).
+	await page.evaluate((value) => {
+		navigator.serviceWorker.dispatchEvent(
+			new MessageEvent("message", { data: { type: "kite:copy-code", code: value } }),
+		);
+	}, code);
+	await expect(page.getByText("Code copied")).toBeVisible();
+	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(code);
+
+	// With codes kept out of notifications, there is nothing to test.
+	await page.getByRole("switch", { name: "Show one-time codes in notifications" }).click();
+	await expect(button).toBeDisabled();
+});
+
 test("turning the code setting off keeps codes out of the notification", async ({ page }) => {
 	await seedRealtimeSession(page);
 	await page.addInitScript(stubNotifications());

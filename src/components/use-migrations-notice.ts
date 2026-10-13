@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useSyncExternalStore, type RefObject } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { AUTH_SESSION_CHANGED_EVENT } from "@/lib/auth/client";
 import type { MigrationApplyResponse, PendingMigrationsResponse } from "./migrations-banner-types";
 import {
 	PENDING_MIGRATIONS_REFRESH_MS,
@@ -40,6 +41,13 @@ async function fetchPendingMigrations(): Promise<PendingMigrationsResponse> {
 
 export function useMigrationsNotice() {
 	const user = useCurrentUser();
+	// The apply state is module-level, so without this it would survive a logout and
+	// show the previous session's summary or error to whoever signs in next on this tab.
+	useEffect(() => {
+		const reset = () => setApplyState({ applying: false, summary: null, error: null });
+		window.addEventListener(AUTH_SESSION_CHANGED_EVENT, reset);
+		return () => window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, reset);
+	}, []);
 	const isPrimaryAdmin = user?.role === "admin" && user.isPrimaryAdmin;
 	const state = useSyncExternalStore(
 		subscribe,

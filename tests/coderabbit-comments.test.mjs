@@ -25,7 +25,7 @@ test("selects the reviewer's top-level findings that still anchor to the current
 test("skips replies, other authors, outdated comments and answered threads", () => {
 	const comments = [
 		// A human inline comment.
-		comment({ id: 21, user: { login: "midego1" } }),
+		comment({ id: 21, user: { login: "human-reviewer" } }),
 		// A reply inside a thread, never a starting point.
 		comment({ id: 22, in_reply_to_id: 21, position: 5 }),
 		// Outdated: the anchor no longer maps onto the pull request head.

@@ -24,7 +24,7 @@ npm run check:mission
 
 This runs app and relay typechecks, ESLint, app unit tests, relay handler tests,
 the Worker build, the Node/Docker build, a relay integration check in real local workerd, and the
-Chromium end-to-end suite. CI runs the same lanes on pull requests, with `build:node` in a parallel "Node build" job and the end-to-end suite split over four parallel "E2E" shard jobs (`MISSION_SKIP_TASKS=build:node,test:e2e` on the Mission validation step; locally nothing is skipped). Keep all
+Chromium end-to-end suite. CI runs the same lanes on pull requests, with `build:node` in a parallel "Node build" job and the end-to-end suite split over ten parallel "E2E" shard jobs balanced by recorded test durations (`MISSION_SKIP_TASKS=build:node,test:e2e` on the Mission validation step; locally nothing is skipped). Keep all
 lanes passing before handing a branch to another worker.
 
 The browser suite starts its own server on port 3200 and resets only its

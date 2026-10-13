@@ -24,8 +24,21 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
+      # Every job restores the same node_modules, saved right after a clean `npm ci` so
+      # nothing a later step writes into it ends up in the cache.
+      - name: Restore node_modules
+        id: node-modules
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      - if: steps.node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+      - if: steps.node-modules.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Run the worker validation contract (e2e runs in the sharded E2E jobs)
         run: npm run check:mission
         env:
@@ -44,14 +57,17 @@ jobs:
   e2e:
     # The suite runs one test at a time against a shared database, so a single
     # runner needs about 20 minutes. Each shard starts its own dev server and
-    # database and runs a slice of the specs; the shard count is the only knob.
-    name: E2E (shard ${{ matrix.shard }} of 4)
+    # database and runs a slice planned from e2e/timings.json so every shard
+    # takes about as long (scripts/quality/e2e-shard.mjs). Public repositories
+    # get standard runners for free; the shard count is the only knob, kept low
+    # enough that a pull request's jobs fit the account's concurrent-job limit.
+    name: E2E (shard ${{ matrix.shard }} of 10)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -59,13 +75,39 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # Every job restores the same node_modules, saved right after a clean `npm ci` so
+      # nothing a later step writes into it ends up in the cache.
+      - name: Restore node_modules
+        id: node-modules
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      - if: steps.node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+      - if: steps.node-modules.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
+      - name: Restore the Playwright browser
+        id: playwright-browser
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-shell-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      # Headless runs only need the headless shell, and the runner image already has Chrome's system libraries.
+      - if: steps.playwright-browser.outputs.cache-hit != 'true'
+        run: npx playwright install --only-shell chromium
+      - if: steps.playwright-browser.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.playwright-browser.outputs.cache-primary-key }}
       - name: Run the end-to-end slice
-        run: npm run quality:timings -- test:e2e
+        run: npm run quality:timings -- test:e2e:shard
         env:
-          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/4
+          E2E_SHARD: ${{ matrix.shard }}/10
       - name: Summarize timings and flaky tests
         if: always()
         run: node scripts/quality/ci-summary.mjs >> "$GITHUB_STEP_SUMMARY"
@@ -90,8 +132,21 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
+      # Every job restores the same node_modules, saved right after a clean `npm ci` so
+      # nothing a later step writes into it ends up in the cache.
+      - name: Restore node_modules
+        id: node-modules
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      - if: steps.node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+      - if: steps.node-modules.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Build the Node and Docker bundle
         run: npm run quality:timings -- build:node
       - name: Summarize timings

@@ -317,6 +317,26 @@ test("a write through the admin helper clears the isolate cache at once", async 
 	assert.equal(await isModuleEnabled(env, "templates"), true);
 });
 
+test("a write through one loaded copy of state.ts is seen at once by another copy", async (t) => {
+	// The Node build loads state.ts separately for route handlers and for pages.
+	const pages = await bundleModules("kite-module-state-copy-", [
+		["isModuleEnabled, listEnabledModules", "src/lib/modules/state.ts"],
+	]);
+	const db = await database(t);
+	const env = { DB: db };
+	assert.equal(await pages.isModuleEnabled(env, "calendar"), true);
+	assert.equal(await isModuleEnabled(env, "calendar"), true);
+
+	await setModuleEnabled(env, { moduleId: "calendar", enabled: false, updatedBy: "owner" });
+	assert.equal(await pages.isModuleEnabled(env, "calendar"), false);
+	assert.deepEqual(await pages.listEnabledModules(env, OWNER), ["templates", "import"]);
+
+	await setUserModuleAllowed(env, { userId: "member", moduleId: "import", allowed: false, updatedBy: "owner" });
+	assert.deepEqual(await pages.listEnabledModules(env, MEMBER), ["templates"]);
+	await setModuleEnabled(env, { moduleId: "calendar", enabled: true, updatedBy: "owner" });
+	assert.deepEqual(await pages.listEnabledModules(env, MEMBER), ["calendar", "booking", "templates"]);
+});
+
 test("a write clears the cache even when it fails", async (t) => {
 	const db = await database(t);
 	const env = { DB: db };

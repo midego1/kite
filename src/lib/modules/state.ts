@@ -16,13 +16,27 @@ type IsolateEntry = { install?: Timed<ModuleFlags>; access: Map<string, Timed<Mo
 const CACHE_TTL_MS = 30_000;
 const MAX_CACHED_USERS = 500;
 
-let isolateCache = new WeakMap<object, IsolateEntry>();
-/** Part of the per-request memo key, so a write earlier in the same request is not hidden by the memo. */
-let generation = 0;
+type SharedCache = {
+	entries: WeakMap<object, IsolateEntry>;
+	/** Part of the per-request memo key, so a write earlier in the same request is not hidden by the memo. */
+	generation: number;
+};
+
+const SHARED_CACHE_KEY = Symbol.for("kite.modules.state-cache");
+
+/**
+ * Kept on `globalThis` because the Node build loads this file once for route handlers and again for pages:
+ * a module-level cache would let a toggle saved through the API stay invisible to pages for 30 seconds.
+ */
+function sharedCache(): SharedCache {
+	const holder = globalThis as { [SHARED_CACHE_KEY]?: SharedCache };
+	return (holder[SHARED_CACHE_KEY] ??= { entries: new WeakMap(), generation: 0 });
+}
 
 function entryFor(db: Binding): IsolateEntry {
-	let entry = isolateCache.get(db);
-	if (!entry) isolateCache.set(db, (entry = { access: new Map() }));
+	const { entries } = sharedCache();
+	let entry = entries.get(db);
+	if (!entry) entries.set(db, (entry = { access: new Map() }));
 	return entry;
 }
 
@@ -103,7 +117,7 @@ const accessForRequest = cache((db: Binding, userId: string, _generation: number
  * The install switch of every module: stored flag, or `defaultEnabled` with no row or no table. Dependencies are not applied.
  */
 export function getInstallModuleState(env: StateEnv): Promise<ModuleFlags> {
-	return installForRequest(env.DB, generation);
+	return installForRequest(env.DB, sharedCache().generation);
 }
 
 /**
@@ -114,7 +128,7 @@ export async function getUserModuleAccess(
 	viewer: Pick<ModuleViewer, "userId" | "isPrimaryAdmin">,
 ): Promise<ModuleFlags> {
 	if (viewer.isPrimaryAdmin) return new Map(MODULE_IDS.map((id) => [id, true]));
-	return accessForRequest(env.DB, viewer.userId, generation);
+	return accessForRequest(env.DB, viewer.userId, sharedCache().generation);
 }
 
 async function effectiveFor(env: StateEnv, viewer: ModuleViewer | null): Promise<Set<ModuleId>> {
@@ -164,8 +178,9 @@ export function readStoredUserAccess(env: StateEnv, userId: string): Promise<Sto
  * once, and so does a backup restore, which rewrites both tables behind the cache.
  */
 export function clearModuleStateCache(): void {
-	isolateCache = new WeakMap();
-	generation++;
+	const shared = sharedCache();
+	shared.entries = new WeakMap();
+	shared.generation++;
 }
 
 /**

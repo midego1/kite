@@ -46,35 +46,44 @@ const hrefs = (sections) => sections.flatMap((section) => section.items.map((ite
 const searchHrefs = (query, user, mode = "settings") =>
 	Object.fromEntries(searchNavAcrossModes(query, user, mode).map((group) => [group.mode, hrefs(group.sections)]));
 
-test("Settings holds only the Personal and Mailbox groups, and no admin page", () => {
+test("Settings holds the Personal, Security and Mailbox groups, and no admin page", () => {
 	assert.deepEqual(
 		settingsNavSections.map((section) => section.label),
-		["Personal", "Mailbox"],
+		["Personal", "Security", "Mailbox"],
 	);
+	assert.deepEqual(hrefs(settingsNavSections.slice(0, 2)), [
+		"/settings/account",
+		"/settings/appearance",
+		"/settings/inbox",
+		"/settings/rules",
+		"/settings/security",
+		"/settings/app-passwords",
+		"/settings/api-keys",
+	]);
 	for (const href of hrefs(settingsNavSections)) assert.match(href, /^\/settings\//);
 });
 
-test("Admin holds the AdminNav groups in order, with AI usage and no separate Audit logs", () => {
+test("Admin groups its pages by task, with AI usage and no separate Audit logs", () => {
 	assert.deepEqual(
 		adminNavSections.map((section) => section.label),
-		["", "Email", "Administration", "Product"],
+		["", "Email", "People & access", "Integrations", "AI", "System"],
 	);
 	assert.deepEqual(hrefs(adminNavSections), [
 		"/admin",
-		"/mailboxes",
 		"/domains",
+		"/mailboxes",
 		"/routing",
-		"/webhooks",
-		"/api-keys",
-		"/general",
-		"/agent",
-		"/modules",
 		"/accounts",
-		"/activity",
+		"/modules",
+		"/api-keys",
+		"/webhooks",
+		"/agent",
+		"/ai-usage",
+		"/general",
+		"/branding",
 		"/backups",
 		"/alerts",
-		"/ai-usage",
-		"/branding",
+		"/activity",
 	]);
 	for (const item of adminNavSections.flatMap((section) => section.items)) assert.ok(item.permission, item.href);
 });
@@ -117,8 +126,8 @@ test("permission gates follow role, primary admin and per-user grants", () => {
 	assert.deepEqual(visible(admin), ["/admin", "/mailboxes", "/routing", "/accounts"]);
 	assert.deepEqual(visible({ ...admin, canManageDomains: true }), [
 		"/admin",
-		"/mailboxes",
 		"/domains",
+		"/mailboxes",
 		"/routing",
 		"/accounts",
 	]);
@@ -163,8 +172,8 @@ test("search never returns items the user cannot see", () => {
 	assert.deepEqual(searchHrefs("members", admin), { admin: ["/accounts"] });
 });
 
-test("Alerts sits in Administration after Backups for the primary admin only", () => {
-	const administration = adminNavSections.find((section) => section.label === "Administration");
+test("Alerts sits in System after Backups for the primary admin only", () => {
+	const administration = adminNavSections.find((section) => section.label === "System");
 	const items = administration.items.map((item) => item.href);
 	assert.equal(items.indexOf("/alerts"), items.indexOf("/backups") + 1);
 	const alerts = administration.items.find((item) => item.href === "/alerts");
@@ -184,7 +193,7 @@ test("Alerts sits in Administration after Backups for the primary admin only", (
 	}
 });
 
-test("Modules is an Administration page for the primary admin only", () => {
+test("Modules is a People & access page for the primary admin only", () => {
 	const modules = adminNavSections.flatMap((section) => section.items).find((item) => item.href === "/modules");
 	assert.equal(modules.label, "Modules");
 	assert.equal(modules.permission, "primary");

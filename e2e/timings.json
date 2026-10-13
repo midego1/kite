@@ -76,7 +76,7 @@
 	"14-section-nav.spec.ts › a non-primary admin's Admin menu hides primary-only pages, which stay blocked": 3900,
 	"14-section-nav.spec.ts › admin detail pages highlight their parent item and do not overflow": 4300,
 	"14-section-nav.spec.ts › admin pages use the Settings layout with the mail sidebar, top bar and Admin menu": 1000,
-	"14-section-nav.spec.ts › an admin's Settings menu has the mode switch and only the Personal and Mailbox groups": 1100,
+	"14-section-nav.spec.ts › an admin's Settings menu has the mode switch and only the Personal, Security and Mailbox groups": 1100,
 	"14-section-nav.spec.ts › clicking a result opens it and closes the list": 2200,
 	"14-section-nav.spec.ts › every Admin menu link opens its page and is the only current link": 7200,
 	"14-section-nav.spec.ts › on a phone › admin pages keep their heading and their content clears the pill": 1400,

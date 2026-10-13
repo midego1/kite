@@ -45,7 +45,7 @@ await build({
 	alias: { "@": join(root, "src") },
 });
 const { extractOneTimeCode } = await import(pathToFileURL(join(outDir, "one-time-code-utils.mjs")).href);
-const { buildNewMessageNotificationParts } = await import(
+const { buildNewMessageNotificationParts, buildTestCodeNotificationParts, makeTestOneTimeCode } = await import(
 	pathToFileURL(join(outDir, "new-message-notification-utils.mjs")).href
 );
 const { parseNewMessageEvent } = await import(pathToFileURL(join(outDir, "message-realtime-utils.mjs")).href);
@@ -323,6 +323,27 @@ test("notification parts lead with the code when the setting is on", () => {
 		title: "481923 · Your sign-in code",
 		body: "From security@nodsoft.example · Click to copy",
 		code: "481923",
+	});
+});
+
+test("the Settings test code is six digits and shaped like a real code notification", () => {
+	assert.equal(
+		makeTestOneTimeCode(() => 0),
+		"100000",
+	);
+	assert.equal(
+		makeTestOneTimeCode(() => 0.999999),
+		"999999",
+	);
+	assert.equal(
+		makeTestOneTimeCode(() => 0.5),
+		"550000",
+	);
+	for (let i = 0; i < 50; i++) assert.match(makeTestOneTimeCode(), /^[1-9]\d{5}$/);
+	assert.deepEqual(buildTestCodeNotificationParts("482913"), {
+		title: "482913 · Test sign-in code",
+		body: "From Kite · Click to copy",
+		code: "482913",
 	});
 });
 

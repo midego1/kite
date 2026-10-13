@@ -10,6 +10,7 @@ import {
 	setBrowserNotificationsEnabled,
 	setOneTimeCodesInNotificationsEnabled,
 	showTestBrowserNotification,
+	showTestCodeNotification,
 } from "@/hooks/message-realtime-utils";
 
 export function BrowserNotificationSettings() {
@@ -17,7 +18,8 @@ export function BrowserNotificationSettings() {
 	const [enabled, setEnabled] = useState(false);
 	const [codesEnabled, setCodesEnabled] = useState(true);
 	const [error, setError] = useState<string | null>(null);
-	const [testState, setTestState] = useState<"idle" | "sending" | "sent">("idle");
+	const [testState, setTestState] = useState<"idle" | "sending" | "sent" | "code-sent">("idle");
+	const [testCode, setTestCode] = useState<string | null>(null);
 
 	useEffect(() => {
 		const refresh = () => {
@@ -122,10 +124,31 @@ export function BrowserNotificationSettings() {
 				>
 					Send test notification
 				</Button>
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					disabled={!notificationsReady || !codesEnabled || testState === "sending"}
+					onClick={() => {
+						setError(null);
+						setTestState("sending");
+						void showTestCodeNotification().then((code) => {
+							if (code) {
+								setTestCode(code);
+								setTestState("code-sent");
+								return;
+							}
+							setTestState("idle");
+							setError(
+								"Could not show a test code notification. Check the browser's site settings and the system notification settings.",
+							);
+						});
+					}}
+				>
+					Send test code
+				</Button>
 				<span className="text-sm text-neutral-500" role="status">
-					{testState === "sent"
-						? "Test notification sent. If nothing appeared, check the system notification settings for this browser."
-						: "Shows a sample notification to check that they appear on this device."}
+					{testStatusText(testState, testCode)}
 				</span>
 			</div>
 			{permission === "denied" && (
@@ -139,4 +162,12 @@ export function BrowserNotificationSettings() {
 			{error && <p className="mt-2 px-4 text-sm text-red-600">{error}</p>}
 		</div>
 	);
+}
+
+function testStatusText(state: "idle" | "sending" | "sent" | "code-sent", code: string | null): string {
+	if (state === "sent")
+		return "Test notification sent. If nothing appeared, check the system notification settings for this browser.";
+	if (state === "code-sent")
+		return `Test code ${code} sent. Click the notification or its Copy code button, then paste to check that ${code} was copied.`;
+	return "Shows a sample notification, or one with a code to copy, to check that they work on this device.";
 }

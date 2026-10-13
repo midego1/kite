@@ -1,5 +1,9 @@
 import { requestCopyCode } from "@/components/copy-code-host-utils";
-import { buildNewMessageNotificationParts } from "./new-message-notification-utils";
+import {
+	buildNewMessageNotificationParts,
+	buildTestCodeNotificationParts,
+	makeTestOneTimeCode,
+} from "./new-message-notification-utils";
 import type { NewMessageEvent } from "./message-realtime-types";
 
 export const REALTIME_FALLBACK_INTERVAL_MS = 60_000;
@@ -168,6 +172,42 @@ export async function showTestBrowserNotification(): Promise<boolean> {
 		return true;
 	} catch {
 		return false;
+	}
+}
+
+/**
+ * Shows a sample one-time code notification from Settings, with the same Copy
+ * code action and copy-on-click as a real one, so a user can check the whole
+ * copy flow. Returns the sample code, or null when notifications or codes in
+ * notifications are unavailable, blocked or turned off.
+ */
+export async function showTestCodeNotification(): Promise<string | null> {
+	if (
+		typeof Notification === "undefined" ||
+		Notification.permission !== "granted" ||
+		!areBrowserNotificationsEnabled() ||
+		!areOneTimeCodesInNotificationsEnabled()
+	) {
+		return null;
+	}
+	const code = makeTestOneTimeCode();
+	const parts = buildTestCodeNotificationParts(code);
+	try {
+		await presentNotification(
+			parts.title,
+			{
+				body: parts.body,
+				icon: "/icon-96.png",
+				tag: "kite-test-code-notification",
+				renotify: true,
+				data: { test: true, code, copyOnClick: true },
+				actions: [{ action: "copy", title: "Copy code" }],
+			},
+			() => requestCopyCode(code),
+		);
+		return code;
+	} catch {
+		return null;
 	}
 }
 

@@ -235,20 +235,20 @@ Position note: this extends the auto-agent pipeline (milestone 5) and depends on
 
 ## Milestone 19: Module platform and app directory (the extendable core)
 
-Position note: scheduled once two or three modules exist (18 plus the first of 9–12), so the registry is generalized from real modules rather than guessed. Workers cannot load third-party code in-process, and the self-hosted runtime must keep the same code path, so external apps are separate services talking to Kite's API, MCP and webhooks — the model `ROADMAP.md`'s Ideas section already sketches.
+Position note: approved and taken first, in [the module platform spec](specs/module-platform.md), with **builtin modules first and sandboxed apps inside your own Kite later**. Instead of waiting for new modules, the registry is extracted from four that already exist (Calendar, Booking, Email templates, Mail import), so it is still generalized from real modules rather than guessed. This supersedes the earlier "external apps are separate services" model and the matching line in `ROADMAP.md`'s Ideas section: an app is a signed bundle that runs sandboxed inside the user's own Kite (Dynamic Workers on Cloudflare, a workerd sidecar on Node and Docker), never on a publisher's servers, and it uses the same capability descriptors and JSON call contract as a builtin module. Later modules (18, 9–12) register through the same platform.
 
-1. **Module registry**
-   - Generalize what milestone 18 proved: each module declares a manifest (id, migrations, permissions, nav items, routes, events, settings page). An admin page lists modules with toggles and per-user permissions; off means no UI, 404 API, no cron work and no events.
-   - Test: e2e for every shipped module: toggle off, check nav, API and cron behavior.
-2. **Module events**
-   - One event path: modules publish domain events, internal modules and external apps subscribe. The same events feed the existing webhook system, so an external app sees `subscription.renewal.due` exactly like an internal one.
-   - Test: unit tests for the fan-out; e2e checks a webhook subscriber receives a module event.
-3. **Sandboxed app panels**
-   - Third-party apps render in an iframe panel or contribute a declared widget using the mail frame's sandbox pattern and CSP nonce: a per-app scoped API key minted at install (least privilege, reusing API/MCP scopes), a narrow postMessage/data bridge, and no reach beyond user-granted scopes. Apps run as separate services, never as arbitrary code inside the Worker or Node process.
-   - Test: e2e installs a synthetic app, checks its panel/widget renders, its key works only for granted scopes, and revoked scopes take effect.
+1. **Builtin module registry (approved, in progress)**
+   - Each module has a client-safe manifest (pages, API prefixes, nav, UI commands, composer slots, record kinds, webhook events, scopes, queue message types, cron tasks) and JSON capability descriptors with server-side handlers. Core reaches module code only through `invokeCapability`, and modules reach core only through `ModuleHost`. The owner turns modules off for the install or per user from Admin → Modules; off means no UI, commands, tools or events, 404 pages and API, and no queue or cron work, and it never deletes data. Mailbox export stays core. See [Modules](modules.md).
+   - Test: unit tests for the registry, the call contract, import rules and guards; e2e for every shipped module: toggle off, check nav, pages, API, assistant tools, MCP, webhooks and background work, then on again.
+2. **Module events and refs**
+   - Module events go through the existing webhook system (`calendar.event.created`, `calendar.event.updated`, `calendar.event.deleted`, `booking.appointment.created`, each with a record ref), listed and sent only while the module is on. Later modules add theirs, such as `subscription.renewal.due`, the same way.
+   - Test: unit tests for the event list and emitter; e2e checks the event list follows module state.
+3. **Sandboxed apps inside your own Kite (later, separate spec)**
+   - Signed bundles the owner installs and approves grants and network hosts for. They run with no network by default, per-call CPU limits and a per-app log, reach core only through a `KiteHost` RPC surface that mirrors `ModuleHost`, and contribute UI through commands and record refs, not injected React. Without the Worker Loader binding they show as unavailable and builtin modules keep working.
+   - Test: e2e installs a synthetic signed app, checks its capabilities appear in the assistant, MCP and search, that ungranted calls are refused, and that disabling it removes them.
 4. **App directory**
-   - A directory of reviewed manifests for first-party modules and external apps, with free and paid listings, capability/permission disclosure, publisher identity, supported runtime, versioning and uninstall/data-revocation behavior. Paid plugins are part of the product goal; settle checkout, entitlements, renewals, refunds, fees and tax responsibilities before Kite handles transactions. A first release may use developer-managed billing, but the platform must not make paid apps impossible to add later.
-   - Test: e2e for free install, paid entitlement grant/revoke, uninstall, scope changes and app-key cleanup.
+   - A directory of reviewed manifests for first-party modules and sandboxed apps, with free and paid listings, capability/permission disclosure, publisher identity, supported runtime, versioning and uninstall/data-revocation behavior. Paid plugins are part of the product goal; settle checkout, entitlements, renewals, refunds, fees and tax responsibilities before Kite handles transactions. A first release may use developer-managed billing, but the platform must not make paid apps impossible to add later.
+   - Test: e2e for free install, paid entitlement grant/revoke, uninstall, grant changes and cleanup.
 5. **AI-suggested apps**
    - The assistant maps detected content to module capabilities and directory apps: an invoice PDF with Money Watch off suggests enabling it; directory search answers "which app handles X"; every suggestion links to the install flow. The model proposes; code validates against the registry.
    - Test: e2e delivers an invoice with the module off and checks the enable suggestion appears and works.

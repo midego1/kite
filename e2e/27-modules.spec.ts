@@ -2708,8 +2708,8 @@ async function importJob(api: APIRequestContext, id: string): Promise<ImportJobR
 	return ((await response.json()) as { jobs: ImportJobRow[] }).jobs.find((job) => job.id === id);
 }
 
-// The spec names 127.0.0.1 port 1, but the import refuses local hosts for good ("not allowed"), so that job
-// would fail at once; an unresolvable public name fails the way a flaky server does and is retried.
+// Not a local host: the import refuses those for good ("not allowed"), so that job would fail at once; an
+// unresolvable public name fails the way a flaky server does and is retried.
 test("a queued import retry that arrives while Import is off is skipped and the job resumes unchanged", async ({
 	page,
 }) => {

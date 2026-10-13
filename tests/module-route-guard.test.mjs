@@ -336,9 +336,28 @@ test("every module page tree has a gating layout", () => {
 	const layout = (path) => readFileSync(join(root, path), "utf8");
 	assert.match(layout("src/app/(calendar)/layout.tsx"), /requireModulePage\("calendar"\)/);
 	assert.match(layout("src/app/(calendar)/layout.tsx"), /export const dynamic = "force-dynamic"/);
-	assert.match(layout("src/app/(calendar)/booking/layout.tsx"), /requireModulePage\("booking", "calendar"\)/);
+	assert.match(layout("src/app/(booking)/layout.tsx"), /requireModulePage\("booking"\)/);
 	assert.match(layout("src/app/book/[userId]/layout.tsx"), /requirePublicModulePage\("booking"/);
 	assert.match(layout("src/app/c/[username]/layout.tsx"), /requirePublicModulePage\("booking"/);
-	assert.match(layout("src/app/(settings)/settings/import/layout.tsx"), /requireModulePage\("import"\)/);
+	assert.match(layout("src/app/(import)/layout.tsx"), /requireModulePage\("import"\)/);
 	assert.ok(!existsSync(join(root, "src/app/(settings)/settings/export/layout.tsx")), "Export is never gated");
+});
+
+// AuthGuard renders nothing on the server, so next build streams a 200 before a not-found from inside it surfaces.
+test("module page guards run in the outermost layout of a route group, above any shell", () => {
+	const guarded = [];
+	const walk = (dir) => {
+		for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
+			const path = `${dir}/${entry.name}`;
+			if (entry.isDirectory()) walk(path);
+			else if (/\.tsx?$/.test(entry.name) && /requireModulePage\(/.test(readFileSync(join(root, path), "utf8")))
+				guarded.push(path);
+		}
+	};
+	walk("src/app");
+	assert.deepEqual(guarded.sort(), [
+		"src/app/(booking)/layout.tsx",
+		"src/app/(calendar)/layout.tsx",
+		"src/app/(import)/layout.tsx",
+	]);
 });

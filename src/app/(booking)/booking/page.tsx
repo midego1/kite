@@ -11,7 +11,7 @@ import { RouteLoadingBarPortal } from "@/components/route-loading-bar-portal";
 import { authFetch } from "@/lib/auth/client";
 import { getUserTimeZone } from "@/lib/time/utils";
 import { useSidebar } from "@/components/sidebar-state";
-import { UpcomingSidebar } from "../upcoming-sidebar";
+import { UpcomingSidebar } from "../../(calendar)/upcoming-sidebar";
 import { BookingEditor } from "./booking-editor";
 import { BookingListSkeleton } from "./booking-list-skeleton";
 import { useBookingEventFromUrl } from "./use-event-from-url";

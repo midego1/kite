@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import type { ImportJob } from "@/app/(settings)/settings/import/types";
+import type { ImportJob } from "@/app/(import)/settings/import/types";
 import {
 	cancelImportJob,
 	fetchImportJobs,
 	getImportJobPercent,
 	isActiveImportJob,
-} from "@/app/(settings)/settings/import/utils";
+} from "@/app/(import)/settings/import/utils";
 
 const POLL_INTERVAL_MS = 3000;
 

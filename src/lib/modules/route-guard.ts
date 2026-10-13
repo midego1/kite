@@ -35,20 +35,12 @@ export function withModule<C extends object = object>(id: ModuleId, handler: Mod
 }
 
 /**
- * For a module's server layout: renders the not-found page when the module is off for the install, or off for
- * the signed-in user. With no session it returns, so the page's own sign-in redirect still applies.
+ * For the outermost layout of a module's route group: renders the not-found page when the module is off for the
+ * install, or off for the signed-in user. With no session it returns, so the page's own sign-in redirect still applies.
  */
-export async function requireModulePage(id: ModuleId, parent?: ModuleId): Promise<void> {
-	const user = await getCurrentUser(getEnv());
-	const access = await pageAccess(storedState, id, user);
-	if (access !== "off" && access !== "restricted") return;
-	// vinext renders each layout on its own, so a layout nested under the parent module's one must stay quiet
-	// when the parent answers not-found already; two layouts throwing at once end in the framework's bare 404.
-	if (parent) {
-		const parentAccess = await pageAccess(storedState, parent, user);
-		if (parentAccess === "off" || parentAccess === "restricted") return;
-	}
-	notFound();
+export async function requireModulePage(id: ModuleId): Promise<void> {
+	const access = await pageAccess(storedState, id, await getCurrentUser(getEnv()));
+	if (access === "off" || access === "restricted") notFound();
 }
 
 /**

@@ -1,0 +1,123 @@
+name: CodeRabbit adopt
+
+# CodeRabbit reviews every pull request. This workflow has Droid verify each of its review
+# comments against the code: a comment that holds up becomes a small commit on the pull
+# request branch, an incorrect one gets a reply with the reason, and one the code already
+# addresses is answered as such. Nothing runs on a local machine; the droid CLI runs
+# headless in CI with the FACTORY_API_KEY repository secret (a Factory API key).
+#
+# Off switch without touching code: Settings → Secrets and variables → Actions → Variables →
+# CODERABBIT_ADOPT = off. For one pull request by hand: Actions → CodeRabbit adopt →
+# Run workflow → number.
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      number:
+        description: "Pull request number"
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: coderabbit-adopt-${{ github.event.pull_request.number || inputs.number }}
+  cancel-in-progress: true
+
+jobs:
+  adopt:
+    name: Verify and adopt CodeRabbit comments
+    # Only CodeRabbit's own reviews start it (the bot's replies and commits never do);
+    # a manual dispatch works on any pull request.
+    if: >-
+      vars.CODERABBIT_ADOPT != 'off' &&
+      (github.event_name == 'workflow_dispatch' || github.actor == 'coderabbitai[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # push the adopted fixes to the pull request branch
+      pull-requests: write # reply to the comments that do not hold up
+    steps:
+      - name: Resolve the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.pull_request.number || inputs.number }}
+        run: |
+          gh pr view "$NUMBER" --json number,headRefName,headRefOid,isCrossRepository > "$RUNNER_TEMP/pr.json"
+          if [ "$(jq -r .isCrossRepository "$RUNNER_TEMP/pr.json")" = "true" ]; then
+            echo "Skipped: this pull request comes from a fork, and the workflow only adopts comments on same-repo branches." >> "$GITHUB_STEP_SUMMARY"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          jq -r '"number=\(.number)\nbranch=\(.headRefName)\nsha=\(.headRefOid)"' "$RUNNER_TEMP/pr.json" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: steps.pr.outputs.skipped != 'true'
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          persist-credentials: true # droid pushes with the workflow token
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.pr.outputs.skipped != 'true'
+        with:
+          node-version: 22
+      # The same node_modules every other job restores, saved right after a clean npm ci
+      # so nothing a later step writes into it ends up in the cache.
+      - name: Restore node_modules
+        id: node-modules
+        if: steps.pr.outputs.skipped != 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      - if: steps.node-modules.outputs.cache-hit != 'true' && steps.pr.outputs.skipped != 'true'
+        run: npm ci
+      - if: steps.node-modules.outputs.cache-hit != 'true' && steps.pr.outputs.skipped != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
+      # The Playwright browser, for comments whose fix needs an e2e spec.
+      - name: Restore the Playwright browser
+        id: playwright-browser
+        if: steps.pr.outputs.skipped != 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-shell-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - if: steps.playwright-browser.outputs.cache-hit != 'true' && steps.pr.outputs.skipped != 'true'
+        run: npx playwright install --only-shell chromium
+      - if: steps.playwright-browser.outputs.cache-hit != 'true' && steps.pr.outputs.skipped != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.playwright-browser.outputs.cache-primary-key }}
+      - name: Collect the unhandled CodeRabbit comments
+        id: comments
+        if: steps.pr.outputs.skipped != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          node scripts/review/coderabbit-comments.mjs > comments.json
+          echo "count=$(jq '.comments | length' comments.json)" >> "$GITHUB_OUTPUT"
+          jq -r '"Pull request #\(.pullRequest): \(.comments | length) comment(s) to handle"' comments.json >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.comments[] | "- #\(.id) \(.path):\(.line)"' comments.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Install droid
+        if: steps.comments.outputs.count != '0' && steps.pr.outputs.skipped != 'true'
+        run: npm install --global droid
+      - name: Verify and adopt the comments
+        if: steps.comments.outputs.count != '0' && steps.pr.outputs.skipped != 'true'
+        env:
+          FACTORY_API_KEY: ${{ secrets.FACTORY_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          if [ -z "${FACTORY_API_KEY:-}" ]; then
+            echo "Set the FACTORY_API_KEY repository secret (a Factory API key); without it Droid cannot run." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          droid exec --auto high --tag coderabbit-adopt -f scripts/review/coderabbit-adopt-prompt.md

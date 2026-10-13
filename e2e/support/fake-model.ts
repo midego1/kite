@@ -185,13 +185,16 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 	let nextId = 1;
 
 	function delay(ms: number) {
+		// Scenarios come from test requests, so bound the timer before it is set. The
+		// slowest scripted reply is the 45s "slow" scenario, so the cap sits above that.
+		const bounded = Math.min(Math.max(0, ms), 120_000);
 		return new Promise<void>((resolve) => {
 			const finish = () => {
 				clearTimeout(timer);
 				delayed.delete(finish);
 				resolve();
 			};
-			const timer = setTimeout(finish, ms);
+			const timer = setTimeout(finish, bounded);
 			delayed.add(finish);
 		});
 	}

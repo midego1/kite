@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type BrowserContext, type Locator, type Page } from "@playwright/test";
+import { randomInt } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { ADMIN, BASE_URL, DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { readAdminAgent, useFakeProvider as pointAssistantAtFake } from "./support/agent";
@@ -61,7 +62,7 @@ const MEMBER_PASSWORD = "module-member-password-123";
 
 /** A regular account with its own mailbox, signed in on a separate API client. */
 async function createMember(admin: APIRequestContext, role: "user" | "admin" = "user") {
-	const username = `${role === "admin" ? "adminb" : "member"}${Date.now()}${Math.floor(Math.random() * 1000)}`;
+	const username = `${role === "admin" ? "adminb" : "member"}${Date.now()}${randomInt(1000)}`;
 	const { domains } = await (await admin.get("/api/domains")).json();
 	const created = await admin.post("/api/accounts", {
 		data: {

@@ -1,13 +1,15 @@
 "use client";
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { loadModuleClient } from "@/components/modules/client-registry";
-import type { ComposerSlotContext, ModuleComposerSlot } from "@/components/modules/client-registry-types";
+import { useMemo, useState, type ReactNode } from "react";
+import type { ComposerSlotContext, ModuleClient } from "@/components/modules/client-registry-types";
 import { useModules } from "@/components/modules/modules-context";
+import { useSlotEntries } from "@/components/modules/use-slot-entries";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
-import { listComposerSlots, slotsToLoad } from "@/lib/modules/composer-slot-utils";
+import { listComposerSlots } from "@/lib/modules/composer-slot-utils";
 import type { ComposerSlotDeclaration } from "@/lib/modules/module-types";
+
+const pickComposerSlot = (client: ModuleClient, slotId: string) => client.composerSlots?.[slotId];
 
 /**
  * What the enabled modules add to one composer placement. Their client chunks load the first time
@@ -22,23 +24,8 @@ export function useComposerSlots(
 ): { menu: ReactNode; overlays: ReactNode } {
 	const { modules } = useModules();
 	const slots = useMemo(() => listComposerSlots(CLIENT_MODULES, modules, placement), [modules, placement]);
-	const [loaded, setLoaded] = useState<Record<string, ModuleComposerSlot>>({});
+	const loaded = useSlotEntries(slots, opened, pickComposerSlot);
 	const [openOverlay, setOpenOverlay] = useState<string | null>(null);
-
-	useEffect(() => {
-		let cancelled = false;
-		for (const slot of slotsToLoad(slots, opened)) {
-			void loadModuleClient(slot.moduleId)
-				?.then((client) => {
-					const entry = client.composerSlots?.[slot.id];
-					if (entry && !cancelled) setLoaded((current) => ({ ...current, [slot.id]: entry }));
-				})
-				.catch(() => {});
-		}
-		return () => {
-			cancelled = true;
-		};
-	}, [slots, opened]);
 
 	const ready = slots.flatMap((slot) => (loaded[slot.id] ? [{ slot, entry: loaded[slot.id] }] : []));
 	return {

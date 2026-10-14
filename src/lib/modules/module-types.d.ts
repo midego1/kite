@@ -77,6 +77,19 @@ export type ComposerSlotDeclaration = {
 export type ComposerSlotSource = { id: ModuleId; composerSlots?: readonly ComposerSlotDeclaration[] };
 export type ListedComposerSlot = ComposerSlotDeclaration & { moduleId: ModuleId };
 
+/** An entry in the reader's overflow menu; core draws `label`, and the module's slot component gets only the message and mailbox ids. */
+export type MessageSlotDeclaration = {
+	id: string;
+	slot: "message-menu";
+	order: number;
+	label: string;
+	/** A lucide icon name, resolved by the client registry like `nav[].icon`. */
+	icon?: string;
+};
+
+export type MessageSlotSource = { id: ModuleId; messageSlots?: readonly MessageSlotDeclaration[] };
+export type ListedMessageSlot = MessageSlotDeclaration & { moduleId: ModuleId };
+
 /** One key scope as the key-creation forms show it. */
 export type KeyScopeText = { scope: string; label: string; description: string };
 
@@ -98,6 +111,8 @@ export type SuggestionKindMeta = {
 export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "commands"> & {
 	/** Composer slots the module fills, so the composer lists them without loading the module. */
 	composerSlots?: ComposerSlotDeclaration[];
+	/** Message menu slots the module fills, so the reader lists them without loading the module. */
+	messageSlots?: MessageSlotDeclaration[];
 	/** Suggestion kinds the module's `suggestion_kind` capabilities declare, so the reader card can pick the module's client chunk without the registry. */
 	suggestionKinds?: readonly string[];
 	/** Label, reasons, chip rank and icon per kind in `suggestionKinds`, so core surfaces need no per-kind code. */
@@ -127,6 +142,7 @@ export type ModuleManifest = {
 	nav: ModuleNavItem[];
 	commands: UiCommand[];
 	composerSlots: ComposerSlotDeclaration[];
+	messageSlots?: MessageSlotDeclaration[];
 	recordKinds: { kind: RecordKind; label: string; unavailableLabel: string }[];
 	webhookEvents: ModuleWebhookEvent[];
 	grants: { grant: string; label: string }[];

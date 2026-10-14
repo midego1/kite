@@ -16,6 +16,14 @@ export type ModuleComposerSlot = {
 	Overlay?: ComponentType<{ open: boolean; onOpenChange: (open: boolean) => void } & ComposerSlotContext>;
 };
 
+/** All a message menu slot learns about the message it was opened on. */
+export type MessageSlotContext = { messageId: string; mailboxId: string | null };
+
+/** One message menu slot: core draws the menu entry from the manifest label and opens this when it is chosen. */
+export type ModuleMessageSlot = {
+	Overlay: ComponentType<MessageSlotContext & { open: boolean; onOpenChange: (open: boolean) => void }>;
+};
+
 /** What a module's lazy client chunk exports. */
 export type ModuleClient = {
 	/** Client command handlers by the `handler` name in `UiCommand.target`. */
@@ -24,4 +32,6 @@ export type ModuleClient = {
 	suggestionCards?: Record<string, ModuleSuggestionCard>;
 	/** Composer slots by the `id` the manifest declares. */
 	composerSlots?: Record<string, ModuleComposerSlot>;
+	/** Message menu slots by the `id` the manifest declares. */
+	messageSlots?: Record<string, ModuleMessageSlot>;
 };

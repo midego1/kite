@@ -26,6 +26,7 @@ const CORE_PATHS = [
 	"src/app/(dashboard)/for-you/",
 	"src/components/shortcuts/",
 	"src/components/compose/",
+	"src/components/message-actions/",
 	"src/components/settings/section-nav-utils.ts",
 	"src/components/agent/agent-activity-utils.ts",
 	"src/components/mailbox-selector.tsx",

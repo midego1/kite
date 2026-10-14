@@ -21,9 +21,10 @@ import { useCompose } from "@/components/compose/compose-context";
 import { MessageSourceDialog } from "@/components/messages/message-source-dialog";
 import { useMessageListHref } from "@/components/messages/message-detail-navigation";
 import { MessageSnoozeDialog } from "./message-snooze-dialog";
+import { useMessageMenuSlots } from "./message-menu-slots";
+import { messageShortcuts } from "./message-shortcuts";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
-import type { ShortcutDefinition } from "@/components/shortcuts/types";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
@@ -73,6 +74,7 @@ export function MessageActions({
 	const [moreOpen, setMoreOpen] = useState(false);
 	const [sourceOpen, setSourceOpen] = useState(false);
 	const [snoozeOpen, setSnoozeOpen] = useState(false);
+	const moduleSlots = useMessageMenuSlots({ messageId, mailboxId }, moreOpen, () => setMoreOpen(false));
 	const listHref = useMessageListHref() ?? getMessageBackHref(direction, status);
 
 	const runAction = useCallback(
@@ -173,53 +175,8 @@ export function MessageActions({
 		],
 	);
 
-	const shortcuts = useMemo<ShortcutDefinition[]>(
-		() => [
-			{
-				key: "e",
-				label: "Archive Message",
-				category: "Actions" as const,
-				action: () => {
-					if (status !== "archived") void runAction("archive");
-				},
-			},
-			{
-				key: "y",
-				label: "Archive Message",
-				category: "Actions" as const,
-				action: () => {
-					if (status !== "archived") void runAction("archive");
-				},
-			},
-			{
-				key: "#",
-				label: "Move to Trash",
-				category: "Actions" as const,
-				action: () => {
-					if (status !== "trash") void runAction("trash");
-				},
-			},
-			{
-				key: "r",
-				label: "Reply to Message",
-				category: "Composing" as const,
-				action: () => void handleReply("reply"),
-			},
-			{
-				key: "!",
-				label: "Report Spam",
-				category: "Actions" as const,
-				action: () => {
-					if (status !== "spam" && direction === "inbound") void runAction("spam");
-				},
-			},
-			{
-				key: "u",
-				label: "Back to List",
-				category: "Navigation" as const,
-				action: () => router.back(),
-			},
-		],
+	const shortcuts = useMemo(
+		() => messageShortcuts({ status, direction, runAction, handleReply, back: () => router.back() }),
 		[status, direction, runAction, handleReply, router],
 	);
 
@@ -528,6 +485,7 @@ export function MessageActions({
 							Show original
 						</button>
 						<hr className="my-1 border-neutral-100" />
+						{moduleSlots.items}
 						<p className="mt-1 px-3 pb-1 pt-2 text-sm font-medium text-neutral-500">Move to</p>
 						{moveActions.map((item) => (
 							<button
@@ -546,6 +504,7 @@ export function MessageActions({
 
 			<MessageSourceDialog messageId={messageId} open={sourceOpen} onOpenChange={setSourceOpen} />
 			<MessageSnoozeDialog messageId={messageId} open={snoozeOpen} onOpenChange={setSnoozeOpen} />
+			{moduleSlots.overlays}
 
 			<span className="flex-1" />
 		</div>

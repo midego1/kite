@@ -179,6 +179,25 @@ test("commands use their own module id and valid targets", () => {
 	]);
 });
 
+test("message slots sit in the message menu under their own module id and match the client slice", () => {
+	const ids = new Set();
+	for (const manifest of MODULE_MANIFESTS) {
+		for (const slot of manifest.messageSlots ?? []) {
+			assert.equal(slot.slot, "message-menu", slot.id);
+			assert.ok(slot.id.startsWith(`${manifest.id}.`), slot.id);
+			assert.ok(!ids.has(slot.id), `duplicate message slot ${slot.id}`);
+			ids.add(slot.id);
+			assert.ok(Number.isFinite(slot.order), slot.id);
+			assert.ok(slot.label.trim().length > 0 && slot.label.length <= 40, slot.id);
+		}
+		const slice = CLIENT_MODULES.find((item) => item.id === manifest.id);
+		assert.deepEqual(slice?.messageSlots ?? [], manifest.messageSlots ?? [], manifest.id);
+	}
+	for (const manifest of MODULE_MANIFESTS)
+		for (const slot of manifest.composerSlots)
+			assert.ok(!ids.has(slot.id), `${slot.id} is both a composer and a message slot`);
+});
+
 test("manifests import nothing server-only, no zod and no React", () => {
 	const forbidden =
 		/from\s+["'](@\/db|@\/lib\/cloudflare|server-only|zod|react|react-dom|next|\.\.?\/(?:.*\/)?(?:schemas|server|capabilities))/;

@@ -22,7 +22,7 @@ The two reviewers are being compared by what you make of their findings, so the 
 2. If the finding **is correct and the code does not yet address it**, adopt it:
    - Implement the smallest fix that resolves it, in the style of the surrounding code.
    - Format what you touched: `npx prettier --write <files>`.
-   - Validate with the narrowest checks that cover the change: at minimum `npm run check`, and for a user-visible change also the affected Playwright spec (`npx playwright test e2e/<file>.spec.ts`). Only keep the fix when everything passes; if validation fails and you cannot fix it, answer the comment instead of adopting it.
+   - Validate with the narrowest checks that cover the change: at minimum `npm run check`, and for a user-visible change also the affected Playwright spec (`npx playwright test e2e/<file>.spec.ts`). Only keep the fix when everything passes; if validation fails and you cannot fix it, discard the change and prepare the answer `Valid, not adopted: <why the fix could not be kept>.` instead of adopting it.
    - Commit with a conventional message (for example `fix: <what and why>`), with the body line `Addresses <reviewer> review comment <id> on pull request <PR_NUMBER>.` (the comment's `reviewer` and `id`) and the trailer:
 
      ```
@@ -33,6 +33,7 @@ The two reviewers are being compared by what you make of their findings, so the 
 
 3. If the finding **is not correct**, prepare an answer: two or three plain sentences on what the code actually does and why the finding does not apply. State facts, no boilerplate.
 4. If the code on the branch **already addressed** the finding before this run, prepare the answer `Already addressed in <short sha>.` when you can point at a commit that was already on the branch, otherwise `Already addressed in the current code.` Never cite a commit you made in this run: the publish job re-applies them, which changes their sha.
+5. Start an answer with `Adopted`, `Already addressed` or `Valid, not adopted` only in the cases above: the reviewers are scored by these prefixes, and every other answer counts as a finding that did not hold up.
 
 ## Result
 

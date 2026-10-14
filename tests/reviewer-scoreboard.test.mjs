@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-	adoptionRate,
 	classifyReply,
 	formatScoreboard,
 	tallyReviewers,
+	validRate,
 } from "../scripts/review/reviewer-scoreboard-utils.mjs";
 
 const finding = (id, login) => ({ id, user: { login }, in_reply_to_id: null, body: "Finding." });
@@ -18,9 +18,55 @@ const byReviewer = (rows) => Object.fromEntries(rows.map((row) => [row.reviewer,
 
 test("classifies the adopt workflow's answers", () => {
 	assert.deepEqual(classifyReply("Adopted in 1a2b3c4."), { outcome: "adopted", sha: "1a2b3c4" });
-	assert.deepEqual(classifyReply("Already addressed in 9f8e7d6."), { outcome: "alreadyAddressed" });
+	assert.deepEqual(classifyReply("Already addressed in 9f8e7d6."), { outcome: "alreadyAddressed", sha: "9f8e7d6" });
 	assert.deepEqual(classifyReply("Already addressed in the current code."), { outcome: "alreadyAddressed" });
+	assert.deepEqual(classifyReply("Valid, not adopted: the fix broke the e2e suite."), {
+		outcome: "validNotAdopted",
+	});
 	assert.deepEqual(classifyReply("The listener is removed in the cleanup."), { outcome: "declined" });
+});
+
+test("credits a later finding answered with a commit the workflow adopted for another finding", () => {
+	const rows = byReviewer(
+		tallyReviewers([
+			{
+				number: 5,
+				comments: [
+					finding(60, "coderabbitai[bot]"),
+					finding(61, "greptile-apps[bot]"),
+					finding(62, "greptile-apps[bot]"),
+					answer(70, 60, "Adopted in abcdef1."),
+					answer(71, 61, "Already addressed in abcdef1234."),
+					// A commit the workflow did not adopt stays an ordinary "already addressed".
+					answer(72, 62, "Already addressed in 1234567."),
+				],
+			},
+		]),
+	);
+	assert.equal(rows.CodeRabbit.adopted, 1);
+	assert.equal(rows.CodeRabbit.sharedAdopted, 1);
+	assert.equal(rows.Greptile.adopted, 1);
+	assert.equal(rows.Greptile.sharedAdopted, 1);
+	assert.equal(rows.Greptile.alreadyAddressed, 1);
+});
+
+test("counts a correct finding that failed validation as valid, not declined", () => {
+	const rows = byReviewer(
+		tallyReviewers([
+			{
+				number: 6,
+				comments: [
+					finding(80, "greptile-apps[bot]"),
+					finding(81, "greptile-apps[bot]"),
+					answer(82, 80, "Valid, not adopted: the fix failed npm run check."),
+					answer(83, 81, "That branch is unreachable."),
+				],
+			},
+		]),
+	);
+	assert.equal(rows.Greptile.validNotAdopted, 1);
+	assert.equal(rows.Greptile.declined, 1);
+	assert.equal(validRate(rows.Greptile), 0.5);
 });
 
 test("tallies each reviewer's findings by outcome and counts shared adoptions", () => {
@@ -55,6 +101,7 @@ test("tallies each reviewer's findings by outcome and counts shared adoptions", 
 		adopted: 1,
 		sharedAdopted: 1,
 		alreadyAddressed: 0,
+		validNotAdopted: 0,
 		declined: 1,
 		open: 1,
 	});
@@ -65,6 +112,7 @@ test("tallies each reviewer's findings by outcome and counts shared adoptions", 
 		adopted: 2,
 		sharedAdopted: 1,
 		alreadyAddressed: 1,
+		validNotAdopted: 0,
 		declined: 0,
 		open: 0,
 	});
@@ -74,19 +122,20 @@ test("ignores other authors and lists every reviewer even without findings", () 
 	const rows = byReviewer(tallyReviewers([{ number: 3, comments: [finding(50, "a-human")] }]));
 	assert.equal(rows.CodeRabbit.findings, 0);
 	assert.equal(rows.Greptile.findings, 0);
-	assert.equal(adoptionRate(rows.CodeRabbit), null);
+	assert.equal(validRate(rows.CodeRabbit), null);
 });
 
-test("formats a Markdown table with the adoption rate", () => {
+test("formats a Markdown table with the valid rate", () => {
 	const table = formatScoreboard(
 		[
 			{
 				reviewer: "Greptile",
 				pullRequests: 2,
-				findings: 4,
+				findings: 5,
 				adopted: 1,
 				sharedAdopted: 0,
 				alreadyAddressed: 1,
+				validNotAdopted: 1,
 				declined: 1,
 				open: 1,
 			},
@@ -94,5 +143,5 @@ test("formats a Markdown table with the adoption rate", () => {
 		5,
 	);
 	assert.match(table, /last 5 pull request/);
-	assert.match(table, /\| Greptile \| 2 \| 4 \| 1 \| 0 \| 1 \| 1 \| 1 \| 33% \|/);
+	assert.match(table, /\| Greptile \| 2 \| 5 \| 1 \| 0 \| 1 \| 1 \| 1 \| 1 \| 50% \|/);
 });

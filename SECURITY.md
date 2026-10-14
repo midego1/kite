@@ -80,9 +80,9 @@ reader frame and a hostile draft end to end.
 
 ## History scan
 
-A full scan of every reachable commit for secrets and personal data, run on 2026-10-15
-before the repository was promoted as public. Repeat it after a history rewrite or before
-publishing a new mirror.
+A full scan of every reachable commit for secrets and personal data, run on 2026-10-14
+(UTC) before the repository was promoted as public. Repeat it after a history rewrite or
+before publishing a new mirror, with the commands below.
 
 - **Scope.** All branches, tags and GitHub's read-only pull request refs
   (`refs/pull/*/head`, fetched with
@@ -90,6 +90,30 @@ publishing a new mirror.
   25 MB of diffs. Gitleaks 8.30.1 ran with the repository config and, separately, with the
   default rules and no allowlists. The diffs and commit metadata were also searched for
   email addresses, IBANs, phone numbers and private key blocks.
+- **Commands.** From a full clone, with Gitleaks 8.30 or later:
+
+  ```sh
+  git fetch origin '+refs/pull/*/head:refs/remotes/origin/pr/*'
+  # Secrets, with the repository config (.gitleaks.toml), over every ref, then main only.
+  gitleaks git --log-opts="--all" --redact
+  gitleaks git --log-opts=origin/main --redact
+  # Secrets, with the default rules and no allowlists, ignore file or gitleaks:allow comments.
+  printf '[extend]\nuseDefault = true\n' > /tmp/gitleaks-default.toml
+  gitleaks git --log-opts="--all" --config /tmp/gitleaks-default.toml \
+    --ignore-gitleaks-allow --gitleaks-ignore-path /dev/null --redact
+  # Personal data: addresses outside reserved domains (review the list by hand), IBANs,
+  # phone numbers (noisy, review by hand) and private key blocks.
+  git log --all -p --format='%an <%ae>%n%cn <%ce>%n%B' \
+    | grep -Eio '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' | tr 'A-Z' 'a-z' \
+    | grep -Eiv '@(example\.(com|org|net)|[a-z0-9.-]+\.(test|example|invalid|localhost))$' \
+    | sort | uniq -c | sort -rn
+  git log --all -p | grep -E '\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\b'
+  git log --all -p | grep -E '\+[0-9][0-9 ().-]{8,}[0-9]'
+  git log --all -p | grep -E -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+  ```
+
+  The default-rules run also reports the two test values below in current history, where
+  they carry `gitleaks:allow`.
 - **Secrets on `main`: none.** `gitleaks git --log-opts=origin/main` reports no findings.
 - **Secrets elsewhere: two known test values.** Both `generic-api-key` findings
   (`tests/queue-log-context.test.mjs` and `tests/security-hardening.test.mjs`) are the

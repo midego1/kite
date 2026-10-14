@@ -78,6 +78,38 @@ reader frame and a hostile draft end to end.
   outside contributors need approval before they run, and the default workflow
   token is read-only. Hosted code scanning is not enabled.
 
+## History scan
+
+A full scan of every reachable commit for secrets and personal data, run on 2026-10-15
+before the repository was promoted as public. Repeat it after a history rewrite or before
+publishing a new mirror.
+
+- **Scope.** All branches, tags and GitHub's read-only pull request refs
+  (`refs/pull/*/head`, fetched with
+  `git fetch origin '+refs/pull/*/head:refs/remotes/origin/pr/*'`): 209 commits, about
+  25 MB of diffs. Gitleaks 8.30.1 ran with the repository config and, separately, with the
+  default rules and no allowlists. The diffs and commit metadata were also searched for
+  email addresses, IBANs, phone numbers and private key blocks.
+- **Secrets on `main`: none.** `gitleaks git --log-opts=origin/main` reports no findings.
+- **Secrets elsewhere: two known test values.** Both `generic-api-key` findings
+  (`tests/queue-log-context.test.mjs` and `tests/security-hardening.test.mjs`) are the
+  synthetic fixtures described above, in the pre-rewrite root commit `59ac91f`, which only
+  old pull request refs (#1 to #12) still reach. Current history marks them
+  `gitleaks:allow`. Nothing needs rotating. GitHub keeps pull request refs read-only, so
+  they cannot be deleted from the repository and are accepted as is.
+- **Personal data in file contents: none.** Addresses in code, tests and docs use
+  reserved or synthetic domains (`example.com`, `*.test` and similar) or published
+  service senders; the only free-mail addresses are a form placeholder. No IBANs, phone
+  numbers or private keys were found.
+- **Personal data in commit metadata.** The maintainer's name and personal email address
+  are the author of `main`'s root commit and of commits on several older feature and
+  mission branches. They were already public with the repository. To keep them out of new
+  commits, set `user.email` to the GitHub noreply address
+  (`<id>+<user>@users.noreply.github.com`) and enable **Block command line pushes that
+  expose my email** in GitHub's email settings; deleting merged branches reduces how much
+  history carries the old address. Rewriting `main` is not planned, because it would break
+  every clone and deployment.
+
 Never deploy or apply remote migrations during agent validation. A push to
 `main` deploys production. Use synthetic local data and review
 [PII handling](docs/pii-handling.md) before gathering evidence. What a deployment stores, retains and deletes is in [Privacy and data handling](docs/privacy.md).

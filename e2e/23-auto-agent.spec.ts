@@ -618,7 +618,7 @@ test.describe("automatic reading settings UI", () => {
 			expect(response.request().postDataJSON()).toEqual({
 				mailboxId: sharedId,
 				autonomy: "suggest",
-				capabilities: { calendar: false, reply: true, summary: false, phishing: true },
+				capabilities: { calendar: false, reply: true, summary: false, phishing: true, modules: {} },
 				triageModelId: "fake-triage",
 				autoReadDailyLimit: 50,
 				dailySpendCapMicros: 500_000,

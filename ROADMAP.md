@@ -4,7 +4,7 @@ Planned work, grouped into milestones. Each milestone is sized to run as one [Fa
 
 Shipped work is listed in the [changelog](CHANGELOG.md). Suggest features and vote on them in [Ideas](https://github.com/midego1/kite/discussions/categories/ideas).
 
-Approved specs, in the order they will be built: [automatic mail reading agent](docs/specs/auto-agent.md), [module platform](docs/specs/module-platform.md), [storing attachments once](docs/specs/attachments-once.md), and [Drive and storage](docs/specs/drive-storage.md).
+Shipped specs: [automatic mail reading agent](docs/specs/auto-agent.md) ([#28](https://github.com/midego1/kite/pull/28)) and [module platform](docs/specs/module-platform.md) ([#45](https://github.com/midego1/kite/pull/45)). Next, in order: [Money Watch](#milestone-18-money-watch-subscription-tracking) (spec to be written), then the approved [storing attachments once](docs/specs/attachments-once.md) and [Drive and storage](docs/specs/drive-storage.md).
 
 ## Working on this repository
 
@@ -84,7 +84,7 @@ Make the app usable for Arabic, Hebrew, Persian and Urdu mail and users.
 
 ## Milestone 5: Agents
 
-Automatic reading of incoming mail, with suggestions and an audit log (item 2), is specified in [docs/specs/auto-agent.md](docs/specs/auto-agent.md).
+Automatic reading of incoming mail, with suggestions and an audit log (item 2), is specified in [docs/specs/auto-agent.md](docs/specs/auto-agent.md) and shipped in [#28](https://github.com/midego1/kite/pull/28); see [docs/assistant.md](docs/assistant.md).
 
 1. **Email-addressable agents**: an address such as `assistant@your-domain` routes mail to the AI assistant, which can reply, file or draft within the permissions of its owner. Built on the existing routing rules and the agent queue; the Cloudflare Agents SDK is evaluated first.
 2. **Agent audit log**: every action an agent takes is recorded and visible to the mailbox owner, with undo where possible.
@@ -179,11 +179,15 @@ Mail from a sender you have not approved waits in a Screener instead of the Inbo
    - The spam filter runs first. On shared mailboxes, users with full access decide. The automatic reading agent skips screened mail and can suggest Yes or No.
    - Decisions live in a per-mailbox table that goes into the backup lists (see `AGENTS.md`). Works on Workers and the Node runtime.
 
+## Milestone 18: Money Watch (subscription tracking)
+
+The next Mission. Automatic reading spots invoices and receipts for things you pay for, suggests tracking them, and reminds you before renewals, with a page listing every subscription and its totals. It is the first new builtin module on the module platform (milestone 19), so the owner can turn it off for everyone or per user. Suggestion-only: nothing is tracked until you accept, and every write can be undone. The full outline is [milestone 18 of the complete-suite roadmap](docs/roadmap-complete-suite.md#milestone-18-subscriptions-money-watch); a spec in `docs/specs/` is written against `main` before implementation starts.
+
 ## Milestone 19: Module platform (builtin modules first, sandboxed apps later)
 
 Taken ahead of the proposed milestones 9–18 in the [complete-suite roadmap](docs/roadmap-complete-suite.md), with an approved [module platform spec](docs/specs/module-platform.md). Modules are built into Kite first; apps from other publishers come later as signed bundles that run sandboxed inside your own Kite, never on someone else's servers.
 
-1. **Builtin modules (in progress on `mission/module-platform`)**
+1. **Builtin modules (shipped in [#45](https://github.com/midego1/kite/pull/45))**
    - Calendar, Booking (needs Calendar), Email templates and Mail import become modules the owner can turn off for everyone or for some users, from Admin → Modules. Off means absent: no links, commands, tools, events or background work, and its pages and API answer 404. No data is deleted, mailbox export always works, and paused imports resume when Mail import is back on. See [Modules](docs/modules.md).
    - Core reaches modules only through a registry and one JSON call contract, and the assistant, automatic reading, MCP, API keys, JMAP, webhooks, search, For you, Activity, the command palette, the composer, the queues and cron read the registry instead of hard-coded lists. Same code path on Workers and the Node runtime.
    - Test: unit tests for the registry, the call contract, the import rules and the guards; `e2e/27-modules.spec.ts` turns every module off and on.

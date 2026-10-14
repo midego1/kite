@@ -2,6 +2,7 @@
 
 import { createElement, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import * as Popover from "@radix-ui/react-popover";
 import {
 	Archive,
 	Ban,
@@ -415,26 +416,28 @@ export function MessageActions({
 					</Tooltip>
 				</>
 			)}
-			<div className="relative">
-				<Tooltip label="More actions">
-					<Button
-						type="button"
-						variant="ghost"
-						size="roundedSM"
-						aria-label="More actions"
-						aria-expanded={moreOpen}
-						disabled={disabled}
-						onClick={() => {
-							setSnoozeExpanded(false);
-							setMoreOpen((open) => !open);
-						}}
-					>
-						<MoreVertical size={iconSize} />
-					</Button>
+			<Popover.Root
+				open={moreOpen}
+				onOpenChange={(open) => {
+					setSnoozeExpanded(false);
+					setMoreOpen(open);
+				}}
+			>
+				<Tooltip label={moreOpen ? null : "More actions"}>
+					<Popover.Trigger asChild>
+						<Button type="button" variant="ghost" size="roundedSM" aria-label="More actions" disabled={disabled}>
+							<MoreVertical size={iconSize} />
+						</Button>
+					</Popover.Trigger>
 				</Tooltip>
-
-				{moreOpen && (
-					<div className="absolute right-0 top-8 z-20 w-54 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg has-[[data-snooze-expanded=true]]:w-72">
+				<Popover.Portal>
+					<Popover.Content
+						align="end"
+						sideOffset={4}
+						collisionPadding={8}
+						aria-label="More actions"
+						className="z-50 max-h-(--radix-popover-content-available-height) w-54 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-lg has-[[data-snooze-expanded=true]]:w-72"
+					>
 						{isMobile && (
 							<>
 								<button
@@ -537,9 +540,9 @@ export function MessageActions({
 								{item.label}
 							</button>
 						))}
-					</div>
-				)}
-			</div>
+					</Popover.Content>
+				</Popover.Portal>
+			</Popover.Root>
 
 			<MessageSourceDialog messageId={messageId} open={sourceOpen} onOpenChange={setSourceOpen} />
 

@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, openMessage, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
 import type { StoredMessage } from "./support/helpers-types";
+import { dateFromZonedFields, zonedDateFields } from "../src/lib/time/utils";
 
 let api: APIRequestContext;
 
@@ -117,33 +118,63 @@ test("snoozing from a row opens a picker next to the button and hides the messag
 test("Snooze in the reader's More actions menu expands in place", async ({ page }) => {
 	const { message } = await deliver("Snooze from reader");
 	await page.goto(`/inbox/${message.id}`);
-	const more = page.getByRole("button", { name: "More actions" });
-	await more.click();
-	const menu = page.locator("div.relative").filter({ has: more }).last();
+	await page.getByRole("button", { name: "More actions" }).click();
+	const menu = page.getByRole("dialog", { name: "More actions" });
 	const snooze = menu.getByRole("button", { name: "Snooze", exact: true }).first();
 	await expect(snooze).toHaveAttribute("aria-expanded", "false");
 	await snooze.click();
 	await expect(snooze).toHaveAttribute("aria-expanded", "true");
-	await expect(page.getByRole("dialog")).toHaveCount(0);
+	await expect(page.getByRole("dialog", { name: "Snooze" })).toHaveCount(0);
 
 	const picker = menu.getByRole("group", { name: "Snooze until" });
 	await expect(picker.getByRole("button", { name: /^Next week/ })).toBeVisible();
-	const until = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-	const local = `${until.getFullYear()}-${String(until.getMonth() + 1).padStart(2, "0")}-${String(until.getDate()).padStart(2, "0")}T09:30`;
+	// The picker reads the date in the user's time zone (named in its label), which may differ
+	// from the runner's, so the expected instant is built in that zone.
+	const dateLabel = picker.getByText(/^Pick date & time/);
+	const timeZone = /\(([^)]+)\)/.exec((await dateLabel.textContent()) ?? "")?.[1] ?? "UTC";
+	const day = zonedDateFields(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), timeZone);
+	day.setUTCHours(9, 30, 0, 0);
+	const local = day.toISOString().slice(0, 16);
 	await picker.getByLabel(/^Pick date & time/).fill(local);
 	await picker.getByRole("button", { name: "Snooze", exact: true }).click();
 	await expect(picker).toBeHidden();
 
-	// The picker reads the date in the user's time zone, which may differ from the runner's.
+	const expected = dateFromZonedFields(day, timeZone).toISOString();
 	await expect
 		.poll(async () => {
 			const body = (await (await api.get(`/api/messages/${message.id}`)).json()) as {
 				message: { snoozedUntil: string | null };
 			};
-			const snoozedUntil = body.message.snoozedUntil ? new Date(body.message.snoozedUntil).getTime() : 0;
-			return Math.abs(snoozedUntil - until.getTime()) < 2 * 24 * 60 * 60 * 1000;
+			return body.message.snoozedUntil ? new Date(body.message.snoozedUntil).toISOString() : null;
 		})
-		.toBe(true);
+		.toBe(expected);
+});
+
+test("on a phone the More actions menu and its snooze picker stay on screen", async ({ page }) => {
+	const viewport = { width: 320, height: 568 };
+	await page.setViewportSize(viewport);
+	const { message } = await deliver("Snooze on a phone");
+	await page.goto(`/inbox/${message.id}`);
+	await page.getByRole("button", { name: "More actions" }).click();
+	const menu = page.getByRole("dialog", { name: "More actions" });
+	await menu.getByRole("button", { name: "Snooze", exact: true }).first().click();
+	await expect(menu.getByRole("group", { name: "Snooze until" })).toBeVisible();
+
+	const box = await menu.boundingBox();
+	expect(box).not.toBeNull();
+	expect(box!.x).toBeGreaterThanOrEqual(0);
+	expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+	expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+
+	// The menu scrolls, so the custom date submit and the actions below it stay reachable.
+	const submit = menu.getByRole("group", { name: "Snooze until" }).getByRole("button", { name: "Snooze", exact: true });
+	await submit.scrollIntoViewIfNeeded();
+	await expect(submit).toBeInViewport();
+	await menu.getByRole("button", { name: "Show original" }).scrollIntoViewIfNeeded();
+	await expect(menu.getByRole("button", { name: "Show original" })).toBeInViewport();
+
+	await page.keyboard.press("Escape");
+	await expect(menu).toBeHidden();
 });
 
 test("trashing the open message stays in the inbox", async ({ page }) => {

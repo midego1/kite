@@ -29,10 +29,7 @@ function waitForWebhook(page: Page, method: string) {
 test("the alerts page is reachable from the Admin menu", async ({ page }) => {
 	await page.goto("/admin");
 	const menu = page.getByRole("complementary", { name: "Admin menu" });
-	await menu
-		.getByRole("navigation", { name: "Administration" })
-		.getByRole("link", { name: "Alerts", exact: true })
-		.click();
+	await menu.getByRole("navigation", { name: "System" }).getByRole("link", { name: "Alerts", exact: true }).click();
 	await expect(page).toHaveURL(/\/alerts$/);
 	await expect(page.getByRole("heading", { name: "Alerts", level: 1 })).toBeVisible();
 	await expect(page.getByLabel("Webhook URL")).toBeVisible();

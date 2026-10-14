@@ -112,7 +112,9 @@ function currentPageLinks(page: Page): Locator {
 	return page.getByRole("complementary").getByRole("navigation").locator('a[aria-current="page"]');
 }
 
-test("an admin's Settings menu has the mode switch and only the Personal and Mailbox groups", async ({ page }) => {
+test("an admin's Settings menu has the mode switch and only the Personal, Security and Mailbox groups", async ({
+	page,
+}) => {
 	await page.goto("/settings/account");
 	const menu = settingsMenu(page);
 	await expect(menu.getByRole("link", { name: "Back to inbox" })).toHaveAttribute("href", "/inbox");
@@ -127,8 +129,18 @@ test("an admin's Settings menu has the mode switch and only the Personal and Mai
 	await expect(menu.getByRole("searchbox")).toBeHidden();
 	await expect(pageSearch(page)).toBeVisible();
 	await expect(pageSearch(page)).toHaveAttribute("placeholder", "Search settings");
-	await expect(menu.getByRole("navigation")).toHaveCount(2);
-	await expect(menu.getByRole("navigation", { name: "Personal" })).toBeVisible();
+	await expect(menu.getByRole("navigation")).toHaveCount(3);
+	await expect(menu.getByRole("navigation", { name: "Personal" }).getByRole("link")).toHaveText([
+		"My account",
+		"Appearance",
+		"Inbox",
+		"Rules & routing",
+	]);
+	await expect(menu.getByRole("navigation", { name: "Security" }).getByRole("link")).toHaveText([
+		"Security",
+		"App passwords",
+		"API keys",
+	]);
 	await expect(menu.getByRole("navigation", { name: "Mailbox" })).toBeVisible();
 	await expect(menu.getByRole("link", { name: "My account" })).toHaveAttribute("aria-current", "page");
 	await expect(menu.getByText("Workspace")).toHaveCount(0);
@@ -161,7 +173,7 @@ test("the top-bar search finds admin pages from Settings and can be cleared", as
 	await search(page, "");
 	await expect(field).toHaveAttribute("aria-expanded", "false");
 	await expect(pageResults(page)).toBeHidden();
-	await expect(menu.getByRole("navigation")).toHaveCount(2);
+	await expect(menu.getByRole("navigation")).toHaveCount(3);
 	await expect(menu.getByRole("navigation", { name: "Personal" })).toBeVisible();
 
 	await search(page, "domains");
@@ -322,24 +334,30 @@ test("admin pages use the Settings layout with the mail sidebar, top bar and Adm
 	await expect(page.getByRole("button", { name: "Open account menu" })).toBeVisible();
 
 	await expect(menu.getByRole("navigation", { name: "Admin overview" }).getByRole("link")).toHaveText(["Overview"]);
-	await expect(menu.getByRole("navigation", { name: "Email" }).getByRole("link")).toHaveText([
-		"Mailboxes",
+	await expect(menu.getByRole("navigation", { name: "Email", exact: true }).getByRole("link")).toHaveText([
 		"Domains",
+		"Mailboxes",
 		"Routing",
+	]);
+	await expect(menu.getByRole("navigation", { name: "People & access", exact: true }).getByRole("link")).toHaveText([
+		"Accounts",
+		"Modules",
+	]);
+	await expect(menu.getByRole("navigation", { name: "Integrations", exact: true }).getByRole("link")).toHaveText([
+		"API keys",
 		"Webhooks",
 	]);
-	await expect(menu.getByRole("navigation", { name: "Administration" }).getByRole("link")).toHaveText([
-		"API keys",
-		"General",
+	await expect(menu.getByRole("navigation", { name: "AI", exact: true }).getByRole("link")).toHaveText([
 		"Agent",
-		"Modules",
-		"Accounts",
-		"Activity",
-		"Backups",
-		"Alerts",
 		"AI usage",
 	]);
-	await expect(menu.getByRole("navigation", { name: "Product" }).getByRole("link")).toHaveText(["Branding"]);
+	await expect(menu.getByRole("navigation", { name: "System", exact: true }).getByRole("link")).toHaveText([
+		"General",
+		"Branding",
+		"Backups",
+		"Alerts",
+		"Activity",
+	]);
 
 	// The overview keeps its heading and the database card but no grid of link cards; the menu is the only nav.
 	await expect(page.getByRole("heading", { level: 1, name: "Admin settings" })).toBeVisible();
@@ -526,8 +544,8 @@ test.describe("on a phone", () => {
 		const sheet = page.getByRole("dialog", { name: "Admin menu" });
 		await expect(sheet).toBeVisible();
 		await expect(modeSwitchOf(sheet).getByRole("link", { name: "Admin" })).toHaveAttribute("aria-current", "page");
-		for (const name of ["Admin overview", "Email", "Administration", "Product"])
-			await expect(sheet.getByRole("navigation", { name })).toBeVisible();
+		for (const name of ["Admin overview", "Email", "People & access", "Integrations", "AI", "System"])
+			await expect(sheet.getByRole("navigation", { name, exact: true })).toBeVisible();
 		await sheet.getByRole("link", { name: "Backups" }).click();
 		await expect(page).toHaveURL(/\/backups$/);
 		await expect(sheet).toBeHidden();
@@ -582,10 +600,7 @@ test.describe("on a phone", () => {
 		await expect(sheet.getByRole("navigation", { name: "Personal" })).toBeVisible();
 
 		await field.fill("backups");
-		await sheet
-			.getByRole("navigation", { name: "Admin: Administration" })
-			.getByRole("link", { name: "Backups" })
-			.click();
+		await sheet.getByRole("navigation", { name: "Admin: System" }).getByRole("link", { name: "Backups" }).click();
 		await expect(page).toHaveURL(/\/backups$/);
 		await expect(sheet).toBeHidden();
 	});

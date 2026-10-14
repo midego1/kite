@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { DOMAIN, RELEASE_VERSION, STORAGE_STATE } from "./support/constants";
-import { apiContext, signIn, uniqueToken } from "./support/helpers";
+import { DOMAIN, RELEASE_VERSION, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { apiContext, deliverInbound, openMessage, signIn, uniqueToken } from "./support/helpers";
 
 const PENDING_API = "/api/migrations/pending";
 const APPLY_API = "/api/admin/migrations";
@@ -83,6 +83,9 @@ test("the primary admin applies pending database updates from the banner", async
 	await openInbox(page);
 	const banner = page.getByRole("region", { name: "Database updates" });
 	await expect(banner).toBeVisible();
+	// With nothing open the notice sits in the empty reading pane, and there is no second copy above the list.
+	await expect(page.getByTestId("reading-pane-empty").getByRole("region", { name: "Database updates" })).toBeVisible();
+	await expect(banner).toHaveCount(1);
 	await expect(banner).toContainText("Kite was updated, but the database still needs 2 updates");
 	await expect(banner).toContainText("new email may not appear and some pages may fail");
 	await expect(banner).toContainText("0001_add_column.sql");
@@ -119,4 +122,40 @@ test("a member is told to ask an administrator and gets no Apply button", async 
 	await expect(banner.getByRole("button", { name: "Apply now" })).toHaveCount(0);
 	await expect(banner.getByRole("link", { name: "Admin overview" })).toHaveCount(0);
 	await context.close();
+});
+
+test("with a message open the notice moves to a one-line banner above the mailbox", async ({ page }) => {
+	const api = await apiContext(STORAGE_STATE);
+	const subject = `Updates notice ${uniqueToken()}`;
+	await deliverInbound(api, {
+		from: `"Notice Sender" <notice@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject,
+		text: "Notice body.",
+	});
+	await api.dispose();
+
+	let pending = 1;
+	await page.route(`**${PENDING_API}`, (route) => route.fulfill({ json: { pending, names: ["0001_add_column.sql"] } }));
+	await page.route(`**${APPLY_API}`, async (route) => {
+		if (route.request().method() !== "POST") return route.continue();
+		pending = 0;
+		await route.fulfill({ json: { ready: true, pending: [], unknown: [], applied: ["0001_add_column.sql"] } });
+	});
+
+	await openInbox(page);
+	const notice = page.getByRole("region", { name: "Database updates" });
+	await expect(page.getByTestId("reading-pane-empty").getByRole("region", { name: "Database updates" })).toBeVisible();
+
+	await openMessage(page, subject);
+	await expect(page.getByTestId("reading-pane-empty")).toHaveCount(0);
+	await expect(notice).toHaveCount(1);
+	await expect(notice).toContainText("still needs 1 update");
+	await expect(notice).toHaveAttribute("title", "0001_add_column.sql");
+	// One line: the banner is no taller than a small button row.
+	expect((await notice.boundingBox())!.height).toBeLessThan(48);
+
+	await notice.getByRole("button", { name: "Apply now" }).click();
+	await expect(notice).toContainText("1 database update applied.");
+	await expect(notice).not.toContainText("Kite was updated");
 });

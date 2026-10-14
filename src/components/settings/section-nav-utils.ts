@@ -52,10 +52,15 @@ const settingsNavSections: NavSection[] = [
 				icon: Inbox,
 				keywords: "threading conversation notifications shortcuts sending undo images spam trash auto reply",
 			},
-			{ href: "/settings/security", label: "Security", icon: Shield, keywords: "password two-factor mfa totp" },
 			{ href: "/settings/rules", label: "Rules & routing", icon: Route, keywords: "filters automations" },
-			{ href: "/settings/api-keys", label: "API keys", icon: KeyRound, keywords: "token mcp jmap" },
+		],
+	},
+	{
+		label: "Security",
+		items: [
+			{ href: "/settings/security", label: "Security", icon: Shield, keywords: "password two-factor mfa totp" },
 			{ href: "/settings/app-passwords", label: "App passwords", icon: Lock, keywords: "imap smtp client" },
+			{ href: "/settings/api-keys", label: "API keys", icon: KeyRound, keywords: "token mcp jmap" },
 		],
 	},
 	{
@@ -103,6 +108,7 @@ const adminNavSections: NavSection[] = [
 	{
 		label: "Email",
 		items: [
+			{ href: "/domains", label: "Domains", icon: Globe2, keywords: "dns workspace", permission: "domains" },
 			{
 				href: "/mailboxes",
 				label: "Mailboxes",
@@ -110,7 +116,6 @@ const adminNavSections: NavSection[] = [
 				keywords: "shared inboxes aliases workspace",
 				permission: "admin",
 			},
-			{ href: "/domains", label: "Domains", icon: Globe2, keywords: "dns workspace", permission: "domains" },
 			{
 				href: "/routing",
 				label: "Routing",
@@ -118,22 +123,11 @@ const adminNavSections: NavSection[] = [
 				keywords: "catch-all forward reject rules",
 				permission: "admin",
 			},
-			{ href: "/webhooks", label: "Webhooks", icon: Webhook, keywords: "events deliveries", permission: "primary" },
 		],
 	},
 	{
-		label: "Administration",
+		label: "People & access",
 		items: [
-			{ href: "/api-keys", label: "API keys", icon: KeyRound, keywords: "token mcp jmap", permission: "primary" },
-			{ href: "/general", label: "General", icon: Settings, keywords: "workspace instance", permission: "primary" },
-			{ href: "/agent", label: "Agent", icon: Bot, keywords: "assistant ai model", permission: "primary" },
-			{
-				href: "/modules",
-				label: "Modules",
-				icon: Blocks,
-				keywords: "calendar booking templates import turn on off features",
-				permission: "primary",
-			},
 			{
 				href: "/accounts",
 				label: "Accounts",
@@ -142,11 +136,37 @@ const adminNavSections: NavSection[] = [
 				permission: "admin",
 			},
 			{
-				href: "/activity",
-				label: "Activity",
-				icon: Activity,
-				// /audit-logs redirects here, so its names are searchable keywords instead of a separate item.
-				keywords: "log events audit audit logs audit log history security",
+				href: "/modules",
+				label: "Modules",
+				icon: Blocks,
+				keywords: "calendar booking templates import turn on off features",
+				permission: "primary",
+			},
+		],
+	},
+	{
+		label: "Integrations",
+		items: [
+			{ href: "/api-keys", label: "API keys", icon: KeyRound, keywords: "token mcp jmap", permission: "primary" },
+			{ href: "/webhooks", label: "Webhooks", icon: Webhook, keywords: "events deliveries", permission: "primary" },
+		],
+	},
+	{
+		label: "AI",
+		items: [
+			{ href: "/agent", label: "Agent", icon: Bot, keywords: "assistant ai model", permission: "primary" },
+			{ href: "/ai-usage", label: "AI usage", icon: Gauge, keywords: "tokens cost assistant", permission: "primary" },
+		],
+	},
+	{
+		label: "System",
+		items: [
+			{ href: "/general", label: "General", icon: Settings, keywords: "workspace instance", permission: "primary" },
+			{
+				href: "/branding",
+				label: "Branding",
+				icon: Palette,
+				keywords: "name logo icon workspace product",
 				permission: "primary",
 			},
 			{ href: "/backups", label: "Backups", icon: DatabaseBackup, keywords: "restore export", permission: "primary" },
@@ -157,17 +177,12 @@ const adminNavSections: NavSection[] = [
 				keywords: "webhook notifications slack discord ntfy",
 				permission: "primary",
 			},
-			{ href: "/ai-usage", label: "AI usage", icon: Gauge, keywords: "tokens cost assistant", permission: "primary" },
-		],
-	},
-	{
-		label: "Product",
-		items: [
 			{
-				href: "/branding",
-				label: "Branding",
-				icon: Palette,
-				keywords: "name logo icon workspace",
+				href: "/activity",
+				label: "Activity",
+				icon: Activity,
+				// /audit-logs redirects here, so its names are searchable keywords instead of a separate item.
+				keywords: "log events audit audit logs audit log history security",
 				permission: "primary",
 			},
 		],

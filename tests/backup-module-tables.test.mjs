@@ -31,7 +31,7 @@ const scratch = makeBundleDirectory("kite-backup-module-tables-dirs-");
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const preDirectory = copyMigrationsBefore(scratch, 62);
 const NEW_TABLES = ["module_settings", "user_module_access", "booking_appointments"];
-const ALL = ["calendar", "booking", "templates", "import"];
+const ALL = ["calendar", "booking", "templates", "import", "finance"];
 const MEMBER = { userId: "member", role: "user", isPrimaryAdmin: false };
 
 async function database(t, dir = migrationsDir) {
@@ -75,7 +75,7 @@ test("a backup taken before 0062 restores after 0062 with every module on and ev
 	db.db.exec(
 		"INSERT INTO calendar_events (id, user_id, title, starts_at, ends_at, created_at, updated_at) VALUES ('extra', 'owner', 'Only here', 1, 2, 1, 1)",
 	);
-	assert.deepEqual(await listEnabledModules({ DB: db }, MEMBER), ["import"]);
+	assert.deepEqual(await listEnabledModules({ DB: db }, MEMBER), ["import", "finance"]);
 
 	await restoreDatabaseRecords(db, encode(document));
 
@@ -155,8 +155,9 @@ test("a backup after 0062 round-trips module state, user access and appointments
 		"calendar",
 		"booking",
 		"import",
+		"finance",
 	]);
-	assert.deepEqual(await listEnabledModules(env, MEMBER), ["import"]);
+	assert.deepEqual(await listEnabledModules(env, MEMBER), ["import", "finance"]);
 	assert.deepEqual(all(target, "SELECT calendar_event_id, booking_event_id FROM booking_appointments"), [
 		{ calendar_event_id: "event-2", booking_event_id: "type-1" },
 	]);
@@ -183,7 +184,7 @@ test("restoring into the same database after changing state brings the saved sta
 	await restoreDatabaseRecords(db, encode(document));
 
 	assert.deepEqual((await exportDocument(db)).tables, document.tables);
-	assert.deepEqual(await listEnabledModules(uncached(db), MEMBER), ["import"]);
+	assert.deepEqual(await listEnabledModules(uncached(db), MEMBER), ["import", "finance"]);
 	assert.deepEqual(found(db, "renamed"), []);
 	assert.deepEqual(found(db, "cafe"), ["event-1"]);
 });
@@ -204,8 +205,8 @@ test("a restore clears the module state cache, so the restoring isolate shows th
 	await restoreDatabaseRecords(db, encode(document));
 
 	assert.equal(await isModuleEnabled(env, "templates"), false);
-	assert.deepEqual(await listEnabledModules(env, MEMBER), ["import"]);
-	assert.deepEqual(await listEnabledModules(env, null), ["calendar", "booking", "import"]);
+	assert.deepEqual(await listEnabledModules(env, MEMBER), ["import", "finance"]);
+	assert.deepEqual(await listEnabledModules(env, null), ["calendar", "booking", "import", "finance"]);
 });
 
 test("a failed restore clears the cache too, because part of it may have been written", async (t) => {

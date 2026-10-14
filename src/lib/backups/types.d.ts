@@ -24,6 +24,8 @@ export type DatabaseBackupTable =
 	| "module_settings"
 	| "user_module_access"
 	| "booking_appointments"
+	| "finance_subscriptions"
+	| "finance_charges"
 	| "email_templates"
 	| "calendar_events"
 	| "booking_events"

@@ -33,6 +33,8 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 			"email_templates",
 			"calendar_events",
 			"booking_events",
+			"finance_subscriptions",
+			"finance_charges",
 			"auto_reply_deliveries",
 			"spam_token_stats",
 			"spam_reputation",

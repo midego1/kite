@@ -88,6 +88,64 @@ test("archives a message and Undo puts it back in the inbox", async ({ page }) =
 	await expect(page.getByRole("main").getByText(subject, { exact: true })).toBeVisible();
 });
 
+test("snoozing from a row opens a picker next to the button and hides the message", async ({ page }) => {
+	const { subject } = await deliver("Snooze from row");
+	await page.goto("/inbox");
+	const row = messageRow(page, subject);
+	await row.hover();
+	await row.getByRole("button", { name: "Snooze" }).click();
+
+	const picker = page.getByRole("dialog", { name: "Snooze" });
+	await expect(picker).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Snooze email" })).toHaveCount(0);
+	const trigger = await row.getByRole("button", { name: "Snooze" }).boundingBox();
+	const panel = await picker.boundingBox();
+	expect(trigger && panel && Math.abs(panel.y - (trigger.y + trigger.height)) < 40).toBe(true);
+
+	await page.keyboard.press("Escape");
+	await expect(picker).toBeHidden();
+	await row.hover();
+	await row.getByRole("button", { name: "Snooze" }).click();
+	await picker.getByRole("button", { name: /^Tomorrow/ }).click();
+	await expect(picker).toBeHidden();
+	await expect(page.getByRole("main").getByText(subject, { exact: true })).toHaveCount(0);
+
+	await page.goto("/snoozed");
+	await expect(page.getByRole("main").getByText(subject, { exact: true })).toBeVisible();
+});
+
+test("Snooze in the reader's More actions menu expands in place", async ({ page }) => {
+	const { message } = await deliver("Snooze from reader");
+	await page.goto(`/inbox/${message.id}`);
+	const more = page.getByRole("button", { name: "More actions" });
+	await more.click();
+	const menu = page.locator("div.relative").filter({ has: more }).last();
+	const snooze = menu.getByRole("button", { name: "Snooze", exact: true }).first();
+	await expect(snooze).toHaveAttribute("aria-expanded", "false");
+	await snooze.click();
+	await expect(snooze).toHaveAttribute("aria-expanded", "true");
+	await expect(page.getByRole("dialog")).toHaveCount(0);
+
+	const picker = menu.getByRole("group", { name: "Snooze until" });
+	await expect(picker.getByRole("button", { name: /^Next week/ })).toBeVisible();
+	const until = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+	const local = `${until.getFullYear()}-${String(until.getMonth() + 1).padStart(2, "0")}-${String(until.getDate()).padStart(2, "0")}T09:30`;
+	await picker.getByLabel(/^Pick date & time/).fill(local);
+	await picker.getByRole("button", { name: "Snooze", exact: true }).click();
+	await expect(picker).toBeHidden();
+
+	// The picker reads the date in the user's time zone, which may differ from the runner's.
+	await expect
+		.poll(async () => {
+			const body = (await (await api.get(`/api/messages/${message.id}`)).json()) as {
+				message: { snoozedUntil: string | null };
+			};
+			const snoozedUntil = body.message.snoozedUntil ? new Date(body.message.snoozedUntil).getTime() : 0;
+			return Math.abs(snoozedUntil - until.getTime()) < 2 * 24 * 60 * 60 * 1000;
+		})
+		.toBe(true);
+});
+
 test("trashing the open message stays in the inbox", async ({ page }) => {
 	const { subject, message } = await deliver("Trash while reading");
 	await page.goto(`/inbox/${message.id}`);

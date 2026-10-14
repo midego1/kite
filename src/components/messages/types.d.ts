@@ -41,6 +41,17 @@ export type MessageListRowActionsProps = {
 	compact?: boolean;
 };
 
+export type SnoozePickerProps = {
+	messageId: string;
+	/** Called once the message is snoozed, to close whatever holds the picker. */
+	onSnoozed: () => void;
+};
+
+export type SnoozeMenuItemProps = SnoozePickerProps & {
+	expanded: boolean;
+	onExpandedChange: (expanded: boolean) => void;
+};
+
 export type MessageFolderPageProps = {
 	config: MessageFolderConfig;
 	compact?: boolean;

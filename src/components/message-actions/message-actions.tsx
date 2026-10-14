@@ -6,7 +6,6 @@ import {
 	Archive,
 	Ban,
 	BellOff,
-	Clock,
 	FileCode2,
 	Forward,
 	Mail,
@@ -20,7 +19,7 @@ import {
 import { useCompose } from "@/components/compose/compose-context";
 import { MessageSourceDialog } from "@/components/messages/message-source-dialog";
 import { useMessageListHref } from "@/components/messages/message-detail-navigation";
-import { MessageSnoozeDialog } from "./message-snooze-dialog";
+import { SnoozeMenuItem } from "@/components/messages/snooze-picker";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
 import type { ShortcutDefinition } from "@/components/shortcuts/types";
@@ -72,7 +71,7 @@ export function MessageActions({
 	const [error, setError] = useState<string | null>(null);
 	const [moreOpen, setMoreOpen] = useState(false);
 	const [sourceOpen, setSourceOpen] = useState(false);
-	const [snoozeOpen, setSnoozeOpen] = useState(false);
+	const [snoozeExpanded, setSnoozeExpanded] = useState(false);
 	const listHref = useMessageListHref() ?? getMessageBackHref(direction, status);
 
 	const runAction = useCallback(
@@ -425,14 +424,17 @@ export function MessageActions({
 						aria-label="More actions"
 						aria-expanded={moreOpen}
 						disabled={disabled}
-						onClick={() => setMoreOpen((open) => !open)}
+						onClick={() => {
+							setSnoozeExpanded(false);
+							setMoreOpen((open) => !open);
+						}}
 					>
 						<MoreVertical size={iconSize} />
 					</Button>
 				</Tooltip>
 
 				{moreOpen && (
-					<div className="absolute right-0 top-8 z-20 w-54 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg">
+					<div className="absolute right-0 top-8 z-20 w-54 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg has-[[data-snooze-expanded=true]]:w-72">
 						{isMobile && (
 							<>
 								<button
@@ -482,17 +484,12 @@ export function MessageActions({
 							</>
 						)}
 						{direction === "inbound" && status === "received" && (
-							<button
-								type="button"
-								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
-								onClick={() => {
-									setMoreOpen(false);
-									setSnoozeOpen(true);
-								}}
-							>
-								<Clock className="h-4 w-4" />
-								Snooze
-							</button>
+							<SnoozeMenuItem
+								messageId={messageId}
+								expanded={snoozeExpanded}
+								onExpandedChange={setSnoozeExpanded}
+								onSnoozed={() => setMoreOpen(false)}
+							/>
 						)}
 						{direction === "inbound" && (
 							<>
@@ -545,7 +542,6 @@ export function MessageActions({
 			</div>
 
 			<MessageSourceDialog messageId={messageId} open={sourceOpen} onOpenChange={setSourceOpen} />
-			<MessageSnoozeDialog messageId={messageId} open={snoozeOpen} onOpenChange={setSnoozeOpen} />
 
 			<span className="flex-1" />
 		</div>

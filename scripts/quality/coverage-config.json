@@ -75,6 +75,8 @@
 		"src/lib/modules/background-utils.ts",
 		"src/lib/modules/capability-utils.ts",
 		"src/lib/modules/composer-slot-utils.ts",
+		"src/lib/modules/display-text-utils.ts",
+		"src/lib/modules/host-utils.ts",
 		"src/lib/modules/invoke-utils.ts",
 		"src/lib/modules/json-utils.ts",
 		"src/lib/modules/key-scope-utils.ts",

@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { cleanDisplayText } from "@/lib/modules/display-text-utils";
 import type { CapabilityDescriptor, ModuleCapabilities, ModuleId } from "@/lib/modules/module-types";
 import type { AutoReadCapabilities } from "./settings-types";
 import type { PlannedSuggestion } from "./suggestion-types";
@@ -9,9 +10,6 @@ const MAX_STEP_SUGGESTIONS = 3;
 const MODULE_SKIP_PREFIX = "module_disabled:";
 const MAX_REASON_CHARS = 100;
 const MAX_TITLE_CHARS = 120;
-const CONTROL_CHARS = /\p{Cc}/gu;
-/** Bidi marks, embeddings, overrides and isolates: invisible, and able to reorder the text around them. */
-const BIDI_CHARS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu;
 
 type StepRejection = { kind: string; why: "kind" | "payload" | "limit" | "shape" };
 
@@ -37,10 +35,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
  * @public Consumed by tests that check the title rules directly.
  */
 export function cleanStepTitle(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const chars = Array.from(value.replace(BIDI_CHARS, "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim());
-	if (chars.length === 0) return undefined;
-	return chars.length > MAX_TITLE_CHARS ? `${chars.slice(0, MAX_TITLE_CHARS - 1).join("")}…` : chars.join("");
+	return cleanDisplayText(value, MAX_TITLE_CHARS);
 }
 
 /**

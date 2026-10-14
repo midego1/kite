@@ -24,7 +24,18 @@ export interface AgentSuggestionNotification {
 	type: "agent_suggestion";
 }
 
-export type RealtimePayload = NewMessageNotification | AgentDraftNotification | AgentSuggestionNotification;
+/** A transient notice a module sends one user; `href` is always a same-origin path. */
+export interface ModuleNoticeNotification {
+	moduleId: string;
+	notice: string;
+	title: string;
+	body: string | null;
+	href: string | null;
+	type: "module_notice";
+}
+
+export type RealtimePayload =
+	NewMessageNotification | AgentDraftNotification | AgentSuggestionNotification | ModuleNoticeNotification;
 
 export interface MailboxRevisionRow {
 	mailbox_id: string;

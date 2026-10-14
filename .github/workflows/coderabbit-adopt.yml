@@ -63,6 +63,14 @@ jobs:
             exit 0
           fi
           jq -r '"number=\(.number)\nsha=\(.headRefOid)"' "$RUNNER_TEMP/pr.json" >> "$GITHUB_OUTPUT"
+      # The collector lives in this repository, so the checkout comes first. The token is
+      # read-only and the credential is not persisted, like the PR report's report job.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: steps.pr.outputs.skipped != 'true'
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          # This job verifies and commits only; the publish job holds the write credentials.
+          persist-credentials: false
       - name: Collect the unhandled CodeRabbit comments
         id: comments
         if: steps.pr.outputs.skipped != 'true'
@@ -74,12 +82,6 @@ jobs:
           echo "count=$(jq '.comments | length' "$RUNNER_TEMP/comments.json")" >> "$GITHUB_OUTPUT"
           jq -r '"Pull request #\(.pullRequest): \(.comments | length) comment(s) to handle"' "$RUNNER_TEMP/comments.json" >> "$GITHUB_STEP_SUMMARY"
           jq -r '.comments[] | "- #\(.id) \(.path):\(.line)"' "$RUNNER_TEMP/comments.json" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        if: steps.comments.outputs.count != '0'
-        with:
-          ref: ${{ steps.pr.outputs.sha }}
-          # This job verifies and commits only; the publish job holds the write credentials.
-          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: steps.comments.outputs.count != '0'
         with:

@@ -348,6 +348,8 @@ test("the not-found page is a styled 404 card in Kite, Classic and dark mode", a
 			[style, dark],
 		);
 	const luminance = ([r, g, b]: number[]) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+	// The link's transition-colors would otherwise report the previous style's colour right after a switch.
+	await page.addStyleTag({ content: "*, *::before, *::after { transition: none !important; }" });
 
 	await set("kite", false);
 	const kite = await colors();

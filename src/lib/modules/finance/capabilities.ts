@@ -3,6 +3,7 @@ import { describeCapability, type DescriptorMeta } from "../schema-utils";
 import { financeSchemas } from "./schemas";
 
 const REMIND_TIMEOUT_MS = 30_000;
+const DETECT_TIMEOUT_MS = 15_000;
 
 const describe = (name: string, meta: DescriptorMeta) => describeCapability(financeSchemas, name, meta);
 
@@ -13,6 +14,25 @@ export const financeCapabilities: ModuleCapabilities = {
 	moduleId: "finance",
 	promptFragment: null,
 	descriptors: [
+		describe("detect", {
+			surfaces: ["triage_step"],
+			description: "Find a subscription receipt, invoice, renewal or trial notice in a message and offer to track it.",
+			scopes: ["finance.read"],
+			effect: "read",
+			timeoutMs: DETECT_TIMEOUT_MS,
+			triage: { order: 20, automatic: true, capability: "subscriptions" },
+		}),
+		describe("subscription", {
+			surfaces: ["suggestion_kind"],
+			description: "A subscription found in a receipt or invoice, with its amount, cycle, renewal date and document.",
+			effect: "none",
+			suggestionKind: {
+				kind: "subscription",
+				label: "Subscription",
+				reasonTemplate: "subscription",
+				audience: "reviewer",
+			},
+		}),
 		describe("resolveRefs", {
 			surfaces: ["resolve_refs"],
 			description: "Resolve subscription references to a link and a label.",

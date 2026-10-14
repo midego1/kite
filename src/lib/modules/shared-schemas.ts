@@ -82,7 +82,7 @@ export const baseTriageStepSchemas: CapabilitySchemas = {
 	output: stepOutput,
 };
 
-/** The full triage-step input: excerpt, extra facts and list headers. @public For module step schemas; no builtin step reads them yet. */
+/** The full triage-step input: excerpt, extra facts and list headers, for module steps that read them. */
 export const triageStepSchemas: CapabilitySchemas = {
 	input: z.object({
 		message: stepMessage.extend({

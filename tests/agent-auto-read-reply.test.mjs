@@ -103,6 +103,9 @@ async function setup(t, { rates = { "fake-triage": { input: 0.05, output: 0.3 } 
 		AGENT_QUEUE: { send: async () => {} },
 		BUCKET: { get: async () => null, put: async () => {}, delete: async () => {} },
 	};
+	// Module triage steps read the current environment, as they do in the Worker.
+	globalThis.__kiteNodeEnv = env;
+	t.after(() => delete globalThis.__kiteNodeEnv);
 	return { db, env };
 }
 

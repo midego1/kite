@@ -1,5 +1,5 @@
 import type { ModuleManifest } from "../module-types";
-import { financeClientData } from "../client-data/finance";
+import { financeClientData, SUBSCRIPTION_REASONS } from "../client-data/finance";
 
 export const financeManifest: ModuleManifest = {
 	id: "finance",
@@ -42,6 +42,7 @@ export const financeManifest: ModuleManifest = {
 	cronTasks: [{ name: "remindRenewals", schedule: "*/5 * * * *", capability: "remindRenewals" }],
 	actionLabels: {},
 	reasonTexts: {
+		...SUBSCRIPTION_REASONS,
 		"module_disabled:finance": "Money Watch is turned off",
 		migration_pending: "The database update for Money Watch has not been applied yet",
 	},

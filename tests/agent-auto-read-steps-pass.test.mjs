@@ -159,7 +159,7 @@ async function setup(t, { externalAllowed = 1, rateLimited = false } = {}) {
 		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
 		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'a', 'shared', 1);
 		INSERT INTO mailbox_access (id, mailbox_id, user_id, permission, created_at) VALUES ('share-1', 'mailbox-a', 'colleague', 'full_access', 1);
-		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, reviewer_user_id, updated_at) VALUES ('mailbox-a', 1, 'suggest', 'owner', 1);
+		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, reviewer_user_id, capabilities, updated_at) VALUES ('mailbox-a', 1, 'suggest', 'owner', '{"modules":{"subscriptions":false}}', 1);
 		INSERT OR IGNORE INTO app_settings (id, updated_at) VALUES ('default', 1);
 	`);
 	db.db
@@ -253,11 +253,12 @@ const kindsOf = (db, messageId) =>
 		.prepare("SELECT kind FROM agent_suggestions WHERE message_id = ? ORDER BY kind")
 		.all(messageId)
 		.map((row) => row.kind);
-// A shared mailbox has the calendar switch off by default; these tests turn it on.
+// A shared mailbox has the calendar switch off by default; these tests turn it on. Money Watch's step
+// reads every message, so it stays off to keep these cases about the test module's steps.
 const setModuleSwitch = (db, value) =>
 	db.db
 		.prepare("UPDATE mailbox_agent_settings SET capabilities = ? WHERE mailbox_id = 'mailbox-a'")
-		.run(JSON.stringify({ calendar: true, modules: { gadgets: value } }));
+		.run(JSON.stringify({ calendar: true, modules: { gadgets: value, subscriptions: false } }));
 function setModule(db, enabled) {
 	db.db
 		.prepare(

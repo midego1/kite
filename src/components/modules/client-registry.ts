@@ -1,10 +1,10 @@
-import { CalendarClock, CalendarDays, Download, Puzzle, type LucideIcon } from "lucide-react";
+import { CalendarClock, CalendarDays, Download, Puzzle, WalletCards, type LucideIcon } from "lucide-react";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import type { ModuleId } from "@/lib/modules/module-types";
 import type { ModuleClient } from "./client-registry-types";
 
 /** Icons a manifest names in `nav[].icon`; the manifest stays data and this file stays the only place that knows the glyphs. */
-const NAV_ICONS: Record<string, LucideIcon> = { CalendarClock, CalendarDays, Download };
+const NAV_ICONS: Record<string, LucideIcon> = { CalendarClock, CalendarDays, Download, WalletCards };
 
 export function resolveNavIcon(name: string): LucideIcon {
 	return NAV_ICONS[name] ?? Puzzle;

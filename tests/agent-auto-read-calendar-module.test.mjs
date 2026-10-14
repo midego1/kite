@@ -169,7 +169,8 @@ const stepInput = (env) => ({
 	},
 	headers: {},
 	bodyText: "Join us",
-	capabilities: { calendar: true },
+	// Money Watch's step reads every message; these cases are about Calendar's.
+	capabilities: { calendar: true, modules: { subscriptions: false } },
 	model: null,
 });
 

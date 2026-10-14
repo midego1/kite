@@ -87,6 +87,9 @@ beforeEach(() => {
 	};
 });
 
+// Money Watch's step reads every message; these cases are about core triage, so its switch is off.
+const NO_FINANCE = JSON.stringify({ modules: { subscriptions: false } });
+
 async function setup(t, { rates = { "fake-triage": { input: 0.05, output: 0.3 } }, externalAllowed = 1 } = {}) {
 	const db = new SqliteDatabase(":memory:");
 	t.after(() => db.db.close());
@@ -96,8 +99,8 @@ async function setup(t, { rates = { "fake-triage": { input: 0.05, output: 0.3 } 
 		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
 		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'a', 1);
 		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-b', 'owner', 'domain-1', 'b', 1);
-		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, updated_at) VALUES ('mailbox-a', 1, 'suggest', 1);
-		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, updated_at) VALUES ('mailbox-b', 1, 'suggest', 1);
+		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, capabilities, updated_at) VALUES ('mailbox-a', 1, 'suggest', '${NO_FINANCE}', 1);
+		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, capabilities, updated_at) VALUES ('mailbox-b', 1, 'suggest', '${NO_FINANCE}', 1);
 		INSERT OR IGNORE INTO app_settings (id, updated_at) VALUES ('default', 1);
 	`);
 	db.db

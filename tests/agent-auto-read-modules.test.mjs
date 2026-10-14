@@ -219,14 +219,19 @@ test("a skipped step is recorded as module_disabled with the module id", () => {
 });
 
 test("suggestion kinds belong to the module whose descriptor declares them", () => {
-	assert.deepEqual(steps.suggestionKindOwners(MODULE_CAPABILITIES), { calendar_invite: "calendar" });
+	assert.deepEqual(steps.suggestionKindOwners(MODULE_CAPABILITIES), {
+		calendar_invite: "calendar",
+		subscription: "finance",
+	});
 	assert.deepEqual(steps.suggestionKindOwners([...MODULE_CAPABILITIES, TEST_MODULE]), {
 		calendar_invite: "calendar",
+		subscription: "finance",
 		widget_offer: "testmod",
 	});
-	assert.deepEqual(steps.hiddenSuggestionKinds(MODULE_CAPABILITIES, ["calendar", "booking"]), []);
-	assert.deepEqual(steps.hiddenSuggestionKinds(MODULE_CAPABILITIES, ["booking"]), ["calendar_invite"]);
-	assert.deepEqual(steps.hiddenSuggestionKinds(MODULE_CAPABILITIES, []), ["calendar_invite"]);
+	assert.deepEqual(steps.hiddenSuggestionKinds(MODULE_CAPABILITIES, ["calendar", "booking", "finance"]), []);
+	assert.deepEqual(steps.hiddenSuggestionKinds(MODULE_CAPABILITIES, ["booking", "finance"]), ["calendar_invite"]);
+	assert.deepEqual(steps.hiddenSuggestionKinds(MODULE_CAPABILITIES, ["calendar"]), ["subscription"]);
+	assert.deepEqual(steps.hiddenSuggestionKinds(MODULE_CAPABILITIES, []), ["calendar_invite", "subscription"]);
 });
 
 test("the client's suggestion kinds match the kinds the descriptors declare", () => {
@@ -238,13 +243,17 @@ test("the client's suggestion kinds match the kinds the descriptors declare", ()
 test("triage steps list in order for modules that are on", () => {
 	assert.deepEqual(
 		steps.triageStepsFor(MODULE_CAPABILITIES).map((step) => [step.moduleId, step.capability, step.requires]),
-		[["calendar", "invite", "invite_attachment"]],
+		[
+			["calendar", "invite", "invite_attachment"],
+			["finance", "detect", undefined],
+		],
 	);
 });
 
 test("audience: only reviewer kinds are reviewer-only, and only the reviewer can see them", () => {
-	assert.deepEqual(steps.reviewerOnlySuggestionKinds(MODULE_CAPABILITIES), []);
+	assert.deepEqual(steps.reviewerOnlySuggestionKinds(MODULE_CAPABILITIES), ["subscription"]);
 	assert.deepEqual(steps.reviewerOnlySuggestionKinds([...MODULE_CAPABILITIES, TEST_MODULE, PRIVATE_MODULE]), [
+		"subscription",
 		"gadget_note",
 	]);
 	const reviewerOnly = ["gadget_note"];
@@ -265,7 +274,10 @@ test("triage steps carry their automatic opt-in and switch key", () => {
 	);
 	assert.deepEqual(
 		steps.triageStepsFor(MODULE_CAPABILITIES).map((step) => [step.moduleId, step.automatic, step.switchKey]),
-		[["calendar", false, null]],
+		[
+			["calendar", false, null],
+			["finance", true, "subscriptions"],
+		],
 	);
 });
 
@@ -293,18 +305,17 @@ test("due steps: switched on, with their fact, and only opted-in steps on a step
 		steps
 			.selectDueSteps(all, { inviteAttachments: 1, capabilities: CORE_CAPABILITIES, automaticOnly: false, ...input })
 			.map((step) => step.capability);
-	assert.deepEqual(due({}), ["plainStep", "invite", "scan"]);
-	assert.deepEqual(due({ inviteAttachments: 0 }), ["plainStep", "scan"]);
-	assert.deepEqual(due({ automaticOnly: true }), ["scan"]);
+	assert.deepEqual(due({}), ["plainStep", "invite", "detect", "scan"]);
+	assert.deepEqual(due({ inviteAttachments: 0 }), ["plainStep", "detect", "scan"]);
+	assert.deepEqual(due({ automaticOnly: true }), ["detect", "scan"]);
 	assert.deepEqual(due({ capabilities: { ...CORE_CAPABILITIES, modules: { gadgets: false } } }), [
 		"plainStep",
 		"invite",
+		"detect",
 	]);
-	assert.deepEqual(
-		due({ automaticOnly: true, capabilities: { ...CORE_CAPABILITIES, modules: { gadgets: false } } }),
-		[],
-	);
-	assert.deepEqual(due({ capabilities: { ...CORE_CAPABILITIES, calendar: false } }), ["plainStep", "scan"]);
+	const off = { gadgets: false, subscriptions: false };
+	assert.deepEqual(due({ automaticOnly: true, capabilities: { ...CORE_CAPABILITIES, modules: off } }), []);
+	assert.deepEqual(due({ capabilities: { ...CORE_CAPABILITIES, calendar: false } }), ["plainStep", "detect", "scan"]);
 });
 
 test("a finished job's note names the refused model first, then the skipped modules", () => {
@@ -523,13 +534,15 @@ test("Activity words come from the manifests, including the module-off reason", 
 const CORE_STORED = ["summary", "phishing", "calendar_invite"];
 
 test("triage stores the core kinds plus every kind a module declares, each once", () => {
-	assert.deepEqual(steps.storedSuggestionKinds(CORE_STORED, MODULE_CAPABILITIES), CORE_STORED);
+	assert.deepEqual(steps.storedSuggestionKinds(CORE_STORED, MODULE_CAPABILITIES), [...CORE_STORED, "subscription"]);
 	assert.deepEqual(steps.storedSuggestionKinds(CORE_STORED, [...MODULE_CAPABILITIES, TEST_MODULE]), [
 		...CORE_STORED,
+		"subscription",
 		"widget_offer",
 	]);
 	assert.deepEqual(steps.suggestionKindDescriptors([...MODULE_CAPABILITIES, TEST_MODULE]), {
 		calendar_invite: { moduleId: "calendar", capability: "calendar_invite", label: "Invitation" },
+		subscription: { moduleId: "finance", capability: "subscription", label: "Subscription" },
 		widget_offer: { moduleId: "testmod", capability: "widgetOffer", label: "Widget offer" },
 	});
 });
@@ -584,6 +597,7 @@ test("Calendar's client meta keeps its label, chip rank, reason text and card po
 		"calendar_invite",
 		"reply",
 		"task",
+		"subscription",
 		"receipt",
 		"summary",
 		"label",

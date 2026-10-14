@@ -1,9 +1,9 @@
 import { and, desc, eq, inArray, notLike } from "drizzle-orm";
 import { getDb } from "@/db";
-import { agentActions, agentSuggestions } from "@/db/schema/agent-auto-read";
+import { agentActions } from "@/db/schema/agent-auto-read";
 import { UNDO_VARIANT_PREFIX } from "./actions-utils";
 import type { Partstat, RsvpState } from "./invite-actions-utils";
-import { notifySuggestionsQuietly } from "./suggestion-events";
+import { reopenSuggestionIfIdle } from "./suggestion-reopen";
 
 const CALENDAR_ACTIONS = ["create_event", "delete_event", "send_rsvp"] as const;
 const NOT_UNDO_ROW = notLike(agentActions.variant, `${UNDO_VARIANT_PREFIX}%`);
@@ -56,24 +56,5 @@ export async function retireLiveRows(env: CloudflareEnv, input: RetireInput): Pr
 
 /** After an undo, a suggestion whose calendar actions are all gone is open again; otherwise it stays decided. */
 export async function reopenIfIdle(env: CloudflareEnv, suggestionId: string | null): Promise<void> {
-	if (!suggestionId) return;
-	const db = getDb(env);
-	const [live] = await db
-		.select({ id: agentActions.id })
-		.from(agentActions)
-		.where(
-			and(
-				eq(agentActions.suggestionId, suggestionId),
-				inArray(agentActions.action, [...CALENDAR_ACTIONS]),
-				inArray(agentActions.status, ["pending", "applied"]),
-				NOT_UNDO_ROW,
-			),
-		)
-		.limit(1);
-	if (live) return;
-	await db
-		.update(agentSuggestions)
-		.set({ status: "open", decidedAt: null, decidedByUserId: null })
-		.where(and(eq(agentSuggestions.id, suggestionId), eq(agentSuggestions.status, "accepted")));
-	await notifySuggestionsQuietly(env, [suggestionId]);
+	await reopenSuggestionIfIdle(env, suggestionId, CALENDAR_ACTIONS);
 }

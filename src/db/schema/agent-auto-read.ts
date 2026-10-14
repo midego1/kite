@@ -1,5 +1,7 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
+import type { AgentActionType } from "@/lib/agent/auto-read/policy-types";
+import type { SuggestionKind } from "@/lib/agent/auto-read/suggestion-types";
 import { agentJobs, mailboxes, messages, users } from "./index";
 
 export const agentSuggestions = sqliteTable(
@@ -17,9 +19,8 @@ export const agentSuggestions = sqliteTable(
 		reviewerUserId: text("reviewer_user_id")
 			.notNull()
 			.references(() => users.id, { onDelete: "cascade" }),
-		kind: text("kind", {
-			enum: ["calendar_invite", "reply", "summary", "phishing", "task", "receipt", "label", "unsubscribe", "follow_up"],
-		}).notNull(),
+		/** A core kind or one a module declares; there is no SQL CHECK. */
+		kind: text("kind").$type<SuggestionKind>().notNull(),
 		status: text("status", { enum: ["open", "accepted", "dismissed", "expired", "superseded", "auto_applied"] })
 			.notNull()
 			.default("open"),
@@ -56,21 +57,8 @@ export const agentActions = sqliteTable(
 		/** Whose permission the action used. */
 		actingUserId: text("acting_user_id").references(() => users.id, { onDelete: "set null" }),
 		autonomy: text("autonomy", { enum: ["off", "suggest", "act", "auto"] }),
-		action: text("action", {
-			enum: [
-				"create_draft",
-				"move",
-				"mark_read",
-				"set_folder",
-				"remind",
-				"create_event",
-				"delete_event",
-				"send_rsvp",
-				"send_reply",
-				"unsubscribe",
-				"dismiss",
-			],
-		}).notNull(),
+		/** A core action type or one a module's `action` descriptor registers, checked against `ACTION_REGISTRY`. */
+		action: text("action").$type<AgentActionType>().notNull(),
 		/** Outcome for actions that have more than one, e.g. the PARTSTAT of send_rsvp. */
 		variant: text("variant").notNull().default(""),
 		status: text("status", { enum: ["pending", "applied", "undone", "failed", "blocked"] })

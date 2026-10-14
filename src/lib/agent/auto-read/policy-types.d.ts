@@ -3,7 +3,7 @@ import type { AutoReadCapabilities, AutonomyLevel } from "./settings-types";
 import type { PlannedSuggestion } from "./suggestion-types";
 import type { TriageResult } from "./triage-types";
 
-export type AgentActionType =
+export type CoreAgentActionType =
 	| "create_draft"
 	| "move"
 	| "mark_read"
@@ -15,6 +15,9 @@ export type AgentActionType =
 	| "send_reply"
 	| "unsubscribe"
 	| "dismiss";
+
+/** Core types plus the types modules' `action` descriptors register; executeAction refuses any type missing from `ACTION_REGISTRY`. */
+export type AgentActionType = CoreAgentActionType | (string & {});
 
 /** A matched `agent_sender_policies` row. */
 export type SenderPolicy = {

@@ -6,7 +6,7 @@ import type { ActionMeta, ActionUndoRule } from "./actions-types";
 /** The same default window the core actions use. */
 const DEFAULT_UNDO_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type ModuleActionOwner = { moduleId: ModuleId; capability: string };
+export type ModuleActionOwner = { moduleId: ModuleId; capability: string; reopensSuggestion?: true };
 
 type ModuleActions = {
 	meta: Record<string, ActionMeta>;
@@ -46,7 +46,11 @@ export function buildModuleActions(all: readonly ModuleCapabilities[]): ModuleAc
 				for (const variant of action.inverseSkipVariants ?? []) undo[variant] = undoRule(action, false);
 			}
 			meta[action.actionType] = { executePermission: action.permission, variants: action.variants, undo };
-			owners[action.actionType] = { moduleId: entry.moduleId, capability: descriptor.name };
+			owners[action.actionType] = {
+				moduleId: entry.moduleId,
+				capability: descriptor.name,
+				...(action.reopensSuggestion ? { reopensSuggestion: true as const } : {}),
+			};
 		}
 	}
 	return { meta, owners };
@@ -60,6 +64,13 @@ export const MODULE_ACTION_META: Readonly<Record<string, ActionMeta>> = MODULE_A
 /** The module and capability that run an action type, or null for core actions. */
 export function moduleActionOwner(actionType: string): ModuleActionOwner | null {
 	return MODULE_ACTIONS.owners[actionType] ?? null;
+}
+
+/** Every action type a module registers, which together decide whether its suggestion is still answered. */
+export function moduleActionTypes(moduleId: ModuleId): string[] {
+	return Object.entries(MODULE_ACTIONS.owners)
+		.filter(([, owner]) => owner.moduleId === moduleId)
+		.map(([actionType]) => actionType);
 }
 
 /** The module capability that handles an accept click, per suggestion kind a module owns. */

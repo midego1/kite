@@ -27,10 +27,11 @@ import {
 	undoUntilFor,
 	userExecuteRefusal,
 } from "./actions-utils";
-import { moduleActionOwner, type ModuleActionOwner } from "./module-actions-utils";
+import { moduleActionOwner, moduleActionTypes, type ModuleActionOwner } from "./module-actions-utils";
 import { moduleEffect, moduleOffReason, undoModuleAction } from "./module-actions";
 import type { AgentActionType } from "./policy-types";
 import { allowedToExecute } from "./policy-utils";
+import { reopenSuggestionIfIdle } from "./suggestion-reopen";
 import type { AutonomyLevel } from "./settings-types";
 import { normalizeTimeZone } from "@/lib/time/utils";
 
@@ -304,6 +305,15 @@ async function writeInverseRow(db: Db, row: AgentActionRow, userId: string, now:
 	return id;
 }
 
+/** A module action that declares `reopensSuggestion` reopens its suggestion once none of the module's actions is live. */
+async function reopenAfterUndo(
+	env: CloudflareEnv,
+	suggestionId: string | null,
+	owner: ModuleActionOwner | null,
+): Promise<void> {
+	if (owner?.reopensSuggestion) await reopenSuggestionIfIdle(env, suggestionId, moduleActionTypes(owner.moduleId));
+}
+
 type UndoActor = Pick<SessionUser, "id" | "role"> & Partial<Pick<SessionUser, "isPrimaryAdmin" | "timeZone">>;
 
 function undoViewer(user: UndoActor): ModuleActionViewer {
@@ -368,5 +378,7 @@ export async function undoAgentAction(
 		if (error instanceof AgentActionError) throw error;
 		throw new AgentActionError(errorReason(error), 409);
 	}
-	return { actionId: row.id, inverseActionId: await writeInverseRow(db, row, user.id, now) };
+	const inverseActionId = await writeInverseRow(db, row, user.id, now);
+	await reopenAfterUndo(env, row.suggestionId, owner);
+	return { actionId: row.id, inverseActionId };
 }

@@ -80,12 +80,28 @@ export type ListedComposerSlot = ComposerSlotDeclaration & { moduleId: ModuleId 
 /** One key scope as the key-creation forms show it. */
 export type KeyScopeText = { scope: string; label: string; description: string };
 
+/** How the shared suggestion surfaces show one module-owned kind. */
+export type SuggestionKindMeta = {
+	/** The For you heading of the kind's group. */
+	label: string;
+	/** Reason code (a suggestion's `reason`) to the plain words "Why?" shows. */
+	reason: Record<string, string>;
+	/** Rank among the kinds that earn a row chip, lower first (core: phishing 10, reply 30, task 40, receipt 50); no chip without one. */
+	badgePriority?: number;
+	/** The chip's short text; the `label` when absent. */
+	badgeLabel?: string;
+	/** A lucide icon name for the chip, resolved by the client registry like `nav[].icon`. */
+	icon?: string;
+};
+
 /** The part of a manifest that browser code needs: identity, navigation and commands. */
 export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "commands"> & {
 	/** Composer slots the module fills, so the composer lists them without loading the module. */
 	composerSlots?: ComposerSlotDeclaration[];
 	/** Suggestion kinds the module's `suggestion_kind` capabilities declare, so the reader card can pick the module's client chunk without the registry. */
 	suggestionKinds?: readonly string[];
+	/** Label, reasons, chip rank and icon per kind in `suggestionKinds`, so core surfaces need no per-kind code. */
+	suggestionKindMeta?: Readonly<Record<string, SuggestionKindMeta>>;
 	/** The key scopes the module adds, with the form text for each, so the key forms can list them only while it is on. */
 	keyScopes?: { mcp: readonly (KeyScopeText & { mailboxBound: boolean })[]; api: readonly KeyScopeText[] };
 };
@@ -179,6 +195,8 @@ export type CapabilityDescriptor = {
 		inverseAction?: string;
 		/** Variants whose undo restores state in place, so they record no inverse action. */
 		inverseSkipVariants?: string[];
+		/** After an undo, core reopens the suggestion once no live action of this module remains on it. */
+		reopensSuggestion?: boolean;
 	};
 	event?: { value: string };
 	lifecycle?: { event: "user.created" | "user.time_zone_changed"; dataHook: boolean };

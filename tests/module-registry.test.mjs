@@ -18,12 +18,14 @@ const {
 	isInvokableDescriptor,
 	surfacesAreCombinable,
 	toJsonSchema,
+	CLIENT_MODULES,
 } = await bundleModules("kite-module-registry-", [
 	["MODULE_MANIFESTS, MODULE_IDS, isModuleId, getModuleManifest", "src/lib/modules/registry.ts"],
 	["MODULE_CAPABILITIES, listCapabilities, findDescriptor", "src/lib/modules/capability-registry.ts"],
 	["SERVER_MODULES", "src/lib/modules/server-registry.ts"],
 	["isInvokableDescriptor, surfacesAreCombinable", "src/lib/modules/capability-utils.ts"],
 	["toJsonSchema", "src/lib/modules/schema-utils.ts"],
+	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
 ]);
 
 const IDS = ["calendar", "booking", "templates", "import", "finance"];
@@ -333,6 +335,24 @@ test("actions name existing suggestion kinds and every action type and reason ha
 					manifest.recordKinds.some((item) => item.kind === kind),
 					kind,
 				);
+	}
+});
+
+test("suggestion kinds carry client meta, and reopening actions belong to a kind of their own module", () => {
+	for (const entry of MODULE_CAPABILITIES) {
+		const client = CLIENT_MODULES.find((item) => item.id === entry.moduleId);
+		const kinds = entry.descriptors.filter((item) => item.suggestionKind).map((item) => item.suggestionKind);
+		for (const kind of kinds) {
+			const meta = client?.suggestionKindMeta?.[kind.kind];
+			assert.ok(meta?.label, `${kind.kind} has no client label`);
+			assert.ok(meta.reason[kind.reasonTemplate], `${kind.kind} has no reason text for ${kind.reasonTemplate}`);
+			if (meta.badgePriority !== undefined) assert.ok(Number.isFinite(meta.badgePriority), kind.kind);
+		}
+		for (const descriptor of entry.descriptors.filter((item) => item.action?.reopensSuggestion))
+			assert.ok(
+				kinds.some((kind) => kind.kind === descriptor.action.suggestionKind),
+				`${descriptor.name} reopens a suggestion its module does not own`,
+			);
 	}
 });
 

@@ -3,10 +3,11 @@ import { getDb } from "@/db";
 import { messageAttachments, type messages } from "@/db/schema";
 import { buildCallContext } from "@/lib/modules/capability-utils";
 import { MODULE_CAPABILITIES, findDescriptor } from "@/lib/modules/capability-registry";
-import { capabilityInputSchema, invokeCapability, isModuleEnabled } from "@/lib/modules/invoke";
+import { invokeCapability, isModuleEnabled } from "@/lib/modules/invoke";
 import type { CapabilityCallContext, JsonValue, ModuleId } from "@/lib/modules/module-types";
 import type { MessageFacts } from "./facts-types";
-import { triageStepsFor, validateStepOutput, type TriageStep } from "./module-steps-utils";
+import { moduleKindPayloadSchema } from "./module-kinds";
+import { suggestionKindDescriptors, triageStepsFor, validateStepOutput, type TriageStep } from "./module-steps-utils";
 import type { AutoReadCapabilities } from "./settings-types";
 import type { PlannedSuggestion } from "./suggestion-types";
 
@@ -14,6 +15,8 @@ type SourceMessage = typeof messages.$inferSelect;
 
 /** The mailbox capability switch that turns a module's step on; a module absent here always runs its step. */
 const STEP_CAPABILITY: Partial<Record<ModuleId, keyof AutoReadCapabilities>> = { calendar: "calendar" };
+
+const MODULE_KINDS = suggestionKindDescriptors(MODULE_CAPABILITIES);
 
 type StepViewer = NonNullable<CapabilityCallContext["viewer"]> & { timeZone: string };
 
@@ -75,19 +78,10 @@ async function stepInput(input: StepRunInput): Promise<JsonValue> {
 }
 
 function kindSchemas(moduleId: ModuleId) {
-	const capabilities = MODULE_CAPABILITIES.find((entry) => entry.moduleId === moduleId)?.descriptors ?? [];
-	const kinds = capabilities.flatMap((descriptor) =>
-		descriptor.surfaces.includes("suggestion_kind") && descriptor.suggestionKind
-			? [{ kind: descriptor.suggestionKind.kind, name: descriptor.name }]
-			: [],
-	);
-	return {
-		ownedKinds: kinds.map((entry) => entry.kind),
-		payloadSchemaFor: (kind: string) => {
-			const name = kinds.find((entry) => entry.kind === kind)?.name;
-			return name ? capabilityInputSchema(moduleId, name) : null;
-		},
-	};
+	const ownedKinds = Object.entries(MODULE_KINDS)
+		.filter(([, owner]) => owner.moduleId === moduleId)
+		.map(([kind]) => kind);
+	return { ownedKinds, payloadSchemaFor: moduleKindPayloadSchema };
 }
 
 /**

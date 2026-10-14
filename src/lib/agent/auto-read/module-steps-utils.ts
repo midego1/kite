@@ -7,6 +7,10 @@ const MAX_STEP_SUGGESTIONS = 3;
 
 export const MODULE_SKIP_PREFIX = "module_disabled:";
 const MAX_REASON_CHARS = 100;
+const MAX_TITLE_CHARS = 120;
+const CONTROL_CHARS = /\p{Cc}/gu;
+/** Bidi marks, embeddings, overrides and isolates: invisible, and able to reorder the text around them. */
+const BIDI_CHARS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu;
 
 type StepRejection = { kind: string; why: "kind" | "payload" | "limit" | "shape" };
 
@@ -27,9 +31,21 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 /**
+ * A step-supplied title as core stores it: controls and bidi characters removed, whitespace collapsed,
+ * at most 120 code points. Undefined when nothing printable is left.
+ * @public Consumed by tests that check the title rules directly.
+ */
+export function cleanStepTitle(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const chars = Array.from(value.replace(BIDI_CHARS, "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim());
+	if (chars.length === 0) return undefined;
+	return chars.length > MAX_TITLE_CHARS ? `${chars.slice(0, MAX_TITLE_CHARS - 1).join("")}…` : chars.join("");
+}
+
+/**
  * Checks a module step's answer. Only the module's own kinds pass, each payload must match the kind's
- * schema, and at most three suggestions are kept. Only `kind`, `payload` and `reason` are read, so a
- * message id or any other field a module adds is dropped: the message is always core's.
+ * schema, and at most three suggestions are kept. Only `kind`, `payload`, `reason` and `title` are read,
+ * so a message id or any other field a module adds is dropped: the message is always core's.
  */
 export function validateStepOutput(input: ValidateInput): StepValidation {
 	const drafts = asRecord(input.output)?.suggestions;
@@ -56,11 +72,13 @@ export function validateStepOutput(input: ValidateInput): StepValidation {
 			rejected.push({ kind, why: "limit" });
 			continue;
 		}
+		const title = cleanStepTitle(draft.title);
 		accepted.push({
 			kind,
 			payload: parsed.data,
 			reason: draft.reason.slice(0, MAX_REASON_CHARS),
 			autoExecute: false,
+			...(title ? { title } : {}),
 		} as PlannedSuggestion);
 	}
 	return { accepted, rejected };
@@ -92,6 +110,27 @@ export function suggestionKindOwners(all: readonly ModuleCapabilities[]): Record
 		for (const descriptor of entry.descriptors)
 			if (isKindDescriptor(descriptor)) owners[descriptor.suggestionKind!.kind] = entry.moduleId;
 	return owners;
+}
+
+export type SuggestionKindOwner = { moduleId: ModuleId; capability: string; label: string };
+
+/** Suggestion kind to its module, the `suggestion_kind` descriptor whose input schema is the payload schema, and its label. */
+export function suggestionKindDescriptors(all: readonly ModuleCapabilities[]): Record<string, SuggestionKindOwner> {
+	const kinds: Record<string, SuggestionKindOwner> = {};
+	for (const entry of all)
+		for (const descriptor of entry.descriptors)
+			if (isKindDescriptor(descriptor))
+				kinds[descriptor.suggestionKind!.kind] = {
+					moduleId: entry.moduleId,
+					capability: descriptor.name,
+					label: descriptor.suggestionKind!.label,
+				};
+	return kinds;
+}
+
+/** Kinds triage stores: the given core kinds, then every kind a module declares. */
+export function storedSuggestionKinds(core: readonly string[], all: readonly ModuleCapabilities[]): string[] {
+	return [...new Set([...core, ...Object.keys(suggestionKindOwners(all))])];
 }
 
 /** Suggestion kind to the module capability that handles an accept click on it. */

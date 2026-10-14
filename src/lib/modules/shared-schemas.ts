@@ -62,7 +62,17 @@ export const triageStepSchemas: CapabilitySchemas = {
 	}),
 	output: z.object({
 		// Core keeps the first three valid suggestions; the cap here only bounds a runaway answer.
-		suggestions: z.array(z.object({ kind: z.string(), payload: json, reason: z.string() })).max(50),
+		suggestions: z
+			.array(
+				z.object({
+					kind: z.string(),
+					payload: json,
+					reason: z.string(),
+					/** Core strips controls and bidi characters and keeps 120 characters; without one the kind's label is used. */
+					title: z.string().max(1_000).optional(),
+				}),
+			)
+			.max(50),
 		skipped: z.string().optional(),
 	}),
 };

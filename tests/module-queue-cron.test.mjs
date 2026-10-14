@@ -311,6 +311,28 @@ test("every_tick matches both cron expressions", async () => {
 	assert.deepEqual(calls[0].input, {});
 });
 
+test("a cron task receives the tick time as scheduledTime, which Import's schema strips", async () => {
+	const inputs = [];
+	const background = createModuleBackground({
+		manifests: [
+			{
+				id: "testmod",
+				queueMessageTypes: [],
+				cronTasks: [{ name: "tick", schedule: "every_tick", capability: "tick" }],
+			},
+		],
+		invoke: async (_moduleId, _name, input) => {
+			inputs.push(input);
+			return { ok: true, output: {} };
+		},
+		descriptorScopes: () => [],
+		log: { debug: () => undefined, info: () => undefined, warn: () => undefined },
+	});
+	await background.runModuleCronTasks({}, "*/5 * * * *", new Date("2026-11-01T08:05:00.000Z"));
+	assert.deepEqual(inputs, [{ scheduledTime: "2026-11-01T08:05:00.000Z" }]);
+	assert.deepEqual(importSchemas.resumeStalledImports.input.parse(inputs[0]), {});
+});
+
 test("an exact schedule runs only on its own trigger and an unknown trigger runs nothing exact", async () => {
 	const manifests = [
 		{

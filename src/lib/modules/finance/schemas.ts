@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { financeModelSchema } from "@/lib/finance/model-schema";
 import { subscriptionSuggestion } from "@/lib/finance/payload-schema";
-import type { ModuleSchemas } from "../schema-utils";
+import { toModelExtensionSchema, type ModuleSchemas } from "../schema-utils";
 import { actionSchemas, resolveRefsSchemas, triageStepSchemas } from "../shared-schemas";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -56,8 +57,12 @@ const answerSubscription: ModuleSchemas[string] = {
 	}),
 };
 
+/** The `modules.finance` fragment core merges into the triage request's provider schema (spec §5.7.1). */
+export const FINANCE_MODEL_JSON_SCHEMA = toModelExtensionSchema(financeModelSchema);
+
 export const financeSchemas: ModuleSchemas = {
 	detect: triageStepSchemas,
+	wantsModel: { input: triageStepSchemas.input, output: z.object({ wantsModel: z.boolean() }) },
 	subscription: { input: subscriptionSuggestion },
 	answerSubscription,
 	trackSubscription: actionSchemas,

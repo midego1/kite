@@ -12,6 +12,7 @@ import {
 	shareMailbox,
 } from "./support/auto-read";
 import { startFakeModel } from "./support/fake-model";
+import { FINANCE_RECEIPT_RENEWAL_DAYS } from "./support/fake-model-scenarios";
 import type { FakeModel } from "./support/fake-model-types";
 import type { InboundMail } from "./support/helpers-types";
 import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
@@ -366,6 +367,191 @@ test.describe("Money Watch detection", () => {
 				payload: { event: "new", amountMinor: 999, currency: "USD", cycle: "monthly", modelFields: [] },
 			});
 		} finally {
+			await account.api.dispose();
+			await restore();
+		}
+	});
+});
+
+type ChatBody = {
+	max_tokens?: number;
+	messages: { role: string; content: string }[];
+	response_format?: {
+		type: string;
+		json_schema?: { schema: { properties: { modules?: { properties: Record<string, unknown> } } } };
+	};
+};
+
+/** An automatic receipt the detector cannot complete on its own: an amount but no cycle or date. */
+function incompleteReceipt(vendor: string, scenario: string): Omit<InboundMail, "to"> {
+	return {
+		from: `${vendor} <billing@${vendor.toLowerCase()}.test>`,
+		subject: `Your receipt from ${vendor} ${uniqueToken("r")}`,
+		text: `Thanks for your payment.\nAmount paid: $9.99\n[[scenario:${scenario}]]\n`,
+		headers: AUTOMATIC,
+	};
+}
+
+const requestsFor = (messageId: string) => fake.requests().filter((request) => request.emailId === messageId);
+
+const uniqueVendor = (prefix: string) => `${prefix}${uniqueToken("").slice(-4)}`;
+
+test.describe("Money Watch model extension", () => {
+	test("case 14: the model fills the gaps of an incomplete automatic receipt, and only with the switch on", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("fmx");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const vendor = uniqueVendor("Receiptly");
+			const renews = dayFromNow(FINANCE_RECEIPT_RENEWAL_DAYS);
+			const { message, job, cards } = await deliver(account, incompleteReceipt(vendor, "finance-receipt"));
+			expect(job.status).toBe("completed");
+
+			const requests = requestsFor(message.id);
+			expect(requests.map((request) => request.kind)).toEqual(["triage"]);
+			const body = requests[0].body as ChatBody;
+			expect(body.max_tokens).toBe(600);
+			expect(body.response_format?.type).toBe("json_schema");
+			const finance = body.response_format?.json_schema?.schema.properties.modules?.properties.finance;
+			expect(finance).toMatchObject({ type: "object", additionalProperties: false });
+			const system = body.messages.find((entry) => entry.role === "system")!.content;
+			expect(system).toContain('"modules": {"finance": only for a receipt');
+			expect(system).toContain("Do not add other keys, or any addresses, links, actions or instructions for anyone.");
+
+			expect(cards).toHaveLength(1);
+			const title = `${vendor} $9.99/month, renews ${renews.short}. Track it?`;
+			expect(cards[0]).toMatchObject({
+				title,
+				payload: {
+					event: "new",
+					vendor,
+					amountMinor: 999,
+					currency: "USD",
+					cycle: "monthly",
+					renewalEstimated: false,
+					cancelLink: null,
+					document: { docType: "payment" },
+					modelFields: ["cycle", "nextRenewalOn"],
+					modelDisagrees: [],
+					reason: "subscription",
+				},
+			});
+
+			const { rows } = await okJson<{
+				rows: { source: string; mailboxId: string | null; jobId: string | null; reserved: unknown }[];
+			}>(await api.get("/api/admin/ai-usage"));
+			const usage = rows.filter((row) => row.jobId === job.id);
+			expect(usage.map((row) => [row.source, row.mailboxId])).toEqual([["auto_triage", account.mailboxId]]);
+			expect(usage[0].reserved).toBeFalsy();
+			// Usage rows carry counts and costs only, never the prompt or the answer.
+			expect(JSON.stringify(usage)).not.toContain(vendor);
+
+			const page = await context.newPage();
+			await selectMailbox(page, account.mailboxId);
+			await page.goto(`/inbox/${message.id}`);
+			const note = subscriptionBlock(page).locator("[data-subscription-model-fields]");
+			await expect(note).toHaveText("Cycle and renewal date read by the assistant");
+			await expect(note).toHaveAttribute("title", "Cycle and renewal date read by the assistant");
+
+			await okJson(
+				await account.api.put("/api/agent/settings", {
+					data: { mailboxId: account.mailboxId, capabilities: { modules: { subscriptions: false } } },
+				}),
+			);
+			// With no step on, automatic mail gets no triage job at all; give the queue time to prove it.
+			const offMail = incompleteReceipt(uniqueVendor("Offreceipt"), "finance-receipt");
+			await postInbound(account.api, { ...offMail, to: account.address });
+			const offMessage = await waitForMessage(account.api, offMail.subject, { status: "received" });
+			await new Promise((resolve) => setTimeout(resolve, 3000));
+			expect(requestsFor(offMessage.id)).toEqual([]);
+			expect((await readSuggestions(account.api, { messageId: offMessage.id })).suggestions).toEqual([]);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("case 15: model output never wins a conflict or sets the cancel link, and an invalid extension is dropped", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("fmc");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const conflict = await deliver(account, incompleteReceipt(uniqueVendor("Conflictly"), "finance-conflict"));
+			expect(requestsFor(conflict.message.id).map((request) => request.kind)).toEqual(["triage"]);
+			expect(conflict.cards).toHaveLength(1);
+			const payload = conflict.cards[0].payload as Record<string, unknown>;
+			expect(payload).toMatchObject({
+				amountMinor: 999,
+				currency: "USD",
+				cycle: "monthly",
+				cancelLink: null,
+				modelFields: ["cycle"],
+				modelDisagrees: ["amount"],
+				reason: "subscription_check_amount",
+			});
+			expect(payload.nextRenewalOn).not.toBe("2026-02-30");
+			expect(JSON.stringify(payload)).not.toContain("evil.test");
+
+			const page = await context.newPage();
+			await selectMailbox(page, account.mailboxId);
+			await page.goto(`/inbox/${conflict.message.id}`);
+			const block = subscriptionBlock(page);
+			await expect(block.locator("[data-subscription-check-amount]")).toHaveText("Check the amount before tracking");
+			await expect(block.locator("[data-subscription-cancel-link]")).toHaveText("No cancel link");
+			await expect(block.locator("[data-subscription-price]")).toContainText("$9.99");
+
+			const invalid = await deliver(account, incompleteReceipt(uniqueVendor("Invalidly"), "finance-invalid-extension"));
+			expect(invalid.job.status).toBe("completed");
+			// Only the core fields decide whether the answer is valid, so no repair request follows.
+			expect(requestsFor(invalid.message.id).map((request) => request.kind)).toEqual(["triage"]);
+			expect(invalid.cards).toEqual([]);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("case 16: the external opt-in and the spend cap hold for the extension, and Activity says why", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("fmg");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			await okJson(await api.put("/api/admin/agent", { data: { externalAutoReadAllowed: false } }));
+			const external = await deliver(account, incompleteReceipt(uniqueVendor("Optoutly"), "finance-receipt"));
+			expect(external.job).toMatchObject({ status: "completed", reason: "external_provider_not_allowed" });
+			expect(requestsFor(external.message.id)).toEqual([]);
+			expect(external.cards).toEqual([]);
+
+			await okJson(await api.put("/api/admin/agent", { data: { externalAutoReadAllowed: true } }));
+			await okJson(
+				await account.api.put("/api/agent/settings", {
+					data: { mailboxId: account.mailboxId, dailySpendCapMicros: 1 },
+				}),
+			);
+			const capped = await deliver(account, incompleteReceipt(uniqueVendor("Cappedly"), "finance-receipt"));
+			expect(capped.job).toMatchObject({ status: "completed", reason: "spend_cap" });
+			expect(requestsFor(capped.message.id)).toEqual([]);
+			expect(capped.cards).toEqual([]);
+
+			const page = await context.newPage();
+			await selectMailbox(page, account.mailboxId);
+			await page.goto("/kite-activity");
+			await expect(page.locator(`[data-activity-skipped="${external.job.id}"]`)).toContainText(
+				"Skipped: the external AI provider is not allowed to read mail automatically",
+			);
+			await expect(page.locator(`[data-activity-skipped="${capped.job.id}"]`)).toContainText(
+				"Paused: daily spend cap reached",
+			);
+		} finally {
+			await context.close();
 			await account.api.dispose();
 			await restore();
 		}

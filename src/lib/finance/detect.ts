@@ -12,9 +12,11 @@ import {
 	needsHistory,
 	recurringCycle,
 	skipsMessage,
+	wantsModelForReceipt,
 	type Analysis,
 	type DetectionContext,
 } from "./detect-utils";
+import { mergeDetection, modelExtensionOf, parseModelExtraction } from "./model-utils";
 import { suggestionTitle } from "./text-utils";
 import type { DetectStepInput, TrackedMatchRow } from "./types";
 import { senderAddress } from "./vendor-utils";
@@ -61,25 +63,47 @@ function worthMatching(analysis: Analysis): boolean {
 
 /**
  * The owner's tracked row a message is about and, only without one, the cycle the sender's earlier
- * mail implies. Throws `MigrationPending` before migration 0063.
+ * mail implies. Matching reads the merged analysis; whether history is read depends on what the
+ * detector alone found (`deterministic`, the same analysis without a model). Throws `MigrationPending`
+ * before migration 0063.
  */
 export async function detectionContext(
 	ctx: CapabilityCallContext,
 	input: DetectStepInput,
 	analysis: Analysis,
 	userId: string,
+	deterministic: Analysis = analysis,
 ): Promise<DetectionContext> {
 	const tracked = matchTracked(await trackedRows(userId, analysis.vendorKey), analysis);
 	const recurring =
-		!tracked && needsHistory(analysis) ? recurringCycle(analysis, await senderHistory(ctx, input), ctx.timeZone) : null;
+		!tracked && needsHistory(deterministic)
+			? recurringCycle(deterministic, await senderHistory(ctx, input), ctx.timeZone)
+			: null;
 	return { tracked, recurring };
 }
 
 async function detectFor(ctx: CapabilityCallContext, input: DetectStepInput, userId: string) {
-	const analysis = analyzeMessage(input, ctx.timeZone);
-	if (!analysis || !worthMatching(analysis)) return null;
-	return buildDetection(analysis, await detectionContext(ctx, input, analysis, userId));
+	const deterministic = analyzeMessage(input, ctx.timeZone);
+	if (!deterministic) return null;
+	const extraction = parseModelExtraction(modelExtensionOf(input), {
+		messageDay: deterministic.dates.messageDay,
+		paymentFailed: deterministic.paymentFailed,
+	});
+	const merged = mergeDetection(deterministic, extraction);
+	if (!worthMatching(merged)) return null;
+	const context = await detectionContext(ctx, input, merged, userId, deterministic);
+	// A cycle from the sender's own history is confident, so it is merged before any model cycle.
+	const analysis =
+		context.recurring && !deterministic.cycle
+			? mergeDetection({ ...deterministic, cycle: context.recurring }, extraction)
+			: merged;
+	return buildDetection(analysis, context);
 }
+
+/** The `wantsModel` service: whether a receipt the detector cannot complete is worth a model request. */
+export const wantsModelStep: CapabilityHandler = async (raw, ctx): Promise<JsonValue> => ({
+	wantsModel: wantsModelForReceipt(raw as DetectStepInput, ctx.timeZone),
+});
 
 /**
  * The `detect` triage step: reads the message's billing evidence deterministically and offers at most

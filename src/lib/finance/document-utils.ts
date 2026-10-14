@@ -174,10 +174,18 @@ export function classifyDocument(input: ClassifyInput): ClassifiedDocument | nul
 	const chosen = chooseType(input);
 	if (!chosen) return null;
 	if (chosen.docType !== "failed_payment" && !input.hasAmount) return null;
+	return { ...chosen, ...documentDetails(input) };
+}
+
+export type DocumentDetails = Omit<DocumentInfo, "docType">;
+
+/** The document date, covered period and document attachment of a message, whatever its document type. */
+export function documentDetails(
+	input: Pick<ClassifyInput, "subject" | "excerpt" | "attachments" | "dates">,
+): DocumentDetails {
 	const text = `${input.subject}\n${input.excerpt}`;
 	const period = documentPeriod(text, input.dates);
 	return {
-		...chosen,
 		documentOn: documentDate(text, input.dates),
 		periodStartOn: period?.start ?? null,
 		periodEndOn: period?.end ?? null,

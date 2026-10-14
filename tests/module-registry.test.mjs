@@ -18,13 +18,14 @@ const {
 	isInvokableDescriptor,
 	surfacesAreCombinable,
 	toJsonSchema,
+	toModelExtensionSchema,
 	CLIENT_MODULES,
 } = await bundleModules("kite-module-registry-", [
 	["MODULE_MANIFESTS, MODULE_IDS, isModuleId, getModuleManifest", "src/lib/modules/registry.ts"],
 	["MODULE_CAPABILITIES, listCapabilities, findDescriptor", "src/lib/modules/capability-registry.ts"],
 	["SERVER_MODULES", "src/lib/modules/server-registry.ts"],
 	["isInvokableDescriptor, surfacesAreCombinable", "src/lib/modules/capability-utils.ts"],
-	["toJsonSchema", "src/lib/modules/schema-utils.ts"],
+	["toJsonSchema, toModelExtensionSchema", "src/lib/modules/schema-utils.ts"],
 	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
 ]);
 
@@ -373,6 +374,92 @@ test("suggestion kinds carry client meta, and reopening actions belong to a kind
 				`${descriptor.name} reopens a suggestion its module does not own`,
 			);
 	}
+});
+
+const MODEL_PROPERTY_TYPES = new Set(["string", "number", "integer", "boolean", "null"]);
+
+/** A scalar or enum property, with no `$ref`, `default`, nesting or combinator. */
+function assertScalarProperty(name, schema) {
+	assert.equal(typeof schema, "object", name);
+	for (const banned of ["$ref", "default", "properties", "items", "anyOf", "oneOf", "allOf"])
+		assert.equal(Object.hasOwn(schema, banned), false, `${name} has ${banned}`);
+	assert.ok(MODEL_PROPERTY_TYPES.has(schema.type), `${name} type ${schema.type}`);
+	if (schema.enum) assert.ok(Array.isArray(schema.enum) && schema.enum.length > 0, name);
+}
+
+/** A flat property: scalar or enum, or a nullable one written as an `anyOf` with `{ type: "null" }`. */
+function assertFlatProperty(name, schema) {
+	if (!Object.hasOwn(schema, "anyOf")) return assertScalarProperty(name, schema);
+	assert.equal(Object.keys(schema).length, 1, `${name} has keys next to anyOf`);
+	assert.equal(schema.anyOf.length, 2, name);
+	assert.ok(
+		schema.anyOf.some((entry) => entry.type === "null" && Object.keys(entry).length === 1),
+		`${name} anyOf is not nullable`,
+	);
+	for (const entry of schema.anyOf) assertScalarProperty(name, entry);
+}
+
+test("triage model extensions are small, closed, flat and static, and name a hint of their own module", () => {
+	let found = 0;
+	for (const entry of MODULE_CAPABILITIES)
+		for (const descriptor of entry.descriptors) {
+			const model = descriptor.triage?.model;
+			if (!model) continue;
+			found += 1;
+			const label = `${entry.moduleId}.${descriptor.name}`;
+			assert.ok(descriptor.surfaces.includes("triage_step"), `${label} declares a model extension off a triage step`);
+			const { jsonSchema } = model;
+			assert.equal(jsonSchema.type, "object", label);
+			assert.equal(jsonSchema.additionalProperties, false, label);
+			assert.ok(JSON.stringify(jsonSchema).length <= 2048, `${label} schema is over 2 KB`);
+			assert.equal(JSON.stringify(jsonSchema).includes('"$ref"'), false, label);
+			assert.equal(Object.hasOwn(jsonSchema, "default"), false, label);
+			for (const [name, property] of Object.entries(jsonSchema.properties ?? {}))
+				assertFlatProperty(`${label}.${name}`, property);
+			assert.equal(typeof model.instructions, "string", label);
+			assert.ok(model.instructions.length > 0 && model.instructions.length <= 600, `${label} instructions length`);
+			assert.match(model.instructions, /^[\x20-\x7e]+$/, `${label} instructions are printable on one line`);
+			assert.equal(model.instructions.includes("<<<"), false, label);
+			assert.doesNotMatch(model.instructions, /nonce\s*=/i, label);
+			assert.ok(Number.isInteger(model.maxOutputTokens), label);
+			assert.ok(model.maxOutputTokens >= 1 && model.maxOutputTokens <= 200, `${label} maxOutputTokens`);
+			if (model.wantsModel !== undefined) {
+				const hint = entry.descriptors.find((item) => item.name === model.wantsModel);
+				assert.ok(hint?.surfaces.includes("service"), `${label} wantsModel must be a service of ${entry.moduleId}`);
+			}
+		}
+	assert.ok(found >= 1, "Money Watch declares an extension");
+	const detect = findDescriptor("finance", "detect").triage.model;
+	assert.equal(detect.maxOutputTokens, 200);
+	assert.equal(detect.wantsModel, "wantsModel");
+	assert.equal(detect.instructions.length, 569);
+	assert.deepEqual(Object.keys(detect.jsonSchema.properties), [
+		"vendor",
+		"plan",
+		"amount",
+		"currency",
+		"cycle",
+		"nextRenewalOn",
+		"trialEndsOn",
+		"docType",
+	]);
+});
+
+test("toModelExtensionSchema keeps zod's properties, closes the object and requires nothing", () => {
+	const schema = toModelExtensionSchema(
+		z
+			.object({
+				name: z.string().max(80).nullable(),
+				kind: z.enum(["a", "b"]).nullable(),
+			})
+			.strict(),
+	);
+	assert.deepEqual(Object.keys(schema).sort(), ["additionalProperties", "properties", "type"]);
+	assert.equal(schema.type, "object");
+	assert.equal(schema.additionalProperties, false);
+	assert.deepEqual(schema.properties.kind, { anyOf: [{ type: "string", enum: ["a", "b"] }, { type: "null" }] });
+	assert.deepEqual(schema.properties.name, { anyOf: [{ type: "string", maxLength: 80 }, { type: "null" }] });
+	assert.deepEqual(toModelExtensionSchema(z.object({})).properties, {});
 });
 
 test("lifecycle hooks follow the data-hook rule", () => {

@@ -1,5 +1,5 @@
 import { formatMoney } from "./amount-utils";
-import type { Cycle, SubscriptionPayload } from "./types";
+import type { Cycle, ModelField, SubscriptionPayload } from "./types";
 
 const MAX_TITLE = 120;
 
@@ -112,4 +112,26 @@ export function cancelLinkLine(payload: Pick<SubscriptionPayload, "cancelLink">)
 	} catch {
 		return "No cancel link";
 	}
+}
+
+const MODEL_FIELD_WORDS: Record<ModelField, string> = {
+	vendor: "vendor",
+	plan: "plan",
+	amount: "amount",
+	currency: "currency",
+	cycle: "cycle",
+	nextRenewalOn: "renewal date",
+	trialEndsOn: "trial end",
+	docType: "document type",
+};
+
+/** "Cycle and renewal date read by the assistant": the tooltip for values the model filled; null when none. */
+export function modelFieldsNote(
+	fields: readonly ModelField[] | undefined,
+	only?: readonly ModelField[],
+): string | null {
+	const words = (fields ?? []).filter((name) => !only || only.includes(name)).map((name) => MODEL_FIELD_WORDS[name]);
+	if (words.length === 0) return null;
+	const list = words.length === 1 ? words[0] : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+	return `${list[0].toUpperCase()}${list.slice(1)} read by the assistant`;
 }

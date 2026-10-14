@@ -9,7 +9,14 @@ import {
 	receiptWindow,
 	type DateContext,
 } from "./date-utils";
-import { classifyDocument, isDocumentAttachment, type ClassifiedDocument, type DocumentInfo } from "./document-utils";
+import {
+	classifyDocument,
+	documentDetails,
+	isDocumentAttachment,
+	type ClassifiedDocument,
+	type DocumentDetails,
+	type DocumentInfo,
+} from "./document-utils";
 import {
 	BILLING_LOCAL,
 	CYCLE_PHRASES,
@@ -21,7 +28,14 @@ import {
 	TRIAL_PHRASE,
 } from "./keywords-utils";
 import { cleanText, senderLocalPart, senderUsesUsDomain, vendorKey, vendorName } from "./vendor-utils";
-import type { DetectStepInput, Cycle, SubscriptionEvent, SubscriptionPayload, TrackedMatchRow } from "./types";
+import type {
+	DetectStepInput,
+	Cycle,
+	ModelField,
+	SubscriptionEvent,
+	SubscriptionPayload,
+	TrackedMatchRow,
+} from "./types";
 
 const MAX_SUBJECT = 300;
 const MAX_SIGNALS = 8;
@@ -41,6 +55,21 @@ const WEIGHTS: Record<string, number> = {
 	model_receipt: 1,
 };
 
+/** What the receipt score counts: the signals the hint can see before the model runs (§5.7.2). */
+const RECEIPT_WEIGHTS: Record<string, number> = {
+	subject_keyword: 2,
+	billing_sender: 1,
+	amount: 1,
+	cycle: 3,
+	renewal_date: 3,
+	trial: 3,
+	invoice_attachment: 1,
+};
+/** A receipt score at least this high, with a subject keyword or a document attachment, may ask the model.
+ * @public Exercised by the bundled unit tests.
+ */
+export const RECEIPT_MODEL_THRESHOLD = 3;
+
 const SIGNAL_ORDER = [
 	"subject_keyword",
 	"billing_sender",
@@ -51,6 +80,7 @@ const SIGNAL_ORDER = [
 	"recurring",
 	"invoice_attachment",
 	"model_receipt",
+	"model_fields",
 	"payment_failed",
 	"doc_invoice",
 	"doc_payment",
@@ -78,6 +108,12 @@ export type Analysis = {
 	unverified: boolean;
 	signals: Set<string>;
 	dates: DateContext;
+	/** The document date, period and attachment, for a document type the model names. */
+	documentDetails: DocumentDetails;
+	/** Fields the validated model extension filled (§5.7.4); empty for the detector alone. */
+	modelFields: ModelField[];
+	/** Where the model disagreed with a confident amount or currency (§5.7.4, rule 3). */
+	modelDisagrees: ("amount" | "currency")[];
 };
 
 /** The cycle a phrase names; one on the amount's line wins, else the earliest in the text.
@@ -169,14 +205,8 @@ export function analyzeMessage(input: DetectStepInput, timeZone: string): Analys
 	const trialEndsOn = dateAfterPhrase(text, TRIAL_PHRASE, dates, window);
 	const paymentFailed = PAYMENT_FAILED.test(text);
 	const subjectKeyword = SUBJECT_KEYWORD.test(subject);
-	const document = classifyDocument({
-		subject,
-		excerpt,
-		attachments: input.attachments,
-		paymentFailed,
-		hasAmount: amount !== null,
-		dates,
-	});
+	const classify = { subject, excerpt, attachments: input.attachments, dates };
+	const document = classifyDocument({ ...classify, paymentFailed, hasAmount: amount !== null });
 	const found: [string, boolean][] = [
 		["amount", amount !== null],
 		["cycle", cycle !== null],
@@ -207,6 +237,9 @@ export function analyzeMessage(input: DetectStepInput, timeZone: string): Analys
 		unverified: !input.facts.authPassed,
 		signals,
 		dates,
+		documentDetails: documentDetails(classify),
+		modelFields: [],
+		modelDisagrees: [],
 	};
 }
 
@@ -217,6 +250,36 @@ export function signalWeight(signals: Iterable<string>): number {
 	let total = 0;
 	for (const signal of signals) total += WEIGHTS[signal] ?? 0;
 	return total;
+}
+
+/** The §5.7.2 receipt score: deterministic signals only, so it can be computed before the model runs.
+ * @public Exercised by the bundled unit tests.
+ */
+export function receiptScore(signals: ReadonlySet<string>): number {
+	let total = 0;
+	for (const signal of signals) total += RECEIPT_WEIGHTS[signal] ?? 0;
+	return total;
+}
+
+/** The deterministic receipt evidence that may ask the model, and that a model-assisted candidate needs.
+ * @public Exercised by the bundled unit tests.
+ */
+export function receiptCondition(signals: ReadonlySet<string>): boolean {
+	return (
+		receiptScore(signals) >= RECEIPT_MODEL_THRESHOLD &&
+		(signals.has("subject_keyword") || signals.has("invoice_attachment"))
+	);
+}
+
+/**
+ * The `wantsModel` hint (§5.7.2): a receipt-like message the detector could not read completely, with no
+ * amount, no cycle, or neither a stated renewal date nor a trial end. Phishing and spam never ask.
+ */
+export function wantsModelForReceipt(input: DetectStepInput, timeZone: string): boolean {
+	if (skipsMessage(input.facts)) return false;
+	const analysis = analyzeMessage({ ...input, model: null }, timeZone);
+	if (!analysis || !receiptCondition(analysis.signals)) return false;
+	return !analysis.amount || !analysis.cycle || (!analysis.renewalOn && !analysis.trialEndsOn);
 }
 
 /** Only a message with an amount and no cycle, renewal or trial phrase looks at the sender's earlier mail. */
@@ -285,11 +348,17 @@ function trackedEvent(analysis: Analysis, row: TrackedMatchRow): Planned {
 	return { event: analysis.trialEndsOn ? "trial" : "renewal", previousAmountMinor: null };
 }
 
-/** Recurrence evidence plus enough weight: what every card except a tracked row's refund or failed payment needs. */
+/**
+ * Recurrence evidence plus enough weight: what every card except a tracked row's refund or failed payment
+ * needs. Model-filled fields count as evidence but add no weight; with any of them the deterministic
+ * receipt condition replaces the weight of 4, so the model alone never makes a candidate (§5.7.4, rule 6).
+ */
 function meetsCandidateRule(analysis: Analysis, signals: Set<string>): boolean {
 	if (!analysis.amount) return false;
-	const recurrence = ["cycle", "renewal_date", "trial", "recurring"].some((signal) => signals.has(signal));
-	return recurrence && signalWeight(signals) >= CANDIDATE_WEIGHT;
+	const recurrence = !!analysis.cycle || !!analysis.renewalOn || !!analysis.trialEndsOn || signals.has("recurring");
+	if (!recurrence) return false;
+	if (signalWeight(signals) >= CANDIDATE_WEIGHT) return true;
+	return analysis.modelFields.length > 0 && receiptCondition(signals);
 }
 
 function plan(analysis: Analysis, row: TrackedMatchRow | null, signals: Set<string>): Planned | null {
@@ -341,8 +410,10 @@ export function buildDetection(
 	const cycle = analysis.cycle ?? context.recurring ?? context.tracked?.cycle ?? null;
 	const estimated = !analysis.renewalOn && cycle !== null;
 	const amount = analysis.amount;
+	const checkAmount =
+		analysis.modelDisagrees.length > 0 && planned.event !== "payment_failed" && planned.event !== "refund";
 	return {
-		reason: REASONS[planned.event],
+		reason: checkAmount ? "subscription_check_amount" : REASONS[planned.event],
 		payload: {
 			event: planned.event,
 			subscriptionId: context.tracked?.id ?? null,
@@ -360,8 +431,8 @@ export function buildDetection(
 			document: documentOf(analysis.document),
 			unverified: analysis.unverified,
 			signals: orderedSignals(signals),
-			modelFields: [],
-			modelDisagrees: [],
+			modelFields: [...analysis.modelFields],
+			modelDisagrees: [...analysis.modelDisagrees],
 		},
 	};
 }

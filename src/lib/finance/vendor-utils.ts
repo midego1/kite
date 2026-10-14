@@ -83,9 +83,10 @@ function capitalise(value: string): string {
 }
 
 /** The vendor from the sender name without "Billing", "via …", quotes and the like; the domain label otherwise. */
-export function vendorName(fromName: string | null, from: string): { vendor: string; fromDomain: boolean } {
+/** A vendor name from a display name or the model: quotes, "via …", noise words and unsafe characters removed; "" when nothing usable is left. */
+export function cleanVendorName(value: string): string {
 	const name = cleanText(
-		(fromName ?? "")
+		value
 			.replace(/["'“”‘’]/g, "")
 			.replace(/\s+via\s+.*$/i, "")
 			.replace(new RegExp(VENDOR_NOISE.source, "giu"), " ")
@@ -93,7 +94,12 @@ export function vendorName(fromName: string | null, from: string): { vendor: str
 			.replace(/^[\s,:|·-]+/u, ""),
 		MAX_VENDOR,
 	);
-	if (name && !name.includes("@")) return { vendor: name, fromDomain: false };
+	return name.includes("@") ? "" : name;
+}
+
+export function vendorName(fromName: string | null, from: string): { vendor: string; fromDomain: boolean } {
+	const name = cleanVendorName(fromName ?? "");
+	if (name) return { vendor: name, fromDomain: false };
 	const domain = registrableDomain(senderDomain(from));
 	const label = domain.split(".")[0] ?? "";
 	return { vendor: cleanText(capitalise(label), MAX_VENDOR), fromDomain: true };

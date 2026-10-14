@@ -606,6 +606,11 @@ test.describe("automatic reading settings UI", () => {
 			await expect(section.getByText(/must allow the external provider/)).toHaveCount(0);
 			await expect(section.getByRole("button", { name: "Pause for 24 hours" })).toBeDisabled();
 
+			// Money Watch's step has a per-mailbox switch, on until it is turned off.
+			await expect(section.getByRole("switch", { name: "Subscriptions in receipts (Money Watch)" })).toHaveAttribute(
+				"aria-checked",
+				"true",
+			);
 			await section.getByRole("radio", { name: "Suggest only" }).check();
 			await section.getByRole("switch", { name: "Summaries and tasks" }).click();
 			await section.getByRole("combobox", { name: "Triage model" }).selectOption("fake-triage");
@@ -735,7 +740,9 @@ test.describe("automatic reading settings UI", () => {
 			await expect(section.getByText(/Full mailbox access is required/)).toBeVisible();
 			for (const radio of await section.getByRole("radio").all()) await expect(radio).toBeDisabled();
 			for (const toggle of await section.getByRole("switch").all()) await expect(toggle).toBeDisabled();
-			await expect(section.getByRole("switch")).toHaveCount(4);
+			// The four core switches and Money Watch's.
+			await expect(section.getByRole("switch")).toHaveCount(5);
+			await expect(section.getByRole("switch", { name: "Subscriptions in receipts (Money Watch)" })).toBeDisabled();
 			await expect(section.getByRole("combobox", { name: "Triage model" })).toBeDisabled();
 			for (const input of await section.getByRole("spinbutton").all()) await expect(input).toBeDisabled();
 			await expect(section.getByRole("button")).toHaveCount(0);
@@ -889,7 +896,8 @@ test.describe("triage scheduling", () => {
 		const restore = await useFakeProvider(api, fake);
 		const account = await suggestAccount("trn");
 		try {
-			await setAutonomy(account, { autonomy: "suggest" });
+			// Money Watch reads automatic mail while its switch is on; with it off nothing opts in to auto-replies.
+			await setAutonomy(account, { autonomy: "suggest", capabilities: { modules: { subscriptions: false } } });
 			const token = uniqueToken("ineligible");
 			const senders = [account.address, "MAILER-DAEMON@relay.outside.test", "postmaster@relay.outside.test"];
 			for (const [index, from] of senders.entries())
@@ -1236,6 +1244,12 @@ test.describe("triage scheduling", () => {
 		expect(models.requests().filter((request) => request.emailId === message.id)).toEqual([]);
 	}
 
+	/**
+	 * Money Watch's step reads every message and still runs when the model is refused, which completes the job
+	 * instead of skipping it; with its switch off no module step is due.
+	 */
+	const NO_MODULE_STEPS = { modules: { subscriptions: false } };
+
 	async function expectSkipped(
 		account: { api: APIRequestContext; mailboxId: string; address: string },
 		prefix: string,
@@ -1352,7 +1366,7 @@ test.describe("triage scheduling", () => {
 		const { dailySpendCapMicros: installCap } = await readAdminAgent(api);
 		const account = await suggestAccount("trc");
 		try {
-			await setAutonomy(account, { autonomy: "suggest", dailySpendCapMicros: 1 });
+			await setAutonomy(account, { autonomy: "suggest", dailySpendCapMicros: 1, capabilities: NO_MODULE_STEPS });
 			await expectSkipped(account, "mailboxcap", "spend_cap");
 
 			await setAutonomy(account, { dailySpendCapMicros: null });
@@ -1374,7 +1388,7 @@ test.describe("triage scheduling", () => {
 		const restore = await useFakeProvider(api, fake);
 		const account = await suggestAccount("tre");
 		try {
-			await setAutonomy(account, { autonomy: "suggest" });
+			await setAutonomy(account, { autonomy: "suggest", capabilities: NO_MODULE_STEPS });
 			await okJson(await api.put("/api/admin/agent", { data: { externalAutoReadAllowed: false } }));
 			await expectSkipped(account, "external", "external_provider_not_allowed");
 

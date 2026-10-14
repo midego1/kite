@@ -14,6 +14,7 @@ export const financeManifest: ModuleManifest = {
 	nav: financeClientData.nav,
 	commands: financeClientData.commands,
 	composerSlots: [],
+	messageSlots: financeClientData.messageSlots,
 	recordKinds: [{ kind: "finance:subscription", label: "Subscription", unavailableLabel: "Subscription" }],
 	webhookEvents: [
 		{

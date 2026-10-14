@@ -37,6 +37,22 @@ export const financeClientData: ClientModuleData = {
 		api: [],
 	},
 	nav: [],
+	messageSlots: [
+		{
+			id: "finance.track-message",
+			slot: "message-menu",
+			order: 50,
+			label: "Track as subscription",
+			icon: "WalletCards",
+		},
+		{
+			id: "finance.add-document",
+			slot: "message-menu",
+			order: 51,
+			label: "Add to a tracked subscription",
+			icon: "WalletCards",
+		},
+	],
 	commands: [
 		{
 			id: "finance.open",

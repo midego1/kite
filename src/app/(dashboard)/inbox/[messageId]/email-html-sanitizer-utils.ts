@@ -173,6 +173,9 @@ function isSafeLinkUrl(value: string, origin: string, options: SanitizeEmailHtml
 
 function isLocalImageUrl(value: string, options: SanitizeEmailHtmlOptions): boolean {
 	if (!options.forOutgoing && value.startsWith("/api/messages/")) return true;
+	// An imported draft names its inline attachments by Content-ID; dropping the reference would
+	// lose the image on the next autosave. cid: never fetches anything.
+	if (options.forOutgoing && /^cid:[^\s"'<>]+$/i.test(value)) return true;
 	return /^data:image\/(?:gif|jpeg|png|webp);base64,/i.test(value);
 }
 

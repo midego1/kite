@@ -127,6 +127,13 @@ test("the reader sanitizer holds remote images and keeps local and inline ones",
 	assert.doesNotMatch(sanitizeEmailHtml('<img src="http://t.example/p.png">', { forOutgoing: true }), /<img/);
 });
 
+test("the outgoing sanitizer keeps an imported draft's inline-image references", () => {
+	const html = '<p>Chart</p><img src="cid:chart-1@example.test" alt="chart">';
+	assert.match(sanitizeEmailHtml(html, { forOutgoing: true }), /<img src="cid:chart-1@example\.test" alt="chart"/);
+	// The reader rewrites cid: to attachment URLs first, so an unresolved one is dropped there.
+	assert.doesNotMatch(sanitizeEmailHtml(html), /cid:/);
+});
+
 test("the reader sanitizer spaces the 'On … wrote:' line above a quote", () => {
 	assert.equal(
 		sanitizeEmailHtml("<div>On Mon, a@example.com wrote:</div><blockquote>old</blockquote>"),

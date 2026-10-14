@@ -35,46 +35,76 @@ export const searchSchemas: CapabilitySchemas = {
 	}),
 };
 
+const stepMessage = z.object({
+	id: z.string(),
+	mailboxId: z.string(),
+	from: z.string(),
+	subject: z.string().nullable(),
+	receivedAt: instant,
+});
+const stepFacts = z.object({
+	authPassed: z.boolean(),
+	bulk: z.boolean(),
+	knownContact: z.boolean(),
+	phishing: z.array(z.string()),
+});
+const stepAttachments = z.array(
+	z.object({
+		id: z.string(),
+		contentType: z.string(),
+		filename: z.string().nullable(),
+		size: z.number().int().min(0),
+	}),
+);
+
+const stepOutput = z.object({
+	// Core keeps the first three valid suggestions; the cap here only bounds a runaway answer.
+	suggestions: z
+		.array(
+			z.object({
+				kind: z.string(),
+				payload: json,
+				reason: z.string(),
+				/** Core strips controls and bidi characters and keeps 120 characters; without one the kind's label is used. */
+				title: z.string().max(1_000).optional(),
+			}),
+		)
+		.max(50),
+	skipped: z.string().optional(),
+});
+
+/**
+ * The step input without the sender name, text excerpt, extra facts and headers. A step validating
+ * against it receives exactly these keys, because zod strips the ones core adds for wider steps.
+ */
+export const baseTriageStepSchemas: CapabilitySchemas = {
+	input: z.object({ message: stepMessage, facts: stepFacts, attachments: stepAttachments, model: json.nullable() }),
+	output: stepOutput,
+};
+
+/** The full triage-step input: excerpt, extra facts and list headers. @public For module step schemas; no builtin step reads them yet. */
 export const triageStepSchemas: CapabilitySchemas = {
 	input: z.object({
-		message: z.object({
-			id: z.string(),
-			mailboxId: z.string(),
-			from: z.string(),
-			subject: z.string().nullable(),
-			receivedAt: instant,
+		message: stepMessage.extend({
+			fromName: z.string().nullable(),
+			/** At most 8,192 characters of the readable body text; null when the message has none. */
+			textExcerpt: z.string().max(8_192).nullable(),
 		}),
-		facts: z.object({
-			authPassed: z.boolean(),
-			bulk: z.boolean(),
-			knownContact: z.boolean(),
-			phishing: z.array(z.string()),
+		facts: stepFacts.extend({
+			automatic: z.boolean(),
+			noReply: z.boolean(),
+			list: z.boolean(),
+			spam: z.boolean(),
 		}),
-		attachments: z.array(
-			z.object({
-				id: z.string(),
-				contentType: z.string(),
-				filename: z.string().nullable(),
-				size: z.number().int().min(0),
-			}),
-		),
+		headers: z.object({
+			listUnsubscribe: z.string().nullable(),
+			listUnsubscribePost: z.string().nullable(),
+			listId: z.string().nullable(),
+		}),
+		attachments: stepAttachments,
 		model: json.nullable(),
 	}),
-	output: z.object({
-		// Core keeps the first three valid suggestions; the cap here only bounds a runaway answer.
-		suggestions: z
-			.array(
-				z.object({
-					kind: z.string(),
-					payload: json,
-					reason: z.string(),
-					/** Core strips controls and bidi characters and keeps 120 characters; without one the kind's label is used. */
-					title: z.string().max(1_000).optional(),
-				}),
-			)
-			.max(50),
-		skipped: z.string().optional(),
-	}),
+	output: stepOutput,
 };
 
 /** Execute, undo and the pre-undo check share one capability: `op` selects, and the handler must be idempotent by `actionId`. */

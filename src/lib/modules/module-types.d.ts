@@ -102,6 +102,8 @@ export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "com
 	suggestionKinds?: readonly string[];
 	/** Label, reasons, chip rank and icon per kind in `suggestionKinds`, so core surfaces need no per-kind code. */
 	suggestionKindMeta?: Readonly<Record<string, SuggestionKindMeta>>;
+	/** The per-mailbox switches of the module's triage steps (`triage.capability` keys), listed in the automatic-reading settings while the module is on. */
+	triageSwitches?: readonly { key: string; label: string }[];
 	/** The key scopes the module adds, with the form text for each, so the key forms can list them only while it is on. */
 	keyScopes?: { mcp: readonly (KeyScopeText & { mailboxBound: boolean })[]; api: readonly KeyScopeText[] };
 };
@@ -176,10 +178,24 @@ export type CapabilityDescriptor = {
 	timeoutMs?: number;
 	search?: { section: string };
 	refs?: { kinds: RecordKind[] };
-	/** `answer` names the `service` capability that handles an accept click on this kind of suggestion. */
-	suggestionKind?: { kind: string; label: string; reasonTemplate: string; answer?: string };
-	/** `requires` names a fact core checks first: the step is neither run nor recorded as skipped without it. */
-	triage?: { order: number; requires?: "invite_attachment" };
+	/**
+	 * `answer` names the `service` capability that handles an accept click on this kind of suggestion.
+	 * `audience: "reviewer"` shows and lets decide the suggestion only to the mailbox's reviewer, not to
+	 * everyone with full access (default `mailbox`).
+	 */
+	suggestionKind?: {
+		kind: string;
+		label: string;
+		reasonTemplate: string;
+		answer?: string;
+		audience?: "mailbox" | "reviewer";
+	};
+	/**
+	 * `requires` names a fact core checks first: the step is neither run nor recorded as skipped without it.
+	 * `automatic` lets `Auto-Submitted` mail reach the step through a steps-only pass. `capability` names
+	 * the key of the step's per-mailbox switch in `capabilities.modules` (on unless set to false).
+	 */
+	triage?: { order: number; requires?: "invite_attachment"; automatic?: true; capability?: string };
 	action?: {
 		actionType: string;
 		suggestionKind?: string;

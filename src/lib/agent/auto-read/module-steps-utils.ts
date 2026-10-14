@@ -1,11 +1,12 @@
 import type { z } from "zod";
 import type { CapabilityDescriptor, ModuleCapabilities, ModuleId } from "@/lib/modules/module-types";
+import type { AutoReadCapabilities } from "./settings-types";
 import type { PlannedSuggestion } from "./suggestion-types";
 
 /** A step may add this many suggestions to one message; the rest of its answer is dropped. */
 const MAX_STEP_SUGGESTIONS = 3;
 
-export const MODULE_SKIP_PREFIX = "module_disabled:";
+const MODULE_SKIP_PREFIX = "module_disabled:";
 const MAX_REASON_CHARS = 100;
 const MAX_TITLE_CHARS = 120;
 const CONTROL_CHARS = /\p{Cc}/gu;
@@ -89,8 +90,10 @@ export function stepSkipReason(moduleId: ModuleId): string {
 	return `${MODULE_SKIP_PREFIX}${moduleId}`;
 }
 
-export function joinSkipReasons(moduleIds: readonly ModuleId[]): string | null {
-	return moduleIds.length > 0 ? moduleIds.map(stepSkipReason).join(",") : null;
+/** A finished job's note: the reason the model was not asked first, then each module whose step was skipped. */
+export function joinSkipReasons(moduleIds: readonly ModuleId[], modelSkip: string | null = null): string | null {
+	const parts = [...(modelSkip ? [modelSkip] : []), ...moduleIds.map(stepSkipReason)];
+	return parts.length > 0 ? parts.join(",") : null;
 }
 
 export function splitSkipReasons(reason: string): string[] {
@@ -146,6 +149,24 @@ export function suggestionAnswerers(
 	return answerers;
 }
 
+/** Kinds only the mailbox's reviewer may see and decide (`audience: "reviewer"`). */
+export function reviewerOnlySuggestionKinds(all: readonly ModuleCapabilities[]): string[] {
+	return all.flatMap((entry) =>
+		entry.descriptors
+			.filter((descriptor) => isKindDescriptor(descriptor) && descriptor.suggestionKind!.audience === "reviewer")
+			.map((descriptor) => descriptor.suggestionKind!.kind),
+	);
+}
+
+/** True when a reviewer-only suggestion belongs to someone else's review, so the viewer must not learn it exists. */
+export function hiddenFromViewer(
+	row: { kind: string; reviewerUserId: string },
+	viewerId: string,
+	reviewerOnly: readonly string[],
+): boolean {
+	return reviewerOnly.includes(row.kind) && row.reviewerUserId !== viewerId;
+}
+
 /** Kinds that belong to a module that is off, which lists and counts must leave out. */
 export function hiddenSuggestionKinds(all: readonly ModuleCapabilities[], enabled: Iterable<ModuleId>): string[] {
 	const on = new Set(enabled);
@@ -159,7 +180,40 @@ export type TriageStep = {
 	capability: string;
 	order: number;
 	requires: "invite_attachment" | undefined;
+	/** The step opted in to `Auto-Submitted` mail. */
+	automatic: boolean;
+	/** The step's key in `capabilities.modules`, or null when it has no switch of its own. */
+	switchKey: string | null;
 };
+
+/** Steps whose switch is one of the mailbox's core capability keys, from before module switches existed. */
+const CORE_STEP_SWITCH: Partial<Record<ModuleId, keyof AutoReadCapabilities>> = { calendar: "calendar" };
+
+/**
+ * Whether the mailbox lets a step run: a core key for the steps that had one first, else the step's
+ * key in `capabilities.modules` (on unless set to false), else always.
+ */
+export function stepSwitchOn(step: Pick<TriageStep, "moduleId" | "switchKey">, capabilities: AutoReadCapabilities) {
+	const core = Object.hasOwn(CORE_STEP_SWITCH, step.moduleId) ? CORE_STEP_SWITCH[step.moduleId] : undefined;
+	if (core) return capabilities[core] === true;
+	if (!step.switchKey) return true;
+	return capabilities.modules?.[step.switchKey] !== false;
+}
+
+/**
+ * The steps due for a message: switched on for the mailbox, with their required fact present, and on a
+ * steps-only pass for `Auto-Submitted` mail only those that opted in.
+ */
+export function selectDueSteps(
+	steps: readonly TriageStep[],
+	input: { inviteAttachments: number; capabilities: AutoReadCapabilities; automaticOnly: boolean },
+): TriageStep[] {
+	return steps.filter((step) => {
+		if (input.automaticOnly && !step.automatic) return false;
+		if (step.requires === "invite_attachment" && input.inviteAttachments === 0) return false;
+		return stepSwitchOn(step, input.capabilities);
+	});
+}
 
 /** Every module's `triage_step` descriptors in their declared order, whether or not the module is on. */
 export function triageStepsFor(all: readonly ModuleCapabilities[]): TriageStep[] {
@@ -172,6 +226,8 @@ export function triageStepsFor(all: readonly ModuleCapabilities[]): TriageStep[]
 					capability: descriptor.name,
 					order: descriptor.triage!.order,
 					requires: descriptor.triage!.requires,
+					automatic: descriptor.triage!.automatic === true,
+					switchKey: descriptor.triage!.capability ?? null,
 				})),
 		)
 		.sort((a, b) => a.order - b.order);

@@ -93,6 +93,7 @@
 		"src/lib/setup/configuration-utils.ts",
 		"src/lib/agent/auto-read/module-actions-utils.ts",
 		"src/lib/agent/auto-read/module-steps-utils.ts",
+		"src/lib/agent/auto-read/step-input-utils.ts",
 		"src/lib/booking/working-hours-utils.ts"
 	],
 	"ungated": {

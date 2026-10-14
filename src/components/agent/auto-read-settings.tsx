@@ -2,6 +2,7 @@
 
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useModules } from "@/components/modules/modules-context";
 import { Switch } from "@/components/ui/switch";
 import type {
 	AutoReadForm,
@@ -15,6 +16,7 @@ import {
 	autoReadUpdateBody,
 	CAPABILITY_OPTIONS,
 	loadAutoReadSettings,
+	moduleStepSwitches,
 	pauseEndFrom,
 	saveAutoReadSettings,
 	toAutoReadState,
@@ -77,6 +79,7 @@ function CapabilityToggles({
 	disabled: boolean;
 	onChange: (value: AutoReadForm["capabilities"]) => void;
 }) {
+	const { modules } = useModules();
 	return (
 		<div className="space-y-2">
 			<p className="text-neutral-800">What Kite looks for</p>
@@ -87,6 +90,17 @@ function CapabilityToggles({
 						checked={value[option.key]}
 						disabled={disabled}
 						onCheckedChange={(checked) => onChange({ ...value, [option.key]: checked })}
+						aria-label={option.label}
+					/>
+				</div>
+			))}
+			{moduleStepSwitches(modules).map((option) => (
+				<div key={`module-${option.key}`} className="flex items-center justify-between gap-3">
+					<span>{option.label}</span>
+					<Switch
+						checked={value.modules[option.key] !== false}
+						disabled={disabled}
+						onCheckedChange={(checked) => onChange({ ...value, modules: { ...value.modules, [option.key]: checked } })}
 						aria-label={option.label}
 					/>
 				</div>

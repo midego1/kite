@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "@/db";
 import { mailboxAgentSettings, messages } from "@/db/schema";
@@ -26,7 +26,8 @@ import {
 import { markSpamEffect } from "./suggestion-effects";
 import { notifySuggestionsQuietly } from "./suggestion-events";
 import { messageTargets } from "./suggestion-refs";
-import { hiddenKindsFor } from "./suggestion-visibility";
+import { hiddenFromViewer } from "./module-steps-utils";
+import { suggestionVisibilityFor, visibleSuggestionsWhere } from "./suggestion-visibility";
 
 const LIST_LIMIT = 200;
 const drafts = alias(messages, "draft");
@@ -74,8 +75,8 @@ export async function listSuggestions(env: CloudflareEnv, user: SessionUser, que
 		.where(inArray(mailboxAgentSettings.mailboxId, ids));
 	const autonomy = new Map(settings.map((row) => [row.mailboxId, row.autonomy]));
 	const conditions: SQL[] = [inArray(agentSuggestions.mailboxId, ids)];
-	const hidden = await hiddenKindsFor(env, user);
-	if (hidden.length > 0) conditions.push(notInArray(agentSuggestions.kind, hidden));
+	const visible = visibleSuggestionsWhere(await suggestionVisibilityFor(env, user));
+	if (visible) conditions.push(visible);
 	if (query.status !== "all") conditions.push(eq(agentSuggestions.status, query.status));
 	if (query.messageId) conditions.push(eq(agentSuggestions.messageId, query.messageId));
 	if (query.threadId) conditions.push(eq(agentSuggestions.threadId, query.threadId));
@@ -124,7 +125,10 @@ export async function listSuggestions(env: CloudflareEnv, user: SessionUser, que
 	};
 }
 
-/** The suggestion and the caller's access; anyone without full access cannot tell it exists. */
+/**
+ * The suggestion and the caller's access. Anyone without full access cannot tell it exists, nor can
+ * anyone but its reviewer for a reviewer-only kind.
+ */
 async function loadForDecision(env: CloudflareEnv, user: SessionUser, suggestionId: string) {
 	const db = getDb(env);
 	const [row] = await db
@@ -135,13 +139,15 @@ async function loadForDecision(env: CloudflareEnv, user: SessionUser, suggestion
 			kind: agentSuggestions.kind,
 			status: agentSuggestions.status,
 			draftId: agentSuggestions.draftId,
+			reviewerUserId: agentSuggestions.reviewerUserId,
 			from: messages.fromAddr,
 		})
 		.from(agentSuggestions)
 		.leftJoin(messages, eq(messages.id, agentSuggestions.messageId))
 		.where(eq(agentSuggestions.id, suggestionId))
 		.limit(1);
-	const access = row ? await getMailboxAccessLevel(db, user, row.mailboxId) : null;
+	const visible = row && !hiddenFromViewer(row, user.id, (await suggestionVisibilityFor(env, user)).reviewerOnly);
+	const access = visible ? await getMailboxAccessLevel(db, user, row.mailboxId) : null;
 	if (!row || !access?.canManage) throw new AgentActionError("Suggestion not found", 404);
 	return { row, access };
 }

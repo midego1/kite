@@ -13,6 +13,8 @@ const AUTONOMY_LEVELS = ["off", "suggest", "act", "auto"] as const;
 const AVAILABLE_AUTONOMY_LEVELS: readonly AutonomyLevel[] = ["off", "suggest"];
 const CAPABILITY_KEYS = ["calendar", "reply", "summary", "phishing"] as const;
 const MAX_MUTED_SENDERS = 500;
+const MODULE_SWITCH_KEY = /^[a-z][a-z0-9_]{0,39}$/;
+const MAX_MODULE_SWITCHES = 32;
 const MAX_SPEND_CAP_MICROS = 1_000_000_000_000;
 
 export const DEFAULT_INSTALL_SPEND_CAP_MICROS = 2_000_000;
@@ -33,6 +35,10 @@ export const mailboxAgentSettingsUpdateSchema = z.object({
 			summary: z.boolean().optional(),
 			phishing: z.boolean().optional(),
 			mutedSenders: z.array(z.string().trim().min(1).max(320)).max(MAX_MUTED_SENDERS).optional(),
+			modules: z
+				.record(z.string().regex(MODULE_SWITCH_KEY), z.boolean())
+				.refine((value) => Object.keys(value).length <= MAX_MODULE_SWITCHES)
+				.optional(),
 		})
 		.optional(),
 	triageModelId: z.string().max(200).nullable().optional(),
@@ -67,7 +73,14 @@ export function autonomyError(autonomy: AutonomyLevel | undefined): string | nul
 }
 
 function defaultCapabilities(mailboxType: MailboxAgentSettingsContext["mailboxType"]): AutoReadCapabilities {
-	return { calendar: mailboxType !== "shared", reply: true, summary: true, phishing: true, mutedSenders: [] };
+	return {
+		calendar: mailboxType !== "shared",
+		reply: true,
+		summary: true,
+		phishing: true,
+		mutedSenders: [],
+		modules: {},
+	};
 }
 
 function normalizeMutedSenders(values: unknown[]): string[] {
@@ -78,6 +91,15 @@ function normalizeMutedSenders(values: unknown[]): string[] {
 		if (sender) senders.add(sender);
 	}
 	return [...senders];
+}
+
+/** Only well-formed keys with boolean values survive, at most 32 of them. */
+function normalizeModuleSwitches(value: unknown): Record<string, boolean> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+	const entries = Object.entries(value as Record<string, unknown>).filter(
+		(entry): entry is [string, boolean] => MODULE_SWITCH_KEY.test(entry[0]) && typeof entry[1] === "boolean",
+	);
+	return Object.fromEntries(entries.slice(0, MAX_MODULE_SWITCHES));
 }
 
 function parseCapabilities(value: string | null, fallback: AutoReadCapabilities): AutoReadCapabilities {
@@ -92,6 +114,7 @@ function parseCapabilities(value: string | null, fallback: AutoReadCapabilities)
 	const capabilities = { ...fallback };
 	for (const key of CAPABILITY_KEYS) if (typeof record[key] === "boolean") capabilities[key] = record[key];
 	capabilities.mutedSenders = Array.isArray(record.mutedSenders) ? normalizeMutedSenders(record.mutedSenders) : [];
+	capabilities.modules = normalizeModuleSwitches(record.modules);
 	return capabilities;
 }
 
@@ -103,6 +126,7 @@ function mergeCapabilities(
 	const merged = { ...current };
 	for (const key of CAPABILITY_KEYS) merged[key] = input?.[key] ?? current[key];
 	merged.mutedSenders = normalizeMutedSenders([...current.mutedSenders, ...(input?.mutedSenders ?? [])]);
+	merged.modules = normalizeModuleSwitches({ ...current.modules, ...input?.modules });
 	return merged;
 }
 

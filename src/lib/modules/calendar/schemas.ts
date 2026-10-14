@@ -4,11 +4,11 @@ import { CALENDAR_TOOL_NAMES, calendarToolSchemas } from "@/lib/calendar/tool-sc
 import type { ModuleSchemas } from "../schema-utils";
 import {
 	actionSchemas,
+	baseTriageStepSchemas,
 	instantSchema,
 	lifecycleSchemas,
 	resolveRefsSchemas,
 	searchSchemas,
-	triageStepSchemas,
 } from "../shared-schemas";
 
 const eventPayload = z.object({
@@ -38,7 +38,7 @@ export const calendarSchemas: ModuleSchemas = {
 	...Object.fromEntries(CALENDAR_TOOL_NAMES.map((name) => [name, { input: calendarToolSchemas[name] }])),
 	search: searchSchemas,
 	resolveRefs: resolveRefsSchemas(["calendar:event"]),
-	invite: triageStepSchemas,
+	invite: baseTriageStepSchemas,
 	calendar_invite: { input: calendarInviteSchema },
 	answerInvite,
 	createEvent: actionSchemas,

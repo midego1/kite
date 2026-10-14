@@ -181,7 +181,7 @@ test.describe("automatic reading settings API", () => {
 			const personal = await readMailboxSettings(owner.api, owner.mailboxId);
 			expect(autoReadFields(personal)).toEqual({
 				autonomy: "off",
-				capabilities: { calendar: true, reply: true, summary: true, phishing: true, mutedSenders: [] },
+				capabilities: { calendar: true, reply: true, summary: true, phishing: true, mutedSenders: [], modules: {} },
 				triageModelId: null,
 				autoReadDailyLimit: 200,
 				dailySpendCapMicros: null,
@@ -219,6 +219,7 @@ test.describe("automatic reading settings API", () => {
 							summary: true,
 							phishing: false,
 							mutedSenders: ["Spam@Outside.test"],
+							modules: { gadget: false },
 						},
 						triageModelId: "fake-triage",
 						autoReadDailyLimit: 42,
@@ -236,6 +237,7 @@ test.describe("automatic reading settings API", () => {
 					summary: true,
 					phishing: false,
 					mutedSenders: ["spam@outside.test"],
+					modules: { gadget: false },
 				},
 				triageModelId: "fake-triage",
 				autoReadDailyLimit: 42,
@@ -256,7 +258,11 @@ test.describe("automatic reading settings API", () => {
 				}),
 			);
 			const resaved = await readMailboxSettings(api, sharedId);
-			expect(resaved.settings.capabilities).toMatchObject({ summary: false, mutedSenders: ["spam@outside.test"] });
+			expect(resaved.settings.capabilities).toMatchObject({
+				summary: false,
+				mutedSenders: ["spam@outside.test"],
+				modules: { gadget: false },
+			});
 
 			for (const data of [
 				{ autonomy: "act" },
@@ -266,6 +272,7 @@ test.describe("automatic reading settings API", () => {
 				{ dailySpendCapMicros: -1 },
 				{ triageModelId: "not-a-configured-model" },
 				{ pausedUntil: "not-a-date" },
+				{ capabilities: { modules: { "Not-A-Key": true } } },
 			]) {
 				const response = await api.put("/api/agent/settings", { data: { mailboxId: sharedId, ...data } });
 				expect(response.status(), JSON.stringify(data)).toBe(400);

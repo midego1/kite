@@ -47,7 +47,7 @@ test("a mailbox without a settings row gets the automatic reading defaults", () 
 		instructions: "",
 		dailyLimit: 25,
 		autonomy: "off",
-		capabilities: { calendar: true, reply: true, summary: true, phishing: true, mutedSenders: [] },
+		capabilities: { calendar: true, reply: true, summary: true, phishing: true, mutedSenders: [], modules: {} },
 		triageModelId: null,
 		autoReadDailyLimit: 200,
 		dailySpendCapMicros: null,
@@ -80,6 +80,7 @@ test("stored rows are read back with parsed capabilities and a safe autonomy", (
 		summary: true,
 		phishing: true,
 		mutedSenders: ["a@x.test"],
+		modules: {},
 	});
 	assert.equal(state.pausedUntil, pausedUntil);
 	assert.equal(settings.resolveMailboxAgentSettings({ ...row, autonomy: "bogus" }, shared).autonomy, "off");
@@ -90,6 +91,7 @@ test("stored rows are read back with parsed capabilities and a safe autonomy", (
 			summary: true,
 			phishing: true,
 			mutedSenders: [],
+			modules: {},
 		});
 });
 
@@ -165,6 +167,7 @@ test("a partial update keeps every field it leaves out", () => {
 		summary: false,
 		phishing: true,
 		mutedSenders: [],
+		modules: {},
 	});
 	assert.equal(full.autoReadDailyLimit, 7);
 	assert.equal(full.dailySpendCapMicros, 50);
@@ -186,6 +189,41 @@ test("saving capabilities never drops muted senders", () => {
 	assert.deepEqual(merge({ mutedSenders: [] }).mutedSenders, ["a@x.test"]);
 	assert.deepEqual(merge({ mutedSenders: ["B@Y.test", "a@x.test"] }).mutedSenders, ["a@x.test", "b@y.test"]);
 	assert.deepEqual(merge(undefined), current.capabilities);
+});
+
+test("module step switches are kept per key, merged on save, and malformed keys or values are dropped", () => {
+	const row = (capabilities) => ({
+		mailboxId: "mb2",
+		modelId: null,
+		autoDraftEnabled: false,
+		reviewerUserId: null,
+		instructions: "",
+		dailyLimit: 10,
+		autonomy: "suggest",
+		capabilities,
+		triageModelId: null,
+		autoReadDailyLimit: 5,
+		dailySpendCapMicros: null,
+		pausedUntil: null,
+	});
+	const read = (value) => settings.resolveMailboxAgentSettings(row(value), personal).capabilities.modules;
+	assert.deepEqual(read('{"modules":{"widgets":false,"gadgets":true}}'), { widgets: false, gadgets: true });
+	assert.deepEqual(read('{"modules":{"Bad Key":false,"widgets":"no","__proto__":false,"ok_1":false}}'), {
+		ok_1: false,
+	});
+	for (const modules of ["[]", '"x"', "null", "3"]) assert.deepEqual(read(`{"modules":${modules}}`), {});
+	const many = Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`k${index}`, false]));
+	assert.equal(Object.keys(read(JSON.stringify({ modules: many }))).length, 32);
+
+	const current = settings.resolveMailboxAgentSettings(row('{"modules":{"widgets":false}}'), personal);
+	const merge = (capabilities) =>
+		settings.applyMailboxAgentSettingsUpdate(current, parseUpdate({ capabilities }).data).capabilities.modules;
+	assert.deepEqual(merge({ modules: { gadgets: false } }), { widgets: false, gadgets: false });
+	assert.deepEqual(merge({ modules: { widgets: true } }), { widgets: true });
+	assert.deepEqual(merge({ reply: false }), { widgets: false });
+	assert.equal(parseUpdate({ capabilities: { modules: { "Bad Key": true } } }).success, false);
+	assert.equal(parseUpdate({ capabilities: { modules: { widgets: "yes" } } }).success, false);
+	assert.equal(parseUpdate({ capabilities: { modules: many } }).success, false);
 });
 
 test("muted senders over capacity are refused instead of evicting existing ones", () => {

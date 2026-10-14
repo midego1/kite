@@ -7,14 +7,21 @@ import { invokeCapability, isModuleEnabled } from "@/lib/modules/invoke";
 import type { CapabilityCallContext, JsonValue, ModuleId } from "@/lib/modules/module-types";
 import type { MessageFacts } from "./facts-types";
 import { moduleKindPayloadSchema } from "./module-kinds";
-import { suggestionKindDescriptors, triageStepsFor, validateStepOutput, type TriageStep } from "./module-steps-utils";
+import {
+	selectDueSteps,
+	stepSwitchOn,
+	suggestionKindDescriptors,
+	triageStepsFor,
+	validateStepOutput,
+	type TriageStep,
+} from "./module-steps-utils";
 import type { AutoReadCapabilities } from "./settings-types";
+import { buildStepInput } from "./step-input-utils";
 import type { PlannedSuggestion } from "./suggestion-types";
 
 type SourceMessage = typeof messages.$inferSelect;
 
-/** The mailbox capability switch that turns a module's step on; a module absent here always runs its step. */
-const STEP_CAPABILITY: Partial<Record<ModuleId, keyof AutoReadCapabilities>> = { calendar: "calendar" };
+const TRIAGE_STEPS = triageStepsFor(MODULE_CAPABILITIES);
 
 const MODULE_KINDS = suggestionKindDescriptors(MODULE_CAPABILITIES);
 
@@ -26,27 +33,47 @@ export type StepRunInput = {
 	reviewer: StepViewer;
 	source: SourceMessage;
 	facts: MessageFacts;
+	/** The raw headers triage read, lower-case names with their first value. */
+	headers: Record<string, string>;
+	bodyText: string;
 	capabilities: AutoReadCapabilities;
-	/** The triage model's answer, or null when the message needed no model call. */
+	/** The triage model's answer, or null when the model did not run or was refused. */
 	model: unknown;
+	/** A steps-only pass for `Auto-Submitted` mail: only steps that opted in run. */
+	automaticOnly?: boolean;
 };
 
 export type StepRun = {
 	planned: PlannedSuggestion[];
 	/** Modules whose step was due but skipped because the module is off for the reviewer. */
 	skipped: ModuleId[];
+	/** How many steps were invoked. */
+	ran: number;
 };
 
 function dueSteps(input: StepRunInput): TriageStep[] {
-	return triageStepsFor(MODULE_CAPABILITIES).filter((step) => {
-		if (step.requires === "invite_attachment" && input.facts.inviteAttachments.length === 0) return false;
-		const capability = STEP_CAPABILITY[step.moduleId];
-		return !capability || input.capabilities[capability] === true;
+	return selectDueSteps(TRIAGE_STEPS, {
+		inviteAttachments: input.facts.inviteAttachments.length,
+		capabilities: input.capabilities,
+		automaticOnly: input.automaticOnly === true,
 	});
 }
 
+/**
+ * Whether `Auto-Submitted` mail should get a triage job: some step opted in to it, its switch is on for
+ * the mailbox and its module is on for the reviewer.
+ */
+export async function automaticStepOpen(
+	reviewer: NonNullable<CapabilityCallContext["viewer"]>,
+	capabilities: AutoReadCapabilities,
+): Promise<boolean> {
+	for (const step of TRIAGE_STEPS)
+		if (step.automatic && stepSwitchOn(step, capabilities) && (await isModuleEnabled(reviewer, step.moduleId)))
+			return true;
+	return false;
+}
+
 async function stepInput(input: StepRunInput): Promise<JsonValue> {
-	const { source, facts } = input;
 	const attachments = await getDb(input.env)
 		.select({
 			id: messageAttachments.id,
@@ -55,25 +82,19 @@ async function stepInput(input: StepRunInput): Promise<JsonValue> {
 			size: messageAttachments.size,
 		})
 		.from(messageAttachments)
-		.where(eq(messageAttachments.messageId, source.id));
+		.where(eq(messageAttachments.messageId, input.source.id));
 	return JSON.parse(
-		JSON.stringify({
-			message: {
-				id: source.id,
+		JSON.stringify(
+			buildStepInput({
+				source: input.source,
 				mailboxId: input.job.mailboxId,
-				from: source.fromAddr,
-				subject: source.subject,
-				receivedAt: source.createdAt.toISOString(),
-			},
-			facts: {
-				authPassed: facts.authPassed,
-				bulk: facts.bulk,
-				knownContact: facts.knownContact,
-				phishing: facts.phishingSignals,
-			},
-			attachments,
-			model: input.model ?? null,
-		}),
+				facts: input.facts,
+				headers: input.headers,
+				bodyText: input.bodyText,
+				attachments,
+				model: input.model,
+			}),
+		),
 	) as JsonValue;
 }
 
@@ -93,8 +114,9 @@ function kindSchemas(moduleId: ModuleId) {
 export async function runModuleTriageSteps(input: StepRunInput): Promise<StepRun> {
 	const planned: PlannedSuggestion[] = [];
 	const skipped: ModuleId[] = [];
+	let ran = 0;
 	const steps = dueSteps(input);
-	if (steps.length === 0) return { planned, skipped };
+	if (steps.length === 0) return { planned, skipped, ran };
 	const payload = await stepInput(input);
 	for (const step of steps) {
 		const descriptor = findDescriptor(step.moduleId, step.capability);
@@ -113,6 +135,7 @@ export async function runModuleTriageSteps(input: StepRunInput): Promise<StepRun
 			mailboxIds: [input.job.mailboxId],
 			grants: descriptor.scopes ?? [],
 		});
+		ran += 1;
 		const result = await invokeCapability(step.moduleId, step.capability, payload, ctx);
 		if (!result.ok) {
 			if (result.error.code === "module_disabled") skipped.push(step.moduleId);
@@ -123,5 +146,5 @@ export async function runModuleTriageSteps(input: StepRunInput): Promise<StepRun
 			...validateStepOutput({ moduleId: step.moduleId, output: result.output, ...kindSchemas(step.moduleId) }).accepted,
 		);
 	}
-	return { planned, skipped };
+	return { planned, skipped, ran };
 }

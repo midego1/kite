@@ -13,7 +13,7 @@ import { runModuleTriageSteps } from "./module-steps";
 import { planSuggestions } from "./policy-utils";
 import { allowAutoReadRequest, triageDailyLimitReached } from "./quota";
 import { createReplySuggestion } from "./reply-suggestion";
-import { isPaused } from "./schedule-utils";
+import { isAutoSubmitted, isPaused } from "./schedule-utils";
 import type { AutoReadInstallSettings } from "./settings-types";
 import { resolveMailboxAgentSettings } from "./settings-utils";
 import { settleTriageSuggestions } from "./suggestion-lifecycle";
@@ -45,7 +45,14 @@ async function reviewerAccess(db: AppDatabase, job: AgentJobRow) {
 }
 
 type TriageModelRun = Awaited<ReturnType<typeof runTriageModel>>;
-type ModelStep = { skip: string; model?: undefined } | { skip: null; model: TriageModelRun | null };
+type ModelStep = { skip: string; model: null } | { skip: null; model: TriageModelRun | null };
+
+/** A refusal thrown from inside the model call, as the code the job records. */
+function thrownRefusal(error: unknown): string | null {
+	if (error instanceof SpendCapReachedError) return "spend_cap";
+	if (error instanceof ExternalProviderNotAllowedError) return "external_provider_not_allowed";
+	return null;
+}
 
 /** Makes the one tool-less model call when the message needs it, or names why it cannot be made. */
 async function modelStep(input: {
@@ -59,26 +66,29 @@ async function modelStep(input: {
 	if (!needsModel(context.facts, settings.capabilities)) return { skip: null, model: null };
 	const config = await getAgentProviderConfig(env);
 	if (config.provider === "compatible" && !install.externalAutoReadAllowed)
-		return { skip: "external_provider_not_allowed" };
-	if (!(await allowAutoReadRequest(env, job.mailboxId))) return { skip: "rate_limited" };
-	const model = await runTriageModel({
-		env,
-		job,
-		settings,
-		context,
-		config,
-		installCapMicros: install.dailySpendCapMicros,
-	});
-	return { skip: null, model };
+		return { skip: "external_provider_not_allowed", model: null };
+	if (!(await allowAutoReadRequest(env, job.mailboxId))) return { skip: "rate_limited", model: null };
+	try {
+		const model = await runTriageModel({
+			env,
+			job,
+			settings,
+			context,
+			config,
+			installCapMicros: install.dailySpendCapMicros,
+		});
+		return { skip: null, model };
+	} catch (error) {
+		const refusal = thrownRefusal(error);
+		if (refusal) return { skip: refusal, model: null };
+		throw error;
+	}
 }
 
 type TriageOutcome = { skip: string; note?: undefined } | { skip: null; note: string | null };
 
-/**
- * Triages the claimed job's message. Either the job is skipped with a reason, or its suggestions are
- * stored and `note` names the module steps that were due but skipped because their module is off.
- */
-async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Promise<TriageOutcome> {
+/** Everything the job reads before it looks at the message, or why it stops here. */
+async function prepareTriage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow) {
 	const install = await getAutoReadInstallSettings(env);
 	const [row] = await db
 		.select()
@@ -91,17 +101,31 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 	const [mailbox] = await db.select().from(mailboxes).where(eq(mailboxes.id, job.mailboxId)).limit(1);
 	const reviewed = mailbox && (await reviewerAccess(db, job));
 	if (!mailbox || !reviewed) return { skip: "reviewer_unavailable" };
-	const { reviewer, access } = reviewed;
 	const settings = resolveMailboxAgentSettings(row, {
 		mailboxId: mailbox.id,
 		ownerUserId: mailbox.userId,
 		mailboxType: mailbox.type,
 	});
 	if (await triageDailyLimitReached(db, job.mailboxId, settings.autoReadDailyLimit)) return { skip: "daily_limit" };
+	return { skip: null, install, source, mailbox, settings, ...reviewed };
+}
+
+/**
+ * Triages the claimed job's message. Either the job is skipped with a reason, or its suggestions are
+ * stored and `note` names why the model was not asked and the module steps that were due but skipped
+ * because their module is off.
+ */
+async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Promise<TriageOutcome> {
+	const prepared = await prepareTriage(env, db, job);
+	if (prepared.skip !== null) return { skip: prepared.skip };
+	const { install, source, mailbox, settings, reviewer, access } = prepared;
 	const context = await loadTriageContext(env, source, mailbox.userId);
-	const modelRun = await modelStep({ env, job, settings, context, install });
-	if (modelRun.skip) return { skip: modelRun.skip };
-	const { model } = modelRun;
+	// Mail a program sent is only let in for the steps that opted in to it, so it gets no model call.
+	const stepsOnly = isAutoSubmitted(context.headers);
+	const modelRun: ModelStep = stepsOnly
+		? { skip: null, model: null }
+		: await modelStep({ env, job, settings, context, install });
+	const model = modelRun.model;
 	const steps = await runModuleTriageSteps({
 		env,
 		job,
@@ -113,9 +137,14 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 		},
 		source,
 		facts: context.facts,
+		headers: context.headers,
+		bodyText: context.bodyText,
 		capabilities: settings.capabilities,
 		model: model?.result ?? null,
+		automaticOnly: stepsOnly,
 	});
+	// A refused model only stops the job when no module step ran; otherwise the steps' suggestions are kept.
+	if (modelRun.skip && steps.ran === 0) return { skip: modelRun.skip };
 	const planned = planSuggestions({
 		facts: context.facts,
 		triage: model?.result ?? null,
@@ -141,7 +170,7 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 			installCapMicros: install.dailySpendCapMicros,
 		});
 	await settleTriageSuggestions(env, job.mailboxId, source);
-	return { skip: null, note: joinSkipReasons(steps.skipped) };
+	return { skip: null, note: joinSkipReasons(steps.skipped, modelRun.skip) };
 }
 
 export async function processAgentTriageJob(env: CloudflareEnv, jobId: string) {
@@ -160,9 +189,8 @@ export async function processAgentTriageJob(env: CloudflareEnv, jobId: string) {
 			.set({ status: "completed", leaseUntil: null, completedAt: new Date(), reason: outcome.note ?? null })
 			.where(eq(agentJobs.id, jobId));
 	} catch (error) {
-		if (error instanceof SpendCapReachedError) return void (await skipAgentJob(db, jobId, "spend_cap"));
-		if (error instanceof ExternalProviderNotAllowedError)
-			return void (await skipAgentJob(db, jobId, "external_provider_not_allowed"));
+		const refusal = thrownRefusal(error);
+		if (refusal) return void (await skipAgentJob(db, jobId, refusal));
 		await failAndRequeueAgentJob(env, db, job, error);
 	}
 }

@@ -42,14 +42,14 @@ Message text is treated as untrusted. A message that tries to give the model ord
 
 Every automatic request is checked against these limits before it runs. Cheaper checks come first.
 
-- **Deterministic filters.** The checks above run first and cost nothing. Per mailbox you can also turn off the calendar, reply, summary and phishing capabilities, and mute senders.
+- **Deterministic filters.** The checks above run first and cost nothing. Per mailbox you can also turn off the calendar, reply, summary and phishing capabilities, each enabled module's own step (one switch per step, listed under the core ones), and mute senders.
 - **Daily limit per mailbox.** The number of messages Kite reads per UTC day. Default 200, range 1 to 1000.
 - **Rate limit per mailbox.** A short burst limit. Mail over it is skipped as "rate limited".
 - **Spend cap per mailbox.** An optional daily cap in USD. Empty means no per-mailbox cap.
 - **Spend cap for the install.** A daily cap in USD for all mailboxes together, set by the primary admin. Default $2.00 per day.
 - **When model rates are unknown.** If the model has no configured prices, Kite cannot count dollars. It then counts input tokens instead, with a cap of 2,000,000 input tokens per day for the install. Set rates for your model to get a dollar cap.
 
-Kite reserves the estimated cost before each call and settles it with the real usage afterwards, so parallel jobs are counted against the cap before they run. Once reserved and settled spend reaches the cap, Kite starts no new calls: the message is skipped as "daily spend cap reached" and later mail is skipped until 00:00 UTC. The cap is not a guaranteed billing ceiling. Estimates are not exact, so what your provider bills can slightly exceed it.
+Kite reserves the estimated cost before each call and settles it with the real usage afterwards, so parallel jobs are counted against the cap before they run. Once reserved and settled spend reaches the cap, Kite starts no new calls: the model is skipped as "daily spend cap reached" until 00:00 UTC. The cap is not a guaranteed billing ceiling. Estimates are not exact, so what your provider bills can slightly exceed it.
 
 ## Kill switches
 
@@ -70,6 +70,12 @@ When each switch takes effect differs. Kite checks the automatic-reading switch,
 - The message was moved or deleted first.
 - The reviewer can no longer read this mailbox.
 - A module the step needs is turned off, for example "Calendar is turned off". Kite records this with the reason code `module_disabled` and the module, skips only that step and still runs the others.
+
+When the model is refused (the external provider is not allowed, the rate limit or a spend cap is reached), Kite still runs the module steps that need no model, such as calendar invitations, without the model's answer, keeps their suggestions and lists the message with the reason. Only when no module step ran is the whole message skipped.
+
+Mail a program sent (`Auto-Submitted`) is normally not read at all. When a module step opts in to such mail and is on for the reviewer and the mailbox, Kite reads it in a steps-only pass: only those steps run, no model is asked, and no summary or reply is suggested. These messages count toward the daily limit.
+
+A module kind can be private to the reviewer: its cards, row badges and For you counts appear only for the mailbox's reviewer, and only the reviewer can accept or dismiss them. Other users with full access see nothing of it.
 
 ## Activity and Undo
 

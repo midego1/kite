@@ -27,6 +27,7 @@ async function bundle(entry, outfile) {
 }
 
 const ui = await bundle("src/components/agent/auto-read-settings-utils.ts", "auto-read-ui.mjs");
+const clientData = await bundle("src/lib/modules/client-data/index.ts", "client-data.mjs");
 const rates = await bundle("src/lib/agent/model-rates-utils.ts", "model-rates.mjs");
 
 const NOW = Date.UTC(2026, 9, 10, 12, 0, 0);
@@ -36,7 +37,14 @@ const response = {
 		mailboxId: "mb1",
 		modelId: "m",
 		autonomy: "suggest",
-		capabilities: { calendar: false, reply: true, summary: false, phishing: true, mutedSenders: ["x@y.test"] },
+		capabilities: {
+			calendar: false,
+			reply: true,
+			summary: false,
+			phishing: true,
+			mutedSenders: ["x@y.test"],
+			modules: { widgets: false },
+		},
 		triageModelId: "fake-triage",
 		autoReadDailyLimit: 50,
 		dailySpendCapMicros: 500_000,
@@ -67,6 +75,25 @@ test("only Off and Suggest only can be chosen", () => {
 	]);
 });
 
+test("module step switches come from the client data of the modules that are on, in registry order", () => {
+	const { CLIENT_MODULES } = clientData;
+	const declared = CLIENT_MODULES.flatMap((entry) => (entry.triageSwitches ?? []).map((item) => item.key));
+	const all = CLIENT_MODULES.map((entry) => entry.id);
+	assert.deepEqual(
+		ui.moduleStepSwitches(all).map((item) => item.key),
+		declared,
+	);
+	assert.deepEqual(ui.moduleStepSwitches([]), []);
+	for (const entry of CLIENT_MODULES)
+		assert.deepEqual(
+			ui.moduleStepSwitches([entry.id]),
+			[...(entry.triageSwitches ?? [])],
+			`${entry.id} lists only its own switches`,
+		);
+	// Calendar keeps its core "calendar" key, so it never adds a module switch.
+	assert.deepEqual(ui.moduleStepSwitches(["calendar"]), []);
+});
+
 test("dollar inputs round-trip through micro-dollars", () => {
 	assert.equal(ui.microsToDollarInput(null), "");
 	assert.equal(ui.microsToDollarInput(undefined), "");
@@ -86,7 +113,7 @@ test("the settings response becomes form state, and a response without auto-read
 	const state = ui.toAutoReadState(response, NOW);
 	assert.deepEqual(state.form, {
 		autonomy: "suggest",
-		capabilities: { calendar: false, reply: true, summary: false, phishing: true },
+		capabilities: { calendar: false, reply: true, summary: false, phishing: true, modules: { widgets: false } },
 		triageModelId: "fake-triage",
 		dailyLimit: "50",
 		spendCap: "0.50",
@@ -124,7 +151,7 @@ test("the update body carries the form values but never the muted senders", () =
 	assert.deepEqual(ui.autoReadUpdateBody("mb1", form), {
 		mailboxId: "mb1",
 		autonomy: "suggest",
-		capabilities: { calendar: false, reply: true, summary: false, phishing: true },
+		capabilities: { calendar: false, reply: true, summary: false, phishing: true, modules: { widgets: false } },
 		triageModelId: "fake-triage",
 		autoReadDailyLimit: 50,
 		dailySpendCapMicros: 500_000,

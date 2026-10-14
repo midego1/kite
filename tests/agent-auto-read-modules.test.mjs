@@ -15,6 +15,8 @@ after(() => rmSync(outDir, { recursive: true, force: true }));
 await build({
 	entryPoints: {
 		steps: join(root, "src/lib/agent/auto-read/module-steps-utils.ts"),
+		stepInput: join(root, "src/lib/agent/auto-read/step-input-utils.ts"),
+		sharedSchemas: join(root, "src/lib/modules/shared-schemas.ts"),
 		actions: join(root, "src/lib/agent/auto-read/module-actions-utils.ts"),
 		registry: join(root, "src/lib/modules/capability-registry.ts"),
 		activity: join(root, "src/components/agent/agent-activity-utils.ts"),
@@ -39,6 +41,8 @@ await build({
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const steps = await load("steps");
+const { buildStepInput, stepHeaders, stepTextExcerpt, STEP_TEXT_EXCERPT_CHARS } = await load("stepInput");
+const { triageStepSchemas, baseTriageStepSchemas } = await load("sharedSchemas");
 const actions = await load("actions");
 const { MODULE_CAPABILITIES } = await load("registry");
 const { reasonText, actionLabel } = await load("activity");
@@ -92,6 +96,39 @@ const TEST_MODULE = {
 		},
 	],
 };
+
+/** A second test-only module with a reviewer-only kind and an automatic, switchable triage step. */
+const PRIVATE_MODULE = {
+	moduleId: "privmod",
+	promptFragment: null,
+	descriptors: [
+		{
+			name: "scan",
+			surfaces: ["triage_step"],
+			description: "x",
+			inputSchema: {},
+			effect: "read",
+			triage: { order: 20, automatic: true, capability: "gadgets" },
+		},
+		{
+			name: "gadgetNote",
+			surfaces: ["suggestion_kind"],
+			description: "x",
+			inputSchema: {},
+			effect: "none",
+			suggestionKind: { kind: "gadget_note", label: "Gadget", reasonTemplate: "gadget", audience: "reviewer" },
+		},
+		{
+			name: "plainStep",
+			surfaces: ["triage_step"],
+			description: "x",
+			inputSchema: {},
+			effect: "read",
+			triage: { order: 5 },
+		},
+	],
+};
+const CORE_CAPABILITIES = { calendar: true, reply: true, summary: true, phishing: true, mutedSenders: [], modules: {} };
 
 const payloadSchemas = { calendar_invite: z.object({ uid: z.string(), summary: z.string() }) };
 const validate = (output, extra = {}) =>
@@ -203,6 +240,213 @@ test("triage steps list in order for modules that are on", () => {
 		steps.triageStepsFor(MODULE_CAPABILITIES).map((step) => [step.moduleId, step.capability, step.requires]),
 		[["calendar", "invite", "invite_attachment"]],
 	);
+});
+
+test("audience: only reviewer kinds are reviewer-only, and only the reviewer can see them", () => {
+	assert.deepEqual(steps.reviewerOnlySuggestionKinds(MODULE_CAPABILITIES), []);
+	assert.deepEqual(steps.reviewerOnlySuggestionKinds([...MODULE_CAPABILITIES, TEST_MODULE, PRIVATE_MODULE]), [
+		"gadget_note",
+	]);
+	const reviewerOnly = ["gadget_note"];
+	const row = { kind: "gadget_note", reviewerUserId: "reviewer" };
+	assert.equal(steps.hiddenFromViewer(row, "reviewer", reviewerOnly), false);
+	assert.equal(steps.hiddenFromViewer(row, "colleague", reviewerOnly), true);
+	assert.equal(steps.hiddenFromViewer({ ...row, kind: "widget_offer" }, "colleague", reviewerOnly), false);
+	assert.equal(steps.hiddenFromViewer({ ...row, kind: "summary" }, "colleague", reviewerOnly), false);
+});
+
+test("triage steps carry their automatic opt-in and switch key", () => {
+	assert.deepEqual(
+		steps.triageStepsFor([PRIVATE_MODULE]).map((step) => [step.capability, step.order, step.automatic, step.switchKey]),
+		[
+			["plainStep", 5, false, null],
+			["scan", 20, true, "gadgets"],
+		],
+	);
+	assert.deepEqual(
+		steps.triageStepsFor(MODULE_CAPABILITIES).map((step) => [step.moduleId, step.automatic, step.switchKey]),
+		[["calendar", false, null]],
+	);
+});
+
+test("the mailbox module switch: a module step's key in capabilities.modules, on unless set to false", () => {
+	const [plain, scan] = steps.triageStepsFor([PRIVATE_MODULE]);
+	assert.equal(steps.stepSwitchOn(scan, CORE_CAPABILITIES), true);
+	assert.equal(steps.stepSwitchOn(scan, { ...CORE_CAPABILITIES, modules: { gadgets: true } }), true);
+	assert.equal(steps.stepSwitchOn(scan, { ...CORE_CAPABILITIES, modules: { gadgets: false } }), false);
+	assert.equal(steps.stepSwitchOn(scan, { ...CORE_CAPABILITIES, modules: undefined }), true);
+	assert.equal(steps.stepSwitchOn(scan, { ...CORE_CAPABILITIES, modules: { other: false } }), true);
+	assert.equal(steps.stepSwitchOn(plain, { ...CORE_CAPABILITIES, modules: { gadgets: false } }), true);
+	// Calendar keeps its core key, whatever capabilities.modules says.
+	const [invite] = steps.triageStepsFor(MODULE_CAPABILITIES);
+	assert.equal(steps.stepSwitchOn(invite, CORE_CAPABILITIES), true);
+	assert.equal(steps.stepSwitchOn(invite, { ...CORE_CAPABILITIES, calendar: false }), false);
+	assert.equal(
+		steps.stepSwitchOn(invite, { ...CORE_CAPABILITIES, calendar: false, modules: { calendar: true } }),
+		false,
+	);
+});
+
+test("due steps: switched on, with their fact, and only opted-in steps on a steps-only pass", () => {
+	const all = steps.triageStepsFor([...MODULE_CAPABILITIES, PRIVATE_MODULE]);
+	const due = (input) =>
+		steps
+			.selectDueSteps(all, { inviteAttachments: 1, capabilities: CORE_CAPABILITIES, automaticOnly: false, ...input })
+			.map((step) => step.capability);
+	assert.deepEqual(due({}), ["plainStep", "invite", "scan"]);
+	assert.deepEqual(due({ inviteAttachments: 0 }), ["plainStep", "scan"]);
+	assert.deepEqual(due({ automaticOnly: true }), ["scan"]);
+	assert.deepEqual(due({ capabilities: { ...CORE_CAPABILITIES, modules: { gadgets: false } } }), [
+		"plainStep",
+		"invite",
+	]);
+	assert.deepEqual(
+		due({ automaticOnly: true, capabilities: { ...CORE_CAPABILITIES, modules: { gadgets: false } } }),
+		[],
+	);
+	assert.deepEqual(due({ capabilities: { ...CORE_CAPABILITIES, calendar: false } }), ["plainStep", "scan"]);
+});
+
+test("a finished job's note names the refused model first, then the skipped modules", () => {
+	assert.equal(steps.joinSkipReasons([], "rate_limited"), "rate_limited");
+	assert.equal(steps.joinSkipReasons(["testmod"], "spend_cap"), "spend_cap,module_disabled:testmod");
+	assert.equal(steps.joinSkipReasons(["testmod"], null), "module_disabled:testmod");
+	assert.equal(
+		reasonText("external_provider_not_allowed,module_disabled:calendar"),
+		"Skipped: the external AI provider is not allowed to read mail automatically, Calendar is turned off",
+	);
+});
+
+const stepFacts = {
+	senderAddress: "billing@vendor.test",
+	senderName: "Vendor Billing",
+	automatic: true,
+	bulk: true,
+	list: true,
+	noReply: false,
+	authPassed: true,
+	knownContact: false,
+	phishingSignals: [],
+	spamVerdict: "inbox",
+	inviteAttachments: [],
+};
+const stepSource = {
+	id: "m1",
+	fromAddr: "Vendor Billing <billing@vendor.test>",
+	subject: "Your receipt",
+	createdAt: new Date("2030-01-02T03:04:05.000Z"),
+};
+
+test("the wider step input carries the sender name, an 8 KB excerpt, extra facts and three list headers", () => {
+	const input = buildStepInput({
+		source: stepSource,
+		mailboxId: "mb1",
+		facts: stepFacts,
+		headers: {
+			"list-unsubscribe": " <https://vendor.test/u/1>, <mailto:u@vendor.test> ",
+			"list-unsubscribe-post": "List-Unsubscribe=One-Click",
+			"list-id": "<news.vendor.test>",
+			"x-other": "dropped",
+		},
+		bodyText: "Total 9.99",
+		attachments: [{ id: "a1", contentType: "application/pdf", filename: "r.pdf", size: 10 }],
+		model: null,
+	});
+	assert.deepEqual(input, {
+		message: {
+			id: "m1",
+			mailboxId: "mb1",
+			from: "Vendor Billing <billing@vendor.test>",
+			fromName: "Vendor Billing",
+			subject: "Your receipt",
+			receivedAt: "2030-01-02T03:04:05.000Z",
+			textExcerpt: "Total 9.99",
+		},
+		facts: {
+			authPassed: true,
+			bulk: true,
+			knownContact: false,
+			phishing: [],
+			automatic: true,
+			noReply: false,
+			list: true,
+			spam: false,
+		},
+		headers: {
+			listUnsubscribe: "<https://vendor.test/u/1>, <mailto:u@vendor.test>",
+			listUnsubscribePost: "List-Unsubscribe=One-Click",
+			listId: "<news.vendor.test>",
+		},
+		attachments: [{ id: "a1", contentType: "application/pdf", filename: "r.pdf", size: 10 }],
+		model: null,
+	});
+	assert.equal(triageStepSchemas.input.safeParse(input).success, true);
+	const spam = buildStepInput({
+		...input,
+		source: stepSource,
+		mailboxId: "mb1",
+		facts: { ...stepFacts, spamVerdict: "spam" },
+		headers: {},
+		bodyText: "",
+		attachments: [],
+		model: { category: "fyi" },
+	});
+	assert.equal(spam.facts.spam, true);
+	assert.equal(spam.message.textExcerpt, null);
+	assert.deepEqual(spam.headers, { listUnsubscribe: null, listUnsubscribePost: null, listId: null });
+	assert.deepEqual(spam.model, { category: "fyi" });
+});
+
+test("the excerpt stops at 8,192 characters without splitting a surrogate pair, and long headers are cut", () => {
+	assert.equal(STEP_TEXT_EXCERPT_CHARS, 8_192);
+	assert.equal(stepTextExcerpt(""), null);
+	assert.equal(stepTextExcerpt("x".repeat(9_000)).length, 8_192);
+	const emoji = `${"x".repeat(8_191)}😀tail`;
+	assert.equal(stepTextExcerpt(emoji), "x".repeat(8_191));
+	assert.equal(stepHeaders({ "list-id": "y".repeat(5_000) }).listId.length, 4_096);
+	assert.equal(stepHeaders({ "list-id": "   " }).listId, null);
+	assert.equal(stepHeaders(Object.create({ "list-id": "inherited" })).listId, null);
+});
+
+test("a step on the base schema gets exactly its old input: the new keys are stripped", () => {
+	const input = buildStepInput({
+		source: stepSource,
+		mailboxId: "mb1",
+		facts: stepFacts,
+		headers: { "list-id": "<news.vendor.test>" },
+		bodyText: "Body",
+		attachments: [],
+		model: null,
+	});
+	const parsed = baseTriageStepSchemas.input.parse(input);
+	assert.deepEqual(parsed, {
+		message: {
+			id: "m1",
+			mailboxId: "mb1",
+			from: "Vendor Billing <billing@vendor.test>",
+			subject: "Your receipt",
+			receivedAt: "2030-01-02T03:04:05.000Z",
+		},
+		facts: { authPassed: true, bulk: true, knownContact: false, phishing: [] },
+		attachments: [],
+		model: null,
+	});
+});
+
+test("every module step switch is declared in the module's client data, and no switch key is a core key", () => {
+	for (const entry of MODULE_CAPABILITIES) {
+		const keys = steps
+			.triageStepsFor([entry])
+			.map((step) => step.switchKey)
+			.filter(Boolean);
+		const client = CLIENT_MODULES.find((module) => module.id === entry.moduleId);
+		assert.deepEqual(
+			(client.triageSwitches ?? []).map((item) => item.key).sort(),
+			[...new Set(keys)].sort(),
+			entry.moduleId,
+		);
+		for (const key of keys) assert.ok(!Object.hasOwn(CORE_CAPABILITIES, key), `${entry.moduleId}: ${key}`);
+	}
 });
 
 test("module actions register from their descriptors with the rules calendar used before", () => {

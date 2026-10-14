@@ -15,7 +15,7 @@ import { queryInChunks } from "@/db/chunk-utils";
 import { decodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor-utils";
 import { ownedStatusCondition } from "@/lib/modules/message-status";
 import { loadRowSuggestions } from "@/lib/agent/auto-read/message-suggestions";
-import { hiddenKindsFor } from "@/lib/agent/auto-read/suggestion-visibility";
+import { suggestionVisibilityFor } from "@/lib/agent/auto-read/suggestion-visibility";
 import { afterCursor, getMessageListColumns, loadConversationPage } from "./utils";
 import type { ListMessage } from "./types";
 
@@ -221,7 +221,7 @@ export async function GET(request: Request) {
 		accessibleMailboxes,
 		rows,
 		threadMessageIds,
-		await hiddenKindsFor(env, user),
+		await suggestionVisibilityFor(env, user),
 	);
 	// `Message.textBody`/`htmlBody` are optional on the wire type and the
 	// reading pane loads them from /api/messages/[id]/thread, so they are

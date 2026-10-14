@@ -1,5 +1,7 @@
 import { authFetch } from "@/lib/auth/client";
 import type { AutonomyLevel } from "@/lib/agent/auto-read/settings-types";
+import { CLIENT_MODULES } from "@/lib/modules/client-data";
+import type { ModuleId } from "@/lib/modules/module-types";
 import type { AgentSettings } from "./types";
 import type {
 	AutoReadAdminValues,
@@ -27,6 +29,13 @@ export const CAPABILITY_OPTIONS: { key: AutoReadCapabilityKey; label: string }[]
 	{ key: "phishing", label: "Phishing warnings" },
 ];
 
+/** One switch per triage step of each module that is on, in registry order, from the modules' client data. */
+export function moduleStepSwitches(enabled: readonly ModuleId[]): { key: string; label: string }[] {
+	return CLIENT_MODULES.filter((module) => enabled.includes(module.id)).flatMap(
+		(module) => module.triageSwitches ?? [],
+	);
+}
+
 export function microsToDollarInput(micros: number | null | undefined): string {
 	if (micros === null || micros === undefined) return "";
 	const dollars = micros / MICROS_PER_DOLLAR;
@@ -46,11 +55,11 @@ export function parseDollarInput(value: string): number | null | undefined {
 export function toAutoReadState(data: AutoReadSettingsResponse, now: number): AutoReadSettingsState | null {
 	const { settings } = data;
 	if (!settings.autonomy || !settings.capabilities) return null;
-	const { calendar, reply, summary, phishing } = settings.capabilities;
+	const { calendar, reply, summary, phishing, modules } = settings.capabilities;
 	return {
 		form: {
 			autonomy: settings.autonomy,
-			capabilities: { calendar, reply, summary, phishing },
+			capabilities: { calendar, reply, summary, phishing, modules: { ...modules } },
 			triageModelId: settings.triageModelId ?? "",
 			dailyLimit: String(settings.autoReadDailyLimit ?? 200),
 			spendCap: microsToDollarInput(settings.dailySpendCapMicros),
@@ -74,7 +83,7 @@ export function autoReadUpdateBody(mailboxId: string, form: AutoReadForm): AutoR
 	return {
 		mailboxId,
 		autonomy: form.autonomy,
-		capabilities: { ...form.capabilities },
+		capabilities: { ...form.capabilities, modules: { ...form.capabilities.modules } },
 		triageModelId: form.triageModelId || null,
 		autoReadDailyLimit: limit,
 		dailySpendCapMicros: cap,

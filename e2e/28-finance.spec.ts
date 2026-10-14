@@ -623,3 +623,274 @@ test.describe("Money Watch tracking", () => {
 		}
 	});
 });
+
+type DetectAnswer = {
+	messageId: string;
+	mailboxId: string;
+	draft: {
+		vendor: string;
+		amountMinor: number | null;
+		currency: string | null;
+		cycle: string | null;
+		nextRenewalOn: string | null;
+		cancelLink: { url: string; oneClick: boolean } | null;
+		document: { docType: string; attachmentId: string | null } | null;
+		subscriptionId: string | null;
+	};
+	attachments: { id: string; filename: string }[];
+};
+
+/** Delivers mail to an account whose automatic reading may be off, so no triage job is awaited. */
+async function deliverPlain(account: { api: APIRequestContext; address: string }, mail: Omit<InboundMail, "to">) {
+	await postInbound(account.api, { ...mail, to: account.address });
+	return waitForMessage(account.api, mail.subject, { status: "received" });
+}
+
+async function plainAccount(prefix: string) {
+	const username = `${prefix}${uniqueToken("")}`;
+	const account = await createSignedInAccount(api, username);
+	return { ...account, address: `${username}@${DOMAIN}` };
+}
+
+/** Opens the reader's overflow menu on the message and chooses the module entry. */
+async function openMessageMenuItem(page: Page, messageId: string, label: string) {
+	await page.goto(`/inbox/${messageId}`);
+	await page.getByRole("button", { name: "More actions" }).first().click();
+	const detected = page.waitForResponse((response) => response.url().endsWith("/api/finance/detect"));
+	await page.getByRole("button", { name: label, exact: true }).click();
+	const response = await detected;
+	expect(response.status()).toBe(200);
+	return (await response.json()) as DetectAnswer;
+}
+
+const pdf = (name: string) => ({
+	filename: name,
+	contentType: "application/pdf",
+	content: Buffer.from("%PDF-1.4 doc"),
+});
+
+test.describe("Money Watch manual add", () => {
+	test("case 4: by hand, Track as subscription and Add to a tracked subscription, all undoable", async ({
+		browser,
+	}) => {
+		const account = await plainAccount("fma");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const added = await okJson<{ subscription: SubscriptionView; actionId: string }>(
+				await account.api.post("/api/finance/subscriptions", {
+					data: {
+						vendor: "Gym Plus",
+						plan: "Gold",
+						amountMinor: 2500,
+						currency: "EUR",
+						cycle: "monthly",
+						nextRenewalOn: new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10),
+						reminderDays: 7,
+						calendarReminder: false,
+						mailboxId: account.mailboxId,
+					},
+				}),
+			);
+			expect(added.subscription).toMatchObject({
+				vendor: "Gym Plus",
+				amount: { minor: 2500, currency: "EUR" },
+				reminderDays: 7,
+				calendarReminder: false,
+				cancelUrl: null,
+			});
+			expect((await activity(account)).find((item) => item.id === added.actionId)).toMatchObject({
+				action: "create_subscription",
+				variant: "",
+			});
+			const outOfBounds = await account.api.post("/api/finance/subscriptions", {
+				data: { vendor: "Gym Plus", amountMinor: 0, currency: "EUR", mailboxId: account.mailboxId },
+			});
+			expect(outOfBounds.status()).toBe(400);
+			await undo(account, added.actionId);
+			expect((await listSubscriptions(account)).subscriptions).toEqual([]);
+
+			const vendor = `Handflix${uniqueToken("").slice(-4)}`;
+			const domain = `${vendor.toLowerCase()}.test`;
+			const cancelUrl = `https://${uniqueToken("cancel").toLowerCase()}.example/cancel`;
+			const invoicePdf = `invoice-${uniqueToken("pdf")}.pdf`;
+			const message = await deliverPlain(
+				account,
+				invoice(vendor, dayFromNow(20).long, {
+					headers: { ...AUTOMATIC, "List-Unsubscribe": `<${cancelUrl}>` },
+					attachments: [pdf(invoicePdf)],
+				}),
+			);
+
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			const draft = await openMessageMenuItem(page, message.id, "Track as subscription");
+			expect(draft.draft).toMatchObject({
+				vendor,
+				amountMinor: 1799,
+				currency: "USD",
+				cycle: "monthly",
+				cancelLink: { url: cancelUrl },
+				document: { docType: "invoice" },
+				subscriptionId: null,
+			});
+			const dialog = page.locator("[data-finance-track-dialog]");
+			await expect(dialog.getByLabel("Vendor")).toHaveValue(vendor);
+			await expect(dialog.getByLabel("Amount", { exact: true }).first()).toHaveValue("17.99");
+			await expect(dialog.locator("[data-finance-cancel-link]")).toContainText(new URL(cancelUrl).host);
+			await expect(dialog.getByLabel("Attachment")).toContainText(invoicePdf);
+			expect((await listSubscriptions(account)).subscriptions).toEqual([]);
+			const saved = page.waitForResponse(
+				(response) => response.url().endsWith("/api/finance/subscriptions") && response.request().method() === "POST",
+			);
+			await dialog.getByRole("button", { name: "Track subscription" }).click();
+			expect((await saved).status()).toBe(200);
+			await expect(page.getByText("Tracking the subscription")).toBeVisible();
+			await expect(dialog).toHaveCount(0);
+			const [row] = (await listSubscriptions(account)).subscriptions;
+			expect(row).toMatchObject({ vendor, cancelUrl, amount: { minor: 1799, currency: "USD" } });
+			expect((await subscriptionDetail(account, row.id)).documents).toMatchObject([
+				{ docType: "invoice", messageId: message.id, attachmentId: expect.any(String) },
+			]);
+
+			const receiptPdf = `receipt-${uniqueToken("pdf")}.pdf`;
+			const receipt = await deliverPlain(account, {
+				from: `${vendor} Billing <billing@${domain}>`,
+				subject: `Your ${vendor} payment receipt ${uniqueToken("rcpt")}`,
+				text: "Payment received, thank you for your payment.\nPlan: Premium $17.99/month.\n",
+				headers: AUTOMATIC,
+				attachments: [pdf(receiptPdf)],
+			});
+			const other = await deliverPlain(account, {
+				from: `Someone <someone@${domain}>`,
+				subject: `Unrelated ${uniqueToken("other")}`,
+				text: "Hello",
+				attachments: [pdf(`other-${uniqueToken("pdf")}.pdf`)],
+			});
+			const documentDraft = await openMessageMenuItem(page, receipt.id, "Add to a tracked subscription");
+			expect(documentDraft.draft.subscriptionId).toBe(row.id);
+			const documentDialog = page.locator("[data-finance-document-dialog]");
+			await expect(documentDialog.getByLabel("Subscription")).toHaveValue(row.id);
+			await expect(documentDialog.getByLabel("Attachment")).toContainText(receiptPdf);
+			await documentDialog.getByLabel("Document").selectOption("payment");
+			await documentDialog.getByLabel("Amount").fill("17.99");
+			await documentDialog.getByLabel("Currency").fill("USD");
+			const attachmentId = documentDraft.attachments[0].id;
+			await documentDialog.getByLabel("Attachment").selectOption(attachmentId);
+			const recordedResponse = page.waitForResponse((response) =>
+				response.url().endsWith(`/api/finance/subscriptions/${row.id}/documents`),
+			);
+			await documentDialog.getByRole("button", { name: "Record document" }).click();
+			const recorded = await recordedResponse;
+			expect(recorded.status()).toBe(200);
+			const { document, actionId } = (await recorded.json()) as {
+				document: DocumentView & { documentOn: string };
+				actionId: string;
+			};
+			expect(document).toMatchObject({ docType: "payment", messageId: receipt.id, attachmentId });
+			expect((await activity(account)).find((item) => item.id === actionId)).toMatchObject({
+				action: "record_document",
+				variant: "payment",
+			});
+			await expect(documentDialog).toHaveCount(0);
+
+			await openMessageMenuItem(page, receipt.id, "Add to a tracked subscription");
+			await documentDialog.getByLabel("Document").selectOption("payment");
+			await documentDialog.getByLabel("Amount").fill("17.99");
+			await documentDialog.getByLabel("Currency").fill("USD");
+			await documentDialog.getByRole("button", { name: "Record document" }).click();
+			await expect(documentDialog.getByRole("alert")).toHaveText(
+				"This document is already recorded for the subscription",
+			);
+			await page.keyboard.press("Escape");
+
+			const body = {
+				messageId: receipt.id,
+				docType: "refund",
+				amountMinor: 100,
+				currency: "USD",
+				documentOn: document.documentOn,
+			};
+			const duplicate = await account.api.post(`/api/finance/subscriptions/${row.id}/documents`, {
+				data: { ...body, docType: "payment", amountMinor: 1799 },
+			});
+			expect(duplicate.status()).toBe(409);
+			expect(await duplicate.json()).toMatchObject({ code: "DOCUMENT_EXISTS" });
+			const otherAttachment = (
+				await okJson<{ attachments: { id: string }[] }>(await account.api.get(`/api/messages/${other.id}`))
+			).attachments[0].id;
+			const foreign = await account.api.post(`/api/finance/subscriptions/${row.id}/documents`, {
+				data: { ...body, attachmentId: otherAttachment },
+			});
+			expect(foreign.status()).toBe(404);
+
+			await undo(account, actionId);
+			expect((await subscriptionDetail(account, row.id)).documents.map((item) => item.docType)).toEqual(["invoice"]);
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("case 4: a subscription tracked from a message is updated by the vendor's next invoice card", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("fmn");
+		try {
+			const vendor = `Nextflix${uniqueToken("").slice(-4)}`;
+			const first = await deliver(account, invoice(vendor, dayFromNow(15).long));
+			const { draft } = await okJson<DetectAnswer>(
+				await account.api.post("/api/finance/detect", { data: { messageId: first.message.id } }),
+			);
+			const tracked = await okJson<{ subscription: SubscriptionView & { vendorKey: string } }>(
+				await account.api.post("/api/finance/subscriptions", {
+					data: {
+						vendor: draft.vendor,
+						amountMinor: draft.amountMinor,
+						currency: draft.currency,
+						cycle: draft.cycle,
+						nextRenewalOn: draft.nextRenewalOn,
+						messageId: first.message.id,
+						document: { ...draft.document, amountMinor: draft.amountMinor, currency: draft.currency },
+					},
+				}),
+			);
+			expect(tracked.subscription.vendorKey).toBe(`${vendor.toLowerCase()}.test`);
+
+			const second = await deliver(account, invoice(vendor, dayFromNow(45).long));
+			expect(second.cards).toHaveLength(1);
+			expect(["renewal", "price_change"]).toContain(second.cards[0].payload.event);
+			expect(second.cards[0].payload.subscriptionId).toBe(tracked.subscription.id);
+			await acceptCard(account, second.cards[0].id, "track");
+			const { subscriptions } = await listSubscriptions(account);
+			expect(subscriptions.map((item) => item.id)).toEqual([tracked.subscription.id]);
+			expect(
+				(await subscriptionDetail(account, tracked.subscription.id)).documents.map((item) => item.docType),
+			).toEqual(["invoice", "invoice"]);
+		} finally {
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("signed-out callers get 401 from every Money Watch route", async () => {
+		const anonymous = await apiContext();
+		try {
+			for (const [method, path] of [
+				["GET", "/api/finance/subscriptions"],
+				["POST", "/api/finance/subscriptions"],
+				["GET", "/api/finance/subscriptions/e2e_probe"],
+				["PATCH", "/api/finance/subscriptions/e2e_probe"],
+				["DELETE", "/api/finance/subscriptions/e2e_probe"],
+				["POST", "/api/finance/subscriptions/e2e_probe/documents"],
+				["DELETE", "/api/finance/documents/e2e_probe"],
+				["POST", "/api/finance/detect"],
+			] as const) {
+				const response = await anonymous.fetch(path, { method, data: method === "GET" ? undefined : {} });
+				expect(response.status(), `${method} ${path}`).toBe(401);
+			}
+		} finally {
+			await anonymous.dispose();
+		}
+	});
+});

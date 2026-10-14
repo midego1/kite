@@ -116,6 +116,7 @@ test("signed-out callers keep their 401 for module routes while the modules are 
 			["GET", "/api/templates"],
 			["GET", "/api/import/jobs"],
 			["POST", "/api/import/messages"],
+			["GET", "/api/finance/subscriptions"],
 		] as const) {
 			const response = await anonymous.fetch(path, { method });
 			expect(response.status(), `${method} ${path}`).toBe(401);

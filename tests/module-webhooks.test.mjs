@@ -34,6 +34,7 @@ const {
 	bookingAppointmentPayload,
 	calendarCapabilities,
 	bookingCapabilities,
+	financeCapabilities,
 } = await bundleModules("kite-module-webhooks-", [
 	["SqliteDatabase", "server/runtime/sqlite-database.ts"],
 	["applyMigrations", "server/runtime/migrate.ts"],
@@ -56,9 +57,10 @@ const {
 	["bookingAppointmentPayload", "src/lib/booking/webhook-event-utils.ts"],
 	["calendarCapabilities", "src/lib/modules/calendar/capabilities.ts"],
 	["bookingCapabilities", "src/lib/modules/booking/capabilities.ts"],
+	["financeCapabilities", "src/lib/modules/finance/capabilities.ts"],
 ]);
 
-const ALL = ["calendar", "booking", "templates", "import"];
+const ALL = ["calendar", "booking", "templates", "import", "finance"];
 const install = (off = []) => new Map(ALL.map((id) => [id, !off.includes(id)]));
 const enabledWith = (off) => [...effectiveModules(install(off), new Map(), MODULE_MANIFESTS)];
 const ids = (events) => events.map((event) => event.value);
@@ -66,7 +68,8 @@ const ids = (events) => events.map((event) => event.value);
 const MESSAGE_EVENTS = ["message.inbound", "message.outbound", "message.failed"];
 const CALENDAR_EVENTS = ["calendar.event.created", "calendar.event.updated", "calendar.event.deleted"];
 const BOOKING_EVENT = "booking.appointment.created";
-const ALL_EVENTS = [...MESSAGE_EVENTS, ...CALENDAR_EVENTS, BOOKING_EVENT];
+const FINANCE_EVENTS = ["finance.subscription.detected", "finance.subscription.renewal_due"];
+const ALL_EVENTS = [...MESSAGE_EVENTS, ...CALENDAR_EVENTS, BOOKING_EVENT, ...FINANCE_EVENTS];
 
 const OWNER = { userId: "owner", role: "admin", isPrimaryAdmin: true };
 const ctxFor = (viewer = OWNER) => ({
@@ -87,15 +90,17 @@ test("one registry list holds the core events and every module's events with the
 	assert.equal(byValue.get(BOOKING_EVENT).label, "Appointment booked");
 	assert.equal(webhookEventOwner(WEBHOOK_EVENT_CATALOG, "calendar.event.updated"), "calendar");
 	assert.equal(webhookEventOwner(WEBHOOK_EVENT_CATALOG, BOOKING_EVENT), "booking");
+	assert.equal(byValue.get("finance.subscription.renewal_due").label, "Subscription renewal due");
+	assert.equal(webhookEventOwner(WEBHOOK_EVENT_CATALOG, "finance.subscription.detected"), "finance");
 	assert.equal(webhookEventOwner(WEBHOOK_EVENT_CATALOG, "message.failed"), null);
 	assert.equal(webhookEventOwner(WEBHOOK_EVENT_CATALOG, "foo.bar"), undefined);
 });
 
 test("every module event of the manifests is declared by a webhook_event descriptor with the same value", () => {
-	const declared = [calendarCapabilities, bookingCapabilities].flatMap((entry) =>
+	const declared = [calendarCapabilities, bookingCapabilities, financeCapabilities].flatMap((entry) =>
 		entry.descriptors.filter((d) => d.surfaces.includes("webhook_event")).map((d) => d.event.value),
 	);
-	assert.deepEqual(declared.sort(), [...CALENDAR_EVENTS, BOOKING_EVENT].sort());
+	assert.deepEqual(declared.sort(), [...CALENDAR_EVENTS, BOOKING_EVENT, ...FINANCE_EVENTS].sort());
 	assert.deepEqual(
 		MODULE_MANIFESTS.flatMap((manifest) => manifest.webhookEvents.map((event) => event.value)).sort(),
 		declared.sort(),
@@ -107,18 +112,27 @@ test("the picker lists only the events of modules that are on", () => {
 	assert.deepEqual(ids(availableWebhookEvents(WEBHOOK_EVENT_CATALOG, enabledWith(["booking"]))), [
 		...MESSAGE_EVENTS,
 		...CALENDAR_EVENTS,
+		...FINANCE_EVENTS,
 	]);
-	assert.deepEqual(ids(availableWebhookEvents(WEBHOOK_EVENT_CATALOG, enabledWith(["calendar"]))), MESSAGE_EVENTS);
+	assert.deepEqual(ids(availableWebhookEvents(WEBHOOK_EVENT_CATALOG, enabledWith(["calendar"]))), [
+		...MESSAGE_EVENTS,
+		...FINANCE_EVENTS,
+	]);
+	assert.deepEqual(
+		ids(availableWebhookEvents(WEBHOOK_EVENT_CATALOG, enabledWith(["calendar", "finance"]))),
+		MESSAGE_EVENTS,
+	);
 	assert.deepEqual(ids(availableWebhookEvents(WEBHOOK_EVENT_CATALOG, [])), MESSAGE_EVENTS);
 });
 
 test("the API catalog holds only the events of modules that are on, as value, label and hint", () => {
 	const listed = (off) => webhookEventOptions(WEBHOOK_EVENT_CATALOG, enabledWith(off));
 	assert.deepEqual(ids(listed([])), ALL_EVENTS);
-	assert.deepEqual(ids(listed(["booking"])), [...MESSAGE_EVENTS, ...CALENDAR_EVENTS]);
+	assert.deepEqual(ids(listed(["booking"])), [...MESSAGE_EVENTS, ...CALENDAR_EVENTS, ...FINANCE_EVENTS]);
 	assert.ok(!ids(listed(["booking"])).includes(BOOKING_EVENT));
-	assert.deepEqual(ids(listed(["calendar"])), MESSAGE_EVENTS);
-	assert.deepEqual(ids(listed(["calendar", "booking"])), MESSAGE_EVENTS);
+	assert.deepEqual(ids(listed(["calendar"])), [...MESSAGE_EVENTS, ...FINANCE_EVENTS]);
+	assert.deepEqual(ids(listed(["calendar", "booking", "finance"])), MESSAGE_EVENTS);
+	assert.deepEqual(ids(listed(["finance"])), [...MESSAGE_EVENTS, ...CALENDAR_EVENTS, BOOKING_EVENT]);
 	for (const option of listed([])) {
 		assert.deepEqual(Object.keys(option).sort(), ["hint", "label", "value"]);
 	}

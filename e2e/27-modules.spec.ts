@@ -82,11 +82,11 @@ async function createMember(admin: APIRequestContext, role: "user" | "admin" = "
 	return { id, email, api };
 }
 
-test("the session answer lists the four modules that are on for the owner", async ({ request }) => {
+test("the session answer lists the five modules that are on for the owner", async ({ request }) => {
 	const response = await request.get("/api/auth/me");
 	expect(response.status()).toBe(200);
 	const body = await response.json();
-	expect(body.modules).toEqual(["calendar", "booking", "templates", "import"]);
+	expect(body.modules).toEqual(["calendar", "booking", "templates", "import", "finance"]);
 });
 
 test("the mailbox and the calendar both load with every module on", async ({ page }) => {
@@ -134,7 +134,7 @@ test("Calendar off hides the navigation and answers not-found on pages and API f
 		await expect(menu.getByRole("link", { name: "Calendar", exact: true })).toHaveCount(0);
 		// Booking needs Calendar, so it goes with it.
 		await expect(menu.getByRole("link", { name: "Booking", exact: true })).toHaveCount(0);
-		expect((await api.get("/api/auth/me").then((r) => r.json())).modules).toEqual(["templates", "import"]);
+		expect((await api.get("/api/auth/me").then((r) => r.json())).modules).toEqual(["templates", "import", "finance"]);
 
 		await expectNotFoundPage(page, "/calendar");
 		await expectNotFoundPage(page, "/booking");
@@ -171,6 +171,29 @@ test("Calendar off hides the navigation and answers not-found on pages and API f
 		expect((await restored.get("/api/calendar/events")).status()).toBe(200);
 	} finally {
 		await restored.dispose();
+	}
+});
+
+test("Money Watch off answers not-found on its page and Money Watch on renders it again", async ({ page }) => {
+	const api = await owner();
+	try {
+		await page.goto("/finance");
+		await expect(page.getByRole("heading", { level: 1, name: "Subscriptions" })).toBeVisible();
+		await setModuleState(api, { modules: { finance: false } });
+		expect((await api.get("/api/auth/me").then((r) => r.json())).modules).toEqual([
+			"calendar",
+			"booking",
+			"templates",
+			"import",
+		]);
+		await expectNotFoundPage(page, "/finance");
+		await setModuleState(api, { modules: { finance: true } });
+		await page.goto("/finance");
+		await expect(page.getByText("Page not found")).toHaveCount(0);
+		await expect(page.getByRole("heading", { level: 1, name: "Subscriptions" })).toBeVisible();
+	} finally {
+		await restoreModules(api);
+		await api.dispose();
 	}
 });
 
@@ -469,15 +492,21 @@ function auditKeys(rows: AuditRow[]): Record<string, number> {
 const moduleSection = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
 const moduleSwitch = (page: Page, name: string) => moduleSection(page, name).getByRole("switch");
 
-test("the Modules page lists the four modules with their dependencies, capabilities and notes", async ({ page }) => {
+test("the Modules page lists the five modules with their dependencies, capabilities and notes", async ({ page }) => {
 	await page.goto("/modules");
 	await expect(page.getByRole("heading", { level: 1, name: "Modules" })).toBeVisible();
-	await expect(page.locator("[data-module] h2")).toHaveText(["Calendar", "Booking", "Email templates", "Mail import"]);
+	await expect(page.locator("[data-module] h2")).toHaveText([
+		"Calendar",
+		"Booking",
+		"Email templates",
+		"Mail import",
+		"Money Watch",
+	]);
 	await expect(page.getByRole("heading", { level: 2, name: "Always on" })).toBeVisible();
-	await expect(page.locator("[data-module]").getByRole("switch")).toHaveCount(4);
+	await expect(page.locator("[data-module]").getByRole("switch")).toHaveCount(5);
 	await expect(page.getByText("up to 30 seconds to reach other open sessions")).toBeVisible();
 	await expect(moduleSection(page, "Booking")).toContainText("Depends on Calendar");
-	for (const name of ["Calendar", "Email templates", "Mail import"])
+	for (const name of ["Calendar", "Email templates", "Mail import", "Money Watch"])
 		await expect(moduleSection(page, name)).not.toContainText("Depends on");
 	await expect(moduleSection(page, "Mail import")).toContainText(
 		"Turning this off pauses running imports. They keep their saved source credentials until they finish or are cancelled, and resume within about five minutes of turning it back on.",
@@ -500,6 +529,14 @@ test("the Modules page lists the four modules with their dependencies, capabilit
 	for (const item of ["booking.appointment.created", "booking.open", "booking.open_event_type"])
 		await expect(booking.getByText(item, { exact: true })).toBeVisible();
 	await expect(moduleSection(page, "Mail import").getByText("import.open", { exact: true })).toBeVisible();
+	const finance = moduleSection(page, "Money Watch");
+	for (const item of [
+		"mcp:finance-read",
+		"finance.subscription.detected",
+		"finance.subscription.renewal_due",
+		"finance.open",
+	])
+		await expect(finance.getByText(item, { exact: true })).toBeVisible();
 	await expect(moduleSection(page, "Email templates")).toContainText("Adds no assistant tools");
 	await expect(moduleSection(page, "Calendar")).toContainText("Every user has access.");
 });
@@ -532,8 +569,9 @@ test("Calendar off asks first, Booking reads Off because Calendar is off and can
 			["booking", true],
 			["templates", true],
 			["import", true],
+			["finance", true],
 		]);
-		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual(["templates", "import"]);
+		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual(["templates", "import", "finance"]);
 
 		// Booking cannot be turned on while Calendar is off: the API refuses and the page says why.
 		const refused = await api.put("/api/admin/modules", { data: { moduleId: "booking", enabled: true } });
@@ -551,6 +589,7 @@ test("Calendar off asks first, Booking reads Off because Calendar is off and can
 			"booking",
 			"templates",
 			"import",
+			"finance",
 		]);
 		await page.goto("/booking");
 		await expect(page.getByText("Page not found")).toHaveCount(0);
@@ -559,7 +598,12 @@ test("Calendar off asks first, Booking reads Off because Calendar is off and can
 		await setModuleState(api, { modules: { booking: false } });
 		await setModuleState(api, { modules: { calendar: false } });
 		await setModuleState(api, { modules: { calendar: true } });
-		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual(["calendar", "templates", "import"]);
+		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual([
+			"calendar",
+			"templates",
+			"import",
+			"finance",
+		]);
 
 		const rows = await moduleAuditRows(api);
 		expect(rows.length).toBeGreaterThan(before);
@@ -585,7 +629,7 @@ test("the owner toggles Email templates and Mail import on the page, the state p
 			await page.reload();
 			await expect(moduleSwitch(page, name)).toHaveAttribute("aria-checked", "false");
 		}
-		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual(["calendar", "booking"]);
+		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual(["calendar", "booking", "finance"]);
 		for (const name of ["Email templates", "Mail import"]) {
 			await moduleSwitch(page, name).click();
 			await expect(moduleSwitch(page, name)).toHaveAttribute("aria-checked", "true");
@@ -595,6 +639,7 @@ test("the owner toggles Email templates and Mail import on the page, the state p
 			"booking",
 			"templates",
 			"import",
+			"finance",
 		]);
 
 		const after = auditKeys(await moduleAuditRows(api));
@@ -618,7 +663,7 @@ test("the owner toggles Email templates and Mail import on the page, the state p
 	}
 });
 
-test("the module API refuses ids outside the four and bodies it cannot read, and core areas have no switch", async () => {
+test("the module API refuses ids outside the five and bodies it cannot read, and core areas have no switch", async () => {
 	const api = await owner();
 	try {
 		for (const data of [
@@ -637,6 +682,7 @@ test("the module API refuses ids outside the four and bodies it cannot read, and
 			["booking", true],
 			["templates", true],
 			["import", true],
+			["finance", true],
 		]);
 		expect(modules[0]).toMatchObject({ dependsOn: [], restrictedUsers: [] });
 		expect(modules[1]).toMatchObject({ dependsOn: [{ id: "calendar", name: "Calendar" }], offBecause: null });
@@ -660,7 +706,7 @@ test("a restriction applies to that user only, shows on both admin pages and is 
 		await page.goto(`/accounts/${target.id}/permissions`);
 		const section = page.getByRole("region", { name: "Modules", exact: true });
 		await expect(section).toBeVisible();
-		await expect(section.getByRole("checkbox")).toHaveCount(4);
+		await expect(section.getByRole("checkbox")).toHaveCount(5);
 		await section.getByRole("checkbox", { name: "Allow Calendar" }).uncheck();
 		await section.getByRole("button", { name: "Save module access" }).click();
 		await expect(section.getByText("Module access updated")).toBeVisible();
@@ -669,18 +715,20 @@ test("a restriction applies to that user only, shows on both admin pages and is 
 			page.getByRole("region", { name: "Modules", exact: true }).getByRole("checkbox", { name: "Allow Calendar" }),
 		).not.toBeChecked();
 
-		expect((await (await target.api.get("/api/auth/me")).json()).modules).toEqual(["templates", "import"]);
+		expect((await (await target.api.get("/api/auth/me")).json()).modules).toEqual(["templates", "import", "finance"]);
 		expect((await (await other.api.get("/api/auth/me")).json()).modules).toEqual([
 			"calendar",
 			"booking",
 			"templates",
 			"import",
+			"finance",
 		]);
 		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual([
 			"calendar",
 			"booking",
 			"templates",
 			"import",
+			"finance",
 		]);
 		expect((await target.api.get("/api/calendar/events")).status()).toBe(404);
 		expect((await other.api.get("/api/calendar/events")).status()).toBe(200);
@@ -717,6 +765,7 @@ test("a restriction applies to that user only, shows on both admin pages and is 
 			"booking",
 			"templates",
 			"import",
+			"finance",
 		]);
 		await moduleAccessCleanup([target, other]);
 	} finally {
@@ -799,6 +848,7 @@ test("the owner's own access cannot be restricted and the owner's permissions pa
 			"booking",
 			"templates",
 			"import",
+			"finance",
 		]);
 		await page.goto(`/accounts/${user.id}/permissions`);
 		await expect(page.getByRole("heading", { name: "Permissions" })).toBeVisible();
@@ -1828,12 +1878,19 @@ test("the key forms list calendar scopes only while Calendar is on, and existing
 			"Request send review",
 			"Read calendar",
 			"Manage calendar",
+			"Read subscriptions",
 		]);
 
 		await setModuleState(api, { modules: { calendar: false } });
 		const off = await optionNames();
 		expect(off.standard).toEqual(["Read mail", "Send mail"]);
-		expect(off.mcp).toEqual(["Read mail", "Manage drafts", "Organize mail", "Request send review"]);
+		expect(off.mcp).toEqual([
+			"Read mail",
+			"Manage drafts",
+			"Organize mail",
+			"Request send review",
+			"Read subscriptions",
+		]);
 		await page.keyboard.press("Escape");
 		const row = page.getByText("E2E form keeps scopes").locator("xpath=ancestor::span[contains(@class,'flex-1')][1]");
 		await expect(row.getByText("mcp:calendar-read", { exact: true })).toBeVisible();
@@ -1859,6 +1916,8 @@ async function deleteWebhooks(api: APIRequestContext, ids: string[]) {
 
 const CALENDAR_EVENT_LABELS = ["Calendar event created", "Calendar event updated", "Calendar event deleted"];
 const CALENDAR_EVENTS = ["calendar.event.created", "calendar.event.updated", "calendar.event.deleted"];
+const FINANCE_EVENT_LABELS = ["Subscription detected", "Subscription renewal due"];
+const FINANCE_EVENTS = ["finance.subscription.detected", "finance.subscription.renewal_due"];
 
 test("the webhook picker lists calendar and booking events only while their modules are on", async ({ page }) => {
 	const api = await owner();
@@ -1877,8 +1936,17 @@ test("the webhook picker lists calendar and booking events only while their modu
 			"Delivery failure",
 			...CALENDAR_EVENT_LABELS,
 			"Appointment booked",
+			...FINANCE_EVENT_LABELS,
 		]);
 
+		await setModuleState(api, { modules: { finance: false } });
+		expect(await eventLabels()).toEqual([
+			"Inbound message",
+			"Outbound message",
+			"Delivery failure",
+			...CALENDAR_EVENT_LABELS,
+			"Appointment booked",
+		]);
 		await setModuleState(api, { modules: { booking: false } });
 		expect(await eventLabels()).toEqual([
 			"Inbound message",
@@ -1904,6 +1972,15 @@ test("the webhook picker lists calendar and booking events only while their modu
 			...CALENDAR_EVENTS,
 			"booking.appointment.created",
 		]);
+		await setModuleState(api, { modules: { finance: true } });
+		expect(await catalog()).toEqual([
+			"message.inbound",
+			"message.outbound",
+			"message.failed",
+			...CALENDAR_EVENTS,
+			"booking.appointment.created",
+			...FINANCE_EVENTS,
+		]);
 	} finally {
 		await restoreModules(api);
 		await api.dispose();
@@ -1924,6 +2001,8 @@ test("the webhook picker follows module changes made through the admin navigatio
 	};
 	const labels = (dialog: Locator) => dialog.locator("label span.font-medium").allTextContents();
 	try {
+		// Only Calendar changes here, so the picker shows exactly the core events once it is off.
+		await setModuleState(api, { modules: { finance: false } });
 		await page.goto("/webhooks");
 		let dialog = await openPicker();
 		expect(await labels(dialog)).toContain("Calendar event created");
@@ -2765,7 +2844,7 @@ test("a queued import retry that arrives while Import is off is skipped and the 
 // Cross-area flows: each module's surfaces go away and come back together, an open tab follows a toggle,
 // and an install with every module off keeps the core working, including its backups.
 
-const ALL_MODULES_OFF = { calendar: false, booking: false, templates: false, import: false };
+const ALL_MODULES_OFF = { calendar: false, booking: false, templates: false, import: false, finance: false };
 
 /** The owner's clients, a fake model the assistant uses and an MCP key with calendar scopes. */
 type SurfaceRig = {
@@ -3005,6 +3084,7 @@ test("with migration 0062 applied the owner sees every module surface as before 
 			["booking", true],
 			["templates", true],
 			["import", true],
+			["finance", true],
 		]);
 
 		const account = await openAccountMenu(page);
@@ -3042,7 +3122,7 @@ test("with migration 0062 applied the owner sees every module surface as before 
 		await page.getByRole("complementary", { name: "Admin menu" }).getByRole("link", { name: "Modules" }).click();
 		await expect(page).toHaveURL(/\/modules$/);
 		await expect(page.getByRole("heading", { level: 1, name: "Modules" })).toBeVisible();
-		await expect(page.locator("[data-module]").getByRole("switch", { checked: true })).toHaveCount(4);
+		await expect(page.locator("[data-module]").getByRole("switch", { checked: true })).toHaveCount(5);
 		await shot("click-3-modules");
 	} finally {
 		await api.dispose();
@@ -3099,6 +3179,7 @@ test("the Modules page and the Calendar confirmation read clearly in Kite, Class
 				"Booking",
 				"Email templates",
 				"Mail import",
+				"Money Watch",
 			]);
 			const colors = await modulesPageColors(page);
 			seen[`${style}-${theme}`] = colors;
@@ -3269,6 +3350,7 @@ test("a mail-only install backs up and restores with its module data and with ev
 		expect(document.tables.module_settings.map((row) => [row.module_id, row.enabled]).sort()).toEqual([
 			["booking", 0],
 			["calendar", 0],
+			["finance", 0],
 			["import", 0],
 			["templates", 0],
 		]);
@@ -3294,7 +3376,7 @@ test("a mail-only install backs up and restores with its module data and with ev
 		await signIn(restorer, ADMIN.email, ADMIN.password);
 		await expect(restorer).toHaveURL(/\/inbox/);
 		await restorer.goto("/modules");
-		await expect(restorer.locator("[data-module]").getByRole("switch", { checked: false })).toHaveCount(4);
+		await expect(restorer.locator("[data-module]").getByRole("switch", { checked: false })).toHaveCount(5);
 		const stored = (await (await api.get("/api/admin/modules")).json()) as {
 			modules: { id: string; enabled: boolean }[];
 		};
@@ -3303,6 +3385,7 @@ test("a mail-only install backs up and restores with its module data and with ev
 			["booking", false],
 			["templates", false],
 			["import", false],
+			["finance", false],
 		]);
 		expect((await api.get("/api/calendar/events")).status()).toBe(404);
 
@@ -3340,12 +3423,14 @@ test("after the spec every module is on and no user is restricted", async () => 
 			["booking", true, 0],
 			["templates", true, 0],
 			["import", true, 0],
+			["finance", true, 0],
 		]);
 		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual([
 			"calendar",
 			"booking",
 			"templates",
 			"import",
+			"finance",
 		]);
 	} finally {
 		await api.dispose();

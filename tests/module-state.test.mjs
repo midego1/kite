@@ -32,7 +32,7 @@ const {
 ]);
 
 const migrationsDir = join(root, "drizzle/migrations");
-const ALL = ["calendar", "booking", "templates", "import"];
+const ALL = ["calendar", "booking", "templates", "import", "finance"];
 const OWNER = { userId: "owner", role: "admin", isPrimaryAdmin: true };
 const MEMBER = { userId: "member", role: "user", isPrimaryAdmin: false };
 
@@ -153,8 +153,8 @@ test("install state, dependencies and per-user access combine", async (t) => {
 		UPDATE module_settings SET enabled = 0 WHERE module_id = 'templates';
 		INSERT INTO user_module_access (id, user_id, module_id, allowed, updated_at) VALUES ('u1', 'member', 'import', 0, 1);
 	`);
-	assert.deepEqual(await listEnabledModules(env, MEMBER), ["calendar", "booking"]);
-	assert.deepEqual(await listEnabledModules(env, null), ["calendar", "booking", "import"]);
+	assert.deepEqual(await listEnabledModules(env, MEMBER), ["calendar", "booking", "finance"]);
+	assert.deepEqual(await listEnabledModules(env, null), ["calendar", "booking", "import", "finance"]);
 	assert.equal(await isModuleEnabledFor(env, MEMBER, "import"), false);
 	assert.equal(await isModuleEnabledFor(env, OWNER, "import"), true);
 	assert.equal(await isModuleEnabled(env, "import"), true);
@@ -165,7 +165,7 @@ test("Booking is off whenever Calendar is off, without changing its stored flag"
 	const db = await database(t);
 	const env = { DB: db };
 	db.db.exec("UPDATE module_settings SET enabled = 0 WHERE module_id = 'calendar'");
-	assert.deepEqual(await listEnabledModules(env, OWNER), ["templates", "import"]);
+	assert.deepEqual(await listEnabledModules(env, OWNER), ["templates", "import", "finance"]);
 	assert.equal(db.db.prepare("SELECT enabled FROM module_settings WHERE module_id = 'booking'").get().enabled, 1);
 	assert.equal((await getInstallModuleState(env)).get("booking"), true);
 });
@@ -175,7 +175,7 @@ test("a user restricted from Calendar loses Booking too", async (t) => {
 	db.db.exec(
 		"INSERT INTO user_module_access (id, user_id, module_id, allowed, updated_at) VALUES ('u1', 'member', 'calendar', 0, 1)",
 	);
-	assert.deepEqual(await listEnabledModules({ DB: db }, MEMBER), ["templates", "import"]);
+	assert.deepEqual(await listEnabledModules({ DB: db }, MEMBER), ["templates", "import", "finance"]);
 });
 
 test("the primary admin is never restricted, whatever a stored row says", async (t) => {
@@ -298,7 +298,7 @@ test("a write through the admin helper clears the isolate cache at once", async 
 	await setModuleEnabled(env, { moduleId: "templates", enabled: false, updatedBy: "owner" });
 	assert.equal(await isModuleEnabled(env, "templates"), false);
 	assert.equal(db.reads, 2);
-	assert.deepEqual(await listEnabledModules(env, MEMBER), ["calendar", "booking", "import"]);
+	assert.deepEqual(await listEnabledModules(env, MEMBER), ["calendar", "booking", "import", "finance"]);
 	assert.equal(db.reads, 2);
 
 	assert.deepEqual(
@@ -308,9 +308,9 @@ test("a write through the admin helper clears the isolate cache at once", async 
 	assert.equal(db.db.prepare("SELECT count(*) AS count FROM module_settings").get().count, 4);
 
 	await setUserModuleAllowed(env, { userId: "member", moduleId: "import", allowed: false, updatedBy: "owner" });
-	assert.deepEqual(await listEnabledModules(env, MEMBER), ["calendar", "booking"]);
+	assert.deepEqual(await listEnabledModules(env, MEMBER), ["calendar", "booking", "finance"]);
 	await setUserModuleAllowed(env, { userId: "member", moduleId: "import", allowed: true, updatedBy: "owner" });
-	assert.deepEqual(await listEnabledModules(env, MEMBER), ["calendar", "booking", "import"]);
+	assert.deepEqual(await listEnabledModules(env, MEMBER), ["calendar", "booking", "import", "finance"]);
 	assert.equal(db.db.prepare("SELECT count(*) AS count FROM user_module_access").get().count, 1);
 
 	await setModuleEnabled(env, { moduleId: "templates", enabled: true, updatedBy: null });
@@ -329,12 +329,12 @@ test("a write through one loaded copy of state.ts is seen at once by another cop
 
 	await setModuleEnabled(env, { moduleId: "calendar", enabled: false, updatedBy: "owner" });
 	assert.equal(await pages.isModuleEnabled(env, "calendar"), false);
-	assert.deepEqual(await pages.listEnabledModules(env, OWNER), ["templates", "import"]);
+	assert.deepEqual(await pages.listEnabledModules(env, OWNER), ["templates", "import", "finance"]);
 
 	await setUserModuleAllowed(env, { userId: "member", moduleId: "import", allowed: false, updatedBy: "owner" });
-	assert.deepEqual(await pages.listEnabledModules(env, MEMBER), ["templates"]);
+	assert.deepEqual(await pages.listEnabledModules(env, MEMBER), ["templates", "finance"]);
 	await setModuleEnabled(env, { moduleId: "calendar", enabled: true, updatedBy: "owner" });
-	assert.deepEqual(await pages.listEnabledModules(env, MEMBER), ["calendar", "booking", "templates"]);
+	assert.deepEqual(await pages.listEnabledModules(env, MEMBER), ["calendar", "booking", "templates", "finance"]);
 });
 
 test("a write clears the cache even when it fails", async (t) => {
@@ -378,6 +378,6 @@ test("stored state reads skip the cache and say whether migration 0062 is applie
 	db.db.exec("DROP TABLE user_module_access; DROP TABLE module_settings;");
 	const missing = await readStoredInstallState(env);
 	assert.equal(missing.ready, false);
-	assert.deepEqual([...missing.flags.values()], [true, true, true, true]);
+	assert.deepEqual([...missing.flags.values()], [true, true, true, true, true]);
 	assert.equal((await readStoredUserAccess(env, "member")).ready, false);
 });

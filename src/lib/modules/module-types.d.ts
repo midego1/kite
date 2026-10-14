@@ -1,4 +1,4 @@
-export type ModuleId = "calendar" | "booking" | "templates" | "import";
+export type ModuleId = "calendar" | "booking" | "templates" | "import" | "finance";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonSchemaObject = { [key: string]: JsonValue };
@@ -14,7 +14,8 @@ export type RecordKind =
 	| "booking:event_type"
 	| "booking:appointment"
 	| "templates:template"
-	| "import:job";
+	| "import:job"
+	| "finance:subscription";
 
 export type RecordRef = { kind: RecordKind; id: string };
 

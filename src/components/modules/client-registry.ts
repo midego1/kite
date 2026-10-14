@@ -18,6 +18,7 @@ const MODULE_CLIENTS: Partial<Record<ModuleId, () => Promise<ModuleClient>>> = {
 	calendar: () => (typeof window === "undefined" ? new Promise<never>(() => {}) : import("./calendar/client")),
 	booking: () => (typeof window === "undefined" ? new Promise<never>(() => {}) : import("./booking/client")),
 	templates: () => (typeof window === "undefined" ? new Promise<never>(() => {}) : import("./templates/client")),
+	finance: () => (typeof window === "undefined" ? new Promise<never>(() => {}) : import("./finance/client")),
 };
 
 /** The module's client chunk, or null when it has none. Call only for a module that is on. */

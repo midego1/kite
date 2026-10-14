@@ -19,7 +19,7 @@ const {
 ]);
 
 const read = (path) => readFileSync(join(root, path), "utf8");
-const ALL = ["calendar", "booking", "templates", "import"];
+const ALL = ["calendar", "booking", "templates", "import", "finance"];
 
 const withSlots = [
 	{ id: "calendar", composerSlots: [{ id: "calendar.late", slot: "send-menu", order: 50, label: "Late" }] },

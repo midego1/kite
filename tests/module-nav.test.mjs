@@ -10,7 +10,7 @@ const { moduleNavItems, MODULE_MANIFESTS, navSectionsFor, filterNavSections, sea
 		["resolveNavIcon", "src/components/modules/client-registry.ts"],
 	]);
 
-const ALL = ["calendar", "booking", "templates", "import"];
+const ALL = ["calendar", "booking", "templates", "import", "finance"];
 const labels = (items) => items.map((item) => item.label);
 const hrefs = (sections) => sections.flatMap((section) => section.items.map((item) => item.href));
 const member = { role: "user", isPrimaryAdmin: false, canManageDomains: false, canManageUsers: false };

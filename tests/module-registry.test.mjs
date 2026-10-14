@@ -26,7 +26,7 @@ const {
 	["toJsonSchema", "src/lib/modules/schema-utils.ts"],
 ]);
 
-const IDS = ["calendar", "booking", "templates", "import"];
+const IDS = ["calendar", "booking", "templates", "import", "finance"];
 const CORE_QUEUE_KINDS = [
 	"email.scheduled",
 	"agent.draft",
@@ -39,7 +39,7 @@ const covers = (prefix, path) => path === prefix || path.startsWith(`${prefix}/`
 const allPrefixes = (key) =>
 	MODULE_MANIFESTS.flatMap((manifest) => manifest[key].map((item) => ({ moduleId: manifest.id, ...item })));
 
-test("the registry lists the four builtin modules in a fixed order", () => {
+test("the registry lists the five builtin modules in a fixed order", () => {
 	assert.deepEqual(MODULE_IDS, IDS);
 	assert.deepEqual(
 		MODULE_CAPABILITIES.map((entry) => entry.moduleId),
@@ -52,6 +52,7 @@ test("the registry lists the four builtin modules in a fixed order", () => {
 	assert.equal(isModuleId("mail"), false);
 	assert.equal(isModuleId(undefined), false);
 	assert.equal(getModuleManifest("booking").name, "Booking");
+	assert.equal(getModuleManifest("finance").name, "Money Watch");
 	assert.throws(() => getModuleManifest("nope"), /Unknown module/);
 });
 
@@ -120,6 +121,29 @@ test("manifests carry what the spec lists for each module", () => {
 		{ name: "resumeStalledImports", schedule: "every_tick", capability: "resumeStalledImports" },
 	]);
 	assert.ok(importManifest.adminNotes?.[0].includes("resume within about five minutes"));
+	const finance = getModuleManifest("finance");
+	assert.deepEqual(finance.dependsOn, []);
+	assert.deepEqual(finance.pages, [{ prefix: "/finance" }]);
+	assert.deepEqual(finance.apiPrefixes, [{ prefix: "/api/finance" }]);
+	assert.deepEqual(
+		finance.recordKinds.map((item) => item.kind),
+		["finance:subscription"],
+	);
+	assert.deepEqual(
+		finance.webhookEvents.map((event) => event.value),
+		["finance.subscription.detected", "finance.subscription.renewal_due"],
+	);
+	assert.deepEqual(
+		finance.grants.map((item) => item.grant),
+		["finance.read", "finance.write"],
+	);
+	assert.deepEqual(finance.mcpScopes, [
+		{ scope: "mcp:finance-read", label: "Read subscriptions", grants: ["finance.read"], mailboxBound: false },
+	]);
+	assert.deepEqual(finance.apiKeyScopes, []);
+	assert.deepEqual(finance.cronTasks, [
+		{ name: "remindRenewals", schedule: "*/5 * * * *", capability: "remindRenewals" },
+	]);
 	for (const manifest of MODULE_MANIFESTS) assert.deepEqual(manifest.jmapCapabilities, []);
 	const accountMenu = MODULE_MANIFESTS.flatMap((manifest) => manifest.nav).filter(
 		(item) => item.placement === "account-menu",
@@ -148,6 +172,7 @@ test("commands use their own module id and valid targets", () => {
 		"calendar.go_to_date",
 		"calendar.new_event",
 		"calendar.open",
+		"finance.open",
 		"import.open",
 	]);
 });
@@ -324,7 +349,14 @@ test("listCapabilities returns the enabled modules' descriptors for a surface in
 	assert.deepEqual(names("mcp_tool", ["calendar"]), names("assistant_tool", ["calendar"]));
 	assert.deepEqual(names("search", ["calendar"]), ["search"]);
 	assert.deepEqual(names("search", ["booking"]), []);
-	assert.deepEqual(names("webhook_event", IDS), ["eventCreated", "eventUpdated", "eventDeleted", "appointmentCreated"]);
+	assert.deepEqual(names("webhook_event", IDS), [
+		"eventCreated",
+		"eventUpdated",
+		"eventDeleted",
+		"appointmentCreated",
+		"subscriptionDetected",
+		"renewalDue",
+	]);
 	assert.deepEqual(names("webhook_event", ["booking", "calendar"]), [
 		"eventCreated",
 		"eventUpdated",
@@ -334,6 +366,8 @@ test("listCapabilities returns the enabled modules' descriptors for a surface in
 	assert.deepEqual(names("webhook_event", ["booking"]), ["appointmentCreated"]);
 	assert.deepEqual(names("jmap_method", IDS), []);
 	assert.deepEqual(names("cron", ["import"]), ["resumeStalledImports"]);
+	assert.deepEqual(names("cron", IDS), ["resumeStalledImports", "remindRenewals"]);
+	assert.deepEqual(names("webhook_event", ["finance"]), ["subscriptionDetected", "renewalDue"]);
 });
 
 test("registry sources use static imports only, with no dynamic loading", () => {

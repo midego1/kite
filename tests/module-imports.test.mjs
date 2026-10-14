@@ -5,7 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const MODULE_IDS = ["calendar", "booking", "templates", "import"];
+const MODULE_IDS = ["calendar", "booking", "templates", "import", "finance"];
 
 /** Core entry points and surfaces that must reach modules only through the registry (spec §19.1). */
 const CORE_PATHS = [
@@ -54,6 +54,8 @@ const MODULE_CODE = [
 	"src/lib/calendar",
 	"src/lib/booking",
 	"src/lib/import",
+	"src/lib/finance",
+	"src/components/finance",
 	...MODULE_IDS.map((id) => `src/lib/modules/${id}`),
 	...MODULE_IDS.map((id) => `src/components/modules/${id}`),
 	...MODULE_OWNED_INVITE_FILES.map((file) => file.replace(/\.ts$/, "")),
@@ -150,13 +152,28 @@ test("core client code reaches module client code only through client-registry.t
 });
 
 test("module directories never import the send path or the webhook dispatcher directly", () => {
-	const files = [...walk(join(root, "src", "lib", "modules")), ...walk(join(root, "src", "components", "modules"))].map(
-		(file) => toPosix(relative(root, file)),
-	);
+	const files = [
+		...walk(join(root, "src", "lib", "modules")),
+		...walk(join(root, "src", "components", "modules")),
+		...walk(join(root, "src", "lib", "finance")),
+		...walk(join(root, "src", "components", "finance")),
+	].map((file) => toPosix(relative(root, file)));
 	assert.ok(files.length > 0);
 	for (const file of files)
 		for (const path of importsOf(file))
 			assert.ok(path !== "src/lib/email/send" && path !== "src/lib/email/webhooks", `${file} imports ${path}`);
+});
+
+test("Money Watch implementation code never loads code dynamically and stays out of automatic reading", () => {
+	const files = [...walk(join(root, "src", "lib", "finance")), ...walk(join(root, "src", "lib", "modules", "finance"))];
+	assert.ok(files.length > 0);
+	for (const file of files)
+		assert.ok(!/\bimport\(/.test(readFileSync(file, "utf8")), `${toPosix(relative(root, file))} uses import()`);
+	const autoRead = walk(join(root, "src", "lib", "agent", "auto-read")).map((file) => toPosix(relative(root, file)));
+	assert.deepEqual(
+		autoRead.filter((file) => /finance|subscription/i.test(file)),
+		[],
+	);
 });
 
 test("the import scanner resolves aliases, relative paths and dynamic imports", () => {

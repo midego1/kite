@@ -39,7 +39,7 @@ const {
 	["toJsonOutput, withCalendarToolRefs", "src/lib/calendar/tool-ref-utils.ts"],
 ]);
 
-const ALL = ["calendar", "booking", "templates", "import"];
+const ALL = ["calendar", "booking", "templates", "import", "finance"];
 const calendarFragment = MODULE_CAPABILITIES.find((entry) => entry.moduleId === "calendar").promptFragment;
 const commandsFor = (enabled) => navigateCommands(listCommands({ enabled }));
 const enumFor = (enabled) => openPageSchema(commandsFor(enabled)).properties.command.enum;
@@ -78,7 +78,14 @@ test("a chat call context carries the viewer, the trigger and the grants of the 
 	assert.equal(ctx.timeZone, "Europe/Paris");
 	assert.deepEqual(ctx.mailboxIds, ["mb1"]);
 	assert.ok(ctx.requestId);
-	for (const grant of ["calendar.read", "calendar.write", "booking.read", "import.run"])
+	for (const grant of [
+		"calendar.read",
+		"calendar.write",
+		"booking.read",
+		"import.run",
+		"finance.read",
+		"finance.write",
+	])
 		assert.ok(ctx.grants.includes(grant), grant);
 	assert.deepEqual(JSON.parse(JSON.stringify(ctx)), ctx);
 	const calendarOff = buildCallContext({
@@ -134,6 +141,7 @@ test("open_page lists only navigate commands with route targets that are enabled
 		"booking.open",
 		"booking.open_event_type",
 		"import.open",
+		"finance.open",
 		"mail.export",
 		"nav-inbox",
 		"nav-settings",
@@ -148,6 +156,7 @@ test("open_page lists only navigate commands with route targets that are enabled
 	assert.ok(bookingOff.includes("calendar.open") && !bookingOff.some((id) => id.startsWith("booking.")));
 	const importOff = enumFor(["calendar", "booking", "templates"]);
 	assert.ok(!importOff.includes("import.open") && importOff.includes("mail.export"));
+	assert.ok(!enumFor(["calendar", "booking", "templates", "import"]).includes("finance.open"));
 	assert.deepEqual(
 		everything.filter((id) => CORE_COMMANDS.some((c) => c.id === id)).sort(),
 		CORE_COMMANDS.filter((c) => c.effect === "navigate" && c.target.type === "route")

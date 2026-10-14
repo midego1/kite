@@ -1,0 +1,995 @@
+import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import test, { after } from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "esbuild";
+import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+import { loadFinance } from "./support/finance-bundle.mjs";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const outDir = makeBundleDirectory("kite-finance-module-");
+after(() => rmSync(outDir, { recursive: true, force: true }));
+
+// Splitting keeps one copy of the host bindings and the module state cache across the entries.
+await build({
+	entryPoints: {
+		api: join(root, "src/lib/agent/auto-read/suggestion-api.ts"),
+		execute: join(root, "src/lib/agent/auto-read/execute.ts"),
+		activity: join(root, "src/lib/agent/auto-read/activity.ts"),
+		labels: join(root, "src/components/agent/agent-activity-utils.ts"),
+		invoke: join(root, "src/lib/modules/invoke.ts"),
+		host: join(root, "src/lib/modules/host.ts"),
+		refs: join(root, "src/lib/modules/record-refs.ts"),
+		state: join(root, "src/lib/modules/state.ts"),
+		views: join(root, "src/lib/finance/views.ts"),
+		runtime: join(root, "server/runtime/sqlite-database.ts"),
+		migrate: join(root, "server/runtime/migrate.ts"),
+	},
+	outdir: outDir,
+	outExtension: { ".js": ".mjs" },
+	bundle: true,
+	splitting: true,
+	platform: "node",
+	format: "esm",
+	target: "node22",
+	logLevel: "silent",
+	packages: "external",
+	tsconfig: join(root, "tsconfig.json"),
+	alias: { "cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts") },
+});
+const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
+const { acceptSuggestion } = await load("api");
+const { undoAgentAction } = await load("execute");
+const { listAgentActivity } = await load("activity");
+const { actionLabel } = await load("labels");
+const { invokeCapability } = await load("invoke");
+const { moduleHost } = await load("host");
+const { resolveRecordRefs } = await load("refs");
+const { clearModuleStateCache } = await load("state");
+const { listSubscriptionsView, subscriptionDetailView } = await load("views");
+const { SqliteDatabase } = await load("runtime");
+const { applyMigrations } = await load("migrate");
+
+const DAY_MS = 86_400_000;
+const day = (offset) => new Date(Date.now() + offset * DAY_MS).toISOString().slice(0, 10);
+const SENDER = "Streamflix Billing <billing@streamflix.example>";
+const HOOK_URL = "https://hooks.kite-validation.invalid/finance";
+
+const user = (id) => ({ id, role: "user", isPrimaryAdmin: false, timeZone: "UTC", email: `${id}@example.com` });
+const owner = user("owner");
+const member = user("member");
+const viewOf = (account) => ({ userId: account.id, role: account.role, isPrimaryAdmin: false, timeZone: "UTC" });
+
+function card(overrides = {}) {
+	return {
+		event: "new",
+		subscriptionId: null,
+		vendor: "Streamflix",
+		vendorKey: "streamflix.example",
+		plan: null,
+		amountMinor: 1799,
+		currency: "USD",
+		previousAmountMinor: null,
+		cycle: "monthly",
+		nextRenewalOn: day(20),
+		renewalEstimated: false,
+		trialEndsOn: null,
+		cancelLink: { url: "https://streamflix.example/cancel", oneClick: false },
+		document: { docType: "invoice", documentOn: day(-40), periodStartOn: null, periodEndOn: null, attachmentId: null },
+		unverified: false,
+		signals: ["subject_keyword", "cycle", "renewal_date"],
+		modelFields: [],
+		modelDisagrees: [],
+		...overrides,
+	};
+}
+
+const realFetch = globalThis.fetch;
+after(() => {
+	globalThis.fetch = realFetch;
+});
+
+async function setup(t) {
+	const db = new SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await applyMigrations(db, join(root, "drizzle/migrations"));
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, time_zone, created_at) VALUES
+			('owner', 'owner@example.com', 'hash', 'Owner', 'UTC', 1),
+			('member', 'member@example.com', 'hash', 'Member', 'UTC', 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'support', 'shared', 1);
+		INSERT INTO mailbox_access (id, mailbox_id, user_id, permission, created_at) VALUES ('access-1', 'mailbox-a', 'member', 'full_access', 1);
+		INSERT INTO contacts (id, user_id, email, display_name, source, created_at) VALUES
+			('contact-1', 'owner', 'billing@streamflix.example', 'Streamflix Billing', 'inbound', 1);
+	`);
+	const addHook = db.db.prepare(
+		"INSERT INTO webhooks (id, user_id, url, secret, events, enabled, max_attempts, created_at) VALUES (?, ?, ?, 'whsec_test', ?, 1, 3, 1)",
+	);
+	addHook.run("wh-owner", "owner", HOOK_URL, JSON.stringify(["finance.subscription.detected"]));
+	addHook.run("wh-member", "member", HOOK_URL, JSON.stringify(["finance.subscription.detected"]));
+	const env = { DB: db, OUTBOUND_QUEUE: { send: async () => undefined } };
+	globalThis.__kiteNodeEnv = env;
+	globalThis.fetch = async () => new Response("ok", { status: 200 });
+	clearModuleStateCache();
+	t.after(() => {
+		delete globalThis.__kiteNodeEnv;
+		globalThis.fetch = realFetch;
+		clearModuleStateCache();
+	});
+	let order = 10;
+	const addMessage = (id, { attachments = [] } = {}) => {
+		order += 1;
+		db.db
+			.prepare(
+				"INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at) VALUES (?, 'owner', 'mailbox-a', 'inbound', ?, 'support@example.com', 'Your invoice', 'Invoice', 'received', ?)",
+			)
+			.run(id, SENDER, order);
+		for (const attachment of attachments)
+			db.db
+				.prepare(
+					"INSERT INTO message_attachments (id, message_id, filename, content_type, size, r2_key, created_at) VALUES (?, ?, ?, 'application/pdf', 1200, ?, 1)",
+				)
+				.run(attachment, id, `${attachment}.pdf`, `att/${attachment}`);
+	};
+	const addCard = (id, messageId, payload, status = "open") => {
+		addMessage(messageId, { attachments: payload.document?.attachmentId ? [payload.document.attachmentId] : [] });
+		db.db
+			.prepare(
+				"INSERT INTO agent_suggestions (id, mailbox_id, message_id, reviewer_user_id, kind, status, title, payload, created_at) VALUES (?, 'mailbox-a', ?, 'owner', 'subscription', ?, 'Track it?', ?, ?)",
+			)
+			.run(id, messageId, status, JSON.stringify(payload), order);
+	};
+	const rows = () => db.db.prepare("SELECT * FROM finance_subscriptions ORDER BY created_at").all();
+	const documents = () => db.db.prepare("SELECT * FROM finance_charges ORDER BY document_at, rowid").all();
+	const suggestion = (id) => db.db.prepare("SELECT * FROM agent_suggestions WHERE id = ?").get(id);
+	const deliveries = () =>
+		db.db
+			.prepare("SELECT webhook_id, event_type, payload FROM webhook_deliveries ORDER BY created_at, rowid")
+			.all()
+			.map((row) => ({ webhookId: row.webhook_id, event: row.event_type, body: JSON.parse(row.payload) }));
+	return { db, env, addMessage, addCard, rows, documents, suggestion, deliveries };
+}
+
+const accept = (env, id, option = "track", account = owner) => acceptSuggestion(env, account, id, option, null);
+
+async function trackFirst(context) {
+	context.addCard("sugg-1", "inv-1", card());
+	return accept(context.env, "sugg-1");
+}
+
+async function labels(env) {
+	const { actions } = await listAgentActivity(env, "mailbox-a", "owner");
+	return actions.map((action) => ({ label: actionLabel(action), status: action.status, target: action.target }));
+}
+
+test("Track creates the row and its invoice document through one audited action; a double click repeats it", async (t) => {
+	const context = await setup(t);
+	const { env, rows, documents, suggestion, deliveries } = context;
+	const first = await trackFirst(context);
+	assert.equal(first.status, "accepted");
+	assert.match(first.actionId, /^aact_/);
+	const [row] = rows();
+	assert.equal(row.id, `fsub_${first.actionId.replace(/^aact_/, "")}`);
+	assert.deepEqual(first.subscription, { kind: "finance:subscription", id: row.id });
+	assert.equal(row.user_id, "owner");
+	assert.equal(row.contact_id, "contact-1");
+	assert.equal(row.source_message_id, "inv-1");
+	assert.equal(row.cancel_url, "https://streamflix.example/cancel");
+	assert.equal(suggestion("sugg-1").status, "accepted");
+	const [document] = documents();
+	assert.equal(document.doc_type, "invoice");
+	assert.equal(document.message_id, "inv-1");
+	assert.equal(document.amount_minor, 1799);
+
+	const again = await accept(env, "sugg-1");
+	assert.equal(again.actionId, first.actionId, "a double click hands back the first action");
+	assert.equal(rows().length, 1);
+	assert.equal(documents().length, 1);
+
+	const listed = await listSubscriptionsView(viewOf(owner), null);
+	assert.equal(listed.subscriptions.length, 1);
+	const view = listed.subscriptions[0];
+	assert.deepEqual(view.amount, { minor: 1799, currency: "USD" });
+	assert.equal(view.cycle, "monthly");
+	assert.equal(view.status, "active");
+	assert.equal(view.reminderDays, 3);
+	assert.equal(view.calendarReminder, true);
+	assert.equal(view.urgent, false);
+	assert.deepEqual(
+		listed.totals.map((total) => [total.currency, total.monthlyMinor, total.paidLast12MonthsMinor]),
+		[["USD", 1799, 1799]],
+	);
+
+	const [activity] = await labels(env);
+	assert.equal(activity.label, "Started tracking a subscription");
+	assert.equal(activity.target.href, `/finance?subscription=${row.id}`);
+	assert.match(activity.target.label, /^Streamflix · \$17\.99\/month$/);
+
+	const sent = deliveries().filter((delivery) => delivery.event === "finance.subscription.detected");
+	assert.deepEqual(
+		sent.map((delivery) => delivery.webhookId),
+		["wh-owner"],
+		"one delivery, to the owner's webhook only",
+	);
+	assert.equal(sent[0].body.data.source, "suggestion");
+	assert.deepEqual(sent[0].body.data.message, { kind: "mail:message", id: "inv-1" });
+	assert.equal(sent[0].body.data.subscription.ref.id, row.id);
+});
+
+test("Undo of Track removes the row and its documents and reopens the card", async (t) => {
+	const context = await setup(t);
+	const { env, rows, documents, suggestion } = context;
+	const first = await trackFirst(context);
+	const subscriptionId = first.subscription.id;
+	await undoAgentAction(env, owner, first.actionId);
+	assert.deepEqual(rows(), []);
+	assert.deepEqual(documents(), []);
+	assert.equal(suggestion("sugg-1").status, "open");
+	assert.equal(await subscriptionDetailView(viewOf(owner), subscriptionId), null);
+	const listed = await listSubscriptionsView(viewOf(owner), null);
+	assert.deepEqual(listed, { subscriptions: [], totals: [] });
+	const [undo] = await labels(env);
+	assert.equal(undo.label.startsWith("Undid"), true, undo.label);
+	const [ref] = await resolveRecordRefs(env, { userId: "owner", role: "user", isPrimaryAdmin: false }, [
+		{ kind: "finance:subscription", id: subscriptionId },
+	]);
+	assert.equal(ref.unavailable, true);
+	await undoAgentAction(env, owner, first.actionId).catch(() => undefined);
+	assert.deepEqual(rows(), [], "a second undo changes nothing");
+});
+
+test("a later invoice at a new price updates the row, flags the change and its undo removes only its own document", async (t) => {
+	const context = await setup(t);
+	const { env, addCard, rows, documents, suggestion, deliveries } = context;
+	const first = await trackFirst(context);
+	const subscriptionId = first.subscription.id;
+	const originalRenewal = rows()[0].next_renewal_at;
+	addCard(
+		"sugg-2",
+		"inv-2",
+		card({
+			event: "price_change",
+			subscriptionId,
+			amountMinor: 1999,
+			previousAmountMinor: 1799,
+			nextRenewalOn: day(50),
+			document: {
+				docType: "invoice",
+				documentOn: day(-10),
+				periodStartOn: null,
+				periodEndOn: null,
+				attachmentId: "invoice-2",
+			},
+		}),
+	);
+	const update = await accept(env, "sugg-2");
+	assert.notEqual(update.actionId, first.actionId);
+	assert.equal(update.subscription.id, subscriptionId);
+	const [row] = rows();
+	assert.equal(rows().length, 1);
+	assert.equal(row.amount_minor, 1999);
+	assert.equal(row.previous_amount_minor, 1799);
+	assert.ok(row.price_changed_at);
+	assert.notEqual(row.next_renewal_at, originalRenewal);
+	assert.equal(row.last_message_id, "inv-2");
+	assert.deepEqual(
+		documents().map((document) => [document.message_id, document.doc_type, document.attachment_id]),
+		[
+			["inv-1", "invoice", null],
+			["inv-2", "invoice", "invoice-2"],
+		],
+	);
+	const [activity] = await labels(env);
+	assert.equal(activity.label, "Updated a tracked subscription from a new invoice");
+	assert.equal(
+		deliveries().filter((delivery) => delivery.webhookId === "wh-owner").length,
+		1,
+		"an update of an existing row emits no detected event",
+	);
+	const detail = await subscriptionDetailView(viewOf(owner), subscriptionId);
+	assert.equal(detail.subscription.previousAmountMinor, 1799);
+	assert.deepEqual(detail.paidLast12Months, [{ currency: "USD", minor: 3798 }]);
+	assert.equal(detail.documents[0].message.id, "inv-2");
+	assert.equal(detail.documents[0].attachmentId, "invoice-2");
+
+	await undoAgentAction(env, owner, update.actionId);
+	const [restored] = rows();
+	assert.equal(restored.amount_minor, 1799);
+	assert.equal(restored.previous_amount_minor, null);
+	assert.equal(restored.price_changed_at, null);
+	assert.equal(restored.next_renewal_at, originalRenewal);
+	assert.equal(restored.last_message_id, "inv-1");
+	assert.deepEqual(
+		documents().map((document) => document.message_id),
+		["inv-1"],
+	);
+	assert.equal(suggestion("sugg-2").status, "open", "the price-change card reopens");
+	assert.equal(suggestion("sugg-1").status, "accepted");
+});
+
+test("a same-price renewal and a second card for an untracked vendor update the row; an invoice ends a trial", async (t) => {
+	const context = await setup(t);
+	const { env, addCard, rows, documents } = context;
+	addCard("sugg-a", "inv-a", card({ event: "trial", trialEndsOn: day(10), document: null }));
+	addCard("sugg-b", "inv-b", card({ nextRenewalOn: day(30) }));
+	const tracked = await accept(env, "sugg-a");
+	assert.equal(rows()[0].status, "trial");
+	const second = await accept(env, "sugg-b");
+	assert.equal(rows().length, 1, "the second card is matched again and updates the row");
+	assert.equal(second.subscription.id, tracked.subscription.id);
+	assert.equal(rows()[0].status, "active", "an invoice moves a trial to active");
+	const actions = context.db.db
+		.prepare("SELECT action, variant FROM agent_actions WHERE status = 'applied' ORDER BY rowid")
+		.all();
+	assert.deepEqual(
+		actions.map((action) => `${action.action}:${action.variant}`),
+		["create_subscription:", "create_subscription:update"],
+	);
+	addCard(
+		"sugg-c",
+		"inv-c",
+		card({
+			event: "renewal",
+			subscriptionId: tracked.subscription.id,
+			nextRenewalOn: day(60),
+			document: { docType: "invoice", documentOn: day(-1), periodStartOn: null, periodEndOn: null, attachmentId: null },
+		}),
+	);
+	await accept(env, "sugg-c");
+	assert.equal(rows().length, 1);
+	assert.equal(rows()[0].next_renewal_at, Date.parse(`${day(60)}T00:00:00Z`) / 1000);
+	assert.equal(rows()[0].previous_amount_minor, null, "the same price flags nothing");
+	assert.equal(documents().length, 2);
+});
+
+test("a refund is recorded without changing the subscription and lowers the 12-month total; undo restores it", async (t) => {
+	const context = await setup(t);
+	const { env, addCard, rows, documents, suggestion } = context;
+	const first = await trackFirst(context);
+	const subscriptionId = first.subscription.id;
+	addCard(
+		"sugg-2",
+		"inv-2",
+		card({
+			event: "price_change",
+			subscriptionId,
+			amountMinor: 1999,
+			previousAmountMinor: 1799,
+			document: {
+				docType: "invoice",
+				documentOn: day(-10),
+				periodStartOn: null,
+				periodEndOn: null,
+				attachmentId: null,
+			},
+		}),
+	);
+	await accept(env, "sugg-2");
+	const paid = async () => (await listSubscriptionsView(viewOf(owner), null)).totals[0].paidLast12MonthsMinor;
+	assert.equal(await paid(), 3798);
+	const before = rows()[0];
+	addCard(
+		"sugg-r",
+		"refund-1",
+		card({
+			event: "refund",
+			subscriptionId,
+			amountMinor: 1999,
+			document: { docType: "refund", documentOn: day(-2), periodStartOn: null, periodEndOn: null, attachmentId: null },
+		}),
+	);
+	await assert.rejects(() => accept(env, "sugg-r", "track"), { status: 400 });
+	const recorded = await accept(env, "sugg-r", "record");
+	assert.equal(recorded.documentRecorded, true);
+	assert.equal(await paid(), 1799);
+	const after = rows()[0];
+	for (const column of ["amount_minor", "next_renewal_at", "status", "last_message_id", "cycle", "trial_ends_at"])
+		assert.equal(after[column], before[column], column);
+	assert.equal(documents().filter((document) => document.doc_type === "refund").length, 1);
+	assert.equal((await labels(env))[0].label, "Recorded a refund");
+	await undoAgentAction(env, owner, recorded.actionId);
+	assert.equal(await paid(), 3798);
+	assert.equal(documents().filter((document) => document.doc_type === "refund").length, 0);
+	assert.equal(suggestion("sugg-r").status, "open");
+
+	addCard(
+		"sugg-credit",
+		"credit-1",
+		card({
+			event: "refund",
+			subscriptionId,
+			amountMinor: 500,
+			document: { docType: "credit", documentOn: day(-1), periodStartOn: null, periodEndOn: null, attachmentId: null },
+		}),
+	);
+	await accept(env, "sugg-credit", "record");
+	assert.equal(await paid(), 3298);
+	assert.equal((await labels(env))[0].label, "Recorded a credit note");
+});
+
+test("a failed payment is urgent only after the click and a later payment clears it", async (t) => {
+	const context = await setup(t);
+	const { env, addCard, rows, documents } = context;
+	const first = await trackFirst(context);
+	const subscriptionId = first.subscription.id;
+	addCard(
+		"sugg-f",
+		"failed-1",
+		card({
+			event: "payment_failed",
+			subscriptionId,
+			amountMinor: null,
+			currency: null,
+			document: {
+				docType: "failed_payment",
+				documentOn: day(-1),
+				periodStartOn: null,
+				periodEndOn: null,
+				attachmentId: null,
+			},
+		}),
+	);
+	const urgent = async () => (await listSubscriptionsView(viewOf(owner), null)).subscriptions[0].urgent;
+	assert.equal(await urgent(), false, "nothing changes before the click");
+	const marked = await accept(env, "sugg-f", "mark_urgent");
+	assert.equal(await urgent(), true);
+	assert.equal(documents().filter((document) => document.doc_type === "failed_payment").length, 1);
+	const { totals } = await listSubscriptionsView(viewOf(owner), null);
+	assert.equal(totals[0].paidLast12MonthsMinor, 1799, "a failed payment never counts");
+	assert.equal((await labels(env))[0].label, "Marked a subscription payment as failed");
+	await undoAgentAction(env, owner, marked.actionId);
+	assert.equal(await urgent(), false);
+	assert.equal(documents().filter((document) => document.doc_type === "failed_payment").length, 0);
+
+	await accept(env, "sugg-f", "mark_urgent");
+	assert.equal(await urgent(), true);
+	addCard(
+		"sugg-p",
+		"payment-1",
+		card({
+			event: "renewal",
+			subscriptionId,
+			document: { docType: "payment", documentOn: day(0), periodStartOn: null, periodEndOn: null, attachmentId: null },
+		}),
+	);
+	const paid = await accept(env, "sugg-p");
+	assert.equal(await urgent(), false, "a later payment clears the failed payment");
+	await undoAgentAction(env, owner, paid.actionId);
+	assert.equal(await urgent(), true, "undoing the payment puts the failed payment back");
+	assert.equal(rows().length, 1);
+});
+
+test("only the reviewer decides; stale cards, unfit options and stale attachments are refused or dropped", async (t) => {
+	const context = await setup(t);
+	const { env, addCard, rows, documents } = context;
+	addCard(
+		"sugg-1",
+		"inv-1",
+		card({
+			document: {
+				docType: "invoice",
+				documentOn: day(-3),
+				periodStartOn: null,
+				periodEndOn: null,
+				attachmentId: "gone",
+			},
+		}),
+	);
+	context.db.db.prepare("DELETE FROM message_attachments WHERE id = 'gone'").run();
+	await assert.rejects(() => accept(env, "sugg-1", "track", member), { status: 404 });
+	assert.equal(rows().length, 0);
+	await assert.rejects(() => accept(env, "sugg-1", "mark_urgent"), { status: 400 });
+	await assert.rejects(() => accept(env, "sugg-1", "nonsense"), { status: 400 });
+	await accept(env, "sugg-1");
+	assert.equal(documents().length, 1, "the document is still recorded");
+	assert.equal(documents()[0].attachment_id, null, "without the attachment the message no longer has");
+	addCard("sugg-old", "inv-old", card(), "dismissed");
+	await assert.rejects(() => accept(env, "sugg-old"), { status: 409 });
+	addCard(
+		"sugg-orphan",
+		"refund-orphan",
+		card({
+			event: "refund",
+			subscriptionId: "fsub_missing",
+			vendorKey: "other.example",
+			document: { docType: "refund", documentOn: day(-1), periodStartOn: null, periodEndOn: null, attachmentId: null },
+		}),
+	);
+	await assert.rejects(() => accept(env, "sugg-orphan", "record"), { status: 409 });
+	assert.equal(context.suggestion("sugg-orphan").status, "open");
+});
+
+test("a document already recorded for that message is not inserted twice", async (t) => {
+	const context = await setup(t);
+	const { env, addCard, documents, db } = context;
+	const first = await trackFirst(context);
+	addCard(
+		"sugg-2",
+		"inv-2",
+		card({
+			event: "renewal",
+			subscriptionId: first.subscription.id,
+			document: { docType: "invoice", documentOn: day(-5), periodStartOn: null, periodEndOn: null, attachmentId: null },
+		}),
+	);
+	db.db
+		.prepare(
+			"INSERT INTO finance_charges (id, subscription_id, user_id, message_id, doc_type, amount_minor, currency, document_at, created_at) VALUES ('fdoc_hand', ?, 'owner', 'inv-2', 'invoice', 1799, 'USD', 1, 1)",
+		)
+		.run(first.subscription.id);
+	const update = await accept(env, "sugg-2");
+	assert.equal(update.documentRecorded, false);
+	assert.deepEqual(
+		documents().map((document) => document.id),
+		["fdoc_hand", `fdoc_${first.actionId.replace(/^aact_/, "")}`],
+	);
+	await undoAgentAction(env, owner, update.actionId);
+	assert.equal(documents().length, 2, "undo leaves the document it did not insert");
+});
+
+test("subscriptions, documents and refs are the owner's only", async (t) => {
+	const context = await setup(t);
+	const { env } = context;
+	const first = await trackFirst(context);
+	const id = first.subscription.id;
+	assert.equal(await subscriptionDetailView(viewOf(member), id), null);
+	assert.deepEqual((await listSubscriptionsView(viewOf(member), null)).subscriptions, []);
+	const refs = [{ kind: "finance:subscription", id }];
+	const [mine] = await resolveRecordRefs(env, { userId: "owner", role: "user", isPrimaryAdmin: false }, refs);
+	assert.equal(mine.label, "Streamflix · $17.99/month");
+	assert.equal(mine.href, `/finance?subscription=${id}`);
+	const [theirs] = await resolveRecordRefs(env, { userId: "member", role: "user", isPrimaryAdmin: false }, refs);
+	assert.equal(theirs.unavailable, true);
+	const [missing] = await resolveRecordRefs(env, { userId: "owner", role: "user", isPrimaryAdmin: false }, [
+		{ kind: "finance:subscription", id: "fsub_missing" },
+	]);
+	assert.equal(missing.unavailable, true);
+	const call = {
+		op: "undo",
+		actionId: first.actionId,
+		inverse: { inverse: { userId: "owner", subscriptionId: id, created: true } },
+	};
+	const ctx = {
+		viewer: { userId: "member", role: "user", isPrimaryAdmin: false },
+		requestId: "r",
+		locale: "en",
+		timeZone: "UTC",
+		grants: ["finance.write"],
+		trigger: "api",
+	};
+	const refused = await invokeCapability("finance", "trackSubscription", call, ctx);
+	assert.equal(refused.ok, true);
+	assert.equal(refused.output.refused.status, 403, "only the owner can undo");
+	assert.equal(context.rows().length, 1);
+});
+
+test("the detect step completes a receipt without a cycle from two earlier same-amount messages", async (t) => {
+	const context = await setup(t);
+	const received = new Date(Date.now() - DAY_MS).toISOString();
+	const calls = [];
+	const original = moduleHost.mail.recentFromSender;
+	moduleHost.mail.recentFromSender = async (_ctx, query) => {
+		calls.push(query);
+		const earlier = (days) => ({
+			id: `older-${days}`,
+			mailboxId: "mailbox-a",
+			from: "billing@streamflix.example",
+			subject: "Your receipt",
+			receivedAt: new Date(Date.parse(received) - days * DAY_MS).toISOString(),
+			attachments: [],
+			textExcerpt: "Amount paid: $12.00",
+		});
+		return [earlier(30), earlier(60)];
+	};
+	t.after(() => {
+		moduleHost.mail.recentFromSender = original;
+	});
+	const input = {
+		message: {
+			id: "receipt-1",
+			mailboxId: "mailbox-a",
+			from: "billing@streamflix.example",
+			fromName: "Streamflix Billing",
+			subject: "Your receipt",
+			receivedAt: received,
+			textExcerpt: "Amount paid: $12.00",
+		},
+		facts: {
+			authPassed: true,
+			bulk: false,
+			knownContact: false,
+			phishing: [],
+			automatic: true,
+			noReply: false,
+			list: false,
+			spam: false,
+		},
+		headers: { listUnsubscribe: null, listUnsubscribePost: null, listId: null },
+		attachments: [],
+		model: null,
+	};
+	const ctx = {
+		viewer: { userId: "owner", role: "user", isPrimaryAdmin: false },
+		requestId: "r",
+		locale: "en",
+		timeZone: "UTC",
+		grants: ["finance.read"],
+		mailboxIds: ["mailbox-a"],
+		trigger: "auto_read",
+	};
+	const result = await invokeCapability("finance", "detect", input, ctx);
+	assert.equal(result.ok, true, JSON.stringify(result));
+	const [suggestion] = result.output.suggestions;
+	assert.equal(suggestion.kind, "subscription");
+	assert.ok(suggestion.payload.signals.includes("recurring"));
+	assert.equal(suggestion.payload.cycle, "monthly");
+	assert.equal(calls.length, 1);
+	assert.ok(calls[0].limit <= 5);
+	assert.equal(calls[0].sinceDays, 400);
+	assert.equal(calls[0].sender, "billing@streamflix.example");
+	assert.deepEqual(context.rows(), [], "nothing is stored for an untracked vendor");
+	assert.deepEqual(context.documents(), []);
+});
+
+function actionCtx(userId = "owner") {
+	return {
+		viewer: { userId, role: "user", isPrimaryAdmin: false },
+		requestId: "r",
+		locale: "en",
+		timeZone: "UTC",
+		grants: ["finance.write"],
+		trigger: "api",
+	};
+}
+
+async function runAction(name, call, userId = "owner") {
+	const result = await invokeCapability("finance", name, call, actionCtx(userId));
+	assert.equal(result.ok, true, JSON.stringify(result));
+	return result.output;
+}
+
+const suggestionRef = { id: null, messageId: null, mailboxId: "mailbox-a" };
+
+test("each action is idempotent by actionId and undoes only what it did", async (t) => {
+	const context = await setup(t);
+	const { rows, documents } = context;
+	const first = await trackFirst(context);
+	const subscriptionId = first.subscription.id;
+	const execute = (name, actionId, input) =>
+		runAction(name, { op: "execute", actionId, suggestion: suggestionRef, input });
+	const undo = (name, actionId, inverse, op = "undo") => runAction(name, { op, actionId, inverse: { inverse } });
+
+	const edit = { variant: "", subscriptionId, changes: { vendor: "Streamflix Plus", amountMinor: 2499 } };
+	const edited = await execute("editSubscription", "aact_edit", edit);
+	assert.deepEqual(edited.inverse.previous, { vendor: "Streamflix", amountMinor: 1799 });
+	assert.equal(rows()[0].vendor, "Streamflix Plus");
+	await undo("editSubscription", "aact_edit", edited.inverse);
+	await undo("editSubscription", "aact_edit", edited.inverse);
+	assert.equal(rows()[0].vendor, "Streamflix");
+	assert.equal(rows()[0].amount_minor, 1799);
+	const refused = await runAction("editSubscription", {
+		op: "execute",
+		actionId: "aact_bad",
+		suggestion: suggestionRef,
+		input: { variant: "reminder", subscriptionId, changes: { vendor: "Nope" } },
+	});
+	assert.equal(refused.refused.status, 409, "a variant cannot change fields outside its own");
+
+	const status = await execute("setSubscriptionStatus", "aact_status", { variant: "cancelled", subscriptionId });
+	assert.equal(rows()[0].status, "cancelled");
+	await undo("setSubscriptionStatus", "aact_status", status.inverse);
+	assert.equal(rows()[0].status, "active");
+
+	const document = {
+		docType: "payment",
+		documentOn: day(-3),
+		periodStartOn: null,
+		periodEndOn: null,
+		attachmentId: null,
+		amountMinor: 1799,
+		currency: "USD",
+	};
+	context.addMessage("pay-hand");
+	const record = { variant: "payment", subscriptionId, messageId: "pay-hand", document };
+	const recorded = await execute("recordDocument", "aact_pay", record);
+	const again = await execute("recordDocument", "aact_pay", record);
+	assert.equal(recorded.result.documentRecorded, true);
+	assert.equal(again.result.documentId, recorded.result.documentId, "a resumed action finds its own document");
+	assert.equal(documents().length, 2);
+	const duplicate = await execute("recordDocument", "aact_pay_2", record);
+	assert.equal(duplicate.result.documentRecorded, false, "one document per subscription, message and type");
+	assert.equal(documents().length, 2);
+	await undo("recordDocument", "aact_pay_2", duplicate.inverse);
+	assert.equal(documents().length, 2, "undoing the duplicate removes nothing");
+
+	const removed = await execute("deleteDocument", "aact_deldoc", { documentId: recorded.result.documentId });
+	assert.equal(documents().length, 1);
+	await undo("deleteDocument", "aact_deldoc", removed.inverse);
+	await undo("deleteDocument", "aact_deldoc", removed.inverse);
+	assert.ok(
+		documents().some((row) => row.id === recorded.result.documentId),
+		"re-inserted with the same id",
+	);
+
+	const snapshot = documents();
+	const gone = await execute("deleteSubscription", "aact_delsub", { subscriptionId });
+	assert.deepEqual(rows(), []);
+	assert.deepEqual(documents(), []);
+	const authorized = await undo("deleteSubscription", "aact_delsub", gone.inverse, "authorize_undo");
+	assert.equal(authorized.refused, undefined);
+	assert.deepEqual(rows(), [], "authorizing changes nothing");
+	const stranger = await runAction(
+		"deleteSubscription",
+		{ op: "authorize_undo", actionId: "aact_delsub", inverse: { inverse: gone.inverse } },
+		"member",
+	);
+	assert.equal(stranger.refused.status, 403);
+	await undo("deleteSubscription", "aact_delsub", gone.inverse);
+	await undo("deleteSubscription", "aact_delsub", gone.inverse);
+	assert.equal(rows().length, 1);
+	assert.equal(rows()[0].id, subscriptionId);
+	assert.deepEqual(documents(), snapshot, "documents come back with their ids");
+
+	const missing = await execute("recordDocument", "aact_missing", { ...record, subscriptionId: "fsub_missing" });
+	assert.equal(missing.refused.status, 409);
+});
+
+test("Track by hand creates the row once, emits a manual event, and undo removes it", async (t) => {
+	const context = await setup(t);
+	const { rows, deliveries } = context;
+	const input = {
+		variant: "",
+		fields: {
+			vendor: "Gym",
+			plan: null,
+			amountMinor: 4000,
+			currency: "EUR",
+			cycle: "monthly",
+			nextRenewalOn: day(5),
+			renewalEstimated: false,
+			trialEndsOn: null,
+			status: "active",
+			paymentFailedAt: null,
+			reminderDays: 7,
+			calendarReminder: false,
+			cancelUrl: null,
+			cancelOneClick: false,
+			previousAmountMinor: null,
+			priceChangedAt: null,
+			lastMessageId: null,
+		},
+		vendorKey: "gym.example",
+		mailboxId: "mailbox-a",
+		contactId: null,
+		messageId: null,
+		source: "manual",
+		document: null,
+	};
+	const call = { op: "execute", actionId: "aact_manual", suggestion: suggestionRef, input };
+	const created = await runAction("trackSubscription", call);
+	const resumed = await runAction("trackSubscription", call);
+	assert.equal(created.result.created, true);
+	assert.equal(resumed.result.created, false);
+	assert.equal(rows().length, 1);
+	const sent = deliveries().filter((delivery) => delivery.webhookId === "wh-owner");
+	assert.equal(sent.length, 1, "a resumed action does not emit again");
+	assert.equal(sent[0].body.data.source, "manual");
+	assert.equal(sent[0].body.data.message, null);
+	await runAction("trackSubscription", { op: "undo", actionId: "aact_manual", inverse: { inverse: created.inverse } });
+	assert.deepEqual(rows(), []);
+});
+
+const answerUtils = await loadFinance("answer-utils");
+const recordUtils = await loadFinance("record-utils");
+
+const DATE = new Date("2026-10-14T09:00:00.000Z");
+function storedRow(overrides = {}) {
+	return {
+		id: "fsub_1",
+		userId: "owner",
+		mailboxId: "mailbox-a",
+		contactId: null,
+		vendor: "Streamflix",
+		vendorKey: "streamflix.example",
+		plan: null,
+		amountMinor: 1799,
+		currency: "USD",
+		cycle: "monthly",
+		nextRenewalAt: new Date("2026-11-01T00:00:00.000Z"),
+		renewalEstimated: false,
+		trialEndsAt: null,
+		status: "active",
+		paymentFailedAt: null,
+		reminderDays: 3,
+		calendarReminder: true,
+		lastRemindedFor: null,
+		calendarEventId: null,
+		cancelUrl: null,
+		cancelOneClick: false,
+		previousAmountMinor: null,
+		priceChangedAt: null,
+		sourceMessageId: "inv-1",
+		lastMessageId: "inv-1",
+		createdAt: DATE,
+		updatedAt: DATE,
+		...overrides,
+	};
+}
+
+test("planAnswer picks the action for each button and refuses what does not fit", () => {
+	const { planAnswer, optionFits, isAnswerOption } = answerUtils;
+	const row = storedRow();
+	const fresh = { messageId: "inv-2", repeat: false };
+	assert.equal(isAnswerOption("track"), true);
+	assert.equal(isAnswerOption("toString"), false);
+	assert.equal(optionFits("record", "refund"), true);
+	assert.equal(optionFits("record", "new"), false);
+	assert.deepEqual(planAnswer("track", card(), null, fresh), { capability: "trackSubscription", variant: "" });
+	assert.deepEqual(planAnswer("track", card(), row, fresh), { capability: "trackSubscription", variant: "update" });
+	assert.deepEqual(
+		planAnswer("track", card(), row, { messageId: "inv-1", repeat: true }),
+		{ capability: "trackSubscription", variant: "" },
+		"a repeated click on the card that created the row is the same Track",
+	);
+	assert.deepEqual(planAnswer("track", card(), row, { messageId: "inv-1", repeat: false }), {
+		capability: "trackSubscription",
+		variant: "update",
+	});
+	assert.deepEqual(planAnswer("mark_urgent", card({ event: "payment_failed" }), row, fresh), {
+		capability: "editSubscription",
+		variant: "payment_failed",
+	});
+	assert.equal(planAnswer("mark_urgent", card({ event: "payment_failed" }), null, fresh).status, 409);
+	const refund = card({ event: "refund", document: { ...card().document, docType: "refund" } });
+	assert.deepEqual(planAnswer("record", refund, row, fresh), { capability: "recordDocument", variant: "refund" });
+	assert.equal(planAnswer("record", card({ event: "refund" }), row, fresh).status, 409);
+	assert.equal(planAnswer("record", card({ event: "refund", document: null }), row, fresh).status, 409);
+	assert.equal(planAnswer("record", card(), row, fresh).status, 400);
+});
+
+test("rowForPayload prefers the named row and otherwise matches again", () => {
+	const { rowForPayload } = answerUtils;
+	const rows = [storedRow(), storedRow({ id: "fsub_2", plan: "Family", amountMinor: 2999 })];
+	assert.equal(rowForPayload(rows, card({ subscriptionId: "fsub_2" })).id, "fsub_2");
+	assert.equal(rowForPayload(rows, card({ subscriptionId: "fsub_gone" })).id, "fsub_1");
+	assert.equal(rowForPayload(rows, card({ amountMinor: null, currency: null })).id, "fsub_1");
+	assert.equal(rowForPayload([], card()), null);
+});
+
+test("liveDocument drops a stale attachment and documentInput carries the amount", () => {
+	const { liveDocument, documentInput } = answerUtils;
+	const document = { ...card().document, attachmentId: "att-1" };
+	assert.equal(liveDocument(document, ["att-1"]), document);
+	assert.equal(liveDocument(document, ["att-2"]).attachmentId, null);
+	assert.equal(liveDocument(null, []), null);
+	assert.deepEqual(liveDocument(card().document, []), card().document);
+	assert.deepEqual(documentInput(card(), card().document), { ...card().document, amountMinor: 1799, currency: "USD" });
+	assert.equal(documentInput(card({ amountMinor: null, currency: null }), card().document), null);
+	const failed = { ...card().document, docType: "failed_payment" };
+	assert.equal(documentInput(card({ amountMinor: null, currency: null }), failed).docType, "failed_payment");
+	assert.equal(documentInput(card(), null), null);
+});
+
+test("trackUpdate sets what the card read, flags a price change and keeps the earlier values", () => {
+	const { trackUpdate, trackedFields } = answerUtils;
+	const now = new Date("2026-10-14T10:00:00.000Z");
+	const payload = card({
+		amountMinor: 1999,
+		nextRenewalOn: "2026-12-01",
+		renewalEstimated: true,
+		trialEndsOn: "2026-10-30",
+		cancelLink: { url: "https://streamflix.example/stop", oneClick: true },
+	});
+	const { changes, previous } = trackUpdate(payload, storedRow({ status: "trial" }), card().document, "inv-2", now);
+	assert.equal(changes.amountMinor, 1999);
+	assert.equal(changes.previousAmountMinor, 1799);
+	assert.equal(changes.priceChangedAt, now.toISOString());
+	assert.equal(changes.nextRenewalOn, "2026-12-01");
+	assert.equal(changes.renewalEstimated, true);
+	assert.equal(changes.trialEndsOn, "2026-10-30");
+	assert.equal(changes.cancelUrl, "https://streamflix.example/stop");
+	assert.equal(changes.cancelOneClick, true);
+	assert.equal(changes.status, "active");
+	assert.equal(changes.lastMessageId, "inv-2");
+	assert.equal(previous.amountMinor, 1799);
+	assert.equal(previous.previousAmountMinor, null);
+	assert.equal(previous.nextRenewalOn, "2026-11-01");
+	assert.equal(previous.status, "trial");
+	const same = trackUpdate(
+		card({ nextRenewalOn: null, cycle: null, cancelLink: null }),
+		storedRow(),
+		null,
+		"inv-3",
+		now,
+	);
+	assert.deepEqual(Object.keys(same.changes).sort(), ["amountMinor", "currency", "lastMessageId"]);
+	const payment = { ...card().document, docType: "payment" };
+	const failed = storedRow({ paymentFailedAt: DATE });
+	const cleared = trackUpdate(card({ amountMinor: null, currency: null }), failed, payment, "pay-1", now);
+	assert.equal(cleared.changes.paymentFailedAt, null);
+	assert.equal(cleared.previous.paymentFailedAt, DATE.toISOString());
+	assert.equal(cleared.changes.amountMinor, undefined);
+	const otherCurrency = trackUpdate(card({ currency: "EUR" }), storedRow(), null, "inv-4", now);
+	assert.equal(otherCurrency.changes.previousAmountMinor, undefined, "a different currency is not a price change");
+
+	const fields = trackedFields(card({ event: "trial", nextRenewalOn: null, renewalEstimated: true }), "inv-1");
+	assert.equal(fields.status, "trial");
+	assert.equal(fields.renewalEstimated, false);
+	assert.equal(fields.reminderDays, 3);
+	assert.equal(fields.calendarReminder, true);
+	assert.equal(fields.cancelUrl, "https://streamflix.example/cancel");
+	const bare = trackedFields(card({ amountMinor: null, cancelLink: null }), "inv-1");
+	assert.equal(bare.currency, null);
+	assert.equal(bare.cancelUrl, null);
+	assert.equal(bare.status, "active");
+});
+
+test("record helpers convert fields, rows and filters", () => {
+	const {
+		snapshotFields,
+		fieldColumns,
+		subscriptionView,
+		webhookSubscription,
+		ledgerEntry,
+		documentView,
+		subscriptionLabel,
+		subscriptionHref,
+		statusesOf,
+		rowJson,
+		subscriptionFromJson,
+		chargeFromJson,
+		derivedId,
+		dayToDate,
+		dateToDay,
+	} = recordUtils;
+	const row = storedRow({ paymentFailedAt: DATE, trialEndsAt: new Date("2026-10-20T00:00:00.000Z") });
+	assert.deepEqual(snapshotFields(row, ["nextRenewalOn", "paymentFailedAt", "vendor", "trialEndsOn"]), {
+		nextRenewalOn: "2026-11-01",
+		paymentFailedAt: DATE.toISOString(),
+		vendor: "Streamflix",
+		trialEndsOn: "2026-10-20",
+	});
+	assert.deepEqual(
+		fieldColumns({ nextRenewalOn: "2026-12-01", priceChangedAt: null, vendor: "X", trialEndsOn: null }),
+		{ nextRenewalAt: new Date("2026-12-01T00:00:00.000Z"), priceChangedAt: null, vendor: "X", trialEndsAt: null },
+	);
+	const view = subscriptionView(row);
+	assert.equal(view.urgent, true);
+	assert.deepEqual(view.amount, { minor: 1799, currency: "USD" });
+	assert.equal(subscriptionView(storedRow({ amountMinor: null, currency: null })).amount, null);
+	assert.equal(webhookSubscription(row).nextRenewalOn, "2026-11-01");
+	const charge = {
+		id: "fdoc_1",
+		subscriptionId: "fsub_1",
+		userId: "owner",
+		messageId: null,
+		attachmentId: "att-1",
+		docType: "invoice",
+		amountMinor: 1799,
+		currency: "USD",
+		documentAt: new Date("2026-10-01T00:00:00.000Z"),
+		periodStartAt: null,
+		periodEndAt: null,
+		filedRef: null,
+		createdAt: DATE,
+	};
+	assert.equal(ledgerEntry(charge).documentOn, "2026-10-01");
+	assert.equal(documentView(charge, true).attachmentId, null, "no attachment without a message");
+	assert.equal(documentView(charge, true).paired, true);
+	assert.equal(subscriptionLabel(row, "en"), "Streamflix · $17.99/month");
+	assert.equal(subscriptionLabel({ ...row, amountMinor: null }, "en"), "Streamflix");
+	assert.equal(subscriptionHref("fsub 1"), "/finance?subscription=fsub%201");
+	assert.deepEqual(statusesOf("current"), ["active", "trial"]);
+	assert.deepEqual(statusesOf("ended"), ["cancelled", "expired"]);
+	assert.deepEqual(statusesOf("trial"), ["trial"]);
+	assert.deepEqual(statusesOf(null), ["active", "trial", "cancelled", "expired"]);
+	assert.deepEqual(statusesOf("bogus"), ["active", "trial", "cancelled", "expired"]);
+	assert.deepEqual(subscriptionFromJson(JSON.parse(JSON.stringify(rowJson(row)))), row);
+	assert.deepEqual(chargeFromJson(JSON.parse(JSON.stringify(rowJson(charge)))), charge);
+	assert.equal(derivedId("fsub", "aact_abc"), "fsub_abc");
+	assert.equal(derivedId("fdoc", "other"), "fdoc_other");
+	assert.equal(dayToDate(null), null);
+	assert.equal(dateToDay(null), null);
+});

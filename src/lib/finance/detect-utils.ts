@@ -252,7 +252,10 @@ export function recurringCycle(analysis: Analysis, history: readonly HistoryMess
 }
 
 /** The tracked row this message is about: same vendor key, then the same currency, then plan, then the closest amount. */
-export function matchTracked(rows: readonly TrackedMatchRow[], analysis: Analysis): TrackedMatchRow | null {
+export function matchTracked<Row extends TrackedMatchRow>(
+	rows: readonly Row[],
+	analysis: Pick<Analysis, "vendorKey" | "plan" | "amount">,
+): Row | null {
 	const sameKey = rows.filter((row) => row.vendorKey === analysis.vendorKey);
 	if (sameKey.length === 0) return null;
 	const score = (row: TrackedMatchRow) => {

@@ -462,7 +462,24 @@ test("every module step switch is declared in the module's client data, and no s
 
 test("module actions register from their descriptors with the rules calendar used before", () => {
 	const registry = actions.buildModuleActions(MODULE_CAPABILITIES);
-	assert.deepEqual(Object.keys(registry.meta).sort(), ["create_event", "delete_event", "send_rsvp"]);
+	assert.deepEqual(Object.keys(registry.meta).sort(), [
+		"create_event",
+		"create_subscription",
+		"delete_document",
+		"delete_event",
+		"delete_subscription",
+		"record_document",
+		"send_rsvp",
+		"set_subscription_status",
+		"update_subscription",
+	]);
+	assert.deepEqual(registry.owners.create_subscription, {
+		moduleId: "finance",
+		capability: "trackSubscription",
+		reopensSuggestion: true,
+	});
+	assert.deepEqual(registry.owners.delete_document, { moduleId: "finance", capability: "deleteDocument" });
+	assert.deepEqual(registry.meta.set_subscription_status.variants, ["active", "trial", "cancelled", "expired"]);
 	assert.deepEqual(registry.owners.create_event, { moduleId: "calendar", capability: "createEvent" });
 	assert.deepEqual(registry.owners.delete_event, { moduleId: "calendar", capability: "deleteEvent" });
 	assert.deepEqual(registry.owners.send_rsvp, { moduleId: "calendar", capability: "sendRsvp" });

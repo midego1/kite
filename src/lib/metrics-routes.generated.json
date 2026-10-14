@@ -79,6 +79,8 @@
 	"/api/drafts/[id]",
 	"/api/drafts",
 	"/api/export/messages",
+	"/api/finance/subscriptions/[id]",
+	"/api/finance/subscriptions",
 	"/api/folders",
 	"/api/import/imap/folders",
 	"/api/import/imap",

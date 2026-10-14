@@ -3,6 +3,10 @@ import type { DocumentInfo, StepAttachment } from "./document-utils";
 
 export type Cycle = "weekly" | "monthly" | "quarterly" | "yearly";
 
+export type DocType = "invoice" | "payment" | "credit" | "refund" | "failed_payment";
+
+export type SubscriptionStatus = "active" | "trial" | "cancelled" | "expired";
+
 export type SubscriptionEvent = "new" | "renewal" | "price_change" | "trial" | "payment_failed" | "refund";
 
 /** The triage-step input the `detect` step reads (the wide step input of the module platform). */

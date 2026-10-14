@@ -21,8 +21,7 @@ import {
 	REFUND_PHRASES,
 	phraseRegex,
 } from "./keywords-utils";
-
-type DocType = "invoice" | "payment" | "credit" | "refund" | "failed_payment";
+import type { DocType } from "./types";
 
 export type StepAttachment = { id: string; contentType: string; filename: string | null; size: number };
 

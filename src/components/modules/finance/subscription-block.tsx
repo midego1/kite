@@ -3,19 +3,20 @@
 import { useEffect, useState } from "react";
 import { Link2, TriangleAlert, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { announceSuggestionChange, postSuggestion } from "@/components/agent/suggestion-card-actions";
+import { showUndoToast } from "@/components/ui/undo-toast";
+import { announceSuggestionChange, postSuggestion, undoAction } from "@/components/agent/suggestion-card-actions";
 import type { SuggestionBlockProps } from "@/components/agent/suggestion-card-types";
 import { cancelLinkLine, documentLine, priceText } from "@/lib/finance/text-utils";
 import type { SubscriptionPayload } from "@/lib/finance/types";
 import { getUserTimeZone } from "@/lib/time/utils";
 
-const BUTTONS: Record<SubscriptionPayload["event"], { option: string; label: string }> = {
-	new: { option: "track", label: "Track" },
-	trial: { option: "track", label: "Track" },
-	renewal: { option: "track", label: "Update" },
-	price_change: { option: "track", label: "Update" },
-	payment_failed: { option: "mark_urgent", label: "Mark urgent" },
-	refund: { option: "record", label: "Record it" },
+const BUTTONS: Record<SubscriptionPayload["event"], { option: string; label: string; done: string }> = {
+	new: { option: "track", label: "Track", done: "Tracking the subscription" },
+	trial: { option: "track", label: "Track", done: "Tracking the subscription" },
+	renewal: { option: "track", label: "Update", done: "Subscription updated" },
+	price_change: { option: "track", label: "Update", done: "Subscription updated" },
+	payment_failed: { option: "mark_urgent", label: "Mark urgent", done: "Marked urgent" },
+	refund: { option: "record", label: "Record it", done: "Recorded" },
 };
 
 function locale(): string {
@@ -59,9 +60,18 @@ export function SubscriptionBlock({ suggestion, onChanged, menu, why }: Suggesti
 		setBusy(true);
 		setError(null);
 		try {
-			await postSuggestion(suggestion.id, "accept", { option: button.option, deviceTimeZone: getUserTimeZone() });
+			const { actionId } = await postSuggestion(suggestion.id, "accept", {
+				option: button.option,
+				deviceTimeZone: getUserTimeZone(),
+			});
 			announceSuggestionChange(suggestion);
 			onChanged();
+			if (actionId)
+				showUndoToast(button.done, async () => {
+					await undoAction(actionId);
+					announceSuggestionChange(suggestion);
+					onChanged();
+				});
 		} catch (caught) {
 			setError(caught instanceof Error ? caught.message : String(caught));
 		} finally {

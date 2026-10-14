@@ -66,7 +66,7 @@ const guardedRoutes = MODULE_MANIFESTS.flatMap((manifest) =>
 	),
 );
 
-test("the scan finds the route files of all four modules", () => {
+test("the scan finds the route files of every module with routes", () => {
 	const names = guardedRoutes.map(({ file }) => relative(join(root, "src/app/api"), file));
 	for (const expected of [
 		"calendar/events/route.ts",
@@ -83,9 +83,14 @@ test("the scan finds the route files of all four modules", () => {
 		"import/imap/route.ts",
 		"import/imap/folders/route.ts",
 		"import/messages/route.ts",
+		"finance/subscriptions/route.ts",
+		"finance/subscriptions/[id]/route.ts",
 	])
 		assert.ok(names.includes(expected), `${expected} is not scanned`);
-	assert.deepEqual(new Set(guardedRoutes.map(({ id }) => id)), new Set(["calendar", "booking", "templates", "import"]));
+	assert.deepEqual(
+		new Set(guardedRoutes.map(({ id }) => id)),
+		new Set(["calendar", "booking", "templates", "import", "finance"]),
+	);
 });
 
 test("every method of every module route is wrapped in withModule and asks who is calling", () => {

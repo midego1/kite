@@ -55,14 +55,20 @@ const applied = (values = {}) => ({
 	...values,
 });
 
-test("the registry covers dismiss, drafts, spam moves and the calendar actions with a 7-day undo window", () => {
+test("the registry covers dismiss, drafts, spam moves and the module actions with a 7-day undo window", () => {
 	assert.deepEqual(Object.keys(ACTION_REGISTRY).sort(), [
 		"create_draft",
 		"create_event",
+		"create_subscription",
+		"delete_document",
 		"delete_event",
+		"delete_subscription",
 		"dismiss",
 		"move",
+		"record_document",
 		"send_rsvp",
+		"set_subscription_status",
+		"update_subscription",
 	]);
 	assert.deepEqual(ACTION_REGISTRY.send_rsvp.variants, ["accepted", "declined"]);
 	assert.equal(inverseActionFor({ action: "create_event", variant: "" }), "delete_event");

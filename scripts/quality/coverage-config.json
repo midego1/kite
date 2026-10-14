@@ -63,6 +63,8 @@
 		"src/lib/email/undo-send-utils.ts",
 		"src/lib/email/module-import-utils.ts",
 		"src/lib/email/one-time-code-utils.ts",
+		"src/lib/email/stored-html-utils.ts",
+		"src/app/(dashboard)/inbox/[messageId]/email-html-sanitizer-utils.ts",
 		"src/lib/import/imap-utils.ts",
 		"src/lib/jmap/email-import-utils.ts",
 		"src/lib/jmap/module-utils.ts",

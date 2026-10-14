@@ -46,6 +46,8 @@ export type FoundDate = {
 	day: number;
 	/** A numeric date whose two parts could both be the month. */
 	ambiguous: boolean;
+	/** How a numeric date was read: in the receipt's day/month convention, or only the other way round. */
+	order: "usual" | "swapped" | null;
 	index: number;
 	end: number;
 };
@@ -118,8 +120,10 @@ export function receiptWindow(messageDay: string): DayWindow {
 
 function numericDate(a: number, b: number, year: number, monthFirst: boolean) {
 	const [month, day] = monthFirst ? [a, b] : [b, a];
-	if (isRealDate(year, month, day)) return { year, month, day, ambiguous: a <= 12 && b <= 12 && a !== b };
-	if (isRealDate(year, day, month)) return { year, month: day, day: month, ambiguous: false };
+	if (isRealDate(year, month, day))
+		return { year, month, day, ambiguous: a <= 12 && b <= 12 && a !== b, order: "usual" as const };
+	if (isRealDate(year, day, month))
+		return { year, month: day, day: month, ambiguous: false, order: "swapped" as const };
 	return null;
 }
 
@@ -131,10 +135,11 @@ type Parts = Omit<FoundDate, "index" | "end">;
 
 function partsOf(match: RegExpMatchArray, monthFirst: boolean): Parts | null {
 	const n = (index: number) => (match[index] === undefined ? null : Number(match[index]));
-	if (match[1]) return { year: n(1), month: n(2)!, day: n(3)!, ambiguous: false };
+	const fixed = { ambiguous: false, order: null };
+	if (match[1]) return { year: n(1), month: n(2)!, day: n(3)!, ...fixed };
 	if (match[4]) return numericDate(n(4)!, n(5)!, n(6)!, monthFirst);
-	if (match[7]) return { year: n(9), month: monthOf(match[8]), day: n(7)!, ambiguous: false };
-	return { year: n(12), month: monthOf(match[10]), day: n(11)!, ambiguous: false };
+	if (match[7]) return { year: n(9), month: monthOf(match[8]), day: n(7)!, ...fixed };
+	return { year: n(12), month: monthOf(match[10]), day: n(11)!, ...fixed };
 }
 
 /** Every date the text writes, with its parts; a date without a year keeps `year: null`. */

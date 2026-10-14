@@ -93,6 +93,26 @@ test("$ is USD unless a qualifier or a code is on the same line", () => {
 	assert.equal(currency("Total CAD\n$17.99"), "USD");
 });
 
+test("kr reads only with a kr-family code on the same line", () => {
+	const one = (value) => amounts.parseAmounts(value).map(({ minor, currency }) => [minor, currency]);
+	assert.deepEqual(one("Total: 99,00 kr (SEK) per month"), [[9900, "SEK"]]);
+	assert.deepEqual(one("Totalt 149,00 kr. NOK"), [[14900, "NOK"]]);
+	assert.deepEqual(one("DKK: kr 79,00 om måneden"), [[7900, "DKK"]]);
+	assert.deepEqual(one("Kr. 1.990 ISK"), [[1990, "ISK"]]);
+	assert.deepEqual(one("Total: 99,00 kr per month"), []);
+	assert.deepEqual(one("Total: 99,00 kr (EUR)"), []);
+	assert.deepEqual(one("Total: 99,00 kr\nSEK"), []);
+	assert.deepEqual(one("99 kroner SEK"), []);
+	const detection = run({ body: "Total: 99,00 kr (SEK) per month, renews on 1 Nov 2026" });
+	assert.deepEqual(
+		[detection.payload.amountMinor, detection.payload.currency, detection.payload.nextRenewalOn],
+		[9900, "SEK", "2026-11-01"],
+	);
+	assert.equal(run({ body: "Total: 99,00 kr per month, renews on 1 Nov 2026" }), null);
+	const plan = detect.analyzeMessage(stepInput({ body: "Plan: Premium 99,00 kr (SEK) per month" }), "UTC").plan;
+	assert.equal(plan, "Premium");
+});
+
 test("amount bounds", () => {
 	assert.deepEqual(amounts.parseAmounts("$0.00"), []);
 	assert.deepEqual(amounts.parseAmounts("$1,000,000.01"), []);
@@ -541,6 +561,23 @@ test("a labelled plan stops at its price and keeps its own digits", () => {
 	assert.equal(plan("Plan: Premium $17.99/month, renews on 1 Nov 2026"), "Premium");
 	assert.equal(plan("Plan: Plus 2TB 9,99 EUR monthly"), "Plus 2TB");
 	assert.equal(plan("Plan: Family EUR 9.99 per month"), "Family");
+});
+
+test("a labelled plan keeps its hyphens and stops at a spaced separator or a comma", () => {
+	const plan = (body) => detect.analyzeMessage(stepInput({ body }), "UTC").plan;
+	assert.equal(plan("Plan: Business-Pro $17.99/month"), "Business-Pro");
+	assert.equal(plan("Plan: Business - billed monthly $17.99"), "Business");
+	assert.equal(plan("Plan: Business – billed monthly $17.99"), "Business");
+	assert.equal(plan("Plan: Business — billed monthly $17.99"), "Business");
+	assert.equal(plan("Plan: Business | billed monthly $17.99"), "Business");
+	assert.equal(plan("Plan: Business, billed monthly $17.99"), "Business");
+	const analysis = detect.analyzeMessage(stepInput({ body: "Plan: Business-Pro $17.99/month" }), "UTC");
+	const rows = [
+		tracked({ id: "business", plan: "Business", amountMinor: 1799 }),
+		tracked({ id: "business-pro", plan: "Business-Pro", amountMinor: 2999 }),
+	];
+	assert.equal(detect.matchTracked(rows, analysis).id, "business-pro");
+	assert.equal(detect.matchTracked([...rows].reverse(), analysis).id, "business-pro");
 });
 
 test("renewal phrases name the next renewal in five languages", () => {

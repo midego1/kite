@@ -46,7 +46,9 @@ const SYMBOLS: Record<string, string> = {
 	R$: "BRL",
 };
 
-const SYMBOL = "US\\$|CA\\$|C\\$|AU\\$|A\\$|NZ\\$|HK\\$|S\\$|MX\\$|R\\$|\\$|€|£|¥|₹";
+const KR_CODES: ReadonlySet<string> = new Set(["SEK", "NOK", "DKK", "ISK"]);
+
+const SYMBOL = "US\\$|CA\\$|C\\$|AU\\$|A\\$|NZ\\$|HK\\$|S\\$|MX\\$|R\\$|\\$|€|£|¥|₹|[Kk][Rr]\\.?";
 const NUMBER = "\\d(?:[\\d.,]*\\d)?";
 const GAP = "[ \\u00a0]?";
 const AMOUNT_PATTERN = new RegExp(
@@ -87,8 +89,15 @@ function dollarCurrency(line: string): string {
 	return "USD";
 }
 
+/** The kr-family code on the same line as a `kr`, or null: kr alone names no currency. */
+function kronaCurrency(line: string): string | null {
+	for (const match of line.matchAll(CODE_IN_LINE)) if (KR_CODES.has(match[0])) return match[0];
+	return null;
+}
+
 function currencyOf(token: string, line: string): string | null {
 	if (token === "$") return dollarCurrency(line);
+	if (/^kr\.?$/i.test(token)) return kronaCurrency(line);
 	if (SYMBOLS[token]) return SYMBOLS[token];
 	return CURRENCY_CODES.has(token) ? token : null;
 }

@@ -150,12 +150,14 @@ export function nextAfter(day: string, cycle: Cycle): string {
 
 /** The text before the first price: a currency sign, a code before a number or a number before a code. */
 function beforePrice(value: string): string {
-	return value.split(/[$€£¥₹]|\b[A-Z]{3}\s?\d|\d[\d.,]*\s?[A-Z]{3}\b/u)[0];
+	return value.split(
+		/[$€£¥₹]|\b[A-Z]{3}\s?\d|\d[\d.,]*\s?[A-Z]{3}\b|(?<!\p{L})[Kk][Rr]\.?\s?\d|\d[\d.,]*\s?[Kk][Rr](?!\p{L})/u,
+	)[0];
 }
 
 function planOf(text: string, vendor: string, amountLine: string | null): string | null {
 	const labelled = PLAN_LABEL.exec(text)?.[1];
-	if (labelled) return cleanText(beforePrice(labelled).replace(/[-–|,].*$/u, ""), 80) || null;
+	if (labelled) return cleanText(beforePrice(labelled).replace(/\s[-–—|]\s.*$|,.*$/u, ""), 80) || null;
 	if (!amountLine) return null;
 	const at = amountLine.toLowerCase().indexOf(vendor.toLowerCase());
 	if (at === -1) return null;

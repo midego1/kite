@@ -90,6 +90,9 @@ test("document date: a labelled date within -400/+1 days, else the message date"
 	assert.equal(documentDate("Invoice date: 20 Oct 2026", DATES), "2026-10-14");
 	assert.equal(documentDate("Invoice date: 15 Oct 2026", DATES), "2026-10-15");
 	assert.equal(documentDate("Invoice date: 3 Oct", DATES), "2026-10-14");
+	assert.equal(documentDate("Invoice date: 15 Oct", DATES), "2026-10-15");
+	assert.equal(documentDate("Invoice date: 14 Oct", DATES), "2026-10-14");
+	assert.equal(documentDate("Invoice date: 03/04/2026", DATES), "2026-10-14");
 	assert.equal(documentDate("Invoice date: soon", DATES), "2026-10-14");
 	assert.equal(documentDate("No label 3 Oct 2026", DATES), "2026-10-14");
 });
@@ -115,8 +118,46 @@ test("period ranges: separators, open start year, bounds", () => {
 	assert.equal(documentPeriod("Billing period: 1 Oct 2025 - 31 Oct 2026", DATES), null);
 	assert.equal(documentPeriod("Billing period: 1 Jan 2020 - 31 Jan 2020", DATES), null);
 	assert.equal(documentPeriod("Billing period: 1 Oct 2026 and later 31 Oct 2026", DATES), null);
-	assert.equal(documentPeriod("Billing period: 1 Oct 2026 - 31 Oct", DATES), null);
+	assert.deepEqual(documentPeriod("Billing period: 1 Oct 2026 - 31 Oct", DATES), {
+		start: "2026-10-01",
+		end: "2026-10-31",
+	});
+	assert.deepEqual(documentPeriod("Billing period: 15 Dec 2026 - 14 Jan", DATES), {
+		start: "2026-12-15",
+		end: "2027-01-14",
+	});
+	assert.equal(documentPeriod("Billing period: 1 Oct - 31 Oct", DATES), null);
 	assert.equal(documentPeriod("Billing period: October", DATES), null);
+});
+
+test("period ranges: ambiguous numeric endpoints far from the message are dropped", () => {
+	const EUR = DATES;
+	assert.equal(documentPeriod("Billing period: 03/04/2027 - 04/05/2027", EUR), null);
+	assert.equal(documentPeriod("Billing period: 03/04/2026 - 04/05/2026", EUR), null);
+	// 30/09 can only be day first, so 01/09 is read the same way.
+	assert.deepEqual(documentPeriod("Billing period: 01/09/2026 - 30/09/2026", EUR), {
+		start: "2026-09-01",
+		end: "2026-09-30",
+	});
+	assert.deepEqual(documentPeriod("Billing period: 15/08/2026 - 01/09/2026", EUR), {
+		start: "2026-08-15",
+		end: "2026-09-01",
+	});
+	// 09/30 only reads month first, the opposite order, so it settles nothing about 09/01.
+	assert.equal(documentPeriod("Billing period: 09/01/2026 - 09/30/2026", EUR), null);
+	// Within 31 days an ambiguous endpoint needs no help.
+	assert.deepEqual(documentPeriod("Billing period: 01/10/2026 - 31/10/2026", EUR), {
+		start: "2026-10-01",
+		end: "2026-10-31",
+	});
+	assert.deepEqual(documentPeriod("Billing period: 09/01/2026 - 09/30/2026", { ...EUR, monthFirst: true }), {
+		start: "2026-09-01",
+		end: "2026-09-30",
+	});
+	assert.deepEqual(documentPeriod("Billing period: 1 Sep 2026 - 30 Sep 2026", EUR), {
+		start: "2026-09-01",
+		end: "2026-09-30",
+	});
 });
 
 test("attachment choice: keyword PDF, then keyword image, then a lone PDF, else none", () => {

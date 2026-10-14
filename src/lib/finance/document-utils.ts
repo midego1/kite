@@ -109,7 +109,7 @@ export function documentDate(text: string, ctx: DateContext): string {
 		const start = match.index + match[0].length;
 		const [first] = scanDates(text.slice(start, start + 40), ctx.monthFirst);
 		if (!first) continue;
-		const day = first.year === null ? null : acceptDay(first, ctx, window);
+		const day = acceptDay(first, ctx, window);
 		if (day) return day;
 	}
 	return ctx.messageDay;
@@ -117,12 +117,26 @@ export function documentDate(text: string, ctx: DateContext): string {
 
 const RANGE_JOINER = /^\s*(?:-|–|—|to|through|until|tot|bis|au|al|a|hasta)\s*$/iu;
 
+function isBefore(a: Pick<FoundDate, "month" | "day">, b: Pick<FoundDate, "month" | "day">): boolean {
+	return a.month < b.month || (a.month === b.month && a.day < b.day);
+}
+
+/** The year-less side of a range takes the other side's year, moved so the start never follows the end. */
 function rangeDays(start: FoundDate, end: FoundDate): [string, string] | null {
-	if (end.year === null) return null;
-	let year = start.year ?? end.year;
-	if (start.year === null && (start.month > end.month || (start.month === end.month && start.day > end.day))) year -= 1;
-	if (!isRealDate(year, start.month, start.day)) return null;
-	return [formatDay(year, start.month, start.day), formatDay(end.year, end.month, end.day)];
+	if (start.year === null && end.year === null) return null;
+	const startYear = start.year ?? end.year! - (isBefore(end, start) ? 1 : 0);
+	const endYear = end.year ?? start.year! + (isBefore(end, start) ? 1 : 0);
+	if (!isRealDate(startYear, start.month, start.day) || !isRealDate(endYear, end.month, end.day)) return null;
+	return [formatDay(startYear, start.month, start.day), formatDay(endYear, end.month, end.day)];
+}
+
+/** An ambiguous endpoint is settled when the other one is an unambiguous numeric date read the same way. */
+function settledBy(endpoint: FoundDate, other: FoundDate): boolean {
+	return !endpoint.ambiguous || (!other.ambiguous && other.order === endpoint.order);
+}
+
+function farAmbiguous(endpoint: FoundDate, day: string, other: FoundDate, ctx: DateContext): boolean {
+	return !settledBy(endpoint, other) && Math.abs(daysBetween(ctx.messageDay, day)) > 31;
 }
 
 /** The stated period a document covers; both days or neither, never inferred from the cycle.
@@ -139,6 +153,7 @@ export function documentPeriod(text: string, ctx: DateContext): { start: string;
 		const range = rangeDays(dates[0], dates[1]);
 		if (!range) continue;
 		const [from, to] = range;
+		if (farAmbiguous(dates[0], from, dates[1], ctx) || farAmbiguous(dates[1], to, dates[0], ctx)) continue;
 		const length = daysBetween(from, to);
 		if (length < 0 || length > 366 || !inWindow(from, window) || !inWindow(to, window)) continue;
 		return { start: from, end: to };

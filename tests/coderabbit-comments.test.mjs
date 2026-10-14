@@ -40,8 +40,33 @@ test("skips replies, other authors, outdated comments and answered threads", () 
 test("keeps only the fields the prompt needs and falls back to the original line", () => {
 	const comments = [comment({ id: 31, line: null, original_line: 64, body: "Long finding." })];
 	assert.deepEqual(selectActionableComments(comments), [
-		{ id: 31, path: "src/components/migrations-banner.tsx", line: 64, body: "Long finding." },
+		{ id: 31, reviewer: "CodeRabbit", path: "src/components/migrations-banner.tsx", line: 64, body: "Long finding." },
 	]);
+});
+
+test("selects Greptile's findings too and names the reviewer of each", () => {
+	const comments = [
+		comment({ id: 51 }),
+		comment({ id: 52, user: { login: "greptile-apps[bot]" } }),
+		comment({ id: 53, user: { login: "greptile-apps[bot]" }, in_reply_to_id: 51, position: 5 }),
+	];
+	assert.deepEqual(
+		selectActionableComments(comments).map(({ id, reviewer }) => ({ id, reviewer })),
+		[
+			{ id: 51, reviewer: "CodeRabbit" },
+			{ id: 52, reviewer: "Greptile" },
+		],
+	);
+});
+
+test("the reviewer list is configurable", () => {
+	const comments = [comment({ id: 61 }), comment({ id: 62, user: { login: "greptile-apps[bot]" } })];
+	assert.deepEqual(
+		selectActionableComments(comments, { reviewers: { "greptile-apps[bot]": "Greptile" } }).map(
+			(selected) => selected.id,
+		),
+		[62],
+	);
 });
 
 test("the workflow bot login is configurable", () => {

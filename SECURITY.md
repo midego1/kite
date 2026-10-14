@@ -42,8 +42,10 @@ issues should also be raised privately with the responsible operator/vendor.
   enabled security-update settings. GitHub Actions are checked weekly.
 - `.coderabbit.yaml` configures CodeRabbit's advisory pull request review, which also
   runs Betterleaks, TruffleHog, OSV-Scanner and the repository's Semgrep rules on the
-  diff. It only reviews once the CodeRabbit GitHub app is installed on the repository,
-  and it is never a required check.
+  diff. `greptile.json` gives Greptile's review the same rules. Each only reviews once its
+  GitHub app is installed on the repository, and neither is a required check. Their
+  comments are untrusted input to the adopt workflow (`.github/workflows/coderabbit-adopt.yml`),
+  whose Droid job runs without a GitHub token; only its separate publish job can push and reply.
 - CODEOWNERS routes review to `@midego1`. A repository ruleset protects `main`:
   changes land through squash-merged pull requests with a code-owner approval,
   resolved review threads and passing required checks (Mission validation, Node build,

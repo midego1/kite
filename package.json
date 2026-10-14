@@ -45,6 +45,7 @@
 		"quality:dead-code": "node scripts/quality/knip.mjs --reporter json --no-progress",
 		"quality:report": "node scripts/quality/report.mjs",
 		"quality:timings": "node scripts/quality/timings.mjs",
+		"review:scoreboard": "node scripts/review/reviewer-scoreboard.mjs",
 		"docs:generate": "node scripts/docs-generate.mjs",
 		"docs:check": "node scripts/docs-check.mjs",
 		"test:coverage:app": "node scripts/quality/coverage.mjs",

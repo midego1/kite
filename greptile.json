@@ -1,0 +1,60 @@
+{
+	"strictness": 2,
+	"commentTypes": ["logic", "syntax"],
+	"autoReview": ["open", "push", "rebase"],
+	"triggerOnDrafts": false,
+	"includeBranches": ["main"],
+	"statusCheck": true,
+	"shouldUpdateDescription": false,
+	"instructions": "Kite is reviewed by CodeRabbit and Greptile side by side, with the same rules as .coderabbit.yaml. Report only real problems: correctness, security, data loss and the repository rules below. Comments are added only where the reason is not obvious (CONTRIBUTING.md), so do not ask for comments or docstrings that restate the code. Prettier (tabs) and ESLint own formatting and style, and Markdown and SQL are deliberately left unformatted, so do not comment on style.",
+	"ignorePatterns": "**/package-lock.json\ncloudflare-env.d.ts\nnext-env.d.ts\ndocs/openapi.json\ndrizzle/migrations/meta/**\nscripts/quality/*baseline.json\nscreenshots/**",
+	"customContext": {
+		"rules": [
+			{
+				"rule": "Route files must not import requireUser (it throws, which surfaces as a 500); use requireSessionUser or requireSessionAdmin from src/lib/api/auth.ts. Message and mailbox queries must be scoped by the accessible mailbox IDs from src/lib/mailboxes/access.ts, not by userId. Failures return NextResponse.json({ error }, { status }).",
+				"scope": ["src/app/api/**"]
+			},
+			{
+				"rule": "Migrations are kept exactly as generated, so do not suggest formatting. A migration that creates, renames or drops a table must update BACKUP_TABLES and INTERNAL_TABLES (src/lib/backups/export.ts), BACKUP_TABLE_GROUPS (src/lib/backups/table-groups.ts) and DatabaseBackupTable (src/lib/backups/types.d.ts) in the same pull request, and a dropped table belongs in RETIRED_BACKUP_TABLES so older backups still restore. Flag edits to a migration that already exists on main.",
+				"scope": ["drizzle/migrations/**"]
+			},
+			{
+				"rule": "Cloudflare resource names must not change (Worker and D1 kite, R2 kite-raw, queues kite-*, dataset kite_metrics). The Worker name, the WORKER_SELF_REFERENCE service and getEmailWorkerName() in src/lib/cloudflare-api-utils.ts must agree. Flag anything that looks like a secret; secrets belong in Worker secrets, not vars.",
+				"scope": ["**/wrangler.jsonc*"]
+			},
+			{
+				"rule": "message.forward() and message.setReject() only exist in the email handler, so forward and reject routing must stay there and never move to the queue consumer. The email handler stores raw MIME in R2 and enqueues; it must not parse mail inline. RealtimeHub must stay exported.",
+				"scope": ["worker.ts"]
+			},
+			{
+				"rule": "HKDF_INFO must never change: stored provider secrets were encrypted with it and would become unreadable.",
+				"scope": ["src/lib/security/secret-box.ts"]
+			},
+			{
+				"rule": "Use Tailwind's blue-* palette rather than hard-coded colours so the Kite and Classic styles and dark mode all work. A dialog with more than a few fields needs max-h-[calc(100vh-4rem)] overflow-y-auto. React hooks must not live in modules a Server Component imports. A user-visible change needs an e2e spec change under e2e/.",
+				"scope": ["src/components/**"]
+			},
+			{
+				"rule": "Test data must be invented: no real names, addresses, domains, tokens or mail. A spec must run against the isolated e2e database and need no Cloudflare credentials.",
+				"scope": ["e2e/**"]
+			},
+			{
+				"rule": "Test data must be invented: no real names, addresses, domains, tokens or mail. Unit tests must not need Workers bindings; anything that reaches D1 or R2 belongs in a script under scripts/.",
+				"scope": ["tests/**"]
+			},
+			{
+				"rule": "The screenshots are published in the README, so every seeded name, address, domain and message must be invented.",
+				"scope": ["scripts/screenshots/**"]
+			}
+		],
+		"files": [
+			{
+				"path": "AGENTS.md",
+				"description": "Repository agent instructions: branches, deploys, testing and backup rules"
+			},
+			{ "path": "CLAUDE.md", "description": "Architecture and conventions" },
+			{ "path": "CONTRIBUTING.md", "description": "Contribution and code style guide" },
+			{ "path": "SECURITY.md", "description": "Security model and repository controls" }
+		]
+	}
+}

@@ -37,6 +37,11 @@ export async function claimAgentJob(db: AppDatabase, jobId: string): Promise<Age
 	return blocked ? "mailbox_busy" : null;
 }
 
+/** Whether the claimed attempt of `job` (the row as it was before the claim) is its last one. */
+export function isLastAttempt(job: Pick<AgentJobRow, "attempts">): boolean {
+	return job.attempts + 1 >= MAX_ATTEMPTS;
+}
+
 export async function skipAgentJob(db: AppDatabase, jobId: string, reason: string) {
 	await db.update(agentJobs).set({ status: "skipped", reason, leaseUntil: null }).where(eq(agentJobs.id, jobId));
 }

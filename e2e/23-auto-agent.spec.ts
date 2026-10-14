@@ -1046,7 +1046,8 @@ test.describe("triage scheduling", () => {
 		const restore = await useFakeProvider(api, fake);
 		const account = await suggestAccount("trw");
 		try {
-			await setAutonomy(account, { autonomy: "suggest" });
+			// With no active module extension the request must stay exactly as it was before extensions.
+			await setAutonomy(account, { autonomy: "suggest", capabilities: { modules: { subscriptions: false } } });
 			const nonces: string[] = [];
 			for (const index of [1, 2]) {
 				const message = await deliverInbound(account.api, {
@@ -1099,7 +1100,11 @@ test.describe("triage scheduling", () => {
 					},
 				}),
 			);
-			await setAutonomy(account, { autonomy: "suggest", triageModelId: "fake-triage" });
+			await setAutonomy(account, {
+				autonomy: "suggest",
+				triageModelId: "fake-triage",
+				capabilities: { modules: { subscriptions: false } },
+			});
 			const message = await deliverInbound(account.api, {
 				from: "Customer <customer@outside.test>",
 				to: account.address,

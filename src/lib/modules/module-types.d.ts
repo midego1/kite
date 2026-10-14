@@ -180,6 +180,22 @@ export type CapabilitySurface =
 
 export type CapabilityEffect = "none" | "read" | "create" | "update" | "delete" | "send" | "external";
 
+/**
+ * A triage step's addition to the one triage model request, as static JSON data. Core merges `jsonSchema`
+ * under `properties.modules.properties.<moduleId>` of the provider schema, appends `instructions` to the
+ * prompt's key list and hands the step back whatever the model answered under its id, unvalidated.
+ */
+export type TriageModelExtension = {
+	/** An object schema with `additionalProperties: false` and only scalar, nullable or enum properties; at most 2 KB. */
+	jsonSchema: JsonSchemaObject;
+	/** At most 600 printable characters, no newline, `<<<` or `nonce=`. */
+	instructions: string;
+	/** Extra output tokens, 1..200; the total across extensions is capped at 200. */
+	maxOutputTokens: number;
+	/** A `service` capability of the same module answering `{ wantsModel: boolean }` for the step input. */
+	wantsModel?: string;
+};
+
 export type CapabilityDescriptor = {
 	name: string;
 	surfaces: CapabilitySurface[];
@@ -211,7 +227,13 @@ export type CapabilityDescriptor = {
 	 * `automatic` lets `Auto-Submitted` mail reach the step through a steps-only pass. `capability` names
 	 * the key of the step's per-mailbox switch in `capabilities.modules` (on unless set to false).
 	 */
-	triage?: { order: number; requires?: "invite_attachment"; automatic?: true; capability?: string };
+	triage?: {
+		order: number;
+		requires?: "invite_attachment";
+		automatic?: true;
+		capability?: string;
+		model?: TriageModelExtension;
+	};
 	action?: {
 		actionType: string;
 		suggestionKind?: string;

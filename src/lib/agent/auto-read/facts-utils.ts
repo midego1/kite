@@ -170,9 +170,18 @@ export function collectFacts(input: CollectFactsInput): MessageFacts {
 	};
 }
 
-/** Whether triage needs the model at all; bulk, list and no-reply mail is settled from facts alone. */
-export function needsModel(facts: MessageFacts, capabilities: AutoReadCapabilities): boolean {
-	if (facts.automatic || facts.bulk || facts.noReply || facts.spamVerdict === "spam") return false;
-	if (capabilities.mutedSenders.includes(facts.senderAddress)) return false;
+/** Whether a module's `wantsModel` hint may add a model request: never for a muted sender or a spam verdict. */
+export function hintsAllowed(facts: MessageFacts, capabilities: AutoReadCapabilities): boolean {
+	return facts.spamVerdict !== "spam" && !capabilities.mutedSenders.includes(facts.senderAddress);
+}
+
+/**
+ * Whether triage needs the model at all; bulk, list and no-reply mail is settled from facts alone unless a
+ * module extension's hint asked (`hinted`). A muted sender or a spam verdict never gets a request.
+ */
+export function needsModel(facts: MessageFacts, capabilities: AutoReadCapabilities, hinted = false): boolean {
+	if (!hintsAllowed(facts, capabilities)) return false;
+	if (hinted) return true;
+	if (facts.automatic || facts.bulk || facts.noReply) return false;
 	return capabilities.reply || capabilities.summary || capabilities.phishing;
 }

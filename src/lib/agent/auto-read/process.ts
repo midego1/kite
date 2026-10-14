@@ -3,13 +3,14 @@ import { getDb, type AppDatabase } from "@/db";
 import { agentJobs, mailboxAgentSettings, mailboxes, messages, users } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { normalizeTimeZone } from "@/lib/time/utils";
-import { claimAgentJob, failAndRequeueAgentJob, skipAgentJob } from "../jobs/lease";
+import { claimAgentJob, failAndRequeueAgentJob, isLastAttempt, skipAgentJob } from "../jobs/lease";
 import { getAgentProviderConfig } from "../provider";
 import { ExternalProviderNotAllowedError } from "./auto-read-model";
-import { needsModel } from "./facts-utils";
+import { hintsAllowed, needsModel } from "./facts-utils";
 import { getAutoReadInstallSettings } from "./install-settings";
 import { joinSkipReasons } from "./module-steps-utils";
-import { runModuleTriageSteps } from "./module-steps";
+import { activeModelExtensions, modelHintsAsk, runModuleTriageSteps, type StepRunInput } from "./module-steps";
+import type { ActiveModelExtension } from "./model-extension-utils";
 import { planSuggestions } from "./policy-utils";
 import { allowAutoReadRequest, triageDailyLimitReached } from "./quota";
 import { createReplySuggestion } from "./reply-suggestion";
@@ -45,7 +46,13 @@ async function reviewerAccess(db: AppDatabase, job: AgentJobRow) {
 }
 
 type TriageModelRun = Awaited<ReturnType<typeof runTriageModel>>;
-type ModelStep = { skip: string; model: null } | { skip: null; model: TriageModelRun | null };
+/**
+ * The model's part of a job. `hintOnly` is true when only a module's `wantsModel` hint asked for the
+ * request, so core plans its own kinds as if the model had not run. `error` is kept for a failed request.
+ */
+type ModelStep = { skip: string | null; model: TriageModelRun | null; hintOnly: boolean; error?: unknown };
+
+const NO_MODEL: ModelStep = { skip: null, model: null, hintOnly: false };
 
 /** A refusal thrown from inside the model call, as the code the job records. */
 function thrownRefusal(error: unknown): string | null {
@@ -54,20 +61,25 @@ function thrownRefusal(error: unknown): string | null {
 	return null;
 }
 
-/** Makes the one tool-less model call when the message needs it, or names why it cannot be made. */
+/**
+ * Makes the one tool-less model call, or names why it cannot be made. A failed call is retried by the job
+ * only when core itself needed the model and attempts are left; a hint-only request is never retried, and
+ * either way the module steps then run without the model (`model_failed`).
+ */
 async function modelStep(input: {
 	env: CloudflareEnv;
 	job: AgentJobRow;
 	settings: ReturnType<typeof resolveMailboxAgentSettings>;
 	context: Awaited<ReturnType<typeof loadTriageContext>>;
 	install: AutoReadInstallSettings;
+	extensions: readonly ActiveModelExtension[];
+	hintOnly: boolean;
 }): Promise<ModelStep> {
-	const { env, job, settings, context, install } = input;
-	if (!needsModel(context.facts, settings.capabilities)) return { skip: null, model: null };
+	const { env, job, settings, context, install, extensions, hintOnly } = input;
 	const config = await getAgentProviderConfig(env);
 	if (config.provider === "compatible" && !install.externalAutoReadAllowed)
-		return { skip: "external_provider_not_allowed", model: null };
-	if (!(await allowAutoReadRequest(env, job.mailboxId))) return { skip: "rate_limited", model: null };
+		return { skip: "external_provider_not_allowed", model: null, hintOnly };
+	if (!(await allowAutoReadRequest(env, job.mailboxId))) return { skip: "rate_limited", model: null, hintOnly };
 	try {
 		const model = await runTriageModel({
 			env,
@@ -76,13 +88,40 @@ async function modelStep(input: {
 			context,
 			config,
 			installCapMicros: install.dailySpendCapMicros,
+			extensions,
 		});
-		return { skip: null, model };
+		return { skip: null, model, hintOnly };
 	} catch (error) {
 		const refusal = thrownRefusal(error);
-		if (refusal) return { skip: refusal, model: null };
+		if (refusal) return { skip: refusal, model: null, hintOnly };
+		if (hintOnly || isLastAttempt(job)) return { skip: "model_failed", model: null, hintOnly, error };
 		throw error;
 	}
+}
+
+/**
+ * Whether and how to ask the model: when core needs it (never on a steps-only pass), or when an active
+ * module extension's hint asks for it. Every active extension rides along once the request is made.
+ */
+async function decideModel(input: {
+	env: CloudflareEnv;
+	job: AgentJobRow;
+	settings: ReturnType<typeof resolveMailboxAgentSettings>;
+	context: Awaited<ReturnType<typeof loadTriageContext>>;
+	install: AutoReadInstallSettings;
+	stepRun: StepRunInput;
+	stepsOnly: boolean;
+}): Promise<ModelStep> {
+	const { context, settings, stepRun } = input;
+	const extensions = await activeModelExtensions(stepRun);
+	const coreNeeds = !input.stepsOnly && needsModel(context.facts, settings.capabilities);
+	const hinted =
+		!coreNeeds &&
+		extensions.length > 0 &&
+		hintsAllowed(context.facts, settings.capabilities) &&
+		(await modelHintsAsk(stepRun, extensions));
+	if (!coreNeeds && !hinted) return NO_MODEL;
+	return modelStep({ ...input, extensions, hintOnly: !coreNeeds });
 }
 
 type TriageOutcome = { skip: string; note?: undefined } | { skip: null; note: string | null };
@@ -120,13 +159,9 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 	if (prepared.skip !== null) return { skip: prepared.skip };
 	const { install, source, mailbox, settings, reviewer, access } = prepared;
 	const context = await loadTriageContext(env, source, mailbox.userId);
-	// Mail a program sent is only let in for the steps that opted in to it, so it gets no model call.
+	// Mail a program sent is only let in for the steps that opted in to it; only a module hint can ask the model.
 	const stepsOnly = isAutoSubmitted(context.headers);
-	const modelRun: ModelStep = stepsOnly
-		? { skip: null, model: null }
-		: await modelStep({ env, job, settings, context, install });
-	const model = modelRun.model;
-	const steps = await runModuleTriageSteps({
+	const stepRun: StepRunInput = {
 		env,
 		job,
 		reviewer: {
@@ -140,11 +175,17 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 		headers: context.headers,
 		bodyText: context.bodyText,
 		capabilities: settings.capabilities,
-		model: model?.result ?? null,
+		model: null,
 		automaticOnly: stepsOnly,
-	});
-	// A refused model only stops the job when no module step ran; otherwise the steps' suggestions are kept.
+	};
+	const modelRun = await decideModel({ env, job, settings, context, install, stepRun, stepsOnly });
+	const steps = await runModuleTriageSteps({ ...stepRun, model: modelRun.model?.result ?? null });
+	// When the model core needed failed for good, the job fails as before unless a module step still found something.
+	if (modelRun.skip === "model_failed" && !modelRun.hintOnly && steps.planned.length === 0) throw modelRun.error;
+	// A refused or failed model only stops the job when no module step ran; otherwise the steps' suggestions are kept.
 	if (modelRun.skip && steps.ran === 0) return { skip: modelRun.skip };
+	// A request only a module hint asked for reaches the steps alone: core plans as if the model had not run.
+	const model = modelRun.hintOnly ? null : modelRun.model;
 	const planned = planSuggestions({
 		facts: context.facts,
 		triage: model?.result ?? null,
@@ -156,7 +197,7 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 			threadMessageCount: context.threadMessageCount,
 		},
 	});
-	await storeTriageSuggestions({ env, job, source, planned, model: model?.modelId ?? null });
+	await storeTriageSuggestions({ env, job, source, planned, model: modelRun.model?.modelId ?? null });
 	const reply = planned.find((suggestion) => suggestion.kind === "reply");
 	if (reply)
 		await createReplySuggestion({

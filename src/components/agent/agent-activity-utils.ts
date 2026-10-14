@@ -33,6 +33,7 @@ const REASON_TEXT: Record<string, string> = {
 	external_provider_not_allowed: "Skipped: the external AI provider is not allowed to read mail automatically",
 	paused: "Skipped: Kite is paused for this mailbox",
 	rate_limited: "Skipped: rate limited, too many messages at once",
+	model_failed: "The AI model did not answer; the message was checked without it",
 	autonomy_off: "Skipped: automatic reading is off for this mailbox",
 	assistant_disabled: "Skipped: the email assistant is turned off",
 	source_changed: "Skipped: the message was moved or deleted first",

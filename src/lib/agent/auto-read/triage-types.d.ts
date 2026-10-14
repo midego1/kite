@@ -15,6 +15,8 @@ export type TriageResult = {
 	summary: string;
 	tasks: TriageTask[];
 	suspicious: { flagged: boolean; reasons: TriageSuspiciousReason[] };
+	/** What the model answered for the active module extensions, by module id: untrusted JSON, never read by core. */
+	modules?: Record<string, unknown>;
 };
 
 export type TriageParseOutcome = { ok: true; result: TriageResult } | { ok: false; error: string };
@@ -35,6 +37,8 @@ export type TriagePromptInput = {
 	facts?: MessageFacts;
 	/** Mailbox preferences; at most 4,000 characters, and they cannot override the rules. */
 	instructions?: string;
+	/** The active module extensions' static key text, appended to the key list outside the email block. */
+	extensionInstructions?: readonly string[];
 	nonce?: string;
 	/** Lets the model resolve relative due dates; defaults to the current time. */
 	now?: Date;

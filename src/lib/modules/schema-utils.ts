@@ -10,6 +10,16 @@ export function toJsonSchema(schema: z.ZodType, io: "input" | "output"): JsonSch
 	return z.toJSONSchema(schema, { io }) as JsonSchemaObject;
 }
 
+/**
+ * The JSON fragment of a triage model extension from a flat zod object: its properties as zod writes
+ * them (a nullable field is an `anyOf` with `{ type: "null" }`), `additionalProperties: false` and no
+ * `required`, so the model may leave out any field.
+ */
+export function toModelExtensionSchema(schema: z.ZodType): JsonSchemaObject {
+	const json = toJsonSchema(schema, "input");
+	return { type: "object", additionalProperties: false, properties: json.properties };
+}
+
 /** A descriptor whose JSON Schemas are generated from the module's zod schemas, so there is one source. */
 export function describeCapability(schemas: ModuleSchemas, name: string, meta: DescriptorMeta): CapabilityDescriptor {
 	const entry = schemas[name];

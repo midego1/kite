@@ -289,8 +289,13 @@ test("an opt-in revoked during triage blocks the draft and makes no draft reques
 test("a draft over the spend cap is recorded as blocked and makes no draft request", async (t) => {
 	const { db, env } = await setup(t);
 	const { jobId, messageId } = insertJob(db);
-	// The triage reservation fits; the larger draft estimate (900 output tokens) does not.
-	db.db.prepare("UPDATE mailbox_agent_settings SET daily_spend_cap_micros = 200 WHERE mailbox_id = 'mailbox-a'").run();
+	// The triage reservation fits; the larger draft estimate (900 output tokens) does not. Money Watch's
+	// model extension would raise the triage reservation, so its switch is off here.
+	db.db
+		.prepare(
+			`UPDATE mailbox_agent_settings SET daily_spend_cap_micros = 200, capabilities = '{"modules":{"subscriptions":false}}' WHERE mailbox_id = 'mailbox-a'`,
+		)
+		.run();
 	await processAgentTriageJob(env, jobId);
 	assert.equal(jobStatus(db, jobId), "completed");
 	assert.deepEqual(

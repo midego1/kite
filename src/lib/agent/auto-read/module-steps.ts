@@ -7,6 +7,7 @@ import { invokeCapability, isModuleEnabled } from "@/lib/modules/invoke";
 import type { CapabilityCallContext, JsonValue, ModuleId } from "@/lib/modules/module-types";
 import type { MessageFacts } from "./facts-types";
 import { moduleKindPayloadSchema } from "./module-kinds";
+import { declaredModelExtensions, hintSaysYes, modelForStep, type ActiveModelExtension } from "./model-extension-utils";
 import {
 	selectDueSteps,
 	stepSwitchOn,
@@ -25,6 +26,8 @@ const TRIAGE_STEPS = triageStepsFor(MODULE_CAPABILITIES);
 
 const MODULE_KINDS = suggestionKindDescriptors(MODULE_CAPABILITIES);
 
+const MODEL_EXTENSIONS = declaredModelExtensions(MODULE_CAPABILITIES);
+
 type StepViewer = NonNullable<CapabilityCallContext["viewer"]> & { timeZone: string };
 
 export type StepRunInput = {
@@ -37,7 +40,7 @@ export type StepRunInput = {
 	headers: Record<string, string>;
 	bodyText: string;
 	capabilities: AutoReadCapabilities;
-	/** The triage model's answer, or null when the model did not run or was refused. */
+	/** The triage model's answer, or null when the model did not run, was refused or failed. */
 	model: unknown;
 	/** A steps-only pass for `Auto-Submitted` mail: only steps that opted in run. */
 	automaticOnly?: boolean;
@@ -73,7 +76,7 @@ export async function automaticStepOpen(
 	return false;
 }
 
-async function stepInput(input: StepRunInput): Promise<JsonValue> {
+async function stepInput(input: StepRunInput): Promise<Record<string, JsonValue>> {
 	const attachments = await getDb(input.env)
 		.select({
 			id: messageAttachments.id,
@@ -95,7 +98,58 @@ async function stepInput(input: StepRunInput): Promise<JsonValue> {
 				model: input.model,
 			}),
 		),
-	) as JsonValue;
+	) as Record<string, JsonValue>;
+}
+
+function stepContext(input: StepRunInput, grants: readonly string[]): CapabilityCallContext {
+	return buildCallContext({
+		trigger: "auto_read",
+		viewer: {
+			userId: input.reviewer.userId,
+			role: input.reviewer.role,
+			isPrimaryAdmin: input.reviewer.isPrimaryAdmin,
+		},
+		timeZone: input.reviewer.timeZone,
+		mailboxIds: [input.job.mailboxId],
+		grants: [...grants],
+	});
+}
+
+/**
+ * The model extensions of the steps due for this message whose module is on for the reviewer. They are
+ * what one model request may carry; none keeps the request exactly as it was before extensions existed.
+ */
+export async function activeModelExtensions(input: StepRunInput): Promise<ActiveModelExtension[]> {
+	const due = dueSteps(input);
+	const active: ActiveModelExtension[] = [];
+	for (const extension of MODEL_EXTENSIONS) {
+		const step = due.find(
+			(entry) => entry.moduleId === extension.moduleId && entry.capability === extension.capability,
+		);
+		if (step && (await isModuleEnabled(input.reviewer, step.moduleId))) active.push(extension);
+	}
+	return active;
+}
+
+/**
+ * Asks each active extension's `wantsModel` service, with the step input and `model: null`, whether the
+ * model is worth a request. A hint that fails, times out or answers anything but `{ wantsModel: true }` is no.
+ */
+export async function modelHintsAsk(input: StepRunInput, extensions: readonly ActiveModelExtension[]) {
+	const hinted = extensions.filter((extension) => extension.wantsModel);
+	if (hinted.length === 0) return false;
+	const payload = await stepInput({ ...input, model: null });
+	for (const extension of hinted) {
+		const descriptor = findDescriptor(extension.moduleId, extension.wantsModel!);
+		if (!descriptor?.surfaces.includes("service")) continue;
+		try {
+			const ctx = stepContext(input, descriptor.scopes ?? []);
+			if (hintSaysYes(await invokeCapability(extension.moduleId, extension.wantsModel!, payload, ctx))) return true;
+		} catch {
+			// A hint never stops triage; it only counts as no.
+		}
+	}
+	return false;
 }
 
 function kindSchemas(moduleId: ModuleId) {
@@ -124,19 +178,11 @@ export async function runModuleTriageSteps(input: StepRunInput): Promise<StepRun
 			skipped.push(step.moduleId);
 			continue;
 		}
-		const ctx = buildCallContext({
-			trigger: "auto_read",
-			viewer: {
-				userId: input.reviewer.userId,
-				role: input.reviewer.role,
-				isPrimaryAdmin: input.reviewer.isPrimaryAdmin,
-			},
-			timeZone: input.reviewer.timeZone,
-			mailboxIds: [input.job.mailboxId],
-			grants: descriptor.scopes ?? [],
-		});
+		const ctx = stepContext(input, descriptor.scopes ?? []);
 		ran += 1;
-		const result = await invokeCapability(step.moduleId, step.capability, payload, ctx);
+		// Each step sees only its own module's extension answer.
+		const own = { ...payload, model: modelForStep(input.model, step.moduleId) as JsonValue };
+		const result = await invokeCapability(step.moduleId, step.capability, own, ctx);
 		if (!result.ok) {
 			if (result.error.code === "module_disabled") skipped.push(step.moduleId);
 			else if (result.error.retryable) throw new Error(`The ${step.moduleId} triage step failed: ${result.error.code}`);

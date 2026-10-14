@@ -64,6 +64,7 @@
 		"src/lib/finance/detect-utils.ts",
 		"src/lib/finance/document-utils.ts",
 		"src/lib/finance/keywords-utils.ts",
+		"src/lib/finance/manual-utils.ts",
 		"src/lib/finance/record-utils.ts",
 		"src/lib/finance/text-utils.ts",
 		"src/lib/finance/totals-utils.ts",

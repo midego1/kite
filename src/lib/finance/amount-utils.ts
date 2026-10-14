@@ -13,6 +13,11 @@ const CURRENCY_CODES: ReadonlySet<string> = new Set(
 const ZERO_DIGITS = new Set("BIF CLP DJF GNF ISK JPY KMF KRW PYG RWF UGX VND VUV XAF XOF XPF".split(" "));
 const THREE_DIGITS = new Set("BHD IQD JOD KWD LYD OMR TND".split(" "));
 
+/** Whether a code is on the ISO 4217 allowlist. */
+export function isCurrencyCode(code: string): boolean {
+	return CURRENCY_CODES.has(code);
+}
+
 /** The most an amount may be, in minor units (1,000,000.00 in a two-digit currency).
  * @public Exercised by the bundled unit tests.
  */

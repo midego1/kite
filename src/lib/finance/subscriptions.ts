@@ -88,6 +88,30 @@ export async function documentRow(userId: string, id: string): Promise<ChargeRow
 	return row ?? null;
 }
 
+/** Whether the subscription already has a document of this type from this message (`finance_charges_dedupe_idx`). */
+export async function hasDocument(
+	userId: string,
+	subscriptionId: string,
+	messageId: string,
+	docType: ChargeRow["docType"],
+): Promise<boolean> {
+	const [row] = await onFinanceTables(() =>
+		db()
+			.select({ id: financeCharges.id })
+			.from(financeCharges)
+			.where(
+				and(
+					eq(financeCharges.userId, userId),
+					eq(financeCharges.subscriptionId, subscriptionId),
+					eq(financeCharges.messageId, messageId),
+					eq(financeCharges.docType, docType),
+				),
+			)
+			.limit(1),
+	);
+	return !!row;
+}
+
 export async function deleteDocuments(userId: string, ids: readonly string[]): Promise<void> {
 	if (ids.length === 0) return;
 	await onFinanceTables(() =>

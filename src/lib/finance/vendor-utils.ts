@@ -109,6 +109,11 @@ function slug(value: string): string {
 		.replace(/-+$/, "");
 }
 
+/** The vendor key of a subscription added by hand without a sender: `manual:<vendor slug>`. */
+export function manualVendorKey(vendor: string): string {
+	return `manual:${slug(vendor) || "subscription"}`;
+}
+
 /**
  * The sender's registrable domain, lower case; for a payment processor `<domain>:<vendor slug>`, so two
  * App Store subscriptions stay apart. Null when the sender has no usable domain.

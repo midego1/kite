@@ -13,6 +13,7 @@ import {
 	recurringCycle,
 	skipsMessage,
 	type Analysis,
+	type DetectionContext,
 } from "./detect-utils";
 import { suggestionTitle } from "./text-utils";
 import type { DetectStepInput, TrackedMatchRow } from "./types";
@@ -22,7 +23,7 @@ import { senderAddress } from "./vendor-utils";
 const HISTORY_DAYS = 400;
 const HISTORY_LIMIT = 5;
 
-class MigrationPending extends Error {}
+export class MigrationPending extends Error {}
 
 async function trackedRows(userId: string, key: string): Promise<TrackedMatchRow[]> {
 	try {
@@ -58,13 +59,26 @@ function worthMatching(analysis: Analysis): boolean {
 	return !!analysis.amount || analysis.paymentFailed;
 }
 
-async function detectFor(ctx: CapabilityCallContext, input: DetectStepInput, userId: string) {
-	const analysis = analyzeMessage(input, ctx.timeZone);
-	if (!analysis || !worthMatching(analysis)) return null;
+/**
+ * The owner's tracked row a message is about and, only without one, the cycle the sender's earlier
+ * mail implies. Throws `MigrationPending` before migration 0063.
+ */
+export async function detectionContext(
+	ctx: CapabilityCallContext,
+	input: DetectStepInput,
+	analysis: Analysis,
+	userId: string,
+): Promise<DetectionContext> {
 	const tracked = matchTracked(await trackedRows(userId, analysis.vendorKey), analysis);
 	const recurring =
 		!tracked && needsHistory(analysis) ? recurringCycle(analysis, await senderHistory(ctx, input), ctx.timeZone) : null;
-	return buildDetection(analysis, { tracked, recurring });
+	return { tracked, recurring };
+}
+
+async function detectFor(ctx: CapabilityCallContext, input: DetectStepInput, userId: string) {
+	const analysis = analyzeMessage(input, ctx.timeZone);
+	if (!analysis || !worthMatching(analysis)) return null;
+	return buildDetection(analysis, await detectionContext(ctx, input, analysis, userId));
 }
 
 /**

@@ -2,11 +2,18 @@ import type { ZodType } from "zod";
 import { getEnv } from "@/lib/cloudflare";
 import { importModuleMessages } from "@/lib/email/module-import";
 import { getModuleMessage, readModuleAttachment } from "@/lib/email/module-read";
+import { recentModuleMessagesFromSender } from "@/lib/email/module-recent";
 import { sendModuleMail } from "@/lib/email/module-send";
 import { dispatchModuleWebhook } from "@/lib/email/module-webhooks";
 import { findDescriptor, MODULE_CAPABILITIES } from "./capability-registry";
-import type { HostResolvedRef, ModuleHost } from "./host-types";
-import { getUserProfile, isModuleEnabledForUser, recordModuleAudit } from "./host-services";
+import type { HostAgentServices, HostResolvedRef, ModuleHost } from "./host-types";
+import {
+	findViewerContact,
+	getUserProfile,
+	isModuleEnabledForUser,
+	notifyModuleUsers,
+	recordModuleAudit,
+} from "./host-services";
 import type { CapabilityCallContext, CapabilityResult, JsonValue, ModuleId } from "./module-types";
 import { isModuleEnabledFor } from "./state";
 import { createWebhookEmitter } from "./webhook-emit-utils";
@@ -36,6 +43,18 @@ export function bindHostInvoker(next: Invoker, readPayloadSchema: PayloadSchemaR
 /** `record-refs.ts` binds itself here for the same reason: it imports `invoke.ts`, which imports this file. */
 export function bindHostRefResolver(next: RefResolver): void {
 	refResolver = next;
+}
+
+let agentServices: HostAgentServices | null = null;
+
+/** Automatic reading binds its suggestion and action services here; it imports `invoke.ts` as well. */
+export function bindHostAgentServices(next: HostAgentServices): void {
+	agentServices = next;
+}
+
+function boundAgentServices(): HostAgentServices {
+	if (!agentServices) throw new Error("moduleHost.suggestions and actions are not bound to automatic reading");
+	return agentServices;
 }
 
 /**
@@ -80,8 +99,17 @@ export const moduleHost: ModuleHost = {
 		if (!refResolver) throw new Error("moduleHost.resolveRefs is not bound to resolveRecordRefs");
 		return refResolver(ctx, refs);
 	},
+	suggestions: {
+		get: (ctx, moduleId, suggestionId) => boundAgentServices().getSuggestion(ctx, moduleId, suggestionId),
+		decide: (ctx, moduleId, suggestionId, status) =>
+			boundAgentServices().decideSuggestion(ctx, moduleId, suggestionId, status),
+	},
+	actions: { execute: (ctx, moduleId, call) => boundAgentServices().executeAction(ctx, moduleId, call) },
+	notify: (_ctx, moduleId, userIds, notice) => notifyModuleUsers(getEnv(), moduleId, userIds, notice),
+	contacts: { find: (ctx, userId, email) => findViewerContact(getEnv(), ctx, userId, email) },
 	mail: {
-		getMessage: (ctx, messageId) => getModuleMessage(getEnv(), ctx, messageId),
+		getMessage: (ctx, messageId, options) => getModuleMessage(getEnv(), ctx, messageId, options),
+		recentFromSender: (ctx, query) => recentModuleMessagesFromSender(getEnv(), ctx, query),
 		readAttachment: (ctx, messageId, attachmentId, options) =>
 			readModuleAttachment(getEnv(), ctx, messageId, attachmentId, options),
 		send: (ctx, draft) => sendModuleMail(getEnv(), ctx, draft),

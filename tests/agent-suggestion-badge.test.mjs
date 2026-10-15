@@ -1,6 +1,29 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { groupSuggestionCounts, pickSuggestionBadge } from "../src/lib/agent/auto-read/suggestion-badge-utils.ts";
+import { rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import test, { after } from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "esbuild";
+import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const outDir = makeBundleDirectory("kite-agent-suggestion-badge-");
+after(() => rmSync(outDir, { recursive: true, force: true }));
+
+// The utils read the modules' client data through the `@/` alias, so they are bundled rather than imported.
+await build({
+	entryPoints: [join(root, "src/lib/agent/auto-read/suggestion-badge-utils.ts")],
+	outfile: join(outDir, "suggestion-badge.mjs"),
+	bundle: true,
+	sourcemap: "inline",
+	platform: "node",
+	format: "esm",
+	target: "node22",
+	logLevel: "silent",
+});
+const { groupSuggestionCounts, pickSuggestionBadge } = await import(
+	pathToFileURL(join(outDir, "suggestion-badge.mjs")).href
+);
 
 test("badge priority is phishing > calendar_invite > reply > task > receipt, and summaries get no chip", () => {
 	assert.equal(pickSuggestionBadge([]), null);

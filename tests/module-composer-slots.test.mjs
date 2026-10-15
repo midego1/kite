@@ -9,17 +9,18 @@ const {
 	moduleOwnedMessageStatuses,
 	CLIENT_MODULES,
 	listComposerSlots,
+	listMessageSlots,
 	slotsToLoad,
 	messageStatusExclusions,
 } = await bundleModules("kite-module-composer-slots-", [
 	["MODULE_MANIFESTS, moduleOwnedMessageStatuses", "src/lib/modules/registry.ts"],
 	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
-	["listComposerSlots, slotsToLoad", "src/lib/modules/composer-slot-utils.ts"],
+	["listComposerSlots, listMessageSlots, slotsToLoad", "src/lib/modules/composer-slot-utils.ts"],
 	["messageStatusExclusions", "src/lib/modules/message-status-utils.ts"],
 ]);
 
 const read = (path) => readFileSync(join(root, path), "utf8");
-const ALL = ["calendar", "booking", "templates", "import"];
+const ALL = ["calendar", "booking", "templates", "import", "finance"];
 
 const withSlots = [
 	{ id: "calendar", composerSlots: [{ id: "calendar.late", slot: "send-menu", order: 50, label: "Late" }] },
@@ -121,6 +122,22 @@ test("the send menu reaches template code only through the composer slot", () =>
 	}
 	for (const file of ["template-menu.tsx", "new-template-dialog.tsx", "client.ts"])
 		assert.ok(existsSync(join(root, "src/components/modules/templates", file)), file);
+});
+
+test("composer and message menu slots share one lazy chunk loader, and the reader menu names no module", () => {
+	for (const file of [
+		"src/components/compose/composer-slot.tsx",
+		"src/components/message-actions/message-menu-slots.tsx",
+	]) {
+		const source = read(file);
+		assert.match(source, /useSlotEntries\(/, file);
+		assert.doesNotMatch(source, /loadModuleClient|import\(/, file);
+	}
+	assert.match(read("src/components/modules/use-slot-entries.ts"), /loadModuleClient\(slot\.moduleId\)/);
+	const menu = read("src/components/message-actions/message-actions.tsx");
+	assert.match(menu, /useMessageMenuSlots\(\{ messageId, mailboxId \}/);
+	assert.doesNotMatch(menu, /finance|calendar|templates|booking/i);
+	assert.deepEqual(listMessageSlots(CLIENT_MODULES, [], "message-menu"), [], "nothing on, no entries");
 });
 
 test("the message list route excludes owned statuses through the registry helper", () => {

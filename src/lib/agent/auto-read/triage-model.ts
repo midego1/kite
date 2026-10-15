@@ -8,38 +8,13 @@ import {
 } from "ai";
 import type { ModelCallOptions, ModelCallResult } from "./model-call-utils";
 import type { TriagePrompt } from "./triage-types";
+import { buildTriageJsonSchema } from "./triage-utils";
 
 // Longer than any provider takes for a triage answer (and the fake model's 20 s `slow` reply), far
 // shorter than the job's 10-minute lease.
 const TRIAGE_CALL_TIMEOUT_MS = 60_000;
 
-// A loose shape for providers that constrain decoding to a schema; parseTriageOutput stays the real check.
-const TRIAGE_JSON_SCHEMA = jsonSchema({
-	type: "object",
-	properties: {
-		category: {
-			type: "string",
-			enum: ["needs_reply", "fyi", "calendar", "receipt", "newsletter", "notification", "other"],
-		},
-		needsReply: { type: "boolean" },
-		urgency: { type: "string", enum: ["none", "low", "high"] },
-		summary: { type: "string" },
-		tasks: {
-			type: "array",
-			items: {
-				type: "object",
-				properties: { title: { type: "string" }, dueAt: { type: "string" } },
-				required: ["title"],
-			},
-		},
-		suspicious: {
-			type: "object",
-			properties: { flagged: { type: "boolean" }, reasons: { type: "array", items: { type: "string" } } },
-			required: ["flagged", "reasons"],
-		},
-	},
-	required: ["category", "needsReply", "urgency", "summary", "tasks", "suspicious"],
-});
+const TRIAGE_JSON_SCHEMA = jsonSchema(buildTriageJsonSchema());
 
 export type TriageModelResult = ModelCallResult & { usage: LanguageModelUsage | undefined };
 
@@ -48,9 +23,9 @@ export type TriageModelResult = ModelCallResult & { usage: LanguageModelUsage | 
  * the AI SDK's own structured output. Compatible providers get `json_object` from provider options.
  */
 function structuredOutput(options: ModelCallOptions) {
-	return (options.provider === "cloudflare" || options.preset === "anthropic") && options.jsonMode
-		? Output.object({ schema: TRIAGE_JSON_SCHEMA })
-		: undefined;
+	if (!((options.provider === "cloudflare" || options.preset === "anthropic") && options.jsonMode)) return undefined;
+	const schema = options.extension?.schema ? jsonSchema(options.extension.schema) : TRIAGE_JSON_SCHEMA;
+	return Output.object({ schema });
 }
 
 /** One automatic triage request: no tools, no SDK retries (the job retries), provider-aware options. */

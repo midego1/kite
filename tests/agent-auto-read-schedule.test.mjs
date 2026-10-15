@@ -77,6 +77,9 @@ async function setup(t, { autonomy = "suggest", autoDraft = false } = {}) {
 		.run(autoDraft ? 1 : 0, autonomy);
 	const sent = [];
 	const env = { DB: db, AGENT_QUEUE: { send: async (message) => void sent.push(message) } };
+	// Module state is read through the current environment, as it is in the Worker.
+	globalThis.__kiteNodeEnv = env;
+	t.after(() => delete globalThis.__kiteNodeEnv);
 	return { db, env, sent };
 }
 
@@ -160,6 +163,10 @@ test("two stored copies of one Message-ID scheduled at the same time leave one t
 
 test("ineligible mail gets no triage job", async (t) => {
 	const { db, env, sent } = await setup(t);
+	// With no step opted in to automatic mail, Auto-Submitted mail is ineligible like the rest.
+	db.db
+		.prepare("UPDATE mailbox_agent_settings SET capabilities = ? WHERE mailbox_id = 'mailbox-a'")
+		.run(JSON.stringify({ modules: { subscriptions: false } }));
 	const cases = [
 		{ status: "spam" },
 		{ status: "trash" },
@@ -182,6 +189,11 @@ test("ineligible mail gets no triage job", async (t) => {
 		jobs(db).map((job) => job.kind),
 		["triage", "triage", "triage"],
 	);
+
+	// Money Watch reads automatic mail while its switch is on, so a receipt gets a steps-only job.
+	db.db.exec("UPDATE mailbox_agent_settings SET capabilities = '{}' WHERE mailbox_id = 'mailbox-a'");
+	await scheduleAgentWork(env, workInput(insertMessage(db), { headers: { "Auto-Submitted": "auto-generated" } }));
+	assert.equal(jobs(db).length, 4);
 });
 
 test("a disabled reviewer, a paused mailbox or the install switches stop scheduling", async (t) => {

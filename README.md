@@ -107,7 +107,8 @@ Click a screenshot to open it at full size. The screenshots and the demo recordi
 - **AI assistant**: Search your mail, draft replies, and manage calendar events with AI.
 - **Automatic reading**: Let Kite read new mail and suggest replies, calendar answers, summaries and phishing warnings. Off by default, suggestions only, with spend caps and undo. See [Assistant: automatic reading](docs/assistant.md).
 - **MCP access**: Connect AI clients over MCP, with separate permissions for each key.
-- **Switchable modules**: Calendar, Booking pages, Email templates and Mail import are modules the owner can turn off for the whole install or per user, from the Modules admin page. What is off disappears from the menus, pages and APIs, and nothing is deleted. See [Modules](docs/modules.md).
+- **Money Watch**: With automatic reading on, Kite spots subscriptions in receipts and invoices (including PDF invoices) and offers to track them on a card only the mailbox's reviewer sees. You can also add one by hand or from a message's menu. The Subscriptions page (`/finance`) lists them with monthly and yearly totals per currency, keeps each one's invoices, payments, credits and refunds, and opens the vendor's cancel page when the mail names one. A reminder arrives before a renewal or the end of a trial as a notification, a sidebar count and, with Calendar on, a calendar event. Every change can be undone. It needs database migration 0063. See [Modules](docs/modules.md).
+- **Switchable modules**: Calendar, Booking pages, Email templates, Mail import and Money Watch are modules the owner can turn off for the whole install or per user, from the Modules admin page. What is off disappears from the menus, pages and APIs, and nothing is deleted. See [Modules](docs/modules.md).
 
 ## How this version differs
 
@@ -242,16 +243,17 @@ npm run db:migrate:local
 npm run dev
 ```
 
-Add your Cloudflare credentials to `.dev.vars`, then open [http://localhost:3000](http://localhost:3000). To load sample data, run `npm run db:seed` while the dev server is running.
+Add your Cloudflare credentials to `.dev.vars`, then open [http://localhost:3000](http://localhost:3000). To load sample data, run `npm run db:seed` while the dev server is running. `npm run db:migrate:local` applies every migration, including 0063 for Money Watch; on an existing install, apply it from the migrations banner or Admin settings after deploying.
 
 The Cloudflare app uses vinext and the Cloudflare Vite plugin, with local D1, R2, Queues, and Durable Objects. Remote bindings are off by default. To use Workers AI locally, log in with Wrangler, set `CLOUDFLARE_ACCOUNT_ID`, and run `CLOUDFLARE_REMOTE_BINDINGS=true npm run dev`.
 
 - `npm run build`: build the full Worker.
 - `npm run start`: preview that build locally.
 - `npm run deploy`: build and deploy.
+- `npm run test`: run the unit tests (`node --test tests/*.test.mjs`) and the relay handler tests.
 - `npm run check`: type-check, lint and run the unit tests.
 - `npm run check:mission`: everything CI runs, including coverage, quality and docs checks and the browser tests.
-- `npm run test:e2e`: run the Playwright browser tests against an isolated local database.
+- `npm run test:e2e`: run the Playwright browser tests against an isolated local database (its own dev server on port 3200). Run one file with `npx playwright test e2e/<file>.spec.ts`; Money Watch is covered by `e2e/28-finance*.spec.ts`.
 
 The Node/Docker runtime still uses Next.js with `build:node`, `start:node`, and `dev:node`.
 
@@ -277,7 +279,7 @@ GitHub workflows also run the security scans, draft a release from `v*` tags, re
 - [Spam protection for incoming mail](docs/spam-protection.md)
 - [API and integrations](docs/api.md), including the [calendar and booking APIs](docs/api.md#calendar-and-booking)
 - [Email assistant and MCP](docs/email-assistant-and-mcp.md)
-- [Modules: turning Calendar, Booking, templates and import off](docs/modules.md)
+- [Modules: turning Calendar, Booking, templates, import and Money Watch off](docs/modules.md)
 - [Operations](docs/operations.md), including [after a deploy](docs/operations.md#after-a-deploy)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Roadmap](ROADMAP.md) and [changelog](CHANGELOG.md)

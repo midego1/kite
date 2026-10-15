@@ -18,15 +18,18 @@ const {
 	isInvokableDescriptor,
 	surfacesAreCombinable,
 	toJsonSchema,
+	toModelExtensionSchema,
+	CLIENT_MODULES,
 } = await bundleModules("kite-module-registry-", [
 	["MODULE_MANIFESTS, MODULE_IDS, isModuleId, getModuleManifest", "src/lib/modules/registry.ts"],
 	["MODULE_CAPABILITIES, listCapabilities, findDescriptor", "src/lib/modules/capability-registry.ts"],
 	["SERVER_MODULES", "src/lib/modules/server-registry.ts"],
 	["isInvokableDescriptor, surfacesAreCombinable", "src/lib/modules/capability-utils.ts"],
-	["toJsonSchema", "src/lib/modules/schema-utils.ts"],
+	["toJsonSchema, toModelExtensionSchema", "src/lib/modules/schema-utils.ts"],
+	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
 ]);
 
-const IDS = ["calendar", "booking", "templates", "import"];
+const IDS = ["calendar", "booking", "templates", "import", "finance"];
 const CORE_QUEUE_KINDS = [
 	"email.scheduled",
 	"agent.draft",
@@ -39,7 +42,7 @@ const covers = (prefix, path) => path === prefix || path.startsWith(`${prefix}/`
 const allPrefixes = (key) =>
 	MODULE_MANIFESTS.flatMap((manifest) => manifest[key].map((item) => ({ moduleId: manifest.id, ...item })));
 
-test("the registry lists the four builtin modules in a fixed order", () => {
+test("the registry lists the five builtin modules in a fixed order", () => {
 	assert.deepEqual(MODULE_IDS, IDS);
 	assert.deepEqual(
 		MODULE_CAPABILITIES.map((entry) => entry.moduleId),
@@ -52,6 +55,7 @@ test("the registry lists the four builtin modules in a fixed order", () => {
 	assert.equal(isModuleId("mail"), false);
 	assert.equal(isModuleId(undefined), false);
 	assert.equal(getModuleManifest("booking").name, "Booking");
+	assert.equal(getModuleManifest("finance").name, "Money Watch");
 	assert.throws(() => getModuleManifest("nope"), /Unknown module/);
 });
 
@@ -120,6 +124,30 @@ test("manifests carry what the spec lists for each module", () => {
 		{ name: "resumeStalledImports", schedule: "every_tick", capability: "resumeStalledImports" },
 	]);
 	assert.ok(importManifest.adminNotes?.[0].includes("resume within about five minutes"));
+	const finance = getModuleManifest("finance");
+	assert.deepEqual(finance.dependsOn, []);
+	assert.deepEqual(finance.pages, [{ prefix: "/finance" }]);
+	assert.deepEqual(finance.apiPrefixes, [{ prefix: "/api/finance" }]);
+	assert.deepEqual(
+		finance.recordKinds.map((item) => item.kind),
+		["finance:subscription"],
+	);
+	assert.deepEqual(
+		finance.webhookEvents.map((event) => event.value),
+		["finance.subscription.detected", "finance.subscription.renewal_due"],
+	);
+	assert.deepEqual(
+		finance.grants.map((item) => item.grant),
+		["finance.read", "finance.write"],
+	);
+	assert.deepEqual(finance.mcpScopes, [
+		{ scope: "mcp:finance-read", label: "Read subscriptions", grants: ["finance.read"], mailboxBound: false },
+	]);
+	assert.deepEqual(finance.apiKeyScopes, []);
+	assert.deepEqual(finance.searchSections, [{ id: "subscriptions", label: "Subscriptions" }]);
+	assert.deepEqual(finance.cronTasks, [
+		{ name: "remindRenewals", schedule: "*/5 * * * *", capability: "remindRenewals" },
+	]);
 	for (const manifest of MODULE_MANIFESTS) assert.deepEqual(manifest.jmapCapabilities, []);
 	const accountMenu = MODULE_MANIFESTS.flatMap((manifest) => manifest.nav).filter(
 		(item) => item.placement === "account-menu",
@@ -128,6 +156,44 @@ test("manifests carry what the spec lists for each module", () => {
 		accountMenu.map((item) => [item.label, item.href]),
 		[["Booking", "/booking"]],
 	);
+	assert.deepEqual(finance.nav, [
+		{
+			id: "finance.subscriptions",
+			label: "Subscriptions",
+			href: "/finance",
+			icon: "WalletCards",
+			placement: "sidebar",
+			count: { endpoint: "/api/finance/badge" },
+			keywords: ["finance", "money", "subscriptions", "renewals", "bills", "trials"],
+			order: 20,
+		},
+	]);
+	const sidebar = MODULE_MANIFESTS.flatMap((manifest) => manifest.nav).filter((item) => item.placement === "sidebar");
+	assert.deepEqual(
+		sidebar.map((item) => item.id),
+		["finance.subscriptions"],
+	);
+});
+
+test("nav counts are fetched from one of the module's own API prefixes", () => {
+	const within = (endpoint, prefix) => endpoint === prefix || endpoint.startsWith(`${prefix}/`);
+	for (const manifest of MODULE_MANIFESTS)
+		for (const item of manifest.nav) {
+			assert.ok(item.id.startsWith(`${manifest.id}.`), item.id);
+			assert.ok(item.href.startsWith("/") && !item.href.startsWith("//"), item.id);
+			if (!item.count) continue;
+			assert.deepEqual(Object.keys(item.count), ["endpoint"], item.id);
+			assert.ok(
+				manifest.apiPrefixes.some(({ prefix }) => within(item.count.endpoint, prefix)),
+				`${item.id} counts from ${item.count.endpoint}, outside the module's API prefixes`,
+			);
+		}
+	for (const client of CLIENT_MODULES)
+		assert.deepEqual(
+			client.nav,
+			MODULE_MANIFESTS.find((manifest) => manifest.id === client.id).nav,
+			`${client.id} client nav matches the manifest`,
+		);
 });
 
 test("commands use their own module id and valid targets", () => {
@@ -148,8 +214,29 @@ test("commands use their own module id and valid targets", () => {
 		"calendar.go_to_date",
 		"calendar.new_event",
 		"calendar.open",
+		"finance.add",
+		"finance.open",
 		"import.open",
 	]);
+});
+
+test("message slots sit in the message menu under their own module id and match the client slice", () => {
+	const ids = new Set();
+	for (const manifest of MODULE_MANIFESTS) {
+		for (const slot of manifest.messageSlots ?? []) {
+			assert.equal(slot.slot, "message-menu", slot.id);
+			assert.ok(slot.id.startsWith(`${manifest.id}.`), slot.id);
+			assert.ok(!ids.has(slot.id), `duplicate message slot ${slot.id}`);
+			ids.add(slot.id);
+			assert.ok(Number.isFinite(slot.order), slot.id);
+			assert.ok(slot.label.trim().length > 0 && slot.label.length <= 40, slot.id);
+		}
+		const slice = CLIENT_MODULES.find((item) => item.id === manifest.id);
+		assert.deepEqual(slice?.messageSlots ?? [], manifest.messageSlots ?? [], manifest.id);
+	}
+	for (const manifest of MODULE_MANIFESTS)
+		for (const slot of manifest.composerSlots)
+			assert.ok(!ids.has(slot.id), `${slot.id} is both a composer and a message slot`);
 });
 
 test("manifests import nothing server-only, no zod and no React", () => {
@@ -311,6 +398,110 @@ test("actions name existing suggestion kinds and every action type and reason ha
 	}
 });
 
+test("suggestion kinds carry client meta, and reopening actions belong to a kind of their own module", () => {
+	for (const entry of MODULE_CAPABILITIES) {
+		const client = CLIENT_MODULES.find((item) => item.id === entry.moduleId);
+		const kinds = entry.descriptors.filter((item) => item.suggestionKind).map((item) => item.suggestionKind);
+		for (const kind of kinds) {
+			const meta = client?.suggestionKindMeta?.[kind.kind];
+			assert.ok(meta?.label, `${kind.kind} has no client label`);
+			assert.ok(meta.reason[kind.reasonTemplate], `${kind.kind} has no reason text for ${kind.reasonTemplate}`);
+			if (meta.badgePriority !== undefined) assert.ok(Number.isFinite(meta.badgePriority), kind.kind);
+		}
+		for (const descriptor of entry.descriptors.filter((item) => item.action?.reopensSuggestion))
+			assert.ok(
+				kinds.some((kind) => kind.kind === descriptor.action.suggestionKind),
+				`${descriptor.name} reopens a suggestion its module does not own`,
+			);
+	}
+});
+
+const MODEL_PROPERTY_TYPES = new Set(["string", "number", "integer", "boolean", "null"]);
+
+/** A scalar or enum property, with no `$ref`, `default`, nesting or combinator. */
+function assertScalarProperty(name, schema) {
+	assert.equal(typeof schema, "object", name);
+	for (const banned of ["$ref", "default", "properties", "items", "anyOf", "oneOf", "allOf"])
+		assert.equal(Object.hasOwn(schema, banned), false, `${name} has ${banned}`);
+	assert.ok(MODEL_PROPERTY_TYPES.has(schema.type), `${name} type ${schema.type}`);
+	if (schema.enum) assert.ok(Array.isArray(schema.enum) && schema.enum.length > 0, name);
+}
+
+/** A flat property: scalar or enum, or a nullable one written as an `anyOf` with `{ type: "null" }`. */
+function assertFlatProperty(name, schema) {
+	if (!Object.hasOwn(schema, "anyOf")) return assertScalarProperty(name, schema);
+	assert.equal(Object.keys(schema).length, 1, `${name} has keys next to anyOf`);
+	assert.equal(schema.anyOf.length, 2, name);
+	assert.ok(
+		schema.anyOf.some((entry) => entry.type === "null" && Object.keys(entry).length === 1),
+		`${name} anyOf is not nullable`,
+	);
+	for (const entry of schema.anyOf) assertScalarProperty(name, entry);
+}
+
+test("triage model extensions are small, closed, flat and static, and name a hint of their own module", () => {
+	let found = 0;
+	for (const entry of MODULE_CAPABILITIES)
+		for (const descriptor of entry.descriptors) {
+			const model = descriptor.triage?.model;
+			if (!model) continue;
+			found += 1;
+			const label = `${entry.moduleId}.${descriptor.name}`;
+			assert.ok(descriptor.surfaces.includes("triage_step"), `${label} declares a model extension off a triage step`);
+			const { jsonSchema } = model;
+			assert.equal(jsonSchema.type, "object", label);
+			assert.equal(jsonSchema.additionalProperties, false, label);
+			assert.ok(JSON.stringify(jsonSchema).length <= 2048, `${label} schema is over 2 KB`);
+			assert.equal(JSON.stringify(jsonSchema).includes('"$ref"'), false, label);
+			assert.equal(Object.hasOwn(jsonSchema, "default"), false, label);
+			for (const [name, property] of Object.entries(jsonSchema.properties ?? {}))
+				assertFlatProperty(`${label}.${name}`, property);
+			assert.equal(typeof model.instructions, "string", label);
+			assert.ok(model.instructions.length > 0 && model.instructions.length <= 600, `${label} instructions length`);
+			assert.match(model.instructions, /^[\x20-\x7e]+$/, `${label} instructions are printable on one line`);
+			assert.equal(model.instructions.includes("<<<"), false, label);
+			assert.doesNotMatch(model.instructions, /nonce\s*=/i, label);
+			assert.ok(Number.isInteger(model.maxOutputTokens), label);
+			assert.ok(model.maxOutputTokens >= 1 && model.maxOutputTokens <= 200, `${label} maxOutputTokens`);
+			if (model.wantsModel !== undefined) {
+				const hint = entry.descriptors.find((item) => item.name === model.wantsModel);
+				assert.ok(hint?.surfaces.includes("service"), `${label} wantsModel must be a service of ${entry.moduleId}`);
+			}
+		}
+	assert.ok(found >= 1, "Money Watch declares an extension");
+	const detect = findDescriptor("finance", "detect").triage.model;
+	assert.equal(detect.maxOutputTokens, 200);
+	assert.equal(detect.wantsModel, "wantsModel");
+	assert.equal(detect.instructions.length, 569);
+	assert.deepEqual(Object.keys(detect.jsonSchema.properties), [
+		"vendor",
+		"plan",
+		"amount",
+		"currency",
+		"cycle",
+		"nextRenewalOn",
+		"trialEndsOn",
+		"docType",
+	]);
+});
+
+test("toModelExtensionSchema keeps zod's properties, closes the object and requires nothing", () => {
+	const schema = toModelExtensionSchema(
+		z
+			.object({
+				name: z.string().max(80).nullable(),
+				kind: z.enum(["a", "b"]).nullable(),
+			})
+			.strict(),
+	);
+	assert.deepEqual(Object.keys(schema).sort(), ["additionalProperties", "properties", "type"]);
+	assert.equal(schema.type, "object");
+	assert.equal(schema.additionalProperties, false);
+	assert.deepEqual(schema.properties.kind, { anyOf: [{ type: "string", enum: ["a", "b"] }, { type: "null" }] });
+	assert.deepEqual(schema.properties.name, { anyOf: [{ type: "string", maxLength: 80 }, { type: "null" }] });
+	assert.deepEqual(toModelExtensionSchema(z.object({})).properties, {});
+});
+
 test("lifecycle hooks follow the data-hook rule", () => {
 	const hook = (id, name) => findDescriptor(id, name).lifecycle;
 	assert.deepEqual(hook("calendar", "timeZoneChanged"), { event: "user.time_zone_changed", dataHook: true });
@@ -319,12 +510,22 @@ test("lifecycle hooks follow the data-hook rule", () => {
 
 test("listCapabilities returns the enabled modules' descriptors for a surface in registry order", () => {
 	const names = (surface, enabled) => listCapabilities(surface, enabled).map((item) => item.descriptor.name);
-	assert.equal(names("assistant_tool", IDS).length, 8);
+	assert.equal(names("assistant_tool", IDS).length, 9);
 	assert.deepEqual(names("assistant_tool", ["booking", "templates", "import"]), []);
+	assert.deepEqual(names("assistant_tool", ["finance"]), ["list_subscriptions"]);
 	assert.deepEqual(names("mcp_tool", ["calendar"]), names("assistant_tool", ["calendar"]));
+	assert.deepEqual(names("mcp_tool", ["finance"]), ["list_subscriptions"]);
 	assert.deepEqual(names("search", ["calendar"]), ["search"]);
+	assert.deepEqual(names("search", ["finance"]), ["search"]);
 	assert.deepEqual(names("search", ["booking"]), []);
-	assert.deepEqual(names("webhook_event", IDS), ["eventCreated", "eventUpdated", "eventDeleted", "appointmentCreated"]);
+	assert.deepEqual(names("webhook_event", IDS), [
+		"eventCreated",
+		"eventUpdated",
+		"eventDeleted",
+		"appointmentCreated",
+		"subscriptionDetected",
+		"renewalDue",
+	]);
 	assert.deepEqual(names("webhook_event", ["booking", "calendar"]), [
 		"eventCreated",
 		"eventUpdated",
@@ -334,6 +535,8 @@ test("listCapabilities returns the enabled modules' descriptors for a surface in
 	assert.deepEqual(names("webhook_event", ["booking"]), ["appointmentCreated"]);
 	assert.deepEqual(names("jmap_method", IDS), []);
 	assert.deepEqual(names("cron", ["import"]), ["resumeStalledImports"]);
+	assert.deepEqual(names("cron", IDS), ["resumeStalledImports", "remindRenewals"]);
+	assert.deepEqual(names("webhook_event", ["finance"]), ["subscriptionDetected", "renewalDue"]);
 });
 
 test("registry sources use static imports only, with no dynamic loading", () => {

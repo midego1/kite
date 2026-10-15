@@ -1,16 +1,45 @@
-import type { SuggestionCount, SuggestionKind } from "./suggestion-types";
+import { CLIENT_MODULES } from "@/lib/modules/client-data";
+import type { ClientModuleData } from "@/lib/modules/module-types";
+import type { CoreSuggestionKind, SuggestionCount, SuggestionKind } from "./suggestion-types";
+
+/** Chip ranks of the core kinds; module kinds slot in by their `badgePriority`. */
+const CORE_BADGE_PRIORITY: readonly [CoreSuggestionKind, number][] = [
+	["phishing", 10],
+	["reply", 30],
+	["task", 40],
+	["receipt", 50],
+];
+const CORE_UNRANKED: readonly CoreSuggestionKind[] = ["summary", "label", "unsubscribe", "follow_up"];
+
+type KindRanking = { badge: SuggestionKind[]; order: SuggestionKind[] };
+
+/**
+ * The chip-worthy kinds by rank (core and module kinds with a `badgePriority`, ties in declaration
+ * order), then every kind most important first: chip kinds, core kinds without a chip, module kinds
+ * without a chip.
+ * @public Consumed by tests that rank sample module kinds.
+ */
+export function suggestionKindRanking(modules: readonly Pick<ClientModuleData, "suggestionKindMeta">[]): KindRanking {
+	const ranked: [SuggestionKind, number][] = [...CORE_BADGE_PRIORITY];
+	const unranked: SuggestionKind[] = [];
+	for (const entry of modules)
+		for (const [kind, meta] of Object.entries(entry.suggestionKindMeta ?? {}))
+			if (typeof meta.badgePriority === "number") ranked.push([kind, meta.badgePriority]);
+			else unranked.push(kind);
+	const badge = ranked
+		.map(([kind, priority], index) => ({ kind, priority, index }))
+		.sort((a, b) => a.priority - b.priority || a.index - b.index)
+		.map((entry) => entry.kind);
+	return { badge, order: [...badge, ...CORE_UNRANKED, ...unranked] };
+}
+
+const RANKING = suggestionKindRanking(CLIENT_MODULES);
 
 /** Kinds that earn a row chip, most important first. Summaries and the other kinds never show one. */
-const BADGE_PRIORITY: readonly SuggestionKind[] = ["phishing", "calendar_invite", "reply", "task", "receipt"];
+const BADGE_PRIORITY: readonly SuggestionKind[] = RANKING.badge;
 
 /** Every kind, most important first; rows and For you list kinds in this order. */
-export const SUGGESTION_KIND_ORDER: readonly SuggestionKind[] = [
-	...BADGE_PRIORITY,
-	"summary",
-	"label",
-	"unsubscribe",
-	"follow_up",
-];
+export const SUGGESTION_KIND_ORDER: readonly SuggestionKind[] = RANKING.order;
 
 /** The inbox chip: the highest-priority open kind, plus how many other chip-worthy suggestions exist. */
 export function pickSuggestionBadge(counts: readonly SuggestionCount[]): { kind: SuggestionKind; more: number } | null {

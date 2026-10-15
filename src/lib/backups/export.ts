@@ -31,6 +31,8 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"booking_events",
 	"calendar_events",
 	"booking_appointments",
+	"finance_subscriptions",
+	"finance_charges",
 	"auto_reply_deliveries",
 	"spam_token_stats",
 	"spam_reputation",

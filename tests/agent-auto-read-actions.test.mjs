@@ -55,14 +55,20 @@ const applied = (values = {}) => ({
 	...values,
 });
 
-test("the registry covers dismiss, drafts, spam moves and the calendar actions with a 7-day undo window", () => {
+test("the registry covers dismiss, drafts, spam moves and the module actions with a 7-day undo window", () => {
 	assert.deepEqual(Object.keys(ACTION_REGISTRY).sort(), [
 		"create_draft",
 		"create_event",
+		"create_subscription",
+		"delete_document",
 		"delete_event",
+		"delete_subscription",
 		"dismiss",
 		"move",
+		"record_document",
 		"send_rsvp",
+		"set_subscription_status",
+		"update_subscription",
 	]);
 	assert.deepEqual(ACTION_REGISTRY.send_rsvp.variants, ["accepted", "declined"]);
 	assert.equal(inverseActionFor({ action: "create_event", variant: "" }), "delete_event");
@@ -177,4 +183,60 @@ test("activity rows offer undo only while applied and inside the window", () => 
 	assert.equal(inverse.undoneAt, now.toISOString());
 	assert.equal(canOfferUndo({ ...row, action: "send_reply" }, now), false);
 	assert.equal(canOfferUndo({ ...row, status: "undone" }, now), false);
+});
+
+test("activity rows of module actions show only the ref of the record they touched", () => {
+	const row = (values) => ({
+		id: "act-m",
+		mailboxId: "mailbox-a",
+		suggestionId: null,
+		messageId: null,
+		jobId: null,
+		initiator: "user",
+		actingUserId: "owner",
+		autonomy: null,
+		variant: "",
+		status: "applied",
+		before: null,
+		after: null,
+		reason: "user_click",
+		undoUntil: later,
+		undoneAt: null,
+		undoneByUserId: null,
+		createdAt: now,
+		updatedAt: now,
+		...values,
+	});
+	const ref = { kind: "finance:subscription", id: "fsub_1" };
+	const snapshot = JSON.stringify({
+		userId: "owner",
+		removed: { subscription: { vendor: "Streamflix" }, documents: [] },
+	});
+	const removed = row({ action: "delete_subscription", after: JSON.stringify({ ref, subscriptionId: "fsub_1" }) });
+	assert.deepEqual(toActivityAction(removed, now).after, { ref });
+	const undo = row({
+		action: "delete_subscription",
+		variant: "undo:act-0",
+		before: JSON.stringify({ ref, subscriptionId: "fsub_1" }),
+		after: snapshot,
+	});
+	assert.deepEqual(toActivityAction(undo, now).after, { ref }, "an undo row takes the ref of the original result");
+	assert.equal(toActivityAction(row({ action: "delete_subscription", after: snapshot }), now).after, null);
+	assert.equal(
+		toActivityAction(row({ action: "delete_subscription", before: removed.after, after: snapshot }), now).after,
+		null,
+		"only an undo row falls back to before",
+	);
+	const event = { ref: { kind: "calendar:event", id: "evt-1" } };
+	assert.deepEqual(toActivityAction(row({ action: "create_event", after: '{"eventId":"evt-1"}' }), now).after, event);
+	assert.deepEqual(
+		toActivityAction(
+			row({ action: "create_event", variant: "undo:act-0", before: '{"eventId":"evt-1"}', after: "{}" }),
+			now,
+		).after,
+		event,
+	);
+	assert.equal(toActivityAction(row({ action: "send_rsvp", after: '{"messageId":"m"}' }), now).after, null);
+	const draft = row({ action: "create_draft", after: '{"draftId":"msg_1","sentMessageId":"msg_2"}' });
+	assert.deepEqual(toActivityAction(draft, now).after, { draftId: "msg_1", sentMessageId: "msg_2" });
 });

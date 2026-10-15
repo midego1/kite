@@ -1,6 +1,6 @@
 import { expect, type APIRequestContext } from "@playwright/test";
 
-const MODULE_IDS = ["calendar", "booking", "templates", "import"] as const;
+const MODULE_IDS = ["calendar", "booking", "templates", "import", "finance"] as const;
 export type ModuleId = (typeof MODULE_IDS)[number];
 
 type AccessChange = { userId: string; moduleId: ModuleId; allowed: boolean };

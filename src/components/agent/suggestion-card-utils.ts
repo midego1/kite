@@ -1,14 +1,20 @@
+import { SUGGESTION_KIND_ORDER } from "@/lib/agent/auto-read/suggestion-badge-utils";
 import type { SuggestionKind } from "@/lib/agent/auto-read/suggestion-types";
+import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import type { CardSections, CardSuggestion, WhyDetails } from "./suggestion-card-types";
 
-/** Kinds that get their own block in the reader card, in display order. */
-const BLOCK_KINDS: readonly SuggestionKind[] = ["phishing", "calendar_invite", "reply"];
+const MODULE_KIND_META = CLIENT_MODULES.flatMap((entry) => Object.entries(entry.suggestionKindMeta ?? {}));
+
+/** Kinds that get their own block in the reader card, in display order: phishing, reply and every module kind, by rank. */
+const BLOCK_KINDS: readonly SuggestionKind[] = SUGGESTION_KIND_ORDER.filter(
+	(kind) => kind === "phishing" || kind === "reply" || MODULE_KIND_META.some(([moduleKind]) => moduleKind === kind),
+);
 
 const REASON_TEXT: Record<string, string> = {
+	...Object.assign({}, ...MODULE_KIND_META.map(([, meta]) => meta.reason)),
 	needs_reply: "The message asks you something that needs an answer.",
 	long_thread: "The message or conversation is long, so Kite summarised it.",
 	phishing_signals: "The message shows signs of phishing.",
-	calendar_invite: "The message contains a calendar invitation.",
 };
 
 /** Deterministic signals first, then the reasons a model may add; each in plain words. */
@@ -123,7 +129,9 @@ export function newPhishingWarnings(
 export function whyDetails(suggestion: CardSuggestion): WhyDetails {
 	const reason = suggestion.payload.reason;
 	return {
-		reason: (typeof reason === "string" && REASON_TEXT[reason]) || "Kite's rules for this mailbox suggested this.",
+		reason:
+			(typeof reason === "string" && Object.hasOwn(REASON_TEXT, reason) && REASON_TEXT[reason]) ||
+			"Kite's rules for this mailbox suggested this.",
 		model: suggestion.model ? `Read by ${suggestion.model}.` : "Found by Kite's rules, without a model.",
 	};
 }

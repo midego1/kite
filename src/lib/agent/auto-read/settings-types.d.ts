@@ -7,6 +7,8 @@ export type AutoReadCapabilities = {
 	phishing: boolean;
 	/** Lowercased sender addresses the user muted from a suggestion card. */
 	mutedSenders: string[];
+	/** Module step switches by their `triage.capability` key; a key that is absent is on. */
+	modules: Record<string, boolean>;
 };
 
 export type MailboxAgentSettingsState = {

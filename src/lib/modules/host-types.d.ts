@@ -42,6 +42,71 @@ export type HostImportResult = { imported: number; skipped: number; failed: numb
 
 export type HostUserProfile = { id: string; name: string; email: string; timeZone: string | null };
 
+/** The list headers `mail.getMessage` can return, by lower-case name. */
+export type HostMessageHeaderName = "list-unsubscribe" | "list-unsubscribe-post" | "list-id";
+
+export type HostMessageOptions = {
+	/** The readable body text, cut at `maxBytes` UTF-8 bytes (at most 64 KB) without splitting a character. */
+	text?: { maxBytes: number };
+	headers?: HostMessageHeaderName[];
+};
+
+export type HostMessageDetail = HostMessageView & {
+	fromName: string | null;
+	/** Present when `text` was asked for; null when the message has no text. */
+	textExcerpt?: string | null;
+	/** Present when `headers` was asked for; a header the message lacks is null. */
+	headers?: Partial<Record<HostMessageHeaderName, string | null>>;
+};
+
+export type HostRecentFromSenderQuery = {
+	mailboxId: string;
+	sender: string;
+	/** ISO time; only messages received strictly before it are listed. */
+	before: string;
+	sinceDays: number;
+	limit: number;
+};
+
+export type HostSuggestion = {
+	id: string;
+	mailboxId: string;
+	messageId: string;
+	kind: string;
+	status: string;
+	payload: JsonValue;
+	reviewerUserId: string;
+};
+
+export type HostActionCall = {
+	capability: string;
+	mailboxId: string;
+	variant?: string;
+	suggestionId?: string | null;
+	messageId?: string | null;
+	input: Record<string, JsonValue>;
+	before?: JsonValue;
+};
+
+export type HostActionResult =
+	{ ok: true; actionId: string; result: JsonValue } | { ok: false; status: 403 | 404 | 409; error: string };
+
+export type HostNotice = { notice: string; title: string; body?: string; href?: string };
+
+export type HostContact = { id: string; displayName: string | null };
+
+/** What `suggestions` and `actions` need from automatic reading, bound by it so this file does not import it. */
+export type HostAgentServices = {
+	getSuggestion(ctx: CapabilityCallContext, moduleId: ModuleId, suggestionId: string): Promise<HostSuggestion | null>;
+	decideSuggestion(
+		ctx: CapabilityCallContext,
+		moduleId: ModuleId,
+		suggestionId: string,
+		status: "accepted",
+	): Promise<boolean>;
+	executeAction(ctx: CapabilityCallContext, moduleId: ModuleId, call: HostActionCall): Promise<HostActionResult>;
+};
+
 /**
  * The plain-function facade modules use to reach core services. Every function takes the JSON call
  * context and JSON arguments and returns JSON, so the same shape can later be an RPC surface.
@@ -51,8 +116,33 @@ export type ModuleHost = {
 	invoke(ctx: CapabilityCallContext, moduleId: ModuleId, name: string, input: JsonValue): Promise<CapabilityResult>;
 	modules: { isEnabledFor(ctx: CapabilityCallContext, userId: string, moduleId: ModuleId): Promise<boolean> };
 	resolveRefs(ctx: CapabilityCallContext, refs: RecordRef[]): Promise<HostResolvedRef[]>;
+	suggestions: {
+		/** A suggestion of a kind the module owns, if the viewer may decide it (full access, and the reviewer for `audience: "reviewer"`). */
+		get(ctx: CapabilityCallContext, moduleId: ModuleId, suggestionId: string): Promise<HostSuggestion | null>;
+		/** Marks an open suggestion of the module's kind accepted by the viewer and sends the quiet realtime ping. */
+		decide(ctx: CapabilityCallContext, moduleId: ModuleId, suggestionId: string, status: "accepted"): Promise<boolean>;
+	};
+	actions: {
+		/** Runs an action capability the module owns through the executor as the viewer, with the viewer's mailbox permissions. */
+		execute(ctx: CapabilityCallContext, moduleId: ModuleId, call: HostActionCall): Promise<HostActionResult>;
+	};
+	/** A transient notice over realtime to those of `userIds` for whom the module is on. */
+	notify(ctx: CapabilityCallContext, moduleId: ModuleId, userIds: string[], notice: HostNotice): Promise<void>;
+	contacts: {
+		/** The viewer's own contact for an address; `userId` must be the viewer. */
+		find(ctx: CapabilityCallContext, userId: string, email: string): Promise<HostContact | null>;
+	};
 	mail: {
-		getMessage(ctx: CapabilityCallContext, messageId: string): Promise<HostMessageView | null>;
+		getMessage(
+			ctx: CapabilityCallContext,
+			messageId: string,
+			options?: HostMessageOptions,
+		): Promise<HostMessageDetail | null>;
+		/** At most 5 earlier received messages from one sender in a mailbox in `ctx.mailboxIds`, newest first, with excerpts of at most 4 KB. */
+		recentFromSender(
+			ctx: CapabilityCallContext,
+			query: HostRecentFromSenderQuery,
+		): Promise<(HostMessageView & { textExcerpt: string | null })[]>;
 		readAttachment(
 			ctx: CapabilityCallContext,
 			messageId: string,

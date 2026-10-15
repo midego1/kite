@@ -10,7 +10,7 @@ const { moduleNavItems, MODULE_MANIFESTS, navSectionsFor, filterNavSections, sea
 		["resolveNavIcon", "src/components/modules/client-registry.ts"],
 	]);
 
-const ALL = ["calendar", "booking", "templates", "import"];
+const ALL = ["calendar", "booking", "templates", "import", "finance"];
 const labels = (items) => items.map((item) => item.label);
 const hrefs = (sections) => sections.flatMap((section) => section.items.map((item) => item.href));
 const member = { role: "user", isPrimaryAdmin: false, canManageDomains: false, canManageUsers: false };
@@ -21,6 +21,23 @@ test("the mailbox selector shows Calendar and the account menu shows Booking whi
 	assert.deepEqual(moduleNavItems(MODULE_MANIFESTS, "account-menu", ALL)[0].href, "/booking");
 	assert.deepEqual(moduleNavItems(MODULE_MANIFESTS, "mailbox-selector", ["booking"]), []);
 	assert.deepEqual(moduleNavItems(MODULE_MANIFESTS, "account-menu", ["calendar"]), []);
+});
+
+test("the sidebar lists Subscriptions with its count endpoint only while Money Watch is on", () => {
+	const sidebar = moduleNavItems(MODULE_MANIFESTS, "sidebar", ALL);
+	assert.deepEqual(labels(sidebar), ["Subscriptions"]);
+	assert.equal(sidebar[0].href, "/finance");
+	assert.equal(sidebar[0].moduleId, "finance");
+	assert.deepEqual(sidebar[0].count, { endpoint: "/api/finance/badge" });
+	assert.deepEqual(
+		moduleNavItems(
+			MODULE_MANIFESTS,
+			"sidebar",
+			ALL.filter((id) => id !== "finance"),
+		),
+		[],
+	);
+	assert.notEqual(resolveNavIcon("WalletCards"), resolveNavIcon("NoSuchIcon"));
 });
 
 test("the calendar tabs list Bookings before Calendar and drop the one that is off", () => {

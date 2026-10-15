@@ -4,7 +4,8 @@ import {
 	buildTestCodeNotificationParts,
 	makeTestOneTimeCode,
 } from "./new-message-notification-utils";
-import type { NewMessageEvent } from "./message-realtime-types";
+import { isSameOriginPath } from "@/lib/modules/path-utils";
+import type { ModuleNoticeEvent, NewMessageEvent } from "./message-realtime-types";
 
 export const REALTIME_FALLBACK_INTERVAL_MS = 60_000;
 /** Keeps the socket alive; answered by the Durable Object's auto-response without waking it. */
@@ -16,6 +17,8 @@ export const REALTIME_FOCUS_CHECK_THROTTLE_MS = 10_000;
 export const REALTIME_RECONNECT_MAX_MS = 30_000;
 /** Fired on window when a Kite suggestion is created, decided or closed (realtime or a local action). */
 export const AGENT_SUGGESTION_EVENT = "kite:agent-suggestion";
+/** Fired on window in every open tab when a module sends the user a notice; the detail is a `ModuleNoticeEvent`. */
+export const MODULE_NOTICE_EVENT = "kite:module-notice";
 const BROWSER_NOTIFICATIONS_ENABLED_KEY = "kite:browser-notifications-enabled";
 const NOTIFICATION_CODES_ENABLED_KEY = "kite:notification-codes-enabled";
 const NOTIFICATION_SERVICE_WORKER_URL = "/kite-sw.js";
@@ -109,6 +112,39 @@ export function parseNewMessageEvent(value: string): NewMessageEvent | null {
 	} catch {
 		return null;
 	}
+}
+
+const nonEmptyString = (value: unknown): value is string => typeof value === "string" && value.length > 0;
+
+/** A `module_notice` realtime payload, or null for anything else, incomplete, or linking off this site. */
+export function parseModuleNoticeEvent(value: string): ModuleNoticeEvent | null {
+	try {
+		const payload = JSON.parse(value) as Partial<Record<keyof ModuleNoticeEvent, unknown>> | null;
+		if (
+			payload?.type !== "module_notice" ||
+			!nonEmptyString(payload.moduleId) ||
+			!nonEmptyString(payload.notice) ||
+			!nonEmptyString(payload.title)
+		) {
+			return null;
+		}
+		const href = payload.href ?? null;
+		if (href !== null && !isSameOriginPath(href)) return null;
+		return {
+			type: "module_notice",
+			moduleId: payload.moduleId,
+			notice: payload.notice,
+			title: payload.title,
+			body: typeof payload.body === "string" ? payload.body : null,
+			href,
+		};
+	} catch {
+		return null;
+	}
+}
+
+export function dispatchModuleNotice(notice: ModuleNoticeEvent): void {
+	window.dispatchEvent(new CustomEvent(MODULE_NOTICE_EVENT, { detail: notice }));
 }
 
 export async function showBrowserNewMessageNotification(event: NewMessageEvent): Promise<void> {

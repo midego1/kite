@@ -7,7 +7,9 @@ import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
 import { scheduleAutoDraft } from "../jobs/utils";
 import { agentJobQueueMessage } from "../queue-utils";
 import { getAutoReadInstallSettings } from "./install-settings";
+import { automaticStepOpen } from "./module-steps";
 import { isPaused, triageMessageGate, withinRecoveryWindow } from "./schedule-utils";
+import { resolveMailboxAgentSettings } from "./settings-utils";
 import { supersedeOlderReplies } from "./suggestion-lifecycle";
 
 export type AgentWorkInput = Parameters<typeof scheduleAutoDraft>[1] & {
@@ -17,9 +19,10 @@ export type AgentWorkInput = Parameters<typeof scheduleAutoDraft>[1] & {
 
 type MailboxSettings = typeof mailboxAgentSettings.$inferSelect;
 
-async function reviewerCanRead(db: AppDatabase, reviewerUserId: string, mailboxId: string) {
+async function readingReviewer(db: AppDatabase, reviewerUserId: string, mailboxId: string) {
 	const [reviewer] = await db.select().from(users).where(eq(users.id, reviewerUserId)).limit(1);
-	return !!reviewer && !reviewer.disabled && !!(await getMailboxAccessLevel(db, reviewer, mailboxId))?.canRead;
+	if (!reviewer || reviewer.disabled) return null;
+	return (await getMailboxAccessLevel(db, reviewer, mailboxId))?.canRead ? reviewer : null;
 }
 
 /**
@@ -60,8 +63,20 @@ async function triageAllowed(env: CloudflareEnv, input: AgentWorkInput, settings
 	const [mailbox] = await db.select().from(mailboxes).where(eq(mailboxes.id, input.mailboxId)).limit(1);
 	if (!mailbox) return false;
 	const ownAddresses = await getMailboxDomainAddresses(db, mailbox);
-	if (triageMessageGate({ ...input, ownAddresses })) return false;
-	return reviewerCanRead(db, settings.reviewerUserId || input.ownerUserId, input.mailboxId);
+	const gate = triageMessageGate({ ...input, ownAddresses });
+	if (gate && gate !== "auto_submitted") return false;
+	const reviewer = await readingReviewer(db, settings.reviewerUserId || input.ownerUserId, input.mailboxId);
+	if (!reviewer) return false;
+	if (!gate) return true;
+	const { capabilities } = resolveMailboxAgentSettings(settings, {
+		mailboxId: mailbox.id,
+		ownerUserId: mailbox.userId,
+		mailboxType: mailbox.type,
+	});
+	return automaticStepOpen(
+		{ userId: reviewer.id, role: reviewer.role, isPrimaryAdmin: reviewer.isPrimaryAdmin },
+		capabilities,
+	);
 }
 
 /**

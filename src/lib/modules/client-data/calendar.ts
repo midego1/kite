@@ -5,6 +5,15 @@ export const calendarClientData: ClientModuleData = {
 	id: "calendar",
 	name: "Calendar",
 	suggestionKinds: ["calendar_invite"],
+	suggestionKindMeta: {
+		calendar_invite: {
+			label: "Invitations",
+			reason: { calendar_invite: "The message contains a calendar invitation." },
+			badgePriority: 20,
+			badgeLabel: "Invite",
+			icon: "CalendarDays",
+		},
+	},
 	keyScopes: {
 		mcp: [
 			{

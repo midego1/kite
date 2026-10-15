@@ -1,5 +1,8 @@
-export type SuggestionKind =
+export type CoreSuggestionKind =
 	"calendar_invite" | "reply" | "summary" | "phishing" | "task" | "receipt" | "label" | "unsubscribe" | "follow_up";
+
+/** Core kinds plus the kinds modules declare in their `suggestion_kind` descriptors. */
+export type SuggestionKind = CoreSuggestionKind | (string & {});
 
 export type SuggestionStatus = "open" | "accepted" | "dismissed" | "expired" | "superseded" | "auto_applied";
 
@@ -45,16 +48,23 @@ export type SuggestionPayloads = {
 	follow_up: Record<string, never>;
 };
 
-/** A kind together with its payload, discriminated on `kind`. */
-export type SuggestionContent = {
-	[K in SuggestionKind]: { kind: K; payload: SuggestionPayloads[K] };
-}[SuggestionKind];
+/** A core kind together with its payload, discriminated on `kind`. */
+export type CoreSuggestionContent = {
+	[K in CoreSuggestionKind]: { kind: K; payload: SuggestionPayloads[K] };
+}[CoreSuggestionKind];
+
+/** A module-owned kind; its payload was validated against the owning descriptor's input schema. */
+export type ModuleSuggestionContent = { kind: string & {}; payload: Record<string, unknown> };
+
+export type SuggestionContent = CoreSuggestionContent | ModuleSuggestionContent;
 
 /** A suggestion the planner wants; nothing in it runs without a user click in Suggest mode. */
 export type PlannedSuggestion = SuggestionContent & {
 	/** The policy rule that produced it, shown under "Why?". */
 	reason: string;
 	autoExecute: false;
+	/** A module step's own title, already cleaned by core; core titles its own kinds. */
+	title?: string;
 };
 
 export type SuggestionCount = { kind: SuggestionKind; count: number };

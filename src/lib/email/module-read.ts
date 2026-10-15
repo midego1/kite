@@ -1,33 +1,51 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messageAttachments, messages } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/types";
+import { getContactNameFromAddress } from "@/lib/contacts/utils";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
-import type { HostAttachmentContent, HostMessageView } from "@/lib/modules/host-types";
+import type {
+	HostAttachmentContent,
+	HostMessageDetail,
+	HostMessageOptions,
+	HostMessageView,
+} from "@/lib/modules/host-types";
+import { pickMessageHeaders, utf8Excerpt } from "@/lib/modules/host-utils";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import { getAttachmentForUser } from "./attachments";
 import { encodeRawMime } from "./module-import-utils";
+import { readRawHeaders } from "./raw-headers";
+import { htmlToReadableText } from "./reply-content-utils";
 
 const TEXT_TYPE = /^text\/|calendar|json|xml/i;
 
-function actingUser(ctx: CapabilityCallContext): Pick<SessionUser, "id" | "role"> {
+type MessageRow = typeof messages.$inferSelect;
+type AttachmentRow = typeof messageAttachments.$inferSelect;
+
+export function actingUser(ctx: CapabilityCallContext): Pick<SessionUser, "id" | "role"> {
 	if (!ctx.viewer) throw new Error("Reading mail needs an acting user");
 	return { id: ctx.viewer.userId, role: ctx.viewer.role as SessionUser["role"] };
 }
 
-/** A minimal view of a message the viewer can read, or null when it does not exist or is not theirs to read. */
-export async function getModuleMessage(
+/** The attachments of each message, by message id, in one query. */
+export async function attachmentsByMessage(
 	env: CloudflareEnv,
-	ctx: CapabilityCallContext,
-	messageId: string,
-): Promise<HostMessageView | null> {
-	const user = actingUser(ctx);
-	const db = getDb(env);
-	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
-	if (!message?.mailboxId) return null;
-	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
-	if (!access?.canRead) return null;
-	const attachments = await db.select().from(messageAttachments).where(eq(messageAttachments.messageId, message.id));
+	messageIds: string[],
+): Promise<Map<string, AttachmentRow[]>> {
+	const byMessage = new Map<string, AttachmentRow[]>();
+	if (messageIds.length === 0) return byMessage;
+	const rows = await getDb(env)
+		.select()
+		.from(messageAttachments)
+		.where(inArray(messageAttachments.messageId, messageIds));
+	for (const row of rows) byMessage.set(row.messageId, [...(byMessage.get(row.messageId) ?? []), row]);
+	return byMessage;
+}
+
+export function toHostMessageView(
+	message: MessageRow & { mailboxId: string },
+	attachments: AttachmentRow[],
+): HostMessageView {
 	return {
 		id: message.id,
 		mailboxId: message.mailboxId,
@@ -41,6 +59,38 @@ export async function getModuleMessage(
 			size: item.size,
 		})),
 	};
+}
+
+/** The readable body: the text part, or text from the HTML part. */
+export function readableBody(message: Pick<MessageRow, "textBody" | "htmlBody">): string {
+	return message.textBody || htmlToReadableText(message.htmlBody);
+}
+
+/**
+ * A minimal view of a message the viewer can read, or null when it does not exist or is not theirs to
+ * read. `text` adds a body excerpt and `headers` the named list headers, read from the stored raw message.
+ */
+export async function getModuleMessage(
+	env: CloudflareEnv,
+	ctx: CapabilityCallContext,
+	messageId: string,
+	options: HostMessageOptions = {},
+): Promise<HostMessageDetail | null> {
+	const user = actingUser(ctx);
+	const db = getDb(env);
+	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+	if (!message?.mailboxId) return null;
+	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
+	if (!access?.canRead) return null;
+	const attachments = await attachmentsByMessage(env, [message.id]);
+	const view: HostMessageDetail = {
+		...toHostMessageView({ ...message, mailboxId: message.mailboxId }, attachments.get(message.id) ?? []),
+		fromName: getContactNameFromAddress(message.fromAddr),
+	};
+	if (options.text) view.textExcerpt = utf8Excerpt(readableBody(message), options.text.maxBytes);
+	if (options.headers?.length)
+		view.headers = pickMessageHeaders(await readRawHeaders(env, message.rawR2Key), options.headers);
+	return view;
 }
 
 /** One attachment's content for a viewer who can read the message: text for text types, base64 otherwise, cut at `maxBytes`. */

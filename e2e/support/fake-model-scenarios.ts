@@ -27,7 +27,61 @@ const inviteTriage = {
 	summary: "An invitation to a meeting.",
 };
 
+const receiptTriage = {
+	...benignTriage,
+	category: "receipt",
+	summary: "A payment receipt.",
+};
+
+/** A calendar day `days` after today (UTC), so model dates stay inside the detector's bounds. */
+function dayFromNow(days: number): string {
+	return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** The `nextRenewalOn` the `finance-receipt` scenario answers; specs compare the card's date with it. */
+export const FINANCE_RECEIPT_RENEWAL_DAYS = 30;
+
 export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
+	"finance-receipt": {
+		triage: () =>
+			json({
+				...receiptTriage,
+				modules: {
+					finance: {
+						vendor: null,
+						plan: null,
+						amount: "9.99",
+						currency: "USD",
+						cycle: "monthly",
+						nextRenewalOn: dayFromNow(FINANCE_RECEIPT_RENEWAL_DAYS),
+						trialEndsOn: null,
+						docType: "payment",
+					},
+				},
+			}),
+	},
+	"finance-conflict": {
+		triage: () =>
+			json({
+				...receiptTriage,
+				modules: {
+					finance: {
+						vendor: null,
+						plan: null,
+						amount: "12.49",
+						currency: "USD",
+						cycle: "monthly",
+						nextRenewalOn: "2026-02-30",
+						trialEndsOn: null,
+						docType: "payment",
+						cancelUrl: "https://evil.test/cancel",
+					},
+				},
+			}),
+	},
+	"finance-invalid-extension": {
+		triage: () => json({ ...receiptTriage, modules: { finance: "monthly, $12.49, renews soon" } }),
+	},
 	default: { triage: () => json(benignTriage), draft: () => text(DEFAULT_DRAFT_BODY) },
 	question: {
 		triage: () =>

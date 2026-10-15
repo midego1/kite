@@ -1,17 +1,18 @@
-import { and, count, eq, inArray, notInArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { queryInChunks } from "@/db/chunk-utils";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import type { MailboxPermission } from "@/lib/mailboxes/types";
 import { groupSuggestionCounts } from "./suggestion-badge-utils";
-import type { SuggestionCount, SuggestionKind } from "./suggestion-types";
+import type { SuggestionCount } from "./suggestion-types";
+import { visibleSuggestionsWhere, type SuggestionVisibility } from "./suggestion-visibility";
 
 type ListRow = { id: string; mailboxId: string | null; threadId: string | null };
 
 /**
  * Open suggestion counts for the rows of a message list, in one grouped query over every message the
  * rows stand for. Only rows in mailboxes where the user has full access get any, and kinds owned by a
- * module that is off for the user are left out. Returns the field to
+ * module that is off for the user, or reviewer-only kinds someone else reviews, are left out. Returns the field to
  * spread into each row: `{ agentSuggestions }`, or nothing.
  */
 export async function loadRowSuggestions(
@@ -19,7 +20,7 @@ export async function loadRowSuggestions(
 	mailboxes: readonly { id: string; permission: MailboxPermission }[],
 	rows: readonly ListRow[],
 	threadMessageIds: ReadonlyMap<string, string[]>,
-	hiddenKinds: readonly SuggestionKind[] = [],
+	visibility: SuggestionVisibility | null = null,
 ): Promise<(rowId: string) => { agentSuggestions?: SuggestionCount[] }> {
 	const fullAccess = new Set(mailboxes.filter((mailbox) => mailbox.permission === "full_access").map(({ id }) => id));
 	const members = rows
@@ -39,7 +40,7 @@ export async function loadRowSuggestions(
 				and(
 					eq(agentSuggestions.status, "open"),
 					inArray(agentSuggestions.messageId, chunk),
-					hiddenKinds.length > 0 ? notInArray(agentSuggestions.kind, [...hiddenKinds]) : undefined,
+					visibleSuggestionsWhere(visibility),
 				),
 			)
 			.groupBy(agentSuggestions.messageId, agentSuggestions.mailboxId, agentSuggestions.kind),

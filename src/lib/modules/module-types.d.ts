@@ -1,4 +1,4 @@
-export type ModuleId = "calendar" | "booking" | "templates" | "import";
+export type ModuleId = "calendar" | "booking" | "templates" | "import" | "finance";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonSchemaObject = { [key: string]: JsonValue };
@@ -14,11 +14,12 @@ export type RecordKind =
 	| "booking:event_type"
 	| "booking:appointment"
 	| "templates:template"
-	| "import:job";
+	| "import:job"
+	| "finance:subscription";
 
 export type RecordRef = { kind: RecordKind; id: string };
 
-export type ModuleNavPlacement = "mailbox-selector" | "account-menu" | "module-tabs" | "settings-nav";
+export type ModuleNavPlacement = "mailbox-selector" | "account-menu" | "module-tabs" | "settings-nav" | "sidebar";
 
 export type ModuleNavItem = {
 	id: string;
@@ -29,6 +30,8 @@ export type ModuleNavItem = {
 	placement: ModuleNavPlacement;
 	/** Settings navigation group for `settings-nav` items. */
 	group?: string;
+	/** A `{ count }` endpoint under one of the module's API prefixes, shown next to a `sidebar` item. */
+	count?: { endpoint: string };
 	keywords?: string[];
 	order: number;
 };
@@ -76,15 +79,48 @@ export type ComposerSlotDeclaration = {
 export type ComposerSlotSource = { id: ModuleId; composerSlots?: readonly ComposerSlotDeclaration[] };
 export type ListedComposerSlot = ComposerSlotDeclaration & { moduleId: ModuleId };
 
+/** An entry in the reader's overflow menu; core draws `label`, and the module's slot component gets only the message and mailbox ids. */
+export type MessageSlotDeclaration = {
+	id: string;
+	slot: "message-menu";
+	order: number;
+	label: string;
+	/** A lucide icon name, resolved by the client registry like `nav[].icon`. */
+	icon?: string;
+};
+
+export type MessageSlotSource = { id: ModuleId; messageSlots?: readonly MessageSlotDeclaration[] };
+export type ListedMessageSlot = MessageSlotDeclaration & { moduleId: ModuleId };
+
 /** One key scope as the key-creation forms show it. */
 export type KeyScopeText = { scope: string; label: string; description: string };
+
+/** How the shared suggestion surfaces show one module-owned kind. */
+export type SuggestionKindMeta = {
+	/** The For you heading of the kind's group. */
+	label: string;
+	/** Reason code (a suggestion's `reason`) to the plain words "Why?" shows. */
+	reason: Record<string, string>;
+	/** Rank among the kinds that earn a row chip, lower first (core: phishing 10, reply 30, task 40, receipt 50); no chip without one. */
+	badgePriority?: number;
+	/** The chip's short text; the `label` when absent. */
+	badgeLabel?: string;
+	/** A lucide icon name for the chip, resolved by the client registry like `nav[].icon`. */
+	icon?: string;
+};
 
 /** The part of a manifest that browser code needs: identity, navigation and commands. */
 export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "commands"> & {
 	/** Composer slots the module fills, so the composer lists them without loading the module. */
 	composerSlots?: ComposerSlotDeclaration[];
+	/** Message menu slots the module fills, so the reader lists them without loading the module. */
+	messageSlots?: MessageSlotDeclaration[];
 	/** Suggestion kinds the module's `suggestion_kind` capabilities declare, so the reader card can pick the module's client chunk without the registry. */
 	suggestionKinds?: readonly string[];
+	/** Label, reasons, chip rank and icon per kind in `suggestionKinds`, so core surfaces need no per-kind code. */
+	suggestionKindMeta?: Readonly<Record<string, SuggestionKindMeta>>;
+	/** The per-mailbox switches of the module's triage steps (`triage.capability` keys), listed in the automatic-reading settings while the module is on. */
+	triageSwitches?: readonly { key: string; label: string }[];
 	/** The key scopes the module adds, with the form text for each, so the key forms can list them only while it is on. */
 	keyScopes?: { mcp: readonly (KeyScopeText & { mailboxBound: boolean })[]; api: readonly KeyScopeText[] };
 };
@@ -108,6 +144,7 @@ export type ModuleManifest = {
 	nav: ModuleNavItem[];
 	commands: UiCommand[];
 	composerSlots: ComposerSlotDeclaration[];
+	messageSlots?: MessageSlotDeclaration[];
 	recordKinds: { kind: RecordKind; label: string; unavailableLabel: string }[];
 	webhookEvents: ModuleWebhookEvent[];
 	grants: { grant: string; label: string }[];
@@ -145,6 +182,22 @@ export type CapabilitySurface =
 
 export type CapabilityEffect = "none" | "read" | "create" | "update" | "delete" | "send" | "external";
 
+/**
+ * A triage step's addition to the one triage model request, as static JSON data. Core merges `jsonSchema`
+ * under `properties.modules.properties.<moduleId>` of the provider schema, appends `instructions` to the
+ * prompt's key list and hands the step back whatever the model answered under its id, unvalidated.
+ */
+export type TriageModelExtension = {
+	/** An object schema with `additionalProperties: false` and only scalar, nullable or enum properties; at most 2 KB. */
+	jsonSchema: JsonSchemaObject;
+	/** At most 600 printable characters, no newline, `<<<` or `nonce=`. */
+	instructions: string;
+	/** Extra output tokens, 1..200; the total across extensions is capped at 200. */
+	maxOutputTokens: number;
+	/** A `service` capability of the same module answering `{ wantsModel: boolean }` for the step input. */
+	wantsModel?: string;
+};
+
 export type CapabilityDescriptor = {
 	name: string;
 	surfaces: CapabilitySurface[];
@@ -159,10 +212,30 @@ export type CapabilityDescriptor = {
 	timeoutMs?: number;
 	search?: { section: string };
 	refs?: { kinds: RecordKind[] };
-	/** `answer` names the `service` capability that handles an accept click on this kind of suggestion. */
-	suggestionKind?: { kind: string; label: string; reasonTemplate: string; answer?: string };
-	/** `requires` names a fact core checks first: the step is neither run nor recorded as skipped without it. */
-	triage?: { order: number; requires?: "invite_attachment" };
+	/**
+	 * `answer` names the `service` capability that handles an accept click on this kind of suggestion.
+	 * `audience: "reviewer"` shows and lets decide the suggestion only to the mailbox's reviewer, not to
+	 * everyone with full access (default `mailbox`).
+	 */
+	suggestionKind?: {
+		kind: string;
+		label: string;
+		reasonTemplate: string;
+		answer?: string;
+		audience?: "mailbox" | "reviewer";
+	};
+	/**
+	 * `requires` names a fact core checks first: the step is neither run nor recorded as skipped without it.
+	 * `automatic` lets `Auto-Submitted` mail reach the step through a steps-only pass. `capability` names
+	 * the key of the step's per-mailbox switch in `capabilities.modules` (on unless set to false).
+	 */
+	triage?: {
+		order: number;
+		requires?: "invite_attachment";
+		automatic?: true;
+		capability?: string;
+		model?: TriageModelExtension;
+	};
 	action?: {
 		actionType: string;
 		suggestionKind?: string;
@@ -178,6 +251,8 @@ export type CapabilityDescriptor = {
 		inverseAction?: string;
 		/** Variants whose undo restores state in place, so they record no inverse action. */
 		inverseSkipVariants?: string[];
+		/** After an undo, core reopens the suggestion once no live action of this module remains on it. */
+		reopensSuggestion?: boolean;
 	};
 	event?: { value: string };
 	lifecycle?: { event: "user.created" | "user.time_zone_changed"; dataHook: boolean };

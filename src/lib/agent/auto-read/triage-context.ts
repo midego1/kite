@@ -14,6 +14,8 @@ const THREAD_WINDOW = 20;
 export type TriageContext = {
 	source: SourceMessage;
 	facts: MessageFacts;
+	/** The raw headers, lower-case names with their first value; empty when the raw message is gone. */
+	headers: Record<string, string>;
 	bodyText: string;
 	threadSubjects: string[];
 	threadMessageCount: number;
@@ -59,6 +61,7 @@ export async function loadTriageContext(
 	return {
 		source,
 		facts,
+		headers,
 		bodyText,
 		threadSubjects: thread.filter((row) => row.id !== source.id).map((row) => row.subject ?? ""),
 		threadMessageCount: Math.max(1, thread.length),

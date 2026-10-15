@@ -1,9 +1,17 @@
+import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import { SUGGESTION_KIND_ORDER } from "./suggestion-badge-utils";
 import type { SuggestionKind } from "./suggestion-types";
 
-export const FOR_YOU_KIND_LABELS: Record<SuggestionKind, string> = {
+const MODULE_KIND_LABELS: Record<string, string> = Object.fromEntries(
+	CLIENT_MODULES.flatMap((entry) =>
+		Object.entries(entry.suggestionKindMeta ?? {}).map(([kind, meta]) => [kind, meta.label]),
+	),
+);
+
+/** Group headings: core kinds here, module kinds from their client data. */
+export const FOR_YOU_KIND_LABELS: Readonly<Record<string, string>> = {
+	...MODULE_KIND_LABELS,
 	phishing: "Possible phishing",
-	calendar_invite: "Invitations",
 	reply: "Replies to review",
 	task: "Tasks",
 	receipt: "Receipts",

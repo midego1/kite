@@ -9,6 +9,18 @@ are confidential even when not personal data.
 
 See [Privacy and data handling](privacy.md) for what is stored where, retention, export and deletion.
 
+Money Watch adds two per-user tables (`src/db/schema/finance.ts`, migration
+0063): `finance_subscriptions` (vendor, plan, amounts, dates, status, the
+`List-Unsubscribe` cancel link and links to messages, contact, mailbox and the
+calendar reminder) and `finance_charges`, the document ledger (type, amount,
+dates and period, source message and attachment id per invoice, payment, credit
+note, refund or failed payment). The ledger holds attachment references only,
+never file content or extracted PDF text. Both are owner-only in every surface
+(page, API, search, refs, tools, webhooks), are backed up in the `mail` group,
+cascade from the user row, keep the amounts but lose the message and attachment
+links when a message is deleted, and are kept when the module is turned off.
+Logs carry only ids and codes for them, never vendors, amounts, dates or URLs.
+
 Review [the database schema](../src/db/schema/index.ts), `src/lib/backups/export.ts`, and
 `src/lib/backups/table-groups.ts` for the current persisted model. D1/SQLite holds
 account and mail metadata plus other records; R2/filesystem holds message and

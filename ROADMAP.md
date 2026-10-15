@@ -4,7 +4,7 @@ Planned work, grouped into milestones. Each milestone is sized to run as one [Fa
 
 Shipped work is listed in the [changelog](CHANGELOG.md). Suggest features and vote on them in [Ideas](https://github.com/midego1/kite/discussions/categories/ideas).
 
-Shipped specs: [automatic mail reading agent](docs/specs/auto-agent.md) ([#28](https://github.com/midego1/kite/pull/28)) and [module platform](docs/specs/module-platform.md) ([#45](https://github.com/midego1/kite/pull/45)). Next, in order: [Money Watch](#milestone-18-money-watch-subscription-tracking) (spec to be written), then the approved [storing attachments once](docs/specs/attachments-once.md) and [Drive and storage](docs/specs/drive-storage.md).
+Shipped specs: [automatic mail reading agent](docs/specs/auto-agent.md) ([#28](https://github.com/midego1/kite/pull/28)), [module platform](docs/specs/module-platform.md) ([#45](https://github.com/midego1/kite/pull/45)) and [Money Watch](docs/specs/money-watch.md) ([#50](https://github.com/midego1/kite/pull/50)). Next, in order: the approved [storing attachments once](docs/specs/attachments-once.md) and [Drive and storage](docs/specs/drive-storage.md).
 
 ## Working on this repository
 
@@ -149,6 +149,7 @@ Files next to mail, on storage the operator chooses. Today every object (raw MIM
    - Off until an admin turns it on; a per-user permission and quota decide who can use it and how much. When off, it is hidden and its API answers 404.
    - New tables go into the backup lists (see `AGENTS.md`); file contents stay in storage.
    - Test: e2e for upload, folders, sharing and the off switch, in Kite, Classic and dark mode.
+   - Follow-up once Drive ships: Money Watch files every ledger document that has an attachment (including earlier ones) into the owner's Drive under `Finance/<vendor>/<year>/`, through a Drive filing service. The agreed behaviour and what Drive must provide are in [§24 of the Money Watch spec](docs/specs/money-watch.md#24-drive-filing-follow-up-after-drive-ships).
 3. **Cold storage**
    - Raw mail, attachments and Drive files older than a chosen age move automatically to cheaper storage: R2's Infrequent Access class (through R2 lifecycle rules) or a second S3-compatible store (moved by a scheduled job that records where each object lives).
    - Opening a cold message or file fetches it from there with no extra step. The settings show what reading cold data costs: Infrequent Access bills every read and keeps objects for at least 30 days, and some archive classes (such as S3 Glacier Flexible Retrieval and Deep Archive) need a restore before an object can be read.
@@ -181,7 +182,18 @@ Mail from a sender you have not approved waits in a Screener instead of the Inbo
 
 ## Milestone 18: Money Watch (subscription tracking)
 
-The next Mission. Automatic reading spots invoices and receipts for things you pay for, suggests tracking them, and reminds you before renewals, with a page listing every subscription and its totals. It is the first new builtin module on the module platform (milestone 19), so the owner can turn it off for everyone or per user. Suggestion-only: nothing is tracked until you accept, and every write can be undone. The full outline is [milestone 18 of the complete-suite roadmap](docs/roadmap-complete-suite.md#milestone-18-subscriptions-money-watch); a spec in `docs/specs/` is written against `main` before implementation starts.
+Shipped in [#50](https://github.com/midego1/kite/pull/50), specified in [docs/specs/money-watch.md](docs/specs/money-watch.md). Automatic reading spots receipts, invoices, renewal and trial notices, refunds and failed payments, suggests tracking them, and reminds you before renewals, with a page at `/finance` listing every subscription, its totals and its documents. It is the first new builtin module on the module platform (milestone 19), with the module id `finance` and the display name Money Watch, so the owner can turn it off for everyone or per user. Suggestion-only: nothing is tracked until you accept, and every write can be undone. See [Modules](docs/modules.md) and [Assistant: automatic reading](docs/assistant.md#subscriptions-money-watch).
+
+1. **Shipped**
+   - Deterministic detection as a module triage step, including automatic and no-reply billing mail and the text of plain PDF invoices. A generic module model extension lets the step ask the existing triage request for missing fields (vendor, plan, amount, currency, cycle, dates, document type) under every existing gate; code validates them and they never override what the detector read or supply the cancel link, which comes only from `List-Unsubscribe`.
+   - A reviewer-only `subscription` suggestion kind with Track, Record it (credits and refunds) and Mark urgent (failed payments), audited in `agent_actions` with undo; manual add by hand and from any message.
+   - A document ledger: one entry per invoice, payment, credit note, refund or failed payment, linked to its message and attachment (a reference, never a copy), with a "paid in the last 12 months" total per currency.
+   - Renewal and trial reminders from a module cron task: a realtime notice, the Subscriptions sidebar count and, through a new Calendar service, a calendar event.
+   - The `list_subscriptions` tool, a search section, the `finance:subscription` record kind and the webhook events `finance.subscription.detected` and `finance.subscription.renewal_due`. Migration 0063; both tables are in the backup lists.
+2. **Later**
+   - One-off purchases and general expense tracking (a receipt with no subscription records nothing today).
+   - Filing ledger documents into Drive automatically, once Drive ships (see milestone 7, item 2).
+   - More events (`finance.subscription.updated`, `finance.document.recorded`), assistant write tools, `mailto:` cancel links and automatic updates from renewal invoices once an Act level exists.
 
 ## Milestone 19: Module platform (builtin modules first, sandboxed apps later)
 

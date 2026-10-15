@@ -73,8 +73,8 @@ export function createModuleBackground(deps: BackgroundDeps) {
 	}
 
 	/**
-	 * Runs every cron task whose schedule matches this trigger. A task of a disabled module is skipped, and
-	 * a failing task is logged without stopping the others.
+	 * Runs every cron task whose schedule matches this trigger, with the tick time as `{ scheduledTime }`
+	 * (ISO). A task of a disabled module is skipped, and a failing task is logged without stopping the others.
 	 */
 	async function runModuleCronTasks(_env: unknown, cron: string, now: Date): Promise<void> {
 		const tasks = deps.manifests.flatMap((manifest) =>
@@ -87,7 +87,7 @@ export function createModuleBackground(deps: BackgroundDeps) {
 				const fields = { moduleId, task: task.name, cron, scheduledTime: now.toISOString() };
 				try {
 					const ctx = backgroundContext("cron", deps.descriptorScopes(moduleId, task.capability));
-					const result = await deps.invoke(moduleId, task.capability, {}, ctx);
+					const result = await deps.invoke(moduleId, task.capability, { scheduledTime: fields.scheduledTime }, ctx);
 					if (result.ok) return;
 					if (result.error.code === "module_disabled") deps.log.debug("cron.module_disabled", fields);
 					else deps.log.warn("cron.task_failed", { ...fields, code: result.error.code });

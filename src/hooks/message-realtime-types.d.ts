@@ -9,6 +9,16 @@ export interface NewMessageEvent {
 	oneTimeCode: string | null;
 }
 
+/** A transient notice from a module, shown as a toast; `href` is always a same-origin path. */
+export interface ModuleNoticeEvent {
+	type: "module_notice";
+	moduleId: string;
+	notice: string;
+	title: string;
+	body: string | null;
+	href: string | null;
+}
+
 /** Title, body and code for a browser new-mail notification. */
 export interface NewMessageNotificationParts {
 	title: string;

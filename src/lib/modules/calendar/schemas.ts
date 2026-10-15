@@ -1,14 +1,16 @@
 import { z } from "zod";
 import { calendarInviteSchema } from "@/lib/agent/auto-read/suggestion-utils";
+import { REMINDER_KEY_PATTERN } from "@/lib/calendar/reminder-utils";
 import { CALENDAR_TOOL_NAMES, calendarToolSchemas } from "@/lib/calendar/tool-schemas";
+import { isValidTimeZone } from "@/lib/time/utils";
 import type { ModuleSchemas } from "../schema-utils";
 import {
 	actionSchemas,
+	baseTriageStepSchemas,
 	instantSchema,
 	lifecycleSchemas,
 	resolveRefsSchemas,
 	searchSchemas,
-	triageStepSchemas,
 } from "../shared-schemas";
 
 const eventPayload = z.object({
@@ -34,16 +36,52 @@ const answerInvite: ModuleSchemas[string] = {
 	}),
 };
 
+const reminderKey = z.string().regex(REMINDER_KEY_PATTERN, "Use <namespace>:<id> without @");
+const userId = z.string().min(1);
+const refused = z.object({ refused: z.literal("forbidden") });
+
+const upsertReminder: ModuleSchemas[string] = {
+	input: z.object({
+		userId,
+		key: reminderKey,
+		title: z.string().trim().min(1).max(120),
+		description: z.string().max(2000),
+		date: z
+			.string()
+			.regex(/^\d{4}-\d{2}-\d{2}$/)
+			.refine((day) => new Date(`${day}T00:00:00.000Z`).toISOString().startsWith(day), "Not a calendar date"),
+		time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+		durationMinutes: z.number().int().min(5).max(120),
+		timeZone: z.string().min(1).max(64).refine(isValidTimeZone, "Unknown time zone"),
+		sourceMessageId: z.string().min(1).nullable(),
+	}),
+	output: z.union([
+		z.object({
+			eventId: z.string(),
+			ref: z.object({ kind: z.literal("calendar:event"), id: z.string() }),
+			created: z.boolean(),
+		}),
+		refused,
+	]),
+};
+
+const removeReminder: ModuleSchemas[string] = {
+	input: z.object({ userId, key: reminderKey }),
+	output: z.union([z.object({ removed: z.boolean() }), refused]),
+};
+
 export const calendarSchemas: ModuleSchemas = {
 	...Object.fromEntries(CALENDAR_TOOL_NAMES.map((name) => [name, { input: calendarToolSchemas[name] }])),
 	search: searchSchemas,
 	resolveRefs: resolveRefsSchemas(["calendar:event"]),
-	invite: triageStepSchemas,
+	invite: baseTriageStepSchemas,
 	calendar_invite: { input: calendarInviteSchema },
 	answerInvite,
 	createEvent: actionSchemas,
 	deleteEvent: actionSchemas,
 	sendRsvp: actionSchemas,
+	upsertReminder,
+	removeReminder,
 	timeZoneChanged: lifecycleSchemas("user.time_zone_changed"),
 	eventCreated: { input: eventPayload },
 	eventUpdated: { input: eventPayload },

@@ -1,4 +1,5 @@
 import type { JSONValue } from "ai";
+import type { JsonSchemaObject } from "@/lib/modules/module-types";
 import type { AgentModelRates, AgentProviderKind, AgentProviderPreset, AgentReasoningEffort } from "../provider-types";
 import { parseAgentReasoningEffort } from "../reasoning-effort-utils";
 import type { TriagePrompt, TriageResult } from "./triage-types";
@@ -13,6 +14,13 @@ const REASONING_HEADROOM_TOKENS = 1_100;
 
 type ModelCallKind = "triage" | "draft";
 
+/** What active module extensions add to a triage request: extra output tokens and the merged provider schema. */
+export type ModelCallExtension = {
+	outputTokens: number;
+	/** The provider schema with the `modules` fragments; null once a provider rejected `json_schema`. */
+	schema: JsonSchemaObject | null;
+};
+
 export type ModelCallOptions = {
 	provider: AgentProviderKind;
 	preset: AgentProviderPreset;
@@ -22,6 +30,8 @@ export type ModelCallOptions = {
 	/** The reasoning effort actually sent, if any. */
 	reasoningEffort: AgentReasoningEffort | null;
 	jsonMode: boolean;
+	/** Only present for a triage request with active module extensions. */
+	extension?: ModelCallExtension;
 };
 
 type ModelCallInput = {
@@ -30,9 +40,10 @@ type ModelCallInput = {
 	kind: ModelCallKind;
 	/** The per-model hint saved with the provider settings (`rates[modelId].reasoningEffort`). */
 	reasoningEffort?: unknown;
+	extension?: ModelCallExtension;
 };
 
-type ModelCallSettings = Pick<ModelCallOptions, "provider" | "preset" | "kind" | "reasoningEffort">;
+type ModelCallSettings = Pick<ModelCallOptions, "provider" | "preset" | "kind" | "reasoningEffort" | "extension">;
 
 export type ModelCallResult = { text: string; finishReason: string };
 
@@ -50,9 +61,19 @@ export class TriageOutputError extends Error {
 	}
 }
 
+/** A compatible provider gets the merged schema as `json_schema` while extensions are active, else `json_object`. */
+function responseFormat(jsonMode: boolean, extension: ModelCallExtension | undefined): Record<string, JSONValue> {
+	if (!jsonMode) return {};
+	if (!extension?.schema) return { response_format: { type: "json_object" } };
+	return { response_format: { type: "json_schema", json_schema: { name: "triage", schema: extension.schema } } };
+}
+
 function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCallOptions {
-	const base = settings.kind === "triage" ? TRIAGE_MAX_OUTPUT_TOKENS : DRAFT_MAX_OUTPUT_TOKENS;
+	const extension = settings.kind === "triage" ? settings.extension : undefined;
+	const base =
+		settings.kind === "triage" ? TRIAGE_MAX_OUTPUT_TOKENS + (extension?.outputTokens ?? 0) : DRAFT_MAX_OUTPUT_TOKENS;
 	const json: Record<string, JSONValue> = jsonMode ? { response_format: { type: "json_object" } } : {};
+	const extra = extension ? { extension } : {};
 	if (settings.provider === "cloudflare") {
 		// Kimi K2.5 ignores reasoning_effort; only switching thinking off keeps it fast and inside the budget.
 		const options = { chat_template_kwargs: { thinking: false }, ...json };
@@ -65,6 +86,7 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 			providerOptions: { workersAi: options, "workers-ai": options },
 			reasoningEffort: null,
 			jsonMode,
+			...extra,
 		};
 	}
 	const effort = settings.reasoningEffort;
@@ -79,6 +101,7 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 			},
 			reasoningEffort: effort,
 			jsonMode,
+			...extra,
 		};
 	}
 	return {
@@ -86,9 +109,15 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 		preset: settings.preset,
 		kind: settings.kind,
 		maxOutputTokens: effort ? base + REASONING_HEADROOM_TOKENS : base,
-		providerOptions: { [COMPATIBLE_PROVIDER_NAME]: { ...json, ...(effort ? { reasoningEffort: effort } : {}) } },
+		providerOptions: {
+			[COMPATIBLE_PROVIDER_NAME]: {
+				...responseFormat(jsonMode, extension),
+				...(effort ? { reasoningEffort: effort } : {}),
+			},
+		},
 		reasoningEffort: effort,
 		jsonMode,
+		...extra,
 	};
 }
 
@@ -96,7 +125,13 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 export function buildModelCallOptions(input: ModelCallInput): ModelCallOptions {
 	const reasoningEffort = parseAgentReasoningEffort(input.reasoningEffort) ?? null;
 	return buildOptions(
-		{ provider: input.provider, preset: input.preset ?? "openai", kind: input.kind, reasoningEffort },
+		{
+			provider: input.provider,
+			preset: input.preset ?? "openai",
+			kind: input.kind,
+			reasoningEffort,
+			extension: input.extension,
+		},
 		input.kind === "triage",
 	);
 }
@@ -151,8 +186,11 @@ export function fallbackOptionsAfterError(options: ModelCallOptions, error: unkn
 	const text = errorText(error);
 	if (options.reasoningEffort && /reasoning/i.test(text))
 		return buildOptions({ ...options, reasoningEffort: null }, options.jsonMode);
-	if (options.jsonMode && /response_format|json_object|json_schema|json mode/i.test(text))
-		return buildOptions(options, false);
+	const rejectsFormat = /response_format|json_object|json_schema|json mode/i.test(text);
+	// A provider without `json_schema` support first falls back to plain JSON mode, then to none.
+	if (options.jsonMode && rejectsFormat && options.extension?.schema && options.provider !== "cloudflare")
+		return buildOptions({ ...options, extension: { ...options.extension, schema: null } }, true);
+	if (options.jsonMode && rejectsFormat) return buildOptions(options, false);
 	return null;
 }
 
@@ -182,6 +220,8 @@ export function completedText(result: ModelCallResult): string {
 type TriageAttemptInput = {
 	prompt: TriagePrompt;
 	options: ModelCallOptions;
+	/** The module ids of the active extensions, whose `modules` keys the parse keeps. */
+	activeModuleIds?: readonly string[];
 	generate: (prompt: TriagePrompt, options: ModelCallOptions) => Promise<ModelCallResult>;
 	now?: Date;
 };
@@ -190,10 +230,11 @@ type TriageAttemptInput = {
 export async function runTriageAttempt(input: TriageAttemptInput): Promise<{ result: TriageResult; calls: number }> {
 	const run = (prompt: TriagePrompt) =>
 		callWithFallback(input.options, (options) => input.generate(prompt, options)).then(completedText);
+	const parse = (text: string) => parseTriageOutput(text, input.now, input.activeModuleIds);
 	const first = await run(input.prompt);
-	const parsed = parseTriageOutput(first, input.now);
+	const parsed = parse(first);
 	if (parsed.ok) return { result: parsed.result, calls: 1 };
-	const repaired = parseTriageOutput(await run(buildTriageRepairPrompt(input.prompt, first, parsed.error)), input.now);
+	const repaired = parse(await run(buildTriageRepairPrompt(input.prompt, first, parsed.error)));
 	if (repaired.ok) return { result: repaired.result, calls: 2 };
 	throw new TriageOutputError(repaired.error);
 }

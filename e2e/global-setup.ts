@@ -18,6 +18,7 @@ const WARM_UP_ROUTES = [
 	"/settings/api-keys",
 	"/alerts",
 	"/modules",
+	"/finance",
 ];
 
 export default async function globalSetup(config: FullConfig) {

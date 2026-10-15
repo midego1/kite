@@ -167,7 +167,10 @@ const stepInput = (env) => ({
 		senderAddress: "alice@partner.test",
 		inviteAttachments: [{ filename: "invite.ics", contentType: "text/calendar", size: 10 }],
 	},
-	capabilities: { calendar: true },
+	headers: {},
+	bodyText: "Join us",
+	// Money Watch's step reads every message; these cases are about Calendar's.
+	capabilities: { calendar: true, modules: { subscriptions: false } },
 	model: null,
 });
 
@@ -248,7 +251,7 @@ test("with Calendar off the step is skipped with the module id and never reads t
 	const { db, env } = await setup(t);
 	toggle(db, "calendar", false);
 	const run = await runModuleTriageSteps(stepInput(env));
-	assert.deepEqual(run, { planned: [], skipped: ["calendar"] });
+	assert.deepEqual(run, { planned: [], skipped: ["calendar"], ran: 0 });
 	toggle(db, "calendar", true);
 	assert.equal((await runModuleTriageSteps(stepInput(env))).planned.length, 1);
 });
@@ -258,7 +261,7 @@ test("a message without an invitation attachment runs no calendar step and recor
 	toggle(db, "calendar", false);
 	const input = stepInput(env);
 	const run = await runModuleTriageSteps({ ...input, facts: { ...input.facts, inviteAttachments: [] } });
-	assert.deepEqual(run, { planned: [], skipped: [] });
+	assert.deepEqual(run, { planned: [], skipped: [], ran: 0 });
 });
 
 test("proposed slots follow Booking's working hours when Booking is on and have event types", async (t) => {
@@ -657,7 +660,9 @@ test("the message row badge leaves out kinds the viewer's modules own while they
 	const mailboxes = [{ id: "mailbox-a", permission: "full_access" }];
 	const rows = [{ id: "source-1", mailboxId: "mailbox-a", threadId: null }];
 	const badge = async (hidden) =>
-		(await loadRowSuggestions(getDb(env), mailboxes, rows, new Map(), hidden))("source-1").agentSuggestions ?? [];
+		(await loadRowSuggestions(getDb(env), mailboxes, rows, new Map(), { userId: "owner", hidden, reviewerOnly: [] }))(
+			"source-1",
+		).agentSuggestions ?? [];
 	assert.equal((await badge([])).length, 1);
 	assert.deepEqual(await badge(["calendar_invite"]), []);
 });

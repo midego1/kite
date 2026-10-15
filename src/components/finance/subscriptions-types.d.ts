@@ -52,6 +52,16 @@ export type SubscriptionDetail = {
 	documents: DocumentItem[];
 };
 
+/** The pre-0063 detail answer: HTTP 200 without a subscription. */
+export type SubscriptionDetailPending = { migrationPending: true };
+
+export type DrawerState =
+	| { kind: "closed" }
+	| { kind: "loading" }
+	| { kind: "missing" }
+	| { kind: "migration-pending" }
+	| { kind: "ready"; detail: SubscriptionDetail };
+
 export type StatusFilter = "current" | "ended" | "all";
 
 export type AttentionEntry = { item: SubscriptionItem; reason: string };

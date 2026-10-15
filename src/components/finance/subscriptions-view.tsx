@@ -126,7 +126,7 @@ export function SubscriptionsView() {
 	const openId = params.get("subscription");
 	const adding = params.get("add") === "1";
 	const { list, error, version, reload } = useSubscriptionList();
-	const { detail, missing } = useSubscriptionDetail(openId, version);
+	const drawer = useSubscriptionDetail(openId, version);
 	const [filter, setFilter] = useState<StatusFilter>("all");
 	// undefined: closed; null: adding a new row; a row: editing it.
 	const [editing, setEditing] = useState<SubscriptionItem | null | undefined>(undefined);
@@ -191,9 +191,7 @@ export function SubscriptionsView() {
 			)}
 
 			<SubscriptionDrawer
-				id={openId}
-				detail={detail}
-				missing={missing}
+				state={drawer}
 				today={today}
 				locale={locale}
 				onClose={() => router.replace("/finance", { scroll: false })}

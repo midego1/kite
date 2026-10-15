@@ -223,6 +223,17 @@ test("Track creates the row and its invoice document through one audited action;
 	assert.equal(sent[0].body.data.subscription.ref.id, row.id);
 });
 
+test("before migration 0063 the list and the detail answer migrationPending without a subscription", async (t) => {
+	const context = await setup(t);
+	context.db.db.exec("DROP TABLE finance_charges; DROP TABLE finance_subscriptions;");
+	assert.deepEqual(await listSubscriptionsView(viewOf(owner), "all"), {
+		subscriptions: [],
+		totals: [],
+		migrationPending: true,
+	});
+	assert.deepEqual(await subscriptionDetailView(viewOf(owner), "fsub_missing"), { migrationPending: true });
+});
+
 test("Undo of Track removes the row and its documents and reopens the card", async (t) => {
 	const context = await setup(t);
 	const { env, rows, documents, suggestion } = context;

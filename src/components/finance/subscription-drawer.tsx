@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { shortDay } from "@/lib/finance/text-utils";
 import { writeWithUndo } from "./subscription-writes";
-import type { DocumentItem, SubscriptionDetail, SubscriptionItem } from "./subscriptions-types";
+import type { DocumentItem, DrawerState, SubscriptionDetail, SubscriptionItem } from "./subscriptions-types";
 import {
 	documentAmount,
 	documentHref,
@@ -24,9 +24,7 @@ import {
 } from "./subscriptions-utils";
 
 type DrawerProps = {
-	id: string | null;
-	detail: SubscriptionDetail | null;
-	missing: boolean;
+	state: DrawerState;
 	today: string;
 	locale: string;
 	onClose: () => void;
@@ -118,7 +116,7 @@ function DrawerBody({
 	locale,
 	onEdit,
 	onChanged,
-}: Omit<DrawerProps, "id" | "missing" | "onClose"> & { detail: SubscriptionDetail }) {
+}: Omit<DrawerProps, "state" | "onClose"> & { detail: SubscriptionDetail }) {
 	const { subscription: item, documents } = detail;
 	const paid = paidLines(detail.paidLast12Months, locale);
 	return (
@@ -173,22 +171,33 @@ function DrawerBody({
 	);
 }
 
+const DESCRIPTIONS: Record<DrawerState["kind"], string> = {
+	closed: "",
+	loading: "Its invoices, payments and refunds, newest first.",
+	ready: "Its invoices, payments and refunds, newest first.",
+	missing: "This subscription no longer exists.",
+	"migration-pending": "The database update for Money Watch has not been applied yet.",
+};
+
 /** `/finance?subscription=<id>`: the fields, the 12-month paid total and the document history. */
-export function SubscriptionDrawer({ id, detail, missing, today, locale, onClose, onEdit, onChanged }: DrawerProps) {
+export function SubscriptionDrawer({ state, today, locale, onClose, onEdit, onChanged }: DrawerProps) {
 	return (
-		<Dialog open={id !== null} onOpenChange={(open) => !open && onClose()}>
+		<Dialog open={state.kind !== "closed"} onOpenChange={(open) => !open && onClose()}>
 			<DialogContent
 				data-finance-drawer
+				data-finance-drawer-state={state.kind}
 				className="bottom-0 left-auto right-0 top-0 h-full w-[min(440px,100vw)] max-w-full translate-x-0 translate-y-0 overflow-y-auto rounded-none rounded-l-2xl"
 			>
 				<DialogHeader>
-					<DialogTitle className="pr-8">{detail?.subscription.vendor ?? "Subscription"}</DialogTitle>
-					<DialogDescription>
-						{missing ? "This subscription no longer exists." : "Its invoices, payments and refunds, newest first."}
-					</DialogDescription>
+					<DialogTitle className="pr-8">
+						{state.kind === "ready" ? state.detail.subscription.vendor : "Subscription"}
+					</DialogTitle>
+					<DialogDescription>{DESCRIPTIONS[state.kind]}</DialogDescription>
 				</DialogHeader>
-				{detail && <DrawerBody detail={detail} today={today} locale={locale} onEdit={onEdit} onChanged={onChanged} />}
-				{!detail && !missing && <p className="text-sm text-neutral-500">Loading…</p>}
+				{state.kind === "ready" && (
+					<DrawerBody detail={state.detail} today={today} locale={locale} onEdit={onEdit} onChanged={onChanged} />
+				)}
+				{state.kind === "loading" && <p className="text-sm text-neutral-500">Loading…</p>}
 			</DialogContent>
 		</Dialog>
 	);

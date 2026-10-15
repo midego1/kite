@@ -9,7 +9,9 @@ import { isSameOriginPath } from "@/lib/modules/path-utils";
 import type {
 	AttentionEntry,
 	DocumentItem,
+	DrawerState,
 	StatusFilter,
+	SubscriptionDetail,
 	SubscriptionGroups,
 	SubscriptionItem,
 } from "./subscriptions-types";
@@ -277,4 +279,19 @@ export function addBody(form: TrackForm, mailboxId: string | null) {
 /** Which sections the status filter shows. */
 export function visibleSections(filter: StatusFilter): { current: boolean; ended: boolean } {
 	return { current: filter !== "ended", ended: filter !== "current" };
+}
+
+/**
+ * What the drawer for `id` shows, from the last detail answer: "missing" for a failed request,
+ * otherwise the parsed body. Before migration 0063 the detail route answers 200 with only
+ * `{ migrationPending: true }`, so a body is used only when it carries the requested subscription.
+ */
+export function drawerState(id: string | null, answer: unknown): DrawerState {
+	if (id === null) return { kind: "closed" };
+	if (answer === null) return { kind: "loading" };
+	if (answer === "missing" || typeof answer !== "object") return { kind: "missing" };
+	if ((answer as { migrationPending?: unknown }).migrationPending === true) return { kind: "migration-pending" };
+	const subscription = (answer as { subscription?: { id?: unknown } | null }).subscription;
+	if (!subscription || typeof subscription.id !== "string") return { kind: "missing" };
+	return subscription.id === id ? { kind: "ready", detail: answer as SubscriptionDetail } : { kind: "loading" };
 }

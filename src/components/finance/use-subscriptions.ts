@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth/client";
 import { getUserTimeZone } from "@/lib/time/utils";
-import type { SubscriptionDetail, SubscriptionList } from "./subscriptions-types";
+import type {
+	DrawerState,
+	SubscriptionDetail,
+	SubscriptionDetailPending,
+	SubscriptionList,
+} from "./subscriptions-types";
+import { drawerState } from "./subscriptions-utils";
+
+type DetailAnswer = SubscriptionDetail | SubscriptionDetailPending | "missing";
 
 /** The viewer's calendar day in their time zone, as the server's totals and badge count it. */
 export function viewerToday(): string {
@@ -46,33 +54,28 @@ export function useSubscriptionList() {
 	return { list, error, version, reload };
 }
 
-/** One subscription with its documents, reloaded whenever the list is. */
-export function useSubscriptionDetail(id: string | null, version: number) {
-	const [detail, setDetail] = useState<SubscriptionDetail | null>(null);
-	const [missing, setMissing] = useState(false);
+/**
+ * The drawer state for one subscription with its documents, reloaded whenever the list is. An answer
+ * counts only for the id it was fetched for, so switching rows shows Loading instead of the last row.
+ */
+export function useSubscriptionDetail(id: string | null, version: number): DrawerState {
+	const [answer, setAnswer] = useState<{ id: string; body: DetailAnswer } | null>(null);
 
 	useEffect(() => {
 		if (!id) return;
 		let live = true;
 		authFetch(`/api/finance/subscriptions/${encodeURIComponent(id)}`, { cache: "no-store" })
 			.then(async (response) => {
-				if (!live) return;
-				if (!response.ok) {
-					setMissing(true);
-					setDetail(null);
-					return;
-				}
-				setMissing(false);
-				setDetail((await response.json()) as SubscriptionDetail);
+				const body: DetailAnswer = response.ok ? ((await response.json()) as DetailAnswer) : "missing";
+				if (live) setAnswer({ id, body });
 			})
 			.catch(() => {
-				if (live) setMissing(true);
+				if (live) setAnswer({ id, body: "missing" });
 			});
 		return () => {
 			live = false;
 		};
 	}, [id, version]);
 
-	const current = detail && detail.subscription.id === id ? detail : null;
-	return { detail: current, missing: id ? missing : false };
+	return drawerState(id, answer && answer.id === id ? answer.body : null);
 }

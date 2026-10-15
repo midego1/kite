@@ -1935,4 +1935,45 @@ test.describe("Money Watch view", () => {
 			await restore();
 		}
 	});
+
+	test("a deep-linked drawer on a database without migration 0063 shows the pending update instead of crashing", async ({
+		browser,
+	}) => {
+		const account = await plainAccount("fvp");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const page = await context.newPage();
+			const errors: string[] = [];
+			page.on("pageerror", (error) => errors.push(error.message));
+			// The shared e2e database has 0063 applied, so the routes answer with the bodies the views give
+			// before it (tests/finance-module.test.mjs checks them against a database without the tables).
+			await page.route(/\/api\/finance\/subscriptions\?/, (route) =>
+				route.fulfill({ json: { subscriptions: [], totals: [], migrationPending: true } }),
+			);
+			await page.route(/\/api\/finance\/subscriptions\/[^/?]+/, (route) =>
+				route.fulfill({ json: { migrationPending: true } }),
+			);
+			await page.route(/\/api\/finance\/badge/, (route) =>
+				route.fulfill({ json: { count: 0, migrationPending: true } }),
+			);
+			const id = `fsub_${uniqueToken("pending").toLowerCase()}`;
+			await page.goto(`/finance?subscription=${id}`);
+			const drawer = page.locator("[data-finance-drawer]");
+			await expect(drawer).toHaveAttribute("data-finance-drawer-state", "migration-pending");
+			await expect(drawer.getByRole("heading", { name: "Subscription" })).toBeVisible();
+			await expect(drawer).toContainText("The database update for Money Watch has not been applied yet.");
+			await expect(drawer).not.toContainText("Loading");
+			await expect(drawer.getByRole("button", { name: "Edit" })).toHaveCount(0);
+			await page.keyboard.press("Escape");
+			await expect(drawer).toHaveCount(0);
+			await expect(page).toHaveURL(/\/finance$/);
+			await expect(page.locator("[data-finance-page]")).toContainText(
+				"The database update for Money Watch has not been applied yet.",
+			);
+			expect(errors).toEqual([]);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
 });

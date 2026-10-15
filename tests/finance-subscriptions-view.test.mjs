@@ -314,3 +314,18 @@ test("the status filter keeps the sections it names", () => {
 	assert.deepEqual(view.visibleSections("ended"), { current: false, ended: true });
 	assert.deepEqual(view.visibleSections("all"), { current: true, ended: true });
 });
+
+test("the drawer state recognises the pre-migration answer and never reads a missing subscription", () => {
+	const detail = { subscription: item(), paidLast12Months: [], documents: [] };
+	assert.deepEqual(view.drawerState("fsub_1", { migrationPending: true }), { kind: "migration-pending" });
+	assert.deepEqual(view.drawerState("fsub_1", { migrationPending: true, subscription: null }), {
+		kind: "migration-pending",
+	});
+	assert.deepEqual(view.drawerState("fsub_1", detail), { kind: "ready", detail });
+	assert.deepEqual(view.drawerState("fsub_2", detail), { kind: "loading" });
+	assert.deepEqual(view.drawerState("fsub_1", null), { kind: "loading" });
+	assert.deepEqual(view.drawerState("fsub_1", "missing"), { kind: "missing" });
+	assert.deepEqual(view.drawerState("fsub_1", {}), { kind: "missing" });
+	assert.deepEqual(view.drawerState("fsub_1", { subscription: null }), { kind: "missing" });
+	assert.deepEqual(view.drawerState(null, detail), { kind: "closed" });
+});

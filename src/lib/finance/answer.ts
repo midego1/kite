@@ -122,10 +122,7 @@ async function answer(ctx: CapabilityCallContext, userId: string, input: AnswerI
 	const option: AnswerOption = input.option;
 	const card = await loadCard(ctx, userId, input.suggestionId);
 	if ("status" in card) return refused(card);
-	const plan = planAnswer(option, card.payload, card.row, {
-		messageId: card.message.id,
-		repeat: card.suggestion.status === "accepted",
-	});
+	const plan = planAnswer(option, card.payload, card.row, { suggestionId: card.suggestion.id });
 	if ("status" in plan) return refused(plan);
 	const planned = await actionInput(card, plan);
 	if ("refusal" in planned) return refused(planned.refusal);

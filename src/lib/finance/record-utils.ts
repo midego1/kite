@@ -272,3 +272,8 @@ export const chargeFromJson = (json: Record<string, unknown>) => revive<ChargeRo
 export function derivedId(prefix: "fsub" | "fdoc", actionId: string): string {
 	return `${prefix}_${actionId.replace(/^aact_/, "")}`;
 }
+
+/** The id of the row Track creates from a card, the same for every click on that card. */
+export function suggestionSubscriptionId(suggestionId: string): string {
+	return `fsub_s_${suggestionId}`;
+}

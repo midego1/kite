@@ -2,7 +2,13 @@ import type { ZodType } from "zod";
 import type { CapabilityCallContext, CapabilityHandler, JsonValue } from "@/lib/modules/module-types";
 import { storedInverse, type StoredInverse } from "./action-input";
 import { FinanceRefusal, refusalOf } from "./errors";
-import { chargeFromJson, fieldColumns, subscriptionFromJson, subscriptionRef } from "./record-utils";
+import {
+	chargeFromJson,
+	fieldColumns,
+	subscriptionFromJson,
+	subscriptionRef,
+	type SubscriptionRow,
+} from "./record-utils";
 import { deleteDocuments, deleteSubscriptionRow, ownerRow, restoreRows, updateSubscription } from "./subscriptions";
 
 export type ExecuteCall<Input> = {
@@ -11,12 +17,20 @@ export type ExecuteCall<Input> = {
 	ctx: CapabilityCallContext;
 	suggestion: { id: string | null; messageId: string | null; mailboxId: string };
 	input: Input;
+	/** The row as the caller saw it before this action, as JSON; the same on a resumed run. */
+	before: Record<string, unknown> | null;
 };
 
 export type ActionOutcome = { result: Record<string, JsonValue>; inverse: StoredInverse | null };
 
 type RawCall =
-	| { op: "execute"; actionId: string; suggestion: ExecuteCall<unknown>["suggestion"]; input?: JsonValue }
+	| {
+			op: "execute";
+			actionId: string;
+			suggestion: ExecuteCall<unknown>["suggestion"];
+			input?: JsonValue;
+			before?: JsonValue;
+	  }
 	| { op: "undo" | "authorize_undo"; actionId: string; inverse: { inverse: JsonValue } };
 
 /** The result every Money Watch action reports: the subscription it is about, which Activity links. */
@@ -49,6 +63,22 @@ function undoInverse(call: Extract<RawCall, { op: "undo" | "authorize_undo" }>):
 	return parsed.success ? parsed.data : null;
 }
 
+const isObject = (value: unknown): value is Record<string, unknown> =>
+	!!value && typeof value === "object" && !Array.isArray(value);
+
+/**
+ * The row before this action ran, from the `before` its caller saved, when that names this row of this
+ * owner; null otherwise. A resumed action may already have changed the row, so its earlier values come
+ * from here rather than from the row as it is now.
+ */
+export function priorRow(
+	before: Record<string, unknown> | null,
+	userId: string,
+	row: SubscriptionRow,
+): SubscriptionRow | null {
+	return before && before.id === row.id && before.userId === userId ? subscriptionFromJson(before) : null;
+}
+
 async function run<Input>(
 	raw: JsonValue,
 	ctx: CapabilityCallContext,
@@ -62,7 +92,8 @@ async function run<Input>(
 		const input = schema.safeParse(call.input);
 		if (!input.success) throw new FinanceRefusal(409, "The action's input is not valid");
 		const { actionId, suggestion } = call;
-		const outcome = await execute({ actionId, userId: viewer.userId, ctx, suggestion, input: input.data });
+		const before = isObject(call.before) ? call.before : null;
+		const outcome = await execute({ actionId, userId: viewer.userId, ctx, suggestion, input: input.data, before });
 		// Optional inverse fields may be undefined, which is not JSON.
 		const inverse = outcome.inverse ? (JSON.parse(JSON.stringify(outcome.inverse)) as JsonValue) : null;
 		return { result: outcome.result, inverse };

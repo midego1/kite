@@ -40,7 +40,7 @@ await build({
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { acceptSuggestion } = await load("api");
-const { undoAgentAction } = await load("execute");
+const { executeAction, undoAgentAction } = await load("execute");
 const { listAgentActivity } = await load("activity");
 const { actionLabel } = await load("labels");
 const { invokeCapability } = await load("invoke");
@@ -171,7 +171,7 @@ test("Track creates the row and its invoice document through one audited action;
 	assert.equal(first.status, "accepted");
 	assert.match(first.actionId, /^aact_/);
 	const [row] = rows();
-	assert.equal(row.id, `fsub_${first.actionId.replace(/^aact_/, "")}`);
+	assert.equal(row.id, "fsub_s_sugg-1", "the row's id derives from the card");
 	assert.deepEqual(first.subscription, { kind: "finance:subscription", id: row.id });
 	assert.equal(row.user_id, "owner");
 	assert.equal(row.contact_id, "contact-1");
@@ -781,6 +781,253 @@ test("Track by hand creates the row once, emits a manual event, and undo removes
 	assert.deepEqual(rows(), []);
 });
 
+const liveActions = (db) =>
+	db.db
+		.prepare("SELECT action, variant FROM agent_actions WHERE status IN ('pending', 'applied') ORDER BY rowid")
+		.all()
+		.map((action) => `${action.action}:${action.variant}`);
+
+test("concurrent and repeated Track clicks on one card reach one action and never an update", async (t) => {
+	const context = await setup(t);
+	const { env, addCard, rows, suggestion, db } = context;
+	addCard("sugg-1", "inv-1", card());
+	const settled = await Promise.allSettled([accept(env, "sugg-1"), accept(env, "sugg-1")]);
+	for (const outcome of settled) if (outcome.status === "rejected") assert.equal(outcome.reason.status, 409);
+	const actionIds = settled.flatMap((outcome) => (outcome.status === "fulfilled" ? [outcome.value.actionId] : []));
+	assert.ok(actionIds.length > 0);
+	assert.equal(new Set(actionIds).size, 1, "both clicks hand back the same action");
+	assert.deepEqual(liveActions(db), ["create_subscription:"]);
+	assert.equal(rows().length, 1);
+
+	// Between the row being written and the card being decided, the card still reads open.
+	db.db.prepare("UPDATE agent_suggestions SET status = 'open' WHERE id = 'sugg-1'").run();
+	const again = await accept(env, "sugg-1");
+	assert.equal(again.actionId, actionIds[0]);
+	assert.deepEqual(liveActions(db), ["create_subscription:"], "no update action");
+	assert.equal(rows().length, 1);
+
+	await undoAgentAction(env, owner, actionIds[0]);
+	assert.deepEqual(rows(), []);
+	assert.equal(suggestion("sugg-1").status, "open");
+});
+
+/** Puts an applied card action back as a pending row left by a crash before it was marked applied. */
+function crashBeforeApplied(db, actionId, suggestionId, before) {
+	const stale = Math.floor(Date.now() / 1000) - 3600;
+	db.db
+		.prepare(
+			"UPDATE agent_actions SET status = 'pending', before = ?, after = '{}', undo_until = NULL, updated_at = ? WHERE id = ?",
+		)
+		.run(JSON.stringify(before), stale, actionId);
+	db.db.prepare("UPDATE agent_suggestions SET status = 'open' WHERE id = ?").run(suggestionId);
+}
+
+function recordBefore(t) {
+	const seen = [];
+	const execute = moduleHost.actions.execute;
+	moduleHost.actions.execute = (ctx, moduleId, call) => {
+		seen.push(call.before);
+		return execute(ctx, moduleId, call);
+	};
+	t.after(() => {
+		moduleHost.actions.execute = execute;
+	});
+	return seen;
+}
+
+test("a resumed card action still undoes back to the row before its first run", async (t) => {
+	const context = await setup(t);
+	const { env, addCard, rows, documents, db } = context;
+	const first = await trackFirst(context);
+	const subscriptionId = first.subscription.id;
+	const original = rows()[0];
+	const seen = recordBefore(t);
+	addCard(
+		"sugg-2",
+		"inv-2",
+		card({
+			event: "price_change",
+			subscriptionId,
+			amountMinor: 1999,
+			previousAmountMinor: 1799,
+			nextRenewalOn: day(50),
+			document: {
+				docType: "invoice",
+				documentOn: day(-10),
+				periodStartOn: null,
+				periodEndOn: null,
+				attachmentId: null,
+			},
+		}),
+	);
+	const update = await accept(env, "sugg-2");
+	crashBeforeApplied(db, update.actionId, "sugg-2", seen.at(-1));
+	const replay = await accept(env, "sugg-2");
+	assert.equal(replay.actionId, update.actionId, "the stale pending row is resumed");
+	assert.equal(rows()[0].amount_minor, 1999);
+	assert.equal(documents().length, 2, "the resumed run inserts no second document");
+	await undoAgentAction(env, owner, update.actionId);
+	const restored = rows()[0];
+	for (const column of [
+		"amount_minor",
+		"previous_amount_minor",
+		"price_changed_at",
+		"next_renewal_at",
+		"last_message_id",
+		"payment_failed_at",
+	])
+		assert.equal(restored[column], original[column], column);
+	assert.equal(restored.amount_minor, 1799);
+	assert.equal(restored.previous_amount_minor, null);
+	assert.deepEqual(
+		documents().map((document) => document.message_id),
+		["inv-1"],
+	);
+
+	addCard(
+		"sugg-f",
+		"failed-1",
+		card({
+			event: "payment_failed",
+			subscriptionId,
+			amountMinor: null,
+			currency: null,
+			document: {
+				docType: "failed_payment",
+				documentOn: day(-1),
+				periodStartOn: null,
+				periodEndOn: null,
+				attachmentId: null,
+			},
+		}),
+	);
+	const marked = await accept(env, "sugg-f", "mark_urgent");
+	assert.ok(rows()[0].payment_failed_at);
+	crashBeforeApplied(db, marked.actionId, "sugg-f", seen.at(-1));
+	const remarked = await accept(env, "sugg-f", "mark_urgent");
+	assert.equal(remarked.actionId, marked.actionId);
+	await undoAgentAction(env, owner, marked.actionId);
+	assert.equal(rows()[0].payment_failed_at, null, "undo clears the failed payment the first run set");
+	assert.equal(documents().filter((document) => document.doc_type === "failed_payment").length, 0);
+});
+
+test("the executor hands a resumed module action the before saved with its pending row", async (t) => {
+	const context = await setup(t);
+	const { env, db } = context;
+	const first = await trackFirst(context);
+	const id = first.subscription.id;
+	const stale = Math.floor(Date.now() / 1000) - 3600;
+	db.db
+		.prepare(
+			"INSERT INTO agent_actions (id, mailbox_id, suggestion_id, initiator, acting_user_id, action, variant, status, before, after, created_at, updated_at) VALUES ('aact_resume', 'mailbox-a', 'sugg-1', 'user', 'owner', 'update_subscription', '', 'pending', ?, '{}', ?, ?)",
+		)
+		.run(JSON.stringify({ id, userId: "owner", vendor: "Saved before" }), stale, stale);
+	const result = await executeAction({
+		env,
+		mailboxId: "mailbox-a",
+		suggestionId: "sugg-1",
+		action: "update_subscription",
+		initiator: "user",
+		actingUserId: "owner",
+		permissions: { canManage: true, canSendOnBehalf: true },
+		module: {
+			input: { variant: "", subscriptionId: id, changes: { vendor: "Renamed" }, previous: { vendor: "From input" } },
+			before: { id, userId: "owner", vendor: "From the new caller" },
+			viewer: viewOf(owner),
+		},
+	});
+	assert.equal(result.status, "applied", result.reason);
+	assert.equal(result.actionId, "aact_resume");
+	const stored = db.db.prepare("SELECT before FROM agent_actions WHERE id = 'aact_resume'").get();
+	assert.deepEqual(JSON.parse(stored.before).previous, { vendor: "Saved before" });
+});
+
+const handTracked = (vendorKey) => ({
+	op: "execute",
+	actionId: "aact_hand",
+	suggestion: suggestionRef,
+	input: {
+		variant: "",
+		fields: {
+			vendor: "Streamflix",
+			plan: "Family",
+			amountMinor: 2999,
+			currency: "USD",
+			cycle: "monthly",
+			nextRenewalOn: day(5),
+			renewalEstimated: false,
+			trialEndsOn: null,
+			status: "active",
+			paymentFailedAt: null,
+			reminderDays: 3,
+			calendarReminder: false,
+			cancelUrl: null,
+			cancelOneClick: false,
+			previousAmountMinor: null,
+			priceChangedAt: null,
+			lastMessageId: null,
+		},
+		vendorKey,
+		mailboxId: "mailbox-a",
+		contactId: null,
+		messageId: null,
+		source: "manual",
+		document: null,
+	},
+});
+
+test("refund and failed-payment cards whose row was removed answer 409 instead of matching another row", async (t) => {
+	const context = await setup(t);
+	const { env, addCard, rows, documents, suggestion, db } = context;
+	const first = await trackFirst(context);
+	const removedId = first.subscription.id;
+	await runAction("trackSubscription", handTracked("streamflix.example"));
+	const refund = { docType: "refund", documentOn: day(-2), periodStartOn: null, periodEndOn: null, attachmentId: null };
+	addCard("sugg-r", "refund-1", card({ event: "refund", subscriptionId: removedId, document: refund }));
+	addCard(
+		"sugg-f",
+		"failed-1",
+		card({
+			event: "payment_failed",
+			subscriptionId: removedId,
+			amountMinor: null,
+			currency: null,
+			document: { ...refund, docType: "failed_payment" },
+		}),
+	);
+	db.db.prepare("DELETE FROM finance_subscriptions WHERE id = ?").run(removedId);
+	const before = documents().length;
+	await assert.rejects(() => accept(env, "sugg-r", "record"), { status: 409 });
+	await assert.rejects(() => accept(env, "sugg-f", "mark_urgent"), { status: 409 });
+	assert.equal(documents().length, before, "no document is written");
+	assert.equal(rows().length, 1);
+	assert.equal(rows()[0].payment_failed_at, null, "the remaining row is not marked urgent");
+	assert.equal(suggestion("sugg-r").status, "open");
+	assert.equal(suggestion("sugg-f").status, "open");
+});
+
+test("a subscription with more than 200 documents is not removed", async (t) => {
+	const context = await setup(t);
+	const { rows, documents, db } = context;
+	const first = await trackFirst(context);
+	const id = first.subscription.id;
+	const insert = db.db.prepare(
+		"INSERT INTO finance_charges (id, subscription_id, user_id, doc_type, amount_minor, currency, document_at, created_at) VALUES (?, ?, 'owner', 'invoice', 1799, 'USD', ?, 1)",
+	);
+	for (let index = 0; index < 200; index += 1) insert.run(`fdoc_bulk_${index}`, id, index + 1);
+	assert.equal(documents().length, 201);
+	const refused = await runAction("deleteSubscription", {
+		op: "execute",
+		actionId: "aact_delete_big",
+		suggestion: suggestionRef,
+		input: { subscriptionId: id },
+	});
+	assert.equal(refused.refused.status, 409);
+	assert.match(refused.refused.error, /too many documents/);
+	assert.equal(rows().length, 1);
+	assert.equal(documents().length, 201);
+});
+
 const answerUtils = await loadFinance("answer-utils");
 const recordUtils = await loadFinance("record-utils");
 
@@ -821,7 +1068,7 @@ function storedRow(overrides = {}) {
 test("planAnswer picks the action for each button and refuses what does not fit", () => {
 	const { planAnswer, optionFits, isAnswerOption } = answerUtils;
 	const row = storedRow();
-	const fresh = { messageId: "inv-2", repeat: false };
+	const fresh = { suggestionId: "sugg-2" };
 	assert.equal(isAnswerOption("track"), true);
 	assert.equal(isAnswerOption("toString"), false);
 	assert.equal(optionFits("record", "refund"), true);
@@ -829,14 +1076,15 @@ test("planAnswer picks the action for each button and refuses what does not fit"
 	assert.deepEqual(planAnswer("track", card(), null, fresh), { capability: "trackSubscription", variant: "" });
 	assert.deepEqual(planAnswer("track", card(), row, fresh), { capability: "trackSubscription", variant: "update" });
 	assert.deepEqual(
-		planAnswer("track", card(), row, { messageId: "inv-1", repeat: true }),
+		planAnswer("track", card(), storedRow({ id: "fsub_s_sugg-1" }), { suggestionId: "sugg-1" }),
 		{ capability: "trackSubscription", variant: "" },
-		"a repeated click on the card that created the row is the same Track",
+		"the row this card's own Track created is the same Track, accepted yet or not",
 	);
-	assert.deepEqual(planAnswer("track", card(), row, { messageId: "inv-1", repeat: false }), {
-		capability: "trackSubscription",
-		variant: "update",
-	});
+	assert.deepEqual(
+		planAnswer("track", card(), row, { suggestionId: "sugg-1" }),
+		{ capability: "trackSubscription", variant: "update" },
+		"a row added another way from the same message is updated",
+	);
 	assert.deepEqual(planAnswer("mark_urgent", card({ event: "payment_failed" }), row, fresh), {
 		capability: "editSubscription",
 		variant: "payment_failed",
@@ -856,6 +1104,10 @@ test("rowForPayload prefers the named row and otherwise matches again", () => {
 	assert.equal(rowForPayload(rows, card({ subscriptionId: "fsub_gone" })).id, "fsub_1");
 	assert.equal(rowForPayload(rows, card({ amountMinor: null, currency: null })).id, "fsub_1");
 	assert.equal(rowForPayload([], card()), null);
+	for (const event of ["refund", "payment_failed"]) {
+		assert.equal(rowForPayload(rows, card({ event, subscriptionId: "fsub_gone" })), null, event);
+		assert.equal(rowForPayload(rows, card({ event, subscriptionId: "fsub_2" })).id, "fsub_2", event);
+	}
 });
 
 test("liveDocument drops a stale attachment and documentInput carries the amount", () => {

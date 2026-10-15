@@ -1,5 +1,11 @@
 import { matchTracked } from "./detect-utils";
-import { snapshotFields, type FieldKey, type SubscriptionFields, type SubscriptionRow } from "./record-utils";
+import {
+	snapshotFields,
+	suggestionSubscriptionId,
+	type FieldKey,
+	type SubscriptionFields,
+	type SubscriptionRow,
+} from "./record-utils";
 import type { DocumentInfo } from "./document-utils";
 import type { SubscriptionEvent, SubscriptionPayload } from "./types";
 
@@ -23,13 +29,18 @@ export function optionFits(option: AnswerOption, event: SubscriptionEvent): bool
 	return OPTION_EVENTS[option].includes(event);
 }
 
+/** Cards about one tracked row; when it is gone they answer 409 rather than fall onto another row. */
+const NAMED_ROW_EVENTS: readonly SubscriptionEvent[] = ["refund", "payment_failed"];
+
 /**
  * The owner's row a card is about now: the one it names if it still exists, otherwise the best match
- * by vendor key, currency, plan and amount, since the row may have been added after detection.
+ * by vendor key, currency, plan and amount, since the row may have been added after detection. A
+ * refund or failed-payment card only ever means the row it names.
  */
 export function rowForPayload(rows: readonly SubscriptionRow[], payload: SubscriptionPayload): SubscriptionRow | null {
 	const named = payload.subscriptionId ? rows.find((row) => row.id === payload.subscriptionId) : undefined;
 	if (named) return named;
+	if (NAMED_ROW_EVENTS.includes(payload.event)) return null;
 	const amount =
 		payload.amountMinor !== null && payload.currency
 			? { minor: payload.amountMinor, currency: payload.currency }
@@ -96,6 +107,23 @@ export function trackUpdate(
 	return { changes, previous: snapshotFields(row, Object.keys(changes) as FieldKey[]) };
 }
 
+/** Every column `trackUpdate` can set, which an update's undo snapshots whatever this run changes. */
+export const TRACK_UPDATE_KEYS: readonly FieldKey[] = [
+	"amountMinor",
+	"currency",
+	"previousAmountMinor",
+	"priceChangedAt",
+	"lastMessageId",
+	"nextRenewalOn",
+	"renewalEstimated",
+	"cycle",
+	"trialEndsOn",
+	"cancelUrl",
+	"cancelOneClick",
+	"status",
+	"paymentFailedAt",
+];
+
 /** The new row Track creates from a card. */
 export function trackedFields(payload: SubscriptionPayload, messageId: string): SubscriptionFields {
 	return {
@@ -122,19 +150,20 @@ export function trackedFields(payload: SubscriptionPayload, messageId: string): 
 export type AnswerPlan = { capability: string; variant: string };
 
 /**
- * Which action an accept click runs. Track creates a row, or updates the matched one. A repeated click
- * on an accepted card whose message created the matched row is that same Track, so the executor hands
- * back the first action instead of running an update. Record and Mark urgent need the row to exist.
+ * Which action an accept click runs. Track creates a row, or updates the matched one. A matched row
+ * this card's own Track created (its id derives from the suggestion) is that same Track, so a second
+ * click, even one racing the first, reaches the executor's live row instead of running an update.
+ * Record and Mark urgent need the row to exist.
  */
 export function planAnswer(
 	option: AnswerOption,
 	payload: SubscriptionPayload,
 	row: SubscriptionRow | null,
-	card: { messageId: string; repeat: boolean },
+	card: { suggestionId: string },
 ): AnswerPlan | Refusal {
 	if (!optionFits(option, payload.event)) return { status: 400, error: "This option does not fit the suggestion" };
 	if (option === "track") {
-		const ownRow = card.repeat && row?.sourceMessageId === card.messageId;
+		const ownRow = row?.id === suggestionSubscriptionId(card.suggestionId);
 		return { capability: "trackSubscription", variant: row && !ownRow ? "update" : "" };
 	}
 	if (!row) return { status: 409, error: "The subscription is no longer tracked" };

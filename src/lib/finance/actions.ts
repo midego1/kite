@@ -1,7 +1,16 @@
 import { deleteSubscriptionInput, editInput, statusInput, trackInput } from "./action-input";
-import { actionResult, financeAction, requireRow } from "./action-runner";
+import { actionResult, financeAction, priorRow, requireRow } from "./action-runner";
+import { TRACK_UPDATE_KEYS } from "./answer-utils";
+import { FinanceRefusal } from "./errors";
 import { recordLedgerDocument } from "./document-actions";
-import { derivedId, fieldColumns, rowJson, snapshotFields, type FieldKey } from "./record-utils";
+import {
+	derivedId,
+	fieldColumns,
+	rowJson,
+	snapshotFields,
+	suggestionSubscriptionId,
+	type FieldKey,
+} from "./record-utils";
 import {
 	SNAPSHOT_DOCUMENTS,
 	deleteSubscriptionRow,
@@ -26,52 +35,63 @@ async function recordFor(
 }
 
 /**
- * `create_subscription`: `""` inserts a row (id derived from the action) with its invoice or payment
+ * `create_subscription`: `""` inserts a row (id derived from the card, or from the action when added
+ * by hand) with its invoice or payment
  * document and tells the owner's webhooks once; `update` applies what a later card read to the row it
  * matched. Undo deletes the created row, or puts back the changed fields and removes only the
  * document this action inserted.
  */
-export const trackSubscription = financeAction(trackInput, async ({ actionId, userId, ctx, input }) => {
-	if (input.variant === "update") {
-		const row = await requireRow(userId, input.subscriptionId);
-		await updateSubscription(userId, row.id, fieldColumns(input.changes));
-		const recorded = await recordFor(userId, row.id, actionId, input.messageId, input.document);
+export const trackSubscription = financeAction(
+	trackInput,
+	async ({ actionId, userId, ctx, suggestion, input, before }) => {
+		if (input.variant === "update") {
+			const row = await requireRow(userId, input.subscriptionId);
+			const prior = priorRow(before, userId, row);
+			const previous = prior ? snapshotFields(prior, TRACK_UPDATE_KEYS) : input.previous;
+			await updateSubscription(userId, row.id, fieldColumns(input.changes));
+			const recorded = await recordFor(userId, row.id, actionId, input.messageId, input.document);
+			return {
+				result: actionResult(row.id, { documentRecorded: recorded.documentRecorded }),
+				inverse: { userId, subscriptionId: row.id, previous, documentIds: recorded.documentIds },
+			};
+		}
+		const id =
+			input.source === "suggestion" && suggestion.id
+				? suggestionSubscriptionId(suggestion.id)
+				: derivedId("fsub", actionId);
+		const now = new Date();
+		const created = await insertSubscription({
+			id,
+			userId,
+			mailboxId: input.mailboxId,
+			contactId: input.contactId,
+			vendorKey: input.vendorKey,
+			sourceMessageId: input.messageId,
+			...fieldColumns(input.fields),
+			vendor: input.fields.vendor,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const row = await requireRow(userId, id);
+		const recorded = await recordFor(userId, id, actionId, input.messageId, input.document);
+		if (created) await emitSubscriptionDetected(ctx, row, input.source, input.messageId);
 		return {
-			result: actionResult(row.id, { documentRecorded: recorded.documentRecorded }),
-			inverse: { userId, subscriptionId: row.id, previous: input.previous, documentIds: recorded.documentIds },
+			result: actionResult(id, { created, documentRecorded: recorded.documentRecorded }),
+			inverse: { userId, subscriptionId: id, created: true },
 		};
-	}
-	const id = derivedId("fsub", actionId);
-	const now = new Date();
-	const created = await insertSubscription({
-		id,
-		userId,
-		mailboxId: input.mailboxId,
-		contactId: input.contactId,
-		vendorKey: input.vendorKey,
-		sourceMessageId: input.messageId,
-		...fieldColumns(input.fields),
-		vendor: input.fields.vendor,
-		createdAt: now,
-		updatedAt: now,
-	});
-	const row = await requireRow(userId, id);
-	const recorded = await recordFor(userId, id, actionId, input.messageId, input.document);
-	if (created) await emitSubscriptionDetected(ctx, row, input.source, input.messageId);
-	return {
-		result: actionResult(id, { created, documentRecorded: recorded.documentRecorded }),
-		inverse: { userId, subscriptionId: id, created: true },
-	};
-});
+	},
+);
 
 /**
  * `update_subscription`: `""` edits the subscription's fields, `reminder` its reminder and
  * `payment_failed` marks a failed payment with its `failed_payment` document. Undo restores the
  * earlier values and removes the document.
  */
-export const editSubscription = financeAction(editInput, async ({ actionId, userId, input }) => {
+export const editSubscription = financeAction(editInput, async ({ actionId, userId, input, before }) => {
 	const row = await requireRow(userId, input.subscriptionId);
-	const previous = input.previous ?? snapshotFields(row, Object.keys(input.changes) as FieldKey[]);
+	const keys = Object.keys(input.changes) as FieldKey[];
+	const prior = priorRow(before, userId, row);
+	const previous = prior ? snapshotFields(prior, keys) : (input.previous ?? snapshotFields(row, keys));
 	await updateSubscription(userId, row.id, fieldColumns(input.changes));
 	const recorded = await recordFor(userId, row.id, actionId, input.messageId ?? null, input.document);
 	return {
@@ -92,12 +112,18 @@ export const setSubscriptionStatus = financeAction(statusInput, async ({ userId,
 });
 
 /**
- * `delete_subscription`: removes the row and its documents, keeping a snapshot (at most
- * `SNAPSHOT_DOCUMENTS` documents) so undo puts them back with the same ids.
+ * `delete_subscription`: removes the row and its documents, keeping a snapshot so undo puts them back
+ * with the same ids. A row with more than `SNAPSHOT_DOCUMENTS` documents is refused, since undo could
+ * not restore the rest.
  */
 export const deleteSubscription = financeAction(deleteSubscriptionInput, async ({ userId, input }) => {
 	const row = await requireRow(userId, input.subscriptionId);
-	const documents = await ownerDocuments(userId, row.id, SNAPSHOT_DOCUMENTS);
+	const documents = await ownerDocuments(userId, row.id, SNAPSHOT_DOCUMENTS + 1);
+	if (documents.length > SNAPSHOT_DOCUMENTS)
+		throw new FinanceRefusal(
+			409,
+			"This subscription has too many documents to remove in one step; remove older documents first",
+		);
 	await deleteSubscriptionRow(userId, row.id);
 	return {
 		result: actionResult(row.id),

@@ -1026,7 +1026,8 @@ test.describe("triage scheduling", () => {
 	/** Delivers one mail to a new Suggest-only mailbox; the caller has pointed the install at the fake model. */
 	async function deliverForTriage(restore: () => Promise<void>, prefix: string, text: string) {
 		const account = await suggestAccount(prefix);
-		await setAutonomy(account, { autonomy: "suggest" });
+		// With a module step running, a model that fails for good no longer fails the job, so these core retry checks turn the steps off.
+		await setAutonomy(account, { autonomy: "suggest", capabilities: { modules: { subscriptions: false } } });
 		const subject = uniqueToken(prefix);
 		const message = await deliverInbound(account.api, {
 			from: "Customer <customer@outside.test>",

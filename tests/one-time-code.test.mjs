@@ -286,8 +286,47 @@ test("keeps a code when a label word sits behind a keyword", () => {
 	);
 });
 
-test("rejects lowercase alphanumerics and short or letter-only tokens", () => {
-	assert.equal(extractOneTimeCode({ subject: null, text: "Your code is g7h2k9. Enter it soon." }), null);
+test("accepts a lowercase alphanumeric code on its own line", () => {
+	assert.equal(
+		extractOneTimeCode({
+			subject: "Verify your email address",
+			text: "Hi,\nPlease enter the following authentication code to verify your email address:\n  b77f3a  \nThe code will expire in 15 minutes.",
+		}),
+		"b77f3a",
+	);
+	assert.equal(extractOneTimeCode({ subject: "Your sign-in code", text: "Hello\r\nq4zt8m\r\nThanks" }), "q4zt8m");
+});
+
+test("a code on its own line wins over a footer address near the expiry sentence", () => {
+	const text = [
+		"Please verify your account",
+		"Hi there,",
+		"Simply copy and paste the temporary authentication code into the pop-up verification form on the Examplehost website.",
+		"b77f3a",
+		"The code will expire thirty minutes after the request was made.",
+		"4600 East Example Street, Suite 300, Exampleville, ZZ 85034",
+	].join("\n");
+	assert.equal(extractOneTimeCode({ subject: "Important action required: Please verify account", text }), "b77f3a");
+	assert.equal(extractOneTimeCode({ subject: null, text: text.replace("b77f3a", "Your code is 482913.") }), "482913");
+});
+
+test("accepts a lowercase alphanumeric code directly after a keyword", () => {
+	assert.equal(extractOneTimeCode({ subject: null, text: "Your code is g7h2k9. Enter it soon." }), "g7h2k9");
+	assert.equal(extractOneTimeCode({ subject: null, text: "Verification code: 3kx9pq (valid 10 minutes)" }), "3kx9pq");
+});
+
+test("rejects lowercase alphanumerics that only sit near a keyword", () => {
+	assert.equal(
+		extractOneTimeCode({ subject: null, text: "The verification fix landed in commit a7bc52f yesterday." }),
+		null,
+	);
+	assert.equal(
+		extractOneTimeCode({ subject: "Confirm your seat", text: "Welcome back, user42x, to the event." }),
+		null,
+	);
+});
+
+test("rejects short or letter-only tokens", () => {
 	assert.equal(extractOneTimeCode({ subject: null, text: "Your code is 482." }), null);
 	assert.equal(extractOneTimeCode({ subject: null, text: "Your code is 482123459." }), null);
 	assert.equal(extractOneTimeCode({ subject: null, text: "The code word is ORCHID." }), null);

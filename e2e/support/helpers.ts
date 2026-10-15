@@ -62,6 +62,7 @@ const newBoundary = () => `b${randomUUID().replace(/-/g, "")}`;
 function bodyPart(mail: InboundMail): string[] {
 	const text = mail.text ?? "E2E message body.";
 	if (!mail.html) return ["Content-Type: text/plain; charset=utf-8", "", text];
+	if (mail.text === null) return ["Content-Type: text/html; charset=utf-8", "", mail.html];
 	const boundary = newBoundary();
 	return [
 		`Content-Type: multipart/alternative; boundary="${boundary}"`,

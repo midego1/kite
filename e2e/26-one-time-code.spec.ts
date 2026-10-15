@@ -144,6 +144,58 @@ test("the open message shows a copy-code chip", async ({ page }) => {
 	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("441902");
 });
 
+/**
+ * Delivers an HTML-only verification mail whose lowercase code sits in its own
+ * table cell, with a footer address close enough to "The code will expire"
+ * that its street number would make the code ambiguous.
+ */
+async function deliverHtmlOnlyCodeMail(subject: string, code: string) {
+	const api = await apiContext(STORAGE_STATE);
+	const message = await deliverInbound(api, {
+		from: `"Examplehost Accounts" <alert@examplehost.example.test>`,
+		to: SUPPORT_ADDRESS,
+		subject,
+		text: null,
+		html: [
+			`<table><tr><td><h1>Please verify your account</h1></td></tr>`,
+			`<tr><td><p>Hi there,</p><p>Simply copy and paste the temporary authentication code into the pop-up verification form on the Examplehost website.</p></td></tr>`,
+			`<tr><td><a href="#" style="color:#3355ff">${code}</a></td></tr>`,
+			`<tr><td>The code will expire thirty minutes after the request was made.</td></tr></table>`,
+			`<p>4600 East Example Street, Suite 300, Exampleville, ZZ 85034</p>`,
+		].join(""),
+	});
+	await api.dispose();
+	return message;
+}
+
+test("an HTML-only message with a lowercase code above a footer address shows the chip", async ({ page }) => {
+	await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+	const subject = `Important action required: Please verify account ${uniqueToken("otp")}`;
+	await deliverHtmlOnlyCodeMail(subject, "b77f3a");
+	await page.goto("/inbox");
+	await openMessage(page, subject);
+	const readerCopy = page.getByRole("main").getByRole("button", { name: "Copy code" });
+	await expect(readerCopy).toBeVisible();
+	await readerCopy.click();
+	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("b77f3a");
+});
+
+test("an HTML-only message with a lowercase code carries it in the browser notification", async ({ page }) => {
+	await seedRealtimeSession(page);
+	await page.addInitScript(stubNotifications());
+	await page.addInitScript(instrumentRealtime());
+	await page.goto("/inbox");
+	await expect
+		.poll(() => page.evaluate(() => (navigator.serviceWorker?.controller ? 1 : 0)), { timeout: 20_000 })
+		.toBe(1);
+	await waitForRealtimeSocket(page);
+	const subject = `Important action required: Please verify account ${uniqueToken("otp")}`;
+	const message = await deliverHtmlOnlyCodeMail(subject, "q4zt8m");
+	const entry = await lastNotification(page);
+	expect(entry.title).toBe(`q4zt8m · ${subject}`);
+	expect(entry.options?.data).toMatchObject({ messageId: message.id, code: "q4zt8m" });
+});
+
 test("the browser notification carries the code, a copy action and service-worker data", async ({ page }) => {
 	await seedRealtimeSession(page);
 	await page.addInitScript(stubNotifications());

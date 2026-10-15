@@ -17,7 +17,7 @@ Design principles:
 
 1. **The model proposes and code decides.** The automatic path never gives the model mailbox tools. The model returns a validated JSON triage result. Deterministic code turns that result into suggestions and runs any action allowed by the mailbox autonomy level.
 2. **Recipients, times and targets come from data, not from the model.** Reply recipients come from `getReplyRecipients`. Proposed meeting times come from the free/busy computation. Folders come from the user's existing folders.
-3. **Run deterministic checks first and use the LLM only when it adds something.** Calendar invites, `List-Unsubscribe`, spam signals and bulk headers are detected without a model call.
+3. **Run deterministic checks first and use the LLM only when it adds something.** Calendar invites, `List-Unsubscribe`, spam signals and bulk headers are detected without a model call. Modules add their own deterministic `triage_step`s ([module platform](module-platform.md) §11.2); a step that needs a few fields from the model declares a model extension and a deterministic `wantsModel` hint instead of calling a model itself (§5.4).
 4. **Everything is audited, and everything reversible can be undone.**
 
 Non-goals for this milestone: two-way calendar sync, fetching links, forwarding, attachment OCR, and training or fine-tuning.
@@ -38,7 +38,7 @@ Non-goals for this milestone: two-way calendar sync, fetching links, forwarding,
 | Calendar | `calendar_events` (per user; no external UID, organizer or RSVP fields); `src/lib/calendar/tools.ts` (`get_schedule`, `find_free_time`, which builds busy blocks from `expandToolEvents`); `src/lib/calendar/utils.ts` `createCalendarInvitation` (outbound METHOD REQUEST/CANCEL with the `@mailflare` UID suffix) | **There is no inbound ICS parsing and no RSVP REPLY yet.** Both are new. |
 | Booking | `booking_events` (working hours: `weekdays`, `time_ranges`, `time_zone`), `src/lib/booking/availability.ts` `availableBookingSlots` | Source of working hours for proposed times. |
 | Spam and phishing signals | `src/lib/spam/engine.ts` (`inbox`/`suspicious`/`spam`), `analyzers/authentication.ts` (`spf/dkim/dmarc_passed/failed`), `analyzers/urls.ts` (`displayed_link_mismatch`, `ip_address_url`, `punycode_url`); stored in `messages.spam_signals` | A free, deterministic phishing input. It also tells us whether the sender passed authentication. |
-| Unsubscribe | `src/lib/email/unsubscribe.ts` (`getUnsubscribeUrlFromRawR2Key` reads `List-Unsubscribe` from the raw MIME) | Newsletter suggestions without a model call. |
+| Unsubscribe | `src/lib/email/unsubscribe.ts` (`getUnsubscribeUrlFromRawR2Key` reads `List-Unsubscribe` from the raw MIME) | Newsletter suggestions without a model call. Module steps receive `List-Unsubscribe`, `List-Unsubscribe-Post` and `List-Id` in their input; Money Watch stores the `https` link as a subscription's cancel link, taken only from that header. |
 | Organising | `updateMessageStatusForUser` (`src/lib/user.ts`), `folders`, `messages.snoozed_until`, mailbox-scope `routing_rules` (`resolveInboxRuleDestination`) | Targets for label, archive and remind actions. |
 | Sending | `sendEmail` (`src/lib/email/send.ts`, supports `scheduledAt` → `outbound_jobs`), `/api/send/undo` | A full-auto send becomes a scheduled send with a hold window, so it can be undone. |
 | Permissions | `src/lib/mailboxes/access.ts`: `read_only < send_on_behalf < send_as < full_access` → `canRead`, `canSendOnBehalf`, `canManage`; mailbox `type: personal \| shared` | The acting identity is the reviewer user, as in auto-draft. |
@@ -78,8 +78,11 @@ A **D** marks a capability that needs no model call. Each capability can be togg
 | Phishing warning | D: `spam_verdict = suspicious`, `displayed_link_mismatch`, auth failures, display-name spoofing of a known contact; LLM `suspicious.reasons` adds to these but never clears them | Red banner in the reader with the reasons | Suggest only | Suggest only | **1** |
 | Tasks and deadlines | LLM `tasks[]` with `dueAt` validated as a future date within 1 year | "Remind me on 3 Nov" | Set `snoozed_until` to the day before the due date | same | 2 |
 | Receipts and invoices | D: subject, sender and attachment heuristics, then confirmed by the LLM `category` | "File under Receipts" | Move to the configured folder | same | 2 |
+| Subscriptions (Money Watch module) | D: the module's `detect` step (subject, sender and body phrases, amounts, cycles, dates, invoice attachments, earlier mail from the sender); the model fills only empty fields through the module's model extension | Module-owned kind `subscription`, reviewer-only: "Netflix $17.99/month, renews 1 Nov. Track it?" | Suggest only (tracking needs a click) | Suggest only | [Money Watch](money-watch.md) |
 | Labelling and archiving | LLM `category` mapped to user-configured folder rules; never invents folders | "Move to Newsletters" | Apply | same | 2 |
-| Newsletter unsubscribe | D: `List-Id` plus `List-Unsubscribe`, and the user has not opened the last N messages from this list | "Unsubscribe?" | Suggest only | Suggest only (the one-click POST runs only when the user clicks) | 3 |
+| Newsletter unsubscribe | D: `List-Id` plus `List-Unsubscribe`, and the user has not opened the last N messages from this list | "Unsubscribe?" | Suggest only | Suggest only (the one-click POST runs only when the user clicks; not built, and Money Watch's cancel link only opens in the browser) | 3 |
+
+Modules add suggestion kinds of their own (`calendar_invite` from Calendar, `subscription` from Money Watch). A module kind is stored once a `suggestion_kind` descriptor declares it, its payload is validated by that descriptor's input schema, its card, For you heading, row chip and "Why?" texts come from the module's client data (`suggestionKindMeta`), and `audience: "reviewer"` limits it to the mailbox's reviewer. The reserved `receipt` kind stays for "File under Receipts".
 | Follow-up nudges | D, cron: an outbound `sent` message with no inbound reply in its thread after N days | "No reply from X in 4 days. Draft a nudge?" | Draft only | — | 3 |
 
 **First slice (milestone A–E below):** the framework, Suggest only, calendar invites, reply drafts, summaries and phishing warnings. These cover what the user asked for (invite → availability → accept or reschedule draft) and exercise every part of the pipeline: deterministic detection, LLM triage, an LLM draft, a calendar read, a one-click send, and audit with undo.
@@ -142,6 +145,15 @@ worker.ts queue() / server/index.ts agentQueue consumer
    - Decline: offer "Accept instead".
 6. Calendars are personal (`calendar_events.user_id`). On **shared** mailboxes, the calendar capability is off by default and acts only on the reviewer's calendar when enabled.
 
+### 5.4 Module steps, steps-only jobs and model extensions
+
+Added with the [Money Watch](money-watch.md) module (§16 of that spec); none of it names a module in core.
+
+- **Steps-only jobs.** A `triage_step` with `triage.automatic: true` lets `Auto-Submitted` mail through `triageMessageGate` when that step's module is on for the reviewer. `processAgentTriageJob` then runs a steps-only pass: only opted-in module steps run, core plans no kinds except phishing, and no model is asked unless a `wantsModel` hint asks. Steps-only jobs count toward the daily job limit.
+- **Steps after a refused or failed model.** On `external_provider_not_allowed`, `rate_limited` or `spend_cap`, the module steps run with `model: null`, their suggestions are stored and the job note records the model skip; the job is skipped only when no step ran. On a model error after the in-request repair, a request made only because of a hint is not retried and records `model_failed`; a request core needed keeps the existing retries and, on the last attempt, runs the steps with `model: null` instead of failing. Calendar invitations are therefore also detected when the model is refused or keeps failing.
+- **Model extensions.** `triage.model` on a step declares `{ jsonSchema, instructions, maxOutputTokens, wantsModel? }`. For each request, `activeModelExtensions` keeps the extensions whose module is on for the reviewer and whose per-mailbox step switch (`capabilities.modules.<key>`) is on. Core merges each schema under `properties.modules.properties.<moduleId>` of the per-request provider schema (never `required`), appends each `instructions` string to the system prompt's key list outside the nonce-delimited message block, raises the output cap by the allowances (at most 200 in total) and parses `modules` leniently: only active keys, at most 2 KB each, and an invalid value never fails the parse or triggers the repair. Each step receives only its own `model.modules.<id>`, unvalidated, and validates it itself. Without an active extension the schema, prompt and 400-token cap are unchanged.
+- **`wantsModel` hints.** Before `modelStep`, core invokes each active extension's `wantsModel` service with the step input and `model: null`. The model is requested when `needsModel` is true or any hint answers `{ wantsModel: true }`, never for a muted sender or a `spam` verdict; a hint that throws, times out or answers anything else counts as false. When only a hint asked, core plans its own kinds as if the model had not run, so bulk mail gains no summaries or replies. Every gate stays in place and in order: autonomy, kill switch, pause and daily limit at job start; the external opt-in on every request; the rate limit; the spend reservation against the mailbox and install caps.
+
 ## 6. Data model
 
 One hand-written migration `drizzle/migrations/0060_add_agent_auto_read.sql` plus a journal entry. Schema changes go in `src/db/schema/index.ts`.
@@ -196,7 +208,7 @@ One hand-written migration `drizzle/migrations/0060_add_agent_auto_read.sql` plu
 1. **No tools on the automatic path.** Triage and drafting call `generateText` with **no `tools`**. The triage output is a closed zod schema with no address, URL or free-text instruction fields. The draft output is only a body. Prompt injection can therefore at most produce wrong suggestion content or a misleading draft body. It cannot cause an action the policy does not allow.
 2. **Code-bound parameters.** Recipients come from `getReplyRecipients` (which already refuses own addresses) or the ICS `ORGANIZER`. When `organizerMatchesSender` is false or authentication fails, the card shows a warning and Full auto is disabled. Times come from `proposeSlots`, and folders from existing `folders` rows. `edit_draft` and `draft_email` are not reachable from the automatic path. No forwarding exists at all, and no address that is new to the thread is ever used.
 3. **Sending requires a click by default.** In Suggest and Act with undo, a send happens only from a user click: the card's Accept or Decline button, or the composer's Send. Full auto sends only under §3 conditions (allowlisted, authenticated, not suspicious, at most 1 per thread per 24 hours, under the daily cap, held for `full_auto_hold_minutes` and undoable). `allowedToExecute` is the single gate. The executor also re-checks it right before the side effect, inside the same function.
-4. **No link fetching or remote content.** The pipeline never calls `fetch` with a URL taken from mail. Unsubscribe uses only the `List-Unsubscribe` header, and only on click (RFC 8058 one-click POST, or opening a `mailto:` draft). Remote images and attachments other than the ICS are not read. URLs in the model input are kept as text but marked as untrusted.
+4. **No link fetching or remote content.** The pipeline never calls `fetch` with a URL taken from mail. Unsubscribe uses only the `List-Unsubscribe` header, and only on click (RFC 8058 one-click POST, or opening a `mailto:` draft). The same rule holds for module cancel links: Money Watch stores only an `https` `List-Unsubscribe` link (never one from the body, an attachment or the model) and opens it in the browser on a click with `noopener,noreferrer`; Kite never fetches or POSTs it. Remote images and attachments other than the ICS are not read. URLs in the model input are kept as text but marked as untrusted.
 5. **Untrusted-data prompting (spotlighting).** Email content goes into the user turn, wrapped as `<<<EMAIL id=… nonce=RANDOM>>> … <<<END nonce>>>`. Any nonce-like sequence in the content is stripped. The system prompt, a constant in `triage-utils.ts`, says the content is data and that the only valid output is the JSON schema. Mailbox `instructions` stay limited to 4,000 characters and are placed in the system prompt as preferences that cannot override the rules, as in `agentSystemPrompt`.
 6. **Output checks.** After the model returns, the code:
    - rejects drafts that contain addresses or URLs that do not appear in the thread;
@@ -249,7 +261,7 @@ Model routing:
 
 - `triage_model_id`: default the cheapest configured model that reliably produces JSON. Fall back to the mailbox `model_id`.
 - Drafts use `model_id` (Kimi by default).
-- Skip the model entirely when deterministic facts settle the result: bulk or list mail, notifications from `no-reply` senders (deterministic suggestions only), a short invite with no body text, or a known receipt sender.
+- Skip the model entirely when deterministic facts settle the result: bulk or list mail, notifications from `no-reply` senders (deterministic suggestions only), a short invite with no body text, or a known receipt sender. The exception is an active module model extension whose `wantsModel` hint asks for help (§5.4): then the one triage request is made for that mail too, under every gate, and core plans its own kinds as if the model had not run.
 
 ## 9. Runtime
 
@@ -265,14 +277,14 @@ Model routing:
   2. the supersede check (a newer inbound message, or a sent reply, in the thread marks older open `reply` suggestions `superseded`);
   3. ICS `SEQUENCE` comparison (a lower sequence never overwrites a higher one).
 - **Skipping.** No job is created for spam, trash, own addresses, `mailer-daemon` or `postmaster`, `Auto-Submitted` other than `no`, or messages older than 30 minutes on recovery. For `List-Id`, `Precedence: bulk` and `no-reply` senders, only deterministic facts are used and no model is called. Messages filed by a mailbox rule (`folderId`) get triage but no reply draft, which keeps today's auto-draft behaviour.
-- **Time limits.** One model call for triage and at most one for the draft, with `maxOutputTokens` set to 400 for triage and 900 for drafts. The 10-minute lease covers slow providers.
+- **Time limits.** One model call for triage and at most one for the draft, with `maxOutputTokens` set to 400 for triage and 900 for drafts. Active module model extensions raise the triage cap by their allowances, at most 200 in total (`MODULE_EXTENSION_MAX_OUTPUT_TOKENS`), so 600 with Money Watch; without one it stays 400. The 10-minute lease covers slow providers.
 - **Both runtimes.** Only `getEnv()`, `getDb`, `env.BUCKET`, `env.AGENT_QUEUE` and `getAgentModel` are used. On Node, `AGENT_QUEUE` is the SQLite-backed `openKiteQueue("agent")` and the consumer is registered in `server/index.ts`. There is no `env.AI`, so a `compatible` provider is required, which in turn needs the privacy opt-in from §7, item 12. `npm run build:node` must pass, and no React hooks may sit in modules imported by Server Components.
 
 ## 10. UI
 
 Use the `blue-*` palette only (it is remapped for Kite and Classic), and check every surface in Kite, Classic and dark mode. Text says "Kite".
 
-- **Inbox row badge** (`src/components/messages/message-folder-page.tsx` row rendering): one icon chip for the highest-priority open suggestion (phishing > calendar > reply > task > receipt), plus "+n". The data comes from `/api/messages` (`src/app/api/messages/route.ts`), which adds `agentSuggestions: {kind,count}[]` per row in one extra query over the page's message IDs (no N+1). In conversation view (`group=thread`), suggestions aggregate over `threadMessageIds`.
+- **Inbox row badge** (`src/components/messages/message-folder-page.tsx` row rendering): one icon chip for the highest-priority open suggestion (phishing > calendar > reply > task > receipt; a module kind takes the rank of its `suggestionKindMeta.badgePriority`, Money Watch's `subscription` 40, the rank of task), plus "+n". Reviewer-only kinds count only for the reviewer. The data comes from `/api/messages` (`src/app/api/messages/route.ts`), which adds `agentSuggestions: {kind,count}[]` per row in one extra query over the page's message IDs (no N+1). In conversation view (`group=thread`), suggestions aggregate over `threadMessageIds`.
 - **Reader card** (above the body in `src/components/messages/conversation-thread.tsx`, as a new `src/components/agent/suggestion-card.tsx` with `-types.d.ts` and `-utils.ts`). It shows the summary, then one block per suggestion:
   - Calendar: date and time in the user's time zone, conflicts, and the buttons **Accept**, **Decline**, **Propose new time** (opens the draft).
   - Reply: **Review draft** (opens `/drafts/[id]`) and **Discard**.
@@ -412,6 +424,7 @@ Work on `mission/auto-agent`. Every feature ends with `npm run check`, `npm run 
   - Actions run only at `act` or above, each with an audit row and a working Undo.
   - The agent never trashes, marks spam or creates folders.
 - Tests: the policy matrix, and e2e for a receipt being auto-filed and then undone.
+- Note: Money Watch's subscription tracking is a separate, suggest-only module ([Money Watch](money-watch.md)); tracking a subscription automatically, like filing a receipt, waits for this level.
 
 **G. Follow-ups and unsubscribe**
 
@@ -419,6 +432,7 @@ Work on `mission/auto-agent`. Every feature ends with `npm run check`, `npm run 
 - Acceptance:
   - No network call happens without a click.
   - The nudge is suppressed once a reply arrives.
+- Note: the module steps that already read `List-Unsubscribe` (Money Watch's cancel link) open the link in the browser only; the click-only POST here is still unbuilt.
 - Tests: unit tests for the follow-up selection and e2e for both.
 
 **H. Full auto for approved senders**

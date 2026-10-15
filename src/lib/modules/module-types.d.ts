@@ -19,7 +19,7 @@ export type RecordKind =
 
 export type RecordRef = { kind: RecordKind; id: string };
 
-export type ModuleNavPlacement = "mailbox-selector" | "account-menu" | "module-tabs" | "settings-nav";
+export type ModuleNavPlacement = "mailbox-selector" | "account-menu" | "module-tabs" | "settings-nav" | "sidebar";
 
 export type ModuleNavItem = {
 	id: string;
@@ -30,6 +30,8 @@ export type ModuleNavItem = {
 	placement: ModuleNavPlacement;
 	/** Settings navigation group for `settings-nav` items. */
 	group?: string;
+	/** A `{ count }` endpoint under one of the module's API prefixes, shown next to a `sidebar` item. */
+	count?: { endpoint: string };
 	keywords?: string[];
 	order: number;
 };

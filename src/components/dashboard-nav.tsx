@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useForYouNav } from "./for-you-nav";
+import { useModuleSidebarLinks } from "./modules/module-sidebar-links";
 import { authFetch } from "@/lib/auth/client";
 import { DEFAULT_FOLDER_COLOR, FOLDER_COLOR_OPTIONS } from "@/lib/folders/colors";
 import type { FolderColor } from "@/lib/folders/types";
@@ -90,6 +91,7 @@ export function DashboardNav({ className }: { className?: string }) {
 	const { selectedMailbox, isLoading } = useSelectedMailbox();
 	const { counts } = useMessageCounts(selectedMailbox?.id, !isLoading);
 	const forYou = useForYouNav();
+	const moduleLinks = useModuleSidebarLinks();
 	const [folders, setFolders] = useState<CustomFolder[]>([]);
 	const [newFolderName, setNewFolderName] = useState("");
 	const [newFolderColor, setNewFolderColor] = useState<FolderColor>(DEFAULT_FOLDER_COLOR);
@@ -145,8 +147,10 @@ export function DashboardNav({ className }: { className?: string }) {
 
 	const isActiveHref = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 	const composeLink = linksWithCounts.find((link) => link.href === "/compose");
-	const mainLinks = forYou.withLink(
-		linksWithCounts.filter((link) => link.href !== "/compose" && !MORE_LINK_HREFS.includes(link.href!)),
+	const mainLinks = moduleLinks.after(
+		forYou.withLink(
+			linksWithCounts.filter((link) => link.href !== "/compose" && !MORE_LINK_HREFS.includes(link.href!)),
+		),
 	);
 	const moreLinks = linksWithCounts.filter((link) => MORE_LINK_HREFS.includes(link.href!));
 	// The icon rail has no room for text toggles. When collapsed, the page you are on stays listed on its own.

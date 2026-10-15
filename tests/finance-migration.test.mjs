@@ -14,12 +14,14 @@ const {
 	restoreDatabaseRecords,
 	BACKUP_TABLE_GROUPS,
 	listEnabledModules,
+	financeTablesReady,
 } = await bundleModules("kite-finance-migration-", [
 	["SqliteDatabase", "server/runtime/sqlite-database.ts"],
 	["applyMigrations", "server/runtime/migrate.ts"],
 	["assertBackupTablesCoverDatabase, exportDatabaseRecords, restoreDatabaseRecords", "src/lib/backups/export.ts"],
 	["BACKUP_TABLE_GROUPS", "src/lib/backups/table-groups.ts"],
 	["listEnabledModules", "src/lib/modules/state.ts"],
+	["financeTablesReady", "src/lib/finance/errors.ts"],
 ]);
 
 const scratch = makeBundleDirectory("kite-finance-migration-dirs-");
@@ -243,6 +245,30 @@ test("both tables are in BACKUP_TABLES after their parents, in the mail group, e
 	for (const table of TABLES) assert.deepEqual(groupOf(table), ["mail"], table);
 	const types = readFileSync(join(migrationsDir, "..", "..", "src/lib/backups/types.d.ts"), "utf8");
 	for (const table of TABLES) assert.ok(types.includes(`"${table}"`), `${table} is a DatabaseBackupTable`);
+});
+
+test("the finance readiness check reads sqlite_master: false through 0062, true after 0063", async (t) => {
+	t.after(() => delete globalThis.__kiteNodeEnv);
+	const ready = async (db) => {
+		const observed = [];
+		const prepare = db.prepare.bind(db);
+		db.prepare = (sql) => {
+			observed.push(sql);
+			return prepare(sql);
+		};
+		globalThis.__kiteNodeEnv = { DB: db };
+		const answer = await financeTablesReady();
+		assert.equal(observed.length, 1);
+		assert.match(observed[0], /FROM sqlite_master/);
+		assert.doesNotMatch(observed[0], /finance_/, "the table names are bound, not written into the SQL");
+		db.prepare = prepare;
+		return answer;
+	};
+	assert.equal(await ready(await database(t, preDirectory)), false);
+	const migrated = await database(t);
+	assert.equal(await ready(migrated), true);
+	migrated.db.exec("DROP TABLE finance_charges");
+	assert.equal(await ready(migrated), false, "both tables must exist");
 });
 
 test("a backup taken before 0063 restores after 0063 with both tables empty", async (t) => {

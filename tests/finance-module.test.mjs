@@ -32,6 +32,8 @@ await build({
 		subscriptionRoute: join(root, "src/app/api/finance/subscriptions/[id]/route.ts"),
 		documentsRoute: join(root, "src/app/api/finance/subscriptions/[id]/documents/route.ts"),
 		documentRoute: join(root, "src/app/api/finance/documents/[id]/route.ts"),
+		badgeRoute: join(root, "src/app/api/finance/badge/route.ts"),
+		detectRoute: join(root, "src/app/api/finance/detect/route.ts"),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
 	},
@@ -69,6 +71,8 @@ const subscriptionsRoute = await load("subscriptionsRoute");
 const subscriptionRoute = await load("subscriptionRoute");
 const documentsRoute = await load("documentsRoute");
 const documentRoute = await load("documentRoute");
+const badgeRoute = await load("badgeRoute");
+const detectRoute = await load("detectRoute");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
 
@@ -248,85 +252,6 @@ test("before migration 0063 the list and the detail answer migrationPending with
 		migrationPending: true,
 	});
 	assert.deepEqual(await subscriptionDetailView(viewOf(owner), "fsub_missing"), { migrationPending: true });
-});
-
-test("before migration 0063 the five write routes answer 409 MIGRATION_PENDING and the reads answer migrationPending", async (t) => {
-	const db = new SqliteDatabase(":memory:");
-	await applyMigrations(db, copyMigrationsBefore(outDir, 63));
-	assert.equal(db.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name LIKE 'finance_%'").get().n, 0);
-	db.db.exec(`
-		INSERT INTO users (id, email, password_hash, name, time_zone, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'UTC', 1);
-		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
-		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'support', 1);
-		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at) VALUES
-			('inv-1', 'owner', 'mailbox-a', 'inbound', 'billing@streamflix.example', 'support@example.com', 'Your invoice', 'Invoice', 'received', 2);
-	`);
-	const env = { DB: db, OUTBOUND_QUEUE: { send: async () => undefined } };
-	globalThis.__kiteNodeEnv = env;
-	clearModuleStateCache();
-	t.after(() => {
-		db.db.close();
-		delete globalThis.__kiteNodeEnv;
-		clearModuleStateCache();
-	});
-	const token = await createSession(env, "owner");
-	const call = async (route, method, path, body, id) => {
-		const request = new Request(`http://localhost${path}`, {
-			method,
-			headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-			...(body === undefined ? {} : { body: JSON.stringify(body) }),
-		});
-		const response = await route[method](request, { params: Promise.resolve({ id }) });
-		return { status: response.status, body: await response.json() };
-	};
-	const pending = {
-		status: 409,
-		body: { error: "Apply the pending database update first", code: "MIGRATION_PENDING" },
-	};
-	const writes = [
-		[
-			"POST by hand",
-			subscriptionsRoute,
-			"POST",
-			"/api/finance/subscriptions",
-			{ vendor: "Streamflix", mailboxId: "mailbox-a" },
-		],
-		[
-			"POST from a message",
-			subscriptionsRoute,
-			"POST",
-			"/api/finance/subscriptions",
-			{ vendor: "Streamflix", messageId: "inv-1" },
-		],
-		[
-			"PATCH",
-			subscriptionRoute,
-			"PATCH",
-			"/api/finance/subscriptions/fsub_missing",
-			{ fields: { plan: "Premium" } },
-			"fsub_missing",
-		],
-		["DELETE", subscriptionRoute, "DELETE", "/api/finance/subscriptions/fsub_missing", undefined, "fsub_missing"],
-		[
-			"POST documents",
-			documentsRoute,
-			"POST",
-			"/api/finance/subscriptions/fsub_missing/documents",
-			{ messageId: "inv-1", docType: "invoice", amountMinor: 1799, currency: "USD", documentOn: day(-1) },
-			"fsub_missing",
-		],
-		["DELETE document", documentRoute, "DELETE", "/api/finance/documents/fdoc_missing", undefined, "fdoc_missing"],
-	];
-	for (const [name, route, method, path, body, id] of writes)
-		assert.deepEqual(await call(route, method, path, body, id), pending, name);
-	assert.deepEqual(await call(subscriptionsRoute, "GET", "/api/finance/subscriptions"), {
-		status: 200,
-		body: { subscriptions: [], totals: [], migrationPending: true },
-	});
-	assert.deepEqual(
-		await call(subscriptionRoute, "GET", "/api/finance/subscriptions/fsub_missing", undefined, "fsub_missing"),
-		{ status: 200, body: { migrationPending: true } },
-	);
 });
 
 test("Undo of Track removes the row and its documents and reopens the card", async (t) => {
@@ -936,6 +861,225 @@ async function runAction(name, call, userId = "owner") {
 }
 
 const suggestionRef = { id: null, messageId: null, mailboxId: "mailbox-a" };
+
+const FINANCE_SQL = /finance_subscriptions|finance_charges/i;
+const METADATA_SQL = /sqlite_master/i;
+
+/** Records the SQL text of every statement prepared on the app's database binding from now on. */
+function observeStatements(db) {
+	const observed = [];
+	const prepare = db.prepare.bind(db);
+	db.prepare = (sql) => {
+		observed.push(sql);
+		return prepare(sql);
+	};
+	return observed;
+}
+
+function routeCaller(token) {
+	return async (route, method, path, body, id) => {
+		const request = new Request(`http://localhost${path}`, {
+			method,
+			headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
+		});
+		const response = await route[method](request, { params: Promise.resolve({ id }) });
+		return { status: response.status, body: await response.json() };
+	};
+}
+
+function receiptStepInput() {
+	const input = pdfStepInput([]);
+	return { ...input, message: { ...input.message, textExcerpt: "Amount paid: $17.99 per month" } };
+}
+
+const CRON_CTX = {
+	viewer: null,
+	requestId: "cron-1",
+	locale: "en",
+	timeZone: "UTC",
+	grants: ["finance.read", "finance.write"],
+	trigger: "cron",
+};
+
+const ownerRef = { userId: "owner", role: "user", isPrimaryAdmin: false };
+
+test("before migration 0063 every finance entry point reads sqlite_master, answers pending and names no finance table", async (t) => {
+	const db = new SqliteDatabase(":memory:");
+	await applyMigrations(db, copyMigrationsBefore(outDir, 63));
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name LIKE 'finance_%'").get().n, 0);
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, time_zone, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'UTC', 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'support', 1);
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at) VALUES
+			('inv-1', 'owner', 'mailbox-a', 'inbound', 'billing@streamflix.example', 'support@example.com', 'Your invoice', 'Amount paid: $17.99 per month', 'received', 2);
+	`);
+	db.db
+		.prepare(
+			"INSERT INTO agent_suggestions (id, mailbox_id, message_id, reviewer_user_id, kind, status, title, payload, created_at) VALUES ('sugg-1', 'mailbox-a', 'inv-1', 'owner', 'subscription', 'open', 'Track it?', ?, 3)",
+		)
+		.run(JSON.stringify(card()));
+	const env = { DB: db, OUTBOUND_QUEUE: { send: async () => undefined } };
+	globalThis.__kiteNodeEnv = env;
+	clearModuleStateCache();
+	t.after(() => {
+		db.db.close();
+		delete globalThis.__kiteNodeEnv;
+		clearModuleStateCache();
+	});
+	const observed = observeStatements(db);
+	const call = routeCaller(await createSession(env, "owner"));
+	const pending = {
+		status: 409,
+		body: { error: "Apply the pending database update first", code: "MIGRATION_PENDING" },
+	};
+	const writes = [
+		[
+			"POST by hand",
+			subscriptionsRoute,
+			"POST",
+			"/api/finance/subscriptions",
+			{ vendor: "Streamflix", mailboxId: "mailbox-a" },
+		],
+		[
+			"POST from a message",
+			subscriptionsRoute,
+			"POST",
+			"/api/finance/subscriptions",
+			{ vendor: "Streamflix", messageId: "inv-1" },
+		],
+		[
+			"PATCH",
+			subscriptionRoute,
+			"PATCH",
+			"/api/finance/subscriptions/fsub_missing",
+			{ fields: { plan: "Premium" } },
+			"fsub_missing",
+		],
+		["DELETE", subscriptionRoute, "DELETE", "/api/finance/subscriptions/fsub_missing", undefined, "fsub_missing"],
+		[
+			"POST documents",
+			documentsRoute,
+			"POST",
+			"/api/finance/subscriptions/fsub_missing/documents",
+			{ messageId: "inv-1", docType: "invoice", amountMinor: 1799, currency: "USD", documentOn: day(-1) },
+			"fsub_missing",
+		],
+		["DELETE document", documentRoute, "DELETE", "/api/finance/documents/fdoc_missing", undefined, "fdoc_missing"],
+		["POST detect", detectRoute, "POST", "/api/finance/detect", { messageId: "inv-1" }],
+	];
+	for (const [name, route, method, path, body, id] of writes)
+		assert.deepEqual(await call(route, method, path, body, id), pending, name);
+	assert.deepEqual(await call(subscriptionsRoute, "GET", "/api/finance/subscriptions"), {
+		status: 200,
+		body: { subscriptions: [], totals: [], migrationPending: true },
+	});
+	assert.deepEqual(
+		await call(subscriptionRoute, "GET", "/api/finance/subscriptions/fsub_missing", undefined, "fsub_missing"),
+		{ status: 200, body: { migrationPending: true } },
+	);
+	assert.deepEqual(await call(badgeRoute, "GET", "/api/finance/badge"), {
+		status: 200,
+		body: { count: 0, migrationPending: true },
+	});
+
+	await assert.rejects(() => accept(env, "sugg-1"), {
+		status: 409,
+		message: "Apply the pending database update first",
+	});
+	assert.equal(db.db.prepare("SELECT status FROM agent_suggestions WHERE id = 'sugg-1'").get().status, "open");
+	const step = await invokeCapability("finance", "detect", receiptStepInput(), PDF_CTX);
+	assert.deepEqual(step, { ok: true, output: { suggestions: [], skipped: "migration_pending" } });
+	const [ref] = await resolveRecordRefs(env, ownerRef, [{ kind: "finance:subscription", id: "fsub_missing" }]);
+	assert.equal(ref.unavailable, true);
+	const search = await invokeCapability("finance", "search", { query: "flix", limit: 5 }, readCtx("owner"));
+	assert.deepEqual(search, { ok: true, output: { items: [] } });
+	const tool = await invokeCapability("finance", "list_subscriptions", {}, readCtx("owner"));
+	assert.deepEqual(tool, { ok: true, output: { subscriptions: [], totals: [] } });
+	const cron = await invokeCapability(
+		"finance",
+		"remindRenewals",
+		{ scheduledTime: new Date().toISOString() },
+		CRON_CTX,
+	);
+	assert.deepEqual(cron, { ok: true, output: { reminded: 0 } });
+
+	assert.ok(
+		observed.some((sql) => METADATA_SQL.test(sql)),
+		"the readiness check reads sqlite_master",
+	);
+	assert.deepEqual(
+		observed.filter((sql) => FINANCE_SQL.test(sql)),
+		[],
+		"no SQL names the finance tables or their columns while 0063 is unapplied",
+	);
+});
+
+/** The statements one call prepares; the readiness check must come before the first finance statement. */
+async function checkedFirst(observed, label, run) {
+	observed.length = 0;
+	const result = await run();
+	const metadata = observed.findIndex((sql) => METADATA_SQL.test(sql));
+	const finance = observed.findIndex((sql) => FINANCE_SQL.test(sql));
+	assert.ok(finance >= 0, `${label} queries the finance tables`);
+	assert.ok(metadata >= 0 && metadata < finance, `${label} reads sqlite_master first`);
+	return result;
+}
+
+test("after migration 0063 the readiness check passes and every entry point queries the finance tables as before", async (t) => {
+	const context = await setup(t);
+	const { db, env } = context;
+	const first = await trackFirst(context);
+	const id = first.subscription.id;
+	const observed = observeStatements(db);
+	const call = routeCaller(await createSession(env, "owner"));
+
+	const listed = await checkedFirst(observed, "list", () =>
+		call(subscriptionsRoute, "GET", "/api/finance/subscriptions"),
+	);
+	assert.equal(listed.status, 200);
+	assert.deepEqual(
+		listed.body.subscriptions.map((row) => row.id),
+		[id],
+	);
+	assert.equal(listed.body.migrationPending, undefined);
+	const badge = await checkedFirst(observed, "badge", () => call(badgeRoute, "GET", "/api/finance/badge"));
+	assert.equal(badge.status, 200);
+	assert.equal(badge.body.migrationPending, undefined);
+	const patched = await checkedFirst(observed, "PATCH", () =>
+		call(subscriptionRoute, "PATCH", `/api/finance/subscriptions/${id}`, { fields: { plan: "Premium" } }, id),
+	);
+	assert.equal(patched.status, 200, JSON.stringify(patched.body));
+	assert.equal(context.rows()[0].plan, "Premium");
+
+	const step = await checkedFirst(observed, "detect", () =>
+		invokeCapability("finance", "detect", receiptStepInput(), PDF_CTX),
+	);
+	assert.equal(step.ok, true, JSON.stringify(step));
+	assert.equal(step.output.skipped, undefined);
+	assert.equal(step.output.suggestions[0].payload.subscriptionId, id, "the receipt matches the tracked row");
+	const [ref] = await checkedFirst(observed, "refs", () =>
+		resolveRecordRefs(env, ownerRef, [{ kind: "finance:subscription", id }]),
+	);
+	assert.equal(ref.unavailable, undefined);
+	assert.equal(ref.href, `/finance?subscription=${id}`);
+	const search = await checkedFirst(observed, "search", () =>
+		invokeCapability("finance", "search", { query: "flix", limit: 5 }, readCtx("owner")),
+	);
+	assert.deepEqual(
+		search.output.items.map((item) => item.ref.id),
+		[id],
+	);
+	const tool = await checkedFirst(observed, "list_subscriptions", () =>
+		invokeCapability("finance", "list_subscriptions", {}, readCtx("owner")),
+	);
+	assert.equal(tool.output.subscriptions.length, 1);
+	const cron = await checkedFirst(observed, "remindRenewals", () =>
+		invokeCapability("finance", "remindRenewals", { scheduledTime: new Date().toISOString() }, CRON_CTX),
+	);
+	assert.deepEqual(cron, { ok: true, output: { reminded: 0 } }, "the row renews in 20 days, outside its window");
+});
 
 test("removal actions refuse missing, mismatched or another owner's snapshots without deleting rows", async (t) => {
 	const context = await setup(t);

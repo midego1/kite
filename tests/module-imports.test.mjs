@@ -177,6 +177,29 @@ test("Money Watch implementation code never loads code dynamically and stays out
 	);
 });
 
+test("Money Watch reads attachments only through moduleHost.mail.readAttachment", () => {
+	const files = [...walk(join(root, "src", "lib", "finance")), ...walk(join(root, "src", "lib", "modules", "finance"))];
+	assert.ok(files.length > 0);
+	const storage =
+		/\bBUCKET\b|R2Bucket|message_attachments|messageAttachments|getAttachmentForUser|@\/lib\/email\/(?:attachments|inbound-attachments|shared-attachments|cloud-attachment-utils|module-read)\b/;
+	const offenders = [];
+	let reads = 0;
+	for (const file of files) {
+		const name = toPosix(relative(root, file));
+		const source = readFileSync(file, "utf8");
+		if (storage.test(source)) offenders.push(`${name} names attachment storage`);
+		for (const path of importsOf(name))
+			if (/^src\/lib\/email\/(?:attachments|inbound-attachments|shared-attachments|module-read)/.test(path))
+				offenders.push(`${name} imports ${path}`);
+		for (const match of source.matchAll(/([\w$.]*)readAttachment\b/g)) {
+			if (match[1] === "moduleHost.mail.") reads += 1;
+			else offenders.push(`${name} reads an attachment through ${match[0]}`);
+		}
+	}
+	assert.deepEqual(offenders, []);
+	assert.ok(reads > 0, "the PDF path reads its attachment through the host");
+});
+
 test("the import scanner resolves aliases, relative paths and dynamic imports", () => {
 	assert.ok(importsOf("src/lib/modules/invoke.ts").includes("src/lib/modules/server-registry"));
 	assert.ok(importsOf("src/lib/modules/invoke.ts").includes("src/lib/logger.mjs".replace(/\.mjs$/, "")));

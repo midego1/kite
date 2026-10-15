@@ -69,6 +69,7 @@
 		"src/lib/finance/keywords-utils.ts",
 		"src/lib/finance/manual-utils.ts",
 		"src/lib/finance/model-utils.ts",
+		"src/lib/finance/pdf-text-utils.ts",
 		"src/lib/finance/record-utils.ts",
 		"src/lib/finance/reminder-utils.ts",
 		"src/lib/finance/search-utils.ts",

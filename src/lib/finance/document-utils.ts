@@ -68,7 +68,7 @@ export function docTypeOfFilenames(attachments: readonly StepAttachment[]): Excl
 	return best;
 }
 
-function isPdf(attachment: StepAttachment): boolean {
+export function isPdf(attachment: StepAttachment): boolean {
 	return (
 		attachment.contentType.toLowerCase().startsWith("application/pdf") ||
 		(attachment.filename ?? "").toLowerCase().endsWith(".pdf")

@@ -1,3 +1,4 @@
+import { deflateSync } from "node:zlib";
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { BASE_URL, DOMAIN, STORAGE_STATE } from "./support/constants";
 import { useFakeProvider } from "./support/agent";
@@ -84,6 +85,16 @@ function invoice(vendor: string, renews: string, extra: Partial<InboundMail> = {
 		headers: AUTOMATIC,
 		...extra,
 	};
+}
+
+/** A one-page synthetic PDF whose content stream is Flate-compressed. */
+function flatePdf(content: string) {
+	const body = deflateSync(Buffer.from(content, "latin1"));
+	return Buffer.concat([
+		Buffer.from(`%PDF-1.4\n4 0 obj\n<< /Length ${body.length} /Filter /FlateDecode >>\nstream\n`, "latin1"),
+		body,
+		Buffer.from("\nendstream\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n", "latin1"),
+	]);
 }
 
 const subscriptionBlock = (page: Page) => page.locator('[data-suggestion-block="subscription"]');
@@ -218,6 +229,50 @@ test.describe("Money Watch detection", () => {
 			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
 		} finally {
 			await context.close();
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("an invoice whose amount is only in its PDF attachment yields a card; an encrypted PDF gives none", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("fdp");
+		try {
+			const vendor = `Pdfcast${uniqueToken("").slice(-4)}`;
+			const filename = `invoice-${uniqueToken("pdf")}.pdf`;
+			const mail = (subject: string, content: Buffer) => ({
+				from: `${vendor} Billing <billing@${vendor.toLowerCase()}.test>`,
+				subject,
+				text: "Hello, your invoice is attached.",
+				headers: AUTOMATIC,
+				attachments: [{ filename, contentType: "application/pdf", content }],
+			});
+			const { message, job, cards } = await deliver(
+				account,
+				mail(
+					`Your ${vendor} invoice ${uniqueToken("inv")}`,
+					flatePdf(`BT (${vendor} Pro) Tj T* ($12.00 per month) Tj ET`),
+				),
+			);
+			expect(job.status).toBe("completed");
+			const { attachments } = await okJson<{ attachments: { id: string; filename: string }[] }>(
+				await account.api.get(`/api/messages/${message.id}`),
+			);
+			expect(cards).toHaveLength(1);
+			expect(cards[0].payload).toMatchObject({
+				amountMinor: 1200,
+				currency: "USD",
+				cycle: "monthly",
+				document: { docType: "invoice", attachmentId: attachments.find((item) => item.filename === filename)?.id },
+			});
+			const encrypted = Buffer.from(
+				`%PDF-1.4\n${flatePdf("BT ($12.00 per month) Tj ET").toString("latin1")}\ntrailer << /Encrypt 9 0 R >>`,
+				"latin1",
+			);
+			const locked = await deliver(account, mail(`Your ${vendor} invoice ${uniqueToken("enc")}`, encrypted));
+			expect(locked.job.status).toBe("completed");
+			expect(locked.cards).toEqual([]);
+		} finally {
 			await account.api.dispose();
 			await restore();
 		}

@@ -3,6 +3,7 @@ import { rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { deflateSync } from "node:zlib";
 import { build } from "esbuild";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
 import { loadFinance } from "./support/finance-bundle.mjs";
@@ -710,6 +711,101 @@ test("the detect step completes a receipt without a cycle from two earlier same-
 	assert.equal(calls[0].sender, "billing@streamflix.example");
 	assert.deepEqual(context.rows(), [], "nothing is stored for an untracked vendor");
 	assert.deepEqual(context.documents(), []);
+});
+
+function invoicePdf(content) {
+	const body = deflateSync(Buffer.from(content, "latin1"));
+	return Buffer.concat([
+		Buffer.from(`%PDF-1.4\n4 0 obj\n<< /Length ${body.length} /Filter /FlateDecode >>\nstream\n`, "latin1"),
+		body,
+		Buffer.from("\nendstream\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n", "latin1"),
+	]);
+}
+
+function pdfStepInput(attachments) {
+	return {
+		message: {
+			id: "pdf-1",
+			mailboxId: "mailbox-a",
+			from: "billing@streamflix.example",
+			fromName: "Streamflix Billing",
+			subject: "Your Streamflix invoice",
+			receivedAt: new Date(Date.now() - DAY_MS).toISOString(),
+			textExcerpt: "Hello, your invoice is attached.",
+		},
+		facts: {
+			authPassed: true,
+			bulk: false,
+			knownContact: false,
+			phishing: [],
+			automatic: true,
+			noReply: false,
+			list: false,
+			spam: false,
+		},
+		headers: { listUnsubscribe: null, listUnsubscribePost: null, listId: null },
+		attachments,
+		model: null,
+	};
+}
+
+const PDF_CTX = {
+	viewer: { userId: "owner", role: "user", isPrimaryAdmin: false },
+	requestId: "r",
+	locale: "en",
+	timeZone: "UTC",
+	grants: ["finance.read"],
+	mailboxIds: ["mailbox-a"],
+	trigger: "auto_read",
+};
+
+test("the detect step reads an invoice PDF through readAttachment when the body has no amount", async (t) => {
+	await setup(t);
+	const reads = [];
+	const files = {
+		"att-plain": invoicePdf("BT (Streamflix Plus) Tj T* ($12.00 per month) Tj ET"),
+		"att-locked": Buffer.from("%PDF-1.4\ntrailer << /Encrypt 5 0 R >>\n%%EOF"),
+	};
+	files["att-big"] = files["att-plain"];
+	const original = moduleHost.mail.readAttachment;
+	moduleHost.mail.readAttachment = async (_ctx, messageId, attachmentId, options) => {
+		reads.push({ messageId, attachmentId, maxBytes: options.maxBytes });
+		if (attachmentId === "att-broken") throw new Error("storage unavailable");
+		const bytes = files[attachmentId];
+		return { encoding: "base64", content: bytes.toString("base64"), truncated: attachmentId === "att-big" };
+	};
+	t.after(() => {
+		moduleHost.mail.readAttachment = original;
+	});
+	const pdfAttachment = (id, size = 900) => ({
+		id,
+		contentType: "application/pdf",
+		filename: `invoice-${id}.pdf`,
+		size,
+	});
+	const detect = (attachments) => invokeCapability("finance", "detect", pdfStepInput(attachments), PDF_CTX);
+
+	const found = await detect([pdfAttachment("att-plain")]);
+	assert.equal(found.ok, true, JSON.stringify(found));
+	const [card] = found.output.suggestions;
+	assert.equal(card.payload.amountMinor, 1200);
+	assert.equal(card.payload.currency, "USD");
+	assert.equal(card.payload.cycle, "monthly");
+	assert.equal(card.payload.document.attachmentId, "att-plain");
+	assert.deepEqual(reads, [{ messageId: "pdf-1", attachmentId: "att-plain", maxBytes: 2_097_152 }]);
+	assert.doesNotMatch(JSON.stringify(found.output), /Streamflix Plus/, "the PDF text is not handed back");
+
+	for (const id of ["att-locked", "att-broken", "att-big"]) {
+		const skipped = await detect([pdfAttachment(id)]);
+		assert.equal(skipped.ok, true, `${id}: ${JSON.stringify(skipped)}`);
+		assert.deepEqual(skipped.output.suggestions, [], id);
+	}
+	reads.length = 0;
+	const oversized = await detect([pdfAttachment("att-huge", 2_097_153)]);
+	assert.deepEqual(oversized.output.suggestions, []);
+	const image = await detect([{ id: "img", contentType: "image/png", filename: "invoice.png", size: 900 }]);
+	assert.deepEqual(image.output.suggestions, []);
+	assert.deepEqual(reads, [], "oversized PDFs and images are never read");
 });
 
 function actionCtx(userId = "owner") {

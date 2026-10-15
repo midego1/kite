@@ -17,6 +17,7 @@ import {
 	type DetectionContext,
 } from "./detect-utils";
 import { mergeDetection, modelExtensionOf, parseModelExtraction } from "./model-utils";
+import { PDF_READ_MAX_BYTES, pdfTextFromContent, pdfToRead, withPdfText } from "./pdf-text-utils";
 import { suggestionTitle } from "./text-utils";
 import type { DetectStepInput, TrackedMatchRow } from "./types";
 import { senderAddress } from "./vendor-utils";
@@ -82,8 +83,37 @@ export async function detectionContext(
 	return { tracked, recurring };
 }
 
-async function detectFor(ctx: CapabilityCallContext, input: DetectStepInput, userId: string) {
-	const deterministic = analyzeMessage(input, ctx.timeZone);
+/**
+ * The step input with the text of the message's invoice PDF added, when the body had no amount. Every
+ * failure (no access, a truncated, encrypted or unreadable file) leaves the input as it was. The text
+ * stays inside this step: it is never stored, logged or sent to the model.
+ */
+async function withAttachmentText(
+	ctx: CapabilityCallContext,
+	input: DetectStepInput,
+	analysis: Analysis,
+): Promise<DetectStepInput> {
+	const attachment = pdfToRead(analysis, input.attachments);
+	if (!attachment) return input;
+	try {
+		const content = await moduleHost.mail.readAttachment(ctx, input.message.id, attachment.id, {
+			maxBytes: PDF_READ_MAX_BYTES,
+		});
+		return withPdfText(input, await pdfTextFromContent(content));
+	} catch {
+		return input;
+	}
+}
+
+async function analyzeWithAttachments(ctx: CapabilityCallContext, raw: DetectStepInput) {
+	const first = analyzeMessage(raw, ctx.timeZone);
+	if (!first) return { input: raw, deterministic: null };
+	const input = await withAttachmentText(ctx, raw, first);
+	return { input, deterministic: input === raw ? first : analyzeMessage(input, ctx.timeZone) };
+}
+
+async function detectFor(ctx: CapabilityCallContext, raw: DetectStepInput, userId: string) {
+	const { input, deterministic } = await analyzeWithAttachments(ctx, raw);
 	if (!deterministic) return null;
 	const extraction = parseModelExtraction(modelExtensionOf(input), {
 		messageDay: deterministic.dates.messageDay,

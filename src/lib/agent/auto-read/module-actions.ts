@@ -48,7 +48,8 @@ async function call(
 /**
  * Runs a module's action capability as the effect of an executor row. The row's id is the capability's
  * `actionId`, so a resumed pending row calls the handler again with the same id and the handler must
- * not repeat what it already did.
+ * not repeat what it already did. `before` is the state persisted with the pending row, passed on
+ * every run so a resumed handler computes its inverse from it rather than from what it already changed.
  */
 export function moduleEffect(input: {
 	owner: ModuleActionOwner;
@@ -57,6 +58,7 @@ export function moduleEffect(input: {
 	mailboxId: string;
 	suggestion: { id: string | null; messageId: string | null; mailboxId: string };
 	args: Record<string, JsonValue>;
+	before?: JsonValue | null;
 }): ActionEffect {
 	let inverse: JsonValue | null = null;
 	return {
@@ -67,6 +69,7 @@ export function moduleEffect(input: {
 				suggestion: input.suggestion,
 				input: input.args,
 				...(Object.keys(ids).length > 0 ? { storedIds: ids } : {}),
+				...(input.before === undefined || input.before === null ? {} : { before: input.before }),
 			});
 			if (output.refused) throw new Error(output.refused.error);
 			inverse = output.inverse ?? null;

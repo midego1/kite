@@ -33,6 +33,7 @@ import type { AgentActionType } from "./policy-types";
 import { allowedToExecute } from "./policy-utils";
 import { reopenSuggestionIfIdle } from "./suggestion-reopen";
 import type { AutonomyLevel } from "./settings-types";
+import type { JsonValue } from "@/lib/modules/module-types";
 import { normalizeTimeZone } from "@/lib/time/utils";
 
 type Db = ReturnType<typeof getDb>;
@@ -174,7 +175,8 @@ async function claimStalePending(db: Db, row: AgentActionRow, now: Date): Promis
  * Runs one action with its audit row written first. The row is `pending` before the side effect and
  * becomes `applied` or `failed` after it. A live row for the same suggestion, action and variant makes
  * the call idempotent: an applied row is skipped, a fresh pending row is a conflict (HTTP 409), and a
- * pending row older than ten minutes is resumed with its stored ids so the effect never runs twice.
+ * pending row older than ten minutes is resumed with its stored ids and `before` so the effect never runs
+ * twice and its inverse still describes the state before the first run.
  */
 export async function executeAction(input: ExecuteActionInput): Promise<ExecuteActionResult> {
 	const now = input.now ?? new Date();
@@ -193,7 +195,7 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
 	if (await insertPending(db, input, { id, variant, rule, ids, now }))
 		return runEffect(db, input, {
 			id,
-			effect: effectFor(input, owner, id),
+			effect: effectFor(input, owner, id, input.module?.before ?? null),
 			ids,
 			meta,
 			variant,
@@ -208,7 +210,7 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
 		throw new AgentActionError("This action is already in progress", 409);
 	return runEffect(db, input, {
 		id: live.id,
-		effect: effectFor(input, owner, live.id),
+		effect: effectFor(input, owner, live.id, parseActionState(live.before) as JsonValue | null),
 		ids: actionIds(parseActionState(live.after)),
 		meta,
 		variant,
@@ -262,8 +264,16 @@ async function insertPending(
 	return inserted.length > 0;
 }
 
-/** The caller's effect, or the module capability that performs this action under the row's id. */
-function effectFor(input: ExecuteActionInput, owner: ModuleActionOwner | null, actionId: string): ActionEffect {
+/**
+ * The caller's effect, or the module capability that performs this action under the row's id, with the
+ * `before` saved on the pending row (on resume, the stored one rather than the new caller's).
+ */
+function effectFor(
+	input: ExecuteActionInput,
+	owner: ModuleActionOwner | null,
+	actionId: string,
+	before: JsonValue | null,
+): ActionEffect {
 	if (input.effect) return input.effect;
 	return moduleEffect({
 		owner: owner!,
@@ -272,6 +282,7 @@ function effectFor(input: ExecuteActionInput, owner: ModuleActionOwner | null, a
 		mailboxId: input.mailboxId,
 		suggestion: { id: input.suggestionId ?? null, messageId: input.messageId ?? null, mailboxId: input.mailboxId },
 		args: input.module!.input,
+		before,
 	});
 }
 

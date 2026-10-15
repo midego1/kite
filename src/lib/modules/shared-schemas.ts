@@ -117,6 +117,11 @@ export const actionSchemas: CapabilitySchemas = {
 			input: json.optional(),
 			/** Effect ids a resumed row already holds (rows written before module actions derive ids from `actionId`); handlers prefer them. */
 			storedIds: z.record(z.string(), z.string()).optional(),
+			/**
+			 * The `before` the caller saved with the pending row, on the first run and again on resume, when
+			 * the record may already hold this action's changes; handlers derive their inverse from it.
+			 */
+			before: json.optional(),
 		}),
 		z.object({ op: z.literal("undo"), actionId: z.string(), inverse: json }),
 		/** Asked before an undo claims anything: a handler that refuses here changes nothing. */

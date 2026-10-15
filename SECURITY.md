@@ -78,6 +78,76 @@ reader frame and a hostile draft end to end.
   outside contributors need approval before they run, and the default workflow
   token is read-only. Hosted code scanning is not enabled.
 
+## History scan
+
+A full scan of every reachable commit for secrets and personal data, run on 2026-10-14
+(UTC) before the repository was promoted as public. Repeat it after a history rewrite or
+before publishing a new mirror, with the commands below.
+
+- **Scope.** All branches, tags and GitHub's read-only pull request refs
+  (`refs/pull/*/head`, fetched with
+  `git fetch origin '+refs/pull/*/head:refs/remotes/origin/pr/*'`): 209 commits, about
+  25 MB of diffs. Gitleaks 8.30.1 ran with the repository config and, separately, with the
+  default rules and no allowlists. The diffs and commit metadata (author and committer)
+  were also searched for email addresses, IBANs, phone numbers and private key blocks; the
+  IBAN and phone searches were broadened and re-run on 2026-10-15 (UTC) over 231 commits,
+  and the results below are from that run.
+- **Commands.** From a full clone, with Gitleaks 8.30 or later:
+
+  ```sh
+  git fetch origin '+refs/pull/*/head:refs/remotes/origin/pr/*'
+  # Secrets, with the repository config (.gitleaks.toml), over every ref, then main only.
+  gitleaks git --log-opts="--all" --redact
+  gitleaks git --log-opts=origin/main --redact
+  # Secrets, with the default rules and no allowlists, ignore file or gitleaks:allow comments.
+  printf '[extend]\nuseDefault = true\n' > /tmp/gitleaks-default.toml
+  gitleaks git --log-opts="--all" --config /tmp/gitleaks-default.toml \
+    --ignore-gitleaks-allow --gitleaks-ignore-path /dev/null --redact
+  # Personal data: every diff plus author and committer of every commit.
+  history() { git log --all -p --format='%an <%ae>%n%cn <%ce>%n%B'; }
+  # Addresses outside reserved domains (review the list by hand).
+  history | grep -Eio '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' | tr 'A-Z' 'a-z' \
+    | grep -Eiv '@(example\.(com|org|net)|[a-z0-9.-]+\.(test|example|invalid|localhost))$' \
+    | sort | uniq -c | sort -rn
+  # IBANs in any case, grouped by spaces or not, kept only when the mod-97 check passes
+  # (a case-insensitive pattern alone matches every commit hash). Words swallowed after
+  # an IBAN are dropped one at a time until the checksum passes.
+  history | perl -ne 'while (/\b([A-Za-z]{2}[0-9]{2}(?: ?[A-Za-z0-9]{4}){2,7}(?: ?[A-Za-z0-9]{1,3})?)\b/g) {
+    for (my @t = split / /, $1; @t; pop @t) { ($s = uc join "", @t) =~ /^.{15,34}$/ or next;
+      $r = substr($s, 4) . substr($s, 0, 4); $r =~ s/([A-Z])/ord($1) - 55/ge;
+      $m = 0; $m = ($m * 10 + $_) % 97 for split //, $r; if ($m == 1) { print "$s\n"; last } } }'
+  # Phone numbers (review by hand): international (+ or 00), national (leading 0) and
+  # North American.
+  history | grep -Eo '(\+|\b00)[1-9][0-9 ().-]{8,}[0-9]|\(?\b0[1-9][0-9]{0,3}\)?( |-)([0-9]{4}|[0-9]{3,4}[ -]?[0-9]{2,4})\b|\b(1[ -])?\(?[2-9][0-9]{2}\)?[ -][0-9]{3}[ -][0-9]{4}\b' \
+    | sort -u
+  history | grep -E -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+  ```
+
+  The default-rules run also reports the two test values below in current history, where
+  they carry `gitleaks:allow`.
+- **Secrets on `main`: none.** `gitleaks git --log-opts=origin/main` reports no findings.
+- **Secrets elsewhere: two known test values.** Both `generic-api-key` findings
+  (`tests/queue-log-context.test.mjs` and `tests/security-hardening.test.mjs`) are the
+  synthetic fixtures described above, in the pre-rewrite root commit `59ac91f`, which only
+  old pull request refs (#1 to #12) still reach. Current history marks them
+  `gitleaks:allow`. Nothing needs rotating. GitHub keeps pull request refs read-only, so
+  they cannot be deleted from the repository and are accepted as is.
+- **Personal data in file contents: none.** Addresses in code, tests and docs use
+  reserved or synthetic domains (`example.com`, `*.test` and similar) or published
+  service senders; the only free-mail addresses are a form placeholder. No IBANs or
+  private keys were found. The phone numbers (`+31 20 123 4567`, `(020) 1234 567`,
+  `0900 1234`, `1-800-555-0199`) are all synthetic fixtures in
+  `tests/one-time-code.test.mjs`; the other matches are version strings and a diff
+  `index` line.
+- **Personal data in commit metadata.** The maintainer's name and personal email address
+  are the author of `main`'s root commit and of commits on several older feature and
+  mission branches. They were already public with the repository. To keep them out of new
+  commits, set `user.email` to the GitHub noreply address
+  (`<id>+<user>@users.noreply.github.com`) and enable **Block command line pushes that
+  expose my email** in GitHub's email settings; deleting merged branches reduces how much
+  history carries the old address. Rewriting `main` is not planned, because it would break
+  every clone and deployment.
+
 Never deploy or apply remote migrations during agent validation. A push to
 `main` deploys production. Use synthetic local data and review
 [PII handling](docs/pii-handling.md) before gathering evidence. What a deployment stores, retains and deletes is in [Privacy and data handling](docs/privacy.md).

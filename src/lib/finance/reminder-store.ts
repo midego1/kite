@@ -45,7 +45,11 @@ export function dueRows(now: Date, limit: number, after?: DueCursor): Promise<Su
 	);
 }
 
-/** Marks the row reminded for `dueAt`; true only for the one call that changed it, so overlapping ticks remind once. */
+/**
+ * Marks the row reminded for `dueAt`; true only for the one call that changed it, so overlapping ticks
+ * remind once. The row is rechecked as it is now, so a selection made before a cancellation, a
+ * reminder change or a new due date claims nothing and never overwrites a newer date's claim.
+ */
 export async function claimReminder(id: string, dueAt: Date): Promise<boolean> {
 	const claimed = await onFinanceTables(() =>
 		db()
@@ -54,6 +58,9 @@ export async function claimReminder(id: string, dueAt: Date): Promise<boolean> {
 			.where(
 				and(
 					eq(subscriptions.id, id),
+					inArray(subscriptions.status, ["active", "trial"]),
+					gt(subscriptions.reminderDays, 0),
+					sql`${dueColumn} = ${seconds(dueAt)}`,
 					or(isNull(subscriptions.lastRemindedFor), ne(subscriptions.lastRemindedFor, dueAt)),
 				),
 			)

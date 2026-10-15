@@ -103,20 +103,25 @@ export function renewalDuePayload(row: ReminderRow, due: Due, daysLeft: number) 
 
 /**
  * What a change to a row means for its calendar event: remove it when the row is gone or can no
- * longer remind, keep it in step when it exists or the reminder already fired for this due date
- * (an undo puts it back without a second notice), and otherwise leave it to the cron.
+ * longer remind, keep it in step when it exists or the reminder already fired for this due date,
+ * put it back when an undo restores a row that had one (`restore`; no second notice), and otherwise
+ * leave it to the cron.
  */
-export function calendarSync(row: ReminderRow | null): "upsert" | "remove" | "none" {
+export function calendarSync(
+	row: ReminderRow | null,
+	{ restore = false }: { restore?: boolean } = {},
+): "upsert" | "remove" | "none" {
 	if (!row || !row.calendarReminder || !reminds(row)) return "remove";
 	const due = dueOf(row);
 	if (!due) return "remove";
-	return row.calendarEventId || remindedFor(row, due) ? "upsert" : "none";
+	return row.calendarEventId || remindedFor(row, due) || restore ? "upsert" : "none";
 }
 
 /**
- * The due dates a tick reads, before the per-owner check: from a day ago (a missed date in any time
- * zone) to a day past the reminder window, which the query adds per row.
+ * The due dates a tick reads, before the per-owner check: from two days ago to a day past the
+ * reminder window, which the query adds per row. A date stored at 00:00 UTC is still the owner's
+ * today for up to 36 hours at UTC-12, and the rows past it become silent claims.
  */
 export function selectionBounds(now: Date): { from: Date; until: Date } {
-	return { from: new Date(now.getTime() - DAY_MS), until: new Date(now.getTime() + DAY_MS) };
+	return { from: new Date(now.getTime() - 2 * DAY_MS), until: new Date(now.getTime() + DAY_MS) };
 }

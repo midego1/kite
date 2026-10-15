@@ -21,6 +21,7 @@ await build({
 		invoke: join(root, "src/lib/modules/invoke.ts"),
 		execute: join(root, "src/lib/agent/auto-read/execute.ts"),
 		manual: join(root, "src/lib/finance/manual.ts"),
+		store: join(root, "src/lib/finance/reminder-store.ts"),
 		state: join(root, "src/lib/modules/state.ts"),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
@@ -42,6 +43,7 @@ const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { invokeCapability } = await load("invoke");
 const { undoAgentAction } = await load("execute");
 const { addSubscription, changeSubscription, removeSubscription } = await load("manual");
+const { claimReminder, dueRows } = await load("store");
 const { clearModuleStateCache } = await load("state");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
@@ -176,8 +178,11 @@ test("the calendar event is removed when it can no longer apply and kept in step
 		calendarSync(row({ nextRenewalAt: at("2026-11-16"), lastRemindedFor: due, calendarEventId: "evt_1" })),
 		"upsert",
 	);
-	assert.equal(calendarSync(row({ nextRenewalAt: at("2026-11-16"), lastRemindedFor: due })), "none");
+	const moved = row({ nextRenewalAt: at("2026-11-16"), lastRemindedFor: due });
+	assert.equal(calendarSync(moved), "none", "a change leaves an unclaimed new date to the cron");
+	assert.equal(calendarSync(moved, { restore: true }), "upsert", "an undo puts back the event the row had");
 	assert.equal(calendarSync(row({ nextRenewalAt: due })), "none", "the cron adds it when the window opens");
+	assert.equal(calendarSync({ ...moved, calendarReminder: false }, { restore: true }), "remove");
 	assert.equal(calendarSync({ ...fired, calendarReminder: false }), "remove");
 	assert.equal(calendarSync({ ...fired, reminderDays: 0 }), "remove");
 	assert.equal(calendarSync({ ...fired, status: "cancelled" }), "remove");
@@ -185,9 +190,10 @@ test("the calendar event is removed when it can no longer apply and kept in step
 	assert.equal(calendarSync({ ...fired, nextRenewalAt: null }), "remove");
 });
 
-test("the query bounds leave a day of slack for every time zone", () => {
+test("the query bounds cover the whole owner-local due day in every time zone", () => {
 	const { from, until } = selectionBounds(new Date("2026-10-14T12:00:00.000Z"));
-	assert.equal(from.toISOString(), "2026-10-13T12:00:00.000Z");
+	// A date stored at 00:00 UTC is still today at UTC-12 until 36 hours later.
+	assert.equal(from.toISOString(), "2026-10-12T12:00:00.000Z");
 	assert.equal(until.toISOString(), "2026-10-15T12:00:00.000Z");
 });
 
@@ -228,6 +234,7 @@ async function setup(t, { timeZone = "UTC" } = {}) {
 	addHook.run("wh-owner", "owner", HOOK_URL, JSON.stringify(["finance.subscription.renewal_due"]));
 	addHook.run("wh-other", "other", HOOK_URL, JSON.stringify(["finance.subscription.renewal_due"]));
 	const frames = [];
+	const noticeHooks = [];
 	const failNotifyFor = new Set();
 	const env = {
 		DB: db,
@@ -237,7 +244,9 @@ async function setup(t, { timeZone = "UTC" } = {}) {
 				if (failNotifyFor.has(userId)) throw new Error("hub unavailable");
 				return {
 					fetch: async (_url, init) => {
-						frames.push({ userId, ...JSON.parse(init.body) });
+						const frame = { userId, ...JSON.parse(init.body) };
+						frames.push(frame);
+						if (frame.type === "module_notice") await noticeHooks.shift()?.(frame);
 						return new Response("ok");
 					},
 				};
@@ -305,7 +314,10 @@ async function setup(t, { timeZone = "UTC" } = {}) {
 				body: JSON.parse(delivery.payload),
 			}));
 	const notices = () => frames.filter((frame) => frame.type === "module_notice");
+	/** Runs `hook` inside the next notice, while the tick that sent it still holds its selected rows. */
+	const duringNextNotice = (hook) => noticeHooks.push(hook);
 	return {
+		duringNextNotice,
 		db,
 		env,
 		addRow,
@@ -653,4 +665,183 @@ test("turning Calendar off for the user leaves existing events in place", async 
 	const cancelled = await changeSubscription(owner, id, { status: "cancelled" });
 	assert.equal(cancelled.status, 200);
 	assert.equal(context.events().length, 1);
+});
+
+test("undoing a calendar reminder off after the date moved past its claim brings the event back at the new date", async (t) => {
+	const context = await setup(t);
+	const { id } = await trackedAndReminded(context);
+	const reminded = context.subscription(id).last_reminded_for;
+	const moved = await changeSubscription(owner, id, { fields: { nextRenewalOn: today(20) } });
+	assert.equal(moved.status, 200, JSON.stringify(moved.body));
+	const off = await changeSubscription(owner, id, { calendarReminder: false });
+	assert.equal(off.status, 200, JSON.stringify(off.body));
+	assert.deepEqual(context.events(), []);
+	await undoAgentAction(context.env, owner, off.body.actionId);
+	const events = context.events();
+	assert.equal(events.length, 1, "the event is back");
+	assert.equal(events[0].starts_at, Date.parse(`${today(20)}T09:00:00.000Z`) / 1000, "at the new date");
+	assert.equal(context.subscription(id).calendar_event_id, events[0].id);
+	assert.equal(context.subscription(id).last_reminded_for, reminded, "last_reminded_for is unchanged");
+	assert.equal(context.notices().length, 1, "no second notice");
+});
+
+test("undoing the removal of a row whose date moved past its claim restores its event without a notice", async (t) => {
+	const context = await setup(t);
+	const { id } = await trackedAndReminded(context);
+	const reminded = context.subscription(id).last_reminded_for;
+	await changeSubscription(owner, id, { fields: { nextRenewalOn: today(20) } });
+	const [before] = context.events();
+	const removed = await removeSubscription(owner, id);
+	assert.equal(removed.status, 200, JSON.stringify(removed.body));
+	assert.deepEqual(context.events(), []);
+	await undoAgentAction(context.env, owner, removed.body.actionId);
+	const events = context.events();
+	assert.equal(events.length, 1, "the event is back");
+	assert.notEqual(events[0].id, before.id, "a new event, not the deleted one's id");
+	assert.equal(events[0].starts_at, Date.parse(`${today(20)}T09:00:00.000Z`) / 1000);
+	assert.equal(context.subscription(id).calendar_event_id, events[0].id);
+	assert.equal(context.subscription(id).last_reminded_for, reminded);
+	assert.equal(context.notices().length, 1, "no second notice");
+});
+
+test("undoing a change on a moved row that had no calendar event leaves it to the cron", async (t) => {
+	const context = await setup(t);
+	const { id } = await trackedAndReminded(context);
+	await changeSubscription(owner, id, { fields: { nextRenewalOn: today(20) } });
+	const off = await changeSubscription(owner, id, { calendarReminder: false });
+	const plan = await changeSubscription(owner, id, { fields: { plan: "Family" } });
+	assert.equal(plan.status, 200, JSON.stringify(plan.body));
+	await undoAgentAction(context.env, owner, plan.body.actionId);
+	assert.deepEqual(context.events(), [], "the plan change never had an event to restore");
+	await undoAgentAction(context.env, owner, off.body.actionId);
+	assert.equal(context.events().length, 1);
+});
+
+// --- Selection and claims at the edges ------------------------------------------------------------
+
+const unix = (day) => Date.parse(`${day}T00:00:00.000Z`) / 1000;
+
+test("a UTC owner's due date is reminded until local midnight and claimed silently from then on", async (t) => {
+	const context = await setup(t);
+	context.addRow("fsub_today", { next: "2026-10-14", calendarReminder: 0 });
+	assert.deepEqual((await tick("2026-10-14T23:59:59.000Z")).output, { reminded: 1 });
+	assert.equal(context.notices()[0].title, "Streamflix renews today ($17.99)");
+	context.addRow("fsub_late", { next: "2026-10-14", calendarReminder: 0 });
+	assert.deepEqual((await tick("2026-10-15T00:00:00.000Z")).output, { reminded: 0 });
+	assert.equal(context.subscription("fsub_late").last_reminded_for, unix("2026-10-14"), "claimed silently");
+	assert.equal(context.notices().length, 1);
+});
+
+test("a negative-offset owner is reminded for the whole local due day, past the next UTC midnight", async (t) => {
+	const context = await setup(t, { timeZone: "Pacific/Honolulu" });
+	// 05:00 UTC on 15 October is 19:00 on 14 October in Honolulu (UTC-10).
+	context.addRow("fsub_today", { next: "2026-10-14" });
+	assert.deepEqual((await tick("2026-10-15T05:00:00.000Z")).output, { reminded: 1 });
+	assert.deepEqual(
+		context.notices().map((notice) => notice.title),
+		["Streamflix renews today ($17.99)"],
+	);
+	assert.equal(context.subscription("fsub_today").last_reminded_for, unix("2026-10-14"));
+	const [event] = context.events();
+	assert.equal(event.starts_at, Date.parse("2026-10-14T19:00:00.000Z") / 1000, "09:00 in Honolulu");
+
+	// The last minute of the local day still reminds; local midnight (10:00 UTC) only claims.
+	context.addRow("fsub_edge", { next: "2026-10-14", calendarReminder: 0 });
+	assert.deepEqual((await tick("2026-10-15T09:59:00.000Z")).output, { reminded: 1 });
+	context.addRow("fsub_after", { next: "2026-10-14", calendarReminder: 0 });
+	assert.deepEqual((await tick("2026-10-15T10:00:00.000Z")).output, { reminded: 0 });
+	assert.equal(context.subscription("fsub_after").last_reminded_for, unix("2026-10-14"), "claimed silently");
+	assert.equal(context.notices().length, 2);
+});
+
+test("at UTC-12 the due date is still selected 36 hours after its UTC midnight", async (t) => {
+	const context = await setup(t, { timeZone: "Etc/GMT+12" });
+	context.addRow("fsub_today", { next: "2026-10-14", calendarReminder: 0 });
+	assert.deepEqual((await tick("2026-10-15T11:59:00.000Z")).output, { reminded: 1 });
+	assert.equal(context.notices()[0].title, "Streamflix renews today ($17.99)");
+	context.addRow("fsub_after", { next: "2026-10-14", calendarReminder: 0 });
+	assert.deepEqual((await tick("2026-10-15T12:00:00.000Z")).output, { reminded: 0 });
+	assert.equal(context.subscription("fsub_after").last_reminded_for, unix("2026-10-14"));
+});
+
+test("a claim rechecks the live row: status, reminder days, due date and an earlier claim", async (t) => {
+	const context = await setup(t);
+	const update = (statement) => context.db.db.prepare(statement).run();
+	context.addRow("fsub_ok", { next: "2026-10-16" });
+	context.addRow("fsub_trial", { status: "trial", trial: "2026-10-15", next: "2026-11-15" });
+	context.addRow("fsub_cancelled", { next: "2026-10-16" });
+	context.addRow("fsub_off", { next: "2026-10-16" });
+	context.addRow("fsub_moved", { next: "2026-10-16" });
+	context.addRow("fsub_claimed", { next: "2026-10-16" });
+	const selected = await dueRows(new Date(NOW), 100);
+	assert.equal(selected.length, 6);
+	update("UPDATE finance_subscriptions SET status = 'cancelled' WHERE id = 'fsub_cancelled'");
+	update("UPDATE finance_subscriptions SET reminder_days = 0 WHERE id = 'fsub_off'");
+	update(`UPDATE finance_subscriptions SET next_renewal_at = ${unix("2026-10-17")} WHERE id = 'fsub_moved'`);
+	update(`UPDATE finance_subscriptions SET last_reminded_for = ${unix("2026-10-16")} WHERE id = 'fsub_claimed'`);
+	const claims = {};
+	for (const selectedRow of selected) {
+		const dueAt = selectedRow.status === "trial" ? selectedRow.trialEndsAt : selectedRow.nextRenewalAt;
+		claims[selectedRow.id] = await claimReminder(selectedRow.id, dueAt);
+	}
+	assert.deepEqual(claims, {
+		fsub_ok: true,
+		fsub_trial: true,
+		fsub_cancelled: false,
+		fsub_off: false,
+		fsub_moved: false,
+		fsub_claimed: false,
+	});
+	assert.equal(context.subscription("fsub_trial").last_reminded_for, unix("2026-10-15"));
+	for (const id of ["fsub_cancelled", "fsub_off", "fsub_moved"])
+		assert.equal(context.subscription(id).last_reminded_for, null, id);
+	assert.equal(await claimReminder("fsub_ok", new Date("2026-10-16T00:00:00.000Z")), false, "once per date");
+	assert.equal(await claimReminder("fsub_trial", new Date("2026-11-15T00:00:00.000Z")), false, "a trial's renewal");
+});
+
+test("a row cancelled while the tick that selected it is still running is not reminded", async (t) => {
+	const context = await setup(t);
+	context.addRow("fsub_first", { next: "2026-10-15" });
+	context.addRow("fsub_cancelled", { next: "2026-10-16" });
+	context.duringNextNotice(async () => {
+		const cancelled = await changeSubscription(owner, "fsub_cancelled", { status: "cancelled" });
+		assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body));
+	});
+	assert.deepEqual((await tick(NOW)).output, { reminded: 1 });
+	assert.deepEqual(
+		context.notices().map((notice) => notice.href),
+		["/finance?subscription=fsub_first"],
+	);
+	assert.equal(context.subscription("fsub_cancelled").status, "cancelled");
+	assert.equal(context.subscription("fsub_cancelled").last_reminded_for, null);
+	assert.equal(context.subscription("fsub_cancelled").calendar_event_id, null);
+	assert.deepEqual(
+		context.events().map((event) => event.ical_uid),
+		["finance-renewal:fsub_first"],
+		"no event for the cancelled row",
+	);
+	assert.deepEqual(
+		context.deliveries().map((delivery) => delivery.body.data.subscription.ref.id),
+		["fsub_first"],
+	);
+});
+
+test("a stale tick never overwrites a newer cycle's claim, so the new date is announced once", async (t) => {
+	const context = await setup(t);
+	context.addRow("fsub_first", { next: "2026-10-15", calendarReminder: 0 });
+	context.addRow("fsub_moved", { next: "2026-10-16", calendarReminder: 0 });
+	// While the first tick still holds fsub_moved due 16 October, the date moves and a second tick claims it.
+	context.duringNextNotice(async () => {
+		context.db.db
+			.prepare("UPDATE finance_subscriptions SET next_renewal_at = ? WHERE id = 'fsub_moved'")
+			.run(unix("2026-10-17"));
+		assert.deepEqual((await tick("2026-10-14T12:01:00.000Z")).output, { reminded: 1 });
+	});
+	assert.deepEqual((await tick(NOW)).output, { reminded: 1 });
+	assert.equal(context.subscription("fsub_moved").last_reminded_for, unix("2026-10-17"), "the newer claim stays");
+	assert.deepEqual((await tick("2026-10-14T12:05:00.000Z")).output, { reminded: 0 });
+	assert.deepEqual(
+		context.notices().map((notice) => notice.title),
+		["Streamflix renews tomorrow ($17.99)", "Streamflix renews in 3 days ($17.99)"],
+	);
 });

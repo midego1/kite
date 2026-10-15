@@ -74,18 +74,20 @@ async function removeCalendarReminder(ctx: CapabilityCallContext, userId: string
 
 /**
  * Keeps the row's calendar event in step after a user's change or its undo (spec §11, §23 q23): removed
- * when the row is gone or can no longer remind, moved or put back when it exists or already fired
- * for this due date. Nothing happens while Calendar is off for the owner, so existing events stay.
+ * when the row is gone or can no longer remind, moved or put back when it exists, already fired for
+ * this due date or `restore` says the undone change took one away. Nothing happens while Calendar is
+ * off for the owner, so existing events stay.
  */
 export async function syncCalendarReminder(
 	ctx: CapabilityCallContext,
 	userId: string,
 	subscriptionId: string,
+	options: { restore?: boolean } = {},
 ): Promise<void> {
 	try {
 		if (!(await moduleHost.modules.isEnabledFor(ctx, userId, "calendar"))) return;
 		const row = await ownerRow(userId, subscriptionId);
-		const plan = calendarSync(row);
+		const plan = calendarSync(row, options);
 		if (plan === "remove") return await removeCalendarReminder(ctx, userId, row, subscriptionId);
 		const due = row && dueOf(row);
 		if (plan !== "upsert" || !row || !due) return;

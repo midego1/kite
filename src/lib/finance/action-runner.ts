@@ -84,6 +84,18 @@ export function priorRow(
 	return before && before.id === row.id && before.userId === userId ? subscriptionFromJson(before) : null;
 }
 
+/**
+ * Whether the row had a calendar event before the action, from the row its caller saved or the
+ * removal snapshot. Only the fact is kept: the event may be gone, so its id is never restored.
+ */
+function hadCalendarEvent(row: Record<string, unknown> | null | undefined, subscriptionId: string): boolean {
+	return !!row && row.id === subscriptionId && typeof row.calendarEventId === "string";
+}
+
+function restoresCalendarEvent(inverse: StoredInverse): boolean {
+	return inverse.calendarEvent === true || hadCalendarEvent(inverse.removed?.subscription, inverse.subscriptionId);
+}
+
 type ActionOptions = {
 	/** The action can change whether or when the subscription's calendar reminder applies. */
 	syncsReminder?: boolean;
@@ -106,8 +118,11 @@ async function run<Input>(
 		const before = isObject(call.before) ? call.before : null;
 		const outcome = await execute({ actionId, userId: viewer.userId, ctx, suggestion, input: input.data, before });
 		const subscriptionId = outcome.result.subscriptionId;
-		if (options.syncsReminder && typeof subscriptionId === "string")
+		if (options.syncsReminder && typeof subscriptionId === "string") {
+			if (outcome.inverse && !outcome.inverse.removed && hadCalendarEvent(before, subscriptionId))
+				outcome.inverse.calendarEvent = true;
 			await syncCalendarReminder(ctx, viewer.userId, subscriptionId);
+		}
 		// Optional inverse fields may be undefined, which is not JSON.
 		const inverse = outcome.inverse ? (JSON.parse(JSON.stringify(outcome.inverse)) as JsonValue) : null;
 		return { result: outcome.result, inverse };
@@ -117,7 +132,10 @@ async function run<Input>(
 		throw new FinanceRefusal(403, "Only the owner can change this subscription");
 	if (inverse && call.op === "undo") {
 		await undoStored(inverse);
-		if (options.syncsReminder) await syncCalendarReminder(ctx, inverse.userId, inverse.subscriptionId);
+		if (options.syncsReminder)
+			await syncCalendarReminder(ctx, inverse.userId, inverse.subscriptionId, {
+				restore: restoresCalendarEvent(inverse),
+			});
 	}
 	return { result: {}, inverse: null };
 }

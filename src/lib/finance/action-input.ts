@@ -142,6 +142,8 @@ export const storedInverse = z.object({
 	/** The subscription this action created; undo deletes it with its documents. */
 	created: z.boolean().optional(),
 	previous: partialFields.optional(),
+	/** The row had a calendar event before this action; undo puts one back (never the old event id). */
+	calendarEvent: z.boolean().optional(),
 	/** Documents this action inserted; documents another action recorded are never listed. */
 	documentIds: z.array(id).optional(),
 	/** Rows this action removed, as JSON, put back with their ids. */

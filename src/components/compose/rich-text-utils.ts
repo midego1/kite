@@ -45,6 +45,23 @@ export function splitQuotedHtml(html: string | null | undefined): { body: string
 	return { body: value.slice(0, found.index), quoted: inner };
 }
 
+/**
+ * A stored draft as editor state. Drafts can also be written by other mailbox
+ * members, API clients over JMAP or the assistant, and the editor renders them in
+ * the app's own document rather than a sandboxed frame, so both parts are
+ * sanitized with the outgoing allowlist first.
+ */
+export function splitStoredDraftHtml(
+	htmlBody: string | null | undefined,
+	textBody: string | null | undefined,
+): { body: string; quoted: string | null } {
+	const stored = splitQuotedHtml(htmlBody || textToHtml(textBody));
+	return {
+		body: sanitizeEmailHtml(stored.body, { forOutgoing: true }) ?? "",
+		quoted: stored.quoted === null ? null : (sanitizeEmailHtml(stored.quoted, { forOutgoing: true }) ?? ""),
+	};
+}
+
 export function joinQuotedHtml(body: string, quoted: string | null): string {
 	return quoted ? `${body}${wrapQuotedHtml(quoted)}` : body;
 }

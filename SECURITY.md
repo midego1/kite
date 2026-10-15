@@ -26,6 +26,28 @@ Repository code, including Worker, self-hosted Node runtime, JMAP/MCP and inboun
 provider handlers, is in scope. Deployment configuration or third-party service
 issues should also be raised privately with the responsible operator/vendor.
 
+## Email HTML
+
+Mail HTML is untrusted and passes three layers:
+
+- **Stored.** `parseRawMime` (`src/lib/email/parse.ts`) runs `sanitizeStoredEmailHtml`
+  (`src/lib/email/stored-html-utils.ts`) on every received or imported body before it is
+  written, on Workers and Node alike (htmlparser2, no DOM). It keeps layout, classes,
+  inline styles without script and `http`, `https`, `data` and `cid` images, and drops
+  scripts, styles, frames, forms, SVG/MathML, comments, event handlers and non-web URL
+  schemes. The raw MIME keeps the original. Rows stored before this layer existed are not
+  rewritten; the next two layers cover them.
+- **Displayed.** Before anything reaches the page, the reader, quotes, signatures and
+  drafts loaded into the composer go through DOMPurify with Kite's allowlist
+  (`email-html-sanitizer-utils.ts`), which also blocks remote images until allowed and
+  strips CSS `url()`.
+- **Framed.** Received mail renders in an `<iframe sandbox>` without `allow-scripts`, under
+  the nonce-based Content Security Policy.
+
+`tests/email-html-sanitizer.test.mjs` runs both sanitizers against the payloads in
+`tests/fixtures/xss-payloads.mjs`; `e2e/03-reading.spec.ts` checks the stored body, the
+reader frame and a hostile draft end to end.
+
 ## Repository controls
 
 - `security.yml` scans checked-out Git history with checksum-verified Gitleaks,

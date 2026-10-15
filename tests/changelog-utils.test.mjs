@@ -36,9 +36,13 @@ test("parses the shipped changelog into releases, sections and items", () => {
 	);
 	assert.equal(releases[0].date, null);
 	assert.equal(releases[1].date, "2026-10-13");
+	// Unreleased gains headings with every pull request, so only their order is pinned.
+	const keepAChangelogOrder = ["Changes", "Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"];
+	const unreleasedTitles = releases[0].sections.map((section) => section.title);
+	assert.equal(unreleasedTitles[0], "Changes");
 	assert.deepEqual(
-		releases[0].sections.map((section) => section.title),
-		["Changes", "Added", "Changed", "Fixed"],
+		unreleasedTitles,
+		keepAChangelogOrder.filter((title) => unreleasedTitles.includes(title)),
 	);
 	assert.deepEqual(
 		releases[1].sections.map((section) => section.title),

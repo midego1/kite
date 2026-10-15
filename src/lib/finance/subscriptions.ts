@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { queryInChunks } from "@/db/chunk-utils";
 import { contacts, mailboxes, messages } from "@/db/schema";
@@ -112,6 +112,25 @@ export async function hasDocument(
 			.limit(1),
 	);
 	return !!row;
+}
+
+/** How many of the subscription's documents are not among `ids`, counting no further than `limit`. */
+export async function otherDocumentCount(
+	userId: string,
+	subscriptionId: string,
+	ids: readonly string[],
+	limit: number,
+): Promise<number> {
+	const conditions = [eq(financeCharges.userId, userId), eq(financeCharges.subscriptionId, subscriptionId)];
+	if (ids.length > 0) conditions.push(notInArray(financeCharges.id, [...ids]));
+	const rows = await onFinanceTables(() =>
+		db()
+			.select({ id: financeCharges.id })
+			.from(financeCharges)
+			.where(and(...conditions))
+			.limit(limit),
+	);
+	return rows.length;
 }
 
 export async function deleteDocuments(userId: string, ids: readonly string[]): Promise<void> {

@@ -588,14 +588,14 @@ Every write a user makes is an `executeAction` row (`src/lib/agent/auto-read/exe
 
 | User decision | Action type and variant | Effect | Inverse (undo) |
 | --- | --- | --- | --- |
-| Track (new) | `create_subscription` `""` | Insert row and, when the card has an `invoice` or `payment` document, its ledger row; link contact; emit `finance.subscription.detected` | Delete row (ledger rows cascade); remove its calendar reminder; reopen the suggestion |
+| Track (new) | `create_subscription` `""` | Insert row and, when the card has an `invoice` or `payment` document, its ledger row; link contact; emit `finance.subscription.detected` | Delete row (ledger rows cascade); remove its calendar reminder; reopen the suggestion. Refused with 409 while the row holds a ledger row this action did not insert, so a later document is never deleted with it |
 | Track (matches a row) | `create_subscription` `update` | Update renewal date, amount (price change), cycle, cancel link, `last_message_id`; `trial → active` on an invoice or payment; clear `payment_failed_at` on a payment; insert the `invoice` or `payment` ledger row when the card has one | Restore the previous columns, delete the ledger row it inserted; reopen the suggestion |
 | Record (credit or refund card) | `record_document` `credit` or `refund` | Insert the ledger row only; price, cycle, renewal and trial dates, status and `last_message_id` are never changed | Delete the ledger row; reopen the suggestion |
 | Mark urgent (payment failed card) | `update_subscription` `payment_failed` | Set `payment_failed_at`; insert a `failed_payment` ledger row | Clear it, delete the ledger row; reopen the suggestion |
 | Edit fields | `update_subscription` `""` | Update vendor, plan, amount, currency, cycle, dates | Restore the previous columns |
 | Change reminder | `update_subscription` `reminder` | `reminder_days`, `calendar_reminder`; removes the calendar event when turned off | Restore; the cron recreates the event if due |
 | Change status | `set_subscription_status` `<status>` | Set status; `cancelled`/`expired` remove the reminder event | Restore the previous status |
-| Add by hand or from a message | `create_subscription` `""` with no suggestion | Insert row (and the ledger row when added from a message with a document type set in the dialog); emit `finance.subscription.detected` with `source: "manual"` (§14) | Delete row |
+| Add by hand or from a message | `create_subscription` `""` with no suggestion | Insert row (and the ledger row when added from a message with a document type set in the dialog); emit `finance.subscription.detected` with `source: "manual"` (§14) | Delete row; refused like Track's while a later ledger row exists |
 | Add a document from a message | `record_document` `<doc type>` with no suggestion | Insert one ledger row on a tracked subscription the user picks (§9.4); a `payment` also clears `payment_failed_at`, nothing else changes | Delete the ledger row (and restore `payment_failed_at`) |
 | Remove a document | `delete_document` `""` | Delete one ledger row (snapshot in `inverse`) | Re-insert it with the same id |
 | Remove | `delete_subscription` `""` | Delete row and its ledger rows (snapshot in `inverse`, ≤ 200 ledger rows) | Re-insert both with the same ids |

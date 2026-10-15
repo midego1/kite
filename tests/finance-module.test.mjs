@@ -345,6 +345,38 @@ test("a later invoice at a new price updates the row, flags the change and its u
 	assert.equal(suggestion("sugg-1").status, "accepted");
 });
 
+test("Undo of Track is refused while the row holds a later document, so that document is never deleted", async (t) => {
+	const context = await setup(t);
+	const { env, addCard, rows, documents, db } = context;
+	const first = await trackFirst(context);
+	const subscriptionId = first.subscription.id;
+	addCard(
+		"sugg-2",
+		"inv-2",
+		card({ event: "renewal", subscriptionId, document: { ...card().document, documentOn: day(-10) } }),
+	);
+	const update = await accept(env, "sugg-2");
+	await assert.rejects(() => undoAgentAction(env, owner, first.actionId), {
+		status: 409,
+		message: "Later documents were recorded for this subscription; remove it from Money Watch instead",
+	});
+	assert.equal(rows().length, 1);
+	assert.deepEqual(
+		documents().map((document) => document.message_id),
+		["inv-1", "inv-2"],
+	);
+
+	await undoAgentAction(env, owner, update.actionId);
+	// An inverse stored before creates kept their document ids still undoes with only Track's document.
+	const stored = db.db.prepare("SELECT before FROM agent_actions WHERE id = ?").get(first.actionId).before;
+	const legacy = stored.replace(/,?"documentIds":\[[^\]]*\]/, "");
+	assert.notEqual(legacy, stored);
+	db.db.prepare("UPDATE agent_actions SET before = ? WHERE id = ?").run(legacy, first.actionId);
+	await undoAgentAction(env, owner, first.actionId);
+	assert.deepEqual(rows(), []);
+	assert.deepEqual(documents(), []);
+});
+
 test("a same-price renewal and a second card for an untracked vendor update the row; an invoice ends a trial", async (t) => {
 	const context = await setup(t);
 	const { env, addCard, rows, documents } = context;
@@ -991,6 +1023,8 @@ test("before migration 0063 every finance entry point reads sqlite_master, answe
 	assert.equal(db.db.prepare("SELECT status FROM agent_suggestions WHERE id = 'sugg-1'").get().status, "open");
 	const step = await invokeCapability("finance", "detect", receiptStepInput(), PDF_CTX);
 	assert.deepEqual(step, { ok: true, output: { suggestions: [], skipped: "migration_pending" } });
+	const hint = await invokeCapability("finance", "wantsModel", receiptStepInput(), PDF_CTX);
+	assert.deepEqual(hint, { ok: true, output: { wantsModel: false } }, "no model request for a step that can only skip");
 	const [ref] = await resolveRecordRefs(env, ownerRef, [{ kind: "finance:subscription", id: "fsub_missing" }]);
 	assert.equal(ref.unavailable, true);
 	const search = await invokeCapability("finance", "search", { query: "flix", limit: 5 }, readCtx("owner"));
@@ -1059,6 +1093,8 @@ test("after migration 0063 the readiness check passes and every entry point quer
 	assert.equal(step.ok, true, JSON.stringify(step));
 	assert.equal(step.output.skipped, undefined);
 	assert.equal(step.output.suggestions[0].payload.subscriptionId, id, "the receipt matches the tracked row");
+	const hint = await invokeCapability("finance", "wantsModel", receiptStepInput(), PDF_CTX);
+	assert.deepEqual(hint, { ok: true, output: { wantsModel: true } });
 	const [ref] = await checkedFirst(observed, "refs", () =>
 		resolveRecordRefs(env, ownerRef, [{ kind: "finance:subscription", id }]),
 	);

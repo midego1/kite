@@ -93,7 +93,12 @@ test("a draft written outside the composer is sanitized before the editor render
 			from: SUPPORT_ADDRESS,
 			to: "someone@outside.test",
 			subject,
-			html: '<p>Draft <b>body</b></p><img src="/missing.png" onerror="window.__pwned = true"><a href="javascript:window.__pwned = true">link</a>',
+			html: [
+				'<p>Draft <b>body</b></p><img src="/missing.png" onerror="window.__pwned = true"><a href="javascript:window.__pwned = true">link</a>',
+				'<div class="kite-quote" data-kite-quote="1">',
+				'<p>Quoted <b>content</b></p><img src="/missing.png" onerror="window.__pwned = true"><a href="javascript:window.__pwned = true">quoted link</a>',
+				"</div>",
+			].join(""),
 		},
 	});
 	expect(created.ok(), await created.text()).toBe(true);
@@ -104,7 +109,13 @@ test("a draft written outside the composer is sanitized before the editor render
 	const editor = page.getByRole("textbox", { name: "Message body" });
 	await expect(editor.getByText("body")).toBeVisible();
 	await expect(editor.locator("img")).toHaveCount(0);
-	await expect(editor.getByText("link")).not.toHaveAttribute("href");
+	await expect(editor.getByText("link", { exact: true })).not.toHaveAttribute("href");
+	// The folded quote is rendered separately from the editable body, so it needs its own check.
+	await page.getByTitle("Show quoted text").click();
+	const quoted = page.locator("div.email-body").filter({ hasText: "Quoted" });
+	await expect(quoted.getByText("content")).toBeVisible();
+	await expect(quoted.locator("img")).toHaveCount(0);
+	await expect(quoted.getByText("quoted link")).not.toHaveAttribute("href");
 	// Development pages allow inline handlers, so an unsanitized onerror would have run by now.
 	expect(await page.evaluate(() => (window as unknown as { __pwned?: boolean }).__pwned)).toBeUndefined();
 });

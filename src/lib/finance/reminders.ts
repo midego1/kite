@@ -6,10 +6,10 @@ import { reminderFailed, upsertCalendarReminder } from "./calendar-reminder";
 import { dayInTimeZone } from "./date-utils";
 import { MIGRATION_PENDING_ERROR, refusalOf } from "./errors";
 import type { SubscriptionRow } from "./record-utils";
-import { reminderNotice, reminderStep, renewalDuePayload } from "./reminder-utils";
-import { claimReminder, dueRows, reminderOwner, type ReminderOwner } from "./reminder-store";
+import { dueOf, reminderNotice, reminderStep, renewalDuePayload } from "./reminder-utils";
+import { claimReminder, dueRows, reminderOwner, type DueCursor, type ReminderOwner } from "./reminder-store";
 
-/** Rows handled per tick; the rest wait for the next one, five minutes later. */
+/** Eligible rows handled per tick; skipped rows never consume the batch. */
 const ROWS_PER_TICK = 100;
 
 const RENEWAL_DUE = "finance.subscription.renewal_due";
@@ -79,23 +79,34 @@ async function ownerTick(cron: CapabilityCallContext, userId: string, now: Date)
 }
 
 /** A user restricted from Money Watch keeps their rows untouched, so the reminder fires once access returns. */
-async function remindOwner(cron: CapabilityCallContext, userId: string, rows: SubscriptionRow[], now: Date) {
+async function remindOwner(
+	cron: CapabilityCallContext,
+	userId: string,
+	rows: SubscriptionRow[],
+	now: Date,
+	limit: number,
+) {
 	let tick: OwnerTick | null;
 	try {
 		tick = await ownerTick(cron, userId, now);
 	} catch {
 		for (const row of rows) reminderFailed(row.id, "owner_failed");
-		return 0;
+		return { reminded: 0, handled: 0 };
 	}
-	if (!tick) return 0;
+	if (!tick) return { reminded: 0, handled: 0 };
 	let reminded = 0;
-	for (const row of rows)
+	let handled = 0;
+	for (const row of rows) {
+		if (handled >= limit) break;
+		if (reminderStep(row, tick.today).step === "wait") continue;
+		handled += 1;
 		try {
 			if (await remindRow(tick, row)) reminded += 1;
 		} catch {
 			reminderFailed(row.id, "reminder_failed");
 		}
-	return reminded;
+	}
+	return { reminded, handled };
 }
 
 function byOwner(rows: readonly SubscriptionRow[]): Map<string, SubscriptionRow[]> {
@@ -110,14 +121,25 @@ function byOwner(rows: readonly SubscriptionRow[]): Map<string, SubscriptionRow[
  */
 export const remindRenewals: CapabilityHandler = async (input, ctx) => {
 	const now = tickTime(input);
-	let rows: SubscriptionRow[];
+	let after: DueCursor | undefined;
+	let reminded = 0;
+	let handled = 0;
 	try {
-		rows = await dueRows(now, ROWS_PER_TICK);
+		while (handled < ROWS_PER_TICK) {
+			const rows = await dueRows(now, ROWS_PER_TICK, after);
+			for (const [userId, owned] of byOwner(rows)) {
+				const result = await remindOwner(ctx, userId, owned, now, ROWS_PER_TICK - handled);
+				reminded += result.reminded;
+				handled += result.handled;
+				if (handled >= ROWS_PER_TICK) break;
+			}
+			if (rows.length < ROWS_PER_TICK) break;
+			const last = rows[rows.length - 1];
+			after = { dueAt: dueOf(last)!.at, id: last.id };
+		}
 	} catch (error) {
 		if (refusalOf(error)?.error === MIGRATION_PENDING_ERROR) return { reminded: 0 };
 		throw error;
 	}
-	let reminded = 0;
-	for (const [userId, owned] of byOwner(rows)) reminded += await remindOwner(ctx, userId, owned, now);
 	return { reminded };
 };

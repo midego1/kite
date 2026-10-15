@@ -13,11 +13,13 @@ const seconds = (date: Date) => Math.floor(date.getTime() / 1000);
 
 const dueColumn = sql`(CASE WHEN ${subscriptions.status} = 'trial' AND ${subscriptions.trialEndsAt} IS NOT NULL THEN ${subscriptions.trialEndsAt} ELSE ${subscriptions.nextRenewalAt} END)`;
 
+export type DueCursor = { dueAt: Date; id: string };
+
 /**
  * Active and trial rows with reminders on whose due date is near and not yet reminded, earliest
- * first. The owner's calendar day decides the exact window afterwards.
+ * first. Page by due date and id, since claiming a reminder removes it from this selection.
  */
-export function dueRows(now: Date, limit: number): Promise<SubscriptionRow[]> {
+export function dueRows(now: Date, limit: number, after?: DueCursor): Promise<SubscriptionRow[]> {
 	const { from, until } = selectionBounds(now);
 	return onFinanceTables(() =>
 		db()
@@ -30,6 +32,12 @@ export function dueRows(now: Date, limit: number): Promise<SubscriptionRow[]> {
 					sql`${dueColumn} >= ${seconds(from)}`,
 					sql`${dueColumn} <= ${seconds(until)} + ${subscriptions.reminderDays} * 86400`,
 					sql`(${subscriptions.lastRemindedFor} IS NULL OR ${subscriptions.lastRemindedFor} <> ${dueColumn})`,
+					after
+						? or(
+								sql`${dueColumn} > ${seconds(after.dueAt)}`,
+								and(sql`${dueColumn} = ${seconds(after.dueAt)}`, gt(subscriptions.id, after.id)),
+							)
+						: undefined,
 				),
 			)
 			.orderBy(dueColumn, subscriptions.id)

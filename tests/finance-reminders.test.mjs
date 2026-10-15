@@ -510,6 +510,52 @@ test("at most 100 rows are handled per tick and the rest on the next", async (t)
 	assert.equal(context.notices().length, 105);
 });
 
+test("restricted owners do not block an enabled owner's reminders beyond the first page", async (t) => {
+	const context = await setup(t);
+	for (let index = 0; index < 200; index += 1)
+		context.addRow(`fsub_a${String(index).padStart(3, "0")}`, { next: "2026-10-14", calendarReminder: 0 });
+	context.restrict("owner", "finance");
+	context.addRow("fsub_z", { next: "2026-10-14", userId: "other" });
+	assert.deepEqual((await tick(NOW)).output, { reminded: 1 });
+	assert.deepEqual(
+		context.notices().map((notice) => notice.userId),
+		["other"],
+	);
+	assert.equal(context.events().length, 1);
+	assert.equal(context.subscription("fsub_a000").last_reminded_for, null, "restricted rows stay untouched");
+	context.allow("owner", "finance");
+	assert.deepEqual((await tick(NOW)).output, { reminded: 100 });
+	assert.deepEqual((await tick(NOW)).output, { reminded: 100 });
+});
+
+test("rows waiting for their owner's calendar day do not consume the batch", async (t) => {
+	const context = await setup(t, { timeZone: "Pacific/Honolulu" });
+	for (let index = 0; index < 100; index += 1)
+		context.addRow(`fsub_a${String(index).padStart(3, "0")}`, { next: "2026-10-17", calendarReminder: 0 });
+	context.addRow("fsub_z", { next: "2026-10-17", userId: "other" });
+	assert.deepEqual((await tick("2026-10-14T00:30:00.000Z")).output, { reminded: 1 });
+	assert.deepEqual(
+		context.notices().map((notice) => notice.userId),
+		["other"],
+	);
+	assert.equal(context.subscription("fsub_a000").last_reminded_for, null);
+	assert.deepEqual((await tick("2026-10-14T12:00:00.000Z")).output, { reminded: 100 });
+});
+
+test("paging past claimed rows does not skip eligible rows when the selection shrinks", async (t) => {
+	const context = await setup(t, { timeZone: "Pacific/Honolulu" });
+	for (let index = 0; index < 50; index += 1)
+		context.addRow(`fsub_a${index}`, { next: "2026-10-14", calendarReminder: 0 });
+	for (let index = 0; index < 100; index += 1)
+		context.addRow(`fsub_b${index}`, { next: "2026-10-17", calendarReminder: 0 });
+	for (let index = 0; index < 55; index += 1)
+		context.addRow(`fsub_z${index}`, { next: "2026-10-17", userId: "other", calendarReminder: 0 });
+	assert.deepEqual((await tick("2026-10-14T00:30:00.000Z")).output, { reminded: 100 });
+	assert.deepEqual((await tick("2026-10-14T00:35:00.000Z")).output, { reminded: 5 });
+	assert.equal(context.notices().length, 105);
+	assert.equal(context.subscription("fsub_b0").last_reminded_for, null);
+});
+
 test("before the Money Watch tables exist the cron returns without work", async (t) => {
 	const context = await setup(t);
 	context.db.db.exec("DROP TABLE finance_charges; DROP TABLE finance_subscriptions;");

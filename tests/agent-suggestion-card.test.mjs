@@ -118,11 +118,18 @@ test("phishing reasons read in plain words, deterministic ones first, without re
 					"spoofed_identity",
 					"unexpected_attachment",
 					"model_flagged",
+					"html_attachment",
+					"attachment_login_form",
+					"attachment_active_content",
+					"risky_attachment",
+					"safelist_pressure",
 				],
 			},
 		}),
 	);
-	assert.equal(texts.length, 14);
+	assert.equal(texts.length, 19);
+	assert.match(texts[14], /web page \(HTML or SVG\)/);
+	assert.match(texts[18], /whitelist/);
 	assert.equal(texts[0], "A link shows one web address but opens a different one.");
 	assert.match(texts[4], /SPF failed/);
 	assert.match(texts[7], /name of one of your contacts/);

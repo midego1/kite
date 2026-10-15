@@ -45,15 +45,5 @@ export function analyzeStructure(
 			score: 16,
 			reason: "Message contains a high-risk urgent payment pattern",
 		});
-	const risky = message.attachments.filter((attachment) =>
-		/\.(exe|scr|js|vbs|bat|cmd|iso|img)$/i.test(attachment.filename),
-	);
-	if (risky.length)
-		signals.push({
-			id: "risky_attachment",
-			score: 10,
-			reason: "Message contains a potentially risky attachment",
-			metadata: { count: risky.length },
-		});
 	return signals;
 }

@@ -2,7 +2,7 @@ import type { ParsedEmail } from "@/lib/email/parse";
 import type { PreparedSpamContent, SpamSignal } from "../types";
 
 export function analyzeUrls(message: ParsedEmail, prepared: PreparedSpamContent): SpamSignal[] {
-	const domains = prepared.urlDomains;
+	const domains = [...new Set([...prepared.urlDomains, ...prepared.attachmentUrlDomains])];
 	const signals: SpamSignal[] = [];
 	if (domains.some((domain) => /^\d{1,3}(?:\.\d{1,3}){3}$/.test(domain)))
 		signals.push({ id: "ip_address_url", score: 8, reason: "A link uses an IP address instead of a domain" });

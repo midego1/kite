@@ -9,7 +9,12 @@ export type DeterministicPhishingSignal =
 	| "spf_failed"
 	| "dkim_failed"
 	| "dmarc_failed"
-	| "display_name_spoof";
+	| "display_name_spoof"
+	| "html_attachment"
+	| "attachment_login_form"
+	| "attachment_active_content"
+	| "risky_attachment"
+	| "safelist_pressure";
 
 export type FactsMessage = {
 	fromAddr: string;

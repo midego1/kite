@@ -2,7 +2,9 @@ import { and, eq } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { contacts, spamReputation } from "@/db/schema";
 import { getEmailAddress } from "@/lib/email/address";
+import { analyzeAttachments } from "./analyzers/attachments";
 import { analyzeAuthentication } from "./analyzers/authentication";
+import { analyzeSafelistPressure } from "./analyzers/pressure";
 import { getReputationKeys } from "./analyzers/reputation";
 import { analyzeStructure } from "./analyzers/structure";
 import { analyzeUrls } from "./analyzers/urls";
@@ -20,6 +22,8 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 		...analyzeAuthentication(input.headers),
 		...analyzeUrls(input.message, prepared),
 		...analyzeStructure(input.message, input.headers, prepared),
+		...analyzeAttachments(input.message, prepared),
+		...analyzeSafelistPressure(prepared),
 	];
 	const intelligenceProvider = input.intelligenceProvider ?? new LocalSpamIntelligenceProvider();
 	signals.push(
@@ -27,6 +31,9 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 			senderDomain: getDomain(sender),
 			urlDomains: prepared.urlDomains,
 			fingerprint,
+			urls: prepared.urls,
+			attachmentUrls: prepared.attachmentUrls,
+			attachments: input.message.attachments,
 		})),
 	);
 

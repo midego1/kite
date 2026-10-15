@@ -1,6 +1,7 @@
 import { getEmailAddress } from "@/lib/email/address";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
 import type { ParsedEmail } from "@/lib/email/parse";
+import { readWebPageAttachments } from "./analyzers/attachments";
 import type { PreparedSpamContent } from "./types";
 import { MAX_CANDIDATE_TOKENS } from "./weights";
 
@@ -11,26 +12,36 @@ export function getDomain(value: string | null | undefined): string {
 	return address.includes("@") ? address.slice(address.lastIndexOf("@") + 1) : "";
 }
 
-export function extractUrlDomains(message: ParsedEmail): string[] {
-	const source = `${message.text ?? ""}\n${message.html ?? ""}`.slice(0, 250_000);
-	const result = new Set<string>();
-	for (const match of source.matchAll(URL_RE)) {
+/** Up to 50 distinct link domains (without `www.`) and up to 50 links, in order of appearance. */
+function extractLinks(source: string): { urls: string[]; domains: string[] } {
+	const urls = new Set<string>();
+	const domains = new Set<string>();
+	for (const match of source.slice(0, 250_000).matchAll(URL_RE)) {
 		try {
-			const domain = new URL(match[0]).hostname.toLowerCase().replace(/^www\./, "");
-			if (domain) result.add(domain);
+			const url = new URL(match[0]);
+			const domain = url.hostname.toLowerCase().replace(/^www\./, "");
+			if (domain) domains.add(domain);
+			if (domain && urls.size < 50) urls.add(url.href);
 		} catch {}
-		if (result.size >= 50) break;
+		if (domains.size >= 50) break;
 	}
-	return [...result];
+	return { urls: [...urls], domains: [...domains] };
 }
 
 export function prepareSpamContent(message: ParsedEmail): PreparedSpamContent {
+	const body = extractLinks(`${message.text ?? ""}\n${message.html ?? ""}`);
+	const webPageAttachments = readWebPageAttachments(message.attachments);
+	const attached = extractLinks(webPageAttachments.map((page) => page.text).join("\n"));
 	return {
 		visibleText: `${message.subject ?? ""}\n${message.text ?? ""}\n${htmlToReadableText(message.html)}`.slice(
 			0,
 			250_000,
 		),
-		urlDomains: extractUrlDomains(message),
+		urlDomains: body.domains,
+		urls: body.urls,
+		webPageAttachments,
+		attachmentUrls: attached.urls,
+		attachmentUrlDomains: attached.domains,
 	};
 }
 

@@ -116,6 +116,18 @@ export const calendarCapabilities: ModuleCapabilities = {
 			variants: ["accepted", "declined"],
 			actingUserOnly: true,
 		}),
+		describe("upsertReminder", {
+			surfaces: ["service"],
+			description: "Add or move the one reminder event another module keeps under a key on the acting user's calendar.",
+			scopes: ["calendar.write"],
+			effect: "create",
+		}),
+		describe("removeReminder", {
+			surfaces: ["service"],
+			description: "Remove the reminder event another module keeps under a key on the acting user's calendar.",
+			scopes: ["calendar.write"],
+			effect: "delete",
+		}),
 		describe("timeZoneChanged", {
 			surfaces: ["lifecycle"],
 			description: "Freeze legacy recurring series when a user changes time zone.",

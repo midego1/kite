@@ -19,6 +19,7 @@ import { loadCalendarInvite } from "@/lib/agent/auto-read/invite";
 import { answerInvite } from "@/lib/agent/auto-read/invite-actions";
 import type { CapabilityHandler, JsonValue } from "../module-types";
 import { resolveCalendarRefs } from "@/lib/calendar/refs";
+import { removeReminder, upsertReminder, type UpsertReminderInput } from "@/lib/calendar/reminders";
 
 type StepInput = {
 	message: { id: string; from: string };
@@ -100,5 +101,7 @@ export const calendarHandlers: Record<string, CapabilityHandler> = {
 	createEvent: actionHandler("createEvent"),
 	deleteEvent: actionHandler("deleteEvent"),
 	sendRsvp: actionHandler("sendRsvp"),
+	upsertReminder: (input, ctx) => upsertReminder(input as UpsertReminderInput, ctx),
+	removeReminder: (input, ctx) => removeReminder(input as { userId: string; key: string }, ctx),
 	timeZoneChanged: timeZoneChangedHandler,
 };

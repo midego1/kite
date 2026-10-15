@@ -53,6 +53,7 @@
 		"src/lib/booking/webhook-event-utils.ts",
 		"src/lib/calendar/availability-utils.ts",
 		"src/lib/calendar/event-link-utils.ts",
+		"src/lib/calendar/reminder-utils.ts",
 		"src/lib/calendar/search-utils.ts",
 		"src/lib/calendar/tool-ref-utils.ts",
 		"src/lib/calendar/ics-parse-utils.ts",

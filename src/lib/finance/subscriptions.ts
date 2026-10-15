@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
+import { queryInChunks } from "@/db/chunk-utils";
 import { contacts, mailboxes, messages } from "@/db/schema";
 import { financeCharges, financeSubscriptions } from "@/db/schema/finance";
 import { getEnv } from "@/lib/cloudflare";
@@ -140,8 +141,9 @@ type LinkTable = typeof messages | typeof contacts | typeof mailboxes;
 /** The ids among `ids` that still have a row in `table`. */
 async function liveIds(table: LinkTable, ids: readonly (string | null)[]): Promise<Set<string>> {
 	const wanted = [...new Set(ids.filter((id): id is string => !!id))];
-	if (wanted.length === 0) return new Set();
-	const found = await db().select({ id: table.id }).from(table).where(inArray(table.id, wanted));
+	const found = await queryInChunks(wanted, (chunk) =>
+		db().select({ id: table.id }).from(table).where(inArray(table.id, chunk)),
+	);
 	return new Set(found.map((row) => row.id));
 }
 

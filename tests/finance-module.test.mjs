@@ -1335,6 +1335,47 @@ test("refund and failed-payment cards whose row was removed answer 409 instead o
 	assert.equal(suggestion("sugg-f").status, "open");
 });
 
+test("a removal of a subscription with 200 linked documents undoes within D1's bound-parameter limit", async (t) => {
+	const context = await setup(t);
+	const { rows, documents, db } = context;
+	const first = await trackFirst(context);
+	const id = first.subscription.id;
+	const insert = db.db.prepare(
+		"INSERT INTO finance_charges (id, subscription_id, user_id, message_id, doc_type, amount_minor, currency, document_at, created_at) VALUES (?, ?, 'owner', ?, 'invoice', 1799, 'USD', ?, 1)",
+	);
+	for (let index = 0; index < 199; index += 1) {
+		context.addMessage(`bulk-msg-${index}`);
+		insert.run(`fdoc_bulk_${index}`, id, `bulk-msg-${index}`, index + 1);
+	}
+	const before = await subscriptionRemovalSnapshot(await ownerRow("owner", id));
+	const removed = await runAction("deleteSubscription", {
+		op: "execute",
+		actionId: "aact_delsub_bulk",
+		suggestion: suggestionRef,
+		input: { subscriptionId: id },
+		before,
+	});
+	assert.deepEqual(rows(), []);
+	db.db.prepare("DELETE FROM messages WHERE id = 'bulk-msg-0'").run();
+	const prepare = db.prepare.bind(db);
+	db.prepare = (sql) => {
+		assert.ok((sql.match(/\?/g) ?? []).length <= 100, "D1 binds at most 100 parameters per query");
+		return prepare(sql);
+	};
+	t.after(() => {
+		db.prepare = prepare;
+	});
+	await runAction("deleteSubscription", {
+		op: "undo",
+		actionId: "aact_delsub_bulk",
+		inverse: { inverse: removed.inverse },
+	});
+	assert.equal(rows().length, 1);
+	assert.equal(documents().length, 200);
+	assert.equal(documents().find((row) => row.id === "fdoc_bulk_0").message_id, null);
+	assert.equal(documents().find((row) => row.id === "fdoc_bulk_1").message_id, "bulk-msg-1");
+});
+
 test("a subscription with more than 200 documents is not removed", async (t) => {
 	const context = await setup(t);
 	const { rows, documents, db } = context;

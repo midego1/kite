@@ -16,6 +16,7 @@ import { FINANCE_RECEIPT_RENEWAL_DAYS } from "./support/fake-model-scenarios";
 import type { FakeModel } from "./support/fake-model-types";
 import type { InboundMail } from "./support/helpers-types";
 import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { openPalette } from "./support/module-flows";
 import { restoreModules, setModuleState } from "./support/modules";
 import { readSuggestions, waitForFinishedJob } from "./support/triage";
 
@@ -606,6 +607,11 @@ test.describe("Money Watch tracking", () => {
 				urgent: false,
 			});
 			expect(totals).toMatchObject([{ currency: "USD", monthlyMinor: 1799, paidLast12MonthsMinor: 1799 }]);
+			await page.goto("/finance");
+			const listed = page.locator(`[data-finance-section="upcoming"] [data-finance-row="${row.id}"]`);
+			await expect(listed).toContainText(vendor);
+			await expect(listed).toContainText("$17.99/month");
+			await expect(page.locator('[data-finance-paid="USD"]')).toHaveText("$17.99");
 			const detail = await subscriptionDetail(account, row.id);
 			expect(detail.documents).toMatchObject([{ docType: "invoice", messageId: message.id }]);
 			const [card] = (await readSuggestions(account.api, { messageId: message.id, status: "all" })).suggestions;
@@ -642,9 +648,13 @@ test.describe("Money Watch tracking", () => {
 		}
 	});
 
-	test("case 2: a second invoice updates the price, a refund lowers the 12-month total, and undo restores both", async () => {
+	test("case 2: a second invoice updates the price, a refund lowers the 12-month total, and undo restores both", async ({
+		browser,
+	}) => {
 		const restore = await useFakeProvider(api, fake);
 		const account = await suggestAccount("ftp");
+		const outsider = await plainAccount("ftx");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
 		try {
 			const vendor = `Priceflix${uniqueToken("").slice(-4)}`;
 			const first = await deliver(account, invoice(vendor, dayFromNow(10).long));
@@ -683,6 +693,36 @@ test.describe("Money Watch tracking", () => {
 			});
 			expect(await paidTotal(account)).toBe(3798);
 
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.goto("/finance");
+			const listed = page.locator(`[data-finance-row="${subscriptionId}"]`);
+			await expect(listed.locator("[data-finance-price-chip]")).toHaveText("Increased from $17.99");
+			await expect(page.locator('[data-finance-paid="USD"]')).toHaveText("$37.98");
+			await listed.getByRole("button", { name: new RegExp(`^${vendor}`) }).click();
+			await expect(page).toHaveURL(new RegExp(`/finance\\?subscription=${subscriptionId}$`));
+			const drawer = page.locator("[data-finance-drawer]");
+			await expect(drawer.locator("[data-finance-drawer-paid]")).toHaveText("$37.98");
+			const entries = drawer.locator("[data-finance-document]");
+			await expect(entries).toHaveCount(2);
+			const latest = entries.filter({ hasText: "$19.99" });
+			await expect(latest).toContainText("Invoice");
+			const openDocument = latest.getByRole("link", { name: "Open document" });
+			const href = await openDocument.getAttribute("href");
+			expect(href).toMatch(new RegExp(`^/api/messages/${second.message.id}/attachments/[^/?]+\\?preview=1$`));
+			const file = await account.api.get(href!);
+			expect(file.status()).toBe(200);
+			expect(file.headers()["content-type"]).toContain("application/pdf");
+			expect((await outsider.api.get(href!)).status()).toBe(404);
+			await expect(latest.getByRole("link", { name: "Open thread" })).toHaveAttribute(
+				"href",
+				`/inbox/${second.message.id}`,
+			);
+			const earlier = entries.filter({ hasText: "$17.99" });
+			await expect(earlier.getByRole("link", { name: "Open thread" })).toBeVisible();
+			await expect(earlier.getByRole("link", { name: "Open document" })).toHaveCount(0);
+
 			const refund = await deliver(account, {
 				from: `${vendor} Billing <billing@${vendor.toLowerCase()}.test>`,
 				subject: `Your ${vendor} refund ${uniqueToken("ref")}`,
@@ -700,6 +740,11 @@ test.describe("Money Watch tracking", () => {
 			const afterRefund = (await listSubscriptions(account)).subscriptions[0];
 			for (const key of ["amount", "nextRenewalOn", "status", "lastMessageId"] as const)
 				expect(afterRefund[key]).toEqual(beforeRefund[key]);
+			await page.reload();
+			await expect(drawer.locator("[data-finance-drawer-paid]")).toHaveText("$17.99");
+			await expect(entries).toHaveCount(3);
+			await expect(entries.filter({ hasText: "Refund" })).toContainText("−$19.99");
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
 			await undo(account, recorded.actionId);
 			expect(await paidTotal(account)).toBe(3798);
 
@@ -710,6 +755,8 @@ test.describe("Money Watch tracking", () => {
 				{ docType: "invoice", messageId: first.message.id },
 			]);
 		} finally {
+			await context.close();
+			await outsider.api.dispose();
 			await account.api.dispose();
 			await restore();
 		}
@@ -750,6 +797,11 @@ test.describe("Money Watch tracking", () => {
 			const documents = (await subscriptionDetail(account, urgent.id)).documents;
 			expect(documents.map((document) => document.docType).sort()).toEqual(["failed_payment", "invoice"]);
 			expect(await paidTotal(account)).toBe(1799);
+			expect(await okJson(await account.api.get("/api/finance/badge"))).toEqual({ count: 1 });
+			await page.goto("/finance");
+			const attention = page.locator('[data-finance-section="attention"]');
+			await expect(attention.locator(`[data-finance-row="${urgent.id}"]`)).toContainText("Payment failed");
+			await expect(page.locator(`[data-finance-section="upcoming"] [data-finance-row="${urgent.id}"]`)).toHaveCount(0);
 
 			await undo(account, actionId);
 			expect((await listSubscriptions(account)).subscriptions[0].urgent).toBe(false);
@@ -1359,6 +1411,459 @@ test.describe("Money Watch reminders", () => {
 			await restoreModules(api, [account.id]);
 			await context.close();
 			await account.api.dispose();
+		}
+	});
+});
+
+type ViewTotals = (Totals[number] & { yearlyMinor: number; trialMonthlyMinor: number })[];
+type HandRow = {
+	vendor: string;
+	amountMinor?: number | null;
+	currency?: string | null;
+	cycle?: string | null;
+	nextRenewalOn?: string | null;
+	trialEndsOn?: string | null;
+	status?: string;
+	reminderDays?: number;
+	messageId?: string;
+	document?: { docType: string; amountMinor: number; currency: string; documentOn: string };
+};
+
+async function addByHand(account: { api: APIRequestContext; mailboxId: string }, row: HandRow) {
+	const { subscription } = await okJson<{ subscription: SubscriptionView }>(
+		await account.api.post("/api/finance/subscriptions", {
+			data: { reminderDays: 0, calendarReminder: false, mailboxId: account.mailboxId, ...row },
+		}),
+	);
+	return subscription;
+}
+
+const financeRow = (page: Page, id: string) => page.locator(`[data-finance-row="${id}"]`);
+const usd = (minor: number) => `$${(minor / 100).toFixed(2)}`;
+
+async function openRowMenu(page: Page, vendor: string) {
+	await page.getByRole("button", { name: `More actions for ${vendor}` }).click();
+	const menu = page.locator("[data-finance-row-menu]");
+	await expect(menu).toBeVisible();
+	return menu;
+}
+
+async function chooseReminder(page: Page, vendor: string, label: string) {
+	const menu = await openRowMenu(page, vendor);
+	// The keyboard opens the submenu without a pointer path across the other items, which would close it.
+	await menu.getByRole("menuitem", { name: "Reminder" }).press("ArrowRight");
+	const reminders = page.locator("[data-finance-reminder-menu]");
+	await expect(reminders).toBeVisible();
+	return reminders.getByRole("menuitemcheckbox", { name: label, exact: true });
+}
+
+/** Fails when the element (or the page) is wider than its box, which is what horizontal overflow looks like. */
+async function expectNoOverflow(page: Page, selector: string | null, name: string) {
+	const sizes = await page.evaluate((target) => {
+		const element = target ? document.querySelector(target) : document.documentElement;
+		return element ? { scroll: element.scrollWidth, client: element.clientWidth } : null;
+	}, selector);
+	expect(sizes, name).not.toBeNull();
+	expect(sizes!.scroll, name).toBeLessThanOrEqual(sizes!.client + 1);
+}
+
+test.describe("Money Watch view", () => {
+	test.use({ timezoneId: "UTC" });
+
+	test("case 7: the view lists rows in due order with totals, edits a reminder and cancels through the header link", async ({
+		browser,
+	}) => {
+		const account = await plainAccount("fvw");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const vendor = uniqueVendor("Viewflix");
+			const cancelUrl = `https://${uniqueToken("cancel").toLowerCase()}.example/cancel`;
+			const source = await deliverPlain(
+				account,
+				invoice(vendor, dayFromNow(10).long, { headers: { ...AUTOMATIC, "List-Unsubscribe": `<${cancelUrl}>` } }),
+			);
+			const cancellable = await addByHand(account, {
+				vendor,
+				amountMinor: 1799,
+				currency: "USD",
+				cycle: "monthly",
+				nextRenewalOn: isoDay(10),
+				messageId: source.id,
+				document: { docType: "payment", amountMinor: 1799, currency: "USD", documentOn: isoDay(0) },
+			});
+			expect(cancellable.cancelUrl).toBe(cancelUrl);
+			const yearlyVendor = uniqueVendor("Yearbox");
+			const yearlySource = await deliverPlain(account, invoice(yearlyVendor, dayFromNow(30).long));
+			const yearly = await addByHand(account, {
+				vendor: yearlyVendor,
+				amountMinor: 12000,
+				currency: "EUR",
+				cycle: "yearly",
+				nextRenewalOn: isoDay(30),
+				messageId: yearlySource.id,
+			});
+			const weekly = await addByHand(account, {
+				vendor: uniqueVendor("Weekbox"),
+				amountMinor: 500,
+				currency: "USD",
+				cycle: "weekly",
+				nextRenewalOn: isoDay(3),
+			});
+			const undated = await addByHand(account, { vendor: uniqueVendor("Nodate") });
+			const { totals } = await okJson<{ totals: ViewTotals }>(await account.api.get("/api/finance/subscriptions"));
+			const dollars = totals.find((total) => total.currency === "USD")!;
+			expect(dollars.monthlyMinor).toBe(Math.round(1799 + (500 * 52) / 12));
+			expect(totals.find((total) => total.currency === "EUR")).toMatchObject({
+				monthlyMinor: 1000,
+				yearlyMinor: 12000,
+			});
+
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			const cancelRequests: string[] = [];
+			page.on("request", (request) => {
+				if (request.url().startsWith(new URL(cancelUrl).origin)) cancelRequests.push(request.resourceType());
+			});
+			await context.route(`${new URL(cancelUrl).origin}/**`, (route) =>
+				route.fulfill({ contentType: "text/html", body: "<title>Cancel</title>" }),
+			);
+			await page.addInitScript(() => {
+				const opened: unknown[][] = [];
+				(window as { __kiteOpened?: unknown[][] }).__kiteOpened = opened;
+				const original = window.open.bind(window);
+				window.open = (...args: Parameters<typeof window.open>) => {
+					opened.push(args);
+					return original(...args);
+				};
+			});
+			await selectMailbox(page, account.mailboxId);
+			await page.goto("/inbox");
+			await page.getByRole("navigation").first().locator('a[href="/finance"]').click();
+			await expect(page).toHaveURL(/\/finance$/);
+			await expect(page.getByRole("heading", { name: "Subscriptions", level: 1 })).toBeVisible();
+			await expect(page.getByRole("button", { name: "Add subscription" })).toBeVisible();
+			expect(await page.getByLabel("Show").locator("option").allTextContents()).toEqual([
+				"Active and trials",
+				"Cancelled and expired",
+				"All",
+			]);
+
+			const upcoming = page.locator('[data-finance-section="upcoming"]');
+			await expect(upcoming.getByRole("heading")).toContainText("Upcoming renewals");
+			expect(
+				await upcoming
+					.locator("[data-finance-row]")
+					.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-finance-row"))),
+			).toEqual([weekly.id, cancellable.id, yearly.id]);
+			await expect(financeRow(page, weekly.id)).toContainText(`$5.00/week · renews in 3 days (${dayFromNow(3).short})`);
+			await expect(financeRow(page, cancellable.id)).toContainText(
+				`$17.99/month · renews in 10 days (${dayFromNow(10).short})`,
+			);
+			await expect(financeRow(page, cancellable.id).locator("[data-finance-status]")).toHaveText("Active");
+			await expect(page.locator('[data-finance-section="no-date"]')).toContainText(undated.vendor);
+			await expect(page.locator('[data-finance-cost="USD"]')).toContainText(
+				`${usd(dollars.monthlyMinor)}/month · ${usd(dollars.yearlyMinor)}/year`,
+			);
+			await expect(page.locator('[data-finance-cost="EUR"]')).toContainText("€10.00/month · €120.00/year");
+			await expect(page.locator("[data-finance-unpriced]")).toHaveText("1 without a price");
+			await expect(page.locator('[data-finance-paid="USD"]')).toHaveText(usd(dollars.paidLast12MonthsMinor));
+			expect(dollars.paidLast12MonthsMinor).toBe(1799);
+			await expect(financeRow(page, yearly.id).getByRole("link", { name: "Open latest message" })).toHaveAttribute(
+				"href",
+				`/inbox/${yearlySource.id}`,
+			);
+
+			const patched = () =>
+				page.waitForResponse(
+					(response) =>
+						response.url().endsWith(`/api/finance/subscriptions/${cancellable.id}`) &&
+						response.request().method() === "PATCH",
+				);
+			let answer = patched();
+			await (await chooseReminder(page, vendor, "7 days before")).press("Enter");
+			expect((await answer).status()).toBe(200);
+			const toast = page.getByRole("status").filter({ hasText: "Reminder set to 7 days before" });
+			await expect(toast).toBeVisible();
+			expect((await subscriptionDetail(account, cancellable.id)).subscription.reminderDays).toBe(7);
+			expect((await activity(account)).find((item) => item.action === "update_subscription")).toMatchObject({
+				variant: "reminder",
+			});
+			await toast.getByRole("button", { name: "Undo" }).click();
+			await expect
+				.poll(async () => (await subscriptionDetail(account, cancellable.id)).subscription.reminderDays)
+				.toBe(0);
+			await expect(await chooseReminder(page, vendor, "Off")).toHaveAttribute("aria-checked", "true");
+			await page.keyboard.press("Escape");
+			await page.keyboard.press("Escape");
+			answer = patched();
+			await (await chooseReminder(page, vendor, "7 days before")).press("Enter");
+			expect((await answer).status()).toBe(200);
+			await page.reload();
+			await expect(await chooseReminder(page, vendor, "7 days before")).toHaveAttribute("aria-checked", "true");
+			await page.keyboard.press("Escape");
+			await page.keyboard.press("Escape");
+
+			const row = financeRow(page, cancellable.id);
+			const cancel = row.getByRole("button", { name: `Cancel before ${dayFromNow(9).short}` });
+			await expect(cancel).toBeVisible();
+			await expect(row).toContainText(`Opens ${new URL(cancelUrl).host}`);
+			const popupOpened = context.waitForEvent("page");
+			await cancel.click();
+			const popup = await popupOpened;
+			await popup.waitForLoadState();
+			expect(popup.url()).toBe(cancelUrl);
+			expect(await popup.evaluate(() => window.opener)).toBeNull();
+			expect(await page.evaluate(() => (window as { __kiteOpened?: unknown[][] }).__kiteOpened)).toEqual([
+				[cancelUrl, "_blank", "noopener,noreferrer"],
+			]);
+			expect(cancelRequests.filter((type) => type === "fetch" || type === "xhr")).toEqual([]);
+			await popup.close();
+
+			const prompt = row.locator("[data-finance-cancel-prompt]");
+			await expect(prompt).toContainText("Did you cancel?");
+			answer = patched();
+			await prompt.getByRole("button", { name: "Mark as cancelled" }).click();
+			expect((await answer).status()).toBe(200);
+			await expect(page.getByRole("status").filter({ hasText: "Marked as cancelled" })).toBeVisible();
+			await expect(upcoming.locator(`[data-finance-row="${cancellable.id}"]`)).toHaveCount(0);
+			const ended = page.locator('[data-finance-section="ended"]');
+			const toggle = ended.getByRole("button", { name: /Cancelled and expired/ });
+			await expect(toggle).toHaveAttribute("aria-expanded", "false");
+			await toggle.click();
+			await expect(ended.locator(`[data-finance-row="${cancellable.id}"] [data-finance-status]`)).toHaveText(
+				"Cancelled",
+			);
+			expect((await subscriptionDetail(account, cancellable.id)).subscription.status).toBe("cancelled");
+			expect((await activity(account)).find((item) => item.action === "set_subscription_status")).toMatchObject({
+				variant: "cancelled",
+			});
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("case 4: the Add dialog, the palette commands, Edit, the status changes and Remove work from /finance, all undoable", async ({
+		browser,
+	}) => {
+		const account = await plainAccount("fva");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const vendor = uniqueVendor("Dialogbox");
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.goto("/inbox");
+			await expect(page.getByRole("button", { name: "Compose" })).toBeVisible();
+			const search = await openPalette(page);
+			await search.fill("Open Subscriptions");
+			await page.getByText("Open Subscriptions", { exact: true }).click();
+			await expect(page).toHaveURL(/\/finance$/);
+			await expect(page.getByText("Money Watch lists the subscriptions you track here")).toBeVisible();
+
+			const dialog = page.locator("[data-finance-subscription-dialog]");
+			await page.getByRole("button", { name: "Add subscription" }).click();
+			await expect(dialog.getByRole("heading", { name: "Add subscription" })).toBeVisible();
+			for (const label of [
+				"Vendor",
+				"Plan (optional)",
+				"Amount",
+				"Currency",
+				"Billed",
+				"Next renewal",
+				"Trial ends (optional)",
+				"Remind days before",
+				"Add a calendar reminder",
+				"Mailbox",
+			])
+				await expect(dialog.getByLabel(label, { exact: true }), label).toBeVisible();
+			await expect(dialog.getByLabel("Mailbox")).toHaveValue(account.mailboxId);
+			await dialog.getByLabel("Vendor").fill(vendor);
+			await dialog.getByLabel("Amount").fill("9.99");
+			await dialog.getByLabel("Currency").fill("usd");
+			await dialog.getByLabel("Billed").selectOption("monthly");
+			await dialog.getByLabel("Next renewal").fill(isoDay(12));
+			await dialog.getByLabel("Remind days before").fill("3");
+			const created = page.waitForResponse(
+				(response) => response.url().endsWith("/api/finance/subscriptions") && response.request().method() === "POST",
+			);
+			await dialog.getByRole("button", { name: "Add subscription" }).click();
+			expect((await created).status()).toBe(200);
+			await expect(dialog).toHaveCount(0);
+			await expect(page.getByRole("status").filter({ hasText: "Subscription added" })).toBeVisible();
+			const [row] = (await listSubscriptions(account)).subscriptions;
+			expect(row).toMatchObject({ vendor, amount: { minor: 999, currency: "USD" }, cycle: "monthly", reminderDays: 3 });
+			const listed = financeRow(page, row.id);
+			await expect(listed).toContainText("$9.99/month · renews in 12 days");
+
+			await (await openRowMenu(page, vendor)).getByRole("menuitem", { name: "Edit" }).click();
+			await expect(dialog.getByRole("heading", { name: `Edit ${vendor}` })).toBeVisible();
+			await expect(dialog.getByLabel("Amount")).toHaveValue("9.99");
+			await dialog.getByLabel("Plan (optional)").fill("Family");
+			await dialog.getByRole("button", { name: "Save changes" }).click();
+			await expect(dialog).toHaveCount(0);
+			const changed = page.getByRole("status").filter({ hasText: "Subscription changed" });
+			await expect(changed).toBeVisible();
+			await expect(listed).toContainText("Family");
+			await changed.getByRole("button", { name: "Undo" }).click();
+			await expect(listed).not.toContainText("Family");
+
+			await (await openRowMenu(page, vendor)).getByRole("menuitem", { name: "Mark as expired" }).click();
+			await expect(page.getByRole("status").filter({ hasText: "Marked as expired" })).toBeVisible();
+			await expect(page.locator('[data-finance-section="upcoming"]')).toHaveCount(0);
+			await page.getByLabel("Show").selectOption("ended");
+			await expect(listed.locator("[data-finance-status]")).toHaveText("Expired");
+			await (await openRowMenu(page, vendor)).getByRole("menuitem", { name: "Mark as active" }).click();
+			await expect(page.getByRole("status").filter({ hasText: "Marked as active" })).toBeVisible();
+			await expect(page.getByText("No cancelled or expired subscriptions.")).toBeVisible();
+			await page.getByLabel("Show").selectOption("current");
+			await expect(listed.locator("[data-finance-status]")).toHaveText("Active");
+
+			await (await openRowMenu(page, vendor)).getByRole("menuitem", { name: "Remove" }).click();
+			const removed = page.getByRole("status").filter({ hasText: `Removed ${vendor}` });
+			await expect(removed).toBeVisible();
+			await expect(listed).toHaveCount(0);
+			expect((await listSubscriptions(account)).subscriptions).toEqual([]);
+			await removed.getByRole("button", { name: "Undo" }).click();
+			await expect(listed).toBeVisible();
+			expect((await listSubscriptions(account)).subscriptions.map((item) => item.id)).toEqual([row.id]);
+
+			const palette = await openPalette(page);
+			await palette.fill("Add a subscription");
+			await page.getByText("Add a subscription", { exact: true }).click();
+			await expect(page).toHaveURL(/\/finance\?add=1$/);
+			await expect(dialog.getByRole("heading", { name: "Add subscription" })).toBeVisible();
+			await page.keyboard.press("Escape");
+			await expect(dialog).toHaveCount(0);
+			await expect(page).toHaveURL(/\/finance$/);
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("case 13: the view, the drawer, the card and the dialogs render without overflow in Kite, Classic and dark mode on a short viewport", async ({
+		browser,
+	}) => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("fvs");
+		const context = await browser.newContext({
+			baseURL: BASE_URL,
+			storageState: await account.api.storageState(),
+			viewport: { width: 1280, height: 600 },
+		});
+		try {
+			const cardVendor = uniqueVendor("Cardflix");
+			const { message, cards } = await deliver(account, invoice(cardVendor, dayFromNow(20).long));
+			expect(cards).toHaveLength(1);
+			const vendor = uniqueVendor("Stylebox");
+			const source = await deliverPlain(account, {
+				from: `${vendor} Billing <billing@${vendor.toLowerCase()}.test>`,
+				subject: `Your ${vendor} invoice ${uniqueToken("inv")}`,
+				text: "Hello",
+			});
+			const tracked = await addByHand(account, {
+				vendor,
+				amountMinor: 1799,
+				currency: "USD",
+				cycle: "monthly",
+				nextRenewalOn: isoDay(8),
+				messageId: source.id,
+				document: { docType: "invoice", amountMinor: 1799, currency: "USD", documentOn: isoDay(0) },
+			});
+			const trial = await addByHand(account, {
+				vendor: uniqueVendor("Trialbox"),
+				amountMinor: 1200,
+				currency: "EUR",
+				cycle: "monthly",
+				status: "trial",
+				trialEndsOn: isoDay(2),
+				reminderDays: 3,
+			});
+
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			for (const style of [
+				{ name: "kite", theme: "light", classic: false },
+				{ name: "classic", theme: "light", classic: true },
+				{ name: "dark", theme: "dark", classic: false },
+			]) {
+				await page.addInitScript(({ theme, classic }) => {
+					localStorage.setItem("kite-theme", theme);
+					if (classic) localStorage.setItem("kite-style", "classic");
+					else localStorage.removeItem("kite-style");
+				}, style);
+				await page.goto("/finance");
+				expect(
+					await page.evaluate(() => ({
+						classic: document.documentElement.dataset.style === "classic",
+						dark: document.documentElement.classList.contains("dark"),
+					})),
+				).toEqual({ classic: style.classic, dark: style.theme === "dark" });
+				const attention = page.locator('[data-finance-section="attention"]');
+				await expect(attention.locator(`[data-finance-row="${trial.id}"]`)).toContainText("Trial ends in 2 days");
+				await expect(financeRow(page, tracked.id)).toBeVisible();
+				await expect(page.locator('[data-finance-paid="USD"]')).toHaveText("$17.99");
+				await expectNoOverflow(page, null, `${style.name} page`);
+				await expectNoOverflow(page, "[data-finance-page]", `${style.name} view`);
+
+				await financeRow(page, tracked.id)
+					.getByRole("button", { name: new RegExp(`^${vendor}`) })
+					.click();
+				const drawer = page.locator("[data-finance-drawer]");
+				await expect(drawer.locator("[data-finance-document]")).toHaveCount(1);
+				await expect(drawer.locator("[data-finance-drawer-paid]")).toHaveText("$17.99");
+				await expectNoOverflow(page, "[data-finance-drawer]", `${style.name} drawer`);
+				await page.keyboard.press("Escape");
+				await expect(drawer).toHaveCount(0);
+
+				await page.getByRole("button", { name: "Add subscription" }).click();
+				const dialog = page.locator("[data-finance-subscription-dialog]");
+				await expect(dialog).toBeVisible();
+				const box = await dialog.boundingBox();
+				expect(box!.height, `${style.name} dialog height`).toBeLessThanOrEqual(600 - 64 + 1);
+				await expectNoOverflow(page, "[data-finance-subscription-dialog]", `${style.name} dialog`);
+				const submit = dialog.getByRole("button", { name: "Add subscription" });
+				await submit.scrollIntoViewIfNeeded();
+				await expect(submit).toBeInViewport();
+				await page.keyboard.press("Escape");
+				await expect(dialog).toHaveCount(0);
+
+				await page.goto(`/inbox/${message.id}`);
+				const block = subscriptionBlock(page);
+				await expect(block.getByRole("button", { name: "Track", exact: true })).toBeVisible();
+				// The card's menu button sits in the card's padding, so its content is measured against the card box.
+				const spill = await block.evaluate((element) => {
+					const box = (element.parentElement ?? element).getBoundingClientRect();
+					return Math.max(
+						0,
+						...[...element.querySelectorAll("*")].map((child) => {
+							const rect = child.getBoundingClientRect();
+							return rect.width === 0 ? 0 : Math.max(rect.right - box.right, box.left - rect.left);
+						}),
+					);
+				});
+				expect(spill, `${style.name} card`).toBeLessThanOrEqual(1);
+				await expectNoOverflow(page, null, `${style.name} reader`);
+			}
+
+			await page.getByRole("button", { name: "More actions" }).first().click();
+			await page.getByRole("button", { name: "Add to a tracked subscription", exact: true }).click();
+			const documentDialog = page.locator("[data-finance-document-dialog]");
+			await expect(documentDialog).toBeVisible();
+			expect((await documentDialog.boundingBox())!.height).toBeLessThanOrEqual(600 - 64 + 1);
+			const record = documentDialog.getByRole("button", { name: "Record document" });
+			await record.scrollIntoViewIfNeeded();
+			await expect(record).toBeInViewport();
+			await page.keyboard.press("Escape");
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+			await restore();
 		}
 	});
 });

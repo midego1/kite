@@ -841,6 +841,11 @@ async function plainAccount(prefix: string) {
 /** Opens the reader's overflow menu on the message and chooses the module entry. */
 async function openMessageMenuItem(page: Page, messageId: string, label: string) {
 	await page.goto(`/inbox/${messageId}`);
+	return chooseMessageMenuItem(page, label);
+}
+
+/** Chooses the module entry from the overflow menu of the message already open in the reader. */
+async function chooseMessageMenuItem(page: Page, label: string) {
 	await page.getByRole("button", { name: "More actions" }).first().click();
 	const detected = page.waitForResponse((response) => response.url().endsWith("/api/finance/detect"));
 	await page.getByRole("button", { name: label, exact: true }).click();
@@ -1012,6 +1017,53 @@ test.describe("Money Watch manual add", () => {
 
 			await undo(account, actionId);
 			expect((await subscriptionDetail(account, row.id)).documents.map((item) => item.docType)).toEqual(["invoice"]);
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("case 4: reopening Add to a tracked subscription preselects a row tracked since it was last open", async ({
+		browser,
+	}) => {
+		const account = await plainAccount("fmr");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const vendor = `Reopenflix${uniqueToken("").slice(-4)}`;
+			const message = await deliverPlain(account, invoice(vendor, dayFromNow(20).long, { headers: AUTOMATIC }));
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			const documentDialog = page.locator("[data-finance-document-dialog]");
+			await openMessageMenuItem(page, message.id, "Add to a tracked subscription");
+			await expect(documentDialog).toContainText("You are not tracking any subscriptions yet.");
+			await page.keyboard.press("Escape");
+			await expect(documentDialog).toHaveCount(0);
+
+			await chooseMessageMenuItem(page, "Track as subscription");
+			const trackDialog = page.locator("[data-finance-track-dialog]");
+			await expect(trackDialog.getByLabel("Vendor")).toHaveValue(vendor);
+			await trackDialog.getByRole("button", { name: "Track subscription" }).click();
+			await expect(trackDialog).toHaveCount(0);
+			const [row] = (await listSubscriptions(account)).subscriptions;
+			expect(row).toMatchObject({ vendor });
+
+			// Hold the list until the detector answers, the order in which a cached list would mount the form.
+			let detected!: () => void;
+			const detectAnswered = new Promise<void>((resolve) => (detected = resolve));
+			await page.route(
+				(url) => url.pathname === "/api/finance/subscriptions",
+				async (route) => {
+					await detectAnswered;
+					await route.continue();
+				},
+			);
+			const draft = await chooseMessageMenuItem(page, "Add to a tracked subscription");
+			detected();
+			expect(draft.draft.subscriptionId).toBe(row.id);
+			await expect(documentDialog.getByLabel("Subscription")).toHaveValue(row.id);
+			await expect(documentDialog.getByRole("button", { name: "Record document" })).toBeEnabled();
 			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
 		} finally {
 			await context.close();

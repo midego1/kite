@@ -18,9 +18,13 @@ type OverlayProps = MessageSlotContext & { open: boolean; onOpenChange: (open: b
 
 const localToday = () => new Date().toLocaleDateString("en-CA");
 
-/** The user's tracked subscriptions, loaded while the dialog is open. */
+/**
+ * The user's tracked subscriptions, loaded each time the dialog opens. The list is dropped on close so
+ * a reopen never mounts the form, which picks its row once, with a list from an earlier opening.
+ */
 function useTracked(open: boolean): TrackedOption[] | null {
 	const [tracked, setTracked] = useState<TrackedOption[] | null>(null);
+	if (!open && tracked !== null) setTracked(null);
 	useEffect(() => {
 		if (!open) return;
 		let live = true;

@@ -118,7 +118,7 @@ before publishing a new mirror, with the commands below.
       $m = 0; $m = ($m * 10 + $_) % 97 for split //, $r; if ($m == 1) { print "$s\n"; last } } }'
   # Phone numbers (review by hand): international (+ or 00), national (leading 0) and
   # North American.
-  history | grep -Eo '(\+|\b00)[1-9][0-9 ().-]{8,}[0-9]|\(?\b0[1-9][0-9]{0,3}\)?[ -]([0-9]{4}|[0-9]{3,4}[ -]?[0-9]{2,4})\b|\b(1[ -])?\(?[2-9][0-9]{2}\)?[ -][0-9]{3}[ -][0-9]{4}\b' \
+  history | grep -Eo '(\+|\b00)[1-9][0-9 ().-]{8,}[0-9]|\(?\b0[1-9][0-9]{0,3}\)?( |-)([0-9]{4}|[0-9]{3,4}[ -]?[0-9]{2,4})\b|\b(1[ -])?\(?[2-9][0-9]{2}\)?[ -][0-9]{3}[ -][0-9]{4}\b' \
     | sort -u
   history | grep -E -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'
   ```

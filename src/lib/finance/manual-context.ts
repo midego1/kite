@@ -95,7 +95,14 @@ export async function executeFinanceAction(
 		...call,
 		input: call.input as Record<string, JsonValue>,
 	});
-	if (!executed.ok) return { answer: fail(executed.status, executed.error) };
+	// A refusal raised inside the action reaches here as its message only, so the code is restored from it.
+	if (!executed.ok)
+		return {
+			answer:
+				executed.error === MIGRATION_PENDING_ERROR
+					? fail(409, executed.error, "MIGRATION_PENDING")
+					: fail(executed.status, executed.error),
+		};
 	return { actionId: executed.actionId, result: (executed.result ?? {}) as Record<string, JsonValue> };
 }
 

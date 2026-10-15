@@ -7,6 +7,7 @@ import { deflateSync } from "node:zlib";
 import { build } from "esbuild";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
 import { loadFinance } from "./support/finance-bundle.mjs";
+import { copyMigrationsBefore } from "./support/module-database.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = makeBundleDirectory("kite-finance-module-");
@@ -26,6 +27,11 @@ await build({
 		views: join(root, "src/lib/finance/views.ts"),
 		subscriptions: join(root, "src/lib/finance/subscriptions.ts"),
 		removal: join(root, "src/lib/finance/removal-snapshot.ts"),
+		session: join(root, "src/lib/auth/session.ts"),
+		subscriptionsRoute: join(root, "src/app/api/finance/subscriptions/route.ts"),
+		subscriptionRoute: join(root, "src/app/api/finance/subscriptions/[id]/route.ts"),
+		documentsRoute: join(root, "src/app/api/finance/subscriptions/[id]/documents/route.ts"),
+		documentRoute: join(root, "src/app/api/finance/documents/[id]/route.ts"),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
 	},
@@ -39,7 +45,12 @@ await build({
 	logLevel: "silent",
 	packages: "external",
 	tsconfig: join(root, "tsconfig.json"),
-	alias: { "cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts") },
+	alias: {
+		"cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts"),
+		"next/server": "next/server.js",
+		"next/headers": "next/headers.js",
+		"next/navigation": "next/navigation.js",
+	},
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { acceptSuggestion } = await load("api");
@@ -53,6 +64,11 @@ const { clearModuleStateCache } = await load("state");
 const { listSubscriptionsView, subscriptionDetailView } = await load("views");
 const { ownerRow, documentRow } = await load("subscriptions");
 const { subscriptionRemovalSnapshot, documentRemovalSnapshot } = await load("removal");
+const { createSession } = await load("session");
+const subscriptionsRoute = await load("subscriptionsRoute");
+const subscriptionRoute = await load("subscriptionRoute");
+const documentsRoute = await load("documentsRoute");
+const documentRoute = await load("documentRoute");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
 
@@ -232,6 +248,85 @@ test("before migration 0063 the list and the detail answer migrationPending with
 		migrationPending: true,
 	});
 	assert.deepEqual(await subscriptionDetailView(viewOf(owner), "fsub_missing"), { migrationPending: true });
+});
+
+test("before migration 0063 the five write routes answer 409 MIGRATION_PENDING and the reads answer migrationPending", async (t) => {
+	const db = new SqliteDatabase(":memory:");
+	await applyMigrations(db, copyMigrationsBefore(outDir, 63));
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name LIKE 'finance_%'").get().n, 0);
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, time_zone, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'UTC', 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'support', 1);
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at) VALUES
+			('inv-1', 'owner', 'mailbox-a', 'inbound', 'billing@streamflix.example', 'support@example.com', 'Your invoice', 'Invoice', 'received', 2);
+	`);
+	const env = { DB: db, OUTBOUND_QUEUE: { send: async () => undefined } };
+	globalThis.__kiteNodeEnv = env;
+	clearModuleStateCache();
+	t.after(() => {
+		db.db.close();
+		delete globalThis.__kiteNodeEnv;
+		clearModuleStateCache();
+	});
+	const token = await createSession(env, "owner");
+	const call = async (route, method, path, body, id) => {
+		const request = new Request(`http://localhost${path}`, {
+			method,
+			headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
+		});
+		const response = await route[method](request, { params: Promise.resolve({ id }) });
+		return { status: response.status, body: await response.json() };
+	};
+	const pending = {
+		status: 409,
+		body: { error: "Apply the pending database update first", code: "MIGRATION_PENDING" },
+	};
+	const writes = [
+		[
+			"POST by hand",
+			subscriptionsRoute,
+			"POST",
+			"/api/finance/subscriptions",
+			{ vendor: "Streamflix", mailboxId: "mailbox-a" },
+		],
+		[
+			"POST from a message",
+			subscriptionsRoute,
+			"POST",
+			"/api/finance/subscriptions",
+			{ vendor: "Streamflix", messageId: "inv-1" },
+		],
+		[
+			"PATCH",
+			subscriptionRoute,
+			"PATCH",
+			"/api/finance/subscriptions/fsub_missing",
+			{ fields: { plan: "Premium" } },
+			"fsub_missing",
+		],
+		["DELETE", subscriptionRoute, "DELETE", "/api/finance/subscriptions/fsub_missing", undefined, "fsub_missing"],
+		[
+			"POST documents",
+			documentsRoute,
+			"POST",
+			"/api/finance/subscriptions/fsub_missing/documents",
+			{ messageId: "inv-1", docType: "invoice", amountMinor: 1799, currency: "USD", documentOn: day(-1) },
+			"fsub_missing",
+		],
+		["DELETE document", documentRoute, "DELETE", "/api/finance/documents/fdoc_missing", undefined, "fdoc_missing"],
+	];
+	for (const [name, route, method, path, body, id] of writes)
+		assert.deepEqual(await call(route, method, path, body, id), pending, name);
+	assert.deepEqual(await call(subscriptionsRoute, "GET", "/api/finance/subscriptions"), {
+		status: 200,
+		body: { subscriptions: [], totals: [], migrationPending: true },
+	});
+	assert.deepEqual(
+		await call(subscriptionRoute, "GET", "/api/finance/subscriptions/fsub_missing", undefined, "fsub_missing"),
+		{ status: 200, body: { migrationPending: true } },
+	);
 });
 
 test("Undo of Track removes the row and its documents and reopens the card", async (t) => {

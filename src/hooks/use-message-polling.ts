@@ -4,9 +4,11 @@ import type { MessageRealtimeState, NewMessageEvent, RealtimeChannelMessage } fr
 import {
 	areBrowserNotificationsEnabled,
 	dispatchAgentSuggestionChanged,
+	dispatchModuleNotice,
 	ensureNotificationServiceWorker,
 	getRealtimeWebSocketUrl,
 	getReconnectDelay,
+	parseModuleNoticeEvent,
 	parseNewMessageEvent,
 	REALTIME_FALLBACK_INTERVAL_MS,
 	REALTIME_FOCUS_CHECK_THROTTLE_MS,
@@ -68,6 +70,10 @@ export function useMessagePolling(): MessageRealtimeState {
 			if (leader) channel?.postMessage({ type: "status", connected: value } satisfies RealtimeChannelMessage);
 		}
 
+		function relayToOtherTabs(payload: string, fromSocket: boolean) {
+			if (fromSocket) channel?.postMessage({ type: "notification", payload } satisfies RealtimeChannelMessage);
+		}
+
 		function handleNotification(payload: string, fromSocket: boolean) {
 			try {
 				const parsed = JSON.parse(payload) as {
@@ -89,14 +95,21 @@ export function useMessagePolling(): MessageRealtimeState {
 				if (parsed.type === "agent_draft" && parsed.draftId && parsed.mailboxId) {
 					window.dispatchEvent(new CustomEvent("kite:agent-draft", { detail: parsed }));
 					dispatchMessagesChanged();
-					if (fromSocket) channel?.postMessage({ type: "notification", payload } satisfies RealtimeChannelMessage);
+					relayToOtherTabs(payload, fromSocket);
 					return;
 				}
 				// Without this branch the event would fall through to parseNewMessageEvent and be dropped.
 				if (parsed.type === "agent_suggestion" && parsed.mailboxId) {
 					dispatchAgentSuggestionChanged(parsed);
 					dispatchMessagesChanged();
-					if (fromSocket) channel?.postMessage({ type: "notification", payload } satisfies RealtimeChannelMessage);
+					relayToOtherTabs(payload, fromSocket);
+					return;
+				}
+				if (parsed.type === "module_notice") {
+					const notice = parseModuleNoticeEvent(payload);
+					if (!notice) return;
+					dispatchModuleNotice(notice);
+					relayToOtherTabs(payload, fromSocket);
 					return;
 				}
 			} catch {

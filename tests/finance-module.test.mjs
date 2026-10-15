@@ -24,6 +24,8 @@ await build({
 		refs: join(root, "src/lib/modules/record-refs.ts"),
 		state: join(root, "src/lib/modules/state.ts"),
 		views: join(root, "src/lib/finance/views.ts"),
+		subscriptions: join(root, "src/lib/finance/subscriptions.ts"),
+		removal: join(root, "src/lib/finance/removal-snapshot.ts"),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
 	},
@@ -49,6 +51,8 @@ const { moduleHost } = await load("host");
 const { resolveRecordRefs } = await load("refs");
 const { clearModuleStateCache } = await load("state");
 const { listSubscriptionsView, subscriptionDetailView } = await load("views");
+const { ownerRow, documentRow } = await load("subscriptions");
+const { subscriptionRemovalSnapshot, documentRemovalSnapshot } = await load("removal");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
 
@@ -827,13 +831,59 @@ async function runAction(name, call, userId = "owner") {
 
 const suggestionRef = { id: null, messageId: null, mailboxId: "mailbox-a" };
 
+test("removal actions refuse missing, mismatched or another owner's snapshots without deleting rows", async (t) => {
+	const context = await setup(t);
+	const first = await trackFirst(context);
+	const subscriptionId = first.subscription.id;
+	const before = await subscriptionRemovalSnapshot(await ownerRow("owner", subscriptionId));
+	const input = { subscriptionId };
+	for (const name of ["deleteSubscription", "deleteDocument"]) {
+		const result = await runAction(name, {
+			op: "execute",
+			actionId: "aact_no_snapshot",
+			suggestion: suggestionRef,
+			input: name === "deleteSubscription" ? input : { documentId: context.documents()[0].id },
+		});
+		assert.equal(result.refused.status, 409);
+	}
+	const mismatched = await runAction("deleteSubscription", {
+		op: "execute",
+		actionId: "aact_wrong_snapshot",
+		suggestion: suggestionRef,
+		input: { subscriptionId: "another" },
+		before,
+	});
+	assert.equal(mismatched.refused.status, 409);
+	const stranger = await runAction(
+		"deleteSubscription",
+		{ op: "execute", actionId: "aact_foreign_snapshot", suggestion: suggestionRef, input, before },
+		"member",
+	);
+	assert.equal(stranger.refused.status, 403);
+	assert.equal(context.rows().length, 1);
+	assert.equal(context.documents().length, 1);
+});
+
 test("each action is idempotent by actionId and undoes only what it did", async (t) => {
 	const context = await setup(t);
 	const { rows, documents } = context;
 	const first = await trackFirst(context);
 	const subscriptionId = first.subscription.id;
-	const execute = (name, actionId, input) =>
-		runAction(name, { op: "execute", actionId, suggestion: suggestionRef, input });
+	const execute = async (name, actionId, input) => {
+		const before =
+			name === "deleteSubscription"
+				? await subscriptionRemovalSnapshot(await ownerRow("owner", input.subscriptionId))
+				: name === "deleteDocument"
+					? documentRemovalSnapshot(await documentRow("owner", input.documentId))
+					: undefined;
+		return runAction(name, {
+			op: "execute",
+			actionId,
+			suggestion: suggestionRef,
+			input,
+			...(before ? { before } : {}),
+		});
+	};
 	const undo = (name, actionId, inverse, op = "undo") => runAction(name, { op, actionId, inverse: { inverse } });
 
 	const edit = { variant: "", subscriptionId, changes: { vendor: "Streamflix Plus", amountMinor: 2499 } };
@@ -1191,14 +1241,8 @@ test("a subscription with more than 200 documents is not removed", async (t) => 
 	);
 	for (let index = 0; index < 200; index += 1) insert.run(`fdoc_bulk_${index}`, id, index + 1);
 	assert.equal(documents().length, 201);
-	const refused = await runAction("deleteSubscription", {
-		op: "execute",
-		actionId: "aact_delete_big",
-		suggestion: suggestionRef,
-		input: { subscriptionId: id },
-	});
-	assert.equal(refused.refused.status, 409);
-	assert.match(refused.refused.error, /too many documents/);
+	const row = await ownerRow("owner", id);
+	await assert.rejects(() => subscriptionRemovalSnapshot(row), /too many documents/);
 	assert.equal(rows().length, 1);
 	assert.equal(documents().length, 201);
 });

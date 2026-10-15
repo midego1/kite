@@ -40,7 +40,7 @@ const { addSubscription, changeSubscription, removeSubscription } = await load("
 const { addDocument, removeDocument } = await load("documents");
 const { detectDraft } = await load("draft");
 const { acceptSuggestion } = await load("api");
-const { undoAgentAction } = await load("execute");
+const { executeAction, undoAgentAction } = await load("execute");
 const { listAgentActivity } = await load("activity");
 const { clearModuleStateCache } = await load("state");
 const { SqliteDatabase } = await load("runtime");
@@ -349,6 +349,72 @@ test("documents from a message are recorded once, need the message's own attachm
 		"undo puts the document back with its id",
 	);
 });
+
+for (const kind of ["subscription", "document"])
+	for (const deleted of [false, true])
+		test(`a ${kind} removal interrupted ${deleted ? "after" : "before"} deletion resumes with its saved undo snapshot`, async (t) => {
+			const { env, db, addMessage, rows, documents, action } = await setup(t);
+			addMessage("pay-1", { attachments: ["att-1"] });
+			const id = (await addSubscription(owner, byHand())).body.subscription.id;
+			const recorded = await addDocument(owner, id, documentBody({ attachmentId: "att-1" }));
+			const originalRows = rows();
+			const originalDocuments = documents();
+			const subscription = kind === "subscription";
+			const actionType = subscription ? "delete_subscription" : "delete_document";
+			const table = subscription ? "finance_subscriptions" : "finance_charges";
+			const targetId = subscription ? id : recorded.body.document.id;
+			const snapshotPath = subscription ? "$.removed.subscription.id" : "$.removed.documents[0].id";
+			db.db.exec(`
+				CREATE TRIGGER require_saved_removal BEFORE DELETE ON ${table}
+				BEGIN
+					SELECT CASE WHEN NOT EXISTS (
+						SELECT 1 FROM agent_actions WHERE action = '${actionType}' AND status = 'pending'
+						AND json_extract(before, '${snapshotPath}') = OLD.id
+						AND json_array_length(before, '$.removed.documents') = 1
+						AND json_extract(before, '$.removed.documents[0].attachmentId') = 'att-1'
+					) THEN RAISE(ABORT, 'missing undo snapshot') END;
+					${deleted ? "" : "SELECT RAISE(ABORT, 'interrupted before deletion');"}
+				END;
+			`);
+			const removed = subscription ? await removeSubscription(owner, targetId) : await removeDocument(owner, targetId);
+			assert.equal(removed.status, deleted ? 200 : 409, JSON.stringify(removed.body));
+			const pending = db.db.prepare("SELECT * FROM agent_actions WHERE action = ?").get(actionType);
+			const saved = JSON.parse(pending.before);
+			assert.equal(saved.removed.documents[0].id, recorded.body.document.id);
+			assert.equal(saved.removed.subscription?.id ?? null, subscription ? id : null);
+			db.db.exec(`DROP TRIGGER require_saved_removal`);
+			// A suggestion identity lets the executor locate the interrupted action on replay.
+			db.db.exec(`
+				INSERT INTO agent_suggestions (id, mailbox_id, message_id, reviewer_user_id, kind, title, created_at)
+				VALUES ('remove-resume', 'mailbox-o', 'pay-1', 'owner', 'subscription', 'Remove', 1);
+			`);
+			db.db
+				.prepare(
+					"UPDATE agent_actions SET suggestion_id = 'remove-resume', status = 'pending', after = '{}', undo_until = NULL, updated_at = ? WHERE id = ?",
+				)
+				.run(Math.floor(Date.now() / 1000) - 3600, pending.id);
+			const resumed = await executeAction({
+				env,
+				mailboxId: "mailbox-o",
+				suggestionId: "remove-resume",
+				action: actionType,
+				initiator: "user",
+				actingUserId: owner.id,
+				permissions: { canManage: true, canSendOnBehalf: true },
+				module: {
+					input: subscription ? { subscriptionId: targetId } : { documentId: targetId },
+					viewer: { userId: owner.id, role: owner.role, isPrimaryAdmin: false, timeZone: "UTC" },
+				},
+			});
+			assert.equal(resumed.status, "applied", resumed.reason);
+			assert.equal(resumed.actionId, pending.id);
+			assert.deepEqual(JSON.parse(action(pending.id).before), saved, "resume keeps the original snapshot");
+			assert.deepEqual(documents(), []);
+			assert.equal(rows().length, subscription ? 0 : 1);
+			await undoAgentAction(env, owner, pending.id);
+			assert.deepEqual(rows(), originalRows);
+			assert.deepEqual(documents(), originalDocuments);
+		});
 
 test("documents name the row's audit mailbox, are owner-only and answer NO_MAILBOX without one", async (t) => {
 	const { db, addMessage, action, documents, actions } = await setup(t);

@@ -2,8 +2,9 @@ import type { z } from "zod";
 import { deleteDocumentInput, recordInput, type documentInputSchema } from "./action-input";
 import { actionResult, financeAction, priorRow, requireRow } from "./action-runner";
 import { FinanceRefusal } from "./errors";
-import { dayToDate, derivedId, fieldColumns, rowJson, snapshotFields } from "./record-utils";
-import { deleteDocuments, documentRow, insertDocument, updateSubscription } from "./subscriptions";
+import { dayToDate, derivedId, fieldColumns, snapshotFields } from "./record-utils";
+import { removalBefore } from "./removal-snapshot";
+import { deleteDocuments, insertDocument, updateSubscription } from "./subscriptions";
 
 type DocumentInput = z.infer<typeof documentInputSchema>;
 
@@ -62,16 +63,17 @@ export const recordDocument = financeAction(recordInput, async ({ actionId, user
 });
 
 /** `delete_document`: removes one document; the snapshot in the inverse puts it back with its id. */
-export const deleteDocument = financeAction(deleteDocumentInput, async ({ userId, input }) => {
-	const document = await documentRow(userId, input.documentId);
-	if (!document) throw new FinanceRefusal(409, "The document is no longer recorded");
-	await deleteDocuments(userId, [document.id]);
+export const deleteDocument = financeAction(deleteDocumentInput, async ({ userId, input, before }) => {
+	const inverse = removalBefore(before, userId);
+	if (
+		inverse.removed.subscription ||
+		inverse.removed.documents.length !== 1 ||
+		inverse.removed.documents[0].id !== input.documentId
+	)
+		throw new FinanceRefusal(409, "The removal snapshot does not match this document");
+	await deleteDocuments(userId, [input.documentId]);
 	return {
-		result: actionResult(document.subscriptionId, { documentId: document.id }),
-		inverse: {
-			userId,
-			subscriptionId: document.subscriptionId,
-			removed: { subscription: null, documents: [rowJson(document)] },
-		},
+		result: actionResult(inverse.subscriptionId, { documentId: input.documentId }),
+		inverse,
 	};
 });

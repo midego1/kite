@@ -1776,6 +1776,18 @@ test.describe("Money Watch view", () => {
 			await page.getByLabel("Show").selectOption("current");
 			await expect(listed.locator("[data-finance-status]")).toHaveText("Active");
 
+			const receipt = await deliverPlain(account, invoice(vendor, dayFromNow(12).long));
+			const { document } = await okJson<{ document: DocumentView }>(
+				await account.api.post(`/api/finance/subscriptions/${row.id}/documents`, {
+					data: {
+						messageId: receipt.id,
+						docType: "payment",
+						amountMinor: 999,
+						currency: "USD",
+						documentOn: isoDay(0),
+					},
+				}),
+			);
 			await (await openRowMenu(page, vendor)).getByRole("menuitem", { name: "Remove" }).click();
 			const removed = page.getByRole("status").filter({ hasText: `Removed ${vendor}` });
 			await expect(removed).toBeVisible();
@@ -1784,6 +1796,7 @@ test.describe("Money Watch view", () => {
 			await removed.getByRole("button", { name: "Undo" }).click();
 			await expect(listed).toBeVisible();
 			expect((await listSubscriptions(account)).subscriptions.map((item) => item.id)).toEqual([row.id]);
+			expect((await subscriptionDetail(account, row.id)).documents.map((item) => item.id)).toEqual([document.id]);
 
 			const palette = await openPalette(page);
 			await palette.fill("Add a subscription");

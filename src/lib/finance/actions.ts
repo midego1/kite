@@ -3,21 +3,9 @@ import { actionResult, financeAction, priorRow, requireRow } from "./action-runn
 import { TRACK_UPDATE_KEYS } from "./answer-utils";
 import { FinanceRefusal } from "./errors";
 import { recordLedgerDocument } from "./document-actions";
-import {
-	derivedId,
-	fieldColumns,
-	rowJson,
-	snapshotFields,
-	suggestionSubscriptionId,
-	type FieldKey,
-} from "./record-utils";
-import {
-	SNAPSHOT_DOCUMENTS,
-	deleteSubscriptionRow,
-	insertSubscription,
-	ownerDocuments,
-	updateSubscription,
-} from "./subscriptions";
+import { derivedId, fieldColumns, snapshotFields, suggestionSubscriptionId, type FieldKey } from "./record-utils";
+import { removalBefore } from "./removal-snapshot";
+import { deleteSubscriptionRow, insertSubscription, updateSubscription } from "./subscriptions";
 import { emitSubscriptionDetected } from "./webhook-events";
 
 /** Every change to a row's due date, status or reminder keeps its calendar event in step. */
@@ -130,22 +118,14 @@ export const setSubscriptionStatus = financeAction(
  */
 export const deleteSubscription = financeAction(
 	deleteSubscriptionInput,
-	async ({ userId, input }) => {
-		const row = await requireRow(userId, input.subscriptionId);
-		const documents = await ownerDocuments(userId, row.id, SNAPSHOT_DOCUMENTS + 1);
-		if (documents.length > SNAPSHOT_DOCUMENTS)
-			throw new FinanceRefusal(
-				409,
-				"This subscription has too many documents to remove in one step; remove older documents first",
-			);
-		await deleteSubscriptionRow(userId, row.id);
+	async ({ userId, input, before }) => {
+		const inverse = removalBefore(before, userId);
+		if (inverse.subscriptionId !== input.subscriptionId || !inverse.removed.subscription)
+			throw new FinanceRefusal(409, "The removal snapshot does not match this subscription");
+		await deleteSubscriptionRow(userId, input.subscriptionId);
 		return {
-			result: actionResult(row.id),
-			inverse: {
-				userId,
-				subscriptionId: row.id,
-				removed: { subscription: rowJson(row), documents: documents.map(rowJson) },
-			},
+			result: actionResult(input.subscriptionId),
+			inverse,
 		};
 	},
 	SYNCS_REMINDER,

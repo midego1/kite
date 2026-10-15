@@ -20,6 +20,7 @@ import {
 } from "./manual-context";
 import { auditMailbox, editPlan, manualFields, type ManagedMailbox } from "./manual-utils";
 import { rowJson, subscriptionView, type SubscriptionRow } from "./record-utils";
+import { subscriptionRemovalSnapshot } from "./removal-snapshot";
 import { ownerRow } from "./subscriptions";
 import { manualVendorKey, senderAddress, vendorKey, vendorName } from "./vendor-utils";
 
@@ -160,7 +161,7 @@ export function removeSubscription(user: FinanceUser, id: string): Promise<Finan
 			capability: "deleteSubscription",
 			mailboxId: target.mailboxId,
 			input: { subscriptionId: target.row.id },
-			before: rowJson(target.row),
+			before: await subscriptionRemovalSnapshot(target.row),
 		});
 		if ("answer" in executed) return executed.answer;
 		return ok({ actionId: executed.actionId });

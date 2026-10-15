@@ -18,7 +18,7 @@ export type ExecuteCall<Input> = {
 	ctx: CapabilityCallContext;
 	suggestion: { id: string | null; messageId: string | null; mailboxId: string };
 	input: Input;
-	/** The row as the caller saw it before this action, as JSON; the same on a resumed run. */
+	/** The caller's saved state (a row or removal snapshot), as JSON; the same on a resumed run. */
 	before: Record<string, unknown> | null;
 };
 

@@ -14,6 +14,7 @@ import {
 	type FinanceUser,
 } from "./manual-context";
 import { documentView, rowJson } from "./record-utils";
+import { documentRemovalSnapshot } from "./removal-snapshot";
 import { documentRow, hasDocument } from "./subscriptions";
 
 const documentExists = () => fail(409, "This document is already recorded for the subscription", "DOCUMENT_EXISTS");
@@ -62,6 +63,7 @@ export function removeDocument(user: FinanceUser, documentId: string): Promise<F
 			capability: "deleteDocument",
 			mailboxId: target.mailboxId,
 			input: { documentId: document.id },
+			before: documentRemovalSnapshot(document),
 		});
 		if ("answer" in executed) return executed.answer;
 		return ok({ actionId: executed.actionId });

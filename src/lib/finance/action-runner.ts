@@ -1,6 +1,7 @@
 import type { ZodType } from "zod";
 import type { CapabilityCallContext, CapabilityHandler, JsonValue } from "@/lib/modules/module-types";
 import { storedInverse, type StoredInverse } from "./action-input";
+import { syncCalendarReminder } from "./calendar-reminder";
 import { FinanceRefusal, refusalOf } from "./errors";
 import {
 	chargeFromJson,
@@ -51,7 +52,11 @@ async function undoStored(inverse: StoredInverse): Promise<void> {
 	}
 	if (inverse.removed) {
 		const subscription = inverse.removed.subscription ? subscriptionFromJson(inverse.removed.subscription) : null;
-		await restoreRows(subscription, inverse.removed.documents.map(chargeFromJson));
+		// The reminder event went with the row; the calendar sync after the undo puts it back.
+		await restoreRows(
+			subscription && { ...subscription, calendarEventId: null },
+			inverse.removed.documents.map(chargeFromJson),
+		);
 	}
 	if (inverse.previous && Object.keys(inverse.previous).length > 0 && (await ownerRow(userId, subscriptionId)))
 		await updateSubscription(userId, subscriptionId, fieldColumns(inverse.previous));
@@ -79,11 +84,17 @@ export function priorRow(
 	return before && before.id === row.id && before.userId === userId ? subscriptionFromJson(before) : null;
 }
 
+type ActionOptions = {
+	/** The action can change whether or when the subscription's calendar reminder applies. */
+	syncsReminder?: boolean;
+};
+
 async function run<Input>(
 	raw: JsonValue,
 	ctx: CapabilityCallContext,
 	schema: ZodType<Input>,
 	execute: (call: ExecuteCall<Input>) => Promise<ActionOutcome>,
+	options: ActionOptions,
 ): Promise<JsonValue> {
 	const viewer = ctx.viewer;
 	if (!viewer) throw new FinanceRefusal(403, "This action needs a signed-in user");
@@ -94,6 +105,9 @@ async function run<Input>(
 		const { actionId, suggestion } = call;
 		const before = isObject(call.before) ? call.before : null;
 		const outcome = await execute({ actionId, userId: viewer.userId, ctx, suggestion, input: input.data, before });
+		const subscriptionId = outcome.result.subscriptionId;
+		if (options.syncsReminder && typeof subscriptionId === "string")
+			await syncCalendarReminder(ctx, viewer.userId, subscriptionId);
 		// Optional inverse fields may be undefined, which is not JSON.
 		const inverse = outcome.inverse ? (JSON.parse(JSON.stringify(outcome.inverse)) as JsonValue) : null;
 		return { result: outcome.result, inverse };
@@ -101,7 +115,10 @@ async function run<Input>(
 	const inverse = undoInverse(call);
 	if (inverse && inverse.userId !== viewer.userId)
 		throw new FinanceRefusal(403, "Only the owner can change this subscription");
-	if (inverse && call.op === "undo") await undoStored(inverse);
+	if (inverse && call.op === "undo") {
+		await undoStored(inverse);
+		if (options.syncsReminder) await syncCalendarReminder(ctx, inverse.userId, inverse.subscriptionId);
+	}
 	return { result: {}, inverse: null };
 }
 
@@ -113,10 +130,11 @@ async function run<Input>(
 export function financeAction<Input>(
 	schema: ZodType<Input>,
 	execute: (call: ExecuteCall<Input>) => Promise<ActionOutcome>,
+	options: ActionOptions = {},
 ): CapabilityHandler {
 	return async (raw, ctx) => {
 		try {
-			return await run(raw, ctx, schema, execute);
+			return await run(raw, ctx, schema, execute, options);
 		} catch (error) {
 			const refusal = refusalOf(error);
 			if (!refusal) throw error;

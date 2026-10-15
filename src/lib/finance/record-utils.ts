@@ -172,7 +172,12 @@ export function subscriptionView(row: SubscriptionRow) {
 }
 
 /** The `subscription` object of the Money Watch webhook payloads. */
-export function webhookSubscription(row: SubscriptionRow) {
+export function webhookSubscription(
+	row: Pick<
+		SubscriptionRow,
+		"id" | "vendor" | "plan" | "amountMinor" | "currency" | "cycle" | "status" | "nextRenewalAt" | "trialEndsAt"
+	>,
+) {
 	return {
 		ref: subscriptionRef(row.id),
 		vendor: row.vendor,

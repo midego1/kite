@@ -70,6 +70,7 @@
 		"src/lib/finance/manual-utils.ts",
 		"src/lib/finance/model-utils.ts",
 		"src/lib/finance/record-utils.ts",
+		"src/lib/finance/reminder-utils.ts",
 		"src/lib/finance/text-utils.ts",
 		"src/lib/finance/totals-utils.ts",
 		"src/lib/finance/vendor-utils.ts",

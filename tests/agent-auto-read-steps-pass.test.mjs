@@ -169,9 +169,18 @@ async function setup(t, { externalAllowed = 1, rateLimited = false } = {}) {
 		.run(externalAllowed, JSON.stringify({ "fake-triage": { input: 0.05, output: 0.3 } }));
 	const raw = new Map();
 	const sent = [];
+	const pings = [];
 	const env = {
 		DB: db,
 		AGENT_QUEUE: { send: async (message) => void sent.push(message) },
+		REALTIME: {
+			getByName: (userId) => ({
+				fetch: async (_url, init) => {
+					pings.push({ userId, ...JSON.parse(init.body) });
+					return new Response(null, { status: 204 });
+				},
+			}),
+		},
 		...(rateLimited ? { AGENT_RATE_LIMIT: { limit: async () => ({ success: false }) } } : {}),
 		BUCKET: {
 			get: async (key) => {
@@ -187,7 +196,7 @@ async function setup(t, { externalAllowed = 1, rateLimited = false } = {}) {
 		delete globalThis.__kiteNodeEnv;
 		clearModuleStateCache();
 	});
-	return { db, env, raw, sent };
+	return { db, env, raw, sent, pings };
 }
 
 let count = 0;
@@ -399,11 +408,14 @@ test("a calendar invitation is still detected when the model is refused", async 
 	assert.deepEqual(kindsOf(db, messageId), ["calendar_invite"]);
 });
 
-test("a reviewer-only suggestion is listed, counted, badged and decidable for the reviewer only", async (t) => {
-	const { db, env, raw } = await setup(t);
+test("a reviewer-only suggestion is listed, counted, badged, pinged and decidable for the reviewer only", async (t) => {
+	const { db, env, raw, pings } = await setup(t);
 	const { jobId, messageId } = insertMessage(db, raw, { headers: AUTOMATIC });
 	await processAgentTriageJob(env, jobId);
 	const [{ id }] = db.db.prepare("SELECT id FROM agent_suggestions WHERE message_id = ?").all(messageId);
+	const pinged = () =>
+		pings.filter((ping) => ping.type === "agent_suggestion" && ping.suggestionId === id).map((ping) => ping.userId);
+	assert.deepEqual(pinged(), ["owner"], "the full-access colleague is not told the card exists");
 
 	const forOwner = await listSuggestions(env, owner, { mailboxId: null, status: "open" });
 	assert.deepEqual(
@@ -428,4 +440,5 @@ test("a reviewer-only suggestion is listed, counted, badged and decidable for th
 	await assert.rejects(dismissSuggestion(env, colleague, id, {}), (error) => error.status === 404);
 	const dismissed = await dismissSuggestion(env, owner, id, {});
 	assert.equal(dismissed.status, "dismissed");
+	assert.deepEqual(new Set(pinged()), new Set(["owner"]));
 });

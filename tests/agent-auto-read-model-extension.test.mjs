@@ -43,6 +43,8 @@ export const testCapabilities = [
 					model: { jsonSchema: fragment("gadget"), instructions: '"modules": {"extmod": {"gadget": name or null}}',
 						maxOutputTokens: 120, wantsModel: "hint" } } },
 			{ name: "hint", surfaces: ["service"], description: "x", inputSchema: {}, effect: "none", timeoutMs: 200 },
+			{ name: "gadgetNote", surfaces: ["suggestion_kind"], description: "x", inputSchema: {}, effect: "none",
+				suggestionKind: { kind: "gadget_note", label: "Gadget", reasonTemplate: "gadget" } },
 		],
 	},
 	{
@@ -59,7 +61,8 @@ export const testCapabilities = [
 
 const record = (id) => async (input) => {
 	(globalThis.__stepInputs ??= []).push({ id, input });
-	return { suggestions: [] };
+	if (id !== "extmod" || !globalThis.__emitCard) return { suggestions: [] };
+	return { suggestions: [{ kind: "gadget_note", payload: { subject: input.message.subject }, reason: "gadget" }] };
 };
 export const testServers = {
 	extmod: {
@@ -77,6 +80,7 @@ export const testServers = {
 		schemas: {
 			scan: triageStepSchemas,
 			hint: { input: triageStepSchemas.input, output: z.object({ wantsModel: z.unknown() }) },
+			gadgetNote: { input: z.object({ subject: z.string().nullable() }) },
 		},
 	},
 	extbis: { handlers: { scan: record("extbis") }, schemas: { scan: triageStepSchemas } },
@@ -165,6 +169,7 @@ beforeEach(() => {
 	globalThis.__stepInputs = [];
 	globalThis.__hintInputs = [];
 	globalThis.__hintMode = "no";
+	globalThis.__emitCard = false;
 	globalThis.fetch = async (url, init) => {
 		const body = JSON.parse(init.body);
 		requests.push({ url: String(url), body });
@@ -480,6 +485,25 @@ test("on the steps-only pass the hint alone asks the model, and core plans nothi
 	assert.equal(requests[0].body.max_tokens, 520);
 	assert.deepEqual(stepModel("extmod").modules, { extmod: { gadget: "Sprocket" } });
 	assert.deepEqual(kindsOf(db, messageId), [], "no summary, reply or tasks from a hint-only request");
+});
+
+test("a message the model flags as suspicious gets no module card, on the full and the hint-only pass", async (t) => {
+	const { db, env, raw } = await setup(t);
+	globalThis.__emitCard = true;
+	globalThis.__hintMode = "yes";
+	const clean = insertMessage(db, raw, { headers: AUTOMATIC });
+	await processAgentTriageJob(env, clean.jobId);
+	assert.deepEqual(kindsOf(db, clean.messageId), ["gadget_note"], "an unflagged answer keeps the card");
+
+	answer = { ...answer, suspicious: { flagged: true, reasons: ["payment_change"] } };
+	const hinted = insertMessage(db, raw, { headers: AUTOMATIC });
+	await processAgentTriageJob(env, hinted.jobId);
+	assert.deepEqual(jobOf(db, hinted.jobId), { status: "completed", reason: null });
+	assert.deepEqual(kindsOf(db, hinted.messageId), []);
+	const full = insertMessage(db, raw);
+	await processAgentTriageJob(env, full.jobId);
+	assert.deepEqual(kindsOf(db, full.messageId), ["phishing", "summary"]);
+	assert.equal(requests.length, 3);
 });
 
 for (const mode of ["no", "throw", "slow", "string"])

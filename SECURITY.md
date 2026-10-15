@@ -107,8 +107,14 @@ before publishing a new mirror, with the commands below.
     | grep -Eio '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' | tr 'A-Z' 'a-z' \
     | grep -Eiv '@(example\.(com|org|net)|[a-z0-9.-]+\.(test|example|invalid|localhost))$' \
     | sort | uniq -c | sort -rn
-  git log --all -p | grep -E '\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\b'
-  git log --all -p | grep -E '\+[0-9][0-9 ().-]{8,}[0-9]'
+  # IBANs in any case, grouped by spaces or not, kept only when the mod-97 check passes
+  # (a case-insensitive pattern alone matches every commit hash).
+  git log --all -p | perl -ne 'while (/\b([A-Za-z]{2}[0-9]{2}(?: ?[A-Za-z0-9]{4}){2,7}(?: ?[A-Za-z0-9]{1,3})?)\b/g) {
+    ($s = uc $1) =~ s/ //g; $r = substr($s, 4) . substr($s, 0, 4); $r =~ s/([A-Z])/ord($1) - 55/ge;
+    $m = 0; $m = ($m * 10 + $_) % 97 for split //, $r; print "$s\n" if $m == 1 }'
+  # Phone numbers: international (+ or 00) and national (leading 0 with separators).
+  git log --all -p | grep -Eo '(\+|\b00)[1-9][0-9 ().-]{8,}[0-9]' | sort -u
+  git log --all -p | grep -Eo '\b0[1-9][0-9]{0,3}[ -][0-9]{3,4}[ -]?[0-9]{2,4}\b' | sort -u
   git log --all -p | grep -E -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'
   ```
 
@@ -123,8 +129,9 @@ before publishing a new mirror, with the commands below.
   they cannot be deleted from the repository and are accepted as is.
 - **Personal data in file contents: none.** Addresses in code, tests and docs use
   reserved or synthetic domains (`example.com`, `*.test` and similar) or published
-  service senders; the only free-mail addresses are a form placeholder. No IBANs, phone
-  numbers or private keys were found.
+  service senders; the only free-mail addresses are a form placeholder. No IBANs or
+  private keys were found. The only phone number is the made-up support line in
+  `tests/one-time-code.test.mjs`; the other international matches are version strings and a diff `index` line.
 - **Personal data in commit metadata.** The maintainer's name and personal email address
   are the author of `main`'s root commit and of commits on several older feature and
   mission branches. They were already public with the repository. To keep them out of new

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { loadFinance } from "./support/finance-bundle.mjs";
 
@@ -587,4 +588,55 @@ test("renewal phrases name the next renewal in five languages", () => {
 	assert.equal(renewal("Nächste Verlängerung: 3. November 2026."), "2026-11-03");
 	assert.equal(renewal("Prochain renouvellement : 3 novembre 2026."), "2026-11-03");
 	assert.equal(renewal("Próxima renovación: 3 de noviembre de 2026."), "2026-11-03");
+});
+
+// The receipt-shaped cases of the hostile corpus that scripts/agent/injection-eval.mjs also runs against a real model.
+
+const CORPUS = new URL("./fixtures/agent-injection/", import.meta.url);
+
+function corpusInput(file) {
+	const raw = readFileSync(new URL(file, CORPUS), "utf8");
+	const split = raw.indexOf("\n\n");
+	const headers = Object.fromEntries(
+		raw
+			.slice(0, split)
+			.split("\n")
+			.map((line) => [line.slice(0, line.indexOf(":")).toLowerCase(), line.slice(line.indexOf(":") + 1).trim()]),
+	);
+	const [, name, address] = /^"?(.*?)"?\s*<([^>]+)>$/.exec(headers.from);
+	return stepInput({
+		from: address,
+		fromName: name,
+		subject: headers.subject,
+		body: raw.slice(split + 2),
+		receivedAt: new Date(headers.date).toISOString(),
+		facts: { automatic: headers["auto-submitted"] === "auto-generated" },
+	});
+}
+
+function corpusDetection(file) {
+	const analysis = detect.analyzeMessage(corpusInput(file), "UTC");
+	return analysis ? detect.buildDetection(analysis, { tracked: null, recurring: null }) : null;
+}
+
+test("receipt-shaped corpus: instructions in the body never set the cancel link", () => {
+	const { payload } = corpusDetection("receipt-link-injection.eml");
+	assert.equal(payload.amountMinor, 1499);
+	assert.equal(payload.cycle, "monthly");
+	assert.equal(payload.cancelLink, null);
+	assert.equal(payload.vendorKey, "streamvault.test");
+	assert.doesNotMatch(JSON.stringify(payload), /evil\.test/);
+});
+
+test("receipt-shaped corpus: oversized amounts, far-future dates and bidi vendor names stay bounded", () => {
+	assert.equal(corpusDetection("receipt-oversized-amount.eml"), null, "an amount over the bound is no amount");
+	const far = corpusDetection("receipt-far-future.eml").payload;
+	assert.equal(far.amountMinor, 800);
+	assert.equal(far.renewalEstimated, true, "a renewal in 2099 is dropped and estimated from the cycle");
+	assert.equal(far.nextRenewalOn, "2026-11-05");
+	assert.equal(far.trialEndsOn, null);
+	const bidi = corpusDetection("receipt-bidi-vendor.eml").payload;
+	assert.doesNotMatch(bidi.vendor, /[\u200e\u200f\u202a-\u202e\u2066-\u2069]/u);
+	assert.equal(bidi.vendorKey, "streamfiix.test", "the vendor key comes from the sender address only");
+	assert.equal(bidi.amountMinor, 1799);
 });

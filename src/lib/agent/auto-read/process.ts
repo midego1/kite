@@ -180,8 +180,8 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 	};
 	const modelRun = await decideModel({ env, job, settings, context, install, stepRun, stepsOnly });
 	const steps = await runModuleTriageSteps({ ...stepRun, model: modelRun.model?.result ?? null });
-	// When the model core needed failed for good, the job fails as before unless a module step still found something.
-	if (modelRun.skip === "model_failed" && !modelRun.hintOnly && steps.planned.length === 0) throw modelRun.error;
+	// When the model core needed failed for good, the job fails as before only when no module step ran.
+	if (modelRun.skip === "model_failed" && !modelRun.hintOnly && steps.ran === 0) throw modelRun.error;
 	// A refused or failed model only stops the job when no module step ran; otherwise the steps' suggestions are kept.
 	if (modelRun.skip && steps.ran === 0) return { skip: modelRun.skip };
 	// A request only a module hint asked for reaches the steps alone: core plans as if the model had not run.

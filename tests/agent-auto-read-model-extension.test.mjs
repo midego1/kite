@@ -529,8 +529,29 @@ test("a failed model core needed is retried, and on the last attempt the steps r
 	await processAgentTriageJob(env, last.jobId);
 	assert.equal(globalThis.__stepInputs.length, 1);
 	assert.equal(stepModel("extmod"), null);
-	// The step found nothing, so the job fails as it did before extensions.
-	assert.equal(jobOf(db, last.jobId).status, "failed");
+	// A step ran, so core plans without the model and the job completes with the note.
+	assert.deepEqual(jobOf(db, last.jobId), { status: "completed", reason: "model_failed" });
+});
+
+test("a last-attempt model failure still stores the deterministic phishing warning when a step ran", async (t) => {
+	const { db, env, raw } = await setup(t);
+	failWith = 500;
+	const { jobId, messageId } = insertMessage(db, raw, { spamVerdict: "suspicious", attempts: 2 });
+	await processAgentTriageJob(env, jobId);
+	assert.equal(globalThis.__stepInputs.length, 1);
+	assert.deepEqual(jobOf(db, jobId), { status: "completed", reason: "model_failed" });
+	assert.deepEqual(kindsOf(db, messageId), ["phishing"]);
+});
+
+test("a last-attempt model failure with no module step fails the job as before", async (t) => {
+	const { db, env, raw } = await setup(t);
+	setSwitches(db, { gadgets: false, widgets: false });
+	failWith = 500;
+	const { jobId, messageId } = insertMessage(db, raw, { attempts: 2 });
+	await processAgentTriageJob(env, jobId);
+	assert.equal(globalThis.__stepInputs.length, 0);
+	assert.equal(jobOf(db, jobId).status, "failed");
+	assert.deepEqual(kindsOf(db, messageId), []);
 });
 
 for (const [name, options, prepare, reason] of [

@@ -16,7 +16,7 @@ Kite runs on Workers and on Node (`server/index.ts`, Docker). Application code m
 
 ## Bundle budget
 
-Budgets are in `scripts/quality/bundle-budgets.json` and checked by `npm run quality:report`. The worker budget is 5,101,006 B raw / 1,439,860 B gzip; the last local build measured 4,534,236 / 1,282,650, leaving about 567 KB raw and 157 KB gzip.
+Budgets are in `scripts/quality/bundle-budgets.json` and checked by `npm run quality:report`. At the time of the spike the worker budget was 5,101,006 B raw / 1,439,860 B gzip and the last local build measured 4,534,236 / 1,282,650, leaving about 567 KB raw and 157 KB gzip. The budget is now 5,150,000 / 1,460,000, set when the stored-mail HTML sanitizer and the Money Watch module together measured 5,102,148 / 1,444,086.
 
 A minimal Agent (one class, one `this.queue()` call, `getAgentByName` routing), bundled with esbuild and minified, came to **1,194,754 B raw / 276,293 B gzip**. That is about twice the remaining headroom, before any Kite code is added. The install is 169 packages and 113 MB of `node_modules`. The queue approach adds no dependency and only the triage code itself.
 

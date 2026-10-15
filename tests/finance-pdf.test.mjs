@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { randomBytes } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { loadFinance } from "./support/finance-bundle.mjs";
 
@@ -141,6 +142,13 @@ test("inflate stops at 1 MiB per stream and 4 MiB in total", async () => {
 	// Smaller caps apply the same way.
 	const capped = await textOf(makePdf([{ data: INVOICE, flate: true }]), { limits: { maxStreamBytes: 10 } });
 	assert.doesNotMatch(capped ?? "", /per month/);
+});
+
+test("a compressed stream larger than one write slice is read to its end", async () => {
+	// Random hex outside any text object compresses poorly, so the stream spans several 16 KiB slices.
+	const data = `${randomBytes(50_000).toString("hex")} BT (tail marker) Tj ET`;
+	assert.ok(deflateSync(Buffer.from(data, "latin1")).length > 32 * 1024);
+	assert.match(await textOf(makePdf([{ data, flate: true }])), /tail marker/);
 });
 
 test("corrupt Flate data yields no text and no error", async () => {

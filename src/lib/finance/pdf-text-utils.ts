@@ -89,6 +89,8 @@ async function extractPdfText(binary: string, options: PdfTextOptions): Promise<
 type RawStream = { dict: string; data: string };
 
 const DICT_LOOKBACK = 2048;
+/** Compressed bytes written to the inflater at a time. */
+const INFLATE_SLICE = 16 * 1024;
 
 /** The `stream … endstream` objects in file order; a stream cut off before `endstream` ends the walk. */
 function* streamsOf(binary: string, maxStreams: number): Generator<RawStream> {
@@ -141,10 +143,18 @@ function toBinary(bytes: Uint8Array): string {
 async function inflate(data: string, cap: number, expired: () => boolean): Promise<string> {
 	const stream = new DecompressionStream("deflate");
 	const writer = stream.writable.getWriter();
-	writer.write(toBytes(data)).catch(() => undefined);
-	writer.close().catch(() => undefined);
 	const reader = stream.readable.getReader();
+	const input = toBytes(data);
 	let out = "";
+	let stopped = false;
+	// The compressed input goes in small slices, each only once the reader has caught up, so a
+	// runtime that inflates a whole written chunk at once never holds more than one slice's output.
+	const feed = (async () => {
+		for (let offset = 0; offset < input.length && !stopped; offset += INFLATE_SLICE) {
+			await writer.write(input.subarray(offset, offset + INFLATE_SLICE));
+		}
+		if (!stopped) await writer.close();
+	})().catch(() => undefined);
 	try {
 		while (out.length < cap && !expired()) {
 			const { done, value } = await reader.read();
@@ -154,7 +164,10 @@ async function inflate(data: string, cap: number, expired: () => boolean): Promi
 	} catch {
 		// Corrupt or truncated data: keep what inflated before the error.
 	} finally {
+		stopped = true;
 		reader.cancel().catch(() => undefined);
+		writer.abort().catch(() => undefined);
+		await feed;
 	}
 	return out;
 }

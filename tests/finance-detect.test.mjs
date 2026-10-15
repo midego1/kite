@@ -548,6 +548,32 @@ test("hostile inputs stay bounded and never become links or far dates", () => {
 	assert.ok(Date.now() - start < 500);
 });
 
+test("PDF-sized text and huge display names stay linear", () => {
+	// 72K characters is the body excerpt plus the PDF text cap; these took seconds when parsing was quadratic.
+	const timed = (fn) => {
+		const start = performance.now();
+		fn();
+		return performance.now() - start;
+	};
+	assert.ok(timed(() => amounts.parseAmounts("1.".repeat(36_000))) < 500);
+	assert.ok(timed(() => amounts.parseAmounts("$1 ".repeat(24_000))) < 500);
+	assert.ok(timed(() => run({ subject: "Your invoice", body: `Total ${"1,".repeat(36_000)} USD monthly` })) < 1000);
+	assert.ok(timed(() => vendors.cleanVendorName(`${" ".repeat(100_000)}x`)) < 100);
+	assert.equal(vendors.cleanVendorName(`Streamflix via Payments${" ".repeat(100_000)}`), "Streamflix");
+	assert.ok(amounts.parseAmounts("$1 ".repeat(24_000)).length <= 200);
+	assert.equal(
+		amounts.parseAmounts(`${"x".repeat(5_000)} Total $17.99/month ${"y".repeat(5_000)}`)[0].line.length,
+		320,
+	);
+});
+
+test("a long number run never yields an amount from its tail", () => {
+	const one = (value) => amounts.parseAmounts(value).map(({ minor, currency }) => [minor, currency]);
+	assert.deepEqual(one("1.234.567.890.123,45 EUR"), []);
+	assert.deepEqual(one("12345678901234567890 EUR"), []);
+	assert.deepEqual(one("1.000.000,00 EUR"), [[100000000, "EUR"]]);
+});
+
 test("the body or an http header never sets the cancel link", () => {
 	assert.equal(
 		run({ body: "Your invoice: $17.99/month. Cancel: https://streamflix.example/cancel" }).payload.cancelLink,

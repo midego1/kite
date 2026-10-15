@@ -285,7 +285,7 @@ GitHub workflows also run the security scans, draft a release from `v*` tags, re
 
 ## How this was built
 
-Kite is developed with AI coding assistants as well as by hand. The repository contains the instruction files those tools read ([CLAUDE.md](CLAUDE.md) and [AGENTS.md](AGENTS.md)), and some commits are co-authored by AI agents (the history shows `factory-droid[bot]`, and an automated reviewer, [CodeRabbit](https://coderabbit.link/midego) (referral link), comments on pull requests). Every change goes through the same gates, whoever wrote it: strict TypeScript, lint, unit tests and browser tests in CI, and a human review before anything is merged to `main`, which deploys production. AI-written code can still contain mistakes, so please report anything that looks wrong.
+Kite is developed with AI coding assistants as well as by hand. The repository contains the instruction files those tools read ([CLAUDE.md](CLAUDE.md) and [AGENTS.md](AGENTS.md)), and some commits are co-authored by AI agents (the history shows `factory-droid[bot]`, and two automated reviewers, [CodeRabbit](https://coderabbit.link/midego) (referral link) and [Greptile](https://www.greptile.com), comment on pull requests). Every change goes through the same gates, whoever wrote it: strict TypeScript, lint, unit tests and browser tests in CI, and a human review before anything is merged to `main`, which deploys production. AI-written code can still contain mistakes, so please report anything that looks wrong.
 
 ## License
 

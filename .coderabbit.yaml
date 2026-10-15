@@ -1,6 +1,8 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 # CodeRabbit reads AGENTS.md and CLAUDE.md on its own; the instructions below only
-# point it at the rules that are easiest to break in a diff.
+# point it at the rules that are easiest to break in a diff. Greptile reviews the same pull
+# requests with the same rules from greptile.json; change both together so the comparison
+# stays fair.
 language: en-US
 early_access: false
 

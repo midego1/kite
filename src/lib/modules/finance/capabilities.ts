@@ -36,7 +36,8 @@ const webhook = (name: string, value: string, description: string) =>
 
 export const financeCapabilities: ModuleCapabilities = {
 	moduleId: "finance",
-	promptFragment: null,
+	promptFragment:
+		"Money Watch tracks the user's subscriptions and their invoices, payments, credits and refunds. Use list_subscriptions for questions about renewals, trials, recurring spend and what was paid in the last 12 months; amounts are in the currency shown and are never converted.",
 	descriptors: [
 		describe("detect", {
 			surfaces: ["triage_step"],
@@ -118,6 +119,20 @@ export const financeCapabilities: ModuleCapabilities = {
 			scopes: ["finance.read"],
 			effect: "read",
 			refs: { kinds: ["finance:subscription"] },
+		}),
+		describe("search", {
+			surfaces: ["search"],
+			description: "Search the viewer's tracked subscriptions by vendor and plan.",
+			scopes: ["finance.read"],
+			effect: "read",
+			search: { section: "subscriptions" },
+		}),
+		describe("list_subscriptions", {
+			surfaces: ["assistant_tool", "mcp_tool"],
+			description:
+				"List the user's tracked subscriptions (active and trial ones unless a status or all is asked for), optionally only those renewing or ending their trial within some days, with monthly and yearly totals and what was paid in the last 12 months per currency. Amounts are in minor units of their own currency and are never converted.",
+			scopes: ["finance.read"],
+			effect: "read",
 		}),
 		describe("remindRenewals", {
 			surfaces: ["cron"],

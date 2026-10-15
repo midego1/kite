@@ -144,6 +144,7 @@ test("manifests carry what the spec lists for each module", () => {
 		{ scope: "mcp:finance-read", label: "Read subscriptions", grants: ["finance.read"], mailboxBound: false },
 	]);
 	assert.deepEqual(finance.apiKeyScopes, []);
+	assert.deepEqual(finance.searchSections, [{ id: "subscriptions", label: "Subscriptions" }]);
 	assert.deepEqual(finance.cronTasks, [
 		{ name: "remindRenewals", schedule: "*/5 * * * *", capability: "remindRenewals" },
 	]);
@@ -509,10 +510,13 @@ test("lifecycle hooks follow the data-hook rule", () => {
 
 test("listCapabilities returns the enabled modules' descriptors for a surface in registry order", () => {
 	const names = (surface, enabled) => listCapabilities(surface, enabled).map((item) => item.descriptor.name);
-	assert.equal(names("assistant_tool", IDS).length, 8);
+	assert.equal(names("assistant_tool", IDS).length, 9);
 	assert.deepEqual(names("assistant_tool", ["booking", "templates", "import"]), []);
+	assert.deepEqual(names("assistant_tool", ["finance"]), ["list_subscriptions"]);
 	assert.deepEqual(names("mcp_tool", ["calendar"]), names("assistant_tool", ["calendar"]));
+	assert.deepEqual(names("mcp_tool", ["finance"]), ["list_subscriptions"]);
 	assert.deepEqual(names("search", ["calendar"]), ["search"]);
+	assert.deepEqual(names("search", ["finance"]), ["search"]);
 	assert.deepEqual(names("search", ["booking"]), []);
 	assert.deepEqual(names("webhook_event", IDS), [
 		"eventCreated",

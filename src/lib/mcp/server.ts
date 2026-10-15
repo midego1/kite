@@ -74,7 +74,9 @@ export async function createKiteMcpHandler(
 	});
 	return createMcpHandler(
 		() => {
-			const server = new McpServer({ name: "kite", version: BUILD_VERSION });
+			// Declared up front so `tools/list` answers an empty list when no tool applies, for example a key whose
+			// only scope belongs to a module that is off; without it the method is never registered.
+			const server = new McpServer({ name: "kite", version: BUILD_VERSION }, { capabilities: { tools: {} } });
 			const has = (scope: string) => principal.scopes.includes(scope);
 			if (principal.scopes.some((scope) => scope.startsWith("mcp:"))) {
 				const taken = new Set(CORE_TOOL_NAMES);

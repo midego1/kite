@@ -74,18 +74,22 @@ const jmapModule = {
 	],
 };
 
-test("mcp_tool lists Calendar's eight tools with Calendar on and none with Calendar off", () => {
-	assert.deepEqual(names(listCapabilities("mcp_tool", enabledWith([]))), CALENDAR_TOOLS);
-	assert.deepEqual(names(listCapabilities("mcp_tool", enabledWith(["calendar"]))), []);
+test("mcp_tool lists Calendar's eight tools and list_subscriptions only while their modules are on", () => {
+	assert.deepEqual(names(listCapabilities("mcp_tool", enabledWith([]))), [...CALENDAR_TOOLS, "list_subscriptions"]);
+	assert.deepEqual(names(listCapabilities("mcp_tool", enabledWith(["calendar"]))), ["list_subscriptions"]);
+	assert.deepEqual(names(listCapabilities("mcp_tool", enabledWith(["finance"]))), CALENDAR_TOOLS);
 	assert.deepEqual(
-		names(listCapabilities("mcp_tool", enabledWith(["booking", "templates", "import"]))),
+		names(listCapabilities("mcp_tool", enabledWith(["booking", "templates", "import", "finance"]))),
 		CALENDAR_TOOLS,
 	);
 });
 
-test("assistant_tool lists Calendar's eight tools with Calendar on and none with Calendar off", () => {
-	assert.deepEqual(names(listCapabilities("assistant_tool", enabledWith([]))), CALENDAR_TOOLS);
-	assert.deepEqual(names(listCapabilities("assistant_tool", enabledWith(["calendar"]))), []);
+test("assistant_tool lists Calendar's eight tools and list_subscriptions only while their modules are on", () => {
+	assert.deepEqual(names(listCapabilities("assistant_tool", enabledWith([]))), [
+		...CALENDAR_TOOLS,
+		"list_subscriptions",
+	]);
+	assert.deepEqual(names(listCapabilities("assistant_tool", enabledWith(["calendar", "finance"]))), []);
 });
 
 test("jmap_capability and jmap_method list a test-only module's declarations only while it is on", () => {
@@ -121,10 +125,12 @@ test("webhook_event lists the six module events, five with Booking off and Money
 	assert.deepEqual(names(listCapabilities("webhook_event", enabledWith(["calendar", "finance"]))), []);
 });
 
-test("search lists the events provider only with Calendar on", () => {
-	const events = listCapabilities("search", enabledWith([])).map((item) => item.descriptor.search.section);
-	assert.deepEqual(events, ["events"]);
-	assert.deepEqual(listCapabilities("search", enabledWith(["calendar"])), []);
+test("search lists the events and subscriptions providers only while their modules are on", () => {
+	const sections = (off) => listCapabilities("search", enabledWith(off)).map((item) => item.descriptor.search.section);
+	assert.deepEqual(sections([]), ["events", "subscriptions"]);
+	assert.deepEqual(sections(["calendar"]), ["subscriptions"]);
+	assert.deepEqual(sections(["finance"]), ["events"]);
+	assert.deepEqual(sections(["calendar", "finance"]), []);
 });
 
 test("every module's scopes stay registered whether the module is on or off", () => {

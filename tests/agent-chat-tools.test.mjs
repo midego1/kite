@@ -47,13 +47,17 @@ const enumFor = (enabled) => openPageSchema(commandsFor(enabled)).properties.com
 test("prompt fragments of enabled modules fill {timeZone} and {today}; off modules add nothing", () => {
 	assert.ok(calendarFragment.includes("{timeZone}") && calendarFragment.includes("{today}"));
 	const on = selectPromptFragments(MODULE_CAPABILITIES, ALL, { timeZone: "Europe/Amsterdam", today: "2026-11-03" });
-	assert.equal(on.length, 1);
+	assert.equal(on.length, 2);
 	assert.ok(on[0].includes("Europe/Amsterdam") && on[0].includes("2026-11-03"));
 	assert.ok(!/\{timeZone\}|\{today\}/.test(on[0]));
+	assert.match(on[1], /list_subscriptions/);
+	assert.match(on[1], /never converted/);
 	assert.deepEqual(
 		selectPromptFragments(MODULE_CAPABILITIES, ["booking", "templates", "import"], { timeZone: "UTC", today: "x" }),
 		[],
 	);
+	const financeOnly = selectPromptFragments(MODULE_CAPABILITIES, ["finance"], { timeZone: "UTC", today: "x" });
+	assert.deepEqual(financeOnly, [on[1]]);
 });
 
 test("agentToday is the calendar date in the user's time zone", () => {

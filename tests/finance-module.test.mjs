@@ -565,6 +565,85 @@ test("subscriptions, documents and refs are the owner's only", async (t) => {
 	assert.equal(context.rows().length, 1);
 });
 
+const readCtx = (userId) => ({
+	viewer: { userId, role: "user", isPrimaryAdmin: false },
+	requestId: "r",
+	locale: "en",
+	timeZone: "UTC",
+	grants: ["finance.read"],
+	trigger: "mcp",
+});
+
+test("search and list_subscriptions answer with the owner's rows only and stop while Money Watch is off", async (t) => {
+	const context = await setup(t);
+	const { db } = context;
+	const first = await trackFirst(context);
+	const id = first.subscription.id;
+	db.db.prepare("UPDATE finance_subscriptions SET plan = '50%_Family' WHERE id = ?").run(id);
+
+	const search = (userId, query, limit = 20) =>
+		invokeCapability("finance", "search", { query, limit }, readCtx(userId));
+	const found = await search("owner", "flix");
+	assert.equal(found.ok, true, JSON.stringify(found));
+	assert.deepEqual(found.output.items, [
+		{
+			ref: { kind: "finance:subscription", id },
+			label: "Streamflix · $17.99/month",
+			sublabel: `50%_Family · Renews ${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${day(20)}T00:00:00Z`))}`,
+			href: `/finance?subscription=${id}`,
+		},
+	]);
+	assert.equal((await search("owner", "%_f")).output.items.length, 1, "% and _ match themselves");
+	assert.deepEqual((await search("owner", "x%y")).output.items, [], "% is not a wildcard");
+	assert.deepEqual((await search("owner", "s_reamflix")).output.items, [], "_ is not a wildcard");
+	assert.deepEqual((await search("member", "flix")).output.items, [], "another user finds nothing");
+	for (let index = 0; index < 12; index += 1)
+		db.db
+			.prepare(
+				"INSERT INTO finance_subscriptions (id, user_id, vendor, vendor_key, status, reminder_days, created_at, updated_at) VALUES (?, 'owner', ?, ?, 'active', 3, 1, 1)",
+			)
+			.run(`fsub_many_${index}`, `Manyflix ${index}`, `many${index}.example`);
+	assert.equal((await search("owner", "flix")).output.items.length, 10, "at most 10 rows");
+
+	const list = (userId, input = {}) => invokeCapability("finance", "list_subscriptions", input, readCtx(userId));
+	const mine = await list("owner", { limit: 1 });
+	assert.equal(mine.ok, true, JSON.stringify(mine));
+	assert.deepEqual(mine.output.subscriptions, [
+		{
+			ref: { kind: "finance:subscription", id },
+			vendor: "Streamflix",
+			plan: "50%_Family",
+			amount: { minor: 1799, currency: "USD" },
+			cycle: "monthly",
+			status: "active",
+			nextRenewalOn: day(20),
+			trialEndsOn: null,
+			urgent: false,
+		},
+	]);
+	assert.deepEqual(mine.output.totals, [
+		{ currency: "USD", monthlyMinor: 1799, yearlyMinor: 21588, paidLast12MonthsMinor: 1799 },
+	]);
+	assert.equal((await list("owner")).output.subscriptions.length, 13, "limit defaults to 20");
+	assert.equal((await list("owner", { dueWithinDays: 30 })).output.subscriptions.length, 1);
+	assert.deepEqual((await list("owner", { status: "cancelled" })).output.subscriptions, []);
+	assert.deepEqual(await list("member").then((result) => result.output), { subscriptions: [], totals: [] });
+	for (const input of [{ limit: 51 }, { limit: 0 }, { dueWithinDays: 0 }, { dueWithinDays: 367 }, { status: "paused" }])
+		assert.equal((await list("owner", input)).error?.code, "invalid_input", JSON.stringify(input));
+	const noGrant = await invokeCapability("finance", "list_subscriptions", {}, { ...readCtx("owner"), grants: [] });
+	assert.equal(noGrant.ok, false, "the key needs mcp:finance-read");
+
+	db.db.exec(
+		"INSERT INTO module_settings (id, module_id, enabled, updated_at) VALUES ('finance', 'finance', 0, 1) ON CONFLICT (module_id) DO UPDATE SET enabled = 0",
+	);
+	clearModuleStateCache();
+	assert.equal((await list("owner")).error?.code, "module_disabled");
+	assert.equal((await search("owner", "flix")).error?.code, "module_disabled");
+	db.db.exec("UPDATE module_settings SET enabled = 1 WHERE module_id = 'finance'");
+	clearModuleStateCache();
+	assert.equal((await list("owner", { limit: 50 })).output.subscriptions.length, 13, "on again lists the same rows");
+});
+
 test("the detect step completes a receipt without a cycle from two earlier same-amount messages", async (t) => {
 	const context = await setup(t);
 	const received = new Date(Date.now() - DAY_MS).toISOString();

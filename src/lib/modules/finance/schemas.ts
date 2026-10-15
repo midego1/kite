@@ -2,19 +2,20 @@ import { z } from "zod";
 import { financeModelSchema } from "@/lib/finance/model-schema";
 import { subscriptionSuggestion } from "@/lib/finance/payload-schema";
 import { toModelExtensionSchema, type ModuleSchemas } from "../schema-utils";
-import { actionSchemas, resolveRefsSchemas, triageStepSchemas } from "../shared-schemas";
+import { actionSchemas, resolveRefsSchemas, searchSchemas, triageStepSchemas } from "../shared-schemas";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const cycle = z.enum(["weekly", "monthly", "quarterly", "yearly"]);
 const status = z.enum(["active", "trial", "cancelled", "expired"]);
 const subscriptionRef = z.object({ kind: z.literal("finance:subscription"), id: z.string() });
 const messageRef = z.object({ kind: z.literal("mail:message"), id: z.string() });
+const money = z.object({ minor: z.number().int(), currency: z.string() });
 
 const subscriptionPayload = z.object({
 	ref: subscriptionRef,
 	vendor: z.string(),
 	plan: z.string().nullable(),
-	amount: z.object({ minor: z.number().int(), currency: z.string() }).nullable(),
+	amount: money.nullable(),
 	cycle: cycle.nullable(),
 	status,
 	nextRenewalOn: date.nullable(),
@@ -57,6 +58,46 @@ const answerSubscription: ModuleSchemas[string] = {
 	}),
 };
 
+const listSubscriptions: ModuleSchemas[string] = {
+	input: z.object({
+		status: z
+			.enum(["active", "trial", "cancelled", "expired", "all"])
+			.optional()
+			.describe("Which rows to list; active and trial rows when left out"),
+		dueWithinDays: z
+			.number()
+			.int()
+			.min(1)
+			.max(366)
+			.optional()
+			.describe("Only rows that renew or end their trial within this many days from today"),
+		limit: z.number().int().min(1).max(50).default(20),
+	}),
+	output: z.object({
+		subscriptions: z.array(
+			z.object({
+				ref: subscriptionRef,
+				vendor: z.string(),
+				plan: z.string().nullable(),
+				amount: money.nullable(),
+				cycle: cycle.nullable(),
+				status,
+				nextRenewalOn: date.nullable(),
+				trialEndsOn: date.nullable(),
+				urgent: z.boolean(),
+			}),
+		),
+		totals: z.array(
+			z.object({
+				currency: z.string(),
+				monthlyMinor: z.number().int(),
+				yearlyMinor: z.number().int(),
+				paidLast12MonthsMinor: z.number().int(),
+			}),
+		),
+	}),
+};
+
 /** The `modules.finance` fragment core merges into the triage request's provider schema (spec §5.7.1). */
 export const FINANCE_MODEL_JSON_SCHEMA = toModelExtensionSchema(financeModelSchema);
 
@@ -72,6 +113,8 @@ export const financeSchemas: ModuleSchemas = {
 	recordDocument: actionSchemas,
 	deleteDocument: actionSchemas,
 	resolveRefs: resolveRefsSchemas(["finance:subscription"]),
+	search: searchSchemas,
+	list_subscriptions: listSubscriptions,
 	remindRenewals: {
 		input: z.object({ scheduledTime: z.string().datetime({ offset: true }).optional() }),
 		output: z.object({ reminded: z.number().int().min(0), skipped: z.literal("module_disabled").optional() }),

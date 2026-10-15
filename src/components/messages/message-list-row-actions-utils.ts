@@ -2,6 +2,7 @@ import { authFetch } from "@/lib/auth/client";
 import type { MessageCountsDelta } from "@/hooks/types";
 import {
 	dateFromZonedFields,
+	formatUserDate,
 	formatUserDateTimeLocal,
 	getUserTimeZone,
 	parseUserDateTimeLocal,
@@ -31,6 +32,18 @@ export function getSnoozePresets(now = new Date()): SnoozePreset[] {
 		{ label: "Next week", value: formatSnoozeDateTime(dateFromZonedFields(nextWeek, getUserTimeZone())) },
 		{ label: "Next month", value: formatSnoozeDateTime(dateFromZonedFields(nextMonth, getUserTimeZone())) },
 	];
+}
+
+export function formatSnoozePresetHint(value: string): string {
+	const parsed = parseUserDateTimeLocal(value);
+	if (!parsed) return "";
+	return formatUserDate(parsed, {
+		weekday: "short",
+		month: "short",
+		day: "numeric",
+		hour: "numeric",
+		minute: "2-digit",
+	});
 }
 
 export async function snoozeMessage(messageId: string, snoozedUntil: string) {

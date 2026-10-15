@@ -88,8 +88,10 @@ before publishing a new mirror, with the commands below.
   (`refs/pull/*/head`, fetched with
   `git fetch origin '+refs/pull/*/head:refs/remotes/origin/pr/*'`): 209 commits, about
   25 MB of diffs. Gitleaks 8.30.1 ran with the repository config and, separately, with the
-  default rules and no allowlists. The diffs and commit metadata were also searched for
-  email addresses, IBANs, phone numbers and private key blocks.
+  default rules and no allowlists. The diffs and commit metadata (author and committer)
+  were also searched for email addresses, IBANs, phone numbers and private key blocks; the
+  IBAN and phone searches were broadened and re-run on 2026-10-15 (UTC) over 231 commits,
+  and the results below are from that run.
 - **Commands.** From a full clone, with Gitleaks 8.30 or later:
 
   ```sh
@@ -101,21 +103,24 @@ before publishing a new mirror, with the commands below.
   printf '[extend]\nuseDefault = true\n' > /tmp/gitleaks-default.toml
   gitleaks git --log-opts="--all" --config /tmp/gitleaks-default.toml \
     --ignore-gitleaks-allow --gitleaks-ignore-path /dev/null --redact
-  # Personal data: addresses outside reserved domains (review the list by hand), IBANs,
-  # phone numbers (noisy, review by hand) and private key blocks.
-  git log --all -p --format='%an <%ae>%n%cn <%ce>%n%B' \
-    | grep -Eio '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' | tr 'A-Z' 'a-z' \
+  # Personal data: every diff plus author and committer of every commit.
+  history() { git log --all -p --format='%an <%ae>%n%cn <%ce>%n%B'; }
+  # Addresses outside reserved domains (review the list by hand).
+  history | grep -Eio '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' | tr 'A-Z' 'a-z' \
     | grep -Eiv '@(example\.(com|org|net)|[a-z0-9.-]+\.(test|example|invalid|localhost))$' \
     | sort | uniq -c | sort -rn
   # IBANs in any case, grouped by spaces or not, kept only when the mod-97 check passes
-  # (a case-insensitive pattern alone matches every commit hash).
-  git log --all -p | perl -ne 'while (/\b([A-Za-z]{2}[0-9]{2}(?: ?[A-Za-z0-9]{4}){2,7}(?: ?[A-Za-z0-9]{1,3})?)\b/g) {
-    ($s = uc $1) =~ s/ //g; $r = substr($s, 4) . substr($s, 0, 4); $r =~ s/([A-Z])/ord($1) - 55/ge;
-    $m = 0; $m = ($m * 10 + $_) % 97 for split //, $r; print "$s\n" if $m == 1 }'
-  # Phone numbers: international (+ or 00) and national (leading 0 with separators).
-  git log --all -p | grep -Eo '(\+|\b00)[1-9][0-9 ().-]{8,}[0-9]' | sort -u
-  git log --all -p | grep -Eo '\b0[1-9][0-9]{0,3}[ -][0-9]{3,4}[ -]?[0-9]{2,4}\b' | sort -u
-  git log --all -p | grep -E -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+  # (a case-insensitive pattern alone matches every commit hash). Words swallowed after
+  # an IBAN are dropped one at a time until the checksum passes.
+  history | perl -ne 'while (/\b([A-Za-z]{2}[0-9]{2}(?: ?[A-Za-z0-9]{4}){2,7}(?: ?[A-Za-z0-9]{1,3})?)\b/g) {
+    for (my @t = split / /, $1; @t; pop @t) { ($s = uc join "", @t) =~ /^.{15,34}$/ or next;
+      $r = substr($s, 4) . substr($s, 0, 4); $r =~ s/([A-Z])/ord($1) - 55/ge;
+      $m = 0; $m = ($m * 10 + $_) % 97 for split //, $r; if ($m == 1) { print "$s\n"; last } } }'
+  # Phone numbers (review by hand): international (+ or 00), national (leading 0) and
+  # North American.
+  history | grep -Eo '(\+|\b00)[1-9][0-9 ().-]{8,}[0-9]|\(?\b0[1-9][0-9]{0,3}\)?[ -]([0-9]{4}|[0-9]{3,4}[ -]?[0-9]{2,4})\b|\b(1[ -])?\(?[2-9][0-9]{2}\)?[ -][0-9]{3}[ -][0-9]{4}\b' \
+    | sort -u
+  history | grep -E -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'
   ```
 
   The default-rules run also reports the two test values below in current history, where
@@ -130,8 +135,10 @@ before publishing a new mirror, with the commands below.
 - **Personal data in file contents: none.** Addresses in code, tests and docs use
   reserved or synthetic domains (`example.com`, `*.test` and similar) or published
   service senders; the only free-mail addresses are a form placeholder. No IBANs or
-  private keys were found. The only phone number is the made-up support line in
-  `tests/one-time-code.test.mjs`; the other international matches are version strings and a diff `index` line.
+  private keys were found. The phone numbers (`+31 20 123 4567`, `(020) 1234 567`,
+  `0900 1234`, `1-800-555-0199`) are all synthetic fixtures in
+  `tests/one-time-code.test.mjs`; the other matches are version strings and a diff
+  `index` line.
 - **Personal data in commit metadata.** The maintainer's name and personal email address
   are the author of `main`'s root commit and of commits on several older feature and
   mission branches. They were already public with the repository. To keep them out of new

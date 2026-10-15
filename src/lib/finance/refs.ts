@@ -14,6 +14,7 @@ import {
 import type { CapabilityHandler } from "@/lib/modules/module-types";
 import { isSameOriginPath } from "@/lib/modules/path-utils";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
+import { financeTablesReady } from "./errors";
 import { subscriptionHref, subscriptionLabel } from "./record-utils";
 
 const KIND = "finance:subscription";
@@ -26,10 +27,11 @@ export const resolveFinanceRefs: CapabilityHandler = async (input, ctx) => {
 	const refs = refsOf(input);
 	const userId = viewerId(ctx);
 	const found = new Map<string, FoundRef>();
-	if (!userId) return refsOutput(refs, found);
+	const ids = idsOfKind(refs, KIND);
+	if (!userId || ids.length === 0 || !(await financeTablesReady())) return refsOutput(refs, found);
 	const db = getDb(getEnv());
 	try {
-		await forEachIdChunk(idsOfKind(refs, KIND), async (chunk) => {
+		await forEachIdChunk(ids, async (chunk) => {
 			const rows = await db
 				.select({
 					id: financeSubscriptions.id,

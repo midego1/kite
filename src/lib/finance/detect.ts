@@ -5,6 +5,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { moduleHost } from "@/lib/modules/host";
 import type { CapabilityCallContext, CapabilityHandler, JsonValue } from "@/lib/modules/module-types";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
+import { financeTablesReady } from "./errors";
 import {
 	analyzeMessage,
 	buildDetection,
@@ -29,6 +30,7 @@ const HISTORY_LIMIT = 5;
 export class MigrationPending extends Error {}
 
 async function trackedRows(userId: string, key: string): Promise<TrackedMatchRow[]> {
+	if (!(await financeTablesReady())) throw new MigrationPending();
 	try {
 		return await getDb(getEnv())
 			.select({

@@ -4,6 +4,7 @@ import { financeSubscriptions } from "@/db/schema/finance";
 import { getEnv } from "@/lib/cloudflare";
 import type { CapabilityHandler } from "@/lib/modules/module-types";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
+import { financeTablesReady } from "./errors";
 import { subscriptionHref, subscriptionLabel, subscriptionRef } from "./record-utils";
 import { containsPattern, searchSublabel } from "./search-utils";
 
@@ -15,7 +16,7 @@ const MAX_ITEMS = 10;
  * 0063 there is nothing to search, which is an empty answer, not a failure.
  */
 export const searchSubscriptions: CapabilityHandler = async (input, ctx) => {
-	if (!ctx.viewer) return { items: [] };
+	if (!ctx.viewer || !(await financeTablesReady())) return { items: [] };
 	const { query, limit } = input as { query: string; limit: number };
 	const pattern = containsPattern(query);
 	const matches = (column: typeof financeSubscriptions.vendor | typeof financeSubscriptions.plan) =>

@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { BASE_URL, DOMAIN, STORAGE_STATE } from "./support/constants";
 import { useFakeProvider } from "./support/agent";
 import {
@@ -1185,6 +1185,180 @@ test.describe("Money Watch manual add", () => {
 			}
 		} finally {
 			await anonymous.dispose();
+		}
+	});
+});
+
+type CalendarEventRow = { id: string; title: string; icalUid: string | null; startsAt: string; endsAt: string };
+type NoticeFrame = { type: string; moduleId: string; notice: string; title: string; href: string | null };
+
+const isoDay = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+
+/** Records every realtime frame the page receives, as e2e/26 records its sockets. */
+function recordRealtimeFrames() {
+	const frames: string[] = [];
+	(window as { __kiteFrames?: string[] }).__kiteFrames = frames;
+	const sockets: WebSocket[] = [];
+	(window as { __kiteSockets?: WebSocket[] }).__kiteSockets = sockets;
+	const OriginalWebSocket = window.WebSocket;
+	const RecordingWebSocket = class extends OriginalWebSocket {
+		constructor(url: string | URL, protocols?: string | string[]) {
+			super(url, protocols);
+			if (String(url).includes("/api/realtime")) {
+				sockets.push(this as unknown as WebSocket);
+				this.addEventListener("message", (event) => frames.push(String(event.data)));
+			}
+		}
+	};
+	Object.defineProperty(window, "WebSocket", { value: RecordingWebSocket, configurable: true });
+}
+
+/** Opens the inbox with a live realtime socket for the account, recording its frames. */
+async function openRealtimePage(browser: Browser, account: { id: string; api: APIRequestContext; mailboxId: string }) {
+	const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+	const page = await context.newPage();
+	await page.addInitScript((userId) => localStorage.setItem("kite-session-user", userId), account.id);
+	await page.addInitScript(recordRealtimeFrames);
+	await selectMailbox(page, account.mailboxId);
+	await page.goto("/inbox");
+	await page.waitForFunction(() =>
+		((window as { __kiteSockets?: WebSocket[] }).__kiteSockets ?? []).some((socket) => socket.readyState === 1),
+	);
+	return { context, page };
+}
+
+async function noticeFrames(page: Page): Promise<NoticeFrame[]> {
+	const frames = await page.evaluate(() => (window as { __kiteFrames?: string[] }).__kiteFrames ?? []);
+	return frames
+		.map((frame) => {
+			try {
+				return JSON.parse(frame) as NoticeFrame;
+			} catch {
+				return null;
+			}
+		})
+		.filter((frame): frame is NoticeFrame => frame?.type === "module_notice");
+}
+
+/** Runs the `*` + `/5` cron trigger once, through the Worker's real `scheduled` handler. */
+async function cronTick() {
+	const response = await api.get(`/cdn-cgi/handler/scheduled?cron=${encodeURIComponent("*/5 * * * *")}`);
+	expect(response.ok()).toBe(true);
+}
+
+async function reminderEvents(account: { api: APIRequestContext }, subscriptionId: string) {
+	const start = new Date(Date.now() - 86_400_000).toISOString();
+	const end = new Date(Date.now() + 10 * 86_400_000).toISOString();
+	const { events } = await okJson<{ events: CalendarEventRow[] }>(
+		await account.api.get(`/api/calendar/events?start=${start}&end=${end}`),
+	);
+	return events.filter((event) => event.icalUid === `finance-renewal:${subscriptionId}`);
+}
+
+async function trackRenewing(account: { api: APIRequestContext; mailboxId: string }, vendor: string) {
+	const { subscription } = await okJson<{ subscription: SubscriptionView }>(
+		await account.api.post("/api/finance/subscriptions", {
+			data: {
+				vendor,
+				amountMinor: 1799,
+				currency: "USD",
+				cycle: "monthly",
+				nextRenewalOn: isoDay(2),
+				reminderDays: 3,
+				calendarReminder: true,
+				mailboxId: account.mailboxId,
+			},
+		}),
+	);
+	return subscription;
+}
+
+test.describe("Money Watch reminders", () => {
+	test("case 5: one cron tick sends one renewal notice, a badge of 1 and one calendar event; a second tick adds nothing", async ({
+		browser,
+	}) => {
+		const account = await plainAccount("frn");
+		const { context, page } = await openRealtimePage(browser, account);
+		try {
+			const errors = collectConsoleErrors(page);
+			const vendor = uniqueVendor("Remindflix");
+			const row = await trackRenewing(account, vendor);
+			const nav = page.getByRole("navigation").first().locator('a[href="/finance"]');
+
+			await cronTick();
+			await expect.poll(async () => (await noticeFrames(page)).length, { timeout: 20_000 }).toBe(1);
+			const [frame] = await noticeFrames(page);
+			expect(frame).toMatchObject({
+				moduleId: "finance",
+				notice: "renewal_due",
+				title: `${vendor} renews in 2 days ($17.99)`,
+				href: `/finance?subscription=${row.id}`,
+			});
+			const toast = page.getByRole("status").filter({ hasText: `${vendor} renews in 2 days` });
+			await expect(toast).toBeVisible();
+			expect(await okJson(await account.api.get("/api/finance/badge"))).toEqual({ count: 1 });
+			await expect(nav).toContainText("1");
+
+			const [event, ...others] = await reminderEvents(account, row.id);
+			expect(others).toEqual([]);
+			expect(event.title).toBe(`${vendor} renews ($17.99)`);
+			expect(new Date(event.endsAt).getTime() - new Date(event.startsAt).getTime()).toBe(15 * 60_000);
+
+			await cronTick();
+			await page.waitForTimeout(3_000);
+			expect(await noticeFrames(page)).toHaveLength(1);
+			expect((await reminderEvents(account, row.id)).map((item) => item.id)).toEqual([event.id]);
+
+			await toast.getByRole("link", { name: "Open" }).click();
+			await expect(page).toHaveURL(new RegExp(`/finance\\?subscription=${row.id}$`));
+
+			await okJson(
+				await account.api.patch(`/api/finance/subscriptions/${row.id}`, {
+					data: { fields: { nextRenewalOn: isoDay(4) } },
+				}),
+			);
+			const [moved] = await reminderEvents(account, row.id);
+			expect(moved.id).toBe(event.id);
+			expect(new Date(moved.startsAt).getTime() - new Date(event.startsAt).getTime()).toBe(2 * 86_400_000);
+			await okJson(await account.api.patch(`/api/finance/subscriptions/${row.id}`, { data: { status: "cancelled" } }));
+			expect(await reminderEvents(account, row.id)).toEqual([]);
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("case 6: with Calendar off for the user the reminder still notifies, creates no event and the row keeps working", async ({
+		browser,
+	}) => {
+		const account = await plainAccount("frc");
+		const { context, page } = await openRealtimePage(browser, account);
+		try {
+			await setModuleState(api, { access: [{ userId: account.id, moduleId: "calendar", allowed: false }] });
+			const vendor = uniqueVendor("Offcalflix");
+			const row = await trackRenewing(account, vendor);
+
+			await cronTick();
+			await expect.poll(async () => (await noticeFrames(page)).length, { timeout: 20_000 }).toBe(1);
+			expect((await noticeFrames(page))[0]).toMatchObject({
+				notice: "renewal_due",
+				title: `${vendor} renews in 2 days ($17.99)`,
+			});
+			await expect(page.getByRole("status").filter({ hasText: `${vendor} renews in 2 days` })).toBeVisible();
+			expect(await okJson(await account.api.get("/api/finance/badge"))).toEqual({ count: 1 });
+
+			const edited = await okJson<{ subscription: SubscriptionView }>(
+				await account.api.patch(`/api/finance/subscriptions/${row.id}`, { data: { fields: { plan: "Family" } } }),
+			);
+			expect(edited.subscription.vendor).toBe(vendor);
+
+			await restoreModules(api, [account.id]);
+			expect(await reminderEvents(account, row.id)).toEqual([]);
+		} finally {
+			await restoreModules(api, [account.id]);
+			await context.close();
+			await account.api.dispose();
 		}
 	});
 });

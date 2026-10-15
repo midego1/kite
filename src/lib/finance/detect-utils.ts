@@ -10,10 +10,12 @@ import {
 	type DateContext,
 } from "./date-utils";
 import {
-	classifyDocument,
+	chooseDocType,
 	documentDetails,
+	gatedDocument,
 	isDocumentAttachment,
 	type ClassifiedDocument,
+	type DocumentClass,
 	type DocumentDetails,
 	type DocumentInfo,
 } from "./document-utils";
@@ -104,6 +106,8 @@ export type Analysis = {
 	trialEndsOn: string | null;
 	paymentFailed: boolean;
 	document: ClassifiedDocument | null;
+	/** The document type the detector found, before the amount gate that `document` applies. */
+	classified: DocumentClass | null;
 	cancelLink: CancelLink | null;
 	unverified: boolean;
 	signals: Set<string>;
@@ -208,7 +212,9 @@ export function analyzeMessage(input: DetectStepInput, timeZone: string): Analys
 	const paymentFailed = PAYMENT_FAILED.test(text);
 	const subjectKeyword = SUBJECT_KEYWORD.test(subject);
 	const classify = { subject, excerpt, attachments: input.attachments, dates };
-	const document = classifyDocument({ ...classify, paymentFailed, hasAmount: amount !== null });
+	const classified = chooseDocType({ ...classify, paymentFailed });
+	const details = documentDetails(classify);
+	const document = gatedDocument(classified, details, amount !== null);
 	const found: [string, boolean][] = [
 		["amount", amount !== null],
 		["cycle", cycle !== null],
@@ -235,11 +241,12 @@ export function analyzeMessage(input: DetectStepInput, timeZone: string): Analys
 		trialEndsOn,
 		paymentFailed,
 		document,
+		classified,
 		cancelLink: parseCancelLink(input.headers.listUnsubscribe, input.headers.listUnsubscribePost),
 		unverified: !input.facts.authPassed,
 		signals,
 		dates,
-		documentDetails: documentDetails(classify),
+		documentDetails: details,
 		modelFields: [],
 		modelDisagrees: [],
 	};
@@ -359,8 +366,9 @@ function meetsCandidateRule(analysis: Analysis, signals: Set<string>): boolean {
 	if (!analysis.amount) return false;
 	const recurrence = !!analysis.cycle || !!analysis.renewalOn || !!analysis.trialEndsOn || signals.has("recurring");
 	if (!recurrence) return false;
-	if (signalWeight(signals) >= CANDIDATE_WEIGHT) return true;
-	return analysis.modelFields.length > 0 && receiptCondition(signals);
+	if (analysis.modelFields.length === 0) return signalWeight(signals) >= CANDIDATE_WEIGHT;
+	const deterministic = [...signals].filter((signal) => signal !== "model_receipt");
+	return signalWeight(deterministic) >= CANDIDATE_WEIGHT || receiptCondition(signals);
 }
 
 function plan(analysis: Analysis, row: TrackedMatchRow | null, signals: Set<string>): Planned | null {

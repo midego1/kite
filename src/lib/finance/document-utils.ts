@@ -170,7 +170,14 @@ export type ClassifyInput = {
 	dates: DateContext;
 };
 
-function chooseType(input: ClassifyInput): { docType: DocType; confident: boolean } | null {
+/** A document type and whether it came from the subject, an attachment name or the payment-failed phrases. */
+export type DocumentClass = { docType: DocType; confident: boolean };
+
+/**
+ * The type of money document a message is, whatever its amount: payment-failed phrases first, then the
+ * subject, then attachment names, then the body (weak). Null for a notice.
+ */
+export function chooseDocType(input: Omit<ClassifyInput, "hasAmount" | "dates">): DocumentClass | null {
 	if (input.paymentFailed) return { docType: "failed_payment", confident: true };
 	const fromSubject = docTypeOfText(input.subject);
 	if (fromSubject) return { docType: fromSubject, confident: true };
@@ -180,16 +187,23 @@ function chooseType(input: ClassifyInput): { docType: DocType; confident: boolea
 	return fromBody ? { docType: fromBody, confident: false } : null;
 }
 
-/**
- * The money document a message is: payment-failed phrases first, then the subject, then attachment
- * names, then the body (weak). Null for a notice, or for a document type without an amount (only a
- * failed payment may have none).
+/** The classified document, or null for a document type without an amount (only a failed payment may have none). */
+export function gatedDocument(
+	chosen: DocumentClass | null,
+	details: DocumentDetails,
+	hasAmount: boolean,
+): ClassifiedDocument | null {
+	if (!chosen) return null;
+	if (chosen.docType !== "failed_payment" && !hasAmount) return null;
+	return { ...chosen, ...details };
+}
+
+/** The money document a message is (see `chooseDocType`), gated on its amount like `gatedDocument`.
+ * @public Exercised by the bundled unit tests.
  */
 export function classifyDocument(input: ClassifyInput): ClassifiedDocument | null {
-	const chosen = chooseType(input);
-	if (!chosen) return null;
-	if (chosen.docType !== "failed_payment" && !input.hasAmount) return null;
-	return { ...chosen, ...documentDetails(input) };
+	const chosen = chooseDocType(input);
+	return chosen ? gatedDocument(chosen, documentDetails(input), input.hasAmount) : null;
 }
 
 export type DocumentDetails = Omit<DocumentInfo, "docType">;

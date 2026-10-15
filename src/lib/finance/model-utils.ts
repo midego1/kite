@@ -119,21 +119,31 @@ export function modelFields(deterministic: Analysis, model: ModelExtraction): Mo
 	return fills.flatMap(([names, fills]) => (fills ? names : []));
 }
 
-/** A model document type replaces only a body-only or missing one, and money documents need an amount. */
+/** A model document type replaces only a body-only or missing classification, and money documents need an amount. */
 function fillsDocType(deterministic: Analysis, model: ModelExtraction): boolean {
 	const docType = model.docType;
 	if (!docType || docType === "failed_payment") return false;
-	const current = deterministic.document;
+	const current = deterministic.classified;
 	if (current?.confident || current?.docType === docType) return false;
 	return !!(deterministic.amount ?? model.amount);
 }
 
-function withDocSignal(signals: ReadonlySet<string>, docType: DocType | undefined, filled: boolean): Set<string> {
+/** The merged document: the model's type when it filled one, else the detector's type once an amount is known. */
+function mergedDocument(
+	deterministic: Analysis,
+	model: ModelExtraction,
+	docFilled: boolean,
+	hasAmount: boolean,
+): Analysis["document"] {
+	if (docFilled) return { docType: model.docType!, ...deterministic.documentDetails, confident: false };
+	if (deterministic.document || !deterministic.classified || !hasAmount) return deterministic.document;
+	return { ...deterministic.classified, ...deterministic.documentDetails };
+}
+
+function withDocSignal(signals: ReadonlySet<string>, document: Analysis["document"]): Set<string> {
 	const next = new Set(signals);
-	if (filled) {
-		for (const signal of [...next]) if (signal.startsWith("doc_")) next.delete(signal);
-		next.add(`doc_${docType}`);
-	}
+	for (const signal of [...next]) if (signal.startsWith("doc_")) next.delete(signal);
+	if (document && document.docType !== "failed_payment") next.add(`doc_${document.docType}`);
 	next.add("model_fields");
 	return next;
 }
@@ -141,8 +151,9 @@ function withDocSignal(signals: ReadonlySet<string>, docType: DocType | undefine
 /**
  * The detector's analysis with the validated model values merged in (spec §5.7.4). A confident
  * deterministic value always wins; the model fills empty fields and replaces only a domain-fallback
- * vendor, an estimated renewal and a body-only document type. The vendor key, the event, the cancel
- * link, a failed payment and the document's date, period and attachment never come from the model.
+ * vendor, an estimated renewal and a body-only document type. A document type the detector classified
+ * without an amount becomes the document once the model supplies the amount. The vendor key, the event,
+ * the cancel link, a failed payment and the document's date, period and attachment never come from the model.
  */
 export function mergeDetection(deterministic: Analysis, model: ModelExtraction | null): Analysis {
 	if (!model) return deterministic;
@@ -150,20 +161,19 @@ export function mergeDetection(deterministic: Analysis, model: ModelExtraction |
 	const fields = modelFields(deterministic, model);
 	if (fields.length === 0) return { ...deterministic, modelDisagrees: disagrees };
 	const has = (name: ModelField) => fields.includes(name);
-	const docFilled = has("docType");
+	const amount = has("amount") ? model.amount! : deterministic.amount;
+	const document = mergedDocument(deterministic, model, has("docType"), amount !== null);
 	return {
 		...deterministic,
 		vendor: has("vendor") ? model.vendor! : deterministic.vendor,
 		vendorFromDomain: has("vendor") ? false : deterministic.vendorFromDomain,
 		plan: has("plan") ? model.plan! : deterministic.plan,
-		amount: has("amount") ? model.amount! : deterministic.amount,
+		amount,
 		cycle: has("cycle") ? model.cycle! : deterministic.cycle,
 		renewalOn: has("nextRenewalOn") ? model.nextRenewalOn! : deterministic.renewalOn,
 		trialEndsOn: has("trialEndsOn") ? model.trialEndsOn! : deterministic.trialEndsOn,
-		document: docFilled
-			? { docType: model.docType!, ...deterministic.documentDetails, confident: false }
-			: deterministic.document,
-		signals: withDocSignal(deterministic.signals, model.docType, docFilled),
+		document,
+		signals: withDocSignal(deterministic.signals, document),
 		modelFields: fields,
 		modelDisagrees: disagrees,
 	};

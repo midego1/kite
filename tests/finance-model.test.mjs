@@ -17,6 +17,7 @@ function stepInput({
 	facts = {},
 	attachments = [],
 	extension,
+	category = "receipt",
 } = {}) {
 	return {
 		message: { id: "m1", mailboxId: "mb1", from, fromName, subject, receivedAt: RECEIVED, textExcerpt: body },
@@ -33,14 +34,14 @@ function stepInput({
 		},
 		headers: { listUnsubscribe: null, listUnsubscribePost: null, listId: null },
 		attachments,
-		model: extension === undefined ? null : { category: "receipt", modules: { finance: extension } },
+		model: extension === undefined ? null : { category, modules: { finance: extension } },
 	};
 }
 
-/** The step's whole path: analyse, validate and merge the extension, then build the card. */
+/** The step's whole path, as production runs it: analyse with the model, validate and merge the extension, then build the card. */
 function detectWith(options, context = { tracked: null, recurring: null }) {
 	const input = stepInput(options);
-	const deterministic = detect.analyzeMessage({ ...input, model: null }, "UTC");
+	const deterministic = detect.analyzeMessage(input, "UTC");
 	const extraction = model.parseModelExtraction(model.modelExtensionOf(input), {
 		messageDay: deterministic.dates.messageDay,
 		paymentFailed: deterministic.paymentFailed,
@@ -335,8 +336,66 @@ test("rule 6: model fields make a candidate only with the deterministic receipt 
 	);
 });
 
+test("rule 6: a model receipt category adds no weight once a field came from the model", () => {
+	const personal = {
+		from: "sam@partner.test",
+		fromName: "Sam Partner",
+		subject: "Hello",
+		body: "I will send the monthly notes.",
+		facts: { automatic: false },
+		category: "receipt",
+	};
+	assert.equal(
+		detectWith({ ...personal, extension: { amount: "9.99", currency: "USD" } }),
+		null,
+		"only a cycle is deterministic: the model's receipt and amount make no card",
+	);
+	assert.ok(
+		detectWith({ ...personal, body: "I will send the monthly notes. $9.99", extension: null }),
+		"without model fields the model_receipt weight still counts",
+	);
+});
+
+test("rule 1: a subject classification without an amount survives the merge", () => {
+	const result = detectWith({
+		subject: "Your Streamflix invoice",
+		body: "Thanks for your subscription. Billed monthly, renews on 1 Nov 2026.",
+		extension: { amount: "9.99", currency: "USD" },
+	});
+	assert.equal(result.payload.amountMinor, 999);
+	assert.equal(result.payload.document.docType, "invoice");
+	assert.deepEqual(result.payload.modelFields, ["amount", "currency"]);
+	assert.ok(result.payload.signals.includes("doc_invoice"));
+});
+
+test("rule 1: a model refund never replaces a confident invoice", () => {
+	const tracked = {
+		id: "sub-1",
+		vendorKey: "streamflix.example",
+		plan: null,
+		amountMinor: 999,
+		currency: "USD",
+		cycle: "monthly",
+	};
+	const options = {
+		subject: "Your invoice",
+		body: "Thanks for your subscription. Billed monthly.",
+		extension: { amount: "9.99", currency: "USD", docType: "refund" },
+	};
+	for (const context of [
+		{ tracked, recurring: null },
+		{ tracked: null, recurring: null },
+	]) {
+		const result = detectWith(options, context);
+		assert.notEqual(result.payload.event, "refund");
+		assert.equal(result.payload.document.docType, "invoice");
+		assert.equal(result.payload.modelFields.includes("docType"), false);
+		assert.equal(result.payload.signals.includes("doc_refund"), false);
+	}
+});
+
 test("an extension with nothing valid gives exactly the detector's result", () => {
-	const base = detectWith({ body: "Amount paid: $9.99/month, renews on 1 Nov 2026." });
+	const base = detectWith({ body: "Amount paid: $9.99/month, renews on 1 Nov 2026.", extension: {} });
 	for (const extension of ["monthly", { cycle: "biweekly" }, { cancelUrl: "https://evil.test" }])
 		assert.deepEqual(detectWith({ body: "Amount paid: $9.99/month, renews on 1 Nov 2026.", extension }), base);
 });

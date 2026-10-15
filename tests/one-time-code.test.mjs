@@ -301,10 +301,10 @@ test("a code on its own line wins over a footer address near the expiry sentence
 	const text = [
 		"Please verify your account",
 		"Hi there,",
-		"Simply copy and paste the temporary authentication code into the pop-up verification form on the Spaceship website.",
+		"Simply copy and paste the temporary authentication code into the pop-up verification form on the Examplehost website.",
 		"b77f3a",
 		"The code will expire thirty minutes after the request was made.",
-		"4600 East Example Street, Suite 300, Phoenix, AZ 85034, USA",
+		"4600 East Example Street, Suite 300, Exampleville, ZZ 85034",
 	].join("\n");
 	assert.equal(extractOneTimeCode({ subject: "Important action required: Please verify account", text }), "b77f3a");
 	assert.equal(extractOneTimeCode({ subject: null, text: text.replace("b77f3a", "Your code is 482913.") }), "482913");

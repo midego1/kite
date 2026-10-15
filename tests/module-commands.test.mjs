@@ -79,11 +79,13 @@ test("the spec's module commands exist with the right targets and effects", () =
 		"booking.copy_link",
 		"import.open",
 		"finance.open",
+		"finance.add",
 	]);
 	assert.deepEqual(byId("calendar.new_event").target, { type: "client", action: "open_dialog", handler: "newEvent" });
 	assert.deepEqual(byId("booking.copy_link").target, { type: "client", action: "invoke", handler: "copyLink" });
 	assert.equal(byId("import.open").target.href, "/settings/import");
 	assert.equal(byId("finance.open").target.href, "/finance");
+	assert.equal(byId("finance.add").target.href, "/finance?add=1");
 	assert.equal(byId("mail.export").target.href, "/settings/export");
 	assert.equal(byId("mail.export").moduleId, "core");
 	assert.equal(MODULE_MANIFESTS.find((manifest) => manifest.id === "templates").commands.length, 0);
@@ -179,7 +181,15 @@ test("with every module on the list holds the core and module navigation command
 		assert.ok(listed.includes(id), id);
 	assert.deepEqual(
 		listed.filter((id) => id.includes(".") && !id.startsWith("mail.")),
-		["calendar.open", "calendar.go_to_date", "booking.open", "booking.open_event_type", "import.open", "finance.open"],
+		[
+			"calendar.open",
+			"calendar.go_to_date",
+			"booking.open",
+			"booking.open_event_type",
+			"import.open",
+			"finance.open",
+			"finance.add",
+		],
 	);
 });
 

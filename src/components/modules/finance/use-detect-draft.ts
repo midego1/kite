@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth/client";
-import type { DetectAnswer } from "./dialog-types";
+import type { DetectAnswer } from "@/components/finance/dialog-types";
 
 type DraftState = { loading: boolean; error: string | null; answer: DetectAnswer | null };
 

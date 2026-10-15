@@ -6,126 +6,18 @@ import { undoAction } from "@/components/agent/suggestion-card-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { showUndoToast } from "@/components/ui/undo-toast";
 import { authFetch } from "@/lib/auth/client";
 import type { MessageSlotContext } from "../client-registry-types";
-import type { DetectAnswer, DocumentForm, TrackForm } from "./dialog-types";
-import { CYCLES, documentForm, linkHost, trackBody, trackForm } from "./dialog-utils";
+import type { DetectAnswer, DocumentForm } from "@/components/finance/dialog-types";
+import { documentForm, linkHost, trackBody, trackForm } from "@/components/finance/dialog-utils";
 import { DocumentFields } from "./document-fields";
+import { SubscriptionFields } from "@/components/finance/subscription-fields";
 import { errorOf, useDetectDraft } from "./use-detect-draft";
 
 type OverlayProps = MessageSlotContext & { open: boolean; onOpenChange: (open: boolean) => void };
 
 const localToday = () => new Date().toLocaleDateString("en-CA");
-
-function TrackFields({ form, onChange }: { form: TrackForm; onChange: (form: TrackForm) => void }) {
-	const set = (patch: Partial<TrackForm>) => onChange({ ...form, ...patch });
-	return (
-		<>
-			<div className="grid grid-cols-2 gap-3">
-				<div className="space-y-1.5">
-					<Label htmlFor="finance-track-vendor">Vendor</Label>
-					<Input
-						id="finance-track-vendor"
-						value={form.vendor}
-						onChange={(event) => set({ vendor: event.target.value })}
-						maxLength={80}
-						required
-					/>
-				</div>
-				<div className="space-y-1.5">
-					<Label htmlFor="finance-track-plan">Plan (optional)</Label>
-					<Input
-						id="finance-track-plan"
-						value={form.plan}
-						onChange={(event) => set({ plan: event.target.value })}
-						maxLength={80}
-					/>
-				</div>
-			</div>
-			<div className="grid grid-cols-[1fr_6rem_1fr] gap-3">
-				<div className="space-y-1.5">
-					<Label htmlFor="finance-track-amount">Amount</Label>
-					<Input
-						id="finance-track-amount"
-						inputMode="decimal"
-						value={form.amount}
-						onChange={(event) => set({ amount: event.target.value })}
-						placeholder="17.99"
-					/>
-				</div>
-				<div className="space-y-1.5">
-					<Label htmlFor="finance-track-currency">Currency</Label>
-					<Input
-						id="finance-track-currency"
-						value={form.currency}
-						onChange={(event) => set({ currency: event.target.value.toUpperCase() })}
-						maxLength={3}
-						placeholder="EUR"
-					/>
-				</div>
-				<div className="space-y-1.5">
-					<Label htmlFor="finance-track-cycle">Billed</Label>
-					<Select
-						id="finance-track-cycle"
-						containerClassName="flex h-9 text-sm"
-						value={form.cycle}
-						onChange={(event) => set({ cycle: event.target.value })}
-					>
-						{CYCLES.map((cycle) => (
-							<option key={cycle.value} value={cycle.value}>
-								{cycle.label}
-							</option>
-						))}
-					</Select>
-				</div>
-			</div>
-			<div className="grid grid-cols-2 gap-3">
-				<div className="space-y-1.5">
-					<Label htmlFor="finance-track-renewal">Next renewal</Label>
-					<Input
-						id="finance-track-renewal"
-						type="date"
-						value={form.nextRenewalOn}
-						onChange={(event) => set({ nextRenewalOn: event.target.value })}
-					/>
-				</div>
-				<div className="space-y-1.5">
-					<Label htmlFor="finance-track-trial">Trial ends (optional)</Label>
-					<Input
-						id="finance-track-trial"
-						type="date"
-						value={form.trialEndsOn}
-						onChange={(event) => set({ trialEndsOn: event.target.value })}
-					/>
-				</div>
-			</div>
-			<div className="grid grid-cols-2 items-end gap-3">
-				<div className="space-y-1.5">
-					<Label htmlFor="finance-track-reminder">Remind days before</Label>
-					<Input
-						id="finance-track-reminder"
-						type="number"
-						min={0}
-						max={30}
-						value={form.reminderDays}
-						onChange={(event) => set({ reminderDays: event.target.value })}
-					/>
-				</div>
-				<label className="flex h-9 items-center gap-2 text-sm text-neutral-700">
-					<Checkbox
-						checked={form.calendarReminder}
-						onChange={(event) => set({ calendarReminder: event.target.checked })}
-					/>
-					Add a calendar reminder
-				</label>
-			</div>
-		</>
-	);
-}
 
 function TrackMessageForm({ answer, onSaved }: { answer: DetectAnswer; onSaved: () => void }) {
 	const { draft } = answer;
@@ -172,7 +64,7 @@ function TrackMessageForm({ answer, onSaved }: { answer: DetectAnswer; onSaved: 
 				void save();
 			}}
 		>
-			<TrackFields form={form} onChange={setForm} />
+			<SubscriptionFields form={form} onChange={setForm} />
 			<p data-finance-cancel-link className="flex items-center gap-1.5 text-xs text-neutral-600">
 				<Link2 aria-hidden className="h-3.5 w-3.5 shrink-0" />
 				{draft.cancelLink

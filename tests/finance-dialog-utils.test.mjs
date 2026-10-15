@@ -11,7 +11,7 @@ const outDir = makeBundleDirectory("kite-finance-dialog-utils-");
 after(() => rmSync(outDir, { recursive: true, force: true }));
 
 await build({
-	entryPoints: [join(root, "src/components/modules/finance/dialog-utils.ts")],
+	entryPoints: [join(root, "src/components/finance/dialog-utils.ts")],
 	outfile: join(outDir, "dialog-utils.mjs"),
 	bundle: true,
 	sourcemap: "inline",

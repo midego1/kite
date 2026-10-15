@@ -213,6 +213,7 @@ test("commands use their own module id and valid targets", () => {
 		"calendar.go_to_date",
 		"calendar.new_event",
 		"calendar.open",
+		"finance.add",
 		"finance.open",
 		"import.open",
 	]);

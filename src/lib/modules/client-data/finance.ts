@@ -75,5 +75,15 @@ export const financeClientData: ClientModuleData = {
 			target: { type: "route", href: "/finance" },
 			effect: "navigate",
 		},
+		{
+			id: "finance.add",
+			moduleId: "finance",
+			label: "Add a subscription",
+			description: "Track a subscription by hand",
+			keywords: ["finance", "money", "subscription", "track", "new"],
+			group: "Money Watch",
+			target: { type: "route", href: "/finance?add=1" },
+			effect: "navigate",
+		},
 	],
 };

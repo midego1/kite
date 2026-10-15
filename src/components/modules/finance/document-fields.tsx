@@ -3,8 +3,8 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import type { DocumentForm, DocumentType, DraftAttachment } from "./dialog-types";
-import { DOCUMENT_TYPES } from "./dialog-utils";
+import type { DocumentForm, DocumentType, DraftAttachment } from "@/components/finance/dialog-types";
+import { DOCUMENT_TYPES } from "@/components/finance/dialog-utils";
 
 /** Type, amount, currency, date, optional period and attachment of one money document. */
 export function DocumentFields({

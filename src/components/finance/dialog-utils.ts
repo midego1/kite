@@ -84,10 +84,10 @@ export function documentBody(form: DocumentForm): Built<Record<string, unknown>>
 	};
 }
 
-/** The `POST /api/finance/subscriptions` body of "Track as subscription", or the first problem to show. */
+/** The `POST /api/finance/subscriptions` body of "Track as subscription" (or of a row added by hand), or the first problem to show. */
 export function trackBody(
 	form: TrackForm,
-	messageId: string,
+	messageId: string | null,
 	document: DocumentForm | null,
 ): Built<Record<string, unknown>> {
 	if (!form.vendor.trim()) return { error: "Enter the vendor" };

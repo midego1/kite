@@ -9,8 +9,8 @@ import { Select } from "@/components/ui/select";
 import { showUndoToast } from "@/components/ui/undo-toast";
 import { authFetch } from "@/lib/auth/client";
 import type { MessageSlotContext } from "../client-registry-types";
-import type { DetectAnswer, DocumentForm, TrackedOption } from "./dialog-types";
-import { documentBody, documentForm } from "./dialog-utils";
+import type { DetectAnswer, DocumentForm, TrackedOption } from "@/components/finance/dialog-types";
+import { documentBody, documentForm } from "@/components/finance/dialog-utils";
 import { DocumentFields } from "./document-fields";
 import { errorOf, useDetectDraft } from "./use-detect-draft";
 

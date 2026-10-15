@@ -29,7 +29,7 @@ The two reviewers are being compared by what you make of their findings, so the 
      Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>
      ```
 
-   - When comments from both reviewers describe the same problem, fix it once and put one `Addresses ...` line per comment in that commit's body, so each reviewer is credited.
+   - When comments from both reviewers describe the same problem, fix it once and put one `Addresses ...` line per comment in that commit's body, so each reviewer is credited. Before committing a fix, check the remaining comments for the same problem; if you only notice a matching comment after the commit, amend that commit with its `Addresses ...` line. Such a comment is adopted, not `Already addressed`, which is only for fixes made before this run.
 
 3. If the finding **is not correct**, prepare an answer: two or three plain sentences on what the code actually does and why the finding does not apply. State facts, no boilerplate.
 4. If the code on the branch **already addressed** the finding before this run, prepare the answer `Already addressed in <short sha>.` when you can point at a commit that was already on the branch, otherwise `Already addressed in the current code.` Never cite a commit you made in this run: the publish job re-applies them, which changes their sha.

@@ -6,7 +6,8 @@ import type {
 	AgentActionRow,
 	UndoRefusal,
 } from "./actions-types";
-import { MODULE_ACTION_META } from "./module-actions-utils";
+import { moduleActionRef } from "./activity-ref-utils";
+import { MODULE_ACTION_META, moduleActionOwner } from "./module-actions-utils";
 import type { AgentActionType } from "./policy-types";
 
 const MINUTE_MS = 60 * 1000;
@@ -140,6 +141,21 @@ function undoneActionId(variant: string): string | null {
 	return variant.startsWith(UNDO_VARIANT_PREFIX) ? variant.slice(UNDO_VARIANT_PREFIX.length) || null : null;
 }
 
+/**
+ * What Activity shows of a row's `after`. Every full-access user of the mailbox reads Activity, while a
+ * module's records may belong to one user, so a module action shows only the ref of the record it
+ * touched: from its result, or for an undo row (whose `after` is the inverse) from the original result.
+ */
+function activityAfter(row: AgentActionRow): Record<string, unknown> | null {
+	const after = parseActionState(row.after);
+	const owner = moduleActionOwner(row.action);
+	if (!owner) return after;
+	const ref =
+		moduleActionRef({ after }, owner.moduleId) ??
+		(undoneActionId(row.variant) ? moduleActionRef({ after: parseActionState(row.before) }, owner.moduleId) : null);
+	return ref ? { ref } : null;
+}
+
 /** The audit row as the Activity API returns it; `before` stays server-side. */
 export function toActivityAction(row: AgentActionRow, now: Date) {
 	return {
@@ -154,7 +170,7 @@ export function toActivityAction(row: AgentActionRow, now: Date) {
 		messageId: row.messageId,
 		actingUserId: row.actingUserId,
 		autonomy: row.autonomy,
-		after: parseActionState(row.after),
+		after: activityAfter(row),
 		undoUntil: row.undoUntil?.toISOString() ?? null,
 		undoneAt: row.undoneAt?.toISOString() ?? null,
 		undoneByUserId: row.undoneByUserId,

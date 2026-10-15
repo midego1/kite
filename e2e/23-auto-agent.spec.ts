@@ -3645,12 +3645,12 @@ test.describe("calendar invite actions", () => {
 		return messages.filter((message) => message.subject.includes(summary));
 	}
 
-	/** The replies in the order the executor sent them. */
-	async function repliesInOrder(client: APIRequestContext, mailboxId: string, suggestionId: string) {
+	/** The answers the executor sent, oldest first; Activity shows module actions by their ref only. */
+	async function rsvpsInOrder(client: APIRequestContext, mailboxId: string, suggestionId: string) {
 		const rows = (await readActions(client, mailboxId)).filter(
-			(action) => action.suggestionId === suggestionId && action.action === "send_rsvp",
+			(action) => action.suggestionId === suggestionId && action.action === "send_rsvp" && !action.undoOf,
 		);
-		return rows.reverse().map((action) => String(action.after?.messageId));
+		return rows.reverse().map((action) => action.variant);
 	}
 
 	async function replyIcs(client: APIRequestContext, messageId: string) {
@@ -3760,12 +3760,17 @@ test.describe("calendar invite actions", () => {
 			expect(await eventsAround(account.api, later)).toHaveLength(1);
 
 			await expect.poll(async () => (await repliesFor(account.api, summary)).length, { timeout: 30_000 }).toBe(3);
-			const ordered = await repliesInOrder(account.api, account.mailboxId, suggestion!.id);
-			expect(ordered).toHaveLength(3);
+			expect(await rsvpsInOrder(account.api, account.mailboxId, suggestion!.id)).toEqual([
+				"accepted",
+				"declined",
+				"accepted",
+			]);
 			const partstats = await Promise.all(
-				ordered.map(async (id) => /PARTSTAT=(\w+)/.exec(await replyIcs(account.api, id))![1]),
+				(await repliesFor(account.api, summary)).map(
+					async (reply) => /PARTSTAT=(\w+)/.exec(await replyIcs(account.api, reply.id))![1],
+				),
 			);
-			expect(partstats).toEqual(["ACCEPTED", "DECLINED", "ACCEPTED"]);
+			expect(partstats.sort()).toEqual(["ACCEPTED", "ACCEPTED", "DECLINED"]);
 			const live = (await readActions(account.api, account.mailboxId)).filter(
 				(action) =>
 					action.suggestionId === suggestion!.id && action.action === "send_rsvp" && action.status === "applied",

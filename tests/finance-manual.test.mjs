@@ -484,3 +484,36 @@ test("accepting a card for a document recorded by hand inserts no second ledger 
 	assert.equal(accepted.documentRecorded, false);
 	assert.equal(documents().length, 1);
 });
+
+test("Activity shows another full-access user only the ref of a removed and restored subscription", async (t) => {
+	const { env, db, addMessage } = await setup(t);
+	db.db.exec("UPDATE mailbox_access SET permission = 'full_access' WHERE id = 'access-member'");
+	addMessage("pay-1");
+	const id = (await addSubscription(owner, byHand({ mailboxId: "mailbox-s" }))).body.subscription.id;
+	await addDocument(owner, id, documentBody());
+	const removed = await removeSubscription(owner, id);
+	assert.equal(removed.status, 200);
+	await undoAgentAction(env, owner, removed.body.actionId);
+
+	const ref = { kind: "finance:subscription", id };
+	const { actions } = await listAgentActivity(env, "mailbox-s", "member");
+	const finance = actions.filter(
+		(action) => action.action.endsWith("_subscription") || action.action.endsWith("_document"),
+	);
+	assert.ok(finance.length >= 3);
+	for (const action of finance) assert.deepEqual(action.after, { ref }, `${action.action} ${action.variant}`);
+	assert.ok(finance.some((action) => action.undoOf === removed.body.actionId));
+	const text = JSON.stringify(actions);
+	for (const secret of ["Gym Plus", "Gold", "2500", "removed", "documents", "vendor"])
+		assert.equal(text.includes(secret), false, secret);
+	for (const action of finance) assert.deepEqual(action.target, { href: null, label: "Subscription" });
+
+	const own = await listAgentActivity(env, "mailbox-s", "owner");
+	const undo = own.actions.find((action) => action.undoOf === removed.body.actionId);
+	assert.deepEqual(undo.after, { ref });
+	assert.equal(undo.target.href, `/finance?subscription=${id}`);
+	const stored = db.db
+		.prepare("SELECT after FROM agent_actions WHERE variant = ?")
+		.get(`undo:${removed.body.actionId}`);
+	assert.ok(JSON.parse(stored.after).removed, "the stored inverse keeps its snapshot");
+});

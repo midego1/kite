@@ -316,8 +316,10 @@ test("documents from a message are recorded once, need the message's own attachm
 	const audit = action(actionId);
 	assert.deepEqual(
 		[audit.action, audit.variant, audit.mailbox_id, audit.message_id],
-		["record_document", "payment", "mailbox-s", "pay-1"],
+		["record_document", "payment", "mailbox-o", null],
+		"the row's audit mailbox, without the receipt from another mailbox",
 	);
+	assert.equal(documents()[0].message_id, "pay-1", "the ledger row still links the receipt");
 	assert.equal(rows()[0].payment_failed_at, null, "a payment clears the failed payment");
 
 	const again = await addDocument(owner, id, documentBody({ attachmentId: "att-1" }));
@@ -346,6 +348,35 @@ test("documents from a message are recorded once, need the message's own attachm
 		[invoice.body.document.id],
 		"undo puts the document back with its id",
 	);
+});
+
+test("documents name the row's audit mailbox, are owner-only and answer NO_MAILBOX without one", async (t) => {
+	const { db, addMessage, action, documents, actions } = await setup(t);
+	addMessage("pay-1");
+	addMessage("pay-o", { mailboxId: "mailbox-o" });
+	const id = (await addSubscription(owner, byHand())).body.subscription.id;
+
+	const same = await addDocument(owner, id, documentBody({ messageId: "pay-o" }));
+	assert.equal(same.status, 200, JSON.stringify(same.body));
+	assert.deepEqual(
+		[action(same.body.actionId).mailbox_id, action(same.body.actionId).message_id],
+		["mailbox-o", "pay-o"],
+		"a receipt in the audit mailbox is named on the audit row",
+	);
+
+	const stranger = await addDocument(boss, id, documentBody({ docType: "invoice" }));
+	assert.equal(stranger.status, 404, "anyone but the owner gets 404");
+
+	db.db.exec("DELETE FROM mailbox_access WHERE id = 'access-owner'");
+	db.db.exec("UPDATE mailboxes SET disabled = 1 WHERE user_id = 'owner'");
+	const written = actions().length;
+	const none = await addDocument(owner, id, documentBody({ docType: "invoice" }));
+	assert.deepEqual(none, {
+		status: 409,
+		body: { error: "Money Watch needs a mailbox you manage to record changes", code: "NO_MAILBOX" },
+	});
+	assert.equal(actions().length, written);
+	assert.equal(documents().length, 1);
 });
 
 test("rows and documents are owner-only and out-of-bounds input writes nothing", async (t) => {

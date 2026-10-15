@@ -1232,7 +1232,8 @@ test.describe("Money Watch manual add", () => {
 				["POST", "/api/finance/detect"],
 				["GET", "/api/finance/badge"],
 			] as const) {
-				const response = await anonymous.fetch(path, { method, data: method === "GET" ? undefined : {} });
+				// No body: the dev server's proxy can drop the next keep-alive request after a 401 that left a body unread.
+				const response = await anonymous.fetch(path, { method });
 				expect(response.status(), `${method} ${path}`).toBe(401);
 			}
 		} finally {

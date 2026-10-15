@@ -3031,6 +3031,52 @@ test("Mail import off then on removes and restores the Settings item, page, API,
 	});
 });
 
+test("Money Watch off then on removes and restores every finance surface: nav, page, API, palette, assistant, MCP, webhooks and search", async ({
+	page,
+}) => {
+	await withSurfaceRig(async (rig) => {
+		const vendor = `Surfaceflix${uniqueToken("").slice(-4)}`;
+		const key = await createMcpKey(rig.api, "E2E finance surfaces", ["mcp:read", "mcp:finance-read"], [rig.mailboxId]);
+		const created = await rig.api.post("/api/finance/subscriptions", {
+			data: { vendor, amountMinor: 999, currency: "USD", cycle: "monthly", reminderDays: 0, calendarReminder: false },
+		});
+		expect(created.status(), await created.text()).toBe(200);
+		const subscriptionId = ((await created.json()) as { subscription: { id: string } }).subscription.id;
+		try {
+			await offThenOn(rig.api, "finance", async (on) => {
+				await page.goto("/inbox");
+				const sidebar = page.getByRole("navigation").first();
+				await expect(sidebar.locator('a[href="/inbox"]').last()).toBeVisible();
+				if (on) await expect(sidebar.locator('a[href="/finance"]')).toBeVisible();
+				else await expect(sidebar.locator('a[href="/finance"]')).toHaveCount(0);
+				await expectPaletteCommands(page, "money", ["Open Subscriptions", "Add a subscription"], on);
+				await expectPageState(page, "/finance", on);
+				if (on) await expect(page.getByRole("heading", { level: 1, name: "Subscriptions" })).toBeVisible();
+				expect((await rig.api.get("/api/finance/subscriptions")).status()).toBe(on ? 200 : 404);
+				expect((await rig.anonymous.get("/api/finance/subscriptions")).status()).toBe(on ? 401 : 404);
+
+				const offer = await assistantOffer(rig);
+				expect(offer.tools.includes("list_subscriptions")).toBe(on);
+				expect(offer.tools).toEqual(expect.arrayContaining(["list_emails", "search_emails", "open_page"]));
+				expect(offer.pages.filter((id) => id.startsWith("finance.")).sort()).toEqual(
+					on ? ["finance.add", "finance.open"] : [],
+				);
+				const mcp = await mcpToolNames(rig.anonymous, key.key);
+				expect(mcp.includes("list_subscriptions")).toBe(on);
+				expect(mcp).toContain("list_emails");
+				const catalog = await webhookCatalog(rig.api);
+				expect(FINANCE_EVENTS.filter((event) => catalog.includes(event))).toEqual(on ? FINANCE_EVENTS : []);
+				expect((await searchSections(rig.api, vendor)).map((section) => section.id)).toEqual(
+					on ? ["subscriptions"] : [],
+				);
+			});
+		} finally {
+			await rig.api.delete(`/api/finance/subscriptions/${subscriptionId}`);
+			await deleteKeys(rig.api, { mcp: [key.id] });
+		}
+	});
+});
+
 test("an open calendar tab gets 404 from its calendar calls once Calendar is turned off in another tab, and not-found on reload", async ({
 	context,
 	page,

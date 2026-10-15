@@ -800,6 +800,14 @@ test.describe("Money Watch tracking", () => {
 			await expect(entries).toHaveCount(3);
 			await expect(entries.filter({ hasText: "Refund" })).toContainText("−$19.99");
 			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+			// Undoing Track would delete the row and, with it, the two documents recorded after it.
+			const refused = await account.api.post(`/api/agent/actions/${tracked.actionId}/undo`);
+			expect(refused.status()).toBe(409);
+			expect(await refused.json()).toMatchObject({
+				error: "Later documents were recorded for this subscription; remove it from Money Watch instead",
+			});
+			expect((await listSubscriptions(account)).subscriptions.map((row) => row.id)).toEqual([subscriptionId]);
+			expect((await subscriptionDetail(account, subscriptionId)).documents).toHaveLength(3);
 			await undo(account, recorded.actionId);
 			expect(await paidTotal(account)).toBe(3798);
 
@@ -809,6 +817,8 @@ test.describe("Money Watch tracking", () => {
 			expect((await subscriptionDetail(account, subscriptionId)).documents).toMatchObject([
 				{ docType: "invoice", messageId: first.message.id },
 			]);
+			await undo(account, tracked.actionId);
+			expect((await listSubscriptions(account)).subscriptions).toEqual([]);
 		} finally {
 			await context.close();
 			await outsider.api.dispose();

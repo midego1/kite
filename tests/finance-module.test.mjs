@@ -64,7 +64,7 @@ const { moduleHost } = await load("host");
 const { resolveRecordRefs } = await load("refs");
 const { clearModuleStateCache } = await load("state");
 const { listSubscriptionsView, subscriptionDetailView } = await load("views");
-const { ownerRow, documentRow } = await load("subscriptions");
+const { ownerRow, documentRow, deleteSubscriptionWithOnly } = await load("subscriptions");
 const { subscriptionRemovalSnapshot, documentRemovalSnapshot } = await load("removal");
 const { createSession } = await load("session");
 const subscriptionsRoute = await load("subscriptionsRoute");
@@ -375,6 +375,44 @@ test("Undo of Track is refused while the row holds a later document, so that doc
 	await undoAgentAction(env, owner, first.actionId);
 	assert.deepEqual(rows(), []);
 	assert.deepEqual(documents(), []);
+});
+
+test("An older Track inverse owns only the document derived from its action, so one later invoice is kept", async (t) => {
+	const context = await setup(t);
+	const { env, addCard, rows, documents, db } = context;
+	addCard("sugg-1", "inv-1", card({ document: null }));
+	const first = await accept(env, "sugg-1");
+	assert.deepEqual(documents(), [], "Track recorded no document");
+	const subscriptionId = first.subscription.id;
+	addCard("sugg-2", "inv-2", card({ event: "renewal", subscriptionId }));
+	await accept(env, "sugg-2");
+	const stored = db.db.prepare("SELECT before FROM agent_actions WHERE id = ?").get(first.actionId).before;
+	const legacy = stored.replace(/,?"documentIds":\[[^\]]*\]/, "");
+	assert.notEqual(legacy, stored);
+	db.db.prepare("UPDATE agent_actions SET before = ? WHERE id = ?").run(legacy, first.actionId);
+	await assert.rejects(() => undoAgentAction(env, owner, first.actionId), { status: 409 });
+	assert.equal(rows().length, 1);
+	assert.deepEqual(
+		documents().map((document) => document.message_id),
+		["inv-2"],
+	);
+});
+
+test("Deleting a created subscription checks for other documents in the same statement", async (t) => {
+	const context = await setup(t);
+	const { rows, documents } = context;
+	const first = await trackFirst(context);
+	const subscriptionId = first.subscription.id;
+	const [own] = documents();
+	assert.equal(await deleteSubscriptionWithOnly("owner", subscriptionId, []), false, "Track's document is not listed");
+	assert.equal(rows().length, 1);
+	assert.equal(documents().length, 1);
+	assert.equal(await deleteSubscriptionWithOnly("member", subscriptionId, [own.id]), true, "no row of that owner");
+	assert.equal(rows().length, 1, "another user's call deletes nothing");
+	assert.equal(await deleteSubscriptionWithOnly("owner", subscriptionId, [own.id]), true);
+	assert.deepEqual(rows(), []);
+	assert.deepEqual(documents(), []);
+	assert.equal(await deleteSubscriptionWithOnly("owner", subscriptionId, [own.id]), true, "a repeat is a no-op");
 });
 
 test("a same-price renewal and a second card for an untracked vendor update the row; an invoice ends a trial", async (t) => {

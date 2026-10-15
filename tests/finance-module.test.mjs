@@ -972,6 +972,99 @@ test("each action is idempotent by actionId and undoes only what it did", async 
 	assert.equal(missing.refused.status, 409);
 });
 
+test("undoing a removal after its source message, contact and attachment were purged restores the history unlinked", async (t) => {
+	const context = await setup(t);
+	const { db, rows, documents } = context;
+	const first = await trackFirst(context);
+	const subscriptionId = first.subscription.id;
+	assert.equal(rows()[0].source_message_id, "inv-1");
+	assert.equal(rows()[0].contact_id, "contact-1");
+	const record = (actionId, messageId, attachmentId = null) =>
+		runAction("recordDocument", {
+			op: "execute",
+			actionId,
+			suggestion: suggestionRef,
+			input: {
+				variant: "payment",
+				subscriptionId,
+				messageId,
+				document: {
+					docType: "payment",
+					documentOn: day(-3),
+					periodStartOn: null,
+					periodEndOn: null,
+					attachmentId,
+					amountMinor: 1799,
+					currency: "USD",
+				},
+			},
+		});
+	context.addMessage("pay-gone", { attachments: ["att-gone"] });
+	context.addMessage("pay-keep");
+	const gone = await record("aact_pay_gone", "pay-gone", "att-gone");
+	const kept = await record("aact_pay_keep", "pay-keep");
+	const purge = (id) => db.db.prepare("DELETE FROM messages WHERE id = ?").run(id);
+	const documentOf = (id) => documents().find((row) => row.id === id);
+	const storedGone = documentOf(gone.result.documentId);
+	assert.equal(storedGone.attachment_id, "att-gone");
+
+	const removedDocument = await runAction("deleteDocument", {
+		op: "execute",
+		actionId: "aact_deldoc_purged",
+		suggestion: suggestionRef,
+		input: { documentId: gone.result.documentId },
+		before: documentRemovalSnapshot(await documentRow("owner", gone.result.documentId)),
+	});
+	purge("pay-gone");
+	const undone = await runAction("deleteDocument", {
+		op: "undo",
+		actionId: "aact_deldoc_purged",
+		inverse: { inverse: removedDocument.inverse },
+	});
+	assert.equal(undone.refused, undefined);
+	assert.deepEqual(
+		documentOf(gone.result.documentId),
+		{ ...storedGone, message_id: null },
+		"the document returns with the same id and amount, without its purged message",
+	);
+
+	const totalBefore = (await subscriptionDetailView(viewOf(owner), subscriptionId)).subscription;
+	const snapshot = await subscriptionRemovalSnapshot(await ownerRow("owner", subscriptionId));
+	const removedSubscription = await runAction("deleteSubscription", {
+		op: "execute",
+		actionId: "aact_delsub_purged",
+		suggestion: suggestionRef,
+		input: { subscriptionId },
+		before: snapshot,
+	});
+	assert.deepEqual(rows(), []);
+	purge("inv-1");
+	db.db.prepare("DELETE FROM contacts WHERE id = 'contact-1'").run();
+	await runAction("deleteSubscription", {
+		op: "undo",
+		actionId: "aact_delsub_purged",
+		inverse: { inverse: removedSubscription.inverse },
+	});
+	const [restored] = rows();
+	assert.equal(restored.id, subscriptionId);
+	assert.equal(restored.source_message_id, null);
+	assert.equal(restored.last_message_id, null);
+	assert.equal(restored.contact_id, null);
+	assert.equal(restored.mailbox_id, "mailbox-a", "a reference that still exists is kept");
+	assert.equal(restored.amount_minor, 1799);
+	assert.equal(documents().length, 3, "every document comes back");
+	const invoice = documents().find((row) => ![gone.result.documentId, kept.result.documentId].includes(row.id));
+	assert.equal(invoice.message_id, null);
+	assert.equal(documentOf(kept.result.documentId).message_id, "pay-keep", "a live message link is kept");
+	assert.equal(documentOf(gone.result.documentId).attachment_id, "att-gone");
+	const detail = await subscriptionDetailView(viewOf(owner), subscriptionId);
+	assert.deepEqual(
+		detail.subscription,
+		{ ...totalBefore, sourceMessageId: null, lastMessageId: null, contactId: null },
+		"totals and fields are as before the removal, without the purged links",
+	);
+});
+
 test("Track by hand creates the row once, emits a manual event, and undo removes it", async (t) => {
 	const context = await setup(t);
 	const { rows, deliveries } = context;

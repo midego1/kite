@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
+import { contacts, mailboxes, messages } from "@/db/schema";
 import { financeCharges, financeSubscriptions } from "@/db/schema/finance";
 import { getEnv } from "@/lib/cloudflare";
 import { onFinanceTables } from "./errors";
@@ -134,12 +135,48 @@ export function ownerDocuments(userId: string, subscriptionId?: string, limit?: 
 	});
 }
 
-/** Puts snapshotted rows back with their ids; rows that are already there are left alone. */
+type LinkTable = typeof messages | typeof contacts | typeof mailboxes;
+
+/** The ids among `ids` that still have a row in `table`. */
+async function liveIds(table: LinkTable, ids: readonly (string | null)[]): Promise<Set<string>> {
+	const wanted = [...new Set(ids.filter((id): id is string => !!id))];
+	if (wanted.length === 0) return new Set();
+	const found = await db().select({ id: table.id }).from(table).where(inArray(table.id, wanted));
+	return new Set(found.map((row) => row.id));
+}
+
+const keepLive = (id: string | null, live: Set<string>) => (id && live.has(id) ? id : null);
+
+/**
+ * Puts snapshotted rows back with their ids; rows that are already there are left alone. A snapshot
+ * outlives the `ON DELETE SET NULL` that cleared live rows when a message, contact or mailbox was
+ * purged, so links to rows that are gone are cleared here instead of failing the foreign key.
+ * `attachmentId` is not a foreign key and is ignored once the message link is null.
+ */
 export async function restoreRows(
 	subscription: SubscriptionRow | null,
 	documents: readonly ChargeRow[],
 ): Promise<void> {
-	if (subscription) await insertSubscription(subscription);
-	for (const document of documents)
-		await onFinanceTables(() => db().insert(financeCharges).values(document).onConflictDoNothing());
+	const liveMessages = await liveIds(messages, [
+		subscription?.sourceMessageId ?? null,
+		subscription?.lastMessageId ?? null,
+		...documents.map((document) => document.messageId),
+	]);
+	if (subscription) {
+		const [liveContacts, liveMailboxes] = await Promise.all([
+			liveIds(contacts, [subscription.contactId]),
+			liveIds(mailboxes, [subscription.mailboxId]),
+		]);
+		await insertSubscription({
+			...subscription,
+			sourceMessageId: keepLive(subscription.sourceMessageId, liveMessages),
+			lastMessageId: keepLive(subscription.lastMessageId, liveMessages),
+			contactId: keepLive(subscription.contactId, liveContacts),
+			mailboxId: keepLive(subscription.mailboxId, liveMailboxes),
+		});
+	}
+	for (const document of documents) {
+		const values = { ...document, messageId: keepLive(document.messageId, liveMessages) };
+		await onFinanceTables(() => db().insert(financeCharges).values(values).onConflictDoNothing());
+	}
 }

@@ -23,6 +23,23 @@ test("the mailbox selector shows Calendar and the account menu shows Booking whi
 	assert.deepEqual(moduleNavItems(MODULE_MANIFESTS, "account-menu", ["calendar"]), []);
 });
 
+test("the sidebar lists Subscriptions with its count endpoint only while Money Watch is on", () => {
+	const sidebar = moduleNavItems(MODULE_MANIFESTS, "sidebar", ALL);
+	assert.deepEqual(labels(sidebar), ["Subscriptions"]);
+	assert.equal(sidebar[0].href, "/finance");
+	assert.equal(sidebar[0].moduleId, "finance");
+	assert.deepEqual(sidebar[0].count, { endpoint: "/api/finance/badge" });
+	assert.deepEqual(
+		moduleNavItems(
+			MODULE_MANIFESTS,
+			"sidebar",
+			ALL.filter((id) => id !== "finance"),
+		),
+		[],
+	);
+	assert.notEqual(resolveNavIcon("WalletCards"), resolveNavIcon("NoSuchIcon"));
+});
+
 test("the calendar tabs list Bookings before Calendar and drop the one that is off", () => {
 	assert.deepEqual(labels(moduleNavItems(MODULE_MANIFESTS, "module-tabs", ALL)), ["Bookings", "Calendar"]);
 	assert.deepEqual(labels(moduleNavItems(MODULE_MANIFESTS, "module-tabs", ["calendar", "templates"])), ["Calendar"]);

@@ -36,7 +36,18 @@ export const financeClientData: ClientModuleData = {
 		],
 		api: [],
 	},
-	nav: [],
+	nav: [
+		{
+			id: "finance.subscriptions",
+			label: "Subscriptions",
+			href: "/finance",
+			icon: "WalletCards",
+			placement: "sidebar",
+			count: { endpoint: "/api/finance/badge" },
+			keywords: ["finance", "money", "subscriptions", "renewals", "bills", "trials"],
+			order: 20,
+		},
+	],
 	messageSlots: [
 		{
 			id: "finance.track-message",

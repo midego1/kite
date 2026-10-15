@@ -155,6 +155,44 @@ test("manifests carry what the spec lists for each module", () => {
 		accountMenu.map((item) => [item.label, item.href]),
 		[["Booking", "/booking"]],
 	);
+	assert.deepEqual(finance.nav, [
+		{
+			id: "finance.subscriptions",
+			label: "Subscriptions",
+			href: "/finance",
+			icon: "WalletCards",
+			placement: "sidebar",
+			count: { endpoint: "/api/finance/badge" },
+			keywords: ["finance", "money", "subscriptions", "renewals", "bills", "trials"],
+			order: 20,
+		},
+	]);
+	const sidebar = MODULE_MANIFESTS.flatMap((manifest) => manifest.nav).filter((item) => item.placement === "sidebar");
+	assert.deepEqual(
+		sidebar.map((item) => item.id),
+		["finance.subscriptions"],
+	);
+});
+
+test("nav counts are fetched from one of the module's own API prefixes", () => {
+	const within = (endpoint, prefix) => endpoint === prefix || endpoint.startsWith(`${prefix}/`);
+	for (const manifest of MODULE_MANIFESTS)
+		for (const item of manifest.nav) {
+			assert.ok(item.id.startsWith(`${manifest.id}.`), item.id);
+			assert.ok(item.href.startsWith("/") && !item.href.startsWith("//"), item.id);
+			if (!item.count) continue;
+			assert.deepEqual(Object.keys(item.count), ["endpoint"], item.id);
+			assert.ok(
+				manifest.apiPrefixes.some(({ prefix }) => within(item.count.endpoint, prefix)),
+				`${item.id} counts from ${item.count.endpoint}, outside the module's API prefixes`,
+			);
+		}
+	for (const client of CLIENT_MODULES)
+		assert.deepEqual(
+			client.nav,
+			MODULE_MANIFESTS.find((manifest) => manifest.id === client.id).nav,
+			`${client.id} client nav matches the manifest`,
+		);
 });
 
 test("commands use their own module id and valid targets", () => {

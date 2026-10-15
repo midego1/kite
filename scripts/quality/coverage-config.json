@@ -59,6 +59,7 @@
 		"src/lib/calendar/utils.ts",
 		"src/lib/calendar/webhook-event-utils.ts",
 		"src/lib/finance/amount-utils.ts",
+		"src/lib/finance/badge-utils.ts",
 		"src/lib/finance/answer-utils.ts",
 		"src/lib/finance/cancel-link-utils.ts",
 		"src/lib/finance/date-utils.ts",

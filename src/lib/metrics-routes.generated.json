@@ -79,6 +79,7 @@
 	"/api/drafts/[id]",
 	"/api/drafts",
 	"/api/export/messages",
+	"/api/finance/badge",
 	"/api/finance/detect",
 	"/api/finance/documents/[id]",
 	"/api/finance/subscriptions/[id]/documents",

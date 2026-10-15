@@ -2,6 +2,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { resolveRecordRefs } from "@/lib/modules/record-refs";
 import type { RefViewer } from "@/lib/modules/record-ref-types";
 import { normalizeTimeZone } from "@/lib/time/utils";
+import { badgeCount } from "./badge-utils";
 import { dayInTimeZone } from "./date-utils";
 import { MIGRATION_PENDING_ERROR, refusalOf } from "./errors";
 import { documentView, ledgerEntry, statusesOf, subscriptionView } from "./record-utils";
@@ -44,6 +45,14 @@ export async function listSubscriptionsView(user: ViewUser, status: string | nul
 		},
 		{ subscriptions: [], totals: [], migrationPending: true as const },
 	);
+}
+
+/** The owner's sidebar count; zero with `migrationPending` before migration 0063. */
+export async function badgeView(user: ViewUser) {
+	return orPending(async () => ({ count: badgeCount(await ownerRows(user.userId), todayFor(user)) }), {
+		count: 0,
+		migrationPending: true as const,
+	});
 }
 
 /**

@@ -16,6 +16,7 @@ import { FINANCE_RECEIPT_RENEWAL_DAYS } from "./support/fake-model-scenarios";
 import type { FakeModel } from "./support/fake-model-types";
 import type { InboundMail } from "./support/helpers-types";
 import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { restoreModules, setModuleState } from "./support/modules";
 import { readSuggestions, waitForFinishedJob } from "./support/triage";
 
 let fake: FakeModel;
@@ -1111,6 +1112,60 @@ test.describe("Money Watch manual add", () => {
 		}
 	});
 
+	test("the Subscriptions sidebar item shows the badge count and is gone while Money Watch is off for the user", async ({
+		browser,
+	}) => {
+		const account = await plainAccount("fsb");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		const day = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+		try {
+			for (const [vendor, nextRenewalOn] of [
+				["Soonflix", day(1)],
+				["Laterflix", day(20)],
+			])
+				await okJson(
+					await account.api.post("/api/finance/subscriptions", {
+						data: {
+							vendor,
+							amountMinor: 999,
+							currency: "USD",
+							cycle: "monthly",
+							nextRenewalOn,
+							reminderDays: 3,
+							calendarReminder: false,
+							mailboxId: account.mailboxId,
+						},
+					}),
+				);
+			expect(await okJson(await account.api.get("/api/finance/badge"))).toEqual({ count: 1 });
+
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.goto("/inbox");
+			const nav = page.getByRole("navigation").first();
+			const item = nav.locator('a[href="/finance"]');
+			await expect(item).toContainText("Subscriptions");
+			await expect(item).toContainText("1");
+			const hrefs = await nav.locator("a[href]").evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+			const inbox = hrefs.lastIndexOf("/inbox");
+			expect(hrefs.slice(inbox + 1, inbox + 3).filter((href) => href !== "/for-you")[0]).toBe("/finance");
+			await item.click();
+			await expect(page).toHaveURL(/\/finance$/);
+
+			await setModuleState(api, { access: [{ userId: account.id, moduleId: "finance", allowed: false }] });
+			expect((await account.api.get("/api/finance/badge")).status()).toBe(404);
+			await page.goto("/inbox");
+			await expect(nav.locator('a[href="/inbox"]').last()).toBeVisible();
+			await expect(item).toHaveCount(0);
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await restoreModules(api, [account.id]);
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
 	test("signed-out callers get 401 from every Money Watch route", async () => {
 		const anonymous = await apiContext();
 		try {
@@ -1123,6 +1178,7 @@ test.describe("Money Watch manual add", () => {
 				["POST", "/api/finance/subscriptions/e2e_probe/documents"],
 				["DELETE", "/api/finance/documents/e2e_probe"],
 				["POST", "/api/finance/detect"],
+				["GET", "/api/finance/badge"],
 			] as const) {
 				const response = await anonymous.fetch(path, { method, data: method === "GET" ? undefined : {} });
 				expect(response.status(), `${method} ${path}`).toBe(401);

@@ -92,6 +92,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/drafts/[id]`                                     | DELETE, GET, PATCH     | [source](../src/app/api/drafts/[id]/route.ts)                                     |
 | `/api/drafts`                                          | GET, POST              | [source](../src/app/api/drafts/route.ts)                                          |
 | `/api/export/messages`                                 | GET                    | [source](../src/app/api/export/messages/route.ts)                                 |
+| `/api/finance/badge`                                   | GET                    | [source](../src/app/api/finance/badge/route.ts)                                   |
 | `/api/finance/detect`                                  | POST                   | [source](../src/app/api/finance/detect/route.ts)                                  |
 | `/api/finance/documents/[id]`                          | DELETE                 | [source](../src/app/api/finance/documents/[id]/route.ts)                          |
 | `/api/finance/subscriptions/[id]/documents`            | POST                   | [source](../src/app/api/finance/subscriptions/[id]/documents/route.ts)            |

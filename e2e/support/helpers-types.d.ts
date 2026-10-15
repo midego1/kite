@@ -2,7 +2,8 @@ export type InboundMail = {
 	from: string;
 	to: string;
 	subject: string;
-	text?: string;
+	/** `null` with `html` sends an HTML-only message, without a text/plain part. */
+	text?: string | null;
 	html?: string;
 	messageId?: string;
 	inReplyTo?: string;

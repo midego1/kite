@@ -30,8 +30,7 @@ import {
 	hasMeaningfulHtml,
 	htmlToPlainText,
 	joinQuotedHtml,
-	splitQuotedHtml,
-	textToHtml,
+	splitStoredDraftHtml,
 } from "./rich-text-utils";
 import { headerToRecipients, isValidRecipient, recipientsToHeader } from "./recipient-utils";
 import type { ComposeAttachment, ComposeStoredAttachment, ComposeThreading } from "./types";
@@ -175,7 +174,7 @@ export function ComposeForm({
 						: null,
 				);
 				setSubject(draft.subject ?? "");
-				const stored = splitQuotedHtml(draft.htmlBody || textToHtml(draft.textBody));
+				const stored = splitStoredDraftHtml(draft.htmlBody, draft.textBody);
 				setHtml(stored.body);
 				setQuotedHtml(stored.quoted);
 				setStoredAttachments(draft.attachments?.filter((item) => item.disposition === "attachment") ?? []);

@@ -3,6 +3,7 @@ import { formatPostalAddress, formatPostalAddressList } from "@/lib/email/addres
 import { normalizeMessageId, parseMessageIdList } from "@/lib/email/threading";
 import { normalizeAttachmentContent } from "@/lib/email/attachments";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
+import { sanitizeStoredEmailHtml } from "@/lib/email/stored-html-utils";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 
 export type ParsedEmail = {
@@ -29,7 +30,7 @@ export async function parseRawMime(raw: ArrayBuffer): Promise<ParsedEmail> {
 	return {
 		subject: email.subject ?? null,
 		text: email.text ?? null,
-		html: email.html ?? null,
+		html: sanitizeStoredEmailHtml(email.html),
 		messageId: email.messageId ?? null,
 		fromAddr: formatPostalAddress(email.from, null),
 		toAddr: formatPostalAddressList(email.to, null),

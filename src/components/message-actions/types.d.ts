@@ -22,12 +22,6 @@ export type MessageActionsProps = {
 	bodyHtml?: string | null;
 };
 
-export type MessageSnoozeDialogProps = {
-	messageId: string;
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-};
-
 export type ForwardDraftInput = {
 	mailboxId: string | null;
 	ownAddress?: string | null;

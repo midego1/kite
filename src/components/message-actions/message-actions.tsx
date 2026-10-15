@@ -2,11 +2,11 @@
 
 import { createElement, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import * as Popover from "@radix-ui/react-popover";
 import {
 	Archive,
 	Ban,
 	BellOff,
-	Clock,
 	FileCode2,
 	Forward,
 	Mail,
@@ -20,7 +20,7 @@ import {
 import { useCompose } from "@/components/compose/compose-context";
 import { MessageSourceDialog } from "@/components/messages/message-source-dialog";
 import { useMessageListHref } from "@/components/messages/message-detail-navigation";
-import { MessageSnoozeDialog } from "./message-snooze-dialog";
+import { SnoozeMenuItem } from "@/components/messages/snooze-picker";
 import { useMessageMenuSlots } from "./message-menu-slots";
 import { messageShortcuts } from "./message-shortcuts";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
@@ -73,7 +73,7 @@ export function MessageActions({
 	const [error, setError] = useState<string | null>(null);
 	const [moreOpen, setMoreOpen] = useState(false);
 	const [sourceOpen, setSourceOpen] = useState(false);
-	const [snoozeOpen, setSnoozeOpen] = useState(false);
+	const [snoozeExpanded, setSnoozeExpanded] = useState(false);
 	const moduleSlots = useMessageMenuSlots({ messageId, mailboxId }, moreOpen, () => setMoreOpen(false));
 	const listHref = useMessageListHref() ?? getMessageBackHref(direction, status);
 
@@ -373,23 +373,28 @@ export function MessageActions({
 					</Tooltip>
 				</>
 			)}
-			<div className="relative">
-				<Tooltip label="More actions">
-					<Button
-						type="button"
-						variant="ghost"
-						size="roundedSM"
-						aria-label="More actions"
-						aria-expanded={moreOpen}
-						disabled={disabled}
-						onClick={() => setMoreOpen((open) => !open)}
-					>
-						<MoreVertical size={iconSize} />
-					</Button>
+			<Popover.Root
+				open={moreOpen}
+				onOpenChange={(open) => {
+					setSnoozeExpanded(false);
+					setMoreOpen(open);
+				}}
+			>
+				<Tooltip label={moreOpen ? null : "More actions"}>
+					<Popover.Trigger asChild>
+						<Button type="button" variant="ghost" size="roundedSM" aria-label="More actions" disabled={disabled}>
+							<MoreVertical size={iconSize} />
+						</Button>
+					</Popover.Trigger>
 				</Tooltip>
-
-				{moreOpen && (
-					<div className="absolute right-0 top-8 z-20 w-54 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg">
+				<Popover.Portal>
+					<Popover.Content
+						align="end"
+						sideOffset={4}
+						collisionPadding={8}
+						aria-label="More actions"
+						className="z-50 max-h-(--radix-popover-content-available-height) w-54 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-lg has-[[data-snooze-expanded=true]]:w-72"
+					>
 						{isMobile && (
 							<>
 								<button
@@ -439,17 +444,12 @@ export function MessageActions({
 							</>
 						)}
 						{direction === "inbound" && status === "received" && (
-							<button
-								type="button"
-								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
-								onClick={() => {
-									setMoreOpen(false);
-									setSnoozeOpen(true);
-								}}
-							>
-								<Clock className="h-4 w-4" />
-								Snooze
-							</button>
+							<SnoozeMenuItem
+								messageId={messageId}
+								expanded={snoozeExpanded}
+								onExpandedChange={setSnoozeExpanded}
+								onSnoozed={() => setMoreOpen(false)}
+							/>
 						)}
 						{direction === "inbound" && (
 							<>
@@ -498,12 +498,11 @@ export function MessageActions({
 								{item.label}
 							</button>
 						))}
-					</div>
-				)}
-			</div>
+					</Popover.Content>
+				</Popover.Portal>
+			</Popover.Root>
 
 			<MessageSourceDialog messageId={messageId} open={sourceOpen} onOpenChange={setSourceOpen} />
-			<MessageSnoozeDialog messageId={messageId} open={snoozeOpen} onOpenChange={setSnoozeOpen} />
 			{moduleSlots.overlays}
 
 			<span className="flex-1" />

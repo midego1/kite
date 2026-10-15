@@ -5,3 +5,5 @@ export type SanitizeEmailHtmlOptions = {
 	/** Incremented once per remote image dropped by `blockRemoteImages`. */
 	stats?: { blockedRemoteImages: number };
 };
+
+export type EmailHtmlSanitizer = (html: string | null, options?: SanitizeEmailHtmlOptions) => string | null;

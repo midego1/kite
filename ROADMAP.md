@@ -78,8 +78,8 @@ Make the app usable for Arabic, Hebrew, Persian and Urdu mail and users.
 
 ## Milestone 4: Security hardening
 
-1. **HTML sanitizing with an allowlist**: sanitize stored and displayed email HTML with DOMPurify (or an equivalent that runs on Workers) in addition to the sandboxed frame. Test: unit tests with known XSS payloads.
-2. **Secret scan before going public**: scan the full git history for keys and personal data; document the result in `SECURITY.md`.
+1. **HTML sanitizing with an allowlist (shipped in [#51](https://github.com/midego1/kite/pull/51))**: sanitize stored and displayed email HTML with DOMPurify (or an equivalent that runs on Workers) in addition to the sandboxed frame. Test: unit tests with known XSS payloads. Stored mail is cleaned with htmlparser2 in `parseRawMime`, display goes through DOMPurify; see [SECURITY.md](SECURITY.md#email-html).
+2. **Secret scan before going public (done)**: scan the full git history for keys and personal data; document the result in `SECURITY.md`. Result: no secrets on `main`, two known synthetic test values on old pull request refs, and the maintainer's address only in commit metadata; see [SECURITY.md](SECURITY.md#history-scan).
 3. **MCP over OAuth**: MCP clients can connect with OAuth 2.1 instead of a pasted API key, with the same per-scope tool filtering.
 
 ## Milestone 5: Agents

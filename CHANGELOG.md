@@ -27,6 +27,7 @@ Apply database migration 0062 after deploying, from the database card on the adm
 
 ### Fixed
 
+- One-time codes with lowercase letters, such as `b77f3a`, now get the **Copy code** button and the code notification when the code stands on its own line or right after a word like "code:". A code on its own line is also no longer lost when a street number in the footer sits near "The code will expire".
 - A browser tab left open for a long time no longer keeps every message you opened in memory. Kite now remembers the 100 most recently opened messages for instant re-opening and fetches older ones again when needed.
 
 ### Security

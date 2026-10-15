@@ -144,6 +144,30 @@ test("the open message shows a copy-code chip", async ({ page }) => {
 	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("441902");
 });
 
+test("a lowercase code on its own line above a footer address shows the chip", async ({ page }) => {
+	await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+	const subject = `Important action required: Please verify account ${uniqueToken("otp")}`;
+	const intro =
+		"Simply copy and paste the temporary authentication code into the pop-up verification form on the Nodsoft website.";
+	const expiry = "The code will expire thirty minutes after the request was made.";
+	const footer = "4600 East Example Street, Suite 300, Phoenix, AZ 85034, USA";
+	const api = await apiContext(STORAGE_STATE);
+	await deliverInbound(api, {
+		from: `"Nodsoft Security" <security@nodsoft.example.test>`,
+		to: SUPPORT_ADDRESS,
+		subject,
+		text: `Please verify your account\n\nHi there,\n\n${intro}\n\nb77f3a\n${expiry}\n\n${footer}`,
+		html: `<h1>Please verify your account</h1><p>Hi there,</p><p>${intro}</p><p><strong>b77f3a</strong><br>${expiry}</p><p>${footer}</p>`,
+	});
+	await api.dispose();
+	await page.goto("/inbox");
+	await openMessage(page, subject);
+	const readerCopy = page.getByRole("main").getByRole("button", { name: "Copy code" });
+	await expect(readerCopy).toBeVisible();
+	await readerCopy.click();
+	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("b77f3a");
+});
+
 test("the browser notification carries the code, a copy action and service-worker data", async ({ page }) => {
 	await seedRealtimeSession(page);
 	await page.addInitScript(stubNotifications());

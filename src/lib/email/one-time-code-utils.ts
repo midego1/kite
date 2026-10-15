@@ -6,8 +6,10 @@
  *
  * Rules, all biased towards returning nothing over returning a wrong number:
  * - A candidate is 4–8 digits (optionally split once by a single space or dash
- *   in the middle, returned without the separator) or 6–8 uppercase letters
- *   and digits containing at least one of each.
+ *   in the middle, returned without the separator) or 6–8 letters and digits
+ *   containing at least one of each. A lowercase letter makes the alphanumeric
+ *   candidate count only when it fills its own line or follows an OTP keyword
+ *   directly ("code: b77f3a").
  * - An OTP keyword must sit near the candidate (64 characters before or 32
  *   after): code, verify/verification, OTP, one-time, passcode, 2FA,
  *   authentication, confirm, plus Dutch eenmalig(e), verificatiecode, inlogcode.
@@ -20,6 +22,8 @@
  *   candidates (a subject like "Verification code" over a body that is only
  *   "554108"); within one source, repeated occurrences of the same code are
  *   fine but two different valid candidates are ambiguous and yield null.
+ *   Candidates that fill their own line or follow a keyword directly win over
+ *   ones that only sit near a keyword.
  */
 
 type OneTimeCodeInput = {
@@ -74,8 +78,11 @@ const CURRENCY_AFTER_RE = /^\s?(?:USD|EUR|GBP|CHF|CAD)\b/i;
 // reject the head of another group, a decimal tail and alphanumeric runs.
 const DIGIT_CANDIDATE_RE =
 	/(?<![\p{L}\d])(?<!\d[ -])(?<!\d[.,/])(?<!\)\s)(\d{2,6}[ ]\d{2,6}|\d{2,6}-\d{2,6}|\d{4,8})(?![\p{L}\d])(?![ -]\d)(?![.,/]\d)/gu;
-// Alphanumeric candidates: 6–8 uppercase letters and digits (both required).
-const ALNUM_CANDIDATE_RE = /(?<![\p{L}\d])([A-Z0-9]{6,8})(?![\p{L}\d])/gu;
+// Alphanumeric candidates: 6–8 letters and digits (both required). Codes with a
+// lowercase letter must also pass hasStrictAlnumContext.
+const ALNUM_CANDIDATE_RE = /(?<![\p{L}\d])([A-Za-z0-9]{6,8})(?![\p{L}\d])/gu;
+/** A keyword directly in front, as in "code: b77f3a" or "passcode is b77f3a". */
+const KEYWORD_DIRECTLY_BEFORE_RE = new RegExp(`${KEYWORD_SOURCE}(?:\\s+is)?\\s*[:：]?\\s*$`, "i");
 
 function collectCandidates(source: string): CodeCandidate[] {
 	const candidates: CodeCandidate[] = [];
@@ -89,7 +96,7 @@ function collectCandidates(source: string): CodeCandidate[] {
 	for (const match of source.matchAll(ALNUM_CANDIDATE_RE)) {
 		const raw = match[1];
 		const index = match.index ?? 0;
-		if (!/[0-9]/.test(raw) || !/[A-Z]/.test(raw)) continue;
+		if (!/[0-9]/.test(raw) || !/[A-Za-z]/.test(raw)) continue;
 		candidates.push({ value: raw, index, end: index + raw.length, kind: "alnum" });
 	}
 	return candidates.sort((a, b) => a.index - b.index);
@@ -154,8 +161,22 @@ function labelBeatsKeyword(source: string, candidate: CodeCandidate): boolean {
 	return lastLabelEnd > lastKeywordEnd;
 }
 
+/** True when the candidate fills its own line or an OTP keyword sits directly in front of it. */
+function hasStrongPosition(source: string, candidate: CodeCandidate): boolean {
+	const lineStart = source.lastIndexOf("\n", candidate.index - 1) + 1;
+	const lineEndIndex = source.indexOf("\n", candidate.end);
+	const lineEnd = lineEndIndex === -1 ? source.length : lineEndIndex;
+	if (source.slice(lineStart, lineEnd).trim() === source.slice(candidate.index, candidate.end)) return true;
+	return KEYWORD_DIRECTLY_BEFORE_RE.test(sliceBefore(source, candidate, KEYWORD_BEFORE_WINDOW));
+}
+
 function isValidCandidate(source: string, candidate: CodeCandidate): boolean {
 	if (candidate.kind === "digits" && SERVICE_NUMBER_RE.test(candidate.value)) return false;
+	// Lowercase letter-digit runs also appear in commit hashes, usernames and
+	// product names, so they need a strong position.
+	if (candidate.kind === "alnum" && /[a-z]/.test(candidate.value) && !hasStrongPosition(source, candidate)) {
+		return false;
+	}
 	if (hasPhoneContext(source, candidate) || hasCurrencyContext(source, candidate)) return false;
 	if (insideUrlToken(source, candidate)) return false;
 	if (labelBeatsKeyword(source, candidate)) return false;
@@ -165,13 +186,17 @@ function isValidCandidate(source: string, candidate: CodeCandidate): boolean {
 	return hasKeywordNear(source, candidate);
 }
 
-/** The distinct valid candidate values of one span, or null when the span has no valid candidate. */
+/**
+ * The distinct valid candidate values of one span, or null when the span has no
+ * valid candidate. When some valid candidates are in a strong position, only
+ * those count, so a code on its own line is not made ambiguous by a street
+ * number in the footer that happens to sit near "The code will expire".
+ */
 function uniqueValidValues(source: string, candidates: CodeCandidate[]): Set<string> | null {
-	const values = new Set<string>();
-	for (const candidate of candidates) {
-		if (isValidCandidate(source, candidate)) values.add(candidate.value);
-	}
-	return values.size ? values : null;
+	const valid = candidates.filter((candidate) => isValidCandidate(source, candidate));
+	if (!valid.length) return null;
+	const strong = valid.filter((candidate) => hasStrongPosition(source, candidate));
+	return new Set((strong.length ? strong : valid).map((candidate) => candidate.value));
 }
 
 /** One value is the code; several different values are ambiguous, which means no code. */

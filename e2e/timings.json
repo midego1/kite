@@ -208,5 +208,9 @@
 	"26-one-time-code.spec.ts › the browser notification carries the code, a copy action and service-worker data": 3500,
 	"26-one-time-code.spec.ts › the new-mail popup shows the code and Copy puts it on the clipboard": 3500,
 	"26-one-time-code.spec.ts › the open message shows a copy-code chip": 4000,
-	"26-one-time-code.spec.ts › turning the code setting off keeps codes out of the notification": 5000
+	"26-one-time-code.spec.ts › turning the code setting off keeps codes out of the notification": 5000,
+	"29-phishing.spec.ts › Admin General shows that URLhaus lookups are off without a key": 500,
+	"29-phishing.spec.ts › Report phishing in the reader's More actions menu reports the open message": 5200,
+	"29-phishing.spec.ts › Report phishing on a selection reports every message and blocks each sender once": 10100,
+	"29-phishing.spec.ts › an attached login page gets a warning whose Report phishing moves the mail to Spam and blocks the sender": 7300
 }

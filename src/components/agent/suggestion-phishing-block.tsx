@@ -32,7 +32,7 @@ export function PhishingBlock({
 		if (done) onChanged();
 	}
 
-	/** No Undo here: the report blocks the sender, which Contacts can lift. */
+	/** No Undo here: the report blocks the sender, and a block cannot be lifted from the app. */
 	async function reportPhishing() {
 		if (!(await confirmReportPhishing(1))) return;
 		setBusy(true);

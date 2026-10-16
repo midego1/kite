@@ -52,6 +52,8 @@ export type SpamIntelligenceInput = {
 	urls: string[];
 	attachmentUrls: string[];
 	attachments: readonly AttachmentContent[];
+	/** What Kite's own analyzers found, so a provider can stay quiet about mail that shows no risk. */
+	localSignals: readonly SpamSignal[];
 };
 
 export interface SpamIntelligenceProvider {

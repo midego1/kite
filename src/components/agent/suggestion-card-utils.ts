@@ -31,6 +31,8 @@ const PHISHING_REASON_TEXT: Record<string, string> = {
 	attachment_login_form: "An attached web page asks for a password or sends what you type to a website.",
 	attachment_active_content: "An attached web page runs hidden code or forwards you to a website.",
 	risky_attachment: "An attachment is a program or disk image that could harm your computer.",
+	urlhaus_url: "A link is on URLhaus's list of sites that spread malware.",
+	urlhaus_payload: "An attachment matches malware known to URLhaus.",
 	safelist_pressure: "It asks you to mark it as safe or to whitelist the sender, to get past the spam filter.",
 	credential_request: "It asks for a password or other login details.",
 	payment_change: "It asks you to pay or to change payment details.",

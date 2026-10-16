@@ -17,6 +17,8 @@ const ATTACHMENT_SIGNALS = [
 	"attachment_active_content",
 	"risky_attachment",
 ] as const;
+/** Found by the optional URLhaus lookup (`src/lib/spam/providers/urlhaus.ts`). */
+const LOOKUP_SIGNALS = ["urlhaus_url", "urlhaus_payload"] as const;
 const AUTH_METHODS = ["spf", "dkim", "dmarc"] as const;
 
 // Local parsing keeps this module free of runtime imports so tests can load it directly.
@@ -132,11 +134,12 @@ function phishingSignals(
 	const found: DeterministicPhishingSignal[] = [];
 	if (verdict === "suspicious") found.push("suspicious_verdict");
 	for (const id of URL_SIGNALS) if (signals.has(id)) found.push(id);
-	for (const id of ATTACHMENT_SIGNALS) if (signals.has(id)) found.push(id);
+	for (const id of [...ATTACHMENT_SIGNALS, ...LOOKUP_SIGNALS]) if (signals.has(id)) found.push(id);
 	for (const method of AUTH_METHODS) if (auth[method] === "fail") found.push(`${method}_failed`);
 	if (spoofedContact) found.push("display_name_spoof");
 	// Newsletters ask to be marked safe too, so the request only warns next to a risky link or attachment.
-	const risky = [...URL_SIGNALS, ...ATTACHMENT_SIGNALS].some((id) => signals.has(id)) || !!spoofedContact;
+	const risky =
+		[...URL_SIGNALS, ...ATTACHMENT_SIGNALS, ...LOOKUP_SIGNALS].some((id) => signals.has(id)) || !!spoofedContact;
 	if (risky && signals.has("safelist_pressure")) found.push("safelist_pressure");
 	return found;
 }

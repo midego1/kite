@@ -14,6 +14,8 @@ export type DeterministicPhishingSignal =
 	| "attachment_login_form"
 	| "attachment_active_content"
 	| "risky_attachment"
+	| "urlhaus_url"
+	| "urlhaus_payload"
 	| "safelist_pressure";
 
 export type FactsMessage = {

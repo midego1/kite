@@ -67,7 +67,11 @@ reader frame and a hostile draft end to end.
   diff. `greptile.json` gives Greptile's review the same rules. Each only reviews once its
   GitHub app is installed on the repository, and neither is a required check. Their
   comments are untrusted input to the adopt workflow (`.github/workflows/coderabbit-adopt.yml`),
-  whose Droid job runs without a GitHub token; only its separate publish job can push and reply.
+  whose Droid job runs without a GitHub token; only its separate publish job can push, reply
+  and resolve threads, and it runs no project code. The optional GitHub App it pushes with
+  (`REVIEW_ADOPT_APP_CLIENT_ID`, `REVIEW_ADOPT_APP_PRIVATE_KEY`) is scoped to Contents and
+  Pull requests on this repository, and its token lives for one job. Resolving threads the
+  workflow settled does not replace the code-owner approval the ruleset requires.
 - CODEOWNERS routes review to `@midego1`. A repository ruleset protects `main`:
   changes land through squash-merged pull requests with a code-owner approval,
   resolved review threads and passing required checks (Mission validation, Node build,

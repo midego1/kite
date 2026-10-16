@@ -22,7 +22,8 @@ The two reviewers are being compared by what you make of their findings, so the 
 2. If the finding **is correct and the code does not yet address it**, adopt it:
    - Implement the smallest fix that resolves it, in the style of the surrounding code.
    - Format what you touched: `npx prettier --write <files>`.
-   - Validate with the narrowest checks that cover the change: at minimum `npm run check`, and for a user-visible change also the affected Playwright spec (`npx playwright test e2e/<file>.spec.ts`). Only keep the fix when everything passes; if validation fails and you cannot fix it, discard the change and prepare the answer `Valid, not adopted: <why the fix could not be kept>.` instead of adopting it.
+   - Validate before committing: `npm run check`, `npm run test:coverage` and `npm run quality:check`, plus `npm run docs:check` when you touched documentation, and for a user-visible change also the affected Playwright spec (`npx playwright test e2e/<file>.spec.ts`). A new `*-utils.ts` file must be classified in `scripts/quality/coverage-config.json`, and an e2e timing is appended to `e2e/timings.json` without reordering it. Only keep the fix when everything passes; if validation fails and you cannot fix it, discard the change and prepare the answer `Valid, not adopted: <why the fix could not be kept>.` instead of adopting it.
+   - After you finish, the workflow runs `npm run check`, `npm run test:coverage`, `npm run quality:check` and `npm run docs:check` itself, and drops every adoption of this run if one of them fails with your commits and passes without them.
    - Commit with a conventional message (for example `fix: <what and why>`), with the body line `Addresses <reviewer> review comment <id> on pull request <PR_NUMBER>.` (the comment's `reviewer` and `id`) and the trailer:
 
      ```

@@ -13,6 +13,7 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkS
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ADOPT_GATE_CHECKS, adoptedCommentIds, rejectedAdoptionReplies } from "./coderabbit-comments-utils.mjs";
+import { answerAdoptions, touchesWorkflowFiles, WORKFLOW_CHANGE_REPLY } from "./coderabbit-comments-utils.mjs";
 
 const REPLIES_FILE = "replies.json";
 
@@ -49,10 +50,49 @@ function readReplies() {
 	return existsSync(REPLIES_FILE) ? JSON.parse(readFileSync(REPLIES_FILE, "utf8")) : [];
 }
 
+function changedFiles(sha) {
+	return git("diff-tree", "--no-commit-id", "--name-only", "-r", sha).split("\n").filter(Boolean);
+}
+
+/**
+ * Replays the commits (newest first, as rev-list lists them) onto the base without those that
+ * change a workflow file, or that no longer apply once those are gone, answers the comments
+ * only they adopted, and returns the commits that remain, newest first.
+ */
+function withoutWorkflowChanges(base, commits) {
+	const message = (sha) => git("log", "-1", "--format=%B", sha);
+	const dropped = [];
+	git("reset", "--hard", base);
+	for (const sha of [...commits].reverse()) {
+		if (touchesWorkflowFiles(changedFiles(sha))) {
+			dropped.push(sha);
+			continue;
+		}
+		if (spawnSync("git", ["cherry-pick", "--allow-empty", sha], { stdio: "inherit" }).status !== 0) {
+			spawnSync("git", ["cherry-pick", "--abort"], { stdio: "inherit" });
+			dropped.push(sha);
+		}
+	}
+	const remaining = git("rev-list", `${base}..HEAD`).split("\n").filter(Boolean);
+	const kept = new Set(adoptedCommentIds(remaining.map(message)));
+	const ids = adoptedCommentIds(dropped.map(message)).filter((id) => !kept.has(id));
+	writeFileSync(
+		REPLIES_FILE,
+		`${JSON.stringify(answerAdoptions(ids, WORKFLOW_CHANGE_REPLY, readReplies()), null, "\t")}\n`,
+	);
+	summary(
+		`Left out ${dropped.length} commit(s) that change a workflow file or build on one; answered as valid, not adopted: ${ids.join(", ") || "no comment named"}.`,
+	);
+	return remaining;
+}
+
 function main() {
 	const base = process.env.BASE_SHA;
 	if (!base) throw new Error("BASE_SHA must be set");
-	const commits = git("rev-list", `${base}..HEAD`).split("\n").filter(Boolean);
+	let commits = git("rev-list", `${base}..HEAD`).split("\n").filter(Boolean);
+	if (commits.some((sha) => touchesWorkflowFiles(changedFiles(sha)))) {
+		commits = withoutWorkflowChanges(base, commits);
+	}
 	if (commits.length === 0) {
 		summary("No adoptions to check.");
 		return;

@@ -5,6 +5,11 @@ import {
 	rejectedAdoptionReplies,
 	selectActionableComments,
 } from "../scripts/review/coderabbit-comments-utils.mjs";
+import {
+	answerAdoptions,
+	touchesWorkflowFiles,
+	WORKFLOW_CHANGE_REPLY,
+} from "../scripts/review/coderabbit-comments-utils.mjs";
 
 const comment = (overrides = {}) => ({
 	id: 1,
@@ -112,4 +117,19 @@ test("answers dropped adoptions as valid, not adopted and keeps Droid's own answ
 		},
 	]);
 	assert.deepEqual(rejectedAdoptionReplies([], ["check"]), []);
+});
+
+test("recognises commits that change a workflow file", () => {
+	assert.equal(touchesWorkflowFiles(["scripts/review/adopt-gate.mjs", ".github/workflows/ci.yml"]), true);
+	assert.equal(touchesWorkflowFiles([".github/dependabot.yml", "docs/quality.md"]), false);
+	assert.equal(touchesWorkflowFiles([]), false);
+});
+
+test("answers adoptions with a given reply and keeps existing answers", () => {
+	const replies = [{ commentId: 3, body: "Already addressed in the current code." }];
+	assert.deepEqual(answerAdoptions([3, 4], WORKFLOW_CHANGE_REPLY, replies), [
+		...replies,
+		{ commentId: 4, body: WORKFLOW_CHANGE_REPLY },
+	]);
+	assert.match(WORKFLOW_CHANGE_REPLY, /^Valid, not adopted: /);
 });

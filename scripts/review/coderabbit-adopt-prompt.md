@@ -11,6 +11,7 @@ This repository is checked out at the head of the pull request's branch, with `n
 - Follow the repository instructions in AGENTS.md and CLAUDE.md. In particular: never run `npm run deploy` or any `wrangler` command with `--remote`.
 - This run has no write access to GitHub: no push and no comments. Commit your work locally; the publish job pushes it and posts the answers.
 - Never commit `comments.json` or `replies.json`; they are inputs and outputs of this run, not project files.
+- Never change files under `.github/workflows/`: the publish job may not push them. When the only right fix is a workflow change, do not commit it; answer `Valid, not adopted: the fix changes a GitHub Actions workflow, so a person has to apply it.` with the change in one sentence. The workflow leaves out any commit that touches a workflow file anyway.
 
 ## Judge every comment the same way
 

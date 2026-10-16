@@ -22,6 +22,8 @@ import { MessageSourceDialog } from "@/components/messages/message-source-dialog
 import { useMessageListHref } from "@/components/messages/message-detail-navigation";
 import { SnoozeMenuItem } from "@/components/messages/snooze-picker";
 import { useMessageMenuSlots } from "./message-menu-slots";
+import { ReportPhishingItem } from "./report-phishing-item";
+import { confirmReportPhishing } from "@/components/messages/phishing-report";
 import { messageShortcuts } from "./message-shortcuts";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
@@ -247,6 +249,10 @@ export function MessageActions({
 		}
 	}
 
+	const reportPhishing = async () => {
+		setMoreOpen(false);
+		if (await confirmReportPhishing(1)) await runAction("phishing");
+	};
 	const disabled = pendingAction !== null;
 	const markAction: BulkMessageAction = read ? "unread" : "read";
 	const moveActions = getMoveMessageActions(status, direction);
@@ -470,6 +476,7 @@ export function MessageActions({
 									<Ban className="h-4 w-4" />
 									Block contact
 								</button>
+								<ReportPhishingItem onSelect={() => void reportPhishing()} />
 								<hr className="my-1 border-neutral-100" />
 							</>
 						)}

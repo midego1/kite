@@ -362,7 +362,7 @@ export const spamFeedback = sqliteTable(
 			.notNull()
 			.references(() => mailboxes.id, { onDelete: "cascade" }),
 		actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-		classification: text("classification", { enum: ["spam", "ham"] }).notNull(),
+		classification: text("classification", { enum: ["spam", "ham", "phishing"] }).notNull(),
 		trainingTokens: text("training_tokens").notNull(),
 		reputationKeys: text("reputation_keys").notNull(),
 		tokenizerVersion: integer("tokenizer_version").notNull().default(1),

@@ -8,6 +8,7 @@ import type { EmailPageTitleInput } from "./types";
 import type { MessageFolderConfig } from "./types";
 import type { PageRange } from "./types";
 import type { BulkMessageResponse, PermanentDeleteFolder } from "@/app/api/messages/bulk/types";
+import { announcePhishingReports } from "./phishing-report";
 import { offerUndoForMove } from "./undo-utils";
 import type { EmptyFolderResponse } from "@/app/api/messages/empty/types";
 
@@ -95,6 +96,7 @@ export async function runBulkMessageAction(messageIds: string[], action: string,
 	if (action === "read" || action === "unread") markMessagesReadInCaches(messageIds, action === "read");
 	if (notify) window.dispatchEvent(new Event("kite:messages-changed"));
 	offerUndoForMove(action, data);
+	if (action === "phishing") announcePhishingReports(data);
 	return data;
 }
 

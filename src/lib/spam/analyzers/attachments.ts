@@ -19,12 +19,12 @@ const EXTERNAL_FORM = /<form\b[^>]*\baction\s*=\s*["']?https?:/i;
 const MAX_PAGE_BYTES = 500_000;
 const MAX_PAGES = 5;
 
-export function isExecutableAttachment(attachment: Pick<AttachmentContent, "filename">): boolean {
+function isExecutableAttachment(attachment: Pick<AttachmentContent, "filename">): boolean {
 	return EXECUTABLE_EXTENSION.test(attachment.filename.trim());
 }
 
 /** An attached HTML or SVG file, which opens in a browser and can show a fake login page. Inline images are not. */
-export function isWebPageAttachment(
+function isWebPageAttachment(
 	attachment: Pick<AttachmentContent, "filename" | "type" | "disposition" | "contentId">,
 ): boolean {
 	const filename = attachment.filename.trim();

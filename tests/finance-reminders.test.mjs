@@ -509,7 +509,8 @@ test("a failing notice or calendar write never stops the loop and logs only the 
 		assert.deepEqual(Object.keys(fields).sort(), ["code", "subscriptionId"]);
 		assert.equal(fields.subscriptionId, "fsub_a");
 		assert.match(fields.code, /^[a-z_]+$/);
-		assert.doesNotMatch(line, /Streamflix|17\.99|1799|2026-10-16|https?:|owner@example/);
+		// The line's own timestamp may carry the renewal date, so only the logged fields are checked.
+		assert.doesNotMatch(JSON.stringify(fields), /Streamflix|17\.99|1799|2026-10-16|https?:|owner@example/);
 	}
 });
 

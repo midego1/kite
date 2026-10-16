@@ -2,7 +2,8 @@ import type { AttachmentContent } from "@/lib/email/attachment-types";
 import type { ParsedEmail } from "@/lib/email/parse";
 
 export type SpamVerdict = "inbox" | "suspicious" | "spam";
-export type SpamClassification = "spam" | "ham";
+/** `phishing` trains like `spam`, with extra weight on the message's fingerprint. */
+export type SpamClassification = "spam" | "ham" | "phishing";
 
 export type SpamSignal = {
 	id: string;

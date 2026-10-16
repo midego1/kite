@@ -10,6 +10,7 @@ import { queryInChunks, runInChunks } from "@/db/chunk-utils";
 import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import { permanentlyDeleteMessages } from "@/lib/email/permanent-delete";
 import { applySpamFeedback } from "@/lib/spam/feedback";
+import { reportPhishingAll } from "@/lib/spam/phishing-report";
 import type { BulkMessagePayload } from "./types";
 import {
 	getReadValueForBulkAction,
@@ -60,12 +61,8 @@ export async function POST(request: Request) {
 			return NextResponse.json({ error: "Folder not found" }, { status: 404 });
 		}
 		folderId = folder.id;
-	} else if (
-		payload.action === "spam" ||
-		payload.action === "trash" ||
-		payload.action === "inbox" ||
-		payload.action === "archive"
-	) {
+	} else if (status) {
+		// Every other move leaves user folders.
 		folderId = null;
 	}
 
@@ -143,6 +140,8 @@ export async function POST(request: Request) {
 		for (const messageId of allowedMessageIds) await applySpamFeedback(env, user, messageId, "spam");
 		return NextResponse.json({ ok: true });
 	}
+	if (payload.action === "phishing")
+		return NextResponse.json({ ok: true, reports: await reportPhishingAll(env, user, allowedMessageIds) });
 	if (payload.action === "inbox") {
 		const spamMessageIds = selectedMessages
 			.filter((message) => message.status === "spam" && allowedMessageIds.includes(message.id))

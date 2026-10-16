@@ -26,23 +26,23 @@ function summary(line) {
 	if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${line}\n`);
 }
 
-function passes(script, cwd) {
-	console.log(`\n> npm run ${script} (${cwd === process.cwd() ? "with the adoptions" : "without them"})`);
+function passes(script, cwd, label) {
+	console.log(`\n> npm run ${script} (${label})`);
 	return spawnSync("npm", ["run", script], { cwd, stdio: "inherit" }).status === 0;
 }
 
-/** The checks that fail without the adoptions too, run in a worktree of the base commit. */
-function failingAtBase(base, checks) {
+/** Checks only committed files, with that commit's dependencies, leaving Droid's files alone. */
+function failingAtCommit(ref, checks, label) {
 	const directory = mkdtempSync(path.join(tmpdir(), "adopt-gate-"));
 	rmSync(directory, { recursive: true });
-	git("worktree", "add", "--detach", directory, base);
+	git("worktree", "add", "--detach", directory, ref);
 	try {
 		if (spawnSync("npm", ["ci"], { cwd: directory, stdio: "inherit" }).status !== 0) {
-			throw new Error("Could not install the base commit's dependencies; the comparison is unavailable.");
+			throw new Error(`Could not install dependencies for ${ref}; the comparison is unavailable.`);
 		}
 		// The generated bundles are untracked; `check` builds them, the other checks need them.
 		spawnSync("npm", ["run", "bundles"], { cwd: directory, stdio: "inherit" });
-		return checks.filter((check) => !passes(check, directory));
+		return checks.filter((check) => !passes(check, directory, label));
 	} finally {
 		git("worktree", "remove", "--force", directory);
 	}
@@ -99,12 +99,12 @@ function main() {
 		summary("No adoptions to check.");
 		return;
 	}
-	const failed = ADOPT_GATE_CHECKS.filter((check) => !passes(check, process.cwd()));
+	const failed = failingAtCommit("HEAD", ADOPT_GATE_CHECKS, "with the adoptions");
 	if (failed.length === 0) {
 		summary(`The adoptions pass ${ADOPT_GATE_CHECKS.map((check) => `\`npm run ${check}\``).join(", ")}.`);
 		return;
 	}
-	const preexisting = new Set(failingAtBase(base, failed));
+	const preexisting = new Set(failingAtCommit(base, failed, "without them"));
 	const introduced = failed.filter((check) => !preexisting.has(check));
 	if (preexisting.size > 0) {
 		summary(`Already failing before this run, so not held against the adoptions: ${[...preexisting].join(", ")}.`);

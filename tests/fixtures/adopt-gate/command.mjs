@@ -36,7 +36,7 @@ if (command === "git") {
 	}
 } else if (command === "npm") {
 	if (args[0] === "ci") {
-		if (process.env.GATE_INSTALL_FAIL === "1") process.exit(1);
+		if (process.env.GATE_INSTALL_FAIL === readFileSync(join(cwd, "revision"), "utf8")) process.exit(1);
 		mkdirSync(join(cwd, "node_modules"), { recursive: true });
 		writeFileSync(join(cwd, "node_modules", "version"), readFileSync(join(cwd, "package-lock.json")));
 	} else if (args[0] === "run") {

@@ -180,10 +180,6 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 	};
 	const modelRun = await decideModel({ env, job, settings, context, install, stepRun, stepsOnly });
 	const steps = await runModuleTriageSteps({ ...stepRun, model: modelRun.model?.result ?? null });
-	// When the model core needed failed for good, the job fails as before only when no module step ran.
-	if (modelRun.skip === "model_failed" && !modelRun.hintOnly && steps.ran === 0) throw modelRun.error;
-	// A refused or failed model only stops the job when no module step ran; otherwise the steps' suggestions are kept.
-	if (modelRun.skip && steps.ran === 0) return { skip: modelRun.skip };
 	// A request only a module hint asked for reaches the steps alone: core plans as if the model had not run.
 	const model = modelRun.hintOnly ? null : modelRun.model;
 	// Module cards can carry links and amounts from the mail; none is offered for mail the model
@@ -200,6 +196,11 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 			threadMessageCount: context.threadMessageCount,
 		},
 	});
+	// A refused or failed model must not discard deterministic warnings, even with every module off.
+	if (modelRun.skip && steps.ran === 0 && planned.length === 0) {
+		if (modelRun.skip === "model_failed" && !modelRun.hintOnly) throw modelRun.error;
+		return { skip: modelRun.skip };
+	}
 	await storeTriageSuggestions({ env, job, source, planned, model: modelRun.model?.modelId ?? null });
 	const reply = planned.find((suggestion) => suggestion.kind === "reply");
 	if (reply)

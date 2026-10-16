@@ -323,6 +323,50 @@ test("an external provider without the opt-in, or a spend cap, receives nothing"
 	assert.equal(requests.length, 0);
 });
 
+for (const reason of ["external_provider_not_allowed", "rate_limited", "spend_cap", "model_failed"]) {
+	test(`local phishing warnings survive ${reason} with every module off`, async (t) => {
+		const { db, env, raw, sent } = await setup(t, {
+			externalAllowed: reason === "external_provider_not_allowed" ? 0 : 1,
+		});
+		for (const id of ["calendar", "booking", "templates", "import", "finance"])
+			db.db
+				.prepare(
+					"INSERT INTO module_settings (id, module_id, enabled, updated_at) VALUES (?, ?, 0, 1) ON CONFLICT(module_id) DO UPDATE SET enabled = 0",
+				)
+				.run(id, id);
+		if (reason === "rate_limited") env.AGENT_RATE_LIMIT = { limit: async () => ({ success: false }) };
+		if (reason === "spend_cap") db.db.exec("UPDATE app_settings SET agent_daily_spend_cap_micros = 0");
+
+		for (const bulk of [false, true]) {
+			const from = bulk ? "Team <team@lists.example.net>" : "Billing <no-reply@vendor.test>";
+			const rawR2Key = `raw/risky-${bulk}`;
+			raw.set(rawR2Key, `From: ${from}\r\n${bulk ? "List-Id: <team.lists.example.net>\r\n" : ""}\r\nBody`);
+			const { jobId, messageId } = insertJob(db, { from, rawR2Key });
+			db.db
+				.prepare("UPDATE messages SET spam_signals = ? WHERE id = ?")
+				.run(JSON.stringify([{ id: "displayed_link_mismatch" }]), messageId);
+			if (reason === "model_failed") {
+				replies = [500, 500, 500];
+				for (let attempt = 0; attempt < 2; attempt++) {
+					await processAgentTriageJob(env, jobId);
+					assert.equal(jobOf(db, jobId).status, "pending", "transient failures still retry");
+					makeDue(db, jobId);
+				}
+			}
+			await processAgentTriageJob(env, jobId);
+			assert.equal(jobOf(db, jobId).status, "completed");
+			assert.equal(jobOf(db, jobId).reason, reason);
+			const warnings = suggestionsOf(db, messageId);
+			assert.equal(warnings.length, 1, "only the deterministic warning is stored");
+			assert.equal(warnings[0].kind, "phishing");
+			assert.equal(warnings[0].model, null);
+			assert.deepEqual(warnings[0].payload.reasons, ["displayed_link_mismatch"]);
+		}
+		assert.equal(requests.length, reason === "model_failed" ? 6 : 0);
+		assert.equal(sent.length, reason === "model_failed" ? 4 : 0);
+	});
+}
+
 test("an opt-in revoked or an external provider chosen after the early gate still sends nothing", async (t) => {
 	const revoked = await setup(t);
 	// The rate limiter runs between the early provider gate and the triage request.

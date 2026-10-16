@@ -1,8 +1,9 @@
 import type { ParsedEmail } from "@/lib/email/parse";
 import type { PreparedSpamContent, SpamSignal } from "../types";
+import { hasDisplayedLinkMismatch } from "./urls-utils";
 
 export function analyzeUrls(message: ParsedEmail, prepared: PreparedSpamContent): SpamSignal[] {
-	const domains = prepared.urlDomains;
+	const domains = [...new Set([...prepared.urlDomains, ...prepared.attachmentUrlDomains])];
 	const signals: SpamSignal[] = [];
 	if (domains.some((domain) => /^\d{1,3}(?:\.\d{1,3}){3}$/.test(domain)))
 		signals.push({ id: "ip_address_url", score: 8, reason: "A link uses an IP address instead of a domain" });
@@ -15,21 +16,15 @@ export function analyzeUrls(message: ParsedEmail, prepared: PreparedSpamContent)
 			reason: "Message links to an unusually large number of domains",
 			metadata: { count: domains.length },
 		});
-	for (const match of (message.html ?? "")
-		.slice(0, 250_000)
-		.matchAll(/<a\b[^>]*\bhref=["'](https?:\/\/[^"']+)["'][^>]*>\s*(https?:\/\/[^<\s]+)\s*<\/a>/gi)) {
-		try {
-			const target = new URL(match[1]).hostname.toLowerCase().replace(/^www\./, "");
-			const displayed = new URL(match[2]).hostname.toLowerCase().replace(/^www\./, "");
-			if (target !== displayed) {
-				signals.push({
-					id: "displayed_link_mismatch",
-					score: 10,
-					reason: "A link's displayed address differs from its destination",
-				});
-				break;
-			}
-		} catch {}
+	for (const html of [message.html ?? "", ...prepared.webPageAttachments.map((page) => page.text)]) {
+		if (hasDisplayedLinkMismatch(html)) {
+			signals.push({
+				id: "displayed_link_mismatch",
+				score: 10,
+				reason: "A link's displayed address differs from its destination",
+			});
+			return signals;
+		}
 	}
 	return signals;
 }

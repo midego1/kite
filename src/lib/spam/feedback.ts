@@ -7,7 +7,7 @@ import { createAuditLog } from "@/lib/mailboxes/audit";
 import { buildFingerprint, prepareSpamContent, tokenizeMessage } from "./tokenizer";
 import { getReputationKeys } from "./analyzers/reputation";
 import type { ReputationKey, SpamClassification } from "./types";
-import { TOKENIZER_VERSION } from "./weights";
+import { PHISHING_FINGERPRINT_WEIGHT, TOKENIZER_VERSION } from "./weights";
 
 export async function applySpamFeedback(
 	env: CloudflareEnv,
@@ -21,7 +21,7 @@ export async function applySpamFeedback(
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canManage) return false;
 	const [previous] = await db.select().from(spamFeedback).where(eq(spamFeedback.messageId, messageId)).limit(1);
-	const status = classification === "spam" ? "spam" : "received";
+	const status = classification === "ham" ? "received" : "spam";
 	if (previous?.classification === classification) {
 		await db.update(messages).set({ status, folderId: null }).where(eq(messages.id, messageId));
 		return true;
@@ -48,14 +48,17 @@ export async function applySpamFeedback(
 		: getReputationKeys(parsed, buildFingerprint(parsed, prepared));
 	const now = Math.floor(Date.now() / 1000);
 	const statements: D1PreparedStatement[] = [];
-	const addCounts = (target: SpamClassification, amount: 1 | -1) => {
+	const addCounts = (target: SpamClassification, direction: 1 | -1) => {
+		const spam = target !== "ham";
 		for (const token of tokens)
 			statements.push(
 				env.DB.prepare(
 					`INSERT INTO spam_token_stats (mailbox_id, token, spam_count, ham_count, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(mailbox_id, token) DO UPDATE SET spam_count = MAX(0, spam_count + excluded.spam_count), ham_count = MAX(0, ham_count + excluded.ham_count), updated_at = excluded.updated_at`,
-				).bind(message.mailboxId, token, target === "spam" ? amount : 0, target === "ham" ? amount : 0, now),
+				).bind(message.mailboxId, token, spam ? direction : 0, spam ? 0 : direction, now),
 			);
-		for (const item of keys)
+		for (const item of keys) {
+			const weight = target === "phishing" && item.type === "fingerprint" ? PHISHING_FINGERPRINT_WEIGHT : 1;
+			const amount = direction * weight;
 			statements.push(
 				env.DB.prepare(
 					`INSERT INTO spam_reputation (mailbox_id, type, key, messages_seen, spam_count, ham_count, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(mailbox_id, type, key) DO UPDATE SET messages_seen = MAX(messages_seen, excluded.messages_seen), spam_count = MAX(0, spam_count + excluded.spam_count), ham_count = MAX(0, ham_count + excluded.ham_count), last_seen_at = excluded.last_seen_at`,
@@ -64,12 +67,13 @@ export async function applySpamFeedback(
 					item.type,
 					item.key,
 					amount > 0 ? 1 : 0,
-					target === "spam" ? amount : 0,
-					target === "ham" ? amount : 0,
+					spam ? amount : 0,
+					spam ? 0 : amount,
 					now,
 					now,
 				),
 			);
+		}
 	};
 	if (previous) addCounts(previous.classification, -1);
 	addCounts(classification, 1);

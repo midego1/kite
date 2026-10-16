@@ -196,3 +196,52 @@ test("needsModel is false for bulk, list, no-reply and spam mail and when no cap
 	assert.equal(needsModel(person, { ...capabilities, reply: false, summary: false }), true);
 	assert.equal(needsModel(person, { ...capabilities, mutedSenders: ["ada@example.com"] }), false);
 });
+
+test("attachment signals warn, and a whitelist request warns only next to a risky link or attachment", () => {
+	const facts = collectFacts({
+		message: message({
+			spamSignals: signals(
+				"html_attachment",
+				"attachment_login_form",
+				"attachment_active_content",
+				"risky_attachment",
+				"safelist_pressure",
+			),
+		}),
+	});
+	assert.deepEqual(facts.phishingSignals, [
+		"html_attachment",
+		"attachment_login_form",
+		"attachment_active_content",
+		"risky_attachment",
+		"safelist_pressure",
+	]);
+	const newsletter = collectFacts({ message: message({ spamSignals: signals("safelist_pressure", "dkim_failed") }) });
+	assert.deepEqual(newsletter.phishingSignals, ["dkim_failed"]);
+	const withLink = collectFacts({ message: message({ spamSignals: signals("safelist_pressure", "ip_address_url") }) });
+	assert.deepEqual(withLink.phishingSignals, ["ip_address_url", "safelist_pressure"]);
+});
+
+test("needsModel reads no-reply and bulk mail when the phishing check is on and the content carries a warning sign", () => {
+	const fakeInvoice = collectFacts({
+		message: message({ fromAddr: "Accounts <no-reply@billing.test>", spamSignals: signals("html_attachment") }),
+	});
+	assert.equal(fakeInvoice.noReply, true);
+	assert.equal(needsModel(fakeInvoice, capabilities), true);
+	assert.equal(needsModel(fakeInvoice, { ...capabilities, phishing: false }), false);
+	assert.equal(needsModel(fakeInvoice, { ...capabilities, mutedSenders: ["no-reply@billing.test"] }), false);
+	const listLink = collectFacts({
+		message: message({ spamSignals: signals("displayed_link_mismatch") }),
+		headers: { "List-Id": "x" },
+	});
+	assert.equal(needsModel(listLink, capabilities), true);
+	const scoreOnly = collectFacts({
+		message: message({ fromAddr: "noreply@x.test", spamVerdict: "suspicious", spamSignals: signals("dmarc_failed") }),
+	});
+	assert.deepEqual(scoreOnly.phishingSignals, ["suspicious_verdict", "dmarc_failed"]);
+	assert.equal(needsModel(scoreOnly, capabilities), false, "the spam score or authentication alone does not");
+	const spam = collectFacts({
+		message: message({ fromAddr: "noreply@x.test", spamVerdict: "spam", spamSignals: signals("html_attachment") }),
+	});
+	assert.equal(needsModel(spam, capabilities), false);
+});

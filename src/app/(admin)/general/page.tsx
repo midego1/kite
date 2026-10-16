@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ThreatLookupsCard } from "./threat-lookups-card";
 import { loadGeneralSettings, saveGeneralSettings } from "./utils";
 
 export default function GeneralSettingsPage() {
@@ -12,6 +13,7 @@ export default function GeneralSettingsPage() {
 	const [loaded, setLoaded] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [status, setStatus] = useState("");
+	const [urlhaus, setUrlhaus] = useState<boolean | null>(null);
 
 	useEffect(() => {
 		let active = true;
@@ -19,6 +21,7 @@ export default function GeneralSettingsPage() {
 			.then((settings) => {
 				if (active) {
 					setMaxMb(settings.outboundAttachmentMaxMb);
+					setUrlhaus(settings.urlhausConfigured ?? false);
 					setLoaded(true);
 				}
 			})
@@ -49,7 +52,9 @@ export default function GeneralSettingsPage() {
 		<div className="space-y-6">
 			<div>
 				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">General</h1>
-				<p className="mt-2 text-sm text-neutral-500">Set limits for outgoing mail.</p>
+				<p className="mt-2 text-sm text-neutral-500">
+					Set limits for outgoing mail and see outside checks of incoming mail.
+				</p>
 			</div>
 			<Card className="rounded-3xl border-0 bg-white p-6">
 				<CardHeader className="py-0">
@@ -98,6 +103,7 @@ export default function GeneralSettingsPage() {
 					</form>
 				</CardContent>
 			</Card>
+			<ThreatLookupsCard configured={urlhaus} />
 		</div>
 	);
 }

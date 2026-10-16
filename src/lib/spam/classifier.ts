@@ -9,7 +9,7 @@ export async function classifyTokens(db: AppDatabase, mailboxId: string, tokens:
 		db
 			.select({ value: count() })
 			.from(spamFeedback)
-			.where(and(eq(spamFeedback.mailboxId, mailboxId), eq(spamFeedback.classification, "spam"))),
+			.where(and(eq(spamFeedback.mailboxId, mailboxId), inArray(spamFeedback.classification, ["spam", "phishing"]))),
 		db
 			.select({ value: count() })
 			.from(spamFeedback)

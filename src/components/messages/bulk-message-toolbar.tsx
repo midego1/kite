@@ -12,6 +12,7 @@ import {
 	MoreVertical,
 	ShieldAlert,
 	ShieldCheck,
+	ShieldX,
 	Trash2,
 	Undo2,
 	X,
@@ -61,6 +62,14 @@ export function BulkMessageToolbar({
 		{ value: "spam", label: "Spam", Icon: ShieldAlert, hidden: folder === "spam" },
 		{ value: "trash", label: "Trash", Icon: Trash2, hidden: folder === "trash" },
 	].filter((option) => !option.hidden);
+	// Only received mail can be reported; the server skips anything else.
+	const canReportPhishing = folder !== "sent" && folder !== "drafts";
+	const phishingItem = canReportPhishing && (
+		<DropdownMenu.Item className={`${menuItemClass} text-red-600`} onSelect={() => onAction("phishing")}>
+			<ShieldX className="h-4 w-4" />
+			Report phishing
+		</DropdownMenu.Item>
+	);
 	const { selectedMailbox } = useSelectedMailbox();
 	const folders = useMailboxFolders(selectedMailbox?.id);
 	return (
@@ -156,6 +165,7 @@ export function BulkMessageToolbar({
 								{label}
 							</DropdownMenu.Item>
 						))}
+						{phishingItem}
 						{folders.length > 0 && (
 							<>
 								<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
@@ -200,6 +210,7 @@ export function BulkMessageToolbar({
 							<spam.Icon className="h-4 w-4" />
 							{spam.label}
 						</DropdownMenu.Item>
+						{phishingItem}
 						{canDeleteForever && (
 							<DropdownMenu.Item className={`${menuItemClass} text-red-600`} onSelect={() => onAction("delete")}>
 								<Trash2 className="h-4 w-4" />

@@ -145,6 +145,42 @@ test("links of a message that shows no risk are never sent", async (t) => {
 	assert.ok(!ids(result).includes("urlhaus_url"));
 });
 
+test("HTML body and attachment links are entity-decoded before URLhaus lookup", async (t) => {
+	const { analyze } = await setup(t);
+	const link = "https://files.bad.test/get?a=1&b=2";
+	for (const escaped of [
+		"https://files.bad.test/get?a=1&amp;b=2",
+		"https://files.bad.test/get?a=1&#38;b=2",
+		"https&#58;//files.bad.test/get?a=1&#x26;b=2",
+	]) {
+		const html = `<p>Please confirm your password immediately.</p><a href="${escaped}">View file</a>`;
+		for (const source of [{ text: null, html }, { attachments: [file("file.html", "text/html", html)] }]) {
+			const { provider, requests } = fakeUrlhaus({ urls: [link] });
+			const result = await analyze(email(source), provider);
+			assert.ok(ids(result).includes("urlhaus_url"), `${JSON.stringify(source)}: ${ids(result)}`);
+			assert.deepEqual(
+				requests.filter((request) => request.form.url).map((request) => request.form.url),
+				[link],
+			);
+		}
+	}
+});
+
+test("plain-text lookup URLs keep literal HTML entity spellings", async (t) => {
+	const { analyze } = await setup(t);
+	const link = "https://files.bad.test/get?a=1&amp;b=2";
+	const { provider, requests } = fakeUrlhaus({ urls: [link] });
+	const result = await analyze(
+		email({ text: `Please confirm your password immediately: ${link}`, html: null }),
+		provider,
+	);
+	assert.ok(ids(result).includes("urlhaus_url"));
+	assert.deepEqual(
+		requests.map((request) => request.form.url),
+		[link],
+	);
+});
+
 test("attachments are looked up by SHA-256 only, inline images not at all", async (t) => {
 	const { analyze } = await setup(t);
 	const page = "<html><body>Statement</body></html>";

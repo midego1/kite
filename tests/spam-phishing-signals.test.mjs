@@ -211,3 +211,25 @@ test("links inside attachments stay out of the fingerprint, so feedback on the s
 	assert.deepEqual(prepared.urlDomains, []);
 	assert.deepEqual(prepared.attachmentUrlDomains, ["xn--exmple-9ta.test"]);
 });
+
+test("HTML URLs decode once in attributes and text, while plain-text URLs are unchanged", () => {
+	const prepared = prepareSpamContent(
+		email({
+			text: "https://plain.test/?a=1&amp;b=2",
+			html: `<a href=https://attribute.test/?a=1&amp;b=2 title="View">https://label.test/?a=1&amp;b=2</a>
+<a href="https://once.test/?a=1&amp;amp;b=2">Open</a>`,
+			attachments: [
+				file("unfinished.html", "text/html", "<!-- Unclosed comment"),
+				file("links.html", "text/html", '<a href="https://attached.test/?a=1&amp;b=2">Open</a>'),
+			],
+		}),
+	);
+	assert.deepEqual(prepared.urls, [
+		"https://plain.test/?a=1&amp;b=2",
+		"https://attribute.test/?a=1&b=2",
+		"https://label.test/?a=1&b=2",
+		"https://once.test/?a=1&amp;b=2",
+	]);
+	assert.deepEqual(prepared.urlDomains, ["plain.test", "attribute.test", "label.test", "once.test"]);
+	assert.deepEqual(prepared.attachmentUrls, ["https://attached.test/?a=1&b=2"]);
+});

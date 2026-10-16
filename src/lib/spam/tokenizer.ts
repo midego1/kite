@@ -2,6 +2,7 @@ import { getEmailAddress } from "@/lib/email/address";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
 import type { ParsedEmail } from "@/lib/email/parse";
 import { readWebPageAttachments } from "./analyzers/attachments";
+import { htmlLinkText } from "./tokenizer-utils";
 import type { PreparedSpamContent } from "./types";
 import { MAX_CANDIDATE_TOKENS } from "./weights";
 
@@ -29,9 +30,9 @@ function extractLinks(source: string): { urls: string[]; domains: string[] } {
 }
 
 export function prepareSpamContent(message: ParsedEmail): PreparedSpamContent {
-	const body = extractLinks(`${message.text ?? ""}\n${message.html ?? ""}`);
+	const body = extractLinks(`${message.text ?? ""}\n${htmlLinkText(message.html ?? "")}`);
 	const webPageAttachments = readWebPageAttachments(message.attachments);
-	const attached = extractLinks(webPageAttachments.map((page) => page.text).join("\n"));
+	const attached = extractLinks(webPageAttachments.map((page) => htmlLinkText(page.text)).join("\n"));
 	return {
 		visibleText: `${message.subject ?? ""}\n${message.text ?? ""}\n${htmlToReadableText(message.html)}`.slice(
 			0,

@@ -13,6 +13,7 @@ import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
 import type { InboundAttachment } from "./support/helpers-types";
 import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { restoreModules, setModuleState } from "./support/modules";
 import { readSuggestions, waitForFinishedJob } from "./support/triage";
 
 let fake: FakeModel;
@@ -193,6 +194,57 @@ test("entity-encoded links in an attached page still produce a warning", async (
 		);
 	} finally {
 		await page?.context().close();
+		await okJson(
+			await account.api.put("/api/agent/settings", {
+				data: { mailboxId: account.mailboxId, autonomy: "off", autoDraftEnabled: false },
+			}),
+		);
+		await account.api.dispose();
+		await restore();
+	}
+});
+
+test("risky no-reply mail keeps its local warning when external reading and all modules are off", async ({
+	browser,
+}) => {
+	const restore = await useFakeProvider(api, fake);
+	const account = await newAccount("phb");
+	let page: Page | undefined;
+	try {
+		await setModuleState(api, {
+			modules: { calendar: false, booking: false, templates: false, import: false, finance: false },
+		});
+		await okJson(await api.put("/api/admin/agent", { data: { externalAutoReadAllowed: false } }));
+		await okJson(
+			await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, autonomy: "suggest" } }),
+		);
+		const subject = uniqueToken("phbs");
+		await postInbound(account.api, {
+			from: "Billing <no-reply@vendor.test>",
+			to: account.address,
+			subject,
+			text: "Please review your statement.",
+			html: '<a href="https://collect.phish.test/">https://accounts.good.test/</a>',
+		});
+		const message = await waitForMessage(account.api, subject);
+		expect(await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage")).toMatchObject({
+			status: "completed",
+			reason: expect.stringContaining("external_provider_not_allowed"),
+		});
+		const warnings = (await readSuggestions(account.api, { messageId: message.id, status: "open" })).suggestions;
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0].kind).toBe("phishing");
+		expect(warnings[0].payload.reasons).toContain("displayed_link_mismatch");
+		expect(fake.requests()).toHaveLength(0);
+
+		page = await openAs(browser, account);
+		await page.goto(`/inbox/${message.id}`);
+		await expect(page.locator('[data-suggestion-block="phishing"] [data-phishing-reasons]')).toContainText(
+			"A link shows one web address but opens a different one.",
+		);
+	} finally {
+		await page?.context().close();
+		await restoreModules(api);
 		await okJson(
 			await account.api.put("/api/agent/settings", {
 				data: { mailboxId: account.mailboxId, autonomy: "off", autoDraftEnabled: false },

@@ -408,7 +408,7 @@ test("the wider step input carries the sender name, an 8 KB excerpt, extra facts
 	assert.deepEqual(spam.model, { category: "fyi" });
 });
 
-test("the excerpt stops at 8,192 characters without splitting a surrogate pair, and long headers are cut", () => {
+test("the excerpt stops at 8,192 characters without splitting a surrogate pair, and long headers, names and subjects are cut", () => {
 	assert.equal(STEP_TEXT_EXCERPT_CHARS, 8_192);
 	assert.equal(stepTextExcerpt(""), null);
 	assert.equal(stepTextExcerpt("x".repeat(9_000)).length, 8_192);
@@ -417,6 +417,17 @@ test("the excerpt stops at 8,192 characters without splitting a surrogate pair, 
 	assert.equal(stepHeaders({ "list-id": "y".repeat(5_000) }).listId.length, 4_096);
 	assert.equal(stepHeaders({ "list-id": "   " }).listId, null);
 	assert.equal(stepHeaders(Object.create({ "list-id": "inherited" })).listId, null);
+	const long = buildStepInput({
+		source: { ...stepSource, subject: "s".repeat(10_000) },
+		mailboxId: "mb1",
+		facts: { ...stepFacts, senderName: " ".repeat(100_000) },
+		headers: {},
+		bodyText: "",
+		attachments: [],
+		model: null,
+	});
+	assert.equal(long.message.fromName.length, 256);
+	assert.equal(long.message.subject.length, 4_096);
 });
 
 test("a step on the base schema gets exactly its old input: the new keys are stripped", () => {

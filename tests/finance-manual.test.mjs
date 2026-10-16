@@ -48,8 +48,8 @@ const { applyMigrations } = await load("migrate");
 
 const DAY_MS = 86_400_000;
 const day = (offset) => new Date(Date.now() + offset * DAY_MS).toISOString().slice(0, 10);
-const SENDER = "Streamflix Billing <billing@streamflix.example>";
-const CANCEL = "https://streamflix.example/cancel";
+const SENDER = "Acmeflix Billing <billing@acmeflix.example>";
+const CANCEL = "https://acmeflix.example/cancel";
 
 const user = (id, extra = {}) => ({
 	id,
@@ -74,7 +74,7 @@ function rawMime(subject, text) {
 		`From: ${SENDER}`,
 		"To: support@example.com",
 		`Subject: ${subject}`,
-		`List-Unsubscribe: <mailto:stop@streamflix.example>, <${CANCEL}>`,
+		`List-Unsubscribe: <mailto:stop@acmeflix.example>, <${CANCEL}>`,
 		"List-Unsubscribe-Post: List-Unsubscribe=One-Click",
 		"Content-Type: text/plain",
 		"",
@@ -101,7 +101,7 @@ async function setup(t) {
 			('access-owner', 'mailbox-s', 'owner', 'full_access', 1),
 			('access-member', 'mailbox-s', 'member', 'read_only', 1);
 		INSERT INTO contacts (id, user_id, email, display_name, source, created_at) VALUES
-			('contact-1', 'owner', 'billing@streamflix.example', 'Streamflix Billing', 'inbound', 1);
+			('contact-1', 'owner', 'billing@acmeflix.example', 'Acmeflix Billing', 'inbound', 1);
 	`);
 	db.db
 		.prepare(
@@ -127,7 +127,7 @@ async function setup(t) {
 	let order = 10;
 	const addMessage = (
 		id,
-		{ subject = "Your Streamflix receipt", text, attachments = [], mailboxId = "mailbox-s" } = {},
+		{ subject = "Your Acmeflix receipt", text, attachments = [], mailboxId = "mailbox-s" } = {},
 	) => {
 		order += 1;
 		const body = text ?? `Thank you for your payment.\nPlan: Premium $17.99/month, renews on ${day(20)}.\n`;
@@ -491,7 +491,7 @@ test("rows and documents are owner-only and out-of-bounds input writes nothing",
 
 test("the detect draft prefills from the message, matches a tracked row and writes nothing", async (t) => {
 	const { addMessage, rows, actions } = await setup(t);
-	addMessage("inv-1", { subject: "Your Streamflix invoice", attachments: ["invoice-1"] });
+	addMessage("inv-1", { subject: "Your Acmeflix invoice", attachments: ["invoice-1"] });
 	const draft = await detectDraft(owner, { messageId: "inv-1" });
 	assert.equal(draft.status, 200, JSON.stringify(draft.body));
 	assert.equal(draft.body.mailboxId, "mailbox-s");
@@ -501,7 +501,7 @@ test("the detect draft prefills from the message, matches a tracked row and writ
 	const fields = draft.body.draft;
 	assert.deepEqual(
 		[fields.vendor, fields.vendorKey, fields.plan, fields.amountMinor, fields.currency, fields.cycle],
-		["Streamflix", "streamflix.example", "Premium", 1799, "USD", "monthly"],
+		["Acmeflix", "acmeflix.example", "Premium", 1799, "USD", "monthly"],
 	);
 	assert.deepEqual(fields.cancelLink, { url: CANCEL, oneClick: true });
 	assert.equal(fields.nextRenewalOn, day(20));
@@ -524,11 +524,11 @@ test("the detect draft prefills from the message, matches a tracked row and writ
 	const [row] = rows();
 	assert.deepEqual(
 		[row.vendor_key, row.mailbox_id, row.source_message_id, row.contact_id, row.cancel_url, row.cancel_one_click],
-		["streamflix.example", "mailbox-s", "inv-1", "contact-1", CANCEL, 1],
+		["acmeflix.example", "mailbox-s", "inv-1", "contact-1", CANCEL, 1],
 	);
 	assert.equal(saved.body.documentRecorded, true);
 
-	addMessage("inv-2", { subject: "Your Streamflix invoice", text: "Invoice\nPremium $17.99/month" });
+	addMessage("inv-2", { subject: "Your Acmeflix invoice", text: "Invoice\nPremium $17.99/month" });
 	const matched = await detectDraft(owner, { messageId: "inv-2" });
 	assert.equal(matched.body.draft.subscriptionId, row.id);
 
@@ -540,9 +540,9 @@ test("the detect draft prefills from the message, matches a tracked row and writ
 
 test("accepting a card for a document recorded by hand inserts no second ledger row", async (t) => {
 	const { db, addMessage, documents } = await setup(t);
-	addMessage("pay-1", { subject: "Your Streamflix receipt" });
-	const id = (await addSubscription(owner, byHand({ vendor: "Streamflix" }))).body.subscription.id;
-	db.db.exec(`UPDATE finance_subscriptions SET vendor_key = 'streamflix.example' WHERE id = '${id}'`);
+	addMessage("pay-1", { subject: "Your Acmeflix receipt" });
+	const id = (await addSubscription(owner, byHand({ vendor: "Acmeflix" }))).body.subscription.id;
+	db.db.exec(`UPDATE finance_subscriptions SET vendor_key = 'acmeflix.example' WHERE id = '${id}'`);
 	assert.equal((await addDocument(owner, id, documentBody())).status, 200);
 	db.db
 		.prepare(
@@ -552,8 +552,8 @@ test("accepting a card for a document recorded by hand inserts no second ledger 
 			JSON.stringify({
 				event: "renewal",
 				subscriptionId: id,
-				vendor: "Streamflix",
-				vendorKey: "streamflix.example",
+				vendor: "Acmeflix",
+				vendorKey: "acmeflix.example",
 				plan: null,
 				amountMinor: 1799,
 				currency: "USD",

@@ -16,8 +16,8 @@ function row(overrides = {}) {
 		userId: "owner",
 		mailboxId: "mailbox-a",
 		contactId: null,
-		vendor: "Streamflix",
-		vendorKey: "streamflix.example",
+		vendor: "Acmeflix",
+		vendorKey: "acmeflix.example",
 		plan: null,
 		amountMinor: 1799,
 		currency: "USD",
@@ -159,9 +159,9 @@ test("an edit may not leave an amount without a currency", () => {
 
 function analysis(overrides = {}) {
 	return {
-		vendor: "Streamflix",
+		vendor: "Acmeflix",
 		vendorFromDomain: false,
-		vendorKey: "streamflix.example",
+		vendorKey: "acmeflix.example",
 		plan: "Premium",
 		amount: { minor: 1799, currency: "USD" },
 		cycle: null,
@@ -176,7 +176,7 @@ function analysis(overrides = {}) {
 			attachmentId: "att-1",
 			confident: true,
 		},
-		cancelLink: { url: "https://streamflix.example/cancel", oneClick: false },
+		cancelLink: { url: "https://acmeflix.example/cancel", oneClick: false },
 		unverified: false,
 		signals: new Set(),
 		dates: { messageDay: "2026-10-10", monthFirst: true },
@@ -187,8 +187,8 @@ function analysis(overrides = {}) {
 test("the draft carries what the detector read and the cycle the context implies", () => {
 	const draft = draftFromAnalysis(analysis(), { tracked: null, recurring: "monthly" });
 	assert.deepEqual(draft, {
-		vendor: "Streamflix",
-		vendorKey: "streamflix.example",
+		vendor: "Acmeflix",
+		vendorKey: "acmeflix.example",
 		plan: "Premium",
 		amountMinor: 1799,
 		currency: "USD",
@@ -196,7 +196,7 @@ test("the draft carries what the detector read and the cycle the context implies
 		nextRenewalOn: "2026-11-10",
 		renewalEstimated: true,
 		trialEndsOn: null,
-		cancelLink: { url: "https://streamflix.example/cancel", oneClick: false },
+		cancelLink: { url: "https://acmeflix.example/cancel", oneClick: false },
 		document: {
 			docType: "payment",
 			amountMinor: 1799,
@@ -210,7 +210,7 @@ test("the draft carries what the detector read and the cycle the context implies
 	});
 	const tracked = {
 		id: "fsub_9",
-		vendorKey: "streamflix.example",
+		vendorKey: "acmeflix.example",
 		plan: null,
 		amountMinor: 1799,
 		currency: "USD",

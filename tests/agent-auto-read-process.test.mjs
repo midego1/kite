@@ -717,6 +717,27 @@ for (const [kind, processJob] of [
 		assert.equal(sent.length, 1);
 	});
 
+	test(`${kind} fails a job whose last attempt died mid-run instead of claiming it again`, async (t) => {
+		const { db, env, sent } = await setup(t);
+		const killed = insertJob(db, { kind, status: "running" });
+		db.db
+			.prepare("UPDATE agent_jobs SET attempts = 3, lease_until = ? WHERE id = ?")
+			.run(nowSeconds() - 1, killed.jobId);
+		const retried = insertJob(db, { kind, status: "running" });
+		db.db
+			.prepare("UPDATE agent_jobs SET attempts = 1, lease_until = ? WHERE id = ?")
+			.run(nowSeconds() - 1, retried.jobId);
+		db.db.exec("UPDATE app_settings SET agent_enabled = 0");
+		await processJob(env, killed.jobId);
+		await processJob(env, retried.jobId);
+		assert.equal(jobOf(db, killed.jobId).status, "failed");
+		assert.equal(jobOf(db, killed.jobId).attempts, 3);
+		assert.match(jobOf(db, killed.jobId).reason, /no attempts are left/);
+		assert.equal(jobOf(db, retried.jobId).attempts, 2, "an earlier attempt that died still gets another one");
+		assert.deepEqual(sent, []);
+		assert.equal(requests.length, 0);
+	});
+
 	test(`${kind} does not requeue missing, completed, not-due or already leased jobs`, async (t) => {
 		const { db, env, sent } = await setup(t);
 		const active = insertJob(db, { kind, status: "running" });

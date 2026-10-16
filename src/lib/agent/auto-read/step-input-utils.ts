@@ -4,6 +4,8 @@ import type { MessageFacts } from "./facts-types";
 export const STEP_TEXT_EXCERPT_CHARS = 8_192;
 /** Header values are attacker-controlled; anything longer is cut, not dropped. */
 const MAX_HEADER_CHARS = 4_096;
+/** Display names are unbounded in mail; steps get this much. */
+const MAX_NAME_CHARS = 256;
 
 type StepSource = {
 	id: string;
@@ -60,8 +62,8 @@ export function buildStepInput(parts: StepInputParts) {
 			id: source.id,
 			mailboxId: parts.mailboxId,
 			from: source.fromAddr,
-			fromName: facts.senderName,
-			subject: source.subject,
+			fromName: facts.senderName?.slice(0, MAX_NAME_CHARS) ?? null,
+			subject: source.subject?.slice(0, MAX_HEADER_CHARS) ?? null,
 			receivedAt: source.createdAt.toISOString(),
 			textExcerpt: stepTextExcerpt(parts.bodyText),
 		},

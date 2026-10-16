@@ -186,10 +186,13 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 	if (modelRun.skip && steps.ran === 0) return { skip: modelRun.skip };
 	// A request only a module hint asked for reaches the steps alone: core plans as if the model had not run.
 	const model = modelRun.hintOnly ? null : modelRun.model;
+	// Module cards can carry links and amounts from the mail; none is offered for mail the model
+	// flagged as suspicious, even when only a module hint asked for the request.
+	const modelFlagged = !!modelRun.model?.result.suspicious.flagged;
 	const planned = planSuggestions({
 		facts: context.facts,
 		triage: model?.result ?? null,
-		moduleSuggestions: steps.planned,
+		moduleSuggestions: modelFlagged ? [] : steps.planned,
 		settings: {
 			capabilities: settings.capabilities,
 			canDraftReply: access.canSendOnBehalf,

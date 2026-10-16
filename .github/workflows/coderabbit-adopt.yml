@@ -56,7 +56,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' ||
        github.actor == 'coderabbitai[bot]' || github.actor == 'greptile-apps[bot]')
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 90
     permissions:
       contents: read
       pull-requests: read
@@ -128,7 +128,7 @@ jobs:
         run: npm install --global droid@0.241.1
       - name: Verify the comments and commit the adoptions
         if: steps.comments.outputs.count && steps.comments.outputs.count != '0'
-        timeout-minutes: 20
+        timeout-minutes: 45
         env:
           FACTORY_API_KEY: ${{ secrets.FACTORY_API_KEY }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
@@ -151,7 +151,15 @@ jobs:
           # No GitHub token here and --auto medium: Droid can fix, validate and commit, but
           # it cannot push or answer anything, so pull-request test code never runs with
           # write credentials.
-          droid exec --auto medium --tag coderabbit-adopt -f scripts/review/coderabbit-adopt-prompt.md
+          # Stopped below the step timeout so the commits made so far are still gated and
+          # published; the comments Droid did not reach stay unanswered for the next run.
+          status=0
+          timeout --kill-after=1m 35m droid exec --auto medium --tag coderabbit-adopt -f scripts/review/coderabbit-adopt-prompt.md || status=$?
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+            echo "Droid ran out of time after 35 minutes; the commits it made are kept and the comments it did not reach are left for the next run." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
       # The checks CI runs before anything is pushed (all but the builds and e2e, which Droid
       # runs for the specs a fix touches). Adoptions that break a check passing without them
       # are dropped and answered `Valid, not adopted`.
@@ -167,7 +175,9 @@ jobs:
           BASE_SHA: ${{ steps.pr.outputs.sha }}
         run: |
           git format-patch "$BASE_SHA" --stdout -- . ':(exclude)comments.json' ':(exclude)replies.json' > "$RUNNER_TEMP/adoptions.patch"
-          if [ -f replies.json ]; then
+          # A run stopped mid-write can leave no file or a broken one; its comments then
+          # stay unanswered for the next run.
+          if jq -e 'type == "array"' replies.json > /dev/null 2>&1; then
             cp replies.json "$RUNNER_TEMP/replies.json"
           else
             printf '[]' > "$RUNNER_TEMP/replies.json"

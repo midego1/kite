@@ -203,6 +203,46 @@ test("entity-encoded links in an attached page still produce a warning", async (
 	}
 });
 
+test("HTML links still produce a warning after a long plain-text part", async ({ browser }) => {
+	const restore = await useFakeProvider(api, fake);
+	const account = await newAccount("phl");
+	let page: Page | undefined;
+	try {
+		await okJson(
+			await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, autonomy: "suggest" } }),
+		);
+		const subject = uniqueToken("phls");
+		await postInbound(account.api, {
+			from: `Billing <${strangerAddress("phl")}>`,
+			to: account.address,
+			subject,
+			text: "Details.\n".repeat(32_000),
+			html: '<p>Details.</p><a href="https://127.0.0.1/">Continue</a>',
+		});
+		const message = await waitForMessage(account.api, subject);
+		expect((await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage")).status).toBe("completed");
+		const warning = (
+			await readSuggestions(account.api, { mailboxId: account.mailboxId, status: "open" })
+		).suggestions.find((item) => item.kind === "phishing" && item.messageId === message.id);
+		expect(warning?.payload.reasons).toContain("ip_address_url");
+
+		page = await openAs(browser, account);
+		await page.goto(`/inbox/${message.id}`);
+		await expect(page.locator('[data-suggestion-block="phishing"] [data-phishing-reasons]')).toContainText(
+			"A link points to a bare IP address instead of a website name.",
+		);
+	} finally {
+		await page?.context().close();
+		await okJson(
+			await account.api.put("/api/agent/settings", {
+				data: { mailboxId: account.mailboxId, autonomy: "off", autoDraftEnabled: false },
+			}),
+		);
+		await account.api.dispose();
+		await restore();
+	}
+});
+
 test("Report phishing in the reader's More actions menu reports the open message", async ({ browser }) => {
 	const account = await newAccount("phm");
 	try {

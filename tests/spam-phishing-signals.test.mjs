@@ -261,3 +261,35 @@ test("HTML URLs decode once in attributes and text, while plain-text URLs are un
 	assert.deepEqual(prepared.urlDomains, ["plain.test", "attribute.test", "label.test", "once.test"]);
 	assert.deepEqual(prepared.attachmentUrls, ["https://attached.test/?a=1&b=2"]);
 });
+
+test("long plain text does not hide links in the HTML part", async (t) => {
+	const { analyze, seen } = await setup(t);
+	const message = email({
+		text: "https://plain.test/\n" + "Details.\n".repeat(32_000),
+		html: '<a href="https://127.0.0.1/">Continue</a>',
+	});
+	const prepared = prepareSpamContent(message);
+	assert.deepEqual(prepared.urls, ["https://plain.test/", "https://127.0.0.1/"]);
+	assert.deepEqual(prepared.urlDomains, ["plain.test", "127.0.0.1"]);
+	assert.ok(ids(await analyze(message)).includes("ip_address_url"));
+	assert.deepEqual(seen[0].urls, prepared.urls);
+});
+
+test("body link limits apply to each part, with duplicates merged", () => {
+	const links = (prefix) => Array.from({ length: 60 }, (_, index) => `https://${prefix}${index}.test/`);
+	const textLinks = links("plain");
+	const htmlLinks = links("html");
+	const prepared = prepareSpamContent(
+		email({
+			text: textLinks.join("\n"),
+			html: htmlLinks.map((url) => `<a href="${url}">Continue</a>`).join("\n"),
+		}),
+	);
+	assert.deepEqual(prepared.urls, [...textLinks.slice(0, 50), ...htmlLinks.slice(0, 50)]);
+	assert.equal(prepared.urlDomains.length, 100);
+	const duplicate = prepareSpamContent(
+		email({ text: textLinks[0], html: `<a href="${textLinks[0]}">${textLinks[0]}</a>` }),
+	);
+	assert.deepEqual(duplicate.urls, [textLinks[0]]);
+	assert.deepEqual(duplicate.urlDomains, ["plain0.test"]);
+});

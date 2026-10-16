@@ -37,7 +37,7 @@ export type PreparedSpamContent = {
 	visibleText: string;
 	/** Link domains in the body; these feed the fingerprint and training tokens. */
 	urlDomains: string[];
-	/** Links in the body, at most 50. */
+	/** Links in the body, at most 50 from each of the plain-text and HTML parts. */
 	urls: string[];
 	webPageAttachments: WebPageAttachment[];
 	/** Links inside attached web pages, kept apart so the fingerprint matches the stored message. */

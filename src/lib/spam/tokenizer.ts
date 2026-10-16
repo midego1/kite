@@ -30,7 +30,8 @@ function extractLinks(source: string): { urls: string[]; domains: string[] } {
 }
 
 export function prepareSpamContent(message: ParsedEmail): PreparedSpamContent {
-	const body = extractLinks(`${message.text ?? ""}\n${htmlLinkText(message.html ?? "")}`);
+	const text = extractLinks(message.text ?? "");
+	const html = extractLinks(htmlLinkText(message.html ?? ""));
 	const webPageAttachments = readWebPageAttachments(message.attachments);
 	const attached = extractLinks(webPageAttachments.map((page) => htmlLinkText(page.text)).join("\n"));
 	return {
@@ -38,8 +39,8 @@ export function prepareSpamContent(message: ParsedEmail): PreparedSpamContent {
 			0,
 			250_000,
 		),
-		urlDomains: body.domains,
-		urls: body.urls,
+		urlDomains: [...new Set([...text.domains, ...html.domains])],
+		urls: [...new Set([...text.urls, ...html.urls])],
 		webPageAttachments,
 		attachmentUrls: attached.urls,
 		attachmentUrlDomains: attached.domains,

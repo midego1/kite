@@ -9,7 +9,7 @@
 // GITHUB_STEP_SUMMARY. Run it from the repository root.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ADOPT_GATE_CHECKS, adoptedCommentIds, rejectedAdoptionReplies } from "./coderabbit-comments-utils.mjs";
@@ -49,7 +49,13 @@ function failingAtCommit(ref, checks, label) {
 }
 
 function readReplies() {
-	return existsSync(REPLIES_FILE) ? JSON.parse(readFileSync(REPLIES_FILE, "utf8")) : [];
+	try {
+		const replies = JSON.parse(readFileSync(REPLIES_FILE, "utf8"));
+		return Array.isArray(replies) ? replies : [];
+	} catch {
+		// A timed-out run may leave no file or a partial write; unanswered comments can retry.
+		return [];
+	}
 }
 
 function changedFiles(sha) {

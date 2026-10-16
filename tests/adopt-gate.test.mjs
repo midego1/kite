@@ -123,3 +123,25 @@ test("a failure present in both committed revisions does not drop adoptions", (t
 	assert.match(result.stdout, /Already failing before this run/);
 	assert.ok(!existsSync(join(f.root, "reset.json")));
 });
+
+for (const [name, contents] of [
+	["missing", undefined],
+	["partial", '[{"commentId":'],
+	["object", "{}"],
+	["null", "null"],
+	["string", '"unfinished"'],
+]) {
+	test(`recovers ${name} replies when rejecting an adoption`, (t) => {
+		const f = fixture(t);
+		writeFileSync(join(f.root, "head", "source"), "broken");
+		if (contents !== undefined) writeFileSync(f.file("replies.json"), contents);
+		const result = f.run();
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /Dropped 1 adoption commit/);
+		const replies = JSON.parse(readFileSync(f.file("replies.json"), "utf8"));
+		assert.equal(replies.length, 1);
+		assert.equal(replies[0].commentId, 777);
+		assert.match(replies[0].body, /^Valid, not adopted:/);
+		assert.ok(existsSync(join(f.root, "reset.json")));
+	});
+}

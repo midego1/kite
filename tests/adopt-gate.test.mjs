@@ -130,6 +130,28 @@ for (const [name, contents] of [
 	["object", "{}"],
 	["null", "null"],
 	["string", '"unfinished"'],
+	["null entry", "[null]"],
+	[
+		"invalid entries",
+		JSON.stringify([
+			null,
+			false,
+			777,
+			"unfinished",
+			[],
+			{},
+			{ commentId: null, body: "Unusable id." },
+			{ commentId: "777", body: "String id." },
+			{ commentId: 0, body: "Zero id." },
+			{ commentId: -777, body: "Negative id." },
+			{ commentId: 7.77, body: "Fractional id." },
+			{ commentId: Number.MAX_SAFE_INTEGER + 1, body: "Unsafe id." },
+			{ commentId: 777 },
+			{ commentId: 777, body: null },
+			{ commentId: 777, body: 123 },
+			{ commentId: 777, body: " \n\t" },
+		]),
+	],
 ]) {
 	test(`recovers ${name} replies when rejecting an adoption`, (t) => {
 		const f = fixture(t);
@@ -145,3 +167,18 @@ for (const [name, contents] of [
 		assert.ok(existsSync(join(f.root, "reset.json")));
 	});
 }
+
+test("keeps valid replies among invalid entries when rejecting an adoption", (t) => {
+	const f = fixture(t);
+	writeFileSync(join(f.root, "head", "source"), "broken");
+	const replies = [
+		{ commentId: 888, body: "The existing answer is preserved." },
+		{ commentId: 777, body: "Valid, not adopted: the fix could not be kept." },
+	];
+	writeFileSync(f.file("replies.json"), JSON.stringify([null, replies[0], {}, replies[1]]));
+	const result = f.run();
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /Dropped 1 adoption commit/);
+	assert.deepEqual(JSON.parse(readFileSync(f.file("replies.json"), "utf8")), replies);
+	assert.ok(existsSync(join(f.root, "reset.json")));
+});

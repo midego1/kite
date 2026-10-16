@@ -51,7 +51,14 @@ function failingAtCommit(ref, checks, label) {
 function readReplies() {
 	try {
 		const replies = JSON.parse(readFileSync(REPLIES_FILE, "utf8"));
-		return Array.isArray(replies) ? replies : [];
+		if (!Array.isArray(replies)) return [];
+		return replies.filter(
+			(reply) =>
+				Number.isSafeInteger(reply?.commentId) &&
+				reply.commentId > 0 &&
+				typeof reply.body === "string" &&
+				reply.body.trim().length > 0,
+		);
 	} catch {
 		// A timed-out run may leave no file or a partial write; unanswered comments can retry.
 		return [];

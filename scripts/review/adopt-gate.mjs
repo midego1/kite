@@ -9,7 +9,7 @@
 // GITHUB_STEP_SUMMARY. Run it from the repository root.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ADOPT_GATE_CHECKS, adoptedCommentIds, rejectedAdoptionReplies } from "./coderabbit-comments-utils.mjs";
@@ -37,7 +37,9 @@ function failingAtBase(base, checks) {
 	rmSync(directory, { recursive: true });
 	git("worktree", "add", "--detach", directory, base);
 	try {
-		symlinkSync(path.resolve("node_modules"), path.join(directory, "node_modules"), "dir");
+		if (spawnSync("npm", ["ci"], { cwd: directory, stdio: "inherit" }).status !== 0) {
+			throw new Error("Could not install the base commit's dependencies; the comparison is unavailable.");
+		}
 		// The generated bundles are untracked; `check` builds them, the other checks need them.
 		spawnSync("npm", ["run", "bundles"], { cwd: directory, stdio: "inherit" });
 		return checks.filter((check) => !passes(check, directory));

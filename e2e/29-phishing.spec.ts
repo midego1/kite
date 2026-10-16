@@ -173,7 +173,7 @@ test("entity-encoded links in an attached page still produce a warning", async (
 			{
 				filename: "links.html",
 				contentType: "text/html",
-				content: '<a href="https://&#49;27.0.0.1/get?a=1&amp;b=2">View statement</a>',
+				content: '<a href="https&#58;//&#49;27.0.0.1/get?a=1&amp;b=2">https&colon;//accounts.good.test/</a>',
 			},
 		]);
 		expect((await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage")).status).toBe("completed");
@@ -181,11 +181,15 @@ test("entity-encoded links in an attached page still produce a warning", async (
 			await readSuggestions(account.api, { mailboxId: account.mailboxId, status: "open" })
 		).suggestions.find((item) => item.kind === "phishing" && item.messageId === message.id);
 		expect(warning?.payload.reasons).toContain("ip_address_url");
+		expect(warning?.payload.reasons).toContain("displayed_link_mismatch");
 
 		page = await openAs(browser, account);
 		await page.goto(`/inbox/${message.id}`);
 		await expect(page.locator('[data-suggestion-block="phishing"] [data-phishing-reasons]')).toContainText(
 			"A link points to a bare IP address instead of a website name.",
+		);
+		await expect(page.locator('[data-suggestion-block="phishing"] [data-phishing-reasons]')).toContainText(
+			"A link shows one web address but opens a different one.",
 		);
 	} finally {
 		await page?.context().close();

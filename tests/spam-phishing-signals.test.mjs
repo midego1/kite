@@ -187,6 +187,34 @@ test("displayed addresses are compared inside attached pages, counting a mismatc
 	}
 });
 
+test("displayed link comparisons decode HTML attributes and text once", async (t) => {
+	const { analyze } = await setup(t);
+	for (const html of [
+		'<a href="https&#58;//collect.bad.test/">https://accounts.good.test/</a>',
+		"<a href=https&#58;//collect.bad.test/><span>https&#58;//accounts.good.test/</span></a>",
+		'<a href="https://collect.bad.test/">https&colon;//accounts.good.test/</a>',
+	]) {
+		for (const message of [email({ html }), email({ attachments: [file("links.html", "text/html", html)] })]) {
+			assert.ok(ids(await analyze(message)).includes("displayed_link_mismatch"), html);
+		}
+	}
+	for (const html of [
+		'<a href="https&#58;//www.accounts.good.test/">https&colon;//accounts.good.test/</a>',
+		'<a href="https://collect.bad.test/">Continue</a>',
+		'<a href="mailto:collect@bad.test">https://accounts.good.test/</a>',
+		'<a href="https&amp;colon;//collect.bad.test/">https://accounts.good.test/</a>',
+		'<a href="https://collect.bad.test/">https&amp;colon;//accounts.good.test/</a>',
+	]) {
+		assert.equal(
+			ids(await analyze(email({ attachments: [file("links.html", "text/html", html)] }))).includes(
+				"displayed_link_mismatch",
+			),
+			false,
+			html,
+		);
+	}
+});
+
 test("whitelist requests count, a newsletter's address book request does not", async (t) => {
 	const { analyze } = await setup(t);
 	for (const text of [

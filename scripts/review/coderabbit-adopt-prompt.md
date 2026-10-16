@@ -11,6 +11,7 @@ This repository is checked out at the head of the pull request's branch, with `n
 - Follow the repository instructions in AGENTS.md and CLAUDE.md. In particular: never run `npm run deploy` or any `wrangler` command with `--remote`.
 - This run has no write access to GitHub: no push and no comments. Commit your work locally; the publish job pushes it and posts the answers.
 - Never commit `comments.json` or `replies.json`; they are inputs and outputs of this run, not project files.
+- Never change files under `.github/workflows/`: the publish job may not push them. When the only right fix is a workflow change, do not commit it; answer `Valid, not adopted: the fix changes a GitHub Actions workflow, so a person has to apply it.` with the change in one sentence. The workflow leaves out any commit that touches a workflow file anyway.
 
 ## Judge every comment the same way
 
@@ -22,7 +23,12 @@ The two reviewers are being compared by what you make of their findings, so the 
 2. If the finding **is correct and the code does not yet address it**, adopt it:
    - Implement the smallest fix that resolves it, in the style of the surrounding code.
    - Format what you touched: `npx prettier --write <files>`.
-   - Validate with the narrowest checks that cover the change: at minimum `npm run check`, and for a user-visible change also the affected Playwright spec (`npx playwright test e2e/<file>.spec.ts`). Only keep the fix when everything passes; if validation fails and you cannot fix it, discard the change and prepare the answer `Valid, not adopted: <why the fix could not be kept>.` instead of adopting it.
+   - Validate before committing with the narrowest checks that cover the fix: the unit test files it affects (`node --test tests/<file>.test.mjs`), `npm run typecheck` when TypeScript changed, `npm run lint` on what you touched, and the affected Playwright spec (`npx playwright test e2e/<file>.spec.ts`) only when the fix changes behaviour a user sees in `src/app` or `src/components`. A new `*-utils.ts` file must be classified in `scripts/quality/coverage-config.json`, and an e2e timing is appended to `e2e/timings.json` without reordering it. Only keep the fix when its checks pass; if validation fails and you cannot fix it, discard the change and prepare the answer `Valid, not adopted: <why the fix could not be kept>.` instead of adopting it.
+   - Time is limited (about 30 minutes for every comment together), so never run the whole Playwright suite.
+
+## Before you finish
+
+When you made at least one commit, run `npm run check`, `npm run test:coverage` and `npm run quality:check` once (plus `npm run docs:check` when you touched documentation) and fix or drop what breaks them. The workflow runs the same checks after you and drops every adoption of this run if one of them fails with your commits and passes without them.
    - Commit with a conventional message (for example `fix: <what and why>`), with the body line `Addresses <reviewer> review comment <id> on pull request <PR_NUMBER>.` (the comment's `reviewer` and `id`) and the trailer:
 
      ```

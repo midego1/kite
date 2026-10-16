@@ -52,6 +52,7 @@ import {
 import clsx from "clsx";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { showProgressToast } from "@/components/ui/progress-toast";
+import { confirmReportPhishing } from "./phishing-report";
 
 const pageSize = 25;
 
@@ -472,6 +473,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 			return;
 		}
 
+		if (action === "phishing" && !(await confirmReportPhishing(expandSelectedIds(selectedIds).length))) return;
 		setPendingBulkAction(true);
 		const previousMessages = messages;
 		const readValue = action === "read" ? true : action === "unread" ? false : null;

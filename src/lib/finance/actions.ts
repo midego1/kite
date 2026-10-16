@@ -68,7 +68,7 @@ export const trackSubscription = financeAction(
 		if (created) await emitSubscriptionDetected(ctx, row, input.source, input.messageId);
 		return {
 			result: actionResult(id, { created, documentRecorded: recorded.documentRecorded }),
-			inverse: { userId, subscriptionId: id, created: true },
+			inverse: { userId, subscriptionId: id, created: true, documentIds: recorded.documentIds },
 		};
 	},
 	SYNCS_REMINDER,

@@ -6,6 +6,7 @@ import { requireSessionUser } from "@/lib/api/auth";
 import { isPrimaryAdmin } from "@/lib/auth/admin";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getOutboundAttachmentMaxMb, MAX_OUTBOUND_ATTACHMENT_MAX_MB } from "@/lib/email/attachment-policy";
+import { isUrlhausConfigured } from "@/lib/spam/providers/urlhaus";
 
 const schema = z.object({ outboundAttachmentMaxMb: z.number().int().min(1).max(MAX_OUTBOUND_ATTACHMENT_MAX_MB) });
 
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
 	if (auth.error) return auth.error;
 	if (!isPrimaryAdmin(auth.user)) return Response.json({ error: "Forbidden" }, { status: 403 });
 	return Response.json(
-		{ outboundAttachmentMaxMb: await getOutboundAttachmentMaxMb(env) },
+		{ outboundAttachmentMaxMb: await getOutboundAttachmentMaxMb(env), urlhausConfigured: isUrlhausConfigured(env) },
 		{ headers: { "Cache-Control": "no-store" } },
 	);
 }

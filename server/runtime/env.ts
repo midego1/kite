@@ -78,6 +78,7 @@ export function createNodeRuntime(): NodeRuntime {
 		APP_URL: optional("APP_URL")?.replace(/\/$/, ""),
 		INBOUND_WEBHOOK_SECRET: optional("INBOUND_WEBHOOK_SECRET"),
 		SETUP_TOKEN: optional("SETUP_TOKEN"),
+		URLHAUS_AUTH_KEY: optional("URLHAUS_AUTH_KEY"),
 		OPERATIONAL_ALERTS: optional("OPERATIONAL_ALERTS"),
 		AUTO_APPLY_MIGRATIONS: optional("AUTO_APPLY_MIGRATIONS"),
 		ALERT_WEBHOOK_ALLOW_INSECURE: optional("ALERT_WEBHOOK_ALLOW_INSECURE"),

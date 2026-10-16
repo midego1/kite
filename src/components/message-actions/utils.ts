@@ -1,5 +1,6 @@
 import type { BulkMessageAction, BulkMessageResponse } from "@/app/api/messages/bulk/types";
 import { offerUndoForMove } from "@/components/messages/undo-utils";
+import { announcePhishingReports } from "@/components/messages/phishing-report";
 import { authFetch } from "@/lib/auth/client";
 import { markMessagesReadInCaches } from "@/hooks/utils";
 import { getEmailAddress, normalizeEmailAddress, splitEmailAddressList } from "@/lib/email/address";
@@ -43,6 +44,7 @@ export async function runSingleMessageAction(messageId: string, action: BulkMess
 	if (action === "read" || action === "unread") markMessagesReadInCaches([messageId], action === "read");
 	window.dispatchEvent(new Event("kite:messages-changed"));
 	offerUndoForMove(action, data);
+	if (action === "phishing") announcePhishingReports(data);
 }
 
 export function openUnsubscribeUrl(url: string) {
@@ -101,7 +103,14 @@ export function getMoveMessageActions(status: string, direction: "inbound" | "ou
 
 /** Actions after which the open message no longer belongs to the list it was opened from. */
 export function movesMessageOutOfList(action: BulkMessageAction) {
-	return action === "trash" || action === "spam" || action === "archive" || action === "inbox" || action === "folder";
+	return (
+		action === "trash" ||
+		action === "spam" ||
+		action === "phishing" ||
+		action === "archive" ||
+		action === "inbox" ||
+		action === "folder"
+	);
 }
 
 export function buildReplySubject(subject: string | null | undefined) {

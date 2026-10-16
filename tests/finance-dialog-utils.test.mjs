@@ -25,8 +25,8 @@ const { parseAmountInput, trackForm, documentForm, documentBody, trackBody, link
 );
 
 const draft = {
-	vendor: "Streamflix",
-	vendorKey: "streamflix.example",
+	vendor: "Acmeflix",
+	vendorKey: "acmeflix.example",
 	plan: "Premium",
 	amountMinor: 1799,
 	currency: "USD",
@@ -34,7 +34,7 @@ const draft = {
 	nextRenewalOn: "2026-11-03",
 	renewalEstimated: false,
 	trialEndsOn: null,
-	cancelLink: { url: "https://streamflix.example/cancel", oneClick: true },
+	cancelLink: { url: "https://acmeflix.example/cancel", oneClick: true },
 	document: {
 		docType: "invoice",
 		amountMinor: 1799,
@@ -59,7 +59,7 @@ test("typed amounts read in the currency's minor digits and refuse anything ambi
 
 test("the forms start from the draft, or empty with today's date for a document", () => {
 	assert.deepEqual(trackForm(draft), {
-		vendor: "Streamflix",
+		vendor: "Acmeflix",
 		plan: "Premium",
 		amount: "17.99",
 		currency: "USD",
@@ -125,7 +125,7 @@ test("the track body names the message, the document when recorded, and nulls fo
 	const document = documentForm(draft.document, "2026-10-20");
 	const built = trackBody(form, "msg-1", document);
 	assert.deepEqual(built.body, {
-		vendor: "Streamflix",
+		vendor: "Acmeflix",
 		plan: "Premium",
 		amountMinor: 1799,
 		currency: "USD",
@@ -150,6 +150,6 @@ test("the track body names the message, the document when recorded, and nulls fo
 });
 
 test("the cancel link is named by its host", () => {
-	assert.equal(linkHost("https://streamflix.example/cancel?u=1"), "streamflix.example");
+	assert.equal(linkHost("https://acmeflix.example/cancel?u=1"), "acmeflix.example");
 	assert.equal(linkHost("not a url"), "not a url");
 });

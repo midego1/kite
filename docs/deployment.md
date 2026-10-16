@@ -21,6 +21,7 @@ Set up Kite in four steps:
 | `APP_ENCRYPTION_KEY` (secret) | Deploy button | Deploy | A long random string, at least 16 characters, not the example value. First-run setup in production stops until you replace the example. |
 | `APP_URL` (variable) | Worker **Settings → Variables and secrets** | After the first deploy | The public HTTPS address, for example `https://kite.<your-subdomain>.workers.dev`. The setup page shows the exact value. Needed for password reset emails and for receiving through Resend or Amazon SES. |
 | `SEND_LIMIT_PER_HOUR`, `SEND_LIMIT_PER_DAY` (variables) | Worker **Settings → Variables and secrets** | Optional | Per-user sending allowance, default 100 an hour and 500 a day; `0` removes a limit. See [Sending and deliverability](sending-and-deliverability.md#limits-and-abuse-protection). |
+| `URLHAUS_AUTH_KEY` (secret) | Worker **Settings → Variables and secrets** | Optional | A free abuse.ch Auth-Key. Kite then checks links and attachment hashes of risky incoming mail against URLhaus. See [Spam protection](spam-protection.md#urlhaus-lookups-optional). |
 
 Generate random values with `openssl rand -hex 32`, or with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` if you do not have OpenSSL.
 
@@ -162,7 +163,7 @@ A [Worker Preview](https://developers.cloudflare.com/workers/previews/) runs a b
 One-time setup in the Cloudflare dashboard, under **Workers & Pages → kite → Settings**:
 
 1. **Builds**: in the **Set up Worker Previews** banner, select **Set up** and then **Switch to Worker Previews**. This cannot be undone. Under **Branch control**, keep **Enable Preview Builds** on, and make sure the build command is `npm run build` so the Preview command finds the built Worker.
-2. **Variables and secrets**: choose **Previews Base** and import the variables from production. Secrets are not copied, so add them again with the same values. `APP_ENCRYPTION_KEY` must match production exactly, or the Preview cannot read stored provider keys. Add `CF_TOKEN`, and `TURNSTILE_SECRET_KEY` or `AI_API_KEY` if production has them.
+2. **Variables and secrets**: choose **Previews Base** and import the variables from production. Secrets are not copied, so add them again with the same values. `APP_ENCRYPTION_KEY` must match production exactly, or the Preview cannot read stored provider keys. Add `CF_TOKEN`, and `TURNSTILE_SECRET_KEY`, `AI_API_KEY` or `URLHAUS_AUTH_KEY` if production has them.
 
 After that, every push to a branch other than `main` builds a Preview, and the Preview URL appears under the Worker's deployments. You can also run `npx wrangler preview` from a branch on your own machine.
 

@@ -2,13 +2,15 @@ import { and, eq } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { contacts, spamReputation } from "@/db/schema";
 import { getEmailAddress } from "@/lib/email/address";
+import { analyzeAttachments } from "./analyzers/attachments";
 import { analyzeAuthentication } from "./analyzers/authentication";
+import { analyzeSafelistPressure } from "./analyzers/pressure";
 import { getReputationKeys } from "./analyzers/reputation";
 import { analyzeStructure } from "./analyzers/structure";
 import { analyzeUrls } from "./analyzers/urls";
 import { classifyTokens } from "./classifier";
 import { buildFingerprint, getDomain, prepareSpamContent, tokenizeMessage } from "./tokenizer";
-import type { SpamAnalysisInput, SpamAnalysisResult, SpamSignal } from "./types";
+import type { PreparedSpamContent, SpamAnalysisInput, SpamAnalysisResult, SpamSignal } from "./types";
 import { SPAM_THRESHOLDS, SPAM_WEIGHTS } from "./weights";
 import { LocalSpamIntelligenceProvider } from "./providers/local";
 
@@ -20,16 +22,9 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 		...analyzeAuthentication(input.headers),
 		...analyzeUrls(input.message, prepared),
 		...analyzeStructure(input.message, input.headers, prepared),
+		...analyzeAttachments(input.message, prepared),
+		...analyzeSafelistPressure(prepared),
 	];
-	const intelligenceProvider = input.intelligenceProvider ?? new LocalSpamIntelligenceProvider();
-	signals.push(
-		...(await intelligenceProvider.check({
-			senderDomain: getDomain(sender),
-			urlDomains: prepared.urlDomains,
-			fingerprint,
-		})),
-	);
-
 	const [contact] = sender
 		? await db
 				.select()
@@ -45,18 +40,8 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 			fingerprint,
 		};
 	}
-	if (contact?.source === "manual")
-		signals.push({
-			id: "manual_contact",
-			score: SPAM_WEIGHTS.relationships.manuallySavedContact,
-			reason: "Sender is in your manually saved contacts",
-		});
-	if (contact?.source === "outbound")
-		signals.push({
-			id: "previously_sent",
-			score: SPAM_WEIGHTS.relationships.previouslySentTo,
-			reason: "You have previously sent email to this address",
-		});
+	signals.push(...(await intelligenceSignals(input, contact?.source, signals, { sender, prepared, fingerprint })));
+	signals.push(...relationshipSignals(contact?.source));
 
 	const identities = getReputationKeys(input.message, fingerprint);
 	const reputationRecords = await Promise.all(
@@ -123,4 +108,47 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 		contentProbability: bayesian.probability,
 		fingerprint,
 	};
+}
+
+type ContactSource = string | null | undefined;
+
+async function intelligenceSignals(
+	input: SpamAnalysisInput,
+	source: ContactSource,
+	localSignals: readonly SpamSignal[],
+	content: { sender: string; prepared: PreparedSpamContent; fingerprint: string },
+): Promise<SpamSignal[]> {
+	// Nothing about a known correspondent's mail leaves Kite, unless authentication failed and the From may be forged.
+	const knownCorrespondent = source === "manual" || source === "outbound";
+	if (knownCorrespondent && !localSignals.some((signal) => signal.id.endsWith("_failed"))) return [];
+	const provider = input.intelligenceProvider ?? new LocalSpamIntelligenceProvider();
+	return provider.check({
+		senderDomain: getDomain(content.sender),
+		urlDomains: content.prepared.urlDomains,
+		fingerprint: content.fingerprint,
+		urls: content.prepared.urls,
+		attachmentUrls: content.prepared.attachmentUrls,
+		attachments: input.message.attachments,
+		localSignals: [...localSignals],
+	});
+}
+
+function relationshipSignals(source: ContactSource): SpamSignal[] {
+	if (source === "manual")
+		return [
+			{
+				id: "manual_contact",
+				score: SPAM_WEIGHTS.relationships.manuallySavedContact,
+				reason: "Sender is in your manually saved contacts",
+			},
+		];
+	if (source === "outbound")
+		return [
+			{
+				id: "previously_sent",
+				score: SPAM_WEIGHTS.relationships.previouslySentTo,
+				reason: "You have previously sent email to this address",
+			},
+		];
+	return [];
 }

@@ -49,12 +49,19 @@ const SYMBOLS: Record<string, string> = {
 const KR_CODES: ReadonlySet<string> = new Set(["SEK", "NOK", "DKK", "ISK"]);
 
 const SYMBOL = "US\\$|CA\\$|C\\$|AU\\$|A\\$|NZ\\$|HK\\$|S\\$|MX\\$|R\\$|\\$|€|£|¥|₹|[Kk][Rr]\\.?";
-const NUMBER = "\\d(?:[\\d.,]*\\d)?";
+// Mail and PDF text are attacker-controlled: the number is capped at 16 characters (more than
+// MAX_AMOUNT_MINOR can need) and cannot start right after "<digit>." or "<digit>,", so a long
+// "1.1.1…" run is scanned once instead of once per digit.
+const NUMBER = "\\d(?:[\\d.,]{0,14}\\d)?";
 const GAP = "[ \\u00a0]?";
 const AMOUNT_PATTERN = new RegExp(
-	`(?<![\\p{L}\\d])(?:(${SYMBOL}|[A-Z]{3})${GAP}(${NUMBER})|(${NUMBER})${GAP}(${SYMBOL}|[A-Z]{3})(?![\\p{L}]))`,
+	`(?<![\\p{L}\\d])(?<!\\d[.,])(?:(${SYMBOL}|[A-Z]{3})${GAP}(${NUMBER})|(${NUMBER})${GAP}(${SYMBOL}|[A-Z]{3})(?![\\p{L}]))`,
 	"gu",
 );
+/** At most this many amounts are read from one text. */
+const MAX_AMOUNTS = 200;
+/** How much of the line on either side of an amount the "same line" rules see. */
+const LINE_CONTEXT = 160;
 const CODE_IN_LINE = /(?<![A-Za-z])[A-Z]{3}(?![A-Za-z])/g;
 
 export type ParsedAmount = {
@@ -102,16 +109,21 @@ function currencyOf(token: string, line: string): string | null {
 	return CURRENCY_CODES.has(token) ? token : null;
 }
 
+/** The amount's line, clipped to LINE_CONTEXT characters on either side so per-amount rules stay linear. */
 function lineAround(text: string, index: number): string {
+	const from = Math.max(0, index - LINE_CONTEXT);
 	const start = text.lastIndexOf("\n", index) + 1;
 	const end = text.indexOf("\n", index);
-	return text.slice(start, end === -1 ? text.length : end);
+	const to = Math.min(end === -1 ? text.length : end, index + LINE_CONTEXT);
+	return text.slice(Math.max(start, from), to);
 }
 
 /** Every currency amount in the text that reads cleanly and lies within the bounds. */
 export function parseAmounts(text: string): ParsedAmount[] {
 	const found: ParsedAmount[] = [];
+	let seen = 0;
 	for (const match of text.matchAll(AMOUNT_PATTERN)) {
+		if (++seen > MAX_AMOUNTS) break;
 		const token = match[1] ?? match[4];
 		const number = match[2] ?? match[3];
 		const line = lineAround(text, match.index);

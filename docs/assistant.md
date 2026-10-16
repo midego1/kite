@@ -83,6 +83,10 @@ Every action Kite records, and every action you accept from a suggestion, is wri
 
 Actions can be undone from Activity or from the toast for 7 days. Undo needs the same permission as the action, and undoing a sent reply or RSVP step is limited to the person who made it. An undo is itself logged as a new row.
 
+## Phishing warnings
+
+A message with phishing signs gets a red warning in the reader that lists them in plain words: a link that opens a different address than it shows, failed sender checks, an attached web page that asks for a password, an attached program, a request to whitelist the sender, a match on URLhaus when the operator turned [URLhaus lookups](spam-protection.md#urlhaus-lookups-optional) on, and what the model found. The model can add reasons but never removes one Kite found itself. The warning offers **Mark as spam**, which moves the message to Spam and can be undone, and **Report phishing**, which also blocks the sender and trains the spam filter harder (see [Report phishing](spam-protection.md#report-phishing)). Reporting a message from its **More actions** menu closes its warning too.
+
 ## Calendar invites
 
 When a message carries an invitation (ICS), the reader card shows the event and offers **Accept**, **Decline** and **Propose new time**. Kite checks your calendar for conflicts and can suggest free slots over the next 7 days.

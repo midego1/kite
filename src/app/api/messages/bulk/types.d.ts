@@ -1,5 +1,7 @@
+import type { PhishingReport } from "@/lib/spam/phishing-report-types";
+
 export type BulkMessageAction =
-	"archive" | "trash" | "spam" | "read" | "unread" | "inbox" | "folder" | "delete" | "restore";
+	"archive" | "trash" | "spam" | "phishing" | "read" | "unread" | "inbox" | "folder" | "delete" | "restore";
 
 /** Folders whose messages can be permanently deleted or emptied in one go. */
 export type PermanentDeleteFolder = "trash" | "spam";
@@ -21,4 +23,6 @@ export type BulkMessageResponse = {
 	deleted?: number;
 	skipped?: number;
 	undo?: MessageRestoreState[];
+	/** For "phishing": what happened to each reported message's sender. */
+	reports?: PhishingReport[];
 };

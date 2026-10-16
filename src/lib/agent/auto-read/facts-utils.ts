@@ -11,6 +11,14 @@ import type { AutoReadCapabilities } from "./settings-types";
 const AUTOMATIC_SENDER = /^(mailer-daemon|postmaster|no-?reply|do-?not-?reply)@/i;
 const NO_REPLY_SENDER = /^(no-?reply|do-?not-?reply)@/i;
 const URL_SIGNALS = ["displayed_link_mismatch", "ip_address_url", "punycode_url"] as const;
+const ATTACHMENT_SIGNALS = [
+	"html_attachment",
+	"attachment_login_form",
+	"attachment_active_content",
+	"risky_attachment",
+] as const;
+/** Found by the optional URLhaus lookup (`src/lib/spam/providers/urlhaus.ts`). */
+const LOOKUP_SIGNALS = ["urlhaus_url", "urlhaus_payload"] as const;
 const AUTH_METHODS = ["spf", "dkim", "dmarc"] as const;
 
 // Local parsing keeps this module free of runtime imports so tests can load it directly.
@@ -126,8 +134,13 @@ function phishingSignals(
 	const found: DeterministicPhishingSignal[] = [];
 	if (verdict === "suspicious") found.push("suspicious_verdict");
 	for (const id of URL_SIGNALS) if (signals.has(id)) found.push(id);
+	for (const id of [...ATTACHMENT_SIGNALS, ...LOOKUP_SIGNALS]) if (signals.has(id)) found.push(id);
 	for (const method of AUTH_METHODS) if (auth[method] === "fail") found.push(`${method}_failed`);
 	if (spoofedContact) found.push("display_name_spoof");
+	// Newsletters ask to be marked safe too, so the request only warns next to a risky link or attachment.
+	const risky =
+		[...URL_SIGNALS, ...ATTACHMENT_SIGNALS, ...LOOKUP_SIGNALS].some((id) => signals.has(id)) || !!spoofedContact;
+	if (risky && signals.has("safelist_pressure")) found.push("safelist_pressure");
 	return found;
 }
 
@@ -176,12 +189,22 @@ export function hintsAllowed(facts: MessageFacts, capabilities: AutoReadCapabili
 }
 
 /**
+ * A warning sign in the message itself (a link, an attachment, a copied contact name or a whitelist
+ * request), as opposed to the spam score or failed authentication, which plenty of bulk mail has.
+ */
+function hasContentRisk(facts: Pick<MessageFacts, "phishingSignals">): boolean {
+	return facts.phishingSignals.some((id) => id !== "suspicious_verdict" && !id.endsWith("_failed"));
+}
+
+/**
  * Whether triage needs the model at all; bulk, list and no-reply mail is settled from facts alone unless a
- * module extension's hint asked (`hinted`). A muted sender or a spam verdict never gets a request.
+ * module extension's hint asked (`hinted`) or the phishing check is on and the content carries a warning
+ * sign, since fake invoices are usually sent from no-reply addresses. A muted sender or a spam verdict
+ * never gets a request.
  */
 export function needsModel(facts: MessageFacts, capabilities: AutoReadCapabilities, hinted = false): boolean {
 	if (!hintsAllowed(facts, capabilities)) return false;
 	if (hinted) return true;
-	if (facts.automatic || facts.bulk || facts.noReply) return false;
+	if (facts.automatic || facts.bulk || facts.noReply) return capabilities.phishing && hasContentRisk(facts);
 	return capabilities.reply || capabilities.summary || capabilities.phishing;
 }

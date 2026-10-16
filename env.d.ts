@@ -55,6 +55,8 @@ interface CloudflareEnv {
 	ALERT_WEBHOOK_ALLOW_INSECURE?: string;
 	/** Dev/test only: "1" lets a custom AI provider be http://127.0.0.1 or http://localhost (the fake model); ignored in production. */
 	AI_ALLOW_INSECURE_LOOPBACK?: string;
+	/** abuse.ch Auth-Key; when set, inbound spam checks look up risky links and attachment hashes on URLhaus. */
+	URLHAUS_AUTH_KEY?: string;
 	/** When set, first-run setup and the first registration must present this token. */
 	SETUP_TOKEN?: string;
 	/** Any long random string; when set, provider secrets in app_settings are stored encrypted (AES-GCM, key derived with HKDF). */

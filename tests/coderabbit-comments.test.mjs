@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectActionableComments } from "../scripts/review/coderabbit-comments-utils.mjs";
+import {
+	adoptedCommentIds,
+	rejectedAdoptionReplies,
+	selectActionableComments,
+} from "../scripts/review/coderabbit-comments-utils.mjs";
+import {
+	answerAdoptions,
+	touchesWorkflowFiles,
+	WORKFLOW_CHANGE_REPLY,
+} from "../scripts/review/coderabbit-comments-utils.mjs";
 
 const comment = (overrides = {}) => ({
 	id: 1,
@@ -78,4 +87,49 @@ test("the workflow bot login is configurable", () => {
 		selectActionableComments(comments, { botLogin: "adopt-bot[bot]" }).map((selected) => selected.id),
 		[],
 	);
+});
+
+test("reads the adopted comment ids from the commits' Addresses lines", () => {
+	const messages = [
+		"fix: escape the label\n\nAddresses CodeRabbit review comment 301 on pull request 9.\nAddresses Greptile review comment 302 on pull request 9.\n\nCo-authored-by: Test Bot <review-bot@example.invalid>",
+		"test: cover the empty list\n\nAddresses Greptile review comment 205 on pull request 9.",
+		"chore: format\n\nAddresses CodeRabbit review comment 301 on pull request 9.",
+		"fix: unrelated\n\nAddresses Someone review comment 999 on pull request 9.",
+	];
+	assert.deepEqual(adoptedCommentIds(messages), [205, 301, 302]);
+	assert.deepEqual(adoptedCommentIds([]), []);
+});
+
+test("answers dropped adoptions as valid, not adopted and keeps Droid's own answers", () => {
+	const replies = [
+		{ commentId: 7, body: "The listener is removed in the cleanup." },
+		{ commentId: 8, body: "Valid, not adopted: the e2e spec could not be fixed." },
+	];
+	assert.deepEqual(rejectedAdoptionReplies([8, 9, 10], ["test:coverage", "quality:check"], replies), [
+		...replies,
+		{
+			commentId: 9,
+			body: "Valid, not adopted: the fix failed `npm run test:coverage`, `npm run quality:check` in the workflow's checks, which pass without it, so it was not pushed.",
+		},
+		{
+			commentId: 10,
+			body: "Valid, not adopted: the fix failed `npm run test:coverage`, `npm run quality:check` in the workflow's checks, which pass without it, so it was not pushed.",
+		},
+	]);
+	assert.deepEqual(rejectedAdoptionReplies([], ["check"]), []);
+});
+
+test("recognises commits that change a workflow file", () => {
+	assert.equal(touchesWorkflowFiles(["scripts/review/adopt-gate.mjs", ".github/workflows/ci.yml"]), true);
+	assert.equal(touchesWorkflowFiles([".github/dependabot.yml", "docs/quality.md"]), false);
+	assert.equal(touchesWorkflowFiles([]), false);
+});
+
+test("answers adoptions with a given reply and keeps existing answers", () => {
+	const replies = [{ commentId: 3, body: "Already addressed in the current code." }];
+	assert.deepEqual(answerAdoptions([3, 4], WORKFLOW_CHANGE_REPLY, replies), [
+		...replies,
+		{ commentId: 4, body: WORKFLOW_CHANGE_REPLY },
+	]);
+	assert.match(WORKFLOW_CHANGE_REPLY, /^Valid, not adopted: /);
 });

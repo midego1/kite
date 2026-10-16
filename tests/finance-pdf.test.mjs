@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { randomBytes } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { loadFinance } from "./support/finance-bundle.mjs";
 
@@ -28,11 +29,11 @@ function makePdf(streams, { trailer = "", header = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\
 const base64 = (bytes) => ({ encoding: "base64", content: bytes.toString("base64"), truncated: false });
 const textOf = (bytes, options) => pdf.pdfTextFromContent(base64(bytes), options);
 
-const INVOICE = "BT /F1 12 Tf 72 720 Td (Streamflix invoice INV-7) Tj 0 -16 Td ($12.00 per month) Tj ET";
+const INVOICE = "BT /F1 12 Tf 72 720 Td (Acmeflix invoice INV-7) Tj 0 -16 Td ($12.00 per month) Tj ET";
 
 test("reads Tj text from a plain PDF", async () => {
 	const text = await textOf(makePdf([{ data: INVOICE }]));
-	assert.match(text, /Streamflix invoice INV-7\n\$12\.00 per month/);
+	assert.match(text, /Acmeflix invoice INV-7\n\$12\.00 per month/);
 });
 
 test("reads Tj text from a FlateDecode PDF, in either filter spelling", async () => {
@@ -143,6 +144,13 @@ test("inflate stops at 1 MiB per stream and 4 MiB in total", async () => {
 	assert.doesNotMatch(capped ?? "", /per month/);
 });
 
+test("a compressed stream larger than one write slice is read to its end", async () => {
+	// Random hex outside any text object compresses poorly, so the stream spans several 16 KiB slices.
+	const data = `${randomBytes(50_000).toString("hex")} BT (tail marker) Tj ET`;
+	assert.ok(deflateSync(Buffer.from(data, "latin1")).length > 32 * 1024);
+	assert.match(await textOf(makePdf([{ data, flate: true }])), /tail marker/);
+});
+
 test("corrupt Flate data yields no text and no error", async () => {
 	const text = await textOf(makePdf([{ data: Buffer.from("not deflate at all"), dict: "/Filter /FlateDecode" }]));
 	assert.equal(text, "");
@@ -153,8 +161,8 @@ test("text stops at 64 KB", async () => {
 	const long = Array.from({ length: 2000 }, (_, index) => `(${"w".repeat(60)}${index}) Tj`).join(" T* ");
 	const text = await textOf(makePdf([{ data: `BT ${long} ET` }]));
 	assert.equal(text.length, 65_536);
-	const small = await textOf(makePdf([{ data: INVOICE }]), { limits: { maxTextChars: 9 } });
-	assert.equal(small, "Streamfli");
+	const small = await textOf(makePdf([{ data: INVOICE }]), { limits: { maxTextChars: 7 } });
+	assert.equal(small, "Acmefli");
 });
 
 test("stops by itself after 5 seconds and returns what it has", async () => {

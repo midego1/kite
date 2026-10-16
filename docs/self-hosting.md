@@ -92,6 +92,7 @@ and the DNS page shows what to set by hand.
 | `RESEND_API_KEY` | unset | Resend key, used when none is saved in the app |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | unset | Amazon SES credentials, used when none are saved in the app |
 | `INBOUND_WEBHOOK_SECRET` | unset | Enables `/api/inbound` for the relay Worker |
+| `URLHAUS_AUTH_KEY` | unset | abuse.ch Auth-Key; checks links and attachment hashes of risky incoming mail against URLhaus (see [Spam protection](spam-protection.md#urlhaus-lookups-optional)) |
 | `TURNSTILE_SECRET_KEY` | unset | Bot protection on login and reset forms (`NEXT_PUBLIC_TURNSTILE_SITE_KEY` at build time) |
 | `AI_BASE_URL` | unset | OpenAI-compatible model API base URL for the assistant |
 | `AI_API_KEY` | unset | Server-only key for that model API |

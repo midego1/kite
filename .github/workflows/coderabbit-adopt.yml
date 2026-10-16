@@ -250,7 +250,15 @@ jobs:
           PUSH_TOKEN: ${{ steps.app.outputs.token || github.token }}
           WITH_APP: ${{ steps.app.outputs.token != '' }}
           PR_BRANCH: ${{ steps.pr.outputs.branch }}
+          ADOPTED_SHA: ${{ needs.adopt.outputs.sha }}
         run: |
+          # The branch can move between the head check above and the checkout. The patch was
+          # gated on ADOPTED_SHA only, and the plain (non-force) push below then refuses any
+          # later update.
+          if [ "$(git rev-parse HEAD)" != "$ADOPTED_SHA" ]; then
+            echo "The branch moved after the comments were verified; rerun the workflow." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           echo "before=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if [ -s "$RUNNER_TEMP/adopt/adoptions.patch" ]; then
             # A fresh runner has no git identity and git am needs a committer.

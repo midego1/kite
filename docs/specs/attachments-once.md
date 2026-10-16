@@ -1,8 +1,10 @@
 # Design: store mail attachments once
 
-Status: approved for a Factory Mission; second in order, after [the automatic reading agent](auto-agent.md) and before [Drive and storage](drive-storage.md). Written against `main` at `22b1ac3`; every path below is relative to the repository root.
+Status: approved for a Factory Mission; it now comes **after** [Drive and storage](drive-storage.md) (reordered on 2026-10-16). Written against `main` at `22b1ac3`; every path below is relative to the repository root.
 
-The migration number below assumes this work lands first. Take the next free number when you start and keep `tests/migration-order.test.mjs` passing.
+The migration number below (`0060`) is stale: `main` has reached `0063` (Money Watch) and Drive claims `0064` and `0065`, so this work takes the next free number after Drive's (planned `0066`). Take the next free number when you start and keep `tests/migration-order.test.mjs` passing.
+
+What Drive changes for this work: Drive's Save to Drive route (`POST /api/drive/attachments/[id]/save`) and, once S3 stores exist, the storage migration planner (`src/lib/storage/migration.ts`) read `message_attachments.r2_key` directly. When this work lands, switch Save to Drive to `openAttachment`, make the planner copy only rows with `storage = 'object'` (never a `raw:` sentinel), and add both files to the allowlist of `tests/attachment-storage-boundary.test.mjs`. See sections 6 and 9 of the Drive spec.
 
 ## 1. Recommendation in one paragraph
 

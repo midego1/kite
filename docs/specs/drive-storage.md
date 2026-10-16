@@ -1,8 +1,8 @@
 # Spec: Drive and pluggable S3-compatible storage (ROADMAP Milestone 7)
 
-Status: approved for a Factory Mission; third in order, after [the automatic reading agent](auto-agent.md) and [storing attachments once](attachments-once.md). Written against `main` at `22b1ac3`. Upstream reference: [hieunc229/mailflare](https://github.com/hieunc229/mailflare) commits `83ade98` (S3/B2 bucket), `9f66e13` and `3c90a03` (Drive). Both projects are AGPL-3.0; ported code names its source commit in the commit message.
+Status: approved for a Factory Mission; **next in order**, after [the automatic reading agent](auto-agent.md), [the module platform](module-platform.md) and [Money Watch](money-watch.md), and **before** [storing attachments once](attachments-once.md). Revised on 2026-10-16 against `main` at `9c0f610` (first written against `22b1ac3`): Drive is now a module of the module platform, on by default, and the Mission builds Drive on the existing R2 storage first and S3-compatible stores second (section 14, decisions 6 to 8). Upstream reference: [hieunc229/mailflare](https://github.com/hieunc229/mailflare) commits `83ade98` (S3/B2 bucket), `9f66e13` and `3c90a03` (Drive). Both projects are AGPL-3.0; ported code names its source commit in the commit message.
 
-Migration numbers below assume this work lands first. Earlier Missions will have used some of them, so take the next free numbers when you start and keep `tests/migration-order.test.mjs` passing. Already taken: `0060` and `0061` (automatic reading), `0062` (the [module platform](module-platform.md)) and `0063` ([Money Watch](money-watch.md)); [storing attachments once](attachments-once.md) takes `0064` or later. Every phase here therefore takes the next free numbers after both when it starts, including phases 3 and 4, which were planned as `0063` and `0064`.
+Migrations: the last one on `main` is `0063_add_finance_module.sql` (journal `idx` 66), so this Mission starts at **`0064`**: `0064_add_drive.sql` (phase 1) and `0065_add_storage_stores.sql` (phase 2). If another branch lands a migration first, take the next free numbers and keep `tests/migration-order.test.mjs` passing. Storing attachments once comes after this Mission and takes the number after Drive's.
 
 Work on branch `mission/drive-storage`. Never push `main`, never run `npm run deploy`, `db:migrate:remote` or any `wrangler --remote` command. Do not rename `BUCKET` / `kite-raw` or any other Cloudflare resource.
 
@@ -12,8 +12,8 @@ Work on branch `mission/drive-storage`. Never push `main`, never run `npm run de
 
 Goals (from `ROADMAP.md` Milestone 7):
 
-1. **Storage providers.** R2 stays the default. A primary admin can add S3-compatible stores (AWS S3, Backblaze B2, Wasabi, Hetzner, MinIO, R2 over its S3 API). Credentials are stored encrypted with `APP_ENCRYPTION_KEY` and checked before they are saved. Large uploads and downloads use short-lived signed URLs that go straight to the store.
-2. **Drive (optional).** Folders, upload, download, rename, move, trash, sharing with people, and share links that expire. An **All attachments** view lists files that arrived by mail. Drive is off by default. An admin switch, a per-user permission and a per-user quota control access. When Drive is off it is hidden and its API answers 404.
+1. **Drive (a module, on by default).** Folders, upload, download, rename, move, trash, sharing with people, and share links that expire. An **All attachments** view lists files that arrived by mail. Drive works out of the box on the storage every install already has (the R2 `BUCKET` binding, or the file bucket on Node). It is the module `drive` (module platform, `src/lib/modules/`), `defaultEnabled: true`: the owner can turn it off for everyone under **Admin → Modules** and restrict it per user under **Accounts → Permissions**, like Calendar or Money Watch, and a per-user quota limits how much each person stores. When Drive is off for a viewer it is hidden and its pages and API answer 404.
+2. **Storage providers (core).** R2 stays the default. A primary admin can add S3-compatible stores (any provider that speaks the S3 API: AWS S3, Backblaze B2, Wasabi, Hetzner, MinIO, R2 over its S3 API, and others through a custom endpoint) and choose which store holds mail, Drive files and backups. Credentials are stored encrypted with `APP_ENCRYPTION_KEY` and checked before they are saved. Large uploads and downloads use short-lived signed URLs that go straight to the store. Storage is core, not part of the Drive module: mail and backups use it whether Drive is on or off.
 3. **Cold storage** (outline only). Move old objects to R2 Infrequent Access or to a second store, and keep reading them transparently.
 4. **External storage** (outline only). WebDAV first.
 
@@ -25,10 +25,10 @@ Non-goals for this milestone: file versioning, office-document editing, full-tex
 
 | Fact | Where |
 | --- | --- |
-| Every object goes through `env.BUCKET` (R2 binding `kite-raw`). About 37 call sites use only `get` (with range), `put`, `delete`; `head` is used in places; backups also use `createMultipartUpload` | `env.d.ts:4`, `wrangler.jsonc` `r2_buckets`, `grep -rn "BUCKET" src` |
+| Every object goes through `env.BUCKET` (R2 binding `kite-raw`). About 58 references; call sites use only `get` (with range), `put`, `delete`; `head` is used in places; backups also use `createMultipartUpload` | `env.d.ts:4`, `wrangler.jsonc` `r2_buckets`, `grep -rn "BUCKET" src` |
 | Backups stream in 8 MiB multipart parts and fall back to one `put` when `createMultipartUpload` is missing (file bucket) | `src/lib/backups/backup-writer.ts` |
-| The Node runtime swaps the binding for a directory bucket: get/put/delete/head, **no multipart, no list**; `put` buffers streams in memory | `server/runtime/file-bucket.ts`, `server/runtime/env.ts:47` |
-| `getEnv()` returns `getNodeEnv() ?? cloudflare:workers env`; `worker.ts` `email`/`queue`/`scheduled` handlers use the `env` argument directly | `src/lib/cloudflare.ts`, `worker.ts:100-232` |
+| The Node runtime swaps the binding for a directory bucket: get/put/delete/head, **no multipart, no list**; `put` buffers streams in memory | `server/runtime/file-bucket.ts`, `server/runtime/env.ts:45` |
+| `getEnv()` returns `getNodeEnv() ?? cloudflare:workers env`; `worker.ts` `email`/`queue`/`scheduled` handlers use the `env` argument directly | `src/lib/cloudflare.ts`, `worker.ts:84-260` |
 | SigV4 signing with Web Crypto; always hashes the body (no `UNSIGNED-PAYLOAD`, no presigning). `awsRequest` always builds `https://` URLs and buffers bodies (`string | ArrayBuffer`) | `src/lib/aws/sigv4.ts`, `src/lib/aws/client.ts` |
 | S3 helpers are hard-wired to `<bucket>.s3.<region>.amazonaws.com` | `src/lib/aws/s3.ts` |
 | AWS credentials pattern: sealed JSON in `app_settings.aws_config`, env-var fallback, `validateAwsConfig` probes each permission, primary-admin-only route | `src/lib/aws/config.ts`, `src/lib/aws/validate.ts`, `src/app/api/admin/aws/route.ts` |
@@ -40,9 +40,15 @@ Non-goals for this milestone: file versioning, office-document editing, full-tex
 | Attachments already have expiring share links (`shared_attachment_links`, `/api/shared-files/[id]`) with `Content-Disposition`, `CSP: default-src 'none'; sandbox`, `no-store`, `no-referrer` | `src/app/api/shared-files/[id]/route.ts`, `src/lib/email/shared-attachments.ts` |
 | vinext treats every `POST` with `multipart/form-data` or urlencoded bodies as a possible server action and enforces a 1 MB limit, so upload bodies must be raw `PUT`s | `node_modules/vinext/dist/server/app-action-request.js` |
 | Backup lists: `BACKUP_TABLES`, `REQUIRED_BACKUP_TABLES`, `INTERNAL_TABLES` (`src/lib/backups/export.ts`), `BACKUP_TABLE_GROUPS` (`table-groups.ts`), `DatabaseBackupTable` and `BackupTableGroupId` (`types.d.ts`). Restore has no per-group selection | `src/lib/backups/*` |
-| Last migration `0059_add_alert_webhook.sql`, journal `idx` 62. **The next free number is `0060`** | `drizzle/migrations/` |
-| The app switcher entry for Calendar lives in `src/components/mailbox-selector.tsx` (~line 305). The `(calendar)` route group is the model for a sibling app section | `src/app/(calendar)/layout.tsx` |
-| The user payload from `/api/auth/me` carries permission flags (`canManage*`) | `src/app/api/auth/me/route.ts:31` |
+| Last migration `0063_add_finance_module.sql`, journal `idx` 66. **The next free number is `0064`** | `drizzle/migrations/` |
+| Module navigation comes from each manifest's `nav` (placements `mailbox-selector`, `account-menu`, `module-tabs`, `settings-nav`, `sidebar`), resolved by `src/lib/modules/nav-utils.ts`; core files never import module code. The `(calendar)` route group and `src/lib/modules/finance/` are the models for a module with its own app section | `src/lib/modules/module-types.d.ts`, `src/lib/modules/registry.ts`, `src/app/(calendar)/layout.tsx` |
+| The user payload from `/api/auth/me` carries permission flags (`canManage*`) and `modules`, the module ids on for this viewer (`listEnabledModules`) | `src/app/api/auth/me/route.ts` |
+| Module state: `module_settings` (install switch, owner only, Admin → Modules) and `user_module_access` (per user, Accounts → Permissions; a missing row means allowed). `effectiveModules` combines both with `defaultEnabled` and `dependsOn`; a database without the tables behaves as `defaultEnabled`. `guardRoute` answers 404 before the handler when the module is off for the install and lets the handler call `checkUser` / `checkAuth` for per-user restrictions; `pageAccess` does the same for pages | `drizzle/migrations/0062_add_module_platform.sql`, `src/lib/modules/state-utils.ts`, `src/lib/modules/route-guard-utils.ts` |
+| Modules declare cron tasks (`0 2 * * *`, `*/5 * * * *`, `every_tick`), queue message types, record kinds, services (`describe("workingHours", …)` in Booking), webhook events, search sections and reader menu entries (`messageSlots`, slot `message-menu` only) in their manifest and capabilities; core calls them only through `invokeCapability` | `src/lib/modules/module-types.d.ts`, `src/lib/modules/booking/capabilities.ts`, `src/lib/modules/finance/manifest.ts` |
+| A module keeps its tables in its own schema file (Money Watch: `src/db/schema/finance.ts`, merged into the Drizzle `schema` in `src/db/index.ts`) | `src/db/schema/` |
+| `requireSessionAdmin(env, request, allow?)` answers 401/403 for admin routes; `isPrimaryAdmin` for owner-only ones | `src/lib/api/auth.ts` |
+| Attachments are one R2 object each at `message_attachments.r2_key`; `getAttachmentForUser` is the access check for attachment reads. Storing attachments once has **not** landed: there is no `storage` column, no `raw:` sentinel and no `openAttachment` yet | `src/lib/email/attachments.ts` |
+| The admin menu is grouped (Email; People & access; Integrations; AI; System). The e2e suite runs up to `28-*.spec.ts` (`29-phishing.spec.ts` is on an open branch), sharded by `e2e/timings.json` | `src/components/settings/section-nav-utils.ts`, `e2e/` |
 | Public API allowlist for the e2e security spec | `e2e/support/public-routes.ts` |
 | Dev-only insecure-endpoint precedent: `ALERT_WEBHOOK_ALLOW_INSECURE` | `src/lib/alerts/webhook-settings.ts`, `playwright.config.ts` |
 | Object key prefixes in use: `inbound/`, `imports/`, `drafts/`, `attachments/`, `jmap-uploads/`, `backups/database/`, `avatars/`, `contact-avatars/`, `mailbox-avatars/`, `branding/app-icon`, alert state | `grep` of key templates |
@@ -62,6 +68,13 @@ The full decision table is in section 13.
 ---
 
 ## 4. Architecture
+
+What each phase builds (section 12):
+
+- **Phase 1, Drive on R2:** the object classes (4.1), the storage interface with only the default store (4.2: `getStorage(env)` returns `store("default")` for every class, wrapping `env.BUCKET`), the file bucket additions, the proxied upload flow and downloads (4.7) and the object keys (4.8). Drive rows record `store_id = 'default'` from the start, so phase 2 needs no data rewrite.
+- **Phase 2, S3-compatible stores:** the S3 adapter (4.3), the router and `withStorage` (4.4), configuration and validation (4.5), the endpoint rules (4.6), the direct upload flow and presigned downloads (4.7), the CSP change, and switching stores with migration (section 9).
+
+Storage (`src/lib/storage/`) is core code. The Drive module (`src/lib/modules/drive/`, `src/lib/drive/`) calls it; core never imports Drive code (the module platform's boundary test enforces that).
 
 ### 4.1 Object classes and routing
 
@@ -130,7 +143,7 @@ Drive code and the migration job use `getStorage(env)` from `src/lib/storage/ind
   - MinIO / other: custom host, path addressing.
 - `get` with `range` (offset/length/suffix), `head`, `put`, `delete` (ignore 404; batches of 10 in parallel as upstream), multipart (`create`, `uploadPart`, `complete`, `abort`, plus `listParts` for diagnostics), `list` (ListObjectsV2), and `copy` (CopyObject within one store; used for "Save to Drive" when source and target store are the same and the attachment is stored as its own object).
 - **Streaming instead of buffering.** Extend `signAwsRequest` with `payloadHash?: "UNSIGNED-PAYLOAD"` and let `awsRequest` take a `ReadableStream` body with a known `contentLength`. On Workers, pipe through `FixedLengthStream(length)`. On Node, pass `duplex: "half"` and `Content-Length`. Without a known length, buffer up to 32 MiB and refuse anything larger. This also requires a URL scheme option (`http` for MinIO in dev) and support for path-style hosts.
-- Map `httpMetadata` to `Content-Type`/`Content-Disposition`/`Cache-Control`, and `customMetadata` to `x-amz-meta-*`. **Percent-encode metadata values.** S3 headers are ASCII-only, and `inbound.ts:280` stores `from`/`to`, which can contain UTF-8. Decode the values on read.
+- Map `httpMetadata` to `Content-Type`/`Content-Disposition`/`Cache-Control`, and `customMetadata` to `x-amz-meta-*`. **Percent-encode metadata values.** S3 headers are ASCII-only, and `inbound.ts:288` stores `from`/`to`, which can contain UTF-8. Decode the values on read.
 - Keep upstream's check for a `<Error>` document inside a `200` response on CompleteMultipartUpload (B2 and AWS can both do this).
 - Return objects shaped like `R2ObjectBody` (`body`, `size`, `etag`, `httpEtag`, `uploaded`, `httpMetadata`, `customMetadata`, `writeHttpMetadata`, `arrayBuffer`, `text`, `json`, `blob`), as upstream `B2Object` does.
 - Presigning: add `presignAwsUrl()` to `src/lib/aws/sigv4.ts` (query-string auth, `X-Amz-Expires` ≤ 3600, `UNSIGNED-PAYLOAD`). Signed headers are `host` and, for PUT and UploadPart, `content-length`, so the store rejects any body whose size differs from the reserved size. GET URLs carry `response-content-disposition` and `response-content-type`.
@@ -161,7 +174,7 @@ Plug-in points (both runtimes):
 ### 4.5 Configuration storage and validation
 
 - Credentials are sealed JSON (`sealSetting`) in `storage_stores.credentials`. **Saving an S3 store is refused when `APP_ENCRYPTION_KEY` is unset.** This is stricter than the AWS settings, on purpose. Show the reason in the UI.
-- Optional bootstrap for Docker (phase 1, low priority): `STORAGE_S3_ENDPOINT`, `STORAGE_S3_REGION`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY`, `STORAGE_S3_ADDRESSING`, `STORAGE_S3_CLASSES=mail,drive,backups`. These env vars appear as a read-only store (`source: "environment"`), like `getAwsConfigStatus`. They are never written to D1.
+- Optional bootstrap for Docker (phase 2, low priority): `STORAGE_S3_ENDPOINT`, `STORAGE_S3_REGION`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY`, `STORAGE_S3_ADDRESSING`, `STORAGE_S3_CLASSES=mail,drive,backups`. These env vars appear as a read-only store (`source: "environment"`), like `getAwsConfigStatus`. They are never written to D1.
 - `validateStore(config)` in `src/lib/storage/validate.ts` runs before saving and from the **Test** button:
   1. Endpoint guard (4.6).
   2. HeadBucket.
@@ -195,7 +208,7 @@ The object limit is 10 000 parts. A file with one part may be any size from 1 by
 3. The browser PUTs each part with `XMLHttpRequest` (for progress) and `credentials: "omit"`, **sending no Kite headers**. It reads `ETag` from the response and reports it with `PUT /api/drive/uploads/[id]/parts/[n]` `{ etag }`. The server records the part in `drive_upload_parts`.
 4. `POST /api/drive/uploads/[id]/complete` runs CompleteMultipartUpload (the store rejects wrong ETags with `InvalidPart`), then HEAD, and checks the size. If the size differs, the server deletes the object and the row and returns 409. On success, `status = 'ready'`.
 
-**Proxied (default R2 without S3 keys, or the Node file bucket):** the same steps 1 and 4, but step 2/3 becomes `PUT /api/drive/uploads/[id]/parts/[n]` with a raw `application/octet-stream` body. The handler checks the exact `Content-Length` (every part except the last must be full size, as upstream does) and streams `request.body` into `uploadPart`. **Verify that vinext passes `request.body` through as a stream.** If it buffers, mount this one endpoint in `worker.ts` ahead of vinext, the same way `/api/realtime` is mounted. Do the equivalent in `server/index.ts`.
+**Proxied (default R2 without S3 keys, or the Node file bucket):** the same steps 1 and 4, but step 2/3 becomes `PUT /api/drive/uploads/[id]/parts/[n]` with a raw `application/octet-stream` body. The handler checks the exact `Content-Length` (every part except the last must be full size, as upstream does) and streams `request.body` into `uploadPart`. **Verify that vinext passes `request.body` through as a stream, as the first task of phase 1.** If it buffers, the part upload cannot be a normal module route. Do not import Drive code into `worker.ts`: put the streaming part write behind a core storage endpoint (`PUT /api/storage/uploads/[uploadId]/parts/[n]`, mounted in `worker.ts` ahead of vinext the way `/api/realtime` is, and the equivalent in `server/index.ts`) that only accepts parts a Drive route reserved first (a short-lived HMAC grant naming the store, key, upload id, part number and exact length), so core never needs to know about Drive items.
 
 **Downloads:** `GET /api/drive/files/[id]/content?disposition=inline|attachment`.
 - Previews and inline content are always streamed same-origin with Range and If-Range support. This ports upstream `parseByteRange` / `streamDriveFile` with these headers:
@@ -218,46 +231,9 @@ The object limit is 10 000 parts. A file with one part may be any size from 1 by
 
 ## 5. Data model and migrations
 
-Hand-written SQL in the generated style, with journal entries continuing from `idx` 63. Mirror the schema in `src/db/schema/index.ts` and run `npm run db:bundle`.
+Hand-written SQL in the generated style, with journal entries continuing from `idx` 66. The storage tables are core and go in `src/db/schema/index.ts`; the Drive tables belong to the module and go in a new `src/db/schema/drive.ts`, merged into the Drizzle `schema` in `src/db/index.ts` like `finance.ts`. Run `npm run db:bundle`.
 
-### `0060_add_storage_stores.sql` (phase 1)
-
-```sql
-CREATE TABLE `storage_stores` (
-	`id` text PRIMARY KEY NOT NULL,            -- sto_…
-	`name` text NOT NULL,
-	`provider` text NOT NULL,                  -- aws | r2 | b2 | wasabi | hetzner | minio | other
-	`endpoint` text NOT NULL,
-	`region` text NOT NULL,
-	`bucket` text NOT NULL,
-	`addressing` text DEFAULT 'virtual' NOT NULL,
-	`credentials` text NOT NULL,               -- sealed JSON {accessKeyId, secretAccessKey}
-	`same_as_binding` integer DEFAULT 0 NOT NULL, -- R2 S3 keys for the BUCKET binding, used only to presign
-	`status` text DEFAULT 'unchecked' NOT NULL,   -- ok | error | unchecked
-	`last_checked_at` integer, `last_error` text,
-	`created_at` integer NOT NULL, `updated_at` integer NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE `storage_routes` (
-	`object_class` text PRIMARY KEY NOT NULL,  -- mail | drive | backups
-	`store_id` text NOT NULL,                  -- 'default' or storage_stores.id (no FK: 'default' has no row)
-	`previous_store_id` text,                  -- read fallback while a migration runs
-	`updated_at` integer NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE `storage_migrations` (
-	`id` text PRIMARY KEY NOT NULL,
-	`object_class` text NOT NULL, `from_store_id` text NOT NULL, `to_store_id` text NOT NULL,
-	`status` text DEFAULT 'queued' NOT NULL,   -- queued | copying | verifying | completed | failed | cancelled
-	`cursor` text,                             -- JSON per source table
-	`objects_total` integer DEFAULT 0 NOT NULL, `objects_done` integer DEFAULT 0 NOT NULL,
-	`bytes_done` integer DEFAULT 0 NOT NULL, `errors` integer DEFAULT 0 NOT NULL, `last_error` text,
-	`created_by_user_id` text REFERENCES `users`(`id`) ON DELETE set null,
-	`created_at` integer NOT NULL, `started_at` integer, `finished_at` integer
-);
-```
-
-### `0061_add_drive.sql` (phase 2)
+### `0064_add_drive.sql` (phase 1)
 
 ```sql
 CREATE TABLE `drive_items` (
@@ -268,7 +244,7 @@ CREATE TABLE `drive_items` (
 	`name` text NOT NULL,
 	`size` integer DEFAULT 0 NOT NULL,
 	`content_type` text DEFAULT 'application/octet-stream' NOT NULL,
-	`store_id` text, `object_key` text,        -- files only
+	`store_id` text, `object_key` text,        -- files only; 'default' (the BUCKET binding) until phase 2 adds stores
 	`status` text DEFAULT 'ready' NOT NULL,    -- uploading | ready
 	`upload_id` text, `upload_part_size` integer, `upload_fingerprint` text, `upload_expires_at` integer,
 	`source_attachment_id` text,               -- informational, no FK
@@ -308,16 +284,62 @@ CREATE TABLE `drive_upload_parts` (
 	`part_number` integer NOT NULL, `etag` text NOT NULL, `size` integer NOT NULL
 );
 CREATE UNIQUE INDEX `drive_upload_parts_idx` ON `drive_upload_parts` (`item_id`,`part_number`);
-ALTER TABLE `users` ADD `can_use_drive` integer DEFAULT false NOT NULL;
-ALTER TABLE `users` ADD `drive_quota_bytes` integer;                 -- null = app default
-ALTER TABLE `app_settings` ADD `drive_enabled` integer DEFAULT false NOT NULL;
-ALTER TABLE `app_settings` ADD `drive_default_quota_bytes` integer;  -- null = unlimited
-ALTER TABLE `app_settings` ADD `drive_link_max_days` integer DEFAULT 30 NOT NULL; -- 0 = public links off; otherwise 1-365, never unlimited
-ALTER TABLE `app_settings` ADD `drive_trash_retention_days` integer DEFAULT 30 NOT NULL;
+CREATE TABLE `drive_settings` (             -- one row, id 'default'; no row means the defaults below
+	`id` text PRIMARY KEY NOT NULL,
+	`default_quota_bytes` integer,             -- null = unlimited
+	`link_max_days` integer DEFAULT 30 NOT NULL, -- 0 = public links off; otherwise 1-365, never unlimited
+	`trash_retention_days` integer DEFAULT 30 NOT NULL,
+	`updated_at` integer NOT NULL,
+	`updated_by` text REFERENCES `users`(`id`) ON DELETE set null
+);
+CREATE TABLE `drive_user_quotas` (           -- per-user override of default_quota_bytes
+	`user_id` text PRIMARY KEY NOT NULL REFERENCES `users`(`id`) ON DELETE cascade,
+	`quota_bytes` integer,                     -- null = unlimited for this user
+	`updated_at` integer NOT NULL
+);
 ```
-(Separate the statements with `--> statement-breakpoint`.)
 
-Later phases: `<next>_add_object_locations.sql` (phase 3: `object_locations(key PK, store_id, storage_class, size, moved_at)`, `drive_items.storage_class`, `storage_cold_rules`) and `<next>_add_drive_mounts.sql` (phase 4: WebDAV), numbered after Money Watch's `0063_add_finance_module.sql` and the attachments-once migration (`0064` or later). They were planned as `0063` and `0064`; take the next free numbers when each phase starts. `tests/migration-order.test.mjs` guards the order.
+There is no Drive switch or Drive permission column: whether Drive is on comes from the module platform (`module_settings`, `user_module_access`, `defaultEnabled: true`), so the migration seeds no `module_settings` row, as Money Watch's `0063` did not. Until `0064` is applied, Drive answers as Money Watch does before `0063` instead of failing on a missing table: the pages say the database update is pending, reads answer empty with `migrationPending: true`, and mutations answer 409 `MIGRATION_PENDING` (section 6).
+Separate the statements with `--> statement-breakpoint`.
+
+### `0065_add_storage_stores.sql` (phase 2)
+
+```sql
+CREATE TABLE `storage_stores` (
+	`id` text PRIMARY KEY NOT NULL,            -- sto_…
+	`name` text NOT NULL,
+	`provider` text NOT NULL,                  -- aws | r2 | b2 | wasabi | hetzner | minio | other
+	`endpoint` text NOT NULL,
+	`region` text NOT NULL,
+	`bucket` text NOT NULL,
+	`addressing` text DEFAULT 'virtual' NOT NULL,
+	`credentials` text NOT NULL,               -- sealed JSON {accessKeyId, secretAccessKey}
+	`same_as_binding` integer DEFAULT 0 NOT NULL, -- R2 S3 keys for the BUCKET binding, used only to presign
+	`status` text DEFAULT 'unchecked' NOT NULL,   -- ok | error | unchecked
+	`last_checked_at` integer, `last_error` text,
+	`created_at` integer NOT NULL, `updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `storage_routes` (
+	`object_class` text PRIMARY KEY NOT NULL,  -- mail | drive | backups
+	`store_id` text NOT NULL,                  -- 'default' or storage_stores.id (no FK: 'default' has no row)
+	`previous_store_id` text,                  -- read fallback while a migration runs
+	`updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `storage_migrations` (
+	`id` text PRIMARY KEY NOT NULL,
+	`object_class` text NOT NULL, `from_store_id` text NOT NULL, `to_store_id` text NOT NULL,
+	`status` text DEFAULT 'queued' NOT NULL,   -- queued | copying | verifying | completed | failed | cancelled
+	`cursor` text,                             -- JSON per source table
+	`objects_total` integer DEFAULT 0 NOT NULL, `objects_done` integer DEFAULT 0 NOT NULL,
+	`bytes_done` integer DEFAULT 0 NOT NULL, `errors` integer DEFAULT 0 NOT NULL, `last_error` text,
+	`created_by_user_id` text REFERENCES `users`(`id`) ON DELETE set null,
+	`created_at` integer NOT NULL, `started_at` integer, `finished_at` integer
+);
+```
+
+Later phases: `<next>_add_object_locations.sql` (phase 3: `object_locations(key PK, store_id, storage_class, size, moved_at)`, `drive_items.storage_class`, `storage_cold_rules`) and `<next>_add_drive_mounts.sql` (phase 4: WebDAV), numbered after this Mission's `0065` and the attachments-once migration. Take the next free numbers when each phase starts. `tests/migration-order.test.mjs` guards the order.
 
 ### Quota rule (atomic)
 
@@ -327,20 +349,20 @@ Usage is `SUM(size)` over the owner's `drive_items`, **including** trashed items
 INSERT INTO drive_items (...) SELECT ... WHERE
   ?limit IS NULL OR (SELECT coalesce(sum(size),0) FROM drive_items WHERE owner_id = ?1) + ?size <= ?limit
 ```
-Zero rows changed means `413 { error: "Not enough Drive storage left for this file" }`. The effective limit is `users.drive_quota_bytes ?? app_settings.drive_default_quota_bytes`, and null means unlimited. The explicit `?limit IS NULL` branch is required: without it, `sum + size <= NULL` is NULL and every upload would be refused.
+Zero rows changed means `413 { error: "Not enough Drive storage left for this file" }`. The effective limit is the owner's `drive_user_quotas` row when one exists (its `quota_bytes`, where null means unlimited for that user), otherwise `drive_settings.default_quota_bytes` (null, or no settings row, means unlimited). Resolve the limit in code before the statement; the explicit `?limit IS NULL` branch is still required, because without it `sum + size <= NULL` is NULL and every upload would be refused.
 
 ### Backup lists (same change as each migration, per `AGENTS.md`)
 
 | Table | List | Group |
 | --- | --- | --- |
-| `storage_stores`, `storage_routes` | `BACKUP_TABLES` (before `app_settings`) | `system` |
-| `storage_migrations` | `INTERNAL_TABLES`, with a comment: a transient job that points at live stores; replaying it would restart a copy | — |
-| `drive_items`, `drive_shares`, `drive_links` | `BACKUP_TABLES` after `users` (FK order: items, then shares and links) | **new group `drive`** ("Drive files and sharing"); add `"drive"` to `BackupTableGroupId` |
-| `drive_upload_parts` | `INTERNAL_TABLES`: in-flight multipart state is meaningless after a restore | — |
+| `drive_items`, `drive_shares`, `drive_links`, `drive_settings`, `drive_user_quotas` (phase 1) | `BACKUP_TABLES` after `users` (FK order: items, then shares and links; settings and quotas after `users`) | **new group `drive`** ("Drive files and sharing"); add `"drive"` to `BackupTableGroupId` |
+| `drive_upload_parts` (phase 1) | `INTERNAL_TABLES`: in-flight multipart state is meaningless after a restore | — |
+| `storage_stores`, `storage_routes` (phase 2) | `BACKUP_TABLES` (before `app_settings`) | `system` |
+| `storage_migrations` (phase 2) | `INTERNAL_TABLES`, with a comment: a transient job that points at live stores; replaying it would restart a copy | — |
 
 Also:
 - Add every new table to `DatabaseBackupTable`, but not to `REQUIRED_BACKUP_TABLES`, so older documents still restore.
-- **Restore keeps the live storage config.** When the target database already has `storage_stores` or `storage_routes` rows, restore keeps them instead of replacing them, so a restore cannot point the install at stores whose credentials or contents differ. On an empty install they are restored. This needs a small `PRESERVED_ON_RESTORE` rule in `src/lib/backups/restore-utils.ts`. Flag it for human review.
+- **Restore keeps the live storage config** (phase 2). When the target database already has `storage_stores` or `storage_routes` rows, restore keeps them instead of replacing them, so a restore cannot point the install at stores whose credentials or contents differ. On an empty install they are restored. This needs a small `PRESERVED_ON_RESTORE` rule in `src/lib/backups/restore-utils.ts`. Flag it for human review.
 - Document that backups contain Drive metadata but not file contents, as for mail objects today (`docs/privacy.md` "What is stored where", `docs/operations.md`).
 
 D1 size: one `drive_items` row is about 300 B, so 1 M files is about 0.3 GB of the 10 GB cap. Only metadata goes to D1.
@@ -350,36 +372,30 @@ D1 size: one `drive_items` row is about 300 B, so 1 M files is about 0.3 GB of t
 ## 6. API routes
 
 All session routes:
-- Use `requireSessionUser` (never `requireUser`; `tests/route-auth.test.mjs` enforces this).
+- Use `requireSessionUser` or `requireSessionAdmin` (never `requireUser`; `tests/route-auth.test.mjs` enforces this).
 - Check `hasValidSessionMutationOrigin` for mutations.
 - Return `NextResponse.json({ error }, { status })` on failure.
 
-The Drive gate is `requireDriveUser(request, { mutation })` in `src/lib/drive/auth.ts`, an adaptation of upstream `authorizeDrive`:
+### The Drive gate
+
+The Drive manifest (`src/lib/modules/drive/manifest.ts`, client data in `src/lib/modules/client-data/drive.ts`) declares `id: "drive"`, `defaultEnabled: true`, `pages: [{ prefix: "/drive" }, { prefix: "/d" }]` and `apiPrefixes: [{ prefix: "/api/drive" }, { prefix: "/api/public/drive" }]`. Every Drive route is wrapped in `guardRoute("drive", …)`, which answers 404 before the handler when the owner has turned Drive off for the install. Inside, `requireDriveUser(request, { mutation })` in `src/lib/drive/auth.ts` (an adaptation of upstream `authorizeDrive`) does the rest:
 - No session: 401 (the e2e security spec expects 401/403 for every non-public route).
-- `drive_enabled` is false, the user lacks `can_use_drive`, or the user is disabled: **404 `{ error: "Not found" }`**.
+- The user is restricted from Drive (`checkUser`, `user_module_access`) or disabled: **404 `{ error: "Not found" }`**.
+- Before migration `0064` is applied: reads answer empty with `migrationPending: true`, mutations 409 `{ error, code: "MIGRATION_PENDING" }`, as Money Watch does (`orPending` in `src/lib/finance/views.ts`, `MigrationPending` in `src/lib/finance/detect.ts`), and the pages say the database update is pending.
 
-### Storage (phase 1, primary admin only, as `src/app/api/admin/aws/route.ts`)
+The viewer's `modules` list from `/api/auth/me` decides what the client shows; there is no separate `features.drive` flag.
 
-| Method and path | Purpose |
-| --- | --- |
-| `GET /api/admin/storage` | stores (no secrets: key hint = last 4 characters), routes, capabilities, running migration, usage per class from D1 sums |
-| `POST /api/admin/storage/stores` | validate (4.5) and then save; 422 with the step report on failure |
-| `PATCH/DELETE /api/admin/storage/stores/[id]` | update (re-validates), delete (refused while routed, or while any `drive_items.store_id` or migration references it) |
-| `POST /api/admin/storage/stores/[id]/test` | run `validateStore` and update `status` |
-| `POST /api/admin/storage/stores/[id]/cors` | apply the CORS rule where the provider supports it |
-| `PUT /api/admin/storage/routes/[class]` | `{ storeId, migrate: boolean, copyBackups?: boolean }` switches the route and optionally queues a migration |
-| `GET/POST /api/admin/storage/migrations/[id]` | progress; `POST { action: "cancel" | "finish" | "purge-source" }` (purge requires a typed confirmation) |
-| `GET/POST /api/v1/storage` | (optional) admin API key scope `storage`: status and test, adapted from upstream. Add `storage` to `ADMIN_API_KEY_SCOPES` (`src/lib/api/scopes.ts`), the OpenAPI document and the MCP `manage_storage` tool (`src/lib/mcp/admin-tools.ts`) |
-
-### Drive settings (phase 2)
+### Drive settings (phase 1, admin)
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET/PATCH /api/admin/drive` | `drive_enabled`, default quota, link max days (0 or 1-365; any other value is 400), trash retention, `grantAll: true` (gives every enabled account access). Admin (`isAdmin`) |
-| `PATCH /api/accounts/[id]` | extend with `canUseDrive`, `driveQuotaBytes` (existing `canManageUsers` rules) |
-| `GET /api/auth/me` | add `features: { drive: boolean }` (global switch AND user permission) |
+| `GET/PATCH /api/drive/settings` | `drive_settings`: default quota, link max days (0 or 1-365; any other value is 400), trash retention days. `requireSessionAdmin` (`isAdmin`) inside the Drive gate |
+| `GET /api/drive/settings/usage?cursor=` | per-account usage and quota, for the settings page (admin) |
+| `PUT/DELETE /api/drive/settings/quotas/[userId]` | set or clear a `drive_user_quotas` override (admin; the same rule as `canManageUsers` for who may change whom) |
 
-### Drive (phase 2, session plus Drive gate)
+Turning Drive on or off for everyone and per user is the module platform's job (**Admin → Modules**, **Accounts → Permissions**); Drive adds no switch routes.
+
+### Drive (phase 1, session plus Drive gate)
 
 | Method and path | Purpose |
 | --- | --- |
@@ -387,15 +403,15 @@ The Drive gate is `requireDriveUser(request, { mutation })` in `src/lib/drive/au
 | `POST /api/drive/folders` | create folder |
 | `GET/PATCH/DELETE /api/drive/items/[id]` | details with breadcrumb; rename or move (`{ name?, parentId? }`, refuse moving into its own subtree, depth ≤ 64); `DELETE` = delete forever (owner, only from trash) |
 | `POST /api/drive/items/bulk` | `{ ids, action: trash | restore | delete | move, parentId? }` (≤ 100 ids) |
-| `GET /api/drive/files/[id]/content` | stream, Range, or presigned redirect (4.7) |
-| `GET/POST/DELETE /api/drive/items/[id]/shares` | people sharing (owner or edit role may share with view; only the owner grants edit); the user picker lists active accounts on the install |
-| `GET/POST /api/drive/items/[id]/links`, `PATCH/DELETE /api/drive/links/[id]` | create `{ expiresInDays, password? }` (`expiresInDays` is required, from 1 to `drive_link_max_days`), list, revoke; `PATCH` may change the expiry within the same bound but never clear it; the response includes the URL only when it can be shown (see `token_sealed`) |
-| `POST /api/drive/uploads`, `POST /api/drive/uploads/[id]/part-urls`, `PUT /api/drive/uploads/[id]/parts/[n]`, `POST /api/drive/uploads/[id]/complete`, `DELETE /api/drive/uploads/[id]` | upload lifecycle (4.7); `DELETE` aborts |
+| `GET /api/drive/files/[id]/content` | stream with Range (4.7); from phase 2 also a presigned redirect |
+| `GET/POST/DELETE /api/drive/items/[id]/shares` | people sharing (owner or edit role may share with view; only the owner grants edit); the user picker lists active accounts on the install that Drive is on for |
+| `GET/POST /api/drive/items/[id]/links`, `PATCH/DELETE /api/drive/links/[id]` | create `{ expiresInDays, password? }` (`expiresInDays` is required, from 1 to `link_max_days`), list, revoke; `PATCH` may change the expiry within the same bound but never clear it; the response includes the URL only when it can be shown (see `token_sealed`) |
+| `POST /api/drive/uploads`, `PUT /api/drive/uploads/[id]/parts/[n]`, `POST /api/drive/uploads/[id]/complete`, `DELETE /api/drive/uploads/[id]` | proxied upload lifecycle (4.7); `DELETE` aborts. Phase 2 adds `POST /api/drive/uploads/[id]/part-urls` for direct uploads |
 | `GET /api/drive/attachments?types=&cursor=` | All attachments (port upstream `listDriveAttachments` minus the trash, scoped by `listAccessibleMailboxes`, cursor pagination) |
 | `GET /api/drive/attachments/[id]/content` | stream via the existing attachment access check (`getAttachmentForUser` in `src/lib/email/attachments.ts`) |
-| `POST /api/drive/attachments/[id]/save` | `{ parentId }` first checks that the caller can read the source attachment with the same rule as the content route (`getAttachmentForUser`) and can edit `parentId`, answering 404 otherwise; then copies into Drive (quota-checked; an `object` row on the same store: `copy`; otherwise, including every raw-backed row, stream the bytes from the attachment accessor (`openAttachment`, [storing attachments once](attachments-once.md)) → put) |
+| `POST /api/drive/attachments/[id]/save` | `{ parentId }` first checks that the caller can read the source attachment with the same rule as the content route (`getAttachmentForUser`) and can edit `parentId`, answering 404 otherwise; then copies into Drive, quota-checked: read `message_attachments.r2_key` through the attachment accessor and `put` it under a new `drive/<id>` key. From phase 2, use `copy` when source and target are on the same S3 store. When [storing attachments once](attachments-once.md) lands later, it switches this route to `openAttachment` for raw-backed rows |
 
-### Public links (phase 2, no session, under the CSRF-exempt `/api/public`)
+### Public links (phase 1, no session, under the CSRF-exempt `/api/public`)
 
 | Method and path | Purpose |
 | --- | --- |
@@ -403,7 +419,20 @@ The Drive gate is `requireDriveUser(request, { mutation })` in `src/lib/drive/au
 | `GET /api/public/drive/[token]/content?item=&download=1` | stream (always proxied) |
 | `POST /api/public/drive/[token]/unlock` | `{ password }` sets an HttpOnly, Secure, SameSite=Strict cookie `kite_link_<linkId>` (HMAC of link id + expiry, 1 h, `Path=/api/public/drive/<token>`) |
 
-Unknown, expired and revoked links, a trashed item or ancestor, Drive switched off, and an owner without Drive permission or with a disabled account all return the same 404 `{ error: "Link not found" }`. A missing unlock returns 401 `{ passwordRequired: true }` only for a valid link. Add these routes to `e2e/support/public-routes.ts` with exact statuses.
+Unknown, expired and revoked links, a trashed item or ancestor, Drive off for the install, Drive restricted for the link owner, and a disabled owner all return the same 404 `{ error: "Link not found" }`. `guardRoute` handles the install switch; the handler checks the link owner with the module platform's per-user check (`isModuleEnabledForUser(env, ownerId, "drive")`, the helper behind `moduleHost.modules.isEnabledFor`), not the anonymous viewer. A missing unlock returns 401 `{ passwordRequired: true }` only for a valid link. Add these routes to `e2e/support/public-routes.ts` with exact statuses.
+
+### Storage (phase 2, core, primary admin only, as `src/app/api/admin/aws/route.ts`)
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /api/admin/storage` | stores (no secrets: key hint = last 4 characters), routes, capabilities, running migration, usage per class from D1 sums |
+| `POST /api/admin/storage/stores` | validate (4.5) and then save; 422 with the step report on failure |
+| `PATCH/DELETE /api/admin/storage/stores/[id]` | update (re-validates), delete (refused while routed, or while any `drive_items.store_id` or migration references it; core asks the Drive module through a capability, so core never queries Drive tables directly) |
+| `POST /api/admin/storage/stores/[id]/test` | run `validateStore` and update `status` |
+| `POST /api/admin/storage/stores/[id]/cors` | apply the CORS rule where the provider supports it |
+| `PUT /api/admin/storage/routes/[class]` | `{ storeId, migrate: boolean, copyBackups?: boolean }` switches the route and optionally queues a migration |
+| `GET/POST /api/admin/storage/migrations/[id]` | progress; `POST { action: "cancel" | "finish" | "purge-source" }` (purge requires a typed confirmation) |
+| `GET/POST /api/v1/storage` | (optional) admin API key scope `storage`: status and test, adapted from upstream. Add `storage` to `ADMIN_API_KEY_SCOPES` (`src/lib/api/scopes.ts`), the OpenAPI document and the MCP `manage_storage` tool (`src/lib/mcp/admin-tools.ts`) |
 
 After adding routes, regenerate `docs/api-inventory.md`, `docs/openapi.json` and `src/lib/metrics-routes.generated.json` with `node scripts/docs-generate.mjs`.
 
@@ -413,39 +442,38 @@ After adding routes, regenerate `docs/api-inventory.md`, `docs/openapi.json` and
 
 All screens must work in Kite, Classic and dark mode, use the `blue-*` palette, and set `max-h-[calc(100vh-4rem)] overflow-y-auto` on taller dialogs. Put types and helpers in sibling `*-types.d.ts` / `*-utils.ts` files. Upstream's `en.json` strings are inlined, because Kite has no i18n library.
 
-1. **Admin → Storage** (`src/app/(admin)/storage/page.tsx`, primary admin; add an admin nav entry).
-   - Stores list: name, provider, bucket, status badge, last check, Test, Edit, Delete.
-   - The Default (R2 or Local files) row is always present. It has an "Enable direct uploads" action that adds R2 S3 keys.
-   - **Add store** dialog: provider preset, endpoint, region, bucket, addressing, key ID and secret, then a step-by-step test checklist with the fix shown for each failed step, a CORS snippet and Apply CORS.
-   - A "Where data lives" table (Mail, Drive, Backups, each with a store select) and a **Switch** confirm dialog. The dialog explains the cost (source egress, destination writes), the "copy existing data" checkbox and the note that **Preview deployments share this setting**.
-   - A migration progress card (objects and bytes, errors, Cancel, Finish, Delete from old store).
-   - Usage per class.
-2. **Admin → General: Drive card**, or a section on the Storage page: switch, "Give all accounts access", default quota (GB, empty = unlimited), maximum link lifetime (1-365 days, or links off; there is no "no expiry" option), trash retention days.
-3. **Admin → Accounts → [id]** (`src/app/(admin)/accounts/[id]`): a "Can use Drive" toggle, a quota override and a usage bar.
-4. **Drive app** (`src/app/(drive)/layout.tsx`, modelled on `(calendar)`; routes `/drive`, `/drive/f/[folderId]`, `/drive/shared`, `/drive/attachments`, `/drive/trash`).
+1. **Drive app** (phase 1; `src/app/(drive)/layout.tsx`, modelled on `(calendar)` and Money Watch; routes `/drive`, `/drive/f/[folderId]`, `/drive/shared`, `/drive/attachments`, `/drive/trash`).
+   - Navigation comes from the manifest `nav`: a `mailbox-selector` entry (the app switcher, like Calendar) and a `sidebar` entry. Core draws them only when `modules` includes `"drive"`; when the gate fails, `pageAccess` renders the Kite not-found page.
    - Left nav with a usage bar. Toolbar: New folder, Upload files, Upload folder. Breadcrumbs. List view with name, owner, modified and size, plus type filter chips (port `categories.ts`).
    - Drag-drop upload and drag-to-move (port `drive-drag.ts`). Multi-select bulk actions: move, download, trash, restore, delete forever.
    - Rename dialog, move dialog with a folder picker, preview dialog (image, PDF iframe, text, audio and video, all same-origin).
    - **Share dialog:** people with roles; links with expiry, optional password, copy, revoke, last access and download count.
-   - Upload panel with per-file progress, resume, cancel and a quota error (port `drive-upload.ts` / `drive-upload-panel.tsx`; route the direct mode to the store URL).
-   - The app switcher in `src/components/mailbox-selector.tsx` shows Drive only when `features.drive`. When the gate fails, the layout renders the Kite not-found page.
-5. **Public link page** (`src/app/d/[token]/page.tsx`): a minimal page with branding name and icon only. It shows a file preview and download, or a folder listing with breadcrumbs inside the shared subtree, plus a password form and an expired state. There is no app chrome, no account data and no session call.
-6. **Mail integration:**
-   - "Save to Drive" in the attachment menu of the reader (when `features.drive`).
-   - Stretch: "Attach from Drive" in the composer. It copies into the draft's attachments within the outbound attachment limit, or inserts a Drive link for larger files.
+   - Upload panel with per-file progress, resume, cancel and a quota error (port `drive-upload.ts` / `drive-upload-panel.tsx`; phase 2 routes the direct mode to the store URL).
+2. **Drive settings** (phase 1; `/drive/settings`, admins only, members get not-found): default quota (GB, empty = unlimited), maximum link lifetime (1-365 days, or links off; there is no "no expiry" option), trash retention days, and a table of accounts with usage bars and a quota override. Link it from the admin menu: add an `admin-nav` placement to the module platform (`ModuleNavPlacement`, merged into the admin sections in `src/components/settings/section-nav-utils.ts` the way `settings-nav` items are, with an admin permission on every item) and declare Drive's entry in the System group. The on/off switch stays on **Admin → Modules**, and per-user access on **Accounts → Permissions**; both already exist.
+3. **Public link page** (phase 1; `src/app/d/[token]/page.tsx`): a minimal page with branding name and icon only. It shows a file preview and download, or a folder listing with breadcrumbs inside the shared subtree, plus a password form and an expired state. There is no app chrome, no account data and no session call.
+4. **Mail integration** (phase 1):
+   - "Save to Drive" in the reader's attachment menu. The module platform has only the `message-menu` slot today, so add an `attachment-menu` slot (`AttachmentSlotDeclaration` next to `MessageSlotDeclaration` in `module-types.d.ts`; core draws the label, the module's slot component gets only the message, mailbox and attachment ids) and fill it from the Drive manifest.
+   - Stretch: "Attach from Drive" in the composer through a `composerSlots` entry. It copies into the draft's attachments within the outbound attachment limit, or inserts a Drive link for larger files.
+5. **Admin → Storage** (phase 2; `src/app/(admin)/storage/page.tsx`, core, primary admin; an entry in the System group of the admin menu).
+   - Stores list: name, provider, bucket, status badge, last check, Test, Edit, Delete.
+   - The Default (R2 or Local files) row is always present. It has an "Enable direct uploads" action that adds R2 S3 keys.
+   - **Add store** dialog: provider preset, endpoint, region, bucket, addressing, key ID and secret, then a step-by-step test checklist with the fix shown for each failed step, a CORS snippet and Apply CORS.
+   - A "Where data lives" table (Mail, Drive, Backups, each with a store select) and a **Switch** confirm dialog. The dialog explains the cost (source egress, destination writes), the "copy existing data" checkbox and the note that **Preview deployments share this setting**. The Drive row is shown even when Drive is off, since its files still exist.
+   - A migration progress card (objects and bytes, errors, Cancel, Finish, Delete from old store).
+   - Usage per class.
 
 ---
 
 ## 8. Security review points
 
-1. **Credentials:**
+1. **Credentials** (phase 2):
    - Store credentials only sealed; refuse to save without `APP_ENCRYPTION_KEY`.
    - Never return secrets. The GET response carries only the last 4 characters of the key ID.
    - Restrict storage management to the primary admin.
-   - Write an audit log entry (`createAuditLog`, `src/lib/mailboxes/audit.ts`) for store create, update and delete, route switches, migration purge, Drive switch changes and link creation.
+   - Write an audit log entry (`createAuditLog`, `src/lib/mailboxes/audit.ts`) for store create, update and delete, route switches and migration purge. Phase 1 audits Drive settings changes, quota overrides and link creation.
    - Never log presigned URLs.
-2. **SSRF:** apply the endpoint guard (4.6) on save and on every config load. The dev flags must be ignored in production.
-3. **Presigned URLs:**
+2. **SSRF** (phase 2): apply the endpoint guard (4.6) on save and on every config load. The dev flags must be ignored in production.
+3. **Presigned URLs** (phase 2):
    - Short expiry (15 min for uploads, 5 min for downloads).
    - `content-length` is signed, so the size cannot be inflated past the reservation.
    - The size is verified by HEAD at completion.
@@ -458,7 +486,7 @@ All screens must work in Kite, Classic and dark mode, use the `blue-*` palette, 
    - Presigned GETs carry forced `response-content-type` and `response-content-disposition=attachment`.
 5. **Public links:**
    - The token is 32 random bytes, compared by SHA-256 hash.
-   - Expiry is always required and bounded by `drive_link_max_days`. Links can be revoked and are re-checked on every request.
+   - Expiry is always required and bounded by `drive_settings.link_max_days`. Links can be revoked and are re-checked on every request.
    - Password attempts are rate limited.
    - Every failure answers with the same 404.
    - The page and API never read or set `ep_session`, and never expose the owner email, owner id, store, bucket or object keys.
@@ -466,7 +494,7 @@ All screens must work in Kite, Classic and dark mode, use the `blue-*` palette, 
    - The page loads no third-party resources, so the token cannot leak through Referer.
    - Folder links are limited to their subtree, checked through the ancestor chain.
 6. **Rate limiting:**
-   - New binding `DRIVE_LINK_RATE_LIMIT`: namespace `1004` in prod and `1104` in previews, 60 requests per 60 s, keyed by IP from `src/lib/security/client-ip.ts`.
+   - New binding `DRIVE_LINK_RATE_LIMIT`: namespace `1004` in prod and `1104` in previews (both free on `main`), 60 requests per 60 s, keyed by IP from `src/lib/security/client-ip.ts`.
    - Unlock is keyed by `ip:linkId` and allowed 5 per minute, using the same binding with a separate key prefix or `LOGIN_RATE_LIMIT`.
    - Add Node `openRateLimiter(60, 60)` in `server/runtime/env.ts`, the `env.d.ts` type and `wrangler.jsonc.example`.
    - Upload initiation is limited per user (for example 120/min, reusing the binding with a `upload:<userId>` key).
@@ -475,13 +503,14 @@ All screens must work in Kite, Classic and dark mode, use the `blue-*` palette, 
    - A trashed ancestor hides its descendants.
    - Replace upstream's N+1 parent walk with one `WITH RECURSIVE` CTE (depth ≤ 64).
    - Only the owner can delete forever or create links with edit-like reach. Shared editors can upload, rename and move within the shared folder, but cannot move items out of it.
+   - A share with a user who is restricted from Drive gives that user nothing (the gate answers 404 first).
    - The All attachments view is scoped by `listAccessibleMailboxes`.
-8. **Hidden when off:** API 404, page not-found, nav hidden, and public links 404. Tests must cover each of these.
+8. **Hidden when off:** with Drive off for the install or restricted for a user: API 404, page not-found, nav entries and the attachment-menu entry hidden, and public links 404. Tests must cover each of these.
 9. **Quota and abuse:**
    - Use the atomic reservation.
    - Abort and delete expired uploads (`upload_expires_at`, 3 days) in the daily job, and cap each user at 20 uploads in progress.
    - Validate names (port `normalizeDriveName`: no control characters, no `/` or `\`, no `.` or `..`, ≤ 255 characters).
-10. **Store migration safety:**
+10. **Store migration safety** (phase 2):
     - Never delete from the source automatically.
     - The verify pass runs before completion.
     - Reads fall back through the chain.
@@ -490,7 +519,7 @@ All screens must work in Kite, Classic and dark mode, use the `blue-*` palette, 
 
 ---
 
-## 9. Switching a store and migrating existing data
+## 9. Switching a store and migrating existing data (phase 2)
 
 Flow (`src/lib/storage/migration.ts`, with a pure planner in `migration-utils.ts`):
 
@@ -498,8 +527,8 @@ Flow (`src/lib/storage/migration.ts`, with a pure planner in `migration-utils.ts
 2. Save the route `store_id = B`, `previous_store_id = A` and insert a `storage_migrations` row (`queued`). From then on, new writes go to B (other isolates follow within 30 s) and reads use the chain B → A → default.
 3. The job runs on the existing queues: `OUTBOUND_QUEUE` message `{ kind: "storage.migrate", jobId }`, re-enqueued after each batch, the same way `isMailboxPurgeMessage` works in `worker.ts`. The `*/5` cron restarts a stalled job. On Node, use the in-process queue. Batches are at most 50 objects or 256 MiB, and objects over 64 MiB are copied as multipart. The adapter streams with known lengths taken from `R2Object.size`.
 4. Keys come from D1, not from bucket listing:
-   - mail: `messages.raw_r2_key`, `message_attachments.r2_key`, `drafts/`, `imports/`. Attachment keys come only from rows with `storage = 'object'`, de-duplicated because those rows can share a key. Raw-backed rows (`storage = 'raw'`, [storing attachments once](attachments-once.md)) carry the sentinel `r2_key` `raw:<id>`, which is not an object; their bytes live inside the raw and move with `messages.raw_r2_key`. The planner never treats a `raw:` key as an object key. Because the copy reads attachment keys directly, add `src/lib/storage/migration.ts` to the allowlist of `tests/attachment-storage-boundary.test.mjs`.
-   - drive: `drive_items.object_key WHERE store_id = A`
+   - mail: `messages.raw_r2_key`, `message_attachments.r2_key`, `drafts/`, `imports/`. If [storing attachments once](attachments-once.md) has landed by then, attachment keys come only from rows with `storage = 'object'`, de-duplicated because those rows can share a key, and the planner never treats the `raw:<id>` sentinel as an object key (their bytes live inside the raw and move with `messages.raw_r2_key`). Add `src/lib/storage/migration.ts` to the allowlist of that spec's boundary test.
+   - drive: the Drive module supplies the keys through a capability (`listObjectKeys({ storeId, cursor })` and `markMoved({ ids, storeId })` over `drive_items.object_key WHERE store_id = A`), so core storage code never reads Drive tables. When Drive is off for the install its files still move.
    - backups: `backups.r2_key`
 
    The cursor is stored per source table. For Drive, each row's `store_id` is updated after its object is copied and verified.
@@ -530,7 +559,7 @@ Typical mail objects (raw MIME and attachments of tens of KB) are read now and t
 
 ### 10.3 Rules
 
-A `storage_cold_rules` table holds `(object_class, after_days, min_bytes, target: "r2-ia" | store_id, enabled)`. The pure helper `selectColdCandidates()` (`cold-utils.ts`) is unit-tested. The job runs at 02:00 after the backup and pruning chain in `worker.ts` `scheduled`, and in `server/runtime/scheduler.ts`.
+A `storage_cold_rules` table holds `(object_class, after_days, min_bytes, target: "r2-ia" | store_id, enabled)`. The pure helper `selectColdCandidates()` (`cold-utils.ts`) is unit-tested. The job runs at 02:00 after the backup and pruning chain in `worker.ts` `scheduled`, and in `server/runtime/scheduler.ts`; the Drive part runs as a Drive module cron task.
 
 ### 10.4 Moving message bodies out of D1 (spike only)
 
@@ -540,9 +569,9 @@ Tests: unit tests for the age and size rules and for read-through via `object_lo
 
 ---
 
-## 11. External storage (phase 4, outline; needs phase 2)
+## 11. External storage (phase 4, outline; needs phase 1)
 
-- **WebDAV first** (Nextcloud, ownCloud, most NAS devices). Table `drive_mounts(id, owner_id, kind: "webdav", label, base_url, username, password sealed, root_path, status, last_error, created_at)`. A mount appears as a linked folder in the Drive nav.
+- **WebDAV first** (Nextcloud, ownCloud, most NAS devices). Table `drive_mounts(id, owner_id, kind: "webdav", label, base_url, username, password sealed, root_path, status, last_error, created_at)`, in the Drive schema file. A mount appears as a linked folder in the Drive nav.
 - Operations are proxied: PROPFIND (Depth 1) for listing, GET with Range, PUT streaming (Nextcloud chunked upload v2 for files over 32 MiB), MKCOL, MOVE, DELETE. Nothing is copied into D1. Mounted items have no Kite share links and do not count toward the quota in v1.
 - Add a small namespace-tolerant multistatus parser (`webdav-xml-utils.ts`; `src/lib/aws/xml.ts` only has `xmlTag`). Do not add a new dependency.
 - Network: Workers can reach only public hosts, which is documented (a NAS needs a public URL or the Node runtime). On Node, LAN access requires `STORAGE_ALLOW_PRIVATE_ENDPOINTS=1`. Store credentials sealed.
@@ -553,24 +582,67 @@ Tests: unit tests for the age and size rules and for read-through via `object_lo
 
 ## 12. Phased plan, acceptance criteria, tests, estimates
 
-Estimates are in focused engineer-days for one Mission worker, including tests and docs.
+Estimates are in focused engineer-days for one Mission worker, including tests and docs. Phases 1 and 2 are this Mission; phases 3 and 4 are separate Missions.
 
-### Phase 1: Storage providers (7-9 days)
+e2e numbering: `main` runs up to `28-*.spec.ts` and `29-phishing.spec.ts` is on an open branch, so the Drive specs below are planned as `30`-`33`. Take the next free numbers when the work starts, and add new specs to `e2e/timings.json` so sharding stays balanced.
+
+### Phase 1: Drive on the default store (10-13 days; ports most of upstream)
 
 Deliverables:
-- Migration `0060` + backup lists.
-- `src/lib/storage/{types.d.ts, object-classes-utils.ts, s3-bucket.ts, s3-presets-utils.ts, router.ts, index.ts, config.ts, validate.ts, health.ts, migration.ts, migration-utils.ts}`.
-- `presignAwsUrl` + `UNSIGNED-PAYLOAD` + streaming / `http` / path-style in `src/lib/aws/{sigv4,client}.ts`.
-- File bucket multipart, streaming `put` and `list`.
-- `withStorage` at every plug-in point.
-- CSP `connectSources`.
-- Admin Storage page and routes; optional `/api/v1/storage` + MCP tool.
-- Docs: `docs/deployment.md` (R2 S3 keys, CORS), `docs/self-hosting.md` (MinIO, env bootstrap), `docs/operations.md`, `docs/privacy.md`, `CLAUDE.md` (a new "Object storage" section), `CHANGELOG.md`, `NOTICE`.
+- Verify first that vinext streams `request.body` for a raw `PUT` (4.7); if it buffers, add the core part endpoint described there before building uploads.
+- Migration `0064_add_drive.sql`, `src/db/schema/drive.ts`, the journal entry, `npm run db:bundle`, and the backup lists (new `drive` group).
+- `src/lib/storage/{types.d.ts, object-classes-utils.ts, index.ts}` with only the default store, and the file bucket additions (multipart, streaming `put`, `list`).
+- The module: `src/lib/modules/drive/{manifest.ts, capabilities.ts}`, `src/lib/modules/client-data/drive.ts`, registered in `src/lib/modules/registry.ts`, with `nav` (`mailbox-selector`, `sidebar`, the new `admin-nav`), `commands` (open Drive), the `attachment-menu` slot, `recordKinds` (`drive:file`, with a resolver), `reasonTexts` (`module_disabled:drive`, `migration_pending`), and `cronTasks: [{ name: "purgeDrive", schedule: "0 2 * * *", capability: "purgeDrive" }]` for trash older than `trash_retention_days` and expired uploads.
+- The two module platform additions: the `admin-nav` placement and the `attachment-menu` slot, each with unit tests next to the existing nav and slot tests.
+- `src/lib/drive/*` (ported and adapted), the API routes in section 6 except storage, the `(drive)` app, Drive settings, the public page, Save to Drive, `DRIVE_LINK_RATE_LIMIT`.
+- Docs: `docs/drive.md` (new user guide: folders, sharing, links, quota, turning Drive off), `docs/privacy.md` (what Drive stores and where, public links), `docs/operations.md` (retention, backups without file contents), `docs/self-hosting.md` (file bucket location for Drive files), the module list in `docs/modules.md` or wherever the module platform documents built-in modules, `CLAUDE.md` (a short "Drive lives in `src/lib/drive/`" section), `CHANGELOG.md`, `NOTICE`.
 
 Acceptance:
-- With no stores configured, behaviour and per-request D1 reads are unchanged, apart from one cached config read per isolate every 30 s. All existing e2e specs pass.
+- On a fresh install Drive is on: the app switcher and sidebar show Drive, `/drive` opens, and uploads land in the `BUCKET` binding (R2 on Workers, the file bucket on Node) with `store_id = 'default'`.
+- With Drive turned off under **Admin → Modules**, the nav entries and Save to Drive are absent, `/drive` shows not-found, `/api/drive/*` returns 404 for signed-in users, and `/d/<any>` and `/api/public/drive/*` return 404. The same holds for one user restricted under **Accounts → Permissions** while Drive stays on for others, including that user's public links.
+- Before `0064` is applied, Drive pages show the pending database update and the API answers as section 6 describes, without a 500.
+- With Drive on:
+  - folder create, rename and move (refused into its own subtree), upload (proxied, multi-part for a file over one part, resumable after a reload), download with Range, preview of image/PDF/text, and trash → restore → delete forever all work;
+  - the quota blocks an upload that would exceed it, concurrent uploads cannot overshoot, a per-user override beats the default, and an unlimited (null) limit allows any size;
+  - sharing with a second account gives view or edit as specified;
+  - a public link with expiry and password works in a fresh browser context with no cookies, returns 404 after revoke or expiry, sends `Content-Disposition: attachment` for HTML and SVG with sandbox CSP, and the page and its JSON show no owner email or session data;
+  - All attachments lists mail attachments only from accessible mailboxes, and Save to Drive copies one and counts it against the quota;
+  - the daily job purges trash past the retention and aborts expired uploads.
+- A backup made before migration `0064` restores. A backup after it includes the Drive tables; with contents absent, the content route returns a clear 404.
+- Both runtimes work: `npm run build`, `npm run build:node`, and the Node server with the file bucket.
+- Kite, Classic and dark mode are checked.
+
+Tests:
+- `tests/drive-utils.test.mjs` (names, inline-safe types, disposition, byte ranges, part plan, quota math including an unlimited (null) limit and an override, link token hashing and expiry).
+- `tests/drive-access.test.mjs` (SQLite: inherited roles, trashed ancestors, public subtree, the recursive CTE).
+- `tests/drive-retention.test.mjs`.
+- `tests/file-bucket-multipart.test.mjs`.
+- The module registry and boundary tests pick up the new module; extend the nav and slot tests for `admin-nav` and `attachment-menu`.
+- Extend backup coverage and the migration-order test.
+- `e2e/30-drive-off.spec.ts` (install switch, per-user restriction, public links, pending migration if the suite can simulate it).
+- `e2e/31-drive-files.spec.ts` (including `data-style` Classic and dark assertions or screenshots).
+- `e2e/32-drive-sharing.spec.ts` (second seeded account; anonymous context for links; header assertions).
+- Extend `e2e/support/public-routes.ts`. Extend `e2e/13-security.spec.ts` if it enumerates routes.
+
+Follow-up for Money Watch (not part of this phase's acceptance): once Drive exists, Money Watch files the documents in its ledger (`finance_charges`) into the owner's Drive under `Finance/<vendor>/<year>/`. Drive should provide the filing service that [§24 of the Money Watch spec](money-watch.md#24-drive-filing-follow-up-after-drive-ships) describes as a **module service** in `src/lib/modules/drive/capabilities.ts` (`describe("fileAttachment", …)`, as Booking describes `workingHours`): input `userId`, `messageId`, `attachmentId`, `folderPath`, `fileName`, `idempotencyKey`; output a file ref and `created`. It checks access with `getAttachmentForUser`, copies server-side and is idempotent per owner and key; the `drive:file` record kind resolves the ref. Money Watch reaches it with `moduleHost.invoke(ctx, "drive", "fileAttachment", …)` and asks `moduleHost.modules.isEnabledFor(ctx, userId, "drive")` first; both already exist, and the invoke answers `module_disabled` when Drive is off for the user. Build the service in phase 1 if time allows; the Money Watch side stays a follow-up. No Drive code exists in Money Watch.
+
+### Phase 2: S3-compatible stores (7-9 days)
+
+Deliverables:
+- Migration `0065_add_storage_stores.sql` + backup lists and the restore rule (section 5).
+- `src/lib/storage/{s3-bucket.ts, s3-presets-utils.ts, router.ts, config.ts, validate.ts, health.ts, migration.ts, migration-utils.ts}`.
+- `presignAwsUrl` + `UNSIGNED-PAYLOAD` + streaming / `http` / path-style in `src/lib/aws/{sigv4,client}.ts`.
+- `withStorage` at every plug-in point (4.4).
+- CSP `connectSources`.
+- Direct uploads (`part-urls`) and presigned downloads in Drive; the Drive capabilities that let core list and update Drive object keys during a migration (section 9).
+- Admin Storage page and routes; optional `/api/v1/storage` + MCP tool.
+- Docs: `docs/deployment.md` (R2 S3 keys, CORS), `docs/self-hosting.md` (MinIO, env bootstrap), `docs/operations.md`, `docs/privacy.md` (third-party stores as processors), `CLAUDE.md` (a new "Object storage" section), `CHANGELOG.md`, `NOTICE`.
+
+Acceptance:
+- With no stores configured, behaviour and per-request D1 reads are unchanged, apart from one cached config read per isolate every 30 s. All existing e2e specs pass, including phase 1's Drive specs.
 - An admin adds a MinIO/fake store. The validation checklist reports a missing CORS rule and a wrong secret precisely. Save is refused without `APP_ENCRYPTION_KEY`.
 - Routing `mail` to the S3 store makes new inbound mail (through the dev inbound helper), attachments, JMAP uploads and drafts land there. Old messages still open (read chain). A migration copies them, verifies them and completes. The old store is untouched until **Delete from old store** is used.
+- Routing `drive` to the S3 store makes new uploads go direct (presigned parts, no Kite headers on the store request), large downloads redirect to a presigned GET, and existing files migrate with their `store_id` updated.
 - A backup routed to S3 is written as multipart and downloads and restores.
 - Both runtimes work: `npm run build`, `npm run build:node`, and the Node server with the file bucket default plus an S3 route.
 
@@ -579,46 +651,14 @@ Tests:
 - `tests/storage-s3-bucket.test.mjs` against `tests/support/fake-s3.mjs`. This is an in-process `node:http` server that verifies SigV4 with a known secret, handles virtual and path hosts, Range, multipart, ListObjectsV2, CopyObject, CORS preflight and CORS headers on actual responses, and serves recorded fixtures `tests/fixtures/s3/*.xml`: NoSuchKey, AccessDenied, SignatureDoesNotMatch, InvalidPart, and the 200-with-`<Error>` on complete.
 - `tests/storage-router.test.mjs` (classification, chain reads, dual delete, cache TTL, config-failure fallback).
 - `tests/storage-config.test.mjs` (sealing required, presets, endpoint guard with the dev flags on and off).
-- `tests/file-bucket-multipart.test.mjs`.
 - Extend `tests/backup-writer.test.mjs` to write through the router and the S3 adapter.
 - `tests/storage-migration.test.mjs`.
-- `e2e/21-storage-s3.spec.ts`: start the fake S3 on `localhost` (or MinIO when `E2E_S3_URL` is set), add a store, switch mail, migrate, open an old message's original.
+- `e2e/33-storage-s3.spec.ts`: start the fake S3 on `localhost` (or MinIO when `E2E_S3_URL` is set), add a store, switch mail and Drive, migrate, open an old message's original and an old Drive file, upload a new file directly.
 - Add `STORAGE_ALLOW_INSECURE_ENDPOINT=1` to `playwright.config.ts` `webServer.env`.
-
-### Phase 2: Drive (10-13 days; ports most of upstream)
-
-Deliverables:
-- Migration `0061` + backup lists (new `drive` group).
-- `src/lib/drive/*` (ported and adapted), the API routes in section 6, the `(drive)` app, the public page, Save to Drive, account and admin settings, `DRIVE_LINK_RATE_LIMIT`.
-- Retention: a daily purge of trash older than `drive_trash_retention_days` and expired uploads, wired into `worker.ts` `scheduled` and `server/runtime/scheduler.ts`.
-
-Acceptance:
-- With Drive off (the default), the nav entry is absent, `/drive` shows not-found, `/api/drive/*` returns 404 for signed-in users, and `/d/<any>` and `/api/public/drive/*` return 404.
-- The same holds for a user without `can_use_drive` while Drive is on.
-- After the switch is turned on and a user is granted access:
-  - folder create, rename and move (refused into its own subtree), upload (proxied on the default R2 binding, direct on an S3 store), download with Range, preview of image/PDF/text, and trash → restore → delete forever all work;
-  - the quota blocks an upload that would exceed it, and concurrent uploads cannot overshoot;
-  - sharing with a second account gives view or edit as specified;
-  - a public link with expiry and password works in a fresh browser context with no cookies, returns 404 after revoke or expiry, sends `Content-Disposition: attachment` for HTML and SVG with sandbox CSP, and the page and its JSON show no owner email or session data;
-  - All attachments lists mail attachments only from accessible mailboxes, and Save to Drive copies one and counts it against the quota.
-- A backup made before migration `0061` restores. A backup after it includes the Drive tables; with contents absent, the content route returns a clear 404.
-- Kite, Classic and dark mode are checked.
-
-Tests:
-- `tests/drive-utils.test.mjs` (names, inline-safe types, disposition, byte ranges, part plan, quota math including an unlimited (null) limit, link token hashing and expiry).
-- `tests/drive-access.test.mjs` (SQLite: inherited roles, trashed ancestors, public subtree, the recursive CTE).
-- `tests/drive-retention.test.mjs`.
-- Extend backup coverage and retired-table tests.
-- `e2e/22-drive-off-switch.spec.ts`.
-- `e2e/23-drive-files.spec.ts` (including `data-style` Classic and dark assertions or screenshots).
-- `e2e/24-drive-sharing.spec.ts` (second seeded account; anonymous context for links; header assertions).
-- Extend `e2e/support/public-routes.ts`. Extend `e2e/13-security.spec.ts` if it enumerates routes.
-
-Follow-up for Money Watch (not part of this phase's acceptance): once Drive exists, Money Watch files the documents in its ledger (`finance_charges`) into the owner's Drive under `Finance/<vendor>/<year>/`. Drive should provide the filing service that [§24 of the Money Watch spec](money-watch.md#24-drive-filing-follow-up-after-drive-ships) describes: a `fileAttachment` service (input `userId`, `messageId`, `attachmentId`, `folderPath`, `fileName`, `idempotencyKey`; output a file ref and `created`) that checks access with `getAttachmentForUser`, copies server-side and is idempotent per owner and key, a record kind for Drive files with a resolver, and a way for another module to ask whether Drive is on for a user. Whether that is a module capability or a host service is this mission's choice. No Drive code exists in Money Watch.
 
 ### Phase 3: Cold storage (6-8 days, plus a 2-day body-offload spike)
 
-Section 10, with the next free migration number (planned as `0063`, now taken by Money Watch). Acceptance:
+Section 10, with the next free migration number after this Mission and storing attachments once. Acceptance:
 - Rules select only matching objects.
 - An R2 IA rewrite or a move to a second store keeps messages and files opening without extra steps.
 - The settings show the cost text and refuse classes that need a restore.
@@ -626,7 +666,7 @@ Section 10, with the next free migration number (planned as `0063`, now taken by
 
 ### Phase 4: External storage, WebDAV (6-9 days)
 
-Section 11, with the next free migration number after phase 3 (planned as `0064`, which attachments-once may take). Acceptance:
+Section 11, with the next free migration number after phase 3. Acceptance:
 - Link a WebDAV folder, browse it, download (with Range), upload, rename and delete.
 - Bad credentials or an unreachable host show a clear error.
 - A private host is refused on Workers.
@@ -641,34 +681,34 @@ Validation for every phase (from `AGENTS.md`): `npm run check`, `npm run build`,
 
 | Upstream piece | Decision | Notes for Kite |
 | --- | --- | --- |
-| `src/lib/storage/b2-bucket.ts` (`B2Bucket`, `B2Object`) | **Adapt** → `src/lib/storage/s3-bucket.ts` | generic endpoint and addressing, `http` under the dev flag, streaming with `UNSIGNED-PAYLOAD`, metadata encoding, `list`, `copy`, presign, `storageClass`; keep the 200-with-`<Error>` check |
-| `src/lib/storage/index.ts` `withStorage` Proxy + WeakMap | **Port pattern, adapt** | becomes the async, per-class router (4.4) |
+| `src/lib/storage/b2-bucket.ts` (`B2Bucket`, `B2Object`) | **Adapt** → `src/lib/storage/s3-bucket.ts` (phase 2) | generic endpoint and addressing, `http` under the dev flag, streaming with `UNSIGNED-PAYLOAD`, metadata encoding, `list`, `copy`, presign, `storageClass`; keep the 200-with-`<Error>` check |
+| `src/lib/storage/index.ts` `withStorage` Proxy + WeakMap | **Port pattern, adapt** (phase 2) | becomes the async, per-class router (4.4) |
 | `src/lib/storage/b2-config.ts` (env-only B2/S3 selection) | **Drop as primary; adapt** as the optional `STORAGE_S3_*` bootstrap | Kite config lives in D1, sealed |
 | `src/lib/storage/health.ts` `testStorage` | **Port** into `validate.ts` | step 3 of validation |
-| `/api/v1/storage`, MCP `manage_storage`, admin scope `storage` | **Adapt (optional in phase 1)** | report routes per class; never return credentials |
+| `/api/v1/storage`, MCP `manage_storage`, admin scope `storage` | **Adapt (optional in phase 2)** | report routes per class; never return credentials |
 | `tests/b2-bucket.test.mjs` | **Adapt** | runs against `fake-s3.mjs` plus recorded fixtures |
 | `.dev.vars.example` B2_/S3_ docs, `docs/*` text | **Drop / rewrite** | Admin-first documentation |
-| `server/runtime/file-bucket.ts` multipart | **Port** | also add a streaming `put` and `list` |
-| Migration `0055_add_drive` (`drive_items`, `drive_shares`) | **Adapt** into `0061` | add `status`, `store_id`, `object_key`, `upload_expires_at`, `source_attachment_id`; key `drive/<id>`; no `link_token` |
-| `0056_add_drive_upload_id`, `0057_add_drive_resumable_uploads` | **Adapt** (folded into `0061`) | add `size` to parts; table in `INTERNAL_TABLES` |
-| `0058_add_drive_storage_limit` (global per-user cap) | **Adapt** | global switch + default quota + per-user permission and override |
+| `server/runtime/file-bucket.ts` multipart | **Port** (phase 1) | also add a streaming `put` and `list` |
+| Migration `0055_add_drive` (`drive_items`, `drive_shares`) | **Adapt** into `0064` | add `status`, `store_id`, `object_key`, `upload_expires_at`, `source_attachment_id`; key `drive/<id>`; no `link_token` |
+| `0056_add_drive_upload_id`, `0057_add_drive_resumable_uploads` | **Adapt** (folded into `0064`) | add `size` to parts; table in `INTERNAL_TABLES` |
+| `0058_add_drive_storage_limit` (global per-user cap) | **Adapt** | `drive_settings.default_quota_bytes` plus `drive_user_quotas` overrides; on/off comes from the module platform |
 | `0059_add_attachment_trash` (`message_attachments.trashed_at`) | **Drop (v1)** | changes mail semantics (JMAP blobs, the reader, backups); All attachments stays read-only, plus Save to Drive |
 | `0060_add_license_seat_limit`, `src/lib/licenses/*` changes, `LicenseIndicator` in the Drive layout, Team/Pro gating in `accounts/utils.ts`, `admin-auth.ts` `canShareAdminMailboxes` | **Drop** | Kite has no licensing (`CLAUDE.md`, "No licensing") |
 | `src/lib/drive/access.ts` (roles, chain, descendants, `deleteDriveItems`, `withoutTrashedAncestors`) | **Port, then fix** | recursive CTE instead of N+1; delete uses each row's `store_id` |
 | `src/lib/drive/attachments.ts` | **Adapt** | no trash, cursor pagination, Save to Drive |
 | `src/lib/drive/categories.ts`, `category-names.ts` | **Port** | |
-| `src/lib/drive/content.ts` (`parseByteRange`, `streamDriveFile`) | **Port + extend** | presigned redirect for large downloads; shared disposition helper |
-| `src/lib/drive/retention.ts` | **Adapt** | Drive only, configurable days, expired upload abort; hook into `worker.ts` and the Node scheduler |
+| `src/lib/drive/content.ts` (`parseByteRange`, `streamDriveFile`) | **Port + extend** | phase 2 adds the presigned redirect for large downloads; shared disposition helper |
+| `src/lib/drive/retention.ts` | **Adapt** | Drive only, configurable days, expired upload abort; runs as the Drive module's `0 2 * * *` cron task, not wired into `worker.ts` directly |
 | `src/lib/drive/storage.ts` (quota sum) | **Adapt** | atomic conditional insert; per-user limit |
 | `src/lib/drive/utils.ts` | **Port** | part size 32 MiB proxied / 64 MiB direct; keep `isDriveInlineSafe`, `normalizeDriveName` |
-| `src/lib/drive/auth.ts` `authorizeDrive` | **Adapt** → `requireDriveUser` | 404 when off or not permitted |
-| `src/app/api/drive/**` routes | **Adapt** | upload flow split into direct and proxied; links API; public API moved to `/api/public/drive/*` |
+| `src/lib/drive/auth.ts` `authorizeDrive` | **Adapt** → `requireDriveUser` inside `guardRoute("drive", …)` | 404 when off for the install or restricted for the user |
+| `src/app/api/drive/**` routes | **Adapt** | upload flow split into proxied (phase 1) and direct (phase 2); links API; public API moved to `/api/public/drive/*` |
 | `items/[id]/link` + `public/[token]` (plaintext token, no expiry) | **Drop the model, keep the subtree logic** | replaced by `drive_links` (hashed, expiry, password, revoke, rate limit) |
 | `api/drive/owners/[id]/avatar` | **Drop** | show initials (`src/lib/avatar-colors.ts`); reuse an existing avatar route only if its access rules fit |
-| `src/app/(drive)/*` UI (page, nav, columns, drag, bulk actions, share dialog, type filter, upload, upload panel, cache, preview) | **Adapt** | Kite/Classic/dark, `blue-*`, split utils/types, dialog height rule, link options, direct-upload mode, no i18n JSON |
+| `src/app/(drive)/*` UI (page, nav, columns, drag, bulk actions, share dialog, type filter, upload, upload panel, cache, preview) | **Adapt** | Kite/Classic/dark, `blue-*`, split utils/types, dialog height rule, link options, direct-upload mode in phase 2, no i18n JSON |
 | `src/app/d/[token]/page.tsx` | **Adapt** | password and expired states; no session, no owner data |
-| `security/headers.ts` `frame-src 'self'` | **Already in Kite** | add dynamic `connect-src` for store origins |
-| `header-search.tsx`, `mail-search-input.tsx`, `nav-section-header.tsx`, `sidebar-footer.tsx`, `mailbox-selector.tsx` edits | **Adapt minimally** | only the app switcher entry and the Drive search box; avoid broad refactors |
+| `security/headers.ts` `frame-src 'self'` | **Already in Kite** | phase 2 adds dynamic `connect-src` for store origins |
+| `header-search.tsx`, `mail-search-input.tsx`, `nav-section-header.tsx`, `sidebar-footer.tsx`, `mailbox-selector.tsx` edits | **Drop** | Kite draws module navigation from manifests; declare `nav` entries and a search section instead of editing core components |
 | `src/lib/email/attachments.ts`, `thread-view.ts`, `jmap/*` `trashedAt` filters | **Drop** | follows from dropping attachment trash |
 | `src/lib/i18n/en.json`, `docs/localization.md`, `tests/i18n.test.mjs` edits | **Drop** | Kite has no i18n library yet (Milestone 1 item 5) |
 | `ui/dialog.tsx` change | **Review**; take only if it fixes a real Kite issue | |
@@ -680,20 +720,24 @@ Attribution: add a line to `NOTICE` that the storage adapter and Drive modules a
 
 ## 14. Decisions
 
-Approved by the maintainer on 2026-10-10.
+Decisions 1-5 were approved by the maintainer on 2026-10-10; decisions 6-8 on 2026-10-16, when the spec was revised for the module platform.
 
 1. A restore keeps the live `storage_stores` / `storage_routes` rows (section 5); the small change to restore planning is accepted.
-2. Admins get Drive only through the explicit "Give all accounts access" action, not automatically when the switch is turned on.
+2. *(Superseded by decision 6.)* Admins were to get Drive only through an explicit "Give all accounts access" action. Access now follows the module platform: Drive is on for everyone unless the owner turns it off or restricts a user.
 3. `system` objects (avatars, branding) stay pinned to the default store in v1.
-4. Links always expire; the default maximum is 30 days (`drive_link_max_days = 30`). Admins can change the maximum (1-365 days) or turn links off (0), but cannot allow links without expiry.
+4. Links always expire; the default maximum is 30 days (`drive_settings.link_max_days = 30`). Admins can change the maximum (1-365 days) or turn links off (0), but cannot allow links without expiry.
 5. The dynamic `connect-src` with exact store origins is accepted, so direct browser uploads stay.
+6. **Drive is a module, on by default** (`defaultEnabled: true`), because every install already has R2 (or the file bucket on Node). There is no Drive switch column or Drive permission column; Admin → Modules and Accounts → Permissions control it, and Drive keeps its own settings and quotas in `drive_settings` and `drive_user_quotas`.
+7. **Storage is core.** The storage interface, the S3 adapter, the router and the Admin → Storage page live outside the module, because mail and backups use them whether Drive is on or off. Core reaches Drive data only through Drive capabilities.
+8. **Phase order: Drive on the default store first, S3-compatible stores second.** Drive rows record `store_id` from the start, so phase 2 needs no data rewrite. Any S3-compatible provider is in scope for phase 2, through presets and a custom endpoint.
 
 Follow-up, not part of this work: tightening the broad `img-src https:` (this design does not need it).
 
 ## 15. Mission hand-off checklist
 
-- Read `AGENTS.md`, `CLAUDE.md`, `ROADMAP.md` Milestone 7 and this spec. Use branch `mission/drive-storage`.
-- Order: phase 1 (adapter, router, admin) → phase 2 (Drive). Keep phases 3 and 4 as separate Missions.
+- Read `AGENTS.md`, `CLAUDE.md`, `ROADMAP.md` Milestone 7, [the module platform spec](module-platform.md) and this spec. Use branch `mission/drive-storage`.
+- Order: phase 1 (Drive on the default store, as a module) → phase 2 (S3-compatible stores, router, admin, migration, direct uploads). Keep phases 3 and 4 as separate Missions.
+- Keep the boundary: core never imports `src/lib/modules/drive/` or `src/lib/drive/`; the module platform's boundary test must stay green.
 - Every migration: hand-written SQL, a journal entry, a schema mirror, `npm run db:bundle`, and the backup lists updated in the same commit.
 - Every user-visible change: an e2e spec, checked in Kite, Classic and dark mode.
 - Every new route: regenerate the docs inventory and OpenAPI. Add public routes to `e2e/support/public-routes.ts`.

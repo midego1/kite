@@ -4,7 +4,7 @@ Planned work, grouped into milestones. Each milestone is sized to run as one [Fa
 
 Shipped work is listed in the [changelog](CHANGELOG.md). Suggest features and vote on them in [Ideas](https://github.com/midego1/kite/discussions/categories/ideas).
 
-Shipped specs: [automatic mail reading agent](docs/specs/auto-agent.md) ([#28](https://github.com/midego1/kite/pull/28)), [module platform](docs/specs/module-platform.md) ([#45](https://github.com/midego1/kite/pull/45)) and [Money Watch](docs/specs/money-watch.md) ([#50](https://github.com/midego1/kite/pull/50)). Next, in order: the approved [storing attachments once](docs/specs/attachments-once.md) and [Drive and storage](docs/specs/drive-storage.md).
+Shipped specs: [automatic mail reading agent](docs/specs/auto-agent.md) ([#28](https://github.com/midego1/kite/pull/28)), [module platform](docs/specs/module-platform.md) ([#45](https://github.com/midego1/kite/pull/45)) and [Money Watch](docs/specs/money-watch.md) ([#50](https://github.com/midego1/kite/pull/50)). Next, in order: the approved [Drive and storage](docs/specs/drive-storage.md) and [storing attachments once](docs/specs/attachments-once.md).
 
 ## Working on this repository
 
@@ -138,15 +138,15 @@ Google treats full Gmail access (`https://mail.google.com/`) as a restricted sco
 
 ## Milestone 7: Drive and storage
 
-Files next to mail, on storage the operator chooses. Today every object (raw MIME, attachments, backups) goes through the one `BUCKET` binding with `get`, `put` and `delete`; the Node runtime already swaps R2 for a folder (`server/runtime/file-bucket.ts`), and `src/lib/aws/` already signs S3 requests. Items 1 to 3 are specified in [docs/specs/drive-storage.md](docs/specs/drive-storage.md); storing attachments once ([docs/specs/attachments-once.md](docs/specs/attachments-once.md)) comes first and cuts mail storage by about a third.
+Files next to mail, on storage the operator chooses. Today every object (raw MIME, attachments, backups) goes through the one `BUCKET` binding with `get`, `put` and `delete`; the Node runtime already swaps R2 for a folder (`server/runtime/file-bucket.ts`), and `src/lib/aws/` already signs S3 requests. Items 1 to 3 are specified in [docs/specs/drive-storage.md](docs/specs/drive-storage.md), whose first Mission builds Drive on the existing storage and then adds S3-compatible stores; storing attachments once ([docs/specs/attachments-once.md](docs/specs/attachments-once.md)) comes after it and cuts mail storage by about a third.
 
 1. **Storage providers**
    - R2 stays the default. An admin can add an S3-compatible store (AWS S3, Backblaze B2, Wasabi, Hetzner, MinIO, RustFS) behind the same interface. Credentials are encrypted with `APP_ENCRYPTION_KEY` and checked before saving, like the AWS settings.
    - Large uploads and downloads go straight between the browser and the store through short-lived signed URLs, so they are not limited by the Worker request size.
    - Test: unit tests for the S3 adapter against recorded responses; e2e against a local S3-compatible server.
-2. **Drive (optional)**
+2. **Drive (a module, on by default)**
    - Folders, upload, download, rename, move, trash, and share links with an expiry. An **All attachments** view lists files that arrived by mail.
-   - Off until an admin turns it on; a per-user permission and quota decide who can use it and how much. When off, it is hidden and its API answers 404.
+   - Works out of the box on the storage every install already has (R2, or the file folder on Node). It is the module `drive`: the owner can turn it off under Admin → Modules or restrict it per user under Accounts → Permissions, and a per-user quota decides how much each person stores. When off, it is hidden and its API answers 404.
    - New tables go into the backup lists (see `AGENTS.md`); file contents stay in storage.
    - Test: e2e for upload, folders, sharing and the off switch, in Kite, Classic and dark mode.
    - Follow-up once Drive ships: Money Watch files every ledger document that has an attachment (including earlier ones) into the owner's Drive under `Finance/<vendor>/<year>/`, through a Drive filing service. The agreed behaviour and what Drive must provide are in [§24 of the Money Watch spec](docs/specs/money-watch.md#24-drive-filing-follow-up-after-drive-ships).
@@ -211,5 +211,5 @@ Taken ahead of the proposed milestones 9–18 in the [complete-suite roadmap](do
 
 - Offline reading with a service worker.
 - A keyboard shortcut overview.
-- Modules an admin can turn on or off (Drive, Calendar, Booking). Now [milestone 19](#milestone-19-module-platform-builtin-modules-first-sandboxed-apps-later); Drive will be core.
+- Modules an admin can turn on or off (Drive, Calendar, Booking). Now [milestone 19](#milestone-19-module-platform-builtin-modules-first-sandboxed-apps-later); Drive will be a module (on by default) and storage stays core.
 - ~~Extensions as separate services that use the API, webhooks and a sandboxed panel, so an extension cannot reach data it was not given. A directory of extensions would come later.~~ Superseded by milestone 19: modules are builtin first, and apps run sandboxed inside your own Kite later.

@@ -499,7 +499,14 @@ test("a failing notice or calendar write never stops the loop and logs only the 
 		["wh-other", "wh-owner"],
 		"the webhook still went out for the row whose notice failed",
 	);
-	const failures = context.warnings.filter((line) => JSON.parse(line).event === "finance.reminder_failed");
+	// Without the logger's timestamp: it is the real date, which can equal a renewal date below.
+	const failures = context.warnings
+		.filter((line) => JSON.parse(line).event === "finance.reminder_failed")
+		.map((line) => {
+			const entry = JSON.parse(line);
+			delete entry.timestamp;
+			return JSON.stringify(entry);
+		});
 	assert.equal(failures.length, 2, context.warnings.join("\n"));
 	for (const line of failures) {
 		const { fields } = JSON.parse(line);

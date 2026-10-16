@@ -9,9 +9,18 @@ name: Review adopt
 #
 # Two jobs, so pull-request code never runs where write credentials live:
 #   adopt    - read-only: resolves and collects the comments, then Droid verifies, fixes,
-#              validates and commits locally (no GitHub token, no push access).
-#   publish  - write-only: applies the patch, pushes it, and answers every comment. It runs
-#              no project code at all.
+#              validates and commits locally (no GitHub token, no push access), and the CI
+#              gate (scripts/review/adopt-gate.mjs) drops adoptions that break it.
+#   publish  - write-only: applies the patch, pushes it, answers every comment and resolves
+#              the threads that need nobody: adopted, already addressed and incorrect findings.
+#              A `Valid, not adopted` thread stays open for a person. It runs no project code.
+#
+# Pushes made with the workflow's own token never start other workflows, so CI would not run
+# on the adopted commits. With a GitHub App configured (Actions variable
+# REVIEW_ADOPT_APP_CLIENT_ID and secret REVIEW_ADOPT_APP_PRIVATE_KEY, the App installed on this
+# repository with Contents and Pull requests read and write), the push and the thread
+# resolution use an App token instead, so CI runs. Replies stay with the workflow token, so
+# their author is still github-actions[bot], the login the collector checks.
 #
 # Off switch without touching code: Settings → Secrets and variables → Actions → Variables →
 # CODERABBIT_ADOPT = off (the name predates Greptile). For one pull request by hand:
@@ -47,7 +56,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' ||
        github.actor == 'coderabbitai[bot]' || github.actor == 'greptile-apps[bot]')
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     permissions:
       contents: read
       pull-requests: read
@@ -96,11 +105,17 @@ jobs:
       # Caches are only restored here and saved by the CI jobs that run clean installs, so
       # a pull request branch can never write a cache that the default branch later restores.
       - name: Restore node_modules
+        id: modules
         if: steps.comments.outputs.count && steps.comments.outputs.count != '0'
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: node_modules
           key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      # A pull request that changes the lockfile has no cache yet, and the checks need the
+      # dependencies. Nothing is saved from here.
+      - name: Install the dependencies
+        if: steps.comments.outputs.count && steps.comments.outputs.count != '0' && steps.modules.outputs.cache-hit != 'true'
+        run: npm ci
       # The Playwright browser, for comments whose fix needs an e2e spec.
       - name: Restore the Playwright browser
         if: steps.comments.outputs.count && steps.comments.outputs.count != '0'
@@ -113,7 +128,7 @@ jobs:
         run: npm install --global droid@0.241.1
       - name: Verify the comments and commit the adoptions
         if: steps.comments.outputs.count && steps.comments.outputs.count != '0'
-        timeout-minutes: 20
+        timeout-minutes: 45
         env:
           FACTORY_API_KEY: ${{ secrets.FACTORY_API_KEY }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
@@ -129,17 +144,40 @@ jobs:
           # Keep the run's input and output out of every commit; a committed replies.json
           # made the publish job's git am collide with the downloaded artifact.
           printf 'comments.json\nreplies.json\n' >> .git/info/exclude
+          # The gate runs from a copy taken before Droid starts, so an adoption cannot change
+          # the checks it is held to.
+          mkdir -p "$RUNNER_TEMP/gate"
+          cp scripts/review/adopt-gate.mjs scripts/review/coderabbit-comments-utils.mjs "$RUNNER_TEMP/gate/"
           # No GitHub token here and --auto medium: Droid can fix, validate and commit, but
           # it cannot push or answer anything, so pull-request test code never runs with
           # write credentials.
-          droid exec --auto medium --tag coderabbit-adopt -f scripts/review/coderabbit-adopt-prompt.md
+          # Stopped below the step timeout so the commits made so far are still gated and
+          # published; the comments Droid did not reach stay unanswered for the next run.
+          status=0
+          timeout --kill-after=1m 35m droid exec --auto medium --tag coderabbit-adopt -f scripts/review/coderabbit-adopt-prompt.md || status=$?
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+            echo "Droid ran out of time after 35 minutes; the commits it made are kept and the comments it did not reach are left for the next run." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+      # The checks CI runs before anything is pushed (all but the builds and e2e, which Droid
+      # runs for the specs a fix touches). Adoptions that break a check passing without them
+      # are dropped and answered `Valid, not adopted`.
+      - name: Check the adoptions like CI
+        if: steps.comments.outputs.count && steps.comments.outputs.count != '0'
+        timeout-minutes: 30
+        env:
+          BASE_SHA: ${{ steps.pr.outputs.sha }}
+        run: node "$RUNNER_TEMP/gate/adopt-gate.mjs"
       - name: Pack the adoptions and the replies
         if: steps.comments.outputs.count && steps.comments.outputs.count != '0'
         env:
           BASE_SHA: ${{ steps.pr.outputs.sha }}
         run: |
           git format-patch "$BASE_SHA" --stdout -- . ':(exclude)comments.json' ':(exclude)replies.json' > "$RUNNER_TEMP/adoptions.patch"
-          if [ -f replies.json ]; then
+          # A run stopped mid-write can leave no file or a broken one; its comments then
+          # stay unanswered for the next run.
+          if jq -e 'type == "array"' replies.json > /dev/null 2>&1; then
             cp replies.json "$RUNNER_TEMP/replies.json"
           else
             printf '[]' > "$RUNNER_TEMP/replies.json"
@@ -195,21 +233,44 @@ jobs:
         with:
           name: coderabbit-adopt
           path: ${{ runner.temp }}/adopt
+      # Optional: an App token makes the push start CI on the adopted commits, which a push
+      # with the workflow token never does. Scoped to what the push and the resolution need.
+      - name: Mint the GitHub App token
+        id: app
+        if: vars.REVIEW_ADOPT_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.REVIEW_ADOPT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.REVIEW_ADOPT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - name: Apply the adoptions and push them
         id: push
         env:
-          GH_TOKEN: ${{ github.token }}
+          PUSH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          WITH_APP: ${{ steps.app.outputs.token != '' }}
           PR_BRANCH: ${{ steps.pr.outputs.branch }}
+          ADOPTED_SHA: ${{ needs.adopt.outputs.sha }}
         run: |
+          # The branch can move between the head check above and the checkout. The patch was
+          # gated on ADOPTED_SHA only, and the plain (non-force) push below then refuses any
+          # later update.
+          if [ "$(git rev-parse HEAD)" != "$ADOPTED_SHA" ]; then
+            echo "The branch moved after the comments were verified; rerun the workflow." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           echo "before=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if [ -s "$RUNNER_TEMP/adopt/adoptions.patch" ]; then
             # A fresh runner has no git identity and git am needs a committer.
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git am "$RUNNER_TEMP/adopt/adoptions.patch"
-            git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${PR_BRANCH}"
+            git push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${PR_BRANCH}"
             echo "pushed=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
             echo "Pushed the adopted commits to ${PR_BRANCH}." >> "$GITHUB_STEP_SUMMARY"
+            if [ "$WITH_APP" != "true" ]; then
+              echo "Pushed with the workflow token, so CI does not start on these commits by itself. Configure the GitHub App (docs/quality.md) to change that." >> "$GITHUB_STEP_SUMMARY"
+            fi
           else
             echo "Nothing to adopt." >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -218,16 +279,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ needs.adopt.outputs.number }}
           BEFORE: ${{ steps.push.outputs.before }}
+          PUSHED: ${{ steps.push.outputs.pushed }}
         run: |
           answer() {
-            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/comments/$1/replies" -f body="$2"
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/comments/$1/replies" -f body="$2" > /dev/null
           }
+          # The threads the resolve step closes, one comment id per line.
+          resolve="$RUNNER_TEMP/resolve.txt"
+          : > "$resolve"
           # Adopted comments: the commit that adopted them carries their ids in its body, one
           # line per comment, so a fix both reviewers asked for credits both.
-          if [ -n "${{ steps.push.outputs.pushed }}" ]; then
+          if [ -n "$PUSHED" ]; then
             for sha in $(git rev-list "${BEFORE}"..HEAD); do
               for id in $(git log -1 --format=%B "$sha" | grep -oE 'Addresses (CodeRabbit|Greptile) review comment [0-9]+' | grep -oE '[0-9]+$' | sort -u); do
                 answer "$id" "Adopted in ${sha:0:7}."
+                echo "$id" >> "$resolve"
               done
             done
           fi
@@ -237,5 +303,54 @@ jobs:
             id=$(jq -r ".[${index}].commentId" "$replies")
             body=$(jq -r ".[${index}].body" "$replies")
             answer "$id" "$body"
+            # A valid finding that was not fixed still needs a person; every other answer
+            # (already addressed, or why the finding does not hold) settles the thread.
+            case "$body" in
+              "Valid, not adopted"*) ;;
+              *) echo "$id" >> "$resolve" ;;
+            esac
           done
           echo "Answered every comment." >> "$GITHUB_STEP_SUMMARY"
+      - name: Resolve the settled threads
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          PR_NUMBER: ${{ needs.adopt.outputs.number }}
+        run: |
+          resolve="$RUNNER_TEMP/resolve.txt"
+          if [ ! -s "$resolve" ]; then
+            echo "No threads to resolve." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Each review thread starts with the reviewer comment the ids refer to.
+          gh api graphql --paginate \
+            -F number="$PR_NUMBER" -f owner="${GITHUB_REPOSITORY%%/*}" -f repo="${GITHUB_REPOSITORY#*/}" \
+            -f query='query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $number) {
+                  reviewThreads(first: 100, after: $endCursor) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { id isResolved comments(first: 1) { nodes { databaseId } } }
+                  }
+                }
+              }
+            }' \
+            --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) | "\(.comments.nodes[0].databaseId) \(.id)"' \
+            > "$RUNNER_TEMP/threads.txt"
+          resolved=0
+          refused=0
+          for id in $(sort -u "$resolve"); do
+            thread=$(awk -v id="$id" '$1 == id { print $2 }' "$RUNNER_TEMP/threads.txt")
+            [ -n "$thread" ] || continue
+            if gh api graphql -f threadId="$thread" \
+              -f query='mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { isResolved } } }' > /dev/null; then
+              resolved=$((resolved + 1))
+            else
+              refused=$((refused + 1))
+            fi
+          done
+          echo "Resolved ${resolved} thread(s)." >> "$GITHUB_STEP_SUMMARY"
+          # Fail loudly: a thread that says "Adopted" but stays open looks handled and is not.
+          if [ "$refused" -gt 0 ]; then
+            echo "GitHub refused to resolve ${refused} thread(s); the answers are posted, resolve them by hand. The GitHub App token (docs/quality.md) has the permissions this needs." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

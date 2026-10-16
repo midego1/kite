@@ -8,6 +8,7 @@ type AgentJobRow = typeof agentJobs.$inferSelect;
 
 const LEASE_MS = 10 * 60_000;
 const MAX_ATTEMPTS = 3;
+const LEASE_EXHAUSTED_REASON = "The last attempt stopped before it finished, and no attempts are left.";
 
 /**
  * Takes the job's 10-minute lease and returns the row as it was before the claim.
@@ -19,6 +20,22 @@ export async function claimAgentJob(db: AppDatabase, jobId: string): Promise<Age
 	if (!job || job.status === "completed" || job.status === "skipped" || job.status === "failed") return null;
 	const now = new Date();
 	if (job.nextAttemptAt > now || (job.status === "running" && job.leaseUntil && job.leaseUntil > now)) return null;
+	// A run killed by the CPU or memory limit never reaches failAgentJob, so its row stays running.
+	// Without this check every expired lease would grant another attempt, forever.
+	if (job.status === "running" && job.attempts >= MAX_ATTEMPTS) {
+		await db
+			.update(agentJobs)
+			.set({ status: "failed", leaseUntil: null, reason: LEASE_EXHAUSTED_REASON })
+			.where(
+				and(
+					eq(agentJobs.id, jobId),
+					eq(agentJobs.status, "running"),
+					eq(agentJobs.attempts, job.attempts),
+					lt(agentJobs.leaseUntil, now),
+				),
+			);
+		return null;
+	}
 	const eligible = and(
 		eq(agentJobs.id, jobId),
 		eq(agentJobs.attempts, job.attempts),

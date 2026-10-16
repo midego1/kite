@@ -2,7 +2,11 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { mailboxAccess, mailboxes } from "@/db/schema";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
+import { MODULE_CAPABILITIES } from "@/lib/modules/capability-registry";
 import { notifyUsersOfNewMessage } from "@/lib/realtime/utils";
+import { reviewerOnlySuggestionKinds } from "./module-steps-utils";
+
+const REVIEWER_ONLY_KINDS = new Set(reviewerOnlySuggestionKinds(MODULE_CAPABILITIES));
 
 /** The owner plus every full-access sharer; read-only and send-on-behalf sharers never see suggestions. */
 async function listFullAccessUserIds(env: CloudflareEnv, mailboxId: string): Promise<string[]> {
@@ -23,7 +27,10 @@ async function listFullAccessUserIds(env: CloudflareEnv, mailboxId: string): Pro
 	return [...new Set([mailbox.userId, ...sharers.map((row) => row.userId)])];
 }
 
-/** Sends an `agent_suggestion` event per suggestion to the users with full access on its mailbox. */
+/**
+ * Sends an `agent_suggestion` event per suggestion to the users with full access on its mailbox; a
+ * reviewer-only kind goes to its reviewer alone, the only one of them who can list it.
+ */
 async function notifySuggestionsChanged(env: CloudflareEnv, suggestionIds: string[]): Promise<void> {
 	const ids = [...new Set(suggestionIds)];
 	if (ids.length === 0 || !env.REALTIME) return;
@@ -33,6 +40,7 @@ async function notifySuggestionsChanged(env: CloudflareEnv, suggestionIds: strin
 			mailboxId: agentSuggestions.mailboxId,
 			messageId: agentSuggestions.messageId,
 			kind: agentSuggestions.kind,
+			reviewerUserId: agentSuggestions.reviewerUserId,
 		})
 		.from(agentSuggestions)
 		.where(inArray(agentSuggestions.id, ids));
@@ -40,7 +48,9 @@ async function notifySuggestionsChanged(env: CloudflareEnv, suggestionIds: strin
 	for (const row of rows) {
 		const userIds = recipients.get(row.mailboxId) ?? (await listFullAccessUserIds(env, row.mailboxId));
 		recipients.set(row.mailboxId, userIds);
-		await notifyUsersOfNewMessage(env, userIds, {
+		const audience = REVIEWER_ONLY_KINDS.has(row.kind) ? userIds.filter((id) => id === row.reviewerUserId) : userIds;
+		if (audience.length === 0) continue;
+		await notifyUsersOfNewMessage(env, audience, {
 			type: "agent_suggestion",
 			mailboxId: row.mailboxId,
 			messageId: row.messageId,

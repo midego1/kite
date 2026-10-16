@@ -39,6 +39,8 @@ const PROCESSOR_DOMAINS = new Set([
 ]);
 
 const MAX_VENDOR = 80;
+/** How much of a display name is read; well above MAX_VENDOR so trailing noise words still go. */
+const MAX_VENDOR_INPUT = 256;
 // Control characters, bidirectional controls, zero-width and other invisible format characters.
 const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g;
 
@@ -85,8 +87,10 @@ function capitalise(value: string): string {
 /** The vendor from the sender name without "Billing", "via …", quotes and the like; the domain label otherwise. */
 /** A vendor name from a display name or the model: quotes, "via …", noise words and unsafe characters removed; "" when nothing usable is left. */
 export function cleanVendorName(value: string): string {
+	// Display names are unbounded; the regexes below backtrack, so clip first.
 	const name = cleanText(
 		value
+			.slice(0, MAX_VENDOR_INPUT)
 			.replace(/["'“”‘’]/g, "")
 			.replace(/\s+via\s+.*$/i, "")
 			.replace(new RegExp(VENDOR_NOISE.source, "giu"), " ")

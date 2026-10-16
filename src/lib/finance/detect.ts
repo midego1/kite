@@ -132,9 +132,12 @@ async function detectFor(ctx: CapabilityCallContext, raw: DetectStepInput, userI
 	return buildDetection(analysis, context);
 }
 
-/** The `wantsModel` service: whether a receipt the detector cannot complete is worth a model request. */
+/**
+ * The `wantsModel` service: whether a receipt the detector cannot complete is worth a model request.
+ * Before migration 0063 the step can only report `migration_pending`, so no request is worth paying for.
+ */
 export const wantsModelStep: CapabilityHandler = async (raw, ctx): Promise<JsonValue> => ({
-	wantsModel: wantsModelForReceipt(raw as DetectStepInput, ctx.timeZone),
+	wantsModel: wantsModelForReceipt(raw as DetectStepInput, ctx.timeZone) && (await financeTablesReady()),
 });
 
 /**

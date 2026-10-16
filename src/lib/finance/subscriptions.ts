@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, notExists, notInArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { queryInChunks } from "@/db/chunk-utils";
 import { contacts, mailboxes, messages } from "@/db/schema";
@@ -112,6 +112,42 @@ export async function hasDocument(
 			.limit(1),
 	);
 	return !!row;
+}
+
+/** The subscription's documents that are not among `ids`, whoever recorded them. */
+function otherDocuments(subscriptionId: string, ids: readonly string[]) {
+	const ofSubscription = eq(financeCharges.subscriptionId, subscriptionId);
+	return db()
+		.select({ id: financeCharges.id })
+		.from(financeCharges)
+		.where(ids.length > 0 ? and(ofSubscription, notInArray(financeCharges.id, [...ids])) : ofSubscription);
+}
+
+/** Whether the subscription holds a document that is not among `ids`. */
+export async function hasOtherDocument(subscriptionId: string, ids: readonly string[]): Promise<boolean> {
+	const rows = await onFinanceTables(() => otherDocuments(subscriptionId, ids).limit(1));
+	return rows.length > 0;
+}
+
+/**
+ * Deletes a subscription unless it holds a document that is not among `own`, checked in the same
+ * statement so a document recorded meanwhile is never deleted with it. False when such a document
+ * kept the row; true when the row is gone, including when an earlier call already deleted it.
+ */
+export async function deleteSubscriptionWithOnly(userId: string, id: string, own: readonly string[]): Promise<boolean> {
+	const deleted = await onFinanceTables(() =>
+		db()
+			.delete(financeSubscriptions)
+			.where(
+				and(
+					eq(financeSubscriptions.id, id),
+					eq(financeSubscriptions.userId, userId),
+					notExists(otherDocuments(id, own)),
+				),
+			)
+			.returning({ id: financeSubscriptions.id }),
+	);
+	return deleted.length > 0 || !(await ownerRow(userId, id));
 }
 
 export async function deleteDocuments(userId: string, ids: readonly string[]): Promise<void> {

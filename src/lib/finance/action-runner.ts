@@ -5,12 +5,20 @@ import { syncCalendarReminder } from "./calendar-reminder";
 import { FinanceRefusal, refusalOf } from "./errors";
 import {
 	chargeFromJson,
+	derivedId,
 	fieldColumns,
 	subscriptionFromJson,
 	subscriptionRef,
 	type SubscriptionRow,
 } from "./record-utils";
-import { deleteDocuments, deleteSubscriptionRow, ownerRow, restoreRows, updateSubscription } from "./subscriptions";
+import {
+	deleteDocuments,
+	deleteSubscriptionWithOnly,
+	hasOtherDocument,
+	ownerRow,
+	restoreRows,
+	updateSubscription,
+} from "./subscriptions";
 
 export type ExecuteCall<Input> = {
 	actionId: string;
@@ -44,10 +52,11 @@ export function actionResult(subscriptionId: string, extra: Record<string, JsonV
  * removes only the documents it inserted, and re-inserts what it removed with the same ids. Each
  * step is a no-op when already done, so a retried undo changes nothing more.
  */
-async function undoStored(inverse: StoredInverse): Promise<void> {
+async function undoStored(inverse: StoredInverse, actionId: string): Promise<void> {
 	const { userId, subscriptionId } = inverse;
 	if (inverse.created) {
-		await deleteSubscriptionRow(userId, subscriptionId);
+		if (!(await deleteSubscriptionWithOnly(userId, subscriptionId, ownDocumentIds(inverse, actionId))))
+			throw laterDocumentsRefusal();
 		return;
 	}
 	if (inverse.removed) {
@@ -61,6 +70,25 @@ async function undoStored(inverse: StoredInverse): Promise<void> {
 	if (inverse.previous && Object.keys(inverse.previous).length > 0 && (await ownerRow(userId, subscriptionId)))
 		await updateSubscription(userId, subscriptionId, fieldColumns(inverse.previous));
 	await deleteDocuments(userId, inverse.documentIds ?? []);
+}
+
+/**
+ * The documents Track recorded. An inverse stored before creates kept `documentIds` names none, so
+ * the only one it can own is the document whose id derives from the action, as Track records it.
+ */
+function ownDocumentIds(inverse: StoredInverse, actionId: string): string[] {
+	return inverse.documentIds ?? [derivedId("fdoc", actionId)];
+}
+
+const laterDocumentsRefusal = () =>
+	new FinanceRefusal(409, "Later documents were recorded for this subscription; remove it from Money Watch instead");
+
+/**
+ * Undoing a create deletes the row, and its documents cascade with it, so it is refused once the row
+ * holds a document this action did not record. The delete itself checks again (`undoStored`).
+ */
+async function refuseLaterDocuments(inverse: StoredInverse, actionId: string): Promise<void> {
+	if (await hasOtherDocument(inverse.subscriptionId, ownDocumentIds(inverse, actionId))) throw laterDocumentsRefusal();
 }
 
 function undoInverse(call: Extract<RawCall, { op: "undo" | "authorize_undo" }>): StoredInverse | null {
@@ -130,8 +158,9 @@ async function run<Input>(
 	const inverse = undoInverse(call);
 	if (inverse && inverse.userId !== viewer.userId)
 		throw new FinanceRefusal(403, "Only the owner can change this subscription");
+	if (inverse?.created) await refuseLaterDocuments(inverse, call.actionId);
 	if (inverse && call.op === "undo") {
-		await undoStored(inverse);
+		await undoStored(inverse, call.actionId);
 		if (options.syncsReminder)
 			await syncCalendarReminder(ctx, inverse.userId, inverse.subscriptionId, {
 				restore: restoresCalendarEvent(inverse),

@@ -10,7 +10,7 @@ const at = (day) => (day ? new Date(`${day}T00:00:00Z`) : null);
 function row(overrides = {}) {
 	return {
 		id: "fsub_1",
-		vendor: "Streamflix",
+		vendor: "Acmeflix",
 		plan: null,
 		amountMinor: 1799,
 		currency: "USD",
@@ -68,7 +68,7 @@ test("selectToolRows keeps current rows by default, filters by status and due wi
 test("toolSubscription carries the ref, the price, the dates and urgency", () => {
 	assert.deepEqual(toolSubscription(row({ plan: "Premium", paymentFailedAt: at("2026-10-02") })), {
 		ref: { kind: "finance:subscription", id: "fsub_1" },
-		vendor: "Streamflix",
+		vendor: "Acmeflix",
 		plan: "Premium",
 		amount: { minor: 1799, currency: "USD" },
 		cycle: "monthly",

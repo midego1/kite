@@ -120,7 +120,7 @@ export function trackBody(
 	};
 }
 
-/** "streamflix.example" for a cancel link, so the dialog names where it leads without making it clickable. */
+/** "acmeflix.example" for a cancel link, so the dialog names where it leads without making it clickable. */
 export function linkHost(url: string): string {
 	try {
 		return new URL(url).host;

@@ -47,7 +47,7 @@ jobs:
         if: always()
         run: node scripts/quality/ci-summary.mjs >> "$GITHUB_STEP_SUMMARY"
       - name: Retain timing, coverage and quality evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: mission-validation-evidence
@@ -112,7 +112,7 @@ jobs:
         if: always()
         run: node scripts/quality/ci-summary.mjs >> "$GITHUB_STEP_SUMMARY"
       - name: Retain timing and browser evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: e2e-evidence-shard-${{ matrix.shard }}
@@ -153,7 +153,7 @@ jobs:
         if: always()
         run: node scripts/quality/ci-summary.mjs >> "$GITHUB_STEP_SUMMARY"
       - name: Retain timing evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: node-build-evidence

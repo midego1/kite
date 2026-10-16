@@ -91,7 +91,7 @@ test("the workflow bot login is configurable", () => {
 
 test("reads the adopted comment ids from the commits' Addresses lines", () => {
 	const messages = [
-		"fix: escape the label\n\nAddresses CodeRabbit review comment 301 on pull request 9.\nAddresses Greptile review comment 302 on pull request 9.\n\nCo-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>",
+		"fix: escape the label\n\nAddresses CodeRabbit review comment 301 on pull request 9.\nAddresses Greptile review comment 302 on pull request 9.\n\nCo-authored-by: Test Bot <review-bot@example.invalid>",
 		"test: cover the empty list\n\nAddresses Greptile review comment 205 on pull request 9.",
 		"chore: format\n\nAddresses CodeRabbit review comment 301 on pull request 9.",
 		"fix: unrelated\n\nAddresses Someone review comment 999 on pull request 9.",

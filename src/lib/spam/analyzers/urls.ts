@@ -15,21 +15,23 @@ export function analyzeUrls(message: ParsedEmail, prepared: PreparedSpamContent)
 			reason: "Message links to an unusually large number of domains",
 			metadata: { count: domains.length },
 		});
-	for (const match of (message.html ?? "")
-		.slice(0, 250_000)
-		.matchAll(/<a\b[^>]*\bhref=["'](https?:\/\/[^"']+)["'][^>]*>\s*(https?:\/\/[^<\s]+)\s*<\/a>/gi)) {
-		try {
-			const target = new URL(match[1]).hostname.toLowerCase().replace(/^www\./, "");
-			const displayed = new URL(match[2]).hostname.toLowerCase().replace(/^www\./, "");
-			if (target !== displayed) {
-				signals.push({
-					id: "displayed_link_mismatch",
-					score: 10,
-					reason: "A link's displayed address differs from its destination",
-				});
-				break;
-			}
-		} catch {}
+	for (const html of [message.html ?? "", ...prepared.webPageAttachments.map((page) => page.text)]) {
+		for (const match of html
+			.slice(0, 250_000)
+			.matchAll(/<a\b[^>]*\bhref=["'](https?:\/\/[^"']+)["'][^>]*>\s*(https?:\/\/[^<\s]+)\s*<\/a>/gi)) {
+			try {
+				const target = new URL(match[1]).hostname.toLowerCase().replace(/^www\./, "");
+				const displayed = new URL(match[2]).hostname.toLowerCase().replace(/^www\./, "");
+				if (target !== displayed) {
+					signals.push({
+						id: "displayed_link_mismatch",
+						score: 10,
+						reason: "A link's displayed address differs from its destination",
+					});
+					return signals;
+				}
+			} catch {}
+		}
 	}
 	return signals;
 }

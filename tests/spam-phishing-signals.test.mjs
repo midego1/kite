@@ -164,6 +164,29 @@ test("programs and disk images are risky attachments", async (t) => {
 	assert.equal(ids(notes).includes("risky_attachment"), false);
 });
 
+test("displayed addresses are compared inside attached pages, counting a mismatch only once", async (t) => {
+	const { analyze } = await setup(t);
+	const matching = '<a href="https://accounts.good.test/">https://accounts.good.test/</a>';
+	const mismatched = '<a href="https://collect.bad.test/">https://accounts.good.test/</a>';
+	const matchingPage = file("matching.html", "text/html", matching);
+	const mismatchedPage = file("link.html", "text/html", mismatched);
+	const safe = await analyze(email({ attachments: [matchingPage] }));
+	assert.equal(ids(safe).includes("displayed_link_mismatch"), false);
+	for (const html of [null, matching, mismatched]) {
+		const result = await analyze(email({ html, attachments: [matchingPage, mismatchedPage, mismatchedPage] }));
+		assert.deepEqual(
+			result.signals.filter((item) => item.id === "displayed_link_mismatch"),
+			[
+				{
+					id: "displayed_link_mismatch",
+					score: 10,
+					reason: "A link's displayed address differs from its destination",
+				},
+			],
+		);
+	}
+});
+
 test("whitelist requests count, a newsletter's address book request does not", async (t) => {
 	const { analyze } = await setup(t);
 	for (const text of [

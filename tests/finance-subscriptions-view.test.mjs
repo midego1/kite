@@ -27,7 +27,7 @@ const TODAY = "2026-10-15";
 function item(overrides = {}) {
 	return {
 		id: "fsub_1",
-		vendor: "Streamflix",
+		vendor: "Acmeflix",
 		plan: "Premium",
 		amount: { minor: 1799, currency: "USD" },
 		cycle: "monthly",
@@ -267,7 +267,7 @@ test("the edit form starts from the row and sends only what changed", () => {
 	const row = item({ trialEndsOn: "2026-10-20" });
 	const form = view.formFromItem(row);
 	assert.deepEqual(form, {
-		vendor: "Streamflix",
+		vendor: "Acmeflix",
 		plan: "Premium",
 		amount: "17.99",
 		currency: "USD",

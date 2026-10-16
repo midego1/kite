@@ -12,9 +12,9 @@ const text = await loadFinance("text-utils");
 const RECEIVED = "2026-10-14T09:00:00.000Z";
 
 function stepInput({
-	from = "billing@streamflix.example",
-	fromName = "Streamflix Billing",
-	subject = "Your Streamflix invoice",
+	from = "billing@acmeflix.example",
+	fromName = "Acmeflix Billing",
+	subject = "Your Acmeflix invoice",
 	body = "Your invoice INV-1001: $17.99/month, renews on 1 Nov 2026.",
 	facts = {},
 	headers = {},
@@ -48,7 +48,7 @@ function run(options = {}, context = { tracked: null, recurring: null }) {
 
 const tracked = (overrides = {}) => ({
 	id: "sub-1",
-	vendorKey: "streamflix.example",
+	vendorKey: "acmeflix.example",
 	plan: null,
 	amountMinor: 1799,
 	currency: "USD",
@@ -251,8 +251,8 @@ test("cycles inferred from intervals", () => {
 // Vendors
 
 test("vendor names lose sender noise and fall back to the domain", () => {
-	assert.deepEqual(vendors.vendorName("Streamflix Billing", "billing@streamflix.example"), {
-		vendor: "Streamflix",
+	assert.deepEqual(vendors.vendorName("Acmeflix Billing", "billing@acmeflix.example"), {
+		vendor: "Acmeflix",
 		fromDomain: false,
 	});
 	assert.equal(vendors.vendorName('"Cloudbox Team"', "x@cloudbox.example").vendor, "Cloudbox");
@@ -264,7 +264,7 @@ test("vendor names lose sender noise and fall back to the domain", () => {
 });
 
 test("vendor keys use the registrable domain, and processors add the vendor", () => {
-	assert.equal(vendors.vendorKey("Billing <billing@mail.streamflix.example>", "Streamflix"), "streamflix.example");
+	assert.equal(vendors.vendorKey("Billing <billing@mail.acmeflix.example>", "Acmeflix"), "acmeflix.example");
 	assert.equal(vendors.vendorKey("billing@news.example.co.uk", "News"), "example.co.uk");
 	assert.equal(vendors.vendorKey("billing@shop.example.com.au", "Shop"), "example.com.au");
 	assert.equal(vendors.vendorKey("no-reply@apple.com", "Tune Box Pro"), "apple.com:tune-box-pro");
@@ -280,7 +280,7 @@ test("vendor keys use the registrable domain, and processors add the vendor", ()
 test("an automatic monthly invoice is a new subscription card", () => {
 	const detection = run({
 		headers: {
-			listUnsubscribe: "<https://streamflix.example/cancel>",
+			listUnsubscribe: "<https://acmeflix.example/cancel>",
 			listUnsubscribePost: "List-Unsubscribe=One-Click",
 		},
 	});
@@ -288,8 +288,8 @@ test("an automatic monthly invoice is a new subscription card", () => {
 	assert.deepEqual(detection.payload, {
 		event: "new",
 		subscriptionId: null,
-		vendor: "Streamflix",
-		vendorKey: "streamflix.example",
+		vendor: "Acmeflix",
+		vendorKey: "acmeflix.example",
 		plan: null,
 		amountMinor: 1799,
 		currency: "USD",
@@ -298,7 +298,7 @@ test("an automatic monthly invoice is a new subscription card", () => {
 		nextRenewalOn: "2026-11-01",
 		renewalEstimated: false,
 		trialEndsOn: null,
-		cancelLink: { url: "https://streamflix.example/cancel", oneClick: true },
+		cancelLink: { url: "https://acmeflix.example/cancel", oneClick: true },
 		document: {
 			docType: "invoice",
 			documentOn: "2026-10-14",
@@ -311,7 +311,7 @@ test("an automatic monthly invoice is a new subscription card", () => {
 		modelFields: [],
 		modelDisagrees: [],
 	});
-	assert.equal(text.suggestionTitle(detection.payload, "en"), "Streamflix $17.99/month, renews 1 Nov. Track it?");
+	assert.equal(text.suggestionTitle(detection.payload, "en"), "Acmeflix $17.99/month, renews 1 Nov. Track it?");
 });
 
 test("one-off receipts, personal mentions of money and weak evidence give nothing", () => {
@@ -346,7 +346,7 @@ test("trial notices and an unauthenticated sender", () => {
 	assert.equal(detection.payload.event, "trial");
 	assert.equal(detection.payload.unverified, true);
 	assert.equal(detection.reason, "subscription_trial");
-	assert.equal(text.suggestionTitle(detection.payload, "en"), "Streamflix trial ends 1 Nov. Track it?");
+	assert.equal(text.suggestionTitle(detection.payload, "en"), "Acmeflix trial ends 1 Nov. Track it?");
 });
 
 test("an attachment and the model's receipt category add weight", () => {
@@ -415,12 +415,12 @@ test("a tracked vendor's refund is a refund event, never a price change", () => 
 	assert.equal(detection.payload.previousAmountMinor, null);
 	assert.equal(detection.payload.subscriptionId, "sub-1");
 	assert.equal(detection.reason, "subscription_refund");
-	assert.equal(text.suggestionTitle(detection.payload, "en"), "Streamflix refunded $19.99. Record it?");
+	assert.equal(text.suggestionTitle(detection.payload, "en"), "Acmeflix refunded $19.99. Record it?");
 	const credit = run(
 		{ subject: "Credit note", body: "Credit note for $5.00" },
 		{ tracked: tracked(), recurring: null },
 	);
-	assert.equal(text.suggestionTitle(credit.payload, "en"), "Streamflix credit note for $5.00. Record it?");
+	assert.equal(text.suggestionTitle(credit.payload, "en"), "Acmeflix credit note for $5.00. Record it?");
 });
 
 test("a tracked vendor's failed payment needs no amount", () => {
@@ -431,19 +431,19 @@ test("a tracked vendor's failed payment needs no amount", () => {
 	assert.equal(detection.payload.event, "payment_failed");
 	assert.equal(detection.payload.document.docType, "failed_payment");
 	assert.ok(detection.payload.signals.includes("payment_failed"));
-	assert.equal(text.suggestionTitle(detection.payload, "en"), "Streamflix payment failed. Mark it urgent?");
+	assert.equal(text.suggestionTitle(detection.payload, "en"), "Acmeflix payment failed. Mark it urgent?");
 });
 
 test("a tracked vendor's invoice is a renewal or a price change", () => {
 	const renewal = run({ body: "$17.99/month, renews on 1 Dec 2026" }, { tracked: tracked(), recurring: null });
 	assert.equal(renewal.payload.event, "renewal");
-	assert.equal(text.suggestionTitle(renewal.payload, "en"), "Streamflix renewed, next on 1 Dec. Update it?");
+	assert.equal(text.suggestionTitle(renewal.payload, "en"), "Acmeflix renewed, next on 1 Dec. Update it?");
 	const change = run({ body: "$19.99/month, renews on 1 Dec 2026" }, { tracked: tracked(), recurring: null });
 	assert.deepEqual([change.payload.event, change.payload.previousAmountMinor], ["price_change", 1799]);
 	assert.equal(change.reason, "subscription_price_change");
-	assert.equal(text.suggestionTitle(change.payload, "en"), "Streamflix now $19.99/month, up from $17.99. Update it?");
+	assert.equal(text.suggestionTitle(change.payload, "en"), "Acmeflix now $19.99/month, up from $17.99. Update it?");
 	const cheaper = run({ body: "$9.99/month" }, { tracked: tracked(), recurring: null });
-	assert.equal(text.suggestionTitle(cheaper.payload, "en"), "Streamflix now $9.99/month, down from $17.99. Update it?");
+	assert.equal(text.suggestionTitle(cheaper.payload, "en"), "Acmeflix now $9.99/month, down from $17.99. Update it?");
 	const trial = run(
 		{ body: "$9.99/month after your trial ends 1 Nov 2026" },
 		{ tracked: tracked({ amountMinor: null }), recurring: null },
@@ -484,26 +484,20 @@ test("matching prefers the same currency, then plan, then the closest amount", (
 test("plans come from a label or sit between the vendor and the amount", () => {
 	const plan = (body) => detect.analyzeMessage(stepInput({ body }), "UTC").plan;
 	assert.equal(plan("Subscription: Premium HD - billed monthly"), "Premium HD");
-	assert.equal(plan("Streamflix Premium $17.99/month"), "Premium");
+	assert.equal(plan("Acmeflix Premium $17.99/month"), "Premium");
 	assert.equal(plan("Charged $17.99/month"), null);
 	assert.equal(plan("Thanks"), null);
 });
 
 test("titles omit unknown parts and stay within 120 characters", () => {
 	const base = run().payload;
-	assert.equal(text.suggestionTitle({ ...base, nextRenewalOn: null }, "en"), "Streamflix $17.99/month. Track it?");
-	assert.equal(
-		text.suggestionTitle({ ...base, cycle: null, nextRenewalOn: null }, "en"),
-		"Streamflix $17.99. Track it?",
-	);
+	assert.equal(text.suggestionTitle({ ...base, nextRenewalOn: null }, "en"), "Acmeflix $17.99/month. Track it?");
+	assert.equal(text.suggestionTitle({ ...base, cycle: null, nextRenewalOn: null }, "en"), "Acmeflix $17.99. Track it?");
 	assert.equal(
 		text.suggestionTitle({ ...base, event: "renewal", nextRenewalOn: null }, "en"),
-		"Streamflix renewed. Update it?",
+		"Acmeflix renewed. Update it?",
 	);
-	assert.equal(
-		text.suggestionTitle({ ...base, event: "trial", trialEndsOn: null }, "en"),
-		"Streamflix trial. Track it?",
-	);
+	assert.equal(text.suggestionTitle({ ...base, event: "trial", trialEndsOn: null }, "en"), "Acmeflix trial. Track it?");
 	const long = text.suggestionTitle({ ...base, vendor: "V".repeat(80), plan: null }, "en");
 	assert.ok(long.length <= 120);
 	assert.equal(
@@ -559,7 +553,7 @@ test("PDF-sized text and huge display names stay linear", () => {
 	assert.ok(timed(() => amounts.parseAmounts("$1 ".repeat(24_000))) < 500);
 	assert.ok(timed(() => run({ subject: "Your invoice", body: `Total ${"1,".repeat(36_000)} USD monthly` })) < 1000);
 	assert.ok(timed(() => vendors.cleanVendorName(`${" ".repeat(100_000)}x`)) < 100);
-	assert.equal(vendors.cleanVendorName(`Streamflix via Payments${" ".repeat(100_000)}`), "Streamflix");
+	assert.equal(vendors.cleanVendorName(`Acmeflix via Payments${" ".repeat(100_000)}`), "Acmeflix");
 	assert.ok(amounts.parseAmounts("$1 ".repeat(24_000)).length <= 200);
 	assert.equal(
 		amounts.parseAmounts(`${"x".repeat(5_000)} Total $17.99/month ${"y".repeat(5_000)}`)[0].line.length,
@@ -576,11 +570,11 @@ test("a long number run never yields an amount from its tail", () => {
 
 test("the body or an http header never sets the cancel link", () => {
 	assert.equal(
-		run({ body: "Your invoice: $17.99/month. Cancel: https://streamflix.example/cancel" }).payload.cancelLink,
+		run({ body: "Your invoice: $17.99/month. Cancel: https://acmeflix.example/cancel" }).payload.cancelLink,
 		null,
 	);
-	assert.equal(run({ headers: { listUnsubscribe: "<http://streamflix.example/cancel>" } }).payload.cancelLink, null);
-	assert.equal(run({ headers: { listUnsubscribe: "<mailto:leave@streamflix.example>" } }).payload.cancelLink, null);
+	assert.equal(run({ headers: { listUnsubscribe: "<http://acmeflix.example/cancel>" } }).payload.cancelLink, null);
+	assert.equal(run({ headers: { listUnsubscribe: "<mailto:leave@acmeflix.example>" } }).payload.cancelLink, null);
 });
 
 test("a labelled plan stops at its price and keeps its own digits", () => {

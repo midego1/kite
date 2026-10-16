@@ -55,7 +55,7 @@ function reminder(overrides = {}) {
 	return {
 		userId: "owner",
 		key: KEY,
-		title: "Streamflix renews ($17.99)",
+		title: "Acmeflix renews ($17.99)",
 		description: "Open in Money Watch: /finance?subscription=fsub_abc",
 		date: "2026-11-01",
 		time: "09:00",
@@ -138,7 +138,7 @@ test("upsertReminder inserts once, updates on a changed call and never duplicate
 	assert.equal(event.id, first.output.eventId);
 	assert.equal(event.user_id, "owner");
 	assert.equal(event.ical_uid, KEY);
-	assert.equal(event.title, "Streamflix renews ($17.99)");
+	assert.equal(event.title, "Acmeflix renews ($17.99)");
 	assert.match(event.description, /\/finance\?subscription=fsub_abc/);
 	assert.equal(event.time_zone, "Europe/Amsterdam");
 	assert.equal(event.starts_at, Date.parse("2026-11-01T08:00:00.000Z") / 1000);
@@ -150,12 +150,12 @@ test("upsertReminder inserts once, updates on a changed call and never duplicate
 	assert.equal(events().length, 1, "repeated calls never insert a second event");
 	assert.deepEqual(deliveries(), ["wh-owner:calendar.event.created"], "an unchanged repeat writes nothing");
 
-	const moved = await upsert(reminder({ date: "2026-12-01", title: "Streamflix renews ($19.99)" }));
+	const moved = await upsert(reminder({ date: "2026-12-01", title: "Acmeflix renews ($19.99)" }));
 	assert.equal(moved.output.created, false);
 	assert.equal(moved.output.eventId, first.output.eventId);
 	const [updated] = events();
 	assert.equal(events().length, 1);
-	assert.equal(updated.title, "Streamflix renews ($19.99)");
+	assert.equal(updated.title, "Acmeflix renews ($19.99)");
 	assert.equal(updated.starts_at, Date.parse("2026-12-01T08:00:00.000Z") / 1000);
 	assert.deepEqual(deliveries(), ["wh-owner:calendar.event.created", "wh-owner:calendar.event.updated"]);
 });

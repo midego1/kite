@@ -210,7 +210,7 @@ test("activity rows of module actions show only the ref of the record they touch
 	const ref = { kind: "finance:subscription", id: "fsub_1" };
 	const snapshot = JSON.stringify({
 		userId: "owner",
-		removed: { subscription: { vendor: "Streamflix" }, documents: [] },
+		removed: { subscription: { vendor: "Acmeflix" }, documents: [] },
 	});
 	const removed = row({ action: "delete_subscription", after: JSON.stringify({ ref, subscriptionId: "fsub_1" }) });
 	assert.deepEqual(toActivityAction(removed, now).after, { ref });

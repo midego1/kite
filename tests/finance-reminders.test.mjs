@@ -51,7 +51,7 @@ const { applyMigrations } = await load("migrate");
 const DAY_MS = 86_400_000;
 const at = (day) => (day ? new Date(`${day}T00:00:00.000Z`) : null);
 const HOOK_URL = "https://hooks.kite-validation.invalid/finance";
-const VENDOR = "Streamflix";
+const VENDOR = "Acmeflix";
 
 function row(extra = {}) {
 	return {
@@ -128,22 +128,19 @@ test("the notice, the calendar event and the webhook payload say when and how mu
 	const due = dueOf(renewal);
 	assert.deepEqual(reminderNotice(renewal, due, 2, "en"), {
 		notice: "renewal_due",
-		title: "Streamflix renews in 2 days ($17.99)",
+		title: "Acmeflix renews in 2 days ($17.99)",
 		href: "/finance?subscription=fsub_1",
 	});
-	assert.equal(reminderNotice(renewal, due, 1, "en").title, "Streamflix renews tomorrow ($17.99)");
-	assert.equal(reminderNotice(renewal, due, 0, "en").title, "Streamflix renews today ($17.99)");
-	assert.equal(
-		reminderNotice(row({ ...renewal, amountMinor: null }), due, 3, "en").title,
-		"Streamflix renews in 3 days",
-	);
+	assert.equal(reminderNotice(renewal, due, 1, "en").title, "Acmeflix renews tomorrow ($17.99)");
+	assert.equal(reminderNotice(renewal, due, 0, "en").title, "Acmeflix renews today ($17.99)");
+	assert.equal(reminderNotice(row({ ...renewal, amountMinor: null }), due, 3, "en").title, "Acmeflix renews in 3 days");
 	const trial = row({ status: "trial", trialEndsAt: at("2026-10-15") });
-	assert.equal(reminderNotice(trial, dueOf(trial), 1, "en").title, "Your Streamflix trial ends tomorrow");
-	assert.equal(reminderNotice(trial, dueOf(trial), 3, "en").title, "Your Streamflix trial ends in 3 days");
+	assert.equal(reminderNotice(trial, dueOf(trial), 1, "en").title, "Your Acmeflix trial ends tomorrow");
+	assert.equal(reminderNotice(trial, dueOf(trial), 3, "en").title, "Your Acmeflix trial ends in 3 days");
 
 	assert.deepEqual(reminderEvent(renewal, due, "Europe/Amsterdam"), {
 		key: "finance-renewal:fsub_1",
-		title: "Streamflix renews ($17.99)",
+		title: "Acmeflix renews ($17.99)",
 		description: "Open in Money Watch: /finance?subscription=fsub_1",
 		date: "2026-10-16",
 		time: "09:00",
@@ -151,8 +148,8 @@ test("the notice, the calendar event and the webhook payload say when and how mu
 		timeZone: "Europe/Amsterdam",
 		sourceMessageId: null,
 	});
-	assert.equal(reminderEvent(trial, dueOf(trial), "UTC").title, "Streamflix trial ends");
-	assert.equal(reminderEvent(row({ ...renewal, amountMinor: null }), due, "UTC").title, "Streamflix renews");
+	assert.equal(reminderEvent(trial, dueOf(trial), "UTC").title, "Acmeflix trial ends");
+	assert.equal(reminderEvent(row({ ...renewal, amountMinor: null }), due, "UTC").title, "Acmeflix renews");
 
 	assert.deepEqual(renewalDuePayload(renewal, due, 2), {
 		subscription: {
@@ -268,7 +265,7 @@ async function setup(t, { timeZone = "UTC" } = {}) {
 	let order = 0;
 	const insert = db.db.prepare(
 		`INSERT INTO finance_subscriptions (id, user_id, mailbox_id, vendor, vendor_key, amount_minor, currency, cycle, next_renewal_at, trial_ends_at, status, reminder_days, calendar_reminder, last_reminded_for, created_at, updated_at)
-		VALUES (@id, @userId, 'mailbox-a', @vendor, 'streamflix.example', @amountMinor, 'USD', 'monthly', @next, @trial, @status, @reminderDays, @calendarReminder, @reminded, @order, @order)`,
+		VALUES (@id, @userId, 'mailbox-a', @vendor, 'acmeflix.example', @amountMinor, 'USD', 'monthly', @next, @trial, @status, @reminderDays, @calendarReminder, @reminded, @order, @order)`,
 	);
 	const seconds = (day) => (day ? Date.parse(`${day}T00:00:00.000Z`) / 1000 : null);
 	const addRow = (id, values = {}) => {
@@ -348,7 +345,7 @@ test("one tick reminds a row inside its window once: notice, owner webhook, cale
 			type: "module_notice",
 			moduleId: "finance",
 			notice: "renewal_due",
-			title: "Streamflix renews in 2 days ($17.99)",
+			title: "Acmeflix renews in 2 days ($17.99)",
 			body: null,
 			href: "/finance?subscription=fsub_soon",
 		},
@@ -359,7 +356,7 @@ test("one tick reminds a row inside its window once: notice, owner webhook, cale
 	assert.equal(context.events().length, 1);
 	assert.equal(event.user_id, "owner");
 	assert.equal(event.ical_uid, "finance-renewal:fsub_soon");
-	assert.equal(event.title, "Streamflix renews ($17.99)");
+	assert.equal(event.title, "Acmeflix renews ($17.99)");
 	assert.equal(event.starts_at, Date.parse("2026-10-16T07:00:00.000Z") / 1000, "09:00 in Amsterdam");
 	assert.equal(event.ends_at - event.starts_at, 15 * 60);
 	assert.match(event.description, /\/finance\?subscription=fsub_soon/);
@@ -401,14 +398,14 @@ test("rows outside the window, turned off or not active are left alone", async (
 	assert.deepEqual(result.output, { reminded: 1 });
 	assert.deepEqual(
 		context.notices().map((notice) => notice.title),
-		["Your Streamflix trial ends tomorrow"],
+		["Your Acmeflix trial ends tomorrow"],
 	);
 	for (const id of ["fsub_far", "fsub_off", "fsub_cancelled", "fsub_expired"])
 		assert.equal(context.subscription(id).last_reminded_for, null, id);
 	assert.equal(context.subscription("fsub_trial").last_reminded_for, Date.parse("2026-10-15T00:00:00.000Z") / 1000);
 	assert.deepEqual(
 		context.events().map((event) => event.title),
-		["Streamflix trial ends"],
+		["Acmeflix trial ends"],
 	);
 	const [delivery] = context.deliveries();
 	assert.deepEqual(delivery.body.data.due, { on: "2026-10-15", kind: "trial_end", daysLeft: 1 });
@@ -471,7 +468,7 @@ test("the tick time comes from scheduledTime and the window from the owner's zon
 	context.addRow("fsub_spring", { next: "2026-04-01" });
 	assert.deepEqual((await tick("2026-03-28T22:30:00.000Z")).output, { reminded: 0 });
 	assert.deepEqual((await tick("2026-03-28T23:30:00.000Z")).output, { reminded: 1 });
-	assert.equal(context.notices()[0].title, "Streamflix renews in 3 days ($17.99)");
+	assert.equal(context.notices()[0].title, "Acmeflix renews in 3 days ($17.99)");
 	assert.equal(context.events()[0].starts_at, Date.parse("2026-04-01T07:00:00.000Z") / 1000, "09:00 CEST");
 });
 
@@ -510,7 +507,7 @@ test("a failing notice or calendar write never stops the loop and logs only the 
 		assert.equal(fields.subscriptionId, "fsub_a");
 		assert.match(fields.code, /^[a-z_]+$/);
 		// The line's own timestamp may carry the renewal date, so only the logged fields are checked.
-		assert.doesNotMatch(JSON.stringify(fields), /Streamflix|17\.99|1799|2026-10-16|https?:|owner@example/);
+		assert.doesNotMatch(JSON.stringify(fields), /Acmeflix|17\.99|1799|2026-10-16|https?:|owner@example/);
 	}
 });
 
@@ -726,7 +723,7 @@ test("a UTC owner's due date is reminded until local midnight and claimed silent
 	const context = await setup(t);
 	context.addRow("fsub_today", { next: "2026-10-14", calendarReminder: 0 });
 	assert.deepEqual((await tick("2026-10-14T23:59:59.000Z")).output, { reminded: 1 });
-	assert.equal(context.notices()[0].title, "Streamflix renews today ($17.99)");
+	assert.equal(context.notices()[0].title, "Acmeflix renews today ($17.99)");
 	context.addRow("fsub_late", { next: "2026-10-14", calendarReminder: 0 });
 	assert.deepEqual((await tick("2026-10-15T00:00:00.000Z")).output, { reminded: 0 });
 	assert.equal(context.subscription("fsub_late").last_reminded_for, unix("2026-10-14"), "claimed silently");
@@ -740,7 +737,7 @@ test("a negative-offset owner is reminded for the whole local due day, past the 
 	assert.deepEqual((await tick("2026-10-15T05:00:00.000Z")).output, { reminded: 1 });
 	assert.deepEqual(
 		context.notices().map((notice) => notice.title),
-		["Streamflix renews today ($17.99)"],
+		["Acmeflix renews today ($17.99)"],
 	);
 	assert.equal(context.subscription("fsub_today").last_reminded_for, unix("2026-10-14"));
 	const [event] = context.events();
@@ -759,7 +756,7 @@ test("at UTC-12 the due date is still selected 36 hours after its UTC midnight",
 	const context = await setup(t, { timeZone: "Etc/GMT+12" });
 	context.addRow("fsub_today", { next: "2026-10-14", calendarReminder: 0 });
 	assert.deepEqual((await tick("2026-10-15T11:59:00.000Z")).output, { reminded: 1 });
-	assert.equal(context.notices()[0].title, "Streamflix renews today ($17.99)");
+	assert.equal(context.notices()[0].title, "Acmeflix renews today ($17.99)");
 	context.addRow("fsub_after", { next: "2026-10-14", calendarReminder: 0 });
 	assert.deepEqual((await tick("2026-10-15T12:00:00.000Z")).output, { reminded: 0 });
 	assert.equal(context.subscription("fsub_after").last_reminded_for, unix("2026-10-14"));
@@ -843,6 +840,6 @@ test("a stale tick never overwrites a newer cycle's claim, so the new date is an
 	assert.deepEqual((await tick("2026-10-14T12:05:00.000Z")).output, { reminded: 0 });
 	assert.deepEqual(
 		context.notices().map((notice) => notice.title),
-		["Streamflix renews tomorrow ($17.99)", "Streamflix renews in 3 days ($17.99)"],
+		["Acmeflix renews tomorrow ($17.99)", "Acmeflix renews in 3 days ($17.99)"],
 	);
 });

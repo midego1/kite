@@ -78,7 +78,7 @@ const { applyMigrations } = await load("migrate");
 
 const DAY_MS = 86_400_000;
 const day = (offset) => new Date(Date.now() + offset * DAY_MS).toISOString().slice(0, 10);
-const SENDER = "Streamflix Billing <billing@streamflix.example>";
+const SENDER = "Acmeflix Billing <billing@acmeflix.example>";
 const HOOK_URL = "https://hooks.kite-validation.invalid/finance";
 
 const user = (id) => ({ id, role: "user", isPrimaryAdmin: false, timeZone: "UTC", email: `${id}@example.com` });
@@ -90,8 +90,8 @@ function card(overrides = {}) {
 	return {
 		event: "new",
 		subscriptionId: null,
-		vendor: "Streamflix",
-		vendorKey: "streamflix.example",
+		vendor: "Acmeflix",
+		vendorKey: "acmeflix.example",
 		plan: null,
 		amountMinor: 1799,
 		currency: "USD",
@@ -100,7 +100,7 @@ function card(overrides = {}) {
 		nextRenewalOn: day(20),
 		renewalEstimated: false,
 		trialEndsOn: null,
-		cancelLink: { url: "https://streamflix.example/cancel", oneClick: false },
+		cancelLink: { url: "https://acmeflix.example/cancel", oneClick: false },
 		document: { docType: "invoice", documentOn: day(-40), periodStartOn: null, periodEndOn: null, attachmentId: null },
 		unverified: false,
 		signals: ["subject_keyword", "cycle", "renewal_date"],
@@ -127,7 +127,7 @@ async function setup(t) {
 		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'support', 'shared', 1);
 		INSERT INTO mailbox_access (id, mailbox_id, user_id, permission, created_at) VALUES ('access-1', 'mailbox-a', 'member', 'full_access', 1);
 		INSERT INTO contacts (id, user_id, email, display_name, source, created_at) VALUES
-			('contact-1', 'owner', 'billing@streamflix.example', 'Streamflix Billing', 'inbound', 1);
+			('contact-1', 'owner', 'billing@acmeflix.example', 'Acmeflix Billing', 'inbound', 1);
 	`);
 	const addHook = db.db.prepare(
 		"INSERT INTO webhooks (id, user_id, url, secret, events, enabled, max_attempts, created_at) VALUES (?, ?, ?, 'whsec_test', ?, 1, 3, 1)",
@@ -201,7 +201,7 @@ test("Track creates the row and its invoice document through one audited action;
 	assert.equal(row.user_id, "owner");
 	assert.equal(row.contact_id, "contact-1");
 	assert.equal(row.source_message_id, "inv-1");
-	assert.equal(row.cancel_url, "https://streamflix.example/cancel");
+	assert.equal(row.cancel_url, "https://acmeflix.example/cancel");
 	assert.equal(suggestion("sugg-1").status, "accepted");
 	const [document] = documents();
 	assert.equal(document.doc_type, "invoice");
@@ -230,7 +230,7 @@ test("Track creates the row and its invoice document through one audited action;
 	const [activity] = await labels(env);
 	assert.equal(activity.label, "Started tracking a subscription");
 	assert.equal(activity.target.href, `/finance?subscription=${row.id}`);
-	assert.match(activity.target.label, /^Streamflix · \$17\.99\/month$/);
+	assert.match(activity.target.label, /^Acmeflix · \$17\.99\/month$/);
 
 	const sent = deliveries().filter((delivery) => delivery.event === "finance.subscription.detected");
 	assert.deepEqual(
@@ -644,7 +644,7 @@ test("subscriptions, documents and refs are the owner's only", async (t) => {
 	assert.deepEqual((await listSubscriptionsView(viewOf(member), null)).subscriptions, []);
 	const refs = [{ kind: "finance:subscription", id }];
 	const [mine] = await resolveRecordRefs(env, { userId: "owner", role: "user", isPrimaryAdmin: false }, refs);
-	assert.equal(mine.label, "Streamflix · $17.99/month");
+	assert.equal(mine.label, "Acmeflix · $17.99/month");
 	assert.equal(mine.href, `/finance?subscription=${id}`);
 	const [theirs] = await resolveRecordRefs(env, { userId: "member", role: "user", isPrimaryAdmin: false }, refs);
 	assert.equal(theirs.unavailable, true);
@@ -694,7 +694,7 @@ test("search and list_subscriptions answer with the owner's rows only and stop w
 	assert.deepEqual(found.output.items, [
 		{
 			ref: { kind: "finance:subscription", id },
-			label: "Streamflix · $17.99/month",
+			label: "Acmeflix · $17.99/month",
 			sublabel: `50%_Family · Renews ${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${day(20)}T00:00:00Z`))}`,
 			href: `/finance?subscription=${id}`,
 		},
@@ -717,7 +717,7 @@ test("search and list_subscriptions answer with the owner's rows only and stop w
 	assert.deepEqual(mine.output.subscriptions, [
 		{
 			ref: { kind: "finance:subscription", id },
-			vendor: "Streamflix",
+			vendor: "Acmeflix",
 			plan: "50%_Family",
 			amount: { minor: 1799, currency: "USD" },
 			cycle: "monthly",
@@ -760,7 +760,7 @@ test("the detect step completes a receipt without a cycle from two earlier same-
 		const earlier = (days) => ({
 			id: `older-${days}`,
 			mailboxId: "mailbox-a",
-			from: "billing@streamflix.example",
+			from: "billing@acmeflix.example",
 			subject: "Your receipt",
 			receivedAt: new Date(Date.parse(received) - days * DAY_MS).toISOString(),
 			attachments: [],
@@ -775,8 +775,8 @@ test("the detect step completes a receipt without a cycle from two earlier same-
 		message: {
 			id: "receipt-1",
 			mailboxId: "mailbox-a",
-			from: "billing@streamflix.example",
-			fromName: "Streamflix Billing",
+			from: "billing@acmeflix.example",
+			fromName: "Acmeflix Billing",
 			subject: "Your receipt",
 			receivedAt: received,
 			textExcerpt: "Amount paid: $12.00",
@@ -813,7 +813,7 @@ test("the detect step completes a receipt without a cycle from two earlier same-
 	assert.equal(calls.length, 1);
 	assert.ok(calls[0].limit <= 5);
 	assert.equal(calls[0].sinceDays, 400);
-	assert.equal(calls[0].sender, "billing@streamflix.example");
+	assert.equal(calls[0].sender, "billing@acmeflix.example");
 	assert.deepEqual(context.rows(), [], "nothing is stored for an untracked vendor");
 	assert.deepEqual(context.documents(), []);
 });
@@ -832,9 +832,9 @@ function pdfStepInput(attachments) {
 		message: {
 			id: "pdf-1",
 			mailboxId: "mailbox-a",
-			from: "billing@streamflix.example",
-			fromName: "Streamflix Billing",
-			subject: "Your Streamflix invoice",
+			from: "billing@acmeflix.example",
+			fromName: "Acmeflix Billing",
+			subject: "Your Acmeflix invoice",
 			receivedAt: new Date(Date.now() - DAY_MS).toISOString(),
 			textExcerpt: "Hello, your invoice is attached.",
 		},
@@ -868,7 +868,7 @@ test("the detect step reads an invoice PDF through readAttachment when the body 
 	await setup(t);
 	const reads = [];
 	const files = {
-		"att-plain": invoicePdf("BT (Streamflix Plus) Tj T* ($12.00 per month) Tj ET"),
+		"att-plain": invoicePdf("BT (Acmeflix Plus) Tj T* ($12.00 per month) Tj ET"),
 		"att-locked": Buffer.from("%PDF-1.4\ntrailer << /Encrypt 5 0 R >>\n%%EOF"),
 	};
 	files["att-big"] = files["att-plain"];
@@ -898,7 +898,7 @@ test("the detect step reads an invoice PDF through readAttachment when the body 
 	assert.equal(card.payload.cycle, "monthly");
 	assert.equal(card.payload.document.attachmentId, "att-plain");
 	assert.deepEqual(reads, [{ messageId: "pdf-1", attachmentId: "att-plain", maxBytes: 2_097_152 }]);
-	assert.doesNotMatch(JSON.stringify(found.output), /Streamflix Plus/, "the PDF text is not handed back");
+	assert.doesNotMatch(JSON.stringify(found.output), /Acmeflix Plus/, "the PDF text is not handed back");
 
 	for (const id of ["att-locked", "att-broken", "att-big"]) {
 		const skipped = await detect([pdfAttachment(id)]);
@@ -983,7 +983,7 @@ test("before migration 0063 every finance entry point reads sqlite_master, answe
 		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
 		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'support', 1);
 		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at) VALUES
-			('inv-1', 'owner', 'mailbox-a', 'inbound', 'billing@streamflix.example', 'support@example.com', 'Your invoice', 'Amount paid: $17.99 per month', 'received', 2);
+			('inv-1', 'owner', 'mailbox-a', 'inbound', 'billing@acmeflix.example', 'support@example.com', 'Your invoice', 'Amount paid: $17.99 per month', 'received', 2);
 	`);
 	db.db
 		.prepare(
@@ -1010,14 +1010,14 @@ test("before migration 0063 every finance entry point reads sqlite_master, answe
 			subscriptionsRoute,
 			"POST",
 			"/api/finance/subscriptions",
-			{ vendor: "Streamflix", mailboxId: "mailbox-a" },
+			{ vendor: "Acmeflix", mailboxId: "mailbox-a" },
 		],
 		[
 			"POST from a message",
 			subscriptionsRoute,
 			"POST",
 			"/api/finance/subscriptions",
-			{ vendor: "Streamflix", messageId: "inv-1" },
+			{ vendor: "Acmeflix", messageId: "inv-1" },
 		],
 		[
 			"PATCH",
@@ -1210,13 +1210,13 @@ test("each action is idempotent by actionId and undoes only what it did", async 
 	};
 	const undo = (name, actionId, inverse, op = "undo") => runAction(name, { op, actionId, inverse: { inverse } });
 
-	const edit = { variant: "", subscriptionId, changes: { vendor: "Streamflix Plus", amountMinor: 2499 } };
+	const edit = { variant: "", subscriptionId, changes: { vendor: "Acmeflix Plus", amountMinor: 2499 } };
 	const edited = await execute("editSubscription", "aact_edit", edit);
-	assert.deepEqual(edited.inverse.previous, { vendor: "Streamflix", amountMinor: 1799 });
-	assert.equal(rows()[0].vendor, "Streamflix Plus");
+	assert.deepEqual(edited.inverse.previous, { vendor: "Acmeflix", amountMinor: 1799 });
+	assert.equal(rows()[0].vendor, "Acmeflix Plus");
 	await undo("editSubscription", "aact_edit", edited.inverse);
 	await undo("editSubscription", "aact_edit", edited.inverse);
-	assert.equal(rows()[0].vendor, "Streamflix");
+	assert.equal(rows()[0].vendor, "Acmeflix");
 	assert.equal(rows()[0].amount_minor, 1799);
 	const refused = await runAction("editSubscription", {
 		op: "execute",
@@ -1591,7 +1591,7 @@ const handTracked = (vendorKey) => ({
 	input: {
 		variant: "",
 		fields: {
-			vendor: "Streamflix",
+			vendor: "Acmeflix",
 			plan: "Family",
 			amountMinor: 2999,
 			currency: "USD",
@@ -1623,7 +1623,7 @@ test("refund and failed-payment cards whose row was removed answer 409 instead o
 	const { env, addCard, rows, documents, suggestion, db } = context;
 	const first = await trackFirst(context);
 	const removedId = first.subscription.id;
-	await runAction("trackSubscription", handTracked("streamflix.example"));
+	await runAction("trackSubscription", handTracked("acmeflix.example"));
 	const refund = { docType: "refund", documentOn: day(-2), periodStartOn: null, periodEndOn: null, attachmentId: null };
 	addCard("sugg-r", "refund-1", card({ event: "refund", subscriptionId: removedId, document: refund }));
 	addCard(
@@ -1715,8 +1715,8 @@ function storedRow(overrides = {}) {
 		userId: "owner",
 		mailboxId: "mailbox-a",
 		contactId: null,
-		vendor: "Streamflix",
-		vendorKey: "streamflix.example",
+		vendor: "Acmeflix",
+		vendorKey: "acmeflix.example",
 		plan: null,
 		amountMinor: 1799,
 		currency: "USD",
@@ -1809,7 +1809,7 @@ test("trackUpdate sets what the card read, flags a price change and keeps the ea
 		nextRenewalOn: "2026-12-01",
 		renewalEstimated: true,
 		trialEndsOn: "2026-10-30",
-		cancelLink: { url: "https://streamflix.example/stop", oneClick: true },
+		cancelLink: { url: "https://acmeflix.example/stop", oneClick: true },
 	});
 	const { changes, previous } = trackUpdate(payload, storedRow({ status: "trial" }), card().document, "inv-2", now);
 	assert.equal(changes.amountMinor, 1999);
@@ -1818,7 +1818,7 @@ test("trackUpdate sets what the card read, flags a price change and keeps the ea
 	assert.equal(changes.nextRenewalOn, "2026-12-01");
 	assert.equal(changes.renewalEstimated, true);
 	assert.equal(changes.trialEndsOn, "2026-10-30");
-	assert.equal(changes.cancelUrl, "https://streamflix.example/stop");
+	assert.equal(changes.cancelUrl, "https://acmeflix.example/stop");
 	assert.equal(changes.cancelOneClick, true);
 	assert.equal(changes.status, "active");
 	assert.equal(changes.lastMessageId, "inv-2");
@@ -1848,7 +1848,7 @@ test("trackUpdate sets what the card read, flags a price change and keeps the ea
 	assert.equal(fields.renewalEstimated, false);
 	assert.equal(fields.reminderDays, 3);
 	assert.equal(fields.calendarReminder, true);
-	assert.equal(fields.cancelUrl, "https://streamflix.example/cancel");
+	assert.equal(fields.cancelUrl, "https://acmeflix.example/cancel");
 	const bare = trackedFields(card({ amountMinor: null, cancelLink: null }), "inv-1");
 	assert.equal(bare.currency, null);
 	assert.equal(bare.cancelUrl, null);
@@ -1877,7 +1877,7 @@ test("record helpers convert fields, rows and filters", () => {
 	assert.deepEqual(snapshotFields(row, ["nextRenewalOn", "paymentFailedAt", "vendor", "trialEndsOn"]), {
 		nextRenewalOn: "2026-11-01",
 		paymentFailedAt: DATE.toISOString(),
-		vendor: "Streamflix",
+		vendor: "Acmeflix",
 		trialEndsOn: "2026-10-20",
 	});
 	assert.deepEqual(
@@ -1907,8 +1907,8 @@ test("record helpers convert fields, rows and filters", () => {
 	assert.equal(ledgerEntry(charge).documentOn, "2026-10-01");
 	assert.equal(documentView(charge, true).attachmentId, null, "no attachment without a message");
 	assert.equal(documentView(charge, true).paired, true);
-	assert.equal(subscriptionLabel(row, "en"), "Streamflix · $17.99/month");
-	assert.equal(subscriptionLabel({ ...row, amountMinor: null }, "en"), "Streamflix");
+	assert.equal(subscriptionLabel(row, "en"), "Acmeflix · $17.99/month");
+	assert.equal(subscriptionLabel({ ...row, amountMinor: null }, "en"), "Acmeflix");
 	assert.equal(subscriptionHref("fsub 1"), "/finance?subscription=fsub%201");
 	assert.deepEqual(statusesOf("current"), ["active", "trial"]);
 	assert.deepEqual(statusesOf("ended"), ["cancelled", "expired"]);

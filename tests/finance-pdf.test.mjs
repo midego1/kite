@@ -29,11 +29,11 @@ function makePdf(streams, { trailer = "", header = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\
 const base64 = (bytes) => ({ encoding: "base64", content: bytes.toString("base64"), truncated: false });
 const textOf = (bytes, options) => pdf.pdfTextFromContent(base64(bytes), options);
 
-const INVOICE = "BT /F1 12 Tf 72 720 Td (Streamflix invoice INV-7) Tj 0 -16 Td ($12.00 per month) Tj ET";
+const INVOICE = "BT /F1 12 Tf 72 720 Td (Acmeflix invoice INV-7) Tj 0 -16 Td ($12.00 per month) Tj ET";
 
 test("reads Tj text from a plain PDF", async () => {
 	const text = await textOf(makePdf([{ data: INVOICE }]));
-	assert.match(text, /Streamflix invoice INV-7\n\$12\.00 per month/);
+	assert.match(text, /Acmeflix invoice INV-7\n\$12\.00 per month/);
 });
 
 test("reads Tj text from a FlateDecode PDF, in either filter spelling", async () => {
@@ -161,8 +161,8 @@ test("text stops at 64 KB", async () => {
 	const long = Array.from({ length: 2000 }, (_, index) => `(${"w".repeat(60)}${index}) Tj`).join(" T* ");
 	const text = await textOf(makePdf([{ data: `BT ${long} ET` }]));
 	assert.equal(text.length, 65_536);
-	const small = await textOf(makePdf([{ data: INVOICE }]), { limits: { maxTextChars: 9 } });
-	assert.equal(small, "Streamfli");
+	const small = await textOf(makePdf([{ data: INVOICE }]), { limits: { maxTextChars: 7 } });
+	assert.equal(small, "Acmefli");
 });
 
 test("stops by itself after 5 seconds and returns what it has", async () => {

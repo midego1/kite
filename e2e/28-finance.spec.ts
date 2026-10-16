@@ -163,7 +163,7 @@ test.describe("Money Watch detection", () => {
 		const account = await suggestAccount("fdc");
 		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
 		try {
-			const vendor = `Streamflix${uniqueToken("").slice(-4)}`;
+			const vendor = `Acmeflix${uniqueToken("").slice(-4)}`;
 			const renews = dayFromNow(20);
 			const today = dayFromNow(0);
 			const cancelUrl = `https://${uniqueToken("cancel").toLowerCase()}.example/cancel`;

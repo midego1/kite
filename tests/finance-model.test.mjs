@@ -10,9 +10,9 @@ const RECEIVED = "2026-10-14T09:00:00.000Z";
 const DAY = "2026-10-14";
 
 function stepInput({
-	from = "billing@streamflix.example",
-	fromName = "Streamflix Billing",
-	subject = "Your receipt from Streamflix",
+	from = "billing@acmeflix.example",
+	fromName = "Acmeflix Billing",
+	subject = "Your receipt from Acmeflix",
 	body = "Thanks for your payment.\nAmount paid: $9.99",
 	facts = {},
 	attachments = [],
@@ -72,19 +72,19 @@ test("the hint asks only for receipt-like mail the detector could not complete",
 	assert.equal(ask({ facts: { phishing: ["credential_request"] } }), false);
 	assert.equal(ask({ facts: { spam: true } }), false);
 	assert.equal(
-		ask({ subject: "Hello from Streamflix", from: "news@streamflix.example" }),
+		ask({ subject: "Hello from Acmeflix", from: "news@acmeflix.example" }),
 		false,
 		"no subject keyword and no document attachment",
 	);
 	assert.equal(
-		ask({ subject: "Your receipt", from: "news@streamflix.example", body: "Thanks." }),
+		ask({ subject: "Your receipt", from: "news@acmeflix.example", body: "Thanks." }),
 		false,
 		"a subject keyword alone scores 2",
 	);
 	assert.equal(
 		ask({
-			subject: "Hello from Streamflix",
-			from: "news@streamflix.example",
+			subject: "Hello from Acmeflix",
+			from: "news@acmeflix.example",
 			body: "Amount paid: $9.99",
 			attachments: [{ id: "a1", filename: "invoice-1001.pdf", contentType: "application/pdf", size: 100 }],
 		}),
@@ -93,7 +93,7 @@ test("the hint asks only for receipt-like mail the detector could not complete",
 	);
 	assert.equal(
 		ask({
-			subject: "Hello from Streamflix",
+			subject: "Hello from Acmeflix",
 			body: "Amount paid: $9.99",
 			attachments: [{ id: "a1", filename: "invoice-1001.pdf", contentType: "application/pdf", size: 100 }],
 		}),
@@ -123,7 +123,7 @@ test("a value that is not an object is absent, and unknown keys are never read",
 
 test("each field is validated on its own", () => {
 	const parsed = parse({
-		vendor: "\u202eStreamflix\u200b Billing",
+		vendor: "\u202eAcmeflix\u200b Billing",
 		plan: "x".repeat(81),
 		amount: "17.99",
 		currency: "USD",
@@ -133,7 +133,7 @@ test("each field is validated on its own", () => {
 		docType: "receipt",
 	});
 	assert.deepEqual(parsed, {
-		vendor: "Streamflix",
+		vendor: "Acmeflix",
 		amount: { minor: 1799, currency: "USD" },
 		nextRenewalOn: "2026-11-14",
 	});
@@ -179,7 +179,7 @@ test("the model may say failed_payment only when the deterministic phrases match
 
 test("rule 1: a confident deterministic value always wins", () => {
 	const result = detectWith({
-		fromName: "Streamflix",
+		fromName: "Acmeflix",
 		body: "Plan: Premium\nAmount paid: $17.99/month, renews on 1 Nov 2026.",
 		extension: {
 			vendor: "Other Vendor",
@@ -201,7 +201,7 @@ test("rule 1: a confident deterministic value always wins", () => {
 			modelFields: result.payload.modelFields,
 		},
 		{
-			vendor: "Streamflix",
+			vendor: "Acmeflix",
 			plan: "Premium",
 			cycle: "monthly",
 			nextRenewalOn: "2026-11-01",
@@ -236,7 +236,7 @@ test("rule 2: the model fills empty fields and replaces a domain vendor, an esti
 	assert.equal(estimated.payload.renewalEstimated, false);
 
 	const bodyOnly = detectWith({
-		subject: "Your Streamflix subscription",
+		subject: "Your Acmeflix subscription",
 		body: "Amount paid: $9.99/month, renews on 1 Nov 2026.",
 		extension: { docType: "invoice" },
 	});
@@ -262,14 +262,14 @@ test("rule 3: an amount or currency conflict keeps the detector's value and asks
 test("rule 3: payment failures and refunds keep their own reason when the amount disagrees", () => {
 	const tracked = {
 		id: "sub-1",
-		vendorKey: "streamflix.example",
+		vendorKey: "acmeflix.example",
 		plan: null,
 		amountMinor: 999,
 		currency: "USD",
 		cycle: "monthly",
 	};
 	const refund = detectWith(
-		{ subject: "Your Streamflix refund", body: "Refund issued: $9.99", extension: { amount: "5.00", currency: "USD" } },
+		{ subject: "Your Acmeflix refund", body: "Refund issued: $9.99", extension: { amount: "5.00", currency: "USD" } },
 		{ tracked, recurring: null },
 	);
 	assert.equal(refund.payload.event, "refund");
@@ -286,21 +286,21 @@ test("rule 4: the vendor key, cancel link, event and failed payment never come f
 			docType: "failed_payment",
 		},
 	});
-	assert.equal(result.payload.vendorKey, "streamflix.example");
+	assert.equal(result.payload.vendorKey, "acmeflix.example");
 	assert.equal(result.payload.cancelLink, null);
 	assert.equal(result.payload.event, "new");
 	assert.equal(result.payload.document.docType, "payment");
 	assert.equal(JSON.stringify(result).includes("evil.test"), false);
 	const tracked = {
 		id: "sub-1",
-		vendorKey: "streamflix.example",
+		vendorKey: "acmeflix.example",
 		plan: null,
 		amountMinor: 999,
 		currency: "USD",
 		cycle: "monthly",
 	};
 	const credit = detectWith(
-		{ subject: "Your Streamflix account", body: "Amount: $9.99", extension: { docType: "credit" } },
+		{ subject: "Your Acmeflix account", body: "Amount: $9.99", extension: { docType: "credit" } },
 		{ tracked, recurring: null },
 	);
 	assert.equal(credit.payload.event, "refund", "a model credit can only make a 'Record it?' card");
@@ -318,8 +318,8 @@ test("rule 6: model fields make a candidate only with the deterministic receipt 
 	assert.ok(detectWith({ extension: { cycle: "monthly" } }), "score 3 with a receipt keyword and a model cycle");
 	assert.equal(
 		detectWith({
-			subject: "Hello from Streamflix",
-			from: "news@streamflix.example",
+			subject: "Hello from Acmeflix",
+			from: "news@acmeflix.example",
 			extension: { cycle: "monthly", nextRenewalOn: "2026-11-14" },
 		}),
 		null,
@@ -358,7 +358,7 @@ test("rule 6: a model receipt category adds no weight once a field came from the
 
 test("rule 1: a subject classification without an amount survives the merge", () => {
 	const result = detectWith({
-		subject: "Your Streamflix invoice",
+		subject: "Your Acmeflix invoice",
 		body: "Thanks for your subscription. Billed monthly, renews on 1 Nov 2026.",
 		extension: { amount: "9.99", currency: "USD" },
 	});
@@ -371,7 +371,7 @@ test("rule 1: a subject classification without an amount survives the merge", ()
 test("rule 1: a model refund never replaces a confident invoice", () => {
 	const tracked = {
 		id: "sub-1",
-		vendorKey: "streamflix.example",
+		vendorKey: "acmeflix.example",
 		plan: null,
 		amountMinor: 999,
 		currency: "USD",

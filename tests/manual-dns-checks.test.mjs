@@ -74,6 +74,17 @@ test("a manual zone without an MX answers false, and a failed lookup stays unkno
 	assert.equal(m.MX_UNCHECKED, "Could not check DNS from here");
 });
 
+test("a CNAME answer cannot satisfy a manual zone's MX check", async (t) => {
+	answerDns(t, { "example.com|MX": ["mail.example.net."] });
+	assert.equal(await m.hasMx({}, manualDomain, "mail.example.net"), false);
+});
+
+test("a CNAME followed by an MX answer matches only the MX host", async (t) => {
+	answerDns(t, { "example.com|MX": ["alias.example.net.", "20 mail.example.net."] });
+	assert.equal(await m.hasMx({}, manualDomain, "alias.example.net"), false);
+	assert.equal(await m.hasMx({}, manualDomain, "mail.example.net"), true);
+});
+
 test("DKIM for a Resend domain is checked at Resend's selector when nothing else names one", async (t) => {
 	const asked = answerDns(t, { "resend._domainkey.example.com|TXT": ['"p=abc"'] });
 	const view = { routing: { records: [], missing: [] }, sending: [] };

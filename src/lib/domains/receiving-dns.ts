@@ -30,7 +30,10 @@ export const MX_UNCHECKED = "Could not check DNS from here";
 async function hasPublicMx(hostname: string, content: string): Promise<boolean | null> {
 	try {
 		const answers = await queryDns(hostname, "MX");
-		return answers.some((answer) => same(answer.replace(/^\d+\s+/, ""), content));
+		return answers.some((answer) => {
+			const mx = answer.match(/^\d+\s+(\S+)\s*$/);
+			return mx !== null && same(mx[1], content);
+		});
 	} catch {
 		return null;
 	}

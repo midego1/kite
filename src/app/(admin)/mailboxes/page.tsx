@@ -3,7 +3,7 @@
 import { mobilePrimaryActionAboveNavClass } from "@/components/page-header-utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { Plus, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,11 +26,12 @@ import { authFetch } from "@/lib/auth/client";
 import { useAuthMe } from "@/hooks/use-auth-me";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import type { Domain, MailboxOwner, MailboxesResponse } from "./types";
-import { getMailboxAddress, getMailboxName } from "./utils";
+import { getMailboxAddress, getMailboxesBase, getMailboxName, listedMailboxes } from "./utils";
 
 export default function MailboxesPage() {
 	const qc = useQueryClient();
 	const router = useRouter();
+	const base = getMailboxesBase(usePathname());
 	const [displayName, setDisplayName] = useState("");
 	const [localPart, setLocalPart] = useState("");
 	const [domainId, setDomainId] = useState("");
@@ -97,13 +98,16 @@ export default function MailboxesPage() {
 			clearMailboxesCache();
 			setCreateOpen(false);
 			qc.invalidateQueries({ queryKey: ["mailboxes"] });
-			if (mailboxType === "shared" && mailboxId) router.push(`/mailboxes/${mailboxId}`);
+			if (mailboxType === "shared" && mailboxId) router.push(`${base}/${mailboxId}`);
 			setMailboxType("personal");
 		},
 	});
 
+	const visibleMailboxes = listedMailboxes(mailboxes.data?.mailboxes ?? [], base, account.data?.user?.id);
 	const domainMap = new Map((domains.data?.domains ?? []).map((d) => [d.id, d.hostname]));
-	const mailboxOwners = [...(accounts.data?.accounts ?? [])];
+	const mailboxOwners = (accounts.data?.accounts ?? []).filter(
+		(owner) => base !== "/settings/mailboxes" || owner.id === account.data?.user?.id,
+	);
 	if (account.data?.user?.id && !mailboxOwners.some((owner) => owner.id === account.data?.user?.id)) {
 		mailboxOwners.unshift({
 			id: account.data.user.id,
@@ -228,11 +232,11 @@ export default function MailboxesPage() {
 					</span>
 				</div> */}
 				{mailboxes.isLoading && <SectionRowSkeleton />}
-				{!mailboxes.isLoading && (mailboxes.data?.mailboxes ?? []).length === 0 && (
+				{!mailboxes.isLoading && visibleMailboxes.length === 0 && (
 					<p className="rounded-2xl bg-white px-5 py-4 text-sm text-neutral-500">No mailboxes yet</p>
 				)}
 				<List>
-					{(mailboxes.data?.mailboxes ?? []).map((mailbox) => {
+					{visibleMailboxes.map((mailbox) => {
 						const mailboxWithHostname = {
 							...mailbox,
 							hostname: mailbox.hostname ?? domainMap.get(mailbox.domainId) ?? "?",
@@ -240,10 +244,7 @@ export default function MailboxesPage() {
 
 						return (
 							<ListRow key={mailbox.id} asChild>
-								<Link
-									href={`/mailboxes/${mailbox.id}`}
-									className="group px-5 py-4 transition-colors hover:bg-blue-50/40"
-								>
+								<Link href={`${base}/${mailbox.id}`} className="group px-5 py-4 transition-colors hover:bg-blue-50/40">
 									<span className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
 										{getMailboxName(mailboxWithHostname).trim().charAt(0).toUpperCase() || "?"}
 										{mailbox.hasAvatar && (

@@ -34,6 +34,7 @@ Apply database migrations 0062 and 0063 after deploying, from the database card 
 
 ### Fixed
 
+- One-time codes in HTML-only mail whose markup is deeply indented, such as ChatGPT sign-in codes, now get the **Copy code** button and the code notification. The indentation left so many spaces between "verification code" and the code that Kite no longer saw them as belonging together.
 - The MCP server now declares the tools capability, so `tools/list` always answers, with an empty list when no tool applies (for example a key whose only scope belongs to a module that is off) instead of an unknown-method error, and module tools such as `list_subscriptions` are listed with the core ones.
 - One-time codes with lowercase letters, such as `b77f3a`, now get the **Copy code** button and the code notification when the code stands on its own line or right after a word like "code:". A code on its own line is also no longer lost when a street number in the footer sits near "The code will expire".
 - An automatic reading job whose last attempt was stopped mid-run (for example by the Worker's CPU limit) is now marked failed with "no attempts are left" instead of being picked up again by recovery forever.
@@ -43,6 +44,7 @@ Apply database migrations 0062 and 0063 after deploying, from the database card 
 - A scheduled send can no longer go out straight away because its time has passed. The schedule menu says "That send time has already passed. Pick a later time." for a past date and does not use it, the composer refuses a schedule that passed before you pressed **Schedule**, and `/api/send` answers 400 for a `scheduledAt` more than a minute in the past. Ported from upstream Mailflare #134.
 - Text typed just before closing the composer is saved to the draft instead of being lost, and **Delete draft** no longer gets stuck after a network error or reports a failure for a draft that was already gone. Ported from upstream Mailflare #86.
 - Pressing Enter or **Apply** in the **Insert link** popup no longer sends the message you are writing. Ported from upstream Mailflare #141.
+- Confirming or cancelling an input method composition (for example Japanese or Chinese typing) with Enter or Escape in the **Insert link** popup no longer applies a half-typed address, closes the popup or leaves the composer.
 - In conversation view, a conversation row is bold only when a message it stands for in that folder is unread, so an unread archived reply no longer makes the Inbox row look unread and a sent reply is never bold. Marking a conversation read or unread moves the sidebar Inbox count by the number of messages it really changes, and only from the Inbox, and opening an unread message in another folder no longer lowers it. **Delete forever** on a message that has meanwhile left Trash or Spam now says "Some messages could not be deleted because they are no longer in Trash or Spam." and keeps the message open instead of going back to the list as if it had worked; for a selection the progress toast says so. Ported from upstream Mailflare #135.
 - For a domain whose DNS is managed outside Cloudflare, the Resend and Amazon SES receiving steps now look the MX record up in public DNS, so "MX record points to Resend" (or SES) passes once the record is published instead of always failing; when the lookup itself fails the step says "Could not check DNS from here". The DNS check on the Domains page now checks DKIM at `resend._domainkey` for a domain that sends through Resend instead of leaving it unknown. Ported from upstream Mailflare #132.
 - The fixes below were ported from upstream Mailflare by hieunc229 (AGPL-3.0):
@@ -56,6 +58,7 @@ Apply database migrations 0062 and 0063 after deploying, from the database card 
   - On a phone, the message reader, conversation and one-time code card use narrow side margins, so the subject and body are no longer squeezed by desktop indents ([mailflare#112](https://github.com/hieunc229/mailflare/pull/112)).
   - The routing rule switches and buttons under Admin → Routing are announced with the rule they belong to ("Enable rule: …", "Edit rule: …", "Delete rule: …"), and the keep-a-copy switch has a label ([mailflare#129](https://github.com/hieunc229/mailflare/pull/129)).
   - The browser tab shows your custom app name from Admin → Branding from the first page load instead of "Kite" until the page finishes loading, and leaving a mail folder no longer leaves its title on the next page ([mailflare#81](https://github.com/hieunc229/mailflare/pull/81)).
+- The development server (`npm run dev`, and the e2e suite that runs on it) no longer refuses file uploads over 1 MB, such as draft attachments, avatars and backup restores, with "Payload Too Large". Deployed Workers were not affected.
 
 ### Security
 

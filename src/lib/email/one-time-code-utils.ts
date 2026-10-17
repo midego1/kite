@@ -205,10 +205,22 @@ function singleValueOrNull(values: Set<string>): string | null {
 	return [...values][0] ?? null;
 }
 
+/**
+ * Text converted from an HTML-only email keeps the markup's indentation, so a keyword and its code can sit
+ * over 100 characters of spaces apart. Trimming lines and collapsing runs keeps the windows measuring words.
+ */
+function compactWhitespace(value: string): string {
+	return value
+		.split(/\r?\n/)
+		.map((line) => line.replace(/[ \t\u00a0]+/g, " ").trim())
+		.join("\n")
+		.replace(/\n{3,}/g, "\n\n");
+}
+
 /** The one-time code a new email contains, or null when there is none or it is ambiguous. */
 export function extractOneTimeCode({ subject, text }: OneTimeCodeInput): string | null {
-	const subjectText = typeof subject === "string" ? subject : "";
-	const bodyText = typeof text === "string" ? text : "";
+	const subjectText = typeof subject === "string" ? compactWhitespace(subject) : "";
+	const bodyText = typeof text === "string" ? compactWhitespace(text) : "";
 	// Candidates live in one concatenated source so a subject keyword sits next
 	// to a body that is only the code ("Verification code\n554108").
 	const source = subjectText ? `${subjectText}\n${bodyText}` : bodyText;

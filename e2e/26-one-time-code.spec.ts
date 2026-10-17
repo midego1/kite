@@ -180,6 +180,39 @@ test("an HTML-only message with a lowercase code above a footer address shows th
 	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("b77f3a");
 });
 
+test("an HTML-only message whose markup is deeply indented shows the chip", async ({ page }) => {
+	await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+	const pad = (depth: number) => " ".repeat(depth * 2);
+	const subject = `Your temporary Examplechat login code ${uniqueToken("otp")}`;
+	const api = await apiContext(STORAGE_STATE);
+	await deliverInbound(api, {
+		from: `"Examplechat" <noreply@examplechat.example.test>`,
+		to: SUPPORT_ADDRESS,
+		subject,
+		text: null,
+		html: [
+			"<center><table><tr><td>",
+			`${pad(10)}<p>`,
+			`${pad(12)}Enter this temporary verification code to continue:`,
+			`${pad(10)}</p>`,
+			`${pad(10)}<p style="font-family: Menlo, monospace; font-size: 24px">`,
+			pad(12),
+			`${pad(12)}604127`,
+			pad(12),
+			`${pad(10)}</p>`,
+			`${pad(10)}<p>Didn't request a verification code? You can ignore this email.</p>`,
+			"</td></tr></table></center>",
+		].join("\n"),
+	});
+	await api.dispose();
+	await page.goto("/inbox");
+	await openMessage(page, subject);
+	const readerCopy = page.getByRole("main").getByRole("button", { name: "Copy code" });
+	await expect(readerCopy).toBeVisible();
+	await readerCopy.click();
+	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("604127");
+});
+
 test("an HTML-only message with a lowercase code carries it in the browser notification", async ({ page }) => {
 	await seedRealtimeSession(page);
 	await page.addInitScript(stubNotifications());

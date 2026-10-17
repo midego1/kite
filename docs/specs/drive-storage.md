@@ -216,7 +216,7 @@ The object limit is 10 000 parts. A file with one part may be any size from 1 by
   - `CSP: default-src 'none'; style-src 'unsafe-inline'; sandbox`, or `frame-ancestors 'self'` only for PDF, matching upstream's documented exception for Chrome's viewer
   - `Referrer-Policy: no-referrer`
   - `Cache-Control: private, no-store`
-  - Inline only for the safe allowlist `isDriveInlineSafe`: no HTML and no SVG.
+  - Inline only when `getInlineContentType(item.contentType)` from `src/lib/http/content-type-utils.ts` returns a type, and send that parsed type, never the stored raw value. Otherwise send `getDownloadContentType(...)` (or `application/octet-stream`) with `attachment`. The helper is the one mail attachments use (PR #69, a port of upstream #103); do not add a separate Drive allowlist. If it is not on `main` yet when Drive starts, merge `origin/main` once #69 lands.
 - When the store can presign, `disposition=attachment` and the size is at least 8 MiB, respond `302` to a presigned GET (5 min, `response-content-disposition=attachment; filename*=…`, `response-content-type=application/octet-stream`) with `Cache-Control: no-store`. Otherwise stream.
 - Public links always stream through Kite (section 8). That hides the store, keeps expiry checked server-side and keeps rate limiting accurate.
 
@@ -481,7 +481,7 @@ All screens must work in Kite, Classic and dark mode, use the `blue-*` palette, 
    - URLs are only issued after the role check.
    - The browser PUT sends no cookies and no Kite headers (the CSRF token must not leak to the store).
 4. **Content serving:**
-   - Inline only for the safe allowlist. HTML, SVG and XML are always served as an `attachment` with `application/octet-stream`.
+   - Inline only for types `getInlineContentType` (`src/lib/http/content-type-utils.ts`) accepts. HTML, SVG, XML and unparsable types (for example `image/png, text/html`) are always served as an `attachment` with `application/octet-stream`.
    - Send `nosniff`, sandbox CSP, `no-store`, and RFC 5987 `filename*` in `Content-Disposition`. Reuse `getAttachmentContentDisposition` (`src/app/api/messages/[messageId]/attachments/[attachmentId]/utils.ts`; move it to `src/lib/http/` if both sides import it).
    - Presigned GETs carry forced `response-content-type` and `response-content-disposition=attachment`.
 5. **Public links:**
@@ -613,7 +613,7 @@ Acceptance:
 - Kite, Classic and dark mode are checked.
 
 Tests:
-- `tests/drive-utils.test.mjs` (names, inline-safe types, disposition, byte ranges, part plan, quota math including an unlimited (null) limit and an override, link token hashing and expiry).
+- `tests/drive-utils.test.mjs` (names, disposition, byte ranges, part plan, quota math including an unlimited (null) limit and an override, link token hashing and expiry).
 - `tests/drive-access.test.mjs` (SQLite: inherited roles, trashed ancestors, public subtree, the recursive CTE).
 - `tests/drive-retention.test.mjs`.
 - `tests/file-bucket-multipart.test.mjs`.
@@ -700,7 +700,7 @@ Validation for every phase (from `AGENTS.md`): `npm run check`, `npm run build`,
 | `src/lib/drive/content.ts` (`parseByteRange`, `streamDriveFile`) | **Port + extend** | phase 2 adds the presigned redirect for large downloads; shared disposition helper |
 | `src/lib/drive/retention.ts` | **Adapt** | Drive only, configurable days, expired upload abort; runs as the Drive module's `0 2 * * *` cron task, not wired into `worker.ts` directly |
 | `src/lib/drive/storage.ts` (quota sum) | **Adapt** | atomic conditional insert; per-user limit |
-| `src/lib/drive/utils.ts` | **Port** | part size 32 MiB proxied / 64 MiB direct; keep `isDriveInlineSafe`, `normalizeDriveName` |
+| `src/lib/drive/utils.ts` | **Port** | part size 32 MiB proxied / 64 MiB direct; keep `normalizeDriveName`; drop `isDriveInlineSafe` in favour of `getInlineContentType` (`src/lib/http/content-type-utils.ts`), as upstream #103 did |
 | `src/lib/drive/auth.ts` `authorizeDrive` | **Adapt** → `requireDriveUser` inside `guardRoute("drive", …)` | 404 when off for the install or restricted for the user |
 | `src/app/api/drive/**` routes | **Adapt** | upload flow split into proxied (phase 1) and direct (phase 2); links API; public API moved to `/api/public/drive/*` |
 | `items/[id]/link` + `public/[token]` (plaintext token, no expiry) | **Drop the model, keep the subtree logic** | replaced by `drive_links` (hashed, expiry, password, revoke, rate limit) |

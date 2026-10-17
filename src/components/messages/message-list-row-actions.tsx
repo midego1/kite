@@ -8,6 +8,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import type { MessageListRowActionsProps } from "./types";
 import { isMessageSnoozed, unsnoozeMessage } from "./message-list-row-actions-utils";
 import { SnoozePicker } from "./snooze-picker";
+import { reportListActionError } from "./list-action-toast";
 
 export function MessageListRowActions({ message, onAction, compact = false }: MessageListRowActionsProps) {
 	const [snoozeOpen, setSnoozeOpen] = useState(false);
@@ -63,7 +64,7 @@ export function MessageListRowActions({ message, onAction, compact = false }: Me
 							variant="ghost"
 							size="sm"
 							className={buttonClassName}
-							onClick={() => void unsnoozeMessage(message.id)}
+							onClick={() => void unsnoozeMessage(message.id).catch(reportListActionError)}
 							aria-label="Unsnooze"
 						>
 							<Clock className="h-4 w-4" />

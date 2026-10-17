@@ -70,6 +70,8 @@ export async function POST(request: Request) {
 		...(status ? { status } : {}),
 		...(read !== null ? { read } : {}),
 		...(folderId !== undefined ? { folderId } : {}),
+		// The inbox hides snoozed mail, so moving a snoozed message there must end the snooze.
+		...(payload.action === "inbox" ? { snoozedUntil: null } : {}),
 	};
 
 	if (payload.action !== "delete" && payload.action !== "restore" && Object.keys(values).length === 0) {

@@ -57,7 +57,7 @@ export function BulkMessageToolbar({
 	// Trash and Spam also offer the irreversible delete; the page confirms before running it.
 	const canDeleteForever = supportsPermanentDelete(folder);
 	const moveOptions = [
-		{ value: "inbox", label: "Inbox", Icon: Inbox, hidden: !folder || folder === "inbox" },
+		{ value: "inbox", label: "Inbox", Icon: Inbox, hidden: folder === "inbox" },
 		{ value: "archive", label: "Archived", Icon: Archive, hidden: folder === "archived" },
 		{ value: "spam", label: "Spam", Icon: ShieldAlert, hidden: folder === "spam" },
 		{ value: "trash", label: "Trash", Icon: Trash2, hidden: folder === "trash" },

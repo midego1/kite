@@ -359,3 +359,73 @@ test("the assistant answers once its step limit is reached", async (t) => {
 	assert.equal(saved.length, 1);
 	assert.match(saved[0].content, /Max steps per question/);
 });
+
+async function paginationContext(t) {
+	const directory = mkdtempSync(join(tmpdir(), "kite-agent-pages-"));
+	const database = new SqliteDatabase(join(directory, "kite.sqlite"));
+	t.after(() => {
+		database.db.close();
+		rmSync(directory, { recursive: true, force: true });
+	});
+	await applyMigrations(database, join(process.cwd(), "drizzle", "migrations"));
+	database.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, created_at) VALUES
+			('user-1', 'owner@example.com', 'hash', 'Owner', 1),
+			('user-2', 'other@example.com', 'hash', 'Other', 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'user-1', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES
+			('mailbox-1', 'user-1', 'domain-1', 'owner', 1),
+			('mailbox-2', 'user-2', 'domain-1', 'other', 1);
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at) VALUES
+			('email-1', 'user-1', 'mailbox-1', 'inbound', 'sender@example.net', 'owner@example.com', 'First', 'First email', 'received', 2),
+			('email-2', 'user-1', 'mailbox-1', 'inbound', 'sender@example.net', 'owner@example.com', 'Second', 'Second email', 'received', 3),
+			('email-3', 'user-1', 'mailbox-1', 'inbound', 'sender@example.net', 'owner@example.com', 'Third', 'Third email', 'received', 4),
+			('foreign-email', 'user-2', 'mailbox-2', 'inbound', 'sender@example.net', 'other@example.com', 'Other mailbox', 'Private', 'received', 5),
+			('private-draft', 'user-2', 'mailbox-1', 'outbound', 'owner@example.com', 'sender@example.net', 'Other user draft', 'Private', 'draft', 6);
+	`);
+	return {
+		env: { DB: database, BUCKET: { get: async () => null, delete: async () => {} } },
+		user: { id: "user-1", email: "owner@example.com", role: "user" },
+		mailboxId: "mailbox-1",
+		origin: "chat",
+	};
+}
+
+test("list_emails starts with an omitted or null cursor and follows the returned nextCursor", async (t) => {
+	const context = await paginationContext(t);
+	const first = await runEmailTool(context, "list_emails", { folder: "inbox", limit: 1 });
+	assert.deepEqual(
+		first.emails.map((email) => email.id),
+		["email-3"],
+	);
+	assert.equal(first.nextCursor, "email-3");
+	assert.deepEqual(await runEmailTool(context, "list_emails", { folder: "inbox", limit: 1, cursor: null }), first);
+	const second = await runEmailTool(context, "list_emails", { folder: "inbox", limit: 1, cursor: first.nextCursor });
+	assert.deepEqual(
+		second.emails.map((email) => email.id),
+		["email-2"],
+	);
+	const third = await runEmailTool(context, "list_emails", { folder: "inbox", limit: 1, cursor: second.nextCursor });
+	assert.deepEqual(
+		third.emails.map((email) => email.id),
+		["email-1"],
+	);
+	assert.equal(third.nextCursor, null);
+});
+
+test("list_emails answers an invented or inaccessible cursor with retry guidance", async (t) => {
+	const context = await paginationContext(t);
+	for (const cursor of ["0", "initial", "missing-email", "foreign-email", "private-draft"]) {
+		await assert.rejects(runEmailTool(context, "list_emails", { folder: "inbox", limit: 1, cursor }), (error) => {
+			assert.match(error.message, /^Invalid pagination cursor/);
+			assert.match(error.message, /omit cursor or set it to null/);
+			assert.match(error.message, /nextCursor/);
+			return true;
+		});
+	}
+	await assert.rejects(runEmailTool(context, "get_email", { emailId: "missing-email" }), /^Error: Message not found$/);
+	await assert.rejects(
+		runEmailTool({ ...context, mailboxId: "mailbox-2" }, "list_emails", { folder: "inbox", cursor: "foreign-email" }),
+		/Mailbox not found or permission denied/,
+	);
+});

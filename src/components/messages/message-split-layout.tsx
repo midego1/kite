@@ -22,6 +22,7 @@ import {
 import { ReadingPaneEmptyState } from "./reading-pane-empty-state";
 import { clampListSize, getEffectiveReadingPaneMode } from "./reading-layout-utils";
 import { useReadingPaneMode, useWideReadingViewport } from "./use-reading-layout";
+import { getSelectionToolbarFolder } from "./utils";
 import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
 
 const LIST_WIDTH = { fallback: 360, min: 250, max: 1200, reserved: 280 };
@@ -180,7 +181,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 				<section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white">
 					{split && !below && selectedMessages.length > 0 ? (
 						<BulkMessageSelectionPane
-							folder={config.folder}
+							folder={getSelectionToolbarFolder(config)}
 							selectedMessages={selectedMessages}
 							onAction={(action, folderId) => bulkActionRef.current?.(action, folderId) ?? Promise.resolve()}
 							onClearSelection={clearSelection}

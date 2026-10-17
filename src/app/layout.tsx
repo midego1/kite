@@ -6,6 +6,7 @@ import { legacyStorageMigrationScript } from "@/components/legacy-storage-utils"
 import { sidebarBootstrapScript } from "@/components/sidebar-state-utils";
 import { themeBootstrapScript } from "@/components/theme-utils";
 import { appearanceBootstrapScript } from "@/components/appearance-preferences";
+import { getHomeBranding } from "./home-server-utils";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -34,8 +35,7 @@ const kiteScript = Ms_Madi({
 	weight: "400",
 });
 
-export const metadata: Metadata = {
-	title: "Kite",
+const baseMetadata: Metadata = {
 	description: "Multi-tenant email on Cloudflare",
 	icons: { icon: "/api/branding/icon" },
 	robots: {
@@ -54,8 +54,15 @@ export const metadata: Metadata = {
 	},
 };
 
+/** The configured app name is the title of the first response, so it is not swapped in after the page loads. */
+export async function generateMetadata(): Promise<Metadata> {
+	const { appName } = await getHomeBranding();
+	return { ...baseMetadata, title: appName };
+}
+
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
 	const nonce = (await headers()).get("x-nonce") ?? undefined;
+	const branding = await getHomeBranding();
 	return (
 		<html
 			lang="en"
@@ -71,7 +78,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 				<link rel="icon" href="/api/branding/icon"></link>
 			</head>
 			<body className="antialiased">
-				<Providers>{children}</Providers>
+				<Providers initialBranding={branding}>{children}</Providers>
 			</body>
 		</html>
 	);

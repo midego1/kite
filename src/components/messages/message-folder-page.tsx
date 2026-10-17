@@ -37,8 +37,8 @@ import {
 	getMessagePartyClassName,
 	getMessagePreview,
 	isMessageListRowUnread,
-	formatEmailPageTitle,
 	getMailboxAddress,
+	getSelectionToolbarFolder,
 	runBulkMessageAction,
 	emptyMessageFolder,
 	deleteMessagesForever,
@@ -53,6 +53,8 @@ import clsx from "clsx";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { showProgressToast } from "@/components/ui/progress-toast";
 import { confirmReportPhishing } from "./phishing-report";
+import { reportListActionError } from "./list-action-toast";
+import { useEmailPageTitle } from "./use-email-page-title";
 
 const pageSize = 25;
 
@@ -101,7 +103,7 @@ function MessageListRow({
 				setThreadUnread(previousThreadUnread);
 				if (unreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: -unreadDelta });
 			}
-			throw error;
+			reportListActionError(error);
 		}
 	}
 
@@ -113,7 +115,9 @@ function MessageListRow({
 	function toggleStar(event: MouseEvent<HTMLButtonElement>) {
 		event.preventDefault();
 		event.stopPropagation();
-		void toggleMessageStar(message.id).then((result) => setStarred(result.starred));
+		void toggleMessageStar(message.id)
+			.then((result) => setStarred(result.starred))
+			.catch(reportListActionError);
 	}
 
 	function onMessageNavigate(event: MouseEvent<HTMLAnchorElement>) {
@@ -224,13 +228,13 @@ function MessageListRow({
 					label: read ? "Mark unread" : "Mark read",
 					icon: read ? Mail : MailOpen,
 					className: "bg-blue-600",
-					onTrigger: () => void runRowAction(read ? "unread" : "read").catch(() => undefined),
+					onTrigger: () => void runRowAction(read ? "unread" : "read"),
 				}}
 				endAction={{
 					label: "Archive",
 					icon: Archive,
 					className: "bg-emerald-600",
-					onTrigger: () => void runRowAction("archive").catch(() => undefined),
+					onTrigger: () => void runRowAction("archive"),
 				}}
 			>
 				{compactRow}
@@ -384,15 +388,10 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 
 	const { clearSelection, leaveOpenMessage } = useClearSelection(selection, setSelectedMessages, messages, isLoading);
 
-	useEffect(() => {
-		if (mailboxesLoading) return;
-		document.title = formatEmailPageTitle({
-			location: config.title,
-			total: titleTotal,
-			unread: titleUnread,
-			emailAddress: mailboxAddress,
-		});
-	}, [config.title, mailboxAddress, mailboxesLoading, titleTotal, titleUnread]);
+	useEmailPageTitle(
+		{ location: config.title, total: titleTotal, unread: titleUnread, emailAddress: mailboxAddress },
+		mailboxesLoading,
+	);
 
 	function updateSelectedMessage(messageId: string, selected: boolean, extendRange = false) {
 		const orderedIds = messages.map((message) => message.id);
@@ -502,7 +501,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 					.reduce((total, message) => total + (readValue ? (message.read ? 0 : 1) : message.read ? -1 : 0), 0);
 				if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta });
 			}
-			throw error;
+			reportListActionError(error);
 		} finally {
 			setPendingBulkAction(false);
 		}
@@ -537,7 +536,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 							onAction={runSelectedAction}
 							onClearSelection={clearSelection}
 							pending={pendingBulkAction}
-							folder={config.folderId ? undefined : config.folder}
+							folder={getSelectionToolbarFolder(config)}
 						/>
 					) : (
 						(compact || isMobile) && <h1 className="truncate font-semibold text-neutral-900 pl-1">{config.title}</h1>

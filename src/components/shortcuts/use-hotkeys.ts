@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { ShortcutDefinition } from "./types";
+import { findSequenceMatch, isModifierKey } from "./use-hotkeys-utils";
 
 interface UseHotkeysOptions {
 	enabled?: boolean;
@@ -81,6 +82,8 @@ export function useHotkeys(shortcuts: ShortcutDefinition[], options: UseHotkeysO
 				return;
 			}
 
+			if (isModifierKey(key)) return;
+
 			// Handle sequence buffer
 			sequenceBufferRef.current.push(key);
 
@@ -92,10 +95,9 @@ export function useHotkeys(shortcuts: ShortcutDefinition[], options: UseHotkeysO
 				sequenceBufferRef.current = [];
 			}, 800);
 
-			const currentSequence = sequenceBufferRef.current.join(" ");
-			const sequenceMatch = shortcutsRef.current.find((s) => s.key.toLowerCase() === currentSequence);
+			const sequenceMatch = findSequenceMatch(sequenceBufferRef.current, shortcutsRef.current);
 
-			if (sequenceMatch) {
+			if (sequenceMatch && matchModifiers(e, sequenceMatch)) {
 				e.preventDefault();
 				sequenceBufferRef.current = [];
 				sequenceMatch.action();

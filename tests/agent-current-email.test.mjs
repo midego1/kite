@@ -151,5 +151,6 @@ test("the current email note names only the email ID and follows the user's text
 	assert.ok(noted.endsWith(")"));
 	assert.match(noted, /The user now has email email-9 open/);
 	assert.match(noted, /"This email", "this thread" or "this message" means email email-9/);
-	assert.match(noted, /read it with get_thread/);
+	assert.match(noted, /read it with get_email using emailId email-9/);
+	assert.match(noted, /Use get_thread when thread context is needed/);
 });

@@ -25,6 +25,9 @@ type AuditInput = {
 	dkimSelector?: string;
 };
 
+/** The selector Resend asks a domain to publish its DKIM key under. */
+const RESEND_DKIM_SELECTOR = "resend";
+
 function isTxt(record: CfDnsRecord) {
 	return record.type?.toUpperCase() === "TXT";
 }
@@ -49,16 +52,21 @@ async function check(
  * Independently verifies the public DNS a domain needs, rather than trusting
  * the zone records the Cloudflare API reports. MX, SPF and DMARC are checked at
  * their canonical names; DKIM uses the selector the sending subdomain was
- * provisioned with. A name that resolves is "ok", one that answers NXDOMAIN is
+ * provisioned with, or Resend's own selector for a Resend domain. A name that resolves is "ok", one that answers NXDOMAIN is
  * "missing", and a lookup that fails outright is "unknown".
  */
-export async function auditDomainDns(hostname: string, view: AuditInput): Promise<DomainDnsAudit> {
+export async function auditDomainDns(
+	hostname: string,
+	view: AuditInput,
+	sendingProvider?: string | null,
+): Promise<DomainDnsAudit> {
 	const expected = [...view.routing.records, ...view.routing.missing, ...view.sending];
 	// Cloudflare reports the selector it signs with, which is more reliable than
 	// guessing from the subdomain's DNS records (whose names may be relative).
 	const dkimName =
 		(view.dkimSelector ? `${view.dkimSelector}._domainkey.${hostname}` : undefined) ??
-		expected.find((record) => isTxt(record) && /_domainkey/i.test(record.name ?? ""))?.name;
+		expected.find((record) => isTxt(record) && /_domainkey/i.test(record.name ?? ""))?.name ??
+		(sendingProvider === "resend" ? `${RESEND_DKIM_SELECTOR}._domainkey.${hostname}` : undefined);
 
 	const [mx, spf, dmarc] = await Promise.all([
 		check("mx", "MX", hostname, "MX", (value) => !/^0\s*\.?$/.test(value.trim())),

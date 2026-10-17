@@ -2,6 +2,7 @@ import type { BulkMessageAction, BulkMessageResponse } from "@/app/api/messages/
 import { offerUndoForMove } from "@/components/messages/undo-utils";
 import { announcePhishingReports } from "@/components/messages/phishing-report";
 import { authFetch } from "@/lib/auth/client";
+import { assertNothingSkipped } from "@/lib/messages/permanent-delete-utils";
 import { markMessagesReadInCaches } from "@/hooks/utils";
 import { getEmailAddress, normalizeEmailAddress, splitEmailAddressList } from "@/lib/email/address";
 import { getLatestEmailContent } from "@/lib/email/reply-content-utils";
@@ -45,6 +46,7 @@ export async function runSingleMessageAction(messageId: string, action: BulkMess
 	window.dispatchEvent(new Event("kite:messages-changed"));
 	offerUndoForMove(action, data);
 	if (action === "phishing") announcePhishingReports(data);
+	assertNothingSkipped(action, data);
 }
 
 export function openUnsubscribeUrl(url: string) {

@@ -2,6 +2,7 @@ import { authFetch } from "@/lib/auth/client";
 import { parseSearchQuery } from "@/lib/search/query-utils";
 import { getUserTimeZone } from "@/lib/time/utils";
 import { setCachedMessageRead } from "@/lib/messages/detail-cache";
+import { withReadState } from "@/lib/messages/thread-unread-utils";
 import type { MessageFilterOptions, MessageFolder } from "./types";
 import type { MessageCounts, MessageListResponse } from "./types";
 
@@ -100,12 +101,7 @@ export function markMessagesReadInCaches(messageIds: string[], read: boolean) {
 			...response,
 			messages: response.messages.map((message) => {
 				if (!ids.has(message.id)) return message;
-				const threadSize = message.threadMessageIds?.length;
-				return {
-					...message,
-					read,
-					...(threadSize !== undefined ? { threadUnread: read ? 0 : threadSize } : {}),
-				};
+				return withReadState(message, read);
 			}),
 		});
 	}

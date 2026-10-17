@@ -17,6 +17,7 @@ import { ownedStatusCondition } from "@/lib/modules/message-status";
 import { loadRowSuggestions } from "@/lib/agent/auto-read/message-suggestions";
 import { suggestionVisibilityFor } from "@/lib/agent/auto-read/suggestion-visibility";
 import { afterCursor, getMessageListColumns, loadConversationPage } from "./utils";
+import { groupThreadMembers, type ScopedThreads } from "@/lib/messages/thread-unread-utils";
 import type { ListMessage } from "./types";
 
 export async function GET(request: Request) {
@@ -119,7 +120,7 @@ export async function GET(request: Request) {
 	let nextCursor: string | null = null;
 	// Which stored messages each visible row stands for, so acting on a
 	// conversation row acts on the whole conversation within this folder.
-	const threadMessageIds = new Map<string, string[]>();
+	let scopedThreads: ScopedThreads = { ids: new Map(), unread: new Map(), inbound: new Map() };
 	if (groupByThread) {
 		const page = await loadConversationPage({ db, where, offset, limit, cursor });
 		total = page.total;
@@ -134,15 +135,11 @@ export async function GET(request: Request) {
 		if (keys.length > 0) {
 			const members = await queryInChunks(keys, (chunk) =>
 				db
-					.select({ id: messages.id, key: threadKey })
+					.select({ id: messages.id, key: threadKey, read: messages.read, direction: messages.direction })
 					.from(messages)
 					.where(and(where, inArray(threadKey, chunk))),
 			);
-			for (const member of members) {
-				const list = threadMessageIds.get(member.key) ?? [];
-				list.push(member.id);
-				threadMessageIds.set(member.key, list);
-			}
+			scopedThreads = groupThreadMembers(members);
 		}
 	} else {
 		const [[totalRow], pageRows] = await Promise.all([
@@ -220,7 +217,7 @@ export async function GET(request: Request) {
 		db,
 		accessibleMailboxes,
 		rows,
-		threadMessageIds,
+		scopedThreads.ids,
 		await suggestionVisibilityFor(env, user),
 	);
 	// `Message.textBody`/`htmlBody` are optional on the wire type and the
@@ -229,6 +226,7 @@ export async function GET(request: Request) {
 	const enrichedRows = rows.map(({ rawR2Key: _rawR2Key, ...message }) => {
 		const contactMap = contactMapsByUserId.get(message.userId);
 		const accountName = message.mailboxId ? mailboxNameMap.get(message.mailboxId) : null;
+		const key = message.threadId ?? message.id;
 		return {
 			...message,
 			snippet: message.snippet,
@@ -238,10 +236,17 @@ export async function GET(request: Request) {
 				null,
 			toContactName: contactMap?.get(normalizeEmailAddress(getFirstEmailAddressEntry(message.toAddr))) ?? null,
 			threadCount: (message.threadId && threadCounts.get(message.threadId)?.total) || 1,
-			threadUnread: (message.threadId && threadCounts.get(message.threadId)?.unread) || 0,
+			// A conversation row is unread only when a message it stands for in this folder is.
+			threadUnread:
+				(groupByThread
+					? scopedThreads.unread.get(key)
+					: message.threadId && threadCounts.get(message.threadId)?.unread) || 0,
 			...rowSuggestions(message.id),
 			...(groupByThread
-				? { threadMessageIds: threadMessageIds.get(message.threadId ?? message.id) ?? [message.id] }
+				? {
+						threadMessageIds: scopedThreads.ids.get(key) ?? [message.id],
+						threadInboundCount: scopedThreads.inbound.get(key) ?? 0,
+					}
 				: {}),
 		};
 	});

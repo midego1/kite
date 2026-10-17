@@ -13,6 +13,8 @@ import type { AgentToolContext } from "./types";
 import { normalizeTimeZone } from "@/lib/time/utils";
 import { AGENT_STEP_LIMIT_FALLBACK, agentStepSettings, clampAgentMaxSteps } from "./step-limit-utils";
 import { serializeAgentToolOutput } from "./tool-history-utils";
+import { withCurrentEmailContext } from "./current-email-utils";
+import { ownMessage } from "./tools";
 
 export async function getAgentConversation(context: AgentToolContext, conversationId: string) {
 	const db = getDb(context.env);
@@ -53,12 +55,22 @@ export async function getAgentChatHistory(context: AgentToolContext, conversatio
 	return attachHistoryRefs(context, rows);
 }
 
+/** The open email, under the same rule as get_email: in this mailbox, and never another user's draft. */
+async function resolveCurrentEmailId(context: AgentToolContext, messageId?: string) {
+	if (!messageId) return null;
+	return ownMessage(context, messageId).then(
+		(row) => row.id,
+		() => null,
+	);
+}
+
 export async function createAgentChatStream(
 	context: AgentToolContext,
 	text: string,
 	conversationId?: string,
 	signal?: AbortSignal,
 	timeZone?: string,
+	currentMessageId?: string,
 ) {
 	timeZone = normalizeTimeZone(timeZone ?? context.timeZone);
 	context = { ...context, timeZone };
@@ -73,6 +85,7 @@ export async function createAgentChatStream(
 		.limit(1);
 	const selection = await getAgentModel(context.env, settings?.modelId);
 	if (!selection) throw new Error("AI provider is not configured");
+	const currentEmailId = await resolveCurrentEmailId(context, currentMessageId);
 	let conversation = conversationId ? await getAgentConversation(context, conversationId) : null;
 	if (conversationId && !conversation) throw new Error("Conversation not found");
 	if (!conversation) {
@@ -96,7 +109,7 @@ export async function createAgentChatStream(
 		.reverse()
 		.filter((row) => row.role === "user" || row.role === "assistant")
 		.map((row) => ({ role: row.role as "user" | "assistant", content: row.content }));
-	prompt.push({ role: "user", content: text });
+	prompt.push({ role: "user", content: withCurrentEmailContext(text, currentEmailId) });
 	const { tools, fragments } = await buildChatTools(context);
 	const system = agentSystemPrompt(settings?.instructions ?? "", timeZone, fragments);
 	const maxSteps = clampAgentMaxSteps(context.user.agentMaxSteps);

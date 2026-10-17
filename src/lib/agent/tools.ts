@@ -136,7 +136,7 @@ async function requireAccess(context: AgentToolContext, write = false, manage = 
 const INVALID_CURSOR_MESSAGE =
 	"Invalid pagination cursor. To start from the first page, omit cursor or set it to null. For later pages, use only the nextCursor returned by list_emails for this mailbox and folder; never invent a cursor or use a page number or offset.";
 
-async function ownMessage(context: AgentToolContext, messageId: string, notFoundMessage = "Message not found") {
+export async function ownMessage(context: AgentToolContext, messageId: string, notFoundMessage = "Message not found") {
 	await requireAccess(context);
 	const [row] = await getDb(context.env)
 		.select()

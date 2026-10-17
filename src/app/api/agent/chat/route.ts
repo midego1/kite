@@ -13,6 +13,7 @@ const schema = z.object({
 	conversationId: z.string().nullish(),
 	text: z.string().trim().min(1).max(4_000),
 	timeZone: z.string().max(80).optional(),
+	currentMessageId: z.string().max(100).nullish(),
 });
 
 export async function POST(request: Request) {
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
 			parsed.data.conversationId ?? undefined,
 			request.signal,
 			getRequestTimeZone(request, user.timeZone),
+			parsed.data.currentMessageId ?? undefined,
 		);
 		return new Response(stream, {
 			headers: {

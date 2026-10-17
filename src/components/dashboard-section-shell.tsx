@@ -12,6 +12,8 @@ import { MailboxSelector } from "@/components/mailbox-selector";
 import { ShortcutsProvider } from "@/components/shortcuts";
 import { MobileMenuButton, SidebarAside } from "@/components/sidebar-aside";
 import { SidebarProvider } from "@/components/sidebar-state";
+import { MAIN_CONTENT_ID, SkipToContent } from "@/components/skip-to-content";
+import { RouteTitle } from "@/components/route-title";
 
 type DashboardSectionShellProps = Omit<AuthGuardProps, "children" | "mode" | "allowAuthenticated"> & {
 	children: ReactNode;
@@ -25,10 +27,12 @@ export function DashboardSectionShell({ children, ...guard }: DashboardSectionSh
 				<MailboxProvider>
 					<ComposeProvider>
 						<ShortcutsProvider>
+							<RouteTitle />
 							<div
 								className="grid h-[100dvh] grid-cols-[minmax(0,1fr)] md:grid-cols-[var(--sidebar-width)_minmax(0,1fr)] overflow-hidden bg-[#f6f8fc] transition-[grid-template-columns]"
 								style={{ transitionDuration: "var(--sidebar-transition-duration)" }}
 							>
+								<SkipToContent />
 								<SidebarAside>
 									<DashboardNav />
 								</SidebarAside>
@@ -38,7 +42,11 @@ export function DashboardSectionShell({ children, ...guard }: DashboardSectionSh
 										<PageSearchInput />
 										<MailboxSelector />
 									</header>
-									<main className="page-flush min-h-0 flex-1 overflow-y-auto max-md:rounded-t-3xl max-md:bg-white overscroll-contain scrollbar-gutter-stable">
+									<main
+										id={MAIN_CONTENT_ID}
+										tabIndex={-1}
+										className="focus:outline-none page-flush min-h-0 flex-1 overflow-y-auto max-md:rounded-t-3xl max-md:bg-white overscroll-contain scrollbar-gutter-stable"
+									>
 										{children}
 									</main>
 								</div>

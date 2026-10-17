@@ -50,7 +50,7 @@ export function AuthShell({ icon: Icon, title, description, children, footer, st
 						<div className="mb-7 flex flex-wrap gap-2 text-xs font-semibold">
 							{steps.map((step, index) => (
 								<span key={step.label} className="flex items-center gap-2">
-									<span className={step.active ? "text-blue-700" : "text-neutral-400"}>
+									<span className={step.active ? "text-blue-700" : "text-neutral-500"}>
 										{index + 1} {step.label}
 									</span>
 									{index < steps.length - 1 && <span className="text-neutral-300">/</span>}

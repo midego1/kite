@@ -71,6 +71,7 @@ import {
 	WEEKDAY_OPTIONS,
 } from "./utils";
 import clsx from "clsx";
+import { DialogFrame } from "@/components/dialog-frame";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 
 const eventFieldClass =
@@ -530,6 +531,7 @@ export default function CalendarPage() {
 				minimal ? "gap-0" : "gap-3",
 			)}
 		>
+			<h1 className="sr-only">Calendar</h1>
 			{loading && <RouteLoadingBarPortal />}
 			{headerTarget &&
 				createPortal(
@@ -861,10 +863,9 @@ export default function CalendarPage() {
 					)}
 					data-state={closingEventEditor ? "closed" : "open"}
 				>
-					<div
-						role="dialog"
-						aria-modal="true"
-						aria-label={editing ? "Edit event" : "Create event"}
+					<DialogFrame
+						label={editing ? "Edit event" : "Create event"}
+						onClose={() => pendingAction !== "save" && setClosingEventEditor(true)}
 						className="dialog-content max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl sm:p-6"
 						data-state={closingEventEditor ? "closed" : "open"}
 						onAnimationEnd={(event) => {
@@ -1093,7 +1094,7 @@ export default function CalendarPage() {
 								</div>
 							</div>
 						</div>
-					</div>
+					</DialogFrame>
 				</div>
 			)}
 		</div>

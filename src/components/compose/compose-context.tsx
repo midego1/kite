@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 type ComposeContextValue = {
@@ -22,6 +22,11 @@ export function useCompose() {
 export function ComposeProvider({ children }: { children: ReactNode }) {
 	const [open, setOpen] = useState(false);
 	const [draftId, setDraftId] = useState<string | null>(null);
+	const opener = useRef<HTMLElement | null>(null);
+
+	function rememberOpener() {
+		opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+	}
 
 	return (
 		<ComposeContext.Provider
@@ -29,16 +34,24 @@ export function ComposeProvider({ children }: { children: ReactNode }) {
 				open,
 				draftId,
 				openComposer: () => {
+					if (!open) rememberOpener();
 					setDraftId(null);
 					setOpen(true);
 				},
 				openDraftComposer: (nextDraftId) => {
+					if (!open) rememberOpener();
 					setDraftId(nextDraftId);
 					setOpen(true);
 				},
 				closeComposer: () => {
 					setOpen(false);
 					setDraftId(null);
+					const previous = opener.current;
+					opener.current = null;
+					if (previous)
+						requestAnimationFrame(() => {
+							if (previous.isConnected) previous.focus();
+						});
 				},
 			}}
 		>

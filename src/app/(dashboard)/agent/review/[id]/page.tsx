@@ -23,7 +23,11 @@ export default function AgentReviewPage() {
 	return (
 		<div className="p-8">
 			<h1 className="text-2xl font-semibold">AI draft review</h1>
-			{error && <p className="mt-4 text-red-600">{error}</p>}
+			{error && (
+				<p role="alert" className="mt-4 text-red-600">
+					{error}
+				</p>
+			)}
 			{!error && !request && <p className="mt-4">Loading review…</p>}
 			{request && (request.status !== "pending" || request.stale || !request.snapshot) && (
 				<p className="mt-4">

@@ -210,7 +210,7 @@ export default function ResendDomainSection({
 								{record.priority !== null ? `${record.priority} ` : ""}
 								{record.value}
 							</span>
-							<span className="uppercase text-neutral-400">{record.status.replace(/_/g, " ")}</span>
+							<span className="uppercase text-neutral-500">{record.status.replace(/_/g, " ")}</span>
 						</li>
 					))}
 				</ul>

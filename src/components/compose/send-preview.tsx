@@ -66,7 +66,7 @@ export function SendPreview({
 							</>
 						)}
 						<dt className="text-neutral-500">Subject</dt>
-						<dd>{subject || <span className="text-neutral-400">(no subject)</span>}</dd>
+						<dd>{subject || <span className="text-neutral-500">(no subject)</span>}</dd>
 						{scheduledAt && (
 							<>
 								<dt className="text-neutral-500">Send at</dt>

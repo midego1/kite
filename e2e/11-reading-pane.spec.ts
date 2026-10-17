@@ -65,6 +65,29 @@ test("No split shows the list full width and replaces it with the open message",
 	await expect(page.getByRole("button", { name: "Back to Inbox" })).toBeVisible();
 });
 
+test("No split keeps the folder title on direct message routes and after returning from settings", async ({ page }) => {
+	await chooseSetting(page, "No split");
+	await openMessage(page, subject);
+	const messageUrl = page.url();
+	await page.getByRole("button", { name: "Open account menu" }).click();
+	await page.getByRole("link", { name: "Settings", exact: true }).click();
+	await expect(page).toHaveTitle(/^My account - /);
+	await page.evaluate(() => {
+		(window as Window & { __e2eTitleMarker?: boolean }).__e2eTitleMarker = true;
+	});
+
+	await page.goBack();
+	await expect(page).toHaveURL(messageUrl);
+	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+	await expect(page).toHaveTitle(/^Inbox(?: \(\d+\))?$/);
+	expect(await page.evaluate(() => (window as Window & { __e2eTitleMarker?: boolean }).__e2eTitleMarker)).toBe(true);
+	await expect(page.getByRole("main").locator("[data-density]")).toHaveCount(0);
+
+	await page.reload();
+	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+	await expect(page).toHaveTitle(/^Inbox(?: \(\d+\))?$/);
+});
+
 test("Below inbox stacks the list above the reading pane", async ({ page }) => {
 	await chooseSetting(page, "Below inbox");
 	await page.goto("/inbox");

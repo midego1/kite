@@ -26,14 +26,22 @@ export default function ActivityPage() {
 				<p className="mt-1 text-sm text-neutral-500">Sign-ins, sign-outs and module changes across user accounts.</p>
 			</div>
 
-			<section className="overflow-x-auto rounded-3xl bg-white">
+			<section role="region" tabIndex={0} aria-label="Activity" className="overflow-x-auto rounded-3xl bg-white">
 				<table className="w-full min-w-[760px] table-fixed text-left">
 					<thead className="border-b border-neutral-100 bg-neutral-50 text-xs font-semibold uppercase tracking-wide text-neutral-500">
 						<tr>
-							<th className="w-40 px-5 py-3">Activity</th>
-							<th className="px-5 py-3">User</th>
-							<th className="w-64 px-5 py-3">Device</th>
-							<th className="w-48 px-5 py-3">Time</th>
+							<th scope="col" className="w-40 px-5 py-3">
+								Activity
+							</th>
+							<th scope="col" className="px-5 py-3">
+								User
+							</th>
+							<th scope="col" className="w-64 px-5 py-3">
+								Device
+							</th>
+							<th scope="col" className="w-48 px-5 py-3">
+								Time
+							</th>
 						</tr>
 					</thead>
 					<tbody className="divide-y divide-neutral-100">

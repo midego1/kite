@@ -19,6 +19,7 @@ import { SidebarProvider } from "@/components/sidebar-state";
 import { SidebarAside, MobileMenuButton } from "@/components/sidebar-aside";
 import { SidebarResizeBoundary } from "@/components/sidebar-resize-boundary";
 import { ShortcutsProvider } from "@/components/shortcuts";
+import { MAIN_CONTENT_ID, SkipToContent } from "@/components/skip-to-content";
 import clsx from "clsx";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { readInitialColumnWidth, saveColumnWidth } from "@/components/column-width-preferences";
@@ -38,6 +39,7 @@ function clampAssistantWidth(width: number) {
 import { useDashboardState, useLatch } from "./dashboard-state";
 import { useAssistantAvailability } from "./use-assistant-availability";
 import { FloatingAssistant } from "./floating-assistant-window";
+import { RouteTitle } from "@/components/route-title";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
 	const { assistantOpen, setAssistantOpen, assistantFullSize, setAssistantFullSize } = useDashboardState();
@@ -79,10 +81,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 					<ComposeProvider>
 						<MailSearchProvider>
 							<ShortcutsProvider>
+								<RouteTitle />
 								<div
 									className="grid h-dvh grid-cols-[minmax(0,1fr)] overflow-hidden bg-[#f6f8fc] transition-[grid-template-columns] md:grid-cols-[var(--sidebar-width)_minmax(0,1fr)]"
 									style={{ transitionDuration: "var(--sidebar-transition-duration)" }}
 								>
+									<SkipToContent />
 									<SidebarAside>
 										<div className="h-full">
 											<DashboardNav />
@@ -125,7 +129,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 										<div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
 											<AssistantOpenContext.Provider value={assistantVisible && assistantLayout === "sidebar"}>
 												<main
-													className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-t-3xl bg-white overscroll-contain scrollbar-gutter-stable"
+													id={MAIN_CONTENT_ID}
+													tabIndex={-1}
+													className="focus:outline-none min-h-0 min-w-0 flex-1 overflow-y-auto rounded-t-3xl bg-white overscroll-contain scrollbar-gutter-stable"
 													aria-hidden={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
 													inert={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
 												>

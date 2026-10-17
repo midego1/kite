@@ -75,7 +75,7 @@ function DocumentEntry({
 					<button
 						type="button"
 						aria-label={`Remove ${documentLabel(document.docType).toLowerCase()}`}
-						className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+						className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 						onClick={() =>
 							void writeWithUndo(
 								{ path: `/api/finance/documents/${encodeURIComponent(document.id)}`, method: "DELETE" },

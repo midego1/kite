@@ -113,11 +113,11 @@ export function ContactDetailsTrigger({ mailboxId, address, name, label, classNa
 						</div>
 						<div className="grid gap-3 rounded-lg bg-neutral-50 p-3 text-sm sm:grid-cols-2">
 							<div>
-								<p className="text-xs font-medium uppercase text-neutral-400">Source</p>
+								<p className="text-xs font-medium uppercase text-neutral-500">Source</p>
 								<p className="mt-1 capitalize text-neutral-700">{contact?.source ?? "Email"}</p>
 							</div>
 							<div>
-								<p className="text-xs font-medium uppercase text-neutral-400">Last seen</p>
+								<p className="text-xs font-medium uppercase text-neutral-500">Last seen</p>
 								<p className="mt-1 text-neutral-700">
 									{contact?.lastSeenAt
 										? formatUserDate(contact.lastSeenAt, { month: "short", day: "2-digit", year: "numeric" })
@@ -126,7 +126,11 @@ export function ContactDetailsTrigger({ mailboxId, address, name, label, classNa
 							</div>
 							{contact?.blocked && <p className="text-sm font-medium text-red-600">Blocked contact</p>}
 						</div>
-						{error && <p className="text-sm text-red-600">{error}</p>}
+						{error && (
+							<p role="alert" className="text-sm text-red-600">
+								{error}
+							</p>
+						)}
 						<Button type="button" onClick={saveContact} disabled={loading || saving || !displayName.trim()}>
 							{saving ? "Saving..." : "Save contact"}
 						</Button>

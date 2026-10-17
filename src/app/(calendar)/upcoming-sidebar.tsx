@@ -105,7 +105,7 @@ export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }
 			) : groups.length === 0 ? (
 				<div>
 					<h2 className="text-lg font-semibold text-neutral-900">Upcoming</h2>
-					<p className="mt-4 text-sm text-neutral-400">
+					<p className="mt-4 text-sm text-neutral-500">
 						{loadError ? "Could not load upcoming events." : "No upcoming events."}
 					</p>
 				</div>
@@ -143,7 +143,7 @@ export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }
 										<span className="block truncate text-sm text-neutral-700 group-hover:text-neutral-950">
 											{event.title}
 										</span>
-										<span className="block text-xs text-neutral-400">
+										<span className="block text-xs text-neutral-500">
 											{formatEventRange(event)}
 											{event.status === "tentative" && <span className="ml-1 italic">Tentative</span>}
 										</span>

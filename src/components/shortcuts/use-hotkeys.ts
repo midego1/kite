@@ -84,6 +84,10 @@ export function useHotkeys(shortcuts: ShortcutDefinition[], options: UseHotkeysO
 
 			if (isModifierKey(key)) return;
 
+			// Single keys inside a dialog, menu or listbox belong to it: `e` in the snooze picker must not archive the message behind it.
+			if (e.target instanceof HTMLElement && e.target.closest('[role="dialog"], [role="menu"], [role="listbox"]'))
+				return;
+
 			// Handle sequence buffer
 			sequenceBufferRef.current.push(key);
 

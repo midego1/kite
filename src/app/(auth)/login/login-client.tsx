@@ -98,10 +98,16 @@ export function LoginClient({ adding = false }: { adding?: boolean }) {
 							autoFocus
 							placeholder="123 456"
 							required
+							aria-invalid={error ? true : undefined}
+							aria-describedby={error ? "login-error" : undefined}
 						/>
 					</div>
 					{error && (
-						<p className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+						<p
+							id="login-error"
+							role="alert"
+							className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+						>
 							{error}
 						</p>
 					)}
@@ -137,7 +143,15 @@ export function LoginClient({ adding = false }: { adding?: boolean }) {
 			<form method="post" onSubmit={onSubmit} className="space-y-5">
 				<div className="space-y-2">
 					<Label htmlFor="email">Email</Label>
-					<Input id="email" name="email" type="email" autoComplete="email" required />
+					<Input
+						id="email"
+						name="email"
+						type="email"
+						autoComplete="email"
+						required
+						aria-invalid={error ? true : undefined}
+						aria-describedby={error ? "login-error" : undefined}
+					/>
 				</div>
 				<div className="space-y-2">
 					<div className="flex items-center justify-between">
@@ -146,10 +160,22 @@ export function LoginClient({ adding = false }: { adding?: boolean }) {
 							Forgot password?
 						</Link>
 					</div>
-					<Input id="password" name="password" type="password" autoComplete="current-password" required />
+					<Input
+						id="password"
+						name="password"
+						type="password"
+						autoComplete="current-password"
+						required
+						aria-invalid={error ? true : undefined}
+						aria-describedby={error ? "login-error" : undefined}
+					/>
 				</div>
 				{error && (
-					<p className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+					<p
+						id="login-error"
+						role="alert"
+						className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+					>
 						{error}
 					</p>
 				)}

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Check, ChevronDown, Inbox, LogOut, Settings, ShieldCheck, UserPlus, UsersRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useDismissible } from "@/components/use-dismissible";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { ModuleMenuLinks } from "@/components/modules/module-nav-links";
 import { useKeyChanged } from "@/hooks/use-synced-state";
@@ -133,21 +134,7 @@ export function MailboxSelector({ initialUser }: MailboxSelectorProps = {}) {
 	const ref = useRef<HTMLDivElement>(null);
 	const { counts } = useMessageCounts(null, open);
 
-	useEffect(() => {
-		function onPointerDown(event: PointerEvent) {
-			if (!ref.current?.contains(event.target as Node)) setOpen(false);
-		}
-		function onKeyDown(event: KeyboardEvent) {
-			if (event.key === "Escape") setOpen(false);
-		}
-
-		document.addEventListener("pointerdown", onPointerDown);
-		document.addEventListener("keydown", onKeyDown);
-		return () => {
-			document.removeEventListener("pointerdown", onPointerDown);
-			document.removeEventListener("keydown", onKeyDown);
-		};
-	}, []);
+	useDismissible(open, () => setOpen(false), ref);
 
 	const session = useAuthMe();
 	const [syncedSession, setSyncedSession] = useState<unknown>(UNSYNCED_SESSION);

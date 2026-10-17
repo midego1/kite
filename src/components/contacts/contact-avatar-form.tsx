@@ -97,7 +97,11 @@ export function ContactAvatarForm({ mailboxId, address, name, hasAvatar, onAvata
 					)}
 				</div>
 			</div>
-			{status && <p className="text-xs text-red-600">{status}</p>}
+			{status && (
+				<p role="alert" className="text-xs text-red-600">
+					{status}
+				</p>
+			)}
 		</div>
 	);
 }

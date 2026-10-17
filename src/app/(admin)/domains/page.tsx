@@ -390,10 +390,12 @@ export default function DomainsPage() {
 								</div>
 							)}
 							{domainCheckError && (
-								<p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{domainCheckError}</p>
+								<p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+									{domainCheckError}
+								</p>
 							)}
 							{create.isError && (
-								<div className="space-y-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+								<div role="alert" className="space-y-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
 									<p>{(create.error as Error).message}</p>
 									<div className="space-y-2">
 										<p className="font-medium">Check that your Cloudflare API token has these permissions:</p>

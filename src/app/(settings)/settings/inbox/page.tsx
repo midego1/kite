@@ -11,6 +11,7 @@ import { BrowserNotificationSettings } from "@/components/settings/browser-notif
 export default function SettingsInboxPage() {
 	return (
 		<div className="space-y-8 py-4">
+			<h1 className="sr-only">Inbox settings</h1>
 			<section className="space-y-4">
 				<div>
 					<h2 className="text-xl font-semibold text-neutral-900">Inbox experience</h2>

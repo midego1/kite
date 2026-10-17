@@ -61,7 +61,11 @@ export function SendingSettings() {
 					))}
 				</Select>
 			</label>
-			{(saveError || error) && <p className="px-4 text-sm text-red-600">{saveError || error}</p>}
+			{(saveError || error) && (
+				<p role="alert" className="px-4 text-sm text-red-600">
+					{saveError || error}
+				</p>
+			)}
 		</div>
 	);
 }

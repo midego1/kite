@@ -24,6 +24,7 @@ export default function SettingsExportPage() {
 
 	return (
 		<div className="space-y-6">
+			<h1 className="sr-only">Export</h1>
 			{/* <div>
 				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Export</h1>
 				<p className="mt-1 text-sm text-neutral-500">
@@ -44,7 +45,7 @@ export default function SettingsExportPage() {
 						{exportState.loading ? "Preparing..." : "Download .mbox"}
 					</Button>
 					{exportState.error && (
-						<p className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+						<p role="alert" className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
 							{exportState.error}
 						</p>
 					)}

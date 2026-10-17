@@ -92,11 +92,15 @@ export default function BrandingPage() {
 									<ImagePlus className="mb-1 h-5 w-5" />
 									Choose PNG, JPEG, WebP, or GIF
 									<br />
-									<span className="text-xs text-neutral-400">Maximum 2 MB</span>
+									<span className="text-xs text-neutral-500">Maximum 2 MB</span>
 								</span>
 							</button>
 						</div>
-						{status && <p className="text-sm text-neutral-600">{status}</p>}
+						{status && (
+							<p role="status" className="text-sm text-neutral-600">
+								{status}
+							</p>
+						)}
 						<Button type="submit" disabled={saving || !appName.trim()}>
 							{saving ? "Saving..." : "Save branding"}
 						</Button>

@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useId, useState, useEffect, useRef, useMemo } from "react";
 import { Search, CornerDownLeft } from "lucide-react";
 import toast from "react-hot-toast";
 import type { CommandItem } from "./types";
 import { CommandParamForm } from "./command-palette-params";
 import { filterCommands, groupCommandsByCategory, orderCommandsByGroup } from "./command-palette-utils";
 import { CommandPaletteItem } from "./command-palette-item";
+import { useDialogFocus } from "@/components/use-dialog-focus";
 
 interface CommandPaletteProps {
 	isOpen: boolean;
@@ -22,9 +23,9 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 	const [values, setValues] = useState<Record<string, string>>({});
 	const [paramError, setParamError] = useState<string | null>(null);
 
-	useEffect(() => {
-		inputRef.current?.focus();
-	}, []);
+	const dialogRef = useRef<HTMLDivElement>(null);
+	const listboxId = useId();
+	useDialogFocus(dialogRef, inputRef);
 
 	const filteredCommands = useMemo(() => filterCommands(commands, query), [commands, query]);
 
@@ -82,11 +83,20 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 	};
 
 	let flatIndex = 0;
+	const optionId = (index: number) => `${listboxId}-option-${index}`;
+
+	useEffect(() => {
+		document.getElementById(`${listboxId}-option-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
+	}, [activeIndex, listboxId]);
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4 bg-neutral-900/40 backdrop-blur-xs animate-in fade-in duration-100">
 			<div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
 			<div
+				ref={dialogRef}
+				role="dialog"
+				aria-modal="true"
+				aria-label="Command palette"
 				className="relative w-full max-w-xl bg-white border border-neutral-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col z-10"
 				onKeyDown={handleKeyDown}
 			>
@@ -103,15 +113,26 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 							setSelectedIndex(0);
 						}}
 						placeholder="Type a command or search actions..."
+						role="combobox"
+						aria-label="Search commands"
+						aria-expanded={pending === null}
+						aria-controls={listboxId}
+						aria-autocomplete="list"
+						aria-activedescendant={pending === null && orderedCommands.length ? optionId(activeIndex) : undefined}
 						className="w-full bg-transparent text-neutral-900 placeholder-neutral-400 text-[15px] focus:outline-none"
 					/>
-					<kbd className="px-2 py-0.5 text-xs font-semibold text-neutral-400 bg-neutral-100 border border-neutral-200 rounded-md shadow-2xs">
+					<kbd className="px-2 py-0.5 text-xs font-semibold text-neutral-500 bg-neutral-100 border border-neutral-200 rounded-md shadow-2xs">
 						ESC
 					</kbd>
 				</div>
 
 				{/* Results */}
-				<div className="max-h-80 overflow-y-auto p-2">
+				<div
+					id={listboxId}
+					role={pending ? undefined : "listbox"}
+					aria-label={pending ? undefined : "Commands"}
+					className="max-h-80 overflow-y-auto p-2"
+				>
 					{pending ? (
 						<CommandParamForm
 							item={pending}
@@ -120,13 +141,16 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 							onChange={(name, value) => setValues((previous) => ({ ...previous, [name]: value }))}
 						/>
 					) : filteredCommands.length === 0 ? (
-						<div className="p-8 text-center text-sm text-neutral-400">
+						<div role="status" className="p-8 text-center text-sm text-neutral-500">
 							No matching commands found for &ldquo;{query}&rdquo;
 						</div>
 					) : (
 						Object.entries(grouped).map(([category, items]) => (
-							<div key={category} className="mb-2 last:mb-0">
-								<div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+							<div key={category} role="group" aria-label={category} className="mb-2 last:mb-0">
+								<div
+									aria-hidden="true"
+									className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-500"
+								>
 									{category}
 								</div>
 								{items.map((item) => {
@@ -137,6 +161,7 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 									return (
 										<CommandPaletteItem
 											key={item.id}
+											id={optionId(itemIndex)}
 											item={item}
 											isActive={isCurrent}
 											onSelect={() => select(item)}
@@ -150,7 +175,7 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 				</div>
 
 				{/* Footer */}
-				<div className="px-4 py-2.5 bg-neutral-50 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-400">
+				<div className="px-4 py-2.5 bg-neutral-50 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-500">
 					<div className="flex items-center gap-3">
 						<span>
 							<kbd className="px-1.5 py-0.5 bg-neutral-200 rounded mr-1 text-[10px]">↑↓</kbd>

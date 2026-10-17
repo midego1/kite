@@ -1,4 +1,5 @@
 import { createDnsRecord, deleteDnsRecord, listMxRecords } from "@/lib/cloudflare-dns";
+import { queryDns } from "@/lib/dns-query";
 import { isManualZone } from "@/lib/domains/provision";
 import type { CfDnsRecord } from "@/lib/cloudflare-api.types";
 import type { DomainRow } from "@/lib/domains/types";
@@ -22,9 +23,25 @@ export async function listDomainMx(env: CloudflareEnv, domain: DomainRow): Promi
 	return listMxRecords(env, domain.zoneId, domain.hostname);
 }
 
-/** Whether an MX record for `content` is in the zone; null when DNS is manual. */
+/** The receiving step's detail when the MX could not be looked up. */
+export const MX_UNCHECKED = "Could not check DNS from here";
+
+/** Public DNS answers MX data as "<priority> <host>". */
+async function hasPublicMx(hostname: string, content: string): Promise<boolean | null> {
+	try {
+		const answers = await queryDns(hostname, "MX");
+		return answers.some((answer) => same(answer.replace(/^\d+\s+/, ""), content));
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Whether an MX record for `content` is in the zone, or in public DNS when the
+ * zone is managed outside Cloudflare; null when that lookup fails.
+ */
 export async function hasMx(env: CloudflareEnv, domain: DomainRow, content: string): Promise<boolean | null> {
-	if (isManualZone(domain.zoneId)) return null;
+	if (isManualZone(domain.zoneId)) return hasPublicMx(domain.hostname, content);
 	return (await listDomainMx(env, domain)).some((record) => same(record.content ?? "", content));
 }
 

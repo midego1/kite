@@ -14,7 +14,7 @@ import {
 import { bucketExists, createBucket, putBucketPolicy, putExpiryLifecycle } from "@/lib/aws/s3";
 import { createTopic, listSubscriptions, setTopicPolicy, subscribeHttps } from "@/lib/aws/sns";
 import { getCallerIdentity } from "@/lib/aws/sts";
-import { hasMx, isInboundSmtpMx, publishMx, removeMx } from "@/lib/domains/receiving-dns";
+import { hasMx, isInboundSmtpMx, MX_UNCHECKED, publishMx, removeMx } from "@/lib/domains/receiving-dns";
 import { isManualZone } from "@/lib/domains/provision";
 import type { SesReceivingState } from "@/lib/aws/aws-types";
 import type { ReceivingStep, SesReceivingView } from "@/lib/aws/ses-receiving-types";
@@ -220,7 +220,7 @@ export async function getSesReceivingView(env: CloudflareEnv, domain: DomainRow)
 		key: "mx",
 		label: "MX record points to SES",
 		ok: mxOk === true,
-		detail: mxOk === null ? "Add the MX record in your DNS" : mx,
+		detail: mxOk === null ? MX_UNCHECKED : mx,
 	});
 
 	return {

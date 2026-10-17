@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FileText, X } from "lucide-react";
 import { fetchCachedMessageDetail } from "@/lib/messages/detail-cache";
+import { useKeyChanged } from "@/hooks/use-synced-state";
 
 /**
  * The open email the next chat message refers to: only one from the selected mailbox, and not one
@@ -13,6 +14,7 @@ export function useCurrentEmail(selectedMessageId: string | null, mailboxId: str
 	const [subjects, setSubjects] = useState<Record<string, string>>({});
 	const [dismissedId, setDismissedId] = useState<string | null>(null);
 	const ref = useRef<string | null>(null);
+	if (useKeyChanged(selectedMessageId)) setDismissedId(null);
 	const contextMessageId = selectedMessageId !== dismissedId ? selectedMessageId : null;
 	const openEmailId = contextMessageId && contextMessageId in subjects ? contextMessageId : null;
 

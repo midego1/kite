@@ -318,6 +318,16 @@ async function lastAssistantRequest(fake: FakeModel) {
 		.at(-1)!;
 }
 
+async function openEmailAssistant(page: Page, message: StoredMessage) {
+	await selectMailbox(page, message.mailboxId);
+	await page.addInitScript(() => localStorage.setItem("kite-assistant-layout", "floating"));
+	await page.goto(`/inbox/${message.id}`);
+	await expect(page.getByRole("heading", { name: message.subject! })).toBeVisible();
+	const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+	if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+	return page.getByRole("region", { name: "Email assistant" });
+}
+
 test.describe("the assistant knows which email is open (upstream #140)", () => {
 	let fake: FakeModel | undefined;
 	let restore: (() => Promise<void>) | undefined;
@@ -335,13 +345,7 @@ test.describe("the assistant knows which email is open (upstream #140)", () => {
 	test("the open email shows above the prompt, reaches the model by ID and can be removed", async ({ page }) => {
 		const subject = `Open email ${uniqueToken()}`;
 		const message = await deliverInbound(api, { from: "sender@outside.test", to: SUPPORT_ADDRESS, subject });
-		await selectMailbox(page, message.mailboxId);
-		await page.addInitScript(() => localStorage.setItem("kite-assistant-layout", "floating"));
-		await page.goto(`/inbox/${message.id}`);
-		await expect(page.getByRole("heading", { name: subject })).toBeVisible();
-		const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
-		if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
-		const panel = page.getByRole("region", { name: "Email assistant" });
+		const panel = await openEmailAssistant(page, message);
 		const chip = panel.getByText(`Current email: ${subject}`, { exact: true });
 		await expect(chip).toBeVisible();
 		await expect(panel.getByText("Current thread", { exact: true })).toBeVisible();
@@ -363,6 +367,31 @@ test.describe("the assistant knows which email is open (upstream #140)", () => {
 		await askAssistant(page, "What else arrived?");
 		await expect(panel.getByText("Here is your mailbox.", { exact: true })).toBeVisible();
 		expect(latestUserTurn(await lastAssistantRequest(fake!))).toBe("What else arrived?");
+	});
+
+	test("opening another email ends dismissal when returning to the original email", async ({ page }) => {
+		const first = await deliverInbound(api, {
+			from: "sender@outside.test",
+			to: SUPPORT_ADDRESS,
+			subject: `Dismissed email ${uniqueToken()}`,
+		});
+		const second = await deliverInbound(api, {
+			from: "sender@outside.test",
+			to: SUPPORT_ADDRESS,
+			subject: `Other email ${uniqueToken()}`,
+		});
+		const panel = await openEmailAssistant(page, first);
+		await panel.getByRole("button", { name: "Don’t use this email" }).click();
+		await expect(panel.getByText(`Current email: ${first.subject}`, { exact: true })).toHaveCount(0);
+		await messageRow(page, second.subject!).getByText(second.subject!, { exact: true }).click();
+		await expect(panel.getByText(`Current email: ${second.subject}`, { exact: true })).toBeVisible();
+		await messageRow(page, first.subject!).getByText(first.subject!, { exact: true }).click();
+		await expect(panel.getByText(`Current email: ${first.subject}`, { exact: true })).toBeVisible();
+
+		fake!.clearRequests();
+		fake!.scriptChat({ content: "The original email is open again." });
+		await askAssistant(page, "Which email is open?");
+		expect(latestUserTurn(await lastAssistantRequest(fake!))).toContain(`The user now has email ${first.id} open`);
 	});
 
 	test("the chat API ignores an open email from another mailbox", async () => {

@@ -926,7 +926,7 @@ test("a non-owner admin never sees or reaches Modules, and non-admins and signed
 async function runPaletteCommand(page: Page, query: string) {
 	const search = await openPalette(page);
 	await search.fill(query);
-	await expect(page.getByRole("button", { name: new RegExp(query, "i") }).first()).toBeVisible();
+	await expect(page.getByRole("option", { name: new RegExp(query, "i") }).first()).toBeVisible();
 	await search.press("Enter");
 }
 
@@ -1002,7 +1002,7 @@ test("the client commands run: New event opens the dialog on the calendar", asyn
 
 /** Moves the highlight with ArrowDown until the row with this title is highlighted. */
 async function arrowToPaletteRow(page: Page, search: Locator, title: string) {
-	const row = page.getByRole("button", { name: new RegExp(`^${title}`) });
+	const row = page.getByRole("option", { name: new RegExp(`^${title}`) });
 	await expect(row).toBeVisible();
 	for (let step = 0; step < 60; step++) {
 		if (/bg-blue-600/.test((await row.getAttribute("class")) ?? "")) return;

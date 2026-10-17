@@ -52,3 +52,62 @@ test("a message row is reachable by keyboard and Enter opens the message", async
 	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
 	await expect(link).toHaveAttribute("aria-current", "true");
 });
+
+test("the command palette and the shortcuts help keep focus inside and give it back", async ({ page }) => {
+	await page.goto("/inbox");
+	await expect(page.getByRole("list", { name: "Inbox" })).toBeVisible();
+	const opener = page.getByRole("button", { name: "Open account menu" });
+	await opener.focus();
+
+	await expect(async () => {
+		if (!(await page.getByRole("dialog", { name: "Command palette" }).isVisible()))
+			await page.keyboard.press("Control+k");
+		await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible({ timeout: 1000 });
+	}).toPass();
+	const combobox = page.getByRole("combobox", { name: "Search commands" });
+	await expect(combobox).toBeFocused();
+	await expect(page.getByRole("listbox", { name: "Commands" }).getByRole("option").first()).toHaveAttribute(
+		"aria-selected",
+		"true",
+	);
+	const first = await combobox.getAttribute("aria-activedescendant");
+	await page.keyboard.press("ArrowDown");
+	await expect(combobox).not.toHaveAttribute("aria-activedescendant", first ?? "");
+	await page.keyboard.press("Tab");
+	await expect(combobox).toBeFocused();
+	await page.keyboard.press("Escape");
+	await expect(page.getByRole("dialog", { name: "Command palette" })).toHaveCount(0);
+	await expect(opener).toBeFocused();
+
+	await page.keyboard.press("?");
+	const help = page.getByRole("dialog", { name: "Keyboard Shortcuts" });
+	await expect(help).toBeVisible();
+	await expect(help.getByRole("button", { name: "Close keyboard shortcuts" })).toBeFocused();
+	await page.keyboard.press("Tab");
+	await expect(help.getByRole("button", { name: "Close keyboard shortcuts" })).toBeFocused();
+	await page.keyboard.press("Escape");
+	await expect(help).toHaveCount(0);
+	await expect(opener).toBeFocused();
+});
+
+test("Escape closes the account menu and leaves focus on its button", async ({ page }) => {
+	await page.goto("/inbox");
+	const button = page.getByRole("button", { name: "Open account menu" });
+	await button.click();
+	await expect(button).toHaveAttribute("aria-expanded", "true");
+	await page.keyboard.press("Escape");
+	await expect(button).toHaveAttribute("aria-expanded", "false");
+	await expect(button).toBeFocused();
+});
+
+test("the composer takes focus when it opens and gives it back when it closes", async ({ page }) => {
+	await page.goto("/inbox");
+	const compose = page.getByRole("button", { name: "Compose" });
+	await compose.click();
+	const composer = page.getByRole("region", { name: "Compose message" });
+	await expect(composer).toBeVisible();
+	await expect(composer.getByLabel("To")).toBeFocused();
+	await composer.getByRole("button", { name: "Close composer" }).click();
+	await expect(composer).toHaveCount(0);
+	await expect(compose).toBeFocused();
+});

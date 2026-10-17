@@ -233,5 +233,8 @@
 	"36-upstream-fixes.spec.ts › unmodified c opens Compose but copy chords outside inputs do not": 2000,
 	"36-upstream-fixes.spec.ts › unsnoozes mail moved from Spam to Inbox so it becomes visible": 6800,
 	"39-accessibility.spec.ts › the skip link is the first tab stop and moves focus to the main content": 1000,
-	"39-accessibility.spec.ts › a message row is reachable by keyboard and Enter opens the message": 4100
+	"39-accessibility.spec.ts › a message row is reachable by keyboard and Enter opens the message": 4100,
+	"39-accessibility.spec.ts › the command palette and the shortcuts help keep focus inside and give it back": 1400,
+	"39-accessibility.spec.ts › Escape closes the account menu and leaves focus on its button": 1300,
+	"39-accessibility.spec.ts › the composer takes focus when it opens and gives it back when it closes": 2200
 }

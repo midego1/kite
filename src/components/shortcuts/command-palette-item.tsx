@@ -4,18 +4,23 @@ import React from "react";
 import type { CommandItem } from "./types";
 
 interface CommandPaletteItemProps {
+	id: string;
 	item: CommandItem;
 	isActive: boolean;
 	onSelect: () => void;
 	onHover: () => void;
 }
 
-export function CommandPaletteItem({ item, isActive, onSelect, onHover }: CommandPaletteItemProps) {
+export function CommandPaletteItem({ id, item, isActive, onSelect, onHover }: CommandPaletteItemProps) {
 	const Icon = item.icon;
 
 	return (
 		<button
+			id={id}
 			type="button"
+			role="option"
+			aria-selected={isActive}
+			tabIndex={-1}
 			onClick={onSelect}
 			onMouseEnter={onHover}
 			className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between transition-colors ${

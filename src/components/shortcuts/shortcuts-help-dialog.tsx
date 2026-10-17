@@ -1,8 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useId, useRef } from "react";
 import { X, Keyboard } from "lucide-react";
 import type { ShortcutDefinition } from "./types";
+import { useDialogFocus } from "@/components/use-dialog-focus";
 
 interface ShortcutsHelpDialogProps {
 	isOpen: boolean;
@@ -12,6 +13,14 @@ interface ShortcutsHelpDialogProps {
 
 export function ShortcutsHelpDialog({ isOpen, onClose, shortcuts }: ShortcutsHelpDialogProps) {
 	if (!isOpen) return null;
+	return <ShortcutsHelpDialogContent onClose={onClose} shortcuts={shortcuts} />;
+}
+
+function ShortcutsHelpDialogContent({ onClose, shortcuts }: Omit<ShortcutsHelpDialogProps, "isOpen">) {
+	const dialogRef = useRef<HTMLDivElement>(null);
+	const closeRef = useRef<HTMLButtonElement>(null);
+	const titleId = useId();
+	useDialogFocus(dialogRef, closeRef);
 
 	const grouped = shortcuts.reduce(
 		(acc, item) => {
@@ -39,7 +48,18 @@ export function ShortcutsHelpDialog({ isOpen, onClose, shortcuts }: ShortcutsHel
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/40 backdrop-blur-xs animate-in fade-in duration-100">
 			<div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
-			<div className="relative w-full max-w-2xl bg-white border border-neutral-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col z-10 max-h-[85vh]">
+			<div
+				ref={dialogRef}
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby={titleId}
+				onKeyDown={(event) => {
+					if (event.key !== "Escape" && event.key !== "?") return;
+					event.stopPropagation();
+					onClose();
+				}}
+				className="relative w-full max-w-2xl bg-white border border-neutral-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col z-10 max-h-[85vh]"
+			>
 				{/* Header */}
 				<div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
 					<div className="flex items-center gap-2.5">
@@ -47,16 +67,20 @@ export function ShortcutsHelpDialog({ isOpen, onClose, shortcuts }: ShortcutsHel
 							<Keyboard className="w-5 h-5" />
 						</div>
 						<div>
-							<h2 className="text-base font-semibold text-neutral-900">Keyboard Shortcuts</h2>
+							<h2 id={titleId} className="text-base font-semibold text-neutral-900">
+								Keyboard Shortcuts
+							</h2>
 							<p className="text-xs text-neutral-400">Superhuman &amp; Gmail style quick keys</p>
 						</div>
 					</div>
 					<button
+						ref={closeRef}
 						type="button"
 						onClick={onClose}
+						aria-label="Close keyboard shortcuts"
 						className="text-neutral-400 hover:text-neutral-700 p-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
 					>
-						<X className="w-5 h-5" />
+						<X className="w-5 h-5" aria-hidden="true" />
 					</button>
 				</div>
 

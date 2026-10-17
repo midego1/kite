@@ -46,7 +46,7 @@ async function snooze(id: string) {
 
 async function moveSelectionToInbox(page: Page, subject: string) {
 	await messageRow(page, subject).getByRole("checkbox").check();
-	await page.getByRole("button", { name: "Move selected messages" }).first().click();
+	await page.getByRole("button", { name: "Move to", exact: true }).first().click();
 	await page.getByRole("menuitem", { name: "Inbox", exact: true }).click();
 }
 

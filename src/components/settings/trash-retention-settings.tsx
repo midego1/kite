@@ -78,7 +78,11 @@ export function TrashRetentionSettings() {
 					))}
 				</select>
 			</label>
-			{error && <p className="mt-2 px-4 text-sm text-red-600">{error}</p>}
+			{error && (
+				<p role="alert" className="mt-2 px-4 text-sm text-red-600">
+					{error}
+				</p>
+			)}
 		</div>
 	);
 }

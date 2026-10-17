@@ -164,6 +164,7 @@ export function RichTextEditor({
 							type="button"
 							onClick={() => setShowQuoted((open) => !open)}
 							aria-expanded={showQuoted}
+							aria-label={showQuoted ? "Hide quoted text" : "Show quoted text"}
 							className="rounded-full border border-neutral-200 bg-neutral-100 px-2 text-xs leading-5 text-neutral-500 hover:bg-neutral-200"
 							title={showQuoted ? "Hide quoted text" : "Show quoted text"}
 						>

@@ -192,7 +192,7 @@ export default function MailboxesPage() {
 										placeholder="support"
 										className="min-w-0 flex-1 rounded-none border-0 shadow-none focus-visible:border-0"
 									/>
-									<span className="flex items-center text-sm text-neutral-400">@</span>
+									<span className="flex items-center text-sm text-neutral-500">@</span>
 									<Select
 										aria-label="Domain"
 										className="min-w-0 max-w-[55%] bg-transparent px-3 text-sm text-neutral-700 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
@@ -208,7 +208,11 @@ export default function MailboxesPage() {
 									</Select>
 								</div>
 							</div>
-							{create.isError && <p className="text-sm text-red-600">{(create.error as Error).message}</p>}
+							{create.isError && (
+								<p role="alert" className="text-sm text-red-600">
+									{(create.error as Error).message}
+								</p>
+							)}
 							<Button
 								onClick={() => create.mutate()}
 								disabled={

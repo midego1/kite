@@ -23,7 +23,7 @@ export function UsageChart({ daily, timeZone = getUserTimeZone() }: UsageChartPr
 				</div>
 			</div>
 			<div className="mt-5 flex gap-3" role="img" aria-label="Daily AI token usage for the last 30 days">
-				<div className="flex h-48 flex-col justify-between pb-5 text-right text-[10px] text-neutral-400">
+				<div className="flex h-48 flex-col justify-between pb-5 text-right text-[10px] text-neutral-500">
 					<span>{formatTokenCount(maxTokens)}</span>
 					<span>0</span>
 				</div>
@@ -51,7 +51,7 @@ export function UsageChart({ daily, timeZone = getUserTimeZone() }: UsageChartPr
 										/>
 									</div>
 								</div>
-								<span className="h-5 whitespace-nowrap pt-1 text-[9px] text-neutral-400">
+								<span className="h-5 whitespace-nowrap pt-1 text-[9px] text-neutral-500">
 									{index % 5 === 0 || index === days.length - 1 ? formatDailyLabel(day.date) : ""}
 								</span>
 							</div>

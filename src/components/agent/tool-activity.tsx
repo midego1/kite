@@ -57,7 +57,7 @@ function AgentToolResult({ result, detail }: { result: Record<string, unknown>; 
 					.filter(([key, value]) => !HIDDEN_RESULT_FIELDS.has(key) && value !== null && typeof value !== "object")
 					.map(([key, value]) => (
 						<p key={key} className="break-words">
-							<span className="text-neutral-400">{key.replace(/([A-Z])/g, " $1")}: </span>
+							<span className="text-neutral-500">{key.replace(/([A-Z])/g, " $1")}: </span>
 							{String(value)}
 						</p>
 					))}

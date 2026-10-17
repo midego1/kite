@@ -106,7 +106,11 @@ export function AdminUpdateCard() {
 					)}
 				</div>
 
-				{migrationError && <p className="text-sm text-red-600">{migrationError}</p>}
+				{migrationError && (
+					<p role="alert" className="text-sm text-red-600">
+						{migrationError}
+					</p>
+				)}
 			</CardContent>
 		</Card>
 	);

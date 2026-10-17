@@ -69,7 +69,7 @@ export function SidebarFooter() {
 					</kbd>
 				</button>
 			)}
-			<p className="px-1 text-[11px] text-neutral-400">
+			<p className="px-1 text-[11px] text-neutral-500">
 				<button
 					type="button"
 					onClick={() => setChangelogOpen(true)}

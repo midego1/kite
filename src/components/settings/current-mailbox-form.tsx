@@ -105,7 +105,11 @@ export function CurrentMailboxForm() {
 							<Save className="h-4 w-4" />
 							{saving ? "Saving..." : "Save changes"}
 						</Button>
-						{status && <p className="text-sm text-neutral-500">{status}</p>}
+						{status && (
+							<p role="status" className="text-sm text-neutral-500">
+								{status}
+							</p>
+						)}
 					</div>
 				</form>
 			</CardContent>

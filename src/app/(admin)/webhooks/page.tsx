@@ -161,7 +161,7 @@ export default function WebhooksPage() {
 								</div>
 								<div className="px-4 py-3">
 									<span
-										className={`block text-lg font-semibold ${hook.stats.delivered ? "text-green-600" : "text-neutral-400"}`}
+										className={`block text-lg font-semibold ${hook.stats.delivered ? "text-green-600" : "text-neutral-500"}`}
 									>
 										{hook.stats.delivered}
 									</span>
@@ -169,7 +169,7 @@ export default function WebhooksPage() {
 								</div>
 								<div className="px-4 py-3">
 									<span
-										className={`block text-lg font-semibold ${hook.stats.pending ? "text-amber-600" : "text-neutral-400"}`}
+										className={`block text-lg font-semibold ${hook.stats.pending ? "text-amber-600" : "text-neutral-500"}`}
 									>
 										{hook.stats.pending}
 									</span>
@@ -177,7 +177,7 @@ export default function WebhooksPage() {
 								</div>
 								<div className="px-4 py-3">
 									<span
-										className={`block text-lg font-semibold ${hook.stats.failing ? "text-red-600" : "text-neutral-400"}`}
+										className={`block text-lg font-semibold ${hook.stats.failing ? "text-red-600" : "text-neutral-500"}`}
 									>
 										{hook.stats.failing}
 									</span>
@@ -314,7 +314,11 @@ export default function WebhooksPage() {
 							/>
 						</div>
 
-						{error && <p className="text-sm text-red-600">{error}</p>}
+						{error && (
+							<p role="alert" className="text-sm text-red-600">
+								{error}
+							</p>
+						)}
 
 						<div className="flex justify-end gap-2">
 							<Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>

@@ -4,6 +4,7 @@ import { DomainRouting } from "@/components/settings/domain-routing/domain-routi
 export default function SettingsRulesPage() {
 	return (
 		<div className="space-y-8">
+			<h1 className="sr-only">Rules &amp; routing</h1>
 			{/* <div>
 				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Rules</h1>
 				<p className="mt-1 text-sm text-neutral-500">

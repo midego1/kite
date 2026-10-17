@@ -263,7 +263,11 @@ export function MessageActions({
 
 	return (
 		<div className="flex flex-wrap items-center gap-3 text-neutral-600 flex-1 min-w-0">
-			{error && <span className="text-xs text-red-600">{error}</span>}
+			{error && (
+				<span role="alert" className="text-xs text-red-600">
+					{error}
+				</span>
+			)}
 
 			{isMobile && (
 				<>

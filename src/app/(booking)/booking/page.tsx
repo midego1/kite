@@ -212,13 +212,15 @@ export default function BookingsPage() {
 										<p className="mt-1 text-sm text-neutral-500">Set the meetings people can book with you.</p>
 									</div>
 									<div className="flex shrink-0 items-center gap-2">
-										<Button variant="ghost" className="w-10 max-md:-mr-2">
+										<Button asChild variant="ghost" className="w-10 max-md:-mr-2">
 											<Link
 												href={`/c/${username}`}
 												target="_blank"
-												className="text-blue-700 underline underline-offset-2"
+												rel="noopener noreferrer"
+												aria-label="Open your booking page"
+												className="text-blue-700"
 											>
-												<ExternalLink size={18} />
+												<ExternalLink size={18} aria-hidden="true" />
 											</Link>
 										</Button>
 

@@ -18,7 +18,8 @@ import { SendReview } from "@/components/agent/send-review";
 import type { ReviewSnapshot } from "@/components/agent/send-review-types";
 import { buildSendFormData, fetchDraft, formatAttachmentSize } from "./utils";
 import { SendPreview } from "./send-preview";
-import { composeFrameClass, useComposerBesideAssistant } from "./compose-frame";
+import { composeFrameAria, composeFrameClass, useComposerBesideAssistant, useDraftBodyFocus } from "./compose-frame";
+import { ComposeToast, type ComposeToastState } from "./compose-toast";
 import { SendingBar, UndoSendBar } from "./undo-send-bar";
 import { useSendingSettings } from "./use-sending-settings";
 import type { PendingUndoSend, PendingUndoSnapshot } from "./undo-send-types";
@@ -38,8 +39,6 @@ import { useDraftAutosave } from "./use-draft-autosave";
 import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-send-utils";
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
 import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
-
-type Toast = { type: "success" | "error"; message: string } | null;
 
 export function ComposeForm({
 	mode = "page",
@@ -76,10 +75,11 @@ export function ComposeForm({
 	const [modalMode, setModalMode] = useState(false);
 	const [minimized, setMinimized] = useState(false);
 	const besideAssistant = useComposerBesideAssistant({ mode, minimized, modalMode }, setMinimized);
-	const [toast, setToast] = useState<Toast>(null);
+	const [toast, setToast] = useState<ComposeToastState>(null);
 	const [loading, setLoading] = useState(false);
 	const [loadedDraftId, setLoadedDraftId] = useState<string | null>(null);
 	const loadingDraft = !!draftIdToLoad && loadedDraftId !== draftIdToLoad;
+	const formRef = useDraftBodyFocus(draftIdToLoad, loadingDraft);
 	const [deletingDraft, setDeletingDraft] = useState(false);
 	const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
 	const [scheduleInvalid, setScheduleInvalid] = useState(false);
@@ -592,11 +592,11 @@ export function ComposeForm({
 					>
 						<FileText className="h-4 w-4 shrink-0 text-neutral-500" />
 						<span className="max-w-48 truncate">{attachment.filename}</span>
-						<span className="text-xs text-neutral-400">{formatAttachmentSize(attachment.size)}</span>
+						<span className="text-xs text-neutral-500">{formatAttachmentSize(attachment.size)}</span>
 						<button
 							type="button"
 							onClick={() => void removeStoredAttachment(attachment.id)}
-							className="rounded-full p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+							className="rounded-full p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700"
 						>
 							<X className="h-3.5 w-3.5" />
 							<span className="sr-only">Remove attachment</span>
@@ -610,11 +610,11 @@ export function ComposeForm({
 					>
 						<FileText className="h-4 w-4 shrink-0 text-neutral-500" />
 						<span className="max-w-48 truncate font-medium">{attachment.file.name}</span>
-						<span className="text-xs text-neutral-400">{formatAttachmentSize(attachment.file.size)}</span>
+						<span className="text-xs text-neutral-500">{formatAttachmentSize(attachment.file.size)}</span>
 						<button
 							type="button"
 							onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-							className="rounded-full p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+							className="rounded-full p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700"
 						>
 							<X className="h-3.5 w-3.5" />
 							<span className="sr-only">Remove attachment</span>
@@ -698,22 +698,12 @@ export function ComposeForm({
 			{mode === "popup" && modalMode && !minimized && (
 				<div className="fixed inset-0 z-40 bg-neutral-950/65" aria-hidden="true" />
 			)}
-			{toast && (
-				<div
-					className={cn(
-						"fixed right-6 top-6 z-[60] rounded-lg px-4 py-3 text-sm font-medium shadow-lg",
-						toast.type === "success" ? "bg-green-600 text-white" : "bg-red-600 text-white",
-					)}
-				>
-					{toast.message}
-				</div>
-			)}
+			<ComposeToast toast={toast} />
 			<form
 				onSubmit={onSubmit}
+				ref={formRef}
 				className={frameClass}
-				role={modalMode && !minimized ? "dialog" : undefined}
-				aria-modal={(modalMode && !minimized) || undefined}
-				aria-label={modalMode && !minimized ? "Compose message" : undefined}
+				{...composeFrameAria({ mode, minimized, modalMode })}
 				onKeyDown={(event) => {
 					if (modalMode && !minimized && event.key === "Escape") {
 						event.preventDefault();
@@ -814,6 +804,7 @@ export function ComposeForm({
 						onChange={setTo}
 						placeholder='Recipients, or "Maya Chen" <maya@example.com>'
 						required
+						autoFocus={!draftIdToLoad}
 						disabled={loadingDraft}
 						trailing={
 							<>

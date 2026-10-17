@@ -45,7 +45,7 @@ export function AgentTurnView({
 					),
 				)
 			) : (
-				<p className="text-neutral-400">
+				<p className="text-neutral-500">
 					{turn.running ? "Waiting for the model..." : "No tool details were provided."}
 				</p>
 			)}

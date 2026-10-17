@@ -103,7 +103,11 @@ export default function DomainDnsDetails({
 							are hosted.
 						</p>
 					)}
-					{setupMessage && <p className="text-xs text-red-600">{setupMessage}</p>}
+					{setupMessage && (
+						<p role="alert" className="text-xs text-red-600">
+							{setupMessage}
+						</p>
+					)}
 				</section>
 			)}
 			<ReceivingSetupSection

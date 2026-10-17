@@ -63,9 +63,12 @@ export function Providers({ children, initialBranding }: { children: React.React
 				<CopyCodeHost />
 				<Toaster position="bottom-center" />
 				<ModuleNoticeHost />
-				{realtime.notification && (
-					<NewMessagePopup notification={realtime.notification} onDismiss={realtime.dismissNotification} />
-				)}
+				{/* A live region without role="status": specs and pages look up the single status line by role. */}
+				<div aria-live="polite" aria-atomic="true">
+					{realtime.notification && (
+						<NewMessagePopup notification={realtime.notification} onDismiss={realtime.dismissNotification} />
+					)}
+				</div>
 			</BrandingProvider>
 		</QueryClientProvider>
 	);

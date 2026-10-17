@@ -49,7 +49,11 @@ export function MigrationsNoticeCard() {
 					<p className="mt-1">{content.body}</p>
 					{data.names?.length ? <p className="mt-2 break-all text-xs text-amber-800">{data.names.join(", ")}</p> : null}
 					{summary && <p className="mt-2">{summary}</p>}
-					{error && <p className="mt-2 text-red-700">{error}</p>}
+					{error && (
+						<p role="alert" className="mt-2 text-red-700">
+							{error}
+						</p>
+					)}
 					{!isPrimaryAdmin && <p className="mt-2">Ask an administrator to apply them.</p>}
 				</div>
 			</div>
@@ -92,7 +96,9 @@ export function MigrationsBanner() {
 			<p className="min-w-0 flex-1 truncate">
 				<span className="font-medium">{content.title}.</span>{" "}
 				{error ? (
-					<span className="text-red-700">{error}</span>
+					<span role="alert" className="text-red-700">
+						{error}
+					</span>
 				) : isPrimaryAdmin ? (
 					content.body
 				) : (

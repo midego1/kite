@@ -130,8 +130,12 @@ export default function AccountPermissionsPage() {
 				<table className="w-full text-left">
 					<thead className="border-b border-neutral-100 bg-neutral-50 text-xs font-semibold uppercase tracking-wide text-neutral-500">
 						<tr>
-							<th className="px-5 py-3">Permission</th>
-							<th className="w-28 px-5 py-3 text-center">Allowed</th>
+							<th scope="col" className="px-5 py-3">
+								Permission
+							</th>
+							<th scope="col" className="w-28 px-5 py-3 text-center">
+								Allowed
+							</th>
 						</tr>
 					</thead>
 					<tbody className="divide-y divide-neutral-100">
@@ -215,7 +219,11 @@ export default function AccountPermissionsPage() {
 					</div>
 				</section>
 			)}
-			{message && <p className="text-sm text-neutral-500">{message}</p>}
+			{message && (
+				<p role="status" className="text-sm text-neutral-500">
+					{message}
+				</p>
+			)}
 
 			<Dialog open={transferOpen} onOpenChange={setTransferOpen}>
 				<DialogContent className="w-[min(420px,calc(100vw-32px))]">

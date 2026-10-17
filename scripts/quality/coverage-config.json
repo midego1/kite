@@ -4,6 +4,7 @@
 		"src/lib/alerts/delivery-utils.ts",
 		"src/lib/alerts/rules-utils.ts",
 		"src/lib/alerts/webhook-utils.ts",
+		"src/lib/http/content-type-utils.ts",
 		"src/components/alerts-banner-utils.ts",
 		"src/components/migrations-banner-utils.ts",
 		"src/components/agent/agent-activity-utils.ts",

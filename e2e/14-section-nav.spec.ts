@@ -508,9 +508,10 @@ test("a non-primary admin's Admin menu hides primary-only pages, which stay bloc
 	const menu = adminMenu(page);
 	await expectMode(menu, "Admin", "Overview");
 	await expect(page.getByRole("heading", { level: 1, name: "Admin settings" })).toBeVisible();
-	for (const label of ["Overview", "Mailboxes", "Routing"])
+	for (const label of ["Overview", "Mailboxes"])
 		await expect(menu.getByRole("navigation").getByRole("link", { name: label, exact: true })).toBeVisible();
-	for (const label of primaryOnlyLabels)
+	// Domain routing follows the domain-management grant, which this admin does not have.
+	for (const label of [...primaryOnlyLabels, "Routing"])
 		await expect(menu.getByRole("navigation").getByRole("link", { name: label, exact: true })).toHaveCount(0);
 	await expect(page.getByText("Database", { exact: true })).toHaveCount(0);
 

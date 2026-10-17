@@ -15,6 +15,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { CardGridSkeleton } from "@/components/page-skeletons";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { canManageDomains } from "@/lib/auth/admin";
 import type { DomainRoutingProps, DomainRule, DomainRuleInput } from "./types";
 import {
 	ACTION_LABELS,
@@ -48,8 +49,8 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 
 	const domainId = domain?.id ?? selectedMailbox?.domainId ?? "";
 	const mailboxId = selectedMailbox?.id ?? "";
-	// Domain rules apply to every address on the domain, so only admins manage them.
-	const canManage = !!domain || currentUser?.role === "admin";
+	// Domain rules apply to every address on the domain, so only admins who may manage domains change them.
+	const canManage = !!currentUser && canManageDomains(currentUser);
 	const rulesQueryKey = ["domain-rules", domainId] as const;
 
 	const rules = useQuery({
@@ -127,7 +128,7 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 				</div>
 			</div>
 
-			{(!domain && isMailboxLoading) || rules.isLoading ? (
+			{!currentUser || (!domain && isMailboxLoading) || rules.isLoading ? (
 				<CardGridSkeleton />
 			) : !domain && !mailboxId ? (
 				<Card>

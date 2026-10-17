@@ -1,6 +1,7 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { domains, mailboxes, routingRules } from "@/db/schema";
+import { canManageDomains } from "@/lib/auth/admin";
 import type { SessionUser } from "@/lib/auth/types";
 
 export type DomainRuleInput = {
@@ -28,23 +29,40 @@ export async function listDomainRules(db: AppDatabase, domainId: string) {
 
 /**
  * Domain rules affect every address on the domain (a reject rule runs before any mailbox
- * lookup), so only an admin of the domain may read or change them.
+ * lookup), so only an admin who may manage the domain can read or change them.
  */
-export const DOMAIN_RULES_ADMIN_ONLY = "Only an admin of this domain can manage domain routing";
+export const DOMAIN_RULES_ADMIN_ONLY = "Only an admin who can manage this domain can manage domain routing";
 
-export async function getAdminDomain(
-	db: AppDatabase,
-	user: Pick<SessionUser, "id" | "role" | "canManageMailboxes" | "createdByUserId">,
-	domainId: string,
-) {
-	if (user.role !== "admin") return null;
-	const ownerId = user.canManageMailboxes && user.createdByUserId ? user.createdByUserId : user.id;
+type DomainRuleUser = Pick<SessionUser, "id" | "role" | "isPrimaryAdmin" | "canManageDomains" | "createdByUserId">;
+
+/** An admin the primary admin granted domain management manages the primary's domains as well as its own. */
+function domainOwnerIds(user: DomainRuleUser): string[] {
+	return !user.isPrimaryAdmin && user.createdByUserId ? [user.id, user.createdByUserId] : [user.id];
+}
+
+export async function getAdminDomain(db: AppDatabase, user: DomainRuleUser, domainId: string) {
+	if (!canManageDomains(user)) return null;
 	const [domain] = await db
 		.select()
 		.from(domains)
-		.where(and(eq(domains.id, domainId), eq(domains.userId, ownerId)))
+		.where(and(eq(domains.id, domainId), inArray(domains.userId, domainOwnerIds(user))))
 		.limit(1);
 	return domain ?? null;
+}
+
+/** The domains whose routing the user may manage, or null when it may manage none. */
+export async function listAdminRoutingDomains(db: AppDatabase, user: DomainRuleUser) {
+	if (!canManageDomains(user)) return null;
+	return db
+		.select({
+			id: domains.id,
+			hostname: domains.hostname,
+			status: domains.status,
+			routingEnabled: domains.routingEnabled,
+		})
+		.from(domains)
+		.where(inArray(domains.userId, domainOwnerIds(user)))
+		.orderBy(asc(domains.hostname));
 }
 
 export async function listAdminDomainMailboxes(db: AppDatabase, domainId: string) {

@@ -83,7 +83,7 @@ function attachmentPart(attachment: InboundAttachment): string[] {
 	const base64 = Buffer.from(attachment.content).toString("base64");
 	return [
 		`Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
-		`Content-Disposition: attachment; filename="${attachment.filename}"`,
+		`Content-Disposition: ${attachment.disposition ?? "attachment"}; filename="${attachment.filename}"`,
 		"Content-Transfer-Encoding: base64",
 		"",
 		...(base64.match(/.{1,76}/g) ?? []),

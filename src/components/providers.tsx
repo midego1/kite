@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Toaster } from "react-hot-toast";
 import { clearMailboxClientState } from "@/components/mailbox-provider-utils";
 import { BrandingProvider } from "@/components/branding-provider";
+import type { Branding } from "@/lib/branding/types";
 import { CopyCodeHost } from "@/components/copy-code-host";
 import { ModuleNoticeHost } from "@/components/module-notice-host";
 import { NewMessagePopup } from "@/components/new-message-popup";
@@ -16,7 +17,7 @@ import { clearMessageDetailCache } from "@/lib/messages/detail-cache";
 import { AUTH_ME_STALE_EVENT, AUTH_SESSION_CHANGED_EVENT } from "@/lib/auth/client";
 import { AUTH_ME_QUERY_KEY } from "@/lib/auth/me-client";
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({ children, initialBranding }: { children: React.ReactNode; initialBranding?: Branding }) {
 	const realtime = useMessagePolling();
 
 	const [client] = useState(
@@ -55,7 +56,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
 	return (
 		<QueryClientProvider client={client}>
-			<BrandingProvider>
+			<BrandingProvider initialBranding={initialBranding}>
 				{children}
 				<ThemeSync />
 				<ConfirmDialogHost />

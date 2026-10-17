@@ -17,6 +17,8 @@ await build({
 		classifier: fileURLToPath(import.meta.resolve("../src/lib/spam/classifier.ts")),
 		db: fileURLToPath(import.meta.resolve("../src/db/index.ts")),
 		bulk: fileURLToPath(import.meta.resolve("../src/app/api/messages/bulk/utils.ts")),
+		bulkRoute: fileURLToPath(import.meta.resolve("../src/app/api/messages/bulk/route.ts")),
+		session: fileURLToPath(import.meta.resolve("../src/lib/auth/session.ts")),
 		text: fileURLToPath(import.meta.resolve("../src/components/messages/phishing-report-utils.ts")),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
@@ -31,7 +33,11 @@ await build({
 	logLevel: "silent",
 	packages: "external",
 	tsconfig: join(root, "tsconfig.json"),
-	alias: { "cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts") },
+	alias: {
+		"cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts"),
+		"next/headers": "next/headers.js",
+		"next/server": "next/server.js",
+	},
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { reportPhishingAll } = await load("report");
@@ -39,6 +45,8 @@ const { applySpamFeedback } = await load("feedback");
 const { classifyTokens } = await load("classifier");
 const { getDb } = await load("db");
 const { getStatusForBulkAction, isAllowedBulkMessageAction } = await load("bulk");
+const { POST: bulkMessages } = await load("bulkRoute");
+const { createSession } = await load("session");
 const { describePhishingReports, phishingConfirmCopy } = await load("text");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
@@ -160,6 +168,32 @@ test("a user without full access to the mailbox reports nothing", async (t) => {
 test("the bulk endpoint accepts phishing and moves the selection to Spam", () => {
 	assert.equal(isAllowedBulkMessageAction("phishing"), true);
 	assert.equal(getStatusForBulkAction("phishing"), "spam");
+});
+
+test("Move to Inbox clears snoozes on spam and normal messages while recording ham feedback", async (t) => {
+	const { db, env, addMessage } = await setup(t);
+	const spam = addMessage("billing@invoices-portal.test");
+	const normal = addMessage("friend@partner.test");
+	db.db.prepare("UPDATE messages SET snoozed_until = ?").run(Math.floor(Date.now() / 1000) + 86_400);
+	await applySpamFeedback(env, owner, spam, "spam");
+	const token = await createSession(env, owner.id);
+	const response = await bulkMessages(
+		new Request("https://kite.test/api/messages/bulk", {
+			method: "POST",
+			headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+			body: JSON.stringify({ action: "inbox", messageIds: [spam, normal] }),
+		}),
+	);
+	assert.equal(response.status, 200);
+	for (const id of [spam, normal]) {
+		const message = db.db.prepare("SELECT status, folder_id, snoozed_until FROM messages WHERE id = ?").get(id);
+		assert.deepEqual({ ...message }, { status: "received", folder_id: null, snoozed_until: null });
+	}
+	assert.equal(
+		db.db.prepare("SELECT classification FROM spam_feedback WHERE message_id = ?").get(spam).classification,
+		"ham",
+	);
+	assert.deepEqual(reputation(db, "fingerprint"), [{ spam_count: 0, ham_count: 1 }]);
 });
 
 test("the confirmation and the toast say what happened to each sender", () => {

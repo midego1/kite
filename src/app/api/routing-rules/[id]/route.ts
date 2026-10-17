@@ -20,7 +20,8 @@ export async function PATCH(request: Request, { params }: RoutingRuleRouteParams
 
 	const db = getDb(env);
 	const [rule] = await db.select().from(routingRules).where(eq(routingRules.id, id)).limit(1);
-	if (!rule?.mailboxId || rule.mailboxId !== parsed.data.mailboxId) {
+	// Domain rules also carry a mailboxId (their destination); only the domain endpoints may change them.
+	if (rule?.scope !== "mailbox" || !rule.mailboxId || rule.mailboxId !== parsed.data.mailboxId) {
 		return NextResponse.json({ error: "Rule not found" }, { status: 404 });
 	}
 	const access = await getMailboxAccessLevel(db, user, rule.mailboxId);
@@ -69,7 +70,7 @@ export async function DELETE(request: Request, { params }: RoutingRuleRouteParam
 	if (error) return error;
 	const db = getDb(env);
 	const [rule] = await db.select().from(routingRules).where(eq(routingRules.id, id)).limit(1);
-	if (!rule?.mailboxId) {
+	if (rule?.scope !== "mailbox" || !rule.mailboxId) {
 		return NextResponse.json({ error: "Rule not found" }, { status: 404 });
 	}
 	const access = await getMailboxAccessLevel(db, user, rule.mailboxId);

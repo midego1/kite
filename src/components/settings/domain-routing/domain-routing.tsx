@@ -15,6 +15,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { CardGridSkeleton } from "@/components/page-skeletons";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { canManageDomains } from "@/lib/auth/admin";
 import type { DomainRoutingProps, DomainRule, DomainRuleInput } from "./types";
 import {
 	ACTION_LABELS,
@@ -48,8 +49,8 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 
 	const domainId = domain?.id ?? selectedMailbox?.domainId ?? "";
 	const mailboxId = selectedMailbox?.id ?? "";
-	// Domain rules apply to every address on the domain, so only admins manage them.
-	const canManage = !!domain || currentUser?.role === "admin";
+	// Domain rules apply to every address on the domain, so only admins who may manage domains change them.
+	const canManage = !!currentUser && canManageDomains(currentUser);
 	const rulesQueryKey = ["domain-rules", domainId] as const;
 
 	const rules = useQuery({
@@ -127,7 +128,7 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 				</div>
 			</div>
 
-			{(!domain && isMailboxLoading) || rules.isLoading ? (
+			{!currentUser || (!domain && isMailboxLoading) || rules.isLoading ? (
 				<CardGridSkeleton />
 			) : !domain && !mailboxId ? (
 				<Card>
@@ -335,7 +336,11 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 										</Tooltip>
 									</div>
 								</div>
-								<Switch checked={form.keepCopy} onCheckedChange={(keepCopy) => setForm({ ...form, keepCopy })} />
+								<Switch
+									checked={form.keepCopy}
+									onCheckedChange={(keepCopy) => setForm({ ...form, keepCopy })}
+									aria-label="Keep a copy"
+								/>
 							</div>
 						)}
 
@@ -407,6 +412,7 @@ function RuleSection({
 				) : (
 					rules.map((rule) => {
 						const Icon = ACTION_ICONS[rule.action];
+						const ruleName = rule.name || describeRule(rule, mailboxes, hostname);
 						return (
 							<div
 								key={rule.id}
@@ -415,9 +421,7 @@ function RuleSection({
 								<Icon className="h-4 w-4 shrink-0 text-neutral-500" />
 								<div className="min-w-0 flex-1">
 									<div className="flex items-center gap-2">
-										<p className="truncate text-sm font-medium">
-											{rule.name || describeRule(rule, mailboxes, hostname)}
-										</p>
+										<p className="truncate text-sm font-medium">{ruleName}</p>
 										{!rule.enabled && <Badge variant="secondary">Disabled</Badge>}
 									</div>
 									{rule.name && (
@@ -427,13 +431,18 @@ function RuleSection({
 										Priority {rule.priority} · matched {rule.matchCount}× · last {formatLastMatched(rule.lastMatchedAt)}
 									</p>
 								</div>
-								<Switch checked={rule.enabled} onCheckedChange={() => onToggle(rule)} />
-								<Button variant="ghost" size="sm" onClick={() => onEdit(rule)}>
+								<Switch
+									checked={rule.enabled}
+									onCheckedChange={() => onToggle(rule)}
+									aria-label={`Enable rule: ${ruleName}`}
+								/>
+								<Button variant="ghost" size="sm" onClick={() => onEdit(rule)} aria-label={`Edit rule: ${ruleName}`}>
 									<Pencil className="h-4 w-4" />
 								</Button>
 								<Button
 									variant="ghost"
 									size="sm"
+									aria-label={`Delete rule: ${ruleName}`}
 									onClick={async () => {
 										if (
 											!(await requestConfirmation({

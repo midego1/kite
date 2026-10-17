@@ -48,17 +48,36 @@ export function WebhookDeliveries({ webhookId }: { webhookId: string }) {
 	}
 
 	return (
-		<div className="overflow-x-auto rounded-xl border border-neutral-200">
+		<div
+			role="region"
+			tabIndex={0}
+			aria-label="Deliveries"
+			className="overflow-x-auto rounded-xl border border-neutral-200"
+		>
 			<table className="w-full min-w-[820px] text-left text-sm">
 				<thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
 					<tr>
-						<th className="px-3 py-2 font-medium">Event</th>
-						<th className="px-3 py-2 font-medium">Status</th>
-						<th className="px-3 py-2 font-medium">Attempts</th>
-						<th className="px-3 py-2 font-medium">Response</th>
-						<th className="px-3 py-2 font-medium">Last attempt</th>
-						<th className="px-3 py-2 font-medium">Next retry</th>
-						<th className="px-3 py-2 font-medium" />
+						<th scope="col" className="px-3 py-2 font-medium">
+							Event
+						</th>
+						<th scope="col" className="px-3 py-2 font-medium">
+							Status
+						</th>
+						<th scope="col" className="px-3 py-2 font-medium">
+							Attempts
+						</th>
+						<th scope="col" className="px-3 py-2 font-medium">
+							Response
+						</th>
+						<th scope="col" className="px-3 py-2 font-medium">
+							Last attempt
+						</th>
+						<th scope="col" className="px-3 py-2 font-medium">
+							Next retry
+						</th>
+						<th scope="col" className="px-3 py-2 font-medium">
+							<span className="sr-only">Actions</span>
+						</th>
 					</tr>
 				</thead>
 				<tbody>

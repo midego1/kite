@@ -236,13 +236,16 @@
 	"39-accessibility.spec.ts › a settings form announces its result as a status message": 1500,
 	"39-accessibility.spec.ts › each page has one h1, and the folder list keeps a heading while a message is open": 9000,
 	"39-accessibility.spec.ts › Escape closes the account menu and leaves focus on its button": 1300,
+	"39-accessibility.spec.ts › Escape closes the mobile menu drawer and returns focus to the menu button": 1200,
 	"39-accessibility.spec.ts › navigation landmarks have distinct names": 3000,
 	"39-accessibility.spec.ts › pages are titled after themselves, also after a client-side navigation": 3500,
 	"39-accessibility.spec.ts › secondary text and the highlighted command meet AA contrast in Kite, Classic and dark mode": 6000,
 	"39-accessibility.spec.ts › signed out › a failed sign-in is announced and tied to the fields": 1500,
 	"39-accessibility.spec.ts › signed out › the sign-in page is titled": 800,
+	"39-accessibility.spec.ts › the calendar event editor keeps focus inside, closes on Escape and gives focus back": 1500,
 	"39-accessibility.spec.ts › the command palette and the shortcuts help keep focus inside and give it back": 1400,
 	"39-accessibility.spec.ts › the composer takes focus when it opens and gives it back when it closes": 2200,
 	"39-accessibility.spec.ts › the skip link is the first tab stop and moves focus to the main content": 1000,
-	"39-accessibility.spec.ts › the startup overlay is announced only while it is showing": 1000
+	"39-accessibility.spec.ts › the startup overlay is announced only while it is showing": 1000,
+	"39-accessibility.spec.ts › wide admin tables declare column headers and scroll by keyboard, and routing hints are buttons": 1000
 }

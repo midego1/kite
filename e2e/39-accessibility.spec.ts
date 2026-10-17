@@ -252,3 +252,62 @@ test("secondary text and the highlighted command meet AA contrast in Kite, Class
 		await expect(palette).toHaveCount(0);
 	}
 });
+
+test("the calendar event editor keeps focus inside, closes on Escape and gives focus back", async ({ page }) => {
+	await page.goto("/calendar");
+	const opener = page.getByRole("button", { name: "New event" });
+	await opener.click();
+	const editor = page.getByRole("dialog", { name: "Create event" });
+	await expect(editor).toBeVisible();
+	await expect(editor).toHaveAttribute("aria-modal", "true");
+	await expect.poll(() => editor.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+	for (let step = 0; step < 25; step += 1) await page.keyboard.press("Tab");
+	await expect.poll(() => editor.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+	await page.keyboard.press("Escape");
+	await expect(editor).toHaveCount(0);
+	await expect(opener).toBeFocused();
+});
+
+test("Escape closes the mobile menu drawer and returns focus to the menu button", async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto("/inbox");
+	const button = page.getByRole("button", { name: "Open menu" });
+	await button.click();
+	await expect(button).toHaveAttribute("aria-expanded", "true");
+	await expect(
+		page
+			.locator("aside")
+			.first()
+			.getByRole("link", { name: /^Inbox\b/ }),
+	).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(button).toHaveAttribute("aria-expanded", "false");
+	await expect(button).toBeFocused();
+});
+
+test("wide admin tables declare column headers and scroll by keyboard, and routing hints are buttons", async ({
+	page,
+}) => {
+	for (const [path, name] of [
+		["/activity", "Activity"],
+		["/ai-usage", "AI usage"],
+	] as const) {
+		await page.goto(path);
+		const region = page.getByRole("region", { name, exact: true });
+		await expect(region).toHaveAttribute("tabindex", "0");
+		const headers = region.locator("th");
+		await expect(headers.first()).toBeVisible();
+		await expect(region.locator('th:not([scope="col"])')).toHaveCount(0);
+		await region.focus();
+		await expect(region).toBeFocused();
+	}
+
+	await page.goto("/routing");
+	const hint = page.getByRole("button", {
+		name: "Evaluated before delivery. Matching mail is rejected at the edge.",
+	});
+	await hint.focus();
+	await expect(page.getByRole("tooltip")).toHaveText(
+		"Evaluated before delivery. Matching mail is rejected at the edge.",
+	);
+});

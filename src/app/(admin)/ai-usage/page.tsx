@@ -69,16 +69,34 @@ export default function AiUsagePage() {
 				</section>
 			</div>
 			<UsageChart daily={data?.daily ?? []} timeZone={data?.timeZone} />
-			<section className="overflow-x-auto rounded-2xl bg-white" aria-busy={loadingPage}>
+			<section
+				role="region"
+				tabIndex={0}
+				aria-label="AI usage"
+				className="overflow-x-auto rounded-2xl bg-white"
+				aria-busy={loadingPage}
+			>
 				<table className="w-full min-w-[850px] text-left text-sm">
 					<thead className="border-b border-neutral-100 bg-neutral-50 text-xs font-semibold uppercase tracking-wide text-neutral-500">
 						<tr>
-							<th className="px-4 py-3">Date & time</th>
-							<th className="px-4 py-3">Model</th>
-							<th className="px-4 py-3">Provider</th>
-							<th className="px-4 py-3 text-right">Input tokens</th>
-							<th className="px-4 py-3 text-right">Output tokens</th>
-							<th className="px-4 py-3 text-right">Spending</th>
+							<th scope="col" className="px-4 py-3">
+								Date & time
+							</th>
+							<th scope="col" className="px-4 py-3">
+								Model
+							</th>
+							<th scope="col" className="px-4 py-3">
+								Provider
+							</th>
+							<th scope="col" className="px-4 py-3 text-right">
+								Input tokens
+							</th>
+							<th scope="col" className="px-4 py-3 text-right">
+								Output tokens
+							</th>
+							<th scope="col" className="px-4 py-3 text-right">
+								Spending
+							</th>
 						</tr>
 					</thead>
 					<tbody className="divide-y divide-neutral-100">

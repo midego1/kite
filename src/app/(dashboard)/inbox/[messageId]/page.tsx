@@ -343,7 +343,8 @@ export default function MessageDetailPage() {
 												</span>
 												<span className="block text-xs text-neutral-500">Open from {attachment.provider}</span>
 											</span>
-											<ExternalLink className="h-4 w-4 shrink-0 text-neutral-400" />
+											<ExternalLink className="h-4 w-4 shrink-0 text-neutral-400" aria-hidden="true" />
+											<span className="sr-only"> (opens in a new tab)</span>
 										</a>
 									))}
 								</div>

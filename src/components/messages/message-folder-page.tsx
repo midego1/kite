@@ -44,11 +44,13 @@ import {
 	deleteMessagesForever,
 } from "./utils";
 import {
+	describePermanentDeleteResult,
 	getEmptyFolderConfirmText,
 	getEmptyFolderLabel,
 	getPermanentDeleteConfirmText,
 	supportsPermanentDelete,
 } from "@/lib/messages/permanent-delete-utils";
+import { affectsInboxUnreadCount, getInboxUnreadDelta, withReadState } from "@/lib/messages/thread-unread-utils";
 import clsx from "clsx";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { showProgressToast } from "@/components/ui/progress-toast";
@@ -82,11 +84,13 @@ function MessageListRow({
 	const preview = getMessagePreview(rowMessage, config.folder);
 	const href = `${config.hrefPrefix}/${message.id}`;
 	const navigation = useMessageNavigation(href, rowMessage);
+	const affectsInboxCount = affectsInboxUnreadCount(config);
 
 	async function runRowAction(action: RowMessageAction) {
 		const previousRead = read;
 		const previousThreadUnread = threadUnread;
-		const unreadDelta = action === "read" ? -1 : action === "unread" ? 1 : 0;
+		const readValue = action === "read" ? true : action === "unread" ? false : null;
+		const unreadDelta = getInboxUnreadDelta([rowMessage], readValue, affectsInboxCount);
 		if (action === "read") setRead(true);
 		if (action === "unread") setRead(false);
 		// Grouped rows derive their unread styling from the thread count, so it must change with the row.
@@ -126,11 +130,12 @@ function MessageListRow({
 			const previousThreadUnread = threadUnread;
 			setRead(true);
 			if (previousThreadUnread !== undefined) setThreadUnread(Math.max(0, previousThreadUnread - 1));
-			if (message.direction === "inbound") dispatchMessageCountsDelta({ inboxUnreadDelta: -1 });
+			const inboxUnreadDelta = getInboxUnreadDelta([{ direction: message.direction, read }], true, affectsInboxCount);
+			if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta });
 			void runBulkMessageAction([message.id], "read", false).catch(() => {
 				setRead(false);
 				setThreadUnread(previousThreadUnread);
-				if (message.direction === "inbound") dispatchMessageCountsDelta({ inboxUnreadDelta: 1 });
+				if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: -inboxUnreadDelta });
 			});
 		}
 		navigation.onNavigate(event, !read);
@@ -452,13 +457,14 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 			const progress = showProgressToast("Deleting forever", ids.length);
 			let completed = 0;
 			try {
-				const { deleted } = await deleteMessagesForever(ids, (done, _total, batch) => {
+				const { deleted, skipped } = await deleteMessagesForever(ids, (done, _total, batch) => {
 					completed = done;
 					progress.update(done);
 					const gone = new Set(batch);
 					updateMessages((current) => current.filter((message) => !gone.has(message.id)));
 				});
-				progress.succeed(deleted === 1 ? "1 message deleted forever" : `${deleted} messages deleted forever`);
+				const outcome = describePermanentDeleteResult(deleted, skipped);
+				progress[outcome.ok ? "succeed" : "fail"](outcome.message);
 			} catch (error) {
 				console.error(error);
 				progress.fail(
@@ -476,18 +482,13 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 		setPendingBulkAction(true);
 		const previousMessages = messages;
 		const readValue = action === "read" ? true : action === "unread" ? false : null;
-		const changedMessages =
-			readValue === null
-				? []
-				: messages.filter((message) => selectedIds.includes(message.id) && message.read !== readValue);
+		const selectedRows = messages.filter((message) => selectedIds.includes(message.id));
+		const inboxUnreadDelta = getInboxUnreadDelta(selectedRows, readValue, affectsInboxUnreadCount(config));
 		if (readValue !== null) {
 			updateMessages((current) =>
-				current.map((message) => (selectedIds.includes(message.id) ? { ...message, read: readValue } : message)),
+				current.map((message) => (selectedIds.includes(message.id) ? withReadState(message, readValue) : message)),
 			);
 			setSelectedMessages((current) => current.map((message) => ({ ...message, read: readValue })));
-			const inboxUnreadDelta = changedMessages
-				.filter((message) => message.direction === "inbound")
-				.reduce((total, message) => total + (readValue ? (message.read ? 0 : -1) : message.read ? 1 : 0), 0);
 			if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta });
 		}
 		try {
@@ -496,10 +497,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 		} catch (error) {
 			if (readValue !== null) {
 				updateMessages(previousMessages);
-				const inboxUnreadDelta = changedMessages
-					.filter((message) => message.direction === "inbound")
-					.reduce((total, message) => total + (readValue ? (message.read ? 0 : 1) : message.read ? -1 : 0), 0);
-				if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta });
+				if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: -inboxUnreadDelta });
 			}
 			reportListActionError(error);
 		} finally {

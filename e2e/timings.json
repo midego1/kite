@@ -231,5 +231,10 @@
 	"36-upstream-fixes.spec.ts › Move to Inbox from Snoozed ends the snooze and the message shows in the inbox": 3800,
 	"36-upstream-fixes.spec.ts › replying to mail sent from the mailbox's own address addresses that sender": 5100,
 	"36-upstream-fixes.spec.ts › unmodified c opens Compose but copy chords outside inputs do not": 2000,
-	"36-upstream-fixes.spec.ts › unsnoozes mail moved from Spam to Inbox so it becomes visible": 6800
+	"36-upstream-fixes.spec.ts › unsnoozes mail moved from Spam to Inbox so it becomes visible": 6800,
+	"38-upstream-medium.spec.ts › conversation unread state and skipped deletes (upstream #135) › a conversation row is unread only for unread mail in the folder it is listed in": 6600,
+	"38-upstream-medium.spec.ts › conversation unread state and skipped deletes (upstream #135) › deleting a selection forever reports the messages that had left Trash": 5300,
+	"38-upstream-medium.spec.ts › conversation unread state and skipped deletes (upstream #135) › deleting forever a message that left Trash keeps the page open and says why": 3400,
+	"38-upstream-medium.spec.ts › conversation unread state and skipped deletes (upstream #135) › marking a conversation read or unread moves the sidebar Inbox count by its unread messages": 7000,
+	"38-upstream-medium.spec.ts › conversation unread state and skipped deletes (upstream #135) › opening an unread message outside the Inbox leaves the sidebar Inbox count alone": 5600
 }

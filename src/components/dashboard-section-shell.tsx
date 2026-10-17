@@ -13,6 +13,7 @@ import { ShortcutsProvider } from "@/components/shortcuts";
 import { MobileMenuButton, SidebarAside } from "@/components/sidebar-aside";
 import { SidebarProvider } from "@/components/sidebar-state";
 import { MAIN_CONTENT_ID, SkipToContent } from "@/components/skip-to-content";
+import { RouteTitle } from "@/components/route-title";
 
 type DashboardSectionShellProps = Omit<AuthGuardProps, "children" | "mode" | "allowAuthenticated"> & {
 	children: ReactNode;
@@ -26,6 +27,7 @@ export function DashboardSectionShell({ children, ...guard }: DashboardSectionSh
 				<MailboxProvider>
 					<ComposeProvider>
 						<ShortcutsProvider>
+							<RouteTitle />
 							<div
 								className="grid h-[100dvh] grid-cols-[minmax(0,1fr)] md:grid-cols-[var(--sidebar-width)_minmax(0,1fr)] overflow-hidden bg-[#f6f8fc] transition-[grid-template-columns]"
 								style={{ transitionDuration: "var(--sidebar-transition-duration)" }}

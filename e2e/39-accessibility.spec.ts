@@ -115,6 +115,11 @@ test("the composer takes focus when it opens and gives it back when it closes", 
 test.describe("signed out", () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
 
+	test("the sign-in page is titled", async ({ page }) => {
+		await page.goto("/login");
+		await expect(page).toHaveTitle(/^Sign in - /);
+	});
+
 	test("a failed sign-in is announced and tied to the fields", async ({ page }) => {
 		await signIn(page, `nobody-${uniqueToken()}@example.com`, "not-the-password");
 		const alert = page.getByRole("alert").filter({ hasText: "Invalid credentials" });
@@ -143,4 +148,55 @@ test("the startup overlay is announced only while it is showing", async ({ page 
 	await expect(overlay).toHaveAttribute("aria-hidden", "true");
 	await expect(overlay).not.toHaveAttribute("role", "status");
 	await expect(overlay.locator("img")).toHaveAttribute("alt", "");
+});
+
+test("pages are titled after themselves, also after a client-side navigation", async ({ page }) => {
+	await page.goto("/settings/account");
+	await expect(page).toHaveTitle(/^My account - /);
+	await page.getByRole("navigation", { name: "Security" }).getByRole("link", { name: "Security", exact: true }).click();
+	await expect(page).toHaveURL(/\/settings\/security$/);
+	await expect(page).toHaveTitle(/^Security - /);
+	await page.goto("/domains");
+	await expect(page).toHaveTitle(/^Domains - /);
+	await page.goto("/inbox");
+	await expect(page).toHaveTitle(/^Inbox/);
+});
+
+test("each page has one h1, and the folder list keeps a heading while a message is open", async ({ page }) => {
+	for (const path of [
+		"/inbox",
+		"/sent",
+		"/settings/account",
+		"/settings/inbox",
+		"/settings/rules",
+		"/settings/export",
+		"/admin",
+		"/domains",
+	]) {
+		await page.goto(path);
+		await expect(page.getByRole("main")).toBeVisible();
+		await expect(page.getByRole("heading", { level: 1 }), path).toHaveCount(1);
+	}
+	await page.goto("/inbox");
+	await expect(page.getByRole("heading", { level: 1, name: "Inbox" })).toHaveCount(1);
+	const { subject, message } = await deliver("Heading check");
+	await page.goto(`/inbox/${message.id}`);
+	await expect(page.getByRole("heading", { level: 1 })).toHaveText(subject);
+	await expect(page.getByRole("heading", { level: 2, name: "Inbox" })).toHaveCount(1);
+});
+
+test("navigation landmarks have distinct names", async ({ page }) => {
+	for (const path of ["/inbox", "/settings/account", "/domains"]) {
+		await page.goto(path);
+		await expect(page.getByRole("main")).toBeVisible();
+		const names = await page
+			.getByRole("navigation")
+			.evaluateAll((navs) => navs.map((nav) => nav.getAttribute("aria-label") ?? ""));
+		expect(names.length, path).toBeGreaterThan(0);
+		expect(
+			names.filter((name) => !name),
+			path,
+		).toEqual([]);
+		expect(new Set(names).size, path).toBe(names.length);
+	}
 });

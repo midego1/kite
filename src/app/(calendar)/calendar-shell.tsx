@@ -25,6 +25,7 @@ import { moduleNavItems } from "@/lib/modules/nav-utils";
 import { CalendarMobileUpcoming } from "./calendar-mobile-upcoming";
 import { useDashboardState, useLatch } from "../(dashboard)/dashboard-state";
 import { useAssistantAvailability } from "../(dashboard)/use-assistant-availability";
+import { RouteTitle } from "@/components/route-title";
 
 /** Runs under AuthGuard, so `useModules()` already reflects the signed-in user. */
 function CalendarFrame({ children }: { children: React.ReactNode }) {
@@ -50,6 +51,7 @@ function CalendarFrame({ children }: { children: React.ReactNode }) {
 				<ComposeProvider>
 					<MailSearchProvider>
 						<ShortcutsProvider>
+							<RouteTitle />
 							<div className="grid h-dvh grid-cols-[minmax(0,1fr)] overflow-hidden bg-[#f6f8fc]">
 								<SkipToContent />
 								<SidebarAside className="md:hidden">

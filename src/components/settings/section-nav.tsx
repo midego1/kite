@@ -150,7 +150,7 @@ export function SectionNav({ mode: modeProp }: { mode?: NavMode }) {
 						Back to inbox
 					</Link>
 					{canShowModeSwitch(user) && <ModeSwitch mode={mode} user={user} />}
-					<h1 className="text-2xl font-bold tracking-tight text-neutral-900">{title}</h1>
+					<h2 className="text-2xl font-bold tracking-tight text-neutral-900">{title}</h2>
 					<label className="flex h-9 md:hidden items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-500 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/20">
 						<Search className="h-4 w-4 shrink-0" />
 						<input

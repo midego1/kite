@@ -11,6 +11,7 @@
 		"src/components/mail-search/search-dropdown-utils.ts",
 		"src/components/shortcuts/command-palette-utils.ts",
 		"src/components/shortcuts/use-hotkeys-utils.ts",
+		"src/components/route-title-utils.ts",
 		"src/lib/agent/auto-read/activity-ref-utils.ts",
 		"src/lib/agent/chat-tools-utils.ts",
 		"src/components/agent/suggestion-card-utils.ts",

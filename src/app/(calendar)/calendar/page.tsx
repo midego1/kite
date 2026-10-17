@@ -530,6 +530,7 @@ export default function CalendarPage() {
 				minimal ? "gap-0" : "gap-3",
 			)}
 		>
+			<h1 className="sr-only">Calendar</h1>
 			{loading && <RouteLoadingBarPortal />}
 			{headerTarget &&
 				createPortal(

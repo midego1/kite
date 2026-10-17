@@ -39,6 +39,7 @@ function clampAssistantWidth(width: number) {
 import { useDashboardState, useLatch } from "./dashboard-state";
 import { useAssistantAvailability } from "./use-assistant-availability";
 import { FloatingAssistant } from "./floating-assistant-window";
+import { RouteTitle } from "@/components/route-title";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
 	const { assistantOpen, setAssistantOpen, assistantFullSize, setAssistantFullSize } = useDashboardState();
@@ -80,6 +81,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 					<ComposeProvider>
 						<MailSearchProvider>
 							<ShortcutsProvider>
+								<RouteTitle />
 								<div
 									className="grid h-dvh grid-cols-[minmax(0,1fr)] overflow-hidden bg-[#f6f8fc] transition-[grid-template-columns] md:grid-cols-[var(--sidebar-width)_minmax(0,1fr)]"
 									style={{ transitionDuration: "var(--sidebar-transition-duration)" }}

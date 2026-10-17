@@ -55,6 +55,7 @@ import { showProgressToast } from "@/components/ui/progress-toast";
 import { confirmReportPhishing } from "./phishing-report";
 import { reportListActionError } from "./list-action-toast";
 import { useEmailPageTitle } from "./use-email-page-title";
+import { FolderHeading } from "./folder-heading";
 
 const pageSize = 25;
 
@@ -498,6 +499,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 			<div
 				className={`flex h-14 shrink-0 items-center justify-between border-b border-neutral-200 ${compact ? "px-4" : "px-4.5 md:px-6"}`}
 			>
+				<FolderHeading title={config.title} nested={!!selectedMessageId} />
 				<div className="flex items-center gap-3 w-full">
 					<Tooltip label="Select all visible messages">
 						<Checkbox
@@ -518,7 +520,11 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 							folder={getSelectionToolbarFolder(config)}
 						/>
 					) : (
-						(compact || isMobile) && <h1 className="truncate font-semibold text-neutral-900 pl-1">{config.title}</h1>
+						(compact || isMobile) && (
+							<p aria-hidden="true" className="truncate font-semibold text-neutral-900 pl-1">
+								{config.title}
+							</p>
+						)
 					)}
 				</div>
 				{(selectedIds.length === 0 || compact) && (

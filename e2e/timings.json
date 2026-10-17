@@ -222,6 +222,7 @@
 	"35-composer-drafts.spec.ts › composer drafts › an invalid picked time blocks an existing schedule until cleared": 3300,
 	"35-composer-drafts.spec.ts › composer drafts › an invalid picked time blocks an existing schedule until corrected": 3300,
 	"35-composer-drafts.spec.ts › composer drafts › closing the composer right after typing still saves what was typed": 2300,
+	"35-composer-drafts.spec.ts › composer drafts › Enter and Escape that end an IME composition leave Insert link and the composer open": 2400,
 	"35-composer-drafts.spec.ts › composer drafts › Escape on the link Apply button closes only the popup, and Enter applies once": 3300,
 	"35-composer-drafts.spec.ts › composer drafts › pressing Enter in Insert link adds the link without sending the message": 2300,
 	"35-composer-drafts.spec.ts › composer drafts › the send endpoint refuses a scheduled time that has passed": 100,

@@ -87,8 +87,8 @@ async function openLinkPopup(t) {
 				input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 			});
 		},
-		async press(key, { apply = false } = {}) {
-			const event = new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+		async press(key, { apply = false, isComposing = false } = {}) {
+			const event = new dom.window.KeyboardEvent("keydown", { key, isComposing, bubbles: true, cancelable: true });
 			const target = apply
 				? Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Apply")
 				: input;
@@ -160,6 +160,19 @@ test("Escape on Apply closes the popup without reaching the composer", async (t)
 	assert.equal(popup.popupOpen(), false);
 	assert.deepEqual(popup.commands, []);
 });
+
+for (const key of ["Enter", "Escape"]) {
+	test(`${key} during IME composition is left to the input method and does not reach the composer`, async (t) => {
+		const popup = await openLinkPopup(t);
+		await popup.type("https://example.com/日本");
+		const event = await popup.press(key, { isComposing: true });
+		assert.equal(event.defaultPrevented, false, "the input method still receives the key");
+		assert.equal(popup.formKeys(), 0, "the composer neither submits nor leaves its modal mode");
+		assert.equal(popup.submits(), 0);
+		assert.equal(popup.popupOpen(), true);
+		assert.deepEqual(popup.commands, []);
+	});
+}
 
 test("Enter on Apply keeps the button's native activation without inserting a second link", async (t) => {
 	const popup = await openLinkPopup(t);

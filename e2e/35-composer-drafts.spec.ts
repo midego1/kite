@@ -40,6 +40,17 @@ async function deleteOpenDraft(page: Page) {
 	await expect(page.getByRole("button", { name: "Close composer" })).toHaveCount(0);
 }
 
+/**
+ * Closes the schedule menu by clicking outside it; the date field keeps Escape to itself. Radix starts
+ * listening for outside clicks a moment after the menu opens, so a click that lands earlier is retried.
+ */
+async function closeScheduleMenu(page: Page) {
+	await expect(async () => {
+		await page.mouse.click(5, 5);
+		await expect(page.getByRole("menu")).toBeHidden({ timeout: 1000 });
+	}).toPass();
+}
+
 function isDraftSave(url: string, method: string) {
 	return /^\/api\/drafts(\/[^/]+)?$/.test(new URL(url).pathname) && (method === "POST" || method === "PATCH");
 }
@@ -239,6 +250,39 @@ test.describe("composer drafts", () => {
 		}
 	});
 
+	test("Enter and Escape that end an IME composition leave Insert link and the composer open", async ({ page }) => {
+		const subject = `IME link draft ${uniqueToken()}`;
+		const sends: string[] = [];
+		page.on("request", (request) => {
+			if (request.url().endsWith("/api/send")) sends.push(request.method());
+		});
+		try {
+			await page.goto("/inbox");
+			await openComposer(page, { to: RECIPIENT });
+			await page.getByLabel("Subject").fill(subject);
+			const body = page.getByRole("textbox", { name: "Message body" });
+			await body.fill("Docs: ");
+
+			await page.getByRole("button", { name: "Insert link", exact: true }).click();
+			const address = page.getByPlaceholder("https://example.com");
+			await address.fill("example.com/にほん");
+			for (const key of ["Enter", "Escape"]) {
+				await address.dispatchEvent("keydown", { key, isComposing: true, bubbles: true, cancelable: true });
+				await expect(address, `${key} while composing`).toBeVisible();
+				await expect(page.getByLabel("Subject")).toHaveValue(subject);
+			}
+			await expect(body.locator("a")).toHaveCount(0);
+
+			await address.press("Enter");
+			await expect(address).toBeHidden();
+			await expect(body.locator("a")).toHaveCount(1);
+			expect(sends).toEqual([]);
+			await deleteOpenDraft(page);
+		} finally {
+			await deleteDrafts(api, subject);
+		}
+	});
+
 	test("Escape on the link Apply button closes only the popup, and Enter applies once", async ({ page }) => {
 		const subject = `Link keyboard ${uniqueToken()}`;
 		const sends: string[] = [];
@@ -307,9 +351,7 @@ test.describe("composer drafts", () => {
 			const when = page.locator('input[type="datetime-local"]');
 			await when.fill("2020-01-01T09:00");
 			await expect(page.getByRole("alert").filter({ hasText: PAST_SCHEDULE_MESSAGE })).toBeVisible();
-			// The field keeps Escape to itself, so close the menu by clicking outside it.
-			await page.mouse.click(5, 5);
-			await expect(page.getByRole("menu")).toBeHidden();
+			await closeScheduleMenu(page);
 			// The past time did not become the schedule.
 			await page.getByRole("button", { name: "Send", exact: true }).click();
 			await expect(page.getByText(PAST_SCHEDULE_MESSAGE)).toBeVisible();
@@ -353,7 +395,7 @@ test.describe("composer drafts", () => {
 				await page.getByRole("button", { name: "Schedule send options" }).click();
 				const when = page.getByLabel("Send date and time");
 				await when.fill("2020-01-01T09:00");
-				await page.mouse.click(5, 5);
+				await closeScheduleMenu(page);
 				await page.getByRole("button", { name: "Schedule", exact: true }).click();
 				await expect(page.getByText(PAST_SCHEDULE_MESSAGE)).toBeVisible();
 				expect(sends).toEqual([]);
@@ -365,7 +407,7 @@ test.describe("composer drafts", () => {
 				} else {
 					await when.fill("2099-01-01T09:00");
 					await expect(when).not.toHaveAttribute("aria-invalid", "true");
-					await page.mouse.click(5, 5);
+					await closeScheduleMenu(page);
 				}
 				await page.getByRole("button", { name: recovery === "clear" ? "Send" : "Schedule", exact: true }).click();
 				await expect.poll(() => sends.length).toBe(1);
@@ -374,7 +416,7 @@ test.describe("composer drafts", () => {
 				await expect(page.getByText(recovery === "clear" ? "Message sent" : "Message scheduled")).toBeVisible();
 				await page.getByRole("button", { name: "Schedule send options" }).click();
 				await expect(when).toHaveValue("");
-				await page.mouse.click(5, 5);
+				await closeScheduleMenu(page);
 				await page.getByRole("button", { name: "Close composer" }).click();
 			} finally {
 				await deleteDrafts(api, subject);

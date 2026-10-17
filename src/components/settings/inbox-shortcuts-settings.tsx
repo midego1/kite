@@ -35,7 +35,9 @@ export function InboxShortcutsSettings() {
 				/>
 			</label>
 			{(saveError || shortcutsPreferenceError) && (
-				<p className="mt-2 px-4 text-sm text-red-600">{saveError || shortcutsPreferenceError}</p>
+				<p role="alert" className="mt-2 px-4 text-sm text-red-600">
+					{saveError || shortcutsPreferenceError}
+				</p>
 			)}
 		</div>
 	);

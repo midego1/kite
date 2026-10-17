@@ -131,7 +131,7 @@ export function ThreadMessageActions({
 	return (
 		<div className="flex items-center gap-0.5">
 			{error && (
-				<span className="mr-1 max-w-32 truncate text-xs text-red-600" title={error}>
+				<span role="alert" className="mr-1 max-w-32 truncate text-xs text-red-600" title={error}>
 					{error}
 				</span>
 			)}

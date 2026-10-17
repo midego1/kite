@@ -105,7 +105,11 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 				</p>
 			</div>
 			<div className="space-y-3 rounded-3xl bg-white p-6">
-				{error && <p className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+				{error && (
+					<p role="alert" className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+						{error}
+					</p>
+				)}
 				{jobs.map((job) => {
 					const percent = getImportJobPercent(job);
 					const rate = formatRate(job);

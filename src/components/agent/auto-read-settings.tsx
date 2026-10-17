@@ -285,7 +285,12 @@ export function AutoReadSettings({ mailboxId }: AutoReadSettingsProps) {
 		};
 	}, [mailboxId]);
 
-	if (!state) return status ? <p className="text-xs text-red-600">{status.text}</p> : null;
+	if (!state)
+		return status ? (
+			<p role="alert" className="text-xs text-red-600">
+				{status.text}
+			</p>
+		) : null;
 
 	async function run(action: () => Promise<void>, done: string) {
 		setBusy(true);

@@ -213,7 +213,7 @@ export default function BackupsPage() {
 								})}
 							</div>
 							{saveSettings.error && (
-								<p className="text-sm text-red-700">
+								<p role="alert" className="text-sm text-red-700">
 									{saveSettings.error instanceof Error ? saveSettings.error.message : "Failed to save backup settings"}
 								</p>
 							)}
@@ -227,7 +227,7 @@ export default function BackupsPage() {
 			</Dialog>
 
 			{error && (
-				<p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+				<p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
 					{error instanceof Error ? error.message : "Backup operation failed"}
 				</p>
 			)}

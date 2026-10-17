@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, signIn, uniqueToken } from "./support/helpers";
 
 let api: APIRequestContext;
 
@@ -110,4 +110,37 @@ test("the composer takes focus when it opens and gives it back when it closes", 
 	await composer.getByRole("button", { name: "Close composer" }).click();
 	await expect(composer).toHaveCount(0);
 	await expect(compose).toBeFocused();
+});
+
+test.describe("signed out", () => {
+	test.use({ storageState: { cookies: [], origins: [] } });
+
+	test("a failed sign-in is announced and tied to the fields", async ({ page }) => {
+		await signIn(page, `nobody-${uniqueToken()}@example.com`, "not-the-password");
+		const alert = page.getByRole("alert").filter({ hasText: "Invalid credentials" });
+		await expect(alert).toBeVisible();
+		await expect(alert).toHaveAttribute("id", "login-error");
+		for (const field of [page.getByLabel("Email"), page.getByLabel("Password")]) {
+			await expect(field).toHaveAttribute("aria-invalid", "true");
+			await expect(field).toHaveAttribute("aria-describedby", "login-error");
+		}
+	});
+});
+
+test("a settings form announces its result as a status message", async ({ page }) => {
+	await page.goto("/settings/security");
+	await page.getByLabel("Current password").fill("anything-at-all");
+	await page.getByLabel("New password", { exact: true }).fill("first-password-1");
+	await page.getByLabel("Confirm new password").fill("second-password-2");
+	await page.getByRole("button", { name: "Change password" }).click();
+	await expect(page.getByRole("status").filter({ hasText: "New passwords do not match" })).toBeVisible();
+});
+
+test("the startup overlay is announced only while it is showing", async ({ page }) => {
+	await page.goto("/inbox");
+	await expect(page.getByRole("list", { name: "Inbox" })).toBeVisible();
+	const overlay = page.locator("[data-loading-overlay]");
+	await expect(overlay).toHaveAttribute("aria-hidden", "true");
+	await expect(overlay).not.toHaveAttribute("role", "status");
+	await expect(overlay.locator("img")).toHaveAttribute("alt", "");
 });

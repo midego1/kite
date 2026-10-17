@@ -85,11 +85,25 @@ export function ProfileForm({ initialName, initialResetEmail, email }: ProfileFo
 
 				<div className="space-y-2">
 					<Label htmlFor="name">Name</Label>
-					<Input id="name" value={name} onChange={(event) => setName(event.target.value)} required />
+					<Input
+						id="name"
+						autoComplete="name"
+						value={name}
+						onChange={(event) => setName(event.target.value)}
+						required
+					/>
 				</div>
 				<div className="space-y-2">
 					<Label htmlFor="accountEmail">Current email</Label>
-					<Input id="accountEmail" value={email} type="email" readOnly aria-readonly="true" className="bg-neutral-50" />
+					<Input
+						id="accountEmail"
+						autoComplete="email"
+						value={email}
+						type="email"
+						readOnly
+						aria-readonly="true"
+						className="bg-neutral-50"
+					/>
 				</div>
 
 				<div className="flex items-center gap-3">
@@ -109,6 +123,7 @@ export function ProfileForm({ initialName, initialResetEmail, email }: ProfileFo
 					<Label htmlFor="resetEmail">Email address</Label>
 					<Input
 						id="resetEmail"
+						autoComplete="email"
 						value={resetEmail}
 						onChange={(event) => setResetEmail(event.target.value)}
 						type="email"

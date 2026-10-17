@@ -314,7 +314,11 @@ export default function WebhooksPage() {
 							/>
 						</div>
 
-						{error && <p className="text-sm text-red-600">{error}</p>}
+						{error && (
+							<p role="alert" className="text-sm text-red-600">
+								{error}
+							</p>
+						)}
 
 						<div className="flex justify-end gap-2">
 							<Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>

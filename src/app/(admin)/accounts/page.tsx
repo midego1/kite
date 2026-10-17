@@ -235,7 +235,11 @@ export default function AccountsPage() {
 								aliases={aliases}
 								onAliasesChange={setAliases}
 							/>
-							{message && <p className="text-sm text-red-600">{message}</p>}
+							{message && (
+								<p role="alert" className="text-sm text-red-600">
+									{message}
+								</p>
+							)}
 							<Button type="submit" disabled={saving || !domainId}>
 								{saving ? "Creating..." : "Create account"}
 							</Button>

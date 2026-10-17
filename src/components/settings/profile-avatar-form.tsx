@@ -1,14 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Camera, LoaderCircle, User } from "lucide-react";
 import { useAuthMe } from "@/hooks/use-auth-me";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { getAvatarColorStyle } from "@/lib/avatar-colors";
 import { dispatchProfileAvatarChanged, getProfileAvatarUrl } from "@/lib/profile/avatar-client";
 import { dispatchMailboxAvatarChanged } from "@/lib/mailboxes/avatar-client";
 import { Input } from "@/components/ui/input";
-import { ProgressiveAvatarImage } from "@/components/progressive-avatar-image";
+import { AvatarPickerButton } from "@/components/avatar-picker-button";
 import type { ProfileAvatarFormProps } from "./types";
 import {
 	getMailboxProfileAvatarUrl,
@@ -81,38 +80,16 @@ export function ProfileAvatarForm({
 	return (
 		<div className="flex flex-col items-start gap-2">
 			<Input ref={inputRef} type="file" accept={PROFILE_AVATAR_ACCEPT} className="hidden" onChange={onPick} />
-			<button
-				type="button"
-				onClick={() => inputRef.current?.click()}
-				disabled={busy}
-				className="group relative h-24 w-24 overflow-hidden rounded-full border border-neutral-200 bg-blue-600 text-white shadow-sm outline-none ring-blue-500 transition focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-wait"
+			<AvatarPickerButton
+				name={name}
+				hasAvatar={hasAvatar}
+				avatarUrl={avatarUrl}
+				busy={busy}
+				error={status}
 				style={getAvatarColorStyle(colorSeed ?? mailboxId ?? name)}
-				aria-label={hasAvatar ? `Change ${name} profile picture` : `Upload ${name} profile picture`}
-			>
-				{hasAvatar ? (
-					<ProgressiveAvatarImage
-						src={avatarUrl}
-						alt={`${name} profile picture`}
-						className="h-full w-full object-cover"
-						onError={() => setHasAvatar(false)}
-					/>
-				) : (
-					<span className="flex h-full w-full items-center justify-center">
-						<User className="h-9 w-9" />
-					</span>
-				)}
-				<span className="absolute inset-0 flex items-center justify-center bg-neutral-950/55 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-					{busy ? (
-						<LoaderCircle className="h-6 w-6 animate-spin" />
-					) : (
-						<span className="flex flex-col items-center gap-1 text-[11px] font-medium">
-							<Camera className="h-5 w-5" />
-							{hasAvatar ? "Change" : "Upload"}
-						</span>
-					)}
-				</span>
-			</button>
-			{status && <p className="max-w-xs text-xs text-red-600">{status}</p>}
+				onPick={() => inputRef.current?.click()}
+				onImageError={() => setHasAvatar(false)}
+			/>
 		</div>
 	);
 }

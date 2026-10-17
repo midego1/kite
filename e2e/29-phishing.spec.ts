@@ -330,7 +330,7 @@ test("Report phishing on a selection reports every message and blocks each sende
 		const page = await openAs(browser, account);
 		await page.goto("/inbox");
 		for (const subject of subjects) await rowFor(page, subject).getByRole("checkbox").check();
-		await page.getByRole("button", { name: "Move selected messages" }).click();
+		await page.getByRole("button", { name: "Move to", exact: true }).click();
 		await page.getByRole("menuitem", { name: "Report phishing" }).click();
 		const confirm = confirmDialog(page, "Report 3 messages as phishing?");
 		await expect(confirm).toContainText("blocks the senders");

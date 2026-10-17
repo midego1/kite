@@ -125,7 +125,7 @@ export default function MailboxSettingsPage() {
 			</div>
 
 			{mailbox.isError && (
-				<p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+				<p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
 					{mailbox.error instanceof Error ? mailbox.error.message : "Failed to load mailbox"}
 				</p>
 			)}
@@ -169,7 +169,7 @@ export default function MailboxSettingsPage() {
 						</span>
 					</label>
 					{updateName.isError && (
-						<p className="text-sm text-red-600">
+						<p role="alert" className="text-sm text-red-600">
 							{updateName.error instanceof Error ? updateName.error.message : "Failed to update mailbox"}
 						</p>
 					)}
@@ -224,7 +224,7 @@ export default function MailboxSettingsPage() {
 						<p className="rounded-2xl bg-neutral-50 px-4 py-3 text-sm text-neutral-500">No aliases yet.</p>
 					)}
 					{aliases.isError && (
-						<p className="text-sm text-red-600">
+						<p role="alert" className="text-sm text-red-600">
 							{aliases.error instanceof Error ? aliases.error.message : "Failed to load aliases"}
 						</p>
 					)}
@@ -258,12 +258,12 @@ export default function MailboxSettingsPage() {
 						</Button>
 					</div>
 					{addAlias.isError && (
-						<p className="text-sm text-red-600">
+						<p role="alert" className="text-sm text-red-600">
 							{addAlias.error instanceof Error ? addAlias.error.message : "Failed to add alias"}
 						</p>
 					)}
 					{removeAlias.isError && (
-						<p className="text-sm text-red-600">
+						<p role="alert" className="text-sm text-red-600">
 							{removeAlias.error instanceof Error ? removeAlias.error.message : "Failed to remove alias"}
 						</p>
 					)}
@@ -316,7 +316,7 @@ export default function MailboxSettingsPage() {
 							</p>
 						)}
 						{sharedAccess.isError && (
-							<p className="text-sm text-red-600">
+							<p role="alert" className="text-sm text-red-600">
 								{sharedAccess.error instanceof Error ? sharedAccess.error.message : "Failed to load shared access"}
 							</p>
 						)}
@@ -346,7 +346,7 @@ export default function MailboxSettingsPage() {
 							</Button>
 						</div>
 						{addMember.isError && (
-							<p className="text-sm text-red-600">
+							<p role="alert" className="text-sm text-red-600">
 								{addMember.error instanceof Error ? addMember.error.message : "Failed to add account"}
 							</p>
 						)}
@@ -364,7 +364,7 @@ export default function MailboxSettingsPage() {
 				</CardHeader>
 				<CardContent className="pt-5">
 					{removeMailbox.isError && (
-						<p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+						<p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
 							{removeMailbox.error instanceof Error ? removeMailbox.error.message : "Failed to delete mailbox"}
 						</p>
 					)}

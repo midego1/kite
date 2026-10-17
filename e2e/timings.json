@@ -236,5 +236,8 @@
 	"39-accessibility.spec.ts › a message row is reachable by keyboard and Enter opens the message": 4100,
 	"39-accessibility.spec.ts › the command palette and the shortcuts help keep focus inside and give it back": 1400,
 	"39-accessibility.spec.ts › Escape closes the account menu and leaves focus on its button": 1300,
-	"39-accessibility.spec.ts › the composer takes focus when it opens and gives it back when it closes": 2200
+	"39-accessibility.spec.ts › the composer takes focus when it opens and gives it back when it closes": 2200,
+	"39-accessibility.spec.ts › signed out › a failed sign-in is announced and tied to the fields": 1500,
+	"39-accessibility.spec.ts › a settings form announces its result as a status message": 1500,
+	"39-accessibility.spec.ts › the startup overlay is announced only while it is showing": 1000
 }

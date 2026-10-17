@@ -114,7 +114,11 @@ function ModuleAccessControls({ accountId }: { accountId: string }) {
 			<Button onClick={() => void save()} disabled={saving || !changed?.length}>
 				{saving ? "Saving..." : "Save module access"}
 			</Button>
-			{message && <p className="text-sm text-neutral-500">{message}</p>}
+			{message && (
+				<p role="status" className="text-sm text-neutral-500">
+					{message}
+				</p>
+			)}
 		</section>
 	);
 }

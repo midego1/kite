@@ -96,7 +96,11 @@ export default function BrandingPage() {
 								</span>
 							</button>
 						</div>
-						{status && <p className="text-sm text-neutral-600">{status}</p>}
+						{status && (
+							<p role="status" className="text-sm text-neutral-600">
+								{status}
+							</p>
+						)}
 						<Button type="submit" disabled={saving || !appName.trim()}>
 							{saving ? "Saving..." : "Save branding"}
 						</Button>

@@ -87,9 +87,13 @@ async function openLinkPopup(t) {
 				input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 			});
 		},
-		async press(key) {
+		async press(key, { apply = false } = {}) {
 			const event = new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
-			await act(async () => input.dispatchEvent(event));
+			const target = apply
+				? Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Apply")
+				: input;
+			target.focus();
+			await act(async () => target.dispatchEvent(event));
 			return event;
 		},
 		async clickApply() {
@@ -145,4 +149,25 @@ test("Escape closes the popup without reaching the composer", async (t) => {
 	assert.equal(popup.formKeys(), 0, "Escape does not also leave the composer's modal mode");
 	assert.equal(popup.popupOpen(), false);
 	assert.deepEqual(popup.commands, []);
+});
+
+test("Escape on Apply closes the popup without reaching the composer", async (t) => {
+	const popup = await openLinkPopup(t);
+	await popup.type("https://example.com");
+	const event = await popup.press("Escape", { apply: true });
+	assert.equal(event.defaultPrevented, true);
+	assert.equal(popup.formKeys(), 0);
+	assert.equal(popup.popupOpen(), false);
+	assert.deepEqual(popup.commands, []);
+});
+
+test("Enter on Apply keeps the button's native activation without inserting a second link", async (t) => {
+	const popup = await openLinkPopup(t);
+	await popup.type("https://example.com");
+	const event = await popup.press("Enter", { apply: true });
+	assert.equal(event.defaultPrevented, false);
+	assert.deepEqual(popup.commands, [], "keydown leaves insertion to the native button click");
+	await popup.clickApply();
+	assert.equal(popup.commands.length, 1);
+	assert.equal(popup.submits(), 0);
 });

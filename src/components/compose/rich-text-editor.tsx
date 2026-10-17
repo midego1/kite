@@ -116,12 +116,11 @@ export function RichTextEditor({
 	}
 
 	function onLinkKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-		if (event.key !== "Enter" && event.key !== "Escape") return;
-		// Enter would otherwise submit the compose form, and Escape would leave its modal mode.
+		if (event.key !== "Enter") return;
+		// Enter would otherwise submit the compose form.
 		event.preventDefault();
 		event.stopPropagation();
-		if (event.key === "Enter") applyLink();
-		else setLinkOpen(false);
+		applyLink();
 	}
 
 	function onPaste(event: ClipboardEvent<HTMLDivElement>) {
@@ -228,7 +227,15 @@ export function RichTextEditor({
 				{/* Not a <form>: the editor sits inside the compose form, and a nested form's submit
 				    bubbles through React to the composer and sends the message. */}
 				{linkOpen && (
-					<div className="absolute bottom-full left-2 z-10 mb-1 flex items-center gap-2 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg">
+					<div
+						onKeyDown={(event) => {
+							if (event.key !== "Escape") return;
+							event.preventDefault();
+							event.stopPropagation();
+							setLinkOpen(false);
+						}}
+						className="absolute bottom-full left-2 z-10 mb-1 flex items-center gap-2 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg"
+					>
 						<input
 							autoFocus
 							value={linkUrl}

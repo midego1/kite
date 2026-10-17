@@ -192,6 +192,58 @@ test.describe("composer drafts", () => {
 		}
 	});
 
+	test("Escape on the link Apply button closes only the popup, and Enter applies once", async ({ page }) => {
+		const subject = `Link keyboard ${uniqueToken()}`;
+		const sends: string[] = [];
+		page.on("request", (request) => {
+			if (request.url().endsWith("/api/send")) sends.push(request.method());
+		});
+		try {
+			await page.goto("/inbox");
+			await openComposer(page, { to: RECIPIENT });
+			await page.getByLabel("Subject").fill(subject);
+			const body = page.getByRole("textbox", { name: "Message body" });
+			await body.fill("Read this: ");
+			await page.getByRole("button", { name: "Open composer as modal" }).click();
+
+			for (const [style, dark] of [
+				["kite", false],
+				["classic", false],
+				["kite", true],
+			] as const) {
+				await page.evaluate(
+					({ style, dark }) => {
+						document.documentElement.setAttribute("data-style", style);
+						document.documentElement.classList.toggle("dark", dark);
+					},
+					{ style, dark },
+				);
+				await page.getByRole("button", { name: "Insert link", exact: true }).click();
+				const address = page.getByLabel("Link address");
+				await address.fill("example.com/cancelled");
+				await address.press("Tab");
+				const apply = page.getByRole("button", { name: "Apply", exact: true });
+				await expect(apply).toBeFocused();
+				await apply.press("Escape");
+				await expect(address).toBeHidden();
+				await expect(page.getByRole("dialog", { name: "Compose message" })).toBeVisible();
+				await expect(body.locator("a")).toHaveCount(0);
+			}
+
+			await body.click();
+			await body.press("End");
+			await page.getByRole("button", { name: "Insert link", exact: true }).click();
+			await page.getByLabel("Link address").fill("example.com/keyboard");
+			await page.getByLabel("Link address").press("Tab");
+			await page.getByRole("button", { name: "Apply", exact: true }).press("Enter");
+			await expect(body.locator('a[href="https://example.com/keyboard"]')).toHaveCount(1);
+			expect(sends).toEqual([]);
+			await deleteOpenDraft(page);
+		} finally {
+			await deleteDrafts(api, subject);
+		}
+	});
+
 	test("a send time in the past is refused in the menu and when the schedule has passed", async ({ page }) => {
 		const subject = `Past schedule ${uniqueToken()}`;
 		const sends: string[] = [];

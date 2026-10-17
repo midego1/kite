@@ -231,5 +231,6 @@
 	"36-upstream-fixes.spec.ts › Move to Inbox from Snoozed ends the snooze and the message shows in the inbox": 3800,
 	"36-upstream-fixes.spec.ts › replying to mail sent from the mailbox's own address addresses that sender": 5100,
 	"36-upstream-fixes.spec.ts › unmodified c opens Compose but copy chords outside inputs do not": 2000,
-	"36-upstream-fixes.spec.ts › unsnoozes mail moved from Spam to Inbox so it becomes visible": 6800
+	"36-upstream-fixes.spec.ts › unsnoozes mail moved from Spam to Inbox so it becomes visible": 6800,
+	"37-large-uploads.spec.ts › a draft accepts a multipart attachment upload larger than 1 MB": 600
 }

@@ -149,7 +149,7 @@ test("g then i goes to the inbox, after a stray key and with Shift for g !", asy
 	await expect(page).toHaveURL(/\/spam$/);
 });
 
-test("copy chords outside inputs do not open Compose, but plain c still does", async ({ page }) => {
+test("unmodified c opens Compose but copy chords outside inputs do not", async ({ page }) => {
 	await page.goto("/inbox");
 	await expect(page.getByPlaceholder("Search mail (press / to focus)")).toBeVisible();
 	for (const modifier of ["Control", "Meta"]) {
@@ -169,4 +169,20 @@ test("copy chords outside inputs do not open Compose, but plain c still does", a
 	}
 	await page.keyboard.press("c");
 	await expect(page.getByLabel("Subject", { exact: true })).toBeVisible();
+});
+
+test("unsnoozes mail moved from Spam to Inbox so it becomes visible", async ({ page }) => {
+	const { subject, message } = await deliver("Unsnooze from spam");
+	await snooze(message.id);
+	const reported = await api.post("/api/messages/bulk", {
+		data: { action: "spam", messageIds: [message.id] },
+	});
+	expect(reported.ok(), await reported.text()).toBe(true);
+	await page.goto("/spam");
+	await expect(messageRow(page, subject)).toBeVisible();
+
+	await moveSelectionToInbox(page, subject);
+	await expect.poll(async () => (await readMessage(message.id)).snoozedUntil ?? null).toBeNull();
+	await page.goto("/inbox");
+	await expect(messageRow(page, subject)).toBeVisible();
 });

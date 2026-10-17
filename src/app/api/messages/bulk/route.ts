@@ -148,9 +148,8 @@ export async function POST(request: Request) {
 		const spamMessageIds = selectedMessages
 			.filter((message) => message.status === "spam" && allowedMessageIds.includes(message.id))
 			.map((message) => message.id);
-		const normalMessageIds = allowedMessageIds.filter((messageId) => !spamMessageIds.includes(messageId));
 		for (const messageId of spamMessageIds) await applySpamFeedback(env, user, messageId, "ham");
-		await runInChunks(normalMessageIds, (ids) => db.update(messages).set(values).where(inArray(messages.id, ids)));
+		await runInChunks(allowedMessageIds, (ids) => db.update(messages).set(values).where(inArray(messages.id, ids)));
 		return NextResponse.json({ ok: true });
 	}
 

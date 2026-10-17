@@ -50,6 +50,7 @@
 	"10-backups.spec.ts › restores the downloaded backup": 7100,
 	"11-reading-pane.spec.ts › Below inbox stacks the list above the reading pane": 4000,
 	"11-reading-pane.spec.ts › density changes the height of message rows": 7400,
+	"11-reading-pane.spec.ts › No split keeps the folder title on direct message routes and after returning from settings": 3800,
 	"11-reading-pane.spec.ts › No split shows the list full width and replaces it with the open message": 3500,
 	"11-reading-pane.spec.ts › Right of inbox is the default and keeps the list beside an open message": 2300,
 	"11-reading-pane.spec.ts › the header button hides the list and choosing a split layout shows it again": 4100,

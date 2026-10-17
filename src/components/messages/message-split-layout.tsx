@@ -9,6 +9,7 @@ import { ResizeHandle } from "@/components/ui/resize-handle";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { BulkMessageSelectionPane } from "./bulk-message-selection-pane";
 import { MessageFolderPage } from "./message-folder-page";
+import { MessageFolderTitle } from "./message-folder-title";
 import { useLeaveOpenMessage } from "./use-leave-open-message";
 import { MessageDetailNavigationProvider } from "./message-detail-navigation";
 import { MessageListVisibilityContext } from "./message-list-visibility";
@@ -196,7 +197,13 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 		</MessageListVisibilityContext.Provider>
 	);
 
-	if (!split) return <div className="h-full min-h-0 overflow-hidden">{detail}</div>;
+	if (!split)
+		return (
+			<div className="h-full min-h-0 overflow-hidden">
+				<MessageFolderTitle config={config} />
+				{detail}
+			</div>
+		);
 
 	const hiddenTransform = below ? "-translate-y-full" : "-translate-x-full";
 	// While dragging, sizes go straight to the DOM once per frame: re-rendering the list on every

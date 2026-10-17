@@ -221,6 +221,25 @@ function settingsNav(page: Page) {
 }
 
 test.describe("Settings → Mailboxes (upstream #133)", () => {
+	test("Settings offers only the current mailbox owner while Admin offers other accounts", async ({ page }) => {
+		const username = `mbowner${uniqueToken("m").toLowerCase()}`.replace(/[^a-z0-9]/g, "");
+		const member = await createMember(username, true);
+		const { user } = await json<{ user: { id: string } }>(await api.get("/api/auth/me"));
+
+		await page.goto("/settings/mailboxes");
+		await page.getByRole("button", { name: "New mailbox" }).click();
+		const owner = page.getByLabel("Account", { exact: true });
+		await expect(owner).toHaveValue(user.id);
+		await expect(owner.locator("option")).toHaveCount(1);
+		await expect(owner.locator("option")).toHaveAttribute("value", user.id);
+
+		await page.goto("/mailboxes");
+		await page.getByRole("button", { name: "New mailbox" }).click();
+		await expect(owner.locator(`option[value="${member.id}"]`)).toHaveCount(1);
+		await owner.selectOption(member.id);
+		await expect(owner).toHaveValue(member.id);
+	});
+
 	test("a member with the mailbox grant renames their own mailbox from Settings", async ({ browser }) => {
 		const username = `mbset${uniqueToken("m").toLowerCase()}`.replace(/[^a-z0-9]/g, "");
 		const member = await createMember(username, true);

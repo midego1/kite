@@ -105,7 +105,9 @@ export default function MailboxesPage() {
 
 	const visibleMailboxes = listedMailboxes(mailboxes.data?.mailboxes ?? [], base, account.data?.user?.id);
 	const domainMap = new Map((domains.data?.domains ?? []).map((d) => [d.id, d.hostname]));
-	const mailboxOwners = [...(accounts.data?.accounts ?? [])];
+	const mailboxOwners = (accounts.data?.accounts ?? []).filter(
+		(owner) => base !== "/settings/mailboxes" || owner.id === account.data?.user?.id,
+	);
 	if (account.data?.user?.id && !mailboxOwners.some((owner) => owner.id === account.data?.user?.id)) {
 		mailboxOwners.unshift({
 			id: account.data.user.id,

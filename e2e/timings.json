@@ -244,5 +244,6 @@
 	"38-upstream-medium.spec.ts › Settings → Mailboxes (upstream #133) › a member without the grant gets no Mailboxes entry and is sent back from the page": 2200,
 	"38-upstream-medium.spec.ts › Settings → Mailboxes (upstream #133) › the API refuses a member's change to a mailbox they do not own": 700,
 	"38-upstream-medium.spec.ts › the assistant knows which email is open (upstream #140) › the chat API ignores an open email from another mailbox": 1500,
-	"38-upstream-medium.spec.ts › the assistant knows which email is open (upstream #140) › the open email shows above the prompt, reaches the model by ID and can be removed": 9000
+	"38-upstream-medium.spec.ts › the assistant knows which email is open (upstream #140) › the open email shows above the prompt, reaches the model by ID and can be removed": 9000,
+	"38-upstream-medium.spec.ts › Settings → Mailboxes (upstream #133) › Settings offers only the current mailbox owner while Admin offers other accounts": 4700
 }

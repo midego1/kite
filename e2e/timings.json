@@ -215,12 +215,14 @@
 	"29-phishing.spec.ts › Report phishing on a selection reports every message and blocks each sender once": 10100,
 	"29-phishing.spec.ts › risky no-reply mail keeps its local warning when external reading and all modules are off": 4700,
 	"35-composer-drafts.spec.ts › composer drafts › a file added to a draft is still there after closing and reopening it, and is sent once": 5500,
+	"35-composer-drafts.spec.ts › composer drafts › a later autosave keeps draft attachments after a temporary 503 failure": 6900,
+	"35-composer-drafts.spec.ts › composer drafts › a later autosave keeps draft attachments after a temporary network failure": 6500,
 	"35-composer-drafts.spec.ts › composer drafts › a send time in the past is refused in the menu and when the schedule has passed": 2400,
+	"35-composer-drafts.spec.ts › composer drafts › an invalid picked time blocks an existing schedule until cleared": 3300,
+	"35-composer-drafts.spec.ts › composer drafts › an invalid picked time blocks an existing schedule until corrected": 3300,
 	"35-composer-drafts.spec.ts › composer drafts › closing the composer right after typing still saves what was typed": 2300,
+	"35-composer-drafts.spec.ts › composer drafts › Escape on the link Apply button closes only the popup, and Enter applies once": 3300,
 	"35-composer-drafts.spec.ts › composer drafts › pressing Enter in Insert link adds the link without sending the message": 2300,
 	"35-composer-drafts.spec.ts › composer drafts › the send endpoint refuses a scheduled time that has passed": 100,
-	"35-composer-drafts.spec.ts › composer drafts › typing while the first autosave is still running makes one draft, not two": 6100,
-	"35-composer-drafts.spec.ts › composer drafts › Escape on the link Apply button closes only the popup, and Enter applies once": 3300,
-	"35-composer-drafts.spec.ts › composer drafts › an invalid picked time blocks an existing schedule until cleared": 3300,
-	"35-composer-drafts.spec.ts › composer drafts › an invalid picked time blocks an existing schedule until corrected": 3300
+	"35-composer-drafts.spec.ts › composer drafts › typing while the first autosave is still running makes one draft, not two": 6100
 }

@@ -104,6 +104,53 @@ test.describe("composer drafts", () => {
 		await expect.poll(async () => (await draftsWithSubject(api, subject)).length).toBe(0);
 	});
 
+	for (const failure of ["network", "503"] as const) {
+		test(`a later autosave keeps draft attachments after a temporary ${failure} failure`, async ({ page }) => {
+			const subject = `Retry file ${failure} ${uniqueToken()}`;
+			let attempts = 0;
+			await page.route("**/api/drafts/*/attachments", async (route) => {
+				attempts += 1;
+				if (attempts !== 1) return route.continue();
+				if (failure === "network") await route.abort("failed");
+				else await route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } });
+			});
+			try {
+				await page.goto("/inbox");
+				const composer = await openComposer(page);
+				await page.getByLabel("Subject").fill(subject);
+				await composer.locator('input[type="file"]').setInputFiles({
+					name: "retry-agenda.txt",
+					mimeType: "text/plain",
+					buffer: Buffer.from("Keep this agenda with the draft"),
+				});
+				await expect(page.getByText(/Could not save the attachments with the draft/)).toBeVisible();
+				expect(attempts).toBe(1);
+				const stored = page.waitForResponse(
+					(response) =>
+						/^\/api\/drafts\/[^/]+\/attachments$/.test(new URL(response.url()).pathname) &&
+						response.request().method() === "POST",
+				);
+				await page.getByRole("textbox", { name: "Message body" }).fill("A later edit retries the file.");
+				expect((await stored).ok()).toBe(true);
+				expect(attempts).toBe(2);
+				await expect(composer.locator('[title="Saved with the draft"]')).toContainText("retry-agenda.txt");
+				await page.getByRole("button", { name: "Close composer" }).click();
+
+				const [draft] = await draftsWithSubject(api, subject);
+				await page.goto(`/drafts/${draft.id}`);
+				await expect(page.getByLabel("Subject")).toHaveValue(subject);
+				await expect(composerForm(page).getByText("retry-agenda.txt")).toBeVisible();
+				const detail = (await (await api.get(`/api/drafts/${draft.id}`)).json()) as {
+					draft: { attachments: { filename: string }[] };
+				};
+				expect(detail.draft.attachments.map((attachment) => attachment.filename)).toEqual(["retry-agenda.txt"]);
+				await deleteOpenDraft(page);
+			} finally {
+				await deleteDrafts(api, subject);
+			}
+		});
+	}
+
 	test("typing while the first autosave is still running makes one draft, not two", async ({ page }) => {
 		const subject = `Rapid draft ${uniqueToken()}`;
 		// Holds the POST that creates the draft, so the next edit is saved while it is in flight.

@@ -105,8 +105,10 @@ async function storeDraftAttachments(
 	for (const attachment of pending) uploads.tried.add(attachment.id);
 	const form = new FormData();
 	for (const attachment of pending) form.append("attachments", attachment.file);
+	let retryable = true;
 	try {
 		const res = await authFetch(`/api/drafts/${draftId}/attachments`, { method: "POST", body: form });
+		retryable = res.status === 408 || res.status === 429 || res.status >= 500;
 		const result = (await res.json().catch(() => ({}))) as { attachments?: ComposeStoredAttachment[]; error?: string };
 		if (!res.ok) throw new Error(result.error || "the server refused them");
 		const stored = new Set(pending.map((attachment) => attachment.id));
@@ -114,6 +116,7 @@ async function storeDraftAttachments(
 		setters.setStoredAttachments((current) => [...current, ...(result.attachments ?? [])]);
 		setters.setAttachments((current) => withoutAttachmentIds(current, stored));
 	} catch (cause) {
+		if (retryable) for (const attachment of pending) uploads.tried.delete(attachment.id);
 		// Files the draft could not keep stay in the composer and go out with the send request.
 		const reason = cause instanceof Error && cause.message ? cause.message : "the request failed";
 		setters.reportError({

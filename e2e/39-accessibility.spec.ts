@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, signIn, uniqueToken } from "./support/helpers";
 
@@ -198,5 +198,57 @@ test("navigation landmarks have distinct names", async ({ page }) => {
 			path,
 		).toEqual([]);
 		expect(new Set(names).size, path).toBe(names.length);
+	}
+});
+
+/** The WCAG contrast ratio between an element's text colour and its own background. */
+async function ownContrast(target: Locator) {
+	return target.evaluate((element) => {
+		const context = document.createElement("canvas").getContext("2d")!;
+		const rgb = (color: string) => {
+			context.clearRect(0, 0, 1, 1);
+			context.fillStyle = color;
+			context.fillRect(0, 0, 1, 1);
+			return Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3));
+		};
+		const luminance = (value: number[]) => {
+			const [r, g, b] = value.map((channel) => {
+				const c = channel / 255;
+				return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+			});
+			return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+		};
+		const style = getComputedStyle(element);
+		const [high, low] = [luminance(rgb(style.color)), luminance(rgb(style.backgroundColor))].sort((x, y) => y - x);
+		return (high + 0.05) / (low + 0.05);
+	});
+}
+
+test("secondary text and the highlighted command meet AA contrast in Kite, Classic and dark mode", async ({ page }) => {
+	for (const style of [
+		{ theme: "light", classic: false },
+		{ theme: "light", classic: true },
+		{ theme: "dark", classic: false },
+		{ theme: "dark", classic: true },
+	]) {
+		const label = `${style.classic ? "classic" : "kite"} ${style.theme}`;
+		await page.addInitScript(({ theme, classic }) => {
+			localStorage.setItem("kite-theme", theme);
+			if (classic) localStorage.setItem("kite-style", "classic");
+			else localStorage.removeItem("kite-style");
+		}, style);
+		await page.goto("/inbox");
+		await expect(page.getByRole("list", { name: "Inbox" })).toBeVisible();
+		const palette = page.getByRole("dialog", { name: "Command palette" });
+		await expect(async () => {
+			if (!(await palette.isVisible())) await page.keyboard.press("Control+k");
+			await expect(palette).toBeVisible({ timeout: 1000 });
+		}).toPass();
+		const footer = palette.locator("div.bg-neutral-50.text-neutral-500");
+		expect(await ownContrast(footer), `${label} palette footer`).toBeGreaterThanOrEqual(4.5);
+		const active = palette.locator('[role="option"][aria-selected="true"]');
+		expect(await ownContrast(active), `${label} highlighted command`).toBeGreaterThanOrEqual(4.5);
+		await page.keyboard.press("Escape");
+		await expect(palette).toHaveCount(0);
 	}
 });

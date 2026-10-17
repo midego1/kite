@@ -238,6 +238,7 @@
 	"39-accessibility.spec.ts › Escape closes the account menu and leaves focus on its button": 1300,
 	"39-accessibility.spec.ts › navigation landmarks have distinct names": 3000,
 	"39-accessibility.spec.ts › pages are titled after themselves, also after a client-side navigation": 3500,
+	"39-accessibility.spec.ts › secondary text and the highlighted command meet AA contrast in Kite, Classic and dark mode": 6000,
 	"39-accessibility.spec.ts › signed out › a failed sign-in is announced and tied to the fields": 1500,
 	"39-accessibility.spec.ts › signed out › the sign-in page is titled": 800,
 	"39-accessibility.spec.ts › the command palette and the shortcuts help keep focus inside and give it back": 1400,

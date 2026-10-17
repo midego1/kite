@@ -113,7 +113,7 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 							<button
 								type="button"
 								aria-label="About domain routing"
-								className="text-neutral-400 hover:text-neutral-700"
+								className="text-neutral-500 hover:text-neutral-700"
 							>
 								<Info className="h-4 w-4" />
 							</button>
@@ -252,7 +252,7 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 								<div className="flex items-center gap-2">
 									<Label htmlFor="rule-value">Match value</Label>
 									<Tooltip label="Use * to match every message.">
-										<span className="text-neutral-400">
+										<span className="text-neutral-500">
 											<Info className="h-4 w-4" />
 										</span>
 									</Tooltip>
@@ -269,7 +269,7 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 								<div className="flex items-center gap-2">
 									<Label htmlFor="rule-priority">Priority</Label>
 									<Tooltip label="Higher numbers run first.">
-										<span className="text-neutral-400">
+										<span className="text-neutral-500">
 											<Info className="h-4 w-4" />
 										</span>
 									</Tooltip>
@@ -330,7 +330,7 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 									<div className="flex items-center gap-2">
 										<p className="text-sm font-medium">Keep a copy</p>
 										<Tooltip label="Also store the message in the selected inbox.">
-											<span className="text-neutral-400">
+											<span className="text-neutral-500">
 												<Info className="h-4 w-4" />
 											</span>
 										</Tooltip>
@@ -404,7 +404,7 @@ function RuleSection({
 				<div className="flex items-center gap-2">
 					<CardTitle className="text-xs uppercase">{title}</CardTitle>
 					<Tooltip label={description}>
-						<span className="text-neutral-400">
+						<span className="text-neutral-500">
 							<Info className="h-4 w-4" />
 						</span>
 					</Tooltip>
@@ -431,7 +431,7 @@ function RuleSection({
 									{rule.name && (
 										<p className="truncate text-xs text-neutral-500">{describeRule(rule, mailboxes, hostname)}</p>
 									)}
-									<p className="text-xs text-neutral-400">
+									<p className="text-xs text-neutral-500">
 										Priority {rule.priority} · matched {rule.matchCount}× · last {formatLastMatched(rule.lastMatchedAt)}
 									</p>
 								</div>

@@ -182,7 +182,7 @@ export default function AccountsPage() {
 										className="min-w-0 flex-1 rounded-none border-0 shadow-none"
 										required
 									/>
-									<span className="flex items-center text-sm text-neutral-400">@</span>
+									<span className="flex items-center text-sm text-neutral-500">@</span>
 									<Select
 										aria-label="Domain"
 										value={domainId}

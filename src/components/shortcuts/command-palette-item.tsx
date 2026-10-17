@@ -32,7 +32,7 @@ export function CommandPaletteItem({ id, item, isActive, onSelect, onHover }: Co
 				<div className="truncate">
 					<span className="text-sm font-medium">{item.title}</span>
 					{item.subtitle && (
-						<span className={`ml-2 text-xs truncate ${isActive ? "text-blue-100" : "text-neutral-400"}`}>
+						<span className={`ml-2 text-xs truncate ${isActive ? "text-white" : "text-neutral-500"}`}>
 							{item.subtitle}
 						</span>
 					)}
@@ -41,7 +41,7 @@ export function CommandPaletteItem({ id, item, isActive, onSelect, onHover }: Co
 			{item.shortcut && (
 				<kbd
 					className={`text-xs px-2 py-0.5 rounded-md font-mono font-medium shrink-0 ${
-						isActive ? "bg-blue-700 text-blue-100" : "bg-neutral-100 text-neutral-500 border border-neutral-200"
+						isActive ? "bg-blue-700 text-white" : "bg-neutral-100 text-neutral-500 border border-neutral-200"
 					}`}
 				>
 					{item.shortcut}

@@ -44,7 +44,7 @@ export function MonthView({ date, today, events, onEdit, onAdd, onShowDay }: Mon
 									type="button"
 									onClick={() => onAdd(day)}
 									aria-label={`Add event on ${key}`}
-									className="rounded p-1 text-neutral-400 hover:bg-blue-50 hover:text-blue-700"
+									className="rounded p-1 text-neutral-500 hover:bg-blue-50 hover:text-blue-700"
 								>
 									<Plus size={12} aria-hidden="true" />
 								</button>

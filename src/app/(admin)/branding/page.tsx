@@ -92,7 +92,7 @@ export default function BrandingPage() {
 									<ImagePlus className="mb-1 h-5 w-5" />
 									Choose PNG, JPEG, WebP, or GIF
 									<br />
-									<span className="text-xs text-neutral-400">Maximum 2 MB</span>
+									<span className="text-xs text-neutral-500">Maximum 2 MB</span>
 								</span>
 							</button>
 						</div>

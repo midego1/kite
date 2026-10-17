@@ -66,7 +66,7 @@ export function WebhookDeliveries({ webhookId }: { webhookId: string }) {
 						<tr key={delivery.id} className="border-t border-neutral-100 align-top">
 							<td className="px-3 py-2">
 								<span className="block">{delivery.eventType}</span>
-								<span className="block text-xs text-neutral-400">{formatTimestamp(delivery.createdAt)}</span>
+								<span className="block text-xs text-neutral-500">{formatTimestamp(delivery.createdAt)}</span>
 							</td>
 							<td className="px-3 py-2">
 								<Badge className={STATUS_STYLES[delivery.status]}>
@@ -82,7 +82,7 @@ export function WebhookDeliveries({ webhookId }: { webhookId: string }) {
 									{delivery.responseStatus ?? "—"}
 									{delivery.durationMs !== null && (
 										// An explicit separator: "200" next to "6ms" otherwise reads as "2006ms".
-										<span className="ml-1 text-xs text-neutral-400">· {formatDuration(delivery.durationMs)}</span>
+										<span className="ml-1 text-xs text-neutral-500">· {formatDuration(delivery.durationMs)}</span>
 									)}
 								</span>
 								{delivery.error && (

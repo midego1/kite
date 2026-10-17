@@ -188,7 +188,7 @@ function MessageListRow({
 							/>
 							<span
 								className={clsx(
-									unread ? "font-medium" : "text-neutral-400",
+									unread ? "font-medium" : "text-neutral-500",
 									"shrink-0 text-[11px]",
 									showHoverActions && "group-hover:hidden group-has-[:focus-visible]:hidden",
 								)}

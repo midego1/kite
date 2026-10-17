@@ -119,7 +119,7 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 								<div className="min-w-0">
 									<p className="truncate text-sm font-medium text-neutral-900">
 										{job.label}
-										<span className="ml-2 text-xs font-normal text-neutral-400">
+										<span className="ml-2 text-xs font-normal text-neutral-500">
 											{job.folder} · {job.username}
 										</span>
 									</p>

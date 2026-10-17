@@ -59,7 +59,7 @@ function AutonomyOptions({
 							<span>{option.label}</span>
 						</label>
 						{!option.available && (
-							<span id={noteId} className="text-xs text-neutral-400">
+							<span id={noteId} className="text-xs text-neutral-500">
 								Not available yet
 							</span>
 						)}

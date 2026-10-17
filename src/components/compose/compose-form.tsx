@@ -592,11 +592,11 @@ export function ComposeForm({
 					>
 						<FileText className="h-4 w-4 shrink-0 text-neutral-500" />
 						<span className="max-w-48 truncate">{attachment.filename}</span>
-						<span className="text-xs text-neutral-400">{formatAttachmentSize(attachment.size)}</span>
+						<span className="text-xs text-neutral-500">{formatAttachmentSize(attachment.size)}</span>
 						<button
 							type="button"
 							onClick={() => void removeStoredAttachment(attachment.id)}
-							className="rounded-full p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+							className="rounded-full p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700"
 						>
 							<X className="h-3.5 w-3.5" />
 							<span className="sr-only">Remove attachment</span>
@@ -610,11 +610,11 @@ export function ComposeForm({
 					>
 						<FileText className="h-4 w-4 shrink-0 text-neutral-500" />
 						<span className="max-w-48 truncate font-medium">{attachment.file.name}</span>
-						<span className="text-xs text-neutral-400">{formatAttachmentSize(attachment.file.size)}</span>
+						<span className="text-xs text-neutral-500">{formatAttachmentSize(attachment.file.size)}</span>
 						<button
 							type="button"
 							onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-							className="rounded-full p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+							className="rounded-full p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700"
 						>
 							<X className="h-3.5 w-3.5" />
 							<span className="sr-only">Remove attachment</span>

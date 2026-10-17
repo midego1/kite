@@ -55,7 +55,7 @@ export function AccountAliases({
 								maxLength={64}
 								required
 							/>
-							<span className="text-sm text-neutral-400">@</span>
+							<span className="text-sm text-neutral-500">@</span>
 							<Select
 								aria-label={`Alias ${index + 1} domain`}
 								value={alias.domainId}

@@ -70,7 +70,7 @@ function ShortcutsHelpDialogContent({ onClose, shortcuts }: Omit<ShortcutsHelpDi
 							<h2 id={titleId} className="text-base font-semibold text-neutral-900">
 								Keyboard Shortcuts
 							</h2>
-							<p className="text-xs text-neutral-400">Superhuman &amp; Gmail style quick keys</p>
+							<p className="text-xs text-neutral-500">Superhuman &amp; Gmail style quick keys</p>
 						</div>
 					</div>
 					<button
@@ -78,7 +78,7 @@ function ShortcutsHelpDialogContent({ onClose, shortcuts }: Omit<ShortcutsHelpDi
 						type="button"
 						onClick={onClose}
 						aria-label="Close keyboard shortcuts"
-						className="text-neutral-400 hover:text-neutral-700 p-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
+						className="text-neutral-500 hover:text-neutral-700 p-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
 					>
 						<X className="w-5 h-5" aria-hidden="true" />
 					</button>
@@ -88,7 +88,7 @@ function ShortcutsHelpDialogContent({ onClose, shortcuts }: Omit<ShortcutsHelpDi
 				<div className="overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
 					{Object.entries(grouped).map(([category, items]) => (
 						<div key={category} className="space-y-3">
-							<h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 border-b border-neutral-100 pb-1.5">
+							<h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 border-b border-neutral-100 pb-1.5">
 								{category}
 							</h3>
 							<div className="space-y-2">
@@ -106,7 +106,7 @@ function ShortcutsHelpDialogContent({ onClose, shortcuts }: Omit<ShortcutsHelpDi
 				</div>
 
 				{/* Footer */}
-				<div className="px-6 py-3 bg-neutral-50 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-400">
+				<div className="px-6 py-3 bg-neutral-50 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-500">
 					<span>
 						Press <kbd className="px-1.5 py-0.5 bg-neutral-200 text-neutral-700 rounded font-mono">?</kbd> to toggle
 					</span>

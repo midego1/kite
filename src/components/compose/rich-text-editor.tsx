@@ -116,7 +116,7 @@ export function RichTextEditor({
 	}
 
 	function onLinkKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-		if (event.key !== "Enter") return;
+		if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
 		// Enter would otherwise submit the compose form.
 		event.preventDefault();
 		event.stopPropagation();
@@ -230,6 +230,13 @@ export function RichTextEditor({
 				{linkOpen && (
 					<div
 						onKeyDown={(event) => {
+							if (event.key !== "Enter" && event.key !== "Escape") return;
+							// Keys that confirm or cancel an IME composition belong to the input method, but must not
+							// reach the composer, which would submit or leave its modal mode.
+							if (event.nativeEvent.isComposing) {
+								event.stopPropagation();
+								return;
+							}
 							if (event.key !== "Escape") return;
 							event.preventDefault();
 							event.stopPropagation();

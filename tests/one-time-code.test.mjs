@@ -44,7 +44,21 @@ await build({
 	logLevel: "silent",
 	alias: { "@": join(root, "src") },
 });
+await build({
+	entryPoints: [join(root, "src/lib/email/reply-content-utils.ts")],
+	outfile: join(outDir, "reply-content-utils.mjs"),
+	bundle: true,
+	sourcemap: "inline",
+	platform: "node",
+	format: "esm",
+	target: "node22",
+	logLevel: "silent",
+	alias: { "@": join(root, "src") },
+});
 const { extractOneTimeCode } = await import(pathToFileURL(join(outDir, "one-time-code-utils.mjs")).href);
+const { getLatestEmailContent, htmlToReadableText } = await import(
+	pathToFileURL(join(outDir, "reply-content-utils.mjs")).href
+);
 const { buildNewMessageNotificationParts, buildTestCodeNotificationParts, makeTestOneTimeCode } = await import(
 	pathToFileURL(join(outDir, "new-message-notification-utils.mjs")).href
 );
@@ -308,6 +322,45 @@ test("a code on its own line wins over a footer address near the expiry sentence
 	].join("\n");
 	assert.equal(extractOneTimeCode({ subject: "Important action required: Please verify account", text }), "b77f3a");
 	assert.equal(extractOneTimeCode({ subject: null, text: text.replace("b77f3a", "Your code is 482913.") }), "482913");
+});
+
+test("indentation from an HTML-only email does not push the keyword out of reach", () => {
+	const pad = (depth) => " ".repeat(depth * 2);
+	const html = [
+		"<center><table><tr><td>",
+		`${pad(10)}<p style="font-size: 16px">`,
+		`${pad(12)}Enter this temporary verification code to continue:`,
+		`${pad(10)}</p>`,
+		"",
+		`${pad(10)}<p style="font-family: Menlo, monospace; font-size: 24px; padding: 28px 24px">`,
+		pad(12),
+		`${pad(12)}604127`,
+		pad(12),
+		`${pad(10)}</p>`,
+		"",
+		`${pad(10)}<p>`,
+		pad(12),
+		`${pad(13)}Didn't request a verification code? You can ignore this email.`,
+		pad(12),
+		`${pad(10)}</p>`,
+		`${pad(10)}<p><br>Best,<br>The Examplechat team</p>`,
+		'</td></tr></table><p><a href="https://help.examplechat.test/">Help center</a></p></center>',
+	].join("\n");
+	const text = getLatestEmailContent(htmlToReadableText(html));
+	assert.equal(extractOneTimeCode({ subject: "Your temporary Examplechat login code", text }), "604127");
+	assert.equal(extractOneTimeCode({ subject: null, text }), "604127");
+});
+
+test("collapsed whitespace still keeps unrelated numbers apart from a keyword", () => {
+	const filler = `\n${" ".repeat(40)}\n`.repeat(6);
+	assert.equal(
+		extractOneTimeCode({ subject: null, text: `Use this code to sign in.${filler}Order 554108 ships today.` }),
+		null,
+	);
+	assert.equal(
+		extractOneTimeCode({ subject: null, text: `Your code:${filler}${"Lorem ipsum dolor sit amet. ".repeat(4)}554108` }),
+		null,
+	);
 });
 
 test("accepts a lowercase alphanumeric code directly after a keyword", () => {

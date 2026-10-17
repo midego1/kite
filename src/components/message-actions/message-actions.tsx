@@ -31,7 +31,11 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { MessageActionsProps, ReplyMode } from "./types";
-import { getPermanentDeleteConfirmText, supportsPermanentDelete } from "@/lib/messages/permanent-delete-utils";
+import {
+	getPermanentDeleteConfirmText,
+	PartialDeleteError,
+	supportsPermanentDelete,
+} from "@/lib/messages/permanent-delete-utils";
 import {
 	confirmTrashWithoutUnsubscribe,
 	blockMessageContact,
@@ -116,8 +120,8 @@ export function MessageActions({
 			await runSingleMessageAction(messageId, "delete");
 			router.push(listHref);
 			router.refresh();
-		} catch {
-			setError("Could not delete message");
+		} catch (deleteError) {
+			setError(deleteError instanceof PartialDeleteError ? deleteError.message : "Could not delete message");
 			setPendingAction(null);
 		}
 	}, [messageId, listHref, router]);

@@ -41,6 +41,8 @@ export type Message = {
 	threadCount?: number;
 	/** Unread messages in the conversation; zero means the grouped thread is read. */
 	threadUnread?: number;
+	/** Inbound messages represented by this grouped row in the current folder. */
+	threadInboundCount?: number;
 	/** In conversation view: every message this row stands for within the current folder. */
 	threadMessageIds?: string[];
 	/** Open Kite suggestions per kind over the row's messages; only sent to users with full access. */

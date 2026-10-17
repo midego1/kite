@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AtSign, Save, Trash2, UserPlus } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { Badge } from "@/components/ui/badge";
@@ -25,12 +25,13 @@ import {
 	revokeSharedInboxAccess,
 	updateMailboxSettings,
 } from "./utils";
+import { getMailboxesBase, mailboxIdParam } from "../utils";
 import MailboxAvatarForm from "./MailboxAvatarForm";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 
 export default function MailboxSettingsPage() {
-	const params = useParams<{ id: string }>();
-	const mailboxId = params.id;
+	const params = useParams<{ id: string | string[] }>();
+	const mailboxId = mailboxIdParam(params.id);
 	const qc = useQueryClient();
 	const mailbox = useQuery({
 		queryKey: ["mailbox", mailboxId],
@@ -59,11 +60,12 @@ export default function MailboxSettingsPage() {
 	});
 
 	const router = useRouter();
+	const base = getMailboxesBase(usePathname());
 	const removeMailbox = useMutation({
 		mutationFn: () => deleteMailbox(mailboxId),
 		onSuccess: async () => {
 			await qc.invalidateQueries({ queryKey: ["mailboxes"] });
-			router.push("/mailboxes");
+			router.push(base);
 		},
 	});
 

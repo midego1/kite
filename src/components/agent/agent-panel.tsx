@@ -30,6 +30,7 @@ import { Switch } from "@/components/ui/switch";
 import { AgentTurnView } from "./agent-turn";
 import { KiteAvatar } from "./kite-avatar";
 import { ChatContext, ChatWelcome } from "./chat-welcome";
+import { CurrentEmailChip, useCurrentEmail } from "./current-email";
 import { useChatContentResize } from "./use-chat-content-resize";
 import { ConversationSkeleton } from "./conversation-skeleton";
 import { QueuedAgentMessages } from "./queued-messages";
@@ -118,6 +119,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 	const mailboxId = selectedMailbox?.id;
 	const selectedMessageId =
 		pathname.match(/^\/(?:inbox|sent|archived|spam|trash|starred|snoozed|folders\/[^/]+)\/([^/]+)/)?.[1] ?? null;
+	const currentEmail = useCurrentEmail(selectedMessageId, mailboxId);
 	const welcomePrompts = selectedMessageId
 		? [
 				{
@@ -368,6 +370,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 				body: JSON.stringify({
 					mailboxId,
 					...(selectedConversationRef.current ? { conversationId: selectedConversationRef.current } : {}),
+					currentMessageId: currentEmail.ref.current,
 					text,
 					timeZone: getUserTimeZone(),
 				}),
@@ -688,7 +691,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 			)}
 			{view === "chat" && (
 				<>
-					<ChatContext selectedMessageId={selectedMessageId} />
+					<ChatContext selectedMessageId={currentEmail.contextMessageId} />
 					<div
 						ref={chatScrollRef}
 						onScroll={(event) => {
@@ -795,6 +798,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 							</div>
 						</div>
 					)}
+					<CurrentEmailChip email={currentEmail} />
 					<form
 						className="relative mx-auto w-full max-w-3xl px-3 pb-2 pt-1"
 						onSubmit={(event) => {

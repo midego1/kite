@@ -12,14 +12,25 @@ import {
 } from "./schedule-send-utils";
 import type { ScheduleSendMenuProps } from "./schedule-send-types";
 import { getUserTimeZone } from "@/lib/time/utils";
+import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-send-utils";
 
 export function ScheduleSendMenu({ disabled, value, onChange, mailboxId, from, applyContent }: ScheduleSendMenuProps) {
 	const [menuOpened, setMenuOpened] = useState(false);
 	const slots = useComposerSlots("send-menu", { mailboxId, from, applyContent }, menuOpened);
 	// Suggestions are computed from the moment the menu opens.
 	const [openedAt, setOpenedAt] = useState(() => Date.now());
+	// What was typed into the date field, kept so a past time can stay visible with its error.
+	const [pickedText, setPickedText] = useState<string | null>(null);
 	const options = getScheduleSendOptions(new Date(openedAt));
-	const minimum = new Date(openedAt + 5 * 60 * 1000);
+	const picked = pickedText === null ? null : parseDateTimeLocal(pickedText);
+	const pastPicked = picked !== null && isPastScheduledSend(picked);
+
+	function pick(text: string) {
+		setPickedText(text);
+		const parsed = parseDateTimeLocal(text);
+		if (!parsed) onChange(null);
+		else if (!isPastScheduledSend(parsed)) onChange(parsed);
+	}
 
 	return (
 		<>
@@ -27,6 +38,7 @@ export function ScheduleSendMenu({ disabled, value, onChange, mailboxId, from, a
 				onOpenChange={(open) => {
 					if (!open) return;
 					setOpenedAt(Date.now());
+					setPickedText(null);
 					setMenuOpened(true);
 				}}
 			>
@@ -78,12 +90,24 @@ export function ScheduleSendMenu({ disabled, value, onChange, mailboxId, from, a
 						</DropdownMenu.Label>
 						<input
 							type="datetime-local"
-							min={formatDateTimeLocal(minimum)}
-							value={value ? formatDateTimeLocal(value) : ""}
-							onChange={(event) => onChange(parseDateTimeLocal(event.target.value))}
+							min={formatDateTimeLocal(new Date(openedAt))}
+							value={pickedText ?? (value ? formatDateTimeLocal(value) : "")}
+							onChange={(event) => pick(event.target.value)}
 							onKeyDown={(event) => event.stopPropagation()}
-							className="mx-2 mb-2 h-9 rounded-md border border-neutral-200 px-2 text-sm outline-none focus:border-blue-400"
+							aria-label="Send date and time"
+							aria-invalid={pastPicked || undefined}
+							aria-describedby={pastPicked ? "schedule-send-past-time" : undefined}
+							className="mx-2 mb-2 h-9 rounded-md border border-neutral-200 px-2 text-sm outline-none focus:border-blue-400 aria-[invalid=true]:border-red-400"
 						/>
+						{pastPicked && (
+							<p
+								id="schedule-send-past-time"
+								role="alert"
+								className="mx-2 mb-2 max-w-56 text-xs text-red-600 dark:text-red-400"
+							>
+								{PAST_SCHEDULE_MESSAGE}
+							</p>
+						)}
 					</DropdownMenu.Content>
 				</DropdownMenu.Portal>
 			</DropdownMenu.Root>

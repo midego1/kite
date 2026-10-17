@@ -213,5 +213,11 @@
 	"29-phishing.spec.ts › an attached login page gets a warning whose Report phishing moves the mail to Spam and blocks the sender": 7300,
 	"29-phishing.spec.ts › Report phishing in the reader's More actions menu reports the open message": 5200,
 	"29-phishing.spec.ts › Report phishing on a selection reports every message and blocks each sender once": 10100,
-	"29-phishing.spec.ts › risky no-reply mail keeps its local warning when external reading and all modules are off": 4700
+	"29-phishing.spec.ts › risky no-reply mail keeps its local warning when external reading and all modules are off": 4700,
+	"35-composer-drafts.spec.ts › composer drafts › a file added to a draft is still there after closing and reopening it, and is sent once": 5500,
+	"35-composer-drafts.spec.ts › composer drafts › a send time in the past is refused in the menu and when the schedule has passed": 2400,
+	"35-composer-drafts.spec.ts › composer drafts › closing the composer right after typing still saves what was typed": 2300,
+	"35-composer-drafts.spec.ts › composer drafts › pressing Enter in Insert link adds the link without sending the message": 2300,
+	"35-composer-drafts.spec.ts › composer drafts › the send endpoint refuses a scheduled time that has passed": 100,
+	"35-composer-drafts.spec.ts › composer drafts › typing while the first autosave is still running makes one draft, not two": 6100
 }

@@ -7,6 +7,26 @@ export function isUndoSendSeconds(value: unknown): value is UndoSendSeconds {
 	return typeof value === "number" && (UNDO_SEND_SECONDS_OPTIONS as readonly number[]).includes(value);
 }
 
+/** How far in the past a requested send time may be before it is refused, to absorb clock skew. */
+const PAST_SCHEDULE_TOLERANCE_MS = 60_000;
+
+export const PAST_SCHEDULE_MESSAGE = "That send time has already passed. Pick a later time.";
+
+/**
+ * Whether a requested send time has already passed. The outbound queue sends a
+ * past time straight away, so a schedule picked for the past would go out now.
+ * An unreadable time counts as passed.
+ */
+export function isPastScheduledSend(
+	scheduledAt: string | Date | null | undefined,
+	now = Date.now(),
+	toleranceMs = PAST_SCHEDULE_TOLERANCE_MS,
+): boolean {
+	if (!scheduledAt) return false;
+	const time = new Date(scheduledAt).getTime();
+	return !Number.isFinite(time) || time < now - toleranceMs;
+}
+
 /**
  * When a composer send should leave the outbound queue. An explicit schedule
  * wins; otherwise the user's undo window holds the message briefly.

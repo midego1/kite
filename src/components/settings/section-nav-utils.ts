@@ -121,7 +121,7 @@ const adminNavSections: NavSection[] = [
 				label: "Routing",
 				icon: Route,
 				keywords: "catch-all forward reject rules",
-				permission: "admin",
+				permission: "domains",
 			},
 		],
 	},

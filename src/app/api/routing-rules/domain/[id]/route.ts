@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { routingRules } from "@/db/schema";
 import { requireSessionUser } from "@/lib/api/auth";
+import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
 import { domainRoutingRuleSchema } from "@/lib/validators";
 import {
@@ -18,6 +19,9 @@ async function loadRule(request: Request, id: string) {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return { error: auth.error } as const;
+	if (!hasValidSessionMutationOrigin(request)) {
+		return { error: NextResponse.json({ error: "Invalid origin" }, { status: 403 }) } as const;
+	}
 	const db = getDb(env);
 	const [rule] = await db
 		.select()

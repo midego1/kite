@@ -18,6 +18,8 @@ export type InboundAttachment = {
 	/** Full Content-Type value, e.g. `text/calendar; method=REQUEST; charset=utf-8`. */
 	contentType: string;
 	content: string | Buffer;
+	/** Defaults to `attachment`. */
+	disposition?: "inline" | "attachment";
 };
 
 export type StoredMessage = {

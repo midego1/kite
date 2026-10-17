@@ -148,3 +148,25 @@ test("g then i goes to the inbox, after a stray key and with Shift for g !", asy
 	await page.keyboard.press("Shift+Digit1");
 	await expect(page).toHaveURL(/\/spam$/);
 });
+
+test("copy chords outside inputs do not open Compose, but plain c still does", async ({ page }) => {
+	await page.goto("/inbox");
+	await expect(page.getByPlaceholder("Search mail (press / to focus)")).toBeVisible();
+	for (const modifier of ["Control", "Meta"]) {
+		const prevented = await page.evaluate((modifier) => {
+			const event = new KeyboardEvent("keydown", {
+				key: "c",
+				bubbles: true,
+				cancelable: true,
+				ctrlKey: modifier === "Control",
+				metaKey: modifier === "Meta",
+			});
+			document.body.dispatchEvent(event);
+			return event.defaultPrevented;
+		}, modifier);
+		expect(prevented).toBe(false);
+		await expect(page.getByLabel("Subject", { exact: true })).toHaveCount(0);
+	}
+	await page.keyboard.press("c");
+	await expect(page.getByLabel("Subject", { exact: true })).toBeVisible();
+});

@@ -97,7 +97,7 @@ export function useHotkeys(shortcuts: ShortcutDefinition[], options: UseHotkeysO
 
 			const sequenceMatch = findSequenceMatch(sequenceBufferRef.current, shortcutsRef.current);
 
-			if (sequenceMatch) {
+			if (sequenceMatch && matchModifiers(e, sequenceMatch)) {
 				e.preventDefault();
 				sequenceBufferRef.current = [];
 				sequenceMatch.action();

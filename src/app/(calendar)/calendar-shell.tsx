@@ -17,6 +17,7 @@ import { SidebarAside, MobileMenuButton } from "@/components/sidebar-aside";
 import { SidebarHeader } from "@/components/sidebar-header";
 import { SidebarProvider } from "@/components/sidebar-state";
 import { ShortcutsProvider } from "@/components/shortcuts";
+import { MAIN_CONTENT_ID, SkipToContent } from "@/components/skip-to-content";
 import { Button } from "@/components/ui/button";
 import clsx from "clsx";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
@@ -50,6 +51,7 @@ function CalendarFrame({ children }: { children: React.ReactNode }) {
 					<MailSearchProvider>
 						<ShortcutsProvider>
 							<div className="grid h-dvh grid-cols-[minmax(0,1fr)] overflow-hidden bg-[#f6f8fc]">
+								<SkipToContent />
 								<SidebarAside className="md:hidden">
 									<CalendarMobileUpcoming />
 								</SidebarAside>
@@ -128,7 +130,9 @@ function CalendarFrame({ children }: { children: React.ReactNode }) {
 									<div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
 										<AssistantOpenContext.Provider value={assistantVisible}>
 											<main
-												className="min-h-0 min-w-0 flex-1 overflow-hidden bg-[#f6f8fc] overscroll-contain scrollbar-gutter-stable"
+												id={MAIN_CONTENT_ID}
+												tabIndex={-1}
+												className="focus:outline-none min-h-0 min-w-0 flex-1 overflow-hidden bg-[#f6f8fc] overscroll-contain scrollbar-gutter-stable"
 												aria-hidden={assistantVisible && assistantFullSize}
 												inert={assistantVisible && assistantFullSize}
 											>

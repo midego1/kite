@@ -8,7 +8,6 @@ import { Archive, ChevronLeft, ChevronRight, ListFilter, Mail, MailOpen, Trash2 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip } from "@/components/ui/tooltip";
-import { SuggestionBadge } from "@/components/agent/suggestion-badge";
 import { useMailSearch } from "@/components/mail-search/mail-search-context";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { usePageLoading } from "@/components/page-loading";
@@ -22,6 +21,7 @@ import { BulkMessageToolbar } from "./bulk-message-toolbar";
 import { SwipeableRow } from "./swipeable-row";
 import { useClearSelection } from "./use-clear-selection";
 import { MessageListRowActions } from "./message-list-row-actions";
+import { MessageRowParty, MessageRowStar } from "./message-row-parts";
 import { applySelection, getRangeSelectionIds, rowCheckboxHandlers } from "./message-range-selection-utils";
 import { dispatchMessageCountsDelta, toggleMessageStar } from "./message-list-row-actions-utils";
 import { MessageNavigationProgress, useMessageNavigation } from "./message-navigation";
@@ -140,6 +140,7 @@ function MessageListRow({
 		const stackedDensity = getStackedRowDensity(density);
 		const compactRow = (
 			<div
+				role={swipeable ? undefined : "listitem"}
 				className={`group relative grid grid-cols-[20px_minmax(0,1fr)] gap-3 border-l-2 px-4 ${stackedDensity.rowClassName} transition-colors ${
 					active
 						? "border-l-blue-600 bg-blue-50"
@@ -161,41 +162,29 @@ function MessageListRow({
 						className="mt-1 h-4 w-4 rounded border-neutral-300"
 						aria-label={`Select message from ${party}`}
 					/>
-					{starToggle && (
-						<Tooltip label={starred ? "Starred" : "Not starred"}>
-							<button
-								type="button"
-								onClick={toggleStar}
-								aria-label={starred ? "Starred" : "Not starred"}
-								className={`rounded p-0.5 hover:bg-neutral-200 ${starred ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"}`}
-							>
-								<Icon className={`h-3.5 w-3.5 ${starred ? "fill-amber-400 text-amber-400" : "text-neutral-400"}`} />
-							</button>
-						</Tooltip>
-					)}
+					{starToggle && <MessageRowStar starred={starred} compact icon={Icon} onToggle={toggleStar} />}
 				</span>
 				<div className="relative min-w-0">
-					<Link href={href} onClick={onMessageNavigate} className="block min-w-0">
+					<Link
+						href={href}
+						onClick={onMessageNavigate}
+						aria-current={active ? "true" : undefined}
+						className="block min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+					>
 						<span
 							className={clsx(
 								"flex items-baseline justify-between gap-3",
 								showHoverActions && "group-hover:pr-[6.75rem] group-has-[:focus-visible]:pr-[6.75rem]",
 							)}
 						>
-							<span
-								className={clsx(
-									"min-w-0 truncate",
-									unread && "font-semibold",
-									getMessagePartyClassName(rowMessage, config.folder),
-								)}
-							>
-								{party}
-
-								{(message.threadCount ?? 1) > 1 && (
-									<span className="ml-2 text-xs font-normal text-neutral-500">{message.threadCount}</span>
-								)}
-								<SuggestionBadge suggestions={message.agentSuggestions} />
-							</span>
+							<MessageRowParty
+								party={party}
+								unread={unread}
+								threadCount={message.threadCount}
+								suggestions={message.agentSuggestions}
+								className={clsx("min-w-0 truncate", getMessagePartyClassName(rowMessage, config.folder))}
+								countClassName="font-normal"
+							/>
 							<span
 								className={clsx(
 									unread ? "font-medium" : "text-neutral-400",
@@ -224,6 +213,7 @@ function MessageListRow({
 		if (!swipeable) return compactRow;
 		return (
 			<SwipeableRow
+				role="listitem"
 				startAction={{
 					label: read ? "Mark unread" : "Mark read",
 					icon: read ? Mail : MailOpen,
@@ -242,34 +232,36 @@ function MessageListRow({
 		);
 	}
 
-	const className = `group relative grid ${getWideRowDensity(density).rowClassName} w-full grid-cols-[24px_32px_minmax(160px,260px)_1fr_auto] items-center gap-3 px-6 text-left text-sm hover:z-10 hover:bg-[#f2f6fc] hover:shadow-sm ${
+	const className = `group relative grid ${getWideRowDensity(density).rowClassName} w-full grid-cols-[24px_32px_minmax(160px,260px)_1fr_auto] items-center gap-3 px-6 text-left text-sm hover:z-10 hover:bg-[#f2f6fc] hover:shadow-sm has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-inset has-[a:focus-visible]:ring-blue-600 ${
 		active || selected ? "bg-blue-50" : ""
 	} ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`;
 	const content = (
 		<>
-			{config.folder === "inbox" && message.direction === "inbound" && (
-				<Tooltip label={starred ? "Starred" : "Not starred"}>
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						onClick={toggleStar}
-						aria-label={starred ? "Starred" : "Not starred"}
-					>
-						<Icon className={`h-4 w-4 ${starred ? "fill-amber-400 text-amber-400" : "text-neutral-300"}`} />
-					</Button>
-				</Tooltip>
+			{starToggle ? (
+				<MessageRowStar starred={starred} compact={false} icon={Icon} onToggle={toggleStar} />
+			) : (
+				<Icon className="h-4 w-4 text-neutral-300" />
 			)}
-			{(config.folder !== "inbox" || message.direction !== "inbound") && <Icon className="h-4 w-4 text-neutral-300" />}
-			<span className={clsx(unread && "font-semibold", getMessagePartyClassName(rowMessage, config.folder))}>
-				{party}
-
-				{(message.threadCount ?? 1) > 1 && <span className="ml-2 text-xs text-neutral-500">{message.threadCount}</span>}
-				<SuggestionBadge suggestions={message.agentSuggestions} />
-			</span>
+			<MessageRowParty
+				party={party}
+				unread={unread}
+				threadCount={message.threadCount}
+				suggestions={message.agentSuggestions}
+				className={getMessagePartyClassName(rowMessage, config.folder)}
+				countClassName=""
+			/>
 			<span className="truncate text-neutral-700">
-				<span className={unread ? "font-semibold text-neutral-900" : ""}>{rowMessage.subject ?? "(no subject)"}</span>
-				<span className="text-neutral-500"> - {getMessagePreview(rowMessage, config.folder)}</span>
+				{/* The overlay stretches the link over the whole row, so a click anywhere opens the message
+				while the row has one keyboard stop; the checkbox, star and hover actions sit above it. */}
+				<Link
+					href={href}
+					onClick={config.folder === "drafts" ? undefined : onMessageNavigate}
+					aria-current={active ? "true" : undefined}
+					className="after:absolute after:inset-0 focus-visible:outline-none"
+				>
+					<span className={unread ? "font-semibold text-neutral-900" : ""}>{rowMessage.subject ?? "(no subject)"}</span>
+					<span className="text-neutral-500"> - {getMessagePreview(rowMessage, config.folder)}</span>
+				</Link>
 			</span>
 			<time
 				dateTime={message.createdAt}
@@ -282,24 +274,9 @@ function MessageListRow({
 		</>
 	);
 
-	if (config.folder === "drafts") {
-		return (
-			<div className={className}>
-				<Checkbox
-					checked={selected}
-					{...rowCheckboxHandlers(message.id, onSelectedChange)}
-					className="h-4 w-4 rounded border-neutral-300"
-					aria-label="Select message"
-				/>
-				<Link href={href} className="contents text-left">
-					{content}
-				</Link>
-			</div>
-		);
-	}
-
 	return (
 		<div
+			role="listitem"
 			className={className}
 			draggable={draggable}
 			onDragStart={(event) => {
@@ -311,12 +288,14 @@ function MessageListRow({
 			<Checkbox
 				checked={selected}
 				{...rowCheckboxHandlers(message.id, onSelectedChange)}
-				className="h-4 w-4 rounded border-neutral-300"
-				aria-label="Select message"
+				className="relative z-10 h-4 w-4 rounded border-neutral-300"
+				aria-label={
+					config.folder === "drafts"
+						? `Select draft ${rowMessage.subject ?? "(no subject)"}`
+						: `Select message from ${party}`
+				}
 			/>
-			<Link href={href} onClick={onMessageNavigate} className="contents">
-				{content}
-			</Link>
+			{content}
 			{hasRowActions && <MessageListRowActions message={rowMessage} onAction={runRowAction} />}
 		</div>
 	);
@@ -613,32 +592,31 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 				)}
 			</div>
 
-			<div
-				className="min-h-0 flex-1 divide-y divide-neutral-100 overflow-y-auto overscroll-contain scrollbar-gutter-stable"
-				data-density={density}
-			>
-				{messages.map((message) => (
-					<MessageListRow
-						key={message.id}
-						message={message}
-						config={config}
-						selected={selectedIds.includes(message.id)}
-						active={message.id === selectedMessageId}
-						compact={compact || isMobile}
-						density={density}
-						hoverActions={!isMobile}
-						currentAccountName={currentAccountName}
-						onSelectedChange={updateSelectedMessage}
-						onMessageAction={async (messageId, action) => {
-							await runBulkMessageAction(
-								expandSelectedIds([messageId]),
-								action,
-								action !== "read" && action !== "unread",
-							);
-						}}
-						dragMessageIds={expandSelectedIds(selectedIds.includes(message.id) ? selectedIds : [message.id])}
-					/>
-				))}
+			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable" data-density={density}>
+				<div role="list" aria-label={config.title} className="divide-y divide-neutral-100">
+					{messages.map((message) => (
+						<MessageListRow
+							key={message.id}
+							message={message}
+							config={config}
+							selected={selectedIds.includes(message.id)}
+							active={message.id === selectedMessageId}
+							compact={compact || isMobile}
+							density={density}
+							hoverActions={!isMobile}
+							currentAccountName={currentAccountName}
+							onSelectedChange={updateSelectedMessage}
+							onMessageAction={async (messageId, action) => {
+								await runBulkMessageAction(
+									expandSelectedIds([messageId]),
+									action,
+									action !== "read" && action !== "unread",
+								);
+							}}
+							dragMessageIds={expandSelectedIds(selectedIds.includes(message.id) ? selectedIds : [message.id])}
+						/>
+					))}
+				</div>
 				{!isLoading && messages.length === 0 && (
 					<div className="px-6 py-4">
 						{!hasActiveFilters && (

@@ -231,5 +231,7 @@
 	"36-upstream-fixes.spec.ts › Move to Inbox from Snoozed ends the snooze and the message shows in the inbox": 3800,
 	"36-upstream-fixes.spec.ts › replying to mail sent from the mailbox's own address addresses that sender": 5100,
 	"36-upstream-fixes.spec.ts › unmodified c opens Compose but copy chords outside inputs do not": 2000,
-	"36-upstream-fixes.spec.ts › unsnoozes mail moved from Spam to Inbox so it becomes visible": 6800
+	"36-upstream-fixes.spec.ts › unsnoozes mail moved from Spam to Inbox so it becomes visible": 6800,
+	"39-accessibility.spec.ts › the skip link is the first tab stop and moves focus to the main content": 1000,
+	"39-accessibility.spec.ts › a message row is reachable by keyboard and Enter opens the message": 4100
 }

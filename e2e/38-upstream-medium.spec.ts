@@ -2,6 +2,11 @@ import { expect, test, type APIRequestContext, type APIResponse, type Browser, t
 import { DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, apiSignIn, deliverInbound, signIn, uniqueToken } from "./support/helpers";
 import type { StoredMessage } from "./support/helpers-types";
+import { useFakeProvider } from "./support/agent";
+import { selectMailbox } from "./support/auto-read";
+import { askAssistant, chatRequests } from "./support/chat";
+import { startFakeModel } from "./support/fake-model";
+import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types";
 
 let api: APIRequestContext;
 
@@ -277,5 +282,86 @@ test.describe("Settings → Mailboxes (upstream #133)", () => {
 		} finally {
 			await memberApi.dispose();
 		}
+	});
+});
+
+/** The text of the newest user turn in a chat request the fake model received. */
+function latestUserTurn(request: FakeRecordedRequest): string {
+	const messages = (request.body as { messages?: { role?: string; content?: unknown }[] }).messages ?? [];
+	const content = messages.filter((message) => message.role === "user").at(-1)?.content;
+	return typeof content === "string" ? content : JSON.stringify(content ?? "");
+}
+
+async function lastAssistantRequest(fake: FakeModel) {
+	await expect.poll(() => chatRequests(fake).filter((request) => request.kind === "other").length).toBeGreaterThan(0);
+	return chatRequests(fake)
+		.filter((request) => request.kind === "other")
+		.at(-1)!;
+}
+
+test.describe("the assistant knows which email is open (upstream #140)", () => {
+	let fake: FakeModel | undefined;
+	let restore: (() => Promise<void>) | undefined;
+
+	test.beforeAll(async () => {
+		fake = await startFakeModel();
+		restore = await useFakeProvider(api, fake);
+	});
+
+	test.afterAll(async () => {
+		await restore?.();
+		await fake?.close();
+	});
+
+	test("the open email shows above the prompt, reaches the model by ID and can be removed", async ({ page }) => {
+		const subject = `Open email ${uniqueToken()}`;
+		const message = await deliverInbound(api, { from: "sender@outside.test", to: SUPPORT_ADDRESS, subject });
+		await selectMailbox(page, message.mailboxId);
+		await page.addInitScript(() => localStorage.setItem("kite-assistant-layout", "floating"));
+		await page.goto(`/inbox/${message.id}`);
+		await expect(page.getByRole("heading", { name: subject })).toBeVisible();
+		const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+		if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+		const panel = page.getByRole("region", { name: "Email assistant" });
+		const chip = panel.getByText(`Current email: ${subject}`, { exact: true });
+		await expect(chip).toBeVisible();
+		await expect(panel.getByText("Current thread", { exact: true })).toBeVisible();
+
+		fake!.clearRequests();
+		fake!.scriptChat({ content: "It is a routine message." });
+		await askAssistant(page, "What is this about?");
+		await expect(panel.getByText("It is a routine message.", { exact: true })).toBeVisible();
+		const withEmail = latestUserTurn(await lastAssistantRequest(fake!));
+		expect(withEmail).toContain("What is this about?");
+		expect(withEmail).toContain(`The user now has email ${message.id} open`);
+		expect(withEmail).not.toContain(subject);
+
+		await panel.getByRole("button", { name: "Don’t use this email" }).click();
+		await expect(chip).toHaveCount(0);
+		await expect(panel.getByText("Your mailbox", { exact: true })).toBeVisible();
+		fake!.clearRequests();
+		fake!.scriptChat({ content: "Here is your mailbox." });
+		await askAssistant(page, "What else arrived?");
+		await expect(panel.getByText("Here is your mailbox.", { exact: true })).toBeVisible();
+		expect(latestUserTurn(await lastAssistantRequest(fake!))).toBe("What else arrived?");
+	});
+
+	test("the chat API ignores an open email from another mailbox", async () => {
+		const message = await deliverInbound(api, {
+			from: "sender@outside.test",
+			to: SUPPORT_ADDRESS,
+			subject: `Foreign email ${uniqueToken()}`,
+		});
+		const { mailboxes } = await json<{ mailboxes: { id: string }[] }>(await api.get("/api/mailboxes"));
+		const other = mailboxes.find((mailbox) => mailbox.id !== message.mailboxId);
+		expect(other).toBeDefined();
+
+		fake!.clearRequests();
+		fake!.scriptChat({ content: "Nothing open." });
+		const response = await api.post("/api/agent/chat", {
+			data: { mailboxId: other!.id, text: "Summarize this email", currentMessageId: message.id },
+		});
+		expect(response.ok(), await response.text()).toBe(true);
+		expect(latestUserTurn(await lastAssistantRequest(fake!))).toBe("Summarize this email");
 	});
 });

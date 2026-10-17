@@ -36,6 +36,7 @@
 		"src/lib/agent/auto-read/suggestion-badge-utils.ts",
 		"src/lib/agent/auto-read/suggestion-utils.ts",
 		"src/lib/agent/auto-read/triage-utils.ts",
+		"src/lib/agent/current-email-utils.ts",
 		"src/lib/agent/jobs/draft-prompt-utils.ts",
 		"src/lib/agent/model-rates-utils.ts",
 		"src/lib/agent/provider-url-utils.ts",

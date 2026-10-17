@@ -33,7 +33,10 @@ import {
 	splitStoredDraftHtml,
 } from "./rich-text-utils";
 import { headerToRecipients, isValidRecipient, recipientsToHeader } from "./recipient-utils";
-import type { ComposeAttachment, ComposeStoredAttachment, ComposeThreading } from "./types";
+import { hasDraftContent, withoutAttachmentIds } from "./draft-autosave-utils";
+import { useDraftAutosave } from "./use-draft-autosave";
+import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-send-utils";
+import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
 import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
 
 type Toast = { type: "success" | "error"; message: string } | null;
@@ -63,7 +66,7 @@ export function ComposeForm({
 	const [html, setHtml] = useState("");
 	const [quotedHtml, setQuotedHtml] = useState<string | null>(null);
 	const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
-	// Attachments the draft already holds server-side (a forwarded message's files).
+	// Attachments the draft holds server-side: a forwarded message's files and those the autosave stored.
 	const [storedAttachments, setStoredAttachments] = useState<ComposeStoredAttachment[]>([]);
 	const [attachmentPolicy, setAttachmentPolicy] = useState<ComposeAttachmentPolicy>({
 		maxMb: 25,
@@ -79,6 +82,7 @@ export function ComposeForm({
 	const loadingDraft = !!draftIdToLoad && loadedDraftId !== draftIdToLoad;
 	const [deletingDraft, setDeletingDraft] = useState(false);
 	const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
+	const [scheduleInvalid, setScheduleInvalid] = useState(false);
 	const [loadedDraftMailboxId, setLoadedDraftMailboxId] = useState<string | null>(null);
 	const [loadedDraftFrom, setLoadedDraftFrom] = useState<string | null>(null);
 	const [chosenFrom, setSelectedFrom] = useState("");
@@ -88,8 +92,6 @@ export function ComposeForm({
 	const [sending, setSending] = useState<{ undoable: boolean } | null>(null);
 	const [undoRequestedWhileSending, setUndoRequestedWhileSending] = useState(false);
 	const undoRequested = useRef(false);
-	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const draftGeneration = useRef(0);
 	const attachmentInput = useRef<HTMLInputElement | null>(null);
 	const fileDragDepth = useRef(0);
 	const previousSignature = useRef("");
@@ -140,6 +142,56 @@ export function ComposeForm({
 	const selectedFrom = senderAddresses.includes(chosenFrom) ? chosenFrom : (senderAddresses[0] ?? "");
 	const fromAddr = selectedMailbox && selectedFrom ? formatEmailAddress(selectedFrom, selectedMailbox.displayName) : "";
 
+	const draftSnapshot = useMemo((): ComposeDraftSnapshot | null => {
+		const content = {
+			recipients: to.length + cc.length + bcc.length,
+			subject,
+			quotedHtml,
+			attachments: attachments.length,
+			bodyText: htmlToPlainText(html),
+			signature: selectedMailbox?.signature,
+		};
+		if (!fromAddr || loadingDraft || !hasDraftContent(content)) return null;
+		const fullHtml = joinQuotedHtml(html, quotedHtml);
+		return {
+			payload: {
+				mailboxId: selectedMailbox?.id,
+				from: fromAddr,
+				to: recipientsToHeader(to),
+				cc: recipientsToHeader(cc),
+				bcc: recipientsToHeader(bcc),
+				subject,
+				html: fullHtml,
+				text: htmlToPlainText(fullHtml),
+				inReplyTo: threading?.inReplyTo ?? null,
+				references: threading?.references ?? null,
+				threadId: threading?.threadId ?? null,
+			},
+			attachments,
+			storeAttachments: agentRevision === null,
+		};
+	}, [
+		agentRevision,
+		attachments,
+		bcc,
+		cc,
+		fromAddr,
+		html,
+		loadingDraft,
+		quotedHtml,
+		selectedMailbox?.id,
+		selectedMailbox?.signature,
+		subject,
+		threading,
+		to,
+	]);
+	const { draftSaves, storedUploads, cancelPendingSave } = useDraftAutosave(draftSnapshot, {
+		setDraftId,
+		setAttachments,
+		setStoredAttachments,
+		reportError: setToast,
+	});
+
 	useEffect(() => {
 		if (!toast) return;
 		const timer = setTimeout(() => setToast(null), 3200);
@@ -154,6 +206,7 @@ export function ComposeForm({
 			.then((draft) => {
 				if (cancelled) return;
 
+				draftSaves.reset(draft.id);
 				setDraftId(draft.id);
 				setAgentRevision(draft.agent?.revision ?? null);
 				setScheduledAt(draft.agent?.scheduledAt ? new Date(draft.agent.scheduledAt) : null);
@@ -193,7 +246,7 @@ export function ComposeForm({
 		return () => {
 			cancelled = true;
 		};
-	}, [draftIdToLoad]);
+	}, [draftIdToLoad, draftSaves]);
 
 	useEffect(() => {
 		if (!loadedDraftMailboxId) return;
@@ -209,67 +262,6 @@ export function ComposeForm({
 		setHtml((current) => applyMailboxSignatureHtml(current, previousSignature.current, nextSignature));
 		previousSignature.current = nextSignature;
 	}, [loadingDraft, selectedMailbox?.id, selectedMailbox?.signature]);
-
-	useEffect(() => {
-		const bodyContent = htmlToPlainText(html).trim();
-		const signatureOnly = bodyContent === (selectedMailbox?.signature?.trim() ?? "");
-		const hasContent =
-			to.length > 0 ||
-			cc.length > 0 ||
-			bcc.length > 0 ||
-			subject.trim() ||
-			quotedHtml ||
-			(bodyContent && !signatureOnly);
-		if (!fromAddr || !hasContent || loadingDraft) return;
-		if (saveTimer.current) clearTimeout(saveTimer.current);
-
-		const generation = draftGeneration.current;
-		saveTimer.current = setTimeout(async () => {
-			const payload = {
-				mailboxId: selectedMailbox?.id,
-				from: fromAddr,
-				to: recipientsToHeader(to),
-				cc: recipientsToHeader(cc),
-				bcc: recipientsToHeader(bcc),
-				subject,
-				html: joinQuotedHtml(html, quotedHtml),
-				text: htmlToPlainText(joinQuotedHtml(html, quotedHtml)),
-				inReplyTo: threading?.inReplyTo ?? null,
-				references: threading?.references ?? null,
-				threadId: threading?.threadId ?? null,
-			};
-			const res = await authFetch(draftId ? `/api/drafts/${draftId}` : "/api/drafts", {
-				method: draftId ? "PATCH" : "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(payload),
-			});
-			const data = (await res.json()) as { draft?: { id: string } };
-			if (res.ok && data.draft?.id) {
-				if (generation !== draftGeneration.current) {
-					void authFetch(`/api/drafts/${data.draft.id}`, { method: "DELETE" });
-					return;
-				}
-				setDraftId(data.draft.id);
-			}
-		}, 900);
-
-		return () => {
-			if (saveTimer.current) clearTimeout(saveTimer.current);
-		};
-	}, [
-		bcc,
-		cc,
-		draftId,
-		fromAddr,
-		html,
-		loadingDraft,
-		quotedHtml,
-		selectedMailbox?.id,
-		selectedMailbox?.signature,
-		subject,
-		threading,
-		to,
-	]);
 
 	function onSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -290,16 +282,26 @@ export function ComposeForm({
 			setToast({ type: "error", message: "Write a message before sending" });
 			return;
 		}
+		if (scheduleInvalid || isPastScheduledSend(scheduledAt)) {
+			setPreviewOpen(false);
+			setToast({ type: "error", message: PAST_SCHEDULE_MESSAGE });
+			return;
+		}
 		const isAgentDraft = !!draftId && agentRevision !== null;
 		if (!isAgentDraft && !skipPreview && sendingSettings.previewEnabled) {
 			setPreviewOpen(true);
 			return;
 		}
 		setLoading(true);
+		// A save still running may be the POST that creates the draft, or may be storing its files.
+		cancelPendingSave();
+		draftSaves.skip();
+		await draftSaves.idle();
+		const currentDraftId = draftSaves.draftId;
+		const unsent = withoutAttachmentIds(attachments, storedUploads);
 		const fullHtml = joinQuotedHtml(html, quotedHtml);
 		if (draftId && agentRevision !== null) {
 			try {
-				if (saveTimer.current) clearTimeout(saveTimer.current);
 				if (attachments.length > 0) {
 					const form = new FormData();
 					for (const attachment of attachments) form.append("attachments", attachment.file);
@@ -350,9 +352,9 @@ export function ComposeForm({
 		// The composer clears and the preview closes straight away; the request
 		// finishes behind the sending bar, and a failure puts everything back.
 		const snapshot: PendingUndoSnapshot = { to, cc, bcc, showCc, showBcc, threading, subject, html, quotedHtml };
-		const sent = { draftId, attachments, storedAttachments, scheduledAt };
+		const sent = { draftId: currentDraftId, attachments: unsent, scheduledAt };
 		const body = buildSendFormData({
-			attachments,
+			attachments: unsent,
 			from: fromAddr,
 			to: recipientsToHeader(to),
 			cc: recipientsToHeader(cc),
@@ -362,10 +364,9 @@ export function ComposeForm({
 			html: fullHtml,
 			mailboxId: selectedMailbox?.id,
 			threading: threading ?? undefined,
-			draftId,
+			draftId: currentDraftId,
 			scheduledAt,
 		});
-		if (saveTimer.current) clearTimeout(saveTimer.current);
 		undoRequested.current = false;
 		setUndoRequestedWhileSending(false);
 		setPreviewOpen(false);
@@ -387,7 +388,7 @@ export function ComposeForm({
 		if (!ok) {
 			restoreComposer(snapshot, sent.draftId);
 			setAttachments(sent.attachments);
-			setStoredAttachments(sent.storedAttachments);
+			void loadStoredAttachments(sent.draftId);
 			setScheduledAt(sent.scheduledAt);
 			setToast({ type: "error", message: data.error ?? "Send failed" });
 			return;
@@ -410,6 +411,8 @@ export function ComposeForm({
 	}
 
 	function resetComposer() {
+		cancelPendingSave();
+		draftSaves.reset(null);
 		setDraftId(null);
 		setTo([]);
 		setCc([]);
@@ -423,10 +426,12 @@ export function ComposeForm({
 		setQuotedHtml(null);
 		setAttachments([]);
 		setScheduledAt(null);
+		setScheduleInvalid(false);
 	}
 
 	function restoreComposer(snapshot: PendingUndoSnapshot, nextDraftId: string | null) {
-		if (saveTimer.current) clearTimeout(saveTimer.current);
+		cancelPendingSave();
+		draftSaves.reset(nextDraftId);
 		setDraftId(nextDraftId);
 		setTo(snapshot.to);
 		setCc(snapshot.cc);
@@ -456,43 +461,47 @@ export function ComposeForm({
 		// further edits and a later send use its stored attachments.
 		restoreComposer(pending.snapshot, data.draftId);
 		setAttachments([]);
-		try {
-			const draft = await fetchDraft(data.draftId);
-			setStoredAttachments(draft.attachments?.filter((item) => item.disposition === "attachment") ?? []);
-		} catch {
-			setStoredAttachments([]);
-		}
+		await loadStoredAttachments(data.draftId);
 		setToast({ type: "success", message: "Sending undone" });
 		window.dispatchEvent(new Event("kite:messages-changed"));
 	}
 
-	async function deleteDraftAndClose() {
-		if (saveTimer.current) clearTimeout(saveTimer.current);
-		draftGeneration.current += 1;
-		setDeletingDraft(true);
+	async function loadStoredAttachments(id: string | null) {
+		if (!id) {
+			setStoredAttachments([]);
+			return;
+		}
+		try {
+			const draft = await fetchDraft(id);
+			setStoredAttachments(draft.attachments?.filter((item) => item.disposition === "attachment") ?? []);
+		} catch {
+			setStoredAttachments([]);
+		}
+	}
 
-		if (draftId) {
-			const res = await authFetch(`/api/drafts/${draftId}`, { method: "DELETE" });
-			if (!res.ok) {
+	async function deleteDraftAndClose() {
+		cancelPendingSave();
+		setDeletingDraft(true);
+		// Waits for a save in flight, so a draft it is still creating is not left behind.
+		const id = await draftSaves.cancel();
+
+		if (id) {
+			let deleted = false;
+			try {
+				const res = await authFetch(`/api/drafts/${id}`, { method: "DELETE" });
+				// Already gone (deleted in another tab, or sent) is what the user asked for.
+				deleted = res.ok || res.status === 404;
+			} catch {
+				deleted = false;
+			}
+			if (!deleted) {
 				setDeletingDraft(false);
 				setToast({ type: "error", message: "Could not delete draft" });
 				return;
 			}
 		}
 
-		setDraftId(null);
-		setTo([]);
-		setCc([]);
-		setBcc([]);
-		setShowCc(false);
-		setShowBcc(false);
-		setThreading(null);
-		setStoredAttachments([]);
-		setSubject("");
-		setHtml(applyMailboxSignatureHtml("", "", selectedMailbox?.signature));
-		setQuotedHtml(null);
-		setAttachments([]);
-		setScheduledAt(null);
+		resetComposer();
 		window.dispatchEvent(new Event("kite:messages-changed"));
 
 		if (onClose) {
@@ -504,8 +513,9 @@ export function ComposeForm({
 	}
 
 	async function removeStoredAttachment(attachmentId: string) {
-		if (!draftId) return;
-		const res = await authFetch(`/api/drafts/${draftId}/attachments/${attachmentId}`, { method: "DELETE" });
+		const id = draftSaves.draftId;
+		if (!id) return;
+		const res = await authFetch(`/api/drafts/${id}/attachments/${attachmentId}`, { method: "DELETE" });
 		if (!res.ok) {
 			setToast({ type: "error", message: "Could not remove attachment" });
 			return;
@@ -578,7 +588,7 @@ export function ComposeForm({
 					<div
 						key={attachment.id}
 						className="flex max-w-full shrink-0 items-center gap-2 rounded-lg bg-neutral-100 px-2 py-1 text-xs"
-						title="Carried over from the forwarded message"
+						title="Saved with the draft"
 					>
 						<FileText className="h-4 w-4 shrink-0 text-neutral-500" />
 						<span className="max-w-48 truncate">{attachment.filename}</span>
@@ -872,39 +882,37 @@ export function ComposeForm({
 						placeholder="Write your message"
 						footerContent={attachmentContent}
 						toolbarStart={
-							<>
-								<div className="flex items-center">
-									<Button
-										type="submit"
-										size="sm"
-										disabled={loading || loadingDraft || !fromAddr}
-										className="rounded-r-none px-4"
-									>
-										{loading
-											? "Preparing…"
-											: scheduledAt
-												? "Schedule"
-												: agentRevision !== null || sendingSettings.previewEnabled
-													? "Review send"
-													: "Send"}
-									</Button>
-									<ScheduleSendMenu
-										disabled={loading || loadingDraft || !fromAddr}
-										value={scheduledAt}
-										onChange={setScheduledAt}
-										mailboxId={selectedMailbox?.id}
-										from={fromAddr}
-										applyContent={({ subject: contentSubject, html: contentHtml }) => {
-											setSubject((current) => (current.trim() ? current : contentSubject));
-											setHtml((current) => (hasMeaningfulHtml(current) ? `${current}${contentHtml}` : contentHtml));
-										}}
-									/>
-								</div>
-							</>
+							<div className="flex items-center">
+								<Button
+									type="submit"
+									size="sm"
+									disabled={loading || loadingDraft || !fromAddr}
+									className="rounded-r-none px-4"
+								>
+									{loading
+										? "Preparing…"
+										: scheduledAt
+											? "Schedule"
+											: agentRevision !== null || sendingSettings.previewEnabled
+												? "Review send"
+												: "Send"}
+								</Button>
+								<ScheduleSendMenu
+									disabled={loading || loadingDraft || !fromAddr}
+									value={scheduledAt}
+									onChange={setScheduledAt}
+									onInvalidChange={setScheduleInvalid}
+									mailboxId={selectedMailbox?.id}
+									from={fromAddr}
+									applyContent={({ subject: contentSubject, html: contentHtml }) => {
+										setSubject((current) => (current.trim() ? current : contentSubject));
+										setHtml((current) => (hasMeaningfulHtml(current) ? `${current}${contentHtml}` : contentHtml));
+									}}
+								/>
+							</div>
 						}
 						toolbarEnd={
 							<>
-								{/* <span className="mx-1 h-5 w-px bg-neutral-200" /> */}
 								<Input
 									ref={attachmentInput}
 									type="file"

@@ -4,10 +4,15 @@ type UnreadRow = {
 	direction: string;
 	read: boolean;
 	threadUnread?: number;
+	threadInboundCount?: number;
 	threadMessageIds?: string[];
 };
 
-export type ScopedThreads = { ids: Map<string, string[]>; unread: Map<string, number> };
+export type ScopedThreads = {
+	ids: Map<string, string[]>;
+	unread: Map<string, number>;
+	inbound: Map<string, number>;
+};
 
 /**
  * Collects the messages each conversation row stands for in the current folder,
@@ -17,19 +22,21 @@ export type ScopedThreads = { ids: Map<string, string[]>; unread: Map<string, nu
 export function groupThreadMembers(members: ThreadMember[]): ScopedThreads {
 	const ids = new Map<string, string[]>();
 	const unread = new Map<string, number>();
+	const inbound = new Map<string, number>();
 	for (const { id, key, read, direction } of members) {
 		const list = ids.get(key) ?? [];
 		list.push(id);
 		ids.set(key, list);
 		unread.set(key, (unread.get(key) ?? 0) + (!read && direction === "inbound" ? 1 : 0));
+		inbound.set(key, (inbound.get(key) ?? 0) + (direction === "inbound" ? 1 : 0));
 	}
-	return { ids, unread };
+	return { ids, unread, inbound };
 }
 
 /** How many unread messages a read or unread action on this row would flip. */
 function getUnreadFlipCount(message: UnreadRow, readValue: boolean): number {
 	if (message.threadMessageIds) {
-		const size = message.threadMessageIds.length;
+		const size = message.threadInboundCount ?? 0;
 		const unread = Math.min(Math.max(message.threadUnread ?? 0, 0), size);
 		return readValue ? unread : size - unread;
 	}
@@ -56,5 +63,5 @@ export function getInboxUnreadDelta(rows: UnreadRow[], readValue: boolean | null
 /** The row after a read or unread action, with a conversation row's unread count to match. */
 export function withReadState<T extends UnreadRow>(row: T, readValue: boolean): T {
 	if (!row.threadMessageIds) return { ...row, read: readValue };
-	return { ...row, read: readValue, threadUnread: readValue ? 0 : row.threadMessageIds.length };
+	return { ...row, read: readValue, threadUnread: readValue ? 0 : (row.threadInboundCount ?? 0) };
 }

@@ -18,6 +18,7 @@ await build({
 			export { GET as listMessages } from "./src/app/api/messages/route.ts";
 			export { affectsInboxUnreadCount, getInboxUnreadDelta, groupThreadMembers, withReadState } from "./src/lib/messages/thread-unread-utils.ts";
 			export { assertNothingSkipped, describePermanentDeleteResult, PartialDeleteError } from "./src/lib/messages/permanent-delete-utils.ts";
+			export { clearMessageListCache, fetchMessageList, getCachedMessageList, markMessagesReadInCaches } from "./src/hooks/utils.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "message-list-unread-test-entry.ts",
@@ -44,10 +45,11 @@ const DELETE_SKIPPED = "Some messages could not be deleted because they are no l
 /** How many unread messages an action on one Inbox row flips. */
 const flips = (row, readValue) => Math.abs(m.getInboxUnreadDelta([row], readValue, true));
 const single = (read, direction = "inbound") => ({ direction, read });
-const grouped = (threadUnread, size) => ({
+const grouped = (threadUnread, size, threadInboundCount = size) => ({
 	direction: "inbound",
 	read: threadUnread === 0,
 	threadUnread,
+	threadInboundCount,
 	threadMessageIds: Array.from({ length: size }, (_, index) => `m${index}`),
 });
 
@@ -90,11 +92,16 @@ test("a conversation row counts unread messages only among those it stands for i
 	const list = await threadFixture(t);
 	const inbox = await list("status=received");
 	assert.equal(inbox.get("thread").threadUnread, 2);
+	assert.equal(inbox.get("thread").threadInboundCount, 2);
 	assert.deepEqual(inbox.get("thread").threadMessageIds.sort(), ["in-1", "in-2"]);
 	assert.equal(inbox.get("thread").threadCount, 4, "the conversation size still counts every folder");
 	assert.equal(inbox.get("lone").threadUnread, 1, "a message without a thread id is its own conversation");
 	assert.equal((await list("status=archived")).get("thread").threadUnread, 1);
 	assert.equal((await list("status=sent")).get("thread").threadUnread, 0, "a sent reply never makes a row unread");
+	assert.equal((await list("status=sent")).get("thread").threadInboundCount, 0);
+	const all = (await list("")).get("thread");
+	assert.equal(all.threadInboundCount, 3);
+	assert.equal(all.threadMessageIds.length, 4);
 });
 
 test("groupThreadMembers collects ids and counts only unread inbound messages", () => {
@@ -106,8 +113,10 @@ test("groupThreadMembers collects ids and counts only unread inbound messages", 
 	]);
 	assert.deepEqual(threads.ids.get("t"), ["a", "b", "c"]);
 	assert.equal(threads.unread.get("t"), 1);
+	assert.equal(threads.inbound.get("t"), 2);
 	assert.deepEqual(threads.ids.get("d"), ["d"]);
 	assert.equal(threads.unread.get("d"), 1);
+	assert.equal(threads.inbound.get("d"), 1);
 });
 
 test("a single message flips once, and not at all when it already has the state", () => {
@@ -143,6 +152,38 @@ test("marking a conversation row read or unread restyles it at once", () => {
 	assert.deepEqual(m.withReadState(grouped(2, 3), true).threadUnread, 0);
 	assert.deepEqual(m.withReadState(grouped(0, 3), false).threadUnread, 3);
 	assert.deepEqual(m.withReadState(single(false), true), { direction: "inbound", read: true });
+});
+
+test("marking grouped rows unread counts inbound members, not sent replies", () => {
+	const mixed = grouped(1, 4, 2);
+	assert.equal(flips(mixed, false), 1);
+	assert.equal(m.withReadState(mixed, false).threadUnread, 2);
+	const sent = { ...grouped(0, 3, 0), direction: "outbound" };
+	assert.equal(flips(sent, false), 0);
+	assert.equal(m.withReadState(sent, false).threadUnread, 0);
+	assert.equal(m.withReadState({ ...sent, threadInboundCount: undefined }, false).threadUnread, 0);
+});
+
+test("cached grouped rows use the same inbound-only optimistic unread count", async (t) => {
+	m.clearMessageListCache();
+	const params = new URLSearchParams({ group: "thread" });
+	const rows = [
+		{ id: "mixed", ...grouped(0, 3, 2) },
+		{ id: "sent", ...grouped(0, 1, 0) },
+	];
+	t.mock.method(globalThis, "fetch", async () => Response.json({ messages: rows }));
+	await m.fetchMessageList(params);
+	m.markMessagesReadInCaches(["mixed", "sent"], false);
+	assert.deepEqual(
+		m.getCachedMessageList(params).messages.map((row) => row.threadUnread),
+		[2, 0],
+	);
+	m.markMessagesReadInCaches(["mixed", "sent"], true);
+	assert.deepEqual(
+		m.getCachedMessageList(params).messages.map((row) => row.threadUnread),
+		[0, 0],
+	);
+	m.clearMessageListCache();
 });
 
 test("a permanent delete that kept messages is reported, anything else is not", () => {

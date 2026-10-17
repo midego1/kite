@@ -91,12 +91,11 @@ function MessageListRow({
 		const previousThreadUnread = threadUnread;
 		const readValue = action === "read" ? true : action === "unread" ? false : null;
 		const unreadDelta = getInboxUnreadDelta([rowMessage], readValue, affectsInboxCount);
-		if (action === "read") setRead(true);
-		if (action === "unread") setRead(false);
 		// Grouped rows derive their unread styling from the thread count, so it must change with the row.
-		if (message.threadMessageIds) {
-			if (action === "read") setThreadUnread(0);
-			if (action === "unread") setThreadUnread(message.threadMessageIds.length);
+		if (readValue !== null) {
+			const next = withReadState(rowMessage, readValue);
+			setRead(next.read);
+			setThreadUnread(next.threadUnread);
 		}
 		if (unreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: unreadDelta });
 		try {

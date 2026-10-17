@@ -239,6 +239,7 @@
 	"38-upstream-medium.spec.ts › conversation unread state and skipped deletes (upstream #135) › deleting a selection forever reports the messages that had left Trash": 5300,
 	"38-upstream-medium.spec.ts › conversation unread state and skipped deletes (upstream #135) › deleting forever a message that left Trash keeps the page open and says why": 3400,
 	"38-upstream-medium.spec.ts › conversation unread state and skipped deletes (upstream #135) › marking a conversation read or unread moves the sidebar Inbox count by its unread messages": 7000,
+	"38-upstream-medium.spec.ts › conversation unread state and skipped deletes (upstream #135) › marking a Sent conversation unread never gives it optimistic unread styling": 3700,
 	"38-upstream-medium.spec.ts › conversation unread state and skipped deletes (upstream #135) › opening an unread message outside the Inbox leaves the sidebar Inbox count alone": 5600,
 	"38-upstream-medium.spec.ts › Settings → Mailboxes (upstream #133) › a member with the mailbox grant renames their own mailbox from Settings": 3200,
 	"38-upstream-medium.spec.ts › Settings → Mailboxes (upstream #133) › a member without the grant gets no Mailboxes entry and is sent back from the page": 2200,

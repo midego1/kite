@@ -43,7 +43,7 @@ async function sidebarInboxCount(page: Page): Promise<number> {
 	return Number(text.match(/\d+/)?.[0] ?? 0);
 }
 
-type ListRow = StoredMessage & { threadUnread: number; threadMessageIds?: string[] };
+type ListRow = StoredMessage & { threadUnread: number; threadInboundCount: number; threadMessageIds?: string[] };
 
 async function conversationRow(status: string, mailboxId: string, threadId: string): Promise<ListRow | undefined> {
 	const params = new URLSearchParams({ status, mailboxId, group: "thread", limit: "100" });
@@ -132,6 +132,39 @@ test.describe("conversation unread state and skipped deletes (upstream #135)", (
 		await expect(page).toHaveURL(new RegExp(`/archived/${message.id}`));
 		await expect(page.getByRole("heading", { name: subject })).toBeVisible();
 		expect(await sidebarInboxCount(page)).toBe(before);
+	});
+
+	test("marking a Sent conversation unread never gives it optimistic unread styling", async ({ page }) => {
+		const { messages } = await json<{ messages: ListRow[] }>(
+			await api.get("/api/messages?status=sent&direction=outbound&group=thread"),
+		);
+		const sent = messages[0];
+		expect(sent.threadInboundCount).toBe(0);
+		await bulk(sent.threadMessageIds!, "read");
+		await selectMailbox(page, sent.mailboxId);
+		await page.goto("/sent");
+		const row = messageRow(page, sent.subject!);
+		await expect(row).toBeVisible();
+		await row.getByRole("checkbox").check();
+
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => (release = resolve));
+		await page.route("**/api/messages/bulk", async (route) => {
+			await held;
+			await route.continue();
+		});
+		try {
+			const request = page.waitForRequest("**/api/messages/bulk");
+			await page.getByRole("button", { name: "Mark as unread", exact: true }).first().click();
+			await request;
+			await expect(row.locator(".font-bold")).toHaveCount(0);
+			const response = page.waitForResponse("**/api/messages/bulk");
+			release();
+			expect((await response).ok()).toBe(true);
+			await expect(row.locator(".font-bold")).toHaveCount(0);
+		} finally {
+			release();
+		}
 	});
 
 	test("deleting forever a message that left Trash keeps the page open and says why", async ({ page }) => {

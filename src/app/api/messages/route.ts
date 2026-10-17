@@ -120,7 +120,7 @@ export async function GET(request: Request) {
 	let nextCursor: string | null = null;
 	// Which stored messages each visible row stands for, so acting on a
 	// conversation row acts on the whole conversation within this folder.
-	let scopedThreads: ScopedThreads = { ids: new Map(), unread: new Map() };
+	let scopedThreads: ScopedThreads = { ids: new Map(), unread: new Map(), inbound: new Map() };
 	if (groupByThread) {
 		const page = await loadConversationPage({ db, where, offset, limit, cursor });
 		total = page.total;
@@ -226,6 +226,7 @@ export async function GET(request: Request) {
 	const enrichedRows = rows.map(({ rawR2Key: _rawR2Key, ...message }) => {
 		const contactMap = contactMapsByUserId.get(message.userId);
 		const accountName = message.mailboxId ? mailboxNameMap.get(message.mailboxId) : null;
+		const key = message.threadId ?? message.id;
 		return {
 			...message,
 			snippet: message.snippet,
@@ -238,11 +239,14 @@ export async function GET(request: Request) {
 			// A conversation row is unread only when a message it stands for in this folder is.
 			threadUnread:
 				(groupByThread
-					? scopedThreads.unread.get(message.threadId ?? message.id)
+					? scopedThreads.unread.get(key)
 					: message.threadId && threadCounts.get(message.threadId)?.unread) || 0,
 			...rowSuggestions(message.id),
 			...(groupByThread
-				? { threadMessageIds: scopedThreads.ids.get(message.threadId ?? message.id) ?? [message.id] }
+				? {
+						threadMessageIds: scopedThreads.ids.get(key) ?? [message.id],
+						threadInboundCount: scopedThreads.inbound.get(key) ?? 0,
+					}
 				: {}),
 		};
 	});

@@ -33,8 +33,8 @@ export function useCurrentEmail(selectedMessageId: string | null, mailboxId: str
 	}, [selectedMessageId, mailboxId]);
 
 	useEffect(() => {
-		ref.current = openEmailId;
-	}, [openEmailId]);
+		ref.current = contextMessageId;
+	}, [contextMessageId]);
 
 	return {
 		contextMessageId,

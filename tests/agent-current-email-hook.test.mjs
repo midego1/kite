@@ -86,3 +86,22 @@ test("dismissal ends when another email opens, including when returning to the d
 	assert.equal(hook.email.openEmailId, "email-a");
 	assert.equal(hook.email.ref.current, "email-a");
 });
+
+test("the request ID is available before the subject while the chip waits for mailbox verification", async (t) => {
+	let resolveDetail;
+	t.mock.method(globalThis, "fetch", () => new Promise((resolve) => (resolveDetail = resolve)));
+	const hook = await mount(t);
+	await hook.select("email-a");
+	assert.equal(hook.email.ref.current, "email-a");
+	assert.equal(hook.email.openEmailId, null);
+	assert.equal(hook.email.subject, "");
+	await act(async () => {
+		resolveDetail(Response.json({ message: { mailboxId: "mailbox", subject: "Verified subject" } }));
+	});
+	assert.equal(hook.email.openEmailId, "email-a");
+	assert.equal(hook.email.subject, "Verified subject");
+	await act(() => hook.email.dismiss());
+	assert.equal(hook.email.ref.current, null);
+	await hook.select(null);
+	assert.equal(hook.email.ref.current, null);
+});

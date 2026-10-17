@@ -264,9 +264,14 @@ test.describe("composer drafts", () => {
 			await page.mouse.click(5, 5);
 			await expect(page.getByRole("menu")).toBeHidden();
 			// The past time did not become the schedule.
-			await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
+			await page.getByRole("button", { name: "Send", exact: true }).click();
+			await expect(page.getByText(PAST_SCHEDULE_MESSAGE)).toBeVisible();
+			await expect(page.getByLabel("Subject")).toHaveValue(subject);
+			expect(sends).toEqual([]);
 
 			await page.getByRole("button", { name: "Schedule send options" }).click();
+			await expect(when).toHaveValue("2020-01-01T09:00");
+			await expect(when).toHaveAttribute("aria-invalid", "true");
 			await page.getByRole("menuitem", { name: /Tomorrow morning/ }).click();
 			const schedule = page.getByRole("button", { name: "Schedule", exact: true });
 			await expect(schedule).toBeVisible();
@@ -282,6 +287,53 @@ test.describe("composer drafts", () => {
 			await deleteDrafts(api, subject);
 		}
 	});
+
+	for (const recovery of ["clear", "correct"] as const) {
+		test(`an invalid picked time blocks an existing schedule until ${recovery}ed`, async ({ page }) => {
+			const subject = `Invalid schedule ${recovery} ${uniqueToken()}`;
+			const sends: string[] = [];
+			await page.route("**/api/send", async (route) => {
+				sends.push(route.request().postData() ?? "");
+				await route.fulfill({ status: 200, json: { scheduled: recovery === "correct" } });
+			});
+			try {
+				await page.goto("/inbox");
+				await openComposer(page, { to: RECIPIENT });
+				await page.getByLabel("Subject").fill(subject);
+				await page.getByRole("textbox", { name: "Message body" }).fill("Keep the schedule until corrected.");
+				await page.getByRole("button", { name: "Schedule send options" }).click();
+				await page.getByRole("menuitem", { name: /Tomorrow morning/ }).click();
+				await page.getByRole("button", { name: "Schedule send options" }).click();
+				const when = page.getByLabel("Send date and time");
+				await when.fill("2020-01-01T09:00");
+				await page.mouse.click(5, 5);
+				await page.getByRole("button", { name: "Schedule", exact: true }).click();
+				await expect(page.getByText(PAST_SCHEDULE_MESSAGE)).toBeVisible();
+				expect(sends).toEqual([]);
+				await page.getByRole("button", { name: "Schedule send options" }).click();
+				await expect(when).toHaveValue("2020-01-01T09:00");
+
+				if (recovery === "clear") {
+					await page.getByRole("menuitem", { name: "Clear schedule" }).click();
+				} else {
+					await when.fill("2099-01-01T09:00");
+					await expect(when).not.toHaveAttribute("aria-invalid", "true");
+					await page.mouse.click(5, 5);
+				}
+				await page.getByRole("button", { name: recovery === "clear" ? "Send" : "Schedule", exact: true }).click();
+				await expect.poll(() => sends.length).toBe(1);
+				if (recovery === "clear") expect(sends[0]).not.toContain('name="scheduledAt"');
+				else expect(sends[0]).toContain("2099-01-01T09:00:00.000Z");
+				await expect(page.getByText(recovery === "clear" ? "Message sent" : "Message scheduled")).toBeVisible();
+				await page.getByRole("button", { name: "Schedule send options" }).click();
+				await expect(when).toHaveValue("");
+				await page.mouse.click(5, 5);
+				await page.getByRole("button", { name: "Close composer" }).click();
+			} finally {
+				await deleteDrafts(api, subject);
+			}
+		});
+	}
 
 	test("the send endpoint refuses a scheduled time that has passed", async () => {
 		const subject = `Past send ${uniqueToken()}`;

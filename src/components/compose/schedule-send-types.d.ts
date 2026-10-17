@@ -7,6 +7,7 @@ export type ScheduleSendMenuProps = {
 	disabled?: boolean;
 	value: Date | null;
 	onChange: (value: Date | null) => void;
+	onInvalidChange: (invalid: boolean) => void;
 	mailboxId?: string | null;
 	from: string;
 	applyContent: (content: { subject: string; html: string }) => void;

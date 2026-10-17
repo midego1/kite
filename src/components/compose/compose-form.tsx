@@ -82,6 +82,7 @@ export function ComposeForm({
 	const loadingDraft = !!draftIdToLoad && loadedDraftId !== draftIdToLoad;
 	const [deletingDraft, setDeletingDraft] = useState(false);
 	const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
+	const [scheduleInvalid, setScheduleInvalid] = useState(false);
 	const [loadedDraftMailboxId, setLoadedDraftMailboxId] = useState<string | null>(null);
 	const [loadedDraftFrom, setLoadedDraftFrom] = useState<string | null>(null);
 	const [chosenFrom, setSelectedFrom] = useState("");
@@ -281,7 +282,7 @@ export function ComposeForm({
 			setToast({ type: "error", message: "Write a message before sending" });
 			return;
 		}
-		if (isPastScheduledSend(scheduledAt)) {
+		if (scheduleInvalid || isPastScheduledSend(scheduledAt)) {
 			setPreviewOpen(false);
 			setToast({ type: "error", message: PAST_SCHEDULE_MESSAGE });
 			return;
@@ -425,6 +426,7 @@ export function ComposeForm({
 		setQuotedHtml(null);
 		setAttachments([]);
 		setScheduledAt(null);
+		setScheduleInvalid(false);
 	}
 
 	function restoreComposer(snapshot: PendingUndoSnapshot, nextDraftId: string | null) {
@@ -880,39 +882,37 @@ export function ComposeForm({
 						placeholder="Write your message"
 						footerContent={attachmentContent}
 						toolbarStart={
-							<>
-								<div className="flex items-center">
-									<Button
-										type="submit"
-										size="sm"
-										disabled={loading || loadingDraft || !fromAddr}
-										className="rounded-r-none px-4"
-									>
-										{loading
-											? "Preparing…"
-											: scheduledAt
-												? "Schedule"
-												: agentRevision !== null || sendingSettings.previewEnabled
-													? "Review send"
-													: "Send"}
-									</Button>
-									<ScheduleSendMenu
-										disabled={loading || loadingDraft || !fromAddr}
-										value={scheduledAt}
-										onChange={setScheduledAt}
-										mailboxId={selectedMailbox?.id}
-										from={fromAddr}
-										applyContent={({ subject: contentSubject, html: contentHtml }) => {
-											setSubject((current) => (current.trim() ? current : contentSubject));
-											setHtml((current) => (hasMeaningfulHtml(current) ? `${current}${contentHtml}` : contentHtml));
-										}}
-									/>
-								</div>
-							</>
+							<div className="flex items-center">
+								<Button
+									type="submit"
+									size="sm"
+									disabled={loading || loadingDraft || !fromAddr}
+									className="rounded-r-none px-4"
+								>
+									{loading
+										? "Preparing…"
+										: scheduledAt
+											? "Schedule"
+											: agentRevision !== null || sendingSettings.previewEnabled
+												? "Review send"
+												: "Send"}
+								</Button>
+								<ScheduleSendMenu
+									disabled={loading || loadingDraft || !fromAddr}
+									value={scheduledAt}
+									onChange={setScheduledAt}
+									onInvalidChange={setScheduleInvalid}
+									mailboxId={selectedMailbox?.id}
+									from={fromAddr}
+									applyContent={({ subject: contentSubject, html: contentHtml }) => {
+										setSubject((current) => (current.trim() ? current : contentSubject));
+										setHtml((current) => (hasMeaningfulHtml(current) ? `${current}${contentHtml}` : contentHtml));
+									}}
+								/>
+							</div>
 						}
 						toolbarEnd={
 							<>
-								{/* <span className="mx-1 h-5 w-px bg-neutral-200" /> */}
 								<Input
 									ref={attachmentInput}
 									type="file"

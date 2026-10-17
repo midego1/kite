@@ -14,7 +14,15 @@ import type { ScheduleSendMenuProps } from "./schedule-send-types";
 import { getUserTimeZone } from "@/lib/time/utils";
 import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-send-utils";
 
-export function ScheduleSendMenu({ disabled, value, onChange, mailboxId, from, applyContent }: ScheduleSendMenuProps) {
+export function ScheduleSendMenu({
+	disabled,
+	value,
+	onChange,
+	onInvalidChange,
+	mailboxId,
+	from,
+	applyContent,
+}: ScheduleSendMenuProps) {
 	const [menuOpened, setMenuOpened] = useState(false);
 	const slots = useComposerSlots("send-menu", { mailboxId, from, applyContent }, menuOpened);
 	// Suggestions are computed from the moment the menu opens.
@@ -28,8 +36,15 @@ export function ScheduleSendMenu({ disabled, value, onChange, mailboxId, from, a
 	function pick(text: string) {
 		setPickedText(text);
 		const parsed = parseDateTimeLocal(text);
-		if (!parsed) onChange(null);
-		else if (!isPastScheduledSend(parsed)) onChange(parsed);
+		const invalid = parsed !== null && isPastScheduledSend(parsed);
+		onInvalidChange(invalid);
+		if (!invalid) onChange(parsed);
+	}
+
+	function choose(value: Date | null) {
+		setPickedText(null);
+		onInvalidChange(false);
+		onChange(value);
 	}
 
 	return (
@@ -38,7 +53,7 @@ export function ScheduleSendMenu({ disabled, value, onChange, mailboxId, from, a
 				onOpenChange={(open) => {
 					if (!open) return;
 					setOpenedAt(Date.now());
-					setPickedText(null);
+					if (!pastPicked) setPickedText(null);
 					setMenuOpened(true);
 				}}
 			>
@@ -60,10 +75,10 @@ export function ScheduleSendMenu({ disabled, value, onChange, mailboxId, from, a
 						<DropdownMenu.Label className="px-3 pb-1 pt-2 text-xs font-medium text-neutral-500">
 							Schedule
 						</DropdownMenu.Label>
-						{value && (
+						{(value || pastPicked) && (
 							<>
 								<DropdownMenu.Item
-									onSelect={() => onChange(null)}
+									onSelect={() => choose(null)}
 									className="flex cursor-pointer items-center rounded-md px-3 py-2 outline-none hover:bg-neutral-100 focus:bg-neutral-100"
 								>
 									<X className="mr-2 h-4 w-4" />
@@ -75,7 +90,7 @@ export function ScheduleSendMenu({ disabled, value, onChange, mailboxId, from, a
 						{options.map((option) => (
 							<DropdownMenu.Item
 								key={option.label}
-								onSelect={() => onChange(option.value)}
+								onSelect={() => choose(option.value)}
 								className="cursor-pointer rounded-md px-3 py-2 outline-none hover:bg-neutral-100 focus:bg-neutral-100"
 							>
 								{option.label}

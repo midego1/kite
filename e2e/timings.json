@@ -220,5 +220,7 @@
 	"35-composer-drafts.spec.ts › composer drafts › pressing Enter in Insert link adds the link without sending the message": 2300,
 	"35-composer-drafts.spec.ts › composer drafts › the send endpoint refuses a scheduled time that has passed": 100,
 	"35-composer-drafts.spec.ts › composer drafts › typing while the first autosave is still running makes one draft, not two": 6100,
-	"35-composer-drafts.spec.ts › composer drafts › Escape on the link Apply button closes only the popup, and Enter applies once": 3300
+	"35-composer-drafts.spec.ts › composer drafts › Escape on the link Apply button closes only the popup, and Enter applies once": 3300,
+	"35-composer-drafts.spec.ts › composer drafts › an invalid picked time blocks an existing schedule until cleared": 3300,
+	"35-composer-drafts.spec.ts › composer drafts › an invalid picked time blocks an existing schedule until corrected": 3300
 }

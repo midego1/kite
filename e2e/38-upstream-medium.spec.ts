@@ -1,6 +1,6 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
+import { expect, test, type APIRequestContext, type APIResponse, type Browser, type Page } from "@playwright/test";
+import { DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { apiContext, apiSignIn, deliverInbound, signIn, uniqueToken } from "./support/helpers";
 import type { StoredMessage } from "./support/helpers-types";
 
 let api: APIRequestContext;
@@ -176,5 +176,106 @@ test.describe("conversation unread state and skipped deletes (upstream #135)", (
 		await expect(page.getByText(`1 message deleted forever. ${DELETE_SKIPPED}`)).toBeVisible();
 		await expect.poll(async () => (await api.get(`/api/messages/${gone.id}`)).status()).toBe(404);
 		expect((await api.get(`/api/messages/${kept.id}`)).status()).toBe(200);
+	});
+});
+
+const MEMBER_PASSWORD = "upstream-medium-password-123";
+
+async function json<T>(response: APIResponse): Promise<T> {
+	expect(response.ok(), `${response.url()} -> ${response.status()} ${await response.text()}`).toBe(true);
+	return (await response.json()) as T;
+}
+
+/** A member account on the demo domain, optionally granted mailbox management. */
+async function createMember(username: string, canManageMailboxes: boolean) {
+	const { domains } = await json<{ domains: { id: string; hostname: string }[] }>(await api.get("/api/domains"));
+	const domainId = domains.find((domain) => domain.hostname === DOMAIN)!.id;
+	const { account } = await json<{ account: { id: string } }>(
+		await api.post("/api/accounts", {
+			data: { username, domainId, password: MEMBER_PASSWORD, role: "user", useAllDomains: true },
+		}),
+	);
+	await json(
+		await api.patch(`/api/accounts/${account.id}`, {
+			data: { name: username, role: "user", disabled: false, canManageMailboxes, canManageDomains: false },
+		}),
+	);
+	return { id: account.id, address: `${username}@${DOMAIN}` };
+}
+
+async function memberPage(browser: Browser, address: string) {
+	const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+	const page = await context.newPage();
+	await signIn(page, address, MEMBER_PASSWORD);
+	await expect(page).not.toHaveURL(/\/login/);
+	return { context, page };
+}
+
+function settingsNav(page: Page) {
+	return page.getByRole("navigation", { name: "Mailbox" });
+}
+
+test.describe("Settings → Mailboxes (upstream #133)", () => {
+	test("a member with the mailbox grant renames their own mailbox from Settings", async ({ browser }) => {
+		const username = `mbset${uniqueToken("m").toLowerCase()}`.replace(/[^a-z0-9]/g, "");
+		const member = await createMember(username, true);
+		const { context, page } = await memberPage(browser, member.address);
+		try {
+			await page.goto("/settings/account");
+			await settingsNav(page).getByRole("link", { name: "Mailboxes" }).click();
+			await expect(page).toHaveURL(/\/settings\/mailboxes$/);
+			await expect(page.getByRole("heading", { name: "Mailboxes", level: 1 })).toBeVisible();
+			const row = page.getByRole("link", { name: new RegExp(member.address) });
+			await expect(row).toBeVisible();
+			await expect(page.getByText(SUPPORT_ADDRESS, { exact: true })).toHaveCount(0);
+
+			await row.click();
+			await expect(page).toHaveURL(/\/settings\/mailboxes\/mbx_[\w-]+$/);
+			await expect(page.getByText(member.address, { exact: true })).toBeVisible();
+			const name = page.getByLabel("Name", { exact: true });
+			await expect(name).toBeEnabled();
+			await name.fill(`Renamed ${username}`);
+			await page.getByRole("button", { name: "Save changes" }).click();
+			await expect(page.getByText("Mailbox settings saved")).toBeVisible();
+			await expect(page).toHaveURL(/\/settings\/mailboxes\//);
+		} finally {
+			await context.close();
+		}
+	});
+
+	test("a member without the grant gets no Mailboxes entry and is sent back from the page", async ({ browser }) => {
+		const username = `mbnone${uniqueToken("m").toLowerCase()}`.replace(/[^a-z0-9]/g, "");
+		const member = await createMember(username, false);
+		const { context, page } = await memberPage(browser, member.address);
+		try {
+			await page.goto("/settings/account");
+			await expect(settingsNav(page).getByRole("link", { name: "Export" })).toBeVisible();
+			await expect(settingsNav(page).getByRole("link", { name: "Mailboxes" })).toHaveCount(0);
+			await page.goto("/settings/mailboxes");
+			await expect(page).toHaveURL(/\/settings\/account$/);
+			await expect(page.getByRole("button", { name: "New mailbox" })).toHaveCount(0);
+		} finally {
+			await context.close();
+		}
+	});
+
+	test("the API refuses a member's change to a mailbox they do not own", async () => {
+		const username = `mbapi${uniqueToken("m").toLowerCase()}`.replace(/[^a-z0-9]/g, "");
+		const member = await createMember(username, true);
+		const memberApi = await apiSignIn(member.address, MEMBER_PASSWORD);
+		try {
+			const { mailboxes } = await json<{ mailboxes: { id: string; localPart: string; hostname: string }[] }>(
+				await api.get("/api/mailboxes"),
+			);
+			const support = mailboxes.find((mailbox) => `${mailbox.localPart}@${mailbox.hostname}` === SUPPORT_ADDRESS);
+			expect(support).toBeDefined();
+			expect((await memberApi.get(`/api/mailboxes/${support!.id}`)).status()).toBe(404);
+			expect(
+				(await memberApi.patch(`/api/mailboxes/${support!.id}`, { data: { displayName: "Taken" } })).status(),
+			).toBe(404);
+			expect((await memberApi.delete(`/api/mailboxes/${support!.id}`)).status()).toBe(403);
+		} finally {
+			await memberApi.dispose();
+		}
 	});
 });

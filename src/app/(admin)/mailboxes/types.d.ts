@@ -1,5 +1,6 @@
 export type Mailbox = {
 	id: string;
+	userId?: string;
 	localPart: string;
 	displayName: string | null;
 	hasAvatar?: boolean;

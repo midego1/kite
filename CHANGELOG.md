@@ -29,6 +29,7 @@ Apply database migrations 0062 and 0063 after deploying, from the database card 
 - The notice that the database still needs updates now sits in the empty reading pane, next to "Select a message to read", with the **Apply now** button for the owner. While a message is open, on other pages and on a phone it shrinks to a one-line banner above the mailbox.
 - Snooze no longer opens a separate window. In an open message, **Snooze** in the **More actions** menu expands in place; on a list row, the clock button opens a small panel next to it. Choosing **Tomorrow**, **Next week** or **Next month** snoozes right away and shows the exact time beside each choice; a date and time of your own still needs **Snooze**.
 - The Admin menu is grouped by task: **Email** (Domains, Mailboxes, Routing), **People & access** (Accounts, Modules), **Integrations** (API keys, Webhooks), **AI** (Agent, AI usage) and **System** (General, Branding, Backups, Alerts, Activity). In Settings, Security, App passwords and API keys move to their own **Security** group.
+- Members who have been given permission to manage mailboxes now find **Mailboxes** under Settings → Mailbox (`/settings/mailboxes`). It lists the mailboxes they own and opens the same editor as Admin → Mailboxes, for the display name, picture, aliases, the use-all-domains option and deleting the mailbox, and it stays in Settings while doing so. Members without that permission get no entry and are sent back to Settings; the API still checks every change. Ported from upstream Mailflare #133.
 
 ### Fixed
 

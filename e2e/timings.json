@@ -204,6 +204,7 @@
 	"24-auto-agent-injection.spec.ts › extra keys in the triage reply are ignored and trigger no forward, send or move": 6400,
 	"25-auto-agent-backup.spec.ts › a backup with live agent data and invite events restores intact, including a tentative event": 14500,
 	"26-one-time-code.spec.ts › a copy request the clipboard refuses becomes a dialog with one more Copy": 1400,
+	"26-one-time-code.spec.ts › an HTML-only message whose markup is deeply indented shows the chip": 3500,
 	"26-one-time-code.spec.ts › Settings can send a test notification while the tab is visible": 2100,
 	"26-one-time-code.spec.ts › the browser notification carries the code, a copy action and service-worker data": 3500,
 	"26-one-time-code.spec.ts › the new-mail popup shows the code and Copy puts it on the clipboard": 3500,

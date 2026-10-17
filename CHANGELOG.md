@@ -47,6 +47,7 @@ Apply database migrations 0062 and 0063 after deploying, from the database card 
   - On a phone, the message reader, conversation and one-time code card use narrow side margins, so the subject and body are no longer squeezed by desktop indents ([mailflare#112](https://github.com/hieunc229/mailflare/pull/112)).
   - The routing rule switches and buttons under Admin → Routing are announced with the rule they belong to ("Enable rule: …", "Edit rule: …", "Delete rule: …"), and the keep-a-copy switch has a label ([mailflare#129](https://github.com/hieunc229/mailflare/pull/129)).
   - The browser tab shows your custom app name from Admin → Branding from the first page load instead of "Kite" until the page finishes loading, and leaving a mail folder no longer leaves its title on the next page ([mailflare#81](https://github.com/hieunc229/mailflare/pull/81)).
+- The development server (`npm run dev`, and the e2e suite that runs on it) no longer refuses file uploads over 1 MB, such as draft attachments, avatars and backup restores, with "Payload Too Large". Deployed Workers were not affected.
 
 ### Security
 

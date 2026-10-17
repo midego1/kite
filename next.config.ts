@@ -21,6 +21,14 @@ const nextConfig: NextConfig = {
 				: {},
 	},
 	allowedDevOrigins: ["mail.dev"],
+	experimental: {
+		serverActions: {
+			// Kite has no server actions, but `vite dev` treats every multipart POST without an action id as one
+			// and caps it at this size before route handlers (uploads, restore) apply their own limits. Production
+			// builds skip that gate when no "use server" code exists. 100 MB is the Workers request body limit.
+			bodySizeLimit: "100mb",
+		},
+	},
 	typescript: {
 		ignoreBuildErrors: false,
 	},

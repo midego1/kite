@@ -11,7 +11,7 @@ import { agentDraftMetadata, messages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { loadMessageAttachmentContents } from "@/lib/email/attachments";
 import { userOwnsDraft } from "@/app/api/drafts/utils";
-import { resolveComposerSendTime } from "@/lib/email/undo-send-utils";
+import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend, resolveComposerSendTime } from "@/lib/email/undo-send-utils";
 
 export async function POST(request: Request) {
 	const env = getEnv();
@@ -28,6 +28,9 @@ export async function POST(request: Request) {
 	const parsed = sendEmailSchema.omit({ attachments: true }).safeParse(fields);
 	if (!parsed.success) {
 		return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+	}
+	if (isPastScheduledSend(parsed.data.scheduledAt)) {
+		return NextResponse.json({ error: PAST_SCHEDULE_MESSAGE }, { status: 400 });
 	}
 
 	// Files already stored on the draft (a forwarded message's attachments) ride

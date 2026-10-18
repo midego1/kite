@@ -19,7 +19,9 @@ await build({
 	target: "node22",
 	logLevel: "silent",
 });
-const { findSequenceMatch, isModifierKey } = await import(pathToFileURL(join(bundleDirectory, "entry.mjs")).href);
+const { findSequenceMatch, isBrowserChord, isModifierKey } = await import(
+	pathToFileURL(join(bundleDirectory, "entry.mjs")).href
+);
 
 const shortcuts = [{ key: "g i" }, { key: "g !" }, { key: "G S" }, { key: "e" }];
 
@@ -41,4 +43,26 @@ test("a single key matches only when it is the whole buffer", () => {
 test("modifier keys are not steps of a sequence", () => {
 	for (const key of ["Shift", "control", "Alt", "meta", "AltGraph", "CapsLock"]) assert.equal(isModifierKey(key), true);
 	for (const key of ["g", "!", "?", "escape"]) assert.equal(isModifierKey(key), false);
+});
+
+test("a bare key is handled only when no Cmd, Ctrl or Alt chord is held", () => {
+	const press = (key, modifiers = {}) =>
+		isBrowserChord({ key, metaKey: false, ctrlKey: false, altKey: false, ...modifiers });
+	assert.equal(press("c", { metaKey: true }), true);
+	assert.equal(press("c", { ctrlKey: true }), true);
+	assert.equal(press("c", { altKey: true }), true);
+	assert.equal(press("c"), false);
+	assert.equal(press("?"), false);
+	// Cmd and Ctrl alone never type a character, even a symbol.
+	assert.equal(press("?", { metaKey: true }), true);
+	assert.equal(press("/", { ctrlKey: true }), true);
+	assert.equal(press("#", { metaKey: true, altKey: true }), true);
+	// AltGr (Ctrl+Alt) and Option type symbols; letters, digits and space with them stay chords.
+	assert.equal(press("#", { ctrlKey: true, altKey: true }), false);
+	assert.equal(press("€", { ctrlKey: true, altKey: true }), false);
+	assert.equal(press("#", { altKey: true }), false);
+	assert.equal(press("ą", { ctrlKey: true, altKey: true }), true);
+	assert.equal(press("3", { altKey: true }), true);
+	assert.equal(press(" ", { altKey: true }), true);
+	assert.equal(press("F4", { altKey: true }), true);
 });

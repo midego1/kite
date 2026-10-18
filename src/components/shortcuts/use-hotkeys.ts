@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { ShortcutDefinition } from "./types";
-import { findSequenceMatch, isModifierKey } from "./use-hotkeys-utils";
+import { findSequenceMatch, isBrowserChord, isModifierKey } from "./use-hotkeys-utils";
 
 interface UseHotkeysOptions {
 	enabled?: boolean;
@@ -83,6 +83,9 @@ export function useHotkeys(shortcuts: ShortcutDefinition[], options: UseHotkeysO
 			}
 
 			if (isModifierKey(key)) return;
+
+			// Sequences match on bare keys, so the `g` of Cmd+G must not start `g i`.
+			if (isBrowserChord(e)) return;
 
 			// Single keys inside a dialog, menu or listbox belong to it: `e` in the snooze picker must not archive the message behind it.
 			if (e.target instanceof HTMLElement && e.target.closest('[role="dialog"], [role="menu"], [role="listbox"]'))

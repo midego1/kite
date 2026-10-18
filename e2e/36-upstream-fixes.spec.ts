@@ -171,6 +171,38 @@ test("unmodified c opens Compose but copy chords outside inputs do not", async (
 	await expect(page.getByLabel("Subject", { exact: true })).toBeVisible();
 });
 
+test("a Cmd or Ctrl chord neither starts a sequence nor opens the shortcuts help", async ({ page }) => {
+	await page.goto("/starred");
+	await expect(page.getByPlaceholder("Search mail (press / to focus)")).toBeVisible();
+
+	for (const chord of ["Meta+g", "Control+g"]) {
+		await page.keyboard.press(chord);
+		await page.keyboard.press("i");
+	}
+	// Nothing to wait for when the shortcut correctly does nothing, and a later navigation would replace this one
+	// before it commits, so give a wrongly started `g i` time to land.
+	await page.waitForTimeout(1500);
+	await expect(page).toHaveURL(/\/starred$/);
+
+	const prevented = await page.evaluate(() => {
+		const event = new KeyboardEvent("keydown", {
+			key: "?",
+			bubbles: true,
+			cancelable: true,
+			metaKey: true,
+			shiftKey: true,
+		});
+		document.body.dispatchEvent(event);
+		return event.defaultPrevented;
+	});
+	expect(prevented).toBe(false);
+	const help = page.getByRole("dialog", { name: "Keyboard Shortcuts" });
+	await expect(help).toHaveCount(0);
+
+	await page.keyboard.press("Shift+Slash");
+	await expect(help).toBeVisible();
+});
+
 test("unsnoozes mail moved from Spam to Inbox so it becomes visible", async ({ page }) => {
 	const { subject, message } = await deliver("Unsnooze from spam");
 	await snooze(message.id);

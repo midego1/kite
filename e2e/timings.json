@@ -228,6 +228,7 @@
 	"35-composer-drafts.spec.ts › composer drafts › pressing Enter in Insert link adds the link without sending the message": 2300,
 	"35-composer-drafts.spec.ts › composer drafts › the send endpoint refuses a scheduled time that has passed": 100,
 	"35-composer-drafts.spec.ts › composer drafts › typing while the first autosave is still running makes one draft, not two": 6100,
+	"36-upstream-fixes.spec.ts › a Cmd or Ctrl chord neither starts a sequence nor opens the shortcuts help": 2400,
 	"36-upstream-fixes.spec.ts › a custom folder's Move to menu offers Inbox": 3500,
 	"36-upstream-fixes.spec.ts › a failed list action tells the user instead of failing silently": 3600,
 	"36-upstream-fixes.spec.ts › g then i goes to the inbox, after a stray key and with Shift for g !": 1100,

@@ -61,6 +61,36 @@ test("a client that lists vacationresponse in using still syncs, and that extens
 	expect(methodResponses[1][1]).toEqual({ type: "unknownMethod" });
 });
 
+test("Email/get and Thread/get answer 200 ids with repeats once each (upstream #157)", async () => {
+	const queried = await call(CORE, [["Email/query", { accountId, limit: 100 }, "q"]]);
+	expect(queried.status(), await queried.text()).toBe(200);
+	const stored = ((await queried.json()) as { methodResponses: Invocation[] }).methodResponses[0][1].ids as string[];
+	expect(stored.length).toBeGreaterThan(1);
+	const missing = Array.from({ length: 198 - stored.length }, (_, index) => `msg_missing_${index}`);
+	// The repeats sit after the padding, so they fall into a later batch than the first copy.
+	const requested = [...stored, ...missing, stored[0], stored[1]];
+	expect(requested).toHaveLength(200);
+
+	const got = await call(CORE, [["Email/get", { accountId, ids: requested, properties: ["id", "threadId"] }, "g"]]);
+	expect(got.status(), await got.text()).toBe(200);
+	const [[name, email]] = ((await got.json()) as { methodResponses: Invocation[] }).methodResponses;
+	expect(name, JSON.stringify(email)).toBe("Email/get");
+	const list = email.list as { id: string; threadId: string }[];
+	expect(list.map((item) => item.id).sort()).toEqual([...stored].sort());
+	expect(email.notFound).toEqual(missing);
+
+	const threadIds = [...new Set(list.map((item) => item.threadId))];
+	const threadRequest = [...threadIds, ...missing.slice(0, 150 - threadIds.length), threadIds[0]];
+	const threads = await call(CORE, [["Thread/get", { accountId, ids: threadRequest }, "t"]]);
+	expect(threads.status(), await threads.text()).toBe(200);
+	const [[threadName, thread]] = ((await threads.json()) as { methodResponses: Invocation[] }).methodResponses;
+	expect(threadName, JSON.stringify(thread)).toBe("Thread/get");
+	const groups = thread.list as { id: string; emailIds: string[] }[];
+	expect(groups.map((group) => group.id).sort()).toEqual([...threadIds].sort());
+	const emailIds = groups.flatMap((group) => group.emailIds);
+	expect(new Set(emailIds).size).toBe(emailIds.length);
+});
+
 test("a capability outside the IETF JMAP namespace is still refused (upstream #155)", async () => {
 	const response = await call([...CORE, "https://example.com/apis/foobar"], [["Core/echo", {}, "e"]]);
 	expect(response.status()).toBe(400);

@@ -170,12 +170,9 @@ export async function processRequest(ctx: JmapContext, request: JmapRequest): Pr
 			if (error instanceof JmapError) {
 				responses.push(["error", error.toMethodError(), callId]);
 			} else {
+				// A database error's message carries the SQL and its bound values; only the log gets it.
 				console.error(`JMAP ${name} failed`, error);
-				responses.push([
-					"error",
-					{ type: "serverFail", description: error instanceof Error ? error.message : "Unexpected error" },
-					callId,
-				]);
+				responses.push(["error", { type: "serverFail", description: "The method failed on the server" }, callId]);
 			}
 		}
 	}

@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
-import { queryInChunks } from "@/db/chunk-utils";
+import { inJsonArray, queryInChunks } from "@/db/chunk-utils";
 import { messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { buildSnippet, parseRawMime } from "@/lib/email/parse";
@@ -84,12 +84,18 @@ async function scope(ctx: JmapContext) {
 	const ids = Array.from(await listAccessibleMailboxIdSet(ctx));
 	return {
 		ids,
+		// One JSON parameter however many mailboxes the user reads, so the id batches keep the rest of D1's cap.
 		condition: ids.length
-			? inArray(messages.mailboxId, ids)
+			? inJsonArray(messages.mailboxId, ids)
 			: ctx.auth.mailboxIds
 				? sql`1 = 0`
 				: eq(messages.userId, ctx.auth.userId),
 	};
+}
+
+/** Each requested id that matched nothing, once, however often the request repeated it. */
+function notFoundIds(requested: string[], found: { has(id: string): boolean }): string[] {
+	return [...new Set(requested)].filter((id) => !found.has(id));
 }
 
 export async function loadMessages(ctx: JmapContext, ids: string[]): Promise<MessageRow[]> {
@@ -132,7 +138,7 @@ export const emailGet: JmapMethodHandler = async (ctx, args) => {
 		accountId: ctx.accountId,
 		state: await getEmailState(ctx),
 		list,
-		notFound: ids.filter((id) => !found.has(id)),
+		notFound: notFoundIds(ids, found),
 	};
 };
 
@@ -599,7 +605,7 @@ export const threadGet: JmapMethodHandler = async (ctx, args) => {
 		accountId: ctx.accountId,
 		state: await getEmailState(ctx),
 		list: Array.from(grouped, ([id, emailIds]) => ({ id, emailIds })),
-		notFound: ids.filter((id) => !grouped.has(id)),
+		notFound: notFoundIds(ids, grouped),
 	};
 };
 
@@ -630,7 +636,7 @@ export const searchSnippetGet: JmapMethodHandler = async (ctx, args) => {
 		}
 		return { emailId: row.id, subject: highlight(row.subject), preview: excerpt };
 	});
-	return { accountId: ctx.accountId, list, notFound: ids.filter((id) => !found.has(id)) };
+	return { accountId: ctx.accountId, list, notFound: notFoundIds(ids, found) };
 };
 
 export { count, desc, mailboxRefCondition, invalidArguments };

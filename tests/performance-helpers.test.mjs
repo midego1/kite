@@ -72,6 +72,21 @@ test("queryInChunks keeps every query under the bound-parameter limit and preser
 	assert.equal(calls, 0);
 });
 
+test("queryInChunks asks for a repeated item once, also across chunk boundaries", async () => {
+	const items = Array.from({ length: 60 }, (_, index) => `id${index}`);
+	const asked = [];
+	const rows = await helpers.queryInChunks([...items, "id0", "id59", "id0"], async (chunk) => {
+		asked.push(...chunk);
+		return chunk.map((id) => ({ id }));
+	});
+	assert.deepEqual(asked, items);
+	assert.deepEqual(
+		rows.map((row) => row.id),
+		items,
+	);
+	assert.deepEqual(await helpers.queryInChunks(["a", "a"], async (chunk) => chunk), ["a"]);
+});
+
 test("runInChunks runs writes sequentially", async () => {
 	const order = [];
 	let active = 0;

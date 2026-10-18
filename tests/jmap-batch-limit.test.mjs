@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { D1_BOUND_PARAMETER_LIMIT, jmap, jmapContext, limitBoundParameters } from "./support/jmap-database.mjs";
 
-const { loadAttachmentsByMessage, loadMessages, processRequest } = jmap;
+const { LIMITS, loadAttachmentsByMessage, loadMessages, processRequest, threadGet } = jmap;
 
 /**
  * D1 refuses a statement with more than 100 bound parameters, while `Email/get` serves up to 200 ids
@@ -69,6 +69,29 @@ test("Thread/get groups 150 threads with repeated ids once each, oldest message 
 	assert.ok(result.list.every((thread) => thread.emailIds.length === 2));
 	assert.deepEqual(result.notFound, ["thread-missing"]);
 	assert.ok(stats.maxBound <= D1_BOUND_PARAMETER_LIMIT, `bound ${stats.maxBound}`);
+});
+
+test("Thread/get accepts exactly the advertised maximum number of ids", async (t) => {
+	const { database, ctx, mailboxIds } = await jmapContext(t);
+	const ids = messageIds(LIMITS.maxObjectsInGet);
+	seedMessages(database, mailboxIds[0], ids);
+	const stats = limitBoundParameters(database);
+
+	const [[name, result]] = await run(ctx, [["Thread/get", { ids }, "t"]]);
+	assert.equal(name, "Thread/get", JSON.stringify(result));
+	assert.deepEqual(result.list.map((thread) => thread.id).sort(), ids);
+	assert.deepEqual(result.notFound, []);
+	assert.ok(stats.maxBound <= D1_BOUND_PARAMETER_LIMIT, `bound ${stats.maxBound}`);
+});
+
+test("Thread/get rejects too many ids before querying scope, including repeated ids", async (t) => {
+	const { database, ctx } = await jmapContext(t);
+	const prepare = t.mock.method(database, "prepare");
+
+	for (const ids of [messageIds(LIMITS.maxObjectsInGet + 1), Array(LIMITS.maxObjectsInGet + 1).fill("same-thread")]) {
+		await assert.rejects(threadGet(ctx, { ids }), { type: "requestTooLarge" });
+	}
+	assert.equal(prepare.mock.callCount(), 0);
 });
 
 test("attachments of a repeated message id are listed once", async (t) => {

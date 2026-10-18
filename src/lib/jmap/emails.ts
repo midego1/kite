@@ -20,6 +20,7 @@ import { emailWriteAccess } from "./email-access";
 import { deleteUpload, readUpload, storeRawDraftMime } from "./blobs";
 import type {
 	Comparator,
+	DraftRow,
 	EmailAddressObject,
 	Filter,
 	JmapContext,
@@ -30,26 +31,6 @@ import type {
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 
 type MessageRow = typeof messages.$inferSelect;
-
-/** The columns a draft row is made of, shared by `Email/set` create and `Email/import`. */
-type DraftRow = {
-	mailboxId: string;
-	fromAddr: string;
-	toAddr: string;
-	ccAddr: string | null;
-	bccAddr: string | null;
-	subject: string | null;
-	textBody: string | null;
-	htmlBody: string | null;
-	inReplyTo: string | null;
-	references: string | null;
-	read?: boolean;
-	starred?: boolean;
-	threadId?: string | null;
-	providerMessageId?: string | null;
-	rawR2Key?: string | null;
-	createdAt?: Date;
-};
 
 /** Insert a draft and return its id. Drafts are outbound mail that has not been sent. */
 async function insertDraft(ctx: JmapContext, row: DraftRow): Promise<string> {
@@ -590,6 +571,7 @@ export const emailUnsupported =
 export const threadGet: JmapMethodHandler = async (ctx, args) => {
 	const ids = args.ids as string[] | null | undefined;
 	if (!ids) throw new JmapError("requestTooLarge", "Thread/get needs an explicit list of ids");
+	if (ids.length > LIMITS.maxObjectsInGet) throw new JmapError("requestTooLarge");
 	const { condition } = await scope(ctx);
 	const threadKey = sql<string>`coalesce(${messages.threadId}, ${messages.id})`;
 	const rows = await queryInChunks(ids, (chunk) =>

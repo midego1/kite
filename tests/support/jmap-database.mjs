@@ -5,8 +5,9 @@ export const jmap = await bundleModules("kite-jmap-db-", [
 	["SqliteDatabase", "server/runtime/sqlite-database.ts"],
 	["applyMigrations", "server/runtime/migrate.ts"],
 	["getDb", "src/db/index.ts"],
+	["LIMITS", "src/lib/jmap/constants.ts"],
 	["SUPPORTED_CAPABILITIES, processRequest, validateRequest", "src/lib/jmap/processor.ts"],
-	["loadMessages", "src/lib/jmap/emails.ts"],
+	["loadMessages, threadGet", "src/lib/jmap/emails.ts"],
 	["loadAttachmentsByMessage", "src/lib/jmap/email-objects.ts"],
 ]);
 

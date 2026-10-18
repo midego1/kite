@@ -117,6 +117,7 @@
 	"/api/profile/avatar",
 	"/api/public/booking/[eventId]",
 	"/api/public/booking",
+	"/api/remote-images",
 	"/api/routing-rules/[id]",
 	"/api/routing-rules/domain/[id]",
 	"/api/routing-rules/domain",

@@ -5,7 +5,11 @@ import { imagesOptimizer } from "@vinext/cloudflare/images/images-optimizer";
 import { getBuildVersion } from "./scripts/build-version.mjs";
 
 const build = getBuildVersion();
-const DEV_ONLY_VARS = ["ALERT_WEBHOOK_ALLOW_INSECURE", "AI_ALLOW_INSECURE_LOOPBACK"] as const;
+const DEV_ONLY_VARS = [
+	"ALERT_WEBHOOK_ALLOW_INSECURE",
+	"AI_ALLOW_INSECURE_LOOPBACK",
+	"REMOTE_IMAGES_ALLOW_LOOPBACK",
+] as const;
 
 export default defineConfig(({ command }) => ({
 	define: {

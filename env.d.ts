@@ -30,6 +30,8 @@ interface CloudflareEnv {
 	LOGIN_RATE_LIMIT?: RateLimit;
 	AGENT_RATE_LIMIT?: RateLimit;
 	BOOKING_RATE_LIMIT?: RateLimit;
+	/** Per-user budget on the remote image proxy (`/api/remote-images`); absent on older deployments. */
+	REMOTE_IMAGE_RATE_LIMIT?: RateLimit;
 	CF_TOKEN?: string;
 	CF_API_KEY?: string;
 	CF_EMAIL?: string;
@@ -55,6 +57,8 @@ interface CloudflareEnv {
 	ALERT_WEBHOOK_ALLOW_INSECURE?: string;
 	/** Dev/test only: "1" lets a custom AI provider be http://127.0.0.1 or http://localhost (the fake model); ignored in production. */
 	AI_ALLOW_INSECURE_LOOPBACK?: string;
+	/** Dev/test only: "1" lets the remote image proxy fetch http://127.0.0.1 on any port (the e2e image server); ignored in production. */
+	REMOTE_IMAGES_ALLOW_LOOPBACK?: string;
 	/** abuse.ch Auth-Key; when set, inbound spam checks look up risky links and attachment hashes on URLhaus. */
 	URLHAUS_AUTH_KEY?: string;
 	/** When set, first-run setup and the first registration must present this token. */

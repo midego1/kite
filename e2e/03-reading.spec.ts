@@ -18,10 +18,17 @@ test("renders HTML in a sandboxed frame and holds remote images until asked", as
 	});
 	await api.dispose();
 
+	// A shown remote image loads through the same-origin proxy (e2e/42-remote-images.spec.ts covers the proxy itself).
 	let imageRequests = 0;
-	await page.route("https://images.e2e.test/**", (route) => {
-		imageRequests += 1;
+	let directRequests = 0;
+	await page.route("**/api/remote-images?**", (route) => {
+		const url = new URL(route.request().url());
+		if (url.searchParams.get("url") === "https://images.e2e.test/pixel.png") imageRequests += 1;
 		return route.fulfill({ status: 200, contentType: "image/png", body: PIXEL });
+	});
+	await page.route("https://images.e2e.test/**", (route) => {
+		directRequests += 1;
+		return route.abort();
 	});
 
 	await page.goto("/inbox");
@@ -45,6 +52,7 @@ test("renders HTML in a sandboxed frame and holds remote images until asked", as
 	await expect(body.getByRole("img", { name: "tracking pixel" })).toHaveCount(1);
 	await expect(page.getByText("Remote images are hidden to protect your privacy.")).toBeHidden();
 	await expect.poll(() => imageRequests).toBeGreaterThan(0);
+	expect(directRequests).toBe(0);
 });
 
 test("stores received HTML without active content and the reader keeps it inert", async ({ page }) => {

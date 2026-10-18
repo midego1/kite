@@ -6,6 +6,7 @@ import { legacyStorageMigrationScript } from "@/components/legacy-storage-utils"
 import { sidebarBootstrapScript } from "@/components/sidebar-state-utils";
 import { themeBootstrapScript } from "@/components/theme-utils";
 import { appearanceBootstrapScript } from "@/components/appearance-preferences";
+import { isNodeRuntime } from "@/lib/runtime";
 import { getHomeBranding } from "./home-server-utils";
 import "./globals.css";
 
@@ -67,6 +68,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 		<html
 			lang="en"
 			data-style="kite"
+			// Read by the email reader: the self-hosted server does not proxy remote images.
+			data-remote-image-proxy={isNodeRuntime() ? "off" : undefined}
 			className={`${geistSans.variable} ${geistMono.variable} ${manrope.variable} ${inter.variable} ${kiteScript.variable}`}
 			suppressHydrationWarning
 		>

@@ -42,6 +42,8 @@ export default defineConfig({
 			ALERT_WEBHOOK_ALLOW_INSECURE: "1",
 			// Lets specs point the agent provider at the fake model on 127.0.0.1 (e2e/support/fake-model.ts).
 			AI_ALLOW_INSECURE_LOOPBACK: "1",
+			// Lets the remote image proxy fetch the in-spec image server on 127.0.0.1 (e2e/42-remote-images.spec.ts).
+			REMOTE_IMAGES_ALLOW_LOOPBACK: "1",
 		},
 		// A reused server keeps whatever state earlier runs left behind; opt in only while iterating.
 		reuseExistingServer: process.env.E2E_REUSE_SERVER === "1",

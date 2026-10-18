@@ -5,6 +5,7 @@ import { jmap, jmapContext } from "./support/jmap-database.mjs";
 const { SUPPORTED_CAPABILITIES, processRequest, validateRequest } = jmap;
 
 const VACATION = "urn:ietf:params:jmap:vacationresponse";
+const SMIME = "urn:ietf:params:jmap:smimeverify";
 const request = (using, methodCalls = [["Core/echo", { echo: true }, "c0"]]) => ({ using, methodCalls });
 
 test("the capabilities the server advertises are accepted", () => {
@@ -53,6 +54,35 @@ test("a method of an ignored extension answers unknownMethod while the rest of t
 		["error", { type: "unknownMethod" }, "c0"],
 		["Core/echo", { hello: "world" }, "c1"],
 	]);
+});
+
+test("Email/get rejects unsupported smimeStatus but accepts an unused smimeverify capability", async (t) => {
+	const { database, ctx, mailboxIds } = await jmapContext(t);
+	database.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, status, subject, created_at)
+		VALUES ('msg-1', 'owner', '${mailboxIds[0]}', 'inbound', 'a@example.net', 'b@example.com', 'received', 'Hello', 1);
+	`);
+	const parsed = validateRequest(
+		request(
+			["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail", SMIME],
+			[
+				["Email/get", { ids: ["msg-1"], properties: ["id", "smimeStatus"] }, "unsupported"],
+				["Email/get", { ids: [], properties: ["smimeStatus"] }, "empty"],
+				["Email/get", { ids: ["msg-1"], properties: ["id", "subject"] }, "supported"],
+				["Core/echo", { hello: "world" }, "echo"],
+			],
+		),
+	);
+	const { methodResponses } = await processRequest(ctx, parsed);
+	for (const [index, callId] of ["unsupported", "empty"].entries()) {
+		assert.equal(methodResponses[index][0], "error");
+		assert.equal(methodResponses[index][1].type, "invalidArguments");
+		assert.equal(methodResponses[index][2], callId);
+	}
+	assert.equal(methodResponses[2][0], "Email/get");
+	assert.deepEqual(methodResponses[2][1].list, [{ id: "msg-1", subject: "Hello" }]);
+	assert.deepEqual(methodResponses[2][1].notFound, []);
+	assert.deepEqual(methodResponses[3], ["Core/echo", { hello: "world" }, "echo"]);
 });
 
 test("a body that is not a request is still notRequest", () => {

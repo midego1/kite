@@ -95,6 +95,7 @@ export const emailGet: JmapMethodHandler = async (ctx, args) => {
 	if (!ids) throw new JmapError("requestTooLarge", "Email/get needs an explicit list of ids");
 	if (ids.length > LIMITS.maxObjectsInGet) throw new JmapError("requestTooLarge");
 	const properties = args.properties as string[] | null | undefined;
+	if (properties?.includes("smimeStatus")) throw invalidArguments("Email/get does not support smimeStatus");
 	const fetchBodies = !!(args.fetchTextBodyValues || args.fetchHTMLBodyValues || args.fetchAllBodyValues);
 	const maxBodyValueBytes = Number(args.maxBodyValueBytes ?? 0);
 

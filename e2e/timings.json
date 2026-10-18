@@ -265,5 +265,7 @@
 	"39-accessibility.spec.ts › the composer takes focus when it opens and gives it back when it closes": 2200,
 	"39-accessibility.spec.ts › the skip link is the first tab stop and moves focus to the main content": 1000,
 	"39-accessibility.spec.ts › the startup overlay is announced only while it is showing": 1000,
-	"39-accessibility.spec.ts › wide admin tables declare column headers and scroll by keyboard, and routing hints are buttons": 1000
+	"39-accessibility.spec.ts › wide admin tables declare column headers and scroll by keyboard, and routing hints are buttons": 1000,
+	"40-upstream-jmap.spec.ts › a capability outside the IETF JMAP namespace is still refused (upstream #155)": 300,
+	"40-upstream-jmap.spec.ts › a client that lists vacationresponse in using still syncs, and that extension's methods are unknown (upstream #155)": 500
 }

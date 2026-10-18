@@ -1,6 +1,7 @@
 {
 	"gated": [
 		"src/lib/alerts/active-utils.ts",
+		"src/lib/app-badge-utils.ts",
 		"src/lib/alerts/delivery-utils.ts",
 		"src/lib/alerts/rules-utils.ts",
 		"src/lib/alerts/webhook-utils.ts",

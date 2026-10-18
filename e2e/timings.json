@@ -265,5 +265,7 @@
 	"39-accessibility.spec.ts › the composer takes focus when it opens and gives it back when it closes": 2200,
 	"39-accessibility.spec.ts › the skip link is the first tab stop and moves focus to the main content": 1000,
 	"39-accessibility.spec.ts › the startup overlay is announced only while it is showing": 1000,
-	"39-accessibility.spec.ts › wide admin tables declare column headers and scroll by keyboard, and routing hints are buttons": 1000
+	"39-accessibility.spec.ts › wide admin tables declare column headers and scroll by keyboard, and routing hints are buttons": 1000,
+	"41-upstream-badge.spec.ts › signing out › clears the app badge": 4100,
+	"41-upstream-badge.spec.ts › the app badge follows the Inbox unread count across all mailboxes": 3400
 }

@@ -88,6 +88,34 @@ test("the app badge follows the Inbox unread count across all mailboxes", async 
 	expect((await badgeCalls(page)).some((call) => call[0] === "clear")).toBe(false);
 });
 
+test("a hidden account change clears the badge and refreshes it when visible", async ({ page }) => {
+	await stubAppBadge(page);
+	// Keep revision replies silent: the counts hook must recover without a realtime refresh.
+	await page.routeWebSocket("**/api/realtime", () => {});
+	let unread = 9;
+	await page.route("**/api/messages/counts*", async (route) => {
+		const response = await route.fetch();
+		const data = await response.json();
+		data.counts.folders.inbox.unread = unread;
+		await route.fulfill({ response, json: data });
+	});
+	await page.goto("/inbox");
+	await expect.poll(() => badgeValue(page)).toBe(9);
+
+	await page.evaluate(() => {
+		Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+		window.dispatchEvent(new CustomEvent("kite:auth-session-changed", { detail: { authenticated: true } }));
+	});
+	await expect.poll(() => badgeValue(page)).toBe(0);
+
+	unread = 4;
+	await page.evaluate(() => {
+		Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+		document.dispatchEvent(new Event("visibilitychange"));
+	});
+	await expect.poll(() => badgeValue(page)).toBe(4);
+});
+
 test.describe("signing out", () => {
 	// Signing out revokes the session, so this must not use the suite's shared admin session.
 	test.use({ storageState: { cookies: [], origins: [] } });

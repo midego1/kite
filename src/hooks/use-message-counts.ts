@@ -29,6 +29,7 @@ export function useMessageCounts(mailboxId?: string | null, enabled = true) {
 		let cancelled = false;
 		let refreshTimer: number | null = null;
 		let requestNumber = 0;
+		let staleWhileHidden = false;
 
 		async function loadCounts(force = false) {
 			const currentRequest = ++requestNumber;
@@ -44,12 +45,21 @@ export function useMessageCounts(mailboxId?: string | null, enabled = true) {
 		void loadCounts();
 		function onMessagesChanged() {
 			clearMessageCountsCache();
-			if (document.visibilityState !== "visible") return;
+			requestNumber += 1;
+			if (document.visibilityState !== "visible") {
+				staleWhileHidden = true;
+				setIsLoading(true);
+				return;
+			}
+			staleWhileHidden = false;
 			if (refreshTimer) window.clearTimeout(refreshTimer);
 			refreshTimer = window.setTimeout(() => {
 				refreshTimer = null;
 				void loadCounts(true);
 			}, REFRESH_DEBOUNCE_MS);
+		}
+		function onVisibilityChange() {
+			if (staleWhileHidden && document.visibilityState === "visible") onMessagesChanged();
 		}
 		function onMessageCountsDelta(event: Event) {
 			const detail = (event as CustomEvent<MessageCountsDelta>).detail;
@@ -69,12 +79,14 @@ export function useMessageCounts(mailboxId?: string | null, enabled = true) {
 		window.addEventListener("kite:messages-changed", onMessagesChanged);
 		window.addEventListener("kite:message-counts-changed", onMessagesChanged);
 		window.addEventListener("kite:message-counts-delta", onMessageCountsDelta);
+		document.addEventListener("visibilitychange", onVisibilityChange);
 
 		return () => {
 			cancelled = true;
 			window.removeEventListener("kite:messages-changed", onMessagesChanged);
 			window.removeEventListener("kite:message-counts-changed", onMessagesChanged);
 			window.removeEventListener("kite:message-counts-delta", onMessageCountsDelta);
+			document.removeEventListener("visibilitychange", onVisibilityChange);
 			if (refreshTimer) window.clearTimeout(refreshTimer);
 		};
 	}, [enabled, mailboxId]);

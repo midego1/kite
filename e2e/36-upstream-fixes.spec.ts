@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { errors, expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 import type { StoredMessage } from "./support/helpers-types";
@@ -175,13 +175,15 @@ test("a Cmd or Ctrl chord neither starts a sequence nor opens the shortcuts help
 	await page.goto("/starred");
 	await expect(page.getByPlaceholder("Search mail (press / to focus)")).toBeVisible();
 
+	// Observe the whole window, failing as soon as an unintended navigation commits.
+	const staysOnStarred = expect(
+		page.waitForURL(/\/inbox$/, { timeout: 5_000, waitUntil: "commit" }),
+	).rejects.toBeInstanceOf(errors.TimeoutError);
 	for (const chord of ["Meta+g", "Control+g"]) {
 		await page.keyboard.press(chord);
 		await page.keyboard.press("i");
 	}
-	// Nothing to wait for when the shortcut correctly does nothing, and a later navigation would replace this one
-	// before it commits, so give a wrongly started `g i` time to land.
-	await page.waitForTimeout(1500);
+	await staysOnStarred;
 	await expect(page).toHaveURL(/\/starred$/);
 
 	const prevented = await page.evaluate(() => {

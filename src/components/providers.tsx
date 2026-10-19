@@ -16,6 +16,8 @@ import { clearMessageClientState } from "@/hooks/utils";
 import { clearMessageDetailCache } from "@/lib/messages/detail-cache";
 import { AUTH_ME_STALE_EVENT, AUTH_SESSION_CHANGED_EVENT } from "@/lib/auth/client";
 import { AUTH_ME_QUERY_KEY } from "@/lib/auth/me-client";
+import type { AuthSessionChangedDetail } from "@/lib/auth/client-types";
+import { clearAppBadge } from "@/lib/app-badge-utils";
 
 export function Providers({ children, initialBranding }: { children: React.ReactNode; initialBranding?: Branding }) {
 	const realtime = useMessagePolling();
@@ -35,11 +37,16 @@ export function Providers({ children, initialBranding }: { children: React.React
 	);
 
 	useEffect(() => {
-		function resetUserScopedState() {
+		function resetUserScopedState(event: Event) {
 			client.clear();
 			clearMailboxClientState();
 			clearMessageClientState();
 			clearMessageDetailCache();
+			// The dashboard layout outlives an account switch, so its all-mailbox counts (the app badge) would keep the old account's number.
+			if ((event as CustomEvent<AuthSessionChangedDetail>).detail?.authenticated) {
+				void clearAppBadge(navigator);
+				window.dispatchEvent(new Event("kite:message-counts-changed"));
+			}
 		}
 
 		function refreshCurrentAccount() {

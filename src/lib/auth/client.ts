@@ -2,6 +2,7 @@
 
 import { getUserTimeZone } from "@/lib/time/utils";
 import { clearUserTimeZonePreference } from "@/lib/time/client";
+import { clearAppBadge } from "@/lib/app-badge-utils";
 import { changesCurrentAccount } from "./client-utils";
 import type { AuthFetchOptions, AuthSessionChangedDetail, AuthSessionResponse } from "./client-types";
 
@@ -45,6 +46,7 @@ export function clearClientSessionKey(): void {
 	localStorage.removeItem(SESSION_STORAGE_KEY);
 	localStorage.removeItem(LEGACY_TOKEN_STORAGE_KEY);
 	clearUserTimeZonePreference();
+	void clearAppBadge(navigator);
 	dispatchAuthSessionChanged(false);
 }
 

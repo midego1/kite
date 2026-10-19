@@ -87,3 +87,110 @@ test("multi-key shortcuts also check modifiers and still accept shifted punctuat
 	assert.equal(press("!", { shiftKey: true }), true);
 	assert.equal(calls, 1);
 });
+
+// Upstream Mailflare #161: browser and OS chords must never reach a single-key shortcut or a sequence.
+for (const [key, modifiers] of [
+	["c", { metaKey: true }],
+	["c", { ctrlKey: true }],
+	["r", { metaKey: true }],
+	["f", { metaKey: true }],
+	["f", { ctrlKey: true }],
+]) {
+	test(`${Object.keys(modifiers)[0]}+${key} is left to the browser`, async (t) => {
+		let calls = 0;
+		const press = await mount(t, [
+			{ key: "c", action: () => calls++ },
+			{ key: "r", action: () => calls++ },
+			{ key: "f", action: () => calls++ },
+		]);
+		assert.equal(press(key, modifiers), false);
+		assert.equal(calls, 0);
+	});
+}
+
+test("a chord's key is not the first step of a sequence", async (t) => {
+	let calls = 0;
+	const press = await mount(t, [{ key: "g i", action: () => calls++ }]);
+	for (const modifiers of [{ metaKey: true }, { ctrlKey: true }, { altKey: true }]) {
+		press("g", modifiers);
+		assert.equal(press("i"), false);
+	}
+	assert.equal(calls, 0);
+	press("g");
+	assert.equal(press("i"), true);
+	assert.equal(calls, 1);
+});
+
+for (const modifier of ["metaKey", "ctrlKey", "altKey"]) {
+	test(`${modifier} cancels a pending sequence and its timer`, async (t) => {
+		let calls = 0;
+		const press = await mount(t, [{ key: "g i", action: () => calls++ }]);
+		const clear = t.mock.method(globalThis, "clearTimeout");
+		press("g");
+		assert.equal(press("c", { [modifier]: true }), false);
+		assert.equal(clear.mock.callCount(), 1);
+		assert.equal(press("i"), false);
+		assert.equal(calls, 0, "the chord interrupted g i");
+		press("g");
+		assert.equal(press("i"), true);
+		assert.equal(calls, 1, "a new uninterrupted sequence still works");
+	});
+}
+
+test("Cmd or Ctrl with a punctuation shortcut is left to the browser", async (t) => {
+	const calls = [];
+	const press = await mount(t, [
+		{ key: "?", action: () => calls.push("?") },
+		{ key: "/", action: () => calls.push("/") },
+		{ key: "#", action: () => calls.push("#") },
+	]);
+	assert.equal(press("?", { metaKey: true, shiftKey: true }), false);
+	assert.equal(press("/", { ctrlKey: true }), false);
+	assert.equal(press("#", { metaKey: true, shiftKey: true }), false);
+	assert.deepEqual(calls, []);
+});
+
+test("Shift still types ?, # and the ! of g !", async (t) => {
+	const calls = [];
+	const press = await mount(t, [
+		{ key: "?", action: () => calls.push("?") },
+		{ key: "#", action: () => calls.push("#") },
+		{ key: "g !", action: () => calls.push("g !") },
+	]);
+	assert.equal(press("?", { shiftKey: true }), true);
+	assert.equal(press("#", { shiftKey: true }), true);
+	press("g");
+	press("Shift", { shiftKey: true });
+	assert.equal(press("!", { shiftKey: true }), true);
+	assert.deepEqual(calls, ["?", "#", "g !"]);
+});
+
+test("a character typed with AltGr or Option is the character, not a chord", async (t) => {
+	const calls = [];
+	const press = await mount(t, [
+		{ key: "#", action: () => calls.push("#") },
+		{ key: "/", action: () => calls.push("/") },
+		{ key: "c", action: () => calls.push("c") },
+	]);
+	// AltGr arrives as Ctrl+Alt on Windows: `#` on French AZERTY, `/` on some Nordic layouts. Option+3 is `#` on a British Mac.
+	assert.equal(press("#", { ctrlKey: true, altKey: true }), true);
+	assert.equal(press("/", { ctrlKey: true, altKey: true, shiftKey: true }), true);
+	assert.equal(press("#", { altKey: true }), true);
+	// Characters that are not shortcuts pass through untouched.
+	assert.equal(press("@", { ctrlKey: true, altKey: true }), false);
+	assert.equal(press("€", { ctrlKey: true, altKey: true }), false);
+	// A letter with Ctrl+Alt is a chord, not a typed character.
+	assert.equal(press("c", { ctrlKey: true, altKey: true }), false);
+	assert.deepEqual(calls, ["#", "/", "#"]);
+});
+
+test("Cmd+K and Ctrl+K still open the command palette", async (t) => {
+	let calls = 0;
+	const press = await mount(t, [
+		{ key: "k", modifiers: ["meta", "ctrl"], action: () => calls++ },
+		{ key: "c", action: () => calls++ },
+	]);
+	assert.equal(press("k", { metaKey: true }), true);
+	assert.equal(press("k", { ctrlKey: true }), true);
+	assert.equal(calls, 2);
+});

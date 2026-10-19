@@ -26,6 +26,7 @@ import { readInitialColumnWidth, saveColumnWidth } from "@/components/column-wid
 import { ASSISTANT_LAYOUT_PREFERENCE } from "@/components/appearance-preferences";
 import { useAppearancePreference } from "@/components/use-appearance-preference";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useAppBadge } from "@/hooks/use-app-badge";
 
 const DEFAULT_ASSISTANT_WIDTH = 390;
 const MIN_ASSISTANT_WIDTH = 320;
@@ -45,6 +46,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 	const { assistantOpen, setAssistantOpen, assistantFullSize, setAssistantFullSize } = useDashboardState();
 	const assistantEnabled = useAssistantAvailability();
 	const assistantVisible = assistantEnabled === true && assistantOpen;
+	useAppBadge();
 	const assistantLoaded = useLatch(assistantVisible);
 	const [assistantLayout] = useAppearancePreference(ASSISTANT_LAYOUT_PREFERENCE);
 	const userId = useCurrentUser()?.id ?? null;

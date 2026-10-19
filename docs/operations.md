@@ -260,6 +260,14 @@ While any rule is active, every admin sees a banner at the top of the dashboard 
 
 Email alerts need working outbound sending, and webhook alerts need the receiver to be reachable. Configure the webhook so a sending outage still reaches you. If both fail, check the logs for `alerts.notify_failed` and `alerts.channel_failed`.
 
+### Remote image proxy
+
+Once remote images are allowed for a message, the reader loads them through `GET /api/remote-images` (Workers only; see [Privacy](privacy.md)). It needs no configuration. The optional `REMOTE_IMAGE_RATE_LIMIT` rate limit binding (600 requests per minute per user, in `wrangler.jsonc.example`) caps it; without the binding the proxy is not rate limited. Refusals answer JSON with a status: 400 for an unsafe URL or redirect, 404 when the message does not show the image or the user cannot read it, 413 for an image over 5 MiB, 415 for anything but PNG, JPEG, GIF, WebP or AVIF, 429 over the rate limit, 502 or 504 when the image host fails or takes over 10 seconds, and 503 on Node/Docker.
+
+#### REMOTE_IMAGES_ALLOW_LOOPBACK (dev and test only)
+
+`REMOTE_IMAGES_ALLOW_LOOPBACK=1` lets the remote image proxy (`GET /api/remote-images`) fetch `http` or `https` on `127.0.0.1` at any port other than the app's own, so `e2e/42-remote-images.spec.ts` can serve images from a local server. `localhost`, other loopback and private addresses stay blocked. Like `ALERT_WEBHOOK_ALLOW_INSECURE` it is ignored whenever `NODE_ENV` is `production` and `vite.config.ts` passes it to the Worker only for `vite dev`. Never set it on a deployment.
+
 ## Triage and backlog
 
 Use the bug/task forms and assign a human owner. The task form records P0–P3;

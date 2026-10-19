@@ -130,6 +130,7 @@ export default function MessageDetailPage() {
 	const imageOptions = {
 		blockRemoteImages: !alwaysLoadRemoteImages && remoteImagesShownFor !== message.id,
 		stats: { blockedRemoteImages: 0 },
+		proxyRemoteImagesFor: message.id,
 	};
 	const htmlBody = collapseQuotedEmailHtml(
 		sanitizeEmailHtml(resolveInlineAttachmentUrls(bodyDisplay.htmlBody, message.id, attachments), imageOptions),

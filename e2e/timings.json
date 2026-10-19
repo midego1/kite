@@ -274,5 +274,7 @@
 	"41-upstream-badge.spec.ts › a hidden account change clears the badge and refreshes it when visible": 2600,
 	"41-upstream-badge.spec.ts › signing out › clears the app badge": 4100,
 	"41-upstream-badge.spec.ts › the app badge follows the Inbox unread count across all mailboxes": 3400,
-	"41-upstream-badge.spec.ts › visible-tab refresh timers defer badge updates while hidden": 2700
+	"41-upstream-badge.spec.ts › visible-tab refresh timers defer badge updates while hidden": 2700,
+	"42-remote-images.spec.ts › a consented remote image whose host sends CORP same-origin shows through the authenticated proxy": 3700,
+	"42-remote-images.spec.ts › the proxy refuses callers, URLs and responses it must not serve": 3500
 }

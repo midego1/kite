@@ -161,6 +161,7 @@ export function ConversationMessageCard({
 		const imageOptions = {
 			blockRemoteImages: !alwaysLoadRemoteImages && !remoteImagesShown,
 			stats: { blockedRemoteImages: 0 },
+			proxyRemoteImagesFor: message.id,
 		};
 		body = {
 			html: collapseQuotedEmailHtml(

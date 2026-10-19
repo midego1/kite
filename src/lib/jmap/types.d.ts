@@ -71,6 +71,26 @@ export type AccessibleMailbox = {
 
 export type EmailAddressObject = { name: string | null; email: string };
 
+/** The columns a draft row is made of, shared by `Email/set` create and `Email/import`. */
+export type DraftRow = {
+	mailboxId: string;
+	fromAddr: string;
+	toAddr: string;
+	ccAddr: string | null;
+	bccAddr: string | null;
+	subject: string | null;
+	textBody: string | null;
+	htmlBody: string | null;
+	inReplyTo: string | null;
+	references: string | null;
+	read?: boolean;
+	starred?: boolean;
+	threadId?: string | null;
+	providerMessageId?: string | null;
+	rawR2Key?: string | null;
+	createdAt?: Date;
+};
+
 export type EmailBodyPart = {
 	partId: string | null;
 	blobId: string | null;

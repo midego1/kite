@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { errors, expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 import type { StoredMessage } from "./support/helpers-types";
@@ -169,6 +169,61 @@ test("unmodified c opens Compose but copy chords outside inputs do not", async (
 	}
 	await page.keyboard.press("c");
 	await expect(page.getByLabel("Subject", { exact: true })).toBeVisible();
+});
+
+test("a Cmd or Ctrl chord neither starts a sequence nor opens the shortcuts help", async ({ page }) => {
+	await page.goto("/starred");
+	await expect(page.getByPlaceholder("Search mail (press / to focus)")).toBeVisible();
+
+	// Observe the whole window, failing as soon as an unintended navigation commits.
+	const staysOnStarred = expect(
+		page.waitForURL(/\/inbox$/, { timeout: 5_000, waitUntil: "commit" }),
+	).rejects.toBeInstanceOf(errors.TimeoutError);
+	for (const chord of ["Meta+g", "Control+g"]) {
+		await page.keyboard.press(chord);
+		await page.keyboard.press("i");
+	}
+	await staysOnStarred;
+	await expect(page).toHaveURL(/\/starred$/);
+
+	const prevented = await page.evaluate(() => {
+		const event = new KeyboardEvent("keydown", {
+			key: "?",
+			bubbles: true,
+			cancelable: true,
+			metaKey: true,
+			shiftKey: true,
+		});
+		document.body.dispatchEvent(event);
+		return event.defaultPrevented;
+	});
+	expect(prevented).toBe(false);
+	const help = page.getByRole("dialog", { name: "Keyboard Shortcuts" });
+	await expect(help).toHaveCount(0);
+
+	await page.keyboard.press("Shift+Slash");
+	await expect(help).toBeVisible();
+});
+
+test("a browser chord cancels a pending navigation sequence", async ({ page }) => {
+	await page.goto("/starred");
+	await expect(page.getByPlaceholder("Search mail (press / to focus)")).toBeVisible();
+
+	for (const modifier of ["Meta", "Control", "Alt"]) {
+		await page.keyboard.press("g");
+		await page.keyboard.press(`${modifier}+c`);
+		// Shortcut actions prevent the completing key synchronously, even when navigation would be slow.
+		const prevented = await page.evaluate(() => {
+			const event = new KeyboardEvent("keydown", { key: "i", bubbles: true, cancelable: true });
+			document.body.dispatchEvent(event);
+			return event.defaultPrevented;
+		});
+		expect(prevented).toBe(false);
+	}
+	await expect(page).toHaveURL(/\/starred$/);
+	await page.keyboard.press("g");
+	await page.keyboard.press("i");
+	await expect(page).toHaveURL(/\/inbox$/);
 });
 
 test("unsnoozes mail moved from Spam to Inbox so it becomes visible", async ({ page }) => {

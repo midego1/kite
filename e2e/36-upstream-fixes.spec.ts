@@ -205,6 +205,27 @@ test("a Cmd or Ctrl chord neither starts a sequence nor opens the shortcuts help
 	await expect(help).toBeVisible();
 });
 
+test("a browser chord cancels a pending navigation sequence", async ({ page }) => {
+	await page.goto("/starred");
+	await expect(page.getByPlaceholder("Search mail (press / to focus)")).toBeVisible();
+
+	for (const modifier of ["Meta", "Control", "Alt"]) {
+		await page.keyboard.press("g");
+		await page.keyboard.press(`${modifier}+c`);
+		// Shortcut actions prevent the completing key synchronously, even when navigation would be slow.
+		const prevented = await page.evaluate(() => {
+			const event = new KeyboardEvent("keydown", { key: "i", bubbles: true, cancelable: true });
+			document.body.dispatchEvent(event);
+			return event.defaultPrevented;
+		});
+		expect(prevented).toBe(false);
+	}
+	await expect(page).toHaveURL(/\/starred$/);
+	await page.keyboard.press("g");
+	await page.keyboard.press("i");
+	await expect(page).toHaveURL(/\/inbox$/);
+});
+
 test("unsnoozes mail moved from Spam to Inbox so it becomes visible", async ({ page }) => {
 	const { subject, message } = await deliver("Unsnooze from spam");
 	await snooze(message.id);

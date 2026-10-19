@@ -121,6 +121,22 @@ test("a chord's key is not the first step of a sequence", async (t) => {
 	assert.equal(calls, 1);
 });
 
+for (const modifier of ["metaKey", "ctrlKey", "altKey"]) {
+	test(`${modifier} cancels a pending sequence and its timer`, async (t) => {
+		let calls = 0;
+		const press = await mount(t, [{ key: "g i", action: () => calls++ }]);
+		const clear = t.mock.method(globalThis, "clearTimeout");
+		press("g");
+		assert.equal(press("c", { [modifier]: true }), false);
+		assert.equal(clear.mock.callCount(), 1);
+		assert.equal(press("i"), false);
+		assert.equal(calls, 0, "the chord interrupted g i");
+		press("g");
+		assert.equal(press("i"), true);
+		assert.equal(calls, 1, "a new uninterrupted sequence still works");
+	});
+}
+
 test("Cmd or Ctrl with a punctuation shortcut is left to the browser", async (t) => {
 	const calls = [];
 	const press = await mount(t, [

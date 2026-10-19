@@ -85,7 +85,14 @@ export function useHotkeys(shortcuts: ShortcutDefinition[], options: UseHotkeysO
 			if (isModifierKey(key)) return;
 
 			// Sequences match on bare keys, so the `g` of Cmd+G must not start `g i`.
-			if (isBrowserChord(e)) return;
+			if (isBrowserChord(e)) {
+				sequenceBufferRef.current = [];
+				if (sequenceTimerRef.current) {
+					clearTimeout(sequenceTimerRef.current);
+					sequenceTimerRef.current = null;
+				}
+				return;
+			}
 
 			// Single keys inside a dialog, menu or listbox belong to it: `e` in the snooze picker must not archive the message behind it.
 			if (e.target instanceof HTMLElement && e.target.closest('[role="dialog"], [role="menu"], [role="listbox"]'))

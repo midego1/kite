@@ -47,6 +47,8 @@ export function useMessageCounts(mailboxId?: string | null, enabled = true) {
 			clearMessageCountsCache();
 			requestNumber += 1;
 			if (document.visibilityState !== "visible") {
+				if (refreshTimer) window.clearTimeout(refreshTimer);
+				refreshTimer = null;
 				staleWhileHidden = true;
 				setIsLoading(true);
 				return;
@@ -55,6 +57,11 @@ export function useMessageCounts(mailboxId?: string | null, enabled = true) {
 			if (refreshTimer) window.clearTimeout(refreshTimer);
 			refreshTimer = window.setTimeout(() => {
 				refreshTimer = null;
+				if (document.visibilityState !== "visible") {
+					staleWhileHidden = true;
+					setIsLoading(true);
+					return;
+				}
 				void loadCounts(true);
 			}, REFRESH_DEBOUNCE_MS);
 		}

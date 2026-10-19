@@ -270,5 +270,6 @@
 	"39-accessibility.spec.ts › wide admin tables declare column headers and scroll by keyboard, and routing hints are buttons": 1000,
 	"41-upstream-badge.spec.ts › a hidden account change clears the badge and refreshes it when visible": 2600,
 	"41-upstream-badge.spec.ts › signing out › clears the app badge": 4100,
-	"41-upstream-badge.spec.ts › the app badge follows the Inbox unread count across all mailboxes": 3400
+	"41-upstream-badge.spec.ts › the app badge follows the Inbox unread count across all mailboxes": 3400,
+	"41-upstream-badge.spec.ts › visible-tab refresh timers defer badge updates while hidden": 2700
 }

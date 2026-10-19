@@ -16,6 +16,10 @@ test.afterAll(async () => {
 	await api.dispose();
 });
 
+test.afterEach(async ({ page }) => {
+	await page.unrouteAll({ behavior: "wait" });
+});
+
 /** Records Badging API calls in sessionStorage, so they survive the navigation to /login. */
 async function stubAppBadge(page: Page) {
 	await page.addInitScript((key) => {
@@ -114,6 +118,45 @@ test("a hidden account change clears the badge and refreshes it when visible", a
 		document.dispatchEvent(new Event("visibilitychange"));
 	});
 	await expect.poll(() => badgeValue(page)).toBe(4);
+});
+
+test("visible-tab refresh timers defer badge updates while hidden", async ({ page }) => {
+	await stubAppBadge(page);
+	await page.routeWebSocket("**/api/realtime", () => {});
+	let unread = 9;
+	let requests = 0;
+	await page.route("**/api/messages/counts*", async (route) => {
+		requests += 1;
+		const response = await route.fetch();
+		const data = await response.json();
+		data.counts.folders.inbox.unread = unread;
+		await route.fulfill({ response, json: data });
+	});
+	await page.goto("/inbox");
+	await expect.poll(() => badgeValue(page)).toBe(9);
+	await page.clock.install();
+
+	for (const invalidateWhileHidden of [false, true]) {
+		const previousRequests = requests;
+		const previousBadgeCalls = await badgeCalls(page);
+		unread -= 2;
+		await page.evaluate((invalidate) => {
+			window.dispatchEvent(new Event("kite:message-counts-changed"));
+			Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+			document.dispatchEvent(new Event("visibilitychange"));
+			if (invalidate) window.dispatchEvent(new Event("kite:message-counts-changed"));
+		}, invalidateWhileHidden);
+		await page.clock.runFor(300);
+		expect(requests).toBe(previousRequests);
+		expect(await badgeCalls(page)).toEqual(previousBadgeCalls);
+
+		await page.evaluate(() => {
+			Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+			document.dispatchEvent(new Event("visibilitychange"));
+		});
+		await page.clock.runFor(300);
+		await expect.poll(() => badgeValue(page)).toBe(unread);
+	}
 });
 
 test.describe("signing out", () => {

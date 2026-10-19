@@ -73,6 +73,9 @@ async function mount(t) {
 		get state() {
 			return state;
 		},
+		get pendingRefreshes() {
+			return timers.size;
+		},
 		change: () => act(() => window.dispatchEvent(new dom.window.Event("kite:message-counts-changed"))),
 		visibility: (value) =>
 			act(() => {
@@ -128,3 +131,33 @@ test("an in-flight answer cannot restore counts invalidated while hidden", async
 	assert.equal(hook.state.counts.folders.inbox.unread, 4);
 	assert.equal(hook.state.isLoading, false);
 });
+
+for (const invalidateWhileHidden of [false, true]) {
+	test(
+		invalidateWhileHidden
+			? "a hidden invalidation cancels a refresh queued while visible"
+			: "a refresh queued while visible defers if its timer fires while hidden",
+		async (t) => {
+			let unread = 8;
+			const fetch = t.mock.method(globalThis, "fetch", async () => answer(unread));
+			const hook = await mount(t);
+			await hook.change();
+			assert.equal(hook.pendingRefreshes, 1);
+			await hook.visibility("hidden");
+			unread = 3;
+			if (invalidateWhileHidden) {
+				await hook.change();
+				assert.equal(hook.pendingRefreshes, 0, "the hidden invalidation cancels the queued timer");
+			}
+			await hook.refresh();
+			assert.equal(fetch.mock.callCount(), 1, "the queued refresh never fetches while hidden");
+			assert.equal(hook.state.counts.folders.inbox.unread, 8);
+			assert.equal(hook.state.isLoading, true);
+			await hook.visibility("visible");
+			await hook.refresh();
+			assert.equal(fetch.mock.callCount(), 2, "visibility restoration runs one deferred refresh");
+			assert.equal(hook.state.counts.folders.inbox.unread, 3);
+			assert.equal(hook.state.isLoading, false);
+		},
+	);
+}

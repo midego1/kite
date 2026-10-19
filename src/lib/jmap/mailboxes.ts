@@ -1,4 +1,5 @@
 import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
+import { queryInChunks } from "@/db/chunk-utils";
 import { folders, messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { JmapError } from "./errors";
@@ -26,17 +27,20 @@ type Counts = { total: number; unread: number };
 async function loadCounts(ctx: JmapContext, mailboxIds: string[]): Promise<Map<string, Counts>> {
 	const result = new Map<string, Counts>();
 	if (mailboxIds.length === 0) return result;
-	const rows = await ctx.db
-		.select({
-			mailboxId: messages.mailboxId,
-			status: messages.status,
-			folderId: messages.folderId,
-			total: count(),
-			unread: sql<number>`sum(case when ${messages.read} = 0 and ${messages.direction} = 'inbound' then 1 else 0 end)`,
-		})
-		.from(messages)
-		.where(inArray(messages.mailboxId, mailboxIds))
-		.groupBy(messages.mailboxId, messages.status, messages.folderId);
+	// Grouped by mailbox, so a mailbox's rows never span two chunks.
+	const rows = await queryInChunks(mailboxIds, (chunk) =>
+		ctx.db
+			.select({
+				mailboxId: messages.mailboxId,
+				status: messages.status,
+				folderId: messages.folderId,
+				total: count(),
+				unread: sql<number>`sum(case when ${messages.read} = 0 and ${messages.direction} = 'inbound' then 1 else 0 end)`,
+			})
+			.from(messages)
+			.where(inArray(messages.mailboxId, chunk))
+			.groupBy(messages.mailboxId, messages.status, messages.folderId),
+	);
 
 	const add = (key: string, row: { total: number; unread: number }) => {
 		const current = result.get(key) ?? { total: 0, unread: 0 };

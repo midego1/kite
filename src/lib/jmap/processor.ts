@@ -64,6 +64,9 @@ const METHODS: Record<string, JmapMethodHandler> = {
 
 export const SUPPORTED_CAPABILITIES = new Set([CAPABILITY_CORE, CAPABILITY_MAIL, CAPABILITY_SUBMISSION]);
 
+/** Every IETF JMAP capability, optional extensions included, is named in this namespace. */
+const IETF_CAPABILITY_NAMESPACE = "urn:ietf:params:jmap:";
+
 /** JSON Pointer lookup with the JMAP `*` array-flattening extension. */
 function resolvePointer(value: unknown, path: string): unknown {
 	const segments = path
@@ -167,12 +170,9 @@ export async function processRequest(ctx: JmapContext, request: JmapRequest): Pr
 			if (error instanceof JmapError) {
 				responses.push(["error", error.toMethodError(), callId]);
 			} else {
+				// A database error's message carries the SQL and its bound values; only the log gets it.
 				console.error(`JMAP ${name} failed`, error);
-				responses.push([
-					"error",
-					{ type: "serverFail", description: error instanceof Error ? error.message : "Unexpected error" },
-					callId,
-				]);
+				responses.push(["error", { type: "serverFail", description: "The method failed on the server" }, callId]);
 			}
 		}
 	}
@@ -194,8 +194,12 @@ export function validateRequest(body: unknown, modules?: Pick<JmapModuleSurface,
 	if (!Array.isArray(request.using) || !Array.isArray(request.methodCalls)) throw new JmapError("notRequest");
 	for (const capability of request.using) {
 		const urn = String(capability);
-		if (!SUPPORTED_CAPABILITIES.has(urn) && !Object.hasOwn(modules?.capabilities ?? {}, urn))
-			throw new JmapError("unknownCapability", String(capability));
+		if (SUPPORTED_CAPABILITIES.has(urn) || Object.hasOwn(modules?.capabilities ?? {}, urn)) continue;
+		// Clients such as Flectar Mail list optional IETF extensions (vacationresponse) on every request,
+		// and RFC 8620 §3.3 lets `using` name capabilities the calls never use. Ignoring one moves the
+		// failure to its method calls, which still answer unknownMethod; other namespaces stay a mismatch.
+		if (urn.startsWith(IETF_CAPABILITY_NAMESPACE)) continue;
+		throw new JmapError("unknownCapability", urn);
 	}
 	if (request.methodCalls.length > LIMITS.maxCallsInRequest)
 		throw new JmapError("limit", "Too many method calls", { limit: "maxCallsInRequest" });

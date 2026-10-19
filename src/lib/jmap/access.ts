@@ -1,4 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { queryInChunks } from "@/db/chunk-utils";
 import { folders, mailboxes } from "@/db/schema";
 import { listAccessibleMailboxes } from "@/lib/mailboxes/access";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
@@ -32,10 +33,12 @@ export async function listFoldersByMailbox(
 ): Promise<Map<string, Array<{ id: string; name: string }>>> {
 	const result = new Map<string, Array<{ id: string; name: string }>>();
 	if (mailboxIds.length === 0) return result;
-	const rows = await ctx.db
-		.select({ id: folders.id, mailboxId: folders.mailboxId, name: folders.name })
-		.from(folders)
-		.where(inArray(folders.mailboxId, mailboxIds));
+	const rows = await queryInChunks(mailboxIds, (chunk) =>
+		ctx.db
+			.select({ id: folders.id, mailboxId: folders.mailboxId, name: folders.name })
+			.from(folders)
+			.where(inArray(folders.mailboxId, chunk)),
+	);
 	for (const row of rows) {
 		const list = result.get(row.mailboxId) ?? [];
 		list.push({ id: row.id, name: row.name });

@@ -1,7 +1,7 @@
 import { clearModuleStateCache } from "@/lib/modules/state";
 import type { BackupTableGroupId, DatabaseBackupDocument, DatabaseBackupTable, DatabaseRecord } from "./types";
 import { dropRetiredBackupTables, mergeLegacyMessageBodies, RETIRED_BACKUP_TABLES } from "./utils";
-import { BACKUP_TABLE_GROUPS, getSelectedBackupTables } from "./table-groups";
+import { BACKUP_TABLE_GROUPS, getSelectedBackupTables, isPartialBackupDocument } from "./table-groups";
 import { createRestorePlan, planRestoreStatements } from "./restore-utils";
 import type { RestoreBatchLimits, RestorePlan, RestoreTablePlan } from "./restore-types";
 
@@ -33,6 +33,11 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"booking_appointments",
 	"finance_subscriptions",
 	"finance_charges",
+	"drive_items",
+	"drive_shares",
+	"drive_links",
+	"drive_settings",
+	"drive_user_quotas",
 	"auto_reply_deliveries",
 	"spam_token_stats",
 	"spam_reputation",
@@ -107,6 +112,9 @@ const INTERNAL_TABLES = [
 	// server's password while running and point at queue messages, so restoring
 	// them would resume imports against a database they no longer match.
 	"import_jobs",
+	// Drive multipart parts of uploads in progress: the store's upload ids they
+	// name do not survive a restore, so the parts would only point at nothing.
+	"drive_upload_parts",
 ];
 
 /**
@@ -179,9 +187,10 @@ async function* backupDocumentChunks(
 	db: D1Database,
 	tables: string[],
 	includedTables: string[],
+	excludedGroups: BackupTableGroupId[],
 	existingTables: Set<string>,
 ): AsyncGenerator<string> {
-	yield `{"format":"kite-database-backup","version":1,"createdAt":${JSON.stringify(new Date().toISOString())},"includedTables":${JSON.stringify(includedTables)},"tables":{`;
+	yield `{"format":"kite-database-backup","version":1,"createdAt":${JSON.stringify(new Date().toISOString())},"includedTables":${JSON.stringify(includedTables)},"excludedGroups":${JSON.stringify(excludedGroups)},"tables":{`;
 	for (const [index, table] of tables.entries()) {
 		yield `${index ? "," : ""}${JSON.stringify(table)}:[`;
 		if (existingTables.has(table)) {
@@ -205,7 +214,9 @@ export async function streamDatabaseRecords(
 	const selected = getSelectedBackupTables(excludedGroups);
 	const includedTables = BACKUP_TABLES.filter((table) => selected.has(table));
 	if (!includedTables.length) throw new Error("Select at least one backup table group");
-	return backupDocumentChunks(db, includedTables, includedTables, databaseTables);
+	const knownGroups = new Set(BACKUP_TABLE_GROUPS.map((group) => group.id));
+	const excluded = [...new Set(excludedGroups)].filter((group) => knownGroups.has(group));
+	return backupDocumentChunks(db, includedTables, includedTables, excluded, databaseTables);
 }
 
 /**
@@ -221,7 +232,7 @@ export async function streamDatabaseSnapshot(db: D1Database): Promise<AsyncGener
 		...BACKUP_TABLES,
 		...[...databaseTables].filter((name) => !BACKUP_TABLES.includes(name as DatabaseBackupTable)).sort(),
 	];
-	return backupDocumentChunks(db, tables, [...BACKUP_TABLES], databaseTables);
+	return backupDocumentChunks(db, tables, [...BACKUP_TABLES], [], databaseTables);
 }
 
 async function collectChunks(chunks: AsyncIterable<string>): Promise<Uint8Array> {
@@ -264,10 +275,7 @@ export async function prepareDatabaseRestore(
 	options: { limits?: RestoreBatchLimits } = {},
 ): Promise<RestorePlan> {
 	const document = parseDatabaseBackup(content);
-	if (
-		document.includedTables &&
-		!BACKUP_TABLE_GROUPS.every((group) => group.tables.some((table) => document.includedTables?.includes(table)))
-	)
+	if (isPartialBackupDocument(document))
 		throw new Error(
 			"This backup contains selected table groups only. Restore requires a backup that includes every table group.",
 		);
@@ -334,6 +342,11 @@ function isDatabaseBackupDocument(value: unknown): value is DatabaseBackupDocume
 	if (!value || typeof value !== "object") return false;
 	const document = value as Partial<DatabaseBackupDocument>;
 	if (!BACKUP_FORMATS.includes(document.format as string) || document.version !== 1 || !document.tables) return false;
+	if (
+		document.excludedGroups !== undefined &&
+		(!Array.isArray(document.excludedGroups) || !document.excludedGroups.every((group) => typeof group === "string"))
+	)
+		return false;
 	if (document.includedTables) {
 		if (
 			!Array.isArray(document.includedTables) ||

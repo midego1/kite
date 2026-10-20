@@ -1,0 +1,15 @@
+CREATE TABLE `drive_items` (`id` text PRIMARY KEY NOT NULL, `owner_id` text NOT NULL REFERENCES `users`(`id`) ON DELETE cascade, `parent_id` text, `kind` text NOT NULL, `name` text NOT NULL, `size` integer DEFAULT 0 NOT NULL, `content_type` text DEFAULT 'application/octet-stream' NOT NULL, `store_id` text, `object_key` text, `status` text DEFAULT 'ready' NOT NULL, `upload_id` text, `upload_part_size` integer, `upload_fingerprint` text, `upload_expires_at` integer, `source_attachment_id` text, `trashed_at` integer, `created_at` integer NOT NULL, `updated_at` integer NOT NULL);--> statement-breakpoint
+CREATE INDEX `drive_items_owner_parent_idx` ON `drive_items` (`owner_id`,`parent_id`,`status`);--> statement-breakpoint
+CREATE INDEX `drive_items_parent_idx` ON `drive_items` (`parent_id`);--> statement-breakpoint
+CREATE INDEX `drive_items_trashed_idx` ON `drive_items` (`trashed_at`);--> statement-breakpoint
+CREATE INDEX `drive_items_upload_expiry_idx` ON `drive_items` (`upload_expires_at`);--> statement-breakpoint
+CREATE TABLE `drive_shares` (`id` text PRIMARY KEY NOT NULL, `item_id` text NOT NULL REFERENCES `drive_items`(`id`) ON DELETE cascade, `user_id` text NOT NULL REFERENCES `users`(`id`) ON DELETE cascade, `role` text DEFAULT 'view' NOT NULL, `created_by_user_id` text REFERENCES `users`(`id`) ON DELETE set null, `created_at` integer NOT NULL);--> statement-breakpoint
+CREATE UNIQUE INDEX `drive_shares_item_user_idx` ON `drive_shares` (`item_id`,`user_id`);--> statement-breakpoint
+CREATE INDEX `drive_shares_user_idx` ON `drive_shares` (`user_id`);--> statement-breakpoint
+CREATE TABLE `drive_links` (`id` text PRIMARY KEY NOT NULL, `item_id` text NOT NULL REFERENCES `drive_items`(`id`) ON DELETE cascade, `token_hash` text NOT NULL, `token_sealed` text, `password_hash` text, `expires_at` integer NOT NULL, `download_count` integer DEFAULT 0 NOT NULL, `last_accessed_at` integer, `revoked_at` integer, `created_by_user_id` text REFERENCES `users`(`id`) ON DELETE set null, `created_at` integer NOT NULL);--> statement-breakpoint
+CREATE UNIQUE INDEX `drive_links_token_idx` ON `drive_links` (`token_hash`);--> statement-breakpoint
+CREATE INDEX `drive_links_item_idx` ON `drive_links` (`item_id`);--> statement-breakpoint
+CREATE TABLE `drive_upload_parts` (`item_id` text NOT NULL REFERENCES `drive_items`(`id`) ON DELETE cascade, `part_number` integer NOT NULL, `etag` text NOT NULL, `size` integer NOT NULL);--> statement-breakpoint
+CREATE UNIQUE INDEX `drive_upload_parts_idx` ON `drive_upload_parts` (`item_id`,`part_number`);--> statement-breakpoint
+CREATE TABLE `drive_settings` (`id` text PRIMARY KEY NOT NULL, `default_quota_bytes` integer, `link_max_days` integer DEFAULT 30 NOT NULL, `trash_retention_days` integer DEFAULT 30 NOT NULL, `updated_at` integer NOT NULL, `updated_by` text REFERENCES `users`(`id`) ON DELETE set null);--> statement-breakpoint
+CREATE TABLE `drive_user_quotas` (`user_id` text PRIMARY KEY NOT NULL REFERENCES `users`(`id`) ON DELETE cascade, `quota_bytes` integer, `updated_at` integer NOT NULL);

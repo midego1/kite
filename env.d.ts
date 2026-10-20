@@ -32,6 +32,8 @@ interface CloudflareEnv {
 	BOOKING_RATE_LIMIT?: RateLimit;
 	/** Per-user budget on the remote image proxy (`/api/remote-images`); absent on older deployments. */
 	REMOTE_IMAGE_RATE_LIMIT?: RateLimit;
+	/** Drive public link views and password attempts, keyed by IP; absent on older deployments. */
+	DRIVE_LINK_RATE_LIMIT?: RateLimit;
 	CF_TOKEN?: string;
 	CF_API_KEY?: string;
 	CF_EMAIL?: string;

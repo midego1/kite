@@ -41,6 +41,11 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 			"spam_feedback",
 		],
 	},
+	{
+		id: "drive",
+		label: "Drive files and sharing",
+		tables: ["drive_items", "drive_shares", "drive_links", "drive_settings", "drive_user_quotas"],
+	},
 	{ id: "automation", label: "Routing and webhooks", tables: ["routing_rules", "webhooks", "webhook_deliveries"] },
 	{
 		id: "assistant",
@@ -64,6 +69,32 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 		tables: ["audit_logs", "backup_settings", "backups", "app_settings", "module_settings"],
 	},
 ];
+
+/**
+ * The groups that existed before backup documents recorded `excludedGroups`.
+ * A document without that field can only prove it is complete for these, so a
+ * group added later (drive onwards) may be absent from an older full backup.
+ */
+export const LEGACY_BACKUP_TABLE_GROUPS: BackupTableGroupId[] = [
+	"accounts",
+	"mail",
+	"automation",
+	"assistant",
+	"system",
+];
+
+/** Whether a document leaves out a group its writer knew about, which restore refuses. */
+export function isPartialBackupDocument(document: {
+	includedTables?: DatabaseBackupTable[];
+	excludedGroups?: BackupTableGroupId[];
+}): boolean {
+	const included = document.includedTables;
+	if (!included) return false;
+	if (document.excludedGroups) return document.excludedGroups.length > 0;
+	return BACKUP_TABLE_GROUPS.some(
+		(group) => LEGACY_BACKUP_TABLE_GROUPS.includes(group.id) && !group.tables.some((table) => included.includes(table)),
+	);
+}
 
 export function getSelectedBackupTables(excludedGroups: BackupTableGroupId[]): Set<DatabaseBackupTable> {
 	const excluded = new Set(excludedGroups);

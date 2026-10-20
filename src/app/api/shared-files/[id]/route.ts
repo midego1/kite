@@ -2,7 +2,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messageAttachments, sharedAttachmentLinks } from "@/db/schema";
 import { getEnv } from "@/lib/cloudflare";
-import { getAttachmentContentDisposition } from "@/app/api/messages/[messageId]/attachments/[attachmentId]/utils";
+import { getContentDisposition } from "@/lib/http/content-disposition-utils";
 import { getDownloadContentType } from "@/lib/http/content-type-utils";
 import type { SharedFileParams } from "./types";
 
@@ -26,7 +26,7 @@ export async function GET(_request: Request, { params }: SharedFileParams) {
 	const headers = new Headers();
 	headers.set("Content-Type", getDownloadContentType(file.contentType));
 	headers.set("Content-Length", String(file.size));
-	headers.set("Content-Disposition", getAttachmentContentDisposition(file.filename, false));
+	headers.set("Content-Disposition", getContentDisposition(file.filename, false));
 	headers.set("X-Content-Type-Options", "nosniff");
 	headers.set("Content-Security-Policy", "default-src 'none'; sandbox");
 	headers.set("Referrer-Policy", "no-referrer");

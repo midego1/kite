@@ -6,6 +6,8 @@
 		"src/lib/alerts/rules-utils.ts",
 		"src/lib/alerts/webhook-utils.ts",
 		"src/lib/http/content-type-utils.ts",
+		"src/lib/http/content-disposition-utils.ts",
+		"src/lib/storage/object-classes-utils.ts",
 		"src/lib/remote-images/fetch-utils.ts",
 		"src/lib/remote-images/message-urls-utils.ts",
 		"src/lib/remote-images/proxy-url-utils.ts",

@@ -29,7 +29,8 @@ const scratch = makeBundleDirectory("kite-module-migration-dirs-");
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const preDirectory = copyMigrationsBefore(scratch, 62);
 const MIGRATION = "0062_add_module_platform.sql";
-const LAST_MIGRATION = "0063_add_finance_module.sql";
+/** Migrations after 0062, in order. */
+const LATER_MIGRATIONS = ["0063_add_finance_module.sql", "0064_add_drive.sql"];
 /** The modules 0062 seeds a row for; later modules have no row, which means `defaultEnabled`. */
 const MODULES = ["calendar", "booking", "templates", "import"];
 
@@ -79,7 +80,7 @@ function assertIndexIntact(db) {
 	db.db.prepare("INSERT INTO calendar_events_fts(calendar_events_fts) VALUES ('integrity-check')").run();
 }
 
-test("the journal lists 0062_add_module_platform at idx 65, then 0063_add_finance_module last, and the files exist", () => {
+test("the journal lists 0062_add_module_platform at idx 65, then 0063_add_finance_module, and the files exist", () => {
 	const journal = JSON.parse(readFileSync(join(migrationsDir, "meta", "_journal.json"), "utf8"));
 	const entry = journal.entries.find((item) => item.tag === "0062_add_module_platform");
 	assert.deepEqual(entry, {
@@ -89,17 +90,15 @@ test("the journal lists 0062_add_module_platform at idx 65, then 0063_add_financ
 		tag: "0062_add_module_platform",
 		breakpoints: true,
 	});
-	const last = journal.entries.at(-1);
-	assert.deepEqual(last, {
+	const next = journal.entries[journal.entries.indexOf(entry) + 1];
+	assert.deepEqual(next, {
 		idx: 66,
 		version: "6",
 		when: 1788851280028,
 		tag: "0063_add_finance_module",
 		breakpoints: true,
 	});
-	assert.equal(journal.entries.at(-2), entry);
-	assert.ok(readdirSync(migrationsDir).includes(MIGRATION));
-	assert.ok(readdirSync(migrationsDir).includes(LAST_MIGRATION));
+	for (const file of [MIGRATION, ...LATER_MIGRATIONS]) assert.ok(readdirSync(migrationsDir).includes(file), file);
 });
 
 test("a fresh database gets the module tables and four enabled module rows", async (t) => {
@@ -170,7 +169,7 @@ test("upgrading from 0061 changes no existing table and indexes the events that 
 	const before = Object.fromEntries(
 		["calendar_events", "booking_events", "messages", "users"].map((table) => [table, columns(db, table)]),
 	);
-	assert.deepEqual(await applyMigrations(db, migrationsDir), [MIGRATION, LAST_MIGRATION]);
+	assert.deepEqual(await applyMigrations(db, migrationsDir), [MIGRATION, ...LATER_MIGRATIONS]);
 
 	for (const [table, expected] of Object.entries(before)) assert.deepEqual(columns(db, table), expected, table);
 	assert.deepEqual(names(db, "SELECT module_id AS name FROM module_settings ORDER BY rowid"), MODULES);
@@ -244,7 +243,7 @@ test("rebuild restores an index that was emptied", async (t) => {
 	assertIndexIntact(db);
 });
 
-test("backup lists name the new tables in foreign-key order without a new group", async (t) => {
+test("backup lists name the new tables in foreign-key order; 0062 added no group", async (t) => {
 	const db = await database(t);
 	seedAccountData(db);
 	await assertBackupTablesCoverDatabase(db);
@@ -263,7 +262,7 @@ test("backup lists name the new tables in foreign-key order without a new group"
 
 	assert.deepEqual(
 		BACKUP_TABLE_GROUPS.map((group) => group.id),
-		["accounts", "mail", "automation", "assistant", "system"],
+		["accounts", "mail", "drive", "automation", "assistant", "system"],
 	);
 	const groupOf = (table) =>
 		BACKUP_TABLE_GROUPS.filter((group) => group.tables.includes(table)).map((group) => group.id);
@@ -295,11 +294,10 @@ test("the calendar search index is derived: internal to backups, like the messag
 	);
 });
 
-test("a fresh database applies every migration in the repository, 0063 last", async (t) => {
+test("a fresh database applies every migration in the repository, 0062 then the later ones last", async (t) => {
 	const db = new SqliteDatabase(":memory:");
 	t.after(() => db.db.close());
 	const applied = await applyMigrations(db, migrationsDir);
-	assert.equal(applied.at(-2), MIGRATION);
-	assert.equal(applied.at(-1), LAST_MIGRATION);
+	assert.deepEqual(applied.slice(-1 - LATER_MIGRATIONS.length), [MIGRATION, ...LATER_MIGRATIONS]);
 	assert.equal(applied.length, readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).length);
 });

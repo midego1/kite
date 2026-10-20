@@ -1,12 +1,15 @@
-import { createReadStream } from "node:fs";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, resolve, sep } from "node:path";
+import { randomUUID } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
+import { finished, pipeline } from "node:stream/promises";
 
 /**
  * The R2 bucket API over a directory. Objects are files under `root`; the
  * HTTP and custom metadata R2 would keep ride in a `.meta.json` sidecar.
- * Covers what the app uses: get (with a byte range), put, delete, head.
+ * Covers what the app uses: get (with a byte range), put (streamed to disk), delete, head,
+ * list and multipart uploads (adapted from Mailflare 9f66e13).
  */
 type StoredMeta = {
 	httpMetadata?: { contentType?: string; contentDisposition?: string; cacheControl?: string };
@@ -124,34 +127,34 @@ export class FileBucket {
 		return meta ? new FileObject(key, this.pathFor(key), meta) : null;
 	}
 
-	async put(
-		key: string,
-		value: ArrayBuffer | ArrayBufferView | string | ReadableStream | Blob | null,
-		options?: { httpMetadata?: StoredMeta["httpMetadata"] | Headers; customMetadata?: Record<string, string> },
-	) {
+	/** Streams are piped to disk, so a large object is never held in memory; the file appears only once complete. */
+	async put(key: string, value: BucketValue | null, options?: PutOptions) {
 		const path = this.pathFor(key);
 		await mkdir(dirname(path), { recursive: true });
-		let buffer: Buffer;
-		if (value === null) buffer = Buffer.alloc(0);
-		else if (typeof value === "string") buffer = Buffer.from(value);
-		else if (value instanceof ArrayBuffer) buffer = Buffer.from(value);
-		else if (ArrayBuffer.isView(value)) buffer = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
-		else if (value instanceof Blob) buffer = Buffer.from(await value.arrayBuffer());
-		else buffer = Buffer.from(await new Response(value).arrayBuffer());
+		const temporary = `${path}.${randomUUID()}.partial`;
+		try {
+			await pipeline(toReadable(value), createWriteStream(temporary));
+			await rename(temporary, path);
+		} catch (error) {
+			await rm(temporary, { force: true });
+			throw error;
+		}
+		const { size } = await stat(path);
 		const httpMetadata =
 			options?.httpMetadata instanceof Headers
 				? { contentType: options.httpMetadata.get("content-type") ?? undefined }
 				: options?.httpMetadata;
-		const meta: StoredMeta = {
-			httpMetadata,
-			customMetadata: options?.customMetadata,
-			size: buffer.byteLength,
+		return this.writeMeta(key, path, { httpMetadata, customMetadata: options?.customMetadata, size });
+	}
+
+	private async writeMeta(key: string, path: string, meta: Omit<StoredMeta, "uploaded" | "etag">) {
+		const stored: StoredMeta = {
+			...meta,
 			uploaded: new Date().toISOString(),
-			etag: `${Date.now().toString(16)}-${buffer.byteLength.toString(16)}`,
+			etag: `${Date.now().toString(16)}-${meta.size.toString(16)}`,
 		};
-		await writeFile(path, buffer);
-		await writeFile(`${path}.meta.json`, JSON.stringify(meta));
-		return new FileObject(key, path, meta);
+		await writeFile(`${path}.meta.json`, JSON.stringify(stored));
+		return new FileObject(key, path, stored);
 	}
 
 	async delete(keys: string | string[]) {
@@ -162,9 +165,136 @@ export class FileBucket {
 		}
 	}
 
-	async list() {
-		throw new Error("FileBucket.list is not implemented");
+	/** Keys in lexical order, as R2 lists them; `cursor` is the last key of the previous page. */
+	async list(options?: { prefix?: string; cursor?: string; limit?: number }) {
+		const prefix = options?.prefix ?? "";
+		const limit = Math.min(Math.max(options?.limit ?? 1000, 1), 1000);
+		const keys = (await this.walkKeys(this.root))
+			.filter((key) => key.startsWith(prefix) && (!options?.cursor || key > options.cursor))
+			.sort();
+		const page = keys.slice(0, limit);
+		const objects = [];
+		for (const key of page) {
+			const meta = await this.readMeta(key);
+			if (meta) objects.push(new FileObject(key, this.pathFor(key), meta));
+		}
+		const truncated = keys.length > limit;
+		return { objects, truncated, cursor: truncated ? page.at(-1) : undefined, delimitedPrefixes: [] as string[] };
 	}
+
+	private async walkKeys(directory: string): Promise<string[]> {
+		let entries;
+		try {
+			entries = await readdir(directory, { withFileTypes: true });
+		} catch {
+			return [];
+		}
+		const keys: string[] = [];
+		for (const entry of entries) {
+			const full = join(directory, entry.name);
+			if (entry.isDirectory()) {
+				if (full !== join(this.root, MULTIPART_DIRECTORY)) keys.push(...(await this.walkKeys(full)));
+			} else if (!entry.name.endsWith(".meta.json") && !entry.name.endsWith(".partial")) {
+				keys.push(relative(this.root, full).split(sep).join("/"));
+			}
+		}
+		return keys;
+	}
+
+	private multipartDirectory(uploadId: string) {
+		if (!/^[\w-]+$/.test(uploadId)) throw new Error("Invalid multipart upload id");
+		return join(this.root, MULTIPART_DIRECTORY, uploadId);
+	}
+
+	async createMultipartUpload(key: string, options?: { httpMetadata?: StoredMeta["httpMetadata"] }) {
+		this.pathFor(key);
+		const uploadId = randomUUID();
+		const directory = this.multipartDirectory(uploadId);
+		await mkdir(directory, { recursive: true });
+		await writeFile(join(directory, "upload.json"), JSON.stringify({ key, httpMetadata: options?.httpMetadata ?? {} }));
+		return this.resumeMultipartUpload(key, uploadId);
+	}
+
+	/** Parts are files in a per-upload directory; completing concatenates them in part order into the object. */
+	resumeMultipartUpload(key: string, uploadId: string) {
+		const directory = this.multipartDirectory(uploadId);
+		const partPath = (partNumber: number) => join(directory, `part-${partNumber}`);
+		const readUpload = async () => {
+			const upload = JSON.parse(await readFile(join(directory, "upload.json"), "utf8")) as UploadMeta;
+			if (upload.key !== key) throw new Error("The multipart upload belongs to another key");
+			return upload;
+		};
+		return {
+			key,
+			uploadId,
+			uploadPart: async (partNumber: number, value: BucketValue) => {
+				if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > MAX_PARTS)
+					throw new Error("Invalid part number");
+				await readUpload();
+				const temporary = `${partPath(partNumber)}.${randomUUID()}.partial`;
+				try {
+					await pipeline(toReadable(value), createWriteStream(temporary));
+					await rename(temporary, partPath(partNumber));
+				} catch (error) {
+					await rm(temporary, { force: true });
+					throw error;
+				}
+				const { size } = await stat(partPath(partNumber));
+				return { partNumber, etag: partEtag(partNumber, size) };
+			},
+			abort: async () => {
+				await rm(directory, { recursive: true, force: true });
+			},
+			complete: async (parts: { partNumber: number; etag: string }[]) => {
+				const upload = await readUpload();
+				const ordered = [...parts].sort((a, b) => a.partNumber - b.partNumber);
+				if (!ordered.length) throw new Error("A multipart upload needs at least one part");
+				for (const part of ordered) {
+					const info = await stat(partPath(part.partNumber)).catch(() => null);
+					if (!info || part.etag !== partEtag(part.partNumber, info.size))
+						throw new Error(`Invalid part ${part.partNumber}`);
+				}
+				const path = this.pathFor(key);
+				await mkdir(dirname(path), { recursive: true });
+				const temporary = `${path}.${randomUUID()}.partial`;
+				const out = createWriteStream(temporary);
+				try {
+					for (const part of ordered) await pipeline(createReadStream(partPath(part.partNumber)), out, { end: false });
+					out.end();
+					await finished(out);
+					await rename(temporary, path);
+				} catch (error) {
+					out.destroy();
+					await rm(temporary, { force: true });
+					throw error;
+				}
+				const { size } = await stat(path);
+				const object = await this.writeMeta(key, path, { httpMetadata: upload.httpMetadata, size });
+				await rm(directory, { recursive: true, force: true });
+				return object;
+			},
+		};
+	}
+}
+
+type BucketValue = ArrayBuffer | ArrayBufferView | string | ReadableStream | Blob;
+type PutOptions = { httpMetadata?: StoredMeta["httpMetadata"] | Headers; customMetadata?: Record<string, string> };
+type UploadMeta = { key: string; httpMetadata?: StoredMeta["httpMetadata"] };
+
+const MULTIPART_DIRECTORY = ".multipart";
+const MAX_PARTS = 10_000;
+
+function partEtag(partNumber: number, size: number): string {
+	return `${partNumber}-${size.toString(16)}`;
+}
+
+function toReadable(value: BucketValue | null): Readable {
+	if (value === null) return Readable.from([]);
+	if (typeof value === "string") return Readable.from([Buffer.from(value)]);
+	if (value instanceof ArrayBuffer) return Readable.from([Buffer.from(value)]);
+	if (ArrayBuffer.isView(value)) return Readable.from([Buffer.from(value.buffer, value.byteOffset, value.byteLength)]);
+	if (value instanceof Blob) return Readable.fromWeb(value.stream() as never);
+	return Readable.fromWeb(value as never);
 }
 
 export function openFileBucket(root: string): R2Bucket {

@@ -24,7 +24,10 @@ export class UploadCancelled extends Error {
 // XMLHttpRequest rather than fetch, because only it reports upload progress.
 function putPart(url: string, chunk: Blob, onBytes: (loaded: number) => void, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve, reject) => {
+		if (signal.aborted) return reject(new UploadCancelled());
 		const request = new XMLHttpRequest();
+		const onAbort = () => request.abort();
+		request.onloadend = () => signal.removeEventListener("abort", onAbort);
 		request.open("PUT", url);
 		getAuthHeaders({ "Content-Type": "application/octet-stream" }).forEach((value, name) =>
 			request.setRequestHeader(name, value),
@@ -44,7 +47,7 @@ function putPart(url: string, chunk: Blob, onBytes: (loaded: number) => void, si
 		};
 		request.onerror = () => reject(new Error("Upload failed: network error"));
 		request.onabort = () => reject(new UploadCancelled());
-		signal.addEventListener("abort", () => request.abort(), { once: true });
+		signal.addEventListener("abort", onAbort, { once: true });
 		request.send(chunk);
 	});
 }
@@ -98,6 +101,7 @@ export async function uploadDriveFile(
 	report(sent);
 	try {
 		for (let index = 0; index < parts; index += 1) {
+			if (signal.aborted) throw new UploadCancelled();
 			if (stored.has(index + 1)) continue;
 			const chunk = file.slice(index * partSize, (index + 1) * partSize);
 			const url = `/api/drive/uploads/${encodeURIComponent(id)}/parts/${index + 1}`;

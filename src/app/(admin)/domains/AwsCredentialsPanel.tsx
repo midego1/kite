@@ -201,6 +201,7 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 						>
 							<Input
 								autoComplete="off"
+								aria-label="Access key ID"
 								placeholder="Access key ID (AKIA…)"
 								value={accessKeyId}
 								onChange={(event) => setAccessKeyId(event.target.value)}
@@ -209,6 +210,7 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 							<Input
 								type="password"
 								autoComplete="off"
+								aria-label="Secret access key"
 								placeholder="Secret access key"
 								value={secretAccessKey}
 								onChange={(event) => setSecretAccessKey(event.target.value)}
@@ -216,6 +218,7 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 							/>
 							<Input
 								list="aws-regions"
+								aria-label="Region"
 								placeholder="Region (us-east-1)"
 								value={region}
 								onChange={(event) => setRegion(event.target.value)}

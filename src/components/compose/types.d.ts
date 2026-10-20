@@ -40,3 +40,26 @@ export type ComposeAttachment = {
 	id: string;
 	file: File;
 };
+
+/** The fields an autosave writes to `/api/drafts`. */
+export type ComposeDraftPayload = {
+	mailboxId?: string;
+	from: string;
+	to: string;
+	cc: string;
+	bcc: string;
+	subject: string;
+	html: string;
+	text: string;
+	inReplyTo: string | null;
+	references: string | null;
+	threadId: string | null;
+};
+
+/** One autosave: the draft fields, and the composer files to store on the draft with them. */
+export type ComposeDraftSnapshot = {
+	payload: ComposeDraftPayload;
+	attachments: ComposeAttachment[];
+	/** False for AI drafts, whose files are stored when they are sent for review. */
+	storeAttachments: boolean;
+};

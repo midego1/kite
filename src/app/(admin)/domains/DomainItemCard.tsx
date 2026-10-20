@@ -146,7 +146,9 @@ export default function DomainItemCard({
 						setupMessage={setupMessage}
 					/>
 				) : dnsError ? (
-					<div className="px-4 pb-4 pt-4 text-sm text-red-600 sm:px-5 sm:pb-5">{dnsError}</div>
+					<div role="alert" className="px-4 pb-4 pt-4 text-sm text-red-600 sm:px-5 sm:pb-5">
+						{dnsError}
+					</div>
 				) : dnsLoading ? (
 					<DomainDnsSkeleton />
 				) : null)}

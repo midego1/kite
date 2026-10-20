@@ -188,7 +188,11 @@ function EnrollDialog({
 								autoFocus
 							/>
 						</div>
-						{error && <p className="text-sm text-red-600">{error}</p>}
+						{error && (
+							<p role="alert" className="text-sm text-red-600">
+								{error}
+							</p>
+						)}
 						<Button type="submit" disabled={busy}>
 							{busy ? "Please wait..." : "Continue"}
 						</Button>
@@ -203,6 +207,8 @@ function EnrollDialog({
 							</DialogDescription>
 						</DialogHeader>
 						<div
+							role="img"
+							aria-label="QR code for your authenticator app"
 							className="mx-auto w-48 rounded-xl border border-neutral-200 bg-white p-2"
 							dangerouslySetInnerHTML={{ __html: qrSvg }}
 						/>
@@ -225,7 +231,11 @@ function EnrollDialog({
 								autoFocus
 							/>
 						</div>
-						{error && <p className="text-sm text-red-600">{error}</p>}
+						{error && (
+							<p role="alert" className="text-sm text-red-600">
+								{error}
+							</p>
+						)}
 						<Button type="submit" disabled={busy}>
 							{busy ? "Checking..." : "Verify and turn on"}
 						</Button>
@@ -311,7 +321,11 @@ function DisableDialog({
 							required
 						/>
 					</div>
-					{error && <p className="text-sm text-red-600">{error}</p>}
+					{error && (
+						<p role="alert" className="text-sm text-red-600">
+							{error}
+						</p>
+					)}
 					<Button type="submit" variant="destructive" disabled={busy}>
 						{busy ? "Please wait..." : "Turn off"}
 					</Button>
@@ -390,7 +404,11 @@ function RecoveryCodesDialog({
 								autoFocus
 							/>
 						</div>
-						{error && <p className="text-sm text-red-600">{error}</p>}
+						{error && (
+							<p role="alert" className="text-sm text-red-600">
+								{error}
+							</p>
+						)}
 						<Button type="submit" disabled={busy}>
 							{busy ? "Please wait..." : "Generate"}
 						</Button>

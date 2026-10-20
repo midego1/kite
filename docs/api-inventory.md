@@ -130,6 +130,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/profile/avatar`                                  | DELETE, GET, POST      | [source](../src/app/api/profile/avatar/route.ts)                                  |
 | `/api/public/booking/[eventId]`                        | GET, POST              | [source](../src/app/api/public/booking/[eventId]/route.ts)                        |
 | `/api/public/booking`                                  | GET                    | [source](../src/app/api/public/booking/route.ts)                                  |
+| `/api/remote-images`                                   | GET                    | [source](../src/app/api/remote-images/route.ts)                                   |
 | `/api/routing-rules/[id]`                              | DELETE, PATCH          | [source](../src/app/api/routing-rules/[id]/route.ts)                              |
 | `/api/routing-rules/domain/[id]`                       | DELETE, PATCH          | [source](../src/app/api/routing-rules/domain/[id]/route.ts)                       |
 | `/api/routing-rules/domain`                            | GET, POST              | [source](../src/app/api/routing-rules/domain/route.ts)                            |

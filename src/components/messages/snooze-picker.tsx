@@ -63,7 +63,7 @@ export function SnoozePicker({ messageId, onSnoozed }: SnoozePickerProps) {
 					className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-neutral-700 hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none disabled:text-neutral-400"
 				>
 					<span>{preset.label}</span>
-					<span className="ml-auto text-xs text-neutral-400">{formatSnoozePresetHint(preset.value)}</span>
+					<span className="ml-auto text-xs text-neutral-500">{formatSnoozePresetHint(preset.value)}</span>
 				</button>
 			))}
 			<form

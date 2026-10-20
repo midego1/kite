@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { toolEmailSchema } from "@/lib/agent/tool-schema-utils";
 import type { CalendarToolName } from "./tool-types";
 
 const id = z.string().min(1).max(160);
@@ -15,7 +16,7 @@ const fields = {
 	color: z.string().max(30),
 	repeat,
 	repeatDays: z.array(z.number().int().min(0).max(6)).max(7),
-	attendees: z.array(z.string().email()).max(50),
+	attendees: z.array(toolEmailSchema).max(50),
 };
 export const calendarUpdateSchema = z.object({
 	eventId: id,

@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { messageAttachments, sharedAttachmentLinks } from "@/db/schema";
 import { getEnv } from "@/lib/cloudflare";
 import { getAttachmentContentDisposition } from "@/app/api/messages/[messageId]/attachments/[attachmentId]/utils";
+import { getDownloadContentType } from "@/lib/http/content-type-utils";
 import type { SharedFileParams } from "./types";
 
 export async function GET(_request: Request, { params }: SharedFileParams) {
@@ -23,7 +24,7 @@ export async function GET(_request: Request, { params }: SharedFileParams) {
 	const object = await env.BUCKET.get(file.r2Key);
 	if (!object) return new Response("File not found", { status: 404 });
 	const headers = new Headers();
-	headers.set("Content-Type", file.contentType);
+	headers.set("Content-Type", getDownloadContentType(file.contentType));
 	headers.set("Content-Length", String(file.size));
 	headers.set("Content-Disposition", getAttachmentContentDisposition(file.filename, false));
 	headers.set("X-Content-Type-Options", "nosniff");

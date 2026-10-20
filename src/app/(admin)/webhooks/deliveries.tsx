@@ -48,17 +48,36 @@ export function WebhookDeliveries({ webhookId }: { webhookId: string }) {
 	}
 
 	return (
-		<div className="overflow-x-auto rounded-xl border border-neutral-200">
+		<div
+			role="region"
+			tabIndex={0}
+			aria-label="Deliveries"
+			className="overflow-x-auto rounded-xl border border-neutral-200"
+		>
 			<table className="w-full min-w-[820px] text-left text-sm">
 				<thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
 					<tr>
-						<th className="px-3 py-2 font-medium">Event</th>
-						<th className="px-3 py-2 font-medium">Status</th>
-						<th className="px-3 py-2 font-medium">Attempts</th>
-						<th className="px-3 py-2 font-medium">Response</th>
-						<th className="px-3 py-2 font-medium">Last attempt</th>
-						<th className="px-3 py-2 font-medium">Next retry</th>
-						<th className="px-3 py-2 font-medium" />
+						<th scope="col" className="px-3 py-2 font-medium">
+							Event
+						</th>
+						<th scope="col" className="px-3 py-2 font-medium">
+							Status
+						</th>
+						<th scope="col" className="px-3 py-2 font-medium">
+							Attempts
+						</th>
+						<th scope="col" className="px-3 py-2 font-medium">
+							Response
+						</th>
+						<th scope="col" className="px-3 py-2 font-medium">
+							Last attempt
+						</th>
+						<th scope="col" className="px-3 py-2 font-medium">
+							Next retry
+						</th>
+						<th scope="col" className="px-3 py-2 font-medium">
+							<span className="sr-only">Actions</span>
+						</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -66,7 +85,7 @@ export function WebhookDeliveries({ webhookId }: { webhookId: string }) {
 						<tr key={delivery.id} className="border-t border-neutral-100 align-top">
 							<td className="px-3 py-2">
 								<span className="block">{delivery.eventType}</span>
-								<span className="block text-xs text-neutral-400">{formatTimestamp(delivery.createdAt)}</span>
+								<span className="block text-xs text-neutral-500">{formatTimestamp(delivery.createdAt)}</span>
 							</td>
 							<td className="px-3 py-2">
 								<Badge className={STATUS_STYLES[delivery.status]}>
@@ -82,7 +101,7 @@ export function WebhookDeliveries({ webhookId }: { webhookId: string }) {
 									{delivery.responseStatus ?? "—"}
 									{delivery.durationMs !== null && (
 										// An explicit separator: "200" next to "6ms" otherwise reads as "2006ms".
-										<span className="ml-1 text-xs text-neutral-400">· {formatDuration(delivery.durationMs)}</span>
+										<span className="ml-1 text-xs text-neutral-500">· {formatDuration(delivery.durationMs)}</span>
 									)}
 								</span>
 								{delivery.error && (

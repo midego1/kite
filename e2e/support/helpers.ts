@@ -28,11 +28,7 @@ export async function signIn(page: Page, email: string, password: string): Promi
 	await page.getByRole("button", { name: "Sign in" }).click();
 }
 
-/**
- * Opens a message from the current list by its subject. Row links use
- * `display: contents`, so clicking the link itself lands on its first child,
- * the star toggle; the subject text is a safe target.
- */
+/** Opens a message from the current list by clicking its subject. */
 export async function openMessage(page: Page, subject: string | RegExp): Promise<void> {
 	await page
 		.getByRole("main")
@@ -83,7 +79,7 @@ function attachmentPart(attachment: InboundAttachment): string[] {
 	const base64 = Buffer.from(attachment.content).toString("base64");
 	return [
 		`Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
-		`Content-Disposition: attachment; filename="${attachment.filename}"`,
+		`Content-Disposition: ${attachment.disposition ?? "attachment"}; filename="${attachment.filename}"`,
 		"Content-Transfer-Encoding: base64",
 		"",
 		...(base64.match(/.{1,76}/g) ?? []),

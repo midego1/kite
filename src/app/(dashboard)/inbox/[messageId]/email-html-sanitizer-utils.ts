@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify";
 import type { Config, DOMPurify as Purifier, WindowLike } from "dompurify";
+import { remoteImageProxyUrl } from "@/lib/remote-images/proxy-url-utils";
 import type { EmailHtmlSanitizer, SanitizeEmailHtmlOptions } from "./email-html-sanitizer-types";
 
 const ALLOWED_TAGS = [
@@ -186,6 +187,14 @@ function isSafeImageUrl(value: string, origin: string, options: SanitizeEmailHtm
 	return options.forOutgoing ? url.protocol === "https:" : url.protocol === "http:" || url.protocol === "https:";
 }
 
+/** Remote images (not this origin's, not inline data) go through the proxy when it is asked for. */
+function displayedImageUrl(src: string, origin: string, options: SanitizeEmailHtmlOptions): string {
+	if (!options.proxyRemoteImagesFor || options.forOutgoing || isLocalImageUrl(src, options)) return src;
+	const url = parseUrl(src, origin, options);
+	if (!url || url.origin === origin || (url.protocol !== "http:" && url.protocol !== "https:")) return src;
+	return remoteImageProxyUrl(options.proxyRemoteImagesFor, url.href);
+}
+
 function sanitizeStyle(element: StyledElement, options: SanitizeEmailHtmlOptions): void {
 	const safeDeclarations: string[] = [];
 	for (const property of Array.from(element.style)) {
@@ -243,6 +252,7 @@ function finishElement(element: Element, origin: string, options: SanitizeEmailH
 			element.remove();
 			return;
 		}
+		element.setAttribute("src", displayedImageUrl(src, origin, options));
 		element.setAttribute("loading", "lazy");
 		element.setAttribute("referrerpolicy", "no-referrer");
 	}

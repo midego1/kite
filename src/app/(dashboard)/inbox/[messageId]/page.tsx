@@ -130,6 +130,7 @@ export default function MessageDetailPage() {
 	const imageOptions = {
 		blockRemoteImages: !alwaysLoadRemoteImages && remoteImagesShownFor !== message.id,
 		stats: { blockedRemoteImages: 0 },
+		proxyRemoteImagesFor: message.id,
 	};
 	const htmlBody = collapseQuotedEmailHtml(
 		sanitizeEmailHtml(resolveInlineAttachmentUrls(bodyDisplay.htmlBody, message.id, attachments), imageOptions),
@@ -187,7 +188,10 @@ export default function MessageDetailPage() {
 				{!message.read && <MarkAsRead messageId={message.id} />}
 
 				<h1
-					className={clsx(!isAnyPanelVisible ? "pl-16" : "pl-10", "pr-6 pb-2 pt-2 text-2xl text-neutral-900")}
+					className={clsx(
+						!isAnyPanelVisible ? "sm:pl-16" : "sm:pl-10",
+						"pl-3 pr-3 pb-2 pt-2 text-2xl text-neutral-900 sm:pr-6",
+					)}
 					title={message.subject ?? "(no subject)"}
 				>
 					{message.subject ?? "(no subject)"}
@@ -217,9 +221,9 @@ export default function MessageDetailPage() {
 					expandedAll={threadExpanded}
 					onExpandedAllChange={setThreadExpanded}
 				/>
-				<article className={clsx("px-6 py-4", !isAnyPanelVisible && "pl-12")}>
+				<article className={clsx("px-3 py-4 sm:px-6", !isAnyPanelVisible && "sm:pl-12")}>
 					<div className="w-full">
-						<div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 pb-5 pl-4">
+						<div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 pb-5 sm:pl-4">
 							<div className="flex min-w-0 items-start gap-3">
 								<ContactAvatar
 									mailboxId={message.mailboxId}
@@ -302,7 +306,7 @@ export default function MessageDetailPage() {
 								/>
 							</div>
 						</div>
-						<div className="prose max-w-none pl-16 text-neutral-900">
+						<div className="prose max-w-none text-neutral-900 sm:pl-16">
 							{imageOptions.stats.blockedRemoteImages > 0 && (
 								<RemoteImagesNotice onShow={() => setRemoteImagesShownFor(message.id)} />
 							)}
@@ -320,7 +324,7 @@ export default function MessageDetailPage() {
 							))}
 						</div>
 						{cloudAttachmentResult.attachments.length > 0 && (
-							<section className="mt-8 border-t border-neutral-100 py-6 pl-16">
+							<section className="mt-8 border-t border-neutral-100 py-6 sm:pl-16">
 								<h2 className="mb-3 text-sm font-semibold text-neutral-900">
 									Cloud files ({cloudAttachmentResult.attachments.length})
 								</h2>
@@ -340,14 +344,15 @@ export default function MessageDetailPage() {
 												</span>
 												<span className="block text-xs text-neutral-500">Open from {attachment.provider}</span>
 											</span>
-											<ExternalLink className="h-4 w-4 shrink-0 text-neutral-400" />
+											<ExternalLink className="h-4 w-4 shrink-0 text-neutral-400" aria-hidden="true" />
+											<span className="sr-only"> (opens in a new tab)</span>
 										</a>
 									))}
 								</div>
 							</section>
 						)}
 						{attachments.length > 0 && (
-							<section className="mt-8 border-t border-neutral-100 py-6 pl-16">
+							<section className="mt-8 border-t border-neutral-100 py-6 sm:pl-16">
 								<h2 className="mb-3 text-sm font-semibold text-neutral-900">Attachments ({attachments.length})</h2>
 								<div className="grid gap-2 sm:grid-cols-2">
 									{attachments.map((attachment) => (

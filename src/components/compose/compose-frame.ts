@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useAssistantDocked } from "@/components/agent/assistant-open-state";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { cn } from "@/lib/utils";
@@ -42,4 +43,21 @@ export function composeFrameClass(state: ComposeFrameState, besideAssistant: boo
 			(state.minimized || !state.modalMode) &&
 			"md:right-[calc(3rem+min(var(--assistant-window-width,440px),100vw-32px))]",
 	);
+}
+
+/** The popup is a labelled region, and a modal dialog while it is expanded. */
+export function composeFrameAria({ mode, minimized, modalMode }: ComposeFrameState) {
+	if (modalMode && !minimized) return { role: "dialog", "aria-modal": true, "aria-label": "Compose message" } as const;
+	if (mode === "popup") return { role: "region", "aria-label": "Compose message" } as const;
+	return {};
+}
+
+/** An opened draft or reply starts in the body; a new message starts in the recipients field (its `autoFocus`). */
+export function useDraftBodyFocus(draftIdToLoad: string | null | undefined, loadingDraft: boolean) {
+	const formRef = useRef<HTMLFormElement>(null);
+	useEffect(() => {
+		if (!draftIdToLoad || loadingDraft) return;
+		formRef.current?.querySelector<HTMLElement>("[contenteditable='true']")?.focus();
+	}, [draftIdToLoad, loadingDraft]);
+	return formRef;
 }

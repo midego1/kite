@@ -59,7 +59,7 @@ function AutonomyOptions({
 							<span>{option.label}</span>
 						</label>
 						{!option.available && (
-							<span id={noteId} className="text-xs text-neutral-400">
+							<span id={noteId} className="text-xs text-neutral-500">
 								Not available yet
 							</span>
 						)}
@@ -285,7 +285,12 @@ export function AutoReadSettings({ mailboxId }: AutoReadSettingsProps) {
 		};
 	}, [mailboxId]);
 
-	if (!state) return status ? <p className="text-xs text-red-600">{status.text}</p> : null;
+	if (!state)
+		return status ? (
+			<p role="alert" className="text-xs text-red-600">
+				{status.text}
+			</p>
+		) : null;
 
 	async function run(action: () => Promise<void>, done: string) {
 		setBusy(true);

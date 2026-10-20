@@ -69,7 +69,11 @@ export function SendReview({ approvalId, snapshot, onClose, onSent }: SendReview
 				{snapshot.attachments.length > 0 && (
 					<p className="mt-3 text-sm">Attachments: {snapshot.attachments.map((item) => item.filename).join(", ")}</p>
 				)}
-				{error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+				{error && (
+					<p role="alert" className="mt-3 text-sm text-red-600">
+						{error}
+					</p>
+				)}
 				<div className="mt-5 flex justify-end gap-3">
 					{onClose && (
 						<button type="button" className="rounded-lg border px-4 py-2" onClick={onClose} disabled={busy}>

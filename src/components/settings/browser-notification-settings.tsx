@@ -159,7 +159,11 @@ export function BrowserNotificationSettings() {
 			{permission === "unsupported" && (
 				<p className="mt-2 px-4 text-sm text-neutral-500">Browser notifications are unavailable here.</p>
 			)}
-			{error && <p className="mt-2 px-4 text-sm text-red-600">{error}</p>}
+			{error && (
+				<p role="alert" className="mt-2 px-4 text-sm text-red-600">
+					{error}
+				</p>
+			)}
 		</div>
 	);
 }

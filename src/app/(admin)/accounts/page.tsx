@@ -182,7 +182,7 @@ export default function AccountsPage() {
 										className="min-w-0 flex-1 rounded-none border-0 shadow-none"
 										required
 									/>
-									<span className="flex items-center text-sm text-neutral-400">@</span>
+									<span className="flex items-center text-sm text-neutral-500">@</span>
 									<Select
 										aria-label="Domain"
 										value={domainId}
@@ -235,7 +235,11 @@ export default function AccountsPage() {
 								aliases={aliases}
 								onAliasesChange={setAliases}
 							/>
-							{message && <p className="text-sm text-red-600">{message}</p>}
+							{message && (
+								<p role="alert" className="text-sm text-red-600">
+									{message}
+								</p>
+							)}
 							<Button type="submit" disabled={saving || !domainId}>
 								{saving ? "Creating..." : "Create account"}
 							</Button>

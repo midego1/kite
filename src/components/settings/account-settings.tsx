@@ -13,7 +13,11 @@ export function AccountSettings() {
 	const error = session.error || session.data === null ? "Failed to load account" : null;
 
 	if (error) {
-		return <p className="py-8 text-sm text-red-600">{error}</p>;
+		return (
+			<p role="alert" className="py-8 text-sm text-red-600">
+				{error}
+			</p>
+		);
 	}
 
 	if (!user) {
@@ -27,6 +31,7 @@ export function AccountSettings() {
 
 	return (
 		<div className="space-y-8 py-4">
+			<h1 className="sr-only">My account</h1>
 			{/* <div>
 				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Account</h1>
 				<p className="mt-1 text-sm text-neutral-500">Manage your account details and sign-in password.</p>

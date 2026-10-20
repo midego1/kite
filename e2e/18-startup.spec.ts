@@ -8,7 +8,7 @@ test("a stale offline hint cannot pause the session check indefinitely", async (
 	await expect(
 		page.getByText(new RegExp(`Kite v${RELEASE_VERSION.replaceAll(".", "\\.")} \\([a-f0-9]{7}\\)`)),
 	).toBeVisible();
-	await expect(page.getByLabel("Loading", { exact: true })).not.toHaveClass(/opacity-100/);
+	await expect(page.locator("[data-loading-overlay]")).not.toHaveClass(/opacity-100/);
 });
 
 test("preferences saved before the rename to Kite still apply", async ({ page }) => {
@@ -34,7 +34,7 @@ test("a failed session check does not leave the startup overlay open", async ({ 
 	await page.route("**/api/auth/me", (route) => route.abort("failed"));
 	await page.goto("/inbox");
 	await expect(page.getByRole("button", { name: "Compose", exact: true })).toBeVisible({ timeout: 15_000 });
-	await expect(page.getByLabel("Loading", { exact: true })).not.toHaveClass(/opacity-100/);
+	await expect(page.locator("[data-loading-overlay]")).not.toHaveClass(/opacity-100/);
 });
 
 test("a stalled startup offers a reload without bypassing the session check", async ({ page }) => {

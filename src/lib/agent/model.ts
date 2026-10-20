@@ -4,6 +4,7 @@ import { createWorkersAI } from "workers-ai-provider";
 import { getAgentProviderConfig } from "./provider";
 import { agentTimeContext } from "./time";
 import { COMPATIBLE_PROVIDER_NAME } from "./auto-read/model-call-utils";
+import { withDedupedStreams } from "./workers-ai-stream-utils";
 
 export async function getAgentModel(env: CloudflareEnv, requestedModel?: string | null) {
 	const config = await getAgentProviderConfig(env);
@@ -18,7 +19,7 @@ export async function getAgentModel(env: CloudflareEnv, requestedModel?: string 
 		reasoningEffort: config.rates[modelId]?.reasoningEffort ?? null,
 	};
 	if (config.provider === "cloudflare")
-		return env.AI ? { model: createWorkersAI({ binding: env.AI })(modelId), ...details } : null;
+		return env.AI ? { model: createWorkersAI({ binding: withDedupedStreams(env.AI) })(modelId), ...details } : null;
 	if (config.baseUrl && config.apiKey && modelId) {
 		if (config.preset === "anthropic") {
 			const provider = createAnthropic({ apiKey: config.apiKey, baseURL: config.baseUrl });

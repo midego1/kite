@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Toaster } from "react-hot-toast";
 import { clearMailboxClientState } from "@/components/mailbox-provider-utils";
 import { BrandingProvider } from "@/components/branding-provider";
+import type { Branding } from "@/lib/branding/types";
 import { CopyCodeHost } from "@/components/copy-code-host";
 import { ModuleNoticeHost } from "@/components/module-notice-host";
 import { NewMessagePopup } from "@/components/new-message-popup";
@@ -15,8 +16,10 @@ import { clearMessageClientState } from "@/hooks/utils";
 import { clearMessageDetailCache } from "@/lib/messages/detail-cache";
 import { AUTH_ME_STALE_EVENT, AUTH_SESSION_CHANGED_EVENT } from "@/lib/auth/client";
 import { AUTH_ME_QUERY_KEY } from "@/lib/auth/me-client";
+import type { AuthSessionChangedDetail } from "@/lib/auth/client-types";
+import { clearAppBadge } from "@/lib/app-badge-utils";
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({ children, initialBranding }: { children: React.ReactNode; initialBranding?: Branding }) {
 	const realtime = useMessagePolling();
 
 	const [client] = useState(
@@ -34,11 +37,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
 	);
 
 	useEffect(() => {
-		function resetUserScopedState() {
+		function resetUserScopedState(event: Event) {
 			client.clear();
 			clearMailboxClientState();
 			clearMessageClientState();
 			clearMessageDetailCache();
+			// The dashboard layout outlives an account switch, so its all-mailbox counts (the app badge) would keep the old account's number.
+			if ((event as CustomEvent<AuthSessionChangedDetail>).detail?.authenticated) {
+				void clearAppBadge(navigator);
+				window.dispatchEvent(new Event("kite:message-counts-changed"));
+			}
 		}
 
 		function refreshCurrentAccount() {
@@ -55,16 +63,19 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
 	return (
 		<QueryClientProvider client={client}>
-			<BrandingProvider>
+			<BrandingProvider initialBranding={initialBranding}>
 				{children}
 				<ThemeSync />
 				<ConfirmDialogHost />
 				<CopyCodeHost />
 				<Toaster position="bottom-center" />
 				<ModuleNoticeHost />
-				{realtime.notification && (
-					<NewMessagePopup notification={realtime.notification} onDismiss={realtime.dismissNotification} />
-				)}
+				{/* A live region without role="status": specs and pages look up the single status line by role. */}
+				<div aria-live="polite" aria-atomic="true">
+					{realtime.notification && (
+						<NewMessagePopup notification={realtime.notification} onDismiss={realtime.dismissNotification} />
+					)}
+				</div>
 			</BrandingProvider>
 		</QueryClientProvider>
 	);

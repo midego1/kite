@@ -65,7 +65,17 @@ const settingsNavSections: NavSection[] = [
 	},
 	{
 		label: "Mailbox",
-		items: [{ href: "/settings/export", label: "Export", icon: Upload, keywords: "backup download" }],
+		items: [
+			{
+				href: "/settings/mailboxes",
+				label: "Mailboxes",
+				icon: Mail,
+				keywords: "addresses aliases display name",
+				permission: "mailboxes",
+				order: 0,
+			},
+			{ href: "/settings/export", label: "Export", icon: Upload, keywords: "backup download" },
+		],
 	},
 ];
 
@@ -75,7 +85,7 @@ function withModuleItems(sections: NavSection[]): NavSection[] {
 	return sections.map((section) => {
 		const added = items.filter((item) => item.group === section.label);
 		if (!added.length) return section;
-		const core = section.items.map((item) => ({ item, order: EXPORT_ORDER }));
+		const core = section.items.map((item) => ({ item, order: item.order ?? EXPORT_ORDER }));
 		const fromModules = added.map((entry) => ({
 			order: entry.order,
 			item: {
@@ -121,7 +131,7 @@ const adminNavSections: NavSection[] = [
 				label: "Routing",
 				icon: Route,
 				keywords: "catch-all forward reject rules",
-				permission: "admin",
+				permission: "domains",
 			},
 		],
 	},
@@ -224,6 +234,7 @@ export function findActiveNavItem(mode: NavMode, pathname: string): NavItem | un
 function canSeeNavItem(item: NavItem, user: AuthMeUser | null, modules?: readonly ModuleId[]): boolean {
 	if (item.moduleId && modules && !modules.includes(item.moduleId)) return false;
 	if (!item.permission) return true;
+	if (item.permission === "mailboxes") return user?.canManageMailboxes === true;
 	if (!user || user.role !== "admin") return false;
 	if (item.permission === "primary") return user.isPrimaryAdmin;
 	if (item.permission === "domains") return user.isPrimaryAdmin || user.canManageDomains;

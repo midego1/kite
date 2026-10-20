@@ -154,6 +154,7 @@ export default function SettingsImportPage() {
 
 	return (
 		<div className="space-y-6">
+			<h1 className="sr-only">Import</h1>
 			{/* <div>
         <h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Import</h1>
         <p className="mt-1 text-sm text-neutral-500">
@@ -222,7 +223,7 @@ export default function SettingsImportPage() {
 							<>
 								<form onSubmit={onFileSubmit} className="space-y-4">
 									<div className="space-y-2">
-										<Label>Select Backup File</Label>
+										<Label htmlFor="import-files">Select Backup File</Label>
 										<Input
 											id="import-files"
 											type="file"
@@ -268,7 +269,10 @@ export default function SettingsImportPage() {
 										</p>
 									)}
 									{fileError && (
-										<p className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+										<p
+											role="alert"
+											className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700"
+										>
 											{fileError}
 										</p>
 									)}
@@ -414,7 +418,10 @@ export default function SettingsImportPage() {
 										</p>
 									)}
 									{imapError && (
-										<p className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+										<p
+											role="alert"
+											className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700"
+										>
 											{imapError}
 										</p>
 									)}

@@ -84,6 +84,7 @@ export default function ResendKeyRow({ configured, onChanged, onError }: Props) 
 						<Input
 							type="password"
 							autoComplete="off"
+							aria-label="Resend API key"
 							placeholder="re_..."
 							value={apiKey}
 							onChange={(event) => setApiKey(event.target.value)}

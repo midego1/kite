@@ -73,7 +73,7 @@ export function RecipientInput({
 								<button
 									type="button"
 									aria-label={`Remove ${getEmailAddress(entry)}`}
-									className="rounded-full p-0.5 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+									className="rounded-full p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700"
 									onClick={(event) => {
 										event.stopPropagation();
 										onChange(value.filter((item) => item !== entry));

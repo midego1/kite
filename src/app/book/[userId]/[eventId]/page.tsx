@@ -353,7 +353,7 @@ export default function PublicBookingEventPage() {
 											<ChevronRight className="h-5 w-5" />
 										</button>
 									</div>
-									<div className="mx-auto mt-6 grid max-w-[440px] grid-cols-7 max-sm:px-5 text-center text-sm text-neutral-400">
+									<div className="mx-auto mt-6 grid max-w-[440px] grid-cols-7 max-sm:px-5 text-center text-sm text-neutral-500">
 										<span>Mo</span>
 										<span>Tu</span>
 										<span>We</span>

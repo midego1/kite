@@ -229,7 +229,11 @@ export function InboxRules() {
 								</RoutingRuleSelect>
 							</div>
 						</div>
-						{save.isError && <p className="text-sm text-red-600">{save.error.message}</p>}
+						{save.isError && (
+							<p role="alert" className="text-sm text-red-600">
+								{save.error.message}
+							</p>
+						)}
 						<div className="flex justify-end gap-2 border-t border-neutral-200 pt-4">
 							<Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
 								Cancel

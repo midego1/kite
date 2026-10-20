@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
-import { queryInChunks } from "@/db/chunk-utils";
+import { inJsonArray, queryInChunks } from "@/db/chunk-utils";
 import { messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { buildSnippet, parseRawMime } from "@/lib/email/parse";
@@ -15,11 +15,13 @@ import { buildEmailObject, loadAttachmentsByMessage, resolveHeaderProperty } fro
 import { importFlags, parseReceivedAt, resolveDraftsMailbox } from "./email-import-utils";
 import { filterToSql, mailboxRefCondition, sortToSql } from "./email-query";
 import { getEmailState } from "./state";
+import { unescapePointerToken } from "./pointer-utils";
 import { listAccessibleMailboxIdSet, listJmapMailboxes } from "./access";
 import { emailWriteAccess } from "./email-access";
 import { deleteUpload, readUpload, storeRawDraftMime } from "./blobs";
 import type {
 	Comparator,
+	DraftRow,
 	EmailAddressObject,
 	Filter,
 	JmapContext,
@@ -30,26 +32,6 @@ import type {
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 
 type MessageRow = typeof messages.$inferSelect;
-
-/** The columns a draft row is made of, shared by `Email/set` create and `Email/import`. */
-type DraftRow = {
-	mailboxId: string;
-	fromAddr: string;
-	toAddr: string;
-	ccAddr: string | null;
-	bccAddr: string | null;
-	subject: string | null;
-	textBody: string | null;
-	htmlBody: string | null;
-	inReplyTo: string | null;
-	references: string | null;
-	read?: boolean;
-	starred?: boolean;
-	threadId?: string | null;
-	providerMessageId?: string | null;
-	rawR2Key?: string | null;
-	createdAt?: Date;
-};
 
 /** Insert a draft and return its id. Drafts are outbound mail that has not been sent. */
 async function insertDraft(ctx: JmapContext, row: DraftRow): Promise<string> {
@@ -84,12 +66,18 @@ async function scope(ctx: JmapContext) {
 	const ids = Array.from(await listAccessibleMailboxIdSet(ctx));
 	return {
 		ids,
+		// One JSON parameter however many mailboxes the user reads, so the id batches keep the rest of D1's cap.
 		condition: ids.length
-			? inArray(messages.mailboxId, ids)
+			? inJsonArray(messages.mailboxId, ids)
 			: ctx.auth.mailboxIds
 				? sql`1 = 0`
 				: eq(messages.userId, ctx.auth.userId),
 	};
+}
+
+/** Each requested id that matched nothing, once, however often the request repeated it. */
+function notFoundIds(requested: string[], found: { has(id: string): boolean }): string[] {
+	return [...new Set(requested)].filter((id) => !found.has(id));
 }
 
 export async function loadMessages(ctx: JmapContext, ids: string[]): Promise<MessageRow[]> {
@@ -108,6 +96,7 @@ export const emailGet: JmapMethodHandler = async (ctx, args) => {
 	if (!ids) throw new JmapError("requestTooLarge", "Email/get needs an explicit list of ids");
 	if (ids.length > LIMITS.maxObjectsInGet) throw new JmapError("requestTooLarge");
 	const properties = args.properties as string[] | null | undefined;
+	if (properties?.includes("smimeStatus")) throw invalidArguments("Email/get does not support smimeStatus");
 	const fetchBodies = !!(args.fetchTextBodyValues || args.fetchHTMLBodyValues || args.fetchAllBodyValues);
 	const maxBodyValueBytes = Number(args.maxBodyValueBytes ?? 0);
 
@@ -132,7 +121,7 @@ export const emailGet: JmapMethodHandler = async (ctx, args) => {
 		accountId: ctx.accountId,
 		state: await getEmailState(ctx),
 		list,
-		notFound: ids.filter((id) => !found.has(id)),
+		notFound: notFoundIds(ids, found),
 	};
 };
 
@@ -206,7 +195,8 @@ function targetFromMailboxIds(
 		for (const [key, value] of Object.entries(patch)) {
 			if (!key.startsWith("mailboxIds/")) continue;
 			touched = true;
-			const id = key.slice("mailboxIds/".length);
+			// RFC 8620 §5.3: patch keys are JSON Pointers, so the `~` in a role ref arrives as `~0`.
+			const id = unescapePointerToken(key.slice("mailboxIds/".length));
 			if (value) current.add(id);
 			else current.delete(id);
 		}
@@ -268,7 +258,7 @@ function keywordsFromPatch(patch: Record<string, unknown>): { read?: boolean; st
 		result.starred = !!map[KEYWORD_FLAGGED];
 	}
 	for (const [key, value] of Object.entries(patch)) {
-		if (key.startsWith("keywords/")) apply(key.slice("keywords/".length), value);
+		if (key.startsWith("keywords/")) apply(unescapePointerToken(key.slice("keywords/".length)), value);
 	}
 	return result;
 }
@@ -584,6 +574,7 @@ export const emailUnsupported =
 export const threadGet: JmapMethodHandler = async (ctx, args) => {
 	const ids = args.ids as string[] | null | undefined;
 	if (!ids) throw new JmapError("requestTooLarge", "Thread/get needs an explicit list of ids");
+	if (ids.length > LIMITS.maxObjectsInGet) throw new JmapError("requestTooLarge");
 	const { condition } = await scope(ctx);
 	const threadKey = sql<string>`coalesce(${messages.threadId}, ${messages.id})`;
 	const rows = await queryInChunks(ids, (chunk) =>
@@ -599,7 +590,7 @@ export const threadGet: JmapMethodHandler = async (ctx, args) => {
 		accountId: ctx.accountId,
 		state: await getEmailState(ctx),
 		list: Array.from(grouped, ([id, emailIds]) => ({ id, emailIds })),
-		notFound: ids.filter((id) => !grouped.has(id)),
+		notFound: notFoundIds(ids, grouped),
 	};
 };
 
@@ -630,7 +621,7 @@ export const searchSnippetGet: JmapMethodHandler = async (ctx, args) => {
 		}
 		return { emailId: row.id, subject: highlight(row.subject), preview: excerpt };
 	});
-	return { accountId: ctx.accountId, list, notFound: ids.filter((id) => !found.has(id)) };
+	return { accountId: ctx.accountId, list, notFound: notFoundIds(ids, found) };
 };
 
 export { count, desc, mailboxRefCondition, invalidArguments };

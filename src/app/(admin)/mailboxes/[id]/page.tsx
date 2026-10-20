@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AtSign, Save, Trash2, UserPlus } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { Badge } from "@/components/ui/badge";
@@ -25,12 +25,13 @@ import {
 	revokeSharedInboxAccess,
 	updateMailboxSettings,
 } from "./utils";
+import { getMailboxesBase, mailboxIdParam } from "../utils";
 import MailboxAvatarForm from "./MailboxAvatarForm";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 
 export default function MailboxSettingsPage() {
-	const params = useParams<{ id: string }>();
-	const mailboxId = params.id;
+	const params = useParams<{ id: string | string[] }>();
+	const mailboxId = mailboxIdParam(params.id);
 	const qc = useQueryClient();
 	const mailbox = useQuery({
 		queryKey: ["mailbox", mailboxId],
@@ -59,11 +60,12 @@ export default function MailboxSettingsPage() {
 	});
 
 	const router = useRouter();
+	const base = getMailboxesBase(usePathname());
 	const removeMailbox = useMutation({
 		mutationFn: () => deleteMailbox(mailboxId),
 		onSuccess: async () => {
 			await qc.invalidateQueries({ queryKey: ["mailboxes"] });
-			router.push("/mailboxes");
+			router.push(base);
 		},
 	});
 
@@ -125,7 +127,7 @@ export default function MailboxSettingsPage() {
 			</div>
 
 			{mailbox.isError && (
-				<p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+				<p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
 					{mailbox.error instanceof Error ? mailbox.error.message : "Failed to load mailbox"}
 				</p>
 			)}
@@ -169,7 +171,7 @@ export default function MailboxSettingsPage() {
 						</span>
 					</label>
 					{updateName.isError && (
-						<p className="text-sm text-red-600">
+						<p role="alert" className="text-sm text-red-600">
 							{updateName.error instanceof Error ? updateName.error.message : "Failed to update mailbox"}
 						</p>
 					)}
@@ -224,7 +226,7 @@ export default function MailboxSettingsPage() {
 						<p className="rounded-2xl bg-neutral-50 px-4 py-3 text-sm text-neutral-500">No aliases yet.</p>
 					)}
 					{aliases.isError && (
-						<p className="text-sm text-red-600">
+						<p role="alert" className="text-sm text-red-600">
 							{aliases.error instanceof Error ? aliases.error.message : "Failed to load aliases"}
 						</p>
 					)}
@@ -258,12 +260,12 @@ export default function MailboxSettingsPage() {
 						</Button>
 					</div>
 					{addAlias.isError && (
-						<p className="text-sm text-red-600">
+						<p role="alert" className="text-sm text-red-600">
 							{addAlias.error instanceof Error ? addAlias.error.message : "Failed to add alias"}
 						</p>
 					)}
 					{removeAlias.isError && (
-						<p className="text-sm text-red-600">
+						<p role="alert" className="text-sm text-red-600">
 							{removeAlias.error instanceof Error ? removeAlias.error.message : "Failed to remove alias"}
 						</p>
 					)}
@@ -316,7 +318,7 @@ export default function MailboxSettingsPage() {
 							</p>
 						)}
 						{sharedAccess.isError && (
-							<p className="text-sm text-red-600">
+							<p role="alert" className="text-sm text-red-600">
 								{sharedAccess.error instanceof Error ? sharedAccess.error.message : "Failed to load shared access"}
 							</p>
 						)}
@@ -346,7 +348,7 @@ export default function MailboxSettingsPage() {
 							</Button>
 						</div>
 						{addMember.isError && (
-							<p className="text-sm text-red-600">
+							<p role="alert" className="text-sm text-red-600">
 								{addMember.error instanceof Error ? addMember.error.message : "Failed to add account"}
 							</p>
 						)}
@@ -364,7 +366,7 @@ export default function MailboxSettingsPage() {
 				</CardHeader>
 				<CardContent className="pt-5">
 					{removeMailbox.isError && (
-						<p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+						<p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
 							{removeMailbox.error instanceof Error ? removeMailbox.error.message : "Failed to delete mailbox"}
 						</p>
 					)}

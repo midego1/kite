@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { appSettings } from "@/db/schema";
 import { isManualZone } from "@/lib/domains/provision";
-import { hasMx, isInboundSmtpMx, publishMx, removeMx } from "@/lib/domains/receiving-dns";
+import { hasMx, isInboundSmtpMx, MX_UNCHECKED, publishMx, removeMx } from "@/lib/domains/receiving-dns";
 import { getResendApiKey, getResendKeyStatus } from "@/lib/email/outbound-provider";
 import {
 	createResendDomain,
@@ -125,7 +125,12 @@ export async function getResendReceivingView(
 		});
 		const mx = inboundMx(resend?.records);
 		const mxOk = mx ? await hasMx(env, domain, mx.value) : false;
-		steps.push({ key: "mx", label: "MX record points to Resend", ok: mxOk === true, detail: mx?.value ?? undefined });
+		steps.push({
+			key: "mx",
+			label: "MX record points to Resend",
+			ok: mxOk === true,
+			detail: mxOk === null ? MX_UNCHECKED : (mx?.value ?? undefined),
+		});
 		steps.push({
 			key: "verified",
 			label: "Domain verified",

@@ -22,7 +22,7 @@ function currentLinks(menu: Locator): Locator {
 
 async function expectMode(menu: Locator, mode: "Settings" | "Admin", current: string) {
 	await expect(modeSwitchOf(menu).getByRole("link", { name: mode })).toHaveAttribute("aria-current", "page");
-	await expect(menu.getByRole("heading", { level: 1, name: mode })).toBeVisible();
+	await expect(menu.getByRole("heading", { level: 2, name: mode })).toBeVisible();
 	await expect(currentLinks(menu)).toHaveText([current]);
 }
 
@@ -125,7 +125,7 @@ test("an admin's Settings menu has the mode switch and only the Personal, Securi
 	await expect(admin).toHaveAttribute("href", "/admin");
 	await expect(admin).not.toHaveAttribute("aria-current", /.*/);
 
-	await expect(menu.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+	await expect(menu.getByRole("heading", { level: 2, name: "Settings" })).toBeVisible();
 	await expect(menu.getByRole("searchbox")).toBeHidden();
 	await expect(pageSearch(page)).toBeVisible();
 	await expect(pageSearch(page)).toHaveAttribute("placeholder", "Search settings");
@@ -396,7 +396,7 @@ test("admin detail pages highlight their parent item and do not overflow", async
 
 	for (const path of ["/domains", "/accounts", "/backups", "/activity", "/ai-usage"]) {
 		await page.goto(path);
-		await expect(adminMenu(page).getByRole("heading", { level: 1, name: "Admin" })).toBeVisible();
+		await expect(adminMenu(page).getByRole("heading", { level: 2, name: "Admin" })).toBeVisible();
 		await expect(page.getByRole("main").getByRole("heading", { level: 1 }).last()).toBeVisible();
 		expect(await horizontalOverflow(page), path).toBeLessThanOrEqual(0);
 	}
@@ -508,9 +508,10 @@ test("a non-primary admin's Admin menu hides primary-only pages, which stay bloc
 	const menu = adminMenu(page);
 	await expectMode(menu, "Admin", "Overview");
 	await expect(page.getByRole("heading", { level: 1, name: "Admin settings" })).toBeVisible();
-	for (const label of ["Overview", "Mailboxes", "Routing"])
+	for (const label of ["Overview", "Mailboxes"])
 		await expect(menu.getByRole("navigation").getByRole("link", { name: label, exact: true })).toBeVisible();
-	for (const label of primaryOnlyLabels)
+	// Domain routing follows the domain-management grant, which this admin does not have.
+	for (const label of [...primaryOnlyLabels, "Routing"])
 		await expect(menu.getByRole("navigation").getByRole("link", { name: label, exact: true })).toHaveCount(0);
 	await expect(page.getByText("Database", { exact: true })).toHaveCount(0);
 

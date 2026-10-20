@@ -84,6 +84,11 @@ export function formatEmailPageTitle({ location, total, unread, emailAddress }: 
 	return `${location} (${count})${suffix}`;
 }
 
+/** The folder the selection toolbar offers moves from; a custom folder lists with folder "inbox" but may move there. */
+export function getSelectionToolbarFolder(config: Pick<MessageFolderConfig, "folder" | "folderId">) {
+	return config.folderId ? undefined : config.folder;
+}
+
 export async function runBulkMessageAction(messageIds: string[], action: string, notify = true, folderId?: string) {
 	const response = await authFetch("/api/messages/bulk", {
 		method: "POST",

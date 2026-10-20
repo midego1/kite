@@ -1,13 +1,15 @@
 import type { SidebarScaffoldProps } from "./sidebar-state-types";
 import { cn } from "@/lib/utils";
+import { useBranding } from "./branding-provider";
 import { useSidebar } from "./sidebar-state";
 
 // Header and footer stay put; only the middle scrolls. The padding inside the scroller
 // matches the mask's fade length, so nothing looks faded until content actually scrolls under it.
 export function SidebarScaffold({ header, footer, children, className }: SidebarScaffoldProps) {
 	const { minimal } = useSidebar();
+	const { appName } = useBranding();
 	return (
-		<nav className={cn("flex h-full min-h-0 flex-col", className)}>
+		<nav aria-label={appName} className={cn("flex h-full min-h-0 flex-col", className)}>
 			<div className="shrink-0 px-3 pt-4">{header}</div>
 			<div
 				className={cn(

@@ -115,6 +115,14 @@ export function RichTextEditor({
 		emit();
 	}
 
+	function onLinkKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+		if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+		// Enter would otherwise submit the compose form.
+		event.preventDefault();
+		event.stopPropagation();
+		applyLink();
+	}
+
 	function onPaste(event: ClipboardEvent<HTMLDivElement>) {
 		event.preventDefault();
 		const text = event.clipboardData.getData("text/plain");
@@ -156,6 +164,7 @@ export function RichTextEditor({
 							type="button"
 							onClick={() => setShowQuoted((open) => !open)}
 							aria-expanded={showQuoted}
+							aria-label={showQuoted ? "Hide quoted text" : "Show quoted text"}
 							className="rounded-full border border-neutral-200 bg-neutral-100 px-2 text-xs leading-5 text-neutral-500 hover:bg-neutral-200"
 							title={showQuoted ? "Hide quoted text" : "Show quoted text"}
 						>
@@ -216,31 +225,42 @@ export function RichTextEditor({
 					</button>
 				</Tooltip>
 				{toolbarEnd}
+				{/* Not a <form>: the editor sits inside the compose form, and a nested form's submit
+				    bubbles through React to the composer and sends the message. */}
 				{linkOpen && (
-					<form
-						className="absolute bottom-full left-2 z-10 mb-1 flex items-center gap-2 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg"
-						onSubmit={(event) => {
+					<div
+						onKeyDown={(event) => {
+							if (event.key !== "Enter" && event.key !== "Escape") return;
+							// Keys that confirm or cancel an IME composition belong to the input method, but must not
+							// reach the composer, which would submit or leave its modal mode.
+							if (event.nativeEvent.isComposing) {
+								event.stopPropagation();
+								return;
+							}
+							if (event.key !== "Escape") return;
 							event.preventDefault();
-							applyLink();
+							event.stopPropagation();
+							setLinkOpen(false);
 						}}
+						className="absolute bottom-full left-2 z-10 mb-1 flex items-center gap-2 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg"
 					>
 						<input
 							autoFocus
 							value={linkUrl}
 							onChange={(event) => setLinkUrl(event.target.value)}
-							onKeyDown={(event) => {
-								if (event.key === "Escape") setLinkOpen(false);
-							}}
+							onKeyDown={onLinkKeyDown}
 							placeholder="https://example.com"
+							aria-label="Link address"
 							className="h-8 w-64 rounded-md border border-neutral-200 px-2 text-sm outline-none focus:border-blue-400"
 						/>
 						<button
-							type="submit"
+							type="button"
+							onClick={applyLink}
 							className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
 						>
 							Apply
 						</button>
-					</form>
+					</div>
 				)}
 			</div>
 		</div>

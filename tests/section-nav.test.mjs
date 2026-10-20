@@ -123,7 +123,8 @@ test("permission gates follow role, primary admin and per-user grants", () => {
 	const visible = (user) => hrefs(filterNavSections(adminNavSections, "", user));
 	assert.equal(visible(primary).length, 15);
 	assert.ok(visible(primary).includes("/alerts"));
-	assert.deepEqual(visible(admin), ["/admin", "/mailboxes", "/routing", "/accounts"]);
+	// Domain routing applies to every address on a domain, so it follows the domain grant like Domains does.
+	assert.deepEqual(visible(admin), ["/admin", "/mailboxes", "/accounts"]);
 	assert.deepEqual(visible({ ...admin, canManageDomains: true }), [
 		"/admin",
 		"/domains",

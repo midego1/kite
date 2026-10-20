@@ -2,12 +2,24 @@
 
 import clsx from "clsx";
 import { Menu } from "lucide-react";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { useSidebar } from "./sidebar-state";
 
 export function SidebarAside({ children, className }: { children: ReactNode; className?: string }) {
 	const { mobile, mobileOpen, toggle } = useSidebar();
 	const hidden = mobile && !mobileOpen;
+
+	useEffect(() => {
+		if (!mobile || !mobileOpen) return;
+		function onKeyDown(event: KeyboardEvent) {
+			if (event.key !== "Escape" || event.defaultPrevented) return;
+			toggle();
+			document.querySelector<HTMLElement>("[data-mobile-menu]")?.focus();
+		}
+		document.addEventListener("keydown", onKeyDown);
+		return () => document.removeEventListener("keydown", onKeyDown);
+	}, [mobile, mobileOpen, toggle]);
 
 	return (
 		<>
@@ -41,6 +53,7 @@ export function MobileMenuButton({ className }: { className?: string }) {
 	return (
 		<button
 			type="button"
+			data-mobile-menu
 			onClick={toggle}
 			aria-label="Open menu"
 			aria-expanded={mobileOpen}

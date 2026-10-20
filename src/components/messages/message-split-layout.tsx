@@ -9,6 +9,7 @@ import { ResizeHandle } from "@/components/ui/resize-handle";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { BulkMessageSelectionPane } from "./bulk-message-selection-pane";
 import { MessageFolderPage } from "./message-folder-page";
+import { MessageFolderTitle } from "./message-folder-title";
 import { useLeaveOpenMessage } from "./use-leave-open-message";
 import { MessageDetailNavigationProvider } from "./message-detail-navigation";
 import { MessageListVisibilityContext } from "./message-list-visibility";
@@ -22,6 +23,7 @@ import {
 import { ReadingPaneEmptyState } from "./reading-pane-empty-state";
 import { clampListSize, getEffectiveReadingPaneMode } from "./reading-layout-utils";
 import { useReadingPaneMode, useWideReadingViewport } from "./use-reading-layout";
+import { getSelectionToolbarFolder } from "./utils";
 import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
 
 const LIST_WIDTH = { fallback: 360, min: 250, max: 1200, reserved: 280 };
@@ -180,7 +182,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 				<section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white">
 					{split && !below && selectedMessages.length > 0 ? (
 						<BulkMessageSelectionPane
-							folder={config.folder}
+							folder={getSelectionToolbarFolder(config)}
 							selectedMessages={selectedMessages}
 							onAction={(action, folderId) => bulkActionRef.current?.(action, folderId) ?? Promise.resolve()}
 							onClearSelection={clearSelection}
@@ -195,7 +197,13 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 		</MessageListVisibilityContext.Provider>
 	);
 
-	if (!split) return <div className="h-full min-h-0 overflow-hidden">{detail}</div>;
+	if (!split)
+		return (
+			<div className="h-full min-h-0 overflow-hidden">
+				<MessageFolderTitle config={config} />
+				{detail}
+			</div>
+		);
 
 	const hiddenTransform = below ? "-translate-y-full" : "-translate-x-full";
 	// While dragging, sizes go straight to the DOM once per frame: re-rendering the list on every

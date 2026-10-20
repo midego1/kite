@@ -12,7 +12,7 @@ import type { OneTimeCodeChipProps } from "./one-time-code-chip-types";
 export function OneTimeCodeChip({ code, alignWide }: OneTimeCodeChipProps) {
 	if (!code) return null;
 	return (
-		<div className={clsx(alignWide ? "pl-16" : "pl-10", "flex items-center gap-2 px-6 pb-2")}>
+		<div className={clsx(alignWide ? "sm:pl-16" : "sm:pl-10", "flex items-center gap-2 px-3 pb-2 sm:px-6")}>
 			<span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 font-mono text-sm font-semibold tracking-[0.2em] text-blue-900 select-all">
 				{code}
 			</span>

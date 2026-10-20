@@ -149,7 +149,11 @@ export default function ApiKeysPage() {
 										))}
 									</div>
 								</fieldset>
-								{create.isError && <p className="text-sm text-red-600">{(create.error as Error).message}</p>}
+								{create.isError && (
+									<p role="alert" className="text-sm text-red-600">
+										{(create.error as Error).message}
+									</p>
+								)}
 								<Button
 									onClick={() => create.mutate()}
 									disabled={!name.trim() || scopes.length === 0 || create.isPending}

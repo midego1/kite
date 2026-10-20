@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DRIVE_LINK_MAX_DAYS_LIMIT } from "@/lib/drive/link-utils";
 import { DRIVE_MAX_TRASH_DAYS } from "@/lib/drive/settings-utils";
 import type { DriveSettingsValues } from "@/lib/drive/types";
 import { driveRequest } from "./drive-api";
@@ -22,11 +23,25 @@ const toForm = (settings: DriveSettingsValues): Form => ({
 function toPatch(form: Form): { patch: DriveSettingsValues } | { error: string } {
 	const quota = parseQuotaGb(form.quotaGb);
 	if ("error" in quota) return quota;
+	const linkDays = Number(form.linkMaxDays);
+	if (
+		form.linksOn &&
+		(!form.linkMaxDays.trim() || !Number.isInteger(linkDays) || linkDays < 1 || linkDays > DRIVE_LINK_MAX_DAYS_LIMIT)
+	)
+		return { error: `Enter a link lifetime from 1 to ${DRIVE_LINK_MAX_DAYS_LIMIT} days` };
+	const trashDays = Number(form.trashRetentionDays);
+	if (
+		!form.trashRetentionDays.trim() ||
+		!Number.isInteger(trashDays) ||
+		trashDays < 1 ||
+		trashDays > DRIVE_MAX_TRASH_DAYS
+	)
+		return { error: `Enter a trash retention from 1 to ${DRIVE_MAX_TRASH_DAYS} days` };
 	return {
 		patch: {
 			defaultQuotaBytes: quota.bytes,
-			linkMaxDays: form.linksOn ? Number(form.linkMaxDays) : 0,
-			trashRetentionDays: Number(form.trashRetentionDays),
+			linkMaxDays: form.linksOn ? linkDays : 0,
+			trashRetentionDays: trashDays,
 		},
 	};
 }

@@ -218,6 +218,20 @@ test("Admin → Drive saves the defaults and lists usage, and is not found for a
 		await page.getByRole("complementary", { name: "Admin menu" }).getByRole("link", { name: "Drive" }).click();
 		await expect(page).toHaveURL(/\/drive\/settings$/);
 		await expect(page.getByRole("heading", { level: 1, name: "Drive" })).toBeVisible();
+		await page.getByLabel("Allow public links").check();
+		await page.getByLabel("Longest link lifetime (days)").fill("");
+		await page.getByRole("button", { name: "Save settings" }).click();
+		await expect(
+			page.getByRole("status").filter({ hasText: "Enter a link lifetime from 1 to 365 days" }),
+		).toBeVisible();
+		expect((await (await admin.get("/api/drive/settings")).json()).settings).toEqual(before.settings);
+		await page.getByLabel("Longest link lifetime (days)").fill("30");
+		await page.getByLabel("Keep trashed items for (days)").fill("");
+		await page.getByRole("button", { name: "Save settings" }).click();
+		await expect(
+			page.getByRole("status").filter({ hasText: "Enter a trash retention from 1 to 365 days" }),
+		).toBeVisible();
+		expect((await (await admin.get("/api/drive/settings")).json()).settings).toEqual(before.settings);
 		await page.getByLabel("Keep trashed items for (days)").fill("45");
 		await page.getByRole("button", { name: "Save settings" }).click();
 		await expect(page.getByRole("status").filter({ hasText: "Drive settings saved" })).toBeVisible();

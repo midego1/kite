@@ -277,5 +277,16 @@
 	"41-upstream-badge.spec.ts › the app badge follows the Inbox unread count across all mailboxes": 3400,
 	"41-upstream-badge.spec.ts › visible-tab refresh timers defer badge updates while hidden": 2700,
 	"42-remote-images.spec.ts › a consented remote image whose host sends CORP same-origin shows through the authenticated proxy": 3700,
-	"42-remote-images.spec.ts › the proxy refuses callers, URLs and responses it must not serve": 3500
+	"42-remote-images.spec.ts › the proxy refuses callers, URLs and responses it must not serve": 3500,
+	"43-drive-off.spec.ts › a user restricted from Drive loses it after authentication, including their public links, while others keep theirs": 2300,
+	"43-drive-off.spec.ts › Drive off for the install removes nav, pages, API, public links and Save to Drive, and on brings them back unchanged": 8700,
+	"44-drive-files.spec.ts › a file of two parts uploads, downloads whole and answers a byte range": 1100,
+	"44-drive-files.spec.ts › a storage override refuses an upload that does not fit, and the sidebar shows the usage": 1000,
+	"44-drive-files.spec.ts › Admin → Drive saves the defaults and lists usage, and is not found for a member": 2100,
+	"44-drive-files.spec.ts › My Drive: a folder, an upload, preview, rename, move, trash, restore and delete forever": 5900,
+	"44-drive-files.spec.ts › Save to Drive from a message attachment puts it in the chosen folder, and All attachments lists it": 5600,
+	"45-drive-sharing.spec.ts › a password-protected folder link asks for the password, then lists folders first and opens a subfolder": 1800,
+	"45-drive-sharing.spec.ts › a public file link opens a preview and download for anyone, shows nothing of the owner, and revoking it ends it": 4100,
+	"45-drive-sharing.spec.ts › an expired link says so, and turning public links off ends every link and the form to make one": 3100,
+	"45-drive-sharing.spec.ts › sharing with people: a viewer reads under Shared with me, an editor changes, and removing a share ends access": 6000
 }

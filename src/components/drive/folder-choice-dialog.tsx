@@ -72,7 +72,7 @@ export function FolderChoiceDialog({
 						Cancel
 					</Button>
 					<Button type="button" onClick={() => void choose()} disabled={busy}>
-						{busy ? "Working…" : `${verb} in ${current ? current.name : "My Drive"}`}
+						{busy ? "Working…" : `${verb} to ${current ? current.name : "My Drive"}`}
 					</Button>
 				</div>
 			</DialogContent>

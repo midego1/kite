@@ -67,6 +67,11 @@ export function DrivePreviewDialog({ target, onClose }: { target: PreviewTarget;
 			<DialogContent
 				className="flex h-[min(85vh,900px)] w-[min(1100px,calc(100vw-32px))] max-w-none flex-col overflow-hidden p-0"
 				data-drive-preview
+				onOpenAutoFocus={(event) => {
+					// Radix would focus the preview iframe, whose document then swallows Escape.
+					event.preventDefault();
+					(event.currentTarget as HTMLElement | null)?.focus();
+				}}
 			>
 				<DialogTitle className="flex h-14 shrink-0 items-center gap-3 border-b border-neutral-200 pl-5 pr-14 text-base">
 					<span className="min-w-0 flex-1 truncate font-medium">{target.name}</span>

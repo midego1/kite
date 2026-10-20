@@ -10,7 +10,7 @@ import { canEditDrive, DRIVE_MAX_DEPTH, normalizeDriveName, toDriveCrumbs } from
 import type { DriveAnswer, DriveRole, DriveRow, DriveUser } from "./types";
 
 type Db = ReturnType<typeof getDb>;
-export const MAX_BULK_ITEMS = 100;
+const MAX_BULK_ITEMS = 100;
 const BULK_ACTIONS = ["trash", "restore", "delete", "move"] as const;
 type BulkAction = (typeof BULK_ACTIONS)[number];
 

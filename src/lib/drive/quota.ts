@@ -41,7 +41,7 @@ export async function getQuotaLimit(env: CloudflareEnv, ownerId: string): Promis
 }
 
 /** Everything the owner holds, including trashed items and uploads in progress. */
-export async function getUsedBytes(env: CloudflareEnv, ownerId: string): Promise<number> {
+async function getUsedBytes(env: CloudflareEnv, ownerId: string): Promise<number> {
 	const [row] = await getDb(env)
 		.select({ total: sql<number>`coalesce(sum(${driveItems.size}), 0)` })
 		.from(driveItems)

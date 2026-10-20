@@ -11,7 +11,7 @@ import { generateLinkToken, hashLinkToken, isLinkActive, linkExpiry, parseLinkPa
 import { getDriveSettings } from "./quota";
 import type { DriveAnswer, DriveLinkDto, DriveLinkRow, DriveRow, DriveUser } from "./types";
 
-export const linkUrl = (origin: string, token: string) => `${origin}/d/${token}`;
+const linkUrl = (origin: string, token: string) => `${origin}/d/${token}`;
 
 /** The item, when the user owns it and can see it: only owners create and manage public links. */
 async function ownedItem(env: CloudflareEnv, user: DriveUser, id: string): Promise<DriveRow | null> {

@@ -25,7 +25,7 @@ export async function requireDriveUser(request: Request, options: { admin?: bool
 	return { env, user: auth.user, error: null };
 }
 
-export const respond = (answer: DriveAnswer) => NextResponse.json(answer.body, { status: answer.status });
+const respond = (answer: DriveAnswer) => NextResponse.json(answer.body, { status: answer.status });
 
 /** Runs a Drive operation (see `answerDrive`) and answers with its JSON. */
 export async function driveJson(

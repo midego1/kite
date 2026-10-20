@@ -2,7 +2,7 @@ export const DRIVE_LINK_MAX_DAYS_LIMIT = 365;
 export const DRIVE_LINK_DEFAULT_MAX_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** How long an unlocked password link stays open in one browser. */
-export const DRIVE_UNLOCK_TTL_SECONDS = 60 * 60;
+const DRIVE_UNLOCK_TTL_SECONDS = 60 * 60;
 export const DRIVE_LINK_PASSWORD_MAX_LENGTH = 200;
 
 function base64Url(bytes: Uint8Array): string {

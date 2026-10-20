@@ -3,7 +3,7 @@
  * Direct parts (phase 2) go straight to the store and can be larger.
  */
 export const DRIVE_PROXIED_PART_BYTES = 32 * 1024 * 1024;
-export const DRIVE_DIRECT_PART_BYTES = 64 * 1024 * 1024;
+/** @public Exercised by the bundled unit tests. */
 export const DRIVE_MAX_PARTS = 10_000;
 /** How long an interrupted upload can be resumed before the daily job aborts it. */
 export const DRIVE_UPLOAD_RESUME_MS = 3 * 24 * 60 * 60 * 1000;
@@ -31,6 +31,7 @@ export function expectedPartSize(size: number, partSize: number, partNumber: num
 	return partNumber < parts ? partSize : size - partSize * (parts - 1);
 }
 
+/** @public Exercised by the bundled unit tests. */
 export function maxFileBytes(partSize: number): number {
 	return partSize * DRIVE_MAX_PARTS;
 }

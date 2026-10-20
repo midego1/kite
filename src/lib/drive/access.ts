@@ -82,6 +82,7 @@ const descendantIds = (rootIds: string[]) => sql`(WITH RECURSIVE tree(id, depth)
 	SELECT d.id, tree.depth + 1 FROM drive_items d JOIN tree ON d.parent_id = tree.id WHERE tree.depth < ${DRIVE_MAX_DEPTH}
 ) SELECT id FROM tree)`;
 
+/** @public Exercised by the bundled unit tests. */
 export async function collectDriveDescendants(db: Db, rootIds: string[]): Promise<DriveRow[]> {
 	if (!rootIds.length) return [];
 	const rows = await db

@@ -15,11 +15,6 @@ export function effectiveQuota(
 	return defaultQuota;
 }
 
-/** Whether `size` more bytes fit; the same rule the reserving insert applies in SQL. */
-export function fitsQuota(used: number, size: number, limit: number | null): boolean {
-	return limit === null || used + size <= limit;
-}
-
 export const QUOTA_ERROR = "Not enough Drive storage left for this file";
 
 /** A quota in bytes from a request body: null is unlimited, a non-negative whole number is a limit, anything else undefined. */

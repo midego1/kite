@@ -1,6 +1,6 @@
 import type { DriveCrumb, DriveRole, DriveRow } from "./types";
 
-export const DRIVE_MAX_NAME_LENGTH = 255;
+const DRIVE_MAX_NAME_LENGTH = 255;
 /** Folder nesting limit; the recursive queries stop here, so a cycle in restored data cannot loop. */
 export const DRIVE_MAX_DEPTH = 64;
 

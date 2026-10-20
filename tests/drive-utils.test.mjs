@@ -18,7 +18,6 @@ const {
 	normalizeUploadContentType,
 	partsComplete,
 	effectiveQuota,
-	fitsQuota,
 	parseQuotaBytes,
 	mayChangeQuota,
 	generateLinkToken,
@@ -57,7 +56,7 @@ const {
 		"DRIVE_PROXIED_PART_BYTES, DRIVE_MAX_PARTS, partCount, expectedPartSize, maxFileBytes, parseUploadRequest, normalizeUploadContentType, partsComplete",
 		"src/lib/drive/upload-utils.ts",
 	],
-	["effectiveQuota, fitsQuota, parseQuotaBytes, mayChangeQuota", "src/lib/drive/quota-utils.ts"],
+	["effectiveQuota, parseQuotaBytes, mayChangeQuota", "src/lib/drive/quota-utils.ts"],
 	[
 		"generateLinkToken, hashLinkToken, isWellFormedLinkToken, linkExpiry, isLinkActive, parseLinkPassword, unlockCookieName, createUnlockValue, verifyUnlockValue, readCookie, unlockCookieHeader",
 		"src/lib/drive/link-utils.ts",
@@ -142,14 +141,11 @@ test("upload requests are validated and content types normalized", () => {
 	assert.equal(normalizeUploadContentType("image/png"), "image/png");
 });
 
-test("quotas: an override wins, null is unlimited, and the fit rule matches the SQL", () => {
+test("quotas: an override wins and null is unlimited", () => {
 	assert.equal(effectiveQuota(undefined, null), null);
 	assert.equal(effectiveQuota(undefined, 100), 100);
 	assert.equal(effectiveQuota({ quotaBytes: null }, 100), null);
 	assert.equal(effectiveQuota({ quotaBytes: 5 }, null), 5);
-	assert.equal(fitsQuota(90, 10, 100), true);
-	assert.equal(fitsQuota(90, 11, 100), false);
-	assert.equal(fitsQuota(1e15, 1e15, null), true);
 	assert.equal(parseQuotaBytes(null), null);
 	assert.equal(parseQuotaBytes(0), 0);
 	assert.equal(parseQuotaBytes(-1), undefined);

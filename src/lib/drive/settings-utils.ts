@@ -2,7 +2,7 @@ import { DRIVE_LINK_DEFAULT_MAX_DAYS, DRIVE_LINK_MAX_DAYS_LIMIT } from "./link-u
 import { parseQuotaBytes } from "./quota-utils";
 import type { DriveSettingsValues } from "./types";
 
-export const DRIVE_DEFAULT_TRASH_DAYS = 30;
+const DRIVE_DEFAULT_TRASH_DAYS = 30;
 export const DRIVE_MAX_TRASH_DAYS = 365;
 
 /** What an install without a `drive_settings` row gets. */

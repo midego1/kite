@@ -1,8 +1,8 @@
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import type { DriveAnswer } from "./types";
 
-export const MIGRATION_PENDING_ERROR = "Apply the pending database update first";
-export const MIGRATION_PENDING_CODE = "MIGRATION_PENDING";
+const MIGRATION_PENDING_ERROR = "Apply the pending database update first";
+const MIGRATION_PENDING_CODE = "MIGRATION_PENDING";
 
 const DRIVE_TABLES = [
 	"drive_items",
@@ -30,7 +30,7 @@ export const fail = (status: number, error: string, code?: string): DriveAnswer 
 	body: code ? { error, code } : { error },
 });
 export const notFound = (): DriveAnswer => fail(404, "Not found");
-export const pending = (): DriveAnswer => fail(409, MIGRATION_PENDING_ERROR, MIGRATION_PENDING_CODE);
+const pending = (): DriveAnswer => fail(409, MIGRATION_PENDING_ERROR, MIGRATION_PENDING_CODE);
 
 /**
  * Whether migration 0064 has been applied. It reads only `sqlite_master`, and the names are bound, so the

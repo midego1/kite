@@ -30,6 +30,9 @@ test("pages are titled after the most specific matching route", () => {
 	assert.equal(getRouteTitle("/agent"), "Agent");
 	assert.equal(getRouteTitle("/agent/review/apr_1"), "AI draft review");
 	assert.equal(getRouteTitle("/calendar"), "Calendar");
+	assert.equal(getRouteTitle("/drive/f/drv_1"), "Drive");
+	assert.equal(getRouteTitle("/drive/settings"), "Drive settings");
+	assert.equal(getRouteTitle("/d/token"), null);
 });
 
 test("mail folders, messages and look-alike paths are left to their own title", () => {

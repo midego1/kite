@@ -17,10 +17,12 @@ import { RouteTitle } from "@/components/route-title";
 
 type DashboardSectionShellProps = Omit<AuthGuardProps, "children" | "mode" | "allowAuthenticated"> & {
 	children: ReactNode;
+	/** The sidebar; the mail navigation when absent. */
+	nav?: ReactNode;
 };
 
-/** The mail sidebar and top bar around the Settings and Admin pages. */
-export function DashboardSectionShell({ children, ...guard }: DashboardSectionShellProps) {
+/** The mail sidebar (or `nav`) and top bar around the Settings, Admin and module pages. */
+export function DashboardSectionShell({ children, nav, ...guard }: DashboardSectionShellProps) {
 	return (
 		<AuthGuard {...guard}>
 			<SidebarProvider mobileOverlay>
@@ -33,9 +35,7 @@ export function DashboardSectionShell({ children, ...guard }: DashboardSectionSh
 								style={{ transitionDuration: "var(--sidebar-transition-duration)" }}
 							>
 								<SkipToContent />
-								<SidebarAside>
-									<DashboardNav />
-								</SidebarAside>
+								<SidebarAside>{nav ?? <DashboardNav />}</SidebarAside>
 								<div className="flex min-h-0 min-w-0 flex-col">
 									<header className="flex h-16 w-full shrink-0 items-center gap-4 pr-4 text-sm">
 										<MobileMenuButton className="ml-2" />

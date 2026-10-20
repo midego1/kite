@@ -30,6 +30,9 @@ const CORE_PATHS = [
 	"src/components/settings/section-nav-utils.ts",
 	"src/components/agent/agent-activity-utils.ts",
 	"src/components/mailbox-selector.tsx",
+	"src/components/message-attachment-card.tsx",
+	"src/components/message-attachment-menu.tsx",
+	"src/components/dashboard-section-shell.tsx",
 	"src/app/api/settings/time-zone/route.ts",
 	"src/app/api/accounts/create.ts",
 	"src/app/api/auth/register/route.ts",
@@ -164,6 +167,7 @@ test("module directories never import the send path or the webhook dispatcher di
 		...walk(join(root, "src", "lib", "finance")),
 		...walk(join(root, "src", "components", "finance")),
 		...walk(join(root, "src", "lib", "drive")),
+		...walk(join(root, "src", "components", "drive")),
 	].map((file) => toPosix(relative(root, file)));
 	assert.ok(files.length > 0);
 	for (const file of files)

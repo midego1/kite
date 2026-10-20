@@ -6,6 +6,8 @@ export type ByteRange = { start: number; end: number };
 /**
  * Parses a single `bytes=` range. Returns null when absent or unusable (a multi-range request is served
  * whole), "invalid" when it cannot be satisfied.
+ *
+ * @public Exercised by the bundled unit tests.
  */
 export function parseByteRange(header: string | null, size: number): ByteRange | "invalid" | null {
 	const match = /^bytes=(\d*)-(\d*)$/.exec(header?.trim() ?? "");

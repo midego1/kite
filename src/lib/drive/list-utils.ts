@@ -11,6 +11,7 @@ export function parseDriveView(value: string | null): DriveView | null {
 /** A page boundary on `(sortedAt desc, id desc)`, as an opaque string the client sends back. */
 export type DriveCursor = { at: number; id: string };
 
+/** @public Exercised by the bundled unit tests. */
 export function encodeDriveCursor(cursor: DriveCursor): string {
 	return btoa(`${cursor.at}:${cursor.id}`).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }

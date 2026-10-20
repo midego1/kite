@@ -47,7 +47,7 @@ export async function streamDriveFile(
 }
 
 /** Streams a mail attachment the caller was already checked against, with the same safe headers. */
-export function streamAttachment(
+function streamAttachment(
 	attachment: { id: string; filename: string; contentType: string; size: number; createdAt?: Date },
 	object: { body: ReadableStream; size?: number },
 	download: boolean,

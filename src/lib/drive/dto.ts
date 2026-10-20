@@ -22,7 +22,7 @@ async function sharedItemIds(db: Db, ids: string[], now: Date): Promise<Set<stri
 	return new Set(shared);
 }
 
-export function toDriveItemDto(row: DriveRow, role: DriveRole, ownerName: string, shared: boolean): DriveItemDto {
+function toDriveItemDto(row: DriveRow, role: DriveRole, ownerName: string, shared: boolean): DriveItemDto {
 	return {
 		id: row.id,
 		kind: row.kind,

@@ -8,6 +8,7 @@ import { streamDriveFile } from "./content";
 import { driveTablesReady } from "./errors";
 import {
 	createUnlockValue,
+	DRIVE_LINK_PASSWORD_MAX_LENGTH,
 	hashLinkToken,
 	isLinkActive,
 	isWellFormedLinkToken,
@@ -62,6 +63,29 @@ export async function resolvePublicLink(
 	const chain = await getDriveChain(db, item);
 	if (chain.some((entry) => entry.trashedAt) || !chain.some((entry) => entry.id === root.id)) return null;
 	return { link, root, item };
+}
+
+/**
+ * For the `/d/<token>` page: whose link it is and whether it has only expired. Expiry gets its own page because
+ * the visitor already holds the token; every other failure (unknown, revoked, trashed, owner disabled) is null.
+ */
+export async function linkPageState(
+	env: CloudflareEnv,
+	token: string,
+): Promise<{ ownerId: string; expired: boolean } | null> {
+	const target = await resolvePublicLink(env, token, null);
+	if (target) return { ownerId: target.root.ownerId, expired: false };
+	if (!isWellFormedLinkToken(token) || !(await driveTablesReady(env))) return null;
+	const db = getDb(env);
+	const [link] = await db
+		.select()
+		.from(driveLinks)
+		.where(eq(driveLinks.tokenHash, await hashLinkToken(token)))
+		.limit(1);
+	if (!link || link.revokedAt || link.expiresAt > new Date()) return null;
+	const root = await getDriveItem(db, link.itemId);
+	if (!root || root.status !== "ready" || !(await ownerActive(db, root.ownerId))) return null;
+	return { ownerId: root.ownerId, expired: true };
 }
 
 /** Whether a password link has been unlocked in this browser; links without a password always are. */
@@ -122,7 +146,8 @@ export async function unlockLink(
 	link: DriveLinkRow,
 	password: unknown,
 ): Promise<{ value: string; maxAge: number } | null> {
-	if (!link.passwordHash || typeof password !== "string" || password.length > 200) return null;
+	if (!link.passwordHash || typeof password !== "string" || password.length > DRIVE_LINK_PASSWORD_MAX_LENGTH)
+		return null;
 	if (!verifyPassword(password, link.passwordHash)) return null;
 	return createUnlockValue({ id: link.id, passwordHash: link.passwordHash, expiresAt: link.expiresAt }, new Date());
 }

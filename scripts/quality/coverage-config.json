@@ -16,6 +16,7 @@
 		"src/lib/drive/settings-utils.ts",
 		"src/lib/drive/list-utils.ts",
 		"src/lib/drive/category-names-utils.ts",
+		"src/components/drive/drive-utils.ts",
 		"src/lib/remote-images/fetch-utils.ts",
 		"src/lib/remote-images/message-urls-utils.ts",
 		"src/lib/remote-images/proxy-url-utils.ts",

@@ -91,7 +91,10 @@ test("attachments that can run script are never served inline", async () => {
 
 	await test.step("types that cannot run script still preview inline", async () => {
 		const png = await fetchAttachment("pixel.png");
-		expect(png).toEqual({ type: "image/png", disposition: 'inline; filename="pixel.png"' });
+		expect(png).toEqual({
+			type: "image/png",
+			disposition: "inline; filename=\"pixel.png\"; filename*=UTF-8''pixel.png",
+		});
 		const text = await fetchAttachment("notes.txt", "?preview=1");
 		expect(text.disposition).toMatch(/^inline;/);
 		expect(text.type).toMatch(/^text\/plain\b/);

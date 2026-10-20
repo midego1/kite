@@ -1,5 +1,5 @@
 export type BackupScheduleType = "daily" | "weekly" | "monthly";
-export type BackupTableGroupId = "accounts" | "mail" | "automation" | "assistant" | "system";
+export type BackupTableGroupId = "accounts" | "mail" | "drive" | "automation" | "assistant" | "system";
 
 export type DatabaseBackupTable =
 	| "users"
@@ -26,6 +26,11 @@ export type DatabaseBackupTable =
 	| "booking_appointments"
 	| "finance_subscriptions"
 	| "finance_charges"
+	| "drive_items"
+	| "drive_shares"
+	| "drive_links"
+	| "drive_settings"
+	| "drive_user_quotas"
 	| "email_templates"
 	| "calendar_events"
 	| "booking_events"
@@ -55,5 +60,7 @@ export type DatabaseBackupDocument = {
 	version: 1;
 	createdAt: string;
 	includedTables?: DatabaseBackupTable[];
+	/** Written since the drive group; documents without it predate every group added after LEGACY_BACKUP_TABLE_GROUPS. */
+	excludedGroups?: BackupTableGroupId[];
 	tables: Partial<Record<DatabaseBackupTable, DatabaseRecord[]>>;
 };

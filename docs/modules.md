@@ -2,7 +2,7 @@
 
 Kite's core is mail: mailboxes, domains, contacts, accounts, settings, backups, search, the assistant, MCP, the API, JMAP, webhooks and mailbox export. Core is always on. Around it sit **modules**, feature areas the owner (the primary admin) can turn off for everyone or for some users. The design is in the [module platform spec](specs/module-platform.md).
 
-## The five modules
+## The six modules
 
 | Module | What it is | Depends on |
 | --- | --- | --- |
@@ -11,6 +11,7 @@ Kite's core is mail: mailboxes, domains, contacts, accounts, settings, backups, 
 | **Email templates** | The **Template** entry in the composer's send menu (insert a template, save a new one) and its API under `/api/templates`. There is no templates page. | nothing |
 | **Mail import** | Settings → Import (`/settings/import`): IMAP imports, mbox and eml uploads and background IMAP jobs, with the API under `/api/import`. | nothing |
 | **Money Watch** | Subscription tracking: the Subscriptions page at `/finance` and its sidebar item with a count, the API under `/api/finance`, subscription cards in automatic reading (found in receipts, invoices, renewal, trial, refund and failed-payment mail), the **Track as subscription** and **Add to a tracked subscription** entries in the reader's menu, renewal reminders (a notice, the sidebar count and, when Calendar is on, a calendar event), the `list_subscriptions` tool in assistant chat and MCP, the Subscriptions section of the search dropdown and the `finance.subscription.detected` and `finance.subscription.renewal_due` webhook events. Its data is two tables: tracked subscriptions and their document ledger (invoices, payments, credit notes, refunds and failed payments, each linked to its message and attachment). | nothing (calendar reminders need Calendar) |
+| **Drive** | Files and folders: the pages under `/drive` (My Drive, Recent, Shared with me, All attachments, Trash) and their sidebar and mailbox-menu items, Admin → Drive at `/drive/settings`, the API under `/api/drive`, public links at `/d/<token>` with their API under `/api/public/drive`, **Save to Drive** in a message attachment's menu, the **Open Drive** palette command and the daily task that empties the trash. Its data is the `drive_*` tables and the file contents in object storage. See [Drive](drive.md). | nothing |
 
 Every module starts on. A new install and an upgraded one behave exactly as before until the owner turns something off.
 
@@ -32,11 +33,12 @@ A module that is off is absent, not broken:
 - Automatic reading skips the calendar step and Activity says "Calendar is turned off". Invitation suggestions and their counts are hidden, and accepting one or undoing an invitation action is refused until Calendar is back on. The other steps (reply, summary, phishing) still run.
 - With Email templates off, the composer's send menu shows only the schedule options and loads no template code, and the message API returns no template rows.
 - With Mail import off, its queued work is skipped: see paused imports below.
+- With Drive off, the Drive sidebar and mailbox-menu items, Admin → Drive, the palette command and **Save to Drive** disappear, `/drive` and `/d/<token>` show the not-found page, and `/api/drive` and `/api/public/drive` answer 404, so every public link stops working. For a restricted user, their own public links answer 404 while other users' links keep working. The daily trash clean-up does not run while Drive is off for the install.
 - With Money Watch off, the Subscriptions sidebar item and its count, the reader's menu entries and its palette commands disappear, `/finance` and `/api/finance` answer 404, and automatic reading skips its step (Activity says "Money Watch is turned off") and does not add its part to the model request. Existing subscription cards are hidden, and accepting one or undoing a Money Watch action is refused. The reminder task sends no notice, webhook or calendar event, and leaves the rows untouched, so a reminder still inside its window fires once Money Watch is back on. Calendar reminder events it already created stay in the calendar.
 
 ### What off does not do
 
-- **Nothing is deleted.** Events, booking pages, appointments, templates, import jobs, subscriptions and their documents stay in the database and in backups. Turn the module on again and everything is back.
+- **Nothing is deleted.** Events, booking pages, appointments, templates, import jobs, subscriptions and their documents, and Drive files, shares and links stay in the database and in backups. Turn the module on again and everything is back.
 - **Mailbox export always works.** Settings → Export (`/settings/export`) and the export API are core. Turning Mail import off never hides them, and the old Import and export links send you to Export instead.
 - **Old keys keep working.** An API key or MCP key that already has a module's scope keeps authenticating. It only gets 404 or no tools from that module while the module is off.
 - **Existing webhook subscriptions keep their events.** They just receive nothing while the module is off.
@@ -68,6 +70,8 @@ The browser tab and server that handled a change see it at once. Other open sess
 The switches live in tables that migration 0062 adds. Until an admin applies it, every module is on for everyone, and the Modules page says "Apply the pending database update to manage modules" with the switches disabled. Calendar search returns no events until then.
 
 Money Watch keeps its data in two tables that migration 0063 adds. Until it is applied, `/finance` shows an empty page that points to the database update, its read API answers with an empty list and `migrationPending: true`, every write answers 409 `MIGRATION_PENDING`, automatic reading skips its step and the reminder task does nothing.
+
+Drive keeps its data in the tables that migration 0064 adds. Until it is applied, Drive pages say the update is pending, its read API answers with an empty list and `migrationPending: true`, every write answers 409 `MIGRATION_PENDING`, public links answer 404 and the trash task does nothing.
 
 ## Adding a builtin module
 

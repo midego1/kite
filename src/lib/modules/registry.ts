@@ -1,6 +1,7 @@
 import { MODULE_IDS } from "./client-data/module-ids";
 import { bookingManifest } from "./booking/manifest";
 import { calendarManifest } from "./calendar/manifest";
+import { driveManifest } from "./drive/manifest";
 import { financeManifest } from "./finance/manifest";
 import { importManifest } from "./import/manifest";
 import type { ModuleId, ModuleManifest } from "./module-types";
@@ -13,6 +14,7 @@ export const MODULE_MANIFESTS: readonly ModuleManifest[] = [
 	templatesManifest,
 	importManifest,
 	financeManifest,
+	driveManifest,
 ];
 
 export { MODULE_IDS };

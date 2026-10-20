@@ -42,7 +42,7 @@ const {
 	["flattenSections, nextActiveIndex, searchItemKey", "src/components/mail-search/search-dropdown-utils.ts"],
 ]);
 
-const ALL = ["calendar", "booking", "templates", "import", "finance"];
+const ALL = ["calendar", "booking", "templates", "import", "finance", "drive"];
 const enabledWith = (off) =>
 	effectiveModules(new Map(ALL.map((id) => [id, !off.includes(id)])), new Map(), MODULE_MANIFESTS);
 

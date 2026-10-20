@@ -5,7 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const MODULE_IDS = ["calendar", "booking", "templates", "import", "finance"];
+const MODULE_IDS = ["calendar", "booking", "templates", "import", "finance", "drive"];
 
 /** Core entry points and surfaces that must reach modules only through the registry (spec §19.1). */
 const CORE_PATHS = [
@@ -30,11 +30,17 @@ const CORE_PATHS = [
 	"src/components/settings/section-nav-utils.ts",
 	"src/components/agent/agent-activity-utils.ts",
 	"src/components/mailbox-selector.tsx",
+	"src/components/message-attachment-card.tsx",
+	"src/components/message-attachment-menu.tsx",
+	"src/components/dashboard-section-shell.tsx",
 	"src/app/api/settings/time-zone/route.ts",
 	"src/app/api/accounts/create.ts",
 	"src/app/api/auth/register/route.ts",
 	"src/app/(dashboard)/import-export/page.tsx",
 	"src/app/(settings)/settings/import-export/page.tsx",
+	"src/lib/storage/",
+	"server/runtime/file-bucket.ts",
+	"src/lib/backups/",
 ];
 
 /** The calendar invite files that belong to the Calendar module's server code (spec §12). */
@@ -57,6 +63,8 @@ const MODULE_CODE = [
 	"src/lib/import",
 	"src/lib/finance",
 	"src/components/finance",
+	"src/lib/drive",
+	"src/components/drive",
 	...MODULE_IDS.map((id) => `src/lib/modules/${id}`),
 	...MODULE_IDS.map((id) => `src/components/modules/${id}`),
 	...MODULE_OWNED_INVITE_FILES.map((file) => file.replace(/\.ts$/, "")),
@@ -158,6 +166,8 @@ test("module directories never import the send path or the webhook dispatcher di
 		...walk(join(root, "src", "components", "modules")),
 		...walk(join(root, "src", "lib", "finance")),
 		...walk(join(root, "src", "components", "finance")),
+		...walk(join(root, "src", "lib", "drive")),
+		...walk(join(root, "src", "components", "drive")),
 	].map((file) => toPosix(relative(root, file)));
 	assert.ok(files.length > 0);
 	for (const file of files)
@@ -175,6 +185,13 @@ test("Money Watch implementation code never loads code dynamically and stays out
 		autoRead.filter((file) => /finance|subscription/i.test(file)),
 		[],
 	);
+});
+
+test("Drive implementation code never loads code dynamically", () => {
+	const files = [...walk(join(root, "src", "lib", "drive")), ...walk(join(root, "src", "lib", "modules", "drive"))];
+	assert.ok(files.length > 0);
+	for (const file of files)
+		assert.ok(!/\bimport\(/.test(readFileSync(file, "utf8")), `${toPosix(relative(root, file))} uses import()`);
 });
 
 test("Money Watch reads attachments only through moduleHost.mail.readAttachment", () => {

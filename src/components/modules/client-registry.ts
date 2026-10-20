@@ -1,10 +1,10 @@
-import { CalendarClock, CalendarDays, Download, Puzzle, WalletCards, type LucideIcon } from "lucide-react";
+import { CalendarClock, CalendarDays, Download, HardDrive, Puzzle, WalletCards, type LucideIcon } from "lucide-react";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import type { ModuleId } from "@/lib/modules/module-types";
 import type { ModuleClient } from "./client-registry-types";
 
 /** Icons a manifest names in `nav[].icon`; the manifest stays data and this file stays the only place that knows the glyphs. */
-const NAV_ICONS: Record<string, LucideIcon> = { CalendarClock, CalendarDays, Download, WalletCards };
+const NAV_ICONS: Record<string, LucideIcon> = { CalendarClock, CalendarDays, Download, HardDrive, WalletCards };
 
 export function resolveNavIcon(name: string): LucideIcon {
 	return NAV_ICONS[name] ?? Puzzle;
@@ -19,6 +19,7 @@ const MODULE_CLIENTS: Partial<Record<ModuleId, () => Promise<ModuleClient>>> = {
 	booking: () => (typeof window === "undefined" ? new Promise<never>(() => {}) : import("./booking/client")),
 	templates: () => (typeof window === "undefined" ? new Promise<never>(() => {}) : import("./templates/client")),
 	finance: () => (typeof window === "undefined" ? new Promise<never>(() => {}) : import("./finance/client")),
+	drive: () => (typeof window === "undefined" ? new Promise<never>(() => {}) : import("./drive/client")),
 };
 
 /** The module's client chunk, or null when it has none. Call only for a module that is on. */

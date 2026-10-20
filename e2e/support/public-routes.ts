@@ -67,6 +67,19 @@ export const PUBLIC_ROUTES: PublicRoute[] = [
 		status: 404,
 		reason: "Public booking request; unknown slug",
 	},
+	{ method: "GET", path: "/api/public/drive/e2e_probe", status: 404, reason: "Drive public link; unknown token" },
+	{
+		method: "GET",
+		path: "/api/public/drive/e2e_probe/content",
+		status: 404,
+		reason: "Drive public link download; unknown token",
+	},
+	{
+		method: "POST",
+		path: "/api/public/drive/e2e_probe/unlock",
+		status: 404,
+		reason: "Drive public link password; unknown token",
+	},
 	{
 		method: "GET",
 		path: "/api/auth/accounts/e2e_probe/avatar",

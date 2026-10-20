@@ -15,6 +15,7 @@ const {
 	MAX_MESSAGE_TEXT_BYTES,
 	listMessageSlots,
 	listComposerSlots,
+	listAttachmentSlots,
 	slotsToLoad,
 } = await bundleModules("kite-module-host-utils-", [
 	["cleanDisplayText", "src/lib/modules/display-text-utils.ts"],
@@ -22,7 +23,7 @@ const {
 		"utf8Excerpt, pickMessageHeaders, recentBounds, containsPattern, isFromSender, cleanNotice, ownedActionDescriptor, refusedAction, MAX_MESSAGE_TEXT_BYTES",
 		"src/lib/modules/host-utils.ts",
 	],
-	["listMessageSlots, listComposerSlots, slotsToLoad", "src/lib/modules/composer-slot-utils.ts"],
+	["listMessageSlots, listComposerSlots, listAttachmentSlots, slotsToLoad", "src/lib/modules/composer-slot-utils.ts"],
 ]);
 
 const bytes = (text) => new TextEncoder().encode(text).length;
@@ -181,4 +182,35 @@ test("message menu slots list enabled modules only, in order, and load only once
 	);
 	assert.deepEqual(slotsToLoad(listed, false), []);
 	assert.equal(slotsToLoad(listed, true).length, 3);
+});
+
+test("attachment menu slots list enabled modules only, in order, and never mix with message slots", () => {
+	const modules = [
+		{
+			id: "drive",
+			attachmentSlots: [{ id: "drive.save", slot: "attachment-menu", order: 30, label: "Save" }],
+			messageSlots: [{ id: "drive.message", slot: "message-menu", order: 1, label: "M" }],
+		},
+		{ id: "finance", attachmentSlots: [{ id: "finance.doc", slot: "attachment-menu", order: 10, label: "Doc" }] },
+		{ id: "import" },
+	];
+	assert.deepEqual(
+		listAttachmentSlots(modules, ["drive", "finance", "import"], "attachment-menu").map((slot) => [
+			slot.id,
+			slot.moduleId,
+		]),
+		[
+			["finance.doc", "finance"],
+			["drive.save", "drive"],
+		],
+	);
+	assert.deepEqual(
+		listAttachmentSlots(modules, ["finance"], "attachment-menu").map((slot) => slot.id),
+		["finance.doc"],
+	);
+	assert.deepEqual(listAttachmentSlots(modules, [], "attachment-menu"), []);
+	assert.deepEqual(
+		listMessageSlots(modules, ["drive"], "message-menu").map((slot) => slot.id),
+		["drive.message"],
+	);
 });

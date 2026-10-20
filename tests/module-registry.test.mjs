@@ -29,7 +29,7 @@ const {
 	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
 ]);
 
-const IDS = ["calendar", "booking", "templates", "import", "finance"];
+const IDS = ["calendar", "booking", "templates", "import", "finance", "drive"];
 const CORE_QUEUE_KINDS = [
 	"email.scheduled",
 	"agent.draft",
@@ -42,7 +42,7 @@ const covers = (prefix, path) => path === prefix || path.startsWith(`${prefix}/`
 const allPrefixes = (key) =>
 	MODULE_MANIFESTS.flatMap((manifest) => manifest[key].map((item) => ({ moduleId: manifest.id, ...item })));
 
-test("the registry lists the five builtin modules in a fixed order", () => {
+test("the registry lists the six builtin modules in a fixed order", () => {
 	assert.deepEqual(MODULE_IDS, IDS);
 	assert.deepEqual(
 		MODULE_CAPABILITIES.map((entry) => entry.moduleId),
@@ -56,6 +56,7 @@ test("the registry lists the five builtin modules in a fixed order", () => {
 	assert.equal(isModuleId(undefined), false);
 	assert.equal(getModuleManifest("booking").name, "Booking");
 	assert.equal(getModuleManifest("finance").name, "Money Watch");
+	assert.equal(getModuleManifest("drive").name, "Drive");
 	assert.throws(() => getModuleManifest("nope"), /Unknown module/);
 });
 
@@ -85,7 +86,7 @@ test("page and API prefixes never overlap and never cover export", () => {
 		allPrefixes("apiPrefixes")
 			.filter((item) => item.public)
 			.map((item) => item.prefix),
-		["/api/public/booking"],
+		["/api/public/booking", "/api/public/drive"],
 	);
 });
 
@@ -171,8 +172,32 @@ test("manifests carry what the spec lists for each module", () => {
 	const sidebar = MODULE_MANIFESTS.flatMap((manifest) => manifest.nav).filter((item) => item.placement === "sidebar");
 	assert.deepEqual(
 		sidebar.map((item) => item.id),
-		["finance.subscriptions"],
+		["finance.subscriptions", "drive.files"],
 	);
+	const drive = getModuleManifest("drive");
+	assert.equal(drive.defaultEnabled, true);
+	assert.deepEqual(drive.dependsOn, []);
+	assert.deepEqual(drive.pages, [{ prefix: "/drive" }, { prefix: "/d", public: true }]);
+	assert.deepEqual(drive.apiPrefixes, [{ prefix: "/api/drive" }, { prefix: "/api/public/drive", public: true }]);
+	assert.deepEqual(
+		drive.recordKinds.map((item) => item.kind),
+		["drive:file"],
+	);
+	assert.deepEqual(drive.cronTasks, [{ name: "purgeDrive", schedule: "0 2 * * *", capability: "purgeDrive" }]);
+	assert.deepEqual(
+		drive.nav.map((item) => [item.placement, item.href]),
+		[
+			["mailbox-selector", "/drive"],
+			["sidebar", "/drive"],
+			["admin-nav", "/drive/settings"],
+		],
+	);
+	assert.deepEqual(
+		drive.attachmentSlots.map((slot) => [slot.id, slot.slot, slot.label]),
+		[["drive.save-attachment", "attachment-menu", "Save to Drive"]],
+	);
+	assert.equal(drive.reasonTexts["module_disabled:drive"], "Drive is turned off");
+	assert.ok(drive.reasonTexts.migration_pending);
 });
 
 test("nav counts are fetched from one of the module's own API prefixes", () => {
@@ -214,6 +239,7 @@ test("commands use their own module id and valid targets", () => {
 		"calendar.go_to_date",
 		"calendar.new_event",
 		"calendar.open",
+		"drive.open",
 		"finance.add",
 		"finance.open",
 		"import.open",
@@ -237,6 +263,27 @@ test("message slots sit in the message menu under their own module id and match 
 	for (const manifest of MODULE_MANIFESTS)
 		for (const slot of manifest.composerSlots)
 			assert.ok(!ids.has(slot.id), `${slot.id} is both a composer and a message slot`);
+});
+
+test("attachment slots sit in the attachment menu under their own module id and match the client slice", () => {
+	const ids = new Set(
+		MODULE_MANIFESTS.flatMap((manifest) => [
+			...manifest.composerSlots.map((slot) => slot.id),
+			...(manifest.messageSlots ?? []).map((slot) => slot.id),
+		]),
+	);
+	for (const manifest of MODULE_MANIFESTS) {
+		for (const slot of manifest.attachmentSlots ?? []) {
+			assert.equal(slot.slot, "attachment-menu", slot.id);
+			assert.ok(slot.id.startsWith(`${manifest.id}.`), slot.id);
+			assert.ok(!ids.has(slot.id), `duplicate slot ${slot.id}`);
+			ids.add(slot.id);
+			assert.ok(Number.isFinite(slot.order), slot.id);
+			assert.ok(slot.label.trim().length > 0 && slot.label.length <= 40, slot.id);
+		}
+		const slice = CLIENT_MODULES.find((item) => item.id === manifest.id);
+		assert.deepEqual(slice?.attachmentSlots ?? [], manifest.attachmentSlots ?? [], manifest.id);
+	}
 });
 
 test("manifests import nothing server-only, no zod and no React", () => {
@@ -535,7 +582,8 @@ test("listCapabilities returns the enabled modules' descriptors for a surface in
 	assert.deepEqual(names("webhook_event", ["booking"]), ["appointmentCreated"]);
 	assert.deepEqual(names("jmap_method", IDS), []);
 	assert.deepEqual(names("cron", ["import"]), ["resumeStalledImports"]);
-	assert.deepEqual(names("cron", IDS), ["resumeStalledImports", "remindRenewals"]);
+	assert.deepEqual(names("cron", IDS), ["resumeStalledImports", "remindRenewals", "purgeDrive"]);
+	assert.deepEqual(names("resolve_refs", ["drive"]), ["resolveRefs"]);
 	assert.deepEqual(names("webhook_event", ["finance"]), ["subscriptionDetected", "renewalDue"]);
 });
 

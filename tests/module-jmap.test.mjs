@@ -228,10 +228,14 @@ test("the real session is the same with every module on, every module off, or no
 	const everyModule = buildSession(
 		await context(
 			t,
-			jmapModuleSurface(MODULE_CAPABILITIES, ["calendar", "booking", "templates", "import", "finance"], async () => ({
-				ok: true,
-				output: {},
-			})),
+			jmapModuleSurface(
+				MODULE_CAPABILITIES,
+				["calendar", "booking", "templates", "import", "finance", "drive"],
+				async () => ({
+					ok: true,
+					output: {},
+				}),
+			),
 		),
 		"s",
 	);

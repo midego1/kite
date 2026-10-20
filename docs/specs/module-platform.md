@@ -40,7 +40,7 @@ Core is everything a mail server needs to be useful on its own. It cannot be tur
 | Auto-reply, operational alerts | Core for now (§2.3). |
 | Contacts (as stored today, `contacts` upserted on delivery) | Used by the mail pipeline and automatic reading facts. There is no contacts page; `contact:contact` is reserved as a core record kind for when one is built. |
 | Backups, migrations, admin settings, audit log | Install administration. |
-| Drive and storage (when built) | Planned as core in [Drive and storage](drive-storage.md); attachments depend on it. |
+| Storage (when built) | The storage interface, S3-compatible stores and the Admin → Storage page are core in [Drive and storage](drive-storage.md), because mail and backups use them. Drive itself was revised on 2026-10-16 to be a module (`drive`, on by default, §2.3). |
 
 Export and import share nothing that gating could hide by accident: separate pages (`/settings/export`, `/settings/import`), separate API prefixes (`/api/export`, `/api/import`) and separate libraries. They share two things, both handled in core: the "Mailbox" group in the Settings navigation (`src/components/settings/section-nav-utils.ts`), where Export stays a core item and Import becomes a module nav item, and the two legacy redirect pages `src/app/(dashboard)/import-export/page.tsx` and `src/app/(settings)/settings/import-export/page.tsx`, which redirect to `/settings/import` when Mail import is enabled for the viewer and to `/settings/export` otherwise (§10.1).
 
@@ -62,7 +62,7 @@ Booking writes appointments into `calendar_events` and shows them in the calenda
 | Operational alerts | M | Alerts are how an operator learns that backups or migrations are failing; making them switchable is a safety regression unless the Modules page warns clearly. It also needs the `*/5` cron branch and the dashboard banner moved behind the registry. Revisit once the platform has shipped. |
 | Auto-reply / vacation | M | It runs inside delivery (`sendMailboxAutoReply` in `src/lib/email/inbound.ts`) and touches about 15 core files. Moving it needs a delivery hook in the registry first. |
 
-Everything else in the inventory (rules, spam, folders, snooze, sharing, aliases, forwarding, branding, shared attachment links, pruning, Drive and mailbox export) stays core.
+Everything else in the inventory (rules, spam, folders, snooze, sharing, aliases, forwarding, branding, shared attachment links, pruning, storage and mailbox export) stays core. Drive is the exception added later: [Drive and storage](drive-storage.md) builds it as the module `drive` (`defaultEnabled: true`), and adds an `admin-nav` placement and an `attachment-menu` slot to this platform.
 
 ## 3. Manifest, capability descriptors and the call contract
 

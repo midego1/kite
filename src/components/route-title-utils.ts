@@ -29,6 +29,8 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
 	["/calendar", "Calendar"],
 	["/booking", "Bookings"],
 	["/finance", "Subscriptions"],
+	["/drive", "Drive"],
+	["/drive/settings", "Drive settings"],
 	["/compose", "Compose"],
 	["/for-you", "For you"],
 	["/kite-activity", "Activity"],

@@ -34,7 +34,7 @@ const {
 	["CORE_API_KEY_SCOPES, CORE_MCP_SCOPES", "src/lib/api/scopes.ts"],
 ]);
 
-const ALL = ["calendar", "booking", "templates", "import", "finance"];
+const ALL = ["calendar", "booking", "templates", "import", "finance", "drive"];
 const CALENDAR_TOOLS = [
 	"get_schedule",
 	"search_events",

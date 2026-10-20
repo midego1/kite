@@ -27,6 +27,7 @@ const {
 const scratch = makeBundleDirectory("kite-finance-migration-dirs-");
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const preDirectory = copyMigrationsBefore(scratch, 63);
+const throughDirectory = copyMigrationsBefore(scratch, 64);
 const MIGRATION = "0063_add_finance_module.sql";
 const TABLES = ["finance_subscriptions", "finance_charges"];
 
@@ -219,7 +220,7 @@ test("upgrading from 0062 adds only the two tables and changes no existing one",
 	seedAccountData(db);
 	const tablesBefore = all(db, "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").map((r) => r.name);
 	const before = Object.fromEntries(tablesBefore.map((table) => [table, columns(db, table)]));
-	assert.deepEqual(await applyMigrations(db, migrationsDir), [MIGRATION]);
+	assert.deepEqual(await applyMigrations(db, throughDirectory), [MIGRATION]);
 	const tablesAfter = all(db, "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").map((r) => r.name);
 	assert.deepEqual(
 		tablesAfter.filter((table) => !tablesBefore.includes(table)),

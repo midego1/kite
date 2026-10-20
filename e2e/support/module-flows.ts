@@ -42,7 +42,7 @@ export async function expectPaletteCommands(page: Page, query: string, titles: s
 	await expect(search).toHaveCount(0);
 }
 
-const MODULE_API = /^\/api\/(calendar|booking|templates|import|finance)(\/|$)/;
+const MODULE_API = /^\/api\/(calendar|booking|templates|import|finance|drive)(\/|$)/;
 
 /**
  * Records what a page does that a mail-only install must never do: answers of 500 and above, requests

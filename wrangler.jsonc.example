@@ -47,6 +47,11 @@
 			"namespace_id": "1004",
 			"simple": { "limit": 600, "period": 60 },
 		},
+		{
+			"name": "DRIVE_LINK_RATE_LIMIT",
+			"namespace_id": "1005",
+			"simple": { "limit": 60, "period": 60 },
+		},
 	],
 	"observability": {
 		"enabled": true,

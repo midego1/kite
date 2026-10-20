@@ -3,7 +3,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { getAttachmentForUser } from "@/lib/email/attachments";
 import { getDownloadContentType, getInlineContentType } from "@/lib/http/content-type-utils";
 import type { AttachmentRouteParams } from "./types";
-import { getAttachmentContentDisposition } from "./utils";
+import { getContentDisposition } from "@/lib/http/content-disposition-utils";
 
 export async function GET(request: Request, { params }: AttachmentRouteParams) {
 	const env = getEnv();
@@ -27,7 +27,7 @@ export async function GET(request: Request, { params }: AttachmentRouteParams) {
 	object.writeHttpMetadata(headers);
 	headers.set("Content-Type", inline && inlineType ? inlineType : getDownloadContentType(attachment.contentType));
 	headers.set("Content-Length", String(attachment.size));
-	headers.set("Content-Disposition", getAttachmentContentDisposition(attachment.filename, inline));
+	headers.set("Content-Disposition", getContentDisposition(attachment.filename, inline));
 	headers.set("X-Content-Type-Options", "nosniff");
 	headers.set(
 		"Content-Security-Policy",

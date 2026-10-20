@@ -1,10 +1,11 @@
 import { drizzle } from "drizzle-orm/d1";
 import * as coreTables from "@/db/schema";
 import * as autoReadTables from "@/db/schema/agent-auto-read";
+import * as driveTables from "@/db/schema/drive";
 import * as financeTables from "@/db/schema/finance";
 import * as moduleTables from "@/db/schema/modules";
 
-const schema = { ...coreTables, ...autoReadTables, ...moduleTables, ...financeTables };
+const schema = { ...coreTables, ...autoReadTables, ...moduleTables, ...financeTables, ...driveTables };
 
 export type AppDatabase = ReturnType<typeof createDb>;
 

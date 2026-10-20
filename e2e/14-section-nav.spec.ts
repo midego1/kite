@@ -43,6 +43,7 @@ const adminPages = [
 	{ label: "Alerts", path: "/alerts", heading: "Alerts" },
 	{ label: "AI usage", path: "/ai-usage", heading: "AI Usage" },
 	{ label: "Branding", path: "/branding", heading: "Branding" },
+	{ label: "Drive", path: "/drive/settings", heading: "Drive" },
 ];
 
 const primaryOnlyLabels = [
@@ -357,6 +358,7 @@ test("admin pages use the Settings layout with the mail sidebar, top bar and Adm
 		"Backups",
 		"Alerts",
 		"Activity",
+		"Drive",
 	]);
 
 	// The overview keeps its heading and the database card but no grid of link cards; the menu is the only nav.

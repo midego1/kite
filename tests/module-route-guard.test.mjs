@@ -85,11 +85,17 @@ test("the scan finds the route files of every module with routes", () => {
 		"import/messages/route.ts",
 		"finance/subscriptions/route.ts",
 		"finance/subscriptions/[id]/route.ts",
+		"drive/items/route.ts",
+		"drive/uploads/[id]/parts/[n]/route.ts",
+		"drive/settings/quotas/[userId]/route.ts",
+		"public/drive/[token]/route.ts",
+		"public/drive/[token]/content/route.ts",
+		"public/drive/[token]/unlock/route.ts",
 	])
 		assert.ok(names.includes(expected), `${expected} is not scanned`);
 	assert.deepEqual(
 		new Set(guardedRoutes.map(({ id }) => id)),
-		new Set(["calendar", "booking", "templates", "import", "finance"]),
+		new Set(["calendar", "booking", "templates", "import", "finance", "drive"]),
 	);
 });
 
@@ -347,6 +353,9 @@ test("every module page tree has a gating layout", () => {
 	assert.match(layout("src/app/(import)/layout.tsx"), /requireModulePage\("import"\)/);
 	assert.match(layout("src/app/(finance)/layout.tsx"), /requireModulePage\("finance"\)/);
 	assert.match(layout("src/app/(finance)/layout.tsx"), /export const dynamic = "force-dynamic"/);
+	assert.match(layout("src/app/(drive)/layout.tsx"), /requireModulePage\("drive"\)/);
+	assert.match(layout("src/app/(drive)/layout.tsx"), /export const dynamic = "force-dynamic"/);
+	assert.match(layout("src/app/d/[token]/layout.tsx"), /requirePublicModulePage\("drive"/);
 	assert.ok(!existsSync(join(root, "src/app/(settings)/settings/export/layout.tsx")), "Export is never gated");
 });
 
@@ -365,6 +374,7 @@ test("module page guards run in the outermost layout of a route group, above any
 	assert.deepEqual(guarded.sort(), [
 		"src/app/(booking)/layout.tsx",
 		"src/app/(calendar)/layout.tsx",
+		"src/app/(drive)/layout.tsx",
 		"src/app/(finance)/layout.tsx",
 		"src/app/(import)/layout.tsx",
 	]);

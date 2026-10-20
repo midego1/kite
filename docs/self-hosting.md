@@ -103,6 +103,11 @@ and the DNS page shows what to set by hand.
 - **Backups.** The daily 02:00 UTC backup and the admin Backups page work
   unchanged; files land under `/data/blobs/backups`. Back up the whole volume
   for a full copy.
+- **Drive files.** Drive stores file contents under `/data/blobs/drive`.
+  Backups made from the admin Backups page hold only their names, folders,
+  shares and links, so back up the volume to keep the files. Uploads pass
+  through the server in 32 MiB parts; a reverse proxy in front of Kite must
+  accept request bodies of that size (for nginx, `client_max_body_size 33m`).
 - **Updates.** Pull the new image and recreate the container; migrations run
   at start.
 - **Logs.** `docker compose logs -f kite`.

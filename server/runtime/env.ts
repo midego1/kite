@@ -69,6 +69,7 @@ export function createNodeRuntime(): NodeRuntime {
 		LOGIN_RATE_LIMIT: openRateLimiter(20, 60),
 		AGENT_RATE_LIMIT: openRateLimiter(120, 60),
 		BOOKING_RATE_LIMIT: openRateLimiter(5, 60),
+		DRIVE_LINK_RATE_LIMIT: openRateLimiter(60, 60),
 		CF_TOKEN: optional("CF_TOKEN"),
 		CF_API_KEY: optional("CF_API_KEY"),
 		CF_EMAIL: optional("CF_EMAIL"),

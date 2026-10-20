@@ -1,4 +1,4 @@
-export type ModuleId = "calendar" | "booking" | "templates" | "import" | "finance";
+export type ModuleId = "calendar" | "booking" | "templates" | "import" | "finance" | "drive";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonSchemaObject = { [key: string]: JsonValue };
@@ -15,11 +15,13 @@ export type RecordKind =
 	| "booking:appointment"
 	| "templates:template"
 	| "import:job"
-	| "finance:subscription";
+	| "finance:subscription"
+	| "drive:file";
 
 export type RecordRef = { kind: RecordKind; id: string };
 
-export type ModuleNavPlacement = "mailbox-selector" | "account-menu" | "module-tabs" | "settings-nav" | "sidebar";
+export type ModuleNavPlacement =
+	"mailbox-selector" | "account-menu" | "module-tabs" | "settings-nav" | "admin-nav" | "sidebar";
 
 export type ModuleNavItem = {
 	id: string;
@@ -28,7 +30,7 @@ export type ModuleNavItem = {
 	/** Resolved by the client registry, so the manifest stays data. */
 	icon: string;
 	placement: ModuleNavPlacement;
-	/** Settings navigation group for `settings-nav` items. */
+	/** The menu group (its label) for `settings-nav` and `admin-nav` items; admin items need an admin to see them. */
 	group?: string;
 	/** A `{ count }` endpoint under one of the module's API prefixes, shown next to a `sidebar` item. */
 	count?: { endpoint: string };
@@ -92,6 +94,19 @@ export type MessageSlotDeclaration = {
 export type MessageSlotSource = { id: ModuleId; messageSlots?: readonly MessageSlotDeclaration[] };
 export type ListedMessageSlot = MessageSlotDeclaration & { moduleId: ModuleId };
 
+/** An entry in the menu of one attachment in the reader; core draws `label`, and the module's slot component gets only the message, mailbox and attachment ids. */
+export type AttachmentSlotDeclaration = {
+	id: string;
+	slot: "attachment-menu";
+	order: number;
+	label: string;
+	/** A lucide icon name, resolved by the client registry like `nav[].icon`. */
+	icon?: string;
+};
+
+export type AttachmentSlotSource = { id: ModuleId; attachmentSlots?: readonly AttachmentSlotDeclaration[] };
+export type ListedAttachmentSlot = AttachmentSlotDeclaration & { moduleId: ModuleId };
+
 /** One key scope as the key-creation forms show it. */
 export type KeyScopeText = { scope: string; label: string; description: string };
 
@@ -115,6 +130,8 @@ export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "com
 	composerSlots?: ComposerSlotDeclaration[];
 	/** Message menu slots the module fills, so the reader lists them without loading the module. */
 	messageSlots?: MessageSlotDeclaration[];
+	/** Attachment menu slots the module fills, so the reader lists them without loading the module. */
+	attachmentSlots?: AttachmentSlotDeclaration[];
 	/** Suggestion kinds the module's `suggestion_kind` capabilities declare, so the reader card can pick the module's client chunk without the registry. */
 	suggestionKinds?: readonly string[];
 	/** Label, reasons, chip rank and icon per kind in `suggestionKinds`, so core surfaces need no per-kind code. */
@@ -145,6 +162,7 @@ export type ModuleManifest = {
 	commands: UiCommand[];
 	composerSlots: ComposerSlotDeclaration[];
 	messageSlots?: MessageSlotDeclaration[];
+	attachmentSlots?: AttachmentSlotDeclaration[];
 	recordKinds: { kind: RecordKind; label: string; unavailableLabel: string }[];
 	webhookEvents: ModuleWebhookEvent[];
 	grants: { grant: string; label: string }[];

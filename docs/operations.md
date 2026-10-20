@@ -287,6 +287,10 @@ runs pull request code with a read-only token, and a separate `comment` job
 holds `pull-requests: write`, never checks out PR code, skips forks and
 upserts one comment (see [quality checks](quality.md#pr-report)).
 
+### Drive files
+
+Drive (`src/lib/drive/`) keeps file contents in the same object store as attachments, under `drive/<itemId>`, and its metadata in the `drive_*` tables (migration 0064). Database backups include the metadata (the `drive` table group, which a configured backup can leave out) but not the contents: back up the R2 bucket or, on Node, the `blobs` folder of the data directory to keep the files. Restoring a database backup without the objects leaves rows whose content answers 404. The daily 02:00 UTC module task `purgeDrive` deletes trashed items older than the retention set under Admin → Drive (default 30 days) and aborts uploads nobody finished within three days; it skips while Drive is off for the install. Public link visits are limited by the `DRIVE_LINK_RATE_LIMIT` binding (namespace `1005`, previews `1105`, 60 requests per minute per IP), and password attempts by `LOGIN_RATE_LIMIT` keyed by IP and link.
+
 ## Recovery and data handling
 
 Start with [incident response](runbooks/incident.md),

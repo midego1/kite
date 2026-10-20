@@ -498,6 +498,7 @@ All screens must work in Kite, Classic and dark mode, use the `blue-*` palette, 
    - Unlock is keyed by `ip:linkId` and allowed 5 per minute, using the same binding with a separate key prefix or `LOGIN_RATE_LIMIT`.
    - Add Node `openRateLimiter(60, 60)` in `server/runtime/env.ts`, the `env.d.ts` type and `wrangler.jsonc.example`.
    - Upload initiation is limited per user (for example 120/min, reusing the binding with a `upload:<userId>` key).
+   - *As built:* `1004`/`1104` were taken by `REMOTE_IMAGE_RATE_LIMIT` before Drive landed, so `DRIVE_LINK_RATE_LIMIT` uses `1005` in prod and `1105` in previews. Unlock attempts use `LOGIN_RATE_LIMIT` (20 per minute) with the key `drive-unlock:<ip>:<linkId>`, since a binding's limit is fixed per namespace. Instead of a per-minute upload limit, an owner can have at most 20 uploads in progress (`DRIVE_MAX_UPLOADS_IN_PROGRESS`), which also bounds reserved quota and open multipart uploads.
 7. **Access control:**
    - Roles are owner, edit and view. A share on any ancestor applies to the whole subtree (port `getDriveRole`).
    - A trashed ancestor hides its descendants.

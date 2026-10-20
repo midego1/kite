@@ -271,6 +271,7 @@
 	"40-upstream-jmap.spec.ts › a capability outside the IETF JMAP namespace is still refused (upstream #155)": 300,
 	"40-upstream-jmap.spec.ts › a client that lists vacationresponse in using still syncs, and that extension's methods are unknown (upstream #155)": 500,
 	"40-upstream-jmap.spec.ts › Email/get and Thread/get answer 200 ids with repeats once each (upstream #157)": 600,
+	"40-upstream-jmap.spec.ts › Email/set accepts RFC 6901-escaped patch keys for a move and a flag (upstream #162)": 400,
 	"41-upstream-badge.spec.ts › a hidden account change clears the badge and refreshes it when visible": 2600,
 	"41-upstream-badge.spec.ts › signing out › clears the app badge": 4100,
 	"41-upstream-badge.spec.ts › the app badge follows the Inbox unread count across all mailboxes": 3400,

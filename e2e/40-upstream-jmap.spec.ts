@@ -91,6 +91,72 @@ test("Email/get and Thread/get answer 200 ids with repeats once each (upstream #
 	expect(new Set(emailIds).size).toBe(emailIds.length);
 });
 
+test("Email/set accepts RFC 6901-escaped patch keys for a move and a flag (upstream #162)", async () => {
+	const listed = await call(CORE, [["Mailbox/get", { accountId, ids: null, properties: ["id", "role"] }, "m"]]);
+	expect(listed.status(), await listed.text()).toBe(200);
+	const boxes = ((await listed.json()) as { methodResponses: Invocation[] }).methodResponses[0][1].list as {
+		id: string;
+		role: string | null;
+	}[];
+	const drafts = boxes.find((box) => box.role === "drafts")!.id;
+	const trash = boxes.find((box) => box.role === "trash")!.id;
+	expect(drafts).toContain("~");
+	expect(trash).toContain("~");
+	const escape = (token: string) => token.replace(/~/g, "~0").replace(/\//g, "~1");
+
+	const created = await call(CORE, [
+		[
+			"Email/set",
+			{
+				accountId,
+				create: {
+					d: {
+						mailboxIds: { [drafts]: true },
+						from: [{ email: SUPPORT_ADDRESS }],
+						subject: uniqueToken("pointer"),
+						bodyValues: { t: { value: "Escaped patch keys" } },
+						textBody: [{ partId: "t", type: "text/plain" }],
+					},
+				},
+			},
+			"c",
+		],
+	]);
+	expect(created.status(), await created.text()).toBe(200);
+	const createResult = ((await created.json()) as { methodResponses: Invocation[] }).methodResponses[0][1];
+	const id = (createResult.created as Record<string, { id: string }> | undefined)?.d?.id;
+	expect(id, JSON.stringify(createResult)).toBeDefined();
+
+	try {
+		const moved = await call(CORE, [
+			[
+				"Email/set",
+				{
+					accountId,
+					update: {
+						[id!]: {
+							[`mailboxIds/${escape(drafts)}`]: null,
+							[`mailboxIds/${escape(trash)}`]: true,
+							"keywords/$flagged": true,
+						},
+					},
+				},
+				"u",
+			],
+			["Email/get", { accountId, ids: [id], properties: ["mailboxIds", "keywords"] }, "g"],
+		]);
+		expect(moved.status(), await moved.text()).toBe(200);
+		const [[, update], [, got]] = ((await moved.json()) as { methodResponses: Invocation[] }).methodResponses;
+		expect(update.notUpdated ?? {}, JSON.stringify(update)).toEqual({});
+		expect(Object.keys(update.updated as Record<string, unknown>)).toEqual([id]);
+		const [email] = got.list as { mailboxIds: Record<string, boolean>; keywords: Record<string, boolean> }[];
+		expect(email.mailboxIds).toEqual({ [trash]: true });
+		expect(email.keywords.$flagged).toBe(true);
+	} finally {
+		await call(CORE, [["Email/set", { accountId, destroy: [id] }, "x"]]);
+	}
+});
+
 test("a capability outside the IETF JMAP namespace is still refused (upstream #155)", async () => {
 	const response = await call([...CORE, "https://example.com/apis/foobar"], [["Core/echo", {}, "e"]]);
 	expect(response.status()).toBe(400);

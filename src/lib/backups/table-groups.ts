@@ -75,13 +75,7 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
  * A document without that field can only prove it is complete for these, so a
  * group added later (drive onwards) may be absent from an older full backup.
  */
-export const LEGACY_BACKUP_TABLE_GROUPS: BackupTableGroupId[] = [
-	"accounts",
-	"mail",
-	"automation",
-	"assistant",
-	"system",
-];
+const LEGACY_BACKUP_TABLE_GROUPS: BackupTableGroupId[] = ["accounts", "mail", "automation", "assistant", "system"];
 
 /** Whether a document leaves out a group its writer knew about, which restore refuses. */
 export function isPartialBackupDocument(document: {

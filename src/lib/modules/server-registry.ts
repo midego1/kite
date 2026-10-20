@@ -2,6 +2,8 @@ import { bookingSchemas } from "./booking/schemas";
 import { bookingHandlers } from "./booking/server";
 import { calendarSchemas } from "./calendar/schemas";
 import { calendarHandlers } from "./calendar/server";
+import { driveSchemas } from "./drive/schemas";
+import { driveHandlers } from "./drive/server";
 import { financeSchemas } from "./finance/schemas";
 import { financeHandlers } from "./finance/server";
 import { importSchemas } from "./import/schemas";
@@ -20,4 +22,5 @@ export const SERVER_MODULES: Record<ModuleId, ServerModule> = {
 	templates: { handlers: templatesHandlers, schemas: templatesSchemas },
 	import: { handlers: importHandlers, schemas: importSchemas },
 	finance: { handlers: financeHandlers, schemas: financeSchemas },
+	drive: { handlers: driveHandlers, schemas: driveSchemas },
 };

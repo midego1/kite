@@ -33,7 +33,7 @@ const {
 	["MODULE_CAPABILITIES", "src/lib/modules/capability-registry.ts"],
 ]);
 
-const ALL = ["calendar", "booking", "templates", "import", "finance"];
+const ALL = ["calendar", "booking", "templates", "import", "finance", "drive"];
 const OWNER = { id: "owner" };
 const manifests = [
 	{ id: "a", name: "A", dependsOn: [], defaultEnabled: true },
@@ -154,7 +154,7 @@ async function database(t) {
 const audits = (db) =>
 	db.db.prepare("SELECT action, actor_user_id, target_user_id, metadata FROM audit_logs ORDER BY rowid").all();
 
-test("the owner view lists the five modules on, in order, with no restrictions", async (t) => {
+test("the owner view lists the six modules on, in order, with no restrictions", async (t) => {
 	const { env } = await database(t);
 	const view = await loadModuleAdminView(env);
 	assert.equal(view.migrationPending, false);
@@ -170,7 +170,7 @@ test("turning a module off and on stores the flag, writes audit rows and is visi
 	assert.deepEqual(await listEnabledModules(env, null), ALL);
 	const off = await setInstallModule(env, OWNER, { moduleId: "templates", enabled: false });
 	assert.deepEqual(off, { ok: true, changed: true });
-	assert.deepEqual(await listEnabledModules(env, null), ["calendar", "booking", "import", "finance"]);
+	assert.deepEqual(await listEnabledModules(env, null), ["calendar", "booking", "import", "finance", "drive"]);
 	assert.equal((await loadModuleAdminView(env)).modules.find((entry) => entry.id === "templates").enabled, false);
 	await setInstallModule(env, OWNER, { moduleId: "templates", enabled: true });
 	assert.deepEqual(
@@ -220,7 +220,7 @@ test("Booking turned off before Calendar stays off when Calendar returns", async
 	await setInstallModule(env, OWNER, { moduleId: "booking", enabled: false });
 	await setInstallModule(env, OWNER, { moduleId: "calendar", enabled: false });
 	await setInstallModule(env, OWNER, { moduleId: "calendar", enabled: true });
-	assert.deepEqual(await listEnabledModules(env, null), ["calendar", "templates", "import", "finance"]);
+	assert.deepEqual(await listEnabledModules(env, null), ["calendar", "templates", "import", "finance", "drive"]);
 });
 
 test("restricting a user writes one audit row per changed module with a user ref and affects only that user", async (t) => {
@@ -235,7 +235,7 @@ test("restricting a user writes one audit row per changed module with a user ref
 	assert.deepEqual(result, { ok: true, changed: 1 });
 	const member = { userId: "member", role: "user", isPrimaryAdmin: false };
 	const other = { userId: "other", role: "user", isPrimaryAdmin: false };
-	assert.deepEqual(await listEnabledModules(env, member), ["calendar", "booking", "templates", "finance"]);
+	assert.deepEqual(await listEnabledModules(env, member), ["calendar", "booking", "templates", "finance", "drive"]);
 	assert.deepEqual(await listEnabledModules(env, other), ALL);
 	const rows = audits(db);
 	assert.equal(rows.length, 1);
@@ -259,6 +259,7 @@ test("restricting a user writes one audit row per changed module with a user ref
 			["templates", true],
 			["import", false],
 			["finance", true],
+			["drive", true],
 		],
 	);
 

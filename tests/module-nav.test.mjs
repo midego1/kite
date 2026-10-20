@@ -10,22 +10,25 @@ const { moduleNavItems, MODULE_MANIFESTS, navSectionsFor, filterNavSections, sea
 		["resolveNavIcon", "src/components/modules/client-registry.ts"],
 	]);
 
-const ALL = ["calendar", "booking", "templates", "import", "finance"];
+const ALL = ["calendar", "booking", "templates", "import", "finance", "drive"];
 const labels = (items) => items.map((item) => item.label);
 const hrefs = (sections) => sections.flatMap((section) => section.items.map((item) => item.href));
 const member = { role: "user", isPrimaryAdmin: false, canManageDomains: false, canManageUsers: false };
 
-test("the mailbox selector shows Calendar and the account menu shows Booking while they are on", () => {
-	assert.deepEqual(labels(moduleNavItems(MODULE_MANIFESTS, "mailbox-selector", ALL)), ["Calendar"]);
+test("the mailbox selector shows Calendar and Drive and the account menu shows Booking while they are on", () => {
+	assert.deepEqual(labels(moduleNavItems(MODULE_MANIFESTS, "mailbox-selector", ALL)), ["Calendar", "Drive"]);
+	assert.deepEqual(labels(moduleNavItems(MODULE_MANIFESTS, "mailbox-selector", ["calendar"])), ["Calendar"]);
 	assert.deepEqual(labels(moduleNavItems(MODULE_MANIFESTS, "account-menu", ALL)), ["Booking"]);
 	assert.deepEqual(moduleNavItems(MODULE_MANIFESTS, "account-menu", ALL)[0].href, "/booking");
 	assert.deepEqual(moduleNavItems(MODULE_MANIFESTS, "mailbox-selector", ["booking"]), []);
 	assert.deepEqual(moduleNavItems(MODULE_MANIFESTS, "account-menu", ["calendar"]), []);
 });
 
-test("the sidebar lists Subscriptions with its count endpoint only while Money Watch is on", () => {
+test("the sidebar lists Subscriptions with its count endpoint only while Money Watch is on, then Drive", () => {
 	const sidebar = moduleNavItems(MODULE_MANIFESTS, "sidebar", ALL);
-	assert.deepEqual(labels(sidebar), ["Subscriptions"]);
+	assert.deepEqual(labels(sidebar), ["Subscriptions", "Drive"]);
+	assert.equal(sidebar[1].href, "/drive");
+	assert.equal(sidebar[1].moduleId, "drive");
 	assert.equal(sidebar[0].href, "/finance");
 	assert.equal(sidebar[0].moduleId, "finance");
 	assert.deepEqual(sidebar[0].count, { endpoint: "/api/finance/badge" });
@@ -33,11 +36,12 @@ test("the sidebar lists Subscriptions with its count endpoint only while Money W
 		moduleNavItems(
 			MODULE_MANIFESTS,
 			"sidebar",
-			ALL.filter((id) => id !== "finance"),
+			ALL.filter((id) => id !== "finance" && id !== "drive"),
 		),
 		[],
 	);
 	assert.notEqual(resolveNavIcon("WalletCards"), resolveNavIcon("NoSuchIcon"));
+	assert.notEqual(resolveNavIcon("HardDrive"), resolveNavIcon("NoSuchIcon"));
 });
 
 test("the calendar tabs list Bookings before Calendar and drop the one that is off", () => {

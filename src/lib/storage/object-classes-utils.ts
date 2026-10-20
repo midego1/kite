@@ -7,7 +7,7 @@ const CLASS_PREFIXES: readonly [ObjectClass, readonly string[]][] = [
 ];
 
 /**
- * @public The class an object key belongs to, from its prefix. Anything unlisted (avatars, branding, alert state,
+ * The class an object key belongs to, from its prefix. Anything unlisted (avatars, branding, alert state,
  * health checks) is `system`, which always stays on the default store so sign-in and branding never depend on an
  * external store.
  */

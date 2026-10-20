@@ -39,7 +39,7 @@ const {
 	["toJsonOutput, withCalendarToolRefs", "src/lib/calendar/tool-ref-utils.ts"],
 ]);
 
-const ALL = ["calendar", "booking", "templates", "import", "finance"];
+const ALL = ["calendar", "booking", "templates", "import", "finance", "drive"];
 const calendarFragment = MODULE_CAPABILITIES.find((entry) => entry.moduleId === "calendar").promptFragment;
 const commandsFor = (enabled) => navigateCommands(listCommands({ enabled }));
 const enumFor = (enabled) => openPageSchema(commandsFor(enabled)).properties.command.enum;

@@ -29,7 +29,7 @@ const {
 	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
 ]);
 
-const IDS = ["calendar", "booking", "templates", "import", "finance"];
+const IDS = ["calendar", "booking", "templates", "import", "finance", "drive"];
 const CORE_QUEUE_KINDS = [
 	"email.scheduled",
 	"agent.draft",
@@ -42,7 +42,7 @@ const covers = (prefix, path) => path === prefix || path.startsWith(`${prefix}/`
 const allPrefixes = (key) =>
 	MODULE_MANIFESTS.flatMap((manifest) => manifest[key].map((item) => ({ moduleId: manifest.id, ...item })));
 
-test("the registry lists the five builtin modules in a fixed order", () => {
+test("the registry lists the six builtin modules in a fixed order", () => {
 	assert.deepEqual(MODULE_IDS, IDS);
 	assert.deepEqual(
 		MODULE_CAPABILITIES.map((entry) => entry.moduleId),
@@ -56,6 +56,7 @@ test("the registry lists the five builtin modules in a fixed order", () => {
 	assert.equal(isModuleId(undefined), false);
 	assert.equal(getModuleManifest("booking").name, "Booking");
 	assert.equal(getModuleManifest("finance").name, "Money Watch");
+	assert.equal(getModuleManifest("drive").name, "Drive");
 	assert.throws(() => getModuleManifest("nope"), /Unknown module/);
 });
 
@@ -171,8 +172,27 @@ test("manifests carry what the spec lists for each module", () => {
 	const sidebar = MODULE_MANIFESTS.flatMap((manifest) => manifest.nav).filter((item) => item.placement === "sidebar");
 	assert.deepEqual(
 		sidebar.map((item) => item.id),
-		["finance.subscriptions"],
+		["finance.subscriptions", "drive.files"],
 	);
+	const drive = getModuleManifest("drive");
+	assert.equal(drive.defaultEnabled, true);
+	assert.deepEqual(drive.dependsOn, []);
+	assert.deepEqual(drive.pages, [{ prefix: "/drive" }, { prefix: "/d" }]);
+	assert.deepEqual(drive.apiPrefixes, [{ prefix: "/api/drive" }, { prefix: "/api/public/drive" }]);
+	assert.deepEqual(
+		drive.recordKinds.map((item) => item.kind),
+		["drive:file"],
+	);
+	assert.deepEqual(drive.cronTasks, [{ name: "purgeDrive", schedule: "0 2 * * *", capability: "purgeDrive" }]);
+	assert.deepEqual(
+		drive.nav.map((item) => [item.placement, item.href]),
+		[
+			["mailbox-selector", "/drive"],
+			["sidebar", "/drive"],
+		],
+	);
+	assert.equal(drive.reasonTexts["module_disabled:drive"], "Drive is turned off");
+	assert.ok(drive.reasonTexts.migration_pending);
 });
 
 test("nav counts are fetched from one of the module's own API prefixes", () => {
@@ -214,6 +234,7 @@ test("commands use their own module id and valid targets", () => {
 		"calendar.go_to_date",
 		"calendar.new_event",
 		"calendar.open",
+		"drive.open",
 		"finance.add",
 		"finance.open",
 		"import.open",
@@ -535,7 +556,8 @@ test("listCapabilities returns the enabled modules' descriptors for a surface in
 	assert.deepEqual(names("webhook_event", ["booking"]), ["appointmentCreated"]);
 	assert.deepEqual(names("jmap_method", IDS), []);
 	assert.deepEqual(names("cron", ["import"]), ["resumeStalledImports"]);
-	assert.deepEqual(names("cron", IDS), ["resumeStalledImports", "remindRenewals"]);
+	assert.deepEqual(names("cron", IDS), ["resumeStalledImports", "remindRenewals", "purgeDrive"]);
+	assert.deepEqual(names("resolve_refs", ["drive"]), ["resolveRefs"]);
 	assert.deepEqual(names("webhook_event", ["finance"]), ["subscriptionDetected", "renewalDue"]);
 });
 

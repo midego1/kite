@@ -13,11 +13,14 @@ const {
 	exportDatabaseRecords,
 	restoreDatabaseRecords,
 	BACKUP_TABLE_GROUPS,
+	listEnabledModules,
+	clearModuleStateCache,
 } = await bundleModules("kite-drive-migration-", [
 	["SqliteDatabase", "server/runtime/sqlite-database.ts"],
 	["applyMigrations", "server/runtime/migrate.ts"],
 	["assertBackupTablesCoverDatabase, exportDatabaseRecords, restoreDatabaseRecords", "src/lib/backups/export.ts"],
 	["BACKUP_TABLE_GROUPS", "src/lib/backups/table-groups.ts"],
+	["listEnabledModules, clearModuleStateCache", "src/lib/modules/state.ts"],
 ]);
 
 const scratch = makeBundleDirectory("kite-drive-migration-dirs-");
@@ -113,9 +116,14 @@ test("shares, links and parts cascade with their item, and the item with its own
 	assert.equal(count(db, "drive_links"), 0);
 });
 
-test("0064 inserts no module row", async (t) => {
+test("0064 inserts no module row, so Drive reads as on by default for everyone", async (t) => {
 	const db = await database(t);
+	seedAccountData(db);
 	assert.equal(all(db, "SELECT module_id FROM module_settings WHERE module_id = 'drive'").length, 0);
+	clearModuleStateCache();
+	const member = { userId: "member", role: "user", isPrimaryAdmin: false };
+	assert.ok((await listEnabledModules({ DB: db }, member)).includes("drive"));
+	assert.ok((await listEnabledModules({ DB: db }, null)).includes("drive"));
 });
 
 test("upgrading from 0063 adds only the Drive tables and changes no existing one", async (t) => {

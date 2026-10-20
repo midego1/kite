@@ -34,7 +34,7 @@ const {
 	["calendarDateFromParam, findEventForUrl, expandCalendarEvents", "src/app/(calendar)/calendar/utils.ts"],
 ]);
 
-const ALL = ["calendar", "booking", "templates", "import", "finance"];
+const ALL = ["calendar", "booking", "templates", "import", "finance", "drive"];
 const ids = (commands) => commands.map((command) => command.id);
 const moduleCommands = MODULE_MANIFESTS.flatMap((manifest) => manifest.commands);
 const everyCommand = [...CORE_COMMANDS, ...moduleCommands];
@@ -80,12 +80,14 @@ test("the spec's module commands exist with the right targets and effects", () =
 		"import.open",
 		"finance.open",
 		"finance.add",
+		"drive.open",
 	]);
 	assert.deepEqual(byId("calendar.new_event").target, { type: "client", action: "open_dialog", handler: "newEvent" });
 	assert.deepEqual(byId("booking.copy_link").target, { type: "client", action: "invoke", handler: "copyLink" });
 	assert.equal(byId("import.open").target.href, "/settings/import");
 	assert.equal(byId("finance.open").target.href, "/finance");
 	assert.equal(byId("finance.add").target.href, "/finance?add=1");
+	assert.equal(byId("drive.open").target.href, "/drive");
 	assert.equal(byId("mail.export").target.href, "/settings/export");
 	assert.equal(byId("mail.export").moduleId, "core");
 	assert.equal(MODULE_MANIFESTS.find((manifest) => manifest.id === "templates").commands.length, 0);
@@ -177,6 +179,7 @@ test("with every module on the list holds the core and module navigation command
 		"booking.open_event_type",
 		"import.open",
 		"finance.open",
+		"drive.open",
 	])
 		assert.ok(listed.includes(id), id);
 	assert.deepEqual(
@@ -189,6 +192,7 @@ test("with every module on the list holds the core and module navigation command
 			"import.open",
 			"finance.open",
 			"finance.add",
+			"drive.open",
 		],
 	);
 });

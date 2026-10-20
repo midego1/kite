@@ -26,6 +26,8 @@ export type ObjectStore = {
 export type Storage = {
 	/** The store new objects of a class are written to. */
 	storeFor(objectClass: ObjectClass): ObjectStore;
+	/** The store a new object with this key is written to, by the class its prefix belongs to. */
+	storeForKey(key: string): ObjectStore;
 	/** A store by id, for objects that recorded where they live; null for an unknown id. */
 	store(id: string): ObjectStore | null;
 };

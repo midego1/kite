@@ -1,0 +1,58 @@
+import { bucketOfItem } from "./objects";
+import { driveContentHeaders, driveEtag, requestedRange } from "./range-utils";
+import type { DriveRow } from "./types";
+
+const notStored = () =>
+	Response.json(
+		{ error: "The file's contents are not in storage. It may come from a backup restored without its files." },
+		{ status: 404, headers: { "Cache-Control": "no-store" } },
+	);
+
+/**
+ * Streams a stored file, same-origin, with `Range` and `If-Range` support for seeking and resumed downloads.
+ * Inline only when asked for and the type is safe to render; otherwise an attachment.
+ */
+export async function streamDriveFile(
+	env: CloudflareEnv,
+	request: Request,
+	item: DriveRow,
+	download: boolean,
+): Promise<Response> {
+	if (item.kind !== "file" || item.status !== "ready" || !item.objectKey)
+		return Response.json({ error: "Not found" }, { status: 404 });
+	const headers = driveContentHeaders(item, !download);
+	const etag = driveEtag(item);
+	const range = requestedRange(request, etag, item.size);
+	if (range === "invalid") {
+		headers.set("Content-Range", `bytes */${item.size}`);
+		return new Response(null, { status: 416, headers });
+	}
+	const bucket = bucketOfItem(env, item);
+	const object = range
+		? await bucket?.get(item.objectKey, { range: { offset: range.start, length: range.end - range.start + 1 } })
+		: await bucket?.get(item.objectKey);
+	if (!object) return notStored();
+	const body = request.method === "HEAD" ? null : object.body;
+	if (!range) {
+		headers.set("Content-Length", String(item.size));
+		return new Response(body, { headers });
+	}
+	headers.set("Content-Range", `bytes ${range.start}-${range.end}/${item.size}`);
+	headers.set("Content-Length", String(range.end - range.start + 1));
+	return new Response(body, { status: 206, headers });
+}
+
+/** Streams a mail attachment the caller was already checked against, with the same safe headers. */
+export function streamAttachment(
+	attachment: { id: string; filename: string; contentType: string; size: number; createdAt?: Date },
+	object: { body: ReadableStream; size?: number },
+	download: boolean,
+): Response {
+	const headers = driveContentHeaders(
+		{ ...attachment, name: attachment.filename, updatedAt: attachment.createdAt ?? new Date(0) },
+		!download,
+	);
+	headers.set("Content-Length", String(object.size ?? attachment.size));
+	headers.delete("Accept-Ranges");
+	return new Response(object.body, { headers });
+}

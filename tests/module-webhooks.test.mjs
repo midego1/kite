@@ -60,7 +60,7 @@ const {
 	["financeCapabilities", "src/lib/modules/finance/capabilities.ts"],
 ]);
 
-const ALL = ["calendar", "booking", "templates", "import", "finance"];
+const ALL = ["calendar", "booking", "templates", "import", "finance", "drive"];
 const install = (off = []) => new Map(ALL.map((id) => [id, !off.includes(id)]));
 const enabledWith = (off) => [...effectiveModules(install(off), new Map(), MODULE_MANIFESTS)];
 const ids = (events) => events.map((event) => event.value);

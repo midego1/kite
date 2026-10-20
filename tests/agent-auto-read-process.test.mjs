@@ -328,7 +328,7 @@ for (const reason of ["external_provider_not_allowed", "rate_limited", "spend_ca
 		const { db, env, raw, sent } = await setup(t, {
 			externalAllowed: reason === "external_provider_not_allowed" ? 0 : 1,
 		});
-		for (const id of ["calendar", "booking", "templates", "import", "finance"])
+		for (const id of ["calendar", "booking", "templates", "import", "finance", "drive"])
 			db.db
 				.prepare(
 					"INSERT INTO module_settings (id, module_id, enabled, updated_at) VALUES (?, ?, 0, 1) ON CONFLICT(module_id) DO UPDATE SET enabled = 0",

@@ -1,3 +1,4 @@
+import { objectClassOf } from "./object-classes-utils";
 import type { KiteBucket, ObjectStore, Storage, StoreCapabilities } from "./types";
 
 export const DEFAULT_STORE_ID = "default";
@@ -25,6 +26,7 @@ export function getStorage(env: Pick<CloudflareEnv, "BUCKET">): Storage {
 	const defaultStore: ObjectStore = { id: DEFAULT_STORE_ID, bucket, capabilities: capabilitiesOf(bucket) };
 	const storage: Storage = {
 		storeFor: () => defaultStore,
+		storeForKey: (key: string) => storage.storeFor(objectClassOf(key)),
 		store: (id: string) => (id === DEFAULT_STORE_ID ? defaultStore : null),
 	};
 	cache.set(bucket, storage);

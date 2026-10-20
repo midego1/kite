@@ -1,6 +1,7 @@
 import { bookingCapabilities } from "./booking/capabilities";
 import { calendarCapabilities } from "./calendar/capabilities";
 import { selectCapabilities, type ListedCapability } from "./capability-utils";
+import { driveCapabilities } from "./drive/capabilities";
 import { financeCapabilities } from "./finance/capabilities";
 import { importCapabilities } from "./import/capabilities";
 import type { CapabilityDescriptor, CapabilitySurface, ModuleCapabilities, ModuleId } from "./module-types";
@@ -13,6 +14,7 @@ export const MODULE_CAPABILITIES: readonly ModuleCapabilities[] = [
 	templatesCapabilities,
 	importCapabilities,
 	financeCapabilities,
+	driveCapabilities,
 ];
 
 function getModuleCapabilities(moduleId: ModuleId): ModuleCapabilities | undefined {

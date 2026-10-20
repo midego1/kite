@@ -1,6 +1,7 @@
 import type { ClientModuleData } from "../module-types";
 import { bookingClientData } from "./booking";
 import { calendarClientData } from "./calendar";
+import { driveClientData } from "./drive";
 import { financeClientData } from "./finance";
 import { importClientData } from "./import";
 import { templatesClientData } from "./templates";
@@ -12,4 +13,5 @@ export const CLIENT_MODULES: readonly ClientModuleData[] = [
 	templatesClientData,
 	importClientData,
 	financeClientData,
+	driveClientData,
 ];

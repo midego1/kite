@@ -15,6 +15,7 @@ import { buildEmailObject, loadAttachmentsByMessage, resolveHeaderProperty } fro
 import { importFlags, parseReceivedAt, resolveDraftsMailbox } from "./email-import-utils";
 import { filterToSql, mailboxRefCondition, sortToSql } from "./email-query";
 import { getEmailState } from "./state";
+import { unescapePointerToken } from "./pointer-utils";
 import { listAccessibleMailboxIdSet, listJmapMailboxes } from "./access";
 import { emailWriteAccess } from "./email-access";
 import { deleteUpload, readUpload, storeRawDraftMime } from "./blobs";
@@ -194,7 +195,8 @@ function targetFromMailboxIds(
 		for (const [key, value] of Object.entries(patch)) {
 			if (!key.startsWith("mailboxIds/")) continue;
 			touched = true;
-			const id = key.slice("mailboxIds/".length);
+			// RFC 8620 §5.3: patch keys are JSON Pointers, so the `~` in a role ref arrives as `~0`.
+			const id = unescapePointerToken(key.slice("mailboxIds/".length));
 			if (value) current.add(id);
 			else current.delete(id);
 		}
@@ -256,7 +258,7 @@ function keywordsFromPatch(patch: Record<string, unknown>): { read?: boolean; st
 		result.starred = !!map[KEYWORD_FLAGGED];
 	}
 	for (const [key, value] of Object.entries(patch)) {
-		if (key.startsWith("keywords/")) apply(key.slice("keywords/".length), value);
+		if (key.startsWith("keywords/")) apply(unescapePointerToken(key.slice("keywords/".length)), value);
 	}
 	return result;
 }

@@ -24,6 +24,7 @@ import {
 	identitySet,
 } from "./identities";
 import { moduleMethodResult } from "./module-utils";
+import { unescapePointerToken } from "./pointer-utils";
 import { getEmailState } from "./state";
 import type {
 	JmapContext,
@@ -69,10 +70,7 @@ const IETF_CAPABILITY_NAMESPACE = "urn:ietf:params:jmap:";
 
 /** JSON Pointer lookup with the JMAP `*` array-flattening extension. */
 function resolvePointer(value: unknown, path: string): unknown {
-	const segments = path
-		.split("/")
-		.slice(1)
-		.map((segment) => segment.replace(/~1/g, "/").replace(/~0/g, "~"));
+	const segments = path.split("/").slice(1).map(unescapePointerToken);
 	let current: unknown = value;
 	for (let index = 0; index < segments.length; index += 1) {
 		const segment = segments[index];

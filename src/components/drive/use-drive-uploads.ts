@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import { createFolder } from "./drive-api";
 import type { DriveUploadEntry } from "./drive-types";
 import { UploadCancelled, uploadDriveFile } from "./drive-upload";
@@ -92,7 +93,14 @@ export function useDriveUploads(onUploaded: () => void) {
 	const uploadFolder = useCallback(
 		async (files: File[], parentId: string | null) => {
 			if (!files.length) return;
-			const folders = await createFolderTree(files, parentId);
+			let folders: Map<string, string | null>;
+			try {
+				folders = await createFolderTree(files, parentId);
+			} catch (error) {
+				onUploaded();
+				toast.error(error instanceof Error ? error.message : "Could not create the folders");
+				return;
+			}
 			onUploaded();
 			await enqueue(
 				files.map((file) => ({

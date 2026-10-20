@@ -1,5 +1,6 @@
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
+import { users } from "@/db/schema";
 import { driveItems, driveLinks } from "@/db/schema/drive";
 import { verifyPassword } from "@/lib/auth/password";
 import { getDriveChain, getDriveItem } from "./access";
@@ -30,8 +31,13 @@ const publicItem = (row: DriveRow) => ({
 	updatedAt: row.updatedAt.toISOString(),
 });
 
+async function ownerActive(db: ReturnType<typeof getDb>, ownerId: string): Promise<boolean> {
+	const [owner] = await db.select({ disabled: users.disabled }).from(users).where(eq(users.id, ownerId)).limit(1);
+	return !!owner && !owner.disabled;
+}
+
 /**
- * Resolves a link token, re-checked on every request: the link is live, links are on, nothing on the way
+ * Resolves a link token, re-checked on every request: the link is live, links are on, the owner's account is enabled, nothing on the way
  * down is trashed, and a descendant `itemId` lies inside the shared subtree. Any failure is null, which
  * every caller answers with the same 404.
  */
@@ -50,7 +56,7 @@ export async function resolvePublicLink(
 	if (!link || !isLinkActive(link, new Date())) return null;
 	if ((await getDriveSettings(env)).linkMaxDays <= 0) return null;
 	const root = await getDriveItem(db, link.itemId);
-	if (!root || root.status !== "ready") return null;
+	if (!root || root.status !== "ready" || !(await ownerActive(db, root.ownerId))) return null;
 	const item = !itemId || itemId === root.id ? root : await getDriveItem(db, itemId);
 	if (!item || item.status !== "ready") return null;
 	const chain = await getDriveChain(db, item);
@@ -120,3 +126,18 @@ export async function unlockLink(
 	if (!verifyPassword(password, link.passwordHash)) return null;
 	return createUnlockValue({ id: link.id, passwordHash: link.passwordHash, expiresAt: link.expiresAt }, new Date());
 }
+
+const PUBLIC_HEADERS = {
+	"Cache-Control": "private, no-store",
+	"Referrer-Policy": "no-referrer",
+	"X-Robots-Tag": "noindex, nofollow",
+};
+
+export function publicJson(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
+	return Response.json(body, { status, headers: { ...PUBLIC_HEADERS, ...headers } });
+}
+
+/** The one answer for every link that does not exist, expired, was revoked, or whose owner lost Drive. */
+export const publicNotFound = () => publicJson({ error: "Not found" }, 404);
+export const publicTooMany = () => publicJson({ error: "Too many requests; try again in a minute" }, 429);
+export const passwordRequired = () => publicJson({ error: "This link needs a password", passwordRequired: true }, 401);

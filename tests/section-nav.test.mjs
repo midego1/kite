@@ -84,6 +84,7 @@ test("Admin groups its pages by task, with AI usage and no separate Audit logs",
 		"/backups",
 		"/alerts",
 		"/activity",
+		"/drive/settings",
 	]);
 	for (const item of adminNavSections.flatMap((section) => section.items)) assert.ok(item.permission, item.href);
 });
@@ -121,16 +122,17 @@ test("only admins get the mode switch", () => {
 
 test("permission gates follow role, primary admin and per-user grants", () => {
 	const visible = (user) => hrefs(filterNavSections(adminNavSections, "", user));
-	assert.equal(visible(primary).length, 15);
+	assert.equal(visible(primary).length, 16);
 	assert.ok(visible(primary).includes("/alerts"));
 	// Domain routing applies to every address on a domain, so it follows the domain grant like Domains does.
-	assert.deepEqual(visible(admin), ["/admin", "/mailboxes", "/accounts"]);
+	assert.deepEqual(visible(admin), ["/admin", "/mailboxes", "/accounts", "/drive/settings"]);
 	assert.deepEqual(visible({ ...admin, canManageDomains: true }), [
 		"/admin",
 		"/domains",
 		"/mailboxes",
 		"/routing",
 		"/accounts",
+		"/drive/settings",
 	]);
 	assert.deepEqual(visible(member), []);
 	assert.deepEqual(visible(null), []);

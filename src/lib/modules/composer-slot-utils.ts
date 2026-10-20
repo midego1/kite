@@ -1,6 +1,9 @@
 import type {
+	AttachmentSlotDeclaration,
+	AttachmentSlotSource,
 	ComposerSlotDeclaration,
 	ComposerSlotSource,
+	ListedAttachmentSlot,
 	ListedComposerSlot,
 	ListedMessageSlot,
 	MessageSlotDeclaration,
@@ -46,6 +49,15 @@ export function listMessageSlots(
 	placement: MessageSlotDeclaration["slot"],
 ): ListedMessageSlot[] {
 	return listSlots(modules, (module) => module.messageSlots, enabled, placement);
+}
+
+/** The entries enabled modules declare for the menu of one reader attachment, in the same order as composer slots. */
+export function listAttachmentSlots(
+	modules: readonly AttachmentSlotSource[],
+	enabled: Iterable<ModuleId>,
+	placement: AttachmentSlotDeclaration["slot"],
+): ListedAttachmentSlot[] {
+	return listSlots(modules, (module) => module.attachmentSlots, enabled, placement);
 }
 
 /** The slots whose client chunk to request now: none until the menu has been opened once. */

@@ -24,6 +24,18 @@ export type ModuleMessageSlot = {
 	Overlay: ComponentType<MessageSlotContext & { open: boolean; onOpenChange: (open: boolean) => void }>;
 };
 
+/** All an attachment menu slot learns about the attachment it was opened on. */
+export type AttachmentSlotContext = {
+	messageId: string;
+	mailboxId: string | null;
+	attachmentId: string;
+};
+
+/** One attachment menu slot: core draws the menu entry from the manifest label and opens this when it is chosen. */
+export type ModuleAttachmentSlot = {
+	Overlay: ComponentType<AttachmentSlotContext & { open: boolean; onOpenChange: (open: boolean) => void }>;
+};
+
 /** What a module's lazy client chunk exports. */
 export type ModuleClient = {
 	/** Client command handlers by the `handler` name in `UiCommand.target`. */
@@ -34,4 +46,6 @@ export type ModuleClient = {
 	composerSlots?: Record<string, ModuleComposerSlot>;
 	/** Message menu slots by the `id` the manifest declares. */
 	messageSlots?: Record<string, ModuleMessageSlot>;
+	/** Attachment menu slots by the `id` the manifest declares. */
+	attachmentSlots?: Record<string, ModuleAttachmentSlot>;
 };

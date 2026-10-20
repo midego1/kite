@@ -85,11 +85,17 @@ test("the scan finds the route files of every module with routes", () => {
 		"import/messages/route.ts",
 		"finance/subscriptions/route.ts",
 		"finance/subscriptions/[id]/route.ts",
+		"drive/items/route.ts",
+		"drive/uploads/[id]/parts/[n]/route.ts",
+		"drive/settings/quotas/[userId]/route.ts",
+		"public/drive/[token]/route.ts",
+		"public/drive/[token]/content/route.ts",
+		"public/drive/[token]/unlock/route.ts",
 	])
 		assert.ok(names.includes(expected), `${expected} is not scanned`);
 	assert.deepEqual(
 		new Set(guardedRoutes.map(({ id }) => id)),
-		new Set(["calendar", "booking", "templates", "import", "finance"]),
+		new Set(["calendar", "booking", "templates", "import", "finance", "drive"]),
 	);
 });
 

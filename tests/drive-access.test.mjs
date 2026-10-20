@@ -263,10 +263,25 @@ test("folders cannot nest deeper than 64 levels", async (t) => {
 test("trash, restore and delete forever; an orphan comes back at the top level", async (t) => {
 	const { db, env } = await setup(t);
 	seedTree(db);
+	const picker = await run(env, () =>
+		listDriveItems(env, OWNER, { view: "my", parentId: null, query: "", types: [], foldersOnly: true, cursor: null }),
+	);
+	assert.ok(picker.body.items.length > 0);
+	assert.ok(
+		picker.body.items.every((item) => item.kind === "folder"),
+		"a folder picker lists folders only",
+	);
 	assert.equal((await run(env, () => bulkItems(env, OWNER, { ids: ["report"], action: "trash" }))).body.count, 1);
 	assert.equal((await run(env, () => bulkItems(env, OWNER, { ids: ["plans"], action: "trash" }))).body.count, 1);
 	const trash = await run(env, () =>
-		listDriveItems(env, OWNER, { view: "trash", parentId: null, query: "", types: [], cursor: null }),
+		listDriveItems(env, OWNER, {
+			view: "trash",
+			parentId: null,
+			query: "",
+			types: [],
+			foldersOnly: false,
+			cursor: null,
+		}),
 	);
 	assert.deepEqual(trash.body.items.map((item) => item.id).sort(), ["plans", "report"]);
 	assert.equal((await run(env, () => bulkItems(env, OWNER, { ids: ["report"], action: "restore" }))).status, 200);
@@ -291,7 +306,7 @@ test("listing pages by cursor, searches by name and shows what is shared with th
 			{ at: 1000 + index, name: `n${index}.txt` },
 		]);
 	insert(db, rows);
-	const query = { view: "recent", parentId: null, query: "", types: [], cursor: null };
+	const query = { view: "recent", parentId: null, query: "", types: [], foldersOnly: false, cursor: null };
 	const first = await run(env, () => listDriveItems(env, OWNER, query));
 	assert.equal(first.body.items.length, 100);
 	assert.ok(first.body.nextCursor);

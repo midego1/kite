@@ -10,12 +10,13 @@ const {
 	CLIENT_MODULES,
 	listComposerSlots,
 	listMessageSlots,
+	listAttachmentSlots,
 	slotsToLoad,
 	messageStatusExclusions,
 } = await bundleModules("kite-module-composer-slots-", [
 	["MODULE_MANIFESTS, moduleOwnedMessageStatuses", "src/lib/modules/registry.ts"],
 	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
-	["listComposerSlots, listMessageSlots, slotsToLoad", "src/lib/modules/composer-slot-utils.ts"],
+	["listComposerSlots, listMessageSlots, listAttachmentSlots, slotsToLoad", "src/lib/modules/composer-slot-utils.ts"],
 	["messageStatusExclusions", "src/lib/modules/message-status-utils.ts"],
 ]);
 
@@ -128,6 +129,7 @@ test("composer and message menu slots share one lazy chunk loader, and the reade
 	for (const file of [
 		"src/components/compose/composer-slot.tsx",
 		"src/components/message-actions/message-menu-slots.tsx",
+		"src/components/message-attachment-menu.tsx",
 	]) {
 		const source = read(file);
 		assert.match(source, /useSlotEntries\(/, file);
@@ -138,6 +140,31 @@ test("composer and message menu slots share one lazy chunk loader, and the reade
 	assert.match(menu, /useMessageMenuSlots\(\{ messageId, mailboxId \}/);
 	assert.doesNotMatch(menu, /finance|calendar|templates|booking/i);
 	assert.deepEqual(listMessageSlots(CLIENT_MODULES, [], "message-menu"), [], "nothing on, no entries");
+});
+
+test("the reader's attachment menu names no module and shows Save to Drive only while Drive is on", () => {
+	const card = read("src/components/message-attachment-card.tsx");
+	const menu = read("src/components/message-attachment-menu.tsx");
+	for (const source of [card, menu]) assert.doesNotMatch(source, /drive|finance|calendar|templates|booking/i);
+	assert.match(menu, /listAttachmentSlots\(CLIENT_MODULES, modules, "attachment-menu"\)/);
+	assert.match(menu, /if \(slots\.length === 0\) return null/);
+	assert.deepEqual(listAttachmentSlots(CLIENT_MODULES, [], "attachment-menu"), [], "nothing on, no entries");
+	assert.deepEqual(
+		listAttachmentSlots(CLIENT_MODULES, ALL, "attachment-menu").map((slot) => [slot.id, slot.label]),
+		[["drive.save-attachment", "Save to Drive"]],
+	);
+	assert.deepEqual(
+		listAttachmentSlots(
+			CLIENT_MODULES,
+			ALL.filter((id) => id !== "drive"),
+			"attachment-menu",
+		),
+		[],
+	);
+	assert.match(
+		read("src/components/modules/drive/client.ts"),
+		/"drive\.save-attachment": \{ Overlay: SaveAttachmentDialog \}/,
+	);
 });
 
 test("the message list route excludes owned statuses through the registry helper", () => {

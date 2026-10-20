@@ -108,3 +108,24 @@ export function readCookie(header: string | null, name: string): string | undefi
 	}
 	return undefined;
 }
+
+/**
+ * The `Set-Cookie` value for an unlocked link: readable only by the link's own API paths, never by script,
+ * and never sent from another site.
+ */
+export function unlockCookieHeader(
+	linkId: string,
+	token: string,
+	unlock: { value: string; maxAge: number },
+	secure: boolean,
+): string {
+	const parts = [
+		`${unlockCookieName(linkId)}=${unlock.value}`,
+		`Max-Age=${unlock.maxAge}`,
+		`Path=/api/public/drive/${token}`,
+		"HttpOnly",
+		"SameSite=Strict",
+	];
+	if (secure) parts.push("Secure");
+	return parts.join("; ");
+}

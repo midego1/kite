@@ -1,3 +1,7 @@
+import { getDb } from "@/db";
+import type { SessionUser } from "@/lib/auth/types";
+import { getDriveItem, getDriveRole } from "./access";
+import { readableAttachment } from "./attachments";
 import { bucketOfItem } from "./objects";
 import { driveContentHeaders, driveEtag, requestedRange } from "./range-utils";
 import type { DriveRow } from "./types";
@@ -55,4 +59,42 @@ export function streamAttachment(
 	headers.set("Content-Length", String(object.size ?? attachment.size));
 	headers.delete("Accept-Ranges");
 	return new Response(object.body, { headers });
+}
+
+const notFoundResponse = () => Response.json({ error: "Not found" }, { status: 404 });
+
+/**
+ * `GET /api/drive/files/[id]/content?disposition=`: a file the user can see; the owner may also open it
+ * from the trash. Anything else answers the same 404.
+ */
+export async function userFileResponse(
+	env: CloudflareEnv,
+	user: Pick<SessionUser, "id">,
+	request: Request,
+	id: string,
+): Promise<Response> {
+	const db = getDb(env);
+	const item = await getDriveItem(db, id);
+	if (!item || item.kind !== "file") return notFoundResponse();
+	const { role } = await getDriveRole(db, user.id, item, { allowTrashed: item.ownerId === user.id });
+	if (!role) return notFoundResponse();
+	const download = new URL(request.url).searchParams.get("disposition") === "attachment";
+	return streamDriveFile(env, request, item, download);
+}
+
+/** `GET /api/drive/attachments/[id]/content`: by the same access rule as the mail attachment route. */
+export async function attachmentResponse(
+	env: CloudflareEnv,
+	user: SessionUser,
+	request: Request,
+	id: string,
+): Promise<Response> {
+	const source = await readableAttachment(env, user, id);
+	if (!source) return notFoundResponse();
+	const download = new URL(request.url).searchParams.get("disposition") === "attachment";
+	return streamAttachment(
+		{ ...source.attachment, createdAt: source.attachment.createdAt ?? undefined },
+		source.object,
+		download,
+	);
 }

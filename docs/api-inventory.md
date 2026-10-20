@@ -91,6 +91,24 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/drafts/[id]/attachments`                         | POST                   | [source](../src/app/api/drafts/[id]/attachments/route.ts)                         |
 | `/api/drafts/[id]`                                     | DELETE, GET, PATCH     | [source](../src/app/api/drafts/[id]/route.ts)                                     |
 | `/api/drafts`                                          | GET, POST              | [source](../src/app/api/drafts/route.ts)                                          |
+| `/api/drive/attachments/[id]/content`                  | GET                    | [source](../src/app/api/drive/attachments/[id]/content/route.ts)                  |
+| `/api/drive/attachments/[id]/save`                     | POST                   | [source](../src/app/api/drive/attachments/[id]/save/route.ts)                     |
+| `/api/drive/attachments`                               | GET                    | [source](../src/app/api/drive/attachments/route.ts)                               |
+| `/api/drive/files/[id]/content`                        | GET                    | [source](../src/app/api/drive/files/[id]/content/route.ts)                        |
+| `/api/drive/folders`                                   | POST                   | [source](../src/app/api/drive/folders/route.ts)                                   |
+| `/api/drive/items/[id]/links`                          | GET, POST              | [source](../src/app/api/drive/items/[id]/links/route.ts)                          |
+| `/api/drive/items/[id]`                                | DELETE, GET, PATCH     | [source](../src/app/api/drive/items/[id]/route.ts)                                |
+| `/api/drive/items/[id]/shares`                         | DELETE, GET, POST      | [source](../src/app/api/drive/items/[id]/shares/route.ts)                         |
+| `/api/drive/items/bulk`                                | POST                   | [source](../src/app/api/drive/items/bulk/route.ts)                                |
+| `/api/drive/items`                                     | GET                    | [source](../src/app/api/drive/items/route.ts)                                     |
+| `/api/drive/links/[id]`                                | DELETE, PATCH          | [source](../src/app/api/drive/links/[id]/route.ts)                                |
+| `/api/drive/settings/quotas/[userId]`                  | DELETE, PUT            | [source](../src/app/api/drive/settings/quotas/[userId]/route.ts)                  |
+| `/api/drive/settings`                                  | GET, PATCH             | [source](../src/app/api/drive/settings/route.ts)                                  |
+| `/api/drive/settings/usage`                            | GET                    | [source](../src/app/api/drive/settings/usage/route.ts)                            |
+| `/api/drive/uploads/[id]/complete`                     | POST                   | [source](../src/app/api/drive/uploads/[id]/complete/route.ts)                     |
+| `/api/drive/uploads/[id]/parts/[n]`                    | PUT                    | [source](../src/app/api/drive/uploads/[id]/parts/[n]/route.ts)                    |
+| `/api/drive/uploads/[id]`                              | DELETE                 | [source](../src/app/api/drive/uploads/[id]/route.ts)                              |
+| `/api/drive/uploads`                                   | POST                   | [source](../src/app/api/drive/uploads/route.ts)                                   |
 | `/api/export/messages`                                 | GET                    | [source](../src/app/api/export/messages/route.ts)                                 |
 | `/api/finance/badge`                                   | GET                    | [source](../src/app/api/finance/badge/route.ts)                                   |
 | `/api/finance/detect`                                  | POST                   | [source](../src/app/api/finance/detect/route.ts)                                  |
@@ -130,6 +148,9 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/profile/avatar`                                  | DELETE, GET, POST      | [source](../src/app/api/profile/avatar/route.ts)                                  |
 | `/api/public/booking/[eventId]`                        | GET, POST              | [source](../src/app/api/public/booking/[eventId]/route.ts)                        |
 | `/api/public/booking`                                  | GET                    | [source](../src/app/api/public/booking/route.ts)                                  |
+| `/api/public/drive/[token]/content`                    | GET                    | [source](../src/app/api/public/drive/[token]/content/route.ts)                    |
+| `/api/public/drive/[token]`                            | GET                    | [source](../src/app/api/public/drive/[token]/route.ts)                            |
+| `/api/public/drive/[token]/unlock`                     | POST                   | [source](../src/app/api/public/drive/[token]/unlock/route.ts)                     |
 | `/api/remote-images`                                   | GET                    | [source](../src/app/api/remote-images/route.ts)                                   |
 | `/api/routing-rules/[id]`                              | DELETE, PATCH          | [source](../src/app/api/routing-rules/[id]/route.ts)                              |
 | `/api/routing-rules/domain/[id]`                       | DELETE, PATCH          | [source](../src/app/api/routing-rules/domain/[id]/route.ts)                       |

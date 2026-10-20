@@ -79,9 +79,12 @@ const settingsNavSections: NavSection[] = [
 	},
 ];
 
-/** Adds the Settings items the modules declare to their groups, in manifest order among the core ones. */
-function withModuleItems(sections: NavSection[]): NavSection[] {
-	const items = moduleNavItems(CLIENT_MODULES, "settings-nav");
+/**
+ * Adds the items the modules declare for a menu to their groups, in manifest order among the core ones.
+ * Admin menu items always carry the admin permission, so searching from Settings never shows one to a member.
+ */
+function withModuleItems(sections: NavSection[], placement: "settings-nav" | "admin-nav"): NavSection[] {
+	const items = moduleNavItems(CLIENT_MODULES, placement);
 	return sections.map((section) => {
 		const added = items.filter((item) => item.group === section.label);
 		if (!added.length) return section;
@@ -94,6 +97,7 @@ function withModuleItems(sections: NavSection[]): NavSection[] {
 				icon: resolveNavIcon(entry.icon),
 				keywords: entry.keywords?.join(" "),
 				moduleId: entry.moduleId,
+				...(placement === "admin-nav" ? { permission: "admin" as const } : {}),
 			} satisfies NavItem,
 		}));
 		return { ...section, items: [...fromModules, ...core].sort((a, b) => a.order - b.order).map(({ item }) => item) };
@@ -200,8 +204,8 @@ const adminNavSections: NavSection[] = [
 ];
 
 const sectionsByMode: Record<NavMode, NavSection[]> = {
-	settings: withModuleItems(settingsNavSections),
-	admin: adminNavSections,
+	settings: withModuleItems(settingsNavSections, "settings-nav"),
+	admin: withModuleItems(adminNavSections, "admin-nav"),
 };
 
 export const navModeLabels: Record<NavMode, string> = { settings: "Settings", admin: "Admin" };
@@ -219,7 +223,7 @@ export function isActiveNavPath(pathname: string, href: string): boolean {
 }
 
 export function getNavMode(pathname: string): NavMode {
-	const isAdmin = adminNavSections.some((section) =>
+	const isAdmin = sectionsByMode.admin.some((section) =>
 		section.items.some((item) => isActiveNavPath(pathname, item.href)),
 	);
 	return isAdmin ? "admin" : "settings";

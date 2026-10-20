@@ -24,6 +24,19 @@ export const driveClientData: ClientModuleData = {
 			keywords: KEYWORDS,
 			order: 30,
 		},
+		{
+			id: "drive.settings",
+			label: "Drive",
+			href: "/drive/settings",
+			icon: "HardDrive",
+			placement: "admin-nav",
+			group: "System",
+			keywords: ["drive", "files", "storage", "quota", "links", "trash", "retention"],
+			order: 30,
+		},
+	],
+	attachmentSlots: [
+		{ id: "drive.save-attachment", slot: "attachment-menu", order: 30, label: "Save to Drive", icon: "HardDrive" },
 	],
 	commands: [
 		{

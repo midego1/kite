@@ -360,6 +360,7 @@ export default function MessageDetailPage() {
 											key={attachment.id}
 											attachment={attachment}
 											messageId={message.id}
+											mailboxId={message.mailboxId ?? null}
 											onPreview={setPreviewAttachment}
 										/>
 									))}

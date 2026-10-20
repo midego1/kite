@@ -45,6 +45,9 @@ const {
 	containsPattern,
 	parseDriveCategories,
 	isDriveCategory,
+	unlockCookieHeader,
+	allowPublicLinkRequest,
+	allowLinkUnlockAttempt,
 } = await bundleModules("kite-drive-utils-", [
 	[
 		"normalizeDriveName, canEditDrive, driveObjectKey, driveItemHref, toDriveCrumbs, formatDriveSize",
@@ -56,7 +59,7 @@ const {
 	],
 	["effectiveQuota, fitsQuota, parseQuotaBytes, mayChangeQuota", "src/lib/drive/quota-utils.ts"],
 	[
-		"generateLinkToken, hashLinkToken, isWellFormedLinkToken, linkExpiry, isLinkActive, parseLinkPassword, unlockCookieName, createUnlockValue, verifyUnlockValue, readCookie",
+		"generateLinkToken, hashLinkToken, isWellFormedLinkToken, linkExpiry, isLinkActive, parseLinkPassword, unlockCookieName, createUnlockValue, verifyUnlockValue, readCookie, unlockCookieHeader",
 		"src/lib/drive/link-utils.ts",
 	],
 	["parseByteRange, driveEtag, driveContentHeaders, requestedRange", "src/lib/drive/range-utils.ts"],
@@ -66,6 +69,7 @@ const {
 		"src/lib/drive/list-utils.ts",
 	],
 	["parseDriveCategories, isDriveCategory", "src/lib/drive/category-names-utils.ts"],
+	["allowPublicLinkRequest, allowLinkUnlockAttempt", "src/lib/drive/rate-limit.ts"],
 ]);
 
 const MiB = 1024 * 1024;
@@ -308,4 +312,34 @@ test("views, cursors, search patterns and type filters", () => {
 	assert.deepEqual(parseDriveCategories(null), []);
 	assert.equal(isDriveCategory("others"), true);
 	assert.equal(isDriveCategory(null), false);
+});
+
+test("the unlock cookie is scoped to the link's API path, HttpOnly, SameSite=Strict, and Secure over https", () => {
+	const unlock = { value: "v.sig", maxAge: 3600 };
+	const header = unlockCookieHeader("lnk_1", "tok", unlock, true);
+	assert.ok(header.startsWith(`${unlockCookieName("lnk_1")}=v.sig; `));
+	for (const part of ["Max-Age=3600", "Path=/api/public/drive/tok", "HttpOnly", "SameSite=Strict", "Secure"])
+		assert.ok(header.split("; ").includes(part), part);
+	assert.ok(!unlockCookieHeader("lnk_1", "tok", unlock, false).includes("Secure"));
+});
+
+test("public link and unlock budgets key by client IP, and a missing or failing limiter lets the request through", async (t) => {
+	const keys = [];
+	const limiter = (success) => ({
+		limit: async ({ key }) => {
+			keys.push(key);
+			return { success };
+		},
+	});
+	const request = new Request("https://kite.test/api/public/drive/x", {
+		headers: { "cf-connecting-ip": "203.0.113.9" },
+	});
+	assert.equal(await allowPublicLinkRequest({ DRIVE_LINK_RATE_LIMIT: limiter(true) }, request), true);
+	assert.equal(await allowPublicLinkRequest({ DRIVE_LINK_RATE_LIMIT: limiter(false) }, request), false);
+	assert.equal(await allowLinkUnlockAttempt({ LOGIN_RATE_LIMIT: limiter(false) }, request, "lnk_1"), false);
+	assert.deepEqual(keys, ["203.0.113.9", "203.0.113.9", "drive-unlock:203.0.113.9:lnk_1"]);
+	assert.equal(await allowPublicLinkRequest({}, request), true);
+	t.mock.method(console, "warn", () => {});
+	const broken = { limit: async () => Promise.reject(new Error("down")) };
+	assert.equal(await allowLinkUnlockAttempt({ LOGIN_RATE_LIMIT: broken }, request, "lnk_1"), true);
 });

@@ -2,18 +2,30 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { bundleModules } from "./support/modules-bundle.mjs";
 
-const { moduleNavItems, MODULE_MANIFESTS, navSectionsFor, filterNavSections, searchNavAcrossModes, resolveNavIcon } =
-	await bundleModules("kite-module-nav-", [
-		["moduleNavItems", "src/lib/modules/nav-utils.ts"],
-		["MODULE_MANIFESTS", "src/lib/modules/registry.ts"],
-		["navSectionsFor, filterNavSections, searchNavAcrossModes", "src/components/settings/section-nav-utils.ts"],
-		["resolveNavIcon", "src/components/modules/client-registry.ts"],
-	]);
+const {
+	moduleNavItems,
+	MODULE_MANIFESTS,
+	navSectionsFor,
+	filterNavSections,
+	searchNavAcrossModes,
+	getNavMode,
+	findActiveNavItem,
+	resolveNavIcon,
+} = await bundleModules("kite-module-nav-", [
+	["moduleNavItems", "src/lib/modules/nav-utils.ts"],
+	["MODULE_MANIFESTS", "src/lib/modules/registry.ts"],
+	[
+		"navSectionsFor, filterNavSections, searchNavAcrossModes, getNavMode, findActiveNavItem",
+		"src/components/settings/section-nav-utils.ts",
+	],
+	["resolveNavIcon", "src/components/modules/client-registry.ts"],
+]);
 
 const ALL = ["calendar", "booking", "templates", "import", "finance", "drive"];
 const labels = (items) => items.map((item) => item.label);
 const hrefs = (sections) => sections.flatMap((section) => section.items.map((item) => item.href));
 const member = { role: "user", isPrimaryAdmin: false, canManageDomains: false, canManageUsers: false };
+const admin = { ...member, role: "admin" };
 
 test("the mailbox selector shows Calendar and Drive and the account menu shows Booking while they are on", () => {
 	assert.deepEqual(labels(moduleNavItems(MODULE_MANIFESTS, "mailbox-selector", ALL)), ["Calendar", "Drive"]);
@@ -94,4 +106,34 @@ test("the menu search does not find Import while Mail import is off", () => {
 		searchNavAcrossModes("export", member, "settings", ["calendar"]).flatMap((group) => hrefs(group.sections)),
 		["/settings/export"],
 	);
+});
+
+test("an admin-nav item joins its Admin group for admins only, and only while its module is on", () => {
+	assert.deepEqual(labels(moduleNavItems(MODULE_MANIFESTS, "admin-nav", ALL)), ["Drive"]);
+	assert.deepEqual(moduleNavItems(MODULE_MANIFESTS, "admin-nav", ["calendar"]), []);
+	const system = navSectionsFor("admin").find((section) => section.label === "System");
+	const drive = system.items.find((item) => item.href === "/drive/settings");
+	assert.equal(drive.permission, "admin");
+	assert.equal(drive.moduleId, "drive");
+	const forAdmin = filterNavSections(navSectionsFor("admin"), "", admin, ALL);
+	assert.ok(hrefs(forAdmin).includes("/drive/settings"));
+	assert.ok(!hrefs(filterNavSections(navSectionsFor("admin"), "", member, ALL)).includes("/drive/settings"));
+	assert.ok(
+		!hrefs(
+			filterNavSections(
+				navSectionsFor("admin"),
+				"",
+				admin,
+				ALL.filter((id) => id !== "drive"),
+			),
+		).includes("/drive/settings"),
+	);
+	assert.equal(getNavMode("/drive/settings"), "admin");
+	assert.equal(getNavMode("/drive"), "settings", "the Drive app itself is not an admin page");
+	assert.equal(findActiveNavItem("admin", "/drive/settings")?.label, "Drive");
+	const found = (user, modules) =>
+		searchNavAcrossModes("quota", user, "settings", modules).flatMap((group) => hrefs(group.sections));
+	assert.deepEqual(found(admin, ALL), ["/drive/settings"]);
+	assert.deepEqual(found(member, ALL), []);
+	assert.deepEqual(found(admin, ["calendar"]), []);
 });

@@ -18,8 +18,12 @@ export type ListQuery = {
 	parentId: string | null;
 	query: string;
 	types: DriveCategory[];
+	/** Only folders, for folder pickers such as Move and Save to Drive. */
+	foldersOnly: boolean;
 	cursor: DriveCursor | null;
 };
+
+const folderFilter = (query: ListQuery) => (query.foldersOnly ? eq(driveItems.kind, "folder") : undefined);
 
 const seconds = (date: Date) => Math.floor(date.getTime() / 1000);
 
@@ -72,7 +76,11 @@ async function listFolder(env: CloudflareEnv, user: DriveUser, query: ListQuery)
 	const typeFilter = query.types.length
 		? or(eq(driveItems.kind, "folder"), driveTypesCondition(query.types))
 		: undefined;
-	const { rows, nextCursor } = await page(db, [eq(driveItems.parentId, folder.id), visible, typeFilter], query.cursor);
+	const { rows, nextCursor } = await page(
+		db,
+		[eq(driveItems.parentId, folder.id), visible, typeFilter, folderFilter(query)],
+		query.cursor,
+	);
 	const path = role === "owner" ? chain : await trimToSharedRoot(db, user.id, chain);
 	return ok({
 		items: await toDriveItemDtos(db, rows, () => role),
@@ -91,7 +99,7 @@ async function listShared(env: CloudflareEnv, user: DriveUser, query: ListQuery)
 	const shared = sql`${driveItems.id} IN (SELECT ${driveShares.itemId} FROM ${driveShares} WHERE ${driveShares.userId} = ${user.id})`;
 	const { rows, nextCursor } = await page(
 		db,
-		[shared, ne(driveItems.ownerId, user.id), visible, typeFilter],
+		[shared, ne(driveItems.ownerId, user.id), visible, typeFilter, folderFilter(query)],
 		query.cursor,
 	);
 	const roles = new Map(
@@ -128,7 +136,7 @@ async function listMine(env: CloudflareEnv, user: DriveUser, query: ListQuery): 
 	const db = getDb(env);
 	const recent = query.view === "recent";
 	const everywhere = recent || !!query.query || query.types.length > 0;
-	const where: (SQL | undefined)[] = [eq(driveItems.ownerId, user.id), visible];
+	const where: (SQL | undefined)[] = [eq(driveItems.ownerId, user.id), visible, folderFilter(query)];
 	if (query.query) where.push(sql`${driveItems.name} LIKE ${containsPattern(query.query)} ESCAPE '\\'`);
 	if (query.types.length) where.push(eq(driveItems.kind, "file"), driveTypesCondition(query.types));
 	if (recent) where.push(eq(driveItems.kind, "file"));

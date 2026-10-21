@@ -14,10 +14,10 @@ import { dnsSkippedBannerContent, parseSkippedDomains } from "./dns-skipped-bann
 // Under ["domains"] so every change on the Domains page refreshes the banner too.
 const SKIPPED_DOMAINS_QUERY_KEY = ["domains", "dns-skipped"];
 
-async function fetchSkippedDomains(): Promise<SkippedDomain[]> {
+async function fetchSkippedDomains(userId: string): Promise<SkippedDomain[]> {
 	const response = await authFetch("/api/domains", { cache: "no-store" });
 	if (!response.ok) throw new Error(`Domains request failed (${response.status})`);
-	return parseSkippedDomains(await response.json());
+	return parseSkippedDomains(await response.json(), userId);
 }
 
 async function markDnsDone(domains: SkippedDomain[]): Promise<void> {
@@ -41,8 +41,8 @@ export function DnsSkippedBanner() {
 	const queryClient = useQueryClient();
 	const [error, setError] = useState<string | null>(null);
 	const { data } = useQuery({
-		queryKey: SKIPPED_DOMAINS_QUERY_KEY,
-		queryFn: fetchSkippedDomains,
+		queryKey: [...SKIPPED_DOMAINS_QUERY_KEY, user?.id],
+		queryFn: () => fetchSkippedDomains(user!.id),
 		enabled: allowed,
 		refetchOnWindowFocus: false,
 		retry: false,

@@ -155,6 +155,48 @@ test("a domain added with DNS setup skipped is flagged until an admin marks it d
 			await member.dispose();
 		});
 
+		await test.step("a delegated domain manager sees no banner for the creator's domain", async () => {
+			const token = uniqueToken("skipadmin");
+			const primary = (await listDomains(admin)).find((domain) => domain.hostname === DOMAIN)!;
+			const created = await admin.post("/api/accounts", {
+				data: {
+					username: token,
+					domainId: primary.id,
+					password: MEMBER_PASSWORD,
+					role: "admin",
+					useAllDomains: false,
+				},
+			});
+			expect(created.ok(), await created.text()).toBe(true);
+			const { account } = (await created.json()) as { account: { id: string } };
+			const granted = await admin.patch(`/api/accounts/${account.id}`, {
+				data: {
+					name: token,
+					role: "admin",
+					disabled: false,
+					canManageDomains: true,
+					canManageMailboxes: true,
+				},
+			});
+			expect(granted.ok(), await granted.text()).toBe(true);
+			const manager = await apiSignIn(`${token}@${DOMAIN}`, MEMBER_PASSWORD);
+			const context = await browser.newContext({ storageState: await manager.storageState() });
+			try {
+				// Listing the creator's domain does not grant permission to change it.
+				expect((await findDomain(manager, hostname))?.dnsSkipped).toBe(true);
+				const patch = await manager.patch(`/api/domains/${domainId}`, { data: { dnsSkipped: false } });
+				expect(patch.status()).toBe(404);
+				const managerPage = await context.newPage();
+				const response = await openInboxWithDomains(managerPage);
+				expect(response.ok()).toBe(true);
+				await expect(managerPage.getByRole("main")).toBeVisible();
+				await expect(dnsBanner(managerPage)).toHaveCount(0);
+			} finally {
+				await context.close();
+				await manager.dispose();
+			}
+		});
+
 		await test.step("Mark as done clears the flag and hides the banner", async () => {
 			const banner = dnsBanner(page);
 			const patched = page.waitForResponse(

@@ -32,27 +32,32 @@ const { dnsSkippedBannerContent, mxCheckBlocksSubmit, parseSkippedDomains } = aw
 	pathToFileURL(join(bundleDirectory, "banner.mjs")).href
 );
 
-test("parseSkippedDomains keeps only domains flagged as skipped", () => {
+test("parseSkippedDomains keeps only the viewer's domains flagged as skipped", () => {
 	assert.deepEqual(
-		parseSkippedDomains({
-			domains: [
-				{ id: "dom-1", hostname: "skip.example.test", dnsSkipped: true },
-				{ id: "dom-2", hostname: "done.example.test", dnsSkipped: false },
-				// Before the migration the flag is absent or false, never a reason to warn.
-				{ id: "dom-3", hostname: "old.example.test" },
-				{ id: 4, hostname: "bad.example.test", dnsSkipped: true },
-				{ id: "dom-5", dnsSkipped: true },
-				null,
-				"dom-6",
-			],
-		}),
+		parseSkippedDomains(
+			{
+				domains: [
+					{ id: "dom-1", userId: "owner", hostname: "skip.example.test", dnsSkipped: true },
+					{ id: "dom-2", userId: "owner", hostname: "done.example.test", dnsSkipped: false },
+					// Before the migration the flag is absent or false, never a reason to warn.
+					{ id: "dom-3", userId: "owner", hostname: "old.example.test" },
+					{ id: 4, userId: "owner", hostname: "bad.example.test", dnsSkipped: true },
+					{ id: "dom-5", userId: "owner", dnsSkipped: true },
+					{ id: "dom-7", userId: "creator", hostname: "creator.example.test", dnsSkipped: true },
+					{ id: "dom-8", hostname: "no-owner.example.test", dnsSkipped: true },
+					null,
+					"dom-6",
+				],
+			},
+			"owner",
+		),
 		[{ id: "dom-1", hostname: "skip.example.test" }],
 	);
 });
 
 test("parseSkippedDomains reads anything unexpected as no domain", () => {
 	for (const value of [undefined, null, "domains", 3, {}, { domains: "dom-1" }, { domains: null }]) {
-		assert.deepEqual(parseSkippedDomains(value), []);
+		assert.deepEqual(parseSkippedDomains(value, "owner"), []);
 	}
 });
 

@@ -3,6 +3,7 @@ const primaryOnlyPrefixes = [
 	"/api-keys",
 	"/webhooks",
 	"/backups",
+	"/storage",
 	"/branding",
 	"/activity",
 	"/audit-logs",

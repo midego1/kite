@@ -106,6 +106,16 @@ test("restore plan splits rows with different columns and rejects empty rows", (
 	);
 });
 
+test("restore keeps the live storage config and restores it only into an empty install", () => {
+	assert.deepEqual([...lib.preservedRestoreTables({})], []);
+	assert.deepEqual([...lib.preservedRestoreTables({ storage_stores: 0, storage_routes: 0 })], []);
+	assert.deepEqual([...lib.preservedRestoreTables({ storage_routes: 1 })], ["storage_stores", "storage_routes"]);
+	assert.deepEqual(
+		[...lib.preservedRestoreTables({ storage_stores: 2, storage_routes: 0 })],
+		["storage_stores", "storage_routes"],
+	);
+});
+
 test("restore chunks respect statement and byte limits and report atomicity", () => {
 	const statements = Array.from({ length: 7 }, (_, index) => ({
 		sql: "INSERT INTO t VALUES (?)",

@@ -5,6 +5,7 @@ import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+import { loadStorageServices } from "./support/storage-services.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const directory = makeBundleDirectory("kite-backup-writer-test-");
@@ -152,4 +153,36 @@ test("exports page through tables larger than one query and still restore", asyn
 	db.db.exec("DELETE FROM users");
 	await helpers.restoreDatabaseRecords(db, new TextEncoder().encode(JSON.stringify(exported)).buffer);
 	assert.equal(db.db.prepare("SELECT count(*) AS count FROM users").get().count, 250);
+});
+
+const storage = await loadStorageServices("kite-backup-writer-s3-", ["kite-backups"], {
+	router: "src/lib/storage/router.ts",
+	writer: "src/lib/backups/backup-writer.ts",
+});
+
+test("a backup routed to an S3 store is written there as a multipart upload and reads back", async (t) => {
+	const { env, db } = await storage.fixture(t);
+	await storage.addStore(env, "sto_backups", "kite-backups");
+	db.db
+		.prepare(
+			"INSERT INTO storage_routes (object_class, store_id, previous_store_id, updated_at) VALUES ('backups', 'sto_backups', 'default', 1)",
+		)
+		.run();
+	storage.lib.config.clearStorageConfigCache();
+	const routed = storage.lib.router.withStorage(env);
+	const pieces = Array.from({ length: 30 }, (_, index) => `{"row":${index}},`);
+	const result = await storage.lib.writer.writeBackupObject(
+		routed.BUCKET,
+		"backups/invented.json",
+		fromStrings(pieces),
+		{ httpMetadata: { contentType: "application/json" } },
+		64,
+	);
+	assert.equal(result.size, pieces.join("").length);
+	const actions = storage.fake.state.requests.filter((request) => request.method !== "GET");
+	assert.ok(actions.filter((request) => request.query.partNumber).length > 2);
+	assert.ok(actions.some((request) => request.method === "POST" && "uploadId" in request.query));
+	assert.equal(storage.fake.object("kite-backups", "backups/invented.json").bytes.toString(), pieces.join(""));
+	assert.equal(await env.BUCKET.get("backups/invented.json"), null, "nothing on the default store");
+	assert.equal(await (await routed.BUCKET.get("backups/invented.json")).text(), pieces.join(""));
 });

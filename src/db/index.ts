@@ -4,8 +4,16 @@ import * as autoReadTables from "@/db/schema/agent-auto-read";
 import * as driveTables from "@/db/schema/drive";
 import * as financeTables from "@/db/schema/finance";
 import * as moduleTables from "@/db/schema/modules";
+import * as storageTables from "@/db/schema/storage";
 
-const schema = { ...coreTables, ...autoReadTables, ...moduleTables, ...financeTables, ...driveTables };
+const schema = {
+	...coreTables,
+	...autoReadTables,
+	...moduleTables,
+	...financeTables,
+	...driveTables,
+	...storageTables,
+};
 
 export type AppDatabase = ReturnType<typeof createDb>;
 

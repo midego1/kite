@@ -66,7 +66,15 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 	{
 		id: "system",
 		label: "App settings and history",
-		tables: ["audit_logs", "backup_settings", "backups", "app_settings", "module_settings"],
+		tables: [
+			"audit_logs",
+			"backup_settings",
+			"backups",
+			"storage_stores",
+			"storage_routes",
+			"app_settings",
+			"module_settings",
+		],
 	},
 ];
 

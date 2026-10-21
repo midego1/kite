@@ -263,3 +263,28 @@ test("production CSP allows inline scripts only by nonce", () => {
 	assert.equal(headers.isDocumentPath("/api/messages"), false);
 	assert.equal(headers.isDocumentPath("/_next/static/a.js"), false);
 });
+
+test("CSP connect-src adds exact store origins and drops anything else", () => {
+	const connect = (sources) =>
+		headers
+			.buildContentSecurityPolicy({ nonce: "n", connectSources: sources })
+			.split("; ")
+			.find((d) => d.startsWith("connect-src"));
+	assert.equal(connect([]), "connect-src 'self' ws: wss: https://challenges.cloudflare.com");
+	assert.equal(
+		connect([
+			"https://kite.s3.eu-central-1.amazonaws.com",
+			"http://localhost:9100",
+			"https://kite.s3.eu-central-1.amazonaws.com",
+		]),
+		"connect-src 'self' ws: wss: https://challenges.cloudflare.com https://kite.s3.eu-central-1.amazonaws.com http://localhost:9100",
+	);
+	for (const bad of [
+		"https://*.amazonaws.com",
+		"https://store.example/path",
+		"https://a.example; script-src *",
+		"ftp://a.example",
+		"*",
+	])
+		assert.equal(connect([bad]), "connect-src 'self' ws: wss: https://challenges.cloudflare.com", bad);
+});

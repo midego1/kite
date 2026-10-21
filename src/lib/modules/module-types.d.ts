@@ -196,7 +196,8 @@ export type CapabilitySurface =
 	| "queue"
 	| "jmap_capability"
 	| "jmap_method"
-	| "service";
+	| "service"
+	| "storage_hook";
 
 export type CapabilityEffect = "none" | "read" | "create" | "update" | "delete" | "send" | "external";
 
@@ -276,8 +277,16 @@ export type CapabilityDescriptor = {
 	lifecycle?: { event: "user.created" | "user.time_zone_changed"; dataHook: boolean };
 	cron?: { task: string };
 	queue?: { kind: string };
+	/**
+	 * How core storage reaches objects a module owns, for store migrations and store deletion. Like a data
+	 * hook it runs while the module is off, because the module's objects still exist and still have to move.
+	 */
+	storage?: { objectClass: "drive"; hook: StorageHookName };
 	jmap?: { urn?: string; capability?: JsonValue; method?: string };
 };
+
+/** `listObjectKeys` pages `{ id, key, size }` on a store; `markMoved` records rows copied to another store; `countOnStore` and `usage` count them. */
+export type StorageHookName = "listObjectKeys" | "markMoved" | "countOnStore" | "usage";
 
 export type ModuleCapabilities = {
 	moduleId: ModuleId;

@@ -3,6 +3,7 @@ import { lookup } from "node:dns/promises";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createNoopMetrics } from "../../src/lib/metrics.mjs";
+import { withStorage } from "../../src/lib/storage/router";
 import { openFileBucket } from "./file-bucket";
 import { openMailer, type Mailer, type MailerConfig } from "./mailer";
 import { openAssets, openRateLimiter } from "./misc";
@@ -51,7 +52,7 @@ export function createNodeRuntime(): NodeRuntime {
 	const realtime = new RealtimeHubRegistry();
 	const publicDir = resolve(optional("PUBLIC_DIR") ?? "./public");
 
-	const env = {
+	const platform = {
 		DB: database,
 		BUCKET: bucket,
 		EMAIL: mailer,
@@ -84,12 +85,23 @@ export function createNodeRuntime(): NodeRuntime {
 		AUTO_APPLY_MIGRATIONS: optional("AUTO_APPLY_MIGRATIONS"),
 		ALERT_WEBHOOK_ALLOW_INSECURE: optional("ALERT_WEBHOOK_ALLOW_INSECURE"),
 		AI_ALLOW_INSECURE_LOOPBACK: optional("AI_ALLOW_INSECURE_LOOPBACK"),
+		STORAGE_ALLOW_INSECURE_ENDPOINT: optional("STORAGE_ALLOW_INSECURE_ENDPOINT"),
+		STORAGE_ALLOW_PRIVATE_ENDPOINTS: optional("STORAGE_ALLOW_PRIVATE_ENDPOINTS"),
+		STORAGE_S3_ENDPOINT: optional("STORAGE_S3_ENDPOINT"),
+		STORAGE_S3_REGION: optional("STORAGE_S3_REGION"),
+		STORAGE_S3_BUCKET: optional("STORAGE_S3_BUCKET"),
+		STORAGE_S3_ACCESS_KEY_ID: optional("STORAGE_S3_ACCESS_KEY_ID"),
+		STORAGE_S3_SECRET_ACCESS_KEY: optional("STORAGE_S3_SECRET_ACCESS_KEY"),
+		STORAGE_S3_ADDRESSING: optional("STORAGE_S3_ADDRESSING"),
+		STORAGE_S3_CLASSES: optional("STORAGE_S3_CLASSES"),
 		APP_ENCRYPTION_KEY: optional("APP_ENCRYPTION_KEY"),
 		SEND_LIMIT_PER_HOUR: optional("SEND_LIMIT_PER_HOUR"),
 		SEND_LIMIT_PER_DAY: optional("SEND_LIMIT_PER_DAY"),
 		RESOLVE_HOST: async (hostname: string) =>
 			(await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address),
 	} as unknown as CloudflareEnv;
+	// Wrapped before anything holds the env, so the realtime hub, the scheduler and the queues all see the router.
+	const env = withStorage(platform);
 	realtime.bindEnv(env);
 
 	return {

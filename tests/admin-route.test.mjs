@@ -30,6 +30,7 @@ test("owner-only admin routes and their children require the primary admin", () 
 		"/api-keys",
 		"/webhooks",
 		"/backups",
+		"/storage",
 		"/branding",
 		"/activity",
 		"/audit-logs",

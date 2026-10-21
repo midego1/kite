@@ -37,6 +37,7 @@ const CORE_QUEUE_KINDS = [
 	"mailbox.purge",
 	"backup.run",
 	"webhook.retry",
+	"storage.migrate",
 ];
 const covers = (prefix, path) => path === prefix || path.startsWith(`${prefix}/`);
 const allPrefixes = (key) =>

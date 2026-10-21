@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { APP_ORIGIN, loadStorageServices } from "./support/storage-services.mjs";
 
-const { lib, fake, fixture, addStore } = await loadStorageServices("kite-storage-stores-", [
-	"kite-store",
-	"kite-spare",
-]);
+const { lib, fake, fixture, addStore } = await loadStorageServices(
+	"kite-storage-stores-",
+	["kite-store", "kite-spare"],
+	{
+		corsRoute: "src/app/api/admin/storage/stores/[id]/cors/route.ts",
+		lifecycleRoute: "src/app/api/admin/storage/stores/[id]/lifecycle/route.ts",
+	},
+);
 const { stores, routeSwitch } = lib;
 const actor = { id: "owner" };
 
@@ -242,6 +246,61 @@ async function caller(env, userId) {
 		return { status: response.status, cache: response.headers.get("cache-control"), body: await response.json() };
 	};
 }
+
+test("CORS and lifecycle APIs return JSON 409 when saved credentials cannot be opened", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_a", "kite-store");
+	env.APP_ENCRYPTION_KEY = "another-invented-encryption-key";
+	lib.config.clearStorageConfigCache();
+	const owner = await caller(env, "owner");
+	const before = fake.state.requests.length;
+	for (const route of [lib.corsRoute, lib.lifecycleRoute]) {
+		const response = await owner(route, "POST", { params: { id: "sto_a" } });
+		assert.equal(response.status, 409);
+		assert.match(response.body.error, /saved credentials cannot be opened; APP_ENCRYPTION_KEY may have changed/);
+	}
+	assert.equal(fake.state.requests.length, before);
+});
+
+for (const [action, routeName] of [
+	["PutBucketCors", "corsRoute"],
+	["GetLifecycleConfiguration", "lifecycleRoute"],
+	["PutLifecycleConfiguration", "lifecycleRoute"],
+]) {
+	test(`${action} refusal returns JSON 502 with the provider message`, async (t) => {
+		const { env } = await fixture(t);
+		await addStore(env, "sto_a", "kite-store");
+		fake.state.denied.add(action);
+		const owner = await caller(env, "owner");
+		const response = await owner(lib[routeName], "POST", { params: { id: "sto_a" } });
+		assert.equal(response.status, 502);
+		assert.match(response.body.error, /Access Denied/);
+	});
+}
+
+test("CORS and lifecycle actions report network errors and use a fallback for non-Error failures", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_a", "kite-store");
+	let failure = new Error("Invented network outage");
+	t.mock.method(globalThis, "fetch", async () => {
+		throw failure;
+	});
+	const actions = [
+		[() => stores.applyStoreCors(env, "sto_a", APP_ORIGIN), /CORS rule/],
+		[() => stores.applyStoreLifecycle(env, "sto_a"), /lifecycle rule/],
+	];
+	for (const [invoke] of actions) {
+		const response = await invoke();
+		assert.equal(response.status, 502);
+		assert.equal(response.error, failure.message);
+	}
+	failure = null;
+	for (const [invoke, fallback] of actions) {
+		const response = await invoke();
+		assert.equal(response.status, 502);
+		assert.match(response.error, fallback);
+	}
+});
 
 test("the storage API is for the primary admin only and answers with the service results", async (t) => {
 	const { env } = await fixture(t);

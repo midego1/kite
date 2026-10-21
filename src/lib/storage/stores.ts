@@ -401,8 +401,17 @@ export async function applyStoreCors(
 	const origins = originsFor(env, requestOrigin);
 	if (!presetFor(store.provider)?.applyCors)
 		return fail(409, `Add this CORS rule in the provider's console: ${corsRuleJson(origins)}`);
-	const candidate = await candidateOf(env, store);
-	await new S3Bucket({ ...candidate.location, ...candidate.credentials }).putCors(origins);
+	let candidate;
+	try {
+		candidate = await candidateOf(env, store);
+	} catch {
+		return fail(409, "The saved credentials cannot be opened; APP_ENCRYPTION_KEY may have changed");
+	}
+	try {
+		await new S3Bucket({ ...candidate.location, ...candidate.credentials }).putCors(origins);
+	} catch (error) {
+		return fail(502, error instanceof Error ? error.message : "The provider refused the CORS rule");
+	}
 	const check = await validateStoreCors(candidate, requestOrigin);
 	return { ok: true, steps: check.steps, cors: check.ok };
 }
@@ -413,10 +422,19 @@ export async function applyStoreLifecycle(env: StoresEnv, id: string): Promise<R
 	if (!store) return fail(404, "Store not found");
 	if (store.blocked) return fail(409, store.blocked);
 	if (!presetFor(store.provider)?.applyLifecycle) return fail(409, "Add the lifecycle rule in the provider's console");
-	const candidate = await candidateOf(env, store);
-	const bucket = new S3Bucket({ ...candidate.location, ...candidate.credentials });
-	if (await bucket.getLifecycle())
-		return fail(409, "The bucket already has lifecycle rules; add the abort rule next to them by hand");
-	await bucket.putAbortIncompleteUploadsLifecycle(7);
+	let candidate;
+	try {
+		candidate = await candidateOf(env, store);
+	} catch {
+		return fail(409, "The saved credentials cannot be opened; APP_ENCRYPTION_KEY may have changed");
+	}
+	try {
+		const bucket = new S3Bucket({ ...candidate.location, ...candidate.credentials });
+		if (await bucket.getLifecycle())
+			return fail(409, "The bucket already has lifecycle rules; add the abort rule next to them by hand");
+		await bucket.putAbortIncompleteUploadsLifecycle(7);
+	} catch (error) {
+		return fail(502, error instanceof Error ? error.message : "The provider refused the lifecycle rule");
+	}
 	return { ok: true };
 }

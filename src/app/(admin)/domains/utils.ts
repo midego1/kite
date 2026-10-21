@@ -50,6 +50,6 @@ export function getSendingStatusLabel(
 	domainSendingEnabled: boolean,
 ): string {
 	if (subdomainName) return `Sending for ${subdomainName} is ${subdomainEnabled ? "enabled" : "disabled"}`;
-	if (!manual) return "Sending has not configured for this domain";
+	if (!manual) return "Sending has not been configured for this domain";
 	return domainSendingEnabled ? "Email sending is configured" : "Email sending is not configured";
 }

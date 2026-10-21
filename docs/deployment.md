@@ -124,7 +124,7 @@ The `database_id` in `wrangler.jsonc` is a default value: the Deploy to Cloudfla
 
 ## Database backups
 
-Kite exports its D1 records as JSON and stores the backup files in the configured R2 bucket. A cron trigger in `wrangler.jsonc` runs daily at 02:00 UTC and applies the schedule selected under **Admin → Backups**. A manual backup queues the same record export on the `kite-outbound` queue and its consumer writes the file, so the admin request never waits for a large export. A backup left queued or running for more than 30 minutes is marked failed by the five-minute cron and by the Backups page itself.
+Kite exports its D1 records as JSON and stores the backup files in the store routed for Backups under **Admin → Storage** (the `BUCKET` R2 binding by default). Existing backup files may remain in the previous or default store. These record exports do not include object contents: separately back up every bucket holding mail or Drive objects, including old stores retained during migration (and the data directory's `blobs` folder for the default store on Node). A cron trigger in `wrangler.jsonc` runs daily at 02:00 UTC and applies the schedule selected under **Admin → Backups**. A manual backup queues the same record export on the `kite-outbound` queue and its consumer writes the file, so the admin request never waits for a large export. A backup left queued or running for more than 30 minutes is marked failed by the five-minute cron and by the Backups page itself.
 
 Deploy the complete Worker with `npm run deploy` whenever the cron trigger is added or changed.
 

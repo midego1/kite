@@ -23,7 +23,7 @@ import {
 	type HttpMetadata,
 	type RangeRequest,
 } from "./s3-utils";
-import type { PresignGetOptions, S3StoreConfig, StoreSigner } from "./types";
+import type { PresignGetOptions, S3Credentials, S3Location, S3StoreConfig, StoreSigner } from "./types";
 
 /**
  * An S3-compatible bucket behind the R2 bucket API the app already uses (get with a range, head, put, delete,
@@ -166,11 +166,15 @@ export class S3Object {
 
 type RequestInit = Omit<AwsRequest, "config" | "service" | "host" | "scheme" | "path" | "fetch">;
 
-export type S3BucketOptions = { fetch?: typeof fetch };
+export type S3BucketOptions = {
+	fetch?: typeof fetch;
+	/** Opens the credentials on first use, so a configured store costs nothing until something reads from it. */
+	credentials?: () => Promise<S3Credentials>;
+};
 
 export class S3Bucket {
 	constructor(
-		readonly config: S3StoreConfig,
+		readonly config: S3Location & Partial<S3Credentials>,
 		private readonly options: S3BucketOptions = {},
 	) {}
 
@@ -178,17 +182,15 @@ export class S3Bucket {
 		return storeOrigin(this.config);
 	}
 
-	private credentials() {
-		return {
-			accessKeyId: this.config.accessKeyId,
-			secretAccessKey: this.config.secretAccessKey,
-			region: this.config.region,
-		};
+	private async credentials() {
+		const { accessKeyId, secretAccessKey } = this.options.credentials ? await this.options.credentials() : this.config;
+		if (!accessKeyId || !secretAccessKey) throw new Error("The store has no credentials");
+		return { accessKeyId, secretAccessKey, region: this.config.region };
 	}
 
-	private request(key: string | null, init: RequestInit = {}): Promise<Response> {
+	private async request(key: string | null, init: RequestInit = {}): Promise<Response> {
 		return awsRequest({
-			config: this.credentials(),
+			config: await this.credentials(),
 			service: "s3",
 			host: bucketHost(this.config),
 			scheme: this.config.scheme,
@@ -346,6 +348,17 @@ export class S3Bucket {
 		await this.request(null, { method: "PUT", query: { cors: "" }, body, headers: await sha256ChecksumHeaders(body) });
 	}
 
+	/** The bucket's lifecycle document, or null when it has none. */
+	async getLifecycle(): Promise<string | null> {
+		const response = await this.request(null, { query: { lifecycle: "" }, allowStatuses: [404] });
+		return response.status === 404 ? null : response.text();
+	}
+
+	/** The URL of an object, for a browser-style request the validation sends itself (CORS preflight). */
+	objectUrl(key: string): string {
+		return `${this.origin}${objectPath(this.config, key)}`;
+	}
+
 	async putAbortIncompleteUploadsLifecycle(days: number): Promise<void> {
 		const body = abortIncompleteLifecycleXml(days);
 		await this.request(null, {
@@ -365,14 +378,14 @@ export class S3Bucket {
 	): Promise<string> {
 		if (!Number.isInteger(expiresIn) || expiresIn < 1 || expiresIn > MAX_PRESIGN_SECONDS)
 			throw new Error("Presigned URLs expire within an hour");
-		const url = new URL(`${this.origin}${objectPath(this.config, key)}`);
+		const url = new URL(this.objectUrl(key));
 		for (const [name, value] of Object.entries(query)) url.searchParams.set(name, value);
 		return presignAwsUrl({
 			method,
 			url,
 			region: this.config.region,
 			service: "s3",
-			credentials: this.credentials(),
+			credentials: await this.credentials(),
 			expiresIn,
 			headers,
 		});
@@ -401,6 +414,6 @@ export class S3Bucket {
 	}
 }
 
-export function openS3Bucket(config: S3StoreConfig, options?: S3BucketOptions): S3Bucket {
+export function openS3Bucket(config: S3StoreConfig | S3Location, options?: S3BucketOptions): S3Bucket {
 	return new S3Bucket(config, options);
 }

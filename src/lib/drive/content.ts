@@ -31,7 +31,7 @@ export async function streamDriveFile(
 		headers.set("Content-Range", `bytes */${item.size}`);
 		return new Response(null, { status: 416, headers });
 	}
-	const bucket = bucketOfItem(env, item);
+	const bucket = await bucketOfItem(env, item);
 	const object = range
 		? await bucket?.get(item.objectKey, { range: { offset: range.start, length: range.end - range.start + 1 } })
 		: await bucket?.get(item.objectKey);

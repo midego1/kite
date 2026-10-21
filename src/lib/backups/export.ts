@@ -1,4 +1,5 @@
 import { clearModuleStateCache } from "@/lib/modules/state";
+import { clearStorageConfigCache } from "@/lib/storage/config";
 import type { BackupTableGroupId, DatabaseBackupDocument, DatabaseBackupTable, DatabaseRecord } from "./types";
 import { dropRetiredBackupTables, mergeLegacyMessageBodies, RETIRED_BACKUP_TABLES } from "./utils";
 import { BACKUP_TABLE_GROUPS, getSelectedBackupTables, isPartialBackupDocument } from "./table-groups";
@@ -337,8 +338,10 @@ export async function executeDatabaseRestore(db: D1Database, plan: RestorePlan):
 			await db.batch(chunk.map((statement) => db.prepare(statement.sql).bind(...statement.params)));
 		}
 	} finally {
-		// The restore rewrites the module tables behind the isolate's 30-second cache, even when it fails part way.
+		// The restore rewrites the module and storage tables behind the isolate's 30-second caches, even when it
+		// fails part way.
 		clearModuleStateCache();
+		clearStorageConfigCache();
 	}
 }
 

@@ -55,8 +55,15 @@ export type Storage = {
 	storeFor(objectClass: ObjectClass): ObjectStore;
 	/** The store a new object with this key is written to, by the class its prefix belongs to. */
 	storeForKey(key: string): ObjectStore;
-	/** A store by id, for objects that recorded where they live; null for an unknown id. */
+	/** A store by id, for objects that recorded where they live; null for an unknown or blocked id. */
 	store(id: string): ObjectStore | null;
+	/** Where a read of a class looks, in order: active, previous while migrating, then the default store. */
+	readChain(objectClass: ObjectClass): ObjectStore[];
+	/** The stores a delete of a class reaches: active and previous. */
+	deleteTargets(objectClass: ObjectClass): ObjectStore[];
+	/** The exact origins browsers may send presigned requests to, for CSP `connect-src`. */
+	connectOrigins(): string[];
+	config: import("./config-utils").StorageConfig;
 };
 
 export type S3Addressing = "virtual" | "path";

@@ -9,6 +9,7 @@ const DEV_ONLY_VARS = [
 	"ALERT_WEBHOOK_ALLOW_INSECURE",
 	"AI_ALLOW_INSECURE_LOOPBACK",
 	"REMOTE_IMAGES_ALLOW_LOOPBACK",
+	"STORAGE_ALLOW_INSECURE_ENDPOINT",
 ] as const;
 
 export default defineConfig(({ command }) => ({

@@ -18,7 +18,15 @@ export function isWebhookRetryMessage(payload: unknown): payload is WebhookRetry
 }
 
 type CoreQueueMessageKind =
-	"inbound" | "webhook_retry" | "outbound" | "agent_draft" | "agent_triage" | "mailbox_purge" | "backup" | "unknown";
+	| "inbound"
+	| "webhook_retry"
+	| "outbound"
+	| "agent_draft"
+	| "agent_triage"
+	| "mailbox_purge"
+	| "backup"
+	| "storage_migration"
+	| "unknown";
 
 /** Core kinds plus the metric class each module declares for its own queue messages. */
 export type QueueMessageKind = CoreQueueMessageKind | (string & {});
@@ -29,6 +37,7 @@ const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"agent.triage": "agent_triage",
 	"mailbox.purge": "mailbox_purge",
 	"backup.run": "backup",
+	"storage.migrate": "storage_migration",
 	...Object.fromEntries(
 		MODULE_MANIFESTS.flatMap((manifest) => manifest.queueMessageTypes.map((entry) => [entry.kind, entry.metricClass])),
 	),

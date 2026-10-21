@@ -25,5 +25,29 @@ export const driveCapabilities: ModuleCapabilities = {
 			timeoutMs: PURGE_TIMEOUT_MS,
 			cron: { task: "purgeDrive" },
 		}),
+		describe("storageListObjectKeys", {
+			surfaces: ["storage_hook"],
+			description: "List the stored Drive files on one object store, for a store migration.",
+			effect: "read",
+			storage: { objectClass: "drive", hook: "listObjectKeys" },
+		}),
+		describe("storageMarkMoved", {
+			surfaces: ["storage_hook"],
+			description: "Record that Drive files were copied to another object store.",
+			effect: "update",
+			storage: { objectClass: "drive", hook: "markMoved" },
+		}),
+		describe("storageCountOnStore", {
+			surfaces: ["storage_hook"],
+			description: "Count the Drive files that name an object store.",
+			effect: "read",
+			storage: { objectClass: "drive", hook: "countOnStore" },
+		}),
+		describe("storageUsage", {
+			surfaces: ["storage_hook"],
+			description: "Count the Drive files and bytes stored.",
+			effect: "read",
+			storage: { objectClass: "drive", hook: "usage" },
+		}),
 	],
 };

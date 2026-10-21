@@ -91,7 +91,7 @@ async function runWithTimeout(
 
 /**
  * Builds the one call contract between core and module code. The returned function checks, in order:
- * descriptor, module state (data hooks exempt), grants and mailbox, JSON-only input and context,
+ * descriptor, module state (data and storage hooks exempt), grants and mailbox, JSON-only input and context,
  * the input schema, then runs the handler under a timeout and checks the output. It never throws.
  */
 export function createInvoker(deps: InvokerDeps) {
@@ -107,8 +107,8 @@ export function createInvoker(deps: InvokerDeps) {
 		const entry = deps.lookup(moduleId, name);
 		if (!entry) return failure("unknown_capability");
 		const { descriptor } = entry;
-		if (!descriptor.lifecycle?.dataHook && !(await deps.isEnabled(ctx.viewer, moduleId)))
-			return failure("module_disabled");
+		const runsWhileOff = !!descriptor.lifecycle?.dataHook || !!descriptor.storage;
+		if (!runsWhileOff && !(await deps.isEnabled(ctx.viewer, moduleId))) return failure("module_disabled");
 		if (missingGrant(descriptor, ctx) || (descriptor.mailboxBound && mailboxOutsideContext(input, ctx)))
 			return failure("forbidden");
 		const jsonProblem = jsonValueProblem(input, "input") ?? jsonValueProblem(ctx, "context");

@@ -95,7 +95,7 @@ export async function startUpload(env: CloudflareEnv, user: DriveUser, body: unk
 		);
 	if ((await countUploadsInProgress(env, ownerId)) >= DRIVE_MAX_UPLOADS_IN_PROGRESS)
 		return fail(429, "Too many uploads in progress; finish or cancel some first");
-	const store = newDriveStore(env);
+	const store = await newDriveStore(env);
 	const id = newId("drv");
 	const now = new Date();
 	const reserved = {
@@ -144,8 +144,8 @@ async function loadUpload(env: CloudflareEnv, user: DriveUser, id: string): Prom
 	return canEditDrive(role) ? item : null;
 }
 
-function multipartFor(env: CloudflareEnv, item: DriveRow) {
-	const bucket = bucketOfItem(env, item);
+async function multipartFor(env: CloudflareEnv, item: DriveRow) {
+	const bucket = await bucketOfItem(env, item);
 	return bucket ? multipartOf(bucket).resume(item.objectKey!, item.uploadId!) : null;
 }
 
@@ -161,7 +161,7 @@ export async function putUploadPart(
 	request: Request,
 ): Promise<DriveAnswer> {
 	const item = await loadUpload(env, user, id);
-	const upload = item ? multipartFor(env, item) : null;
+	const upload = item ? await multipartFor(env, item) : null;
 	if (!item || !upload) return fail(404, "Upload not found");
 	const expected = expectedPartSize(item.size, item.uploadPartSize ?? DRIVE_PROXIED_PART_BYTES, partNumber);
 	if (expected === null) return fail(400, "Invalid part number");
@@ -180,16 +180,14 @@ export async function putUploadPart(
 
 /** Removes an upload's row (its parts cascade) and what was sent. */
 async function discardUpload(env: CloudflareEnv, item: DriveRow): Promise<void> {
-	await multipartFor(env, item)
-		?.abort()
-		.catch(() => undefined);
+	await (await multipartFor(env, item))?.abort().catch(() => undefined);
 	await getDb(env).delete(driveItems).where(eq(driveItems.id, item.id));
 }
 
 /** `POST /api/drive/uploads/[id]/complete`: joins the recorded parts and checks the stored size. */
 export async function completeUpload(env: CloudflareEnv, user: DriveUser, id: string): Promise<DriveAnswer> {
 	const item = await loadUpload(env, user, id);
-	const upload = item ? multipartFor(env, item) : null;
+	const upload = item ? await multipartFor(env, item) : null;
 	if (!item || !upload) return fail(404, "Upload not found");
 	const parts = await recordedParts(getDb(env), item.id);
 	const total = partCount(item.size, item.uploadPartSize ?? DRIVE_PROXIED_PART_BYTES);
@@ -207,7 +205,7 @@ export async function completeUpload(env: CloudflareEnv, user: DriveUser, id: st
 		return fail(409, "Could not complete the upload; send the parts again");
 	}
 	if (size !== item.size) {
-		await bucketOfItem(env, item)?.delete(item.objectKey!);
+		await (await bucketOfItem(env, item))?.delete(item.objectKey!);
 		await getDb(env).delete(driveItems).where(eq(driveItems.id, item.id));
 		return fail(409, "The uploaded file does not match its declared size");
 	}

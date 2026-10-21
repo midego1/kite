@@ -12,6 +12,7 @@ import { hasAdminAccount } from "@/lib/auth/setup";
 import { getAllowedMutationHosts, isAllowedMutationRequest, requiresCsrfCheck } from "@/lib/security/csrf";
 import { isTrustProxyEnabled, resolveClientIp } from "@/lib/security/client-ip";
 import { buildContentSecurityPolicy, createCspNonce, isDocumentPath } from "@/lib/security/headers";
+import { storageConnectOrigins } from "@/lib/storage";
 import { processInboundMessage } from "@/lib/email/inbound";
 import { processAgentQueueMessage } from "@/lib/agent/queue";
 import { dispatchModuleQueueMessage } from "@/lib/modules/background";
@@ -21,6 +22,8 @@ import { processMailboxPurge } from "@/lib/mailboxes/delete";
 import { isMailboxPurgeMessage } from "@/lib/mailboxes/delete-utils";
 import { runDatabaseBackup } from "@/lib/backups/runner";
 import { isBackupRunMessage } from "@/lib/backups/queue-utils";
+import { processStorageMigration } from "@/lib/storage/migration";
+import { isStorageMigrateMessage } from "@/lib/storage/migration-utils";
 import { isInboundQueueMessage, isWebhookRetryMessage } from "../worker-utils";
 import { createNodeRuntime } from "./runtime/env";
 import { applyMigrations } from "./runtime/migrate";
@@ -66,6 +69,7 @@ async function main() {
 		if (isWebhookRetryMessage(body)) await processWebhookRetry(env, body as WebhookRetryMessage);
 		else if (isMailboxPurgeMessage(body)) await processMailboxPurge(env, body);
 		else if (isBackupRunMessage(body)) await runDatabaseBackup(env, body.backupId);
+		else if (isStorageMigrateMessage(body)) await processStorageMigration(env, body);
 		else if ((await dispatchModuleQueueMessage(env, "outbound", body)).handled) {
 			// A module's own message kind, routed through the registry.
 		} else await processOutboundQueue(env, body as OutboundQueueMessage);
@@ -114,16 +118,20 @@ async function main() {
 			response.end(JSON.stringify({ error: "Cross-site request blocked" }));
 			return;
 		}
-		if (isDocumentPath(url.pathname ?? "/")) {
+		if (!isDocumentPath(url.pathname ?? "/")) {
+			void handle(request, response, url);
+			return;
+		}
+		void storageConnectOrigins(env).then((connectSources) => {
 			// Next reads the nonce from the request's CSP header; the root layout reads x-nonce.
 			const nonce = dev ? undefined : createCspNonce();
-			const policy = buildContentSecurityPolicy({ nonce, dev });
+			const policy = buildContentSecurityPolicy({ nonce, dev, connectSources });
 			request.headers["content-security-policy"] = policy;
 			if (nonce) request.headers["x-nonce"] = nonce;
 			else delete request.headers["x-nonce"];
 			response.setHeader("Content-Security-Policy", policy);
-		}
-		void handle(request, response, url);
+			return handle(request, response, url);
+		});
 	});
 
 	const wss = new WebSocketServer({ noServer: true });

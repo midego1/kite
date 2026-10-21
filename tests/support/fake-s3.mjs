@@ -293,7 +293,7 @@ export async function startFakeS3(options = {}) {
 		if (!key) {
 			if (method === "HEAD") return "HeadBucket";
 			if ("cors" in params) return method === "PUT" ? "PutBucketCors" : "GetBucketCors";
-			if ("lifecycle" in params) return "PutLifecycleConfiguration";
+			if ("lifecycle" in params) return method === "PUT" ? "PutLifecycleConfiguration" : "GetLifecycleConfiguration";
 			return "ListBucket";
 		}
 		if (method === "GET") return "uploadId" in params ? "ListMultipartUploadParts" : "GetObject";
@@ -368,6 +368,10 @@ export async function startFakeS3(options = {}) {
 			case "PutBucketCors":
 				bucket.cors = parseCors(body.toString("utf8"));
 				return new Response(null, { status: 200 });
+			case "GetLifecycleConfiguration":
+				return bucket.lifecycle
+					? xmlResponse(200, bucket.lifecycle)
+					: xmlResponse(404, "<Error><Code>NoSuchLifecycleConfiguration</Code><Message>none</Message></Error>");
 			case "PutLifecycleConfiguration":
 				bucket.lifecycle = body.toString("utf8");
 				return new Response(null, { status: 200 });

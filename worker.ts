@@ -20,6 +20,8 @@ import { buildContentSecurityPolicy, createCspNonce, isDocumentPath } from "./sr
 import { getAccountForwardingDestination, wasForwardedByKite } from "./src/lib/email/account-forwarding";
 import { runDatabaseBackup, runScheduledDatabaseBackup } from "./src/lib/backups/runner";
 import { isBackupRunMessage } from "./src/lib/backups/queue-utils";
+import { processStorageMigration, runStorageMigrationMaintenance } from "./src/lib/storage/migration";
+import { isStorageMigrateMessage } from "./src/lib/storage/migration-utils";
 import { failStaleBackups } from "./src/lib/backups/service";
 import { processAgentQueueMessage } from "./src/lib/agent/queue";
 import { runAgentMaintenance } from "./src/lib/agent/maintenance";
@@ -29,6 +31,8 @@ import { runOperationalAlerts } from "./src/lib/alerts/run";
 import { dispatchModuleQueueMessage, runModuleCronTasks } from "./src/lib/modules/background";
 import { maybeAutoApplyPendingMigrations } from "./src/lib/migrations/auto-apply";
 import { queueRetryDelaySeconds } from "./src/lib/migrations/pending";
+import { storageConnectOrigins } from "./src/lib/storage";
+import { withStorage } from "./src/lib/storage/router";
 export { RealtimeHub } from "./src/lib/realtime/hub";
 
 const logger = createLogger("worker");
@@ -40,7 +44,8 @@ const logger = createLogger("worker");
 async function renderDocumentWithCsp(request: Request, env: CloudflareEnv, ctx: ExecutionContext): Promise<Response> {
 	const dev = process.env.NODE_ENV !== "production";
 	const nonce = dev ? undefined : createCspNonce();
-	const policy = buildContentSecurityPolicy({ nonce, dev });
+	// Client-side navigation keeps the first document's policy, so every document lists the store origins.
+	const policy = buildContentSecurityPolicy({ nonce, dev, connectSources: await storageConnectOrigins(env) });
 	const headers = new Headers(request.headers);
 	headers.set("Content-Security-Policy", policy);
 	if (nonce) headers.set("x-nonce", nonce);
@@ -77,7 +82,7 @@ async function handleFetch(request: Request, env: CloudflareEnv, ctx: ExecutionC
 	if (csrfRejection) return csrfRejection;
 
 	if (!isDocumentPath(url.pathname)) return vinextHandler.fetch(request, env, ctx);
-	return renderDocumentWithCsp(request, env, ctx);
+	return renderDocumentWithCsp(request, withStorage(env), ctx);
 }
 
 export default {
@@ -103,7 +108,8 @@ export default {
 		);
 	},
 
-	async email(message: ForwardableEmailMessage, env: CloudflareEnv, _ctx: ExecutionContext) {
+	async email(message: ForwardableEmailMessage, rawEnv: CloudflareEnv, _ctx: ExecutionContext) {
+		const env = withStorage(rawEnv);
 		// Where the handler stopped and which R2 object it wrote, for the failure log.
 		let stage: "route" | "read_raw" | "forward" | "store" | "enqueue" = "route";
 		let rawR2Key: string | undefined;
@@ -160,7 +166,8 @@ export default {
 		}
 	},
 
-	async queue(batch: MessageBatch, env: CloudflareEnv): Promise<void> {
+	async queue(batch: MessageBatch, rawEnv: CloudflareEnv): Promise<void> {
+		const env = withStorage(rawEnv);
 		// With AUTO_APPLY_MIGRATIONS set, pending migrations are applied before the batch runs, so
 		// inbound mail is not queued against a schema that is still a release behind.
 		await maybeAutoApplyPendingMigrations(env);
@@ -180,6 +187,8 @@ export default {
 					await processMailboxPurge(env, msg.body);
 				} else if (isBackupRunMessage(msg.body)) {
 					await runDatabaseBackup(env, msg.body.backupId);
+				} else if (isStorageMigrateMessage(msg.body)) {
+					await processStorageMigration(env, msg.body);
 				} else if (
 					typeof msg.body === "object" &&
 					msg.body !== null &&
@@ -213,7 +222,8 @@ export default {
 		}
 	},
 
-	async scheduled(controller: ScheduledController, env: CloudflareEnv, ctx: ExecutionContext) {
+	async scheduled(controller: ScheduledController, rawEnv: CloudflareEnv, ctx: ExecutionContext) {
+		const env = withStorage(rawEnv);
 		if (controller.cron === "0 2 * * *") {
 			const now = new Date(controller.scheduledTime);
 			// Prune after the backup so the snapshot still holds the rows being removed.
@@ -237,6 +247,11 @@ export default {
 					.catch((error) => logger.error("backup.stale_recover_failed", { error }))
 					.then(() => runOperationalAlerts(env, now))
 					.catch((error) => logger.error("alerts.evaluation_failed", { error })),
+			);
+			ctx.waitUntil(
+				runStorageMigrationMaintenance(env, now).catch((error) =>
+					logger.error("storage.migration_maintenance_failed", { error }),
+				),
 			);
 		}
 		ctx.waitUntil(runAgentMaintenance(env));

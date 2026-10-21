@@ -44,6 +44,8 @@ export default defineConfig({
 			AI_ALLOW_INSECURE_LOOPBACK: "1",
 			// Lets the remote image proxy fetch the in-spec image server on 127.0.0.1 (e2e/42-remote-images.spec.ts).
 			REMOTE_IMAGES_ALLOW_LOOPBACK: "1",
+			// Lets specs add the fake S3 store on http://localhost (e2e/48-storage-s3.spec.ts).
+			STORAGE_ALLOW_INSECURE_ENDPOINT: "1",
 		},
 		// A reused server keeps whatever state earlier runs left behind; opt in only while iterating.
 		reuseExistingServer: process.env.E2E_REUSE_SERVER === "1",

@@ -11,8 +11,9 @@ Adding or removing a domain from Kite also updates Cloudflare Email Routing and 
 | Kite route | Purpose |
 | --- | --- |
 | `GET /api/domains` | List connected domains |
-| `POST /api/domains` | Connect a domain and configure Cloudflare |
+| `POST /api/domains` | Connect a domain and configure Cloudflare; with `{ hostname, skipDns: true }` the domain is recorded without checking or changing DNS ([Skipping DNS setup](providers.md#skipping-dns-setup)) |
 | `GET /api/domains/[id]` | Get a connected domain |
+| `PATCH /api/domains/[id]` | Set or clear the DNS-skipped reminder (`{ dnsSkipped: boolean }`, nothing else) |
 | `DELETE /api/domains/[id]` | Remove a domain and clean up its Cloudflare resources |
 | `GET /api/domains/[id]/dns` | View its routing and sending DNS status |
 | `PUT /api/domains/[id]/sending` | Choose the sending provider (`{ provider: "none" \| "cloudflare" \| "resend" \| "ses" }`) |
@@ -33,7 +34,7 @@ The same operations are available to scripts through admin API keys with the `do
 | Kite route | Purpose |
 | --- | --- |
 | `GET /api/v1/domains` | List connected domains with their DNS status |
-| `POST /api/v1/domains` | Connect a domain and configure Cloudflare (`{ hostname, enableRouting?, enableSending?, replaceMxRecords?, receivingProvider?, sendingProvider? }`; `receivingProvider` defaults to `cloudflare`, and with another value Email Routing is not enabled. `sendingProvider` defaults to `cloudflare` (or `none` when `enableSending` is `false`), and the Cloudflare sending subdomain is only created for `cloudflare`) |
+| `POST /api/v1/domains` | Connect a domain and configure Cloudflare (`{ hostname, enableRouting?, enableSending?, replaceMxRecords?, receivingProvider?, sendingProvider?, skipDns? }`; `receivingProvider` defaults to `cloudflare`, and with another value Email Routing is not enabled. `sendingProvider` defaults to `cloudflare` (or `none` when `enableSending` is `false`), and the Cloudflare sending subdomain is only created for `cloudflare`; `skipDns: true` records the domain without checking or changing DNS and ignores the other options) |
 | `GET /api/v1/domains/[id]` | Get a connected domain |
 | `DELETE /api/v1/domains/[id]` | Remove a domain and clean up its Cloudflare resources |
 | `GET /api/v1/domains/[id]/dns` | View its routing, sending and authentication DNS status |

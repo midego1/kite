@@ -227,3 +227,57 @@ test("the STORAGE_S3_* store is listed read-only and can be routed to", async (t
 	const switched = await routeSwitch.switchRoute(env, actor, "mail", { storeId: "sto_env" }, APP_ORIGIN);
 	assert.equal(switched.ok, true, switched.error);
 });
+
+async function caller(env, userId) {
+	const token = await lib.session.createSession(env, userId);
+	return async (route, method, { params = {}, body } = {}) => {
+		const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+		if (method !== "GET") headers.Origin = APP_ORIGIN;
+		const request = new Request(`${APP_ORIGIN}/api/admin/storage`, {
+			method,
+			headers,
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
+		});
+		const response = await route[method](request, { params: Promise.resolve(params) });
+		return { status: response.status, cache: response.headers.get("cache-control"), body: await response.json() };
+	};
+}
+
+test("the storage API is for the primary admin only and answers with the service results", async (t) => {
+	const { env } = await fixture(t);
+	const second = await caller(env, "second");
+	assert.equal((await second(lib.overviewRoute, "GET")).status, 403);
+	assert.equal((await second(lib.storesRoute, "POST", { body: form() })).status, 403);
+	const owner = await caller(env, "owner");
+	const overview = await owner(lib.overviewRoute, "GET");
+	assert.equal(overview.status, 200);
+	assert.equal(overview.cache, "no-store");
+	const created = await owner(lib.storesRoute, "POST", { body: form() });
+	assert.equal(created.status, 200, JSON.stringify(created.body));
+	assert.ok(!JSON.stringify(created.body).includes(fake.secretAccessKey));
+	const id = created.body.store.id;
+	const failed = await owner(lib.storesRoute, "POST", { body: form({ secretAccessKey: "wrong-secret-value" }) });
+	assert.equal(failed.status, 422);
+	assert.ok(Array.isArray(failed.body.report.steps));
+	assert.equal((await owner(lib.classRoute, "PUT", { params: { class: "nope" }, body: {} })).status, 404);
+	const routed = await owner(lib.classRoute, "PUT", {
+		params: { class: "mail" },
+		body: { storeId: id, migrate: true },
+	});
+	assert.equal(routed.status, 200, JSON.stringify(routed.body));
+	const migration = await owner(lib.migrationRoute, "GET", { params: { id: routed.body.migrationId } });
+	assert.equal(migration.body.migration.status, "queued");
+	assert.equal((await owner(lib.migrationRoute, "GET", { params: { id: "smg_nope" } })).status, 404);
+	const cancel = await owner(lib.migrationRoute, "POST", {
+		params: { id: routed.body.migrationId },
+		body: { action: "cancel" },
+	});
+	assert.equal(cancel.body.migration.status, "cancelled");
+	assert.equal(
+		(await owner(lib.migrationRoute, "POST", { params: { id: "x" }, body: { action: "boom" } })).status,
+		404,
+	);
+	assert.equal((await owner(lib.storeRoute, "DELETE", { params: { id } })).status, 409, "still routed");
+	const renamed = await owner(lib.storeRoute, "PATCH", { params: { id }, body: { name: "Renamed" } });
+	assert.equal(renamed.body.store.name, "Renamed");
+});

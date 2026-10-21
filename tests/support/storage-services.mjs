@@ -19,6 +19,14 @@ const ENTRIES = {
 	migrate: "server/runtime/migrate.ts",
 	files: "server/runtime/file-bucket.ts",
 	secrets: "src/lib/security/secret-box.ts",
+	session: "src/lib/auth/session.ts",
+	driveUploads: "src/lib/drive/uploads.ts",
+	driveContent: "src/lib/drive/content.ts",
+	overviewRoute: "src/app/api/admin/storage/route.ts",
+	storesRoute: "src/app/api/admin/storage/stores/route.ts",
+	storeRoute: "src/app/api/admin/storage/stores/[id]/route.ts",
+	classRoute: "src/app/api/admin/storage/routes/[class]/route.ts",
+	migrationRoute: "src/app/api/admin/storage/migrations/[id]/route.ts",
 };
 
 export const ENCRYPTION_KEY = "invented-encryption-key-for-storage-tests";
@@ -86,7 +94,9 @@ export async function loadStorageServices(prefix, buckets) {
 		}
 		fake.state.denied.clear();
 		db.db.exec(`
-			INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'admin', 1);
+			INSERT INTO users (id, email, password_hash, name, role, is_primary_admin, created_at) VALUES
+				('owner', 'owner@example.com', 'hash', 'Owner', 'admin', 1, 1),
+				('second', 'second@example.com', 'hash', 'Second admin', 'admin', 0, 1);
 			INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
 			INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'a', 1);
 		`);

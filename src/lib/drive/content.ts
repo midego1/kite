@@ -2,7 +2,7 @@ import { getDb } from "@/db";
 import type { SessionUser } from "@/lib/auth/types";
 import { getDriveItem, getDriveRole } from "./access";
 import { readableAttachment } from "./attachments";
-import { bucketOfItem } from "./objects";
+import { bucketOfItem, storeOfItem } from "./objects";
 import { driveContentHeaders, driveEtag, requestedRange } from "./range-utils";
 import type { DriveRow } from "./types";
 
@@ -79,7 +79,35 @@ export async function userFileResponse(
 	const { role } = await getDriveRole(db, user.id, item, { allowTrashed: item.ownerId === user.id });
 	if (!role) return notFoundResponse();
 	const download = new URL(request.url).searchParams.get("disposition") === "attachment";
+	if (download && request.method === "GET" && !request.headers.has("range")) {
+		const redirect = await presignedDownload(env, item);
+		if (redirect) return redirect;
+	}
 	return streamDriveFile(env, request, item, download);
+}
+
+/** Downloads from this size on go straight to a store that can sign URLs, so the bytes skip the Worker. */
+export const DRIVE_PRESIGNED_DOWNLOAD_BYTES = 8 * 1024 * 1024;
+const PRESIGNED_DOWNLOAD_SECONDS = 5 * 60;
+
+/**
+ * A 302 to a 5-minute signed GET that forces `attachment` and `application/octet-stream`, so the store never
+ * renders the file. Public links never use this: they always stream through Kite.
+ */
+async function presignedDownload(env: CloudflareEnv, item: DriveRow): Promise<Response | null> {
+	if (item.status !== "ready" || !item.objectKey || item.size < DRIVE_PRESIGNED_DOWNLOAD_BYTES) return null;
+	const signer = (await storeOfItem(env, item))?.signer;
+	if (!signer) return null;
+	const url = await signer.presignGet(item.objectKey, {
+		expiresIn: PRESIGNED_DOWNLOAD_SECONDS,
+		filename: item.name,
+		disposition: "attachment",
+		contentType: "application/octet-stream",
+	});
+	return new Response(null, {
+		status: 302,
+		headers: { Location: url, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" },
+	});
 }
 
 /** `GET /api/drive/attachments/[id]/content`: by the same access rule as the mail attachment route. */

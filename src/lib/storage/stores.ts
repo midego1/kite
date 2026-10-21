@@ -1,6 +1,6 @@
 import { and, eq, inArray, or } from "drizzle-orm";
 import { getDb } from "@/db";
-import { storageMigrations, storageStores } from "@/db/schema";
+import { storageMigrations, storageStores } from "@/db/schema/storage";
 import { newId } from "@/lib/ids";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { isNodeRuntime } from "@/lib/runtime";

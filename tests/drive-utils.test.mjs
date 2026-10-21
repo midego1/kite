@@ -17,6 +17,8 @@ const {
 	parseUploadRequest,
 	normalizeUploadContentType,
 	partsComplete,
+	parsePartNumbers,
+	parsePartEtag,
 	effectiveQuota,
 	parseQuotaBytes,
 	mayChangeQuota,
@@ -53,7 +55,7 @@ const {
 		"src/lib/drive/name-utils.ts",
 	],
 	[
-		"DRIVE_PROXIED_PART_BYTES, DRIVE_MAX_PARTS, partCount, expectedPartSize, maxFileBytes, parseUploadRequest, normalizeUploadContentType, partsComplete",
+		"DRIVE_PROXIED_PART_BYTES, DRIVE_MAX_PARTS, partCount, expectedPartSize, maxFileBytes, parseUploadRequest, normalizeUploadContentType, partsComplete, parsePartNumbers, parsePartEtag",
 		"src/lib/drive/upload-utils.ts",
 	],
 	["effectiveQuota, parseQuotaBytes, mayChangeQuota", "src/lib/drive/quota-utils.ts"],
@@ -118,6 +120,23 @@ test("part sizes: every part is full except the last, and an empty file has none
 	assert.equal(partsComplete([1, 3], 3), false);
 	assert.equal(partsComplete([1, 2, 2], 3), false);
 	assert.equal(partsComplete([], 0), true);
+});
+
+test("direct upload part numbers and ETags are validated", () => {
+	assert.deepEqual(parsePartNumbers({ partNumbers: [3, 1] }, 3), [3, 1]);
+	assert.equal(parsePartNumbers({ partNumbers: [4] }, 3), null);
+	assert.equal(parsePartNumbers({ partNumbers: [0] }, 3), null);
+	assert.equal(parsePartNumbers({ partNumbers: [1.5] }, 3), null);
+	assert.equal(parsePartNumbers({ partNumbers: [1, 1] }, 3), null);
+	assert.equal(parsePartNumbers({ partNumbers: [] }, 3), null);
+	assert.equal(parsePartNumbers({ partNumbers: Array.from({ length: 21 }, (_, index) => index + 1) }, 30), null);
+	assert.equal(parsePartNumbers(null, 3), null);
+	assert.equal(parsePartEtag({ etag: '"0a1b2c3d"' }), "0a1b2c3d");
+	assert.equal(parsePartEtag({ etag: " abc-2 " }), "abc-2");
+	assert.equal(parsePartEtag({ etag: 'a"b' }), null);
+	assert.equal(parsePartEtag({ etag: "" }), null);
+	assert.equal(parsePartEtag({ etag: "x".repeat(129) }), null);
+	assert.equal(parsePartEtag({}), null);
 });
 
 test("upload requests are validated and content types normalized", () => {

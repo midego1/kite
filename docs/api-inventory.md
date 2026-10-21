@@ -33,6 +33,14 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/modules`                                   | GET, PUT               | [source](../src/app/api/admin/modules/route.ts)                                   |
 | `/api/admin/resend-key`                                | DELETE, GET, PUT       | [source](../src/app/api/admin/resend-key/route.ts)                                |
 | `/api/admin/search-index`                              | GET, POST              | [source](../src/app/api/admin/search-index/route.ts)                              |
+| `/api/admin/storage/migrations/[id]`                   | GET, POST              | [source](../src/app/api/admin/storage/migrations/[id]/route.ts)                   |
+| `/api/admin/storage`                                   | GET                    | [source](../src/app/api/admin/storage/route.ts)                                   |
+| `/api/admin/storage/routes/[class]`                    | PUT                    | [source](../src/app/api/admin/storage/routes/[class]/route.ts)                    |
+| `/api/admin/storage/stores/[id]/cors`                  | POST                   | [source](../src/app/api/admin/storage/stores/[id]/cors/route.ts)                  |
+| `/api/admin/storage/stores/[id]/lifecycle`             | POST                   | [source](../src/app/api/admin/storage/stores/[id]/lifecycle/route.ts)             |
+| `/api/admin/storage/stores/[id]`                       | DELETE, PATCH          | [source](../src/app/api/admin/storage/stores/[id]/route.ts)                       |
+| `/api/admin/storage/stores/[id]/test`                  | POST                   | [source](../src/app/api/admin/storage/stores/[id]/test/route.ts)                  |
+| `/api/admin/storage/stores`                            | POST                   | [source](../src/app/api/admin/storage/stores/route.ts)                            |
 | `/api/agent/actions/[id]/undo`                         | POST                   | [source](../src/app/api/agent/actions/[id]/undo/route.ts)                         |
 | `/api/agent/actions/confirm`                           | POST                   | [source](../src/app/api/agent/actions/confirm/route.ts)                           |
 | `/api/agent/actions`                                   | GET                    | [source](../src/app/api/agent/actions/route.ts)                                   |
@@ -106,6 +114,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/drive/settings`                                  | GET, PATCH             | [source](../src/app/api/drive/settings/route.ts)                                  |
 | `/api/drive/settings/usage`                            | GET                    | [source](../src/app/api/drive/settings/usage/route.ts)                            |
 | `/api/drive/uploads/[id]/complete`                     | POST                   | [source](../src/app/api/drive/uploads/[id]/complete/route.ts)                     |
+| `/api/drive/uploads/[id]/part-urls`                    | POST                   | [source](../src/app/api/drive/uploads/[id]/part-urls/route.ts)                    |
 | `/api/drive/uploads/[id]/parts/[n]`                    | PUT                    | [source](../src/app/api/drive/uploads/[id]/parts/[n]/route.ts)                    |
 | `/api/drive/uploads/[id]`                              | DELETE                 | [source](../src/app/api/drive/uploads/[id]/route.ts)                              |
 | `/api/drive/uploads`                                   | POST                   | [source](../src/app/api/drive/uploads/route.ts)                                   |

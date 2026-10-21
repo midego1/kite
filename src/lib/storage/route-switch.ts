@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { storageMigrations, storageRoutes } from "@/db/schema";
+import { storageMigrations, storageRoutes } from "@/db/schema/storage";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { isNodeRuntime } from "@/lib/runtime";
 import { clearStorageConfigCache, readStorageConfig } from "./config";
@@ -148,7 +148,12 @@ async function ensureFreshValidation(
 export type MigrationActionInput = { action?: unknown; confirm?: unknown };
 
 /** Cancel, finish, retry, or delete the old copies (which needs the old store's name typed). */
-export async function runMigrationAction(env: StoresEnv, actor: Actor, id: string, body: MigrationActionInput) {
+export async function runMigrationAction(
+	env: StoresEnv,
+	actor: Actor,
+	id: string,
+	body: MigrationActionInput,
+): Promise<Result<{ migration: ReturnType<typeof migrationView> }>> {
 	const [job] = await getDb(env).select().from(storageMigrations).where(eq(storageMigrations.id, id)).limit(1);
 	if (!job) return fail(404, "Migration not found");
 	const action = body.action;

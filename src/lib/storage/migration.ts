@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
-import { storageMigrations, storageRoutes } from "@/db/schema";
+import { storageMigrations, storageRoutes } from "@/db/schema/storage";
 import { newId } from "@/lib/ids";
 import { createLogger } from "@/lib/logger.mjs";
 import { clearStorageConfigCache } from "./config";

@@ -3,6 +3,10 @@
  * Direct parts (phase 2) go straight to the store and can be larger.
  */
 export const DRIVE_PROXIED_PART_BYTES = 32 * 1024 * 1024;
+export const DRIVE_DIRECT_PART_BYTES = 64 * 1024 * 1024;
+/** Part URLs per request, and how long each stays valid; `content-length` is signed into every one. */
+export const DRIVE_PART_URLS_PER_REQUEST = 20;
+export const DRIVE_PART_URL_SECONDS = 15 * 60;
 /** @public Exercised by the bundled unit tests. */
 export const DRIVE_MAX_PARTS = 10_000;
 /** How long an interrupted upload can be resumed before the daily job aborts it. */
@@ -69,4 +73,20 @@ export function partsComplete(recorded: number[], parts: number): boolean {
 	if (recorded.length !== parts) return false;
 	const sorted = [...recorded].sort((a, b) => a - b);
 	return sorted.every((number, index) => number === index + 1);
+}
+
+/** The part numbers of a `part-urls` request: 1 to 20 distinct numbers, each a part of this upload. */
+export function parsePartNumbers(body: unknown, parts: number): number[] | null {
+	const value = (body as { partNumbers?: unknown } | null)?.partNumbers;
+	if (!Array.isArray(value) || !value.length || value.length > DRIVE_PART_URLS_PER_REQUEST) return null;
+	if (!value.every((number) => Number.isInteger(number) && number >= 1 && number <= parts)) return null;
+	return new Set(value).size === value.length ? (value as number[]) : null;
+}
+
+/** The ETag a browser read from the store's answer to a part upload, without quotes; null when it is not one. */
+export function parsePartEtag(body: unknown): string | null {
+	const value = (body as { etag?: unknown } | null)?.etag;
+	if (typeof value !== "string") return null;
+	const etag = value.trim().replace(/^"|"$/g, "");
+	return /^[A-Za-z0-9._-]{1,128}$/.test(etag) ? etag : null;
 }

@@ -438,9 +438,10 @@ export async function actOnStorageMigration(
 	} else {
 		if (job.status !== "failed") return { ok: false, status: 409, error: "Only a failed migration can be retried" };
 		const state = parseCursor(job.cursor, job.objectClass as RoutableClass);
+		const status = state.phase === "purge" ? "completed" : state.phase === "verify" ? "verifying" : "copying";
 		await db
 			.update(storageMigrations)
-			.set({ status: "copying", cursor: JSON.stringify({ ...state, failures: 0, leaseUntil: undefined }) })
+			.set({ status, cursor: JSON.stringify({ ...state, failures: 0, leaseUntil: undefined }) })
 			.where(eq(storageMigrations.id, job.id));
 		await enqueue(env, job.id);
 	}

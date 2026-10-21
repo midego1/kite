@@ -83,6 +83,7 @@ export function advance(
 
 /** The phase after this one; `done` and `purged` are final. */
 export function nextPhase(cursor: MigrationCursor, objectClass: RoutableClass): MigrationCursor {
+	if (cursor.phase === "done" || cursor.phase === "purged") return cursor;
 	if (cursor.phase === "copy") return { ...initialCursor(objectClass, "verify"), driveLeftovers: false };
 	if (cursor.phase === "purge") return { ...cursor, phase: "purged" };
 	return { ...cursor, phase: "done" };

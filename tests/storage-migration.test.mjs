@@ -308,6 +308,67 @@ test("the cron restarts stalled jobs and finishes migrations completed a week ag
 	assert.equal(queue.length, 0);
 });
 
+test("retrying a failed purge stays completed and preserves its terminal phase and finish time", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "m1");
+	setRoute(env, "mail", "sto_target", "default");
+	const id = await migration.queueStorageMigration(env, {
+		objectClass: "mail",
+		fromStoreId: "default",
+		toStoreId: "sto_target",
+		createdByUserId: null,
+	});
+	await drain(env, queue);
+	const finishedAt = job(env, id).finished_at;
+	assert.equal(
+		(await migration.startStorageMigrationPurge(env, await migration.getStorageMigration(env, id))).ok,
+		true,
+	);
+	env.DB.db.prepare("UPDATE storage_migrations SET from_store_id = 'sto_missing' WHERE id = ?").run(id);
+	await drain(env, queue);
+	assert.equal(job(env, id).status, "failed");
+	assert.equal(JSON.parse(job(env, id).cursor).phase, "purge");
+	env.DB.db.prepare("UPDATE storage_migrations SET from_store_id = 'default' WHERE id = ?").run(id);
+	const retried = await migration.actOnStorageMigration(env, await migration.getStorageMigration(env, id), "retry");
+	assert.equal(retried.ok, true);
+	assert.equal(retried.job.status, "completed");
+	assert.equal(JSON.parse(retried.job.cursor).failures, 0);
+	assert.equal(await migration.activeMigrationFor(env, "mail"), null);
+	await drain(env, queue);
+	assert.equal(await env.BUCKET.head("inbound/m1.eml"), null);
+	assert.equal(job(env, id).status, "completed");
+	assert.equal(JSON.parse(job(env, id).cursor).phase, "purged");
+	assert.equal(job(env, id).finished_at, finishedAt);
+	await migration.processStorageMigration(env, { kind: "storage.migrate", jobId: id });
+	await migration.runStorageMigrationMaintenance(env, new Date(Date.now() + 8 * 24 * 60 * 60 * 1000));
+	assert.equal(queue.length, 0);
+	assert.equal(JSON.parse(job(env, id).cursor).phase, "purged");
+	assert.equal(job(env, id).finished_at, finishedAt);
+});
+
+test("retrying a failed verification resumes with verifying status", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "m1");
+	const id = await migration.queueStorageMigration(env, {
+		objectClass: "mail",
+		fromStoreId: "default",
+		toStoreId: "sto_target",
+		createdByUserId: null,
+	});
+	queue.length = 0;
+	env.DB.db
+		.prepare("UPDATE storage_migrations SET status = 'failed', cursor = ? WHERE id = ?")
+		.run(JSON.stringify({ phase: "verify", sources: { messages: null, attachments: null }, failures: 5 }), id);
+	const retried = await migration.actOnStorageMigration(env, await migration.getStorageMigration(env, id), "retry");
+	assert.equal(retried.ok, true);
+	assert.equal(retried.job.status, "verifying");
+	await drain(env, queue);
+	assert.equal(job(env, id).status, "completed");
+	assert.equal(targetText("inbound/m1.eml"), "raw m1");
+});
+
 test("a failing batch is retried later and the job fails after repeated failures", async (t) => {
 	const { env, queue } = await fixture(t);
 	await addStore(env, "sto_target", "kite-target");

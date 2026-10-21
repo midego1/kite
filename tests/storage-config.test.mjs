@@ -284,6 +284,10 @@ test("the migration planner walks each source, then verifies, with bounded batch
 	assert.equal(cursor.sources.messages, null);
 	assert.equal(pure.nextPhase(cursor, "mail").phase, "done");
 	assert.equal(pure.nextPhase(pure.initialCursor("drive", "purge"), "drive").phase, "purged");
+	for (const phase of ["done", "purged"]) {
+		const terminal = { ...pure.initialCursor("drive", phase), lastBatchAt: 123 };
+		assert.equal(pure.nextPhase(terminal, "drive"), terminal);
+	}
 	assert.deepEqual(pure.parseCursor(JSON.stringify(cursor), "mail"), cursor);
 	assert.deepEqual(pure.parseCursor("{broken", "backups"), pure.initialCursor("backups"));
 	assert.deepEqual(pure.parseCursor(null, "drive"), pure.initialCursor("drive"));

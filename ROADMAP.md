@@ -207,6 +207,27 @@ Taken ahead of the proposed milestones 9–18 in the [complete-suite roadmap](do
    - Signed bundles the owner installs, run in Dynamic Workers on Cloudflare or a workerd sidecar on Node and Docker, using the same capability descriptors and call contract as builtin modules, with owner-approved grants and network hosts.
    - An app directory, AI-suggested apps and paid listings follow once sandboxed apps exist.
 
+## Milestone 20: Unified mailbox
+
+One Inbox, Sent, Drafts and Archive for every mailbox you can open, so someone with several addresses (their own, shared ones and, after milestone 6, external accounts) reads and answers everything in one place. A single mailbox stays one click away.
+
+**Where it stands today.** The mailbox selector shows one mailbox at a time. `/api/messages` already lists every accessible mailbox when no `mailboxId` is given, and the **All inboxes** unread count (used by the app badge) adds up all of them, but the UI has no view that uses it.
+
+1. **All mailboxes view**
+   - An **All mailboxes** entry at the top of the mailbox selector. It opens combined folders: Inbox, Starred, Snoozed, Sent, Drafts, Archive, Spam and Trash, with the sidebar counts summed across mailboxes. User folders stay per mailbox and are grouped under each mailbox's name.
+   - Each row shows which mailbox it belongs to, as a small coloured label with the mailbox name or avatar (`src/lib/avatar-colors.ts`), so mail from different addresses is easy to tell apart. Conversation view groups threads per mailbox, never across them.
+   - A filter narrows the view to some mailboxes, and the choice is remembered per browser (`appearance-preferences.ts`). Search, the command palette and keyboard navigation work in the combined view.
+   - Test: e2e seeds two mailboxes, opens All mailboxes and checks both mailboxes' messages, labels and summed counts; filters to one mailbox and checks the other disappears.
+2. **Acting on mail**
+   - Reply, reply all and forward go out from the mailbox the message arrived in. A new message from the combined view asks for the From address, defaulting to the last one used. Bulk actions (read, archive, move, delete) work across mailboxes and move mail only within its own mailbox.
+   - Moving to a user folder offers only the folders of that message's mailbox.
+   - Test: e2e replies from the combined view and checks the From address and the Sent copy land in the right mailbox; a bulk archive over two mailboxes.
+3. **Access and the rest of Kite**
+   - The view contains only mailboxes the user can open (`listAccessibleMailboxes`), with each mailbox's access level applied per message: read-only shared mail cannot be moved or deleted from the combined view either. Admins see only the mailboxes they could open one by one.
+   - Realtime updates, notifications, the For you page, automatic reading suggestions and rules keep working per mailbox. JMAP already lists every mailbox and needs no change.
+   - No new table: the selection and filter are browser preferences. Works on Workers and the Node runtime.
+   - Test: unit tests for the count summing and the per-message permission rules; an e2e test with a read-only shared mailbox.
+
 ## Ideas, not yet planned
 
 - Offline reading with a service worker.

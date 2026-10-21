@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
 import { getDb } from "@/db";
 import { domains, mailboxAliases, mailboxes, users } from "@/db/schema";
+import { selectRow } from "@/lib/db/pending-columns";
 import { requireSessionUser } from "@/lib/api/auth";
 import { newId } from "@/lib/ids";
 import { tracksAccountIdentity } from "@/lib/profile/identity-utils";
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
 			.limit(1);
 		if (!owner) return NextResponse.json({ error: "Account not found" }, { status: 404 });
 	}
-	const [domain] = await db.select().from(domains).where(eq(domains.id, parsed.data.domainId)).limit(1);
+	const domain = await selectRow(db, domains, eq(domains.id, parsed.data.domainId));
 	const canUseDomain =
 		domain &&
 		(domain.userId === user.id ||

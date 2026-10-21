@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { domains, mailboxes, routingRules } from "@/db/schema";
+import { selectRow } from "@/lib/db/pending-columns";
 import { canManageDomains } from "@/lib/auth/admin";
 import type { SessionUser } from "@/lib/auth/types";
 
@@ -42,11 +43,11 @@ function domainOwnerIds(user: DomainRuleUser): string[] {
 
 export async function getAdminDomain(db: AppDatabase, user: DomainRuleUser, domainId: string) {
 	if (!canManageDomains(user)) return null;
-	const [domain] = await db
-		.select()
-		.from(domains)
-		.where(and(eq(domains.id, domainId), inArray(domains.userId, domainOwnerIds(user))))
-		.limit(1);
+	const domain = await selectRow(
+		db,
+		domains,
+		and(eq(domains.id, domainId), inArray(domains.userId, domainOwnerIds(user))),
+	);
 	return domain ?? null;
 }
 

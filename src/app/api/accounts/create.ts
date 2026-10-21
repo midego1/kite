@@ -2,6 +2,7 @@ import { eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { domains, mailboxAliases, mailboxes, users } from "@/db/schema";
+import { selectRows } from "@/lib/db/pending-columns";
 import { hashPassword } from "@/lib/auth/password";
 import { rollbackEmailRoutingRuleChanges } from "@/lib/cloudflare-api";
 import type { CfEmailRoutingRuleChange } from "@/lib/cloudflare-api.types";
@@ -20,7 +21,7 @@ export async function createAccountResponse(env: CloudflareEnv, adminUserId: str
 	const username = input.username.toLowerCase().trim();
 	const email = `${username}@${primaryDomain.hostname}`;
 	const requested = [{ domainId: primaryDomain.id, localPart: username }, ...input.aliases];
-	const ownedDomains = await db.select().from(domains).where(eq(domains.userId, adminUserId));
+	const ownedDomains = await selectRows(db, domains, eq(domains.userId, adminUserId));
 	const byId = new Map(ownedDomains.map((domain) => [domain.id, domain]));
 	const seen = new Set<string>();
 	for (const [index, address] of requested.entries()) {

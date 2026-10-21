@@ -1,6 +1,7 @@
 import { eq, and, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import { domains, mailboxes } from "@/db/schema";
+import { selectRow, selectRows, insertRow } from "@/lib/db/pending-columns";
 import { ensureMailboxDomainRouting } from "@/lib/mailboxes/domain-addresses";
 import { newId } from "@/lib/ids";
 import {
@@ -35,7 +36,7 @@ export type DomainDnsView = {
 
 export async function listUserDomains(env: CloudflareEnv, userId: string) {
 	const db = getDb(env);
-	return db.select().from(domains).where(eq(domains.userId, userId));
+	return selectRows(db, domains, eq(domains.userId, userId));
 }
 
 export async function addDomainForUser(
@@ -90,7 +91,7 @@ export async function addDomainForUser(
 	let domain: typeof domains.$inferSelect;
 
 	try {
-		const [existing] = await db.select().from(domains).where(eq(domains.hostname, provisioned.hostname)).limit(1);
+		const existing = await selectRow(db, domains, eq(domains.hostname, provisioned.hostname));
 		if (existing && existing.userId !== userId) {
 			throw new Error("Domain is already registered");
 		}
@@ -121,7 +122,7 @@ export async function addDomainForUser(
 		if (existing) {
 			await db.update(domains).set(values).where(eq(domains.id, domainId));
 		} else {
-			await db.insert(domains).values(values);
+			await insertRow(db, domains, values);
 			insertedDomainId = domainId;
 		}
 
@@ -142,7 +143,7 @@ export async function addDomainForUser(
 			if (result.status === "rejected") console.warn("ensureMailboxDomainRouting", result.reason);
 		}
 
-		const [row] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+		const row = await selectRow(db, domains, eq(domains.id, domainId));
 		domain = row!;
 	} catch (err) {
 		// The zone was already provisioned above. Anything that fails after that —
@@ -217,11 +218,7 @@ export async function removeDomainForUser(
 	domainId: string,
 ): Promise<MailboxDeletionResult> {
 	const db = getDb(env);
-	const [domain] = await db
-		.select()
-		.from(domains)
-		.where(and(eq(domains.id, domainId), eq(domains.userId, userId)))
-		.limit(1);
+	const domain = await selectRow(db, domains, and(eq(domains.id, domainId), eq(domains.userId, userId)));
 	if (!domain) throw new Error("Domain not found");
 
 	try {
@@ -256,10 +253,6 @@ export async function removeDomainForUser(
 
 export async function getDomainForUser(env: CloudflareEnv, userId: string, domainId: string) {
 	const db = getDb(env);
-	const [domain] = await db
-		.select()
-		.from(domains)
-		.where(and(eq(domains.id, domainId), eq(domains.userId, userId)))
-		.limit(1);
+	const domain = await selectRow(db, domains, and(eq(domains.id, domainId), eq(domains.userId, userId)));
 	return domain ?? null;
 }

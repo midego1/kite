@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { domains, mailboxes } from "@/db/schema";
+import { selectRow } from "@/lib/db/pending-columns";
 import { ensureEmailRoutingRuleToWorker } from "@/lib/cloudflare-api";
 import { ensureMailboxDomainRouting } from "@/lib/mailboxes/domain-addresses";
 import { newId } from "@/lib/ids";
@@ -13,7 +14,7 @@ export async function ensurePersonalMailbox(env: CloudflareEnv, db: AppDatabase,
 
 	const [localPart, hostname] = user.email.toLowerCase().split("@");
 	if (!localPart || !hostname) return current;
-	const [domain] = await db.select().from(domains).where(eq(domains.hostname, hostname)).limit(1);
+	const domain = await selectRow(db, domains, eq(domains.hostname, hostname));
 	if (!domain) return current;
 
 	const [existing] = await db

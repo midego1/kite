@@ -66,6 +66,7 @@
 		"src/lib/auth/client-utils.ts",
 		"src/lib/auth/setup-token-utils.ts",
 		"src/lib/auth/user-lookup-utils.ts",
+		"src/lib/db/pending-columns-utils.ts",
 		"src/lib/build-version-utils.ts",
 		"src/lib/backups/backup-writer-utils.ts",
 		"src/lib/changelog/changelog-utils.ts",

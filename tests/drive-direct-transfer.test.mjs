@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadStorageServices } from "./support/storage-services.mjs";
 
-const { lib, fake, fixture, addStore } = await loadStorageServices("kite-drive-direct-", ["kite-drive"]);
+const { lib, fake, fixture, addStore } = await loadStorageServices("kite-drive-direct-", ["kite-drive"], {
+	driveObjects: "src/lib/drive/objects.ts",
+});
 const { driveUploads, driveContent } = lib;
 
 const owner = { id: "owner", email: "owner@example.com", name: "Owner", role: "admin", isPrimaryAdmin: true };
@@ -33,6 +35,73 @@ const partRequest = (body) =>
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(body),
 	});
+
+test("browser transfers require HTTPS except explicitly enabled development loopback", () => {
+	const signer = (origin) => ({ origin });
+	const https = signer("https://s3.example.com");
+	assert.equal(lib.driveObjects.browserSigner({}, { signer: https }), https);
+	assert.equal(lib.driveObjects.browserSigner({}, null), undefined);
+	const enabled = { STORAGE_ALLOW_INSECURE_ENDPOINT: "1", STORAGE_ALLOW_PRIVATE_ENDPOINTS: "1", KITE_RUNTIME: "node" };
+	for (const origin of ["http://s3.example.com", "http://10.0.0.1:9000"])
+		assert.equal(lib.driveObjects.browserSigner(enabled, { signer: signer(origin) }), undefined);
+	const loopback = signer("http://127.0.0.1:9000");
+	assert.equal(lib.driveObjects.browserSigner({}, { signer: loopback }), undefined);
+	assert.equal(lib.driveObjects.browserSigner(enabled, { signer: loopback }), loopback);
+	const previous = process.env.NODE_ENV;
+	try {
+		process.env.NODE_ENV = "production";
+		assert.equal(lib.driveObjects.browserSigner(enabled, { signer: loopback }), undefined);
+	} finally {
+		if (previous === undefined) delete process.env.NODE_ENV;
+		else process.env.NODE_ENV = previous;
+	}
+});
+
+test("an HTTP store without the dev exception proxies new and resumed uploads and large downloads", async (t) => {
+	const { env, db } = await driveOnStore(t);
+	delete env.STORAGE_ALLOW_INSECURE_ENDPOINT;
+	lib.config.clearStorageConfigCache();
+	const bytes = Buffer.from("proxied HTTP store bytes");
+	const body = uploadBody(bytes);
+	const session = unwrap(await driveUploads.startUpload(env, owner, body));
+	assert.equal(session.mode, "proxied");
+	assert.equal(session.partSize, 32 * 1024 * 1024);
+	const resumed = unwrap(await driveUploads.startUpload(env, owner, body));
+	assert.equal(resumed.id, session.id);
+	assert.equal(resumed.mode, "proxied");
+	assert.equal(resumed.resumed, true);
+	assert.equal(statusOf(await driveUploads.presignUploadParts(env, owner, session.id, { partNumbers: [1] })), 409);
+	assert.equal(
+		statusOf(await driveUploads.putUploadPart(env, owner, session.id, 1, partRequest({ etag: "abc" }))),
+		409,
+	);
+	unwrap(
+		await driveUploads.putUploadPart(
+			env,
+			owner,
+			session.id,
+			1,
+			new Request("http://localhost:3200/api/drive/uploads/x/parts/1", {
+				method: "PUT",
+				headers: { "Content-Length": String(bytes.length) },
+				body: bytes,
+			}),
+		),
+	);
+	unwrap(await driveUploads.completeUpload(env, owner, session.id));
+	assert.equal(bucket().objects.get(`drive/${session.id}`).bytes.toString(), bytes.toString());
+	const large = Buffer.alloc(driveContent.DRIVE_PRESIGNED_DOWNLOAD_BYTES, 7);
+	await insertReadyFile(env, db, "drv_large", "large.bin", large);
+	const download = await driveContent.userFileResponse(
+		env,
+		owner,
+		new Request("http://localhost:3200/api/drive/files/drv_large/content?disposition=attachment"),
+		"drv_large",
+	);
+	assert.equal(download.status, 200);
+	assert.equal(download.headers.get("Location"), null);
+	assert.deepEqual(Buffer.from(await download.arrayBuffer()), large);
+});
 
 test("a direct upload sends parts to the store with signed URLs and completes with the reported ETags", async (t) => {
 	const { env } = await driveOnStore(t);

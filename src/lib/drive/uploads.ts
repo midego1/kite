@@ -7,7 +7,7 @@ import { toDriveItemDtos } from "./dto";
 import { fail, notFound, ok } from "./errors";
 import { editableFolder } from "./items";
 import { canEditDrive, driveObjectKey, normalizeDriveName } from "./name-utils";
-import { bucketOfItem, multipartOf, newDriveStore, storeOfItem } from "./objects";
+import { browserSigner, bucketOfItem, multipartOf, newDriveStore, storeOfItem } from "./objects";
 import { countUploadsInProgress, getQuotaLimit, reserveDriveFile } from "./quota";
 import { QUOTA_ERROR } from "./quota-utils";
 import {
@@ -61,7 +61,7 @@ type UploadMode = "direct" | "proxied";
 
 /** Direct when the file's store can sign part URLs, so the browser sends the parts to it without Kite. */
 async function uploadMode(env: CloudflareEnv, row: Pick<DriveRow, "storeId">): Promise<UploadMode> {
-	return (await storeOfItem(env, row))?.signer ? "direct" : "proxied";
+	return browserSigner(env, await storeOfItem(env, row)) ? "direct" : "proxied";
 }
 
 function uploadAnswer(row: DriveRow, uploaded: number[], resumed: boolean, mode: UploadMode): DriveAnswer {
@@ -93,7 +93,8 @@ async function finishRow(env: CloudflareEnv, user: DriveUser, row: DriveRow, siz
  */
 export async function startUpload(env: CloudflareEnv, user: DriveUser, body: unknown): Promise<DriveAnswer> {
 	const store = await newDriveStore(env);
-	const partSize = store.signer ? DRIVE_DIRECT_PART_BYTES : DRIVE_PROXIED_PART_BYTES;
+	const mode: UploadMode = browserSigner(env, store) ? "direct" : "proxied";
+	const partSize = mode === "direct" ? DRIVE_DIRECT_PART_BYTES : DRIVE_PROXIED_PART_BYTES;
 	const request = parseUploadRequest(body, partSize);
 	if ("error" in request) return fail(400, request.error);
 	const db = getDb(env);
@@ -140,7 +141,7 @@ export async function startUpload(env: CloudflareEnv, user: DriveUser, body: unk
 			httpMetadata: { contentType: request.contentType },
 		});
 		await db.update(driveItems).set({ uploadId: upload.uploadId }).where(eq(driveItems.id, id));
-		return uploadAnswer({ ...row, uploadId: upload.uploadId }, [], false, store.signer ? "direct" : "proxied");
+		return uploadAnswer({ ...row, uploadId: upload.uploadId }, [], false, mode);
 	} catch (error) {
 		await db.delete(driveItems).where(eq(driveItems.id, id));
 		throw error;
@@ -213,7 +214,7 @@ export async function presignUploadParts(
 	body: unknown,
 ): Promise<DriveAnswer> {
 	const item = await loadUpload(env, user, id);
-	const signer = item ? (await storeOfItem(env, item))?.signer : undefined;
+	const signer = item ? browserSigner(env, await storeOfItem(env, item)) : undefined;
 	if (!item) return fail(404, "Upload not found");
 	if (!signer) return fail(409, "This upload goes through Kite; send the parts to Kite instead");
 	const partSize = item.uploadPartSize ?? DRIVE_PROXIED_PART_BYTES;

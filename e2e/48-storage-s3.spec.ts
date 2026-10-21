@@ -98,13 +98,17 @@ test("Admin → Storage adds an S3 store, sends Drive there with direct transfer
 		await switchDrive(page, storeName, { copy: false });
 		await expect(driveRow(page)).toContainText("Also reading from Cloudflare R2");
 
-		// A browser upload goes straight to the store, without Kite's cookies.
+		// The explicit dev loopback exception still permits direct transfers, without Kite's cookies.
 		await page.goto("/drive");
+		const uploadSession = page.waitForResponse(
+			(response) => response.url().endsWith("/api/drive/uploads") && response.request().method() === "POST",
+		);
 		await page.locator("input[data-drive-file-input]").setInputFiles({
 			name: fileName,
 			mimeType: "application/octet-stream",
 			buffer: Buffer.alloc(LARGE_BYTES, 3),
 		});
+		expect((await (await uploadSession).json()).mode).toBe("direct");
 		await expect(page.getByRole("region", { name: "Uploads" }).getByLabel("Uploaded")).toBeVisible({ timeout: 60_000 });
 		const requests = fake.state.requests as unknown as {
 			method: string;

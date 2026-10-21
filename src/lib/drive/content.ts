@@ -2,7 +2,7 @@ import { getDb } from "@/db";
 import type { SessionUser } from "@/lib/auth/types";
 import { getDriveItem, getDriveRole } from "./access";
 import { readableAttachment } from "./attachments";
-import { bucketOfItem, storeOfItem } from "./objects";
+import { browserSigner, bucketOfItem, storeOfItem } from "./objects";
 import { driveContentHeaders, driveEtag, requestedRange } from "./range-utils";
 import type { DriveRow } from "./types";
 
@@ -99,7 +99,7 @@ const PRESIGNED_DOWNLOAD_SECONDS = 5 * 60;
  */
 async function presignedDownload(env: CloudflareEnv, item: DriveRow): Promise<Response | null> {
 	if (item.status !== "ready" || !item.objectKey || item.size < DRIVE_PRESIGNED_DOWNLOAD_BYTES) return null;
-	const signer = (await storeOfItem(env, item))?.signer;
+	const signer = browserSigner(env, await storeOfItem(env, item));
 	if (!signer) return null;
 	const url = await signer.presignGet(item.objectKey, {
 		expiresIn: PRESIGNED_DOWNLOAD_SECONDS,

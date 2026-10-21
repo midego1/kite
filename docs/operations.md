@@ -291,6 +291,16 @@ upserts one comment (see [quality checks](quality.md#pr-report)).
 
 Drive (`src/lib/drive/`) keeps file contents in the same object store as attachments, under `drive/<itemId>`, and its metadata in the `drive_*` tables (migration 0064). Database backups include the metadata (the `drive` table group, which a configured backup can leave out) but not the contents: back up the R2 bucket or, on Node, the `blobs` folder of the data directory to keep the files. Restoring a database backup without the objects leaves rows whose content answers 404. The daily 02:00 UTC module task `purgeDrive` deletes trashed items older than the retention set under Admin → Drive (default 30 days) and aborts uploads nobody finished within three days; it skips while Drive is off for the install. Public link visits are limited by the `DRIVE_LINK_RATE_LIMIT` binding (namespace `1005`, previews `1105`, 60 requests per minute per IP), and password attempts by `LOGIN_RATE_LIMIT` keyed by IP and link.
 
+### Object storage
+
+`src/lib/storage/` decides where each object lives. With no store configured nothing changes, except one cached read of the storage tables (migration 0065) per isolate every 30 seconds. With stores, each class (Mail, Drive, Backups) writes to its routed store, reads fall back from the active store to the previous one (while a migration is pending) and then the default, and deletes reach the active and previous stores.
+
+- **Logs.** `storage.store_blocked` means a saved endpoint now resolves to a private address and the store is skipped; `storage.config_stale` and `storage.config_unavailable` mean the config read failed and the last known config (or the default store) was used. Presigned URLs and credentials are never logged.
+- **Migrations.** Each batch is a `storage.migrate` message on `kite-outbound`. A job leases its cursor, so a duplicate delivery does nothing; a batch that fails is retried and the job stops as failed after five failures in a row (Retry on the Storage page restarts it). The five-minute cron restarts stalled jobs and finishes completed ones after seven days, keeping the old copies.
+- **Audit log.** `storage.store_created`, `storage.store_updated`, `storage.store_deleted`, `storage.route_switched`, `storage.migration_started`, `storage.migration_cancelled` and `storage.migration_purged`.
+- **Backups.** `storage_stores` and `storage_routes` are in the `system` group (credentials stay sealed); `storage_migrations` is internal. A restore leaves a live storage config alone: when the target already has stores or routes, both tables keep their current rows. Object contents are never in a database backup; back up each bucket.
+- **`STORAGE_ALLOW_INSECURE_ENDPOINT` (dev and test only).** Allows `http` and loopback endpoints, as the e2e suite's fake S3 needs. It is ignored when `NODE_ENV` is `production`.
+
 ## Recovery and data handling
 
 Start with [incident response](runbooks/incident.md),

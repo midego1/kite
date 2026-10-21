@@ -5,7 +5,13 @@ import { newId } from "@/lib/ids";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { isNodeRuntime } from "@/lib/runtime";
 import { isSealed, sealSetting } from "@/lib/security/secret-box";
-import { clearStorageConfigCache, endpointPolicyFor, openStoreCredentials, readStorageConfig } from "./config";
+import {
+	clearStorageConfigCache,
+	endpointPolicyFor,
+	openStoreCredentials,
+	readStorageConfig,
+	storageTablesReady,
+} from "./config";
 import {
 	DEFAULT_STORE_ID,
 	ENVIRONMENT_STORE_ID,
@@ -162,6 +168,7 @@ export async function storageOverview(env: StoresEnv) {
 		migrations: (await listStorageMigrations(env)).map(migrationView),
 		usage: await usageByClass(env),
 		encryptionReady: !!env.APP_ENCRYPTION_KEY?.trim(),
+		migrationPending: !(await storageTablesReady(env)),
 		endpointPolicy: { allowInsecure: policy.allowInsecure, allowPrivate: policy.allowPrivate },
 		runtime: isNodeRuntime(env) ? "node" : "workers",
 	};

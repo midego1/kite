@@ -1,8 +1,9 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { startFakeS3 } from "../tests/support/fake-s3.mjs";
-import { BASE_URL, STORAGE_STATE } from "./support/constants";
+import { okJson } from "./support/auto-read";
+import { BASE_URL, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { listItems, sql } from "./support/drive";
-import { apiContext, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 
 const BUCKET = "kite-e2e";
 const LARGE_BYTES = 9 * 1024 * 1024;
@@ -21,6 +22,32 @@ async function switchDrive(page: Page, storeName: string, { copy }: { copy: bool
 	await dialog.getByRole("button", { name: "Switch" }).click();
 	await expect(dialog).toHaveCount(0);
 }
+
+/** Later specs share the database: nothing may stay routed to a store that is about to stop. */
+async function resetStorage(admin: APIRequestContext) {
+	const left = await admin.get("/api/admin/storage").then((response) => response.json());
+	if (left.routes?.some((route: { storeId: string }) => route.storeId !== "default") || left.stores?.length)
+		sql(
+			"DELETE FROM storage_routes; UPDATE drive_items SET store_id = 'default' WHERE store_id <> 'default'; DELETE FROM storage_migrations; DELETE FROM storage_stores;",
+		);
+}
+
+async function waitForMigration(admin: APIRequestContext, id: string, done: (migration: MigrationState) => boolean) {
+	let last: MigrationState | undefined;
+	await expect
+		.poll(
+			async () => {
+				last = (await okJson<{ migration: MigrationState }>(await admin.get(`/api/admin/storage/migrations/${id}`)))
+					.migration;
+				return done(last);
+			},
+			{ timeout: 90_000, intervals: [500, 1000, 2000] },
+		)
+		.toBe(true);
+	return last!;
+}
+
+type MigrationState = { status: string; phase: string; objectsDone: number; errors: number };
 
 test("Admin → Storage adds an S3 store, sends Drive there with direct transfers, and moves it back", async ({
 	page,
@@ -131,13 +158,74 @@ test("Admin → Storage adds an S3 store, sends Drive there with direct transfer
 			.click();
 		await expect(storeRow).toHaveCount(0);
 	} finally {
-		// Later specs share the database: nothing may stay routed to a store that is about to stop.
-		const left = await admin.get("/api/admin/storage").then((response) => response.json());
-		if (left.routes?.some((route: { storeId: string }) => route.storeId !== "default")) {
-			sql(
-				"DELETE FROM storage_routes; UPDATE drive_items SET store_id = 'default' WHERE store_id <> 'default'; DELETE FROM storage_migrations; DELETE FROM storage_stores;",
-			);
+		await resetStorage(admin);
+		await admin.dispose();
+		await fake.close();
+	}
+});
+
+test("mail routed to an S3 store lands there, old messages still open, and a migration moves it back", async () => {
+	test.setTimeout(180_000);
+	const bucket = "kite-e2e-mail";
+	const fake = await startFakeS3({ buckets: [bucket] });
+	const admin = await apiContext(STORAGE_STATE);
+	const storeName = `E2E mail ${uniqueToken("")}`;
+	const objects = () => fake.buckets.get(bucket)!.objects;
+	try {
+		const old = await deliverInbound(admin, {
+			from: "sender@example.net",
+			to: SUPPORT_ADDRESS,
+			subject: uniqueToken("Before the switch "),
+			text: "Stored on the default store.",
+		});
+		const { store } = await okJson<{ store: { id: string } }>(
+			await admin.post("/api/admin/storage/stores", {
+				data: {
+					name: storeName,
+					provider: "minio",
+					endpoint: fake.url,
+					region: fake.region,
+					bucket,
+					addressing: "path",
+					accessKeyId: fake.accessKeyId,
+					secretAccessKey: fake.secretAccessKey,
+				},
+			}),
+		);
+		await okJson(await admin.put("/api/admin/storage/routes/mail", { data: { storeId: store.id, migrate: false } }));
+
+		const fresh = await deliverInbound(admin, {
+			from: "sender@example.net",
+			to: SUPPORT_ADDRESS,
+			subject: uniqueToken("After the switch "),
+			text: "Stored on the S3 store.",
+		});
+		expect([...objects().keys()].some((key) => key.startsWith("inbound/"))).toBe(true);
+		for (const message of [old, fresh]) {
+			const original = await admin.get(`/api/messages/${message.id}/original`);
+			expect(original.status()).toBe(200);
+			expect(await original.text()).toContain(message.subject);
 		}
+
+		const { migrationId } = await okJson<{ migrationId: string }>(
+			await admin.put("/api/admin/storage/routes/mail", { data: { storeId: "default", migrate: true } }),
+		);
+		const copied = await waitForMigration(admin, migrationId, (job) => job.status === "completed");
+		expect(copied.errors).toBe(0);
+		expect(copied.objectsDone).toBeGreaterThan(0);
+		expect(objects().size).toBeGreaterThan(0);
+		await okJson(
+			await admin.post(`/api/admin/storage/migrations/${migrationId}`, {
+				data: { action: "purge-source", confirm: storeName },
+			}),
+		);
+		await waitForMigration(admin, migrationId, (job) => job.phase === "purged");
+		expect(objects().size).toBe(0);
+		const original = await admin.get(`/api/messages/${fresh.id}/original`);
+		expect(await original.text()).toContain(fresh.subject);
+		await okJson(await admin.delete(`/api/admin/storage/stores/${store.id}`));
+	} finally {
+		await resetStorage(admin);
 		await admin.dispose();
 		await fake.close();
 	}

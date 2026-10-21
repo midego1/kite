@@ -35,13 +35,15 @@ export const APP_ORIGIN = "http://localhost:3200";
 /**
  * The storage services bundled without the module-server stubs of `bundleModules`, because the migration
  * reaches Drive files through the real Drive capabilities. Splitting keeps one config cache and one module
- * registry across the entries. Returns the loaded entries, a fake S3 with the given buckets and `fixture(t)`.
+ * registry across the entries; `extraEntries` adds more by name. Returns the loaded entries, a fake S3 with the
+ * given buckets and `fixture(t)`.
  */
-export async function loadStorageServices(prefix, buckets) {
+export async function loadStorageServices(prefix, buckets, extraEntries = {}) {
+	const entries = { ...ENTRIES, ...extraEntries };
 	const outDir = makeBundleDirectory(prefix);
 	const scratch = mkdtempSync(join(tmpdir(), prefix));
 	await build({
-		entryPoints: Object.fromEntries(Object.entries(ENTRIES).map(([name, file]) => [name, join(root, file)])),
+		entryPoints: Object.fromEntries(Object.entries(entries).map(([name, file]) => [name, join(root, file)])),
 		outdir: outDir,
 		outExtension: { ".js": ".mjs" },
 		bundle: true,
@@ -60,7 +62,7 @@ export async function loadStorageServices(prefix, buckets) {
 		},
 	});
 	const lib = {};
-	for (const name of Object.keys(ENTRIES)) lib[name] = await import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
+	for (const name of Object.keys(entries)) lib[name] = await import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 	const fake = await startFakeS3({ buckets });
 	after(async () => {
 		await fake.close();

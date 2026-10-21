@@ -2,6 +2,7 @@ import { requireSessionAdmin } from "@/lib/api/auth";
 import { isPrimaryAdmin } from "@/lib/auth/admin";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
+import { storageTablesReady } from "./config";
 import type { Failure } from "./stores";
 
 const noStore = { "Cache-Control": "no-store" };
@@ -18,6 +19,10 @@ export async function authorizeStorage(request: Request, mutation: boolean): Pro
 	if (auth.error) return { error: auth.error };
 	if (mutation && !hasValidSessionMutationOrigin(request))
 		return { error: Response.json({ error: "Invalid origin" }, { status: 403 }) };
+	if (mutation && !(await storageTablesReady(env)))
+		return {
+			error: storageJson({ error: "Apply the pending database update first", code: "MIGRATION_PENDING" }, 409),
+		};
 	const origin = request.headers.get("origin") || new URL(request.url).origin;
 	return { env, actor: { id: auth.user.id }, origin, error: null };
 }

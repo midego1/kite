@@ -281,3 +281,21 @@ test("the storage API is for the primary admin only and answers with the service
 	const renamed = await owner(lib.storeRoute, "PATCH", { params: { id }, body: { name: "Renamed" } });
 	assert.equal(renamed.body.store.name, "Renamed");
 });
+
+test("before migration 0065 the overview says so and every change answers 409 MIGRATION_PENDING", async (t) => {
+	const { env } = await fixture(t);
+	env.DB.db.exec("DROP TABLE storage_migrations; DROP TABLE storage_routes; DROP TABLE storage_stores;");
+	const owner = await caller(env, "owner");
+	const overview = await owner(lib.overviewRoute, "GET");
+	assert.equal(overview.status, 200);
+	assert.equal(overview.body.migrationPending, true);
+	assert.deepEqual(overview.body.stores, []);
+	const before = fake.state.requests.length;
+	const created = await owner(lib.storesRoute, "POST", { body: form() });
+	assert.equal(created.status, 409);
+	assert.equal(created.body.code, "MIGRATION_PENDING");
+	assert.equal(fake.state.requests.length, before, "no probe is written");
+	const routed = await owner(lib.classRoute, "PUT", { params: { class: "mail" }, body: { storeId: "default" } });
+	assert.equal(routed.status, 409);
+	assert.equal(routed.body.code, "MIGRATION_PENDING");
+});

@@ -117,6 +117,23 @@ async function readRows(env: StorageEnv): Promise<{ stores: StoreRow[]; routes: 
 	}
 }
 
+const STORAGE_TABLES = ["storage_stores", "storage_routes", "storage_migrations"];
+/** Migrations only add tables, so once they exist the check is skipped for the rest of the isolate's life. */
+const readyDatabases = new WeakSet<object>();
+
+/** Whether migration 0065 has been applied; reads only `sqlite_master`. */
+export async function storageTablesReady(env: Pick<CloudflareEnv, "DB">): Promise<boolean> {
+	if (readyDatabases.has(env.DB)) return true;
+	const row = await env.DB.prepare(
+		`SELECT count(*) AS present FROM sqlite_master WHERE type = 'table' AND name IN (${STORAGE_TABLES.map(() => "?").join(", ")})`,
+	)
+		.bind(...STORAGE_TABLES)
+		.first<{ present: number }>();
+	const ready = Number(row?.present ?? 0) === STORAGE_TABLES.length;
+	if (ready) readyDatabases.add(env.DB);
+	return ready;
+}
+
 /** Reads and guards the config, bypassing the cache. */
 export async function readStorageConfig(env: StorageEnv): Promise<StorageConfig> {
 	const rows = await readRows(env);

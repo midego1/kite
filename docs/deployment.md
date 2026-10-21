@@ -128,6 +128,18 @@ Kite exports its D1 records as JSON and stores the backup files in the configure
 
 Deploy the complete Worker with `npm run deploy` whenever the cron trigger is added or changed.
 
+## Object storage (optional)
+
+By default every file Kite keeps (raw mail, attachments, Drive files, backups) is in the `BUCKET` R2 binding (`kite-raw`), and nothing below is needed. **Admin → Storage** (primary admin only) can add S3-compatible stores and choose, separately for Mail, Drive and Backups, which store new objects go to. It needs `APP_ENCRYPTION_KEY`: store keys are only ever saved encrypted, and the page refuses to add a store without it.
+
+- **Direct Drive uploads to R2.** Without S3 API keys, Drive uploads pass through the Worker in 32 MiB parts. Select **Enable direct uploads** on the Default row and enter an R2 API token's S3 keys (R2 → Manage API tokens, **Object Read & Write** on `kite-raw`) and your account's endpoint, `https://<account id>.r2.cloudflarestorage.com`. Browsers then send 64 MiB parts straight to the bucket with signed URLs, and signed-in downloads of 8 MiB or more redirect to a five-minute signed link.
+- **Another store.** **Add store** has presets for Amazon S3, Cloudflare R2 (S3 API), Backblaze B2, Wasabi, Hetzner, MinIO and any other S3-compatible service. Before saving, Kite checks the endpoint, the bucket, writing, reading and deleting a test object, a multipart upload and a signed link, and lists each failure with the permission or setting that fixes it. A wrong secret or a missing permission is reported by step.
+- **CORS.** Drive can only be routed to a store whose CORS rule lets the Kite origin `PUT` parts and read their `ETag`. **Apply CORS** sets the rule on providers whose own keys may (S3, R2, Wasabi, MinIO); for the others the dialog shows the rule to add in the provider's console. Mail and backups do not need CORS.
+- **Switching and migrating.** Switching a class sends new objects to the chosen store within 30 seconds; existing objects stay readable from the old one. Tick **Copy existing** to start a migration, which copies and verifies every object on the `kite-outbound` queue and shows its progress. Then choose **Finish and keep old copies** or **Delete from** the old store (behind a typed confirmation); a migration left alone finishes by itself after seven days and keeps the old copies. Providers may charge for the requests and for data leaving the old store.
+- **Preview deployments** share the database, and therefore this setting, with production.
+
+The Worker can only reach public `https` endpoints. Store changes, switches and deletions are written to the audit log.
+
 ## Email assistant and MCP
 
 The assistant uses the Workers AI `AI` binding and a separate `kite-agent` queue. The Deploy to Cloudflare button creates the queue; for a manual deploy, create it before deploying. The five-minute cron recovers pending auto-draft work; the 02:00 UTC cron still runs backups.

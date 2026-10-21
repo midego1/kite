@@ -18,7 +18,7 @@ Search finds names, and the type chips (Photos, Videos, Documents, Others) narro
 
 ## Uploading
 
-Use **New → Upload files** or **Upload folder**, or drop files on the list. Folders keep their structure. Files are sent in parts of 32 MiB, and the **Uploads** panel shows each one's progress. If an upload is interrupted, uploading the same file into the same folder again within three days continues where it stopped; after that the unfinished upload is removed. One account can have 20 uploads in progress at a time.
+Use **New → Upload files** or **Upload folder**, or drop files on the list. Folders keep their structure. Files are sent in parts of 32 MiB through Kite, or of 64 MiB straight to the storage provider when an admin has set that up under Admin → Storage, and the **Uploads** panel shows each one's progress. If an upload is interrupted, uploading the same file into the same folder again within three days continues where it stopped; after that the unfinished upload is removed. One account can have 20 uploads in progress at a time.
 
 **Save to Drive** in an attachment's menu, in the reader or under All attachments, copies the attachment into the folder you choose. The copy is independent of the message: deleting the mail keeps the file.
 
@@ -69,4 +69,4 @@ The owner turns Drive off under **Admin → Modules**, or for one user under **A
 
 ## Where files live
 
-File contents are stored in the install's object storage under `drive/<id>` (the `BUCKET` R2 bucket on Cloudflare, the `blobs` folder of the data directory on Node and Docker). Names, folders, shares and links are in the database. Database backups include that metadata but not the file contents, as with mail attachments; see [Privacy](privacy.md#what-is-stored-where) and [Operations](operations.md#drive-files).
+File contents are stored in the install's object storage under `drive/<id>` (the `BUCKET` R2 bucket on Cloudflare, the `blobs` folder of the data directory on Node and Docker), or in an S3-compatible store an admin chose for Drive under Admin → Storage. With such a store, downloads of 8 MiB or more open a five-minute signed link to the store; public links always go through Kite. Names, folders, shares and links are in the database. Database backups include that metadata but not the file contents, as with mail attachments; see [Privacy](privacy.md#what-is-stored-where) and [Operations](operations.md#drive-files).

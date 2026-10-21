@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { storageMigrations, storageRoutes } from "@/db/schema/storage";
 import { newId } from "@/lib/ids";
 import { createLogger } from "@/lib/logger.mjs";
+import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { clearStorageConfigCache } from "./config";
 import { DEFAULT_STORE_ID, isRoutableClass } from "./config-utils";
 import { getStorage, type StoragePlatformEnv } from "./index";
@@ -350,7 +351,7 @@ export async function runStorageMigrationMaintenance(env: MigrationEnv, now = ne
 			.from(storageMigrations)
 			.where(inArray(storageMigrations.status, [...ACTIVE_MIGRATION_STATUSES, "completed"]));
 	} catch (error) {
-		if (/no such table/i.test(String((error as Error)?.message ?? error))) return;
+		if (isNoSuchTableError(error)) return;
 		throw error;
 	}
 	for (const job of jobs) {
@@ -394,7 +395,7 @@ export async function listStorageMigrations(env: MigrationEnv, limit = 10): Prom
 	try {
 		return await getDb(env).select().from(storageMigrations).orderBy(desc(storageMigrations.createdAt)).limit(limit);
 	} catch (error) {
-		if (/no such table/i.test(String((error as Error)?.message ?? error))) return [];
+		if (isNoSuchTableError(error)) return [];
 		throw error;
 	}
 }

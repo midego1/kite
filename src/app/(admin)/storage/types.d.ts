@@ -30,6 +30,7 @@ export type StorageOverview = {
 	migrations: MigrationView[];
 	usage: Record<RoutableClass, { objects: number; bytes: number }>;
 	encryptionReady: boolean;
+	migrationPending: boolean;
 	endpointPolicy: { allowInsecure: boolean; allowPrivate: boolean };
 	runtime: "node" | "workers";
 };

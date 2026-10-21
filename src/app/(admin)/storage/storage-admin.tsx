@@ -208,12 +208,17 @@ export function StorageAdmin() {
 				</p>
 			)}
 			{overview.isLoading && <SkeletonRows count={4} />}
-			{data && !data.encryptionReady && (
+			{data?.migrationPending && (
+				<p role="status" className="rounded-3xl bg-blue-50 p-6 text-sm font-medium text-blue-900">
+					Apply the pending database update to set up storage. Until then everything stays in the default store.
+				</p>
+			)}
+			{data && !data.migrationPending && !data.encryptionReady && (
 				<p role="status" className="rounded-3xl bg-blue-50 p-6 text-sm font-medium text-blue-900">
 					Set APP_ENCRYPTION_KEY to add stores. Store keys are only ever saved encrypted.
 				</p>
 			)}
-			{data && (
+			{data && !data.migrationPending && (
 				<>
 					<StoresCard overview={data} onDialog={setDialog} onChanged={refresh} />
 					<DataRoutes overview={data} onChanged={refresh} />

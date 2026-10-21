@@ -40,7 +40,7 @@ function requireMultipart(store: ObjectStore) {
 
 /**
  * `env.BUCKET` once `withStorage` wraps the env: writes go to the class's active store, reads walk the chain
- * (active, previous while migrating, default), deletes reach the active and previous store. `system` keys and an
+ * (active, previous while migrating, default), deletes reach all three stores. `system` keys and an
  * install without stores go straight to the binding: `system` keys without reading the config at all, the others
  * after one cached config read.
  * @public Exercised by the unit tests.

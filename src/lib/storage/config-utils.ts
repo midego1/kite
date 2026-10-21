@@ -191,11 +191,11 @@ export function readChain(config: StorageConfig, objectClass: ObjectClass): stri
 	return [...new Set(chain)];
 }
 
-/** A delete reaches the active and the previous store, so a migration cannot bring a deleted object back. */
+/** A delete reaches every store in the read chain, including objects written to default during a config outage. */
 export function deleteTargets(config: StorageConfig, objectClass: ObjectClass): string[] {
 	if (objectClass === "system") return [DEFAULT_STORE_ID];
 	const route = config.routes.get(objectClass);
-	const targets = [route?.storeId ?? DEFAULT_STORE_ID, route?.previousStoreId].filter((id) =>
+	const targets = [route?.storeId ?? DEFAULT_STORE_ID, route?.previousStoreId, DEFAULT_STORE_ID].filter((id) =>
 		isUsableStore(config, id),
 	);
 	return targets.length ? [...new Set(targets)] : [DEFAULT_STORE_ID];

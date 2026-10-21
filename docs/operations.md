@@ -293,7 +293,7 @@ Drive (`src/lib/drive/`) keeps file contents under `drive/<itemId>` in the store
 
 ### Object storage
 
-`src/lib/storage/` decides where each object lives. With no store configured nothing changes, except one cached read of the storage tables (migration 0065) per isolate every 30 seconds. With stores, each class (Mail, Drive, Backups) writes to its routed store, reads fall back from the active store to the previous one (while a migration is pending) and then the default, and deletes reach the active and previous stores.
+`src/lib/storage/` decides where each object lives. With no store configured nothing changes, except one cached read of the storage tables (migration 0065) per isolate every 30 seconds. With stores, each class (Mail, Drive, Backups) writes to its routed store, reads fall back from the active store to the previous one (while a migration is pending) and then the default, and routed deletes reach the active, previous and default stores.
 
 - **Logs.** `storage.store_blocked` means a saved endpoint now resolves to a private address and the store is skipped; `storage.config_stale` and `storage.config_unavailable` mean the config read failed and the last known config (or the default store) was used. Presigned URLs and credentials are never logged.
 - **Migrations.** Each batch is a `storage.migrate` message on `kite-outbound`. A job leases its cursor, so a duplicate delivery does nothing; a batch that fails is retried and the job stops as failed after five failures in a row (Retry on the Storage page restarts it). The five-minute cron restarts stalled jobs and finishes completed ones after seven days, keeping the old copies.

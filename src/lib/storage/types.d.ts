@@ -59,7 +59,7 @@ export type Storage = {
 	store(id: string): ObjectStore | null;
 	/** Where a read of a class looks, in order: active, previous while migrating, then the default store. */
 	readChain(objectClass: ObjectClass): ObjectStore[];
-	/** The stores a delete of a class reaches: active and previous. */
+	/** The stores a delete of a class reaches: active, previous and default. */
 	deleteTargets(objectClass: ObjectClass): ObjectStore[];
 	/** The exact origins browsers may send presigned requests to, for CSP `connect-src`. */
 	connectOrigins(): string[];

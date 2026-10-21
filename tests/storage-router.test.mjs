@@ -256,6 +256,47 @@ test("a database without migration 0065 reads as every class on the default stor
 	assert.equal(config.routes.size, 0);
 });
 
+for (const [objectClass, key] of [
+	["mail", "inbound/outage.eml"],
+	["backups", "backups/outage.json"],
+]) {
+	test(`a ${objectClass} delete after config recovery also removes the default fallback copy`, async (t) => {
+		const env = await fixture(t, {
+			stores: [
+				{ id: "sto_active", bucket: "kite-mail" },
+				{ id: "sto_previous", bucket: "kite-drive" },
+			],
+			routes: [[objectClass, "sto_active", "sto_previous"]],
+		});
+		let failing = true;
+		const flaky = {
+			...env,
+			DB: new Proxy(env.DB, {
+				get(target, property) {
+					if (property === "batch" && failing)
+						return async () => {
+							throw new Error("D1_ERROR: network");
+						};
+					return Reflect.get(target, property);
+				},
+			}),
+		};
+		const routed = lib.withStorage(flaky);
+		await routed.BUCKET.put(key, "written during the outage");
+		assert.ok(await env.BUCKET.head(key));
+		failing = false;
+		lib.clearStorageConfigCache();
+		const storage = await lib.getStorage(flaky);
+		await storage.store("sto_active").bucket.put(key, "active copy");
+		await storage.store("sto_previous").bucket.put(key, "previous copy");
+		await routed.BUCKET.delete(key);
+		assert.equal(await env.BUCKET.head(key), null);
+		assert.equal(fakeHas("kite-mail", key), false);
+		assert.equal(fakeHas("kite-drive", key), false);
+		assert.equal(await routed.BUCKET.get(key), null);
+	});
+}
+
 test("the endpoint guard runs on every load: without the dev flag an http loopback store is blocked", async (t) => {
 	const env = await fixture(t, {
 		stores: [{ id: "sto_mail", bucket: "kite-mail" }],
@@ -316,7 +357,7 @@ test("the read chain, delete targets and active store skip unusable stores", () 
 		]),
 	};
 	assert.deepEqual(lib.readChain(config, "mail"), ["sto_b", "sto_a", "default"]);
-	assert.deepEqual(lib.deleteTargets(config, "mail"), ["sto_b", "sto_a"]);
+	assert.deepEqual(lib.deleteTargets(config, "mail"), ["sto_b", "sto_a", "default"]);
 	assert.deepEqual(lib.readChain(config, "drive"), ["default"]);
 	assert.deepEqual(lib.deleteTargets(config, "drive"), ["default"]);
 	assert.equal(lib.activeStoreId(config, "drive"), "default");
@@ -325,6 +366,7 @@ test("the read chain, delete targets and active store skip unusable stores", () 
 	assert.deepEqual(lib.readChain(config, "backups"), ["default"]);
 	assert.deepEqual(lib.readChain(config, "system"), ["default"]);
 	assert.deepEqual(lib.deleteTargets(config, "system"), ["default"]);
+	assert.deepEqual(lib.deleteTargets(config, "backups"), ["default"], "default is not deleted twice");
 	assert.deepEqual(lib.routesUsingStore(config, "sto_a"), ["mail"]);
 	assert.deepEqual(lib.routesUsingStore(config, "sto_keys"), []);
 });

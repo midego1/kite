@@ -23,6 +23,7 @@ import {
 	storageEndpointPolicy,
 	type EndpointPolicy,
 } from "./endpoint-utils";
+import { bucketHost } from "./s3-utils";
 import type { RoutableClass, S3Credentials, S3Location } from "./types";
 
 const log = createLogger("storage");
@@ -78,13 +79,13 @@ class StorageEndpointError extends Error {}
  */
 export async function assertStoreEndpoint(
 	env: StorageEnv,
-	location: Pick<S3Location, "endpoint" | "scheme">,
+	location: Pick<S3Location, "endpoint" | "scheme" | "bucket" | "addressing">,
 ): Promise<void> {
 	const policy = endpointPolicyFor(env);
 	const problem = endpointProblem(location, policy);
 	if (problem) throw new StorageEndpointError(problem);
 	if (isAllowedLocalEndpoint(location, policy)) return;
-	const host = endpointHostname(location.endpoint);
+	const host = endpointHostname(bucketHost(location));
 	try {
 		await assertPublicHttpUrl(env, `https://${host.includes(":") ? `[${host}]` : host}/`);
 	} catch (error) {

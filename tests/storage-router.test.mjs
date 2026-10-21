@@ -14,7 +14,7 @@ const lib = await bundleModules("kite-storage-router-", [
 	["sealSetting", "src/lib/security/secret-box.ts"],
 	["withStorage, createStorageRouter", "src/lib/storage/router.ts"],
 	["getStorage, rawEnvOf, storageConnectOrigins", "src/lib/storage/index.ts"],
-	["clearStorageConfigCache, loadStorageConfig, CONFIG_TTL_MS", "src/lib/storage/config.ts"],
+	["assertStoreEndpoint, clearStorageConfigCache, loadStorageConfig, CONFIG_TTL_MS", "src/lib/storage/config.ts"],
 	[
 		"readChain, deleteTargets, activeStoreId, routesUsingStore, keyHint, parseCredentials, environmentStore, environmentClasses, mergeEnvironmentRoutes, storeRecordFromRow",
 		"src/lib/storage/config-utils.ts",
@@ -339,6 +339,34 @@ test("connect origins list presign-capable stores, and R2 keys for the binding s
 	assert.equal(url.pathname, "/kite-raw/drive/drv_1");
 	const node = await lib.getStorage({ ...env, KITE_RUNTIME: "node" });
 	assert.ok(node);
+});
+
+test("the endpoint guard resolves the bucket-qualified host for virtual addressing", async (t) => {
+	const resolved = [];
+	const env = await fixture(t, {
+		stores: [{ id: "sto_virtual", bucket: "kite-mail" }],
+		extraEnv: {
+			STORAGE_ALLOW_INSECURE_ENDPOINT: undefined,
+			RESOLVE_HOST: async (host) => {
+				resolved.push(host);
+				return host === "kite-mail.s3.example.com" ? ["10.0.0.5"] : ["93.184.216.34"];
+			},
+		},
+	});
+	const location = { endpoint: "s3.example.com:9443", scheme: "https", bucket: "kite-mail", addressing: "virtual" };
+	await assert.rejects(lib.assertStoreEndpoint(env, location), /Private and local/);
+	assert.deepEqual(resolved, ["kite-mail.s3.example.com"]);
+	await lib.assertStoreEndpoint(env, { ...location, addressing: "path" });
+	assert.equal(resolved.at(-1), "s3.example.com");
+	env.DB.db.prepare("UPDATE storage_stores SET endpoint = ?, addressing = 'virtual'").run(location.endpoint);
+	lib.clearStorageConfigCache();
+	const before = fake.state.requests.length;
+	const config = await lib.loadStorageConfig(env);
+	assert.match(config.stores.get("sto_virtual").blocked, /Private and local/);
+	assert.equal(fake.state.requests.length, before, "the blocked bucket is not contacted");
+	env.RESOLVE_HOST = async () => ["93.184.216.34"];
+	lib.clearStorageConfigCache();
+	assert.equal((await lib.loadStorageConfig(env)).stores.get("sto_virtual").blocked, null);
 });
 
 test("the read chain, delete targets and active store skip unusable stores", () => {

@@ -17,6 +17,12 @@ Open **Admin → Domains**, expand a domain, and use the **Setup receiving email
 
 **New domain** asks which service receives the domain's mail (**Receive mail with**) and which sends it (**Send mail with**), each a dropdown of Cloudflare, Resend, Amazon SES or Not selected. Cloudflare Email Routing and the Cloudflare sending subdomain are only enabled on the zone for the Cloudflare choice. For Resend or SES the domain is added without touching either; finish from the domain page once the credentials are in. The same choices are available over the API as `receivingProvider` and `sendingProvider` (see [API](api.md#domain-management)).
 
+### Skipping DNS setup
+
+**Skip DNS setup** (in **New domain**, in onboarding and in the first-run domain step) adds the domain now and leaves its DNS for later: Kite does not look the domain up on Cloudflare, does not check or change any record, and selects no receiving or sending provider. Mail does not arrive until the records are set. Ported from upstream Mailflare #152.
+
+Until then, admins who can manage domains see a banner above the mailbox naming the domain, with **Review** (the Domains page) and **Mark as done**, which clears the reminder once the records are in place; the domain shows **DNS skipped** on the Domains page. On an install with Cloudflare credentials, the first Setup on the domain page (a DNS record, Cloudflare Email Routing or Cloudflare Email Sending) finds the domain's Cloudflare zone and attaches it; it is refused when the zone belongs to another account on this install or is not on the configured Cloudflare account. On a self-hosted install without Cloudflare credentials, create the records where the domain's nameservers are hosted.
+
 ## Resend
 
 Resend uses one **API key**, shared by every domain that uses it. Create it at [resend.com/api-keys](https://resend.com/api-keys).

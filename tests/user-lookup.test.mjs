@@ -47,6 +47,10 @@ test("missingColumnFromError reads D1, SQLite and wrapped errors", () => {
 		missingColumnFromError(new Error("Failed query", { cause: new Error("no such column: agent_max_steps") })),
 		"agent_max_steps",
 	);
+	assert.equal(
+		missingColumnFromError(new Error("D1_ERROR: table domains has no column named dns_skipped: SQLITE_ERROR")),
+		"dns_skipped",
+	);
 	assert.equal(missingColumnFromError(new Error("UNIQUE constraint failed: users.email")), null);
 });
 

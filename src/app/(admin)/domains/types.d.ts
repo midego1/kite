@@ -11,6 +11,16 @@ export type Domain = {
 	sendingProvider: SendingProvider;
 	receivingProvider: ReceivingProvider;
 	zoneId: string;
+	/** Added with "Skip DNS setup": Kite has not checked or changed its DNS. Absent before the migration. */
+	dnsSkipped?: boolean;
+};
+
+export type AddDomainProviderFieldsProps = {
+	receivingProvider: ReceivingProvider;
+	onReceivingProviderChange: (provider: ReceivingProvider) => void;
+	sendingProvider: SendingProvider;
+	onSendingProviderChange: (provider: SendingProvider) => void;
+	checking: boolean;
 };
 
 export type DomainPreflight = {
@@ -69,6 +79,8 @@ export type DomainDnsCache = Record<string, { domain: Domain; dns: DomainDnsView
 export type DomainDnsDetailsProps = {
 	domain: Domain;
 	dns: DomainDnsView;
+	/** Whether this install has Cloudflare credentials, so Kite can set DNS records up itself. */
+	managesDns?: boolean;
 	onSendingProviderChange?: (provider: SendingProvider) => void;
 	sendingProviderBusy?: boolean;
 	sendingProviderMessage?: string | null;
@@ -86,6 +98,7 @@ export type DomainItemCardProps = {
 	item: Domain;
 	dns?: DnsStatusSummary;
 	dnsDetails?: DomainDnsView;
+	managesDns?: boolean;
 	onSendingProviderChange?: (provider: SendingProvider) => void;
 	sendingProviderBusy?: boolean;
 	sendingProviderMessage?: string | null;

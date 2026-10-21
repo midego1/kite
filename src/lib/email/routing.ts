@@ -1,6 +1,7 @@
 import { eq, and, asc, desc } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { domains, folders, mailboxAliases, mailboxes, routingRules } from "@/db/schema";
+import { selectRow } from "@/lib/db/pending-columns";
 import { getEmailAddress } from "@/lib/email/address";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
 import { normalizeRecipientLocalPart, parseRecipientAddress } from "@/lib/email/recipient-address";
@@ -58,11 +59,7 @@ export async function resolveInboundAddress(
 	const parsed = parseRecipientAddress(toAddress);
 	if (!parsed) return null;
 
-	const [domain] = await db
-		.select()
-		.from(domains)
-		.where(and(eq(domains.hostname, parsed.domain), eq(domains.status, "active")))
-		.limit(1);
+	const domain = await selectRow(db, domains, and(eq(domains.hostname, parsed.domain), eq(domains.status, "active")));
 
 	if (!domain) return null;
 

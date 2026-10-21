@@ -1,10 +1,31 @@
 import { Button } from "@/components/ui/button";
-import { dnsAuthDescriptions, getDnsAuthItemClass } from "./utils";
+import { dnsAuthDescriptions, getDnsAuthItemClass, getSendingStatusLabel } from "./utils";
 import { ROW_GRID, StatusBadge, StatusRow } from "./status-row";
 import CloudflareReceivingConfig from "./CloudflareReceivingConfig";
 import ReceivingSetupSection from "./ReceivingSetupSection";
 import SendingSetupSection from "./SendingSetupSection";
 import type { DnsAuthRecord, DomainDnsDetailsProps } from "./types";
+
+/** Where the domain's records have to be created, which differs for a skipped and a manually managed domain. */
+function ManualDnsNotice({ skipped, canSetUp }: { skipped: boolean; canSetUp: boolean }) {
+	if (!skipped) {
+		return (
+			<p className="text-xs text-neutral-500">
+				DNS is managed manually for this domain, so records must be created where the domain&apos;s nameservers are
+				hosted.
+			</p>
+		);
+	}
+	return (
+		<p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+			DNS setup was skipped when this domain was added, so Kite has not checked or changed its records and mail will not
+			arrive until they are set.{" "}
+			{canSetUp
+				? "Setup creates a record on the domain's Cloudflare zone; otherwise create the records where its nameservers are hosted."
+				: "Create the records where the domain's nameservers are hosted."}
+		</p>
+	);
+}
 
 export default function DomainDnsDetails({
 	domain,
@@ -19,18 +40,16 @@ export default function DomainDnsDetails({
 	receivingProviderBusy,
 	receivingProviderMessage,
 	onDnsChanged,
+	managesDns = true,
 }: DomainDnsDetailsProps) {
 	const audit = dns.audit;
-	const manual = domain.zoneId === "manual";
+	const skipped = domain.dnsSkipped === true;
+	// A skipped domain keeps the manual zone until its first Cloudflare setup adopts the real zone,
+	// so with Cloudflare credentials its Setup buttons stay available.
+	const manual = domain.zoneId === "manual" && !(skipped && managesDns);
 	const subdomain = dns.sendingSubdomain;
 	const sendingOk = subdomain ? dns.sendingEnabled : manual && domain.sendingEnabled;
-	const sendingLabel = subdomain
-		? `Sending for ${subdomain.name} is ${dns.sendingEnabled ? "enabled" : "disabled"}`
-		: manual
-			? domain.sendingEnabled
-				? "Email sending is configured"
-				: "Email sending is not configured"
-			: "Sending has not configured for this domain";
+	const sendingLabel = getSendingStatusLabel(subdomain?.name, dns.sendingEnabled, manual, domain.sendingEnabled);
 	const routingOk = dns.routing.missing.length === 0 && (dns.routing.records.length > 0 || domain.routingEnabled);
 	const routingLabel = routingOk
 		? "Email routing is configured"
@@ -97,12 +116,7 @@ export default function DomainDnsDetails({
 						Review the DNS authentication that keeps mail deliverable, whichever services send and receive it.
 					</p>
 					<ul className="mt-3 space-y-2">{(["mx", "spf", "dmarc"] as DnsAuthRecord[]).map(auditRow)}</ul>
-					{manual && (
-						<p className="text-xs text-neutral-500">
-							DNS is managed manually for this domain, so records must be created where the domain&apos;s nameservers
-							are hosted.
-						</p>
-					)}
+					{(manual || skipped) && <ManualDnsNotice skipped={skipped} canSetUp={!manual} />}
 					{setupMessage && (
 						<p role="alert" className="text-xs text-red-600">
 							{setupMessage}

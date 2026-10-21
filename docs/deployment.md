@@ -85,7 +85,9 @@ Setup applies the committed migrations through the Worker's D1 binding before cr
 3. Choose the address for your first mailbox and finish setup.
 4. Open the inbox and send a test message to the new address.
 
-To connect more domains later, open **Admin → Domains**, select **New domain**, enter the hostname and choose the receiving service. With Cloudflare, Kite configures Email Routing and Email Sending automatically. With Resend or Amazon SES, add the provider's credentials and run its setup from the domain page; see [Sending and receiving providers](providers.md). `CF_TOKEN` is still needed in every case, because Cloudflare manages the domain's DNS.
+If the domain's DNS is not ready yet (for example, it is not on Cloudflare yet), turn on **Skip DNS setup** in the domain step. Kite then records the domain without checking or changing any DNS and skips the MX check; mail does not arrive until the records are set. See [Skipping DNS setup](providers.md#skipping-dns-setup).
+
+To connect more domains later, open **Admin → Domains**, select **New domain**, enter the hostname and choose the receiving service (or turn on **Skip DNS setup** to set the records up later). With Cloudflare, Kite configures Email Routing and Email Sending automatically. With Resend or Amazon SES, add the provider's credentials and run its setup from the domain page; see [Sending and receiving providers](providers.md). `CF_TOKEN` is still needed in every case, because Cloudflare manages the domain's DNS.
 
 Resend and SES receive mail by calling your app, so set `APP_URL` to the app's public HTTPS address before setting them up for receiving.
 

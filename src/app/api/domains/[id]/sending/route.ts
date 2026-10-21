@@ -9,6 +9,8 @@ import { canManageDomains } from "@/lib/auth/admin";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getDomainForUser } from "@/lib/domains/service";
 import { isManualZone } from "@/lib/domains/provision";
+import { adoptCloudflareZone } from "@/lib/domains/adopt-zone";
+import { zoneAdoptionFailure } from "@/lib/domains/skip-dns-utils";
 import { findCloudflareSending, removeCloudflareSending } from "@/lib/domains/cloudflare-sending";
 import { getAwsConfig } from "@/lib/aws/config";
 import { getSesIdentity } from "@/lib/aws/ses";
@@ -36,11 +38,22 @@ export async function PUT(request: Request, { params }: Params) {
 	if (error) return error;
 	if (!canManageDomains(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
-	const domain = await getDomainForUser(env, user.id, id);
+	let domain = await getDomainForUser(env, user.id, id);
 	if (!domain) return NextResponse.json({ error: "Not found" }, { status: 404 });
 	const parsed = schema.safeParse(await request.json().catch(() => null));
 	if (!parsed.success) return NextResponse.json({ error: "Unknown sending provider" }, { status: 400 });
 	const { provider, replaceMx } = parsed.data;
+
+	if (provider === "cloudflare") {
+		// A domain added with DNS skipped gets its Cloudflare zone before sending is enabled on it.
+		try {
+			domain = await adoptCloudflareZone(env, domain);
+		} catch (error) {
+			const adoption = zoneAdoptionFailure(error);
+			if (!adoption) throw error;
+			return NextResponse.json(adoption.body, { status: adoption.status });
+		}
+	}
 
 	await getDb(env)
 		.update(domains)

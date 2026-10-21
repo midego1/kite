@@ -90,7 +90,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/domains/[id]/receiving/[provider]`               | GET, POST              | [source](../src/app/api/domains/[id]/receiving/[provider]/route.ts)               |
 | `/api/domains/[id]/receiving`                          | DELETE, GET, PUT       | [source](../src/app/api/domains/[id]/receiving/route.ts)                          |
 | `/api/domains/[id]/resend`                             | GET, POST              | [source](../src/app/api/domains/[id]/resend/route.ts)                             |
-| `/api/domains/[id]`                                    | DELETE, GET            | [source](../src/app/api/domains/[id]/route.ts)                                    |
+| `/api/domains/[id]`                                    | DELETE, GET, PATCH     | [source](../src/app/api/domains/[id]/route.ts)                                    |
 | `/api/domains/[id]/sending`                            | DELETE, GET, PUT       | [source](../src/app/api/domains/[id]/sending/route.ts)                            |
 | `/api/domains/[id]/ses`                                | GET, POST              | [source](../src/app/api/domains/[id]/ses/route.ts)                                |
 | `/api/domains/check`                                   | POST                   | [source](../src/app/api/domains/check/route.ts)                                   |

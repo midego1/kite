@@ -23,6 +23,7 @@ const {
 const scratch = makeBundleDirectory("kite-storage-schema-dirs-");
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const preDirectory = copyMigrationsBefore(scratch, 65);
+const throughStorage = copyMigrationsBefore(scratch, 66);
 const MIGRATION = "0065_add_storage_stores.sql";
 const BACKED_UP = ["storage_stores", "storage_routes"];
 
@@ -80,7 +81,7 @@ test("upgrading from 0064 adds only the storage tables and changes no existing o
 	seedAccountData(db);
 	const tablesBefore = all(db, "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").map((r) => r.name);
 	const before = Object.fromEntries(tablesBefore.map((table) => [table, columns(db, table)]));
-	assert.deepEqual(await applyMigrations(db, migrationsDir), [MIGRATION]);
+	assert.deepEqual(await applyMigrations(db, throughStorage), [MIGRATION]);
 	const tablesAfter = all(db, "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").map((r) => r.name);
 	assert.deepEqual(
 		tablesAfter.filter((table) => !tablesBefore.includes(table)),

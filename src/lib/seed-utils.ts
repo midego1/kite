@@ -1,6 +1,7 @@
 import { and, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import { domains, mailboxes, messages, outboundJobs, users } from "@/db/schema";
+import { selectRow } from "@/lib/db/pending-columns";
 import { hashPassword } from "@/lib/auth/password";
 import { upsertContactFromAddress } from "@/lib/contacts/service";
 import { MANUAL_ZONE_ID } from "@/lib/domains/provision";
@@ -246,7 +247,7 @@ export async function ensureDemoUser(env: CloudflareEnv) {
 
 export async function ensureDemoDomain(env: CloudflareEnv, userId: string) {
 	const db = getDb(env);
-	const [existing] = await db.select().from(domains).where(eq(domains.hostname, demoDomain)).limit(1);
+	const existing = await selectRow(db, domains, eq(domains.hostname, demoDomain));
 	if (existing) {
 		// Older seeds stored a fake zone id, which made every mailbox or account
 		// created on the demo domain fail against the Cloudflare API.
@@ -269,7 +270,7 @@ export async function ensureDemoDomain(env: CloudflareEnv, userId: string) {
 		sendingEnabled: true,
 	});
 
-	const [created] = await db.select().from(domains).where(eq(domains.id, id)).limit(1);
+	const created = await selectRow(db, domains, eq(domains.id, id));
 	return created!;
 }
 

@@ -1,6 +1,7 @@
 /**
  * The column a "no such column" error names, if any. D1 and better-sqlite3 phrase it as
- * `no such column: agent_max_steps` (possibly table-qualified or quoted), sometimes only on the error's cause.
+ * `no such column: agent_max_steps` (possibly table-qualified or quoted), or for an insert as
+ * `table users has no column named agent_max_steps`, sometimes only on the error's cause.
  */
 export function missingColumnFromError(error: unknown): string | null {
 	const messages: string[] = [];
@@ -11,7 +12,8 @@ export function missingColumnFromError(error: unknown): string | null {
 		current = current instanceof Error ? current.cause : null;
 	}
 	for (const message of messages) {
-		const match = /no such column: (?:"?\w+"?\.)?"?(\w+)"?/i.exec(message);
+		const match =
+			/no such column: (?:"?\w+"?\.)?"?(\w+)"?/i.exec(message) ?? /has no column named "?(\w+)"?/i.exec(message);
 		if (match) return match[1];
 	}
 	return null;

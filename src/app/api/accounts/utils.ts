@@ -1,6 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import type { getDb } from "@/db";
 import { domains, mailboxes, users } from "@/db/schema";
+import { selectRow } from "@/lib/db/pending-columns";
 import { requireSessionAdmin } from "@/lib/api/auth";
 import { getEnv } from "@/lib/cloudflare";
 
@@ -27,11 +28,7 @@ export function listAccountsForAdmin(db: Db) {
 }
 
 export async function getDomainForAdmin(db: Db, adminUserId: string, domainId: string) {
-	const [domain] = await db
-		.select()
-		.from(domains)
-		.where(and(eq(domains.id, domainId), eq(domains.userId, adminUserId)))
-		.limit(1);
+	const domain = await selectRow(db, domains, and(eq(domains.id, domainId), eq(domains.userId, adminUserId)));
 	return domain ?? null;
 }
 

@@ -1,6 +1,7 @@
 import { eq, and, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import { domains, mailboxes } from "@/db/schema";
+import { selectRow, selectRows, insertRow } from "@/lib/db/pending-columns";
 import { ensureMailboxDomainRouting } from "@/lib/mailboxes/domain-addresses";
 import { newId } from "@/lib/ids";
 import {
@@ -20,8 +21,11 @@ import type { DomainProvisioningChanges } from "@/lib/domains/types";
 import { findSendingSubdomain } from "@/lib/domains/sending-status";
 import { preflightDomain } from "@/lib/domains/preflight";
 import { hasCloudflareCredentials } from "@/lib/runtime";
+import { clearedDnsSkip, isDomainHostname, skippedDomainDns, skippedDomainValues } from "@/lib/domains/skip-dns-utils";
 import { deleteDomainWithMailboxes } from "@/lib/mailboxes/delete";
 import type { MailboxDeletionResult } from "@/lib/mailboxes/delete-types";
+import type { z } from "zod";
+import type { addDomainSchema } from "@/lib/validators";
 
 export type DomainDnsView = {
 	routing: { records: CfDnsRecord[]; missing: CfDnsRecord[]; status?: string };
@@ -35,7 +39,75 @@ export type DomainDnsView = {
 
 export async function listUserDomains(env: CloudflareEnv, userId: string) {
 	const db = getDb(env);
-	return db.select().from(domains).where(eq(domains.userId, userId));
+	return selectRows(db, domains, eq(domains.userId, userId));
+}
+
+type AddedDomain = {
+	domain: typeof domains.$inferSelect;
+	dns: DomainDnsView;
+	changes: DomainProvisioningChanges;
+};
+
+/** Points the owner's all-domains mailboxes at a domain that was just added. */
+async function routeAliasMailboxes(env: CloudflareEnv, userId: string): Promise<void> {
+	const db = getDb(env);
+	const aliasMailboxes = await db
+		.select({
+			id: mailboxes.id,
+			domainId: mailboxes.domainId,
+			localPart: mailboxes.localPart,
+			useAllDomains: mailboxes.useAllDomains,
+		})
+		.from(mailboxes)
+		.innerJoin(domains, eq(mailboxes.domainId, domains.id))
+		.where(and(eq(domains.userId, userId), eq(mailboxes.useAllDomains, true)));
+	const routingResults = await Promise.allSettled(
+		aliasMailboxes.map((mailbox) => ensureMailboxDomainRouting(env, db, mailbox)),
+	);
+	for (const result of routingResults) {
+		if (result.status === "rejected") console.warn("ensureMailboxDomainRouting", result.reason);
+	}
+}
+
+/**
+ * Records a domain without looking it up on Cloudflare or changing any DNS: the manual
+ * zone, no receiving or sending provider and the "DNS skipped" flag, which the dashboard
+ * warns about until an admin marks it done. The first Cloudflare setup on the domain page
+ * adopts the real zone (`adoptCloudflareZone`). An already added domain is refused rather
+ * than overwritten, since its zone and providers may be in use.
+ */
+export async function addSkippedDomainForUser(
+	env: CloudflareEnv,
+	userId: string,
+	hostname: string,
+): Promise<AddedDomain> {
+	const db = getDb(env);
+	const normalized = hostname.toLowerCase().trim();
+	if (!isDomainHostname(normalized)) throw new Error("Enter a domain name such as example.com");
+	const [claimed] = await db
+		.select({ userId: domains.userId })
+		.from(domains)
+		.where(eq(domains.hostname, normalized))
+		.limit(1);
+	if (claimed && claimed.userId !== userId) throw new Error("Domain is already registered");
+	if (claimed) throw new Error("This domain is already added. Set up its DNS from the Domains page.");
+
+	const values = skippedDomainValues(newId("dom"), userId, normalized);
+	await insertRow(db, domains, values);
+	await routeAliasMailboxes(env, userId);
+	const domain = (await selectRow(db, domains, eq(domains.id, values.id)))!;
+	return {
+		domain,
+		dns: await getDomainDns(env, domain),
+		changes: {
+			zoneId: values.zoneId,
+			enabledEmailRouting: false,
+			createdSendingSubdomainTag: null,
+			previousCatchAll: null,
+			createdAddressRules: [],
+			deletedMxRecords: [],
+		},
+	};
 }
 
 export async function addDomainForUser(
@@ -49,11 +121,7 @@ export async function addDomainForUser(
 		receivingProvider?: "none" | "cloudflare" | "resend" | "ses";
 		sendingProvider?: "none" | "cloudflare" | "resend" | "ses";
 	},
-): Promise<{
-	domain: typeof domains.$inferSelect;
-	dns: DomainDnsView;
-	changes: DomainProvisioningChanges;
-}> {
+): Promise<AddedDomain> {
 	const db = getDb(env);
 	const normalizedHostname = hostname.toLowerCase().trim();
 	const [claimedHostname] = await db
@@ -90,7 +158,7 @@ export async function addDomainForUser(
 	let domain: typeof domains.$inferSelect;
 
 	try {
-		const [existing] = await db.select().from(domains).where(eq(domains.hostname, provisioned.hostname)).limit(1);
+		const existing = await selectRow(db, domains, eq(domains.hostname, provisioned.hostname));
 		if (existing && existing.userId !== userId) {
 			throw new Error("Domain is already registered");
 		}
@@ -116,33 +184,19 @@ export async function addDomainForUser(
 					: { sendingProvider: provisioned.sendingRequested ? ("cloudflare" as const) : ("none" as const) }),
 			sendingEnabled: provisioned.sendingEnabled,
 			routingEnabled: provisioned.routingEnabled,
+			...clearedDnsSkip(existing),
 		};
 
 		if (existing) {
 			await db.update(domains).set(values).where(eq(domains.id, domainId));
 		} else {
-			await db.insert(domains).values(values);
+			await insertRow(db, domains, values);
 			insertedDomainId = domainId;
 		}
 
-		const aliasMailboxes = await db
-			.select({
-				id: mailboxes.id,
-				domainId: mailboxes.domainId,
-				localPart: mailboxes.localPart,
-				useAllDomains: mailboxes.useAllDomains,
-			})
-			.from(mailboxes)
-			.innerJoin(domains, eq(mailboxes.domainId, domains.id))
-			.where(and(eq(domains.userId, userId), eq(mailboxes.useAllDomains, true)));
-		const routingResults = await Promise.allSettled(
-			aliasMailboxes.map((mailbox) => ensureMailboxDomainRouting(env, db, mailbox)),
-		);
-		for (const result of routingResults) {
-			if (result.status === "rejected") console.warn("ensureMailboxDomainRouting", result.reason);
-		}
+		await routeAliasMailboxes(env, userId);
 
-		const [row] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+		const row = await selectRow(db, domains, eq(domains.id, domainId));
 		domain = row!;
 	} catch (err) {
 		// The zone was already provisioned above. Anything that fails after that —
@@ -176,8 +230,27 @@ export async function addDomainForUser(
 	return { domain, dns, changes: provisioned.changes };
 }
 
+/** Adds a domain the way the add-domain form or API asked: with DNS skipped, or fully provisioned. */
+export function addDomainAsRequested(
+	env: CloudflareEnv,
+	userId: string,
+	input: z.infer<typeof addDomainSchema>,
+): Promise<AddedDomain> {
+	if (input.skipDns) return addSkippedDomainForUser(env, userId, input.hostname);
+	return addDomainForUser(env, userId, input.hostname, {
+		enableRouting: input.enableRouting,
+		enableSending: input.enableSending,
+		replaceMxRecords: input.replaceMxRecords,
+		receivingProvider: input.receivingProvider,
+		sendingProvider: input.sendingProvider,
+	});
+}
+
 export async function getDomainDns(env: CloudflareEnv, domain: typeof domains.$inferSelect): Promise<DomainDnsView> {
-	if (isManualZone(domain.zoneId)) return getManualDomainDns(env, domain.hostname);
+	if (isManualZone(domain.zoneId)) {
+		if (domain.dnsSkipped && hasCloudflareCredentials(env)) return skippedDomainDns();
+		return getManualDomainDns(env, domain.hostname);
+	}
 	// Read the zone's actual sending state rather than trusting `sendingRequested`,
 	// which goes stale when sending is enabled outside Kite (or when the row
 	// was written before the subdomain existed). A missing Email Sending permission
@@ -217,11 +290,7 @@ export async function removeDomainForUser(
 	domainId: string,
 ): Promise<MailboxDeletionResult> {
 	const db = getDb(env);
-	const [domain] = await db
-		.select()
-		.from(domains)
-		.where(and(eq(domains.id, domainId), eq(domains.userId, userId)))
-		.limit(1);
+	const domain = await selectRow(db, domains, and(eq(domains.id, domainId), eq(domains.userId, userId)));
 	if (!domain) throw new Error("Domain not found");
 
 	try {
@@ -256,10 +325,6 @@ export async function removeDomainForUser(
 
 export async function getDomainForUser(env: CloudflareEnv, userId: string, domainId: string) {
 	const db = getDb(env);
-	const [domain] = await db
-		.select()
-		.from(domains)
-		.where(and(eq(domains.id, domainId), eq(domains.userId, userId)))
-		.limit(1);
+	const domain = await selectRow(db, domains, and(eq(domains.id, domainId), eq(domains.userId, userId)));
 	return domain ?? null;
 }

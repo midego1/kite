@@ -11,6 +11,7 @@ import { MailSearchProvider } from "@/components/mail-search/mail-search-context
 import { MailboxProvider } from "@/components/mailbox-provider";
 import { MailboxSelector } from "@/components/mailbox-selector";
 import { MigrationsBanner } from "@/components/migrations-banner";
+import { DnsSkippedBanner } from "@/components/dns-skipped-banner";
 import { LazyAgentPanel, preloadAgentPanel } from "@/components/agent/agent-panel-lazy";
 import { AssistantDockedContext, AssistantOpenContext } from "@/components/agent/assistant-open-state";
 import { Button } from "@/components/ui/button";
@@ -128,6 +129,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 										</header>
 										<AlertsBanner />
 										<MigrationsBanner />
+										<DnsSkippedBanner />
 										<div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
 											<AssistantOpenContext.Provider value={assistantVisible && assistantLayout === "sidebar"}>
 												<main

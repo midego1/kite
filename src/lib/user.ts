@@ -1,6 +1,7 @@
 import { eq, desc, and } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages, domains, mailboxes } from "@/db/schema";
+import { selectRow } from "@/lib/db/pending-columns";
 import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import type { SessionUser } from "@/lib/auth/types";
@@ -54,8 +55,7 @@ export async function hasPrimaryDomain(env: CloudflareEnv): Promise<boolean> {
 
 export async function getPrimaryDomain(env: CloudflareEnv) {
 	const db = getDb(env);
-	const [row] = await db.select().from(domains).limit(1);
-	return row ?? null;
+	return (await selectRow(db, domains)) ?? null;
 }
 
 export async function getMailboxForUser(env: CloudflareEnv, userId: string, mailboxId: string) {

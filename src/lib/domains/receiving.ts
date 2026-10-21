@@ -7,6 +7,7 @@ import { deleteEmailRoutingRulesForDomain } from "@/lib/domains/cloudflare-clean
 import { removeMxRecords } from "@/lib/domains/mx-records";
 import { setupDomainDnsRecord } from "@/lib/domains/dns-setup";
 import { isManualZone } from "@/lib/domains/provision";
+import { adoptCloudflareZone } from "@/lib/domains/adopt-zone";
 import { listDomainMx, MxConflictError } from "@/lib/domains/receiving-dns";
 import { removeResendReceiving, setupResendReceiving, hasResendReceivingConfig } from "@/lib/domains/resend-receiving";
 import { hasSesReceivingConfig, removeSesReceiving, setupSesReceiving } from "@/lib/aws/ses-receiving";
@@ -18,12 +19,16 @@ export type ConfigurableReceiving = Exclude<ReceivingProviderId, "none">;
 
 const isCloudflareMx = (content: string) => content.toLowerCase().replace(/\.$/, "").endsWith(".mx.cloudflare.net");
 
-/** Email Routing on the zone, the MX and the Worker routes for this domain's mailboxes. */
+/**
+ * Email Routing on the zone, the MX and the Worker routes for this domain's mailboxes. A
+ * domain added with DNS skipped gets its Cloudflare zone first (`adoptCloudflareZone`).
+ */
 export async function setupCloudflareReceiving(
 	env: CloudflareEnv,
-	domain: DomainRow,
+	skippedOrManaged: DomainRow,
 	options: { replaceMx: boolean },
 ): Promise<void> {
+	const domain = await adoptCloudflareZone(env, skippedOrManaged);
 	if (isManualZone(domain.zoneId)) throw new Error("Cloudflare Email Routing needs a domain on a Cloudflare zone");
 	const foreign = (await listDomainMx(env, domain)).filter((record) => !isCloudflareMx(record.content ?? ""));
 	if (foreign.length > 0 && !options.replaceMx) {

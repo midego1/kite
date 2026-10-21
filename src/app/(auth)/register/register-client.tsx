@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowRight, CheckCircle2, LoaderCircle, MailPlus, XCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -22,6 +21,10 @@ import {
 	submitRegistration,
 } from "./utils";
 import type { DomainPreflight, DomainSetupResult, SetupRequirementCheck } from "./types";
+import { SkipDnsSwitch } from "@/components/skip-dns-switch";
+import { isDomainHostname } from "@/lib/domains/skip-dns-utils";
+import { mxCheckBlocksSubmit } from "./mx-status-utils";
+import { RegisterMxStatus } from "./register-mx-status";
 
 export function RegisterClient() {
 	const router = useRouter();
@@ -46,6 +49,8 @@ export function RegisterClient() {
 	const [loading, setLoading] = useState(false);
 	const [turnstileReset, setTurnstileReset] = useState(0);
 	const [setupTokenNeeded, setSetupTokenNeeded] = useState(false);
+	const [skipDns, setSkipDns] = useState(false);
+	const domainCheckRevision = useRef(0);
 
 	useEffect(() => {
 		void runPreparation();
@@ -54,7 +59,7 @@ export function RegisterClient() {
 	const accountDomain = setupDomain ?? primaryDomain;
 
 	const mxCheckKey = JSON.stringify([step, accountDomain, mxCheckRevision]);
-	if (useKeyChanged(mxCheckKey) && step === 3 && accountDomain) {
+	if (useKeyChanged(mxCheckKey) && step === 3 && accountDomain && !skipDns) {
 		setMxChecking(true);
 		setMxRecordsExist(null);
 		setReplaceMxRecords(false);
@@ -62,7 +67,7 @@ export function RegisterClient() {
 	}
 
 	useEffect(() => {
-		if (step !== 3 || !accountDomain) return;
+		if (step !== 3 || !accountDomain || skipDns) return;
 
 		let active = true;
 		void checkExistingMx(accountDomain)
@@ -84,7 +89,7 @@ export function RegisterClient() {
 		return () => {
 			active = false;
 		};
-	}, [step, accountDomain, mxCheckRevision]);
+	}, [step, accountDomain, mxCheckRevision, skipDns]);
 
 	async function runPreparation() {
 		setLoading(true);
@@ -122,6 +127,17 @@ export function RegisterClient() {
 		const hostname = String(new FormData(e.currentTarget).get("domain") ?? "")
 			.toLowerCase()
 			.trim();
+		if (skipDns) {
+			setLoading(false);
+			if (!isDomainHostname(hostname)) {
+				setError("Enter a domain name such as example.com");
+				return;
+			}
+			setSetupDomain(hostname);
+			setSetupEnableSending(false);
+			setStep(3);
+			return;
+		}
 		const usedCachedCheck = domainCheck?.hostname === hostname;
 		const result: { ok: boolean; data: DomainSetupResult } = usedCachedCheck
 			? { ok: true, data: { domain: domainCheck } }
@@ -139,11 +155,13 @@ export function RegisterClient() {
 
 	async function onDomainBlur(e: React.FocusEvent<HTMLInputElement>) {
 		const hostname = e.currentTarget.value.toLowerCase().trim();
-		if (hostname.length < 3 || domainCheck?.hostname === hostname) return;
+		if (skipDns || hostname.length < 3 || domainCheck?.hostname === hostname) return;
 
+		const revision = ++domainCheckRevision.current;
 		setDomainChecking(true);
 		setError(null);
 		const { ok, data } = await submitPrimaryDomain(hostname);
+		if (revision !== domainCheckRevision.current) return;
 		setDomainChecking(false);
 		if (!ok || !data.domain) {
 			setDomainCheck(null);
@@ -174,6 +192,7 @@ export function RegisterClient() {
 			domain,
 			enableSending: setupDomain ? setupEnableSending : (primaryDomainSendingRequested ?? undefined),
 			replaceMxRecords,
+			skipDns: !!setupDomain && skipDns,
 		});
 		setLoading(false);
 		if (!ok) {
@@ -358,31 +377,46 @@ export function RegisterClient() {
 							The domain must already be a Cloudflare zone on this account.
 						</p>
 					</div>
-					<div className="flex items-center justify-between gap-4 rounded-2xl bg-neutral-50 px-4 py-3">
-						<div>
-							<Label htmlFor="setup-enable-sending">Enable sending</Label>
-							<p className="mt-1 text-xs leading-5 text-neutral-500">
-								{domainChecking
-									? "Checking Cloudflare access..."
-									: domainCheck
-										? enableSending
-											? "Required to send email."
-											: "Receive-only mode."
-										: "Enter the domain and leave the field to verify it."}
-							</p>
-						</div>
-						<Switch
-							id="setup-enable-sending"
-							checked={enableSending}
-							onCheckedChange={setEnableSending}
-							disabled={domainChecking || !domainCheck}
-						/>
-					</div>
-					{domainCheck && (
-						<div className="flex items-center gap-3 rounded-2xl bg-green-50 px-4 py-3 text-sm text-green-700">
-							<CheckCircle2 className="h-4 w-4" />
-							Domain found in Cloudflare as {domainCheck.zone.name}
-						</div>
+					<SkipDnsSwitch
+						id="setup-skip-dns"
+						checked={skipDns}
+						onCheckedChange={(checked) => {
+							domainCheckRevision.current++;
+							setDomainChecking(false);
+							setSkipDns(checked);
+							setError(null);
+						}}
+						disabled={loading}
+					/>
+					{!skipDns && (
+						<>
+							<div className="flex items-center justify-between gap-4 rounded-2xl bg-neutral-50 px-4 py-3">
+								<div>
+									<Label htmlFor="setup-enable-sending">Enable sending</Label>
+									<p className="mt-1 text-xs leading-5 text-neutral-500">
+										{domainChecking
+											? "Checking Cloudflare access..."
+											: domainCheck
+												? enableSending
+													? "Required to send email."
+													: "Receive-only mode."
+												: "Enter the domain and leave the field to verify it."}
+									</p>
+								</div>
+								<Switch
+									id="setup-enable-sending"
+									checked={enableSending}
+									onCheckedChange={setEnableSending}
+									disabled={domainChecking || !domainCheck}
+								/>
+							</div>
+							{domainCheck && (
+								<div className="flex items-center gap-3 rounded-2xl bg-green-50 px-4 py-3 text-sm text-green-700">
+									<CheckCircle2 className="h-4 w-4" />
+									Domain found in Cloudflare as {domainCheck.zone.name}
+								</div>
+							)}
+						</>
 					)}
 					{error && (
 						<p
@@ -402,36 +436,14 @@ export function RegisterClient() {
 				</form>
 			) : (
 				<form method="post" onSubmit={onSubmit} className="space-y-5">
-					{mxChecking && (
-						<div className="flex items-center gap-3 rounded-2xl bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
-							<LoaderCircle className="h-4 w-4 animate-spin" />
-							Checking existing MX records
-						</div>
-					)}
-					{mxRecordsExist === false && (
-						<div className="flex items-center gap-3 rounded-2xl bg-green-50 px-4 py-3 text-sm text-green-700">
-							<CheckCircle2 className="h-4 w-4" />
-							No existing MX records found
-						</div>
-					)}
-					{mxRecordsExist === true && (
-						<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-900">
-							<Checkbox
-								checked={replaceMxRecords}
-								onChange={(event) => setReplaceMxRecords(event.target.checked)}
-								className="mt-1"
-							/>
-							<span>
-								<span className="flex items-center gap-2 text-sm font-medium">
-									<AlertTriangle className="h-4 w-4" />
-									Replace existing MX records
-								</span>
-								<span className="mt-1 block text-xs leading-5">
-									This deletes the current mail provider&apos;s MX records and replaces them with Cloudflare Email
-									Routing. The previous provider will stop receiving mail.
-								</span>
-							</span>
-						</label>
+					{!skipDns && (
+						<RegisterMxStatus
+							checking={mxChecking}
+							recordsExist={mxRecordsExist}
+							replaceRecords={replaceMxRecords}
+							onReplaceRecordsChange={setReplaceMxRecords}
+							onRetry={() => setMxCheckRevision((value) => value + 1)}
+						/>
 					)}
 					<div className="space-y-2">
 						<Label htmlFor="username">Username</Label>
@@ -475,25 +487,18 @@ export function RegisterClient() {
 							{error}
 						</p>
 					)}
-					{!mxChecking && mxRecordsExist === null && (
-						<Button
-							type="button"
-							variant="outline"
-							className="h-11 w-full rounded-full px-6 active:scale-[0.98]"
-							onClick={() => setMxCheckRevision((value) => value + 1)}
-						>
-							Check MX records again
-						</Button>
-					)}
 					<TurnstileField resetSignal={turnstileReset} />
 					<Button
 						type="submit"
 						className="h-11 w-full rounded-full px-6 active:scale-[0.98] mt-8"
 						disabled={
 							loading ||
-							mxChecking ||
-							mxRecordsExist === null ||
-							(mxRecordsExist && !replaceMxRecords) ||
+							mxCheckBlocksSubmit({
+								skipDns,
+								checking: mxChecking,
+								recordsExist: mxRecordsExist,
+								replaceRecords: replaceMxRecords,
+							}) ||
 							hasAdminAccount === null ||
 							hasPrimaryDomain === null
 						}

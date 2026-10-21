@@ -15,7 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { List } from "@/components/ui/list";
-import { CheckCircle2, LoaderCircle, Plus } from "lucide-react";
+import { CheckCircle2, Plus } from "lucide-react";
 import { authFetch } from "@/lib/auth/client";
 import { useAuthMe } from "@/hooks/use-auth-me";
 import type {
@@ -29,9 +29,11 @@ import type {
 	SendingProvider,
 } from "./types";
 import DomainItemCard from "./DomainItemCard";
+import AddDomainProviderFields from "./AddDomainProviderFields";
+import { SkipDnsSwitch } from "@/components/skip-dns-switch";
 import { SectionRowSkeleton } from "@/components/page-skeletons";
 import { checkDomain } from "./utils";
-import { confirmMxReplacement } from "./api";
+import { confirmMxReplacement, postJson } from "./api";
 import toast from "react-hot-toast";
 
 export default function DomainsPage() {
@@ -44,6 +46,8 @@ export default function DomainsPage() {
 	const [domainChecking, setDomainChecking] = useState(false);
 	const [sendingProvider, setSendingProvider] = useState<SendingProvider>("cloudflare");
 	const [receivingProvider, setReceivingProvider] = useState<ReceivingProvider>("cloudflare");
+	const [skipDns, setSkipDns] = useState(false);
+	const domainCheckRevision = useRef(0);
 	const [domainCheckError, setDomainCheckError] = useState<string | null>(null);
 	const [createOpen, setCreateOpen] = useState(false);
 	const [setupRecord, setSetupRecord] = useState<DnsAuthRecord | null>(null);
@@ -68,6 +72,7 @@ export default function DomainsPage() {
 	const create = useMutation({
 		mutationFn: async () => {
 			const normalized = hostname.toLowerCase().trim();
+			if (skipDns) return postJson("/api/domains", "POST", { hostname: normalized, skipDns: true });
 			let checkedDomain = domainCheck;
 			if (checkedDomain?.hostname !== normalized) {
 				const result = await checkDomain(normalized);
@@ -79,23 +84,17 @@ export default function DomainsPage() {
 			}
 			if (!checkedDomain) throw new Error("Domain check failed");
 
-			const res = await authFetch("/api/domains", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					hostname: checkedDomain.hostname,
-					enableRouting: true,
-					sendingProvider,
-					receivingProvider,
-				}),
+			return postJson("/api/domains", "POST", {
+				hostname: checkedDomain.hostname,
+				enableRouting: true,
+				sendingProvider,
+				receivingProvider,
 			});
-			const json = (await res.json()) as { error?: string };
-			if (!res.ok) throw new Error(json.error ?? "Failed");
-			return json;
 		},
 		onSuccess: () => {
 			setHostname("");
 			setDomainCheck(null);
+			setSkipDns(false);
 			setSendingProvider("cloudflare");
 			setReceivingProvider("cloudflare");
 			setDomainCheckError(null);
@@ -277,11 +276,13 @@ export default function DomainsPage() {
 
 	const inspectDomain = async () => {
 		const normalized = hostname.toLowerCase().trim();
-		if (normalized.length < 3 || domainCheck?.hostname === normalized) return;
+		if (skipDns || normalized.length < 3 || domainCheck?.hostname === normalized) return;
 
+		const revision = ++domainCheckRevision.current;
 		setDomainChecking(true);
 		setDomainCheckError(null);
 		const result = await checkDomain(normalized);
+		if (revision !== domainCheckRevision.current) return;
 		setDomainChecking(false);
 		if (!result.ok || !result.domain) {
 			setDomainCheck(null);
@@ -310,7 +311,7 @@ export default function DomainsPage() {
 							New domain
 						</Button>
 					</DialogTrigger>
-					<DialogContent>
+					<DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto">
 						<DialogHeader>
 							<DialogTitle>Add domain</DialogTitle>
 							<DialogDescription>
@@ -334,56 +335,28 @@ export default function DomainsPage() {
 									placeholder="example.com"
 								/>
 							</div>
-							<div className="flex items-center justify-between gap-4 rounded-xl bg-neutral-50 px-4 py-3">
-								<div>
-									<Label htmlFor="receiving-provider">Receive mail with</Label>
-									<p className="mt-1 text-xs leading-5 text-neutral-500">
-										{receivingProvider === "cloudflare"
-											? "Cloudflare Email Routing is enabled on the zone."
-											: receivingProvider === "none"
-												? "The domain only sends. Add a receiving service later."
-												: "Add your credentials and set it up from the domain page after adding."}
-									</p>
-								</div>
-								<select
-									id="receiving-provider"
-									value={receivingProvider}
-									onChange={(e) => setReceivingProvider(e.target.value as ReceivingProvider)}
-									className="h-9 shrink-0 rounded-md border border-neutral-200 bg-white px-3 text-sm"
-								>
-									<option value="cloudflare">Cloudflare Email Routing</option>
-									<option value="resend">Resend</option>
-									<option value="ses">Amazon SES</option>
-									<option value="none">Not selected</option>
-								</select>
-							</div>
-							<div className="flex items-center justify-between gap-4 rounded-xl bg-neutral-50 px-4 py-3">
-								<div>
-									<Label htmlFor="sending-provider">Send mail with</Label>
-									<p className="mt-1 text-xs leading-5 text-neutral-500">
-										{domainChecking
-											? "Checking Cloudflare access..."
-											: sendingProvider === "cloudflare"
-												? "Cloudflare Email Sending is enabled on the zone."
-												: sendingProvider === "none"
-													? "Receive-only mode. Add a sending service later."
-													: "Add your credentials and set it up from the domain page after adding."}
-									</p>
-								</div>
-								{domainChecking && <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-neutral-500" />}
-								<select
-									id="sending-provider"
-									value={sendingProvider}
-									onChange={(e) => setSendingProvider(e.target.value as SendingProvider)}
-									className="h-9 shrink-0 rounded-md border border-neutral-200 bg-white px-3 text-sm"
-								>
-									<option value="cloudflare">Cloudflare Email Sending</option>
-									<option value="resend">Resend</option>
-									<option value="ses">Amazon SES</option>
-									<option value="none">Not selected</option>
-								</select>
-							</div>
-							{domainCheck && (
+							<SkipDnsSwitch
+								id="skip-dns"
+								checked={skipDns}
+								onCheckedChange={(checked) => {
+									domainCheckRevision.current++;
+									setDomainChecking(false);
+									setSkipDns(checked);
+									setDomainCheckError(null);
+									create.reset();
+								}}
+								disabled={create.isPending}
+							/>
+							{!skipDns && (
+								<AddDomainProviderFields
+									receivingProvider={receivingProvider}
+									onReceivingProviderChange={setReceivingProvider}
+									sendingProvider={sendingProvider}
+									onSendingProviderChange={setSendingProvider}
+									checking={domainChecking}
+								/>
+							)}
+							{domainCheck && !skipDns && (
 								<div className="flex items-center gap-3 rounded-xl bg-green-50 px-4 py-3 text-sm text-green-700">
 									<CheckCircle2 className="h-4 w-4" />
 									Domain found in Cloudflare as {domainCheck.zone.name}
@@ -397,7 +370,7 @@ export default function DomainsPage() {
 							{create.isError && (
 								<div role="alert" className="space-y-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
 									<p>{(create.error as Error).message}</p>
-									<div className="space-y-2">
+									<div className={skipDns ? "hidden" : "space-y-2"}>
 										<p className="font-medium">Check that your Cloudflare API token has these permissions:</p>
 										<ul className="list-disc space-y-1 pl-5">
 											<li>
@@ -409,7 +382,10 @@ export default function DomainsPage() {
 									</div>
 								</div>
 							)}
-							<Button onClick={() => create.mutate()} disabled={!hostname || domainChecking || create.isPending}>
+							<Button
+								onClick={() => create.mutate()}
+								disabled={!hostname || (domainChecking && !skipDns) || create.isPending}
+							>
 								{create.isPending ? "Adding..." : "Add domain"}
 							</Button>
 						</div>
@@ -447,6 +423,7 @@ export default function DomainsPage() {
 								setupRecord={setupRecord}
 								setupMessage={setupMessage}
 								item={d}
+								managesDns={managesDns}
 								remove={remove}
 							/>
 						);

@@ -24,7 +24,7 @@ export type DomainProvisioningChanges = {
 
 export type DomainProvisioningError = {
 	message: string;
-	code?: "MX_RECORDS_CONFLICT";
+	code?: "MX_RECORDS_CONFLICT" | "MIGRATION_PENDING";
 	status: number;
 };
 

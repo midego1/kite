@@ -23,7 +23,7 @@ import {
 	type HttpMetadata,
 	type RangeRequest,
 } from "./s3-utils";
-import type { PresignGetOptions, S3Credentials, S3Location, S3StoreConfig, StoreSigner } from "./types";
+import type { PresignGetOptions, S3Credentials, S3Location, StoreSigner } from "./types";
 
 /**
  * An S3-compatible bucket behind the R2 bucket API the app already uses (get with a range, head, put, delete,
@@ -32,10 +32,13 @@ import type { PresignGetOptions, S3Credentials, S3Location, S3StoreConfig, Store
  * UNSIGNED-PAYLOAD instead of buffering, encoded metadata, list, copy and presigned browser URLs.
  */
 
-/** Bodies of unknown length are buffered up to this size; larger ones must be streamed with a known length. */
+/**
+ * Bodies of unknown length are buffered up to this size; larger ones must be streamed with a known length.
+ * @public Exercised by the unit tests.
+ */
 export const MAX_BUFFERED_BYTES = 32 * 1024 * 1024;
 /** Presigned URLs Kite issues live at most an hour (uploads 15 minutes, downloads 5). */
-export const MAX_PRESIGN_SECONDS = 3600;
+const MAX_PRESIGN_SECONDS = 3600;
 
 type PutValue = ReadableStream | ArrayBuffer | ArrayBufferView | string | Blob | null;
 /** R2's put options, plus the length of a streamed body (the migration job and backups know it). */
@@ -412,8 +415,4 @@ export class S3Bucket {
 				),
 		};
 	}
-}
-
-export function openS3Bucket(config: S3StoreConfig | S3Location, options?: S3BucketOptions): S3Bucket {
-	return new S3Bucket(config, options);
 }

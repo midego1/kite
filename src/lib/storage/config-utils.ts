@@ -7,7 +7,7 @@ export const DEFAULT_STORE_ID = "default";
 export const ENVIRONMENT_STORE_ID = "sto_env";
 export const ROUTABLE_CLASSES: readonly RoutableClass[] = ["mail", "drive", "backups"];
 
-export type StoreStatus = "ok" | "error" | "unchecked";
+type StoreStatus = "ok" | "error" | "unchecked";
 
 export type StoreRecord = {
 	id: string;
@@ -173,7 +173,7 @@ export function activeStoreId(config: StorageConfig, objectClass: ObjectClass): 
 	return isUsableStore(config, storeId) ? storeId : DEFAULT_STORE_ID;
 }
 
-export function isUsableStore(config: StorageConfig, storeId: string | null | undefined): storeId is string {
+function isUsableStore(config: StorageConfig, storeId: string | null | undefined): storeId is string {
 	if (!storeId) return false;
 	if (storeId === DEFAULT_STORE_ID) return true;
 	const store = config.stores.get(storeId);

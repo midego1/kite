@@ -43,7 +43,10 @@ export const STEP_LABELS: Record<ValidationStepId, string> = {
 	lifecycle: "Clean up abandoned uploads",
 };
 
-/** The steps a store must pass to be saved; CORS only blocks routing Drive to it. */
+/**
+ * The steps a store must pass to be saved; CORS only blocks routing Drive to it.
+ * @public Exercised by the unit tests.
+ */
 export const REQUIRED_STEPS: readonly ValidationStepId[] = [
 	"endpoint",
 	"bucket",
@@ -54,7 +57,10 @@ export const REQUIRED_STEPS: readonly ValidationStepId[] = [
 	"presign",
 ];
 
-/** The permissions Kite uses, as an IAM-style policy an admin can attach (the pattern of `AWS_IAM_POLICY`). */
+/**
+ * The permissions Kite uses, as an IAM-style policy an admin can attach (the pattern of `AWS_IAM_POLICY`).
+ * @public Exercised by the unit tests.
+ */
 export function storePolicy(bucket: string) {
 	return {
 		Version: "2012-10-17",

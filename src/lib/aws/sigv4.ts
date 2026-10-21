@@ -46,7 +46,10 @@ const amzDateOf = (now: Date) => now.toISOString().replace(/[:-]|\.\d{3}/g, "");
 const byName = <T extends readonly [string, string]>(left: T, right: T) =>
 	left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : left[1] < right[1] ? -1 : left[1] > right[1] ? 1 : 0;
 
-/** Query parameters encoded and sorted the way SigV4 signs them, which is also how they must be sent. */
+/**
+ * Query parameters encoded and sorted the way SigV4 signs them, which is also how they must be sent.
+ * @public Exercised by the unit tests.
+ */
 export function canonicalQueryString(params: Iterable<readonly [string, string]>): string {
 	return [...params]
 		.map(([name, value]) => [rfc3986(name), rfc3986(value)] as const)

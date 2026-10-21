@@ -11,7 +11,7 @@ const SYSTEM_CONTEXT: CapabilityCallContext = {
 	trigger: "system",
 };
 
-export class StorageHookError extends Error {}
+class StorageHookError extends Error {}
 
 /** The module capability that answers a storage hook for an object class, when a module owns that class. */
 function hookFor(objectClass: string, hook: StorageHookName) {

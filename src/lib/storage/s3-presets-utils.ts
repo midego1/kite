@@ -84,7 +84,10 @@ export function isS3Provider(value: unknown): value is S3Provider {
 
 const B2_ENDPOINT = /^s3\.([a-z0-9-]+)\.backblazeb2\.com$/;
 
-/** `s3.us-west-004.backblazeb2.com` → `us-west-004`, as upstream's `b2RegionFromEndpoint`. */
+/**
+ * `s3.us-west-004.backblazeb2.com` → `us-west-004`, as upstream's `b2RegionFromEndpoint`.
+ * @public Exercised by the unit tests.
+ */
 export function b2RegionFromEndpoint(endpoint: string): string | null {
 	return B2_ENDPOINT.exec(endpoint)?.[1] ?? null;
 }

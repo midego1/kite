@@ -384,6 +384,7 @@ async function clearPrevious(env: MigrationEnv, job: Job): Promise<boolean> {
 	return (result.meta.changes ?? 0) > 0;
 }
 
+/** @public Exercised by the unit tests. */
 export async function getStorageMigration(env: MigrationEnv, id: string): Promise<Job | null> {
 	return loadJob(env, id);
 }

@@ -27,7 +27,10 @@ import type { RoutableClass, S3Credentials, S3Location } from "./types";
 
 const log = createLogger("storage");
 
-/** A saved change reaches other isolates within this time; the admin page says so. */
+/**
+ * A saved change reaches other isolates within this time; the admin page says so.
+ * @public Exercised by the unit tests.
+ */
 export const CONFIG_TTL_MS = 30_000;
 /** After a failed read with nothing cached, the next request tries again this soon. */
 const FAILURE_RETRY_MS = 5_000;
@@ -52,21 +55,21 @@ export type StorageEnv = Pick<CloudflareEnv, "DB"> &
 	>;
 
 type Entry = { at: number; ttl: number; value: Promise<StorageConfig>; known?: StorageConfig };
-type SharedCache = { entries: WeakMap<object, Entry>; generation: number };
+type SharedCache = { entries: WeakMap<object, Entry> };
 
 const SHARED_CACHE_KEY = Symbol.for("kite.storage.config-cache");
 
 /** On `globalThis` because the Node build loads this file once for route handlers and again for pages. */
 function sharedCache(): SharedCache {
 	const holder = globalThis as { [SHARED_CACHE_KEY]?: SharedCache };
-	return (holder[SHARED_CACHE_KEY] ??= { entries: new WeakMap(), generation: 0 });
+	return (holder[SHARED_CACHE_KEY] ??= { entries: new WeakMap() });
 }
 
 export function endpointPolicyFor(env: StorageEnv): EndpointPolicy {
 	return storageEndpointPolicy(env, process.env.NODE_ENV);
 }
 
-export class StorageEndpointError extends Error {}
+class StorageEndpointError extends Error {}
 
 /**
  * The endpoint guard: the literal check under the dev flags, then, on the Node server, every address the host
@@ -164,15 +167,8 @@ export function loadStorageConfig(env: StorageEnv): Promise<StorageConfig> {
 
 /** Drops the cached config in this isolate; every write to the storage tables calls it. */
 export function clearStorageConfigCache(): void {
-	const shared = sharedCache();
-	shared.entries = new WeakMap();
-	shared.generation += 1;
+	sharedCache().entries = new WeakMap();
 	openedCredentials.clear();
-}
-
-/** Changes whenever the cache is cleared, so per-config memos built from an older config are not reused. */
-export function storageConfigGeneration(): number {
-	return sharedCache().generation;
 }
 
 const openedCredentials = new Map<string, Promise<S3Credentials>>();

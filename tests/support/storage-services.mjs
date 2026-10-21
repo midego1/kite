@@ -29,7 +29,7 @@ const ENTRIES = {
 	migrationRoute: "src/app/api/admin/storage/migrations/[id]/route.ts",
 };
 
-export const ENCRYPTION_KEY = "invented-encryption-key-for-storage-tests";
+const ENCRYPTION_KEY = "invented-encryption-key-for-storage-tests";
 export const APP_ORIGIN = "http://localhost:3200";
 
 /**

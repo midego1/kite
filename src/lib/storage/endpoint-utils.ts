@@ -47,6 +47,7 @@ export function endpointHostname(endpoint: string): string {
 	return value.replace(/:\d+$/, "");
 }
 
+/** @public Exercised by the unit tests. */
 export function isLoopbackHostname(hostname: string): boolean {
 	return (
 		hostname === "localhost" ||

@@ -290,5 +290,7 @@
 	"45-drive-sharing.spec.ts › an expired link says so, and turning public links off ends every link and the form to make one": 3100,
 	"45-drive-sharing.spec.ts › sharing with people: a viewer reads under Shared with me, an editor changes, and removing a share ends access": 6000,
 	"46-drive-cancel.spec.ts › cancelling while an upload starts discards the session without sending any parts": 9200,
-	"47-drive-folder-errors.spec.ts › a failed folder upload shows the error, refreshes partial folders and sends no files": 6700
+	"47-drive-folder-errors.spec.ts › a failed folder upload shows the error, refreshes partial folders and sends no files": 6700,
+	"48-storage-s3.spec.ts › Admin → Storage adds an S3 store, sends Drive there with direct transfers, and moves it back": 15000,
+	"48-storage-s3.spec.ts › the storage API is for the primary admin only and never answers with a secret": 100
 }

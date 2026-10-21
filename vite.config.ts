@@ -10,6 +10,8 @@ const DEV_ONLY_VARS = [
 	"AI_ALLOW_INSECURE_LOOPBACK",
 	"REMOTE_IMAGES_ALLOW_LOOPBACK",
 	"STORAGE_ALLOW_INSECURE_ENDPOINT",
+	// Only so the e2e server can save storage credentials; a real install sets it as a secret or in .dev.vars.
+	"APP_ENCRYPTION_KEY",
 ] as const;
 
 export default defineConfig(({ command }) => ({

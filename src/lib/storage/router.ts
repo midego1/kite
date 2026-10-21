@@ -43,6 +43,7 @@ function requireMultipart(store: ObjectStore) {
  * (active, previous while migrating, default), deletes reach the active and previous store. `system` keys and an
  * install without stores go straight to the binding: `system` keys without reading the config at all, the others
  * after one cached config read.
+ * @public Exercised by the unit tests.
  */
 export function createStorageRouter(env: StoragePlatformEnv): KiteBucket {
 	const binding = env.BUCKET as unknown as KiteBucket;

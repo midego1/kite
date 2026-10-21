@@ -2,6 +2,7 @@ import type { RoutableClass } from "./types";
 
 /** One queue message copies at most this many objects or bytes, then re-enqueues itself. */
 export const MAX_BATCH_OBJECTS = 50;
+/** @public Exercised by the unit tests. */
 export const MAX_BATCH_BYTES = 256 * 1024 * 1024;
 /** Objects larger than this are copied as multipart uploads of this part size. */
 export const MULTIPART_COPY_THRESHOLD = 64 * 1024 * 1024;
@@ -39,9 +40,12 @@ export type MigrationCursor = {
 	lastBatchAt?: number;
 };
 
-export const DONE = "done";
+const DONE = "done";
 
-/** The tables keys come from, per class; keys always come from D1, never from listing a bucket. */
+/**
+ * The tables keys come from, per class; keys always come from D1, never from listing a bucket.
+ * @public Exercised by the unit tests.
+ */
 export function sourcesFor(objectClass: RoutableClass): MigrationSource[] {
 	if (objectClass === "mail") return ["messages", "attachments"];
 	if (objectClass === "drive") return ["drive"];
@@ -128,7 +132,6 @@ export function isStalled(cursor: MigrationCursor, now: number, startedAt: numbe
 }
 
 export const ACTIVE_MIGRATION_STATUSES = ["queued", "copying", "verifying"] as const;
-export type MigrationStatus = "queued" | "copying" | "verifying" | "completed" | "failed" | "cancelled";
 
 export function isActiveMigration(status: string): boolean {
 	return (ACTIVE_MIGRATION_STATUSES as readonly string[]).includes(status);

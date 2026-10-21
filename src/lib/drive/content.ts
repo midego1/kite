@@ -86,7 +86,10 @@ export async function userFileResponse(
 	return streamDriveFile(env, request, item, download);
 }
 
-/** Downloads from this size on go straight to a store that can sign URLs, so the bytes skip the Worker. */
+/**
+ * Downloads from this size on go straight to a store that can sign URLs, so the bytes skip the Worker.
+ * @public Exercised by the unit tests.
+ */
 export const DRIVE_PRESIGNED_DOWNLOAD_BYTES = 8 * 1024 * 1024;
 const PRESIGNED_DOWNLOAD_SECONDS = 5 * 60;
 

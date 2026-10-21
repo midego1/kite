@@ -5,7 +5,7 @@
 export const DRIVE_PROXIED_PART_BYTES = 32 * 1024 * 1024;
 export const DRIVE_DIRECT_PART_BYTES = 64 * 1024 * 1024;
 /** Part URLs per request, and how long each stays valid; `content-length` is signed into every one. */
-export const DRIVE_PART_URLS_PER_REQUEST = 20;
+const DRIVE_PART_URLS_PER_REQUEST = 20;
 export const DRIVE_PART_URL_SECONDS = 15 * 60;
 /** @public Exercised by the bundled unit tests. */
 export const DRIVE_MAX_PARTS = 10_000;

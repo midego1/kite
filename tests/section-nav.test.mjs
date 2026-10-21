@@ -81,6 +81,7 @@ test("Admin groups its pages by task, with AI usage and no separate Audit logs",
 		"/ai-usage",
 		"/general",
 		"/branding",
+		"/storage",
 		"/backups",
 		"/alerts",
 		"/activity",
@@ -122,8 +123,9 @@ test("only admins get the mode switch", () => {
 
 test("permission gates follow role, primary admin and per-user grants", () => {
 	const visible = (user) => hrefs(filterNavSections(adminNavSections, "", user));
-	assert.equal(visible(primary).length, 16);
+	assert.equal(visible(primary).length, 17);
 	assert.ok(visible(primary).includes("/alerts"));
+	assert.ok(visible(primary).includes("/storage"));
 	// Domain routing applies to every address on a domain, so it follows the domain grant like Domains does.
 	assert.deepEqual(visible(admin), ["/admin", "/mailboxes", "/accounts", "/drive/settings"]);
 	assert.deepEqual(visible({ ...admin, canManageDomains: true }), [

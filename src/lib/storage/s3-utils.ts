@@ -13,7 +13,7 @@ const rfc3986 = (value: string) =>
 	encodeURIComponent(value).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 
 /** The request path of an object key, each segment percent-encoded as S3 signs it. */
-export function encodeKeyPath(key: string): string {
+function encodeKeyPath(key: string): string {
 	return `/${key.split("/").map(rfc3986).join("/")}`;
 }
 
@@ -42,6 +42,7 @@ function asciiHeader(value: string): string {
 
 export type HttpMetadata = { contentType?: string; contentDisposition?: string; cacheControl?: string };
 
+/** @public Exercised by the unit tests. */
 export function toHttpMetadata(value: HttpMetadata | Headers | undefined): HttpMetadata {
 	if (!value) return {};
 	if (value instanceof Headers)

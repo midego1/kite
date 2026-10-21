@@ -21,7 +21,10 @@ export const RAW_ENV = Symbol.for("kite.storage.raw-env");
 
 export type Proxied = { [RAW_ENV]?: CloudflareEnv };
 
-/** The env underneath `withStorage`, whose `BUCKET` is the binding itself. */
+/**
+ * The env underneath `withStorage`, whose `BUCKET` is the binding itself.
+ * @public Exercised by the unit tests.
+ */
 export function rawEnvOf<T extends object>(env: T): T {
 	return ((env as Proxied)[RAW_ENV] as T | undefined) ?? env;
 }

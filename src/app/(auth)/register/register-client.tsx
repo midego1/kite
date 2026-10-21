@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowRight, CheckCircle2, LoaderCircle, MailPlus, XCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,7 @@ export function RegisterClient() {
 	const [turnstileReset, setTurnstileReset] = useState(0);
 	const [setupTokenNeeded, setSetupTokenNeeded] = useState(false);
 	const [skipDns, setSkipDns] = useState(false);
+	const domainCheckRevision = useRef(0);
 
 	useEffect(() => {
 		void runPreparation();
@@ -156,9 +157,11 @@ export function RegisterClient() {
 		const hostname = e.currentTarget.value.toLowerCase().trim();
 		if (skipDns || hostname.length < 3 || domainCheck?.hostname === hostname) return;
 
+		const revision = ++domainCheckRevision.current;
 		setDomainChecking(true);
 		setError(null);
 		const { ok, data } = await submitPrimaryDomain(hostname);
+		if (revision !== domainCheckRevision.current) return;
 		setDomainChecking(false);
 		if (!ok || !data.domain) {
 			setDomainCheck(null);
@@ -378,6 +381,8 @@ export function RegisterClient() {
 						id="setup-skip-dns"
 						checked={skipDns}
 						onCheckedChange={(checked) => {
+							domainCheckRevision.current++;
+							setDomainChecking(false);
 							setSkipDns(checked);
 							setError(null);
 						}}

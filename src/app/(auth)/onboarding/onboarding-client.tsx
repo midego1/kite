@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, LoaderCircle, MailPlus } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ export function OnboardingClient() {
 	const [domainChecking, setDomainChecking] = useState(false);
 	const [enableSending, setEnableSending] = useState(false);
 	const [skipDns, setSkipDns] = useState(false);
+	const domainCheckRevision = useRef(0);
 	const [domainId, setDomainId] = useState("");
 	const [localPart, setLocalPart] = useState("me");
 	const [error, setError] = useState<string | null>(null);
@@ -87,10 +88,12 @@ export function OnboardingClient() {
 		const normalized = hostname.toLowerCase().trim();
 		if (skipDns || normalized.length < 3 || domainCheck?.hostname === normalized) return;
 
+		const revision = ++domainCheckRevision.current;
 		setDomainChecking(true);
 		setError(null);
 		setMxConflict(false);
 		const result = await checkDomain(normalized);
+		if (revision !== domainCheckRevision.current) return;
 		setDomainChecking(false);
 		if (!result.ok || !result.domain) {
 			setDomainCheck(null);
@@ -164,6 +167,8 @@ export function OnboardingClient() {
 							id="onboarding-skip-dns"
 							checked={skipDns}
 							onCheckedChange={(checked) => {
+								domainCheckRevision.current++;
+								setDomainChecking(false);
 								setSkipDns(checked);
 								setError(null);
 								setMxConflict(false);

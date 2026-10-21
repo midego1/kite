@@ -294,5 +294,6 @@
 	"48-storage-s3.spec.ts › Admin → Storage adds an S3 store, sends Drive there with direct transfers, and moves it back": 15000,
 	"48-storage-s3.spec.ts › mail routed to an S3 store lands there, old messages still open, and a migration moves it back": 15000,
 	"48-storage-s3.spec.ts › the storage API is for the primary admin only and never answers with a secret": 100,
-	"49-domain-skip-dns.spec.ts › a domain added with DNS setup skipped is flagged until an admin marks it done": 4100
+	"49-domain-skip-dns.spec.ts › a domain added with DNS setup skipped is flagged until an admin marks it done": 4100,
+	"49-domain-skip-dns.spec.ts › Skip DNS setup discards a domain check that finishes after the switch changes": 3100
 }

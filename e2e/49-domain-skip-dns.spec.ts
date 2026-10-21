@@ -33,6 +33,41 @@ async function openInboxWithDomains(page: Page) {
 	return domains;
 }
 
+test("Skip DNS setup discards a domain check that finishes after the switch changes", async ({ page }) => {
+	let releaseCheck!: () => void;
+	const pendingCheck = new Promise<void>((resolve) => {
+		releaseCheck = resolve;
+	});
+	await page.route("**/api/domains/check", async (route) => {
+		await pendingCheck;
+		await route.fulfill({ status: 422, json: { error: "Domain not found in Cloudflare" } });
+	});
+	await page.goto("/domains");
+	await page.getByRole("button", { name: "New domain" }).click();
+	const dialog = page.getByRole("dialog", { name: "Add domain" });
+	const hostname = dialog.getByLabel("Hostname");
+	const skip = dialog.getByRole("switch", { name: "Skip DNS setup" });
+	await hostname.fill("not-on-cloudflare.example.test");
+	const checkStarted = page.waitForRequest("**/api/domains/check");
+	await skip.click();
+	await checkStarted;
+	await expect(skip).toHaveAttribute("aria-checked", "true");
+	await expect(dialog.getByRole("button", { name: "Add domain", exact: true })).toBeEnabled();
+
+	const checkFinished = page.waitForResponse("**/api/domains/check");
+	releaseCheck();
+	await (await checkFinished).finished();
+	// Turning the switch back off must not reveal a stale result either.
+	await skip.click();
+	await expect(dialog.getByRole("alert")).toHaveCount(0);
+	await expect(dialog.getByText(/Domain found in Cloudflare/)).toHaveCount(0);
+
+	// A fresh check still reports its failure while DNS checking is enabled.
+	await hostname.focus();
+	await hostname.blur();
+	await expect(dialog.getByRole("alert")).toHaveText("Domain not found in Cloudflare");
+});
+
 test("a domain added with DNS setup skipped is flagged until an admin marks it done", async ({ page, browser }) => {
 	const hostname = `${uniqueToken("skip")}.example.test`;
 	const admin = await apiContext(STORAGE_STATE);

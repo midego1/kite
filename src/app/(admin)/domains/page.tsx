@@ -47,6 +47,7 @@ export default function DomainsPage() {
 	const [sendingProvider, setSendingProvider] = useState<SendingProvider>("cloudflare");
 	const [receivingProvider, setReceivingProvider] = useState<ReceivingProvider>("cloudflare");
 	const [skipDns, setSkipDns] = useState(false);
+	const domainCheckRevision = useRef(0);
 	const [domainCheckError, setDomainCheckError] = useState<string | null>(null);
 	const [createOpen, setCreateOpen] = useState(false);
 	const [setupRecord, setSetupRecord] = useState<DnsAuthRecord | null>(null);
@@ -277,9 +278,11 @@ export default function DomainsPage() {
 		const normalized = hostname.toLowerCase().trim();
 		if (skipDns || normalized.length < 3 || domainCheck?.hostname === normalized) return;
 
+		const revision = ++domainCheckRevision.current;
 		setDomainChecking(true);
 		setDomainCheckError(null);
 		const result = await checkDomain(normalized);
+		if (revision !== domainCheckRevision.current) return;
 		setDomainChecking(false);
 		if (!result.ok || !result.domain) {
 			setDomainCheck(null);
@@ -336,6 +339,8 @@ export default function DomainsPage() {
 								id="skip-dns"
 								checked={skipDns}
 								onCheckedChange={(checked) => {
+									domainCheckRevision.current++;
+									setDomainChecking(false);
 									setSkipDns(checked);
 									setDomainCheckError(null);
 									create.reset();

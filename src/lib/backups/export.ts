@@ -2,7 +2,12 @@ import { clearModuleStateCache } from "@/lib/modules/state";
 import type { BackupTableGroupId, DatabaseBackupDocument, DatabaseBackupTable, DatabaseRecord } from "./types";
 import { dropRetiredBackupTables, mergeLegacyMessageBodies, RETIRED_BACKUP_TABLES } from "./utils";
 import { BACKUP_TABLE_GROUPS, getSelectedBackupTables, isPartialBackupDocument } from "./table-groups";
-import { createRestorePlan, planRestoreStatements } from "./restore-utils";
+import {
+	createRestorePlan,
+	planRestoreStatements,
+	PRESERVED_ON_RESTORE,
+	preservedRestoreTables,
+} from "./restore-utils";
 import type { RestoreBatchLimits, RestorePlan, RestoreTablePlan } from "./restore-types";
 
 const BACKUP_TABLES: DatabaseBackupTable[] = [
@@ -25,6 +30,8 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"audit_logs",
 	"backup_settings",
 	"backups",
+	"storage_stores",
+	"storage_routes",
 	"app_settings",
 	"module_settings",
 	"email_templates",
@@ -115,6 +122,9 @@ const INTERNAL_TABLES = [
 	// Drive multipart parts of uploads in progress: the store's upload ids they
 	// name do not survive a restore, so the parts would only point at nothing.
 	"drive_upload_parts",
+	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
+	// restored database would restart a copy between stores that may no longer match.
+	"storage_migrations",
 ];
 
 /**
@@ -283,8 +293,10 @@ export async function prepareDatabaseRestore(
 	fillMissingBackupTables(document);
 	validateDatabaseBackup(document);
 	const databaseTables = await listApplicationTables(db);
+	const preserved = await livePreservedTables(db, databaseTables);
 	const tables: RestoreTablePlan[] = [];
 	for (const table of BACKUP_TABLES) {
+		if (preserved.has(table)) continue;
 		const rows = document.tables[table] ?? [];
 		if (!databaseTables.has(table)) {
 			if (rows.length)
@@ -302,6 +314,16 @@ export async function prepareDatabaseRestore(
 		tables.reduce((total, table) => total + table.rows.length, 0),
 		options.limits,
 	);
+}
+
+async function livePreservedTables(db: D1Database, databaseTables: Set<string>): Promise<Set<string>> {
+	const counts: Record<string, number> = {};
+	for (const table of PRESERVED_ON_RESTORE) {
+		if (!databaseTables.has(table)) continue;
+		const row = await db.prepare(`SELECT count(*) AS count FROM \`${table}\``).first<{ count: number }>();
+		counts[table] = Number(row?.count ?? 0);
+	}
+	return preservedRestoreTables(counts);
 }
 
 /**

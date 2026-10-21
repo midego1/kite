@@ -1,6 +1,19 @@
 import type { DatabaseRecord } from "./types";
 import type { RestoreBatchLimits, RestorePlan, RestoreStatement, RestoreTablePlan } from "./restore-types";
 
+/**
+ * The storage configuration says where this install's objects live right now. A backup's copy may name
+ * stores whose credentials or contents differ, so a restore keeps the live rows when there are any and
+ * restores the backup's only into an install that has none. The two tables move together: routes name stores.
+ */
+export const PRESERVED_ON_RESTORE = ["storage_stores", "storage_routes"] as const;
+
+/** The tables a restore must leave untouched, given how many rows each preserved table has now. */
+export function preservedRestoreTables(liveRowCounts: Partial<Record<string, number>>): Set<string> {
+	const hasLiveRows = PRESERVED_ON_RESTORE.some((table) => (liveRowCounts[table] ?? 0) > 0);
+	return new Set(hasLiveRows ? PRESERVED_ON_RESTORE : []);
+}
+
 /** D1 rejects a statement with more bound parameters than this. */
 export const MAX_BOUND_PARAMETERS = 100;
 

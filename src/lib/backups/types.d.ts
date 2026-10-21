@@ -20,6 +20,8 @@ export type DatabaseBackupTable =
 	| "audit_logs"
 	| "backup_settings"
 	| "backups"
+	| "storage_stores"
+	| "storage_routes"
 	| "app_settings"
 	| "module_settings"
 	| "user_module_access"

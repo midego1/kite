@@ -477,6 +477,13 @@
       "when": 1788851340028,
       "tag": "0064_add_drive",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1788851400028,
+      "tag": "0065_add_storage_stores",
+      "breakpoints": true
     }
   ]
 }

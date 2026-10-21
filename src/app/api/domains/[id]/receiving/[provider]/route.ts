@@ -10,6 +10,7 @@ import { getDomainForUser } from "@/lib/domains/service";
 import { setupReceiving } from "@/lib/domains/receiving";
 import { MxConflictError } from "@/lib/domains/receiving-dns";
 import { getResendReceivingView } from "@/lib/domains/resend-receiving";
+import { zoneAdoptionFailure } from "@/lib/domains/skip-dns-utils";
 
 type Params = { params: Promise<{ id: string; provider: string }> };
 const noStore = { "Cache-Control": "no-store" };
@@ -68,6 +69,8 @@ export async function POST(request: Request, { params }: Params) {
 	} catch (error) {
 		if (error instanceof MxConflictError)
 			return NextResponse.json({ error: error.message, code: error.code, records: error.records }, { status: 409 });
+		const adoption = zoneAdoptionFailure(error);
+		if (adoption) return NextResponse.json(adoption.body, { status: adoption.status });
 		return NextResponse.json({ error: error instanceof Error ? error.message : "Setup failed" }, { status: 502 });
 	}
 }

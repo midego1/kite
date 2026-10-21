@@ -21,6 +21,7 @@ import type { DomainProvisioningChanges } from "@/lib/domains/types";
 import { findSendingSubdomain } from "@/lib/domains/sending-status";
 import { preflightDomain } from "@/lib/domains/preflight";
 import { hasCloudflareCredentials } from "@/lib/runtime";
+import { clearedDnsSkip, isDomainHostname, skippedDomainValues } from "@/lib/domains/skip-dns-utils";
 import { deleteDomainWithMailboxes } from "@/lib/mailboxes/delete";
 import type { MailboxDeletionResult } from "@/lib/mailboxes/delete-types";
 
@@ -39,6 +40,74 @@ export async function listUserDomains(env: CloudflareEnv, userId: string) {
 	return selectRows(db, domains, eq(domains.userId, userId));
 }
 
+type AddedDomain = {
+	domain: typeof domains.$inferSelect;
+	dns: DomainDnsView;
+	changes: DomainProvisioningChanges;
+};
+
+/** Points the owner's all-domains mailboxes at a domain that was just added. */
+async function routeAliasMailboxes(env: CloudflareEnv, userId: string): Promise<void> {
+	const db = getDb(env);
+	const aliasMailboxes = await db
+		.select({
+			id: mailboxes.id,
+			domainId: mailboxes.domainId,
+			localPart: mailboxes.localPart,
+			useAllDomains: mailboxes.useAllDomains,
+		})
+		.from(mailboxes)
+		.innerJoin(domains, eq(mailboxes.domainId, domains.id))
+		.where(and(eq(domains.userId, userId), eq(mailboxes.useAllDomains, true)));
+	const routingResults = await Promise.allSettled(
+		aliasMailboxes.map((mailbox) => ensureMailboxDomainRouting(env, db, mailbox)),
+	);
+	for (const result of routingResults) {
+		if (result.status === "rejected") console.warn("ensureMailboxDomainRouting", result.reason);
+	}
+}
+
+/**
+ * Records a domain without looking it up on Cloudflare or changing any DNS: the manual
+ * zone, no receiving or sending provider and the "DNS skipped" flag, which the dashboard
+ * warns about until an admin marks it done. The first Cloudflare setup on the domain page
+ * adopts the real zone (`adoptCloudflareZone`). An already added domain is refused rather
+ * than overwritten, since its zone and providers may be in use.
+ */
+export async function addSkippedDomainForUser(
+	env: CloudflareEnv,
+	userId: string,
+	hostname: string,
+): Promise<AddedDomain> {
+	const db = getDb(env);
+	const normalized = hostname.toLowerCase().trim();
+	if (!isDomainHostname(normalized)) throw new Error("Enter a domain name such as example.com");
+	const [claimed] = await db
+		.select({ userId: domains.userId })
+		.from(domains)
+		.where(eq(domains.hostname, normalized))
+		.limit(1);
+	if (claimed && claimed.userId !== userId) throw new Error("Domain is already registered");
+	if (claimed) throw new Error("This domain is already added. Set up its DNS from the Domains page.");
+
+	const values = skippedDomainValues(newId("dom"), userId, normalized);
+	await insertRow(db, domains, values);
+	await routeAliasMailboxes(env, userId);
+	const domain = (await selectRow(db, domains, eq(domains.id, values.id)))!;
+	return {
+		domain,
+		dns: await getManualDomainDns(env, normalized),
+		changes: {
+			zoneId: values.zoneId,
+			enabledEmailRouting: false,
+			createdSendingSubdomainTag: null,
+			previousCatchAll: null,
+			createdAddressRules: [],
+			deletedMxRecords: [],
+		},
+	};
+}
+
 export async function addDomainForUser(
 	env: CloudflareEnv,
 	userId: string,
@@ -50,11 +119,7 @@ export async function addDomainForUser(
 		receivingProvider?: "none" | "cloudflare" | "resend" | "ses";
 		sendingProvider?: "none" | "cloudflare" | "resend" | "ses";
 	},
-): Promise<{
-	domain: typeof domains.$inferSelect;
-	dns: DomainDnsView;
-	changes: DomainProvisioningChanges;
-}> {
+): Promise<AddedDomain> {
 	const db = getDb(env);
 	const normalizedHostname = hostname.toLowerCase().trim();
 	const [claimedHostname] = await db
@@ -117,6 +182,7 @@ export async function addDomainForUser(
 					: { sendingProvider: provisioned.sendingRequested ? ("cloudflare" as const) : ("none" as const) }),
 			sendingEnabled: provisioned.sendingEnabled,
 			routingEnabled: provisioned.routingEnabled,
+			...clearedDnsSkip(existing),
 		};
 
 		if (existing) {
@@ -126,22 +192,7 @@ export async function addDomainForUser(
 			insertedDomainId = domainId;
 		}
 
-		const aliasMailboxes = await db
-			.select({
-				id: mailboxes.id,
-				domainId: mailboxes.domainId,
-				localPart: mailboxes.localPart,
-				useAllDomains: mailboxes.useAllDomains,
-			})
-			.from(mailboxes)
-			.innerJoin(domains, eq(mailboxes.domainId, domains.id))
-			.where(and(eq(domains.userId, userId), eq(mailboxes.useAllDomains, true)));
-		const routingResults = await Promise.allSettled(
-			aliasMailboxes.map((mailbox) => ensureMailboxDomainRouting(env, db, mailbox)),
-		);
-		for (const result of routingResults) {
-			if (result.status === "rejected") console.warn("ensureMailboxDomainRouting", result.reason);
-		}
+		await routeAliasMailboxes(env, userId);
 
 		const row = await selectRow(db, domains, eq(domains.id, domainId));
 		domain = row!;

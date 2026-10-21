@@ -5,6 +5,7 @@ import { canManageDomains } from "@/lib/auth/admin";
 import { getDomainForUser } from "@/lib/domains/service";
 import { parseDnsSetupInput, setupDnsRecordView } from "@/lib/domains/dns-setup-request";
 import { MxConflictError } from "@/lib/domains/receiving-dns";
+import { zoneAdoptionFailure } from "@/lib/domains/skip-dns-utils";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -29,6 +30,8 @@ export async function POST(request: Request, { params }: Params) {
 		// 409 MX_CONFLICT asks the caller to confirm and retry with replaceMx.
 		if (err instanceof MxConflictError)
 			return NextResponse.json({ error: err.message, code: err.code, records: err.records }, { status: 409 });
+		const adoption = zoneAdoptionFailure(err);
+		if (adoption) return NextResponse.json(adoption.body, { status: adoption.status });
 		const message = err instanceof Error ? err.message : "Failed to set up DNS record";
 		return NextResponse.json({ error: message }, { status: 500 });
 	}

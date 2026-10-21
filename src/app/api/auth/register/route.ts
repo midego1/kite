@@ -9,7 +9,7 @@ import { requireSetupToken } from "@/lib/auth/setup-token";
 import { SESSION_COOKIE } from "@/lib/auth/session";
 import { newId } from "@/lib/ids";
 import { firstRunRegisterSchema } from "@/lib/validators";
-import { addDomainForUser } from "@/lib/domains/service";
+import { addDomainForUser, addSkippedDomainForUser } from "@/lib/domains/service";
 import { rollbackDomainProvisioning } from "@/lib/domains/rollback";
 import type { DomainProvisioningChanges } from "@/lib/domains/types";
 import { ensureEmailRoutingRuleToWorker } from "@/lib/cloudflare-api";
@@ -73,11 +73,13 @@ export async function POST(request: Request) {
 	// config would go unnoticed.
 	let changes: DomainProvisioningChanges | null = null;
 	try {
-		const added = await addDomainForUser(env, userId, domainName, {
-			enableRouting: true,
-			enableSending: firstRunParsed.data.enableSending ?? true,
-			replaceMxRecords: firstRunParsed.data.replaceMxRecords,
-		});
+		const added = firstRunParsed.data.skipDns
+			? await addSkippedDomainForUser(env, userId, domainName)
+			: await addDomainForUser(env, userId, domainName, {
+					enableRouting: true,
+					enableSending: firstRunParsed.data.enableSending ?? true,
+					replaceMxRecords: firstRunParsed.data.replaceMxRecords,
+				});
 		const domain = added.domain;
 		changes = added.changes;
 		await ensureEmailRoutingRuleToWorker(env, domain.zoneId, email);

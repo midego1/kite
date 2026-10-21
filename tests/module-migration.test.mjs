@@ -30,7 +30,7 @@ after(() => rmSync(scratch, { recursive: true, force: true }));
 const preDirectory = copyMigrationsBefore(scratch, 62);
 const MIGRATION = "0062_add_module_platform.sql";
 /** Migrations after 0062, in order. */
-const LATER_MIGRATIONS = ["0063_add_finance_module.sql", "0064_add_drive.sql"];
+const LATER_MIGRATIONS = ["0063_add_finance_module.sql", "0064_add_drive.sql", "0065_add_domain_dns_skipped.sql"];
 /** The modules 0062 seeds a row for; later modules have no row, which means `defaultEnabled`. */
 const MODULES = ["calendar", "booking", "templates", "import"];
 

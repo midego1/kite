@@ -65,6 +65,7 @@ export const firstRunRegisterSchema = z.object({
 	domain: z.string().min(3),
 	enableSending: z.boolean().optional(),
 	replaceMxRecords: z.boolean().optional(),
+	skipDns: z.boolean().optional(),
 	username: z
 		.string()
 		.min(1)
@@ -93,6 +94,8 @@ export const addDomainSchema = z.object({
 	enableRouting: z.boolean().optional(),
 	enableSending: z.boolean().optional(),
 	replaceMxRecords: z.boolean().optional(),
+	/** Record the domain without checking or changing DNS; a dashboard warning shows until it is marked done. */
+	skipDns: z.boolean().optional(),
 	/** Which service sends mail for the domain; derived from `enableSending` when omitted. */
 	sendingProvider: z.enum(["none", "cloudflare", "resend", "ses"]).optional(),
 	/** Which service receives mail for the domain; Cloudflare Email Routing when omitted. */
@@ -440,3 +443,6 @@ export const webhookUpdateSchema = z.object({
 	maxAttempts: z.number().int().min(1).max(10).optional(),
 	rotateSecret: z.literal(true).optional(),
 });
+
+/** PATCH /api/domains/[id]: only the "DNS skipped" flag can be changed there. */
+export const domainUpdateSchema = z.object({ dnsSkipped: z.boolean() }).strict();

@@ -26,6 +26,7 @@ const {
 const scratch = makeBundleDirectory("kite-drive-migration-dirs-");
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const preDirectory = copyMigrationsBefore(scratch, 64);
+const throughDrive = copyMigrationsBefore(scratch, 65);
 const MIGRATION = "0064_add_drive.sql";
 const BACKED_UP = ["drive_items", "drive_shares", "drive_links", "drive_settings", "drive_user_quotas"];
 const TABLES = [...BACKED_UP, "drive_upload_parts"];
@@ -131,7 +132,7 @@ test("upgrading from 0063 adds only the Drive tables and changes no existing one
 	seedAccountData(db);
 	const tablesBefore = all(db, "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").map((r) => r.name);
 	const before = Object.fromEntries(tablesBefore.map((table) => [table, columns(db, table)]));
-	assert.deepEqual(await applyMigrations(db, migrationsDir), [MIGRATION]);
+	assert.deepEqual(await applyMigrations(db, throughDrive), [MIGRATION]);
 	const tablesAfter = all(db, "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").map((r) => r.name);
 	assert.deepEqual(
 		tablesAfter.filter((table) => !tablesBefore.includes(table)),

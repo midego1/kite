@@ -21,9 +21,11 @@ import type { DomainProvisioningChanges } from "@/lib/domains/types";
 import { findSendingSubdomain } from "@/lib/domains/sending-status";
 import { preflightDomain } from "@/lib/domains/preflight";
 import { hasCloudflareCredentials } from "@/lib/runtime";
-import { clearedDnsSkip, isDomainHostname, skippedDomainValues } from "@/lib/domains/skip-dns-utils";
+import { clearedDnsSkip, isDomainHostname, skippedDomainDns, skippedDomainValues } from "@/lib/domains/skip-dns-utils";
 import { deleteDomainWithMailboxes } from "@/lib/mailboxes/delete";
 import type { MailboxDeletionResult } from "@/lib/mailboxes/delete-types";
+import type { z } from "zod";
+import type { addDomainSchema } from "@/lib/validators";
 
 export type DomainDnsView = {
 	routing: { records: CfDnsRecord[]; missing: CfDnsRecord[]; status?: string };
@@ -96,7 +98,7 @@ export async function addSkippedDomainForUser(
 	const domain = (await selectRow(db, domains, eq(domains.id, values.id)))!;
 	return {
 		domain,
-		dns: await getManualDomainDns(env, normalized),
+		dns: await getDomainDns(env, domain),
 		changes: {
 			zoneId: values.zoneId,
 			enabledEmailRouting: false,
@@ -228,8 +230,27 @@ export async function addDomainForUser(
 	return { domain, dns, changes: provisioned.changes };
 }
 
+/** Adds a domain the way the add-domain form or API asked: with DNS skipped, or fully provisioned. */
+export function addDomainAsRequested(
+	env: CloudflareEnv,
+	userId: string,
+	input: z.infer<typeof addDomainSchema>,
+): Promise<AddedDomain> {
+	if (input.skipDns) return addSkippedDomainForUser(env, userId, input.hostname);
+	return addDomainForUser(env, userId, input.hostname, {
+		enableRouting: input.enableRouting,
+		enableSending: input.enableSending,
+		replaceMxRecords: input.replaceMxRecords,
+		receivingProvider: input.receivingProvider,
+		sendingProvider: input.sendingProvider,
+	});
+}
+
 export async function getDomainDns(env: CloudflareEnv, domain: typeof domains.$inferSelect): Promise<DomainDnsView> {
-	if (isManualZone(domain.zoneId)) return getManualDomainDns(env, domain.hostname);
+	if (isManualZone(domain.zoneId)) {
+		if (domain.dnsSkipped && hasCloudflareCredentials(env)) return skippedDomainDns();
+		return getManualDomainDns(env, domain.hostname);
+	}
 	// Read the zone's actual sending state rather than trusting `sendingRequested`,
 	// which goes stale when sending is enabled outside Kite (or when the row
 	// was written before the subdomain existed). A missing Email Sending permission

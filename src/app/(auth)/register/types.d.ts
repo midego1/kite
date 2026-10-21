@@ -35,6 +35,18 @@ export type MxCheckResult = {
 	error?: string;
 };
 
+export type MxCheckState = {
+	skipDns: boolean;
+	checking: boolean;
+	recordsExist: boolean | null;
+	replaceRecords: boolean;
+};
+
+export type RegisterMxStatusProps = Omit<MxCheckState, "skipDns"> & {
+	onReplaceRecordsChange: (replace: boolean) => void;
+	onRetry: () => void;
+};
+
 export type RegisterResult = {
 	redirect?: string;
 	error?: string;

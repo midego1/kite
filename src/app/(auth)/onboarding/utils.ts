@@ -16,15 +16,23 @@ export async function checkDomain(hostname: string): Promise<DomainPreflightResp
 	return { ok: res.ok, ...data };
 }
 
+/** Adds the domain; with `skipDns` it is recorded without checking or changing any DNS. */
 export async function createDomain(
 	hostname: string,
-	enableSending: boolean,
-	replaceMxRecords = false,
+	options: { enableSending?: boolean; replaceMxRecords?: boolean; skipDns?: boolean },
 ): Promise<{ ok: boolean; data: DomainCreateResult }> {
+	const body = options.skipDns
+		? { hostname, skipDns: true }
+		: {
+				hostname,
+				enableRouting: true,
+				enableSending: options.enableSending ?? false,
+				replaceMxRecords: options.replaceMxRecords ?? false,
+			};
 	const res = await authFetch("/api/domains", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ hostname, enableRouting: true, enableSending, replaceMxRecords }),
+		body: JSON.stringify(body),
 	});
 
 	return {

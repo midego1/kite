@@ -128,7 +128,9 @@ const zonesAnswer = (zones) => Response.json({ success: true, result: zones, err
 test("a skipped domain is added without Cloudflare and accepts mail once its DNS points at Kite", async (t) => {
 	const env = { DB: await database(t), CF_TOKEN: "token" };
 	stubZoneLookup(t, () => assert.fail("skipping DNS must not call Cloudflare"));
-	const { domain, changes } = await kite.addSkippedDomainForUser(env, "user-1", " Skip.Example.Test ");
+	const { domain, changes, dns } = await kite.addSkippedDomainForUser(env, "user-1", " Skip.Example.Test ");
+	// The SMTP listener's records would be wrong for a domain headed for Cloudflare.
+	assert.deepEqual(dns, kite.skippedDomainDns());
 	assert.equal(domain.hostname, "skip.example.test");
 	assert.equal(domain.zoneId, "manual");
 	assert.equal(domain.dnsSkipped, true);
@@ -184,8 +186,13 @@ test("adoptCloudflareZone attaches the real zone to a skipped domain", async (t)
 test("adoptCloudflareZone leaves manual zones alone without credentials or a skip", async (t) => {
 	const env = { DB: await database(t) };
 	stubZoneLookup(t, () => assert.fail("nothing to adopt"));
-	const { domain: skipped } = await kite.addSkippedDomainForUser(env, "user-1", "skip.example.test");
+	const { domain: skipped, dns } = await kite.addSkippedDomainForUser(env, "user-1", "skip.example.test");
 	assert.equal(await kite.adoptCloudflareZone(env, skipped), skipped);
+	// Without Cloudflare credentials the records to set by hand are this server's own.
+	assert.deepEqual(
+		dns.routing.missing.map((record) => record.type),
+		["MX", "TXT", "TXT"],
+	);
 	const { domain: manual } = await kite.addDomainForUser(env, "user-1", "manual.example.test", {
 		sendingProvider: "none",
 	});

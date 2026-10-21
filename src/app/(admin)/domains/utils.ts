@@ -41,3 +41,15 @@ export async function checkDomain(hostname: string): Promise<DomainPreflightResp
 	const data = (await response.json()) as Omit<DomainPreflightResponse, "ok">;
 	return { ok: response.ok, ...data };
 }
+
+/** The Email Sending row's text: the zone's sending subdomain when there is one, else the manual setup's state. */
+export function getSendingStatusLabel(
+	subdomainName: string | undefined,
+	subdomainEnabled: boolean,
+	manual: boolean,
+	domainSendingEnabled: boolean,
+): string {
+	if (subdomainName) return `Sending for ${subdomainName} is ${subdomainEnabled ? "enabled" : "disabled"}`;
+	if (!manual) return "Sending has not configured for this domain";
+	return domainSendingEnabled ? "Email sending is configured" : "Email sending is not configured";
+}

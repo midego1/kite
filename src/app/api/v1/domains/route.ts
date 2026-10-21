@@ -3,7 +3,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { authenticateAdminApiKey } from "@/lib/api/admin-auth";
 import { canManageDomains } from "@/lib/auth/admin";
 import { addDomainSchema } from "@/lib/validators";
-import { addDomainForUser, listUserDomains } from "@/lib/domains/service";
+import { addDomainAsRequested, listUserDomains } from "@/lib/domains/service";
 import { getDomainDnsView, summariseDomainDns } from "@/lib/domains/dns-view";
 import { getDomainProvisioningError } from "@/lib/domains/errors";
 import type { DnsStatusSummary } from "@/lib/dns-status";
@@ -47,13 +47,7 @@ export async function POST(request: Request) {
 	}
 
 	try {
-		const result = await addDomainForUser(env, auth.userId, parsed.data.hostname, {
-			enableRouting: parsed.data.enableRouting,
-			enableSending: parsed.data.enableSending,
-			replaceMxRecords: parsed.data.replaceMxRecords,
-			receivingProvider: parsed.data.receivingProvider,
-			sendingProvider: parsed.data.sendingProvider,
-		});
+		const result = await addDomainAsRequested(env, auth.userId, parsed.data);
 		let dns = result.dns;
 		try {
 			dns = await getDomainDnsView(env, result.domain);

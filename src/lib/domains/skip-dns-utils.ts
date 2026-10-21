@@ -69,6 +69,19 @@ export function skippedDomainValues(id: string, userId: string, hostname: string
 }
 
 /**
+ * The zone view of a skipped domain on an install with Cloudflare credentials. The manual
+ * zone's own record list describes this server's SMTP listener, which is wrong for a
+ * domain that will be moved to Cloudflare, so it lists nothing until the zone is adopted.
+ */
+export function skippedDomainDns() {
+	return {
+		routing: { records: [], missing: [], status: "skipped" },
+		sending: [],
+		sendingEnabled: false,
+	};
+}
+
+/**
  * What re-adding a domain with full provisioning changes about the "DNS skipped" flag:
  * provisioning has just set the DNS up, so an earlier skip's warning is cleared. Nothing
  * is written when the flag is already off, which keeps the update working before the

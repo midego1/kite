@@ -3,7 +3,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { requireSessionUser } from "@/lib/api/auth";
 import { canManageDomains } from "@/lib/auth/admin";
 import { addDomainSchema } from "@/lib/validators";
-import { addDomainForUser, addSkippedDomainForUser, listUserDomains } from "@/lib/domains/service";
+import { addDomainAsRequested, listUserDomains } from "@/lib/domains/service";
 import type { DnsStatusSummary } from "@/lib/dns-status";
 import { summariseDomainDns } from "@/lib/domains/dns-view";
 import { getDomainProvisioningError } from "@/lib/domains/errors";
@@ -55,15 +55,7 @@ export async function POST(request: Request) {
 	}
 
 	try {
-		const result = parsed.data.skipDns
-			? await addSkippedDomainForUser(env, user.id, parsed.data.hostname)
-			: await addDomainForUser(env, user.id, parsed.data.hostname, {
-					enableRouting: parsed.data.enableRouting,
-					enableSending: parsed.data.enableSending,
-					replaceMxRecords: parsed.data.replaceMxRecords,
-					receivingProvider: parsed.data.receivingProvider,
-					sendingProvider: parsed.data.sendingProvider,
-				});
+		const result = await addDomainAsRequested(env, user.id, parsed.data);
 		return NextResponse.json(result);
 	} catch (err) {
 		const failure = getDomainProvisioningError(err, "Failed to add domain");

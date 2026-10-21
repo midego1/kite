@@ -22,6 +22,8 @@
 		"src/lib/remote-images/proxy-url-utils.ts",
 		"src/components/alerts-banner-utils.ts",
 		"src/components/migrations-banner-utils.ts",
+		"src/components/dns-skipped-banner-utils.ts",
+		"src/app/(auth)/register/mx-status-utils.ts",
 		"src/components/agent/agent-activity-utils.ts",
 		"src/components/mail-search/search-dropdown-utils.ts",
 		"src/components/shortcuts/command-palette-utils.ts",

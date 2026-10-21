@@ -1,25 +1,20 @@
 import { Fragment } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ListRow } from "@/components/ui/list";
-import { cn } from "@/lib/utils";
 import DomainDnsDetails from "./DomainDnsDetails";
 import DomainDnsSkeleton from "./DomainDnsSkeleton";
 import { dnsAuthRecords, getDnsAuthStatusLabel } from "./utils";
-import { Check, AlertTriangle, ChevronDown, ChevronRight, Globe2, MoreVertical, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Globe2, MoreVertical, Trash2 } from "lucide-react";
+import DomainStatusBadges, { StatusIcon } from "./DomainStatusBadges";
 import type { DomainItemCardProps } from "./types";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
-
-function StatusIcon({ ok, className }: { ok: boolean; className?: string }) {
-	if (ok) return <Check className={cn(className, "text-green-600")} />;
-	return <AlertTriangle className={cn(className, "text-amber-500")} />;
-}
 
 export default function DomainItemCard({
 	item,
 	dns,
 	dnsDetails,
+	managesDns,
 	onSendingProviderChange,
 	sendingProviderBusy,
 	sendingProviderMessage,
@@ -54,47 +49,7 @@ export default function DomainItemCard({
 				<div className="flex w-full min-w-0 flex-1 flex-col gap-2">
 					<span className="min-w-0 truncate pr-10 text-sm font-semibold text-neutral-900">{item.hostname}</span>
 
-					<div className="flex flex-wrap gap-2">
-						<Badge variant={item.status === "active" ? "success" : "secondary"} className="gap-1">
-							<StatusIcon ok={item.status === "active"} className="h-3 w-3" />
-							{item.status}
-						</Badge>
-						{item.receivingProvider === "cloudflare" ? (
-							<Badge
-								variant={item.routingEnabled ? "outline" : "secondary"}
-								className={cn("gap-1", !item.routingEnabled && "opacity-50")}
-							>
-								<StatusIcon ok={item.routingEnabled} className="h-3 w-3" />
-								routing
-							</Badge>
-						) : item.receivingProvider === "none" ? (
-							<Badge variant="secondary" className="gap-1 opacity-50">
-								sending only
-							</Badge>
-						) : (
-							<Badge variant="outline" className="gap-1">
-								receiving via {item.receivingProvider === "ses" ? "Amazon SES" : "Resend"}
-							</Badge>
-						)}
-						{item.sendingProvider === "resend" || item.sendingProvider === "ses" ? (
-							<Badge variant="outline" className="gap-1">
-								<StatusIcon ok className="h-3 w-3" />
-								sending via {item.sendingProvider === "ses" ? "Amazon SES" : "Resend"}
-							</Badge>
-						) : item.sendingProvider === "none" ? (
-							<Badge variant="secondary" className="gap-1 opacity-50">
-								receiving only
-							</Badge>
-						) : (
-							<Badge
-								variant={item.sendingEnabled ? "outline" : "secondary"}
-								className={cn("gap-1", !item.sendingEnabled && "opacity-50")}
-							>
-								<StatusIcon ok={item.sendingEnabled} className="h-3 w-3" />
-								sending
-							</Badge>
-						)}
-					</div>
+					<DomainStatusBadges item={item} />
 
 					<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
 						{auth &&
@@ -134,6 +89,7 @@ export default function DomainItemCard({
 					<DomainDnsDetails
 						domain={item}
 						dns={dnsDetails}
+						managesDns={managesDns}
 						onSendingProviderChange={onSendingProviderChange}
 						sendingProviderBusy={sendingProviderBusy}
 						sendingProviderMessage={sendingProviderMessage}

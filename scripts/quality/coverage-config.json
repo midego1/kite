@@ -8,6 +8,8 @@
 		"src/lib/http/content-type-utils.ts",
 		"src/lib/http/content-disposition-utils.ts",
 		"src/lib/storage/object-classes-utils.ts",
+		"src/lib/storage/s3-utils.ts",
+		"src/lib/storage/s3-presets-utils.ts",
 		"src/lib/drive/name-utils.ts",
 		"src/lib/drive/upload-utils.ts",
 		"src/lib/drive/quota-utils.ts",

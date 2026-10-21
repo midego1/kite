@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error><Code>SignatureDoesNotMatch</Code><Message>The request signature we calculated does not match the signature you provided. Check your key and signing method.</Message><AWSAccessKeyId>{{accessKeyId}}</AWSAccessKeyId><RequestId>1F2E3D4C5B6A7980</RequestId><HostId>fake-host-id</HostId></Error>

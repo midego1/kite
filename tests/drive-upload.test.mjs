@@ -120,3 +120,94 @@ test("failed parts remove their abort listeners on every retry", async (t) => {
 	);
 	mocked.assertClean();
 });
+
+function mockDirectUpload(t, { etag = '"etag-1"', expireFirst = false } = {}) {
+	const calls = [];
+	const requests = [];
+	let urlBatches = 0;
+	t.mock.method(globalThis, "fetch", async (url, init) => {
+		calls.push({ url, method: init.method, body: init.body });
+		if (url === "/api/drive/uploads") return Response.json({ ...session, mode: "direct" });
+		if (url.endsWith("/part-urls")) {
+			urlBatches += 1;
+			const { partNumbers } = JSON.parse(init.body);
+			return Response.json({
+				urls: partNumbers.map((partNumber) => ({
+					partNumber,
+					url: `https://store.example.test/bucket/key?partNumber=${partNumber}&batch=${urlBatches}`,
+				})),
+			});
+		}
+		return Response.json({});
+	});
+	const previous = Object.getOwnPropertyDescriptor(globalThis, "XMLHttpRequest");
+	t.after(() => {
+		if (previous) Object.defineProperty(globalThis, "XMLHttpRequest", previous);
+		else delete globalThis.XMLHttpRequest;
+	});
+	globalThis.XMLHttpRequest = class {
+		upload = {};
+		status = 200;
+		headers = [];
+		withCredentials = true;
+		open(method, url) {
+			this.entry = { method, url, headers: this.headers };
+			requests.push(this.entry);
+		}
+		setRequestHeader(name) {
+			this.headers.push(name);
+		}
+		getResponseHeader(name) {
+			return name === "ETag" ? etag : null;
+		}
+		send() {
+			this.entry.withCredentials = this.withCredentials;
+			if (expireFirst && requests.length === 1) {
+				this.status = 403;
+				this.responseText = "<Error><Code>AccessDenied</Code></Error>";
+			}
+			this.onload();
+			this.onloadend();
+		}
+		abort() {}
+	};
+	return { calls, requests };
+}
+
+test("direct uploads send parts to the store without Kite headers and record each ETag", async (t) => {
+	const mocked = mockDirectUpload(t);
+	await uploadDriveFile(file, null, () => {}, new AbortController().signal);
+	assert.equal(mocked.requests.length, 3);
+	for (const request of mocked.requests) {
+		assert.match(request.url, /^https:\/\/store\.example\.test\//);
+		assert.deepEqual(request.headers, []);
+		assert.equal(request.withCredentials, false);
+	}
+	const reported = mocked.calls.filter(({ url }) => /\/parts\/\d$/.test(url));
+	assert.deepEqual(
+		reported.map(({ url, method, body }) => [url, method, JSON.parse(body).etag]),
+		[1, 2, 3].map((part) => [`/api/drive/uploads/session/parts/${part}`, "PUT", '"etag-1"']),
+	);
+	assert.equal(mocked.calls.filter(({ url }) => url.endsWith("/part-urls")).length, 1);
+	assert.equal(mocked.calls.at(-1).url, "/api/drive/uploads/session/complete");
+});
+
+test("a rejected direct part fetches a fresh URL before retrying", async (t) => {
+	const mocked = mockDirectUpload(t, { expireFirst: true });
+	await uploadDriveFile(file, null, () => {}, new AbortController().signal);
+	assert.equal(mocked.requests.length, 4);
+	assert.match(mocked.requests[0].url, /partNumber=1&batch=1$/);
+	assert.match(mocked.requests[1].url, /partNumber=1&batch=2$/);
+});
+
+test("a direct part without a readable ETag fails instead of completing", async (t) => {
+	const mocked = mockDirectUpload(t, { etag: null });
+	await assert.rejects(
+		uploadDriveFile(file, null, () => {}, new AbortController().signal),
+		/ETag/,
+	);
+	assert.equal(
+		mocked.calls.some(({ url }) => url.endsWith("/complete")),
+		false,
+	);
+});

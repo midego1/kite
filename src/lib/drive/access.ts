@@ -158,7 +158,7 @@ export async function deleteDriveItems(env: CloudflareEnv, roots: DriveRow[]): P
 async function deleteDriveObjects(env: CloudflareEnv, rows: DriveRow[]): Promise<void> {
 	const byStore = new Map<KiteBucket, string[]>();
 	for (const row of rows) {
-		const bucket = row.kind === "file" && row.objectKey ? bucketOfItem(env, row) : null;
+		const bucket = row.kind === "file" && row.objectKey ? await bucketOfItem(env, row) : null;
 		if (!bucket) continue;
 		if (row.status === "uploading" && row.uploadId && bucket.resumeMultipartUpload)
 			await bucket

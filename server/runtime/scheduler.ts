@@ -7,6 +7,7 @@ import { runTrashRetention } from "@/lib/email/trash-retention";
 import { runDatabasePruning } from "@/lib/maintenance/pruning";
 import { runOperationalAlerts } from "@/lib/alerts/run";
 import { runModuleCronTasks } from "@/lib/modules/background";
+import { runStorageMigrationMaintenance } from "@/lib/storage/migration";
 
 const logger = createLogger("node-scheduler");
 
@@ -29,6 +30,9 @@ export function startScheduler(env: CloudflareEnv) {
 				.then(() => runOperationalAlerts(env, now))
 				.catch((error) => logger.error("alerts.evaluation_failed", { error }));
 			runModuleCronTasks(env, "*/5 * * * *", now).catch((error) => logger.error("modules.cron_failed", { error }));
+			runStorageMigrationMaintenance(env, now).catch((error) =>
+				logger.error("storage.migration_maintenance_failed", { error }),
+			);
 		}
 		const day = now.toISOString().slice(0, 10);
 		if (now.getUTCHours() !== 2 || lastRunDay === day) return;

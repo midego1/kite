@@ -7,8 +7,19 @@ import type { ContentSecurityPolicyOptions } from "./headers-types";
  * would make browsers ignore 'unsafe-inline'. `style-src` keeps 'unsafe-inline'
  * because React style attributes and sanitized email styles need it.
  */
-export function buildContentSecurityPolicy({ nonce, dev = false }: ContentSecurityPolicyOptions = {}): string {
+export function buildContentSecurityPolicy({
+	nonce,
+	dev = false,
+	connectSources = [],
+}: ContentSecurityPolicyOptions = {}): string {
 	const scriptSources = ["'self'", "https://challenges.cloudflare.com"];
+	const connect = [
+		"'self'",
+		"ws:",
+		"wss:",
+		"https://challenges.cloudflare.com",
+		...connectSources.filter(isExactOrigin),
+	];
 	if (dev) scriptSources.push("'unsafe-inline'", "'unsafe-eval'");
 	else if (nonce) scriptSources.push(`'nonce-${nonce}'`);
 	return [
@@ -17,7 +28,7 @@ export function buildContentSecurityPolicy({ nonce, dev = false }: ContentSecuri
 		"style-src 'self' 'unsafe-inline'",
 		"img-src 'self' data: blob: https:",
 		"font-src 'self' data:",
-		"connect-src 'self' ws: wss: https://challenges.cloudflare.com",
+		`connect-src ${[...new Set(connect)].join(" ")}`,
 		"frame-src 'self' https://challenges.cloudflare.com",
 		"object-src 'none'",
 		"base-uri 'self'",
@@ -26,6 +37,16 @@ export function buildContentSecurityPolicy({ nonce, dev = false }: ContentSecuri
 		"frame-ancestors 'self'",
 		"upgrade-insecure-requests",
 	].join("; ");
+}
+
+/** `https://host[:port]` or `http://host[:port]` and nothing else, so a stored value cannot inject a directive. */
+function isExactOrigin(value: string): boolean {
+	try {
+		const url = new URL(value);
+		return (url.protocol === "https:" || url.protocol === "http:") && url.origin === value && !value.includes("*");
+	} catch {
+		return false;
+	}
 }
 
 export function createCspNonce(): string {

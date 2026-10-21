@@ -39,6 +39,7 @@ const CORE_PATHS = [
 	"src/app/(dashboard)/import-export/page.tsx",
 	"src/app/(settings)/settings/import-export/page.tsx",
 	"src/lib/storage/",
+	"src/app/api/admin/storage/",
 	"server/runtime/file-bucket.ts",
 	"src/lib/backups/",
 ];

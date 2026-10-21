@@ -13,12 +13,13 @@ interface CloudflareEnv {
 	AI_MODEL?: string;
 	AI_BASE_URL?: string;
 	AI_API_KEY?: string;
-	// The outbound queue also carries webhook retries and manual backup exports, so that neither needs an extra binding.
+	// The outbound queue also carries webhook retries, manual backup exports and storage migration batches, so that neither needs an extra binding.
 	OUTBOUND_QUEUE: Queue<
 		| import("./src/lib/email/send").OutboundQueueMessage
 		| import("./src/lib/email/webhooks").WebhookRetryMessage
 		| import("./src/lib/mailboxes/delete-types").MailboxPurgeMessage
 		| import("./src/lib/backups/queue-types").BackupRunMessage
+		| import("./src/lib/storage/migration-utils").StorageMigrateMessage
 	>;
 	ASSETS: Fetcher;
 	IMAGES: ImagesBinding;
@@ -61,6 +62,20 @@ interface CloudflareEnv {
 	AI_ALLOW_INSECURE_LOOPBACK?: string;
 	/** Dev/test only: "1" lets the remote image proxy fetch http://127.0.0.1 on any port (the e2e image server); ignored in production. */
 	REMOTE_IMAGES_ALLOW_LOOPBACK?: string;
+	/** Dev/test only: "1" or "true" lets an object store use plain http and loopback hosts (the fake S3, local MinIO); ignored in production. */
+	STORAGE_ALLOW_INSECURE_ENDPOINT?: string;
+	/** Node server only: "1" or "true" lets an object store be a private or LAN host, such as MinIO beside the server; ignored on Workers. */
+	STORAGE_ALLOW_PRIVATE_ENDPOINTS?: string;
+	/** Optional read-only S3 store from the environment (Docker bootstrap); see docs/self-hosting.md. Never written to D1. */
+	STORAGE_S3_ENDPOINT?: string;
+	STORAGE_S3_REGION?: string;
+	STORAGE_S3_BUCKET?: string;
+	STORAGE_S3_ACCESS_KEY_ID?: string;
+	STORAGE_S3_SECRET_ACCESS_KEY?: string;
+	/** `virtual` or `path` (default `path`). */
+	STORAGE_S3_ADDRESSING?: string;
+	/** Comma-separated classes routed to the environment store when no saved route names them: `mail,drive,backups`. */
+	STORAGE_S3_CLASSES?: string;
 	/** abuse.ch Auth-Key; when set, inbound spam checks look up risky links and attachment hashes on URLhaus. */
 	URLHAUS_AUTH_KEY?: string;
 	/** When set, first-run setup and the first registration must present this token. */

@@ -1,4 +1,4 @@
-import { signAwsRequest } from "@/lib/aws/sigv4";
+import { signAwsRequest, UNSIGNED_PAYLOAD } from "@/lib/aws/sigv4";
 import { xmlTag } from "@/lib/aws/xml";
 import type { AwsConfig } from "@/lib/aws/aws-types";
 
@@ -41,39 +41,93 @@ async function parseError(response: Response): Promise<AwsError> {
 export type AwsRequest = {
 	config: AwsConfig;
 	service: string;
-	/** Defaults to `${service}.${region}.amazonaws.com`. */
+	/** Defaults to `${service}.${region}.amazonaws.com`. May carry a port (`localhost:9000`). */
 	host?: string;
+	/** `http` only for S3-compatible stores a dev flag allowed (src/lib/storage/endpoint.ts). */
+	scheme?: "https" | "http";
 	method?: string;
 	path?: string;
 	query?: Record<string, string>;
-	body?: string | ArrayBuffer;
+	/** A stream is sent unhashed (`UNSIGNED-PAYLOAD`) and needs `contentLength`. */
+	body?: string | ArrayBuffer | Uint8Array | ReadableStream<Uint8Array>;
+	/** The exact byte length of a streamed body. */
+	contentLength?: number;
+	/** Sign the body as `UNSIGNED-PAYLOAD` even when it is in memory, which spares hashing large objects. */
+	unsignedPayload?: boolean;
 	headers?: Record<string, string>;
 	/** Region used to sign; defaults to the config's. */
 	region?: string;
+	/** Statuses answered without throwing (a HEAD probe's 404). */
+	allowStatuses?: number[];
+	fetch?: typeof fetch;
 };
+
+type FixedLengthStreamConstructor = new (length: number) => TransformStream<Uint8Array, Uint8Array>;
+
+/**
+ * A streamed body the runtime sends with a Content-Length, which S3 requires (it refuses chunked uploads that
+ * are not aws-chunked). Workers learn the length from a FixedLengthStream; Node's fetch sends the header as given.
+ */
+function streamedBody(body: ReadableStream<Uint8Array>, length: number): ReadableStream<Uint8Array> {
+	const FixedLength = (globalThis as { FixedLengthStream?: FixedLengthStreamConstructor }).FixedLengthStream;
+	if (!FixedLength) return body;
+	const { readable, writable } = new FixedLength(length);
+	void body.pipeTo(writable).catch(() => undefined);
+	return readable;
+}
+
+function requestUrl(request: AwsRequest, region: string): URL {
+	const host = request.host ?? `${request.service}.${region}.amazonaws.com`;
+	const url = new URL(`${request.scheme ?? "https"}://${host}${request.path ?? "/"}`);
+	for (const [name, value] of Object.entries(request.query ?? {})) url.searchParams.set(name, value);
+	return url;
+}
+
+/** What to sign and send for the body: streams go unhashed with their exact length. */
+function requestBody(
+	request: AwsRequest,
+	method: string,
+): {
+	sign: { payloadHash: string } | { body: string | ArrayBuffer | Uint8Array };
+	headers: Record<string, string>;
+	init: { body: BodyInit | undefined; duplex?: "half" };
+} {
+	const body = request.body ?? "";
+	const sendsBody = method !== "GET" && method !== "HEAD";
+	if (!(body instanceof ReadableStream))
+		return {
+			sign: request.unsignedPayload ? { payloadHash: UNSIGNED_PAYLOAD } : { body },
+			headers: {},
+			init: { body: sendsBody ? (body as BodyInit) : undefined },
+		};
+	const length = request.contentLength;
+	if (length === undefined || !Number.isSafeInteger(length) || length < 0)
+		throw new Error("A streamed body needs its exact length");
+	return {
+		sign: { payloadHash: UNSIGNED_PAYLOAD },
+		headers: { "content-length": String(length) },
+		init: sendsBody ? { body: streamedBody(body, length), duplex: "half" as const } : { body: undefined },
+	};
+}
 
 export async function awsRequest(request: AwsRequest): Promise<Response> {
 	const { config, service } = request;
 	const region = request.region ?? config.region;
-	const url = new URL(`https://${request.host ?? `${service}.${region}.amazonaws.com`}${request.path ?? "/"}`);
-	for (const [name, value] of Object.entries(request.query ?? {})) url.searchParams.set(name, value);
-	const body = request.body ?? "";
+	const url = requestUrl(request, region);
 	const method = request.method ?? "GET";
+	const body = requestBody(request, method);
 	const headers = await signAwsRequest({
 		method,
 		url,
-		headers: request.headers ?? {},
-		body,
+		headers: { ...request.headers, ...body.headers },
+		...body.sign,
 		region,
 		service,
 		credentials: config,
 	});
-	const response = await fetch(url, {
-		method,
-		headers,
-		body: method === "GET" || method === "HEAD" ? undefined : body,
-	});
-	if (!response.ok) throw await parseError(response);
+	const init: RequestInit & { duplex?: "half" } = { method, headers, ...body.init };
+	const response = await (request.fetch ?? fetch)(url, init);
+	if (!response.ok && !request.allowStatuses?.includes(response.status)) throw await parseError(response);
 	return response;
 }
 

@@ -137,7 +137,7 @@ export async function saveAttachmentToDrive(
 	const ownerId = parentId ? (await editableFolder(db, user.id, parentId)).folder.ownerId : user.id;
 	const source = await readableAttachment(env, user, attachmentId);
 	if (!source) return notFound();
-	const store = newDriveStore(env);
+	const store = await newDriveStore(env);
 	const id = newId("drv");
 	const now = new Date();
 	const size = source.object.size ?? source.attachment.size;

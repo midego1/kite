@@ -42,6 +42,19 @@ export async function putBucketPolicy(config: AwsConfig, bucket: string, policy:
 	});
 }
 
+/**
+ * Bucket configuration writes (lifecycle, CORS) need a body checksum. Web Crypto has no MD5, so they carry the
+ * SHA-256 flexible checksum instead.
+ */
+export async function sha256ChecksumHeaders(body: string): Promise<Record<string, string>> {
+	const digest = new Uint8Array((await sha256Hex(body)).match(/../g)!.map((byte) => parseInt(byte, 16)));
+	return {
+		"Content-Type": "application/xml",
+		"x-amz-sdk-checksum-algorithm": "SHA256",
+		"x-amz-checksum-sha256": btoa(String.fromCharCode(...digest)),
+	};
+}
+
 /** Expires leftover raw messages; best effort, since we delete each object after intake. */
 export async function putExpiryLifecycle(
 	config: AwsConfig,
@@ -50,7 +63,6 @@ export async function putExpiryLifecycle(
 	days: number,
 ): Promise<void> {
 	const body = `<LifecycleConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Rule><ID>kite-expire-inbound</ID><Filter><Prefix>${prefix}</Prefix></Filter><Status>Enabled</Status><Expiration><Days>${days}</Days></Expiration></Rule></LifecycleConfiguration>`;
-	const digest = new Uint8Array((await sha256Hex(body)).match(/../g)!.map((byte) => parseInt(byte, 16)));
 	await awsRequest({
 		config,
 		service: "s3",
@@ -58,11 +70,7 @@ export async function putExpiryLifecycle(
 		method: "PUT",
 		query: { lifecycle: "" },
 		body,
-		headers: {
-			"Content-Type": "application/xml",
-			"x-amz-sdk-checksum-algorithm": "SHA256",
-			"x-amz-checksum-sha256": btoa(String.fromCharCode(...digest)),
-		},
+		headers: await sha256ChecksumHeaders(body),
 	});
 }
 

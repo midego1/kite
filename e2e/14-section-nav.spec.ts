@@ -355,6 +355,7 @@ test("admin pages use the Settings layout with the mail sidebar, top bar and Adm
 	await expect(menu.getByRole("navigation", { name: "System", exact: true }).getByRole("link")).toHaveText([
 		"General",
 		"Branding",
+		"Storage",
 		"Backups",
 		"Alerts",
 		"Activity",

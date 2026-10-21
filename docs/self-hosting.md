@@ -97,6 +97,28 @@ and the DNS page shows what to set by hand.
 | `AI_BASE_URL` | unset | OpenAI-compatible model API base URL for the assistant |
 | `AI_API_KEY` | unset | Server-only key for that model API |
 | `AI_MODEL` | `gpt-4o-mini` | Model ID supported by the configured API |
+| `STORAGE_ALLOW_PRIVATE_ENDPOINTS` | unset | Lets an S3-compatible store live on a private or LAN address (MinIO beside the server), over `http` or `https`; see [Object storage](#object-storage-optional) |
+| `STORAGE_S3_ENDPOINT`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY` | unset | An S3-compatible store defined by the environment, listed read-only under Admin → Storage |
+| `STORAGE_S3_REGION`, `STORAGE_S3_ADDRESSING` | `us-east-1`, `path` | Signing region and `path` or `virtual` addressing of that store |
+| `STORAGE_S3_CLASSES` | unset | Comma-separated classes (`mail`, `drive`, `backups`) the environment store holds while no route is saved for them |
+
+## Object storage (optional)
+
+Files live in `DATA_DIR/blobs` unless you route them elsewhere. **Admin → Storage** adds S3-compatible stores and picks, per class (Mail, Drive, Backups), where new objects go, with the same checks, CORS help and migrations as on Workers (see [Deployment](deployment.md#object-storage-optional)). It needs `APP_ENCRYPTION_KEY`.
+
+MinIO (or another S3 service) next to Kite usually has a private address, which the endpoint guard refuses unless `STORAGE_ALLOW_PRIVATE_ENDPOINTS=1` is set. Use path-style addressing for MinIO. For Drive, the browser must reach the store too: its address must be one the users' browsers can open, and its CORS rule must allow Kite's origin (**Apply CORS** sets it on MinIO).
+
+To set a store without the UI, define it in the environment:
+
+```
+STORAGE_S3_ENDPOINT=https://minio.example.internal:9000
+STORAGE_S3_BUCKET=kite
+STORAGE_S3_ACCESS_KEY_ID=...
+STORAGE_S3_SECRET_ACCESS_KEY=...
+STORAGE_S3_CLASSES=mail,drive,backups
+```
+
+The store appears read-only under Admin → Storage. A route saved in the UI wins over `STORAGE_S3_CLASSES`. Kite cannot set this store's CORS rule, so add it by hand before using it for Drive.
 
 ## Operations
 
@@ -108,6 +130,8 @@ and the DNS page shows what to set by hand.
   shares and links, so back up the volume to keep the files. Uploads pass
   through the server in 32 MiB parts; a reverse proxy in front of Kite must
   accept request bodies of that size (for nginx, `client_max_body_size 33m`).
+  When Drive is routed to an S3 store, browsers send the parts to the store
+  directly and the server never sees them.
 - **Updates.** Pull the new image and recreate the container; migrations run
   at start.
 - **Logs.** `docker compose logs -f kite`.

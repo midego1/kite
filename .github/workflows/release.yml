@@ -67,8 +67,9 @@ jobs:
           set -euo pipefail
           if IS_DRAFT=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
             if [ "$IS_DRAFT" != "true" ]; then
-              echo "Release $TAG is already published; leaving it untouched." >&2
-              exit 1
+              # Usually the Release publish workflow already published it after the production deploy.
+              echo "::notice::Release $TAG is already published; leaving it untouched."
+              exit 0
             fi
             gh release edit "$TAG" --notes-file notes.md
           else

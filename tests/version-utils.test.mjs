@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { nextVersion, packageVersion, releaseChangelog } from "../scripts/version-utils.mjs";
+import {
+	changelogSection,
+	checkReleaseBump,
+	compareVersions,
+	NO_CHANGES_NOTE,
+	nextVersion,
+	packageVersion,
+	releaseChangelog,
+} from "../scripts/version-utils.mjs";
 
 test("the first release of a UTC day ends in .0 and later ones count up", () => {
 	assert.equal(nextVersion("0.5.0.1", new Date("2026-10-09T12:00:00Z")), "2026.10.09.0");
@@ -37,16 +45,114 @@ test("releasing moves the Unreleased entries under the new version", () => {
 	);
 });
 
-test("releasing refuses a changelog with nothing unreleased", () => {
-	assert.throws(
-		() =>
-			releaseChangelog("# Changelog\n\n## [Unreleased]\n\n## [2026.10.01.0] - 2026-10-01\n\n- Old.\n", "2026.10.09.0"),
-		/nothing under Unreleased/,
+test("a release without Unreleased entries says there are no user-visible changes", () => {
+	const day = new Date("2026-10-09T12:00:00Z");
+	assert.equal(
+		releaseChangelog(
+			"# Changelog\n\n## [Unreleased]\n\n## [2026.10.01.0] - 2026-10-01\n\n- Old.\n",
+			"2026.10.09.0",
+			day,
+		),
+		"# Changelog\n\n## [Unreleased]\n\n## [2026.10.09.0] - 2026-10-09\n\nNo user-visible changes.\n\n## [2026.10.01.0] - 2026-10-01\n\n- Old.\n",
 	);
-	assert.throws(
-		() => releaseChangelog("# Changelog\n\n## [Unreleased]\n\n### Added\n\n### Fixed\n\n", "2026.10.09.0"),
-		/nothing under Unreleased/,
-		"headings without entries",
+	assert.equal(
+		releaseChangelog("# Changelog\n\n## [Unreleased]\n\n### Added\n\n### Fixed\n\n", "2026.10.09.0", day),
+		"# Changelog\n\n## [Unreleased]\n\n## [2026.10.09.0] - 2026-10-09\n\nNo user-visible changes.\n",
+		"empty headings are dropped",
 	);
+	assert.equal(
+		releaseChangelog("# Changelog\n\n## [Unreleased]\n", "2026.10.09.0", day),
+		`# Changelog\n\n## [Unreleased]\n\n## [2026.10.09.0] - 2026-10-09\n\n${NO_CHANGES_NOTE}\n`,
+		"Unreleased as the last line",
+	);
+});
+
+test("releasing still needs an Unreleased section", () => {
 	assert.throws(() => releaseChangelog("# Changelog\n", "2026.10.09.0"), /no "## \[Unreleased\]" section/);
+});
+
+test("calendar versions compare by day, then by the counter as a number", () => {
+	assert.equal(compareVersions("2026.10.09.0", "2026.10.09.0"), 0);
+	assert.equal(compareVersions("2026.10.09.1", "2026.10.09.0"), 1);
+	assert.equal(compareVersions("2026.10.09.9", "2026.10.09.10"), -1);
+	assert.equal(compareVersions("2026.10.10.0", "2026.10.09.12"), 1);
+	assert.equal(compareVersions("2026.09.30.5", "2026.10.01.0"), -1);
+	assert.equal(compareVersions("2027.01.01.0\n", "2026.12.31.3"), 1);
+	assert.throws(() => compareVersions("0.5.0.1", "2026.10.09.0"), /Not a calendar version: 0\.5\.0\.1/);
+	assert.throws(() => compareVersions("2026.10.09.0", "v2026.10.09.1"), /Not a calendar version: v2026/);
+});
+
+test("a release section is the text up to the next release heading", () => {
+	const changelog =
+		"# Changelog\n\n## [Unreleased]\n\n## [2026.10.09.1] - 2026-10-09\n\nNote.\n\n### Fixed\n\n- A fix.\n\n## [2026.10.09.0] - 2026-10-09\n\n- First.\n";
+	assert.equal(changelogSection(changelog, "2026.10.09.1"), "Note.\n\n### Fixed\n\n- A fix.");
+	assert.equal(changelogSection(changelog, "2026.10.09.0"), "- First.");
+	assert.equal(changelogSection(changelog, "Unreleased"), "");
+	assert.equal(changelogSection(changelog, "2026.10.09.2"), null);
+	assert.equal(changelogSection(changelog, "2026.10.09"), null, "a prefix is not a heading");
+	assert.equal(changelogSection(changelog, "2026x10.09.1"), null, "dots are literal");
+});
+
+const released = (version, extra = "") =>
+	`# Changelog\n\n## [Unreleased]\n${extra}\n## [${version}] - 2026-10-22\n\n- Thing.\n\n## [2026.10.22.0] - 2026-10-22\n\n- Old.\n`;
+
+test("a branch that bumps VERSION and releases its changelog passes", () => {
+	assert.deepEqual(
+		checkReleaseBump({
+			baseVersion: "2026.10.22.0\n",
+			headVersion: "2026.10.22.1\n",
+			changelog: released("2026.10.22.1"),
+		}),
+		[],
+	);
+	assert.deepEqual(
+		checkReleaseBump({ baseVersion: "0.5.0.1", headVersion: "2026.10.22.1", changelog: released("2026.10.22.1") }),
+		[],
+		"a pre-calendar base is older than any calendar version",
+	);
+	assert.deepEqual(
+		checkReleaseBump({
+			baseVersion: "2026.10.22.0",
+			headVersion: "2026.10.22.1",
+			changelog: released("2026.10.22.1", "\n### Added\n"),
+		}),
+		[],
+		"empty headings under Unreleased are not entries",
+	);
+});
+
+test("an unbumped, invalid or unreleased branch reports each problem", () => {
+	const unchanged = checkReleaseBump({
+		baseVersion: "2026.10.22.0",
+		headVersion: "2026.10.22.0",
+		changelog: "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- A fix.\n\n## [2026.10.22.0] - 2026-10-22\n\n- Old.\n",
+	});
+	assert.equal(unchanged.length, 2);
+	assert.match(unchanged[0], /2026\.10\.22\.0 is not newer than 2026\.10\.22\.0/);
+	assert.match(unchanged[1], /entries under Unreleased/);
+
+	const older = checkReleaseBump({
+		baseVersion: "2026.10.22.1",
+		headVersion: "2026.10.22.0",
+		changelog: released("2026.10.22.0"),
+	});
+	assert.deepEqual(older, ["VERSION 2026.10.22.0 is not newer than 2026.10.22.1 on the base branch"]);
+
+	const noHeading = checkReleaseBump({
+		baseVersion: "2026.10.22.0",
+		headVersion: "2026.10.22.1",
+		changelog: released("2026.10.22.2"),
+	});
+	assert.deepEqual(noHeading, ['CHANGELOG.md has no "## [2026.10.22.1]" heading']);
+
+	const invalid = checkReleaseBump({
+		baseVersion: "2026.10.22.0",
+		headVersion: "2026.10.22",
+		changelog: released("2026.10.22.1"),
+	});
+	assert.equal(invalid.length, 2);
+	assert.match(invalid[0], /2026\.10\.22 is not a calendar version/);
+
+	const empty = checkReleaseBump({ baseVersion: "2026.10.22.0", headVersion: "", changelog: released("2026.10.22.1") });
+	assert.deepEqual(empty, ["VERSION (empty) is not a calendar version YYYY.MM.DD.N"]);
 });

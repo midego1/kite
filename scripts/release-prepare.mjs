@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openApiPath, renderOpenApi } from "./docs-generate.mjs";
-import { nextVersion, packageVersion, releaseChangelog } from "./version-utils.mjs";
+import { changelogSection, NO_CHANGES_NOTE, nextVersion, packageVersion, releaseChangelog } from "./version-utils.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const file = (name) => path.join(root, name);
@@ -28,8 +28,9 @@ async function main() {
 	writeFileSync(file("CHANGELOG.md"), changelog);
 	// renderOpenApi reads info.version from the VERSION file written above.
 	writeFileSync(openApiPath, await renderOpenApi());
+	const empty = changelogSection(changelog, version) === NO_CHANGES_NOTE;
 	process.stdout.write(
-		`Prepared ${version} (package.json ${npmVersion}). Review CHANGELOG.md, then follow docs/releasing.md.\n`,
+		`Prepared ${version} (package.json ${npmVersion}).${empty ? ` Nothing was under Unreleased, so it says "${NO_CHANGES_NOTE}"` : ""} Review CHANGELOG.md, then commit it as "chore(release): ${version}", the last commit of this branch (docs/releasing.md).\n`,
 	);
 }
 

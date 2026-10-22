@@ -296,5 +296,6 @@
 	"48-storage-s3.spec.ts › the storage API is for the primary admin only and never answers with a secret": 100,
 	"49-domain-skip-dns.spec.ts › a domain added with DNS setup skipped is flagged until an admin marks it done": 4100,
 	"49-domain-skip-dns.spec.ts › Skip DNS setup discards a domain check that finishes after the switch changes": 3100,
-	"50-domain-sending-label.spec.ts › a Cloudflare domain without a sending subdomain explains that sending is not configured": 12200
+	"50-domain-sending-label.spec.ts › a Cloudflare domain without a sending subdomain explains that sending is not configured": 12200,
+	"51-update-toast.spec.ts › session changes › Dismiss stays in effect after signing out and back in": 6300
 }

@@ -201,6 +201,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/v1/mailboxes`                                    | GET, POST              | [source](../src/app/api/v1/mailboxes/route.ts)                                    |
 | `/api/v1/messages`                                     | GET                    | [source](../src/app/api/v1/messages/route.ts)                                     |
 | `/api/v1/send`                                         | POST                   | [source](../src/app/api/v1/send/route.ts)                                         |
+| `/api/version`                                         | GET                    | [source](../src/app/api/version/route.ts)                                         |
 | `/api/webhooks/[id]/deliveries/[deliveryId]/retry`     | POST                   | [source](../src/app/api/webhooks/[id]/deliveries/[deliveryId]/retry/route.ts)     |
 | `/api/webhooks/[id]/deliveries`                        | GET                    | [source](../src/app/api/webhooks/[id]/deliveries/route.ts)                        |
 | `/api/webhooks/[id]`                                   | DELETE, GET, PATCH     | [source](../src/app/api/webhooks/[id]/route.ts)                                   |

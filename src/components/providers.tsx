@@ -10,6 +10,7 @@ import { CopyCodeHost } from "@/components/copy-code-host";
 import { ModuleNoticeHost } from "@/components/module-notice-host";
 import { NewMessagePopup } from "@/components/new-message-popup";
 import { ThemeSync } from "@/components/theme-sync";
+import { UpdateAvailableHost } from "@/components/update-available-host";
 import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
 import { useMessagePolling } from "@/hooks/use-message-polling";
 import { clearMessageClientState } from "@/hooks/utils";
@@ -70,6 +71,7 @@ export function Providers({ children, initialBranding }: { children: React.React
 				<CopyCodeHost />
 				<Toaster position="bottom-center" />
 				<ModuleNoticeHost />
+				<UpdateAvailableHost />
 				{/* A live region without role="status": specs and pages look up the single status line by role. */}
 				<div aria-live="polite" aria-atomic="true">
 					{realtime.notification && (

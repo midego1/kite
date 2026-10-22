@@ -53,6 +53,7 @@
 		"test:coverage": "npm run test:coverage:app && npm run test:coverage:relay",
 		"hooks:install": "node scripts/install-hooks.mjs",
 		"precommit:check": "node scripts/docs-check.mjs && node scripts/quality/check.mjs format --staged",
+		"release:check": "node scripts/release-check.mjs",
 		"release:notes": "node scripts/release-notes.mjs",
 		"release:prepare": "node scripts/release-prepare.mjs",
 		"screenshots": "playwright test -c playwright.screenshots.config.ts",

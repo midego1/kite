@@ -3,6 +3,7 @@
 ## Branches and deploys
 
 - A push to `main` deploys to production through the Cloudflare Git integration. Never push to `main` from automated or mission work. Work on a branch named `mission/<topic>` (or `feature/<topic>`), push only that branch, and leave merging to a human.
+- Every merge to `main` is a production deploy and a release, so every pull request to `main` ends with a `chore(release): <version>` commit made by `npm run release:prepare` after rebasing on `main`. The CI "Release version" job (`npm run release:check`) fails without it; see `docs/releasing.md`.
 - Never run `npm run deploy`, `npm run db:migrate:remote`, or any `wrangler ... --remote` command.
 - Do not rename Cloudflare resource names (Worker and D1 `kite`, R2 `kite-raw`, queues `kite-*`, dataset `kite_metrics`). Installs from before the rename to Kite still depend on the old names in a few places, so keep that compatibility: the server accepts `X-Mailflare-*` relay headers and `X-Mailflare-Forwarded`, calendar UIDs keep the `@mailflare` suffix, `mailflare-*` browser keys are moved on first load, `mailflare-database-backup` documents restore, and the HKDF info string in `src/lib/security/secret-box.ts` and the AWS SES resource names never change. User-facing text says Kite.
 

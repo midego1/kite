@@ -1,0 +1,24 @@
+{
+	"action": "completed",
+	"check_run": {
+		"id": 1000000004,
+		"name": "Workers Builds: kite-email-relay",
+		"head_sha": "0123456789abcdef0123456789abcdef01234567",
+		"external_id": "44444444-5555-4666-8777-888888888888",
+		"status": "completed",
+		"conclusion": "success",
+		"details_url": "https://dash.cloudflare.com/00000000000000000000000000000000/workers/services/view/kite-email-relay/production/builds/44444444-5555-4666-8777-888888888888",
+		"output": {
+			"title": "Build completed",
+			"summary": "**Build Status:** success\n\nVersion ID: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\n",
+			"text": null
+		},
+		"app": {
+			"slug": "cloudflare-workers-and-pages",
+			"name": "Cloudflare Workers and Pages"
+		}
+	},
+	"repository": {
+		"full_name": "example/kite"
+	}
+}

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { compareVersions } from "../scripts/version-utils.mjs";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -27,56 +28,77 @@ const { changelogReleaseLabel, isAppChangelogHref, parseChangelog, parseInlineMa
 );
 
 const markdown = readFileSync(join(root, "CHANGELOG.md"), "utf8");
+const currentVersion = readFileSync(join(root, "VERSION"), "utf8").trim();
+
+// Every merge to main adds a release on top, so shipped releases are found by name, never by position.
+function shippedRelease(releases, name) {
+	const release = releases.find((entry) => entry.name === name);
+	assert.ok(release, `CHANGELOG.md has a ${name} release`);
+	return release;
+}
+
+const sectionTitles = (release) => release.sections.map((section) => section.title);
 
 test("parses the shipped changelog into releases, sections and items", () => {
 	const releases = parseChangelog(markdown);
-	assert.deepEqual(
-		releases.map((release) => release.name),
-		["Unreleased", "2026.10.22.0", "2026.10.13.0", "2026.10.12.1", "2026.10.12.0", "2026.10.09.1", "2026.10.09.0"],
-	);
+	assert.equal(releases[0].name, "Unreleased");
 	assert.equal(releases[0].date, null);
-	assert.equal(releases[1].date, "2026-10-22");
+	const versions = releases.slice(1).map((release) => release.name);
+	for (let index = 1; index < versions.length; index++) {
+		assert.ok(
+			compareVersions(versions[index - 1], versions[index]) > 0,
+			`${versions[index - 1]} is listed above the older ${versions[index]}`,
+		);
+	}
+	for (const release of releases.slice(1)) {
+		assert.equal(release.date, release.name.split(".").slice(0, 3).join("-"), `${release.name} is dated its own day`);
+	}
 	// Unreleased gains headings with every pull request, so only their order is pinned.
 	const keepAChangelogOrder = ["Changes", "Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"];
-	const unreleasedTitles = releases[0].sections.map((section) => section.title);
+	const unreleasedTitles = sectionTitles(releases[0]);
 	assert.deepEqual(
 		unreleasedTitles,
 		keepAChangelogOrder.filter((title) => unreleasedTitles.includes(title)),
 	);
-	assert.deepEqual(
-		releases[1].sections.map((section) => section.title),
-		["Changes", "Added", "Changed", "Fixed", "Security"],
-	);
-	assert.deepEqual(
-		releases[2].sections.map((section) => section.title),
-		["Changes", "Fixed"],
-	);
-	assert.deepEqual(
-		releases[3].sections.map((section) => section.title),
-		["Changes", "Added", "Changed"],
-	);
-	assert.deepEqual(
-		releases[4].sections.map((section) => section.title),
-		["Changes", "Added", "Changed", "Fixed"],
-	);
-	assert.deepEqual(
-		releases[6].sections.map((section) => section.title),
-		["Changes", "Added", "Changed", "Security", "Fixed"],
-	);
+	const shipped = {
+		"2026.10.22.0": ["Changes", "Added", "Changed", "Fixed", "Security"],
+		"2026.10.13.0": ["Changes", "Fixed"],
+		"2026.10.12.1": ["Changes", "Added", "Changed"],
+		"2026.10.12.0": ["Changes", "Added", "Changed", "Fixed"],
+		"2026.10.09.1": ["Changes", "Added", "Changed", "Fixed", "Security"],
+		"2026.10.09.0": ["Changes", "Added", "Changed", "Security", "Fixed"],
+	};
+	for (const [name, titles] of Object.entries(shipped)) {
+		assert.deepEqual(sectionTitles(shippedRelease(releases, name)), titles, name);
+	}
 });
 
 test("a note above the first ### heading keeps its own section", () => {
-	const september = parseChangelog(markdown)[5];
-	assert.equal(september.name, "2026.10.09.1");
+	const september = shippedRelease(parseChangelog(markdown), "2026.10.09.1");
 	assert.equal(september.sections[0].title, "Changes");
 	assert.match(september.sections[0].items[0], /^No database migrations\./);
 });
 
+/** Releases whose first line under the heading is a paragraph rather than a `###` heading or a bullet. */
+function releasesOpeningWithParagraph(text) {
+	return text
+		.split(/^## /m)
+		.slice(1)
+		.filter((block) => {
+			const opening = block
+				.split("\n")
+				.slice(1)
+				.find((line) => line.trim());
+			return opening !== undefined && !/^###\s/.test(opening) && !/^\s*[-*]\s+\S/.test(opening);
+		}).length;
+}
+
 test("every bullet in the file reaches the dialog", () => {
 	const bullets = markdown.split("\n").filter((line) => /^\s*[-*]\s+\S/.test(line)).length;
 	const items = parseChangelog(markdown).flatMap((release) => release.sections.flatMap((section) => section.items));
-	// The six releases that open with a paragraph add one item each.
-	assert.equal(items.length, bullets + 6);
+	// A release that opens with a one-line paragraph adds one item for it.
+	assert.ok(releasesOpeningWithParagraph(markdown) >= 6);
+	assert.equal(items.length, bullets + releasesOpeningWithParagraph(markdown));
 	for (const item of items) assert.ok(item.trim().length > 0);
 });
 
@@ -125,7 +147,8 @@ test("markdown without release headings has nothing to show", () => {
 test("the newest release heading is titled for the dialog", () => {
 	const releases = parseChangelog(markdown);
 	assert.equal(changelogReleaseLabel(releases[0]), "Unreleased changes");
-	assert.equal(changelogReleaseLabel(releases[1]), "2026.10.22.0");
+	// The newest release under Unreleased is the one VERSION names.
+	assert.equal(changelogReleaseLabel(releases[1]), currentVersion);
 });
 
 test("inline markdown becomes text, code, strong and http links", () => {

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.22.1] - 2026-10-22
+
 ### Changed
 
 - Every deploy to production is now a release with its own version number, and its GitHub release, with these notes, is published automatically after the deploy. A deploy without user-visible changes says so in its notes. See [Releasing](https://github.com/midego1/kite/blob/main/docs/releasing.md).

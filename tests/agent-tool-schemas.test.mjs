@@ -67,7 +67,10 @@ function allToolSchemas() {
 }
 
 test("the lookaround check finds lookahead and lookbehind patterns anywhere in a schema", () => {
-	const naive = z.object({ to: z.string().email(), list: z.array(z.object({ address: z.string().email() })) });
+	const naive = z.object({
+		to: z.string().regex(/^(?!\.)[^@]+@[^@]+$/),
+		list: z.array(z.object({ address: z.string().regex(/^(?!\.)[^@]+@[^@]+$/) })),
+	});
 	assert.equal(lookaroundPatterns(zodSchema(naive).jsonSchema).length, 2);
 	assert.deepEqual(lookaroundPatterns({ pattern: "^(?<=a)b$" }), ["$.pattern: ^(?<=a)b$"]);
 	assert.deepEqual(lookaroundPatterns({ pattern: "^[a-z]+$" }), []);

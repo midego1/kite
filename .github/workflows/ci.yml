@@ -13,6 +13,29 @@ permissions:
   contents: read
 
 jobs:
+  release-version:
+    # Merging to main deploys production, so every pull request must end with its own
+    # `npm run release:prepare` commit. The check uses only Node built-ins: no npm ci.
+    name: Release version
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Fetch the base commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
+      - name: Check the release version against the base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: npm run release:check -- "$BASE_SHA"
+
   mission-validation:
     name: Mission validation
     runs-on: ubuntu-latest

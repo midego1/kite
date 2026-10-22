@@ -188,6 +188,7 @@
 	"/api/v1/mailboxes",
 	"/api/v1/messages",
 	"/api/v1/send",
+	"/api/version",
 	"/api/webhooks/[id]/deliveries/[deliveryId]/retry",
 	"/api/webhooks/[id]/deliveries",
 	"/api/webhooks/[id]",

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.22.0] - 2026-10-22
+
 Apply database migrations 0062, 0063, 0064, 0065 and 0066 after deploying, from the database card on the admin overview or the banner in the mailbox. 0062 adds the module switches, per-user module access, booking appointment links and the calendar search index; until it is applied, every module stays on for everyone and search finds no calendar events. 0063 adds the Money Watch tables (tracked subscriptions and their documents); until it is applied, the Subscriptions page is empty and points to the update, and Money Watch finds and records nothing. 0064 adds the Drive tables; until it is applied, Drive says the update is pending and stores nothing. 0065 adds the object storage tables; until it is applied, everything stays in the default bucket and Admin → Storage says the update is pending. 0066 adds the domains' DNS-skipped flag; until it is applied, **Skip DNS setup** answers that the database needs an update first, everything else on the Domains page works as before and no DNS reminder is shown. Two new optional rate limit bindings, `REMOTE_IMAGE_RATE_LIMIT` (see remote images under Fixed) and `DRIVE_LINK_RATE_LIMIT` (Drive public links), which deploys that keep their own `wrangler.jsonc` can copy from `wrangler.jsonc.example`; one new optional secret, `URLHAUS_AUTH_KEY` (see URLhaus lookups below).
 
 ### Added

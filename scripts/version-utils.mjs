@@ -23,7 +23,8 @@ export function packageVersion(version) {
 }
 
 const UNRELEASED_HEADING = "## [Unreleased]";
-const ENTRY = /^[-*] \S/m;
+// Paragraph notes count as entries too; blank lines and headings alone do not.
+const ENTRY = /^[ \t]*[^#\s]/m;
 
 /** Text written under a release that has no Unreleased entries, so every deploy can still be a release. */
 export const NO_CHANGES_NOTE = "No user-visible changes.";

@@ -45,6 +45,22 @@ test("releasing moves the Unreleased entries under the new version", () => {
 	);
 });
 
+test("releasing preserves paragraph-only Unreleased notes", () => {
+	const note = "Apply the database migrations before enabling the new setting.";
+	for (const prefix of ["", "### Changed\n\n", "\t"]) {
+		const body = `${prefix}${note}\n\n`;
+		const previous = "## [2026.10.01.0] - 2026-10-01\n\n- Old.\n";
+		assert.equal(
+			releaseChangelog(
+				`# Changelog\n\n## [Unreleased]\n\n${body}${previous}`,
+				"2026.10.09.0",
+				new Date("2026-10-09T12:00:00Z"),
+			),
+			`# Changelog\n\n## [Unreleased]\n\n## [2026.10.09.0] - 2026-10-09\n\n${body}${previous}`,
+		);
+	}
+});
+
 test("a release without Unreleased entries says there are no user-visible changes", () => {
 	const day = new Date("2026-10-09T12:00:00Z");
 	assert.equal(
@@ -59,6 +75,11 @@ test("a release without Unreleased entries says there are no user-visible change
 		releaseChangelog("# Changelog\n\n## [Unreleased]\n\n### Added\n\n### Fixed\n\n", "2026.10.09.0", day),
 		"# Changelog\n\n## [Unreleased]\n\n## [2026.10.09.0] - 2026-10-09\n\nNo user-visible changes.\n",
 		"empty headings are dropped",
+	);
+	assert.equal(
+		releaseChangelog("# Changelog\n\n## [Unreleased]\n\n  ### Added\n \t\n\t### Fixed\n\n", "2026.10.09.0", day),
+		"# Changelog\n\n## [Unreleased]\n\n## [2026.10.09.0] - 2026-10-09\n\nNo user-visible changes.\n",
+		"indented empty headings and whitespace are not entries",
 	);
 	assert.equal(
 		releaseChangelog("# Changelog\n\n## [Unreleased]\n", "2026.10.09.0", day),
@@ -119,6 +140,19 @@ test("a branch that bumps VERSION and releases its changelog passes", () => {
 		[],
 		"empty headings under Unreleased are not entries",
 	);
+});
+
+test("paragraph-only Unreleased notes must be released before merging", () => {
+	for (const note of ["No database migrations.", "### Changed\n\nEnable the new setting.", "\tAn operator note."]) {
+		assert.deepEqual(
+			checkReleaseBump({
+				baseVersion: "2026.10.22.0",
+				headVersion: "2026.10.22.1",
+				changelog: released("2026.10.22.1", `\n${note}\n`),
+			}),
+			["CHANGELOG.md still has entries under Unreleased; they would deploy without a release"],
+		);
+	}
 });
 
 test("an unbumped, invalid or unreleased branch reports each problem", () => {

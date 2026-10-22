@@ -104,8 +104,7 @@ export function UpdateAvailableHost() {
 			window.removeEventListener("focus", onChange);
 			document.removeEventListener("visibilitychange", onChange);
 			if (shown.current) {
-				// Signed out: the next session in this tab is told again.
-				shown.current = false;
+				// Hide on sign-out without allowing another notice in this tab.
 				toast.dismiss(UPDATE_TOAST_ID);
 			}
 		};

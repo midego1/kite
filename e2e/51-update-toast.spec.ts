@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { STORAGE_STATE } from "./support/constants";
-import { apiContext } from "./support/helpers";
+import { ADMIN, STORAGE_STATE } from "./support/constants";
+import { apiContext, signIn, waitForHydration } from "./support/helpers";
 
 const MESSAGE = "Kite was updated. Reload to get the latest version.";
 
@@ -117,6 +117,47 @@ test("Dismiss hides the toast for the rest of the tab's life", async ({ page }) 
 	await page.clock.fastForward("06:00");
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 	await expect(updateToast(page)).toHaveCount(0);
+});
+
+test.describe("session changes", () => {
+	// Signing out must not revoke the session shared by the other specs.
+	test.use({ storageState: { cookies: [], origins: [] } });
+
+	test("Dismiss stays in effect after signing out and back in", async ({ page }) => {
+		const version = await routeVersion(page, "deploy-1");
+		await signIn(page, ADMIN.email, ADMIN.password);
+		await expect(page).toHaveURL(/\/inbox/);
+		await openInbox(page, version);
+		version.current = "deploy-2";
+		await returnToTab(page, version);
+		await expect(updateToast(page)).toBeVisible();
+		await updateToast(page).getByRole("button", { name: "Dismiss" }).click();
+		await expect(updateToast(page)).toHaveCount(0);
+		const shownAt = version.requests;
+
+		await page.evaluate(() => {
+			(window as unknown as { __sameTab?: boolean }).__sameTab = true;
+		});
+		await page.getByRole("button", { name: "Open account menu" }).click();
+		await page.getByRole("button", { name: "Sign out" }).click();
+		await expect(page).toHaveURL(/\/login/);
+		await expect(updateToast(page)).toHaveCount(0);
+
+		version.current = "deploy-3";
+		// Submit the existing page rather than navigating, which would reset the host.
+		await waitForHydration(page);
+		await page.getByLabel("Email").fill(ADMIN.email);
+		await page.getByLabel("Password").fill(ADMIN.password);
+		await page.getByRole("button", { name: "Sign in" }).click();
+		await expect(page).toHaveURL(/\/inbox/);
+		await expect(page.getByRole("main")).toBeVisible();
+		expect(await page.evaluate(() => (window as unknown as { __sameTab?: boolean }).__sameTab)).toBe(true);
+
+		await page.clock.fastForward("06:00");
+		await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+		await expect(updateToast(page)).toHaveCount(0);
+		expect(version.requests).toBe(shownAt);
+	});
 });
 
 test("an unknown version and failed checks never show the toast", async ({ page }) => {

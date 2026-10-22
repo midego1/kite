@@ -24,6 +24,7 @@ const contractDocs = [
 	"docs/operations.md",
 	"docs/pii-handling.md",
 	"docs/privacy.md",
+	"docs/releasing.md",
 	"docs/runbooks/incident.md",
 	"docs/runbooks/mail-delivery.md",
 	"docs/runbooks/recovery.md",

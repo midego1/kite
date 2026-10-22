@@ -62,7 +62,7 @@ A push to `main` deploys the main Worker through the Cloudflare Git integration.
 
 ### Main Worker (kite)
 
-1. In GitHub, open the commit's checks and confirm `Workers Builds: kite` (app `cloudflare-workers-and-pages`) passed. `.github/workflows/deploy-record.yml` then records a GitHub deployment; the repository's **Deployments → production** entry carries the commit and the Worker version.
+1. In GitHub, open the commit's checks and confirm `Workers Builds: kite` (app `cloudflare-workers-and-pages`) passed. `.github/workflows/deploy-record.yml` then records a GitHub deployment; the repository's **Deployments → production** entry carries the commit and the Worker version. `.github/workflows/release-publish.yml` tags the commit `v<VERSION>` and publishes its GitHub release; a warning on that run means the merge did not bump `VERSION` ([Releasing](releasing.md#after-the-merge)).
 2. In the Cloudflare dashboard open Workers & Pages → `kite` → Deployments and note the new version id. Keep the previous id for the comparison below.
 3. Open Logs (Observability) and search for these JSON events:
    - `http.request_completed`: 5xx responses, 4xx responses and slow requests (over 1000 ms).

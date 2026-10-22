@@ -147,6 +147,51 @@ test("a draft for the tag is published with the new notes instead of creating a 
 	assert.equal(writes[0].body.make_latest, "true");
 });
 
+test("only the highest published calendar version is made latest", async () => {
+	for (const [version, publishedVersion, makeLatest] of [
+		["2026.10.22.1", "2026.10.23.0", "false"],
+		["2026.10.22.9", "2026.10.22.10", "false"],
+		["2026.10.22.10", "2026.10.22.9", "true"],
+		["2026.10.23.0", "2026.10.22.10", "true"],
+	]) {
+		const { fn, calls } = fakeGitHub({
+			releases: [
+				{ id: 3, tag_name: `v${publishedVersion}`, draft: false, prerelease: false },
+				{ id: 2, tag_name: "v2026.10.22.0", draft: false },
+			],
+		});
+		await publishRelease(release({ version }), options(fn));
+		const published = calls.find((call) => call.method === "POST" && call.path === "/releases");
+		assert.equal(published.body.make_latest, makeLatest, `${version} after ${publishedVersion}`);
+	}
+});
+
+test("drafts, prereleases and non-calendar tags do not determine latest", async () => {
+	const { fn, calls } = fakeGitHub({
+		releases: [
+			{ id: 1, tag_name: "v2026.10.23.0", draft: true },
+			{ id: 2, tag_name: "v2026.10.24.0", prerelease: true },
+			{ id: 3, tag_name: "v0.5.0.1" },
+			{ id: 4, tag_name: "nightly" },
+		],
+	});
+	await publishRelease(release(), options(fn));
+	assert.equal(calls.find((call) => call.method === "POST" && call.path === "/releases").body.make_latest, "true");
+});
+
+test("publishing a draft checks later pages for higher published versions", async () => {
+	const draft = { id: 700, tag_name: "v2026.10.22.1", draft: true };
+	const older = Array.from({ length: 99 }, (_, index) => ({ id: index + 1, tag_name: `v2025.01.01.${index}` }));
+	const { fn, calls } = fakeGitHub({
+		refs: { "v2026.10.22.1": { type: "commit", sha: SHA } },
+		releases: [draft, ...older, { id: 701, tag_name: "v2026.10.23.0", draft: false }],
+	});
+	const result = await publishRelease(release(), options(fn));
+	assert.equal(result.outcome, "published-draft");
+	assert.ok(calls.some((call) => call.page === "2"));
+	assert.equal(calls.find((call) => call.method === "PATCH").body.make_latest, "false");
+});
+
 test("an annotated tag on the same commit counts as this release", async () => {
 	const { fn, calls } = fakeGitHub({
 		refs: { "v2026.10.22.1": { type: "tag", sha: "1111111111111111111111111111111111111111" } },
@@ -219,4 +264,14 @@ test("a failed API call throws without leaking the token, and a bad VERSION writ
 	const { fn, calls } = fakeGitHub();
 	await assert.rejects(publishRelease(release({ version: "next" }), options(fn)), /not a calendar version/);
 	assert.equal(calls.length, 0);
+});
+
+test("an invalid release list fails closed without publishing", async () => {
+	const { fn, calls } = fakeGitHub({
+		refs: { "v2026.10.22.1": { type: "commit", sha: SHA } },
+	});
+	const malformed = (url, init) =>
+		new URL(String(url)).pathname.endsWith("/releases") ? new Response("{}") : fn(url, init);
+	await assert.rejects(publishRelease(release(), options(malformed)), /invalid release list/);
+	assert.ok(calls.every((call) => call.method === "GET"));
 });

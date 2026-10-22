@@ -1,5 +1,5 @@
 import { renderCommitGroups } from "../release-notes.mjs";
-import { changelogSection, isCalendarVersion } from "../version-utils.mjs";
+import { changelogSection, compareVersions, isCalendarVersion } from "../version-utils.mjs";
 import { planDeployment } from "./deploy-record-utils.mjs";
 
 const MAIN_SCRIPT = "kite";
@@ -61,17 +61,25 @@ async function tagCommit(call, ref) {
 	return object.sha;
 }
 
-/** Drafts are invisible to `GET /releases/tags/{tag}`, so the list is searched instead. */
+/** Find the draft or release and the highest published calendar version, regardless of list order. */
 async function findRelease(call, tag) {
+	let release = null;
+	let latestVersion = null;
 	for (let page = 1; page <= MAX_RELEASE_PAGES; page++) {
 		const items = await call("GET", `/releases?per_page=${PER_PAGE}&page=${page}`);
-		if (!Array.isArray(items)) return null;
-		const release = items.find((item) => item?.tag_name === tag);
-		if (release) return release;
-		if (items.length < PER_PAGE) return null;
+		if (!Array.isArray(items)) throw new Error("GitHub API returned an invalid release list");
+		for (const item of items) {
+			if (item?.tag_name === tag) release = item;
+			if (item?.draft || item?.prerelease || typeof item?.tag_name !== "string") continue;
+			const version = item.tag_name.startsWith("v") ? item.tag_name.slice(1) : "";
+			if (isCalendarVersion(version) && (!latestVersion || compareVersions(version, latestVersion) > 0)) {
+				latestVersion = version;
+			}
+		}
+		if (items.length < PER_PAGE) return { release, latestVersion };
 	}
 	throw new Error(
-		`No release for ${tag} in the newest ${MAX_RELEASE_PAGES * PER_PAGE}; not creating a possible duplicate`,
+		`Release history exceeds ${MAX_RELEASE_PAGES * PER_PAGE} entries; not creating a possible duplicate or changing latest without full history`,
 	);
 }
 
@@ -94,7 +102,7 @@ export async function publishRelease({ sha, version, notes }, { fetch: doFetch =
 		createdTag = true;
 	}
 
-	const release = await findRelease(call, tag);
+	const { release, latestVersion } = await findRelease(call, tag);
 	if (release && !release.draft) return { outcome: "already-published", tag, createdTag, url: release.html_url };
 	const body = {
 		tag_name: tag,
@@ -102,7 +110,7 @@ export async function publishRelease({ sha, version, notes }, { fetch: doFetch =
 		name,
 		body: notes,
 		draft: false,
-		make_latest: "true",
+		make_latest: !latestVersion || compareVersions(version, latestVersion) > 0 ? "true" : "false",
 	};
 	const published = release
 		? await call("PATCH", `/releases/${release.id}`, { body })

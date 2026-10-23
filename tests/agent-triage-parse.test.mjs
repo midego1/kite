@@ -306,8 +306,8 @@ test("the trusted facts give authentication results, the sender's domain and whe
 		}),
 		nonce: "n3",
 	});
-	assert.ok(crowded.messages[0].content.includes("h9.example.com (sender's domain)"));
-	assert.ok(!crowded.messages[0].content.includes("h10.example.com"), "at most ten hosts");
+	assert.match(crowded.messages[0].content, /\bh9\.example\.com \(sender's domain\)/);
+	assert.doesNotMatch(crowded.messages[0].content, /\bh10\.example\.com\b/, "at most ten hosts");
 });
 test("injected delimiters, nonce fragments and invisible characters are stripped from content", () => {
 	const hostile = [

@@ -2982,9 +2982,19 @@ test.describe("reply suggestions", () => {
 			await notPhishing.click();
 			await expect(phishingBlock(page)).toHaveCount(0);
 			await expect.poll(trustedSenders).toEqual(["support@service.test"]);
-			const trusted = await deliverTriaged(account, {
+			const trustedMail = {
 				from: "Support <support@service.test>",
 				text: "Confirm your password today: https://bit.ly/3kTe9Xq [[scenario:phishing]]",
+			};
+			// Trust holds only for authenticated mail, since an unauthenticated From can be forged.
+			const forged = await deliverTriaged(account, trustedMail);
+			expect((await warningsOf(forged.id))[0]?.payload.reasons).toContain("url_shortener");
+			const trusted = await deliverTriaged(account, {
+				...trustedMail,
+				headers: {
+					"Authentication-Results":
+						"mx.cloudflare.net; spf=pass smtp.mailfrom=service.test; dkim=pass header.d=service.test; dmarc=pass header.from=service.test",
+				},
 			});
 			expect(await warningsOf(trusted.id)).toEqual([]);
 			expect(await jobReason(trusted.id)).toBe("model_flag_trusted_sender");

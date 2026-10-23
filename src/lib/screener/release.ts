@@ -3,9 +3,7 @@ import { getDb, type AppDatabase } from "@/db";
 import { mailboxes, messages } from "@/db/schema";
 import { runInChunks } from "@/db/chunk-utils";
 import { approveUndecidedAddresses, getScreenerSettings, screenerOwnAddresses } from "./settings";
-import { recipientAddresses, SCREENER_FOLLOW_UP_LIMIT, SCREENING_STATUS, screenerAddress } from "./screener-utils";
-
-type ReleaseMailbox = { id: string; userId: string };
+import { recipientAddresses, SCREENING_STATUS, screenerAddress } from "./screener-utils";
 
 export type SenderMessage = {
 	id: string;
@@ -83,34 +81,11 @@ export async function releaseScreenedFrom(db: AppDatabase, mailboxId: string, ad
 	return held.map((row) => ({ ...row, status: "received" }));
 }
 
-/** Automatic reading skipped these while they waited, so they are scheduled now that the sender is approved. */
-export async function scheduleApprovedMail(env: CloudflareEnv, mailbox: ReleaseMailbox, rows: SenderMessage[]) {
-	if (rows.length === 0) return;
-	// Loaded lazily: `send.ts` imports this file, and a static import would close the cycle
-	// send -> schedule -> modules/invoke -> modules/host -> module-send -> send, which unbinds moduleHost.
-	const { scheduleAgentWork } = await import("@/lib/agent/auto-read/schedule");
-	for (const row of rows.slice(0, SCREENER_FOLLOW_UP_LIMIT)) {
-		try {
-			await scheduleAgentWork(env, {
-				mailboxId: mailbox.id,
-				sourceMessageId: row.id,
-				ownerUserId: mailbox.userId,
-				sender: row.fromAddr,
-				status: row.status,
-				folderId: row.folderId,
-				spamVerdict: row.spamVerdict,
-				spamAnalysisError: row.spamAnalysisError,
-			});
-		} catch (error) {
-			console.error(`Agent work scheduling failed for approved message ${row.id}`, error);
-		}
-	}
-}
-
 /**
  * Writing to someone approves them: called after a send is accepted, for every To, Cc and Bcc address the
  * mailbox has not decided on yet. A denied sender stays denied. Nothing happens while the Screener is off.
- * It lives apart from `service.ts` so the send path does not import contacts, spam training and audit code.
+ * It lives apart from `service.ts` because the send path must not import automatic reading: that would close
+ * the cycle send -> agent schedule -> modules/invoke -> modules/host -> module-send -> send.
  */
 export async function approveSentRecipients(
 	env: CloudflareEnv,
@@ -127,6 +102,7 @@ export async function approveSentRecipients(
 	const addresses = recipientAddresses([...recipients]).filter((address) => !own.has(address));
 	const approved = await approveUndecidedAddresses(db, mailbox.id, addresses, "sent", userId);
 	if (approved.length === 0) return;
-	const released = await releaseScreenedFrom(db, mailbox.id, new Set(approved));
-	await scheduleApprovedMail(env, mailbox, released);
+	// Not scheduled for automatic reading: a reply to the sender usually is what released it, so a reply
+	// suggestion would only repeat it. Approving by hand or "Approve everyone you've written to" does schedule.
+	await releaseScreenedFrom(db, mailbox.id, new Set(approved));
 }

@@ -29,6 +29,7 @@ import {
 	waitForMessage,
 } from "./support/helpers";
 import { createSignedInAccount, okJson, selectMailbox } from "./support/auto-read";
+import { turnScreenerOff } from "./support/screener";
 import { futureAt, inviteAttachment } from "./support/invites";
 import { readSuggestions, waitForFinishedJob } from "./support/triage";
 import { callOutcome, createMcpKey, mcpCall, mcpToolNames } from "./support/mcp";
@@ -79,6 +80,7 @@ async function createMember(admin: APIRequestContext, role: "user" | "admin" = "
 	const api = await apiContext();
 	const login = await api.post("/api/auth/login", { data: { email, password: MEMBER_PASSWORD } });
 	expect(login.ok(), await login.text()).toBe(true);
+	await turnScreenerOff(api);
 	return { id, email, api };
 }
 

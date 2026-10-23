@@ -2,6 +2,7 @@ import { expect, type APIRequestContext, type APIResponse, type Page } from "@pl
 import { DOMAIN } from "./constants";
 import { readAdminAgent } from "./agent";
 import { apiContext, apiSignIn } from "./helpers";
+import { turnScreenerOff } from "./screener";
 
 export const AUTO_READ_ACCOUNT_PASSWORD = "auto-read-password-123";
 
@@ -50,6 +51,7 @@ export async function createSignedInAccount(
 	);
 	const mailbox = mailboxes.find((item) => item.localPart === username);
 	expect(mailbox).toBeDefined();
+	await turnScreenerOff(api, mailbox!.id);
 	const session = await api.storageState();
 	await trackMailboxSettings(api, mailbox!.id, () => apiContext(session));
 	return { id: account.id, api, mailboxId: mailbox!.id };
@@ -61,6 +63,7 @@ export async function createSharedMailbox(admin: APIRequestContext, localPart: s
 		data: { domainId, localPart, displayName: localPart, type: "shared" },
 	});
 	const { id } = await okJson<{ id: string }>(response);
+	await turnScreenerOff(admin, id);
 	await trackMailboxSettings(admin, id, async () => admin);
 	return id;
 }

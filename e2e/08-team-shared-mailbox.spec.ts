@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { DOMAIN, STORAGE_STATE } from "./support/constants";
 import { apiContext, apiSignIn, deliverInbound, openMessage, signIn, uniqueToken } from "./support/helpers";
+import { turnScreenerOff } from "./support/screener";
 
 const PASSWORD = "teammate-password-123";
 
@@ -60,6 +61,7 @@ test("an admin shares a team mailbox with one account and not another", async ({
 	});
 
 	const admin = await apiContext(STORAGE_STATE);
+	await turnScreenerOff(admin, page.url().match(/\/mailboxes\/(mbx_[^/?#]+)/)![1]);
 	await test.step("mail arrives in the shared mailbox", async () => {
 		await deliverInbound(admin, {
 			from: `"Customer" <customer@outside.test>`,

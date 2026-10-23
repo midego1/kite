@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
 import { queryInChunks } from "@/db/chunk-utils";
+import { scheduleAgentWork } from "@/lib/agent/auto-read/schedule";
 import type { SessionUser } from "@/lib/auth/types";
 import { blockContact, unblockContact } from "@/lib/contacts/service";
 import { createAuditLog } from "@/lib/mailboxes/audit";
@@ -15,9 +16,32 @@ import {
 	recordSenderDecision,
 	screenerOwnAddresses,
 } from "./settings";
-import { messagesFromSenders, releaseScreenedFrom, scheduleApprovedMail, setMessageStatus } from "./release";
+import { messagesFromSenders, releaseScreenedFrom, setMessageStatus } from "./release";
+import type { SenderMessage } from "./release";
 import { recipientAddresses, SCREENER_FOLLOW_UP_LIMIT, SCREENING_STATUS, screenerAddress } from "./screener-utils";
 import type { ScreenerDecisionResult } from "./screener-types";
+
+type Mailbox = MailboxAccessLevel["mailbox"];
+
+/** Automatic reading skipped these while they waited, so they are scheduled now that the sender is approved. */
+async function scheduleApprovedMail(env: CloudflareEnv, mailbox: Mailbox, rows: SenderMessage[]) {
+	for (const row of rows.slice(0, SCREENER_FOLLOW_UP_LIMIT)) {
+		try {
+			await scheduleAgentWork(env, {
+				mailboxId: mailbox.id,
+				sourceMessageId: row.id,
+				ownerUserId: mailbox.userId,
+				sender: row.fromAddr,
+				status: row.status,
+				folderId: row.folderId,
+				spamVerdict: row.spamVerdict,
+				spamAnalysisError: row.spamAnalysisError,
+			});
+		} catch (error) {
+			console.error(`Agent work scheduling failed for approved message ${row.id}`, error);
+		}
+	}
+}
 
 /** The statuses a sender's waiting mail has: held in the Screener, or marked in the Inbox in Inbox mode. */
 async function waitingStatuses(db: AppDatabase, mailboxId: string): Promise<string[]> {

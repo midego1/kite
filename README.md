@@ -102,6 +102,7 @@ Click a screenshot to open it at full size. The screenshots and the demo recordi
 - **Organization**: Keep your inbox tidy with search, folders, stars, snooze, archive, spam, and trash, with undo for archive and trash. After a bulk action you return to the message list with the selection cleared.
 - **Spam and phishing protection**: A local spam filter that learns from you, plus phishing warnings for misleading links, failed sender checks and risky attachments. Mark a warning **Not phishing** to trust that sender, and manage trusted and muted senders in Settings. With a free abuse.ch key, risky mail is also checked against URLhaus and ThreatFox, and a **Test key** button on Admin → General shows whether the key works. See [Spam protection](docs/spam-protection.md).
 - **Routing rules**: Store, forward, reject, or sort incoming mail automatically.
+- **Screener**: Decide once whether you want mail from someone new. Their first messages wait in the Screener (or arrive in the Inbox marked as a new sender) until you approve or deny them; people you write to are approved automatically. On for new mailboxes, per mailbox. It needs database migration 0067. See [Screener](docs/screener.md).
 - **Notifications**: Get live inbox updates and alerts when new mail arrives, and copy a one-time code straight from the notification.
 - **Import, export, contacts**: Move mail in and out, manage contacts, and block unwanted senders.
 - **Admin**: Manage users, permissions, API keys, webhooks, audit logs, and backups. Admin pages share the Settings layout, with the mail sidebar and one side menu that switches between Settings and Admin; there, the top-bar search field finds pages in both menus (on phones, the menu sheet has its own search), and audit logs are under Activity.
@@ -278,6 +279,7 @@ GitHub workflows also run the security scans, draft a release from `v*` tags, re
 - [Sending and receiving providers (Cloudflare, Resend, Amazon SES)](docs/providers.md)
 - [Sending and deliverability: who can send, abuse protection, SPF, DKIM and DMARC](docs/sending-and-deliverability.md)
 - [Spam protection for incoming mail](docs/spam-protection.md)
+- [Screener: approving new senders](docs/screener.md)
 - [API and integrations](docs/api.md), including the [calendar and booking APIs](docs/api.md#calendar-and-booking)
 - [Email assistant and MCP](docs/email-assistant-and-mcp.md)
 - [Modules: turning Calendar, Booking, templates, import and Money Watch off](docs/modules.md)

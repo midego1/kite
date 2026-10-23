@@ -9,13 +9,15 @@ export type LookupOutcome = "listed" | "not_listed" | "key_rejected" | "failed";
 export type LookupRequest = {
 	service: AbuseChService;
 	kind: LookupKind;
+	/** Original URLs or attachment hashes covered by this lookup; never persisted or logged. */
+	inputs: readonly string[];
 	url: string;
 	contentType: string;
 	body: string;
 	listed: (answer: unknown) => boolean;
 };
 
-export type LookupResult = { service: AbuseChService; kind: LookupKind; outcome: LookupOutcome };
+export type LookupResult = Pick<LookupRequest, "service" | "kind" | "inputs"> & { outcome: LookupOutcome };
 
 export type ThreatLookupPlan = { urls: string[]; payloads: AttachmentContent[] };
 

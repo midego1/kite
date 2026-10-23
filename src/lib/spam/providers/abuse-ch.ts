@@ -58,13 +58,14 @@ class AbuseChIntelligenceProvider implements SpamIntelligenceProvider {
 		const requests = [
 			...urls.map((url) => urlhausRequest("link", url)),
 			...hashes.map((hash) => urlhausRequest("payload", hash)),
-			...threatfoxHostTerms(urls).map(threatfoxIocRequest),
+			...threatfoxHostTerms(urls).map((term) => threatfoxIocRequest(term, urls)),
 			...hashes.map(threatfoxHashRequest),
 		];
 		const results = await Promise.all(
 			requests.map(async (request) => ({
 				service: request.service,
 				kind: request.kind,
+				inputs: request.inputs,
 				outcome: await lookup(this.fetcher, this.authKey, request),
 			})),
 		);
@@ -84,11 +85,15 @@ export function spamIntelligenceProvider(
 
 /** One harmless lookup per service (`example.com`), so an admin can tell a refused key from an outage. */
 export async function testAbuseChKey(authKey: string, fetcher: typeof fetch = fetch): Promise<KeyTestResults> {
-	const requests = [urlhausRequest("link", "http://example.com/"), threatfoxIocRequest("example.com")];
+	const requests = [
+		urlhausRequest("link", "http://example.com/"),
+		threatfoxIocRequest("example.com", ["http://example.com/"]),
+	];
 	const results = await Promise.all(
 		requests.map(async (request) => ({
 			service: request.service,
 			kind: request.kind,
+			inputs: request.inputs,
 			outcome: await lookup(fetcher, authKey, request),
 		})),
 	);

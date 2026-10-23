@@ -46,10 +46,15 @@ function isThreatfoxListed(answer: unknown): boolean {
 	return status === "ok" && Array.isArray(data) && data.length > 0;
 }
 
-function threatfoxRequest(kind: LookupRequest["kind"], query: Record<string, unknown>): LookupRequest {
+function threatfoxRequest(
+	kind: LookupRequest["kind"],
+	inputs: readonly string[],
+	query: Record<string, unknown>,
+): LookupRequest {
 	return {
 		service: "threatfox",
 		kind,
+		inputs,
 		url: API,
 		contentType: "application/json",
 		body: JSON.stringify(query),
@@ -58,13 +63,14 @@ function threatfoxRequest(kind: LookupRequest["kind"], query: Record<string, unk
 }
 
 /** An exact search for a domain or `ip:port` pair. */
-export function threatfoxIocRequest(term: string): LookupRequest {
-	return threatfoxRequest("link", { query: "search_ioc", search_term: term, exact_match: true });
+export function threatfoxIocRequest(term: string, urls: readonly string[]): LookupRequest {
+	const inputs = urls.filter((url) => threatfoxHostTerms([url]).includes(term));
+	return threatfoxRequest("link", inputs, { query: "search_ioc", search_term: term, exact_match: true });
 }
 
 /** A search for IOCs of the malware sample with this SHA-256 hash. */
 export function threatfoxHashRequest(sha256: string): LookupRequest {
-	return threatfoxRequest("payload", { query: "search_hash", hash: sha256 });
+	return threatfoxRequest("payload", [sha256], { query: "search_hash", hash: sha256 });
 }
 
 export function threatfoxSignals(listedHosts: number, listedPayloads: number): SpamSignal[] {

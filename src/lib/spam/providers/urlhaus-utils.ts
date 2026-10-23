@@ -14,6 +14,7 @@ export function urlhausRequest(kind: LookupKind, value: string): LookupRequest {
 	return {
 		service: "urlhaus",
 		kind,
+		inputs: [value],
 		url: `${API}/${endpoint}/`,
 		contentType: "application/x-www-form-urlencoded",
 		body: new URLSearchParams({ [field]: value }).toString(),

@@ -26,7 +26,7 @@ const RISK_SIGNALS = new Set([
 ]);
 /** Together, weaker findings count as a risk too. */
 const RISK_SCORE = 15;
-/** What a second list adds when both lists match links (or both match attachments) of one message. */
+/** What a second list adds when URLhaus already lists every input matched by ThreatFox. */
 const SECOND_LIST_SCORE = 10;
 // abuse.ch names a refused key in `query_status`, as in `unknown_auth_key` or `illegal_auth_key`.
 const KEY_STATUS = /auth[_-]?key/i;
@@ -73,18 +73,24 @@ export function rejectedServices(results: readonly LookupResult[]): AbuseChServi
 }
 
 /**
- * The signals of both lists. When both match a message's links, or both match its attachments, the
- * ThreatFox signal adds only a little, so the same bad link or file is not counted twice in full.
+ * The signals of both lists. Discount ThreatFox only when all of its matched URLs or hashes are
+ * already listed on URLhaus; a distinct bad link or file must retain the full signal.
  */
 export function lookupSignals(results: readonly LookupResult[]): SpamSignal[] {
 	const listed = (service: AbuseChService, kind: LookupResult["kind"]) =>
-		results.filter((result) => result.service === service && result.kind === kind && result.outcome === "listed")
-			.length;
-	const urlhaus = urlhausSignals(listed("urlhaus", "link"), listed("urlhaus", "payload"));
-	const threatfox = threatfoxSignals(listed("threatfox", "link"), listed("threatfox", "payload")).map((signal) =>
-		urlhaus.some((other) => other.id === signal.id.replace("threatfox_", "urlhaus_"))
-			? { ...signal, score: SECOND_LIST_SCORE, metadata: { ...signal.metadata, alsoOnUrlhaus: true } }
-			: signal,
+		results.filter((result) => result.service === service && result.kind === kind && result.outcome === "listed");
+	const alreadyListed = (kind: LookupResult["kind"]) => {
+		const inputs = new Set(listed("urlhaus", kind).flatMap((result) => result.inputs));
+		return listed("threatfox", kind).every(
+			(result) => result.inputs.length > 0 && result.inputs.every((input) => inputs.has(input)),
+		);
+	};
+	const urlhaus = urlhausSignals(listed("urlhaus", "link").length, listed("urlhaus", "payload").length);
+	const threatfox = threatfoxSignals(listed("threatfox", "link").length, listed("threatfox", "payload").length).map(
+		(signal) =>
+			alreadyListed(signal.id === "threatfox_url" ? "link" : "payload")
+				? { ...signal, score: SECOND_LIST_SCORE, metadata: { ...signal.metadata, alsoOnUrlhaus: true } }
+				: signal,
 	);
 	return [...urlhaus, ...threatfox];
 }

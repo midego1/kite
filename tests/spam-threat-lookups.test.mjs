@@ -213,6 +213,77 @@ test("a link on both lists counts 40 plus 10, not twice in full", async (t) => {
 	});
 });
 
+for (const [name, links, listedUrls, hosts, score] of [
+	[
+		"unrelated links on different lists keep both full scores",
+		["https://one.test/a", "https://two.test/b"],
+		["https://one.test/a"],
+		["two.test"],
+		40,
+	],
+	[
+		"a ThreatFox host keeps every associated URL, not just the URLhaus match",
+		["https://files.stranger.test/a", "https://files.stranger.test/b"],
+		["https://files.stranger.test/a"],
+		["files.stranger.test"],
+		40,
+	],
+	[
+		"a ThreatFox parent domain keeps URLs from every matching subdomain",
+		["https://one.stranger.test/a", "https://two.stranger.test/b"],
+		["https://one.stranger.test/a"],
+		["stranger.test"],
+		40,
+	],
+	[
+		"a ThreatFox parent is discounted when URLhaus lists every associated URL",
+		["https://one.stranger.test/a", "https://two.stranger.test/b"],
+		["https://one.stranger.test/a", "https://two.stranger.test/b"],
+		["stranger.test"],
+		10,
+	],
+	[
+		"an overlapping link does not discount another ThreatFox-only link",
+		["https://one.test/a", "https://two.test/b"],
+		["https://one.test/a"],
+		["one.test", "two.test"],
+		40,
+	],
+	[
+		"an IPv4 host and port retains each associated URL",
+		["https://192.0.2.10:8443/a", "https://192.0.2.10:8443/b"],
+		["https://192.0.2.10:8443/b"],
+		["192.0.2.10:8443"],
+		40,
+	],
+	[
+		"IPv4 links on different ports are separate inputs",
+		["https://192.0.2.10/a", "https://192.0.2.10:8443/a"],
+		["https://192.0.2.10/a"],
+		["192.0.2.10:8443"],
+		40,
+	],
+	[
+		"an IPv4 match on the same URL gets the second-list discount",
+		["https://192.0.2.10/a"],
+		["https://192.0.2.10/a"],
+		["192.0.2.10:443"],
+		10,
+	],
+]) {
+	test(name, async (t) => {
+		const { analyze } = await setup(t);
+		const { provider } = fakeAbuseCh({ urls: listedUrls, hosts });
+		const result = await analyze(
+			email({ text: `Please confirm your password immediately: ${links.join(" ")}` }),
+			provider,
+		);
+		assert.equal(signal(result, "urlhaus_url").score, 40);
+		assert.equal(signal(result, "threatfox_url").score, score);
+		assert.equal(signal(result, "threatfox_url").metadata.alsoOnUrlhaus, score === 10 ? true : undefined);
+	});
+}
+
 test("links of a message that shows no risk are never sent", async (t) => {
 	const { analyze } = await setup(t);
 	const { provider, requests } = fakeAbuseCh({ urls: ["https://news.stranger.test/a?token=private"] });
@@ -302,6 +373,27 @@ test("an attachment only ThreatFox knows adds 50", async (t) => {
 	assert.equal(signal(result, "threatfox_payload").score, 50);
 	assert.equal(signal(result, "threatfox_payload").reason, "An attachment matches malware known to ThreatFox");
 	assert.ok(!ids(result).includes("urlhaus_payload"));
+});
+
+test("different attachment hashes on each list keep their full scores, even with an overlap", async (t) => {
+	const { analyze } = await setup(t);
+	const attachments = [
+		file("first.exe", "application/octet-stream", "first program"),
+		file("second.exe", "application/octet-stream", "second program"),
+	];
+	for (const hashes of [[sha256("first program")], [sha256("first program"), sha256("second program")]]) {
+		const { provider } = fakeAbuseCh({ hashes, threatfoxHashes: [sha256("second program")] });
+		const result = await analyze(email({ attachments }), provider);
+		assert.equal(signal(result, "urlhaus_payload").score, 50);
+		assert.equal(signal(result, "threatfox_payload").score, hashes.length === 1 ? 50 : 10);
+	}
+	const { provider } = fakeAbuseCh({
+		hashes: [sha256("first program")],
+		threatfoxHashes: [sha256("first program"), sha256("second program")],
+	});
+	const result = await analyze(email({ attachments }), provider);
+	assert.equal(signal(result, "threatfox_payload").score, 50);
+	assert.equal(signal(result, "threatfox_payload").metadata.alsoOnUrlhaus, undefined);
 });
 
 test("a message that shows no risk sends nothing, not even attachment hashes", async (t) => {
@@ -455,7 +547,7 @@ test("answers map to listed, not listed, a refused key or a failure", () => {
 		"rejected",
 		"unreachable",
 	]);
-	assert.deepEqual(lookupSignals([{ service: "threatfox", kind: "link", outcome: "key_rejected" }]), []);
+	assert.deepEqual(lookupSignals([{ service: "threatfox", kind: "link", inputs: [], outcome: "key_rejected" }]), []);
 });
 
 test("an empty ThreatFox answer is not a match", async (t) => {

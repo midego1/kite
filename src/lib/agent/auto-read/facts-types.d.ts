@@ -16,6 +16,8 @@ export type DeterministicPhishingSignal =
 	| "risky_attachment"
 	| "urlhaus_url"
 	| "urlhaus_payload"
+	| "threatfox_url"
+	| "threatfox_payload"
 	| "safelist_pressure";
 
 /** Signs that back up a model's phishing flag; on their own they do not warn. */

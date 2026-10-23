@@ -765,6 +765,143 @@ test.describe("automatic reading settings UI", () => {
 		}
 	});
 
+	test("trusted and muted senders are listed, added and removed one at a time without clobbering", async ({
+		browser,
+	}) => {
+		const account = await createSignedInAccount(api, `ars${uniqueToken("ars")}`);
+		const restore = await useFakeProvider(api, fake);
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		const lists = async () => {
+			const { capabilities } = (await readMailboxSettings(account.api, account.mailboxId)).settings;
+			return { trusted: capabilities.trustedSenders, muted: capabilities.mutedSenders };
+		};
+		const sendersPost = (page: Page) =>
+			page.waitForResponse(
+				(response) => response.url().endsWith("/api/agent/settings/senders") && response.request().method() === "POST",
+			);
+		try {
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			let section = await openAutoReadSection(page);
+			const trusted = section.getByRole("region", { name: "Trusted senders" });
+			const muted = section.getByRole("region", { name: "Muted senders" });
+			await expect(trusted).toContainText(
+				"Kite won't warn about a trusted sender because of the AI model alone, as long as their mail passes sender checks. Signs Kite finds itself still warn.",
+			);
+			await expect(trusted.getByText(/No trusted senders yet/)).toBeVisible();
+			await expect(muted.getByText(/No muted senders yet/)).toBeVisible();
+
+			const trustedInput = trusted.getByRole("textbox", { name: "Add a trusted sender" });
+			await trustedInput.fill("not an address");
+			await trusted.getByRole("button", { name: "Add" }).click();
+			await expect(trusted.getByRole("alert")).toHaveText("Enter one email address, like name@example.com");
+			expect(await lists()).toEqual({ trusted: [], muted: [] });
+
+			// The mailbox never saved settings; adding a sender stores them with the list. An email input
+			// drops the surrounding spaces itself, and the server lowercases the address.
+			await trustedInput.fill(" Bank@Example.TEST ");
+			let posted = sendersPost(page);
+			await trusted.getByRole("button", { name: "Add" }).click();
+			expect((await posted).request().postDataJSON()).toEqual({
+				mailboxId: account.mailboxId,
+				list: "trusted",
+				add: "Bank@Example.TEST",
+			});
+			await expect(trusted.getByRole("listitem")).toHaveCount(1);
+			await expect(trusted.getByRole("listitem")).toContainText("bank@example.test");
+			await expect(trustedInput).toHaveValue("");
+			expect(await lists()).toEqual({ trusted: ["bank@example.test"], muted: [] });
+
+			await muted.getByRole("textbox", { name: "Add a muted sender" }).fill("noise@outside.test");
+			posted = sendersPost(page);
+			await muted.getByRole("button", { name: "Add" }).click();
+			expect((await posted).status()).toBe(200);
+			await expect(muted.getByRole("listitem")).toContainText("noise@outside.test");
+			expect(await lists()).toEqual({ trusted: ["bank@example.test"], muted: ["noise@outside.test"] });
+
+			// A change made elsewhere after the section loaded survives both a save and a remove here.
+			await okJson(
+				await account.api.post("/api/agent/settings/senders", {
+					data: { mailboxId: account.mailboxId, list: "trusted", add: "alerts@service.test" },
+				}),
+			);
+			const saved = settingsPut(page);
+			await section.getByRole("button", { name: "Save automatic reading" }).click();
+			expect((await saved).status()).toBe(200);
+			expect((await lists()).trusted).toEqual(["bank@example.test", "alerts@service.test"]);
+			posted = sendersPost(page);
+			await trusted.getByRole("button", { name: "Remove bank@example.test" }).click();
+			expect((await posted).request().postDataJSON()).toEqual({
+				mailboxId: account.mailboxId,
+				list: "trusted",
+				remove: "bank@example.test",
+			});
+			await expect(trusted.getByRole("listitem")).toHaveCount(1);
+			await expect(trusted.getByRole("listitem")).toContainText("alerts@service.test");
+			expect(await lists()).toEqual({ trusted: ["alerts@service.test"], muted: ["noise@outside.test"] });
+
+			await muted.getByRole("button", { name: "Remove noise@outside.test" }).click();
+			await expect(muted.getByText(/No muted senders yet/)).toBeVisible();
+			await expect.poll(lists).toEqual({ trusted: ["alerts@service.test"], muted: [] });
+
+			await page.reload();
+			section = await openAutoReadSection(page);
+			await expect(section.getByRole("region", { name: "Trusted senders" }).getByRole("listitem")).toContainText(
+				"alerts@service.test",
+			);
+			expect(errors).toEqual([]);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("the sender list API checks the address, the limit and full mailbox access", async () => {
+		const account = await createSignedInAccount(api, `arq${uniqueToken("arq")}`);
+		const post = (client: APIRequestContext, data: Record<string, unknown>) =>
+			client.post("/api/agent/settings/senders", { data: { mailboxId: account.mailboxId, ...data } });
+		try {
+			expect((await post(account.api, { list: "trusted", add: "Name <a@b.test>" })).status()).toBe(400);
+			expect((await post(account.api, { list: "trusted", add: "a@b.test", remove: "a@b.test" })).status()).toBe(400);
+			expect((await post(account.api, { list: "blocked", add: "a@b.test" })).status()).toBe(400);
+			// A personal mailbox is invisible to the admin, like every other mailbox without full access.
+			expect((await post(api, { list: "trusted", add: "a@b.test" })).status()).toBe(403);
+			expect(await okJson(await post(account.api, { list: "trusted", add: "A@B.test" }))).toEqual({
+				senders: ["a@b.test"],
+				changed: true,
+			});
+			expect(await okJson(await post(account.api, { list: "trusted", add: "a@b.test" }))).toEqual({
+				senders: ["a@b.test"],
+				changed: false,
+			});
+			expect(await okJson(await post(account.api, { list: "trusted", remove: "nobody@b.test" }))).toEqual({
+				senders: ["a@b.test"],
+				changed: false,
+			});
+
+			const full = Array.from({ length: 500 }, (_, index) => `muted${index}@outside.test`);
+			await okJson(
+				await account.api.put("/api/agent/settings", {
+					data: { mailboxId: account.mailboxId, capabilities: { mutedSenders: full } },
+				}),
+			);
+			const over = await post(account.api, { list: "muted", add: "new@outside.test" });
+			expect(over.status()).toBe(400);
+			expect(await over.json()).toEqual({ error: "A mailbox can have at most 500 muted senders" });
+			const removed = await okJson<{ senders: string[]; changed: boolean }>(
+				await post(account.api, { list: "muted", remove: "muted0@outside.test" }),
+			);
+			expect(removed.changed).toBe(true);
+			expect(removed.senders).toHaveLength(499);
+			expect((await readMailboxSettings(account.api, account.mailboxId)).settings.capabilities.trustedSenders).toEqual([
+				"a@b.test",
+			]);
+		} finally {
+			await account.api.dispose();
+		}
+	});
 	test("the admin page saves the kill switch, the external opt-in and the spend cap with auto-read keys only", async ({
 		page,
 	}) => {

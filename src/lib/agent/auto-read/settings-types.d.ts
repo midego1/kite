@@ -5,11 +5,12 @@ export type AutoReadCapabilities = {
 	reply: boolean;
 	summary: boolean;
 	phishing: boolean;
-	/** Lowercased sender addresses the user muted from a suggestion card. */
+	/** Lowercased sender addresses the user muted from a suggestion card or the settings list. */
 	mutedSenders: string[];
 	/**
-	 * Lowercased sender addresses the user marked "Not phishing": a model's flag alone no longer warns
-	 * about them. Only that button and its undo change the list; settings saves keep it as stored.
+	 * Lowercased sender addresses the user marked "Not phishing" or added in the settings list: a model's
+	 * flag alone no longer warns about them. Only that button, its undo and the list's add and remove
+	 * (`/api/agent/settings/senders`) change it; settings saves keep it as stored.
 	 */
 	trustedSenders: string[];
 	/** Module step switches by their `triage.capability` key; a key that is absent is on. */

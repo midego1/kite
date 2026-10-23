@@ -39,8 +39,9 @@ CF_TOKEN=your_api_token_with_zone_email_permissions
 # SEND_LIMIT_PER_HOUR=100
 # SEND_LIMIT_PER_DAY=500
 
-# Optional: a free abuse.ch Auth-Key. Links and attachment hashes (never files) of incoming mail
-# that already looks risky are then checked against URLhaus. See docs/spam-protection.md.
+# Optional: a free abuse.ch Auth-Key. Links, link hosts and attachment hashes (never files) of
+# incoming mail that already looks risky are then checked against URLhaus and ThreatFox.
+# ABUSE_CH_AUTH_KEY works too; URLHAUS_AUTH_KEY wins when both are set. See docs/spam-protection.md.
 # URLHAUS_AUTH_KEY=your_abuse_ch_auth_key
 
 # Development and tests only: lets the alert webhook (Admin > Alerts) post over http

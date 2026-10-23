@@ -154,9 +154,12 @@
 		"src/lib/setup/configuration-utils.ts",
 		"src/lib/spam/analyzers/link-host-utils.ts",
 		"src/lib/spam/analyzers/urls-utils.ts",
+		"src/lib/spam/providers/abuse-ch-utils.ts",
+		"src/lib/spam/providers/threatfox-utils.ts",
 		"src/lib/spam/providers/urlhaus-utils.ts",
 		"src/lib/spam/tokenizer-utils.ts",
 		"src/lib/agent/auto-read/module-actions-utils.ts",
+		"src/lib/agent/auto-read/sender-lists-utils.ts",
 		"src/lib/agent/auto-read/module-steps-utils.ts",
 		"src/lib/agent/auto-read/step-input-utils.ts",
 		"src/lib/booking/working-hours-utils.ts"

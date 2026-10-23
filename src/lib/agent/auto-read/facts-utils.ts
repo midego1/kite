@@ -18,8 +18,8 @@ const ATTACHMENT_SIGNALS = [
 	"attachment_active_content",
 	"risky_attachment",
 ] as const;
-/** Found by the optional URLhaus lookup (`src/lib/spam/providers/urlhaus.ts`). */
-const LOOKUP_SIGNALS = ["urlhaus_url", "urlhaus_payload"] as const;
+/** Found by the optional abuse.ch lookups (`src/lib/spam/providers/abuse-ch.ts`). */
+const LOOKUP_SIGNALS = ["urlhaus_url", "urlhaus_payload", "threatfox_url", "threatfox_payload"] as const;
 const SUPPORTING_SIGNALS: readonly SupportingPhishingSignal[] = ["url_shortener"];
 const AUTH_METHODS = ["spf", "dkim", "dmarc"] as const;
 

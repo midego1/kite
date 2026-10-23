@@ -100,6 +100,7 @@ Click a screenshot to open it at full size. The screenshots and the demo recordi
 - **Reading layout**: Read with the list beside or above the open email, or full width, in default, comfortable or compact density.
 - **Safer sending**: Preview an email before it goes out and undo a send for a few seconds afterwards.
 - **Organization**: Keep your inbox tidy with search, folders, stars, snooze, archive, spam, and trash, with undo for archive and trash. After a bulk action you return to the message list with the selection cleared.
+- **Spam and phishing protection**: A local spam filter that learns from you, plus phishing warnings for misleading links, failed sender checks and risky attachments. Mark a warning **Not phishing** to trust that sender, and manage trusted and muted senders in Settings. With a free abuse.ch key, risky mail is also checked against URLhaus and ThreatFox, and a **Test key** button on Admin → General shows whether the key works. See [Spam protection](docs/spam-protection.md).
 - **Routing rules**: Store, forward, reject, or sort incoming mail automatically.
 - **Notifications**: Get live inbox updates and alerts when new mail arrives, and copy a one-time code straight from the notification.
 - **Import, export, contacts**: Move mail in and out, manage contacts, and block unwanted senders.

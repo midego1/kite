@@ -1,4 +1,5 @@
 import type { AutoReadCapabilities, AutonomyLevel } from "@/lib/agent/auto-read/settings-types";
+import type { SenderListName } from "@/lib/agent/auto-read/sender-lists-utils";
 
 export type AutoReadCapabilityKey = Exclude<keyof AutoReadCapabilities, "mutedSenders" | "trustedSenders" | "modules">;
 /** The core switches, plus each module step's switch by its key (absent means on). */
@@ -36,6 +37,8 @@ export type AutoReadSettingsState = {
 	savedAutonomy: AutonomyLevel;
 	/** The pause end while it was still in the future when the settings loaded. */
 	pausedUntil: string | null;
+	/** Saved on their own by each add or remove, so they are not part of the form. */
+	senders: SenderLists;
 	models: string[];
 	canManage: boolean;
 	autoReadAvailable: boolean;
@@ -59,4 +62,21 @@ export type AutoReadAdminValues = {
 };
 
 export type AutoReadSettingsProps = { mailboxId: string };
+
+export type SenderLists = Record<SenderListName, string[]>;
+
+export type SenderListsProps = {
+	mailboxId: string;
+	senders: SenderLists;
+	disabled: boolean;
+	onChange: (senders: SenderLists) => void;
+};
+
+export type SenderListEditorProps = {
+	mailboxId: string;
+	list: SenderListName;
+	senders: string[];
+	disabled: boolean;
+	onChange: (senders: string[]) => void;
+};
 export type AutoReadStatus = { tone: "error" | "ok"; text: string } | null;

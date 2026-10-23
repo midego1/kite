@@ -76,8 +76,10 @@ interface CloudflareEnv {
 	STORAGE_S3_ADDRESSING?: string;
 	/** Comma-separated classes routed to the environment store when no saved route names them: `mail,drive,backups`. */
 	STORAGE_S3_CLASSES?: string;
-	/** abuse.ch Auth-Key; when set, inbound spam checks look up risky links and attachment hashes on URLhaus. */
+	/** abuse.ch Auth-Key; when set, inbound spam checks look up risky links and attachment hashes on URLhaus and ThreatFox. */
 	URLHAUS_AUTH_KEY?: string;
+	/** Alias of `URLHAUS_AUTH_KEY`, used only when that is unset. */
+	ABUSE_CH_AUTH_KEY?: string;
 	/** When set, first-run setup and the first registration must present this token. */
 	SETUP_TOKEN?: string;
 	/** Any long random string; when set, provider secrets in app_settings are stored encrypted (AES-GCM, key derived with HKDF). */

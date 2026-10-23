@@ -1,6 +1,6 @@
 # Spam protection
 
-Kite analyzes stored incoming messages locally. The filter combines trusted authentication results, sender relationships, mailbox-scoped reputation, bounded Bayesian token learning, URL checks, message structure, and attachments. No message content or spam intelligence leaves your install, unless the operator turns on the optional [URLhaus lookups](#urlhaus-lookups-optional).
+Kite analyzes stored incoming messages locally. The filter combines trusted authentication results, sender relationships, mailbox-scoped reputation, bounded Bayesian token learning, URL checks, message structure, and attachments. No message content or spam intelligence leaves your install, unless the operator turns on the optional [URLhaus and ThreatFox lookups](#urlhaus-and-threatfox-lookups-optional).
 
 Scores range from 0 to 100. Messages scoring 70 or higher move to Spam. Scores from 40 through 69 are recorded as suspicious but remain in their normal Inbox or custom folder. Analysis failures also deliver normally. Automatic replies and new-message notifications are suppressed for messages placed in Spam.
 
@@ -34,11 +34,15 @@ A link is misleading only when it opens a different domain than the one it shows
 
 A sender you saved as a contact or have written to is not blocked, and neither is an address on one of the install's own domains: a phishing message can forge such a From, and blocking it would hide the real person's mail. The message still moves to Spam and still trains the filter. The toast after a report says which senders were blocked and why any were not. There is no Undo. **Not spam** moves a message back and reverses its training, but a block, like one from **Block contact**, cannot be lifted from the app yet.
 
-## URLhaus lookups (optional)
+<a id="urlhaus-lookups-optional"></a>
 
-[URLhaus](https://urlhaus.abuse.ch/) is a free list of websites and files that spread malware, run by abuse.ch. When the operator sets the `URLHAUS_AUTH_KEY` secret (a free Auth-Key from abuse.ch), Kite asks URLhaus about some incoming mail. **Admin → General → Threat lookups** shows whether lookups are on. There is no switch in the app: remove the secret to turn them off.
+## URLhaus and ThreatFox lookups (optional)
+
+[URLhaus](https://urlhaus.abuse.ch/) is a free list of websites and files that spread malware, and [ThreatFox](https://threatfox.abuse.ch/) a free list of the servers, domains and files malware uses, both run by abuse.ch. When the operator sets the `URLHAUS_AUTH_KEY` secret (a free Auth-Key from abuse.ch, which works for both lists), Kite asks both about some incoming mail, at the same time. `ABUSE_CH_AUTH_KEY` is accepted as another name for the same key; when both are set, `URLHAUS_AUTH_KEY` is used. **Admin → General → Threat lookups** shows whether lookups are on, and the owner can press **Test key** there: Kite looks up `example.com` once on each list and shows **Key works**, **Key rejected** or **abuse.ch unreachable** for each. There is no switch in the app: remove the secret to turn lookups off.
 
 - **Only risky mail.** Kite asks only when the message already shows a risk: an attached web page or program, a login or payment lure, a misleading link, a failed SPF, DKIM or DMARC check, a request to get past the filter, or enough smaller signs together.
 - **Not your correspondents.** Mail from a saved contact or someone you have written to is not looked up, unless its authentication failed and the From may be forged. Mail from a blocked sender is decided before any lookup.
-- **What is sent.** Up to five links (links inside attached web pages first) and the SHA-256 hashes of up to three attachments, never the files themselves. Inline images are left out. Links are sent as they are, so a personal link can reveal who received it.
-- **What it changes.** A listed link adds 40 to the score, a listed attachment 50, and both show as reasons on the phishing warning. A lookup that fails or takes longer than 3 seconds counts as not listed, so an outage never holds mail back.
+- **What is sent to URLhaus.** Up to five links (links inside attached web pages first) and the SHA-256 hashes of up to three attachments, never the files themselves. Inline images are left out. Links are sent as they are, so a personal link can reveal who received it.
+- **What is sent to ThreatFox.** Only the host names of those links (as in `files.example.net` and `example.net`, or an IP address with its port), at most five, and the same attachment hashes. Paths and query strings are not sent. Each name and hash is looked up once.
+- **What it changes.** A link on URLhaus adds 40 to the score, an attachment on URLhaus 50; ThreatFox adds the same. When both lists match a message's links, or both match its attachments, the second adds only 10, so one bad link or file is not counted twice in full. Every match shows as a reason on the phishing warning. A lookup that fails or takes longer than 3 seconds counts as not listed, so an outage never holds mail back.
+- **A rejected key is logged.** When abuse.ch refuses the key, the Worker logs `spam.threat_lookup_key_rejected` with the list's name, never the key or the links. Mail is delivered as if nothing were listed.

@@ -345,13 +345,35 @@ test("Report phishing on a selection reports every message and blocks each sende
 	}
 });
 
-test("Admin General shows that URLhaus lookups are off without a key", async ({ browser }) => {
+test("Admin General shows that URLhaus and ThreatFox lookups are off without a key, and Test key is owner only", async ({
+	browser,
+}) => {
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE });
 	const page = await context.newPage();
+	const errors = collectConsoleErrors(page);
 	await page.goto("/general");
 	const card = page.locator("[data-threat-lookups]");
 	await expect(card.getByText("Threat lookups")).toBeVisible();
-	await expect(card.locator("[data-urlhaus-status]")).toHaveText("URLhaus lookups are off");
+	await expect(card.locator("[data-lookup-status=urlhaus]")).toHaveText("URLhaus lookups are off");
+	await expect(card.locator("[data-lookup-status=threatfox]")).toHaveText("ThreatFox lookups are off");
 	await expect(card).toContainText("URLHAUS_AUTH_KEY");
+	await expect(card).toContainText("ABUSE_CH_AUTH_KEY");
+	await expect(card.getByRole("button", { name: "Test key" })).toHaveCount(0);
+	expect(await okJson<{ threatLookupsConfigured: boolean }>(await api.get("/api/admin/general"))).toMatchObject({
+		threatLookupsConfigured: false,
+	});
+
+	// Without a key the test makes no lookup; anyone but the owner is refused before that.
+	const test = await api.post("/api/admin/threat-lookups/test");
+	expect(test.status()).toBe(400);
+	expect(await test.json()).toEqual({ error: "No abuse.ch Auth-Key is set" });
+	expect((await api.get("/api/admin/threat-lookups/test")).status()).toBe(405);
+	const account = await newAccount("phk");
+	try {
+		expect((await account.api.post("/api/admin/threat-lookups/test")).status()).toBe(403);
+	} finally {
+		await account.api.dispose();
+	}
+	expect(errors).toEqual([]);
 	await context.close();
 });

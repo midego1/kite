@@ -13,7 +13,7 @@ export default function GeneralSettingsPage() {
 	const [loaded, setLoaded] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [status, setStatus] = useState("");
-	const [urlhaus, setUrlhaus] = useState<boolean | null>(null);
+	const [threatLookups, setThreatLookups] = useState<boolean | null>(null);
 
 	useEffect(() => {
 		let active = true;
@@ -21,7 +21,7 @@ export default function GeneralSettingsPage() {
 			.then((settings) => {
 				if (active) {
 					setMaxMb(settings.outboundAttachmentMaxMb);
-					setUrlhaus(settings.urlhausConfigured ?? false);
+					setThreatLookups(settings.threatLookupsConfigured ?? false);
 					setLoaded(true);
 				}
 			})
@@ -103,7 +103,7 @@ export default function GeneralSettingsPage() {
 					</form>
 				</CardContent>
 			</Card>
-			<ThreatLookupsCard configured={urlhaus} />
+			<ThreatLookupsCard configured={threatLookups} />
 		</div>
 	);
 }

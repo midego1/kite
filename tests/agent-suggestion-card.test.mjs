@@ -141,6 +141,20 @@ test("phishing reasons read in plain words, deterministic ones first, without re
 	assert.deepEqual(phishingReasonTexts(item("p1", "phishing", { payload: {} })), []);
 });
 
+test("URLhaus and ThreatFox matches read in plain words and name the list", () => {
+	const texts = phishingReasonTexts(
+		item("p1", "phishing", {
+			payload: { reasons: ["urlhaus_url", "urlhaus_payload", "threatfox_url", "threatfox_payload"] },
+		}),
+	);
+	assert.deepEqual(texts, [
+		"A link is on URLhaus's list of sites that spread malware.",
+		"An attachment matches malware known to URLhaus.",
+		"A link goes to a site that ThreatFox lists as used by malware.",
+		"An attachment matches malware known to ThreatFox.",
+	]);
+});
+
 test("a pause lasts 24 hours from the click", () => {
 	assert.equal(pauseEnd(new Date("2026-10-11T08:00:00.000Z")), "2026-10-12T08:00:00.000Z");
 });

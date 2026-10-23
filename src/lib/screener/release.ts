@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { mailboxes, messages } from "@/db/schema";
 import { runInChunks } from "@/db/chunk-utils";
@@ -37,23 +37,39 @@ export async function messagesFromSenders(
 	if (addresses.size === 0 || statuses.length === 0) return [];
 	// One address narrows the scan in SQL; the exact comparison below settles display-name forms.
 	const [single] = addresses.size === 1 ? [...addresses] : [];
-	const rows = await db
-		.select(senderColumns)
-		.from(messages)
-		.where(
-			and(
-				eq(messages.mailboxId, mailboxId),
-				eq(messages.direction, "inbound"),
-				inArray(messages.status, statuses),
-				single ? sql`lower(${messages.fromAddr}) LIKE ${likeContains(single)} ESCAPE '\\'` : undefined,
-			),
-		)
-		.orderBy(desc(messages.createdAt))
-		.limit(5000);
-	return rows.filter((row) => {
-		const sender = screenerAddress(row.fromAddr);
-		return !!sender && addresses.has(sender);
-	});
+	const matched: SenderMessage[] = [];
+	const pageSize = 500;
+	let cursor: { id: string; createdAt: Date } | undefined;
+	for (;;) {
+		const rows = await db
+			.select({ ...senderColumns, createdAt: messages.createdAt })
+			.from(messages)
+			.where(
+				and(
+					eq(messages.mailboxId, mailboxId),
+					eq(messages.direction, "inbound"),
+					inArray(messages.status, statuses),
+					single ? sql`lower(${messages.fromAddr}) LIKE ${likeContains(single)} ESCAPE '\\'` : undefined,
+					cursor
+						? or(
+								lt(messages.createdAt, cursor.createdAt),
+								and(eq(messages.createdAt, cursor.createdAt), lt(messages.id, cursor.id)),
+							)
+						: undefined,
+				),
+			)
+			.orderBy(desc(messages.createdAt), desc(messages.id))
+			.limit(pageSize);
+		matched.push(
+			...rows.filter((row) => {
+				const sender = screenerAddress(row.fromAddr);
+				return !!sender && addresses.has(sender);
+			}),
+		);
+		// Advance using the unfiltered page, even when none of its senders matched.
+		if (rows.length < pageSize) return matched;
+		cursor = rows[rows.length - 1];
+	}
 }
 
 export async function setMessageStatus(

@@ -300,6 +300,29 @@ test("Undo preserves and restores more than 500 released message IDs", async (t)
 	assert.equal(statusOf(other), "received", "Undo cannot restore another sender's mail");
 });
 
+test("approving pages through more than 5000 held messages, including equal timestamps", async (t) => {
+	const { database, db, env, addMessage, statusOf, access } = await setup(t);
+	await settings.enableScreenerForNewMailbox(db, "mailbox-a");
+	const held = Array.from({ length: 5001 }, () => addMessage("Jane <jane@partner.test>", { status: "screening" }));
+	database.db.exec("UPDATE messages SET created_at = 1");
+	const approved = await service.approveSender(env, owner, await access(), "jane@partner.test");
+	assert.equal(approved.movedMessageIds.length, held.length);
+	assert.equal(new Set(approved.movedMessageIds).size, held.length);
+	for (const id of held) assert.equal(statusOf(id), "received");
+});
+
+test("sending to multiple recipients releases old matches beyond pages of unrelated held mail", async (t) => {
+	const { db, env, addMessage, statusOf } = await setup(t);
+	await settings.enableScreenerForNewMailbox(db, "mailbox-a");
+	const first = addMessage("Jane <jane@partner.test>", { status: "screening" });
+	const second = addMessage("bob@partner.test", { status: "screening" });
+	const unrelated = Array.from({ length: 5001 }, () => addMessage("unrelated@partner.test", { status: "screening" }));
+	await approveSentRecipients(env, "mailbox-a", "owner", ["jane@partner.test", "bob@partner.test"]);
+	assert.equal(statusOf(first), "received");
+	assert.equal(statusOf(second), "received");
+	for (const id of unrelated) assert.equal(statusOf(id), "screening");
+});
+
 test("denying moves waiting mail to Spam, trains on it and blocks the sender until the denial is removed", async (t) => {
 	const { database, db, env, addMessage, statusOf, access } = await setup(t);
 	await settings.enableScreenerForNewMailbox(db, "mailbox-a");

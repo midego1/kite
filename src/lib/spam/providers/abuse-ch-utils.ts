@@ -1,5 +1,15 @@
 import type { SpamIntelligenceInput, SpamSignal } from "../types";
-import type { AbuseChService, KeyTestResult, LookupOutcome, LookupResult, ThreatLookupPlan } from "./abuse-ch-types";
+import type {
+	AbuseChSecretName,
+	AbuseChService,
+	KeySaveDecision,
+	KeyTestResult,
+	KeyTestResults,
+	LookupOutcome,
+	LookupResult,
+	ResolvedAbuseChKey,
+	ThreatLookupPlan,
+} from "./abuse-ch-types";
 import { threatfoxSignals } from "./threatfox-utils";
 import { urlhausSignals } from "./urlhaus-utils";
 
@@ -53,9 +63,60 @@ export function planThreatLookups(input: SpamIntelligenceInput): ThreatLookupPla
 	return { urls, payloads };
 }
 
-/** The abuse.ch Auth-Key: `URLHAUS_AUTH_KEY`, or `ABUSE_CH_AUTH_KEY` when that is unset. */
+/** The abuse.ch Auth-Key secret: `URLHAUS_AUTH_KEY`, or `ABUSE_CH_AUTH_KEY` when that is unset. */
 export function abuseChAuthKey(env: Pick<CloudflareEnv, "URLHAUS_AUTH_KEY" | "ABUSE_CH_AUTH_KEY">): string | null {
 	return env.URLHAUS_AUTH_KEY?.trim() || env.ABUSE_CH_AUTH_KEY?.trim() || null;
+}
+
+/** The name of the secret `abuseChAuthKey` reads, or null when neither is set. */
+export function abuseChSecretName(
+	env: Pick<CloudflareEnv, "URLHAUS_AUTH_KEY" | "ABUSE_CH_AUTH_KEY">,
+): AbuseChSecretName | null {
+	if (env.URLHAUS_AUTH_KEY?.trim()) return "URLHAUS_AUTH_KEY";
+	return env.ABUSE_CH_AUTH_KEY?.trim() ? "ABUSE_CH_AUTH_KEY" : null;
+}
+
+/** A secret always wins over a key saved in Kite, so an operator can pin the key outside the database. */
+export function pickAbuseChKey(secret: string | null, saved: string | null | undefined): ResolvedAbuseChKey | null {
+	if (secret) return { key: secret, source: "secret" };
+	const trimmed = saved?.trim();
+	return trimmed ? { key: trimmed, source: "settings" } : null;
+}
+
+// The key travels in an HTTP header, so only visible ASCII without spaces is accepted.
+const AUTH_KEY_PATTERN = /^[!-~]{1,200}$/;
+
+/** The key the owner typed, trimmed, or null when it cannot be an Auth-Key. */
+export function parseAbuseChKeyInput(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim();
+	return AUTH_KEY_PATTERN.test(trimmed) ? trimmed : null;
+}
+
+/** Either list refusing the key blocks saving it; an unreachable list saves it unchecked. */
+export function keySaveDecision(results: KeyTestResults): KeySaveDecision {
+	const outcomes = Object.values(results);
+	if (outcomes.includes("rejected")) return "rejected";
+	return outcomes.includes("unreachable") ? "unverified" : "verified";
+}
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost"]);
+
+/** Dev/test only: the loopback origin that stands in for abuse.ch, or null (always null in production). */
+export function abuseChTestOrigin(value: string | undefined, nodeEnv: string | undefined): string | null {
+	if (!value?.trim() || nodeEnv === "production") return null;
+	try {
+		const url = new URL(value.trim());
+		return url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname) ? url.origin : null;
+	} catch {
+		return null;
+	}
+}
+
+/** The same path and query on the test origin; both abuse.ch APIs are told apart by path. */
+export function abuseChTestUrl(url: string, origin: string): string {
+	const parsed = new URL(url);
+	return `${origin}${parsed.pathname}${parsed.search}`;
 }
 
 /** Reads one answer: a refused key (401, 403 or a key status), any other failure, or whether it lists the item. */

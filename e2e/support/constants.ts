@@ -5,6 +5,8 @@ export const RELEASE_VERSION = readFileSync(new URL("../../VERSION", import.meta
 
 export const E2E_PORT = Number(process.env.E2E_PORT ?? 3200);
 export const BASE_URL = `http://localhost:${E2E_PORT}`;
+/** The fake abuse.ch (e2e/support/fake-abuse-ch.ts); the dev server sends both abuse.ch APIs here. */
+export const FAKE_ABUSE_CH_PORT = Number(process.env.E2E_FAKE_ABUSE_CH_PORT ?? E2E_PORT + 97);
 export const E2E_PERSIST_DIR = ".wrangler/e2e-state";
 export const E2E_VITE_CACHE_DIR = ".wrangler/e2e-vite-cache";
 export const STORAGE_STATE = "test-results/.auth/admin.json";

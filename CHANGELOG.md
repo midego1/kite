@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+Apply database migration 0068 after deploying, from the database card on the admin overview or the banner in the mailbox. It adds the abuse.ch Auth-Key the owner can save in the app; until it is applied, a key set as a secret works as before and **Save key** asks for the update.
+
+### Added
+
+- The owner can enter the **abuse.ch Auth-Key** under [Admin → General](/general) → **Threat lookups** instead of setting a secret. **Save key** checks it on URLhaus and ThreatFox first and refuses a key either list rejects; when abuse.ch cannot be reached, it saves the key with a warning. The key is stored encrypted and never shown again; **Remove key** deletes it. A `URLHAUS_AUTH_KEY` or `ABUSE_CH_AUTH_KEY` secret still takes precedence, and the card says which one is in use. The card links to [auth.abuse.ch](https://auth.abuse.ch/) for a free key, which is for non-commercial use. See [Spam protection](https://github.com/midego1/kite/blob/main/docs/spam-protection.md#urlhaus-and-threatfox-lookups-optional).
+
 ## [2026.10.23.2] - 2026-10-23
 
 Apply database migration 0067 after deploying, from the database card on the admin overview or the banner in the mailbox. It adds the Screener tables; until it is applied, every mailbox delivers as before, **Settings → Inbox → Screener** says the update is pending and Screener changes answer `503 SCREENER_UNAVAILABLE`. Mailboxes created before it is applied keep the Screener off.

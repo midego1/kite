@@ -21,7 +21,7 @@ import { resolveThreadId } from "@/lib/email/threading";
 import { normalizeMessageId } from "@/lib/email/thread-lookup";
 import type { SessionUser } from "@/lib/auth/types";
 import { analyzeSpam } from "@/lib/spam/engine";
-import { spamIntelligenceProvider } from "@/lib/spam/providers/abuse-ch";
+import { configuredSpamIntelligenceProvider } from "@/lib/spam/providers/abuse-ch-key";
 import { getReputationKeys } from "@/lib/spam/analyzers/reputation";
 import { recordReputationObservation } from "@/lib/spam/repository";
 import { getMailboxNotificationUserIds, notifyUsersOfNewMessage } from "@/lib/realtime/utils";
@@ -224,7 +224,7 @@ export async function processInboundMessage(env: CloudflareEnv, payload: Inbound
 				envelopeFrom: payload.from,
 				headers: payload.headers,
 				message: parsed,
-				intelligenceProvider: spamIntelligenceProvider(env),
+				intelligenceProvider: configuredSpamIntelligenceProvider(env),
 			});
 		} catch (error) {
 			spamAnalysisError = error instanceof Error ? error.message.slice(0, 300) : "Spam analysis failed";

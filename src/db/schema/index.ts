@@ -755,6 +755,8 @@ export const appSettings = sqliteTable("app_settings", {
 	alertWebhookUrl: text("alert_webhook_url"),
 	/** Payload format override; null means detect it from the URL. */
 	alertWebhookKind: text("alert_webhook_kind", { enum: ["slack", "discord", "ntfy", "json"] }),
+	/** abuse.ch Auth-Key saved by the owner, sealed with APP_ENCRYPTION_KEY; a URLHAUS_AUTH_KEY or ABUSE_CH_AUTH_KEY secret wins. */
+	abuseChAuthKey: text("abuse_ch_auth_key"),
 	updatedAt: integer("updated_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),

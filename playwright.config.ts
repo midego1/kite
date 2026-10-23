@@ -1,5 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
-import { BASE_URL, E2E_PERSIST_DIR, E2E_PORT, E2E_VITE_CACHE_DIR, STORAGE_STATE } from "./e2e/support/constants";
+import {
+	BASE_URL,
+	E2E_PERSIST_DIR,
+	E2E_PORT,
+	E2E_VITE_CACHE_DIR,
+	FAKE_ABUSE_CH_PORT,
+	STORAGE_STATE,
+} from "./e2e/support/constants";
 
 export default defineConfig({
 	testDir: "./e2e",
@@ -46,6 +53,8 @@ export default defineConfig({
 			REMOTE_IMAGES_ALLOW_LOOPBACK: "1",
 			// Lets specs add the fake S3 store on http://localhost (e2e/48-storage-s3.spec.ts).
 			STORAGE_ALLOW_INSECURE_ENDPOINT: "1",
+			// Sends both abuse.ch APIs to the fake on 127.0.0.1 (e2e/support/fake-abuse-ch.ts); nothing reaches abuse.ch.
+			ABUSE_CH_TEST_ORIGIN: `http://127.0.0.1:${FAKE_ABUSE_CH_PORT}`,
 			// Storage credentials are only ever saved encrypted, so the storage spec needs a key; invented, e2e only.
 			APP_ENCRYPTION_KEY: "e2e-only-invented-encryption-key-not-a-secret-0123456789",
 		},

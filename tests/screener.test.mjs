@@ -511,6 +511,47 @@ test("the overview and the reader status show read-only users the state without 
 	assert.equal((await views.getScreenerMessageStatus(db, owner, plain)).pending, false);
 });
 
+test("sender decisions and pending lists stay within D1's binding limit across many mailboxes", async (t) => {
+	const { database, db } = await setup(t);
+	const mailboxIds = Array.from({ length: 60 }, (_, index) => `many-${index}`);
+	const addresses = Array.from({ length: 50 }, (_, index) => `friend${index}@partner.test`);
+	for (const [index, mailboxId] of mailboxIds.entries()) {
+		database.db
+			.prepare(
+				"INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES (?, 'owner', 'domain-1', ?, 1)",
+			)
+			.run(mailboxId, mailboxId);
+		await settings.saveScreenerSettings(db, mailboxId, { enabled: true, mode: "inbox" }, "owner");
+		await settings.recordSenderDecision(db, {
+			mailboxId,
+			address: addresses[index % addresses.length],
+			decision: "approved",
+			source: "manual",
+			userId: "owner",
+		});
+	}
+	const prepare = database.prepare.bind(database);
+	database.prepare = (sql) => {
+		const statement = prepare(sql);
+		const bind = statement.bind.bind(statement);
+		statement.bind = (...values) => {
+			assert.ok(values.length <= 100, `D1 cannot bind ${values.length} parameters`);
+			return bind(...values);
+		};
+		return statement;
+	};
+	const decided = await settings.listDecidedAddresses(db, mailboxIds, addresses);
+	assert.equal(decided.size, mailboxIds.length);
+	const rows = Array.from({ length: 100 }, (_, index) => ({
+		id: `row-${index}`,
+		mailboxId: mailboxIds[index % mailboxIds.length],
+		fromAddr: addresses[index % addresses.length],
+		status: "received",
+		direction: "inbound",
+	}));
+	assert.deepEqual(await views.screenerPendingRows(db, rows), new Set(rows.slice(60).map((row) => row.id)));
+});
+
 test("before migration 0067 every read answers off and every write says the migration is missing", async (t) => {
 	const { db, env, addMessage, statusOf, access } = await setup(t, { migrated: false });
 	assert.equal(await settings.isScreenerAvailable(db), false);

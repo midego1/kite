@@ -2,7 +2,7 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { domains, mailboxAliases, mailboxes, messages } from "@/db/schema";
 import { screenerSenders, screenerSettings } from "@/db/schema/screener";
-import { queryInChunks } from "@/db/chunk-utils";
+import { inJsonArray, queryInChunks } from "@/db/chunk-utils";
 import { newId } from "@/lib/ids";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
 import type { MailboxDomainAddressInput } from "@/lib/mailboxes/domain-addresses-types";
@@ -151,7 +151,7 @@ export async function listDecidedAddresses(
 				db
 					.select({ mailboxId: screenerSenders.mailboxId, address: screenerSenders.address })
 					.from(screenerSenders)
-					.where(and(inArray(screenerSenders.mailboxId, [...mailboxIds]), inArray(screenerSenders.address, chunk))),
+					.where(and(inJsonArray(screenerSenders.mailboxId, [...mailboxIds]), inArray(screenerSenders.address, chunk))),
 			),
 		[],
 	);

@@ -8,6 +8,7 @@ import { authenticateAdminApiKey } from "@/lib/api/admin-auth";
 import { newId } from "@/lib/ids";
 import { mailboxSchema } from "@/lib/validators";
 import { ensureMailboxDomainRouting } from "@/lib/mailboxes/domain-addresses";
+import { enableScreenerForNewMailbox } from "@/lib/screener/settings";
 
 export async function GET(request: Request) {
 	const env = getEnv();
@@ -86,5 +87,6 @@ export async function POST(request: Request) {
 			{ status: 502 },
 		);
 	}
+	await enableScreenerForNewMailbox(db, id);
 	return NextResponse.json({ id, address: `${localPart}@${domain.hostname}`, type: mailboxType }, { status: 201 });
 }

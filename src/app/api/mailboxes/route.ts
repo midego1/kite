@@ -9,6 +9,7 @@ import { newId } from "@/lib/ids";
 import { tracksAccountIdentity } from "@/lib/profile/identity-utils";
 import { mailboxSchema } from "@/lib/validators";
 import { ensureMailboxDomainRouting, getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
+import { listScreenerSettings, enableScreenerForNewMailbox } from "@/lib/screener/settings";
 import { ensurePersonalMailbox } from "./utils";
 
 export async function GET(request: Request) {
@@ -17,6 +18,10 @@ export async function GET(request: Request) {
 	if (error) return error;
 	const db = getDb(env);
 	const rows = await ensurePersonalMailbox(env, db, user);
+	const screener = await listScreenerSettings(
+		db,
+		rows.map((mailbox) => mailbox.id),
+	);
 	return NextResponse.json({
 		mailboxes: await Promise.all(
 			rows.map(async (mailbox) => ({
@@ -25,6 +30,7 @@ export async function GET(request: Request) {
 					? { displayName: user.name, hasAvatar: !!user.avatarKey }
 					: {}),
 				senderAddresses: await getMailboxDomainAddresses(db, mailbox),
+				screener: screener.get(mailbox.id) ?? null,
 			})),
 		),
 		canCreateShared: user.role === "admin",
@@ -102,6 +108,7 @@ export async function POST(request: Request) {
 		const message = err instanceof Error ? err.message : "Failed to create Cloudflare routing rule";
 		return NextResponse.json({ error: message }, { status: 502 });
 	}
+	await enableScreenerForNewMailbox(db, id);
 
 	const address = `${localPart}@${domain.hostname}`;
 

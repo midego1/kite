@@ -28,6 +28,7 @@ import { useMessageListVisibility } from "@/components/messages/message-list-vis
 import { splitEmailAddressList } from "@/lib/email/address";
 import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
 import { OneTimeCodeChip } from "@/components/messages/one-time-code-chip";
+import { ScreenerBanner } from "@/components/screener/screener-banner";
 import { RecipientList } from "@/components/messages/recipient-list";
 import { useShowFullRecipientAddresses } from "@/components/messages/use-show-full-recipient-addresses";
 import type { MessageAttachment, MessageDetailResponse } from "./types";
@@ -197,6 +198,7 @@ export default function MessageDetailPage() {
 					{message.subject ?? "(no subject)"}
 				</h1>
 				<OneTimeCodeChip code={oneTimeCode} alignWide={!isAnyPanelVisible} />
+				<ScreenerBanner message={message} mailbox={messageMailbox} alignWide={!isAnyPanelVisible} />
 				{/* <div className="px-6">
         <div className="mx-auto w-full max-w-[640px]">
           <SpamScoreDetails

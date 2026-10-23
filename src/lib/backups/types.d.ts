@@ -40,6 +40,8 @@ export type DatabaseBackupTable =
 	| "spam_token_stats"
 	| "spam_reputation"
 	| "spam_feedback"
+	| "screener_settings"
+	| "screener_senders"
 	| "mailbox_aliases"
 	| "password_reset_tokens"
 	| "mfa_recovery_codes"

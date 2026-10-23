@@ -4,6 +4,8 @@ import { messages, users } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { buildSnippet, parseRawMime } from "@/lib/email/parse";
 import { resolveInboundAddress, resolveInboxRuleDestination } from "@/lib/email/routing";
+import type { ResolvedMailbox } from "@/lib/email/routing";
+import type { ParsedEmail } from "@/lib/email/parse";
 import { dispatchWebhooks } from "@/lib/email/webhooks";
 import { getMessageContactNames, upsertContactFromAddress } from "@/lib/contacts/service";
 import { getEmailAddress } from "@/lib/email/address";
@@ -25,6 +27,8 @@ import { recordReputationObservation } from "@/lib/spam/repository";
 import { getMailboxNotificationUserIds, notifyUsersOfNewMessage } from "@/lib/realtime/utils";
 import type { NewMessageNotification } from "@/lib/realtime/types";
 import { scheduleAgentWork } from "@/lib/agent/auto-read/schedule";
+import { applyScreener } from "@/lib/screener/inbound";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 
 export type InboundQueueMessage = {
 	from: string;
@@ -69,6 +73,79 @@ function buildInboundNewMessageNotification(input: InboundNotificationInput): Ne
 	};
 }
 
+/** A queue retry of a message that is already stored only needs its agent work scheduled again. */
+async function recoverAgentWork(
+	env: CloudflareEnv,
+	mailbox: ResolvedMailbox,
+	messageId: string,
+	headers: Record<string, string> | undefined,
+): Promise<void> {
+	try {
+		const [existing] = await getDb(env).select().from(messages).where(eq(messages.id, messageId)).limit(1);
+		if (!existing || existing.status === SCREENING_STATUS) return;
+		await scheduleAgentWork(env, {
+			mailboxId: mailbox.mailboxId,
+			sourceMessageId: existing.id,
+			ownerUserId: mailbox.userId,
+			sender: existing.fromAddr,
+			headers,
+			status: existing.status,
+			folderId: existing.folderId,
+			spamVerdict: existing.spamVerdict,
+			spamAnalysisError: existing.spamAnalysisError,
+			recoveryReceivedAt: existing.createdAt,
+		});
+	} catch (error) {
+		console.error("Agent work recovery failed", error);
+	}
+}
+
+/** The auto-reply and the realtime notification for a freshly stored message. */
+async function announceDelivery(
+	env: CloudflareEnv,
+	input: {
+		mailbox: ResolvedMailbox;
+		messageId: string;
+		status: string;
+		deliveredAddress: string;
+		fromAddr: string;
+		fromName: string | null;
+		parsed: ParsedEmail;
+		headers: Record<string, string> | undefined;
+	},
+): Promise<void> {
+	const { mailbox, parsed } = input;
+	if (input.status === "received") {
+		try {
+			await sendMailboxAutoReply(env, {
+				mailboxId: mailbox.mailboxId,
+				userId: mailbox.userId,
+				deliveredAddress: input.deliveredAddress,
+				fromAddress: input.fromAddr,
+				incomingMessageId: parsed.messageId,
+				headers: input.headers,
+			});
+		} catch (error) {
+			console.error(`Auto-reply failed for mailbox ${mailbox.mailboxId}`, error);
+		}
+	}
+	if (input.status === "spam") return;
+	const notificationUserIds = await getMailboxNotificationUserIds(env, mailbox.mailboxId, mailbox.userId);
+	await notifyUsersOfNewMessage(
+		env,
+		notificationUserIds,
+		buildInboundNewMessageNotification({
+			messageId: input.messageId,
+			mailboxId: mailbox.mailboxId,
+			from: input.fromAddr,
+			fromName: input.fromName,
+			subject: parsed.subject,
+			text: parsed.text,
+			html: parsed.html,
+		}),
+	);
+}
+
 export async function processInboundMessage(env: CloudflareEnv, payload: InboundQueueMessage): Promise<void> {
 	const db = getDb(env);
 	// The sender is passed so that sender-based block rules resolve the same way here as they
@@ -99,24 +176,7 @@ export async function processInboundMessage(env: CloudflareEnv, payload: Inbound
 		.where(and(eq(messages.mailboxId, decision.mailbox.mailboxId), eq(messages.rawR2Key, payload.rawR2Key)))
 		.limit(1);
 	if (stored) {
-		try {
-			const [existing] = await db.select().from(messages).where(eq(messages.id, stored.id)).limit(1);
-			if (existing)
-				await scheduleAgentWork(env, {
-					mailboxId: decision.mailbox.mailboxId,
-					sourceMessageId: existing.id,
-					ownerUserId: decision.mailbox.userId,
-					sender: existing.fromAddr,
-					headers: payload.headers,
-					status: existing.status,
-					folderId: existing.folderId,
-					spamVerdict: existing.spamVerdict,
-					spamAnalysisError: existing.spamAnalysisError,
-					recoveryReceivedAt: existing.createdAt,
-				});
-		} catch (error) {
-			console.error("Agent work recovery failed", error);
-		}
+		await recoverAgentWork(env, decision.mailbox, stored.id, payload.headers);
 		return;
 	}
 
@@ -178,7 +238,13 @@ export async function processInboundMessage(env: CloudflareEnv, payload: Inbound
 			fingerprint: spamAnalysis?.fingerprint ?? "",
 		};
 	}
-	const status = destination.status === "received" && spamAnalysis?.verdict === "spam" ? "spam" : destination.status;
+	// The Screener sees only what the spam filter and mailbox rules would still deliver to the Inbox or a folder.
+	const screened = await applyScreener(db, {
+		mailboxId: decision.mailbox.mailboxId,
+		sender: fromAddr,
+		status: destination.status === "received" && spamAnalysis?.verdict === "spam" ? "spam" : destination.status,
+	});
+	const status = screened.status;
 	const folderId = status === "spam" ? null : destination.folderId;
 	const contact = await upsertContactFromAddress(env, {
 		userId: decision.mailbox.userId,
@@ -260,41 +326,18 @@ export async function processInboundMessage(env: CloudflareEnv, payload: Inbound
 		throw error;
 	}
 
-	if (status === "received") {
-		try {
-			await sendMailboxAutoReply(env, {
-				mailboxId: decision.mailbox.mailboxId,
-				userId: decision.mailbox.userId,
-				deliveredAddress,
-				fromAddress: fromAddr,
-				incomingMessageId: parsed.messageId,
-				headers: payload.headers,
-			});
-		} catch (error) {
-			console.error(`Auto-reply failed for mailbox ${decision.mailbox.mailboxId}`, error);
-		}
-	}
-
-	if (status !== "spam") {
-		const notificationUserIds = await getMailboxNotificationUserIds(
-			env,
-			decision.mailbox.mailboxId,
-			decision.mailbox.userId,
-		);
-		await notifyUsersOfNewMessage(
-			env,
-			notificationUserIds,
-			buildInboundNewMessageNotification({
-				messageId,
-				mailboxId: decision.mailbox.mailboxId,
-				from: fromAddr,
-				fromName: contact?.displayName ?? null,
-				subject: parsed.subject,
-				text: parsed.text,
-				html: parsed.html,
-			}),
-		);
-	}
+	// Mail from a sender waiting in the Screener gets no auto-reply and no notification.
+	if (!screened.awaiting)
+		await announceDelivery(env, {
+			mailbox: decision.mailbox,
+			messageId,
+			status,
+			deliveredAddress,
+			fromAddr,
+			fromName: contact?.displayName ?? null,
+			parsed,
+			headers: payload.headers,
+		});
 	await dispatchWebhooks(env, decision.mailbox.userId, "message.inbound", {
 		messageId,
 		from: fromAddr,
@@ -305,6 +348,8 @@ export async function processInboundMessage(env: CloudflareEnv, payload: Inbound
 		spamScore: spamAnalysis?.score,
 		spamVerdict: spamAnalysis?.verdict,
 	});
+	// Approving the sender schedules this message later (src/lib/screener/service.ts).
+	if (screened.awaiting) return;
 	try {
 		await scheduleAgentWork(env, {
 			mailboxId: decision.mailbox.mailboxId,

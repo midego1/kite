@@ -28,6 +28,8 @@ export type MailboxOption = {
 	permission?: "read_only" | "send_as" | "send_on_behalf" | "full_access";
 	isPrimary?: boolean;
 	senderAddresses?: string[];
+	/** Null when the mailbox has no Screener settings (off). */
+	screener?: { enabled: boolean; mode: "screener" | "inbox" } | null;
 };
 
 type MailboxContextValue = {

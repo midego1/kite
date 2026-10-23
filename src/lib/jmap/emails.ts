@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { inJsonArray, queryInChunks } from "@/db/chunk-utils";
 import { messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
@@ -8,6 +8,7 @@ import { joinEmailAddressList } from "@/lib/email/address";
 import { resolveThreadId } from "@/lib/email/threading";
 import { storeMessageAttachments } from "@/lib/email/attachments";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { LIMITS, KEYWORD_FLAGGED, KEYWORD_SEEN } from "./constants";
 import { JmapError, invalidArguments } from "./errors";
 import { decodeBlobId, decodeMailboxRef, roleToStatus } from "./ids";
@@ -67,11 +68,15 @@ async function scope(ctx: JmapContext) {
 	return {
 		ids,
 		// One JSON parameter however many mailboxes the user reads, so the id batches keep the rest of D1's cap.
-		condition: ids.length
-			? inJsonArray(messages.mailboxId, ids)
-			: ctx.auth.mailboxIds
-				? sql`1 = 0`
-				: eq(messages.userId, ctx.auth.userId),
+		// Mail held in the Screener is invisible to JMAP until its sender is approved.
+		condition: and(
+			ne(messages.status, SCREENING_STATUS),
+			ids.length
+				? inJsonArray(messages.mailboxId, ids)
+				: ctx.auth.mailboxIds
+					? sql`1 = 0`
+					: eq(messages.userId, ctx.auth.userId),
+		)!,
 	};
 }
 

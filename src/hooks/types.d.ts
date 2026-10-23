@@ -2,7 +2,8 @@ import type { SuggestionCount } from "@/lib/agent/auto-read/suggestion-types";
 
 export type MessageStatus = "received" | "sent" | "draft" | "queued" | "failed" | "archived" | "trash" | "spam";
 
-export type MessageFolder = "inbox" | "starred" | "snoozed" | "sent" | "drafts" | "archived" | "trash" | "spam";
+export type MessageFolder =
+	"inbox" | "starred" | "snoozed" | "sent" | "drafts" | "archived" | "trash" | "spam" | "screener";
 
 export type MessageDirection = "inbound" | "outbound";
 
@@ -47,6 +48,8 @@ export type Message = {
 	threadMessageIds?: string[];
 	/** Open Kite suggestions per kind over the row's messages; only sent to users with full access. */
 	agentSuggestions?: SuggestionCount[];
+	/** The sender waits for a Screener decision: held mail, or a new sender in an Inbox-mode mailbox. */
+	screenerPending?: boolean;
 	createdAt: string;
 };
 

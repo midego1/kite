@@ -491,6 +491,13 @@
       "when": 1788851460028,
       "tag": "0066_add_domain_dns_skipped",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "6",
+      "when": 1788851520028,
+      "tag": "0067_add_screener",
+      "breakpoints": true
     }
   ]
 }

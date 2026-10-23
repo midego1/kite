@@ -58,6 +58,7 @@ import { confirmReportPhishing } from "./phishing-report";
 import { reportListActionError } from "./list-action-toast";
 import { useEmailPageTitle } from "./use-email-page-title";
 import { FolderHeading } from "./folder-heading";
+import { ScreenerRowControls } from "@/components/screener/screener-row-controls";
 
 const pageSize = 25;
 
@@ -211,6 +212,7 @@ function MessageListRow({
 							<span className="mt-0.5 block truncate text-xs leading-5 text-neutral-500">{preview}</span>
 						)}
 					</Link>
+					<ScreenerRowControls message={rowMessage} compact />
 					{showHoverActions && <MessageListRowActions message={rowMessage} onAction={runRowAction} compact />}
 				</div>
 			</div>
@@ -258,6 +260,7 @@ function MessageListRow({
 			<span className="truncate text-neutral-700">
 				{/* The overlay stretches the link over the whole row, so a click anywhere opens the message
 				while the row has one keyboard stop; the checkbox, star and hover actions sit above it. */}
+				<ScreenerRowControls message={rowMessage} />
 				<Link
 					href={href}
 					onClick={config.folder === "drafts" ? undefined : onMessageNavigate}

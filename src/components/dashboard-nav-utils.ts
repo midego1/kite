@@ -4,7 +4,8 @@ import type { MessageCounts, MessageFolder } from "@/hooks/types";
 import { authFetch } from "@/lib/auth/client";
 
 export function getFolderNavCount(folder: MessageFolder, counts: MessageCounts["folders"]): number | undefined {
-	return counts[folder].unread;
+	// Counts cached from before the Screener existed have no entry for it.
+	return counts[folder]?.unread;
 }
 
 async function moveMessages(payload: { messageIds: string[]; action: BulkMessageAction; folderId?: string }) {

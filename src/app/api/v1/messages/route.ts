@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, inArray, ne } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
 import { authenticateApiKey, requireScope } from "@/lib/api/auth";
@@ -10,6 +10,7 @@ import { buildSearchConditions } from "@/lib/search/conditions";
 import { getRequestTimeZone } from "@/lib/time/utils";
 import { decodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor-utils";
 import { afterCursor } from "@/app/api/messages/utils";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 
 export async function GET(request: Request) {
 	const env = getEnv();
@@ -34,7 +35,8 @@ export async function GET(request: Request) {
 	if (!user || user.disabled) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
-	const conditions: SQL[] = [];
+	// Mail held in the Screener stays out of the API until its sender is approved.
+	const conditions: SQL[] = [ne(messages.status, SCREENING_STATUS)];
 	if (mailboxId) {
 		if (auth.mailboxIds && !auth.mailboxIds.includes(mailboxId)) {
 			return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });

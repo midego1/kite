@@ -14,6 +14,7 @@ import { rollbackDomainProvisioning } from "@/lib/domains/rollback";
 import type { DomainProvisioningChanges } from "@/lib/domains/types";
 import { ensureEmailRoutingRuleToWorker } from "@/lib/cloudflare-api";
 import { ensureMailboxDomainRouting } from "@/lib/mailboxes/domain-addresses";
+import { enableScreenerForNewMailbox } from "@/lib/screener/settings";
 import { readJsonBody } from "@/lib/http/request";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { verifyTurnstileToken } from "@/lib/auth/turnstile";
@@ -92,6 +93,7 @@ export async function POST(request: Request) {
 			localPart: username,
 			displayName: username,
 		});
+		await enableScreenerForNewMailbox(db, mailboxId);
 		await ensureMailboxDomainRouting(env, db, {
 			id: mailboxId,
 			domainId: domain.id,

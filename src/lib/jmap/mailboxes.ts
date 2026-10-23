@@ -2,6 +2,7 @@ import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { queryInChunks } from "@/db/chunk-utils";
 import { folders, messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { JmapError } from "./errors";
 import { decodeMailboxRef, encodeMailboxRef, roleToStatus, SYSTEM_ROLES } from "./ids";
 import { getMailboxState } from "./state";
@@ -47,7 +48,7 @@ async function loadCounts(ctx: JmapContext, mailboxIds: string[]): Promise<Map<s
 		result.set(key, { total: current.total + row.total, unread: current.unread + Number(row.unread ?? 0) });
 	};
 	for (const row of rows) {
-		if (!row.mailboxId) continue;
+		if (!row.mailboxId || row.status === SCREENING_STATUS) continue;
 		add(encodeMailboxRef({ kind: "account", mailboxId: row.mailboxId }), row);
 		if (row.folderId) {
 			add(encodeMailboxRef({ kind: "folder", mailboxId: row.mailboxId, folderId: row.folderId }), row);

@@ -5,6 +5,7 @@ import { SendingSettings } from "@/components/settings/sending-settings";
 import { InboxShortcutsSettings } from "@/components/settings/inbox-shortcuts-settings";
 import { MailboxAutoReplyForm } from "@/components/settings/mailbox-auto-reply-form";
 import { SpamFilterSettings } from "@/components/settings/spam-filter-settings";
+import { ScreenerSettings } from "@/components/settings/screener-settings";
 import { TrashRetentionSettings } from "@/components/settings/trash-retention-settings";
 import { BrowserNotificationSettings } from "@/components/settings/browser-notification-settings";
 
@@ -67,9 +68,20 @@ export default function SettingsInboxPage() {
 			<section className="space-y-4">
 				<div>
 					<h2 className="text-xl font-semibold text-neutral-900">Message handling</h2>
-					<p className="mt-1 text-sm text-neutral-500">Manage spam protection, clean-up and automatic replies.</p>
+					<p className="mt-1 text-sm text-neutral-500">
+						Manage the Screener, spam protection, clean-up and automatic replies.
+					</p>
 				</div>
 				<div className="divide-y divide-neutral-100 rounded-3xl bg-white p-6">
+					<div className="py-6 first:pt-0 last:pb-0">
+						<div className="mb-4">
+							<h3 className="text-base font-semibold text-neutral-900">Screener</h3>
+							<p className="mt-1 text-sm text-neutral-500">
+								Decide who can reach the inbox selected above the first time they write.
+							</p>
+						</div>
+						<ScreenerSettings />
+					</div>
 					<div className="py-6 first:pt-0 last:pb-0">
 						<div className="mb-4">
 							<h3 className="text-base font-semibold text-neutral-900">Spam protection</h3>

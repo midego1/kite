@@ -39,6 +39,8 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 			"spam_token_stats",
 			"spam_reputation",
 			"spam_feedback",
+			"screener_settings",
+			"screener_senders",
 		],
 	},
 	{

@@ -305,6 +305,29 @@ test("turning the Screener on offers to approve everyone the mailbox has written
 	}
 });
 
+test("Screener settings update the sidebar immediately without reloading", async ({ browser }) => {
+	const account = await screenedAccount("scrnav");
+	const { context, page } = await openAs(browser, account, account.mailboxId);
+	try {
+		await page.goto("/settings/inbox");
+		const toggle = page.getByRole("switch", { name: "Screen new senders" });
+		await expect(screenerLink(page)).toBeVisible();
+		await toggle.click();
+		await expect(toggle).toHaveAttribute("aria-checked", "false");
+		await expect(screenerLink(page)).toHaveCount(0);
+		await toggle.click();
+		await expect(toggle).toHaveAttribute("aria-checked", "true");
+		await expect(screenerLink(page)).toBeVisible();
+		await page.getByRole("radio", { name: /Deliver to the Inbox/ }).click();
+		await expect(screenerLink(page)).toHaveCount(0);
+		await page.getByRole("radio", { name: /Hold in the Screener/ }).click();
+		await expect(screenerLink(page)).toBeVisible();
+	} finally {
+		await context.close();
+		await account.api.dispose();
+	}
+});
+
 test("the seeded mailbox keeps the Screener off and shows no Screener link", async ({ page }) => {
 	const { mailboxes } = await okJson<{ mailboxes: { localPart: string; hostname: string; screener: unknown }[] }>(
 		await admin.get("/api/mailboxes"),

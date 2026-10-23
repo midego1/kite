@@ -130,7 +130,7 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 	}, []);
 
 	const setSelectedMailbox = useCallback((mb: MailboxOption | null) => {
-		setSelectedMailboxState((current) => (current?.id === mb?.id ? current : mb));
+		setSelectedMailboxState(mb);
 		if (mb) {
 			setMailboxes((items) => items.map((item) => (item.id === mb.id && item !== mb ? mb : item)));
 			localStorage.setItem(SELECTED_MAILBOX_STORAGE_KEY, mb.id);

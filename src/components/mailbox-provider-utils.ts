@@ -56,6 +56,7 @@ export async function fetchMailboxOptions(force = false): Promise<MailboxOption[
 				permission: m.permission,
 				isPrimary: m.isPrimary,
 				senderAddresses: m.senderAddresses,
+				screener: m.screener,
 			}));
 			if (requestGeneration === cacheGeneration) {
 				mailboxesCache = items;

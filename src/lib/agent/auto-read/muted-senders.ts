@@ -5,7 +5,8 @@ import { applyMutedSenderChange, type SenderList } from "./muted-senders-utils";
 
 const MAX_ATTEMPTS = 3;
 
-async function updateSenderList(
+/** Adds or removes one address on a sender list; true only when the stored list changed. */
+export async function updateSenderList(
 	env: CloudflareEnv,
 	mailboxId: string,
 	sender: string,

@@ -7,7 +7,6 @@ import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { getAgentProviderPublicConfig } from "@/lib/agent/provider";
 import { isPrimaryAdmin } from "@/lib/auth/admin";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
-import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import type { AppDatabase } from "@/db";
 import { getAutoReadInstallSettings, skipPendingMailboxJobs } from "@/lib/agent/auto-read/install-settings";
 import {
@@ -19,22 +18,9 @@ import {
 	mailboxAgentSettingsUpdateSchema,
 	mutedSendersError,
 	requiredReviewerAccess,
-	resolveMailboxAgentSettings,
 	unknownModelError,
 } from "@/lib/agent/auto-read/settings-utils";
-
-async function currentSettings(db: AppDatabase, access: MailboxAccessLevel) {
-	const [row] = await db
-		.select()
-		.from(mailboxAgentSettings)
-		.where(eq(mailboxAgentSettings.mailboxId, access.mailbox.id))
-		.limit(1);
-	return resolveMailboxAgentSettings(row, {
-		mailboxId: access.mailbox.id,
-		ownerUserId: access.mailbox.userId,
-		mailboxType: access.mailbox.type,
-	});
-}
+import { readMailboxAgentSettings } from "@/lib/agent/auto-read/mailbox-settings";
 
 async function listReviewers(db: AppDatabase, mailboxId: string) {
 	const reviewers: { id: string; name: string; email: string }[] = [];
@@ -68,7 +54,7 @@ export async function GET(request: Request) {
 	const db = getDb(env);
 	const access = await getMailboxAccessLevel(db, user, mailboxId);
 	if (!access?.canRead) return Response.json({ error: "Mailbox not found" }, { status: 404 });
-	const settings = await currentSettings(db, access);
+	const settings = await readMailboxAgentSettings(db, access);
 	const reviewers = access.canManage ? await listReviewers(db, mailboxId) : [];
 	const agentProvider = await getAgentProviderPublicConfig(env);
 	const provider = agentProvider.configured
@@ -113,7 +99,7 @@ export async function PUT(request: Request) {
 	const db = getDb(env);
 	const access = await getMailboxAccessLevel(db, user, parsed.data.mailboxId);
 	if (!access?.canManage) return Response.json({ error: "Mailbox not found or permission denied" }, { status: 403 });
-	const current = await currentSettings(db, access);
+	const current = await readMailboxAgentSettings(db, access);
 	const mutedError = mutedSendersError(current, parsed.data);
 	if (mutedError) return Response.json({ error: mutedError }, { status: 400 });
 	const next = applyMailboxAgentSettingsUpdate(current, parsed.data);

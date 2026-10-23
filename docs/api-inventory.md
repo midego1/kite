@@ -41,6 +41,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/storage/stores/[id]`                       | DELETE, PATCH          | [source](../src/app/api/admin/storage/stores/[id]/route.ts)                       |
 | `/api/admin/storage/stores/[id]/test`                  | POST                   | [source](../src/app/api/admin/storage/stores/[id]/test/route.ts)                  |
 | `/api/admin/storage/stores`                            | POST                   | [source](../src/app/api/admin/storage/stores/route.ts)                            |
+| `/api/admin/threat-lookups/test`                       | POST                   | [source](../src/app/api/admin/threat-lookups/test/route.ts)                       |
 | `/api/agent/actions/[id]/undo`                         | POST                   | [source](../src/app/api/agent/actions/[id]/undo/route.ts)                         |
 | `/api/agent/actions/confirm`                           | POST                   | [source](../src/app/api/agent/actions/confirm/route.ts)                           |
 | `/api/agent/actions`                                   | GET                    | [source](../src/app/api/agent/actions/route.ts)                                   |
@@ -55,6 +56,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/agent/jobs`                                      | GET                    | [source](../src/app/api/agent/jobs/route.ts)                                      |
 | `/api/agent/mcp-keys`                                  | DELETE, GET, POST      | [source](../src/app/api/agent/mcp-keys/route.ts)                                  |
 | `/api/agent/settings`                                  | GET, PUT               | [source](../src/app/api/agent/settings/route.ts)                                  |
+| `/api/agent/settings/senders`                          | POST                   | [source](../src/app/api/agent/settings/senders/route.ts)                          |
 | `/api/agent/suggestions/[id]/accept`                   | POST                   | [source](../src/app/api/agent/suggestions/[id]/accept/route.ts)                   |
 | `/api/agent/suggestions/[id]/dismiss`                  | POST                   | [source](../src/app/api/agent/suggestions/[id]/dismiss/route.ts)                  |
 | `/api/agent/suggestions`                               | GET                    | [source](../src/app/api/agent/suggestions/route.ts)                               |

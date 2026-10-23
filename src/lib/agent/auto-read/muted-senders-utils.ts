@@ -1,7 +1,5 @@
 import { parseActionState } from "./actions-utils";
-
-/** Mirrors the settings schema limit; listed senders are never evicted, so a full list stops growing. */
-const MAX_LISTED_SENDERS = 500;
+import { MAX_LISTED_SENDERS } from "./sender-lists-utils";
 
 export type SenderList = "mutedSenders" | "trustedSenders";
 

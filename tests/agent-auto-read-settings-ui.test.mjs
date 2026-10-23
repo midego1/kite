@@ -29,6 +29,7 @@ async function bundle(entry, outfile) {
 const ui = await bundle("src/components/agent/auto-read-settings-utils.ts", "auto-read-ui.mjs");
 const clientData = await bundle("src/lib/modules/client-data/index.ts", "client-data.mjs");
 const rates = await bundle("src/lib/agent/model-rates-utils.ts", "model-rates.mjs");
+const senderLists = await bundle("src/lib/agent/auto-read/sender-lists-utils.ts", "sender-lists.mjs");
 
 const NOW = Date.UTC(2026, 9, 10, 12, 0, 0);
 
@@ -134,6 +135,7 @@ test("the settings response becomes form state, and a response without auto-read
 			form: undefined,
 			savedAutonomy: "suggest",
 			pausedUntil: null,
+			senders: { trusted: [], muted: ["x@y.test"] },
 			models: [],
 			canManage: false,
 			autoReadAvailable: true,
@@ -234,4 +236,59 @@ test("published catalog rates merge per model and keep a saved reasoning effort"
 	});
 	assert.deepEqual(current["fake-triage"], { input: 1, output: 2, reasoningEffort: "minimal" });
 	assert.deepEqual(rates.mergePublishedAgentRates(current, {}), current);
+});
+
+test("the sender lists load beside the form, never inside it", () => {
+	const state = ui.toAutoReadState(
+		{
+			...response,
+			settings: {
+				...response.settings,
+				capabilities: { ...response.settings.capabilities, trustedSenders: ["bank@y.test"] },
+			},
+		},
+		NOW,
+	);
+	assert.deepEqual(state.senders, { trusted: ["bank@y.test"], muted: ["x@y.test"] });
+	assert.equal("trustedSenders" in state.form.capabilities, false);
+	assert.deepEqual(ui.toAutoReadState(response, NOW).senders.trusted, []);
+	assert.deepEqual(Object.keys(ui.SENDER_LIST_TEXT).sort(), ["muted", "trusted"]);
+	assert.equal(
+		ui.SENDER_LIST_TEXT.trusted.description,
+		"Kite won't warn about a trusted sender because of the AI model alone, as long as their mail passes sender checks. Signs Kite finds itself still warn.",
+	);
+});
+
+test("a sender list edit is checked and lowercased, and only an added address must look like one", () => {
+	const { parseSenderListEdit, senderAddressError } = senderLists;
+	assert.deepEqual(parseSenderListEdit({ mailboxId: "mb1", list: "trusted", add: "  Bank@Y.test " }), {
+		mailboxId: "mb1",
+		list: "trusted",
+		change: "add",
+		sender: "bank@y.test",
+	});
+	assert.deepEqual(parseSenderListEdit({ mailboxId: "mb1", list: "muted", remove: "Odd Entry" }), {
+		mailboxId: "mb1",
+		list: "muted",
+		change: "remove",
+		sender: "odd entry",
+	});
+	for (const [body, message] of [
+		[null, /Invalid request/],
+		[[], /Invalid request/],
+		[{ list: "trusted", add: "a@b.test" }, /Mailbox required/],
+		[{ mailboxId: "mb1", list: "blocked", add: "a@b.test" }, /trusted or the muted/],
+		[{ mailboxId: "mb1", list: "trusted" }, /either add or remove/],
+		[{ mailboxId: "mb1", list: "trusted", add: "a@b.test", remove: "c@d.test" }, /either add or remove/],
+		[{ mailboxId: "mb1", list: "trusted", add: 3 }, /Enter an email address/],
+		[{ mailboxId: "mb1", list: "trusted", remove: "  " }, /Enter an email address/],
+		[{ mailboxId: "mb1", list: "trusted", add: "not an address" }, /like name@example\.com/],
+		[{ mailboxId: "mb1", list: "trusted", add: "Name <a@b.test>" }, /like name@example\.com/],
+		[{ mailboxId: "mb1", list: "trusted", add: `${"a".repeat(320)}@b.test` }, /Enter an email address/],
+	])
+		assert.match(parseSenderListEdit(body), message, JSON.stringify(body));
+	assert.equal(senderAddressError("a@b.test"), null);
+	assert.match(senderAddressError(""), /Enter an email address/);
+	assert.match(senderAddressError("a@b"), /like name@example\.com/);
+	assert.match(senderAddressError("a@b.test, c@d.test"), /like name@example\.com/);
 });

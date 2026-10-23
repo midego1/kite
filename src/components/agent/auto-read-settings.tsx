@@ -21,6 +21,7 @@ import {
 	saveAutoReadSettings,
 	toAutoReadState,
 } from "./auto-read-settings-utils";
+import { SenderLists } from "./sender-lists";
 
 const fieldClass =
 	"mt-2 w-full rounded-xl border border-neutral-200 bg-white p-2 outline-none focus:border-blue-400 disabled:cursor-not-allowed disabled:opacity-60";
@@ -244,7 +245,10 @@ function usePauseChangedElsewhere(mailboxId: string, setState: Dispatch<SetState
 			loadAutoReadSettings(mailboxId)
 				.then((data) => {
 					const next = toAutoReadState(data, Date.now());
-					if (active) setState((current) => (current && next ? { ...current, pausedUntil: next.pausedUntil } : next));
+					if (active)
+						setState((current) =>
+							current && next ? { ...current, pausedUntil: next.pausedUntil, senders: next.senders } : next,
+						);
 				})
 				.catch(() => undefined);
 		}
@@ -334,6 +338,14 @@ export function AutoReadSettings({ mailboxId }: AutoReadSettingsProps) {
 			</p>
 			<AutoReadNotices state={state} />
 			<AutoReadFields mailboxId={mailboxId} state={state} busy={busy} setForm={setForm} />
+			{state.canManage && (
+				<SenderLists
+					mailboxId={mailboxId}
+					senders={state.senders}
+					disabled={busy}
+					onChange={(senders) => setState((current) => (current ? { ...current, senders } : current))}
+				/>
+			)}
 			<p className="text-xs text-neutral-500">Message content is sent to {state.providerLabel}.</p>
 			{state.canManage && (
 				<div className="flex flex-wrap items-center gap-3">

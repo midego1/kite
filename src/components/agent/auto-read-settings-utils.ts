@@ -1,5 +1,6 @@
 import { authFetch } from "@/lib/auth/client";
 import type { AutonomyLevel } from "@/lib/agent/auto-read/settings-types";
+import type { SenderListName } from "@/lib/agent/auto-read/sender-lists-utils";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import type { ModuleId } from "@/lib/modules/module-types";
 import type { AgentSettings } from "./types";
@@ -28,6 +29,26 @@ export const CAPABILITY_OPTIONS: { key: AutoReadCapabilityKey; label: string }[]
 	{ key: "calendar", label: "Calendar invites" },
 	{ key: "phishing", label: "Phishing warnings" },
 ];
+
+export const SENDER_LIST_TEXT: Record<
+	SenderListName,
+	{ title: string; description: string; empty: string; inputLabel: string }
+> = {
+	trusted: {
+		title: "Trusted senders",
+		description:
+			"Kite won't warn about a trusted sender because of the AI model alone, as long as their mail passes sender checks. Signs Kite finds itself still warn.",
+		empty: 'No trusted senders yet. "Not phishing" on a phishing warning adds one.',
+		inputLabel: "Add a trusted sender",
+	},
+	muted: {
+		title: "Muted senders",
+		description:
+			"Kite doesn't send mail from a muted sender to the AI model and suggests nothing for it, except phishing warnings.",
+		empty: 'No muted senders yet. "Don\'t suggest this for this sender" on a suggestion adds one.',
+		inputLabel: "Add a muted sender",
+	},
+};
 
 /** One switch per triage step of each module that is on, in registry order, from the modules' client data. */
 export function moduleStepSwitches(enabled: readonly ModuleId[]): { key: string; label: string }[] {
@@ -66,6 +87,10 @@ export function toAutoReadState(data: AutoReadSettingsResponse, now: number): Au
 		},
 		savedAutonomy: settings.autonomy,
 		pausedUntil: activePauseEnd(settings.pausedUntil ?? null, now)?.toISOString() ?? null,
+		senders: {
+			trusted: settings.capabilities.trustedSenders ?? [],
+			muted: settings.capabilities.mutedSenders ?? [],
+		},
 		models: data.models ?? [],
 		canManage: data.canManage === true,
 		autoReadAvailable: data.autoReadAvailable !== false,
@@ -132,6 +157,21 @@ export async function saveAutoReadSettings(body: Partial<AutoReadUpdateBody> & {
 		body: JSON.stringify(body),
 	});
 	await readJson<{ error?: string }>(response, "Could not save automatic reading settings");
+}
+
+/** Adds or removes one sender on its own, and returns the list as the server stored it. */
+export async function saveSenderListEdit(
+	mailboxId: string,
+	list: SenderListName,
+	change: "add" | "remove",
+	sender: string,
+): Promise<{ senders: string[]; changed: boolean }> {
+	const response = await authFetch("/api/agent/settings/senders", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ mailboxId, list, [change]: sender }),
+	});
+	return readJson<{ senders: string[]; changed: boolean; error?: string }>(response, "Could not change the list");
 }
 
 export async function loadAutoReadAdmin(): Promise<AutoReadAdminValues> {

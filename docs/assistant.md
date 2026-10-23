@@ -85,7 +85,13 @@ Actions can be undone from Activity or from the toast for 7 days. Undo needs the
 
 ## Phishing warnings
 
-A message with phishing signs gets a red warning in the reader that lists them in plain words: a link that opens a different address than it shows, failed sender checks, an attached web page that asks for a password, an attached program, a request to whitelist the sender, a match on URLhaus when the operator turned [URLhaus lookups](spam-protection.md#urlhaus-lookups-optional) on, and what the model found. The model can add reasons but never removes one Kite found itself. The warning offers **Mark as spam**, which moves the message to Spam and can be undone, and **Report phishing**, which also blocks the sender and trains the spam filter harder (see [Report phishing](spam-protection.md#report-phishing)). Reporting a message from its **More actions** menu closes its warning too.
+A message with phishing signs gets a red warning in the reader that lists them in plain words: a link that opens a different address than it shows, failed sender checks, an attached web page that asks for a password, an attached program, a request to whitelist the sender, a match on URLhaus when the operator turned [URLhaus lookups](spam-protection.md#urlhaus-lookups-optional) on, and what the model found. The model can add reasons but never removes one Kite found itself. The warning offers **Mark as spam**, which moves the message to Spam and can be undone, **Report phishing**, which also blocks the sender and trains the spam filter harder (see [Report phishing](spam-protection.md#report-phishing)), and **Not phishing**. Reporting a message from its **More actions** menu closes its warning too.
+
+The model's suspicion alone does not show a warning. It needs a sign in the message itself: one of the signs above, or a weaker one such as a link through a URL shortener. The model is told the authentication results, whether the sender is on one of your domains and where the links go, so an authenticated password reset or sign-in code from a service you use is normal mail to it. When the model is suspicious and the message shows no sign, Kite still writes no reply draft for it and Activity records `model_flag_unconfirmed`.
+
+Kite also trusts some senders more. For a known contact, a sender you marked **Not phishing**, or mail from one of the install's own domains that passed DMARC without copying a contact's name, the model's suspicion is not enough even with a weak sign (Activity records `model_flag_trusted_sender`). Signs Kite found itself, such as a misleading link or a failed check, always warn, whoever the sender is.
+
+**Not phishing** closes the warning and adds the sender to the mailbox's trusted senders. The toast offers Undo, which opens the warning again and removes the sender. There is no list of trusted senders in the settings yet.
 
 ## Calendar invites
 

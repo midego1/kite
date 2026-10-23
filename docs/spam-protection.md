@@ -12,11 +12,15 @@ Kite accepts mail before this analysis. Forward-only routing occurs before store
 
 ## Phishing signs
 
-Besides links that show one address and open another, bare IP addresses and look-alike characters in links, and failed SPF, DKIM or DMARC checks, the filter looks for these signs. With automatic reading on, they also become the reasons on the red phishing warning in the reader.
+Besides links that show one address and open another, bare IP addresses (IPv4 and IPv6) and look-alike characters in links, and failed SPF, DKIM or DMARC checks, the filter looks for these signs. With automatic reading on, they also become the reasons on the red phishing warning in the reader.
 
 - **Attached web pages.** An HTML or SVG attachment opens in a browser and can show a fake login page. It counts more when the message or the file name presents it as an invoice, statement, scan or other document (`invoice.pdf.html`). Inline images are not counted.
 - **Inside those pages.** Kite reads the text of up to five attached pages: a password field or a form that sends to a website, and hidden code or an automatic redirect, each add to the score. Links inside the pages get the same link checks as links in the message.
 - **Programs and disk images.** Attachments such as `.exe`, `.js`, `.scr`, `.iso` or `.lnk` files.
+- **Look-alike link hosts.** A link host written in punycode (`xn--`) counts more when it decodes to letters that imitate Latin ones, such as Cyrillic or Greek letters mixed with Latin, than when it is an ordinary international domain name.
+- **URL shorteners.** A link through a shortener such as bit.ly hides where it goes. This adds a little to the score and, on its own, is not a reason for a phishing warning; it only lets the model's suspicion count.
+
+A link is misleading only when it opens a different domain than the one it shows. One that shows `example.com` and opens `mail.example.com`, or a newsletter service's tracking redirect whose target is the address it shows, is not.
 - **Requests to get past the filter.** Text that asks you to whitelist the sender, never block it or mark the message as safe or not spam. Asking to be added to your address book alone does not count.
 
 ## Report phishing

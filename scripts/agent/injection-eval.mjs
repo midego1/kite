@@ -92,6 +92,12 @@ async function loadReal() {
 				`export { buildReplyDraftPrompt } from "@/lib/agent/jobs/draft-prompt-utils";`,
 				`export { parseRawMime } from "@/lib/email/parse";`,
 				`export { htmlToReadableText } from "@/lib/email/reply-content-utils";`,
+				`export { analyzeUrls } from "@/lib/spam/analyzers/urls";`,
+				`export { analyzeAttachments } from "@/lib/spam/analyzers/attachments";`,
+				`export { analyzeSafelistPressure } from "@/lib/spam/analyzers/pressure";`,
+				`export { linkHostsOf, summarizeLinks } from "@/lib/spam/analyzers/link-host-utils";`,
+				`export { prepareSpamContent } from "@/lib/spam/tokenizer";`,
+				`export { htmlLinkText } from "@/lib/spam/tokenizer-utils";`,
 			].join("\n"),
 			resolveDir: root,
 			sourcefile: "injection-eval-entry.ts",
@@ -211,15 +217,46 @@ function policyBreaches(facts, triage) {
 	return breaches;
 }
 
-const CAPABILITIES = { calendar: true, reply: true, summary: true, phishing: true, mutedSenders: [] };
+const CAPABILITIES = {
+	calendar: true,
+	reply: true,
+	summary: true,
+	phishing: true,
+	mutedSenders: [],
+	trustedSenders: [],
+};
+
+/**
+ * The deterministic signals intake would store for the fixture (links, attachments, whitelist requests).
+ * Fixtures carry no Authentication-Results, so every sender counts as unverified.
+ */
+function deterministicSignals(parsed) {
+	const prepared = real.prepareSpamContent(parsed);
+	return JSON.stringify([
+		...real.analyzeUrls(parsed, prepared),
+		...real.analyzeAttachments(parsed, prepared),
+		...real.analyzeSafelistPressure(prepared),
+	]);
+}
 
 async function evaluate(file) {
 	const raw = readFileSync(join(values.corpus, file));
 	const parsed = await real.parseRawMime(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
 	const bodyText = parsed.text || real.htmlToReadableText(parsed.html);
 	const from = parsed.fromAddr ?? "";
+	const sender = real.collectFacts({
+		message: { fromAddr: from, subject: null, textBody: null, spamVerdict: null, spamSignals: null },
+	}).senderAddress;
+	const hosts = real.linkHostsOf(`${parsed.text ?? ""}\n${parsed.html ? real.htmlLinkText(parsed.html) : ""}`);
 	const facts = real.collectFacts({
-		message: { fromAddr: from, subject: parsed.subject, textBody: parsed.text, spamVerdict: null, spamSignals: null },
+		message: {
+			fromAddr: from,
+			subject: parsed.subject,
+			textBody: parsed.text,
+			spamVerdict: null,
+			spamSignals: deterministicSignals(parsed),
+		},
+		links: real.summarizeLinks(sender, hosts),
 		attachments: parsed.attachments.map((item) => ({
 			filename: item.filename,
 			contentType: item.type,
@@ -247,6 +284,7 @@ async function evaluate(file) {
 		name: file.replace(/\.eml$/, ""),
 		expectPhishing: /^X-Kite-Eval:\s*phishing/im.test(raw.toString("utf8")),
 		flagged: planned.some((item) => item.kind === "phishing"),
+		modelFlagged: !!triage.result?.suspicious.flagged,
 		triage,
 		draft,
 		breaches: [...breaches, ...policyBreaches(facts, triage.result)],

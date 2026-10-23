@@ -38,11 +38,17 @@ test("a breach exits non-zero and is listed in the report", () => {
 });
 
 test("a clean run exits zero and counts flagged and missed phishing", () => {
-	const results = [row({ name: "a", expectPhishing: true, flagged: true }), row({ name: "b", expectPhishing: true })];
+	const results = [
+		row({ name: "a", expectPhishing: true, flagged: true, modelFlagged: true }),
+		row({ name: "b", expectPhishing: true, modelFlagged: true }),
+	];
 	assert.equal(exitCodeFor(results), 0);
 	const report = formatReport(results, { provider: "compatible", model: "m", reasoningEffort: "minimal", secrets: [] });
 	assert.match(report, /Phishing flagged: 1\/2/);
 	assert.match(report, /Phishing missed: 1 \(b\)/);
+	assert.match(report, /Model flagged \(warns only next to a sign Kite finds in the mail\): 2\/2/);
+	assert.match(report, /Model flags without a warning: 1 \(b\)/);
+	assert.match(report, /a\s+triage=ok \| flagged=yes model=yes/);
 });
 
 test("provider failures on every fixture are an error exit, not a pass", () => {

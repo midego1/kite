@@ -1,6 +1,6 @@
 import type { MessageFacts } from "./facts-types";
 import type { AgentActionType, ExecutionContext, ExecutionDecision, PlanInput, SenderPolicy } from "./policy-types";
-import type { AutonomyLevel } from "./settings-types";
+import type { AutoReadCapabilities, AutonomyLevel } from "./settings-types";
 import type { PlannedSuggestion } from "./suggestion-types";
 
 const SUGGEST_ACTIONS: readonly AgentActionType[] = ["create_draft"];
@@ -142,14 +142,46 @@ export function allowedToExecute(
 	return rule ? block(rule) : { allowed: true, rule: `${effective}_allows_${action}`, level: effective };
 }
 
-/** Stands in for a model flag that came without a reason, so the flag still warns and blocks the reply. */
+/** Stands in for a confirmed model flag that came without a reason. */
 const MODEL_FLAGGED_REASON = "model_flagged";
 
-function phishingReasons(facts: MessageFacts, triage: PlanInput["triage"]): string[] {
-	const flagged = !!triage?.suspicious.flagged;
-	const modelReasons = triage && flagged ? triage.suspicious.reasons : [];
-	const generic = flagged && modelReasons.length === 0 ? [MODEL_FLAGGED_REASON] : [];
-	return [...new Set<string>([...facts.phishingSignals, ...modelReasons, ...generic])];
+/**
+ * A sender a model's flag alone never warns about: a known contact, a sender the user marked "Not
+ * phishing", or mail from one of this install's domains that passed DMARC without copying a contact's name.
+ */
+export function trustedSender(facts: MessageFacts, capabilities: Pick<AutoReadCapabilities, "trustedSenders">) {
+	if (facts.knownContact || capabilities.trustedSenders.includes(facts.senderAddress)) return true;
+	return facts.ownDomain && facts.auth.dmarc === "pass" && !facts.authFailed && !facts.spoofedContact;
+}
+
+export type PhishingAssessment = {
+	reasons: string[];
+	/** Why a model flag did not warn, recorded on the job: `model_flag_unconfirmed` or `model_flag_trusted_sender`. */
+	note: string | null;
+};
+
+/**
+ * Deterministic signals always warn. A model flag only adds its reasons when the message itself shows a
+ * sign: a deterministic signal, or a supporting one (such as a URL shortener) from a sender that is not
+ * trusted. A flag nothing confirms shows no warning; it still blocks the reply draft and module cards.
+ */
+export function assessPhishing(
+	facts: MessageFacts,
+	triage: PlanInput["triage"],
+	capabilities: Pick<AutoReadCapabilities, "trustedSenders">,
+): PhishingAssessment {
+	const signals = facts.phishingSignals;
+	if (!triage?.suspicious.flagged) return { reasons: [...signals], note: null };
+	if (signals.length === 0 && trustedSender(facts, capabilities))
+		return { reasons: [], note: "model_flag_trusted_sender" };
+	if (signals.length === 0 && facts.supportingSignals.length === 0)
+		return { reasons: [], note: "model_flag_unconfirmed" };
+	const modelReasons = triage.suspicious.reasons;
+	const generic = modelReasons.length === 0 ? [MODEL_FLAGGED_REASON] : [];
+	return {
+		reasons: [...new Set<string>([...signals, ...facts.supportingSignals, ...modelReasons, ...generic])],
+		note: null,
+	};
 }
 
 function wantsSummary(input: PlanInput): boolean {
@@ -174,11 +206,12 @@ function wantsReply(input: PlanInput, phishing: boolean): boolean {
 
 /**
  * Turns facts and the (optional) triage result into suggestions. Model output can add phishing
- * reasons but never removes deterministic ones; a phishing suggestion suppresses the reply draft.
+ * reasons (see `assessPhishing`) but never removes deterministic ones; a phishing suggestion or a
+ * model flag suppresses the reply draft.
  */
 export function planSuggestions(input: PlanInput): PlannedSuggestion[] {
 	const { facts, triage, settings } = input;
-	const reasons = phishingReasons(facts, triage);
+	const { reasons } = assessPhishing(facts, triage, settings.capabilities);
 	const phishing = reasons.length > 0;
 	const planned: PlannedSuggestion[] = [];
 	if (phishing && settings.capabilities.phishing)
@@ -188,7 +221,7 @@ export function planSuggestions(input: PlanInput): PlannedSuggestion[] {
 	planned.push(...(input.moduleSuggestions ?? []));
 	if (triage && wantsSummary(input))
 		planned.push({ kind: "summary", payload: { text: triage.summary }, reason: "long_thread", autoExecute: false });
-	if (triage && wantsReply(input, phishing || forcesSuggest(facts)))
+	if (triage && wantsReply(input, phishing || forcesSuggest(facts, triage.suspicious.flagged)))
 		planned.push({ kind: "reply", payload: { urgency: triage.urgency }, reason: "needs_reply", autoExecute: false });
 	return planned;
 }

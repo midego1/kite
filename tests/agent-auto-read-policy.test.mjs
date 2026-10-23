@@ -193,7 +193,14 @@ test("sender policies match an exact address before a domain", () => {
 	assert.equal(matchSenderPolicy(policies, "not-an-address"), null);
 });
 
-const capabilities = { calendar: true, reply: true, summary: true, phishing: true, mutedSenders: [] };
+const capabilities = {
+	calendar: true,
+	reply: true,
+	summary: true,
+	phishing: true,
+	mutedSenders: [],
+	trustedSenders: [],
+};
 const settings = (overrides = {}) => ({
 	capabilities,
 	canDraftReply: true,
@@ -242,7 +249,7 @@ test("planSuggestions: reply drafts need a reply-worthy, unfiled, clean message 
 	);
 });
 
-test("planSuggestions: phishing forces Suggest, suppresses the reply, and model reasons only add", () => {
+test("planSuggestions: phishing forces Suggest, suppresses the reply, and model reasons only add to a confirmed warning", () => {
 	const deterministic = planSuggestions({ facts: facts({ suspicious: true }), triage: triage(), settings: settings() });
 	assert.deepEqual(kinds(deterministic), ["phishing"]);
 	assert.deepEqual(deterministic[0].payload.reasons, ["suspicious_verdict"]);
@@ -254,13 +261,12 @@ test("planSuggestions: phishing forces Suggest, suppresses the reply, and model 
 	});
 	assert.deepEqual(cleared[0].payload.reasons, ["suspicious_verdict"], "the model cannot clear a deterministic reason");
 
-	const added = planSuggestions({
+	const unconfirmed = planSuggestions({
 		facts: facts(),
 		triage: triage({ suspicious: { flagged: true, reasons: ["credential_request", "urgency_pressure"] } }),
 		settings: settings(),
 	});
-	assert.deepEqual(kinds(added), ["phishing"]);
-	assert.deepEqual(added[0].payload.reasons, ["credential_request", "urgency_pressure"]);
+	assert.deepEqual(kinds(unconfirmed), [], "a model flag alone warns about nothing but still blocks the reply");
 
 	const unflaggedReasons = planSuggestions({
 		facts: facts(),
@@ -269,20 +275,18 @@ test("planSuggestions: phishing forces Suggest, suppresses the reply, and model 
 	});
 	assert.deepEqual(kinds(unflaggedReasons), ["reply"], "reasons without the flag add nothing");
 
-	const flaggedWithoutReasons = planSuggestions({
-		facts: facts(),
-		triage: triage({ suspicious: { flagged: true, reasons: [] } }),
+	const confirmed = planSuggestions({
+		facts: facts({ suspicious: true }),
+		triage: triage({ suspicious: { flagged: true, reasons: ["credential_request", "urgency_pressure"] } }),
 		settings: settings(),
 	});
-	assert.deepEqual(kinds(flaggedWithoutReasons), ["phishing"], "a bare model flag warns and suppresses the reply");
-	assert.deepEqual(flaggedWithoutReasons[0].payload.reasons, ["model_flagged"]);
+	assert.deepEqual(confirmed[0].payload.reasons, ["suspicious_verdict", "credential_request", "urgency_pressure"]);
 	const flaggedAndSuspicious = planSuggestions({
 		facts: facts({ suspicious: true }),
 		triage: triage({ suspicious: { flagged: true, reasons: [] } }),
 		settings: settings(),
 	});
 	assert.deepEqual(flaggedAndSuspicious[0].payload.reasons, ["suspicious_verdict", "model_flagged"]);
-
 	const capabilityOff = settings({ capabilities: { ...capabilities, phishing: false } });
 	assert.deepEqual(
 		kinds(planSuggestions({ facts: facts({ spoof: true }), triage: triage(), settings: capabilityOff })),

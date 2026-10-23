@@ -85,7 +85,10 @@ export function stepSkipReason(moduleId: ModuleId): string {
 	return `${MODULE_SKIP_PREFIX}${moduleId}`;
 }
 
-/** A finished job's note: the reason the model was not asked first, then each module whose step was skipped. */
+/**
+ * A finished job's note: the model's own code first (why it was not asked, or why its flag did not warn),
+ * then each module whose step was skipped.
+ */
 export function joinSkipReasons(moduleIds: readonly ModuleId[], modelSkip: string | null = null): string | null {
 	const parts = [...(modelSkip ? [modelSkip] : []), ...moduleIds.map(stepSkipReason)];
 	return parts.length > 0 ? parts.join(",") : null;

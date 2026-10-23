@@ -34,6 +34,10 @@ const REASON_TEXT: Record<string, string> = {
 	paused: "Skipped: Kite is paused for this mailbox",
 	rate_limited: "Skipped: rate limited, too many messages at once",
 	model_failed: "The AI model did not answer; the message was checked without it",
+	model_flag_unconfirmed:
+		"No phishing warning: the AI model found the message suspicious, but Kite found no sign of phishing in it",
+	model_flag_trusted_sender:
+		"No phishing warning: the AI model found the message suspicious, but the sender is trusted and Kite found no sign of phishing in it",
 	autonomy_off: "Skipped: automatic reading is off for this mailbox",
 	assistant_disabled: "Skipped: the email assistant is turned off",
 	source_changed: "Skipped: the message was moved or deleted first",

@@ -140,7 +140,7 @@ test("long text is truncated and tasks are capped at five", () => {
 });
 
 const planSettings = {
-	capabilities: { calendar: true, reply: true, summary: true, phishing: true, mutedSenders: [] },
+	capabilities: { calendar: true, reply: true, summary: true, phishing: true, mutedSenders: [], trustedSenders: [] },
 	canDraftReply: true,
 	filed: false,
 	threadMessageCount: 3,
@@ -156,17 +156,32 @@ const cleanFacts = () =>
 		},
 	});
 
-test("a model flag without reasons survives parsing as a phishing warning and suppresses the reply", () => {
+test("a model flag without reasons survives parsing: it suppresses the reply and warns only with a sign in the mail", () => {
 	const parsed = parseTriageOutput(JSON.stringify({ ...valid, suspicious: { flagged: true } }), now);
 	assert.deepEqual(parsed.result.suspicious, { flagged: true, reasons: [] });
 	const planned = planSuggestions({ facts: cleanFacts(), triage: parsed.result, settings: planSettings });
 	assert.deepEqual(
 		planned.map((item) => item.kind),
+		["summary"],
+	);
+	const signed = collectFacts({
+		message: {
+			fromAddr: "Ada <ada@example.com>",
+			subject: "Hi",
+			textBody: "Body",
+			spamVerdict: "inbox",
+			spamSignals: JSON.stringify([{ id: "displayed_link_mismatch", score: 10, reason: "x" }]),
+		},
+	});
+	const warned = planSuggestions({ facts: signed, triage: parsed.result, settings: planSettings });
+	assert.deepEqual(
+		warned.map((item) => item.kind),
 		["phishing", "summary"],
 	);
-	assert.deepEqual(parseSuggestionPayload("phishing", planned[0].payload), { reasons: ["model_flagged"] });
+	assert.deepEqual(parseSuggestionPayload("phishing", warned[0].payload), {
+		reasons: ["displayed_link_mismatch", "model_flagged"],
+	});
 });
-
 test("a truncated emoji summary is still a valid summary payload", () => {
 	for (const summary of ["😀".repeat(300), `${"a".repeat(279)}😀`, "👩‍💻".repeat(100)]) {
 		const parsed = parseTriageOutput(JSON.stringify({ ...valid, needsReply: false, summary }), now);

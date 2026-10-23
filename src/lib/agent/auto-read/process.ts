@@ -11,7 +11,7 @@ import { getAutoReadInstallSettings } from "./install-settings";
 import { joinSkipReasons } from "./module-steps-utils";
 import { activeModelExtensions, modelHintsAsk, runModuleTriageSteps, type StepRunInput } from "./module-steps";
 import type { ActiveModelExtension } from "./model-extension-utils";
-import { planSuggestions } from "./policy-utils";
+import { assessPhishing, planSuggestions } from "./policy-utils";
 import { allowAutoReadRequest, triageDailyLimitReached } from "./quota";
 import { createReplySuggestion } from "./reply-suggestion";
 import { isAutoSubmitted, isPaused } from "./schedule-utils";
@@ -151,8 +151,8 @@ async function prepareTriage(env: CloudflareEnv, db: AppDatabase, job: AgentJobR
 
 /**
  * Triages the claimed job's message. Either the job is skipped with a reason, or its suggestions are
- * stored and `note` names why the model was not asked and the module steps that were due but skipped
- * because their module is off.
+ * stored and `note` names why the model was not asked (or why its phishing flag did not warn) and the
+ * module steps that were due but skipped because their module is off.
  */
 async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Promise<TriageOutcome> {
 	const prepared = await prepareTriage(env, db, job);
@@ -215,7 +215,12 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 			installCapMicros: install.dailySpendCapMicros,
 		});
 	await settleTriageSuggestions(env, job.mailboxId, source);
-	return { skip: null, note: joinSkipReasons(steps.skipped, modelRun.skip) };
+	// A flag that did not warn is still worth a line in Activity, so the owner can see the model was wary.
+	const flagNote =
+		model && settings.capabilities.phishing
+			? assessPhishing(context.facts, model.result, settings.capabilities).note
+			: null;
+	return { skip: null, note: joinSkipReasons(steps.skipped, modelRun.skip ?? flagNote) };
 }
 
 export async function processAgentTriageJob(env: CloudflareEnv, jobId: string) {

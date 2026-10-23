@@ -502,7 +502,8 @@ test("a message the model flags as suspicious gets no module card, on the full a
 	assert.deepEqual(kindsOf(db, hinted.messageId), []);
 	const full = insertMessage(db, raw);
 	await processAgentTriageJob(env, full.jobId);
-	assert.deepEqual(kindsOf(db, full.messageId), ["phishing", "summary"]);
+	assert.deepEqual(kindsOf(db, full.messageId), ["summary"], "a flag nothing in the mail confirms shows no warning");
+	assert.deepEqual(jobOf(db, full.jobId), { status: "completed", reason: "model_flag_unconfirmed" });
 	assert.equal(requests.length, 3);
 });
 

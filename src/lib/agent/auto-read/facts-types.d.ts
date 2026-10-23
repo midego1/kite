@@ -18,6 +18,19 @@ export type DeterministicPhishingSignal =
 	| "urlhaus_payload"
 	| "safelist_pressure";
 
+/** Signs that back up a model's phishing flag; on their own they do not warn. */
+export type SupportingPhishingSignal = "url_shortener";
+
+/** A link host and whether it is on the sender's registrable domain. */
+export type LinkHostFact = { host: string; sameAsSender: boolean };
+
+/** Computed outside this module (`summarizeLinks` in the spam link utils), which stays free of runtime imports. */
+export type LinkFacts = {
+	/** The registrable domain of the From address, as in `example.co.uk` for `mail.example.co.uk`. */
+	senderDomain: string | null;
+	hosts: LinkHostFact[];
+};
+
 export type FactsMessage = {
 	fromAddr: string;
 	subject: string | null;
@@ -43,6 +56,9 @@ export type CollectFactsInput = {
 	bodyText?: string;
 	/** The reviewer's contacts used for known-sender and display-name spoofing checks. */
 	contacts?: FactsContact[];
+	/** The sender's domain, or a parent of it, is a domain of this install. */
+	ownDomain?: boolean;
+	links?: LinkFacts;
 };
 
 export type MessageFacts = {
@@ -64,6 +80,12 @@ export type MessageFacts = {
 	/** The address of the known contact whose display name the sender copies. */
 	spoofedContact: string | null;
 	phishingSignals: DeterministicPhishingSignal[];
+	supportingSignals: SupportingPhishingSignal[];
+	/** The sender's domain, or a parent of it, is a domain of this install. */
+	ownDomain: boolean;
+	senderDomain: string | null;
+	/** Distinct link hosts in the body, a fact for the model rather than a warning sign. */
+	linkHosts: LinkHostFact[];
 	inviteAttachments: FactsAttachment[];
 	bodyLength: number;
 };

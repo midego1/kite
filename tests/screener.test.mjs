@@ -35,6 +35,7 @@ await build({
 		utils: join(root, "src/lib/screener/screener-utils.ts"),
 		settings: join(root, "src/lib/screener/settings.ts"),
 		inbound: join(root, "src/lib/screener/inbound.ts"),
+		emailInbound: join(root, "src/lib/email/inbound.ts"),
 		release: join(root, "src/lib/screener/release.ts"),
 		service: join(root, "src/lib/screener/service.ts"),
 		views: join(root, "src/lib/screener/views.ts"),
@@ -65,6 +66,7 @@ const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const utils = await load("utils");
 const settings = await load("settings");
 const { applyScreener } = await load("inbound");
+const { processInboundMessage } = await load("emailInbound");
 const { approveSentRecipients } = await load("release");
 const service = await load("service");
 const views = await load("views");
@@ -361,6 +363,35 @@ test("in Inbox mode approving and denying act on the marked Inbox mail too", asy
 	assert.equal((await views.getScreenerMessageStatus(db, owner, marked)).pending, false);
 	await service.denySender(env, owner, await access(), "spammer@junk.test");
 	assert.equal(statusOf(deniedMail), "spam");
+});
+
+test("inbound retries skip held and marked mail until the sender is approved", async (t) => {
+	const { database, db, env, addMessage } = await setup(t);
+	await settings.saveScreenerSettings(db, "mailbox-a", { enabled: true, mode: "inbox" }, "owner");
+	const held = addMessage("held@partner.test", { status: "screening" });
+	const marked = addMessage("marked@partner.test");
+	const retry = async (id) => {
+		const rawR2Key = `raw/${id}.eml`;
+		database.db.prepare("UPDATE messages SET raw_r2_key = ? WHERE id = ?").run(rawR2Key, id);
+		await processInboundMessage(env, { from: "envelope@partner.test", to: "a@example.com", rawR2Key });
+	};
+	globalThis.__screenerScheduled = [];
+	await retry(held);
+	await retry(marked);
+	assert.deepEqual(globalThis.__screenerScheduled, []);
+	await settings.recordSenderDecision(db, {
+		mailboxId: "mailbox-a",
+		address: "marked@partner.test",
+		decision: "approved",
+		source: "manual",
+		userId: "owner",
+	});
+	await retry(marked);
+	assert.deepEqual(globalThis.__screenerScheduled, [marked]);
+	await settings.saveScreenerSettings(db, "mailbox-a", { enabled: false }, "owner");
+	const plain = addMessage("plain@partner.test");
+	await retry(plain);
+	assert.deepEqual(globalThis.__screenerScheduled, [marked, plain]);
 });
 
 test("sending approves the recipients the mailbox has not decided on, and releases their held mail", async (t) => {

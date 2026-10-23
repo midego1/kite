@@ -28,7 +28,7 @@ import { getMailboxNotificationUserIds, notifyUsersOfNewMessage } from "@/lib/re
 import type { NewMessageNotification } from "@/lib/realtime/types";
 import { scheduleAgentWork } from "@/lib/agent/auto-read/schedule";
 import { applyScreener } from "@/lib/screener/inbound";
-import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
+import { screenerPendingRows } from "@/lib/screener/views";
 
 export type InboundQueueMessage = {
 	from: string;
@@ -81,8 +81,9 @@ async function recoverAgentWork(
 	headers: Record<string, string> | undefined,
 ): Promise<void> {
 	try {
-		const [existing] = await getDb(env).select().from(messages).where(eq(messages.id, messageId)).limit(1);
-		if (!existing || existing.status === SCREENING_STATUS) return;
+		const db = getDb(env);
+		const [existing] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+		if (!existing || (await screenerPendingRows(db, [existing])).has(existing.id)) return;
 		await scheduleAgentWork(env, {
 			mailboxId: mailbox.mailboxId,
 			sourceMessageId: existing.id,

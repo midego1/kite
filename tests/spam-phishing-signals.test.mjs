@@ -294,3 +294,24 @@ test("body link limits apply to each part, with duplicates merged", () => {
 	assert.deepEqual(duplicate.urls, [textLinks[0]]);
 	assert.deepEqual(duplicate.urlDomains, ["plain0.test"]);
 });
+
+test("bare host names in link text, IPv6 links, look-alike domains and URL shorteners", async (t) => {
+	const { analyze } = await setup(t);
+	const bare = await analyze(email({ html: '<a href="https://collect.bad.test/login">www.paypal.com</a>' }));
+	assert.ok(ids(bare).includes("displayed_link_mismatch"));
+	const subdomain = await analyze(email({ html: '<a href="https://click.example.test/r/1">example.test/account</a>' }));
+	assert.equal(ids(subdomain).includes("displayed_link_mismatch"), false, "a subdomain of the shown site");
+	assert.ok(ids(await analyze(email({ text: "Open http://[2001:db8::1]/login" }))).includes("ip_address_url"));
+	const lookalike = await analyze(email({ text: "Sign in at https://xn--pple-43d.com/" }));
+	assert.deepEqual(signal(lookalike, "punycode_url").metadata, { lookalike: true });
+	assert.equal(signal(lookalike, "punycode_url").score, 10);
+	const umlaut = await analyze(email({ text: "Order at https://xn--mnchen-3ya.de/" }));
+	assert.equal(signal(umlaut, "punycode_url").score, 5);
+	assert.equal(signal(umlaut, "punycode_url").metadata, undefined);
+	const short = await analyze(email({ text: "Details: https://bit.ly/3abc" }));
+	assert.deepEqual(signal(short, "url_shortener"), {
+		id: "url_shortener",
+		score: 2,
+		reason: "A link goes through a URL shortener that hides where it leads",
+	});
+});

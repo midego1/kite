@@ -1,8 +1,10 @@
-import { and, asc, eq } from "drizzle-orm";
-import { getDb } from "@/db";
-import { messageAttachments, messages } from "@/db/schema";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { getDb, type AppDatabase } from "@/db";
+import { domains, messageAttachments, messages } from "@/db/schema";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { readRawHeaders } from "@/lib/email/raw-headers";
+import { hostAndParents, linkHostsOf, summarizeLinks } from "@/lib/spam/analyzers/link-host-utils";
+import { htmlLinkText } from "@/lib/spam/tokenizer-utils";
 import { collectFacts } from "./facts-utils";
 import type { MessageFacts } from "./facts-types";
 import { loadTrustedContacts } from "./trusted-contacts";
@@ -31,10 +33,20 @@ async function threadRows(env: CloudflareEnv, source: SourceMessage) {
 		.limit(THREAD_WINDOW);
 }
 
+/** Whether the sender's domain, or a parent of it, is one of this install's domains. */
+async function isOwnDomain(db: AppDatabase, senderAddress: string): Promise<boolean> {
+	const at = senderAddress.lastIndexOf("@");
+	const names = at >= 0 ? hostAndParents(senderAddress.slice(at + 1)) : [];
+	if (names.length === 0) return false;
+	const [row] = await db.select({ id: domains.id }).from(domains).where(inArray(domains.hostname, names)).limit(1);
+	return !!row;
+}
+
 /**
  * Everything triage reads about a message: the stored row, its raw headers (headers are not kept
  * on the row), attachments, and the mailbox owner's manual or outbound contacts for spoofing
- * checks. Mailbox contacts live under the owner even when a delegated reviewer triages.
+ * checks, whether the sender is on one of the install's domains, and the hosts the body links to.
+ * Mailbox contacts live under the owner even when a delegated reviewer triages.
  */
 export async function loadTriageContext(
 	env: CloudflareEnv,
@@ -43,7 +55,7 @@ export async function loadTriageContext(
 ): Promise<TriageContext> {
 	const db = getDb(env);
 	const sender = collectFacts({ message: source });
-	const [headers, attachments, trustedContacts, thread] = await Promise.all([
+	const [headers, attachments, trustedContacts, thread, ownDomain] = await Promise.all([
 		readRawHeaders(env, source.rawR2Key),
 		db
 			.select({
@@ -55,9 +67,22 @@ export async function loadTriageContext(
 			.where(eq(messageAttachments.messageId, source.id)),
 		loadTrustedContacts(db, ownerUserId, { address: sender.senderAddress, name: sender.senderName }),
 		threadRows(env, source),
+		isOwnDomain(db, sender.senderAddress),
 	]);
 	const bodyText = source.textBody || htmlToReadableText(source.htmlBody);
-	const facts = collectFacts({ message: source, headers, attachments, bodyText, contacts: trustedContacts });
+	const links = summarizeLinks(
+		sender.senderAddress,
+		linkHostsOf(`${source.textBody ?? ""}\n${source.htmlBody ? htmlLinkText(source.htmlBody) : ""}`),
+	);
+	const facts = collectFacts({
+		message: source,
+		headers,
+		attachments,
+		bodyText,
+		contacts: trustedContacts,
+		ownDomain,
+		links,
+	});
 	return {
 		source,
 		facts,

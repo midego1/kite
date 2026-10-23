@@ -11,11 +11,13 @@ import { getAutoReadInstallSettings } from "./install-settings";
 import { joinSkipReasons } from "./module-steps-utils";
 import { activeModelExtensions, modelHintsAsk, runModuleTriageSteps, type StepRunInput } from "./module-steps";
 import type { ActiveModelExtension } from "./model-extension-utils";
-import { planSuggestions } from "./policy-utils";
+import { assessPhishing, planSuggestions } from "./policy-utils";
 import { allowAutoReadRequest, triageDailyLimitReached } from "./quota";
 import { createReplySuggestion } from "./reply-suggestion";
 import { isAutoSubmitted, isPaused } from "./schedule-utils";
-import type { AutoReadInstallSettings } from "./settings-types";
+import type { MessageFacts } from "./facts-types";
+import type { PlanInput } from "./policy-types";
+import type { AutoReadCapabilities, AutoReadInstallSettings } from "./settings-types";
 import { resolveMailboxAgentSettings } from "./settings-utils";
 import { settleTriageSuggestions } from "./suggestion-lifecycle";
 import { storeTriageSuggestions } from "./suggestions";
@@ -151,8 +153,8 @@ async function prepareTriage(env: CloudflareEnv, db: AppDatabase, job: AgentJobR
 
 /**
  * Triages the claimed job's message. Either the job is skipped with a reason, or its suggestions are
- * stored and `note` names why the model was not asked and the module steps that were due but skipped
- * because their module is off.
+ * stored and `note` names why the model was not asked (or why its phishing flag did not warn) and the
+ * module steps that were due but skipped because their module is off.
  */
 async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Promise<TriageOutcome> {
 	const prepared = await prepareTriage(env, db, job);
@@ -215,7 +217,23 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 			installCapMicros: install.dailySpendCapMicros,
 		});
 	await settleTriageSuggestions(env, job.mailboxId, source);
-	return { skip: null, note: joinSkipReasons(steps.skipped, modelRun.skip) };
+	return {
+		skip: null,
+		note: joinSkipReasons(
+			steps.skipped,
+			modelRun.skip ?? phishingFlagNote(context.facts, model, settings.capabilities),
+		),
+	};
+}
+
+/** A flag that did not warn is still worth a line in Activity, so the owner can see the model was wary. */
+function phishingFlagNote(
+	facts: MessageFacts,
+	model: { result: NonNullable<PlanInput["triage"]> } | null,
+	capabilities: AutoReadCapabilities,
+): string | null {
+	if (!model || !capabilities.phishing) return null;
+	return assessPhishing(facts, model.result, capabilities).note;
 }
 
 export async function processAgentTriageJob(env: CloudflareEnv, jobId: string) {

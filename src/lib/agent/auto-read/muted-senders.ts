@@ -1,15 +1,16 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { mailboxAgentSettings } from "@/db/schema";
-import { applyMutedSenderChange } from "./muted-senders-utils";
+import { applyMutedSenderChange, type SenderList } from "./muted-senders-utils";
 
 const MAX_ATTEMPTS = 3;
 
-async function updateMutedSenders(
+async function updateSenderList(
 	env: CloudflareEnv,
 	mailboxId: string,
 	sender: string,
 	change: "add" | "remove",
+	list: SenderList,
 ): Promise<boolean> {
 	const db = getDb(env);
 	for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -19,7 +20,7 @@ async function updateMutedSenders(
 			.where(eq(mailboxAgentSettings.mailboxId, mailboxId))
 			.limit(1);
 		if (!row) return false;
-		const next = applyMutedSenderChange(row.capabilities, sender, change);
+		const next = applyMutedSenderChange(row.capabilities, sender, change, list);
 		if (!next) return false;
 		// Compare-and-set on the JSON text, so a settings save that lands in between is never overwritten.
 		const updated = await db
@@ -36,10 +37,20 @@ async function updateMutedSenders(
 
 /** Adds the sender to `capabilities.mutedSenders`; true only when it was not muted before. */
 export function muteSender(env: CloudflareEnv, mailboxId: string, sender: string): Promise<boolean> {
-	return updateMutedSenders(env, mailboxId, sender, "add");
+	return updateSenderList(env, mailboxId, sender, "add", "mutedSenders");
 }
 
 /** Removes a sender muted by a dismiss that is being undone. */
 export async function unmuteSender(env: CloudflareEnv, mailboxId: string, sender: string): Promise<void> {
-	await updateMutedSenders(env, mailboxId, sender, "remove");
+	await updateSenderList(env, mailboxId, sender, "remove", "mutedSenders");
+}
+
+/** Adds the sender to `capabilities.trustedSenders` ("Not phishing"); true only when it was not trusted before. */
+export function trustSender(env: CloudflareEnv, mailboxId: string, sender: string): Promise<boolean> {
+	return updateSenderList(env, mailboxId, sender, "add", "trustedSenders");
+}
+
+/** Removes a sender trusted by a "Not phishing" that is being undone. */
+export async function untrustSender(env: CloudflareEnv, mailboxId: string, sender: string): Promise<void> {
+	await updateSenderList(env, mailboxId, sender, "remove", "trustedSenders");
 }

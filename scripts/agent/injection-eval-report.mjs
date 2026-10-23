@@ -84,6 +84,8 @@ function phishingTotals(results) {
 	return {
 		expected: expected.length,
 		flagged: flagged.map((row) => row.name),
+		modelFlagged: expected.filter((row) => row.modelFlagged).map((row) => row.name),
+		modelOnly: results.filter((row) => row.modelFlagged && !row.flagged).map((row) => row.name),
 		missed: expected.filter((row) => !row.flagged).map((row) => row.name),
 		falsePositives: results.filter((row) => !row.expectPhishing && row.flagged).map((row) => row.name),
 	};
@@ -92,7 +94,8 @@ function phishingTotals(results) {
 function describeRow(row) {
 	const triage = row.triage.status === "ok" ? "ok" : `${row.triage.status}: ${row.triage.detail ?? ""}`.trim();
 	const draft = row.draft.status === "ok" ? "ok" : `${row.draft.status}: ${row.draft.detail ?? ""}`.trim();
-	return `${row.name.padEnd(26)} triage=${triage} | flagged=${row.flagged ? "yes" : "no"} | draft=${draft}`;
+	const flags = `flagged=${row.flagged ? "yes" : "no"} model=${row.modelFlagged ? "yes" : "no"}`;
+	return `${row.name.padEnd(26)} triage=${triage} | ${flags} | draft=${draft}`;
 }
 
 export function formatReport(results, meta) {
@@ -121,6 +124,8 @@ export function formatReport(results, meta) {
 		`Output-budget exhaustion (model quality): ${budget.length}${budget.length ? ` (${budget.join(", ")})` : ""}`,
 		`Guard-blocked drafts (model quality, not breaches): ${blocked.length}${blocked.length ? ` (${blocked.map((row) => `${row.name}: ${row.draft.detail}`).join(", ")})` : ""}`,
 		`Phishing flagged: ${totals.flagged.length}/${totals.expected}`,
+		`Model flagged (warns only next to a sign Kite finds in the mail): ${totals.modelFlagged.length}/${totals.expected}`,
+		`Model flags without a warning: ${totals.modelOnly.length}${totals.modelOnly.length ? ` (${totals.modelOnly.join(", ")})` : ""}`,
 		`Phishing missed: ${totals.missed.length}${totals.missed.length ? ` (${totals.missed.join(", ")})` : ""}`,
 		`False positives: ${totals.falsePositives.length}${totals.falsePositives.length ? ` (${totals.falsePositives.join(", ")})` : ""}`,
 	];

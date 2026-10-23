@@ -23,6 +23,7 @@ const PHISHING_REASON_TEXT: Record<string, string> = {
 	displayed_link_mismatch: "A link shows one web address but opens a different one.",
 	ip_address_url: "A link points to a bare IP address instead of a website name.",
 	punycode_url: "A link uses look-alike characters in its web address.",
+	url_shortener: "A link goes through a URL shortener, which hides where it really leads.",
 	spf_failed: "The sending server is not allowed to send for this domain (SPF failed).",
 	dkim_failed: "The message's signature does not match its domain (DKIM failed).",
 	dmarc_failed: "The sender's domain did not vouch for this message (DMARC failed).",
@@ -112,6 +113,11 @@ export function pauseUndoValue(previous: string | null | undefined, now: Date): 
 	if (!previous) return null;
 	const end = Date.parse(previous);
 	return Number.isFinite(end) && end > now.getTime() ? previous : null;
+}
+
+/** The toast after "Not phishing", naming the sender Kite now trusts when the server returned one. */
+export function notPhishingToast(sender: string | null | undefined): string {
+	return `Marked as not phishing. Kite won't warn about ${sender || "this sender"} again unless the message itself shows a sign of phishing.`;
 }
 
 /**

@@ -1,6 +1,6 @@
 import type { AutoReadCapabilities, AutonomyLevel } from "@/lib/agent/auto-read/settings-types";
 
-export type AutoReadCapabilityKey = Exclude<keyof AutoReadCapabilities, "mutedSenders" | "modules">;
+export type AutoReadCapabilityKey = Exclude<keyof AutoReadCapabilities, "mutedSenders" | "trustedSenders" | "modules">;
 /** The core switches, plus each module step's switch by its key (absent means on). */
 export type AutoReadCapabilityToggles = Record<AutoReadCapabilityKey, boolean> & { modules: Record<string, boolean> };
 

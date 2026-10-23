@@ -8,7 +8,7 @@ import { runEmailTool } from "../tools";
 import { AgentActionError } from "./action-error";
 import type { ActionEffect, AgentActionRow } from "./actions-types";
 import { parseActionState } from "./actions-utils";
-import { unmuteSender } from "./muted-senders";
+import { unmuteSender, untrustSender } from "./muted-senders";
 import type { AgentActionType } from "./policy-types";
 import { notifySuggestionsQuietly } from "./suggestion-events";
 import { restoreMarkedSpam } from "./suggestion-effects";
@@ -93,9 +93,10 @@ async function reopenSuggestion(env: CloudflareEnv, row: AgentActionRow): Promis
 		.update(agentSuggestions)
 		.set({ status, decidedAt: null, decidedByUserId: null })
 		.where(and(eq(agentSuggestions.id, row.suggestionId), eq(agentSuggestions.status, "dismissed")));
-	// Only a sender this dismiss muted is recorded in `after`, so an older mute survives the undo.
-	const mutedSender = parseActionState(row.after)?.mutedSender;
-	if (typeof mutedSender === "string") await unmuteSender(env, row.mailboxId, mutedSender);
+	// Only a sender this dismiss muted or trusted is recorded in `after`, so an older entry survives the undo.
+	const after = parseActionState(row.after);
+	if (typeof after?.mutedSender === "string") await unmuteSender(env, row.mailboxId, after.mutedSender);
+	if (typeof after?.trustedSender === "string") await untrustSender(env, row.mailboxId, after.trustedSender);
 	await notifySuggestionsQuietly(env, [row.suggestionId]);
 }
 

@@ -181,7 +181,15 @@ test.describe("automatic reading settings API", () => {
 			const personal = await readMailboxSettings(owner.api, owner.mailboxId);
 			expect(autoReadFields(personal)).toEqual({
 				autonomy: "off",
-				capabilities: { calendar: true, reply: true, summary: true, phishing: true, mutedSenders: [], modules: {} },
+				capabilities: {
+					calendar: true,
+					reply: true,
+					summary: true,
+					phishing: true,
+					mutedSenders: [],
+					trustedSenders: [],
+					modules: {},
+				},
 				triageModelId: null,
 				autoReadDailyLimit: 200,
 				dailySpendCapMicros: null,
@@ -219,6 +227,8 @@ test.describe("automatic reading settings API", () => {
 							summary: true,
 							phishing: false,
 							mutedSenders: ["Spam@Outside.test"],
+							// Only "Not phishing" on a warning trusts a sender; the settings API ignores the list.
+							trustedSenders: ["attacker@evil.test"],
 							modules: { gadget: false },
 						},
 						triageModelId: "fake-triage",
@@ -237,6 +247,7 @@ test.describe("automatic reading settings API", () => {
 					summary: true,
 					phishing: false,
 					mutedSenders: ["spam@outside.test"],
+					trustedSenders: [],
 					modules: { gadget: false },
 				},
 				triageModelId: "fake-triage",
@@ -1683,6 +1694,7 @@ test.describe("reply suggestions", () => {
 				status: "dismissed",
 				actionId: expect.any(String),
 				mutedSender: "customer@outside.test",
+				trustedSender: null,
 			});
 			const repeated = await okJson<{ actionId: string }>(await manager.api.post(suggestionUrl(replyId, "dismiss")));
 			expect(repeated.actionId).toBe(dismissed.actionId);
@@ -2765,9 +2777,10 @@ test.describe("reply suggestions", () => {
 				text: "Please verify your account. [[scenario:fyi]]",
 				html: LINK_MISMATCH_HTML("Please verify your account. [[scenario:fyi]]"),
 			});
+			// A model's flag warns only with a sign in the message itself, here a shortened link.
 			const modelFlagged = await deliverTriaged(account, {
 				from: "Support <support@service.test>",
-				text: "Confirm your password today. [[scenario:phishing]]",
+				text: "Confirm your password today: https://bit.ly/3kTe9Xq [[scenario:phishing]]",
 			});
 			const spoof = await deliverTriaged(account, {
 				from: "Grace Hopper <grace@evil.test>",
@@ -2782,7 +2795,11 @@ test.describe("reply suggestions", () => {
 			const warningOf = async (messageId: string) =>
 				(await suggestionsFor(account.api, account.mailboxId, messageId)).find((item) => item.kind === "phishing")!;
 			expect((await warningOf(mismatch.id)).payload.reasons).toEqual(["displayed_link_mismatch"]);
-			expect((await warningOf(modelFlagged.id)).payload.reasons).toEqual(["credential_request", "urgency_pressure"]);
+			expect((await warningOf(modelFlagged.id)).payload.reasons).toEqual([
+				"url_shortener",
+				"credential_request",
+				"urgency_pressure",
+			]);
 			expect((await warningOf(spoof.id)).payload.reasons).toEqual(["display_name_spoof"]);
 			const wireKinds = (await suggestionsFor(account.api, account.mailboxId, wire.id)).map((item) => item.kind);
 			expect(wireKinds.sort()).toEqual(["phishing", "summary"]);
@@ -2891,6 +2908,112 @@ test.describe("reply suggestions", () => {
 		}
 	});
 
+	test("a model's suspicion alone does not warn, and Not phishing trusts the sender with Undo", async ({ browser }) => {
+		test.setTimeout(120_000);
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("npf");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const warningsOf = async (messageId: string) =>
+				(await suggestionsFor(account.api, account.mailboxId, messageId)).filter((item) => item.kind === "phishing");
+			const jobReason = async (messageId: string) =>
+				(await waitForFinishedJob(account.api, account.mailboxId, messageId, "triage")).reason;
+
+			// An authenticated password reset from the install's own domain is normal mail, whatever the model thinks.
+			const reset = await deliverTriaged(account, {
+				from: `Kite <security@${DOMAIN}>`,
+				text: `Reset your password: https://${DOMAIN}/reset?token=abc [[scenario:phishing]]`,
+				headers: {
+					"Authentication-Results": `mx.cloudflare.net; spf=pass smtp.mailfrom=${DOMAIN}; dkim=pass header.d=${DOMAIN}; dmarc=pass header.from=${DOMAIN}`,
+				},
+			});
+			expect(await warningsOf(reset.id)).toEqual([]);
+			expect(await jobReason(reset.id)).toBe("model_flag_trusted_sender");
+			// Nothing in the message confirms the flag, so there is no warning, but no reply draft either.
+			const unconfirmed = await deliverTriaged(account, {
+				from: "Support <support@service.test>",
+				text: "Confirm your password today. [[scenario:phishing]]",
+			});
+			expect(await warningsOf(unconfirmed.id)).toEqual([]);
+			expect(await jobReason(unconfirmed.id)).toBe("model_flag_unconfirmed");
+			expect(await draftIds(account.api)).toEqual([]);
+
+			// A shortened link is a sign in the message itself, so the same suspicion now warns.
+			const shortened = await deliverTriaged(account, {
+				from: "Support <support@service.test>",
+				text: "Confirm your password today: https://bit.ly/3kTe9Xq [[scenario:phishing]]",
+			});
+			const [warning] = await warningsOf(shortened.id);
+			expect(warning.payload.reasons).toEqual(["url_shortener", "credential_request", "urgency_pressure"]);
+
+			const page = await context.newPage();
+			const errors = collectConsoleErrors(page);
+			await selectMailbox(page, account.mailboxId);
+			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+			await page.addInitScript(() => {
+				localStorage.setItem("kite-conversation-view", "off");
+				localStorage.setItem("kite-reading-pane", "none");
+			});
+			await openReader(page, shortened);
+			await expect(phishingBlock(page)).toContainText("A link goes through a URL shortener");
+			const trustedSenders = async () =>
+				(await readMailboxSettings(account.api, account.mailboxId)).settings.capabilities.trustedSenders;
+			const notPhishing = phishingBlock(page).getByRole("button", { name: "Not phishing" });
+			const toastText = /Kite won't warn about support@service\.test again unless the message itself shows a sign/;
+
+			const dismissed = page.waitForResponse((response) =>
+				response.url().endsWith(`/api/agent/suggestions/${warning.id}/dismiss`),
+			);
+			await notPhishing.click();
+			expect((await dismissed).status()).toBe(200);
+			await expect(phishingBlock(page)).toHaveCount(0);
+			const toast = page.getByRole("status").filter({ hasText: toastText });
+			await expect(toast).toBeVisible();
+			expect(await trustedSenders()).toEqual(["support@service.test"]);
+			expect((await warningsOf(shortened.id))[0].status).toBe("dismissed");
+
+			const undone = page.waitForResponse((response) => /\/api\/agent\/actions\/[^/]+\/undo$/.test(response.url()));
+			await toast.getByRole("button", { name: "Undo" }).click();
+			expect((await undone).status()).toBe(200);
+			await expect(phishingBlock(page)).toHaveCount(1);
+			expect(await trustedSenders()).toEqual([]);
+			expect((await warningsOf(shortened.id))[0].status).toBe("open");
+
+			await notPhishing.click();
+			await expect(phishingBlock(page)).toHaveCount(0);
+			await expect.poll(trustedSenders).toEqual(["support@service.test"]);
+			const trustedMail = {
+				from: "Support <support@service.test>",
+				text: "Confirm your password today: https://bit.ly/3kTe9Xq [[scenario:phishing]]",
+			};
+			// Trust holds only for authenticated mail, since an unauthenticated From can be forged.
+			const forged = await deliverTriaged(account, trustedMail);
+			expect((await warningsOf(forged.id))[0]?.payload.reasons).toContain("url_shortener");
+			const trusted = await deliverTriaged(account, {
+				...trustedMail,
+				headers: {
+					"Authentication-Results":
+						"mx.cloudflare.net; spf=pass smtp.mailfrom=service.test; dkim=pass header.d=service.test; dmarc=pass header.from=service.test",
+				},
+			});
+			expect(await warningsOf(trusted.id)).toEqual([]);
+			expect(await jobReason(trusted.id)).toBe("model_flag_trusted_sender");
+			// A sign Kite finds itself still warns about a trusted sender.
+			const mismatch = await deliverTriaged(account, {
+				from: "Support <support@service.test>",
+				text: "Please verify your account. [[scenario:fyi]]",
+				html: LINK_MISMATCH_HTML("Please verify your account. [[scenario:fyi]]"),
+			});
+			expect((await warningsOf(mismatch.id))[0]?.payload.reasons).toEqual(["displayed_link_mismatch"]);
+			expect(await draftIds(account.api)).toEqual([]);
+			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+		} finally {
+			await context.close();
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
 	test("the ⋯ menu dismisses once with Undo like Activity, mutes a sender and pauses the mailbox", async ({
 		browser,
 	}) => {

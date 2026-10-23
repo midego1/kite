@@ -1,6 +1,10 @@
 import { Parser } from "htmlparser2";
+import { linkTextMismatch } from "./link-host-utils";
 
-/** Compare decoded anchor destinations and visible addresses, without parsing more than the URL scan limit. */
+/**
+ * Whether an anchor's visible address (a URL or a bare hostname) names a different site than its
+ * destination, without parsing more than the URL scan limit.
+ */
 export function hasDisplayedLinkMismatch(html: string): boolean {
 	let href: string | undefined;
 	let text = "";
@@ -18,14 +22,7 @@ export function hasDisplayedLinkMismatch(html: string): boolean {
 			},
 			onclosetag(name) {
 				if (name !== "a") return;
-				const displayed = text.trim();
-				if (href && /^https?:\/\//i.test(href) && /^https?:\/\/\S+$/i.test(displayed)) {
-					try {
-						const targetDomain = new URL(href).hostname.toLowerCase().replace(/^www\./, "");
-						const displayedDomain = new URL(displayed).hostname.toLowerCase().replace(/^www\./, "");
-						if (targetDomain !== displayedDomain) mismatch = true;
-					} catch {}
-				}
+				if (href && linkTextMismatch(href, text)) mismatch = true;
 				href = undefined;
 				text = "";
 			},

@@ -47,7 +47,15 @@ test("a mailbox without a settings row gets the automatic reading defaults", () 
 		instructions: "",
 		dailyLimit: 25,
 		autonomy: "off",
-		capabilities: { calendar: true, reply: true, summary: true, phishing: true, mutedSenders: [], modules: {} },
+		capabilities: {
+			calendar: true,
+			reply: true,
+			summary: true,
+			phishing: true,
+			mutedSenders: [],
+			trustedSenders: [],
+			modules: {},
+		},
 		triageModelId: null,
 		autoReadDailyLimit: 200,
 		dailySpendCapMicros: null,
@@ -66,7 +74,8 @@ test("stored rows are read back with parsed capabilities and a safe autonomy", (
 		instructions: "Be brief",
 		dailyLimit: 10,
 		autonomy: "suggest",
-		capabilities: '{"calendar":true,"reply":false,"summary":"yes","mutedSenders":["A@x.test"," a@x.test ",3]}',
+		capabilities:
+			'{"calendar":true,"reply":false,"summary":"yes","mutedSenders":["A@x.test"," a@x.test ",3],"trustedSenders":["Bank@Y.test",false]}',
 		triageModelId: "t",
 		autoReadDailyLimit: 5,
 		dailySpendCapMicros: 0,
@@ -80,6 +89,7 @@ test("stored rows are read back with parsed capabilities and a safe autonomy", (
 		summary: true,
 		phishing: true,
 		mutedSenders: ["a@x.test"],
+		trustedSenders: ["bank@y.test"],
 		modules: {},
 	});
 	assert.equal(state.pausedUntil, pausedUntil);
@@ -91,6 +101,7 @@ test("stored rows are read back with parsed capabilities and a safe autonomy", (
 			summary: true,
 			phishing: true,
 			mutedSenders: [],
+			trustedSenders: [],
 			modules: {},
 		});
 });
@@ -167,6 +178,7 @@ test("a partial update keeps every field it leaves out", () => {
 		summary: false,
 		phishing: true,
 		mutedSenders: [],
+		trustedSenders: [],
 		modules: {},
 	});
 	assert.equal(full.autoReadDailyLimit, 7);
@@ -189,6 +201,16 @@ test("saving capabilities never drops muted senders", () => {
 	assert.deepEqual(merge({ mutedSenders: [] }).mutedSenders, ["a@x.test"]);
 	assert.deepEqual(merge({ mutedSenders: ["B@Y.test", "a@x.test"] }).mutedSenders, ["a@x.test", "b@y.test"]);
 	assert.deepEqual(merge(undefined), current.capabilities);
+});
+
+test("saving capabilities keeps trusted senders as stored and cannot set them", () => {
+	const base = settings.resolveMailboxAgentSettings(undefined, personal);
+	const current = { ...base, capabilities: { ...base.capabilities, trustedSenders: ["bank@x.test"] } };
+	const parsed = parseUpdate({ capabilities: { reply: false, trustedSenders: ["evil@x.test"] } });
+	assert.equal(parsed.success, true);
+	const merged = settings.applyMailboxAgentSettingsUpdate(current, parsed.data).capabilities;
+	assert.deepEqual(merged.trustedSenders, ["bank@x.test"]);
+	assert.equal(merged.reply, false);
 });
 
 test("module step switches are kept per key, merged on save, and malformed keys or values are dropped", () => {

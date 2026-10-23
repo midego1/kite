@@ -354,6 +354,36 @@ test("dismiss is audited and undoable; muting adds the sender once and undo remo
 	await assert.rejects(dismissSuggestion(env, manager, "sugg-reply", null), { status: 400 });
 });
 
+test("Not phishing dismisses the warning and trusts the sender; undo reopens it and removes only that trust", async (t) => {
+	const { db, env } = await setup(t);
+	const capabilities = () =>
+		JSON.parse(
+			db.db.prepare("SELECT capabilities FROM mailbox_agent_settings WHERE mailbox_id = 'mailbox-a'").get()
+				.capabilities,
+		);
+	await assert.rejects(dismissSuggestion(env, manager, "sugg-reply", { notPhishing: true }), { status: 400 });
+	const result = await dismissSuggestion(env, manager, "sugg-phish", { notPhishing: true });
+	assert.equal(result.status, "dismissed");
+	assert.equal(result.trustedSender, "alerts@bank.test");
+	assert.equal(result.mutedSender, null);
+	assert.equal(statusOf(db, "sugg-phish"), "dismissed");
+	assert.deepEqual(capabilities().trustedSenders, ["alerts@bank.test"]);
+	assert.deepEqual(capabilities().mutedSenders, ["old@sender.test"], "muted senders are kept as stored");
+	const [row] = actionRows(db);
+	assert.equal(JSON.parse(row.after).trustedSender, "alerts@bank.test");
+
+	await undoAgentAction(env, owner, result.actionId);
+	assert.equal(statusOf(db, "sugg-phish"), "open");
+	assert.deepEqual(capabilities().trustedSenders, []);
+
+	db.db.exec(
+		`UPDATE mailbox_agent_settings SET capabilities = '{"trustedSenders":["alerts@bank.test"]}' WHERE mailbox_id = 'mailbox-a'`,
+	);
+	const again = await dismissSuggestion(env, owner, "sugg-phish", { notPhishing: true });
+	assert.equal(JSON.parse(actionRows(db).at(-1).after).trustedSender, undefined, "an older trust is not recorded");
+	await undoAgentAction(env, owner, again.actionId);
+	assert.deepEqual(capabilities().trustedSenders, ["alerts@bank.test"], "and survives the undo");
+});
 test("muting a sender who is already muted keeps the mute when the dismiss is undone", async (t) => {
 	const { db, env } = await setup(t);
 	db.db.exec("UPDATE messages SET from_addr = 'Old <OLD@sender.test>' WHERE id = 'msg-a'");

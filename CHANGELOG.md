@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.23.0] - 2026-10-23
+
+### Added
+
+- **Not phishing** on the phishing warning closes it and trusts the sender for that mailbox, so the AI model's suspicion alone no longer warns about their mail; signs Kite finds in a message itself still do. The toast offers Undo. See [Phishing warnings](https://github.com/midego1/kite/blob/main/docs/assistant.md#phishing-warnings).
+- Links through URL shorteners such as bit.ly add a little to the spam score. See [Phishing signs](https://github.com/midego1/kite/blob/main/docs/spam-protection.md#phishing-signs).
+
+### Changed
+
+- Fewer false phishing warnings. The AI model's suspicion now shows a warning only when the message itself shows a sign of phishing, and never for an authenticated known contact or for mail from your own domains that passed DMARC; such mail still gets no reply draft. The model is now told the authentication results, the sender's domain and where the links go, so authenticated password resets and sign-in codes are treated as normal mail.
+- A link that shows one address and opens a subdomain of it, or a newsletter tracking redirect to the address it shows, no longer counts as a misleading link. Links to IPv6 addresses now count like IPv4 ones, and punycode link hosts that imitate Latin letters count more than ordinary international domain names.
+
 ## [2026.10.22.1] - 2026-10-22
 
 ### Changed

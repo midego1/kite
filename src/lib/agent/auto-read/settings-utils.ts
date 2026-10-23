@@ -79,11 +79,12 @@ function defaultCapabilities(mailboxType: MailboxAgentSettingsContext["mailboxTy
 		summary: true,
 		phishing: true,
 		mutedSenders: [],
+		trustedSenders: [],
 		modules: {},
 	};
 }
 
-function normalizeMutedSenders(values: unknown[]): string[] {
+function normalizeSenders(values: unknown[]): string[] {
 	const senders = new Set<string>();
 	for (const value of values) {
 		if (typeof value !== "string") continue;
@@ -113,19 +114,23 @@ function parseCapabilities(value: string | null, fallback: AutoReadCapabilities)
 	const record = parsed as Record<string, unknown>;
 	const capabilities = { ...fallback };
 	for (const key of CAPABILITY_KEYS) if (typeof record[key] === "boolean") capabilities[key] = record[key];
-	capabilities.mutedSenders = Array.isArray(record.mutedSenders) ? normalizeMutedSenders(record.mutedSenders) : [];
+	capabilities.mutedSenders = Array.isArray(record.mutedSenders) ? normalizeSenders(record.mutedSenders) : [];
+	capabilities.trustedSenders = Array.isArray(record.trustedSenders) ? normalizeSenders(record.trustedSenders) : [];
 	capabilities.modules = normalizeModuleSwitches(record.modules);
 	return capabilities;
 }
 
-/** Toggles replace stored values; muted senders are only ever added, so a stale settings form cannot unmute anyone. */
+/**
+ * Toggles replace stored values; muted senders are only ever added, so a stale settings form cannot unmute
+ * anyone, and trusted senders are kept as stored.
+ */
 function mergeCapabilities(
 	current: AutoReadCapabilities,
 	input: MailboxAgentSettingsUpdate["capabilities"],
 ): AutoReadCapabilities {
 	const merged = { ...current };
 	for (const key of CAPABILITY_KEYS) merged[key] = input?.[key] ?? current[key];
-	merged.mutedSenders = normalizeMutedSenders([...current.mutedSenders, ...(input?.mutedSenders ?? [])]);
+	merged.mutedSenders = normalizeSenders([...current.mutedSenders, ...(input?.mutedSenders ?? [])]);
 	merged.modules = normalizeModuleSwitches({ ...current.modules, ...input?.modules });
 	return merged;
 }

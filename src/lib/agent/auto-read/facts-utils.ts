@@ -5,6 +5,7 @@ import type {
 	FactsAttachment,
 	FactsContact,
 	MessageFacts,
+	SupportingPhishingSignal,
 } from "./facts-types";
 import type { AutoReadCapabilities } from "./settings-types";
 
@@ -19,6 +20,7 @@ const ATTACHMENT_SIGNALS = [
 ] as const;
 /** Found by the optional URLhaus lookup (`src/lib/spam/providers/urlhaus.ts`). */
 const LOOKUP_SIGNALS = ["urlhaus_url", "urlhaus_payload"] as const;
+const SUPPORTING_SIGNALS: readonly SupportingPhishingSignal[] = ["url_shortener"];
 const AUTH_METHODS = ["spf", "dkim", "dmarc"] as const;
 
 // Local parsing keeps this module free of runtime imports so tests can load it directly.
@@ -178,6 +180,10 @@ export function collectFacts(input: CollectFactsInput): MessageFacts {
 		knownContact: isKnownContact(signals, senderAddress, contacts),
 		spoofedContact,
 		phishingSignals: phishingSignals(signals, verdict, auth, spoofedContact),
+		supportingSignals: SUPPORTING_SIGNALS.filter((id) => signals.has(id)),
+		ownDomain: !!input.ownDomain,
+		senderDomain: input.links?.senderDomain ?? null,
+		linkHosts: input.links?.hosts ?? [],
 		inviteAttachments: (input.attachments ?? []).filter(isCalendarAttachment),
 		bodyLength: (input.bodyText ?? message.textBody ?? "").length,
 	};

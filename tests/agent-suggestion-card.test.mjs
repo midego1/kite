@@ -24,6 +24,7 @@ const {
 	cardSections,
 	hasCardContent,
 	newPhishingWarnings,
+	notPhishingToast,
 	pauseEnd,
 	pauseUndoValue,
 	phishingReasonTexts,
@@ -185,4 +186,13 @@ test("the reply line tells a non-reviewer that a draft exists without offering i
 		"Kite drafted a reply. It is in the reviewer's Drafts.",
 	);
 	assert.equal(replyStatusText({ draftId: null, canReviewDraft: false }), "The drafted reply is gone.");
+});
+
+test("the Not phishing toast names the trusted sender, or says this sender", () => {
+	assert.equal(
+		notPhishingToast("billing@example.com"),
+		"Marked as not phishing. Kite won't warn about billing@example.com again unless the message itself shows a sign of phishing.",
+	);
+	assert.match(notPhishingToast(null), /warn about this sender again/);
+	assert.match(notPhishingToast(""), /warn about this sender again/);
 });

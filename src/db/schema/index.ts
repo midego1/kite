@@ -795,7 +795,7 @@ export const mailboxAgentSettings = sqliteTable("mailbox_agent_settings", {
 	autonomy: text("autonomy", { enum: ["off", "suggest", "act", "auto"] })
 		.notNull()
 		.default("off"),
-	/** JSON: per-capability switches (calendar, reply, summary, phishing) plus `mutedSenders`. */
+	/** JSON: per-capability switches (calendar, reply, summary, phishing) plus `mutedSenders` and `trustedSenders`. */
 	capabilities: text("capabilities").notNull().default('{"calendar":true,"reply":true,"summary":true,"phishing":true}'),
 	triageModelId: text("triage_model_id"),
 	autoReadDailyLimit: integer("auto_read_daily_limit").notNull().default(200),

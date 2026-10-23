@@ -26,7 +26,12 @@ export function parseStatusFilter(value: string | null, hasMailbox: boolean): Su
 export const acceptSuggestionSchema = z.object({ option: z.string().min(1).max(40) });
 
 export const dismissSuggestionSchema = z
-	.object({ muteSender: z.boolean().optional(), discardDraft: z.boolean().optional() })
+	.object({
+		muteSender: z.boolean().optional(),
+		discardDraft: z.boolean().optional(),
+		/** Only for a phishing warning: also trust the sender, so a model's flag alone never warns about them. */
+		notPhishing: z.boolean().optional(),
+	})
 	.strict();
 
 /** Options each kind can be accepted with; calendar invites join in a later milestone. */
@@ -78,9 +83,17 @@ export function sumTotals(totals: Record<string, number>): number {
 	return Object.values(totals).reduce((sum, value) => sum + value, 0);
 }
 
-/** Dismissing is allowed while open; a repeated dismiss is answered by the executor's idempotency. */
-export function dismissRefusal(status: SuggestionStatus): AcceptRefusal | null {
-	return status === "open" || status === "dismissed"
+/**
+ * Dismissing is allowed while open; a repeated dismiss is answered by the executor's idempotency.
+ * "Not phishing" exists only on a phishing warning.
+ */
+export function dismissRefusal(
+	suggestion: { kind: SuggestionKind; status: SuggestionStatus },
+	options: { notPhishing?: boolean } = {},
+): AcceptRefusal | null {
+	if (options.notPhishing && suggestion.kind !== "phishing")
+		return { status: 400, error: "Only a phishing warning can be marked as not phishing" };
+	return suggestion.status === "open" || suggestion.status === "dismissed"
 		? null
 		: { status: 409, error: "This suggestion is no longer open" };
 }

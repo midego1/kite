@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.23.0] - 2026-10-23
+
 ### Added
 
 - **Not phishing** on the phishing warning closes it and trusts the sender for that mailbox, so the AI model's suspicion alone no longer warns about their mail; signs Kite finds in a message itself still do. The toast offers Undo. See [Phishing warnings](https://github.com/midego1/kite/blob/main/docs/assistant.md#phishing-warnings).

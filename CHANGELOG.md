@@ -6,13 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.23.1] - 2026-10-23
+
 One new optional secret name, `ABUSE_CH_AUTH_KEY`, another name for `URLHAUS_AUTH_KEY` (see ThreatFox lookups below).
 
 ### Added
 
 - Optional **ThreatFox lookups**. The abuse.ch Auth-Key in `URLHAUS_AUTH_KEY` now also checks risky incoming mail against ThreatFox, abuse.ch's list of the servers, domains and files malware uses, at the same time as URLhaus and under the same rules: only mail that already looks risky, not from people you have saved or written to unless its sender checks failed, and a lookup that fails or takes over 3 seconds is skipped. ThreatFox gets only the host names of up to five links (no paths or query strings) and the SHA-256 hashes of up to three attachments. A match raises the spam score and shows on the phishing warning; when both lists match, the second adds only a little. `ABUSE_CH_AUTH_KEY` works as another name for the key. See [Spam protection](https://github.com/midego1/kite/blob/main/docs/spam-protection.md#urlhaus-and-threatfox-lookups-optional).
-- **Test key** under **Admin → General → Threat lookups**, for the owner: Kite looks up `example.com` once on URLhaus and ThreatFox and shows **Key works**, **Key rejected** or **abuse.ch unreachable** for each. The card now shows URLhaus and ThreatFox separately, and the Worker logs `spam.threat_lookup_key_rejected` when abuse.ch refuses the key, without the key or any link.
+- **Test key** under [Admin → General](/general) → **Threat lookups**, for the owner: Kite looks up `example.com` once on URLhaus and ThreatFox and shows **Key works**, **Key rejected** or **abuse.ch unreachable** for each. The card now shows URLhaus and ThreatFox separately, and the Worker logs `spam.threat_lookup_key_rejected` when abuse.ch refuses the key, without the key or any link.
 - **Trusted senders** and **Muted senders** lists in the assistant settings under **Automatic reading**, for people with full access to the mailbox: see who you marked **Not phishing** or muted, remove them, or add an address yourself. Each change is saved at once for that address only. See [Phishing warnings](https://github.com/midego1/kite/blob/main/docs/assistant.md#phishing-warnings).
+
 ## [2026.10.23.0] - 2026-10-23
 
 ### Added

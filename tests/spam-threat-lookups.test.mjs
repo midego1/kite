@@ -17,6 +17,7 @@ await build({
 		engine: source("lib/spam/engine.ts"),
 		abuseCh: source("lib/spam/providers/abuse-ch.ts"),
 		abuseChUtils: source("lib/spam/providers/abuse-ch-utils.ts"),
+		abuseChKey: source("lib/spam/providers/abuse-ch-key.ts"),
 		threatfoxUtils: source("lib/spam/providers/threatfox-utils.ts"),
 		facts: source("lib/agent/auto-read/facts-utils.ts"),
 		db: source("db/index.ts"),
@@ -39,7 +40,26 @@ await build({
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { analyzeSpam } = await load("engine");
 const { spamIntelligenceProvider, testAbuseChKey } = await load("abuseCh");
-const { abuseChAuthKey, keyTestResult, lookupOutcome, lookupSignals } = await load("abuseChUtils");
+const {
+	abuseChAuthKey,
+	abuseChSecretName,
+	abuseChTestOrigin,
+	abuseChTestUrl,
+	keySaveDecision,
+	keyTestResult,
+	lookupOutcome,
+	lookupSignals,
+	parseAbuseChKeyInput,
+	pickAbuseChKey,
+} = await load("abuseChUtils");
+const {
+	AbuseChKeyUpdatePendingError,
+	clearAbuseChKey,
+	configuredSpamIntelligenceProvider,
+	getAbuseChKeyStatus,
+	resolveAbuseChKey,
+	saveAbuseChKey,
+} = await load("abuseChKey");
 const { threatfoxHostTerms } = await load("threatfoxUtils");
 const { collectFacts } = await load("facts");
 const { createDb } = await load("db");
@@ -140,7 +160,7 @@ async function setup(t) {
 				"INSERT INTO contacts (id, user_id, email, display_name, source, blocked, created_at, last_seen_at) VALUES (?, 'owner', ?, 'Someone', ?, ?, 1, 1)",
 			)
 			.run(`contact-${email}`, email, source, blocked);
-	return { analyze, addContact };
+	return { analyze, addContact, sqlite };
 }
 
 const ids = (result) => result.signals.map((signal) => signal.id);
@@ -604,4 +624,121 @@ test("URLhaus and ThreatFox matches become phishing warning reasons", () => {
 	});
 	for (const id of ["urlhaus_url", "urlhaus_payload", "threatfox_url", "threatfox_payload"])
 		assert.ok(facts.phishingSignals.includes(id), id);
+});
+
+// Invented, test only.
+const ENCRYPTION_KEY = "test-only-encryption-key-0123456789abcdef";
+const SAVED = "saved-auth-key";
+
+test("a secret wins over the key saved in Kite, which is used only without one", () => {
+	assert.equal(pickAbuseChKey(null, null), null);
+	assert.equal(pickAbuseChKey(null, "  "), null);
+	assert.deepEqual(pickAbuseChKey(null, ` ${SAVED} `), { key: SAVED, source: "settings" });
+	assert.deepEqual(pickAbuseChKey(KEY, SAVED), { key: KEY, source: "secret" });
+	assert.equal(abuseChSecretName({}), null);
+	assert.equal(abuseChSecretName({ ABUSE_CH_AUTH_KEY: "alias" }), "ABUSE_CH_AUTH_KEY");
+	assert.equal(abuseChSecretName({ URLHAUS_AUTH_KEY: KEY, ABUSE_CH_AUTH_KEY: "alias" }), "URLHAUS_AUTH_KEY");
+	assert.equal(abuseChSecretName({ URLHAUS_AUTH_KEY: " ", ABUSE_CH_AUTH_KEY: "alias" }), "ABUSE_CH_AUTH_KEY");
+});
+
+test("a key is saved only when no list refuses it; an unreachable list saves it unchecked", () => {
+	assert.equal(keySaveDecision({ urlhaus: "works", threatfox: "works" }), "verified");
+	assert.equal(keySaveDecision({ urlhaus: "works", threatfox: "unreachable" }), "unverified");
+	assert.equal(keySaveDecision({ urlhaus: "unreachable", threatfox: "unreachable" }), "unverified");
+	assert.equal(keySaveDecision({ urlhaus: "rejected", threatfox: "works" }), "rejected");
+	assert.equal(keySaveDecision({ urlhaus: "unreachable", threatfox: "rejected" }), "rejected");
+	assert.equal(parseAbuseChKeyInput(` ${KEY} `), KEY);
+	for (const bad of [null, 42, "", "   ", "two words", "line\nbreak", "x".repeat(201), "ключ"])
+		assert.equal(parseAbuseChKeyInput(bad), null, JSON.stringify(bad));
+});
+
+test("the abuse.ch test origin is loopback http only and never in production", () => {
+	assert.equal(abuseChTestOrigin("http://127.0.0.1:3297", "development"), "http://127.0.0.1:3297");
+	assert.equal(abuseChTestOrigin("http://localhost:3297/ignored", undefined), "http://localhost:3297");
+	assert.equal(abuseChTestOrigin("http://127.0.0.1:3297", "production"), null);
+	for (const value of [undefined, "", "https://127.0.0.1:3297", "http://evil.test", "http://10.0.0.1", "nonsense"])
+		assert.equal(abuseChTestOrigin(value, "development"), null, String(value));
+	assert.equal(
+		abuseChTestUrl("https://urlhaus-api.abuse.ch/v1/url/", "http://127.0.0.1:3297"),
+		"http://127.0.0.1:3297/v1/url/",
+	);
+	assert.equal(
+		abuseChTestUrl("https://threatfox-api.abuse.ch/api/v1/", "http://127.0.0.1:3297"),
+		"http://127.0.0.1:3297/api/v1/",
+	);
+});
+
+test("the key saved in Kite is sealed, reported without its value, used by inbound lookups, and removable", async (t) => {
+	const { analyze, sqlite } = await setup(t);
+	const env = { DB: sqlite, APP_ENCRYPTION_KEY: ENCRYPTION_KEY };
+	const link = "https://files.stranger.test/invoice.zip";
+	assert.deepEqual(await getAbuseChKeyStatus(env), {
+		source: null,
+		secretName: null,
+		unreadable: false,
+		updatePending: false,
+		nodeRuntime: false,
+	});
+	assert.equal(await resolveAbuseChKey(env), null);
+
+	await saveAbuseChKey(env, SAVED);
+	const stored = sqlite.db.prepare("SELECT abuse_ch_auth_key AS value FROM app_settings WHERE id = 'default'").get();
+	assert.match(stored.value, /^enc:v1:/);
+	assert.ok(!stored.value.includes(SAVED));
+	const status = await getAbuseChKeyStatus(env);
+	assert.equal(status.source, "settings");
+	assert.ok(!JSON.stringify(status).includes(SAVED));
+	assert.deepEqual(await resolveAbuseChKey(env), { key: SAVED, source: "settings" });
+
+	const saved = fakeAbuseCh();
+	await analyze(email(), configuredSpamIntelligenceProvider(env, saved.fetcher));
+	assert.deepEqual(saved.requests, [], "mail that does not look risky is not looked up");
+	await analyze(risky(link), configuredSpamIntelligenceProvider(env, saved.fetcher));
+	assert.ok(saved.requests.length > 0);
+	assert.ok(saved.requests.every((request) => request.key === SAVED));
+
+	const withSecret = { ...env, ABUSE_CH_AUTH_KEY: KEY };
+	assert.deepEqual(await resolveAbuseChKey(withSecret), { key: KEY, source: "secret" });
+	assert.equal((await getAbuseChKeyStatus(withSecret)).secretName, "ABUSE_CH_AUTH_KEY");
+	const secret = fakeAbuseCh();
+	await analyze(risky(link), configuredSpamIntelligenceProvider(withSecret, secret.fetcher));
+	assert.ok(secret.requests.length > 0);
+	assert.ok(secret.requests.every((request) => request.key === KEY));
+
+	// A changed APP_ENCRYPTION_KEY makes the saved key unreadable: no lookups, and the owner is told.
+	const changed = { ...env, APP_ENCRYPTION_KEY: "another-test-only-key-0123456789abcdef" };
+	const unreadable = await captureWarnings(async () => {
+		assert.deepEqual(await getAbuseChKeyStatus(changed), {
+			source: null,
+			secretName: null,
+			unreadable: true,
+			updatePending: false,
+			nodeRuntime: false,
+		});
+	});
+	assert.ok(unreadable.every((line) => !line.includes(SAVED)));
+	const none = fakeAbuseCh();
+	await captureWarnings(() => analyze(risky(link), configuredSpamIntelligenceProvider(changed, none.fetcher)));
+	assert.deepEqual(none.requests, []);
+
+	await clearAbuseChKey(env);
+	assert.equal(await resolveAbuseChKey(env), null);
+	const cleared = fakeAbuseCh();
+	await analyze(risky(link), configuredSpamIntelligenceProvider(env, cleared.fetcher));
+	assert.deepEqual(cleared.requests, []);
+});
+
+test("before migration 0068 the saved key reads as none and saving asks for the update", async (t) => {
+	const { analyze, sqlite } = await setup(t);
+	sqlite.db.exec("ALTER TABLE app_settings DROP COLUMN abuse_ch_auth_key");
+	const env = { DB: sqlite, APP_ENCRYPTION_KEY: ENCRYPTION_KEY };
+	assert.equal((await getAbuseChKeyStatus(env)).updatePending, true);
+	assert.equal(await resolveAbuseChKey(env), null);
+	const { fetcher, requests } = fakeAbuseCh();
+	await analyze(risky("https://files.stranger.test/invoice.zip"), configuredSpamIntelligenceProvider(env, fetcher));
+	assert.deepEqual(requests, []);
+	await assert.rejects(saveAbuseChKey(env, SAVED), AbuseChKeyUpdatePendingError);
+	await assert.rejects(clearAbuseChKey(env), AbuseChKeyUpdatePendingError);
+	// The secret still works without the update.
+	assert.deepEqual(await resolveAbuseChKey({ ...env, URLHAUS_AUTH_KEY: KEY }), { key: KEY, source: "secret" });
 });

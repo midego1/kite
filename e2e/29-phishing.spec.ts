@@ -9,6 +9,7 @@ import {
 	restoreAutoReadSnapshot,
 	selectMailbox,
 } from "./support/auto-read";
+import { FAKE_ABUSE_CH_KEYS, startFakeAbuseCh } from "./support/fake-abuse-ch";
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
 import type { InboundAttachment } from "./support/helpers-types";
@@ -376,4 +377,103 @@ test("Admin General shows that URLhaus and ThreatFox lookups are off without a k
 	}
 	expect(errors).toEqual([]);
 	await context.close();
+});
+
+test("the owner saves an abuse.ch key in Admin General, inbound mail uses it, and it never leaves the server", async ({
+	browser,
+}) => {
+	const abuseCh = await startFakeAbuseCh();
+	const context = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE });
+	const page = await context.newPage();
+	const errors = collectConsoleErrors(page);
+	const bodies: Promise<string>[] = [];
+	page.on("response", (response) => {
+		if (/^\/api\//.test(new URL(response.url()).pathname)) bodies.push(response.text().catch(() => ""));
+	});
+	const account = await newAccount("phs");
+	const keys = Object.values(FAKE_ABUSE_CH_KEYS);
+	const leaks = (text: string) => keys.filter((key) => text.includes(key));
+	try {
+		await page.goto("/general");
+		const card = page.locator("[data-threat-lookups]");
+		const source = card.locator("[data-key-source]");
+		await expect(source).toHaveText("No key");
+		await expect(card.getByRole("link", { name: "https://auth.abuse.ch/" })).toHaveAttribute(
+			"href",
+			"https://auth.abuse.ch/",
+		);
+		await expect(card).toContainText(
+			"The free abuse.ch API is for non-commercial use; commercial use needs a Spamhaus subscription.",
+		);
+		const field = card.getByLabel("abuse.ch Auth-Key");
+		await expect(field).toHaveAttribute("type", "password");
+
+		await field.fill(FAKE_ABUSE_CH_KEYS.rejected);
+		await card.getByRole("button", { name: "Save key" }).click();
+		await expect(card.getByRole("alert")).toContainText("Key rejected");
+		await expect(source).toHaveText("No key");
+
+		await field.fill(FAKE_ABUSE_CH_KEYS.works);
+		await card.getByRole("button", { name: "Save key" }).click();
+		await expect(card.locator("[data-key-message]")).toHaveText("Key works and is saved");
+		await expect(source).toHaveText("Key saved in Kite");
+		await expect(field).toHaveValue("");
+		await expect(card.locator("[data-lookup-status=urlhaus]")).toHaveText("URLhaus lookups are on");
+		await expect(card.locator("[data-lookup-status=threatfox]")).toHaveText("ThreatFox lookups are on");
+		await card.getByRole("button", { name: "Test key" }).click();
+		await expect(card.locator("[data-key-test] [data-service=urlhaus]")).toHaveText("URLhaus: Key works");
+		await expect(card.locator("[data-key-test] [data-service=threatfox]")).toHaveText("ThreatFox: Key works");
+
+		await page.reload();
+		await expect(source).toHaveText("Key saved in Kite");
+		expect(leaks(await page.content())).toEqual([]);
+		const general = await api.get("/api/admin/general");
+		expect(leaks(await general.text())).toEqual([]);
+		expect((await general.json()).threatLookupKey).toMatchObject({ source: "settings", secretName: null });
+
+		// Risky inbound mail is looked up with the saved key.
+		const before = abuseCh.keys.length;
+		await deliverFrom(account, strangerAddress("phs"), uniqueToken("phss"), [loginPage]);
+		await expect.poll(() => abuseCh.keys.length).toBeGreaterThan(before);
+		expect(abuseCh.keys.slice(before).every((key) => key === FAKE_ABUSE_CH_KEYS.works)).toBe(true);
+
+		// When abuse.ch cannot be reached the key is saved anyway, with a warning.
+		await field.fill(FAKE_ABUSE_CH_KEYS.unreachable);
+		await card.getByRole("button", { name: "Save key" }).click();
+		await expect(card.locator("[data-key-message]")).toContainText("abuse.ch could not be reached");
+		await expect(source).toHaveText("Key saved in Kite");
+
+		// Only the owner may save, remove or test the key, and only from Kite's own origin.
+		const otherAdmin = await createSignedInAccount(api, `phsx${uniqueToken("")}`, "admin");
+		try {
+			for (const response of [
+				await otherAdmin.api.put("/api/admin/threat-lookups/key", { data: { authKey: FAKE_ABUSE_CH_KEYS.works } }),
+				await otherAdmin.api.delete("/api/admin/threat-lookups/key"),
+				await otherAdmin.api.post("/api/admin/threat-lookups/test"),
+			])
+				expect(response.status()).toBe(403);
+		} finally {
+			await otherAdmin.api.dispose();
+		}
+		const crossOrigin = await api.put("/api/admin/threat-lookups/key", {
+			data: { authKey: FAKE_ABUSE_CH_KEYS.works },
+			headers: { Origin: "https://attacker.test" },
+		});
+		expect(crossOrigin.status()).toBe(403);
+
+		await card.getByRole("button", { name: "Remove key" }).click();
+		await confirmDialog(page, "Remove the abuse.ch Auth-Key?").getByRole("button", { name: "Remove key" }).click();
+		await expect(source).toHaveText("No key");
+		await expect(card.locator("[data-lookup-status=urlhaus]")).toHaveText("URLhaus lookups are off");
+		await expect(card.getByRole("button", { name: "Test key" })).toHaveCount(0);
+
+		for (const body of await Promise.all(bodies)) expect(leaks(body)).toEqual([]);
+		// The refused key answers 400 on purpose, which Chromium logs as a failed resource.
+		expect(errors.filter((error) => !/status of 400/.test(error))).toEqual([]);
+	} finally {
+		await api.delete("/api/admin/threat-lookups/key");
+		await account.api.dispose();
+		await context.close();
+		await abuseCh.close();
+	}
 });

@@ -6,7 +6,7 @@ import { requireSessionUser } from "@/lib/api/auth";
 import { isPrimaryAdmin } from "@/lib/auth/admin";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getOutboundAttachmentMaxMb, MAX_OUTBOUND_ATTACHMENT_MAX_MB } from "@/lib/email/attachment-policy";
-import { abuseChAuthKey } from "@/lib/spam/providers/abuse-ch-utils";
+import { getAbuseChKeyStatus } from "@/lib/spam/providers/abuse-ch-key";
 
 const schema = z.object({ outboundAttachmentMaxMb: z.number().int().min(1).max(MAX_OUTBOUND_ATTACHMENT_MAX_MB) });
 
@@ -15,10 +15,12 @@ export async function GET(request: Request) {
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return auth.error;
 	if (!isPrimaryAdmin(auth.user)) return Response.json({ error: "Forbidden" }, { status: 403 });
+	const threatLookupKey = await getAbuseChKeyStatus(env);
 	return Response.json(
 		{
 			outboundAttachmentMaxMb: await getOutboundAttachmentMaxMb(env),
-			threatLookupsConfigured: abuseChAuthKey(env) !== null,
+			threatLookupsConfigured: threatLookupKey.source !== null,
+			threatLookupKey,
 		},
 		{ headers: { "Cache-Control": "no-store" } },
 	);

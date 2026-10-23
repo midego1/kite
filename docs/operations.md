@@ -268,6 +268,10 @@ Once remote images are allowed for a message, the reader loads them through `GET
 
 `REMOTE_IMAGES_ALLOW_LOOPBACK=1` lets the remote image proxy (`GET /api/remote-images`) fetch `http` or `https` on `127.0.0.1` at any port other than the app's own, so `e2e/42-remote-images.spec.ts` can serve images from a local server. `localhost`, other loopback and private addresses stay blocked. Like `ALERT_WEBHOOK_ALLOW_INSECURE` it is ignored whenever `NODE_ENV` is `production` and `vite.config.ts` passes it to the Worker only for `vite dev`. Never set it on a deployment.
 
+### ABUSE_CH_TEST_ORIGIN (dev and test only)
+
+`ABUSE_CH_TEST_ORIGIN=http://127.0.0.1:<port>` (or `http://localhost:<port>`) sends every URLhaus and ThreatFox request, with its path, to that origin instead of abuse.ch, so the Playwright suite can save and test a key against `e2e/support/fake-abuse-ch.ts` without outside network access. Any other value is ignored. Like `ALERT_WEBHOOK_ALLOW_INSECURE` it is ignored whenever `NODE_ENV` is `production` and `vite.config.ts` passes it to the Worker only for `vite dev`. Never set it on a deployment.
+
 ## Triage and backlog
 
 Use the bug/task forms and assign a human owner. The task form records P0–P3;

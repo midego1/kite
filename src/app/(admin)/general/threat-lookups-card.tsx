@@ -3,14 +3,21 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { KeyTestResults } from "@/lib/spam/providers/abuse-ch-types";
-import { KEY_TEST_TEXT, lookupStatusText, testThreatLookupKey, THREAT_LOOKUP_SERVICES } from "./utils";
+import type { AbuseChKeyStatus, KeyTestResults } from "@/lib/spam/providers/abuse-ch-types";
+import { ThreatLookupsKeyForm } from "./threat-lookups-key-form";
+import { KEY_TEST_TEXT, keyStatusText, lookupStatusText, testThreatLookupKey, THREAT_LOOKUP_SERVICES } from "./utils";
 
-/** The key is a deployment secret, so nothing here can change it; the owner can only test it. */
-export function ThreatLookupsCard({ configured }: { configured: boolean | null }) {
+type Props = {
+	status: AbuseChKeyStatus | null;
+	onStatusChange: (status: AbuseChKeyStatus) => void;
+};
+
+/** The owner saves the key here, unless a deployment secret sets it; either way it can be tested. */
+export function ThreatLookupsCard({ status, onStatusChange }: Props) {
 	const [testing, setTesting] = useState(false);
 	const [results, setResults] = useState<KeyTestResults | null>(null);
 	const [error, setError] = useState("");
+	const configured = status ? status.source !== null : null;
 
 	async function test() {
 		setTesting(true);
@@ -23,6 +30,12 @@ export function ThreatLookupsCard({ configured }: { configured: boolean | null }
 		} finally {
 			setTesting(false);
 		}
+	}
+
+	function changeStatus(next: AbuseChKeyStatus) {
+		setResults(null);
+		setError("");
+		onStatusChange(next);
 	}
 
 	return (
@@ -39,10 +52,9 @@ export function ThreatLookupsCard({ configured }: { configured: boolean | null }
 					))}
 				</ul>
 				<p>
-					With a free abuse.ch Auth-Key in the <code>URLHAUS_AUTH_KEY</code> secret (or <code>ABUSE_CH_AUTH_KEY</code>),
-					Kite checks incoming mail from people you have not saved or written to against URLhaus and ThreatFox, public
-					lists of sites, servers and files that spread malware. A match adds to the spam score and shows a phishing
-					warning.
+					With a free abuse.ch Auth-Key, Kite checks incoming mail from people you have not saved or written to against
+					URLhaus and ThreatFox, public lists of sites, servers and files that spread malware. A match adds to the spam
+					score and shows a phishing warning.
 				</p>
 				<p>
 					Kite asks only about mail that already looks risky, such as mail with an attached web page or program, a
@@ -50,6 +62,38 @@ export function ThreatLookupsCard({ configured }: { configured: boolean | null }
 					links as they are, so they may carry personal details; ThreatFox gets only the names of the sites they lead
 					to. A lookup that fails or takes longer than 3 seconds is skipped.
 				</p>
+				<div className="space-y-2 rounded-xl bg-neutral-50 p-4">
+					<p className="font-medium text-neutral-900" data-key-source={status?.source ?? "none"}>
+						{keyStatusText(status)}
+					</p>
+					{status?.source === "secret" ? (
+						<p>
+							The <code>{status.secretName}</code> secret takes precedence over a key saved in Kite. To manage the key
+							here, remove the secret.
+						</p>
+					) : (
+						<p>
+							Enter the key here, or set it as the <code>URLHAUS_AUTH_KEY</code> secret (or{" "}
+							<code>ABUSE_CH_AUTH_KEY</code>), which takes precedence. A saved key is never shown again, and is
+							encrypted when APP_ENCRYPTION_KEY is set.
+						</p>
+					)}
+					{status && status.source !== "secret" && (
+						<ThreatLookupsKeyForm status={status} onStatusChange={changeStatus} />
+					)}
+					<p>
+						Get a free key at{" "}
+						<a
+							href="https://auth.abuse.ch/"
+							target="_blank"
+							rel="noreferrer"
+							className="text-blue-600 underline underline-offset-2"
+						>
+							https://auth.abuse.ch/
+						</a>
+						. The free abuse.ch API is for non-commercial use; commercial use needs a Spamhaus subscription.
+					</p>
+				</div>
 				{configured && (
 					<div className="space-y-2">
 						<Button type="button" size="sm" variant="outline" disabled={testing} onClick={() => void test()}>

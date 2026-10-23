@@ -23,3 +23,24 @@ export type ThreatLookupPlan = { urls: string[]; payloads: AttachmentContent[] }
 
 export type KeyTestResult = "works" | "rejected" | "unreachable";
 export type KeyTestResults = Record<AbuseChService, KeyTestResult>;
+
+/** Where the key lookups use comes from: a deployment secret, or the owner's entry in Admin → General. */
+export type AbuseChKeySource = "secret" | "settings";
+export type AbuseChSecretName = "URLHAUS_AUTH_KEY" | "ABUSE_CH_AUTH_KEY";
+export type ResolvedAbuseChKey = { key: string; source: AbuseChKeySource };
+/** A key either list refuses is not saved; when abuse.ch cannot be reached it is saved unchecked. */
+export type KeySaveDecision = "verified" | "unverified" | "rejected";
+
+/** What the owner may see about the key; never the key itself. */
+export type AbuseChKeyStatus = {
+	/** The key lookups use, or null when there is none (an unreadable saved key counts as none). */
+	source: AbuseChKeySource | null;
+	/** The secret holding the key when `source` is "secret". */
+	secretName: AbuseChSecretName | null;
+	/** A saved key exists but cannot be decrypted; APP_ENCRYPTION_KEY is missing or changed. */
+	unreadable: boolean;
+	/** The migration adding the saved key has not been applied, so no key can be saved yet. */
+	updatePending: boolean;
+	/** The self-hosted server, where the secret is an environment variable. */
+	nodeRuntime: boolean;
+};

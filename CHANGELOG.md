@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.23.2] - 2026-10-23
+
 Apply database migration 0067 after deploying, from the database card on the admin overview or the banner in the mailbox. It adds the Screener tables; until it is applied, every mailbox delivers as before, **Settings → Inbox → Screener** says the update is pending and Screener changes answer `503 SCREENER_UNAVAILABLE`. Mailboxes created before it is applied keep the Screener off.
 
 ### Added

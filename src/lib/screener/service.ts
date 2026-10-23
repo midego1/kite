@@ -90,7 +90,9 @@ export async function denySender(
 ): Promise<ScreenerDecisionResult> {
 	const db = getDb(env);
 	const mailbox = access.mailbox;
-	const waiting = await messagesFromSenders(db, mailbox.id, await waitingStatuses(db, mailbox.id), new Set([address]));
+	const previous = await getSenderDecision(db, mailbox.id, address);
+	const statuses = previous === null ? await waitingStatuses(db, mailbox.id) : [SCREENING_STATUS];
+	const waiting = await messagesFromSenders(db, mailbox.id, statuses, new Set([address]));
 	await recordSenderDecision(db, {
 		mailboxId: mailbox.id,
 		address,

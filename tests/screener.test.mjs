@@ -388,6 +388,23 @@ test("in Inbox mode approving and denying act on the marked Inbox mail too", asy
 	assert.equal(statusOf(deniedMail), "spam");
 });
 
+test("denying a decided sender leaves settled Inbox mail and spam training alone", async (t) => {
+	const { database, db, env, addMessage, statusOf, access } = await setup(t);
+	await settings.saveScreenerSettings(db, "mailbox-a", { enabled: true, mode: "inbox" }, "owner");
+	const settled = addMessage("jane@partner.test");
+	await service.approveSender(env, owner, await access(), "jane@partner.test");
+	const held = addMessage("jane@partner.test", { status: "screening" });
+	const denied = await service.denySender(env, owner, await access(), "jane@partner.test");
+	assert.deepEqual(denied.movedMessageIds, [held]);
+	assert.equal(statusOf(held), "spam");
+	assert.equal(statusOf(settled), "received");
+	assert.equal(database.db.prepare("SELECT 1 FROM spam_feedback WHERE message_id = ?").get(settled), undefined);
+	const later = addMessage("jane@partner.test");
+	const repeated = await service.denySender(env, owner, await access(), "jane@partner.test");
+	assert.deepEqual(repeated.movedMessageIds, []);
+	assert.equal(statusOf(later), "received", "an existing denial also protects settled mail");
+});
+
 test("inbound retries skip held and marked mail until the sender is approved", async (t) => {
 	const { database, db, env, addMessage } = await setup(t);
 	await settings.saveScreenerSettings(db, "mailbox-a", { enabled: true, mode: "inbox" }, "owner");

@@ -1694,6 +1694,7 @@ test.describe("reply suggestions", () => {
 				status: "dismissed",
 				actionId: expect.any(String),
 				mutedSender: "customer@outside.test",
+				trustedSender: null,
 			});
 			const repeated = await okJson<{ actionId: string }>(await manager.api.post(suggestionUrl(replyId, "dismiss")));
 			expect(repeated.actionId).toBe(dismissed.actionId);

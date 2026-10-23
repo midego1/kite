@@ -298,5 +298,6 @@
 	"49-domain-skip-dns.spec.ts › Skip DNS setup discards a domain check that finishes after the switch changes": 3100,
 	"50-domain-sending-label.spec.ts › a Cloudflare domain without a sending subdomain explains that sending is not configured": 12200,
 	"51-update-toast.spec.ts › session changes › Dismiss stays in effect after signing out and back in": 6300,
-	"52-screener.spec.ts › Screener settings update the sidebar immediately without reloading": 5000
+	"52-screener.spec.ts › Screener settings update the sidebar immediately without reloading": 5000,
+	"52-screener.spec.ts › unverified own and system senders still need approval": 10000
 }

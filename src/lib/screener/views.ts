@@ -12,9 +12,8 @@ import {
 	listDecidedAddresses,
 	listScreenerSenders,
 	listScreenerSettings,
-	screenerOwnAddresses,
 } from "./settings";
-import { isNewSenderRow, isScreenerExempt, SCREENING_STATUS, screenerAddress } from "./screener-utils";
+import { isNewSenderRow, SCREENING_STATUS, screenerAddress } from "./screener-utils";
 import type { ScreenerMessageStatus, ScreenerOverview } from "./screener-types";
 
 type ListRow = { id: string; mailboxId: string | null; status: string; direction: string; fromAddr: string };
@@ -40,12 +39,8 @@ export async function screenerPendingRows(db: AppDatabase, rows: readonly ListRo
 	const marked = candidates.filter((row) => inboxMode.has(row.mailboxId));
 	if (marked.length === 0) return pending;
 	const senders = marked.map((row) => screenerAddress(row.fromAddr)).filter((address): address is string => !!address);
-	const [decided, own] = await Promise.all([
-		listDecidedAddresses(db, [...inboxMode], senders),
-		screenerOwnAddresses(db),
-	]);
-	for (const row of marked)
-		if (isNewSenderRow(row, true, decided.get(row.mailboxId) ?? new Set(), own)) pending.add(row.id);
+	const decided = await listDecidedAddresses(db, [...inboxMode], senders);
+	for (const row of marked) if (isNewSenderRow(row, true, decided.get(row.mailboxId) ?? new Set())) pending.add(row.id);
 	return pending;
 }
 
@@ -79,8 +74,7 @@ export async function getScreenerMessageStatus(
 	if (message.status === SCREENING_STATUS) return { ...base, pending: true };
 	if (!address || base.mode !== "inbox" || message.status !== "received" || message.direction !== "inbound")
 		return { ...base, pending: false };
-	const own = await screenerOwnAddresses(db, access.mailbox);
-	const pending = !isScreenerExempt(address, own) && (await getSenderDecision(db, message.mailboxId, address)) === null;
+	const pending = (await getSenderDecision(db, message.mailboxId, address)) === null;
 	return { ...base, pending };
 }
 

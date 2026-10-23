@@ -1,8 +1,6 @@
-import { eq } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
-import { mailboxes } from "@/db/schema";
-import { getScreenerSettings, getSenderDecision, screenerOwnAddresses } from "./settings";
-import { isScreenerExempt, SCREENING_STATUS, screenerAddress, screenerVerdict } from "./screener-utils";
+import { getScreenerSettings, getSenderDecision } from "./settings";
+import { SCREENING_STATUS, screenerAddress, screenerVerdict } from "./screener-utils";
 
 /**
  * The status a delivered message is stored with once the Screener has seen it, and whether it waits for a
@@ -18,13 +16,10 @@ export async function applyScreener(
 	const settings = await getScreenerSettings(db, input.mailboxId);
 	const sender = screenerAddress(input.sender);
 	if (!settings?.enabled || !sender) return unchanged;
-	const [mailbox] = await db.select().from(mailboxes).where(eq(mailboxes.id, input.mailboxId)).limit(1);
-	const own = await screenerOwnAddresses(db, mailbox);
 	const verdict = screenerVerdict({
 		settings,
 		status: input.status,
 		sender,
-		exempt: isScreenerExempt(sender, own),
 		decision: await getSenderDecision(db, input.mailboxId, sender),
 	});
 	if (verdict === "hold") return { status: SCREENING_STATUS, awaiting: true };

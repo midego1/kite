@@ -145,6 +145,36 @@ test("a new mailbox holds mail from a new sender out of the Inbox, search, count
 	}
 });
 
+test("unverified own and system senders still need approval", async () => {
+	const account = await screenedAccount("scrspoof");
+	try {
+		for (const mode of ["screener", "inbox"] as const) {
+			await setScreener(account.api, account.mailboxId, { mode });
+			for (const from of [
+				account.address,
+				SUPPORT_ADDRESS,
+				"mailer-daemon@outside.test",
+				"postmaster@outside.test",
+				"mail-daemon@outside.test",
+			]) {
+				const message = await deliverFrom(
+					account,
+					from,
+					uniqueToken("unverified"),
+					mode === "screener" ? "screening" : "received",
+				);
+				expect(message.screenerPending).toBe(true);
+				const status = await okJson<{ pending: boolean }>(
+					await account.api.get(`/api/screener/message?messageId=${message.id}`),
+				);
+				expect(status.pending).toBe(true);
+			}
+		}
+	} finally {
+		await account.api.dispose();
+	}
+});
+
 test("approving releases every held message from the sender, and Undo puts them back", async ({ browser }) => {
 	const account = await screenedAccount("scrok");
 	const first = await deliverFrom(account, "Pat <pat@outside.test>", uniqueToken("patone"), "screening");

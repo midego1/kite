@@ -17,7 +17,6 @@ const SCREENER_MODES: readonly ScreenerMode[] = ["screener", "inbox"];
 /** How many released or denied messages one decision trains on or schedules automatic reading for. */
 export const SCREENER_FOLLOW_UP_LIMIT = 25;
 
-const BOUNCE_SENDER = /^(mailer-daemon|postmaster|mail-daemon)@/;
 const ADDRESS_PATTERN = /^[^\s@<>(),;:"]+@[^\s@<>(),;:"]+\.[^\s@<>(),;:"]+$/;
 
 function isScreenerMode(value: unknown): value is ScreenerMode {
@@ -35,12 +34,6 @@ export function screenerAddress(value: unknown): string | null {
 	return ADDRESS_PATTERN.test(address) ? address : null;
 }
 
-/** Mail the Screener never holds: bounces and system mail, and mail from this install's own mailboxes. */
-export function isScreenerExempt(sender: string | null, ownAddresses: ReadonlySet<string>): boolean {
-	if (!sender) return true;
-	return BOUNCE_SENDER.test(sender) || ownAddresses.has(sender);
-}
-
 /**
  * What delivery does with a message. Only mail that would land in the Inbox or a user folder (`received`) is
  * screened: spam, trash and rule-filed archive keep their status, so the spam filter and rules always run first.
@@ -49,10 +42,9 @@ export function screenerVerdict(input: {
 	settings: ScreenerSettings | null;
 	status: string;
 	sender: string | null;
-	exempt: boolean;
 	decision: ScreenerDecision | null;
 }): ScreenerVerdict {
-	if (!input.settings?.enabled || input.status !== "received" || input.exempt || !input.sender) return "deliver";
+	if (!input.settings?.enabled || input.status !== "received" || !input.sender) return "deliver";
 	if (input.decision === "approved") return "deliver";
 	if (input.decision === "denied") return "spam";
 	return input.settings.mode === "inbox" ? "mark" : "hold";
@@ -128,10 +120,9 @@ export function isNewSenderRow(
 	row: { status: string; direction: string; fromAddr: string },
 	inboxModeMailbox: boolean,
 	decided: ReadonlySet<string>,
-	ownAddresses: ReadonlySet<string>,
 ): boolean {
 	if (row.status === SCREENING_STATUS) return true;
 	if (!inboxModeMailbox || row.status !== "received" || row.direction !== "inbound") return false;
 	const sender = screenerAddress(row.fromAddr);
-	return !isScreenerExempt(sender, ownAddresses) && !decided.has(sender!);
+	return !!sender && !decided.has(sender);
 }

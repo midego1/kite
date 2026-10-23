@@ -29,11 +29,11 @@ In both modes the reader shows a **New sender** bar above a waiting message with
 
 Decisions are stored per mailbox for the lowercased address only, so approving `pat@example.com` does not approve the rest of `example.com`.
 
-## Who is never screened
+## Who is approved automatically
 
-- Addresses you write to. Sending from a mailbox approves every To, Cc and Bcc address that has no decision yet, and releases their waiting mail. A denied address stays denied.
-- Mail from this install's own mailboxes and aliases, and from the mailbox's other domain addresses.
-- Bounces and system mail (`mailer-daemon@`, `postmaster@`, `mail-daemon@`).
+Sending from a mailbox approves every external To, Cc and Bcc address that has no decision yet, and releases their waiting mail. This install's own addresses are excluded. A denied address stays denied.
+
+Mail claiming to come from this install's own mailboxes or aliases, or from system addresses (`mailer-daemon@`, `postmaster@`, `mail-daemon@`), still needs approval. The From header alone does not prove who sent it. The Screener is a sender preference, not a replacement for sender authentication or spam protection.
 
 Saved contacts are not approved automatically; approve them once, or with **Approve everyone you've written to**.
 

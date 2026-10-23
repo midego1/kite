@@ -129,18 +129,19 @@ test("addresses are lowercased bare addresses, and anything else is refused", ()
 	);
 });
 
-test("bounces, system mail and the install's own addresses are never screened", () => {
-	const own = new Set(["a@example.com"]);
-	assert.equal(utils.isScreenerExempt(null, own), true);
-	assert.equal(utils.isScreenerExempt("mailer-daemon@partner.test", own), true);
-	assert.equal(utils.isScreenerExempt("postmaster@partner.test", own), true);
-	assert.equal(utils.isScreenerExempt("a@example.com", own), true);
-	assert.equal(utils.isScreenerExempt("jane@partner.test", own), false);
+test("own and system From addresses do not bypass screening without approval", () => {
+	for (const sender of ["a@example.com", "mailer-daemon@partner.test", "postmaster@partner.test"]) {
+		for (const mode of ["screener", "inbox"])
+			assert.equal(
+				utils.screenerVerdict({ settings: { enabled: true, mode }, status: "received", sender, decision: null }),
+				mode === "screener" ? "hold" : "mark",
+			);
+	}
 });
 
 test("the verdict screens only mail headed for the Inbox or a folder, from undecided senders", () => {
 	const on = { enabled: true, mode: "screener" };
-	const base = { settings: on, status: "received", sender: "jane@partner.test", exempt: false, decision: null };
+	const base = { settings: on, status: "received", sender: "jane@partner.test", decision: null };
 	assert.equal(utils.screenerVerdict(base), "hold");
 	assert.equal(utils.screenerVerdict({ ...base, settings: { enabled: true, mode: "inbox" } }), "mark");
 	assert.equal(utils.screenerVerdict({ ...base, decision: "approved" }), "deliver");
@@ -148,7 +149,6 @@ test("the verdict screens only mail headed for the Inbox or a folder, from undec
 	assert.equal(utils.screenerVerdict({ ...base, settings: null }), "deliver");
 	assert.equal(utils.screenerVerdict({ ...base, settings: { enabled: false, mode: "screener" } }), "deliver");
 	assert.equal(utils.screenerVerdict({ ...base, status: "spam" }), "deliver");
-	assert.equal(utils.screenerVerdict({ ...base, exempt: true }), "deliver");
 	assert.equal(utils.screenerVerdict({ ...base, sender: null }), "deliver");
 });
 
@@ -186,13 +186,13 @@ test("request bodies are validated before anything is written", () => {
 
 test("a row is a new sender when held, or undecided in an Inbox-mode mailbox", () => {
 	const row = { status: "received", direction: "inbound", fromAddr: "Jane <jane@partner.test>" };
-	const own = new Set(["a@example.com"]);
-	assert.equal(utils.isNewSenderRow({ ...row, status: "screening" }, false, new Set(), own), true);
-	assert.equal(utils.isNewSenderRow(row, false, new Set(), own), false);
-	assert.equal(utils.isNewSenderRow(row, true, new Set(), own), true);
-	assert.equal(utils.isNewSenderRow(row, true, new Set(["jane@partner.test"]), own), false);
-	assert.equal(utils.isNewSenderRow({ ...row, direction: "outbound" }, true, new Set(), own), false);
-	assert.equal(utils.isNewSenderRow({ ...row, fromAddr: "a@example.com" }, true, new Set(), own), false);
+	assert.equal(utils.isNewSenderRow({ ...row, status: "screening" }, false, new Set()), true);
+	assert.equal(utils.isNewSenderRow(row, false, new Set()), false);
+	assert.equal(utils.isNewSenderRow(row, true, new Set()), true);
+	assert.equal(utils.isNewSenderRow(row, true, new Set(["jane@partner.test"])), false);
+	assert.equal(utils.isNewSenderRow({ ...row, direction: "outbound" }, true, new Set()), false);
+	assert.equal(utils.isNewSenderRow({ ...row, fromAddr: "a@example.com" }, true, new Set()), true);
+	assert.equal(utils.isNewSenderRow({ ...row, fromAddr: "not an address" }, true, new Set()), false);
 });
 
 test("delivery holds undecided senders, delivers approved ones and files denied ones as spam", async (t) => {
@@ -207,9 +207,9 @@ test("delivery holds undecided senders, delivers approved ones and files denied 
 	assert.deepEqual(await deliver("Jane <Jane@partner.test>"), { status: "screening", awaiting: true });
 	assert.deepEqual(await deliver("jane@partner.test", "spam"), { status: "spam", awaiting: false });
 	assert.deepEqual(await deliver("jane@partner.test", "archived"), { status: "archived", awaiting: false });
-	assert.deepEqual(await deliver("b@example.com"), { status: "received", awaiting: false }, "own mailbox");
-	assert.deepEqual(await deliver("sales@example.com"), { status: "received", awaiting: false }, "own alias");
-	assert.deepEqual(await deliver("MAILER-DAEMON@partner.test"), { status: "received", awaiting: false });
+	assert.deepEqual(await deliver("b@example.com"), { status: "screening", awaiting: true }, "own mailbox");
+	assert.deepEqual(await deliver("sales@example.com"), { status: "screening", awaiting: true }, "own alias");
+	assert.deepEqual(await deliver("MAILER-DAEMON@partner.test"), { status: "screening", awaiting: true });
 	assert.deepEqual(await deliver("not an address"), { status: "received", awaiting: false });
 
 	await settings.recordSenderDecision(db, {
@@ -370,7 +370,7 @@ test("in Inbox mode approving and denying act on the marked Inbox mail too", asy
 		{ id: "held", mailboxId: "mailbox-b", status: "screening", direction: "inbound", fromAddr: "x@partner.test" },
 		{ id: "off", mailboxId: "mailbox-b", status: "received", direction: "inbound", fromAddr: "x@partner.test" },
 	]);
-	assert.deepEqual([...pending].sort(), ["held", marked].sort());
+	assert.deepEqual([...pending].sort(), ["held", "own", marked].sort());
 	const status = await views.getScreenerMessageStatus(db, owner, marked);
 	assert.deepEqual(status, {
 		address: "jane@partner.test",

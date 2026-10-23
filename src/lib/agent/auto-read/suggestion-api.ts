@@ -13,7 +13,7 @@ import { executeAction } from "./execute";
 import { senderAddressOf } from "./facts-utils";
 import { answerSuggestion } from "./module-actions";
 import { MODULE_ANSWERERS } from "./module-actions-utils";
-import { muteSender } from "./muted-senders";
+import { muteSender, trustSender } from "./muted-senders";
 import {
 	acceptRefusal,
 	countByKind,
@@ -225,34 +225,49 @@ function withDraftDiscard(
 	};
 }
 
-function withMute(env: CloudflareEnv, effect: ActionEffect, mailboxId: string, sender: string): ActionEffect {
+/**
+ * Also adds the sender to a list in the mailbox's capabilities. `after` names the sender only when this
+ * action added it, so undo never removes an entry that was there before.
+ */
+function withSenderListed(
+	effect: ActionEffect,
+	add: () => Promise<boolean>,
+	key: "mutedSender" | "trustedSender",
+	sender: string,
+): ActionEffect {
 	return {
 		...effect,
 		async apply(ids) {
 			const after = await effect.apply(ids);
-			return (await muteSender(env, mailboxId, sender)) ? { ...after, mutedSender: sender } : after;
+			return (await add()) ? { ...after, [key]: sender } : after;
 		},
 	};
 }
 
 /**
  * Dismisses a suggestion as an undoable `dismiss` action. With `muteSender`, the sender is also added
- * to the mailbox's muted senders, which the planner skips from then on; undo unmutes it again.
+ * to the mailbox's muted senders, which the planner skips from then on. With `notPhishing` on a phishing
+ * warning, the sender is added to the trusted senders, whom a model's flag alone never warns about.
+ * Undo removes the sender again.
  */
 export async function dismissSuggestion(
 	env: CloudflareEnv,
 	user: SessionUser,
 	suggestionId: string,
-	options: { muteSender?: boolean; discardDraft?: boolean } | null,
+	options: { muteSender?: boolean; discardDraft?: boolean; notPhishing?: boolean } | null,
 ) {
 	const { row, access } = await loadForDecision(env, user, suggestionId);
 	if (!options) throw new AgentActionError("Invalid request", 400);
-	const refusal = dismissRefusal(row.status);
+	const refusal = dismissRefusal(row, options);
 	if (refusal) throw new AgentActionError(refusal.error, refusal.status);
-	const sender = options.muteSender && row.from ? senderAddressOf(row.from) : null;
+	const address = row.from ? senderAddressOf(row.from) : null;
+	const sender = options.muteSender ? address : null;
+	const trusted = options.notPhishing ? address : null;
 	let base = await dismissSuggestionEffect(env, row.id, user.id);
 	if (options.discardDraft && row.kind === "reply" && row.draftId)
 		base = withDraftDiscard(env, base, row.id, row.draftId);
+	if (sender) base = withSenderListed(base, () => muteSender(env, row.mailboxId, sender), "mutedSender", sender);
+	if (trusted) base = withSenderListed(base, () => trustSender(env, row.mailboxId, trusted), "trustedSender", trusted);
 	const result = settled(
 		await executeAction({
 			env,
@@ -263,9 +278,9 @@ export async function dismissSuggestion(
 			initiator: "user",
 			actingUserId: user.id,
 			permissions: access,
-			effect: sender ? withMute(env, base, row.mailboxId, sender) : base,
+			effect: base,
 		}),
 	);
 	await notifySuggestionsQuietly(env, [row.id]);
-	return { status: "dismissed", actionId: result.actionId, mutedSender: sender };
+	return { status: "dismissed", actionId: result.actionId, mutedSender: sender, trustedSender: trusted };
 }

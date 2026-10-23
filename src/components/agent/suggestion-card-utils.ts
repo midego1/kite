@@ -115,6 +115,11 @@ export function pauseUndoValue(previous: string | null | undefined, now: Date): 
 	return Number.isFinite(end) && end > now.getTime() ? previous : null;
 }
 
+/** The toast after "Not phishing", naming the sender Kite now trusts when the server returned one. */
+export function notPhishingToast(sender: string | null | undefined): string {
+	return `Marked as not phishing. Kite won't warn about ${sender || "this sender"} again unless the message itself shows a sign of phishing.`;
+}
+
 /**
  * The open phishing warnings of the open message that were not there before, so a live warning is
  * announced once. `known` is updated in place; null on the first list, which only records what exists.

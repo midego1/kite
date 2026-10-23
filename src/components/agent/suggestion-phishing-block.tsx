@@ -10,7 +10,7 @@ import { confirmReportPhishing } from "@/components/messages/phishing-report";
 import toast from "react-hot-toast";
 import { phishingReasonTexts } from "./suggestion-card-utils";
 
-/** The red phishing warning: its reasons in plain words, "Mark as spam" and "Report phishing". */
+/** The red phishing warning: its reasons in plain words, "Mark as spam", "Report phishing" and "Not phishing". */
 export function PhishingBlock({
 	suggestion,
 	menu,
@@ -28,6 +28,14 @@ export function PhishingBlock({
 	async function markSpam() {
 		setBusy(true);
 		const done = await runCardAction(suggestion, "mark_spam");
+		setBusy(false);
+		if (done) onChanged();
+	}
+
+	/** Dismisses the warning and trusts the sender, so a model's suspicion alone no longer warns; undoable. */
+	async function notPhishing() {
+		setBusy(true);
+		const done = await runCardAction(suggestion, "not_phishing");
 		setBusy(false);
 		if (done) onChanged();
 	}
@@ -80,6 +88,15 @@ export function PhishingBlock({
 					onClick={() => void reportPhishing()}
 				>
 					Report phishing
+				</Button>
+				<Button
+					size="sm"
+					variant="ghost"
+					className="text-red-800 hover:bg-red-100"
+					disabled={busy}
+					onClick={() => void notPhishing()}
+				>
+					Not phishing
 				</Button>
 			</div>
 			{why}

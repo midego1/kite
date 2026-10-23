@@ -37,6 +37,7 @@ const {
 	reviewRefusal,
 	countByKind,
 	sumTotals,
+	dismissSuggestionSchema,
 } = await load("apiUtils");
 const { applyMutedSenderChange } = await load("muteUtils");
 
@@ -53,9 +54,16 @@ test("status filters, accept refusals and muted sender changes", () => {
 	assert.equal(acceptRefusal({ kind: "calendar_invite", status: "open", draftId: null }, "accept").status, 400);
 	assert.equal(acceptRefusal({ kind: "phishing", status: "accepted", draftId: null }, "mark_spam"), null);
 	assert.equal(acceptRefusal({ kind: "phishing", status: "expired", draftId: null }, "mark_spam").status, 409);
-	assert.equal(dismissRefusal("open"), null);
-	assert.equal(dismissRefusal("dismissed"), null);
-	assert.equal(dismissRefusal("accepted").status, 409);
+	const phishing = { kind: "phishing", status: "open" };
+	assert.equal(dismissRefusal(phishing), null);
+	assert.equal(dismissRefusal({ ...phishing, status: "dismissed" }), null);
+	assert.equal(dismissRefusal({ ...phishing, status: "accepted" }).status, 409);
+	assert.equal(dismissRefusal(phishing, { notPhishing: true }), null);
+	assert.equal(dismissRefusal({ kind: "reply", status: "open" }, { notPhishing: true }).status, 400);
+	assert.equal(dismissRefusal({ kind: "reply", status: "open" }, { notPhishing: false }), null);
+	assert.equal(dismissSuggestionSchema.safeParse({ notPhishing: true }).success, true);
+	assert.equal(dismissSuggestionSchema.safeParse({ notPhishing: "yes" }).success, false);
+	assert.equal(dismissSuggestionSchema.safeParse({ trustSender: true }).success, false);
 
 	assert.equal(
 		applyMutedSenderChange('{"reply":false}', " Sam@Sender.test ", "add"),
@@ -70,6 +78,23 @@ test("status filters, accept refusals and muted sender changes", () => {
 	);
 	const full = JSON.stringify({ mutedSenders: Array.from({ length: 500 }, (_, index) => `s${index}@x.test`) });
 	assert.equal(applyMutedSenderChange(full, "new@x.test", "add"), null);
+	assert.notEqual(
+		applyMutedSenderChange(full, "new@x.test", "add", "trustedSenders"),
+		null,
+		"each list has its own limit",
+	);
+});
+
+test("trusted senders change in their own list and keep the muted list as stored", () => {
+	const stored = '{"mutedSenders":["m@x.test"]}';
+	const trusted = applyMutedSenderChange(stored, " Bank@X.test ", "add", "trustedSenders");
+	assert.equal(trusted, '{"mutedSenders":["m@x.test"],"trustedSenders":["bank@x.test"]}');
+	assert.equal(applyMutedSenderChange(trusted, "bank@x.test", "add", "trustedSenders"), null);
+	assert.equal(applyMutedSenderChange(trusted, "m@x.test", "remove", "trustedSenders"), null);
+	assert.equal(
+		applyMutedSenderChange(trusted, "bank@x.test", "remove", "trustedSenders"),
+		'{"mutedSenders":["m@x.test"],"trustedSenders":[]}',
+	);
 });
 
 test("toApiSuggestion parses the payload and formats dates", () => {

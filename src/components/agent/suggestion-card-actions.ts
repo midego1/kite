@@ -6,9 +6,15 @@ import { dispatchAgentSuggestionChanged } from "@/hooks/message-realtime-utils";
 import { authFetch } from "@/lib/auth/client";
 import { dispatchAgentSettingsChanged, loadAutoReadSettings } from "./auto-read-settings-utils";
 import type { CardSuggestion } from "./suggestion-card-types";
-import { pauseEnd, pauseUndoValue } from "./suggestion-card-utils";
+import { notPhishingToast, pauseEnd, pauseUndoValue } from "./suggestion-card-utils";
 
-type DecisionResponse = { error?: string; url?: string; actionId?: string; mutedSender?: string | null };
+type DecisionResponse = {
+	error?: string;
+	url?: string;
+	actionId?: string;
+	mutedSender?: string | null;
+	trustedSender?: string | null;
+};
 
 /** Suggestions with a decision on its way; a second click while one is in flight does nothing. */
 const inFlight = new Set<string>();
@@ -58,23 +64,35 @@ async function pauseMailbox(mailboxId: string): Promise<() => Promise<void>> {
 	return () => savePause(mailboxId, pauseUndoValue(previous, new Date()));
 }
 
-export type CardAction = "dismiss" | "mute" | "pause" | "mark_spam";
+export type CardAction = "dismiss" | "mute" | "pause" | "mark_spam" | "not_phishing";
 
 const TOAST_TEXT: Record<CardAction, string> = {
 	dismiss: "Suggestion dismissed",
 	mute: "Kite will only warn about phishing from this sender",
 	pause: "Kite is paused for this mailbox for 24 hours",
 	mark_spam: "Moved to Spam",
+	not_phishing: notPhishingToast(null),
 };
 
-async function apply(suggestion: CardSuggestion, action: CardAction): Promise<() => Promise<void>> {
-	if (action === "pause") return pauseMailbox(suggestion.mailboxId);
-	const { actionId } =
+const DISMISS_BODY: Partial<Record<CardAction, object>> = {
+	mute: { muteSender: true },
+	not_phishing: { notPhishing: true },
+};
+
+async function apply(
+	suggestion: CardSuggestion,
+	action: CardAction,
+): Promise<{ undo: () => Promise<void>; message: string }> {
+	if (action === "pause") return { undo: await pauseMailbox(suggestion.mailboxId), message: TOAST_TEXT.pause };
+	const response =
 		action === "mark_spam"
 			? await postSuggestion(suggestion.id, "accept", { option: "mark_spam" })
-			: await postSuggestion(suggestion.id, "dismiss", action === "mute" ? { muteSender: true } : {});
-	return async () => {
-		if (actionId) await undoAction(actionId);
+			: await postSuggestion(suggestion.id, "dismiss", DISMISS_BODY[action] ?? {});
+	return {
+		undo: async () => {
+			if (response.actionId) await undoAction(response.actionId);
+		},
+		message: action === "not_phishing" ? notPhishingToast(response.trustedSender) : TOAST_TEXT[action],
 	};
 }
 
@@ -86,9 +104,9 @@ export async function runCardAction(suggestion: CardSuggestion, action: CardActi
 	if (inFlight.has(suggestion.id)) return false;
 	inFlight.add(suggestion.id);
 	try {
-		const undo = await apply(suggestion, action);
+		const { undo, message } = await apply(suggestion, action);
 		announceSuggestionChange(suggestion);
-		showUndoToast(TOAST_TEXT[action], async () => {
+		showUndoToast(message, async () => {
 			await undo();
 			announceSuggestionChange(suggestion);
 		});

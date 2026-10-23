@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
@@ -7,9 +7,38 @@ import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
 import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import type { MessageFolder } from "@/hooks/types";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import type { MessageNavigationEntry } from "./types";
 
-const folders: MessageFolder[] = ["inbox", "starred", "snoozed", "sent", "archived", "spam", "trash"];
+const folders: MessageFolder[] = ["inbox", "starred", "snoozed", "sent", "archived", "spam", "trash", "screener"];
+
+function folderConditions(folder: MessageFolder, folderId: string | null): SQL[] {
+	const conditions: SQL[] = [];
+	if (folder === "inbox") {
+		conditions.push(eq(messages.direction, "inbound"));
+		conditions.push(eq(messages.status, "received"));
+		if (!folderId) {
+			conditions.push(isNull(messages.folderId));
+			conditions.push(or(isNull(messages.snoozedUntil), lte(messages.snoozedUntil, new Date()))!);
+		}
+	} else if (folder === "starred") {
+		conditions.push(eq(messages.starred, true));
+		conditions.push(ne(messages.status, SCREENING_STATUS));
+	} else if (folder === "screener") {
+		conditions.push(eq(messages.status, SCREENING_STATUS));
+	} else if (folder === "snoozed") {
+		conditions.push(eq(messages.status, "received"));
+		conditions.push(isNull(messages.folderId));
+		conditions.push(gt(messages.snoozedUntil, new Date()));
+	} else if (folder === "sent") {
+		conditions.push(eq(messages.direction, "outbound"));
+		conditions.push(eq(messages.status, "sent"));
+	} else {
+		conditions.push(eq(messages.status, folder));
+	}
+	if (folderId) conditions.push(eq(messages.folderId, folderId));
+	return conditions;
+}
 
 export async function GET(request: Request) {
 	const env = getEnv();
@@ -38,26 +67,7 @@ export async function GET(request: Request) {
 		);
 	}
 
-	if (folder === "inbox") {
-		conditions.push(eq(messages.direction, "inbound"));
-		conditions.push(eq(messages.status, "received"));
-		if (!folderId) {
-			conditions.push(isNull(messages.folderId));
-			conditions.push(or(isNull(messages.snoozedUntil), lte(messages.snoozedUntil, new Date()))!);
-		}
-	} else if (folder === "starred") {
-		conditions.push(eq(messages.starred, true));
-	} else if (folder === "snoozed") {
-		conditions.push(eq(messages.status, "received"));
-		conditions.push(isNull(messages.folderId));
-		conditions.push(gt(messages.snoozedUntil, new Date()));
-	} else if (folder === "sent") {
-		conditions.push(eq(messages.direction, "outbound"));
-		conditions.push(eq(messages.status, "sent"));
-	} else {
-		conditions.push(eq(messages.status, folder));
-	}
-	if (folderId) conditions.push(eq(messages.folderId, folderId));
+	conditions.push(...folderConditions(folder, folderId));
 
 	const rows = await db
 		.select({

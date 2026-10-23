@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { messageAttachments, messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { LIMITS } from "./constants";
 import { decodeBlobId, uploadBlobId } from "./ids";
 import { listAccessibleMailboxIdSet } from "./access";
@@ -53,10 +54,19 @@ export async function storeRawDraftMime(ctx: JmapContext, messageId: string, raw
 	return key;
 }
 
+/** Held Screener mail stays out of JMAP until its sender is approved. */
+function isReadableRow<T extends { mailboxId: string | null; status: string }>(
+	row: T | undefined,
+	accessible: Set<string>,
+): row is T {
+	return Boolean(row?.mailboxId && accessible.has(row.mailboxId) && row.status !== SCREENING_STATUS);
+}
+
 /**
  * Resolve a blob id to bytes the account may read: an attachment on one of
  * its messages, the raw MIME of one of its messages, or its own upload.
  */
+
 export async function readBlob(
 	ctx: JmapContext,
 	blobId: string,
@@ -79,12 +89,13 @@ export async function readBlob(
 				type: messageAttachments.contentType,
 				size: messageAttachments.size,
 				mailboxId: messages.mailboxId,
+				status: messages.status,
 			})
 			.from(messageAttachments)
 			.innerJoin(messages, eq(messageAttachments.messageId, messages.id))
 			.where(eq(messageAttachments.id, decoded.id))
 			.limit(1);
-		if (!row || !row.mailboxId || !accessible.has(row.mailboxId)) return null;
+		if (!isReadableRow(row, accessible)) return null;
 		const object = await ctx.env.BUCKET.get(row.r2Key);
 		return object ? { body: object.body, type: row.type, name: row.filename, size: row.size } : null;
 	}
@@ -93,7 +104,7 @@ export async function readBlob(
 		.from(messages)
 		.where(and(eq(messages.id, decoded.id)))
 		.limit(1);
-	if (!row || !row.mailboxId || !accessible.has(row.mailboxId)) return null;
+	if (!isReadableRow(row, accessible)) return null;
 	if (row.rawR2Key) {
 		const object = await ctx.env.BUCKET.get(row.rawR2Key);
 		if (object) return { body: object.body, type: "message/rfc822", name: `${row.id}.eml`, size: object.size };

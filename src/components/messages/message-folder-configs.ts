@@ -1,4 +1,4 @@
-import { Archive, Clock, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
+import { Archive, Clock, Send, ShieldAlert, Star, Trash2, UserCheck } from "lucide-react";
 import type { MessageFolderConfig } from "./types";
 
 export const inboxFolderConfig: MessageFolderConfig = {
@@ -63,5 +63,14 @@ export const trashFolderConfig: MessageFolderConfig = {
 	emptyText: "No emails in trash",
 	hrefPrefix: "/trash",
 	icon: Trash2,
+	badgeVariant: "outline",
+};
+
+export const screenerFolderConfig: MessageFolderConfig = {
+	folder: "screener",
+	title: "Screener",
+	emptyText: "Nobody new is waiting. Mail from senders you have not approved shows up here.",
+	hrefPrefix: "/screener",
+	icon: UserCheck,
 	badgeVariant: "outline",
 };

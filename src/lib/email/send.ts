@@ -17,6 +17,7 @@ import { getOutboundProviderConfig, sendThroughProvider } from "@/lib/email/outb
 import { prepareCloudflareAttachments } from "@/lib/email/cloud-attachment-utils";
 import { runPostDeliveryStep } from "@/lib/email/post-delivery-utils";
 import { supersedeOlderReplies } from "@/lib/agent/auto-read/suggestion-lifecycle";
+import { approveSentRecipients } from "@/lib/screener/release";
 import { recordMetric } from "@/lib/metrics.mjs";
 import { isNodeRuntime } from "@/lib/runtime";
 
@@ -292,6 +293,9 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 			.where(eq(messages.id, messageId));
 	});
 	await runPostDeliveryStep(`agent reply suggestions for ${messageId}`, () => supersedeOlderReplies(env, messageId));
+	await runPostDeliveryStep(`screener approvals for ${messageId}`, () =>
+		approveSentRecipients(env, mailboxId, input.userId, [...to, ...cc, ...bcc]),
+	);
 	await runPostDeliveryStep(`sent job status for ${jobId}`, () =>
 		db.update(outboundJobs).set({ status: "sent", updatedAt: new Date() }).where(eq(outboundJobs.id, jobId)),
 	);

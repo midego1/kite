@@ -1,20 +1,12 @@
 import { useEffect, useState } from "react";
 import type { MessageCounts, MessageCountsDelta } from "./types";
 import { clearMessageCountsCache, fetchMessageCounts } from "./utils";
+import { createEmptyFolderCounts } from "@/app/api/messages/counts/utils";
 
 const REFRESH_DEBOUNCE_MS = 150;
 
 const emptyCounts: MessageCounts = {
-	folders: {
-		inbox: { total: 0, unread: 0 },
-		starred: { total: 0, unread: 0 },
-		snoozed: { total: 0, unread: 0 },
-		sent: { total: 0, unread: 0 },
-		drafts: { total: 0, unread: 0 },
-		archived: { total: 0, unread: 0 },
-		spam: { total: 0, unread: 0 },
-		trash: { total: 0, unread: 0 },
-	},
+	folders: createEmptyFolderCounts(),
 	customFolders: {},
 	mailboxes: [],
 };

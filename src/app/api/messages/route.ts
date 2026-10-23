@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq, desc, and, or, count, isNull, isNotNull, inArray, lte, gt, notInArray, sql, sum } from "drizzle-orm";
+import { eq, desc, and, or, count, isNull, isNotNull, inArray, lte, gt, ne, notInArray, sql, sum } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
 import { getCurrentUser } from "@/lib/auth/cookies";
@@ -16,6 +16,8 @@ import { decodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor
 import { ownedStatusCondition } from "@/lib/modules/message-status";
 import { loadRowSuggestions } from "@/lib/agent/auto-read/message-suggestions";
 import { suggestionVisibilityFor } from "@/lib/agent/auto-read/suggestion-visibility";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
+import { screenerPendingRows } from "@/lib/screener/views";
 import { afterCursor, getMessageListColumns, loadConversationPage } from "./utils";
 import { groupThreadMembers, type ScopedThreads } from "@/lib/messages/thread-unread-utils";
 import type { ListMessage } from "./types";
@@ -74,6 +76,8 @@ export async function GET(request: Request) {
 	if (status) {
 		conditions.push(eq(messages.status, status));
 	}
+	// Held mail shows only in the Screener view, never in starred, folder or search results.
+	if (status !== SCREENING_STATUS) conditions.push(ne(messages.status, SCREENING_STATUS));
 	const ownedStatus = await ownedStatusCondition(
 		env,
 		{ userId: user.id, role: user.role, isPrimaryAdmin: user.isPrimaryAdmin },
@@ -179,7 +183,7 @@ export async function GET(request: Request) {
 						scope,
 						inArray(messages.threadId, chunk),
 						isNotNull(messages.threadId),
-						notInArray(messages.status, ["draft", "trash"]),
+						notInArray(messages.status, ["draft", "trash", SCREENING_STATUS]),
 					),
 				)
 				.groupBy(messages.threadId),
@@ -220,6 +224,7 @@ export async function GET(request: Request) {
 		scopedThreads.ids,
 		await suggestionVisibilityFor(env, user),
 	);
+	const screenerPending = await screenerPendingRows(db, rows);
 	// `Message.textBody`/`htmlBody` are optional on the wire type and the
 	// reading pane loads them from /api/messages/[id]/thread, so they are
 	// neither selected nor sent here.
@@ -242,6 +247,7 @@ export async function GET(request: Request) {
 					? scopedThreads.unread.get(key)
 					: message.threadId && threadCounts.get(message.threadId)?.unread) || 0,
 			...rowSuggestions(message.id),
+			...(screenerPending.has(message.id) ? { screenerPending: true } : {}),
 			...(groupByThread
 				? {
 						threadMessageIds: scopedThreads.ids.get(key) ?? [message.id],

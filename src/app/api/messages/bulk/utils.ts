@@ -17,7 +17,7 @@ const allowedBulkActions = new Set<BulkMessageAction>([
  * Statuses an undo may put a message back into. Queued and sending states are
  * left out so an undo can never resurrect a send the outbound queue owns.
  */
-const restorableStatuses = new Set(["received", "sent", "draft", "archived", "spam", "trash"]);
+const restorableStatuses = new Set(["received", "screening", "sent", "draft", "archived", "spam", "trash"]);
 
 export function isRestorableStatus(status: unknown): status is string {
 	return typeof status === "string" && restorableStatuses.has(status);

@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { DOMAIN, STORAGE_STATE } from "./support/constants";
 import { apiContext, apiSignIn, deliverInbound, signIn, uniqueToken } from "./support/helpers";
+import { turnScreenerOff } from "./support/screener";
 
 const PASSWORD = "access-control-password-123";
 
@@ -36,7 +37,9 @@ async function createSharedMailbox(admin: APIRequestContext, localPart: string, 
 	const response = await admin.post("/api/mailboxes", {
 		data: { domainId: domain, localPart, displayName: localPart, type: "shared" },
 	});
-	return (await json<{ id: string }>(response)).id;
+	const { id } = await json<{ id: string }>(response);
+	await turnScreenerOff(admin, id);
+	return id;
 }
 
 async function jmap(key: string, methodCalls: unknown[]) {

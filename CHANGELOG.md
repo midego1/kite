@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.23.2] - 2026-10-23
+
+Apply database migration 0067 after deploying, from the database card on the admin overview or the banner in the mailbox. It adds the Screener tables; until it is applied, every mailbox delivers as before, **Settings → Inbox → Screener** says the update is pending and Screener changes answer `503 SCREENER_UNAVAILABLE`. Mailboxes created before it is applied keep the Screener off.
+
+### Added
+
+- **Screener**, per mailbox: mail from someone who has never written to the mailbox before waits until you approve or deny the sender, once per address. In the default **Hold in the Screener** mode their mail stays out of the Inbox, search, counts, conversations, bulk actions, JMAP, `/api/v1` and MCP and appears under **Screener** in the sidebar with a count; in **Deliver to the Inbox** mode it arrives in the Inbox marked **New sender**. Approve and Deny are in the row and in a bar above the message in the reader. Approving releases all of the sender's waiting mail, with Undo; denying moves it to Spam, trains the spam filter and blocks the sender like Report phishing, so their later mail goes to Trash (lift it with **Un-deny**). External addresses you send to are approved automatically, and turning the Screener on offers **Approve everyone you've written to** once. Mail claiming to come from the install's own mailboxes or system addresses still needs approval: the From header alone is not proof of who sent it. Waiting mail gets no notification, automatic reply or automatic reading until it is approved; webhooks still fire. The spam filter and mailbox rules run first. It is on for new mailboxes and off for existing ones; [Settings → Inbox → Screener](/settings/inbox) turns it on or off, picks the mode and lists approved and denied senders. Only people with full access to a mailbox can change it. See [Screener](https://github.com/midego1/kite/blob/main/docs/screener.md).
+
 ## [2026.10.23.1] - 2026-10-23
 
 One new optional secret name, `ABUSE_CH_AUTH_KEY`, another name for `URLHAUS_AUTH_KEY` (see ThreatFox lookups below).

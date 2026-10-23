@@ -51,7 +51,8 @@ const settingsNavSections: NavSection[] = [
 				href: "/settings/inbox",
 				label: "Inbox",
 				icon: Inbox,
-				keywords: "threading conversation notifications shortcuts sending undo images spam trash auto reply",
+				keywords:
+					"threading conversation notifications shortcuts sending undo images screener new senders approve deny spam trash auto reply",
 			},
 			{ href: "/settings/rules", label: "Rules & routing", icon: Route, keywords: "filters automations" },
 		],

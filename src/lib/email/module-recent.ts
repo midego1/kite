@@ -1,6 +1,7 @@
-import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, ne, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { HostMessageView, HostRecentFromSenderQuery } from "@/lib/modules/host-types";
 import {
@@ -38,6 +39,7 @@ export async function recentModuleMessagesFromSender(
 			and(
 				eq(messages.mailboxId, query.mailboxId),
 				eq(messages.direction, "inbound"),
+				ne(messages.status, SCREENING_STATUS),
 				lt(messages.createdAt, bounds.before),
 				gte(messages.createdAt, bounds.since),
 				sql`lower(${messages.fromAddr}) LIKE ${containsPattern(bounds.sender)} ESCAPE '\\'`,

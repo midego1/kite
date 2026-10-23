@@ -18,6 +18,7 @@ export async function preloadMailboxPage(href: string, mailboxId?: string) {
 		"archived",
 		"spam",
 		"trash",
+		"screener",
 	];
 	if (!supportedFolders.includes(folder)) return;
 

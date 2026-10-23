@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useForYouNav } from "./for-you-nav";
+import { useScreenerNav } from "./screener/screener-nav";
 import { useModuleSidebarLinks } from "./modules/module-sidebar-links";
 import { authFetch } from "@/lib/auth/client";
 import { DEFAULT_FOLDER_COLOR, FOLDER_COLOR_OPTIONS } from "@/lib/folders/colors";
@@ -91,6 +92,7 @@ export function DashboardNav({ className }: { className?: string }) {
 	const { selectedMailbox, isLoading } = useSelectedMailbox();
 	const { counts } = useMessageCounts(selectedMailbox?.id, !isLoading);
 	const forYou = useForYouNav();
+	const screener = useScreenerNav(selectedMailbox, counts.folders);
 	const moduleLinks = useModuleSidebarLinks();
 	const [folders, setFolders] = useState<CustomFolder[]>([]);
 	const [newFolderName, setNewFolderName] = useState("");
@@ -149,7 +151,9 @@ export function DashboardNav({ className }: { className?: string }) {
 	const composeLink = linksWithCounts.find((link) => link.href === "/compose");
 	const mainLinks = moduleLinks.after(
 		forYou.withLink(
-			linksWithCounts.filter((link) => link.href !== "/compose" && !MORE_LINK_HREFS.includes(link.href!)),
+			screener.withLink(
+				linksWithCounts.filter((link) => link.href !== "/compose" && !MORE_LINK_HREFS.includes(link.href!)),
+			),
 		),
 	);
 	const moreLinks = linksWithCounts.filter((link) => MORE_LINK_HREFS.includes(link.href!));
@@ -216,7 +220,7 @@ export function DashboardNav({ className }: { className?: string }) {
 				lists={[
 					{
 						id: "main",
-						visibleIds: forYou.visibleIds,
+						visibleIds: (ordered) => screener.visibleIds(forYou.visibleIds(ordered)),
 						items: mainLinks.map((link) => ({ id: link.href!, node: <NavItem link={link} /> })),
 					},
 					{

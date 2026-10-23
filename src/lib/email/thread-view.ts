@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, notInArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, notInArray, or } from "drizzle-orm";
 import { queryInChunks } from "@/db/chunk-utils";
 import { getDb } from "@/db";
 import { messageAttachments, messages } from "@/db/schema";
@@ -6,6 +6,7 @@ import { getContactAvatarMap, getContactDisplayNameMap } from "@/lib/contacts/se
 import { getFirstEmailAddressEntry, normalizeEmailAddress } from "@/lib/email/address";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { SessionUser } from "@/lib/auth/types";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 
 /**
  * The conversation a message belongs to: every stored message in the same
@@ -40,6 +41,8 @@ export async function getMessageThreadForUser(env: CloudflareEnv, user: SessionU
 						eq(messages.mailboxId, message.mailboxId),
 						eq(messages.threadId, message.threadId),
 						notInArray(messages.status, ["draft", "trash"]),
+						// Held replies stay in the Screener; the opened message is shown even when it is one.
+						or(ne(messages.status, SCREENING_STATUS), eq(messages.id, messageId)),
 					),
 				)
 				.orderBy(asc(messages.createdAt))

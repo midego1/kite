@@ -1,7 +1,9 @@
 import type { MessageCounts, MessageFolder } from "@/hooks/types";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import type { CountableFolder, MessageCountRow } from "./types";
 
 export function getMessageFolder(row: MessageCountRow): CountableFolder {
+	if (row.status === SCREENING_STATUS) return "screener";
 	if (row.snoozedUntil && row.snoozedUntil > new Date()) return "snoozed";
 	if (row.status === "trash") return "trash";
 	if (row.status === "spam") return "spam";
@@ -22,6 +24,7 @@ export function createEmptyFolderCounts(): MessageCounts["folders"] {
 		archived: { total: 0, unread: 0 },
 		spam: { total: 0, unread: 0 },
 		trash: { total: 0, unread: 0 },
+		screener: { total: 0, unread: 0 },
 	};
 }
 
@@ -34,6 +37,12 @@ export function buildMessageCounts(rows: MessageCountRow[]): MessageCounts {
 		const weight = row.total ?? 1;
 		const folder = getMessageFolder(row);
 		const unread = row.direction === "inbound" && !row.read;
+		// Held mail counts only toward the Screener, not toward starred, folders or the mailbox totals.
+		if (folder === "screener") {
+			folders.screener.total += weight;
+			if (unread) folders.screener.unread += weight;
+			continue;
+		}
 		if (row.starred) {
 			folders.starred.total += weight;
 			if (unread) folders.starred.unread += weight;

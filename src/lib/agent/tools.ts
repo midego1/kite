@@ -1,4 +1,4 @@
-import { and, count, desc, eq, isNull, lt, or, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, isNull, lt, ne, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { agentDraftMetadata, domains, mailboxes, messages } from "@/db/schema";
@@ -7,6 +7,7 @@ import { getAuthorizedSenderAddress } from "@/lib/email/sender";
 import { buildReplyReferences, formatMessageIdHeader, parseMessageIdList } from "@/lib/email/threading";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { buildSearchConditions } from "@/lib/search/conditions";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { newId } from "@/lib/ids";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import { listMessageAttachments } from "@/lib/email/attachments";
@@ -143,7 +144,8 @@ export async function ownMessage(context: AgentToolContext, messageId: string, n
 		.from(messages)
 		.where(and(eq(messages.id, messageId), eq(messages.mailboxId, context.mailboxId)))
 		.limit(1);
-	if (!row || (row.status === "draft" && row.userId !== context.user.id)) throw new Error(notFoundMessage);
+	if (!row || row.status === SCREENING_STATUS || (row.status === "draft" && row.userId !== context.user.id))
+		throw new Error(notFoundMessage);
 	return row;
 }
 
@@ -214,7 +216,11 @@ function mailboxFolderConditions(context: AgentToolContext, folder: string | und
 	else if (folder === "inbox") conditions.push(eq(messages.status, "received"), isNull(messages.folderId));
 	else if (folder === "archived" || folder === "trash" || folder === "spam")
 		conditions.push(eq(messages.status, folder));
-	else conditions.push(or(eq(messages.userId, context.user.id), eq(messages.direction, "inbound"))!);
+	else
+		conditions.push(
+			or(eq(messages.userId, context.user.id), eq(messages.direction, "inbound"))!,
+			ne(messages.status, SCREENING_STATUS),
+		);
 	return conditions;
 }
 

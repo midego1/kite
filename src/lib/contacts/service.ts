@@ -164,6 +164,36 @@ export async function blockContact(env: CloudflareEnv, input: BlockContactInput)
 	return { email, blocked: true };
 }
 
+/**
+ * Lifts the block `blockContact` placed for one mailbox. The contact itself stays blocked while another
+ * mailbox of the same owner still has its own block rule for the address.
+ */
+export async function unblockContact(env: CloudflareEnv, input: Omit<BlockContactInput, "domainId">) {
+	const email = normalizeEmailAddress(input.address);
+	if (!email) return { email, blocked: false };
+	const db = getDb(env);
+	await db.delete(routingRules).where(eq(routingRules.id, `block:${input.mailboxId}:${email}`));
+	const [remaining] = await db
+		.select({ id: routingRules.id })
+		.from(routingRules)
+		.where(
+			and(
+				eq(routingRules.userId, input.userId),
+				eq(routingRules.matchField, "email"),
+				eq(routingRules.matchOperator, "exact"),
+				eq(routingRules.matchValue, email),
+				eq(routingRules.action, "trash"),
+			),
+		)
+		.limit(1);
+	if (!remaining)
+		await db
+			.update(contacts)
+			.set({ blocked: false })
+			.where(and(eq(contacts.userId, input.userId), eq(contacts.email, email)));
+	return { email, blocked: !!remaining };
+}
+
 function getNextDisplayName(existingName: string | null, source: string, nextName: string | null): string | null {
 	if (source === "manual") return existingName;
 	if (nextName) return nextName;

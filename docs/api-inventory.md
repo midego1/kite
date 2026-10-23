@@ -167,6 +167,10 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/routing-rules/domain/[id]`                       | DELETE, PATCH          | [source](../src/app/api/routing-rules/domain/[id]/route.ts)                       |
 | `/api/routing-rules/domain`                            | GET, POST              | [source](../src/app/api/routing-rules/domain/route.ts)                            |
 | `/api/routing-rules`                                   | GET, POST              | [source](../src/app/api/routing-rules/route.ts)                                   |
+| `/api/screener/approve-sent`                           | POST                   | [source](../src/app/api/screener/approve-sent/route.ts)                           |
+| `/api/screener/message`                                | GET                    | [source](../src/app/api/screener/message/route.ts)                                |
+| `/api/screener`                                        | GET, PATCH             | [source](../src/app/api/screener/route.ts)                                        |
+| `/api/screener/senders`                                | DELETE, POST           | [source](../src/app/api/screener/senders/route.ts)                                |
 | `/api/search`                                          | GET                    | [source](../src/app/api/search/route.ts)                                          |
 | `/api/seed`                                            | POST                   | [source](../src/app/api/seed/route.ts)                                            |
 | `/api/send`                                            | POST                   | [source](../src/app/api/send/route.ts)                                            |

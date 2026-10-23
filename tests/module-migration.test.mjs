@@ -35,6 +35,7 @@ const LATER_MIGRATIONS = [
 	"0064_add_drive.sql",
 	"0065_add_storage_stores.sql",
 	"0066_add_domain_dns_skipped.sql",
+	"0067_add_screener.sql",
 ];
 /** The modules 0062 seeds a row for; later modules have no row, which means `defaultEnabled`. */
 const MODULES = ["calendar", "booking", "templates", "import"];

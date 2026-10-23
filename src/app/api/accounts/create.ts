@@ -9,6 +9,7 @@ import type { CfEmailRoutingRuleChange } from "@/lib/cloudflare-api.types";
 import { normalizeRecipientLocalPart } from "@/lib/email/recipient-address";
 import { newId } from "@/lib/ids";
 import { ensureMailboxDomainRouting } from "@/lib/mailboxes/domain-addresses";
+import { enableScreenerForNewMailbox } from "@/lib/screener/settings";
 import { emitLifecycleEvent } from "@/lib/modules/lifecycle";
 import type { CreateUserAccountInput } from "./types";
 import { accountListItemFromUser, getDomainForAdmin } from "./utils";
@@ -101,6 +102,7 @@ export async function createAccountResponse(env: CloudflareEnv, adminUserId: str
 		// D1 batches are atomic: aliases and their owner either all exist or none do.
 		const [accounts] = await db.batch([accountInsert, mailboxInsert, ...aliasInserts]);
 		inserted = true;
+		await enableScreenerForNewMailbox(db, mailboxId);
 		await ensureMailboxDomainRouting(env, db, mailbox, changes);
 		// The account is complete; a failing hook is logged and must not undo it.
 		await emitLifecycleEvent({ type: "user.created", userId });

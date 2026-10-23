@@ -28,6 +28,8 @@ export type MailboxOption = {
 	permission?: "read_only" | "send_as" | "send_on_behalf" | "full_access";
 	isPrimary?: boolean;
 	senderAddresses?: string[];
+	/** Null when the mailbox has no Screener settings (off). */
+	screener?: { enabled: boolean; mode: "screener" | "inbox" } | null;
 };
 
 type MailboxContextValue = {
@@ -128,7 +130,7 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 	}, []);
 
 	const setSelectedMailbox = useCallback((mb: MailboxOption | null) => {
-		setSelectedMailboxState((current) => (current?.id === mb?.id ? current : mb));
+		setSelectedMailboxState(mb);
 		if (mb) {
 			setMailboxes((items) => items.map((item) => (item.id === mb.id && item !== mb ? mb : item)));
 			localStorage.setItem(SELECTED_MAILBOX_STORAGE_KEY, mb.id);

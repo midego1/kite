@@ -23,6 +23,16 @@ export function parseMessageSearchQuery(query: string): MessageFilterOptions {
 	return filters;
 }
 
+const FOLDER_QUERY: Partial<Record<MessageFolder, { direction?: "inbound" | "outbound"; status: string }>> = {
+	inbox: { direction: "inbound", status: "received" },
+	screener: { direction: "inbound", status: "screening" },
+	sent: { direction: "outbound", status: "sent" },
+	drafts: { direction: "outbound", status: "draft" },
+	archived: { status: "archived" },
+	trash: { status: "trash" },
+	spam: { status: "spam" },
+};
+
 export function getMessageQueryParams(
 	folder: MessageFolder,
 	mailboxId?: string | null,
@@ -32,26 +42,11 @@ export function getMessageQueryParams(
 	const params = new URLSearchParams();
 	params.set("timeZone", getUserTimeZone());
 
-	if (folder === "inbox") {
-		params.set("direction", "inbound");
-		params.set("status", "received");
-	}
+	const folderQuery = FOLDER_QUERY[folder];
+	if (folderQuery?.direction) params.set("direction", folderQuery.direction);
+	if (folderQuery) params.set("status", folderQuery.status);
 	if (folder === "starred") params.set("starred", "true");
 	if (folder === "snoozed") params.set("snoozed", "true");
-
-	if (folder === "sent") {
-		params.set("direction", "outbound");
-		params.set("status", "sent");
-	}
-
-	if (folder === "drafts") {
-		params.set("direction", "outbound");
-		params.set("status", "draft");
-	}
-
-	if (folder === "archived" || folder === "trash" || folder === "spam") {
-		params.set("status", folder);
-	}
 
 	if (folderId) params.set("folderId", folderId);
 	if (mailboxId) params.set("mailboxId", mailboxId);

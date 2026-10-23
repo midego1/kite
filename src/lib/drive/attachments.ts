@@ -7,6 +7,7 @@ import { getAttachmentForUser } from "@/lib/email/attachments";
 import { newId } from "@/lib/ids";
 import { listAccessibleMailboxes } from "@/lib/mailboxes/access";
 import type { SessionUser } from "@/lib/auth/types";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { driveTypesCondition } from "./categories";
 import type { DriveCategory } from "./category-names-utils";
 import { toDriveItemDtos } from "./dto";
@@ -58,7 +59,7 @@ export async function listDriveAttachments(
 			and(
 				scope,
 				eq(messageAttachments.disposition, "attachment"),
-				notInArray(messages.status, ["draft", "trash", "spam"]),
+				notInArray(messages.status, ["draft", "trash", "spam", SCREENING_STATUS]),
 				types.length
 					? driveTypesCondition(types, {
 							contentType: messageAttachments.contentType,

@@ -118,7 +118,7 @@ export function parseScreenerSenderRemoval(body: unknown): Parsed<ScreenerSender
 		value: {
 			mailboxId: input.mailboxId,
 			address,
-			restoreMessageIds: restore.filter((id): id is string => typeof id === "string" && !!id).slice(0, 500),
+			restoreMessageIds: [...new Set(restore.filter((id): id is string => typeof id === "string" && !!id))],
 		},
 	};
 }

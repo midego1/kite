@@ -273,6 +273,31 @@ test("approving releases the sender's held mail, and its undo puts exactly that 
 	);
 });
 
+test("Undo preserves and restores more than 500 released message IDs", async (t) => {
+	const { db, env, addMessage, statusOf, access } = await setup(t);
+	await settings.enableScreenerForNewMailbox(db, "mailbox-a");
+	const held = Array.from({ length: 551 }, () => addMessage("jane@partner.test", { status: "screening" }));
+	const other = addMessage("bob@partner.test");
+	const approved = await service.approveSender(env, owner, await access(), "jane@partner.test");
+	const parsed = utils.parseScreenerSenderRemoval({
+		mailboxId: "mailbox-a",
+		address: "jane@partner.test",
+		restoreMessageIds: [...approved.movedMessageIds, held[0], other, "", null],
+	});
+	assert.equal(parsed.ok, true);
+	assert.equal(parsed.value.restoreMessageIds.length, held.length + 1);
+	const undone = await service.removeSenderDecision(
+		env,
+		owner,
+		await access(),
+		parsed.value.address,
+		parsed.value.restoreMessageIds,
+	);
+	assert.deepEqual(undone, { removed: true, restored: held.length });
+	for (const id of held) assert.equal(statusOf(id), "screening");
+	assert.equal(statusOf(other), "received", "Undo cannot restore another sender's mail");
+});
+
 test("denying moves waiting mail to Spam, trains on it and blocks the sender until the denial is removed", async (t) => {
 	const { database, db, env, addMessage, statusOf, access } = await setup(t);
 	await settings.enableScreenerForNewMailbox(db, "mailbox-a");

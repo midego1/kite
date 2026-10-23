@@ -15,7 +15,9 @@ import { assessPhishing, planSuggestions } from "./policy-utils";
 import { allowAutoReadRequest, triageDailyLimitReached } from "./quota";
 import { createReplySuggestion } from "./reply-suggestion";
 import { isAutoSubmitted, isPaused } from "./schedule-utils";
-import type { AutoReadInstallSettings } from "./settings-types";
+import type { MessageFacts } from "./facts-types";
+import type { PlanInput } from "./policy-types";
+import type { AutoReadCapabilities, AutoReadInstallSettings } from "./settings-types";
 import { resolveMailboxAgentSettings } from "./settings-utils";
 import { settleTriageSuggestions } from "./suggestion-lifecycle";
 import { storeTriageSuggestions } from "./suggestions";
@@ -215,12 +217,23 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 			installCapMicros: install.dailySpendCapMicros,
 		});
 	await settleTriageSuggestions(env, job.mailboxId, source);
-	// A flag that did not warn is still worth a line in Activity, so the owner can see the model was wary.
-	const flagNote =
-		model && settings.capabilities.phishing
-			? assessPhishing(context.facts, model.result, settings.capabilities).note
-			: null;
-	return { skip: null, note: joinSkipReasons(steps.skipped, modelRun.skip ?? flagNote) };
+	return {
+		skip: null,
+		note: joinSkipReasons(
+			steps.skipped,
+			modelRun.skip ?? phishingFlagNote(context.facts, model, settings.capabilities),
+		),
+	};
+}
+
+/** A flag that did not warn is still worth a line in Activity, so the owner can see the model was wary. */
+function phishingFlagNote(
+	facts: MessageFacts,
+	model: { result: NonNullable<PlanInput["triage"]> } | null,
+	capabilities: AutoReadCapabilities,
+): string | null {
+	if (!model || !capabilities.phishing) return null;
+	return assessPhishing(facts, model.result, capabilities).note;
 }
 
 export async function processAgentTriageJob(env: CloudflareEnv, jobId: string) {

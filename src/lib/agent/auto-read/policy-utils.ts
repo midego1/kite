@@ -148,9 +148,11 @@ const MODEL_FLAGGED_REASON = "model_flagged";
 /**
  * A sender a model's flag alone never warns about: a known contact, a sender the user marked "Not
  * phishing", or mail from one of this install's domains that passed DMARC without copying a contact's name.
+ * A contact or marked sender counts only when authentication passed, since an unauthenticated From is forgeable.
  */
 function trustedSender(facts: MessageFacts, capabilities: Pick<AutoReadCapabilities, "trustedSenders">) {
-	if (facts.knownContact || capabilities.trustedSenders.includes(facts.senderAddress)) return true;
+	const listed = facts.knownContact || capabilities.trustedSenders.includes(facts.senderAddress);
+	if (listed && facts.authPassed) return true;
 	return facts.ownDomain && facts.auth.dmarc === "pass" && !facts.authFailed && !facts.spoofedContact;
 }
 

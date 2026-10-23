@@ -217,7 +217,7 @@ One hand-written migration `drizzle/migrations/0060_add_agent_auto_read.sql` plu
    - strips Markdown;
    - drops any task `dueAt` that is in the past or more than 1 year away.
 
-   A phishing flag from the model can only add warnings. It can never clear a deterministic warning. It warns only when the message shows a deterministic signal, or a supporting one (`url_shortener`) from a sender that is not trusted (`assessPhishing` in `policy-utils.ts`); trusted means a known contact, `capabilities.trustedSenders` (added by **Not phishing**) or the install's own domain with DMARC pass and no contact spoofing. An unconfirmed flag still blocks the reply draft and records `model_flag_unconfirmed` or `model_flag_trusted_sender` on the job.
+   A phishing flag from the model can only add warnings. It can never clear a deterministic warning. It warns only when the message shows a deterministic signal, or a supporting one (`url_shortener`) from a sender that is not trusted (`assessPhishing` in `policy-utils.ts`); trusted means a known contact or `capabilities.trustedSenders` (added by **Not phishing**) with `authPassed`, or the install's own domain with DMARC pass and no contact spoofing. An unconfirmed flag still blocks the reply draft and records `model_flag_unconfirmed` or `model_flag_trusted_sender` on the job.
 7. **Sender trust.** Sender policies match the normalised `From` and require `dkim_passed` or `dmarc_passed` in `spam_signals` when `require_auth` is set. Display-name spoofing of an allowlisted contact (same name, different address) forces Suggest and adds a phishing suggestion.
 8. **Caps and spend.**
    - Per mailbox: `auto_read_daily_limit` triage jobs per day; existing `daily_limit` drafts per day; `daily_spend_cap_micros`.

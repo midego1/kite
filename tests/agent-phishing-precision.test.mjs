@@ -243,6 +243,17 @@ test("a sender marked Not phishing is exempt from a model flag backed only by a 
 	assert.equal(assessPhishing(facts, flagged, trusted).note, "model_flag_trusted_sender");
 });
 
+test("a contact or marked sender without authentication is not exempt from a model flag", () => {
+	const unauthenticated = "mx.cloudflare.net; spf=none smtp.mailfrom=x";
+	const contact = factsFor({ ...benign["a shortened link from a known contact"], auth: unauthenticated });
+	assert.equal(contact.knownContact, true);
+	assert.equal(contact.authPassed, false);
+	assert.ok(assessPhishing(contact, flagged, capabilities).reasons.includes("url_shortener"));
+	const marked = factsFor({ ...hostile["a shortened link from an unknown sender"], auth: unauthenticated });
+	const trusted = { ...capabilities, trustedSenders: ["track@parcel.test"] };
+	assert.ok(assessPhishing(marked, flagged, trusted).reasons.includes("url_shortener"));
+});
+
 test("own-domain trust needs DMARC to pass and no copied contact name", () => {
 	const reset = benign["an authenticated password reset from the install's own domain"];
 	const shortened = { ...reset, text: `${reset.text}\nhttps://bit.ly/3x` };

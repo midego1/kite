@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.24.2] - 2026-10-24
+
+### Security
+
+- undici is updated to 7.30.1 and fast-uri to 3.1.9, fixing their published advisories. The AI SDK is updated to 7.0.152.
+
+### Fixed
+
+- When a model keeps asking for tools after the assistant reaches its step limit, the assistant still answers with the step-limit message instead of showing an error.
+
 ## [2026.10.24.1] - 2026-10-24
 
 ### Changed

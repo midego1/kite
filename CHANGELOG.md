@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.24.1] - 2026-10-24
+
+### Changed
+
+- The Worker build now includes source maps, which `upload_source_maps` in `wrangler.jsonc` already requested, so errors in Workers Logs point at the original source. Build and development dependencies are updated.
+
 ## [2026.10.24.0] - 2026-10-24
 
 ### Security

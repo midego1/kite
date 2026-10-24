@@ -9,6 +9,10 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
+    ignore:
+      # eslint-config-next's react, import and jsx-a11y plugins only declare eslint <= 9.
+      - dependency-name: eslint
+        update-types: [version-update:semver-major]
     groups:
       development-patch-and-minor:
         dependency-type: development

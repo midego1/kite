@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
-import { getEmailAddress } from "@/lib/email/address";
+import { formatEmailAddress, getEmailAddress } from "@/lib/email/address";
 
 type Builder = {
 	from: string | { name?: string; email: string };
@@ -26,7 +26,7 @@ export type MailerConfig =
 
 function addressString(value: string | { name?: string; email: string }): string {
 	if (typeof value === "string") return value;
-	return value.name ? `"${value.name.replace(/"/g, '\\"')}" <${value.email}>` : value.email;
+	return formatEmailAddress(value.email, value.name);
 }
 
 function messageIdFor(from: Builder["from"]): string {

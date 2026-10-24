@@ -133,10 +133,13 @@ const BLOCK_TAGS = new Set([
 export function htmlToPlainText(html: string | null | undefined): string {
 	if (!html) return "";
 	if (typeof DOMParser === "undefined") {
-		return html
-			.replace(/<br\s*\/?>/gi, "\n")
-			.replace(/<\/(p|div|li)>/gi, "\n")
-			.replace(/<[^>]+>/g, "");
+		let text = html.replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|li)>/gi, "\n");
+		// Repeat until stable so removing one tag cannot leave a new one behind ("<<b>b>").
+		for (let previous = ""; previous !== text;) {
+			previous = text;
+			text = text.replace(/<[^>]+>/g, "");
+		}
+		return text;
 	}
 	const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
 	const text = renderNode(doc.body, { listDepth: 0, ordered: [] });

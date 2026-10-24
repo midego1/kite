@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.24.0] - 2026-10-24
+
+### Security
+
+- Next.js is updated to 16.4.2 and nodemailer to 10.2.1, fixing the published Next.js remote code execution and denial-of-service advisories and a nodemailer DKIM signing denial of service.
+- Display names containing a backslash are now escaped correctly in sent mail (JMAP and the self-hosted mailer), and a very long malformed address header can no longer slow address parsing down.
+- Readable text built from HTML mail no longer decodes `&amp;lt;` twice into `<`.
+
 ## [2026.10.23.3] - 2026-10-23
 
 Apply database migration 0068 after deploying, from the database card on the admin overview or the banner in the mailbox. It adds the abuse.ch Auth-Key the owner can save in the app; until it is applied, a key set as a secret works as before and **Save key** asks for the update.

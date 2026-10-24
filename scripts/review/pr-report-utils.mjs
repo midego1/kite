@@ -282,7 +282,10 @@ export function checkRepoRules({ changes, readBase, readHead }) {
 	return [checkBackupLists(input), checkUiWithoutE2e(input), checkCloudflareNames(input)];
 }
 
-const cell = (value) => String(value ?? "").replace(/\|/g, "\\|");
+const cell = (value) =>
+	String(value ?? "")
+		.replace(/\\/g, "\\\\")
+		.replace(/\|/g, "\\|");
 
 export function renderSecurity({ semgrep, audit, changedFiles = [] }) {
 	const lines = ["### Semgrep", ""];

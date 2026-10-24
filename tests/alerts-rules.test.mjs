@@ -146,6 +146,6 @@ test("the rendered email has counts and link paths but no @", () => {
 	assert.ok(plain.text.includes("Failed backups: 2"));
 	const linked = renderAlertEmail(alerts.slice(0, 1), { appName: "Kite", appUrl: "https://mail.example.test/" });
 	assert.equal(linked.subject, "Kite: 1 operational alert");
-	assert.ok(linked.text.includes("https://mail.example.test/backups"));
+	assert.match(linked.text, /(?:^|\s)https:\/\/mail\.example\.test\/backups(?:\s|$)/);
 	assert.ok(!/@/.test(linked.text));
 });

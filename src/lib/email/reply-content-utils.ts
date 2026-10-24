@@ -58,17 +58,20 @@ export function getLatestEmailContent(content: string | null | undefined): strin
 }
 
 export function htmlToReadableText(html: string | null | undefined): string {
-	return (html ?? "")
-		.replace(/<(style|script|head)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
-		.replace(/<br\s*\/?>/gi, "\n")
-		.replace(/<\/(p|div|li|tr|blockquote|h[1-6])>/gi, "\n")
-		.replace(/<[^>]+>/g, " ")
-		.replace(/&nbsp;/g, " ")
-		.replace(/&amp;/g, "&")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.replace(/&quot;/g, '"')
-		.replace(/&#39;/g, "'");
+	return (
+		(html ?? "")
+			.replace(/<(style|script|head)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+			.replace(/<br\s*\/?>/gi, "\n")
+			.replace(/<\/(p|div|li|tr|blockquote|h[1-6])>/gi, "\n")
+			.replace(/<[^>]+>/g, " ")
+			.replace(/&nbsp;/g, " ")
+			.replace(/&lt;/g, "<")
+			.replace(/&gt;/g, ">")
+			.replace(/&quot;/g, '"')
+			.replace(/&#39;/g, "'")
+			// Last, so "&amp;lt;" becomes the literal "&lt;" instead of "<".
+			.replace(/&amp;/g, "&")
+	);
 }
 
 function splitOriginalMessage(

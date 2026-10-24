@@ -27,8 +27,9 @@ const receiver = createServer(async (request, response) => {
 		response.writeHead(200, { "Content-Type": "application/json" });
 		response.end(JSON.stringify(decision));
 	} catch (error) {
+		console.error(error);
 		response.writeHead(500);
-		response.end(String(error));
+		response.end("receiver check failed");
 	}
 });
 receiver.listen(0, "127.0.0.1");

@@ -14,18 +14,32 @@ export function formatEmailAddress(address: string, name?: string | null): strin
 	return `${quoteDisplayName(normalizedName)} <${normalizedAddress}>`;
 }
 
+/** `"Name" <addr>` or `Name <addr>`, parsed by index rather than a backtracking regex. */
+function parseNameAddr(value: string): EmailAddressParts | null {
+	if (!value.endsWith(">")) return null;
+	let name: string;
+	let rest: string;
+	if (value.startsWith('"')) {
+		const close = value.indexOf('"', 1);
+		if (close <= 1) return null;
+		name = value.slice(1, close);
+		rest = value.slice(close + 1).trimStart();
+		if (!rest.startsWith("<")) return null;
+	} else {
+		const open = value.indexOf("<");
+		if (open <= 0) return null;
+		name = value.slice(0, open);
+		if (name.includes('"')) return null;
+		rest = value.slice(open);
+	}
+	const address = rest.slice(1, -1);
+	if (!address || address.includes(">")) return null;
+	return { name: name.trim() || null, address: address.trim() };
+}
+
 export function parseEmailAddressParts(value: string): EmailAddressParts {
 	const trimmed = value.trim();
-	const headerMatch = trimmed.match(/^(?:"([^"]+)"|([^<"]+))\s*<([^>]+)>$/);
-
-	if (headerMatch) {
-		return {
-			name: (headerMatch[1] ?? headerMatch[2] ?? "").trim() || null,
-			address: headerMatch[3].trim(),
-		};
-	}
-
-	return { name: null, address: trimmed };
+	return parseNameAddr(trimmed) ?? { name: null, address: trimmed };
 }
 
 export function getEmailAddress(value: string): string {

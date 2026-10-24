@@ -77,7 +77,7 @@ function mockAws(t, { identity = true } = {}) {
 	const original = globalThis.fetch;
 	globalThis.fetch = async (input, init = {}) => {
 		const url = new URL(typeof input === "string" ? input : (input.url ?? input.href));
-		if (!url.hostname.endsWith("amazonaws.com")) return original(input, init);
+		if (!/(?:^|\.)amazonaws\.com$/.test(url.hostname)) return original(input, init);
 		const action = new URLSearchParams(typeof init.body === "string" ? init.body : "").get("Action");
 		if (action === "GetCallerIdentity")
 			return identity

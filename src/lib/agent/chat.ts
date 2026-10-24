@@ -1,5 +1,5 @@
 import { and, asc, desc, eq } from "drizzle-orm";
-import { streamText, stepCountIs } from "ai";
+import { streamText, stepCountIs, ToolChoiceViolationError } from "ai";
 import { getDb } from "@/db";
 import { agentChatMessages, agentConversations, mailboxAgentSettings } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
@@ -134,6 +134,7 @@ export async function createAgentChatStream(
 			let stepText = "";
 			let reasoning = "";
 			let lastFinishReason: string | null = null;
+			let toolChoiceIgnored = false;
 			const emit = (event: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
 			emit({ type: "conversation", conversationId: id });
 			try {
@@ -183,11 +184,13 @@ export async function createAgentChatStream(
 						});
 						emit({ type: "tool", id: part.toolCallId, name: part.toolName, state: "failed", result: message });
 					} else if (part.type === "error") {
-						emit({ type: "error", message: agentProviderErrorMessage(part.error) });
+						// The SDK reports a tool call on the toolChoice "none" final step as an error part.
+						if (ToolChoiceViolationError.isInstance(part.error)) toolChoiceIgnored = true;
+						else emit({ type: "error", message: agentProviderErrorMessage(part.error) });
 					}
 				}
 				// A model that ignores toolChoice "none" can still end on a tool call; never leave the user without a reply.
-				if (!response.trim() && lastFinishReason === "tool-calls") {
+				if (!response.trim() && (lastFinishReason === "tool-calls" || toolChoiceIgnored)) {
 					response = AGENT_STEP_LIMIT_FALLBACK;
 					emit({ type: "text", text: response });
 				}

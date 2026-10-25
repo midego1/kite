@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.25.0] - 2026-10-25
+
 ### Changed
 
 - In a domain's details the **DKIM** record is now checked in the DNS checklist next to MX, SPF and DMARC instead of only under email sending, so all four records are reviewed together whichever provider sends and receives for the domain.

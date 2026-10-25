@@ -36,6 +36,13 @@ import { checkDomain } from "./utils";
 import { confirmMxReplacement, postJson } from "./api";
 import toast from "react-hot-toast";
 
+type DnsSetupFeedback = {
+	domainId: string;
+	record: DnsAuthRecord;
+	state: "pending" | "success" | "error";
+	message: string;
+};
+
 export default function DomainsPage() {
 	const qc = useQueryClient();
 	const [hostname, setHostname] = useState("");
@@ -50,8 +57,7 @@ export default function DomainsPage() {
 	const domainCheckRevision = useRef(0);
 	const [domainCheckError, setDomainCheckError] = useState<string | null>(null);
 	const [createOpen, setCreateOpen] = useState(false);
-	const [setupRecord, setSetupRecord] = useState<DnsAuthRecord | null>(null);
-	const [setupMessage, setSetupMessage] = useState<string | null>(null);
+	const [setupFeedback, setSetupFeedback] = useState<DnsSetupFeedback | null>(null);
 	const [expandedDomainId, setExpandedDomainId] = useState<string | null>(null);
 	const expandedIdRef = useRef<string | null>(null);
 	const [dnsLoading, setDnsLoading] = useState(false);
@@ -128,14 +134,13 @@ export default function DomainsPage() {
 		}
 		const loadedView = { domain: json.domain, dns: json.dns };
 		setDnsViews((current) => ({ ...current, [id]: loadedView }));
-		if (expandedIdRef.current === id) setSetupMessage(null);
 	};
 
 	const toggleDns = async (id: string) => {
 		if (expandedDomainId === id) {
 			expandedIdRef.current = null;
 			setExpandedDomainId(null);
-			setSetupMessage(null);
+			setSetupFeedback((current) => (current?.state === "pending" ? current : null));
 			setDnsLoading(false);
 			setDnsError(null);
 			return;
@@ -144,7 +149,7 @@ export default function DomainsPage() {
 		// than leaving the card unchanged until the request resolves.
 		expandedIdRef.current = id;
 		setExpandedDomainId(id);
-		setSetupMessage(null);
+		setSetupFeedback((current) => (current?.state === "pending" ? current : null));
 		setDnsError(null);
 		if (dnsViews[id]) {
 			setDnsLoading(false);
@@ -233,11 +238,18 @@ export default function DomainsPage() {
 	};
 
 	const setupDns = async (record: DnsAuthRecord) => {
+		if (setupFeedback?.state === "pending") return;
 		if (!expandedDomainId) return;
 		const dnsView = dnsViews[expandedDomainId];
 		if (!dnsView) return;
-		setSetupRecord(record);
-		setSetupMessage(null);
+		const domainId = dnsView.domain.id;
+		const label = record.toUpperCase();
+		setSetupFeedback({
+			domainId,
+			record,
+			state: "pending",
+			message: `Setting up the ${label} record for ${dnsView.domain.hostname} in Cloudflare. This can take a moment.`,
+		});
 		try {
 			const post = async (replaceMx: boolean) => {
 				const res = await authFetch(`/api/domains/${dnsView.domain.id}/dns/setup`, {
@@ -263,14 +275,27 @@ export default function DomainsPage() {
 				const updatedView = { domain: json.domain, dns: json.dns };
 				setDnsViews((current) => ({
 					...current,
-					[dnsView.domain.id]: updatedView,
+					[domainId]: updatedView,
 				}));
-			} else await loadDns(dnsView.domain.id);
+			} else await loadDns(domainId);
 			qc.invalidateQueries({ queryKey: ["domains"] });
+			const dnsStatus = json.dns?.audit?.[record].status;
+			setSetupFeedback({
+				domainId,
+				record,
+				state: "success",
+				message:
+					dnsStatus === "ok"
+						? `Cloudflare setup finished for ${dnsView.domain.hostname}. The ${label} record is visible in public DNS.`
+						: `Cloudflare setup finished for ${dnsView.domain.hostname}, but public DNS has not verified the ${label} record yet. DNS changes can take a few minutes to appear.`,
+			});
 		} catch (error) {
-			setSetupMessage(error instanceof Error ? error.message : "Failed to set up DNS record");
-		} finally {
-			setSetupRecord(null);
+			setSetupFeedback({
+				domainId,
+				record,
+				state: "error",
+				message: error instanceof Error ? error.message : "Failed to set up DNS record",
+			});
 		}
 	};
 
@@ -403,6 +428,9 @@ export default function DomainsPage() {
 				<List>
 					{(data?.domains ?? []).map((d) => {
 						const dns = data?.dns?.[d.id];
+						const domainSetup = setupFeedback?.domainId === d.id ? setupFeedback : null;
+						const visibleSetup =
+							domainSetup ?? (setupFeedback?.state === "pending" && expandedDomainId === d.id ? setupFeedback : null);
 						return (
 							<DomainItemCard
 								key={d.id}
@@ -420,8 +448,8 @@ export default function DomainsPage() {
 								expanded={expandedDomainId === d.id}
 								onToggleDns={toggleDns}
 								onSetup={setupDns}
-								setupRecord={setupRecord}
-								setupMessage={setupMessage}
+								setupRecord={domainSetup?.state === "pending" ? domainSetup.record : null}
+								setupStatus={visibleSetup ? { state: visibleSetup.state, message: visibleSetup.message } : null}
 								item={d}
 								managesDns={managesDns}
 								remove={remove}

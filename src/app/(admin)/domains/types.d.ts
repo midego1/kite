@@ -91,7 +91,7 @@ export type DomainDnsDetailsProps = {
 	onDnsChanged?: () => void;
 	onSetup?: (record: DnsAuthRecord) => void;
 	setupRecord?: DnsAuthRecord | null;
-	setupMessage?: string | null;
+	setupStatus?: { state: "pending" | "success" | "error"; message: string } | null;
 };
 
 export type DomainItemCardProps = {
@@ -113,5 +113,5 @@ export type DomainItemCardProps = {
 	onToggleDns: (id: string) => void;
 	onSetup?: (record: DnsAuthRecord) => void;
 	setupRecord?: DnsAuthRecord | null;
-	setupMessage?: string | null;
+	setupStatus?: { state: "pending" | "success" | "error"; message: string } | null;
 };

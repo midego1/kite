@@ -29,7 +29,7 @@ export default function DomainItemCard({
 	onToggleDns,
 	onSetup,
 	setupRecord,
-	setupMessage,
+	setupStatus,
 }: DomainItemCardProps) {
 	const auth = dns?.auth;
 
@@ -99,7 +99,7 @@ export default function DomainItemCard({
 						onDnsChanged={onDnsChanged}
 						onSetup={onSetup}
 						setupRecord={setupRecord}
-						setupMessage={setupMessage}
+						setupStatus={setupStatus}
 					/>
 				) : dnsError ? (
 					<div role="alert" className="px-4 pb-4 pt-4 text-sm text-red-600 sm:px-5 sm:pb-5">

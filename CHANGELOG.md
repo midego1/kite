@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.25.0] - 2026-10-25
+
+### Changed
+
+- In a domain's details the **DKIM** record is now checked in the DNS checklist next to MX, SPF and DMARC instead of only under email sending, so all four records are reviewed together whichever provider sends and receives for the domain.
+
+### Fixed
+
+- Clicking **Setup** on a DNS record now says what is happening: a status line names the record and the domain while Cloudflare creates it and, once it finishes, whether public DNS has already verified the record or whether the change can take a few minutes to appear. The **Setup** buttons wait while a setup is running, and a failed setup shows its error in the same line.
+
 ## [2026.10.24.2] - 2026-10-24
 
 ### Security

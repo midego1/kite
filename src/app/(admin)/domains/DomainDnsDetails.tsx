@@ -1,7 +1,9 @@
 import { Button } from "@/components/ui/button";
-import { dnsAuthDescriptions, getDnsAuthItemClass, getSendingStatusLabel } from "./utils";
+import { LoaderCircle } from "lucide-react";
+import { dnsAuthDescriptions, dnsAuthRecords, getDnsAuthItemClass, getSendingStatusLabel } from "./utils";
 import { ROW_GRID, StatusBadge, StatusRow } from "./status-row";
 import CloudflareReceivingConfig from "./CloudflareReceivingConfig";
+import DnsSetupFeedback from "./DnsSetupFeedback";
 import ReceivingSetupSection from "./ReceivingSetupSection";
 import SendingSetupSection from "./SendingSetupSection";
 import type { DnsAuthRecord, DomainDnsDetailsProps } from "./types";
@@ -32,7 +34,7 @@ export default function DomainDnsDetails({
 	dns,
 	onSetup,
 	setupRecord,
-	setupMessage,
+	setupStatus,
 	onSendingProviderChange,
 	sendingProviderBusy,
 	sendingProviderMessage,
@@ -77,11 +79,18 @@ export default function DomainDnsDetails({
 						variant="outline"
 						size="sm"
 						className="shrink-0 bg-white"
-						disabled={manual || setupRecord === record}
+						disabled={manual || setupStatus?.state === "pending"}
 						title={manual ? "DNS for this domain is managed manually" : `Create the ${item.label} record`}
 						onClick={() => onSetup?.(record)}
 					>
-						{setupRecord === record ? "Setting up..." : "Setup"}
+						{setupRecord === record ? (
+							<>
+								<LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+								Setting up…
+							</>
+						) : (
+							"Setup"
+						)}
 					</Button>
 				)}
 			</li>
@@ -93,7 +102,6 @@ export default function DomainDnsDetails({
 			<StatusRow ok={!!sendingOk} title="Email Sending" hint="Sends outgoing email from this domain">
 				{sendingLabel}
 			</StatusRow>
-			{auditRow("dkim")}
 		</ul>
 	);
 
@@ -115,13 +123,9 @@ export default function DomainDnsDetails({
 					<p className="mt-0.5 text-sm text-neutral-500">
 						Review the DNS authentication that keeps mail deliverable, whichever services send and receive it.
 					</p>
-					<ul className="mt-3 space-y-2">{(["mx", "spf", "dmarc"] as DnsAuthRecord[]).map(auditRow)}</ul>
+					<ul className="mt-3 space-y-2">{dnsAuthRecords.map(auditRow)}</ul>
+					<DnsSetupFeedback status={setupStatus} />
 					{(manual || skipped) && <ManualDnsNotice skipped={skipped} canSetUp={!manual} />}
-					{setupMessage && (
-						<p role="alert" className="text-xs text-red-600">
-							{setupMessage}
-						</p>
-					)}
 				</section>
 			)}
 			<ReceivingSetupSection

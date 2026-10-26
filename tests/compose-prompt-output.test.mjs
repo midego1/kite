@@ -219,6 +219,21 @@ test("output: Markdown stays when the user's own text used it", () => {
 	assert.equal(checkComposeOutput("Use **bold** here.", context()).text, "Use bold here.");
 });
 
+test("output: emphasis stays when the user's own text uses * or _, and goes when it does not", () => {
+	const filename = context({ mode: "rewrite", input: "send report_final_v2.pdf and 5 * 3 * 2" });
+	assert.equal(
+		checkComposeOutput("Send report_final_v2.pdf, and 5 * 3 * 2 = 30. Note *this*.", filename).text,
+		"Send report_final_v2.pdf, and 5 * 3 * 2 = 30. Note *this*.",
+	);
+	assert.equal(
+		checkComposeOutput(
+			"I *really* need _this_ today; see report_v2.pdf.",
+			context({ mode: "rewrite", input: "I need this today." }),
+		).text,
+		"I really need this today; see report_v2.pdf.",
+	);
+});
+
 test("output: a note about the text is refused unless the text being rewritten starts the same way", () => {
 	assert.equal(checkComposeOutput("Here is your email: Hi", context()).ok, false);
 	assert.equal(checkComposeOutput("Sure, I can help.", context()).ok, false);

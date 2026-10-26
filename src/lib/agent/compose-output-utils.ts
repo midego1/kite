@@ -106,7 +106,8 @@ export function checkComposeOutput(raw: string, context: ComposeCheckContext): C
 	text = text.replace(BARE_DOMAIN, (value: string, host: string) =>
 		checkLink(value, normalizeUrl(`https://${value}`), host.toLowerCase()),
 	);
-	if (!MARKDOWN.test(context.input)) text = stripDraftMarkdown(text);
+	// Emphasis markers stay when the user's own text uses "*" or "_" itself (file names, formulas, snake_case).
+	if (!MARKDOWN.test(context.input)) text = stripDraftMarkdown(text, { emphasis: !/[*_]/.test(context.input) });
 	text = text
 		.replace(PROTECTED, (_, index: string) => kept[Number(index)])
 		.replace(/[ \t]{2,}/g, " ")

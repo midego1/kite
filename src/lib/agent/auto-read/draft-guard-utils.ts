@@ -9,24 +9,37 @@ type DraftGuardReason = "empty" | "too_long" | "meta_text" | "unknown_address" |
 
 export type DraftGuardResult = { ok: true; text: string } | { ok: false; reason: DraftGuardReason; offending?: string };
 
-/** Turns Markdown a model slipped into a plain-text draft back into plain text. */
-export function stripDraftMarkdown(body: string): string {
+// Emphasis only where Markdown would render it: the markers sit at word boundaries and hug non-space text, so
+// "report_final_v2.pdf", "snake_case", "5 * 3 * 2", "2*3" and "*not emphasis *" stay as they are.
+const STRONG_STARS = /(?<![\w*])\*\*(\S(?:[^*\n]*?\S)?)\*\*(?![\w*])/g;
+const STRONG_UNDERSCORES = /(?<![\w_])__(\S(?:[^_\n]*?\S)?)__(?![\w_])/g;
+const EMPHASIS_STAR = /(?<![\w*])\*(\S(?:[^*\n]*?\S)?)\*(?![\w*])/g;
+const EMPHASIS_UNDERSCORE = /(?<![\w_])_(\S(?:[^_\n]*?\S)?)_(?![\w_])/g;
+
+/**
+ * Turns Markdown a model slipped into a plain-text draft back into plain text. `emphasis: false` keeps `*` and `_`
+ * emphasis markers, for text whose author used those characters themselves.
+ */
+export function stripDraftMarkdown(body: string, options: { emphasis?: boolean } = {}): string {
+	const emphasis = options.emphasis ?? true;
 	return body
 		.replace(/\r\n?/g, "\n")
 		.split("\n")
-		.map((line) =>
-			line
+		.map((line) => {
+			const plain = line
 				.replace(/^\s*```[^\n]*$/, "")
 				.replace(/^\s{0,3}#{1,6}\s+/, "")
 				.replace(/^\s{0,3}[-*+]\s+/, "• ")
 				.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, "$1 ($2)")
-				.replace(/\*\*([^*\n]+)\*\*/g, "$1")
-				.replace(/__([^_\n]+)__/g, "$1")
-				.replace(/\*([^*\n]+)\*/g, "$1")
-				.replace(/_([^_\n]+)_/g, "$1")
 				.replace(/~~([^~\n]+)~~/g, "$1")
-				.replace(/`([^`\n]+)`/g, "$1"),
-		)
+				.replace(/`([^`\n]+)`/g, "$1");
+			if (!emphasis) return plain;
+			return plain
+				.replace(STRONG_STARS, "$1")
+				.replace(STRONG_UNDERSCORES, "$1")
+				.replace(EMPHASIS_STAR, "$1")
+				.replace(EMPHASIS_UNDERSCORE, "$1");
+		})
 		.join("\n")
 		.replace(/\n{3,}/g, "\n\n")
 		.trim();

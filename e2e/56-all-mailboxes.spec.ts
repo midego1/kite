@@ -186,7 +186,8 @@ test("a reply goes out from the mailbox the message arrived in, and a new messag
 		await row(page, subject).getByRole("link").first().click();
 		await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
 		await page.keyboard.press("r");
-		await expect(page.getByLabel("Subject")).toHaveValue(`Re: ${subject}`);
+		// Opening a reply creates its draft first, which can take a while on a busy dev server.
+		await expect(page.getByLabel("Subject")).toHaveValue(`Re: ${subject}`, { timeout: 30_000 });
 		await expectSelectValue(page.getByRole("combobox", { name: "From" }), `${box.id}|${box.address}`);
 		await page.getByRole("textbox", { name: "Message body" }).click();
 		await page.keyboard.type(`Answer from ${box.name}.`);
@@ -257,8 +258,8 @@ test("read-only shared mail cannot be archived or deleted from the combined view
 
 	await row(page, subject).getByRole("link").first().click();
 	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
-	await expect(page.getByRole("button", { name: /^Archive/ })).toBeDisabled();
-	await expect(page.getByRole("button", { name: /^Move to trash/ })).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Archive (e)", exact: true })).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Move to trash (#)", exact: true })).toBeDisabled();
 	await page.keyboard.press("e");
 	await expect(page.getByText("Read-only mail can't be moved or deleted.")).toBeVisible();
 	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
@@ -279,7 +280,8 @@ test("j, k, e and # work in the combined view", async ({ browser }) => {
 	const page = await openPage(browser);
 	await showAllMailboxes(page);
 	const link = (subject: string) => row(page, subject).getByRole("link").first();
-	await expect(link(subjects[2])).toBeVisible();
+	// Every mailbox's rows are listed before the keys run, not the single mailbox's from before the switch.
+	for (const subject of subjects) await expect(link(subject)).toBeVisible();
 
 	await page.keyboard.press("j");
 	await expect(link(subjects[2])).toBeFocused();

@@ -41,6 +41,25 @@ function MailboxAvatar({ mailbox, className }: { mailbox: MailboxOption; classNa
 	);
 }
 
+type MenuAnchor = { top: number; left: number; width: number; container: HTMLElement };
+
+/**
+ * Where the menu opens: fixed under the button in <body>, or, inside the phone menu sheet (a modal
+ * dialog that blocks clicks outside it), inside the sheet and positioned relative to it.
+ */
+function menuAnchor(button: HTMLElement): MenuAnchor {
+	const rect = button.getBoundingClientRect();
+	const width = Math.min(Math.max(rect.width, 320), window.innerWidth - rect.left - 12);
+	const dialog = button.closest<HTMLElement>('[role="dialog"]');
+	const origin = dialog?.getBoundingClientRect() ?? { top: 0, left: 0 };
+	return {
+		top: rect.bottom + 6 - origin.top,
+		left: rect.left - origin.left,
+		width,
+		container: dialog ?? document.body,
+	};
+}
+
 /** Switches the active mailbox from the top of the sidebar, without opening the account menu. */
 export function SidebarMailboxSwitcher() {
 	const { selectedMailbox, setSelectedMailbox, mailboxes, allMailboxes, setAllMailboxes } = useSelectedMailbox();
@@ -50,7 +69,7 @@ export function SidebarMailboxSwitcher() {
 	const [open, setOpen] = useState(false);
 	const ref = useRef<HTMLDivElement>(null);
 	const menuRef = useRef<HTMLDivElement>(null);
-	const [anchor, setAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
+	const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
 	const { counts } = useMessageCounts(null, open);
 
 	useEffect(() => {
@@ -76,11 +95,7 @@ export function SidebarMailboxSwitcher() {
 	}, [open]);
 
 	function toggleMenu() {
-		const rect = ref.current?.getBoundingClientRect();
-		if (rect) {
-			const width = Math.min(Math.max(rect.width, 320), window.innerWidth - rect.left - 12);
-			setAnchor({ top: rect.bottom + 6, left: rect.left, width });
-		}
+		if (ref.current) setAnchor(menuAnchor(ref.current));
 		setOpen((value) => !value);
 	}
 
@@ -105,11 +120,14 @@ export function SidebarMailboxSwitcher() {
 			{open &&
 				anchor &&
 				createPortal(
-					// Portalled to <body>: the sidebar clips overflow and, on phones, is transformed, which would trap a fixed menu.
+					// Portalled out of the sidebar, which clips overflow and, on phones, is transformed, which would trap a fixed menu.
 					<div
 						ref={menuRef}
 						style={{ top: anchor.top, left: anchor.left, width: anchor.width }}
-						className="fixed z-[200] max-h-[70vh] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl shadow-neutral-900/15"
+						className={cn(
+							anchor.container === document.body ? "fixed" : "absolute",
+							"z-[200] max-h-[70vh] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl shadow-neutral-900/15",
+						)}
 						role="listbox"
 						aria-label="Mailboxes"
 					>
@@ -174,7 +192,7 @@ export function SidebarMailboxSwitcher() {
 							</Link>
 						)}
 					</div>,
-					document.body,
+					anchor.container,
 				)}
 		</div>
 	);

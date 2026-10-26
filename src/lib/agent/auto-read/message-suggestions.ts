@@ -3,10 +3,12 @@ import type { AppDatabase } from "@/db";
 import { queryInChunks } from "@/db/chunk-utils";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import type { MailboxPermission } from "@/lib/mailboxes/types";
+import { rowConversationKey } from "@/lib/messages/conversation-key";
 import { groupSuggestionCounts } from "./suggestion-badge-utils";
 import type { SuggestionCount } from "./suggestion-types";
 import { visibleSuggestionsWhere, type SuggestionVisibility } from "./suggestion-visibility";
 
+// Conversation rows are keyed per mailbox, as the message list groups them.
 type ListRow = { id: string; mailboxId: string | null; threadId: string | null };
 
 /**
@@ -25,7 +27,7 @@ export async function loadRowSuggestions(
 	const fullAccess = new Set(mailboxes.filter((mailbox) => mailbox.permission === "full_access").map(({ id }) => id));
 	const members = rows
 		.filter((row) => row.mailboxId && fullAccess.has(row.mailboxId))
-		.map((row) => ({ id: row.id, messageIds: threadMessageIds.get(row.threadId ?? row.id) ?? [row.id] }));
+		.map((row) => ({ id: row.id, messageIds: threadMessageIds.get(rowConversationKey(row)) ?? [row.id] }));
 	const messageIds = Array.from(new Set(members.flatMap((row) => row.messageIds)));
 	const counts = await queryInChunks(messageIds, (chunk) =>
 		db

@@ -20,6 +20,7 @@ import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/
 import { openPalette } from "./support/module-flows";
 import { restoreModules, setModuleState } from "./support/modules";
 import { readSuggestions, waitForFinishedJob } from "./support/triage";
+import { chooseOption, expectSelectValue, readOptions } from "./support/select";
 
 let fake: FakeModel;
 let api: APIRequestContext;
@@ -1047,7 +1048,7 @@ test.describe("Money Watch manual add", () => {
 			await expect(dialog.getByLabel("Vendor")).toHaveValue(vendor);
 			await expect(dialog.getByLabel("Amount", { exact: true }).first()).toHaveValue("17.99");
 			await expect(dialog.locator("[data-finance-cancel-link]")).toContainText(new URL(cancelUrl).host);
-			await expect(dialog.getByLabel("Attachment")).toContainText(invoicePdf);
+			expect((await readOptions(dialog.getByLabel("Attachment"))).map((option) => option.label)).toContain(invoicePdf);
 			expect((await listSubscriptions(account)).subscriptions).toEqual([]);
 			const saved = page.waitForResponse(
 				(response) => response.url().endsWith("/api/finance/subscriptions") && response.request().method() === "POST",
@@ -1079,13 +1080,15 @@ test.describe("Money Watch manual add", () => {
 			const documentDraft = await openMessageMenuItem(page, receipt.id, "Add to a tracked subscription");
 			expect(documentDraft.draft.subscriptionId).toBe(row.id);
 			const documentDialog = page.locator("[data-finance-document-dialog]");
-			await expect(documentDialog.getByLabel("Subscription")).toHaveValue(row.id);
-			await expect(documentDialog.getByLabel("Attachment")).toContainText(receiptPdf);
-			await documentDialog.getByLabel("Document").selectOption("payment");
+			await expectSelectValue(documentDialog.getByLabel("Subscription"), row.id);
+			expect((await readOptions(documentDialog.getByLabel("Attachment"))).map((option) => option.label)).toContain(
+				receiptPdf,
+			);
+			await chooseOption(documentDialog.getByLabel("Document"), "payment");
 			await documentDialog.getByLabel("Amount").fill("17.99");
 			await documentDialog.getByLabel("Currency").fill("USD");
 			const attachmentId = documentDraft.attachments[0].id;
-			await documentDialog.getByLabel("Attachment").selectOption(attachmentId);
+			await chooseOption(documentDialog.getByLabel("Attachment"), attachmentId);
 			const recordedResponse = page.waitForResponse((response) =>
 				response.url().endsWith(`/api/finance/subscriptions/${row.id}/documents`),
 			);
@@ -1104,7 +1107,7 @@ test.describe("Money Watch manual add", () => {
 			await expect(documentDialog).toHaveCount(0);
 
 			await openMessageMenuItem(page, receipt.id, "Add to a tracked subscription");
-			await documentDialog.getByLabel("Document").selectOption("payment");
+			await chooseOption(documentDialog.getByLabel("Document"), "payment");
 			await documentDialog.getByLabel("Amount").fill("17.99");
 			await documentDialog.getByLabel("Currency").fill("USD");
 			await documentDialog.getByRole("button", { name: "Record document" }).click();
@@ -1180,7 +1183,7 @@ test.describe("Money Watch manual add", () => {
 			const draft = await chooseMessageMenuItem(page, "Add to a tracked subscription");
 			detected();
 			expect(draft.draft.subscriptionId).toBe(row.id);
-			await expect(documentDialog.getByLabel("Subscription")).toHaveValue(row.id);
+			await expectSelectValue(documentDialog.getByLabel("Subscription"), row.id);
 			await expect(documentDialog.getByRole("button", { name: "Record document" })).toBeEnabled();
 			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
 		} finally {
@@ -1608,7 +1611,7 @@ test.describe("Money Watch view", () => {
 			await expect(page).toHaveURL(/\/finance$/);
 			await expect(page.getByRole("heading", { name: "Subscriptions", level: 1 })).toBeVisible();
 			await expect(page.getByRole("button", { name: "Add subscription" })).toBeVisible();
-			expect(await page.getByLabel("Show").locator("option").allTextContents()).toEqual([
+			expect((await readOptions(page.getByLabel("Show"))).map((option) => option.label)).toEqual([
 				"Active and trials",
 				"Cancelled and expired",
 				"All",
@@ -1744,11 +1747,11 @@ test.describe("Money Watch view", () => {
 				"Mailbox",
 			])
 				await expect(dialog.getByLabel(label, { exact: true }), label).toBeVisible();
-			await expect(dialog.getByLabel("Mailbox")).toHaveValue(account.mailboxId);
+			await expectSelectValue(dialog.getByLabel("Mailbox"), account.mailboxId);
 			await dialog.getByLabel("Vendor").fill(vendor);
 			await dialog.getByLabel("Amount").fill("9.99");
 			await dialog.getByLabel("Currency").fill("usd");
-			await dialog.getByLabel("Billed").selectOption("monthly");
+			await chooseOption(dialog.getByLabel("Billed"), "monthly");
 			await dialog.getByLabel("Next renewal").fill(isoDay(12));
 			await dialog.getByLabel("Remind days before").fill("3");
 			const created = page.waitForResponse(
@@ -1778,12 +1781,12 @@ test.describe("Money Watch view", () => {
 			await (await openRowMenu(page, vendor)).getByRole("menuitem", { name: "Mark as expired" }).click();
 			await expect(page.getByRole("status").filter({ hasText: "Marked as expired" })).toBeVisible();
 			await expect(page.locator('[data-finance-section="upcoming"]')).toHaveCount(0);
-			await page.getByLabel("Show").selectOption("ended");
+			await chooseOption(page.getByLabel("Show"), "ended");
 			await expect(listed.locator("[data-finance-status]")).toHaveText("Expired");
 			await (await openRowMenu(page, vendor)).getByRole("menuitem", { name: "Mark as active" }).click();
 			await expect(page.getByRole("status").filter({ hasText: "Marked as active" })).toBeVisible();
 			await expect(page.getByText("No cancelled or expired subscriptions.")).toBeVisible();
-			await page.getByLabel("Show").selectOption("current");
+			await chooseOption(page.getByLabel("Show"), "current");
 			await expect(listed.locator("[data-finance-status]")).toHaveText("Active");
 
 			const receipt = await deliverPlain(account, invoice(vendor, dayFromNow(12).long));

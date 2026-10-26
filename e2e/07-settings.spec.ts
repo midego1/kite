@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { STORAGE_STATE } from "./support/constants";
 import { apiContext, setSendingSettings } from "./support/helpers";
+import { chooseOption, expectSelectValue } from "./support/select";
 
 test.afterEach(async () => {
 	const api = await apiContext(STORAGE_STATE);
@@ -13,7 +14,7 @@ test("sending settings are saved to the account and survive a reload", async ({ 
 	const preview = page.getByRole("switch", { name: "Preview before sending" });
 	const undoWindow = page.getByRole("combobox", { name: "Undo send window" });
 	await expect(preview).toHaveAttribute("aria-checked", "false");
-	await expect(undoWindow).toHaveValue("0");
+	await expectSelectValue(undoWindow, "0");
 
 	const waitForSave = () =>
 		page.waitForResponse(
@@ -24,18 +25,61 @@ test("sending settings are saved to the account and survive a reload", async ({ 
 	await preview.click();
 	await saved;
 	saved = waitForSave();
-	await undoWindow.selectOption({ label: "20 seconds" });
+	await chooseOption(undoWindow, { label: "20 seconds" });
 	await saved;
 
 	await page.reload();
 	await expect(page.getByRole("switch", { name: "Preview before sending" })).toHaveAttribute("aria-checked", "true");
-	await expect(page.getByRole("combobox", { name: "Undo send window" })).toHaveValue("20");
+	await expectSelectValue(page.getByRole("combobox", { name: "Undo send window" }), "20");
 
 	// Stored per account, so a different browser profile sees it too.
 	const api = await apiContext(STORAGE_STATE);
 	const stored = await (await api.get("/api/settings/sending")).json();
 	expect(stored).toMatchObject({ previewEnabled: true, undoSeconds: 20 });
 	await api.dispose();
+});
+
+test("typing into a closed dropdown picks an option and does not run keyboard shortcuts", async ({ page }) => {
+	await page.goto("/settings/appearance");
+	const style = page.getByRole("combobox", { name: "Style" });
+	await expectSelectValue(style, "kite");
+	// Shortcuts bind once the account's preference has loaded; the help sheet opening shows they are live.
+	const help = page.getByRole("dialog", { name: "Keyboard Shortcuts" });
+	await expect(async () => {
+		if (!(await help.isVisible())) await page.keyboard.press("?");
+		await expect(help).toBeVisible({ timeout: 1000 });
+	}).toPass();
+	await page.keyboard.press("Escape");
+	await expect(help).toHaveCount(0);
+
+	await style.focus();
+	// `c` is also the Compose shortcut; like a native select, the dropdown keeps the key to itself.
+	await page.keyboard.press("c");
+	await expectSelectValue(style, "classic");
+	// The composer loads its form on demand, so give a wrongly fired shortcut time to show it.
+	await page.waitForTimeout(1500);
+	await expect(page.getByRole("button", { name: "Close composer" })).toHaveCount(0);
+	await chooseOption(style, { label: "Kite" });
+	await expectSelectValue(style, "kite");
+});
+
+test("a required dropdown left empty fails validation and hands the focus to its trigger", async ({ page }) => {
+	await page.goto("/accounts");
+	await page.getByRole("button", { name: "New account" }).click();
+	const dialog = page.getByRole("dialog", { name: "Add user account" });
+	const domain = dialog.getByRole("combobox", { name: "Domain" });
+	await chooseOption(domain, { label: "Select domain" });
+	await expectSelectValue(domain, "");
+	// The hidden native select carries `required` for the form but is never a tab stop of its own.
+	const formControl = dialog.locator('select[aria-hidden="true"][required]');
+	await expect(formControl).toHaveAttribute("tabindex", "-1");
+	await page.keyboard.press("Tab");
+	await expect(formControl).not.toBeFocused();
+	// Validation focuses the invalid control, which hands the focus to the dropdown people can use.
+	expect(await formControl.evaluate((element) => (element as unknown as HTMLSelectElement).reportValidity())).toBe(
+		false,
+	);
+	await expect(domain).toBeFocused();
 });
 
 test.describe("assistant step limit", () => {
@@ -124,23 +168,23 @@ test.describe("assistant display", () => {
 		await openAssistant(page);
 		await page.getByRole("button", { name: "Assistant settings" }).click();
 		const panel = page.locator("#email-assistant-panel");
-		await expect(panel.getByRole("combobox", { name: "Assistant steps" })).toHaveValue("live");
+		await expectSelectValue(panel.getByRole("combobox", { name: "Assistant steps" }), "live");
 		const stepsRow = panel.getByRole("combobox", { name: "Assistant steps" }).locator("..").locator("..");
 		expect((await stepsRow.boundingBox())!.height).toBeLessThan(80);
 		await expect(panel.getByText(/Steps can appear live/)).toBeHidden();
 		await panel.getByText("Display help", { exact: true }).click();
 		await expect(panel.getByText(/Steps can appear live/)).toBeVisible();
-		await expect(panel.getByRole("combobox", { name: "Step details" })).toHaveValue("emails");
-		await panel.getByRole("combobox", { name: "Assistant steps" }).selectOption({ label: "Hidden" });
-		await panel.getByRole("combobox", { name: "Step details" }).selectOption({ label: "Everything" });
+		await expectSelectValue(panel.getByRole("combobox", { name: "Step details" }), "emails");
+		await chooseOption(panel.getByRole("combobox", { name: "Assistant steps" }), { label: "Hidden" });
+		await chooseOption(panel.getByRole("combobox", { name: "Step details" }), { label: "Everything" });
 
 		await page.goto("/settings/appearance");
-		await expect(page.getByRole("combobox", { name: "Assistant steps" })).toHaveValue("hidden");
-		await expect(page.getByRole("combobox", { name: "Step details" })).toHaveValue("full");
-		await page.getByRole("combobox", { name: "Assistant steps" }).selectOption({ label: "Collapsed" });
+		await expectSelectValue(page.getByRole("combobox", { name: "Assistant steps" }), "hidden");
+		await expectSelectValue(page.getByRole("combobox", { name: "Step details" }), "full");
+		await chooseOption(page.getByRole("combobox", { name: "Assistant steps" }), { label: "Collapsed" });
 		await page.reload();
-		await expect(page.getByRole("combobox", { name: "Assistant steps" })).toHaveValue("collapsed");
-		await expect(page.getByRole("combobox", { name: "Step details" })).toHaveValue("full");
+		await expectSelectValue(page.getByRole("combobox", { name: "Assistant steps" }), "collapsed");
+		await expectSelectValue(page.getByRole("combobox", { name: "Step details" }), "full");
 	});
 
 	test("the chat window opens from the Ask Kite AI bubble, which steps aside for the composer", async ({ page }) => {

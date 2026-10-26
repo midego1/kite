@@ -7,10 +7,13 @@ test.describe.configure({ mode: "serial" });
 
 test.beforeAll(seedDemoData);
 
-async function open(browser: Browser, { style = "kite", theme = "light" }: { style?: string; theme?: string } = {}) {
+type Appearance = { style?: string; theme?: string; phone?: boolean };
+
+async function open(browser: Browser, { style = "kite", theme = "light", phone = false }: Appearance = {}) {
 	const context = await browser.newContext({
 		storageState: STORAGE_STATE,
-		viewport: { width: 1440, height: 900 },
+		viewport: phone ? { width: 390, height: 844 } : { width: 1440, height: 900 },
+		...(phone ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}),
 		colorScheme: theme === "dark" ? "dark" : "light",
 	});
 	await context.addInitScript(
@@ -40,7 +43,8 @@ async function openLenasMessage(page: Page) {
 }
 
 async function capture(page: Page, name: string) {
-	await expect(page.getByLabel("Loading", { exact: true })).not.toHaveClass(/opacity-100/);
+	// A visible loading overlay, if the page has one, must be gone.
+	await expect(page.locator('[aria-label="Loading"].opacity-100')).toHaveCount(0);
 	await expect(page.getByRole("progressbar", { name: "Loading page" })).toHaveCount(0);
 	await page.waitForLoadState("networkidle");
 	await page.evaluate(() => document.fonts.ready);
@@ -51,6 +55,7 @@ async function capture(page: Page, name: string) {
 for (const [name, appearance] of [
 	["inbox", {}],
 	["inbox-dark", { theme: "dark" }],
+	["inbox-phone", { phone: true }],
 ] as const) {
 	test(name, async ({ browser }) => {
 		const page = await open(browser, appearance);
@@ -63,9 +68,10 @@ test("compose", async ({ browser }) => {
 	const page = await open(browser);
 	await openLenasMessage(page);
 	await page.getByRole("button", { name: "Reply (r)" }).click();
-	await page
-		.getByRole("textbox", { name: "Message body" })
-		.fill(
+	const body = page.getByRole("textbox", { name: "Message body" });
+	// The editor stays read-only until the reply draft has loaded.
+	await expect(body).toHaveAttribute("contenteditable", "true");
+	await body.fill(
 			"Hi Lena,\n\nThanks for the notes. Suggesting hello@ and support@ is a great idea, I'll add it to the mailbox step. Does Thursday afternoon work to pair on the welcome email?\n\nBest,\nDemo",
 		);
 	await capture(page, "compose");
@@ -97,3 +103,30 @@ test("calendar", async ({ browser }) => {
 	await expect(page.getByRole("button", { name: /Design review: onboarding/ }).first()).toBeVisible();
 	await capture(page, "calendar");
 });
+
+for (const [name, appearance] of [
+	["inbox-list-phone", { phone: true }],
+	["inbox-list-phone-dark", { phone: true, theme: "dark" }],
+] as const) {
+	test(name, async ({ browser }) => {
+		const page = await open(browser, appearance);
+		await page.goto("/inbox");
+		await expect(page.getByText(OPENED.subject).first()).toBeVisible();
+		await capture(page, name);
+	});
+}
+
+for (const [name, appearance] of [
+	["settings", {}],
+	["settings-dark", { theme: "dark" }],
+] as const) {
+	test(name, async ({ browser }) => {
+		const page = await open(browser, appearance);
+		await page.goto("/settings/inbox");
+		const undoWindow = page.getByRole("combobox", { name: "Undo send window" });
+		await expect(undoWindow).toBeVisible();
+		// The sending section holds a switch and a select side by side.
+		await undoWindow.scrollIntoViewIfNeeded();
+		await capture(page, name);
+	});
+}

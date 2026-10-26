@@ -68,9 +68,10 @@ test("compose", async ({ browser }) => {
 	const page = await open(browser);
 	await openLenasMessage(page);
 	await page.getByRole("button", { name: "Reply (r)" }).click();
-	await page
-		.getByRole("textbox", { name: "Message body" })
-		.fill(
+	const body = page.getByRole("textbox", { name: "Message body" });
+	// The editor stays read-only until the reply draft has loaded.
+	await expect(body).toHaveAttribute("contenteditable", "true");
+	await body.fill(
 			"Hi Lena,\n\nThanks for the notes. Suggesting hello@ and support@ is a great idea, I'll add it to the mailbox step. Does Thursday afternoon work to pair on the welcome email?\n\nBest,\nDemo",
 		);
 	await capture(page, "compose");

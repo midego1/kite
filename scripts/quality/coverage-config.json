@@ -152,6 +152,7 @@
 		"src/lib/profile/identity-utils.ts",
 		"src/lib/search/module-search-utils.ts",
 		"src/lib/setup/configuration-utils.ts",
+		"src/lib/spam/authentication-results-utils.ts",
 		"src/lib/spam/analyzers/link-host-utils.ts",
 		"src/lib/spam/analyzers/urls-utils.ts",
 		"src/lib/spam/providers/abuse-ch-utils.ts",

@@ -8,11 +8,18 @@
 const CLOUDFLARE_AUTHSERV_ID = /(^|\.)cloudflare\.(com|net)$/;
 
 /**
- * Where `Headers` joined the next instance of the field on: `, ` followed by another authserv-id
- * (optionally with a version) and its `;`. A `,` inside one header's comments is followed by
- * `name=value`, never by `token;`.
+ * A comment (CFWS) in the field, one nesting level deep. An authserv-id may carry comments around
+ * it (`mail.example.test (comment);`), so a boundary check that assumes a bare server name misses
+ * a sender's copy and keeps its forged results inside the trusted string.
  */
-const NEXT_INSTANCE = /,\s*(?=[^\s;,()="]+(?:\s+\d+)?\s*;)/;
+const COMMENT = String.raw`\((?:[^()]|\([^()]*\))*\)`;
+
+/**
+ * Where `Headers` joined the next instance of the field on: `, ` followed by another authserv-id
+ * (optionally with comments and a version) and its `;`. A `,` inside one header's comments is
+ * followed by `name=value` or `)`, never by `token;`.
+ */
+const NEXT_INSTANCE = new RegExp(`,\\s*(?=(?:${COMMENT}\\s*)*[^\\s;,()="]+(?:\\s+\\d+)?(?:\\s*${COMMENT})*\\s*;)`);
 
 /** The authserv-id of one header value, lower-cased, without its optional version. */
 function authservIdOf(value: string): string {

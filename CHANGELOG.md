@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Moving a selection to a folder now moves only the emails from that folder's mailbox; mail from another mailbox is left where it was.
+- On phones, the mailbox selector inside the menu sheet can be used again; its list opened behind the sheet and could not be tapped.
 
 ## [2026.10.26.7] - 2026-10-26
 

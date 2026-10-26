@@ -33,6 +33,7 @@ import { maybeAutoApplyPendingMigrations } from "./src/lib/migrations/auto-apply
 import { queueRetryDelaySeconds } from "./src/lib/migrations/pending";
 import { storageConnectOrigins } from "./src/lib/storage";
 import { withStorage } from "./src/lib/storage/router";
+import { trustedCloudflareAuthenticationResults } from "./src/lib/spam/authentication-results-utils";
 export { RealtimeHub } from "./src/lib/realtime/hub";
 
 const logger = createLogger("worker");
@@ -157,6 +158,7 @@ export default {
 				to: message.to,
 				rawR2Key,
 				headers: Object.fromEntries(message.headers),
+				authenticationResults: trustedCloudflareAuthenticationResults(message.headers.get("authentication-results")),
 			};
 			stage = "enqueue";
 			await env.INBOUND_QUEUE.send(payload);

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const secret = "local-relay-integration-only";
 const received = [];
+const receivedHeaders = [];
 let decision = { action: "store", forwardTo: null };
 const receiver = createServer(async (request, response) => {
 	try {
@@ -23,6 +24,13 @@ const receiver = createServer(async (request, response) => {
 			.update(body)
 			.digest("hex");
 		assert.equal(request.headers["x-kite-signature"], signature);
+		const headersSignature = createHmac("sha256", secret)
+			.update(`kite-headers\n${request.headers["x-kite-from"]}\n${request.headers["x-kite-to"]}\n`)
+			.update(`${request.headers["x-kite-headers"]}\n`)
+			.update(body)
+			.digest("hex");
+		assert.equal(request.headers["x-kite-headers-signature"], headersSignature);
+		receivedHeaders.push(JSON.parse(request.headers["x-kite-headers"]));
 		received.push(body.toString());
 		response.writeHead(200, { "Content-Type": "application/json" });
 		response.end(JSON.stringify(decision));
@@ -91,7 +99,7 @@ try {
 	assert.deepEqual(await healthy.json(), { status: "ok", service: "kite-email-relay" });
 	const url = `http://127.0.0.1:${workerPort}/cdn-cgi/handler/email?from=sender@example.com&to=inbox@example.com`;
 	const mime =
-		"From: sender@example.com\r\nTo: inbox@example.com\r\nSubject: Local relay QA\r\nMessage-ID: <relay-qa@example.com>\r\nDate: Wed, 07 Oct 2026 00:00:00 +0000\r\n\r\nSynthetic mail only.\r\n";
+		"Authentication-Results: mx.cloudflare.net; spf=none smtp.mailfrom=example.com\r\nAuthentication-Results: relay-qa.example; dmarc=pass\r\nFrom: sender@example.com\r\nTo: inbox@example.com\r\nSubject: Local relay QA\r\nMessage-ID: <relay-qa@example.com>\r\nDate: Wed, 07 Oct 2026 00:00:00 +0000\r\n\r\nSynthetic mail only.\r\n";
 	const stored = await fetch(url, {
 		method: "POST",
 		headers: { "Content-Type": "message/rfc822" },
@@ -101,6 +109,11 @@ try {
 	assert.equal(stored.status, 200, await stored.text());
 	assert.equal(received.length, 1);
 	assert.equal(received[0], mime);
+	// workerd joins repeated fields in message order; the server trusts only the topmost copy.
+	assert.equal(
+		receivedHeaders[0]["authentication-results"],
+		"mx.cloudflare.net; spf=none smtp.mailfrom=example.com, relay-qa.example; dmarc=pass",
+	);
 	decision = { action: "reject", reason: "Local QA rejection" };
 	const rejected = await fetch(url, {
 		method: "POST",
@@ -111,7 +124,9 @@ try {
 	const result = await rejected.text();
 	assert.match(result, /Local QA rejection/);
 	assert.equal(received.length, 2);
-	console.log("Relay integration passed: real local workerd delivery, HMAC verification, store and reject routing.");
+	console.log(
+		"Relay integration passed: real local workerd delivery, HMAC and headers signature verification, store and reject routing.",
+	);
 } finally {
 	if (child.exitCode === null) {
 		child.kill("SIGTERM");

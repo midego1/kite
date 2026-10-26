@@ -85,7 +85,10 @@ function factsFor(mail) {
 		attachments: [],
 	};
 	const headers = { "Authentication-Results": mail.auth ?? AUTH_PASS, ...mail.headers };
-	const signals = [...analyzeAuthentication(headers), ...analyzeUrls(message, prepareSpamContent(message))];
+	const signals = [
+		...analyzeAuthentication(headers["Authentication-Results"]),
+		...analyzeUrls(message, prepareSpamContent(message)),
+	];
 	const sender = addressOf(mail.from);
 	const domain = sender.split("@")[1];
 	const hosts = linkHostsOf(`${mail.text ?? ""}\n${mail.html ? htmlLinkText(mail.html) : ""}`);

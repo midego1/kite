@@ -13,7 +13,10 @@ export function isTypingInInput(target: EventTarget | null): boolean {
 	const tagName = target.tagName.toUpperCase();
 	const isInputOrTextarea = tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
 	const isContentEditable = target.isContentEditable || target.getAttribute("contenteditable") === "true";
-	return isInputOrTextarea || isContentEditable;
+	// A Select trigger is a button with role="combobox" that types ahead through its options, as a native
+	// select does, so its keys belong to it.
+	const isCombobox = target.getAttribute("role") === "combobox";
+	return isInputOrTextarea || isContentEditable || isCombobox;
 }
 
 function matchModifiers(e: KeyboardEvent, shortcut: ShortcutDefinition): boolean {

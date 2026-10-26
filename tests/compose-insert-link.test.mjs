@@ -20,7 +20,12 @@ document.queryCommandState = () => false;
 document.queryCommandValue = () => "";
 
 await build({
-	entryPoints: [join(root, "src/components/compose/rich-text-editor.tsx")],
+	// One bundle for both, so the editor's tooltips see the provider the app mounts in Providers.
+	stdin: {
+		contents: `export { RichTextEditor } from "./src/components/compose/rich-text-editor.tsx"; export { TooltipProvider } from "./src/components/ui/tooltip.tsx";`,
+		resolveDir: root,
+		loader: "tsx",
+	},
 	outfile: join(outDir, "editor.mjs"),
 	bundle: true,
 	platform: "browser",
@@ -33,7 +38,7 @@ await build({
 
 const { createElement, act } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { RichTextEditor } = await import(pathToFileURL(join(outDir, "editor.mjs")).href);
+const { RichTextEditor, TooltipProvider } = await import(pathToFileURL(join(outDir, "editor.mjs")).href);
 
 /** Renders the editor inside a form, as the composer does, and opens the Insert link popup. */
 async function openLinkPopup(t) {
@@ -58,9 +63,13 @@ async function openLinkPopup(t) {
 	await act(async () => {
 		reactRoot.render(
 			createElement(
-				"form",
-				{ onSubmit, onKeyDown: () => (formKeys += 1) },
-				createElement(RichTextEditor, { value: "Read this", onChange() {} }),
+				TooltipProvider,
+				null,
+				createElement(
+					"form",
+					{ onSubmit, onKeyDown: () => (formKeys += 1) },
+					createElement(RichTextEditor, { value: "Read this", onChange() {} }),
+				),
 			),
 		);
 	});

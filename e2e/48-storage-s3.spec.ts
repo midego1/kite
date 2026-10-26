@@ -4,6 +4,7 @@ import { okJson } from "./support/auto-read";
 import { BASE_URL, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { listItems, sql } from "./support/drive";
 import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
+import { chooseOption } from "./support/select";
 
 const BUCKET = "kite-e2e";
 const LARGE_BYTES = 9 * 1024 * 1024;
@@ -11,7 +12,7 @@ const LARGE_BYTES = 9 * 1024 * 1024;
 const driveRow = (page: Page) => page.locator('[data-class="drive"]');
 
 async function switchDrive(page: Page, storeName: string, { copy }: { copy: boolean }) {
-	await driveRow(page).getByLabel("Store for Drive").selectOption({ label: storeName });
+	await chooseOption(driveRow(page).getByLabel("Store for Drive"), { label: storeName });
 	await driveRow(page).getByRole("button", { name: "Switch" }).click();
 	const dialog = page.getByRole("dialog", { name: `Store Drive in ${storeName}?` });
 	await expect(dialog).toContainText("Preview deployments share this setting");
@@ -68,7 +69,7 @@ test("Admin → Storage adds an S3 store, sends Drive there with direct transfer
 		await page.getByRole("button", { name: "Add store" }).click();
 		const add = page.getByRole("dialog", { name: "Add store" });
 		await add.getByLabel("Name").fill(storeName);
-		await add.getByLabel("Provider").selectOption("minio");
+		await chooseOption(add.getByLabel("Provider"), "minio");
 		await add.getByLabel("Endpoint").fill(fake.url);
 		await add.getByLabel("Bucket").fill(BUCKET);
 		await add.getByLabel("Region").fill(fake.region);

@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { ChevronLeft, Wrench } from "lucide-react";
-import type { AgentEmailReference, AgentMessage, AgentTurnProps } from "./types";
+import type { AgentActionProposal, AgentEmailReference, AgentMessage, AgentTurnProps } from "./types";
 import { agentActionProposal, agentToolLabel, draftFromToolContent, parseAgentToolContent } from "./utils";
 import { agentToolLinks } from "./tool-links-utils";
+import { approveActionLabel, approvedActionText, canUndoAction } from "./chat-action-utils";
+import { undoApprovedAgentAction } from "./client-actions";
 import { AgentEmailLink } from "./email-link";
 import { RecordRefLink } from "@/components/modules/record-ref-link";
 import type { AssistantDetailPreference } from "@/components/appearance-preferences";
@@ -117,24 +119,80 @@ export function AgentToolActivity({
 	);
 }
 
+function ProposalEmails({ proposal }: { proposal: AgentActionProposal }) {
+	if (!proposal.emails?.length) return null;
+	return (
+		<ul className="space-y-1">
+			{proposal.emails.map((email) => (
+				<li key={email.id}>
+					<AgentEmailLink email={email} className="text-blue-700 hover:underline" />
+				</li>
+			))}
+		</ul>
+	);
+}
+
+/** An approved action: what it did, and Undo while its undo window is open. The result is kept per card. */
+function ApprovedAction({ item, proposal }: { item: AgentMessage; proposal: AgentActionProposal }) {
+	const [state, setState] = useState<"idle" | "undoing" | "undone">(proposal.status === "undone" ? "undone" : "idle");
+	const [error, setError] = useState<string | null>(null);
+	if (state === "undone")
+		return (
+			<p className="text-neutral-500" data-agent-action-state="undone">
+				Undone.
+			</p>
+		);
+	async function undo() {
+		if (!item.recordId) return;
+		setState("undoing");
+		setError(null);
+		try {
+			await undoApprovedAgentAction(item.recordId);
+			setState("undone");
+			window.dispatchEvent(new Event("kite:messages-changed"));
+		} catch (cause) {
+			setState("idle");
+			setError(cause instanceof Error ? cause.message : "Could not undo action");
+		}
+	}
+	return (
+		<div className="flex flex-wrap items-center justify-end gap-3" data-agent-action-state="approved">
+			<span className="mr-auto text-neutral-600">{approvedActionText(proposal)}</span>
+			{error && (
+				<span role="alert" className="text-red-600">
+					{error}
+				</span>
+			)}
+			{canUndoAction(proposal, new Date()) && (
+				<button
+					type="button"
+					className="rounded-lg border border-neutral-300 px-3 py-2 font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+					disabled={!item.recordId || state === "undoing"}
+					onClick={() => void undo()}
+				>
+					{state === "undoing" ? "Undoing…" : "Undo"}
+				</button>
+			)}
+		</div>
+	);
+}
+
 export function AgentPendingActions({
 	item,
 	onApproveAction,
 	approvingId,
 }: Pick<AgentTurnProps, "onApproveAction" | "approvingId"> & { item: AgentMessage }) {
 	const proposal = agentActionProposal(item.content);
-	if (proposal?.status !== "pending_approval" || draftFromToolContent(item.content)) return null;
+	if (!proposal || proposal.status === "processing" || draftFromToolContent(item.content)) return null;
+	if (proposal.status !== "pending_approval")
+		return (
+			<div className="space-y-2 text-xs">
+				<ApprovedAction item={item} proposal={proposal} />
+			</div>
+		);
 	return (
 		<div className="space-y-2 text-xs">
-			{proposal.emails && (
-				<ul className="space-y-1">
-					{proposal.emails.map((email) => (
-						<li key={email.id}>
-							<AgentEmailLink email={email} className="text-blue-700 hover:underline" />
-						</li>
-					))}
-				</ul>
-			)}
+			<ProposalEmails proposal={proposal} />
 			<div className="flex flex-wrap items-center justify-end gap-3">
 				<button
 					type="button"
@@ -142,13 +200,7 @@ export function AgentPendingActions({
 					disabled={!item.recordId || approvingId === item.id}
 					onClick={() => onApproveAction(item)}
 				>
-					{approvingId === item.id
-						? "Approving…"
-						: proposal.action === "discard_draft"
-							? "Approve discard"
-							: proposal.action === "mark_email_read"
-								? "Approve status change"
-								: `Approve move to ${proposal.destination}`}
+					{approvingId === item.id ? "Approving…" : approveActionLabel(proposal)}
 				</button>
 			</div>
 		</div>

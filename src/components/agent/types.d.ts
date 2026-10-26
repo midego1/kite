@@ -34,9 +34,18 @@ export type AgentEmailReference = {
 	url?: string;
 };
 export type AgentEmailLinkProps = { email: AgentEmailReference; className: string };
+export type AgentActionName =
+	| "move_email"
+	| "move_emails"
+	| "mark_email_read"
+	| "mark_emails_read"
+	| "mark_emails_unread"
+	| "create_folder"
+	| "move_emails_to_folder"
+	| "discard_draft";
 export type AgentActionProposal = {
-	action: "move_email" | "move_emails" | "mark_email_read" | "discard_draft";
-	status: "pending_approval" | "processing" | "approved";
+	action: AgentActionName;
+	status: "pending_approval" | "processing" | "approved" | "undone";
 	emailId?: string;
 	emailIds?: string[];
 	destination?: string;
@@ -44,6 +53,15 @@ export type AgentActionProposal = {
 	draftId?: string;
 	expectedRevision?: number;
 	emails?: AgentEmailReference[];
+	/** `create_folder`: the folder's name and colour name. */
+	name?: string;
+	color?: string;
+	/** `move_emails_to_folder`: the target folder. */
+	folderId?: string;
+	folderName?: string;
+	/** Set once approved, for an action that can be undone. */
+	actionId?: string;
+	undoUntil?: string | null;
 };
 export type AgentTurn = {
 	id: string;

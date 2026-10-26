@@ -27,10 +27,29 @@ const CORE_ACTIONS: Partial<Record<AgentActionType, ActionMeta>> = {
 		variants: [""],
 		undo: { "*": { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "manage", actingUserOnly: false } },
 	},
-	// "Mark as spam" from a phishing warning. Inverse: move the message back and reopen the warning.
+	// "Mark as spam" from a phishing warning, or a move approved in chat (variant: the destination).
+	// Inverse: move the messages back, and for the warning reopen it.
 	move: {
 		executePermission: "manage",
-		variants: ["spam"],
+		variants: ["spam", "archived", "trash", "inbox"],
+		undo: { "*": { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "manage", actingUserOnly: false } },
+	},
+	// Read state approved in chat. Like the mailbox views, reading access is enough. Inverse: restore it.
+	mark_read: {
+		executePermission: "read",
+		variants: ["read", "unread"],
+		undo: { "*": { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "read", actingUserOnly: false } },
+	},
+	// Filing mail into a folder, approved in chat. Inverse: put the messages back where they were.
+	set_folder: {
+		executePermission: "manage",
+		variants: [""],
+		undo: { "*": { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "manage", actingUserOnly: false } },
+	},
+	// A folder created in chat. Inverse: delete it while nothing is filed in it.
+	create_folder: {
+		executePermission: "manage",
+		variants: [""],
 		undo: { "*": { windowMs: DEFAULT_UNDO_WINDOW_MS, permission: "manage", actingUserOnly: false } },
 	},
 	// Inverse: discard the draft, unless a person edited or sent it. Drafts are private to their user.
@@ -58,7 +77,23 @@ export function getUndoRule(meta: ActionMeta, variant: string): ActionUndoRule |
 }
 
 function hasActionPermission(permissions: ActionPermissions, permission: ActionPermission): boolean {
+	if (permission === "read") return permissions.canRead;
 	return permission === "manage" ? permissions.canManage : permissions.canSendOnBehalf;
+}
+
+/**
+ * Whether a user may see an action row at all, for undo. Full access sees every row (Activity is theirs);
+ * reading access sees only the user's own rows whose undo needs no more than reading access.
+ */
+export function canSeeAction(
+	row: Pick<AgentActionRow, "action" | "variant" | "actingUserId">,
+	userId: string,
+	permissions: ActionPermissions,
+): boolean {
+	if (permissions.canManage) return true;
+	const meta = getActionMeta(row.action);
+	const rule = meta ? getUndoRule(meta, row.variant) : null;
+	return permissions.canRead && row.actingUserId === userId && rule?.permission === "read";
 }
 
 /** The policy reason recorded when a user click lacks the permission an action needs, or null. */

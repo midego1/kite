@@ -81,7 +81,9 @@ A module kind can be private to the reviewer: its cards, row badges and For you 
 
 Every action Kite records, and every action you accept from a suggestion, is written to the action log before it takes effect, with who started it, the status and the reason. Activity shows the log for the mailbox.
 
-Actions can be undone from Activity or from the toast for 7 days. Undo needs the same permission as the action, and undoing a sent reply or RSVP step is limited to the person who made it. An undo is itself logged as a new row.
+Changes you approve in the assistant chat (marking emails read or unread, moving them, creating a folder or filing mail into one, see [Email assistant and MCP](email-assistant-and-mcp.md)) are recorded the same way, with the number of emails and the folder.
+
+Actions can be undone from Activity, from the toast or from the chat card for 7 days. Undo needs the same permission as the action, and undoing a sent reply or RSVP step is limited to the person who made it. An undo is itself logged as a new row.
 
 ## Phishing warnings
 

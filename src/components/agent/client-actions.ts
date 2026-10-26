@@ -26,3 +26,14 @@ export async function approveAgentAction(toolMessageId: string): Promise<Record<
 	if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Could not approve action");
 	return result;
 }
+
+export async function undoApprovedAgentAction(toolMessageId: string): Promise<Record<string, unknown>> {
+	const response = await authFetch("/api/agent/actions/chat-undo", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ toolMessageId }),
+	});
+	const result = (await response.json()) as Record<string, unknown>;
+	if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Could not undo action");
+	return result;
+}

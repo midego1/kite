@@ -11,7 +11,7 @@ import { parseActionState } from "./actions-utils";
 import { unmuteSender, untrustSender } from "./muted-senders";
 import type { AgentActionType } from "./policy-types";
 import { notifySuggestionsQuietly } from "./suggestion-events";
-import { restoreMarkedSpam } from "./suggestion-effects";
+import { undoCreateFolder, undoMarkRead, undoMove, undoSetFolder } from "./organize-undo";
 
 type SuggestionStatus = (typeof agentSuggestions.$inferSelect)["status"];
 
@@ -154,5 +154,8 @@ export const INVERSE_EFFECTS: Partial<
 > = {
 	dismiss: reopenSuggestion,
 	create_draft: discardDraft,
-	move: restoreMarkedSpam,
+	move: undoMove,
+	mark_read: undoMarkRead,
+	set_folder: undoSetFolder,
+	create_folder: undoCreateFolder,
 };

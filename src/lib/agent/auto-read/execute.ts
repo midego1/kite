@@ -19,6 +19,7 @@ import type {
 import {
 	UNDO_VARIANT_PREFIX,
 	actionIds,
+	canSeeAction,
 	getActionMeta,
 	inverseActionFor,
 	isStalePending,
@@ -350,7 +351,7 @@ export async function undoAgentAction(
 	const db = getDb(env);
 	const [row] = await db.select().from(agentActions).where(eq(agentActions.id, actionId)).limit(1);
 	const access = row ? await getMailboxAccessLevel(db, user, row.mailboxId) : null;
-	if (!row || !access?.canManage) throw new AgentActionError("Action not found", 404);
+	if (!row || !access || !canSeeAction(row, user.id, access)) throw new AgentActionError("Action not found", 404);
 	const refusal = undoRefusal(row, user.id, access, now);
 	if (refusal) throw new AgentActionError(refusal.error, refusal.status);
 	const owner = moduleActionOwner(row.action);

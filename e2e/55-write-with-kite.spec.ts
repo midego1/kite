@@ -125,7 +125,7 @@ test.describe("Write with Kite", () => {
 				.getByLabel("What should this email say?")
 				.fill("Tell Sam Tuesday at ten works [[scenario:compose-write]]");
 			await panel.getByRole("button", { name: "Write" }).click();
-			await expect(panel.getByRole("status", { name: "Preview" })).toContainText("Tuesday at ten works for me.");
+			await expect(panel.getByRole("region", { name: "Preview" })).toContainText("Tuesday at ten works for me.");
 			// Nothing enters the editor before the click.
 			expect(await body.innerHTML()).toBe(before);
 			await panel.getByRole("button", { name: "Insert", exact: true }).click();
@@ -220,7 +220,7 @@ test.describe("Write with Kite", () => {
 			let panel = await openPanel(page);
 			await expect(panel).toContainText("Rewrite the selected text.");
 			await panel.getByRole("button", { name: "Shorter" }).click();
-			await expect(panel.getByRole("status", { name: "Preview" })).toHaveText(COMPOSE_SHORTER_BODY);
+			await expect(panel.getByRole("region", { name: "Preview" })).toHaveText(COMPOSE_SHORTER_BODY);
 			await panel.getByRole("button", { name: "Replace" }).click();
 			await expect(body).toContainText(COMPOSE_SHORTER_BODY);
 			await expect(body).toContainText("Keep this opening line.");
@@ -274,7 +274,7 @@ test.describe("Write with Kite", () => {
 			await expect(
 				panel.getByText("An email address that is not in your text or the conversation was removed."),
 			).toBeVisible();
-			const preview = panel.getByRole("status", { name: "Preview" });
+			const preview = panel.getByRole("region", { name: "Preview" });
 			await expect(preview).not.toContainText("evil.test");
 			await expect(preview).not.toContainText("**");
 			await expect(preview).not.toContainText("##");
@@ -351,6 +351,62 @@ test.describe("Write with Kite", () => {
 			await api.put("/api/admin/agent", { data: { enabled: true } });
 			await api.put("/api/admin/agent", { data: { externalAutoReadAllowed: true } });
 			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("⌘J and Ctrl+J open the panel from the body, and Undo after replacing a selection restores it", async ({
+		browser,
+	}) => {
+		const account = await newAccount("wwu");
+		const { context, page } = await signedInPage(browser, account);
+		try {
+			await openComposer(page);
+			const body = await typeBody(page, ["First line stays.", "This line will be shortened by Kite."]);
+			const panel = page.getByRole("dialog", { name: "Write with Kite" });
+			for (const shortcut of ["Meta+j", "Control+j"]) {
+				await body.click();
+				await page.keyboard.press(shortcut);
+				await expect(panel).toBeVisible();
+				await expect(panel).toHaveAttribute("aria-modal", "true");
+				await page.keyboard.press("Escape");
+				await expect(panel).toHaveCount(0);
+				// Focus returns to the message body.
+				await expect(body).toBeFocused();
+			}
+
+			const before = await body.innerHTML();
+			await selectInBody(page, "This line will be shortened by Kite.");
+			fake.enqueueScenario("compose-shorter");
+			await page.keyboard.press("ControlOrMeta+j");
+			await panel.getByRole("button", { name: "Shorter" }).click();
+			await expect(panel.getByRole("status").filter({ hasText: "Kite's text is ready" })).toBeAttached();
+			await panel.getByRole("button", { name: "Replace" }).click();
+			await expect(body).toContainText(COMPOSE_SHORTER_BODY);
+			await expect(body).not.toContainText("shortened by Kite");
+			await panel.getByRole("button", { name: "Undo" }).click();
+			await expect(body).toContainText("This line will be shortened by Kite.");
+			await expect(body).not.toContainText(COMPOSE_SHORTER_BODY);
+			expect(await body.innerHTML()).toBe(before);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("a user who sends too many requests in a minute gets 429", async () => {
+		const account = await newAccount("wwr");
+		try {
+			let limited = false;
+			// Each refused body still counts against the per-user limit (120 a minute), which runs first.
+			for (let attempt = 0; attempt < 130 && !limited; attempt++) {
+				const response = await account.api.post("/api/agent/compose", { data: { mailboxId: account.mailboxId } });
+				if (response.status() === 429) limited = true;
+				else expect(response.status()).toBe(400);
+			}
+			expect(limited).toBe(true);
+			expect(composeRequests()).toHaveLength(0);
+		} finally {
 			await account.api.dispose();
 		}
 	});

@@ -125,13 +125,19 @@ export function RewriteActions({
 	);
 }
 
-/** The streamed preview, then the checked text with its warnings. */
-export function ComposePreview({ text, warnings }: { text: string; warnings: string[] }) {
+/**
+ * The streamed preview, then the checked text with its warnings. Screen readers hear about it once, when it is
+ * done, not at every streamed word.
+ */
+export function ComposePreview({ text, warnings, done }: { text: string; warnings: string[]; done: boolean }) {
 	return (
 		<>
+			<p role="status" className="sr-only">
+				{done ? "Kite's text is ready. Review it, then insert or discard it." : ""}
+			</p>
 			<div
-				role="status"
-				aria-live="polite"
+				role="region"
+				aria-busy={!done}
 				aria-label="Preview"
 				className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-lg bg-blue-50 p-2 text-neutral-900 dark:bg-blue-950"
 			>
@@ -191,12 +197,25 @@ export function ResultActions({
 	);
 }
 
-/** After an insert: a reminder to review, and Undo, which restores the message as it was. */
-export function InsertedNote({ onUndo, onDone }: { onUndo: () => void; onDone: () => void }) {
+/**
+ * After an insert: a reminder to review, and Undo, which restores the message as it was before the insert; when
+ * the message was edited since, the note says that Undo drops those edits too.
+ */
+export function InsertedNote({
+	editedSince,
+	onUndo,
+	onDone,
+}: {
+	editedSince: boolean;
+	onUndo: () => void;
+	onDone: () => void;
+}) {
 	return (
 		<div className="flex items-center gap-2">
 			<p role="status" className="flex-1 text-neutral-700">
-				Kite&apos;s text is in your message. Review it before you send.
+				{editedSince
+					? "You changed the message after inserting. Undo restores it as it was before Kite's text, without those changes."
+					: "Kite's text is in your message. Review it before you send."}
 			</p>
 			<Button type="button" size="sm" variant="outline" onClick={onUndo}>
 				Undo

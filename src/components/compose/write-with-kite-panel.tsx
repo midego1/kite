@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Sparkles, X } from "lucide-react";
 import { htmlToPlainText } from "./rich-text-utils";
-import { insertComposeText, selectionIntact } from "./write-with-kite-insert";
+import { canReplace, insertComposeText } from "./write-with-kite-insert";
 import { streamCompose } from "./write-with-kite-request";
 import type { WriteWithKitePanelProps } from "./write-with-kite-types";
 import { hasRichFormatting, splitSignature } from "./write-with-kite-utils";
@@ -22,10 +22,29 @@ type Phase =
 	| { name: "running"; preview: string }
 	| { name: "done"; text: string; warnings: string[] }
 	| { name: "error"; message: string }
-	| { name: "inserted"; previous: string };
+	/** `after` is the editor HTML right after the insert, to tell whether Undo would also drop later edits. */
+	| { name: "inserted"; previous: string; after: string };
+
+/** Tab and Shift+Tab stay inside the panel while it is open. */
+function trapFocus(event: KeyboardEvent<HTMLDivElement>) {
+	const focusable = Array.from(
+		event.currentTarget.querySelectorAll<HTMLElement>("button:not([disabled]), textarea, input"),
+	);
+	const first = focusable[0];
+	const last = focusable[focusable.length - 1];
+	if (!first || !last) return;
+	if (event.shiftKey && document.activeElement === first) {
+		event.preventDefault();
+		last.focus();
+	} else if (!event.shiftKey && document.activeElement === last) {
+		event.preventDefault();
+		first.focus();
+	}
+}
 
 /** Esc aborts and closes the panel, not the composer; Enter never reaches the compose form, which would send. */
 function panelKeyDown(event: KeyboardEvent<HTMLDivElement>, close: () => void) {
+	if (event.key === "Tab") return trapFocus(event);
 	if (event.key !== "Enter" && event.key !== "Escape") return;
 	event.stopPropagation();
 	if (event.nativeEvent.isComposing) return;
@@ -91,6 +110,8 @@ export default function WriteWithKitePanel({
 	const [last, setLast] = useState<ComposeRun | null>(null);
 	const controller = useRef<AbortController | null>(null);
 	const panel = useRef<HTMLDivElement | null>(null);
+	// The body when the request was sent: if the user edits it meanwhile, Kite's text goes below instead.
+	const [bodyAtRequest, setBodyAtRequest] = useState("");
 
 	useEffect(() => () => controller.current?.abort(), []);
 
@@ -121,6 +142,7 @@ export default function WriteWithKitePanel({
 		controller.current?.abort();
 		const abort = new AbortController();
 		controller.current = abort;
+		setBodyAtRequest(splitSignature(composer.html).body);
 		setLast(request);
 		setPhase({ name: "running", preview: "" });
 		const answer = await streamCompose(
@@ -144,17 +166,27 @@ export default function WriteWithKitePanel({
 	function insert(text: string, below: boolean) {
 		const previous = composer.html;
 		const originalHtml = last?.action === "translate" ? sourceHtml : null;
-		insertComposeText({ editorId, composer, selection, text, originalHtml, below });
-		setPhase({ name: "inserted", previous });
+		const after = insertComposeText({
+			editorId,
+			mode,
+			composer,
+			selection,
+			text,
+			originalHtml,
+			bodyAtRequest,
+			below,
+		});
+		setPhase({ name: "inserted", previous, after });
 	}
 
-	const changed = phase.name === "done" && !!selection && !selectionIntact(editorId, selection);
+	const changed = phase.name === "done" && !canReplace({ editorId, composer, selection, bodyAtRequest });
 
 	return (
 		// Not a <form>: the panel sits inside the compose form, and a nested form's submit would send the message.
 		<div
 			ref={panel}
 			role="dialog"
+			aria-modal="true"
 			aria-label="Write with Kite"
 			onKeyDown={(event) => panelKeyDown(event, close)}
 			className="absolute bottom-full left-2 right-2 z-20 mb-1 max-h-[min(28rem,70vh)] space-y-2 overflow-y-auto rounded-xl border border-blue-100 bg-white p-3 text-sm shadow-lg dark:border-blue-900"
@@ -177,11 +209,11 @@ export default function WriteWithKitePanel({
 				) : (
 					<RewriteActions target={target} formatted={formatted} onRun={(request) => void run(request)} />
 				))}
-			{phase.name === "running" && <ComposePreview text={phase.preview} warnings={[]} />}
-			{phase.name === "done" && <ComposePreview text={phase.text} warnings={phase.warnings} />}
+			{phase.name === "running" && <ComposePreview text={phase.preview} warnings={[]} done={false} />}
+			{phase.name === "done" && <ComposePreview text={phase.text} warnings={phase.warnings} done />}
 			{changed && (
 				<p className="text-xs text-amber-700">
-					The selected text changed meanwhile, so Kite adds its text below instead.
+					{selection ? "The selected text" : "Your message"} changed meanwhile, so Kite adds its text below instead.
 				</p>
 			)}
 			{phase.name === "error" && (
@@ -191,6 +223,7 @@ export default function WriteWithKitePanel({
 			)}
 			{phase.name === "inserted" && (
 				<InsertedNote
+					editedSince={composer.html !== phase.after}
 					onUndo={() => {
 						composer.setHtml(phase.previous);
 						onClose();

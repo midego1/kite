@@ -28,6 +28,12 @@ function editorSelection(editor: HTMLElement): WriteWithKiteSelection | null {
 	return { range, text, html: holder.innerHTML };
 }
 
+/** ⌘J on Apple devices, Ctrl+J elsewhere; both open the panel on any platform. */
+function shortcutLabel(): string {
+	const platform = typeof navigator === "undefined" ? "" : navigator.platform || navigator.userAgent;
+	return /Mac|iPhone|iPad/i.test(platform) ? "⌘J" : "Ctrl+J";
+}
+
 /**
  * The composer's Write with Kite button. It shows only when the assistant may write for this mailbox (assistant on,
  * a provider configured, an external provider allowed by the primary admin, and send access), and opens with ⌘J.
@@ -73,7 +79,7 @@ export function WriteWithKite({ editorId, composer }: { editorId: string; compos
 	if (!available) return null;
 	return (
 		<>
-			<Tooltip label="Write with Kite (⌘J)">
+			<Tooltip label={`Write with Kite (${shortcutLabel()})`}>
 				<button
 					type="button"
 					aria-label="Write with Kite"
@@ -92,7 +98,11 @@ export function WriteWithKite({ editorId, composer }: { editorId: string; compos
 						mailboxId={mailboxId}
 						composer={composer}
 						selection={open.selection}
-						onClose={() => setOpen(null)}
+						onClose={() => {
+							setOpen(null);
+							// Focus goes back to where the user was writing.
+							document.getElementById(editorId)?.focus();
+						}}
 					/>
 				</Suspense>
 			)}

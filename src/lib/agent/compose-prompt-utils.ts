@@ -1,7 +1,7 @@
 import { COMPOSE_SYSTEM_MARKER } from "./auto-read/request-markers";
 import type { ComposeAction, ComposePrompt, ComposePromptInput } from "./compose-types";
 import { cleanGeneralInstructions, draftPreferenceText } from "./instruction-utils";
-import { createNonce, stripDelimiters, wrapUntrusted } from "./untrusted-utils";
+import { createNonce, markUntrustedLinks, stripDelimiters, wrapUntrusted } from "./untrusted-utils";
 
 export const COMPOSE_INSTRUCTION_MAX_CHARS = 2_000;
 export const COMPOSE_CUSTOM_MAX_CHARS = 300;
@@ -9,6 +9,9 @@ export const COMPOSE_TEXT_MAX_CHARS = 12_000;
 export const COMPOSE_LANGUAGE_MAX_CHARS = 40;
 const SOURCE_BODY_MAX_CHARS = 8_000;
 const WRITE_MAX_OUTPUT_TOKENS = 900;
+// Shorter never needs more than a new email; any other rewrite of up to 12,000 characters may need up to 3,000.
+const SHORTER_MAX_OUTPUT_TOKENS = 900;
+const REWRITE_MAX_OUTPUT_TOKENS = 3_000;
 
 const FIXED_RULES = [
 	'Output only the body as plain text, with normal paragraphs separated by blank lines; a list may use lines that start with "- ".',
@@ -66,13 +69,17 @@ export function buildComposePrompt(input: ComposePromptInput): ComposePrompt {
 	const nonce = input.nonce ?? createNonce();
 	const clean = (value: string) => stripDelimiters(value, nonce);
 	const request = input.mode === "write" || input.action === "custom" ? clean(input.instruction ?? "").trim() : "";
-	const names = input.recipientNames.map((name) => oneLine(name, 100)).filter(Boolean);
+	const names = input.recipientNames.map((name) => oneLine(clean(name), 100)).filter(Boolean);
+	const details = [
+		`Subject: ${oneLine(clean(input.subject ?? ""), 500)}`,
+		`Recipients' names: ${names.length ? names.join(", ") : "unknown"}`,
+	].join("\n");
 	const lines = [
 		taskLine(input),
 		...(request ? ["", "The user's request:", request] : []),
 		"",
-		`Subject: ${oneLine(input.subject ?? "", 500)}`,
-		`Recipients' names: ${names.length ? names.join(", ") : "unknown"}`,
+		// The subject and the names come from the draft, so they are data like the rest.
+		wrapUntrusted("DETAILS", {}, details, nonce),
 	];
 	if (input.source)
 		lines.push(
@@ -85,7 +92,7 @@ export function buildComposePrompt(input: ComposePromptInput): ComposePrompt {
 					`Subject: ${oneLine(clean(input.source.subject), 500)}`,
 					`Date: ${input.source.date.toISOString()}`,
 					"Body:",
-					clean(input.source.body).slice(0, SOURCE_BODY_MAX_CHARS),
+					markUntrustedLinks(clean(input.source.body).slice(0, SOURCE_BODY_MAX_CHARS)),
 				].join("\n"),
 				nonce,
 			),
@@ -95,9 +102,13 @@ export function buildComposePrompt(input: ComposePromptInput): ComposePrompt {
 	return { system: systemPrompt(input), messages: [{ role: "user", content: lines.join("\n") }] };
 }
 
-/** The output budget: 900 tokens to write; for a rewrite about twice the input, half again for Longer. */
+/**
+ * The output budget: 900 tokens to write; for a rewrite about twice the input's tokens plus 100, half again for
+ * Longer, within 900 for Shorter and 3,000 for every other rewrite. An answer that still runs out is refused.
+ */
 export function composeMaxOutputTokens(input: Pick<ComposePromptInput, "mode" | "action" | "text">): number {
 	if (input.mode === "write") return WRITE_MAX_OUTPUT_TOKENS;
-	const base = Math.min(WRITE_MAX_OUTPUT_TOKENS, 2 * Math.ceil((input.text ?? "").length / 4) + 100);
-	return input.action === "longer" ? Math.ceil(base * 1.5) : base;
+	const base = 2 * Math.ceil((input.text ?? "").length / 4) + 100;
+	if (input.action === "shorter") return Math.min(SHORTER_MAX_OUTPUT_TOKENS, base);
+	return Math.min(REWRITE_MAX_OUTPUT_TOKENS, input.action === "longer" ? Math.ceil(base * 1.5) : base);
 }

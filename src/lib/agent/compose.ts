@@ -1,10 +1,12 @@
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, notInArray, or, sql } from "drizzle-orm";
 import { streamText } from "ai";
 import { getDb, type AppDatabase } from "@/db";
 import { domains, messages } from "@/db/schema";
 import { getEmailDisplayName } from "@/lib/email/address";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { createLogger } from "@/lib/logger.mjs";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import type { SessionUser } from "@/lib/auth/types";
 import { getAutoReadInstallSettings } from "./auto-read/install-settings";
 import { readMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
@@ -15,7 +17,6 @@ import { spendCapMessage } from "./chat-spend-utils";
 import { checkComposeOutput } from "./compose-output-utils";
 import { buildComposePrompt, composeMaxOutputTokens } from "./compose-prompt-utils";
 import type { ComposeAction, ComposeMode, ComposeSource } from "./compose-types";
-import { agentProviderErrorMessage } from "./errors";
 import { selectInteractiveModel } from "./interactive-model";
 import { personalInstructionsFor } from "./user-ai-settings";
 
@@ -45,28 +46,38 @@ export class ComposeRefusal extends Error {
 	}
 }
 
+// Mail Kite holds or has set aside is never the email a reply answers: the Screener's held mail, spam and trash.
+const NOT_A_SOURCE = [SCREENING_STATUS, "spam", "trash"];
+
 /**
- * The message being replied to, under the same rule as `get_email`: in this mailbox and never another user's draft.
- * A message the Screener holds is readable here because the user opened it to reply.
+ * The message being replied to: in this mailbox, not held by the Screener, in spam or in trash, and never another
+ * user's draft (all filtered in SQL). When a Message-ID is stored twice (a copy in Sent and the one received), the
+ * received copy wins, then the newest; without a Message-ID match the newest received message of the thread.
  */
 async function loadSource(db: AppDatabase, user: SessionUser, request: ComposeRequest): Promise<ComposeSource | null> {
-	const scope = eq(messages.mailboxId, request.mailboxId);
+	const allowed = and(
+		eq(messages.mailboxId, request.mailboxId),
+		notInArray(messages.status, NOT_A_SOURCE),
+		or(ne(messages.status, "draft"), eq(messages.userId, user.id)),
+	);
+	const preference = [desc(sql`${messages.direction} = 'inbound'`), desc(messages.createdAt)];
 	const header = request.inReplyTo?.trim().replace(/^<|>$/g, "");
 	let [row] = header
 		? await db
 				.select()
 				.from(messages)
-				.where(and(scope, inArray(messages.providerMessageId, [header, `<${header}>`])))
+				.where(and(allowed, inArray(messages.providerMessageId, [header, `<${header}>`])))
+				.orderBy(...preference)
 				.limit(1)
 		: [];
 	if (!row && request.threadId)
 		[row] = await db
 			.select()
 			.from(messages)
-			.where(and(scope, eq(messages.threadId, request.threadId), ne(messages.status, "draft")))
-			.orderBy(desc(messages.createdAt))
+			.where(and(allowed, eq(messages.threadId, request.threadId), ne(messages.status, "draft")))
+			.orderBy(...preference)
 			.limit(1);
-	if (!row || (row.status === "draft" && row.userId !== user.id)) return null;
+	if (!row) return null;
 	return {
 		id: row.id,
 		from: row.fromAddr,
@@ -141,6 +152,9 @@ export async function createComposeStream(
 		const cap = await refusedSpendCap(reserve);
 		throw new ComposeRefusal(429, spendCapMessage(cap, { ...reserve, tokenCap: install.chatTokenCap }), "spend_cap");
 	}
+	// One abort for the request and for a reader that cancels the stream, so either stops the provider call.
+	const abort = new AbortController();
+	signal?.addEventListener("abort", () => abort.abort(), { once: true });
 	const result = streamText({
 		model: selection.model,
 		system: prompt.system,
@@ -148,22 +162,26 @@ export async function createComposeStream(
 		maxOutputTokens,
 		maxRetries: 0,
 		providerOptions: options.providerOptions,
-		abortSignal: signal,
+		abortSignal: abort.signal,
 		onError: () => undefined,
 	});
-	const references = [
-		request.text,
-		request.instruction,
-		request.subject,
-		...(request.to ?? []),
-		source?.body,
-		source?.from,
-	];
-	return streamComposeAnswer(env, result, reservation, selection.rates, {
+	// The subject and recipients are not references: a link in them would otherwise authorize itself.
+	return streamComposeAnswer(env, result, reservation, selection.rates, abort, {
 		mode: request.mode,
-		inputChars: request.text?.length ?? 0,
-		references,
+		input: (request.mode === "rewrite" ? request.text : request.instruction) ?? "",
+		userReferences: [request.text, request.instruction],
+		sourceReferences: [source?.body, source?.from],
 	});
+}
+
+const logger = createLogger("agent");
+
+/** The client gets a short fixed message and a code; the provider's own text, which may echo content, is not sent. */
+function failure(error: unknown): { error: string; code: string } {
+	const status = (error as { statusCode?: unknown } | null)?.statusCode;
+	const code = typeof status === "number" ? `provider_${status}` : "provider_error";
+	logger.warn("compose.failed", { code });
+	return { error: "The AI provider could not finish this. Try again.", code };
 }
 
 function streamComposeAnswer(
@@ -171,12 +189,17 @@ function streamComposeAnswer(
 	result: ReturnType<typeof streamText>,
 	reservation: SpendReservation,
 	rates: ReserveAiSpendInput["details"]["rates"],
+	abort: AbortController,
 	check: Parameters<typeof checkComposeOutput>[1],
 ) {
 	const encoder = new TextEncoder();
+	let closed = false;
 	return new ReadableStream<Uint8Array>({
 		async start(controller) {
-			const emit = (event: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+			// Nothing is written after the reader cancelled.
+			const emit = (event: unknown) => {
+				if (!closed) controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+			};
 			let settled = false;
 			try {
 				let text = "";
@@ -186,21 +209,32 @@ function streamComposeAnswer(
 						emit({ type: "text", text: part.text });
 					} else if (part.type === "error") throw part.error;
 				}
+				if (abort.signal.aborted) return;
 				await reconcileAiSpend({ env, reservation, rates, usage: await result.totalUsage });
 				settled = true;
+				// An answer that ran out of tokens ends mid-sentence; none of it may be inserted.
+				if ((await result.finishReason) === "length") {
+					logger.warn("compose.cut_off", { mode: check.mode });
+					return emit({ type: "error", error: "The answer was cut off. Try again.", code: "cut_off" });
+				}
 				const outcome = checkComposeOutput(text, check);
 				emit(
 					outcome.ok
 						? { type: "done", text: outcome.text, warnings: outcome.warnings }
-						: { type: "error", error: outcome.error },
+						: { type: "error", error: outcome.error, code: "unusable_answer" },
 				);
 			} catch (error) {
-				emit({ type: "error", error: agentProviderErrorMessage(error) });
+				if (!abort.signal.aborted) emit({ type: "error", ...failure(error) });
 			} finally {
-				// Aborted or failed before the provider reported usage: the estimate stays as the recorded spend.
+				// Aborted, cancelled or failed before the provider reported usage: the estimate stays as the spend.
 				if (!settled) await keepReservedEstimate(env, reservation).catch(() => undefined);
-				controller.close();
+				if (!closed) controller.close();
+				closed = true;
 			}
+		},
+		cancel() {
+			closed = true;
+			abort.abort();
 		},
 	});
 }

@@ -36,6 +36,6 @@ export type ComposePromptInput = {
 export type ComposePrompt = { system: string; messages: { role: "user"; content: string }[] };
 
 /** A warning the panel shows next to a finished text. */
-export type ComposeWarning = "removed_address" | "removed_link" | "truncated";
+export type ComposeWarning = "removed_address" | "removed_link" | "link_from_email" | "truncated";
 
 export type ComposeOutcome = { ok: true; text: string; warnings: ComposeWarning[] } | { ok: false; error: string };

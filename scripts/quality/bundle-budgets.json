@@ -1,10 +1,10 @@
 {
 	"client": {
-		"bytes": 2259000,
-		"gzipBytes": 731000
+		"bytes": 2268000,
+		"gzipBytes": 733000
 	},
 	"worker": {
-		"bytes": 5910000,
-		"gzipBytes": 1692000
+		"bytes": 5924000,
+		"gzipBytes": 1694000
 	}
 }

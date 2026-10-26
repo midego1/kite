@@ -180,8 +180,10 @@ export function collectFacts(input: CollectFactsInput): MessageFacts {
 			? (Object.entries(input.headers).find(([key]) => key.toLowerCase() === "list-unsubscribe")?.[1] ?? null)
 			: null,
 		auth,
-		// DKIM alone counts only for the From domain's own signature; any domain can sign its mail.
-		authPassed: !authFailed && (auth.dmarc === "pass" || signals.has(DKIM_ALIGNED)),
+		// A DMARC pass already means an aligned SPF or DKIM pass (RFC 7489), so a failed SPF check of a
+		// forwarded message does not undo it; `spf_failed` still shows among the phishing signs. DKIM
+		// alone counts only for the From domain's own signature, any domain can sign its mail.
+		authPassed: auth.dmarc === "pass" || (!authFailed && signals.has(DKIM_ALIGNED)),
 		authFailed,
 		spamVerdict: verdict,
 		suspicious: verdict === "suspicious",

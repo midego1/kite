@@ -74,7 +74,8 @@ export type MessageFacts = {
 	listUnsubscribe: string | null;
 	auth: { spf: AuthResult; dkim: AuthResult; dmarc: AuthResult };
 	/**
-	 * DMARC passed, or DKIM passed with a signature aligned to the From domain, and nothing failed.
+	 * DMARC passed (whatever SPF said), or DKIM passed with a signature aligned to the From domain and
+	 * nothing failed.
 	 * Without trusted authentication results the sender is not verified.
 	 */
 	authPassed: boolean;

@@ -84,18 +84,22 @@ function cutAtFirstComma(value: string): string {
  *   raw field is it, commas and all.
  * - The map is something more, then exactly the raw fields: the hop added its header to the map
  *   only, and it is that leading part.
- * - The raw message has none: the whole map is the hop's.
+ * - The raw message has none (and does not even mention the field, see `completeRawHeaderValues`):
+ *   the whole map is the hop's, commas and all.
  *
  * A leading part found only by difference is accepted without a comma, so a field the raw parse
  * and the runtime see differently cannot slip into it. Anything else falls back to `cutAtFirstComma`.
+ * This assumes the hop always adds its own header: had it added none, the topmost copy would be the
+ * sender's, which is why only a copy naming the hop's authserv-id counts at all.
  */
 function topmostAuthenticationResults(joined: string, rawFields: readonly string[] | null): string {
 	const value = whitespace(joined);
 	if (rawFields) {
 		const raw = rawFields.map(whitespace);
 		const all = raw.join(", ");
-		if (raw.length > 0 && value === all) return raw[0] ?? "";
-		const leading = raw.length === 0 ? value : value.endsWith(`, ${all}`) ? value.slice(0, -all.length - 2) : null;
+		if (raw.length === 0) return value;
+		if (value === all) return raw[0] ?? "";
+		const leading = value.endsWith(`, ${all}`) ? value.slice(0, -all.length - 2) : null;
 		if (leading !== null && !leading.includes(",")) return leading.trim();
 	}
 	return cutAtFirstComma(value);

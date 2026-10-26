@@ -46,6 +46,8 @@ test("relay requests without a valid headers signature alert while recent", () =
 		NOW,
 	);
 	assert.deepEqual(both, [{ rule: "relay_signature", fingerprint: "missing,invalid", count: 2 }]);
+	const legacy = evaluateAlertRules({ ...empty, relaySignature: { legacyAt: NOW.getTime() - MIN } }, NOW);
+	assert.deepEqual(legacy, [{ rule: "relay_signature_legacy", fingerprint: "legacy", count: 1 }]);
 });
 
 test("5 failed sends in 60 minutes alert, and 4 do not", () => {

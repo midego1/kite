@@ -20,7 +20,11 @@ export const RULE_LABELS: Record<AlertRuleId, { name: string; path: string }> = 
 	outbound_stuck: { name: "Outbound messages stuck in the queue", path: "/admin" },
 	webhook_exhausted: { name: "Webhook deliveries that ran out of retries", path: "/webhooks" },
 	relay_signature: {
-		name: "Email relay requests without a valid header signature (redeploy the relay)",
+		name: "Email relay requests without a valid header signature (update the relay)",
+		path: "/admin",
+	},
+	relay_signature_legacy: {
+		name: "Email relay uses the older header signature (low priority: update the relay before 2027-01-31)",
 		path: "/admin",
 	},
 };
@@ -31,6 +35,7 @@ export const RULE_ORDER: AlertRuleId[] = [
 	"outbound_stuck",
 	"webhook_exhausted",
 	"relay_signature",
+	"relay_signature_legacy",
 ];
 
 /** Turn a snapshot into the alerts that are active right now. The fingerprint changes when a new problem joins an existing rule. */
@@ -64,6 +69,9 @@ export function evaluateAlertRules(
 	);
 	if (relayProblems.length > 0)
 		alerts.push({ rule: "relay_signature", fingerprint: relayProblems.join(","), count: relayProblems.length });
+	// Still accepted, so it only asks for an update; it ends with issue #118.
+	if (recent(snapshot.relaySignature?.legacyAt))
+		alerts.push({ rule: "relay_signature_legacy", fingerprint: "legacy", count: 1 });
 	return alerts;
 }
 

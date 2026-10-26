@@ -16,11 +16,16 @@ export function parseRawHeaders(raw: ArrayBuffer): Map<string, string[]> {
 
 /**
  * Every value of one header field, in order, from a header block read whole (up to 1 MiB), or null
- * when the block does not end within that: then a field further down could be missing.
+ * when that is uncertain: the block does not end within the limit (a field further down could be
+ * missing), or no field was found although the name appears in the block (another parser might
+ * read a field there).
  */
 export function completeRawHeaderValues(raw: ArrayBuffer, name: string): string[] | null {
 	const block = getHeaderBlock(raw, MAX_COMPLETE_HEADER_BYTES);
-	return block.complete ? (parseHeaderBlock(block.text).get(name.toLowerCase()) ?? []) : null;
+	if (!block.complete) return null;
+	const values = parseHeaderBlock(block.text).get(name.toLowerCase()) ?? [];
+	if (values.length === 0 && block.text.toLowerCase().includes(name.toLowerCase())) return null;
+	return values;
 }
 
 const MAX_COMPLETE_HEADER_BYTES = 1024 * 1024;

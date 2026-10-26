@@ -213,7 +213,24 @@ test("the raw header block gives exact field boundaries wherever Cloudflare put 
 	assert.equal(viaCloudflare(onlyInMap, none), onlyInMap);
 	// A leading part found by difference may not contain a comma: it falls back to the downgrading cut.
 	assert.deepEqual(verdictOf(viaCloudflare(joinFields(withComma, sender), senderRaw)), { ids: [], authPassed: false });
-	assert.deepEqual(verdictOf(viaCloudflare(joinFields(withComma, sender), none)), { ids: [], authPassed: false });
+	// Cloudflare's single copy with a comma in a comment, no sender copies: its passes stand.
+	const spfComment =
+		"mx.cloudflare.net; dkim=pass header.d=bank.test; dmarc=pass header.from=bank.test; spf=pass (mx.cloudflare.net: domain of bounce@bank.test designates 192.0.2.1, 192.0.2.2 as permitted senders) smtp.mailfrom=bounce@bank.test";
+	assert.equal(viaCloudflare(spfComment, none), spfComment);
+	assert.deepEqual(verdictOf(viaCloudflare(spfComment, none)), {
+		ids: ["dkim_passed", "dmarc_passed", "spf_passed"],
+		authPassed: true,
+	});
+	// The same copy with the raw fields unknown is cut and downgraded.
+	assert.deepEqual(verdictOf(viaCloudflare(spfComment, null)).ids, []);
+	// A raw block that mentions the field but yields no field is ambiguous, not "none".
+	assert.equal(
+		completeRawHeaderValues(
+			mime(["X-Note: see authentication-results below", " Authentication-Results: x"]),
+			"authentication-results",
+		),
+		null,
+	);
 	// Raw fields that do not match the map, or a header block not read whole, fall back too.
 	assert.deepEqual(verdictOf(viaCloudflare(joinFields(withComma, sender), ["something else"])).ids, []);
 	const huge = new TextEncoder().encode(`X-Pad: ${"a".repeat(1024 * 1024 + 10)}\r\nSubject: x\r\n\r\nbody`).buffer;
@@ -228,9 +245,10 @@ test("SPF speaks for the envelope sender, not the HELO name, in Cloudflare's for
 		"dmarc_passed",
 		"spf_passed",
 	]);
+	// The envelope check failed even though the HELO check passed; DMARC still passes, so it verifies.
 	assert.deepEqual(verdictOf(viaCloudflare(cloudflare("pass", "fail"))), {
 		ids: ["dkim_passed", "dmarc_passed", "spf_failed"],
-		authPassed: false,
+		authPassed: true,
 	});
 	// A HELO-only result says nothing about the sender.
 	assert.deepEqual(verdictOf("mx.cloudflare.net; spf=fail smtp.helo=mta.bank.test").ids, []);
@@ -260,11 +278,28 @@ test("DKIM alone authenticates only a signature aligned with the From domain", (
 		verdictOf("mx.cloudflare.net; dkim=pass header.d=esp.test; dmarc=pass header.from=bank.test").authPassed,
 		true,
 	);
-	// Anything failing still wins.
+	// Without a DMARC pass, any failure still wins over an aligned DKIM signature.
 	assert.equal(
 		verdictOf("mx.cloudflare.net; dkim=pass header.d=bank.test; spf=fail smtp.mailfrom=x@bank.test").authPassed,
 		false,
 	);
+	// A DMARC pass outweighs a failed SPF check (a forwarded message), and the failure is still reported.
+	const forwarded = verdictOf(
+		"mx.cloudflare.net; dkim=pass header.d=bank.test; dmarc=pass header.from=bank.test; spf=fail smtp.mailfrom=x@relay.test",
+	);
+	assert.deepEqual(forwarded, { ids: ["dkim_passed", "dmarc_passed", "spf_failed"], authPassed: true });
+	const forwardedFacts = collectFacts({
+		message: {
+			fromAddr: "Bank <security@bank.test>",
+			subject: "Hello",
+			textBody: "Hello",
+			spamVerdict: "inbox",
+			spamSignals: JSON.stringify(analyzeAuthentication("mx.cloudflare.net; dmarc=pass; spf=fail", "bank.test")),
+		},
+	});
+	assert.equal(forwardedFacts.authPassed, true);
+	assert.ok(forwardedFacts.phishingSignals.includes("spf_failed"));
+	assert.equal(verdictOf("mx.cloudflare.net; dmarc=fail; spf=pass smtp.mailfrom=x@bank.test").authPassed, false);
 	// A stored dkim_passed signal without the aligned flag (analyzed before this check) is not enough.
 	const old = collectFacts({
 		message: {
@@ -452,6 +487,8 @@ test("relay: signature problems are recorded for the operational alert", async (
 	await recordRelaySignatureProblem(env, "missing", 1_000_000 + 60_000);
 	await recordRelaySignatureProblem(env, "invalid", 1_000_000 + 60_000);
 	assert.deepEqual(await readRelaySignatureState(env), { missingAt: 1_000_000, invalidAt: 1_060_000 });
+	await recordRelaySignatureProblem(env, "legacy", 1_000_000);
+	assert.equal((await readRelaySignatureState(env)).legacyAt, 1_000_000);
 	await recordRelaySignatureProblem(env, "missing", 1_000_000 + 11 * 60_000);
 	assert.equal((await readRelaySignatureState(env)).missingAt, 1_660_000);
 	objects.set("system/relay-signature.json", "not json");

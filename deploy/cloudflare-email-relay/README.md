@@ -24,7 +24,9 @@ second one over the header map Cloudflare passed the Worker
 server trusts Cloudflare's
 `Authentication-Results` only with that second signature, so redeploy the relay
 after updating the server; an older relay keeps delivering, but its mail counts
-as unverified. The server stores it and replies with the routing decision, so
+as unverified. A relay that still signs with the secret itself (the first form)
+is accepted until the first release on or after 2027-01-31
+([#118](https://github.com/midego1/kite/issues/118)). The server stores it and replies with the routing decision, so
 reject rules and forwarding rules still act at Cloudflare's edge. If the server
 is unreachable the message is rejected with a retry hint.
 

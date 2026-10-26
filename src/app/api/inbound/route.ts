@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 		authenticationResults,
 		signature: headersSignature,
 	} = await readRelayHeaders(secret, request.headers, raw, from, to);
-	if (headersSignature === "missing" || headersSignature === "invalid")
+	if (headersSignature !== "valid")
 		await recordRelaySignatureProblem(env, headersSignature).catch((error) =>
 			console.error("Recording the relay headers signature problem failed", error),
 		);

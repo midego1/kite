@@ -20,13 +20,13 @@ function logSignature(status: RelayHeadersSignature): void {
 	if (status === "invalid") {
 		logger.error("relay.headers_signature_invalid", {
 			effect: "authentication_unknown",
-			hint: "X-Kite-Headers-Signature does not match; check INBOUND_WEBHOOK_SECRET and redeploy the relay",
+			hint: "Update the relay (redeploy deploy/cloudflare-email-relay) and make sure its INBOUND_WEBHOOK_SECRET matches the server's",
 		});
 		return;
 	}
 	logger.warn(status === "missing" ? "relay.headers_signature_missing" : "relay.headers_signature_legacy", {
-		effect: status === "missing" ? "authentication_unknown" : "accepted",
-		hint: "Redeploy deploy/cloudflare-email-relay so it signs the header map with the current key",
+		effect: status === "missing" ? "authentication_unknown" : "accepted_until_2027_01_31",
+		hint: "Update the relay: redeploy deploy/cloudflare-email-relay so it signs the header map with the current key",
 	});
 }
 

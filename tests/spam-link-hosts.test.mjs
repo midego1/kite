@@ -36,6 +36,44 @@ test("registrable domains drop subdomains and keep country second levels and sha
 	assert.equal(sameRegistrableDomain("a.github.io", "b.github.io"), false);
 });
 
+test("shared and private suffixes keep their tenants apart", () => {
+	for (const [host, expected] of [
+		["mail.shop.myshopify.com", "shop.myshopify.com"],
+		["app.onrender.com", "app.onrender.com"],
+		["home.duckdns.org", "home.duckdns.org"],
+		["office.dyndns.org", "office.dyndns.org"],
+		["a.b.herokuapp.com", "b.herokuapp.com"],
+		["site.vercel.app", "site.vercel.app"],
+		["site.netlify.app", "site.netlify.app"],
+		["worker.acct.workers.dev", "acct.workers.dev"],
+		["proj.appspot.com", "proj.appspot.com"],
+		["app.azurewebsites.net", "app.azurewebsites.net"],
+		["d111.cloudfront.net", "d111.cloudfront.net"],
+		["proj.firebaseapp.com", "proj.firebaseapp.com"],
+		["proj.web.app", "proj.web.app"],
+		["mail.smith.me.uk", "smith.me.uk"],
+		["www.acme.ltd.uk", "acme.ltd.uk"],
+		["mail.bigco.plc.uk", "bigco.plc.uk"],
+		["www.lincoln.k12.ne.us", "lincoln.k12.ne.us"],
+		["me.blogspot.com", "me.blogspot.com"],
+		["me.blogspot.de", "me.blogspot.de"],
+		["me.blogspot.co.uk", "me.blogspot.co.uk"],
+		["bucket.s3.amazonaws.com", "bucket.s3.amazonaws.com"],
+		["ec2-192-0-2-1.compute-1.amazonaws.com", "ec2-192-0-2-1.compute-1.amazonaws.com"],
+		// Ordinary names are unchanged.
+		["mail.example.com", "example.com"],
+		["news.k12.example.com", "example.com"],
+		["blogspot.example.com", "example.com"],
+	])
+		assert.equal(registrableDomain(host), expected, host);
+	// For DKIM alignment and link checks, two tenants of one shared name are different owners.
+	assert.equal(sameRegistrableDomain("shop-a.myshopify.com", "shop-b.myshopify.com"), false);
+	assert.equal(sameRegistrableDomain("a.s3.amazonaws.com", "b.s3.amazonaws.com"), false);
+	assert.equal(sameRegistrableDomain("alice.me.uk", "bob.me.uk"), false);
+	assert.equal(sameRegistrableDomain("mail.shop-a.myshopify.com", "shop-a.myshopify.com"), true);
+	assert.equal(linkTextMismatch("https://shop-b.myshopify.com/login", "shop-a.myshopify.com"), true);
+});
+
 test("IP hosts: dotted IPv4 and bracketed IPv6, not names made of digits", () => {
 	for (const host of ["127.0.0.1", "192.168.1.1", "[::1]", "[2001:db8::1]", "[::ffff:192.0.2.1]"])
 		assert.equal(isIpHost(host), true, host);

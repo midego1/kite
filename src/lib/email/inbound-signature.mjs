@@ -72,6 +72,7 @@ export async function signInboundHeaders(secret, raw, from, to, headersJson) {
 /**
  * The headers signature as the first relay releases with one made it, with the secret itself as the
  * key. The server still accepts it for a while (docs/self-hosting.md); the relay no longer sends it.
+ * TODO(#118): remove in the first release on or after 2027-01-31.
  * @param {string} secret
  * @param {ArrayBuffer} raw
  * @param {string} from

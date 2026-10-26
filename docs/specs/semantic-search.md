@@ -117,7 +117,7 @@ Messages moved to Spam or Trash keep their vectors until they are deleted for go
 2. Claim up to 32 `pending` rows (or `running` rows whose lease expired) with one `UPDATE … SET status = 'running', lease_until = ? WHERE message_id IN (SELECT … ORDER BY queued_at DESC LIMIT 32) RETURNING …`, newest first so new mail is searchable before old mail is.
 3. Load the messages, re-check eligibility (a row whose message became ineligible is set `skipped`), build chunks.
 4. Reserve spend (section 8); none left → release the claim and stop.
-5. Embed in one call per 32 texts; `upsert` the vectors; set `indexed` with the content hash and chunk count. On a provider error: `attempts + 1`, back to `pending` until 3 attempts, then `failed` with the error code (no content).
+5. Embed in one call per 32 texts; re-read the claimed rows and `upsert` the vectors only for those still `running` under this lease, then set them `indexed` with the content hash and chunk count. A message deleted while its embedding call was in flight lost its state row to the delete trigger, so it fails this re-check and its vectors are never written; its tombstone (saved with `chunk_count` 0) has nothing to remove. On a provider error: `attempts + 1`, back to `pending` until 3 attempts, then `failed` with the error code (no content).
 6. Delete vectors whose chunk count shrank, and drain up to 1,000 tombstones per run with `deleteByIds`.
 
 **Triggering the drain.** After `processInboundMessage` and `sendEmail` store a message, they send `{ kind: "search.embed" }` on `AGENT_QUEUE` (cheap and idempotent: the claim makes duplicate messages no-ops). Every cron tick also runs up to 4 batches on Workers and 2 on Node, which is what moves a backfill along: about 128 messages per 5 minutes on Workers, roughly 37,000 a day, within the spend rules below. A separate queue binding is not added; the agent queue's batch size of 1 keeps embedding work from delaying triage for long.
@@ -267,6 +267,7 @@ Vectorize has no local emulation in `wrangler dev` without remote access, which 
 - `semantic-triggers.test.mjs` (`SqliteDatabase`): insert, status change into and out of Spam, Trash and `screening`, draft insert, delete (including a cascaded delete when a user is removed) produce the right `pending` rows and tombstones; a `skipped` row returns to `pending` when its message becomes eligible again while an `indexed` row stays; the triggers do nothing while the feature is off.
 - `semantic-scope.test.mjs`: the D1 re-check drops hits from other mailboxes, other users' drafts and `screening` rows even when the store returns them.
 - `semantic-spend.test.mjs`: backfill stops at the cap share; live indexing continues to the cap; external provider without the opt-in embeds nothing.
+- `semantic-drain.test.mjs`: a message deleted while its embedding call is in flight gets no vectors (the re-check before `upsert` finds no claimed row) and its tombstone drains with nothing to delete.
 - Backup tests: the two tables are internal; `queue-log-context` for `search.embed`.
 
 ### 14.2 e2e (`e2e/56-semantic-search.spec.ts`; take the next free number)

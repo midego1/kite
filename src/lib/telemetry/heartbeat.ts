@@ -17,8 +17,8 @@ const DAY_SECONDS = 86_400;
 
 /**
  * Counts only. Activity is a sign-in (a new session) or any audited action (reading, sending, deleting, settings) by
- * the account; `messages` is read through `messages_user_created_idx` (one range per account). Drafts and template
- * rows are not mail that moved.
+ * the account; `messages` is read through `messages_user_created_idx` (one range per account). Outbound rows count
+ * only once delivered (`sent`): drafts, templates and queued or failed sends are not mail that moved.
  */
 const COUNTS_SQL = `WITH activity(user_id, at) AS (
 	SELECT actor_user_id, created_at FROM audit_logs WHERE actor_user_id IS NOT NULL AND created_at >= ?
@@ -26,7 +26,8 @@ const COUNTS_SQL = `WITH activity(user_id, at) AS (
 	SELECT user_id, created_at FROM sessions WHERE created_at >= ?
 ), recent AS (
 	SELECT mailbox_id, direction FROM messages
-	WHERE user_id IN (SELECT id FROM users) AND created_at >= ? AND status NOT IN ('draft', 'template')
+	WHERE user_id IN (SELECT id FROM users) AND created_at >= ?
+		AND ((direction = 'inbound' AND status NOT IN ('draft', 'template')) OR (direction = 'outbound' AND status = 'sent'))
 )
 SELECT
 	(SELECT COUNT(*) FROM users WHERE disabled = 0) AS users_total,
@@ -64,6 +65,9 @@ async function sendHeartbeat(env: CloudflareEnv, now: Date, fetcher: typeof fetc
 		modulesEnabled: await listEnabledModules(env, null),
 	});
 	if (!payload) return "disabled";
+	// Counting can take a while: an opt-out (or an off/on that made a new id) in the meantime wins.
+	const current = await readTelemetryState(env);
+	if (!current.enabled || current.installId !== state.installId) return "disabled";
 	const response = await fetcher(endpoint, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },

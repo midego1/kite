@@ -25,7 +25,11 @@ Anonymous usage statistics are off unless the owner turns them on under Admin â†
 General (`src/lib/telemetry/`, migration 0069). The daily heartbeat then holds a
 random install id, the Kite version, the runtime, counts of accounts, active
 accounts, mailboxes and messages, and the modules that are on; never ids,
-addresses, domains, `APP_URL` or error text. `telemetry_state` is not backed up.
+addresses, domains, `APP_URL` or error text. On Workers, Cloudflare adds a
+`CF-Worker` header naming the Worker's zone (the domain or `workers.dev`
+subdomain) to the request; the collector does not read, log or store it or
+the sending IP address. `telemetry_state` is not in Kite's backups, but a copy
+of the database file or a D1 Time Travel restore carries the same install id.
 See [Privacy](privacy.md#usage-statistics-opt-in).
 
 Review [the database schema](../src/db/schema/index.ts), `src/lib/backups/export.ts`, and

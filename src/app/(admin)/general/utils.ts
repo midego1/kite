@@ -85,7 +85,7 @@ export function telemetryStatusText(status: TelemetryStatus | null): string {
 	if (!status.endpoint)
 		return status.enabled ? "On, but this version of Kite has no collector address, so nothing is sent" : "Off";
 	if (!status.enabled) return "Off";
-	return status.lastSentDay ? `On, last sent on ${status.lastSentDay} (UTC)` : "On, nothing sent yet";
+	return status.lastSentDay ? `On, last attempted on ${status.lastSentDay} (UTC)` : "On, nothing sent yet";
 }
 
 export async function loadTelemetryStatus(): Promise<TelemetryStatus> {

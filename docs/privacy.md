@@ -24,7 +24,7 @@ The Node/Docker runtime keeps D1 and R2 equivalents as local files and uses no C
 
 ## Usage statistics (opt-in)
 
-Off by default. Only the primary admin can turn them on, under **Admin → General → Anonymous usage statistics** (`PUT /api/admin/telemetry`, recorded in the audit log as `telemetry.enabled` or `telemetry.disabled`). The card lists exactly the fields below, the address they go to and the install id.
+Off by default. Only the primary admin can turn them on, under **Admin → General → Anonymous usage statistics** (`PUT /api/admin/telemetry`, recorded in the audit log as `telemetry.enabled` or `telemetry.disabled` and listed under Admin → Activity). The card lists exactly the fields below, the address they go to, the install id and the UTC day of the last attempt (it is recorded before sending, so it does not prove the collector received it).
 
 **When.** Once a day, from the 02:00 UTC cron on Workers and the same hour on Node/Docker (`worker.ts`, `server/runtime/scheduler.ts`), at most one heartbeat per UTC day. A heartbeat that fails or takes longer than 5 seconds is not retried until the next day. There is no other report: nothing is sent at setup, at sign-in or when a setting changes.
 
@@ -39,18 +39,20 @@ Off by default. Only the primary admin can turn them on, under **Admin → Gener
 | `users_total` | Accounts that are not disabled |
 | `users_active_1d`, `users_active_7d`, `users_active_30d` | Accounts that signed in (a new session) or made an audited action (reading, sending, deleting, a setting) in the last 1, 7 or 30 days |
 | `mailboxes_total` | Mailboxes |
-| `mailboxes_active_1d` | Mailboxes with a message received or sent in the last day |
+| `mailboxes_active_1d` | Mailboxes that received a message, or sent one successfully, in the last day |
 | `inbound_1d` | Messages received in the last day, including spam and imported mail |
-| `outbound_1d` | Messages sent in the last day (not drafts) |
+| `outbound_1d` | Messages written in the last day and sent successfully (status `sent`: not drafts, queued or failed sends) |
 | `modules_enabled` | The ids of the modules that are on for the install, such as `calendar` or `drive` |
 
 Counts are whole numbers of 0 or more. A heartbeat never contains user, mailbox or message ids, names, email addresses, domains or host names, `APP_URL`, IP addresses, message content or error text (`src/lib/telemetry/heartbeat.ts`).
 
-**Where.** An HTTPS `POST` to the project's collector, `deploy/telemetry-collector/` in this repository, or to the address in `KITE_TELEMETRY_URL`. The default address is set in `src/lib/telemetry/telemetry-utils.ts`; while it is a placeholder (a `.invalid` host) nothing is sent, and the card says so. Like any HTTPS request it reaches the collector from the deployment's IP address, which Cloudflare uses to route it; the collector does not store that address or the user agent and has Workers Logs turned off.
+**Where.** An HTTPS `POST` to the project's collector, `deploy/telemetry-collector/` in this repository, or to the address in `KITE_TELEMETRY_URL`. The default address is set in `src/lib/telemetry/telemetry-utils.ts`; while it is a placeholder (a `.invalid` host) nothing is sent, and the card says so. Like any HTTPS request it comes from an IP address: on Node/Docker the server's own, on Workers a Cloudflare egress address. On Workers, Cloudflare also adds a `CF-Worker` header to every outgoing request, naming the zone the Worker runs on (your domain, or your `workers.dev` subdomain); Kite cannot remove it. The collector does not read, log or store that header, the IP address or the user agent, and has Workers Logs turned off.
 
-**What the collector keeps.** Per install id the first and last day it was seen and its last version and runtime, kept so the number of installs ever can be counted, and one row per install and UTC day with the fields above, deleted after 400 days. No time of day is stored. To have an install's rows removed, send the install id shown on the card to the project.
+**What the collector keeps.** Per install id the first and last day it was seen and its last version and runtime, and one row per install and UTC day with the fields above. Daily rows older than 400 days are deleted, and so is an install id not seen for 400 days, so "installs ever" means installs seen within that time. No time of day is stored. To have an install's rows removed, send the install id shown on the card to the project.
 
 **How to turn it off.** Switch it off on the card, which deletes the install id at once, or set `KITE_TELEMETRY=0` (also `false`, `off` or `no`) on the deployment, which keeps it off whatever the card says; the card then shows it as turned off by the deployment. No value of `KITE_TELEMETRY` turns statistics on. Before migration 0069 is applied statistics stay off.
+
+**Copies of the database.** The install id lives in the database, so a copy of it (the SQLite file on Node, a D1 Time Travel restore or a copied D1 database) carries the same id, and two deployments running from copies would report as one install. Kite's own JSON backups leave `telemetry_state` out. To give a copy its own id, turn statistics off and on again there: turning them off deletes the id and turning them on makes a new one (`setTelemetryEnabled` in `src/lib/telemetry/state.ts`).
 
 ## What is stored where
 

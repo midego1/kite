@@ -4,7 +4,7 @@ import { isPrimaryAdmin } from "@/lib/auth/admin";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { getTelemetryStatus, setTelemetryEnabled, TelemetryUnavailableError } from "@/lib/telemetry/state";
-import { telemetryForcedOff } from "@/lib/telemetry/telemetry-utils";
+import { TELEMETRY_AUDIT_ACTIONS, telemetryForcedOff } from "@/lib/telemetry/telemetry-utils";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -39,7 +39,7 @@ export async function PUT(request: Request) {
 	}
 	await createAuditLog(env, {
 		actorUserId: auth.user.id,
-		action: body.enabled ? "telemetry.enabled" : "telemetry.disabled",
+		action: TELEMETRY_AUDIT_ACTIONS[body.enabled ? 0 : 1],
 	});
 	return Response.json(await getTelemetryStatus(env), { headers: NO_STORE });
 }

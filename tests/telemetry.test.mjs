@@ -60,6 +60,9 @@ const KEYS = [
 	"modules_enabled",
 ];
 const COLLECTOR = "https://collector.example.test/v1/heartbeat";
+/** Asserts a literal never appears in `text` (a regex, so it reads as text matching, not URL checking). */
+const assertAbsent = (text, literal, message = literal) =>
+	assert.doesNotMatch(text, new RegExp(literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), message);
 const NOW = new Date("2026-10-26T02:00:00Z");
 const seconds = (date) => Math.floor(date.getTime() / 1000);
 const ago = (days) => seconds(NOW) - Math.round(days * 86_400);
@@ -100,8 +103,8 @@ test("the heartbeat payload has exactly the schema's keys, whatever else the inp
 		...input().counts,
 		modules_enabled: ["calendar", "drive"],
 	});
-	assert.ok(!JSON.stringify(payload).includes("example.com"));
-	assert.ok(!JSON.stringify(payload).includes("usr_1"));
+	assert.doesNotMatch(JSON.stringify(payload), /example\.com/);
+	assert.doesNotMatch(JSON.stringify(payload), /usr_1/);
 	assert.deepEqual(
 		TELEMETRY_FIELDS.map(({ key }) => key),
 		KEYS,
@@ -246,6 +249,9 @@ function seed(sqlite) {
 	message("msg_3", "mbx_2", "outbound", "sent", ago(0.3));
 	message("msg_4", "mbx_3", "outbound", "draft", ago(0.3));
 	message("msg_5", "mbx_3", "inbound", "received", ago(2));
+	// Not delivered: neither counts as sent nor makes mbx_3 active.
+	message("msg_6", "mbx_3", "outbound", "queued", ago(0.1));
+	message("msg_7", "mbx_3", "outbound", "failed", ago(0.1));
 }
 
 test("counts come from users, sessions, audit rows and recent messages", async (t) => {
@@ -366,8 +372,8 @@ test("the heartbeat sends one allowlisted report a day, only when opted in", asy
 	assert.deepEqual(request.body.modules_enabled, ["calendar", "booking", "templates", "import", "finance", "drive"]);
 	assert.equal(parseHeartbeat(request.init.body).ok, true);
 	for (const forbidden of ["example.com", "usr_", "mbx_", "dom_", "203.0.113.9"])
-		assert.ok(!request.init.body.includes(forbidden), forbidden);
-	assert.ok(!lines.join("\n").includes("203.0.113.9"), "the response is never logged");
+		assertAbsent(request.init.body, forbidden);
+	assertAbsent(lines.join("\n"), "203.0.113.9", "the response is never logged");
 
 	assert.equal(await runTelemetryHeartbeat(env, NOW, fetcher), "already_sent");
 	assert.equal(await runTelemetryHeartbeat(env, new Date("2026-10-26T23:00:00Z"), fetcher), "already_sent");
@@ -390,8 +396,7 @@ test("a failing heartbeat never throws, logs a fixed message and waits for the n
 	assert.equal(result, "failed");
 	const output = lines.join("\n");
 	assert.match(output, /telemetry\.heartbeat_failed/);
-	for (const leaked of ["ECONNREFUSED", "203.0.113.9", "owner@example.com", "install"])
-		assert.ok(!output.includes(leaked), leaked);
+	for (const leaked of ["ECONNREFUSED", "203.0.113.9", "owner@example.com", "install"]) assertAbsent(output, leaked);
 	assert.equal(await runTelemetryHeartbeat(env, NOW, failing.fetcher), "already_sent", "no retry the same day");
 	assert.equal(failing.requests.length, 1);
 
@@ -400,4 +405,32 @@ test("a failing heartbeat never throws, logs a fixed message and waits for the n
 
 	sqlite.db.exec("DROP TABLE audit_logs");
 	assert.equal(await runTelemetryHeartbeat(env, new Date("2026-10-28T02:00:00Z"), rejecting.fetcher), "failed");
+});
+
+test("an opt-out while the counts are read stops the report", async (t) => {
+	const sqlite = await setup(t);
+	seed(sqlite);
+	for (const [label, change] of [
+		["off", "UPDATE telemetry_state SET enabled = 0, install_id = NULL"],
+		["off and on again", "UPDATE telemetry_state SET install_id = '9f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e'"],
+	]) {
+		await setTelemetryEnabled({ DB: sqlite }, false);
+		await setTelemetryEnabled({ DB: sqlite }, true);
+		// The owner's change lands while the heartbeat runs its count query.
+		const DB = new Proxy(sqlite, {
+			get(target, property) {
+				if (property === "prepare")
+					return (sql) => {
+						if (sql.startsWith("WITH activity")) target.db.exec(change);
+						return target.prepare(sql);
+					};
+				const value = target[property];
+				return typeof value === "function" ? value.bind(target) : value;
+			},
+		});
+		const { requests, fetcher } = recorder();
+		const outcome = await runTelemetryHeartbeat({ DB, KITE_TELEMETRY_URL: COLLECTOR }, NOW, fetcher);
+		assert.equal(outcome, "disabled", label);
+		assert.equal(requests.length, 0, label);
+	}
 });

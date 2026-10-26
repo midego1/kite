@@ -4,7 +4,7 @@ export type CollectorEnv = {
 	DB: D1Database;
 	/** Bearer token for GET /v1/stats, set with `wrangler secret put STATS_TOKEN`. Unset means stats are closed. */
 	STATS_TOKEN?: string;
-	/** Days `daily` rows are kept; default 400. `installs` rows stay so "installs ever" keeps counting. */
+	/** Days `daily` rows, and `installs` rows not seen since, are kept; default 400. */
 	DAILY_RETENTION_DAYS?: string;
 };
 
@@ -130,9 +130,11 @@ async function stats(env: CollectorEnv, now: number) {
 export async function purgeOldDays(env: CollectorEnv, now: number): Promise<void> {
 	const days = Number(env.DAILY_RETENTION_DAYS);
 	const retention = Number.isInteger(days) && days >= 31 ? days : DEFAULT_RETENTION_DAYS;
-	await env.DB.prepare("DELETE FROM daily WHERE day < ?")
-		.bind(utcDay(now - retention * DAY_MS))
-		.run();
+	const cutoff = utcDay(now - retention * DAY_MS);
+	await env.DB.batch([
+		env.DB.prepare("DELETE FROM daily WHERE day < ?").bind(cutoff),
+		env.DB.prepare("DELETE FROM installs WHERE last_seen < ?").bind(cutoff),
+	]);
 }
 
 export default {

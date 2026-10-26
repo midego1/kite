@@ -199,5 +199,12 @@ test("stats need the bearer token and count distinct installs", async (t) => {
 
 	await purgeOldDays({ DB: sqlite, DAILY_RETENTION_DAYS: "60" }, Date.now());
 	assert.equal(sqlite.db.prepare("SELECT COUNT(*) AS n FROM daily WHERE install_id = ?").get(ids[3]).n, 0);
-	assert.equal(sqlite.db.prepare("SELECT COUNT(*) AS n FROM installs").get().n, 4, "installs are kept");
+	assert.deepEqual(
+		sqlite.db
+			.prepare("SELECT install_id FROM installs ORDER BY install_id")
+			.all()
+			.map((row) => row.install_id),
+		ids.slice(0, 3),
+		"installs not seen within the retention go too",
+	);
 });

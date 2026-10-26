@@ -64,8 +64,9 @@ export function TelemetryCard() {
 				<p>
 					Off unless you turn it on. Once a day, around 02:00 UTC, Kite then sends one small report with the counts
 					below, so the project can see how many installs are in use. It never contains names, email addresses, domains,
-					message content or anything else that identifies you or your users, and the collector does not store the IP
-					address it comes from.
+					message content or anything else that identifies you or your users. On Cloudflare Workers, Cloudflare adds a{" "}
+					<code>CF-Worker</code> header naming this Worker’s zone (your domain or workers.dev subdomain) to the request;
+					the collector does not read, log or store it, nor the IP address the report comes from.
 				</p>
 				<div className="space-y-2 rounded-xl bg-neutral-50 p-4">
 					<p className="font-medium text-neutral-900">Exactly what is sent</p>

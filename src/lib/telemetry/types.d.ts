@@ -30,6 +30,7 @@ export type TelemetryStatus = {
 	/** False until migration 0069 is applied. */
 	available: boolean;
 	installId: string | null;
+	/** UTC day of the last heartbeat attempt, whether or not the collector got it. */
 	lastSentDay: string | null;
 	/** Collector URL, or null when this build has none (nothing is sent). */
 	endpoint: string | null;

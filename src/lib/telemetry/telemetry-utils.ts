@@ -10,6 +10,9 @@ const TELEMETRY_SCHEMA_VERSION = 1;
  */
 const DEFAULT_TELEMETRY_URL = "https://telemetry.kite.invalid/v1/heartbeat";
 
+/** Audit actions of the owner's choice, listed in Admin → Activity. */
+export const TELEMETRY_AUDIT_ACTIONS = ["telemetry.enabled", "telemetry.disabled"] as const;
+
 /** A heartbeat that takes longer is abandoned; the next one is due the next day. */
 export const TELEMETRY_TIMEOUT_MS = 5_000;
 
@@ -38,9 +41,9 @@ export const TELEMETRY_FIELDS: readonly { key: keyof HeartbeatPayload; descripti
 	{ key: "users_active_7d", description: "The same, in the last 7 days" },
 	{ key: "users_active_30d", description: "The same, in the last 30 days" },
 	{ key: "mailboxes_total", description: "Number of mailboxes" },
-	{ key: "mailboxes_active_1d", description: "Mailboxes that received or sent mail in the last day" },
+	{ key: "mailboxes_active_1d", description: "Mailboxes that received mail or sent it successfully in the last day" },
 	{ key: "inbound_1d", description: "Messages received in the last day" },
-	{ key: "outbound_1d", description: "Messages sent in the last day" },
+	{ key: "outbound_1d", description: "Messages sent successfully in the last day" },
 	{ key: "modules_enabled", description: "Which modules are on, such as calendar or drive" },
 ];
 

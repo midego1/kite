@@ -57,16 +57,19 @@ Needs `Authorization: Bearer <STATS_TOKEN>`; answers `401` otherwise, and always
 }
 ```
 
-- `installs.total` counts every install id ever seen. `active_Nd` counts install ids with a heartbeat dated on or after the UTC day N days ago (so `active_1d` covers today and yesterday, because heartbeats arrive around 02:00 UTC).
+- `installs.total` counts every install id seen within the retention (see below). `active_Nd` counts install ids with a heartbeat dated on or after the UTC day N days ago (so `active_1d` covers today and yesterday, because heartbeats arrive around 02:00 UTC).
 - `usage` sums the latest heartbeat of each install in the `active_1d` set.
 - `versions` and `runtimes` group the installs seen in the last 30 days by their latest heartbeat; `modules` counts, among the latest heartbeat of each of those installs, how many have each module on.
 
 ## Data kept
 
-- `installs`: install id, first and last UTC day seen, last version and runtime. Kept so `installs.total` keeps counting.
-- `daily`: one row per UTC day and install with the heartbeat's fields. The cron (`30 4 * * *`) deletes rows older than `DAILY_RETENTION_DAYS` (default 400, at least 31).
-- No IP address, user agent, time of day or request header is read or stored, and `observability` is off in `wrangler.jsonc` so Workers Logs do not record requests. Cloudflare still sees the connecting IP to route the request.
+- `installs`: install id, first and last UTC day seen, last version and runtime.
+- `daily`: one row per UTC day and install with the heartbeat's fields.
+- The cron (`30 4 * * *`) deletes `daily` rows older than `DAILY_RETENTION_DAYS` (default 400, at least 31) and `installs` rows not seen for that long.
+- No IP address, user agent, time of day or other request header is read or stored, and `observability` is off in `wrangler.jsonc` so Workers Logs do not record requests. Installs on Cloudflare Workers arrive from a Cloudflare egress address with a `CF-Worker` header that Cloudflare adds, naming the sending Worker's zone (the operator's domain or `workers.dev` subdomain); Node/Docker installs arrive from their server's IP address. The collector ignores both. Cloudflare still sees the connecting IP to route the request.
 - To remove an install on request (the owner sees its id under Admin → General): `npx wrangler d1 execute kite-telemetry --remote --command "DELETE FROM daily WHERE install_id = '<id>'; DELETE FROM installs WHERE install_id = '<id>'"`.
+
+Do not add code that reads `CF-Worker`, `CF-Connecting-IP` or similar headers: the privacy page promises they are ignored.
 
 Anyone can post a heartbeat, so the figures are indicative: a bogus install inflates them. Add a Cloudflare rate-limiting rule on `/v1/heartbeat` (for example 10 requests per minute per IP) if that becomes a problem.
 

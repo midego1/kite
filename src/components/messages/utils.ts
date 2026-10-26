@@ -84,6 +84,11 @@ export function formatEmailPageTitle({ location, total, unread, emailAddress }: 
 	return `${location} (${count})${suffix}`;
 }
 
+/** Folders whose list offers the "All mail / Unread" tabs; mail you sent or are writing is never unread. */
+export function supportsUnreadFilter(folder: MessageFolderConfig["folder"]): boolean {
+	return folder !== "sent" && folder !== "drafts";
+}
+
 /** The folder the selection toolbar offers moves from; a custom folder lists with folder "inbox" but may move there. */
 export function getSelectionToolbarFolder(config: Pick<MessageFolderConfig, "folder" | "folderId">) {
 	return config.folderId ? undefined : config.folder;

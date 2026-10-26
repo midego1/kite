@@ -5,7 +5,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSidebar } from "@/components/sidebar-state";
 import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 import { readColumnWidth, readInitialColumnWidth, saveColumnWidth } from "@/components/column-width-preferences";
-import { ResizeHandle } from "@/components/ui/resize-handle";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup, usePanelRef } from "@/components/ui/resizable";
+import { layoutPixels, pixelsPerPercent } from "@/components/ui/resizable-utils";
+import { useSyncedPanel } from "@/components/ui/use-synced-panel";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { BulkMessageSelectionPane } from "./bulk-message-selection-pane";
 import { MessageFolderPage } from "./message-folder-page";
@@ -21,7 +23,7 @@ import {
 	saveMessageListWithAssistant,
 } from "./message-list-visibility-utils";
 import { ReadingPaneEmptyState } from "./reading-pane-empty-state";
-import { clampListSize, getEffectiveReadingPaneMode } from "./reading-layout-utils";
+import { getEffectiveReadingPaneMode } from "./reading-layout-utils";
 import { useReadingPaneMode, useWideReadingViewport } from "./use-reading-layout";
 import { getSelectionToolbarFolder } from "./utils";
 import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
@@ -42,30 +44,24 @@ function useClearSelectionOnOpen(
 }
 
 /**
- * Arranges the message list and reading pane using the user's layout and sizing preferences.
- * Manages checkbox selection and clears it when a new message is opened.
+ * Arranges the message list and reading pane using the user's layout and sizing preferences: resizable
+ * panels side by side or stacked, or one column. Manages checkbox selection and clears it when a new
+ * message is opened.
  */
 export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps) {
 	const pathname = usePathname();
 	const [selectedMessages, setSelectedMessages] = useState<SelectedMessage[]>([]);
 	const [listWidth, setListWidth] = useState(LIST_WIDTH.fallback);
 	const [listHeight, setListHeight] = useState(LIST_HEIGHT.fallback);
-	const [sizeReady, setSizeReady] = useState(false);
-	const [resizing, setResizing] = useState(false);
-	const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 	const [manualListVisible, setManualListVisible] = useState(true);
 	const [preferredMode] = useReadingPaneMode();
 	const wideViewport = useWideReadingViewport();
 	const mode = getEffectiveReadingPaneMode(preferredMode, wideViewport);
 	const split = mode !== "none";
 	const below = mode === "below";
-	const containerRef = useRef<HTMLDivElement>(null);
-	const listFrameRef = useRef<HTMLDivElement>(null);
-	const resizeFrame = useRef<number | null>(null);
 	const bulkActionRef = useRef<BulkSelectionAction | null>(null);
-	const startSize = useRef(0);
-	const resizedSize = useRef(0);
-	const { userId, setForcedMinimal } = useSidebar();
+	const listPanelRef = usePanelRef();
+	const { userId } = useSidebar();
 	const assistantOpen = useAssistantOpen();
 	const detailPrefix = `${config.hrefPrefix}/`;
 	const selectedMessageId = pathname.startsWith(detailPrefix)
@@ -81,13 +77,11 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const [assistantListShown, setAssistantListShown] = useState(false);
 	// The hide-list toggle lives in the open message's header, so with nothing open the list always shows.
 	const listVisible = split && (!selectedMessageId || (manualListVisible && (!assistantOpen || assistantListShown)));
-	const renderedListWidth = clampListSize(listWidth, LIST_WIDTH.min, containerSize.width || 1000, LIST_WIDTH.reserved);
-	const renderedListHeight = clampListSize(
-		listHeight,
-		LIST_HEIGHT.min,
-		containerSize.height || 800,
-		LIST_HEIGHT.reserved,
-	);
+	const listSize = below ? listHeight : listWidth;
+	const listLimits = below ? LIST_HEIGHT : LIST_WIDTH;
+	const changedByPanel = useSyncedPanel(listPanelRef, !listVisible, listSize);
+	// Pixels per percent of the group, as the list last reported, to read pixel sizes from a layout.
+	const groupScale = useRef(1);
 
 	useLayoutEffect(() => {
 		// Persisted preferences are only readable in the browser and must apply before paint.
@@ -102,11 +96,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 		};
 		syncVisible();
 		window.addEventListener(MESSAGE_LIST_VISIBILITY_EVENT, syncVisible);
-		const frame = requestAnimationFrame(() => setSizeReady(true));
-		return () => {
-			cancelAnimationFrame(frame);
-			window.removeEventListener(MESSAGE_LIST_VISIBILITY_EVENT, syncVisible);
-		};
+		return () => window.removeEventListener(MESSAGE_LIST_VISIBILITY_EVENT, syncVisible);
 	}, []);
 
 	useEffect(() => {
@@ -133,43 +123,42 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 		saveColumnWidth(userId, "message-list-height", savedHeight);
 	}, [userId]);
 
-	useLayoutEffect(() => {
-		if (!split) {
-			setForcedMinimal(false);
+	if (!split && !selectedMessageId) return children;
+
+	function setListVisible(visible: boolean) {
+		if (assistantOpen) {
+			setAssistantListShown(visible);
+			saveMessageListWithAssistant(visible);
+		}
+		if (!assistantOpen || visible) {
+			setManualListVisible(visible);
+			saveMessageListVisible(visible);
+		}
+	}
+
+	function storeListSize(next: number) {
+		if (next === 0) {
+			// Dragging the list shut hides it like the header button; with nothing open it springs back.
+			if (selectedMessageId && listVisible) {
+				changedByPanel();
+				setListVisible(false);
+			} else if (!selectedMessageId) listPanelRef.current?.expand();
 			return;
 		}
-		const container = containerRef.current;
-		if (!container) return;
-		const measure = () => setContainerSize({ width: container.clientWidth, height: container.clientHeight });
-		measure();
-		const observer = new ResizeObserver(measure);
-		observer.observe(container);
-		return () => observer.disconnect();
-	}, [split, setForcedMinimal]);
-
-	useEffect(() => () => setForcedMinimal(false), [setForcedMinimal]);
-	useEffect(
-		() => () => {
-			if (resizeFrame.current !== null) cancelAnimationFrame(resizeFrame.current);
-		},
-		[],
-	);
-
-	if (!split && !selectedMessageId) return children;
+		saveColumnWidth(userId, below ? "message-list-height" : "message-list", next);
+		if (!listVisible) {
+			changedByPanel();
+			setListVisible(true);
+		}
+		if (next === listSize) return;
+		changedByPanel();
+		if (below) setListHeight(next);
+		else setListWidth(next);
+	}
 
 	const visibility: MessageListVisibility = {
 		visible: listVisible,
-		toggle: () => {
-			const visible = !listVisible;
-			if (assistantOpen) {
-				setAssistantListShown(visible);
-				saveMessageListWithAssistant(visible);
-			}
-			if (!assistantOpen || visible) {
-				setManualListVisible(visible);
-				saveMessageListVisible(visible);
-			}
-		},
+		toggle: () => setListVisible(!listVisible),
 		singleColumn: !split,
 		stacked: below,
 		backHref: config.hrefPrefix,
@@ -205,51 +194,35 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 			</div>
 		);
 
-	const hiddenTransform = below ? "-translate-y-full" : "-translate-x-full";
-	// While dragging, sizes go straight to the DOM once per frame: re-rendering the list on every
-	// pointer move, behind a 300 ms grid transition, made the divider trail the cursor.
-	const transitionDuration = sizeReady && !resizing ? "300ms" : "0ms";
-
-	function paintResize() {
-		resizeFrame.current = null;
-		const container = containerRef.current;
-		const frame = listFrameRef.current;
-		if (!container || !frame) return;
-		const size = `${resizedSize.current}px`;
-		if (below) {
-			container.style.gridTemplateRows = `${size} minmax(0,1fr)`;
-			frame.style.height = size;
-		} else {
-			container.style.gridTemplateColumns = `${size} minmax(0,1fr)`;
-			frame.style.width = size;
-		}
-	}
-
 	return (
-		<div
-			ref={containerRef}
+		<ResizablePanelGroup
+			key={mode}
+			id={`kite-message-layout-${mode}`}
+			orientation={below ? "vertical" : "horizontal"}
 			data-reading-pane={mode}
-			className={`grid h-full min-h-0 overflow-hidden ease-in-out motion-reduce:transition-none ${below ? "transition-[grid-template-rows]" : "transition-[grid-template-columns]"}`}
-			style={
-				below
-					? {
-							gridTemplateRows: `${listVisible ? renderedListHeight : 0}px minmax(0,1fr)`,
-							gridTemplateColumns: "minmax(0,1fr)",
-							transitionDuration,
-						}
-					: { gridTemplateColumns: `${listVisible ? renderedListWidth : 0}px minmax(0,1fr)`, transitionDuration }
-			}
+			className="min-h-0 overflow-hidden"
+			onLayoutChanged={(layout, meta) => {
+				if (meta.isUserInteraction) storeListSize(layoutPixels(layout.list, groupScale.current));
+			}}
 		>
-			{/* Clip only while hidden: a visible list would cut off the half of the resize handle that straddles the border. */}
-			<aside
-				className={`relative min-h-0 min-w-0 bg-white ${listVisible ? (below ? "border-b border-neutral-200" : "border-r border-neutral-200") : "pointer-events-none overflow-hidden"}`}
-				aria-hidden={!listVisible}
-				inert={!listVisible}
+			<ResizablePanel
+				id="list"
+				panelRef={listPanelRef}
+				collapsible
+				collapsedSize={0}
+				collapsedThreshold={listLimits.min}
+				minSize={listLimits.min}
+				maxSize={listLimits.max}
+				defaultSize={listVisible ? listSize : 0}
+				groupResizeBehavior="preserve-pixel-size"
+				onResize={(size) => {
+					groupScale.current = pixelsPerPercent(size) ?? groupScale.current;
+				}}
 			>
-				<div
-					ref={listFrameRef}
-					className={`overflow-hidden transition-transform duration-300 ease-in-out motion-reduce:transition-none ${listVisible ? "translate-x-0 translate-y-0" : hiddenTransform}`}
-					style={below ? { height: renderedListHeight } : { width: renderedListWidth, height: "100%" }}
+				<aside
+					className="h-full min-h-0 min-w-0 overflow-hidden bg-white"
+					aria-hidden={!listVisible}
+					inert={!listVisible}
 				>
 					<MessageFolderPage
 						config={config}
@@ -264,49 +237,15 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 							},
 						}}
 					/>
-				</div>
-				<ResizeHandle
-					label={below ? "Resize message list height" : "Resize message list"}
-					orientation={below ? "horizontal" : "vertical"}
-					onResizeStart={() => {
-						startSize.current = below ? renderedListHeight : renderedListWidth;
-						resizedSize.current = startSize.current;
-						setResizing(true);
-					}}
-					onResize={(delta) => {
-						const requested = startSize.current + delta;
-						const container = containerRef.current;
-						if (below) {
-							resizedSize.current = clampListSize(
-								requested,
-								LIST_HEIGHT.min,
-								container?.clientHeight ?? 800,
-								LIST_HEIGHT.reserved,
-							);
-						} else {
-							setForcedMinimal(requested < LIST_WIDTH.min);
-							resizedSize.current = clampListSize(
-								requested,
-								LIST_WIDTH.min,
-								container?.clientWidth ?? 1000,
-								LIST_WIDTH.reserved,
-							);
-						}
-						resizeFrame.current ??= requestAnimationFrame(paintResize);
-					}}
-					onResizeEnd={() => {
-						if (resizeFrame.current !== null) {
-							cancelAnimationFrame(resizeFrame.current);
-							paintResize();
-						}
-						if (below) setListHeight(resizedSize.current);
-						else setListWidth(resizedSize.current);
-						setResizing(false);
-						saveColumnWidth(userId, below ? "message-list-height" : "message-list", resizedSize.current);
-					}}
-				/>
-			</aside>
-			{detail}
-		</div>
+				</aside>
+			</ResizablePanel>
+			<ResizableHandle
+				aria-label={below ? "Resize message list height" : "Resize message list"}
+				className={listVisible ? undefined : "pointer-events-none opacity-0"}
+			/>
+			<ResizablePanel id="reader" minSize={listLimits.reserved}>
+				{detail}
+			</ResizablePanel>
+		</ResizablePanelGroup>
 	);
 }

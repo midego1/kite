@@ -8,6 +8,9 @@ type MessageShortcutInput = {
 	direction: MessageDirection;
 	runAction: (action: BulkMessageAction) => unknown;
 	handleReply: (mode: ReplyMode) => unknown;
+	/** Does nothing while the message's details needed to quote it are still loading. */
+	forward: () => unknown;
+	canReplyAll: boolean;
 	back: () => void;
 };
 
@@ -17,6 +20,8 @@ export function messageShortcuts({
 	direction,
 	runAction,
 	handleReply,
+	forward,
+	canReplyAll,
 	back,
 }: MessageShortcutInput): ShortcutDefinition[] {
 	const archive = () => {
@@ -34,6 +39,13 @@ export function messageShortcuts({
 			},
 		},
 		{ key: "r", label: "Reply to Message", category: "Composing", action: () => void handleReply("reply") },
+		{
+			key: "a",
+			label: "Reply All",
+			category: "Composing",
+			action: () => void handleReply(canReplyAll ? "replyAll" : "reply"),
+		},
+		{ key: "f", label: "Forward Message", category: "Composing", action: () => void forward() },
 		{
 			key: "!",
 			label: "Report Spam",

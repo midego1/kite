@@ -18,7 +18,6 @@ const {
 	handlersByCommandId,
 	filterCommands,
 	groupCommandsByCategory,
-	orderCommandsByGroup,
 	calendarDateFromParam,
 	findEventForUrl,
 	expandCalendarEvents,
@@ -28,7 +27,7 @@ const {
 	["MODULE_IDS as CLIENT_MODULE_IDS", "src/lib/modules/client-data/module-ids.ts"],
 	["CORE_COMMANDS, CORE_SHORTCUTS", "src/lib/modules/core-commands.ts"],
 	[
-		"listCommands, listShortcutBindings, commandParamFields, validateCommandParams, fillCommandHref, runCommand, handlersByCommandId, filterCommands, groupCommandsByCategory, orderCommandsByGroup",
+		"listCommands, listShortcutBindings, commandParamFields, validateCommandParams, fillCommandHref, runCommand, handlersByCommandId, filterCommands, groupCommandsByCategory",
 		"src/components/shortcuts/command-palette-utils.ts",
 	],
 	["calendarDateFromParam, findEventForUrl, expandCalendarEvents", "src/app/(calendar)/calendar/utils.ts"],
@@ -444,7 +443,7 @@ test("palette filtering matches title, subtitle, category and keywords, and grou
 	assert.deepEqual(Object.keys(groupCommandsByCategory(items)), ["Navigation", "Actions"]);
 });
 
-test("the palette's display order is the grouped order, so arrow keys and Enter agree with the rows", () => {
+test("the palette lists its groups in first-seen order, each with its commands in list order", () => {
 	const items = [
 		{ id: "compose", title: "Compose", category: "Actions", perform() {} },
 		{ id: "inbox", title: "Go to Inbox", category: "Navigation", perform() {} },
@@ -453,7 +452,8 @@ test("the palette's display order is the grouped order, so arrow keys and Enter 
 		{ id: "settings", title: "Go to Settings", category: "Settings", perform() {} },
 		{ id: "calendar", title: "Open Calendar", category: "Navigation", perform() {} },
 	];
-	assert.deepEqual(ids(orderCommandsByGroup(items)), [
+	// cmdk moves through the rows in DOM order, which is this grouped order.
+	assert.deepEqual(ids(Object.values(groupCommandsByCategory(items)).flat()), [
 		"compose",
 		"inbox",
 		"for-you",
@@ -461,10 +461,7 @@ test("the palette's display order is the grouped order, so arrow keys and Enter 
 		"account",
 		"settings",
 	]);
-	const rows = Object.values(groupCommandsByCategory(items)).flat();
-	assert.deepEqual(ids(orderCommandsByGroup(items)), ids(rows));
-	assert.deepEqual(orderCommandsByGroup([]), []);
-	assert.equal(orderCommandsByGroup(items)[3].id, "calendar");
+	assert.deepEqual(groupCommandsByCategory([]), {});
 });
 
 test("the real palette list keeps one command per row after grouping", () => {
@@ -475,7 +472,7 @@ test("the real palette list keeps one command per row after grouping", () => {
 		category: command.group,
 		perform() {},
 	}));
-	const ordered = orderCommandsByGroup(items);
+	const ordered = Object.values(groupCommandsByCategory(items)).flat();
 	assert.equal(ordered.length, items.length);
 	assert.deepEqual(ids(ordered).sort(), ids(items).sort());
 	assert.notDeepEqual(ids(ordered), ids(items), "the raw list is not group-contiguous, which is why the order matters");

@@ -44,15 +44,6 @@ export function groupCommandsByCategory(commands: CommandItem[]): Record<string,
 	);
 }
 
-/**
- * The commands in the order the palette draws them: grouped by category, groups in first-seen order.
- * Highlighting, ArrowUp/ArrowDown and Enter index this list, because a command list that is not
- * contiguous by category would otherwise run a different command from the highlighted row.
- */
-export function orderCommandsByGroup(commands: CommandItem[]): CommandItem[] {
-	return Object.values(groupCommandsByCategory(commands)).flat();
-}
-
 type CommandSource = { id: ModuleId; commands: readonly UiCommand[] };
 
 type ListOptions = {

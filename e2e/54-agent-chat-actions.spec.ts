@@ -137,6 +137,25 @@ test.describe("assistant chat organizes mail through approval and undo", () => {
 		expect((await messageState(message.id)).read).toBe(true);
 	});
 
+	test("an undo after one email moved again puts back the rest and says how many", async ({ page }) => {
+		const first = await deliver("Partial undo one");
+		const second = await deliver("Partial undo two");
+		const panel = await openPanel(page, first.mailboxId);
+		fake.scriptChat(
+			{ toolCalls: [{ name: "move_emails", arguments: { emailIds: [first.id, second.id], destination: "archived" } }] },
+			{ content: "Approve to archive both." },
+		);
+		await askAssistant(page, "Archive both");
+		await panel.getByRole("button", { name: "Approve move to the archive" }).click();
+		await expect(panel.getByText("Moved 2 emails to the archive.")).toBeVisible();
+		await api.post("/api/messages/bulk", { data: { messageIds: [second.id], action: "trash" } });
+
+		await panel.getByRole("button", { name: "Undo", exact: true }).click();
+		await expect(panel.getByText("Undid 1 of 2; 1 had moved since.", { exact: true })).toBeVisible();
+		expect((await messageState(first.id)).status).toBe("received");
+		expect((await messageState(second.id)).status).toBe("trash");
+	});
+
 	test("a folder proposed in chat is created only on approval and lists afterwards", async ({ page }) => {
 		const message = await deliver("Create folder chat");
 		const name = `Chat folder ${uniqueToken()}`;

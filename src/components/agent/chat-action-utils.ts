@@ -57,3 +57,12 @@ export function canUndoAction(proposal: AgentActionProposal, now: Date): boolean
 	if (proposal.status !== "approved" || !proposal.actionId || !proposal.undoUntil) return false;
 	return new Date(proposal.undoUntil).getTime() > now.getTime();
 }
+
+/** What an undone action says: a plain "Undone." unless some emails had moved or changed since and stayed. */
+export function undoneActionText(proposal: Pick<AgentActionProposal, "action" | "undo">): string {
+	const counts = proposal.undo;
+	if (!counts || counts.restored >= counts.total) return "Undone.";
+	const left = counts.total - counts.restored;
+	const verb = proposal.action.startsWith("mark_") ? "changed" : "moved";
+	return `Undid ${counts.restored} of ${counts.total}; ${left} had ${verb} since.`;
+}

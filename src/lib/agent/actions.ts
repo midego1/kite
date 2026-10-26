@@ -7,7 +7,7 @@ import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { executeAction, undoAgentAction } from "./auto-read/execute";
 import type { ChatActionAudit, MessagePlace } from "./chat-actions-types";
-import { chatActionPlan, chatProposalSchema } from "./chat-actions-utils";
+import { chatActionPlan, chatActionState, chatProposalSchema, safeActionError } from "./chat-actions-utils";
 import { runEmailTool } from "./tools";
 
 async function loadToolMessage(env: CloudflareEnv, user: SessionUser, toolMessageId: string) {
@@ -58,8 +58,10 @@ function auditAfter(audit: ChatActionAudit, result: unknown): Record<string, unk
 
 /**
  * Runs an approved chat proposal. Undoable proposals go through `executeAction`, which writes the
- * `agent_actions` row before the effect (with every message's earlier state in `before`) so the change
- * shows in Activity and can be undone for the usual window; the tool result then carries the action id.
+ * `agent_actions` row before the effect so the change shows in Activity and can be undone for the usual
+ * window; the tool result then carries the action id. Once the effect ran, the row's `before` becomes the
+ * chat-marked state with every message before and right after it (`takeInverse`), which undo compares
+ * against so it never overwrites a later change. Errors are stored and shown without database text.
  */
 async function applyProposal(
 	env: CloudflareEnv,
@@ -75,6 +77,7 @@ async function applyProposal(
 	if (!access?.canRead) throw new Error("Mailbox not found or permission denied");
 	const places = await messagePlaces(env, mailboxId, audit.emailIds);
 	let result: unknown = null;
+	let applied: MessagePlace[] = places;
 	const outcome = await executeAction({
 		env,
 		mailboxId,
@@ -87,11 +90,17 @@ async function applyProposal(
 		permissions: access,
 		effect: {
 			...(folderId ? { ids: { folderId } } : {}),
-			before: { messages: places },
+			before: chatActionState(places, places),
 			async apply() {
-				result = await runEmailTool(context, plan.tool, plan.input);
+				try {
+					result = await runEmailTool(context, plan.tool, plan.input);
+				} catch (error) {
+					throw new Error(safeActionError(error));
+				}
+				applied = await messagePlaces(env, mailboxId, audit.emailIds);
 				return auditAfter(audit, result);
 			},
+			takeInverse: () => chatActionState(places, applied),
 		},
 	});
 	if (outcome.status !== "applied")
@@ -153,8 +162,10 @@ export async function undoChatAgentAction(env: CloudflareEnv, user: SessionUser,
 		.from(agentActions)
 		.where(eq(agentActions.id, actionId))
 		.limit(1);
-	if (action?.status !== "undone") await undoAgentAction(env, user, actionId);
-	const updated = { ...stored, status: "undone" };
+	const undone = action?.status === "undone" ? null : await undoAgentAction(env, user, actionId);
+	// How many messages went back, for actions that count them; the card says when some had moved since.
+	const counts = typeof undone?.total === "number" ? { undo: { restored: undone.restored, total: undone.total } } : {};
+	const updated = { ...stored, status: "undone", ...counts };
 	await db
 		.update(agentChatMessages)
 		.set({ content: JSON.stringify(updated) })

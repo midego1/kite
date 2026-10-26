@@ -62,6 +62,8 @@ export type AgentActionProposal = {
 	/** Set once approved, for an action that can be undone. */
 	actionId?: string;
 	undoUntil?: string | null;
+	/** Set once undone: how many of the changed emails went back. */
+	undo?: { restored: number; total: number };
 };
 export type AgentTurn = {
 	id: string;

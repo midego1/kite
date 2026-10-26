@@ -13,10 +13,10 @@ after(() => rmSync(outDir, { recursive: true, force: true }));
 await build({
 	stdin: {
 		contents: `
-			export { chatActionPlan, chatProposalSchema, movedStatus, storedMessagePlaces } from "./src/lib/agent/chat-actions-utils.ts";
+			export { chatActionPlan, chatActionState, chatProposalSchema, safeActionError, storedChatActionState, undoTargets } from "./src/lib/agent/chat-actions-utils.ts";
 			export { FOLDER_COLOR_NAMES, folderColorValue } from "./src/lib/agent/organize-tools-utils.ts";
 			export { canSeeAction, getActionMeta, userExecuteRefusal, undoRefusal } from "./src/lib/agent/auto-read/actions-utils.ts";
-			export { approveActionLabel, approvedActionText, canUndoAction } from "./src/components/agent/chat-action-utils.ts";
+			export { approveActionLabel, approvedActionText, canUndoAction, undoneActionText } from "./src/components/agent/chat-action-utils.ts";
 			export { agentActionProposal, agentToolLabel } from "./src/components/agent/utils.ts";
 			export { actionLabel, actionTarget } from "./src/components/agent/agent-activity-utils.ts";
 		`,
@@ -46,8 +46,11 @@ const {
 	chatProposalSchema,
 	folderColorValue,
 	getActionMeta,
-	movedStatus,
-	storedMessagePlaces,
+	chatActionState,
+	safeActionError,
+	storedChatActionState,
+	undoTargets,
+	undoneActionText,
 	undoRefusal,
 	userExecuteRefusal,
 } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
@@ -120,13 +123,56 @@ test("a proposal over 20 emails, without ids or already approved is never approv
 	);
 });
 
-test("stored message places are read defensively and moves know the status they leave", () => {
-	const place = { id: "a", status: "received", folderId: null, read: false };
-	assert.deepEqual(storedMessagePlaces({ messages: [place, { id: "b" }, null] }), [place]);
-	assert.equal(storedMessagePlaces({ status: "received", folderId: null }), null);
-	assert.equal(storedMessagePlaces(null), null);
-	assert.equal(movedStatus("inbox"), "received");
-	assert.equal(movedStatus("archived"), "archived");
+test("only rows carrying the chat marker are chat actions, and undo targets only what the action changed", () => {
+	const inbox = { id: "a", status: "received", folderId: null, read: false };
+	const archived = { ...inbox, status: "archived" };
+	const filed = { id: "b", status: "received", folderId: "f1", read: true };
+	const state = chatActionState([inbox, filed], [archived, filed]);
+	assert.deepEqual(state, { source: "chat", messages: [inbox, filed], applied: [archived, filed] });
+	assert.deepEqual(storedChatActionState(JSON.parse(JSON.stringify(state))), state);
+	// A phishing "Mark as spam" row saves one place without the marker, even with a messages list.
+	assert.equal(storedChatActionState({ status: "received", folderId: null }), null);
+	assert.equal(storedChatActionState({ messages: [inbox] }), null);
+	assert.equal(storedChatActionState(null), null);
+	assert.deepEqual(storedChatActionState({ source: "chat", messages: [inbox, { id: "x" }, null], applied: "bad" }), {
+		source: "chat",
+		messages: [inbox],
+		applied: [],
+	});
+	assert.deepEqual(undoTargets(state, "place"), [{ before: inbox, applied: archived }]);
+	assert.deepEqual(undoTargets(state, "read"), []);
+	const marked = chatActionState([inbox, filed], [{ ...inbox, read: true }, filed]);
+	assert.deepEqual(undoTargets(marked, "read"), [{ before: inbox, applied: { ...inbox, read: true } }]);
+	// A message missing after the effect (deleted meanwhile) is not a target.
+	assert.deepEqual(undoTargets(chatActionState([inbox], []), "place"), []);
+});
+
+test("database errors never reach the user or the audit row as SQL", () => {
+	assert.equal(safeActionError(new Error("Folder not found in this mailbox")), "Folder not found in this mailbox");
+	assert.equal(
+		safeActionError(new Error('Failed query: insert into "folders" ... params: fld_1,Bills')),
+		"The action could not be completed",
+	);
+	assert.equal(
+		safeActionError(new Error("UNIQUE constraint failed: folders.mailbox_id")),
+		"The action could not be completed",
+	);
+	assert.equal(safeActionError(new Error("D1_ERROR: oops")), "The action could not be completed");
+	assert.equal(safeActionError("plain"), "plain");
+	assert.equal(safeActionError(new Error("")), "The action could not be completed");
+});
+
+test("an undo that left some emails says how many went back", () => {
+	assert.equal(undoneActionText({ action: "move_emails" }), "Undone.");
+	assert.equal(undoneActionText({ action: "move_emails", undo: { restored: 5, total: 5 } }), "Undone.");
+	assert.equal(
+		undoneActionText({ action: "move_emails", undo: { restored: 2, total: 5 } }),
+		"Undid 2 of 5; 3 had moved since.",
+	);
+	assert.equal(
+		undoneActionText({ action: "mark_emails_unread", undo: { restored: 1, total: 2 } }),
+		"Undid 1 of 2; 1 had changed since.",
+	);
 });
 
 test("folder colours are chosen by name and fall back to nothing for an unknown one", () => {

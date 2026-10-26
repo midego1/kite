@@ -5,7 +5,7 @@ import { ChevronLeft, Wrench } from "lucide-react";
 import type { AgentActionProposal, AgentEmailReference, AgentMessage, AgentTurnProps } from "./types";
 import { agentActionProposal, agentToolLabel, draftFromToolContent, parseAgentToolContent } from "./utils";
 import { agentToolLinks } from "./tool-links-utils";
-import { approveActionLabel, approvedActionText, canUndoAction } from "./chat-action-utils";
+import { approveActionLabel, approvedActionText, canUndoAction, undoneActionText } from "./chat-action-utils";
 import { undoApprovedAgentAction } from "./client-actions";
 import { AgentEmailLink } from "./email-link";
 import { RecordRefLink } from "@/components/modules/record-ref-link";
@@ -135,11 +135,12 @@ function ProposalEmails({ proposal }: { proposal: AgentActionProposal }) {
 /** An approved action: what it did, and Undo while its undo window is open. The result is kept per card. */
 function ApprovedAction({ item, proposal }: { item: AgentMessage; proposal: AgentActionProposal }) {
 	const [state, setState] = useState<"idle" | "undoing" | "undone">(proposal.status === "undone" ? "undone" : "idle");
+	const [undone, setUndone] = useState<string>(() => undoneActionText(proposal));
 	const [error, setError] = useState<string | null>(null);
 	if (state === "undone")
 		return (
 			<p className="text-neutral-500" data-agent-action-state="undone">
-				Undone.
+				{undone}
 			</p>
 		);
 	async function undo() {
@@ -147,7 +148,8 @@ function ApprovedAction({ item, proposal }: { item: AgentMessage; proposal: Agen
 		setState("undoing");
 		setError(null);
 		try {
-			await undoApprovedAgentAction(item.recordId);
+			const result = (await undoApprovedAgentAction(item.recordId)) as Partial<AgentActionProposal>;
+			setUndone(undoneActionText({ action: proposal.action, undo: result.undo }));
 			setState("undone");
 			window.dispatchEvent(new Event("kite:messages-changed"));
 			window.dispatchEvent(new Event("kite:folders-changed"));

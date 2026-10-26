@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ChatActionPlan, MessagePlace } from "./chat-actions-types";
+import type { ChatActionPlan, ChatActionState, MessagePlace } from "./chat-actions-types";
 
 const ids = z.array(z.string()).min(1).max(20);
 const destination = z.enum(["inbox", "archived", "trash", "spam"]);
@@ -102,14 +102,48 @@ function isMessagePlace(value: unknown): value is MessagePlace {
 	);
 }
 
-/** The messages a chat action row saved in `before`, or null when the row has none (an older single-message move). */
-export function storedMessagePlaces(before: Record<string, unknown> | null): MessagePlace[] | null {
-	const list = before?.messages;
-	if (!Array.isArray(list)) return null;
-	return list.filter(isMessagePlace);
+function placeList(value: unknown): MessagePlace[] {
+	return Array.isArray(value) ? value.filter(isMessagePlace) : [];
 }
 
-/** The status a chat move leaves its messages in, so an undo touches only messages still there. */
-export function movedStatus(variant: string): string {
-	return variant === "inbox" ? "received" : variant;
+/** Marks the `before` of a row written by an approved chat action, so undo never guesses from its shape. */
+const CHAT_ACTION_SOURCE = "chat";
+
+/** The state a chat action row keeps for its undo: each message before and right after the effect. */
+export function chatActionState(before: MessagePlace[], after: MessagePlace[]): ChatActionState {
+	return { source: CHAT_ACTION_SOURCE, messages: before, applied: after };
+}
+
+/** The saved state of a row written by an approved chat action, or null for any other row (a phishing "Mark as spam"). */
+export function storedChatActionState(before: Record<string, unknown> | null): ChatActionState | null {
+	if (before?.source !== CHAT_ACTION_SOURCE) return null;
+	return { source: CHAT_ACTION_SOURCE, messages: placeList(before.messages), applied: placeList(before.applied) };
+}
+
+/**
+ * What an undo may change: the messages the action really changed in `field`, each with the state the
+ * action left it in. An undo then touches a message only while it is still exactly in that state.
+ */
+export function undoTargets(
+	state: ChatActionState,
+	field: "place" | "read",
+): { before: MessagePlace; applied: MessagePlace }[] {
+	const applied = new Map(state.applied.map((place) => [place.id, place]));
+	return state.messages.flatMap((before) => {
+		const after = applied.get(before.id);
+		if (!after) return [];
+		const changed =
+			field === "read"
+				? before.read !== after.read
+				: before.status !== after.status || before.folderId !== after.folderId;
+		return changed ? [{ before, applied: after }] : [];
+	});
+}
+
+const DATABASE_ERROR = /failed query|sqlite|constraint|d1_|params:/i;
+
+/** An error message safe to show and store: database errors carry SQL and bound values, so they become a plain sentence. */
+export function safeActionError(error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error);
+	return !message || DATABASE_ERROR.test(message) ? "The action could not be completed" : message;
 }

@@ -191,6 +191,24 @@ test("a key with organize scope creates a folder, files mail in it and marks it 
 		arguments: { mailboxId: supportMailboxId, name },
 	});
 	expect(duplicate.result?.isError).toBe(true);
+	// Refused at call time: a mailbox the key does not cover, and an organize tool on a read-only key.
+	const mailboxes = (await (await api.get("/api/mailboxes")).json()) as { mailboxes: { id: string }[] };
+	const otherMailbox =
+		mailboxes.mailboxes.find((mailbox) => mailbox.id !== supportMailboxId)?.id ?? "mailbox-not-on-key";
+	const foreign = await rpc(key, "tools/call", {
+		name: "create_folder",
+		arguments: { mailboxId: otherMailbox, name: `Foreign ${uniqueToken()}` },
+	});
+	expect(foreign.result?.isError).toBe(true);
+	expect(JSON.stringify(foreign.result?.content)).toContain("Permission denied");
+	const readOnly = await createKey("E2E read only organize", ["mcp:read"]);
+	const refused = await rpc(readOnly, "tools/call", {
+		name: "mark_emails_read",
+		arguments: { mailboxId: supportMailboxId, emailIds: [message.id] },
+	});
+	expect(refused.error ?? refused.result?.isError).toBeTruthy();
+	expect((await (await api.get(`/api/messages/${message.id}`)).json()).message.read).toBe(false);
+
 	const tooMany = await rpc(key, "tools/call", {
 		name: "mark_emails_unread",
 		arguments: { mailboxId: supportMailboxId, emailIds: Array.from({ length: 21 }, (_, index) => `msg-${index}`) },

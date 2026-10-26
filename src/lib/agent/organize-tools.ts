@@ -3,7 +3,7 @@ import { getDb } from "@/db";
 import { folders, messages } from "@/db/schema";
 import { DEFAULT_FOLDER_COLOR } from "@/lib/folders/colors";
 import { newId } from "@/lib/ids";
-import { createAuditLogs } from "@/lib/mailboxes/audit";
+import { createAuditLog, createAuditLogs } from "@/lib/mailboxes/audit";
 import { updateMessageStatusForUser } from "@/lib/user";
 import { FOLDER_COLOR_NAMES, folderColorValue } from "./organize-tools-utils";
 import { ownMessage, publicMessage, requireAccess } from "./tool-messages";
@@ -139,12 +139,25 @@ async function createFolder(context: AgentToolContext, input: Input) {
 	// The proposal keeps the colour's name, which is what approving passes back to this tool.
 	if (context.origin === "chat") return { action: "create_folder", status: "pending_approval", name, color: colorName };
 	const folderId = context.folderId ?? newId("fld");
-	await getDb(context.env).insert(folders).values({
-		id: folderId,
-		userId: access.mailbox.userId,
+	try {
+		await getDb(context.env).insert(folders).values({
+			id: folderId,
+			userId: access.mailbox.userId,
+			mailboxId: context.mailboxId,
+			name,
+			color,
+		});
+	} catch (error) {
+		// Another request created the same name since the check above; the unique index refused this one.
+		if (/unique/i.test(error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : String(error)))
+			throw new Error(`A folder named "${name}" already exists`);
+		throw error;
+	}
+	await createAuditLog(context.env, {
+		actorUserId: context.user.id,
 		mailboxId: context.mailboxId,
-		name,
-		color,
+		action: "folder.create",
+		metadata: { folderId, name, origin: context.origin },
 	});
 	return { folderId, name, color, status: "created", url: `/folders/${encodeURIComponent(folderId)}` };
 }

@@ -103,6 +103,10 @@ export const emailToolSchemas = {
 	discard_draft: z.object({ draftId: id, expectedRevision: z.number().int().positive() }),
 } as const;
 
+/** These descriptions serve chat and MCP alike, so they say where the approval applies. */
+const APPROVAL_NOTE =
+	"In the Kite assistant chat this only proposes the change, the user approves it in Kite and can undo it there; over MCP it applies at once.";
+
 export const emailToolDescriptions: Record<EmailToolName, string> = {
 	list_emails:
 		"List email metadata in a mailbox folder with pagination. Omit cursor or set it to null for the first page; use the returned nextCursor for later pages.",
@@ -118,16 +122,13 @@ export const emailToolDescriptions: Record<EmailToolName, string> = {
 	review_draft_send:
 		"Create a review link for the current assistant draft revision. The user must explicitly confirm before the email is sent or scheduled. This tool never sends or queues an email.",
 	mark_email_read: "Mark one email as read or unread. For several emails use mark_emails_read or mark_emails_unread.",
-	mark_emails_read: "Mark up to 20 emails as read after user approval in chat. The user can undo it afterwards.",
-	mark_emails_unread: "Mark up to 20 emails as unread after user approval in chat. The user can undo it afterwards.",
+	mark_emails_read: `Mark up to 20 emails as read. ${APPROVAL_NOTE}`,
+	mark_emails_unread: `Mark up to 20 emails as unread. ${APPROVAL_NOTE}`,
 	move_email: "Move an email to inbox, archive, trash, or spam.",
-	move_emails:
-		"Archive, trash, mark as spam, or move back to the inbox up to 20 emails at once, after user approval in chat. To clean up mail matching a search, call search_emails first and pass up to 20 of the returned IDs; for more, ask the user to approve this batch before proposing the next. Trash is not permanent deletion, and the user can undo the move afterwards. Needs full access to the mailbox; drafts and sent mail cannot be moved.",
+	move_emails: `Archive, trash, mark as spam, or move back to the inbox up to 20 emails at once. To clean up mail matching a search, call search_emails first and pass up to 20 of the returned IDs; for more, handle one batch before proposing the next. Trash is not permanent deletion. Needs full access to the mailbox; drafts and sent mail cannot be moved. ${APPROVAL_NOTE}`,
 	list_folders: "List the user-created folders of this mailbox with their folderId, name, and color.",
-	create_folder:
-		"Create a folder in this mailbox after user approval in chat. The folder exists only once the user approves; then call list_folders for its folderId. Needs full access to the mailbox.",
-	move_emails_to_folder:
-		"File up to 20 emails into one of this mailbox's folders (folderId from list_folders) after user approval in chat. Filed mail leaves the inbox, archive, trash, or spam. The user can undo it afterwards. Needs full access to the mailbox; drafts and sent mail cannot be moved.",
+	create_folder: `Create a folder in this mailbox. Needs full access to the mailbox. ${APPROVAL_NOTE} A proposed folder exists only once approved; then call list_folders for its folderId.`,
+	move_emails_to_folder: `File up to 20 emails into one of this mailbox's folders (folderId from list_folders). Filed mail leaves the inbox, archive, trash, or spam. Needs full access to the mailbox; drafts and sent mail cannot be moved. ${APPROVAL_NOTE}`,
 	discard_draft: "Discard an unedited agent draft by ID and revision.",
 };
 

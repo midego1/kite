@@ -52,6 +52,12 @@ async function capture(page: Page, name: string) {
 	await expect(page.getByRole("progressbar", { name: "Loading page" })).toHaveCount(0);
 	await page.waitForLoadState("networkidle");
 	await page.evaluate(() => document.fonts.ready);
+	// The shots must use the app's own font, not a system fallback.
+	const uiFontLoaded = await page.evaluate(() => {
+		const family = getComputedStyle(document.body).fontFamily.split(",")[0].trim().replace(/["']/g, "");
+		return [...document.fonts].some((face) => face.family.replace(/["']/g, "") === family && face.status === "loaded");
+	});
+	expect(uiFontLoaded, "the UI font is loaded").toBe(true);
 	await page.screenshot({ path: `screenshots/${name}.png`, animations: "disabled", caret: "hide" });
 	await page.context().close();
 }

@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Moving a selection to a folder now moves only the emails from that folder's mailbox; mail from another mailbox is left where it was.
 
-## [2026.10.26.6] - 2026-10-26
+## [2026.10.26.7] - 2026-10-26
 
 ### Changed
 

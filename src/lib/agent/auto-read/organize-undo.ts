@@ -1,4 +1,4 @@
-import { and, count, eq, type SQL } from "drizzle-orm";
+import { and, eq, notExists, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { folders, messages, routingRules } from "@/db/schema";
 import { movedStatus, storedMessagePlaces } from "../chat-actions-utils";
@@ -68,9 +68,18 @@ export async function undoCreateFolder(env: CloudflareEnv, row: AgentActionRow):
 	const folderId = parseActionState(row.after)?.folderId;
 	if (typeof folderId !== "string") throw new AgentActionError("This action cannot be undone", 409);
 	const db = getDb(env);
-	const [filed] = await db.select({ value: count() }).from(messages).where(eq(messages.folderId, folderId));
-	const [rules] = await db.select({ value: count() }).from(routingRules).where(eq(routingRules.folderId, folderId));
-	if ((filed?.value ?? 0) > 0 || (rules?.value ?? 0) > 0)
-		throw new AgentActionError("The folder is in use now, so Kite kept it", 409);
-	await db.delete(folders).where(and(eq(folders.id, folderId), eq(folders.mailboxId, row.mailboxId)));
+	// The in-use checks ride the delete, so mail or a rule added after a separate read still wins; both
+	// references are ON DELETE SET NULL, so an unchecked delete would silently drop the new assignment.
+	const deleted = await db
+		.delete(folders)
+		.where(
+			and(
+				eq(folders.id, folderId),
+				eq(folders.mailboxId, row.mailboxId),
+				notExists(db.select({ id: messages.id }).from(messages).where(eq(messages.folderId, folders.id))),
+				notExists(db.select({ id: routingRules.id }).from(routingRules).where(eq(routingRules.folderId, folders.id))),
+			),
+		)
+		.returning({ id: folders.id });
+	if (deleted.length === 0) throw new AgentActionError("The folder is in use now, so Kite kept it", 409);
 }

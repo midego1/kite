@@ -102,7 +102,7 @@ export function sumMailboxCounts(counts: readonly MailboxCount[], mailboxIds: re
 }
 
 /** "A", "A and B", "A, B and C". */
-export function formatMailboxNames(names: readonly string[]): string {
+function formatMailboxNames(names: readonly string[]): string {
 	if (names.length <= 1) return names[0] ?? "";
 	return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }

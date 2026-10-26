@@ -392,8 +392,8 @@ test("Empty Trash in All mailboxes counts and names only the mailboxes it may em
 		m.getEmptyFolderConfirmText("trash", plan.total, plan.names),
 		"Permanently delete all 6 messages in Trash of Home, Work and Mine? This cannot be undone.",
 	);
-	assert.equal(m.formatMailboxNames(["A", "B"]), "A and B");
-	assert.equal(m.formatMailboxNames([]), "");
+	assert.equal(m.planEmptyFolder([{ id: "a", name: "A" }, { id: "b", name: "B" }], () => 1).names, "A and B");
+	assert.equal(m.planEmptyFolder([{ id: "a", name: "A" }], () => 0).names, "");
 });
 
 test("the composer offers only mailboxes that can send, and falls back from a From no longer allowed", () => {

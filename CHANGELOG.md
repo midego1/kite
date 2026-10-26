@@ -6,12 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [2026.10.26.2] - 2026-10-26
-
 ### Security
 
 - SPF, DKIM and DMARC results now count only when the server that received the message from the internet checked them. Kite trusts the topmost `Authentication-Results` header Cloudflare Email Routing adds (directly or through the email relay) and ignores every copy the sender could have written. Mail that arrives through the built-in SMTP listener, Resend or Amazon SES is treated as unverified instead of passed, so a forged header can no longer soften spam scoring, phishing warnings or automatic reading's trust in a sender.
 - The email relay now signs the header map it sends with `INBOUND_WEBHOOK_SECRET`. Redeploy the relay (`deploy/cloudflare-email-relay`) after updating the server: until then mail still arrives, but its authentication counts as unverified.
+
+## [2026.10.26.2] - 2026-10-26
+
+### Changed
+
+- CI: allowlist a public key-derivation label and a policy-date log value in the secret scan.
 
 ## [2026.10.26.1] - 2026-10-26
 

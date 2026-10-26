@@ -270,3 +270,35 @@ test("Activity names chat actions with their folder and count, and links where t
 		null,
 	);
 });
+
+test("every proposal has approve and done text, also when optional fields are missing", () => {
+	const cases = [
+		[{ action: "discard_draft" }, "Approve discard", "Draft discarded."],
+		[{ action: "mark_email_read", read: true, emailId: "a" }, "Approve mark as read", "Marked as read."],
+		[{ action: "mark_email_read", read: false, emailId: "a" }, "Approve mark as unread", "Marked as unread."],
+		[{ action: "mark_emails_read", emailIds: ["a"] }, "Approve mark 1 email as read", "Marked 1 email as read."],
+		[{ action: "mark_emails_unread" }, "Approve mark 0 emails as unread", "Marked 0 emails as unread."],
+		[{ action: "create_folder" }, "Approve new folder “”", "Created folder “”."],
+		[{ action: "move_emails_to_folder" }, "Approve move to “folder”", "Moved 0 emails to “folder”."],
+		[{ action: "move_email", emailId: "a", destination: "spam" }, "Approve move to spam", "Moved 1 email to spam."],
+		[
+			{ action: "move_emails", emailIds: ["a"], destination: "inbox" },
+			"Approve move to the inbox",
+			"Moved 1 email to the inbox.",
+		],
+		[
+			{ action: "move_emails", emailIds: ["a"], destination: "elsewhere" },
+			"Approve move to elsewhere",
+			"Moved 1 email to elsewhere.",
+		],
+	];
+	for (const [fields, approve, done] of cases) {
+		const proposal = { status: "pending_approval", ...fields };
+		assert.equal(approveActionLabel(proposal), approve);
+		assert.equal(approvedActionText({ ...proposal, status: "approved" }), done);
+	}
+	assert.equal(
+		canUndoAction({ action: "move_emails", status: "approved", actionId: "aact-1", undoUntil: null }, NOW),
+		false,
+	);
+});

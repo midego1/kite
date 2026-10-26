@@ -3,6 +3,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { intakeIncomingMail } from "@/lib/email/intake";
 import { readRelayHeader, verifyInboundSignature } from "@/lib/email/intake-signature";
 import { inboundAttachmentLimitReasonFromRaw } from "@/lib/email/inbound-attachments";
+import { readRelayHeaders } from "@/lib/email/relay-headers";
 
 export const dynamic = "force-dynamic";
 
@@ -29,18 +30,13 @@ export async function POST(request: Request) {
 	const attachmentLimitReason = await inboundAttachmentLimitReasonFromRaw(raw);
 	if (attachmentLimitReason) return NextResponse.json({ action: "reject", reason: attachmentLimitReason });
 
-	let headers: Record<string, string> = {};
-	try {
-		headers = JSON.parse(readRelayHeader(request.headers, "headers") ?? "{}") as Record<string, string>;
-	} catch {
-		// The header map is advisory; the raw message is authoritative.
-	}
+	const { headers, authenticationResults } = await readRelayHeaders(secret, request.headers, raw, from, to);
 
 	let forwardTo: string | null = null;
 	let forwardHeaders: Record<string, string> = {};
 	const result = await intakeIncomingMail(
 		env,
-		{ from, to, raw, headers },
+		{ from, to, raw, headers, authenticationResults },
 		{
 			// The relay performs the forward on the live message; report it as done so keep-copy applies.
 			forward: async (destination, extra) => {

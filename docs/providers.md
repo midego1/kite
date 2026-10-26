@@ -65,7 +65,7 @@ Only the sending statements are needed if you use SES just for sending.
 3. a receipt rule for the domain in the account's active rule set (Kite creates and activates `mailflare-inbound` only if the account has none, and otherwise adds its rule beside yours);
 4. the MX record `inbound-smtp.<region>.amazonaws.com`.
 
-Each message is read from your own bucket, handed to the normal inbound pipeline, and deleted. SES's virus scan is enabled and infected messages are dropped. `APP_URL` has to be a public HTTPS address so SNS can reach the endpoint. The bucket and topic are shared by all SES domains; **Clean up** removes only the domain's rule and MX, so Kite never deletes resources another domain may still use.
+Each message is read from your own bucket, handed to the normal inbound pipeline, and deleted. SES's SPF, DKIM and DMARC verdicts count only when the SNS notification's signature verifies ([Sender authentication](spam-protection.md#sender-authentication)). SES's virus scan is enabled and infected messages are dropped. `APP_URL` has to be a public HTTPS address so SNS can reach the endpoint. The bucket and topic are shared by all SES domains; **Clean up** removes only the domain's rule and MX, so Kite never deletes resources another domain may still use.
 
 ## MX records and switching receiving provider
 

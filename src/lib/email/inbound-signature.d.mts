@@ -6,3 +6,10 @@ export function signInboundHeaders(
 	to: string,
 	headersJson: string,
 ): Promise<string>;
+export function signInboundHeadersWithSecret(
+	secret: string,
+	raw: ArrayBuffer,
+	from: string,
+	to: string,
+	headersJson: string,
+): Promise<string>;

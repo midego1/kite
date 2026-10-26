@@ -58,6 +58,7 @@
 	"12-observability.spec.ts › API responses preserve a validated trace and create a new span": 100,
 	"12-observability.spec.ts › invalid trace headers are replaced rather than reflected": 0,
 	"12-selection.spec.ts › opening a message while others are selected shows it in the reading pane": 6200,
+	"12-selection.spec.ts › selecting a message on a phone still offers the bulk actions": 6200,
 	"12-selection.spec.ts › Shift-click selects every message between two checkboxes": 11100,
 	"12-selection.spec.ts › trashing a selected message from its row removes it from the selection": 6200,
 	"13-security.spec.ts › every /api/v1 method rejects an invalid bearer token": 300,

@@ -59,6 +59,18 @@ test("opening a message while others are selected shows it in the reading pane",
 	await expect(page.getByText("1 selected")).toBeVisible();
 });
 
+test("selecting a message on a phone still offers the bulk actions", async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	const [subject] = await deliverMany(["Phone pick"]);
+	await page.goto("/inbox");
+	await rowFor(page, subject).getByRole("checkbox").check();
+	// The compact phone header used to hide the bulk toolbar, leaving a selection with no actions.
+	await expect(page.getByText("1 selected")).toBeVisible();
+	await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Mark as read" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "More actions" })).toBeVisible();
+});
+
 test("trashing a selected message from its row removes it from the selection", async ({ page }) => {
 	const subjects = await deliverMany(["Pick one", "Pick two"]);
 

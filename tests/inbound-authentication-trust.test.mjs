@@ -112,6 +112,17 @@ test("only the topmost Cloudflare Authentication-Results is trusted", () => {
 	assert.equal(trustedCloudflareAuthenticationResults(joined), CLOUDFLARE);
 	const partial = "mx.cloudflare.net; spf=none smtp.mailfrom=stranger.test";
 	assert.deepEqual(analyzeAuthentication(`${partial}, ${FORGED}`), []);
+	// Comments around the sender's authserv-id do not hide the boundary to its forged copy.
+	const commentedForgery = "mail.attacker.test (comment); dmarc=pass header.from=bank.test";
+	assert.equal(topmostAuthenticationResults(`${partial}, ${commentedForgery}`), partial);
+	assert.deepEqual(analyzeAuthentication(`${partial}, ${commentedForgery}`), []);
+	assert.deepEqual(analyzeAuthentication(`${partial}, (see notes) mail.attacker.test; dmarc=pass`), []);
+	assert.deepEqual(analyzeAuthentication(`${partial}, mail.attacker.test (a (nested) note); dmarc=pass`), []);
+	const joinedCommented = new Headers([
+		["authentication-results", partial],
+		["authentication-results", commentedForgery],
+	]).get("authentication-results");
+	assert.equal(trustedCloudflareAuthenticationResults(joinedCommented), partial);
 	// A comma inside a comment is not a new instance.
 	const commented =
 		"mx.cloudflare.net; dkim=pass header.d=a.test; dmarc=pass (p=NONE, sp=NONE dis=NONE) header.from=a.test";

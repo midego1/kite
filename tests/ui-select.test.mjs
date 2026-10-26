@@ -33,6 +33,7 @@ const {
 	resolveSelectedOption,
 	toItemValue,
 	fromItemValue,
+	longestOptionText,
 } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 
 test("native option children are read through arrays, fragments and optgroups", () => {
@@ -84,4 +85,14 @@ test("the empty value survives the round trip through Radix, which reserves it",
 	assert.notEqual(toItemValue(""), "");
 	assert.equal(fromItemValue(toItemValue("")), "");
 	assert.equal(fromItemValue(toItemValue("abc")), "abc");
+});
+
+test("the trigger is sized by the option with the longest text", () => {
+	const [group] = readSelectOptions([
+		h("option", { key: "a", value: "0" }, "Off"),
+		h("option", { key: "b", value: "20" }, "20 seconds"),
+		h("option", { key: "c", value: "5" }, "5 seconds"),
+	]);
+	assert.equal(longestOptionText(group.options), "20 seconds");
+	assert.equal(longestOptionText([]), "");
 });

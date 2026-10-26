@@ -154,18 +154,62 @@ test("/ focuses search and Cmd+K opens the command palette, which runs the chose
 	await expect(page).toHaveURL(/\/starred$/);
 });
 
-test("the All mail and Unread tabs filter the list", async ({ page }) => {
+test("mail keys stay out of the search field, the composer and its buttons", async ({ page }) => {
+	const [subject] = await deliverMany(["Keys typed"]);
+	await openInbox(page, subject);
+	await rowLink(page, subject).click();
+	const heading = page.getByRole("heading", { level: 1, name: subject });
+	await expect(heading).toBeVisible();
+	const messageUrl = page.url();
+	const composer = page.getByRole("button", { name: "Close composer" });
+	const unchanged = async () => {
+		await expect(page).toHaveURL(messageUrl);
+		await expect(heading).toBeVisible();
+	};
+
+	const search = page.getByPlaceholder(/^Search mail/);
+	await search.click();
+	await page.keyboard.type("jkxe#af");
+	await expect(search).toHaveValue("jkxe#af");
+	await unchanged();
+	await expect(composer).toHaveCount(0);
+	await search.fill("");
+
+	await page.getByRole("button", { name: "Compose" }).click();
+	const composeSubject = page.getByLabel("Subject");
+	await composeSubject.click();
+	await page.keyboard.type("jkxe#af");
+	await expect(composeSubject).toHaveValue("jkxe#af");
+	const body = page.getByRole("textbox", { name: "Message body" });
+	await expect(body).toHaveAttribute("contenteditable", "true");
+	await body.click();
+	await page.keyboard.type("jkxe#af");
+	await expect(body).toContainText("jkxe#af");
+	await unchanged();
+	await expect(composer).toHaveCount(1);
+
+	// A focused button in the composer does not pass `e` or `#` to the open message behind it.
+	await page.getByRole("button", { name: "Bold (⌘B)" }).focus();
+	await page.keyboard.press("e");
+	await page.keyboard.press("#");
+	// The reader's archive would navigate back to the list; give a wrongly fired shortcut time to do so.
+	await page.waitForTimeout(1000);
+	await unchanged();
+	await composer.click();
+});
+
+test("the All mail and Unread toggles filter the list", async ({ page }) => {
 	const [read, unread] = await deliverMany(["Keys tab read", "Keys tab unread"]);
 	await openInbox(page, unread);
 	await rowLink(page, read).click();
 	await expect(page.getByRole("heading", { level: 1, name: read })).toBeVisible();
 	await page.goto("/inbox");
 
-	await page.getByRole("tab", { name: "Unread" }).click();
-	await expect(page.getByRole("tab", { name: "Unread" })).toHaveAttribute("aria-selected", "true");
+	await page.getByRole("button", { name: "Unread", exact: true }).click();
+	await expect(page.getByRole("button", { name: "Unread", exact: true })).toHaveAttribute("aria-pressed", "true");
 	await expect(rowLink(page, unread)).toBeVisible();
 	await expect(rowLink(page, read)).toHaveCount(0);
-	await page.getByRole("tab", { name: "All mail" }).click();
+	await page.getByRole("button", { name: "All mail", exact: true }).click();
 	await expect(rowLink(page, read)).toBeVisible();
 });
 

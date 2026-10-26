@@ -702,6 +702,8 @@ export function ComposeForm({
 			<form
 				onSubmit={onSubmit}
 				ref={formRef}
+				// Mail shortcuts stay out of the composer, also when a button in it has the focus.
+				data-shortcuts-off=""
 				className={frameClass}
 				{...composeFrameAria({ mode, minimized, modalMode })}
 				onKeyDown={(event) => {

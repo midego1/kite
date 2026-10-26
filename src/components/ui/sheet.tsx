@@ -17,15 +17,18 @@ export function SheetContent({
 	children,
 	closeLabel = "Close",
 	portal = true,
+	returnFocusTo,
 	...props
 }: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content> & {
 	side?: "left" | "right";
 	closeLabel?: string;
 	/** Off keeps the sheet where it is rendered in the DOM instead of moving it to the end of `body`. */
 	portal?: boolean;
+	/** The element focus returns to on close, for a sheet opened by a button outside its Root. */
+	returnFocusTo?: () => HTMLElement | null;
 }) {
 	const Container = portal ? SheetPrimitive.Portal : React.Fragment;
-	const returnFocus = useReturnFocus();
+	const returnFocus = useReturnFocus(returnFocusTo);
 	return (
 		<Container>
 			<SheetPrimitive.Overlay className="dialog-overlay fixed inset-0 z-[100] bg-black/40" />

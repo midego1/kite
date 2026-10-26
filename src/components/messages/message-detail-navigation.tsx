@@ -16,7 +16,11 @@ import type {
 	MessageDetailNavigationSnapshot,
 	OpenedUnreadMessages,
 } from "./message-detail-navigation-types";
-import { getMessageDetailNavigationState, takeOpenedUnreadMessage } from "./message-detail-navigation-utils";
+import {
+	getMessageDetailNavigationState,
+	readerNavigationShortcuts,
+	takeOpenedUnreadMessage,
+} from "./message-detail-navigation-utils";
 import { useConversationView } from "./use-conversation-view";
 
 const NavigationContext = createContext<MessageDetailNavigationContextValue | null>(null);
@@ -101,12 +105,8 @@ export function MessageDetailNavigation({ messageId, unread }: MessageDetailNavi
 	const open = (id: string | null) => {
 		if (id && context) router.push(`${context.hrefPrefix}/${id}`);
 	};
-	// Gmail's keys: j for the older email below in the list, k for the newer one above.
 	useHotkeys(
-		[
-			{ key: "j", label: "Older email", category: "Navigation", action: () => open(nextId) },
-			{ key: "k", label: "Newer email", category: "Navigation", action: () => open(previousId) },
-		],
+		readerNavigationShortcuts((direction) => open(direction === "older" ? nextId : previousId)),
 		{ enabled: shortcutsEnabled && !!context },
 	);
 	if (!context) return null;

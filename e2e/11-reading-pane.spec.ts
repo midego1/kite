@@ -134,6 +134,18 @@ test("the header button hides the list and choosing a split layout shows it agai
 	await page.getByRole("button", { name: "Hide email list" }).click();
 	// The hidden list slides out of a zero-width column and is made inert rather than removed.
 	await expect(page.locator("[inert]").getByText(subject, { exact: true })).toHaveCount(1);
+	// Its resize handle goes with it: no tab stop, hidden from assistive technology, and arrow keys on it
+	// cannot drag the list back open.
+	const handle = page.locator('[role="separator"][aria-label="Resize message list"]');
+	await expect(handle).toHaveAttribute("aria-disabled", "true");
+	await expect(handle).toHaveAttribute("aria-hidden", "true");
+	await expect(handle).not.toHaveAttribute("tabindex");
+	await expect(page.getByRole("separator", { name: "Resize message list" })).toHaveCount(0);
+	await handle.evaluate((element) => (element as HTMLElement).focus());
+	await page.keyboard.press("ArrowRight");
+	await page.keyboard.press("ArrowRight");
+	await expect(page.locator("[inert]").getByText(subject, { exact: true })).toHaveCount(1);
+	await expect(page.getByRole("button", { name: "Show email list" })).toBeVisible();
 	await page.reload();
 	await expect(page.getByRole("button", { name: "Show email list" })).toBeVisible();
 

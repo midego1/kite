@@ -3,7 +3,7 @@
 import { useMemo, type RefObject } from "react";
 import { useHotkeys, useShortcuts, type ShortcutDefinition } from "@/components/shortcuts";
 import type { MessageFolder } from "@/hooks/types";
-import { adjacentRowIndex } from "./message-list-keyboard-utils";
+import { adjacentRowIndex, LIST_KEYS, type ListKeyId } from "./message-list-keyboard-utils";
 
 type ListKeyboardOptions = {
 	listRef: RefObject<HTMLElement | null>;
@@ -54,41 +54,22 @@ export function useMessageListKeyboard({
 			link?.scrollIntoView({ block: "nearest" });
 		};
 		const focusedId = () => focusedRow(listRef.current)?.dataset.messageRow ?? null;
-		return [
-			{ key: "j", label: "Next email", category: "Navigation", action: () => move(1) },
-			{ key: "k", label: "Previous email", category: "Navigation", action: () => move(-1) },
-			{
-				key: "o",
-				label: "Open email",
-				category: "Navigation",
-				action: () => rowLink(focusedRow(listRef.current) ?? undefined)?.click(),
+		const handlers: Record<ListKeyId, () => void> = {
+			next: () => move(1),
+			previous: () => move(-1),
+			open: () => rowLink(focusedRow(listRef.current) ?? undefined)?.click(),
+			select: () => {
+				const id = focusedId();
+				if (id) toggleRowSelection(id);
 			},
-			{
-				key: "x",
-				label: "Select email",
-				category: "Selection",
-				action: () => {
-					const id = focusedId();
-					if (id) toggleRowSelection(id);
-				},
+			archive: () => {
+				if (folder !== "archived") runOnRows("archive", focusedId());
 			},
-			{
-				key: "e",
-				label: "Archive",
-				category: "Actions",
-				action: () => {
-					if (folder !== "archived") runOnRows("archive", focusedId());
-				},
+			trash: () => {
+				if (folder !== "trash") runOnRows("trash", focusedId());
 			},
-			{
-				key: "#",
-				label: "Move to Trash",
-				category: "Actions",
-				action: () => {
-					if (folder !== "trash") runOnRows("trash", focusedId());
-				},
-			},
-		];
+		};
+		return LIST_KEYS.map(({ id, ...meta }) => ({ ...meta, action: handlers[id] }));
 	}, [folder, listRef, runOnRows, toggleRowSelection]);
 
 	useHotkeys(shortcuts, { enabled: shortcutsEnabled && !messageOpen });

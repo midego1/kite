@@ -4,27 +4,47 @@ import clsx from "clsx";
 import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip } from "@/components/ui/tooltip";
 import { getEmptyFolderLabel } from "@/lib/messages/permanent-delete-utils";
 import { BulkMessageToolbar } from "./bulk-message-toolbar";
 import { FolderHeading } from "./folder-heading";
-import type { MessageListHeaderProps } from "./message-list-header-types";
+import type { MessageListFilter, MessageListHeaderProps } from "./message-list-header-types";
 import { getSelectionToolbarFolder } from "./utils";
 
-/** "All mail" and "Unread" as tabs over the list, like the mail clients Kite's layout follows. */
-function ListFilterTabs({ filter }: { filter: NonNullable<MessageListHeaderProps["filter"]> }) {
+const FILTERS: Array<{ value: MessageListFilter; label: string }> = [
+	{ value: "all", label: "All mail" },
+	{ value: "unread", label: "Unread" },
+];
+
+/**
+ * "All mail" and "Unread" over the list, as in the mail clients Kite's layout follows. They filter the list
+ * below rather than switch panels, so they are pressed toggle buttons, not tabs.
+ */
+function ListFilterToggle({ filter }: { filter: NonNullable<MessageListHeaderProps["filter"]> }) {
 	return (
-		<Tabs value={filter.value} onValueChange={(value) => filter.onChange(value === "unread" ? "unread" : "all")}>
-			<TabsList aria-label="Show" className="h-8 rounded-lg p-0.5">
-				<TabsTrigger value="all" className="rounded-md px-2.5 py-1 text-xs">
-					All mail
-				</TabsTrigger>
-				<TabsTrigger value="unread" className="rounded-md px-2.5 py-1 text-xs">
-					Unread
-				</TabsTrigger>
-			</TabsList>
-		</Tabs>
+		<div
+			role="group"
+			aria-label="Show"
+			className="inline-flex h-8 items-center gap-0.5 rounded-lg bg-neutral-100 p-0.5"
+		>
+			{FILTERS.map((option) => {
+				const pressed = filter.value === option.value;
+				return (
+					<button
+						key={option.value}
+						type="button"
+						aria-pressed={pressed}
+						onClick={() => filter.onChange(option.value)}
+						className={clsx(
+							"inline-flex cursor-pointer items-center rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600",
+							pressed ? "bg-white text-blue-700 shadow-sm" : "text-neutral-600 hover:text-neutral-900",
+						)}
+					>
+						{option.label}
+					</button>
+				);
+			})}
+		</div>
 	);
 }
 
@@ -129,7 +149,7 @@ export function MessageListHeader({
 				)}
 				{!bulk && (
 					<div className="ml-auto flex shrink-0 items-center gap-2">
-						{filter && <ListFilterTabs filter={filter} />}
+						{filter && <ListFilterToggle filter={filter} />}
 						{!compact && <ListPager pager={pager} compact={false} />}
 						{!compact && tools}
 					</div>

@@ -243,6 +243,9 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 			</ResizablePanel>
 			<ResizableHandle
 				aria-label={below ? "Resize message list height" : "Resize message list"}
+				// A hidden list has no handle: it is not a tab stop, and arrow keys cannot drag the list back open.
+				disabled={!listVisible}
+				aria-hidden={listVisible ? undefined : true}
 				className={listVisible ? undefined : "pointer-events-none opacity-0"}
 			/>
 			<ResizablePanel id="kite-reader-panel" minSize={listLimits.reserved}>

@@ -1,25 +1,43 @@
-import type { ShortcutHint } from "./types";
+import { messageShortcuts } from "@/components/message-actions/message-shortcuts";
+import { readerNavigationShortcuts } from "@/components/messages/message-detail-navigation-utils";
+import { listShortcuts } from "@/components/messages/message-list-keyboard-utils";
+import type { ShortcutDefinition, ShortcutHint } from "./types";
+
+const noop = () => undefined;
+
+function hint({ key, label, category, modifiers }: ShortcutDefinition): ShortcutHint {
+	return { key, label, category, modifiers };
+}
 
 /**
- * The mail keys, bound by the message list (`use-message-list-keyboard.ts`) and the reader
- * (`message-shortcuts.ts`, `message-detail-navigation.tsx`) while those are on screen.
+ * The mail keys, read from the bindings the message list (`use-message-list-keyboard.ts`) and the reader
+ * (`message-shortcuts.ts`, `message-detail-navigation.tsx`) make while they are on screen.
  */
-const MAIL_KEY_HINTS: ShortcutHint[] = [
-	{ key: "j", label: "Next / older email", category: "Navigation" },
-	{ key: "k", label: "Previous / newer email", category: "Navigation" },
-	{ key: "o", label: "Open email (or Enter)", category: "Navigation" },
-	{ key: "u", label: "Back to List", category: "Navigation" },
-	{ key: "x", label: "Select email", category: "Selection" },
-	{ key: "e", label: "Archive", category: "Actions" },
-	{ key: "#", label: "Move to Trash", category: "Actions" },
-	{ key: "!", label: "Report spam", category: "Actions" },
-	{ key: "r", label: "Reply", category: "Composing" },
-	{ key: "a", label: "Reply all", category: "Composing" },
-	{ key: "f", label: "Forward", category: "Composing" },
-];
+function mailKeyHints(): ShortcutHint[] {
+	const bindings = [
+		...listShortcuts({ next: noop, previous: noop, open: noop, select: noop, archive: noop, trash: noop }),
+		...readerNavigationShortcuts(noop),
+		...messageShortcuts({
+			status: "received",
+			direction: "inbound",
+			runAction: noop,
+			handleReply: noop,
+			forward: noop,
+			canReplyAll: true,
+			back: noop,
+		}),
+	];
+	const seen = new Set<string>();
+	return bindings.map(hint).filter((item) => {
+		const id = `${item.key}\u0000${item.label}`;
+		if (seen.has(id)) return false;
+		seen.add(id);
+		return true;
+	});
+}
 
-/** The provider's bindings followed by the mail keys they do not already list. */
+/** The provider's bindings followed by the mail keys, without a key and label the provider already lists. */
 export function withMailKeyHints(bindings: ShortcutHint[]): ShortcutHint[] {
-	const listed = new Set(bindings.map((binding) => binding.key.toLowerCase()));
-	return [...bindings, ...MAIL_KEY_HINTS.filter((hint) => !listed.has(hint.key))];
+	const listed = new Set(bindings.map((binding) => `${binding.key.toLowerCase()}\u0000${binding.label}`));
+	return [...bindings, ...mailKeyHints().filter((item) => !listed.has(`${item.key}\u0000${item.label}`))];
 }

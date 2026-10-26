@@ -32,11 +32,12 @@ export function MailboxInstructionsSetting({
 	onChange: (settings: AgentSettings) => void;
 }) {
 	const ready = context?.ready !== false;
+	// A response from a server without these fields (or a stale one) must not break the settings view.
 	const values = {
-		general: settings.instructions,
-		chat: settings.chatInstructions,
-		draft: settings.draftInstructions,
-		summary: settings.summaryInstructions,
+		general: settings.instructions ?? "",
+		chat: settings.chatInstructions ?? "",
+		draft: settings.draftInstructions ?? "",
+		summary: settings.summaryInstructions ?? "",
 	};
 	return (
 		<div className="space-y-2">

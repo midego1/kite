@@ -242,8 +242,9 @@ Response: `application/x-ndjson`, `Cache-Control: no-store`, the same framing as
 - A reply that starts with meta text ("Here is…") is refused (`error`), and Try again is offered.
 - An email address or URL that does not appear in the user's text, the instruction or the loaded source message is removed and reported as `removed_address` or `removed_link`.
 - Length cap: 3× the input for rewrites, 12,000 characters for write.
+- An answer that stopped because it hit `maxOutputTokens` (finish reason `length`) is refused (`error`) and Try again is offered, so a partial rewrite can never replace the full selection.
 
-**Model call.** `streamText` with **no tools**, `maxRetries: 0`, `maxOutputTokens` 900 for write and `min(900, 2 × estimated input tokens + 100)` for rewrites (1.5× that for Longer), the provider options of `buildModelCallOptions` for kind `draft` (thinking off on Workers AI). Nothing is persisted except one `ai_usage` row.
+**Model call.** `streamText` with **no tools**, `maxRetries: 0`, `maxOutputTokens` 900 for write and `min(cap, 2 × estimated input tokens + 100)` for rewrites: the cap is 900 for **Shorter** and 3,000 for the actions that keep or grow the length (**More formal**, **More casual**, **Fix spelling and grammar**, **Translate**, **Custom**, and **Longer**, which also multiplies the formula by 1.5), so a rewrite of the full 12,000 characters fits. The provider options of `buildModelCallOptions` for kind `draft` (thinking off on Workers AI). Nothing is persisted except one `ai_usage` row.
 
 ### 5.4 Prompt
 

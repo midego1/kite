@@ -6,6 +6,11 @@ export type IntakeInput = {
 	raw: ArrayBuffer;
 	/** Lower-cased header names to values, as the Worker handler receives them. */
 	headers: Record<string, string>;
+	/**
+	 * The `Authentication-Results` value the hop that handed us the message verified it with, or
+	 * null. Never taken from `headers` or `raw`: those are whatever the sender wrote.
+	 */
+	authenticationResults?: string | null;
 };
 
 export type IntakeActions = {

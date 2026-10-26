@@ -63,6 +63,25 @@ test("typing into a closed dropdown picks an option and does not run keyboard sh
 	await expectSelectValue(style, "kite");
 });
 
+test("a required dropdown left empty fails validation and hands the focus to its trigger", async ({ page }) => {
+	await page.goto("/accounts");
+	await page.getByRole("button", { name: "New account" }).click();
+	const dialog = page.getByRole("dialog", { name: "Add user account" });
+	const domain = dialog.getByRole("combobox", { name: "Domain" });
+	await chooseOption(domain, { label: "Select domain" });
+	await expectSelectValue(domain, "");
+	// The hidden native select carries `required` for the form but is never a tab stop of its own.
+	const formControl = dialog.locator('select[aria-hidden="true"][required]');
+	await expect(formControl).toHaveAttribute("tabindex", "-1");
+	await page.keyboard.press("Tab");
+	await expect(formControl).not.toBeFocused();
+	// Validation focuses the invalid control, which hands the focus to the dropdown people can use.
+	expect(await formControl.evaluate((element) => (element as unknown as HTMLSelectElement).reportValidity())).toBe(
+		false,
+	);
+	await expect(domain).toBeFocused();
+});
+
 test.describe("assistant step limit", () => {
 	test.afterEach(async () => {
 		const api = await apiContext(STORAGE_STATE);

@@ -75,3 +75,8 @@ export function resolveSelectedOption(groups: SelectOptionGroup[], value: string
 	}
 	return options.find((option) => !option.disabled) ?? options[0] ?? null;
 }
+
+/** The option text with the most characters, which sizes the trigger the way a native select's widest option does. */
+export function longestOptionText(options: SelectOption[]): string {
+	return options.reduce((longest, option) => (option.text.length > longest.length ? option.text : longest), "");
+}

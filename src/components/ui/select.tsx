@@ -8,15 +8,27 @@ import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import type { SelectProps } from "./select-types";
-import { fromItemValue, readSelectOptions, resolveSelectedOption, toItemValue } from "./select-utils";
+import {
+	fromItemValue,
+	longestOptionText,
+	readSelectOptions,
+	resolveSelectedOption,
+	toItemValue,
+} from "./select-utils";
 
 export const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
 	(
 		{ className, containerClassName, children, value, defaultValue, onChange, name, required, disabled, ...props },
 		ref,
 	) => {
-		const groups = React.useMemo(() => readSelectOptions(children), [children]);
+		const groups = readSelectOptions(children);
 		const options = groups.flatMap((group) => group.options);
+		const triggerRef = React.useRef<HTMLButtonElement | null>(null);
+		const setTriggerRef = (node: HTMLButtonElement | null) => {
+			triggerRef.current = node;
+			if (typeof ref === "function") ref(node);
+			else if (ref) ref.current = node;
+		};
 		const [uncontrolled, setUncontrolled] = React.useState(
 			defaultValue === undefined ? undefined : String(defaultValue),
 		);
@@ -39,7 +51,7 @@ export const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
 					disabled={disabled}
 				>
 					<SelectPrimitive.Trigger
-						ref={ref}
+						ref={setTriggerRef}
 						aria-required={required || undefined}
 						data-value={formValue}
 						className={cn(
@@ -48,13 +60,11 @@ export const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
 						)}
 						{...props}
 					>
-						{/* Like a native select, the trigger is as wide as its widest option: hidden copies size the cell. */}
+						{/* Like a native select, the trigger is as wide as its longest option: a hidden copy sizes the cell. */}
 						<span className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] [&>*]:col-start-1 [&>*]:row-start-1">
-							{options.map((option) => (
-								<span key={option.value} aria-hidden="true" className="invisible h-0 whitespace-nowrap">
-									{option.text}
-								</span>
-							))}
+							<span aria-hidden="true" className="invisible h-0 whitespace-nowrap">
+								{longestOptionText(options)}
+							</span>
 							<span className="truncate">
 								<SelectPrimitive.Value>{selected?.label}</SelectPrimitive.Value>
 							</span>
@@ -117,6 +127,8 @@ export const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
 						disabled={disabled}
 						value={formValue}
 						onChange={() => undefined}
+						// Form validation focuses an invalid control; the trigger is the one people can use.
+						onFocus={() => triggerRef.current?.focus()}
 						className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
 					>
 						{options.map((option) => (

@@ -47,10 +47,18 @@ async function openThread(page: Page) {
 	await page.goto("/inbox");
 	await openMessage(page, `Re: ${THREAD[0]!.subject}`);
 	await expect(page.getByRole("list", { name: "Participants" })).toBeVisible();
+	await page.waitForLoadState("networkidle");
 	const earlier = page.getByRole("region", { name: "Earlier messages in this conversation" });
-	for (const folded of await earlier.locator('button[aria-expanded="false"]').all()) await folded.click();
-	await expect(earlier.locator('button[aria-expanded="false"]')).toHaveCount(0);
-	await expect(page.locator("iframe")).toHaveCount(THREAD.length);
+	// The thread can re-render once its read state settles, folding the cards again; unfold until every body shows.
+	await expect(async () => {
+		await page.keyboard.press("Escape");
+		// Each card's own toggle; its "More actions" menu trigger also reports aria-expanded but carries a label.
+		const folded = earlier.locator('button[aria-expanded="false"]:not([aria-label])');
+		while ((await folded.count()) > 0) await folded.first().click();
+		await expect(page.locator("iframe")).toHaveCount(THREAD.length, { timeout: 3000 });
+	}).toPass({ timeout: 60_000 });
+	// Off the list, so no row shows its hover actions.
+	await page.mouse.move(1000, 860);
 }
 
 async function capture(page: Page, name: string) {

@@ -1,4 +1,5 @@
-import type { ChangeEvent, MouseEvent } from "react";
+import type { MouseEvent } from "react";
+import type { CheckboxChangeEvent } from "@/components/ui/checkbox-types";
 import type { Message } from "@/hooks/types";
 
 type SelectedMessage = { id: string; read: boolean };
@@ -42,8 +43,8 @@ export function applySelection(
 }
 
 /**
- * Change and mouse-down handlers for a row checkbox. React drives a checkbox's
- * onChange from the click event, so its native event carries Shift; mouse-down
+ * Change and mouse-down handlers for a row checkbox. Checkbox passes the click that
+ * toggled it as onChange's native event, so it carries Shift; mouse-down
  * with Shift is cancelled so the click does not also select the text in between.
  */
 export function rowCheckboxHandlers(
@@ -51,9 +52,9 @@ export function rowCheckboxHandlers(
 	onSelectedChange: (messageId: string, selected: boolean, extendRange?: boolean) => void,
 ) {
 	return {
-		onChange: (event: ChangeEvent<HTMLInputElement>) =>
+		onChange: (event: CheckboxChangeEvent) =>
 			onSelectedChange(messageId, event.target.checked, (event.nativeEvent as globalThis.MouseEvent).shiftKey),
-		onMouseDown: (event: MouseEvent<HTMLInputElement>) => {
+		onMouseDown: (event: MouseEvent<HTMLElement>) => {
 			if (event.shiftKey) event.preventDefault();
 		},
 	};

@@ -259,7 +259,8 @@ test("the trusted facts give authentication results, the sender's domain and whe
 			spamVerdict: "inbox",
 			spamSignals: JSON.stringify([
 				{ id: "spf_passed", score: 0, reason: "x" },
-				{ id: "dkim_passed", score: 0, reason: "x" },
+				// A signature from the sender's own domain, so DKIM alone verifies the sender.
+				{ id: "dkim_passed", score: 0, reason: "x", metadata: { aligned: true } },
 				{ id: "url_shortener", score: 2, reason: "x" },
 			]),
 		},

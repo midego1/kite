@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { STORAGE_STATE } from "./support/constants";
 import { apiContext, setSendingSettings, uniqueToken, waitForMessage } from "./support/helpers";
+import { chooseOption } from "./support/select";
 
 const RECIPIENT = "receiver@e2e.test";
 
@@ -30,7 +31,7 @@ test.describe("compose and send", () => {
 		const settingsSaved = page.waitForResponse(
 			(response) => response.url().endsWith("/api/settings/sending") && response.request().method() === "PATCH",
 		);
-		await page.getByRole("combobox", { name: "Undo send window" }).selectOption({ label: "10 seconds" });
+		await chooseOption(page.getByRole("combobox", { name: "Undo send window" }), { label: "10 seconds" });
 		expect((await settingsSaved).ok()).toBe(true);
 
 		await page.goto("/inbox");

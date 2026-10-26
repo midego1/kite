@@ -316,7 +316,7 @@ test.describe("chat spend", () => {
 			await okJson(await api.put("/api/admin/agent", { data: { ...fakeProviderSettings(fake), rates: {} } }));
 			await page.goto("/agent");
 			const autoRead = page.getByLabel("Automatic reading (input tokens a day)");
-			const chat = page.getByLabel("Chat (input tokens a day)");
+			const chat = page.getByLabel("Chat and Write with Kite (input tokens a day)");
 			await expect(chat).toHaveValue(/^\d+$/);
 			await autoRead.fill("2000000");
 			await chat.fill("1000");
@@ -329,7 +329,7 @@ test.describe("chat spend", () => {
 			const events = await sendChat(account.api, account.mailboxId, "Hello");
 			const error = events.find((event) => event.type === "error");
 			expect(error?.message).toMatch(
-				/^Daily AI token allowance reached: chat has used its 1,000 input tokens for today\./,
+				/^Daily AI token allowance reached: chat and Write with Kite used the 1,000 input tokens allowed for today\./,
 			);
 			expect(error?.message).toMatch(
 				/resets at 00:00 UTC\. The primary admin can raise the allowance, or set model prices, in Admin → Agent\.$/,

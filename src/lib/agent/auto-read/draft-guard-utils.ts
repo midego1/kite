@@ -1,8 +1,8 @@
 const DRAFT_MAX_CHARS = 10_000;
-const META_PREFIX =
+export const META_PREFIX =
 	/^(here is|here's|here are|i have drafted|i've drafted|i drafted|draft created|below is|sure[,!.]|certainly[,!.]|as an ai)/i;
-const EMAIL_PATTERN = /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi;
-const URL_PATTERN = /\b(?:https?:\/\/|www\.)[^\s<>()[\]"'`]+/gi;
+export const EMAIL_PATTERN = /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi;
+export const URL_PATTERN = /\b(?:https?:\/\/|www\.)[^\s<>()[\]"'`]+/gi;
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 
 type DraftGuardReason = "empty" | "too_long" | "meta_text" | "unknown_address" | "unknown_url";
@@ -32,7 +32,7 @@ export function stripDraftMarkdown(body: string): string {
 		.trim();
 }
 
-function normalizeUrl(value: string): string {
+export function normalizeUrl(value: string): string {
 	const trimmed = value.replace(TRAILING_PUNCTUATION, "");
 	const withScheme = /^www\./i.test(trimmed) ? `https://${trimmed}` : trimmed;
 	return withScheme

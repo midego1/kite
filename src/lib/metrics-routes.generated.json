@@ -38,6 +38,7 @@
 	"/api/agent/approvals",
 	"/api/agent/availability",
 	"/api/agent/chat",
+	"/api/agent/compose",
 	"/api/agent/conversations/[id]",
 	"/api/agent/conversations",
 	"/api/agent/jobs/[id]/retry",

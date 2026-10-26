@@ -108,8 +108,8 @@ export function AutoReadAdminSettings() {
 					onChange={(autoReadEnabled) => void save({ autoReadEnabled })}
 				/>
 				<SwitchRow
-					title="Allow external provider for automatic reading"
-					description="Lets automatic reading send message content to the configured external AI provider. Workers AI is always allowed."
+					title="Allow an external AI provider for automatic reading and the composer"
+					description="Lets automatic reading and Write with Kite in the composer send message content to the configured external AI provider. Workers AI is always allowed."
 					checked={values?.externalAutoReadAllowed ?? false}
 					disabled={locked}
 					onChange={(externalAutoReadAllowed) => void save({ externalAutoReadAllowed })}

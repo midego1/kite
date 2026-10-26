@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, index, uniqueIndex, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
+import { instructionColumns } from "./instruction-columns";
 
 export const users = sqliteTable(
 	"users",
@@ -792,7 +793,7 @@ export const mailboxAgentSettings = sqliteTable("mailbox_agent_settings", {
 	modelId: text("model_id"),
 	autoDraftEnabled: integer("auto_draft_enabled", { mode: "boolean" }).notNull().default(false),
 	reviewerUserId: text("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
-	instructions: text("instructions").notNull().default(""),
+	...instructionColumns(),
 	dailyLimit: integer("daily_limit").notNull().default(25),
 	autonomy: text("autonomy", { enum: ["off", "suggest", "act", "auto"] })
 		.notNull()

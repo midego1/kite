@@ -74,14 +74,17 @@ function insertValue(column: SQLiteColumn, value: unknown): SQL {
  * Inserts one row. Before the migration that adds a column is applied, the insert
  * is retried without it, but only when the row would have stored the column's
  * default there; anything else still fails, since dropping the value would lose it.
+ * With `ignoreConflict` an existing row with the same key is left alone.
  */
 export async function insertRow<T extends SQLiteTable>(
 	db: AppDatabase,
 	table: T,
 	values: T["$inferInsert"],
+	options: { ignoreConflict?: boolean } = {},
 ): Promise<void> {
 	try {
-		await db.insert(table).values(values);
+		const insert = db.insert(table).values(values);
+		await (options.ignoreConflict ? insert.onConflictDoNothing() : insert);
 		return;
 	} catch (error) {
 		const columns = getTableColumns(table) as Record<string, SQLiteColumn>;
@@ -103,7 +106,8 @@ export async function insertRow<T extends SQLiteTable>(
 				sql`, `,
 			);
 			try {
-				await db.run(sql`insert into ${table} (${names}) values (${params})`);
+				const verb = options.ignoreConflict ? sql`insert or ignore` : sql`insert`;
+				await db.run(sql`${verb} into ${table} (${names}) values (${params})`);
 				return;
 			} catch (retryError) {
 				lastError = retryError;

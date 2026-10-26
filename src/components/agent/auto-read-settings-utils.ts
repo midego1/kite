@@ -136,7 +136,19 @@ function activePauseEnd(pausedUntil: string | null, now: number): Date | null {
 /** Only the fields the legacy form edits, so saving it never overwrites automatic reading values it loaded earlier. */
 export function legacyAgentSettingsBody(settings: AgentSettings): AgentSettings {
 	const { mailboxId, enabled, modelId, autoDraftEnabled, reviewerUserId, instructions, dailyLimit } = settings;
-	return { mailboxId, enabled, modelId, autoDraftEnabled, reviewerUserId, instructions, dailyLimit };
+	const { chatInstructions, draftInstructions, summaryInstructions } = settings;
+	return {
+		mailboxId,
+		enabled,
+		modelId,
+		autoDraftEnabled,
+		reviewerUserId,
+		instructions,
+		chatInstructions,
+		draftInstructions,
+		summaryInstructions,
+		dailyLimit,
+	};
 }
 
 async function readJson<T extends { error?: string }>(response: Response, fallback: string): Promise<T> {

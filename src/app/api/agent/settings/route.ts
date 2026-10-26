@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { mailboxAgentSettings, users } from "@/db/schema";
+import { users } from "@/db/schema";
 import { getEnv } from "@/lib/cloudflare";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
@@ -20,7 +20,11 @@ import {
 	requiredReviewerAccess,
 	unknownModelError,
 } from "@/lib/agent/auto-read/settings-utils";
-import { readMailboxAgentSettings } from "@/lib/agent/auto-read/mailbox-settings";
+import {
+	readMailboxAgentSettings,
+	saveMailboxAgentSettings,
+	taskInstructionsReady,
+} from "@/lib/agent/auto-read/mailbox-settings";
 
 async function listReviewers(db: AppDatabase, mailboxId: string) {
 	const reviewers: { id: string; name: string; email: string }[] = [];
@@ -78,6 +82,8 @@ export async function GET(request: Request) {
 		},
 		models,
 		canManage: access.canManage,
+		// False until migration 0069 adds the task instruction columns; the fields cannot be saved before.
+		taskInstructionsReady: await taskInstructionsReady(env),
 		canConfigureProvider: isPrimaryAdmin(user),
 		providerConfigured: agentProvider.configured,
 		provider,
@@ -120,11 +126,12 @@ export async function PUT(request: Request) {
 		reviewerUserId: reviewerId,
 		capabilities: JSON.stringify(next.capabilities),
 	};
-	const { mailboxId, ...updates } = values;
-	await db
-		.insert(mailboxAgentSettings)
-		.values(values)
-		.onConflictDoUpdate({ target: mailboxAgentSettings.mailboxId, set: { ...updates, updatedAt: new Date() } });
+	const { mailboxId } = values;
+	if ((await saveMailboxAgentSettings(db, values)) === "migration_pending")
+		return Response.json(
+			{ error: "Apply the pending database update to save these instructions", code: "MIGRATION_PENDING" },
+			{ status: 409 },
+		);
 	if (!next.autoDraftEnabled) await skipPendingMailboxJobs(env, mailboxId, "draft", "Auto-drafting disabled");
 	if (next.autonomy === "off") await skipPendingMailboxJobs(env, mailboxId, "triage", "autonomy_off");
 	return Response.json({ ok: true });

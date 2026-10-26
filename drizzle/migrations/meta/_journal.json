@@ -505,6 +505,13 @@
       "when": 1788851580028,
       "tag": "0068_add_abuse_ch_auth_key",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "6",
+      "when": 1788851640028,
+      "tag": "0069_add_ai_writing",
+      "breakpoints": true
     }
   ]
 }

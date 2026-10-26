@@ -10,6 +10,7 @@ import { collectFacts } from "../src/lib/agent/auto-read/facts-utils.ts";
 import { planSuggestions } from "../src/lib/agent/auto-read/policy-utils.ts";
 import { parseSuggestionPayload } from "../src/lib/agent/auto-read/suggestion-utils.ts";
 import { summarizeLinks } from "../src/lib/spam/analyzers/link-host-utils.ts";
+import { stripDelimiters } from "../src/lib/agent/untrusted-utils.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = makeBundleDirectory("kite-agent-triage-");
@@ -27,7 +28,7 @@ await build({
 	logLevel: "silent",
 	alias: { "@": join(root, "src") },
 });
-const { buildTriagePrompt, buildTriageRepairPrompt, parseTriageOutput, stripDelimiters } = await import(
+const { buildTriagePrompt, buildTriageRepairPrompt, parseTriageOutput } = await import(
 	pathToFileURL(join(outDir, "triage.mjs")).href
 );
 

@@ -3,6 +3,8 @@ import { getDb } from "@/db";
 import { messages, users } from "@/db/schema";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import { draftPromptChars, generateReplyDraft, loadDraftThread } from "../jobs/draft-generation";
+import type { PersonalInstructions } from "../instruction-types";
+import { personalInstructionsFor } from "../user-ai-settings";
 import { draftReplyEffect } from "./action-effects";
 import { ExternalProviderNotAllowedError, selectAutoReadModel } from "./auto-read-model";
 import { guardDraft, collectThreadReferences } from "./draft-guard-utils";
@@ -33,14 +35,19 @@ type ReplySuggestionInput = {
 	installCapMicros: number;
 };
 
-/** One draft request; its estimated cost is reserved first (source auto_draft, the triage job's ids). */
+/**
+ * One draft request; its estimated cost is reserved first (source auto_draft, the triage job's ids). The prompt
+ * carries the mailbox's drafting instructions and, when given, the reviewer's own.
+ */
 export async function generateDraft(
 	input: Pick<ReplySuggestionInput, "env" | "job" | "settings" | "installCapMicros">,
 	selection: AgentSelection,
 	thread: SourceMessage[],
+	personal: PersonalInstructions | null = null,
 ) {
 	const { env, job, settings } = input;
-	const promptChars = draftPromptChars({ instructions: settings.instructions, thread });
+	const preferences = { mailboxDraft: settings.draftInstructions, personal };
+	const promptChars = draftPromptChars({ instructions: settings.instructions, preferences, thread });
 	const options = buildModelCallOptions({
 		provider: selection.providerKind,
 		kind: "draft",
@@ -65,6 +72,7 @@ export async function generateDraft(
 				generateReplyDraft({
 					model: model.model,
 					instructions: settings.instructions,
+					preferences,
 					thread,
 					maxOutputTokens: current.maxOutputTokens,
 					providerOptions: current.providerOptions,
@@ -127,11 +135,16 @@ async function draftModel(input: ReplySuggestionInput): Promise<AgentSelection |
 }
 
 /** Generates a guarded draft and returns its text, or null after recording why no draft is made. */
-async function guardedDraftText(input: ReplySuggestionInput, selection: AgentSelection): Promise<string | null> {
-	const thread = await loadDraftThread(getDb(input.env), input.job.mailboxId, input.source);
+async function guardedDraftText(
+	input: ReplySuggestionInput,
+	selection: AgentSelection,
+	reviewer: { id: string; name: string },
+): Promise<string | null> {
+	const db = getDb(input.env);
+	const thread = await loadDraftThread(db, input.job.mailboxId, input.source);
 	let text: string;
 	try {
-		text = await generateDraft(input, selection, thread);
+		text = await generateDraft(input, selection, thread, await personalInstructionsFor(db, reviewer));
 	} catch (error) {
 		if (error instanceof SpendCapReachedError) {
 			await blockDraft(input, "spend_cap");
@@ -161,7 +174,7 @@ export async function createReplySuggestion(input: ReplySuggestionInput): Promis
 	if (!reviewer || reviewer.disabled) return;
 	const selection = await draftModel(input);
 	if (!selection) return;
-	const body = await guardedDraftText(input, selection);
+	const body = await guardedDraftText(input, selection, reviewer);
 	if (body === null) return;
 	const stored = await upsertSuggestion({ env, job, source, model: input.model }, input.suggestion);
 	if (!stored || stored.status !== "open" || stored.draftId) return;

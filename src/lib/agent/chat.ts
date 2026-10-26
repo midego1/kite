@@ -1,13 +1,18 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { streamText, stepCountIs, ToolChoiceViolationError } from "ai";
 import { getDb } from "@/db";
-import { agentChatMessages, agentConversations, mailboxAgentSettings } from "@/db/schema";
+import { agentChatMessages, agentConversations } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { newId } from "@/lib/ids";
-import { agentSystemPrompt, getAgentModel } from "./model";
+import { getAgentModel } from "./model";
+import { agentSystemPrompt } from "./system-prompt-utils";
 import { agentProviderErrorMessage } from "./errors";
 import { getAgentEnabled } from "./provider";
-import { recordAiUsage } from "@/lib/ai/usage";
+import { readMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
+import { getAutoReadInstallSettings } from "./auto-read/install-settings";
+import { createChatSpend } from "./chat-spend";
+import { CHAT_STEP_MAX_OUTPUT_TOKENS, stepPromptChars } from "./chat-spend-utils";
+import { personalInstructionsFor } from "./user-ai-settings";
 import { attachHistoryRefs, buildChatTools, resolveToolResultRefs } from "./chat-tools";
 import type { AgentToolContext } from "./types";
 import { normalizeTimeZone } from "@/lib/time/utils";
@@ -78,11 +83,7 @@ export async function createAgentChatStream(
 	const access = await getMailboxAccessLevel(db, context.user, context.mailboxId);
 	if (!access?.canRead) throw new Error("Mailbox not found");
 	if (!(await getAgentEnabled(context.env))) throw new Error("Assistant is disabled");
-	const [settings] = await db
-		.select()
-		.from(mailboxAgentSettings)
-		.where(eq(mailboxAgentSettings.mailboxId, context.mailboxId))
-		.limit(1);
+	const settings = await readMailboxAgentSettingsRow(db, context.mailboxId);
 	const selection = await getAgentModel(context.env, settings?.modelId);
 	if (!selection) throw new Error("AI provider is not configured");
 	const currentEmailId = await resolveCurrentEmailId(context, currentMessageId);
@@ -111,19 +112,34 @@ export async function createAgentChatStream(
 		.map((row) => ({ role: row.role as "user" | "assistant", content: row.content }));
 	prompt.push({ role: "user", content: withCurrentEmailContext(text, currentEmailId) });
 	const { tools, fragments } = await buildChatTools(context);
-	const system = agentSystemPrompt(settings?.instructions ?? "", timeZone, fragments);
+	const system = agentSystemPrompt(settings?.instructions ?? "", timeZone, fragments, {
+		mailbox: { chat: settings?.chatInstructions ?? "", draft: settings?.draftInstructions ?? "" },
+		personal: await personalInstructionsFor(db, context.user),
+	});
 	const maxSteps = clampAgentMaxSteps(context.user.agentMaxSteps);
+	const spend = createChatSpend({
+		env: context.env,
+		details: selection,
+		mailboxId: context.mailboxId,
+		installCapMicros: (await getAutoReadInstallSettings(context.env)).dailySpendCapMicros,
+		mailboxCapMicros: settings?.dailySpendCapMicros ?? null,
+	});
 	const result = streamText({
 		model: selection.model,
 		system,
 		messages: prompt,
 		tools,
 		stopWhen: stepCountIs(maxSteps),
-		prepareStep: ({ stepNumber }) => agentStepSettings(stepNumber, maxSteps, system),
-		maxOutputTokens: 1200,
+		// Every step reserves its estimate against the daily caps first; a refused step ends the turn.
+		prepareStep: async ({ stepNumber, messages }) => {
+			const step = agentStepSettings(stepNumber, maxSteps, system);
+			await spend.beforeStep(stepPromptChars(step?.instructions ?? system, messages));
+			return step;
+		},
+		maxOutputTokens: CHAT_STEP_MAX_OUTPUT_TOKENS,
 		abortSignal: signal,
 		onStepFinish: async ({ usage }) => {
-			await recordAiUsage({ env: context.env, details: selection, usage, source: "chat" });
+			await spend.afterStep(usage);
 		},
 	});
 	const encoder = new TextEncoder();
@@ -223,6 +239,7 @@ export async function createAgentChatStream(
 						.values({ id: newId("chat"), conversationId: id, role: "assistant", content: response });
 				emit({ type: "error", message: agentProviderErrorMessage(error) });
 			} finally {
+				await spend.settle().catch(() => undefined);
 				controller.close();
 			}
 		},

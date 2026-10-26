@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { agentJobs, mailboxAgentSettings, mailboxes, messages, users } from "@/db/schema";
+import { readMailboxAgentSettingsRow } from "./mailbox-settings";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { normalizeTimeZone } from "@/lib/time/utils";
 import { claimAgentJob, failAndRequeueAgentJob, isLastAttempt, skipAgentJob } from "../jobs/lease";
@@ -131,11 +132,7 @@ type TriageOutcome = { skip: string; note?: undefined } | { skip: null; note: st
 /** Everything the job reads before it looks at the message, or why it stops here. */
 async function prepareTriage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow) {
 	const install = await getAutoReadInstallSettings(env);
-	const [row] = await db
-		.select()
-		.from(mailboxAgentSettings)
-		.where(eq(mailboxAgentSettings.mailboxId, job.mailboxId))
-		.limit(1);
+	const row = await readMailboxAgentSettingsRow(db, job.mailboxId);
 	const [source] = await db.select().from(messages).where(eq(messages.id, job.sourceMessageId)).limit(1);
 	const skip = triageSkipReason(install, row, source);
 	if (skip || !row || !source) return { skip: skip ?? "source_changed" };

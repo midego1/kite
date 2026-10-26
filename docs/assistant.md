@@ -38,9 +38,20 @@ What is sent: the message's sender, subject and text, the facts Kite computed an
 
 Message text is treated as untrusted. A message that tries to give the model orders cannot make Kite act: the model has no tools, its answer is validated, and anything that changes something needs your click at Suggest only.
 
+## Instructions
+
+The assistant's **Settings** view has two sets of instruction fields. They add preferences; they never replace Kite's own rules, which the settings show read-only under **What Kite always tells the AI**.
+
+- **Instructions for this mailbox** (users who can manage the mailbox): **General instructions (all tasks)**, up to 4,000 characters, used by chat, reply drafts and automatic reading as before; **Chat**, used only in chat; **Drafting**, used for the body of drafts chat writes and for the reply drafts Kite writes on its own (the legacy auto-draft and reply suggestions); and **Summaries**, saved now for thread summaries, which are not available yet. Each task field holds up to 2,000 characters. Automatic reading itself keeps using only the general field.
+- **My instructions** (every user, for themselves): the same four fields, up to 2,000 characters each. They apply in every mailbox you work in, and nobody else can read them, admins included. Chat uses the chatting user's, and automatic reply drafts use the mailbox reviewer's.
+
+Where they go: always in the system prompt, after Kite's rules, each under its own heading that says it cannot override them, in this order: mailbox general, mailbox task, your general, your task. A shared mailbox's house style therefore comes before one person's taste. They are never placed in the user turn or inside the block that holds the email. Kite removes anything that could pass for that block's delimiters, removes control characters and cuts each field to its limit; the API refuses longer text. Empty fields add nothing, so the prompts stay exactly as they were. An instruction such as "ignore the rules above" can make answers worse but cannot make Kite act: automatic paths have no tools, chat actions still need your approval and drafts still need your review.
+
+The fields need migration 0069. Until it is applied, only the mailbox's general field can be saved and the others say so.
+
 ## Costs and caps
 
-Every automatic request is checked against these limits before it runs. Cheaper checks come first.
+Every automatic request, and every step of a chat answer, is checked against these limits before it runs. Cheaper checks come first.
 
 - **Deterministic filters.** The checks above run first and cost nothing. Per mailbox you can also turn off the calendar, reply, summary and phishing capabilities, each enabled module's own step (one switch per step, listed under the core ones), and mute senders. Muted and trusted senders are listed in the same settings, where you can remove or add them (see [Phishing warnings](#phishing-warnings)).
 - **Daily limit per mailbox.** The number of messages Kite reads per UTC day. Default 200, range 1 to 1000.
@@ -49,7 +60,9 @@ Every automatic request is checked against these limits before it runs. Cheaper 
 - **Spend cap for the install.** A daily cap in USD for all mailboxes together, set by the primary admin. Default $2.00 per day.
 - **When model rates are unknown.** If the model has no configured prices, Kite cannot count dollars. It then counts input tokens instead, with a cap of 2,000,000 input tokens per day for the install. Set rates for your model to get a dollar cap.
 
-Kite reserves the estimated cost before each call and settles it with the real usage afterwards, so parallel jobs are counted against the cap before they run. Once reserved and settled spend reaches the cap, Kite starts no new calls: the model is skipped as "daily spend cap reached" until 00:00 UTC. The cap is not a guaranteed billing ceiling. Estimates are not exact, so what your provider bills can slightly exceed it.
+Kite reserves the estimated cost before each call and settles it with the real usage afterwards, so parallel jobs are counted against the cap before they run. Once reserved and settled spend reaches the cap, Kite starts no new calls: the model is skipped as "daily spend cap reached" until 00:00 UTC.
+
+Chat counts against the same mailbox and install caps. Each step of an answer (each tool call is one) reserves its estimate first, with up to 1,200 output tokens, and is settled with the step's usage. A step that would pass a cap is not sent: the answer ends with "Daily AI spend cap reached", and the steps already taken stay in the conversation. A step that is stopped before the provider reports its usage keeps its estimate. The cap is not a guaranteed billing ceiling. Estimates are not exact, so what your provider bills can slightly exceed it.
 
 ## Kill switches
 

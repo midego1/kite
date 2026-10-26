@@ -36,6 +36,8 @@ import { ConversationSkeleton } from "./conversation-skeleton";
 import { QueuedAgentMessages } from "./queued-messages";
 import { SendReview } from "./send-review";
 import { AgentStepLimitSetting } from "./step-limit-setting";
+import { MailboxInstructionsSetting } from "./mailbox-instructions-setting";
+import { PersonalInstructionsSetting } from "./personal-instructions-setting";
 import { AutoReadSettings } from "./auto-read-settings";
 import { AssistantSettingsTabs } from "./assistant-settings-tabs";
 import { reasonText } from "./agent-activity-utils";
@@ -86,6 +88,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 	const [availableModels, setAvailableModels] = useState<string[]>([]);
 	const [reviewers, setReviewers] = useState<{ id: string; name: string; email: string }[]>([]);
 	const [canManage, setCanManage] = useState(false);
+	const [taskInstructionsReady, setTaskInstructionsReady] = useState(true);
 	const [providerConfigured, setProviderConfigured] = useState(false);
 	const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
 	const [conversationId, setConversationId] = useState<string | null>(null);
@@ -179,6 +182,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 			setSettings(data.settings);
 			setAvailableModels(data.models ?? []);
 			setCanManage(data.canManage);
+			setTaskInstructionsReady(data.taskInstructionsReady !== false);
 			setProviderConfigured(data.providerConfigured);
 			setAutoReplyEnabled(data.autoReplyEnabled);
 			setReviewers(data.reviewers ?? []);
@@ -857,6 +861,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 			{view === "settings" && (
 				<AssistantSettingsTabs settings={settings}>
 					<AgentStepLimitSetting />
+					<PersonalInstructionsSetting />
 					<p className="font-medium text-neutral-800">Mailbox settings</p>
 					{!canManage && <p>Mailbox management permission is required to change these settings.</p>}
 					{settings && (
@@ -904,15 +909,12 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 							{autoReplyEnabled && (
 								<p className="text-amber-700">Disable out-of-office auto-replies to enable AI drafts.</p>
 							)}
-							<label className="block">
-								Writing instructions
-								<textarea
-									className="mt-2 min-h-32 w-full rounded-xl border border-neutral-200 p-2 outline-none focus:border-blue-400"
-									value={settings.instructions}
-									disabled={!canManage}
-									onChange={(event) => setSettings({ ...settings, instructions: event.target.value })}
-								/>
-							</label>
+							<MailboxInstructionsSetting
+								settings={settings}
+								canManage={canManage}
+								ready={taskInstructionsReady}
+								onChange={setSettings}
+							/>
 							<label className="block">
 								Daily auto-draft limit
 								<input

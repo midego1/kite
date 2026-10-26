@@ -2,7 +2,8 @@ import type { LanguageModelUsage } from "ai";
 import type { AgentModelRates } from "@/lib/agent/provider-types";
 import type { AiUsageDetails } from "@/lib/ai/usage-types";
 
-export type AutoSpendSource = "auto_triage" | "auto_draft";
+/** Every source that reserves spend: automatic reading, and chat steps (the install cap covers both). */
+export type AutoSpendSource = "auto_triage" | "auto_draft" | "chat";
 
 /** "cost" compares USD micros against the caps; "tokens" applies the input-token cap for models without rates. */
 export type SpendMode = "cost" | "tokens";
@@ -19,7 +20,8 @@ export type ReserveAiSpendInput = {
 	details: AiUsageDetails;
 	source: AutoSpendSource;
 	mailboxId: string;
-	jobId: string;
+	/** The automatic reading job; null for chat. */
+	jobId: string | null;
 	promptChars: number;
 	maxOutputTokens: number;
 	installCapMicros: number;

@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { mailboxAgentSettings, mailboxes, messages } from "@/db/schema";
+import { mailboxes, messages } from "@/db/schema";
+import { readMailboxAgentSettingsRow } from "./mailbox-settings";
 import { loadDraftThread } from "../jobs/draft-generation";
 import { selectAutoReadModel } from "./auto-read-model";
 import { collectThreadReferences, guardDraft } from "./draft-guard-utils";
@@ -24,11 +25,7 @@ export async function generateProposalIntro(
 		if (!install.agentEnabled || !install.autoReadEnabled) return null;
 		const [source] = await db.select().from(messages).where(eq(messages.id, input.messageId)).limit(1);
 		const [mailbox] = await db.select().from(mailboxes).where(eq(mailboxes.id, input.mailboxId)).limit(1);
-		const [row] = await db
-			.select()
-			.from(mailboxAgentSettings)
-			.where(eq(mailboxAgentSettings.mailboxId, input.mailboxId))
-			.limit(1);
+		const row = await readMailboxAgentSettingsRow(db, input.mailboxId);
 		if (!source || !mailbox || !row) return null;
 		const settings = resolveMailboxAgentSettings(row, {
 			mailboxId: mailbox.id,

@@ -70,6 +70,9 @@ export type AgentSettings = {
 	autoDraftEnabled: boolean;
 	reviewerUserId: string | null;
 	instructions: string;
+	chatInstructions: string;
+	draftInstructions: string;
+	summaryInstructions: string;
 	dailyLimit: number;
 };
 
@@ -98,6 +101,8 @@ export type AgentSettingsResponse = {
 	settings: AgentSettings;
 	models: string[];
 	canManage: boolean;
+	/** False until migration 0069 adds the task instruction columns. */
+	taskInstructionsReady?: boolean;
 	canConfigureProvider: boolean;
 	providerConfigured: boolean;
 	provider: AgentProvider | null;

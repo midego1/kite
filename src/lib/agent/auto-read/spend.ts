@@ -16,8 +16,8 @@ const TOKEN_CAP_CONDITION = `
 WHERE (SELECT coalesce(sum(input_tokens), 0) FROM ai_usage WHERE created_at >= ?) + ? <= ?`;
 
 /**
- * Reserves the estimated cost of one automatic model call against the install
- * and mailbox daily caps. Returns null when the call would exceed a cap.
+ * Reserves the estimated cost of one model call against the install and
+ * mailbox daily caps. Returns null when the call would exceed a cap.
  */
 export async function reserveAiSpend(input: ReserveAiSpendInput): Promise<SpendReservation | null> {
 	const now = input.now ?? new Date();
@@ -87,4 +87,12 @@ export async function reconcileAiSpend({ env, reservation, rates, usage }: Recon
 	)
 		.bind(actual.inputTokens, actual.outputTokens, actual.costUsdMicros, reservation.id)
 		.run();
+}
+
+/**
+ * Settles a reservation whose call ended without reporting usage (aborted or failed mid-stream): the estimate
+ * stays as the recorded spend, so the cap errs on the side of stopping.
+ */
+export async function keepReservedEstimate(env: CloudflareEnv, reservation: SpendReservation): Promise<void> {
+	await env.DB.prepare("UPDATE ai_usage SET reserved = 0 WHERE id = ?").bind(reservation.id).run();
 }

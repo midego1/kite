@@ -94,6 +94,7 @@ Click a screenshot to open it at full size. The screenshots and the demo recordi
 
 - **Domains**: Connect your Cloudflare domains and choose Cloudflare, Resend, or Amazon SES for each.
 - **Mailboxes**: Create personal or shared mailboxes and give other people access to them.
+- **All mailboxes**: Read and answer the mail of every mailbox you can open in one Inbox, with a label on each email, added-up counts and a filter to leave some mailboxes out. Replies go out from the mailbox the email arrived in, and read-only shared mail stays read-only. See [All mailboxes](docs/all-mailboxes.md).
 - **Email**: Send and receive mail with attachments, rich text, signatures, and automatic replies.
 - **Calendar**: Day, week and month views. Schedule repeating events with time zones and attendees, who receive email invitations.
 - **Booking pages**: Share a public link so anyone can book a free time on your calendar.

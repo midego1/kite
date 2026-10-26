@@ -101,6 +101,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/drafts/[id]/attachments/[attachmentId]`          | DELETE                 | [source](../src/app/api/drafts/[id]/attachments/[attachmentId]/route.ts)          |
 | `/api/drafts/[id]/attachments`                         | POST                   | [source](../src/app/api/drafts/[id]/attachments/route.ts)                         |
 | `/api/drafts/[id]`                                     | DELETE, GET, PATCH     | [source](../src/app/api/drafts/[id]/route.ts)                                     |
+| `/api/drafts/[id]/state`                               | GET                    | [source](../src/app/api/drafts/[id]/state/route.ts)                               |
 | `/api/drafts`                                          | GET, POST              | [source](../src/app/api/drafts/route.ts)                                          |
 | `/api/drive/attachments/[id]/content`                  | GET                    | [source](../src/app/api/drive/attachments/[id]/content/route.ts)                  |
 | `/api/drive/attachments/[id]/save`                     | POST                   | [source](../src/app/api/drive/attachments/[id]/save/route.ts)                     |

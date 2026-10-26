@@ -2589,6 +2589,21 @@ test.describe("reply suggestions", () => {
 			await okJson(await account.api.post(suggestionUrl(dismissedReply.id, "dismiss"), { data: {} }));
 			const sentMessageId = await sendAgentDraft(account.api, sentReply.draftId!);
 
+			// The draft card asks for the draft's state: still a draft, or sent (the draft row is trashed and the
+			// send is a new message), and never another user's draft.
+			const draftState = async (api: APIRequestContext, draftId: string) =>
+				okJson<{ state: string; messageId?: string | null; subject?: string | null }>(
+					await api.get(`/api/drafts/${draftId}/state`),
+				);
+			expect(await draftState(account.api, (await replyFor(drafted.message.id)).draftId!)).toEqual({ state: "draft" });
+			expect(await draftState(account.api, sentReply.draftId!)).toMatchObject({
+				state: "sent",
+				messageId: sentMessageId,
+				subject: expect.any(String),
+			});
+			expect(await draftState(api, sentReply.draftId!)).toEqual({ state: "unavailable" });
+			expect(await draftState(account.api, "no-such-draft")).toEqual({ state: "unavailable" });
+
 			const actions = await readActions(account.api, account.mailboxId);
 			const find = (messageId: string, action: string) =>
 				actions.find((row) => row.messageId === messageId && row.action === action)!;

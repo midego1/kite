@@ -82,14 +82,6 @@ export function uniqueAgentDraftActions(messages: AgentMessage[]): AgentDraftAct
 	return [...byDraft.values()];
 }
 
-export function markAgentDraftSent(messages: AgentMessage[], draftId: string): AgentMessage[] {
-	return messages.map((item) => {
-		if (item.role !== "tool") return item;
-		const result = parseAgentToolContent(item.content);
-		return result?.draftId === draftId ? { ...item, content: JSON.stringify({ ...result, status: "sent" }) } : item;
-	});
-}
-
 export function readAgentConversationId(mailboxId: string): string | null {
 	try {
 		return localStorage.getItem(`kite-assistant-conversation:${mailboxId}`);

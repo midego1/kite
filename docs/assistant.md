@@ -19,7 +19,7 @@ Suggestions come in these kinds when Kite finds something worth raising: a calen
 
 Suggestions are shown to people with full access to the mailbox only. Other users cannot tell the mailbox has any. They appear as a badge on the message row, as a card in the reader, and together on the **For you** page, grouped by kind with the most important first. Accepting or dismissing a suggestion shows a toast with Undo.
 
-Kite never sends mail on its own at Suggest only. A reply suggestion creates a draft in the reviewer's Drafts, private to the reviewer. You review it and send it from the composer.
+Kite never sends mail on its own at Suggest only. A reply suggestion creates a draft in the reviewer's Drafts, private to the reviewer. You review it and send it from the composer. In the assistant panel a draft the assistant wrote appears as a card with **Edit draft** and **Approve to send**; once the draft is sent or scheduled, the card shows **Sent** or **Scheduled for** the time instead, and a draft that was deleted shows that it is no longer available.
 
 ## Deterministic first
 

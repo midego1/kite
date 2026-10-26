@@ -1,15 +1,27 @@
 import type { LanguageModelUsage } from "ai";
 import type { AiUsageDetails } from "@/lib/ai/usage-types";
-import { keepReservedEstimate, reconcileAiSpend, reserveAiSpend } from "./auto-read/spend";
-import type { SpendReservation } from "./auto-read/spend-types";
-import { CHAT_STEP_MAX_OUTPUT_TOKENS, SPEND_CAP_MESSAGE } from "./chat-spend-utils";
+import { keepReservedEstimate, reconcileAiSpend, refusedSpendCap, reserveAiSpend } from "./auto-read/spend";
+import type { ReserveAiSpendInput, SpendCapKind, SpendReservation } from "./auto-read/spend-types";
+import { CHAT_STEP_MAX_OUTPUT_TOKENS, spendCapMessage } from "./chat-spend-utils";
 
-/** A chat step was refused because it would pass the install or mailbox daily spend cap. */
+/** A chat step was refused because it would pass a daily cap; the message names the cap. */
 export class ChatSpendCapError extends Error {
-	constructor() {
-		super(SPEND_CAP_MESSAGE);
+	constructor(
+		message: string,
+		readonly cap: SpendCapKind,
+	) {
+		super(message);
 		this.name = "ChatSpendCapError";
 	}
+}
+
+/** The cap refusal behind `error`, also when the SDK wrapped it as another error's cause. */
+export function chatSpendCapError(error: unknown): ChatSpendCapError | null {
+	for (let depth = 0; depth < 4 && error; depth += 1) {
+		if (error instanceof ChatSpendCapError) return error;
+		error = error instanceof Error ? error.cause : null;
+	}
+	return null;
 }
 
 type ChatSpendInput = {
@@ -18,6 +30,8 @@ type ChatSpendInput = {
 	mailboxId: string;
 	installCapMicros: number;
 	mailboxCapMicros: number | null;
+	/** Chat's own daily input-token allowance, used when the model has no rates. */
+	tokenCap: number;
 };
 
 /**
@@ -39,18 +53,18 @@ export function createChatSpend(input: ChatSpendInput) {
 	return {
 		async beforeStep(promptChars: number): Promise<void> {
 			await settle();
-			const reservation = await reserveAiSpend({
-				env: input.env,
-				details: input.details,
+			const request: ReserveAiSpendInput = {
+				...input,
 				source: "chat",
-				mailboxId: input.mailboxId,
 				jobId: null,
 				promptChars,
 				maxOutputTokens: CHAT_STEP_MAX_OUTPUT_TOKENS,
-				installCapMicros: input.installCapMicros,
-				mailboxCapMicros: input.mailboxCapMicros,
-			});
-			if (!reservation) throw new ChatSpendCapError();
+			};
+			const reservation = await reserveAiSpend(request);
+			if (!reservation) {
+				const cap = await refusedSpendCap(request);
+				throw new ChatSpendCapError(spendCapMessage(cap, input), cap);
+			}
 			pending = reservation;
 		},
 		async afterStep(usage: LanguageModelUsage | undefined): Promise<void> {

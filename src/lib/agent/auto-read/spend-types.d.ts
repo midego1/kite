@@ -26,8 +26,13 @@ export type ReserveAiSpendInput = {
 	maxOutputTokens: number;
 	installCapMicros: number;
 	mailboxCapMicros: number | null;
+	/** The daily input-token allowance of this source's kind (chat or automatic reading), used without model rates. */
+	tokenCap: number;
 	now?: Date;
 };
+
+/** Which daily cap refused a reservation. */
+export type SpendCapKind = "chat_tokens" | "auto_read_tokens" | "install_dollars" | "mailbox_dollars";
 
 export type SpendReservation = SpendEstimate & { id: string };
 

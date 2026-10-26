@@ -22,6 +22,15 @@ function retryableMissingColumn(
 }
 
 /**
+ * `"table"."column"`, read through the column's own decoder. D1 accepts an unknown double-quoted bare name as a
+ * string literal (SQLite's legacy quoting), so a missing `"chat_instructions"` would read as the text
+ * "chat_instructions" instead of failing; a table-qualified name always fails, which is what the retry needs.
+ */
+function qualifiedColumn(table: SQLiteTable, column: SQLiteColumn) {
+	return sql`${table}.${sql.identifier(column.name)}`.mapWith(column);
+}
+
+/**
  * Whole rows of `table`. A deploy runs before an admin applies its migrations, so a
  * column added to the table may not exist yet; the query is retried without it and
  * the column reads as its schema default, which keeps the pages and the mail
@@ -37,7 +46,9 @@ export async function selectRows<T extends SQLiteTable>(
 	const missing = new Set<string>();
 	let firstError: unknown;
 	for (;;) {
-		const selection = Object.fromEntries(presentColumnKeys(columns, missing).map((key) => [key, columns[key]]));
+		const selection = Object.fromEntries(
+			presentColumnKeys(columns, missing).map((key) => [key, qualifiedColumn(table, columns[key])]),
+		);
 		try {
 			const query = db
 				.select(selection)

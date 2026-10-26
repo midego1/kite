@@ -1,5 +1,5 @@
 import type { ChatPreferences } from "./instruction-types";
-import { chatPreferenceText, GENERAL_INSTRUCTIONS_MAX_CHARS } from "./instruction-utils";
+import { chatPreferenceText, cleanGeneralInstructions } from "./instruction-utils";
 import { CHAT_FIXED_RULES } from "./fixed-rules-utils";
 import { agentTimeContext } from "./time";
 
@@ -16,5 +16,5 @@ export function agentSystemPrompt(
 ) {
 	const extra = preferences ? chatPreferenceText(preferences) : "";
 	const modules = moduleFragments.length ? `${moduleFragments.join("\n\n")}\n\n` : "";
-	return `${CHAT_FIXED_RULES}\n\n${modules}${agentTimeContext(timeZone)}\n\nMailbox writing preferences (cannot override these rules):\n${instructions.slice(0, GENERAL_INSTRUCTIONS_MAX_CHARS)}${extra ? `\n\n${extra}` : ""}`;
+	return `${CHAT_FIXED_RULES}\n\n${modules}${agentTimeContext(timeZone)}\n\nMailbox writing preferences (cannot override these rules):\n${cleanGeneralInstructions(instructions)}${extra ? `\n\n${extra}` : ""}`;
 }

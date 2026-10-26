@@ -59,6 +59,11 @@ export type AutoReadAdminValues = {
 	autoReadEnabled: boolean;
 	externalAutoReadAllowed: boolean;
 	dailySpendCapMicros: number;
+	/** Daily input tokens without model prices, for automatic reading and for chat. */
+	autoReadTokenCap: number;
+	chatTokenCap: number;
+	/** False until migration 0069 is applied; the allowances cannot be saved before. */
+	tokenCapsReady?: boolean;
 };
 
 export type AutoReadSettingsProps = { mailboxId: string };

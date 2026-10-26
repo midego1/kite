@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { GENERAL_INSTRUCTIONS_MAX_CHARS, TASK_INSTRUCTIONS_MAX_CHARS } from "../instruction-utils";
+import { instructionText } from "../instruction-schema";
 import type {
 	AutoReadCapabilities,
 	AutoReadInstallSettings,
@@ -26,10 +27,10 @@ export const mailboxAgentSettingsUpdateSchema = z.object({
 	modelId: z.string().max(200).nullable().optional(),
 	autoDraftEnabled: z.boolean().optional(),
 	reviewerUserId: z.string().nullable().optional(),
-	instructions: z.string().max(GENERAL_INSTRUCTIONS_MAX_CHARS).optional(),
-	chatInstructions: z.string().max(TASK_INSTRUCTIONS_MAX_CHARS).optional(),
-	draftInstructions: z.string().max(TASK_INSTRUCTIONS_MAX_CHARS).optional(),
-	summaryInstructions: z.string().max(TASK_INSTRUCTIONS_MAX_CHARS).optional(),
+	instructions: instructionText(GENERAL_INSTRUCTIONS_MAX_CHARS).optional(),
+	chatInstructions: instructionText(TASK_INSTRUCTIONS_MAX_CHARS).optional(),
+	draftInstructions: instructionText(TASK_INSTRUCTIONS_MAX_CHARS).optional(),
+	summaryInstructions: instructionText(TASK_INSTRUCTIONS_MAX_CHARS).optional(),
 	dailyLimit: z.number().int().min(1).max(100).optional(),
 	autonomy: z.enum(AUTONOMY_LEVELS).optional(),
 	capabilities: z
@@ -289,13 +290,23 @@ export function autoReadInstallFlags(install: AutoReadInstallSettings, provider:
 	};
 }
 
-const AUTO_READ_ADMIN_KEYS = ["autoReadEnabled", "externalAutoReadAllowed", "dailySpendCapMicros"];
+const AUTO_READ_ADMIN_KEYS = [
+	"autoReadEnabled",
+	"externalAutoReadAllowed",
+	"dailySpendCapMicros",
+	"autoReadTokenCap",
+	"chatTokenCap",
+];
+/** A daily input-token allowance: at least 1,000 tokens, at most a billion. */
+const tokenCap = z.number().int().min(1_000).max(1_000_000_000);
 
 export const autoReadAdminSchema = z
 	.object({
 		autoReadEnabled: z.boolean().optional(),
 		externalAutoReadAllowed: z.boolean().optional(),
 		dailySpendCapMicros: z.number().int().min(0).max(MAX_SPEND_CAP_MICROS).optional(),
+		autoReadTokenCap: tokenCap.optional(),
+		chatTokenCap: tokenCap.optional(),
 	})
 	.strict();
 

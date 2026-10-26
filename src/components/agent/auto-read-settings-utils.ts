@@ -226,5 +226,14 @@ function pickAutoReadAdmin(data: AutoReadAdminValues): AutoReadAdminValues {
 		autoReadEnabled: data.autoReadEnabled,
 		externalAutoReadAllowed: data.externalAutoReadAllowed,
 		dailySpendCapMicros: data.dailySpendCapMicros,
+		autoReadTokenCap: data.autoReadTokenCap,
+		chatTokenCap: data.chatTokenCap,
+		tokenCapsReady: data.tokenCapsReady,
 	};
+}
+
+/** A token allowance typed by the admin: a whole number from 1,000 to 1,000,000,000, or null. */
+export function parseTokenAllowance(input: string): number | null {
+	const value = Number(input.trim());
+	return input.trim() && Number.isInteger(value) && value >= 1_000 && value <= 1_000_000_000 ? value : null;
 }

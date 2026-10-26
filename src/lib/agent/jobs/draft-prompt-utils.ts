@@ -2,7 +2,7 @@ import { htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { DRAFT_SYSTEM_MARKER } from "../auto-read/request-markers";
 import { DRAFT_FIXED_RULES } from "../fixed-rules-utils";
 import type { DraftPreferences } from "../instruction-types";
-import { draftPreferenceText, GENERAL_INSTRUCTIONS_MAX_CHARS } from "../instruction-utils";
+import { cleanGeneralInstructions, draftPreferenceText } from "../instruction-utils";
 
 const MESSAGE_CHARS = 2_500;
 const THREAD_CHARS = 24_000;
@@ -35,7 +35,7 @@ export function buildReplyDraftPrompt(
 		)
 		.join("\n\n");
 	return {
-		system: `${DRAFT_SYSTEM_MARKER} ${DRAFT_FIXED_RULES} Mailbox preferences: ${instructions.slice(0, GENERAL_INSTRUCTIONS_MAX_CHARS)}${extra ? `\n\n${extra}` : ""}`,
+		system: `${DRAFT_SYSTEM_MARKER} ${DRAFT_FIXED_RULES} Mailbox preferences: ${cleanGeneralInstructions(instructions)}${extra ? `\n\n${extra}` : ""}`,
 		prompt: `Reply to the latest inbound email in this conversation:\n${conversation.slice(-THREAD_CHARS)}`,
 	};
 }

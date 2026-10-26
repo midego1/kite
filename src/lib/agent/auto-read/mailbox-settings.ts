@@ -74,16 +74,3 @@ export async function saveMailboxAgentSettings(
 		return "saved";
 	}
 }
-
-/** Databases known to have the task instruction columns; migrations only add them, so a hit is final. */
-const readyDatabases = new WeakSet<object>();
-
-/** Whether migration 0069 added the task instruction columns; reads only the table's column list. */
-export async function taskInstructionsReady(env: CloudflareEnv): Promise<boolean> {
-	if (readyDatabases.has(env.DB)) return true;
-	const { results } = await env.DB.prepare("PRAGMA table_info(mailbox_agent_settings)").all<{ name: string }>();
-	const names = new Set(results.map((column) => column.name));
-	const ready = TASK_INSTRUCTION_COLUMNS.every((column) => names.has(column));
-	if (ready) readyDatabases.add(env.DB);
-	return ready;
-}

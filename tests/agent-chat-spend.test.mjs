@@ -31,7 +31,7 @@ await build({
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { ChatSpendCapError, createChatSpend } = await load("spend");
-const { CHAT_STEP_MAX_OUTPUT_TOKENS, SPEND_CAP_MESSAGE, stepPromptChars } = await load("utils");
+const { CHAT_STEP_MAX_OUTPUT_TOKENS, spendCapMessage, stepPromptChars } = await load("utils");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
 
@@ -66,6 +66,7 @@ function chatSpend(db, overrides = {}) {
 		mailboxId: "mailbox-a",
 		installCapMicros: 1_000_000,
 		mailboxCapMicros: null,
+		tokenCap: 2_000_000,
 		...overrides,
 	});
 }
@@ -88,7 +89,11 @@ test("a turn whose second step would pass the install cap stops after the first,
 	await spend.afterStep(STEP_USAGE);
 	await assert.rejects(spend.beforeStep(400), (error) => {
 		assert.ok(error instanceof ChatSpendCapError);
-		assert.equal(error.message, SPEND_CAP_MESSAGE);
+		assert.equal(error.cap, "install_dollars");
+		assert.equal(
+			error.message,
+			"Daily AI spend cap reached: the install's $0.00 for today is used up. It resets at 00:00 UTC. The primary admin can change it in Admin → Agent.",
+		);
 		return true;
 	});
 	await spend.settle();
@@ -105,7 +110,44 @@ test("the mailbox cap stops a chat step too, and other mailboxes' spend does not
 	const spend = chatSpend(db, { mailboxCapMicros: STEP_ESTIMATE });
 	await spend.beforeStep(400);
 	await spend.afterStep(STEP_USAGE);
-	await assert.rejects(spend.beforeStep(400), ChatSpendCapError);
+	await assert.rejects(
+		spend.beforeStep(400),
+		(error) => error.cap === "mailbox_dollars" && /this mailbox's \$0\.00/.test(error.message),
+	);
+});
+
+test("without model rates chat stops at its own token allowance and says so", async (t) => {
+	const db = await database(t);
+	db.db.exec(
+		`INSERT INTO ai_usage (id, created_at, provider, model, source, input_tokens) VALUES ('triage', ${Math.floor(Date.now() / 1000)}, 'p', 'm', 'auto_triage', 5000000)`,
+	);
+	const spend = chatSpend(db, {
+		details: { provider: "cloudflare", modelId: "unpriced", rates: undefined },
+		tokenCap: 150,
+	});
+	await spend.beforeStep(400);
+	await spend.afterStep({ inputTokens: 100, outputTokens: 10 });
+	await assert.rejects(spend.beforeStep(400), (error) => {
+		assert.equal(error.cap, "chat_tokens");
+		assert.match(error.message, /^Daily AI token allowance reached: chat has used its 150 input tokens for today\./);
+		assert.match(error.message, /resets at 00:00 UTC.*Admin → Agent/);
+		return true;
+	});
+});
+
+test("every cap has a message that names it, when it resets and where it is changed", () => {
+	const limits = { installCapMicros: 2_000_000, mailboxCapMicros: 500_000, tokenCap: 2_000_000 };
+	const messages = Object.fromEntries(
+		["install_dollars", "mailbox_dollars", "chat_tokens", "auto_read_tokens"].map((cap) => [
+			cap,
+			spendCapMessage(cap, limits),
+		]),
+	);
+	assert.match(messages.install_dollars, /install's \$2\.00/);
+	assert.match(messages.mailbox_dollars, /this mailbox's \$0\.50.*Automatic reading in the assistant settings/);
+	assert.match(messages.chat_tokens, /chat has used its 2,000,000 input tokens/);
+	assert.match(messages.auto_read_tokens, /automatic reading has used its 2,000,000 input tokens/);
+	for (const message of Object.values(messages)) assert.match(message, /resets at 00:00 UTC/);
 });
 
 test("a step that ends without usage keeps its estimate and releases the reservation", async (t) => {

@@ -2,8 +2,20 @@ import type { LanguageModelUsage } from "ai";
 import type { AgentModelRates } from "@/lib/agent/provider-types";
 import type { ActualSpend, SpendEstimate, SpendMode } from "./spend-types";
 
-/** Daily install-wide input-token budget used when the model has no configured rates. */
+/**
+ * The default daily input-token allowance used when the model has no configured rates, for automatic reading
+ * and for chat each (`app_settings.agent_auto_read_token_cap`, `agent_chat_token_cap`).
+ */
 export const UNKNOWN_RATES_INPUT_TOKEN_CAP = 2_000_000;
+
+/** `ai_usage` sources a person starts; without rates they count against chat's allowance, the rest against automatic reading's. */
+export const INTERACTIVE_SPEND_SOURCES: readonly string[] = ["chat"];
+
+export type TokenAllowanceKind = "chat" | "auto_read";
+
+export function tokenAllowanceKind(source: string): TokenAllowanceKind {
+	return INTERACTIVE_SPEND_SOURCES.includes(source) ? "chat" : "auto_read";
+}
 
 const SECONDS_PER_DAY = 86_400;
 

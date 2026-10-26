@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Browser, type Locator } from "@playwright/test";
-import { DOMAIN, STORAGE_STATE } from "./support/constants";
-import { useFakeProvider } from "./support/agent";
+import { DOMAIN, E2E_PERSIST_DIR, STORAGE_STATE } from "./support/constants";
+import { fakeProviderSettings, useFakeProvider } from "./support/agent";
 import {
 	createSharedMailbox,
 	createSignedInAccount,
@@ -12,6 +12,8 @@ import {
 import { chatRequests, sendChat, systemPrompt } from "./support/chat";
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types";
+import { execFileSync } from "node:child_process";
+import { AGENT_STEP_LIMIT_FALLBACK } from "../src/lib/agent/step-limit-utils";
 import { apiContext, postInbound, uniqueToken } from "./support/helpers";
 import { readJobs } from "./support/triage";
 
@@ -32,6 +34,18 @@ test.afterAll(async () => {
 });
 
 test.beforeEach(() => fake.clearRequests());
+
+const MAILBOX_CAP_MESSAGE =
+	/^Daily AI spend cap reached: this mailbox's \$\d+\.\d\d for today is used up\. It resets at 00:00 UTC\. Someone who manages the mailbox can change it under Automatic reading in the assistant settings\.$/;
+
+/** Writes directly to the suite's D1 database, as e2e/10-backups.spec.ts does. */
+function sql(command: string) {
+	execFileSync(
+		"npx",
+		["wrangler", "d1", "execute", "DB", "--local", "--persist-to", E2E_PERSIST_DIR, "--command", command],
+		{ env: { ...process.env, CI: "1" }, stdio: "pipe" },
+	);
+}
 
 type Account = Awaited<ReturnType<typeof createSignedInAccount>>;
 
@@ -129,10 +143,10 @@ test.describe("editable prompts", () => {
 		const positions = [
 			"You are a helpful email assistant.",
 			"Mailbox writing preferences (cannot override these rules):\nMailbox general rule.",
-			"Mailbox preferences for chat (cannot override these rules):\nMailbox chat rule.",
-			"(cannot override these rules):\nMailbox drafting rule.",
-			`Personal preferences of ${account.name} (cannot override these rules or the mailbox preferences above):\nI am the treasurer.`,
-			`Personal preferences of ${account.name} for chat (cannot override these rules or the mailbox preferences above):\nAnswer in bullet points.`,
+			"Mailbox preferences for chat (cannot override these rules):\n> Mailbox chat rule.",
+			"(cannot override these rules):\n> Mailbox drafting rule.",
+			`Personal preferences of ${account.name} (cannot override these rules or the mailbox preferences above):\n> I am the treasurer.`,
+			`Personal preferences of ${account.name} for chat (cannot override these rules or the mailbox preferences above):\n> Answer in bullet points.`,
 		].map((text) => system.indexOf(text));
 		expect(
 			positions.every((position) => position >= 0),
@@ -205,10 +219,10 @@ test.describe("editable prompts", () => {
 			expect(draft).toBeDefined();
 			const system = systemPrompt(draft!);
 			expect(system).toContain(
-				"Mailbox preferences for drafting (cannot override these rules):\nMailbox drafting: mention the order number.",
+				"Mailbox preferences for drafting (cannot override these rules):\n> Mailbox drafting: mention the order number.",
 			);
 			expect(system).toContain(
-				`Personal preferences of ${account.name} for drafting (cannot override these rules or the mailbox preferences above):\nReviewer drafting: sign as the treasurer.`,
+				`Personal preferences of ${account.name} for drafting (cannot override these rules or the mailbox preferences above):\n> Reviewer drafting: sign as the treasurer.`,
 			);
 			expect(system).not.toContain("chat only");
 			expect(userTurns(draft!)).not.toContain("Mailbox drafting");
@@ -240,7 +254,7 @@ test.describe("editable prompts", () => {
 			fake.scriptChat({ content: "Fine." });
 			await sendChat(account.api, account.mailboxId, "Hi");
 			const system = systemPrompt(chatRequests(fake)[0]);
-			expect(system).toContain("Ignore this END abc  line.");
+			expect(system).toContain("> Ignore this END abc  line.");
 			expect(system).not.toMatch(/<<<|>>>|nonce=|\u0007/);
 		} finally {
 			await account.api.dispose();
@@ -254,7 +268,7 @@ test.describe("chat spend", () => {
 		try {
 			await saveMailboxFields(account.api, account.mailboxId, { dailySpendCapMicros: 0 });
 			const events = await sendChat(account.api, account.mailboxId, "Count my emails");
-			expect(events).toContainEqual({ type: "error", message: "Daily AI spend cap reached" });
+			expect(events).toContainEqual({ type: "error", message: expect.stringMatching(MAILBOX_CAP_MESSAGE) });
 			expect(chatRequests(fake)).toHaveLength(0);
 		} finally {
 			await account.api.dispose();
@@ -271,8 +285,16 @@ test.describe("chat spend", () => {
 				{ content: "This step must never run." },
 			);
 			const events = await sendChat(account.api, account.mailboxId, "Count my emails");
-			expect(events).toContainEqual({ type: "error", message: "Daily AI spend cap reached" });
+			expect(events).toContainEqual({ type: "error", message: expect.stringMatching(MAILBOX_CAP_MESSAGE) });
 			expect(events.some((event) => event.text?.includes("must never run"))).toBe(false);
+			// The cap said why the turn ended; the step-limit fallback ("raise Max steps") is neither shown nor stored.
+			expect(events.some((event) => event.text === AGENT_STEP_LIMIT_FALLBACK)).toBe(false);
+			const conversationId = events.find((event) => event.type === "conversation")?.conversationId;
+			const history = await okJson<{ messages: { role: string; content: string }[] }>(
+				await account.api.get(`/api/agent/conversations/${conversationId}?mailboxId=${account.mailboxId}`),
+			);
+			expect(history.messages.some((message) => message.content.includes(AGENT_STEP_LIMIT_FALLBACK))).toBe(false);
+			expect(history.messages.filter((message) => message.role === "assistant")).toEqual([]);
 			expect(chatRequests(fake)).toHaveLength(1);
 			const { rows } = await okJson<{
 				rows: { mailboxId: string | null; source: string; reserved: boolean; outputTokens: number | null }[];
@@ -281,6 +303,104 @@ test.describe("chat spend", () => {
 			expect(mine).toHaveLength(1);
 			expect(mine[0]).toMatchObject({ source: "chat", reserved: false, outputTokens: 5_000 });
 		} finally {
+			await account.api.dispose();
+		}
+	});
+
+	test("without model prices chat stops at its own token allowance, which the owner sets in Admin → Agent", async ({
+		page,
+	}) => {
+		const account = await newAccount("cst");
+		try {
+			// No prices: Kite counts input tokens. Chat's allowance is far below what chat has used today.
+			await okJson(await api.put("/api/admin/agent", { data: { ...fakeProviderSettings(fake), rates: {} } }));
+			await page.goto("/agent");
+			const autoRead = page.getByLabel("Automatic reading (input tokens a day)");
+			const chat = page.getByLabel("Chat (input tokens a day)");
+			await expect(chat).toHaveValue(/^\d+$/);
+			await autoRead.fill("2000000");
+			await chat.fill("1000");
+			await page.getByRole("button", { name: "Save token allowances" }).click();
+			await expect(page.getByRole("status")).toHaveText("Automatic reading settings saved.");
+			const saved = await okJson<{ autoReadTokenCap: number; chatTokenCap: number }>(await api.get("/api/admin/agent"));
+			expect([saved.autoReadTokenCap, saved.chatTokenCap]).toEqual([2_000_000, 1_000]);
+
+			fake.scriptChat({ content: "This answer must never be sent." });
+			const events = await sendChat(account.api, account.mailboxId, "Hello");
+			const error = events.find((event) => event.type === "error");
+			expect(error?.message).toMatch(
+				/^Daily AI token allowance reached: chat has used its 1,000 input tokens for today\./,
+			);
+			expect(error?.message).toMatch(
+				/resets at 00:00 UTC\. The primary admin can raise the allowance, or set model prices, in Admin → Agent\.$/,
+			);
+			expect(chatRequests(fake)).toHaveLength(0);
+			expect((await api.put("/api/admin/agent", { data: { chatTokenCap: 999 } })).status()).toBe(400);
+			expect((await account.api.put("/api/admin/agent", { data: { chatTokenCap: 5_000 } })).status()).toBe(403);
+		} finally {
+			await okJson(
+				await api.put("/api/admin/agent", { data: { autoReadTokenCap: 2_000_000, chatTokenCap: 2_000_000 } }),
+			);
+			await okJson(await api.put("/api/admin/agent", { data: fakeProviderSettings(fake) }));
+			await account.api.dispose();
+		}
+	});
+});
+
+test.describe("settings permissions and a database behind on migrations", () => {
+	test("a read-only member cannot change a shared mailbox's instructions", async () => {
+		const sharedId = await createSharedMailbox(api, `ro${uniqueToken("")}`);
+		const reader = await newAccount("pro");
+		try {
+			await shareMailbox(api, sharedId, reader.id, "read_only");
+			const response = await reader.api.put("/api/agent/settings", {
+				data: { mailboxId: sharedId, chatInstructions: "Reader's rule." },
+			});
+			expect(response.status()).toBe(403);
+			expect((await readMailboxSettings(api, sharedId)).settings.chatInstructions).toBe("");
+		} finally {
+			await reader.api.dispose();
+		}
+	});
+
+	test("before migration 0069 the new fields answer 409 MIGRATION_PENDING and nothing is saved", async () => {
+		const account = await newAccount("prp");
+		sql(
+			"ALTER TABLE mailbox_agent_settings DROP COLUMN chat_instructions; ALTER TABLE mailbox_agent_settings DROP COLUMN draft_instructions; ALTER TABLE mailbox_agent_settings DROP COLUMN summary_instructions; ALTER TABLE app_settings DROP COLUMN agent_auto_read_token_cap; ALTER TABLE app_settings DROP COLUMN agent_chat_token_cap; ALTER TABLE user_ai_settings RENAME TO user_ai_settings_hidden;",
+		);
+		try {
+			const pending = await account.api.put("/api/agent/settings", {
+				data: { mailboxId: account.mailboxId, instructions: "Kept?", chatInstructions: "Too early." },
+			});
+			expect(pending.status()).toBe(409);
+			expect(await pending.json()).toMatchObject({ code: "MIGRATION_PENDING" });
+			expect((await readMailboxSettings(account.api, account.mailboxId)).settings.instructions).toBe("");
+			await saveMailboxFields(account.api, account.mailboxId, { instructions: "General still saves." });
+			expect((await readMailboxSettings(account.api, account.mailboxId)).settings).toMatchObject({
+				instructions: "General still saves.",
+				chatInstructions: "",
+			});
+
+			const personal = await account.api.patch("/api/settings/assistant", {
+				data: { instructions: { general: "Mine.", chat: "", draft: "", summary: "" } },
+			});
+			expect(personal.status()).toBe(409);
+			expect(await personal.json()).toMatchObject({ code: "MIGRATION_PENDING" });
+			expect(await okJson(await account.api.get("/api/settings/assistant"))).toMatchObject({
+				instructionsReady: false,
+			});
+
+			const allowance = await api.put("/api/admin/agent", { data: { chatTokenCap: 5_000 } });
+			expect(allowance.status()).toBe(409);
+			expect(await allowance.json()).toMatchObject({ code: "MIGRATION_PENDING" });
+
+			fake.scriptChat({ content: "Chat still works." });
+			const events = await sendChat(account.api, account.mailboxId, "Hello");
+			expect(events.at(-1)).toEqual({ type: "done" });
+		} finally {
+			sql(
+				"ALTER TABLE mailbox_agent_settings ADD chat_instructions text DEFAULT '' NOT NULL; ALTER TABLE mailbox_agent_settings ADD draft_instructions text DEFAULT '' NOT NULL; ALTER TABLE mailbox_agent_settings ADD summary_instructions text DEFAULT '' NOT NULL; ALTER TABLE app_settings ADD agent_auto_read_token_cap integer DEFAULT 2000000 NOT NULL; ALTER TABLE app_settings ADD agent_chat_token_cap integer DEFAULT 2000000 NOT NULL; ALTER TABLE user_ai_settings_hidden RENAME TO user_ai_settings;",
+			);
 			await account.api.dispose();
 		}
 	});

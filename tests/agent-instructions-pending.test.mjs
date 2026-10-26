@@ -16,6 +16,8 @@ await build({
 		mailbox: fileURLToPath(import.meta.resolve("../src/lib/agent/auto-read/mailbox-settings.ts")),
 		personal: fileURLToPath(import.meta.resolve("../src/lib/agent/user-ai-settings.ts")),
 		lookup: fileURLToPath(import.meta.resolve("../src/lib/auth/user-lookup-utils.ts")),
+		migration: fileURLToPath(import.meta.resolve("../src/lib/agent/ai-writing-migration.ts")),
+		install: fileURLToPath(import.meta.resolve("../src/lib/agent/auto-read/install-settings.ts")),
 		db: join(root, "src/db/index.ts"),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
@@ -35,6 +37,8 @@ const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const mailbox = await load("mailbox");
 const personal = await load("personal");
 const { missingColumnFromError } = await load("lookup");
+const { aiWritingMigrationApplied } = await load("migration");
+const install = await load("install");
 const { createDb } = await load("db");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
@@ -56,6 +60,8 @@ async function database(t, { behind = false } = {}) {
 			ALTER TABLE mailbox_agent_settings DROP COLUMN draft_instructions;
 			ALTER TABLE mailbox_agent_settings DROP COLUMN summary_instructions;
 			DROP TABLE user_ai_settings;
+			ALTER TABLE app_settings DROP COLUMN agent_auto_read_token_cap;
+			ALTER TABLE app_settings DROP COLUMN agent_chat_token_cap;
 		`);
 	return { sqlite, db: createDb(sqlite), env: { DB: sqlite } };
 }
@@ -79,7 +85,7 @@ const access = {
 
 test("before migration 0069 the settings read with empty task fields and save without them", async (t) => {
 	const { sqlite, db, env } = await database(t, { behind: true });
-	assert.equal(await mailbox.taskInstructionsReady(env), false);
+	assert.equal(await aiWritingMigrationApplied(env), false);
 	const settings = await mailbox.readMailboxAgentSettings(db, access);
 	assert.equal(settings.instructions, "Be brief.");
 	assert.deepEqual([settings.chatInstructions, settings.draftInstructions, settings.summaryInstructions], ["", "", ""]);
@@ -121,7 +127,7 @@ test("before migration 0069 personal instructions read as empty and cannot be sa
 
 test("after migration 0069 the task fields and personal instructions save and read back", async (t) => {
 	const { db, env } = await database(t);
-	assert.equal(await mailbox.taskInstructionsReady(env), true);
+	assert.equal(await aiWritingMigrationApplied(env), true);
 	const settings = await mailbox.readMailboxAgentSettings(db, access);
 	const values = {
 		...settings,
@@ -151,4 +157,48 @@ test("after migration 0069 the task fields and personal instructions save and re
 		chat: "Bullets.",
 		name: "Owner",
 	});
+});
+
+test("before migration 0069 the token allowances read as their defaults and only they refuse to save", async (t) => {
+	const { sqlite, env } = await database(t, { behind: true });
+	sqlite.db.exec("UPDATE app_settings SET agent_daily_spend_cap_micros = 3000000 WHERE id = 'default'");
+	const before = await install.getAutoReadInstallSettings(env);
+	assert.deepEqual(
+		[before.dailySpendCapMicros, before.autoReadTokenCap, before.chatTokenCap],
+		[3_000_000, 2_000_000, 2_000_000],
+	);
+	assert.equal((await install.getAutoReadAdminSettings(env)).tokenCapsReady, false);
+	await install.saveAutoReadAdminSettings(env, { dailySpendCapMicros: 4_000_000 });
+	assert.equal((await install.getAutoReadInstallSettings(env)).dailySpendCapMicros, 4_000_000);
+	await assert.rejects(install.saveAutoReadAdminSettings(env, { chatTokenCap: 50_000 }), install.TokenCapsPendingError);
+});
+
+test("after migration 0069 both token allowances save, on a fresh install too", async (t) => {
+	const { env } = await database(t);
+	assert.equal((await install.getAutoReadInstallSettings(env)).chatTokenCap, 2_000_000);
+	await install.saveAutoReadAdminSettings(env, { autoReadTokenCap: 300_000, chatTokenCap: 50_000 });
+	const saved = await install.getAutoReadAdminSettings(env);
+	assert.deepEqual([saved.autoReadTokenCap, saved.chatTokenCap, saved.tokenCapsReady], [300_000, 50_000, true]);
+	assert.equal(saved.dailySpendCapMicros, 2_000_000);
+});
+
+test("whole-row reads name every column with its table, so D1 cannot read a missing one as its own name", async (t) => {
+	const { sqlite } = await database(t, { behind: true });
+	const statements = [];
+	const recording = new Proxy(sqlite, {
+		get(target, key) {
+			if (key === "prepare")
+				return (query) => {
+					statements.push(query);
+					return target.prepare(query);
+				};
+			const value = Reflect.get(target, key);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+	const row = await mailbox.readMailboxAgentSettingsRow(createDb(recording), "mailbox-a");
+	assert.equal(row.chatInstructions, "");
+	const first = statements.find((query) => query.includes("chat_instructions"));
+	assert.match(first, /"mailbox_agent_settings"\."chat_instructions"/);
+	assert.doesNotMatch(first, /select "mailbox_id"/i);
 });

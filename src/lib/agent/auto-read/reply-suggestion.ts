@@ -33,6 +33,8 @@ type ReplySuggestionInput = {
 	/** The triage model that decided a reply is needed. */
 	model: string | null;
 	installCapMicros: number;
+	/** Automatic reading's daily input-token allowance, used without model rates. */
+	tokenCap: number;
 };
 
 /**
@@ -40,7 +42,7 @@ type ReplySuggestionInput = {
  * carries the mailbox's drafting instructions and, when given, the reviewer's own.
  */
 export async function generateDraft(
-	input: Pick<ReplySuggestionInput, "env" | "job" | "settings" | "installCapMicros">,
+	input: Pick<ReplySuggestionInput, "env" | "job" | "settings" | "installCapMicros" | "tokenCap">,
 	selection: AgentSelection,
 	thread: SourceMessage[],
 	personal: PersonalInstructions | null = null,
@@ -66,6 +68,7 @@ export async function generateDraft(
 				promptChars,
 				maxOutputTokens: current.maxOutputTokens,
 				installCapMicros: input.installCapMicros,
+				tokenCap: input.tokenCap,
 				mailboxCapMicros: settings.dailySpendCapMicros,
 			},
 			() =>

@@ -41,6 +41,7 @@ export async function generateProposalIntro(
 				job: { id: input.suggestionId, mailboxId: mailbox.id, reviewerUserId: mailbox.userId },
 				settings: instructed,
 				installCapMicros: install.dailySpendCapMicros,
+				tokenCap: install.autoReadTokenCap,
 			},
 			selection,
 			thread,

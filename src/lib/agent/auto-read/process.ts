@@ -91,6 +91,7 @@ async function modelStep(input: {
 			context,
 			config,
 			installCapMicros: install.dailySpendCapMicros,
+			tokenCap: install.autoReadTokenCap,
 			extensions,
 		});
 		return { skip: null, model, hintOnly };
@@ -212,6 +213,7 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 			suggestion: reply,
 			model: model?.modelId ?? null,
 			installCapMicros: install.dailySpendCapMicros,
+			tokenCap: install.autoReadTokenCap,
 		});
 	await settleTriageSuggestions(env, job.mailboxId, source);
 	return {

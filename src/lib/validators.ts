@@ -4,6 +4,7 @@ import { DEFAULT_FOLDER_COLOR, FOLDER_COLOR_VALUES } from "@/lib/folders/colors"
 import { isUndoSendSeconds } from "@/lib/email/undo-send-utils";
 import { AGENT_MAX_STEPS_MAX, AGENT_MAX_STEPS_MIN } from "@/lib/agent/step-limit-utils";
 import { TASK_INSTRUCTIONS_MAX_CHARS } from "@/lib/agent/instruction-utils";
+import { instructionText } from "@/lib/agent/instruction-schema";
 import { isPublicHttpUrl } from "@/lib/security/outbound-url";
 import { WEBHOOK_EVENT_VALUES } from "@/lib/modules/webhook-events-utils";
 
@@ -328,7 +329,7 @@ export const updateSendingSettingsSchema = z
 	})
 	.refine((input) => input.previewEnabled !== undefined || input.undoSeconds !== undefined, "Nothing to update");
 
-const personalInstruction = z.string().max(TASK_INSTRUCTIONS_MAX_CHARS);
+const personalInstruction = instructionText(TASK_INSTRUCTIONS_MAX_CHARS);
 
 /** A personal settings update: the step limit, the user's own instructions, or both. */
 export const updateAssistantSettingsSchema = z

@@ -53,6 +53,9 @@ export type AutoReadInstallSettings = {
 	autoReadEnabled: boolean;
 	externalAutoReadAllowed: boolean;
 	dailySpendCapMicros: number;
+	/** Daily input tokens without model rates (migration 0069; the default before it). */
+	autoReadTokenCap: number;
+	chatTokenCap: number;
 };
 
 export type AutoReadProviderSummary = {

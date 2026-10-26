@@ -21,11 +21,8 @@ import {
 	unknownModelError,
 } from "@/lib/agent/auto-read/settings-utils";
 import { CHAT_FIXED_RULES, DRAFT_FIXED_RULES } from "@/lib/agent/fixed-rules-utils";
-import {
-	readMailboxAgentSettings,
-	saveMailboxAgentSettings,
-	taskInstructionsReady,
-} from "@/lib/agent/auto-read/mailbox-settings";
+import { readMailboxAgentSettings, saveMailboxAgentSettings } from "@/lib/agent/auto-read/mailbox-settings";
+import { aiWritingMigrationApplied } from "@/lib/agent/ai-writing-migration";
 
 async function listReviewers(db: AppDatabase, mailboxId: string) {
 	const reviewers: { id: string; name: string; email: string }[] = [];
@@ -85,7 +82,7 @@ export async function GET(request: Request) {
 		canManage: access.canManage,
 		instructionContext: {
 			// False until migration 0069 adds the task instruction columns; the fields cannot be saved before.
-			ready: await taskInstructionsReady(env),
+			ready: await aiWritingMigrationApplied(env),
 			// Kite's own rules, shown read-only; served here so the prompt text stays out of the browser bundle.
 			fixedRules: { chat: CHAT_FIXED_RULES, draft: DRAFT_FIXED_RULES },
 		},

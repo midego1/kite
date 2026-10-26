@@ -3,7 +3,7 @@
  * Mail goes inside nonce-delimited blocks; anything that could fake those delimiters is removed first.
  */
 
-const INVISIBLE_CHARACTERS = /[\u{E0000}-\u{E007F}​-‏‪-‮⁠-⁤⁦-⁩﻿]/gu;
+const INVISIBLE_CHARACTERS = /[\u{E0000}-\u{E007F}\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/gu;
 const DELIMITER_LIKE = /[<>]{3,}|\bnonce\s*[:=]\s*\S*/gi;
 
 /** A fresh random nonce for one prompt's untrusted blocks. */
@@ -33,7 +33,7 @@ export function markUntrustedLinks(text: string): string {
 }
 
 /**
- * One untrusted block: `<<<LABEL key=value … nonce=N>>>`, the text, then `<<<END N>>>`. Attribute values
+ * One untrusted block: `<<<LABEL key=value ... nonce=N>>>`, the text, then `<<<END N>>>`. Attribute values
  * keep only word characters, dots and hyphens; the caller strips delimiters from `text` with the same nonce.
  */
 export function wrapUntrusted(label: string, attributes: Record<string, string>, text: string, nonce: string): string {

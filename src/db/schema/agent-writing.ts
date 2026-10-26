@@ -1,6 +1,6 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { users } from "./index";
-import { instructionColumns } from "./instruction-columns";
+import { instructionColumns } from "./agent-columns";
 
 /**
  * A user's own AI preferences (migration 0069), private to them: personal instructions that apply in every

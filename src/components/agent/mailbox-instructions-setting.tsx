@@ -7,7 +7,7 @@ import {
 import { FixedRulesNote } from "./fixed-rules-note";
 import { InstructionFields } from "./instruction-fields";
 import type { InstructionFieldKey } from "./instruction-fields-utils";
-import type { AgentSettings } from "./types";
+import type { AgentSettings, InstructionContext } from "./types";
 
 const SETTINGS_KEYS = {
 	general: "instructions",
@@ -22,15 +22,16 @@ const MAILBOX_INSTRUCTION_LIMITS = { general: GENERAL_MAX, chat: TASK_MAX, draft
 export function MailboxInstructionsSetting({
 	settings,
 	canManage,
-	ready,
+	context,
 	onChange,
 }: {
 	settings: AgentSettings;
 	canManage: boolean;
-	/** False before migration 0069: only the general field can be edited. */
-	ready: boolean;
+	/** Before migration 0069 (`ready` false) only the general field can be edited. */
+	context: InstructionContext | null;
 	onChange: (settings: AgentSettings) => void;
 }) {
+	const ready = context?.ready !== false;
 	const values = {
 		general: settings.instructions,
 		chat: settings.chatInstructions,
@@ -56,7 +57,7 @@ export function MailboxInstructionsSetting({
 				lockedTasks={!ready}
 				onChange={(key, value) => onChange({ ...settings, [SETTINGS_KEYS[key]]: value })}
 			/>
-			<FixedRulesNote />
+			{context && <FixedRulesNote rules={context.fixedRules} />}
 		</div>
 	);
 }

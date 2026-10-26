@@ -56,6 +56,7 @@ import type {
 	AgentPanelProps,
 	AgentPanelView,
 	AgentSettings,
+	InstructionContext,
 	AgentSettingsResponse,
 	QueuedAgentMessage,
 } from "./types";
@@ -88,7 +89,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 	const [availableModels, setAvailableModels] = useState<string[]>([]);
 	const [reviewers, setReviewers] = useState<{ id: string; name: string; email: string }[]>([]);
 	const [canManage, setCanManage] = useState(false);
-	const [taskInstructionsReady, setTaskInstructionsReady] = useState(true);
+	const [instructionContext, setInstructionContext] = useState<InstructionContext | null>(null);
 	const [providerConfigured, setProviderConfigured] = useState(false);
 	const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
 	const [conversationId, setConversationId] = useState<string | null>(null);
@@ -182,7 +183,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 			setSettings(data.settings);
 			setAvailableModels(data.models ?? []);
 			setCanManage(data.canManage);
-			setTaskInstructionsReady(data.taskInstructionsReady !== false);
+			setInstructionContext(data.instructionContext ?? null);
 			setProviderConfigured(data.providerConfigured);
 			setAutoReplyEnabled(data.autoReplyEnabled);
 			setReviewers(data.reviewers ?? []);
@@ -912,7 +913,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 							<MailboxInstructionsSetting
 								settings={settings}
 								canManage={canManage}
-								ready={taskInstructionsReady}
+								context={instructionContext}
 								onChange={setSettings}
 							/>
 							<label className="block">

@@ -20,6 +20,7 @@ import {
 	requiredReviewerAccess,
 	unknownModelError,
 } from "@/lib/agent/auto-read/settings-utils";
+import { CHAT_FIXED_RULES, DRAFT_FIXED_RULES } from "@/lib/agent/fixed-rules-utils";
 import {
 	readMailboxAgentSettings,
 	saveMailboxAgentSettings,
@@ -82,8 +83,12 @@ export async function GET(request: Request) {
 		},
 		models,
 		canManage: access.canManage,
-		// False until migration 0069 adds the task instruction columns; the fields cannot be saved before.
-		taskInstructionsReady: await taskInstructionsReady(env),
+		instructionContext: {
+			// False until migration 0069 adds the task instruction columns; the fields cannot be saved before.
+			ready: await taskInstructionsReady(env),
+			// Kite's own rules, shown read-only; served here so the prompt text stays out of the browser bundle.
+			fixedRules: { chat: CHAT_FIXED_RULES, draft: DRAFT_FIXED_RULES },
+		},
 		canConfigureProvider: isPrimaryAdmin(user),
 		providerConfigured: agentProvider.configured,
 		provider,

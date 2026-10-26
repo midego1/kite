@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Assistant chat now counts against the daily AI spend caps, like automatic reading: each step reserves its estimated cost against the mailbox and install caps before it is sent and is settled with its real usage, and a turn that reaches a cap ends with "Daily AI spend cap reached". Chat usage rows now carry their mailbox.
+- Assistant chat now counts against the daily AI spend caps, like automatic reading: each step reserves its estimated cost against the mailbox and install caps before it is sent and is settled with its real usage, and a turn that reaches a cap ends with "Daily AI spend cap reached". Chat usage rows now carry their mailbox. Chat and automatic reading now share the install cap (default $2.00 a day), so an install that chats a lot may want to raise it in [Admin → Agent](/agent). Without model rates Kite cannot count dollars and applies its fixed cap of 2,000,000 input tokens a day for the install instead, which a busy assistant chat can reach: set the rates of your models there to get a dollar cap you can change.
 
 ## [2026.10.26.5] - 2026-10-26
 

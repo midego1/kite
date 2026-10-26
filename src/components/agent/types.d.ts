@@ -101,8 +101,7 @@ export type AgentSettingsResponse = {
 	settings: AgentSettings;
 	models: string[];
 	canManage: boolean;
-	/** False until migration 0069 adds the task instruction columns. */
-	taskInstructionsReady?: boolean;
+	instructionContext?: InstructionContext;
 	canConfigureProvider: boolean;
 	providerConfigured: boolean;
 	provider: AgentProvider | null;
@@ -113,3 +112,10 @@ export type AgentConversationsResponse = { conversations: AgentConversation[] };
 export type AgentJobsResponse = { jobs: AgentJob[] };
 export type AgentHistoryResponse = { messages: AgentMessage[] };
 export type AgentErrorResponse = { error?: string };
+
+/** What the instruction fields need besides their values: whether they can be saved yet, and Kite's own rules. */
+export type InstructionContext = {
+	/** False until migration 0069 adds the task instruction columns. */
+	ready: boolean;
+	fixedRules: { chat: string; draft: string };
+};

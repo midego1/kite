@@ -10,7 +10,7 @@ import { agentProviderErrorMessage } from "./errors";
 import { getAgentEnabled } from "./provider";
 import { readMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
 import { getAutoReadInstallSettings } from "./auto-read/install-settings";
-import { createChatSpend } from "./chat-spend";
+import { ChatSpendCapError, createChatSpend } from "./chat-spend";
 import { CHAT_STEP_MAX_OUTPUT_TOKENS, stepPromptChars } from "./chat-spend-utils";
 import { personalInstructionsFor } from "./user-ai-settings";
 import { attachHistoryRefs, buildChatTools, resolveToolResultRefs } from "./chat-tools";
@@ -140,6 +140,10 @@ export async function createAgentChatStream(
 		abortSignal: signal,
 		onStepFinish: async ({ usage }) => {
 			await spend.afterStep(usage);
+		},
+		// A step refused at the spend cap is an expected end of the turn, not an error worth a stack trace.
+		onError: ({ error }) => {
+			if (!(error instanceof ChatSpendCapError)) console.error(error);
 		},
 	});
 	const encoder = new TextEncoder();

@@ -158,9 +158,13 @@ test.describe("assistant chat organizes mail through approval and undo", () => {
 		await panel.getByRole("button", { name: `Approve new folder “${name}”` }).click();
 		await expect(panel.getByText(`Created folder “${name}”.`)).toBeVisible();
 		expect((await listFolders()).find((folder) => folder.name === name)?.color).toBe("#16a34a");
+		// The sidebar refreshes without switching mailboxes or reloading.
+		const nav = page.getByRole("navigation").first();
+		await expect(nav.getByRole("link", { name })).toBeVisible();
 
 		await panel.getByRole("button", { name: "Undo", exact: true }).click();
 		await expect(panel.getByText("Undone.", { exact: true })).toBeVisible();
 		expect((await listFolders()).some((folder) => folder.name === name)).toBe(false);
+		await expect(nav.getByRole("link", { name })).toHaveCount(0);
 	});
 });

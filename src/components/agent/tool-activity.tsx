@@ -150,6 +150,7 @@ function ApprovedAction({ item, proposal }: { item: AgentMessage; proposal: Agen
 			await undoApprovedAgentAction(item.recordId);
 			setState("undone");
 			window.dispatchEvent(new Event("kite:messages-changed"));
+			window.dispatchEvent(new Event("kite:folders-changed"));
 		} catch (cause) {
 			setState("idle");
 			setError(cause instanceof Error ? cause.message : "Could not undo action");

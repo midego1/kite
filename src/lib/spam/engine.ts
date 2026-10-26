@@ -19,7 +19,7 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 	const fingerprint = buildFingerprint(input.message, prepared);
 	const sender = getEmailAddress(input.message.fromAddr ?? input.envelopeFrom).toLowerCase();
 	const signals: SpamSignal[] = [
-		...analyzeAuthentication(input.authenticationResults),
+		...analyzeAuthentication(input.authenticationResults, getDomain(input.message.fromAddr)),
 		...analyzeUrls(input.message, prepared),
 		...analyzeStructure(input.message, input.headers, prepared),
 		...analyzeAttachments(input.message, prepared),

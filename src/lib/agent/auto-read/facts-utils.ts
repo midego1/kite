@@ -59,16 +59,23 @@ export function isAutomaticMessage(from: string, headers?: Record<string, string
 	);
 }
 
+/** Stands in for a `dkim_passed` signal whose signature belongs to the From domain (`metadata.aligned`). */
+const DKIM_ALIGNED = "dkim_aligned";
+
 function parseSignalIds(value: string | null): Set<string> {
 	if (!value) return new Set();
 	try {
 		const parsed: unknown = JSON.parse(value);
 		if (!Array.isArray(parsed)) return new Set();
-		return new Set(
-			parsed
-				.map((signal) => (signal && typeof signal === "object" ? (signal as { id?: unknown }).id : null))
-				.filter((id): id is string => typeof id === "string"),
-		);
+		const ids = new Set<string>();
+		for (const signal of parsed) {
+			if (!signal || typeof signal !== "object") continue;
+			const { id, metadata } = signal as { id?: unknown; metadata?: { aligned?: unknown } };
+			if (typeof id !== "string") continue;
+			ids.add(id);
+			if (id === "dkim_passed" && metadata?.aligned === true) ids.add(DKIM_ALIGNED);
+		}
+		return ids;
 	} catch {
 		return new Set();
 	}
@@ -173,7 +180,8 @@ export function collectFacts(input: CollectFactsInput): MessageFacts {
 			? (Object.entries(input.headers).find(([key]) => key.toLowerCase() === "list-unsubscribe")?.[1] ?? null)
 			: null,
 		auth,
-		authPassed: !authFailed && (auth.dkim === "pass" || auth.dmarc === "pass"),
+		// DKIM alone counts only for the From domain's own signature; any domain can sign its mail.
+		authPassed: !authFailed && (auth.dmarc === "pass" || signals.has(DKIM_ALIGNED)),
 		authFailed,
 		spamVerdict: verdict,
 		suspicious: verdict === "suspicious",

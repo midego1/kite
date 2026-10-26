@@ -95,6 +95,7 @@ test("SES notifications parse S3 receipts and ignore everything else", () => {
 		key: "inbound/abc",
 		virusFailed: false,
 		headers: { subject: "Hi" },
+		authenticationResults: null,
 	});
 	assert.equal(notification.parseSesNotification(JSON.stringify({ notificationType: "Bounce" })), null);
 	assert.equal(notification.parseSesNotification("not json"), null);

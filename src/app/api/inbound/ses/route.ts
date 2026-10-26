@@ -56,6 +56,7 @@ export async function POST(request: Request) {
 		recipients: notification.recipients,
 		raw,
 		headers: notification.headers,
+		authenticationResults: notification.authenticationResults,
 	});
 	// Only after intake succeeded: a failure above returns 500 so SNS retries with the object intact.
 	await deleteObject(config, state.bucket, notification.key);

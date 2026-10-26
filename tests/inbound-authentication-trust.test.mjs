@@ -22,6 +22,8 @@ await build({
 		intake: source("lib/email/intake.ts"),
 		providerIntake: source("lib/email/provider-intake.ts"),
 		relayHeaders: source("lib/email/relay-headers.ts"),
+		rawHeaders: source("lib/email/raw-headers.ts"),
+		relaySignature: source("lib/alerts/relay-signature.ts"),
 		sesNotification: source("lib/aws/ses-notification.ts"),
 		facts: source("lib/agent/auto-read/facts-utils.ts"),
 		db: source("db/index.ts"),
@@ -41,9 +43,21 @@ await build({
 	packages: "external",
 	tsconfig: join(root, "tsconfig.json"),
 	alias: { "cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts") },
+	// The real logger, not a bundled copy, so this file's runs do not stand in for its own tests' coverage.
+	plugins: [
+		{
+			name: "real-logger",
+			setup(build) {
+				const logger = pathToFileURL(join(root, "src/lib/logger.mjs")).href;
+				build.onResolve({ filter: /\/logger\.mjs$/ }, () => ({ path: logger, external: true }));
+			},
+		},
+	],
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
-const { trustedCloudflareAuthenticationResults, topmostAuthenticationResults } = await load("trust");
+const { trustedCloudflareAuthenticationResults, sesAuthenticationResults } = await load("trust");
+const { completeRawHeaderValues } = await load("rawHeaders");
+const { readRelaySignatureState, recordRelaySignatureProblem } = await load("relaySignature");
 const { analyzeAuthentication } = await load("authentication");
 const { analyzeSpam } = await load("engine");
 const { intakeIncomingMail } = await load("intake");
@@ -92,61 +106,176 @@ async function setup(t) {
 	return { env, sqlite, queued };
 }
 
+/** What the Worker and relay hand on: Cloudflare's copy of `joined`, found with the raw fields. */
+const viaCloudflare = (joined, raw = null) => trustedCloudflareAuthenticationResults(joined, raw);
+/** The signals and the `authPassed` fact a trusted value gives mail From `security@bank.test`. */
+function verdictOf(trusted) {
+	const signals = analyzeAuthentication(trusted, "bank.test");
+	const facts = collectFacts({
+		message: {
+			fromAddr: "Bank <security@bank.test>",
+			subject: "Hello",
+			textBody: "Hello",
+			spamVerdict: "inbox",
+			spamSignals: JSON.stringify(signals),
+		},
+	});
+	return { ids: ids(signals), authPassed: facts.authPassed };
+}
+const joinFields = (...values) =>
+	new Headers(values.map((value) => ["authentication-results", value])).get("authentication-results");
+
 test("only the topmost Cloudflare Authentication-Results is trusted", () => {
-	assert.equal(trustedCloudflareAuthenticationResults(CLOUDFLARE), CLOUDFLARE);
+	assert.equal(viaCloudflare(CLOUDFLARE), CLOUDFLARE);
 	assert.equal(
-		trustedCloudflareAuthenticationResults(`mx.cloudflare.net 1; dkim=pass header.d=a.test`),
+		viaCloudflare("mx.cloudflare.net 1; dkim=pass header.d=a.test"),
 		"mx.cloudflare.net 1; dkim=pass header.d=a.test",
 	);
-	assert.equal(trustedCloudflareAuthenticationResults("MX.Cloudflare.NET; dkim=pass"), "MX.Cloudflare.NET; dkim=pass");
+	assert.equal(viaCloudflare("MX.Cloudflare.NET; dkim=pass"), "MX.Cloudflare.NET; dkim=pass");
 	// Another server's header on top means Cloudflare did not add one; anything below is the sender's.
-	assert.equal(trustedCloudflareAuthenticationResults(`mail.attacker.test; dmarc=pass, ${FORGED}`), null);
-	assert.equal(trustedCloudflareAuthenticationResults("mx.cloudflare.net.attacker.test; dmarc=pass"), null);
-	assert.equal(trustedCloudflareAuthenticationResults(""), null);
-	assert.equal(trustedCloudflareAuthenticationResults(undefined), null);
+	assert.equal(viaCloudflare(`mail.attacker.test; dmarc=pass, ${FORGED}`), null);
+	assert.equal(viaCloudflare("mx.cloudflare.net.attacker.test; dmarc=pass"), null);
+	assert.equal(viaCloudflare(""), null);
+	assert.equal(viaCloudflare(undefined), null);
 	// Headers joins repeated fields with ", " in order: the sender's copy below must not fill in methods.
-	const joined = new Headers([
-		["authentication-results", CLOUDFLARE],
-		["authentication-results", FORGED],
-	]).get("authentication-results");
-	assert.equal(trustedCloudflareAuthenticationResults(joined), CLOUDFLARE);
+	assert.equal(viaCloudflare(joinFields(CLOUDFLARE, FORGED)), CLOUDFLARE);
 	const partial = "mx.cloudflare.net; spf=none smtp.mailfrom=stranger.test";
-	assert.deepEqual(analyzeAuthentication(`${partial}, ${FORGED}`), []);
-	// Comments around the sender's authserv-id do not hide the boundary to its forged copy.
-	const commentedForgery = "mail.attacker.test (comment); dmarc=pass header.from=bank.test";
-	assert.equal(topmostAuthenticationResults(`${partial}, ${commentedForgery}`), partial);
-	assert.deepEqual(analyzeAuthentication(`${partial}, ${commentedForgery}`), []);
-	assert.deepEqual(analyzeAuthentication(`${partial}, (see notes) mail.attacker.test; dmarc=pass`), []);
-	assert.deepEqual(analyzeAuthentication(`${partial}, mail.attacker.test (a (nested) note); dmarc=pass`), []);
-	const joinedCommented = new Headers([
-		["authentication-results", partial],
-		["authentication-results", commentedForgery],
-	]).get("authentication-results");
-	assert.equal(trustedCloudflareAuthenticationResults(joinedCommented), partial);
-	// A quoted authserv-id does not hide the boundary either.
-	assert.deepEqual(analyzeAuthentication(`${partial}, "mail.attacker.test"; dmarc=pass`), []);
+	for (const forgery of [
+		FORGED,
+		"mail.attacker.test (comment); dmarc=pass header.from=bank.test",
+		"(see notes) mail.attacker.test; dmarc=pass",
+		"mail.attacker.test (a (nested) note); dmarc=pass",
+		'"mail.attacker.test"; dmarc=pass',
+	]) {
+		assert.equal(viaCloudflare(joinFields(partial, forgery)), partial, forgery);
+		assert.deepEqual(verdictOf(viaCloudflare(joinFields(partial, forgery))), { ids: [], authPassed: false }, forgery);
+	}
 	// Text in the trusted copy that opens a comment or quote cannot swallow the boundary.
 	const opened = 'mx.cloudflare.net; spf=none smtp.mailfrom="a(b"@stranger.test';
-	assert.deepEqual(analyzeAuthentication(`${opened}, x) "; dmarc=pass`), []);
-	assert.deepEqual(analyzeAuthentication("mx.cloudflare.net; spf=none smtp.mailfrom=a(b@x.test, x); dmarc=pass"), []);
-	// A comma inside the trusted copy only drops what follows it.
-	const commented =
-		"mx.cloudflare.net; dkim=pass header.d=a.test; dmarc=pass (p=NONE, sp=NONE dis=NONE) header.from=a.test";
-	assert.equal(
-		topmostAuthenticationResults(commented),
-		"mx.cloudflare.net; dkim=pass header.d=a.test; dmarc=pass (p=NONE",
+	assert.deepEqual(verdictOf(viaCloudflare(`${opened}, x) "; dmarc=pass`)).ids, []);
+	assert.deepEqual(
+		verdictOf(viaCloudflare("mx.cloudflare.net; spf=none smtp.mailfrom=a(b@x.test, x); dmarc=pass")).ids,
+		[],
 	);
-	assert.deepEqual(ids(analyzeAuthentication(commented)), ["dkim_passed", "dmarc_passed"]);
 });
 
-test("the analyzer counts only what intake vouched for", () => {
-	assert.deepEqual(analyzeAuthentication(null), []);
-	assert.deepEqual(analyzeAuthentication(undefined), []);
-	assert.deepEqual(ids(analyzeAuthentication(FORGED)), ["dkim_passed", "dmarc_passed", "spf_passed"]);
-	assert.deepEqual(
-		ids(analyzeAuthentication("mx.cloudflare.net; spf=fail smtp.mailfrom=x; dmarc=fail header.from=x")),
-		["dmarc_failed", "spf_failed"],
+test("a cut that may have lost results downgrades passes to unknown, never to pass", () => {
+	// A comma before a failure: without the exact fields the failure is lost, so the pass must go too.
+	const commaBeforeFail =
+		"mx.cloudflare.net; dkim=pass header.d=bank.test header.s=s1 (key, rotated); dmarc=fail header.from=bank.test";
+	assert.equal(viaCloudflare(commaBeforeFail), "mx.cloudflare.net; dkim=none header.d=bank.test header.s=s1");
+	assert.deepEqual(verdictOf(viaCloudflare(commaBeforeFail)), { ids: [], authPassed: false });
+	// Failures before the cut still count.
+	assert.deepEqual(verdictOf(viaCloudflare("mx.cloudflare.net; dmarc=fail header.from=bank.test, x; dkim=pass")).ids, [
+		"dmarc_failed",
+	]);
+	// Without a comma nothing is cut and nothing downgraded.
+	assert.deepEqual(verdictOf(viaCloudflare(FORGED)), {
+		ids: ["dkim_passed", "dmarc_passed", "spf_passed"],
+		authPassed: true,
+	});
+});
+
+test("the raw header block gives exact field boundaries wherever Cloudflare put its header", () => {
+	const withComma = "mx.cloudflare.net; dkim=pass header.d=bank.test (key, rotated); dmarc=fail header.from=bank.test";
+	const sender = "mail.attacker.test; dmarc=pass";
+	// Cloudflare's header is the first raw field: kept whole, commas and all, so its failure counts.
+	const inRaw = completeRawHeaderValues(
+		mime([`Authentication-Results: ${withComma}`, `Authentication-Results: ${sender}`]),
+		"authentication-results",
 	);
+	assert.deepEqual(inRaw, [withComma, sender]);
+	assert.equal(viaCloudflare(joinFields(withComma, sender), inRaw), withComma);
+	assert.deepEqual(verdictOf(viaCloudflare(joinFields(withComma, sender), inRaw)), {
+		ids: ["dkim_passed", "dmarc_failed"],
+		authPassed: false,
+	});
+	// Folded lines unfold to the same value.
+	const folded = completeRawHeaderValues(
+		mime([
+			"Authentication-Results: mx.cloudflare.net;",
+			"\tdkim=pass header.d=bank.test;",
+			"  dmarc=pass header.from=bank.test",
+		]),
+		"authentication-results",
+	);
+	assert.equal(
+		viaCloudflare("mx.cloudflare.net; dkim=pass header.d=bank.test; dmarc=pass header.from=bank.test", folded),
+		"mx.cloudflare.net; dkim=pass header.d=bank.test; dmarc=pass header.from=bank.test",
+	);
+	// Only in the header map, ahead of the sender's raw copies: the leading part, found exactly.
+	const onlyInMap = "mx.cloudflare.net; dkim=pass header.d=bank.test; dmarc=pass header.from=bank.test";
+	const senderRaw = completeRawHeaderValues(mime([`Authentication-Results: ${sender}`]), "authentication-results");
+	assert.equal(viaCloudflare(joinFields(onlyInMap, sender), senderRaw), onlyInMap);
+	// No raw copy at all: the whole map is Cloudflare's.
+	const none = completeRawHeaderValues(mime([]), "authentication-results");
+	assert.deepEqual(none, []);
+	assert.equal(viaCloudflare(onlyInMap, none), onlyInMap);
+	// A leading part found by difference may not contain a comma: it falls back to the downgrading cut.
+	assert.deepEqual(verdictOf(viaCloudflare(joinFields(withComma, sender), senderRaw)), { ids: [], authPassed: false });
+	assert.deepEqual(verdictOf(viaCloudflare(joinFields(withComma, sender), none)), { ids: [], authPassed: false });
+	// Raw fields that do not match the map, or a header block not read whole, fall back too.
+	assert.deepEqual(verdictOf(viaCloudflare(joinFields(withComma, sender), ["something else"])).ids, []);
+	const huge = new TextEncoder().encode(`X-Pad: ${"a".repeat(1024 * 1024 + 10)}\r\nSubject: x\r\n\r\nbody`).buffer;
+	assert.equal(completeRawHeaderValues(huge, "authentication-results"), null);
+});
+
+test("SPF speaks for the envelope sender, not the HELO name, in Cloudflare's format", () => {
+	const cloudflare = (helo, mailfrom) =>
+		`mx.cloudflare.net; dkim=pass header.d=bank.test header.s=s1 header.b=AbC/12+x; dmarc=pass header.from=bank.test policy.dmarc=reject; spf=${helo} (mx.cloudflare.net: no SPF records found for postmaster@mta.bank.test) smtp.helo=mta.bank.test; spf=${mailfrom} (mx.cloudflare.net: domain of bounce@bank.test designates 192.0.2.1 as permitted sender) smtp.mailfrom=bounce@bank.test; arc=none smtp.remote-ip=192.0.2.1`;
+	assert.deepEqual(verdictOf(viaCloudflare(cloudflare("none", "pass"))).ids, [
+		"dkim_passed",
+		"dmarc_passed",
+		"spf_passed",
+	]);
+	assert.deepEqual(verdictOf(viaCloudflare(cloudflare("pass", "fail"))), {
+		ids: ["dkim_passed", "dmarc_passed", "spf_failed"],
+		authPassed: false,
+	});
+	// A HELO-only result says nothing about the sender.
+	assert.deepEqual(verdictOf("mx.cloudflare.net; spf=fail smtp.helo=mta.bank.test").ids, []);
+	assert.deepEqual(verdictOf("mx.cloudflare.net; spf=pass").ids, ["spf_passed"]);
+});
+
+test("DKIM alone authenticates only a signature aligned with the From domain", () => {
+	assert.deepEqual(verdictOf("mx.cloudflare.net; dkim=pass header.d=esp.test"), {
+		ids: ["dkim_passed"],
+		authPassed: false,
+	});
+	assert.deepEqual(verdictOf("mx.cloudflare.net; dkim=pass header.d=mail.bank.test"), {
+		ids: ["dkim_passed"],
+		authPassed: true,
+	});
+	assert.equal(verdictOf("mx.cloudflare.net; dkim=pass header.i=@bank.test").authPassed, true);
+	assert.equal(verdictOf("mx.cloudflare.net; dkim=pass").authPassed, false);
+	// Look-alike domains do not align.
+	assert.equal(verdictOf("mx.cloudflare.net; dkim=pass header.d=bank.test.esp.test").authPassed, false);
+	assert.equal(verdictOf("mx.cloudflare.net; dkim=pass header.d=notbank.test").authPassed, false);
+	// One aligned signature among several is enough; DMARC passing is enough on its own.
+	assert.equal(
+		verdictOf("mx.cloudflare.net; dkim=pass header.d=esp.test; dkim=pass header.d=bank.test").authPassed,
+		true,
+	);
+	assert.equal(
+		verdictOf("mx.cloudflare.net; dkim=pass header.d=esp.test; dmarc=pass header.from=bank.test").authPassed,
+		true,
+	);
+	// Anything failing still wins.
+	assert.equal(
+		verdictOf("mx.cloudflare.net; dkim=pass header.d=bank.test; spf=fail smtp.mailfrom=x@bank.test").authPassed,
+		false,
+	);
+	// A stored dkim_passed signal without the aligned flag (analyzed before this check) is not enough.
+	const old = collectFacts({
+		message: {
+			fromAddr: "Bank <security@bank.test>",
+			subject: "Hello",
+			textBody: "Hello",
+			spamVerdict: "inbox",
+			spamSignals: JSON.stringify([{ id: "dkim_passed", score: -4, reason: "DKIM authentication passed" }]),
+		},
+	});
+	assert.equal(old.authPassed, false);
 });
 
 test("direct SMTP: a forged Authentication-Results is queued without trust and analyzed as unknown", async (t) => {
@@ -212,7 +341,10 @@ test("Cloudflare hops: the intake's trusted value is what gets queued", async (t
 			to: "owner@example.com",
 			raw,
 			headers,
-			authenticationResults: trustedCloudflareAuthenticationResults(headers["authentication-results"]),
+			authenticationResults: trustedCloudflareAuthenticationResults(
+				headers["authentication-results"],
+				completeRawHeaderValues(raw, "authentication-results"),
+			),
 		},
 		{},
 	);
@@ -220,14 +352,17 @@ test("Cloudflare hops: the intake's trusted value is what gets queued", async (t
 	assert.ok(!ids(analyzeAuthentication(queued[0].authenticationResults)).includes("dmarc_passed"));
 });
 
-function relayRequest(raw, headersJson, { sign = true, tamper = null } = {}) {
+const HEADERS_KEY = createHmac("sha256", SECRET).update("kite-relay-headers-signature-key-v1").digest();
+
+function relayRequest(raw, headersJson, { sign = "derived", tamper = null } = {}) {
 	const from = "x@bank.test";
 	const to = "owner@example.com";
 	const headers = new Headers({ "X-Kite-Headers": tamper ?? headersJson });
-	if (sign)
+	const key = { derived: HEADERS_KEY, legacy: SECRET, wrong: "another-secret" }[sign];
+	if (key)
 		headers.set(
 			"X-Kite-Headers-Signature",
-			createHmac("sha256", SECRET)
+			createHmac("sha256", key)
 				.update(`kite-headers\n${from}\n${to}\n${headersJson}\n`)
 				.update(new Uint8Array(raw))
 				.digest("hex"),
@@ -235,53 +370,155 @@ function relayRequest(raw, headersJson, { sign = true, tamper = null } = {}) {
 	return readRelayHeaders(SECRET, headers, raw, from, to);
 }
 
+/** The JSON log lines written while `run` runs, with their console level. */
+async function captureLogs(run) {
+	const lines = [];
+	const original = { warn: console.warn, error: console.error };
+	console.warn = (line) => lines.push({ level: "warn", ...JSON.parse(String(line)) });
+	console.error = (line) => lines.push({ level: "error", ...JSON.parse(String(line)) });
+	try {
+		await run();
+	} finally {
+		Object.assign(console, original);
+	}
+	return lines;
+}
+
 test("relay: Authentication-Results counts only with a valid headers signature", async () => {
 	const raw = mime([`Authentication-Results: ${FORGED}`]);
 	const trusted = JSON.stringify({ "authentication-results": CLOUDFLARE, subject: "Verify your account" });
-	assert.equal((await relayRequest(raw, trusted)).authenticationResults, CLOUDFLARE);
+	const signed = await relayRequest(raw, trusted);
+	assert.equal(signed.signature, "valid");
+	assert.equal(signed.authenticationResults, CLOUDFLARE);
 	// A relay from before the headers signature: the map is kept, its authentication is not.
-	const unsigned = await relayRequest(raw, trusted, { sign: false });
+	const unsigned = await relayRequest(raw, trusted, { sign: null });
+	assert.equal(unsigned.signature, "missing");
 	assert.equal(unsigned.authenticationResults, null);
 	assert.equal(unsigned.headers.subject, "Verify your account");
-	// A map changed after signing.
+	// The first headers signature, keyed with the secret itself, is still accepted for a while.
+	const legacy = await relayRequest(raw, trusted, { sign: "legacy" });
+	assert.equal(legacy.signature, "legacy");
+	assert.equal(legacy.authenticationResults, CLOUDFLARE);
+	// A map changed after signing, or signed with another key.
 	const swapped = JSON.stringify({ "authentication-results": FORGED });
+	assert.equal((await relayRequest(raw, trusted, { tamper: swapped })).signature, "invalid");
 	assert.equal((await relayRequest(raw, trusted, { tamper: swapped })).authenticationResults, null);
+	assert.equal((await relayRequest(raw, trusted, { sign: "wrong" })).authenticationResults, null);
 	// A signed map whose topmost header is not Cloudflare's.
 	const foreign = JSON.stringify({ "authentication-results": `mail.attacker.test; dmarc=pass, ${FORGED}` });
 	assert.equal((await relayRequest(raw, foreign)).authenticationResults, null);
-	assert.equal((await relayRequest(raw, "not json", { sign: false })).authenticationResults, null);
+	assert.equal((await relayRequest(raw, "not json", { sign: null })).authenticationResults, null);
 });
 
-test("SES and Resend: the message's own Authentication-Results never count", async (t) => {
+test("relay: a missing headers signature warns and a wrong one is an error, each at most every ten minutes", async () => {
+	const raw = mime([]);
+	const json = JSON.stringify({ "authentication-results": CLOUDFLARE });
+	// Earlier tests in this file may have logged already; a fresh bundle has fresh rate limits.
+	const fresh = await import(`${pathToFileURL(join(outDir, "relayHeaders.mjs")).href}?fresh`);
+	const lines = await captureLogs(async () => {
+		for (const sign of [null, null, "wrong", "wrong", "derived"]) {
+			const headers = new Headers({ "X-Kite-Headers": json });
+			if (sign)
+				headers.set(
+					"X-Kite-Headers-Signature",
+					createHmac("sha256", sign === "wrong" ? "another-secret" : HEADERS_KEY)
+						.update(`kite-headers\nx@bank.test\nowner@example.com\n${json}\n`)
+						.update(new Uint8Array(raw))
+						.digest("hex"),
+				);
+			await fresh.readRelayHeaders(SECRET, headers, raw, "x@bank.test", "owner@example.com");
+		}
+	});
+	assert.deepEqual(
+		lines.map((line) => [line.level, line.event]),
+		[
+			["warn", "relay.headers_signature_missing"],
+			["error", "relay.headers_signature_invalid"],
+		],
+	);
+	assert.ok(!JSON.stringify(lines).includes(SECRET));
+});
+
+test("relay: signature problems are recorded for the operational alert", async () => {
+	const objects = new Map();
+	const env = {
+		BUCKET: {
+			get: async (key) => (objects.has(key) ? { text: async () => objects.get(key) } : null),
+			put: async (key, value) => objects.set(key, value),
+		},
+	};
+	assert.deepEqual(await readRelaySignatureState(env), {});
+	await recordRelaySignatureProblem(env, "missing", 1_000_000);
+	await recordRelaySignatureProblem(env, "missing", 1_000_000 + 60_000);
+	await recordRelaySignatureProblem(env, "invalid", 1_000_000 + 60_000);
+	assert.deepEqual(await readRelaySignatureState(env), { missingAt: 1_000_000, invalidAt: 1_060_000 });
+	await recordRelaySignatureProblem(env, "missing", 1_000_000 + 11 * 60_000);
+	assert.equal((await readRelaySignatureState(env)).missingAt, 1_660_000);
+	objects.set("system/relay-signature.json", "not json");
+	assert.deepEqual(await readRelaySignatureState(env), {});
+});
+
+const sesNotification = (receipt, headers = []) =>
+	parseSesNotification(
+		JSON.stringify({
+			notificationType: "Received",
+			mail: { source: "x@bank.test", destination: ["owner@example.com"], headers },
+			receipt: {
+				recipients: ["owner@example.com"],
+				action: { type: "S3", bucketName: "b", objectKey: "k" },
+				...receipt,
+			},
+		}),
+	);
+
+test("SES: its own receipt verdicts count, the message's Authentication-Results never do", async (t) => {
 	const { env, queued } = await setup(t);
 	const raw = mime([
 		"Authentication-Results: amazonses.com; spf=pass; dmarc=none",
 		`Authentication-Results: ${FORGED}`,
 	]);
-	const notification = parseSesNotification(
-		JSON.stringify({
-			notificationType: "Received",
-			mail: {
-				source: "x@bank.test",
-				destination: ["owner@example.com"],
-				headers: [
-					{ name: "Authentication-Results", value: "amazonses.com; spf=pass; dmarc=none" },
-					{ name: "Authentication-Results", value: FORGED },
-				],
-			},
-			receipt: { recipients: ["owner@example.com"], action: { type: "S3", bucketName: "b", objectKey: "k" } },
-		}),
+	const notification = sesNotification(
+		{ spfVerdict: { status: "PASS" }, dkimVerdict: { status: "PASS" }, dmarcVerdict: { status: "FAIL" } },
+		[
+			{ name: "Authentication-Results", value: "amazonses.com; spf=pass; dmarc=none" },
+			{ name: "Authentication-Results", value: FORGED },
+		],
+	);
+	assert.equal(
+		notification.authenticationResults,
+		"amazonses.com; spf=pass smtp.mailfrom=x@bank.test; dkim=pass; dmarc=fail",
 	);
 	const ses = await intakeProviderMail(env, {
 		from: notification.from,
 		recipients: notification.recipients,
 		raw,
 		headers: notification.headers,
+		authenticationResults: notification.authenticationResults,
 	});
 	const resend = await intakeProviderMail(env, { from: "x@bank.test", recipients: ["owner@example.com"], raw });
 	assert.equal(ses.delivered + resend.delivered, 2);
 	assert.deepEqual(
 		queued.map((payload) => payload.authenticationResults),
-		[null, null],
+		[notification.authenticationResults, null],
 	);
+	// DMARC failed: not verified. DKIM alone has no signing domain from SES, so it never aligns.
+	assert.deepEqual(verdictOf(queued[0].authenticationResults), {
+		ids: ["dkim_passed", "dmarc_failed", "spf_passed"],
+		authPassed: false,
+	});
+	const dkimOnly = sesNotification({ dkimVerdict: { status: "PASS" }, dmarcVerdict: { status: "GRAY" } });
+	assert.equal(verdictOf(dkimOnly.authenticationResults).authPassed, false);
+	const dmarc = sesNotification({
+		spfVerdict: { status: "PASS" },
+		dkimVerdict: { status: "PASS" },
+		dmarcVerdict: { status: "PASS" },
+	});
+	assert.equal(verdictOf(dmarc.authenticationResults).authPassed, true);
+	assert.equal(sesNotification({}).authenticationResults, null);
+	assert.equal(
+		sesNotification({ spfVerdict: { status: "PROCESSING_FAILED" } }).authenticationResults,
+		"amazonses.com; spf=temperror smtp.mailfrom=x@bank.test",
+	);
+	// An envelope sender that is not a plain address never becomes part of the value.
+	assert.equal(sesAuthenticationResults({ spf: "PASS" }, '"a; dmarc=pass"@bank.test'), "amazonses.com; spf=pass");
 });

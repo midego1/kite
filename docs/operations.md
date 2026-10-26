@@ -140,6 +140,7 @@ A cron trigger (`*/5 * * * *`) runs the alert check in the Worker; Node/Docker r
 | Stuck outbound jobs | any job has been queued for over 30 minutes or sending for over 15 |
 | Exhausted webhooks  | any webhook delivery ran out of retries in the last 60 minutes      |
 | Failed backups      | any backup failed in the last 60 minutes                            |
+| Email relay header signature | the email relay sent a request without a header signature, or with a wrong one, in the last 60 minutes: its mail arrives, but sender authentication counts as unknown until the relay is redeployed (or `INBOUND_WEBHOOK_SECRET` matches) |
 
 Behaviour:
 
@@ -218,7 +219,7 @@ Generic JSON (`content-type: application/json`):
 }
 ```
 
-The `rule` values are `backup_failed`, `outbound_failed`, `outbound_stuck` and `webhook_exhausted`. Only a test send adds `"test": true`.
+The `rule` values are `backup_failed`, `outbound_failed`, `outbound_stuck`, `webhook_exhausted` and `relay_signature`. Only a test send adds `"test": true`.
 
 #### Send test alert
 

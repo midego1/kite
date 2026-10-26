@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security
+
+- A DKIM signature now verifies the sender only when it comes from the From address's own domain (or the same organization); another domain's signature alone no longer counts as authenticated. DMARC still does on its own. This applies to automatic reading's trust in contacts and marked senders, the unverified-sender warning on invitations and Money Watch's unverified mark.
+- SPF now reads the check of the envelope sender rather than the HELO check that Cloudflare reports first.
+- Kite finds Cloudflare's `Authentication-Results` header exactly by comparing it with the raw message. When it cannot, results that may be incomplete count as unverified, never as passed, so a failed check is not lost.
+- Mail received through Amazon SES now uses the SPF, DKIM and DMARC verdicts SES reports for it.
+- The email relay's header signature now uses a key derived from `INBOUND_WEBHOOK_SECRET`. Redeploy the relay; the earlier signature is still accepted for now. A relay request without a header signature, or with a wrong one, is logged and raises a "redeploy the relay" operational alert.
+
 ## [2026.10.26.2] - 2026-10-26
 
 ### Security

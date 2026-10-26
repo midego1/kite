@@ -32,9 +32,21 @@ const empty = {
 	outboundStuck: 0,
 	webhookExhausted: 0,
 	webhookLastAttemptAt: null,
+	relaySignature: {},
 };
 const baseline = (initializedAt = NOW.getTime() - 10 * HOUR) => ({ version: 1, initializedAt, rules: {} });
 const rulesOf = (alerts) => alerts.map((alert) => alert.rule);
+
+test("relay requests without a valid headers signature alert while recent", () => {
+	assert.deepEqual(evaluateAlertRules({ ...empty, relaySignature: { missingAt: NOW.getTime() - 2 * HOUR } }, NOW), []);
+	const missing = evaluateAlertRules({ ...empty, relaySignature: { missingAt: NOW.getTime() - 5 * MIN } }, NOW);
+	assert.deepEqual(missing, [{ rule: "relay_signature", fingerprint: "missing", count: 1 }]);
+	const both = evaluateAlertRules(
+		{ ...empty, relaySignature: { missingAt: NOW.getTime() - MIN, invalidAt: NOW.getTime() - MIN } },
+		NOW,
+	);
+	assert.deepEqual(both, [{ rule: "relay_signature", fingerprint: "missing,invalid", count: 2 }]);
+});
 
 test("5 failed sends in 60 minutes alert, and 4 do not", () => {
 	assert.deepEqual(evaluateAlertRules({ ...empty, outboundFailed: 4 }, NOW), []);

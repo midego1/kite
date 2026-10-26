@@ -52,7 +52,12 @@ Worker in `deploy/cloudflare-email-relay`. It posts each message to
 on the reject or forward decision the server returns. Cloudflare's SPF, DKIM
 and DMARC results count because the relay also signs the header map it sends;
 after updating the server, redeploy the relay so it sends that signature,
-otherwise its mail counts as unverified. Set
+otherwise its mail counts as unverified and admins see a "redeploy the relay"
+operational alert. The header map signature uses a key derived from
+`INBOUND_WEBHOOK_SECRET`; the server still accepts the earlier form, made with
+the secret itself, from relays deployed before that change, but logs
+`relay.headers_signature_legacy` and will stop accepting it in a later release.
+Set
 `SMTP_INBOUND_PORT=0` if you do not want the listener at all.
 
 ## Sending mail

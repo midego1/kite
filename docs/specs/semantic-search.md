@@ -254,7 +254,7 @@ Vectorize has no local emulation in `wrangler dev` without remote access, which 
 
 - Off by default for every install (`semantic_search_enabled = 0`). The primary admin turns it on in Admin; the backfill starts on the next cron tick. Mailboxes are included by default and can be excluded.
 - The CHANGELOG for the release names migration 0071, the new binding and the operator step of section 10, and links Admin → Agent with an app path (`docs/releasing.md`).
-- Search falls back to keyword-only whenever anything is missing, so turning the feature off (which also deletes the index contents after a confirmation) is safe at any time.
+- Search falls back to keyword-only whenever anything is missing, so turning the feature off is safe at any time. Turning it off (after a confirmation) deletes the vectors, every `message_embeddings` and `message_embedding_deletes` row, and `semantic_backfill_cursor`. Turning it on again therefore starts a complete backfill from the newest message, like the first time, instead of resuming a cursor that already passed messages whose vectors are gone.
 
 ## 14. Tests
 
@@ -264,7 +264,7 @@ Vectorize has no local emulation in `wrangler dev` without remote access, which 
 - `semantic-fusion.test.mjs`: reciprocal rank fusion order, ties, a message in both lists ranks first, `match` labels.
 - `semantic-filter.test.mjs`: the Vectorize filter stays under 2,048 bytes and splits into groups; vector ids stay under 64 bytes.
 - `semantic-sqlite-store.test.mjs` (better-sqlite3, temporary file): int8 quantisation keeps the top-10 order of a float32 reference on fixtures; scoping returns only the given mailboxes; delete removes.
-- `semantic-triggers.test.mjs` (`SqliteDatabase`): insert, status change into and out of Spam, Trash and `screening`, draft insert, delete (including a cascaded delete when a user is removed) produce the right `pending` rows and tombstones; a `skipped` row returns to `pending` when its message becomes eligible again while an `indexed` row stays; the triggers do nothing while the feature is off.
+- `semantic-triggers.test.mjs` (`SqliteDatabase`): insert, status change into and out of Spam, Trash and `screening`, draft insert, delete (including a cascaded delete when a user is removed) produce the right `pending` rows and tombstones; a `skipped` row returns to `pending` when its message becomes eligible again while an `indexed` row stays; the triggers do nothing while the feature is off; turning the feature off clears the state rows, tombstones and cursor, so turning it on again queues every eligible message.
 - `semantic-scope.test.mjs`: the D1 re-check drops hits from other mailboxes, other users' drafts and `screening` rows even when the store returns them.
 - `semantic-spend.test.mjs`: backfill stops at the cap share; live indexing continues to the cap; external provider without the opt-in embeds nothing.
 - `semantic-drain.test.mjs`: a message deleted while its embedding call is in flight gets no vectors (the re-check before `upsert` finds no claimed row) and its tombstone drains with nothing to delete.

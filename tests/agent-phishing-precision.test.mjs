@@ -85,12 +85,12 @@ function factsFor(mail) {
 		attachments: [],
 	};
 	const headers = { "Authentication-Results": mail.auth ?? AUTH_PASS, ...mail.headers };
-	const signals = [
-		...analyzeAuthentication(headers["Authentication-Results"]),
-		...analyzeUrls(message, prepareSpamContent(message)),
-	];
 	const sender = addressOf(mail.from);
 	const domain = sender.split("@")[1];
+	const signals = [
+		...analyzeAuthentication(headers["Authentication-Results"], domain),
+		...analyzeUrls(message, prepareSpamContent(message)),
+	];
 	const hosts = linkHostsOf(`${mail.text ?? ""}\n${mail.html ? htmlLinkText(mail.html) : ""}`);
 	return collectFacts({
 		message: {
@@ -260,7 +260,9 @@ test("a contact or marked sender without authentication is not exempt from a mod
 test("own-domain trust needs DMARC to pass and no copied contact name", () => {
 	const reset = benign["an authenticated password reset from the install's own domain"];
 	const shortened = { ...reset, text: `${reset.text}\nhttps://bit.ly/3x` };
-	const dkimOnly = factsFor({ ...shortened, auth: "mx.cloudflare.net; dkim=pass header.d=x" });
+	// Another domain's DKIM signature does not authenticate the From address.
+	assert.equal(factsFor({ ...shortened, auth: "mx.cloudflare.net; dkim=pass header.d=x" }).authPassed, false);
+	const dkimOnly = factsFor({ ...shortened, auth: "mx.cloudflare.net; dkim=pass header.d=mail.example.com" });
 	assert.equal(dkimOnly.authPassed, true);
 	assert.deepEqual(assessPhishing(dkimOnly, flagged, capabilities).reasons, [
 		"url_shortener",

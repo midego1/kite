@@ -12,6 +12,7 @@ import { NewMessagePopup } from "@/components/new-message-popup";
 import { ThemeSync } from "@/components/theme-sync";
 import { UpdateAvailableHost } from "@/components/update-available-host";
 import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useMessagePolling } from "@/hooks/use-message-polling";
 import { clearMessageClientState } from "@/hooks/utils";
 import { clearMessageDetailCache } from "@/lib/messages/detail-cache";
@@ -65,7 +66,10 @@ export function Providers({ children, initialBranding }: { children: React.React
 	return (
 		<QueryClientProvider client={client}>
 			<BrandingProvider initialBranding={initialBranding}>
-				{children}
+				{/* One provider for every Tooltip: they open at once and share the skip-delay between neighbours. */}
+				<TooltipProvider delayDuration={0} skipDelayDuration={300}>
+					{children}
+				</TooltipProvider>
 				<ThemeSync />
 				<ConfirmDialogHost />
 				<CopyCodeHost />

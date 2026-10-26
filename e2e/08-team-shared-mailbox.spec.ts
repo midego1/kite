@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Browser, type Page } from "@
 import { DOMAIN, STORAGE_STATE } from "./support/constants";
 import { apiContext, apiSignIn, deliverInbound, openMessage, signIn, uniqueToken } from "./support/helpers";
 import { turnScreenerOff } from "./support/screener";
+import { chooseOption, expectSelectValue } from "./support/select";
 
 const PASSWORD = "teammate-password-123";
 
@@ -10,7 +11,7 @@ async function createAccountInUi(page: Page, username: string) {
 	await page.getByRole("button", { name: "New account" }).click();
 	const dialog = page.getByRole("dialog", { name: "Add user account" });
 	await dialog.getByLabel("Email").fill(username);
-	await expect(dialog.getByRole("combobox", { name: "Domain" })).toHaveValue(/.+/);
+	await expectSelectValue(dialog.getByRole("combobox", { name: "Domain" }), /.+/);
 	await dialog.getByLabel("Password").fill(PASSWORD);
 	await dialog.getByRole("button", { name: "Create account" }).click();
 	await expect(dialog).toBeHidden();
@@ -50,10 +51,10 @@ test("an admin shares a team mailbox with one account and not another", async ({
 		await page.goto("/mailboxes");
 		await page.getByRole("button", { name: "New mailbox" }).click();
 		const dialog = page.getByRole("dialog", { name: "Create mailbox" });
-		await dialog.getByLabel("Type").selectOption({ label: "Shared inbox" });
+		await chooseOption(dialog.getByLabel("Type"), { label: "Shared inbox" });
 		await dialog.getByLabel("Name").fill(sharedName);
 		await dialog.getByLabel("Email address").fill(sharedLocalPart);
-		await dialog.getByRole("combobox", { name: "Domain" }).selectOption({ label: DOMAIN });
+		await chooseOption(dialog.getByRole("combobox", { name: "Domain" }), { label: DOMAIN });
 		await dialog.getByRole("button", { name: "Create mailbox" }).click();
 		await expect(page).toHaveURL(/\/mailboxes\/mbx_/);
 		await expect(page.getByText("Shared access")).toBeVisible();
@@ -83,9 +84,9 @@ test("an admin shares a team mailbox with one account and not another", async ({
 	});
 
 	await test.step("admin grants the teammate access", async () => {
-		await page
-			.getByRole("combobox", { name: "Account to add" })
-			.selectOption({ label: `${teammate} (${teammate}@${DOMAIN})` });
+		await chooseOption(page.getByRole("combobox", { name: "Account to add" }), {
+			label: `${teammate} (${teammate}@${DOMAIN})`,
+		});
 		await page.getByRole("button", { name: "Add user" }).click();
 		await expect(page.getByRole("button", { name: `Remove ${teammate}` })).toBeVisible();
 		await expect(page.getByText("No one else has access yet.")).toBeHidden();

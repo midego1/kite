@@ -1,4 +1,13 @@
-export type AlertRuleId = "backup_failed" | "outbound_failed" | "outbound_stuck" | "webhook_exhausted";
+export type AlertRuleId =
+	| "backup_failed"
+	| "outbound_failed"
+	| "outbound_stuck"
+	| "webhook_exhausted"
+	| "relay_signature"
+	| "relay_signature_legacy";
+
+/** When the email relay last sent a request without a headers signature, a wrong one, or the legacy form (ms). */
+export type RelaySignatureState = { missingAt?: number; invalidAt?: number; legacyAt?: number };
 
 /** Timestamps are milliseconds. Only ids, counts and times are collected, never payloads or error text. */
 export type AlertSnapshot = {
@@ -7,6 +16,7 @@ export type AlertSnapshot = {
 	outboundStuck: number;
 	webhookExhausted: number;
 	webhookLastAttemptAt: number | null;
+	relaySignature: RelaySignatureState;
 };
 
 export type ActiveAlert = { rule: AlertRuleId; fingerprint: string; count: number };

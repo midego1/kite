@@ -36,11 +36,16 @@ export async function undoMove(env: CloudflareEnv, row: AgentActionRow): Promise
 	if (restored === 0) throw new AgentActionError(MOVED_AGAIN, 409);
 }
 
-/** Undo of filing mail into a folder: the messages still in that folder go back where they were. */
+/** Undo of filing mail into a folder: the messages still filed there go back where they were. */
 export async function undoSetFolder(env: CloudflareEnv, row: AgentActionRow): Promise<void> {
 	const folderId = parseActionState(row.after)?.folderId;
 	if (typeof folderId !== "string") throw new AgentActionError("This action cannot be undone", 409);
-	const restored = await restorePlaces(env, row, eq(messages.folderId, folderId));
+	// Filing sets the received status, and a later move keeps the folder: only restore messages still filed.
+	const restored = await restorePlaces(
+		env,
+		row,
+		and(eq(messages.folderId, folderId), eq(messages.status, "received"))!,
+	);
 	if (restored === 0) throw new AgentActionError(MOVED_AGAIN, 409);
 }
 

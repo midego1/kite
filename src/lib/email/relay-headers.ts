@@ -25,7 +25,8 @@ function logSignature(status: RelayHeadersSignature): void {
 		return;
 	}
 	logger.warn(status === "missing" ? "relay.headers_signature_missing" : "relay.headers_signature_legacy", {
-		effect: status === "missing" ? "authentication_unknown" : "accepted_until_2027_01_31",
+		effect: status === "missing" ? "authentication_unknown" : "accepted",
+		...(status === "legacy" ? { acceptedUntil: "2027-01-31", issue: 118 } : {}),
 		hint: "Update the relay: redeploy deploy/cloudflare-email-relay so it signs the header map with the current key",
 	});
 }

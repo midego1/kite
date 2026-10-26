@@ -43,6 +43,10 @@ async function openLenasMessage(page: Page) {
 }
 
 async function capture(page: Page, name: string) {
+	// Playwright's click retries can leave the message list scrolled a little; shots start at its top.
+	await page.evaluate(() => {
+		for (const list of document.querySelectorAll("[data-density]")) list.scrollTop = 0;
+	});
 	// A visible loading overlay, if the page has one, must be gone.
 	await expect(page.locator('[aria-label="Loading"].opacity-100')).toHaveCount(0);
 	await expect(page.getByRole("progressbar", { name: "Loading page" })).toHaveCount(0);

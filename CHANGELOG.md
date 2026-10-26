@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.26.2] - 2026-10-26
+
 ### Changed
 
 - CI: allowlist a public key-derivation label in the secret scan.

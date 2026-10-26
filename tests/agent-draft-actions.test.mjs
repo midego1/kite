@@ -32,14 +32,13 @@ test("a cleared schedule does not keep the previous send time", () => {
 	assert.equal(actions[0].revision, 3);
 });
 
-test("separate drafts each keep one action, and a sent draft drops its action", () => {
+test("separate drafts each keep one action", () => {
 	const actions = uniqueAgentDraftActions([
 		tool("a", { draftId: "d1", revision: 1, status: "draft_created" }),
 		tool("b", { draftId: "d2", revision: 1, status: "draft_created" }),
-		tool("sent", { draftId: "d1", revision: 1, status: "sent" }),
 	]);
 	assert.deepEqual(
 		actions.map((action) => action.draftId),
-		["d2"],
+		["d1", "d2"],
 	);
 });

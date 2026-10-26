@@ -13,3 +13,12 @@ export type AgentSendSnapshot = {
 	scheduledAt: string | null;
 	attachments: { id: string; filename: string; size: number; digest: string }[];
 };
+
+/** What a draft card should show for an assistant draft id. */
+export type AgentDraftState =
+	| { state: "draft" }
+	| { state: "sent"; messageId: string | null; subject: string | null; to: string | null }
+	| { state: "scheduled"; messageId: string | null; subject: string | null; to: string | null; scheduledAt: string }
+	| { state: "sending"; messageId: string | null; subject: string | null; to: string | null }
+	| { state: "failed"; messageId: string | null; subject: string | null; to: string | null }
+	| { state: "unavailable" };

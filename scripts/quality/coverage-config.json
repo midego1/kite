@@ -33,6 +33,8 @@
 		"src/components/update-available-utils.ts",
 		"src/app/(auth)/register/mx-status-utils.ts",
 		"src/components/agent/agent-activity-utils.ts",
+		"src/components/agent/draft-card-utils.ts",
+		"src/lib/agent/approvals/draft-state-utils.ts",
 		"src/components/mail-search/search-dropdown-utils.ts",
 		"src/components/shortcuts/command-palette-utils.ts",
 		"src/components/shortcuts/use-hotkeys-utils.ts",

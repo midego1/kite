@@ -88,6 +88,7 @@
 	"/api/drafts/[id]/attachments/[attachmentId]",
 	"/api/drafts/[id]/attachments",
 	"/api/drafts/[id]",
+	"/api/drafts/[id]/state",
 	"/api/drafts",
 	"/api/drive/attachments/[id]/content",
 	"/api/drive/attachments/[id]/save",

@@ -1,5 +1,6 @@
 import { authFetch } from "@/lib/auth/client";
 import type { ReviewSnapshot } from "./send-review-types";
+import type { AgentDraftState } from "@/lib/agent/approvals/types";
 
 export async function requestDraftReview(
 	draftId: string,
@@ -24,5 +25,12 @@ export async function approveAgentAction(toolMessageId: string): Promise<Record<
 	});
 	const result = (await response.json()) as Record<string, unknown>;
 	if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Could not approve action");
+	return result;
+}
+
+export async function fetchAgentDraftState(draftId: string): Promise<AgentDraftState> {
+	const response = await authFetch(`/api/drafts/${encodeURIComponent(draftId)}/state`);
+	const result = (await response.json()) as AgentDraftState & { error?: string };
+	if (!response.ok) throw new Error(result.error || "Could not load draft status");
 	return result;
 }

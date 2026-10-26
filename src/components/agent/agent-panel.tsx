@@ -66,7 +66,6 @@ import {
 	enqueueAgentMessage,
 	groupAgentMessages,
 	isAgentScrollAtBottom,
-	markAgentDraftSent,
 	normalizeAgentHistory,
 	readAgentConversationId,
 	removeQueuedAgentMessage,
@@ -956,7 +955,6 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 					snapshot={draftReview.snapshot}
 					onClose={() => setDraftReview(null)}
 					onSent={() => {
-						setMessages((current) => markAgentDraftSent(current, draftReview.draftId));
 						setDraftReview(null);
 						void refresh();
 					}}

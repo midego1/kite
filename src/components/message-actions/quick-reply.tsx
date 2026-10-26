@@ -6,7 +6,7 @@ import type { ReplyableMessage } from "./types";
 import { useMessageReply } from "./use-message-reply";
 
 type QuickReplyProps = {
-	/** Who the reply goes to, as the reader's header names them. */
+	/** The sender as the reader's header names them; mail you sent shows a plain "Reply…". */
 	name: string;
 	message: ReplyableMessage & Pick<Message, "id" | "mailboxId" | "subject" | "status" | "createdAt">;
 	body?: { textBody?: string | null; htmlBody?: string | null } | null;
@@ -43,10 +43,13 @@ export function QuickReply({ name, message, body, ownAddress, ownAddresses }: Qu
 				<Reply className="h-4 w-4 shrink-0" aria-hidden="true" />
 				{pending ? (
 					<span>Opening the reply…</span>
-				) : (
+				) : message.direction === "inbound" ? (
 					<span className="min-w-0 truncate">
 						Reply to <bdi>{name}</bdi>…
 					</span>
+				) : (
+					// Mail you sent: the reply goes to its recipients, not to you.
+					<span>Reply…</span>
 				)}
 			</button>
 			{error && (

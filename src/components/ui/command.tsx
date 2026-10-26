@@ -92,11 +92,13 @@ export function CommandGroup({ className, ...props }: React.ComponentProps<typeo
 	);
 }
 
+// No colour transition: cmdk marks the first row active just after it mounts, and a fade would show it
+// half-highlighted, below the contrast the highlighted row needs.
 export function CommandItem({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Item>) {
 	return (
 		<CommandPrimitive.Item
 			className={cn(
-				"group/command-item flex cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-neutral-800 outline-none transition-colors data-[disabled=true]:pointer-events-none data-[selected=true]:bg-blue-600 data-[selected=true]:text-white data-[disabled=true]:opacity-50",
+				"group/command-item flex cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-neutral-800 outline-none data-[disabled=true]:pointer-events-none data-[selected=true]:bg-blue-600 data-[selected=true]:text-white data-[disabled=true]:opacity-50",
 				className,
 			)}
 			{...props}

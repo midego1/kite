@@ -30,6 +30,8 @@ import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProp
 
 const LIST_WIDTH = { fallback: 360, min: 250, max: 1200, reserved: 280 };
 const LIST_HEIGHT = { fallback: 320, min: 120, max: 1200, reserved: 200 };
+// Panel ids are DOM ids too, so they carry a prefix.
+const LIST_PANEL_ID = "kite-message-list-panel";
 
 /**
  * Opening a message ends a checkbox selection; otherwise the selection pane would keep covering
@@ -202,11 +204,11 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 			data-reading-pane={mode}
 			className="min-h-0 overflow-hidden"
 			onLayoutChanged={(layout, meta) => {
-				if (meta.isUserInteraction) storeListSize(layoutPixels(layout.list, groupScale.current));
+				if (meta.isUserInteraction) storeListSize(layoutPixels(layout[LIST_PANEL_ID], groupScale.current));
 			}}
 		>
 			<ResizablePanel
-				id="list"
+				id={LIST_PANEL_ID}
 				panelRef={listPanelRef}
 				collapsible
 				collapsedSize={0}
@@ -243,7 +245,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 				aria-label={below ? "Resize message list height" : "Resize message list"}
 				className={listVisible ? undefined : "pointer-events-none opacity-0"}
 			/>
-			<ResizablePanel id="reader" minSize={listLimits.reserved}>
+			<ResizablePanel id="kite-reader-panel" minSize={listLimits.reserved}>
 				{detail}
 			</ResizablePanel>
 		</ResizablePanelGroup>

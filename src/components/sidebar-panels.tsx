@@ -11,6 +11,8 @@ import { useSyncedPanel } from "./ui/use-synced-panel";
 const RAIL_WIDTH = 72;
 const SIDEBAR_WIDTH = { min: 200, max: 480 };
 const PAGE_MIN_WIDTH = 480;
+// Panel ids are DOM ids too, so they carry a prefix.
+const SIDEBAR_PANEL_ID = "kite-sidebar-panel";
 
 /**
  * The sidebar and the page beside it as resizable panels. The sidebar collapses to its icon rail when it is
@@ -36,11 +38,11 @@ export function SidebarPanels({ sidebar, children }: { sidebar: ReactNode; child
 			id="kite-sidebar-layout"
 			orientation="horizontal"
 			onLayoutChanged={(layout, meta) => {
-				if (meta.isUserInteraction) saveWidth(layoutPixels(layout.sidebar, groupScale.current));
+				if (meta.isUserInteraction) saveWidth(layoutPixels(layout[SIDEBAR_PANEL_ID], groupScale.current));
 			}}
 		>
 			<ResizablePanel
-				id="sidebar"
+				id={SIDEBAR_PANEL_ID}
 				panelRef={panelRef}
 				collapsible
 				collapsedSize={RAIL_WIDTH}
@@ -60,7 +62,7 @@ export function SidebarPanels({ sidebar, children }: { sidebar: ReactNode; child
 				{sidebar}
 			</ResizablePanel>
 			<ResizableHandle aria-label="Resize left menu" className="bg-transparent" />
-			<ResizablePanel id="page" minSize={PAGE_MIN_WIDTH}>
+			<ResizablePanel id="kite-page-panel" minSize={PAGE_MIN_WIDTH}>
 				{children}
 			</ResizablePanel>
 		</ResizablePanelGroup>

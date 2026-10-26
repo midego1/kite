@@ -1,0 +1,25 @@
+import type { Message } from "@/hooks/types";
+
+export type ListSection = {
+	key: "pinned" | "primary" | "all";
+	/** Shown over the rows; null for a list without sections. */
+	label: string | null;
+	messages: Message[];
+	/** Starred rows of this page that sit in Pinned, so Primary's count leaves them out. */
+	pinnedOnPage: number;
+};
+
+/**
+ * Zero's "Pinned" and "Primary" groups for the Inbox: Kite has no pins, so starred mail on the page is pinned.
+ * Without grouping, or with nothing starred on the page, the list is one unlabelled section in its own order.
+ */
+export function groupListSections(messages: Message[], grouped: boolean): ListSection[] {
+	if (!grouped) return [{ key: "all", label: null, messages, pinnedOnPage: 0 }];
+	const pinned = messages.filter((message) => message.starred);
+	const rest = messages.filter((message) => !message.starred);
+	if (pinned.length === 0) return [{ key: "primary", label: "Primary", messages: rest, pinnedOnPage: 0 }];
+	return [
+		{ key: "pinned", label: "Pinned", messages: pinned, pinnedOnPage: pinned.length },
+		{ key: "primary", label: "Primary", messages: rest, pinnedOnPage: pinned.length },
+	];
+}

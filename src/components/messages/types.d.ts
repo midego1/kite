@@ -25,6 +25,8 @@ export type MessageListRowProps = {
 	density?: MessageListDensity;
 	/** Hover-revealed row actions; touch screens use swipes instead. */
 	hoverActions?: boolean;
+	/** "Select" is on, so every row shows its checkbox in place of the avatar. */
+	selecting?: boolean;
 	currentAccountName?: string;
 	/** `extendRange` is set for Shift-click and selects every row since the last one clicked. */
 	onSelectedChange: (messageId: string, selected: boolean, extendRange?: boolean) => void;

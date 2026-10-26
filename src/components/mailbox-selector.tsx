@@ -108,7 +108,7 @@ function MailboxAccountRow({ mailbox, unread, avatarUrl, onSelect }: MailboxAcco
 	);
 }
 
-export function MailboxSelector({ initialUser }: MailboxSelectorProps = {}) {
+export function MailboxSelector({ initialUser, placement = "header" }: MailboxSelectorProps = {}) {
 	const { selectedMailbox, setSelectedMailbox, mailboxes, isLoading } = useSelectedMailbox();
 	const pathname = usePathname();
 	const router = useRouter();
@@ -243,7 +243,9 @@ export function MailboxSelector({ initialUser }: MailboxSelectorProps = {}) {
 			</button>
 
 			{open && (
-				<div className="absolute right-0 top-14 w-[360px] overflow-hidden rounded-[28px] border border-neutral-200 bg-[#eef3fb] p-3 shadow-2xl shadow-neutral-900/20 max-h-[82vh] overflow-y-auto z-90">
+				<div
+					className={`${placement === "sidebar" ? "fixed left-3 top-14 z-[200]" : "absolute right-0 top-14 z-90"} w-[360px] overflow-hidden rounded-[28px] border border-neutral-200 bg-[#eef3fb] p-3 shadow-2xl shadow-neutral-900/20 max-h-[82vh] overflow-y-auto`}
+				>
 					<div className="rounded-[22px] bg-white px-5 py-5">
 						<div className="flex items-center gap-4">
 							<AccountAvatar

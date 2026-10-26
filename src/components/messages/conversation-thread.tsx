@@ -67,13 +67,7 @@ export function ConversationThread({
 				}
 				className={cn(position === (latestMessagesFirst ? "before" : "after") ? "pb-6" : "")}
 			>
-				<ol
-					className={cn(
-						!collapsed && "divide-y divide-neutral-200/50",
-						latestMessagesFirst ? "border-t" : "border-b",
-						"border-neutral-200",
-					)}
-				>
+				<ol>
 					<li className={"border-t-0"}>
 						<ConversationMessageCard
 							message={firstMessage}
@@ -85,8 +79,8 @@ export function ConversationThread({
 						/>
 					</li>
 					{collapsed ? (
-						<li className="flex items-center justify-center gap-1 py-2 text-center border-y border-neutral-100 h-px my-4">
-							<span className="bg-white px-6 flex flex-row items-center gap-2">
+						<li className="flex items-center justify-center gap-1 border-t border-neutral-200 py-3 text-center">
+							<span className="flex flex-row items-center gap-2 px-6">
 								<span className="text-sm font-medium text-neutral-600">{collapsedLabel}</span>
 								<button
 									type="button"
@@ -182,13 +176,13 @@ export function ConversationMessageCard({
 	return (
 		<article
 			className={cn(
-				"bg-white transition-colors px-3 sm:px-6",
+				// Each message is a section under a hairline, like the open one, as in Zero's reader.
+				"border-t border-neutral-200 bg-white px-4 transition-colors sm:px-7",
 				!expanded && "hover:bg-neutral-50",
-				!isAnyPanelVisible && "sm:pl-12",
 			)}
 		>
 			<div className="w-full">
-				<div className="flex w-full flex-wrap items-start gap-x-3 py-3 sm:pl-4">
+				<div className="flex w-full flex-wrap items-start gap-x-3 py-4">
 					<button
 						type="button"
 						onClick={() => {
@@ -256,7 +250,7 @@ export function ConversationMessageCard({
 					/>
 				</div>
 				{expanded && body && (
-					<div className="pb-4 pt-2 sm:pl-16">
+					<div className="pb-6 pt-1">
 						{body.blockedRemoteImages > 0 && <RemoteImagesNotice onShow={() => setRemoteImagesShown(true)} />}
 						{body.html ? (
 							<EmailHtmlFrame html={body.html} className="email-body max-w-none" />

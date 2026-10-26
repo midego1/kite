@@ -1,52 +1,19 @@
 "use client";
 
 import clsx from "clsx";
-import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Check, ChevronLeft, ChevronRight, PanelLeft, SlidersHorizontal, Trash2 } from "lucide-react";
+import { MailSearchInput } from "@/components/mail-search/mail-search-input";
+import { useSidebar } from "@/components/sidebar-state";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip } from "@/components/ui/tooltip";
 import { getEmptyFolderLabel } from "@/lib/messages/permanent-delete-utils";
 import { BulkMessageToolbar } from "./bulk-message-toolbar";
 import { FolderHeading } from "./folder-heading";
-import type { MessageListFilter, MessageListHeaderProps } from "./message-list-header-types";
+import type { MessageListHeaderProps } from "./message-list-header-types";
+import { MessageListChips } from "./message-list-chips";
 import { getSelectionToolbarFolder } from "./utils";
-
-const FILTERS: Array<{ value: MessageListFilter; label: string }> = [
-	{ value: "all", label: "All mail" },
-	{ value: "unread", label: "Unread" },
-];
-
-/**
- * "All mail" and "Unread" over the list, as in the mail clients Kite's layout follows. They filter the list
- * below rather than switch panels, so they are pressed toggle buttons, not tabs.
- */
-function ListFilterToggle({ filter }: { filter: NonNullable<MessageListHeaderProps["filter"]> }) {
-	return (
-		<div
-			role="group"
-			aria-label="Show"
-			className="inline-flex h-8 items-center gap-0.5 rounded-lg bg-neutral-100 p-0.5"
-		>
-			{FILTERS.map((option) => {
-				const pressed = filter.value === option.value;
-				return (
-					<button
-						key={option.value}
-						type="button"
-						aria-pressed={pressed}
-						onClick={() => filter.onChange(option.value)}
-						className={clsx(
-							"inline-flex cursor-pointer items-center rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600",
-							pressed ? "bg-white text-blue-700 shadow-sm" : "text-neutral-600 hover:text-neutral-900",
-						)}
-					>
-						{option.label}
-					</button>
-				);
-			})}
-		</div>
-	);
-}
 
 function ListPager({ pager, compact }: Pick<MessageListHeaderProps, "pager" | "compact">) {
 	return (
@@ -100,37 +67,60 @@ function EmptyFolderButton({
 	);
 }
 
-/** The top of a folder list: its title, the select-all box or the bulk toolbar, the unread filter and paging. */
+/** Zero's panel icon at the top left of the list: hides or shows the sidebar (desktop only). */
+function SidebarToggleButton() {
+	const { minimal, toggle } = useSidebar();
+	const label = minimal ? "Show menu" : "Hide menu";
+	return (
+		<Tooltip label={label}>
+			<Button
+				type="button"
+				variant="ghost"
+				size="sm"
+				aria-label={label}
+				onClick={toggle}
+				className="h-8 w-8 shrink-0 p-0 text-neutral-500 hover:text-neutral-900 max-md:hidden"
+			>
+				<PanelLeft className="h-4 w-4" />
+			</Button>
+		</Tooltip>
+	);
+}
+
+/**
+ * The top of a folder list, after Zero's: the panel icon, the title, "Select" and the list settings, then the
+ * search field and the category chips. Checkboxes show while selecting; the bulk toolbar replaces the title
+ * once something is selected. The pager row appears only when there is more than one page.
+ */
 export function MessageListHeader({
 	config,
 	compact,
-	showTitle,
 	nested,
 	selection,
+	selecting,
 	filter,
 	pager,
 	emptyFolder,
+	screenerVisible,
 }: MessageListHeaderProps) {
-	const bulk = selection.count > 0 && !compact;
+	const bulk = selection.count > 0;
 	const headerIcons = config.headerIcons ?? [];
-	const tools = (
-		<>
-			{emptyFolder && <EmptyFolderButton emptyFolder={emptyFolder} compact={compact} />}
-			{!compact && headerIcons.map((Icon, index) => <Icon key={index} className="h-4 w-4 text-neutral-500" />)}
-		</>
-	);
+	const paged = pager.canPrevious || pager.canNext;
 	return (
-		<div className="shrink-0 border-b border-neutral-200">
-			<div className={clsx("flex h-14 items-center gap-3", compact ? "px-4" : "px-4.5 md:px-6")}>
+		<div className="shrink-0">
+			<div className="flex h-14 items-center gap-2 border-b border-neutral-200 px-3">
 				<FolderHeading title={config.title} nested={nested} />
-				<Tooltip label="Select all visible messages">
-					<Checkbox
-						checked={selection.allVisible}
-						disabled={selection.disabled}
-						onChange={(event) => selection.toggleAll(event.target.checked)}
-						aria-label="Select all visible messages"
-					/>
-				</Tooltip>
+				<SidebarToggleButton />
+				{(selecting.value || bulk) && (
+					<Tooltip label="Select all visible messages">
+						<Checkbox
+							checked={selection.allVisible}
+							disabled={selection.disabled}
+							onChange={(event) => selection.toggleAll(event.target.checked)}
+							aria-label="Select all visible messages"
+						/>
+					</Tooltip>
+				)}
 				{bulk ? (
 					<BulkMessageToolbar
 						selectedCount={selection.count}
@@ -141,23 +131,47 @@ export function MessageListHeader({
 						folder={getSelectionToolbarFolder(config)}
 					/>
 				) : (
-					showTitle && (
-						<p aria-hidden="true" className="min-w-0 truncate pl-1 text-base font-semibold text-neutral-900">
-							{config.title}
-						</p>
-					)
+					<p aria-hidden="true" className="min-w-0 truncate text-base font-medium text-neutral-900">
+						{config.title}
+					</p>
 				)}
 				{!bulk && (
-					<div className="ml-auto flex shrink-0 items-center gap-2">
-						{filter && <ListFilterToggle filter={filter} />}
-						{!compact && <ListPager pager={pager} compact={false} />}
-						{!compact && tools}
+					<div className="ml-auto flex shrink-0 items-center gap-1">
+						{emptyFolder && <EmptyFolderButton emptyFolder={emptyFolder} compact={compact} />}
+						{!compact && headerIcons.map((Icon, index) => <Icon key={index} className="h-4 w-4 text-neutral-500" />)}
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							aria-pressed={selecting.value}
+							onClick={() => selecting.onChange(!selecting.value)}
+							className={clsx(
+								"h-8 gap-1.5 px-2 text-sm font-normal",
+								selecting.value ? "bg-neutral-100 text-neutral-900" : "text-neutral-500 hover:text-neutral-900",
+							)}
+						>
+							<Check className="h-4 w-4" />
+							Select
+						</Button>
+						<span aria-hidden className="mx-1 h-4 w-px bg-neutral-200" />
+						<Tooltip label="List settings">
+							<Link
+								href="/settings/inbox"
+								aria-label="List settings"
+								className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+							>
+								<SlidersHorizontal className="h-4 w-4" />
+							</Link>
+						</Tooltip>
 					</div>
 				)}
 			</div>
-			{compact && (
-				<div className="flex h-9 items-center gap-1 border-t border-neutral-100 px-3">
-					{tools}
+			<div className="flex flex-col gap-3 px-3 pb-2 pt-3">
+				<MailSearchInput variant="panel" />
+				<MessageListChips config={config} filter={filter} screenerVisible={screenerVisible} />
+			</div>
+			{paged && (
+				<div className="flex h-8 items-center justify-end px-3">
 					<ListPager pager={pager} compact />
 				</div>
 			)}

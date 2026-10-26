@@ -26,7 +26,14 @@ import { ThreadMessageActions } from "@/components/messages/thread-message-actio
 import { useMessageThread } from "@/components/messages/use-message-thread";
 import { useLatestMessagesFirst } from "@/components/messages/use-latest-messages-first";
 import { useMessageListVisibility } from "@/components/messages/message-list-visibility";
-import { splitEmailAddressList } from "@/lib/email/address";
+import { getEmailAddress, getEmailDisplayName, splitEmailAddressList } from "@/lib/email/address";
+import {
+	getConversationSender,
+	getThreadDateRange,
+	getThreadParticipants,
+} from "@/components/messages/conversation-thread-utils";
+import { CloseMessageButton, ReaderThreadHeader } from "@/components/messages/reader-thread-header";
+import { MessageReplyButtons } from "@/components/message-actions/message-reply-buttons";
 import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
 import { OneTimeCodeChip } from "@/components/messages/one-time-code-chip";
 import { ScreenerBanner } from "@/components/screener/screener-banner";
@@ -128,6 +135,8 @@ export default function MessageDetailPage() {
 	const toEntries = splitEmailAddressList(message.toAddr);
 	const ccEntries = splitEmailAddressList(message.ccAddr);
 	const bccEntries = splitEmailAddressList(message.bccAddr);
+	// The thread may or may not list the open message itself.
+	const threadSize = new Set([message.id, ...thread.messages.map((threadMessage) => threadMessage.id)]).size;
 	const bodyDisplay = getMessageBodyDisplay(body?.textBody, body?.htmlBody, message.snippet, ownAddress);
 	const imageOptions = {
 		blockRemoteImages: !alwaysLoadRemoteImages && remoteImagesShownFor !== message.id,
@@ -147,22 +156,11 @@ export default function MessageDetailPage() {
 	const oneTimeCode = extractOneTimeCode({ subject: message.subject, text: bodyDisplay.latestContent });
 	return (
 		<>
-			<div
-				className={clsx(
-					"flex py-2 h-12 items-center px-2 border-b sticky top-0 bg-white z-40 gap-3",
-					scrolled ? "border-neutral-200" : "border-transparent",
-				)}
-			>
+			<div className="sticky top-0 z-40 flex h-14 items-center gap-1 border-b border-neutral-200 bg-white px-3">
+				<CloseMessageButton />
+				<MessageDetailNavigation messageId={message.id} unread={message.direction === "inbound" && !message.read} />
 				<MessageReadingHeaderButton />
-				{/* <div className="min-w-0 flex-1" /> */}
-				{/* <div className="flex items-center flex-row gap-6">
-					<Link
-						href={getMessageBackHref(message.direction, message.status)}
-						className="rounded-full p-2 text-neutral-600 hover:bg-neutral-100"
-					>
-						<ArrowLeft className="h-5 w-5" />
-					</Link>
-				</div> */}
+				<span className="min-w-0 flex-1" />
 				<MessageActions
 					messageId={message.id}
 					mailboxId={message.mailboxId}
@@ -179,26 +177,33 @@ export default function MessageDetailPage() {
 					messageMeta={message}
 					bodyHtml={body?.htmlBody}
 				/>
-				<MessageDetailNavigation messageId={message.id} unread={message.direction === "inbound" && !message.read} />
 			</div>
 
 			<div
 				ref={scrollRef}
+				data-reader-scroll
 				onScroll={handleScroll}
 				className="h-full overflow-y-auto overscroll-contain scrollbar-gutter-stable flex-1 min-h-0"
 			>
 				{!message.read && <MarkAsRead messageId={message.id} />}
 
-				<h1
-					dir="auto"
-					className={clsx(
-						!isAnyPanelVisible ? "sm:pl-16" : "sm:pl-10",
-						"pl-3 pr-3 pb-2 pt-2 text-2xl text-neutral-900 sm:pr-6",
-					)}
-					title={message.subject ?? "(no subject)"}
-				>
-					{message.subject ?? "(no subject)"}
-				</h1>
+				<ReaderThreadHeader
+					subject={message.subject ?? "(no subject)"}
+					count={threadSize}
+					range={getThreadDateRange([
+						message.createdAt,
+						...thread.messages.map((threadMessage) => threadMessage.createdAt),
+					])}
+					participants={getThreadParticipants([
+						{ name: fromName, address: fromAddress },
+						...thread.messages.map((threadMessage) => ({
+							name: getConversationSender(threadMessage, currentAccountName),
+							address: getEmailAddress(threadMessage.fromAddr),
+						})),
+						...toEntries.map((entry) => ({ name: getEmailDisplayName(entry), address: getEmailAddress(entry) })),
+					])}
+					mailboxId={message.mailboxId}
+				/>
 				<OneTimeCodeChip code={oneTimeCode} alignWide={!isAnyPanelVisible} />
 				<ScreenerBanner message={message} mailbox={messageMailbox} alignWide={!isAnyPanelVisible} />
 				{/* <div className="px-6">
@@ -225,9 +230,10 @@ export default function MessageDetailPage() {
 					expandedAll={threadExpanded}
 					onExpandedAllChange={setThreadExpanded}
 				/>
-				<article className={clsx("px-3 py-4 sm:px-6", !isAnyPanelVisible && "sm:pl-12")}>
+				{/* Every message of the conversation is a section under a hairline, as in Zero's reader. */}
+				<article className="border-t border-neutral-200 px-4 py-6 sm:px-7">
 					<div className="w-full">
-						<div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 pb-5 sm:pl-4">
+						<div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 pb-5">
 							<div className="flex min-w-0 items-start gap-3">
 								<ContactAvatar
 									mailboxId={message.mailboxId}
@@ -310,7 +316,7 @@ export default function MessageDetailPage() {
 								/>
 							</div>
 						</div>
-						<div className="prose max-w-none text-neutral-900 sm:pl-16">
+						<div className="prose mt-1 max-w-none text-neutral-900">
 							{imageOptions.stats.blockedRemoteImages > 0 && (
 								<RemoteImagesNotice onShow={() => setRemoteImagesShownFor(message.id)} />
 							)}
@@ -328,8 +334,8 @@ export default function MessageDetailPage() {
 							))}
 						</div>
 						{cloudAttachmentResult.attachments.length > 0 && (
-							<section className="mt-8 border-t border-neutral-100 py-6 sm:pl-16">
-								<h2 className="mb-3 text-sm font-semibold text-neutral-900">
+							<section className="mt-6">
+								<h2 className="mb-2 text-sm text-neutral-500">
 									Cloud files ({cloudAttachmentResult.attachments.length})
 								</h2>
 								<div className="grid gap-2 sm:grid-cols-2">
@@ -356,9 +362,9 @@ export default function MessageDetailPage() {
 							</section>
 						)}
 						{attachments.length > 0 && (
-							<section className="mt-8 border-t border-neutral-100 py-6 sm:pl-16">
-								<h2 className="mb-3 text-sm font-semibold text-neutral-900">Attachments ({attachments.length})</h2>
-								<div className="grid gap-2 sm:grid-cols-2">
+							<section className="mt-6">
+								<h2 className="mb-2 text-sm text-neutral-500">Attachments ({attachments.length})</h2>
+								<div className="flex flex-wrap gap-2">
 									{attachments.map((attachment) => (
 										<MessageAttachmentCard
 											key={attachment.id}
@@ -371,6 +377,18 @@ export default function MessageDetailPage() {
 								</div>
 							</section>
 						)}
+						<MessageReplyButtons
+							mailboxId={message.mailboxId}
+							senderAddress={message.fromAddr}
+							direction={message.direction}
+							subject={message.subject}
+							bodyText={body?.textBody}
+							bodyHtml={body?.htmlBody}
+							ownAddress={ownAddress}
+							ownAddresses={ownAddresses}
+							message={message}
+							messageMeta={message}
+						/>
 					</div>
 				</article>
 				<ConversationThread

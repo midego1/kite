@@ -24,11 +24,11 @@
 
 /* The next/font variables live on <html>, so --font-ui must be declared there too to resolve. */
 :root {
-	--font-ui: var(--font-manrope), system-ui, sans-serif;
+	--font-ui: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-:root[data-style="classic"] {
-	--font-ui: var(--font-geist-sans), system-ui, sans-serif;
+:root[data-style="lavender"] {
+	--font-ui: var(--font-manrope), system-ui, sans-serif;
 }
 
 /* A chosen font wins over the style's font; these come after the style rules at equal specificity. */
@@ -71,11 +71,158 @@ pre {
 }
 
 /* ── Kite style ──────────────────────────────────────────────────────────────
-   The default look: Kite Blue (#4f46e5) through lavender in place of Tailwind's blue, navy text and a
-   lavender-tinted page. Components use the blue palette directly, so remapping it restyles every screen;
-   Classic (data-style="classic") keeps the original palette. The :not(.dark) / .dark split keeps these
-   rules from outranking the dark theme's own remapping below. */
-:root:not(.dark):not([data-style="classic"]) {
+   The default look (data-style="kite"): Zero's neutral zinc palette, a near-black primary (white in dark mode)
+   and one blue accent (#437dfb) for focus, the unread dot and selection marks. Components use Tailwind's
+   blue palette directly, so the scale is remapped: the tints (50–300) become the muted zinc fills of active
+   and selected items, 400–500 are the accent and 600–950 are the primary. Focus utilities written as
+   blue-600 get the accent back below. Kite classic (data-style="lavender") is the earlier lavender look and
+   Classic (data-style="classic") the original palette. The :not(.dark) / .dark split keeps the light rules
+   from outranking the dark theme's own remapping further down. */
+:root:not(.dark)[data-style="kite"] {
+	--background: #fafafa;
+	--foreground: #09090b;
+	--card: #ffffff;
+	--muted: #f4f4f5;
+	--border: #e4e4e7;
+	--primary: #18181b;
+	--color-neutral-50: #fafafa;
+	--color-neutral-100: #f4f4f5;
+	--color-neutral-200: #e4e4e7;
+	--color-neutral-300: #d4d4d8;
+	--color-neutral-400: #a1a1aa;
+	/* zinc-500 is 4.4:1 on the muted fill; this one keeps secondary text at AA there too. */
+	--color-neutral-500: #686871;
+	--color-neutral-600: #52525b;
+	--color-neutral-700: #3f3f46;
+	--color-neutral-800: #27272a;
+	--color-neutral-900: #18181b;
+	--color-neutral-950: #09090b;
+	--color-blue-50: #f4f4f5;
+	--color-blue-100: #e4e4e7;
+	--color-blue-200: #d4d4d8;
+	--color-blue-300: #a1a1aa;
+	--color-blue-400: #7aa2fc;
+	--color-blue-500: #437dfb;
+	--color-blue-600: #18181b;
+	--color-blue-700: #27272a;
+	--color-blue-800: #18181b;
+	--color-blue-900: #09090b;
+	--color-blue-950: #09090b;
+}
+
+:root:not(.dark)[data-style="kite"] :is(.bg-\[\#f6f8fc\], .bg-\[\#f7f9fc\]) {
+	background-color: #fafafa;
+}
+:root:not(.dark)[data-style="kite"] :is(.bg-\[\#f2f6fc\], .bg-\[\#f1f4fa\], .bg-\[\#f0f3f9\]) {
+	background-color: #f4f4f5;
+}
+:root:not(.dark)[data-style="kite"] :is(.bg-\[\#eef3fb\], .bg-\[\#eaf1fb\]) {
+	background-color: #f4f4f5;
+}
+:root:not(.dark)[data-style="kite"] .bg-\[\#e6ecf6\] {
+	background-color: #e4e4e7;
+}
+:root:not(.dark)[data-style="kite"] .hover\:bg-\[\#f2f6fc\]:hover {
+	background-color: #f4f4f5;
+}
+:root:not(.dark)[data-style="kite"] .hover\:bg-\[\#e6ecf6\]:hover {
+	background-color: #e4e4e7;
+}
+
+/* Zero's dark UI: a #141414 page, #1a1a1a panels, zinc greys and a white primary with dark text. */
+:root.dark[data-style="kite"] {
+	--background: #141414;
+	--foreground: #fafafa;
+	--card: #1a1a1a;
+	--muted: #262626;
+	--border: #2b2b2e;
+	--primary: #fafafa;
+	--primary-foreground: #18181b;
+	--color-white: #1a1a1a;
+	--color-neutral-50: #202020;
+	--color-neutral-100: #262626;
+	--color-neutral-200: #2b2b2e;
+	--color-neutral-300: #3f3f46;
+	--color-neutral-400: #7c7c85;
+	--color-neutral-500: #8c8c8c;
+	--color-neutral-600: #a1a1aa;
+	--color-neutral-700: #d4d4d8;
+	--color-neutral-800: #e4e4e7;
+	--color-neutral-900: #f4f4f5;
+	--color-neutral-950: #fafafa;
+	--color-gray-50: #202020;
+	--color-gray-100: #262626;
+	--color-gray-200: #2b2b2e;
+	--color-gray-300: #3f3f46;
+	--color-gray-400: #7c7c85;
+	--color-gray-500: #8c8c8c;
+	--color-gray-600: #a1a1aa;
+	--color-gray-700: #d4d4d8;
+	--color-gray-800: #e4e4e7;
+	--color-gray-900: #f4f4f5;
+	--color-gray-950: #fafafa;
+	--color-zinc-50: #202020;
+	--color-zinc-100: #262626;
+	--color-zinc-200: #2b2b2e;
+	--color-zinc-300: #3f3f46;
+	--color-zinc-400: #7c7c85;
+	--color-zinc-500: #8c8c8c;
+	--color-zinc-600: #a1a1aa;
+	--color-zinc-700: #d4d4d8;
+	--color-zinc-800: #e4e4e7;
+	--color-zinc-900: #f4f4f5;
+	--color-zinc-950: #fafafa;
+	--color-blue-50: #262626;
+	--color-blue-100: #2b2b2e;
+	--color-blue-200: #3f3f46;
+	--color-blue-300: #52525b;
+	--color-blue-400: #5b8dfc;
+	--color-blue-500: #437dfb;
+	--color-blue-600: #fafafa;
+	--color-blue-700: #e4e4e7;
+	--color-blue-800: #f4f4f5;
+	--color-blue-900: #fafafa;
+	--color-blue-950: #fafafa;
+}
+
+/* The primary is white in dark mode, so its label turns dark (the dark theme keeps text-white white). */
+:root.dark[data-style="kite"] :is(.bg-blue-600, .hover\:bg-blue-600:hover) {
+	background-color: #fafafa;
+}
+:root.dark[data-style="kite"] :is(.bg-blue-700, .hover\:bg-blue-700:hover) {
+	background-color: #e4e4e7;
+}
+:root.dark[data-style="kite"] :is(.bg-blue-600, .bg-blue-700, .hover\:bg-blue-600:hover) :is(.text-white, svg),
+:root.dark[data-style="kite"] :is(.bg-blue-600, .bg-blue-700, .hover\:bg-blue-600:hover).text-white {
+	color: #18181b;
+}
+:root.dark[data-style="kite"] :is(.bg-\[\#f6f8fc\], .bg-\[\#f7f9fc\]) {
+	background-color: #141414;
+}
+:root.dark[data-style="kite"] :is(.bg-\[\#f2f6fc\], .bg-\[\#f1f4fa\], .bg-\[\#f0f3f9\], .hover\:bg-\[\#f2f6fc\]:hover) {
+	background-color: #202020;
+}
+:root.dark[data-style="kite"] :is(.bg-\[\#eef3fb\], .bg-\[\#eaf1fb\], .bg-\[\#e6ecf6\], .hover\:bg-\[\#e6ecf6\]:hover) {
+	background-color: #262626;
+}
+
+/* Focus keeps the blue accent even where a component spells it blue-600, which is the primary here. */
+:root[data-style="kite"] :is(.focus-visible\:ring-blue-600:focus-visible, .focus\:ring-blue-600:focus) {
+	--tw-ring-color: var(--color-blue-500);
+}
+:root[data-style="kite"]
+	:is(
+		.focus-visible\:border-blue-600:focus-visible,
+		.focus\:border-blue-600:focus,
+		.focus-within\:border-blue-600:focus-within
+	) {
+	border-color: var(--color-blue-500);
+}
+
+/* ── Kite classic ────────────────────────────────────────────────────────────
+   The earlier Kite look (data-style="lavender"): Kite Blue (#4f46e5) through lavender in place of
+   Tailwind's blue, navy text and a lavender-tinted page. */
+:root:not(.dark)[data-style="lavender"] {
 	--background: #f6f6fc;
 	--foreground: #161a3f;
 	--muted: #eeedfb;
@@ -96,26 +243,26 @@ pre {
 	--color-neutral-950: #0d1030;
 }
 
-:root:not(.dark):not([data-style="classic"]) :is(.bg-\[\#f6f8fc\], .bg-\[\#f7f9fc\]) {
+:root:not(.dark)[data-style="lavender"] :is(.bg-\[\#f6f8fc\], .bg-\[\#f7f9fc\]) {
 	background-color: #f6f6fc;
 }
-:root:not(.dark):not([data-style="classic"]) :is(.bg-\[\#f2f6fc\], .bg-\[\#f1f4fa\], .bg-\[\#f0f3f9\]) {
+:root:not(.dark)[data-style="lavender"] :is(.bg-\[\#f2f6fc\], .bg-\[\#f1f4fa\], .bg-\[\#f0f3f9\]) {
 	background-color: #efeefb;
 }
-:root:not(.dark):not([data-style="classic"]) :is(.bg-\[\#eef3fb\], .bg-\[\#eaf1fb\]) {
+:root:not(.dark)[data-style="lavender"] :is(.bg-\[\#eef3fb\], .bg-\[\#eaf1fb\]) {
 	background-color: #e9e7fb;
 }
-:root:not(.dark):not([data-style="classic"]) .bg-\[\#e6ecf6\] {
+:root:not(.dark)[data-style="lavender"] .bg-\[\#e6ecf6\] {
 	background-color: #e1dff7;
 }
-:root:not(.dark):not([data-style="classic"]) .hover\:bg-\[\#f2f6fc\]:hover {
+:root:not(.dark)[data-style="lavender"] .hover\:bg-\[\#f2f6fc\]:hover {
 	background-color: #efeefb;
 }
-:root:not(.dark):not([data-style="classic"]) .hover\:bg-\[\#e6ecf6\]:hover {
+:root:not(.dark)[data-style="lavender"] .hover\:bg-\[\#e6ecf6\]:hover {
 	background-color: #e1dff7;
 }
 
-:root.dark:not([data-style="classic"]) {
+:root.dark[data-style="lavender"] {
 	--primary: #a59cff;
 	--color-blue-50: #24224f;
 	--color-blue-100: #2e2b66;
@@ -130,16 +277,56 @@ pre {
 	--color-blue-950: #f3f2ff;
 }
 
-/* Script accents belong to the Kite look; Classic keeps its plain type. */
-:root[data-style="classic"] .font-script {
+:root.dark[data-style="lavender"] .bg-blue-600 {
+	background-color: #5a50e0;
+}
+:root.dark[data-style="lavender"] :is(.bg-blue-700, .hover\:bg-blue-700:hover) {
+	background-color: #4a40c8;
+}
+
+/* Script accents belong to Kite classic; the other styles keep plain type. */
+:root:not([data-style="lavender"]) .font-script {
 	display: none;
 }
 
-:root.dark:not([data-style="classic"]) .bg-blue-600 {
-	background-color: #5a50e0;
+/* Thin, quiet scrollbars in the list and the reader, as in Zero's panels. */
+[data-density],
+[data-reader-scroll] {
+	scrollbar-width: thin;
+	scrollbar-color: var(--color-neutral-200) transparent;
 }
-:root.dark:not([data-style="classic"]) :is(.bg-blue-700, .hover\:bg-blue-700:hover) {
-	background-color: #4a40c8;
+
+/* Zero's reader toolbar: each action is an icon in a rounded square, "Reply all" carries its label and delete
+   is tinted red. The buttons keep their own sizes elsewhere; only the reader toolbar squares them. */
+.reader-toolbar button {
+	height: 2rem;
+	min-width: 2rem;
+	padding: 0 0.5rem;
+	border-radius: 0.5rem;
+	background-color: var(--color-neutral-100);
+	color: var(--color-neutral-600);
+}
+.reader-toolbar button:not([data-labelled]) {
+	width: 2rem;
+	padding: 0;
+}
+.reader-toolbar button[data-labelled] {
+	gap: 0.375rem;
+	font-size: 0.875rem;
+	font-weight: 500;
+	color: var(--color-neutral-900);
+}
+.reader-toolbar button:hover:not(:disabled) {
+	background-color: var(--color-neutral-200);
+	color: var(--color-neutral-900);
+}
+.reader-toolbar button[data-tone="danger"] {
+	background-color: rgb(239 68 68 / 0.12);
+	color: #ef4444;
+}
+.reader-toolbar button[data-tone="danger"]:hover:not(:disabled) {
+	background-color: rgb(239 68 68 / 0.22);
+	color: #ef4444;
 }
 
 @keyframes dialog-overlay-show {

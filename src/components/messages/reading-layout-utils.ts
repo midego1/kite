@@ -57,9 +57,9 @@ export function getEffectiveReadingPaneMode(mode: ReadingPaneMode, wideViewport:
 
 /** Row spacing for the stacked rows of the list beside a reading pane. */
 export function getStackedRowDensity(density: MessageListDensity): MessageRowDensityStyle {
-	if (density === "comfortable") return { rowClassName: "py-4", showPreview: true };
-	if (density === "compact") return { rowClassName: "py-2", showPreview: false };
-	return { rowClassName: "py-3", showPreview: true };
+	if (density === "comfortable") return { rowClassName: "py-3", showPreview: true };
+	if (density === "compact") return { rowClassName: "py-1.5", showPreview: false };
+	return { rowClassName: "py-2.5", showPreview: false };
 }
 
 /** Row height for the single-line rows of a full-width list. */

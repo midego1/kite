@@ -6,14 +6,19 @@ import clsx from "clsx";
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useMailSearch } from "./mail-search-context";
-import { searchPillClass, searchPillInputClass } from "./search-pill";
+import { panelSearchClass, searchPillClass, searchPillInputClass } from "./search-pill";
 import { useShortcuts } from "@/components/shortcuts";
 import type { ModuleSearchItem } from "@/lib/search/module-search-types";
 import { SearchDropdown } from "./search-dropdown";
 import { flattenSections, nextActiveIndex, searchItemKey } from "./search-dropdown-utils";
 import { useModuleSearch } from "./use-module-search";
 
-export function MailSearchInput() {
+/**
+ * The mail search. `panel` is the field inside the message list panel (Zero's "Search ⌘K"), always shown;
+ * `header` is the top-bar pill that collapses to an icon on phones.
+ */
+export function MailSearchInput({ variant = "header" }: { variant?: "header" | "panel" }) {
+	const panel = variant === "panel";
 	const { input: query, setQuery } = useMailSearch();
 	const { openCommandPalette, shortcutsEnabled, shortcutsPreferenceLoading } = useShortcuts();
 	const showShortcutHints = shortcutsEnabled && !shortcutsPreferenceLoading;
@@ -58,6 +63,7 @@ export function MailSearchInput() {
 			<button
 				type="button"
 				onClick={() => setExpanded(true)}
+				hidden={panel}
 				aria-label="Search mail"
 				className={clsx(
 					"ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-neutral-200 md:hidden",
@@ -69,12 +75,16 @@ export function MailSearchInput() {
 			</button>
 			<div
 				className={clsx(
-					searchPillClass,
-					"relative md:flex",
-					expanded ? "flex max-md:fixed max-md:inset-x-2 max-md:top-2 max-md:z-[60] max-md:shadow-md" : "max-md:hidden",
+					panel ? panelSearchClass : searchPillClass,
+					"relative",
+					!panel && "md:flex",
+					!panel &&
+						(expanded
+							? "flex max-md:fixed max-md:inset-x-2 max-md:top-2 max-md:z-[60] max-md:shadow-md"
+							: "max-md:hidden"),
 				)}
 			>
-				<Search className="h-5 w-5 shrink-0" />
+				<Search className="h-4 w-4 shrink-0" />
 				<Input
 					ref={inputRef}
 					onFocus={() => setFocused(true)}
@@ -89,7 +99,7 @@ export function MailSearchInput() {
 						setClosedFor(null);
 						setQuery(event.target.value);
 					}}
-					placeholder={showShortcutHints ? "Search mail (press / to focus)" : "Search mail"}
+					placeholder={showShortcutHints && !panel ? "Search mail (press / to focus)" : "Search mail"}
 					className={searchPillInputClass}
 				/>
 				{query ? (
@@ -106,7 +116,7 @@ export function MailSearchInput() {
 					<button
 						type="button"
 						onClick={openCommandPalette}
-						className="hidden sm:flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-neutral-500 bg-white/70 hover:bg-white border border-neutral-200/80 rounded-md shadow-2xs transition-colors"
+						className="hidden sm:flex items-center gap-1 rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-200 hover:text-neutral-900"
 						title="Open Command Palette (⌘K)"
 					>
 						<span className="text-[11px] font-mono">⌘K</span>

@@ -45,3 +45,25 @@ export function getAvatarInitial(message: ThreadMessage, currentAccountName?: st
 	const name = getConversationSender(message, currentAccountName) || getEmailAddress(message.fromAddr);
 	return name.trim().charAt(0).toUpperCase() || "?";
 }
+
+export type ThreadParticipant = { name: string; address: string };
+
+/** The people of a conversation for the reader's chips: senders and recipients, once each, in order. */
+export function getThreadParticipants(people: ThreadParticipant[]): ThreadParticipant[] {
+	const seen = new Set<string>();
+	const participants: ThreadParticipant[] = [];
+	for (const person of people) {
+		const key = person.address.trim().toLowerCase() || person.name.trim().toLowerCase();
+		if (!key || seen.has(key)) continue;
+		seen.add(key);
+		participants.push({ name: person.name.trim() || person.address, address: person.address });
+	}
+	return participants;
+}
+
+/** The first and last dates of a conversation, or the one date when it all happened on a day. */
+export function getThreadDateRange(dates: string[]): { first: string; last: string } | null {
+	const sorted = dates.filter((date) => !Number.isNaN(Date.parse(date))).sort((a, b) => Date.parse(a) - Date.parse(b));
+	if (sorted.length === 0) return null;
+	return { first: sorted[0], last: sorted.at(-1)! };
+}

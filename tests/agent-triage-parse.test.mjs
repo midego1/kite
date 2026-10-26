@@ -340,6 +340,13 @@ test("injected delimiters, nonce fragments and invisible characters are stripped
 	assert.equal(stripDelimiters("x nonce=abc y"), "x  y");
 	assert.equal(stripDelimiters("abXYab", "ab"), "XY");
 	assert.equal(stripDelimiters("aabb", "ab"), "", "removing the nonce cannot reassemble it");
+	// Controls and invisible characters inside a delimiter or a nonce marker are removed before the delimiters.
+	const cp = (...points) => String.fromCodePoint(...points);
+	assert.equal(stripDelimiters(`<<${cp(0x07)}<END x>>${cp(0x200b)}>`), "END x");
+	assert.equal(stripDelimiters(`<${cp(0x85)}<${cp(0x2066)}<EMAIL id=1>>${cp(0x1f)}>`), "EMAIL id=1");
+	assert.equal(stripDelimiters(`non${cp(0x0b)}ce${cp(0xfeff)}=abc tail`), " tail");
+	assert.equal(stripDelimiters(`a${cp(0x0b)}b${cp(0x07)}`, "ab"), "");
+	assert.equal(stripDelimiters("keeps\ttabs\r\nand lines"), "keeps\ttabs\r\nand lines");
 });
 
 test("the latest message is cut to 8,000 characters and instructions to 4,000", () => {

@@ -32,10 +32,15 @@ const HEADING_LIKE = /^.*\b(?:preferences|cannot override|writing style|facts co
  * text comes out unchanged.
  */
 export function cleanInstruction(value: string, max: number): string {
-	const text = stripDelimiters(value.replace(/\r\n?/g, "\n"))
-		.replace(CONTROL_CHARACTERS, "")
-		.replace(HIDDEN_CHARACTERS, "")
-		.trim();
+	// Hidden and control characters go first, then the delimiters, repeated until stable: removing either can
+	// join brackets into a new `<<<` (as in `<<`, a control character, `<`), so no single pass is enough.
+	let text = value.replace(/\r\n?/g, "\n");
+	let previous: string;
+	do {
+		previous = text;
+		text = stripDelimiters(text.replace(CONTROL_CHARACTERS, "").replace(HIDDEN_CHARACTERS, ""));
+	} while (text !== previous);
+	text = text.trim();
 	const chars = Array.from(text);
 	const cut = chars.length > max ? chars.slice(0, max).join("").trimEnd() : text;
 	return cut

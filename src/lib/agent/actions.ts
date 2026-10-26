@@ -6,7 +6,8 @@ import type { SessionUser } from "@/lib/auth/types";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { executeAction, undoAgentAction } from "./auto-read/execute";
-import { chatActionPlan, chatProposalSchema, type ChatActionAudit, type MessagePlace } from "./chat-actions-utils";
+import type { ChatActionAudit, MessagePlace } from "./chat-actions-types";
+import { chatActionPlan, chatProposalSchema } from "./chat-actions-utils";
 import { runEmailTool } from "./tools";
 
 async function loadToolMessage(env: CloudflareEnv, user: SessionUser, toolMessageId: string) {

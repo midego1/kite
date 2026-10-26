@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { EmailToolName } from "./types";
+import type { ChatActionPlan, MessagePlace } from "./chat-actions-types";
 
 const ids = z.array(z.string()).min(1).max(20);
 const destination = z.enum(["inbox", "archived", "trash", "spam"]);
@@ -41,19 +41,8 @@ export const chatProposalSchema = z.discriminatedUnion("action", [
 	}),
 ]);
 
-export type ChatProposal = z.infer<typeof chatProposalSchema>;
-
-/** How an approved proposal is recorded in `agent_actions`; null for an action that is not undoable. */
-export type ChatActionAudit = {
-	action: "move" | "mark_read" | "set_folder" | "create_folder";
-	variant: string;
-	emailIds: string[];
-};
-
-export type ChatActionPlan = { tool: EmailToolName; input: Record<string, unknown>; audit: ChatActionAudit | null };
-
 /** The tool call that performs an approved proposal, and the audit row that makes it undoable. */
-export function chatActionPlan(proposal: ChatProposal): ChatActionPlan {
+export function chatActionPlan(proposal: z.infer<typeof chatProposalSchema>): ChatActionPlan {
 	const tool = proposal.action;
 	switch (proposal.action) {
 		case "move_email":
@@ -101,9 +90,6 @@ export function chatActionPlan(proposal: ChatProposal): ChatActionPlan {
 			return { tool, input: { draftId: proposal.draftId, expectedRevision: proposal.expectedRevision }, audit: null };
 	}
 }
-
-/** One message as it was before an approved chat action changed it. */
-export type MessagePlace = { id: string; status: string; folderId: string | null; read: boolean };
 
 function isMessagePlace(value: unknown): value is MessagePlace {
 	if (!value || typeof value !== "object") return false;

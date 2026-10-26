@@ -39,6 +39,30 @@ test("sending settings are saved to the account and survive a reload", async ({ 
 	await api.dispose();
 });
 
+test("typing into a closed dropdown picks an option and does not run keyboard shortcuts", async ({ page }) => {
+	await page.goto("/settings/appearance");
+	const style = page.getByRole("combobox", { name: "Style" });
+	await expectSelectValue(style, "kite");
+	// Shortcuts bind once the account's preference has loaded; the help sheet opening shows they are live.
+	const help = page.getByRole("dialog", { name: "Keyboard Shortcuts" });
+	await expect(async () => {
+		if (!(await help.isVisible())) await page.keyboard.press("?");
+		await expect(help).toBeVisible({ timeout: 1000 });
+	}).toPass();
+	await page.keyboard.press("Escape");
+	await expect(help).toHaveCount(0);
+
+	await style.focus();
+	// `c` is also the Compose shortcut; like a native select, the dropdown keeps the key to itself.
+	await page.keyboard.press("c");
+	await expectSelectValue(style, "classic");
+	// The composer loads its form on demand, so give a wrongly fired shortcut time to show it.
+	await page.waitForTimeout(1500);
+	await expect(page.getByRole("button", { name: "Close composer" })).toHaveCount(0);
+	await chooseOption(style, { label: "Kite" });
+	await expectSelectValue(style, "kite");
+});
+
 test.describe("assistant step limit", () => {
 	test.afterEach(async () => {
 		const api = await apiContext(STORAGE_STATE);

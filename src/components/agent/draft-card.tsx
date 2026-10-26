@@ -9,6 +9,7 @@ import { formatUserDate } from "@/lib/time/utils";
 import { fetchAgentDraftState } from "./client-actions";
 import {
 	DRAFT_UNAVAILABLE_TEXT,
+	SENDING_POLL_DELAYS_MS,
 	draftRefreshDelay,
 	draftStateHeading,
 	isFinalDraftState,
@@ -78,6 +79,13 @@ export function AgentDraftActions({
 			window.removeEventListener("kite:messages-changed", onMessagesChanged);
 		};
 		function apply(value: DraftCardState) {
+			if (value.kind === "error" && knownNonDraft) {
+				// A failed look at a draft that is already sent or scheduled keeps what the card showed (never the draft
+				// buttons) and tries again with growing waits.
+				const retry = SENDING_POLL_DELAYS_MS[polls++];
+				if (retry !== undefined) pollTimer = window.setTimeout(load, retry);
+				return;
+			}
 			setCard(value);
 			knownNonDraft = value.kind === "finished" || value.kind === "unavailable";
 			if (value.kind === "unavailable" || (value.kind === "finished" && isFinalDraftState(value.state))) return stop();

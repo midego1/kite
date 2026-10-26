@@ -201,6 +201,37 @@ test("a draft that is still being sent says so, checks again, and then shows as 
 	expect(requests).toEqual({ draft: 1, state: 2 });
 });
 
+test("a failed status check keeps a scheduled card as it was and tries again, never restoring the draft buttons", async ({
+	page,
+}) => {
+	const requests = { draft: 0, state: 0 };
+	const panel = await openDesignConversation(page, async () => {
+		await page.route("**/api/drafts/design-draft", (route) => {
+			requests.draft++;
+			return route.fulfill({ status: 404, json: { error: "Draft not found" } });
+		});
+		await page.route("**/api/drafts/design-draft/state", (route) => {
+			requests.state++;
+			if (requests.state === 2) return route.fulfill({ status: 500, json: { error: "Temporary failure" } });
+			const details = { messageId: "sent-5", subject: "Re: Files to review", to: "sophie@example.com" };
+			return route.fulfill({
+				json:
+					requests.state === 1
+						? { state: "scheduled", ...details, scheduledAt: new Date().toISOString() }
+						: { state: "sent", ...details },
+			});
+		});
+	});
+	const card = panel.getByRole("region", { name: "Reply draft" });
+	await expect(card.getByText(/^Scheduled for /)).toBeVisible();
+	await expect.poll(() => requests.state, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+	await expect(card.getByText(/^Scheduled for /)).toBeVisible();
+	await expect(card.getByRole("button")).toHaveCount(0);
+	await expect(card.getByText("Preview unavailable")).toHaveCount(0);
+	await expect(card.getByText("Sent", { exact: true })).toBeVisible({ timeout: 10_000 });
+	expect(requests).toEqual({ draft: 1, state: 3 });
+});
+
 test("a scheduled draft says when it goes out and a removed draft is no longer available", async ({ page }) => {
 	const panel = await openDesignConversation(page, async () => {
 		await page.route("**/api/drafts/design-draft", (route) =>

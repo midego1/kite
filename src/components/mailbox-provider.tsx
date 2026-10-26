@@ -1,18 +1,19 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import {
 	clearMailboxesCache,
 	fetchMailboxOptions,
 	isIdentityMailbox,
 	SELECTED_MAILBOX_STORAGE_KEY,
+	ALL_MAILBOXES_HIDDEN_STORAGE_KEY,
+	ALL_MAILBOXES_STORAGE_KEY,
 } from "./mailbox-provider-utils";
 import { AUTH_SESSION_CHANGED_EVENT, getClientSessionKey } from "@/lib/auth/client";
 import { PROFILE_NAME_CHANGED_EVENT } from "@/lib/profile/name-client";
 import { PROFILE_AVATAR_CHANGED_EVENT } from "@/lib/profile/avatar-client";
 import type { ProfileNameChangedDetail } from "@/lib/profile/types";
-import { ALL_MAILBOXES_HIDDEN_STORAGE_KEY, ALL_MAILBOXES_STORAGE_KEY } from "@/components/appearance-preferences";
 import { useStoredState } from "@/hooks/use-stored-state";
 import { mailboxIdsParam, visibleMailboxIds } from "@/lib/mailboxes/scope-utils";
 
@@ -54,6 +55,9 @@ type MailboxContextValue = {
 };
 
 const NO_HIDDEN_MAILBOXES: string[] = [];
+const subscribeNever = () => () => {};
+const isClient = () => true;
+const isServer = () => false;
 
 const MailboxContext = createContext<MailboxContextValue | null>(null);
 
@@ -70,6 +74,9 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 	const [storedAllMailboxes, setAllMailboxes] = useStoredState(ALL_MAILBOXES_STORAGE_KEY, false);
 	const [hiddenMailboxIds, setHiddenMailboxIds] = useStoredState(ALL_MAILBOXES_HIDDEN_STORAGE_KEY, NO_HIDDEN_MAILBOXES);
 	const allMailboxes = storedAllMailboxes === true && mailboxes.length > 1;
+	// The view and its filter are read from storage only after hydration; until then nothing may fetch,
+	// so the first list is never one mailbox's or unfiltered when the browser remembered otherwise.
+	const hydrated = useSyncExternalStore(subscribeNever, isClient, isServer);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -176,7 +183,7 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 			selectedMailbox,
 			setSelectedMailbox,
 			mailboxes,
-			isLoading,
+			isLoading: isLoading || !hydrated,
 			allMailboxes,
 			setAllMailboxes,
 			hiddenMailboxIds,
@@ -186,6 +193,7 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 		[
 			allMailboxes,
 			hiddenMailboxIds,
+			hydrated,
 			isLoading,
 			mailboxes,
 			selectedMailbox,

@@ -56,7 +56,8 @@ async function openSwitcher(page: Page) {
 	// The first visit compiles the dashboard on a cold dev server.
 	await expect(trigger).toBeVisible({ timeout: 60_000 });
 	await trigger.click();
-	return page.getByRole("listbox", { name: "Mailboxes" });
+	// The menu holds the mailbox listbox and, outside it, the All mailboxes filter.
+	return page.getByRole("dialog", { name: "Switch mailbox" });
 }
 
 async function showAllMailboxes(page: Page) {
@@ -129,7 +130,7 @@ test("All mailboxes lists every mailbox with labels and summed counts, and the f
 		[desk, subjects.desk],
 	] as const) {
 		await expect(row(page, subject)).toBeVisible();
-		await expect(row(page, subject).getByTestId("message-mailbox-label")).toHaveText(box.name);
+		await expect(row(page, subject).getByTestId("message-mailbox-label")).toHaveText(`Mailbox: ${box.name}`);
 	}
 
 	const counts = async (query = "") =>
@@ -315,11 +316,42 @@ test("on a phone the combined view shows one pane at a time", async ({ browser }
 	await page.keyboard.press("Escape");
 
 	await expect(row(page, subject)).toBeVisible();
-	await expect(row(page, subject).getByTestId("message-mailbox-label")).toHaveText(work.name);
+	await expect(row(page, subject).getByTestId("message-mailbox-label")).toHaveText(`Mailbox: ${work.name}`);
 	await row(page, subject).getByText(subject, { exact: true }).click();
 	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
 	await expect(inboxList(page)).toHaveCount(0);
 	await page.getByRole("button", { name: "Back to Inbox" }).click();
 	await expect(row(page, subject)).toBeVisible();
+	await page.context().close();
+});
+
+test("Empty Trash in the combined view empties only the mailboxes it may manage, and names them", async ({
+	browser,
+}) => {
+	const subjects = { home: `Trash home ${token}`, desk: `Trash desk ${token}` };
+	await deliver(home, subjects.home);
+	await deliver(desk, subjects.desk);
+	const [homeMessage] = (await listMessages(`mailboxId=${home.id}`)).filter((m) => m.subject === subjects.home);
+	const [deskMessage] = (await listMessages(`mailboxId=${desk.id}`)).filter((m) => m.subject === subjects.desk);
+	await json(await user.post("/api/messages/bulk", { data: { action: "trash", messageIds: [homeMessage.id] } }));
+	// The shared mailbox's owner trashes its mail; for this account it stays read-only.
+	const admin = await apiContext(STORAGE_STATE);
+	await json(await admin.post("/api/messages/bulk", { data: { action: "trash", messageIds: [deskMessage.id] } }));
+	await admin.dispose();
+
+	const page = await openPage(browser);
+	await showAllMailboxes(page);
+	await page.goto("/trash");
+	const list = page.getByRole("list", { name: "Trash" });
+	await expect(list.getByText(subjects.home, { exact: true })).toBeVisible();
+	await expect(list.getByText(subjects.desk, { exact: true })).toBeVisible();
+	await page.getByRole("button", { name: "Empty Trash" }).click();
+	const confirm = page.getByRole("alertdialog", { name: "Empty Trash?" });
+	await expect(confirm).toContainText(`in Trash of ${home.name}?`);
+	await expect(confirm).not.toContainText(desk.name);
+	await confirm.getByRole("button", { name: "Delete forever" }).click();
+	await expect(list.getByText(subjects.home, { exact: true })).toHaveCount(0);
+	await expect(list.getByText(subjects.desk, { exact: true })).toBeVisible();
+	expect((await listMessages(`status=trash&mailboxId=${desk.id}`)).some((m) => m.id === deskMessage.id)).toBe(true);
 	await page.context().close();
 });

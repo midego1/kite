@@ -67,8 +67,11 @@ export function AllMailboxesFilter() {
 	const ids = mailboxes.map((mailbox) => mailbox.id);
 	const visible = new Set(visibleMailboxIds(ids, hiddenMailboxIds));
 	return (
-		<fieldset className="mx-1 mb-1 rounded-lg border border-neutral-100 px-2 py-1.5" aria-label="Show in All mailboxes">
-			<legend className="px-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Show</legend>
+		<fieldset className="mt-1 border-t border-neutral-100 px-1 pb-1 pt-2">
+			<legend className="sr-only">Show in All mailboxes</legend>
+			<p aria-hidden className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+				Show in All mailboxes
+			</p>
 			{mailboxes.map((mailbox) => {
 				const checked = visible.has(mailbox.id);
 				const last = checked && visible.size === 1;

@@ -25,6 +25,7 @@ import {
 	getMailboxAddress,
 	runBulkMessageAction,
 	emptyMessageFolder,
+	planEmptyFolderInView,
 	deleteMessagesForever,
 	supportsUnreadFilter,
 } from "./utils";
@@ -140,13 +141,18 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 
 	const permanentDeleteFolder = !config.folderId && supportsPermanentDelete(config.folder) ? config.folder : null;
 	async function emptyFolder() {
-		// Emptying in All mailboxes empties every listed mailbox the user may manage.
-		const targets = viewMailboxes.filter((mailbox) => access.canManage(mailbox.id));
-		if (!permanentDeleteFolder || targets.length === 0) return;
+		if (!permanentDeleteFolder) return;
+		// In All mailboxes this empties every listed mailbox the user may manage, never a read-only one.
+		const plan = await planEmptyFolderInView(viewMailboxes, permanentDeleteFolder);
+		if (plan.targets.length === 0) return;
 		if (
 			!(await requestConfirmation({
 				title: `Empty ${permanentDeleteFolder === "trash" ? "Trash" : "Spam"}?`,
-				description: getEmptyFolderConfirmText(permanentDeleteFolder, titleTotal),
+				description: getEmptyFolderConfirmText(
+					permanentDeleteFolder,
+					plan.total,
+					allMailboxes ? plan.names : undefined,
+				),
 				confirmLabel: "Delete forever",
 			}))
 		)
@@ -154,10 +160,10 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 		setEmptyingFolder(true);
 		leaveOpenMessage();
 		const folderLabel = permanentDeleteFolder === "trash" ? "Trash" : "Spam";
-		const progress = showProgressToast(`Emptying ${folderLabel}`, titleTotal);
+		const progress = showProgressToast(`Emptying ${folderLabel}`, plan.total);
 		try {
 			let deleted = 0;
-			for (const mailbox of targets) {
+			for (const mailbox of plan.targets) {
 				const before = deleted;
 				deleted += await emptyMessageFolder(mailbox.id, permanentDeleteFolder, (done, total) =>
 					progress.update(before + done, before + total),

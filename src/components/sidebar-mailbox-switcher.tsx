@@ -106,7 +106,7 @@ export function SidebarMailboxSwitcher() {
 			<button
 				type="button"
 				onClick={toggleMenu}
-				aria-haspopup="listbox"
+				aria-haspopup="dialog"
 				aria-expanded={open}
 				aria-label={`Switch mailbox, current: ${allMailboxes ? ALL_MAILBOXES_LABEL : getMailboxAddress(selectedMailbox)}`}
 				className="flex h-10 w-full items-center gap-2.5 rounded-xl border max-md:h-11 border-neutral-200 bg-white px-3 text-left text-sm transition-colors hover:border-neutral-300"
@@ -128,59 +128,62 @@ export function SidebarMailboxSwitcher() {
 							anchor.container === document.body ? "fixed" : "absolute",
 							"z-[200] max-h-[70vh] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl shadow-neutral-900/15",
 						)}
-						role="listbox"
-						aria-label="Mailboxes"
+						role="dialog"
+						aria-label="Switch mailbox"
 					>
-						<AllMailboxesOption
-							counts={counts.mailboxes}
-							onSelect={() => {
-								setOpen(false);
-								if (allMailboxes) return;
-								setAllMailboxes(true);
-								router.push("/inbox");
-							}}
-						/>
+						<div role="listbox" aria-label="Mailboxes">
+							<AllMailboxesOption
+								counts={counts.mailboxes}
+								onSelect={() => {
+									setOpen(false);
+									if (allMailboxes) return;
+									setAllMailboxes(true);
+									router.push("/inbox");
+								}}
+							/>
+							{mailboxes.map((mailbox) => {
+								const active = !allMailboxes && mailbox.id === selectedMailbox.id;
+								const unread = counts.mailboxes.find((count) => count.mailboxId === mailbox.id)?.unread ?? 0;
+								return (
+									<button
+										key={mailbox.id}
+										type="button"
+										role="option"
+										aria-selected={active}
+										onClick={() => {
+											setOpen(false);
+											if (active) return;
+											setSelectedMailbox(mailbox);
+											setAllMailboxes(false);
+											router.push("/inbox");
+										}}
+										className={cn(
+											"flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-neutral-100",
+											active && "bg-blue-50",
+										)}
+									>
+										<MailboxAvatar mailbox={mailbox} className="h-7 w-7" />
+										<span className="min-w-0 flex-1">
+											<span className="flex items-center gap-1.5 truncate text-sm font-medium text-neutral-900">
+												{getMailboxName(mailbox)}
+												{mailbox.type === "shared" && (
+													<UsersRound className="h-3.5 w-3.5 shrink-0 text-blue-600" aria-label="Shared inbox" />
+												)}
+											</span>
+											<span className="block truncate text-xs text-neutral-500">{getMailboxAddress(mailbox)}</span>
+										</span>
+										{unread > 0 && (
+											<span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700">
+												{unread > 99 ? "99+" : unread}
+											</span>
+										)}
+										{active && <Check className="h-4 w-4 shrink-0 text-blue-600" />}
+									</button>
+								);
+							})}
+						</div>
+						{/* Outside the listbox: checkboxes are not options. */}
 						<AllMailboxesFilter />
-						{mailboxes.map((mailbox) => {
-							const active = !allMailboxes && mailbox.id === selectedMailbox.id;
-							const unread = counts.mailboxes.find((count) => count.mailboxId === mailbox.id)?.unread ?? 0;
-							return (
-								<button
-									key={mailbox.id}
-									type="button"
-									role="option"
-									aria-selected={active}
-									onClick={() => {
-										setOpen(false);
-										if (active) return;
-										setSelectedMailbox(mailbox);
-										setAllMailboxes(false);
-										router.push("/inbox");
-									}}
-									className={cn(
-										"flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-neutral-100",
-										active && "bg-blue-50",
-									)}
-								>
-									<MailboxAvatar mailbox={mailbox} className="h-7 w-7" />
-									<span className="min-w-0 flex-1">
-										<span className="flex items-center gap-1.5 truncate text-sm font-medium text-neutral-900">
-											{getMailboxName(mailbox)}
-											{mailbox.type === "shared" && (
-												<UsersRound className="h-3.5 w-3.5 shrink-0 text-blue-600" aria-label="Shared inbox" />
-											)}
-										</span>
-										<span className="block truncate text-xs text-neutral-500">{getMailboxAddress(mailbox)}</span>
-									</span>
-									{unread > 0 && (
-										<span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700">
-											{unread > 99 ? "99+" : unread}
-										</span>
-									)}
-									{active && <Check className="h-4 w-4 shrink-0 text-blue-600" />}
-								</button>
-							);
-						})}
 						{user?.role === "admin" && (
 							<Link
 								href="/mailboxes"

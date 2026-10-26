@@ -100,3 +100,48 @@ export function sumMailboxCounts(counts: readonly MailboxCount[], mailboxIds: re
 		{ total: 0, unread: 0, inbox: 0 },
 	);
 }
+
+/** "A", "A and B", "A, B and C". */
+export function formatMailboxNames(names: readonly string[]): string {
+	if (names.length <= 1) return names[0] ?? "";
+	return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * What Empty Trash or Empty Spam does in a view: it empties the listed mailboxes the user may manage
+ * that hold any such mail, never a read-only one, so the count and names it confirms are exactly those.
+ */
+export function planEmptyFolder(
+	mailboxes: ReadonlyArray<{ id: string; name: string; permission?: MailboxPermission }>,
+	countOf: (mailboxId: string) => number,
+) {
+	const targets = mailboxes
+		.filter((mailbox) => canManageMailboxMail(mailbox.permission ?? "full_access"))
+		.map((mailbox) => ({ id: mailbox.id, name: mailbox.name, count: countOf(mailbox.id) }))
+		.filter((target) => target.count > 0);
+	return {
+		targets,
+		total: targets.reduce((sum, target) => sum + target.count, 0),
+		names: formatMailboxNames(targets.map((target) => target.name)),
+	};
+}
+
+/** Read-only access never sends; the user's own mailboxes (no permission listed) and send grants do. */
+export function canSendFromMailbox(permission: MailboxPermission | null | undefined): boolean {
+	return permission !== "read_only";
+}
+
+/**
+ * The mailbox a composer starts from: the first preferred one the user may still send from (the
+ * choice in this composer, the last From used, the selected mailbox), else the first that can send.
+ */
+export function pickComposeMailbox<T extends { id: string }>(
+	sendable: readonly T[],
+	preferredIds: ReadonlyArray<string | null | undefined>,
+): T | null {
+	for (const id of preferredIds) {
+		const mailbox = id ? sendable.find((item) => item.id === id) : undefined;
+		if (mailbox) return mailbox;
+	}
+	return sendable[0] ?? null;
+}

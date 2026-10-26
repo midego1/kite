@@ -21,10 +21,10 @@ export function MessageMailboxLabel({
 			variant="secondary"
 			data-testid="message-mailbox-label"
 			title={address}
-			aria-label={`Mailbox: ${address}`}
 			style={getAvatarColorStyle(address)}
 			className={cn("mr-1.5 max-w-32 shrink-0 truncate px-1.5 py-0 align-middle normal-case", className)}
 		>
+			<span className="sr-only">Mailbox: </span>
 			{getMailboxName(mailbox)}
 		</Badge>
 	);

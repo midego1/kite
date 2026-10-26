@@ -140,6 +140,6 @@ export const appearanceBootstrapScript = `(() => {
  * filter hides (so a new mailbox shows up by default), and the From last used to write a new
  * message from it. Kept per browser like the rest of this file; nothing is stored on the server.
  */
-export const ALL_MAILBOXES_STORAGE_KEY = "kite-all-mailboxes";
-export const ALL_MAILBOXES_HIDDEN_STORAGE_KEY = "kite-all-mailboxes-hidden";
-export const LAST_FROM_STORAGE_KEY = "kite-compose-last-from";
+// The keys live in mailbox-provider-utils.ts, next to their only readers, so this file stays out of the
+// mail views' shared client chunks: `kite-all-mailboxes`, `kite-all-mailboxes-hidden` and
+// `kite-compose-last-from`.

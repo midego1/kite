@@ -1,6 +1,7 @@
 import type { Message } from "@/hooks/types";
 import { authFetch } from "@/lib/auth/client";
-import { markMessagesReadInCaches } from "@/hooks/utils";
+import { fetchMessageCounts, markMessagesReadInCaches } from "@/hooks/utils";
+import { planEmptyFolder } from "@/lib/mailboxes/scope-utils";
 import { getEmailDisplayName, splitEmailAddressList } from "@/lib/email/address";
 import { formatUserDate, getUserTimeZone, zonedDateFields } from "@/lib/time/utils";
 import type { MailboxOption } from "@/components/mailbox-provider";
@@ -166,4 +167,23 @@ export async function emptyMessageFolder(
 	}
 	window.dispatchEvent(new Event("kite:messages-changed"));
 	return deletedTotal;
+}
+
+/** Empty Trash or Spam over the mailboxes in view, from each mailbox's own counts. */
+export async function planEmptyFolderInView(mailboxes: MailboxOption[], folder: PermanentDeleteFolder) {
+	const counts = new Map(
+		await Promise.all(
+			mailboxes.map(
+				async (mailbox) => [mailbox.id, (await fetchMessageCounts(mailbox.id))?.folders[folder]?.total ?? 0] as const,
+			),
+		),
+	);
+	return planEmptyFolder(
+		mailboxes.map((mailbox) => ({
+			id: mailbox.id,
+			name: mailbox.displayName ?? mailbox.localPart,
+			permission: mailbox.permission,
+		})),
+		(mailboxId) => counts.get(mailboxId) ?? 0,
+	);
 }

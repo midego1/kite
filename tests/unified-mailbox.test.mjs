@@ -19,6 +19,8 @@ await build({
 			export { GET as countMessages } from "./src/app/api/messages/counts/route.ts";
 			export { GET as navigateMessages } from "./src/app/api/messages/navigation/route.ts";
 			export { POST as bulkMessages } from "./src/app/api/messages/bulk/route.ts";
+			export { POST as createDraft } from "./src/app/api/drafts/route.ts";
+			export { getEmptyFolderConfirmText } from "./src/lib/messages/permanent-delete-utils.ts";
 			export { buildMessageCounts } from "./src/app/api/messages/counts/utils.ts";
 			export * from "./src/lib/mailboxes/scope-utils.ts";
 			export { setMailboxScopeParam } from "./src/hooks/utils.ts";
@@ -153,6 +155,8 @@ async function fixture(t) {
 			('support-1', 'team', 'support', NULL, 'inbound', 'lee@partner.test', 'support@example.test', 'Help', 'received', 0, 4),
 			('private-1', 'other', 'private', NULL, 'inbound', 'zed@partner.test', 'other@example.test', 'Secret', 'received', 0, 5),
 			('held', 'owner', 'home', NULL, 'inbound', 'new@partner.test', 'owner@example.test', 'Hi', 'screening', 0, 6);
+		UPDATE messages SET starred = 1 WHERE id IN ('held', 'home-1');
+		INSERT INTO folders (id, user_id, mailbox_id, name, color, created_at) VALUES ('private-folder', 'other', 'private', 'Theirs', '#000000', 1);
 	`);
 	const env = { DB: database, KITE_RUNTIME: "node" };
 	globalThis.__kiteNodeEnv = env;
@@ -175,8 +179,21 @@ async function fixture(t) {
 		);
 		return { status: response.status, body: await response.json() };
 	};
-	const row = (id) => database.db.prepare("SELECT status, folder_id AS folderId FROM messages WHERE id = ?").get(id);
-	return { get, bulk, row };
+	const post = async (handler, path, body) => {
+		const response = await handler(
+			new Request(`https://kite.test${path}`, {
+				method: "POST",
+				headers: { ...headers, "Content-Type": "application/json" },
+				body: JSON.stringify(body),
+			}),
+		);
+		return { status: response.status, body: await response.json() };
+	};
+	const row = (id) =>
+		database.db
+			.prepare("SELECT status, folder_id AS folderId, mailbox_id AS mailboxId FROM messages WHERE id = ?")
+			.get(id);
+	return { get, bulk, post, row, database };
 }
 
 const ids = (body) => body.messages.map((message) => message.id).sort();
@@ -233,4 +250,158 @@ test("bulk actions span mailboxes but skip read-only mail and move only within a
 	assert.equal(row("work-2").folderId, "work-folder");
 	assert.equal(row("home-1").folderId, null, "mail never moves into another mailbox's folder");
 	assert.equal((await bulk({ action: "folder", folderId: "work-folder", messageIds: ["home-1"] })).status, 404);
+});
+
+test("a bulk write only touches mail still in the mailbox it was approved in", async (t) => {
+	const { bulk, row, database } = await fixture(t);
+	// Between the access check and the write, home-1 moves to the read-only shared mailbox.
+	const prepare = database.prepare.bind(database);
+	let moved = false;
+	database.prepare = (sql) => {
+		if (!moved && /^update "messages"/i.test(sql)) {
+			moved = true;
+			database.db.exec("UPDATE messages SET mailbox_id = 'support' WHERE id = 'home-1'");
+		}
+		return prepare(sql);
+	};
+	assert.equal((await bulk({ action: "archive", messageIds: ["home-1", "work-1"] })).status, 200);
+	assert.equal(row("home-1").status, "received", "the moved message is left alone");
+	assert.equal(row("work-1").status, "archived");
+});
+
+test("a folder in another user's mailbox is not found, and nothing moves", async (t) => {
+	const { bulk, row } = await fixture(t);
+	const response = await bulk({ action: "folder", folderId: "private-folder", messageIds: ["home-1", "private-1"] });
+	assert.equal(response.status, 404);
+	assert.equal(row("home-1").folderId, null);
+	assert.equal(row("private-1").folderId, null);
+});
+
+test("malformed and oversized mailboxIds never widen the scope", async (t) => {
+	const { get } = await fixture(t);
+	const inbox = "/api/messages?direction=inbound&status=received";
+	assert.deepEqual(ids((await get(m.listMessages, `${inbox}&mailboxIds=${encodeURIComponent(" , ,,")}`)).body), [
+		"home-1",
+		"support-1",
+		"work-1",
+		"work-2",
+	]);
+	const junk = Array.from({ length: 500 }, (_, index) => `mbx_${index}`).join(",");
+	for (const route of [m.listMessages, m.countMessages, m.navigateMessages]) {
+		const path =
+			route === m.navigateMessages ? "/api/messages/navigation?folder=inbox" : "/api/messages?status=received";
+		assert.equal((await get(route, `${path}&mailboxIds=${junk}`)).status, 404);
+		assert.equal((await get(route, `${path}&mailboxIds=home,'%20OR%201=1`)).status, 404);
+		assert.equal((await get(route, `${path}&mailboxIds=home,home,work,`)).status, 200);
+	}
+});
+
+test("held mail stays out of the counts and navigation outside the Screener", async (t) => {
+	const { get } = await fixture(t);
+	const { counts } = (await get(m.countMessages, "/api/messages/counts?mailboxIds=home,work")).body;
+	assert.deepEqual(counts.folders.starred, { total: 1, unread: 1 }, "the starred held message is not counted");
+	assert.equal(counts.folders.inbox.total, 3);
+	assert.equal(counts.folders.screener.total, 1);
+	const navigation = async (folder) =>
+		(await get(m.navigateMessages, `/api/messages/navigation?folder=${folder}&mailboxIds=home,work`)).body.messages.map(
+			(entry) => entry.id,
+		);
+	assert.equal((await navigation("inbox")).includes("held"), false);
+	assert.deepEqual(await navigation("starred"), ["home-1"]);
+	assert.deepEqual(await navigation("screener"), ["held"]);
+});
+
+test("a reply or draft from a read-only shared mailbox is refused", async (t) => {
+	const { post } = await fixture(t);
+	const draft = await post(m.createDraft, "/api/drafts", {
+		mailboxId: "support",
+		from: "support@example.test",
+		to: "lee@partner.test",
+		subject: "Re: Help",
+		inReplyTo: "<help@partner.test>",
+		text: "Answer",
+	});
+	assert.equal(draft.status, 403);
+	const own = await post(m.createDraft, "/api/drafts", {
+		mailboxId: "work",
+		from: "work@example.test",
+		to: "kim@partner.test",
+		subject: "Re: Invoice",
+		text: "Answer",
+	});
+	assert.ok(own.status >= 200 && own.status < 300, "the user's own mailbox can draft the reply");
+});
+
+test("every list, count and navigation query stays within D1's 100 bound parameters with 120 mailboxes", async (t) => {
+	const { get, database } = await fixture(t);
+	const boxes = Array.from({ length: 120 }, (_, index) => `box-${index}`);
+	database.db.exec(
+		boxes
+			.map(
+				(id, index) => `
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('${id}', 'owner', 'domain', 'box${index}', 'personal', 1);
+		INSERT INTO messages (id, user_id, mailbox_id, thread_id, direction, from_addr, to_addr, subject, status, read, created_at)
+			VALUES ('msg-${id}', 'owner', '${id}', 'shared-thread', 'inbound', 'sam@partner.test', 'box${index}@example.test', 'Bulk', 'received', 0, ${10 + index});`,
+			)
+			.join("\n"),
+	);
+	const prepare = database.prepare.bind(database);
+	let most = 0;
+	database.prepare = (sql) => {
+		const statement = prepare(sql);
+		const bind = statement.bind.bind(statement);
+		statement.bind = (...values) => {
+			most = Math.max(most, values.length);
+			return bind(...values);
+		};
+		return statement;
+	};
+	const all = await get(m.listMessages, "/api/messages?direction=inbound&status=received&group=thread&limit=100");
+	assert.equal(all.status, 200);
+	assert.equal(all.body.total, 124, "one conversation per mailbox, never one across the 120");
+	const subset = boxes.slice(0, 110).join(",");
+	assert.equal((await get(m.listMessages, `/api/messages?status=received&mailboxIds=${subset}`)).body.total, 110);
+	const counts = await get(m.countMessages, `/api/messages/counts?mailboxIds=${subset}`);
+	assert.equal(counts.body.counts.folders.inbox.total, 110);
+	const navigation = await get(
+		m.navigateMessages,
+		`/api/messages/navigation?folder=inbox&group=thread&mailboxIds=${subset}`,
+	);
+	assert.equal(navigation.body.messages.length, 110);
+	assert.ok(most <= 100, `a statement bound ${most} parameters`);
+});
+
+test("Empty Trash in All mailboxes counts and names only the mailboxes it may empty", () => {
+	const plan = m.planEmptyFolder(
+		[
+			{ id: "home", name: "Home", permission: "full_access" },
+			{ id: "desk", name: "Help desk", permission: "read_only" },
+			{ id: "work", name: "Work", permission: "full_access" },
+			{ id: "empty", name: "Empty", permission: "full_access" },
+			{ id: "mine", name: "Mine" },
+		],
+		(id) => ({ home: 2, desk: 7, work: 1, mine: 3 })[id] ?? 0,
+	);
+	assert.deepEqual(
+		plan.targets.map((target) => target.id),
+		["home", "work", "mine"],
+	);
+	assert.equal(plan.total, 6, "the read-only mailbox's 7 are not counted");
+	assert.equal(plan.names, "Home, Work and Mine");
+	assert.equal(
+		m.getEmptyFolderConfirmText("trash", plan.total, plan.names),
+		"Permanently delete all 6 messages in Trash of Home, Work and Mine? This cannot be undone.",
+	);
+	assert.equal(m.formatMailboxNames(["A", "B"]), "A and B");
+	assert.equal(m.formatMailboxNames([]), "");
+});
+
+test("the composer offers only mailboxes that can send, and falls back from a From no longer allowed", () => {
+	assert.equal(m.canSendFromMailbox("read_only"), false);
+	assert.equal(m.canSendFromMailbox("send_on_behalf"), true);
+	assert.equal(m.canSendFromMailbox(undefined), true);
+	const sendable = [{ id: "home" }, { id: "work" }];
+	assert.equal(m.pickComposeMailbox(sendable, ["gone", "work", "home"]).id, "work");
+	assert.equal(m.pickComposeMailbox(sendable, [null, "desk"]).id, "home", "a read-only last From falls back");
+	assert.equal(m.pickComposeMailbox([], ["home"]), null);
 });

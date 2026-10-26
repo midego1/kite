@@ -54,3 +54,16 @@ export function useStoredState<T>(key: string, fallback: T): [T, (value: T) => v
 	const setValue = useCallback((next: T) => writeRaw(key, JSON.stringify(next)), [key]);
 	return [value, setValue];
 }
+
+/** Forgets stored values, the in-memory copies included, and tells every mounted reader (sign-out). */
+export function clearStoredState(keys: readonly string[]) {
+	for (const key of keys) {
+		memoryFallback.delete(key);
+		try {
+			localStorage.removeItem(key);
+		} catch {
+			// Nothing was stored there.
+		}
+	}
+	window.dispatchEvent(new Event(STORED_STATE_CHANGED_EVENT));
+}

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.26.1] - 2026-10-26
+
 ### Fixed
 
 - In the assistant panel, a reply draft you approved no longer shows "Preview unavailable" with **Edit draft** and **Approve to send** after it was sent. The card now says **Sent** (or **Scheduled for** the time it goes out) with the subject and recipient, and links to the sent message. A draft that was deleted or discarded says "This draft is no longer available." and offers no buttons.

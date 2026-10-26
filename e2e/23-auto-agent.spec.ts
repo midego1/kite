@@ -2541,6 +2541,16 @@ test.describe("reply suggestions", () => {
 			.locator("[data-activity-action]")
 			.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-activity-action")));
 
+	/** What the assistant's draft card asks about a draft id: still a draft, sent (the draft row is trashed and the send is a new message), or gone. */
+	const draftState = async (api: APIRequestContext, draftId: string) =>
+		okJson<{
+			state: string;
+			messageId?: string | null;
+			subject?: string | null;
+			to?: string | null;
+			scheduledAt?: string;
+		}>(await api.get(`/api/drafts/${draftId}/state`));
+
 	/** Sends an agent draft the way the composer's review does: approval, then confirmation. */
 	async function sendAgentDraft(api: APIRequestContext, draftId: string) {
 		const { draft } = await okJson<{ draft: { agent: { revision: number } | null } }>(
@@ -2567,6 +2577,117 @@ test.describe("reply suggestions", () => {
 		return messageId;
 	}
 
+	/** Gives the agent draft a send time, as the draft editor does, and returns its current revision. */
+	async function scheduleAgentDraft(api: APIRequestContext, draftId: string, scheduledAt: string) {
+		const { draft } = await okJson<{
+			draft: { mailboxId: string; fromAddr: string; toAddr: string; subject: string; textBody: string };
+		}>(await api.get(`/api/drafts/${draftId}`));
+		await okJson(
+			await api.patch(`/api/drafts/${draftId}`, {
+				data: {
+					mailboxId: draft.mailboxId,
+					from: draft.fromAddr,
+					to: draft.toAddr,
+					subject: draft.subject,
+					text: draft.textBody,
+					scheduledAt,
+				},
+			}),
+		);
+	}
+
+	test("the draft card shows a scheduled send until it is undone, and then the draft is no longer available", async () => {
+		const restore = await useFakeProvider(api, fake);
+		const account = await suggestAccount("dst");
+		try {
+			const question = await deliverQuestion(account.api, account.address, "Client <client@outside.test>");
+			expect((await waitForFinishedJob(account.api, account.mailboxId, question.message.id, "triage")).status).toBe(
+				"completed",
+			);
+			const draftId = (await suggestionsFor(account.api, account.mailboxId, question.message.id)).find(
+				(item) => item.kind === "reply",
+			)!.draftId!;
+			const scheduledAt = new Date(Math.floor((Date.now() + 3_600_000) / 1000) * 1000).toISOString();
+			await scheduleAgentDraft(account.api, draftId, scheduledAt);
+			const { draft } = await okJson<{ draft: { agent: { revision: number } } }>(
+				await account.api.get(`/api/drafts/${draftId}`),
+			);
+			const { approvalId } = await okJson<{ approvalId: string }>(
+				await account.api.post("/api/agent/approvals", { data: { draftId, expectedRevision: draft.agent.revision } }),
+			);
+			const confirmed = await okJson<{ messageId: string; scheduled: boolean }>(
+				await account.api.post(`/api/agent/approvals/${approvalId}/confirm`),
+			);
+			expect(confirmed.scheduled).toBe(true);
+			expect(await draftState(account.api, draftId)).toMatchObject({
+				state: "scheduled",
+				messageId: confirmed.messageId,
+				scheduledAt,
+			});
+
+			await okJson(await account.api.post("/api/send/undo", { data: { messageId: confirmed.messageId } }));
+			expect(await draftState(account.api, draftId)).toEqual({ state: "unavailable" });
+		} finally {
+			await stopAutoRead(account.api, account.mailboxId);
+			await account.api.dispose();
+			await restore();
+		}
+	});
+
+	test("a user who can no longer read the mailbox is told the draft was sent but not what it said", async () => {
+		const token = uniqueToken("dsr");
+		const localPart = `dsr${token}`;
+		const sharedId = await createSharedMailbox(api, localPart);
+		const reviewer = await createSignedInAccount(api, `dsrr${token}`);
+		const restore = await useFakeProvider(api, fake);
+		try {
+			await shareMailbox(api, sharedId, reviewer.id, "send_on_behalf");
+			await okJson(
+				await api.put("/api/agent/settings", {
+					data: { mailboxId: sharedId, reviewerUserId: reviewer.id, autonomy: "suggest" },
+				}),
+			);
+			const subject = uniqueToken("dsrq");
+			await postInbound(api, {
+				from: "Customer <customer@outside.test>",
+				to: `${localPart}@${DOMAIN}`,
+				subject,
+				text: "Can you confirm the order? [[scenario:question]]",
+			});
+			const message = await waitForMessage(api, subject, { status: "received" });
+			expect((await waitForFinishedJob(reviewer.api, sharedId, message.id, "triage")).status).toBe("completed");
+			let draftId = "";
+			await expect
+				.poll(
+					async () => {
+						draftId = (await draftIds(reviewer.api))[0] ?? "";
+						return draftId;
+					},
+					{ timeout: 30_000 },
+				)
+				.not.toBe("");
+			const sentMessageId = await sendAgentDraft(reviewer.api, draftId);
+			await expect.poll(async () => (await draftState(reviewer.api, draftId)).state, { timeout: 15_000 }).toBe("sent");
+			expect(await draftState(reviewer.api, draftId)).toMatchObject({
+				messageId: sentMessageId,
+				subject: expect.any(String),
+				to: expect.any(String),
+			});
+
+			await okJson(await api.delete(`/api/mailboxes/${sharedId}/access?userId=${reviewer.id}`));
+			expect(await draftState(reviewer.api, draftId)).toEqual({
+				state: "sent",
+				messageId: null,
+				subject: null,
+				to: null,
+			});
+		} finally {
+			await stopAutoRead(api, sharedId);
+			await reviewer.api.dispose();
+			await restore();
+		}
+	});
+
 	test("Activity lists agent and user actions in both places, opens targets and undoes a dismiss and a draft", async ({
 		browser,
 	}) => {
@@ -2591,11 +2712,10 @@ test.describe("reply suggestions", () => {
 
 			// The draft card asks for the draft's state: still a draft, or sent (the draft row is trashed and the
 			// send is a new message), and never another user's draft.
-			const draftState = async (api: APIRequestContext, draftId: string) =>
-				okJson<{ state: string; messageId?: string | null; subject?: string | null }>(
-					await api.get(`/api/drafts/${draftId}/state`),
-				);
-			expect(await draftState(account.api, (await replyFor(drafted.message.id)).draftId!)).toEqual({ state: "draft" });
+			const liveDraftId = (await replyFor(drafted.message.id)).draftId!;
+			expect(await draftState(account.api, liveDraftId)).toEqual({ state: "draft" });
+			// Another user asking about a live draft learns nothing about it.
+			expect(await draftState(api, liveDraftId)).toEqual({ state: "unavailable" });
 			await expect
 				.poll(async () => (await draftState(account.api, sentReply.draftId!)).state, { timeout: 15_000 })
 				.toBe("sent");

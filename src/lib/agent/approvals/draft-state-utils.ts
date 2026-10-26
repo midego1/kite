@@ -1,11 +1,4 @@
-/** What a draft card should show for an assistant draft id. */
-export type AgentDraftState =
-	| { state: "draft" }
-	| { state: "sent"; messageId: string | null; subject: string | null; to: string | null }
-	| { state: "scheduled"; messageId: string | null; subject: string | null; to: string | null; scheduledAt: string }
-	| { state: "sending"; messageId: string | null; subject: string | null; to: string | null }
-	| { state: "failed"; messageId: string | null; subject: string | null; to: string | null }
-	| { state: "unavailable" };
+import type { AgentDraftState } from "./types";
 
 export type SentDraftMessage = { id: string; status: string; subject: string | null; toAddr: string | null };
 export type SentDraftJob = { status: string; scheduledAt: Date | null };
@@ -14,6 +7,8 @@ const PENDING_STATUSES = ["queued", "sending"];
 
 /** Delivery has not finished (a delayed queue, or a send in flight): it must never be reported as sent. */
 function deliveryPending(message: SentDraftMessage | null, job: SentDraftJob | null): boolean {
+	// The message row is what delivery marks first; the job row is updated afterwards on a best-effort basis.
+	if (message?.status === "sent") return false;
 	return PENDING_STATUSES.includes(job ? job.status : (message?.status ?? ""));
 }
 

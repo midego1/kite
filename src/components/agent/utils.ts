@@ -44,8 +44,8 @@ export async function consumeAgentStream(response: Response, onEvent: (event: Ag
 
 export function draftFromToolResult(result: unknown): { draftId: string; revision: number } | null {
 	if (!result || typeof result !== "object") return null;
-	const value = result as { draftId?: unknown; revision?: unknown; status?: unknown };
-	return value.status !== "sent" && typeof value.draftId === "string" && typeof value.revision === "number"
+	const value = result as { draftId?: unknown; revision?: unknown };
+	return typeof value.draftId === "string" && typeof value.revision === "number"
 		? { draftId: value.draftId, revision: value.revision }
 		: null;
 }
@@ -64,10 +64,6 @@ export function uniqueAgentDraftActions(messages: AgentMessage[]): AgentDraftAct
 	for (const item of messages) {
 		if (item.role !== "tool" || item.toolState === "running" || item.toolState === "failed") continue;
 		const result = parseAgentToolContent(item.content);
-		if (result?.status === "sent" && typeof result.draftId === "string") {
-			byDraft.delete(result.draftId);
-			continue;
-		}
 		const draft = result ? draftFromToolResult(result) : null;
 		if (!result || !draft) continue;
 		const current = byDraft.get(draft.draftId);

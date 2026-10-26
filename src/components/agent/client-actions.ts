@@ -1,6 +1,6 @@
 import { authFetch } from "@/lib/auth/client";
 import type { ReviewSnapshot } from "./send-review-types";
-import type { AgentDraftState } from "@/lib/agent/approvals/draft-state-utils";
+import type { AgentDraftState } from "@/lib/agent/approvals/types";
 
 export async function requestDraftReview(
 	draftId: string,

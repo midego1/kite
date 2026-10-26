@@ -3,7 +3,8 @@ import { getDb } from "@/db";
 import { agentSendApprovals, messages, outboundJobs } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { SessionUser } from "@/lib/auth/types";
-import { sentDraftState, type AgentDraftState } from "./draft-state-utils";
+import { sentDraftState } from "./draft-state-utils";
+import type { AgentDraftState } from "./types";
 
 /**
  * Where an assistant draft stands for its owner: still a draft, sent (or scheduled) by a confirmed

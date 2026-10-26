@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, Mail } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Mail } from "lucide-react";
 import { fetchDraft } from "@/components/compose/utils";
 import type { ComposeDraft } from "@/components/compose/types";
 import { formatUserDate } from "@/lib/time/utils";
 import { fetchAgentDraftState } from "./client-actions";
 import {
 	DRAFT_UNAVAILABLE_TEXT,
+	draftRefreshDelay,
 	draftStateHeading,
+	isFinalDraftState,
 	isFinishedDraftState,
 	type FinishedDraftState,
 } from "./draft-card-utils";
@@ -22,20 +24,28 @@ type DraftCardState =
 	| { kind: "unavailable" }
 	| { kind: "error" };
 
-/** The draft while it is one; otherwise what became of it, so a sent or removed draft never offers to be approved. */
-async function loadDraftCard(draftId: string): Promise<DraftCardState> {
-	try {
-		return { kind: "draft", draft: await fetchDraft(draftId) };
-	} catch {
+/**
+ * The draft while it is one; otherwise what became of it, so a sent or removed draft never offers to be approved.
+ * A card that already knows the draft is gone asks for its state directly instead of probing the draft first.
+ */
+async function loadDraftCard(draftId: string, knownNonDraft: boolean): Promise<DraftCardState> {
+	if (!knownNonDraft) {
 		try {
-			const state = await fetchAgentDraftState(draftId);
-			if (isFinishedDraftState(state)) return { kind: "finished", state };
-			return state.state === "unavailable" ? { kind: "unavailable" } : { kind: "error" };
+			return { kind: "draft", draft: await fetchDraft(draftId) };
 		} catch {
-			return { kind: "error" };
+			/* Not a draft any more, or unreachable: the state tells which. */
 		}
 	}
+	try {
+		const state = await fetchAgentDraftState(draftId);
+		if (isFinishedDraftState(state)) return { kind: "finished", state };
+		return state.state === "unavailable" ? { kind: "unavailable" } : { kind: "error" };
+	} catch {
+		return { kind: "error" };
+	}
 }
+
+const EVENT_DEBOUNCE_MS = 150;
 
 export function AgentDraftActions({
 	action,
@@ -48,18 +58,47 @@ export function AgentDraftActions({
 		let active = true;
 		// Only the newest request may update the card, or a read that began before the send could bring the buttons back.
 		let latest = 0;
-		const load = () => {
-			const request = ++latest;
-			void loadDraftCard(action.draftId).then((value) => {
-				if (active && request === latest) setCard(value);
-			});
+		let knownNonDraft = false;
+		let polls = 0;
+		let eventTimer: number | null = null;
+		let pollTimer: number | null = null;
+		const clearTimers = () => {
+			if (eventTimer) window.clearTimeout(eventTimer);
+			if (pollTimer) window.clearTimeout(pollTimer);
+			eventTimer = pollTimer = null;
 		};
-		load();
 		// Approving the draft elsewhere in the panel announces the change, which turns this card into "Sent".
-		window.addEventListener("kite:messages-changed", load);
+		const onMessagesChanged = () => {
+			if (document.visibilityState !== "visible") return;
+			if (eventTimer) window.clearTimeout(eventTimer);
+			eventTimer = window.setTimeout(load, EVENT_DEBOUNCE_MS);
+		};
+		const stop = () => {
+			clearTimers();
+			window.removeEventListener("kite:messages-changed", onMessagesChanged);
+		};
+		function apply(value: DraftCardState) {
+			setCard(value);
+			knownNonDraft = value.kind === "finished" || value.kind === "unavailable";
+			if (value.kind === "unavailable" || (value.kind === "finished" && isFinalDraftState(value.state))) return stop();
+			if (value.kind !== "finished") return;
+			// A scheduled or in-flight send changes without any mail event, so look at it again on a timer.
+			const delay = draftRefreshDelay(value.state, polls, Date.now());
+			polls = value.state.state === "sending" ? polls + 1 : 0;
+			if (delay !== null) pollTimer = window.setTimeout(load, delay);
+		}
+		function load() {
+			clearTimers();
+			const request = ++latest;
+			void loadDraftCard(action.draftId, knownNonDraft).then((value) => {
+				if (active && request === latest) apply(value);
+			});
+		}
+		load();
+		window.addEventListener("kite:messages-changed", onMessagesChanged);
 		return () => {
 			active = false;
-			window.removeEventListener("kite:messages-changed", load);
+			stop();
 		};
 	}, [action.draftId, action.revision]);
 	if (card.kind === "finished") return <FinishedDraftCard state={card.state} />;
@@ -117,18 +156,13 @@ export function AgentDraftActions({
 }
 
 function FinishedDraftCard({ state }: { state: FinishedDraftState }) {
-	const failed = state.state === "failed";
 	return (
 		<section
 			aria-label="Reply draft"
 			className="overflow-hidden rounded-xl border border-blue-100 bg-white p-3 text-xs shadow-sm"
 		>
 			<div className="flex items-start gap-2">
-				<CheckCircle2
-					size={16}
-					className={`mt-0.5 shrink-0 ${failed ? "text-red-600" : "text-green-700"}`}
-					aria-hidden="true"
-				/>
+				<FinishedDraftIcon state={state} />
 				<div className="min-w-0">
 					<p className="font-semibold text-neutral-900">
 						{draftStateHeading(state, (iso) => formatUserDate(iso, { dateStyle: "medium", timeStyle: "short" }))}
@@ -147,4 +181,13 @@ function FinishedDraftCard({ state }: { state: FinishedDraftState }) {
 			</div>
 		</section>
 	);
+}
+
+function FinishedDraftIcon({ state }: { state: FinishedDraftState }) {
+	const className = "mt-0.5 shrink-0";
+	if (state.state === "failed")
+		return <AlertCircle size={16} className={`${className} text-red-600`} aria-hidden="true" />;
+	if (state.state === "scheduled" || state.state === "sending")
+		return <Clock size={16} className={`${className} text-blue-700`} aria-hidden="true" />;
+	return <CheckCircle2 size={16} className={`${className} text-green-700`} aria-hidden="true" />;
 }

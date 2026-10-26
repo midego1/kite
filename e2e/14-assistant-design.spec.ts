@@ -150,15 +150,18 @@ async function openDesignConversation(page: Page, overrides: () => Promise<void>
 }
 
 test("a draft that was already sent shows as sent instead of an unavailable preview", async ({ page }) => {
+	const requests = { draft: 0, state: 0 };
 	const panel = await openDesignConversation(page, async () => {
-		await page.route("**/api/drafts/design-draft", (route) =>
-			route.fulfill({ status: 404, json: { error: "Draft not found" } }),
-		);
-		await page.route("**/api/drafts/design-draft/state", (route) =>
-			route.fulfill({
+		await page.route("**/api/drafts/design-draft", (route) => {
+			requests.draft++;
+			return route.fulfill({ status: 404, json: { error: "Draft not found" } });
+		});
+		await page.route("**/api/drafts/design-draft/state", (route) => {
+			requests.state++;
+			return route.fulfill({
 				json: { state: "sent", messageId: "sent-1", subject: "Re: Files to review", to: "sophie@example.com" },
-			}),
-		);
+			});
+		});
 	});
 	const card = panel.getByRole("region", { name: "Reply draft" });
 	await expect(card.getByText("Sent", { exact: true })).toBeVisible();
@@ -167,6 +170,35 @@ test("a draft that was already sent shows as sent instead of an unavailable prev
 	await expect(card.getByRole("link", { name: "View message" })).toHaveAttribute("href", "/sent/sent-1");
 	await expect(card.getByRole("button")).toHaveCount(0);
 	await expect(card.getByText("Preview unavailable")).toHaveCount(0);
+
+	// A final card no longer listens: mail events cause no further requests.
+	expect(requests).toEqual({ draft: 1, state: 1 });
+	await page.evaluate(() => window.dispatchEvent(new Event("kite:messages-changed")));
+	await page.waitForTimeout(600);
+	expect(requests).toEqual({ draft: 1, state: 1 });
+});
+
+test("a draft that is still being sent says so, checks again, and then shows as sent without probing the draft", async ({
+	page,
+}) => {
+	const requests = { draft: 0, state: 0 };
+	const panel = await openDesignConversation(page, async () => {
+		await page.route("**/api/drafts/design-draft", (route) => {
+			requests.draft++;
+			return route.fulfill({ status: 404, json: { error: "Draft not found" } });
+		});
+		await page.route("**/api/drafts/design-draft/state", (route) => {
+			requests.state++;
+			const details = { messageId: "sent-4", subject: "Re: Files to review", to: "sophie@example.com" };
+			return route.fulfill({ json: { state: requests.state === 1 ? "sending" : "sent", ...details } });
+		});
+	});
+	const card = panel.getByRole("region", { name: "Reply draft" });
+	await expect(card.getByText("Sending…", { exact: true })).toBeVisible();
+	await expect(card.getByRole("button")).toHaveCount(0);
+	await expect(card.getByRole("link", { name: "View message" })).toHaveCount(0);
+	await expect(card.getByText("Sent", { exact: true })).toBeVisible({ timeout: 10_000 });
+	expect(requests).toEqual({ draft: 1, state: 2 });
 });
 
 test("a scheduled draft says when it goes out and a removed draft is no longer available", async ({ page }) => {

@@ -27,7 +27,7 @@ export function moveMessagesToSystemFolder(messageIds: string[], action: "archiv
 	return moveMessages({ messageIds, action });
 }
 
-export function moveMessagesToCustomFolder(messageIds: string[], folderId: string) {
+function moveMessagesToCustomFolder(messageIds: string[], folderId: string) {
 	return moveMessages({ messageIds, action: "folder", folderId });
 }
 
@@ -41,5 +41,28 @@ export function customFolderNavLink(folder: CustomFolder, unread: number | undef
 		iconColor: folder.color,
 		count: unread,
 		onMessageDrop: (messageIds: string[]) => void moveMessagesToCustomFolder(messageIds, folder.id),
+	};
+}
+
+/** Which parts of the Folders section show: the one mailbox's list, or All mailboxes' groups. */
+export function folderSectionState({
+	allMailboxes,
+	minimal,
+	open,
+	count,
+	overflow,
+}: {
+	allMailboxes: boolean;
+	minimal: boolean;
+	open: boolean;
+	count: number;
+	overflow: boolean;
+}) {
+	const shown = minimal || open;
+	return {
+		groups: allMailboxes && shown,
+		list: !allMailboxes && shown,
+		empty: !allMailboxes && !minimal && open && count === 0,
+		toggle: !allMailboxes && open && overflow,
 	};
 }

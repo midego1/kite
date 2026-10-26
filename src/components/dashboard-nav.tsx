@@ -26,12 +26,15 @@ import type { FolderColor } from "@/lib/folders/types";
 import { NavItem } from "./components-nav";
 import type { NavLink } from "./components-nav-types";
 import type { CustomFolder } from "./dashboard-nav-types";
-import { customFolderNavLink, getFolderNavCount, moveMessagesToSystemFolder } from "./dashboard-nav-utils";
-import { AllMailboxesFolders } from "./all-mailboxes-folders";
-import { useAllMailboxesCommands } from "./use-all-mailboxes-commands";
+import {
+	customFolderNavLink,
+	folderSectionState,
+	getFolderNavCount,
+	moveMessagesToSystemFolder,
+} from "./dashboard-nav-utils";
+import { AllMailboxesFolders, FolderMailboxField } from "./all-mailboxes-folders";
+import { useAllMailboxesNav } from "./use-all-mailboxes-nav";
 import { FOLDERS_CHANGED_EVENT } from "./messages/use-mailbox-folders";
-import { Select } from "./ui/select";
-import { getMailboxAddress } from "./mailbox-selector-utils";
 import { NavSectionHeader, useSectionOpen } from "./nav-section-header";
 import { ReorderableList } from "./reorderable-list";
 import { useStoredState } from "@/hooks/use-stored-state";
@@ -94,27 +97,12 @@ export function DashboardNav({ className }: { className?: string }) {
 	const [moreOpen, setMoreOpen] = useStoredState(MORE_OPEN_KEY, false);
 	const [foldersOpen, setFoldersOpen] = useStoredState(FOLDERS_OPEN_KEY, false);
 	const [foldersSectionOpen, toggleFoldersSection] = useSectionOpen("kite:nav:folders-section-open");
-	const { selectedMailbox, isLoading, allMailboxes, viewMailboxes, mailboxScope } = useSelectedMailbox();
+	const { selectedMailbox, isLoading, allMailboxes, mailboxScope } = useSelectedMailbox();
 	const { counts } = useMessageCounts(mailboxScope, !isLoading);
 	const forYou = useForYouNav();
-	useAllMailboxesCommands();
-	// In All mailboxes the Screener shows while any listed mailbox holds new senders back.
-	const screenerMailbox = allMailboxes
-		? (viewMailboxes.find((mailbox) => mailbox.screener?.enabled && mailbox.screener.mode === "screener") ?? null)
-		: selectedMailbox;
+	const { screenerMailbox, folderTarget } = useAllMailboxesNav();
 	const screener = useScreenerNav(screenerMailbox, counts.folders);
-	// New folders go to the selected mailbox; All mailboxes asks which of the user's own it is for.
-	const folderMailboxes = allMailboxes
-		? viewMailboxes.filter((mailbox) => (mailbox.permission ?? "full_access") === "full_access")
-		: [];
-	const [chosenFolderMailboxId, setFolderMailboxId] = useState<string | null>(null);
-	const folderMailboxId = allMailboxes
-		? (
-				folderMailboxes.find((mailbox) => mailbox.id === chosenFolderMailboxId) ??
-				folderMailboxes.find((mailbox) => mailbox.id === selectedMailbox?.id) ??
-				folderMailboxes[0]
-			)?.id
-		: selectedMailbox?.id;
+	const folderMailboxId = folderTarget.mailboxId;
 	const moduleLinks = useModuleSidebarLinks();
 	const [folders, setFolders] = useState<CustomFolder[]>([]);
 	const [newFolderName, setNewFolderName] = useState("");
@@ -182,6 +170,13 @@ export function DashboardNav({ className }: { className?: string }) {
 	// The icon rail has no room for text toggles. When collapsed, the page you are on stays listed on its own.
 	const showAllMoreLinks = minimal || moreOpen;
 	const foldersOverflow = !minimal && folders.length > MAX_VISIBLE_FOLDERS;
+	const folderSection = folderSectionState({
+		allMailboxes,
+		minimal,
+		open: foldersSectionOpen,
+		count: folders.length,
+		overflow: foldersOverflow,
+	});
 
 	const selectedMailboxId = selectedMailbox?.id ?? null;
 	if (useKeyChanged(selectedMailboxId) && !selectedMailboxId) setFolders([]);
@@ -203,7 +198,8 @@ export function DashboardNav({ className }: { className?: string }) {
 		return () => {
 			cancelled = true;
 		};
-	}, [selectedMailbox?.id]);
+		// Leaving All mailboxes reloads them, as a folder may have been created elsewhere meanwhile.
+	}, [selectedMailbox?.id, allMailboxes]);
 
 	async function createFolder(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -222,8 +218,7 @@ export function DashboardNav({ className }: { className?: string }) {
 			});
 			if (!response.ok) return;
 			const folder = (await response.json()) as CustomFolder;
-			if (folderMailboxId === selectedMailbox?.id)
-				setFolders((items) => [...items, folder].sort((a, b) => a.name.localeCompare(b.name)));
+			setFolders((items) => [...items, folder].sort((a, b) => a.name.localeCompare(b.name)));
 			window.dispatchEvent(new Event(FOLDERS_CHANGED_EVENT));
 			setNewFolderName("");
 			setNewFolderColor(DEFAULT_FOLDER_COLOR);
@@ -273,27 +268,10 @@ export function DashboardNav({ className }: { className?: string }) {
 							<DialogContent>
 								<DialogHeader>
 									<DialogTitle>Create folder</DialogTitle>
-									<DialogDescription>
-										{allMailboxes ? "Add a folder to one of your mailboxes." : "Add a folder to the selected mailbox."}
-									</DialogDescription>
+									<DialogDescription>{folderTarget.description}</DialogDescription>
 								</DialogHeader>
 								<form onSubmit={createFolder} className="space-y-4">
-									{allMailboxes && (
-										<div className="space-y-2">
-											<Label htmlFor="folderMailbox">Mailbox</Label>
-											<Select
-												id="folderMailbox"
-												value={folderMailboxId}
-												onChange={(event) => setFolderMailboxId(event.target.value)}
-											>
-												{folderMailboxes.map((mailbox) => (
-													<option key={mailbox.id} value={mailbox.id}>
-														{getMailboxAddress(mailbox)}
-													</option>
-												))}
-											</Select>
-										</div>
-									)}
+									<FolderMailboxField target={folderTarget} />
 									<div className="space-y-2">
 										<Label htmlFor="folderName">Folder name</Label>
 										<Input
@@ -335,15 +313,13 @@ export function DashboardNav({ className }: { className?: string }) {
 					)}
 				</NavSectionHeader>
 			)}
-			{allMailboxes && (minimal || foldersSectionOpen) && (
-				<AllMailboxesFolders customFolderCounts={counts.customFolders} minimal={minimal} />
-			)}
-			{!allMailboxes && !minimal && foldersSectionOpen && folders.length === 0 && (
+			{folderSection.groups && <AllMailboxesFolders customFolderCounts={counts.customFolders} minimal={minimal} />}
+			{folderSection.empty && (
 				<div className="mx-6 rounded-lg border border-dashed border-neutral-200 px-3 py-3 text-xs text-neutral-500">
 					No folders yet
 				</div>
 			)}
-			{!allMailboxes && (minimal || foldersSectionOpen) && (
+			{folderSection.list && (
 				<ReorderableList
 					storageKey="kite:nav:layout:folders"
 					enabled={!minimal}
@@ -364,9 +340,7 @@ export function DashboardNav({ className }: { className?: string }) {
 					]}
 				/>
 			)}
-			{!allMailboxes && foldersSectionOpen && foldersOverflow && (
-				<NavToggle expanded={foldersOpen} onClick={toggleFolders} />
-			)}
+			{folderSection.toggle && <NavToggle expanded={foldersOpen} onClick={toggleFolders} />}
 		</SidebarScaffold>
 	);
 }

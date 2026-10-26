@@ -19,6 +19,7 @@ import {
 	isPermanentlyDeletableStatus,
 	isRestorableStatus,
 	isUndoableBulkAction,
+	actionMailboxId,
 } from "./utils";
 
 export async function POST(request: Request) {
@@ -98,12 +99,12 @@ export async function POST(request: Request) {
 	const accessByMailbox = new Map<string, Promise<MailboxAccessLevel | null>>();
 
 	for (const message of selectedMessages) {
-		if (!message.mailboxId) continue;
-		if (folderMailboxId && message.mailboxId !== folderMailboxId) continue;
-		let accessRequest = accessByMailbox.get(message.mailboxId);
+		const mailboxId = actionMailboxId(message.mailboxId, folderMailboxId);
+		if (!mailboxId) continue;
+		let accessRequest = accessByMailbox.get(mailboxId);
 		if (!accessRequest) {
-			accessRequest = getMailboxAccessLevel(db, user, message.mailboxId);
-			accessByMailbox.set(message.mailboxId, accessRequest);
+			accessRequest = getMailboxAccessLevel(db, user, mailboxId);
+			accessByMailbox.set(mailboxId, accessRequest);
 		}
 		const access = await accessRequest;
 		const canUpdate = payload.action === "read" || payload.action === "unread" ? access?.canRead : access?.canManage;

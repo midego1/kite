@@ -18,7 +18,12 @@ export function useComposeMailbox() {
 	const [lastFrom, setLastFrom] = useStoredState<LastFrom | null>(LAST_FROM_STORAGE_KEY, null);
 	const [chosenId, setChosenId] = useState<string | null>(null);
 	const chooseLocal = useCallback((mailbox: MailboxOption | null) => setChosenId(mailbox?.id ?? null), []);
-	const rememberFrom = useCallback((from: LastFrom) => setLastFrom(from), [setLastFrom]);
+	const rememberFrom = useCallback(
+		(mailbox: MailboxOption | null, address: string) => {
+			if (mailbox && address) setLastFrom({ mailboxId: mailbox.id, address });
+		},
+		[setLastFrom],
+	);
 
 	if (!allMailboxes) {
 		return { selectedMailbox, setSelectedMailbox, mailboxes, defaultFrom: null, rememberFrom };

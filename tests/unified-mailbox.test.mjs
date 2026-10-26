@@ -63,7 +63,6 @@ test("the scope is one mailbox, a chosen subset, or every accessible mailbox", (
 		ok: true,
 		ids: ["a"],
 	});
-	assert.deepEqual(m.parseMailboxIdList(null), []);
 });
 
 test("the client sends one id as mailboxId and several as mailboxIds", () => {

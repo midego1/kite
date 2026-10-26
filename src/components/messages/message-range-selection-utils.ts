@@ -39,7 +39,7 @@ export function applySelection(
 			next.set(message.id, {
 				id: message.id,
 				read: message.read && !(message.threadUnread ?? 0),
-				mailboxId: message.mailboxId,
+				...(message.mailboxId ? { mailboxId: message.mailboxId } : {}),
 			});
 		}
 	}

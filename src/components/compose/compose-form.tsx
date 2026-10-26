@@ -397,7 +397,7 @@ export function ComposeForm({
 			setToast({ type: "error", message: data.error ?? "Send failed" });
 			return;
 		}
-		if (selectedMailbox && selectedFrom) rememberFrom({ mailboxId: selectedMailbox.id, address: selectedFrom });
+		rememberFrom(selectedMailbox, selectedFrom);
 
 		if (sent.draftId) {
 			void authFetch(`/api/drafts/${sent.draftId}`, { method: "DELETE" }).finally(() => {

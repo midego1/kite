@@ -14,7 +14,7 @@ export type MailboxScopeRequest = {
  */
 export type MailboxScope = { ok: true; ids: string[] } | { ok: false };
 
-export function parseMailboxIdList(value: string | null | undefined): string[] {
+function parseMailboxIdList(value: string | null | undefined): string[] {
 	if (!value) return [];
 	return [
 		...new Set(

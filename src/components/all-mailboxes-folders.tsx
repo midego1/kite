@@ -1,12 +1,15 @@
 "use client";
 
 import { useSelectedMailbox } from "@/components/mailbox-provider";
-import { getMailboxName } from "@/components/mailbox-selector-utils";
+import { getMailboxAddress, getMailboxName } from "@/components/mailbox-selector-utils";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { useFoldersByMailbox } from "@/components/messages/use-mailbox-folders";
 import type { MessageCounts } from "@/hooks/types";
 import { NavItem } from "./components-nav";
 import { customFolderNavLink } from "./dashboard-nav-utils";
 import { ReorderableList } from "./reorderable-list";
+import type { FolderTarget } from "./use-all-mailboxes-nav";
 
 /**
  * User folders in the All mailboxes view: each mailbox's folders under its name, each group in its
@@ -55,5 +58,22 @@ export function AllMailboxesFolders({
 				</div>
 			))}
 		</>
+	);
+}
+
+/** The create-folder dialog's mailbox picker, shown in All mailboxes only. */
+export function FolderMailboxField({ target }: { target: FolderTarget }) {
+	if (target.choices.length === 0) return null;
+	return (
+		<div className="space-y-2">
+			<Label htmlFor="folderMailbox">Mailbox</Label>
+			<Select id="folderMailbox" value={target.mailboxId ?? ""} onChange={(event) => target.choose(event.target.value)}>
+				{target.choices.map((mailbox) => (
+					<option key={mailbox.id} value={mailbox.id}>
+						{getMailboxAddress(mailbox)}
+					</option>
+				))}
+			</Select>
+		</div>
 	);
 }

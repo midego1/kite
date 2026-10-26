@@ -19,11 +19,8 @@ import {
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { useSelectedMailbox } from "@/components/mailbox-provider";
-import { useMailboxFolders } from "./use-mailbox-folders";
-import { useMessageAccess } from "./use-message-access";
-import { singleMailboxOf } from "@/lib/mailboxes/scope-utils";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useBulkSelectionAccess } from "./use-bulk-selection-access";
 import { supportsPermanentDelete } from "@/lib/messages/permanent-delete-utils";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { BulkMessageToolbarProps } from "./types";
@@ -33,6 +30,17 @@ const menuItemClass =
 const menuLabelClass = "mt-1 px-3 pb-1 pt-2 text-sm font-medium text-neutral-500";
 const menuContentClass =
 	"z-[130] max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] w-54 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-lg";
+
+/** Shown in the move menu instead of folders when the selection spans mailboxes. */
+function CrossMailboxFolderHint({ show }: { show: boolean }) {
+	if (!show) return null;
+	return (
+		<>
+			<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
+			<p className="px-3 py-2 text-xs text-neutral-500">Select mail from one mailbox to move it to a folder.</p>
+		</>
+	);
+}
 
 export function BulkMessageToolbar({
 	selectedCount,
@@ -73,14 +81,7 @@ export function BulkMessageToolbar({
 			Report phishing
 		</DropdownMenu.Item>
 	);
-	const { selectedMailbox } = useSelectedMailbox();
-	const access = useMessageAccess();
-	// Mail moves only within its own mailbox, so folders are offered while the selection is in one.
-	const folderMailboxId = mailboxIds ? singleMailboxOf(mailboxIds) : (selectedMailbox?.id ?? null);
-	const folders = useMailboxFolders(folderMailboxId && access.canManage(folderMailboxId) ? folderMailboxId : undefined);
-	const spansMailboxes = !!mailboxIds && !folderMailboxId && mailboxIds.length > 1;
-	// Read-only shared mail can be marked read, nothing else; the page skips it in a mixed selection.
-	const manageDisabled = pending || (!!mailboxIds && !mailboxIds.some((id) => access.canManage(id)));
+	const { folders, spansMailboxes, manageDisabled } = useBulkSelectionAccess(mailboxIds, pending);
 	return (
 		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full">
 			{!hideSelectedCount && (
@@ -174,14 +175,7 @@ export function BulkMessageToolbar({
 							</DropdownMenu.Item>
 						))}
 						{phishingItem}
-						{spansMailboxes && (
-							<>
-								<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
-								<p className="px-3 py-2 text-xs text-neutral-500">
-									Select mail from one mailbox to move it to a folder.
-								</p>
-							</>
-						)}
+						<CrossMailboxFolderHint show={spansMailboxes} />
 						{folders.length > 0 && (
 							<>
 								<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />

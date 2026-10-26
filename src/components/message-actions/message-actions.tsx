@@ -25,9 +25,7 @@ import { ReportPhishingItem } from "./report-phishing-item";
 import { confirmReportPhishing } from "@/components/messages/phishing-report";
 import { messageShortcuts } from "./message-shortcuts";
 import { useMessageReply } from "./use-message-reply";
-import { useMessageAccess } from "@/components/messages/use-message-access";
-import { reportReadOnlySkipped } from "@/components/messages/list-action-toast";
-import { actionNeedsManage } from "@/lib/mailboxes/scope-utils";
+import { useReadOnlyMail } from "./use-read-only-mail";
 import { MoveToolbarMenu, SnoozeToolbarButton } from "./message-toolbar-menus";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
@@ -79,17 +77,9 @@ export function MessageActions({
 	const [snoozeExpanded, setSnoozeExpanded] = useState(false);
 	const moduleSlots = useMessageMenuSlots({ messageId, mailboxId }, moreOpen, () => setMoreOpen(false));
 	const listHref = useMessageListHref() ?? getMessageBackHref(direction, status);
-	const access = useMessageAccess();
-	// Read-only shared mail can be read and marked read, never moved or deleted; the server agrees.
-	const readOnly = !!access.mailboxOf(mailboxId) && !access.canManage(mailboxId);
-
-	const runAction = useCallback(
+	const runUnguarded = useCallback(
 		async (action: BulkMessageAction, folderId?: string) => {
 			setMoreOpen(false);
-			if (readOnly && actionNeedsManage(action)) {
-				reportReadOnlySkipped(1, true);
-				return;
-			}
 			setPendingAction(action);
 			setError(null);
 			try {
@@ -102,7 +92,7 @@ export function MessageActions({
 				setPendingAction(null);
 			}
 		},
-		[messageId, listHref, readOnly, router],
+		[messageId, listHref, router],
 	);
 
 	// In Trash and Spam the delete button removes the message for good instead of
@@ -147,6 +137,10 @@ export function MessageActions({
 	const { canReplyAll, canForward } = replyActions;
 	const handleReply = replyActions.reply;
 	const handleForward = replyActions.forward;
+	const disabled = pendingAction !== null || replyActions.pending !== null;
+	// Read-only shared mail can be read and marked read, never moved or deleted; the server agrees.
+	const { manageDisabled, archiveDisabled, guard } = useReadOnlyMail(mailboxId, { disabled, status });
+	const runAction = guard(runUnguarded);
 
 	async function onUnsubscribe() {
 		setMoreOpen(false);
@@ -209,8 +203,6 @@ export function MessageActions({
 		setMoreOpen(false);
 		if (await confirmReportPhishing(1)) await runAction("phishing");
 	};
-	const disabled = pendingAction !== null || replyActions.pending !== null;
-	const manageDisabled = disabled || readOnly;
 	const shownError = error ?? replyActions.error;
 	const markAction: BulkMessageAction = read ? "unread" : "read";
 	const moveActions = getMoveMessageActions(status, direction);
@@ -387,7 +379,7 @@ export function MessageActions({
 								<button
 									type="button"
 									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
-									disabled={readOnly || status === "archived"}
+									disabled={archiveDisabled}
 									onClick={() => void runAction("archive")}
 								>
 									<Archive className="h-4 w-4" />

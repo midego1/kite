@@ -55,3 +55,9 @@ CF_TOKEN=your_api_token_with_zone_email_permissions
 # saving the same safety backup the "Apply now" button saves. Leave it unset to keep
 # migrations manual.
 # AUTO_APPLY_MIGRATIONS=1
+
+# Optional: anonymous usage statistics are off unless the owner turns them on in
+# Admin > General. KITE_TELEMETRY=0 (or false, off, no) keeps them off whatever is chosen
+# there; no value turns them on. KITE_TELEMETRY_URL replaces the collector address (https
+# only). See docs/privacy.md#usage-statistics-opt-in.
+# KITE_TELEMETRY=0

@@ -5,6 +5,7 @@ import type {
 	KeyTestResult,
 	KeyTestResults,
 } from "@/lib/spam/providers/abuse-ch-types";
+import type { TelemetryStatus } from "@/lib/telemetry/types";
 import type { GeneralSettings, ThreatLookupKeySaved } from "./types";
 
 export const THREAT_LOOKUP_SERVICES: readonly { service: AbuseChService; name: string }[] = [
@@ -74,4 +75,33 @@ export async function testThreatLookupKey(): Promise<KeyTestResults> {
 	const data = (await response.json().catch(() => ({}))) as Partial<KeyTestResults> & { error?: string };
 	if (!response.ok || !data.urlhaus || !data.threatfox) throw new Error(data.error ?? "Could not test the key");
 	return { urlhaus: data.urlhaus, threatfox: data.threatfox };
+}
+
+/** Where the usage statistics card's text comes from, in the owner's words. */
+export function telemetryStatusText(status: TelemetryStatus | null): string {
+	if (!status) return "Checking…";
+	if (!status.available) return "Apply the pending database update first";
+	if (status.forcedOff) return "Off: turned off by the KITE_TELEMETRY setting of this deployment";
+	if (!status.endpoint)
+		return status.enabled ? "On, but this version of Kite has no collector address, so nothing is sent" : "Off";
+	if (!status.enabled) return "Off";
+	return status.lastSentDay ? `On, last sent on ${status.lastSentDay} (UTC)` : "On, nothing sent yet";
+}
+
+export async function loadTelemetryStatus(): Promise<TelemetryStatus> {
+	const response = await authFetch("/api/admin/telemetry", { cache: "no-store" });
+	const data = (await response.json().catch(() => ({}))) as TelemetryStatus & { error?: string };
+	if (!response.ok) throw new Error(data.error ?? "Could not load usage statistics");
+	return data;
+}
+
+export async function saveTelemetryEnabled(enabled: boolean): Promise<TelemetryStatus> {
+	const response = await authFetch("/api/admin/telemetry", {
+		method: "PUT",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ enabled }),
+	});
+	const data = (await response.json().catch(() => ({}))) as TelemetryStatus & { error?: string };
+	if (!response.ok) throw new Error(data.error ?? "Could not save usage statistics");
+	return data;
 }

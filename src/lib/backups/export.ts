@@ -128,6 +128,9 @@ const INTERNAL_TABLES = [
 	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
 	// restored database would restart a copy between stores that may no longer match.
 	"storage_migrations",
+	// Opt-in usage statistics: the install id identifies this deployment, so a restore into another one must not
+	// clone it, and the owner's choice starts off again there.
+	"telemetry_state",
 ];
 
 /**

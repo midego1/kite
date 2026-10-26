@@ -163,7 +163,8 @@
 		"src/lib/agent/auto-read/module-steps-utils.ts",
 		"src/lib/agent/auto-read/step-input-utils.ts",
 		"src/lib/booking/working-hours-utils.ts",
-		"src/lib/screener/screener-utils.ts"
+		"src/lib/screener/screener-utils.ts",
+		"src/lib/telemetry/telemetry-utils.ts"
 	],
 	"ungated": {
 		"src/lib/auth/password-reset-utils.ts": "no unit test bundles it; covered only through the e2e suite",

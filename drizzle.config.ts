@@ -9,6 +9,7 @@ export default defineConfig({
 		"./src/db/schema/drive.ts",
 		"./src/db/schema/storage.ts",
 		"./src/db/schema/screener.ts",
+		"./src/db/schema/telemetry.ts",
 	],
 	out: "./drizzle/migrations",
 	dialect: "sqlite",

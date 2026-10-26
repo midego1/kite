@@ -6,6 +6,7 @@ import * as financeTables from "@/db/schema/finance";
 import * as moduleTables from "@/db/schema/modules";
 import * as screenerTables from "@/db/schema/screener";
 import * as storageTables from "@/db/schema/storage";
+import * as telemetryTables from "@/db/schema/telemetry";
 
 const schema = {
 	...coreTables,
@@ -15,6 +16,7 @@ const schema = {
 	...driveTables,
 	...storageTables,
 	...screenerTables,
+	...telemetryTables,
 };
 
 export type AppDatabase = ReturnType<typeof createDb>;

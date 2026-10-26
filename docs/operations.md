@@ -268,6 +268,10 @@ Once remote images are allowed for a message, the reader loads them through `GET
 
 `REMOTE_IMAGES_ALLOW_LOOPBACK=1` lets the remote image proxy (`GET /api/remote-images`) fetch `http` or `https` on `127.0.0.1` at any port other than the app's own, so `e2e/42-remote-images.spec.ts` can serve images from a local server. `localhost`, other loopback and private addresses stay blocked. Like `ALERT_WEBHOOK_ALLOW_INSECURE` it is ignored whenever `NODE_ENV` is `production` and `vite.config.ts` passes it to the Worker only for `vite dev`. Never set it on a deployment.
 
+### Usage statistics (opt-in)
+
+Off by default. When the owner turns them on under Admin → General, the 02:00 UTC cron (both runtimes; `worker.ts` and `server/runtime/scheduler.ts`) posts one anonymous heartbeat a day (`src/lib/telemetry/heartbeat.ts`); [Privacy](privacy.md#usage-statistics-opt-in) lists every field. It logs `telemetry.heartbeat_sent`, or `telemetry.heartbeat_failed` with `outcome` `rejected` (the collector answered with an error) or `failed` (no answer within 5 seconds, a network error or a database error). Neither carries a response, an error message or a payload value, and a failed heartbeat is not retried until the next day. `KITE_TELEMETRY=0` turns it off for the deployment, and `KITE_TELEMETRY_URL` points it at another https collector. The collector itself is a separate Worker in `deploy/telemetry-collector/` that the Kite project runs; see [its README](../deploy/telemetry-collector/README.md).
+
 ### ABUSE_CH_TEST_ORIGIN (dev and test only)
 
 `ABUSE_CH_TEST_ORIGIN=http://127.0.0.1:<port>` (or `http://localhost:<port>`) sends every URLhaus and ThreatFox request, with its path, to that origin instead of abuse.ch, so the Playwright suite can save and test a key against `e2e/support/fake-abuse-ch.ts` without outside network access. Any other value is ignored. Like `ALERT_WEBHOOK_ALLOW_INSECURE` it is ignored whenever `NODE_ENV` is `production` and `vite.config.ts` passes it to the Worker only for `vite dev`. Never set it on a deployment.

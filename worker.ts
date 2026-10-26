@@ -28,6 +28,7 @@ import { runAgentMaintenance } from "./src/lib/agent/maintenance";
 import { runTrashRetention } from "./src/lib/email/trash-retention";
 import { runDatabasePruning } from "./src/lib/maintenance/pruning";
 import { runOperationalAlerts } from "./src/lib/alerts/run";
+import { runTelemetryHeartbeat } from "./src/lib/telemetry/heartbeat";
 import { dispatchModuleQueueMessage, runModuleCronTasks } from "./src/lib/modules/background";
 import { maybeAutoApplyPendingMigrations } from "./src/lib/migrations/auto-apply";
 import { queueRetryDelaySeconds } from "./src/lib/migrations/pending";
@@ -233,6 +234,8 @@ export default {
 					.then(() => runDatabasePruning(env, now))
 					.catch((error) => logger.error("database.pruning_failed", { error })),
 			);
+			// Opt-in usage statistics; does nothing unless the owner turned them on. Never throws.
+			ctx.waitUntil(runTelemetryHeartbeat(env, now));
 		}
 		// Only the 5-minute trigger: both crons fire at 02:00 and a backup may still be running then.
 		if (controller.cron === "*/5 * * * *") {

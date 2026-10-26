@@ -1,0 +1,21 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "kite-telemetry-collector",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-05-20",
+	// Create the database with `npx wrangler d1 create kite-telemetry` and paste its id here.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "kite-telemetry",
+			"database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+			"migrations_dir": "migrations"
+		}
+	],
+	// Set with `npx wrangler secret put STATS_TOKEN`; never commit it. Without it GET /v1/stats answers 401.
+	"vars": { "DAILY_RETENTION_DAYS": "400" },
+	// Removes `daily` rows older than DAILY_RETENTION_DAYS once a day.
+	"triggers": { "crons": ["30 4 * * *"] },
+	// Off so request metadata (IP address, user agent) does not end up in Workers Logs.
+	"observability": { "enabled": false }
+}

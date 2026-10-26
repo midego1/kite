@@ -41,6 +41,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/storage/stores/[id]`                       | DELETE, PATCH          | [source](../src/app/api/admin/storage/stores/[id]/route.ts)                       |
 | `/api/admin/storage/stores/[id]/test`                  | POST                   | [source](../src/app/api/admin/storage/stores/[id]/test/route.ts)                  |
 | `/api/admin/storage/stores`                            | POST                   | [source](../src/app/api/admin/storage/stores/route.ts)                            |
+| `/api/admin/telemetry`                                 | GET, PUT               | [source](../src/app/api/admin/telemetry/route.ts)                                 |
 | `/api/admin/threat-lookups/key`                        | DELETE, PUT            | [source](../src/app/api/admin/threat-lookups/key/route.ts)                        |
 | `/api/admin/threat-lookups/test`                       | POST                   | [source](../src/app/api/admin/threat-lookups/test/route.ts)                       |
 | `/api/agent/actions/[id]/undo`                         | POST                   | [source](../src/app/api/agent/actions/[id]/undo/route.ts)                         |

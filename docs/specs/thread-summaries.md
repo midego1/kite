@@ -134,6 +134,7 @@ A summary repeats what the messages said. When a message is deleted or moves to 
 
 - `message` and `line` rows reference `messages(id)` with `ON DELETE CASCADE`.
 - Two triggers in the migration remove `thread` rows of the conversation: `AFTER DELETE ON messages` and `AFTER UPDATE OF status ON messages WHEN new.status IN ('spam','trash')`, each running `DELETE FROM ai_summaries WHERE kind = 'thread' AND mailbox_id = old.mailbox_id AND thread_key = coalesce(old.thread_id, old.id)`. The same `UPDATE` trigger also deletes the moved message's own `message` and `line` rows.
+- **Saving is conditional**, because the triggers only remove rows that already exist: a message deleted or trashed while its summary is being generated would otherwise come back in the answer saved afterwards. The upsert of a `thread` or `message` row (and of a translation, against its source row) is one statement, `INSERT … SELECT … WHERE (SELECT count(*) FROM messages, json_each(?) WHERE messages.id = json_each.value AND messages.status IN ('received','sent','archived') AND coalesce(messages.spam_verdict, '') <> 'spam') = ?`, with the covered ids bound as one JSON array (`inJsonArray`, `src/db/chunk-utils.ts`) and their count. D1 runs a single statement atomically, so either every covered message is still eligible when the row is written or nothing is written. With zero changes the answer is discarded (its spend is still reconciled), and the route answers 409 `conversation_changed`, which the card shows as "The conversation changed; summarize again". A `line` row is written the same way against its one message.
 - `src/lib/maintenance/pruning.ts` deletes `thread` rows that have been out of date for 30 days.
 
 ### 7.3 Table
@@ -160,7 +161,7 @@ A summary repeats what the messages said. When a message is deleted or moves to 
 | `created_by_user_id` | text, FK `users` SET NULL | Null for background lines |
 | `created_at`, `updated_at` | timestamp | |
 
-Indexes: unique `(mailbox_id, kind, thread_key, coalesce(message_id, ''), instructions_digest, language)` (upserted, so a regeneration replaces the row); `(message_id)`; `(translation_of)`.
+Indexes: unique `(mailbox_id, kind, thread_key, coalesce(message_id, ''), instructions_digest, language)` (upserted, so a regeneration replaces the row; the upsert first deletes the replaced row's translations with `DELETE FROM ai_summaries WHERE translation_of = <old id>`, because an upsert updates in place and never fires the `ON DELETE CASCADE` that 4.5 relies on); `(message_id)`; `(translation_of)`.
 
 Also in `0070`:
 
@@ -232,7 +233,7 @@ A mailbox with 100 qualifying messages a day and automatic reading off spends ab
 - `summary-language.test.mjs`: the primary subtag of the browser language; translation offered only when the languages differ and neither is `und`; the `instructions_digest` is `''` without personal instructions.
 - `line-summary-gate.test.mjs`: every rule in 5.2, including the daily limit and the newsletter switch.
 - `triage-line-extension.test.mjs`: with the setting off, `buildTriagePrompt` and `buildTriageJsonSchema` equal today's fixtures; with it on, `oneLine` is present, the output cap is 60 higher, and a bad `oneLine` never fails the parse.
-- A `SqliteDatabase` test for the 7.2 triggers: delete and trash remove `thread` rows of that conversation only.
+- A `SqliteDatabase` test for the 7.2 triggers: delete and trash remove `thread` rows of that conversation only; a summary saved after one of its covered messages was deleted or trashed writes nothing and reports `conversation_changed`.
 - Backup tests: `ai_summaries` is internal; `tests/queue-log-context.test.mjs` for the queue message `{ kind: "agent.line_summary", jobId }`.
 
 ### 14.2 e2e with the fake model (`e2e/55-thread-summaries.spec.ts`; take the next free number)

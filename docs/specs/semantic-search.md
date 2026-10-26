@@ -117,7 +117,7 @@ Messages moved to Spam or Trash keep their vectors until they are deleted for go
 2. Claim up to 32 `pending` rows (or `running` rows whose lease expired) with one `UPDATE … SET status = 'running', lease_until = ? WHERE message_id IN (SELECT … ORDER BY queued_at DESC LIMIT 32) RETURNING …`, newest first so new mail is searchable before old mail is.
 3. Load the messages, re-check eligibility (a row whose message became ineligible is set `skipped`), build chunks.
 4. Reserve spend (section 8); none left → release the claim and stop.
-5. Embed in one call per 32 texts; `upsert` the vectors; set `indexed` with the content hash and chunk count. On a provider error: `attempts + 1`, back to `pending` until 3 attempts, then `failed` with the error code (no content).
+5. Embed in one call per 32 texts; re-read the claimed rows and `upsert` the vectors only for those still `running` under this lease, then set them `indexed` with the content hash and chunk count. A message deleted while its embedding call was in flight lost its state row to the delete trigger, so it fails this re-check and its vectors are never written; its tombstone (saved with `chunk_count` 0) has nothing to remove. On a provider error: `attempts + 1`, back to `pending` until 3 attempts, then `failed` with the error code (no content).
 6. Delete vectors whose chunk count shrank, and drain up to 1,000 tombstones per run with `deleteByIds`.
 
 **Triggering the drain.** After `processInboundMessage` and `sendEmail` store a message, they send `{ kind: "search.embed" }` on `AGENT_QUEUE` (cheap and idempotent: the claim makes duplicate messages no-ops). Every cron tick also runs up to 4 batches on Workers and 2 on Node, which is what moves a backfill along: about 128 messages per 5 minutes on Workers, roughly 37,000 a day, within the spend rules below. A separate queue binding is not added; the agent queue's batch size of 1 keeps embedding work from delaying triage for long.
@@ -143,7 +143,7 @@ When semantic search is off, not ready, the provider fails or a cap is reached, 
 
 - **Two layers.** The store query is restricted to the accessible mailbox ids (Vectorize metadata filter, or the SQLite `mailbox_id` index). Every hit is then re-checked in D1 under the exact conditions of the keyword search (4.6 step 5). A bug in either layer alone cannot show another user's mail.
 - **No content in the store.** Vectors carry only a key and `mailboxId`. Message ids, subjects and snippets come from D1 after the re-check.
-- **Shared mailboxes.** A mailbox is indexed once; anyone who can read it can find its mail, exactly as with keyword search. A mailbox manager can switch **Search by meaning** off for a mailbox (`mailbox_agent_settings.semantic_index`); its pending rows are skipped and its vectors deleted.
+- **Shared mailboxes.** A mailbox is indexed once; anyone who can read it can find its mail, exactly as with keyword search. A mailbox manager can switch **Search by meaning** off for a mailbox (`mailbox_agent_settings.semantic_index`); its pending rows are skipped and its vectors deleted. Switching it back on queues the mailbox's eligible messages again: every `message_embeddings` row of the mailbox is set back to `pending`, rows marked `indexed` included, because their vectors are gone and the content-hash skip must not keep them out. The triggers do not see this (no message status changes) and the backfill cursor has long passed those messages, so the switch does it itself instead of waiting for a rebuild.
 - **Drafts** are never embedded, so one user's draft cannot surface for another through a shared mailbox.
 - **MCP keys** are limited to their `mcp_key_mailboxes`, which become the `mailboxIds` passed to the store.
 
@@ -254,7 +254,7 @@ Vectorize has no local emulation in `wrangler dev` without remote access, which 
 
 - Off by default for every install (`semantic_search_enabled = 0`). The primary admin turns it on in Admin; the backfill starts on the next cron tick. Mailboxes are included by default and can be excluded.
 - The CHANGELOG for the release names migration 0071, the new binding and the operator step of section 10, and links Admin → Agent with an app path (`docs/releasing.md`).
-- Search falls back to keyword-only whenever anything is missing, so turning the feature off (which also deletes the index contents after a confirmation) is safe at any time.
+- Search falls back to keyword-only whenever anything is missing, so turning the feature off is safe at any time. Turning it off (after a confirmation) deletes the vectors, every `message_embeddings` and `message_embedding_deletes` row, and `semantic_backfill_cursor`. Turning it on again therefore starts a complete backfill from the newest message, like the first time, instead of resuming a cursor that already passed messages whose vectors are gone.
 
 ## 14. Tests
 
@@ -264,9 +264,10 @@ Vectorize has no local emulation in `wrangler dev` without remote access, which 
 - `semantic-fusion.test.mjs`: reciprocal rank fusion order, ties, a message in both lists ranks first, `match` labels.
 - `semantic-filter.test.mjs`: the Vectorize filter stays under 2,048 bytes and splits into groups; vector ids stay under 64 bytes.
 - `semantic-sqlite-store.test.mjs` (better-sqlite3, temporary file): int8 quantisation keeps the top-10 order of a float32 reference on fixtures; scoping returns only the given mailboxes; delete removes.
-- `semantic-triggers.test.mjs` (`SqliteDatabase`): insert, status change into and out of Spam, Trash and `screening`, draft insert, delete (including a cascaded delete when a user is removed) produce the right `pending` rows and tombstones; a `skipped` row returns to `pending` when its message becomes eligible again while an `indexed` row stays; the triggers do nothing while the feature is off.
+- `semantic-triggers.test.mjs` (`SqliteDatabase`): insert, status change into and out of Spam, Trash and `screening`, draft insert, delete (including a cascaded delete when a user is removed) produce the right `pending` rows and tombstones; a `skipped` row returns to `pending` when its message becomes eligible again while an `indexed` row stays; the triggers do nothing while the feature is off; turning the feature off clears the state rows, tombstones and cursor, so turning it on again queues every eligible message.
 - `semantic-scope.test.mjs`: the D1 re-check drops hits from other mailboxes, other users' drafts and `screening` rows even when the store returns them.
 - `semantic-spend.test.mjs`: backfill stops at the cap share; live indexing continues to the cap; external provider without the opt-in embeds nothing.
+- `semantic-drain.test.mjs`: a message deleted while its embedding call is in flight gets no vectors (the re-check before `upsert` finds no claimed row) and its tombstone drains with nothing to delete.
 - Backup tests: the two tables are internal; `queue-log-context` for `search.embed`.
 
 ### 14.2 e2e (`e2e/56-semantic-search.spec.ts`; take the next free number)

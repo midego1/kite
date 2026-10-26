@@ -80,10 +80,10 @@ Selective on purpose: each metric must be computable in code for any language Ki
 | Key | Value |
 | --- | --- |
 | `greetings` | The greeting line, lower-cased, with the recipient's name or any capitalised word after the greeting word replaced by `{name}`, punctuation kept, at most 40 characters: `hi {name},`, `beste {name},` |
-| `signOffs` | The sign-off line: `best,`, `groet,`, `cheers` |
+| `signOffs` | The sign-off line, lower-cased, with every word that is not part of the matched sign-off phrase replaced by `{name}`: `best,`, `groet,`, `thanks from {name},` |
 | `languages` | `en`, `nl`, `de`, `fr`, `es` or `other`, from a stop-word count over at least 20 words (`language-utils.ts`, about 40 words per language) |
 
-Before a form is stored, anything that looks like an address, a URL, a phone number or a run of digits is removed, and the form is dropped if what remains is empty. So a profile never holds a recipient's name, address or other content.
+Before a form is stored, anything that looks like an address, a URL, a phone number or a run of digits is removed, and the form is dropped if what remains is empty or still contains a capitalised word that is not the first word. Greetings and sign-offs therefore keep only words from their phrase lists plus `{name}`, so a profile never holds the user's or a recipient's name, an address or other content.
 
 Dropped from Zero's list, with reasons: readability indices (Flesch, Gunning-Fog, SMOG) are English-only formulas; sentiment, subjectivity, humour, empathy and analogy rates need a model; parse-tree depth and subordination need a parser; lexical diversity metrics (type-token ratio, MTLD, hapax, entropy) do not translate into an instruction a model follows; Markdown and code-block rates do not apply to the HTML composer.
 
@@ -104,7 +104,7 @@ The update runs in the `/api/send` request after the send succeeded, inside a `t
 `src/lib/agent/writing-style-utils.ts` (pure, unit tested) exports:
 
 - `ownText(html, text, signatureHtml)`: the stripping in 4.2.
-- `measureMessage(text)`: `{ values: Record<MetricKey, number | null>, greeting: string | null, signOff: string | null, language }`. A greeting is a first line of at most 6 words that starts with a word from a per-language list (`hi`, `hello`, `dear`, `hey`, `beste`, `hoi`, `hallo`, `geachte`, `liebe`, `lieber`, `sehr geehrte`, `bonjour`, `cher`, `chère`, `hola`, `estimado`, …) and ends with `,`, `!` or nothing. A sign-off is a last line of at most 4 words before the signature, matched against a list (`best`, `regards`, `thanks`, `cheers`, `groet`, `groeten`, `met vriendelijke groet`, `mvg`, `viele grüße`, `cordialement`, `saludos`, …) or ending in `,`.
+- `measureMessage(text)`: `{ values: Record<MetricKey, number | null>, greeting: string | null, signOff: string | null, language }`. A greeting is a first line of at most 6 words that starts with a word from a per-language list (`hi`, `hello`, `dear`, `hey`, `beste`, `hoi`, `hallo`, `geachte`, `liebe`, `lieber`, `sehr geehrte`, `bonjour`, `cher`, `chère`, `hola`, `estimado`, …) and ends with `,`, `!` or nothing. A sign-off is a last line of at most 4 words before the signature, that starts with a phrase from a per-language list (`best`, `regards`, `thanks`, `cheers`, `groet`, `groeten`, `met vriendelijke groet`, `mvg`, `viele grüße`, `cordialement`, `saludos`, …). A line that only ends in `,` without such a phrase is not a sign-off. The words after the phrase (other than `from`, `van`, `von`, `de`) become `{name}`, so "Thanks from Morgan," is stored as `thanks from {name},`.
 - `updateProfile(profile, measured)`: the Welford step for each metric whose value is not `null`, then the top-K updates.
 - `describeWritingStyle(profile)`: section 4.5.
 
@@ -168,7 +168,7 @@ When the user has not opted in, has no profile or has fewer than 10 samples, eve
 
 ### 4.6 Opt-in, reset and privacy
 
-- **Off by default.** Assistant **Settings** (`src/components/agent/agent-panel.tsx`, the personal section with Max steps) gets **Learn my writing style from mail I send**. Turning it on asks whether to learn from the last 200 messages already sent from each mailbox the user can send from; yes enqueues one `{ kind: "agent.style_backfill", userId, mailboxId }` message per mailbox on `AGENT_QUEUE`, which pages through that user's `sent` messages oldest first, keeps only messages with a `composer_sends` row that is not `ai_assisted` and whose draft had no `agent_draft_metadata` row (everything else, including mail sent before the migration, is skipped, so right after the upgrade the backfill covers only mail sent since), applies 4.2 and 4.3 and writes once per page of 50. No model, no spend.
+- **Off by default.** Assistant **Settings** (`src/components/agent/agent-panel.tsx`, the personal section with Max steps) gets **Learn my writing style from mail I send**. Turning it on asks whether to learn from the last 200 messages already sent from each mailbox the user can send from; yes enqueues one `{ kind: "agent.style_backfill", userId, mailboxId }` message per mailbox on `AGENT_QUEUE`, which pages through that user's `sent` messages oldest first, keeps only messages with a `composer_sends` row that is not `ai_assisted` and whose draft had no `agent_draft_metadata` row (everything else, including mail sent before the migration, is skipped, so right after the upgrade the backfill covers only mail sent since), applies 4.2 and 4.3 and writes once per page of 50. No model, no spend. A backfill rebuilds rather than adds: it starts by resetting the user–mailbox profile row (the Welford state, the top-K maps and `sample_count`) and then replays, so running it again, or after live learning has already counted some of the same mail, never counts a message twice; sends that arrive while it runs update the rebuilt row as usual.
 - **What the user sees.** Per mailbox: the sample count, the exact text of `describeWritingStyle` ("This is what Kite tells the AI"), and **Reset**, which deletes that row. With fewer than 10 samples: "Kite needs 10 sent messages before it uses your style."
 - **Turning it off** deletes all of the user's profiles after a confirmation, and stops learning and using them at once.
 - **Shared mailboxes.** Each user has a separate profile in a shared mailbox. Profiles are never visible to other users, admins included; the primary admin can only delete them with the account.
@@ -242,8 +242,9 @@ Response: `application/x-ndjson`, `Cache-Control: no-store`, the same framing as
 - A reply that starts with meta text ("Here is…") is refused (`error`), and Try again is offered.
 - An email address or URL that does not appear in the user's text, the instruction or the loaded source message is removed and reported as `removed_address` or `removed_link`.
 - Length cap: 3× the input for rewrites, 12,000 characters for write.
+- An answer that stopped because it hit `maxOutputTokens` (finish reason `length`) is refused (`error`) and Try again is offered, so a partial rewrite can never replace the full selection.
 
-**Model call.** `streamText` with **no tools**, `maxRetries: 0`, `maxOutputTokens` 900 for write and `min(900, 2 × estimated input tokens + 100)` for rewrites (1.5× that for Longer), the provider options of `buildModelCallOptions` for kind `draft` (thinking off on Workers AI). Nothing is persisted except one `ai_usage` row.
+**Model call.** `streamText` with **no tools**, `maxRetries: 0`, `maxOutputTokens` 900 for write and `min(cap, 2 × estimated input tokens + 100)` for rewrites: the cap is 900 for **Shorter** and 3,000 for the actions that keep or grow the length (**More formal**, **More casual**, **Fix spelling and grammar**, **Translate**, **Custom**, and **Longer**, which also multiplies the formula by 1.5), so a rewrite of the full 12,000 characters fits. The provider options of `buildModelCallOptions` for kind `draft` (thinking off on Workers AI). Nothing is persisted except one `ai_usage` row.
 
 ### 5.4 Prompt
 
@@ -371,7 +372,7 @@ Nothing here is Workers-specific. The composer route uses `getEnv()`, `getDb`, `
 
 ### 12.1 Unit (`tests/*.test.mjs`, pure modules)
 
-- `writing-style-measure.test.mjs`: each metric on fixtures in English, Dutch, German, French and Spanish; quote, `On … wrote:` and signature stripping; greeting and sign-off detection with names replaced by `{name}`; addresses, URLs and digits removed from forms; messages under 5 words skipped; `formalAddress` ignores English and sentence-initial German `Sie`.
+- `writing-style-measure.test.mjs`: each metric on fixtures in English, Dutch, German, French and Spanish; quote, `On … wrote:` and signature stripping; greeting and sign-off detection with names replaced by `{name}` ("Thanks from Morgan," → `thanks from {name},`; a comma-ended line without a sign-off phrase is not a sign-off); addresses, URLs and digits removed from forms; messages under 5 words skipped; `formalAddress` ignores English and sentence-initial German `Sie`.
 - `writing-style-welford.test.mjs`: running mean and variance equal a two-pass computation up to 300 samples; above the cap, recent values dominate as specified; top-K keeps 8 and evicts the least frequent.
 - `writing-style-describe.test.mjs`: `null` under 10 samples; thresholds produce the expected sentences; output ≤ 500 characters; no `{name}` without the explanation line.
 - `compose-prompt.test.mjs`: the task line per action; instructions and style placed in `system` after the fixed rules; delimiters inside instructions, the draft text and the source message are stripped; formality line left out for formal and casual; no style for grammar and translate; mailbox fields before personal fields, each under its heading.

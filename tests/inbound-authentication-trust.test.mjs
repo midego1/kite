@@ -491,8 +491,36 @@ test("relay: signature problems are recorded for the operational alert", async (
 	assert.equal((await readRelaySignatureState(env)).legacyAt, 1_000_000);
 	await recordRelaySignatureProblem(env, "missing", 1_000_000 + 11 * 60_000);
 	assert.equal((await readRelaySignatureState(env)).missingAt, 1_660_000);
-	objects.set("system/relay-signature.json", "not json");
-	assert.deepEqual(await readRelaySignatureState(env), {});
+	objects.set("system/relay-signature-missing.json", "not json");
+	assert.deepEqual(await readRelaySignatureState(env), { invalidAt: 1_060_000, legacyAt: 1_000_000 });
+});
+
+test("relay: concurrent kinds keep each other's record, and a failed write is retried", async () => {
+	const fresh = await import(`${pathToFileURL(join(outDir, "relaySignature.mjs")).href}?concurrent`);
+	const objects = new Map();
+	let failNext = true;
+	const env = {
+		BUCKET: {
+			get: async (key) => (objects.has(key) ? { text: async () => objects.get(key) } : null),
+			put: async (key, value) => {
+				await new Promise((resolve) => setTimeout(resolve, 5));
+				if (key.endsWith("-invalid.json") && failNext) {
+					failNext = false;
+					throw new Error("bucket down");
+				}
+				objects.set(key, value);
+			},
+		},
+	};
+	await Promise.all([
+		fresh.recordRelaySignatureProblem(env, "missing", 5_000_000),
+		fresh.recordRelaySignatureProblem(env, "legacy", 5_000_000),
+		fresh.recordRelaySignatureProblem(env, "invalid", 5_000_000).catch(() => "failed"),
+	]);
+	assert.deepEqual(await fresh.readRelaySignatureState(env), { missingAt: 5_000_000, legacyAt: 5_000_000 });
+	// The next request after the failure saves it straight away instead of waiting out the throttle.
+	await fresh.recordRelaySignatureProblem(env, "invalid", 5_000_000 + 1_000);
+	assert.equal((await fresh.readRelaySignatureState(env)).invalidAt, 5_001_000);
 });
 
 const sesNotification = (receipt, headers = []) =>

@@ -90,9 +90,9 @@ test("relay signature problems recorded by the inbound route reach the snapshot 
 	// An hour later nothing new arrived, so the rules clear.
 	assert.deepEqual((await rulesAt(env, new Date(start + 61 * MIN))).alerts, []);
 
-	// A corrupt record never breaks the snapshot.
-	objects.set("system/relay-signature.json", "{");
-	assert.deepEqual((await rulesAt(env, new Date(start))).snapshot.relaySignature, {});
+	// A corrupt record never breaks the snapshot, and only loses its own kind.
+	objects.set("system/relay-signature-missing.json", "{");
+	assert.deepEqual((await rulesAt(env, new Date(start))).snapshot.relaySignature, { legacyAt: start });
 	env.BUCKET.get = async () => {
 		throw new Error("bucket down");
 	};

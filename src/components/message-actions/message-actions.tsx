@@ -28,6 +28,7 @@ import { messageShortcuts } from "./message-shortcuts";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { MessageActionsProps, ReplyMode } from "./types";
@@ -331,7 +332,7 @@ export function MessageActions({
 							<Trash2 size={iconSize} />
 						</Button>
 					</Tooltip>
-					<span className="h-5 mx-2 bg-gray-200 w-px inline-block" />
+					<Separator orientation="vertical" className="mx-2 inline-block h-5 bg-gray-200" />
 
 					<Tooltip label={shortcutsEnabled ? "Reply (r)" : "Reply"}>
 						<Button

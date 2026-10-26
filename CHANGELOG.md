@@ -15,6 +15,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Mail received through Amazon SES now uses the SPF, DKIM and DMARC verdicts SES reports for it, once the SNS notification's signature is verified.
 - The email relay's header signature now uses a key derived from `INBOUND_WEBHOOK_SECRET`. Update the relay: the earlier signature is accepted until the first release on or after 2027-01-31 and raises a low-priority operational alert, and a request without a header signature, or with a wrong one, raises an "update the relay" alert.
 
+## [2026.10.26.4] - 2026-10-26
+
+### Changed
+
+- Dropdowns, checkboxes, switches and tooltips across Kite are now built on Radix, the accessible component library behind shadcn/ui. They look as before, but a dropdown now opens a list styled like the rest of Kite (in light and dark mode) instead of the browser's own menu, and you can type to jump to an option.
+
 ## [2026.10.26.3] - 2026-10-26
 
 ### Security

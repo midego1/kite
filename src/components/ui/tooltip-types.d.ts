@@ -6,8 +6,3 @@ export type TooltipProps = {
 	className?: string;
 	placement?: "auto" | "right";
 };
-
-export type TooltipPosition = {
-	left: number;
-	top: number;
-};

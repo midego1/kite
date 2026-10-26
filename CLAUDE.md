@@ -216,7 +216,7 @@ The app never checks for or pulls updates. New versions arrive by a push to the 
 - Types and pure helpers are split out of components and modules into sibling `*-types.d.ts` and `*-utils.ts` files (41 and 27 of them respectively). Follow this when adding anything non-trivial.
 - Server code reaches bindings through `getEnv()` / `getEnvAsync()` in `src/lib/cloudflare.ts`, then `getDb(env)` from `src/db`. Keep binding access centralized here.
 - API routes return `NextResponse.json({ error: "..." }, { status })` for failures; there is no shared error envelope helper.
-- UI is Tailwind v4 + shadcn/Radix primitives in `src/components/ui/`. `DialogContent` sets no max height, so a tall dialog overflows the viewport with an unreachable submit button — add `max-h-[calc(100vh-4rem)] overflow-y-auto` on any dialog with more than a few fields.
+- UI is Tailwind v4 + shadcn/Radix primitives in `src/components/ui/`. `Select` and `Checkbox` keep the native API (`<option>` children, `onChange(event)` with `event.target.value` / `event.target.checked`) but render Radix controls, so e2e specs pick options with `chooseOption` and read values with `expectSelectValue` (`e2e/support/select.ts`), never Playwright's `selectOption`. `DialogContent` sets no max height, so a tall dialog overflows the viewport with an unreachable submit button — add `max-h-[calc(100vh-4rem)] overflow-y-auto` on any dialog with more than a few fields.
 - `cloudflare-env.d.ts` is generated (500KB) — regenerate with `cf-typegen`, never hand-edit.
 
 <!-- BEGIN:nextjs-agent-rules -->

@@ -43,6 +43,7 @@ import { createMcpKey, mcpCall, mcpToolNames } from "./support/mcp";
 import { expectNotFoundPage, expectPaletteCommands } from "./support/module-flows";
 import { restoreModules, setModuleState } from "./support/modules";
 import { readJobs, readSuggestions } from "./support/triage";
+import { chooseOption } from "./support/select";
 
 let fake: FakeModel;
 let api: APIRequestContext;
@@ -643,7 +644,7 @@ test.describe("Money Watch across areas", () => {
 			expect(end.tool.subscriptions.map((item) => [item.ref.id, item.status])).toEqual([[id, "cancelled"]]);
 			expect(end.tool.totals[0].paidLast12MonthsMinor).toBe(1799);
 			expect((await listTool(key.key)).subscriptions).toEqual([]);
-			await page.getByLabel("Show").selectOption("ended");
+			await chooseOption(page.getByLabel("Show"), "ended");
 			await page
 				.locator(`[data-finance-section="ended"] [data-finance-row="${id}"]`)
 				.getByRole("button", { name: new RegExp(`^${vendor}`) })

@@ -1,5 +1,6 @@
 import type { KeyboardEvent } from "react";
 import type {
+	AgentActionName,
 	AgentActionProposal,
 	AgentDraftAction,
 	AgentEmailReference,
@@ -240,6 +241,31 @@ export const AGENT_TOOL_LABELS: Record<string, { running: string; completed: str
 		completed: "Prepared email moves",
 		description: "Prepared email moves for approval.",
 	},
+	mark_emails_read: {
+		running: "Preparing read status...",
+		completed: "Prepared read status",
+		description: "Prepared marking emails as read for approval.",
+	},
+	mark_emails_unread: {
+		running: "Preparing unread status...",
+		completed: "Prepared unread status",
+		description: "Prepared marking emails as unread for approval.",
+	},
+	list_folders: {
+		running: "Listing folders...",
+		completed: "Listed folders",
+		description: "Listed the folders of this mailbox.",
+	},
+	create_folder: {
+		running: "Preparing folder...",
+		completed: "Prepared folder",
+		description: "Prepared a new folder for approval.",
+	},
+	move_emails_to_folder: {
+		running: "Preparing folder move...",
+		completed: "Prepared folder move",
+		description: "Prepared filing emails into a folder for approval.",
+	},
 	discard_draft: {
 		running: "Preparing draft removal...",
 		completed: "Prepared draft removal",
@@ -327,16 +353,42 @@ export function parseAgentToolContent(content: string): Record<string, unknown> 
 	}
 }
 
+/** The chat tools whose result is a proposal the user approves in the panel. */
+const AGENT_ACTION_NAMES: readonly AgentActionName[] = [
+	"move_email",
+	"move_emails",
+	"mark_email_read",
+	"mark_emails_read",
+	"mark_emails_unread",
+	"create_folder",
+	"move_emails_to_folder",
+	"discard_draft",
+];
+const PROPOSAL_STATUSES = new Set(["pending_approval", "processing", "approved", "undone"]);
+
 export function agentActionProposal(content: string): AgentActionProposal | null {
 	const value = parseAgentToolContent(content);
 	return value &&
-		(value.action === "move_email" ||
-			value.action === "move_emails" ||
-			value.action === "mark_email_read" ||
-			value.action === "discard_draft") &&
-		(value.status === "pending_approval" || value.status === "processing" || value.status === "approved")
+		(AGENT_ACTION_NAMES as readonly unknown[]).includes(value.action) &&
+		PROPOSAL_STATUSES.has(value.status as string)
 		? (value as AgentActionProposal)
 		: null;
+}
+
+/** Tools whose label counts the emails they prepared or changed, with the verb for a done change. */
+const EMAIL_BATCH_VERBS: Record<string, string> = {
+	move_email: "Moved",
+	move_emails: "Moved",
+	mark_emails_read: "Marked",
+	mark_emails_unread: "Marked",
+	move_emails_to_folder: "Filed",
+};
+
+function batchLabel(name: string, status: unknown, emails: number): string {
+	const noun = emails === 1 ? "email" : "emails";
+	if (status === "approved") return `${EMAIL_BATCH_VERBS[name]} ${emails} ${noun}`;
+	if (status === "undone") return `Undid the change to ${emails} ${noun}`;
+	return `Prepared ${emails} ${noun} for review`;
 }
 
 function toolDisplay(name: string | null | undefined) {
@@ -371,10 +423,7 @@ export function agentToolLabel(
 		};
 	if (name === "get_thread" && emails !== null)
 		return { label: `Read ${emails} ${emails === 1 ? "email" : "emails"} in thread`, description: display.description };
-	if ((name === "move_emails" || name === "move_email") && emails !== null)
-		return {
-			label: `${result?.status === "approved" ? "Moved" : "Prepared"} ${emails} ${emails === 1 ? "email" : "emails"}${result?.status === "approved" ? "" : " for review"}`,
-			description: display.description,
-		};
+	if (name && EMAIL_BATCH_VERBS[name] && emails !== null)
+		return { label: batchLabel(name, result?.status, emails), description: display.description };
 	return { label: display.completed, description: display.description };
 }

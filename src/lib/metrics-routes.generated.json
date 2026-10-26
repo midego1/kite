@@ -31,6 +31,7 @@
 	"/api/admin/threat-lookups/key",
 	"/api/admin/threat-lookups/test",
 	"/api/agent/actions/[id]/undo",
+	"/api/agent/actions/chat-undo",
 	"/api/agent/actions/confirm",
 	"/api/agent/actions",
 	"/api/agent/approvals/[id]/confirm",

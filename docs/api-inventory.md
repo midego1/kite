@@ -44,6 +44,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/threat-lookups/key`                        | DELETE, PUT            | [source](../src/app/api/admin/threat-lookups/key/route.ts)                        |
 | `/api/admin/threat-lookups/test`                       | POST                   | [source](../src/app/api/admin/threat-lookups/test/route.ts)                       |
 | `/api/agent/actions/[id]/undo`                         | POST                   | [source](../src/app/api/agent/actions/[id]/undo/route.ts)                         |
+| `/api/agent/actions/chat-undo`                         | POST                   | [source](../src/app/api/agent/actions/chat-undo/route.ts)                         |
 | `/api/agent/actions/confirm`                           | POST                   | [source](../src/app/api/agent/actions/confirm/route.ts)                           |
 | `/api/agent/actions`                                   | GET                    | [source](../src/app/api/agent/actions/route.ts)                                   |
 | `/api/agent/approvals/[id]/confirm`                    | POST                   | [source](../src/app/api/agent/approvals/[id]/confirm/route.ts)                    |

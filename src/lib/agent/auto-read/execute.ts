@@ -19,6 +19,7 @@ import type {
 import {
 	UNDO_VARIANT_PREFIX,
 	actionIds,
+	canSeeAction,
 	getActionMeta,
 	inverseActionFor,
 	isStalePending,
@@ -35,6 +36,7 @@ import { reopenSuggestionIfIdle } from "./suggestion-reopen";
 import type { AutonomyLevel } from "./settings-types";
 import type { JsonValue } from "@/lib/modules/module-types";
 import { normalizeTimeZone } from "@/lib/time/utils";
+import type { UndoCounts } from "../chat-actions-types";
 
 type Db = ReturnType<typeof getDb>;
 
@@ -293,7 +295,19 @@ async function restoreApplied(db: Db, id: string): Promise<void> {
 		.where(eq(agentActions.id, id));
 }
 
-async function writeInverseRow(db: Db, row: AgentActionRow, userId: string, now: Date): Promise<string> {
+/** The inverse row's `after`: the state the undo restored, plus how many messages it put back when it counts them. */
+function inverseAfter(row: AgentActionRow, counts: UndoCounts | null): string | null {
+	if (!counts) return row.before;
+	return JSON.stringify({ ...(parseActionState(row.before) ?? {}), ...counts });
+}
+
+async function writeInverseRow(
+	db: Db,
+	row: AgentActionRow,
+	userId: string,
+	now: Date,
+	counts: UndoCounts | null,
+): Promise<string> {
 	const id = newId("aact");
 	await db.insert(agentActions).values({
 		id,
@@ -308,7 +322,7 @@ async function writeInverseRow(db: Db, row: AgentActionRow, userId: string, now:
 		variant: `${UNDO_VARIANT_PREFIX}${row.id}`,
 		status: "applied",
 		before: row.after,
-		after: row.before,
+		after: inverseAfter(row, counts),
 		reason: UNDO_REASON,
 		createdAt: now,
 		updatedAt: now,
@@ -323,6 +337,29 @@ async function reopenAfterUndo(
 	owner: ModuleActionOwner | null,
 ): Promise<void> {
 	if (owner?.reopensSuggestion) await reopenSuggestionIfIdle(env, suggestionId, moduleActionTypes(owner.moduleId));
+}
+
+/**
+ * Runs the undo of a claimed row: the module's capability or the core inverse, which may count the messages
+ * it put back. A failure puts the row back to `applied` and becomes a 409 unless it already has a status.
+ */
+async function runInverse(
+	env: CloudflareEnv,
+	row: AgentActionRow,
+	userId: string,
+	module: { owner: ModuleActionOwner; viewer: ModuleActionViewer } | null,
+): Promise<UndoCounts | null> {
+	try {
+		if (module) {
+			await undoModuleAction(module.owner, module.viewer, row);
+			return null;
+		}
+		return (await INVERSE_EFFECTS[row.action]!(env, row, userId)) ?? null;
+	} catch (error) {
+		await restoreApplied(getDb(env), row.id);
+		if (error instanceof AgentActionError) throw error;
+		throw new AgentActionError(errorReason(error), 409);
+	}
 }
 
 type UndoActor = Pick<SessionUser, "id" | "role"> & Partial<Pick<SessionUser, "isPrimaryAdmin" | "timeZone">>;
@@ -346,11 +383,11 @@ export async function undoAgentAction(
 	user: UndoActor,
 	actionId: string,
 	now = new Date(),
-): Promise<{ actionId: string; inverseActionId: string }> {
+): Promise<{ actionId: string; inverseActionId: string } & Partial<UndoCounts>> {
 	const db = getDb(env);
 	const [row] = await db.select().from(agentActions).where(eq(agentActions.id, actionId)).limit(1);
 	const access = row ? await getMailboxAccessLevel(db, user, row.mailboxId) : null;
-	if (!row || !access?.canManage) throw new AgentActionError("Action not found", 404);
+	if (!row || !access || !canSeeAction(row, user.id, access)) throw new AgentActionError("Action not found", 404);
 	const refusal = undoRefusal(row, user.id, access, now);
 	if (refusal) throw new AgentActionError(refusal.error, refusal.status);
 	const owner = moduleActionOwner(row.action);
@@ -381,15 +418,8 @@ export async function undoAgentAction(
 		.where(and(eq(agentActions.id, row.id), eq(agentActions.status, "applied")))
 		.returning({ id: agentActions.id });
 	if (claimed.length === 0) throw new AgentActionError("Only applied actions can be undone", 409);
-	try {
-		if (owner && viewer) await undoModuleAction(owner, viewer, row);
-		else await inverse!(env, row, user.id);
-	} catch (error) {
-		await restoreApplied(db, row.id);
-		if (error instanceof AgentActionError) throw error;
-		throw new AgentActionError(errorReason(error), 409);
-	}
-	const inverseActionId = await writeInverseRow(db, row, user.id, now);
+	const counts = await runInverse(env, row, user.id, owner && viewer ? { owner, viewer } : null);
+	const inverseActionId = await writeInverseRow(db, row, user.id, now, counts);
 	await reopenAfterUndo(env, row.suggestionId, owner);
-	return { actionId: row.id, inverseActionId };
+	return { actionId: row.id, inverseActionId, ...(counts ?? {}) };
 }

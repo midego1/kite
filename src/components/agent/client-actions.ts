@@ -34,3 +34,14 @@ export async function fetchAgentDraftState(draftId: string): Promise<AgentDraftS
 	if (!response.ok) throw new Error(result.error || "Could not load draft status");
 	return result;
 }
+
+export async function undoApprovedAgentAction(toolMessageId: string): Promise<Record<string, unknown>> {
+	const response = await authFetch("/api/agent/actions/chat-undo", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ toolMessageId }),
+	});
+	const result = (await response.json()) as Record<string, unknown>;
+	if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Could not undo action");
+	return result;
+}

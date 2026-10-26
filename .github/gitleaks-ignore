@@ -1,4 +1,6 @@
 # Exact Gitleaks fingerprints (commit:file:rule:line) of reviewed false positives.
-# Empty: the reviewed synthetic values in tests carry inline `gitleaks:allow` comments
-# instead, because fingerprints change whenever history is rewritten. The one
-# path-level exception is in .gitleaks.toml.
+# Prefer inline `gitleaks:allow` comments (fingerprints change whenever history is
+# rewritten); use a fingerprint only for a value already pushed in an earlier commit.
+# The path- and value-level exceptions are in .gitleaks.toml.
+# 3e09a0d (PR #117 only): the log field value "accepted_until_2027_01_31" in relay-headers.ts, not a credential; replaced in the next commit.
+3e09a0dda9266bcd8ac635fe63d218b85fbc3c64:src/lib/email/relay-headers.ts:generic-api-key:28

@@ -8,6 +8,14 @@ The Spam Filter switch is under **Settings → Inbox → Spam protection** and i
 
 Use **Report spam** to train a message as spam. Use **Not spam** from the Spam folder to train it as legitimate and return it to Inbox. Learning is scoped to the message's mailbox, only explicit user feedback trains the classifier, and changing a decision reverses the previous training first.
 
+## Sender authentication
+
+SPF, DKIM and DMARC results count only when the server that received the message from the internet checked them; a sender can write any `Authentication-Results` header into a message, so Kite never reads one from the message itself.
+
+- **Cloudflare Email Routing** (Kite on Workers, or a self-hosted server behind the [email relay](self-hosting.md#receiving-mail)): Kite uses the topmost `Authentication-Results` header with Cloudflare's `mx.cloudflare.net` authserv-id and ignores any copy below it. Through the relay it counts only when the relay signed the header map with `INBOUND_WEBHOOK_SECRET`, which relays deployed before this change do not do; redeploy the relay to keep the results.
+- **The built-in SMTP listener, Resend and Amazon SES**: no hop Kite trusts checked the sender, so authentication is unknown. It neither raises nor lowers the score, and automatic reading treats the sender as not verified: invitations show the unverified-sender warning, and trusted-sender and own-domain shortcuts that need a passing DMARC check do not apply.
+- **Imported mail** (Mail import) is not analyzed, so its old headers never count either.
+
 Kite accepts mail before this analysis. Forward-only routing occurs before stored-message filtering and is outside the filter's v1 scope.
 
 ## Phishing signs

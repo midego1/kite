@@ -145,12 +145,12 @@ async function setup(t) {
 		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'a', 1);
 	`);
 	const db = createDb(sqlite);
-	const analyze = (message, provider, headers) =>
+	const analyze = (message, provider, authenticationResults) =>
 		analyzeSpam(db, {
 			mailboxId: "mailbox-a",
 			userId: "owner",
 			envelopeFrom: "bounce@stranger.test",
-			headers,
+			authenticationResults,
 			message,
 			intelligenceProvider: provider,
 		});
@@ -517,10 +517,11 @@ test("saved and written-to contacts are not looked up unless authentication fail
 	await analyze({ ...risky(link), fromAddr: "Friend <friend@stranger.test>" }, provider);
 	await analyze({ ...risky(link), fromAddr: "Bad <bad@stranger.test>" }, provider);
 	assert.deepEqual(requests, []);
-	const forged = await analyze({ ...risky(link), fromAddr: "Friend <friend@stranger.test>" }, provider, {
-		"authentication-results":
-			"mx.cloudflare.net; spf=fail smtp.mailfrom=stranger.test; dmarc=fail header.from=stranger.test",
-	});
+	const forged = await analyze(
+		{ ...risky(link), fromAddr: "Friend <friend@stranger.test>" },
+		provider,
+		"mx.cloudflare.net; spf=fail smtp.mailfrom=stranger.test; dmarc=fail header.from=stranger.test",
+	);
 	assert.equal(of("urlhaus").length, 1, "a forged From of a contact is still checked");
 	assert.equal(of("threatfox").length, 2);
 	assert.ok(ids(forged).includes("urlhaus_url"));

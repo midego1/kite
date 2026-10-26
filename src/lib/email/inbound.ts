@@ -35,6 +35,13 @@ export type InboundQueueMessage = {
 	to: string;
 	rawR2Key: string;
 	headers?: Record<string, string>;
+	/**
+	 * The `Authentication-Results` header the intake hop verified the message with, chosen at
+	 * intake (`src/lib/spam/authentication-results-utils.ts`). Absent when no trusted hop checked
+	 * the sender (the SMTP listener, an unsigned relay header map, Resend, SES): the copies in
+	 * `headers` and the raw message are the sender's and never count.
+	 */
+	authenticationResults?: string | null;
 };
 
 type InboundNotificationInput = {
@@ -223,6 +230,7 @@ export async function processInboundMessage(env: CloudflareEnv, payload: Inbound
 				userId: decision.mailbox.userId,
 				envelopeFrom: payload.from,
 				headers: payload.headers,
+				authenticationResults: payload.authenticationResults ?? null,
 				message: parsed,
 				intelligenceProvider: configuredSpamIntelligenceProvider(env),
 			});

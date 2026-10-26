@@ -13,6 +13,8 @@ export const MAX_PROVIDER_MESSAGE_BYTES = 25 * 1024 * 1024;
  * forwarding and storage then behave exactly as for Cloudflare mail. A provider
  * cannot refuse the message after it has been accepted, so a reject or a size
  * limit simply drops it. Throws on infrastructure failure so the provider retries.
+ * No `authenticationResults` is passed: Kite does not read the provider's verdicts, and the
+ * message's own Authentication-Results headers may be the sender's.
  */
 export async function intakeProviderMail(
 	env: CloudflareEnv,

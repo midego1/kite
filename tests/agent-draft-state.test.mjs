@@ -4,6 +4,7 @@ import { sentDraftState } from "../src/lib/agent/approvals/draft-state-utils.ts"
 import {
 	SENDING_POLL_DELAYS_MS,
 	draftRefreshDelay,
+	isBackoffState,
 	draftStateHeading,
 	isFinalDraftState,
 	isFinishedDraftState,
@@ -137,7 +138,6 @@ test("a scheduled card looks again just after its time, a sending card backs off
 		scheduledAt: "2026-10-26T12:10:00.000Z",
 	};
 	assert.equal(draftRefreshDelay(scheduled, 0, now), 10 * 60_000 + 3_000);
-	assert.equal(draftRefreshDelay({ ...scheduled, scheduledAt: "2026-10-26T11:00:00.000Z" }, 0, now), 1_000);
 	assert.equal(draftRefreshDelay({ ...scheduled, scheduledAt: "2027-10-26T11:00:00.000Z" }, 0, now), 3_600_000);
 	assert.equal(draftRefreshDelay({ ...scheduled, scheduledAt: "not a date" }, 0, now), null);
 	const sending = { state: "sending", messageId: null, subject: null, to: null };
@@ -146,4 +146,28 @@ test("a scheduled card looks again just after its time, a sending card backs off
 	assert.equal(draftRefreshDelay(sending, SENDING_POLL_DELAYS_MS.length, now), null);
 	assert.equal(draftRefreshDelay({ state: "sent", messageId: null, subject: null, to: null }, 0, now), null);
 	assert.equal(draftRefreshDelay({ state: "draft" }, 0, now), null);
+});
+
+test("a scheduled card whose time has passed by the client clock backs off instead of polling every second", () => {
+	const now = Date.parse("2026-10-26T12:00:00.000Z");
+	const due = { state: "scheduled", messageId: null, subject: null, to: null, scheduledAt: "2026-10-26T11:50:00.000Z" };
+	const delays = SENDING_POLL_DELAYS_MS.map((_, attempt) => draftRefreshDelay(due, attempt, now));
+	assert.deepEqual(delays, SENDING_POLL_DELAYS_MS);
+	assert.equal(draftRefreshDelay(due, SENDING_POLL_DELAYS_MS.length, now), null);
+	assert.equal(isBackoffState(due, now), true);
+	// Exactly at the send time counts as due; a moment earlier waits for it (plus the grace).
+	assert.equal(isBackoffState({ ...due, scheduledAt: new Date(now).toISOString() }, now), true);
+	const soon = { ...due, scheduledAt: new Date(now + 5_000).toISOString() };
+	assert.equal(isBackoffState(soon, now), false);
+	assert.equal(draftRefreshDelay(soon, 3, now), 8_000);
+	// A card polling with a clock ten minutes fast makes five requests, not hundreds.
+	let attempt = 0;
+	let requests = 0;
+	for (let delay = draftRefreshDelay(due, attempt, now); delay !== null; delay = draftRefreshDelay(due, attempt, now)) {
+		requests++;
+		attempt += isBackoffState(due, now) ? 1 : 0;
+	}
+	assert.equal(requests, SENDING_POLL_DELAYS_MS.length);
+	assert.equal(isBackoffState({ state: "sending", messageId: null, subject: null, to: null }, now), true);
+	assert.equal(isBackoffState({ state: "sent", messageId: null, subject: null, to: null }, now), false);
 });

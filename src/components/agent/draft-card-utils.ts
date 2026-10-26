@@ -25,16 +25,28 @@ export const SENDING_POLL_DELAYS_MS = [2_000, 5_000, 10_000, 30_000, 60_000];
 const MAX_REFRESH_DELAY_MS = 60 * 60 * 1_000;
 const SCHEDULE_GRACE_MS = 3_000;
 
+/** A scheduled send whose time has passed by this device's clock, which the server may still disagree with. */
+function isOverdueSchedule(state: AgentDraftState, now: number): boolean {
+	return state.state === "scheduled" && Date.parse(state.scheduledAt) <= now;
+}
+
+/**
+ * Whether the card's look at this state counts toward the backoff: a send in flight, or a scheduled send that is
+ * already due by the client's clock. Anything else resets the count.
+ */
+export function isBackoffState(state: AgentDraftState, now: number): boolean {
+	return state.state === "sending" || isOverdueSchedule(state, now);
+}
+
 /**
  * Milliseconds until the card should look at the draft again on its own, or null for none. A scheduled send is
- * looked at once its time has passed; a send in flight is looked at a few times with growing waits
+ * looked at once its time has passed. A send in flight, and a scheduled one the client's clock already calls due
+ * (a fast clock, or a server that is behind), is looked at a few times with growing waits instead of every second
  * (`attempt` counts the looks already made).
  */
 export function draftRefreshDelay(state: AgentDraftState, attempt: number, now: number): number | null {
-	if (state.state === "scheduled") {
-		const wait = Date.parse(state.scheduledAt) - now + SCHEDULE_GRACE_MS;
-		return Number.isFinite(wait) ? Math.min(Math.max(wait, 1_000), MAX_REFRESH_DELAY_MS) : null;
-	}
-	if (state.state === "sending") return SENDING_POLL_DELAYS_MS[attempt] ?? null;
-	return null;
+	if (isBackoffState(state, now)) return SENDING_POLL_DELAYS_MS[attempt] ?? null;
+	if (state.state !== "scheduled") return null;
+	const wait = Date.parse(state.scheduledAt) - now + SCHEDULE_GRACE_MS;
+	return Number.isFinite(wait) ? Math.min(wait, MAX_REFRESH_DELAY_MS) : null;
 }

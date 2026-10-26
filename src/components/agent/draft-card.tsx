@@ -12,6 +12,7 @@ import {
 	SENDING_POLL_DELAYS_MS,
 	draftRefreshDelay,
 	draftStateHeading,
+	isBackoffState,
 	isFinalDraftState,
 	isFinishedDraftState,
 	type FinishedDraftState,
@@ -91,8 +92,10 @@ export function AgentDraftActions({
 			if (value.kind === "unavailable" || (value.kind === "finished" && isFinalDraftState(value.state))) return stop();
 			if (value.kind !== "finished") return;
 			// A scheduled or in-flight send changes without any mail event, so look at it again on a timer.
-			const delay = draftRefreshDelay(value.state, polls, Date.now());
-			polls = value.state.state === "sending" ? polls + 1 : 0;
+			const now = Date.now();
+			const delay = draftRefreshDelay(value.state, polls, now);
+			// Repeated "scheduled" answers past the send time (a fast client clock) back off like "sending".
+			polls = isBackoffState(value.state, now) ? polls + 1 : 0;
 			if (delay !== null) pollTimer = window.setTimeout(load, delay);
 		}
 		function load() {

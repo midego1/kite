@@ -37,6 +37,34 @@ export const MAIL = [
 ];
 export const OPENED = MAIL.at(-1)!;
 
+/** A conversation of three, the last with attachments, for the reader's thread view. Delivered last, so it leads the list. */
+export const THREAD = [
+	{
+		from: `"Sofia Marchetti" <sofia@northwind.test>`,
+		subject: "Launch plan for the new inbox",
+		messageId: "<launch-plan-1@northwind.test>",
+		html: `<p>Hi both,</p><p>Here is the first cut of the launch plan for the new inbox. The beta opens to 200 accounts on Monday, the waitlist follows a week later.</p><p>Sofia</p>`,
+	},
+	{
+		from: `"Daniel Osei" <daniel@northwind.test>`,
+		subject: "Re: Launch plan for the new inbox",
+		messageId: "<launch-plan-2@northwind.test>",
+		inReplyTo: "<launch-plan-1@northwind.test>",
+		html: `<p>Looks good. Can we add a short tour for the command palette? Most beta users will not find it on their own.</p><p>Daniel</p>`,
+	},
+	{
+		from: `"Sofia Marchetti" <sofia@northwind.test>`,
+		subject: "Re: Launch plan for the new inbox",
+		messageId: "<launch-plan-3@northwind.test>",
+		inReplyTo: "<launch-plan-2@northwind.test>",
+		html: `<p>Good call, the tour is in. Attached are the updated plan and the rollout checklist; shout if anything is missing before Monday.</p><p>Sofia</p>`,
+		attachments: [
+			{ filename: "launch-plan.pdf", contentType: "application/pdf", content: Buffer.alloc(48_000, 37) },
+			{ filename: "rollout-checklist.csv", contentType: "text/csv", content: "step,owner\nbeta invites,Sofia\ntour,Daniel\n" },
+		],
+	},
+];
+
 const EVENTS = [
 	{ day: 0, start: "09:00", end: "09:30", title: "Team standup", color: "blue", repeat: "weekdays" },
 	{ day: 0, start: "13:00", end: "14:00", title: "Design review: onboarding", color: "violet" },
@@ -78,6 +106,10 @@ export async function seedDemoData(): Promise<void> {
 	for (const mail of MAIL) {
 		await postInbound(api, { ...mail, to: `"Support" <${SUPPORT_ADDRESS}>`, text: plainText(mail.html) });
 		await waitForMessage(api, mail.subject);
+	}
+	for (const mail of THREAD) {
+		await postInbound(api, { ...mail, to: `"Support" <${SUPPORT_ADDRESS}>`, text: plainText(mail.html) });
+		await waitForMessage(api, mail.subject === THREAD[0]!.subject ? mail.subject : `Re: ${THREAD[0]!.subject}`);
 	}
 	const { domains } = (await (await api.get("/api/domains")).json()) as { domains: { id: string }[] };
 	for (const [localPart, displayName] of [

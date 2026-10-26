@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { SUPPORT_ADDRESS, STORAGE_STATE } from "../../e2e/support/constants";
 import { openMessage } from "../../e2e/support/helpers";
-import { OPENED, seedDemoData } from "./demo-data";
+import { OPENED, THREAD, seedDemoData } from "./demo-data";
 
 test.describe.configure({ mode: "serial" });
 
@@ -42,6 +42,17 @@ async function openLenasMessage(page: Page) {
 		.toBe(true);
 }
 
+/** Opens the three-message thread with every earlier message unfolded, as the reader shows a conversation. */
+async function openThread(page: Page) {
+	await page.goto("/inbox");
+	await openMessage(page, `Re: ${THREAD[0]!.subject}`);
+	await expect(page.getByRole("list", { name: "Participants" })).toBeVisible();
+	const earlier = page.getByRole("region", { name: "Earlier messages in this conversation" });
+	for (const folded of await earlier.locator('button[aria-expanded="false"]').all()) await folded.click();
+	await expect(earlier.locator('button[aria-expanded="false"]')).toHaveCount(0);
+	await expect(page.locator("iframe")).toHaveCount(THREAD.length);
+}
+
 async function capture(page: Page, name: string) {
 	// Playwright's click retries can leave the message list scrolled a little; shots start at its top.
 	await page.evaluate(() => {
@@ -63,7 +74,8 @@ for (const [name, appearance] of [
 ] as const) {
 	test(name, async ({ browser }) => {
 		const page = await open(browser, appearance);
-		await openLenasMessage(page);
+		if (name === "inbox-phone") await openLenasMessage(page);
+		else await openThread(page);
 		await capture(page, name);
 	});
 }

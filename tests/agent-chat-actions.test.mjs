@@ -373,3 +373,19 @@ test("a message moved by another request while the action runs keeps that move w
 	await assert.rejects(undoChatAgentAction(env, OWNER, "tool-race"), /moved again since/);
 	assert.equal(message(database, "m1").status, "trash");
 });
+
+test("an action undone in Activity reports the same undo counts when the chat card catches up", async (t) => {
+	const { database, env } = await setup(t);
+	const moved = await approve(database, env, OWNER, "conv-1", "tool-5", "move_emails", {
+		emailIds: ["m1", "m2"],
+		destination: "trash",
+	});
+	// Undone from Activity while one message had moved again: only the other one goes back.
+	database.db.prepare("UPDATE messages SET status = 'spam' WHERE id = 'm2'").run();
+	const undone = await undoAgentAction(env, OWNER, moved.actionId);
+	assert.deepEqual({ restored: undone.restored, total: undone.total }, { restored: 1, total: 2 });
+	// The chat card catches up and reports the same partial undo instead of a plain "Undone.".
+	const caughtUp = await undoChatAgentAction(env, OWNER, "tool-5");
+	assert.equal(caughtUp.status, "undone");
+	assert.deepEqual(caughtUp.undo, { restored: 1, total: 2 });
+});

@@ -5,8 +5,9 @@ import { agentActions } from "@/db/schema/agent-auto-read";
 import type { SessionUser } from "@/lib/auth/types";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { UNDO_VARIANT_PREFIX, parseActionState } from "./auto-read/actions-utils";
 import { executeAction, undoAgentAction } from "./auto-read/execute";
-import type { ChatActionAudit, MessagePlace } from "./chat-actions-types";
+import type { ChatActionAudit, MessagePlace, UndoCounts } from "./chat-actions-types";
 import {
 	appliedPlaces,
 	chatActionPlan,
@@ -153,6 +154,27 @@ export async function confirmAgentAction(env: CloudflareEnv, user: SessionUser, 
 	}
 }
 
+/** The undo counts an action reports, or none for an action that does not count messages. */
+function undoCounts(counts: Partial<UndoCounts>) {
+	return typeof counts.total === "number" && typeof counts.restored === "number"
+		? { undo: { restored: counts.restored, total: counts.total } }
+		: {};
+}
+
+/** The counts an earlier undo of this action saved on its inverse row, so chat reports the same outcome. */
+async function savedUndoCounts(db: ReturnType<typeof getDb>, actionId: string) {
+	const [inverse] = await db
+		.select({ after: agentActions.after })
+		.from(agentActions)
+		.where(eq(agentActions.variant, `${UNDO_VARIANT_PREFIX}${actionId}`))
+		.limit(1);
+	const after = parseActionState(inverse?.after ?? null);
+	return undoCounts({
+		restored: typeof after?.restored === "number" ? after.restored : undefined,
+		total: typeof after?.total === "number" ? after.total : undefined,
+	});
+}
+
 /**
  * Undoes an approved chat action through the audit row it wrote, with the same rules as Undo in Activity,
  * and marks the chat result `undone`. An action already undone elsewhere (from Activity) only updates the chat.
@@ -170,7 +192,7 @@ export async function undoChatAgentAction(env: CloudflareEnv, user: SessionUser,
 		.limit(1);
 	const undone = action?.status === "undone" ? null : await undoAgentAction(env, user, actionId);
 	// How many messages went back, for actions that count them; the card says when some had moved since.
-	const counts = typeof undone?.total === "number" ? { undo: { restored: undone.restored, total: undone.total } } : {};
+	const counts = undone ? undoCounts(undone) : await savedUndoCounts(db, actionId);
 	const updated = { ...stored, status: "undone", ...counts };
 	await db
 		.update(agentChatMessages)

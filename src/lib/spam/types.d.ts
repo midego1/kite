@@ -17,6 +17,8 @@ export type SpamAnalysisInput = {
 	userId: string;
 	envelopeFrom: string;
 	headers?: Record<string, string>;
+	/** The `Authentication-Results` value a verifying intake hop vouched for; null when none did. */
+	authenticationResults?: string | null;
 	message: ParsedEmail;
 	intelligenceProvider?: SpamIntelligenceProvider;
 };

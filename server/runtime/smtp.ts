@@ -68,6 +68,8 @@ export function startSmtpListener(
 					return;
 				}
 				const from = session.envelope.mailFrom ? session.envelope.mailFrom.address : "";
+				// No verifying hop saw this message, so its Authentication-Results are the sender's own
+				// and intake passes none: authentication stays unknown rather than passed.
 				const headers = parseHeaders(raw);
 				let rejectReason: string | null = null;
 				for (const recipient of session.envelope.rcptTo) {

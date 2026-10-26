@@ -44,7 +44,13 @@ export async function intakeIncomingMail(
 		httpMetadata: { contentType: "message/rfc822" },
 		customMetadata: { from: input.from, to: input.to },
 	});
-	const payload: InboundQueueMessage = { from: input.from, to: input.to, rawR2Key, headers: input.headers };
+	const payload: InboundQueueMessage = {
+		from: input.from,
+		to: input.to,
+		rawR2Key,
+		headers: input.headers,
+		authenticationResults: input.authenticationResults ?? null,
+	};
 	await env.INBOUND_QUEUE.send(payload);
 	return { action: "store", rawR2Key, forwardedTo };
 }

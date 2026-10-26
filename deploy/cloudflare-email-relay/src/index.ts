@@ -1,6 +1,7 @@
 import { createTraceContext } from "../../../src/lib/trace.mjs";
 import { createLogger } from "../../../src/lib/logger.mjs";
 import { recordMetric } from "../../../src/lib/metrics.mjs";
+import { signInbound, signInboundHeaders } from "../../../src/lib/email/inbound-signature.mjs";
 
 const logger = createLogger("email-relay");
 
@@ -28,23 +29,6 @@ type Decision =
 	| { action: "forward"; forwardTo: string | null; forwardHeaders?: Record<string, string> }
 	| { action: "store"; forwardTo: string | null; forwardHeaders?: Record<string, string> };
 
-async function sign(secret: string, raw: ArrayBuffer, from: string, to: string): Promise<string> {
-	const key = await crypto.subtle.importKey(
-		"raw",
-		new TextEncoder().encode(secret),
-		{ name: "HMAC", hash: "SHA-256" },
-		false,
-		["sign"],
-	);
-	const prefix = new TextEncoder().encode(`${from}\n${to}\n`);
-	const data = new Uint8Array(prefix.byteLength + raw.byteLength);
-	data.set(prefix, 0);
-	data.set(new Uint8Array(raw), prefix.byteLength);
-	return Array.from(new Uint8Array(await crypto.subtle.sign("HMAC", key, data)), (byte) =>
-		byte.toString(16).padStart(2, "0"),
-	).join("");
-}
-
 export default {
 	async fetch(request: Request) {
 		if (request.method !== "GET" || new URL(request.url).pathname !== "/health")
@@ -70,7 +54,8 @@ export default {
 		}
 		const trace = createTraceContext();
 		const raw = await new Response(message.raw).arrayBuffer();
-		const headers = Object.fromEntries(message.headers);
+		// Carries Cloudflare's Authentication-Results, so the server trusts it only with its own signature.
+		const headers = JSON.stringify(Object.fromEntries(message.headers));
 		let decision: Decision;
 		try {
 			const serverUrl = env.KITE_URL ?? env.MAILFLARE_URL;
@@ -83,8 +68,15 @@ export default {
 					traceparent: trace.traceparent,
 					"X-Kite-From": message.from,
 					"X-Kite-To": message.to,
-					"X-Kite-Headers": JSON.stringify(headers),
-					"X-Kite-Signature": await sign(env.INBOUND_WEBHOOK_SECRET, raw, message.from, message.to),
+					"X-Kite-Headers": headers,
+					"X-Kite-Signature": await signInbound(env.INBOUND_WEBHOOK_SECRET, raw, message.from, message.to),
+					"X-Kite-Headers-Signature": await signInboundHeaders(
+						env.INBOUND_WEBHOOK_SECRET,
+						raw,
+						message.from,
+						message.to,
+						headers,
+					),
 				},
 				body: raw,
 			});

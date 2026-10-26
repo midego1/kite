@@ -1,12 +1,15 @@
 import type { SpamSignal } from "../types";
 import { SPAM_WEIGHTS } from "../weights";
-import { findHeader } from "./utils";
+import { topmostAuthenticationResults } from "../authentication-results-utils";
 
-export function analyzeAuthentication(headers?: Record<string, string>): SpamSignal[] {
-	const value = findHeader(headers, "authentication-results");
-	if (!value) return [];
-	const authservId = value.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-	if (!/(^|\.)cloudflare\.(com|net)$/.test(authservId)) return [];
+/**
+ * Signals from the `Authentication-Results` header the intake hop vouched for
+ * (`InboundQueueMessage.authenticationResults`), never from the message's own headers: without one
+ * the sender's authentication is unknown and adds nothing.
+ */
+export function analyzeAuthentication(trusted: string | null | undefined): SpamSignal[] {
+	if (!trusted) return [];
+	const value = topmostAuthenticationResults(trusted);
 	const signals: SpamSignal[] = [];
 	for (const method of ["dmarc", "dkim", "spf"] as const) {
 		const result = value.match(new RegExp(`(?:^|[;\\s])${method}=([a-z]+)`, "i"))?.[1]?.toLowerCase();

@@ -123,10 +123,20 @@ test("only the topmost Cloudflare Authentication-Results is trusted", () => {
 		["authentication-results", commentedForgery],
 	]).get("authentication-results");
 	assert.equal(trustedCloudflareAuthenticationResults(joinedCommented), partial);
-	// A comma inside a comment is not a new instance.
+	// A quoted authserv-id does not hide the boundary either.
+	assert.deepEqual(analyzeAuthentication(`${partial}, "mail.attacker.test"; dmarc=pass`), []);
+	// Text in the trusted copy that opens a comment or quote cannot swallow the boundary.
+	const opened = 'mx.cloudflare.net; spf=none smtp.mailfrom="a(b"@stranger.test';
+	assert.deepEqual(analyzeAuthentication(`${opened}, x) "; dmarc=pass`), []);
+	assert.deepEqual(analyzeAuthentication("mx.cloudflare.net; spf=none smtp.mailfrom=a(b@x.test, x); dmarc=pass"), []);
+	// A comma inside the trusted copy only drops what follows it.
 	const commented =
 		"mx.cloudflare.net; dkim=pass header.d=a.test; dmarc=pass (p=NONE, sp=NONE dis=NONE) header.from=a.test";
-	assert.equal(topmostAuthenticationResults(commented), commented);
+	assert.equal(
+		topmostAuthenticationResults(commented),
+		"mx.cloudflare.net; dkim=pass header.d=a.test; dmarc=pass (p=NONE",
+	);
+	assert.deepEqual(ids(analyzeAuthentication(commented)), ["dkim_passed", "dmarc_passed"]);
 });
 
 test("the analyzer counts only what intake vouched for", () => {

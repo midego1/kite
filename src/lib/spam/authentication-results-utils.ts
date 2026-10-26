@@ -7,31 +7,21 @@
 /** Cloudflare Email Routing's authserv-id, `mx.cloudflare.net`. */
 const CLOUDFLARE_AUTHSERV_ID = /(^|\.)cloudflare\.(com|net)$/;
 
-/**
- * A comment (CFWS) in the field, one nesting level deep. An authserv-id may carry comments around
- * it (`mail.example.test (comment);`), so a boundary check that assumes a bare server name misses
- * a sender's copy and keeps its forged results inside the trusted string.
- */
-const COMMENT = String.raw`\((?:[^()]|\([^()]*\))*\)`;
-
-/**
- * Where `Headers` joined the next instance of the field on: `, ` followed by another authserv-id
- * (optionally with comments and a version) and its `;`. A `,` inside one header's comments is
- * followed by `name=value` or `)`, never by `token;`.
- */
-const NEXT_INSTANCE = new RegExp(`,\\s*(?=(?:${COMMENT}\\s*)*[^\\s;,()="]+(?:\\s+\\d+)?(?:\\s*${COMMENT})*\\s*;)`);
-
 /** The authserv-id of one header value, lower-cased, without its optional version. */
 function authservIdOf(value: string): string {
 	return value.split(";", 1)[0]?.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? "";
 }
 
 /**
- * The first instance of the field. `Headers.get` and `Object.fromEntries(headers)` join repeated
- * fields with `, ` in message order, so a sender's copy would otherwise follow the trusted one.
+ * The first instance of the field: everything before the first comma. `Headers.get` and
+ * `Object.fromEntries(headers)` join repeated fields with `, ` in message order, so a sender's copy
+ * would otherwise follow the trusted one. Cutting at any comma, even one in a comment, is
+ * deliberate: the sender chooses how its copy starts (comments, a quoted authserv-id) and can put
+ * text into the trusted copy (addresses), so no parse of where the next copy begins is safe. A
+ * trusted copy with a comma only loses its tail, never gains a sender's results.
  */
 export function topmostAuthenticationResults(value: string): string {
-	return (value.split(NEXT_INSTANCE, 1)[0] ?? "").trim();
+	return (value.split(",", 1)[0] ?? "").trim();
 }
 
 /**

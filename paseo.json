@@ -1,9 +1,9 @@
 {
-  "worktree": {
-    "setup": [
-      "if [ -f \"$PASEO_SOURCE_CHECKOUT_PATH/.dev.vars\" ]; then install -m 600 \"$PASEO_SOURCE_CHECKOUT_PATH/.dev.vars\" .dev.vars; fi",
-      "npm ci",
-      "npm run bundles"
-    ]
-  }
+	"worktree": {
+		"setup": [
+			"if [ -f \"$PASEO_SOURCE_CHECKOUT_PATH/.dev.vars\" ]; then install -m 600 \"$PASEO_SOURCE_CHECKOUT_PATH/.dev.vars\" .dev.vars; fi",
+			"npm ci",
+			"npm run bundles"
+		]
+	}
 }

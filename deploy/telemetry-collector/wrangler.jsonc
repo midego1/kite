@@ -1,8 +1,13 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "kite-telemetry-collector",
+	"name": "kite-telemetry",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-05-20",
+	// The app's default collector (DEFAULT_TELEMETRY_URL in src/lib/telemetry/telemetry-utils.ts). A custom domain
+	// creates the DNS record and certificate; the midego.net zone must be on the deploying Cloudflare account.
+	"routes": [{ "pattern": "kite-telemetry.midego.net", "custom_domain": true }],
+	// Only the custom domain answers; no *.workers.dev address.
+	"workers_dev": false,
 	// Create the database with `npx wrangler d1 create kite-telemetry` and paste its id here.
 	"d1_databases": [
 		{

@@ -1,6 +1,6 @@
 # Kite telemetry collector
 
-A small, standalone Cloudflare Worker that receives the opt-in anonymous usage heartbeat Kite installs send once a day, and answers aggregate statistics for the Kite project. It is not part of the Kite app, its build or its deploy: the project runs one collector, and Kite deployments never need it.
+A small, standalone Cloudflare Worker (`kite-telemetry`) that receives the opt-in anonymous usage heartbeat Kite installs send once a day, and answers aggregate statistics for the Kite project. The Kite maintainer runs it on Cloudflare at `https://kite-telemetry.midego.net`, the app's default (`DEFAULT_TELEMETRY_URL` in `src/lib/telemetry/telemetry-utils.ts`; operators can point `KITE_TELEMETRY_URL` elsewhere). It is not part of the Kite app, its build or its deploy, and Kite deployments never need it.
 
 What Kite sends, when, and how operators turn it off is documented in [Privacy → Usage statistics](../../docs/privacy.md#usage-statistics-opt-in). The sender is `src/lib/telemetry/` in the app.
 
@@ -75,16 +75,20 @@ Anyone can post a heartbeat, so the figures are indicative: a bogus install infl
 
 ## Deploy
 
-The collector is deployed by hand by whoever runs it; it is not in CI.
+The Kite maintainer deploys the collector by hand; it is not in CI, and nothing in this repository deploys it. Prerequisite: the `midego.net` zone is on the Cloudflare account you deploy with, because `wrangler.jsonc` routes the Worker to the custom domain `kite-telemetry.midego.net`.
 
 1. `cd deploy/telemetry-collector && npm install`
 2. `npx wrangler d1 create kite-telemetry` and put the returned `database_id` in `wrangler.jsonc`.
 3. `npm run db:migrate:remote` (or `npm run db:migrate:local` with `npm run dev` to try it locally).
 4. `npx wrangler secret put STATS_TOKEN` with a long random value (`openssl rand -hex 32`). Never commit it.
-5. `npm run deploy`, then attach a custom domain (Workers → `kite-telemetry-collector` → Settings → Domains & Routes), for example `telemetry.<your-domain>`.
-6. Put `https://<that host>/v1/heartbeat` in `DEFAULT_TELEMETRY_URL` in `src/lib/telemetry/telemetry-utils.ts` of the app and release it. Until then the app's default is a `.invalid` placeholder and installs send nothing, unless an operator sets `KITE_TELEMETRY_URL`.
+5. `npm run deploy`. The custom domain route makes Cloudflare create the `kite-telemetry.midego.net` DNS record and its certificate; `workers_dev` is off, so there is no `*.workers.dev` address. The domain must not already have a DNS record of its own.
+6. Check it: `curl -i https://kite-telemetry.midego.net/v1/stats` answers `401` without the token.
 
-Read the statistics with `curl -H "Authorization: Bearer $STATS_TOKEN" https://<that host>/v1/stats`. Do not paste the token into issues, pull requests or chat.
+Installs that opted in start posting at their next 02:00 UTC run once this is live; until then their heartbeats fail and are not retried that day.
+
+To run a collector somewhere else (a fork, a test), change `name`, `routes` and the D1 database here and set `KITE_TELEMETRY_URL=https://<that host>/v1/heartbeat` on the Kite deployments that should use it.
+
+Read the statistics with `curl -H "Authorization: Bearer $STATS_TOKEN" https://kite-telemetry.midego.net/v1/stats`. Do not paste the token into issues, pull requests or chat.
 
 ## Tests
 

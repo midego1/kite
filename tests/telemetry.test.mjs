@@ -60,6 +60,11 @@ const KEYS = [
 	"modules_enabled",
 ];
 const COLLECTOR = "https://collector.example.test/v1/heartbeat";
+const DEFAULT_COLLECTOR = "https://kite-telemetry.midego.net/v1/heartbeat";
+/** Every heartbeat here goes to an injected fetcher; a real network call fails the test. */
+globalThis.fetch = async () => {
+	throw new Error("telemetry tests must not use the network");
+};
 /** Asserts a literal never appears in `text` (a regex, so it reads as text matching, not URL checking). */
 const assertAbsent = (text, literal, message = literal) =>
 	assert.doesNotMatch(text, new RegExp(literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), message);
@@ -172,9 +177,10 @@ test("KITE_TELEMETRY only ever forces statistics off", () => {
 		assert.equal(telemetryForcedOff(value), false, value);
 });
 
-test("the collector URL must be https and the placeholder default sends nothing", () => {
-	assert.equal(telemetryUrl(undefined), null);
-	assert.equal(telemetryUrl(""), null);
+test("the collector URL defaults to the project's collector and an override must be https", () => {
+	assert.equal(telemetryUrl(undefined), DEFAULT_COLLECTOR);
+	assert.equal(telemetryUrl(""), DEFAULT_COLLECTOR);
+	assert.equal(telemetryUrl("  "), DEFAULT_COLLECTOR);
 	assert.equal(telemetryUrl(COLLECTOR), COLLECTOR);
 	for (const value of [
 		"http://collector.example.test/v1/heartbeat",
@@ -305,7 +311,8 @@ test("statistics start off; opting in makes an install id and opting out deletes
 	const status = await getTelemetryStatus({ ...env, KITE_TELEMETRY: "off", KITE_TELEMETRY_URL: COLLECTOR });
 	assert.equal(status.forcedOff, true);
 	assert.equal(status.endpoint, COLLECTOR);
-	assert.equal((await getTelemetryStatus(env)).endpoint, null);
+	assert.equal((await getTelemetryStatus(env)).endpoint, DEFAULT_COLLECTOR);
+	assert.equal((await getTelemetryStatus({ ...env, KITE_TELEMETRY_URL: "http://plain.example.test/" })).endpoint, null);
 });
 
 test("before migration 0069 statistics are off and cannot be turned on", async (t) => {
@@ -351,7 +358,14 @@ test("the heartbeat sends one allowlisted report a day, only when opted in", asy
 
 	assert.equal(await runTelemetryHeartbeat(env, NOW, fetcher), "disabled", "off by default");
 	await setTelemetryEnabled(env, true);
-	assert.equal(await runTelemetryHeartbeat({ DB: sqlite }, NOW, fetcher), "no_endpoint");
+	assert.equal(
+		await runTelemetryHeartbeat(
+			{ DB: sqlite, KITE_TELEMETRY_URL: "https://kite-telemetry.e2e.invalid/" },
+			NOW,
+			fetcher,
+		),
+		"no_endpoint",
+	);
 	assert.equal(await runTelemetryHeartbeat({ ...env, KITE_TELEMETRY: "0" }, NOW, fetcher), "forced_off");
 	assert.equal(requests.length, 0);
 
@@ -433,4 +447,15 @@ test("an opt-out while the counts are read stops the report", async (t) => {
 		assert.equal(outcome, "disabled", label);
 		assert.equal(requests.length, 0, label);
 	}
+});
+
+test("without an override the heartbeat goes to kite-telemetry.midego.net", async (t) => {
+	const sqlite = await setup(t);
+	await setTelemetryEnabled({ DB: sqlite }, true);
+	const { requests, fetcher } = recorder();
+	assert.equal(await runTelemetryHeartbeat({ DB: sqlite }, NOW, fetcher), "sent");
+	assert.deepEqual(
+		requests.map(({ url }) => url),
+		[DEFAULT_COLLECTOR],
+	);
 });

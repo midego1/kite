@@ -45,8 +45,8 @@ test("the owner turns anonymous usage statistics on and off in Admin General; no
 
 	await toggle.click();
 	await expect(toggle).toHaveAttribute("aria-checked", "true");
-	// The e2e server sets no collector, and the built-in address is still a placeholder: nothing is sent.
-	await expect(card.locator("[data-telemetry-status]")).toContainText("no collector address");
+	// The e2e server points KITE_TELEMETRY_URL at a `.invalid` host: nothing is sent.
+	await expect(card.locator("[data-telemetry-status]")).toContainText("not a usable https address");
 	const on = await (await api.get("/api/admin/telemetry")).json();
 	expect(on).toMatchObject({ enabled: true, forcedOff: false, available: true, endpoint: null });
 	expect(on.installId).toMatch(UUID);

@@ -32,6 +32,6 @@ export type TelemetryStatus = {
 	installId: string | null;
 	/** UTC day of the last heartbeat attempt, whether or not the collector got it. */
 	lastSentDay: string | null;
-	/** Collector URL, or null when this build has none (nothing is sent). */
+	/** Collector URL, or null when `KITE_TELEMETRY_URL` is unusable (nothing is sent). */
 	endpoint: string | null;
 };

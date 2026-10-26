@@ -83,7 +83,7 @@ export function telemetryStatusText(status: TelemetryStatus | null): string {
 	if (!status.available) return "Apply the pending database update first";
 	if (status.forcedOff) return "Off: turned off by the KITE_TELEMETRY setting of this deployment";
 	if (!status.endpoint)
-		return status.enabled ? "On, but this version of Kite has no collector address, so nothing is sent" : "Off";
+		return status.enabled ? "On, but KITE_TELEMETRY_URL is not a usable https address, so nothing is sent" : "Off";
 	if (!status.enabled) return "Off";
 	return status.lastSentDay ? `On, last attempted on ${status.lastSentDay} (UTC)` : "On, nothing sent yet";
 }

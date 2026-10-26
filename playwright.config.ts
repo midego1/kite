@@ -55,6 +55,8 @@ export default defineConfig({
 			STORAGE_ALLOW_INSECURE_ENDPOINT: "1",
 			// Sends both abuse.ch APIs to the fake on 127.0.0.1 (e2e/support/fake-abuse-ch.ts); nothing reaches abuse.ch.
 			ABUSE_CH_TEST_ORIGIN: `http://127.0.0.1:${FAKE_ABUSE_CH_PORT}`,
+			// A `.invalid` host turns sending off, so no e2e run can post usage statistics to the real collector.
+			KITE_TELEMETRY_URL: "https://kite-telemetry.e2e.invalid/v1/heartbeat",
 			// Storage credentials are only ever saved encrypted, so the storage spec needs a key; invented, e2e only.
 			APP_ENCRYPTION_KEY: "e2e-only-invented-encryption-key-not-a-secret-0123456789",
 		},

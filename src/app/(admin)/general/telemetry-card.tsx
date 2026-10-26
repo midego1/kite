@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { SOURCE_CODE_URL } from "@/lib/source-code";
-import { TELEMETRY_FIELDS } from "@/lib/telemetry/telemetry-utils";
+import { TELEMETRY_FIELDS, telemetryUrl } from "@/lib/telemetry/telemetry-utils";
 import type { TelemetryStatus } from "@/lib/telemetry/types";
 import { loadTelemetryStatus, saveTelemetryEnabled, telemetryStatusText } from "./utils";
 
+const DEFAULT_ENDPOINT = telemetryUrl(undefined);
 const DOCS_URL = `${SOURCE_CODE_URL}/blob/main/docs/privacy.md#usage-statistics-opt-in`;
 
 /** The owner's opt-in for the daily anonymous heartbeat. Off by default; `KITE_TELEMETRY=0` locks it off. */
@@ -79,7 +80,10 @@ export function TelemetryCard() {
 					</ul>
 					{status?.endpoint && (
 						<p>
-							Sent to <code>{status.endpoint}</code>.
+							Sent to <code>{status.endpoint}</code>.{" "}
+							{status.endpoint === DEFAULT_ENDPOINT
+								? "This collector is run by the Kite maintainer on Cloudflare."
+								: "Set by KITE_TELEMETRY_URL on this deployment."}
 						</p>
 					)}
 					{status?.installId && (

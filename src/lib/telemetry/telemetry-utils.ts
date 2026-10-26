@@ -5,10 +5,10 @@ import type { HeartbeatCounts, HeartbeatPayload, TelemetryRuntime } from "./type
 const TELEMETRY_SCHEMA_VERSION = 1;
 
 /**
- * Where heartbeats go unless `KITE_TELEMETRY_URL` says otherwise. PLACEHOLDER: `.invalid` never resolves (RFC 2606),
- * so until the project's collector address is filled in here nothing is sent, even when the owner opts in.
+ * Where heartbeats go unless `KITE_TELEMETRY_URL` says otherwise: the collector in `deploy/telemetry-collector/`,
+ * run by the Kite maintainer on Cloudflare.
  */
-const DEFAULT_TELEMETRY_URL = "https://telemetry.kite.invalid/v1/heartbeat";
+const DEFAULT_TELEMETRY_URL = "https://kite-telemetry.midego.net/v1/heartbeat";
 
 /** Audit actions of the owner's choice, listed in Admin → Activity. */
 export const TELEMETRY_AUDIT_ACTIONS = ["telemetry.enabled", "telemetry.disabled"] as const;
@@ -55,7 +55,10 @@ export function telemetryForcedOff(value: string | undefined): boolean {
 	return ["0", "false", "off", "no"].includes((value ?? "").trim().toLowerCase());
 }
 
-/** The collector URL: `KITE_TELEMETRY_URL` when it is an https URL, else the default. Null when it cannot be reached. */
+/**
+ * The collector URL: `KITE_TELEMETRY_URL` when set, else the default. Null (nothing is sent) when the override is not
+ * an https URL or names a `.invalid` host, a reserved name that never resolves (RFC 2606), which the e2e server uses.
+ */
 export function telemetryUrl(override: string | undefined): string | null {
 	const candidate = override?.trim() || DEFAULT_TELEMETRY_URL;
 	let url: URL;

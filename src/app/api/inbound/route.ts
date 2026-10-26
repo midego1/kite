@@ -4,6 +4,7 @@ import { intakeIncomingMail } from "@/lib/email/intake";
 import { readRelayHeader, verifyInboundSignature } from "@/lib/email/intake-signature";
 import { inboundAttachmentLimitReasonFromRaw } from "@/lib/email/inbound-attachments";
 import { readRelayHeaders } from "@/lib/email/relay-headers";
+import { recordRelaySignatureProblem } from "@/lib/alerts/relay-signature";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,15 @@ export async function POST(request: Request) {
 	const attachmentLimitReason = await inboundAttachmentLimitReasonFromRaw(raw);
 	if (attachmentLimitReason) return NextResponse.json({ action: "reject", reason: attachmentLimitReason });
 
-	const { headers, authenticationResults } = await readRelayHeaders(secret, request.headers, raw, from, to);
+	const {
+		headers,
+		authenticationResults,
+		signature: headersSignature,
+	} = await readRelayHeaders(secret, request.headers, raw, from, to);
+	if (headersSignature !== "valid")
+		await recordRelaySignatureProblem(env, headersSignature).catch((error) =>
+			console.error("Recording the relay headers signature problem failed", error),
+		);
 
 	let forwardTo: string | null = null;
 	let forwardHeaders: Record<string, string> = {};

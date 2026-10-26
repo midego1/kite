@@ -6,11 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [2026.10.26.5] - 2026-10-26
-
 ### Added
 
 - Design specs for AI writing (a writing style profile learned from sent mail, AI in the composer and editable per-task instructions), thread summaries (a Summarize button and optional one-line summaries in the message list), search by meaning, and the assistant by email. They are proposals for roadmap milestones 27 to 30 in `docs/specs/` and change nothing in Kite yet.
+
+## [2026.10.26.5] - 2026-10-26
+
+### Security
+
+- A DKIM signature now verifies the sender only when it comes from the From address's own domain (or the same organization); another domain's signature alone no longer counts as authenticated. A passing DMARC check verifies the sender even when SPF failed, as for forwarded mail, and the failed SPF check still shows as a warning sign. This applies to automatic reading's trust in contacts and marked senders, the unverified-sender warning on invitations and Money Watch's unverified mark.
+- Shared hosting names such as `github.io`, `myshopify.com`, `amazonaws.com` and `me.uk` count as separate owners per subdomain, for DKIM alignment and for link checks.
+- SPF now reads the check of the envelope sender rather than the HELO check that Cloudflare reports first.
+- Passes count only from Cloudflare's own `Authentication-Results` copy, which Kite tells apart from the sender's by comparing it with the raw message; whenever that is ambiguous, the results count as unverified, never as passed. This relies on Cloudflare adding its header to every message, as Email Routing does.
+- Mail received through Amazon SES now uses the SPF, DKIM and DMARC verdicts SES reports for it, once the SNS notification's signature is verified.
+- The email relay's header signature now uses a key derived from `INBOUND_WEBHOOK_SECRET`. Update the relay: the earlier signature is accepted until the first release on or after 2027-01-31 and raises a low-priority operational alert, and a request without a header signature, or with a wrong one, raises an "update the relay" alert.
 
 ## [2026.10.26.4] - 2026-10-26
 

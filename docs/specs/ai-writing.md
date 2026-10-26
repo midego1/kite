@@ -1,6 +1,6 @@
 # Spec: AI writing (style profile, AI in the composer, editable prompts)
 
-Status: **proposed**, not yet approved. Written against `main` at `5c220ba` (release `2026.10.26.1`). Roadmap: proposed [milestone 27](../../ROADMAP.md#milestone-27-ai-writing-proposed). Ideas adopted from [Zero](https://github.com/Mail-0/Zero) (MIT), with Michiel's approval; see section 3 for what is taken and what is not.
+Status: **proposed**; its open questions were decided by Michiel on 2026-10-26 (section 15). Written against `main` at `5c220ba` (release `2026.10.26.1`). Roadmap: proposed [milestone 27](../../ROADMAP.md#milestone-27-ai-writing-proposed). Ideas adopted from [Zero](https://github.com/Mail-0/Zero) (MIT), with Michiel's approval; see section 3 for what is taken and what is not.
 
 Migrations: the last one on `main` is `0068_add_abuse_ch_auth_key.sql` (journal `idx` 71). This spec claims **`0069_add_ai_writing.sql`**. Three sibling specs are written at the same time and claim the numbers after it: [thread summaries](thread-summaries.md) `0070`, [semantic search](semantic-search.md) `0071` and [assistant by email](assistant-by-email.md) `0072`. Whichever Mission starts first takes the next free number and the others shift; keep `tests/migration-order.test.mjs` passing.
 
@@ -31,7 +31,7 @@ Non-goals:
 | Automatic reply drafts | `buildReplyDraftPrompt(instructions, thread)` in `src/lib/agent/jobs/draft-prompt-utils.ts` (24,000-character thread window, `DRAFT_SYSTEM_MARKER`), `generateReplyDraft` in `draft-generation.ts`, used by the legacy auto-draft job and by triage reply suggestions (`auto-read/reply-suggestion.ts`) | Gets the reviewer's style line and the drafting instructions. |
 | Untrusted blocks | `buildTriagePrompt` and `stripDelimiters` in `src/lib/agent/auto-read/triage-utils.ts`: `<<<EMAIL id=… nonce=…>>> … <<<END nonce>>>`, NFKC, invisible characters and delimiter look-alikes removed | Extracted into a shared helper (section 5.4) so the composer and the sibling specs wrap mail the same way. |
 | Spend | `withReservedSpend`, `reserveAiSpend`, `reconcileAiSpend` in `auto-read/spend.ts`; install cap `app_settings.agent_daily_spend_cap_micros` (default 2,000,000 micros, $2/day), mailbox cap `mailbox_agent_settings.daily_spend_cap_micros`, `UNKNOWN_RATES_INPUT_TOKEN_CAP` when rates are missing | Composer calls reserve before they run. |
-| Opt-in for external providers | `selectAutoReadModel` (`auto-read/auto-read-model.ts`) re-reads the provider and `agentExternalAutoReadAllowed` on every request | See section 5.6 for how interactive calls differ. |
+| Opt-in for external providers | `selectAutoReadModel` (`auto-read/auto-read-model.ts`) re-reads the provider and `agentExternalAutoReadAllowed` on every request | The composer requires it too, through `selectInteractiveModel` (section 5.6). |
 | Rate limit | `AGENT_RATE_LIMIT` (120 per 60 s), `allowAgentRequest(env, key)` (`src/lib/agent/rate-limit.ts`) | Key `compose:<userId>`. |
 | Mailbox settings | `mailbox_agent_settings` (`src/db/schema/index.ts`): `instructions` (4,000 characters), `model_id`, `daily_spend_cap_micros`, …; read whole-row by `createAgentChatStream` (`chat.ts`) and `readMailboxAgentSettings` (`auto-read/mailbox-settings.ts`) | New instruction columns. Whole-row reads must survive a database that has not applied the migration yet (section 7.3). |
 | Personal assistant settings | `GET`/`PATCH /api/settings/assistant` (`users.agent_max_steps`, migration 0058) | The style opt-in sits next to Max steps, but in a new table (section 4.6). |
@@ -137,7 +137,7 @@ New table `writing_style_profiles` in `src/db/schema/agent-writing.ts` (merged i
 
 Concurrency: two sends at once must not lose an update silently. The update reads the row, computes the new state and writes `UPDATE … SET …, version = version + 1 WHERE user_id = ? AND mailbox_id = ? AND version = ?`; on zero changes it re-reads and retries up to 3 times, then drops the sample (logged). A missing row is inserted with `ON CONFLICT DO NOTHING` and then retried as an update.
 
-The personal opt-in lives in a new table `user_ai_settings` (`user_id` text primary key, FK `users` cascade; `writing_style_enabled` boolean, default 0; `updated_at`), not in `users`. A new `users` column would break every whole-row read of `users` between a deploy and the migration (deploys never apply migrations); a separate table has no such risk and is where [assistant by email](assistant-by-email.md) adds its personal settings.
+The personal opt-in lives in a new table `user_ai_settings` (`user_id` text primary key, FK `users` cascade; `writing_style_enabled` boolean, default 0; the four personal instruction fields of section 6.1; `updated_at`), not in `users`. A new `users` column would break every whole-row read of `users` between a deploy and the migration (deploys never apply migrations); a separate table has no such risk and is where [assistant by email](assistant-by-email.md) adds its personal settings.
 
 Migration `0069_add_ai_writing.sql` (hand-written, journal entry, `--> statement-breakpoint` between statements) creates the three tables (`writing_style_profiles`, `user_ai_settings` and `composer_sends`, 4.2) and adds the three instruction columns of section 6 to `mailbox_agent_settings`.
 
@@ -185,11 +185,11 @@ API (session routes through `requireSessionUser`, never `requireUser`; mutations
 
 ### 5.1 What the user does
 
-A **Write with Kite** button (Sparkles icon, tooltip "Write with Kite (⌘J)") in the composer toolbar, passed by `compose-form.tsx` through `toolbarEnd`. It shows only when the assistant is available (`useAssistantAvailability`), a provider is configured and the user can send from the selected mailbox.
+A **Write with Kite** button (Sparkles icon, tooltip "Write with Kite (⌘J)") in the composer toolbar, passed by `compose-form.tsx` through `toolbarEnd`. It shows only when the assistant is available (`useAssistantAvailability`), a provider is configured, an external provider is allowed (5.6) and the user can send from the selected mailbox.
 
 - **No selection, empty body:** a panel above the toolbar (positioned like the link popover) with "What should this email say?" (at most 2,000 characters) and **Write**. In a reply, Kite reads the message being replied to itself.
 - **No selection, body has text:** the panel offers the rewrite actions for the whole body (without the signature and the quote).
-- **Selection:** a menu with **Shorter**, **Longer**, **More formal**, **More casual**, **Fix spelling and grammar**, **Translate to ▸** (the browser's language, English, Dutch, German, French, Spanish, and **Other…**, at most 40 characters) and **Custom…** (an instruction of at most 300 characters).
+- **Selection:** a menu with **Shorter**, **Longer**, **More formal**, **More casual**, **Fix spelling and grammar**, **Translate to ▸** (the browser's language, English, Dutch, German, French, Spanish, and **Other…**, at most 40 characters) and **Custom…** (an instruction of at most 300 characters). Translate **keeps the original**: the translation is inserted in place of the selection and the original text follows it in a `<blockquote>` (the editor's existing quote block), so the recipient can read both; the user can delete either part.
 
 The answer streams into a **preview** in the panel, never straight into the editor. When it finishes, the panel shows **Replace** (or **Insert** for Write), **Try again** and **Discard**; Esc or Discard aborts the request. After Replace, a toast offers **Undo**, which restores the editor HTML captured just before the change. Warnings from the output checks (5.3) show in the panel. While a request runs, the user can keep typing; if the selected text changed in the meantime, Replace turns into **Insert at cursor** with a note.
 
@@ -224,7 +224,7 @@ Request (zod, `readJsonBody(request, 32_000)`):
 }
 ```
 
-Checks, in order: session (`getCurrentUser`, 401), `hasValidSessionMutationOrigin` (403), `allowAgentRequest(env, "compose:<userId>")` (429), body (400), `getAgentEnabled` (403 "Assistant is disabled"), mailbox access `canSendOnBehalf` (404 so ids do not leak), `replyToMessageId` readable under the same rule as `get_email` (`ownMessage` in `tools.ts`: in this mailbox, not another user's draft; a `screening` message is readable here because the user opened it), provider configured, spend reservation (429 "Daily AI spend cap reached").
+Checks, in order: session (`getCurrentUser`, 401), `hasValidSessionMutationOrigin` (403), `allowAgentRequest(env, "compose:<userId>")` (429), body (400), `getAgentEnabled` (403 "Assistant is disabled"), the external-provider opt-in (403 `external_provider_not_allowed`, section 5.6), mailbox access `canSendOnBehalf` (404 so ids do not leak), `replyToMessageId` readable under the same rule as `get_email` (`ownMessage` in `tools.ts`: in this mailbox, not another user's draft; a `screening` message is readable here because the user opened it), provider configured, spend reservation (429 "Daily AI spend cap reached").
 
 Response: `application/x-ndjson`, `Cache-Control: no-store`, the same framing as chat:
 
@@ -275,13 +275,16 @@ The task line, not the model, decides what kind of change is made, and the custo
 
 - Each request reserves its estimated cost with `reserveAiSpend` (source `compose`, `mailboxId`, no `jobId`) against the install cap and the mailbox cap, exactly as triage does. Because `streamText` is not a single awaited call, `compose.ts` reserves before the call and reconciles in `onFinish` with the reported usage; on abort or error it reconciles with the usage reported so far when there is any and otherwise keeps the estimate, so the cap errs on the side of stopping.
 - Rate limit: `AGENT_RATE_LIMIT` with key `compose:<userId>`, a separate bucket from chat.
+- **Chat reserves too** (decision 4). `createAgentChatStream` (`chat.ts`) today only records usage with `recordAiUsage`. It changes to reserve before every step and reconcile after it: `prepareStep` calls `reserveAiSpend` (source `chat`, the chat's `mailboxId`) with the step's prompt size and `maxOutputTokens` 1,200, and `onStepFinish` reconciles with the step's usage. A refused reservation ends the turn with "Daily AI spend cap reached" (the steps already taken stay in the conversation). The same pure estimate and the same caps apply as for triage and the composer, so the install cap now really covers every AI request Kite makes.
 - Requests count in `/ai-usage` under the new source `compose`.
 
 ### 5.6 Provider re-check and the external opt-in
 
-Composer requests resolve the provider and model on every request through a new `selectInteractiveModel(env, modelId)` (`src/lib/agent/interactive-model.ts`): `getAgentEnabled`, then `getAgentModel`, so switching the provider or turning the assistant off applies to the next request, including Try again.
+Composer requests resolve the provider and model on every request through a new `selectInteractiveModel(env, modelId)` (`src/lib/agent/interactive-model.ts`): `getAgentEnabled`, then `getAgentModel`, then the external-provider opt-in, so switching the provider, turning the assistant off or withdrawing the opt-in applies to the next request, including Try again.
 
-The automatic-reading opt-in (`agentExternalAutoReadAllowed`) exists because automatic reading sends **every** incoming message to an external provider without anyone clicking. A composer request is started by a click and sends the user's own draft and the one message they are answering, like chat, which needs no opt-in today. This spec therefore recommends that the opt-in does **not** gate composer requests, while the background features in the sibling specs (one-line summaries, embeddings with an external embedding provider, assistant by email) go through `selectAutoReadModel` and do need it. The brief for this spec asked for the opt-in re-check in the composer as well; that is open question 1. Either answer is one line in `selectInteractiveModel`.
+**Composer requests require the external-provider opt-in** (decision 1): with a `compatible` provider (Anthropic, OpenAI-compatible presets, custom), a request runs only while the primary admin's `agentExternalAutoReadAllowed` is on, checked again on every request, as `selectAutoReadModel` does for automatic reading. Without it the button is hidden and the route answers 403 `external_provider_not_allowed`. Workers AI needs no opt-in. Because the switch now covers more than automatic reading, its label in the install-wide settings becomes **Allow an external AI provider for automatic reading, the composer and summaries** (same column, no migration). The same rule applies to every AI feature in the sibling specs: the Summarize button and its translation ([thread summaries](thread-summaries.md)), one-line summaries, embeddings and search queries with a non-Cloudflare provider ([semantic search](semantic-search.md)) and the [assistant by email](assistant-by-email.md).
+
+**Follow-up, not in this milestone:** chat sends mail content to the same provider and does not check the opt-in today. It should be aligned the same way later, through `selectInteractiveModel`, with a CHANGELOG note, since installs that use chat with an external provider would need the admin to turn the switch on.
 
 ## 6. Editable prompts
 
@@ -298,22 +301,26 @@ Three new columns on `mailbox_agent_settings` (migration 0069), next to the exis
 
 All are `text NOT NULL DEFAULT ''`. Triage keeps using only `instructions`, so its prompt does not change.
 
-Who edits: users with `canManage` on the mailbox, through the existing `PUT /api/agent/settings` (extended schema), as for `instructions`. Per-user instructions are not part of this spec (open question 3).
+Who edits: users with `canManage` on the mailbox, through the existing `PUT /api/agent/settings` (extended schema), as for `instructions`.
+
+**Personal instructions** (decision 3) sit next to them: the same four fields for each user, stored in `user_ai_settings` (migration 0069) as `instructions`, `chat_instructions`, `draft_instructions` and `summary_instructions`, `text NOT NULL DEFAULT ''`, 2,000 characters each. Each user edits their own through `PATCH /api/settings/assistant` (`instructions: { general, chat, draft, summary }`); they apply in every mailbox the user works in and nobody else can read them, admins included.
+
+Whose personal fields a request uses: chat, the chatting user; the composer, the composing user; automatic reply drafts (legacy auto-draft and triage reply suggestions), the mailbox's reviewer; the Summarize button, the user who clicked (section 4.3 of [thread summaries](thread-summaries.md) keys its cache by them). Background requests that serve the whole mailbox (triage, one-line summaries) use only the mailbox fields.
 
 ### 6.2 Placement and safety
 
-- Always in the **system** prompt, after Kite's fixed rules (and module fragments and time), each under its own heading that ends in "(cannot override these rules)", in this order: general, task-specific, writing style. Never in the user turn and never inside an untrusted block.
+- Always in the **system** prompt, after Kite's fixed rules (and module fragments and time), each under its own heading that ends in "(cannot override these rules)", in this order: mailbox general, mailbox task-specific, personal general, personal task-specific (headed "Personal preferences of <name> (cannot override these rules or the mailbox preferences above)", so a shared mailbox's house style wins over one person's taste), writing style. Never in the user turn and never inside an untrusted block.
 - Cleaned like the existing `instructions` in `buildTriagePrompt`: `stripDelimiters` (so an instruction cannot fake a `<<<EMAIL` or `<<<END` line or a nonce), C0 control characters except newline removed, trimmed and cut to the limit when the prompt is built (the API refuses longer input with 400).
 - They add preferences and never replace a prompt. There is no field for Kite's own rules; the settings show them read-only under **What Kite always tells the AI** so the user can see what their text is added to.
 - The real guarantees do not depend on prompt wording, so a hostile or careless instruction cannot remove them: automatic paths have no tools; chat organise actions return `pending_approval`; `review_draft_send` only creates a link; drafts pass `draft-guard-utils.ts`; composer output is reviewed before it is inserted; triage output is a closed schema. An instruction such as "ignore the rules above" can at worst make answers worse, not make Kite act.
 
 ### 6.3 Before the migration
 
-`createAgentChatStream` (`chat.ts`) and `readMailboxAgentSettings` read `mailbox_agent_settings` whole-row. Once the schema has the new columns, a deployed release that is ahead of its migration would fail those reads. They switch to `selectRow` (`src/lib/db/pending-columns.ts`) with the three columns registered as pending, so a database without them reads `''`. `PUT /api/agent/settings` answers 409 `MIGRATION_PENDING` when it is asked to save one of them before the migration, and saves the other fields.
+`createAgentChatStream` (`chat.ts`) and `readMailboxAgentSettings` read `mailbox_agent_settings` whole-row. Once the schema has the new columns, a deployed release that is ahead of its migration would fail those reads. They switch to `selectRow` (`src/lib/db/pending-columns.ts`) with the three columns registered as pending, so a database without them reads `''`. `PUT /api/agent/settings` answers 409 `MIGRATION_PENDING` when it is asked to save one of them before the migration, and saves the other fields. Personal fields are read from `user_ai_settings`; a missing table reads as empty, and `PATCH /api/settings/assistant` answers 409 for them until the migration is applied.
 
 ### 6.4 UI
 
-The assistant **Settings** view groups the four fields under **Instructions** as an accordion (General open by default), each with a character counter. The **Drafting and composer** field shows a hint: "Also used when Kite writes reply drafts on its own." Saving is the existing **Save** of that section.
+The assistant **Settings** view groups the four mailbox fields under **Instructions for this mailbox** as an accordion (General open by default), each with a character counter, and the four personal fields under **My instructions** in the personal section next to Max steps. The **Drafting and composer** field shows a hint: "Also used when Kite writes reply drafts on its own." Saving is the existing **Save** of that section.
 
 ## 7. Security and privacy
 
@@ -357,6 +364,7 @@ Nothing here is Workers-specific. The composer route uses `getEnv()`, `getDb`, `
 
 - No install-wide flag of its own: everything sits behind the existing **assistant enabled** switch (`agent_enabled`). The style profile is off per user until they opt in; the composer button appears for everyone who can use chat; the instruction fields are empty, which changes nothing.
 - The CHANGELOG names migration 0069 and links the assistant settings with an app path (`docs/releasing.md`) for the opt-in. Until the migration is applied, the composer works (it needs no table), the instruction fields answer `MIGRATION_PENDING` and the style toggle is hidden.
+- The admin switch's new label (5.6) ships with the composer; the CHANGELOG says that the composer, like automatic reading, needs it for an external provider.
 - Order inside the Mission: editable prompts first (smallest, and composer and summaries use them), then the composer, then the style profile.
 
 ## 12. Tests
@@ -366,9 +374,11 @@ Nothing here is Workers-specific. The composer route uses `getEnv()`, `getDb`, `
 - `writing-style-measure.test.mjs`: each metric on fixtures in English, Dutch, German, French and Spanish; quote, `On … wrote:` and signature stripping; greeting and sign-off detection with names replaced by `{name}`; addresses, URLs and digits removed from forms; messages under 5 words skipped; `formalAddress` ignores English and sentence-initial German `Sie`.
 - `writing-style-welford.test.mjs`: running mean and variance equal a two-pass computation up to 300 samples; above the cap, recent values dominate as specified; top-K keeps 8 and evicts the least frequent.
 - `writing-style-describe.test.mjs`: `null` under 10 samples; thresholds produce the expected sentences; output ≤ 500 characters; no `{name}` without the explanation line.
-- `compose-prompt.test.mjs`: the task line per action; instructions and style placed in `system` after the fixed rules; delimiters inside instructions, the draft text and the source message are stripped; formality line left out for formal and casual; no style for grammar and translate.
+- `compose-prompt.test.mjs`: the task line per action; instructions and style placed in `system` after the fixed rules; delimiters inside instructions, the draft text and the source message are stripped; formality line left out for formal and casual; no style for grammar and translate; mailbox fields before personal fields, each under its heading.
 - `untrusted-utils.test.mjs`: `buildTriagePrompt` output is byte-for-byte the pre-refactor fixture.
-- `agent-prompts-unchanged.test.mjs`: with no profile and empty task instructions, the chat, triage and draft prompts equal today's.
+- `agent-prompts-unchanged.test.mjs`: with no profile and empty task and personal instructions, the chat, triage and draft prompts equal today's.
+- `interactive-model.test.mjs`: a compatible provider without the opt-in is refused on every request; Workers AI is not.
+- A `SqliteDatabase` test for chat spend: a turn whose second step would pass the install cap stops after the first step, and every step's reservation is reconciled.
 - `compose-output.test.mjs`: Markdown stripped, meta prefix refused, unknown addresses and links removed with warnings, length caps.
 - `writing-style-backfill.test.mjs`: only messages with a `composer_sends` row are learned; `ai_assisted` rows, agent drafts and mail without a row are skipped.
 - Backup tests extended for the two tables; `tests/queue-log-context.test.mjs` for `agent.style_backfill`.
@@ -384,8 +394,11 @@ The spec configures the fake model as a `custom` compatible provider (`AI_ALLOW_
 5. Mailbox **Drafting and composer** instructions: the recorded request has them in the system message, outside the nonce blocks.
 6. Writing style: opt in, send 10 messages through the composer, check the settings show a description; the next composer request contains it in the system message; Reset removes it and the next request has none.
 7. Spend cap: set the install cap to 1 micro; the button answers "Daily AI spend cap reached" and the fake model records no request.
-8. Assistant off: the button is hidden and the route answers 403.
+8. Assistant off: the button is hidden and the route answers 403. With the fake model as a compatible provider and the external opt-in off: the button is hidden and the route answers 403 `external_provider_not_allowed` with no request recorded.
 9. The panel in Kite, Classic and dark mode (computed colour from the `blue-*` mapping; screenshots only on failure).
+10. **Translate to ▸ Dutch** on a selection: the translation replaces the selection and the original follows it in a blockquote.
+11. Personal **Drafting and composer** instructions: the recorded system message has them after the mailbox's, under the personal heading; another user's composer request does not.
+12. Chat with the install cap set so one step fits: the turn ends with "Daily AI spend cap reached" and `ai_usage` holds reconciled rows only.
 
 `e2e/13-security.spec.ts` picks up the new routes and checks each answers 401 without a session.
 
@@ -395,22 +408,24 @@ Work on `mission/ai-writing`. Every feature ends with `npm run check`, `npm run 
 
 | Feature | Work | Acceptance | Size |
 | --- | --- | --- | --- |
-| **A. Editable prompts** | Migration 0069 (all of it), `selectRow` for `mailbox_agent_settings`, extended `PUT /api/agent/settings`, placement in chat and draft prompts, `untrusted-utils.ts` refactor, settings UI | Fields save and reload; an empty field changes no prompt; a stale database answers `MIGRATION_PENDING` and chat still works | 1–2 days |
-| **B. Composer** | `/api/agent/compose`, `compose-prompt-utils.ts`, `interactive-model.ts`, streaming reservation, output checks, the toolbar panel and menu, `aiAssisted`, fake-model scenarios, e2e 1–5, 7–9 | Section 5 behaviour; quote and signature untouched; nothing stored but `ai_usage` | 3–4 days |
+| **A. Editable prompts and chat spend** | Migration 0069 (all of it), `selectRow` for `mailbox_agent_settings`, extended `PUT /api/agent/settings` and `PATCH /api/settings/assistant` (personal fields), placement in chat and draft prompts, `untrusted-utils.ts` refactor, settings UI, per-step spend reservation in chat | Fields save and reload; empty fields change no prompt; mailbox fields come before personal ones; chat stops at the caps; a stale database answers `MIGRATION_PENDING` and chat still works | 2–3 days |
+| **B. Composer** | `/api/agent/compose`, `compose-prompt-utils.ts`, `interactive-model.ts` (with the opt-in), the switch's new label, streaming reservation, output checks, Translate keeping the original, the toolbar panel and menu, `aiAssisted`, fake-model scenarios, e2e 1–5, 7–9 | Section 5 behaviour; quote and signature untouched; nothing stored but `ai_usage` | 3–4 days |
 | **C. Style profile** | `writing-style-utils.ts`, `language-utils.ts`, the `/api/send` hook, compare-and-set update, backfill queue kind, settings and API, prompt rendering in chat, drafts and composer, backups and privacy docs, e2e 6 | Section 4 behaviour; the opt-in default is off; Reset and off delete | 2–3 days |
 
-Total: about 6 to 9 working days.
+Total: about 7 to 10 working days.
 
 ## 14. Place in the roadmap
 
-- **Before** [thread summaries](thread-summaries.md) (it uses `summary_instructions` and the shared untrusted-block helper) and [assistant by email](assistant-by-email.md) (it reuses `selectInteractiveModel`/`selectAutoReadModel` split and `user_ai_settings`).
+- **Before** [thread summaries](thread-summaries.md) (it uses `summary_instructions` and the shared untrusted-block helper) and [assistant by email](assistant-by-email.md) (it reuses `selectAutoReadModel`, the opt-in rule of section 5.6 and `user_ai_settings`).
 - **Independent of** [semantic search](semantic-search.md), milestone 1 (RTL) and milestone 6 (external accounts). When milestone 1's composer direction work lands first, the panel follows its `dir="auto"` rules; translate output into an RTL language is inserted with `dir="auto"` either way.
 - **After** the work already in flight: the approved [storing attachments once](attachments-once.md) and the "more chat actions" change being built now (bulk mark unread, archive and trash, folders, the current date). That change only adds chat tools; their prompt text sits with the fixed rules, before the chat instructions of section 6.
 
-## 15. Open questions for Michiel
+## 15. Decisions (2026-10-26, Michiel)
 
-1. Should composer requests also require the automatic-reading opt-in for external providers? This spec recommends no, for parity with chat (section 5.6).
-2. Writing style off by default (opt-in), as specified, or on by default with an opt-out?
-3. Per-user instruction fields as well as per-mailbox ones? Shared mailboxes would benefit; it doubles the settings surface.
-4. Should chat also reserve spend against the caps the way the composer will? Today chat only records usage.
-5. Should a Translate action keep the original under the translation (as a quoted block) or replace it, as specified?
+1. Composer requests **require** the external-provider opt-in, re-checked on every request (5.6). Chat is to be aligned the same way later, as a follow-up.
+2. The writing style profile is **off by default** (opt-in) (4.6).
+3. **Per-user instruction fields** exist next to the per-mailbox ones; mailbox preferences come first and win (6.1, 6.2).
+4. **Chat also reserves spend** against the mailbox and install caps, per step (5.5).
+5. **Translate keeps the original** below the translation (5.1).
+
+No open questions remain.

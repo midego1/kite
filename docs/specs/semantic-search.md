@@ -1,6 +1,6 @@
 # Spec: search by meaning (semantic search)
 
-Status: **proposed**, not yet approved. Written against `main` at `5c220ba` (release `2026.10.26.1`). Roadmap: proposed [milestone 29](../../ROADMAP.md#milestone-29-search-by-meaning-proposed). Idea adopted from [Zero](https://github.com/Mail-0/Zero) (MIT; the `InboxRag` tool in `apps/server/src/routes/agent/tools.ts`, which is commented out there); no code is ported.
+Status: **proposed**; its open questions were decided by Michiel on 2026-10-26 (section 17). Written against `main` at `5c220ba` (release `2026.10.26.1`). Roadmap: proposed [milestone 29](../../ROADMAP.md#milestone-29-search-by-meaning-proposed). Idea adopted from [Zero](https://github.com/Mail-0/Zero) (MIT; the `InboxRag` tool in `apps/server/src/routes/agent/tools.ts`, which is commented out there); no code is ported.
 
 Migrations: the last one on `main` is `0068_add_abuse_ch_auth_key.sql`. This spec claims **`0071_add_semantic_search.sql`**, after [AI writing](ai-writing.md) (`0069`) and [thread summaries](thread-summaries.md) (`0070`), before [assistant by email](assistant-by-email.md) (`0072`). Whichever Mission starts first takes the next free number; keep `tests/migration-order.test.mjs` passing.
 
@@ -65,8 +65,8 @@ interface VectorStore {
 ### 4.2 Embedding model
 
 - **Workers:** `@cf/baai/bge-m3` through `env.AI.run(model, { text: [...] })`, batches of up to 32 texts. Multilingual, 1,024 dimensions, listed by Cloudflare at **$0.0118 per million input tokens** (checked on 2026-10-26; read the current price before release). bge-m3 is chosen over `bge-base-en`/`bge-large-en` because those are English-only, and it is the cheapest of the Workers AI embedding models listed.
-- The model is **fixed per install** in this milestone. A Vectorize index has a fixed dimension count, so changing the model means a new index and a full re-embed (open question 5).
-- **Node:** the same model through the Workers AI REST API (`POST /accounts/{CF_ACCOUNT_ID}/ai/run/@cf/baai/bge-m3`) when `CF_ACCOUNT_ID` and a `CF_TOKEN` with Workers AI permission are set; otherwise an OpenAI-compatible `/embeddings` endpoint configured by the admin (base URL and key reuse the assistant's compatible provider when it offers embeddings, for example OpenAI `text-embedding-3-small` with `dimensions: 1024`). The provider and model are recorded in `app_settings`; a change triggers a rebuild.
+- The model is **fixed to bge-m3** for every install (decision 15). A Vectorize index has a fixed dimension count, so offering a choice would mean a new index and a full re-embed per change; there is no model setting.
+- **Node:** the same model through the Workers AI REST API (`POST /accounts/{CF_ACCOUNT_ID}/ai/run/@cf/baai/bge-m3`) when `CF_ACCOUNT_ID` and a `CF_TOKEN` with Workers AI permission are set; otherwise an OpenAI-compatible `/embeddings` endpoint configured by the admin that serves **bge-m3** (for example a self-hosted Text Embeddings Inference or Ollama with `bge-m3`; Kite sends the model name `bge-m3` and refuses vectors that do not have 1,024 dimensions). Any provider other than Workers AI needs the external-provider opt-in (9). The provider is recorded in `app_settings`; changing it marks every row `pending` again, because two hosts of the same model need not produce identical vectors.
 - Workers AI does not report embedding token usage, so Kite counts `ceil(characters / 4)`; the compatible API reports `usage.prompt_tokens`.
 
 ### 4.3 Vector stores
@@ -88,7 +88,7 @@ interface VectorStore {
 | Size per chunk | 1,024 bytes with int8 quantisation (scale per vector) | 4,096 bytes as float32, or 1,024 bytes as `int8` vectors |
 | Speed for a user with 100,000 chunks in scope | One scan of ~100 MB of int8 data; about 0.2–0.5 s (estimate; measure in the spike) | Several times faster |
 
-**Recommendation:** brute force first, as `sqlite-vector-store.ts` over a separate file `data/vectors.sqlite` (table `vectors(id TEXT PRIMARY KEY, mailbox_id TEXT, scale REAL, data BLOB)`, index on `mailbox_id`), int8-quantised, scanned in pages of 5,000 rows with a running top-K. It needs no new dependency, keeps vectors out of the main database (so its backups and the D1 schema are untouched) and is fast enough for the mailbox sizes self-hosters run. sqlite-vec can replace it behind the same interface if measurements show a need (open question 4). A self-hosted install that later runs on libSQL (roadmap milestone 7, item 5) could use libSQL's native vector type instead.
+**Recommendation:** brute force first, as `sqlite-vector-store.ts` over a separate file `data/vectors.sqlite` (table `vectors(id TEXT PRIMARY KEY, mailbox_id TEXT, scale REAL, data BLOB)`, index on `mailbox_id`), int8-quantised, scanned in pages of 5,000 rows with a running top-K. It needs no new dependency, keeps vectors out of the main database (so its backups and the D1 schema are untouched) and is fast enough for the mailbox sizes self-hosters run. sqlite-vec can replace it behind the same interface later, only if measurements show a need (decision 14). A self-hosted install that later runs on libSQL (roadmap milestone 7, item 5) could use libSQL's native vector type instead.
 
 ### 4.4 What is embedded
 
@@ -154,7 +154,7 @@ When semantic search is off, not ready, the provider fails or a cap is reached, 
 - **`GET /api/v1/messages`:** `mode=hybrid` (feature C), documented in `docs/openapi.json` through `node scripts/docs-generate.mjs`.
 - **JMAP:** unchanged; `Email/query` keeps its `text` filter. A vendor capability can follow.
 - **Mail search box:** a **By meaning** chip in `mail-search-input.tsx`, on by default when available, remembered per browser (`appearance-preferences.ts`). Results are ordered by relevance with a **Sort by date** switch; meaning-only hits get a small "related" mark so a result without the typed words does not look like a bug.
-- **Admin → Agent → Search by meaning** (primary admin): enable, embedding provider and model (Node), progress, estimated cost, Pause, Rebuild index, Clear stale vectors, and the daily share of the spend cap the backfill may use.
+- **Admin → Agent → Search by meaning** (primary admin): enable, the embedding provider (Node; the model is always bge-m3), progress, estimated cost, Pause, Rebuild index, Clear stale vectors, and the daily share of the spend cap the backfill may use.
 - **Settings → Assistant**, per mailbox (`canManage`): **Include this mailbox in search by meaning**.
 
 All routes are session routes through `requireSessionUser` (admin ones through `requireSessionAdmin(env, request, isPrimaryAdmin)`); `e2e/13-security.spec.ts` picks them up.
@@ -182,7 +182,7 @@ Indexes: `(status, queued_at)`, `(mailbox_id)`, `(vector_key)`.
 
 `message_embedding_deletes`: `vector_key` text, `chunk_count` int, `created_at`; drained by the indexer.
 
-Also: the three triggers of 4.5; `app_settings` columns `semantic_search_enabled` (default 0), `semantic_embedding_provider` (`workers_ai | compatible`, nullable), `semantic_embedding_model`, `semantic_backfill_cursor`, `semantic_backfill_paused` (default 0), `semantic_backfill_cap_share` (percent, default 50); `mailbox_agent_settings.semantic_index` (default 1).
+Also: the three triggers of 4.5; `app_settings` columns `semantic_search_enabled` (default 0), `semantic_embedding_provider` (`workers_ai | compatible`, nullable; the model is fixed), `semantic_backfill_cursor`, `semantic_backfill_paused` (default 0), `semantic_backfill_cap_share` (percent, default 50); `mailbox_agent_settings.semantic_index` (default 1).
 
 **Before the migration:** `semantic_search_enabled` cannot be read, so search is keyword-only and Admin shows "Apply the database update". The `app_settings` and `mailbox_agent_settings` columns are read through `selectRow` (`src/lib/db/pending-columns.ts`).
 
@@ -220,8 +220,17 @@ Vectorize bills stored and queried dimensions separately from Workers AI; at 100
   ```
 
   Regenerate `cloudflare-env.d.ts` with `npm run cf-typegen`; never edit it by hand.
-- **Deploy button.** Cloudflare's documentation lists Vectorize among the resources the button provisions (checked 2026-10-26). The spike must confirm that it creates the index with 1,024 dimensions and the cosine metric, and whether it can create the `mailboxId` metadata index. If not, `docs/deployment.md` gets a step: `npx wrangler vectorize create kite-messages --dimensions=1024 --metric=cosine` and `npx wrangler vectorize create-metadata-index kite-messages --property-name=mailboxId --type=string`, before the first deploy. These are operator commands, run by the operator, never by a Mission.
-- **Existing installs (including production).** A Worker whose configuration binds an index that does not exist fails to deploy. The index (and its metadata index) must therefore be created **before** the release that adds the binding is merged; the CHANGELOG entry of that release names this as an operator action. Michiel decides whether to accept this one-time step or to reach Vectorize through its REST API with `CF_TOKEN` instead of a binding, which avoids the deploy dependency at the cost of latency and a wider token (open question 1).
+- **The index is created once, by hand** (decision 11), before the release that binds it, on every install including production. `docs/deployment.md` (a new step before **Deploy the app**, and a row in its settings table) and the CHANGELOG entry of that release give the exact commands, run by the operator with Wrangler logged in to the install's account:
+
+  ```bash
+  npx wrangler vectorize create kite-messages --dimensions=1024 --metric=cosine
+  npx wrangler vectorize create-metadata-index kite-messages --property-name=mailboxId --type=string
+  npx wrangler vectorize info kite-messages    # check: 1024 dimensions, cosine
+  ```
+
+  The metadata index must exist before the first vector is inserted (section 4.3); creating both before the deploy guarantees that. These are operator commands, never run by a Mission (`AGENTS.md`: no `wrangler … --remote` or deploy commands).
+- **Deploy button.** Cloudflare's documentation lists Vectorize among the resources the button provisions (checked 2026-10-26). The spike checks whether it creates the index with 1,024 dimensions, the cosine metric and the metadata index. If it does not, a new install runs the same commands before clicking the button, and `docs/deployment.md` says so.
+- **Existing installs (including production).** A Worker whose configuration binds an index that does not exist fails to deploy, so the commands above must have run **before** the release that adds the binding is merged. The CHANGELOG entry names this as an operator action, and the pull request of that release says it in its first line.
 - Installs that never turn the feature on still need the index to exist once the binding is in the configuration; it stays empty.
 
 ## 11. Both runtimes and development
@@ -262,7 +271,7 @@ Vectorize has no local emulation in `wrangler dev` without remote access, which 
 
 ### 14.2 e2e (`e2e/56-semantic-search.spec.ts`; take the next free number)
 
-The fake model gains `POST /embeddings` returning deterministic vectors: words are mapped through a small synonym table (`invoice`/`bill`/`factuur`, `roof`/`dak`, `dentist`/`tandarts`) and hashed into 1,024 dimensions, so "meaning" matches are predictable. It records requests.
+The fake model gains `POST /embeddings` returning deterministic vectors: words are mapped through a small synonym table (`invoice`/`bill`/`factuur`, `roof`/`dak`, `dentist`/`tandarts`) and hashed into 1,024 dimensions, so "meaning" matches are predictable. It answers for the model name `bge-m3` only and records requests. It is a compatible provider, so the tests turn the external-provider opt-in on, and one test checks that nothing is embedded while it is off.
 
 1. Turn the feature on, deliver messages, wait for indexing; searching "bill" finds the message that says "invoice" (match `meaning`) and the one that says "bill" (`keyword` or `both`) first.
 2. A second user with their own mailbox: neither user's search ever shows the other's message, also when the fake store would rank it first.
@@ -279,7 +288,7 @@ Work on `mission/semantic-search`; the usual validation (`npm run check:mission`
 
 | Feature | Work | Acceptance | Size |
 | --- | --- | --- | --- |
-| **A. Spike** | Deploy-button provisioning of the index, the metadata index on an existing install, bge-m3 quality on Dutch and English mail, Vectorize latency with `$in` filters, Node brute-force timings on 100,000 chunks | A short report in the PR; open questions 1 and 4 answered with numbers | 1 day |
+| **A. Spike** | Deploy-button provisioning of the index, the metadata index on an existing install, bge-m3 quality on Dutch and English mail, Vectorize latency with `$in` filters, Node brute-force timings on 100,000 chunks | A short report in the PR: whether the Deploy button creates the index correctly, and Node timings that confirm brute force is enough | 1 day |
 | **B. Pipeline** | Migration 0071, triggers, `message_embeddings`, the drain, the Vectorize and test stores, embedding providers, spend, backfill, tombstones, the binding and docs | New and backfilled mail is indexed within the caps; deletes remove vectors | 4 days |
 | **C. Search** | `semanticSearch`, fusion, D1 re-check, `/api/messages`, `search_emails` and MCP `mode`, `/api/v1` `mode`, the search chip, e2e 1–8 | Section 4.6 and 5 behaviour; keyword search unchanged when off | 3 days |
 | **D. Node and Admin** | `data/vectors.sqlite` store, REST and compatible embeddings, Admin page (progress, pause, rebuild, clear stale), mailbox switch | Same behaviour on Node; `npm run build:node` passes | 2–3 days |
@@ -293,10 +302,12 @@ Total: about 10 to 11 working days.
 - **With** milestone 7, item 5 (own database): on libSQL the Node store can move to native vectors.
 - **Independent of** [assistant by email](assistant-by-email.md), which benefits from `search_emails` by meaning once both exist. The "more chat actions" work being built now does not change `search_emails`.
 
-## 17. Open questions for Michiel
+## 17. Decisions (2026-10-26, Michiel)
 
-1. Accept the one-time operator step of creating the `kite-messages` index before the release that adds the binding (production included), or use the Vectorize REST API with `CF_TOKEN` instead of a binding?
-2. Is sending search queries to the embedding provider acceptable by default when the provider is Workers AI, with the external opt-in required otherwise (as specified)?
-3. Should embedding count against the same install spend cap as the assistant (as specified, with backfill limited to a share), or get a cap of its own?
-4. Node: brute force first (recommended), or sqlite-vec from the start?
-5. Fix the model to bge-m3 for every install (as specified), or let admins choose, at the cost of a new index and a full re-embed per change?
+11. The `kite-messages` index (and its `mailboxId` metadata index) is **created once, by hand**, before the release that binds it; the exact commands are in section 10 and go into `docs/deployment.md`.
+12. Search queries go to **Workers AI by default**; any other embedding provider needs the external-provider opt-in (9).
+13. Embeddings **share the install spend cap**, with backfill limited to a share of it (8).
+14. Node: **brute force first**; sqlite-vec later, only if measurements need it (4.3).
+15. The embedding model is **fixed to bge-m3** (4.2).
+
+The numbers follow the combined list of decisions for the four specs. No open questions remain.

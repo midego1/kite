@@ -4,7 +4,7 @@ Planned work, grouped into milestones. Each milestone is sized to run as one [Fa
 
 Shipped work is listed in the [changelog](CHANGELOG.md). Suggest features and vote on them in [Ideas](https://github.com/midego1/kite/discussions/categories/ideas).
 
-Shipped specs: [automatic mail reading agent](docs/specs/auto-agent.md) ([#28](https://github.com/midego1/kite/pull/28)), [module platform](docs/specs/module-platform.md) ([#45](https://github.com/midego1/kite/pull/45)) and [Money Watch](docs/specs/money-watch.md) ([#50](https://github.com/midego1/kite/pull/50)). Next, in order: the approved [Drive and storage](docs/specs/drive-storage.md) and [storing attachments once](docs/specs/attachments-once.md). Proposed, not yet approved: [AI writing](docs/specs/ai-writing.md), [thread summaries](docs/specs/thread-summaries.md), [search by meaning](docs/specs/semantic-search.md) and [the assistant by email](docs/specs/assistant-by-email.md) (milestones 27 to 30).
+Shipped specs: [automatic mail reading agent](docs/specs/auto-agent.md) ([#28](https://github.com/midego1/kite/pull/28)), [module platform](docs/specs/module-platform.md) ([#45](https://github.com/midego1/kite/pull/45)) and [Money Watch](docs/specs/money-watch.md) ([#50](https://github.com/midego1/kite/pull/50)). Next, in order: the approved [Drive and storage](docs/specs/drive-storage.md) and [storing attachments once](docs/specs/attachments-once.md). Proposed, with their open questions decided on 2026-10-26: [AI writing](docs/specs/ai-writing.md), [thread summaries](docs/specs/thread-summaries.md), [search by meaning](docs/specs/semantic-search.md) and [the assistant by email](docs/specs/assistant-by-email.md) (milestones 27 to 30).
 
 ## Working on this repository
 
@@ -230,22 +230,22 @@ One Inbox, Sent, Drafts and Archive for every mailbox you can open, so someone w
 
 ## Milestone 27: AI writing (proposed)
 
-Specified in [docs/specs/ai-writing.md](docs/specs/ai-writing.md); not yet approved. Ideas adopted from [Zero](https://github.com/Mail-0/Zero) (MIT), no code ported. Suggested order: first of milestones 27 to 30, after the approved [storing attachments once](docs/specs/attachments-once.md) and the "more chat actions" work in progress. Migration `0069` (renumber if another lands first).
+Specified in [docs/specs/ai-writing.md](docs/specs/ai-writing.md); proposed, open questions decided on 2026-10-26. Ideas adopted from [Zero](https://github.com/Mail-0/Zero) (MIT), no code ported. Suggested order: first of milestones 27 to 30, after the approved [storing attachments once](docs/specs/attachments-once.md) and the "more chat actions" work in progress. Migration `0069` (renumber if another lands first).
 
-1. **Editable prompts** (1–2 days): per-mailbox instruction fields for chat, drafting and the composer, and summaries, next to the existing instructions. Always in the system prompt below Kite's fixed rules, never inside the untrusted block, never replacing a prompt.
-2. **AI in the composer** (3–4 days): write from a short prompt and rewrite a selection (shorter, longer, more formal, more casual, fix grammar, translate, custom), streamed into a preview, with the quote and signature untouched. No tools, nothing stored but usage, under the spend caps and rate limit.
+1. **Editable prompts and chat spend** (2–3 days): per-mailbox and personal instruction fields for chat, drafting and the composer, and summaries, next to the existing instructions; chat reserves spend against the caps like every other AI request. Always in the system prompt below Kite's fixed rules, never inside the untrusted block, never replacing a prompt.
+2. **AI in the composer** (3–4 days): write from a short prompt and rewrite a selection (shorter, longer, more formal, more casual, fix grammar, translate with the original kept below, custom), streamed into a preview, with the quote and signature untouched. No tools, nothing stored but usage, under the spend caps, the rate limit and the external-provider opt-in (chat to follow).
 3. **Writing style profile** (2–3 days): a statistical profile of how each user writes in each mailbox, built from sent mail in code (Welford means, top greeting and sign-off forms; no model), opt-in, with Reset, turned into a few lines for reply drafts, chat drafts and the composer.
 
 ## Milestone 28: Thread summaries (proposed)
 
-Specified in [docs/specs/thread-summaries.md](docs/specs/thread-summaries.md); not yet approved. After milestone 27. Migration `0070`.
+Specified in [docs/specs/thread-summaries.md](docs/specs/thread-summaries.md); proposed, open questions decided on 2026-10-26. After milestone 27. Migration `0070`.
 
-1. **Summarize in the reader** (3–4 days): a button for a conversation or a message, cached per mailbox, marked out of date when the conversation changes, never for spam, trash, screened mail or drafts.
+1. **Summarize in the reader** (4–5 days): a button for a conversation or a message, in the conversation's language with **Translate to <language>** when that differs from the user's, cached per mailbox, marked out of date when the conversation changes, never for spam, trash, screened mail or drafts. Not in backups (derived).
 2. **One-line summaries in the message list** (3 days): optional per mailbox, new mail only, never for suspicious or bulk mail unless allowed, made inside the automatic-reading triage request when there is one so no message is summarised twice, under every automatic-reading gate and cap.
 
 ## Milestone 29: Search by meaning (proposed)
 
-Specified in [docs/specs/semantic-search.md](docs/specs/semantic-search.md); not yet approved. After milestone 28; before or together with large imports from milestone 6. Adds the Vectorize index `kite-messages`, which existing installs must create before the release that binds it. Migration `0071`.
+Specified in [docs/specs/semantic-search.md](docs/specs/semantic-search.md); proposed, open questions decided on 2026-10-26. After milestone 28; before or together with large imports from milestone 6. Adds the Vectorize index `kite-messages`, created once by hand (`npx wrangler vectorize create kite-messages --dimensions=1024 --metric=cosine` plus its `mailboxId` metadata index) before the release that binds it. Migration `0071`.
 
 1. **Spike** (1 day): Deploy-button provisioning, multilingual quality of `@cf/baai/bge-m3`, latency, and Node brute-force timings.
 2. **Indexing** (4 days): triggers queue new, changed and deleted mail; a drain on the agent queue and cron embeds in batches with backfill limited to a share of the spend cap; vectors carry no content.
@@ -254,12 +254,12 @@ Specified in [docs/specs/semantic-search.md](docs/specs/semantic-search.md); not
 
 ## Milestone 30: Assistant by email (proposed)
 
-Specified in [docs/specs/assistant-by-email.md](docs/specs/assistant-by-email.md); not yet approved. Specifies milestone 5, item 1. After milestone 27 and the "more chat actions" work. Migration `0072`.
+Specified in [docs/specs/assistant-by-email.md](docs/specs/assistant-by-email.md); proposed, open questions decided on 2026-10-26. Specifies milestone 5, item 1. After [#115](https://github.com/midego1/kite/pull/115) and [#117](https://github.com/midego1/kite/pull/117), milestone 27 and the "more chat actions" work. Migration `0072`.
 
-1. **Intake** (3 days): an assistant address per domain; DMARC, SPF and DKIM must pass from a trusted hop (Cloudflare Email Routing, the relay or SES); only the user's own or verified addresses; loop, auto-reply and replay guards; unknown senders dropped silently.
-2. **Running and replying** (3–4 days): the chat engine with a read-only tool set plus drafts, send reviews and pending approvals; the reply carries a link to the answer in Kite and nothing else by default.
-3. **Settings and extras** (2–3 days): verified extra addresses, an opt-in mode that includes the answer, the request list.
-4. **SES and Node** (1–2 days): SES verdicts and the relay path; the direct SMTP listener and Resend are not supported.
+1. **Intake** (3 days): one assistant address per domain, shared by opted-in users; Kite's `authPassed` rule (DMARC pass or aligned DKIM) from a trusted hop (Cloudflare Email Routing, the signed relay or SES); only the user's own or verified addresses; loop, auto-reply and replay guards; unknown senders dropped silently.
+2. **Running and replying** (3–4 days): the chat engine with a read-only tool set plus drafts, send reviews and pending approvals; the reply carries only links to the answer and reviews in Kite.
+3. **Settings and extras** (2–3 days): verified extra addresses, the request list.
+4. **SES and Node** (1 day): the SES and relay paths; the direct SMTP listener is not supported, and Resend-received domains come later.
 
 ## Ideas, not yet planned
 

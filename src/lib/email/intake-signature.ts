@@ -1,4 +1,4 @@
-import { signInbound, signInboundHeaders } from "@/lib/email/inbound-signature.mjs";
+import { signInbound, signInboundHeaders, signInboundHeadersWithSecret } from "@/lib/email/inbound-signature.mjs";
 
 function safeEqualHex(expected: string, signature: string): boolean {
 	if (expected.length !== signature.length) return false;
@@ -32,8 +32,10 @@ export async function verifyInboundSignature(
 }
 
 /**
- * Checks `X-Kite-Headers-Signature` (`signInboundHeaders`), which the relay Worker sends since the
- * header map started to carry trust (Cloudflare's `Authentication-Results`).
+ * Checks `X-Kite-Headers-Signature` (`signInboundHeaders`, with its derived key), which the relay
+ * Worker sends since the header map started to carry trust (Cloudflare's `Authentication-Results`).
+ * `legacy` is the first form, keyed with the secret itself, which is still accepted for a while.
+ * TODO(#118): drop `legacy` in the first release on or after 2027-01-31; it then counts as invalid.
  */
 export async function verifyInboundHeadersSignature(
 	secret: string,
@@ -42,6 +44,8 @@ export async function verifyInboundHeadersSignature(
 	from: string,
 	to: string,
 	headersJson: string,
-): Promise<boolean> {
-	return safeEqualHex(await signInboundHeaders(secret, raw, from, to, headersJson), signature);
+): Promise<"valid" | "legacy" | "invalid"> {
+	if (safeEqualHex(await signInboundHeaders(secret, raw, from, to, headersJson), signature)) return "valid";
+	if (safeEqualHex(await signInboundHeadersWithSecret(secret, raw, from, to, headersJson), signature)) return "legacy";
+	return "invalid";
 }

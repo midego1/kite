@@ -230,7 +230,7 @@ test("bulk archive works across mailboxes and leaves read-only shared mail where
 	await page.getByRole("button", { name: "Move to" }).click();
 	await expect(page.getByText("Select mail from one mailbox to move it to a folder.")).toBeVisible();
 	await page.keyboard.press("Escape");
-	await page.getByRole("button", { name: "Archive", exact: true }).first().click();
+	await page.getByRole("button", { name: "Archive", exact: true }).last().click();
 	await expect(page.getByText("1 read-only message was left as it was.")).toBeVisible();
 	await expect(row(page, subjects.home)).toHaveCount(0);
 	await expect(row(page, subjects.work)).toHaveCount(0);
@@ -250,9 +250,9 @@ test("read-only shared mail cannot be archived or deleted from the combined view
 	await showAllMailboxes(page);
 
 	await row(page, subject).getByRole("checkbox").click();
-	await expect(page.getByRole("button", { name: "Archive", exact: true }).first()).toBeDisabled();
-	await expect(page.getByRole("button", { name: "Delete", exact: true }).first()).toBeDisabled();
-	await expect(page.getByRole("button", { name: "Mark as read" }).first()).toBeEnabled();
+	await expect(page.getByRole("button", { name: "Archive", exact: true }).last()).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Delete", exact: true }).last()).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Mark as read" }).last()).toBeEnabled();
 	await row(page, subject).getByRole("checkbox").click();
 
 	await row(page, subject).getByRole("link").first().click();

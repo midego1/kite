@@ -130,3 +130,25 @@ for (const [name, appearance] of [
 		await capture(page, name);
 	});
 }
+
+test("command-palette", async ({ browser }) => {
+	const page = await open(browser);
+	await page.goto("/inbox");
+	await expect(page.getByText(OPENED.subject).first()).toBeVisible();
+	const palette = page.getByRole("dialog", { name: "Command palette" });
+	// Shortcuts bind once the account's preference has loaded.
+	await expect(async () => {
+		if (!(await palette.isVisible())) await page.keyboard.press("ControlOrMeta+k");
+		await expect(palette).toBeVisible({ timeout: 1000 });
+	}).toPass();
+	await capture(page, "command-palette");
+});
+
+test("inbox-menu-phone", async ({ browser }) => {
+	const page = await open(browser, { phone: true });
+	await page.goto("/inbox");
+	await expect(page.getByText(OPENED.subject).first()).toBeVisible();
+	await page.getByRole("button", { name: "Open menu" }).click();
+	await expect(page.getByRole("link", { name: /^Inbox\b/ }).first()).toBeVisible();
+	await capture(page, "inbox-menu-phone");
+});

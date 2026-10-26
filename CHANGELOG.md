@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.26.1] - 2026-10-26
+
 ### Changed
 
 - The README is brought up to date: it now covers Drive and object storage, lists all six modules, states the current test counts and CI setup, describes the AI assistant and **Skip DNS setup** accurately, and no longer names individual migrations.

@@ -218,6 +218,11 @@ test("Admin → Drive saves the defaults and lists usage, and is not found for a
 		await page.getByRole("complementary", { name: "Admin menu" }).getByRole("link", { name: "Drive" }).click();
 		await expect(page).toHaveURL(/\/drive\/settings$/);
 		await expect(page.getByRole("heading", { level: 1, name: "Drive" })).toBeVisible();
+		// The form is disabled and shows an unchecked box until the settings load. check() reads the state first, so
+		// on a slow load it would see that placeholder and then click the loaded, already checked box off.
+		await expect(page.getByLabel("Keep trashed items for (days)")).toHaveValue(
+			String(before.settings.trashRetentionDays),
+		);
 		await page.getByLabel("Allow public links").check();
 		await page.getByLabel("Longest link lifetime (days)").fill("");
 		await page.getByRole("button", { name: "Save settings" }).click();

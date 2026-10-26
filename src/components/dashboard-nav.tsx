@@ -3,7 +3,7 @@
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Archive, Clock, FileText, Folder, Inbox, MailPlus, Plus, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
+import { Archive, Clock, FileText, Inbox, MailPlus, Plus, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +26,12 @@ import type { FolderColor } from "@/lib/folders/types";
 import { NavItem } from "./components-nav";
 import type { NavLink } from "./components-nav-types";
 import type { CustomFolder } from "./dashboard-nav-types";
-import { getFolderNavCount, moveMessagesToCustomFolder, moveMessagesToSystemFolder } from "./dashboard-nav-utils";
+import { customFolderNavLink, getFolderNavCount, moveMessagesToSystemFolder } from "./dashboard-nav-utils";
+import { AllMailboxesFolders } from "./all-mailboxes-folders";
+import { useAllMailboxesCommands } from "./use-all-mailboxes-commands";
+import { FOLDERS_CHANGED_EVENT } from "./messages/use-mailbox-folders";
+import { Select } from "./ui/select";
+import { getMailboxAddress } from "./mailbox-selector-utils";
 import { NavSectionHeader, useSectionOpen } from "./nav-section-header";
 import { ReorderableList } from "./reorderable-list";
 import { useStoredState } from "@/hooks/use-stored-state";
@@ -89,10 +94,27 @@ export function DashboardNav({ className }: { className?: string }) {
 	const [moreOpen, setMoreOpen] = useStoredState(MORE_OPEN_KEY, false);
 	const [foldersOpen, setFoldersOpen] = useStoredState(FOLDERS_OPEN_KEY, false);
 	const [foldersSectionOpen, toggleFoldersSection] = useSectionOpen("kite:nav:folders-section-open");
-	const { selectedMailbox, isLoading } = useSelectedMailbox();
-	const { counts } = useMessageCounts(selectedMailbox?.id, !isLoading);
+	const { selectedMailbox, isLoading, allMailboxes, viewMailboxes, mailboxScope } = useSelectedMailbox();
+	const { counts } = useMessageCounts(mailboxScope, !isLoading);
 	const forYou = useForYouNav();
-	const screener = useScreenerNav(selectedMailbox, counts.folders);
+	useAllMailboxesCommands();
+	// In All mailboxes the Screener shows while any listed mailbox holds new senders back.
+	const screenerMailbox = allMailboxes
+		? (viewMailboxes.find((mailbox) => mailbox.screener?.enabled && mailbox.screener.mode === "screener") ?? null)
+		: selectedMailbox;
+	const screener = useScreenerNav(screenerMailbox, counts.folders);
+	// New folders go to the selected mailbox; All mailboxes asks which of the user's own it is for.
+	const folderMailboxes = allMailboxes
+		? viewMailboxes.filter((mailbox) => (mailbox.permission ?? "full_access") === "full_access")
+		: [];
+	const [chosenFolderMailboxId, setFolderMailboxId] = useState<string | null>(null);
+	const folderMailboxId = allMailboxes
+		? (
+				folderMailboxes.find((mailbox) => mailbox.id === chosenFolderMailboxId) ??
+				folderMailboxes.find((mailbox) => mailbox.id === selectedMailbox?.id) ??
+				folderMailboxes[0]
+			)?.id
+		: selectedMailbox?.id;
 	const moduleLinks = useModuleSidebarLinks();
 	const [folders, setFolders] = useState<CustomFolder[]>([]);
 	const [newFolderName, setNewFolderName] = useState("");
@@ -185,7 +207,7 @@ export function DashboardNav({ className }: { className?: string }) {
 
 	async function createFolder(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		if (!selectedMailbox?.id || !newFolderName.trim()) return;
+		if (!folderMailboxId || !newFolderName.trim()) return;
 
 		setAddingFolder(true);
 		try {
@@ -193,14 +215,16 @@ export function DashboardNav({ className }: { className?: string }) {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					mailboxId: selectedMailbox.id,
+					mailboxId: folderMailboxId,
 					name: newFolderName,
 					color: newFolderColor,
 				}),
 			});
 			if (!response.ok) return;
 			const folder = (await response.json()) as CustomFolder;
-			setFolders((items) => [...items, folder].sort((a, b) => a.name.localeCompare(b.name)));
+			if (folderMailboxId === selectedMailbox?.id)
+				setFolders((items) => [...items, folder].sort((a, b) => a.name.localeCompare(b.name)));
+			window.dispatchEvent(new Event(FOLDERS_CHANGED_EVENT));
 			setNewFolderName("");
 			setNewFolderColor(DEFAULT_FOLDER_COLOR);
 			setFolderDialogOpen(false);
@@ -235,7 +259,7 @@ export function DashboardNav({ className }: { className?: string }) {
 			{minimal && <hr className="mx-6 my-2 border-neutral-200/70" />}
 			{!minimal && (
 				<NavSectionHeader label="Folders" open={foldersSectionOpen} onToggle={toggleFoldersSection}>
-					{selectedMailbox && (
+					{folderMailboxId && (
 						<Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
 							<DialogTrigger asChild>
 								<button
@@ -249,9 +273,27 @@ export function DashboardNav({ className }: { className?: string }) {
 							<DialogContent>
 								<DialogHeader>
 									<DialogTitle>Create folder</DialogTitle>
-									<DialogDescription>Add a folder to the selected mailbox.</DialogDescription>
+									<DialogDescription>
+										{allMailboxes ? "Add a folder to one of your mailboxes." : "Add a folder to the selected mailbox."}
+									</DialogDescription>
 								</DialogHeader>
 								<form onSubmit={createFolder} className="space-y-4">
+									{allMailboxes && (
+										<div className="space-y-2">
+											<Label htmlFor="folderMailbox">Mailbox</Label>
+											<Select
+												id="folderMailbox"
+												value={folderMailboxId}
+												onChange={(event) => setFolderMailboxId(event.target.value)}
+											>
+												{folderMailboxes.map((mailbox) => (
+													<option key={mailbox.id} value={mailbox.id}>
+														{getMailboxAddress(mailbox)}
+													</option>
+												))}
+											</Select>
+										</div>
+									)}
 									<div className="space-y-2">
 										<Label htmlFor="folderName">Folder name</Label>
 										<Input
@@ -293,12 +335,15 @@ export function DashboardNav({ className }: { className?: string }) {
 					)}
 				</NavSectionHeader>
 			)}
-			{!minimal && foldersSectionOpen && folders.length === 0 && (
+			{allMailboxes && (minimal || foldersSectionOpen) && (
+				<AllMailboxesFolders customFolderCounts={counts.customFolders} minimal={minimal} />
+			)}
+			{!allMailboxes && !minimal && foldersSectionOpen && folders.length === 0 && (
 				<div className="mx-6 rounded-lg border border-dashed border-neutral-200 px-3 py-3 text-xs text-neutral-500">
 					No folders yet
 				</div>
 			)}
-			{(minimal || foldersSectionOpen) && (
+			{!allMailboxes && (minimal || foldersSectionOpen) && (
 				<ReorderableList
 					storageKey="kite:nav:layout:folders"
 					enabled={!minimal}
@@ -313,26 +358,15 @@ export function DashboardNav({ className }: { className?: string }) {
 							},
 							items: folders.map((folder) => ({
 								id: folder.id,
-								node: (
-									<NavItem
-										wrap
-										link={{
-											href: `/folders/${folder.id}`,
-											label: folder.name,
-											icon: Folder,
-											preloadMessages: true,
-											iconColor: folder.color,
-											count: counts.customFolders[folder.id]?.unread,
-											onMessageDrop: (messageIds: string[]) => void moveMessagesToCustomFolder(messageIds, folder.id),
-										}}
-									/>
-								),
+								node: <NavItem wrap link={customFolderNavLink(folder, counts.customFolders[folder.id]?.unread)} />,
 							})),
 						},
 					]}
 				/>
 			)}
-			{foldersSectionOpen && foldersOverflow && <NavToggle expanded={foldersOpen} onClick={toggleFolders} />}
+			{!allMailboxes && foldersSectionOpen && foldersOverflow && (
+				<NavToggle expanded={foldersOpen} onClick={toggleFolders} />
+			)}
 		</SidebarScaffold>
 	);
 }

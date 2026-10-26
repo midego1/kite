@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, gt, inArray, isNull, lte, ne, or } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lte, ne, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
-import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
+import { listAccessibleMailboxIds } from "@/lib/mailboxes/access";
+import { resolveMailboxScope } from "@/lib/mailboxes/scope-utils";
+import { rowConversationKey } from "@/lib/messages/conversation-key";
+import { mailboxScopeCondition } from "@/lib/messages/mailbox-scope";
 import type { MessageFolder } from "@/hooks/types";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import type { MessageNavigationEntry } from "./types";
@@ -51,21 +54,15 @@ export async function GET(request: Request) {
 		return NextResponse.json({ error: "Invalid folder" }, { status: 400 });
 	}
 
-	const mailboxId = params.get("mailboxId");
 	const folderId = params.get("folderId");
 	const grouped = params.get("group") === "thread";
 	const db = getDb(env);
-	const conditions: SQL[] = [];
-	if (mailboxId) {
-		const access = await getMailboxAccessLevel(db, user, mailboxId);
-		if (!access?.canRead) return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
-		conditions.push(eq(messages.mailboxId, mailboxId));
-	} else {
-		const accessibleIds = await listAccessibleMailboxIds(db, user);
-		conditions.push(
-			accessibleIds.length > 0 ? inArray(messages.mailboxId, accessibleIds) : eq(messages.userId, user.id),
-		);
-	}
+	const scope = resolveMailboxScope(
+		{ mailboxId: params.get("mailboxId"), mailboxIds: params.get("mailboxIds") },
+		await listAccessibleMailboxIds(db, user),
+	);
+	if (!scope.ok) return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
+	const conditions: SQL[] = [mailboxScopeCondition(scope.ids, user.id)];
 
 	conditions.push(...folderConditions(folder, folderId));
 
@@ -75,6 +72,7 @@ export async function GET(request: Request) {
 			read: messages.read,
 			direction: messages.direction,
 			threadId: messages.threadId,
+			mailboxId: messages.mailboxId,
 		})
 		.from(messages)
 		.where(and(...conditions))
@@ -84,7 +82,7 @@ export async function GET(request: Request) {
 	if (grouped) {
 		const byThread = new Map<string, MessageNavigationEntry>();
 		for (const row of rows) {
-			const key = row.threadId ?? row.id;
+			const key = rowConversationKey(row);
 			const unread = row.direction === "inbound" && !row.read;
 			const existing = byThread.get(key);
 			if (existing) existing.unread ||= unread;

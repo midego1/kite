@@ -2,7 +2,7 @@ import type { MouseEvent } from "react";
 import type { CheckboxChangeEvent } from "@/components/ui/checkbox-types";
 import type { Message } from "@/hooks/types";
 
-type SelectedMessage = { id: string; read: boolean };
+type SelectedMessage = { id: string; read: boolean; mailboxId?: string | null };
 
 /**
  * The ids from the anchor row to the target row, inclusive and in list order, for
@@ -36,7 +36,11 @@ export function applySelection(
 	const next = new Map(current.map((item) => [item.id, item]));
 	for (const message of messages) {
 		if (ids.includes(message.id) && !next.has(message.id)) {
-			next.set(message.id, { id: message.id, read: message.read && !(message.threadUnread ?? 0) });
+			next.set(message.id, {
+				id: message.id,
+				read: message.read && !(message.threadUnread ?? 0),
+				mailboxId: message.mailboxId,
+			});
 		}
 	}
 	return Array.from(next.values());

@@ -1,6 +1,7 @@
 import { and, countDistinct, desc, eq, getTableColumns, lt, or, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { messages } from "@/db/schema";
+import { conversationKey } from "@/lib/messages/conversation-key";
 import type { MessageListCursor } from "@/lib/messages/cursor-types";
 import type { ConversationPage, ConversationPageInput, MessageListColumns } from "./types";
 
@@ -27,7 +28,7 @@ export async function loadConversationPage({
 	limit,
 	cursor,
 }: ConversationPageInput): Promise<ConversationPage> {
-	const threadKey = sql<string>`coalesce(${messages.threadId}, ${messages.id})`;
+	const threadKey = conversationKey();
 	const ranked = db
 		.select({
 			id: messages.id,

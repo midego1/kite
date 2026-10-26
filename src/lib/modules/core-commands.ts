@@ -43,6 +43,26 @@ export const CORE_COMMANDS: readonly UiCommand[] = [
 	navigate("nav-spam", "Go to Spam", "/spam", { shortcut: "g !" }),
 	navigate("nav-trash", "Go to Trash", "/trash", { shortcut: "g x" }),
 	{
+		id: "all-mailboxes",
+		moduleId: "core",
+		label: "Show all mailboxes",
+		description: "Read every mailbox you can open in one Inbox",
+		keywords: ["unified", "combined", "all inboxes"],
+		group: "Navigation",
+		target: { type: "client", action: "apply_filter", handler: "showAllMailboxes" },
+		effect: "navigate",
+	},
+	{
+		id: "one-mailbox",
+		moduleId: "core",
+		label: "Show one mailbox",
+		description: "Leave All mailboxes for the mailbox chosen last",
+		keywords: ["unified", "combined", "single mailbox"],
+		group: "Navigation",
+		target: { type: "client", action: "apply_filter", handler: "showOneMailbox" },
+		effect: "navigate",
+	},
+	{
 		...navigate("settings-account", "Account Settings", "/settings/account", {
 			description: "Profile, password & preferences",
 		}),

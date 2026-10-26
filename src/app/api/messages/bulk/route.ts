@@ -43,6 +43,8 @@ export async function POST(request: Request) {
 	const read = getReadValueForBulkAction(payload.action);
 	const db = getDb(env);
 	let folderId: string | null | undefined;
+	// A user folder belongs to one mailbox, and mail only ever moves within its own mailbox.
+	let folderMailboxId: string | null = null;
 
 	if (payload.action === "folder") {
 		if (!payload.folderId) {
@@ -61,6 +63,7 @@ export async function POST(request: Request) {
 			return NextResponse.json({ error: "Folder not found" }, { status: 404 });
 		}
 		folderId = folder.id;
+		folderMailboxId = folder.mailboxId;
 	} else if (status) {
 		// Every other move leaves user folders.
 		folderId = null;
@@ -96,6 +99,7 @@ export async function POST(request: Request) {
 
 	for (const message of selectedMessages) {
 		if (!message.mailboxId) continue;
+		if (folderMailboxId && message.mailboxId !== folderMailboxId) continue;
 		let accessRequest = accessByMailbox.get(message.mailboxId);
 		if (!accessRequest) {
 			accessRequest = getMailboxAccessLevel(db, user, message.mailboxId);

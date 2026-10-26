@@ -1,5 +1,6 @@
 import { authFetch, getClientSessionKey } from "@/lib/auth/client";
 import type { MailboxOption } from "./mailbox-provider";
+import { ALL_MAILBOXES_STORAGE_KEY } from "./appearance-preferences";
 
 let mailboxesCache: MailboxOption[] | null = null;
 let mailboxesCacheSessionToken: string | null = null;
@@ -28,6 +29,7 @@ export function clearMailboxClientState() {
 	clearMailboxesCache();
 	if (typeof window !== "undefined") {
 		localStorage.removeItem(SELECTED_MAILBOX_STORAGE_KEY);
+		localStorage.removeItem(ALL_MAILBOXES_STORAGE_KEY);
 	}
 }
 

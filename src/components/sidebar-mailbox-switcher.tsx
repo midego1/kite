@@ -13,6 +13,8 @@ import { getAvatarColorStyle } from "@/lib/avatar-colors";
 import { cn } from "@/lib/utils";
 import { getAccountInitial, getMailboxAddress, getMailboxName } from "./mailbox-selector-utils";
 import { useSidebar } from "./sidebar-state";
+import { AllMailboxesFilter, AllMailboxesIcon, AllMailboxesOption } from "./all-mailboxes-option";
+import { ALL_MAILBOXES_LABEL } from "./messages/utils";
 
 function MailboxAvatar({ mailbox, className }: { mailbox: MailboxOption; className?: string }) {
 	const [failed, setFailed] = useState(false);
@@ -41,7 +43,7 @@ function MailboxAvatar({ mailbox, className }: { mailbox: MailboxOption; classNa
 
 /** Switches the active mailbox from the top of the sidebar, without opening the account menu. */
 export function SidebarMailboxSwitcher() {
-	const { selectedMailbox, setSelectedMailbox, mailboxes } = useSelectedMailbox();
+	const { selectedMailbox, setSelectedMailbox, mailboxes, allMailboxes, setAllMailboxes } = useSelectedMailbox();
 	const { minimal } = useSidebar();
 	const user = useCurrentUser();
 	const router = useRouter();
@@ -91,11 +93,13 @@ export function SidebarMailboxSwitcher() {
 				onClick={toggleMenu}
 				aria-haspopup="listbox"
 				aria-expanded={open}
-				aria-label={`Switch mailbox, current: ${getMailboxAddress(selectedMailbox)}`}
+				aria-label={`Switch mailbox, current: ${allMailboxes ? ALL_MAILBOXES_LABEL : getMailboxAddress(selectedMailbox)}`}
 				className="flex h-10 w-full items-center gap-2.5 rounded-xl border max-md:h-11 border-neutral-200 bg-white px-3 text-left text-sm transition-colors hover:border-neutral-300"
 			>
-				<MailboxAvatar mailbox={selectedMailbox} />
-				<span className="min-w-0 flex-1 truncate font-medium text-neutral-900">{getMailboxName(selectedMailbox)}</span>
+				{allMailboxes ? <AllMailboxesIcon /> : <MailboxAvatar mailbox={selectedMailbox} />}
+				<span className="min-w-0 flex-1 truncate font-medium text-neutral-900">
+					{allMailboxes ? ALL_MAILBOXES_LABEL : getMailboxName(selectedMailbox)}
+				</span>
 				<ChevronsUpDown className="h-4 w-4 shrink-0 text-neutral-400" />
 			</button>
 			{open &&
@@ -109,8 +113,18 @@ export function SidebarMailboxSwitcher() {
 						role="listbox"
 						aria-label="Mailboxes"
 					>
+						<AllMailboxesOption
+							counts={counts.mailboxes}
+							onSelect={() => {
+								setOpen(false);
+								if (allMailboxes) return;
+								setAllMailboxes(true);
+								router.push("/inbox");
+							}}
+						/>
+						<AllMailboxesFilter />
 						{mailboxes.map((mailbox) => {
-							const active = mailbox.id === selectedMailbox.id;
+							const active = !allMailboxes && mailbox.id === selectedMailbox.id;
 							const unread = counts.mailboxes.find((count) => count.mailboxId === mailbox.id)?.unread ?? 0;
 							return (
 								<button
@@ -122,6 +136,7 @@ export function SidebarMailboxSwitcher() {
 										setOpen(false);
 										if (active) return;
 										setSelectedMailbox(mailbox);
+										setAllMailboxes(false);
 										router.push("/inbox");
 									}}
 									className={cn(

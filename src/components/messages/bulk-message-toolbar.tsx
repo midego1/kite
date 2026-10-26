@@ -21,6 +21,8 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useMailboxFolders } from "./use-mailbox-folders";
+import { useMessageAccess } from "./use-message-access";
+import { singleMailboxOf } from "@/lib/mailboxes/scope-utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { supportsPermanentDelete } from "@/lib/messages/permanent-delete-utils";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
@@ -40,6 +42,7 @@ export function BulkMessageToolbar({
 	onClearSelection,
 	pending,
 	folder,
+	mailboxIds,
 }: BulkMessageToolbarProps) {
 	// In archived, spam and trash the usual button would be a no-op, so it becomes the way back to the inbox.
 	const archive =
@@ -71,7 +74,13 @@ export function BulkMessageToolbar({
 		</DropdownMenu.Item>
 	);
 	const { selectedMailbox } = useSelectedMailbox();
-	const folders = useMailboxFolders(selectedMailbox?.id);
+	const access = useMessageAccess();
+	// Mail moves only within its own mailbox, so folders are offered while the selection is in one.
+	const folderMailboxId = mailboxIds ? singleMailboxOf(mailboxIds) : (selectedMailbox?.id ?? null);
+	const folders = useMailboxFolders(folderMailboxId && access.canManage(folderMailboxId) ? folderMailboxId : undefined);
+	const spansMailboxes = !!mailboxIds && !folderMailboxId && mailboxIds.length > 1;
+	// Read-only shared mail can be marked read, nothing else; the page skips it in a mixed selection.
+	const manageDisabled = pending || (!!mailboxIds && !mailboxIds.some((id) => access.canManage(id)));
 	return (
 		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full">
 			{!hideSelectedCount && (
@@ -83,7 +92,7 @@ export function BulkMessageToolbar({
 					variant="ghost"
 					size="sm"
 					onClick={() => onAction(archive.action as BulkMessageAction)}
-					disabled={pending}
+					disabled={manageDisabled}
 					aria-label={archive.label}
 				>
 					<archive.Icon className="h-4 w-4" />
@@ -94,7 +103,7 @@ export function BulkMessageToolbar({
 					variant="ghost"
 					size="sm"
 					onClick={() => onAction(spam.action as BulkMessageAction)}
-					disabled={pending}
+					disabled={manageDisabled}
 					aria-label={spam.label}
 				>
 					<spam.Icon className="h-4 w-4" />
@@ -105,7 +114,7 @@ export function BulkMessageToolbar({
 					variant="ghost"
 					size="sm"
 					onClick={() => onAction(trash.action as BulkMessageAction)}
-					disabled={pending}
+					disabled={manageDisabled}
 					aria-label={trash.label}
 				>
 					<trash.Icon className="h-4 w-4" />
@@ -118,7 +127,7 @@ export function BulkMessageToolbar({
 						size="sm"
 						className="text-red-600 hover:text-red-700"
 						onClick={() => onAction("delete")}
-						disabled={pending}
+						disabled={manageDisabled}
 						aria-label="Delete forever"
 					>
 						<Trash2 className="h-4 w-4" />
@@ -144,7 +153,7 @@ export function BulkMessageToolbar({
 							variant="ghost"
 							size="sm"
 							className="max-md:hidden gap-1.5 bg-white text-xs font-medium text-neutral-700"
-							disabled={pending}
+							disabled={manageDisabled}
 						>
 							<FolderInput className="h-4 w-4" />
 							Move to
@@ -165,6 +174,14 @@ export function BulkMessageToolbar({
 							</DropdownMenu.Item>
 						))}
 						{phishingItem}
+						{spansMailboxes && (
+							<>
+								<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
+								<p className="px-3 py-2 text-xs text-neutral-500">
+									Select mail from one mailbox to move it to a folder.
+								</p>
+							</>
+						)}
 						{folders.length > 0 && (
 							<>
 								<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />

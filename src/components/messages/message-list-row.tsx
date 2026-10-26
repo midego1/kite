@@ -111,6 +111,7 @@ function StackedMessageRow(props: RowViewProps) {
 						</span>
 					)}
 					<span className="block pl-3.5">
+						{props.mailboxLabel}
 						<MessageRowBadges message={row.rowMessage} folder={config.folder} />
 					</span>
 				</Link>
@@ -170,6 +171,7 @@ function WideMessageRow(props: RowViewProps) {
 					aria-current={active ? "true" : undefined}
 					className="after:absolute after:inset-0 focus-visible:outline-none"
 				>
+					{props.mailboxLabel}
 					<span dir="auto" className={row.unread ? "font-semibold text-neutral-900" : ""}>
 						{row.rowMessage.subject ?? "(no subject)"}
 					</span>

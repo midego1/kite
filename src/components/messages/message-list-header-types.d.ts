@@ -15,6 +15,8 @@ export type MessageListHeaderProps = {
 		hasUnread: boolean;
 		disabled: boolean;
 		pending: boolean;
+		/** The mailbox of each selected row, for the folders and actions the toolbar offers. */
+		mailboxIds: Array<string | null | undefined>;
 		toggleAll: (selected: boolean) => void;
 		run: (action: BulkMessageAction, folderId?: string) => Promise<void>;
 		clear: () => void;

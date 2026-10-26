@@ -139,6 +139,7 @@ export function MessageListHeader({
 						onClearSelection={selection.clear}
 						pending={selection.pending}
 						folder={getSelectionToolbarFolder(config)}
+						mailboxIds={selection.mailboxIds}
 					/>
 				) : (
 					showTitle && (

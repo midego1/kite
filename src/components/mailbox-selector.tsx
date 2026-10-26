@@ -109,7 +109,8 @@ function MailboxAccountRow({ mailbox, unread, avatarUrl, onSelect }: MailboxAcco
 }
 
 export function MailboxSelector({ initialUser }: MailboxSelectorProps = {}) {
-	const { selectedMailbox, setSelectedMailbox, mailboxes, isLoading } = useSelectedMailbox();
+	const { selectedMailbox, setSelectedMailbox, allMailboxes, setAllMailboxes, mailboxes, isLoading } =
+		useSelectedMailbox();
 	const pathname = usePathname();
 	const router = useRouter();
 	const [open, setOpen] = useState(false);
@@ -201,7 +202,8 @@ export function MailboxSelector({ initialUser }: MailboxSelectorProps = {}) {
 	const selectedAvatarUrl = selectedMailbox
 		? (selectedMailboxAvatarUrl ?? `/api/mailboxes/${selectedMailbox.id}/avatar`)
 		: avatarUrl;
-	const otherMailboxes = mailboxes.filter((mailbox) => mailbox.id !== selectedMailbox?.id);
+	// In All mailboxes every mailbox is one to switch to, the last selected one included.
+	const otherMailboxes = mailboxes.filter((mailbox) => allMailboxes || mailbox.id !== selectedMailbox?.id);
 	const adminActive = isAdminPath(pathname);
 
 	async function logout() {
@@ -311,6 +313,7 @@ export function MailboxSelector({ initialUser }: MailboxSelectorProps = {}) {
 												avatarUrl={mailboxAvatarUrls[mailbox.id]}
 												onSelect={() => {
 													setSelectedMailbox(mailbox);
+													setAllMailboxes(false);
 													setOpen(false);
 													router.push("/inbox");
 												}}

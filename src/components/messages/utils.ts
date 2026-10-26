@@ -66,6 +66,9 @@ export function getPageRange(offset: number, count: number, total: number): Page
 	};
 }
 
+/** How the All mailboxes view names itself where a single mailbox would show its address. */
+export const ALL_MAILBOXES_LABEL = "All mailboxes";
+
 export function getMailboxAddress(
 	mailbox: Pick<MailboxOption, "localPart" | "hostname"> | null | undefined,
 ): string | null {

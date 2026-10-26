@@ -18,9 +18,10 @@ import { dispatchMessageCountsDelta } from "./message-list-row-actions-utils";
 import { useConversationView } from "./use-conversation-view";
 import { useMessageListDensity } from "./use-reading-layout";
 import { useMessageListKeyboard } from "./use-message-list-keyboard";
-import type { MessageFolderPageProps } from "./types";
+import type { MessageFolderPageProps, SelectedMessage } from "./types";
 import {
 	getPageRange,
+	ALL_MAILBOXES_LABEL,
 	getMailboxAddress,
 	runBulkMessageAction,
 	emptyMessageFolder,
@@ -37,19 +38,28 @@ import { affectsInboxUnreadCount, getInboxUnreadDelta, withReadState } from "@/l
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { showProgressToast } from "@/components/ui/progress-toast";
 import { confirmReportPhishing } from "./phishing-report";
-import { reportListActionError } from "./list-action-toast";
+import { reportListActionError, reportReadOnlySkipped } from "./list-action-toast";
+import { MessageMailboxLabel } from "./message-mailbox-label";
+import { useMessageAccess } from "./use-message-access";
 import { useEmailPageTitle } from "./use-email-page-title";
 
 const pageSize = 25;
 
 export function MessageFolderPage({ config, compact = false, selectedMessageId, selection }: MessageFolderPageProps) {
-	const { selectedMailbox, isLoading: mailboxesLoading } = useSelectedMailbox();
+	const {
+		selectedMailbox,
+		allMailboxes,
+		viewMailboxes,
+		mailboxScope,
+		isLoading: mailboxesLoading,
+	} = useSelectedMailbox();
+	const access = useMessageAccess();
 	const { query } = useMailSearch();
 	const isMobile = useIsMobile();
 	const [offset, setOffset] = useState(0);
 	// Cursor that starts the page at each offset, filled in as the user pages forward.
 	const [pageCursors, setPageCursors] = useState<Record<number, string>>({});
-	const [internalSelectedMessages, setInternalSelectedMessages] = useState<Array<{ id: string; read: boolean }>>([]);
+	const [internalSelectedMessages, setInternalSelectedMessages] = useState<SelectedMessage[]>([]);
 	const [pendingBulkAction, setPendingBulkAction] = useState(false);
 	const [emptyingFolder, setEmptyingFolder] = useState(false);
 	const [unreadOnly, setUnreadOnly] = useState(false);
@@ -58,7 +68,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 	const grouped = conversationView && config.folder !== "drafts";
 	const { messages, isLoading, total, limit, nextCursor, updateMessages } = useMessages(
 		config.folder,
-		selectedMailbox?.id,
+		mailboxScope,
 		{
 			query,
 			limit: pageSize,
@@ -70,14 +80,18 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 		!mailboxesLoading,
 		config.folderId,
 	);
-	const { counts } = useMessageCounts(selectedMailbox?.id, !mailboxesLoading);
+	const { counts } = useMessageCounts(mailboxScope, !mailboxesLoading);
 	usePageLoading(mailboxesLoading || isLoading);
 	const hasActiveFilters = !!query.trim();
 	const folderCount = config.folderId ? counts.customFolders[config.folderId] : counts.folders[config.folder];
 	const titleTotal = folderCount?.total ?? total;
 	const titleUnread = folderCount?.unread ?? 0;
-	const mailboxAddress = getMailboxAddress(selectedMailbox);
-	const currentAccountName = selectedMailbox?.displayName ?? selectedMailbox?.localPart;
+	const mailboxAddress = allMailboxes ? ALL_MAILBOXES_LABEL : getMailboxAddress(selectedMailbox);
+	// Sent mail is shown as from the mailbox it went out from, which differs per row in All mailboxes.
+	const accountNameOf = (message: Message) => {
+		const mailbox = access.mailboxOf(message.mailboxId) ?? selectedMailbox;
+		return mailbox?.displayName ?? mailbox?.localPart;
+	};
 	const pageRange = getPageRange(offset, messages.length, total);
 	const selectedMessages = selection?.selectedMessages ?? internalSelectedMessages;
 	const setSelectedMessages = selection?.setSelectedMessages ?? setInternalSelectedMessages;
@@ -90,7 +104,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 	const expandSelectedIds = (ids: string[]) =>
 		ids.flatMap((id) => rowMessageIds(messages.find((message) => message.id === id) ?? ({ id } as Message)));
 
-	const listKey = [query, selectedMailbox?.id, config.folder, config.folderId, unreadOnly, grouped].join("\u0000");
+	const listKey = [query, mailboxScope, config.folder, config.folderId, unreadOnly, grouped].join("\u0000");
 	if (useKeyChanged(listKey)) {
 		setOffset(0);
 		setPageCursors({});
@@ -126,7 +140,9 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 
 	const permanentDeleteFolder = !config.folderId && supportsPermanentDelete(config.folder) ? config.folder : null;
 	async function emptyFolder() {
-		if (!permanentDeleteFolder || !selectedMailbox?.id) return;
+		// Emptying in All mailboxes empties every listed mailbox the user may manage.
+		const targets = viewMailboxes.filter((mailbox) => access.canManage(mailbox.id));
+		if (!permanentDeleteFolder || targets.length === 0) return;
 		if (
 			!(await requestConfirmation({
 				title: `Empty ${permanentDeleteFolder === "trash" ? "Trash" : "Spam"}?`,
@@ -140,9 +156,13 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 		const folderLabel = permanentDeleteFolder === "trash" ? "Trash" : "Spam";
 		const progress = showProgressToast(`Emptying ${folderLabel}`, titleTotal);
 		try {
-			const deleted = await emptyMessageFolder(selectedMailbox.id, permanentDeleteFolder, (done, total) =>
-				progress.update(done, total),
-			);
+			let deleted = 0;
+			for (const mailbox of targets) {
+				const before = deleted;
+				deleted += await emptyMessageFolder(mailbox.id, permanentDeleteFolder, (done, total) =>
+					progress.update(before + done, before + total),
+				);
+			}
 			setOffset(0);
 			clearSelection();
 			progress.succeed(deleted === 1 ? "1 message deleted forever" : `${deleted} messages deleted forever`);
@@ -156,8 +176,12 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 
 	async function runSelectedAction(action: BulkMessageAction, folderId?: string) {
 		if (selectedIds.length === 0) return;
+		// The server skips read-only mail too; leaving it out here keeps the list and the toasts honest.
+		const { allowed: actionIds, skipped } = access.split(selectedMessages, action);
+		reportReadOnlySkipped(skipped, actionIds.length === 0);
+		if (actionIds.length === 0) return;
 		if (action === "delete") {
-			const ids = expandSelectedIds(selectedIds);
+			const ids = expandSelectedIds(actionIds);
 			if (
 				!(await requestConfirmation({
 					title: "Delete forever?",
@@ -192,21 +216,21 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 			return;
 		}
 
-		if (action === "phishing" && !(await confirmReportPhishing(expandSelectedIds(selectedIds).length))) return;
+		if (action === "phishing" && !(await confirmReportPhishing(expandSelectedIds(actionIds).length))) return;
 		setPendingBulkAction(true);
 		const previousMessages = messages;
 		const readValue = action === "read" ? true : action === "unread" ? false : null;
-		const selectedRows = messages.filter((message) => selectedIds.includes(message.id));
+		const selectedRows = messages.filter((message) => actionIds.includes(message.id));
 		const inboxUnreadDelta = getInboxUnreadDelta(selectedRows, readValue, affectsInboxUnreadCount(config));
 		if (readValue !== null) {
 			updateMessages((current) =>
-				current.map((message) => (selectedIds.includes(message.id) ? withReadState(message, readValue) : message)),
+				current.map((message) => (actionIds.includes(message.id) ? withReadState(message, readValue) : message)),
 			);
 			setSelectedMessages((current) => current.map((message) => ({ ...message, read: readValue })));
 			if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta });
 		}
 		try {
-			await runBulkMessageAction(expandSelectedIds(selectedIds), action, true, folderId);
+			await runBulkMessageAction(expandSelectedIds(actionIds), action, true, folderId);
 			clearSelection();
 		} catch (error) {
 			if (readValue !== null) {
@@ -226,8 +250,13 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 		messageOpen: !!selectedMessageId,
 		runOnRows: (action, focusedId) => {
 			if (selectedIds.length > 0) void runSelectedAction(action);
-			else if (focusedId)
-				void runBulkMessageAction(expandSelectedIds([focusedId]), action, true).catch(reportListActionError);
+			else if (focusedId) {
+				const focused = messages.find((message) => message.id === focusedId);
+				const { allowed, skipped } = access.split(focused ? [focused] : [], action);
+				reportReadOnlySkipped(skipped, allowed.length === 0);
+				if (allowed.length > 0)
+					void runBulkMessageAction(expandSelectedIds(allowed), action, true).catch(reportListActionError);
+			}
 		},
 		toggleRowSelection: (messageId) => updateSelectedMessage(messageId, !selectedIds.includes(messageId)),
 	});
@@ -252,6 +281,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 					hasUnread: hasUnreadSelection,
 					disabled: messages.length === 0,
 					pending: pendingBulkAction,
+					mailboxIds: selectedMessages.map((message) => message.mailboxId),
 					toggleAll: toggleAllVisible,
 					run: runSelectedAction,
 					clear: clearSelection,
@@ -301,7 +331,11 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 							compact={compact || isMobile}
 							density={density}
 							hoverActions={!isMobile}
-							currentAccountName={currentAccountName}
+							currentAccountName={accountNameOf(message)}
+							mailboxLabel={
+								access.showMailboxLabels ? <MessageMailboxLabel mailbox={access.mailboxOf(message.mailboxId)} /> : null
+							}
+							canManage={access.canManage(message.mailboxId)}
 							onSelectedChange={updateSelectedMessage}
 							onMessageAction={async (messageId, action) => {
 								await runBulkMessageAction(

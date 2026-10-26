@@ -26,6 +26,10 @@ export type MessageListRowProps = {
 	/** Hover-revealed row actions; touch screens use swipes instead. */
 	hoverActions?: boolean;
 	currentAccountName?: string;
+	/** The row's mailbox in the All mailboxes view (`MessageMailboxLabel`). */
+	mailboxLabel?: ReactNode;
+	/** False for read-only shared mail: the row offers no archive, trash or swipe to archive. */
+	canManage?: boolean;
 	/** `extendRange` is set for Shift-click and selects every row since the last one clicked. */
 	onSelectedChange: (messageId: string, selected: boolean, extendRange?: boolean) => void;
 	onMessageAction: (messageId: string, action: RowMessageAction) => Promise<void>;
@@ -83,9 +87,11 @@ export type BulkMessageToolbarProps = {
 	pending: boolean;
 	/** Folder being listed; archived, spam and trash offer a way back instead of the same move. */
 	folder?: MessageFolder;
+	/** The mailbox of each selected row: folders are offered for one mailbox only, and read-only mail stays put. */
+	mailboxIds?: Array<string | null | undefined>;
 };
 
-export type SelectedMessage = Pick<Message, "id" | "read">;
+export type SelectedMessage = Pick<Message, "id" | "read"> & { mailboxId?: string | null };
 
 export type BulkSelectionAction = (action: BulkMessageAction, folderId?: string) => Promise<void>;
 

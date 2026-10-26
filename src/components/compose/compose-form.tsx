@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { authFetch } from "@/lib/auth/client";
 import { formatEmailAddress, getEmailAddress } from "@/lib/email/address";
@@ -36,6 +35,7 @@ import {
 import { headerToRecipients, isValidRecipient, recipientsToHeader } from "./recipient-utils";
 import { hasDraftContent, withoutAttachmentIds } from "./draft-autosave-utils";
 import { useDraftAutosave } from "./use-draft-autosave";
+import { useComposeMailbox } from "./use-compose-mailbox";
 import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-send-utils";
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
 import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
@@ -50,7 +50,7 @@ export function ComposeForm({
 	onClose?: () => void;
 }) {
 	const router = useRouter();
-	const { selectedMailbox, setSelectedMailbox, mailboxes } = useSelectedMailbox();
+	const { selectedMailbox, setSelectedMailbox, mailboxes, defaultFrom, rememberFrom } = useComposeMailbox();
 	const [draftId, setDraftId] = useState<string | null>(null);
 	const [agentRevision, setAgentRevision] = useState<number | null>(null);
 	const [agentReview, setAgentReview] = useState<{ approvalId: string; snapshot: ReviewSnapshot } | null>(null);
@@ -139,7 +139,11 @@ export function ComposeForm({
 	) {
 		setSelectedFrom(loadedDraftFrom);
 	}
-	const selectedFrom = senderAddresses.includes(chosenFrom) ? chosenFrom : (senderAddresses[0] ?? "");
+	const selectedFrom = senderAddresses.includes(chosenFrom)
+		? chosenFrom
+		: defaultFrom && senderAddresses.includes(defaultFrom)
+			? defaultFrom
+			: (senderAddresses[0] ?? "");
 	const fromAddr = selectedMailbox && selectedFrom ? formatEmailAddress(selectedFrom, selectedMailbox.displayName) : "";
 
 	const draftSnapshot = useMemo((): ComposeDraftSnapshot | null => {
@@ -393,6 +397,7 @@ export function ComposeForm({
 			setToast({ type: "error", message: data.error ?? "Send failed" });
 			return;
 		}
+		if (selectedMailbox && selectedFrom) rememberFrom({ mailboxId: selectedMailbox.id, address: selectedFrom });
 
 		if (sent.draftId) {
 			void authFetch(`/api/drafts/${sent.draftId}`, { method: "DELETE" }).finally(() => {

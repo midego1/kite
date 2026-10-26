@@ -25,6 +25,9 @@ import { ReportPhishingItem } from "./report-phishing-item";
 import { confirmReportPhishing } from "@/components/messages/phishing-report";
 import { messageShortcuts } from "./message-shortcuts";
 import { useMessageReply } from "./use-message-reply";
+import { useMessageAccess } from "@/components/messages/use-message-access";
+import { reportReadOnlySkipped } from "@/components/messages/list-action-toast";
+import { actionNeedsManage } from "@/lib/mailboxes/scope-utils";
 import { MoveToolbarMenu, SnoozeToolbarButton } from "./message-toolbar-menus";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
@@ -76,10 +79,17 @@ export function MessageActions({
 	const [snoozeExpanded, setSnoozeExpanded] = useState(false);
 	const moduleSlots = useMessageMenuSlots({ messageId, mailboxId }, moreOpen, () => setMoreOpen(false));
 	const listHref = useMessageListHref() ?? getMessageBackHref(direction, status);
+	const access = useMessageAccess();
+	// Read-only shared mail can be read and marked read, never moved or deleted; the server agrees.
+	const readOnly = !!access.mailboxOf(mailboxId) && !access.canManage(mailboxId);
 
 	const runAction = useCallback(
 		async (action: BulkMessageAction, folderId?: string) => {
 			setMoreOpen(false);
+			if (readOnly && actionNeedsManage(action)) {
+				reportReadOnlySkipped(1, true);
+				return;
+			}
 			setPendingAction(action);
 			setError(null);
 			try {
@@ -92,7 +102,7 @@ export function MessageActions({
 				setPendingAction(null);
 			}
 		},
-		[messageId, listHref, router],
+		[messageId, listHref, readOnly, router],
 	);
 
 	// In Trash and Spam the delete button removes the message for good instead of
@@ -200,6 +210,7 @@ export function MessageActions({
 		if (await confirmReportPhishing(1)) await runAction("phishing");
 	};
 	const disabled = pendingAction !== null || replyActions.pending !== null;
+	const manageDisabled = disabled || readOnly;
 	const shownError = error ?? replyActions.error;
 	const markAction: BulkMessageAction = read ? "unread" : "read";
 	const moveActions = getMoveMessageActions(status, direction);
@@ -224,14 +235,20 @@ export function MessageActions({
 					>
 						<Reply size={iconSize} />
 					</Button>
-					<Button variant="ghost" size="roundedSM" aria-label={trashLabel} disabled={disabled} onClick={onTrashClick}>
+					<Button
+						variant="ghost"
+						size="roundedSM"
+						aria-label={trashLabel}
+						disabled={manageDisabled}
+						onClick={onTrashClick}
+					>
 						<Trash2 size={iconSize} />
 					</Button>
 					<Button
 						variant="ghost"
 						size="roundedSM"
 						aria-label="Report spam"
-						disabled={disabled || status === "spam" || direction !== "inbound"}
+						disabled={manageDisabled || status === "spam" || direction !== "inbound"}
 						onClick={() => runAction("spam")}
 					>
 						<ShieldAlert size={iconSize} />
@@ -245,7 +262,7 @@ export function MessageActions({
 							variant="ghost"
 							size="roundedSM"
 							aria-label={shortcutsEnabled ? "Archive (e)" : "Archive"}
-							disabled={disabled || status === "archived"}
+							disabled={manageDisabled || status === "archived"}
 							onClick={() => runAction("archive")}
 						>
 							<Archive size={iconSize} />
@@ -254,13 +271,13 @@ export function MessageActions({
 					<SnoozeToolbarButton
 						messageId={messageId}
 						snoozable={direction === "inbound" && status === "received"}
-						disabled={disabled}
+						disabled={manageDisabled}
 						iconSize={iconSize}
 					/>
 					<MoveToolbarMenu
 						actions={moveActions}
 						mailboxId={mailboxId}
-						disabled={disabled}
+						disabled={manageDisabled}
 						iconSize={iconSize}
 						onAction={(action, folderId) => void runAction(action, folderId)}
 					/>
@@ -269,7 +286,7 @@ export function MessageActions({
 							variant="ghost"
 							size="roundedSM"
 							aria-label={shortcutsEnabled ? "Report spam (!)" : "Report spam"}
-							disabled={disabled || status === "spam" || direction !== "inbound"}
+							disabled={manageDisabled || status === "spam" || direction !== "inbound"}
 							onClick={() => runAction("spam")}
 						>
 							<ShieldAlert size={iconSize} />
@@ -280,7 +297,7 @@ export function MessageActions({
 							variant="ghost"
 							size="roundedSM"
 							aria-label={canDeleteForever ? trashLabel : shortcutsEnabled ? "Move to trash (#)" : "Move to trash"}
-							disabled={disabled}
+							disabled={manageDisabled}
 							onClick={onTrashClick}
 							className={canDeleteForever ? "text-red-600 hover:text-red-700" : undefined}
 						>
@@ -370,7 +387,7 @@ export function MessageActions({
 								<button
 									type="button"
 									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
-									disabled={status === "archived"}
+									disabled={readOnly || status === "archived"}
 									onClick={() => void runAction("archive")}
 								>
 									<Archive className="h-4 w-4" />

@@ -2,6 +2,7 @@ import { and, count, eq, gt, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { backups, outboundJobs, webhookDeliveries } from "@/db/schema";
 import type { AlertPolicy, AlertSnapshot } from "./alerts-types";
+import { readRelaySignatureState } from "./relay-signature";
 
 const MINUTE = 60_000;
 
@@ -18,7 +19,7 @@ export async function collectAlertSnapshot(
 	const queuedBefore = new Date(at - policy.stuckQueuedMinutes * MINUTE);
 	const sendingBefore = new Date(at - policy.stuckSendingMinutes * MINUTE);
 
-	const [failedBackups, [failedSends], [stuck], [exhausted]] = await Promise.all([
+	const [failedBackups, [failedSends], [stuck], [exhausted], relaySignature] = await Promise.all([
 		db
 			.select({ id: backups.id, completedAt: backups.completedAt })
 			.from(backups)
@@ -46,6 +47,7 @@ export async function collectAlertSnapshot(
 			.select({ total: count(), lastAttemptAt: sql<number | null>`max(${webhookDeliveries.lastAttemptAt})` })
 			.from(webhookDeliveries)
 			.where(and(eq(webhookDeliveries.status, "exhausted"), gt(webhookDeliveries.lastAttemptAt, since))),
+		readRelaySignatureState(env).catch(() => ({})),
 	]);
 
 	return {
@@ -54,5 +56,6 @@ export async function collectAlertSnapshot(
 		outboundStuck: stuck?.total ?? 0,
 		webhookExhausted: exhausted?.total ?? 0,
 		webhookLastAttemptAt: exhausted?.lastAttemptAt ? Number(exhausted.lastAttemptAt) * 1000 : null,
+		relaySignature,
 	};
 }

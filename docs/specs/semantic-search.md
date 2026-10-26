@@ -143,7 +143,7 @@ When semantic search is off, not ready, the provider fails or a cap is reached, 
 
 - **Two layers.** The store query is restricted to the accessible mailbox ids (Vectorize metadata filter, or the SQLite `mailbox_id` index). Every hit is then re-checked in D1 under the exact conditions of the keyword search (4.6 step 5). A bug in either layer alone cannot show another user's mail.
 - **No content in the store.** Vectors carry only a key and `mailboxId`. Message ids, subjects and snippets come from D1 after the re-check.
-- **Shared mailboxes.** A mailbox is indexed once; anyone who can read it can find its mail, exactly as with keyword search. A mailbox manager can switch **Search by meaning** off for a mailbox (`mailbox_agent_settings.semantic_index`); its pending rows are skipped and its vectors deleted.
+- **Shared mailboxes.** A mailbox is indexed once; anyone who can read it can find its mail, exactly as with keyword search. A mailbox manager can switch **Search by meaning** off for a mailbox (`mailbox_agent_settings.semantic_index`); its pending rows are skipped and its vectors deleted. Switching it back on queues the mailbox's eligible messages again: every `message_embeddings` row of the mailbox is set back to `pending`, rows marked `indexed` included, because their vectors are gone and the content-hash skip must not keep them out. The triggers do not see this (no message status changes) and the backfill cursor has long passed those messages, so the switch does it itself instead of waiting for a rebuild.
 - **Drafts** are never embedded, so one user's draft cannot surface for another through a shared mailbox.
 - **MCP keys** are limited to their `mcp_key_mailboxes`, which become the `mailboxIds` passed to the store.
 

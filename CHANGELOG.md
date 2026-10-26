@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The assistant chat can now organize more mail for you, always after you approve it in the chat: mark up to 20 emails as read or unread, list the mailbox's folders, create a folder and file up to 20 emails into one. Moves to the archive, trash or spam already covered 20 emails at once; the assistant now searches first and proposes a batch for you to approve. Every approved change shows **Undo** in the chat and appears in the assistant's **Activity** with Undo for 7 days. Creating folders and moving mail need full access to the mailbox; read state needs only read access, as in the inbox. Undo puts back only the emails still where the change left them and says how many went back; it does not reverse what the spam filter learned from a move to or out of Spam. MCP keys with **Organize mail** get the same tools (they act at once, as MCP moves always did), and **Read mail** keys can list folders.
 
+- Design specs for AI writing (a writing style profile learned from sent mail, AI in the composer and editable per-task instructions), thread summaries (a Summarize button and optional one-line summaries in the message list), search by meaning, and the assistant by email. They are proposals for roadmap milestones 27 to 30 in `docs/specs/` and change nothing in Kite yet.
+
 ### Changed
 
 - The README is brought up to date: it now covers Drive and object storage, lists all six modules, states the current test counts and CI setup, describes the AI assistant and **Skip DNS setup** accurately, and no longer names individual migrations.

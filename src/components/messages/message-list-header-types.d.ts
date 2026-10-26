@@ -7,6 +7,8 @@ export type MessageListHeaderProps = {
 	config: MessageFolderConfig;
 	/** The list beside a reading pane: the title row and a slim pager row below it. */
 	compact: boolean;
+	/** A selection pane next to the list offers the bulk actions, so the header skips them. */
+	selectionInPane: boolean;
 	showTitle: boolean;
 	nested: boolean;
 	selection: {

@@ -104,6 +104,7 @@ function EmptyFolderButton({
 export function MessageListHeader({
 	config,
 	compact,
+	selectionInPane,
 	showTitle,
 	nested,
 	selection,
@@ -111,7 +112,8 @@ export function MessageListHeader({
 	pager,
 	emptyFolder,
 }: MessageListHeaderProps) {
-	const bulk = selection.count > 0 && !compact;
+	// Only a selection pane beside the list replaces the toolbar; compact styling alone (a phone) must not.
+	const bulk = selection.count > 0 && !selectionInPane;
 	const headerIcons = config.headerIcons ?? [];
 	const tools = (
 		<>
@@ -155,7 +157,7 @@ export function MessageListHeader({
 					</div>
 				)}
 			</div>
-			{compact && (
+			{compact && !bulk && (
 				<div className="flex h-9 items-center gap-1 border-t border-neutral-100 px-3">
 					{tools}
 					<ListPager pager={pager} compact />

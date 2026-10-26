@@ -6,8 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [2026.10.26.7] - 2026-10-26
-
 ### Added
 
 - **Write with Kite** in the composer (the sparkles button, or ⌘J): write an email from a short request, or rewrite the selection or the whole body shorter, longer, more formal, more casual, with spelling and grammar fixed, translated (the original stays below the translation) or as you instruct. The answer streams into a preview and enters your message only when you click Insert or Replace, with Undo afterwards; the quoted message and your signature are never sent or changed. In a reply Kite reads the email being answered from the mailbox itself. It has no tools, removes addresses and links that are not in your text or the conversation, and stores nothing but token counts and cost. It needs the assistant on and, with an external AI provider, the primary admin's opt-in, and counts against the same daily caps as chat. See [Assistant settings](/inbox) for the **Drafting and composer** instructions it uses.

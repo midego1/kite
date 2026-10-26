@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- CI: allowlist a public key-derivation label in the secret scan.
+- CI: allowlist a public key-derivation label and a policy-date log value in the secret scan.
 
 ## [2026.10.26.1] - 2026-10-26
 

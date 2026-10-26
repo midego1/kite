@@ -92,7 +92,8 @@ Dropped from Zero's list, with reasons: readability indices (Flesch, Gunning-Fog
 Only text the user wrote themselves, sent from the composer:
 
 - **Source:** `POST /api/send` with a session, after `sendEmail` returns. Not sends through API keys (`/api/v1`), MCP, JMAP submission, scheduled sends started by the assistant, `sendSystemEmail` (`src/lib/email/system-mail.ts`), auto-replies or the [assistant by email](assistant-by-email.md) replies. A scheduled send counts when the user schedules it; an undone send still counts, which is harmless.
-- **Assistant text is excluded,** so the profile does not learn from the model's own writing: a send whose `draftId` has an `agent_draft_metadata` row, and a send the composer marks `aiAssisted: true` because AI text was inserted into it (section 5). The flag is a new optional boolean on the `/api/send` body; it is not stored on the message.
+- **The send path is stored,** so the backfill (4.6) can apply the same source rule to stored mail: migration 0069 adds a nullable `sent_via` text column to `messages`, and `sendEmail` stores the path its caller names — `composer` from `/api/send` with a session, or `composer_ai` when the composer reported `aiAssisted`, and `api`, `mcp`, `jmap`, `assistant`, `auto_reply` or `import` from the other paths. Mail sent before the migration has `NULL` and is never eligible for the backfill. Until the migration is applied, whole-row reads of `messages` go through `selectRow`/`selectRows` (`src/lib/db/pending-columns.ts`) and see the column as `NULL`, as 6.3 does for `mailbox_agent_settings`.
+- **Assistant text is excluded,** so the profile does not learn from the model's own writing: a send whose `draftId` has an `agent_draft_metadata` row, and a send the composer marks `aiAssisted: true` because AI text was inserted into it (section 5). The flag is a new optional boolean on the `/api/send` body; the boolean itself is not stored, but the `composer_ai` marker keeps the exclusion durable for the backfill.
 - **What is stripped:** the quote (`splitQuotedHtml`, and for plain text, lines starting with `>` and the `On … wrote:` line before them), the signature block (`data-kite-signature`, legacy `data-mailflare-signature`) and a forwarded message block. The rest is turned into text with `htmlToReadableText` (`src/lib/email/reply-content-utils.ts`), which runs on the server.
 - **Skipped:** fewer than 5 words after stripping, more than 20,000 characters, or a mailbox the user cannot send from any more.
 
@@ -138,7 +139,7 @@ Concurrency: two sends at once must not lose an update silently. The update read
 
 The personal opt-in lives in a new table `user_ai_settings` (`user_id` text primary key, FK `users` cascade; `writing_style_enabled` boolean, default 0; `updated_at`), not in `users`. A new `users` column would break every whole-row read of `users` between a deploy and the migration (deploys never apply migrations); a separate table has no such risk and is where [assistant by email](assistant-by-email.md) adds its personal settings.
 
-Migration `0069_add_ai_writing.sql` (hand-written, journal entry, `--> statement-breakpoint` between statements) creates both tables and adds the three instruction columns of section 6 to `mailbox_agent_settings`.
+Migration `0069_add_ai_writing.sql` (hand-written, journal entry, `--> statement-breakpoint` between statements) creates both tables, adds the nullable `sent_via` column to `messages` (4.2) and adds the three instruction columns of section 6 to `mailbox_agent_settings`.
 
 ### 4.5 Turning the profile into prompt text
 
@@ -167,7 +168,7 @@ When the user has not opted in, has no profile or has fewer than 10 samples, eve
 
 ### 4.6 Opt-in, reset and privacy
 
-- **Off by default.** Assistant **Settings** (`src/components/agent/agent-panel.tsx`, the personal section with Max steps) gets **Learn my writing style from mail I send**. Turning it on asks whether to learn from the last 200 messages already sent from each mailbox the user can send from; yes enqueues one `{ kind: "agent.style_backfill", userId, mailboxId }` message per mailbox on `AGENT_QUEUE`, which pages through that user's `sent` messages oldest first, applies 4.2 and 4.3 and writes once per page of 50. No model, no spend.
+- **Off by default.** Assistant **Settings** (`src/components/agent/agent-panel.tsx`, the personal section with Max steps) gets **Learn my writing style from mail I send**. Turning it on asks whether to learn from the last 200 messages already sent from each mailbox the user can send from; yes enqueues one `{ kind: "agent.style_backfill", userId, mailboxId }` message per mailbox on `AGENT_QUEUE`, which pages through that user's `sent` messages oldest first, keeps only rows with `sent_via = 'composer'` (every other value, and `NULL` from before the marker existed, is skipped, so right after the upgrade the backfill covers only mail sent since), applies 4.2 and 4.3 and writes once per page of 50. No model, no spend.
 - **What the user sees.** Per mailbox: the sample count, the exact text of `describeWritingStyle` ("This is what Kite tells the AI"), and **Reset**, which deletes that row. With fewer than 10 samples: "Kite needs 10 sent messages before it uses your style."
 - **Turning it off** deletes all of the user's profiles after a confirmation, and stops learning and using them at once.
 - **Shared mailboxes.** Each user has a separate profile in a shared mailbox. Profiles are never visible to other users, admins included; the primary admin can only delete them with the account.
@@ -348,7 +349,7 @@ Nothing here is Workers-specific. The composer route uses `getEnv()`, `getDb`, `
 
 - `writing_style_profiles` and `user_ai_settings` go into `BACKUP_TABLES` (`src/lib/backups/export.ts`) after `mailbox_agent_settings` (they reference `users` and `mailboxes`), into the `assistant` group in `src/lib/backups/table-groups.ts` and into `DatabaseBackupTable` (`src/lib/backups/types.d.ts`). They are not in `REQUIRED_BACKUP_TABLES`, so older backups restore.
 - They are kept rather than excluded as derived: a profile could be rebuilt from sent mail, but only from the last 200 messages, and the user's opt-in would be lost.
-- The new `mailbox_agent_settings` columns need no list change.
+- The new `mailbox_agent_settings` and `messages` columns need no list change.
 - Tests: restore a backup made before 0069 into a database after it, and a new backup round trip.
 
 ## 11. Rollout and flags
@@ -368,6 +369,7 @@ Nothing here is Workers-specific. The composer route uses `getEnv()`, `getDb`, `
 - `untrusted-utils.test.mjs`: `buildTriagePrompt` output is byte-for-byte the pre-refactor fixture.
 - `agent-prompts-unchanged.test.mjs`: with no profile and empty task instructions, the chat, triage and draft prompts equal today's.
 - `compose-output.test.mjs`: Markdown stripped, meta prefix refused, unknown addresses and links removed with warnings, length caps.
+- `writing-style-backfill.test.mjs`: only `sent_via = 'composer'` rows are learned; `composer_ai`, the other send paths and `NULL` are skipped.
 - Backup tests extended for the two tables; `tests/queue-log-context.test.mjs` for `agent.style_backfill`.
 
 ### 12.2 e2e with the fake model (`e2e/54-composer-ai.spec.ts`; take the next free number)

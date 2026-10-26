@@ -106,7 +106,7 @@ For each eligible message, `buildEmbeddingText` (pure, `chunk-utils.ts`):
 **Enqueueing by triggers**, so every path that creates or changes mail (inbound, send, JMAP import, IMAP import, Screener approval, a restore, moving out of Spam or Trash) is covered without code in each:
 
 - `AFTER INSERT ON messages` when the new status is eligible and `app_settings.semantic_search_enabled = 1` → `INSERT OR IGNORE` a `pending` row.
-- `AFTER UPDATE OF status ON messages` when the new status is eligible and the old one was not → `INSERT OR IGNORE` a `pending` row (a row already `indexed` stays, its vectors still exist).
+- `AFTER UPDATE OF status ON messages` when the new status is eligible and the old one was not → upsert a `pending` row: `INSERT … ON CONFLICT(message_id) DO UPDATE SET status = 'pending', queued_at = <now>, lease_until = NULL WHERE message_embeddings.status = 'skipped'`. A row already `indexed` stays (its vectors still exist) and a `failed` row stays `failed` until a rebuild, but a `skipped` row becomes `pending` again, so a message restored from Trash or Spam after the drain skipped it is indexed instead of staying missing until a manual rebuild.
 - `AFTER DELETE ON messages` → copy `vector_key` and `chunk_count` into `message_embedding_deletes`, then delete the state row. (The state table has no foreign key to `messages` so that this trigger can still read it.)
 
 Messages moved to Spam or Trash keep their vectors until they are deleted for good; search re-checks status in D1, so they never show. Trash retention and mailbox purges delete the rows, and the tombstones remove the vectors.
@@ -255,7 +255,7 @@ Vectorize has no local emulation in `wrangler dev` without remote access, which 
 - `semantic-fusion.test.mjs`: reciprocal rank fusion order, ties, a message in both lists ranks first, `match` labels.
 - `semantic-filter.test.mjs`: the Vectorize filter stays under 2,048 bytes and splits into groups; vector ids stay under 64 bytes.
 - `semantic-sqlite-store.test.mjs` (better-sqlite3, temporary file): int8 quantisation keeps the top-10 order of a float32 reference on fixtures; scoping returns only the given mailboxes; delete removes.
-- `semantic-triggers.test.mjs` (`SqliteDatabase`): insert, status change into and out of Spam, Trash and `screening`, draft insert, delete (including a cascaded delete when a user is removed) produce the right `pending` rows and tombstones; the triggers do nothing while the feature is off.
+- `semantic-triggers.test.mjs` (`SqliteDatabase`): insert, status change into and out of Spam, Trash and `screening`, draft insert, delete (including a cascaded delete when a user is removed) produce the right `pending` rows and tombstones; a `skipped` row returns to `pending` when its message becomes eligible again while an `indexed` row stays; the triggers do nothing while the feature is off.
 - `semantic-scope.test.mjs`: the D1 re-check drops hits from other mailboxes, other users' drafts and `screening` rows even when the store returns them.
 - `semantic-spend.test.mjs`: backfill stops at the cap share; live indexing continues to the cap; external provider without the opt-in embeds nothing.
 - Backup tests: the two tables are internal; `queue-log-context` for `search.embed`.

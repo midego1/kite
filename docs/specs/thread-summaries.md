@@ -160,7 +160,7 @@ A summary repeats what the messages said. When a message is deleted or moves to 
 | `created_by_user_id` | text, FK `users` SET NULL | Null for background lines |
 | `created_at`, `updated_at` | timestamp | |
 
-Indexes: unique `(mailbox_id, kind, thread_key, coalesce(message_id, ''), instructions_digest, language)` (upserted, so a regeneration replaces the row); `(message_id)`; `(translation_of)`.
+Indexes: unique `(mailbox_id, kind, thread_key, coalesce(message_id, ''), instructions_digest, language)` (upserted, so a regeneration replaces the row; the upsert first deletes the replaced row's translations with `DELETE FROM ai_summaries WHERE translation_of = <old id>`, because an upsert updates in place and never fires the `ON DELETE CASCADE` that 4.5 relies on); `(message_id)`; `(translation_of)`.
 
 Also in `0070`:
 

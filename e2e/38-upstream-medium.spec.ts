@@ -7,6 +7,7 @@ import { selectMailbox } from "./support/auto-read";
 import { askAssistant, chatRequests } from "./support/chat";
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types";
+import { chooseOption, expectSelectValue, readOptions } from "./support/select";
 
 let api: APIRequestContext;
 
@@ -262,15 +263,14 @@ test.describe("Settings → Mailboxes (upstream #133)", () => {
 		await page.goto("/settings/mailboxes");
 		await page.getByRole("button", { name: "New mailbox" }).click();
 		const owner = page.getByLabel("Account", { exact: true });
-		await expect(owner).toHaveValue(user.id);
-		await expect(owner.locator("option")).toHaveCount(1);
-		await expect(owner.locator("option")).toHaveAttribute("value", user.id);
+		await expectSelectValue(owner, user.id);
+		expect((await readOptions(owner)).map((option) => option.value)).toEqual([user.id]);
 
 		await page.goto("/mailboxes");
 		await page.getByRole("button", { name: "New mailbox" }).click();
-		await expect(owner.locator(`option[value="${member.id}"]`)).toHaveCount(1);
-		await owner.selectOption(member.id);
-		await expect(owner).toHaveValue(member.id);
+		expect((await readOptions(owner)).map((option) => option.value)).toContain(member.id);
+		await chooseOption(owner, member.id);
+		await expectSelectValue(owner, member.id);
 	});
 
 	test("a member with the mailbox grant renames their own mailbox from Settings", async ({ browser }) => {

@@ -2596,8 +2596,10 @@ test.describe("reply suggestions", () => {
 					await api.get(`/api/drafts/${draftId}/state`),
 				);
 			expect(await draftState(account.api, (await replyFor(drafted.message.id)).draftId!)).toEqual({ state: "draft" });
+			await expect
+				.poll(async () => (await draftState(account.api, sentReply.draftId!)).state, { timeout: 15_000 })
+				.toBe("sent");
 			expect(await draftState(account.api, sentReply.draftId!)).toMatchObject({
-				state: "sent",
 				messageId: sentMessageId,
 				subject: expect.any(String),
 			});

@@ -46,10 +46,14 @@ export function AgentDraftActions({
 	const [card, setCard] = useState<DraftCardState>({ kind: "loading" });
 	useEffect(() => {
 		let active = true;
-		const load = () =>
+		// Only the newest request may update the card, or a read that began before the send could bring the buttons back.
+		let latest = 0;
+		const load = () => {
+			const request = ++latest;
 			void loadDraftCard(action.draftId).then((value) => {
-				if (active) setCard(value);
+				if (active && request === latest) setCard(value);
 			});
+		};
 		load();
 		// Approving the draft elsewhere in the panel announces the change, which turns this card into "Sent".
 		window.addEventListener("kite:messages-changed", load);

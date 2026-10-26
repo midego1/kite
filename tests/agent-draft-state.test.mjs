@@ -40,14 +40,34 @@ test("a queued job with a future time is scheduled", () => {
 	assert.equal(state.scheduledAt, "2026-10-27T09:00:00.000Z");
 });
 
-test("a queued job whose time has passed counts as sent", () => {
-	const state = sentDraftState({
-		approvedMessageId: "m1",
-		message,
-		job: { status: "queued", scheduledAt: new Date("2026-10-26T11:00:00.000Z") },
-		now: NOW,
-	});
-	assert.equal(state.state, "sent");
+test("a send that has not finished is sending, not sent, even after its scheduled time", () => {
+	const late = new Date("2026-10-26T11:00:00.000Z");
+	for (const status of ["queued", "sending"])
+		assert.equal(
+			sentDraftState({
+				approvedMessageId: "m1",
+				message: { ...message, status },
+				job: { status, scheduledAt: late },
+				now: NOW,
+			}).state,
+			"sending",
+		);
+	assert.equal(
+		sentDraftState({ approvedMessageId: "m1", message: { ...message, status: "queued" }, job: null, now: NOW }).state,
+		"sending",
+	);
+});
+
+test("an undone send is unavailable", () => {
+	assert.deepEqual(
+		sentDraftState({
+			approvedMessageId: "m1",
+			message: { ...message, status: "draft" },
+			job: { status: "cancelled", scheduledAt: null },
+			now: NOW,
+		}),
+		{ state: "unavailable" },
+	);
 });
 
 test("a failed delivery is reported as failed", () => {

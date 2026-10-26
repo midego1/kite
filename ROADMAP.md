@@ -254,7 +254,7 @@ Specified in [docs/specs/semantic-search.md](docs/specs/semantic-search.md); pro
 
 ## Milestone 30: Assistant by email (proposed)
 
-Specified in [docs/specs/assistant-by-email.md](docs/specs/assistant-by-email.md); proposed, open questions decided on 2026-10-26. Specifies milestone 5, item 1. After [#115](https://github.com/midego1/kite/pull/115) and [#117](https://github.com/midego1/kite/pull/117), milestone 27 and the "more chat actions" work. Migration `0072`.
+Specified in [docs/specs/assistant-by-email.md](docs/specs/assistant-by-email.md); proposed, open questions decided on 2026-10-26. Specifies milestone 5, item 1. Builds on the trusted authentication results of [#115](https://github.com/midego1/kite/pull/115) and [#117](https://github.com/midego1/kite/pull/117). After milestone 27 and the "more chat actions" work. Migration `0072`.
 
 1. **Intake** (3 days): one assistant address per domain, shared by opted-in users; Kite's `authPassed` rule (DMARC pass or aligned DKIM) from a trusted hop (Cloudflare Email Routing, the signed relay or SES); only the user's own or verified addresses; loop, auto-reply and replay guards; unknown senders dropped silently.
 2. **Running and replying** (3–4 days): the chat engine with a read-only tool set plus drafts, send reviews and pending approvals; the reply carries only links to the answer and reviews in Kite.

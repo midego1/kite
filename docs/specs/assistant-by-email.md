@@ -24,7 +24,7 @@ Non-goals: acting or sending without approval, sending mail to anyone but the re
 | --- | --- | --- |
 | Inbound path | `worker.ts` `email` → `resolveIncomingMail` (`src/lib/email/incoming.ts`) → R2 → `INBOUND_QUEUE` → `processInboundMessage` (`src/lib/email/inbound.ts`); other runtimes through `intakeIncomingMail` (`src/lib/email/intake.ts`): the Node SMTP listener (`server/runtime/smtp.ts`), the signed relay (`/api/inbound`, `deploy/cloudflare-email-relay`), Resend (`/api/inbound/resend`) and SES (`/api/inbound/ses`) through `intakeProviderMail` (`src/lib/email/provider-intake.ts`) | The assistant address is resolved here and never becomes a mailbox message. |
 | Routing | `resolveInboundAddress` (`src/lib/email/routing.ts`): phase 1 `reject` rules, phase 2 exact mailbox and aliases, phase 3 `forward`/`store` catch-alls | The assistant address is an exact address in phase 2. |
-| Authentication results | Since [#115](https://github.com/midego1/kite/pull/115) (merged), the intake hop sets a trusted `authenticationResults` on the queue payload (`src/lib/spam/authentication-results-utils.ts`) and `analyzeSpam` never reads the message's own headers for authentication. [#117](https://github.com/midego1/kite/pull/117) (open) adds SES verdicts and makes `authPassed` require DMARC or aligned DKIM | Section 5 reuses that rule; this Mission depends on both. |
+| Authentication results | Since [#115](https://github.com/midego1/kite/pull/115) (merged), the intake hop sets a trusted `authenticationResults` on the queue payload (`src/lib/spam/authentication-results-utils.ts`) and `analyzeSpam` never reads the message's own headers for authentication. [#117](https://github.com/midego1/kite/pull/117) (merged) adds SES verdicts and makes `authPassed` require DMARC or aligned DKIM | Section 5 reuses that rule. |
 | SES notification | `src/lib/aws/ses-notification.ts` parses the SNS receipt; #117 maps `spfVerdict`, `dkimVerdict` and `dmarcVerdict` into `authenticationResults` after verifying the SNS signature | Used as is. |
 | Loop guard | `X-Kite-Forwarded` (`KITE_FORWARDED_HEADER`, `wasForwardedByKite`, which also honours `X-Mailflare-Forwarded`) in `src/lib/email/account-forwarding.ts`; `isAutomaticMessage` (`auto-read/facts-utils.ts`) | Reused, plus an assistant header. |
 | Chat engine | `createAgentChatStream` (`src/lib/agent/chat.ts`): mailbox access check, `getAgentEnabled`, `getAgentModel`, `buildChatTools` (`chat-tools.ts`: email tools, `open_page`, module `assistant_tool`s through `invokeCapability`), `stepCountIs(maxSteps)`, conversation history in `agent_conversations` / `agent_chat_messages` (deleted 30 days after the last update) | The email request runs the same engine without streaming. |
@@ -65,7 +65,7 @@ mail to assistant@example.com
 
 ### 5.1 Which results Kite trusts
 
-The assistant does not parse authentication headers itself. It reuses the trust rules of the spam filter as changed by [#115](https://github.com/midego1/kite/pull/115) and [#117](https://github.com/midego1/kite/pull/117) (#115 is merged; #117 was open when this was updated, and this Mission starts after it is merged):
+The assistant does not parse authentication headers itself. It reuses the trust rules of the spam filter as changed by [#115](https://github.com/midego1/kite/pull/115) and [#117](https://github.com/midego1/kite/pull/117) (both merged):
 
 - Each intake hop sets `authenticationResults` on the inbound queue payload, and the message's own headers never count (`src/lib/spam/authentication-results-utils.ts`). The Worker `email` handler passes Cloudflare's topmost `Authentication-Results`; the relay route passes it only with a valid `X-Kite-Headers-Signature`; SES passes its receipt verdicts (`sesAuthenticationResults`) only when the SNS signature verifies; the Node SMTP listener and Resend pass none.
 - `analyzeAuthentication` turns that value into the `spf_*`, `dkim_*` and `dmarc_*` signals, with `metadata.aligned` on `dkim_passed`.
@@ -279,7 +279,6 @@ Total: about 9 to 11 working days.
 ## 20. Place in the roadmap
 
 - **Replaces** item 1 of milestone 5 ("Email-addressable agents"); the Cloudflare Agents SDK evaluation that item mentions was done for automatic reading (auto-agent §13: the queue design was kept), and this spec builds on the same queue.
-- **After** [#115](https://github.com/midego1/kite/pull/115) and [#117](https://github.com/midego1/kite/pull/117), which provide the trusted authentication results and the `authPassed` rule.
 - **After** [AI writing](ai-writing.md) (`user_ai_settings`, the shared untrusted-block helper, chat instructions) and after the "more chat actions" work being built now, so its new tools can be classified in 8.3 once instead of twice.
 - **After or with** [thread summaries](thread-summaries.md) ("summarise my unread mail" reads cached summaries) and [semantic search](semantic-search.md) ("what did Jan say about the roof" is a meaning search); neither is required.
 

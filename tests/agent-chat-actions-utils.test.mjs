@@ -13,7 +13,7 @@ after(() => rmSync(outDir, { recursive: true, force: true }));
 await build({
 	stdin: {
 		contents: `
-			export { chatActionPlan, chatActionState, chatProposalSchema, safeActionError, storedChatActionState, undoTargets } from "./src/lib/agent/chat-actions-utils.ts";
+			export { appliedPlaces, chatActionPlan, chatActionState, chatProposalSchema, safeActionError, storedChatActionState, undoTargets } from "./src/lib/agent/chat-actions-utils.ts";
 			export { FOLDER_COLOR_NAMES, folderColorValue } from "./src/lib/agent/organize-tools-utils.ts";
 			export { canSeeAction, getActionMeta, userExecuteRefusal, undoRefusal } from "./src/lib/agent/auto-read/actions-utils.ts";
 			export { approveActionLabel, approvedActionText, canUndoAction, undoneActionText } from "./src/components/agent/chat-action-utils.ts";
@@ -37,6 +37,7 @@ const {
 	actionLabel,
 	actionTarget,
 	agentActionProposal,
+	appliedPlaces,
 	agentToolLabel,
 	approveActionLabel,
 	approvedActionText,
@@ -145,6 +146,43 @@ test("only rows carrying the chat marker are chat actions, and undo targets only
 	assert.deepEqual(undoTargets(marked, "read"), [{ before: inbox, applied: { ...inbox, read: true } }]);
 	// A message missing after the effect (deleted meanwhile) is not a target.
 	assert.deepEqual(undoTargets(chatActionState([inbox], []), "place"), []);
+});
+
+test("the applied state derives from the action's own writes, never from a later live read", () => {
+	const inbox = { id: "a", status: "received", folderId: null, read: true };
+	const spam = { id: "b", status: "spam", folderId: "f1", read: false };
+	const plan = (value) => chatActionPlan(parse(value));
+	// A plan without an audit row changes nothing.
+	assert.deepEqual(appliedPlaces([inbox], plan({ action: "discard_draft", draftId: "d", expectedRevision: 1 })), [
+		inbox,
+	]);
+	// Marking read or unread flips only the read flag.
+	assert.deepEqual(appliedPlaces([inbox], plan({ action: "mark_email_read", emailId: "a", read: false })), [
+		{ ...inbox, read: false },
+	]);
+	assert.deepEqual(appliedPlaces([spam], plan({ action: "mark_emails_read", emailIds: ["b"] })), [
+		{ ...spam, read: true },
+	]);
+	// A move sets the status and keeps the folder, except reporting spam unfiles, as does moving spam back.
+	const move = (destination, emailIds = ["a"]) => plan({ action: "move_emails", emailIds, destination });
+	assert.deepEqual(appliedPlaces([inbox], move("archived")), [{ ...inbox, status: "archived" }]);
+	assert.deepEqual(appliedPlaces([spam], move("spam", ["b"])), [{ ...spam, folderId: null }]);
+	assert.deepEqual(appliedPlaces([spam], move("inbox", ["b"])), [{ ...spam, status: "received", folderId: null }]);
+	assert.deepEqual(appliedPlaces([inbox], move("inbox")), [inbox]);
+	// Filing makes the mail received in that folder; a plan without a folderId files nowhere.
+	assert.deepEqual(appliedPlaces([inbox], plan({ action: "move_emails_to_folder", emailIds: ["a"], folderId: "f9" })), [
+		{ ...inbox, status: "received", folderId: "f9" },
+	]);
+	assert.deepEqual(
+		appliedPlaces([inbox], {
+			tool: "move_emails_to_folder",
+			input: {},
+			audit: { action: "set_folder", variant: "", emailIds: ["a"] },
+		}),
+		[{ ...inbox, status: "received", folderId: null }],
+	);
+	// Creating a folder touches no messages.
+	assert.deepEqual(appliedPlaces([inbox], plan({ action: "create_folder", name: "Bills", color: "green" })), [inbox]);
 });
 
 test("database errors never reach the user or the audit row as SQL", () => {

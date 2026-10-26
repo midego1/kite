@@ -7,7 +7,13 @@ import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { executeAction, undoAgentAction } from "./auto-read/execute";
 import type { ChatActionAudit, MessagePlace } from "./chat-actions-types";
-import { chatActionPlan, chatActionState, chatProposalSchema, safeActionError } from "./chat-actions-utils";
+import {
+	appliedPlaces,
+	chatActionPlan,
+	chatActionState,
+	chatProposalSchema,
+	safeActionError,
+} from "./chat-actions-utils";
 import { runEmailTool } from "./tools";
 
 async function loadToolMessage(env: CloudflareEnv, user: SessionUser, toolMessageId: string) {
@@ -60,8 +66,10 @@ function auditAfter(audit: ChatActionAudit, result: unknown): Record<string, unk
  * Runs an approved chat proposal. Undoable proposals go through `executeAction`, which writes the
  * `agent_actions` row before the effect so the change shows in Activity and can be undone for the usual
  * window; the tool result then carries the action id. Once the effect ran, the row's `before` becomes the
- * chat-marked state with every message before and right after it (`takeInverse`), which undo compares
- * against so it never overwrites a later change. Errors are stored and shown without database text.
+ * chat-marked state with every message before it and the state the action's own writes left it in
+ * (`takeInverse`, derived by `appliedPlaces` rather than re-read, so a message another request moved while
+ * the tool ran keeps that later place), which undo compares against so it never overwrites a later change.
+ * Errors are stored and shown without database text.
  */
 async function applyProposal(
 	env: CloudflareEnv,
@@ -77,7 +85,6 @@ async function applyProposal(
 	if (!access?.canRead) throw new Error("Mailbox not found or permission denied");
 	const places = await messagePlaces(env, mailboxId, audit.emailIds);
 	let result: unknown = null;
-	let applied: MessagePlace[] = places;
 	const outcome = await executeAction({
 		env,
 		mailboxId,
@@ -97,10 +104,9 @@ async function applyProposal(
 				} catch (error) {
 					throw new Error(safeActionError(error));
 				}
-				applied = await messagePlaces(env, mailboxId, audit.emailIds);
 				return auditAfter(audit, result);
 			},
-			takeInverse: () => chatActionState(places, applied),
+			takeInverse: () => chatActionState(places, appliedPlaces(places, plan)),
 		},
 	});
 	if (outcome.status !== "applied")

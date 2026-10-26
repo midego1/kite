@@ -353,3 +353,23 @@ test("a folder name taken between the check and the insert answers already exist
 		.get();
 	assert.equal(failed.reason, 'A folder named "Race" already exists');
 });
+
+test("a message moved by another request while the action runs keeps that move when the action is undone", async (t) => {
+	const { database, env } = await setup(t);
+	// The trigger plays the other request: it trashes the message right after the chat action archives it.
+	database.db.exec(`
+		CREATE TRIGGER race_move AFTER UPDATE ON messages WHEN NEW.id = 'm1' AND NEW.status = 'archived' AND OLD.status != 'archived'
+		BEGIN UPDATE messages SET status = 'trash' WHERE id = 'm1'; END;
+	`);
+	const approved = await approve(database, env, OWNER, "conv-1", "tool-race", "move_emails", {
+		emailIds: ["m1"],
+		destination: "archived",
+	});
+	assert.equal(message(database, "m1").status, "trash");
+	// The row records the state the action's own write left, not the trash move that landed during it.
+	const before = JSON.parse(actionRow(database, approved.actionId).before);
+	assert.deepEqual(before.applied, [{ id: "m1", status: "archived", folderId: null, read: true }]);
+	// Undoing the chat action refuses rather than erasing the later trash move.
+	await assert.rejects(undoChatAgentAction(env, OWNER, "tool-race"), /moved again since/);
+	assert.equal(message(database, "m1").status, "trash");
+});

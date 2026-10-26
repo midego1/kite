@@ -114,6 +114,39 @@ export function chatActionState(before: MessagePlace[], after: MessagePlace[]): 
 	return { source: CHAT_ACTION_SOURCE, messages: before, applied: after };
 }
 
+/**
+ * The state the action's own writes left each message in, derived from the plan rather than re-read after
+ * the tool ran. A message another request moved while the tool was still working keeps its new place: the
+ * undo compares against the state recorded here, so it skips that message instead of erasing the later
+ * move. A field the action does not write keeps its earlier value, which can only make an undo leave the
+ * message alone, never overwrite someone else's change.
+ */
+export function appliedPlaces(before: MessagePlace[], plan: ChatActionPlan): MessagePlace[] {
+	const audit = plan.audit;
+	if (!audit) return before;
+	switch (audit.action) {
+		case "mark_read":
+			return before.map((place) => ({ ...place, read: audit.variant === "read" }));
+		case "move": {
+			const status = audit.variant === "inbox" ? "received" : audit.variant;
+			return before.map((place) => ({
+				...place,
+				status,
+				// Reporting spam, or moving spam back to the inbox, also unfiles the message (applySpamFeedback).
+				folderId:
+					audit.variant === "spam" || (audit.variant === "inbox" && place.status === "spam") ? null : place.folderId,
+			}));
+		}
+		case "set_folder": {
+			// Filed mail is received mail in that folder (moveEmailsToFolder).
+			const folderId = typeof plan.input.folderId === "string" ? plan.input.folderId : null;
+			return before.map((place) => ({ ...place, status: "received", folderId }));
+		}
+		case "create_folder":
+			return before;
+	}
+}
+
 /** The saved state of a row written by an approved chat action, or null for any other row (a phishing "Mark as spam"). */
 export function storedChatActionState(before: Record<string, unknown> | null): ChatActionState | null {
 	if (before?.source !== CHAT_ACTION_SOURCE) return null;

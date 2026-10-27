@@ -150,6 +150,21 @@ test("a stored form is rebuilt only from the listed phrase and {name}, in any sc
 	for (const [line, form] of Object.entries(signOffs)) assert.equal(ws.signOffForm(line), form, line);
 });
 
+test("matching does not depend on the process locale (Turkish dotless i)", () => {
+	const original = String.prototype.toLocaleLowerCase;
+	// A Turkish locale lowercases "I" to the dotless "ı", which would turn "HI" into "hı".
+	String.prototype.toLocaleLowerCase = function () {
+		return String(this).replace(/I/g, "ı").toLowerCase();
+	};
+	try {
+		assert.equal(ws.greetingForm("HI SAM,"), "hi {name},");
+		assert.equal(ws.signOffForm("REGARDS,"), "regards,");
+		assert.equal(ws.greetingForm("Hi İlkay,"), "hi {name},");
+	} finally {
+		String.prototype.toLocaleLowerCase = original;
+	}
+});
+
 test("short, huge and one-line messages are not measured as greeting or signing off", () => {
 	assert.equal(measureText("Thanks, see you."), null, "under five words");
 	assert.equal(measureText("word ".repeat(4_001).trim()), null, "over 20,000 characters");

@@ -266,3 +266,17 @@ for (const [label, interrupt] of [
 		assert.equal(interrupted, true, "the job was interrupted after its first page");
 		assert.equal(profileRow(sqlite), undefined);
 	});
+
+test("a backfill that stops early releases its lease, so another can be requested at once", async (t) => {
+	const { sqlite, env, sent } = await setup(t);
+	for (let index = 0; index < 120; index++) await send(env, sqlite);
+	assert.equal(await style.requestStyleBackfill(env, { ...OWNER }, "mailbox-a"), "queued");
+	// Send access is lost after the first page; the profile row itself stays.
+	const db = interruptAfterFirstPage(sqlite, () =>
+		sqlite.db.exec("UPDATE mailboxes SET user_id = 'other' WHERE id = 'mailbox-a'"),
+	);
+	await style.processStyleBackfill({ ...env, DB: db }, sent[0]);
+	assert.equal(profileRow(sqlite).backfill_requested_at, null);
+	sqlite.db.exec("UPDATE mailboxes SET user_id = 'owner' WHERE id = 'mailbox-a'");
+	assert.equal(await style.requestStyleBackfill(env, { ...OWNER }, "mailbox-a"), "queued");
+});

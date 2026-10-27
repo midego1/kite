@@ -192,6 +192,14 @@ const byLength = (phrases: readonly string[]) => [...phrases].sort((a, b) => b.l
 const GREETING_PHRASES = byLength(GREETINGS);
 const SIGN_OFF_PHRASES = byLength(SIGN_OFFS);
 
+/**
+ * The line lowercased the same way in every process locale: `toLowerCase` uses Unicode's default mapping, where a
+ * Turkish locale's `toLocaleLowerCase` would turn "HI" into "hı" and miss the phrase list.
+ */
+function lowercase(line: string): string {
+	return line.normalize("NFC").trim().toLowerCase();
+}
+
 /** The longest listed phrase the lowercased line starts with, as a whole word. */
 function matchPhrase(lower: string, phrases: readonly string[]): string | null {
 	return (
@@ -213,7 +221,7 @@ function isName(text: string): boolean {
  * tells "Hi Sam," from "Hello, the invoice is paid"; anything else on the line discards the form.
  */
 export function greetingForm(line: string): string | null {
-	const lower = line.normalize("NFC").trim().toLocaleLowerCase();
+	const lower = lowercase(line);
 	const phrase = matchPhrase(lower, GREETING_PHRASES);
 	if (!phrase) return null;
 	const rest = lower.slice(phrase.length);
@@ -230,7 +238,7 @@ export function greetingForm(line: string): string | null {
  * or carries anything else, gives no form.
  */
 export function signOffForm(line: string): string | null {
-	const lower = line.normalize("NFC").trim().toLocaleLowerCase();
+	const lower = lowercase(line);
 	const phrase = matchPhrase(lower, SIGN_OFF_PHRASES);
 	if (!phrase) return null;
 	const rest = lower.slice(phrase.length);

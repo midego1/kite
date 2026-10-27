@@ -301,8 +301,8 @@ async function backfillAllowed(db: AppDatabase, userId: string, mailboxId: strin
  * sent before migration 0070, through the API, MCP, JMAP, by the assistant or with Kite's text is never learnt from.
  * No model and no spend. The opt-in, access and the profile row are checked again before every page, and pages only
  * update the row, so a Reset or switching off mid-job ends it without bringing a profile back. The lease
- * (`backfill_requested_at`) is renewed per page and cleared only when the job is done, so a failed attempt that the
- * queue retries does not overlap a new request.
+ * (`backfill_requested_at`) is renewed per page and released whenever the job ends, early or not; only a thrown error
+ * keeps it, so the queue's retry does not overlap a new request.
  */
 export async function processStyleBackfill(env: CloudflareEnv, message: StyleBackfillMessage): Promise<void> {
 	const db = getDb(env);
@@ -334,7 +334,8 @@ export async function processStyleBackfill(env: CloudflareEnv, message: StyleBac
 		})
 		.where(where(userId, mailboxId));
 	for (let start = 0; start < ids.length; start += BACKFILL_PAGE) {
-		if (!(await backfillAllowed(db, userId, mailboxId))) return;
+		// Access or the opt-in was lost, or the profile was reset: the job is over, so another may be requested.
+		if (!(await backfillAllowed(db, userId, mailboxId))) return void (await releaseBackfill(db, userId, mailboxId));
 		const page = await db
 			.select({ html: messages.htmlBody, text: messages.textBody })
 			.from(messages)
@@ -342,7 +343,9 @@ export async function processStyleBackfill(env: CloudflareEnv, message: StyleBac
 		const measured = page
 			.map((row) => measureMessage(ownText(row.html, row.text)))
 			.filter((value): value is StyleMeasurement => value !== null);
-		if (!(await updateStyleProfile(db, userId, mailboxId, measured))) return;
+		// The row is gone, or its samples could not be saved after the compare-and-set retries: stop and release.
+		if (!(await updateStyleProfile(db, userId, mailboxId, measured)))
+			return void (await releaseBackfill(db, userId, mailboxId));
 		await db.update(writingStyleProfiles).set({ backfillRequestedAt: new Date() }).where(where(userId, mailboxId));
 	}
 	await releaseBackfill(db, userId, mailboxId);

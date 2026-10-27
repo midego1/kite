@@ -140,10 +140,13 @@ test("a chat step the provider refuses keeps its estimate, closes the reservatio
 	respond = async () => Response.json({ error: { message: "model overloaded" } }, { status: 400 });
 	const { stream } = await createAgentChatStream(context, "Hello", undefined, undefined, "UTC");
 	const events = await readEvents(stream);
-	assert.ok(
-		events.some((event) => event.type === "error" && /model overloaded/.test(event.message)),
-		JSON.stringify(events),
-	);
+	// The code, its message and the details; the provider's own text, which may echo content, is not sent.
+	const error = events.find((event) => event.type === "error");
+	assert.equal(error?.code, "provider_rejected", JSON.stringify(events));
+	assert.match(error.message, /^The AI provider refused the request \(HTTP 400\)\./);
+	assert.equal(error.details.status, 400);
+	assert.equal(error.details.feature, "chat");
+	assert.doesNotMatch(JSON.stringify(events), /model overloaded/);
 	const rows = usageRows(db);
 	assert.equal(rows.length, 1);
 	assert.equal(rows[0].reserved, 0);

@@ -466,6 +466,79 @@ test.describe("Thread summaries", () => {
 		}
 	});
 
+	test("a failed summary says what went wrong, with Details and Try again, and Admin → Agent lists it", async ({
+		browser,
+	}) => {
+		const account = await newAccount("sumerr");
+		const cases = [
+			{
+				scenario: "summary-slow",
+				code: "timeout",
+				// The e2e server sets AI_TEST_TIMEOUT_MS=5000; production waits 60 s.
+				message: "The AI took too long (5 s). Try again, or pick a faster model in Admin → Agent.",
+			},
+			{
+				scenario: "summary-cut-off",
+				code: "cut_off",
+				message:
+					"The AI's answer was cut off before it was finished. Try again; if it keeps happening, pick another model in Admin → Agent.",
+			},
+			{
+				scenario: "summary-unusable",
+				code: "unusable_answer",
+				message: "The AI's answer wasn't usable: it was not in the format Kite asked for. Try again.",
+			},
+		];
+		const { context, page } = await signedInPage(browser, account.api, account.mailboxId);
+		const admin = await browser.newContext({ storageState: STORAGE_STATE });
+		try {
+			for (const failure of cases) {
+				const thread = await deliverConversation(account.api, account.address, [
+					`${BODIES[0]} [[scenario:${failure.scenario}]]`,
+					BODIES[1],
+				]);
+				await page.goto(`/inbox/${thread.messages[1].id}`);
+				await page.getByRole("button", { name: "Summarize conversation" }).click();
+				await expect(card(page).getByRole("alert")).toHaveText(failure.message, { timeout: 15_000 });
+				fake.releaseDelayed();
+				const notice = card(page).locator(`[data-ai-error="${failure.code}"]`);
+				await notice.getByText("Details").click();
+				await expect(notice).toContainText(`Code${failure.code}`);
+				await expect(notice).toContainText("FeatureSummary");
+				await expect(notice).toContainText("Modelfake-triage");
+				await expect(notice).toContainText("Providercustom");
+				await expect(card(page).getByRole("button", { name: "Try again" })).toBeVisible();
+				// No content of the mail or the answer reaches the page's error.
+				await expect(notice).not.toContainText("budget review");
+			}
+			// Try again asks the model again, and a good answer replaces the error.
+			fake.enqueueScenario("summary-thread");
+			await card(page).getByRole("button", { name: "Try again" }).click();
+			await expect(card(page)).toContainText(SUMMARY_OVERVIEW);
+			await expect(card(page).getByRole("alert")).toHaveCount(0);
+
+			const { errors } = await okJson<{ errors: { code: string; feature: string; mailbox: string | null }[] }>(
+				await api.get("/api/admin/agent/errors"),
+			);
+			const mine = errors.filter((row) => row.mailbox === account.address);
+			expect(mine.map((row) => row.code).slice(0, 3)).toEqual(["unusable_answer", "cut_off", "timeout"]);
+			expect(mine.every((row) => row.feature === "summary")).toBe(true);
+			expect((await account.api.get("/api/admin/agent/errors")).status()).toBe(403);
+			const adminPage = await admin.newPage();
+			await adminPage.goto("/agent");
+			const recent = adminPage.getByRole("region", { name: "Recent AI errors" });
+			await expect(recent.locator('[data-ai-error-row="cut_off"]').first()).toContainText(
+				"The AI's answer was cut off before it was finished.",
+			);
+			await expect(recent.locator('[data-ai-error-row="timeout"]').first()).toContainText(account.address);
+		} finally {
+			fake.releaseDelayed();
+			await admin.close();
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
 	test("the card reads in Kite, Kite light, Classic and dark mode", async ({ browser }, testInfo) => {
 		const account = await newAccount("sumstyle");
 		const thread = await deliverConversation(account.api, account.address, BODIES.slice(0, 2));

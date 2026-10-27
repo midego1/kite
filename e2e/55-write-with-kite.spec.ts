@@ -336,7 +336,11 @@ test.describe("Write with Kite", () => {
 			fake.enqueueScenario("compose-meta");
 			panel = await openPanel(page);
 			await panel.getByRole("button", { name: "Shorter" }).click();
-			await expect(panel.getByRole("alert")).toHaveText("Kite answered with a note instead of the text. Try again.");
+			await expect(panel.getByRole("alert")).toHaveText(
+				"The AI's answer wasn't usable: it was a note about the text instead of the text. Try again.",
+			);
+			await panel.getByText("Details").click();
+			await expect(panel.locator('[data-ai-error="unusable_answer"]')).toContainText("Codeunusable_answer");
 			await expect(panel.getByRole("button", { name: "Try again" })).toBeVisible();
 			await page.keyboard.press("Escape");
 			await expect(panel).toHaveCount(0);
@@ -392,7 +396,7 @@ test.describe("Write with Kite", () => {
 			await okJson(await api.put("/api/admin/agent", { data: { enabled: false } }));
 			const disabled = await account.api.post("/api/agent/compose", { data: write });
 			expect(disabled.status()).toBe(403);
-			expect(await disabled.json()).toMatchObject({ code: "assistant_disabled" });
+			expect(await disabled.json()).toMatchObject({ code: "assistant_off" });
 			expect(composeRequests()).toHaveLength(0);
 
 			const anonymous = await apiContext();

@@ -20,6 +20,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/accounts`                                        | GET, POST              | [source](../src/app/api/accounts/route.ts)                                        |
 | `/api/activity`                                        | GET                    | [source](../src/app/api/activity/route.ts)                                        |
 | `/api/admin/accounts/[id]/modules`                     | GET, PUT               | [source](../src/app/api/admin/accounts/[id]/modules/route.ts)                     |
+| `/api/admin/agent/errors`                              | GET                    | [source](../src/app/api/admin/agent/errors/route.ts)                              |
 | `/api/admin/agent/models`                              | POST                   | [source](../src/app/api/admin/agent/models/route.ts)                              |
 | `/api/admin/agent`                                     | GET, PUT               | [source](../src/app/api/admin/agent/route.ts)                                     |
 | `/api/admin/ai-usage`                                  | GET                    | [source](../src/app/api/admin/ai-usage/route.ts)                                  |

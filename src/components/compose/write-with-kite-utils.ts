@@ -71,7 +71,7 @@ export function translateLanguages(browserLanguage: string | undefined): string[
 export type ComposeStreamEvent =
 	| { type: "text"; text: string }
 	| { type: "done"; text: string; warnings: string[] }
-	| { type: "error"; error: string };
+	| { type: "error"; error: string; code?: string; details?: unknown };
 
 /** Complete NDJSON lines from a buffer, and the incomplete rest to keep for the next chunk. */
 export function parseComposeEvents(buffer: string): { events: ComposeStreamEvent[]; rest: string } {

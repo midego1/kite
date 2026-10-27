@@ -1,3 +1,4 @@
+import { aiReasonText } from "@/lib/agent/ai-error-utils";
 import { splitSkipReasons } from "@/lib/agent/auto-read/module-steps-utils";
 import { MODULE_MANIFESTS } from "@/lib/modules/registry";
 import type { ActivityAction, ActivityTarget } from "./agent-activity-types";
@@ -105,10 +106,10 @@ function humanize(code: string): string {
 /** A reason in plain words; free-text reasons (error messages) are shown as they are. */
 export function reasonText(reason: string | null): string | null {
 	if (!reason) return null;
-	if (REASON_TEXT[reason]) return REASON_TEXT[reason];
+	const known = (part: string) => REASON_TEXT[part] ?? aiReasonText(part);
+	if (known(reason)) return known(reason);
 	const parts = splitSkipReasons(reason);
-	if (parts.length > 1 && parts.every((part) => REASON_TEXT[part]))
-		return parts.map((part) => REASON_TEXT[part]).join(", ");
+	if (parts.length > 1 && parts.every(known)) return parts.map(known).join(", ");
 	const allowed = ALLOWED_RULE.exec(reason);
 	if (allowed) return `Allowed in ${LEVEL_NAMES[allowed[1]]} mode`;
 	return /\s/.test(reason) ? reason : humanize(reason);

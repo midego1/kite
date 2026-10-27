@@ -36,7 +36,7 @@ import {
 import { headerToRecipients, isValidRecipient, recipientsToHeader } from "./recipient-utils";
 import { hasDraftContent, withoutAttachmentIds } from "./draft-autosave-utils";
 import { useDraftAutosave } from "./use-draft-autosave";
-import { useComposeMailbox } from "./use-compose-mailbox";
+import { pickFromAddress, useComposeMailbox } from "./use-compose-mailbox";
 import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-send-utils";
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
 import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
@@ -140,11 +140,7 @@ export function ComposeForm({
 	) {
 		setSelectedFrom(loadedDraftFrom);
 	}
-	const selectedFrom = senderAddresses.includes(chosenFrom)
-		? chosenFrom
-		: defaultFrom && senderAddresses.includes(defaultFrom)
-			? defaultFrom
-			: (senderAddresses[0] ?? "");
+	const selectedFrom = pickFromAddress(senderAddresses, [chosenFrom, defaultFrom]);
 	const fromAddr = selectedMailbox && selectedFrom ? formatEmailAddress(selectedFrom, selectedMailbox.displayName) : "";
 
 	const draftSnapshot = useMemo((): ComposeDraftSnapshot | null => {

@@ -6,6 +6,11 @@ import { useSelectedMailbox, type MailboxOption } from "@/components/mailbox-pro
 import { useStoredState } from "@/hooks/use-stored-state";
 import { canSendFromMailbox, pickComposeMailbox } from "@/lib/mailboxes/scope-utils";
 
+/** The first preferred address the mailbox can send from (this composer's choice, then the last From), else its first. */
+export function pickFromAddress(addresses: readonly string[], preferred: ReadonlyArray<string | null>): string {
+	return preferred.find((address) => !!address && addresses.includes(address)) ?? addresses[0] ?? "";
+}
+
 type LastFrom = { mailboxId: string; address: string };
 
 /**

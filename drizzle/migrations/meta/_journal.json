@@ -535,7 +535,7 @@
       "breakpoints": true
     },
     {
-      "idx": 75,
+      "idx": 76,
       "version": "6",
       "when": 1788851880028,
       "tag": "0073_add_spam_report_receipts",

@@ -69,6 +69,7 @@ const full = (overrides = {}) => ({
 		senderAddress: "sam@outside.test",
 		bodyLength: 600,
 		spamVerdict: "inbox",
+		phishingSignals: [],
 	},
 	mutedSenders: [],
 	phishingOpen: false,
@@ -95,6 +96,9 @@ test("the full gate: phishing, muted senders, short mail, newsletters and the da
 	assert.equal(lineSummaryGate(full({ status: "spam" })), "not_in_inbox");
 	assert.equal(lineSummaryGate(full({ facts: { ...full().facts, spamVerdict: "suspicious" } })), "suspicious");
 	assert.equal(lineSummaryGate(full({ phishingOpen: true })), "phishing");
+	// Kite's own signals stop a line even with no suggestion stored, as when automatic reading is off.
+	for (const signal of ["displayed_link_mismatch", "dmarc_failed", "urlhaus_url"])
+		assert.equal(lineSummaryGate(full({ facts: { ...full().facts, phishingSignals: [signal] } })), "phishing", signal);
 	assert.equal(lineSummaryGate(full({ mutedSenders: ["sam@outside.test"] })), "muted_sender");
 	assert.equal(lineSummaryGate(full({ facts: { ...full().facts, bodyLength: 279 } })), "too_short");
 	for (const key of ["automatic", "bulk", "noReply"]) {

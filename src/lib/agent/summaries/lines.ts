@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
-import { agentJobs, mailboxAgentSettings, mailboxes, messages } from "@/db/schema";
+import { agentJobs, aiUsage, mailboxAgentSettings, mailboxes, messages } from "@/db/schema";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import { aiSummaries } from "@/db/schema/agent-summaries";
 import { inJsonArray, queryInChunks } from "@/db/chunk-utils";
@@ -26,24 +26,25 @@ type SourceMessage = Pick<
 >;
 type Mailbox = typeof mailboxes.$inferSelect;
 
-/** Lines written in the mailbox since 00:00 UTC, by triage or by their own job; unlimited before migration 0072. */
-async function linesToday(db: AppDatabase, mailboxId: string, now = new Date()): Promise<number> {
-	try {
-		const [row] = await db
-			.select({ count: sql<number>`count(*)` })
-			.from(aiSummaries)
-			.where(
-				and(
-					eq(aiSummaries.mailboxId, mailboxId),
-					eq(aiSummaries.kind, "line"),
-					gte(aiSummaries.createdAt, new Date(utcDayStartSeconds(now) * 1000)),
-				),
-			);
-		return row?.count ?? 0;
-	} catch (error) {
-		if (isNoSuchTableError(error)) return Number.POSITIVE_INFINITY;
-		throw error;
-	}
+/** The `ai_usage` sources of requests that ask for a line: the line's own, and a triage request carrying one. */
+const LINE_REQUEST_SOURCES = ["line_summary", "auto_triage_line"] as const;
+
+/**
+ * Requests that asked for a line in the mailbox since 00:00 UTC, whether or not a usable line came back (a repair
+ * turn or a parameter fallback counts again), so the daily limit bounds the spend and not only the lines shown.
+ */
+async function lineRequestsToday(db: AppDatabase, mailboxId: string, now = new Date()): Promise<number> {
+	const [row] = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(aiUsage)
+		.where(
+			and(
+				eq(aiUsage.mailboxId, mailboxId),
+				inArray(aiUsage.source, [...LINE_REQUEST_SOURCES]),
+				gte(aiUsage.createdAt, new Date(utcDayStartSeconds(now) * 1000)),
+			),
+		);
+	return row?.count ?? 0;
 }
 
 async function phishingOpen(db: AppDatabase, messageId: string): Promise<boolean> {
@@ -78,7 +79,7 @@ export async function lineGateFor(
 		facts,
 		mutedSenders: settings.capabilities.mutedSenders,
 		phishingOpen: await phishingOpen(db, source.id),
-		linesToday: await linesToday(db, mailbox.id),
+		linesToday: await lineRequestsToday(db, mailbox.id),
 		dailyLimit: settings.listSummaryDailyLimit,
 	});
 }

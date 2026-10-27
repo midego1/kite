@@ -50,24 +50,29 @@ export function lineScheduleGate(input: ScheduleGateInput): string | null {
 
 type LineGateInput = Omit<ScheduleGateInput, "createdAt" | "released" | "now"> & {
 	listSummariesBulk: boolean;
-	facts: Pick<MessageFacts, "automatic" | "bulk" | "noReply" | "senderAddress" | "bodyLength" | "spamVerdict">;
+	facts: Pick<
+		MessageFacts,
+		"automatic" | "bulk" | "noReply" | "senderAddress" | "bodyLength" | "spamVerdict" | "phishingSignals"
+	>;
 	mutedSenders: readonly string[];
 	/** The message has an open phishing suggestion: a confident line would launder it. */
 	phishingOpen: boolean;
+	/** Requests that asked for a line in the mailbox today, usable answer or not. */
 	linesToday: number;
 	dailyLimit: number;
 };
 
 /**
  * Whether a message gets a one-line summary (`docs/specs/thread-summaries.md` §5.2), or why not: everything the
- * schedule gate checks, then no phishing warning, no muted sender, at least 280 characters of text, no newsletter,
- * notification or no-reply mail unless the mailbox includes them, and under the mailbox's daily limit.
+ * schedule gate checks, then no phishing warning or deterministic phishing signal, no muted sender, at least 280 characters of text, no newsletter,
+ * notification or no-reply mail unless the mailbox includes them, and under the mailbox's daily limit of line requests.
  */
 export function lineSummaryGate(input: LineGateInput): string | null {
 	const scheduled = lineScheduleGate({ ...input, createdAt: new Date(), released: true });
 	if (scheduled) return scheduled;
 	if (input.facts.spamVerdict !== "inbox") return "suspicious";
-	if (input.phishingOpen) return "phishing";
+	// Kite's own phishing signals count even where no suggestion was stored (automatic reading off).
+	if (input.phishingOpen || input.facts.phishingSignals.length > 0) return "phishing";
 	if (input.mutedSenders.includes(input.facts.senderAddress)) return "muted_sender";
 	if (input.facts.bodyLength < LINE_MIN_BODY_CHARS) return "too_short";
 	if (!input.listSummariesBulk && (input.facts.automatic || input.facts.bulk || input.facts.noReply)) return "bulk";

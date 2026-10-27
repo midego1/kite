@@ -939,7 +939,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 						Drafts always need your confirmation before sending.
 					</p>
 					{jobs
-						.filter((job) => job.kind !== "line_summary" && (job.status === "failed" || job.status === "skipped"))
+						.filter((job) => job.status === "failed" || job.status === "skipped")
 						.slice(0, 5)
 						.map((job) => (
 							<p key={job.id} className="text-xs">

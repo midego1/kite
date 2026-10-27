@@ -5,15 +5,14 @@ import { makeBundleDirectory } from "./support/bundle-directory.mjs";
 import { copyMigrationsBefore, migrationsDir, seedAccountData } from "./support/module-database.mjs";
 import { bundleModules } from "./support/modules-bundle.mjs";
 
-const { SqliteDatabase, applyMigrations, createDb, loadRowLines, saveLine } = await bundleModules(
-	"kite-line-summaries-store-",
-	[
+const { SqliteDatabase, applyMigrations, createDb, lineGateFor, loadRowLines, resolveMailboxAgentSettings, saveLine } =
+	await bundleModules("kite-line-summaries-store-", [
 		["SqliteDatabase", "server/runtime/sqlite-database.ts"],
 		["applyMigrations", "server/runtime/migrate.ts"],
 		["createDb", "src/db/index.ts"],
-		["loadRowLines, saveLine", "src/lib/agent/summaries/lines.ts"],
-	],
-);
+		["lineGateFor, loadRowLines, saveLine", "src/lib/agent/summaries/lines.ts"],
+		["resolveMailboxAgentSettings", "src/lib/agent/auto-read/settings-utils.ts"],
+	]);
 
 const scratch = makeBundleDirectory("kite-line-summaries-store-dirs-");
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -92,4 +91,59 @@ test("before migration 0072 the list has no lines and nothing fails", async (t) 
 	db.db.exec("INSERT INTO mailbox_agent_settings (mailbox_id, enabled, updated_at) VALUES ('mailbox-a', 1, 1)");
 	const get = await loadRowLines(createDb(db), [{ id: "message-1", mailboxId: "mailbox-a" }], (row) => [row.id]);
 	assert.deepEqual(get("message-1"), {});
+});
+
+test("the daily limit counts every request that asked for a line, usable answer or not", async (t) => {
+	const db = await database(t);
+	const appDb = createDb(db);
+	const context = { mailboxId: "mailbox-a", ownerUserId: "owner", mailboxType: "personal" };
+	const settings = {
+		...resolveMailboxAgentSettings(undefined, context),
+		listSummaries: true,
+		listSummaryDailyLimit: 2,
+	};
+	const source = db.db.prepare("SELECT * FROM messages WHERE id = 'message-2'").get();
+	const input = {
+		settings,
+		source: {
+			id: source.id,
+			mailboxId: source.mailbox_id,
+			threadId: source.thread_id,
+			status: "received",
+			spamVerdict: "inbox",
+			fromAddr: source.from_addr,
+		},
+		mailbox: { id: "mailbox-a", userId: "owner", domainId: "domain-1", localPart: "a", type: "personal" },
+		facts: {
+			automatic: false,
+			bulk: false,
+			noReply: false,
+			senderAddress: "customer@example.net",
+			bodyLength: 600,
+			spamVerdict: "inbox",
+			phishingSignals: [],
+		},
+	};
+	const now = Math.floor(Date.now() / 1000);
+	const usage = (id, source) =>
+		db.db.exec(
+			`INSERT INTO ai_usage (id, created_at, provider, model, source, input_tokens, output_tokens, mailbox_id) VALUES ('${id}', ${now}, 'compatible', 'fake', '${source}', 10, 5, 'mailbox-a')`,
+		);
+	assert.equal(await lineGateFor(appDb, input), null);
+	// A triage request that did not ask for a line does not count; one that did counts, even without a line.
+	usage("u1", "auto_triage");
+	usage("u2", "auto_triage_line");
+	assert.equal(await lineGateFor(appDb, input), null);
+	usage("u3", "line_summary");
+	assert.deepEqual(db.db.prepare("SELECT count(*) AS n FROM ai_summaries").all(), [{ n: 0 }]);
+	assert.equal(await lineGateFor(appDb, input), "daily_limit");
+	assert.equal(await lineGateFor(appDb, { ...input, settings: { ...settings, listSummaryDailyLimit: 3 } }), null);
+	assert.equal(
+		await lineGateFor(appDb, {
+			...input,
+			facts: { ...input.facts, phishingSignals: ["display_name_spoof"] },
+			settings: { ...settings, listSummaryDailyLimit: 3 },
+		}),
+		"phishing",
+	);
 });

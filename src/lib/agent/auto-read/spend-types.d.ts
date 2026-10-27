@@ -7,7 +7,14 @@ import type { AiUsageDetails } from "@/lib/ai/usage-types";
  * translations (the install cap covers all).
  */
 export type AutoSpendSource =
-	"auto_triage" | "auto_draft" | "chat" | "compose" | "summary" | "summary_translation" | "line_summary";
+	| "auto_triage"
+	| "auto_draft"
+	| "chat"
+	| "compose"
+	| "summary"
+	| "summary_translation"
+	| "line_summary"
+	| "auto_triage_line";
 
 /** "cost" compares USD micros against the caps; "tokens" applies the input-token cap for models without rates. */
 export type SpendMode = "cost" | "tokens";

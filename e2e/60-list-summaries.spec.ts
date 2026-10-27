@@ -9,7 +9,7 @@ import type { StoredMessage } from "./support/helpers-types";
 import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
 import { setScreener } from "./support/screener";
 import { chooseOption } from "./support/select";
-import { waitForFinishedJob } from "./support/triage";
+import { readJobs, waitForFinishedJob } from "./support/triage";
 
 let api: APIRequestContext;
 let fake: FakeModel;
@@ -149,6 +149,12 @@ test.describe("One-line summaries in the message list", () => {
 			const skipped = await waitForFinishedJob(account.api, account.mailboxId, newsletter.id, "line_summary");
 			expect([skipped.status, skipped.reason]).toEqual(["skipped", "bulk"]);
 			expect(requestsFor(newsletter.id)).toEqual([]);
+			// Routine skips stay out of the job list the assistant panel shows, so real failures are not crowded out.
+			expect((await readJobs(account.api, account.mailboxId)).map((job) => job.kind)).not.toContain("line_summary");
+			expect((await readJobs(account.api, account.mailboxId, "line_summary")).map((job) => job.status).sort()).toEqual([
+				"completed",
+				"skipped",
+			]);
 
 			// The switch lives under Summaries in the assistant settings, for people who manage the mailbox.
 			const { context, page } = await inboxPage(browser, account);

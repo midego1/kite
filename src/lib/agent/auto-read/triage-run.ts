@@ -87,7 +87,8 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 				{
 					env,
 					details: current,
-					source: "auto_triage",
+					// A request that also asks for the list line counts toward the line's daily limit.
+					source: input.oneLine ? "auto_triage_line" : "auto_triage",
 					mailboxId: job.mailboxId,
 					jobId: job.id,
 					promptChars: promptChars(request),

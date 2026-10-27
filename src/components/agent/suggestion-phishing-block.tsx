@@ -7,6 +7,7 @@ import type { CardSuggestion } from "./suggestion-card-types";
 import { announceSuggestionChange, runCardAction } from "./suggestion-card-actions";
 import { runSingleMessageAction } from "@/components/message-actions/utils";
 import { confirmReportPhishing } from "@/components/messages/phishing-report";
+import { confirmReportSpam } from "@/components/messages/spam-report";
 import toast from "react-hot-toast";
 import { phishingReasonTexts } from "./suggestion-card-utils";
 
@@ -25,7 +26,9 @@ export function PhishingBlock({
 	const [busy, setBusy] = useState(false);
 	const reasons = phishingReasonTexts(suggestion);
 
+	/** Trains the filter like a spam report, so it asks first; the toast's Undo takes the training back too. */
 	async function markSpam() {
+		if (!(await confirmReportSpam(1))) return;
 		setBusy(true);
 		const done = await runCardAction(suggestion, "mark_spam");
 		setBusy(false);

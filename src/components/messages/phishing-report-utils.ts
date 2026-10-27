@@ -3,7 +3,7 @@ import type { PhishingReport } from "@/lib/spam/phishing-report-types";
 export function phishingConfirmCopy(count: number) {
 	const them = count === 1 ? "it" : "them";
 	return {
-		title: count === 1 ? "Report this message as phishing?" : `Report ${count} messages as phishing?`,
+		title: count === 1 ? "Report as phishing?" : `Report ${count} messages as phishing?`,
 		description: `Kite moves ${them} to Spam, learns from ${them} more strongly than from a spam report and blocks the ${count === 1 ? "sender" : "senders"}, so their mail goes to Trash. Saved contacts, people you have written to and your own domains are not blocked.`,
 		confirmLabel: "Report phishing",
 	};

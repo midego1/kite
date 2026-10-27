@@ -1,5 +1,6 @@
 "use client";
 
+import clsx from "clsx";
 import { useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { LazyAgentPanel, preloadAgentPanel } from "@/components/agent/agent-panel-lazy";
@@ -7,6 +8,7 @@ import { useCompose } from "@/components/compose/compose-context";
 import { readInitialColumnWidth, saveColumnWidth } from "@/components/column-width-preferences";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { assistantBubblePlacement } from "./floating-assistant-utils";
 
 type WindowSize = { width: number; height: number };
 
@@ -45,13 +47,12 @@ export function FloatingAssistant({
 	onToggleFullSize: () => void;
 	onClose: () => void;
 }) {
-	const { open: composing } = useCompose();
-	// A closed bubble would sit on the composer's send row, so it waits until the composer is gone.
-	const showBubble = !fullSize && (open || !composing);
+	const { open: composing, placement } = useCompose();
+	const bubblePlacement = assistantBubblePlacement({ open, fullSize, composing, composerPlacement: placement });
 	return (
 		<>
 			{open && <FloatingAssistantWindow fullSize={fullSize} onToggleFullSize={onToggleFullSize} onClose={onClose} />}
-			{showBubble && (
+			{bubblePlacement !== "hidden" && (
 				<button
 					type="button"
 					onPointerEnter={() => void preloadAgentPanel().catch(() => undefined)}
@@ -59,7 +60,10 @@ export function FloatingAssistant({
 					aria-label={open ? "Minimize Kite AI" : "Ask Kite AI"}
 					aria-expanded={open}
 					aria-controls={open ? "email-assistant-panel" : undefined}
-					className="fixed bottom-6 right-8 z-[44] flex h-12 items-center gap-2.5 rounded-full bg-blue-900 pl-4 pr-3 text-sm font-medium text-blue-50 shadow-lg shadow-blue-900/25 transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2"
+					className={clsx(
+						"fixed right-8 z-[44] flex h-12 items-center gap-2.5 rounded-full bg-blue-900 pl-4 pr-3 text-sm font-medium text-blue-50 shadow-lg shadow-blue-900/25 transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2",
+						bubblePlacement === "above-reply" ? "bottom-[5.5rem]" : "bottom-6",
+					)}
 				>
 					<Sparkles className="h-4 w-4" aria-hidden="true" />
 					<span>Ask Kite AI</span>

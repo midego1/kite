@@ -104,6 +104,7 @@ async function moveEmails(context: AgentToolContext, name: "move_email" | "move_
 			context.user,
 			row.id,
 			destination === "inbox" ? "received" : destination,
+			context.onReceipt,
 		);
 		if (!moved) throw new Error("Message could not be moved");
 	}

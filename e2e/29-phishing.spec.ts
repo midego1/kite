@@ -128,12 +128,12 @@ test("an attached login page gets a warning whose Report phishing moves the mail
 
 		// Cancelling the confirmation changes nothing.
 		await block.getByRole("button", { name: "Report phishing" }).click();
-		await confirmDialog(page, "Report this message as phishing?").getByRole("button", { name: "Cancel" }).click();
+		await confirmDialog(page, "Report as phishing?").getByRole("button", { name: "Cancel" }).click();
 		expect((await waitForMessage(account.api, subject)).status).toBe("received");
 		expect(await isBlocked(account, sender)).toBe(false);
 
 		await block.getByRole("button", { name: "Report phishing" }).click();
-		const confirm = confirmDialog(page, "Report this message as phishing?");
+		const confirm = confirmDialog(page, "Report as phishing?");
 		await expect(confirm).toContainText("blocks the sender");
 		await confirm.getByRole("button", { name: "Report phishing" }).click();
 		await expect(page.getByText(`Reported as phishing. Mail from ${sender} now goes to Trash.`)).toBeVisible();
@@ -307,12 +307,18 @@ test("Report phishing in the reader's More actions menu reports the open message
 		await expect(page.getByRole("heading", { name: subject })).toBeVisible();
 		await page.getByRole("button", { name: "More actions" }).click();
 		await page.getByRole("dialog", { name: "More actions" }).getByRole("button", { name: "Report phishing" }).click();
-		await confirmDialog(page, "Report this message as phishing?")
-			.getByRole("button", { name: "Report phishing" })
-			.click();
-		await expect(page.getByText(`Reported as phishing. Mail from ${sender} now goes to Trash.`)).toBeVisible();
+		await confirmDialog(page, "Report as phishing?").getByRole("button", { name: "Report phishing" }).click();
+		const toast = page
+			.getByRole("status")
+			.filter({ hasText: `Reported as phishing. Mail from ${sender} now goes to Trash.` });
+		await expect(toast).toBeVisible();
 		await waitForMessage(account.api, subject, { status: "spam" });
 		expect(await isBlocked(account, sender)).toBe(true);
+
+		// Undo moves the message back and lifts the block this report placed.
+		await toast.getByRole("button", { name: "Undo" }).click();
+		await waitForMessage(account.api, subject, { status: "received" });
+		await expect.poll(() => isBlocked(account, sender)).toBe(false);
 		await page.context().close();
 	} finally {
 		await account.api.dispose();

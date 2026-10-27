@@ -1,0 +1,31 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "kite-telemetry",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-05-20",
+	// The app's default collector (DEFAULT_TELEMETRY_URL in src/lib/telemetry/telemetry-utils.ts). A Worker custom
+	// domain creates a proxied DNS record for exactly this name and its certificate, which takes precedence over the
+	// `*.midego.net` wildcard record. The midego.net zone must be on the deploying Cloudflare account.
+	"routes": [{ "pattern": "kite-telemetry.midego.net", "custom_domain": true }],
+	// Only the custom domain answers; no *.workers.dev address and no preview URLs.
+	"workers_dev": false,
+	"preview_urls": false,
+	// The deployed database (`npx wrangler d1 create kite-telemetry`); its id is not a secret.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "kite-telemetry",
+			"database_id": "3159c8ca-b95a-4b43-8fe0-2730c6e6d7a4",
+			"migrations_dir": "migrations"
+		}
+	],
+	// DELETE /v1/installs/<id>: at most 10 erasure requests a minute per connecting address (per Cloudflare location;
+	// the address is only the limiter's key). The namespace id is any number unique among this account's rate limiters.
+	"ratelimits": [{ "name": "ERASE_RATE_LIMIT", "namespace_id": "4710", "simple": { "limit": 10, "period": 60 } }],
+	// STATS_TOKEN is a secret: `npx wrangler secret put STATS_TOKEN`; never commit it. Without it GET /v1/stats answers 401.
+	// Once a day: daily rows older than 90 days are rolled up into aggregates without install ids and deleted, then the
+	// public summary is recomputed and stored.
+	"triggers": { "crons": ["30 4 * * *"] },
+	// Off so request metadata (IP address, user agent) does not end up in Workers Logs.
+	"observability": { "enabled": false }
+}

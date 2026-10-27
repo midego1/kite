@@ -1,4 +1,5 @@
 import type { BulkMessageAction, BulkMessageResponse } from "@/app/api/messages/bulk/types";
+import { confirmReportSpam } from "@/components/messages/spam-report";
 import { offerUndoForMove } from "@/components/messages/undo-utils";
 import type { MessageCounts, MessageFolder } from "@/hooks/types";
 import { authFetch } from "@/lib/auth/client";
@@ -23,7 +24,9 @@ async function moveMessages(payload: { messageIds: string[]; action: BulkMessage
 	offerUndoForMove(payload.action, (await response.json().catch(() => null)) as BulkMessageResponse | null);
 }
 
-export function moveMessagesToSystemFolder(messageIds: string[], action: "archive" | "spam" | "trash") {
+export async function moveMessagesToSystemFolder(messageIds: string[], action: "archive" | "spam" | "trash") {
+	// Dropping mail on Spam reports it like the button does, so it asks first.
+	if (action === "spam" && !(await confirmReportSpam(messageIds.length))) return;
 	return moveMessages({ messageIds, action });
 }
 

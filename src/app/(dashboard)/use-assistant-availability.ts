@@ -2,7 +2,11 @@
 
 import { useEffect, useLayoutEffect, useState } from "react";
 import { AUTH_SESSION_CHANGED_EVENT, authFetch } from "@/lib/auth/client";
-import { readInitialAssistantAvailability, saveAssistantAvailability } from "@/lib/agent/availability-client";
+import {
+	ASSISTANT_AVAILABILITY_STORAGE_KEY,
+	readInitialAssistantAvailability,
+	saveAssistantAvailability,
+} from "@/lib/agent/availability-client";
 import type { AssistantAvailabilityResponse } from "./assistant-availability-types";
 
 /** Admins rarely toggle the assistant, so focus refreshes are throttled to this interval. */
@@ -43,6 +47,11 @@ export function useAssistantAvailability() {
 		const onVisibilityChange = () => {
 			if (!document.hidden) refreshIfStale();
 		};
+		// Another tab saved a new value (an admin turning the assistant on or off).
+		const onStorage = (event: StorageEvent) => {
+			if (event.key === ASSISTANT_AVAILABILITY_STORAGE_KEY && active) setEnabled(readInitialAssistantAvailability());
+		};
+		window.addEventListener("storage", onStorage);
 		// The stored value renders immediately; a remount within the interval keeps it.
 		if (lastAvailabilityCheck === 0) void refresh();
 		else refreshIfStale();
@@ -51,6 +60,7 @@ export function useAssistantAvailability() {
 		document.addEventListener("visibilitychange", onVisibilityChange);
 		return () => {
 			active = false;
+			window.removeEventListener("storage", onStorage);
 			window.removeEventListener("focus", onFocus);
 			window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, onSessionChanged);
 			document.removeEventListener("visibilitychange", onVisibilityChange);

@@ -10,7 +10,7 @@ import { queryInChunks, runInChunks } from "@/db/chunk-utils";
 import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import { permanentlyDeleteMessages } from "@/lib/email/permanent-delete";
 import { applySpamFeedback } from "@/lib/spam/feedback";
-import { reportPhishingAll } from "@/lib/spam/phishing-report";
+import { reportPhishingBulk, reportSpamBulk, restoreMessageStates } from "./report";
 import type { BulkMessagePayload } from "./types";
 import {
 	getReadValueForBulkAction,
@@ -138,24 +138,8 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: "No accessible messages" }, { status: 404 });
 	}
 	if (payload.action === "restore") {
-		for (const state of restoreStates) {
-			if (!allowedMessageIds.includes(state.id)) continue;
-			const message = selectedMessages.find((candidate) => candidate.id === state.id);
-			let restoredFolderId: string | null = null;
-			if (state.folderId && message?.mailboxId) {
-				const [folder] = await db
-					.select({ id: folders.id })
-					.from(folders)
-					.where(and(eq(folders.id, state.folderId), eq(folders.mailboxId, message.mailboxId)))
-					.limit(1);
-				restoredFolderId = folder?.id ?? null;
-			}
-			await db
-				.update(messages)
-				.set({ status: state.status, folderId: restoredFolderId })
-				.where(and(eq(messages.id, state.id), eq(messages.mailboxId, approvedMailbox.get(state.id)!)));
-		}
-		return NextResponse.json({ ok: true });
+		const superseded = await restoreMessageStates(env, db, restoreStates, selectedMessages, approvedMailbox);
+		return NextResponse.json({ ok: true, ...(superseded > 0 ? { superseded } : {}) });
 	}
 	if (payload.action === "delete") {
 		// Only mail already in Trash or Spam can be destroyed; anything else is skipped.
@@ -165,12 +149,8 @@ export async function POST(request: Request) {
 		const deleted = await permanentlyDeleteMessages(env, db, user.id, deletable, "bulk");
 		return NextResponse.json({ ok: true, deleted, skipped: allowedMessageIds.length - deleted });
 	}
-	if (payload.action === "spam") {
-		for (const messageId of allowedMessageIds) await applySpamFeedback(env, user, messageId, "spam");
-		return NextResponse.json({ ok: true });
-	}
-	if (payload.action === "phishing")
-		return NextResponse.json({ ok: true, reports: await reportPhishingAll(env, user, allowedMessageIds) });
+	if (payload.action === "spam") return NextResponse.json(await reportSpamBulk(env, user, allowedMessageIds));
+	if (payload.action === "phishing") return NextResponse.json(await reportPhishingBulk(env, user, allowedMessageIds));
 	if (payload.action === "inbox") {
 		const spamMessageIds = selectedMessages
 			.filter((message) => message.status === "spam" && allowedMessageIds.includes(message.id))

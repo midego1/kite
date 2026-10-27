@@ -79,7 +79,18 @@ async function applyProposal(
 	plan: ReturnType<typeof chatActionPlan>,
 ): Promise<{ result: unknown; actionId?: string; undoUntil?: string | null }> {
 	const folderId = plan.audit?.action === "create_folder" ? newId("fld") : undefined;
-	const context = { env, user, mailboxId, origin: "mcp" as const, folderId };
+	// The receipt of each spam training this action makes, kept in its saved state so an undo takes back exactly those.
+	const receipts: Record<string, string> = {};
+	const context = {
+		env,
+		user,
+		mailboxId,
+		origin: "mcp" as const,
+		folderId,
+		onReceipt: (messageId: string, receiptId: string) => {
+			receipts[messageId] = receiptId;
+		},
+	};
 	if (!plan.audit) return { result: await runEmailTool(context, plan.tool, plan.input) };
 	const audit = plan.audit;
 	const access = await getMailboxAccessLevel(getDb(env), user, mailboxId);
@@ -107,7 +118,7 @@ async function applyProposal(
 				}
 				return auditAfter(audit, result);
 			},
-			takeInverse: () => chatActionState(places, appliedPlaces(places, plan)),
+			takeInverse: () => chatActionState(places, appliedPlaces(places, plan), receipts),
 		},
 	});
 	if (outcome.status !== "applied")

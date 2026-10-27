@@ -7,7 +7,10 @@ import { createAuditLog } from "@/lib/mailboxes/audit";
 import { buildFingerprint, prepareSpamContent, tokenizeMessage } from "./tokenizer";
 import { getReputationKeys } from "./analyzers/reputation";
 import type { ReputationKey, SpamClassification } from "./types";
-import { PHISHING_FINGERPRINT_WEIGHT, TOKENIZER_VERSION } from "./weights";
+import { findMissingRows, saveReceipt } from "./report-receipts";
+import type { SpamFeedbackResult } from "./report-receipts-types";
+import { trainingStatements } from "./training";
+import { TOKENIZER_VERSION } from "./weights";
 
 export async function applySpamFeedback(
 	env: CloudflareEnv,
@@ -15,16 +18,42 @@ export async function applySpamFeedback(
 	messageId: string,
 	classification: SpamClassification,
 ): Promise<boolean> {
+	return (await applySpamFeedbackWithReceipt(env, user, messageId, classification)) !== null;
+}
+
+/**
+ * Records the classification, trains on it and files the message under it, and saves the receipt that
+ * lets an undo take all of that back. Null when the message cannot be classified by this user.
+ */
+export async function applySpamFeedbackWithReceipt(
+	env: CloudflareEnv,
+	user: SessionUser,
+	messageId: string,
+	classification: SpamClassification,
+): Promise<SpamFeedbackResult | null> {
 	const db = getDb(env);
 	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
-	if (!message?.mailboxId || message.direction !== "inbound") return false;
+	if (!message?.mailboxId || message.direction !== "inbound") return null;
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
-	if (!access?.canManage) return false;
+	if (!access?.canManage) return null;
 	const [previous] = await db.select().from(spamFeedback).where(eq(spamFeedback.messageId, messageId)).limit(1);
 	const status = classification === "ham" ? "received" : "spam";
+	const place = { previousStatus: message.status, previousFolderId: message.folderId ?? null };
 	if (previous?.classification === classification) {
 		await db.update(messages).set({ status, folderId: null }).where(eq(messages.id, messageId));
-		return true;
+		const receiptId = await saveReceipt(env, {
+			messageId,
+			mailboxId: message.mailboxId,
+			actorUserId: user.id,
+			classification,
+			previousClassification: classification,
+			trained: false,
+			createdTokens: [],
+			createdKeys: [],
+			...place,
+			extras: {},
+		});
+		return { receiptId, ...place };
 	}
 
 	const parsed = {
@@ -48,33 +77,9 @@ export async function applySpamFeedback(
 		: getReputationKeys(parsed, buildFingerprint(parsed, prepared));
 	const now = Math.floor(Date.now() / 1000);
 	const statements: D1PreparedStatement[] = [];
-	const addCounts = (target: SpamClassification, direction: 1 | -1) => {
-		const spam = target !== "ham";
-		for (const token of tokens)
-			statements.push(
-				env.DB.prepare(
-					`INSERT INTO spam_token_stats (mailbox_id, token, spam_count, ham_count, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(mailbox_id, token) DO UPDATE SET spam_count = MAX(0, spam_count + excluded.spam_count), ham_count = MAX(0, ham_count + excluded.ham_count), updated_at = excluded.updated_at`,
-				).bind(message.mailboxId, token, spam ? direction : 0, spam ? 0 : direction, now),
-			);
-		for (const item of keys) {
-			const weight = target === "phishing" && item.type === "fingerprint" ? PHISHING_FINGERPRINT_WEIGHT : 1;
-			const amount = direction * weight;
-			statements.push(
-				env.DB.prepare(
-					`INSERT INTO spam_reputation (mailbox_id, type, key, messages_seen, spam_count, ham_count, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(mailbox_id, type, key) DO UPDATE SET messages_seen = MAX(messages_seen, excluded.messages_seen), spam_count = MAX(0, spam_count + excluded.spam_count), ham_count = MAX(0, ham_count + excluded.ham_count), last_seen_at = excluded.last_seen_at`,
-				).bind(
-					message.mailboxId,
-					item.type,
-					item.key,
-					amount > 0 ? 1 : 0,
-					spam ? amount : 0,
-					spam ? 0 : amount,
-					now,
-					now,
-				),
-			);
-		}
-	};
+	const missing = await findMissingRows(env, message.mailboxId, tokens, keys);
+	const addCounts = (target: SpamClassification, direction: 1 | -1) =>
+		statements.push(...trainingStatements(env, message.mailboxId!, tokens, keys, target, direction, now));
 	if (previous) addCounts(previous.classification, -1);
 	addCounts(classification, 1);
 	statements.push(
@@ -103,5 +108,17 @@ export async function applySpamFeedback(
 		action: "email.spam_feedback",
 		metadata: { classification },
 	});
-	return true;
+	const receiptId = await saveReceipt(env, {
+		messageId,
+		mailboxId: message.mailboxId,
+		actorUserId: user.id,
+		classification,
+		previousClassification: previous?.classification ?? null,
+		trained: true,
+		createdTokens: missing.tokens,
+		createdKeys: missing.keys,
+		...place,
+		extras: { previousActor: previous?.actorUserId ?? null },
+	});
+	return { receiptId, ...place };
 }

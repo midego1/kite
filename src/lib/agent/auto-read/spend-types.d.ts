@@ -2,8 +2,11 @@ import type { LanguageModelUsage } from "ai";
 import type { AgentModelRates } from "@/lib/agent/provider-types";
 import type { AiUsageDetails } from "@/lib/ai/usage-types";
 
-/** Every source that reserves spend: automatic reading, chat steps and composer requests (the install cap covers all). */
-export type AutoSpendSource = "auto_triage" | "auto_draft" | "chat" | "compose";
+/**
+ * Every source that reserves spend: automatic reading, chat steps, composer requests and the Summarize button and its
+ * translations (the install cap covers all).
+ */
+export type AutoSpendSource = "auto_triage" | "auto_draft" | "chat" | "compose" | "summary" | "summary_translation";
 
 /** "cost" compares USD micros against the caps; "tokens" applies the input-token cap for models without rates. */
 export type SpendMode = "cost" | "tokens";

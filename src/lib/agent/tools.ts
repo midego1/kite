@@ -21,6 +21,7 @@ import { toolEmailSchema } from "./tool-schema-utils";
 import { ownMessage, publicMessage, requireAccess } from "./tool-messages";
 import { isOrganizeTool, runOrganizeTool } from "./organize-tools";
 import { FOLDER_COLOR_NAMES } from "./organize-tools-utils";
+import { currentThreadSummary } from "./summaries/service";
 
 const id = z.string().min(1).max(160);
 const body = z
@@ -302,6 +303,8 @@ export async function runEmailTool(
 					text: (row.textBody || htmlToReadableText(row.htmlBody)).slice(0, 5_000),
 				})),
 			truncated: rows.length > 20,
+			// The cached conversation summary when it is current, so the assistant can answer from it.
+			summary: await currentThreadSummary(context.env, context.user, anchor.id),
 		};
 	}
 	if (name === "draft_email")

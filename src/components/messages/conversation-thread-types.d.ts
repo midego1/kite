@@ -16,6 +16,8 @@ export type ConversationThreadProps = {
 	showFullRecipientAddresses?: boolean;
 	/** The current message's thread; the Kite suggestion card covers the whole conversation. */
 	threadId?: string | null;
+	/** Hides the suggestion card's summary line while a current Summarize summary is shown. */
+	hideTriageSummary?: boolean;
 };
 
 export type ConversationMessageCardProps = {

@@ -47,12 +47,18 @@ export function ConversationThread({
 	onExpandedAllChange,
 	showFullRecipientAddresses = false,
 	threadId = null,
+	hideTriageSummary = false,
 }: ConversationThreadProps) {
 	const slice = partitionThread(messages, currentMessageId, position, latestMessagesFirst);
 	// The reader mounts one thread above the message and one below; only the upper one carries the card.
 	const card =
 		position === (latestMessagesFirst ? "after" : "before") ? (
-			<SuggestionCard mailboxId={mailboxId} messageId={currentMessageId} threadId={threadId} />
+			<SuggestionCard
+				mailboxId={mailboxId}
+				messageId={currentMessageId}
+				threadId={threadId}
+				hideSummary={hideTriageSummary}
+			/>
 		) : null;
 	if (slice.length === 0) return card;
 	const firstMessage = slice[0];

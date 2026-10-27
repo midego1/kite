@@ -55,6 +55,9 @@ import { sanitizeEmailHtml } from "./email-html-sanitizer";
 import { collapseQuotedEmailHtml } from "./quote-collapse-utils";
 import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 import { useMessageContentScroll } from "./use-message-content-scroll";
+import { SummarizeButton, ThreadSummaryCard } from "@/components/messages/thread-summary-card";
+import { useThreadSummary } from "@/components/messages/use-thread-summary";
+import { showsCurrentSummary } from "@/components/messages/thread-summary-utils";
 
 export default function MessageDetailPage() {
 	const params = useParams<{ messageId: string }>();
@@ -74,6 +77,8 @@ export default function MessageDetailPage() {
 	const assistantVisible = useAssistantOpen();
 	const isAnyPanelVisible = messageListVisible || assistantVisible;
 	const { scrollRef, handleScroll } = useMessageContentScroll(messageId, loading);
+	const summary = useThreadSummary(messageId, "thread");
+	const hideTriageSummary = showsCurrentSummary(summary.state, summary.hidden);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -161,6 +166,7 @@ export default function MessageDetailPage() {
 				<MessageDetailNavigation messageId={message.id} unread={message.direction === "inbound" && !message.read} />
 				<MessageReadingHeaderButton />
 				<span className="min-w-0 flex-1" />
+				<SummarizeButton controller={summary} />
 				<MessageActions
 					messageId={message.id}
 					mailboxId={message.mailboxId}
@@ -176,6 +182,7 @@ export default function MessageDetailPage() {
 					message={message}
 					messageMeta={message}
 					bodyHtml={body?.htmlBody}
+					onSummarizeMessage={summary.summarizeMessage}
 				/>
 			</div>
 
@@ -206,6 +213,7 @@ export default function MessageDetailPage() {
 				/>
 				<OneTimeCodeChip code={oneTimeCode} alignWide={!isAnyPanelVisible} />
 				<ScreenerBanner message={message} mailbox={messageMailbox} alignWide={!isAnyPanelVisible} />
+				<ThreadSummaryCard key={message.id} controller={summary} />
 				{/* <div className="px-6">
         <div className="mx-auto w-full max-w-[640px]">
           <SpamScoreDetails
@@ -229,6 +237,7 @@ export default function MessageDetailPage() {
 					showFullRecipientAddresses={showFullRecipientAddresses}
 					expandedAll={threadExpanded}
 					onExpandedAllChange={setThreadExpanded}
+					hideTriageSummary={hideTriageSummary}
 				/>
 				{/* Every message of the conversation is a section under a hairline, as in Zero's reader. */}
 				<article className="border-t border-neutral-200 px-4 py-6 sm:px-7">
@@ -404,6 +413,7 @@ export default function MessageDetailPage() {
 					showFullRecipientAddresses={showFullRecipientAddresses}
 					expandedAll={threadExpanded}
 					onExpandedAllChange={setThreadExpanded}
+					hideTriageSummary={hideTriageSummary}
 				/>
 				<MessageAttachmentViewer
 					attachment={previewAttachment}

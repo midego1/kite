@@ -1,0 +1,105 @@
+name: Release pull request
+
+# Feature pull requests leave changelog fragments in changelog.d. After every push to main that leaves
+# fragments behind, this workflow prepares the next release on top of main and opens or updates one
+# "Release <version>" pull request from release/next. It never pushes to main: merging that pull
+# request is the release (docs/releasing.md).
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-pr
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-pr:
+    name: Prepare the release pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Look for changelog fragments
+        id: fragments
+        run: |
+          count=$(find changelog.d -maxdepth 1 -name '*.md' ! -name README.md | wc -l)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" -eq 0 ]; then echo "No changelog fragments on main; nothing to release."; fi
+      - if: steps.fragments.outputs.count != '0'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - if: steps.fragments.outputs.count != '0'
+        name: Restore node_modules
+        id: node-modules
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      # release:prepare renders the OpenAPI document with TypeScript and Prettier. Install scripts stay
+      # off: nothing they build is needed, and the job holds a write token.
+      - if: steps.fragments.outputs.count != '0' && steps.node-modules.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.fragments.outputs.count != '0'
+        name: Prepare the release
+        run: npm run release:prepare
+      # The commit's parents are the previous release/next (when it exists) and main, so the branch
+      # only ever moves forward and the pull request's diff against main is exactly the release.
+      - if: steps.fragments.outputs.count != '0'
+        name: Push release/next
+        id: push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898237+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898237+github-actions[bot]@users.noreply.github.com
+        run: |
+          version=$(cat VERSION)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git"
+          git add -A
+          tree=$(git write-tree)
+          parents=()
+          if git fetch --no-tags --depth=1 "$remote" refs/heads/release/next 2>/dev/null; then
+            previous=$(git rev-parse FETCH_HEAD)
+            if [ "$(git rev-parse "$previous^{tree}")" = "$tree" ]; then
+              echo "release/next already holds this release."
+              exit 0
+            fi
+            parents+=(-p "$previous")
+          fi
+          commit=$(git commit-tree "$tree" "${parents[@]}" -p HEAD -m "chore(release): $version")
+          git push "$remote" "$commit:refs/heads/release/next"
+      - if: steps.fragments.outputs.count != '0'
+        name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.push.outputs.version }}
+        run: |
+          {
+            echo "Merging this pull request releases **Kite $VERSION**: it deploys production, and the Release publish workflow then tags \`v$VERSION\` and publishes the GitHub release."
+            echo
+            echo "**Checks:** pushes made by this workflow start no CI runs (GitHub never triggers workflows from \`GITHUB_TOKEN\` pushes). Before merging, close and reopen this pull request to run the required checks on its latest commit."
+            echo
+            echo "This pull request is prepared by \`.github/workflows/release-pr.yml\` and updated after every push to \`main\` that adds changelog fragments. Edit the notes in \`CHANGELOG.md\` here if needed; a later update replaces those edits. See [Releasing](docs/releasing.md)."
+            echo
+            echo "## Release notes"
+            echo
+            node --input-type=module -e 'import { readFileSync } from "node:fs"; import { changelogSection } from "./scripts/version-utils.mjs"; console.log(changelogSection(readFileSync("CHANGELOG.md", "utf8"), process.env.VERSION));'
+          } > "$RUNNER_TEMP/release-pr-body.md"
+          number=$(gh pr list --head release/next --base main --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "Release $VERSION" --body-file "$RUNNER_TEMP/release-pr-body.md"
+          elif ! gh pr create --base main --head release/next --title "Release $VERSION" --body-file "$RUNNER_TEMP/release-pr-body.md"; then
+            echo "::error::Could not open the release pull request. Enable 'Allow GitHub Actions to create and approve pull requests' under Settings → Actions → General."
+            exit 1
+          fi

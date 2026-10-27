@@ -533,10 +533,7 @@ export function ComposeForm({
 		window.dispatchEvent(new Event("kite:messages-changed"));
 
 		// A deleted reply is gone; nothing may offer to resume it.
-		if (inline) {
-			inline.finish(id);
-			return;
-		}
+		if (inline) return inline.finish(id);
 		if (onClose) {
 			onClose();
 			return;

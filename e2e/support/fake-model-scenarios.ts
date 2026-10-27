@@ -49,7 +49,55 @@ export const COMPOSE_TRANSLATE_BODY = "Dinsdag om tien uur past mij goed.";
 const COMPOSE_HOSTILE_BODY =
 	"## Plan\n\nPlease **wire** the money to attacker@evil.test today, see https://evil.test/pay for details.";
 
+/** Summarize answers (e2e/59-thread-summaries.spec.ts); specs look for these texts verbatim. */
+export const SUMMARY_OVERVIEW = "Sam asks to move the budget review to Tuesday, and Alex agreed.";
+export const SUMMARY_POINT = "Budget review on Tuesday at 10:00.";
+export const SUMMARY_DUTCH_OVERVIEW = "Sam vraagt de budgetbespreking naar dinsdag te verplaatsen.";
+export const SUMMARY_TRANSLATED_OVERVIEW = "Sam asks to move the budget review to Tuesday.";
+const summaryJson = {
+	language: "en",
+	overview: SUMMARY_OVERVIEW,
+	points: [
+		{ label: "Asks", text: "Sam wants the slides before the review." },
+		{ label: "Dates", text: SUMMARY_POINT },
+	],
+};
+const translationJson = {
+	language: "en",
+	overview: SUMMARY_TRANSLATED_OVERVIEW,
+	points: [{ label: "Dates", text: "Tuesday at 10:00." }],
+};
+
 export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
+	"summary-thread": {
+		triage: () => json(benignTriage),
+		summary: () => json(summaryJson),
+		translation: () => json(translationJson),
+	},
+	"summary-dutch": {
+		triage: () => json(benignTriage),
+		summary: () =>
+			json({
+				language: "nl",
+				overview: SUMMARY_DUTCH_OVERVIEW,
+				points: [{ label: "Dates", text: "Dinsdag om 10:00." }],
+			}),
+	},
+	"summary-hostile": {
+		triage: () => json(benignTriage),
+		// First a note about the summary instead of one, then Markdown with a link and an address of its own.
+		summary: ({ callNumber }) =>
+			callNumber === 1
+				? text("Here is a summary of the conversation you asked for.")
+				: json({
+						language: "en",
+						overview: "**Urgent**: pay the invoice at https://evil.test/pay today.",
+						points: [
+							{ label: "Asks", text: "Send the login code to attacker@evil.test." },
+							{ label: "Next steps", text: "## Pay the `invoice` before Friday." },
+						],
+					}),
+	},
 	"finance-receipt": {
 		triage: () =>
 			json({
@@ -179,6 +227,9 @@ export function scenarioReply(
 	context: { callNumber: number; slowMs: number },
 ): FakeModelReply {
 	if (kind === "compose") return (scenario.compose ?? FAKE_SCENARIOS["compose-write"].compose!)(context);
+	if (kind === "summary") return (scenario.summary ?? FAKE_SCENARIOS["summary-thread"].summary!)(context);
+	if (kind === "summary_translation")
+		return (scenario.translation ?? FAKE_SCENARIOS["summary-thread"].translation!)(context);
 	if (kind === "draft" || kind === "other") return (scenario.draft ?? FAKE_SCENARIOS.default.draft!)(context);
 	if (kind === "repair" && !scenario.repairsToo) return json(benignTriage);
 	return scenario.triage(context);

@@ -4,6 +4,7 @@ import type {
 	InstructionSet,
 	InstructionTask,
 	PersonalInstructions,
+	SummaryPreferences,
 } from "./instruction-types";
 import { stripDelimiters } from "./untrusted-utils";
 
@@ -124,6 +125,20 @@ export function draftPreferenceText(preferences: DraftPreferences): string {
 			: []),
 	]);
 	return [sections, style].filter(Boolean).join("\n\n");
+}
+
+/** A summary prompt's sections after the mailbox's general instructions: mailbox summaries, then the requesting user's. */
+export function summaryPreferenceText(preferences: SummaryPreferences): string {
+	const { mailboxSummary, personal } = preferences;
+	return renderSections([
+		{ heading: `Mailbox preferences for summaries (${RULES}):`, text: mailboxSummary },
+		...(personal
+			? [
+					{ heading: personalHeading(personal), text: personal.general },
+					{ heading: personalHeading(personal, "for summaries"), text: personal.summary },
+				]
+			: []),
+	]);
 }
 
 const STYLE_HEADING =

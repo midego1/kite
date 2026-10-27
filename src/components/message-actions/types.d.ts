@@ -20,6 +20,8 @@ export type MessageActionsProps = {
 	/** Needed by Forward, which quotes the original header block. */
 	messageMeta?: Pick<Message, "id" | "subject" | "createdAt">;
 	bodyHtml?: string | null;
+	/** Shows "Summarize this message" in the overflow menu when the message can be summarised. */
+	onSummarizeMessage?: () => void;
 };
 
 export type ForwardDraftInput = {

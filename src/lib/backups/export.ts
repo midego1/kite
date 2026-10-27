@@ -135,6 +135,9 @@ const INTERNAL_TABLES = [
 	// Opt-in usage statistics: the install id identifies this deployment, so a restore into another one must not
 	// clone it, and the owner's choice starts off again there.
 	"telemetry_state",
+	// AI summaries (migration 0072): derived from the messages and made again on demand, so a backup skips them.
+	// A restore replaces the messages, whose triggers and cascades remove the old summaries with them.
+	"ai_summaries",
 ];
 
 /**

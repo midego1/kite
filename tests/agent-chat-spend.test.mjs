@@ -131,7 +131,7 @@ test("without model rates chat stops at its own token allowance and says so", as
 		assert.equal(error.cap, "chat_tokens");
 		assert.match(
 			error.message,
-			/^Daily AI token allowance reached: chat and Write with Kite used the 150 input tokens allowed for today\./,
+			/^Daily AI token allowance reached: chat, Write with Kite and summaries used the 150 input tokens allowed for today\./,
 		);
 		assert.match(error.message, /resets at 00:00 UTC.*Admin → Agent/);
 		return true;
@@ -148,7 +148,7 @@ test("every cap has a message that names it, when it resets and where it is chan
 	);
 	assert.match(messages.install_dollars, /install's \$2\.00/);
 	assert.match(messages.mailbox_dollars, /this mailbox's \$0\.50.*Automatic reading in the assistant settings/);
-	assert.match(messages.chat_tokens, /chat and Write with Kite used the 2,000,000 input tokens/);
+	assert.match(messages.chat_tokens, /chat, Write with Kite and summaries used the 2,000,000 input tokens/);
 	assert.match(messages.auto_read_tokens, /automatic reading used the 2,000,000 input tokens/);
 	for (const message of Object.values(messages)) assert.match(message, /resets at 00:00 UTC/);
 });

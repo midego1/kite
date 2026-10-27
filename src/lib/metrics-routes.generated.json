@@ -141,6 +141,7 @@
 	"/api/messages/[messageId]/snooze",
 	"/api/messages/[messageId]/star",
 	"/api/messages/[messageId]/status",
+	"/api/messages/[messageId]/summary",
 	"/api/messages/[messageId]/thread",
 	"/api/messages/bulk",
 	"/api/messages/counts",

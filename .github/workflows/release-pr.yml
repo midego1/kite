@@ -1,105 +1,203 @@
 name: Release pull request
 
 # Feature pull requests leave changelog fragments in changelog.d. After every push to main that leaves
-# fragments behind, this workflow prepares the next release on top of main and opens or updates one
-# "Release <version>" pull request from release/next. It never pushes to main: merging that pull
-# request is the release (docs/releasing.md).
+# fragments (or entries under "Unreleased") behind, this workflow prepares the next release on top of
+# main and opens or updates one "Release <version>" pull request from release/next. It never pushes to
+# main: merging that pull request is the release (docs/releasing.md). The prepare job runs npm with a
+# read-only token; the publish job holds the write token and runs no npm or repository scripts.
 on:
   push:
     branches: [main]
+  # Retry by hand from the Actions tab; it always prepares the tip of main.
+  workflow_dispatch:
 
 concurrency:
   group: release-pr
   cancel-in-progress: true
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
-  release-pr:
-    name: Prepare the release pull request
+  prepare:
+    name: Prepare the release
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      state: ${{ steps.prepare.outputs.state }}
+      sha: ${{ steps.tip.outputs.sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: main
           persist-credentials: false
-      - name: Look for changelog fragments
-        id: fragments
+      # A re-run of an older push must not rewind release/next to an older main.
+      - name: Check that this is the tip of main
+        id: tip
         run: |
-          count=$(find changelog.d -maxdepth 1 -name '*.md' ! -name README.md | wc -l)
-          echo "count=$count" >> "$GITHUB_OUTPUT"
-          if [ "$count" -eq 0 ]; then echo "No changelog fragments on main; nothing to release."; fi
-      - if: steps.fragments.outputs.count != '0'
+          sha=$(git rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_SHA" != "$sha" ]; then
+            echo "::notice::main has moved on from $GITHUB_SHA to $sha; the run for $sha prepares the release."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.tip.outputs.current == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      - if: steps.fragments.outputs.count != '0'
+      - if: steps.tip.outputs.current == 'true'
+        name: Look for changes to release
+        id: pending
+        run: |
+          pending=$(node scripts/release-prepare.mjs --pending)
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
+          if [ "$pending" != true ]; then echo "No changelog fragments or Unreleased entries on main; nothing to release."; fi
+      - if: steps.pending.outputs.pending == 'true'
         name: Restore node_modules
         id: node-modules
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
-      # release:prepare renders the OpenAPI document with TypeScript and Prettier. Install scripts stay
-      # off: nothing they build is needed, and the job holds a write token.
-      - if: steps.fragments.outputs.count != '0' && steps.node-modules.outputs.cache-hit != 'true'
+      # release:prepare renders the OpenAPI document with TypeScript and Prettier.
+      - if: steps.pending.outputs.pending == 'true' && steps.node-modules.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
-      - if: steps.fragments.outputs.count != '0'
-        name: Prepare the release
-        run: npm run release:prepare
-      # The commit's parents are the previous release/next (when it exists) and main, so the branch
-      # only ever moves forward and the pull request's diff against main is exactly the release.
-      - if: steps.fragments.outputs.count != '0'
-        name: Push release/next
-        id: push
+      # A failure (such as a malformed fragment) is passed on to the publish job, which reports it.
+      - name: Prepare the release
+        id: prepare
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PENDING: ${{ steps.pending.outputs.pending }}
+        run: |
+          if [ "$PENDING" != true ]; then
+            echo "state=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          out="$RUNNER_TEMP/release"
+          mkdir -p "$out"
+          if ! node scripts/release-prepare.mjs > "$out/log.txt" 2>&1; then
+            cat "$out/log.txt"
+            echo "::error::npm run release:prepare failed on main; see the log above."
+            echo "state=failed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cat "$out/log.txt"
+          git add -A
+          git diff --cached --binary > "$out/release.patch"
+          version=$(cat VERSION)
+          echo "$version" > "$out/VERSION"
+          {
+            echo "Merging this pull request releases **Kite $version**: it deploys production, and the Release publish workflow then tags \`v$version\` and publishes the GitHub release."
+            echo
+            echo "**Checks:** pushes made by this workflow start no CI runs (GitHub never triggers workflows from \`GITHUB_TOKEN\` pushes). Before merging, close and reopen this pull request to run the required checks on its latest commit."
+            echo
+            echo "\`release/next\` is prepared again by \`.github/workflows/release-pr.yml\` after every push to \`main\` while fragments remain, so edits made on this branch by hand are lost then; edit just before merging. See [Releasing](docs/releasing.md)."
+            echo
+            echo "## Release notes"
+            echo
+            VERSION="$version" node --input-type=module -e 'import { readFileSync } from "node:fs"; import { changelogSection } from "./scripts/version-utils.mjs"; console.log(changelogSection(readFileSync("CHANGELOG.md", "utf8"), process.env.VERSION));'
+          } > "$out/body.md"
+          echo "state=ready" >> "$GITHUB_OUTPUT"
+      - if: steps.prepare.outputs.state == 'ready' || steps.prepare.outputs.state == 'failed'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-pr
+          path: ${{ runner.temp }}/release/
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    name: Update the release pull request
+    needs: prepare
+    if: needs.prepare.outputs.state == 'ready' || needs.prepare.outputs.state == 'failed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      MAIN_SHA: ${{ needs.prepare.outputs.sha }}
+      FAILURE_TITLE: Release PR could not be prepared
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-pr
+          path: ${{ runner.temp }}/release
+      # One open issue collects the failures until a release is prepared again.
+      - if: needs.prepare.outputs.state == 'failed'
+        name: Report the failure
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "\`npm run release:prepare\` failed on \`main\` at $MAIN_SHA, so the release pull request was not updated. Fix the changelog fragment it names in a pull request; the next push to \`main\` prepares the release again."
+            echo
+            echo "~~~~"
+            tail -c 6000 "$RUNNER_TEMP/release/log.txt"
+            echo "~~~~"
+            echo
+            echo "Run: $RUN_URL"
+          } > "$RUNNER_TEMP/issue.md"
+          number=$(gh issue list --state open --search "\"$FAILURE_TITLE\" in:title" --json number,title --jq "map(select(.title == env.FAILURE_TITLE))[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body-file "$RUNNER_TEMP/issue.md"
+          else
+            gh issue create --title "$FAILURE_TITLE" --body-file "$RUNNER_TEMP/issue.md"
+          fi
+          echo "::error::$FAILURE_TITLE; see the issue \"$FAILURE_TITLE\"."
+          exit 1
+      # The commit's first parent is main, so its own diff is exactly the release; the second parent is
+      # the previous release/next, so the branch only ever moves forward (no force push).
+      - if: needs.prepare.outputs.state == 'ready'
+        name: Push release/next
+        env:
           REPOSITORY: ${{ github.repository }}
           GIT_AUTHOR_NAME: github-actions[bot]
           GIT_AUTHOR_EMAIL: 41898237+github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898237+github-actions[bot]@users.noreply.github.com
         run: |
-          version=$(cat VERSION)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          version=$(cat "$RUNNER_TEMP/release/VERSION")
           remote="https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git"
-          git add -A
+          git apply --index "$RUNNER_TEMP/release/release.patch"
           tree=$(git write-tree)
-          parents=()
-          if git fetch --no-tags --depth=1 "$remote" refs/heads/release/next 2>/dev/null; then
+          parents=(-p HEAD)
+          status=0
+          git ls-remote --exit-code "$remote" refs/heads/release/next > /dev/null || status=$?
+          if [ "$status" -eq 0 ]; then
+            git fetch --no-tags --depth=1 "$remote" refs/heads/release/next
             previous=$(git rev-parse FETCH_HEAD)
             if [ "$(git rev-parse "$previous^{tree}")" = "$tree" ]; then
               echo "release/next already holds this release."
               exit 0
             fi
             parents+=(-p "$previous")
+          elif [ "$status" -ne 2 ]; then
+            echo "::error::Could not read release/next (git ls-remote exited with $status)."
+            exit 1
           fi
-          commit=$(git commit-tree "$tree" "${parents[@]}" -p HEAD -m "chore(release): $version")
+          commit=$(git commit-tree "$tree" "${parents[@]}" -m "chore(release): $version")
           git push "$remote" "$commit:refs/heads/release/next"
-      - if: steps.fragments.outputs.count != '0'
+      - if: needs.prepare.outputs.state == 'ready'
         name: Open or update the pull request
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          VERSION: ${{ steps.push.outputs.version }}
         run: |
-          {
-            echo "Merging this pull request releases **Kite $VERSION**: it deploys production, and the Release publish workflow then tags \`v$VERSION\` and publishes the GitHub release."
-            echo
-            echo "**Checks:** pushes made by this workflow start no CI runs (GitHub never triggers workflows from \`GITHUB_TOKEN\` pushes). Before merging, close and reopen this pull request to run the required checks on its latest commit."
-            echo
-            echo "This pull request is prepared by \`.github/workflows/release-pr.yml\` and updated after every push to \`main\` that adds changelog fragments. Edit the notes in \`CHANGELOG.md\` here if needed; a later update replaces those edits. See [Releasing](docs/releasing.md)."
-            echo
-            echo "## Release notes"
-            echo
-            node --input-type=module -e 'import { readFileSync } from "node:fs"; import { changelogSection } from "./scripts/version-utils.mjs"; console.log(changelogSection(readFileSync("CHANGELOG.md", "utf8"), process.env.VERSION));'
-          } > "$RUNNER_TEMP/release-pr-body.md"
+          version=$(cat "$RUNNER_TEMP/release/VERSION")
+          body="$RUNNER_TEMP/release/body.md"
           number=$(gh pr list --head release/next --base main --state open --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
-            gh pr edit "$number" --title "Release $VERSION" --body-file "$RUNNER_TEMP/release-pr-body.md"
-          elif ! gh pr create --base main --head release/next --title "Release $VERSION" --body-file "$RUNNER_TEMP/release-pr-body.md"; then
+            gh pr edit "$number" --title "Release $version" --body-file "$body"
+          elif ! gh pr create --base main --head release/next --title "Release $version" --body-file "$body"; then
             echo "::error::Could not open the release pull request. Enable 'Allow GitHub Actions to create and approve pull requests' under Settings → Actions → General."
             exit 1
           fi
+          issue=$(gh issue list --state open --search "\"$FAILURE_TITLE\" in:title" --json number,title --jq "map(select(.title == env.FAILURE_TITLE))[0].number // empty")
+          if [ -n "$issue" ]; then gh issue close "$issue" --comment "Prepared $version in the release pull request."; fi

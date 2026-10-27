@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.27.4] - 2026-10-27
+
+### Changed
+
+- The **What's new in Kite** dialog now lists changes that are already deployed but not yet part of a named release under "Unreleased changes". Releases are now made by a separate release pull request that collects these changes, so production deploys between releases keep showing the last version with the build's revision.
+
+### Fixed
+
+- Money Watch no longer misses the end of a compressed PDF page when its data happens to end in a line-break byte: it now uses the length the PDF states for each stream, so the last lines of an invoice (often the total) are read.
+
 ## [2026.10.27.3] - 2026-10-27
 
 ### Changed

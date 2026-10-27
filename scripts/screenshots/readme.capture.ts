@@ -43,11 +43,21 @@ async function openLenasMessage(page: Page) {
 }
 
 async function capture(page: Page, name: string) {
+	// Playwright's click retries can leave the message list scrolled a little; shots start at its top.
+	await page.evaluate(() => {
+		for (const list of document.querySelectorAll("[data-density]")) list.scrollTop = 0;
+	});
 	// A visible loading overlay, if the page has one, must be gone.
 	await expect(page.locator('[aria-label="Loading"].opacity-100')).toHaveCount(0);
 	await expect(page.getByRole("progressbar", { name: "Loading page" })).toHaveCount(0);
 	await page.waitForLoadState("networkidle");
 	await page.evaluate(() => document.fonts.ready);
+	// The shots must use the app's own font, not a system fallback.
+	const uiFontLoaded = await page.evaluate(() => {
+		const family = getComputedStyle(document.body).fontFamily.split(",")[0].trim().replace(/["']/g, "");
+		return [...document.fonts].some((face) => face.family.replace(/["']/g, "") === family && face.status === "loaded");
+	});
+	expect(uiFontLoaded, "the UI font is loaded").toBe(true);
 	await page.screenshot({ path: `screenshots/${name}.png`, animations: "disabled", caret: "hide" });
 	await page.context().close();
 }
@@ -130,3 +140,25 @@ for (const [name, appearance] of [
 		await capture(page, name);
 	});
 }
+
+test("command-palette", async ({ browser }) => {
+	const page = await open(browser);
+	await page.goto("/inbox");
+	await expect(page.getByText(OPENED.subject).first()).toBeVisible();
+	const palette = page.getByRole("dialog", { name: "Command palette" });
+	// Shortcuts bind once the account's preference has loaded.
+	await expect(async () => {
+		if (!(await palette.isVisible())) await page.keyboard.press("ControlOrMeta+k");
+		await expect(palette).toBeVisible({ timeout: 1000 });
+	}).toPass();
+	await capture(page, "command-palette");
+});
+
+test("inbox-menu-phone", async ({ browser }) => {
+	const page = await open(browser, { phone: true });
+	await page.goto("/inbox");
+	await expect(page.getByText(OPENED.subject).first()).toBeVisible();
+	await page.getByRole("button", { name: "Open menu" }).click();
+	await expect(page.getByRole("link", { name: /^Inbox\b/ }).first()).toBeVisible();
+	await capture(page, "inbox-menu-phone");
+});

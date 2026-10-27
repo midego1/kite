@@ -13,6 +13,9 @@ export interface ShortcutDefinition {
 	action: () => void;
 }
 
+/** A key the help sheet lists; mail keys are bound by the list and the reader, not the provider. */
+export type ShortcutHint = Pick<ShortcutDefinition, "key" | "label" | "category" | "modifiers">;
+
 export interface CommandItem {
 	id: string;
 	title: string;

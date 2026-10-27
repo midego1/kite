@@ -14,15 +14,15 @@ const SidebarContext = createContext<SidebarState>({
 	width: 260,
 	userId: null,
 	toggle: () => undefined,
+	setMinimal: () => undefined,
 	setWidth: () => undefined,
-	setForcedMinimal: () => undefined,
 	mobile: false,
 	mobileOpen: false,
+	setMobileOpen: () => undefined,
 });
 
 export function SidebarProvider({ children, expandedWidth = 260, mobileOverlay = false }: SidebarProviderProps) {
 	const [minimal, setMinimal] = useState(false);
-	const [forcedMinimal, setForcedMinimal] = useState(false);
 	const [width, setWidth] = useState(expandedWidth);
 	const [widthReady, setWidthReady] = useState(false);
 	const [userId, setUserId] = useState<string | null>(null);
@@ -86,41 +86,42 @@ export function SidebarProvider({ children, expandedWidth = 260, mobileOverlay =
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- applied once per signed-in account, not on width prop changes
 	}, [sessionUserId]);
 
+	// Remembers the rail per device and per account; phones always start collapsed, so they never save it.
+	function saveMinimal(next: boolean) {
+		if (isMobileViewport()) return;
+		saveInitialSidebarMinimal(next);
+		try {
+			if (storageKey) localStorage.setItem(storageKey, String(next));
+		} catch {
+			// Storage can be unavailable in private windows; the choice still applies to this page.
+		}
+	}
+
+	function changeMinimal(next: boolean) {
+		setMinimal(next);
+		saveMinimal(next);
+	}
+
 	function toggle() {
 		if (overlay) {
 			setMobileOpen((current) => !current);
 			return;
 		}
-		if (forcedMinimal) {
-			setForcedMinimal(false);
-			setMinimal(false);
-			if (!isMobileViewport()) {
-				saveInitialSidebarMinimal(false);
-				if (storageKey) localStorage.setItem(storageKey, "false");
-			}
-			return;
-		}
-		setMinimal((current) => {
-			const next = !current;
-			if (!isMobileViewport()) {
-				saveInitialSidebarMinimal(next);
-				if (storageKey) localStorage.setItem(storageKey, String(next));
-			}
-			return next;
-		});
+		changeMinimal(!minimal);
 	}
 
 	return (
 		<SidebarContext.Provider
 			value={{
-				minimal: !overlay && (minimal || forcedMinimal),
+				minimal: !overlay && minimal,
 				width,
 				userId,
 				toggle,
+				setMinimal: changeMinimal,
 				setWidth,
-				setForcedMinimal,
 				mobile: overlay,
 				mobileOpen,
+				setMobileOpen,
 			}}
 		>
 			<div
@@ -128,7 +129,7 @@ export function SidebarProvider({ children, expandedWidth = 260, mobileOverlay =
 				style={
 					{
 						"--sidebar-width": widthReady
-							? `${minimal || forcedMinimal ? 72 : width}px`
+							? `${minimal ? 72 : width}px`
 							: `var(--persisted-sidebar-width, ${expandedWidth}px)`,
 						"--sidebar-transition-duration": widthReady ? "200ms" : "0ms",
 					} as React.CSSProperties

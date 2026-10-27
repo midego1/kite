@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { DashboardNav } from "@/components/dashboard-nav";
 import { SidebarProvider } from "@/components/sidebar-state";
 import { SidebarAside, MobileMenuButton } from "@/components/sidebar-aside";
-import { SidebarResizeBoundary } from "@/components/sidebar-resize-boundary";
+import { SidebarFrame } from "@/components/sidebar-frame";
 import { ShortcutsProvider } from "@/components/shortcuts";
 import { MAIN_CONTENT_ID, SkipToContent } from "@/components/skip-to-content";
 import clsx from "clsx";
@@ -85,115 +85,116 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 						<MailSearchProvider>
 							<ShortcutsProvider>
 								<RouteTitle />
-								<div
-									className="grid h-dvh grid-cols-[minmax(0,1fr)] overflow-hidden bg-[#f6f8fc] transition-[grid-template-columns] md:grid-cols-[var(--sidebar-width)_minmax(0,1fr)]"
-									style={{ transitionDuration: "var(--sidebar-transition-duration)" }}
-								>
+								<div className="h-dvh overflow-hidden bg-[#f6f8fc]">
 									<SkipToContent />
-									<SidebarAside>
-										<div className="h-full">
-											<DashboardNav />
-										</div>
-										<SidebarResizeBoundary />
-									</SidebarAside>
-									<div className="flex min-h-0 min-w-0 flex-col">
-										<header className="flex h-16 w-full shrink-0 items-center gap-3 pr-4 text-sm">
-											<MobileMenuButton className="ml-2" />
-											<MailSearchInput />
-											{/* <Link
+									<SidebarFrame
+										sidebar={
+											<SidebarAside className="md:w-full">
+												<div className="h-full">
+													<DashboardNav />
+												</div>
+											</SidebarAside>
+										}
+									>
+										<div className="flex h-full min-h-0 min-w-0 flex-col">
+											<header className="flex h-16 w-full shrink-0 items-center gap-3 pr-4 text-sm">
+												<MobileMenuButton className="ml-2" />
+												<MailSearchInput />
+												{/* <Link
                         href="/settings/account"
                         className="flex h-10 w-10 items-center justify-center rounded-full text-neutral-600 hover:bg-neutral-200"
                         title="Account Settings"
                       >
                         <HelpCircle className="h-5 w-5" />
                       </Link> */}
-											{assistantEnabled && (
-												<Button
-													type="button"
-													variant="ghost"
-													size="sm"
-													className={assistantOpen ? "bg-blue-50 text-blue-700" : "text-neutral-600"}
-													onPointerEnter={() => void preloadAgentPanel().catch(() => undefined)}
-													onClick={() => {
-														setAssistantOpen((current) => !current);
-														setAssistantFullSize(false);
-													}}
-													aria-label={assistantOpen ? "Close email assistant" : "Open email assistant"}
-													aria-expanded={assistantOpen}
-													aria-controls="email-assistant-panel"
-												>
-													<Sparkles className="h-5 w-5" />
-												</Button>
-											)}
-											<MailboxSelector />
-										</header>
-										<AlertsBanner />
-										<MigrationsBanner />
-										<DnsSkippedBanner />
-										<div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-											<AssistantOpenContext.Provider value={assistantVisible && assistantLayout === "sidebar"}>
-												<main
-													id={MAIN_CONTENT_ID}
-													tabIndex={-1}
-													className="focus:outline-none min-h-0 min-w-0 flex-1 overflow-y-auto rounded-t-3xl bg-white overscroll-contain scrollbar-gutter-stable"
-													aria-hidden={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
-													inert={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
-												>
-													{children}
-												</main>
-											</AssistantOpenContext.Provider>
-											{assistantLayout === "sidebar" && (
-												<aside
-													className={clsx(
-														assistantFullSize ? "pl-0" : "pl-4",
-														"relative min-h-0 min-w-0 shrink-0 overflow-hidden pr-2 pb-2 max-md:p-0",
-														!resizingAssistant &&
-															"transition-[width] duration-300 ease-in-out motion-reduce:transition-none",
-														assistantVisible ? "" : "opacity-0",
-													)}
-													style={{
-														width: assistantVisible
-															? assistantFullSize
-																? "100%"
-																: `min(${assistantWidth}px, 100%)`
-															: "0px",
-													}}
-													aria-hidden={!assistantVisible}
-													inert={!assistantVisible}
-												>
-													{assistantVisible && !assistantFullSize && (
-														<div className="absolute inset-y-0 left-2 hidden w-0 md:block">
-															<ResizeHandle
-																label="Resize assistant"
-																onResizeStart={() => {
-																	assistantResizeStart.current = assistantWidth;
-																	setResizingAssistant(true);
-																}}
-																onResize={(delta) =>
-																	setAssistantWidth(clampAssistantWidth(assistantResizeStart.current - delta))
-																}
-																onResizeEnd={() => {
-																	setResizingAssistant(false);
-																	saveColumnWidth(userId, "assistant", assistantWidthRef.current);
+												{assistantEnabled && (
+													<Button
+														type="button"
+														variant="ghost"
+														size="sm"
+														className={assistantOpen ? "bg-blue-50 text-blue-700" : "text-neutral-600"}
+														onPointerEnter={() => void preloadAgentPanel().catch(() => undefined)}
+														onClick={() => {
+															setAssistantOpen((current) => !current);
+															setAssistantFullSize(false);
+														}}
+														aria-label={assistantOpen ? "Close email assistant" : "Open email assistant"}
+														aria-expanded={assistantOpen}
+														aria-controls="email-assistant-panel"
+													>
+														<Sparkles className="h-5 w-5" />
+													</Button>
+												)}
+												<MailboxSelector />
+											</header>
+											<AlertsBanner />
+											<MigrationsBanner />
+											<DnsSkippedBanner />
+											<div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+												<AssistantOpenContext.Provider value={assistantVisible && assistantLayout === "sidebar"}>
+													<main
+														id={MAIN_CONTENT_ID}
+														tabIndex={-1}
+														className="focus:outline-none min-h-0 min-w-0 flex-1 overflow-y-auto rounded-t-3xl bg-white overscroll-contain scrollbar-gutter-stable"
+														aria-hidden={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
+														inert={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
+													>
+														{children}
+													</main>
+												</AssistantOpenContext.Provider>
+												{assistantLayout === "sidebar" && (
+													<aside
+														className={clsx(
+															assistantFullSize ? "pl-0" : "pl-4",
+															"relative min-h-0 min-w-0 shrink-0 overflow-hidden pr-2 pb-2 max-md:p-0",
+															!resizingAssistant &&
+																"transition-[width] duration-300 ease-in-out motion-reduce:transition-none",
+															assistantVisible ? "" : "opacity-0",
+														)}
+														style={{
+															width: assistantVisible
+																? assistantFullSize
+																	? "100%"
+																	: `min(${assistantWidth}px, 100%)`
+																: "0px",
+														}}
+														aria-hidden={!assistantVisible}
+														inert={!assistantVisible}
+													>
+														{assistantVisible && !assistantFullSize && (
+															<div className="absolute inset-y-0 left-2 hidden w-0 md:block">
+																<ResizeHandle
+																	label="Resize assistant"
+																	onResizeStart={() => {
+																		assistantResizeStart.current = assistantWidth;
+																		setResizingAssistant(true);
+																	}}
+																	onResize={(delta) =>
+																		setAssistantWidth(clampAssistantWidth(assistantResizeStart.current - delta))
+																	}
+																	onResizeEnd={() => {
+																		setResizingAssistant(false);
+																		saveColumnWidth(userId, "assistant", assistantWidthRef.current);
+																	}}
+																/>
+															</div>
+														)}
+														{assistantEnabled && assistantLoaded && (
+															<LazyAgentPanel
+																open={assistantVisible}
+																fullSize={assistantFullSize}
+																onToggleFullSize={() => setAssistantFullSize((current) => !current)}
+																onClose={() => {
+																	setAssistantOpen(false);
+																	setAssistantFullSize(false);
 																}}
 															/>
-														</div>
-													)}
-													{assistantEnabled && assistantLoaded && (
-														<LazyAgentPanel
-															open={assistantVisible}
-															fullSize={assistantFullSize}
-															onToggleFullSize={() => setAssistantFullSize((current) => !current)}
-															onClose={() => {
-																setAssistantOpen(false);
-																setAssistantFullSize(false);
-															}}
-														/>
-													)}
-												</aside>
-											)}
+														)}
+													</aside>
+												)}
+											</div>
 										</div>
-									</div>
+									</SidebarFrame>
 									{assistantLayout === "floating" && assistantEnabled === true && (
 										<FloatingAssistant
 											open={assistantOpen}

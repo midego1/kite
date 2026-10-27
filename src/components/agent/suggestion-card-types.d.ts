@@ -30,6 +30,8 @@ export type SuggestionCardProps = {
 	mailboxId: string | null;
 	messageId: string;
 	threadId: string | null;
+	/** A current Summarize summary is on screen, so the automatic-reading summary line stays hidden. */
+	hideSummary?: boolean;
 };
 
 export type SuggestionCardBodyProps = {

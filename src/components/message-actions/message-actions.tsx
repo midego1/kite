@@ -8,6 +8,7 @@ import {
 	Ban,
 	BellOff,
 	FileCode2,
+	Sparkles,
 	Forward,
 	Mail,
 	MailOpen,
@@ -65,6 +66,7 @@ export function MessageActions({
 	message,
 	messageMeta,
 	bodyHtml,
+	onSummarizeMessage,
 }: MessageActionsProps) {
 	const router = useRouter();
 	const isMobile = useIsMobile();
@@ -411,6 +413,19 @@ export function MessageActions({
 								<ReportPhishingItem onSelect={() => void reportPhishing()} />
 								<hr className="my-1 border-neutral-100" />
 							</>
+						)}
+						{onSummarizeMessage && (
+							<button
+								type="button"
+								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+								onClick={() => {
+									setMoreOpen(false);
+									onSummarizeMessage();
+								}}
+							>
+								<Sparkles className="h-4 w-4" />
+								Summarize this message
+							</button>
 						)}
 						<button
 							type="button"

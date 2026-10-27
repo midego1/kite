@@ -21,7 +21,7 @@ const SuggestionCardBody = dynamic(
  * Kite's suggestions for the open conversation, shown once above the thread. The list only covers
  * mailboxes where the user has full access, so everyone else gets nothing rather than a 404.
  */
-export function SuggestionCard({ mailboxId, messageId, threadId }: SuggestionCardProps) {
+export function SuggestionCard({ mailboxId, messageId, threadId, hideSummary = false }: SuggestionCardProps) {
 	const { data, reload } = useSuggestionList<{ suggestions?: CardSuggestion[] }>(
 		suggestionCardUrl(messageId, threadId),
 	);
@@ -29,7 +29,9 @@ export function SuggestionCard({ mailboxId, messageId, threadId }: SuggestionCar
 		answeredInviteUrl(messageId, threadId),
 	);
 	usePhishingToast(data?.suggestions ?? null, messageId);
-	const sections = cardSections(data?.suggestions ?? [], mailboxId, answered?.suggestions ?? []);
+	const all = cardSections(data?.suggestions ?? [], mailboxId, answered?.suggestions ?? []);
+	// The reader never shows two summaries: the suggestion itself stays, so For you still lists it.
+	const sections = hideSummary ? { ...all, summary: null } : all;
 	if (!hasCardContent(sections)) return null;
 	const changed = () => {
 		reload();

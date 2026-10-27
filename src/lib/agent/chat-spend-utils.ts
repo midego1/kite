@@ -16,7 +16,7 @@ function tokenMessage(who: string, cap: number): string {
 
 /** What a user is told when a cap refuses a request: which cap, when it resets and who can change it where. */
 export function spendCapMessage(cap: SpendCapKind, limits: SpendCapLimits): string {
-	if (cap === "chat_tokens") return tokenMessage("chat and Write with Kite", limits.tokenCap);
+	if (cap === "chat_tokens") return tokenMessage("chat, Write with Kite and summaries", limits.tokenCap);
 	if (cap === "auto_read_tokens") return tokenMessage("automatic reading", limits.tokenCap);
 	if (cap === "mailbox_dollars")
 		return `Daily AI spend cap reached: this mailbox's ${dollars(limits.mailboxCapMicros ?? 0)} for today is used up. ${RESETS} Someone who manages the mailbox can change it under Automatic reading in the assistant settings.`;

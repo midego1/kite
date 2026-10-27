@@ -5,3 +5,5 @@ export const TRIAGE_SYSTEM_MARKER = "[kite:auto-read:triage]";
 export const REPAIR_MARKER = "[kite:auto-read:repair]";
 export const DRAFT_SYSTEM_MARKER = "[kite:auto-read:draft]";
 export const COMPOSE_SYSTEM_MARKER = "[kite:composer]";
+export const SUMMARY_SYSTEM_MARKER = "[kite:summary]";
+export const SUMMARY_TRANSLATION_MARKER = "[kite:summary-translation]";

@@ -124,7 +124,7 @@ test("a member is told to ask an administrator and gets no Apply button", async 
 	await context.close();
 });
 
-test("with a message open the notice moves to a one-line banner above the mailbox", async ({ page }) => {
+test("with a message open the notice moves to a compact notice in the sidebar", async ({ page }) => {
 	const api = await apiContext(STORAGE_STATE);
 	const subject = `Updates notice ${uniqueToken()}`;
 	await deliverInbound(api, {
@@ -150,10 +150,13 @@ test("with a message open the notice moves to a one-line banner above the mailbo
 	await openMessage(page, subject);
 	await expect(page.getByTestId("reading-pane-empty")).toHaveCount(0);
 	await expect(notice).toHaveCount(1);
+	await expect(
+		page.getByRole("navigation", { name: "Kite" }).getByRole("region", { name: "Database updates" }),
+	).toHaveCount(1);
 	await expect(notice).toContainText("still needs 1 update");
 	await expect(notice).toHaveAttribute("title", "0001_add_column.sql");
-	// One line: the banner is no taller than a small button row.
-	expect((await notice.boundingBox())!.height).toBeLessThan(48);
+	// Compact: a title, one short line and the button, not a bar across the page.
+	expect((await notice.boundingBox())!.height).toBeLessThan(120);
 
 	await notice.getByRole("button", { name: "Apply now" }).click();
 	await expect(notice).toContainText("1 database update applied.");

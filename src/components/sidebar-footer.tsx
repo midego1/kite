@@ -77,7 +77,7 @@ export function SidebarFooter({ extra, notices }: { extra?: ReactNode; notices?:
 
 	return (
 		<div className="flex flex-col gap-px pt-2">
-			{notices && <div className="mb-2 flex flex-col gap-2 empty:hidden max-md:hidden">{notices}</div>}
+			{notices}
 			<FooterLink href="/settings/account" icon={Settings} label="Settings" />
 			<FooterLink href={`${SOURCE_CODE_URL}/issues`} icon={LifeBuoy} label="Support" />
 			{extra}

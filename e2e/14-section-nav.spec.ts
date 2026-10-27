@@ -500,7 +500,8 @@ test("the mailbox selector opens Admin and Settings in the matching mode", async
 
 	await page.goto("/inbox");
 	await page.getByRole("button", { name: "Open account menu" }).click();
-	await page.getByRole("link", { name: "Settings", exact: true }).click();
+	// The account menu's own Settings link; the sidebar has one too, above Support.
+	await page.locator('[data-placement="sidebar"]').getByRole("link", { name: "Settings", exact: true }).click();
 	await expect(page).toHaveURL(/\/settings\/account$/);
 	await expectMode(settingsMenu(page), "Settings", "My account");
 });

@@ -2,15 +2,12 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
-import { AlertsBanner } from "@/components/alerts-banner";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { ComposeProvider } from "@/components/compose/compose-context";
 import { FloatingComposer } from "@/components/compose/floating-composer";
 import { MailSearchProvider } from "@/components/mail-search/mail-search-context";
 import { MailboxProvider } from "@/components/mailbox-provider";
 import { MailboxSelector } from "@/components/mailbox-selector";
-import { MigrationsBanner } from "@/components/migrations-banner";
-import { DnsSkippedBanner } from "@/components/dns-skipped-banner";
 import { LazyAgentPanel, preloadAgentPanel } from "@/components/agent/agent-panel-lazy";
 import { AssistantDockedContext, AssistantOpenContext } from "@/components/agent/assistant-open-state";
 import { Button } from "@/components/ui/button";
@@ -18,6 +15,7 @@ import { DashboardNav } from "@/components/dashboard-nav";
 import { SidebarProvider } from "@/components/sidebar-state";
 import { SidebarAside, MobileMenuButton } from "@/components/sidebar-aside";
 import { SidebarFrame } from "@/components/sidebar-frame";
+import { DashboardNotices } from "@/components/dashboard-notices";
 import { ShortcutsProvider } from "@/components/shortcuts";
 import { MAIN_CONTENT_ID, SkipToContent } from "@/components/skip-to-content";
 import clsx from "clsx";
@@ -76,13 +74,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 		}
 	}, [assistantEnabled, assistantOpen, assistantFullSize, setAssistantOpen, setAssistantFullSize]);
 
-	const notices = (
-		<>
-			<AlertsBanner />
-			<MigrationsBanner />
-			<DnsSkippedBanner />
-		</>
-	);
 	const assistantToggle = (variant: "icon" | "nav") =>
 		assistantEnabled ? (
 			<Button
@@ -124,6 +115,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 													<DashboardNav
 														assistantToggle={assistantToggle("nav")}
 														accountMenu={<MailboxSelector placement="sidebar" />}
+														notices={<DashboardNotices slot="sidebar" />}
 													/>
 												</div>
 											</SidebarAside>
@@ -137,8 +129,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 												{assistantToggle("icon")}
 												<MailboxSelector />
 											</header>
-											{/* On phones the notices sit over the page; wider screens show them in the sidebar. */}
-											<div className="flex flex-col gap-2 px-2 pb-2 empty:hidden md:hidden">{notices}</div>
+											<DashboardNotices slot="page" />
 											<div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
 												<AssistantOpenContext.Provider value={assistantVisible && assistantLayout === "sidebar"}>
 													<main

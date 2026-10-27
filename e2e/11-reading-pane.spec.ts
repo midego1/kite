@@ -70,7 +70,7 @@ test("No split keeps the folder title on direct message routes and after returni
 	await openMessage(page, subject);
 	const messageUrl = page.url();
 	await page.getByRole("button", { name: "Open account menu" }).click();
-	await page.getByRole("link", { name: "Settings", exact: true }).click();
+	await page.locator('[data-placement="sidebar"]').getByRole("link", { name: "Settings", exact: true }).click();
 	await expect(page).toHaveTitle(/^My account - /);
 	await page.evaluate(() => {
 		(window as Window & { __e2eTitleMarker?: boolean }).__e2eTitleMarker = true;

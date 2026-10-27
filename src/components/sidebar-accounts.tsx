@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { Check, PanelLeft, Plus } from "lucide-react";
@@ -81,13 +80,15 @@ export function SidebarAccounts({ accountMenu }: { accountMenu?: ReactNode }) {
 			})}
 			{user?.role === "admin" && (
 				<Tooltip label="Add mailbox">
-					<Link
-						href="/mailboxes"
+					{/* A button, so the Admin menu's link stays the one link to Mailboxes on the page. */}
+					<button
+						type="button"
 						aria-label="Add mailbox"
+						onClick={() => router.push("/mailboxes")}
 						className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900"
 					>
 						<Plus size={16} />
-					</Link>
+					</button>
 				</Tooltip>
 			)}
 			<span className="flex-1" />

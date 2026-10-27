@@ -18,6 +18,7 @@ import { PreviousMessage } from "@/components/previous-message";
 import { ConversationThread } from "@/components/messages/conversation-thread";
 import { MessageDetailNavigation } from "@/components/messages/message-detail-navigation";
 import { QuickReply } from "@/components/message-actions/quick-reply";
+import { AssistantButton } from "@/components/agent/assistant-button";
 import { MessageReadingHeaderButton } from "@/components/messages/message-reading-header-button";
 import { QuotedEmailToggle } from "@/components/messages/quoted-email-toggle";
 import { EmailHtmlFrame, RemoteImagesNotice } from "@/components/messages/email-html-frame";
@@ -184,6 +185,7 @@ export default function MessageDetailPage() {
 					bodyHtml={body?.htmlBody}
 					onSummarizeMessage={summary.summarizeMessage}
 				/>
+				<AssistantButton testId="assistant-button-reader" />
 			</div>
 
 			<div

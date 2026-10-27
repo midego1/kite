@@ -14,3 +14,17 @@ export const AssistantDockedContext = createContext(false);
 export function useAssistantDocked() {
 	return useContext(AssistantDockedContext);
 }
+
+/** What the Kite AI buttons in the list header and the reader toolbar need; null outside the dashboard. */
+export type AssistantToggleState = {
+	/** False while the assistant is off for this install, which hides every entry point. */
+	available: boolean;
+	open: boolean;
+	toggle: () => void;
+};
+
+export const AssistantToggleContext = createContext<AssistantToggleState | null>(null);
+
+export function useAssistantToggle() {
+	return useContext(AssistantToggleContext);
+}

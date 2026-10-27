@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { Check, ChevronLeft, ChevronRight, PanelLeft, SlidersHorizontal, Trash2 } from "lucide-react";
+import { AssistantButton } from "@/components/agent/assistant-button";
 import { MailSearchInput } from "@/components/mail-search/mail-search-input";
 import { useSidebar } from "@/components/sidebar-state";
 import { Button } from "@/components/ui/button";
@@ -157,6 +158,7 @@ export function MessageListHeader({
 							<Check className="h-4 w-4" />
 							Select
 						</Button>
+						<AssistantButton testId="assistant-button-list" showLabel />
 						<Separator orientation="vertical" className="mx-1 h-4" />
 						<Tooltip label="List settings">
 							<Link

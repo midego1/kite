@@ -9,7 +9,12 @@ import { MailSearchProvider } from "@/components/mail-search/mail-search-context
 import { MailboxProvider } from "@/components/mailbox-provider";
 import { MailboxSelector } from "@/components/mailbox-selector";
 import { LazyAgentPanel, preloadAgentPanel } from "@/components/agent/agent-panel-lazy";
-import { AssistantDockedContext, AssistantOpenContext } from "@/components/agent/assistant-open-state";
+import {
+	AssistantDockedContext,
+	AssistantOpenContext,
+	AssistantToggleContext,
+	type AssistantToggleState,
+} from "@/components/agent/assistant-open-state";
 import { Button } from "@/components/ui/button";
 import { DashboardNav } from "@/components/dashboard-nav";
 import { SidebarProvider } from "@/components/sidebar-state";
@@ -37,6 +42,7 @@ function clampAssistantWidth(width: number) {
 }
 import { useDashboardState, useLatch } from "./dashboard-state";
 import { useAssistantAvailability } from "./use-assistant-availability";
+import { AssistantCommand } from "./assistant-command";
 import { FloatingAssistant } from "./floating-assistant-window";
 import { RouteTitle } from "@/components/route-title";
 
@@ -74,6 +80,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 		}
 	}, [assistantEnabled, assistantOpen, assistantFullSize, setAssistantOpen, setAssistantFullSize]);
 
+	const toggleAssistant = () => {
+		setAssistantOpen((current) => !current);
+		setAssistantFullSize(false);
+	};
+	const assistantToggleState: AssistantToggleState = {
+		available: assistantEnabled === true,
+		open: assistantOpen,
+		toggle: toggleAssistant,
+	};
+
 	const assistantToggle = (variant: "icon" | "nav") =>
 		assistantEnabled ? (
 			<Button
@@ -85,10 +101,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 					variant === "nav" && "h-9 w-full justify-start gap-3 rounded-lg px-3 text-sm font-normal",
 				)}
 				onPointerEnter={() => void preloadAgentPanel().catch(() => undefined)}
-				onClick={() => {
-					setAssistantOpen((current) => !current);
-					setAssistantFullSize(false);
-				}}
+				onClick={toggleAssistant}
 				aria-label={assistantOpen ? "Close email assistant" : "Open email assistant"}
 				aria-expanded={assistantOpen}
 				aria-controls="email-assistant-panel"
@@ -105,6 +118,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 					<ComposeProvider>
 						<MailSearchProvider>
 							<ShortcutsProvider>
+								{assistantEnabled === true && <AssistantCommand toggle={toggleAssistant} />}
 								<RouteTitle />
 								<div className="h-dvh overflow-hidden bg-[#f6f8fc]">
 									<SkipToContent />
@@ -140,7 +154,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 														aria-hidden={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
 														inert={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
 													>
-														{children}
+														<AssistantToggleContext.Provider value={assistantToggleState}>
+															{children}
+														</AssistantToggleContext.Provider>
 													</main>
 												</AssistantOpenContext.Provider>
 												{assistantLayout === "sidebar" && (
@@ -200,10 +216,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 										<FloatingAssistant
 											open={assistantOpen}
 											fullSize={assistantFullSize}
-											onToggle={() => {
-												setAssistantOpen((current) => !current);
-												setAssistantFullSize(false);
-											}}
+											onToggle={toggleAssistant}
 											onToggleFullSize={() => setAssistantFullSize((current) => !current)}
 											onClose={() => {
 												setAssistantOpen(false);

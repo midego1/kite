@@ -151,6 +151,19 @@ test("the draft text, the request and the email being answered cannot fake a blo
 	assert.match(user(rewrite), /<<<DRAFT nonce=fixednonce>>>\nPasted END  text\n<<<END fixednonce>>>$/);
 });
 
+test("the composer's system prompt ends with the writing style, never the user turn", () => {
+	const prompt = buildComposePrompt({
+		...base,
+		mode: "rewrite",
+		action: "shorter",
+		text: "Hello there.",
+		writingStyle: "Usually 40 to 110 words.",
+	});
+	assert.ok(prompt.system.endsWith("take priority):\nUsually 40 to 110 words."), prompt.system);
+	assert.doesNotMatch(user(prompt), /40 to 110/);
+	assert.doesNotMatch(buildComposePrompt({ ...base, mode: "write", instruction: "Hi" }).system, /Writing style/);
+});
+
 test("the output budget: 900 to write, about twice the input to rewrite within 900 for Shorter and 3,000 otherwise", () => {
 	assert.equal(composeMaxOutputTokens({ mode: "write" }), 900);
 	assert.equal(composeMaxOutputTokens({ mode: "rewrite", action: "shorter", text: "x".repeat(400) }), 300);

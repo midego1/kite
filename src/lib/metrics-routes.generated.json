@@ -168,6 +168,8 @@
 	"/api/send",
 	"/api/send/undo",
 	"/api/settings/assistant",
+	"/api/settings/assistant/writing-style/backfill",
+	"/api/settings/assistant/writing-style",
 	"/api/settings/forwarding",
 	"/api/settings/mfa/confirm",
 	"/api/settings/mfa/disable",

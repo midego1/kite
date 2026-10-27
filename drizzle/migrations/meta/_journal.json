@@ -517,7 +517,14 @@
       "idx": 73,
       "version": "6",
       "when": 1788851700028,
-      "tag": "0070_add_telemetry_state",
+      "tag": "0070_add_writing_style",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1788851760028,
+      "tag": "0071_add_telemetry_state",
       "breakpoints": true
     }
   ]

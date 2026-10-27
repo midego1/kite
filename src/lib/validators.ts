@@ -344,8 +344,11 @@ export const updateAssistantSettingsSchema = z
 			})
 			.strict()
 			.optional(),
+		writingStyle: z.object({ enabled: z.boolean() }).strict().optional(),
 	})
-	.refine((value) => value.maxSteps !== undefined || value.instructions !== undefined);
+	.refine(
+		(value) => value.maxSteps !== undefined || value.instructions !== undefined || value.writingStyle !== undefined,
+	);
 
 export const undoSendSchema = z.object({
 	messageId: z.string().min(1).max(200),

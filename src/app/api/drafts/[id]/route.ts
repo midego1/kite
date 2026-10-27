@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { markAiAssistedDraft } from "@/lib/agent/writing-style";
 import { eq, sql } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
 import { getDb } from "@/db";
@@ -82,6 +83,7 @@ export async function PATCH(request: Request, { params }: DraftRouteParams) {
 		.update(messages)
 		.set({ ...next, snippet: buildSnippet(next.textBody, next.htmlBody) })
 		.where(eq(messages.id, id));
+	await markAiAssistedDraft(db, id, input.aiAssisted);
 	if (agent)
 		await db
 			.update(agentDraftMetadata)

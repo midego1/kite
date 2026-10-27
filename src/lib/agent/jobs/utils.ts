@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { agentDraftMetadata, agentJobs, mailboxAgentSettings, mailboxes, messages, users } from "@/db/schema";
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
 import { personalInstructionsFor } from "../user-ai-settings";
+import { styleDescriptionFor } from "../writing-style";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { normalizeEmailAddress } from "@/lib/email/address";
 import { newId } from "@/lib/ids";
@@ -147,6 +148,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 			preferences: {
 				mailboxDraft: settings.draftInstructions,
 				personal: await personalInstructionsFor(db, reviewer),
+				writingStyle: await styleDescriptionFor(db, reviewer.id, job.mailboxId),
 			},
 			thread: await loadDraftThread(db, job.mailboxId, source),
 			onUsage: (usage) =>

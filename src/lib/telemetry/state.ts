@@ -9,7 +9,7 @@ const ROW_ID = "default";
 
 type StoredState = { available: boolean; enabled: boolean; installId: string | null; lastSentDay: string | null };
 
-/** Thrown by `setTelemetryEnabled` while migration 0070 has not been applied. */
+/** Thrown by `setTelemetryEnabled` while migration 0071 has not been applied. */
 export class TelemetryUnavailableError extends Error {
 	constructor() {
 		super("Kite's database needs an update first. Apply the pending updates from the admin overview, then try again.");

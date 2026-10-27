@@ -19,6 +19,7 @@ import { buildComposePrompt, composeMaxOutputTokens } from "./compose-prompt-uti
 import type { ComposeAction, ComposeMode, ComposeSource } from "./compose-types";
 import { selectInteractiveModel } from "./interactive-model";
 import { personalInstructionsFor } from "./user-ai-settings";
+import { styleDescriptionFor } from "./writing-style";
 
 export type ComposeRequest = {
 	mailboxId: string;
@@ -96,6 +97,17 @@ async function mailboxAddress(db: AppDatabase, mailbox: { localPart: string; dom
 	return domain ? `${mailbox.localPart}@${domain.hostname}` : mailbox.localPart;
 }
 
+/**
+ * The user's writing style for this request: none to fix spelling or translate, which must keep the text's own voice,
+ * and without the formality line when they asked for more formal or more casual text.
+ */
+function composeWritingStyle(db: AppDatabase, userId: string, request: ComposeRequest): Promise<string | null> {
+	if (request.mode === "rewrite" && (request.action === "grammar" || request.action === "translate"))
+		return Promise.resolve(null);
+	const withoutFormality = request.action === "formal" || request.action === "casual";
+	return styleDescriptionFor(db, userId, request.mailboxId, { withoutFormality });
+}
+
 const recipientNames = (to: string[] = []) =>
 	to.map((value) => (value.includes("<") ? getEmailDisplayName(value) : "")).filter(Boolean);
 
@@ -125,6 +137,7 @@ export async function createComposeStream(
 		mailboxAddress: await mailboxAddress(db, access.mailbox),
 		instructions: { general: settings?.instructions ?? "", draft: settings?.draftInstructions ?? "" },
 		personal: await personalInstructionsFor(db, user),
+		writingStyle: await composeWritingStyle(db, user.id, request),
 	});
 	const options = buildModelCallOptions({
 		provider: selection.providerKind,

@@ -14,4 +14,6 @@ export type DraftPayload = {
 	threadId?: string | null;
 	/** Copy this message's attachments onto the new draft (forwarding). */
 	forwardOfMessageId?: string | null;
+	/** Write with Kite inserted text into this draft; it is marked so the writing style profile never learns from it. */
+	aiAssisted?: boolean;
 };

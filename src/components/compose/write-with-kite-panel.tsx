@@ -176,6 +176,7 @@ export default function WriteWithKitePanel({
 			bodyAtRequest,
 			below,
 		});
+		composer.onInserted?.();
 		setPhase({ name: "inserted", previous, after });
 	}
 

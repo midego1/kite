@@ -153,6 +153,14 @@ function replyBox(page: Page) {
 	return page.getByRole("button", { name: /^Reply to Inline Sender/ });
 }
 
+/** Opens the docked reply from the reply box and waits until its body has the focus, ready to type in. */
+async function openReply(page: Page) {
+	await openReply(page);
+	const body = inlineComposer(page).getByRole("textbox", { name: "Message body" });
+	await expect(body).toBeFocused();
+	return body;
+}
+
 async function openRow(page: Page, subject: string) {
 	await page
 		.getByRole("list", { name: "Inbox" })
@@ -169,7 +177,7 @@ test("opening another message collapses the docked reply with its draft, and the
 	const first = await deliverOne("Inline switch one");
 	const second = await deliverOne("Inline switch two");
 	await openMessage(page, first);
-	await replyBox(page).click();
+	await openReply(page);
 	await inlineComposer(page).getByRole("textbox", { name: "Message body" }).pressSequentially("Kept across messages");
 
 	await openRow(page, second);
@@ -177,7 +185,7 @@ test("opening another message collapses the docked reply with its draft, and the
 	await expect(replyBox(page)).toBeVisible();
 
 	await openRow(page, first);
-	await replyBox(page).click();
+	await openReply(page);
 	await expect(inlineComposer(page).getByRole("textbox", { name: "Message body" })).toContainText(
 		"Kept across messages",
 	);
@@ -190,7 +198,7 @@ test("leaving the reader while a reply is docked closes it, keeps the draft, and
 }) => {
 	const subject = await deliverOne("Inline leave");
 	await openMessage(page, subject);
-	await replyBox(page).click();
+	await openReply(page);
 	await inlineComposer(page).getByRole("textbox", { name: "Message body" }).pressSequentially("Kept while away");
 
 	await page
@@ -206,7 +214,7 @@ test("leaving the reader while a reply is docked closes it, keeps the draft, and
 		.getByRole("link", { name: /^Inbox\b/ })
 		.click();
 	await openRow(page, subject);
-	await replyBox(page).click();
+	await openReply(page);
 	await expect(inlineComposer(page).getByRole("textbox", { name: "Message body" })).toContainText("Kept while away");
 	await page.keyboard.press("Escape");
 });
@@ -239,7 +247,7 @@ test("a docked reply can be undone after opening another message, and the reply 
 		const first = await deliverOne("Inline undo one");
 		const second = await deliverOne("Inline undo two");
 		await openMessage(page, first);
-		await replyBox(page).click();
+		await openReply(page);
 		const composer = inlineComposer(page);
 		await composer.getByRole("textbox", { name: "Message body" }).pressSequentially("Undo me later");
 		await composer.getByRole("button", { name: "Send", exact: true }).click();
@@ -259,13 +267,13 @@ test("a docked reply can be undone after opening another message, and the reply 
 
 		// Sent, then the window runs out: nothing offers the sent draft again.
 		await openRow(page, first);
-		await replyBox(page).click();
+		await openReply(page);
 		await inlineComposer(page).getByRole("textbox", { name: "Message body" }).pressSequentially("Sent for real");
 		await inlineComposer(page).getByRole("button", { name: "Send", exact: true }).click();
 		await expect(undoBar).toBeVisible();
 		await expect(undoBar).toHaveCount(0, { timeout: 20_000 });
 		await waitForMessage(api, `Re: ${first}`, { status: "sent" });
-		await replyBox(page).click();
+		await openReply(page);
 		const fresh = inlineComposer(page).getByRole("textbox", { name: "Message body" });
 		await expect(fresh).toBeFocused();
 		await expect(fresh).not.toContainText("Sent for real");
@@ -284,7 +292,7 @@ test("with the preview on, a docked reply goes out through the preview and the r
 	try {
 		const subject = await deliverOne("Inline preview");
 		await openMessage(page, subject);
-		await replyBox(page).click();
+		await openReply(page);
 		const composer = inlineComposer(page);
 		await composer.getByRole("textbox", { name: "Message body" }).pressSequentially("Through the preview");
 		await composer.getByRole("button", { name: "Review send" }).click();
@@ -293,7 +301,7 @@ test("with the preview on, a docked reply goes out through the preview and the r
 		await dialog.getByRole("button", { name: "Confirm and send" }).click();
 		await expect(inlineComposer(page)).toHaveCount(0);
 		await waitForMessage(api, `Re: ${subject}`, { status: "sent" });
-		await replyBox(page).click();
+		await openReply(page);
 		await expect(inlineComposer(page).getByRole("textbox", { name: "Message body" })).not.toContainText(
 			"Through the preview",
 		);

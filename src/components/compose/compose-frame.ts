@@ -59,6 +59,11 @@ export function composeFrameAria({ mode, minimized, modalMode }: ComposeFrameSta
 /** An opened draft or reply starts in the body; a new message starts in the recipients field (its `autoFocus`). */
 export function useDraftBodyFocus(draftIdToLoad: string | null | undefined, loadingDraft: boolean) {
 	const formRef = useRef<HTMLFormElement>(null);
+	// While the draft loads the form holds the focus (it turns mail shortcuts off), so early keys never archive.
+	useEffect(() => {
+		if (draftIdToLoad && formRef.current && !formRef.current.contains(document.activeElement))
+			formRef.current.focus({ preventScroll: true });
+	}, [draftIdToLoad]);
 	useEffect(() => {
 		if (!draftIdToLoad || loadingDraft) return;
 		formRef.current?.querySelector<HTMLElement>("[contenteditable='true']")?.focus();

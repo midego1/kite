@@ -739,7 +739,8 @@ export function ComposeForm({
 				ref={formRef}
 				// Mail shortcuts stay out of the composer, also when a button in it has the focus.
 				data-shortcuts-off=""
-				className={cn(frameClass, sentInline && "hidden")}
+				tabIndex={-1}
+				className={cn(frameClass, "focus:outline-none", sentInline && "hidden")}
 				{...composeFrameAria({ mode, minimized, modalMode })}
 				onKeyDown={(event) => {
 					if (event.key !== "Escape" || event.defaultPrevented) return;

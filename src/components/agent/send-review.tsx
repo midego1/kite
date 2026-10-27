@@ -4,9 +4,10 @@ import { useState } from "react";
 import { authFetch } from "@/lib/auth/client";
 import { formatUserDate } from "@/lib/time/utils";
 import { htmlToPlainText } from "@/components/compose/rich-text-utils";
+import { DRAFT_CHANGED_ERROR } from "@/lib/agent/approvals/snapshot-utils";
 import type { SendReviewProps } from "./send-review-types";
 
-export function SendReview({ approvalId, snapshot, onClose, onSent }: SendReviewProps) {
+export function SendReview({ approvalId, snapshot, onClose, onReviewAgain, onSent }: SendReviewProps) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	async function confirm() {
@@ -80,20 +81,33 @@ export function SendReview({ approvalId, snapshot, onClose, onSent }: SendReview
 							Cancel
 						</button>
 					)}
-					<button
-						type="button"
-						className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
-						onClick={() => void confirm()}
-						disabled={busy}
-					>
-						{busy
-							? snapshot.scheduledAt
-								? "Scheduling…"
-								: "Sending…"
-							: snapshot.scheduledAt
-								? "Confirm and schedule"
-								: "Confirm and send"}
-					</button>
+					{error === DRAFT_CHANGED_ERROR && onReviewAgain ? (
+						<button
+							type="button"
+							className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white"
+							onClick={() => {
+								setError(null);
+								onReviewAgain();
+							}}
+						>
+							Review again
+						</button>
+					) : (
+						<button
+							type="button"
+							className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+							onClick={() => void confirm()}
+							disabled={busy}
+						>
+							{busy
+								? snapshot.scheduledAt
+									? "Scheduling…"
+									: "Sending…"
+								: snapshot.scheduledAt
+									? "Confirm and schedule"
+									: "Confirm and send"}
+						</button>
+					)}
 				</div>
 			</div>
 		</div>

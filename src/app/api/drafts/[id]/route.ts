@@ -8,10 +8,11 @@ import { requireSessionUser } from "@/lib/api/auth";
 import { buildSnippet } from "@/lib/email/parse";
 import type { DraftRouteParams } from "./types";
 import { selectDraftWithBody } from "./utils";
-import { getDraftSender, readDraftPayload, userOwnsDraft } from "../utils";
+import { draftSendableFields, getDraftSender, readDraftPayload, userOwnsDraft } from "../utils";
 import { listMessageAttachments } from "@/lib/email/attachments";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import { parseAgentScheduledAt } from "@/lib/agent/schedule";
+import { draftSaveChangesPayload } from "@/lib/agent/approvals/snapshot-utils";
 
 export async function GET(request: Request, { params }: DraftRouteParams) {
 	const { id } = await params;
@@ -53,7 +54,7 @@ export async function PATCH(request: Request, { params }: DraftRouteParams) {
 		return NextResponse.json({ error: "Draft not found" }, { status: 404 });
 	}
 	const [agent] = await db
-		.select({ mailboxId: agentDraftMetadata.mailboxId })
+		.select({ mailboxId: agentDraftMetadata.mailboxId, scheduledAt: agentDraftMetadata.scheduledAt })
 		.from(agentDraftMetadata)
 		.where(eq(agentDraftMetadata.draftId, id))
 		.limit(1);
@@ -73,31 +74,25 @@ export async function PATCH(request: Request, { params }: DraftRouteParams) {
 		return NextResponse.json({ error: sender.error }, { status: 403 });
 	}
 
-	const text = input.text ?? "";
-	const html = input.html ?? "";
+	const next = draftSendableFields(sender, input);
+	// An autosave of an untouched composer writes the same values; it must not count as an edit of an
+	// assistant draft, or it invalidates the send review the user is looking at.
+	if (agent && !draftSaveChangesPayload({ ...draft, scheduledAt: agent.scheduledAt }, { ...next, scheduledAt }))
+		return NextResponse.json({ draft: { id } });
 	await db
 		.update(messages)
-		.set({
-			mailboxId: sender.mailboxId,
-			fromAddr: sender.fromAddr,
-			toAddr: input.to ?? "",
-			ccAddr: input.cc || null,
-			bccAddr: input.bcc || null,
-			subject: input.subject ?? null,
-			snippet: buildSnippet(text || null, html || null),
-			textBody: text || null,
-			htmlBody: html || null,
-		})
+		.set({ ...next, snippet: buildSnippet(next.textBody, next.htmlBody) })
 		.where(eq(messages.id, id));
 	await markAiAssistedDraft(db, id, input.aiAssisted);
-	await db
-		.update(agentDraftMetadata)
-		.set({
-			revision: sql`${agentDraftMetadata.revision} + 1`,
-			humanEditedAt: new Date(),
-			...(scheduledAt !== undefined ? { scheduledAt } : {}),
-		})
-		.where(eq(agentDraftMetadata.draftId, id));
+	if (agent)
+		await db
+			.update(agentDraftMetadata)
+			.set({
+				revision: sql`${agentDraftMetadata.revision} + 1`,
+				humanEditedAt: new Date(),
+				...(scheduledAt !== undefined ? { scheduledAt } : {}),
+			})
+			.where(eq(agentDraftMetadata.draftId, id));
 
 	return NextResponse.json({ draft: { id } });
 }

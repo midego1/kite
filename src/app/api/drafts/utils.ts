@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthorizedSenderAddress } from "@/lib/email/sender";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { readJsonBody } from "@/lib/http/request";
+import type { DraftSendableFields } from "@/lib/agent/approvals/snapshot-utils";
 import type { DraftPayload } from "./types";
 
 export async function getDraftSender(
@@ -18,6 +19,23 @@ export async function getDraftSender(
 	} catch (error) {
 		return { error: error instanceof Error ? error.message : "Mailbox is not authorized" };
 	}
+}
+
+/** The sendable columns a draft save writes from its payload. */
+export function draftSendableFields(
+	sender: { fromAddr: string; mailboxId: string },
+	input: DraftPayload,
+): DraftSendableFields {
+	return {
+		mailboxId: sender.mailboxId,
+		fromAddr: sender.fromAddr,
+		toAddr: input.to ?? "",
+		ccAddr: input.cc || null,
+		bccAddr: input.bcc || null,
+		subject: input.subject ?? null,
+		textBody: input.text || null,
+		htmlBody: input.html || null,
+	};
 }
 
 export function userOwnsDraft(draft: { userId: string; status: string } | undefined, userId: string): boolean {

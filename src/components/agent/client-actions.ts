@@ -1,11 +1,15 @@
 import { authFetch } from "@/lib/auth/client";
+import { fetchDraft } from "@/components/compose/utils";
 import type { ReviewSnapshot } from "./send-review-types";
 import type { AgentDraftState } from "@/lib/agent/approvals/types";
 
+/** Opens a send review of the draft at `expectedRevision`, or as it is now when none is given. */
 export async function requestDraftReview(
 	draftId: string,
-	expectedRevision: number,
+	expectedRevision?: number,
 ): Promise<{ approvalId: string; snapshot: ReviewSnapshot }> {
+	expectedRevision ??= (await fetchDraft(draftId)).agent?.revision;
+	if (!expectedRevision) throw new Error("AI draft metadata is missing");
 	const response = await authFetch("/api/agent/approvals", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },

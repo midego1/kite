@@ -56,7 +56,10 @@ test("the Inbox groups starred mail under Pinned and the rest under Primary, in 
 			["primary", "Primary", ["a", "c"]],
 		],
 	);
-	assert.equal(sections[1].pinnedOnPage, 2);
+	assert.deepEqual(
+		sections.map((section) => section.count),
+		[2, null],
+	);
 	assert.deepEqual(
 		helpers.groupListSections([{ id: "a", starred: false }], true).map((section) => section.key),
 		["primary"],

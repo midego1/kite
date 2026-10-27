@@ -15,7 +15,14 @@ export type MailboxAccessLevel = {
 };
 
 export type AuditAction =
-	"auth.login" | "auth.logout" | "email.send" | "email.read" | "email.delete" | "permission.change" | "mailbox.access";
+	| "auth.login"
+	| "auth.logout"
+	| "email.send"
+	| "email.read"
+	| "email.delete"
+	| "folder.create"
+	| "permission.change"
+	| "mailbox.access";
 
 export type AuditLogInput = {
 	actorUserId?: string | null;

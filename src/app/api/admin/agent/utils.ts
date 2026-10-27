@@ -17,7 +17,11 @@ import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { sealSetting } from "@/lib/security/secret-box";
 import { AGENT_REASONING_EFFORTS } from "@/lib/agent/reasoning-effort-utils";
 import { autoReadAdminSchema, isAutoReadAdminBody } from "@/lib/agent/auto-read/settings-utils";
-import { getAutoReadAdminSettings, saveAutoReadAdminSettings } from "@/lib/agent/auto-read/install-settings";
+import {
+	getAutoReadAdminSettings,
+	saveAutoReadAdminSettings,
+	TokenCapsPendingError,
+} from "@/lib/agent/auto-read/install-settings";
 
 const providerSchema = z.object({
 	provider: z.enum(["cloudflare", "compatible"]),
@@ -91,7 +95,12 @@ async function saveAssistantEnabled(env: CloudflareEnv, enabled: boolean) {
 async function saveAutoRead(env: CloudflareEnv, body: unknown) {
 	const parsed = autoReadAdminSchema.safeParse(body);
 	if (!parsed.success) return Response.json({ error: "Invalid automatic reading settings" }, { status: 400 });
-	await saveAutoReadAdminSettings(env, parsed.data);
+	try {
+		await saveAutoReadAdminSettings(env, parsed.data);
+	} catch (error) {
+		if (!(error instanceof TokenCapsPendingError)) throw error;
+		return Response.json({ error: error.message, code: "MIGRATION_PENDING" }, { status: 409 });
+	}
 	return adminAgentResponse(env);
 }
 

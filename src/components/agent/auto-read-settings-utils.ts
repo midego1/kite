@@ -136,7 +136,19 @@ function activePauseEnd(pausedUntil: string | null, now: number): Date | null {
 /** Only the fields the legacy form edits, so saving it never overwrites automatic reading values it loaded earlier. */
 export function legacyAgentSettingsBody(settings: AgentSettings): AgentSettings {
 	const { mailboxId, enabled, modelId, autoDraftEnabled, reviewerUserId, instructions, dailyLimit } = settings;
-	return { mailboxId, enabled, modelId, autoDraftEnabled, reviewerUserId, instructions, dailyLimit };
+	const { chatInstructions, draftInstructions, summaryInstructions } = settings;
+	return {
+		mailboxId,
+		enabled,
+		modelId,
+		autoDraftEnabled,
+		reviewerUserId,
+		instructions,
+		chatInstructions,
+		draftInstructions,
+		summaryInstructions,
+		dailyLimit,
+	};
 }
 
 async function readJson<T extends { error?: string }>(response: Response, fallback: string): Promise<T> {
@@ -214,5 +226,14 @@ function pickAutoReadAdmin(data: AutoReadAdminValues): AutoReadAdminValues {
 		autoReadEnabled: data.autoReadEnabled,
 		externalAutoReadAllowed: data.externalAutoReadAllowed,
 		dailySpendCapMicros: data.dailySpendCapMicros,
+		autoReadTokenCap: data.autoReadTokenCap,
+		chatTokenCap: data.chatTokenCap,
+		tokenCapsReady: data.tokenCapsReady,
 	};
+}
+
+/** A token allowance typed by the admin: a whole number from 1,000 to 1,000,000,000, or null. */
+export function parseTokenAllowance(input: string): number | null {
+	const value = Number(input.trim());
+	return input.trim() && Number.isInteger(value) && value >= 1_000 && value <= 1_000_000_000 ? value : null;
 }

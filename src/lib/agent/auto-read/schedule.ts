@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { agentJobs, mailboxAgentSettings, mailboxes, users } from "@/db/schema";
+import { readMailboxAgentSettingsRow } from "./mailbox-settings";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
@@ -86,11 +87,7 @@ async function triageAllowed(env: CloudflareEnv, input: AgentWorkInput, settings
 export async function scheduleAgentWork(env: CloudflareEnv, input: AgentWorkInput) {
 	if (!withinRecoveryWindow(input.recoveryReceivedAt)) return;
 	const db = getDb(env);
-	const [settings] = await db
-		.select()
-		.from(mailboxAgentSettings)
-		.where(eq(mailboxAgentSettings.mailboxId, input.mailboxId))
-		.limit(1);
+	const settings = await readMailboxAgentSettingsRow(db, input.mailboxId);
 	if (!settings) return;
 	// Before every gate: the older reply is outdated even when this message is never triaged.
 	await supersedeOlderReplies(env, input.sourceMessageId);

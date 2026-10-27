@@ -34,9 +34,18 @@ export type AgentEmailReference = {
 	url?: string;
 };
 export type AgentEmailLinkProps = { email: AgentEmailReference; className: string };
+export type AgentActionName =
+	| "move_email"
+	| "move_emails"
+	| "mark_email_read"
+	| "mark_emails_read"
+	| "mark_emails_unread"
+	| "create_folder"
+	| "move_emails_to_folder"
+	| "discard_draft";
 export type AgentActionProposal = {
-	action: "move_email" | "move_emails" | "mark_email_read" | "discard_draft";
-	status: "pending_approval" | "processing" | "approved";
+	action: AgentActionName;
+	status: "pending_approval" | "processing" | "approved" | "undone";
 	emailId?: string;
 	emailIds?: string[];
 	destination?: string;
@@ -44,6 +53,17 @@ export type AgentActionProposal = {
 	draftId?: string;
 	expectedRevision?: number;
 	emails?: AgentEmailReference[];
+	/** `create_folder`: the folder's name and colour name. */
+	name?: string;
+	color?: string;
+	/** `move_emails_to_folder`: the target folder. */
+	folderId?: string;
+	folderName?: string;
+	/** Set once approved, for an action that can be undone. */
+	actionId?: string;
+	undoUntil?: string | null;
+	/** Set once undone: how many of the changed emails went back. */
+	undo?: { restored: number; total: number };
 };
 export type AgentTurn = {
 	id: string;
@@ -70,6 +90,9 @@ export type AgentSettings = {
 	autoDraftEnabled: boolean;
 	reviewerUserId: string | null;
 	instructions: string;
+	chatInstructions: string;
+	draftInstructions: string;
+	summaryInstructions: string;
 	dailyLimit: number;
 };
 
@@ -98,6 +121,7 @@ export type AgentSettingsResponse = {
 	settings: AgentSettings;
 	models: string[];
 	canManage: boolean;
+	instructionContext?: InstructionContext;
 	canConfigureProvider: boolean;
 	providerConfigured: boolean;
 	provider: AgentProvider | null;
@@ -108,3 +132,10 @@ export type AgentConversationsResponse = { conversations: AgentConversation[] };
 export type AgentJobsResponse = { jobs: AgentJob[] };
 export type AgentHistoryResponse = { messages: AgentMessage[] };
 export type AgentErrorResponse = { error?: string };
+
+/** What the instruction fields need besides their values: whether they can be saved yet, and Kite's own rules. */
+export type InstructionContext = {
+	/** False until migration 0069 adds the task instruction columns. */
+	ready: boolean;
+	fixedRules: { chat: string; draft: string };
+};

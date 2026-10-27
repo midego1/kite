@@ -31,8 +31,13 @@ const scopeByTool: Record<EmailToolName, string> = {
 	edit_draft: "mcp:draft",
 	review_draft_send: "mcp:request-send",
 	mark_email_read: "mcp:organize",
+	mark_emails_read: "mcp:organize",
+	mark_emails_unread: "mcp:organize",
 	move_email: "mcp:organize",
 	move_emails: "mcp:organize",
+	list_folders: "mcp:read",
+	create_folder: "mcp:organize",
+	move_emails_to_folder: "mcp:organize",
 	discard_draft: "mcp:draft",
 };
 

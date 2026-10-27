@@ -26,6 +26,7 @@ import type { PendingUndoSend, PendingUndoSnapshot } from "./undo-send-types";
 import { RecipientInput } from "./recipient-input";
 import { RichTextEditor } from "./rich-text-editor";
 import { ScheduleSendMenu } from "./schedule-send-menu";
+import { WriteWithKite } from "./write-with-kite";
 import {
 	applyMailboxSignatureHtml,
 	hasMeaningfulHtml,
@@ -185,12 +186,12 @@ export function ComposeForm({
 		threading,
 		to,
 	]);
-	const { draftSaves, storedUploads, cancelPendingSave } = useDraftAutosave(draftSnapshot, {
-		setDraftId,
-		setAttachments,
-		setStoredAttachments,
-		reportError: setToast,
-	});
+	const { draftSaves, storedUploads, cancelPendingSave } = useDraftAutosave(
+		draftSnapshot,
+		{ setDraftId, setAttachments, setStoredAttachments, reportError: setToast },
+		// Preparing or showing an assistant draft's send review: a save now would void the review.
+		{ paused: agentRevision !== null && (loading || agentReview !== null) },
+	);
 
 	useEffect(() => {
 		if (!toast) return;
@@ -643,6 +644,10 @@ export function ComposeForm({
 					approvalId={agentReview.approvalId}
 					snapshot={agentReview.snapshot}
 					onClose={() => setAgentReview(null)}
+					onReviewAgain={() => {
+						setAgentReview(null);
+						void submitMessage();
+					}}
 					onSent={() => {
 						setAgentReview(null);
 						if (onClose) onClose();
@@ -926,6 +931,7 @@ export function ComposeForm({
 										<Paperclip className="h-4 w-4" />
 									</button>
 								</Tooltip>
+								<WriteWithKite editorId={`${mode}-text`} composer={{ html, setHtml, subject, to, threading }} />
 								<span className="flex-1" />
 								<Tooltip label="Delete draft">
 									<button

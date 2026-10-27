@@ -3,6 +3,8 @@ import { getEmailAddress, splitEmailAddressList } from "@/lib/email/address";
 import { DEFAULT_FOLDER_COLOR, FOLDER_COLOR_VALUES } from "@/lib/folders/colors";
 import { isUndoSendSeconds } from "@/lib/email/undo-send-utils";
 import { AGENT_MAX_STEPS_MAX, AGENT_MAX_STEPS_MIN } from "@/lib/agent/step-limit-utils";
+import { TASK_INSTRUCTIONS_MAX_CHARS } from "@/lib/agent/instruction-utils";
+import { instructionText } from "@/lib/agent/instruction-schema";
 import { isPublicHttpUrl } from "@/lib/security/outbound-url";
 import { WEBHOOK_EVENT_VALUES } from "@/lib/modules/webhook-events-utils";
 
@@ -327,9 +329,23 @@ export const updateSendingSettingsSchema = z
 	})
 	.refine((input) => input.previewEnabled !== undefined || input.undoSeconds !== undefined, "Nothing to update");
 
-export const updateAssistantSettingsSchema = z.object({
-	maxSteps: z.number().int().min(AGENT_MAX_STEPS_MIN).max(AGENT_MAX_STEPS_MAX),
-});
+const personalInstruction = instructionText(TASK_INSTRUCTIONS_MAX_CHARS);
+
+/** A personal settings update: the step limit, the user's own instructions, or both. */
+export const updateAssistantSettingsSchema = z
+	.object({
+		maxSteps: z.number().int().min(AGENT_MAX_STEPS_MIN).max(AGENT_MAX_STEPS_MAX).optional(),
+		instructions: z
+			.object({
+				general: personalInstruction,
+				chat: personalInstruction,
+				draft: personalInstruction,
+				summary: personalInstruction,
+			})
+			.strict()
+			.optional(),
+	})
+	.refine((value) => value.maxSteps !== undefined || value.instructions !== undefined);
 
 export const undoSendSchema = z.object({
 	messageId: z.string().min(1).max(200),

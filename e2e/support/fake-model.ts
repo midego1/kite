@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
+	COMPOSE_SYSTEM_MARKER,
 	DRAFT_SYSTEM_MARKER,
 	REPAIR_MARKER,
 	TRIAGE_SYSTEM_MARKER,
@@ -43,6 +44,7 @@ function classifyFakeRequest(messages: ChatMessage[]): FakeRequestKind {
 		.join("\n");
 	if (system.includes(TRIAGE_SYSTEM_MARKER)) return "triage";
 	if (system.includes(DRAFT_SYSTEM_MARKER)) return "draft";
+	if (system.includes(COMPOSE_SYSTEM_MARKER)) return "compose";
 	return "other";
 }
 

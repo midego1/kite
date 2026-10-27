@@ -8,6 +8,7 @@ export type CoreAgentActionType =
 	| "move"
 	| "mark_read"
 	| "set_folder"
+	| "create_folder"
 	| "remind"
 	| "create_event"
 	| "delete_event"

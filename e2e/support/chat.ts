@@ -8,6 +8,7 @@ export type ChatEvent = {
 	result?: unknown;
 	text?: string;
 	message?: string;
+	conversationId?: string;
 };
 
 export const CALENDAR_TOOLS = [

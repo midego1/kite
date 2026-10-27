@@ -4,7 +4,9 @@ import { ZodError } from "zod";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { requireSessionUser } from "@/lib/api/auth";
+import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
+import { readUserAiSettings, savePersonalInstructions, UserAiSettingsPendingError } from "@/lib/agent/user-ai-settings";
 import type { UpdateAssistantSettingsInput } from "./types";
 import { assistantSettingsResponse, parseUpdateAssistantSettingsRequest } from "./utils";
 
@@ -12,13 +14,15 @@ export async function GET(request: Request) {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return auth.error;
-	return NextResponse.json(assistantSettingsResponse(auth.user.agentMaxSteps));
+	const ai = await readUserAiSettings(getDb(env), auth.user.id);
+	return NextResponse.json(assistantSettingsResponse(auth.user.agentMaxSteps, ai));
 }
 
 export async function PATCH(request: Request) {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return auth.error;
+	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
 
 	let input: UpdateAssistantSettingsInput;
 	try {
@@ -30,6 +34,19 @@ export async function PATCH(request: Request) {
 		);
 	}
 
-	await getDb(env).update(users).set({ agentMaxSteps: input.maxSteps }).where(eq(users.id, auth.user.id));
-	return NextResponse.json(assistantSettingsResponse(input.maxSteps));
+	const db = getDb(env);
+	if (input.instructions) {
+		try {
+			await savePersonalInstructions(db, auth.user.id, input.instructions);
+		} catch (error) {
+			if (!(error instanceof UserAiSettingsPendingError)) throw error;
+			return NextResponse.json({ error: error.message, code: "MIGRATION_PENDING" }, { status: 409 });
+		}
+	}
+	let maxSteps = auth.user.agentMaxSteps;
+	if (input.maxSteps !== undefined) {
+		await db.update(users).set({ agentMaxSteps: input.maxSteps }).where(eq(users.id, auth.user.id));
+		maxSteps = input.maxSteps;
+	}
+	return NextResponse.json(assistantSettingsResponse(maxSteps, await readUserAiSettings(db, auth.user.id)));
 }

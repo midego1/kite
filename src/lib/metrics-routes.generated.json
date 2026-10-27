@@ -29,6 +29,7 @@
 	"/api/admin/storage/stores/[id]",
 	"/api/admin/storage/stores/[id]/test",
 	"/api/admin/storage/stores",
+	"/api/admin/telemetry",
 	"/api/admin/threat-lookups/key",
 	"/api/admin/threat-lookups/test",
 	"/api/agent/actions/[id]/undo",

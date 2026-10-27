@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import type { SessionUser } from "@/lib/auth/types";
+import { undoSpamReceipt } from "@/lib/spam/report-receipts";
 import { updateMessageStatusForUser } from "@/lib/user";
 import { AgentActionError } from "./action-error";
 import type { ActionEffect, AgentActionRow } from "./actions-types";
@@ -29,13 +30,18 @@ export async function markSpamEffect(
 	return {
 		before,
 		async apply() {
-			if (!(await updateMessageStatusForUser(env, user, suggestion.messageId, "spam")))
+			let receiptId: string | undefined;
+			if (
+				!(await updateMessageStatusForUser(env, user, suggestion.messageId, "spam", (_messageId, id) => {
+					receiptId = id;
+				}))
+			)
 				throw new Error("The message could not be moved to Spam");
 			await getDb(env)
 				.update(agentSuggestions)
 				.set({ status: "accepted", decidedAt: new Date(), decidedByUserId: user.id })
 				.where(eq(agentSuggestions.id, suggestion.id));
-			return { status: "spam" };
+			return { status: "spam", ...(receiptId ? { receiptId } : {}) };
 		},
 		async check() {
 			return (await messageState(env, suggestion.messageId))?.status === "spam" ? { status: "spam" } : null;
@@ -48,6 +54,13 @@ export async function restoreMarkedSpam(env: CloudflareEnv, row: AgentActionRow)
 	const before = parseActionState(row.before);
 	if (!row.messageId || typeof before?.status !== "string") return;
 	const db = getDb(env);
+	// The training this Mark as spam made is taken back with the move; a newer report keeps both.
+	const receiptId = parseActionState(row.after)?.receiptId;
+	if (
+		typeof receiptId === "string" &&
+		(await undoSpamReceipt(env, row.messageId, receiptId, { restoreLocation: false })) === "superseded"
+	)
+		throw new AgentActionError("A newer spam report on this message is still in place, so Kite left it", 409);
 	const restored = await db
 		.update(messages)
 		.set({ status: before.status, folderId: typeof before.folderId === "string" ? before.folderId : null })

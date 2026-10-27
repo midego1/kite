@@ -39,6 +39,7 @@ import { affectsInboxUnreadCount, getInboxUnreadDelta, withReadState } from "@/l
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { showProgressToast } from "@/components/ui/progress-toast";
 import { confirmReportPhishing } from "./phishing-report";
+import { confirmReportSpam } from "./spam-report";
 import { reportListActionError, reportReadOnlySkipped } from "./list-action-toast";
 import { MessageMailboxLabel } from "./message-mailbox-label";
 import { useMessageAccess } from "./use-message-access";
@@ -232,6 +233,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 		}
 
 		if (action === "phishing" && !(await confirmReportPhishing(expandSelectedIds(actionIds).length))) return;
+		if (action === "spam" && !(await confirmReportSpam(expandSelectedIds(actionIds).length))) return;
 		setPendingBulkAction(true);
 		const previousMessages = messages;
 		const readValue = action === "read" ? true : action === "unread" ? false : null;

@@ -1,0 +1,4 @@
+CREATE TABLE `spam_report_receipts` (`id` text PRIMARY KEY NOT NULL, `message_id` text NOT NULL REFERENCES `messages`(`id`) ON DELETE cascade, `mailbox_id` text NOT NULL REFERENCES `mailboxes`(`id`) ON DELETE cascade, `actor_user_id` text REFERENCES `users`(`id`) ON DELETE set null, `classification` text NOT NULL, `previous_classification` text, `trained` integer NOT NULL, `created_tokens` text DEFAULT '[]' NOT NULL, `created_keys` text DEFAULT '[]' NOT NULL, `previous_status` text NOT NULL, `previous_folder_id` text, `extras` text DEFAULT '{}' NOT NULL, `created_at` integer NOT NULL, `undone_at` integer);--> statement-breakpoint
+CREATE INDEX `spam_report_receipts_message_idx` ON `spam_report_receipts` (`message_id`);--> statement-breakpoint
+CREATE INDEX `spam_report_receipts_created_idx` ON `spam_report_receipts` (`created_at`);--> statement-breakpoint
+CREATE INDEX `spam_report_receipts_mailbox_idx` ON `spam_report_receipts` (`mailbox_id`,`created_at`);

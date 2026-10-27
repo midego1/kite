@@ -6,7 +6,7 @@ Scores range from 0 to 100. Messages scoring 70 or higher move to Spam. Scores f
 
 The Spam Filter switch is under **Settings → Inbox → Spam protection** and is enabled by default. Disabling it affects future incoming messages; it does not move or rescan existing mail.
 
-Use **Report spam** to train a message as spam. Use **Not spam** from the Spam folder to train it as legitimate and return it to Inbox. Learning is scoped to the message's mailbox, only explicit user feedback trains the classifier, and changing a decision reverses the previous training first.
+Use **Report spam** to train a message as spam. Kite always asks first ("Report as spam?" for one message, "Report 7 messages as spam?" for a selection), because the report teaches the filter: Cancel or Esc changes nothing, and focus starts on Cancel so Enter does not confirm by reflex. The question has no "don't ask again" and appears wherever the report starts: the reader's toolbar, its Move menu and the `!` key, the list's selection toolbar, dropping mail on Spam in the sidebar, a message's menu inside a conversation, and **Mark as spam** on the phishing warning. After you confirm, a toast offers **Undo**; see [Undoing a report](#undoing-a-report). Use **Not spam** from the Spam folder to train it as legitimate and return it to Inbox. Learning is scoped to the message's mailbox, only explicit user feedback trains the classifier, and changing a decision reverses the previous training first.
 
 ## Sender authentication
 
@@ -38,16 +38,28 @@ Besides links that show one address and open another, bare IP addresses (IPv4 an
 A link is misleading only when it opens a different domain than the one it shows. One that shows `example.com` and opens `mail.example.com`, or a newsletter service's tracking redirect whose target is the address it shows, is not.
 - **Requests to get past the filter.** Text that asks you to whitelist the sender, never block it or mark the message as safe or not spam. Asking to be added to your address book alone does not count.
 
+## Undoing a report
+
+The toast after **Report spam** or **Report phishing** ("Reported as spam", "3 messages reported as spam", "Reported as phishing. Mail from … now goes to Trash.") has an **Undo** button for 8 seconds. **Mark as spam** on the phishing warning and a move to Spam approved in the assistant chat can be undone the same way, from their toast or the assistant's **Activity** for 7 days. Undo takes back exactly what the report did:
+
+- **Place.** The message goes back to the status and folder it was in, as long as it is still in Spam. If you moved it again since, Kite leaves it there.
+- **What the filter learned.** Kite keeps a small receipt of each report (the table `spam_report_receipts`, deleted after 7 days and not part of backups) and subtracts the same token and sender counts, including the extra weight a phishing report puts on the fingerprint, never below zero. Rows the report added to the filter's statistics are removed again. If the message had been marked **Not spam** before, that earlier training comes back. The filter is then in the state it was in before the report, apart from its "last seen" times.
+- **Phishing extras.** Kite remembers separately whether this report created the mailbox's block rule and whether the contact was already blocked. Undo deletes only a rule the report created and clears the contact's flag only if it was not set before (it also stays while another mailbox still blocks the address). A block you had set yourself stays. The phishing warnings the report closed open again. If the extras cannot be undone (an error is logged as `spam.undo_extras_failed`), the training and place are already back and pressing Undo again finishes the extras. Undo lifts the block even when a later phishing report from the same sender relied on it, because that report found the rule already in place and added nothing of its own.
+- **Newer decisions win.** An Undo only runs while no newer report on the same message that trained the filter is still in place. After "report, Not spam, report again", the oldest Undo does nothing (the toast says a newer decision is still in place) and still works after the newer ones are undone, newest first. The check and the changes are one atomic step, so two Undos at once, or a report landing mid-undo, cannot subtract twice.
+- **Undoing twice** does nothing the second time.
+
+Before the database update that adds the receipts is applied, a report still works and Undo still moves the mail back, but what the filter learned stays, and the toast says so ("What the filter learned can't be undone until the database update is applied").
+
 ## Report phishing
 
-**Report phishing** is in an open message's **More actions** menu, in the list's **Move to** and **More** menus for selected messages, and on the phishing warning. After you confirm, Kite:
+**Report phishing** is in an open message's **More actions** menu, in the list's **Move to** and **More** menus for selected messages, and on the phishing warning. After you confirm ("Report as phishing?", or "Report 3 messages as phishing?"), Kite:
 
 - moves the message to Spam;
 - learns from it like a spam report, with three times the weight on what makes the campaign recognisable, so the next copy starts with a poor reputation;
 - blocks the sender, so their next mail goes straight to Trash;
 - closes the phishing warning for the message.
 
-A sender you saved as a contact or have written to is not blocked, and neither is an address on one of the install's own domains: a phishing message can forge such a From, and blocking it would hide the real person's mail. The message still moves to Spam and still trains the filter. The toast after a report says which senders were blocked and why any were not. There is no Undo. **Not spam** moves a message back and reverses its training, but a block, like one from **Block contact**, cannot be lifted from the app yet.
+A sender you saved as a contact or have written to is not blocked, and neither is an address on one of the install's own domains: a phishing message can forge such a From, and blocking it would hide the real person's mail. The message still moves to Spam and still trains the filter. The toast after a report says which senders were blocked and why any were not. The toast has an **Undo** that also lifts the block, but only a block this report placed (see [Undoing a report](#undoing-a-report)). Later, **Not spam** moves a message back and reverses its training, but it does not lift a block; a block, like one from **Block contact**, cannot be lifted from the app yet.
 
 <a id="urlhaus-lookups-optional"></a>
 

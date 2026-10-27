@@ -6,6 +6,7 @@ import { storedChatActionState, undoTargets } from "../chat-actions-utils";
 import { AgentActionError } from "./action-error";
 import type { AgentActionRow } from "./actions-types";
 import { parseActionState } from "./actions-utils";
+import { undoSpamReceipt } from "@/lib/spam/report-receipts";
 import { restoreMarkedSpam } from "./suggestion-effects";
 
 const MOVED_AGAIN = "The emails were moved again since, so Kite left them where they are";
@@ -28,10 +29,16 @@ async function restoreChanged(
 	field: "place" | "read",
 	refusal: string,
 ): Promise<UndoCounts> {
-	const targets = undoTargets(chatState(row), field);
+	const state = chatState(row);
+	const targets = undoTargets(state, field);
 	const db = getDb(env);
 	let restored = 0;
 	for (const { before, applied } of targets) {
+		// A move to or out of Spam also trained the filter: take back exactly the training this action made. A
+		// newer report on the message leaves it (and its place) alone until that one is undone.
+		const receiptId = field === "place" ? state.receipts?.[before.id] : undefined;
+		if (receiptId && (await undoSpamReceipt(env, before.id, receiptId, { restoreLocation: false })) === "superseded")
+			continue;
 		const updated = await db
 			.update(messages)
 			.set(field === "read" ? { read: before.read } : { status: before.status, folderId: before.folderId })

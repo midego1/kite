@@ -8,10 +8,11 @@ import { runDatabasePruning } from "@/lib/maintenance/pruning";
 import { runOperationalAlerts } from "@/lib/alerts/run";
 import { runModuleCronTasks } from "@/lib/modules/background";
 import { runStorageMigrationMaintenance } from "@/lib/storage/migration";
+import { runTelemetryHeartbeat } from "@/lib/telemetry/heartbeat";
 
 const logger = createLogger("node-scheduler");
 
-/** Fire the daily 02:00 UTC backup and pruning, the 5-minute operational alerts and the recurring maintenance jobs, matching the cron triggers in wrangler.jsonc. */
+/** Fire the daily 02:00 UTC backup, pruning and usage heartbeat, the 5-minute operational alerts and the recurring maintenance jobs, matching the cron triggers in wrangler.jsonc. */
 export function startScheduler(env: CloudflareEnv) {
 	let lastRunDay = "";
 	let lastAlertMinute = 0;
@@ -42,6 +43,8 @@ export function startScheduler(env: CloudflareEnv) {
 			.then(() => runDatabasePruning(env, now))
 			.catch((error) => logger.error("database.pruning_failed", { error }));
 		runModuleCronTasks(env, "0 2 * * *", now).catch((error) => logger.error("modules.cron_failed", { error }));
+		// Opt-in usage statistics, matching worker.ts; does nothing unless the owner turned them on. Never throws.
+		void runTelemetryHeartbeat(env, now);
 	}, 60_000);
 	return () => clearInterval(timer);
 }

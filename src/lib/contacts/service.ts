@@ -166,13 +166,20 @@ export async function blockContact(env: CloudflareEnv, input: BlockContactInput)
 
 /**
  * Lifts the block `blockContact` placed for one mailbox. The contact itself stays blocked while another
- * mailbox of the same owner still has its own block rule for the address.
+ * mailbox of the same owner still has its own block rule for the address. `removeRule: false` keeps the
+ * mailbox's rule (it was not this caller's to remove) and `clearContact: false` keeps the contact's flag
+ * (it was set before this caller's block).
  */
-export async function unblockContact(env: CloudflareEnv, input: Omit<BlockContactInput, "domainId">) {
+export async function unblockContact(
+	env: CloudflareEnv,
+	input: Omit<BlockContactInput, "domainId">,
+	options: { removeRule?: boolean; clearContact?: boolean } = {},
+) {
 	const email = normalizeEmailAddress(input.address);
 	if (!email) return { email, blocked: false };
 	const db = getDb(env);
-	await db.delete(routingRules).where(eq(routingRules.id, `block:${input.mailboxId}:${email}`));
+	if (options.removeRule !== false)
+		await db.delete(routingRules).where(eq(routingRules.id, `block:${input.mailboxId}:${email}`));
 	const [remaining] = await db
 		.select({ id: routingRules.id })
 		.from(routingRules)
@@ -186,7 +193,7 @@ export async function unblockContact(env: CloudflareEnv, input: Omit<BlockContac
 			),
 		)
 		.limit(1);
-	if (!remaining)
+	if (!remaining && options.clearContact !== false)
 		await db
 			.update(contacts)
 			.set({ blocked: false })

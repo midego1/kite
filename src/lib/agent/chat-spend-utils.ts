@@ -11,12 +11,12 @@ const dollars = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`;
 const tokens = (count: number) => count.toLocaleString("en-US");
 
 function tokenMessage(who: string, cap: number): string {
-	return `Daily AI token allowance reached: ${who} has used its ${tokens(cap)} input tokens for today. The model has no prices set, so Kite counts tokens instead of dollars. ${RESETS} The primary admin can raise the allowance, or set model prices, in Admin → Agent.`;
+	return `Daily AI token allowance reached: ${who} used the ${tokens(cap)} input tokens allowed for today. The model has no prices set, so Kite counts tokens instead of dollars. ${RESETS} The primary admin can raise the allowance, or set model prices, in Admin → Agent.`;
 }
 
 /** What a user is told when a cap refuses a request: which cap, when it resets and who can change it where. */
 export function spendCapMessage(cap: SpendCapKind, limits: SpendCapLimits): string {
-	if (cap === "chat_tokens") return tokenMessage("chat", limits.tokenCap);
+	if (cap === "chat_tokens") return tokenMessage("chat and Write with Kite", limits.tokenCap);
 	if (cap === "auto_read_tokens") return tokenMessage("automatic reading", limits.tokenCap);
 	if (cap === "mailbox_dollars")
 		return `Daily AI spend cap reached: this mailbox's ${dollars(limits.mailboxCapMicros ?? 0)} for today is used up. ${RESETS} Someone who manages the mailbox can change it under Automatic reading in the assistant settings.`;

@@ -8,7 +8,7 @@ export type InstructionField = { key: InstructionFieldKey; label: string; hint?:
 export const INSTRUCTION_FIELDS: readonly InstructionField[] = [
 	{ key: "general", label: "General instructions (all tasks)" },
 	{ key: "chat", label: "Chat" },
-	{ key: "draft", label: "Drafting", hint: "Also used when Kite writes reply drafts on its own." },
+	{ key: "draft", label: "Drafting and composer", hint: "Also used when Kite writes reply drafts on its own." },
 	{ key: "summary", label: "Summaries", hint: "Saved for thread summaries, which are not available yet." },
 ];
 

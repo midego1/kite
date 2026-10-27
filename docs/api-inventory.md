@@ -52,6 +52,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/agent/approvals`                                 | POST                   | [source](../src/app/api/agent/approvals/route.ts)                                 |
 | `/api/agent/availability`                              | GET                    | [source](../src/app/api/agent/availability/route.ts)                              |
 | `/api/agent/chat`                                      | POST                   | [source](../src/app/api/agent/chat/route.ts)                                      |
+| `/api/agent/compose`                                   | GET, POST              | [source](../src/app/api/agent/compose/route.ts)                                   |
 | `/api/agent/conversations/[id]`                        | DELETE, GET            | [source](../src/app/api/agent/conversations/[id]/route.ts)                        |
 | `/api/agent/conversations`                             | GET                    | [source](../src/app/api/agent/conversations/route.ts)                             |
 | `/api/agent/jobs/[id]/retry`                           | POST                   | [source](../src/app/api/agent/jobs/[id]/retry/route.ts)                           |

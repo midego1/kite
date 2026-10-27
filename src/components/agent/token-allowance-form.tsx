@@ -63,7 +63,7 @@ export function TokenAllowanceForm({ values, locked, onSave, onInvalid }: TokenA
 					/>
 				</div>
 				<div className="space-y-1">
-					<Label htmlFor="chat-token-cap">Chat (input tokens a day)</Label>
+					<Label htmlFor="chat-token-cap">Chat and Write with Kite (input tokens a day)</Label>
 					<Input
 						id="chat-token-cap"
 						type="number"

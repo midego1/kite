@@ -9,7 +9,7 @@ import type { ActualSpend, SpendEstimate, SpendMode } from "./spend-types";
 export const UNKNOWN_RATES_INPUT_TOKEN_CAP = 2_000_000;
 
 /** `ai_usage` sources a person starts; without rates they count against chat's allowance, the rest against automatic reading's. */
-export const INTERACTIVE_SPEND_SOURCES: readonly string[] = ["chat"];
+export const INTERACTIVE_SPEND_SOURCES: readonly string[] = ["chat", "compose"];
 
 export type TokenAllowanceKind = "chat" | "auto_read";
 

@@ -23,6 +23,8 @@ type TriageRunInput = {
 	context: TriageContext;
 	config: AgentProviderConfig;
 	installCapMicros: number;
+	/** Automatic reading's daily input-token allowance, used without model rates. */
+	tokenCap: number;
 	/** The module extensions active for this mailbox and reviewer; empty keeps the request exactly as before. */
 	extensions?: readonly ActiveModelExtension[];
 };
@@ -83,6 +85,7 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 					promptChars: promptChars(request),
 					maxOutputTokens: options.maxOutputTokens,
 					installCapMicros: input.installCapMicros,
+					tokenCap: input.tokenCap,
 					mailboxCapMicros: settings.dailySpendCapMicros,
 				},
 				() => generateTriageText(current.model, request, options),

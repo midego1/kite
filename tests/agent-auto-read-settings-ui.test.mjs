@@ -177,7 +177,7 @@ test("pausing lasts 24 hours", () => {
 	assert.equal(ui.pauseEndFrom(NOW), "2026-10-11T12:00:00.000Z");
 });
 
-test("the legacy settings body leaves out every automatic reading field", () => {
+test("the legacy settings body leaves out every automatic reading field and keeps the instruction fields", () => {
 	const legacy = ui.legacyAgentSettingsBody({
 		mailboxId: "mb1",
 		enabled: true,
@@ -190,12 +190,15 @@ test("the legacy settings body leaves out every automatic reading field", () => 
 	});
 	assert.deepEqual(Object.keys(legacy).sort(), [
 		"autoDraftEnabled",
+		"chatInstructions",
 		"dailyLimit",
+		"draftInstructions",
 		"enabled",
 		"instructions",
 		"mailboxId",
 		"modelId",
 		"reviewerUserId",
+		"summaryInstructions",
 	]);
 });
 

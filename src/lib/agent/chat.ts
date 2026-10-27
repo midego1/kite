@@ -1,13 +1,18 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { streamText, stepCountIs, ToolChoiceViolationError } from "ai";
-import { getDb } from "@/db";
-import { agentChatMessages, agentConversations, mailboxAgentSettings } from "@/db/schema";
+import { getDb, type AppDatabase } from "@/db";
+import { agentChatMessages, agentConversations } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { newId } from "@/lib/ids";
-import { agentSystemPrompt, getAgentModel } from "./model";
+import { getAgentModel } from "./model";
+import { agentSystemPrompt } from "./system-prompt-utils";
 import { agentProviderErrorMessage } from "./errors";
 import { getAgentEnabled } from "./provider";
-import { recordAiUsage } from "@/lib/ai/usage";
+import { readMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
+import { getAutoReadInstallSettings } from "./auto-read/install-settings";
+import { chatSpendCapError, createChatSpend } from "./chat-spend";
+import { CHAT_STEP_MAX_OUTPUT_TOKENS, stepPromptChars } from "./chat-spend-utils";
+import { personalInstructionsFor } from "./user-ai-settings";
 import { attachHistoryRefs, buildChatTools, resolveToolResultRefs } from "./chat-tools";
 import type { AgentToolContext } from "./types";
 import { normalizeTimeZone } from "@/lib/time/utils";
@@ -64,6 +69,40 @@ async function resolveCurrentEmailId(context: AgentToolContext, messageId?: stri
 	);
 }
 
+/** The assistant's text and reasoning of a turn, kept when the turn ends, also after an error. */
+async function saveTurnText(db: AppDatabase, conversationId: string, response: string, reasoning: string) {
+	if (reasoning.trim())
+		await db.insert(agentChatMessages).values({
+			id: newId("chat"),
+			conversationId,
+			role: "tool",
+			toolName: "__reasoning__",
+			content: reasoning.slice(0, 20_000),
+		});
+	if (response.trim())
+		await db
+			.insert(agentChatMessages)
+			.values({ id: newId("chat"), conversationId, role: "assistant", content: response });
+}
+
+/** A failed tool call, stored in the conversation, as the event the panel shows. */
+async function recordToolError(
+	db: AppDatabase,
+	conversationId: string,
+	part: { toolCallId: string; toolName: string; error: unknown },
+) {
+	const message = agentProviderErrorMessage(part.error);
+	await db
+		.insert(agentChatMessages)
+		.values({ id: newId("chat"), conversationId, role: "tool", toolName: part.toolName, content: message });
+	return { type: "tool", id: part.toolCallId, name: part.toolName, state: "failed", result: message };
+}
+
+/** A spend cap explains itself; anything else is reported as the provider's error. */
+function chatErrorMessage(error: unknown): string {
+	return chatSpendCapError(error)?.message ?? agentProviderErrorMessage(error);
+}
+
 export async function createAgentChatStream(
 	context: AgentToolContext,
 	text: string,
@@ -78,11 +117,7 @@ export async function createAgentChatStream(
 	const access = await getMailboxAccessLevel(db, context.user, context.mailboxId);
 	if (!access?.canRead) throw new Error("Mailbox not found");
 	if (!(await getAgentEnabled(context.env))) throw new Error("Assistant is disabled");
-	const [settings] = await db
-		.select()
-		.from(mailboxAgentSettings)
-		.where(eq(mailboxAgentSettings.mailboxId, context.mailboxId))
-		.limit(1);
+	const settings = await readMailboxAgentSettingsRow(db, context.mailboxId);
 	const selection = await getAgentModel(context.env, settings?.modelId);
 	if (!selection) throw new Error("AI provider is not configured");
 	const currentEmailId = await resolveCurrentEmailId(context, currentMessageId);
@@ -111,19 +146,40 @@ export async function createAgentChatStream(
 		.map((row) => ({ role: row.role as "user" | "assistant", content: row.content }));
 	prompt.push({ role: "user", content: withCurrentEmailContext(text, currentEmailId) });
 	const { tools, fragments } = await buildChatTools(context);
-	const system = agentSystemPrompt(settings?.instructions ?? "", timeZone, fragments);
+	const system = agentSystemPrompt(settings?.instructions ?? "", timeZone, fragments, {
+		mailbox: { chat: settings?.chatInstructions ?? "", draft: settings?.draftInstructions ?? "" },
+		personal: await personalInstructionsFor(db, context.user),
+	});
 	const maxSteps = clampAgentMaxSteps(context.user.agentMaxSteps);
+	const install = await getAutoReadInstallSettings(context.env);
+	const spend = createChatSpend({
+		env: context.env,
+		details: selection,
+		mailboxId: context.mailboxId,
+		installCapMicros: install.dailySpendCapMicros,
+		mailboxCapMicros: settings?.dailySpendCapMicros ?? null,
+		tokenCap: install.chatTokenCap,
+	});
 	const result = streamText({
 		model: selection.model,
 		system,
 		messages: prompt,
 		tools,
 		stopWhen: stepCountIs(maxSteps),
-		prepareStep: ({ stepNumber }) => agentStepSettings(stepNumber, maxSteps, system),
-		maxOutputTokens: 1200,
+		// Every step reserves its estimate against the daily caps first; a refused step ends the turn.
+		prepareStep: async ({ stepNumber, messages }) => {
+			const step = agentStepSettings(stepNumber, maxSteps, system);
+			await spend.beforeStep(stepPromptChars(step?.instructions ?? system, messages));
+			return step;
+		},
+		maxOutputTokens: CHAT_STEP_MAX_OUTPUT_TOKENS,
 		abortSignal: signal,
 		onStepFinish: async ({ usage }) => {
-			await recordAiUsage({ env: context.env, details: selection, usage, source: "chat" });
+			await spend.afterStep(usage);
+		},
+		// A step refused at the spend cap is an expected end of the turn, not an error worth a stack trace.
+		onError: ({ error }) => {
+			if (!chatSpendCapError(error)) console.error(error);
 		},
 	});
 	const encoder = new TextEncoder();
@@ -135,6 +191,7 @@ export async function createAgentChatStream(
 			let reasoning = "";
 			let lastFinishReason: string | null = null;
 			let toolChoiceIgnored = false;
+			let capReached = false;
 			const emit = (event: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
 			emit({ type: "conversation", conversationId: id });
 			try {
@@ -174,55 +231,30 @@ export async function createAgentChatStream(
 							recordId,
 						});
 					} else if (part.type === "tool-error") {
-						const message = agentProviderErrorMessage(part.error);
-						await db.insert(agentChatMessages).values({
-							id: newId("chat"),
-							conversationId: id,
-							role: "tool",
-							toolName: part.toolName,
-							content: message,
-						});
-						emit({ type: "tool", id: part.toolCallId, name: part.toolName, state: "failed", result: message });
+						emit(await recordToolError(db, id, part));
 					} else if (part.type === "error") {
 						// The SDK reports a tool call on the toolChoice "none" final step as an error part.
 						if (ToolChoiceViolationError.isInstance(part.error)) toolChoiceIgnored = true;
-						else emit({ type: "error", message: agentProviderErrorMessage(part.error) });
+						else {
+							capReached ||= !!chatSpendCapError(part.error);
+							emit({ type: "error", message: chatErrorMessage(part.error) });
+						}
 					}
 				}
 				// A model that ignores toolChoice "none" can still end on a tool call; never leave the user without a reply.
-				if (!response.trim() && (lastFinishReason === "tool-calls" || toolChoiceIgnored)) {
+				// A turn stopped at a spend cap already said why, so it does not get the step-limit text.
+				if (!capReached && !response.trim() && (lastFinishReason === "tool-calls" || toolChoiceIgnored)) {
 					response = AGENT_STEP_LIMIT_FALLBACK;
 					emit({ type: "text", text: response });
 				}
-				if (reasoning.trim())
-					await db.insert(agentChatMessages).values({
-						id: newId("chat"),
-						conversationId: id,
-						role: "tool",
-						toolName: "__reasoning__",
-						content: reasoning.slice(0, 20_000),
-					});
-				if (response.trim())
-					await db
-						.insert(agentChatMessages)
-						.values({ id: newId("chat"), conversationId: id, role: "assistant", content: response });
+				await saveTurnText(db, id, response, reasoning);
 				await db.update(agentConversations).set({ updatedAt: new Date() }).where(eq(agentConversations.id, id));
 				emit({ type: "done" });
 			} catch (error) {
-				if (reasoning.trim())
-					await db.insert(agentChatMessages).values({
-						id: newId("chat"),
-						conversationId: id,
-						role: "tool",
-						toolName: "__reasoning__",
-						content: reasoning.slice(0, 20_000),
-					});
-				if (response.trim())
-					await db
-						.insert(agentChatMessages)
-						.values({ id: newId("chat"), conversationId: id, role: "assistant", content: response });
-				emit({ type: "error", message: agentProviderErrorMessage(error) });
+				await saveTurnText(db, id, response, reasoning);
+				emit({ type: "error", message: chatErrorMessage(error) });
 			} finally {
+				await spend.settle().catch(() => undefined);
 				controller.close();
 			}
 		},

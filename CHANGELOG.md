@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.27.0] - 2026-10-27
+
+### Added
+
+- Editable prompts for the assistant. Under [Assistant settings](/inbox) a mailbox now has instruction fields for **Chat**, **Drafting** and **Summaries** next to its general instructions, and every user has **My instructions**, which apply in every mailbox they work in and are visible only to them. They are added to the system prompt below Kite's own rules (shown read-only under **What Kite always tells the AI**) and can never replace them; the mailbox's instructions come first. The Drafting fields also reach the reply drafts Kite writes on its own. Apply migration **0069** (`0069_add_ai_writing.sql`) from the admin overview to use them; until then only the general mailbox instructions can be saved.
+
+### Changed
+
+- Assistant chat now counts against the daily AI spend caps, like automatic reading: each step reserves its estimated cost against the mailbox and install caps before it is sent and is settled with its real usage, and a turn that reaches a cap ends with "Daily AI spend cap reached". Chat usage rows now carry their mailbox. Chat and automatic reading now share the install's dollar cap (default $2.00 a day), so an install that chats a lot may want to raise it in [Admin → Agent](/agent). A refused turn says which cap was reached, that it resets at 00:00 UTC and where to change it.
+- Without model prices, Kite counts input tokens instead of dollars, and chat now has its own daily allowance next to automatic reading's (2,000,000 input tokens each by default, so neither can use up the other's). The primary admin can change both under **Daily token allowances without model prices** in [Admin → Agent](/agent); until migration 0069 is applied they stay at the default. Kite still ships no default model prices.
+
 ## [2026.10.26.6] - 2026-10-26
 
 ### Added

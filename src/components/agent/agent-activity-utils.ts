@@ -35,7 +35,8 @@ const REASON_TEXT: Record<string, string> = {
 	undo: "Undo requested",
 	draft_guard: "Blocked: the draft mentioned an address or link that is not in the conversation",
 	daily_limit: "Paused: daily limit reached",
-	spend_cap: "Paused: daily spend cap reached",
+	spend_cap:
+		"Paused: daily spend cap reached, or without model prices the automatic reading token allowance. It resets at 00:00 UTC; the primary admin can change both in Admin → Agent.",
 	kill_switch: "Skipped: automatic reading is turned off for this install",
 	external_provider_not_allowed: "Skipped: the external AI provider is not allowed to read mail automatically",
 	paused: "Skipped: Kite is paused for this mailbox",

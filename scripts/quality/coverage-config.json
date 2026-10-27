@@ -67,6 +67,10 @@
 		"src/lib/agent/auto-read/suggestion-badge-utils.ts",
 		"src/lib/agent/auto-read/suggestion-utils.ts",
 		"src/lib/agent/auto-read/triage-utils.ts",
+		"src/lib/agent/untrusted-utils.ts",
+		"src/lib/agent/instruction-utils.ts",
+		"src/lib/agent/system-prompt-utils.ts",
+		"src/lib/agent/chat-spend-utils.ts",
 		"src/lib/agent/current-email-utils.ts",
 		"src/lib/agent/jobs/draft-prompt-utils.ts",
 		"src/lib/agent/model-rates-utils.ts",
@@ -172,6 +176,7 @@
 		"src/lib/screener/screener-utils.ts"
 	],
 	"ungated": {
+		"src/lib/agent/fixed-rules-utils.ts": "Only the two prompt rule strings; the prompt fixture tests pin their text byte for byte.",
 		"src/lib/auth/password-reset-utils.ts": "no unit test bundles it; covered only through the e2e suite",
 		"src/lib/auth/setup-utils.ts": "no unit test bundles it; covered only through the e2e suite",
 		"src/lib/cloudflare-api-utils.ts": "bundled transitively (functions 85.7%, branches 31.6%); no direct test yet",

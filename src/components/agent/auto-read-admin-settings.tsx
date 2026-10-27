@@ -14,6 +14,7 @@ import {
 	parseDollarInput,
 	saveAutoReadAdmin,
 } from "./auto-read-settings-utils";
+import { TokenAllowanceForm } from "./token-allowance-form";
 
 function SwitchRow({
 	title,
@@ -114,7 +115,7 @@ export function AutoReadAdminSettings() {
 					onChange={(externalAutoReadAllowed) => void save({ externalAutoReadAllowed })}
 				/>
 				<form onSubmit={saveCap} className="space-y-2">
-					<Label htmlFor="auto-read-install-cap">Daily spend cap for automatic reading (USD)</Label>
+					<Label htmlFor="auto-read-install-cap">Daily spend cap for automatic reading and chat (USD)</Label>
 					<div className="flex flex-wrap items-center gap-3">
 						<Input
 							id="auto-read-install-cap"
@@ -131,10 +132,17 @@ export function AutoReadAdminSettings() {
 						</Button>
 					</div>
 					<p className="text-xs text-neutral-500">
-						Shared by every mailbox and counted from midnight UTC. Automatic reading stops for the day when it is
-						reached.
+						Shared by automatic reading and assistant chat in every mailbox, counted from midnight UTC. Both stop for
+						the day when it is reached.
 					</p>
 				</form>
+				<TokenAllowanceForm
+					key={values ? `${values.autoReadTokenCap}:${values.chatTokenCap}` : "loading"}
+					values={values}
+					locked={locked}
+					onSave={(update) => void save(update)}
+					onInvalid={(text) => setStatus({ tone: "error", text })}
+				/>
 				{status && (
 					<p role="status" className={`text-sm ${status.tone === "error" ? "text-red-700" : "text-neutral-700"}`}>
 						{status.text}

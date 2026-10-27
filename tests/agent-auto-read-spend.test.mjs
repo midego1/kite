@@ -36,7 +36,7 @@ await build({
 	tsconfig: join(root, "tsconfig.json"),
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
-const { reserveAiSpend, reconcileAiSpend } = await load("spend");
+const { reserveAiSpend, reconcileAiSpend, refusedSpendCap } = await load("spend");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
 
@@ -72,6 +72,7 @@ function reserve(db, overrides = {}) {
 		maxOutputTokens: 50,
 		installCapMicros: 10_000,
 		mailboxCapMicros: null,
+		tokenCap: UNKNOWN_RATES_INPUT_TOKEN_CAP,
 		now: NOW,
 		...overrides,
 	});
@@ -163,7 +164,7 @@ test("the install cap blocks even when the mailbox cap has room", async (t) => {
 
 test("unknown rates apply the 2,000,000 input-token cap, including under a race", async (t) => {
 	const db = await database(t);
-	insertUsage(db, { input: UNKNOWN_RATES_INPUT_TOKEN_CAP - 150, source: "chat" });
+	insertUsage(db, { input: UNKNOWN_RATES_INPUT_TOKEN_CAP - 150, source: "auto_draft" });
 	insertUsage(db, { input: 5_000_000, createdAt: DAY_START - 1 });
 	const results = await Promise.all([
 		reserve(db, { details: UNPRICED, installCapMicros: 0, mailboxCapMicros: 0 }),
@@ -267,4 +268,52 @@ test("actualSpend counts reasoning tokens as output", () => {
 		outputTokens: 2,
 		costUsdMicros: 0,
 	});
+});
+
+test("without rates chat and automatic reading have separate token allowances, each with its own cap", async (t) => {
+	const db = await database(t);
+	insertUsage(db, { input: 1_000, source: "chat" });
+	insertUsage(db, { input: 1_000, source: "auto_triage" });
+	const chat = { details: UNPRICED, source: "chat", jobId: null, tokenCap: 1_050 };
+	const triage = { details: UNPRICED, source: "auto_triage", tokenCap: 1_150 };
+	// 100 input tokens per reservation: chat's 1,000 + 100 passes 1,050, triage's 1,000 + 100 fits 1,150.
+	assert.equal(await reserve(db, chat), null);
+	assert.ok(await reserve(db, triage));
+	assert.equal(await reserve(db, triage), null, "the triage allowance now holds 1,100 + 100 > 1,150");
+	insertUsage(db, { input: 5_000_000, source: "auto_draft" });
+	assert.ok(await reserve(db, { ...chat, tokenCap: 1_100 }), "automatic reading's tokens never count against chat");
+	assert.equal(await refusedSpendCap({ ...baseInput(), ...chat }), "chat_tokens");
+	assert.equal(await refusedSpendCap({ ...baseInput(), ...triage }), "auto_read_tokens");
+
+	function baseInput() {
+		return {
+			env: { DB: db },
+			mailboxId: "mailbox-a",
+			promptChars: 400,
+			maxOutputTokens: 50,
+			installCapMicros: 0,
+			mailboxCapMicros: null,
+			now: NOW,
+		};
+	}
+});
+
+test("a refused priced reservation names the mailbox cap only when that cap alone is passed", async (t) => {
+	const db = await database(t);
+	insertUsage(db, { mailboxId: "mailbox-a", cost: 900 });
+	const input = {
+		env: { DB: db },
+		details: PRICED,
+		source: "chat",
+		mailboxId: "mailbox-a",
+		jobId: null,
+		promptChars: 400,
+		maxOutputTokens: 50,
+		installCapMicros: 10_000,
+		tokenCap: UNKNOWN_RATES_INPUT_TOKEN_CAP,
+		now: NOW,
+	};
+	assert.equal(await refusedSpendCap({ ...input, mailboxCapMicros: 1_000 }), "mailbox_dollars");
+	assert.equal(await refusedSpendCap({ ...input, mailboxCapMicros: 5_000 }), "install_dollars");
+	assert.equal(await refusedSpendCap({ ...input, mailboxCapMicros: null }), "install_dollars");
 });

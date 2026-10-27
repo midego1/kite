@@ -55,18 +55,21 @@ const applied = (values = {}) => ({
 	...values,
 });
 
-test("the registry covers dismiss, drafts, spam moves and the module actions with a 7-day undo window", () => {
+test("the registry covers dismiss, drafts, moves, read state, folders and the module actions with a 7-day undo window", () => {
 	assert.deepEqual(Object.keys(ACTION_REGISTRY).sort(), [
 		"create_draft",
 		"create_event",
+		"create_folder",
 		"create_subscription",
 		"delete_document",
 		"delete_event",
 		"delete_subscription",
 		"dismiss",
+		"mark_read",
 		"move",
 		"record_document",
 		"send_rsvp",
+		"set_folder",
 		"set_subscription_status",
 		"update_subscription",
 	]);
@@ -74,7 +77,8 @@ test("the registry covers dismiss, drafts, spam moves and the module actions wit
 	assert.equal(inverseActionFor({ action: "create_event", variant: "" }), "delete_event");
 	assert.equal(inverseActionFor({ action: "create_event", variant: "update" }), "create_event");
 	assert.equal(inverseActionFor({ action: "delete_event", variant: "" }), "create_event");
-	assert.deepEqual(ACTION_REGISTRY.move.variants, ["spam"]);
+	assert.deepEqual(ACTION_REGISTRY.move.variants, ["spam", "archived", "trash", "inbox"]);
+	assert.deepEqual(ACTION_REGISTRY.mark_read.variants, ["read", "unread"]);
 	assert.equal(getUndoRule(ACTION_REGISTRY.move, "spam").windowMs, DEFAULT_UNDO_WINDOW_MS);
 	assert.equal(getActionMeta("send_reply"), null);
 	assert.equal(getUndoRule(ACTION_REGISTRY.dismiss, "").windowMs, DEFAULT_UNDO_WINDOW_MS);

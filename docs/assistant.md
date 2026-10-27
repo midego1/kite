@@ -19,7 +19,7 @@ Suggestions come in these kinds when Kite finds something worth raising: a calen
 
 Suggestions are shown to people with full access to the mailbox only. Other users cannot tell the mailbox has any. They appear as a badge on the message row, as a card in the reader, and together on the **For you** page, grouped by kind with the most important first. Accepting or dismissing a suggestion shows a toast with Undo.
 
-Kite never sends mail on its own at Suggest only. A reply suggestion creates a draft in the reviewer's Drafts, private to the reviewer. You review it and send it from the composer.
+Kite never sends mail on its own at Suggest only. A reply suggestion creates a draft in the reviewer's Drafts, private to the reviewer. You review it and send it from the composer. In the assistant panel a draft the assistant wrote appears as a card with **Edit draft** and **Approve to send**; once the draft is sent or scheduled, the card shows **Sent**, **Scheduled for** the time, **Sending…** while delivery is under way (it checks again by itself) or **Sending failed** instead, and a draft that was deleted or whose send you undid shows that it is no longer available.
 
 ## Deterministic first
 
@@ -81,7 +81,9 @@ A module kind can be private to the reviewer: its cards, row badges and For you 
 
 Every action Kite records, and every action you accept from a suggestion, is written to the action log before it takes effect, with who started it, the status and the reason. Activity shows the log for the mailbox.
 
-Actions can be undone from Activity or from the toast for 7 days. Undo needs the same permission as the action, and undoing a sent reply or RSVP step is limited to the person who made it. An undo is itself logged as a new row.
+Changes you approve in the assistant chat (marking emails read or unread, moving them, creating a folder or filing mail into one, see [Email assistant and MCP](email-assistant-and-mcp.md)) are recorded the same way, with the number of emails and the folder. Undoing one puts back only the emails still where the action left them and says how many went back. Moving mail to or out of Spam also trains the spam filter, and undo does not reverse that training (the same holds for **Mark as spam** on a phishing warning).
+
+Actions can be undone from Activity, from the toast or from the chat card for 7 days. Undo needs the same permission as the action, and undoing a sent reply or RSVP step is limited to the person who made it. An undo is itself logged as a new row.
 
 ## Phishing warnings
 

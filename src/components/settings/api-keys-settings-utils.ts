@@ -30,9 +30,13 @@ export function scopesNeedMailboxes(kind: KeyScopeKind, scopes: readonly string[
 }
 
 const MCP_KEY_SCOPES: { value: McpKeyScope; label: string; description: string }[] = [
-	{ value: "mcp:read", label: "Read mail", description: "List, search, count, and read messages." },
+	{ value: "mcp:read", label: "Read mail", description: "List, search, count, and read messages, and list folders." },
 	{ value: "mcp:draft", label: "Manage drafts", description: "Create, edit, and discard drafts." },
-	{ value: "mcp:organize", label: "Organize mail", description: "Mark messages read and move them." },
+	{
+		value: "mcp:organize",
+		label: "Organize mail",
+		description: "Mark messages read or unread, move them, and create folders and file mail in them.",
+	},
 	{
 		value: "mcp:request-send",
 		label: "Request send review",

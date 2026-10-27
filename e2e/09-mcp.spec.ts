@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { RELEASE_VERSION, STORAGE_STATE } from "./support/constants";
-import { apiContext } from "./support/helpers";
+import { RELEASE_VERSION, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 
 const WRITE_TOOLS = [
 	"draft_email",
@@ -8,8 +8,12 @@ const WRITE_TOOLS = [
 	"update_draft",
 	"discard_draft",
 	"mark_email_read",
+	"mark_emails_read",
+	"mark_emails_unread",
 	"move_email",
 	"move_emails",
+	"create_folder",
+	"move_emails_to_folder",
 	"request_send",
 	"get_send_request",
 	"create_event",
@@ -90,7 +94,14 @@ test("a read-only MCP key reports the app version, lists only read tools and sea
 
 	const tools = await listToolNames(key);
 	expect(tools).toEqual(
-		expect.arrayContaining(["list_mailboxes", "list_emails", "get_email", "search_emails", "count_emails"]),
+		expect.arrayContaining([
+			"list_mailboxes",
+			"list_emails",
+			"get_email",
+			"search_emails",
+			"count_emails",
+			"list_folders",
+		]),
 	);
 	for (const tool of WRITE_TOOLS) expect(tools, `read-only key lists ${tool}`).not.toContain(tool);
 
@@ -124,8 +135,85 @@ test("a key with draft scope lists the draft tools but not organise or calendar 
 	const key = await createKey("E2E drafting", ["mcp:read", "mcp:draft"]);
 	const tools = await listToolNames(key);
 	expect(tools).toEqual(expect.arrayContaining(["draft_email", "draft_reply", "update_draft"]));
-	for (const tool of ["mark_email_read", "move_email", "request_send", "create_event"])
+	for (const tool of [
+		"mark_email_read",
+		"mark_emails_unread",
+		"move_email",
+		"create_folder",
+		"request_send",
+		"create_event",
+	])
 		expect(tools).not.toContain(tool);
+});
+
+/** The JSON a tool call answered, failing the test when the call errored. */
+async function callTool(key: string, name: string, args: Record<string, unknown>) {
+	const response = await rpc(key, "tools/call", { name, arguments: { mailboxId: supportMailboxId, ...args } });
+	const text = ((response.result?.content ?? []) as { text: string }[]).map((part) => part.text).join("\n");
+	expect(response.result?.isError, text).toBeFalsy();
+	return JSON.parse(text) as Record<string, unknown>;
+}
+
+test("a key with organize scope creates a folder, files mail in it and marks it unread", async () => {
+	const key = await createKey("E2E organizing", ["mcp:read", "mcp:organize"]);
+	const tools = await listToolNames(key);
+	expect(tools).toEqual(
+		expect.arrayContaining([
+			"mark_emails_read",
+			"mark_emails_unread",
+			"list_folders",
+			"create_folder",
+			"move_emails_to_folder",
+		]),
+	);
+	const subject = `MCP organize ${uniqueToken()}`;
+	const message = await deliverInbound(api, { from: "sender@outside.test", to: SUPPORT_ADDRESS, subject });
+	const name = `MCP folder ${uniqueToken()}`;
+	const created = await callTool(key, "create_folder", { name, color: "teal" });
+	expect(created).toMatchObject({ status: "created", name, color: "#0d9488" });
+	const listed = (await callTool(key, "list_folders", {})).folders as { id: string; name: string }[];
+	expect(listed.find((folder) => folder.name === name)?.id).toBe(created.folderId);
+	expect(
+		await callTool(key, "move_emails_to_folder", { emailIds: [message.id], folderId: created.folderId }),
+	).toMatchObject({
+		status: "approved",
+		folderName: name,
+	});
+	await callTool(key, "mark_emails_read", { emailIds: [message.id] });
+	await callTool(key, "mark_emails_unread", { emailIds: [message.id] });
+	const stored = (await (await api.get(`/api/messages/${message.id}`)).json()) as {
+		message: { folderId: string | null; read: boolean; status: string };
+	};
+	expect(stored.message).toMatchObject({ folderId: created.folderId, read: false, status: "received" });
+
+	const duplicate = await rpc(key, "tools/call", {
+		name: "create_folder",
+		arguments: { mailboxId: supportMailboxId, name },
+	});
+	expect(duplicate.result?.isError).toBe(true);
+	// Refused at call time: a mailbox the key does not cover, and an organize tool on a read-only key.
+	const mailboxes = (await (await api.get("/api/mailboxes")).json()) as { mailboxes: { id: string }[] };
+	const otherMailbox =
+		mailboxes.mailboxes.find((mailbox) => mailbox.id !== supportMailboxId)?.id ?? "mailbox-not-on-key";
+	const foreign = await rpc(key, "tools/call", {
+		name: "create_folder",
+		arguments: { mailboxId: otherMailbox, name: `Foreign ${uniqueToken()}` },
+	});
+	expect(foreign.result?.isError).toBe(true);
+	expect(JSON.stringify(foreign.result?.content)).toContain("Permission denied");
+	const readOnly = await createKey("E2E read only organize", ["mcp:read"]);
+	const refused = await rpc(readOnly, "tools/call", {
+		name: "mark_emails_read",
+		arguments: { mailboxId: supportMailboxId, emailIds: [message.id] },
+	});
+	expect(refused.error ?? refused.result?.isError).toBeTruthy();
+	expect((await (await api.get(`/api/messages/${message.id}`)).json()).message.read).toBe(false);
+
+	const tooMany = await rpc(key, "tools/call", {
+		name: "mark_emails_unread",
+		arguments: { mailboxId: supportMailboxId, emailIds: Array.from({ length: 21 }, (_, index) => `msg-${index}`) },
+	});
+	expect(tooMany.error ?? tooMany.result?.isError).toBeTruthy();
 });
 
 test("rejects requests without a valid key", async () => {

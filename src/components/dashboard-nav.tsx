@@ -99,10 +99,13 @@ export function DashboardNav({
 	className,
 	assistantToggle,
 	accountMenu,
+	notices,
 }: {
 	className?: string;
 	assistantToggle?: ReactNode;
 	accountMenu?: ReactNode;
+	/** Operational and setup notices, shown above Settings on wider screens. */
+	notices?: ReactNode;
 }) {
 	const { minimal } = useSidebar();
 	const pathname = usePathname();
@@ -233,7 +236,7 @@ export function DashboardNav({
 		<SidebarScaffold
 			className={className}
 			header={<SidebarAccounts accountMenu={accountMenu} />}
-			footer={<SidebarFooter extra={assistantToggle} />}
+			footer={<SidebarFooter extra={assistantToggle} notices={notices} />}
 		>
 			<SidebarMailboxSwitcher />
 			{composeLink && <NavItem link={composeLink} />}

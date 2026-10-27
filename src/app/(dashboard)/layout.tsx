@@ -76,6 +76,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 		}
 	}, [assistantEnabled, assistantOpen, assistantFullSize, setAssistantOpen, setAssistantFullSize]);
 
+	const notices = (
+		<>
+			<AlertsBanner />
+			<MigrationsBanner />
+			<DnsSkippedBanner />
+		</>
+	);
 	const assistantToggle = (variant: "icon" | "nav") =>
 		assistantEnabled ? (
 			<Button
@@ -130,9 +137,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 												{assistantToggle("icon")}
 												<MailboxSelector />
 											</header>
-											<AlertsBanner />
-											<MigrationsBanner />
-											<DnsSkippedBanner />
+											{/* On phones the notices sit over the page; wider screens show them in the sidebar. */}
+											<div className="flex flex-col gap-2 px-2 pb-2 empty:hidden md:hidden">{notices}</div>
 											<div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
 												<AssistantOpenContext.Provider value={assistantVisible && assistantLayout === "sidebar"}>
 													<main

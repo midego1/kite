@@ -34,6 +34,7 @@ import {
 } from "@/components/messages/conversation-thread-utils";
 import { CloseMessageButton, ReaderThreadHeader } from "@/components/messages/reader-thread-header";
 import { MessageReplyButtons } from "@/components/message-actions/message-reply-buttons";
+import { InlineComposerHost, InlineReplyComposer } from "@/components/compose/inline-reply-composer";
 import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
 import { OneTimeCodeChip } from "@/components/messages/one-time-code-chip";
 import { ScreenerBanner } from "@/components/screener/screener-banner";
@@ -155,7 +156,7 @@ export default function MessageDetailPage() {
 	// on the displayed text so a code that slipped through delivery still copies.
 	const oneTimeCode = extractOneTimeCode({ subject: message.subject, text: bodyDisplay.latestContent });
 	return (
-		<>
+		<InlineComposerHost messageId={message.id}>
 			<div className="sticky top-0 z-40 flex h-14 items-center gap-1 border-b border-neutral-200 bg-white px-3">
 				<CloseMessageButton />
 				<MessageDetailNavigation messageId={message.id} unread={message.direction === "inbound" && !message.read} />
@@ -414,7 +415,18 @@ export default function MessageDetailPage() {
 					}}
 				/>
 			</div>
-			<QuickReply name={fromName} message={message} body={body} ownAddress={ownAddress} ownAddresses={ownAddresses} />
-		</>
+			<InlineReplyComposer
+				messageId={message.id}
+				collapsed={
+					<QuickReply
+						name={fromName}
+						message={message}
+						body={body}
+						ownAddress={ownAddress}
+						ownAddresses={ownAddresses}
+					/>
+				}
+			/>
+		</InlineComposerHost>
 	);
 }

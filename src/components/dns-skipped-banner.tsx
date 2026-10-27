@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { NOTICE_LINK_CLASS, WARNING_NOTICE_CLASS } from "./notice-styles";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Globe2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { canManageDomains } from "@/lib/auth/admin";
 import { authFetch } from "@/lib/auth/client";
@@ -62,32 +62,34 @@ export function DnsSkippedBanner() {
 			role="status"
 			aria-label="DNS setup"
 			title={data.map((domain) => domain.hostname).join(", ")}
-			className="mx-2 mb-2 flex shrink-0 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900 md:ml-0 md:mr-4"
+			className={WARNING_NOTICE_CLASS}
 		>
-			<Globe2 className="h-3.5 w-3.5 shrink-0 text-amber-700" aria-hidden="true" />
-			<p className="min-w-0 flex-1 truncate">
-				<span className="font-medium">{content.title}.</span>{" "}
-				{error ? (
-					<span role="alert" className="text-red-700">
-						{error}
-					</span>
-				) : (
-					content.body
-				)}
-			</p>
-			<Link href="/domains" className="shrink-0 underline underline-offset-2 hover:text-amber-950">
-				Review
-			</Link>
-			<Button
-				type="button"
-				size="sm"
-				variant="outline"
-				className="h-6 border-amber-300 bg-white px-2 text-xs text-amber-900 hover:bg-amber-100"
-				disabled={markDone.isPending}
-				onClick={() => markDone.mutate(data)}
-			>
-				{markDone.isPending ? "Saving…" : "Mark as done"}
-			</Button>
+			<Globe2 className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+			<div className="min-w-0 flex-1">
+				<p className="truncate font-medium">{content.title}</p>
+				<p className="mt-0.5 line-clamp-2 opacity-90">
+					{error ? (
+						<span role="alert" className="text-red-600">
+							{error}
+						</span>
+					) : (
+						content.body
+					)}
+				</p>
+				<div className="mt-1.5 flex items-center gap-3">
+					<Link href="/domains" className={NOTICE_LINK_CLASS}>
+						Review
+					</Link>
+					<button
+						type="button"
+						className={NOTICE_LINK_CLASS}
+						disabled={markDone.isPending}
+						onClick={() => markDone.mutate(data)}
+					>
+						{markDone.isPending ? "Saving…" : "Mark as done"}
+					</button>
+				</div>
+			</div>
 		</section>
 	);
 }

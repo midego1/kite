@@ -6,7 +6,7 @@ import { LazyComposeForm, preloadComposeForm } from "@/components/compose/compos
 import { useCompose } from "@/components/compose/compose-context";
 
 export function FloatingComposer() {
-	const { open, draftId, closeComposer } = useCompose();
+	const { open, draftId, placement, closeComposer } = useCompose();
 	const pathname = usePathname();
 	const router = useRouter();
 
@@ -21,7 +21,8 @@ export function FloatingComposer() {
 		return () => window.clearTimeout(timer);
 	}, []);
 
-	if (!open) return null;
+	// A reply docked in the reader renders there (inline-reply-composer.tsx).
+	if (!open || placement !== "popup") return null;
 	return (
 		<LazyComposeForm
 			key={draftId ?? "new"}

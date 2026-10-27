@@ -2,6 +2,8 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useCompose } from "@/components/compose/compose-context";
+import { useInlineComposerHost } from "@/components/compose/inline-composer-host";
+import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import type { MessageActionsProps, ReplyMode } from "./types";
 import {
 	createForwardDraft,
@@ -42,6 +44,10 @@ export function useMessageReply({
 	messageMeta,
 }: MessageReplyInput) {
 	const { openDraftComposer } = useCompose();
+	// In a reader on a wider screen replies open docked under the message; phones keep the full-screen composer.
+	const inlineHost = useInlineComposerHost();
+	const isMobile = useIsMobile();
+	const inlineFor = inlineHost && !isMobile ? inlineHost.messageId : null;
 	const [pending, setPending] = useState<ReplyMode | "forward" | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const replyable = useMemo(
@@ -76,7 +82,7 @@ export function useMessageReply({
 					recipients: getReplyRecipients(replyable, ownAddresses, mode),
 					threading: getReplyThreading(replyable),
 				});
-				openDraftComposer(draftId);
+				openDraftComposer(draftId, { inlineFor });
 			} catch (replyError) {
 				setError(replyError instanceof Error ? replyError.message : "Could not start reply");
 			} finally {
@@ -94,6 +100,7 @@ export function useMessageReply({
 			replyable,
 			ownAddresses,
 			openDraftComposer,
+			inlineFor,
 		],
 	);
 
@@ -110,13 +117,13 @@ export function useMessageReply({
 				bodyText,
 				bodyHtml,
 			});
-			openDraftComposer(draftId);
+			openDraftComposer(draftId, { inlineFor });
 		} catch (forwardError) {
 			setError(forwardError instanceof Error ? forwardError.message : "Could not start forward");
 		} finally {
 			setPending(null);
 		}
-	}, [message, messageMeta, mailboxId, ownAddress, bodyText, bodyHtml, openDraftComposer]);
+	}, [message, messageMeta, mailboxId, ownAddress, bodyText, bodyHtml, openDraftComposer, inlineFor]);
 
 	return { reply, forward, canReplyAll, canForward, pending, error };
 }

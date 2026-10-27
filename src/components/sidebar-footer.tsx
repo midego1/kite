@@ -61,7 +61,7 @@ function FooterLink({ href, icon: Icon, label }: { href: string; icon: LucideIco
 }
 
 /** Settings and Support pinned under the menu, as in Zero, then the style switch, shortcuts and version. */
-export function SidebarFooter({ extra }: { extra?: ReactNode }) {
+export function SidebarFooter({ extra, notices }: { extra?: ReactNode; notices?: ReactNode }) {
 	const { minimal } = useSidebar();
 	const { openHelpModal, shortcutsEnabled, shortcutsPreferenceLoading } = useShortcuts();
 	const [changelogOpen, setChangelogOpen] = useState(false);
@@ -77,6 +77,7 @@ export function SidebarFooter({ extra }: { extra?: ReactNode }) {
 
 	return (
 		<div className="flex flex-col gap-px pt-2">
+			{notices && <div className="mb-2 flex flex-col gap-2 empty:hidden max-md:hidden">{notices}</div>}
 			<FooterLink href="/settings/account" icon={Settings} label="Settings" />
 			<FooterLink href={`${SOURCE_CODE_URL}/issues`} icon={LifeBuoy} label="Support" />
 			{extra}

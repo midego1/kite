@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { TriangleAlert } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { TriangleAlert, X } from "lucide-react";
+import { NOTICE_LINK_CLASS, WARNING_NOTICE_CLASS } from "./notice-styles";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { authFetch } from "@/lib/auth/client";
 import type { ActiveAlertsResponse } from "./alerts-banner-types";
@@ -48,38 +48,33 @@ export function AlertsBanner() {
 	const signature = data.signature;
 
 	return (
-		<section
-			aria-label="Operational alerts"
-			className="mx-2 mb-2 flex shrink-0 items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 md:ml-0 md:mr-4"
-		>
-			<TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" aria-hidden="true" />
+		<section aria-label="Operational alerts" className={WARNING_NOTICE_CLASS}>
+			<TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
 			<div className="min-w-0 flex-1">
-				<p className="font-medium">Operational alerts need attention</p>
-				<ul className="mt-1 flex flex-wrap gap-x-5 gap-y-1">
+				<p className="truncate font-medium">Operational alerts need attention</p>
+				<ul className="mt-1 flex flex-col gap-0.5">
 					{data.alerts.map((alert) => (
-						<li key={alert.rule} className="flex items-center gap-2">
-							<Link href={alert.href} className="text-blue-700 underline underline-offset-2 hover:text-blue-800">
+						<li key={alert.rule} className="flex min-w-0 items-center gap-1.5">
+							<Link href={alert.href} className={`min-w-0 truncate ${NOTICE_LINK_CLASS}`}>
 								{alert.name}
 							</Link>
-							<span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-900">
-								{alert.count}
-							</span>
+							<span className="shrink-0 tabular-nums opacity-80">{alert.count}</span>
 						</li>
 					))}
 				</ul>
 			</div>
-			<Button
+			<button
 				type="button"
-				variant="ghost"
-				size="sm"
-				className="shrink-0 text-blue-800 hover:bg-blue-100"
+				aria-label="Dismiss"
+				title="Dismiss"
+				className="-mr-1 -mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-[#f59e0b]/15"
 				onClick={() => {
 					storeDismissedSignature(browserStorage(), signature);
 					setDismissed(signature);
 				}}
 			>
-				Dismiss
-			</Button>
+				<X className="h-3.5 w-3.5" aria-hidden="true" />
+			</button>
 		</section>
 	);
 }

@@ -2,7 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { ChevronUp, FileText, Forward, Maximize2, Minimize2, Minus, Paperclip, Reply, Trash2, X } from "lucide-react";
+import {
+	ChevronUp,
+	FileText,
+	Forward,
+	Maximize2,
+	Minimize2,
+	Minus,
+	Paperclip,
+	Reply,
+	SquareArrowOutUpRight,
+	Trash2,
+	X,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,10 +56,17 @@ export function ComposeForm({
 	mode = "page",
 	draftIdToLoad,
 	onClose,
+	onPopOut,
+	onSent,
 }: {
-	mode?: "page" | "popup";
+	/** `inline` docks the composer under the open message in the reader (a reply), `popup` floats it. */
+	mode?: "page" | "popup" | "inline";
 	draftIdToLoad?: string | null;
 	onClose?: () => void;
+	/** Inline only: moves the draft into the floating composer once it is saved. */
+	onPopOut?: () => void;
+	/** Inline only: the reply went out (after its undo window); closing otherwise keeps the draft. */
+	onSent?: () => void;
 }) {
 	const router = useRouter();
 	const { selectedMailbox, setSelectedMailbox, mailboxes } = useSelectedMailbox();
@@ -91,6 +110,8 @@ export function ComposeForm({
 	const [pendingUndo, setPendingUndo] = useState<PendingUndoSend | null>(null);
 	const [sending, setSending] = useState<{ undoable: boolean } | null>(null);
 	const [undoRequestedWhileSending, setUndoRequestedWhileSending] = useState(false);
+	// An inline reply that went out: hidden while it sends and undo is offered, then collapsed.
+	const [sentInline, setSentInline] = useState(false);
 	const undoRequested = useRef(false);
 	const attachmentInput = useRef<HTMLInputElement | null>(null);
 	const fileDragDepth = useRef(0);
@@ -185,12 +206,17 @@ export function ComposeForm({
 		threading,
 		to,
 	]);
-	const { draftSaves, storedUploads, cancelPendingSave } = useDraftAutosave(draftSnapshot, {
+	const { draftSaves, storedUploads, cancelPendingSave, flush } = useDraftAutosave(draftSnapshot, {
 		setDraftId,
 		setAttachments,
 		setStoredAttachments,
 		reportError: setToast,
 	});
+
+	// The sent inline reply collapses once its undo window and confirmation are over.
+	useEffect(() => {
+		if (sentInline && !sending && !pendingUndo && !toast) (onSent ?? onClose)?.();
+	}, [sentInline, sending, pendingUndo, toast, onSent, onClose]);
 
 	useEffect(() => {
 		if (!toast) return;
@@ -371,6 +397,7 @@ export function ComposeForm({
 		setUndoRequestedWhileSending(false);
 		setPreviewOpen(false);
 		setSending({ undoable: !scheduledAt && sendingSettings.undoSeconds > 0 });
+		if (mode === "inline") setSentInline(true);
 		resetComposer();
 
 		let data: { messageId?: string; scheduled?: boolean; undoUntil?: string; error?: string };
@@ -386,6 +413,7 @@ export function ComposeForm({
 		setLoading(false);
 
 		if (!ok) {
+			setSentInline(false);
 			restoreComposer(snapshot, sent.draftId);
 			setAttachments(sent.attachments);
 			void loadStoredAttachments(sent.draftId);
@@ -460,6 +488,7 @@ export function ComposeForm({
 		// The held message is a draft again; restore the composer onto it so
 		// further edits and a later send use its stored attachments.
 		restoreComposer(pending.snapshot, data.draftId);
+		setSentInline(false);
 		setAttachments([]);
 		await loadStoredAttachments(data.draftId);
 		setToast({ type: "success", message: "Sending undone" });
@@ -704,12 +733,17 @@ export function ComposeForm({
 				ref={formRef}
 				// Mail shortcuts stay out of the composer, also when a button in it has the focus.
 				data-shortcuts-off=""
-				className={frameClass}
+				className={cn(frameClass, sentInline && "hidden")}
 				{...composeFrameAria({ mode, minimized, modalMode })}
 				onKeyDown={(event) => {
-					if (modalMode && !minimized && event.key === "Escape") {
+					if (event.key !== "Escape" || event.defaultPrevented) return;
+					if (modalMode && !minimized) {
 						event.preventDefault();
 						setModalMode(false);
+					} else if (mode === "inline" && onClose) {
+						// Collapses the reply; the autosave keeps the draft.
+						event.preventDefault();
+						onClose();
 					}
 				}}
 				onDragEnterCapture={minimized ? undefined : onFileDragEnter}
@@ -725,8 +759,17 @@ export function ComposeForm({
 						Drop files to attach
 					</div>
 				)}
-				<div className="flex h-9 shrink-0 items-center justify-between bg-neutral-800 text-white dark:bg-neutral-100 px-4 text-sm font-medium">
-					<span className="flex min-w-0 items-center gap-2 truncate  dark:text-neutral-900">
+				<div
+					className={cn(
+						"flex h-9 shrink-0 items-center justify-between px-4 text-sm font-medium",
+						mode === "inline"
+							? "border-b border-neutral-100 text-neutral-500"
+							: "bg-neutral-800 text-white dark:bg-neutral-100",
+					)}
+				>
+					<span
+						className={cn("flex min-w-0 items-center gap-2 truncate", mode !== "inline" && "dark:text-neutral-900")}
+					>
 						{threading?.inReplyTo && <Reply className="h-3.5 w-3.5 text-neutral-300" />}
 						{!threading?.inReplyTo && /^fwd?:/i.test(subject) && <Forward className="h-3.5 w-3.5 text-neutral-300" />}
 						{loadingDraft
@@ -739,8 +782,32 @@ export function ComposeForm({
 										? "Draft saved"
 										: "New Message"}
 					</span>
+					{mode === "inline" && (
+						<div className="flex shrink-0 items-center gap-1">
+							<Tooltip label="Pop out">
+								<button
+									type="button"
+									onClick={() => void flush().then(() => onPopOut?.())}
+									aria-label="Pop out composer"
+									className="rounded-md p-1.5 hover:bg-neutral-100 hover:text-neutral-900"
+								>
+									<SquareArrowOutUpRight className="h-4 w-4" />
+								</button>
+							</Tooltip>
+							<Tooltip label="Close (Esc); the draft is kept">
+								<button
+									type="button"
+									onClick={onClose}
+									aria-label="Close composer"
+									className="rounded-md p-1.5 hover:bg-neutral-100 hover:text-neutral-900"
+								>
+									<X className="h-4 w-4" />
+								</button>
+							</Tooltip>
+						</div>
+					)}
 					{mode === "popup" && (
-						<div className="flex shrink-0 items-center gap-3 text-neutral-300">
+						<div className="flex shrink-0 items-center gap-3 text-neutral-300 dark:text-neutral-600">
 							<button
 								type="button"
 								onClick={() => {
@@ -777,7 +844,13 @@ export function ComposeForm({
 					)}
 				</div>
 				<div className={cn("flex min-h-0 flex-1 flex-col", minimized && "hidden")}>
-					<div className="border-b border-neutral-100 px-4 py-1 flex flex-row items-center">
+					{/* An inline reply shows only its recipients and body, as Zero's; From and Subject stay in the form. */}
+					<div
+						className={cn(
+							"border-b border-neutral-100 px-4 py-1 flex flex-row items-center",
+							mode === "inline" && "hidden",
+						)}
+					>
 						<Label htmlFor={`${mode}-from`} className="text-sm text-neutral-500">
 							From
 						</Label>
@@ -849,7 +922,7 @@ export function ComposeForm({
 							autoFocus={!loadingDraft && bcc.length === 0}
 						/>
 					)}
-					<div className="border-b border-neutral-100 px-4 py-1">
+					<div className={cn("border-b border-neutral-100 px-4 py-1", mode === "inline" && "hidden")}>
 						<Label htmlFor={`${mode}-subject`} className="sr-only">
 							Subject
 						</Label>

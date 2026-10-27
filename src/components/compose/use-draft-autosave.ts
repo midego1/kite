@@ -67,6 +67,13 @@ export function useDraftAutosave(snapshot: ComposeDraftSnapshot | null, setters:
 		draftSaves,
 		/** Composer files already stored on the draft, which a send must not upload again. */
 		storedUploads: uploads.stored as ReadonlySet<string>,
+		/** Saves what is still waiting for the debounce now and resolves once every save has finished. */
+		flush(): Promise<void> {
+			if (saveTimer.current) clearTimeout(saveTimer.current);
+			const last = pendingSave.current;
+			pendingSave.current = null;
+			return last ? draftSaves.enqueue(last) : draftSaves.idle();
+		},
 		/** Drops the debounced save that has not started; sending and deleting do not want it. */
 		cancelPendingSave() {
 			if (saveTimer.current) clearTimeout(saveTimer.current);

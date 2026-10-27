@@ -9,9 +9,12 @@ export const FRAGMENT_SECTIONS = ["Added", "Changed", "Deprecated", "Removed", "
 const FRAGMENT_README = "README.md";
 const FRAGMENT_NAME = /^[a-z0-9][a-z0-9._-]*\.md$/;
 const SECTION_HEADING = /^###[ \t]+(.+?)[ \t]*$/;
-const OTHER_HEADING = /^#{1,6}[ \t]/;
-// Paragraph notes count as entries too; blank lines and headings alone do not.
-const ENTRY = /^[ \t]*[^#\s]/m;
+const OTHER_HEADING = /^[ \t]{0,3}#{1,6}(?:[ \t]|$)/;
+// CHANGELOG.md's release headings; even inside a code block they would end the release they land in.
+const RELEASE_LEVEL = /^##[ \t]/;
+const FENCE = /^[ \t]{0,3}(`{3,}|~{3,})/;
+// Paragraph notes and lines such as "#123 ..." count as entries too; blank lines and headings alone do not.
+export const ENTRY = /^(?![ \t]{0,3}#{1,6}(?:[ \t]|$))[ \t]*\S/m;
 
 /** Whether `name` (a file in changelog.d) is read as a fragment. */
 export function isFragmentFile(name) {
@@ -30,22 +33,35 @@ export function parseFragment(text, name = "fragment") {
 	}
 	const sections = [];
 	let current = null;
+	let fence = null;
+	let textBefore = false;
 	for (const line of String(text).split(/\r?\n/)) {
-		const heading = SECTION_HEADING.exec(line);
+		const marker = FENCE.exec(line)?.[1];
+		if (fence) {
+			// Inside a code block only the closing fence and release-level headings matter.
+			if (marker?.[0] === fence[0] && marker.length >= fence.length && !line.trim().slice(marker.length)) fence = null;
+			else if (RELEASE_LEVEL.test(line))
+				problems.push(`${name}: "${line.trim()}" would start a new release, even in a code block`);
+		} else if (marker) {
+			fence = marker;
+		}
+		const heading = !fence && !marker ? SECTION_HEADING.exec(line) : null;
 		if (heading) {
 			if (!FRAGMENT_SECTIONS.includes(heading[1])) {
 				problems.push(`${name}: "### ${heading[1]}" is not one of ${FRAGMENT_SECTIONS.join(", ")}`);
 			}
 			current = { title: heading[1], lines: [] };
 			sections.push(current);
-		} else if (OTHER_HEADING.test(line)) {
+		} else if (!fence && !marker && OTHER_HEADING.test(line)) {
 			problems.push(`${name}: only "### Section" headings are allowed, found "${line.trim()}"`);
 		} else if (current) {
 			current.lines.push(line);
-		} else if (line.trim()) {
+		} else if (line.trim() && !textBefore) {
+			textBefore = true;
 			problems.push(`${name}: text before the first "### Section" heading`);
 		}
 	}
+	if (fence) problems.push(`${name}: a code block opened with ${fence} is never closed`);
 	if (!sections.length) problems.push(`${name}: add a "### Section" heading (${FRAGMENT_SECTIONS.join(", ")})`);
 	const groups = sections.map(({ title, lines }) => ({ title, body: lines.join("\n").trim() }));
 	for (const group of groups) {

@@ -1,4 +1,4 @@
-import { foldUnreleased, fragmentProblems } from "./changelog-fragments.mjs";
+import { ENTRY, foldUnreleased, fragmentProblems } from "./changelog-fragments.mjs";
 
 const CALENDAR_VERSION = /^(\d{4}\.\d{2}\.\d{2})\.(\d+)$/;
 
@@ -25,8 +25,6 @@ export function packageVersion(version) {
 }
 
 const UNRELEASED_HEADING = "## [Unreleased]";
-// Paragraph notes count as entries too; blank lines and headings alone do not.
-const ENTRY = /^[ \t]*[^#\s]/m;
 
 /** Text written under a release that has no Unreleased entries, so every deploy can still be a release. */
 export const NO_CHANGES_NOTE = "No user-visible changes.";
@@ -169,4 +167,10 @@ export function checkPullRequest({
 		);
 	}
 	return problems;
+}
+
+/** Whether a release is due: fragments are waiting, or entries are still under "Unreleased" in CHANGELOG.md. */
+export function hasPendingChanges(changelog, fragments) {
+	const unreleased = unreleasedSection(changelog);
+	return fragments.length > 0 || Boolean(unreleased && ENTRY.test(unreleased.body));
 }

@@ -15,6 +15,7 @@ import {
 import {
 	changelogSection,
 	checkPullRequest,
+	hasPendingChanges,
 	isReleaseBranch,
 	NO_CHANGES_NOTE,
 	releaseChangelog,
@@ -62,6 +63,29 @@ test("malformed fragments are reported with their file name", () => {
 	assert.match(problems("### Fixed\n- x\n", "My Change.md")[0], /My Change\.md: name it with lowercase/);
 	assert.deepEqual(fragmentProblems([fixed, added]), []);
 	assert.equal(fragmentProblems([fixed, { name: "bad.md", text: "" }]).length, 1);
+});
+
+test("code blocks may hold heading-like lines and entries may start with #123", () => {
+	const fenced = "### Fixed\n\n- Run this:\n\n  ```sh\n  # not a heading\n  ```\n\n~~~\n#### still code\n~~~\n";
+	assert.deepEqual(parseFragment(fenced, "fenced.md").problems, []);
+	assert.match(parseFragment(fenced, "fenced.md").sections[0].body, /# not a heading/);
+	assert.deepEqual(parseFragment("### Fixed\n\n#123 The reader keeps its place.\n", "issue.md").problems, []);
+	assert.deepEqual(parseFragment("### Fixed\n\n````\n```\n## [x]\n````\n", "nested.md").problems, [
+		'nested.md: "## [x]" would start a new release, even in a code block',
+	]);
+	assert.deepEqual(parseFragment("### Fixed\n\n```\n- open\n", "open.md").problems, [
+		"open.md: a code block opened with ``` is never closed",
+	]);
+	assert.deepEqual(parseFragment("intro\nmore intro\n### Fixed\n- x\n", "intro.md").problems, [
+		'intro.md: text before the first "### Section" heading',
+	]);
+});
+
+test("a release is due for fragments or for entries still under Unreleased", () => {
+	assert.equal(hasPendingChanges(CHANGELOG, []), false);
+	assert.equal(hasPendingChanges(CHANGELOG, [fixed]), true);
+	assert.equal(hasPendingChanges(CHANGELOG.replace("## [Unreleased]\n", "## [Unreleased]\n\n- Legacy.\n"), []), true);
+	assert.equal(hasPendingChanges("# Changelog\n", []), false);
 });
 
 test("README.md and non-Markdown files in changelog.d are not fragments", () => {
@@ -203,5 +227,13 @@ test("the release workflow only pushes release/next and never main", () => {
 	const yaml = readFileSync(new URL("../.github/workflows/release-pr.yml", import.meta.url), "utf8");
 	const pushes = [...yaml.matchAll(/git push[^\n]*/g)].map((match) => match[0]);
 	assert.deepEqual(pushes, ['git push "$remote" "$commit:refs/heads/release/next"']);
-	assert.doesNotMatch(yaml, /--force|-f\b/);
+	assert.doesNotMatch(yaml, /--force|-f\b|\+refs\/|:refs\/heads\/main\b/);
+	// main is the first parent, so the commit's own diff is only the release files.
+	assert.match(yaml, /parents=\(-p HEAD\)/);
+	// Only the publish job holds a write token, and it runs no npm.
+	const publish = yaml.slice(yaml.indexOf("\n  publish:"));
+	const prepare = yaml.slice(yaml.indexOf("\n  prepare:"), yaml.indexOf("\n  publish:"));
+	assert.match(yaml, /^permissions: \{\}$/m);
+	assert.doesNotMatch(prepare, /write/);
+	assert.doesNotMatch(publish, /\bnpm (ci|install)\b|\bnode (scripts|--)|setup-node|node_modules/);
 });

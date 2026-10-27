@@ -140,7 +140,7 @@ async function executeModuleAction(
 			variant: call.variant ?? "",
 			initiator: "user",
 			actingUserId: ctx.viewer.userId,
-			permissions: { canManage: access.canManage, canSendOnBehalf: access.canSendOnBehalf },
+			permissions: { canRead: access.canRead, canManage: access.canManage, canSendOnBehalf: access.canSendOnBehalf },
 			module: {
 				input: call.input,
 				...(call.before === undefined ? {} : { before: call.before }),

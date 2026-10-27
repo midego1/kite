@@ -69,7 +69,6 @@ import {
 	enqueueAgentMessage,
 	groupAgentMessages,
 	isAgentScrollAtBottom,
-	markAgentDraftSent,
 	normalizeAgentHistory,
 	readAgentConversationId,
 	removeQueuedAgentMessage,
@@ -547,6 +546,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 				current.map((message) => (message.id === item.id ? { ...message, content: JSON.stringify(result) } : message)),
 			);
 			window.dispatchEvent(new Event("kite:messages-changed"));
+			window.dispatchEvent(new Event("kite:folders-changed"));
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : "Could not approve action");
 		} finally {
@@ -959,7 +959,6 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 					snapshot={draftReview.snapshot}
 					onClose={() => setDraftReview(null)}
 					onSent={() => {
-						setMessages((current) => markAgentDraftSent(current, draftReview.draftId));
 						setDraftReview(null);
 						void refresh();
 					}}

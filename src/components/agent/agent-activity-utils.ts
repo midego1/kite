@@ -7,6 +7,13 @@ const ACTION_LABELS: Record<string, string> = {
 	dismiss: "Dismissed a suggestion",
 	create_draft: "Drafted a reply",
 	move: "Moved the message to spam",
+	"move:archived": "Moved to the archive",
+	"move:trash": "Moved to trash",
+	"move:inbox": "Moved to the inbox",
+	"mark_read:read": "Marked as read",
+	"mark_read:unread": "Marked as unread",
+	set_folder: "Moved to a folder",
+	create_folder: "Created a folder",
 };
 
 /** Kept whether or not the module is on, so older rows stay readable. */
@@ -62,13 +69,32 @@ export function statusLabel(status: ActivityAction["status"]): string {
 	return STATUS_LABELS[status] ?? status;
 }
 
-export function actionLabel(row: Pick<ActivityAction, "action" | "variant" | "undoOf">): string {
+export function actionLabel(
+	row: Pick<ActivityAction, "action" | "variant" | "undoOf"> & { after?: ActivityAction["after"] },
+): string {
 	const label =
 		MODULE_ACTION_LABELS[`${row.action}:${row.variant}`] ??
+		ACTION_LABELS[`${row.action}:${row.variant}`] ??
 		ACTION_LABELS[row.action] ??
 		MODULE_ACTION_LABELS[row.action] ??
 		humanize(row.action);
-	return row.undoOf ? `Undid: ${label.charAt(0).toLowerCase()}${label.slice(1)}` : label;
+	const full = `${label}${batchDetail(row.after ?? null)}`;
+	return row.undoOf ? `Undid: ${full.charAt(0).toLowerCase()}${full.slice(1)}` : full;
+}
+
+/** A chat action's folder name and, for more than one email, how many it changed. */
+function batchDetail(after: ActivityAction["after"]): string {
+	const folder = typeof after?.folderName === "string" ? ` “${after.folderName}”` : "";
+	const count = typeof after?.count === "number" && after.count > 1 ? ` (${after.count} emails)` : "";
+	return `${folder}${count}`;
+}
+
+const MOVE_FOLDERS = new Set(["archived", "trash", "spam"]);
+
+/** The list a moved message sits in after the row: spam for a phishing "Mark as spam", else the destination. */
+function movedFolder(row: Pick<ActivityAction, "action" | "status" | "variant">): string {
+	if (row.action !== "move" || row.status !== "applied") return "inbox";
+	return MOVE_FOLDERS.has(row.variant) ? row.variant : row.variant === "inbox" ? "inbox" : "spam";
 }
 
 function humanize(code: string): string {
@@ -94,7 +120,10 @@ export function reasonText(reason: string | null): string | null {
  * A calendar action carries the record ref the server resolved (a link, or plain text when unavailable).
  */
 export function actionTarget(
-	row: Pick<ActivityAction, "action" | "status" | "messageId" | "after" | "subject" | "draftAvailable" | "target">,
+	row: Pick<
+		ActivityAction,
+		"action" | "variant" | "status" | "messageId" | "after" | "subject" | "draftAvailable" | "target"
+	>,
 ): ActivityTarget | null {
 	if (row.target) return row.target;
 	const subject = row.subject || "(No subject)";
@@ -104,9 +133,15 @@ export function actionTarget(
 		return { href: `/sent/${encodeURIComponent(sentMessageId)}`, label: `Sent reply: ${subject}` };
 	if (row.action === "create_draft" && row.status === "applied" && row.draftAvailable && typeof draftId === "string")
 		return { href: `/drafts/${encodeURIComponent(draftId)}`, label: `Draft reply: ${subject}` };
+	const folderId = typeof row.after?.folderId === "string" ? row.after.folderId : null;
+	if (row.action === "create_folder")
+		return folderId && row.status === "applied"
+			? { href: `/folders/${encodeURIComponent(folderId)}`, label: "Open folder" }
+			: null;
 	if (!row.messageId) return null;
-	const folder = row.action === "move" && row.status === "applied" ? "spam" : "inbox";
-	return { href: `/${folder}/${encodeURIComponent(row.messageId)}`, label: subject };
+	if (row.action === "set_folder" && row.status === "applied" && folderId)
+		return { href: `/folders/${encodeURIComponent(folderId)}/${encodeURIComponent(row.messageId)}`, label: subject };
+	return { href: `/${movedFolder(row)}/${encodeURIComponent(row.messageId)}`, label: subject };
 }
 
 /** Rows recording an undo carry no Undo of their own; every other row shows one, enabled or not. */

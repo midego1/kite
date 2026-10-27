@@ -21,9 +21,9 @@ The recording shows invented demo data. `npm run demo:record` makes it again (se
 
 Kite is for developers, indie founders and small teams who already keep domains on Cloudflare and want a real inbox for `you@yourdomain` without paying per seat or running a mail server. It is also for self-hosters who want hackable email with an API.
 
-- **Your mail, your account.** Messages live in your own D1 database and attachments in your own R2 bucket. There is no update check, license check or telemetry.
+- **Your mail, your account.** Messages live in your own D1 database and files (attachments, Drive, backups) in your own R2 bucket, or in an S3-compatible store you choose. There is no update check, license check or telemetry.
 - **No server to run.** It deploys with one button to Cloudflare Workers. Receiving through Email Routing is free, and sending uses the free tiers of Resend or Amazon SES, or Cloudflare's own sending on a paid Workers plan. A Docker and SQLite path exists if you would rather run it on a box ([Self-host with Docker](#self-host-with-docker)).
-- **A real inbox, not just forwarding.** Shared mailboxes, search, folders, snooze, undo send, routing rules, a calendar with booking pages, JMAP, an API, webhooks and MCP.
+- **A real inbox, not just forwarding.** Shared mailboxes, search, folders, snooze, undo send, routing rules, a calendar with booking pages, Drive for files, JMAP, an API, webhooks and MCP.
 
 **Not for you (yet) if** you need a native mobile app, an interface in another language, a standard IMAP/SMTP server for desktop mail clients, or a setup with no manual steps. Teams with strict compliance needs should evaluate Kite carefully first.
 
@@ -34,7 +34,7 @@ Kite is for developers, indie founders and small teams who already keep domains 
 | What it is | A fork of Mailflare that runs in your Cloudflare account, developed independently | The original self-hosted inbox by hieunc229 | Forwards mail for your domain to an address or a Worker | A managed mailbox service |
 | Inbox and webmail | Yes | Yes | No, forwarding only | Yes, mature, with mobile apps |
 | Sending as your domain | Cloudflare, Resend or Amazon SES, per domain | Cloudflare, Resend or Amazon SES | No sending inbox | Yes |
-| Where your mail lives | Your D1 database and R2 bucket (or SQLite and local files with Docker) | Your Cloudflare account | Passes through, then lives wherever you forward it | The provider's servers |
+| Where your mail lives | Your D1 database and R2 bucket, or an S3-compatible store for files (SQLite and local files with Docker) | Your Cloudflare account | Passes through, then lives wherever you forward it | The provider's servers |
 | Price model | Free software, every feature included. You pay your own Cloudflare and provider usage | AGPL-3.0 core, with Pro and Team features behind a paid license key | Free | Per user per month |
 | Interface languages | English only | Lists 33 languages in its README | Not applicable | Usually many |
 | Community and maturity | Young project, small community | The original, with a much larger community and its own project site | A Cloudflare product | Established products with support teams |
@@ -49,14 +49,14 @@ Kite builds on Email Routing rather than replacing it: Cloudflare still delivers
 Kite is **early beta**. It is tested, but it has not had the time in the field that older mail software has, and you run it, so you are responsible for updates, backups and your domains' reputation. What the code does and does not do today:
 
 - **English-only interface.** There is no translation support yet; only right-to-left rendering of message content is planned first ([roadmap](ROADMAP.md)). Mailflare ships a multilingual interface.
-- **Cloudflare is required for the default install.** The domain's DNS must be on Cloudflare (even when you send or receive through Resend or Amazon SES), you need an API token with several permissions, and the Worker must be named `kite`. The Docker build can run without Cloudflare credentials, but then you add DNS records by hand.
+- **Cloudflare is required for the default install.** Kite manages DNS only on Cloudflare, even when you send or receive through Resend or Amazon SES, so the domain's DNS should be there. You need an API token with several permissions, and the Worker must be named `kite`. For a domain whose DNS is elsewhere, **Skip DNS setup** adds it without checking or changing any record: you create the records yourself and mail does not arrive until you do. The Docker build can run without Cloudflare credentials, but then you add DNS records by hand.
 - **Cloudflare's own sending has limits.** It needs a paid Workers plan; messages are capped at 5 MiB including attachments (Kite sends larger files as download links), 50 recipients, with daily quotas that start low on new accounts, and Cloudflare describes it as intended for transactional mail. See [sending and deliverability](docs/sending-and-deliverability.md#provider-limits). Use Resend or Amazon SES for heavier sending. New Amazon SES accounts start in a sandbox that only delivers to verified addresses.
 - **A per-user sending allowance.** By default 100 messages an hour and 500 a day per user, so a stolen session or key cannot send unlimited mail. It is configurable with `SEND_LIMIT_PER_HOUR` and `SEND_LIMIT_PER_DAY`.
 - **One service owns a domain's MX records.** Receiving through Cloudflare, Resend or Amazon SES is a per-domain choice, and Kite asks before it replaces existing MX records.
 - **Resend and SES receiving are more limited than Cloudflare's.** Mail that a routing rule would reject is dropped rather than bounced, and forward rules are not applied. Inbound messages are capped at 25 MiB.
 - **No IMAP or SMTP server for desktop clients.** Standard mail apps cannot connect. Kite offers a web app, [JMAP](docs/api.md), an API, webhooks and MCP. IMAP is used only to import mail.
 - **No native mobile app.** The web interface has a mobile layout.
-- **Updates and migrations are manual.** Nothing updates itself: you deploy a new version, then apply database migrations from Admin settings.
+- **Updates and migrations are manual.** Nothing updates itself: you deploy a new version, then apply database migrations from Admin settings (or set `AUTO_APPLY_MIGRATIONS=1` to apply them automatically).
 - **No Wrangler D1 export.** `wrangler d1 export` does not work because of the search index; use the in-app backups.
 - **No published third-party security audit.** The security measures are listed under [How this version differs](#how-this-version-differs), and vulnerabilities are handled as described in [SECURITY.md](SECURITY.md).
 - **The sign-in limit is per IP address and API keys are not rate limited.** See [known gaps](docs/sending-and-deliverability.md#known-gaps).
@@ -92,7 +92,7 @@ Click a screenshot to open it at full size. The screenshots and the demo recordi
 
 ## What you can do
 
-- **Domains**: Connect your Cloudflare domains and choose Cloudflare, Resend, or Amazon SES for each.
+- **Domains**: Connect your Cloudflare domains and choose Cloudflare, Resend, or Amazon SES for each. A domain whose DNS is elsewhere can be added with **Skip DNS setup** and its records set by hand.
 - **Mailboxes**: Create personal or shared mailboxes and give other people access to them.
 - **Email**: Send and receive mail with attachments, rich text, signatures, and automatic replies.
 - **Calendar**: Day, week and month views. Schedule repeating events with time zones and attendees, who receive email invitations.
@@ -102,15 +102,17 @@ Click a screenshot to open it at full size. The screenshots and the demo recordi
 - **Organization**: Keep your inbox tidy with search, folders, stars, snooze, archive, spam, and trash, with undo for archive and trash. After a bulk action you return to the message list with the selection cleared.
 - **Spam and phishing protection**: A local spam filter that learns from you, plus phishing warnings for misleading links, failed sender checks and risky attachments. Mark a warning **Not phishing** to trust that sender, and manage trusted and muted senders in Settings. With a free abuse.ch key, risky mail is also checked against URLhaus and ThreatFox, and a **Test key** button on Admin → General shows whether the key works. See [Spam protection](docs/spam-protection.md).
 - **Routing rules**: Store, forward, reject, or sort incoming mail automatically.
-- **Screener**: Decide once whether you want mail from someone new. Their first messages wait in the Screener (or arrive in the Inbox marked as a new sender) until you approve or deny them; people you write to are approved automatically. On for new mailboxes, per mailbox. It needs database migration 0067. See [Screener](docs/screener.md).
+- **Screener**: Decide once whether you want mail from someone new. Their first messages wait in the Screener (or arrive in the Inbox marked as a new sender) until you approve or deny them; people you write to are approved automatically. On for new mailboxes, per mailbox. See [Screener](docs/screener.md).
 - **Notifications**: Get live inbox updates and alerts when new mail arrives, and copy a one-time code straight from the notification.
 - **Import, export, contacts**: Move mail in and out, manage contacts, and block unwanted senders.
 - **Admin**: Manage users, permissions, API keys, webhooks, audit logs, and backups. Admin pages share the Settings layout, with the mail sidebar and one side menu that switches between Settings and Admin; there, the top-bar search field finds pages in both menus (on phones, the menu sheet has its own search), and audit logs are under Activity.
-- **AI assistant**: Search your mail, draft replies, and manage calendar events with AI.
-- **Automatic reading**: Let Kite read new mail and suggest replies, calendar answers, summaries and phishing warnings. Off by default, suggestions only, with spend caps and undo. See [Assistant: automatic reading](docs/assistant.md).
+- **AI assistant**: Ask about your mail, have it draft and revise replies, and manage calendar events. It never sends on its own: you confirm each send in Kite.
+- **Automatic reading**: Let Kite read new mail and suggest replies, calendar answers, summaries, phishing warnings and subscriptions. Off by default, suggestions only, with spend caps and undo. See [Assistant: automatic reading](docs/assistant.md).
 - **MCP access**: Connect AI clients over MCP, with separate permissions for each key.
-- **Money Watch**: With automatic reading on, Kite spots subscriptions in receipts and invoices (including PDF invoices) and offers to track them on a card only the mailbox's reviewer sees. You can also add one by hand or from a message's menu. The Subscriptions page (`/finance`) lists them with monthly and yearly totals per currency, keeps each one's invoices, payments, credits and refunds, and opens the vendor's cancel page when the mail names one. A reminder arrives before a renewal or the end of a trial as a notification, a sidebar count and, with Calendar on, a calendar event. Every change can be undone. It needs database migration 0063. See [Modules](docs/modules.md).
-- **Switchable modules**: Calendar, Booking pages, Email templates, Mail import and Money Watch are modules the owner can turn off for the whole install or per user, from the Modules admin page. What is off disappears from the menus, pages and APIs, and nothing is deleted. See [Modules](docs/modules.md).
+- **Money Watch**: With automatic reading on, Kite spots subscriptions in receipts and invoices (including PDF invoices) and offers to track them on a card only the mailbox's reviewer sees. You can also add one by hand or from a message's menu. The Subscriptions page (`/finance`) lists them with monthly and yearly totals per currency, keeps each one's invoices, payments, credits and refunds, and opens the vendor's cancel page when the mail names one. A reminder arrives before a renewal or the end of a trial as a notification, a sidebar count and, with Calendar on, a calendar event. Every change can be undone. See [Modules](docs/modules.md).
+- **Drive**: Keep files and folders next to your mail, at `/drive`. Upload large files (resumable), preview images, video, audio, PDF and text, and save an attachment from a message with **Save to Drive**. Share a file or folder with other people on the install as view or edit, or with a public link (`/d/<token>`) that can have a password and an expiry. Admins can set a storage limit per account, and the trash empties itself after a retention they choose. See [Drive](docs/drive.md).
+- **Object storage**: By default files go to your R2 bucket. Under Admin → Storage the owner can add S3-compatible stores (Amazon S3, Backblaze B2, Wasabi, Hetzner, MinIO and others), choose separately for Mail, Drive and Backups where new files go, and copy existing files to another store. See [Object storage](docs/deployment.md#object-storage-optional).
+- **Switchable modules**: Calendar, Booking pages, Email templates, Mail import, Money Watch and Drive are modules the owner can turn off for the whole install or per user, from the Modules admin page. What is off disappears from the menus, pages and APIs, and nothing is deleted. See [Modules](docs/modules.md).
 
 ## How this version differs
 
@@ -125,10 +127,10 @@ This version started from [Mailflare by hieunc229](https://github.com/hieunc229/
 | **Stored secrets** | Provider keys stored as plain text | Provider keys and IMAP passwords encrypted with AES-GCM (`APP_ENCRYPTION_KEY`) |
 | **Sending** | Sends immediately | Optional preview before sending and undo send |
 | **Reading** | Optional two-column view | Reading pane beside or below the list, or full width; density options; smooth resizing |
-| **Backups** | Whole database built in memory as one JSON document | Streamed to R2 in parts, so large mailboxes back up within Worker limits; automatic backup before every migration and restore |
+| **Backups** | Whole database built in memory as one JSON document | Streamed to object storage in parts, so large mailboxes back up within Worker limits; automatic backup before every migration and restore |
 | **Restore** | Deletes the current data, then inserts the backup | Validated first; a failed restore rolls back to the automatic safety backup |
 | **MCP** | Every tool listed for every key, fixed version `0.1.0` | Only the tools a key's scopes allow; reports the real app version |
-| **Quality** | Unit tests, no CI or browser tests | Strict TypeScript, lint, over 300 unit tests and over 70 browser tests on every push |
+| **Quality** | Unit tests, no CI or browser tests | Strict TypeScript, lint, over 2,000 unit tests and over 400 browser tests on every pull request and push to `main` |
 
 ### Performance
 
@@ -154,7 +156,7 @@ Other changes behind those numbers:
 
 Kite runs in your Cloudflare account. By default, Cloudflare Email Routing delivers incoming mail to the app, and Cloudflare's email service sends outgoing mail. Each domain can also receive or send through Resend or Amazon SES. Cloudflare still manages the DNS.
 
-Your mail stays in your own D1 database, and attachments stay in your own R2 bucket, whichever provider you use. See [Sending and receiving providers](docs/providers.md).
+Your mail stays in your own D1 database. Raw messages, attachments, Drive files and backups stay in your own R2 bucket, or in an S3-compatible store you route them to, whichever provider you use. See [Sending and receiving providers](docs/providers.md) and [Object storage](docs/deployment.md#object-storage-optional).
 
 ## Cost
 
@@ -223,7 +225,7 @@ See the [deployment guide](docs/deployment.md) for permissions, manual deploymen
 
 ### Self-host with Docker
 
-Kite also runs as one container on any server. It uses SQLite and local files instead of D1 and R2.
+Kite also runs as one container on any server. It uses SQLite and local files instead of D1 and R2 (files can also go to an S3-compatible store).
 
 - **Inbound mail**: a built-in SMTP listener, or a small Cloudflare relay Worker if you want to keep MX on Cloudflare.
 - **Outbound mail**: any SMTP relay, Cloudflare Email Sending, Resend, or Amazon SES.
@@ -245,7 +247,7 @@ npm run db:migrate:local
 npm run dev
 ```
 
-Add your Cloudflare credentials to `.dev.vars`, then open [http://localhost:3000](http://localhost:3000). To load sample data, run `npm run db:seed` while the dev server is running. `npm run db:migrate:local` applies every migration, including 0063 for Money Watch; on an existing install, apply it from the migrations banner or Admin settings after deploying.
+Add your Cloudflare credentials to `.dev.vars`, then open [http://localhost:3000](http://localhost:3000). To load sample data, run `npm run db:seed` while the dev server is running. `npm run db:migrate:local` applies every migration in `drizzle/migrations`. On a deployed install, new migrations are applied from the migrations banner or the database card in Admin settings after each deploy.
 
 The Cloudflare app uses vinext and the Cloudflare Vite plugin, with local D1, R2, Queues, and Durable Objects. Remote bindings are off by default. To use Workers AI locally, log in with Wrangler, set `CLOUDFLARE_ACCOUNT_ID`, and run `CLOUDFLARE_REMOTE_BINDINGS=true npm run dev`.
 
@@ -263,13 +265,13 @@ The Node/Docker runtime still uses Next.js with `build:node`, `start:node`, and 
 
 Use the development container or `npm run setup:mission` to prepare a development machine, and `npm run check:mission` to run everything CI runs: type checks, lint, unit and coverage gates, quality and docs checks, the relay integration test and the Playwright browser tests, including a security spec that checks every API route answers 401 or 403 without a session. See [Mission readiness](docs/mission-readiness.md) and [Contributing](CONTRIBUTING.md).
 
-GitHub workflows also run the security scans, draft a release from `v*` tags, record Workers Builds results as deployments, run a weekly report-only ZAP scan and post an advisory report on every pull request.
+CI runs on every pull request and on pushes to `main`, with the browser tests split across 10 parallel jobs. GitHub workflows also run the security scans, record Workers Builds results as deployments, publish a GitHub release after each successful production deploy (a draft release can still be made by hand from a `v*` tag), run a weekly report-only ZAP scan and post an advisory report on every pull request.
 
 ## Built with
 
 - **App**: Next.js App Router with React 19, running on Cloudflare Workers through [vinext](https://github.com/cloudflare/vinext) (Vite). The Docker build runs the same app on Node.
 - **UI**: Tailwind CSS v4 with [shadcn/ui](https://ui.shadcn.com) components (Radix primitives, "new-york" style), Lucide icons and TanStack Query.
-- **Data**: Drizzle ORM on Cloudflare D1 (SQLite in Docker), R2 for messages, attachments and backups, Queues for mail processing, and a Durable Object for live updates.
+- **Data**: Drizzle ORM on Cloudflare D1 (SQLite in Docker), R2 (or an S3-compatible store) for messages, attachments, Drive files and backups, Queues for mail processing, and a Durable Object for live updates.
 - **Tests**: `node:test` unit tests and Playwright browser tests (`npm run test:e2e`).
 
 ## Documentation
@@ -282,7 +284,9 @@ GitHub workflows also run the security scans, draft a release from `v*` tags, re
 - [Screener: approving new senders](docs/screener.md)
 - [API and integrations](docs/api.md), including the [calendar and booking APIs](docs/api.md#calendar-and-booking)
 - [Email assistant and MCP](docs/email-assistant-and-mcp.md)
-- [Modules: turning Calendar, Booking, templates, import and Money Watch off](docs/modules.md)
+- [Modules: turning Calendar, Booking, templates, import, Money Watch and Drive off](docs/modules.md)
+- [Drive: files, sharing and public links](docs/drive.md)
+- [Object storage: S3-compatible stores for mail, Drive and backups](docs/deployment.md#object-storage-optional) and [how to operate it](docs/operations.md#object-storage)
 - [Operations](docs/operations.md), including [after a deploy](docs/operations.md#after-a-deploy)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Roadmap](ROADMAP.md) and [changelog](CHANGELOG.md)

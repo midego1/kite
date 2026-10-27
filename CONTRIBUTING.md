@@ -55,7 +55,7 @@ An optional pre-commit hook checks documentation and the formatting of staged fi
 - Keep pull requests focused on one change and describe what it does and how you tested it. Include screenshots for visible UI changes.
 - Each pull request gets an advisory PR report (`.github/workflows/pr-report.yml`) as a comment marked `<!-- kite-pr-report -->` and in the workflow step summary: Semgrep and npm audit findings, new quality debt, coverage and warnings when a table change skips the backup lists, UI changes have no e2e change, or a Cloudflare resource name changes. It is not a required check; fork pull requests get the step summary only. See [docs/quality.md](docs/quality.md#pr-report).
 - CodeRabbit and Greptile also review pull requests, following `AGENTS.md`, `CLAUDE.md`, this guide and the same path rules in `.coderabbit.yaml` and `greptile.json` (change both together). Their comments are advisory; reply to them in the pull request to ask for changes or explain a decision. Both run side by side so the better one can be kept: see [Comparing the reviewers](docs/quality.md#comparing-the-reviewers).
-- Add a line under "Unreleased" in [CHANGELOG.md](CHANGELOG.md) for user-visible changes. Maintainers turn those entries into a release as described in [docs/releasing.md](docs/releasing.md).
+- Add a changelog fragment, `changelog.d/<short-slug>.md`, for user-visible changes (see [changelog.d/README.md](changelog.d/README.md)); do not edit `CHANGELOG.md` or `VERSION`. A change nobody can notice gets the `no-changelog` label instead. Maintainers merge the release pull request that folds fragments into a release, as described in [docs/releasing.md](docs/releasing.md).
 
 ## License
 

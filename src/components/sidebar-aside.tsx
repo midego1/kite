@@ -1,49 +1,42 @@
 "use client";
 
-import clsx from "clsx";
 import { Menu } from "lucide-react";
-import { useEffect } from "react";
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
+import { Sheet, SheetContent, SheetTitle } from "./ui/sheet";
 import { useSidebar } from "./sidebar-state";
 
-export function SidebarAside({ children, className }: { children: ReactNode; className?: string }) {
-	const { mobile, mobileOpen, toggle } = useSidebar();
-	const hidden = mobile && !mobileOpen;
+// The sheet opens from the top bar's menu button, outside its Root, so focus goes back there on close.
+const menuButton = () => document.querySelector<HTMLElement>("[data-mobile-menu]");
 
-	useEffect(() => {
-		if (!mobile || !mobileOpen) return;
-		function onKeyDown(event: KeyboardEvent) {
-			if (event.key !== "Escape" || event.defaultPrevented) return;
-			toggle();
-			document.querySelector<HTMLElement>("[data-mobile-menu]")?.focus();
-		}
-		document.addEventListener("keydown", onKeyDown);
-		return () => document.removeEventListener("keydown", onKeyDown);
-	}, [mobile, mobileOpen, toggle]);
+/**
+ * The sidebar column; on phones a Sheet that slides in from the left. The sheet stays in place in the DOM
+ * (no portal), so the sidebar keeps its position in the page's reading order.
+ */
+export function SidebarAside({ children, className }: { children: ReactNode; className?: string }) {
+	const { mobile, mobileOpen, setMobileOpen } = useSidebar();
+
+	if (mobile)
+		return (
+			<Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+				<SheetContent
+					portal={false}
+					returnFocusTo={menuButton}
+					side="left"
+					closeLabel="Close menu"
+					aria-describedby={undefined}
+					className="bg-[#f6f8fc]"
+				>
+					<SheetTitle className="sr-only">Menu</SheetTitle>
+					<aside className={cn("h-full min-h-0 min-w-0", className)}>{children}</aside>
+				</SheetContent>
+			</Sheet>
+		);
 
 	return (
-		<>
-			<div
-				onClick={toggle}
-				aria-hidden="true"
-				className={clsx(
-					"fixed inset-0 z-[100] bg-black/40 transition-opacity duration-200 ease-out motion-reduce:transition-none md:hidden",
-					mobileOpen ? "opacity-100" : "pointer-events-none opacity-0",
-				)}
-			/>
-			<aside
-				aria-hidden={hidden}
-				inert={hidden}
-				className={clsx(
-					"fixed inset-y-0 left-0 z-[110] w-[min(85vw,300px)] min-h-0 min-w-0 bg-[#f6f8fc] transition-transform duration-200 ease-out motion-reduce:transition-none",
-					"md:relative md:z-30 md:w-[var(--sidebar-width)] md:translate-x-0 md:shadow-none",
-					mobileOpen ? "translate-x-0 shadow-xl" : "-translate-x-full",
-					className,
-				)}
-			>
-				{children}
-			</aside>
-		</>
+		<aside className={cn("relative z-30 h-full min-h-0 min-w-0 bg-[#f6f8fc] md:w-[var(--sidebar-width)]", className)}>
+			{children}
+		</aside>
 	);
 }
 
@@ -57,7 +50,7 @@ export function MobileMenuButton({ className }: { className?: string }) {
 			onClick={toggle}
 			aria-label="Open menu"
 			aria-expanded={mobileOpen}
-			className={clsx(
+			className={cn(
 				"flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-neutral-600 hover:bg-neutral-200 md:hidden",
 				className,
 			)}

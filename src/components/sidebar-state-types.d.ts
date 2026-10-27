@@ -5,10 +5,12 @@ export type SidebarState = {
 	width: number;
 	userId: string | null;
 	toggle(): void;
+	/** Collapses the sidebar to its icon rail or expands it, and remembers the choice. */
+	setMinimal(minimal: boolean): void;
 	setWidth(width: number): void;
-	setForcedMinimal(minimal: boolean): void;
 	mobile: boolean;
 	mobileOpen: boolean;
+	setMobileOpen(open: boolean): void;
 };
 
 export type SidebarProviderProps = {

@@ -55,11 +55,6 @@ export function getEffectiveReadingPaneMode(mode: ReadingPaneMode, wideViewport:
 	return wideViewport ? mode : "none";
 }
 
-/** Keeps a resizable list between its minimum and what leaves `reserved` pixels for the reading pane. */
-export function clampListSize(requested: number, min: number, containerSize: number, reserved: number): number {
-	return Math.max(min, Math.min(requested, Math.max(min, containerSize - reserved)));
-}
-
 /** Row spacing for the stacked rows of the list beside a reading pane. */
 export function getStackedRowDensity(density: MessageListDensity): MessageRowDensityStyle {
 	if (density === "comfortable") return { rowClassName: "py-4", showPreview: true };

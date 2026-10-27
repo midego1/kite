@@ -2,13 +2,13 @@
 
 import React, { useId, useRef } from "react";
 import { X, Keyboard } from "lucide-react";
-import type { ShortcutDefinition } from "./types";
+import type { ShortcutHint } from "./types";
 import { useDialogFocus } from "@/components/use-dialog-focus";
 
 interface ShortcutsHelpDialogProps {
 	isOpen: boolean;
 	onClose: () => void;
-	shortcuts: ShortcutDefinition[];
+	shortcuts: ShortcutHint[];
 }
 
 export function ShortcutsHelpDialog({ isOpen, onClose, shortcuts }: ShortcutsHelpDialogProps) {
@@ -28,10 +28,10 @@ function ShortcutsHelpDialogContent({ onClose, shortcuts }: Omit<ShortcutsHelpDi
 			acc[item.category].push(item);
 			return acc;
 		},
-		{} as Record<string, ShortcutDefinition[]>,
+		{} as Record<string, ShortcutHint[]>,
 	);
 
-	const formatKey = (shortcut: ShortcutDefinition) => {
+	const formatKey = (shortcut: ShortcutHint) => {
 		const parts: string[] = [];
 		if (shortcut.modifiers) {
 			shortcut.modifiers.forEach((m) => {

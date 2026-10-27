@@ -58,13 +58,6 @@ test("narrow viewports always read in one column", () => {
 	}
 });
 
-test("list size stays between its minimum and the space left for the pane", () => {
-	assert.equal(helpers.clampListSize(400, 250, 1000, 280), 400);
-	assert.equal(helpers.clampListSize(900, 250, 1000, 280), 720);
-	assert.equal(helpers.clampListSize(100, 250, 1000, 280), 250);
-	assert.equal(helpers.clampListSize(400, 250, 300, 280), 250);
-});
-
 test("compact density hides the snippet line of stacked rows", () => {
 	assert.equal(helpers.getStackedRowDensity("compact").showPreview, false);
 	assert.equal(helpers.getStackedRowDensity("default").showPreview, true);

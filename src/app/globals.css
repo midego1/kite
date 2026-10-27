@@ -200,6 +200,58 @@ pre {
 	animation: dialog-content-hide 130ms ease-in both;
 }
 
+@keyframes sheet-in-left {
+	from {
+		transform: translateX(-100%);
+	}
+	to {
+		transform: translateX(0);
+	}
+}
+
+@keyframes sheet-out-left {
+	from {
+		transform: translateX(0);
+	}
+	to {
+		transform: translateX(-100%);
+	}
+}
+
+@keyframes sheet-in-right {
+	from {
+		transform: translateX(100%);
+	}
+	to {
+		transform: translateX(0);
+	}
+}
+
+@keyframes sheet-out-right {
+	from {
+		transform: translateX(0);
+	}
+	to {
+		transform: translateX(100%);
+	}
+}
+
+.sheet-content[data-side="left"][data-state="open"] {
+	animation: sheet-in-left 200ms ease-out both;
+}
+
+.sheet-content[data-side="left"][data-state="closed"] {
+	animation: sheet-out-left 150ms ease-in both;
+}
+
+.sheet-content[data-side="right"][data-state="open"] {
+	animation: sheet-in-right 200ms ease-out both;
+}
+
+.sheet-content[data-side="right"][data-state="closed"] {
+	animation: sheet-out-right 150ms ease-in both;
+}
+
 @keyframes route-loading-bar {
 	0% {
 		transform: translateX(-110%) scaleX(0.55);
@@ -278,7 +330,8 @@ pre {
 	}
 
 	.dialog-overlay,
-	.dialog-content {
+	.dialog-content,
+	.sheet-content {
 		animation-duration: 1ms !important;
 	}
 

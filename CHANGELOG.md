@@ -6,9 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added
+## [2026.10.27.3] - 2026-10-27
 
-- **Writing style**, off by default: turn on **Learn my writing style from mail I send** under [Assistant settings](/inbox) and Kite learns, per mailbox, how you write (length, sentences and paragraphs, greetings and sign-offs, how formally you address people, questions, exclamation marks, emoji and lists) from the mail you send from the composer yourself, never from mail Write with Kite helped write. It keeps statistics and anonymised forms only, never text, and from ten messages on tells the AI in at most 500 characters how to sound like you in chat drafts, Write with Kite and the reply drafts Kite writes on its own. Turning it on can also learn from your last 200 composer sends; the settings show exactly what Kite tells the AI, with Reset per mailbox, and turning it off deletes everything. Apply migration **0070** (`0070_add_writing_style.sql`) from the admin overview to use it.
+### Changed
+
+- The inbox is now three resizable panes: the sidebar, the message list and the open email. Drag the line between two panes (or focus it and use the arrow keys) to resize them; Kite remembers the sizes per account, and dragging the sidebar narrow folds it to its icon rail, as the menu button does.
+- The message list has a cleaner look: an unread dot, the sender and date, the subject and a two-line preview, with **Suspicious** and **Snoozed** badges where they apply. **All mail** and **Unread** buttons above the list replace the unread filter button, and they are there in every folder except Sent and Drafts.
+- The reader's toolbar gains **Snooze** and **Move to** buttons, and a **Reply to …** box under each email starts a reply in the composer.
+- Keyboard shortcuts work like Gmail's: in the list, `j` and `k` move between emails, Enter or `o` opens one, `x` selects it, `e` archives and `#` deletes it; in an open email, `j` and `k` go to the older and newer email and `a` and `f` reply to all and forward, next to the existing `r`, `e`, `#` and `u`. The Cmd+K command palette has been rebuilt and the shortcuts sheet (`?`) lists the new keys. Shortcuts can be turned off in [Settings → Inbox](/settings/inbox).
+- On phones the menu opens as a sheet over the page, and an open email's toolbar stays on one line.
 
 ## [2026.10.27.2] - 2026-10-27
 

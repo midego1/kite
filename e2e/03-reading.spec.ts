@@ -227,7 +227,9 @@ test("shows a reply and its original as one conversation", async ({ page }) => {
 	await page.goto("/inbox");
 	await openMessage(page, `Re: Planning ${token}`);
 	// The list beside the reading pane shows the same text as its preview line.
-	await expect(page.locator("[data-reading-pane] > section").getByText(`Follow-up message ${token}`)).toBeVisible();
+	// The reading pane is the layout's last resizable panel.
+	const readingPane = page.locator("[data-reading-pane] > [data-panel]").last();
+	await expect(readingPane.getByText(`Follow-up message ${token}`).first()).toBeVisible();
 
 	const earlier = page.getByRole("region", { name: "Earlier messages in this conversation" });
 	await expect(earlier.getByRole("listitem")).toHaveCount(1);

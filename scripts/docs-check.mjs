@@ -39,6 +39,7 @@ const requiredHeadings = {
 		"### Analytics Engine queries",
 		"### Compare before and after",
 	],
+	"docs/releasing.md": ["## Changelog fragments", "## Releasing", "### Migrating an open PR", "## After the merge"],
 	"docs/privacy.md": ["## Controller", "## What is stored where", "## Retention", "## Export", "## Deletion"],
 };
 const apiRoutes = new Map();

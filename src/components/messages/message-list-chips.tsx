@@ -26,7 +26,7 @@ function ChipButton({ chip }: { chip: Chip }) {
 	const className = clsx(
 		chipClass,
 		chip.active
-			? "min-w-0 flex-1 bg-blue-500 px-3 text-[#fff]"
+			? "min-w-0 max-w-60 flex-1 bg-blue-500 px-3 text-[#fff]"
 			: "w-8 bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900",
 	);
 	const content = (

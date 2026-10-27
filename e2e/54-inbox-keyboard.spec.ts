@@ -209,7 +209,7 @@ test("the All mail and Unread toggles filter the list", async ({ page }) => {
 	await expect(page.getByRole("button", { name: "Unread", exact: true })).toHaveAttribute("aria-pressed", "true");
 	await expect(rowLink(page, unread)).toBeVisible();
 	await expect(rowLink(page, read)).toHaveCount(0);
-	await page.getByRole("button", { name: "All mail", exact: true }).click();
+	await page.getByRole("button", { name: "Primary", exact: true }).click();
 	await expect(rowLink(page, read)).toBeVisible();
 });
 

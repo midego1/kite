@@ -82,7 +82,7 @@ export function useMessageReply({
 					recipients: getReplyRecipients(replyable, ownAddresses, mode),
 					threading: getReplyThreading(replyable),
 				});
-				openDraftComposer(draftId, { inlineFor });
+				openDraftComposer(draftId, { inlineFor, kind: "reply" });
 			} catch (replyError) {
 				setError(replyError instanceof Error ? replyError.message : "Could not start reply");
 			} finally {
@@ -117,7 +117,7 @@ export function useMessageReply({
 				bodyText,
 				bodyHtml,
 			});
-			openDraftComposer(draftId, { inlineFor });
+			openDraftComposer(draftId, { inlineFor, kind: "forward" });
 		} catch (forwardError) {
 			setError(forwardError instanceof Error ? forwardError.message : "Could not start forward");
 		} finally {

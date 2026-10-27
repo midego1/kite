@@ -244,6 +244,8 @@ test("deleting a page of messages forever shows progress and removes them", asyn
 	await expect(mine.first()).toBeVisible();
 	// Messages arriving in the same instant have no fixed order, so read which ones the page shows.
 	const shown = await mine.allTextContents();
+	// Checkboxes show once Select is on.
+	await page.getByRole("button", { name: "Select", exact: true }).click();
 	await page.getByRole("checkbox", { name: "Select all visible messages" }).check();
 	await page.getByRole("button", { name: "Delete forever" }).click();
 	await page

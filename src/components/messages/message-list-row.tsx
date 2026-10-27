@@ -178,7 +178,11 @@ function WideMessageRow(props: RowViewProps) {
 			<Checkbox
 				checked={selected}
 				{...rowCheckboxHandlers(message.id, props.onSelectedChange)}
-				className="relative z-10"
+				// As in the stacked rows, checkboxes show while selecting, on hover and with keyboard focus.
+				className={clsx(
+					"relative z-10",
+					!props.selecting && !selected && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+				)}
 				aria-label={rowCheckboxLabel(props)}
 			/>
 			{row.starToggle ? (

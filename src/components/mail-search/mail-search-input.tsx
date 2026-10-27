@@ -99,7 +99,7 @@ export function MailSearchInput({ variant = "header" }: { variant?: "header" | "
 						setClosedFor(null);
 						setQuery(event.target.value);
 					}}
-					placeholder={showShortcutHints && !panel ? "Search mail (press / to focus)" : "Search mail"}
+					placeholder={showShortcutHints ? "Search mail (press / to focus)" : "Search mail"}
 					className={searchPillInputClass}
 				/>
 				{query ? (

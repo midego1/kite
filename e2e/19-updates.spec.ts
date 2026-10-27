@@ -9,7 +9,7 @@ const USER_PASSWORD = "updates-user-password-123";
 async function openInbox(page: Page) {
 	const status = page.waitForResponse((response) => response.url().includes(PENDING_API));
 	await page.goto("/inbox");
-	await expect(page.getByRole("button", { name: "Compose", exact: true })).toBeVisible({ timeout: 15_000 });
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 15_000 });
 	await status;
 }
 

@@ -6,8 +6,6 @@ import clsx from "clsx";
 import { ChevronDown, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadModuleClient, suggestionKindModule } from "@/components/modules/client-registry";
-import { useMessageListVisibility } from "@/components/messages/message-list-visibility";
-import { useAssistantOpen } from "./assistant-open-state";
 import { announceSuggestionChange, postSuggestion } from "./suggestion-card-actions";
 import { SuggestionCardMenu } from "./suggestion-card-menu";
 import type { CardSuggestion, ModuleSuggestionCard, SuggestionCardBodyProps } from "./suggestion-card-types";
@@ -133,8 +131,6 @@ function ModuleBlock({
 
 /** The reader card: the conversation summary, then one block per suggestion. */
 export function SuggestionCardBody({ sections, onChanged }: SuggestionCardBodyProps) {
-	const { visible: messageListVisible } = useMessageListVisibility();
-	const assistantOpen = useAssistantOpen();
 	const { summary, blocks, answered } = sections;
 	return (
 		<div className="px-4 pb-5 sm:px-7">

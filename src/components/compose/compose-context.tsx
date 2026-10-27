@@ -5,6 +5,9 @@ import type { ReactNode } from "react";
 
 /** Where the open composer shows: the floating window, or docked in the reader under the message (Zero's reply). */
 export type ComposePlacement = "popup" | "inline";
+/** What a docked draft is, so the reply box under a message resumes only a reply. */
+export type InlineDraftKind = "reply" | "forward";
+type CollapsedDraft = { messageId: string; draftId: string; kind: InlineDraftKind };
 
 type ComposeContextValue = {
 	open: boolean;
@@ -13,14 +16,14 @@ type ComposeContextValue = {
 	/** With an inline placement, the open message whose reader hosts the composer. */
 	inlineFor: string | null;
 	openComposer: () => void;
-	openDraftComposer: (draftId: string, options?: { inlineFor?: string | null }) => void;
+	openDraftComposer: (draftId: string, options?: { inlineFor?: string | null; kind?: InlineDraftKind }) => void;
 	/** Moves the open draft from the reader into the floating composer. */
 	popOut: () => void;
 	closeComposer: () => void;
 	/** Closes a docked reply but remembers its draft, so the reply box under that message resumes it. */
 	collapseInline: () => void;
 	/** The docked reply last collapsed with Esc or Close, by the message it answers. */
-	collapsed: { messageId: string; draftId: string } | null;
+	collapsed: CollapsedDraft | null;
 };
 
 const ComposeContext = createContext<ComposeContextValue | null>(null);
@@ -36,7 +39,8 @@ export function ComposeProvider({ children }: { children: ReactNode }) {
 	const [draftId, setDraftId] = useState<string | null>(null);
 	const [placement, setPlacement] = useState<ComposePlacement>("popup");
 	const [inlineFor, setInlineFor] = useState<string | null>(null);
-	const [collapsed, setCollapsed] = useState<{ messageId: string; draftId: string } | null>(null);
+	const [collapsed, setCollapsed] = useState<CollapsedDraft | null>(null);
+	const [inlineKind, setInlineKind] = useState<InlineDraftKind>("reply");
 	const opener = useRef<HTMLElement | null>(null);
 
 	function rememberOpener() {
@@ -77,6 +81,7 @@ export function ComposeProvider({ children }: { children: ReactNode }) {
 					setDraftId(nextDraftId);
 					setPlacement(options?.inlineFor ? "inline" : "popup");
 					setInlineFor(options?.inlineFor ?? null);
+					setInlineKind(options?.kind ?? "reply");
 					setOpen(true);
 				},
 				popOut: () => {
@@ -88,7 +93,8 @@ export function ComposeProvider({ children }: { children: ReactNode }) {
 					close();
 				},
 				collapseInline: () => {
-					if (placement === "inline" && inlineFor && draftId) setCollapsed({ messageId: inlineFor, draftId });
+					if (placement === "inline" && inlineFor && draftId)
+						setCollapsed({ messageId: inlineFor, draftId, kind: inlineKind });
 					close();
 				},
 			}}

@@ -2270,7 +2270,7 @@ test.describe("reply suggestions", () => {
 			const suggestionsLoaded = page.waitForResponse((response) => response.url().includes("/api/agent/suggestions"));
 			await page.reload();
 			await suggestionsLoaded;
-			await expect(page.getByRole("button", { name: "Show less..." })).toBeVisible();
+			await expect(page.getByRole("button", { name: "Management", expanded: true })).toBeVisible();
 			await expect(page.locator('[data-reorder-list="more"]').first()).toBeVisible();
 			await expect(forYouItem(page)).toHaveCount(0);
 			await okJson(

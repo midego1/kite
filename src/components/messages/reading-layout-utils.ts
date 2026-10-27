@@ -23,8 +23,8 @@ export const READING_PANE_OPTIONS: ReadingLayoutOption<ReadingPaneMode>[] = [
 ];
 
 export const MESSAGE_DENSITY_OPTIONS: ReadingLayoutOption<MessageListDensity>[] = [
-	{ value: "default", label: "Default", description: "Balanced spacing with a preview line." },
-	{ value: "comfortable", label: "Comfortable", description: "More room around every email." },
+	{ value: "default", label: "Default", description: "Balanced spacing with the sender and subject." },
+	{ value: "comfortable", label: "Comfortable", description: "More room around every email, with a preview line." },
 	{ value: "compact", label: "Compact", description: "Fit more emails on screen." },
 ];
 

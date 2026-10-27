@@ -53,7 +53,6 @@ import {
 import { extractCloudAttachments } from "./cloud-attachment-utils";
 import { sanitizeEmailHtml } from "./email-html-sanitizer";
 import { collapseQuotedEmailHtml } from "./quote-collapse-utils";
-import clsx from "clsx";
 import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 import { useMessageContentScroll } from "./use-message-content-scroll";
 
@@ -74,7 +73,7 @@ export default function MessageDetailPage() {
 	const thread = useMessageThread(messageId, data?.message?.threadId);
 	const assistantVisible = useAssistantOpen();
 	const isAnyPanelVisible = messageListVisible || assistantVisible;
-	const { scrollRef, scrolled, handleScroll } = useMessageContentScroll(messageId, loading);
+	const { scrollRef, handleScroll } = useMessageContentScroll(messageId, loading);
 
 	useEffect(() => {
 		let cancelled = false;

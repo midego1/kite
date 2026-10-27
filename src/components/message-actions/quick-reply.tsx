@@ -36,7 +36,8 @@ export function QuickReply({ name, message, body, ownAddress, ownAddresses }: Qu
 	const { collapsed, openDraftComposer } = useCompose();
 	const host = useInlineComposerHost();
 	// A reply collapsed with Esc under this message picks up where it was left.
-	const resume = host && collapsed?.messageId === host.messageId ? collapsed.draftId : null;
+	const resume =
+		host && collapsed?.messageId === host.messageId && collapsed.kind === "reply" ? collapsed.draftId : null;
 	if (message.status === "draft") return null;
 	return (
 		<div className="shrink-0 border-t border-neutral-200 bg-white px-3 py-3 sm:px-6">

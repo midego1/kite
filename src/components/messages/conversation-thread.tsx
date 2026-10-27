@@ -23,8 +23,6 @@ import {
 	partitionThread,
 } from "./conversation-thread-utils";
 import clsx from "clsx";
-import { useMessageListVisibility } from "./message-list-visibility";
-import { useAssistantOpen } from "../agent/assistant-open-state";
 import { SuggestionCard } from "../agent/suggestion-card";
 
 /**
@@ -145,9 +143,6 @@ export function ConversationMessageCard({
 	// const href = `${getMessageBackHref(message.direction, message.status)}/${message.id}`;
 	const outbound = message.direction === "outbound";
 	const attachments = message.attachments.filter((attachment) => attachment.disposition === "attachment");
-	const { visible: messageListVisible } = useMessageListVisibility();
-	const isAssistantOpen = useAssistantOpen();
-	const isAnyPanelVisible = messageListVisible || isAssistantOpen;
 
 	let body: { html: string | null; text: string; quotedHtml: string | null; blockedRemoteImages: number } | null = null;
 	if (expanded) {

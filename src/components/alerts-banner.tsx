@@ -55,7 +55,7 @@ export function AlertsBanner() {
 				<ul className="mt-1 flex flex-col gap-0.5">
 					{data.alerts.map((alert) => (
 						<li key={alert.rule} className="flex min-w-0 items-center gap-1.5">
-							<Link href={alert.href} className={`min-w-0 truncate ${NOTICE_LINK_CLASS}`}>
+							<Link href={alert.href} title={alert.name} className={`min-w-0 truncate ${NOTICE_LINK_CLASS}`}>
 								{alert.name}
 							</Link>
 							<span className="shrink-0 tabular-nums opacity-80">{alert.count}</span>
@@ -67,7 +67,7 @@ export function AlertsBanner() {
 				type="button"
 				aria-label="Dismiss"
 				title="Dismiss"
-				className="-mr-1 -mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-[#f59e0b]/15"
+				className="-mr-1.5 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-[#f59e0b]/15"
 				onClick={() => {
 					storeDismissedSignature(browserStorage(), signature);
 					setDismissed(signature);

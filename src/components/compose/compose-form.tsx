@@ -41,22 +41,20 @@ import { useDraftAutosave } from "./use-draft-autosave";
 import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-send-utils";
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
 import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
+import type { InlineComposerActions } from "./inline-composer-types";
 
 export function ComposeForm({
 	mode = "page",
 	draftIdToLoad,
 	onClose,
-	onPopOut,
-	onSent,
+	inline,
 }: {
 	/** `inline` docks the composer under the open message in the reader (a reply), `popup` floats it. */
 	mode?: "page" | "popup" | "inline";
 	draftIdToLoad?: string | null;
 	onClose?: () => void;
-	/** Inline only: moves the draft into the floating composer once it is saved. */
-	onPopOut?: () => void;
-	/** Inline only: the reply went out (after its undo window); closing otherwise keeps the draft. */
-	onSent?: () => void;
+	/** The docked reply's ways out, by draft id (inline-reply-composer.tsx). */
+	inline?: InlineComposerActions;
 }) {
 	const router = useRouter();
 	const { selectedMailbox, setSelectedMailbox, mailboxes } = useSelectedMailbox();
@@ -102,6 +100,7 @@ export function ComposeForm({
 	const [undoRequestedWhileSending, setUndoRequestedWhileSending] = useState(false);
 	// An inline reply that went out: hidden while it sends and undo is offered, then collapsed.
 	const [sentInline, setSentInline] = useState(false);
+	const sentDraftId = useRef<string | null>(null);
 	const undoRequested = useRef(false);
 	const attachmentInput = useRef<HTMLInputElement | null>(null);
 	const fileDragDepth = useRef(0);
@@ -205,8 +204,15 @@ export function ComposeForm({
 
 	// The sent inline reply collapses once its undo window and confirmation are over.
 	useEffect(() => {
-		if (sentInline && !sending && !pendingUndo && !toast) (onSent ?? onClose)?.();
-	}, [sentInline, sending, pendingUndo, toast, onSent, onClose]);
+		if (sentInline && !sending && !pendingUndo && !toast) inline?.finish(sentDraftId.current);
+	}, [sentInline, sending, pendingUndo, toast, inline]);
+
+	// While it sends or offers undo, a docked reply must outlive its reader.
+	const inlineBusy = !!sending || sentInline || !!pendingUndo;
+	const busyChange = inline?.busyChange;
+	useEffect(() => {
+		busyChange?.(inlineBusy);
+	}, [busyChange, inlineBusy]);
 
 	useEffect(() => {
 		if (!toast) return;
@@ -388,6 +394,7 @@ export function ComposeForm({
 		setPreviewOpen(false);
 		setSending({ undoable: !scheduledAt && sendingSettings.undoSeconds > 0 });
 		setSentInline(mode === "inline");
+		sentDraftId.current = currentDraftId;
 		resetComposer();
 
 		let data: { messageId?: string; scheduled?: boolean; undoUntil?: string; error?: string };
@@ -479,6 +486,7 @@ export function ComposeForm({
 		// further edits and a later send use its stored attachments.
 		restoreComposer(pending.snapshot, data.draftId);
 		setSentInline(false);
+		inline?.undone(data.draftId);
 		setAttachments([]);
 		await loadStoredAttachments(data.draftId);
 		setToast({ type: "success", message: "Sending undone" });
@@ -523,6 +531,11 @@ export function ComposeForm({
 		resetComposer();
 		window.dispatchEvent(new Event("kite:messages-changed"));
 
+		// A deleted reply is gone; nothing may offer to resume it.
+		if (inline) {
+			inline.finish(id);
+			return;
+		}
 		if (onClose) {
 			onClose();
 			return;
@@ -664,7 +677,9 @@ export function ComposeForm({
 					onClose={() => setAgentReview(null)}
 					onSent={() => {
 						setAgentReview(null);
-						if (onClose) onClose();
+						// A sent docked reply is finished, never resumable.
+						if (inline) inline.finish(draftSaves.draftId ?? draftId);
+						else if (onClose) onClose();
 						else router.push("/sent");
 					}}
 				/>
@@ -730,10 +745,10 @@ export function ComposeForm({
 					if (modalMode && !minimized) {
 						event.preventDefault();
 						setModalMode(false);
-					} else if (mode === "inline" && onClose) {
+					} else if (inline) {
 						// Collapses the reply; the autosave keeps the draft.
 						event.preventDefault();
-						onClose();
+						inline.collapse(draftSaves.draftId ?? draftId);
 					}
 				}}
 				onDragEnterCapture={minimized ? undefined : onFileDragEnter}
@@ -763,8 +778,8 @@ export function ComposeForm({
 						if (minimized) setMinimized(false);
 						setModalMode((current) => !current);
 					}}
-					onPopOut={() => void flush().then(() => onPopOut?.())}
-					onClose={onClose}
+					onPopOut={() => void flush().then(() => inline?.popOut(draftSaves.draftId ?? draftId))}
+					onClose={inline ? () => inline.collapse(draftSaves.draftId ?? draftId) : onClose}
 				/>
 				<div className={cn("flex min-h-0 flex-1 flex-col", minimized && "hidden")}>
 					{/* An inline reply shows only its recipients and body, as Zero's; From and Subject stay in the form. */}

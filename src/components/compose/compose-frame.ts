@@ -26,9 +26,10 @@ export function useComposerBesideAssistant(
 }
 
 function baseFrameClass({ mode, minimized, modalMode }: ComposeFrameState) {
-	// Docked under the open message, as Zero's reply composer: a bordered card at the bottom of the reader.
+	// Docked under the open message, as Zero's reply composer: a bordered card at the bottom of the reader. It does
+	// not clip: Write with Kite's panel opens above the toolbar and may reach over the message (the editor scrolls).
 	if (mode === "inline")
-		return "relative mx-3 mb-3 flex h-[min(440px,55vh)] shrink-0 flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm sm:mx-6";
+		return "relative mx-3 mb-3 flex h-[min(440px,55vh)] shrink-0 flex-col rounded-xl border border-neutral-200 bg-white shadow-sm sm:mx-6";
 	if (mode !== "popup")
 		return "relative flex h-full min-h-[720px] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm";
 	if (minimized)

@@ -7,7 +7,8 @@ import { useSidebar } from "./sidebar-state";
 
 /**
  * The operational and setup notices, rendered once: above Settings in the expanded sidebar, or over the page
- * on phones and while the sidebar is the icon rail, where they would not fit.
+ * on phones and while the sidebar is the icon rail, where they would not fit. In the sidebar they scroll past a
+ * third of the window, so they never squeeze the menu.
  */
 export function DashboardNotices({ slot }: { slot: "sidebar" | "page" }) {
 	const { mobile, minimal } = useSidebar();
@@ -16,7 +17,9 @@ export function DashboardNotices({ slot }: { slot: "sidebar" | "page" }) {
 	return (
 		<div
 			className={
-				slot === "sidebar" ? "mb-2 flex flex-col gap-2 empty:hidden" : "flex flex-col gap-2 px-2 pb-2 empty:hidden"
+				slot === "sidebar"
+					? "mb-2 flex max-h-[35vh] flex-col gap-2 overflow-y-auto empty:hidden"
+					: "flex flex-col gap-2 px-2 pb-2 empty:hidden"
 			}
 		>
 			<AlertsBanner />

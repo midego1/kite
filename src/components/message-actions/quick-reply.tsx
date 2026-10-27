@@ -35,15 +35,25 @@ export function QuickReply({ name, message, body, ownAddress, ownAddresses }: Qu
 	});
 	const { collapsed, openDraftComposer } = useCompose();
 	const host = useInlineComposerHost();
-	// A reply collapsed with Esc under this message picks up where it was left.
+	// A reply to this message collapsed with Esc in this reader picks up where it was left.
 	const resume =
-		host && collapsed?.messageId === host.messageId && collapsed.kind === "reply" ? collapsed.draftId : null;
+		host &&
+		collapsed?.messageId === host.messageId &&
+		collapsed.source === message.id &&
+		(collapsed.kind === "reply" || collapsed.kind === "replyAll")
+			? collapsed
+			: null;
 	if (message.status === "draft") return null;
 	return (
 		<div className="shrink-0 border-t border-neutral-200 bg-white px-3 py-3 sm:px-6">
 			<button
 				type="button"
-				onClick={() => (resume ? openDraftComposer(resume, { inlineFor: host?.messageId }) : void reply("reply"))}
+				data-reply-box=""
+				onClick={() =>
+					resume
+						? openDraftComposer(resume.draftId, { inlineFor: host?.messageId, kind: resume.kind, source: message.id })
+						: void reply("reply")
+				}
 				disabled={pending !== null}
 				className="flex w-full items-center gap-2.5 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-left text-sm text-neutral-500 transition-colors hover:border-blue-300 hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-60"
 			>

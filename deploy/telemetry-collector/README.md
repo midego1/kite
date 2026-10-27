@@ -98,6 +98,10 @@ Anyone can post a heartbeat, so the figures are indicative: a bogus install infl
 
 ## Deploy
 
+**Status:** deployed at `https://kite-telemetry.midego.net` (October 2026), with the D1 database `kite-telemetry` (`database_id` in `wrangler.jsonc`), both migrations applied, `STATS_TOKEN` set and the custom domain live. To ship a change, redeploy with step 4 (and step 2 when there is a new migration); steps 1 and 3 are done.
+
+`src/index.ts` is the Worker entrypoint and must export only `default`: workerd treats every named export of the main module as an entrypoint and refuses the Worker (error 1101) when one is not a handler. Everything else lives in `src/collector.ts`. Keep every statement to at most five compound `SELECT` terms (`UNION ALL`), D1's limit; local SQLite allows far more. `tests/telemetry-collector.test.mjs` checks both.
+
 The collector is deployed by hand from this directory; nothing in CI deploys it. You need the Cloudflare account that holds the `midego.net` zone, with Wrangler logged in to it (`npx wrangler login`).
 
 `kite-telemetry.midego.net` currently resolves through the `*.midego.net` wildcard record to another server. That is fine: the Worker custom domain in `wrangler.jsonc` (`routes` with `custom_domain: true`) creates a proxied record for exactly `kite-telemetry.midego.net` with its own certificate, and an exact record takes precedence over a wildcard. Do not create a DNS record for that name by hand; if one exists (not the wildcard), delete it first, or the deploy refuses the custom domain.
@@ -111,7 +115,7 @@ From the repository root. Every Wrangler command passes `--config wrangler.jsonc
 cd deploy/telemetry-collector
 npm install --no-package-lock
 
-# 1. The database. Copy the printed database_id into wrangler.jsonc, replacing REPLACE_WITH_YOUR_D1_DATABASE_ID
+# 1. The database (done: its database_id is in wrangler.jsonc). For a fresh collector elsewhere, put the printed id there
 #    (answer "no" if Wrangler offers to add a new binding itself: the DB binding is already there).
 npx wrangler d1 create kite-telemetry --config wrangler.jsonc
 
@@ -134,7 +138,7 @@ curl -i https://kite-telemetry.midego.net/v1/summary   # HTTP/2 200, {"generated
 
 If `curl` reports a certificate problem or the old server answers, the certificate or DNS is still being issued; wait a few minutes and try again (`dig +short kite-telemetry.midego.net` should show Cloudflare addresses, not `159.195.70.154`).
 
-The `database_id` is not a secret: commit it in a pull request so later deploys use the same database. The `STATS_TOKEN` must never be committed. Read the statistics with `curl -H "Authorization: Bearer $STATS_TOKEN" https://kite-telemetry.midego.net/v1/stats`, and never paste the token into issues, pull requests or chat.
+The `database_id` is not a secret and is committed. The `STATS_TOKEN` must never be committed. Read the statistics with `curl -H "Authorization: Bearer $STATS_TOKEN" https://kite-telemetry.midego.net/v1/stats`, and never paste the token into issues, pull requests or chat.
 
 Installs that opted in start reporting at their next 02:00 UTC run once this is live; until then their heartbeats fail and are not retried that day.
 
@@ -144,4 +148,4 @@ To run a collector somewhere else (a fork, a test), change `name`, `routes` and 
 
 ## Tests
 
-`node --test tests/telemetry-collector.test.mjs` from the repository root (part of the app's `npm run test:app`) covers the validator, storage, erasure and its rate limit, the summary (small-count suppression, the 10-install threshold, the stored copy), stats and the 90-day roll-up against SQLite. `npm run typecheck` here type-checks the Worker, and `npx wrangler deploy --config wrangler.jsonc --dry-run` builds it without uploading.
+`node --test tests/telemetry-collector.test.mjs` from the repository root (part of the app's `npm run test:app`) covers the validator, storage, erasure and its rate limit, the summary (small-count suppression, the 10-install threshold, the stored copy), stats and the 90-day roll-up against SQLite. It also checks that `src/index.ts` exports only `default` and that no statement exceeds D1's compound-SELECT limit. `npm run typecheck` here type-checks the Worker, and `npx wrangler deploy --config wrangler.jsonc --dry-run` builds it without uploading.

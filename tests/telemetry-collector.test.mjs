@@ -13,7 +13,8 @@ after(() => rmSync(outDir, { recursive: true, force: true }));
 
 await build({
 	entryPoints: {
-		collector: join(collectorDir, "src/index.ts"),
+		worker: join(collectorDir, "src/index.ts"),
+		collector: join(collectorDir, "src/collector.ts"),
 		validate: join(collectorDir, "src/validate.ts"),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 	},
@@ -28,14 +29,23 @@ await build({
 	packages: "external",
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
-const {
-	default: collector,
-	rollUpOldDays,
-	RAW_RETENTION_DAYS,
-	MIN_PUBLIC_INSTALLS,
-	SMALL_CELL,
-} = await load("collector");
+const worker = await load("worker");
+const { default: collector } = worker;
+const { rollUpOldDays, RAW_RETENTION_DAYS, MIN_PUBLIC_INSTALLS, SMALL_CELL } = await load("collector");
 const { parseHeartbeat } = await load("validate");
+
+test("the Worker entrypoint exports only its default handler", () => {
+	// workerd treats every named export of the main module as an entrypoint and refuses the Worker (error 1101)
+	// when one is not a handler, such as a constant.
+	assert.deepEqual(Object.keys(worker), ["default"]);
+	assert.equal(typeof collector.fetch, "function");
+	assert.equal(typeof collector.scheduled, "function");
+	const source = readFileSync(join(collectorDir, "src/index.ts"), "utf8");
+	assert.deepEqual(
+		source.match(/^export\b.*$/gm).map((line) => line.split(/\s+/).slice(0, 2).join(" ")),
+		["export default"],
+	);
+});
 const { SqliteDatabase } = await load("runtime");
 
 const TOKEN = "test-only-stats-token";
@@ -425,4 +435,37 @@ test("after 90 days daily rows become aggregates without install ids", async (t)
 		{ day: old, installs: 2 },
 		{ day: daysAgo(95), installs: 1 },
 	]);
+});
+
+test("no statement has more compound terms than D1 allows", async (t) => {
+	// D1 refuses a compound SELECT with more than five terms; local SQLite allows 500, so count them here.
+	const { sqlite, env } = await setup(t);
+	seedPublic(sqlite);
+	const statements = [];
+	const recording = {
+		...env,
+		DB: new Proxy(sqlite, {
+			get(target, property) {
+				if (property === "prepare")
+					return (sql) => {
+						statements.push(sql);
+						return target.prepare(sql);
+					};
+				const value = target[property];
+				return typeof value === "function" ? value.bind(target) : value;
+			},
+		}),
+	};
+	await collector.fetch(post(heartbeat()), recording);
+	await get(recording, "/v1/summary");
+	await get(recording, "/v1/stats", TOKEN);
+	await erase(recording, INSTALL_ID);
+	const pending = [];
+	await collector.scheduled({ scheduledTime: Date.now() }, recording, {
+		waitUntil: (promise) => pending.push(promise),
+	});
+	await Promise.all(pending);
+	assert.ok(statements.length > 10);
+	for (const sql of statements)
+		assert.ok((sql.match(/\b(UNION|INTERSECT|EXCEPT)\b/gi) ?? []).length + 1 <= 5, sql.slice(0, 120));
 });

@@ -40,6 +40,7 @@ export async function parseSendRequest(request: Request): Promise<SendRequestPay
 		text: getOptionalFormValue(form, "text"),
 		html: getOptionalFormValue(form, "html"),
 		mailboxId: getOptionalFormValue(form, "mailboxId"),
+		aiAssisted: getOptionalFormValue(form, "aiAssisted"),
 		attachments,
 	};
 }

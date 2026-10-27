@@ -3,10 +3,11 @@ interface CloudflareEnv {
 	EMAIL: SendEmail;
 	BUCKET: R2Bucket;
 	INBOUND_QUEUE: Queue<import("./src/lib/email/inbound").InboundQueueMessage>;
-	// The agent queue also carries background IMAP import jobs.
+	// The agent queue also carries writing style backfills and background IMAP import jobs.
 	AGENT_QUEUE?: Queue<
 		| { kind: "agent.draft"; jobId: string }
 		| { kind: "agent.triage"; jobId: string }
+		| import("./src/lib/agent/writing-style").StyleBackfillMessage
 		| import("./src/lib/import/jobs").ImportJobQueueMessage
 	>;
 	AI?: Ai;

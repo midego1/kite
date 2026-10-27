@@ -30,6 +30,8 @@ export type ComposePromptInput = {
 	mailboxAddress: string;
 	instructions: { general: string; draft: string };
 	personal: PersonalInstructions | null;
+	/** The composing user's writing style; none for spelling fixes and translations, which keep the text's voice. */
+	writingStyle?: string | null;
 	nonce?: string;
 };
 

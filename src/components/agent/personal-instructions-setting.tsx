@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { InstructionSet } from "@/lib/agent/instruction-types";
 import { InstructionFields } from "./instruction-fields";
+import { WritingStyleSetting } from "./writing-style-setting";
 import { overLimit } from "./instruction-fields-utils";
 import {
 	loadPersonalInstructions,
@@ -59,47 +60,50 @@ export function PersonalInstructionsSetting() {
 	}
 
 	return (
-		<section
-			aria-labelledby="personal-instructions-heading"
-			className="space-y-2 rounded-2xl border border-neutral-200 p-3"
-		>
-			<p id="personal-instructions-heading" className="font-medium text-neutral-800">
-				My instructions
-			</p>
-			<p className="text-xs text-neutral-500">
-				Your own preferences, used in every mailbox you work in and never shown to anyone else. A mailbox&apos;s
-				instructions come first and win.
-			</p>
-			{saved && !saved.ready && (
-				<p className="text-xs text-amber-700">Apply the pending database update to use your own instructions.</p>
-			)}
-			{values && (
-				<InstructionFields
-					idPrefix="personal-instructions"
-					values={values}
-					limits={limits}
-					disabled={!saved?.ready || saving}
-					onChange={(key, value) => {
-						setValues({ ...values, [key]: value });
-						setMessage(null);
-					}}
-				/>
-			)}
-			<div className="flex items-center gap-3">
-				<Button
-					type="button"
-					size="sm"
-					disabled={invalid || unchanged || saving || !saved?.ready}
-					onClick={() => void save()}
-				>
-					Save my instructions
-				</Button>
-				{message && (
-					<span role="status" className={`text-xs ${message.tone === "error" ? "text-red-600" : "text-neutral-500"}`}>
-						{message.text}
-					</span>
+		<>
+			<section
+				aria-labelledby="personal-instructions-heading"
+				className="space-y-2 rounded-2xl border border-neutral-200 p-3"
+			>
+				<p id="personal-instructions-heading" className="font-medium text-neutral-800">
+					My instructions
+				</p>
+				<p className="text-xs text-neutral-500">
+					Your own preferences, used in every mailbox you work in and never shown to anyone else. A mailbox&apos;s
+					instructions come first and win.
+				</p>
+				{saved && !saved.ready && (
+					<p className="text-xs text-amber-700">Apply the pending database update to use your own instructions.</p>
 				)}
-			</div>
-		</section>
+				{values && (
+					<InstructionFields
+						idPrefix="personal-instructions"
+						values={values}
+						limits={limits}
+						disabled={!saved?.ready || saving}
+						onChange={(key, value) => {
+							setValues({ ...values, [key]: value });
+							setMessage(null);
+						}}
+					/>
+				)}
+				<div className="flex items-center gap-3">
+					<Button
+						type="button"
+						size="sm"
+						disabled={invalid || unchanged || saving || !saved?.ready}
+						onClick={() => void save()}
+					>
+						Save my instructions
+					</Button>
+					{message && (
+						<span role="status" className={`text-xs ${message.tone === "error" ? "text-red-600" : "text-neutral-500"}`}>
+							{message.text}
+						</span>
+					)}
+				</div>
+			</section>
+			<WritingStyleSetting />
+		</>
 	);
 }

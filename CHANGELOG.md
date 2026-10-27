@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Kite has a new look, after [Zero](https://0.email): neutral grey in place of lavender, one blue accent, the Geist typeface, and dark by default. Pick Light or Match system in [Settings → Appearance](/settings/appearance), where the earlier lavender look stays available as **Kite classic** (also a switch at the bottom of the sidebar).
+- The mailbox sits in rounded panels beside the sidebar. The sidebar starts with your mailboxes as squares, then **New email**, the **Core** folders, a folding **Management** section (Archived, Spam, Trash) and your folders, with **Settings** and **Support** at the bottom.
+- The message list has its own search field and a row of chips: **Primary** (everything), **Unread**, **Attachments** and **Starred**, plus Snoozed and, when it is on, the Screener. In the Inbox, starred mail is pinned at the top. Rows show the sender's avatar with the unread dot, the conversation size, the date and the subject; checkboxes appear once you choose **Select**.
+- The open email shows the subject with the conversation's size, its dates and its people, each message as a section with **Reply** and **Forward** under it, attachments as chips, and the toolbar's actions as square buttons with **Reply all**.
+- Replying no longer opens a separate window: the reply box, **Reply**, **Reply all**, **Forward** and the `r`, `a` and `f` keys open the composer under the message, with the body ready to type in. Escape closes it and keeps the draft, which the reply box picks up again; **Pop out** moves it into the floating composer. Phones keep the full-screen composer.
+- Operational alerts, pending database updates and skipped DNS setups are now small notices in the sidebar above Settings (over the page on phones), instead of a bar across the top.
+
 ## [2026.10.26.7] - 2026-10-26
 
 ### Changed

@@ -113,7 +113,7 @@ export function MessageDetailNavigation({ messageId, unread }: MessageDetailNavi
 	if (!context) return null;
 
 	return (
-		<div className="ml-auto flex shrink-0 items-center gap-1 text-neutral-500 sm:gap-2">
+		<div className="flex shrink-0 items-center gap-1 text-neutral-500">
 			{totalUnread > 0 && (
 				<span className="mr-2 whitespace-nowrap text-xs max-sm:sr-only" aria-live="polite">
 					{unreadOrder} of {totalUnread} unread

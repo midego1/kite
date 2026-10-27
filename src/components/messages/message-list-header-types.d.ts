@@ -23,6 +23,10 @@ export type MessageListHeaderProps = {
 		run: (action: BulkMessageAction, folderId?: string) => Promise<void>;
 		clear: () => void;
 	};
+	/** Whether the rows show their checkboxes (Zero's "Select"). */
+	selecting: { value: boolean; onChange: (value: boolean) => void };
+	/** Whether the Inbox's chips link to the Screener. */
+	screenerVisible: boolean;
 	filter: { value: MessageListFilter; onChange: (value: MessageListFilter) => void } | null;
 	pager: {
 		range: PageRange;

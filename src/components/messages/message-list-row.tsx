@@ -3,8 +3,10 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { Archive, Mail, MailOpen } from "lucide-react";
+import { ContactAvatar } from "@/components/contacts/contact-avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScreenerRowControls } from "@/components/screener/screener-row-controls";
+import { splitEmailAddressList } from "@/lib/email/address";
 import { setMessageDragData } from "@/lib/messages/drag-utils";
 import { MessageListRowActions } from "./message-list-row-actions";
 import { MessageNavigationProgress } from "./message-navigation";
@@ -34,33 +36,106 @@ function rowCheckboxLabel({ config, row }: Pick<RowViewProps, "config" | "row">)
 		: `Select message from ${row.party}`;
 }
 
-/** The row of the list beside a reading pane (and on phones): sender and date, subject, preview, badges. */
+/** The address whose avatar a row shows: the first recipient in Sent, otherwise the sender. */
+function rowAvatarAddress(message: RowViewProps["message"], folder: string) {
+	return folder === "sent" ? (splitEmailAddressList(message.toAddr)[0] ?? message.toAddr) : message.fromAddr;
+}
+
+/** The avatar with its unread dot, which the selection checkbox replaces while selecting. */
+function RowAvatar({ showCheckbox, ...props }: RowViewProps & { showCheckbox: boolean }) {
+	const { message, config, selected, row } = props;
+	return (
+		<span className="relative h-9 w-9 self-start">
+			<ContactAvatar
+				mailboxId={message.mailboxId}
+				address={rowAvatarAddress(row.rowMessage, config.folder)}
+				name={row.party}
+				hasManagedAvatar={config.folder !== "sent" && message.fromContactHasAvatar}
+				className={clsx("h-9 w-9 text-sm", showCheckbox && "opacity-0", "group-has-[:focus-visible]:opacity-0")}
+			/>
+			{row.unread && !showCheckbox && (
+				<span
+					aria-hidden="true"
+					className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)]"
+				/>
+			)}
+			<span
+				className={clsx(
+					"absolute inset-0 flex items-center justify-center",
+					!showCheckbox && "opacity-0",
+					"group-has-[:focus-visible]:opacity-100",
+				)}
+			>
+				<Checkbox
+					checked={selected}
+					{...rowCheckboxHandlers(message.id, props.onSelectedChange)}
+					aria-label={rowCheckboxLabel(props)}
+				/>
+			</span>
+		</span>
+	);
+}
+
+/** The star in the row's bottom corner: shown when starred, on hover and with keyboard focus. */
+function RowCornerStar({
+	row,
+	icon,
+	hoverActions,
+}: {
+	row: RowState;
+	icon: MessageListRowProps["config"]["icon"];
+	hoverActions: boolean;
+}) {
+	if (!row.starToggle) return null;
+	const Icon = icon;
+	// With hover actions the toggle lives in their pill; the corner then only marks a starred row at rest.
+	if (hoverActions)
+		return row.starred ? (
+			<span
+				aria-hidden="true"
+				className="absolute bottom-1 right-1 group-hover:hidden group-has-[:focus-visible]:hidden"
+			>
+				<Icon className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+			</span>
+		) : null;
+	return (
+		<span
+			className={clsx(
+				"absolute bottom-0 right-0",
+				!row.starred && "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
+			)}
+		>
+			<MessageRowStar starred={row.starred} compact icon={icon} onToggle={row.toggleStar} />
+		</span>
+	);
+}
+
+/**
+ * The row of the list beside a reading pane (and on phones), after Zero's: a round avatar carrying the unread
+ * dot, the sender with the conversation count and the date, the subject as a muted second line and the badges
+ * as small icons. The checkbox takes the avatar's place while selecting; it stays in the tab order and shows
+ * when focused.
+ */
 function StackedMessageRow(props: RowViewProps) {
 	const { message, config, selected, active = false, density = "default", hoverActions = true, row } = props;
 	const stackedDensity = getStackedRowDensity(density);
 	const showHoverActions = row.hasRowActions && hoverActions;
+	const showCheckbox = props.selecting || selected;
 	const Icon = config.icon;
 	return (
 		<div
 			data-message-row={message.id}
 			role={row.hasRowActions ? undefined : "listitem"}
 			className={clsx(
-				"group relative mx-2 grid grid-cols-[16px_minmax(0,1fr)] gap-x-3 rounded-lg px-3 transition-colors",
+				"group relative mx-2 grid grid-cols-[36px_minmax(0,1fr)] items-center gap-x-3 rounded-lg px-3 transition-colors",
 				stackedDensity.rowClassName,
-				active ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : selected ? "bg-neutral-100" : "hover:bg-neutral-50",
+				active || selected ? "bg-neutral-100" : "hover:bg-neutral-100/60",
 				row.draggable && "cursor-grab active:cursor-grabbing",
 			)}
 			{...dragHandlers(row, props.dragMessageIds)}
 		>
 			<MessageNavigationProgress progress={row.navigation.progress} />
-			<span className="flex flex-col items-center gap-1.5 pt-0.5">
-				<Checkbox
-					checked={selected}
-					{...rowCheckboxHandlers(message.id, props.onSelectedChange)}
-					aria-label={rowCheckboxLabel(props)}
-				/>
-				{row.starToggle && <MessageRowStar starred={row.starred} compact icon={Icon} onToggle={row.toggleStar} />}
-			</span>
+			<RowAvatar {...props} showCheckbox={showCheckbox} />
 			<div className="relative min-w-0">
 				<Link
 					href={row.href}
@@ -70,53 +145,55 @@ function StackedMessageRow(props: RowViewProps) {
 				>
 					<span
 						className={clsx(
-							"flex items-center justify-between gap-3",
-							showHoverActions && "group-hover:pr-[6.75rem] group-has-[:focus-visible]:pr-[6.75rem]",
+							"flex items-baseline justify-between gap-3",
+							showHoverActions && "group-hover:pr-[9.25rem] group-has-[:focus-visible]:pr-[9.25rem]",
 						)}
 					>
-						<span className="flex min-w-0 items-center gap-1.5">
-							<UnreadDot unread={row.unread} />
-							<MessageRowParty
-								party={row.party}
-								unread={row.unread}
-								threadCount={message.threadCount}
-								suggestions={message.agentSuggestions}
-								className={clsx("min-w-0 truncate", getMessagePartyClassName(row.rowMessage, config.folder))}
-								countClassName="font-normal"
-							/>
-						</span>
+						<MessageRowParty
+							party={row.party}
+							unread={row.unread}
+							threadCount={message.threadCount}
+							suggestions={message.agentSuggestions}
+							className={clsx("min-w-0 truncate text-sm", getMessagePartyClassName(row.rowMessage, config.folder))}
+							countClassName="font-normal"
+						/>
 						<time
 							dateTime={message.createdAt}
 							className={clsx(
-								row.unread ? "font-medium text-neutral-900" : "text-neutral-500",
-								"shrink-0 text-[11px]",
+								"shrink-0 text-xs text-neutral-500",
 								showHoverActions && "group-hover:hidden group-has-[:focus-visible]:hidden",
 							)}
 						>
 							{formatMessageListTimestamp(message.createdAt)}
 						</time>
 					</span>
-					<span
-						dir="auto"
-						className={clsx(
-							"mt-0.5 block truncate pl-3.5 text-[13px]",
-							row.unread ? "font-semibold text-neutral-900" : "text-neutral-700",
-						)}
-					>
-						{row.rowMessage.subject ?? "(no subject)"}
+					<span className="mt-0.5 flex items-center gap-2">
+						<span
+							dir="auto"
+							className={clsx("min-w-0 flex-1 truncate text-sm", row.unread ? "text-neutral-700" : "text-neutral-500")}
+						>
+							{row.rowMessage.subject ?? "(no subject)"}
+						</span>
+						{props.mailboxLabel}
+						<MessageRowBadges message={row.rowMessage} folder={config.folder} />
+						{row.starToggle && <span className="w-5 shrink-0" />}
 					</span>
 					{stackedDensity.showPreview && (
-						<span dir="auto" className="mt-0.5 line-clamp-2 pl-3.5 text-xs leading-5 text-neutral-500">
+						<span dir="auto" className="mt-0.5 block truncate text-xs text-neutral-500">
 							{row.preview}
 						</span>
 					)}
-					<span className="block pl-3.5">
-						{props.mailboxLabel}
-						<MessageRowBadges message={row.rowMessage} folder={config.folder} />
-					</span>
 				</Link>
+				<RowCornerStar row={row} icon={Icon} hoverActions={showHoverActions} />
 				<ScreenerRowControls message={row.rowMessage} compact />
-				{showHoverActions && <MessageListRowActions message={row.rowMessage} onAction={row.runRowAction} compact />}
+				{showHoverActions && (
+					<MessageListRowActions
+						message={row.rowMessage}
+						onAction={row.runRowAction}
+						compact
+						star={row.starToggle ? { starred: row.starred, icon: Icon, onToggle: row.toggleStar } : undefined}
+					/>
+				)}
 			</div>
 		</div>
 	);
@@ -131,9 +208,9 @@ function WideMessageRow(props: RowViewProps) {
 			data-message-row={message.id}
 			role="listitem"
 			className={clsx(
-				"group relative grid w-full grid-cols-[24px_32px_minmax(160px,260px)_1fr_auto] items-center gap-3 px-6 text-left text-sm hover:z-10 hover:bg-[#f2f6fc] hover:shadow-sm has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-inset has-[a:focus-visible]:ring-blue-600",
+				"group relative mx-2 grid grid-cols-[24px_32px_28px_minmax(140px,240px)_1fr_auto] items-center gap-3 rounded-lg px-4 text-left text-sm hover:z-10 hover:bg-neutral-100/70 has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-inset has-[a:focus-visible]:ring-blue-600",
 				getWideRowDensity(density).rowClassName,
-				(active || selected) && "bg-blue-50",
+				(active || selected) && "bg-blue-50 hover:bg-blue-50",
 				row.draggable && "cursor-grab active:cursor-grabbing",
 			)}
 			{...dragHandlers(row, props.dragMessageIds)}
@@ -142,7 +219,11 @@ function WideMessageRow(props: RowViewProps) {
 			<Checkbox
 				checked={selected}
 				{...rowCheckboxHandlers(message.id, props.onSelectedChange)}
-				className="relative z-10"
+				// As in the stacked rows, checkboxes show while selecting, on hover and with keyboard focus.
+				className={clsx(
+					"relative z-10",
+					!props.selecting && !selected && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+				)}
 				aria-label={rowCheckboxLabel(props)}
 			/>
 			{row.starToggle ? (
@@ -150,8 +231,14 @@ function WideMessageRow(props: RowViewProps) {
 			) : (
 				<Icon className="h-4 w-4 text-neutral-300" />
 			)}
+			<ContactAvatar
+				mailboxId={message.mailboxId}
+				address={rowAvatarAddress(row.rowMessage, config.folder)}
+				name={row.party}
+				hasManagedAvatar={config.folder !== "sent" && message.fromContactHasAvatar}
+				className="h-7 w-7 text-xs"
+			/>
 			<span className="flex min-w-0 items-center gap-1.5">
-				<UnreadDot unread={row.unread} />
 				<MessageRowParty
 					party={row.party}
 					unread={row.unread}
@@ -160,6 +247,7 @@ function WideMessageRow(props: RowViewProps) {
 					className={getMessagePartyClassName(row.rowMessage, config.folder)}
 					countClassName=""
 				/>
+				<UnreadDot unread={row.unread} />
 			</span>
 			<span className="truncate text-neutral-700">
 				{/* The overlay stretches the link over the whole row, so a click anywhere opens the message
@@ -172,7 +260,7 @@ function WideMessageRow(props: RowViewProps) {
 					className="after:absolute after:inset-0 focus-visible:outline-none"
 				>
 					{props.mailboxLabel}
-					<span dir="auto" className={row.unread ? "font-semibold text-neutral-900" : ""}>
+					<span dir="auto" className={row.unread ? "font-medium text-neutral-900" : ""}>
 						{row.rowMessage.subject ?? "(no subject)"}
 					</span>
 					<span dir="auto" className="text-neutral-500">
@@ -185,7 +273,7 @@ function WideMessageRow(props: RowViewProps) {
 				dateTime={message.createdAt}
 				className={clsx(
 					"min-w-[96px] whitespace-nowrap text-right text-xs group-hover:opacity-0",
-					row.unread ? "font-semibold text-neutral-800" : "text-neutral-500",
+					row.unread ? "font-medium text-neutral-900" : "text-neutral-500",
 				)}
 			>
 				{formatMessageListTimestamp(message.createdAt)}

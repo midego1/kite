@@ -55,10 +55,11 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 	const classes = cn(
 		"flex h-9 items-center gap-3 rounded-lg text-sm text-neutral-700 transition-colors max-md:min-h-11 max-md:text-base",
 		minimal && "relative mx-auto w-10 justify-center rounded-full px-0",
-		active ? "bg-blue-100 text-blue-900 font-semibold" : "hover:bg-neutral-200/60",
+		active ? "bg-blue-100 text-blue-900 font-medium" : "hover:bg-neutral-200/60 hover:text-neutral-900",
 		dragOver && "bg-blue-50 text-blue-900 ring-1 ring-blue-200",
-		link.primary && "mb-3 h-10 rounded-xl bg-blue-600 px-3 font-semibold text-white shadow-sm hover:bg-blue-700",
-		link.count && "font-semibold",
+		// Zero's "New email": a full-width muted button rather than a coloured slab.
+		link.primary &&
+			"mb-2 h-9 justify-center rounded-lg border border-neutral-200 bg-neutral-100 px-3 font-medium text-neutral-900 hover:bg-neutral-200",
 		link.primary && minimal && "h-10 w-10 rounded-xl px-0",
 		wrap && !minimal && "h-auto min-h-9 items-start py-2",
 	);
@@ -85,18 +86,15 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 			<button
 				type="button"
 				onClick={openComposer}
-				className={cn(!minimal && "ml-3 text-left", classes)}
-				aria-label={minimal ? link.label : undefined}
+				className={cn(!minimal && "ml-3", classes)}
+				// "Compose" stays in the name, which is what the shortcut help, tests and screen reader users know.
+				aria-label={`Compose ${(link.label ?? "").toLowerCase()}`}
 				{...dropProps}
 			>
-				<Icon size={19} style={{ color: link.iconColor }} className={iconClassName} />
-				{!minimal && (
-					<span className={cn("flex-1", typeof link.count === "number" && link.count > 0 && "font-semibold")}>
-						{link.label}
-					</span>
-				)}
+				<Icon size={16} style={{ color: link.iconColor }} className={iconClassName} />
+				{!minimal && <span>{link.label}</span>}
 				{!minimal && typeof link.count === "number" && link.count > 0 && (
-					<span className="ml-auto mr-3 rounded-full px-2 py-0.5 text-sm font-semibold text-neutral-700">
+					<span className="ml-auto mr-1 text-xs font-medium tabular-nums text-neutral-500">
 						{link.count > 99 ? "99+" : link.count}
 					</span>
 				)}
@@ -159,7 +157,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 						"flex-1",
 						wrap && "min-w-0 break-words leading-5 max-md:leading-6",
 						labelClassName,
-						typeof link.count === "number" && link.count > 0 && "font-semibold",
+						typeof link.count === "number" && link.count > 0 && "font-medium text-neutral-900",
 					)}
 				>
 					{link.label}
@@ -168,8 +166,9 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 			{!minimal && typeof link.count === "number" && link.count > 0 && (
 				<span
 					className={cn(
-						"ml-auto mr-3 rounded-full px-2 py-0.5 text-sm font-semibold text-neutral-700",
-						wrap && "shrink-0 py-0 leading-5",
+						// Counts are right-aligned and muted, as in Zero's sidebar.
+						"ml-auto mr-0.5 text-xs font-medium tabular-nums text-neutral-500",
+						wrap && "shrink-0 leading-5",
 					)}
 				>
 					{link.count > 99 ? "99+" : link.count}

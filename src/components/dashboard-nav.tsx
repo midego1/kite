@@ -1,9 +1,9 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Archive, Clock, FileText, Inbox, MailPlus, Plus, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
+import { Archive, Clock, FileText, Inbox, Plus, Send, ShieldAlert, SquarePen, Star, Trash2 } from "lucide-react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,18 +35,18 @@ import {
 import { AllMailboxesFolders, FolderMailboxField } from "./all-mailboxes-folders";
 import { useAllMailboxesNav } from "./use-all-mailboxes-nav";
 import { FOLDERS_CHANGED_EVENT } from "./messages/use-mailbox-folders";
-import { NavSectionHeader, useSectionOpen } from "./nav-section-header";
+import { NavSectionHeader, NavSectionLabel, useSectionOpen } from "./nav-section-header";
 import { ReorderableList } from "./reorderable-list";
 import { useStoredState } from "@/hooks/use-stored-state";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { SidebarFooter } from "./sidebar-footer";
-import { SidebarHeader } from "./sidebar-header";
+import { SidebarAccounts } from "./sidebar-accounts";
 import { SidebarScaffold } from "./sidebar-scaffold";
 import { SidebarMailboxSwitcher } from "./sidebar-mailbox-switcher";
 import { useSidebar } from "./sidebar-state";
 
 const links = [
-	{ href: "/compose", label: "Compose", icon: MailPlus, primary: true },
+	{ href: "/compose", label: "New email", icon: SquarePen, primary: true },
 	{ href: "/inbox", label: "Inbox", icon: Inbox, preloadMessages: true },
 	{ href: "/starred", label: "Starred", icon: Star, preloadMessages: true },
 	{ href: "/snoozed", label: "Snoozed", icon: Clock, preloadMessages: true },
@@ -62,8 +62,8 @@ const links = [
 	{ href: "/trash", label: "Trash", icon: Trash2, preloadMessages: true },
 ];
 
-// Drafts, Archived, Spam and Trash start tucked under "More...".
-const MORE_LINK_HREFS = ["/drafts", "/archived", "/spam", "/trash"];
+// Archived, Spam and Trash sit in the folding "Management" section.
+const MORE_LINK_HREFS = ["/archived", "/spam", "/trash"];
 const MAX_VISIBLE_FOLDERS = 3;
 const MORE_OPEN_KEY = "kite:nav:more-open";
 const FOLDERS_OPEN_KEY = "kite:nav:folders-open";
@@ -91,7 +91,18 @@ function NavToggle({
 	);
 }
 
-export function DashboardNav({ className }: { className?: string }) {
+export function DashboardNav({
+	className,
+	assistantToggle,
+	accountMenu,
+	notices,
+}: {
+	className?: string;
+	assistantToggle?: ReactNode;
+	accountMenu?: ReactNode;
+	/** Operational and setup notices, shown above Settings on wider screens. */
+	notices?: ReactNode;
+}) {
 	const { minimal } = useSidebar();
 	const pathname = usePathname();
 	const [moreOpen, setMoreOpen] = useStoredState(MORE_OPEN_KEY, false);
@@ -240,10 +251,14 @@ export function DashboardNav({ className }: { className?: string }) {
 	}
 
 	return (
-		<SidebarScaffold className={className} header={<SidebarHeader href="/inbox" />} footer={<SidebarFooter />}>
+		<SidebarScaffold
+			className={className}
+			header={<SidebarAccounts accountMenu={accountMenu} />}
+			footer={<SidebarFooter extra={assistantToggle} notices={notices} />}
+		>
 			<SidebarMailboxSwitcher />
-			{composeLink && <NavItem labelClassName="font-medium" link={composeLink} />}
-			{minimal && <hr className="mx-6 my-2 border-neutral-200/70" />}
+			{composeLink && <NavItem link={composeLink} />}
+			{minimal ? <hr className="mx-6 my-2 border-neutral-200/70" /> : <NavSectionLabel label="Core" />}
 			<ReorderableList
 				storageKey="kite:nav:layout"
 				enabled={!minimal}
@@ -255,7 +270,7 @@ export function DashboardNav({ className }: { className?: string }) {
 					},
 					{
 						id: "more",
-						before: minimal ? undefined : <NavToggle expanded={moreOpen} onClick={toggleMore} />,
+						before: minimal ? undefined : <NavSectionHeader label="Management" open={moreOpen} onToggle={toggleMore} />,
 						visibleIds: (ordered) =>
 							forYou.visibleIds(showAllMoreLinks ? ordered : ordered.filter((id) => isActiveHref(id))),
 						items: moreLinks.map((link) => ({ id: link.href!, node: <NavItem link={link} /> })),

@@ -1,3 +1,5 @@
+import type { MouseEvent } from "react";
+import type { LucideIcon } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { Message, MessageFolder } from "@/hooks/types";
@@ -25,6 +27,8 @@ export type MessageListRowProps = {
 	density?: MessageListDensity;
 	/** Hover-revealed row actions; touch screens use swipes instead. */
 	hoverActions?: boolean;
+	/** "Select" is on, so every row shows its checkbox in place of the avatar. */
+	selecting?: boolean;
 	currentAccountName?: string;
 	/** The row's mailbox in the All mailboxes view (`MessageMailboxLabel`). */
 	mailboxLabel?: ReactNode;
@@ -43,6 +47,8 @@ export type MessageListRowActionsProps = {
 	onAction: (action: RowMessageAction) => Promise<void>;
 	/** Placement for the stacked rows of the list beside a reading pane. */
 	compact?: boolean;
+	/** The star toggle, first in the pill of the stacked rows (Zero's row actions). */
+	star?: { starred: boolean; icon: LucideIcon; onToggle: (event: MouseEvent<HTMLButtonElement>) => void };
 };
 
 export type SnoozePickerProps = {

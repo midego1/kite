@@ -6,8 +6,6 @@ import clsx from "clsx";
 import { ChevronDown, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadModuleClient, suggestionKindModule } from "@/components/modules/client-registry";
-import { useMessageListVisibility } from "@/components/messages/message-list-visibility";
-import { useAssistantOpen } from "./assistant-open-state";
 import { announceSuggestionChange, postSuggestion } from "./suggestion-card-actions";
 import { SuggestionCardMenu } from "./suggestion-card-menu";
 import type { CardSuggestion, ModuleSuggestionCard, SuggestionCardBodyProps } from "./suggestion-card-types";
@@ -133,19 +131,18 @@ function ModuleBlock({
 
 /** The reader card: the conversation summary, then one block per suggestion. */
 export function SuggestionCardBody({ sections, onChanged }: SuggestionCardBodyProps) {
-	const { visible: messageListVisible } = useMessageListVisibility();
-	const assistantOpen = useAssistantOpen();
 	const { summary, blocks, answered } = sections;
 	return (
-		<div className={clsx(messageListVisible || assistantOpen ? "pl-10" : "pl-16", "pr-6 pb-4")}>
+		<div className="px-4 pb-5 sm:px-7">
 			<section
 				aria-label="Kite suggestions"
 				data-suggestion-card
-				className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm"
+				// Zero's "AI Summary" box: an indigo outline on the panel, the summary first.
+				className="rounded-xl border border-indigo-400/60 bg-indigo-500/[0.04] p-4 text-sm"
 			>
-				<p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-blue-700">
+				<p className="mb-2 flex items-center gap-1.5 text-sm text-neutral-500">
 					<Sparkles aria-hidden className="h-3.5 w-3.5" />
-					Kite
+					{summary ? "AI Summary" : "Kite"}
 				</p>
 				{summary && (
 					<div data-suggestion-summary className="mb-3 border-b border-blue-200 pb-3 last:mb-0 last:border-0 last:pb-0">

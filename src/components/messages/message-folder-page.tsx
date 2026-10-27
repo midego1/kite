@@ -43,6 +43,7 @@ import { reportListActionError, reportReadOnlySkipped } from "./list-action-toas
 import { MessageMailboxLabel } from "./message-mailbox-label";
 import { useMessageAccess } from "./use-message-access";
 import { useEmailPageTitle } from "./use-email-page-title";
+import { groupListSections } from "./message-list-sections-utils";
 
 const pageSize = 25;
 
@@ -64,6 +65,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 	const [pendingBulkAction, setPendingBulkAction] = useState(false);
 	const [emptyingFolder, setEmptyingFolder] = useState(false);
 	const [unreadOnly, setUnreadOnly] = useState(false);
+	const [selecting, setSelecting] = useState(false);
 	const [conversationView] = useConversationView();
 	const [density] = useMessageListDensity();
 	const grouped = conversationView && config.folder !== "drafts";
@@ -82,6 +84,13 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 		config.folderId,
 	);
 	const { counts } = useMessageCounts(mailboxScope, !mailboxesLoading);
+	// In All mailboxes the Screener applies while any listed mailbox holds new senders back.
+	const screenerVisible =
+		viewMailboxes.some((mailbox) => mailbox.screener?.enabled === true && mailbox.screener.mode === "screener") ||
+		(counts.folders.screener?.total ?? 0) > 0;
+	// The Inbox list beside the reader groups starred mail under "Pinned" first, as Zero does.
+	const sections = groupListSections(messages, config.folder === "inbox" && !config.folderId && (compact || isMobile));
+	const orderedMessages = sections.flatMap((section) => section.messages);
 	usePageLoading(mailboxesLoading || isLoading);
 	const hasActiveFilters = !!query.trim();
 	const folderCount = config.folderId ? counts.customFolders[config.folderId] : counts.folders[config.folder];
@@ -128,7 +137,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 	);
 
 	function updateSelectedMessage(messageId: string, selected: boolean, extendRange = false) {
-		const orderedIds = messages.map((message) => message.id);
+		const orderedIds = orderedMessages.map((message) => message.id);
 		const ids = extendRange ? getRangeSelectionIds(orderedIds, selectionAnchor.current, messageId) : [messageId];
 		selectionAnchor.current = messageId;
 		setSelectedMessages((current) => applySelection(current, messages, ids, selected));
@@ -281,6 +290,14 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 				compact={compact || isMobile}
 				selectionInPane={compact}
 				showTitle={compact || isMobile}
+				selecting={{
+					value: selecting,
+					onChange: (value) => {
+						setSelecting(value);
+						if (!value) setSelectedMessages([]);
+					},
+				}}
+				screenerVisible={screenerVisible}
 				nested={!!selectedMessageId}
 				selection={{
 					count: selectedIds.length,
@@ -328,32 +345,50 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 					aria-label={config.title}
 					className={compact || isMobile ? "flex flex-col gap-0.5 py-1.5" : "divide-y divide-neutral-100"}
 				>
-					{messages.map((message) => (
-						<MessageListRow
-							key={message.id}
-							message={message}
-							config={config}
-							selected={selectedIds.includes(message.id)}
-							active={message.id === selectedMessageId}
-							compact={compact || isMobile}
-							density={density}
-							hoverActions={!isMobile}
-							currentAccountName={accountNameOf(message)}
-							mailboxLabel={
-								access.showMailboxLabels ? <MessageMailboxLabel mailbox={access.mailboxOf(message.mailboxId)} /> : null
-							}
-							canManage={access.canManage(message.mailboxId)}
-							onSelectedChange={updateSelectedMessage}
-							onMessageAction={async (messageId, action) => {
-								await runBulkMessageAction(
-									expandSelectedIds([messageId]),
-									action,
-									action !== "read" && action !== "unread",
-								);
-							}}
-							dragMessageIds={expandSelectedIds(selectedIds.includes(message.id) ? selectedIds : [message.id])}
-						/>
-					))}
+					{sections.map((section) => [
+						section.label && (
+							// Decorative: the rows carry everything, and a list may only hold list items.
+							<p
+								key={`section-${section.key}`}
+								aria-hidden="true"
+								className="px-5 pb-1 pt-3 text-sm text-neutral-500 first:pt-1"
+							>
+								{section.label}{" "}
+								<span className="ml-1">
+									[{section.key === "primary" ? total - section.pinnedOnPage : section.messages.length}]
+								</span>
+							</p>
+						),
+						...section.messages.map((message) => (
+							<MessageListRow
+								key={message.id}
+								selecting={selecting}
+								message={message}
+								config={config}
+								selected={selectedIds.includes(message.id)}
+								active={message.id === selectedMessageId}
+								compact={compact || isMobile}
+								density={density}
+								hoverActions={!isMobile}
+								currentAccountName={accountNameOf(message)}
+								mailboxLabel={
+									access.showMailboxLabels ? (
+										<MessageMailboxLabel mailbox={access.mailboxOf(message.mailboxId)} />
+									) : null
+								}
+								canManage={access.canManage(message.mailboxId)}
+								onSelectedChange={updateSelectedMessage}
+								onMessageAction={async (messageId, action) => {
+									await runBulkMessageAction(
+										expandSelectedIds([messageId]),
+										action,
+										action !== "read" && action !== "unread",
+									);
+								}}
+								dragMessageIds={expandSelectedIds(selectedIds.includes(message.id) ? selectedIds : [message.id])}
+							/>
+						)),
+					])}
 				</div>
 				{!isLoading && messages.length === 0 && (
 					<div className="px-6 py-4">

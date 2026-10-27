@@ -96,3 +96,30 @@ export function AllMailboxesFilter() {
 		</fieldset>
 	);
 }
+
+/** The All mailboxes square before the mailbox squares at the top of the sidebar, checked like them when on. */
+export function AllMailboxesSquare({ onSelect }: { onSelect: () => void }) {
+	const { mailboxes, allMailboxes } = useSelectedMailbox();
+	if (mailboxes.length < 2) return null;
+	return (
+		// A title rather than a Tooltip, like the mailbox squares: the phone menu's first stop leaves Escape to the sheet.
+		<button
+			type="button"
+			title="All mailboxes"
+			aria-label="Open All mailboxes"
+			aria-pressed={allMailboxes}
+			onClick={onSelect}
+			className={cn(
+				"relative flex h-8 w-8 items-center justify-center rounded-lg",
+				allMailboxes ? "ring-1 ring-neutral-300" : "opacity-70 hover:opacity-100",
+			)}
+		>
+			<AllMailboxesIcon className="h-7 w-7" />
+			{allMailboxes && (
+				<span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-[var(--background)]">
+					<Check className="h-2.5 w-2.5 text-[#fff]" strokeWidth={3} />
+				</span>
+			)}
+		</button>
+	);
+}

@@ -3196,7 +3196,7 @@ test("with migration 0062 applied the owner sees every module surface as before 
 		await expect(page.getByRole("button", { name: "Compose" })).toBeVisible();
 		await page.getByRole("button", { name: "Open account menu" }).click();
 		await shot("click-1-account-menu");
-		await page.getByRole("banner").getByRole("link", { name: "Admin", exact: true }).click();
+		await page.locator('[data-placement="sidebar"]').getByRole("link", { name: "Admin", exact: true }).click();
 		await expect(page).toHaveURL(/\/admin$/);
 		await shot("click-2-admin");
 		await page.getByRole("complementary", { name: "Admin menu" }).getByRole("link", { name: "Modules" }).click();

@@ -288,7 +288,8 @@ test.describe("Settings → Mailboxes (upstream #133)", () => {
 
 			await row.click();
 			await expect(page).toHaveURL(/\/settings\/mailboxes\/mbx_[\w-]+$/);
-			await expect(page.getByText(member.address, { exact: true })).toBeVisible();
+			// The sidebar's mailbox switcher names the address too; this is the settings page's own line.
+			await expect(page.getByRole("main").getByText(member.address, { exact: true })).toBeVisible();
 			const name = page.getByLabel("Name", { exact: true });
 			await expect(name).toBeEnabled();
 			await name.fill(`Renamed ${username}`);

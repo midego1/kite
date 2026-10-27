@@ -10,6 +10,8 @@ export type MailboxSelectorUser = {
 
 export type MailboxSelectorProps = {
 	initialUser?: MailboxSelectorUser;
+	/** In the sidebar the menu is fixed to the window's top left, so the sidebar's overflow cannot clip it. */
+	placement?: "header" | "sidebar";
 };
 
 export type AccountAvatarProps = {

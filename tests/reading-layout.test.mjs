@@ -58,9 +58,9 @@ test("narrow viewports always read in one column", () => {
 	}
 });
 
-test("compact density hides the snippet line of stacked rows", () => {
+test("stacked rows show the snippet line only in comfortable density, as Zero's rows show sender and subject", () => {
 	assert.equal(helpers.getStackedRowDensity("compact").showPreview, false);
-	assert.equal(helpers.getStackedRowDensity("default").showPreview, true);
+	assert.equal(helpers.getStackedRowDensity("default").showPreview, false);
 	assert.equal(helpers.getStackedRowDensity("comfortable").showPreview, true);
 	const heights = ["compact", "default", "comfortable"].map(
 		(density) => helpers.getWideRowDensity(density).rowClassName,

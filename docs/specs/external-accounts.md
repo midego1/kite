@@ -185,7 +185,7 @@ IDLE needs one TCP connection held open per account, indefinitely. On Workers a 
 - **Baseline.** Connecting an account stores the current `UIDVALIDITY` and `UIDNEXT − 1` as `last_uid`, so sync starts with mail that arrives after connecting. Older mail is the import's job; the connect dialog offers **Import existing mail**, which opens the import page with the account preselected (§9.2). Import and sync overlap safely through dedupe.
 - **CONDSTORE and QRESYNC are not used.** QRESYNC reports expunges and flag changes, and CONDSTORE flag changes; Kite ignores both by design (D5). `UIDVALIDITY` + `UIDNEXT` already answers "anything new?" in one round trip. Flags are taken once, when the message is fetched: mail already read on the phone arrives read.
 - **Spam folder (optional).** A per-account switch, off by default, also syncs `\Junk` the same way into `spam`, for users who want to see the provider's false positives in Kite.
-- **Limits.** One run holds one socket (Workers allows six per invocation) and makes about three subrequests per message (one fetch chunk, one object write, one queue send), so a 200-message run stays inside the Workers subrequest limit, as the import's does. Gmail's IMAP download cap (about 2.5 GB a day) only matters to imports, which back off on `[THROTTLED]`/`[LIMIT]` responses.
+- **Limits.** One run holds one socket (Workers allows six open connections per invocation) and makes about two subrequests per message (one object write, one queue send), so a 200-message run stays inside the Workers subrequest limit, as the import's does. Gmail's IMAP download cap (about 2.5 GB a day) only matters to imports, which back off on `[THROTTLED]`/`[LIMIT]` responses.
 
 ### 6.4 Delivery of synced mail
 

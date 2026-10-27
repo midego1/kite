@@ -268,7 +268,13 @@ test.describe("chat spend", () => {
 		try {
 			await saveMailboxFields(account.api, account.mailboxId, { dailySpendCapMicros: 0 });
 			const events = await sendChat(account.api, account.mailboxId, "Count my emails");
-			expect(events).toContainEqual({ type: "error", message: expect.stringMatching(MAILBOX_CAP_MESSAGE) });
+			expect(events).toContainEqual(
+				expect.objectContaining({
+					type: "error",
+					code: "spend_cap",
+					message: expect.stringMatching(MAILBOX_CAP_MESSAGE),
+				}),
+			);
 			expect(chatRequests(fake)).toHaveLength(0);
 		} finally {
 			await account.api.dispose();
@@ -285,7 +291,13 @@ test.describe("chat spend", () => {
 				{ content: "This step must never run." },
 			);
 			const events = await sendChat(account.api, account.mailboxId, "Count my emails");
-			expect(events).toContainEqual({ type: "error", message: expect.stringMatching(MAILBOX_CAP_MESSAGE) });
+			expect(events).toContainEqual(
+				expect.objectContaining({
+					type: "error",
+					code: "spend_cap",
+					message: expect.stringMatching(MAILBOX_CAP_MESSAGE),
+				}),
+			);
 			expect(events.some((event) => event.text?.includes("must never run"))).toBe(false);
 			// The cap said why the turn ended; the step-limit fallback ("raise Max steps") is neither shown nor stored.
 			expect(events.some((event) => event.text === AGENT_STEP_LIMIT_FALLBACK)).toBe(false);

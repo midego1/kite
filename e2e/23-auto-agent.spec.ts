@@ -1296,7 +1296,8 @@ test.describe("triage scheduling", () => {
 		try {
 			const job = await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage", 60_000);
 			expect(job.status).toBe("failed");
-			expect(job.reason).toMatch(/valid triage object/);
+			// Only the code is stored; Activity puts it in words.
+			expect(job.reason).toBe("ai_error:unusable_answer");
 			const kinds = requestsFor(message.id).map((request) => request.kind);
 			expect(kinds).toEqual(["triage", "repair", "triage", "repair", "triage", "repair"]);
 			const times = requestsFor(message.id, "triage").map((request) => Date.parse(request.receivedAt));

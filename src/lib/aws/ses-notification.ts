@@ -1,9 +1,7 @@
-export type SnsEnvelope = {
-	Type?: string;
-	TopicArn?: string;
-	Message?: string;
-	SubscribeURL?: string;
-};
+import { sesAuthenticationResults } from "@/lib/spam/authentication-results-utils";
+import type { SignedSnsEnvelope } from "./sns-signature";
+
+export type SnsEnvelope = SignedSnsEnvelope;
 
 export type SesNotification = {
 	from: string;
@@ -12,17 +10,40 @@ export type SesNotification = {
 	key: string;
 	virusFailed: boolean;
 	headers: Record<string, string>;
+	/** SES's id for the message; its S3 action stores it under the rule's prefix plus this id. */
+	messageId: string | null;
+	/**
+	 * SES's own SPF, DKIM and DMARC verdicts as an `Authentication-Results` value, or null. They count
+	 * only once the SNS signature is verified (`src/app/api/inbound/ses/route.ts`).
+	 */
+	authenticationResults: string | null;
 };
 
 type RawNotification = {
 	notificationType?: string;
-	mail?: { source?: string; destination?: string[]; headers?: { name: string; value: string }[] };
+	mail?: {
+		messageId?: string;
+		source?: string;
+		destination?: string[];
+		headers?: { name: string; value: string }[];
+	};
 	receipt?: {
 		recipients?: string[];
 		virusVerdict?: { status?: string };
+		spfVerdict?: { status?: string };
+		dkimVerdict?: { status?: string };
+		dmarcVerdict?: { status?: string };
 		action?: { type?: string; bucketName?: string; objectKey?: string };
 	};
 };
+
+function receiptAuthenticationResults(parsed: RawNotification): string | null {
+	const receipt = parsed.receipt;
+	return sesAuthenticationResults(
+		{ spf: receipt?.spfVerdict?.status, dkim: receipt?.dkimVerdict?.status, dmarc: receipt?.dmarcVerdict?.status },
+		parsed.mail?.source ?? "",
+	);
+}
 
 /** Reads the JSON an SES S3 receipt action publishes to SNS; null for anything else. */
 export function parseSesNotification(message: string): SesNotification | null {
@@ -42,9 +63,12 @@ export function parseSesNotification(message: string): SesNotification | null {
 		bucket: action.bucketName,
 		key: action.objectKey,
 		virusFailed: parsed.receipt?.virusVerdict?.status === "FAIL",
+		messageId: typeof parsed.mail?.messageId === "string" ? parsed.mail.messageId : null,
 		headers: Object.fromEntries(
 			(parsed.mail?.headers ?? []).map((header) => [header.name.toLowerCase(), header.value]),
 		),
+		// SES checked the sender when it received the message; the message's own headers never count.
+		authenticationResults: receiptAuthenticationResults(parsed),
 	};
 }
 

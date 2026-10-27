@@ -252,6 +252,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 			<MessageListHeader
 				config={config}
 				compact={compact || isMobile}
+				selectionInPane={compact}
 				showTitle={compact || isMobile}
 				selecting={{
 					value: selecting,

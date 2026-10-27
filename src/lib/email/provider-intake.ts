@@ -13,12 +13,18 @@ export const MAX_PROVIDER_MESSAGE_BYTES = 25 * 1024 * 1024;
  * forwarding and storage then behave exactly as for Cloudflare mail. A provider
  * cannot refuse the message after it has been accepted, so a reject or a size
  * limit simply drops it. Throws on infrastructure failure so the provider retries.
- * No `authenticationResults` is passed: Kite does not read the provider's verdicts, and the
- * message's own Authentication-Results headers may be the sender's.
+ * `authenticationResults` is the provider's own verdict (SES builds one from its receipt), never
+ * the message's Authentication-Results headers, which may be the sender's. Resend passes none.
  */
 export async function intakeProviderMail(
 	env: CloudflareEnv,
-	input: { from: string; recipients: string[]; raw: ArrayBuffer; headers?: Record<string, string> },
+	input: {
+		from: string;
+		recipients: string[];
+		raw: ArrayBuffer;
+		headers?: Record<string, string>;
+		authenticationResults?: string | null;
+	},
 ): Promise<{ delivered: number; dropped: string | null }> {
 	if (input.raw.byteLength > MAX_PROVIDER_MESSAGE_BYTES)
 		return { delivered: 0, dropped: "Message exceeds the 25 MiB receiving limit" };
@@ -33,7 +39,13 @@ export async function intakeProviderMail(
 		if (!domain) continue;
 		const result = await intakeIncomingMail(
 			env,
-			{ from: normalizeEmailAddress(input.from), to: recipient, raw: input.raw, headers: input.headers ?? {} },
+			{
+				from: normalizeEmailAddress(input.from),
+				to: recipient,
+				raw: input.raw,
+				headers: input.headers ?? {},
+				authenticationResults: input.authenticationResults ?? null,
+			},
 			{ forward: async () => false },
 		);
 		if (result.action === "store") delivered += 1;

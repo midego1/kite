@@ -24,7 +24,8 @@ const receiver = createServer(async (request, response) => {
 			.update(body)
 			.digest("hex");
 		assert.equal(request.headers["x-kite-signature"], signature);
-		const headersSignature = createHmac("sha256", secret)
+		const headersKey = createHmac("sha256", secret).update("kite-relay-headers-signature-key-v1").digest();
+		const headersSignature = createHmac("sha256", headersKey)
 			.update(`kite-headers\n${request.headers["x-kite-from"]}\n${request.headers["x-kite-to"]}\n`)
 			.update(`${request.headers["x-kite-headers"]}\n`)
 			.update(body)

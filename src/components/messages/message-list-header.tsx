@@ -95,6 +95,7 @@ function SidebarToggleButton() {
 export function MessageListHeader({
 	config,
 	compact,
+	selectionInPane,
 	nested,
 	selection,
 	selecting,
@@ -103,7 +104,8 @@ export function MessageListHeader({
 	emptyFolder,
 	screenerVisible,
 }: MessageListHeaderProps) {
-	const bulk = selection.count > 0;
+	// Only a selection pane beside the list replaces the toolbar; compact styling alone (a phone) must not.
+	const bulk = selection.count > 0 && !selectionInPane;
 	const headerIcons = config.headerIcons ?? [];
 	const paged = pager.canPrevious || pager.canNext;
 	return (
@@ -111,7 +113,7 @@ export function MessageListHeader({
 			<div className="flex h-14 items-center gap-2 border-b border-neutral-200 px-3">
 				<FolderHeading title={config.title} nested={nested} />
 				<SidebarToggleButton />
-				{(selecting.value || bulk) && (
+				{(selecting.value || selection.count > 0) && (
 					<Tooltip label="Select all visible messages">
 						<Checkbox
 							checked={selection.allVisible}
@@ -170,7 +172,7 @@ export function MessageListHeader({
 				<MailSearchInput variant="panel" />
 				<MessageListChips config={config} filter={filter} screenerVisible={screenerVisible} />
 			</div>
-			{paged && (
+			{paged && !bulk && (
 				<div className="flex h-8 items-center justify-end px-3">
 					<ListPager pager={pager} compact />
 				</div>

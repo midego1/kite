@@ -2,19 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import {
-	ChevronUp,
-	FileText,
-	Forward,
-	Maximize2,
-	Minimize2,
-	Minus,
-	Paperclip,
-	Reply,
-	SquareArrowOutUpRight,
-	Trash2,
-	X,
-} from "lucide-react";
+import { FileText, Paperclip, Trash2, X } from "lucide-react";
+import { ComposeHeader, composeTitle } from "./compose-header";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -397,7 +386,7 @@ export function ComposeForm({
 		setUndoRequestedWhileSending(false);
 		setPreviewOpen(false);
 		setSending({ undoable: !scheduledAt && sendingSettings.undoSeconds > 0 });
-		if (mode === "inline") setSentInline(true);
+		setSentInline(mode === "inline");
 		resetComposer();
 
 		let data: { messageId?: string; scheduled?: boolean; undoUntil?: string; error?: string };
@@ -759,90 +748,23 @@ export function ComposeForm({
 						Drop files to attach
 					</div>
 				)}
-				<div
-					className={cn(
-						"flex h-9 shrink-0 items-center justify-between px-4 text-sm font-medium",
-						mode === "inline"
-							? "border-b border-neutral-100 text-neutral-500"
-							: "bg-neutral-800 text-white dark:bg-neutral-100",
-					)}
-				>
-					<span
-						className={cn("flex min-w-0 items-center gap-2 truncate", mode !== "inline" && "dark:text-neutral-900")}
-					>
-						{threading?.inReplyTo && <Reply className="h-3.5 w-3.5 text-neutral-300" />}
-						{!threading?.inReplyTo && /^fwd?:/i.test(subject) && <Forward className="h-3.5 w-3.5 text-neutral-300" />}
-						{loadingDraft
-							? "Loading draft"
-							: threading?.inReplyTo
-								? "Reply"
-								: /^fwd?:/i.test(subject)
-									? "Forward"
-									: draftId
-										? "Draft saved"
-										: "New Message"}
-					</span>
-					{mode === "inline" && (
-						<div className="flex shrink-0 items-center gap-1">
-							<Tooltip label="Pop out">
-								<button
-									type="button"
-									onClick={() => void flush().then(() => onPopOut?.())}
-									aria-label="Pop out composer"
-									className="rounded-md p-1.5 hover:bg-neutral-100 hover:text-neutral-900"
-								>
-									<SquareArrowOutUpRight className="h-4 w-4" />
-								</button>
-							</Tooltip>
-							<Tooltip label="Close (Esc); the draft is kept">
-								<button
-									type="button"
-									onClick={onClose}
-									aria-label="Close composer"
-									className="rounded-md p-1.5 hover:bg-neutral-100 hover:text-neutral-900"
-								>
-									<X className="h-4 w-4" />
-								</button>
-							</Tooltip>
-						</div>
-					)}
-					{mode === "popup" && (
-						<div className="flex shrink-0 items-center gap-3 text-neutral-300 dark:text-neutral-600">
-							<button
-								type="button"
-								onClick={() => {
-									setMinimized((current) => !current);
-									setDraggingFiles(false);
-								}}
-								aria-label={minimized ? "Restore composer" : "Minimize composer"}
-								title={minimized ? "Restore composer" : "Minimize composer"}
-								className="rounded p-1 hover:bg-neutral-700 dark:hover:bg-neutral-200 hover:text-white"
-							>
-								{minimized ? <ChevronUp className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
-							</button>
-							<button
-								type="button"
-								onClick={() => {
-									if (minimized) setMinimized(false);
-									setModalMode((current) => !current);
-								}}
-								aria-label={modalMode ? "Restore floating composer" : "Open composer as modal"}
-								title={modalMode ? "Restore floating composer" : "Open composer as modal"}
-								className="rounded p-1 dark:hover:bg-neutral-200 hover:bg-neutral-700 hover:text-white"
-							>
-								{modalMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-							</button>
-							<button
-								type="button"
-								onClick={onClose}
-								aria-label="Close composer"
-								className="rounded p-1 hover:bg-neutral-700 dark:hover:bg-neutral-200 hover:text-white"
-							>
-								<X className="h-4 w-4" />
-							</button>
-						</div>
-					)}
-				</div>
+				<ComposeHeader
+					mode={mode}
+					title={composeTitle({ loadingDraft, threading, subject, draftId })}
+					icon={threading?.inReplyTo ? "reply" : /^fwd?:/i.test(subject) ? "forward" : null}
+					minimized={minimized}
+					modalMode={modalMode}
+					onToggleMinimized={() => {
+						setMinimized((current) => !current);
+						setDraggingFiles(false);
+					}}
+					onToggleModal={() => {
+						if (minimized) setMinimized(false);
+						setModalMode((current) => !current);
+					}}
+					onPopOut={() => void flush().then(() => onPopOut?.())}
+					onClose={onClose}
+				/>
 				<div className={cn("flex min-h-0 flex-1 flex-col", minimized && "hidden")}>
 					{/* An inline reply shows only its recipients and body, as Zero's; From and Subject stay in the form. */}
 					<div

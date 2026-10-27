@@ -1,5 +1,5 @@
 /** Search terms the list's category chips add to the mail search; the server already understands them. */
-export const CHIP_SEARCH_TERMS = ["has:attachment", "is:starred"] as const;
+const CHIP_SEARCH_TERMS = ["has:attachment", "is:starred"] as const;
 export type ChipSearchTerm = (typeof CHIP_SEARCH_TERMS)[number];
 
 function words(query: string): string[] {

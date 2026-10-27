@@ -41,6 +41,56 @@ function rowAvatarAddress(message: RowViewProps["message"], folder: string) {
 	return folder === "sent" ? (splitEmailAddressList(message.toAddr)[0] ?? message.toAddr) : message.fromAddr;
 }
 
+/** The avatar with its unread dot, which the selection checkbox replaces while selecting. */
+function RowAvatar({ showCheckbox, ...props }: RowViewProps & { showCheckbox: boolean }) {
+	const { message, config, selected, row } = props;
+	return (
+		<span className="relative h-9 w-9 self-start">
+			<ContactAvatar
+				mailboxId={message.mailboxId}
+				address={rowAvatarAddress(row.rowMessage, config.folder)}
+				name={row.party}
+				hasManagedAvatar={config.folder !== "sent" && message.fromContactHasAvatar}
+				className={clsx("h-9 w-9 text-sm", showCheckbox && "opacity-0", "group-has-[:focus-visible]:opacity-0")}
+			/>
+			{row.unread && !showCheckbox && (
+				<span
+					aria-hidden="true"
+					className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)]"
+				/>
+			)}
+			<span
+				className={clsx(
+					"absolute inset-0 flex items-center justify-center",
+					!showCheckbox && "opacity-0",
+					"group-has-[:focus-visible]:opacity-100",
+				)}
+			>
+				<Checkbox
+					checked={selected}
+					{...rowCheckboxHandlers(message.id, props.onSelectedChange)}
+					aria-label={rowCheckboxLabel(props)}
+				/>
+			</span>
+		</span>
+	);
+}
+
+/** The star in the row's bottom corner: shown when starred, on hover and with keyboard focus. */
+function RowCornerStar({ row, icon }: { row: RowState; icon: MessageListRowProps["config"]["icon"] }) {
+	if (!row.starToggle) return null;
+	return (
+		<span
+			className={clsx(
+				"absolute bottom-0 right-0",
+				!row.starred && "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
+			)}
+		>
+			<MessageRowStar starred={row.starred} compact icon={icon} onToggle={row.toggleStar} />
+		</span>
+	);
+}
+
 /**
  * The row of the list beside a reading pane (and on phones), after Zero's: a round avatar carrying the unread
  * dot, the sender with the conversation count and the date, the subject as a muted second line and the badges
@@ -66,34 +116,7 @@ function StackedMessageRow(props: RowViewProps) {
 			{...dragHandlers(row, props.dragMessageIds)}
 		>
 			<MessageNavigationProgress progress={row.navigation.progress} />
-			<span className="relative h-9 w-9 self-start">
-				<ContactAvatar
-					mailboxId={message.mailboxId}
-					address={rowAvatarAddress(row.rowMessage, config.folder)}
-					name={row.party}
-					hasManagedAvatar={config.folder !== "sent" && message.fromContactHasAvatar}
-					className={clsx("h-9 w-9 text-sm", showCheckbox && "opacity-0", "group-has-[:focus-visible]:opacity-0")}
-				/>
-				{row.unread && !showCheckbox && (
-					<span
-						aria-hidden="true"
-						className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)]"
-					/>
-				)}
-				<span
-					className={clsx(
-						"absolute inset-0 flex items-center justify-center",
-						!showCheckbox && "opacity-0",
-						"group-has-[:focus-visible]:opacity-100",
-					)}
-				>
-					<Checkbox
-						checked={selected}
-						{...rowCheckboxHandlers(message.id, props.onSelectedChange)}
-						aria-label={rowCheckboxLabel(props)}
-					/>
-				</span>
-			</span>
+			<RowAvatar {...props} showCheckbox={showCheckbox} />
 			<div className="relative min-w-0">
 				<Link
 					href={row.href}
@@ -141,16 +164,7 @@ function StackedMessageRow(props: RowViewProps) {
 						</span>
 					)}
 				</Link>
-				{row.starToggle && (
-					<span
-						className={clsx(
-							"absolute bottom-0 right-0",
-							!row.starred && "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
-						)}
-					>
-						<MessageRowStar starred={row.starred} compact icon={Icon} onToggle={row.toggleStar} />
-					</span>
-				)}
+				<RowCornerStar row={row} icon={Icon} />
 				<ScreenerRowControls message={row.rowMessage} compact />
 				{showHoverActions && <MessageListRowActions message={row.rowMessage} onAction={row.runRowAction} compact />}
 			</div>

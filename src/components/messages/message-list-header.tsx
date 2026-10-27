@@ -7,6 +7,7 @@ import { MailSearchInput } from "@/components/mail-search/mail-search-input";
 import { useSidebar } from "@/components/sidebar-state";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
 import { Tooltip } from "@/components/ui/tooltip";
 import { getEmptyFolderLabel } from "@/lib/messages/permanent-delete-utils";
 import { BulkMessageToolbar } from "./bulk-message-toolbar";
@@ -155,7 +156,7 @@ export function MessageListHeader({
 							<Check className="h-4 w-4" />
 							Select
 						</Button>
-						<span aria-hidden className="mx-1 h-4 w-px bg-neutral-200" />
+						<Separator orientation="vertical" className="mx-1 h-4" />
 						<Tooltip label="List settings">
 							<Link
 								href="/settings/inbox"

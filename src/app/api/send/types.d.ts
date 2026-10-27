@@ -16,4 +16,6 @@ export interface SendRequestPayload {
 	/** Draft whose stored attachments (e.g. forwarded files) should be sent along. */
 	draftId?: string;
 	scheduledAt?: string;
+	/** Set by the composer once Write with Kite inserted text, so the writing style profile skips this send. */
+	aiAssisted?: boolean | string;
 }

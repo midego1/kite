@@ -8,7 +8,11 @@ export async function parseUpdateAssistantSettingsRequest(request: Request): Pro
 	return updateAssistantSettingsSchema.parse(await request.json());
 }
 
-export function assistantSettingsResponse(maxSteps: unknown, ai: UserAiSettingsState): AssistantSettingsResponse {
+export function assistantSettingsResponse(
+	maxSteps: unknown,
+	ai: UserAiSettingsState,
+	writingStyleAvailable: boolean,
+): AssistantSettingsResponse {
 	return {
 		maxSteps: clampAgentMaxSteps(maxSteps),
 		minSteps: AGENT_MAX_STEPS_MIN,
@@ -16,5 +20,6 @@ export function assistantSettingsResponse(maxSteps: unknown, ai: UserAiSettingsS
 		instructions: ai.instructions,
 		instructionsReady: ai.ready,
 		instructionsMaxLength: TASK_INSTRUCTIONS_MAX_CHARS,
+		writingStyle: { enabled: writingStyleAvailable && ai.writingStyleEnabled, available: writingStyleAvailable },
 	};
 }

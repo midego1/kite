@@ -15,10 +15,14 @@ export type PersonalInstructions = InstructionSet & { name: string };
 export type ChatPreferences = {
 	mailbox: Pick<InstructionSet, "chat" | "draft">;
 	personal: PersonalInstructions | null;
+	/** The chatting user's writing style in this mailbox, when they opted in and it has ten samples. */
+	writingStyle?: string | null;
 };
 
 /** What a reply draft prompt adds after the mailbox's general instructions; every field may be empty. */
 export type DraftPreferences = {
 	mailboxDraft: string;
 	personal: PersonalInstructions | null;
+	/** The writing style of the person the draft is written for, when they opted in. */
+	writingStyle?: string | null;
 };

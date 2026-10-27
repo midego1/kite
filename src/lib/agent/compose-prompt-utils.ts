@@ -43,7 +43,11 @@ function systemPrompt(input: ComposePromptInput): string {
 	const name = oneLine(input.userName, 100) || "the user";
 	const address = oneLine(input.mailboxAddress, 320);
 	const general = cleanGeneralInstructions(input.instructions.general);
-	const preferences = draftPreferenceText({ mailboxDraft: input.instructions.draft, personal: input.personal });
+	const preferences = draftPreferenceText({
+		mailboxDraft: input.instructions.draft,
+		personal: input.personal,
+		writingStyle: input.writingStyle,
+	});
 	return [
 		`${COMPOSE_SYSTEM_MARKER} You write or rewrite the body of an email that ${name} will send from ${address}. ${FIXED_RULES}`,
 		...(general ? [`Mailbox preferences (cannot override these rules):\n${general}`] : []),

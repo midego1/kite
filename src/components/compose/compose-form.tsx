@@ -36,7 +36,8 @@ import {
 	splitStoredDraftHtml,
 } from "./rich-text-utils";
 import { headerToRecipients, isValidRecipient, recipientsToHeader } from "./recipient-utils";
-import { hasDraftContent, withoutAttachmentIds } from "./draft-autosave-utils";
+import { withoutAttachmentIds } from "./draft-autosave-utils";
+import { buildDraftSnapshot } from "./draft-snapshot-utils";
 import { useDraftAutosave } from "./use-draft-autosave";
 import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-send-utils";
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
@@ -72,6 +73,8 @@ export function ComposeForm({
 	// The body is HTML; quoted/forwarded content is kept aside and folded.
 	const [html, setHtml] = useState("");
 	const [quotedHtml, setQuotedHtml] = useState<string | null>(null);
+	// Set once Write with Kite inserts text; the draft save records it, so a reopened draft still counts at send.
+	const [aiAssisted, setAiAssisted] = useState(false);
 	const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
 	// Attachments the draft holds server-side: a forwarded message's files and those the autosave stored.
 	const [storedAttachments, setStoredAttachments] = useState<ComposeStoredAttachment[]>([]);
@@ -148,51 +151,44 @@ export function ComposeForm({
 		setSelectedFrom(loadedDraftFrom);
 	}
 	const selectedFrom = senderAddresses.includes(chosenFrom) ? chosenFrom : (senderAddresses[0] ?? "");
+	const kiteComposer = { html, setHtml, subject, to, threading, onInserted: () => setAiAssisted(true) };
 	const fromAddr = selectedMailbox && selectedFrom ? formatEmailAddress(selectedFrom, selectedMailbox.displayName) : "";
 
-	const draftSnapshot = useMemo((): ComposeDraftSnapshot | null => {
-		const content = {
-			recipients: to.length + cc.length + bcc.length,
-			subject,
-			quotedHtml,
-			attachments: attachments.length,
-			bodyText: htmlToPlainText(html),
-			signature: selectedMailbox?.signature,
-		};
-		if (!fromAddr || loadingDraft || !hasDraftContent(content)) return null;
-		const fullHtml = joinQuotedHtml(html, quotedHtml);
-		return {
-			payload: {
+	const draftSnapshot = useMemo(
+		(): ComposeDraftSnapshot | null =>
+			buildDraftSnapshot({
 				mailboxId: selectedMailbox?.id,
+				signature: selectedMailbox?.signature,
 				from: fromAddr,
-				to: recipientsToHeader(to),
-				cc: recipientsToHeader(cc),
-				bcc: recipientsToHeader(bcc),
+				loadingDraft,
+				to,
+				cc,
+				bcc,
 				subject,
-				html: fullHtml,
-				text: htmlToPlainText(fullHtml),
-				inReplyTo: threading?.inReplyTo ?? null,
-				references: threading?.references ?? null,
-				threadId: threading?.threadId ?? null,
-			},
+				html,
+				quotedHtml,
+				threading,
+				attachments,
+				aiAssisted,
+				agentRevision,
+			}),
+		[
+			agentRevision,
+			aiAssisted,
 			attachments,
-			storeAttachments: agentRevision === null,
-		};
-	}, [
-		agentRevision,
-		attachments,
-		bcc,
-		cc,
-		fromAddr,
-		html,
-		loadingDraft,
-		quotedHtml,
-		selectedMailbox?.id,
-		selectedMailbox?.signature,
-		subject,
-		threading,
-		to,
-	]);
+			bcc,
+			cc,
+			fromAddr,
+			html,
+			loadingDraft,
+			quotedHtml,
+			selectedMailbox?.id,
+			selectedMailbox?.signature,
+			subject,
+			threading,
+			to,
+		],
+	);
 	const { draftSaves, storedUploads, cancelPendingSave, flush } = useDraftAutosave(
 		draftSnapshot,
 		{ setDraftId, setAttachments, setStoredAttachments, reportError: setToast },
@@ -380,6 +376,7 @@ export function ComposeForm({
 			threading: threading ?? undefined,
 			draftId: currentDraftId,
 			scheduledAt,
+			aiAssisted,
 		});
 		undoRequested.current = false;
 		setUndoRequestedWhileSending(false);
@@ -440,6 +437,7 @@ export function ComposeForm({
 		setStoredAttachments([]);
 		setSubject("");
 		setHtml(applyMailboxSignatureHtml("", "", selectedMailbox?.signature));
+		setAiAssisted(false);
 		setQuotedHtml(null);
 		setAttachments([]);
 		setScheduledAt(null);
@@ -940,7 +938,7 @@ export function ComposeForm({
 										<Paperclip className="h-4 w-4" />
 									</button>
 								</Tooltip>
-								<WriteWithKite editorId={`${mode}-text`} composer={{ html, setHtml, subject, to, threading }} />
+								<WriteWithKite editorId={`${mode}-text`} composer={kiteComposer} />
 								<span className="flex-1" />
 								<Tooltip label="Delete draft">
 									<button

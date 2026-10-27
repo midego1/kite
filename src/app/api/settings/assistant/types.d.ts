@@ -13,4 +13,6 @@ export type AssistantSettingsResponse = {
 	/** False until migration 0069 is applied; the personal instructions cannot be saved before. */
 	instructionsReady: boolean;
 	instructionsMaxLength: number;
+	/** The writing style opt-in; `available` is false until migration 0070 is applied. */
+	writingStyle: { enabled: boolean; available: boolean };
 };

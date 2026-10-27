@@ -1,5 +1,5 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { users } from "./index";
+import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { mailboxes, messages, users } from "./index";
 import { instructionColumns } from "./agent-columns";
 
 /**
@@ -14,6 +14,78 @@ export const userAiSettings = sqliteTable("user_ai_settings", {
 	writingStyleEnabled: integer("writing_style_enabled", { mode: "boolean" }).notNull().default(false),
 	...instructionColumns(),
 	updatedAt: integer("updated_at", { mode: "timestamp" })
+		.notNull()
+		.$defaultFn(() => new Date()),
+});
+
+/**
+ * A user's writing style in one mailbox (migration 0070): running statistics and anonymised greeting and sign-off
+ * forms, never text. Built only while the user's opt-in is on, from their own composer sends.
+ */
+export const writingStyleProfiles = sqliteTable(
+	"writing_style_profiles",
+	{
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		mailboxId: text("mailbox_id")
+			.notNull()
+			.references(() => mailboxes.id, { onDelete: "cascade" }),
+		metricsVersion: integer("metrics_version").notNull().default(1),
+		sampleCount: integer("sample_count").notNull().default(0),
+		/** JSON `{ "<metric>": { n, mean, m2 } }`. */
+		stats: text("stats").notNull().default("{}"),
+		/** JSON `{ "<form>": count }`, at most eight entries each. */
+		greetings: text("greetings").notNull().default("{}"),
+		signOffs: text("sign_offs").notNull().default("{}"),
+		languages: text("languages").notNull().default("{}"),
+		/** Compare-and-set counter: an update applies only to the version it read. */
+		version: integer("version").notNull().default(0),
+		/** Set while a backfill from earlier sends is queued or running. */
+		backfillRequestedAt: integer("backfill_requested_at", { mode: "timestamp" }),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+		updatedAt: integer("updated_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [primaryKey({ columns: [table.userId, table.mailboxId] })],
+);
+
+/**
+ * One row per message sent from the composer with a session and without text Write with Kite inserted (migration
+ * 0070), recorded whether or not its author opted in, so a backfill can apply the same rule to stored mail. It holds
+ * no content and no AI signal: a send Kite helped write simply has no row, and a missing row is never learnt from.
+ */
+export const composerSends = sqliteTable(
+	"composer_sends",
+	{
+		messageId: text("message_id")
+			.primaryKey()
+			.references(() => messages.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		mailboxId: text("mailbox_id")
+			.notNull()
+			.references(() => mailboxes.id, { onDelete: "cascade" }),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [index("composer_sends_user_mailbox_created_idx").on(table.userId, table.mailboxId, table.createdAt)],
+);
+
+/**
+ * Drafts Write with Kite inserted text into (migration 0070), so a reopened draft is never learnt from when it is
+ * sent. The row goes with the draft, which is deleted once it is sent or discarded.
+ */
+export const aiAssistedDrafts = sqliteTable("ai_assisted_drafts", {
+	draftId: text("draft_id")
+		.primaryKey()
+		.references(() => messages.id, { onDelete: "cascade" }),
+	createdAt: integer("created_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),
 });

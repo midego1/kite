@@ -125,6 +125,7 @@ export function AgentDraftActions({
 				</div>
 			</section>
 		);
+	// The draft as it is now, perhaps edited in the composer since the chat; its review shows it in full.
 	const draft = card.kind === "draft" ? card.draft : null;
 	return (
 		<section
@@ -157,7 +158,7 @@ export function AgentDraftActions({
 					type="button"
 					className="rounded-lg border border-blue-200 px-3 py-2 font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
 					disabled={approvingId === action.draftId}
-					onClick={() => onApproveDraft(action.draftId, action.revision)}
+					onClick={() => onApproveDraft(action.draftId, draft?.agent?.revision ?? action.revision)}
 				>
 					{action.scheduledAt ? "Schedule" : "Approve to send"}
 				</button>

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.27.2] - 2026-10-27
+
+### Fixed
+
+- Confirming an assistant draft's send review no longer keeps failing with "Draft changed; review it again" while the draft is open in the composer. After **Review send** stored a file you added, the composer saved the unchanged draft again a moment later, and every save counted as an edit and voided the review. A save that changes nothing about what would be sent (sender, recipients, subject, body or send time) no longer counts as an edit, the composer skips saves that would write the same content and pauses saving while a review is open. When the draft really did change after the review, the dialog now offers **Review again**, which opens a new review of the draft as it is now. **Approve to send** in the chat reviews the draft as the card shows it, including changes made in the composer since.
+
 ## [2026.10.27.1] - 2026-10-27
 
 ### Added

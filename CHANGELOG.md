@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.27.4] - 2026-10-27
+
+### Added
+
+- **All mailboxes**: with two or more mailboxes, the first entry of the mailbox selector shows the mail of every mailbox you can open in one Inbox, Starred, Snoozed, Sent, Drafts, Archive, Spam and Trash. Each email carries a label with its mailbox's name, the sidebar counts add up, your folders are grouped under their mailbox, and conversations stay within one mailbox. A **Show** list in the selector leaves mailboxes out, and your browser remembers both choices. Replies and forwards go out from the mailbox the email arrived in, a new email starts from the From you used last, and bulk actions work across mailboxes while keeping each email in its own. Read-only shared mail can't be moved or deleted there either. See [All mailboxes](https://github.com/midego1/kite/blob/main/docs/all-mailboxes.md).
+- **Writing style**, off by default: turn on **Learn my writing style from mail I send** under [Assistant settings](/inbox) and Kite learns, per mailbox, how you write (length, sentences and paragraphs, greetings and sign-offs, how formally you address people, questions, exclamation marks, emoji and lists) from the mail you send from the composer yourself, never from mail Write with Kite helped write. It keeps statistics and anonymised forms only, never text, and from ten messages on tells the AI in at most 500 characters how to sound like you in chat drafts, Write with Kite and the reply drafts Kite writes on its own. Turning it on can also learn from your last 200 composer sends; the settings show exactly what Kite tells the AI, with Reset per mailbox, and turning it off deletes everything. Apply migration **0070** (`0070_add_writing_style.sql`) from the admin overview to use it.
+
+### Changed
+
+- The **What's new in Kite** dialog now lists changes that are already deployed but not yet part of a named release under "Unreleased changes". Releases are now made by a separate release pull request that collects these changes, so production deploys between releases keep showing the last version with the build's revision.
+- Kite has a new look, after [Zero](https://0.email): neutral grey in place of lavender, one blue accent and the Geist typeface. The earlier lavender look stays available as **Kite classic** in [Settings → Appearance](/settings/appearance) (also a switch at the bottom of the sidebar).
+- The default theme is now dark. Anyone who never picked a theme starts dark, and so does anyone who picked **Match system** before this release, because that choice was not saved until now. To switch back, choose **Light** or **Match system** under Theme in [Settings → Appearance](/settings/appearance); the choice is saved in the browser from now on.
+- The mailbox sits in rounded panels beside the sidebar. The sidebar starts with your mailboxes as squares, then **New email**, the **Core** folders, a folding **Management** section (Archived, Spam, Trash) and your folders, with **Settings** and **Support** at the bottom.
+- The message list has its own search field and a row of chips: **Primary** (everything), **Unread**, **Attachments** and **Starred**, plus Snoozed and, when it is on, the Screener. In the Inbox, starred mail is pinned at the top. Rows show the sender's avatar with the unread dot, the conversation size, the date and the subject; checkboxes appear once you choose **Select**.
+- The open email shows the subject with the conversation's size, its dates and its people, each message as a section with **Reply** and **Forward** under it, attachments as chips, and the toolbar's actions as square buttons with **Reply all**.
+- Replying no longer opens a separate window: the reply box, **Reply**, **Reply all**, **Forward** and the `r`, `a` and `f` keys open the composer under the message, with the body ready to type in. Escape closes it and keeps the draft, which the reply box picks up again; **Pop out** moves it into the floating composer. Phones keep the full-screen composer.
+- Operational alerts, pending database updates and skipped DNS setups are now small notices in the sidebar above Settings (over the page on phones), instead of a bar across the top.
+- The message list no longer repeats the total next to "Primary"; the pager already shows it.
+
+### Fixed
+
+- Money Watch no longer misses the end of a compressed PDF page when its data happens to end in a line-break byte: it now uses the length the PDF states for each stream, so the last lines of an invoice (often the total) are read.
+- Moving a selection to a folder now moves only the emails from that folder's mailbox; mail from another mailbox is left where it was.
+- On phones, the mailbox selector inside the menu sheet can be used again; its list opened behind the sheet and could not be tapped.
+
 ## [2026.10.27.3] - 2026-10-27
 
 ### Changed

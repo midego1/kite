@@ -1,17 +1,21 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import {
 	clearMailboxesCache,
 	fetchMailboxOptions,
 	isIdentityMailbox,
 	SELECTED_MAILBOX_STORAGE_KEY,
+	ALL_MAILBOXES_HIDDEN_STORAGE_KEY,
+	ALL_MAILBOXES_STORAGE_KEY,
 } from "./mailbox-provider-utils";
 import { AUTH_SESSION_CHANGED_EVENT, getClientSessionKey } from "@/lib/auth/client";
 import { PROFILE_NAME_CHANGED_EVENT } from "@/lib/profile/name-client";
 import { PROFILE_AVATAR_CHANGED_EVENT } from "@/lib/profile/avatar-client";
 import type { ProfileNameChangedDetail } from "@/lib/profile/types";
+import { useStoredState } from "@/hooks/use-stored-state";
+import { mailboxIdsParam, visibleMailboxIds } from "@/lib/mailboxes/scope-utils";
 
 export type MailboxOption = {
 	id: string;
@@ -33,11 +37,27 @@ export type MailboxOption = {
 };
 
 type MailboxContextValue = {
+	/** The mailbox last chosen; in the All mailboxes view it stays the one Settings and Compose start from. */
 	selectedMailbox: MailboxOption | null;
+	/** Updates the chosen mailbox; it does not leave the All mailboxes view (use setAllMailboxes). */
 	setSelectedMailbox: (mb: MailboxOption | null) => void;
 	mailboxes: MailboxOption[];
 	isLoading: boolean;
+	/** The mail views list every mailbox (minus the filter's hidden ones); only offered with two or more. */
+	allMailboxes: boolean;
+	setAllMailboxes: (on: boolean) => void;
+	hiddenMailboxIds: string[];
+	setHiddenMailboxIds: (ids: string[]) => void;
+	/** The mailboxes the mail views list right now: the selected one, or the All mailboxes view's. */
+	viewMailboxes: MailboxOption[];
+	/** The mailbox scope for the message hooks (`setMailboxScopeParam`). */
+	mailboxScope: string | null;
 };
+
+const NO_HIDDEN_MAILBOXES: string[] = [];
+const subscribeNever = () => () => {};
+const isClient = () => true;
+const isServer = () => false;
 
 const MailboxContext = createContext<MailboxContextValue | null>(null);
 
@@ -51,6 +71,12 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 	const [mailboxes, setMailboxes] = useState<MailboxOption[]>([]);
 	const [selectedMailbox, setSelectedMailboxState] = useState<MailboxOption | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
+	const [storedAllMailboxes, setAllMailboxes] = useStoredState(ALL_MAILBOXES_STORAGE_KEY, false);
+	const [hiddenMailboxIds, setHiddenMailboxIds] = useStoredState(ALL_MAILBOXES_HIDDEN_STORAGE_KEY, NO_HIDDEN_MAILBOXES);
+	const allMailboxes = storedAllMailboxes === true && mailboxes.length > 1;
+	// The view and its filter are read from storage only after hydration; until then nothing may fetch,
+	// so the first list is never one mailbox's or unfiltered when the browser remembered otherwise.
+	const hydrated = useSyncExternalStore(subscribeNever, isClient, isServer);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -139,9 +165,44 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 		}
 	}, []);
 
-	return (
-		<MailboxContext.Provider value={{ selectedMailbox, setSelectedMailbox, mailboxes, isLoading }}>
-			{children}
-		</MailboxContext.Provider>
+	const view = useMemo(() => {
+		if (!allMailboxes) {
+			return { viewMailboxes: selectedMailbox ? [selectedMailbox] : [], mailboxScope: selectedMailbox?.id ?? null };
+		}
+		const ids = mailboxes.map((mailbox) => mailbox.id);
+		const visible = visibleMailboxIds(ids, Array.isArray(hiddenMailboxIds) ? hiddenMailboxIds : []);
+		const visibleSet = new Set(visible);
+		return {
+			viewMailboxes: mailboxes.filter((mailbox) => visibleSet.has(mailbox.id)),
+			mailboxScope: mailboxIdsParam(ids, visible),
+		};
+	}, [allMailboxes, hiddenMailboxIds, mailboxes, selectedMailbox]);
+
+	const value = useMemo(
+		() => ({
+			selectedMailbox,
+			setSelectedMailbox,
+			mailboxes,
+			isLoading: isLoading || !hydrated,
+			allMailboxes,
+			setAllMailboxes,
+			hiddenMailboxIds,
+			setHiddenMailboxIds,
+			...view,
+		}),
+		[
+			allMailboxes,
+			hiddenMailboxIds,
+			hydrated,
+			isLoading,
+			mailboxes,
+			selectedMailbox,
+			setAllMailboxes,
+			setHiddenMailboxIds,
+			setSelectedMailbox,
+			view,
+		],
 	);
+
+	return <MailboxContext.Provider value={value}>{children}</MailboxContext.Provider>;
 }

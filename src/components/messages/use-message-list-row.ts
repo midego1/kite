@@ -19,8 +19,9 @@ export function useMessageListRow({
 	message,
 	config,
 	currentAccountName,
+	canManage = true,
 	onMessageAction,
-}: Pick<MessageListRowProps, "message" | "config" | "currentAccountName" | "onMessageAction">) {
+}: Pick<MessageListRowProps, "message" | "config" | "currentAccountName" | "canManage" | "onMessageAction">) {
 	const [read, setRead] = useSyncedState(message.read);
 	const [threadUnread, setThreadUnread] = useSyncedState(message.threadUnread);
 	const [starred, setStarred] = useSyncedState(message.starred);
@@ -29,7 +30,7 @@ export function useMessageListRow({
 	const navigation = useMessageNavigation(href, rowMessage);
 	const affectsInboxCount = affectsInboxUnreadCount(config);
 	const inbound = message.direction === "inbound";
-	const hasRowActions = (config.folder === "inbox" || config.folder === "snoozed") && inbound;
+	const hasRowActions = (config.folder === "inbox" || config.folder === "snoozed") && inbound && canManage;
 
 	function setReadState(value: boolean, unread: number | undefined) {
 		setRead(value);
@@ -91,7 +92,7 @@ export function useMessageListRow({
 		unread: isMessageListRowUnread(rowMessage),
 		party: getMessageParty(rowMessage, config.folder, currentAccountName),
 		preview: getMessagePreview(rowMessage, config.folder),
-		draggable: config.folder === "inbox" && inbound,
+		draggable: config.folder === "inbox" && inbound && canManage,
 		starToggle: config.folder === "inbox" && inbound,
 		hasRowActions,
 		runRowAction,

@@ -16,9 +16,15 @@ export function getPermanentDeleteConfirmText(count: number): string {
 	return `Permanently delete ${subject}? This cannot be undone.`;
 }
 
-export function getEmptyFolderConfirmText(folder: PermanentDeleteFolder, total?: number): string {
+export function getEmptyFolderConfirmText(
+	folder: PermanentDeleteFolder,
+	total?: number,
+	mailboxNames?: string,
+): string {
 	const what = total === 1 ? "the 1 message" : total && total > 1 ? `all ${total} messages` : "every message";
-	return `Permanently delete ${what} in ${folderLabels[folder]}? This cannot be undone.`;
+	// All mailboxes names the mailboxes it empties, since read-only ones are left out.
+	const where = mailboxNames ? `${folderLabels[folder]} of ${mailboxNames}` : folderLabels[folder];
+	return `Permanently delete ${what} in ${where}? This cannot be undone.`;
 }
 
 const DELETE_SKIPPED_MESSAGE = "Some messages could not be deleted because they are no longer in Trash or Spam.";

@@ -42,6 +42,7 @@ export function BulkMessageSelectionPane({
 						onClearSelection={onClearSelection}
 						pending={pending}
 						folder={folder}
+						mailboxIds={selectedMessages.map((message) => message.mailboxId)}
 						hideSelectedCount
 					/>
 				</div>

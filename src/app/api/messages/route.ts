@@ -18,6 +18,9 @@ import { loadRowSuggestions } from "@/lib/agent/auto-read/message-suggestions";
 import { suggestionVisibilityFor } from "@/lib/agent/auto-read/suggestion-visibility";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { screenerPendingRows } from "@/lib/screener/views";
+import { resolveMailboxScope } from "@/lib/mailboxes/scope-utils";
+import { mailboxScopeCondition } from "@/lib/messages/mailbox-scope";
+import { conversationKey, rowConversationKey } from "@/lib/messages/conversation-key";
 import { afterCursor, getMessageListColumns, loadConversationPage } from "./utils";
 import { groupThreadMembers, type ScopedThreads } from "@/lib/messages/thread-unread-utils";
 import type { ListMessage } from "./types";
@@ -31,7 +34,6 @@ export async function GET(request: Request) {
 
 	const url = new URL(request.url);
 	const direction = url.searchParams.get("direction");
-	const mailboxId = url.searchParams.get("mailboxId");
 	const folderId = url.searchParams.get("folderId");
 	const status = url.searchParams.get("status");
 	const query = url.searchParams.get("q")?.trim();
@@ -54,19 +56,17 @@ export async function GET(request: Request) {
 	const db = getDb(env);
 	const accessibleMailboxes = await listAccessibleMailboxes(db, user);
 	const accessibleMailboxIds = accessibleMailboxes.map((mailbox) => mailbox.id);
-	const conditions: SQL[] = [];
-	if (mailboxId) {
-		// Every mailbox in the accessible list is readable, so this is the same check
-		// getMailboxAccessLevel makes without querying the mailbox again.
-		if (!accessibleMailboxIds.includes(mailboxId)) {
-			return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
-		}
-		conditions.push(eq(messages.mailboxId, mailboxId));
-	} else if (accessibleMailboxIds.length > 0) {
-		conditions.push(inArray(messages.mailboxId, accessibleMailboxIds));
-	} else {
-		conditions.push(eq(messages.userId, user.id));
+	// Every mailbox in the accessible list is readable, so this is the same check
+	// getMailboxAccessLevel makes without querying the mailbox again.
+	const mailboxScope = resolveMailboxScope(
+		{ mailboxId: url.searchParams.get("mailboxId"), mailboxIds: url.searchParams.get("mailboxIds") },
+		accessibleMailboxIds,
+	);
+	if (!mailboxScope.ok) {
+		return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
 	}
+	const scope = mailboxScopeCondition(mailboxScope.ids, user.id);
+	const conditions: SQL[] = [scope];
 	if (direction === "inbound" || direction === "outbound") {
 		conditions.push(eq(messages.direction, direction));
 	}
@@ -113,8 +113,9 @@ export async function GET(request: Request) {
 		);
 	}
 	const where = and(...conditions);
-	// Messages that were never threaded (older rows, drafts) stand alone.
-	const threadKey = sql<string>`coalesce(${messages.threadId}, ${messages.id})`;
+	// Messages that were never threaded (older rows, drafts) stand alone, and a conversation
+	// never spans mailboxes: the same Message-ID delivered to two of them is two threads.
+	const threadKey = conversationKey();
 
 	// The list renders `snippet`. Bodies stay on the thread endpoint.
 	const messageListColumns = getMessageListColumns();
@@ -135,7 +136,7 @@ export async function GET(request: Request) {
 		const rowById = new Map(rows.map((row) => [row.id, row]));
 		rows = page.ids.map((id) => rowById.get(id)).filter((row): row is ListMessage => !!row);
 		nextCursor = getNextMessageCursor(rows, limit);
-		const keys = rows.map((row) => row.threadId ?? row.id);
+		const keys = rows.map(rowConversationKey);
 		if (keys.length > 0) {
 			const members = await queryInChunks(keys, (chunk) =>
 				db
@@ -165,14 +166,10 @@ export async function GET(request: Request) {
 	const threadIds = Array.from(new Set(rows.map((row) => row.threadId).filter((id): id is string => !!id)));
 	const threadCounts = new Map<string, { total: number; unread: number }>();
 	if (threadIds.length > 0) {
-		const scope = mailboxId
-			? eq(messages.mailboxId, mailboxId)
-			: accessibleMailboxIds.length > 0
-				? inArray(messages.mailboxId, accessibleMailboxIds)
-				: eq(messages.userId, user.id);
 		const countRows = await queryInChunks(threadIds, (chunk) =>
 			db
 				.select({
+					mailboxId: messages.mailboxId,
 					threadId: messages.threadId,
 					total: count(),
 					unread: sum(sql`case when ${messages.read} = 0 and ${messages.direction} = 'inbound' then 1 else 0 end`),
@@ -186,10 +183,14 @@ export async function GET(request: Request) {
 						notInArray(messages.status, ["draft", "trash", SCREENING_STATUS]),
 					),
 				)
-				.groupBy(messages.threadId),
+				.groupBy(messages.mailboxId, messages.threadId),
 		);
 		for (const row of countRows) {
-			if (row.threadId) threadCounts.set(row.threadId, { total: row.total, unread: Number(row.unread ?? 0) });
+			if (row.threadId)
+				threadCounts.set(rowConversationKey({ ...row, id: row.threadId }), {
+					total: row.total,
+					unread: Number(row.unread ?? 0),
+				});
 		}
 	}
 	const mailboxNameMap = new Map(
@@ -231,7 +232,8 @@ export async function GET(request: Request) {
 	const enrichedRows = rows.map(({ rawR2Key: _rawR2Key, ...message }) => {
 		const contactMap = contactMapsByUserId.get(message.userId);
 		const accountName = message.mailboxId ? mailboxNameMap.get(message.mailboxId) : null;
-		const key = message.threadId ?? message.id;
+		const key = rowConversationKey(message);
+		const threadCount = message.threadId ? threadCounts.get(key) : undefined;
 		return {
 			...message,
 			snippet: message.snippet,
@@ -240,12 +242,9 @@ export async function GET(request: Request) {
 				contactMap?.get(normalizeEmailAddress(message.fromAddr)) ??
 				null,
 			toContactName: contactMap?.get(normalizeEmailAddress(getFirstEmailAddressEntry(message.toAddr))) ?? null,
-			threadCount: (message.threadId && threadCounts.get(message.threadId)?.total) || 1,
+			threadCount: threadCount?.total || 1,
 			// A conversation row is unread only when a message it stands for in this folder is.
-			threadUnread:
-				(groupByThread
-					? scopedThreads.unread.get(key)
-					: message.threadId && threadCounts.get(message.threadId)?.unread) || 0,
+			threadUnread: (groupByThread ? scopedThreads.unread.get(key) : threadCount?.unread) || 0,
 			...rowSuggestions(message.id),
 			...(screenerPending.has(message.id) ? { screenerPending: true } : {}),
 			...(groupByThread

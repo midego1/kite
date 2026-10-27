@@ -39,7 +39,7 @@ const moduleCommands = MODULE_MANIFESTS.flatMap((manifest) => manifest.commands)
 const everyCommand = [...CORE_COMMANDS, ...moduleCommands];
 const byId = (id) => everyCommand.find((command) => command.id === id);
 const clientHandlers = (commands) => commands.filter((command) => command.target.type === "client").map((c) => c.id);
-const CORE_CLIENT = ["compose", "show-help"];
+const CORE_CLIENT = ["compose", "all-mailboxes", "one-mailbox", "show-help"];
 
 test("every command declares the designed fields", () => {
 	const effects = ["navigate", "read", "fill", "create", "update", "delete"];

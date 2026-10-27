@@ -8,6 +8,7 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import { cn } from "@/lib/utils";
 import { getMailboxAddress } from "./mailbox-selector-utils";
 import { MailboxAvatar } from "./sidebar-mailbox-switcher";
+import { AllMailboxesSquare } from "./all-mailboxes-option";
 import { useSidebar } from "./sidebar-state";
 import { Tooltip } from "./ui/tooltip";
 
@@ -38,7 +39,7 @@ function CollapseButton() {
  * "+" for admins, the account menu and the collapse button. In the icon rail only the collapse button stays.
  */
 export function SidebarAccounts({ accountMenu }: { accountMenu?: ReactNode }) {
-	const { selectedMailbox, setSelectedMailbox, mailboxes } = useSelectedMailbox();
+	const { selectedMailbox, setSelectedMailbox, mailboxes, allMailboxes, setAllMailboxes } = useSelectedMailbox();
 	const { minimal } = useSidebar();
 	const user = useCurrentUser();
 	const router = useRouter();
@@ -52,8 +53,15 @@ export function SidebarAccounts({ accountMenu }: { accountMenu?: ReactNode }) {
 	const squares = mailboxes.slice(0, MAX_MAILBOX_SQUARES);
 	return (
 		<div className="mb-3 flex h-10 items-center gap-1.5 px-2">
+			<AllMailboxesSquare
+				onSelect={() => {
+					if (allMailboxes) return;
+					setAllMailboxes(true);
+					router.push("/inbox");
+				}}
+			/>
 			{squares.map((mailbox) => {
-				const active = mailbox.id === selectedMailbox?.id;
+				const active = !allMailboxes && mailbox.id === selectedMailbox?.id;
 				return (
 					// A title rather than a Tooltip: the first stop in the phone menu must leave Escape to the sheet.
 					<button
@@ -65,6 +73,7 @@ export function SidebarAccounts({ accountMenu }: { accountMenu?: ReactNode }) {
 						onClick={() => {
 							if (active) return;
 							setSelectedMailbox(mailbox);
+							setAllMailboxes(false);
 							router.push("/inbox");
 						}}
 						className={cn(

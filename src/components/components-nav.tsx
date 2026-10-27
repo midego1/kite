@@ -23,7 +23,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 	const pathname = usePathname();
 	const router = useRouter();
 	const { openComposer } = useCompose();
-	const { selectedMailbox } = useSelectedMailbox();
+	const { mailboxScope } = useSelectedMailbox();
 	const { minimal } = useSidebar();
 	const [dragOver, setDragOver] = useState(false);
 	const [navigationProgress, setNavigationProgress] = useState<number | null>(null);
@@ -120,7 +120,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 		if (!link.preloadMessages || active) return;
 		// Both calls are no-ops when the route or list is already cached.
 		router.prefetch(link.href!);
-		void preloadMailboxPage(link.href!, selectedMailbox?.id).catch(() => undefined);
+		void preloadMailboxPage(link.href!, mailboxScope ?? undefined).catch(() => undefined);
 	}
 
 	function navigate(event: MouseEvent<HTMLAnchorElement>) {

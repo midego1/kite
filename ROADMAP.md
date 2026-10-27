@@ -211,7 +211,7 @@ Taken ahead of the proposed milestones 9–18 in the [complete-suite roadmap](do
 
 One Inbox, Sent, Drafts and Archive for every mailbox you can open, so someone with several addresses (their own, shared ones and, after milestone 6, external accounts) reads and answers everything in one place. A single mailbox stays one click away.
 
-**Where it stands today.** The mailbox selector shows one mailbox at a time. `/api/messages` already lists every accessible mailbox when no `mailboxId` is given, and the **All inboxes** unread count (used by the app badge) adds up all of them, but the UI has no view that uses it.
+**Where it stands today.** Done: the mailbox selector's **All mailboxes** entry ([docs](docs/all-mailboxes.md)). The list, counts and navigation APIs take `mailboxIds` for the filter, and the browser keeps the view and the filter (`kite-all-mailboxes`, `kite-all-mailboxes-hidden`).
 
 1. **All mailboxes view**
    - An **All mailboxes** entry at the top of the mailbox selector. It opens combined folders: Inbox, Starred, Snoozed, Sent, Drafts, Archive, Spam and Trash, with the sidebar counts summed across mailboxes. User folders stay per mailbox and are grouped under each mailbox's name.

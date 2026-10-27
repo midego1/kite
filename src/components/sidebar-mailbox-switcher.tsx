@@ -13,6 +13,8 @@ import { getAvatarColorStyle } from "@/lib/avatar-colors";
 import { cn } from "@/lib/utils";
 import { getAccountInitial, getMailboxAddress, getMailboxName } from "./mailbox-selector-utils";
 import { useSidebar } from "./sidebar-state";
+import { AllMailboxesFilter, AllMailboxesOption } from "./all-mailboxes-option";
+import { ALL_MAILBOXES_LABEL } from "./messages/utils";
 
 export function MailboxAvatar({ mailbox, className }: { mailbox: MailboxOption; className?: string }) {
 	const [failed, setFailed] = useState(false);
@@ -39,16 +41,36 @@ export function MailboxAvatar({ mailbox, className }: { mailbox: MailboxOption; 
 	);
 }
 
+type MenuAnchor = { top: number; left: number; width: number; container: HTMLElement };
+
+/**
+ * Where the menu opens: fixed under the button in <body>, or, inside the phone menu sheet (a modal
+ * dialog that blocks clicks outside it), inside the sheet and positioned relative to it.
+ */
+function menuAnchor(button: HTMLElement): MenuAnchor {
+	const rect = button.getBoundingClientRect();
+	const width = Math.min(Math.max(rect.width, 320), window.innerWidth - rect.left - 12);
+	const dialog = button.closest<HTMLElement>('[role="dialog"]');
+	const origin = dialog?.getBoundingClientRect() ?? { top: 0, left: 0 };
+	return {
+		top: rect.bottom + 6 - origin.top,
+		left: rect.left - origin.left,
+		width,
+		container: dialog ?? document.body,
+	};
+}
+
 /** Switches the active mailbox from the top of the sidebar, without opening the account menu. */
 export function SidebarMailboxSwitcher() {
-	const { selectedMailbox, setSelectedMailbox, mailboxes } = useSelectedMailbox();
+	const { selectedMailbox, setSelectedMailbox, mailboxes, allMailboxes, setAllMailboxes, viewMailboxes } =
+		useSelectedMailbox();
 	const { minimal } = useSidebar();
 	const user = useCurrentUser();
 	const router = useRouter();
 	const [open, setOpen] = useState(false);
 	const ref = useRef<HTMLDivElement>(null);
 	const menuRef = useRef<HTMLDivElement>(null);
-	const [anchor, setAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
+	const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
 	const { counts } = useMessageCounts(null, open);
 
 	useEffect(() => {
@@ -74,11 +96,7 @@ export function SidebarMailboxSwitcher() {
 	}, [open]);
 
 	function toggleMenu() {
-		const rect = ref.current?.getBoundingClientRect();
-		if (rect) {
-			const width = Math.min(Math.max(rect.width, 320), window.innerWidth - rect.left - 12);
-			setAnchor({ top: rect.bottom + 6, left: rect.left, width });
-		}
+		if (ref.current) setAnchor(menuAnchor(ref.current));
 		setOpen((value) => !value);
 	}
 
@@ -89,69 +107,88 @@ export function SidebarMailboxSwitcher() {
 			<button
 				type="button"
 				onClick={toggleMenu}
-				aria-haspopup="listbox"
+				aria-haspopup="dialog"
 				aria-expanded={open}
-				aria-label={`Switch mailbox, current: ${getMailboxAddress(selectedMailbox)}`}
+				aria-label={`Switch mailbox, current: ${allMailboxes ? ALL_MAILBOXES_LABEL : getMailboxAddress(selectedMailbox)}`}
 				className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-neutral-200/60 max-md:min-h-11"
 			>
 				<span className="min-w-0 flex-1">
 					<span className="block truncate text-[15px] font-medium text-neutral-900">
-						{getMailboxName(selectedMailbox)}
+						{allMailboxes ? ALL_MAILBOXES_LABEL : getMailboxName(selectedMailbox)}
 					</span>
-					<span className="block truncate text-sm text-neutral-500">{getMailboxAddress(selectedMailbox)}</span>
+					<span className="block truncate text-sm text-neutral-500">
+						{allMailboxes ? `${viewMailboxes.length} mailboxes` : getMailboxAddress(selectedMailbox)}
+					</span>
 				</span>
 				<ChevronsUpDown className="h-4 w-4 shrink-0 text-neutral-400" />
 			</button>
 			{open &&
 				anchor &&
 				createPortal(
-					// Portalled to <body>: the sidebar clips overflow and, on phones, is transformed, which would trap a fixed menu.
+					// Portalled out of the sidebar, which clips overflow and, on phones, is transformed, which would trap a fixed menu.
 					<div
 						ref={menuRef}
 						style={{ top: anchor.top, left: anchor.left, width: anchor.width }}
-						className="fixed z-[200] max-h-[70vh] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl shadow-neutral-900/15"
-						role="listbox"
-						aria-label="Mailboxes"
+						className={cn(
+							anchor.container === document.body ? "fixed" : "absolute",
+							"z-[200] max-h-[70vh] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl shadow-neutral-900/15",
+						)}
+						role="dialog"
+						aria-label="Switch mailbox"
 					>
-						{mailboxes.map((mailbox) => {
-							const active = mailbox.id === selectedMailbox.id;
-							const unread = counts.mailboxes.find((count) => count.mailboxId === mailbox.id)?.unread ?? 0;
-							return (
-								<button
-									key={mailbox.id}
-									type="button"
-									role="option"
-									aria-selected={active}
-									onClick={() => {
-										setOpen(false);
-										if (active) return;
-										setSelectedMailbox(mailbox);
-										router.push("/inbox");
-									}}
-									className={cn(
-										"flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-neutral-100",
-										active && "bg-blue-50",
-									)}
-								>
-									<MailboxAvatar mailbox={mailbox} className="h-7 w-7" />
-									<span className="min-w-0 flex-1">
-										<span className="flex items-center gap-1.5 truncate text-sm font-medium text-neutral-900">
-											{getMailboxName(mailbox)}
-											{mailbox.type === "shared" && (
-												<UsersRound className="h-3.5 w-3.5 shrink-0 text-blue-600" aria-label="Shared inbox" />
-											)}
+						<div role="listbox" aria-label="Mailboxes">
+							<AllMailboxesOption
+								counts={counts.mailboxes}
+								onSelect={() => {
+									setOpen(false);
+									if (allMailboxes) return;
+									setAllMailboxes(true);
+									router.push("/inbox");
+								}}
+							/>
+							{mailboxes.map((mailbox) => {
+								const active = !allMailboxes && mailbox.id === selectedMailbox.id;
+								const unread = counts.mailboxes.find((count) => count.mailboxId === mailbox.id)?.unread ?? 0;
+								return (
+									<button
+										key={mailbox.id}
+										type="button"
+										role="option"
+										aria-selected={active}
+										onClick={() => {
+											setOpen(false);
+											if (active) return;
+											setSelectedMailbox(mailbox);
+											setAllMailboxes(false);
+											router.push("/inbox");
+										}}
+										className={cn(
+											"flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-neutral-100",
+											active && "bg-blue-50",
+										)}
+									>
+										<MailboxAvatar mailbox={mailbox} className="h-7 w-7" />
+										<span className="min-w-0 flex-1">
+											<span className="flex items-center gap-1.5 truncate text-sm font-medium text-neutral-900">
+												{getMailboxName(mailbox)}
+												{mailbox.type === "shared" && (
+													<UsersRound className="h-3.5 w-3.5 shrink-0 text-blue-600" aria-label="Shared inbox" />
+												)}
+											</span>
+											<span className="block truncate text-xs text-neutral-500">{getMailboxAddress(mailbox)}</span>
 										</span>
-										<span className="block truncate text-xs text-neutral-500">{getMailboxAddress(mailbox)}</span>
-									</span>
-									{unread > 0 && (
-										<span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700">
-											{unread > 99 ? "99+" : unread}
-										</span>
-									)}
-									{active && <Check className="h-4 w-4 shrink-0 text-blue-600" />}
-								</button>
-							);
-						})}
+										{unread > 0 && (
+											<span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700">
+												{unread > 99 ? "99+" : unread}
+											</span>
+										)}
+										{active && <Check className="h-4 w-4 shrink-0 text-blue-600" />}
+									</button>
+								);
+							})}
+						</div>
+						{/* Outside the listbox: checkboxes are not options. */}
+						<AllMailboxesFilter />
 						{user?.role === "admin" && (
 							<Link
 								href="/mailboxes"
@@ -163,7 +200,7 @@ export function SidebarMailboxSwitcher() {
 							</Link>
 						)}
 					</div>,
-					document.body,
+					anchor.container,
 				)}
 		</div>
 	);

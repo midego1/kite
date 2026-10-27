@@ -1,5 +1,6 @@
 import { authFetch, getClientSessionKey } from "@/lib/auth/client";
 import type { MailboxOption } from "./mailbox-provider";
+import { clearStoredState } from "@/hooks/use-stored-state";
 
 let mailboxesCache: MailboxOption[] | null = null;
 let mailboxesCacheSessionToken: string | null = null;
@@ -7,6 +8,10 @@ let mailboxesRequest: Promise<MailboxOption[]> | null = null;
 let mailboxesRequestSessionToken: string | null = null;
 let cacheGeneration = 0;
 export const SELECTED_MAILBOX_STORAGE_KEY = "selected-mailbox-id";
+/** Browser preferences of the All mailboxes view (see appearance-preferences.ts): on, the hidden mailboxes, the last From. */
+export const ALL_MAILBOXES_STORAGE_KEY = "kite-all-mailboxes";
+export const ALL_MAILBOXES_HIDDEN_STORAGE_KEY = "kite-all-mailboxes-hidden";
+export const LAST_FROM_STORAGE_KEY = "kite-compose-last-from";
 
 /**
  * The primary mailbox is the one at the account address; it is the only mailbox
@@ -28,6 +33,8 @@ export function clearMailboxClientState() {
 	clearMailboxesCache();
 	if (typeof window !== "undefined") {
 		localStorage.removeItem(SELECTED_MAILBOX_STORAGE_KEY);
+		// The All mailboxes view, its filter and the last From belong to the account that signed out.
+		clearStoredState([ALL_MAILBOXES_STORAGE_KEY, ALL_MAILBOXES_HIDDEN_STORAGE_KEY, LAST_FROM_STORAGE_KEY]);
 	}
 }
 

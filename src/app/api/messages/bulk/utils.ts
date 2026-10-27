@@ -58,3 +58,12 @@ export function isPermanentlyDeletableStatus(status: string | null | undefined):
 export function isPermanentDeleteFolder(folder: unknown): folder is PermanentDeleteFolder {
 	return folder === "trash" || folder === "spam";
 }
+
+/**
+ * The mailbox whose access decides an action on a message, or null to skip it: mail without a
+ * mailbox, and mail outside the mailbox of the user folder it would be moved to.
+ */
+export function actionMailboxId(mailboxId: string | null, folderMailboxId: string | null): string | null {
+	if (!mailboxId) return null;
+	return !folderMailboxId || mailboxId === folderMailboxId ? mailboxId : null;
+}

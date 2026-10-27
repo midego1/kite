@@ -3,6 +3,9 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+	/* Where toasts and the send bars sit: above the reply box (about 4.5rem tall) and the assistant button. */
+	--kite-toast-bottom: 6rem;
+	--kite-toast-inset: 2rem;
 	/* Tailwind's #737373 is 4.45:1 on the #f6f8fc page, just under WCAG AA for body text. */
 	--color-neutral-500: #6b6b6b;
 	--background: #f6f8fc;
@@ -930,5 +933,12 @@ button {
 @media (max-width: 767px) {
 	.page-flush :is(.bg-white.p-6, .bg-white.p-5) {
 		padding-inline: 0;
+	}
+}
+
+@media (max-width: 767px) {
+	:root {
+		--kite-toast-bottom: calc(6rem + env(safe-area-inset-bottom));
+		--kite-toast-inset: 1rem;
 	}
 }

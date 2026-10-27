@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Writing style**, off by default: turn on **Learn my writing style from mail I send** under [Assistant settings](/inbox) and Kite learns, per mailbox, how you write (length, sentences and paragraphs, greetings and sign-offs, how formally you address people, questions, exclamation marks, emoji and lists) from the mail you send from the composer yourself, never from mail Write with Kite helped write. It keeps statistics and anonymised forms only, never text, and from ten messages on tells the AI in at most 500 characters how to sound like you in chat drafts, Write with Kite and the reply drafts Kite writes on its own. Turning it on can also learn from your last 200 composer sends; the settings show exactly what Kite tells the AI, with Reset per mailbox, and turning it off deletes everything. Apply migration **0070** (`0070_add_writing_style.sql`) from the admin overview to use it.
+
 ## [2026.10.27.1] - 2026-10-27
 
 ### Added

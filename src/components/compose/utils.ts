@@ -26,6 +26,8 @@ export function buildSendFormData(input: {
 	/** Draft whose stored attachments should be sent with the message. */
 	draftId?: string | null;
 	scheduledAt?: Date | null;
+	/** Write with Kite inserted text into this message; the writing style profile does not learn from it. */
+	aiAssisted?: boolean;
 }): FormData {
 	const form = new FormData();
 	form.set("from", input.from);
@@ -41,6 +43,7 @@ export function buildSendFormData(input: {
 	if (input.threading?.threadId) form.set("threadId", input.threading.threadId);
 	if (input.draftId) form.set("draftId", input.draftId);
 	if (input.scheduledAt) form.set("scheduledAt", input.scheduledAt.toISOString());
+	if (input.aiAssisted) form.set("aiAssisted", "true");
 	for (const attachment of input.attachments) {
 		form.append("attachments", attachment.file);
 	}

@@ -75,3 +75,17 @@ export async function personalInstructionsFor(
 	if (!Object.values(instructions).some((value) => value.trim())) return null;
 	return { ...instructions, name: user.name };
 }
+
+/** Turns the writing style opt-in on or off; throws `UserAiSettingsPendingError` before migration 0069. */
+export async function saveWritingStyleEnabled(db: AppDatabase, userId: string, enabled: boolean): Promise<void> {
+	const values = { writingStyleEnabled: enabled, updatedAt: new Date() };
+	try {
+		await db
+			.insert(userAiSettings)
+			.values({ userId, ...values })
+			.onConflictDoUpdate({ target: userAiSettings.userId, set: values });
+	} catch (error) {
+		if (isNoSuchTableError(error)) throw new UserAiSettingsPendingError();
+		throw error;
+	}
+}

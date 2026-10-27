@@ -55,6 +55,8 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 		tables: [
 			"mailbox_agent_settings",
 			"user_ai_settings",
+			"writing_style_profiles",
+			"composer_sends",
 			"agent_conversations",
 			"agent_chat_messages",
 			"agent_jobs",

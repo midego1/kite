@@ -7,6 +7,8 @@ export type WriteWithKiteComposer = {
 	subject: string;
 	to: string[];
 	threading: ComposeThreading | null;
+	/** Called once Kite's text is in the message, so the send can tell the writing style profile to skip it. */
+	onInserted?: () => void;
 };
 
 /** The selection in the editor when the panel opened, clipped to the text before the signature. */

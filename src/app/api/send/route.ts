@@ -11,6 +11,7 @@ import { agentDraftMetadata, messages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { loadMessageAttachmentContents } from "@/lib/email/attachments";
 import { userOwnsDraft } from "@/app/api/drafts/utils";
+import { learnFromComposerSend } from "@/lib/agent/writing-style";
 import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend, resolveComposerSendTime } from "@/lib/email/undo-send-utils";
 
 export async function POST(request: Request) {
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
 		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
 		return NextResponse.json({ error: "Invalid send request" }, { status });
 	}
-	const { attachments = [], draftId, ...fields } = input;
+	const { attachments = [], draftId, aiAssisted, ...fields } = input;
 	const parsed = sendEmailSchema.omit({ attachments: true }).safeParse(fields);
 	if (!parsed.success) {
 		return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -58,6 +59,15 @@ export async function POST(request: Request) {
 			scheduledAt: timing.scheduledAt,
 			attachments,
 			publicOrigin: new URL(request.url).origin,
+		});
+		// Only here, a send from the composer with a session, may the writing style profile learn; it never fails the send.
+		await learnFromComposerSend(env, {
+			messageId: result.messageId,
+			userId: user.id,
+			mailboxId: parsed.data.mailboxId,
+			aiAssisted: aiAssisted === true || aiAssisted === "true",
+			html: parsed.data.html,
+			text: parsed.data.text,
 		});
 		if (timing.undoUntil && result.scheduled) {
 			return NextResponse.json({ messageId: result.messageId, undoUntil: timing.undoUntil });

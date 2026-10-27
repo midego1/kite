@@ -95,7 +95,8 @@ function personalHeading(personal: PersonalInstructions, scope?: string): string
  */
 export function chatPreferenceText(preferences: ChatPreferences): string {
 	const { mailbox, personal } = preferences;
-	return renderSections([
+	const style = writingStyleSection(preferences.writingStyle, true);
+	const sections = renderSections([
 		{ heading: `Mailbox preferences for chat (${RULES}):`, text: mailbox.chat },
 		{ heading: `Mailbox preferences for draft bodies, ${DRAFT_BODIES} (${RULES}):`, text: mailbox.draft },
 		...(personal
@@ -106,12 +107,14 @@ export function chatPreferenceText(preferences: ChatPreferences): string {
 				]
 			: []),
 	]);
+	return [sections, style].filter(Boolean).join("\n\n");
 }
 
 /** A reply draft prompt's sections after the mailbox's general instructions: mailbox drafting, then the reviewer's. */
 export function draftPreferenceText(preferences: DraftPreferences): string {
 	const { mailboxDraft, personal } = preferences;
-	return renderSections([
+	const style = writingStyleSection(preferences.writingStyle);
+	const sections = renderSections([
 		{ heading: `Mailbox preferences for drafting (${RULES}):`, text: mailboxDraft },
 		...(personal
 			? [
@@ -120,4 +123,18 @@ export function draftPreferenceText(preferences: DraftPreferences): string {
 				]
 			: []),
 	]);
+	return [sections, style].filter(Boolean).join("\n\n");
+}
+
+const STYLE_HEADING =
+	"Writing style of the person you write for (a statistical hint; the instructions above and the user's own request take priority):";
+
+/**
+ * The writing style section that goes last in a system prompt, after every instruction; empty without a description.
+ * `forChat` limits it to the bodies of drafts chat writes. The text is Kite's own, built from statistics.
+ */
+export function writingStyleSection(description: string | null | undefined, forChat = false): string {
+	const text = description ? cleanInstruction(description, 600) : "";
+	if (!text) return "";
+	return `${STYLE_HEADING}\n${forChat ? `When you write a draft body, match this style: ${text}` : text}`;
 }

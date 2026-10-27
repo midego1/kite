@@ -48,6 +48,8 @@ export type DatabaseBackupTable =
 	| "login_challenges"
 	| "mailbox_agent_settings"
 	| "user_ai_settings"
+	| "writing_style_profiles"
+	| "composer_sends"
 	| "agent_conversations"
 	| "agent_chat_messages"
 	| "agent_jobs"

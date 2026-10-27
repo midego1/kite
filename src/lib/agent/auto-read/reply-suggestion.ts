@@ -5,6 +5,7 @@ import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import { draftPromptChars, generateReplyDraft, loadDraftThread } from "../jobs/draft-generation";
 import type { PersonalInstructions } from "../instruction-types";
 import { personalInstructionsFor } from "../user-ai-settings";
+import { styleDescriptionFor } from "../writing-style";
 import { draftReplyEffect } from "./action-effects";
 import { ExternalProviderNotAllowedError, selectAutoReadModel } from "./auto-read-model";
 import { guardDraft, collectThreadReferences } from "./draft-guard-utils";
@@ -46,9 +47,10 @@ export async function generateDraft(
 	selection: AgentSelection,
 	thread: SourceMessage[],
 	personal: PersonalInstructions | null = null,
+	writingStyle: string | null = null,
 ) {
 	const { env, job, settings } = input;
-	const preferences = { mailboxDraft: settings.draftInstructions, personal };
+	const preferences = { mailboxDraft: settings.draftInstructions, personal, writingStyle };
 	const promptChars = draftPromptChars({ instructions: settings.instructions, preferences, thread });
 	const options = buildModelCallOptions({
 		provider: selection.providerKind,
@@ -147,7 +149,13 @@ async function guardedDraftText(
 	const thread = await loadDraftThread(db, input.job.mailboxId, input.source);
 	let text: string;
 	try {
-		text = await generateDraft(input, selection, thread, await personalInstructionsFor(db, reviewer));
+		text = await generateDraft(
+			input,
+			selection,
+			thread,
+			await personalInstructionsFor(db, reviewer),
+			await styleDescriptionFor(db, reviewer.id, input.job.mailboxId),
+		);
 	} catch (error) {
 		if (error instanceof SpendCapReachedError) {
 			await blockDraft(input, "spend_cap");

@@ -13,6 +13,7 @@ import { getAutoReadInstallSettings } from "./auto-read/install-settings";
 import { chatSpendCapError, createChatSpend } from "./chat-spend";
 import { CHAT_STEP_MAX_OUTPUT_TOKENS, stepPromptChars } from "./chat-spend-utils";
 import { personalInstructionsFor } from "./user-ai-settings";
+import { styleDescriptionFor } from "./writing-style";
 import { attachHistoryRefs, buildChatTools, resolveToolResultRefs } from "./chat-tools";
 import type { AgentToolContext } from "./types";
 import { normalizeTimeZone } from "@/lib/time/utils";
@@ -149,6 +150,7 @@ export async function createAgentChatStream(
 	const system = agentSystemPrompt(settings?.instructions ?? "", timeZone, fragments, {
 		mailbox: { chat: settings?.chatInstructions ?? "", draft: settings?.draftInstructions ?? "" },
 		personal: await personalInstructionsFor(db, context.user),
+		writingStyle: await styleDescriptionFor(db, context.user.id, context.mailboxId),
 	});
 	const maxSteps = clampAgentMaxSteps(context.user.agentMaxSteps);
 	const install = await getAutoReadInstallSettings(context.env);

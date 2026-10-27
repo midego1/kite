@@ -185,12 +185,12 @@ export function ComposeForm({
 		threading,
 		to,
 	]);
-	const { draftSaves, storedUploads, cancelPendingSave } = useDraftAutosave(draftSnapshot, {
-		setDraftId,
-		setAttachments,
-		setStoredAttachments,
-		reportError: setToast,
-	});
+	const { draftSaves, storedUploads, cancelPendingSave } = useDraftAutosave(
+		draftSnapshot,
+		{ setDraftId, setAttachments, setStoredAttachments, reportError: setToast },
+		// Preparing or showing an assistant draft's send review: a save now would void the review.
+		{ paused: agentRevision !== null && (loading || agentReview !== null) },
+	);
 
 	useEffect(() => {
 		if (!toast) return;
@@ -643,6 +643,10 @@ export function ComposeForm({
 					approvalId={agentReview.approvalId}
 					snapshot={agentReview.snapshot}
 					onClose={() => setAgentReview(null)}
+					onReviewAgain={() => {
+						setAgentReview(null);
+						void submitMessage();
+					}}
 					onSent={() => {
 						setAgentReview(null);
 						if (onClose) onClose();

@@ -524,7 +524,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 		else setError(((await response.json()) as AgentErrorResponse).error || "Could not discard draft");
 	}
 
-	async function startDraftReview(draftId: string, revision: number) {
+	async function startDraftReview(draftId: string, revision?: number) {
 		setApprovingId(draftId);
 		setError(null);
 		try {
@@ -958,6 +958,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 					approvalId={draftReview.approvalId}
 					snapshot={draftReview.snapshot}
 					onClose={() => setDraftReview(null)}
+					onReviewAgain={() => void startDraftReview(draftReview.draftId)}
 					onSent={() => {
 						setDraftReview(null);
 						void refresh();

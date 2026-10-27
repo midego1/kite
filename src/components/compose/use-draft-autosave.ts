@@ -21,21 +21,34 @@ type DraftUploads = { tried: Set<string>; stored: Set<string> };
 /**
  * Saves the composer to its draft 900 ms after the last change, one save at a
  * time, and stores the composer's files on the draft. A change still waiting
- * when the composer unmounts is saved then instead of being dropped.
+ * when the composer unmounts is saved then instead of being dropped. A
+ * snapshot equal to what the last save stored is not saved again, and nothing
+ * is saved while `paused` (a send review is open).
  *
  * The setters must be stable (React state setters): the save queue keeps the
  * ones from the first render.
  */
-export function useDraftAutosave(snapshot: ComposeDraftSnapshot | null, setters: AutosaveSetters) {
+export function useDraftAutosave(
+	snapshot: ComposeDraftSnapshot | null,
+	setters: AutosaveSetters,
+	{ paused = false }: { paused?: boolean } = {},
+) {
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// The debounced save not started yet; it still runs if the composer closes first.
 	const pendingSave = useRef<ComposeDraftSnapshot | null>(null);
-	const [{ draftSaves, uploads }] = useState(() => {
+	const [{ draftSaves, uploads, lastSaved }] = useState(() => {
 		const created: DraftUploads = { tried: new Set(), stored: new Set() };
+		// The draft and content the last save stored; a snapshot that would write the same again is not saved.
+		const lastSaved: { key: string | null } = { key: null };
 		return {
 			uploads: created,
+			lastSaved,
 			draftSaves: createDraftSaveQueue<ComposeDraftSnapshot>({
-				save: (next, existingId, stale) => saveDraftSnapshot(next, existingId, stale, created, setters),
+				save: async (next, existingId, stale) => {
+					const saved = await saveDraftSnapshot(next, existingId, stale, created, setters);
+					if (saved && !stale()) lastSaved.key = autosaveKey(saved, next);
+					return saved;
+				},
 				discard: (id) => void authFetch(`/api/drafts/${id}`, { method: "DELETE" }).catch(() => {}),
 				onDraftId: setters.setDraftId,
 			}),
@@ -43,15 +56,17 @@ export function useDraftAutosave(snapshot: ComposeDraftSnapshot | null, setters:
 	});
 
 	useEffect(() => {
-		pendingSave.current = snapshot;
-		if (!snapshot) return;
+		// A save while a send review is open would change the draft under the review and void it.
+		const next = snapshot && !paused && autosaveKey(draftSaves.draftId, snapshot) !== lastSaved.key ? snapshot : null;
+		pendingSave.current = next;
+		if (!next) return;
 		const timer = setTimeout(() => {
 			pendingSave.current = null;
-			void draftSaves.enqueue(snapshot);
+			void draftSaves.enqueue(next);
 		}, AUTOSAVE_DELAY_MS);
 		saveTimer.current = timer;
 		return () => clearTimeout(timer);
-	}, [draftSaves, snapshot]);
+	}, [draftSaves, lastSaved, paused, snapshot]);
 
 	// Closing the composer (or opening another draft) unmounts it; save what was typed in the last moment.
 	useEffect(() => {
@@ -80,6 +95,12 @@ export function useDraftAutosave(snapshot: ComposeDraftSnapshot | null, setters:
 			pendingSave.current = null;
 		},
 	};
+}
+
+/** What a save of `snapshot` to `draftId` would store: the payload, and the files only when it stores them. */
+function autosaveKey(draftId: string | null, snapshot: ComposeDraftSnapshot): string {
+	const files = snapshot.storeAttachments ? snapshot.attachments.map((attachment) => attachment.id) : [];
+	return JSON.stringify([draftId, snapshot.payload, files]);
 }
 
 async function saveDraftSnapshot(

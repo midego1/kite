@@ -9,6 +9,7 @@ import { recordSentAgentDraft } from "@/lib/agent/auto-read/sent-draft";
 import { newId } from "@/lib/ids";
 import type { SessionUser } from "@/lib/auth/types";
 import type { AgentSendSnapshot } from "./types";
+import { DRAFT_CHANGED_ERROR, canonicalSnapshotJson } from "./snapshot-utils";
 
 async function sha256(value: ArrayBuffer | string) {
 	const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
@@ -49,7 +50,6 @@ async function snapshot(
 			digest: await sha256(await object.arrayBuffer()),
 		});
 	}
-	attachments.sort((a, b) => a.id.localeCompare(b.id));
 	const payload: AgentSendSnapshot = {
 		from: draft.fromAddr,
 		to: draft.toAddr,
@@ -67,7 +67,7 @@ async function snapshot(
 	};
 	if (!payload.to.trim() || !payload.subject.trim() || !(payload.text?.trim() || payload.html?.trim()))
 		throw new Error("Draft is incomplete");
-	return { payload, hash: await sha256(JSON.stringify(payload)) };
+	return { payload, hash: await sha256(canonicalSnapshotJson(payload)) };
 }
 
 export async function requestAgentSend(
@@ -161,7 +161,7 @@ export async function confirmAgentSend(
 	const { draft, metadata } = await currentDraft(env, user, approval.draftId);
 	const current = await snapshot(env, draft, metadata.scheduledAt);
 	if (metadata.revision !== approval.revision || current.hash !== approval.payloadHash)
-		throw new Error("Draft changed; review it again");
+		throw new Error(DRAFT_CHANGED_ERROR);
 	if (metadata.scheduledAt && metadata.scheduledAt.getTime() <= Date.now())
 		throw new Error("Scheduled time has passed; update the draft before confirming");
 	const claimed = await db

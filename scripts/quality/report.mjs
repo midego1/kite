@@ -1,14 +1,16 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import { resolveBase } from "../release-check-utils.mjs";
 import {
 	ALLOWANCE_DIRECTORY,
+	addedAllowanceFiles,
 	checkBundles,
 	describeBundles,
-	isAllowanceFile,
+	effectiveBudgets,
 	parseAllowance,
+	resolveBundleBase,
 } from "./bundle-budget-utils.mjs";
 
 const directory = "test-results/quality";
@@ -38,58 +40,52 @@ async function measure(root) {
 	return { client: await sizes(path.join(root, "dist/client")), worker: await sizes(path.join(root, "dist/server")) };
 }
 
-const git = (...args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trimEnd();
+const git = (...args) =>
+	execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 28 }).trimEnd();
 const flag = process.argv.indexOf("--base");
 const requested = (flag > 0 ? process.argv[flag + 1] : process.env.BUNDLE_BASE) || "";
 
-/**
- * The commit this build is compared with: BUNDLE_BASE (or --base) when given, `none` to skip the comparison;
- * on a pull request the first parent of GitHub's merge commit (the base it was merged onto); locally the
- * merge-base with origin/main. A push to main has no base: only the ceiling applies. Returns null with a
- * reason when none can be found.
- */
-function baseCommit() {
-	if (requested === "none") return { reason: "BUNDLE_BASE=none" };
-	try {
-		if (requested) return { sha: git("rev-parse", "--verify", `${requested}^{commit}`) };
-		if (process.env.GITHUB_EVENT_NAME === "pull_request") {
-			const sha = resolveBase(git, `origin/${process.env.GITHUB_BASE_REF || "main"}`, { pullRequest: true });
-			return { sha: git("rev-parse", "--verify", `${sha}^{commit}`) };
-		}
-		if (process.env.GITHUB_EVENT_NAME) return { reason: `a ${process.env.GITHUB_EVENT_NAME} has no base` };
-		return { sha: git("merge-base", "HEAD", "origin/main") };
-	} catch {
-		return { reason: "the base commit is not available (fetch it, or pass --base <ref>)" };
-	}
-}
+const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+const showAt = (sha, file) => git("show", `${sha}:${file}`);
 
-/** Builds `sha` in a scratch copy under test-results, reusing the repository's node_modules; cached per commit. */
+/**
+ * Builds `sha` in a scratch copy under test-results and measures it; cached per commit and lockfile. The
+ * checkout's node_modules are linked in unless package-lock.json differs between the base and this change:
+ * then the base installs its own dependencies (`npm ci`; the base is trusted code), so growth that comes
+ * from a dependency shows up in the comparison and a lockfile change cannot break the base build.
+ */
 async function baseSizes(sha) {
-	const cache = path.join(directory, `base-${sha.slice(0, 12)}.json`);
+	const baseLock = showAt(sha, "package-lock.json"); // trimmed, like the checkout's text below
+	const ownDependencies = sha256(baseLock) !== sha256((await fs.readFile("package-lock.json", "utf8")).trimEnd());
+	const key = `base-${sha.slice(0, 12)}-${sha256(baseLock).slice(0, 12)}`;
+	const cache = path.join(directory, `${key}.json`);
 	try {
 		return JSON.parse(await fs.readFile(cache, "utf8"));
 	} catch {
 		// Not measured yet.
 	}
-	const root = path.resolve(directory, `base-${sha.slice(0, 12)}`);
+	const root = path.resolve(directory, key);
 	await fs.rm(root, { recursive: true, force: true });
 	await fs.mkdir(root, { recursive: true });
+	const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+	const run = (args, what) => {
+		const result = spawnSync(npm, args, { cwd: root, encoding: "utf8", maxBuffer: 1 << 28 });
+		if (result.status !== 0) {
+			console.error(String(result.stderr).slice(-4000));
+			throw new Error(what);
+		}
+	};
 	try {
 		const archive = spawnSync("git", ["archive", sha], { maxBuffer: 1 << 30 });
 		if (archive.status !== 0) throw new Error(`git archive ${sha} failed`);
 		const extract = spawnSync("tar", ["-x", "-C", root], { input: archive.stdout });
 		if (extract.status !== 0) throw new Error("could not unpack the base commit");
-		await fs.symlink(path.resolve("node_modules"), path.join(root, "node_modules"), "dir");
+		if (ownDependencies) {
+			console.log("package-lock.json changed; installing the base's own dependencies...");
+			run(["ci", "--ignore-scripts=false", "--no-audit", "--no-fund"], "npm ci failed for the base commit");
+		} else await fs.symlink(path.resolve("node_modules"), path.join(root, "node_modules"), "dir");
 		console.log(`Building base ${sha.slice(0, 12)} to measure this change's growth...`);
-		const build = spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build"], {
-			cwd: root,
-			encoding: "utf8",
-			maxBuffer: 1 << 28,
-		});
-		if (build.status !== 0) {
-			console.error(String(build.stderr).slice(-4000));
-			throw new Error("the base commit did not build");
-		}
+		run(["run", "build"], "the base commit did not build");
 		const measured = await measure(root);
 		for (const kind of ["client", "worker"]) delete measured[kind].largest;
 		await fs.writeFile(cache, JSON.stringify(measured, null, 2));
@@ -99,13 +95,13 @@ async function baseSizes(sha) {
 	}
 }
 
-/** The growth allowance files this change adds (those not already in the base). */
+/** The growth allowance files this change adds (those not already in the base), parsed. */
 async function addedAllowances(sha) {
-	let present;
+	let inBase;
 	try {
-		present = new Set(git("ls-tree", "-r", "--name-only", sha, "--", ALLOWANCE_DIRECTORY).split("\n"));
+		inBase = new Set(git("ls-tree", "-r", "--name-only", sha, "--", ALLOWANCE_DIRECTORY).split("\n"));
 	} catch {
-		present = new Set();
+		inBase = new Set();
 	}
 	let names = [];
 	try {
@@ -113,15 +109,10 @@ async function addedAllowances(sha) {
 	} catch {
 		// No allowance directory: nothing added.
 	}
+	const added = addedAllowanceFiles(names, inBase);
 	const allowances = [];
-	const problems = [];
-	for (const name of names.sort()) {
-		const relative = `${ALLOWANCE_DIRECTORY}/${name}`;
-		if (present.has(relative)) continue;
-		if (!isAllowanceFile(relative)) {
-			problems.push(`${relative}: use a lowercase file name ending in .json`);
-			continue;
-		}
+	const problems = [...added.problems];
+	for (const relative of added.files) {
 		const parsed = parseAllowance(await fs.readFile(relative, "utf8"), relative);
 		problems.push(...parsed.problems);
 		if (parsed.allowance) allowances.push(parsed.allowance);
@@ -130,24 +121,39 @@ async function addedAllowances(sha) {
 }
 
 const results = await measure(".");
-const budgets = JSON.parse(await fs.readFile("scripts/quality/bundle-budgets.json"));
+const headBudgets = JSON.parse(await fs.readFile("scripts/quality/bundle-budgets.json"));
 const problems = [];
+const onPullRequest = process.env.GITHUB_EVENT_NAME === "pull_request";
 
 let base = null;
 let allowances = [];
-const target = baseCommit();
+let budgets = headBudgets;
+const target = resolveBundleBase({ requested, env: process.env, git });
+// Without a comparison only the ceiling applies. On a pull request that is a failure (a silent skip would
+// let any change through); elsewhere it is a warning, except where no comparison is wanted at all.
+function unavailable(reason) {
+	if (onPullRequest) problems.push(`Bundle growth could not be compared with the base: ${reason}.`);
+	else console.warn(`::warning::Bundle growth was not compared with the base: ${reason}. Only the ceiling applies.`);
+}
 if (target.sha) {
 	try {
 		base = await baseSizes(target.sha);
+		let baseFile = null;
+		try {
+			baseFile = JSON.parse(showAt(target.sha, "scripts/quality/bundle-budgets.json"));
+		} catch {
+			// The base has no budgets file: the checkout's apply.
+		}
+		budgets = effectiveBudgets(headBudgets, baseFile);
 		const added = await addedAllowances(target.sha);
 		allowances = added.allowances;
 		problems.push(...added.problems);
 	} catch (error) {
-		console.warn(
-			`::warning::Bundle growth was not compared with the base: ${error.message}. Only the ceiling applies.`,
-		);
+		unavailable(error.message);
 	}
-} else console.log(`Bundle growth is not compared with a base (${target.reason}); only the ceiling applies.`);
+} else if (target.expected)
+	console.log(`Bundle growth is not compared with a base (${target.reason}); only the ceiling applies.`);
+else unavailable(target.reason);
 
 const checked = checkBundles({ results, budgets, base, allowances });
 problems.push(...checked.problems);

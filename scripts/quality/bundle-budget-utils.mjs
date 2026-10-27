@@ -1,3 +1,5 @@
+import { resolveBase } from "../release-check-utils.mjs";
+
 export const KINDS = ["client", "worker"];
 export const METRICS = ["bytes", "gzipBytes"];
 export const ALLOWANCE_DIRECTORY = "bundle-growth.d";
@@ -111,4 +113,54 @@ export function describeBundles(results, growth, limits) {
 		};
 		return `${line}; against the base: raw ${change("bytes")}, gzip ${change("gzipBytes")}`;
 	});
+}
+
+/**
+ * Which commit a build is compared with. `requested` (BUNDLE_BASE or --base) wins, and `none` skips the
+ * comparison on purpose. Otherwise, on a pull request, it is the first parent of GitHub's merge commit (the
+ * `main` the change merges onto); on any other CI event there is no base (`expected`); locally it is the
+ * merge-base with origin/main. `git` runs a git command and returns its output or throws. Returns
+ * `{ sha }`, or `{ reason, expected: true }` when no comparison is wanted, or `{ reason, expected: false }`
+ * when one was wanted but the commit is not available.
+ */
+export function resolveBundleBase({ requested = "", env = {}, git }) {
+	if (requested === "none") return { reason: "BUNDLE_BASE=none", expected: true };
+	try {
+		if (requested) return { sha: git("rev-parse", "--verify", `${requested}^{commit}`) };
+		if (env.GITHUB_EVENT_NAME === "pull_request") {
+			const sha = resolveBase(git, `origin/${env.GITHUB_BASE_REF || "main"}`, { pullRequest: true });
+			return { sha: git("rev-parse", "--verify", `${sha}^{commit}`) };
+		}
+		if (env.GITHUB_EVENT_NAME) return { reason: `a ${env.GITHUB_EVENT_NAME} has no base`, expected: true };
+		return { sha: git("merge-base", "HEAD", "origin/main") };
+	} catch {
+		return { reason: "the base commit is not available (fetch it, or pass --base <ref>)", expected: false };
+	}
+}
+
+/**
+ * The allowance files this change adds: those in `names` (the entries of bundle-growth.d) that the base
+ * does not already have (`inBase`, relative paths such as `bundle-growth.d/a.json`). A file the base has
+ * only mattered to the pull request that added it; a name that is not a valid allowance file is a problem.
+ */
+export function addedAllowanceFiles(names, inBase) {
+	const files = [];
+	const problems = [];
+	for (const name of [...names].sort()) {
+		const relative = `${ALLOWANCE_DIRECTORY}/${name}`;
+		if (inBase.has(relative)) continue;
+		if (isAllowanceFile(relative)) files.push(relative);
+		else problems.push(`${relative}: use a lowercase file name ending in .json`);
+	}
+	return { files, problems };
+}
+
+/**
+ * The budgets that apply to a comparison. The ceilings come from the checkout, so the dedicated pull
+ * request that raises one passes; the growth limits come from the base commit's file, so a pull request
+ * cannot raise its own limit and a raise only takes effect once it has merged. A base without `growth`
+ * (before this check existed) falls back to the checkout's.
+ */
+export function effectiveBudgets(head, baseFile) {
+	return { ...head, growth: baseFile?.growth ?? head.growth };
 }

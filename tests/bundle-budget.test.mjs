@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+	addedAllowanceFiles,
 	checkBundles,
+	effectiveBudgets,
 	describeBundles,
 	growthLimits,
 	isAllowanceFile,
 	parseAllowance,
+	resolveBundleBase,
 } from "../scripts/quality/bundle-budget-utils.mjs";
 
 const budgets = {
@@ -114,4 +117,58 @@ test("the printed lines show totals and, with a base, the change against its lim
 	const lines = describeBundles(results, growth, limits);
 	assert.match(lines[0], /against the base: raw \+50 \(limit 60\), gzip \+15 \(limit 20\)$/);
 	assert.match(lines[1], /raw \+100 \(limit 160\), gzip \+20 \(limit 40\)$/);
+});
+
+test("the base is the merge commit's first parent on a pull request, and must exist there", () => {
+	const calls = [];
+	const git = (...args) => {
+		calls.push(args.join(" "));
+		if (args[0] === "cat-file" && args[1] === "-p") return "tree t\nparent aaa111\nparent bbb222\nauthor x";
+		if (args[0] === "cat-file") return "";
+		if (args[0] === "rev-parse") return args[2].replace(/\^\{commit\}$/, "");
+		throw new Error(`unexpected ${args.join(" ")}`);
+	};
+	const env = { GITHUB_EVENT_NAME: "pull_request", GITHUB_BASE_REF: "main" };
+	assert.deepEqual(resolveBundleBase({ env, git }), { sha: "aaa111" });
+	const broken = () => {
+		throw new Error("no such commit");
+	};
+	assert.deepEqual(resolveBundleBase({ env, git: broken }), {
+		reason: "the base commit is not available (fetch it, or pass --base <ref>)",
+		expected: false,
+	});
+});
+
+test("an explicit base wins, none skips on purpose, and a push or a local run has its own rule", () => {
+	const git = (...args) => (args[0] === "merge-base" ? "mmm" : args[2].replace(/\^\{commit\}$/, ""));
+	assert.deepEqual(resolveBundleBase({ requested: "HEAD~3", env: { GITHUB_EVENT_NAME: "pull_request" }, git }), {
+		sha: "HEAD~3",
+	});
+	assert.deepEqual(resolveBundleBase({ requested: "none", env: { GITHUB_EVENT_NAME: "pull_request" }, git }), {
+		reason: "BUNDLE_BASE=none",
+		expected: true,
+	});
+	assert.deepEqual(resolveBundleBase({ env: { GITHUB_EVENT_NAME: "push" }, git }), {
+		reason: "a push has no base",
+		expected: true,
+	});
+	assert.deepEqual(resolveBundleBase({ env: {}, git }), { sha: "mmm" });
+});
+
+test("only allowance files the base does not have are this pull request's", () => {
+	const inBase = new Set(["bundle-growth.d/old.json"]);
+	const { files, problems } = addedAllowanceFiles(["old.json", "new.json", "Bad.json", "notes.txt", "a.json"], inBase);
+	assert.deepEqual(files, ["bundle-growth.d/a.json", "bundle-growth.d/new.json"]);
+	assert.equal(problems.length, 2);
+	assert.match(problems.join("\n"), /bundle-growth\.d\/Bad\.json: use a lowercase file name/);
+	assert.deepEqual(addedAllowanceFiles([], new Set()), { files: [], problems: [] });
+});
+
+test("the growth limits come from the base's budgets so a pull request cannot raise its own", () => {
+	const raised = { ...budgets, growth: { ...budgets.growth, client: { bytes: 9e9, gzipBytes: 9e9 } } };
+	assert.equal(effectiveBudgets(raised, budgets).growth, budgets.growth);
+	assert.equal(effectiveBudgets(raised, null).growth, raised.growth);
+	assert.equal(effectiveBudgets(raised, { client: {}, worker: {} }).growth, raised.growth);
+	const ceilings = { ...budgets, client: { bytes: 2000, gzipBytes: 800 } };
+	assert.deepEqual(effectiveBudgets(ceilings, budgets).client, { bytes: 2000, gzipBytes: 800 });
 });

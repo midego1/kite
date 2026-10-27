@@ -54,8 +54,9 @@ export const writingStyleProfiles = sqliteTable(
 );
 
 /**
- * One row per message sent from the composer with a session (migration 0070), whether or not its author opted in,
- * so a backfill applies the same rule to stored mail: only these sends, and not those AI text was inserted into.
+ * One row per message sent from the composer with a session and without text Write with Kite inserted (migration
+ * 0070), recorded whether or not its author opted in, so a backfill can apply the same rule to stored mail. It holds
+ * no content and no AI signal: a send Kite helped write simply has no row, and a missing row is never learnt from.
  */
 export const composerSends = sqliteTable(
 	"composer_sends",
@@ -69,10 +70,22 @@ export const composerSends = sqliteTable(
 		mailboxId: text("mailbox_id")
 			.notNull()
 			.references(() => mailboxes.id, { onDelete: "cascade" }),
-		aiAssisted: integer("ai_assisted", { mode: "boolean" }).notNull().default(false),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),
 	},
 	(table) => [index("composer_sends_user_mailbox_created_idx").on(table.userId, table.mailboxId, table.createdAt)],
 );
+
+/**
+ * Drafts Write with Kite inserted text into (migration 0070), so a reopened draft is never learnt from when it is
+ * sent. The row goes with the draft, which is deleted once it is sent or discarded.
+ */
+export const aiAssistedDrafts = sqliteTable("ai_assisted_drafts", {
+	draftId: text("draft_id")
+		.primaryKey()
+		.references(() => messages.id, { onDelete: "cascade" }),
+	createdAt: integer("created_at", { mode: "timestamp" })
+		.notNull()
+		.$defaultFn(() => new Date()),
+});

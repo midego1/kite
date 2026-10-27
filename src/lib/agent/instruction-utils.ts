@@ -131,7 +131,9 @@ const STYLE_HEADING =
 
 /**
  * The writing style section that goes last in a system prompt, after every instruction; empty without a description.
- * `forChat` limits it to the bodies of drafts chat writes. The text is Kite's own, built from statistics.
+ * `forChat` limits it to the bodies of drafts chat writes. The text is Kite's own: sentences built from statistics,
+ * quoting only greeting and sign-off forms rebuilt from allow-listed phrases and `{name}`, never the user's words;
+ * it is still cleaned like an instruction.
  */
 export function writingStyleSection(description: string | null | undefined, forChat = false): string {
 	const text = description ? cleanInstruction(description, 600) : "";

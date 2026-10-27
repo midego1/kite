@@ -78,8 +78,7 @@ function insertSent(
 
 const profileRow = (sqlite, mailboxId = "mailbox-a") =>
 	sqlite.db.prepare("SELECT * FROM writing_style_profiles WHERE user_id = 'owner' AND mailbox_id = ?").get(mailboxId);
-const composerRows = (sqlite) =>
-	sqlite.db.prepare("SELECT message_id, ai_assisted FROM composer_sends ORDER BY created_at").all();
+const composerRows = (sqlite) => sqlite.db.prepare("SELECT * FROM composer_sends ORDER BY created_at").all();
 
 async function send(env, sqlite, overrides = {}) {
 	const messageId = insertSent(sqlite, overrides);
@@ -101,11 +100,14 @@ test("every composer send is recorded; only an opted-in user's own text is learn
 	assert.equal(profileRow(sqlite), undefined);
 	sqlite.db.exec("UPDATE user_ai_settings SET writing_style_enabled = 1");
 	await send(env, sqlite);
-	await send(env, sqlite, { aiAssisted: true });
-	assert.deepEqual(
-		composerRows(sqlite).map((row) => row.ai_assisted),
-		[0, 0, 1],
+	const aiAssisted = await send(env, sqlite, { aiAssisted: true });
+	// A send Kite helped write leaves no row: no "used Write with Kite" signal is stored without consent.
+	assert.equal(composerRows(sqlite).length, 2);
+	assert.equal(
+		composerRows(sqlite).some((row) => row.message_id === aiAssisted),
+		false,
 	);
+	assert.deepEqual(Object.keys(composerRows(sqlite)[0]).sort(), ["created_at", "mailbox_id", "message_id", "user_id"]);
 	const row = profileRow(sqlite);
 	assert.equal(row.sample_count, 1);
 	assert.deepEqual(JSON.parse(row.greetings), { "hi {name},": 1 });
@@ -195,3 +197,72 @@ test("before migration 0070 a send still works, nothing is learnt and the profil
 	await style.deleteStyleProfiles(db, "owner");
 	assert.equal(await style.writingStyleAvailable((await setup(t)).env), true);
 });
+
+test("a draft Kite wrote into stays marked until it is sent or discarded", async (t) => {
+	const { sqlite, db } = await setup(t);
+	const draftId = insertSent(sqlite, { status: "draft" });
+	assert.equal(await style.isAiAssistedDraft(db, draftId), false);
+	await style.markAiAssistedDraft(db, draftId, false);
+	assert.equal(await style.isAiAssistedDraft(db, draftId), false, "only a saved insert marks it");
+	await style.markAiAssistedDraft(db, draftId, true);
+	await style.markAiAssistedDraft(db, draftId, true);
+	assert.equal(await style.isAiAssistedDraft(db, draftId), true);
+	sqlite.db.prepare("DELETE FROM messages WHERE id = ?").run(draftId);
+	assert.equal(await style.isAiAssistedDraft(db, draftId), false, "the mark goes with the draft");
+});
+
+/** The database, with `after` run once right after the backfill's first page wrote its samples to the profile. */
+function interruptAfterFirstPage(sqlite, after) {
+	let done = false;
+	const watch = (statement) =>
+		new Proxy(statement, {
+			get(inner, name) {
+				const value = Reflect.get(inner, name);
+				if (typeof value !== "function") return value;
+				if (name === "bind") return (...args) => watch(value.apply(inner, args));
+				if (!["run", "all", "raw", "first"].includes(name)) return value.bind(inner);
+				return async (...args) => {
+					const result = await value.apply(inner, args);
+					if (!done) {
+						done = true;
+						after();
+					}
+					return result;
+				};
+			},
+		});
+	return new Proxy(sqlite, {
+		get(target, key) {
+			const value = Reflect.get(target, key);
+			if (key !== "prepare") return typeof value === "function" ? value.bind(target) : value;
+			return (query) => {
+				const statement = value.call(target, query);
+				return !done && /^update "writing_style_profiles" set "metrics_version"/i.test(query)
+					? watch(statement)
+					: statement;
+			};
+		},
+	});
+}
+
+for (const [label, interrupt] of [
+	["Reset", (sqlite) => sqlite.db.exec("DELETE FROM writing_style_profiles")],
+	[
+		"Switching off",
+		(sqlite) =>
+			sqlite.db.exec("UPDATE user_ai_settings SET writing_style_enabled = 0; DELETE FROM writing_style_profiles"),
+	],
+])
+	test(`${label} during a backfill ends it, and no profile comes back`, async (t) => {
+		const { sqlite, env, sent } = await setup(t);
+		for (let index = 0; index < 120; index++) await send(env, sqlite);
+		assert.equal(await style.requestStyleBackfill(env, { ...OWNER }, "mailbox-a"), "queued");
+		let interrupted = false;
+		const db = interruptAfterFirstPage(sqlite, () => {
+			interrupted = true;
+			interrupt(sqlite);
+		});
+		await style.processStyleBackfill({ ...env, DB: db }, sent[0]);
+		assert.equal(interrupted, true, "the job was interrupted after its first page");
+		assert.equal(profileRow(sqlite), undefined);
+	});

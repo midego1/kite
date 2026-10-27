@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { markAiAssistedDraft } from "@/lib/agent/writing-style";
 import { and, desc, eq } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
 import { getDb } from "@/db";
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
 		threadId: input.threadId || null,
 	});
 
+	await markAiAssistedDraft(db, draftId, input.aiAssisted);
 	const attachments = forwardSourceId ? await copyMessageAttachments(env, forwardSourceId, draftId) : [];
 	return NextResponse.json({ draft: { id: draftId, attachments } });
 }

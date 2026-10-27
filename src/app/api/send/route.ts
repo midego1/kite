@@ -11,7 +11,7 @@ import { agentDraftMetadata, messages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { loadMessageAttachmentContents } from "@/lib/email/attachments";
 import { userOwnsDraft } from "@/app/api/drafts/utils";
-import { learnFromComposerSend } from "@/lib/agent/writing-style";
+import { isAiAssistedDraft, learnFromComposerSend } from "@/lib/agent/writing-style";
 import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend, resolveComposerSendTime } from "@/lib/email/undo-send-utils";
 
 export async function POST(request: Request) {
@@ -65,7 +65,9 @@ export async function POST(request: Request) {
 			messageId: result.messageId,
 			userId: user.id,
 			mailboxId: parsed.data.mailboxId,
-			aiAssisted: aiAssisted === true || aiAssisted === "true",
+			// The flag from this composer session, or a mark the draft got when Kite's text was saved into it earlier.
+			aiAssisted:
+				aiAssisted === true || aiAssisted === "true" || (!!draftId && (await isAiAssistedDraft(getDb(env), draftId))),
 			html: parsed.data.html,
 			text: parsed.data.text,
 		});

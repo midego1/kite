@@ -23,6 +23,7 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"messages",
 	"message_attachments",
 	"composer_sends",
+	"ai_assisted_drafts",
 	"shared_attachment_links",
 	"outbound_jobs",
 	"routing_rules",

@@ -54,6 +54,8 @@ export type ComposeDraftPayload = {
 	inReplyTo: string | null;
 	references: string | null;
 	threadId: string | null;
+	/** Write with Kite inserted text; the draft is marked so a reopened draft is never learnt from. */
+	aiAssisted?: boolean;
 };
 
 /** One autosave: the draft fields, and the composer files to store on the draft with them. */

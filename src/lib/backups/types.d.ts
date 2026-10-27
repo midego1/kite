@@ -50,6 +50,7 @@ export type DatabaseBackupTable =
 	| "user_ai_settings"
 	| "writing_style_profiles"
 	| "composer_sends"
+	| "ai_assisted_drafts"
 	| "agent_conversations"
 	| "agent_chat_messages"
 	| "agent_jobs"

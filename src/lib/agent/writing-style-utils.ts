@@ -1,14 +1,12 @@
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
 import type { MetricKey, StyleMeasurement, WelfordState, WritingStyleProfileState } from "./writing-style-types";
 import { detectLanguage, LANGUAGE_NAMES, type StyleLanguage } from "./writing-style-language-utils";
-import { stripDelimiters } from "./untrusted-utils";
 
 /** Bumped when a metric's definition changes; a stored profile with an older version starts over. */
 export const WRITING_STYLE_METRICS_VERSION = 1;
 /** Old mail fades: past this many samples each new message weighs 1/300. */
 export const WELFORD_CAP = 300;
 const TOP_K = 8;
-const FORM_MAX_CHARS = 40;
 const MIN_WORDS = 5;
 const MAX_CHARS = 20_000;
 export const MIN_SAMPLES = 10;
@@ -48,7 +46,7 @@ const QUOTE_OPEN = /<div\b[^>]*\bdata-(?:kite|mailflare)-quote="1"[^>]*>/i;
 const SIGNATURE_OPEN = /<div\b[^>]*\bdata-(?:kite|mailflare)-signature="1"[^>]*>/i;
 const FORWARDED = /-{3,}\s*(?:Forwarded message|Doorgestuurd bericht|Weitergeleitete Nachricht|Message transféré)/i;
 // "On Mon, Sam wrote:" and its Dutch, German, French and Spanish forms, which start a plain-text quote.
-const QUOTE_INTRO = /^(?:on|op|am|le|el)\b.*(?:wrote|schreef|schrieb|a écrit|escribió):\s*$/i;
+const QUOTE_INTRO = /^(?:on|op|am|le|el)(?![\p{L}\p{N}]).*(?:wrote|schreef|schrieb|a écrit|escribió):\s*$/iu;
 const WORD = /[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu;
 const EMOJI = /\p{Extended_Pictographic}/gu;
 const HAS_WORD = /[\p{L}\p{N}]/u;
@@ -154,6 +152,7 @@ const SIGN_OFFS = [
 	"sincerely",
 	"groet",
 	"groeten",
+	"groetjes",
 	"mvg",
 	"gr",
 	"grüße",
@@ -168,47 +167,94 @@ const SIGN_OFFS = [
 	"abrazos",
 ];
 
-const startsWithPhrase = (lower: string, phrases: readonly string[]) =>
-	phrases.find((phrase) => lower === phrase || new RegExp(`^${phrase}(?![\\p{L}])`, "u").test(lower)) ?? null;
+// Unicode-aware word boundaries: `\b` only knows ASCII letters, so "Émile" or "Иван" would split wrongly.
+const AFTER_WORD = "(?![\\p{L}\\p{N}])";
+// One word of a name, in any script: letters and marks, with apostrophes, hyphens and abbreviation dots.
+const NAME_WORD = /^[\p{L}\p{M}][\p{L}\p{M}'’.-]*$/u;
+const MAX_NAME_WORDS = 4;
+// Addressees that are not names and may be kept as they are.
+const GENERIC_ADDRESSEES = new Set([
+	"there",
+	"all",
+	"everyone",
+	"team",
+	"both",
+	"folks",
+	"allemaal",
+	"iedereen",
+	"zusammen",
+	"alle",
+	"tous",
+	"todos",
+]);
+
+const byLength = (phrases: readonly string[]) => [...phrases].sort((a, b) => b.length - a.length);
+const GREETING_PHRASES = byLength(GREETINGS);
+const SIGN_OFF_PHRASES = byLength(SIGN_OFFS);
+
+/** The longest listed phrase the lowercased line starts with, as a whole word. */
+function matchPhrase(lower: string, phrases: readonly string[]): string | null {
+	return (
+		phrases.find((phrase) =>
+			new RegExp(`^${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}${AFTER_WORD}`, "u").test(lower),
+		) ?? null
+	);
+}
+
+/** Whether `text` reads as a name of at most four words. */
+function isName(text: string): boolean {
+	const words = text.split(/\s+/);
+	return words.length <= MAX_NAME_WORDS && words.every((word) => NAME_WORD.test(word));
+}
 
 /**
- * A greeting or sign-off line as an anonymous form: capitalised words after the opening phrase become `{name}`,
- * addresses, links, phone numbers and digits go, at most 40 characters. Null when nothing but the name is left.
+ * A greeting line as a stored form, built only from allow-listed words: the greeting phrase, then `{name}` for a
+ * name of up to four words (in any script, any case), then a closing "," or "!". A name needs that closing mark, which
+ * tells "Hi Sam," from "Hello, the invoice is paid"; anything else on the line discards the form.
  */
-export function anonymiseForm(line: string, phrase: string): string | null {
-	const rest = line.slice(phrase.length);
-	const named = rest
-		.replace(/\S+@\S+/g, "")
-		.replace(/\b(?:https?:\/\/|www\.)\S+/gi, "")
-		.replace(/\+?\d[\d\s().-]*/g, "")
-		.replace(/(?:\s*\b\p{Lu}[\p{L}'’.-]*)+/gu, " {name}");
-	const form = stripDelimiters(`${line.slice(0, phrase.length).toLowerCase()}${named.toLowerCase()}`)
-		.replace(/["<>]/g, "")
-		.replace(/\s+/g, " ")
-		.replace(/\s+([,!.])/g, "$1")
-		.trim();
-	const chars = Array.from(form);
-	return chars.length ? chars.slice(0, FORM_MAX_CHARS).join("").trim() : null;
+export function greetingForm(line: string): string | null {
+	const lower = line.normalize("NFC").trim().toLocaleLowerCase();
+	const phrase = matchPhrase(lower, GREETING_PHRASES);
+	if (!phrase) return null;
+	const rest = lower.slice(phrase.length);
+	const closing = /^\s*([,!]?)\s*$/u.exec(rest);
+	if (closing) return `${phrase}${closing[1]}`;
+	const [, name = "", mark = ""] = /^\s*,?\s*(.*?)\s*([,!])?$/u.exec(rest) ?? [];
+	if (!mark || !isName(name)) return null;
+	return GENERIC_ADDRESSEES.has(name) ? `${phrase} ${name}${mark}` : `${phrase} {name}${mark}`;
 }
 
+/**
+ * A sign-off line as a stored form, built only from allow-listed words: a sign-off phrase with its closing mark, or
+ * the phrase, a comma and `{name}` for a name of up to four words ("Gr, Özlem"). A line that is not a listed sign-off,
+ * or carries anything else, gives no form.
+ */
+export function signOffForm(line: string): string | null {
+	const lower = line.normalize("NFC").trim().toLocaleLowerCase();
+	const phrase = matchPhrase(lower, SIGN_OFF_PHRASES);
+	if (!phrase) return null;
+	const rest = lower.slice(phrase.length);
+	const closing = /^\s*([,.!]?)\s*$/u.exec(rest);
+	if (closing) return `${phrase}${closing[1]}`;
+	const named = /^\s*,\s*(.+?)\s*$/u.exec(rest);
+	return named && isName(named[1]) ? `${phrase}, {name}` : null;
+}
+
+/** The greeting, when the first line of a message with more than one line is one. */
 function greetingOf(line: string): string | null {
-	const words = line.match(WORD) ?? [];
-	if (words.length === 0 || words.length > 6 || /[.?:;]$/.test(line)) return null;
-	const phrase = startsWithPhrase(line.toLowerCase(), GREETINGS);
-	return phrase ? anonymiseForm(line, phrase) : null;
+	return (line.match(WORD) ?? []).length <= 6 ? greetingForm(line) : null;
 }
 
+/** The sign-off, when the last line before the signature is one. */
 function signOffOf(line: string): string | null {
-	const words = line.match(WORD) ?? [];
-	if (words.length === 0 || words.length > 4 || /[?:;]$/.test(line)) return null;
-	const phrase = startsWithPhrase(line.toLowerCase(), SIGN_OFFS) ?? (line.endsWith(",") ? "" : null);
-	if (phrase === null) return null;
-	// A comma-ended line that is not a known sign-off ("Talk soon,") is anonymised the same way, names removed.
-	return anonymiseForm(line, phrase || (words[0] ?? ""));
+	return (line.match(WORD) ?? []).length <= MAX_NAME_WORDS + 3 ? signOffForm(line) : null;
 }
 
 type Formality = { formal: (word: string) => boolean; informal: Set<string> };
 
+// Caveats: French "vous" and Spanish "ustedes" are also the plural "you", and Dutch "u" is rare in informal mail, so a
+// user who writes to groups reads as more formal than they are. The share is a hint, and the description names it
+// only at 70% or more (formal) or 30% or less (informal).
 const FORMALITY: Partial<Record<StyleLanguage, Formality>> = {
 	nl: { formal: (word) => ["u", "uw"].includes(word.toLowerCase()), informal: new Set(["je", "jij", "jou", "jouw"]) },
 	fr: { formal: (word) => word.toLowerCase() === "vous", informal: new Set(["tu", "toi", "ton", "ta", "tes"]) },
@@ -271,8 +317,9 @@ export function measureMessage(own: { text: string; hasList: boolean }): StyleMe
 			exclamationRate: ((text.match(/!/g) ?? []).length * 100) / words.length,
 			emojiRate: ((text.match(EMOJI) ?? []).length * 100) / words.length,
 			listUse: own.hasList ? 1 : 0,
-			greetingUse: greeting ? 1 : 0,
-			signOffUse: signOff ? 1 : 0,
+			// A one-line message can neither greet nor sign off, so it does not count toward how often the user does.
+			greetingUse: lines.length > 1 ? (greeting ? 1 : 0) : null,
+			signOffUse: lines.length > 1 ? (signOff ? 1 : 0) : null,
 			formalAddress: formalShare(language, text),
 		},
 		greeting,

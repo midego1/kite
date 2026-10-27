@@ -170,12 +170,14 @@ export function ComposeForm({
 				inReplyTo: threading?.inReplyTo ?? null,
 				references: threading?.references ?? null,
 				threadId: threading?.threadId ?? null,
+				aiAssisted,
 			},
 			attachments,
 			storeAttachments: agentRevision === null,
 		};
 	}, [
 		agentRevision,
+		aiAssisted,
 		attachments,
 		bcc,
 		cc,

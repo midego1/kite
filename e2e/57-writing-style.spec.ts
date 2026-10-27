@@ -172,4 +172,45 @@ test.describe("writing style profile", () => {
 			await account.api.dispose();
 		}
 	});
+
+	test("a draft Write with Kite wrote into is never learnt from, also when it is reopened and sent later", async () => {
+		const account = await newAccount("wsd");
+		try {
+			await okJson(await account.api.patch("/api/settings/assistant", { data: { writingStyle: { enabled: true } } }));
+			await composerSend(account, 1);
+			expect((await profileOf(account))?.sampleCount).toBe(1);
+			const html =
+				"<div>Hi Sam,</div><div><br></div><div>Kite wrote most of this reply about the plan for Friday.</div><div><br></div><div>Cheers,</div>";
+			const draft = await okJson<{ draft: { id: string } }>(
+				await account.api.post("/api/drafts", {
+					data: {
+						from: account.address,
+						to: "sam@partner.test",
+						subject: "Plan",
+						html,
+						text: "Hi Sam",
+						mailboxId: account.mailboxId,
+						aiAssisted: true,
+					},
+				}),
+			);
+			// Reopened later: the composer no longer knows Kite wrote into it, so the send carries no flag.
+			await okJson(
+				await account.api.post("/api/send", {
+					data: {
+						from: account.address,
+						to: "sam@partner.test",
+						subject: "Plan",
+						html,
+						text: "Hi Sam",
+						mailboxId: account.mailboxId,
+						draftId: draft.draft.id,
+					},
+				}),
+			);
+			expect((await profileOf(account))?.sampleCount).toBe(1);
+		} finally {
+			await account.api.dispose();
+		}
+	});
 });

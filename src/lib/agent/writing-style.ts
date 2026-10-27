@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { messages, users } from "@/db/schema";
-import { composerSends, writingStyleProfiles } from "@/db/schema/agent-writing";
+import { aiAssistedDrafts, composerSends, writingStyleProfiles } from "@/db/schema/agent-writing";
 import type { SessionUser } from "@/lib/auth/types";
 import { createLogger } from "@/lib/logger.mjs";
 import { getMailboxAccessLevel, listAccessibleMailboxes } from "@/lib/mailboxes/access";
@@ -82,17 +82,21 @@ export async function styleDescriptionFor(
 /**
  * Adds measured messages to the profile with compare-and-set on its version, so two sends at once never lose an
  * update silently: a lost race re-reads and retries up to three times, then the sample is dropped and logged.
+ * Only a live send may create the profile (`insert`); a backfill page updates an existing row and stops when the
+ * row is gone, so a Reset or switching off during a backfill is never undone by it.
  */
 export async function updateStyleProfile(
 	db: AppDatabase,
 	userId: string,
 	mailboxId: string,
 	measurements: StyleMeasurement[],
+	options: { insert?: boolean } = {},
 ): Promise<boolean> {
 	if (measurements.length === 0) return true;
 	for (let attempt = 0; attempt < MAX_ATTEMPTS + 1; attempt++) {
 		const [row] = await db.select().from(writingStyleProfiles).where(where(userId, mailboxId)).limit(1);
 		if (!row) {
+			if (!options.insert) return false;
 			await db.insert(writingStyleProfiles).values({ userId, mailboxId }).onConflictDoNothing();
 			continue;
 		}
@@ -121,35 +125,62 @@ type ComposerSendInput = {
 	messageId: string;
 	userId: string;
 	mailboxId: string;
+	/** Write with Kite inserted text, in this composer session or in the draft it reopened. */
 	aiAssisted: boolean;
 	html: string | null | undefined;
 	text: string | null | undefined;
 };
 
 /**
- * After a composer send: records it (for a later backfill, whatever the opt-in) and, while the user has opted in and
- * no AI text was inserted, learns from the text they wrote. Never fails the send: errors are logged without content.
+ * After a composer send that Kite did not help write: records it (so a later backfill applies the same rule, whatever
+ * the opt-in; the row holds no content) and, while the user has opted in, learns from the text they wrote. A send
+ * with AI text leaves no row and no other trace. Never fails the send: errors are logged without content.
  */
 export async function learnFromComposerSend(env: CloudflareEnv, input: ComposerSendInput): Promise<void> {
+	if (input.aiAssisted) return;
 	const db = getDb(env);
 	try {
-		await db.insert(composerSends).values({
-			messageId: input.messageId,
-			userId: input.userId,
-			mailboxId: input.mailboxId,
-			aiAssisted: input.aiAssisted,
-		});
+		await db
+			.insert(composerSends)
+			.values({ messageId: input.messageId, userId: input.userId, mailboxId: input.mailboxId });
 	} catch (error) {
 		logger.warn("writing_style.send_not_recorded", { pending: isNoSuchTableError(error) });
 		return;
 	}
-	if (input.aiAssisted) return;
 	try {
 		if (!(await readUserAiSettings(db, input.userId)).writingStyleEnabled) return;
 		const measured = measureMessage(ownText(input.html, input.text));
-		if (measured) await updateStyleProfile(db, input.userId, input.mailboxId, [measured]);
+		if (measured) await updateStyleProfile(db, input.userId, input.mailboxId, [measured], { insert: true });
 	} catch {
 		logger.warn("writing_style.update_failed", {});
+	}
+}
+
+/**
+ * Marks a draft Write with Kite inserted text into, when the autosave says so (`aiAssisted`); the mark is never
+ * removed and goes with the draft.
+ */
+export async function markAiAssistedDraft(db: AppDatabase, draftId: string, aiAssisted: unknown): Promise<void> {
+	if (aiAssisted !== true) return;
+	try {
+		await db.insert(aiAssistedDrafts).values({ draftId }).onConflictDoNothing();
+	} catch (error) {
+		if (!isNoSuchTableError(error)) throw error;
+	}
+}
+
+/** Whether a draft was marked; before migration 0070 nothing is learnt anyway. */
+export async function isAiAssistedDraft(db: AppDatabase, draftId: string): Promise<boolean> {
+	try {
+		const [row] = await db
+			.select({ draftId: aiAssistedDrafts.draftId })
+			.from(aiAssistedDrafts)
+			.where(eq(aiAssistedDrafts.draftId, draftId))
+			.limit(1);
+		return !!row;
+	} catch (error) {
+		if (isNoSuchTableError(error)) return false;
+		throw error;
 	}
 }
 
@@ -246,58 +277,73 @@ export function isStyleBackfillMessage(body: unknown): body is StyleBackfillMess
 	return kind === "agent.style_backfill" && typeof userId === "string" && typeof mailboxId === "string";
 }
 
+/** Clears the backfill lease, so another backfill can be requested. */
+function releaseBackfill(db: AppDatabase, userId: string, mailboxId: string) {
+	return db.update(writingStyleProfiles).set({ backfillRequestedAt: null }).where(where(userId, mailboxId));
+}
+
+/** Whether the job may go on: the user still opted in and can send from the mailbox, and the profile still exists. */
+async function backfillAllowed(db: AppDatabase, userId: string, mailboxId: string): Promise<boolean> {
+	const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+	const access = user && !user.disabled ? await getMailboxAccessLevel(db, user, mailboxId) : null;
+	if (!access?.canSendOnBehalf || !(await readUserAiSettings(db, userId)).writingStyleEnabled) return false;
+	const [row] = await db
+		.select({ userId: writingStyleProfiles.userId })
+		.from(writingStyleProfiles)
+		.where(where(userId, mailboxId))
+		.limit(1);
+	return !!row;
+}
+
 /**
- * Rebuilds the profile from the user's last 200 composer sends in the mailbox, oldest first, in pages of 50. Only
- * sends with a `composer_sends` row count, and none that AI text was inserted into, so mail sent before migration
- * 0070, through the API, MCP, JMAP or by the assistant is never learnt from. No model and no spend.
+ * Rebuilds the profile from the user's last 200 composer sends in the mailbox, oldest first, in pages of 50: only the
+ * ids are selected first, and each page loads its 50 bodies. Only sends with a `composer_sends` row count, so mail
+ * sent before migration 0070, through the API, MCP, JMAP, by the assistant or with Kite's text is never learnt from.
+ * No model and no spend. The opt-in, access and the profile row are checked again before every page, and pages only
+ * update the row, so a Reset or switching off mid-job ends it without bringing a profile back. The lease
+ * (`backfill_requested_at`) is renewed per page and cleared only when the job is done, so a failed attempt that the
+ * queue retries does not overlap a new request.
  */
 export async function processStyleBackfill(env: CloudflareEnv, message: StyleBackfillMessage): Promise<void> {
 	const db = getDb(env);
 	const { userId, mailboxId } = message;
-	try {
-		const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-		const access = user && !user.disabled ? await getMailboxAccessLevel(db, user, mailboxId) : null;
-		if (!access?.canSendOnBehalf || !(await readUserAiSettings(db, userId)).writingStyleEnabled) return;
-		const sent = await db
-			.select({ html: messages.htmlBody, text: messages.textBody })
+	if (!(await backfillAllowed(db, userId, mailboxId))) return void (await releaseBackfill(db, userId, mailboxId));
+	const ids = (
+		await db
+			.select({ id: composerSends.messageId })
 			.from(composerSends)
 			.innerJoin(messages, eq(messages.id, composerSends.messageId))
-			.where(
-				and(
-					eq(composerSends.userId, userId),
-					eq(composerSends.mailboxId, mailboxId),
-					eq(composerSends.aiAssisted, false),
-					eq(messages.status, "sent"),
-				),
-			)
+			.where(and(eq(composerSends.userId, userId), eq(composerSends.mailboxId, mailboxId), eq(messages.status, "sent")))
 			.orderBy(desc(composerSends.createdAt))
-			.limit(BACKFILL_MESSAGES);
-		// The backfill starts over, so a send learnt live before it is not counted twice.
-		await db
-			.update(writingStyleProfiles)
-			.set({
-				sampleCount: 0,
-				stats: "{}",
-				greetings: "{}",
-				signOffs: "{}",
-				languages: "{}",
-				version: sql`${writingStyleProfiles.version} + 1`,
-				updatedAt: new Date(),
-			})
-			.where(where(userId, mailboxId));
-		const oldestFirst = sent.reverse();
-		for (let start = 0; start < oldestFirst.length; start += BACKFILL_PAGE) {
-			const page = oldestFirst
-				.slice(start, start + BACKFILL_PAGE)
-				.map((row) => measureMessage(ownText(row.html, row.text)))
-				.filter((measured): measured is StyleMeasurement => measured !== null);
-			await updateStyleProfile(db, userId, mailboxId, page);
-		}
-	} finally {
-		await db
-			.update(writingStyleProfiles)
-			.set({ backfillRequestedAt: null })
-			.where(where(userId, mailboxId))
-			.catch(() => undefined);
+			.limit(BACKFILL_MESSAGES)
+	)
+		.map((row) => row.id)
+		.reverse();
+	// The profile starts over so sends learnt live are not counted twice. A send learnt live between the select above
+	// and this reset is dropped from the profile until the next one; it is never counted twice.
+	await db
+		.update(writingStyleProfiles)
+		.set({
+			sampleCount: 0,
+			stats: "{}",
+			greetings: "{}",
+			signOffs: "{}",
+			languages: "{}",
+			version: sql`${writingStyleProfiles.version} + 1`,
+			updatedAt: new Date(),
+		})
+		.where(where(userId, mailboxId));
+	for (let start = 0; start < ids.length; start += BACKFILL_PAGE) {
+		if (!(await backfillAllowed(db, userId, mailboxId))) return;
+		const page = await db
+			.select({ html: messages.htmlBody, text: messages.textBody })
+			.from(messages)
+			.where(inArray(messages.id, ids.slice(start, start + BACKFILL_PAGE)));
+		const measured = page
+			.map((row) => measureMessage(ownText(row.html, row.text)))
+			.filter((value): value is StyleMeasurement => value !== null);
+		if (!(await updateStyleProfile(db, userId, mailboxId, measured))) return;
+		await db.update(writingStyleProfiles).set({ backfillRequestedAt: new Date() }).where(where(userId, mailboxId));
 	}
+	await releaseBackfill(db, userId, mailboxId);
 }

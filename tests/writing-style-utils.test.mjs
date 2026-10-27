@@ -82,7 +82,7 @@ test("languages are told apart, and formal address counts only where the languag
 	);
 	assert.equal(formalNl.language, "nl");
 	assert.equal(formalNl.values.formalAddress, 1);
-	assert.equal(formalNl.greeting, "geachte heer {name},");
+	assert.equal(formalNl.greeting, "geachte {name},", "a title after the phrase is part of the name");
 	assert.equal(formalNl.signOff, "met vriendelijke groet,");
 	const de = measureText(
 		"Hallo Frau Weber,\n\nSie haben recht. Ich schicke Ihnen die Unterlagen morgen, damit Sie sie vor dem Termin mit Ihrem Team in Ruhe ansehen können und wir dann alles besprechen.\n\nViele Grüße,",
@@ -112,15 +112,56 @@ test("languages are told apart, and formal address counts only where the languag
 	assert.equal(detectLanguage(Array.from({ length: 25 }, (_, index) => `zorblax${index}`)), "other");
 });
 
-test("forms never keep a name, an address, a link or digits; short or huge messages are skipped", () => {
-	assert.equal(ws.anonymiseForm("Dear Mr. Jones,", "dear"), "dear {name},");
-	assert.equal(ws.anonymiseForm("Hi sam@example.com https://x.test 0612345678,", "hi"), "hi,");
-	assert.equal(ws.anonymiseForm("Best, Sam Smith", "best"), "best, {name}");
+test("a stored form is rebuilt only from the listed phrase and {name}, in any script and any case", () => {
+	const greetings = {
+		"Hi Émile,": "hi {name},",
+		"Beste Łukasz,": "beste {name},",
+		"Hoi Иван,": "hoi {name},",
+		"Hi 王,": "hi {name},",
+		"hi jan,": "hi {name},",
+		"Dear Dr. van der Berg,": "dear {name},",
+		"Hello,": "hello,",
+		"Hey!": "hey!",
+		"Hi there,": "hi there,",
+		"Hello, the invoice is paid": null,
+		"Hello Sam": null,
+		İsmail: null,
+		"Jan de Vries,": null,
+		"Hi sam@example.com,": null,
+		"Hi Sam 0612345678,": null,
+		"Hi Sam, Anna, Bob, Carl and Dave,": null,
+		"Highly appreciated,": null,
+	};
+	for (const [line, form] of Object.entries(greetings)) assert.equal(ws.greetingForm(line), form, line);
+	const signOffs = {
+		"Gr, Özlem": "gr, {name}",
+		"Groetjes,": "groetjes,",
+		"Met vriendelijke groet,": "met vriendelijke groet,",
+		"Best, Sam Smith": "best, {name}",
+		"Cheers!": "cheers!",
+		"Groetjes, Michiel de Gooijer | +31 6 12345678": null,
+		"cheers jan": null,
+		"Thanks for your help": null,
+		"Jan de Vries,": null,
+		İsmail: null,
+		"Talk soon,": null,
+		"Bestellen,": null,
+	};
+	for (const [line, form] of Object.entries(signOffs)) assert.equal(ws.signOffForm(line), form, line);
+});
+
+test("short, huge and one-line messages are not measured as greeting or signing off", () => {
 	assert.equal(measureText("Thanks, see you."), null, "under five words");
 	assert.equal(measureText("word ".repeat(4_001).trim()), null, "over 20,000 characters");
-	const plain = measureText("Talk soon about the plan for next week then.\n\nTalk soon,");
-	assert.equal(plain.signOff, "talk soon,");
-	assert.equal(plain.greeting, null);
+	const oneLine = measureText("Hi Sam, the plan for next week looks good to me.");
+	assert.equal(oneLine.values.greetingUse, null);
+	assert.equal(oneLine.values.signOffUse, null);
+	const plain = measureText("The plan for next week looks fine to me then.\n\nThanks for your help");
+	assert.equal(plain.signOff, null, "a sentence is not a sign-off");
+	assert.equal(plain.values.signOffUse, 0);
+	const lowercase = measureText("hi jan,\n\nthe plan for next week looks fine to me.\n\ncheers jan");
+	assert.equal(lowercase.greeting, "hi {name},");
+	assert.equal(lowercase.signOff, null);
 });
 
 test("Welford's running mean and variance equal a two-pass computation up to 300 samples", () => {

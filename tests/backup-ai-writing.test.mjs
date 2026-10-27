@@ -21,7 +21,7 @@ const scratch = makeBundleDirectory("kite-backup-ai-writing-dirs-");
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const preDirectory = copyMigrationsBefore(scratch, 69);
 const pre70Directory = copyMigrationsBefore(scratch, 70);
-const STYLE_TABLES = ["writing_style_profiles", "composer_sends"];
+const STYLE_TABLES = ["writing_style_profiles", "composer_sends", "ai_assisted_drafts"];
 
 async function database(t, dir = migrationsDir) {
 	const db = new SqliteDatabase(":memory:");
@@ -113,7 +113,8 @@ test("a backup taken before 0070 restores after it with no style profiles, and b
 	db.db.exec(`
 		INSERT INTO writing_style_profiles (user_id, mailbox_id, sample_count, stats, greetings, created_at, updated_at)
 			VALUES ('owner', 'mailbox-a', 12, '{"words":{"n":12,"mean":40,"m2":80}}', '{"hi {name},":9}', 2, 3);
-		INSERT INTO composer_sends (message_id, user_id, mailbox_id, ai_assisted, created_at) VALUES ('message-1', 'owner', 'mailbox-a', 1, 4);
+		INSERT INTO composer_sends (message_id, user_id, mailbox_id, created_at) VALUES ('message-1', 'owner', 'mailbox-a', 4);
+		INSERT INTO ai_assisted_drafts (draft_id, created_at) VALUES ('template-1', 5);
 	`);
 	const full = await exportDocument(db);
 	const order = Object.keys(full.tables);

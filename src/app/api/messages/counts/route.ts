@@ -1,12 +1,13 @@
-import { and, count, eq, inArray } from "drizzle-orm";
-import type { SQL } from "drizzle-orm";
+import { count } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
 import { buildMessageCounts } from "./utils";
-import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
+import { listAccessibleMailboxIds } from "@/lib/mailboxes/access";
+import { resolveMailboxScope } from "@/lib/mailboxes/scope-utils";
+import { mailboxScopeCondition } from "@/lib/messages/mailbox-scope";
 
 export async function GET(request: Request) {
 	const env = getEnv();
@@ -16,23 +17,15 @@ export async function GET(request: Request) {
 	}
 
 	const url = new URL(request.url);
-	const mailboxId = url.searchParams.get("mailboxId");
 	const db = getDb(env);
-	const conditions: SQL[] = [];
-
-	if (mailboxId) {
-		const access = await getMailboxAccessLevel(db, user, mailboxId);
-		if (!access?.canRead) {
-			return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
-		}
-		conditions.push(eq(messages.mailboxId, mailboxId));
-	} else {
-		const accessibleMailboxIds = await listAccessibleMailboxIds(db, user);
-		if (accessibleMailboxIds.length > 0) {
-			conditions.push(inArray(messages.mailboxId, accessibleMailboxIds));
-		} else {
-			conditions.push(eq(messages.userId, user.id));
-		}
+	// One mailbox, the All mailboxes view's filter, or every mailbox the user can open; the
+	// counts of several mailboxes add up, row by row, in buildMessageCounts.
+	const scope = resolveMailboxScope(
+		{ mailboxId: url.searchParams.get("mailboxId"), mailboxIds: url.searchParams.get("mailboxIds") },
+		await listAccessibleMailboxIds(db, user),
+	);
+	if (!scope.ok) {
+		return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
 	}
 
 	const rows = await db
@@ -47,7 +40,7 @@ export async function GET(request: Request) {
 			total: count(),
 		})
 		.from(messages)
-		.where(and(...conditions))
+		.where(mailboxScopeCondition(scope.ids, user.id))
 		// Same column order as messages_counts_idx, so SQLite groups straight off the index.
 		.groupBy(
 			messages.mailboxId,

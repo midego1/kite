@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Message, MessageFilterOptions, MessageFolder, MessageListResponse } from "./types";
 import {
 	clearMessageCountsCache,
@@ -24,6 +24,8 @@ export function useMessages(
 	const [limit, setLimit] = useState(filters?.limit ?? 25);
 	const [offset, setOffset] = useState(filters?.offset ?? 0);
 	const [nextCursor, setNextCursor] = useState<string | null>(null);
+	// Rows of another mailbox scope (switching to or from All mailboxes) are dropped, not shown while loading.
+	const loadedScope = useRef(mailboxId);
 
 	const unreadCount = messages.filter((m) => m.direction === "inbound" && !m.read).length;
 
@@ -60,8 +62,10 @@ export function useMessages(
 			apply(cached);
 			setIsLoading(false);
 		} else {
+			if (loadedScope.current !== mailboxId) setMessages([]);
 			void loadMessages(false, true);
 		}
+		loadedScope.current = mailboxId;
 		// A change while the tab is hidden is not refetched then, and suggestion changes do not move the
 		// mail revision the polling hook checks on return, so the list catches up when the tab is shown.
 		let staleWhileHidden = false;

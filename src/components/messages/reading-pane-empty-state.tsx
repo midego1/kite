@@ -9,8 +9,8 @@ import { useMessageCounts } from "@/hooks/use-message-counts";
 import type { ReadingPaneEmptyStateProps } from "./reading-layout-types";
 
 export function ReadingPaneEmptyState({ config }: ReadingPaneEmptyStateProps) {
-	const { selectedMailbox, isLoading: mailboxesLoading } = useSelectedMailbox();
-	const { counts, isLoading } = useMessageCounts(selectedMailbox?.id, !mailboxesLoading);
+	const { mailboxScope, isLoading: mailboxesLoading } = useSelectedMailbox();
+	const { counts, isLoading } = useMessageCounts(mailboxScope, !mailboxesLoading);
 	const folderCount = config.folderId ? counts.customFolders[config.folderId] : counts.folders[config.folder];
 	const unread = folderCount?.unread ?? 0;
 	const paneRef = useRef<HTMLDivElement>(null);

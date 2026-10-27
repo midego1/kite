@@ -25,6 +25,7 @@ import { ReportPhishingItem } from "./report-phishing-item";
 import { confirmReportPhishing } from "@/components/messages/phishing-report";
 import { messageShortcuts } from "./message-shortcuts";
 import { useMessageReply } from "./use-message-reply";
+import { useReadOnlyMail } from "./use-read-only-mail";
 import { MoveToolbarMenu, SnoozeToolbarButton } from "./message-toolbar-menus";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
@@ -76,7 +77,7 @@ export function MessageActions({
 	const moduleSlots = useMessageMenuSlots({ messageId, mailboxId }, moreOpen, () => setMoreOpen(false));
 	const listHref = useMessageListHref() ?? getMessageBackHref(direction, status);
 
-	const runAction = useCallback(
+	const runUnguarded = useCallback(
 		async (action: BulkMessageAction, folderId?: string) => {
 			setMoreOpen(false);
 			setPendingAction(action);
@@ -136,6 +137,10 @@ export function MessageActions({
 	const { canReplyAll, canForward } = replyActions;
 	const handleReply = replyActions.reply;
 	const handleForward = replyActions.forward;
+	const disabled = pendingAction !== null || replyActions.pending !== null;
+	// Read-only shared mail can be read and marked read, never moved or deleted; the server agrees.
+	const { manageDisabled, archiveDisabled, guard } = useReadOnlyMail(mailboxId, { disabled, status });
+	const runAction = guard(runUnguarded);
 
 	async function onUnsubscribe() {
 		setMoreOpen(false);
@@ -198,7 +203,6 @@ export function MessageActions({
 		setMoreOpen(false);
 		if (await confirmReportPhishing(1)) await runAction("phishing");
 	};
-	const disabled = pendingAction !== null || replyActions.pending !== null;
 	const shownError = error ?? replyActions.error;
 	const markAction: BulkMessageAction = read ? "unread" : "read";
 	const moveActions = getMoveMessageActions(status, direction);
@@ -223,14 +227,20 @@ export function MessageActions({
 					>
 						<Reply size={iconSize} />
 					</Button>
-					<Button variant="ghost" size="roundedSM" aria-label={trashLabel} disabled={disabled} onClick={onTrashClick}>
+					<Button
+						variant="ghost"
+						size="roundedSM"
+						aria-label={trashLabel}
+						disabled={manageDisabled}
+						onClick={onTrashClick}
+					>
 						<Trash2 size={iconSize} />
 					</Button>
 					<Button
 						variant="ghost"
 						size="roundedSM"
 						aria-label="Report spam"
-						disabled={disabled || status === "spam" || direction !== "inbound"}
+						disabled={manageDisabled || status === "spam" || direction !== "inbound"}
 						onClick={() => runAction("spam")}
 					>
 						<ShieldAlert size={iconSize} />
@@ -258,7 +268,7 @@ export function MessageActions({
 							variant="ghost"
 							size="roundedSM"
 							aria-label={shortcutsEnabled ? "Archive (e)" : "Archive"}
-							disabled={disabled || status === "archived"}
+							disabled={manageDisabled || status === "archived"}
 							onClick={() => runAction("archive")}
 						>
 							<Archive size={iconSize} />
@@ -267,13 +277,13 @@ export function MessageActions({
 					<SnoozeToolbarButton
 						messageId={messageId}
 						snoozable={direction === "inbound" && status === "received"}
-						disabled={disabled}
+						disabled={manageDisabled}
 						iconSize={iconSize}
 					/>
 					<MoveToolbarMenu
 						actions={moveActions}
 						mailboxId={mailboxId}
-						disabled={disabled}
+						disabled={manageDisabled}
 						iconSize={iconSize}
 						onAction={(action, folderId) => void runAction(action, folderId)}
 					/>
@@ -282,7 +292,7 @@ export function MessageActions({
 							variant="ghost"
 							size="roundedSM"
 							aria-label={shortcutsEnabled ? "Report spam (!)" : "Report spam"}
-							disabled={disabled || status === "spam" || direction !== "inbound"}
+							disabled={manageDisabled || status === "spam" || direction !== "inbound"}
 							onClick={() => runAction("spam")}
 						>
 							<ShieldAlert size={iconSize} />
@@ -328,7 +338,7 @@ export function MessageActions({
 								<button
 									type="button"
 									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
-									disabled={status === "archived"}
+									disabled={archiveDisabled}
 									onClick={() => void runAction("archive")}
 								>
 									<Archive className="h-4 w-4" />
@@ -437,7 +447,7 @@ export function MessageActions({
 						size="roundedSM"
 						data-tone="danger"
 						aria-label={canDeleteForever ? trashLabel : shortcutsEnabled ? "Move to trash (#)" : "Move to trash"}
-						disabled={disabled}
+						disabled={manageDisabled}
 						onClick={onTrashClick}
 						className={canDeleteForever ? "text-red-600 hover:text-red-700" : undefined}
 					>

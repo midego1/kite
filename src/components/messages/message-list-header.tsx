@@ -132,6 +132,7 @@ export function MessageListHeader({
 						onClearSelection={selection.clear}
 						pending={selection.pending}
 						folder={getSelectionToolbarFolder(config)}
+						mailboxIds={selection.mailboxIds}
 					/>
 				) : (
 					<p aria-hidden="true" className="min-w-0 truncate text-base font-medium text-neutral-900">

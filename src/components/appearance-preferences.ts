@@ -134,3 +134,12 @@ export const appearanceBootstrapScript = `(() => {
 		}
 	} catch {}
 })();`;
+
+/**
+ * The All mailboxes view (JSON through useStoredState): whether it is on, the mailboxes its
+ * filter hides (so a new mailbox shows up by default), and the From last used to write a new
+ * message from it. Kept per browser like the rest of this file; nothing is stored on the server.
+ */
+// The keys live in mailbox-provider-utils.ts, next to their only readers, so this file stays out of the
+// mail views' shared client chunks: `kite-all-mailboxes`, `kite-all-mailboxes-hidden` and
+// `kite-compose-last-from`.

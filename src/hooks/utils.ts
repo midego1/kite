@@ -33,6 +33,16 @@ const FOLDER_QUERY: Partial<Record<MessageFolder, { direction?: "inbound" | "out
 	spam: { status: "spam" },
 };
 
+/**
+ * A mailbox scope is one mailbox id, several ids joined by commas (the All mailboxes view
+ * narrowed by its filter), or null for every mailbox the user can open. A string keeps it a
+ * stable cache key and effect dependency.
+ */
+export function setMailboxScopeParam(params: URLSearchParams, scope: string | null | undefined) {
+	if (!scope) return;
+	params.set(scope.includes(",") ? "mailboxIds" : "mailboxId", scope);
+}
+
 export function getMessageQueryParams(
 	folder: MessageFolder,
 	mailboxId?: string | null,
@@ -49,7 +59,7 @@ export function getMessageQueryParams(
 	if (folder === "snoozed") params.set("snoozed", "true");
 
 	if (folderId) params.set("folderId", folderId);
-	if (mailboxId) params.set("mailboxId", mailboxId);
+	setMailboxScopeParam(params, mailboxId);
 	const searchFilters = filters?.query ? parseMessageSearchQuery(filters.query) : null;
 	const parsedFilters = searchFilters
 		? { ...filters, ...searchFilters, read: filters?.read ?? searchFilters.read }
@@ -130,7 +140,7 @@ export async function fetchMessageCounts(mailboxId?: string | null, force = fals
 	const countsGeneration = messageCountsGeneration;
 	const request = (async () => {
 		const params = new URLSearchParams();
-		if (mailboxId) params.set("mailboxId", mailboxId);
+		setMailboxScopeParam(params, mailboxId);
 		const query = params.toString();
 		const res = await authFetch(`/api/messages/counts${query ? `?${query}` : ""}`);
 		const data = (await res.json()) as { counts?: MessageCounts };

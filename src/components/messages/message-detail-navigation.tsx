@@ -8,6 +8,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
 import { authFetch } from "@/lib/auth/client";
+import { setMailboxScopeParam } from "@/hooks/utils";
 import type { MessageNavigationResponse } from "@/app/api/messages/navigation/types";
 import type {
 	MessageDetailNavigationContextValue,
@@ -26,10 +27,10 @@ import { useConversationView } from "./use-conversation-view";
 const NavigationContext = createContext<MessageDetailNavigationContextValue | null>(null);
 
 export function MessageDetailNavigationProvider({ children, config }: MessageDetailNavigationProviderProps) {
-	const { selectedMailbox, isLoading: mailboxesLoading } = useSelectedMailbox();
+	const { mailboxScope, isLoading: mailboxesLoading } = useSelectedMailbox();
 	const [conversationView] = useConversationView();
 	const grouped = conversationView && config.folder !== "drafts";
-	const mailboxId = selectedMailbox?.id;
+	const mailboxId = mailboxScope;
 	const key = `${config.folder}:${config.folderId ?? ""}:${mailboxId ?? "all"}:${grouped}`;
 	const [snapshot, setSnapshot] = useState<MessageDetailNavigationSnapshot>({ key: "", entries: [] });
 	const [openedUnread, setOpenedUnread] = useState<OpenedUnreadMessages>({ key: "", ids: new Set() });
@@ -56,7 +57,7 @@ export function MessageDetailNavigationProvider({ children, config }: MessageDet
 		let cancelled = false;
 		const params = new URLSearchParams({ folder: config.folder });
 		if (config.folderId) params.set("folderId", config.folderId);
-		if (mailboxId) params.set("mailboxId", mailboxId);
+		setMailboxScopeParam(params, mailboxId);
 		if (grouped) params.set("group", "thread");
 		void authFetch(`/api/messages/navigation?${params.toString()}`)
 			.then((response) => {

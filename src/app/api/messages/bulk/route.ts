@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { getDb } from "@/db";
+import { getDb, type AppDatabase } from "@/db";
 import { folders, messages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
@@ -19,7 +19,26 @@ import {
 	isPermanentlyDeletableStatus,
 	isRestorableStatus,
 	isUndoableBulkAction,
+	actionMailboxId,
 } from "./utils";
+
+/** Applies `values` to the approved messages, each only while it is still in the mailbox it was approved in. */
+async function updateInApprovedMailboxes(
+	db: AppDatabase,
+	approvedMailbox: ReadonlyMap<string, string>,
+	values: Partial<typeof messages.$inferInsert>,
+) {
+	const byMailbox = new Map<string, string[]>();
+	for (const [messageId, mailboxId] of approvedMailbox)
+		byMailbox.set(mailboxId, [...(byMailbox.get(mailboxId) ?? []), messageId]);
+	for (const [mailboxId, ids] of byMailbox)
+		await runInChunks(ids, (chunk) =>
+			db
+				.update(messages)
+				.set(values)
+				.where(and(eq(messages.mailboxId, mailboxId), inArray(messages.id, chunk))),
+		);
+}
 
 export async function POST(request: Request) {
 	const env = getEnv();
@@ -43,6 +62,8 @@ export async function POST(request: Request) {
 	const read = getReadValueForBulkAction(payload.action);
 	const db = getDb(env);
 	let folderId: string | null | undefined;
+	// A user folder belongs to one mailbox, and mail only ever moves within its own mailbox.
+	let folderMailboxId: string | null = null;
 
 	if (payload.action === "folder") {
 		if (!payload.folderId) {
@@ -61,6 +82,7 @@ export async function POST(request: Request) {
 			return NextResponse.json({ error: "Folder not found" }, { status: 404 });
 		}
 		folderId = folder.id;
+		folderMailboxId = folder.mailboxId;
 	} else if (status) {
 		// Every other move leaves user folders.
 		folderId = null;
@@ -91,20 +113,25 @@ export async function POST(request: Request) {
 			.where(inArray(messages.id, ids)),
 	);
 	const allowedMessageIds: string[] = [];
+	// The mailbox each message was approved in; every write below is limited to it, so the rule holds
+	// at write time even if a message changed mailbox after the check.
+	const approvedMailbox = new Map<string, string>();
 	// A bulk selection usually spans one or two mailboxes; resolve each once.
 	const accessByMailbox = new Map<string, Promise<MailboxAccessLevel | null>>();
 
 	for (const message of selectedMessages) {
-		if (!message.mailboxId) continue;
-		let accessRequest = accessByMailbox.get(message.mailboxId);
+		const mailboxId = actionMailboxId(message.mailboxId, folderMailboxId);
+		if (!mailboxId) continue;
+		let accessRequest = accessByMailbox.get(mailboxId);
 		if (!accessRequest) {
-			accessRequest = getMailboxAccessLevel(db, user, message.mailboxId);
-			accessByMailbox.set(message.mailboxId, accessRequest);
+			accessRequest = getMailboxAccessLevel(db, user, mailboxId);
+			accessByMailbox.set(mailboxId, accessRequest);
 		}
 		const access = await accessRequest;
 		const canUpdate = payload.action === "read" || payload.action === "unread" ? access?.canRead : access?.canManage;
 		if (!canUpdate) continue;
 		allowedMessageIds.push(message.id);
+		approvedMailbox.set(message.id, mailboxId);
 	}
 
 	if (allowedMessageIds.length === 0) {
@@ -126,7 +153,7 @@ export async function POST(request: Request) {
 			await db
 				.update(messages)
 				.set({ status: state.status, folderId: restoredFolderId })
-				.where(eq(messages.id, state.id));
+				.where(and(eq(messages.id, state.id), eq(messages.mailboxId, approvedMailbox.get(state.id)!)));
 		}
 		return NextResponse.json({ ok: true });
 	}
@@ -149,7 +176,7 @@ export async function POST(request: Request) {
 			.filter((message) => message.status === "spam" && allowedMessageIds.includes(message.id))
 			.map((message) => message.id);
 		for (const messageId of spamMessageIds) await applySpamFeedback(env, user, messageId, "ham");
-		await runInChunks(allowedMessageIds, (ids) => db.update(messages).set(values).where(inArray(messages.id, ids)));
+		await updateInApprovedMailboxes(db, approvedMailbox, values);
 		return NextResponse.json({ ok: true });
 	}
 
@@ -158,7 +185,7 @@ export async function POST(request: Request) {
 				.filter((message) => allowedMessageIds.includes(message.id) && isRestorableStatus(message.status))
 				.map((message) => ({ id: message.id, status: message.status, folderId: message.folderId ?? null }))
 		: undefined;
-	await runInChunks(allowedMessageIds, (ids) => db.update(messages).set(values).where(inArray(messages.id, ids)));
+	await updateInApprovedMailboxes(db, approvedMailbox, values);
 	await createAuditLogs(
 		env,
 		allowedMessageIds.map((messageId) => ({

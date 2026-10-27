@@ -256,7 +256,7 @@ Emails and webhook payloads contain only the app name, rule ids, rule names, cou
 
 #### Admin banner
 
-While any rule is active, every admin sees a banner at the top of the dashboard listing each alert with its count and a link to the page to check. It reads `GET /api/admin/alerts/active`, which only evaluates the rules: it sends nothing and writes no state. The banner loads when the page opens and refreshes every 5 minutes; users who are not admins never request it. **Dismiss** hides it in that browser until the set of active alerts changes (a new rule fires, or a rule clears and returns); a count changing alone does not bring it back. Dismissal is stored in the browser under `kite-dismissed-alerts`.
+While any rule is active, every admin sees a compact notice in the sidebar, above Settings (over the page on phones and while the sidebar is collapsed), listing each alert with its count and a link to the page to check. It reads `GET /api/admin/alerts/active`, which only evaluates the rules: it sends nothing and writes no state. The banner loads when the page opens and refreshes every 5 minutes; users who are not admins never request it. **Dismiss** hides it in that browser until the set of active alerts changes (a new rule fires, or a rule clears and returns); a count changing alone does not bring it back. Dismissal is stored in the browser under `kite-dismissed-alerts`.
 
 #### Blind spots
 

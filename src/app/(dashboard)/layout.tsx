@@ -2,16 +2,12 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
-import { AlertsBanner } from "@/components/alerts-banner";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { ComposeProvider } from "@/components/compose/compose-context";
 import { FloatingComposer } from "@/components/compose/floating-composer";
-import { MailSearchInput } from "@/components/mail-search/mail-search-input";
 import { MailSearchProvider } from "@/components/mail-search/mail-search-context";
 import { MailboxProvider } from "@/components/mailbox-provider";
 import { MailboxSelector } from "@/components/mailbox-selector";
-import { MigrationsBanner } from "@/components/migrations-banner";
-import { DnsSkippedBanner } from "@/components/dns-skipped-banner";
 import { LazyAgentPanel, preloadAgentPanel } from "@/components/agent/agent-panel-lazy";
 import { AssistantDockedContext, AssistantOpenContext } from "@/components/agent/assistant-open-state";
 import { Button } from "@/components/ui/button";
@@ -19,6 +15,7 @@ import { DashboardNav } from "@/components/dashboard-nav";
 import { SidebarProvider } from "@/components/sidebar-state";
 import { SidebarAside, MobileMenuButton } from "@/components/sidebar-aside";
 import { SidebarFrame } from "@/components/sidebar-frame";
+import { DashboardNotices } from "@/components/dashboard-notices";
 import { ShortcutsProvider } from "@/components/shortcuts";
 import { MAIN_CONTENT_ID, SkipToContent } from "@/components/skip-to-content";
 import clsx from "clsx";
@@ -77,6 +74,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 		}
 	}, [assistantEnabled, assistantOpen, assistantFullSize, setAssistantOpen, setAssistantFullSize]);
 
+	const assistantToggle = (variant: "icon" | "nav") =>
+		assistantEnabled ? (
+			<Button
+				type="button"
+				variant="ghost"
+				size="sm"
+				className={clsx(
+					assistantOpen ? "bg-blue-50 text-blue-700" : "text-neutral-600",
+					variant === "nav" && "h-9 w-full justify-start gap-3 rounded-lg px-3 text-sm font-normal",
+				)}
+				onPointerEnter={() => void preloadAgentPanel().catch(() => undefined)}
+				onClick={() => {
+					setAssistantOpen((current) => !current);
+					setAssistantFullSize(false);
+				}}
+				aria-label={assistantOpen ? "Close email assistant" : "Open email assistant"}
+				aria-expanded={assistantOpen}
+				aria-controls="email-assistant-panel"
+			>
+				<Sparkles className={variant === "nav" ? "h-4 w-4" : "h-5 w-5"} />
+				{variant === "nav" && "Assistant"}
+			</Button>
+		) : null;
+
 	return (
 		<AuthGuard>
 			<SidebarProvider mobileOverlay>
@@ -91,51 +112,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 										sidebar={
 											<SidebarAside className="md:w-full">
 												<div className="h-full">
-													<DashboardNav />
+													<DashboardNav
+														assistantToggle={assistantToggle("nav")}
+														accountMenu={<MailboxSelector placement="sidebar" />}
+														notices={<DashboardNotices slot="sidebar" />}
+													/>
 												</div>
 											</SidebarAside>
 										}
 									>
 										<div className="flex h-full min-h-0 min-w-0 flex-col">
-											<header className="flex h-16 w-full shrink-0 items-center gap-3 pr-4 text-sm">
-												<MobileMenuButton className="ml-2" />
-												<MailSearchInput />
-												{/* <Link
-                        href="/settings/account"
-                        className="flex h-10 w-10 items-center justify-center rounded-full text-neutral-600 hover:bg-neutral-200"
-                        title="Account Settings"
-                      >
-                        <HelpCircle className="h-5 w-5" />
-                      </Link> */}
-												{assistantEnabled && (
-													<Button
-														type="button"
-														variant="ghost"
-														size="sm"
-														className={assistantOpen ? "bg-blue-50 text-blue-700" : "text-neutral-600"}
-														onPointerEnter={() => void preloadAgentPanel().catch(() => undefined)}
-														onClick={() => {
-															setAssistantOpen((current) => !current);
-															setAssistantFullSize(false);
-														}}
-														aria-label={assistantOpen ? "Close email assistant" : "Open email assistant"}
-														aria-expanded={assistantOpen}
-														aria-controls="email-assistant-panel"
-													>
-														<Sparkles className="h-5 w-5" />
-													</Button>
-												)}
+											{/* Phones only: the desktop keeps search in the list panel and the rest in the sidebar. */}
+											<header className="flex h-14 w-full shrink-0 items-center gap-2 px-2 text-sm md:hidden">
+												<MobileMenuButton />
+												<span className="flex-1" />
+												{assistantToggle("icon")}
 												<MailboxSelector />
 											</header>
-											<AlertsBanner />
-											<MigrationsBanner />
-											<DnsSkippedBanner />
+											<DashboardNotices slot="page" />
 											<div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
 												<AssistantOpenContext.Provider value={assistantVisible && assistantLayout === "sidebar"}>
 													<main
 														id={MAIN_CONTENT_ID}
 														tabIndex={-1}
-														className="focus:outline-none min-h-0 min-w-0 flex-1 overflow-y-auto rounded-t-3xl bg-white overscroll-contain scrollbar-gutter-stable"
+														// One bordered panel for the page; the split mail views draw their own panels on the page background.
+														className="focus:outline-none min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable bg-white md:mt-2 md:mb-2 md:rounded-xl md:border md:border-neutral-200 md:shadow-xs has-[[data-reading-pane]]:border-transparent has-[[data-reading-pane]]:bg-transparent has-[[data-reading-pane]]:shadow-none has-[[data-reading-pane]]:[scrollbar-gutter:auto]"
 														aria-hidden={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
 														inert={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
 													>

@@ -23,7 +23,7 @@ For a fresh Mission worker, run `npm run setup:mission` (or open `.devcontainer`
 
 ## UI conventions
 
-- Two styles share one codebase: Kite (default) and Classic, switched by `data-style` on `<html>` (sidebar toggle, Settings → Appearance). Components use Tailwind's `blue-*` palette, which `src/app/globals.css` remaps to Kite indigo; keep using `blue-*` rather than hard-coded hex so both styles and dark mode work. Check new UI in Kite, Classic and dark mode.
+- Three styles share one codebase, switched by `data-style` on `<html>` (Settings → Appearance; the sidebar's **Kite classic** switch): Kite (`kite`, the default, Zero's neutral zinc look, dark unless the user picks light), Kite classic (`lavender`, the earlier indigo and lavender look) and Classic (`classic`, the original blue). Components use Tailwind's `blue-*` palette, which `src/app/globals.css` remaps per style: in Kite the tints (50–300) are the muted zinc fills of active and selected items, 400–500 the one blue accent (focus, the unread dot) and 600–950 the near-black primary (white in dark mode). Keep using `blue-*` rather than hard-coded hex so every style and dark mode work, and check new UI in all three styles and dark mode.
 - Per-browser preferences (font, text size, assistant layout) go through `src/components/appearance-preferences.ts`.
 
 ## Database backup and restore

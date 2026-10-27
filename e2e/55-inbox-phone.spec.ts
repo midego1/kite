@@ -64,11 +64,11 @@ test("the menu opens the sidebar as a sheet, which closes on navigation and on E
 	await expect(sheet).toHaveCount(0);
 });
 
-test("the list's tabs and pager share the phone header without hiding the folder name", async ({ page }) => {
+test("the list's search and category chips share the phone header without hiding the folder name", async ({ page }) => {
 	await page.goto("/inbox");
 	await expect(page.getByRole("list", { name: "Inbox" }).getByText(subject, { exact: true })).toBeVisible();
-	await expect(page.getByRole("button", { name: "All mail", exact: true })).toBeVisible();
-	await expect(page.getByRole("button", { name: "Next page" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Primary", exact: true })).toBeVisible();
+	await expect(page.getByRole("textbox", { name: /Search mail/ })).toBeVisible();
 	const title = page.getByRole("main").locator("p", { hasText: /^Inbox$/ });
 	await expect(title).toBeVisible();
 	expect(await title.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);

@@ -3,14 +3,27 @@
 import Link from "next/link";
 import { CheckCircle2, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NOTICE_LINK_CLASS, SUCCESS_NOTICE_CLASS, WARNING_NOTICE_CLASS } from "./notice-styles";
 import { migrationsBannerContent, shouldShowMigrationsBanner } from "./migrations-banner-utils";
 import { useMigrationsCardVisible, useMigrationsNotice } from "./use-migrations-notice";
 
-function AppliedNotice({ summary, className }: { summary: string; className: string }) {
+function AppliedNotice({
+	summary,
+	className,
+	compact = false,
+}: {
+	summary: string;
+	className?: string;
+	compact?: boolean;
+}) {
 	return (
 		<section
 			aria-label="Database updates"
-			className={`flex items-start gap-3 rounded-2xl bg-green-50 px-4 py-3 text-sm text-green-700 ${className}`}
+			className={
+				compact
+					? SUCCESS_NOTICE_CLASS
+					: `flex items-start gap-3 rounded-2xl bg-green-50 px-4 py-3 text-sm text-green-700 ${className}`
+			}
 		>
 			<CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
 			<div className="min-w-0 flex-1">
@@ -79,41 +92,36 @@ export function MigrationsBanner() {
 	const cardVisible = useMigrationsCardVisible();
 	if (!user || cardVisible) return null;
 	if (!data || !shouldShowMigrationsBanner(data)) {
-		return summary ? <AppliedNotice summary={summary} className="mx-2 mb-2 shrink-0 md:ml-0 md:mr-4" /> : null;
+		return summary ? <AppliedNotice summary={summary} compact /> : null;
 	}
 	const content = migrationsBannerContent(data.pending);
 
 	return (
-		<section
-			aria-label="Database updates"
-			title={data.names?.join(", ")}
-			className="mx-2 mb-2 flex shrink-0 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900 md:ml-0 md:mr-4"
-		>
-			<Database
-				className={`h-3.5 w-3.5 shrink-0 text-amber-700 ${applying ? "animate-pulse" : ""}`}
-				aria-hidden="true"
-			/>
-			<p className="min-w-0 flex-1 truncate">
-				<span className="font-medium">{content.title}.</span>{" "}
-				{error ? (
-					<span role="alert" className="text-red-700">
-						{error}
-					</span>
-				) : isPrimaryAdmin ? (
-					content.body
-				) : (
-					"Ask an administrator to apply them."
-				)}
-			</p>
-			{isPrimaryAdmin ? (
-				<Button type="button" size="sm" className="h-6 px-2 text-xs" disabled={applying} onClick={apply}>
-					{applying ? "Applying…" : "Apply now"}
-				</Button>
-			) : user.role === "admin" ? (
-				<Link href="/admin" className="shrink-0 underline underline-offset-2">
-					Admin overview
-				</Link>
-			) : null}
+		<section aria-label="Database updates" title={data.names?.join(", ")} className={WARNING_NOTICE_CLASS}>
+			<Database className={`mt-px h-3.5 w-3.5 shrink-0 ${applying ? "animate-pulse" : ""}`} aria-hidden="true" />
+			<div className="min-w-0 flex-1">
+				<p className="truncate font-medium">{content.title}</p>
+				<p className="mt-0.5 line-clamp-2 opacity-90">
+					{error ? (
+						<span role="alert" className="text-red-600">
+							{error}
+						</span>
+					) : isPrimaryAdmin ? (
+						content.body
+					) : (
+						"Ask an administrator to apply them."
+					)}
+				</p>
+				{isPrimaryAdmin ? (
+					<Button type="button" size="sm" className="mt-1.5 h-6 px-2 text-xs" disabled={applying} onClick={apply}>
+						{applying ? "Applying…" : "Apply now"}
+					</Button>
+				) : user.role === "admin" ? (
+					<Link href="/admin" className={`mt-1 inline-block ${NOTICE_LINK_CLASS}`}>
+						Admin overview
+					</Link>
+				) : null}
+			</div>
 		</section>
 	);
 }

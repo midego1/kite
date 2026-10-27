@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useCompose } from "@/components/compose/compose-context";
+import { useCompose, type InlineDraftKind } from "@/components/compose/compose-context";
+import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { useInlineComposerHost } from "@/components/compose/inline-composer-host";
+import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import type { MessageActionsProps, ReplyMode } from "./types";
 import {
 	createForwardDraft,
@@ -41,7 +44,11 @@ export function useMessageReply({
 	message,
 	messageMeta,
 }: MessageReplyInput) {
-	const { openDraftComposer } = useCompose();
+	const { openDraftComposer, open, placement, collapsed } = useCompose();
+	// In a reader on a wider screen replies open docked under the message; phones keep the full-screen composer.
+	const inlineHost = useInlineComposerHost();
+	const isMobile = useIsMobile();
+	const inlineFor = inlineHost && !isMobile ? inlineHost.messageId : null;
 	const [pending, setPending] = useState<ReplyMode | "forward" | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const replyable = useMemo(
@@ -60,8 +67,36 @@ export function useMessageReply({
 	const canReplyAll = hasAdditionalRecipients(replyable, ownAddresses);
 	const sentAt = messageMeta?.createdAt;
 
+	const source = messageMeta?.id ?? null;
+	/** The draft of this kind for this message that was collapsed in this reader, if any. */
+	const resumable = useCallback(
+		(kind: InlineDraftKind) =>
+			inlineFor && collapsed?.messageId === inlineFor && collapsed.source === source && collapsed.kind === kind
+				? collapsed.draftId
+				: null,
+		[inlineFor, collapsed, source],
+	);
+	/** Docking a reply closes an open floating composer; its draft stays in Drafts, but ask first. */
+	const mayReplaceComposer = useCallback(
+		() =>
+			!inlineFor || !open || placement !== "popup"
+				? Promise.resolve(true)
+				: requestConfirmation({
+						title: "Close the open message?",
+						description: "The message you are writing is saved in Drafts.",
+						confirmLabel: "Close and reply",
+					}),
+		[inlineFor, open, placement],
+	);
+
 	const reply = useCallback(
 		async (mode: ReplyMode) => {
+			const resume = resumable(mode);
+			if (!(await mayReplaceComposer())) return;
+			if (resume) {
+				openDraftComposer(resume, { inlineFor, kind: mode, source });
+				return;
+			}
 			setPending(mode);
 			setError(null);
 			try {
@@ -76,7 +111,7 @@ export function useMessageReply({
 					recipients: getReplyRecipients(replyable, ownAddresses, mode),
 					threading: getReplyThreading(replyable),
 				});
-				openDraftComposer(draftId);
+				openDraftComposer(draftId, { inlineFor, kind: mode, source });
 			} catch (replyError) {
 				setError(replyError instanceof Error ? replyError.message : "Could not start reply");
 			} finally {
@@ -94,12 +129,22 @@ export function useMessageReply({
 			replyable,
 			ownAddresses,
 			openDraftComposer,
+			inlineFor,
+			source,
+			resumable,
+			mayReplaceComposer,
 		],
 	);
 
 	const canForward = !!message && !!messageMeta;
 	const forward = useCallback(async () => {
 		if (!message || !messageMeta) return;
+		const resume = resumable("forward");
+		if (!(await mayReplaceComposer())) return;
+		if (resume) {
+			openDraftComposer(resume, { inlineFor, kind: "forward", source });
+			return;
+		}
 		setPending("forward");
 		setError(null);
 		try {
@@ -110,13 +155,25 @@ export function useMessageReply({
 				bodyText,
 				bodyHtml,
 			});
-			openDraftComposer(draftId);
+			openDraftComposer(draftId, { inlineFor, kind: "forward", source });
 		} catch (forwardError) {
 			setError(forwardError instanceof Error ? forwardError.message : "Could not start forward");
 		} finally {
 			setPending(null);
 		}
-	}, [message, messageMeta, mailboxId, ownAddress, bodyText, bodyHtml, openDraftComposer]);
+	}, [
+		message,
+		messageMeta,
+		mailboxId,
+		ownAddress,
+		bodyText,
+		bodyHtml,
+		openDraftComposer,
+		inlineFor,
+		source,
+		resumable,
+		mayReplaceComposer,
+	]);
 
 	return { reply, forward, canReplyAll, canForward, pending, error };
 }

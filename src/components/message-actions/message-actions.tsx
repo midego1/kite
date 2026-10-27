@@ -29,7 +29,6 @@ import { MoveToolbarMenu, SnoozeToolbarButton } from "./message-toolbar-menus";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { MessageActionsProps } from "./types";
@@ -205,7 +204,7 @@ export function MessageActions({
 	const moveActions = getMoveMessageActions(status, direction);
 
 	return (
-		<div className="flex min-w-0 flex-1 items-center gap-1 text-neutral-600 md:flex-wrap md:gap-3">
+		<div className="reader-toolbar flex min-w-0 items-center gap-1 text-neutral-600 md:gap-1.5">
 			{shownError && (
 				<span role="alert" className="text-xs text-red-600">
 					{shownError}
@@ -240,6 +239,20 @@ export function MessageActions({
 			)}
 			{!isMobile && (
 				<>
+					{/* Zero's labelled "Reply all"; Reply and Forward sit under the message itself. */}
+					{canReplyAll && (
+						<Button
+							type="button"
+							variant="ghost"
+							size="roundedSM"
+							data-labelled
+							disabled={disabled}
+							onClick={() => handleReply("replyAll")}
+						>
+							<ReplyAll size={iconSize} />
+							Reply all
+						</Button>
+					)}
 					<Tooltip label={shortcutsEnabled ? "Archive (e)" : "Archive"}>
 						<Button
 							variant="ghost"
@@ -275,61 +288,6 @@ export function MessageActions({
 							<ShieldAlert size={iconSize} />
 						</Button>
 					</Tooltip>
-					<Tooltip label={canDeleteForever ? "Delete forever" : shortcutsEnabled ? "Delete (#)" : "Delete"}>
-						<Button
-							variant="ghost"
-							size="roundedSM"
-							aria-label={canDeleteForever ? trashLabel : shortcutsEnabled ? "Move to trash (#)" : "Move to trash"}
-							disabled={disabled}
-							onClick={onTrashClick}
-							className={canDeleteForever ? "text-red-600 hover:text-red-700" : undefined}
-						>
-							<Trash2 size={iconSize} />
-						</Button>
-					</Tooltip>
-					<Separator orientation="vertical" className="mx-2 inline-block h-5 bg-gray-200" />
-
-					<Tooltip label={shortcutsEnabled ? "Reply (r)" : "Reply"}>
-						<Button
-							type="button"
-							variant="ghost"
-							size="roundedSM"
-							aria-label={shortcutsEnabled ? "Reply (r)" : "Reply"}
-							disabled={disabled}
-							onClick={() => handleReply("reply")}
-						>
-							<Reply size={iconSize} />
-						</Button>
-					</Tooltip>
-					{canReplyAll && (
-						<Tooltip label="Reply all">
-							<Button
-								type="button"
-								variant="ghost"
-								size="roundedSM"
-								aria-label="Reply all"
-								disabled={disabled}
-								onClick={() => handleReply("replyAll")}
-							>
-								<ReplyAll size={iconSize} />
-							</Button>
-						</Tooltip>
-					)}
-					{canForward && (
-						<Tooltip label="Forward">
-							<Button
-								type="button"
-								variant="ghost"
-								size="roundedSM"
-								aria-label="Forward"
-								disabled={disabled}
-								onClick={() => void handleForward()}
-							>
-								<Forward size={iconSize} />
-							</Button>
-						</Tooltip>
-					)}
-
 					<Tooltip label={read ? "Mark as unread" : "Mark as read"}>
 						<Button
 							variant="ghost"
@@ -472,6 +430,21 @@ export function MessageActions({
 					</Popover.Content>
 				</Popover.Portal>
 			</Popover.Root>
+			{!isMobile && (
+				<Tooltip label={canDeleteForever ? "Delete forever" : shortcutsEnabled ? "Delete (#)" : "Delete"}>
+					<Button
+						variant="ghost"
+						size="roundedSM"
+						data-tone="danger"
+						aria-label={canDeleteForever ? trashLabel : shortcutsEnabled ? "Move to trash (#)" : "Move to trash"}
+						disabled={disabled}
+						onClick={onTrashClick}
+						className={canDeleteForever ? "text-red-600 hover:text-red-700" : undefined}
+					>
+						<Trash2 size={iconSize} />
+					</Button>
+				</Tooltip>
+			)}
 
 			<MessageSourceDialog messageId={messageId} open={sourceOpen} onOpenChange={setSourceOpen} />
 			{moduleSlots.overlays}

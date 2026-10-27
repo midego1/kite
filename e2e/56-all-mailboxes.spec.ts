@@ -168,6 +168,12 @@ test("All mailboxes lists every mailbox with labels and summed counts, and the f
 	await expect(row(page, subjects.work)).toBeVisible();
 	await expect(row(page, subjects.home)).toHaveCount(0);
 	await expect(row(page, subjects.work).getByTestId("message-mailbox-label")).toHaveCount(0);
+
+	// The square before the mailbox squares at the top of the sidebar opens All mailboxes again.
+	await page.getByRole("button", { name: "Open All mailboxes" }).click();
+	await expect(page.getByRole("button", { name: "Open All mailboxes" })).toHaveAttribute("aria-pressed", "true");
+	await expect(page.getByRole("button", { name: "Switch mailbox, current: All mailboxes" })).toBeVisible();
+	await expect(row(page, subjects.home)).toBeVisible();
 	await page.context().close();
 });
 
@@ -187,24 +193,29 @@ test("a reply goes out from the mailbox the message arrived in, and a new messag
 		await row(page, subject).getByRole("link").first().click();
 		await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
 		await page.keyboard.press("r");
+		// The reply opens in the composer docked under the message, which has no From field: the Sent copy's
+		// From below is the check.
+		const composer = page
+			.getByRole("main")
+			.getByRole("region", { name: "Compose message" })
+			.filter({ has: page.getByRole("button", { name: "Pop out composer" }) });
 		// Opening a reply creates its draft first, which can take a while on a busy dev server.
-		await expect(page.getByLabel("Subject")).toHaveValue(`Re: ${subject}`, { timeout: 30_000 });
-		await expectSelectValue(page.getByRole("combobox", { name: "From" }), `${box.id}|${box.address}`);
-		await page.getByRole("textbox", { name: "Message body" }).click();
+		await expect(composer.getByLabel("Subject")).toHaveValue(`Re: ${subject}`, { timeout: 30_000 });
+		await composer.getByRole("textbox", { name: "Message body" }).click();
 		await page.keyboard.type(`Answer from ${box.name}.`);
 		const sent = page.waitForResponse(
 			(response) => response.url().endsWith("/api/send") && response.request().method() === "POST",
 		);
-		await page.getByRole("button", { name: "Send", exact: true }).click();
+		await composer.getByRole("button", { name: "Send", exact: true }).click();
 		expect((await sent).ok()).toBe(true);
-		await page.getByRole("button", { name: "Close composer" }).click();
+		await expect(composer).toHaveCount(0);
 		await expect
 			.poll(async () =>
-				(await listMessages(`direction=outbound&status=sent&mailboxId=${box.id}`)).some(
-					(message) => message.subject === `Re: ${subject}`,
-				),
+				(await listMessages(`direction=outbound&status=sent&mailboxId=${box.id}`))
+					.filter((message) => message.subject === `Re: ${subject}`)
+					.map((message) => message.fromAddr.toLowerCase().includes(box.address)),
 			)
-			.toBe(true);
+			.toEqual([true]);
 	}
 	const homeSent = await listMessages(`direction=outbound&status=sent&mailboxId=${home.id}`);
 	expect(homeSent.some((message) => message.subject === `Re: ${subjects.work}`)).toBe(false);

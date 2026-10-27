@@ -15,7 +15,13 @@ export type BulkMessagePayload = {
 };
 
 /** Where a message was before an archive or trash, as returned for undo. */
-export type MessageRestoreState = { id: string; status: string; folderId: string | null };
+export type MessageRestoreState = {
+	id: string;
+	status: string;
+	folderId: string | null;
+	/** For a spam or phishing report: the receipt that lets Undo also take back its training and extras. */
+	receiptId?: string | null;
+};
 
 export type BulkMessageResponse = {
 	ok?: boolean;
@@ -23,6 +29,8 @@ export type BulkMessageResponse = {
 	deleted?: number;
 	skipped?: number;
 	undo?: MessageRestoreState[];
+	/** True when a report could not record what it trained, so Undo moves the mail back but cannot untrain it. */
+	trainingUndoUnavailable?: boolean;
 	/** For "phishing": what happened to each reported message's sender. */
 	reports?: PhishingReport[];
 };

@@ -6,6 +6,7 @@ import { storedChatActionState, undoTargets } from "../chat-actions-utils";
 import { AgentActionError } from "./action-error";
 import type { AgentActionRow } from "./actions-types";
 import { parseActionState } from "./actions-utils";
+import { undoLatestSpamReceipt } from "@/lib/spam/report-receipts";
 import { restoreMarkedSpam } from "./suggestion-effects";
 
 const MOVED_AGAIN = "The emails were moved again since, so Kite left them where they are";
@@ -46,6 +47,12 @@ async function restoreChanged(
 			)
 			.returning({ id: messages.id });
 		restored += updated.length;
+		// A move to or out of Spam also trained the filter, so putting the message back takes that back too.
+		if (field === "place" && updated.length > 0) {
+			if (applied.status === "spam") await undoLatestSpamReceipt(env, before.id, "to_spam", row.createdAt);
+			else if (before.status === "spam" && applied.status === "received")
+				await undoLatestSpamReceipt(env, before.id, "from_spam", row.createdAt);
+		}
 	}
 	if (targets.length > 0 && restored === 0) throw new AgentActionError(refusal, 409);
 	return { restored, total: targets.length };

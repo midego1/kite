@@ -20,6 +20,7 @@ import {
 	runSingleMessageAction,
 } from "@/components/message-actions/utils";
 import { toggleMessageStar } from "./message-list-row-actions-utils";
+import { confirmReportSpam } from "./spam-report";
 import type { ThreadMessageActionsProps } from "./thread-message-actions-types";
 import type { ReplyMode } from "@/components/message-actions/types";
 
@@ -102,6 +103,7 @@ export function ThreadMessageActions({
 
 	async function onMessageAction(action: Parameters<typeof runSingleMessageAction>[1]) {
 		setMoreOpen(false);
+		if (action === "spam" && !(await confirmReportSpam(1))) return;
 		setPending(true);
 		setError(null);
 		try {

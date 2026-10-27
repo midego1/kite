@@ -132,6 +132,9 @@ const INTERNAL_TABLES = [
 	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
 	// restored database would restart a copy between stores that may no longer match.
 	"storage_migrations",
+	// Undo receipts of spam and phishing reports: transient (pruned after the 7-day undo window) and tied to
+	// the toast or Activity entry that offered the undo, so a restored database starts without them.
+	"spam_report_receipts",
 ];
 
 /**

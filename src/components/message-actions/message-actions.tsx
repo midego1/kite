@@ -23,6 +23,7 @@ import { SnoozeMenuItem } from "@/components/messages/snooze-picker";
 import { useMessageMenuSlots } from "./message-menu-slots";
 import { ReportPhishingItem } from "./report-phishing-item";
 import { confirmReportPhishing } from "@/components/messages/phishing-report";
+import { confirmReportSpam } from "@/components/messages/spam-report";
 import { messageShortcuts } from "./message-shortcuts";
 import { useMessageReply } from "./use-message-reply";
 import { useReadOnlyMail } from "./use-read-only-mail";
@@ -80,6 +81,8 @@ export function MessageActions({
 	const runUnguarded = useCallback(
 		async (action: BulkMessageAction, folderId?: string) => {
 			setMoreOpen(false);
+			// Reporting trains the filter and cannot be fully undone, so every route to it asks first.
+			if (action === "spam" && !(await confirmReportSpam(1))) return;
 			setPendingAction(action);
 			setError(null);
 			try {

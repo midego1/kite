@@ -353,10 +353,8 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 								aria-hidden="true"
 								className="px-5 pb-1 pt-3 text-sm text-neutral-500 first:pt-1"
 							>
-								{section.label}{" "}
-								<span className="ml-1">
-									[{section.key === "primary" ? total - section.pinnedOnPage : section.messages.length}]
-								</span>
+								{section.label}
+								{section.count !== null && <span className="ml-2">[{section.count}]</span>}
 							</p>
 						),
 						...section.messages.map((message) => (

@@ -6,8 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [2026.10.27.2] - 2026-10-27
-
 ### Changed
 
 - Kite has a new look, after [Zero](https://0.email): neutral grey in place of lavender, one blue accent and the Geist typeface. The earlier lavender look stays available as **Kite classic** in [Settings → Appearance](/settings/appearance) (also a switch at the bottom of the sidebar).

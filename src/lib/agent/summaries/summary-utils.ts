@@ -61,13 +61,16 @@ export function coverageDigest(ids: readonly string[]): Promise<string> {
 
 /**
  * The cache key part for a user's personal instructions: '' when their general and summary fields are both empty,
- * so everyone without them shares one summary, else a digest of the two fields.
+ * so everyone without them shares one summary, else a digest of the two fields and the user's name, which the
+ * prompt's personal headings name, so two people with the same instructions never share a row written for one.
  */
-export async function instructionsDigest(personal: Pick<PersonalInstructions, "general" | "summary"> | null) {
+export async function instructionsDigest(
+	personal: Pick<PersonalInstructions, "general" | "summary" | "name"> | null,
+): Promise<string> {
 	const general = personal?.general.trim() ?? "";
 	const summary = personal?.summary.trim() ?? "";
 	if (!general && !summary) return "";
-	return sha256Prefix(JSON.stringify([general, summary]));
+	return sha256Prefix(JSON.stringify([general, summary, personal?.name.trim() ?? ""]));
 }
 
 function extractJson(text: string): unknown {

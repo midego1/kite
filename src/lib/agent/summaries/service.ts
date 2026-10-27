@@ -8,7 +8,7 @@ import type { SessionUser } from "@/lib/auth/types";
 import { getAutoReadInstallSettings } from "../auto-read/install-settings";
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
 import { buildModelCallOptions, callWithFallback, completedText } from "../auto-read/model-call-utils";
-import { refusedSpendCap, withReservedSpend } from "../auto-read/spend";
+import { keepReservedEstimate, reconcileAiSpend, refusedSpendCap, reserveAiSpend } from "../auto-read/spend";
 import type { AutoSpendSource, ReserveAiSpendInput } from "../auto-read/spend-types";
 import { spendCapMessage } from "../chat-spend-utils";
 import { InteractiveModelRefusedError, interactiveRefusal, selectInteractiveModel } from "../interactive-model";
@@ -19,6 +19,7 @@ import {
 	buildSummaryRepairPrompt,
 	buildTranslationPrompt,
 	isSummaryEligible,
+	SUMMARY_FULL_MESSAGES,
 	SUMMARY_MAX_OUTPUT_TOKENS,
 	SUMMARY_STATUSES,
 	summaryReferences,
@@ -83,8 +84,37 @@ async function loadAnchor(db: AppDatabase, user: SessionUser, messageId: string)
 	};
 }
 
-/** The eligible messages a summary of this scope covers, oldest first: the newest 200 of the conversation, or one. */
-async function loadCovered(db: AppDatabase, anchor: Anchor, scope: SummaryScope): Promise<SummaryMessage[]> {
+function coveredCondition(anchor: Anchor, scope: SummaryScope) {
+	return and(
+		eq(messages.mailboxId, anchor.mailboxId),
+		scope === "message"
+			? eq(messages.id, anchor.id)
+			: sql`coalesce(${messages.threadId}, ${messages.id}) = ${anchor.threadKey}`,
+		inArray(messages.status, ELIGIBLE),
+		sql`coalesce(${messages.spamVerdict}, '') <> 'spam'`,
+	);
+}
+
+/**
+ * The ids of the eligible messages a summary of this scope covers: the newest 200 of the conversation, or the one
+ * message. Reading a summary needs only these, for the coverage digest; no body is loaded.
+ */
+async function loadCoveredIds(db: AppDatabase, anchor: Anchor, scope: SummaryScope): Promise<string[]> {
+	if (!isSummaryEligible(anchor)) return [];
+	const rows = await db
+		.select({ id: messages.id })
+		.from(messages)
+		.where(coveredCondition(anchor, scope))
+		.orderBy(desc(messages.createdAt))
+		.limit(MAX_COVERED_MESSAGES);
+	return rows.map((row) => row.id);
+}
+
+/**
+ * The covered messages as the prompt reads them, oldest first: headers for all of them, bodies only for the newest
+ * `SUMMARY_FULL_MESSAGES` (the earlier ones appear as one line each).
+ */
+async function loadCoveredMessages(db: AppDatabase, anchor: Anchor, scope: SummaryScope): Promise<SummaryMessage[]> {
 	if (!isSummaryEligible(anchor)) return [];
 	const rows = await db
 		.select({
@@ -93,29 +123,26 @@ async function loadCovered(db: AppDatabase, anchor: Anchor, scope: SummaryScope)
 			subject: messages.subject,
 			createdAt: messages.createdAt,
 			direction: messages.direction,
-			textBody: messages.textBody,
-			htmlBody: messages.htmlBody,
 		})
 		.from(messages)
-		.where(
-			and(
-				eq(messages.mailboxId, anchor.mailboxId),
-				scope === "message"
-					? eq(messages.id, anchor.id)
-					: sql`coalesce(${messages.threadId}, ${messages.id}) = ${anchor.threadKey}`,
-				inArray(messages.status, ELIGIBLE),
-				sql`coalesce(${messages.spamVerdict}, '') <> 'spam'`,
-			),
-		)
+		.where(coveredCondition(anchor, scope))
 		.orderBy(desc(messages.createdAt))
 		.limit(MAX_COVERED_MESSAGES);
+	const newest = rows.slice(0, SUMMARY_FULL_MESSAGES).map((row) => row.id);
+	const bodies = newest.length
+		? await db
+				.select({ id: messages.id, textBody: messages.textBody, htmlBody: messages.htmlBody })
+				.from(messages)
+				.where(inArray(messages.id, newest))
+		: [];
+	const text = new Map(bodies.map((row) => [row.id, summaryText(row)]));
 	return rows.reverse().map((row) => ({
 		id: row.id,
 		from: row.from,
 		subject: row.subject ?? "",
 		date: row.createdAt,
 		direction: row.direction === "outbound" ? "outbound" : "inbound",
-		text: summaryText(row),
+		text: text.get(row.id) ?? "",
 	}));
 }
 
@@ -140,15 +167,15 @@ async function unavailableReason(env: CloudflareEnv, eligible: boolean): Promise
 	return eligible ? undefined : "not_eligible";
 }
 
-type Loaded = { anchor: Anchor; covered: SummaryMessage[]; key: SummaryKey; current: string };
+type Loaded = { anchor: Anchor; coveredIds: string[]; key: SummaryKey; current: string };
 
 async function load(env: CloudflareEnv, user: SessionUser, messageId: string, scope: SummaryScope): Promise<Loaded> {
 	const db = getDb(env);
 	const anchor = await loadAnchor(db, user, messageId);
-	const covered = await loadCovered(db, anchor, scope);
+	const coveredIds = await loadCoveredIds(db, anchor, scope);
 	const personal = await personalInstructionsFor(db, user);
 	const key = keyOf(anchor, scope, await instructionsDigest(personal));
-	return { anchor, covered, key, current: await coverageDigest(covered.map((message) => message.id)) };
+	return { anchor, coveredIds, key, current: await coverageDigest(coveredIds) };
 }
 
 /**
@@ -167,7 +194,7 @@ export async function getSummaryState(
 }
 
 async function stateOf(env: CloudflareEnv, loaded: Loaded, request: SummaryRequest): Promise<SummaryState> {
-	const eligible = loaded.covered.length > 0;
+	const eligible = loaded.coveredIds.length > 0;
 	const reason = await unavailableReason(env, eligible);
 	const empty = { summary: null, translation: null, translatable: false };
 	if (reason === "assistant_off") return { ...empty, eligible: false, reason };
@@ -204,15 +231,37 @@ type GenerateInput = {
 	language?: string;
 };
 
-/** Reserves the spend of one request, or refuses with the message that names the cap. */
+/** A provider's HTTP status when it refused the request outright (a 4xx), which costs nothing. */
+function rejectedOutright(error: unknown): boolean {
+	const status = (error as { statusCode?: unknown } | null)?.statusCode;
+	return typeof status === "number" && status >= 400 && status < 500;
+}
+
+/**
+ * Reserves the spend of one request, or refuses with the message that names the cap. A call that fails without
+ * reporting usage (a timeout, an abort, a dropped connection) keeps its estimate as the recorded spend, as compose
+ * and chat do; only a request the provider refused outright is settled at zero.
+ */
 async function reserved<T extends { usage: LanguageModelUsage | undefined }>(
 	reserve: ReserveAiSpendInput,
 	call: () => Promise<T>,
 ) {
-	const result = await withReservedSpend(reserve, call);
-	if (result) return result;
-	const cap = await refusedSpendCap(reserve);
-	throw new SummaryRefusal(429, spendCapMessage(cap, reserve), "spend_cap");
+	const reservation = await reserveAiSpend(reserve);
+	if (!reservation) {
+		const cap = await refusedSpendCap(reserve);
+		throw new SummaryRefusal(429, spendCapMessage(cap, reserve), "spend_cap");
+	}
+	let result: T;
+	try {
+		result = await call();
+	} catch (error) {
+		if (rejectedOutright(error))
+			await reconcileAiSpend({ env: reserve.env, reservation, rates: reserve.details.rates });
+		else await keepReservedEstimate(reserve.env, reservation);
+		throw error;
+	}
+	await reconcileAiSpend({ env: reserve.env, reservation, rates: reserve.details.rates, usage: result.usage });
+	return result;
 }
 
 /**
@@ -300,7 +349,7 @@ export async function createSummary(
 	request: SummaryRequest & { translateTo?: string | null },
 ): Promise<SummaryState> {
 	const loaded = await load(env, user, messageId, request.scope);
-	if (!loaded.covered.length) throw new SummaryRefusal(409, "This message cannot be summarized.", "not_eligible");
+	if (!loaded.coveredIds.length) throw new SummaryRefusal(409, "This message cannot be summarized.", "not_eligible");
 	const cached = await readCachedSummary(getDb(env), loaded.key, request.translateTo ?? null);
 	if (cached.pending) throw new SummaryRefusal(409, "Apply the pending database update first", "MIGRATION_PENDING");
 	const current = cached.source && cached.source.coverageDigest === loaded.current ? cached.source : null;
@@ -325,26 +374,32 @@ export async function createSummary(
 	if (!current) {
 		const db = getDb(env);
 		const settings = await readMailboxAgentSettingsRow(db, loaded.anchor.mailboxId);
+		// Bodies are read only here; the saved coverage is exactly what the model read.
+		const covered = await loadCoveredMessages(db, loaded.anchor, request.scope);
+		if (!covered.length) throw changed();
+		const coveredIds = covered.map((message) => message.id);
 		const { summary, modelId } = await generate({
 			env,
 			mailboxId: loaded.anchor.mailboxId,
 			source: "summary",
 			prompt: buildSummaryPrompt({
-				messages: loaded.covered,
+				messages: covered,
 				instructions: { general: settings?.instructions ?? "", summary: settings?.summaryInstructions ?? "" },
 				personal: await personalInstructionsFor(db, user),
 			}),
-			references: summaryReferences(loaded.covered),
+			references: summaryReferences(covered),
 		});
+		const coverage = await coverageDigest(coveredIds);
 		const saved = await saveSummary(env.DB, {
 			key: loaded.key,
-			coveredIds: loaded.covered.map((message) => message.id),
-			coverageDigest: loaded.current,
+			coveredIds,
+			coverageDigest: coverage,
 			summary,
 			modelId,
 			userId: user.id,
 		});
 		if (!saved) throw changed();
+		return stateOf(env, { ...loaded, coveredIds, current: coverage }, request);
 	}
 	return stateOf(env, loaded, request);
 }
@@ -357,10 +412,10 @@ export async function currentThreadSummary(env: CloudflareEnv, user: SessionUser
 	try {
 		const db = getDb(env);
 		const anchor = await loadAnchor(db, user, messageId);
-		const covered = await loadCovered(db, anchor, "thread");
-		if (!covered.length) return null;
+		const coveredIds = await loadCoveredIds(db, anchor, "thread");
+		if (!coveredIds.length) return null;
 		const cached = await readCachedSummary(db, keyOf(anchor, "thread", ""), null);
-		const current = await coverageDigest(covered.map((message) => message.id));
+		const current = await coverageDigest(coveredIds);
 		if (!cached.source || cached.source.coverageDigest !== current) return null;
 		return { language: cached.source.language, ...storedContent(cached.source) };
 	} catch (error) {

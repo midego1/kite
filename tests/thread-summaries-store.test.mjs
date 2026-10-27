@@ -142,6 +142,40 @@ test("a saved summary is read back with its translation, and saving again replac
 	);
 });
 
+test("a concurrent save of the same coverage keeps the first summary and its translation, and succeeds", async (t) => {
+	const db = await database(t);
+	await seedSummaries(db);
+	const [first] = all(
+		db,
+		"SELECT id FROM ai_summaries WHERE kind = 'thread' AND thread_key = 'thread-1' AND translation_of IS NULL",
+	);
+	// A second user's request finished after the first one saved: no spurious "conversation changed".
+	assert.equal(await saveThread(db, "Second writer.", { language: "nl" }), true);
+	assert.deepEqual(
+		all(
+			db,
+			"SELECT id, text FROM ai_summaries WHERE kind = 'thread' AND thread_key = 'thread-1' AND translation_of IS NULL",
+		).map((row) => [row.id, JSON.parse(row.text).overview]),
+		[[first.id, "Thread summary."]],
+	);
+	assert.equal(
+		await saveTranslation(db, {
+			sourceId: first.id,
+			translation: content("Tweede.", "nl"),
+			modelId: "m",
+			userId: "owner",
+		}),
+		true,
+	);
+	assert.deepEqual(
+		db.db
+			.prepare("SELECT text FROM ai_summaries WHERE translation_of = ?")
+			.all(first.id)
+			.map((row) => JSON.parse(row.text).overview),
+		["Vertaald."],
+	);
+});
+
 test("a summary is not saved when a covered message was deleted, trashed or is not eligible", async (t) => {
 	const db = await database(t);
 	db.db.exec("UPDATE messages SET status = 'trash' WHERE id = 'message-2'");

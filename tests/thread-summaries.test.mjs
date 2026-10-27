@@ -268,10 +268,13 @@ test("digests: coverage changes with the set of messages, instructions are '' wi
 	assert.notEqual(await coverageDigest(["a", "b", "c", "d"]), base);
 	assert.notEqual(await coverageDigest(["a", "b"]), base);
 	assert.equal(await instructionsDigest(null), "");
-	assert.equal(await instructionsDigest({ general: " ", summary: "" }), "");
-	const personal = await instructionsDigest({ general: "", summary: "Dutch please" });
+	assert.equal(await instructionsDigest({ general: " ", summary: "", name: "Alex" }), "");
+	const personal = await instructionsDigest({ general: "", summary: "Dutch please", name: "Alex" });
 	assert.match(personal, /^[0-9a-f]{16}$/);
-	assert.notEqual(await instructionsDigest({ general: "Dutch please", summary: "" }), personal);
+	assert.notEqual(await instructionsDigest({ general: "Dutch please", summary: "", name: "Alex" }), personal);
+	// The prompt names the user, so the same instructions of another user get another row.
+	assert.notEqual(await instructionsDigest({ general: "", summary: "Dutch please", name: "Sam" }), personal);
+	assert.equal(await instructionsDigest({ general: "", summary: "Dutch please ", name: " Alex" }), personal);
 });
 
 test("the reader's helpers: URL, visibility, copy text and error text", async () => {

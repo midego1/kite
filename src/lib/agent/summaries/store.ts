@@ -77,37 +77,44 @@ const storedText = (summary: SummaryContent) => JSON.stringify({ overview: summa
 
 const seconds = (now: Date | undefined) => Math.floor((now ?? new Date()).getTime() / 1000);
 
-async function written(d1: D1Database, id: string): Promise<boolean> {
-	// A batch reports `meta.changes` differently on D1 and locally, so the row itself says whether it was written.
-	return !!(await d1.prepare("SELECT 1 AS found FROM ai_summaries WHERE id = ?").bind(id).first());
+async function exists(d1: D1Database, query: string, values: unknown[]): Promise<boolean> {
+	// A batch reports `meta.changes` differently on D1 and locally, so the rows themselves say what was written.
+	return !!(await d1
+		.prepare(`SELECT 1 AS found FROM ai_summaries WHERE ${query} LIMIT 1`)
+		.bind(...values)
+		.first());
 }
 
 /**
  * Saves a summary in place of the key's earlier one (and that one's translations), in one batch whose insert is
  * conditional: it writes only while every covered message still exists and is eligible, so a message deleted or
- * moved to Spam or Trash while the model was writing cannot come back through the answer. Returns whether it was
- * written.
+ * moved to Spam or Trash while the model was writing cannot come back through the answer. A summary of the same
+ * coverage that someone else saved meanwhile is kept (with its translations) and counts as success. Returns whether
+ * a current summary for the key and coverage now exists.
  */
 export async function saveSummary(d1: D1Database, input: SaveSummaryInput): Promise<boolean> {
 	const { key } = input;
-	const id = newId("sum");
 	const now = seconds(input.now);
 	const match =
 		"mailbox_id = ? AND kind = ? AND thread_key = ? AND coalesce(message_id, '') = ? AND instructions_digest = ? AND translation_of IS NULL";
 	const matchValues = [key.mailboxId, key.kind, key.threadKey, key.messageId ?? "", key.digest];
+	const older = `${match} AND coverage_digest <> ?`;
+	const same = `${match} AND coverage_digest = ?`;
+	const olderValues = [...matchValues, input.coverageDigest];
 	await d1.batch([
 		d1
-			.prepare(`DELETE FROM ai_summaries WHERE translation_of IN (SELECT id FROM ai_summaries WHERE ${match})`)
-			.bind(...matchValues),
-		d1.prepare(`DELETE FROM ai_summaries WHERE ${match}`).bind(...matchValues),
+			.prepare(`DELETE FROM ai_summaries WHERE translation_of IN (SELECT id FROM ai_summaries WHERE ${older})`)
+			.bind(...olderValues),
+		d1.prepare(`DELETE FROM ai_summaries WHERE ${older}`).bind(...olderValues),
 		d1
 			.prepare(
 				`INSERT INTO ai_summaries (${INSERT_COLUMNS})
 				SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'button', ?, ?, NULL, ?, ?, ?, ?
-				WHERE (SELECT count(*) FROM messages, json_each(?) WHERE messages.id = json_each.value AND messages.mailbox_id = ? AND messages.status IN ('received', 'sent', 'archived') AND coalesce(messages.spam_verdict, '') <> 'spam') = ?`,
+				WHERE (SELECT count(*) FROM messages, json_each(?) WHERE messages.id = json_each.value AND messages.mailbox_id = ? AND messages.status IN ('received', 'sent', 'archived') AND coalesce(messages.spam_verdict, '') <> 'spam') = ?
+				AND NOT EXISTS (SELECT 1 FROM ai_summaries WHERE ${same})`,
 			)
 			.bind(
-				id,
+				newId("sum"),
 				key.mailboxId,
 				key.kind,
 				key.threadKey,
@@ -124,38 +131,40 @@ export async function saveSummary(d1: D1Database, input: SaveSummaryInput): Prom
 				JSON.stringify(input.coveredIds),
 				key.mailboxId,
 				input.coveredIds.length,
+				...olderValues,
 			),
 	]);
-	return written(d1, id);
+	return exists(d1, same, olderValues);
 }
 
-/** Saves a translation next to its source row, replacing an earlier one, only while that source still exists. */
+/**
+ * Saves a translation next to its source row, only while that source still exists. A translation into the same
+ * language that someone else saved meanwhile is kept and counts as success.
+ */
 export async function saveTranslation(
 	d1: D1Database,
 	input: { sourceId: string; translation: SummaryContent; modelId: string | null; userId: string | null; now?: Date },
 ): Promise<boolean> {
-	const id = newId("sum");
 	const now = seconds(input.now);
-	await d1.batch([
-		d1
-			.prepare("DELETE FROM ai_summaries WHERE translation_of = ? AND language = ?")
-			.bind(input.sourceId, input.translation.language),
-		d1
-			.prepare(
-				`INSERT INTO ai_summaries (${INSERT_COLUMNS})
-				SELECT ?, mailbox_id, kind, thread_key, message_id, ?, coverage_digest, covered_count, 'button', ?, ?, id, instructions_digest, ?, ?, ?
-				FROM ai_summaries WHERE id = ? AND translation_of IS NULL`,
-			)
-			.bind(
-				id,
-				storedText(input.translation),
-				input.modelId,
-				input.translation.language,
-				input.userId,
-				now,
-				now,
-				input.sourceId,
-			),
-	]);
-	return written(d1, id);
+	const same = "translation_of = ? AND language = ?";
+	const sameValues = [input.sourceId, input.translation.language];
+	await d1
+		.prepare(
+			`INSERT INTO ai_summaries (${INSERT_COLUMNS})
+			SELECT ?, mailbox_id, kind, thread_key, message_id, ?, coverage_digest, covered_count, 'button', ?, ?, id, instructions_digest, ?, ?, ?
+			FROM ai_summaries WHERE id = ? AND translation_of IS NULL AND NOT EXISTS (SELECT 1 FROM ai_summaries WHERE ${same})`,
+		)
+		.bind(
+			newId("sum"),
+			storedText(input.translation),
+			input.modelId,
+			input.translation.language,
+			input.userId,
+			now,
+			now,
+			input.sourceId,
+			...sameValues,
+		)
+		.run();
+	return exists(d1, same, sameValues);
 }

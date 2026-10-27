@@ -187,6 +187,93 @@ test.describe("Thread summaries", () => {
 		}
 	});
 
+	test("an answer that arrives after the reader moved to another message is dropped", async ({ browser }) => {
+		const account = await newAccount("sumnav");
+		const first = await deliverConversation(account.api, account.address, BODIES.slice(0, 2));
+		const second = await deliverConversation(account.api, account.address, ["A separate note about the offsite."]);
+		const { context, page } = await signedInPage(browser, account.api, account.mailboxId);
+		try {
+			// Hold the first conversation's answer until the reader shows the second one.
+			let release!: () => void;
+			const held = new Promise<void>((resolve) => (release = resolve));
+			await page.route(`**/api/messages/${first.messages[1].id}/summary`, async (route) => {
+				if (route.request().method() !== "POST") return route.continue();
+				const response = await route.fetch();
+				await held;
+				await route.fulfill({ response });
+			});
+			await page.goto(`/inbox/${first.messages[1].id}`);
+			await page.getByRole("button", { name: "Summarize conversation" }).click();
+			await expect.poll(() => summaryRequests().length).toBe(1);
+			await page.getByText(second.subject, { exact: true }).first().click();
+			await expect(page).toHaveURL(new RegExp(second.messages[0].id));
+			await expect(page.getByRole("heading", { name: second.subject })).toBeVisible();
+			const answered = page.waitForResponse(
+				(response) => response.request().method() === "POST" && response.url().includes(first.messages[1].id),
+			);
+			release();
+			await answered;
+			// The stale answer neither shows on the second message nor leaves its button busy.
+			await expect(page.getByRole("button", { name: "Summarize conversation" })).toHaveText("Summarize");
+			await expect(card(page)).toHaveCount(0);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("the card follows the conversation: new mail over realtime, window focus, and a 409 reloads the state", async ({
+		browser,
+	}) => {
+		const account = await newAccount("sumlive");
+		const thread = await deliverConversation(account.api, account.address, BODIES.slice(0, 2));
+		const { context, page } = await signedInPage(browser, account.api, account.mailboxId);
+		// The realtime socket starts once the client knows whose session it is.
+		await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
+		const stateRequest = () =>
+			page.waitForRequest(
+				(request) =>
+					request.method() === "GET" && request.url().includes(`/api/messages/${thread.messages[1].id}/summary?`),
+			);
+		try {
+			await page.goto(`/inbox/${thread.messages[1].id}`);
+			await page.getByRole("button", { name: "Summarize conversation" }).click();
+			await expect(card(page)).toContainText(SUMMARY_OVERVIEW);
+
+			// A reply arrives while the reader is open: the card goes out of date without a reload.
+			const longer = await deliverConversation(account.api, account.address, ["Can we add a third topic?"], thread);
+			await expect(card(page)).toContainText("New messages since this summary");
+
+			const onFocus = stateRequest();
+			await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+			await onFocus;
+
+			// Someone moved a message while Kite was writing: the 409 reloads the state, and the button still works.
+			await page.route(
+				`**/api/messages/${thread.messages[1].id}/summary`,
+				(route) =>
+					route.request().method() === "POST"
+						? route.fulfill({
+								status: 409,
+								json: { error: "The conversation changed; summarize again.", code: "conversation_changed" },
+							})
+						: route.continue(),
+				{ times: 2 },
+			);
+			const afterConflict = stateRequest();
+			await card(page).getByRole("button", { name: "Summarize again" }).click();
+			await expect(card(page).getByRole("alert")).toHaveText("The conversation changed; summarize again.");
+			await afterConflict;
+			await page.unrouteAll();
+			await card(page).getByRole("button", { name: "Summarize again" }).click();
+			await expect(card(page)).not.toHaveAttribute("data-stale", "true");
+			expect(promptText(summaryRequests().at(-1)!)).toContain(`<<<EMAIL id=${longer.messages[2].id} `);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
 	test("a hostile answer is refused once, then shown without Markdown, unknown links or addresses", async () => {
 		const account = await newAccount("sumh");
 		try {

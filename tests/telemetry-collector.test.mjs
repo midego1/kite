@@ -28,36 +28,42 @@ await build({
 	packages: "external",
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
-const { default: collector, purgeOldDays } = await load("collector");
+const { default: collector, rollUpOldDays, RAW_RETENTION_DAYS } = await load("collector");
 const { parseHeartbeat } = await load("validate");
 const { SqliteDatabase } = await load("runtime");
 
 const TOKEN = "test-only-stats-token";
+const INSTALL_ID = "3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e";
 const today = () => new Date().toISOString().slice(0, 10);
 const daysAgo = (days) => new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+const idFor = (letter) => `${letter.repeat(8)}-aaaa-4aaa-8aaa-${letter.repeat(12)}`;
 
 function heartbeat(overrides = {}) {
 	return {
-		telemetry_schema_version: 1,
-		install_id: "3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e",
+		telemetry_schema_version: 2,
+		install_id: INSTALL_ID,
 		version: "2026.10.26.0",
 		runtime: "workers",
-		users_total: 3,
-		users_active_1d: 1,
-		users_active_7d: 2,
-		users_active_30d: 3,
-		mailboxes_total: 4,
-		mailboxes_active_1d: 2,
-		inbound_1d: 10,
-		outbound_1d: 5,
+		users_total: "2-5",
+		users_active_1d: "1",
+		users_active_7d: "2-5",
+		users_active_30d: "2-5",
+		mailboxes_total: "2-5",
+		mailboxes_active_1d: "2-5",
+		inbound_1d: "1-10",
+		outbound_1d: "1-10",
 		modules_enabled: ["calendar", "drive"],
 		...overrides,
 	};
 }
 
-test("the validator accepts exactly schema version 1", () => {
+test("the validator accepts exactly schema version 2, with every count a range", () => {
 	assert.equal(parseHeartbeat(JSON.stringify(heartbeat())).ok, true);
 	assert.equal(parseHeartbeat(JSON.stringify(heartbeat({ version: "unknown", runtime: "node" }))).ok, true);
+	for (const value of ["0", "1", "2-5", "6-20", "21-100", "100+"])
+		assert.equal(parseHeartbeat(JSON.stringify(heartbeat({ users_total: value }))).ok, true, value);
+	for (const value of ["0", "1-10", "11-100", "101-1000", "1000+"])
+		assert.equal(parseHeartbeat(JSON.stringify(heartbeat({ inbound_1d: value }))).ok, true, value);
 	const refused = (body) => {
 		const result = parseHeartbeat(typeof body === "string" ? body : JSON.stringify(body));
 		assert.equal(result.ok, false, JSON.stringify(body).slice(0, 80));
@@ -70,12 +76,17 @@ test("the validator accepts exactly schema version 1", () => {
 	assert.equal(refused({ ...heartbeat(), email: "owner@example.com" }), "unknown_key");
 	const { inbound_1d: _omitted, ...missing } = heartbeat();
 	assert.equal(refused(missing), "missing_inbound_1d");
-	assert.equal(refused(heartbeat({ telemetry_schema_version: 2 })), "unsupported_schema_version");
+	// Version 1 carried exact counts; it is refused, not stored.
+	const v1 = { ...heartbeat({ telemetry_schema_version: 1 }), users_total: 3, inbound_1d: 10 };
+	assert.equal(refused(v1), "unsupported_schema_version");
+	assert.equal(refused(heartbeat({ telemetry_schema_version: 3 })), "unsupported_schema_version");
 	assert.equal(refused(heartbeat({ install_id: "owner@example.com" })), "invalid_install_id");
 	assert.equal(refused(heartbeat({ version: "1.0 mail.example.com" })), "invalid_version");
 	assert.equal(refused(heartbeat({ runtime: "lambda" })), "invalid_runtime");
-	for (const value of [-1, 1.5, "3", null, 2 ** 31, Number.MAX_SAFE_INTEGER])
+	for (const value of [3, "3", "1-10", "1000+", "", null, "2-5 "])
 		assert.equal(refused(heartbeat({ users_total: value })), "invalid_users_total", String(value));
+	for (const value of [10, "10", "2-5", "100+", "1001+"])
+		assert.equal(refused(heartbeat({ outbound_1d: value })), "invalid_outbound_1d", String(value));
 	for (const value of [
 		"calendar",
 		["Calendar"],
@@ -87,11 +98,11 @@ test("the validator accepts exactly schema version 1", () => {
 	assert.equal(refused(JSON.stringify(heartbeat()).padEnd(2049, " ")), "too_large");
 });
 
-async function setup(t) {
+async function setup(t, overrides = {}) {
 	const sqlite = new SqliteDatabase(":memory:");
 	t.after(() => sqlite.db.close());
 	sqlite.db.exec(readFileSync(join(collectorDir, "migrations/0001_init.sql"), "utf8"));
-	return { sqlite, env: { DB: sqlite, STATS_TOKEN: TOKEN } };
+	return { sqlite, env: { DB: sqlite, STATS_TOKEN: TOKEN, ...overrides } };
 }
 
 function post(body, headers = {}) {
@@ -102,6 +113,7 @@ function post(body, headers = {}) {
 			"Content-Type": "application/json",
 			"Content-Length": String(Buffer.byteLength(text)),
 			"CF-Connecting-IP": "203.0.113.9",
+			"CF-Worker": "mail.example.com",
 			"User-Agent": "kite-test-agent",
 			...headers,
 		},
@@ -109,41 +121,72 @@ function post(body, headers = {}) {
 	});
 }
 
-const stats = (env, token = TOKEN) =>
+const erase = (env, id, method = "DELETE") =>
 	collector.fetch(
-		new Request("https://collector.example.test/v1/stats", {
+		new Request(`https://collector.example.test/v1/installs/${id}`, {
+			method,
+			headers: { "CF-Connecting-IP": "203.0.113.9", "CF-Worker": "mail.example.com" },
+		}),
+		env,
+	);
+
+const get = (env, path, token = null) =>
+	collector.fetch(
+		new Request(`https://collector.example.test${path}`, {
 			headers: token === null ? {} : { Authorization: `Bearer ${token}` },
 		}),
 		env,
 	);
 
+const COLUMNS = [
+	"day",
+	"install_id",
+	"version",
+	"runtime",
+	"users_total",
+	"users_active_1d",
+	"users_active_7d",
+	"users_active_30d",
+	"mailboxes_total",
+	"mailboxes_active_1d",
+	"inbound_1d",
+	"outbound_1d",
+	"modules_enabled",
+];
+
+function insertDay(sqlite, day, id, overrides = {}) {
+	const row = { ...heartbeat({ install_id: id }), ...overrides, day };
+	row.modules_enabled = JSON.stringify(row.modules_enabled);
+	sqlite.db
+		.prepare(`INSERT INTO daily (${COLUMNS.join(", ")}) VALUES (${COLUMNS.map(() => "?").join(", ")})`)
+		.run(...COLUMNS.map((column) => row[column]));
+}
+
+const dailyCount = (sqlite, id) => sqlite.db.prepare("SELECT COUNT(*) AS n FROM daily WHERE install_id = ?").get(id).n;
+
 test("heartbeats are stored once per install and day, without anything about the request", async (t) => {
 	const { sqlite, env } = await setup(t);
 	assert.equal((await collector.fetch(post(heartbeat()), env)).status, 204);
-	assert.equal((await collector.fetch(post(heartbeat({ users_total: 4, version: "2026.10.27.0" })), env)).status, 204);
+	assert.equal(
+		(await collector.fetch(post(heartbeat({ users_total: "6-20", version: "2026.10.27.0" })), env)).status,
+		204,
+	);
 	const daily = sqlite.db.prepare("SELECT * FROM daily").all();
 	assert.equal(daily.length, 1);
 	assert.equal(daily[0].day, today());
-	assert.equal(daily[0].users_total, 4, "the latest report of the day wins");
+	assert.equal(daily[0].users_total, "6-20", "the latest report of the day wins");
+	assert.equal(daily[0].version, "2026.10.27.0");
 	assert.equal(daily[0].modules_enabled, '["calendar","drive"]');
-	assert.deepEqual(sqlite.db.prepare("SELECT * FROM installs").all(), [
-		{
-			install_id: heartbeat().install_id,
-			first_seen: today(),
-			last_seen: today(),
-			last_version: "2026.10.27.0",
-			last_runtime: "workers",
-		},
-	]);
 	const dump = Buffer.from(await sqlite.dump()).toString("latin1");
-	assert.ok(!dump.includes("203.0.113.9"));
-	assert.ok(!dump.includes("kite-test-agent"));
+	for (const leaked of ["203.0.113.9", "kite-test-agent", "mail.example.com"])
+		assert.ok(!dump.includes(leaked), leaked);
 });
 
 test("bad requests are refused before anything is written", async (t) => {
 	const { sqlite, env } = await setup(t);
 	const status = async (request) => (await collector.fetch(request, env)).status;
 	assert.equal(await status(post({ ...heartbeat(), extra: 1 })), 400);
+	assert.equal(await status(post({ ...heartbeat({ telemetry_schema_version: 1 }), users_total: 3 })), 400);
 	assert.equal(await status(post(heartbeat(), { "Content-Type": "text/plain" })), 415);
 	assert.equal(await status(post(heartbeat(), { "Content-Length": "4096" })), 413);
 	assert.equal(await status(new Request("https://collector.example.test/v1/heartbeat")), 405);
@@ -153,58 +196,158 @@ test("bad requests are refused before anything is written", async (t) => {
 	assert.equal(sqlite.db.prepare("SELECT COUNT(*) AS n FROM daily").get().n, 0);
 });
 
+test("DELETE /v1/installs/<id> erases every report of that id and is rate-limited", async (t) => {
+	const keys = [];
+	let allow = true;
+	const limiter = {
+		limit: async (options) => {
+			keys.push(options);
+			return { success: allow };
+		},
+	};
+	const { sqlite, env } = await setup(t, { ERASE_RATE_LIMIT: limiter });
+	const other = idFor("b");
+	for (const days of [0, 1, 40]) insertDay(sqlite, daysAgo(days), INSTALL_ID);
+	insertDay(sqlite, daysAgo(0), other);
+
+	const response = await erase(env, INSTALL_ID);
+	assert.equal(response.status, 204);
+	assert.equal(response.headers.get("Cache-Control"), "no-store");
+	assert.equal(dailyCount(sqlite, INSTALL_ID), 0, "every day of that id");
+	assert.equal(dailyCount(sqlite, other), 1, "other installs stay");
+	assert.equal((await erase(env, INSTALL_ID)).status, 204, "the same answer when nothing is left");
+	assert.equal((await erase(env, idFor("c"))).status, 204, "and for an id never seen");
+	assert.deepEqual(keys.at(-1), { key: "erase" }, "one shared key: no IP address is read");
+
+	assert.equal((await erase(env, "owner@example.com")).status, 400);
+	assert.equal((await erase(env, INSTALL_ID.toUpperCase())).status, 400);
+	assert.equal((await erase(env, `${INSTALL_ID}/extra`)).status, 404);
+	assert.equal((await erase(env, other, "GET")).status, 405);
+	assert.equal((await erase(env, other, "POST")).status, 405);
+	assert.equal(dailyCount(sqlite, other), 1);
+
+	allow = false;
+	assert.equal((await erase(env, other)).status, 429);
+	assert.equal(dailyCount(sqlite, other), 1, "nothing is deleted over the limit");
+});
+
+test("the public summary has totals and ranges, never an install id", async (t) => {
+	const { sqlite, env } = await setup(t);
+	// a: today (node) and 3 days ago; b: 5 days ago with other ranges; c: 45 days ago (outside 30 days).
+	insertDay(sqlite, daysAgo(0), idFor("a"), { runtime: "node", modules_enabled: ["calendar"] });
+	insertDay(sqlite, daysAgo(3), idFor("a"), { users_total: "100+", version: "2026.10.20.0" });
+	insertDay(sqlite, daysAgo(5), idFor("b"), { users_total: "1", inbound_1d: "1000+", modules_enabled: [] });
+	insertDay(sqlite, daysAgo(45), idFor("c"));
+	sqlite.db
+		.prepare("INSERT INTO aggregates (day, dimension, value, installs) VALUES (?, 'installs', '', 7)")
+		.run(daysAgo(200));
+
+	const response = await get(env, "/v1/summary");
+	assert.equal(response.status, 200);
+	assert.equal(response.headers.get("Cache-Control"), "public, max-age=3600");
+	assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
+	const text = await response.text();
+	for (const letter of ["a", "b", "c"]) assert.ok(!text.includes(idFor(letter)), "no install id");
+	const body = JSON.parse(text);
+	assert.equal(body.installs_30d, 2);
+	assert.deepEqual(body.versions, [{ version: "2026.10.26.0", installs: 2 }], "each install's latest report");
+	assert.deepEqual(body.runtimes, [
+		{ runtime: "node", installs: 1 },
+		{ runtime: "workers", installs: 1 },
+	]);
+	assert.deepEqual(body.modules, [{ module: "calendar", installs: 1 }]);
+	assert.deepEqual(body.ranges.users_total, { 1: 1, "2-5": 1 });
+	assert.deepEqual(body.ranges.inbound_1d, { "1-10": 1, "1000+": 1 });
+	assert.deepEqual(Object.keys(body.ranges).length, 8);
+	assert.deepEqual(body.installs_by_day, [
+		{ day: daysAgo(200), installs: 7 },
+		{ day: daysAgo(45), installs: 1 },
+		{ day: daysAgo(5), installs: 1 },
+		{ day: daysAgo(3), installs: 1 },
+		{ day: daysAgo(0), installs: 1 },
+	]);
+	assert.equal(
+		(await collector.fetch(new Request("https://collector.example.test/v1/summary", { method: "POST" }), env)).status,
+		405,
+	);
+});
+
 test("stats need the bearer token and count distinct installs", async (t) => {
 	const { sqlite, env } = await setup(t);
-	assert.equal((await stats(env, null)).status, 401);
-	assert.equal((await stats(env, "wrong")).status, 401);
-	assert.equal((await stats({ DB: sqlite }, TOKEN)).status, 401, "closed without STATS_TOKEN");
+	assert.equal((await get(env, "/v1/stats")).status, 401);
+	assert.equal((await get(env, "/v1/stats", "wrong")).status, 401);
+	assert.equal((await get({ DB: sqlite }, "/v1/stats", TOKEN)).status, 401, "closed without STATS_TOKEN");
 	assert.equal(
 		(await collector.fetch(new Request("https://collector.example.test/v1/stats", { method: "POST" }), env)).status,
 		405,
 	);
+	// a: today and yesterday; b: 5 days ago; c: 20 days ago; d: 60 days ago.
+	[0, 5, 20, 60].forEach((days, index) => insertDay(sqlite, daysAgo(days), idFor("abcd"[index])));
+	insertDay(sqlite, daysAgo(1), idFor("a"));
 
-	const insertInstall = sqlite.db.prepare("INSERT INTO installs VALUES (?, ?, ?, ?, ?)");
-	const insertDay = sqlite.db.prepare("INSERT INTO daily VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-	const ids = ["a", "b", "c", "d"].map((letter) => `${letter.repeat(8)}-aaaa-4aaa-8aaa-${letter.repeat(12)}`);
-	// a: today; b: 5 days ago; c: 20 days ago; d: 100 days ago.
-	[0, 5, 20, 100].forEach((days, index) => {
-		const runtime = index === 1 ? "node" : "workers";
-		insertInstall.run(ids[index], daysAgo(days + 10), daysAgo(days), "2026.10.26.0", runtime);
-		insertDay.run(daysAgo(days), ids[index], "2026.10.26.0", runtime, 2, 1, 1, 2, 3, 1, 7, 4, '["calendar"]');
-	});
-	insertDay.run(daysAgo(1), ids[0], "2026.10.25.0", "workers", 9, 9, 9, 9, 9, 9, 9, 9, '["drive"]');
-
-	const response = await stats(env);
+	const response = await get(env, "/v1/stats", TOKEN);
 	assert.equal(response.status, 200);
 	assert.equal(response.headers.get("Cache-Control"), "no-store");
 	const body = await response.json();
 	assert.deepEqual(body.installs, { total: 4, active_1d: 1, active_7d: 2, active_30d: 3 });
-	assert.deepEqual(body.usage, {
-		installs: 1,
-		users_total: 2,
-		users_active_1d: 1,
-		users_active_7d: 1,
-		users_active_30d: 2,
-		mailboxes_total: 3,
-		mailboxes_active_1d: 1,
-		inbound_1d: 7,
-		outbound_1d: 4,
-	});
-	assert.deepEqual(body.versions, [{ version: "2026.10.26.0", installs: 3 }]);
-	assert.deepEqual(body.runtimes, [
-		{ runtime: "workers", installs: 2 },
-		{ runtime: "node", installs: 1 },
-	]);
-	assert.deepEqual(body.modules, [{ module: "calendar", installs: 3 }], "from each install's latest report");
+	assert.equal(body.installs_30d, 3);
+	assert.deepEqual(body.ranges.users_total, { "2-5": 3 });
+});
 
-	await purgeOldDays({ DB: sqlite, DAILY_RETENTION_DAYS: "60" }, Date.now());
-	assert.equal(sqlite.db.prepare("SELECT COUNT(*) AS n FROM daily WHERE install_id = ?").get(ids[3]).n, 0);
+test("after 90 days daily rows become aggregates without install ids", async (t) => {
+	const { sqlite, env } = await setup(t);
+	assert.equal(RAW_RETENTION_DAYS, 90);
+	const old = daysAgo(120);
+	insertDay(sqlite, old, idFor("a"), { runtime: "node", modules_enabled: ["calendar", "drive"] });
+	insertDay(sqlite, old, idFor("b"), { users_total: "1", modules_enabled: ["drive"] });
+	insertDay(sqlite, daysAgo(95), idFor("a"));
+	insertDay(sqlite, daysAgo(89), idFor("a"));
+	insertDay(sqlite, daysAgo(0), idFor("b"));
+
+	await rollUpOldDays(env, Date.now());
 	assert.deepEqual(
 		sqlite.db
-			.prepare("SELECT install_id FROM installs ORDER BY install_id")
+			.prepare("SELECT day FROM daily ORDER BY day")
 			.all()
-			.map((row) => row.install_id),
-		ids.slice(0, 3),
-		"installs not seen within the retention go too",
+			.map((row) => row.day),
+		[daysAgo(89), daysAgo(0)],
+		"only the last 90 days keep their rows",
 	);
+	const aggregates = sqlite.db
+		.prepare("SELECT day, dimension, value, installs FROM aggregates WHERE day = ? ORDER BY dimension, value")
+		.all(old);
+	assert.deepEqual(
+		aggregates.filter(({ dimension }) =>
+			["installs", "module", "runtime", "users_total", "version"].includes(dimension),
+		),
+		[
+			{ day: old, dimension: "installs", value: "", installs: 2 },
+			{ day: old, dimension: "module", value: "calendar", installs: 1 },
+			{ day: old, dimension: "module", value: "drive", installs: 2 },
+			{ day: old, dimension: "runtime", value: "node", installs: 1 },
+			{ day: old, dimension: "runtime", value: "workers", installs: 1 },
+			{ day: old, dimension: "users_total", value: "1", installs: 1 },
+			{ day: old, dimension: "users_total", value: "2-5", installs: 1 },
+			{ day: old, dimension: "version", value: "2026.10.26.0", installs: 2 },
+		],
+	);
+	assert.equal(
+		sqlite.db.prepare("SELECT COUNT(DISTINCT dimension) AS n FROM aggregates").get().n,
+		12,
+		"installs, version, runtime, module and the eight ranges",
+	);
+	const dump = Buffer.from(await sqlite.dump()).toString("latin1");
+	assert.ok(!dump.includes(`'${old}','${idFor("a")}'`));
+
+	await rollUpOldDays(env, Date.now());
+	assert.equal(
+		sqlite.db.prepare("SELECT installs FROM aggregates WHERE day = ? AND dimension = 'installs'").get(old).installs,
+		2,
+		"running again counts nothing twice",
+	);
+	const summary = await (await get(env, "/v1/summary")).json();
+	assert.deepEqual(summary.installs_by_day.slice(0, 2), [
+		{ day: old, installs: 2 },
+		{ day: daysAgo(95), installs: 1 },
+	]);
 });

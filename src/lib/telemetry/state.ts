@@ -49,9 +49,10 @@ export async function getTelemetryStatus(
 
 /**
  * Turning statistics on makes a fresh random install id; turning them off deletes it, so a later opt-in cannot be
- * linked to earlier reports.
+ * linked to earlier reports. Returns the state before the change, so an opt-out can ask the collector to erase the
+ * old id's reports (`eraseAfterOptOut`).
  */
-export async function setTelemetryEnabled(env: Pick<CloudflareEnv, "DB">, enabled: boolean): Promise<void> {
+export async function setTelemetryEnabled(env: Pick<CloudflareEnv, "DB">, enabled: boolean): Promise<StoredState> {
 	const current = await readTelemetryState(env);
 	if (!current.available) throw new TelemetryUnavailableError();
 	const values = {
@@ -69,6 +70,7 @@ export async function setTelemetryEnabled(env: Pick<CloudflareEnv, "DB">, enable
 		if (isNoSuchTableError(error)) throw new TelemetryUnavailableError();
 		throw error;
 	}
+	return current;
 }
 
 /**

@@ -27,19 +27,21 @@ test.afterAll(async () => {
 	await api.dispose();
 });
 
-test("the owner turns anonymous usage statistics on and off in Admin General; nobody else can", async ({ browser }) => {
+test("the owner turns usage statistics on and off in Admin General; nobody else can", async ({ browser }) => {
 	await api.put("/api/admin/telemetry", { data: { enabled: false } });
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE });
 	const page = await context.newPage();
 	const errors = collectConsoleErrors(page);
 	await page.goto("/general");
 	const card = page.locator("[data-telemetry]");
-	await expect(card.getByRole("heading", { name: "Anonymous usage statistics" })).toBeVisible();
+	await expect(card.getByRole("heading", { name: "Usage statistics" })).toBeVisible();
 	await expect(card.locator("[data-telemetry-status]")).toHaveText("Off");
 	for (const field of ["install_id", "users_active_30d", "inbound_1d", "modules_enabled"])
 		await expect(card.getByText(field, { exact: true })).toBeVisible();
 	await expect(card).toContainText("KITE_TELEMETRY=0");
-	const toggle = card.getByRole("switch", { name: "Share anonymous usage statistics with the Kite project" });
+	await expect(card).toContainText("CF-Worker");
+	await expect(card).toContainText("pseudonymous");
+	const toggle = card.getByRole("switch", { name: "Share pseudonymous usage statistics with the Kite project" });
 	await expect(toggle).toHaveAttribute("aria-checked", "false");
 	const before = await auditCounts();
 
@@ -50,7 +52,8 @@ test("the owner turns anonymous usage statistics on and off in Admin General; no
 	const on = await (await api.get("/api/admin/telemetry")).json();
 	expect(on).toMatchObject({ enabled: true, forcedOff: false, available: true, endpoint: null });
 	expect(on.installId).toMatch(UUID);
-	await expect(card).toContainText(on.installId);
+	await expect(card.locator("[data-telemetry-install-id]")).toHaveText(on.installId);
+	await expect(card.getByRole("button", { name: "Copy ID" })).toBeVisible();
 
 	const account = await createSignedInAccount(api, `tel${uniqueToken("")}`, "admin");
 	try {
@@ -71,11 +74,15 @@ test("the owner turns anonymous usage statistics on and off in Admin General; no
 	await expect(toggle).toHaveAttribute("aria-checked", "false");
 	await expect(card.locator("[data-telemetry-status]")).toHaveText("Off");
 	await expect(card).not.toContainText(on.installId);
+	// Nothing was ever sent (the endpoint is unusable), so there is nothing for the collector to erase.
+	await expect(card.locator("[data-telemetry-erasure]")).toHaveCount(0);
 	expect(await (await api.get("/api/admin/telemetry")).json()).toMatchObject({ enabled: false, installId: null });
 	expect(await auditCounts()).toEqual({
 		"telemetry.enabled": before["telemetry.enabled"] + 1,
 		"telemetry.disabled": before["telemetry.disabled"] + 1,
 	});
+	const offAgain = await (await api.put("/api/admin/telemetry", { data: { enabled: false } })).json();
+	expect(offAgain.erasure).toEqual({ outcome: "not_needed", installId: null });
 	expect(errors).toEqual([]);
 	await context.close();
 });

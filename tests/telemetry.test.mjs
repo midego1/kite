@@ -16,6 +16,7 @@ await build({
 		utils: source("lib/telemetry/telemetry-utils.ts"),
 		state: source("lib/telemetry/state.ts"),
 		heartbeat: source("lib/telemetry/heartbeat.ts"),
+		erase: source("lib/telemetry/erase.ts"),
 		collector: join(root, "deploy/telemetry-collector/src/validate.ts"),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
@@ -35,10 +36,19 @@ await build({
 	define: { "process.env.NEXT_PUBLIC_KITE_BUILD_VERSION": JSON.stringify("2026.10.26.0") },
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
-const { buildHeartbeatPayload, TELEMETRY_FIELDS, telemetryForcedOff, telemetryUrl, utcDay } = await load("utils");
+const {
+	buildHeartbeatPayload,
+	DEFAULT_TELEMETRY_URL,
+	TELEMETRY_FIELDS,
+	telemetryEraseUrl,
+	telemetryForcedOff,
+	telemetryUrl,
+	utcDay,
+} = await load("utils");
 const { claimTelemetryDay, getTelemetryStatus, readTelemetryState, setTelemetryEnabled, TelemetryUnavailableError } =
 	await load("state");
 const { runTelemetryHeartbeat } = await load("heartbeat");
+const { eraseAfterOptOut, eraseTelemetryInstall } = await load("erase");
 const { parseHeartbeat } = await load("collector");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
@@ -92,6 +102,18 @@ function input(overrides = {}) {
 	};
 }
 
+/** The ranges `input()`'s counts are sent as. */
+const INPUT_BUCKETS = {
+	users_total: "2-5",
+	users_active_1d: "1",
+	users_active_7d: "2-5",
+	users_active_30d: "2-5",
+	mailboxes_total: "2-5",
+	mailboxes_active_1d: "2-5",
+	inbound_1d: "1-10",
+	outbound_1d: "1-10",
+};
+
 test("the heartbeat payload has exactly the schema's keys, whatever else the input carries", () => {
 	const payload = buildHeartbeatPayload({
 		...input(),
@@ -101,11 +123,11 @@ test("the heartbeat payload has exactly the schema's keys, whatever else the inp
 	});
 	assert.deepEqual(Object.keys(payload).sort(), [...KEYS].sort());
 	assert.deepEqual(payload, {
-		telemetry_schema_version: 1,
+		telemetry_schema_version: 2,
 		install_id: INSTALL_ID,
 		version: "2026.10.26.0",
 		runtime: "workers",
-		...input().counts,
+		...INPUT_BUCKETS,
 		modules_enabled: ["calendar", "drive"],
 	});
 	assert.doesNotMatch(JSON.stringify(payload), /example\.com/);
@@ -117,30 +139,71 @@ test("the heartbeat payload has exactly the schema's keys, whatever else the inp
 	);
 });
 
-test("counts are clamped to non-negative integers and odd values become zero", () => {
+/** The ranges every count of a payload falls in when all counts are `value`. */
+function rangesOf(value) {
+	const counts = Object.fromEntries(KEYS.slice(4, 12).map((key) => [key, value]));
+	const payload = buildHeartbeatPayload(input({ counts }));
+	return { account: payload.users_total, message: payload.inbound_1d };
+}
+const messageBucket = (value) => rangesOf(value).message;
+const accountBucket = (value) => rangesOf(value).account;
+
+test("counts are sent as ranges, never as exact numbers", () => {
+	const messages = [
+		[0, "0"],
+		[1, "1-10"],
+		[10, "1-10"],
+		[11, "11-100"],
+		[100, "11-100"],
+		[101, "101-1000"],
+		[1000, "101-1000"],
+		[1001, "1000+"],
+		[1e12, "1000+"],
+	];
+	for (const [value, range] of messages) assert.equal(messageBucket(value), range, String(value));
+	const accounts = [
+		[0, "0"],
+		[1, "1"],
+		[2, "2-5"],
+		[5, "2-5"],
+		[6, "6-20"],
+		[20, "6-20"],
+		[21, "21-100"],
+		[100, "21-100"],
+		[101, "100+"],
+		[5e9, "100+"],
+	];
+	for (const [value, range] of accounts) assert.equal(accountBucket(value), range, String(value));
+	// Odd values count as zero, fractions round down.
+	for (const value of [-4, Number.NaN, Number.POSITIVE_INFINITY, "7", null, { valueOf: () => 3 }, 0.9])
+		assert.equal(accountBucket(value), "0", String(value));
+	assert.equal(accountBucket(1.9), "1");
+
 	const payload = buildHeartbeatPayload(
 		input({
 			counts: {
-				users_total: -4,
-				users_active_1d: 2.9,
-				users_active_7d: Number.NaN,
-				users_active_30d: Number.POSITIVE_INFINITY,
-				mailboxes_total: "7",
-				mailboxes_active_1d: null,
-				inbound_1d: 1e12,
-				outbound_1d: { valueOf: () => 3 },
+				users_total: 250,
+				users_active_1d: 0,
+				users_active_7d: 7,
+				users_active_30d: 21,
+				mailboxes_total: 1,
+				mailboxes_active_1d: "3",
+				inbound_1d: 54_321,
+				outbound_1d: 101,
 			},
 		}),
 	);
-	assert.equal(payload.users_total, 0);
-	assert.equal(payload.users_active_1d, 2);
-	assert.equal(payload.users_active_7d, 0);
-	assert.equal(payload.users_active_30d, 0);
-	assert.equal(payload.mailboxes_total, 0);
-	assert.equal(payload.mailboxes_active_1d, 0);
-	assert.equal(payload.inbound_1d, 2_147_483_647);
-	assert.equal(payload.outbound_1d, 0);
-	for (const key of KEYS.slice(4, 12)) assert.ok(Number.isInteger(payload[key]) && payload[key] >= 0, key);
+	assert.deepEqual(Object.fromEntries(KEYS.slice(4, 12).map((key) => [key, payload[key]])), {
+		users_total: "100+",
+		users_active_1d: "0",
+		users_active_7d: "6-20",
+		users_active_30d: "21-100",
+		mailboxes_total: "1",
+		mailboxes_active_1d: "0",
+		inbound_1d: "1000+",
+		outbound_1d: "101-1000",
+	});
+	assert.doesNotMatch(JSON.stringify(payload), /250|54321/);
 });
 
 test("runtime, version and modules are limited to known values", () => {
@@ -177,10 +240,12 @@ test("KITE_TELEMETRY only ever forces statistics off", () => {
 		assert.equal(telemetryForcedOff(value), false, value);
 });
 
-test("the collector URL defaults to the project's collector and an override must be https", () => {
-	assert.equal(telemetryUrl(undefined), DEFAULT_COLLECTOR);
-	assert.equal(telemetryUrl(""), DEFAULT_COLLECTOR);
-	assert.equal(telemetryUrl("  "), DEFAULT_COLLECTOR);
+test("the collector URL defaults to the project's collector, an empty override sends nothing, others must be https", () => {
+	assert.equal(DEFAULT_TELEMETRY_URL, DEFAULT_COLLECTOR);
+	assert.equal(new URL(DEFAULT_TELEMETRY_URL).origin, "https://kite-telemetry.midego.net");
+	assert.equal(telemetryUrl(undefined), DEFAULT_COLLECTOR, "only an unset value means the default");
+	assert.equal(telemetryUrl(""), null, "an empty value sends nothing");
+	assert.equal(telemetryUrl("  "), null);
 	assert.equal(telemetryUrl(COLLECTOR), COLLECTOR);
 	for (const value of [
 		"http://collector.example.test/v1/heartbeat",
@@ -190,6 +255,19 @@ test("the collector URL defaults to the project's collector and an override must
 	])
 		assert.equal(telemetryUrl(value), null, value);
 	assert.equal(utcDay(new Date("2026-10-26T23:59:59Z")), "2026-10-26");
+});
+
+test("the erasure address sits next to the heartbeat path", () => {
+	assert.equal(
+		telemetryEraseUrl(DEFAULT_COLLECTOR, INSTALL_ID),
+		`https://kite-telemetry.midego.net/v1/installs/${INSTALL_ID}`,
+	);
+	assert.equal(
+		telemetryEraseUrl("https://stats.example.test/kite/v1/heartbeat", INSTALL_ID),
+		`https://stats.example.test/kite/v1/installs/${INSTALL_ID}`,
+	);
+	for (const id of ["../../admin", "", "3F2B8C1E-4D5A-4B6C-9D7E-8F9A0B1C2D3E", null])
+		assert.equal(telemetryEraseUrl(DEFAULT_COLLECTOR, id), null, String(id));
 });
 
 async function setup(t) {
@@ -263,12 +341,29 @@ function seed(sqlite) {
 test("counts come from users, sessions, audit rows and recent messages", async (t) => {
 	const sqlite = await setup(t);
 	seed(sqlite);
-	const env = { DB: sqlite, KITE_TELEMETRY_URL: COLLECTOR };
+	// The exact counts never leave the install; read them where the count query answers.
+	let counted = null;
+	const DB = new Proxy(sqlite, {
+		get(target, property) {
+			if (property === "prepare")
+				return (sql) => {
+					const statement = target.prepare(sql);
+					if (!sql.startsWith("WITH activity")) return statement;
+					return {
+						bind: (...values) => ({
+							first: async () => (counted = await statement.bind(...values).first()),
+						}),
+					};
+				};
+			const value = target[property];
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+	const env = { DB, KITE_TELEMETRY_URL: COLLECTOR };
 	await setTelemetryEnabled(env, true);
 	const { requests, fetcher } = recorder();
 	assert.equal(await runTelemetryHeartbeat(env, NOW, fetcher), "sent");
-	const { telemetry_schema_version, install_id, version, runtime, modules_enabled, ...counts } = requests[0].body;
-	assert.deepEqual(counts, {
+	assert.deepEqual(counted, {
 		users_total: 3,
 		users_active_1d: 1,
 		users_active_7d: 2,
@@ -277,6 +372,17 @@ test("counts come from users, sessions, audit rows and recent messages", async (
 		mailboxes_active_1d: 2,
 		inbound_1d: 2,
 		outbound_1d: 1,
+	});
+	const { telemetry_schema_version, install_id, version, runtime, modules_enabled, ...ranges } = requests[0].body;
+	assert.deepEqual(ranges, {
+		users_total: "2-5",
+		users_active_1d: "1",
+		users_active_7d: "2-5",
+		users_active_30d: "2-5",
+		mailboxes_total: "2-5",
+		mailboxes_active_1d: "2-5",
+		inbound_1d: "1-10",
+		outbound_1d: "1-10",
 	});
 });
 
@@ -308,11 +414,18 @@ test("statistics start off; opting in makes an install id and opting out deletes
 	assert.equal(await claimTelemetryDay(env, "2026-10-28"), false, "never while off");
 	await setTelemetryEnabled(env, true);
 	assert.notEqual((await readTelemetryState(env)).installId, on.installId, "a new id after opting in again");
+	await setTelemetryEnabled(env, true);
+	const forced = { ...env, KITE_TELEMETRY: "0" };
+	const before = await setTelemetryEnabled(forced, false);
+	assert.equal(before.enabled, true, "KITE_TELEMETRY=0 never stops an opt-out");
+	assert.equal((await readTelemetryState(env)).installId, null);
+	await setTelemetryEnabled(env, true);
 	const status = await getTelemetryStatus({ ...env, KITE_TELEMETRY: "off", KITE_TELEMETRY_URL: COLLECTOR });
 	assert.equal(status.forcedOff, true);
 	assert.equal(status.endpoint, COLLECTOR);
 	assert.equal((await getTelemetryStatus(env)).endpoint, DEFAULT_COLLECTOR);
 	assert.equal((await getTelemetryStatus({ ...env, KITE_TELEMETRY_URL: "http://plain.example.test/" })).endpoint, null);
+	assert.equal((await getTelemetryStatus({ ...env, KITE_TELEMETRY_URL: "" })).endpoint, null);
 });
 
 test("before migration 0071 statistics are off and cannot be turned on", async (t) => {
@@ -344,8 +457,8 @@ async function captureLogs(run) {
 function recorder(answer = () => new Response("collector says hi from 203.0.113.9", { status: 202 })) {
 	const requests = [];
 	const fetcher = async (url, init) => {
-		requests.push({ url, init, body: JSON.parse(init.body) });
-		return answer();
+		requests.push({ url, init, body: init.body ? JSON.parse(init.body) : null });
+		return answer({ url, init });
 	};
 	return { requests, fetcher };
 }
@@ -381,8 +494,8 @@ test("the heartbeat sends one allowlisted report a day, only when opted in", asy
 	assert.equal(request.body.install_id, (await readTelemetryState(env)).installId);
 	assert.equal(request.body.version, "2026.10.26.0");
 	assert.equal(request.body.runtime, "workers");
-	assert.equal(request.body.users_total, 3);
-	assert.equal(request.body.inbound_1d, 2);
+	assert.equal(request.body.users_total, "2-5");
+	assert.equal(request.body.inbound_1d, "1-10");
 	assert.deepEqual(request.body.modules_enabled, ["calendar", "booking", "templates", "import", "finance", "drive"]);
 	assert.equal(parseHeartbeat(request.init.body).ok, true);
 	for (const forbidden of ["example.com", "usr_", "mbx_", "dom_", "203.0.113.9"])
@@ -449,13 +562,94 @@ test("an opt-out while the counts are read stops the report", async (t) => {
 	}
 });
 
-test("without an override the heartbeat goes to kite-telemetry.midego.net", async (t) => {
+test("turning statistics off asks the collector to erase the old id's reports", async (t) => {
 	const sqlite = await setup(t);
-	await setTelemetryEnabled({ DB: sqlite }, true);
+	const env = { DB: sqlite, KITE_TELEMETRY_URL: COLLECTOR };
+	const { requests, fetcher } = recorder(() => new Response(null, { status: 204 }));
+
+	// Never reported: nothing to erase, no request.
+	await setTelemetryEnabled(env, true);
+	const unsent = await setTelemetryEnabled(env, false);
+	assert.deepEqual(await eraseAfterOptOut(env, unsent, fetcher), { outcome: "not_needed", installId: null });
+	assert.equal(requests.length, 0);
+
+	await setTelemetryEnabled(env, true);
+	assert.equal(await runTelemetryHeartbeat(env, NOW, fetcher), "sent");
+	const before = await setTelemetryEnabled(env, false);
+	assert.equal((await readTelemetryState(env)).installId, null, "the local id is gone before the request");
+	const { result, lines } = await captureLogs(() => eraseAfterOptOut(env, before, fetcher));
+	assert.deepEqual(result, { outcome: "erased", installId: before.installId });
+	const [, erasure] = requests;
+	assert.equal(erasure.url, `https://collector.example.test/v1/installs/${before.installId}`);
+	assert.equal(erasure.init.method, "DELETE");
+	assert.equal(erasure.init.redirect, "error");
+	assert.equal(erasure.init.body, undefined);
+	assert.equal(erasure.init.headers, undefined);
+	assert.match(lines.join("\n"), /telemetry\.erase_sent/);
+	assertAbsent(lines.join("\n"), before.installId, "the id is never logged");
+});
+
+test("a failed erasure never blocks the opt-out and returns the id for a manual request", async (t) => {
+	const sqlite = await setup(t);
+	const env = { DB: sqlite, KITE_TELEMETRY_URL: COLLECTOR };
+	const previous = { installId: INSTALL_ID, lastSentDay: "2026-10-26" };
+	for (const [label, answer] of [
+		["network error", () => Promise.reject(new Error("connect ECONNREFUSED 203.0.113.9"))],
+		["rate limited", () => new Response("slow down 203.0.113.9", { status: 429 })],
+	]) {
+		const { requests, fetcher } = recorder(answer);
+		const { result, lines } = await captureLogs(() => eraseAfterOptOut(env, previous, fetcher));
+		assert.deepEqual(result, { outcome: "failed", installId: INSTALL_ID }, label);
+		assert.equal(requests.length, 1, label);
+		const output = lines.join("\n");
+		assert.match(output, /telemetry\.erase_failed/, label);
+		for (const leaked of ["ECONNREFUSED", "203.0.113.9", INSTALL_ID]) assertAbsent(output, leaked);
+	}
+	// KITE_TELEMETRY_URL emptied since: no request at all, and the owner gets the id.
 	const { requests, fetcher } = recorder();
-	assert.equal(await runTelemetryHeartbeat({ DB: sqlite }, NOW, fetcher), "sent");
+	assert.deepEqual(await eraseAfterOptOut({ KITE_TELEMETRY_URL: "" }, previous, fetcher), {
+		outcome: "failed",
+		installId: INSTALL_ID,
+	});
+	assert.equal(requests.length, 0);
+	assert.equal(await eraseTelemetryInstall(COLLECTOR, "not-an-id", fetcher), "no_endpoint");
+	assert.equal(requests.length, 0);
+});
+
+test("an opt-out that lands while a report is on its way erases that report too", async (t) => {
+	const sqlite = await setup(t);
+	const env = { DB: sqlite, KITE_TELEMETRY_URL: COLLECTOR };
+	await setTelemetryEnabled(env, true);
+	const { installId } = await readTelemetryState(env);
+	let optedOut = false;
+	const { requests, fetcher } = recorder(async ({ init }) => {
+		// The owner turns statistics off after the last check but before the collector answers.
+		if (init.method === "POST" && !optedOut) {
+			optedOut = true;
+			await setTelemetryEnabled(env, false);
+		}
+		return new Response(null, { status: 204 });
+	});
+	assert.equal(await runTelemetryHeartbeat(env, NOW, fetcher), "sent");
 	assert.deepEqual(
-		requests.map(({ url }) => url),
-		[DEFAULT_COLLECTOR],
+		requests.map(({ url, init }) => [init.method, url]),
+		[
+			["POST", COLLECTOR],
+			["DELETE", `https://collector.example.test/v1/installs/${installId}`],
+		],
 	);
+});
+
+test("without an override every request goes to kite-telemetry.midego.net and never follows a redirect", async (t) => {
+	const sqlite = await setup(t);
+	const env = { DB: sqlite };
+	await setTelemetryEnabled(env, true);
+	const { requests, fetcher } = recorder(() => new Response(null, { status: 204 }));
+	assert.equal(await runTelemetryHeartbeat(env, NOW, fetcher), "sent");
+	await eraseAfterOptOut(env, await setTelemetryEnabled(env, false), fetcher);
+	assert.equal(requests.length, 2);
+	for (const { url, init } of requests) {
+		assert.equal(new URL(url).origin, "https://kite-telemetry.midego.net");
+		assert.equal(init.redirect, "error");
+	}
 });

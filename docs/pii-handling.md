@@ -21,16 +21,19 @@ cascade from the user row, keep the amounts but lose the message and attachment
 links when a message is deleted, and are kept when the module is turned off.
 Logs carry only ids and codes for them, never vendors, amounts, dates or URLs.
 
-Anonymous usage statistics are off unless the owner turns them on under Admin →
-General (`src/lib/telemetry/`, migration 0071). The daily heartbeat then holds a
-random install id, the Kite version, the runtime, counts of accounts, active
-accounts, mailboxes and messages, and the modules that are on; never ids,
-addresses, domains, `APP_URL` or error text. It goes to
-`kite-telemetry.midego.net`, run by the Kite maintainer on Cloudflare, unless
-`KITE_TELEMETRY_URL` names another collector. On Workers, Cloudflare adds a
-`CF-Worker` header naming the Worker's zone (the domain or `workers.dev`
-subdomain) to the request; the collector does not read, log or store it or
-the sending IP address. `telemetry_state` is not in Kite's backups, but a copy
+Usage statistics are off unless the owner turns them on under Admin → General
+(`src/lib/telemetry/`, migration 0071). They are pseudonymous, not anonymous:
+the daily heartbeat holds a random install id, the Kite version, the runtime,
+the ranges (never exact numbers) of accounts, active accounts, mailboxes and
+messages, and the modules that are on; never ids, addresses, domains,
+`APP_URL` or error text. It goes to `kite-telemetry.midego.net`, run by
+Michiel de Gooijer (midego) on Cloudflare (data requests: privacy@midego.net),
+unless `KITE_TELEMETRY_URL` names another collector or is empty. On Workers,
+Cloudflare adds a `CF-Worker` header naming the Worker's zone (the domain or
+`workers.dev` subdomain) to the request, which Kite cannot remove; on Node the
+collector sees the server's IP address. The collector does not read, log or
+store either; daily reports are kept 90 days, then only totals without ids.
+Turning statistics off asks the collector to erase the install's reports. `telemetry_state` is not in Kite's backups, but a copy
 of the database file or a D1 Time Travel restore carries the same install id.
 See [Privacy](privacy.md#usage-statistics-opt-in).
 

@@ -1,7 +1,7 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 /**
- * Opt-in anonymous usage statistics (src/lib/telemetry/). One row, id "default". Not in backups: the install id
+ * Opt-in pseudonymous usage statistics (src/lib/telemetry/). One row, id "default". Not in backups: the install id
  * belongs to this deployment, so a restore elsewhere must not copy it, and the choice starts off there.
  */
 export const telemetryState = sqliteTable("telemetry_state", {

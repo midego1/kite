@@ -55,7 +55,7 @@ export default function GeneralSettingsPage() {
 			<div>
 				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">General</h1>
 				<p className="mt-2 text-sm text-neutral-500">
-					Set limits for outgoing mail, outside checks of incoming mail and anonymous usage statistics.
+					Set limits for outgoing mail, outside checks of incoming mail and usage statistics.
 				</p>
 			</div>
 			<Card className="rounded-3xl border-0 bg-white p-6">

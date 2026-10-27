@@ -2,6 +2,7 @@ import { BUILD_VERSION } from "@/lib/build-version";
 import { createLogger } from "@/lib/logger.mjs";
 import { listEnabledModules } from "@/lib/modules/state";
 import { isNodeRuntime } from "@/lib/runtime";
+import { eraseTelemetryInstall } from "./erase";
 import { claimTelemetryDay, readTelemetryState } from "./state";
 import {
 	buildHeartbeatPayload,
@@ -77,7 +78,12 @@ async function sendHeartbeat(env: CloudflareEnv, now: Date, fetcher: typeof fetc
 	});
 	// The body is never read: nothing the collector answers is used or logged.
 	await response.body?.cancel();
-	return response.ok ? "sent" : "rejected";
+	if (!response.ok) return "rejected";
+	// An opt-out (or off and on again) that landed while the report was on its way: its own erasure request may have
+	// reached the collector first, so erase this report too.
+	if ((await readTelemetryState(env)).installId !== payload.install_id)
+		await eraseTelemetryInstall(endpoint, payload.install_id, fetcher);
+	return "sent";
 }
 
 /**

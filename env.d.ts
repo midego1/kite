@@ -59,7 +59,7 @@ interface CloudflareEnv {
 	AUTO_APPLY_MIGRATIONS?: string;
 	/** "0", "false", "off" or "no" forces the opt-in usage statistics off (src/lib/telemetry/); nothing forces them on. */
 	KITE_TELEMETRY?: string;
-	/** Overrides the collector the daily usage heartbeat is posted to; https only. */
+	/** Overrides the collector the daily usage heartbeat is posted to; https only. Empty means nothing is sent. */
 	KITE_TELEMETRY_URL?: string;
 	/** Dev/test only: "1" or "true" lets the alert webhook use plain http to loopback hosts; ignored in production. */
 	ALERT_WEBHOOK_ALLOW_INSECURE?: string;

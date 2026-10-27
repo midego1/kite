@@ -4,6 +4,8 @@ import {
 	COMPOSE_SYSTEM_MARKER,
 	DRAFT_SYSTEM_MARKER,
 	REPAIR_MARKER,
+	SUMMARY_SYSTEM_MARKER,
+	SUMMARY_TRANSLATION_MARKER,
 	TRIAGE_SYSTEM_MARKER,
 } from "../../src/lib/agent/auto-read/request-markers";
 import { FAKE_SCENARIOS, scenarioReply } from "./fake-model-scenarios";
@@ -45,6 +47,8 @@ function classifyFakeRequest(messages: ChatMessage[]): FakeRequestKind {
 	if (system.includes(TRIAGE_SYSTEM_MARKER)) return "triage";
 	if (system.includes(DRAFT_SYSTEM_MARKER)) return "draft";
 	if (system.includes(COMPOSE_SYSTEM_MARKER)) return "compose";
+	if (system.includes(SUMMARY_TRANSLATION_MARKER)) return "summary_translation";
+	if (system.includes(SUMMARY_SYSTEM_MARKER)) return "summary";
 	return "other";
 }
 

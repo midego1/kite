@@ -2,7 +2,7 @@
 
 Status: **proposed**; its open questions were decided by Michiel on 2026-10-26 (section 17). Written against `main` at `5c220ba` (release `2026.10.26.1`). Roadmap: proposed [milestone 28](../../ROADMAP.md#milestone-28-thread-summaries-proposed). Idea adopted from [Zero](https://github.com/Mail-0/Zero) (MIT; `apps/server/src/lib/thread-short-summary.ts` and its summarize prompts); no code is ported.
 
-Migrations: the last one on `main` is `0068_add_abuse_ch_auth_key.sql`. This spec claims **`0070_add_ai_summaries.sql`**, after [AI writing](ai-writing.md) (`0069`) and before [semantic search](semantic-search.md) (`0071`) and [assistant by email](assistant-by-email.md) (`0072`), which are specified at the same time. Whichever Mission starts first takes the next free number; keep `tests/migration-order.test.mjs` passing.
+Migrations: the last one on `main` is `0068_add_abuse_ch_auth_key.sql`. This spec claims **`0070_add_ai_summaries.sql`**, after [AI writing](ai-writing.md) (`0069`) and before [semantic search](semantic-search.md) (`0071`) and [assistant by email](assistant-by-email.md) (`0072`), which are specified at the same time. Whichever Mission starts first takes the next free number; keep `tests/migration-order.test.mjs` passing. **Implemented as `0072_add_ai_summaries.sql`** (0070 went to the writing style, and 0071 is claimed by the install telemetry pull request); every `0070` below means that migration.
 
 ## 1. Goals and non-goals
 

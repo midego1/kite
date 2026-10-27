@@ -6,6 +6,7 @@ export type PruningPolicy = {
 	expiredLoginChallengesDays: number;
 	expiredPasswordResetTokensDays: number;
 	agentActionsDays: number;
+	staleSummariesDays: number;
 };
 
 export type PruningResult = Record<string, number>;

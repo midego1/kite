@@ -39,6 +39,7 @@ const LATER_MIGRATIONS = [
 	"0068_add_abuse_ch_auth_key.sql",
 	"0069_add_ai_writing.sql",
 	"0070_add_writing_style.sql",
+	"0072_add_ai_summaries.sql",
 ];
 /** The modules 0062 seeds a row for; later modules have no row, which means `defaultEnabled`. */
 const MODULES = ["calendar", "booking", "templates", "import"];

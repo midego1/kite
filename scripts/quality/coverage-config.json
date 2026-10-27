@@ -74,6 +74,8 @@
 		"src/lib/agent/chat-spend-utils.ts",
 		"src/lib/agent/compose-prompt-utils.ts",
 		"src/lib/agent/compose-output-utils.ts",
+		"src/lib/agent/summaries/summary-utils.ts",
+		"src/lib/agent/summaries/summary-prompt-utils.ts",
 		"src/components/compose/write-with-kite-utils.ts",
 		"src/lib/agent/writing-style-utils.ts",
 		"src/lib/agent/writing-style-language-utils.ts",

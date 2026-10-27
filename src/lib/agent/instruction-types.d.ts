@@ -26,3 +26,9 @@ export type DraftPreferences = {
 	/** The writing style of the person the draft is written for, when they opted in. */
 	writingStyle?: string | null;
 };
+
+/** What a summary prompt adds after the mailbox's general instructions; every field may be empty. */
+export type SummaryPreferences = {
+	mailboxSummary: string;
+	personal: PersonalInstructions | null;
+};

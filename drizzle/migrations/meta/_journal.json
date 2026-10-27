@@ -519,6 +519,13 @@
       "when": 1788851700028,
       "tag": "0070_add_writing_style",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1788851760028,
+      "tag": "0072_add_ai_summaries",
+      "breakpoints": true
     }
   ]
 }

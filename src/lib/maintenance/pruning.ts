@@ -1,4 +1,4 @@
-import { and, inArray, lt, type SQL } from "drizzle-orm";
+import { and, eq, inArray, lt, sql, type SQL } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { getDb } from "@/db";
 import {
@@ -10,6 +10,7 @@ import {
 	webhookDeliveries,
 } from "@/db/schema";
 import { agentActions } from "@/db/schema/agent-auto-read";
+import { aiSummaries } from "@/db/schema/agent-summaries";
 import type { PruningPolicy, PruningResult } from "./pruning-types";
 import {
 	PRUNABLE_OUTBOUND_JOB_STATUSES,
@@ -87,6 +88,18 @@ export async function runDatabasePruning(
 			(cutoff) => lt(passwordResetTokens.expiresAt, cutoff),
 		],
 		["agent_actions", agentActions, policy.agentActionsDays, (cutoff) => lt(agentActions.createdAt, cutoff)],
+		[
+			"ai_summaries",
+			aiSummaries,
+			policy.staleSummariesDays,
+			// Out of date since before the cutoff: a summarised message of the conversation arrived after the summary.
+			(cutoff) =>
+				and(
+					eq(aiSummaries.kind, "thread"),
+					lt(aiSummaries.updatedAt, cutoff),
+					sql`exists (select 1 from messages where messages.mailbox_id = ${aiSummaries.mailboxId} and coalesce(messages.thread_id, messages.id) = ${aiSummaries.threadKey} and messages.status in ('received', 'sent', 'archived') and messages.created_at > ${aiSummaries.updatedAt} and messages.created_at < ${Math.floor(cutoff.getTime() / 1000)})`,
+				),
+		],
 	];
 	for (const [name, table, days, where] of jobs) {
 		const cutoff = getRetentionCutoff(now, days);

@@ -5,14 +5,12 @@ import { agentDraftMetadata, domains, mailboxes, messages } from "@/db/schema";
 import { buildSnippet } from "@/lib/email/parse";
 import { getAuthorizedSenderAddress } from "@/lib/email/sender";
 import { buildReplyReferences, formatMessageIdHeader, parseMessageIdList } from "@/lib/email/threading";
-import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { buildSearchConditions } from "@/lib/search/conditions";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { newId } from "@/lib/ids";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import { listMessageAttachments } from "@/lib/email/attachments";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
-import { updateMessageStatusForUser } from "@/lib/user";
 import type { AgentToolContext, EmailToolName } from "./types";
 import { getReplyRecipients } from "./reply";
 import { formatAgentDraftBody } from "./draft-format";
@@ -20,6 +18,9 @@ import { editAgentDraft } from "./edit-draft";
 import { requestAgentSend } from "./approvals/utils";
 import type { AgentDraftEditInput } from "./types";
 import { toolEmailSchema } from "./tool-schema-utils";
+import { ownMessage, publicMessage, requireAccess } from "./tool-messages";
+import { isOrganizeTool, runOrganizeTool } from "./organize-tools";
+import { FOLDER_COLOR_NAMES } from "./organize-tools-utils";
 
 const id = z.string().min(1).max(160);
 const body = z
@@ -30,6 +31,12 @@ const body = z
 	.describe("The recipient-facing email body as ordinary prose. Do not use Markdown or HTML formatting.");
 const limit = z.number().int().min(1).max(50).default(20);
 const folder = z.enum(["inbox", "sent", "draft", "archived", "trash", "spam"]);
+/** Bulk organize tools take at most 20 emails per call, so one approval never covers more than that. */
+const emailIds = z
+	.array(id)
+	.min(1)
+	.max(20)
+	.describe("Up to 20 email IDs from list_emails or search_emails in this mailbox.");
 
 export const emailToolSchemas = {
 	list_emails: z.object({
@@ -77,13 +84,28 @@ export const emailToolSchemas = {
 	}),
 	review_draft_send: z.object({ draftId: id, expectedRevision: z.number().int().positive() }),
 	mark_email_read: z.object({ emailId: id, read: z.boolean() }),
+	mark_emails_read: z.object({ emailIds }),
+	mark_emails_unread: z.object({ emailIds }),
 	move_email: z.object({ emailId: id, destination: z.enum(["inbox", "archived", "trash", "spam"]) }),
 	move_emails: z.object({
-		emailIds: z.array(id).min(1).max(20),
+		emailIds,
 		destination: z.enum(["inbox", "archived", "trash", "spam"]),
+	}),
+	list_folders: z.object({}),
+	create_folder: z.object({
+		name: z.string().trim().min(1).max(80),
+		color: z.enum(FOLDER_COLOR_NAMES).optional().describe("Folder colour; blue when omitted."),
+	}),
+	move_emails_to_folder: z.object({
+		emailIds,
+		folderId: id.describe("A folderId returned by list_folders."),
 	}),
 	discard_draft: z.object({ draftId: id, expectedRevision: z.number().int().positive() }),
 } as const;
+
+/** These descriptions serve chat and MCP alike, so they say where the approval applies. */
+const APPROVAL_NOTE =
+	"In the Kite assistant chat this only proposes the change, the user approves it in Kite and can undo it there; over MCP it applies at once.";
 
 export const emailToolDescriptions: Record<EmailToolName, string> = {
 	list_emails:
@@ -99,55 +121,21 @@ export const emailToolDescriptions: Record<EmailToolName, string> = {
 		"Update a draft created by the assistant in the selected mailbox. First read it with get_email to get its current revision and attachment IDs. Can change sender, recipients, subject, body, requested schedule, and copy or remove attachments from accessible emails. Use an ISO 8601 send time with timezone offset; null clears it. This never sends or schedules delivery by itself.",
 	review_draft_send:
 		"Create a review link for the current assistant draft revision. The user must explicitly confirm before the email is sent or scheduled. This tool never sends or queues an email.",
-	mark_email_read: "Mark an email as read or unread.",
+	mark_email_read: "Mark one email as read or unread. For several emails use mark_emails_read or mark_emails_unread.",
+	mark_emails_read: `Mark up to 20 emails as read. ${APPROVAL_NOTE}`,
+	mark_emails_unread: `Mark up to 20 emails as unread. ${APPROVAL_NOTE}`,
 	move_email: "Move an email to inbox, archive, trash, or spam.",
-	move_emails: "Move up to 20 emails to inbox, archive, trash, or spam after user approval in chat.",
+	move_emails: `Archive, trash, mark as spam, or move back to the inbox up to 20 emails at once. To clean up mail matching a search, call search_emails first and pass up to 20 of the returned IDs; for more, handle one batch before proposing the next. Trash is not permanent deletion. Needs full access to the mailbox; drafts and sent mail cannot be moved. ${APPROVAL_NOTE}`,
+	list_folders: "List the user-created folders of this mailbox with their folderId, name, and color.",
+	create_folder: `Create a folder in this mailbox. Needs full access to the mailbox. ${APPROVAL_NOTE} A proposed folder exists only once approved; then call list_folders for its folderId.`,
+	move_emails_to_folder: `File up to 20 emails into one of this mailbox's folders (folderId from list_folders). Filed mail leaves the inbox, archive, trash, or spam. Needs full access to the mailbox; drafts and sent mail cannot be moved. ${APPROVAL_NOTE}`,
 	discard_draft: "Discard an unedited agent draft by ID and revision.",
 };
 
 export const EMAIL_TOOL_NAMES = Object.keys(emailToolSchemas) as EmailToolName[];
 
-function publicMessage(row: typeof messages.$inferSelect) {
-	return {
-		id: row.id,
-		mailboxId: row.mailboxId,
-		from: row.fromAddr,
-		to: row.toAddr,
-		cc: row.ccAddr,
-		subject: row.subject,
-		snippet: row.snippet,
-		direction: row.direction,
-		status: row.status,
-		read: row.read,
-		starred: row.starred,
-		threadId: row.threadId,
-		url: `/${row.status === "draft" ? "drafts" : row.status === "received" ? "inbox" : row.status}/${encodeURIComponent(row.id)}`,
-		createdAt: row.createdAt,
-	};
-}
-
-async function requireAccess(context: AgentToolContext, write = false, manage = false) {
-	const access = await getMailboxAccessLevel(getDb(context.env), context.user, context.mailboxId);
-	if (!access?.canRead || (write && !access.canSendOnBehalf) || (manage && !access.canManage)) {
-		throw new Error("Mailbox not found or permission denied");
-	}
-	return access;
-}
-
 const INVALID_CURSOR_MESSAGE =
 	"Invalid pagination cursor. To start from the first page, omit cursor or set it to null. For later pages, use only the nextCursor returned by list_emails for this mailbox and folder; never invent a cursor or use a page number or offset.";
-
-export async function ownMessage(context: AgentToolContext, messageId: string, notFoundMessage = "Message not found") {
-	await requireAccess(context);
-	const [row] = await getDb(context.env)
-		.select()
-		.from(messages)
-		.where(and(eq(messages.id, messageId), eq(messages.mailboxId, context.mailboxId)))
-		.limit(1);
-	if (!row || row.status === SCREENING_STATUS || (row.status === "draft" && row.userId !== context.user.id))
-		throw new Error(notFoundMessage);
-	return row;
-}
 
 async function createDraft(
 	context: AgentToolContext,
@@ -230,6 +218,7 @@ export async function runEmailTool(
 	rawInput: unknown,
 ): Promise<unknown> {
 	const input = emailToolSchemas[name].parse(rawInput) as Record<string, unknown>;
+	if (isOrganizeTool(name)) return runOrganizeTool(context, name, input);
 	const db = getDb(context.env);
 	if (name === "count_emails") {
 		await requireAccess(context);
@@ -347,42 +336,6 @@ export async function runEmailTool(
 			scheduledAt: result.snapshot.scheduledAt,
 			reviewUrl: result.reviewUrl,
 		};
-	}
-	if (name === "mark_email_read") {
-		const row = await ownMessage(context, input.emailId as string);
-		if (context.origin === "chat")
-			return {
-				action: name,
-				status: "pending_approval",
-				emailId: row.id,
-				read: input.read,
-				emails: [publicMessage(row)],
-			};
-		await db
-			.update(messages)
-			.set({ read: input.read as boolean })
-			.where(eq(messages.id, row.id));
-		return { emailId: row.id, read: input.read };
-	}
-	if (name === "move_email" || name === "move_emails") {
-		await requireAccess(context, false, true);
-		const ids = name === "move_email" ? [input.emailId as string] : [...new Set(input.emailIds as string[])];
-		const rows = await Promise.all(ids.map((messageId) => ownMessage(context, messageId)));
-		if (rows.some((row) => row.status === "draft" || row.status === "sent"))
-			throw new Error("Cannot move this message");
-		const destination = input.destination as string;
-		if (context.origin === "chat")
-			return { action: name, status: "pending_approval", emailIds: ids, destination, emails: rows.map(publicMessage) };
-		for (const row of rows) {
-			const moved = await updateMessageStatusForUser(
-				context.env,
-				context.user,
-				row.id,
-				destination === "inbox" ? "received" : destination,
-			);
-			if (!moved) throw new Error("Message could not be moved");
-		}
-		return { emailIds: ids, destination, status: "approved" };
 	}
 	if (name === "discard_draft") {
 		const row = await ownMessage(context, input.draftId as string);

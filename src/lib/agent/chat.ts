@@ -19,7 +19,7 @@ import { normalizeTimeZone } from "@/lib/time/utils";
 import { AGENT_STEP_LIMIT_FALLBACK, agentStepSettings, clampAgentMaxSteps } from "./step-limit-utils";
 import { serializeAgentToolOutput } from "./tool-history-utils";
 import { withCurrentEmailContext } from "./current-email-utils";
-import { ownMessage } from "./tools";
+import { ownMessage } from "./tool-messages";
 
 export async function getAgentConversation(context: AgentToolContext, conversationId: string) {
 	const db = getDb(context.env);

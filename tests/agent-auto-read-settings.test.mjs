@@ -45,6 +45,9 @@ test("a mailbox without a settings row gets the automatic reading defaults", () 
 		autoDraftEnabled: false,
 		reviewerUserId: "u1",
 		instructions: "",
+		chatInstructions: "",
+		draftInstructions: "",
+		summaryInstructions: "",
 		dailyLimit: 25,
 		autonomy: "off",
 		capabilities: {

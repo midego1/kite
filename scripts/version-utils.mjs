@@ -1,3 +1,5 @@
+import { ENTRY, foldUnreleased, fragmentProblems } from "./changelog-fragments.mjs";
+
 const CALENDAR_VERSION = /^(\d{4}\.\d{2}\.\d{2})\.(\d+)$/;
 
 function utcDay(date) {
@@ -23,8 +25,6 @@ export function packageVersion(version) {
 }
 
 const UNRELEASED_HEADING = "## [Unreleased]";
-// Paragraph notes count as entries too; blank lines and headings alone do not.
-const ENTRY = /^[ \t]*[^#\s]/m;
 
 /** Text written under a release that has no Unreleased entries, so every deploy can still be a release. */
 export const NO_CHANGES_NOTE = "No user-visible changes.";
@@ -40,15 +40,29 @@ function unreleasedSection(changelog) {
 }
 
 /**
- * Moves the Unreleased entries under a heading for `version`, leaving an empty Unreleased section on top.
- * Without entries the new release says NO_CHANGES_NOTE, and empty `###` headings are dropped.
+ * Moves the Unreleased entries and the pending changelog.d fragments under a heading for `version`,
+ * leaving an empty Unreleased section on top. Without entries the new release says NO_CHANGES_NOTE, and
+ * empty `###` headings are dropped. Deleting the fragment files is the caller's job.
  */
-export function releaseChangelog(changelog, version, date = new Date()) {
+export function releaseChangelog(changelog, version, date = new Date(), fragments = []) {
 	const section = unreleasedSection(changelog);
 	if (!section) throw new Error(`CHANGELOG.md has no "${UNRELEASED_HEADING}" section`);
 	const before = `${changelog.slice(0, section.start)}${UNRELEASED_HEADING}\n\n## [${version}] - ${utcDay(date)}\n`;
-	if (ENTRY.test(section.body)) return `${before}${changelog.slice(section.bodyStart)}`;
-	return `${before}\n${NO_CHANGES_NOTE}\n${changelog.slice(section.bodyEnd)}`;
+	if (!fragments.length && ENTRY.test(section.body)) return `${before}${changelog.slice(section.bodyStart)}`;
+	const body = foldUnreleased(section.body, fragments) || NO_CHANGES_NOTE;
+	return `${before}\n${body}\n${changelog.slice(section.bodyEnd)}`;
+}
+
+/**
+ * CHANGELOG.md as the "What's new" dialog shows it: the pending fragments listed under "Unreleased",
+ * because every merge to main deploys them before the next release names them.
+ */
+export function unreleasedChangelog(changelog, fragments) {
+	const section = unreleasedSection(changelog);
+	if (!section || !fragments.length) return changelog;
+	const body = foldUnreleased(section.body, fragments);
+	if (!body) return changelog;
+	return `${changelog.slice(0, section.bodyStart)}\n${body}\n${changelog.slice(section.bodyEnd)}`;
 }
 
 function parseCalendarVersion(version) {
@@ -105,4 +119,58 @@ export function checkReleaseBump({ baseVersion, headVersion, changelog }) {
 		problems.push("CHANGELOG.md still has entries under Unreleased; they would deploy without a release");
 	}
 	return problems;
+}
+
+/** The label that lets a pull request without user-visible changes skip the fragment. */
+export const NO_CHANGELOG_LABEL = "no-changelog";
+
+/** Release pull requests come from `release/*` branches; the release workflow keeps `release/next`. */
+export function isReleaseBranch(branch) {
+	return /^release\//.test(String(branch ?? ""));
+}
+
+/**
+ * Problems that stop a pull request from merging. A release pull request (a `release/*` branch) must be a
+ * complete release with every fragment folded in. Any other pull request leaves VERSION and the
+ * Unreleased section alone and adds or edits a valid fragment in changelog.d, unless it carries the
+ * `no-changelog` label; that keeps open pull requests from conflicting on the release files.
+ */
+export function checkPullRequest({
+	branch,
+	labels = [],
+	baseVersion,
+	headVersion,
+	changelog,
+	fragments,
+	changedFragments,
+}) {
+	const problems = fragmentProblems(fragments);
+	if (isReleaseBranch(branch)) {
+		problems.push(...checkReleaseBump({ baseVersion, headVersion, changelog }));
+		if (fragments.length) {
+			problems.push(`changelog.d still has ${fragments.length} fragment(s); run npm run release:prepare again`);
+		}
+		return problems;
+	}
+	if (String(headVersion).trim() !== String(baseVersion).trim()) {
+		problems.push(
+			`VERSION changed from ${String(baseVersion).trim()} to ${String(headVersion).trim()}; only the release pull request changes it, so take the base's VERSION, package.json, package-lock.json, docs/openapi.json and CHANGELOG.md`,
+		);
+	}
+	const unreleased = unreleasedSection(changelog);
+	if (unreleased && ENTRY.test(unreleased.body)) {
+		problems.push('CHANGELOG.md has entries under "Unreleased"; move them to a fragment in changelog.d');
+	}
+	if (!changedFragments.length && !labels.includes(NO_CHANGELOG_LABEL)) {
+		problems.push(
+			`add a fragment in changelog.d (see changelog.d/README.md), or the "${NO_CHANGELOG_LABEL}" label when nobody can notice the change`,
+		);
+	}
+	return problems;
+}
+
+/** Whether a release is due: fragments are waiting, or entries are still under "Unreleased" in CHANGELOG.md. */
+export function hasPendingChanges(changelog, fragments) {
+	const unreleased = unreleasedSection(changelog);
+	return fragments.length > 0 || Boolean(unreleased && ENTRY.test(unreleased.body));
 }

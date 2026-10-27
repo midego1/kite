@@ -90,7 +90,10 @@ function signatureBlock(signature: string | null | undefined, attribute = SIGNAT
 	return html ? `<div ${attribute}="1"><br><br>${html}</div>` : "";
 }
 
-/** Swap or append the mailbox signature, mirroring the plain-text behaviour. */
+/**
+ * Swap or append the mailbox signature, mirroring the plain-text behaviour. An empty body gets one empty line
+ * before the signature, so the caret, and what the user types, starts in the body rather than inside the block.
+ */
 export function applyMailboxSignatureHtml(
 	html: string,
 	previousSignature: string | null | undefined,
@@ -104,7 +107,7 @@ export function applyMailboxSignatureHtml(
 		if (previousBlock && html.includes(previousBlock)) return html.replace(previousBlock, nextBlock);
 	}
 	if (!nextBlock || html.includes(nextBlock)) return html;
-	return `${html}${nextBlock}`;
+	return `${html.trim() ? html : "<div><br></div>"}${nextBlock}`;
 }
 
 const BLOCK_TAGS = new Set([

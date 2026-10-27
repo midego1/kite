@@ -92,6 +92,21 @@ const DICT_LOOKBACK = 2048;
 /** Compressed bytes written to the inflater at a time. */
 const INFLATE_SLICE = 16 * 1024;
 
+// A direct `/Length 123`, not an indirect `/Length 12 0 R`.
+const DIRECT_LENGTH = /\/Length\s+(\d+)(?!\d|\s+\d+\s+R\b)/;
+
+/**
+ * Where a stream's data ends. A direct /Length that fits is exact; otherwise the end-of-line before
+ * `endstream` is dropped, which would also cut a final `\r` or `\n` that belongs to the data (such as the
+ * last byte of a Flate checksum), so it is only the fallback.
+ */
+function streamEnd(dict: string, start: number, end: number, binary: string): number {
+	const length = Number(DIRECT_LENGTH.exec(dict)?.[1] ?? Number.NaN);
+	if (Number.isInteger(length) && start + length <= end) return start + length;
+	const eol = binary.slice(end - 2, end) === "\r\n" ? 2 : /[\r\n]/.test(binary[end - 1] ?? "") ? 1 : 0;
+	return Math.max(start, end - eol);
+}
+
 /** The `stream … endstream` objects in file order; a stream cut off before `endstream` ends the walk. */
 function* streamsOf(binary: string, maxStreams: number): Generator<RawStream> {
 	let from = 0;
@@ -106,7 +121,8 @@ function* streamsOf(binary: string, maxStreams: number): Generator<RawStream> {
 		if (end === -1) return;
 		count += 1;
 		const dictFrom = Math.max(binary.lastIndexOf("obj", at), at - DICT_LOOKBACK, 0);
-		yield { dict: binary.slice(dictFrom, at), data: binary.slice(start, end).replace(/\r?\n$|\r$/, "") };
+		const dict = binary.slice(dictFrom, at);
+		yield { dict, data: binary.slice(start, streamEnd(dict, start, end, binary)) };
 		from = end + 9;
 	}
 }

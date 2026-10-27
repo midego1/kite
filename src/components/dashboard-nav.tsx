@@ -185,18 +185,29 @@ export function DashboardNav({ className }: { className?: string }) {
 		if (!selectedMailbox?.id) return;
 
 		let cancelled = false;
+		// Only the newest request may set the list, so a slow earlier reload cannot bring back a removed folder.
+		let latest = 0;
 		const params = new URLSearchParams({ mailboxId: selectedMailbox.id });
-		authFetch(`/api/folders?${params.toString()}`)
-			.then((response) => response.json() as Promise<{ folders?: CustomFolder[] }>)
-			.then((data) => {
-				if (!cancelled) setFolders(data.folders ?? []);
-			})
-			.catch(() => {
-				if (!cancelled) setFolders([]);
-			});
+		const load = () => {
+			const request = ++latest;
+			const current = () => !cancelled && request === latest;
+			return authFetch(`/api/folders?${params.toString()}`)
+				.then((response) => response.json() as Promise<{ folders?: CustomFolder[] }>)
+				.then((data) => {
+					if (current()) setFolders(data.folders ?? []);
+				})
+				.catch(() => {
+					if (current()) setFolders([]);
+				});
+		};
+		void load();
 
+		// Folders created or removed outside this component (the assistant's chat actions) ask for a reload.
+		const onFoldersChanged = () => void load();
+		window.addEventListener("kite:folders-changed", onFoldersChanged);
 		return () => {
 			cancelled = true;
+			window.removeEventListener("kite:folders-changed", onFoldersChanged);
 		};
 		// Leaving All mailboxes reloads them, as a folder may have been created elsewhere meanwhile.
 	}, [selectedMailbox?.id, allMailboxes]);

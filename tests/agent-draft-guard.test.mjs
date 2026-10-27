@@ -69,3 +69,19 @@ test("Markdown is stripped", () => {
 		"Title\n• one\n• two\n\ncode x\n\na b c d\n\nend",
 	);
 });
+
+test("emphasis is stripped only at word boundaries, so file names, snake_case and arithmetic survive", () => {
+	for (const text of [
+		"See report_final_v2.pdf attached.",
+		"Set max_retry_count to 3.",
+		"The total is 5 * 3 * 2 = 30.",
+		"Compute a * b * c first.",
+		"Use 2*3 here.",
+		"This is *not emphasis * at all.",
+		"Rename names_like_this and file_v2_final.txt.",
+	])
+		assert.equal(stripDraftMarkdown(text), text, text);
+	assert.equal(stripDraftMarkdown("This is *really* and _truly_ fine."), "This is really and truly fine.");
+	assert.equal(stripDraftMarkdown("A **bold** and __strong__ word."), "A bold and strong word.");
+	assert.equal(stripDraftMarkdown("Keep *these* and _those_.", { emphasis: false }), "Keep *these* and _those_.");
+});

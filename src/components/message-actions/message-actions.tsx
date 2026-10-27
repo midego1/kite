@@ -77,6 +77,7 @@ export function MessageActions({
 	const [snoozeExpanded, setSnoozeExpanded] = useState(false);
 	const moduleSlots = useMessageMenuSlots({ messageId, mailboxId }, moreOpen, () => setMoreOpen(false));
 	const listHref = useMessageListHref() ?? getMessageBackHref(direction, status);
+
 	const runUnguarded = useCallback(
 		async (action: BulkMessageAction, folderId?: string) => {
 			setMoreOpen(false);

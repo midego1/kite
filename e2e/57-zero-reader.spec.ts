@@ -200,7 +200,12 @@ test("leaving the reader while a reply is docked closes it, keeps the draft, and
 	await expect(page).toHaveURL(/\/starred$/);
 	await expect(page.getByRole("region", { name: "Compose message" })).toHaveCount(0);
 
-	await openMessage(page, subject);
+	// Back without reloading the page, which would forget what the reply box can resume.
+	await page
+		.getByRole("navigation", { name: "Kite" })
+		.getByRole("link", { name: /^Inbox\b/ })
+		.click();
+	await openRow(page, subject);
 	await replyBox(page).click();
 	await expect(inlineComposer(page).getByRole("textbox", { name: "Message body" })).toContainText("Kept while away");
 	await page.keyboard.press("Escape");

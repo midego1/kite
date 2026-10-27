@@ -43,7 +43,7 @@ export function useCompose() {
 }
 
 /** The reply box under the open message, which takes the focus back when a docked reply closes. */
-export const REPLY_BOX_SELECTOR = "[data-reply-box]";
+const REPLY_BOX_SELECTOR = "[data-reply-box]";
 
 export function ComposeProvider({ children }: { children: ReactNode }) {
 	const [open, setOpen] = useState(false);

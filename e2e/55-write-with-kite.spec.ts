@@ -213,7 +213,10 @@ test.describe("Write with Kite", () => {
 			await page.setViewportSize({ width: 1280, height: 720 });
 			await page.goto("/inbox");
 			await openMessage(page, `Docked ${token}`);
-			await page.keyboard.press("r");
+			await page
+				.getByRole("button", { name: /^Reply( \(r\))?$/ })
+				.first()
+				.click();
 			const composer = page.getByRole("main").getByRole("region", { name: "Compose message" });
 			await expect(composer.getByRole("button", { name: "Pop out composer" })).toBeVisible();
 			const panel = await openPanel(page);

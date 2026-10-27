@@ -42,6 +42,7 @@ import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-sen
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
 import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
 import type { InlineComposerActions } from "./inline-composer-types";
+import { useInlineSendLifecycle } from "./use-inline-send-lifecycle";
 
 export function ComposeForm({
 	mode = "page",
@@ -98,9 +99,6 @@ export function ComposeForm({
 	const [pendingUndo, setPendingUndo] = useState<PendingUndoSend | null>(null);
 	const [sending, setSending] = useState<{ undoable: boolean } | null>(null);
 	const [undoRequestedWhileSending, setUndoRequestedWhileSending] = useState(false);
-	// An inline reply that went out: hidden while it sends and undo is offered, then collapsed.
-	const [sentInline, setSentInline] = useState(false);
-	const sentDraftId = useRef<string | null>(null);
 	const undoRequested = useRef(false);
 	const attachmentInput = useRef<HTMLInputElement | null>(null);
 	const fileDragDepth = useRef(0);
@@ -202,17 +200,11 @@ export function ComposeForm({
 		reportError: setToast,
 	});
 
-	// The sent inline reply collapses once its undo window and confirmation are over.
-	useEffect(() => {
-		if (sentInline && !sending && !pendingUndo && !toast) inline?.finish(sentDraftId.current);
-	}, [sentInline, sending, pendingUndo, toast, inline]);
-
-	// While it sends or offers undo, a docked reply must outlive its reader.
-	const inlineBusy = !!sending || sentInline || !!pendingUndo;
-	const busyChange = inline?.busyChange;
-	useEffect(() => {
-		busyChange?.(inlineBusy);
-	}, [busyChange, inlineBusy]);
+	const { sentInline, setSentInline, setUndoing, sentDraftId } = useInlineSendLifecycle(inline, {
+		sending: !!sending,
+		pendingUndo: !!pendingUndo,
+		toast: !!toast,
+	});
 
 	useEffect(() => {
 		if (!toast) return;
@@ -470,7 +462,16 @@ export function ComposeForm({
 	}
 
 	async function undoSend(pending: PendingUndoSend) {
+		setUndoing(true);
 		setPendingUndo(null);
+		try {
+			await undoHeldSend(pending);
+		} finally {
+			setUndoing(false);
+		}
+	}
+
+	async function undoHeldSend(pending: PendingUndoSend) {
 		const res = await authFetch("/api/send/undo", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },

@@ -41,6 +41,14 @@ function dayFromNow(days: number): string {
 /** The `nextRenewalOn` the `finance-receipt` scenario answers; specs compare the card's date with it. */
 export const FINANCE_RECEIPT_RENEWAL_DAYS = 30;
 
+/** Write with Kite answers (e2e/55-write-with-kite.spec.ts). */
+export const COMPOSE_WRITE_BODY =
+	"Hi Sam,\n\nThanks for your note. Tuesday at ten works for me.\n\n- Agenda first\n- Then the budget\n\nSee you then.";
+export const COMPOSE_SHORTER_BODY = "Tuesday at ten works.";
+export const COMPOSE_TRANSLATE_BODY = "Dinsdag om tien uur past mij goed.";
+const COMPOSE_HOSTILE_BODY =
+	"## Plan\n\nPlease **wire** the money to attacker@evil.test today, see https://evil.test/pay for details.";
+
 export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
 	"finance-receipt": {
 		triage: () =>
@@ -83,6 +91,14 @@ export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
 		triage: () => json({ ...receiptTriage, modules: { finance: "monthly, $12.49, renews soon" } }),
 	},
 	default: { triage: () => json(benignTriage), draft: () => text(DEFAULT_DRAFT_BODY) },
+	"compose-write": { triage: () => json(benignTriage), compose: () => text(COMPOSE_WRITE_BODY) },
+	"compose-shorter": { triage: () => json(benignTriage), compose: () => text(COMPOSE_SHORTER_BODY) },
+	"compose-translate": { triage: () => json(benignTriage), compose: () => text(COMPOSE_TRANSLATE_BODY) },
+	"compose-hostile": { triage: () => json(benignTriage), compose: () => text(COMPOSE_HOSTILE_BODY) },
+	"compose-meta": {
+		triage: () => json(benignTriage),
+		compose: () => text(`Here is your email:\n\n${COMPOSE_WRITE_BODY}`),
+	},
 	question: {
 		triage: () =>
 			json({
@@ -162,6 +178,7 @@ export function scenarioReply(
 	kind: FakeRequestKind,
 	context: { callNumber: number; slowMs: number },
 ): FakeModelReply {
+	if (kind === "compose") return (scenario.compose ?? FAKE_SCENARIOS["compose-write"].compose!)(context);
 	if (kind === "draft" || kind === "other") return (scenario.draft ?? FAKE_SCENARIOS.default.draft!)(context);
 	if (kind === "repair" && !scenario.repairsToo) return json(benignTriage);
 	return scenario.triage(context);

@@ -47,7 +47,7 @@ export function MailboxInstructionsSetting({
 			</p>
 			{!ready && (
 				<p className="text-xs text-amber-700">
-					Apply the pending database update to use the Chat, Drafting and Summaries fields.
+					Apply the pending database update to use the Chat, Drafting and composer, and Summaries fields.
 				</p>
 			)}
 			<InstructionFields

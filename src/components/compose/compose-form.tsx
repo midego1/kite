@@ -26,6 +26,7 @@ import type { PendingUndoSend, PendingUndoSnapshot } from "./undo-send-types";
 import { RecipientInput } from "./recipient-input";
 import { RichTextEditor } from "./rich-text-editor";
 import { ScheduleSendMenu } from "./schedule-send-menu";
+import { WriteWithKite } from "./write-with-kite";
 import {
 	applyMailboxSignatureHtml,
 	hasMeaningfulHtml,
@@ -928,6 +929,7 @@ export function ComposeForm({
 										<Paperclip className="h-4 w-4" />
 									</button>
 								</Tooltip>
+								<WriteWithKite editorId={`${mode}-text`} composer={{ html, setHtml, subject, to, threading }} />
 								<span className="flex-1" />
 								<Tooltip label="Delete draft">
 									<button

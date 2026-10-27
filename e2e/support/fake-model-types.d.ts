@@ -1,4 +1,4 @@
-export type FakeRequestKind = "triage" | "repair" | "draft" | "other";
+export type FakeRequestKind = "triage" | "repair" | "draft" | "compose" | "other";
 
 export type FakeToolCall = { name: string; arguments?: unknown };
 
@@ -21,6 +21,8 @@ export type FakeScenarioContext = {
 export type FakeScenario = {
 	triage: (context: FakeScenarioContext) => FakeModelReply;
 	draft?: (context: FakeScenarioContext) => FakeModelReply;
+	/** Write with Kite requests; scenarios without one answer with `compose-write`'s text. */
+	compose?: (context: FakeScenarioContext) => FakeModelReply;
 	/** Repair requests get the scenario's triage reply too; otherwise they get benign valid JSON. */
 	repairsToo?: boolean;
 };

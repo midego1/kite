@@ -18,6 +18,7 @@ Record the commands actually run and results; explain any skipped lane.
 - [ ] Persisted table changes update backup/restore lists and table groups.
 - [ ] API route changes regenerate `docs/api-inventory.md` and update `docs/api.md` when behavior changes.
 - [ ] Logs, screenshots, fixtures, and issue evidence contain only synthetic data.
+- [ ] User-visible changes have a fragment in `changelog.d/` (see `changelog.d/README.md`), or the PR has the `no-changelog` label. Do not edit `VERSION` or `CHANGELOG.md`.
 
 Describe migrations, compatibility, rollout and rollback considerations when relevant.
 A merge to `main` deploys production; a human must review and merge.

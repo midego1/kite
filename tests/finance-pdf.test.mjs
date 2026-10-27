@@ -17,7 +17,7 @@ function makePdf(streams, { trailer = "", header = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\
 		const data = flate ? deflateSync(body) : body;
 		const dict = stream.dict ?? (flate ? "/Filter /FlateDecode" : "");
 		parts.push(
-			Buffer.from(`${index + 4} 0 obj\n<< /Length ${data.length} ${dict} >>\nstream\n`, "latin1"),
+			Buffer.from(`${index + 4} 0 obj\n<< /Length ${stream.length ?? data.length} ${dict} >>\nstream\n`, "latin1"),
 			data,
 			Buffer.from("\nendstream\nendobj\n", "latin1"),
 		);
@@ -149,6 +149,28 @@ test("a compressed stream larger than one write slice is read to its end", async
 	const data = `${randomBytes(50_000).toString("hex")} BT (tail marker) Tj ET`;
 	assert.ok(deflateSync(Buffer.from(data, "latin1")).length > 32 * 1024);
 	assert.match(await textOf(makePdf([{ data, flate: true }])), /tail marker/);
+});
+
+/** Text whose Flate data ends in `byte` (the last byte of the Adler-32 checksum), found by trying a counter. */
+function flateEndingIn(byte) {
+	for (let attempt = 0; ; attempt += 1) {
+		const data = `BT (ends in ${byte} ${attempt}) Tj ET`;
+		if (deflateSync(Buffer.from(data, "latin1")).at(-1) === byte) return data;
+	}
+}
+
+test("a Flate stream whose data ends in a line break keeps that byte when /Length says so", async () => {
+	for (const byte of [0x0d, 0x0a]) {
+		const data = flateEndingIn(byte);
+		assert.match(await textOf(makePdf([{ data, flate: true }])), new RegExp(`ends in ${byte} `));
+	}
+});
+
+test("without a usable /Length the line break before endstream is dropped", async () => {
+	assert.match(await textOf(makePdf([{ data: INVOICE, length: "12 0 R" }])), /\$12\.00 per month/);
+	assert.match(await textOf(makePdf([{ data: INVOICE, flate: true, length: "999999" }])), /\$12\.00 per month/);
+	const crlf = Buffer.from(`%PDF-1.4\n4 0 obj\n<< >>\nstream\r\n${INVOICE}\r\nendstream\nendobj\n%%EOF\n`, "latin1");
+	assert.match(await textOf(crlf), /\$12\.00 per month/);
 });
 
 test("corrupt Flate data yields no text and no error", async () => {

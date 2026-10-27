@@ -375,7 +375,7 @@ test("a row's hover actions, the star first, get their own space clear of the se
 		await row.hover();
 		const archive = row.getByRole("button", { name: /^Archive/ });
 		await expect(archive).toBeVisible();
-		const pill = (await archive.locator("xpath=..").boundingBox())!;
+		const pill = (await archive.locator('xpath=ancestor::div[contains(@class,"shadow-sm")][1]').boundingBox())!;
 		const sender = (await row
 			.getByText(/Inline Sender$/)
 			.first()
@@ -383,10 +383,12 @@ test("a row's hover actions, the star first, get their own space clear of the se
 		const rowBox = (await row.boundingBox())!;
 		expect(sender.x + sender.width, key).toBeLessThanOrEqual(pill.x);
 		expect(pill.x + pill.width, key).toBeLessThanOrEqual(rowBox.x + rowBox.width);
-		// The star is the pill's first action, inside it.
+		// The star is the pill's first action, inside it, and the pill leaves the row's middle free for a click.
 		const star = (await row.getByRole("button", { name: "Star", exact: true }).boundingBox())!;
 		expect(star.x, key).toBeGreaterThanOrEqual(pill.x);
 		expect(star.x + star.width, key).toBeLessThanOrEqual(pill.x + pill.width);
+		const link = (await row.getByRole("link").boundingBox())!;
+		expect(pill.y + pill.height, key).toBeLessThan(link.y + link.height / 2);
 		await page.mouse.move(0, 0);
 	}
 });

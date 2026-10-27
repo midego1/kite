@@ -29,6 +29,8 @@ export type BulkMessageResponse = {
 	deleted?: number;
 	skipped?: number;
 	undo?: MessageRestoreState[];
+	/** For "restore": messages an Undo left alone because a newer spam report on them is still in place. */
+	superseded?: number;
 	/** True when a report could not record what it trained, so Undo moves the mail back but cannot untrain it. */
 	trainingUndoUnavailable?: boolean;
 	/** For "phishing": what happened to each reported message's sender. */

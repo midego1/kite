@@ -132,6 +132,9 @@ const INTERNAL_TABLES = [
 	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
 	// restored database would restart a copy between stores that may no longer match.
 	"storage_migrations",
+	// AI summaries (migration 0072): derived from the messages and made again on demand, so a backup skips them.
+	// A restore replaces the messages, whose triggers and cascades remove the old summaries with them.
+	"ai_summaries",
 	// Undo receipts of spam and phishing reports: transient (pruned after the 7-day undo window) and tied to
 	// the toast or Activity entry that offered the undo, so a restored database starts without them.
 	"spam_report_receipts",

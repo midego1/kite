@@ -43,7 +43,8 @@ export async function reportPhishingBulk(
 /**
  * Undo of an archive, trash, spam or phishing report. A state with a receipt takes back the report's training and
  * extras too (and only moves the message while it is still in Spam); any other state, or one whose receipt is
- * gone, puts the earlier status and folder back.
+ * gone, puts the earlier status and folder back. Returns how many were left alone because a newer report on the
+ * same message is still in place.
  */
 export async function restoreMessageStates(
 	env: CloudflareEnv,
@@ -51,12 +52,16 @@ export async function restoreMessageStates(
 	restoreStates: readonly MessageRestoreState[],
 	selectedMessages: readonly { id: string; mailboxId: string | null }[],
 	approvedMailbox: ReadonlyMap<string, string>,
-): Promise<void> {
+): Promise<number> {
+	let superseded = 0;
 	for (const state of restoreStates) {
 		const mailboxId = approvedMailbox.get(state.id);
 		if (!mailboxId) continue;
-		if (typeof state.receiptId === "string" && (await undoSpamReceipt(env, state.id, state.receiptId)) !== "missing")
-			continue;
+		if (typeof state.receiptId === "string") {
+			const result = await undoSpamReceipt(env, state.id, state.receiptId);
+			if (result === "superseded") superseded += 1;
+			if (result !== "missing") continue;
+		}
 		const message = selectedMessages.find((candidate) => candidate.id === state.id);
 		let restoredFolderId: string | null = null;
 		if (state.folderId && message?.mailboxId) {
@@ -72,4 +77,5 @@ export async function restoreMessageStates(
 			.set({ status: state.status, folderId: restoredFolderId })
 			.where(and(eq(messages.id, state.id), eq(messages.mailboxId, mailboxId)));
 	}
+	return superseded;
 }

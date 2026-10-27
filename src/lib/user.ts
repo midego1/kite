@@ -5,7 +5,7 @@ import { selectRow } from "@/lib/db/pending-columns";
 import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import type { SessionUser } from "@/lib/auth/types";
-import { applySpamFeedback } from "@/lib/spam/feedback";
+import { applySpamFeedbackWithReceipt } from "@/lib/spam/feedback";
 
 export async function listMessagesForUser(
 	env: CloudflareEnv,
@@ -97,14 +97,20 @@ export async function updateMessageStatusForUser(
 	user: SessionUser,
 	messageId: string,
 	status: string,
+	/** Told the receipt of the spam or "Not spam" training this move made, so its undo can take exactly that back. */
+	onReceipt?: (messageId: string, receiptId: string) => void,
 ) {
 	const db = getDb(env);
 	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
 	if (!message?.mailboxId) return false;
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canManage) return false;
-	if (status === "spam") return applySpamFeedback(env, user, messageId, "spam");
-	if (status === "received" && message.status === "spam") return applySpamFeedback(env, user, messageId, "ham");
+	const classification = status === "spam" ? "spam" : status === "received" && message.status === "spam" ? "ham" : null;
+	if (classification) {
+		const result = await applySpamFeedbackWithReceipt(env, user, messageId, classification);
+		if (result?.receiptId) onReceipt?.(messageId, result.receiptId);
+		return result !== null;
+	}
 	await db.update(messages).set({ status }).where(eq(messages.id, messageId));
 	await createAuditLog(env, {
 		actorUserId: user.id,

@@ -46,4 +46,6 @@ export type AgentToolContext = {
 	folderId?: string;
 	/** Overrides the From/Reply-To address a reply draft goes to (a calendar proposal goes to the ICS organizer). */
 	replyTo?: string;
+	/** Told the receipt each move to or out of Spam left, so an approved chat action can record it for its undo. */
+	onReceipt?: (messageId: string, receiptId: string) => void;
 };

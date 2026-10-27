@@ -138,8 +138,8 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: "No accessible messages" }, { status: 404 });
 	}
 	if (payload.action === "restore") {
-		await restoreMessageStates(env, db, restoreStates, selectedMessages, approvedMailbox);
-		return NextResponse.json({ ok: true });
+		const superseded = await restoreMessageStates(env, db, restoreStates, selectedMessages, approvedMailbox);
+		return NextResponse.json({ ok: true, ...(superseded > 0 ? { superseded } : {}) });
 	}
 	if (payload.action === "delete") {
 		// Only mail already in Trash or Spam can be destroyed; anything else is skipped.

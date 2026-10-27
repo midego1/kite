@@ -35,15 +35,16 @@ async function keepSenderReason(
 }
 
 /**
- * Whether blocking `sender` would add a block that was not there: no rule files the sender's mail in Trash
- * for this mailbox yet and the contact is not blocked. Only such a block is the report's to lift again.
+ * What blocking `sender` is about to add, as two separate facts: whether the mailbox has no Trash rule for the
+ * address yet (so `blockContact` will create `block:<mailbox>:<sender>`), and whether the contact was already
+ * blocked, perhaps from another mailbox. An undo lifts only what this report added.
  */
-async function blockIsNew(
+async function blockFacts(
 	env: CloudflareEnv,
 	ownerUserId: string,
 	mailboxId: string,
 	sender: string,
-): Promise<boolean> {
+): Promise<{ ruleCreated: boolean; contactWasBlocked: boolean }> {
 	const db = getDb(env);
 	const [rule] = await db
 		.select({ id: routingRules.id })
@@ -58,13 +59,12 @@ async function blockIsNew(
 			),
 		)
 		.limit(1);
-	if (rule) return false;
 	const [contact] = await db
 		.select({ blocked: contacts.blocked })
 		.from(contacts)
 		.where(and(eq(contacts.userId, ownerUserId), eq(contacts.email, sender)))
 		.limit(1);
-	return !contact?.blocked;
+	return { ruleCreated: !rule, contactWasBlocked: !!contact?.blocked };
 }
 
 /** The message's open phishing warning has been acted on, so it closes like "Mark as spam" closes it. Returns the ids closed. */
@@ -116,7 +116,7 @@ async function reportPhishing(
 	if (!message || !access?.canManage) return null;
 	const sender = normalizeEmailAddress(message.fromAddr ?? "");
 	const notBlocked = await keepSenderReason(env, access.mailbox.userId, sender);
-	const newBlock = !notBlocked && (await blockIsNew(env, access.mailbox.userId, access.mailbox.id, sender));
+	const facts = notBlocked ? null : await blockFacts(env, access.mailbox.userId, access.mailbox.id, sender);
 	if (!notBlocked)
 		await blockContact(env, {
 			userId: access.mailbox.userId,
@@ -126,7 +126,9 @@ async function reportPhishing(
 		});
 	const closedSuggestionIds = await closePhishingWarnings(env, user.id, messageId);
 	await addReceiptExtras(env, feedback.receiptId, {
-		...(newBlock ? { block: { userId: access.mailbox.userId, mailboxId: access.mailbox.id, address: sender } } : {}),
+		...(facts && (facts.ruleCreated || !facts.contactWasBlocked)
+			? { block: { userId: access.mailbox.userId, mailboxId: access.mailbox.id, address: sender, ...facts } }
+			: {}),
 		...(closedSuggestionIds.length > 0 ? { closedSuggestionIds } : {}),
 	});
 	await createAuditLog(env, {

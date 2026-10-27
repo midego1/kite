@@ -35,5 +35,6 @@ export const spamReportReceipts = sqliteTable(
 	(t) => [
 		index("spam_report_receipts_message_idx").on(t.messageId),
 		index("spam_report_receipts_created_idx").on(t.createdAt),
+		index("spam_report_receipts_mailbox_idx").on(t.mailboxId, t.createdAt),
 	],
 );

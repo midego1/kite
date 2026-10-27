@@ -18,6 +18,8 @@ await build({
 			export { runEmailTool } from "./src/lib/agent/tools.ts";
 			export { confirmAgentAction, undoChatAgentAction } from "./src/lib/agent/actions.ts";
 			export { undoAgentAction } from "./src/lib/agent/auto-read/execute.ts";
+			export { applySpamFeedbackWithReceipt } from "./src/lib/spam/feedback.ts";
+			export { undoSpamReceipt } from "./src/lib/spam/report-receipts.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "agent-chat-actions-entry.ts",
@@ -37,8 +39,16 @@ await build({
 	},
 	logLevel: "silent",
 });
-const { SqliteDatabase, applyMigrations, runEmailTool, confirmAgentAction, undoChatAgentAction, undoAgentAction } =
-	await import(pathToFileURL(join(bundleDirectory, "entry.mjs")).href);
+const {
+	SqliteDatabase,
+	applyMigrations,
+	runEmailTool,
+	confirmAgentAction,
+	undoChatAgentAction,
+	undoAgentAction,
+	applySpamFeedbackWithReceipt,
+	undoSpamReceipt,
+} = await import(pathToFileURL(join(bundleDirectory, "entry.mjs")).href);
 
 const OWNER = { id: "user-1", email: "owner@example.com", role: "user" };
 const READER = { id: "user-2", email: "reader@example.com", role: "user" };
@@ -388,4 +398,53 @@ test("an action undone in Activity reports the same undo counts when the chat ca
 	const caughtUp = await undoChatAgentAction(env, OWNER, "tool-5");
 	assert.equal(caughtUp.status, "undone");
 	assert.deepEqual(caughtUp.undo, { restored: 1, total: 2 });
+});
+
+const classifier = (database) => ({
+	tokens: database.db.prepare("SELECT token, spam_count, ham_count FROM spam_token_stats ORDER BY token").all(),
+	reputation: database.db
+		.prepare("SELECT type, key, messages_seen, spam_count, ham_count FROM spam_reputation ORDER BY type, key")
+		.all(),
+	feedback: database.db.prepare("SELECT message_id, classification FROM spam_feedback").all(),
+});
+
+test("undoing an approved chat move to Spam takes back exactly its own training", async (t) => {
+	const { database, env } = await setup(t);
+	const start = classifier(database);
+	const moved = await approve(database, env, OWNER, "conv-1", "tool-spam", "move_emails", {
+		emailIds: ["m1"],
+		destination: "spam",
+	});
+	assert.equal(message(database, "m1").status, "spam");
+	assert.equal(classifier(database).feedback.length, 1);
+	const stored = JSON.parse(actionRow(database, moved.actionId).before);
+	assert.equal(typeof stored.receipts.m1, "string");
+
+	await undoChatAgentAction(env, OWNER, "tool-spam");
+	assert.equal(message(database, "m1").status, "received");
+	assert.deepEqual(classifier(database), start);
+});
+
+test("a chat undo leaves a move alone while a newer report on the message stands, and works once that is undone", async (t) => {
+	const { database, env } = await setup(t);
+	const start = classifier(database);
+	await approve(database, env, OWNER, "conv-1", "tool-spam2", "move_emails", {
+		emailIds: ["m1"],
+		destination: "spam",
+	});
+	const afterChat = classifier(database);
+	// Not spam and a new report follow, so the chat move's training sits under two newer ones.
+	const notSpam = await applySpamFeedbackWithReceipt(env, OWNER, "m1", "ham");
+	const again = await applySpamFeedbackWithReceipt(env, OWNER, "m1", "spam");
+	const full = classifier(database);
+	await assert.rejects(undoChatAgentAction(env, OWNER, "tool-spam2"), status(409));
+	assert.deepEqual(classifier(database), full);
+	assert.equal(message(database, "m1").status, "spam");
+
+	await undoSpamReceipt(env, "m1", again.receiptId);
+	await undoSpamReceipt(env, "m1", notSpam.receiptId);
+	assert.deepEqual(classifier(database), afterChat);
+	await undoChatAgentAction(env, OWNER, "tool-spam2");
+	assert.equal(message(database, "m1").status, "received");
+	assert.deepEqual(classifier(database), start);
 });

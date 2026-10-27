@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
+import { and, eq, inArray, lt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { folders, spamFeedback } from "@/db/schema";
 import { spamReportReceipts } from "@/db/schema/spam-reports";
@@ -62,7 +62,8 @@ export async function findMissingRows(
 
 /**
  * Records a receipt. Returns null, and never throws, when the table is missing or the write fails: the report
- * already happened, and a lost receipt only means its training cannot be undone.
+ * already happened, and a lost receipt only means its training cannot be undone. Old receipts are pruned
+ * separately, so a failed prune cannot lose this one.
  */
 export async function saveReceipt(env: CloudflareEnv, receipt: NewSpamReceipt): Promise<string | null> {
 	const id = crypto.randomUUID();
@@ -83,15 +84,19 @@ export async function saveReceipt(env: CloudflareEnv, receipt: NewSpamReceipt): 
 			extras: JSON.stringify(receipt.extras),
 			createdAt: new Date(),
 		});
-		await db
-			.delete(spamReportReceipts)
-			.where(lt(spamReportReceipts.createdAt, new Date(Date.now() - RECEIPT_WINDOW_MS)));
-		return id;
 	} catch (error) {
 		if (!isNoSuchTableError(error))
 			console.error("spam.receipt_failed", error instanceof Error ? error.message : error);
 		return null;
 	}
+	try {
+		await db
+			.delete(spamReportReceipts)
+			.where(lt(spamReportReceipts.createdAt, new Date(Date.now() - RECEIPT_WINDOW_MS)));
+	} catch (error) {
+		console.error("spam.receipt_prune_failed", error instanceof Error ? error.message : error);
+	}
+	return id;
 }
 
 /** Adds what a phishing report did beyond training to its receipt. */
@@ -125,9 +130,9 @@ async function rowsCreatedByReceipts(
 	receipt: Receipt,
 ): Promise<{ tokens: Set<string>; keys: Set<string> }> {
 	const { results } = await env.DB.prepare(
-		"SELECT created_tokens, created_keys FROM spam_report_receipts WHERE mailbox_id = ?",
+		"SELECT created_tokens, created_keys FROM spam_report_receipts WHERE mailbox_id = ? AND created_at >= ?",
 	)
-		.bind(receipt.mailboxId)
+		.bind(receipt.mailboxId, Math.floor((Date.now() - RECEIPT_WINDOW_MS) / 1000))
 		.all<{ created_tokens: string; created_keys: string }>();
 	const tokens = new Set<string>();
 	const keys = new Set<string>();
@@ -138,20 +143,26 @@ async function rowsCreatedByReceipts(
 	return { tokens, keys };
 }
 
-/** The statements that take back what the report trained, or none when a later change already replaced it. */
+type Plan = {
+	statements: D1PreparedStatement[];
+	/** The feedback row the training statements assume; the batch fails when it changed in between. */
+	expectedFeedback: { classification: SpamClassification; updatedAt: number } | null;
+};
+
+/** The statements that take back what the report trained, or none when the training was replaced by something else. */
 async function trainingReversal(
 	env: CloudflareEnv,
 	receipt: Receipt,
 	extras: ReceiptExtras,
 	now: number,
-): Promise<D1PreparedStatement[]> {
+): Promise<Plan> {
+	const none: Plan = { statements: [], expectedFeedback: null };
 	const [feedback] = await getDb(env)
 		.select()
 		.from(spamFeedback)
 		.where(eq(spamFeedback.messageId, receipt.messageId))
 		.limit(1);
-	// A later report or "Not spam" already changed the training; undoing this one on top would count twice.
-	if (!receipt.trained || feedback?.classification !== receipt.classification) return [];
+	if (!receipt.trained || feedback?.classification !== receipt.classification) return none;
 	const tokens = parseList<string>(feedback.trainingTokens);
 	const keys = parseList<ReputationKey>(feedback.reputationKeys);
 	const statements = trainingStatements(env, receipt.mailboxId, tokens, keys, receipt.classification, -1, now);
@@ -181,7 +192,13 @@ async function trainingReversal(
 				"DELETE FROM spam_reputation WHERE mailbox_id = ? AND type = ? AND key = ? AND spam_count = 0 AND ham_count = 0",
 			).bind(receipt.mailboxId, item.type, item.key),
 		);
-	return statements;
+	return {
+		statements,
+		expectedFeedback: {
+			classification: feedback.classification,
+			updatedAt: Math.floor(feedback.updatedAt.getTime() / 1000),
+		},
+	};
 }
 
 /** Puts the message back where it was, only while it is still where the report left it; a later move wins. */
@@ -204,9 +221,47 @@ async function locationRestore(env: CloudflareEnv, receipt: Receipt): Promise<D1
 	);
 }
 
-/** Lifts the block this report placed and reopens the warnings it closed. */
+/** SQL for "a newer report on this message that trained the filter has not been undone", for receipt `?`. */
+const NEWER_TRAINED_RECEIPT = `EXISTS (SELECT 1 FROM spam_report_receipts newer WHERE newer.message_id = ? AND newer.undone_at IS NULL AND newer.trained = 1 AND newer.rowid > (SELECT rowid FROM spam_report_receipts WHERE id = ?))`;
+
+async function hasNewerTrainedReceipt(env: CloudflareEnv, receipt: Receipt): Promise<boolean> {
+	const row = await env.DB.prepare(`SELECT ${NEWER_TRAINED_RECEIPT} AS newer`)
+		.bind(receipt.messageId, receipt.id)
+		.first<{ newer: number }>();
+	return !!row?.newer;
+}
+
+/**
+ * The first statement of the undo batch. SQLite has no assert, so it evaluates `json()` of a value that is only
+ * valid JSON while the undo may still run: this receipt not yet undone, no newer trained report standing, and the
+ * feedback row as it was read. Otherwise the statement fails and the whole batch rolls back, which makes the
+ * check and the writes one atomic step even if a report or another undo lands in between.
+ */
+function guardStatement(env: CloudflareEnv, receipt: Receipt, plan: Plan): D1PreparedStatement {
+	const conditions = ["EXISTS (SELECT 1 FROM spam_report_receipts WHERE id = ? AND undone_at IS NULL)"];
+	const binds: unknown[] = [receipt.id];
+	if (receipt.trained) {
+		conditions.push(`NOT ${NEWER_TRAINED_RECEIPT}`);
+		binds.push(receipt.messageId, receipt.id);
+	}
+	if (plan.expectedFeedback) {
+		conditions.push(
+			"EXISTS (SELECT 1 FROM spam_feedback WHERE message_id = ? AND classification = ? AND updated_at = ?)",
+		);
+		binds.push(receipt.messageId, plan.expectedFeedback.classification, plan.expectedFeedback.updatedAt);
+	}
+	return env.DB.prepare(`SELECT json(CASE WHEN ${conditions.join(" AND ")} THEN '{}' ELSE 'refused' END)`).bind(
+		...binds,
+	);
+}
+
+/** Lifts what blocking the sender added, but only the parts this report added, and reopens the warnings it closed. */
 async function reverseExtras(env: CloudflareEnv, extras: ReceiptExtras): Promise<void> {
-	if (extras.block) await unblockContact(env, extras.block);
+	if (extras.block)
+		await unblockContact(env, extras.block, {
+			removeRule: extras.block.ruleCreated,
+			clearContact: !extras.block.contactWasBlocked,
+		});
 	if (!extras.closedSuggestionIds?.length) return;
 	const reopened = await getDb(env)
 		.update(agentSuggestions)
@@ -220,34 +275,69 @@ async function reverseExtras(env: CloudflareEnv, extras: ReceiptExtras): Promise
 		);
 }
 
-/** Takes back the training, the place and the phishing extras of one receipt; a second call changes nothing. */
+const hasPendingExtras = (extras: ReceiptExtras) => !!extras.block || !!extras.closedSuggestionIds?.length;
+
+/** Reverses the extras and, once that worked, forgets them; a failure is logged and leaves them for a retry. */
+async function finishExtras(env: CloudflareEnv, receipt: Receipt, extras: ReceiptExtras): Promise<void> {
+	try {
+		await reverseExtras(env, extras);
+		await getDb(env)
+			.update(spamReportReceipts)
+			.set({ extras: JSON.stringify({ previousActor: extras.previousActor }) })
+			.where(eq(spamReportReceipts.id, receipt.id));
+	} catch (error) {
+		console.error("spam.undo_extras_failed", receipt.id, error instanceof Error ? error.message : error);
+		throw error;
+	}
+}
+
+/** Why the guard refused the batch: the receipt was undone meanwhile, or a newer report stands. */
+async function refusalOf(env: CloudflareEnv, receipt: Receipt): Promise<ReceiptUndoResult> {
+	const [current] = await getDb(env)
+		.select({ undoneAt: spamReportReceipts.undoneAt })
+		.from(spamReportReceipts)
+		.where(eq(spamReportReceipts.id, receipt.id))
+		.limit(1);
+	return current?.undoneAt ? "already_undone" : "superseded";
+}
+
+/**
+ * Takes back the training, the place and the phishing extras of one receipt; a second call changes nothing.
+ * A receipt a newer trained report stands on is left untouched ("superseded") so it can run once that one is undone.
+ * The claim (`undone_at`) is written by the same atomic batch as the training, never before it.
+ */
 async function undoReceipt(
 	env: CloudflareEnv,
 	receipt: Receipt,
 	options: { restoreLocation: boolean },
 ): Promise<ReceiptUndoResult> {
-	const db = getDb(env);
-	if (receipt.undoneAt || receipt.createdAt.getTime() < Date.now() - RECEIPT_WINDOW_MS) return "already_undone";
-	// Claiming first makes a second undo, however it arrives, a no-op.
-	const claimed = await db
-		.update(spamReportReceipts)
-		.set({ undoneAt: new Date() })
-		.where(and(eq(spamReportReceipts.id, receipt.id), isNull(spamReportReceipts.undoneAt)))
-		.returning({ id: spamReportReceipts.id });
-	if (claimed.length === 0) return "already_undone";
-
+	if (receipt.createdAt.getTime() < Date.now() - RECEIPT_WINDOW_MS) return "already_undone";
 	const extras = parseExtras(receipt.extras);
+	if (receipt.undoneAt) {
+		// The training is gone already; only extras a failed attempt left behind are still to do.
+		if (!hasPendingExtras(extras)) return "already_undone";
+		await finishExtras(env, receipt, extras);
+		return "undone";
+	}
+	if (receipt.trained && (await hasNewerTrainedReceipt(env, receipt))) return "superseded";
+
+	const plan = await trainingReversal(env, receipt, extras, Math.floor(Date.now() / 1000));
+	const statements = [
+		guardStatement(env, receipt, plan),
+		env.DB.prepare("UPDATE spam_report_receipts SET undone_at = ? WHERE id = ? AND undone_at IS NULL").bind(
+			Math.floor(Date.now() / 1000),
+			receipt.id,
+		),
+		...plan.statements,
+	];
+	if (options.restoreLocation) statements.push(await locationRestore(env, receipt));
 	try {
-		const statements = await trainingReversal(env, receipt, extras, Math.floor(Date.now() / 1000));
-		if (options.restoreLocation) statements.push(await locationRestore(env, receipt));
-		// One atomic batch: it either takes back all of the training and the place or none, so the claim can be released.
-		if (statements.length > 0) await env.DB.batch(statements);
+		await env.DB.batch(statements);
 	} catch (error) {
-		await db.update(spamReportReceipts).set({ undoneAt: null }).where(eq(spamReportReceipts.id, receipt.id));
+		if (/malformed JSON/i.test(error instanceof Error ? error.message : String(error))) return refusalOf(env, receipt);
 		throw error;
 	}
-	// Past the batch the training is gone for good, so the claim stays even if these fail.
-	await reverseExtras(env, extras);
+	if (hasPendingExtras(extras)) await finishExtras(env, receipt, extras);
 	return "undone";
 }
 
@@ -270,39 +360,4 @@ export async function undoSpamReceipt(
 		throw error;
 	}
 	return receipt ? undoReceipt(env, receipt, options) : "missing";
-}
-
-/**
- * Undo of a move to or out of Spam that was not started from a toast (an approved chat move, Mark as spam on a
- * phishing warning): takes back the newest report the message got since `since`. The caller has put the place
- * back already.
- */
-export async function undoLatestSpamReceipt(
-	env: CloudflareEnv,
-	messageId: string,
-	direction: "to_spam" | "from_spam",
-	since: Date,
-): Promise<ReceiptUndoResult> {
-	let receipt: Receipt | undefined;
-	try {
-		[receipt] = await getDb(env)
-			.select()
-			.from(spamReportReceipts)
-			.where(
-				and(
-					eq(spamReportReceipts.messageId, messageId),
-					isNull(spamReportReceipts.undoneAt),
-					gte(spamReportReceipts.createdAt, since),
-					direction === "to_spam"
-						? inArray(spamReportReceipts.classification, ["spam", "phishing"])
-						: eq(spamReportReceipts.classification, "ham"),
-				),
-			)
-			.orderBy(desc(spamReportReceipts.createdAt))
-			.limit(1);
-	} catch (error) {
-		if (isNoSuchTableError(error)) return "missing";
-		throw error;
-	}
-	return receipt ? undoReceipt(env, receipt, { restoreLocation: false }) : "missing";
 }

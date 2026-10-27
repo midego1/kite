@@ -4,8 +4,12 @@ import type { ReputationKey, SpamClassification } from "./types";
 export type ReceiptExtras = {
 	/** Who last trained the message before the report; put back on the feedback row by an undo. */
 	previousActor?: string | null;
-	/** The block this report placed. Absent when the sender was already blocked or was kept. */
-	block?: { userId: string; mailboxId: string; address: string };
+	/**
+	 * What blocking the sender added, as two separate facts: whether this report created the mailbox's Trash rule
+	 * for the address, and whether the contact was already blocked before. Absent when the sender was kept or the
+	 * block was already fully in place.
+	 */
+	block?: { userId: string; mailboxId: string; address: string; ruleCreated: boolean; contactWasBlocked: boolean };
 	/** The phishing warnings this report closed. */
 	closedSuggestionIds?: string[];
 };
@@ -32,4 +36,8 @@ export type SpamFeedbackResult = {
 	previousFolderId: string | null;
 };
 
-export type ReceiptUndoResult = "undone" | "already_undone" | "missing";
+/**
+ * `superseded`: a newer report on the same message is still in place, so this one was left untouched and can
+ * run after the newer one is undone.
+ */
+export type ReceiptUndoResult = "undone" | "already_undone" | "missing" | "superseded";

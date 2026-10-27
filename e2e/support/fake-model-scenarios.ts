@@ -68,7 +68,20 @@ const translationJson = {
 	points: [{ label: "Dates", text: "Tuesday at 10:00." }],
 };
 
+/** One-line summaries in the list (e2e/60-list-summaries.spec.ts): from the triage request, and from their own job. */
+export const LINE_FROM_TRIAGE = "Sam asks whether Tuesday at ten still works for the budget review.";
+export const LINE_FROM_JOB = "A short note about the quarterly budget review and the slides it needs.";
+
 export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
+	"line-question": {
+		triage: () =>
+			json({
+				...benignTriage,
+				category: "fyi",
+				summary: "Sam asks about the budget review.",
+				oneLine: LINE_FROM_TRIAGE,
+			}),
+	},
 	"summary-thread": {
 		triage: () => json(benignTriage),
 		summary: () => json(summaryJson),
@@ -227,6 +240,7 @@ export function scenarioReply(
 	context: { callNumber: number; slowMs: number },
 ): FakeModelReply {
 	if (kind === "compose") return (scenario.compose ?? FAKE_SCENARIOS["compose-write"].compose!)(context);
+	if (kind === "line_summary") return scenario.line ? scenario.line(context) : text(LINE_FROM_JOB);
 	if (kind === "summary") return (scenario.summary ?? FAKE_SCENARIOS["summary-thread"].summary!)(context);
 	if (kind === "summary_translation")
 		return (scenario.translation ?? FAKE_SCENARIOS["summary-thread"].translation!)(context);

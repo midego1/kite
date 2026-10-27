@@ -23,6 +23,7 @@ type CoreQueueMessageKind =
 	| "outbound"
 	| "agent_draft"
 	| "agent_triage"
+	| "agent_line_summary"
 	| "agent_style_backfill"
 	| "mailbox_purge"
 	| "backup"
@@ -36,6 +37,7 @@ const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"email.scheduled": "outbound",
 	"agent.draft": "agent_draft",
 	"agent.triage": "agent_triage",
+	"agent.line_summary": "agent_line_summary",
 	"agent.style_backfill": "agent_style_backfill",
 	"mailbox.purge": "mailbox_purge",
 	"backup.run": "backup",

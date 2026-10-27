@@ -1,9 +1,10 @@
-export type AgentJobKind = "draft" | "triage";
-export type AgentJobQueueMessage = { kind: "agent.draft" | "agent.triage"; jobId: string };
+export type AgentJobKind = "draft" | "triage" | "line_summary";
+export type AgentJobQueueMessage = { kind: "agent.draft" | "agent.triage" | "agent.line_summary"; jobId: string };
 
 const QUEUE_KINDS: Record<AgentJobKind, AgentJobQueueMessage["kind"]> = {
 	draft: "agent.draft",
 	triage: "agent.triage",
+	line_summary: "agent.line_summary",
 };
 
 export function agentJobQueueMessage(kind: AgentJobKind, jobId: string): AgentJobQueueMessage {
@@ -17,6 +18,7 @@ export function agentJobKindOf(body: unknown): AgentJobKind | null {
 	if (typeof jobId !== "string") return null;
 	if (kind === "agent.draft") return "draft";
 	if (kind === "agent.triage") return "triage";
+	if (kind === "agent.line_summary") return "line_summary";
 	return null;
 }
 

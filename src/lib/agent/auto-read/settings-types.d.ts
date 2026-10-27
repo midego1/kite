@@ -34,6 +34,11 @@ export type MailboxAgentSettingsState = {
 	autoReadDailyLimit: number;
 	dailySpendCapMicros: number | null;
 	pausedUntil: Date | null;
+	/** One-line summaries in the message list (migration 0072); off before it is applied. */
+	listSummaries: boolean;
+	/** Whether newsletters, notifications and other bulk or automatic mail get a line too. */
+	listSummariesBulk: boolean;
+	listSummaryDailyLimit: number;
 };
 
 /** A stored `mailbox_agent_settings` row, as far as these helpers read it. */

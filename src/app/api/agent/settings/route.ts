@@ -131,10 +131,11 @@ export async function PUT(request: Request) {
 	const { mailboxId } = values;
 	if ((await saveMailboxAgentSettings(db, values)) === "migration_pending")
 		return Response.json(
-			{ error: "Apply the pending database update to save these instructions", code: "MIGRATION_PENDING" },
+			{ error: "Apply the pending database update to save these settings", code: "MIGRATION_PENDING" },
 			{ status: 409 },
 		);
 	if (!next.autoDraftEnabled) await skipPendingMailboxJobs(env, mailboxId, "draft", "Auto-drafting disabled");
 	if (next.autonomy === "off") await skipPendingMailboxJobs(env, mailboxId, "triage", "autonomy_off");
+	if (!next.listSummaries) await skipPendingMailboxJobs(env, mailboxId, "line_summary", "list_summaries_off");
 	return Response.json({ ok: true });
 }

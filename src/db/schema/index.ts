@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, index, uniqueIndex, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
-import { agentSpendCapColumns, instructionColumns } from "./agent-columns";
+import { agentSpendCapColumns, mailboxAgentExtraColumns } from "./agent-columns";
 
 export const users = sqliteTable(
 	"users",
@@ -793,7 +793,7 @@ export const mailboxAgentSettings = sqliteTable("mailbox_agent_settings", {
 	modelId: text("model_id"),
 	autoDraftEnabled: integer("auto_draft_enabled", { mode: "boolean" }).notNull().default(false),
 	reviewerUserId: text("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
-	...instructionColumns(),
+	...mailboxAgentExtraColumns(),
 	dailyLimit: integer("daily_limit").notNull().default(25),
 	autonomy: text("autonomy", { enum: ["off", "suggest", "act", "auto"] })
 		.notNull()
@@ -895,7 +895,7 @@ export const agentJobs = sqliteTable(
 		leaseUntil: integer("lease_until", { mode: "timestamp" }),
 		draftId: text("draft_id").references(() => messages.id, { onDelete: "set null" }),
 		reason: text("reason"),
-		kind: text("kind", { enum: ["draft", "triage"] })
+		kind: text("kind", { enum: ["draft", "triage", "line_summary"] })
 			.notNull()
 			.default("draft"),
 		createdAt: integer("created_at", { mode: "timestamp" })

@@ -14,6 +14,9 @@ export type AutoReadSettingsResponse = {
 		autoReadDailyLimit?: number;
 		dailySpendCapMicros?: number | null;
 		pausedUntil?: string | null;
+		listSummaries?: boolean;
+		listSummariesBulk?: boolean;
+		listSummaryDailyLimit?: number;
 	};
 	models?: string[];
 	canManage?: boolean;
@@ -53,6 +56,9 @@ export type AutoReadUpdateBody = {
 	triageModelId: string | null;
 	autoReadDailyLimit: number;
 	dailySpendCapMicros: number | null;
+	listSummaries?: boolean;
+	listSummariesBulk?: boolean;
+	listSummaryDailyLimit?: number;
 };
 
 export type AutoReadAdminValues = {

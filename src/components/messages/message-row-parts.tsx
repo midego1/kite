@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import type { MouseEvent } from "react";
-import { Clock, TriangleAlert, type LucideIcon } from "lucide-react";
+import { Clock, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react";
 import { SuggestionBadge } from "@/components/agent/suggestion-badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -115,6 +115,17 @@ export function MessageRowBadges({ message, folder }: { message: Message; folder
 					</span>
 				);
 			})}
+		</span>
+	);
+}
+
+/** The row's preview, or its one-line AI summary in its place with a small mark and the preview as the tooltip. */
+export function MessageRowPreview({ preview, line }: { preview: string; line?: string }) {
+	if (!line) return <>{preview}</>;
+	return (
+		<span data-line-summary title={preview}>
+			<Sparkles aria-label="AI summary" className="mr-1 inline h-3 w-3 align-[-1px] text-neutral-400" />
+			{line}
 		</span>
 	);
 }

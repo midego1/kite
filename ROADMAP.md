@@ -238,7 +238,7 @@ Specified in [docs/specs/ai-writing.md](docs/specs/ai-writing.md); proposed, ope
 
 ## Milestone 28: Thread summaries (proposed)
 
-Specified in [docs/specs/thread-summaries.md](docs/specs/thread-summaries.md); proposed, open questions decided on 2026-10-26. After milestone 27. Migration `0072` (`0070` went to the writing style, `0071` is claimed by install telemetry). Item 1 is being built.
+Specified in [docs/specs/thread-summaries.md](docs/specs/thread-summaries.md); proposed, open questions decided on 2026-10-26. After milestone 27. Migration `0072` (`0070` went to the writing style, `0071` is claimed by install telemetry). Item 1 shipped in #137; item 2 is being built.
 
 1. **Summarize in the reader** (4–5 days): a button for a conversation or a message, in the conversation's language with **Translate to <language>** when that differs from the user's, cached per mailbox, marked out of date when the conversation changes, never for spam, trash, screened mail or drafts. Not in backups (derived).
 2. **One-line summaries in the message list** (3 days): optional per mailbox, new mail only, never for suspicious or bulk mail unless allowed, made inside the automatic-reading triage request when there is one so no message is summarised twice, under every automatic-reading gate and cap.

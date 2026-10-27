@@ -3,7 +3,7 @@ import { okJson } from "./auto-read";
 
 export type AgentJobRow = {
 	id: string;
-	kind: "draft" | "triage";
+	kind: "draft" | "triage" | "line_summary";
 	status: string;
 	reason: string | null;
 	draftId: string | null;

@@ -34,8 +34,19 @@ export interface ModuleNoticeNotification {
 	type: "module_notice";
 }
 
+/** A message's one-line summary arrived; sent to everyone who can read the mailbox, so the list row refreshes. */
+export interface MessageSummaryNotification {
+	mailboxId: string;
+	messageId: string;
+	type: "message_summary";
+}
+
 export type RealtimePayload =
-	NewMessageNotification | AgentDraftNotification | AgentSuggestionNotification | ModuleNoticeNotification;
+	| NewMessageNotification
+	| AgentDraftNotification
+	| AgentSuggestionNotification
+	| ModuleNoticeNotification
+	| MessageSummaryNotification;
 
 export interface MailboxRevisionRow {
 	mailbox_id: string;

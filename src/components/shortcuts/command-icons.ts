@@ -32,6 +32,7 @@ export const COMMAND_ICONS: Record<string, LucideIcon> = {
 	"nav-archived": Archive,
 	"nav-spam": ShieldAlert,
 	"nav-trash": Trash2,
+	"open-assistant": Sparkles,
 	"nav-for-you": Sparkles,
 	"nav-activity": Activity,
 	"nav-settings": Settings,

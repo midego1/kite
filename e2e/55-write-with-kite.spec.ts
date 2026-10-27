@@ -449,8 +449,9 @@ test.describe("Write with Kite", () => {
 		const account = await newAccount("wwr");
 		try {
 			let limited = false;
-			// Each refused body still counts against the per-user limit (120 a minute), which runs first.
-			for (let attempt = 0; attempt < 130 && !limited; attempt++) {
+			// Each refused body still counts against the per-user limit (120 a minute), which runs first. The window is
+			// fixed, so 130 requests can straddle two windows without passing 120 in either; 250 cannot.
+			for (let attempt = 0; attempt < 250 && !limited; attempt++) {
 				const response = await account.api.post("/api/agent/compose", { data: { mailboxId: account.mailboxId } });
 				if (response.status() === 429) limited = true;
 				else expect(response.status()).toBe(400);

@@ -11,7 +11,12 @@ import { useLoadRemoteImages } from "@/components/messages/use-load-remote-image
 import { runSingleMessageAction } from "@/components/message-actions/utils";
 import { sanitizeEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/email-html-sanitizer";
 import { collapseQuotedEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/quote-collapse-utils";
-import { getMessageBodyDisplay, resolveInlineAttachmentUrls } from "@/app/(dashboard)/inbox/[messageId]/utils";
+import {
+	formatAttachmentSize,
+	getMessageBodyDisplay,
+	resolveInlineAttachmentUrls,
+} from "@/app/(dashboard)/inbox/[messageId]/utils";
+import { getAttachmentVisual } from "@/components/message-attachment-card-utils";
 
 import { cn } from "@/lib/utils";
 import type { ConversationMessageCardProps, ConversationThreadProps } from "./conversation-thread-types";
@@ -120,6 +125,33 @@ export function ConversationThread({
 				</ol>
 			</section>
 		</>
+	);
+}
+
+/** An earlier message's attachment as the same chip as the open message's: its type, name and size. */
+function ThreadAttachmentChip({
+	messageId,
+	attachment,
+}: {
+	messageId: string;
+	attachment: ConversationMessageCardProps["message"]["attachments"][number];
+}) {
+	const visual = getAttachmentVisual(attachment);
+	const Icon = visual.icon;
+	const iconColor = visual.iconClassName
+		.split(" ")
+		.filter((name) => name.startsWith("text-"))
+		.join(" ");
+	return (
+		<a
+			href={`/api/messages/${messageId}/attachments/${attachment.id}`}
+			title={`${attachment.filename} · ${visual.label}`}
+			className="flex h-9 max-w-full items-center gap-2 rounded-lg bg-neutral-100 px-2.5 text-sm transition-colors hover:bg-neutral-200"
+		>
+			<Icon className={cn("h-4 w-4 shrink-0", iconColor)} aria-hidden="true" />
+			<span className="min-w-0 max-w-48 truncate text-neutral-900">{attachment.filename}</span>
+			<span className="shrink-0 text-neutral-500">{formatAttachmentSize(attachment.size)}</span>
+		</a>
 	);
 }
 
@@ -257,13 +289,7 @@ export function ConversationMessageCard({
 							<ul className="mt-4 flex flex-wrap gap-2">
 								{attachments.map((attachment) => (
 									<li key={attachment.id}>
-										<a
-											href={`/api/messages/${message.id}/attachments/${attachment.id}`}
-											className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
-										>
-											<Paperclip className="h-3 w-3" />
-											<span className="max-w-48 truncate">{attachment.filename}</span>
-										</a>
+										<ThreadAttachmentChip messageId={message.id} attachment={attachment} />
 									</li>
 								))}
 							</ul>

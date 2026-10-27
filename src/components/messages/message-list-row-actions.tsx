@@ -19,7 +19,7 @@ export function MessageListRowActions({ message, onAction, compact = false }: Me
 	return (
 		<>
 			<div
-				className={`absolute z-10 flex items-center gap-1 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100 ${snoozeOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"} ${compact ? "right-0 top-0 h-6 gap-0.5" : "right-6 top-1/2 -translate-y-1/2 bg-[#f2f6fc] pl-3"}`}
+				className={`absolute z-10 flex items-center gap-1 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100 ${snoozeOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"} ${compact ? "-right-1 -top-1 h-7 gap-0.5 rounded-lg border border-neutral-200 bg-white px-0.5 shadow-sm" : "right-6 top-1/2 -translate-y-1/2 bg-[#f2f6fc] pl-3"}`}
 			>
 				<Tooltip label="Archive">
 					<Button

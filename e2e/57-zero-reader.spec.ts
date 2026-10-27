@@ -358,3 +358,32 @@ test("notices show over the page while the sidebar is the icon rail and on phone
 	await expect(phonePage.getByRole("dialog", { name: "Menu" })).toHaveCount(0);
 	await phone.close();
 });
+
+test("a row's hover actions get their own space, clear of the sender and the star, at narrow and wide list widths", async ({
+	page,
+}) => {
+	const subject = await deliverOne("Inline hover");
+	await page.goto("/inbox");
+	const list = page.getByRole("list", { name: "Inbox" });
+	const row = list.locator("[data-message-row]").filter({ has: page.getByText(subject, { exact: true }) });
+	await expect(row).toBeVisible();
+	const handle = page.getByRole("separator", { name: "Resize message list" });
+	for (const key of ["ArrowLeft", "ArrowRight"] as const) {
+		// As narrow as the list goes, then wide.
+		await handle.focus();
+		for (let step = 0; step < 30; step++) await page.keyboard.press(key);
+		await row.hover();
+		const archive = row.getByRole("button", { name: /^Archive/ });
+		await expect(archive).toBeVisible();
+		const pill = (await archive.locator("xpath=..").boundingBox())!;
+		const sender = (await row
+			.getByText(/Inline Sender$/)
+			.first()
+			.boundingBox())!;
+		const rowBox = (await row.boundingBox())!;
+		expect(sender.x + sender.width, key).toBeLessThanOrEqual(pill.x);
+		expect(pill.x + pill.width, key).toBeLessThanOrEqual(rowBox.x + rowBox.width);
+		await expect(row.getByRole("button", { name: "Star", exact: true })).toBeHidden();
+		await page.mouse.move(0, 0);
+	}
+});

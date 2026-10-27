@@ -15,7 +15,9 @@ import { Tooltip } from "./ui/tooltip";
 const MAX_MAILBOX_SQUARES = 4;
 
 function CollapseButton() {
-	const { minimal, toggle } = useSidebar();
+	const { minimal, toggle, mobile } = useSidebar();
+	// On phones the sidebar is a sheet with its own close button.
+	if (mobile) return null;
 	const label = minimal ? "Expand menu" : "Collapse menu";
 	return (
 		<Tooltip label={label} placement="right">

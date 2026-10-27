@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, index, uniqueIndex, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
+import { agentSpendCapColumns, instructionColumns } from "./agent-columns";
 
 export const users = sqliteTable(
 	"users",
@@ -746,7 +747,7 @@ export const appSettings = sqliteTable("app_settings", {
 	/** Install-wide kill switch for automatic reading. */
 	agentAutoReadEnabled: integer("agent_auto_read_enabled", { mode: "boolean" }).notNull().default(true),
 	agentFullAutoAllowed: integer("agent_full_auto_allowed", { mode: "boolean" }).notNull().default(false),
-	agentDailySpendCapMicros: integer("agent_daily_spend_cap_micros").notNull().default(2_000_000),
+	...agentSpendCapColumns(),
 	/** Automatic reading sends message content to an external OpenAI-compatible provider only when allowed. */
 	agentExternalAutoReadAllowed: integer("agent_external_auto_read_allowed", { mode: "boolean" })
 		.notNull()
@@ -792,7 +793,7 @@ export const mailboxAgentSettings = sqliteTable("mailbox_agent_settings", {
 	modelId: text("model_id"),
 	autoDraftEnabled: integer("auto_draft_enabled", { mode: "boolean" }).notNull().default(false),
 	reviewerUserId: text("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
-	instructions: text("instructions").notNull().default(""),
+	...instructionColumns(),
 	dailyLimit: integer("daily_limit").notNull().default(25),
 	autonomy: text("autonomy", { enum: ["off", "suggest", "act", "auto"] })
 		.notNull()

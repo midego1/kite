@@ -6,8 +6,8 @@ import type { AutonomyLevel } from "./settings-types";
 
 export type AgentActionRow = typeof agentActions.$inferSelect;
 
-/** The mailbox permission an action, or its undo, uses. */
-export type ActionPermission = "manage" | "send_on_behalf";
+/** The mailbox permission an action, or its undo, uses; `read` is enough for changing read state. */
+export type ActionPermission = "read" | "manage" | "send_on_behalf";
 
 export type ActionUndoRule = {
 	windowMs: number;
@@ -26,7 +26,7 @@ export type ActionMeta = {
 	undo: Readonly<Record<string, ActionUndoRule | null>>;
 };
 
-export type ActionPermissions = { canManage: boolean; canSendOnBehalf: boolean };
+export type ActionPermissions = { canRead: boolean; canManage: boolean; canSendOnBehalf: boolean };
 
 export type UndoRefusal = { status: 403 | 409; error: string };
 

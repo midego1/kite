@@ -23,6 +23,10 @@ export type MailboxAgentSettingsState = {
 	autoDraftEnabled: boolean;
 	reviewerUserId: string | null;
 	instructions: string;
+	/** Task-specific preferences (migration 0069); they read as empty before it is applied. */
+	chatInstructions: string;
+	draftInstructions: string;
+	summaryInstructions: string;
 	dailyLimit: number;
 	autonomy: AutonomyLevel;
 	capabilities: AutoReadCapabilities;
@@ -49,6 +53,9 @@ export type AutoReadInstallSettings = {
 	autoReadEnabled: boolean;
 	externalAutoReadAllowed: boolean;
 	dailySpendCapMicros: number;
+	/** Daily input tokens without model rates (migration 0069; the default before it). */
+	autoReadTokenCap: number;
+	chatTokenCap: number;
 };
 
 export type AutoReadProviderSummary = {

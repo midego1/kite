@@ -47,6 +47,7 @@ export type DatabaseBackupTable =
 	| "mfa_recovery_codes"
 	| "login_challenges"
 	| "mailbox_agent_settings"
+	| "user_ai_settings"
 	| "agent_conversations"
 	| "agent_chat_messages"
 	| "agent_jobs"

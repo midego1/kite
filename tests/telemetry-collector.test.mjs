@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, rmSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -28,7 +28,13 @@ await build({
 	packages: "external",
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
-const { default: collector, rollUpOldDays, RAW_RETENTION_DAYS } = await load("collector");
+const {
+	default: collector,
+	rollUpOldDays,
+	RAW_RETENTION_DAYS,
+	MIN_PUBLIC_INSTALLS,
+	SMALL_CELL,
+} = await load("collector");
 const { parseHeartbeat } = await load("validate");
 const { SqliteDatabase } = await load("runtime");
 
@@ -101,7 +107,8 @@ test("the validator accepts exactly schema version 2, with every count a range",
 async function setup(t, overrides = {}) {
 	const sqlite = new SqliteDatabase(":memory:");
 	t.after(() => sqlite.db.close());
-	sqlite.db.exec(readFileSync(join(collectorDir, "migrations/0001_init.sql"), "utf8"));
+	const migrations = join(collectorDir, "migrations");
+	for (const file of readdirSync(migrations).sort()) sqlite.db.exec(readFileSync(join(migrations, file), "utf8"));
 	return { sqlite, env: { DB: sqlite, STATS_TOKEN: TOKEN, ...overrides } };
 }
 
@@ -121,11 +128,11 @@ function post(body, headers = {}) {
 	});
 }
 
-const erase = (env, id, method = "DELETE") =>
+const erase = (env, id, method = "DELETE", ip = "203.0.113.9") =>
 	collector.fetch(
 		new Request(`https://collector.example.test/v1/installs/${id}`, {
 			method,
-			headers: { "CF-Connecting-IP": "203.0.113.9", "CF-Worker": "mail.example.com" },
+			headers: { "CF-Connecting-IP": ip, "CF-Worker": "mail.example.com" },
 		}),
 		env,
 	);
@@ -217,10 +224,14 @@ test("DELETE /v1/installs/<id> erases every report of that id and is rate-limite
 	assert.equal(dailyCount(sqlite, other), 1, "other installs stay");
 	assert.equal((await erase(env, INSTALL_ID)).status, 204, "the same answer when nothing is left");
 	assert.equal((await erase(env, idFor("c"))).status, 204, "and for an id never seen");
-	assert.deepEqual(keys.at(-1), { key: "erase" }, "one shared key: no IP address is read");
+	assert.deepEqual(keys.at(-1), { key: "203.0.113.9" }, "keyed per connecting address");
+	await erase(env, INSTALL_ID, "DELETE", "198.51.100.7");
+	assert.deepEqual(keys.at(-1), { key: "198.51.100.7" });
 
+	const used = keys.length;
 	assert.equal((await erase(env, "owner@example.com")).status, 400);
 	assert.equal((await erase(env, INSTALL_ID.toUpperCase())).status, 400);
+	assert.equal(keys.length, used, "a malformed id is refused before it uses up the limit");
 	assert.equal((await erase(env, `${INSTALL_ID}/extra`)).status, 404);
 	assert.equal((await erase(env, other, "GET")).status, 405);
 	assert.equal((await erase(env, other, "POST")).status, 405);
@@ -229,15 +240,29 @@ test("DELETE /v1/installs/<id> erases every report of that id and is rate-limite
 	allow = false;
 	assert.equal((await erase(env, other)).status, 429);
 	assert.equal(dailyCount(sqlite, other), 1, "nothing is deleted over the limit");
+	const dump = Buffer.from(await sqlite.dump()).toString("latin1");
+	assert.ok(!dump.includes("203.0.113.9"), "the address is never stored");
 });
 
-test("the public summary has totals and ranges, never an install id", async (t) => {
+const numbered = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+/** Twelve installs that reported today: 9 on one version and 3 on another, 2 on Node, 2 with Drive and 100+ users. */
+function seedPublic(sqlite, installs = 12) {
+	for (let n = 0; n < installs; n += 1)
+		insertDay(sqlite, daysAgo(0), numbered(n), {
+			version: n < 9 ? "2026.10.26.0" : "2026.10.20.0",
+			runtime: n < 2 ? "node" : "workers",
+			users_total: n < 2 ? "100+" : "2-5",
+			modules_enabled: n < 2 ? ["calendar", "drive"] : ["calendar"],
+		});
+}
+
+test("the public summary shows totals and ranges, small counts as <5 and never an install id", async (t) => {
 	const { sqlite, env } = await setup(t);
-	// a: today (node) and 3 days ago; b: 5 days ago with other ranges; c: 45 days ago (outside 30 days).
-	insertDay(sqlite, daysAgo(0), idFor("a"), { runtime: "node", modules_enabled: ["calendar"] });
-	insertDay(sqlite, daysAgo(3), idFor("a"), { users_total: "100+", version: "2026.10.20.0" });
-	insertDay(sqlite, daysAgo(5), idFor("b"), { users_total: "1", inbound_1d: "1000+", modules_enabled: [] });
-	insertDay(sqlite, daysAgo(45), idFor("c"));
+	assert.equal(SMALL_CELL, 5);
+	seedPublic(sqlite);
+	insertDay(sqlite, daysAgo(3), numbered(0)); // an earlier report of an install counted today
+	insertDay(sqlite, daysAgo(45), numbered(99)); // outside the 30 days
 	sqlite.db
 		.prepare("INSERT INTO aggregates (day, dimension, value, installs) VALUES (?, 'installs', '', 7)")
 		.run(daysAgo(200));
@@ -246,30 +271,80 @@ test("the public summary has totals and ranges, never an install id", async (t) 
 	assert.equal(response.status, 200);
 	assert.equal(response.headers.get("Cache-Control"), "public, max-age=3600");
 	assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
+	assert.match(response.headers.get("Content-Type"), /^application\/json/);
 	const text = await response.text();
-	for (const letter of ["a", "b", "c"]) assert.ok(!text.includes(idFor(letter)), "no install id");
+	for (const n of [0, 11, 99]) assert.ok(!text.includes(numbered(n)), "no install id");
 	const body = JSON.parse(text);
-	assert.equal(body.installs_30d, 2);
-	assert.deepEqual(body.versions, [{ version: "2026.10.26.0", installs: 2 }], "each install's latest report");
-	assert.deepEqual(body.runtimes, [
-		{ runtime: "node", installs: 1 },
-		{ runtime: "workers", installs: 1 },
+	assert.equal(body.installs_30d, 12);
+	assert.deepEqual(body.versions, [
+		{ version: "2026.10.26.0", installs: 9 },
+		{ version: "2026.10.20.0", installs: "<5" },
 	]);
-	assert.deepEqual(body.modules, [{ module: "calendar", installs: 1 }]);
-	assert.deepEqual(body.ranges.users_total, { 1: 1, "2-5": 1 });
-	assert.deepEqual(body.ranges.inbound_1d, { "1-10": 1, "1000+": 1 });
-	assert.deepEqual(Object.keys(body.ranges).length, 8);
+	assert.deepEqual(body.runtimes, [
+		{ runtime: "workers", installs: 10 },
+		{ runtime: "node", installs: "<5" },
+	]);
+	assert.deepEqual(body.modules, [
+		{ module: "calendar", installs: 12 },
+		{ module: "drive", installs: "<5" },
+	]);
+	assert.deepEqual(body.ranges.users_total, { "100+": "<5", "2-5": 10 });
+	assert.deepEqual(body.ranges.inbound_1d, { "1-10": 12 });
+	assert.equal(Object.keys(body.ranges).length, 8);
 	assert.deepEqual(body.installs_by_day, [
 		{ day: daysAgo(200), installs: 7 },
-		{ day: daysAgo(45), installs: 1 },
-		{ day: daysAgo(5), installs: 1 },
-		{ day: daysAgo(3), installs: 1 },
-		{ day: daysAgo(0), installs: 1 },
+		{ day: daysAgo(45), installs: "<5" },
+		{ day: daysAgo(3), installs: "<5" },
+		{ day: daysAgo(0), installs: 12 },
 	]);
 	assert.equal(
 		(await collector.fetch(new Request("https://collector.example.test/v1/summary", { method: "POST" }), env)).status,
 		405,
 	);
+});
+
+test("below ten installs in 30 days the public summary shows only their number", async (t) => {
+	const { sqlite, env } = await setup(t);
+	assert.equal(MIN_PUBLIC_INSTALLS, 10);
+	seedPublic(sqlite, 9);
+	const body = await (await get(env, "/v1/summary")).json();
+	assert.deepEqual(Object.keys(body).sort(), ["generated_at", "installs_30d"]);
+	assert.equal(body.installs_30d, 9);
+	// The operator's stats keep the exact figures.
+	const stats = await (await get(env, "/v1/stats", TOKEN)).json();
+	assert.deepEqual(stats.runtimes, [
+		{ runtime: "workers", installs: 7 },
+		{ runtime: "node", installs: 2 },
+	]);
+});
+
+test("the public summary is stored and recomputed by the daily cron, not on every request", async (t) => {
+	const { sqlite, env } = await setup(t);
+	seedPublic(sqlite);
+	assert.equal((await (await get(env, "/v1/summary")).json()).installs_30d, 12, "computed once when none is stored");
+	const queries = [];
+	const counting = {
+		...env,
+		DB: new Proxy(sqlite, {
+			get(target, property) {
+				if (property === "prepare")
+					return (sql) => {
+						queries.push(sql);
+						return target.prepare(sql);
+					};
+				const value = target[property];
+				return typeof value === "function" ? value.bind(target) : value;
+			},
+		}),
+	};
+	insertDay(sqlite, daysAgo(0), numbered(50));
+	assert.equal((await (await get(counting, "/v1/summary")).json()).installs_30d, 12, "the stored summary");
+	assert.deepEqual(queries, ["SELECT body FROM summary_cache WHERE id = 1"], "one read per public request");
+
+	const pending = [];
+	await collector.scheduled({ scheduledTime: Date.now() }, env, { waitUntil: (promise) => pending.push(promise) });
+	await Promise.all(pending);
+	assert.equal((await (await get(env, "/v1/summary")).json()).installs_30d, 13, "refreshed by the cron");
 });
 
 test("stats need the bearer token and count distinct installs", async (t) => {
@@ -345,8 +420,8 @@ test("after 90 days daily rows become aggregates without install ids", async (t)
 		2,
 		"running again counts nothing twice",
 	);
-	const summary = await (await get(env, "/v1/summary")).json();
-	assert.deepEqual(summary.installs_by_day.slice(0, 2), [
+	const stats = await (await get(env, "/v1/stats", TOKEN)).json();
+	assert.deepEqual(stats.installs_by_day.slice(0, 2), [
 		{ day: old, installs: 2 },
 		{ day: daysAgo(95), installs: 1 },
 	]);

@@ -31,8 +31,8 @@ Michiel de Gooijer (midego) on Cloudflare (data requests: privacy@midego.net),
 unless `KITE_TELEMETRY_URL` names another collector or is empty. On Workers,
 Cloudflare adds a `CF-Worker` header naming the Worker's zone (the domain or
 `workers.dev` subdomain) to the request, which Kite cannot remove; on Node the
-collector sees the server's IP address. The collector does not read, log or
-store either; daily reports are kept 90 days, then only totals without ids.
+collector sees the server's IP address. The collector logs and stores
+neither (an erasure request's address is only its rate-limit key); daily reports are kept 90 days, then only totals without ids.
 Turning statistics off asks the collector to erase the install's reports. `telemetry_state` is not in Kite's backups, but a copy
 of the database file or a D1 Time Travel restore carries the same install id.
 See [Privacy](privacy.md#usage-statistics-opt-in).

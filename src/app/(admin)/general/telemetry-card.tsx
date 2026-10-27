@@ -113,8 +113,8 @@ export function TelemetryCard() {
 				<p>
 					The request itself can say more than the report. On Cloudflare Workers, Cloudflare adds a{" "}
 					<code>CF-Worker</code> header naming this Worker’s zone (your domain or workers.dev subdomain), which Kite
-					cannot remove; on Node/Docker the collector sees your server’s IP address. The collector does not read, log or
-					store either, but Cloudflare’s own analytics for the collector’s zone may record a sample of IP addresses.
+					cannot remove; on Node/Docker the collector sees your server’s IP address. The collector does not log or store
+					either, but Cloudflare’s own analytics for the collector’s zone may record a sample of IP addresses.
 				</p>
 				<div className="space-y-2 rounded-xl bg-neutral-50 p-4">
 					<p className="font-medium text-neutral-900">Exactly what is sent</p>

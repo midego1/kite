@@ -13,6 +13,10 @@ const DAY_MS = 86_400_000;
 export const RAW_RETENTION_DAYS = 90;
 /** How far back the public summary lists installs per day. */
 const HISTORY_DAYS = 365;
+/** Public counts below this are shown as `"<5"`, so a small group cannot be singled out. */
+export const SMALL_CELL = 5;
+/** Below this many installs in the last 30 days the public summary shows only that number. */
+export const MIN_PUBLIC_INSTALLS = 10;
 const NO_STORE = { "Cache-Control": "no-store" };
 const PUBLIC = { "Cache-Control": "public, max-age=3600", "Access-Control-Allow-Origin": "*" };
 const INSTALL_PATH = /^\/v1\/installs\/([^/]+)$/;
@@ -56,10 +60,12 @@ async function heartbeat(request: Request, env: CollectorEnv, now: number): Prom
  * Erasure: knowing the random install id is enough. Deletes every daily row of that id (the aggregates hold no ids)
  * and answers 204 whether or not there were any, so the answer says nothing about which ids exist.
  */
-async function eraseInstall(env: CollectorEnv, id: string): Promise<Response> {
-	// One shared limit for every caller: the collector never reads IP addresses, so it cannot limit per sender.
-	if (env.ERASE_RATE_LIMIT && !(await env.ERASE_RATE_LIMIT.limit({ key: "erase" })).success) return empty(429);
+async function eraseInstall(request: Request, env: CollectorEnv, id: string): Promise<Response> {
+	// A malformed id is refused before it can use up anyone's limit.
 	if (!isInstallId(id)) return json({ error: "invalid_install_id" }, 400);
+	// Per connecting address: used only as the rate limiter's key, never logged or stored.
+	const key = request.headers.get("CF-Connecting-IP") ?? "unknown";
+	if (env.ERASE_RATE_LIMIT && !(await env.ERASE_RATE_LIMIT.limit({ key })).success) return empty(429);
 	await env.DB.prepare("DELETE FROM daily WHERE install_id = ?").bind(id).run();
 	return empty(204);
 }
@@ -143,6 +149,52 @@ async function summary(db: D1Database, now: number) {
 	};
 }
 
+type Summary = Awaited<ReturnType<typeof summary>>;
+type PublicCount = number | "<5";
+
+const cell = (installs: number): PublicCount => (installs < SMALL_CELL ? "<5" : installs);
+
+/**
+ * What `GET /v1/summary` shows: only `installs_30d` until `MIN_PUBLIC_INSTALLS` installs reported, and every other
+ * count below `SMALL_CELL` as `"<5"`. The token-protected stats keep the exact figures.
+ */
+export function publicSummary(totals: Summary) {
+	const { generated_at, installs_30d } = totals;
+	if (installs_30d < MIN_PUBLIC_INSTALLS) return { generated_at, installs_30d };
+	const cells = <T extends { installs: number }>(rows: T[]) =>
+		rows.map((row) => ({ ...row, installs: cell(row.installs) }));
+	return {
+		generated_at,
+		installs_30d,
+		versions: cells(totals.versions),
+		runtimes: cells(totals.runtimes),
+		modules: cells(totals.modules),
+		ranges: Object.fromEntries(
+			Object.entries(totals.ranges).map(([field, counts]) => [
+				field,
+				Object.fromEntries(Object.entries(counts).map(([range, installs]) => [range, cell(installs)])),
+			]),
+		),
+		installs_by_day: cells(totals.installs_by_day),
+	};
+}
+
+/** Computes the public summary and stores it, so public requests read one row instead of running the queries. */
+export async function refreshPublicSummary(db: D1Database, now: number): Promise<string> {
+	const body = JSON.stringify(publicSummary(await summary(db, now)));
+	await db
+		.prepare("INSERT INTO summary_cache (id, body) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET body = excluded.body")
+		.bind(body)
+		.run();
+	return body;
+}
+
+/** The stored summary, refreshed by the daily cron; computed once when there is none yet (a fresh deploy). */
+async function publicSummaryBody(db: D1Database, now: number): Promise<string> {
+	const row = await db.prepare("SELECT body FROM summary_cache WHERE id = 1").first<{ body: string }>();
+	return row?.body ?? refreshPublicSummary(db, now);
+}
+
 /** The summary plus how many installs are active, for the operator. "Active in N days": a report on or after that UTC day. */
 async function stats(db: D1Database, now: number) {
 	const active = (days: number) =>
@@ -185,10 +237,12 @@ export default {
 		const now = Date.now();
 		if (pathname === "/v1/heartbeat") return request.method === "POST" ? heartbeat(request, env, now) : empty(405);
 		const install = INSTALL_PATH.exec(pathname);
-		if (install) return request.method === "DELETE" ? eraseInstall(env, install[1]) : empty(405);
+		if (install) return request.method === "DELETE" ? eraseInstall(request, env, install[1]) : empty(405);
 		if (pathname === "/v1/summary") {
 			if (request.method !== "GET") return empty(405);
-			return json(await summary(env.DB, now), 200, PUBLIC);
+			return new Response(await publicSummaryBody(env.DB, now), {
+				headers: { ...PUBLIC, "Content-Type": "application/json" },
+			});
 		}
 		if (pathname === "/v1/stats") {
 			if (request.method !== "GET") return empty(405);
@@ -198,6 +252,8 @@ export default {
 		return empty(404);
 	},
 	async scheduled(controller: ScheduledController, env: CollectorEnv, ctx: ExecutionContext): Promise<void> {
-		ctx.waitUntil(rollUpOldDays(env, controller.scheduledTime));
+		ctx.waitUntil(
+			rollUpOldDays(env, controller.scheduledTime).then(() => refreshPublicSummary(env.DB, controller.scheduledTime)),
+		);
 	},
 } satisfies ExportedHandler<CollectorEnv>;

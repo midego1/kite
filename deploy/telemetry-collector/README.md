@@ -7,13 +7,13 @@ What Kite sends, when, and how operators turn it off is documented in [Privacy �
 ## Operator and data protection
 
 - **Operator (controller):** Michiel de Gooijer (midego).
-- **Contact for questions and data requests:** privacy@midego.net. An install id from Admin → General is enough to find and erase an install's reports.
+- **Contact for questions and data requests:** privacy@midego.net. An install id from Admin → General is enough to find and erase an install's reports. `midego.net` receives mail through Cloudflare Email Routing: confirm this address has a routing rule to a mailbox you read (step 0 below) before going live.
 - **Legal basis:** consent. Nothing is sent until the owner of an install turns statistics on, and turning them off withdraws it and erases the reports (below).
 - **Processor:** Cloudflare (Workers, D1 and the `midego.net` zone).
 - **Retention:** daily reports, the only rows with an install id, are kept for 90 days. The daily cron then counts them into per-day totals without ids (`aggregates`) and deletes them.
-- **Pseudonymous, not anonymous:** the install id links one install's daily reports. Requests from installs on Cloudflare Workers carry a `CF-Worker` header that Cloudflare adds, naming the sending Worker's zone (the operator's domain or `workers.dev` subdomain), which Kite cannot remove; Node/Docker installs arrive from their server's IP address. The collector reads, logs and stores neither, and `observability` is off in `wrangler.jsonc` so Workers Logs do not record requests. Cloudflare still sees the connecting address to route the request, and Cloudflare's zone analytics for `midego.net` may record a sample of requests with their IP addresses.
+- **Pseudonymous, not anonymous:** the install id links one install's daily reports. Requests from installs on Cloudflare Workers carry a `CF-Worker` header that Cloudflare adds, naming the sending Worker's zone (the operator's domain or `workers.dev` subdomain), which Kite cannot remove; Node/Docker installs arrive from their server's IP address. The collector logs and stores neither: it reads `CF-Connecting-IP` only as the rate-limit key of `DELETE /v1/installs/<id>` and never reads `CF-Worker`. `observability` is off in `wrangler.jsonc` so Workers Logs do not record requests. Cloudflare still sees the connecting address to route the request, and Cloudflare's zone analytics for `midego.net` may record a sample of requests with their IP addresses.
 
-Do not add code that reads `CF-Worker`, `CF-Connecting-IP` or similar headers: the privacy page promises they are ignored.
+Do not add code that logs or stores `CF-Worker`, `CF-Connecting-IP` or similar headers, or reads them for anything but the erasure rate limit: the privacy page promises it.
 
 ## API
 
@@ -47,17 +47,20 @@ Do not add code that reads `CF-Worker`, `CF-Connecting-IP` or similar headers: t
 
 ### `DELETE /v1/installs/<install_id>`
 
-Erases every daily report of that install id. Knowing the random id is enough; there is no other authentication. Kite calls it when the owner turns statistics off. Answers `204` whether or not there were reports (so it does not reveal which ids exist), `400` for an id that is not a lowercase UUID v4, `405` for another method and `429` over the rate limit: 30 requests a minute across all callers (the `ERASE_RATE_LIMIT` binding; the collector never reads IP addresses, so the limit is shared). Totals already rolled up after 90 days hold no ids and are not affected.
+Erases every daily report of that install id. Knowing the random id is enough; there is no other authentication. Kite calls it when the owner turns statistics off. Answers `204` whether or not there were reports (so it does not reveal which ids exist), `400` for an id that is not a lowercase UUID v4 (checked first, so a malformed request never uses up the limit), `405` for another method and `429` over the rate limit: 10 requests a minute per connecting address (the `ERASE_RATE_LIMIT` binding, keyed by `CF-Connecting-IP`; the address is not logged or stored). Totals already rolled up after 90 days hold no ids and are not affected.
 
 ### `GET /v1/summary`
 
-Public, cached for an hour, `Access-Control-Allow-Origin: *`. Totals only, never an install id:
+Public, cached for an hour, `Access-Control-Allow-Origin: *`. Totals only, never an install id. The daily cron computes it and stores the JSON in `summary_cache` (`refreshPublicSummary`), so a public request reads one row; it is computed on the spot only while none is stored (right after the first deploy). Small groups are hidden (`publicSummary`):
+
+- Until at least 10 installs (`MIN_PUBLIC_INSTALLS`) reported in the last 30 days, the answer is only `{ "generated_at", "installs_30d" }`.
+- After that, every count below 5 (`SMALL_CELL`) in `versions`, `runtimes`, `modules`, `ranges` and `installs_by_day` is the string `"<5"`.
 
 ```json
 {
 	"generated_at": "2026-10-26T09:00:00.000Z",
 	"installs_30d": 80,
-	"versions": [{ "version": "2026.10.26.0", "installs": 50 }],
+	"versions": [{ "version": "2026.10.26.0", "installs": 50 }, { "version": "2026.10.20.0", "installs": "<5" }],
 	"runtimes": [{ "runtime": "workers", "installs": 70 }, { "runtime": "node", "installs": 10 }],
 	"modules": [{ "module": "calendar", "installs": 65 }],
 	"ranges": { "users_total": { "1": 40, "2-5": 30, "6-20": 10 }, "inbound_1d": { "11-100": 50 } },
@@ -70,14 +73,26 @@ Public, cached for an hour, `Access-Control-Allow-Origin: *`. Totals only, never
 
 ### `GET /v1/stats`
 
-The summary plus install counts for the operator. Needs `Authorization: Bearer <STATS_TOKEN>`; answers `401` otherwise, and always while `STATS_TOKEN` is unset. Adds `"installs": { "total", "active_1d", "active_7d", "active_30d" }`: `total` counts install ids within the 90 days, and `active_Nd` those with a report dated on or after the UTC day N days ago (so `active_1d` covers today and yesterday, because reports arrive around 02:00 UTC).
+The summary with exact counts (no `"<5"`, no 10-install threshold, computed on each request) plus install counts for the operator. Needs `Authorization: Bearer <STATS_TOKEN>`; answers `401` otherwise, and always while `STATS_TOKEN` is unset. Adds `"installs": { "total", "active_1d", "active_7d", "active_30d" }`: `total` counts install ids within the 90 days, and `active_Nd` those with a report dated on or after the UTC day N days ago (so `active_1d` covers today and yesterday, because reports arrive around 02:00 UTC).
 
 ## Data kept
 
 - `daily`: one row per UTC day and install with the report's fields. Kept 90 days (`RAW_RETENTION_DAYS` in `src/index.ts`).
 - `aggregates`: per UTC day, how many installs reported (`installs`) and how many reported each version, runtime, module and range. No install id. Kept.
-- The cron (`30 4 * * *`, `rollUpOldDays`) counts daily rows older than 90 days into `aggregates` and deletes them, in one transaction.
-- No IP address, user agent, time of day or other request header is read or stored.
+- `summary_cache`: the public summary's JSON, one row, recomputed daily.
+- The cron (`30 4 * * *`, `rollUpOldDays`) counts daily rows older than 90 days into `aggregates` and deletes them, in one transaction, then refreshes `summary_cache`.
+- No IP address, user agent, time of day or other request header is stored.
+
+## Abuse limits
+
+The Worker limits only erasures (above); `POST /v1/heartbeat` has no Worker-level limit. Add one zone rate-limiting rule in the Cloudflare dashboard (`midego.net` → **Security** → **WAF** → **Rate limiting rules**, available on the Free plan):
+
+- **If incoming requests match:** `(http.host eq "kite-telemetry.midego.net" and starts_with(http.request.uri.path, "/v1/"))`
+- **With the same characteristics:** IP
+- **When rate exceeds:** 50 requests per 10 seconds
+- **Then:** Block, for 10 seconds
+
+Keep it generous: installs on Cloudflare Workers reach the collector from shared Cloudflare egress addresses, all around 02:00 UTC, so a tight per-IP limit would drop real reports.
 
 Anyone can post a heartbeat, so the figures are indicative: a bogus install inflates them.
 
@@ -87,29 +102,34 @@ The collector is deployed by hand from this directory; nothing in CI deploys it.
 
 `kite-telemetry.midego.net` currently resolves through the `*.midego.net` wildcard record to another server. That is fine: the Worker custom domain in `wrangler.jsonc` (`routes` with `custom_domain: true`) creates a proxied record for exactly `kite-telemetry.midego.net` with its own certificate, and an exact record takes precedence over a wildcard. Do not create a DNS record for that name by hand; if one exists (not the wildcard), delete it first, or the deploy refuses the custom domain.
 
-From the repository root:
+From the repository root. Every Wrangler command passes `--config wrangler.jsonc`: after an app build (`npm run build`) the repository root holds a `.wrangler/deploy/config.json` that would otherwise send Wrangler to the app's Worker.
 
 ```sh
+# 0. The privacy contact. In the dashboard, midego.net → Email → Email Routing → Routing rules must route
+#    privacy@midego.net to a verified destination you read. Send it a test message and check it arrives.
+
 cd deploy/telemetry-collector
 npm install --no-package-lock
 
 # 1. The database. Copy the printed database_id into wrangler.jsonc, replacing REPLACE_WITH_YOUR_D1_DATABASE_ID
 #    (answer "no" if Wrangler offers to add a new binding itself: the DB binding is already there).
-npx wrangler d1 create kite-telemetry
+npx wrangler d1 create kite-telemetry --config wrangler.jsonc
 
 # 2. The tables.
-npx wrangler d1 migrations apply DB --remote
+npx wrangler d1 migrations apply DB --remote --config wrangler.jsonc
 
 # 3. The token for GET /v1/stats. Paste the value when asked and keep it in your password manager; never commit it.
 openssl rand -hex 32
-npx wrangler secret put STATS_TOKEN
+npx wrangler secret put STATS_TOKEN --config wrangler.jsonc
 
 # 4. Deploy. This also creates the custom domain, its DNS record and certificate (allow a few minutes for the certificate).
-npx wrangler deploy
+npx wrangler deploy --config wrangler.jsonc
 
-# 5. Check it.
+# 5. Recommended: add the zone rate-limiting rule from "Abuse limits" above.
+
+# 6. Check it.
 curl -i https://kite-telemetry.midego.net/v1/stats     # HTTP/2 401
-curl -i https://kite-telemetry.midego.net/v1/summary   # HTTP/2 200, {"installs_30d":0,...}
+curl -i https://kite-telemetry.midego.net/v1/summary   # HTTP/2 200, {"generated_at":"…","installs_30d":0}
 ```
 
 If `curl` reports a certificate problem or the old server answers, the certificate or DNS is still being issued; wait a few minutes and try again (`dig +short kite-telemetry.midego.net` should show Cloudflare addresses, not `159.195.70.154`).
@@ -124,4 +144,4 @@ To run a collector somewhere else (a fork, a test), change `name`, `routes` and 
 
 ## Tests
 
-`node --test tests/telemetry-collector.test.mjs` from the repository root (part of the app's `npm run test:app`) covers the validator, storage, erasure, the summary, stats and the 90-day roll-up against SQLite. `npm run typecheck` here type-checks the Worker, and `npx wrangler deploy --dry-run` builds it without uploading.
+`node --test tests/telemetry-collector.test.mjs` from the repository root (part of the app's `npm run test:app`) covers the validator, storage, erasure and its rate limit, the summary (small-count suppression, the 10-install threshold, the stored copy), stats and the 90-day roll-up against SQLite. `npm run typecheck` here type-checks the Worker, and `npx wrangler deploy --config wrangler.jsonc --dry-run` builds it without uploading.

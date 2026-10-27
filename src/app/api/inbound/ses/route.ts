@@ -4,17 +4,38 @@ import { requireAwsConfig } from "@/lib/aws/config";
 import { deleteObject, getObject } from "@/lib/aws/s3";
 import { getSesReceivingState, SES_OBJECT_PREFIX } from "@/lib/aws/ses-receiving";
 import { intakeProviderMail } from "@/lib/email/provider-intake";
-import { parseSesNotification, safeEqual, type SnsEnvelope } from "@/lib/aws/ses-notification";
+import { parseSesNotification, safeEqual, type SesNotification, type SnsEnvelope } from "@/lib/aws/ses-notification";
+import { verifySnsSignature } from "@/lib/aws/sns-signature";
+import { createLogger } from "@/lib/logger.mjs";
+
+const logger = createLogger("inbound");
+const LOG_INTERVAL_MS = 10 * 60_000;
+let unsignedLoggedAt = -Infinity;
 
 export const dynamic = "force-dynamic";
 
 /**
  * Amazon SNS endpoint for SES inbound mail. SNS posts JSON as text/plain.
- * Trust comes from three things rather than SNS's certificate signature: the
- * secret token in the URL that only the subscription we created knows, the topic
- * ARN matching ours, and the message itself being read from our own S3 bucket
- * with our credentials, so a forged notification cannot inject content.
+ *
+ * Delivery is guarded by the secret token in the URL that only the subscription we created knows,
+ * the topic ARN matching ours, and the message itself being read from our own S3 bucket with our
+ * credentials, so a forged notification cannot inject content. SES's SPF, DKIM and DMARC verdicts
+ * travel in the notification itself, so they count only when SNS's signature verifies
+ * (`verifySnsSignature`, certificate pinned to `sns.<region>.amazonaws.com`) and the object key is
+ * the one SES derives from that notification's message id. Otherwise the mail is still delivered,
+ * with the sender's authentication unknown, and the failure is logged.
  */
+/** SES's verdicts when SNS signed the notification and it names the object SES stored for it; else null. */
+async function trustedVerdicts(envelope: SnsEnvelope, notification: SesNotification, region: string) {
+	const signed = await verifySnsSignature(envelope, region);
+	if (!signed && Date.now() - unsignedLoggedAt >= LOG_INTERVAL_MS) {
+		unsignedLoggedAt = Date.now();
+		logger.error("ses.notification_signature_invalid", { effect: "authentication_unknown" });
+	}
+	const ownKey = !!notification.messageId && notification.key === `${SES_OBJECT_PREFIX}${notification.messageId}`;
+	return signed && ownKey ? notification.authenticationResults : null;
+}
+
 export async function POST(request: Request) {
 	const env = getEnv();
 	const state = await getSesReceivingState(env);
@@ -56,6 +77,7 @@ export async function POST(request: Request) {
 		recipients: notification.recipients,
 		raw,
 		headers: notification.headers,
+		authenticationResults: await trustedVerdicts(envelope, notification, state.region),
 	});
 	// Only after intake succeeded: a failure above returns 500 so SNS retries with the object intact.
 	await deleteObject(config, state.bucket, notification.key);

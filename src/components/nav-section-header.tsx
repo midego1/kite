@@ -26,17 +26,22 @@ export function NavSectionHeader({
 	children?: ReactNode;
 }) {
 	return (
-		<div className="mt-2 flex h-8 shrink-0 items-center justify-between px-6">
+		<div className="mt-3 flex h-7 shrink-0 items-center justify-between pl-6 pr-4">
 			<button
 				type="button"
 				onClick={onToggle}
 				aria-expanded={open}
-				className="flex items-center gap-1 text-sm font-medium tracking-wide text-neutral-900 max-md:text-base"
+				className="flex items-center gap-1 text-xs font-medium text-neutral-500 hover:text-neutral-900 max-md:text-sm"
 			>
 				{label}
-				<ChevronDown className={cn("h-4 w-4 text-neutral-500 transition-transform", !open && "-rotate-90")} />
+				<ChevronDown className={cn("h-3.5 w-3.5 transition-transform", !open && "-rotate-90")} />
 			</button>
 			{children}
 		</div>
 	);
+}
+
+/** A small muted label over a group of menu links that does not fold, like Zero's "Core". */
+export function NavSectionLabel({ label }: { label: string }) {
+	return <p className="mt-1 flex h-7 shrink-0 items-center pl-6 text-xs font-medium text-neutral-500">{label}</p>;
 }

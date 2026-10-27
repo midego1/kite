@@ -14,6 +14,8 @@ export type SendReviewProps = {
 	approvalId: string;
 	snapshot: ReviewSnapshot;
 	onClose?: () => void;
+	/** Offered when the draft changed after this review: open a new review of the draft as it is now. */
+	onReviewAgain?: () => void;
 	onSent?: (messageId: string) => void;
 };
 

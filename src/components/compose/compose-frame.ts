@@ -6,7 +6,7 @@ import { useKeyChanged } from "@/hooks/use-synced-state";
 import { cn } from "@/lib/utils";
 
 type ComposeFrameState = {
-	mode: "page" | "popup";
+	mode: "page" | "popup" | "inline";
 	minimized: boolean;
 	modalMode: boolean;
 };
@@ -26,6 +26,10 @@ export function useComposerBesideAssistant(
 }
 
 function baseFrameClass({ mode, minimized, modalMode }: ComposeFrameState) {
+	// Docked under the open message, as Zero's reply composer: a bordered card at the bottom of the reader. It does
+	// not clip: Write with Kite's panel opens above the toolbar and may reach over the message (the editor scrolls).
+	if (mode === "inline")
+		return "relative mx-3 mb-3 flex h-[min(440px,55vh)] shrink-0 flex-col rounded-xl border border-neutral-200 bg-white shadow-sm sm:mx-6";
 	if (mode !== "popup")
 		return "relative flex h-full min-h-[720px] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm";
 	if (minimized)
@@ -48,13 +52,18 @@ export function composeFrameClass(state: ComposeFrameState, besideAssistant: boo
 /** The popup is a labelled region, and a modal dialog while it is expanded. */
 export function composeFrameAria({ mode, minimized, modalMode }: ComposeFrameState) {
 	if (modalMode && !minimized) return { role: "dialog", "aria-modal": true, "aria-label": "Compose message" } as const;
-	if (mode === "popup") return { role: "region", "aria-label": "Compose message" } as const;
+	if (mode === "popup" || mode === "inline") return { role: "region", "aria-label": "Compose message" } as const;
 	return {};
 }
 
 /** An opened draft or reply starts in the body; a new message starts in the recipients field (its `autoFocus`). */
 export function useDraftBodyFocus(draftIdToLoad: string | null | undefined, loadingDraft: boolean) {
 	const formRef = useRef<HTMLFormElement>(null);
+	// While the draft loads the form holds the focus (it turns mail shortcuts off), so early keys never archive.
+	useEffect(() => {
+		if (draftIdToLoad && formRef.current && !formRef.current.contains(document.activeElement))
+			formRef.current.focus({ preventScroll: true });
+	}, [draftIdToLoad]);
 	useEffect(() => {
 		if (!draftIdToLoad || loadingDraft) return;
 		formRef.current?.querySelector<HTMLElement>("[contenteditable='true']")?.focus();

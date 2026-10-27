@@ -1,6 +1,8 @@
 import { and, desc, eq, gt, gte, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { agentDraftMetadata, agentJobs, mailboxAgentSettings, mailboxes, messages, users } from "@/db/schema";
+import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
+import { personalInstructionsFor } from "../user-ai-settings";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { normalizeEmailAddress } from "@/lib/email/address";
 import { newId } from "@/lib/ids";
@@ -41,11 +43,7 @@ export async function scheduleAutoDraft(
 		return;
 	if (!(await getAgentEnabled(env))) return;
 	const db = getDb(env);
-	const [settings] = await db
-		.select()
-		.from(mailboxAgentSettings)
-		.where(eq(mailboxAgentSettings.mailboxId, input.mailboxId))
-		.limit(1);
+	const settings = await readMailboxAgentSettingsRow(db, input.mailboxId);
 	const [mailbox] = await db.select().from(mailboxes).where(eq(mailboxes.id, input.mailboxId)).limit(1);
 	if (mailbox && (await getMailboxDomainAddresses(db, mailbox)).includes(normalizeEmailAddress(input.sender))) return;
 	if (!settings?.autoDraftEnabled || mailbox?.autoReplyEnabled) return;
@@ -83,11 +81,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 	const skip = (reason: string) => skipAgentJob(db, jobId, reason);
 	try {
 		if (!(await getAgentEnabled(env))) return void (await skip("Assistant disabled"));
-		const [settings] = await db
-			.select()
-			.from(mailboxAgentSettings)
-			.where(eq(mailboxAgentSettings.mailboxId, job.mailboxId))
-			.limit(1);
+		const settings = await readMailboxAgentSettingsRow(db, job.mailboxId);
 		const [source] = await db.select().from(messages).where(eq(messages.id, job.sourceMessageId)).limit(1);
 		const [reviewer] = await db.select().from(users).where(eq(users.id, job.reviewerUserId)).limit(1);
 		if (!settings?.autoDraftEnabled || !source || source.status !== "received" || !reviewer || reviewer.disabled)
@@ -150,6 +144,10 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 		const { text: body } = await generateReplyDraft({
 			model: selection.model,
 			instructions: settings.instructions,
+			preferences: {
+				mailboxDraft: settings.draftInstructions,
+				personal: await personalInstructionsFor(db, reviewer),
+			},
 			thread: await loadDraftThread(db, job.mailboxId, source),
 			onUsage: (usage) =>
 				recordAiUsage({

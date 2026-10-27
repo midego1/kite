@@ -4,6 +4,7 @@ import type { MessageFacts } from "./facts-types";
 import { extendTriageJsonSchema, keepActiveModules, type ActiveModelExtension } from "./model-extension-utils";
 import { REPAIR_MARKER, TRIAGE_SYSTEM_MARKER } from "./request-markers";
 import type { TriageParseOutcome, TriagePrompt, TriagePromptInput, TriageResult } from "./triage-types";
+import { createNonce, markUntrustedLinks, stripDelimiters, wrapUntrusted } from "../untrusted-utils";
 
 export const TRIAGE_BODY_MAX_CHARS = 8_000;
 const INSTRUCTIONS_MAX_CHARS = 4_000;
@@ -112,33 +113,6 @@ function systemPrompt(extensionInstructions: readonly string[]): string {
 	return [TRIAGE_SYSTEM_PROMPT, ...extensionInstructions, EXTENDED_CLOSING_RULE].join("\n");
 }
 
-const INVISIBLE_CHARACTERS = /[\u{E0000}-\u{E007F}\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/gu;
-const DELIMITER_LIKE = /[<>]{3,}|\bnonce\s*[:=]\s*\S*/gi;
-
-/**
- * Removes anything that could pass for the prompt's own delimiters: runs of three or more angle
- * brackets (after NFKC folds look-alikes), `nonce=` fragments, the live nonce and invisible
- * tag/bidi characters. Repeats until stable so removals cannot join into a new delimiter.
- */
-export function stripDelimiters(value: string, nonce?: string): string {
-	let text = value.normalize("NFKC").replace(INVISIBLE_CHARACTERS, "");
-	let previous: string;
-	do {
-		previous = text;
-		if (nonce) text = text.split(nonce).join("");
-		text = text.replace(DELIMITER_LIKE, "");
-	} while (text !== previous);
-	return text;
-}
-
-function markUntrustedLinks(text: string): string {
-	return text.replace(/\bhttps?:\/\/[^\s()[\]"']+/gi, (url) => `[untrusted link: ${url}]`);
-}
-
-function createNonce(): string {
-	return crypto.randomUUID().replace(/-/g, "");
-}
-
 function yesNo(value: boolean): string {
 	return value ? "yes" : "no";
 }
@@ -184,15 +158,20 @@ export function buildTriagePrompt(input: TriagePromptInput): TriagePrompt {
 		"Facts computed by Kite (trusted):",
 		...facts.map((line) => `- ${line}`),
 		"",
-		`<<<EMAIL id=${input.messageId.replace(/[^\w.-]/g, "")} nonce=${nonce}>>>`,
-		`From: ${clean(input.from).replace(/\s+/g, " ").trim()}`,
-		`Subject: ${clean(input.subject ?? "")
-			.replace(/\s+/g, " ")
-			.trim()}`,
-		...(subjects.length ? ["Earlier subjects in this thread:", ...subjects] : []),
-		"Body:",
-		markUntrustedLinks(clean(input.body).slice(0, TRIAGE_BODY_MAX_CHARS)),
-		`<<<END ${nonce}>>>`,
+		wrapUntrusted(
+			"EMAIL",
+			{ id: input.messageId },
+			[
+				`From: ${clean(input.from).replace(/\s+/g, " ").trim()}`,
+				`Subject: ${clean(input.subject ?? "")
+					.replace(/\s+/g, " ")
+					.trim()}`,
+				...(subjects.length ? ["Earlier subjects in this thread:", ...subjects] : []),
+				"Body:",
+				markUntrustedLinks(clean(input.body).slice(0, TRIAGE_BODY_MAX_CHARS)),
+			].join("\n"),
+			nonce,
+		),
 		"",
 		"Reply with the JSON object only.",
 	].join("\n");

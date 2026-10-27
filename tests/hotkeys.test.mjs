@@ -194,3 +194,37 @@ test("Cmd+K and Ctrl+K still open the command palette", async (t) => {
 	assert.equal(press("k", { ctrlKey: true }), true);
 	assert.equal(calls, 2);
 });
+
+test("bare keys stay with the composer, dialogs and comboboxes that have the focus", async (t) => {
+	let calls = 0;
+	await mount(t, [
+		{ key: "e", action: () => calls++ },
+		{ key: "g i", action: () => calls++ },
+	]);
+	const zones = [
+		'<form data-shortcuts-off><button type="button">Bold</button></form>',
+		'<div role="dialog"><button type="button">OK</button></div>',
+		'<div role="alertdialog"><button type="button">Delete</button></div>',
+		'<div aria-modal="true"><button type="button">Close</button></div>',
+		'<button type="button" role="combobox">Style</button>',
+	];
+	for (const markup of zones) {
+		const holder = document.createElement("div");
+		holder.innerHTML = markup;
+		document.body.appendChild(holder);
+		const target = holder.querySelector("button");
+		for (const key of ["e", "g", "i"]) {
+			const event = new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+			target.dispatchEvent(event);
+			assert.equal(event.defaultPrevented, false, `${key} in ${markup}`);
+		}
+		holder.remove();
+	}
+	assert.equal(calls, 0);
+
+	const outside = document.createElement("button");
+	document.body.appendChild(outside);
+	const event = new window.KeyboardEvent("keydown", { key: "e", bubbles: true, cancelable: true });
+	outside.dispatchEvent(event);
+	assert.equal(calls, 1, "a focused button elsewhere still gets the shortcut");
+});

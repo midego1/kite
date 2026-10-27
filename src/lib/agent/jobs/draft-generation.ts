@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { generateText, type JSONValue, type LanguageModel, type LanguageModelUsage } from "ai";
 import type { AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
+import type { DraftPreferences } from "../instruction-types";
 import { buildReplyDraftPrompt } from "./draft-prompt-utils";
 
 const DRAFT_THREAD_WINDOW = 20;
@@ -28,6 +29,8 @@ export async function loadDraftThread(
 type GenerateReplyDraftInput = {
 	model: LanguageModel;
 	instructions: string;
+	/** The mailbox's drafting field and the reviewer's own instructions. */
+	preferences?: DraftPreferences;
 	thread: ThreadMessage[];
 	maxOutputTokens?: number;
 	providerOptions?: Record<string, Record<string, JSONValue>>;
@@ -43,7 +46,7 @@ export type GeneratedReplyDraft = { text: string; finishReason: string; usage: L
  * auto-draft job and triage reply suggestions; it calls the model without tools.
  */
 export async function generateReplyDraft(input: GenerateReplyDraftInput): Promise<GeneratedReplyDraft> {
-	const { system, prompt } = buildReplyDraftPrompt(input.instructions, input.thread);
+	const { system, prompt } = buildReplyDraftPrompt(input.instructions, input.thread, input.preferences);
 	const onUsage = input.onUsage;
 	const generated = await generateText({
 		model: input.model,
@@ -58,7 +61,11 @@ export async function generateReplyDraft(input: GenerateReplyDraftInput): Promis
 	return { text: generated.text.trim(), finishReason: generated.finishReason, usage: generated.usage };
 }
 
-export function draftPromptChars(input: { instructions: string; thread: ThreadMessage[] }): number {
-	const { system, prompt } = buildReplyDraftPrompt(input.instructions, input.thread);
+export function draftPromptChars(input: {
+	instructions: string;
+	preferences?: DraftPreferences;
+	thread: ThreadMessage[];
+}): number {
+	const { system, prompt } = buildReplyDraftPrompt(input.instructions, input.thread, input.preferences);
 	return system.length + prompt.length;
 }

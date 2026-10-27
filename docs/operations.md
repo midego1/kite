@@ -140,6 +140,8 @@ A cron trigger (`*/5 * * * *`) runs the alert check in the Worker; Node/Docker r
 | Stuck outbound jobs | any job has been queued for over 30 minutes or sending for over 15 |
 | Exhausted webhooks  | any webhook delivery ran out of retries in the last 60 minutes      |
 | Failed backups      | any backup failed in the last 60 minutes                            |
+| Email relay header signature | the email relay sent a request without a header signature, or with a wrong one, in the last 60 minutes: its mail arrives, but sender authentication counts as unknown until the relay is updated (or `INBOUND_WEBHOOK_SECRET` matches) |
+| Email relay older signature (low priority) | the email relay still signs with the older header signature form, accepted until the first release on or after 2027-01-31 ([#118](https://github.com/midego1/kite/issues/118)); update the relay |
 
 Behaviour:
 
@@ -218,7 +220,7 @@ Generic JSON (`content-type: application/json`):
 }
 ```
 
-The `rule` values are `backup_failed`, `outbound_failed`, `outbound_stuck` and `webhook_exhausted`. Only a test send adds `"test": true`.
+The `rule` values are `backup_failed`, `outbound_failed`, `outbound_stuck`, `webhook_exhausted`, `relay_signature` and `relay_signature_legacy`. Only a test send adds `"test": true`.
 
 #### Send test alert
 
@@ -254,7 +256,7 @@ Emails and webhook payloads contain only the app name, rule ids, rule names, cou
 
 #### Admin banner
 
-While any rule is active, every admin sees a banner at the top of the dashboard listing each alert with its count and a link to the page to check. It reads `GET /api/admin/alerts/active`, which only evaluates the rules: it sends nothing and writes no state. The banner loads when the page opens and refreshes every 5 minutes; users who are not admins never request it. **Dismiss** hides it in that browser until the set of active alerts changes (a new rule fires, or a rule clears and returns); a count changing alone does not bring it back. Dismissal is stored in the browser under `kite-dismissed-alerts`.
+While any rule is active, every admin sees a compact notice in the sidebar, above Settings (over the page on phones and while the sidebar is collapsed), listing each alert with its count and a link to the page to check. It reads `GET /api/admin/alerts/active`, which only evaluates the rules: it sends nothing and writes no state. The banner loads when the page opens and refreshes every 5 minutes; users who are not admins never request it. **Dismiss** hides it in that browser until the set of active alerts changes (a new rule fires, or a rule clears and returns); a count changing alone does not bring it back. Dismissal is stored in the browser under `kite-dismissed-alerts`.
 
 #### Blind spots
 

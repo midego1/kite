@@ -4,9 +4,10 @@ import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { LazyComposeForm, preloadComposeForm } from "@/components/compose/compose-form-lazy";
 import { useCompose } from "@/components/compose/compose-context";
+import { InlineComposerPortal } from "@/components/compose/inline-reply-composer";
 
 export function FloatingComposer() {
-	const { open, draftId, closeComposer } = useCompose();
+	const { open, draftId, placement, closeComposer } = useCompose();
 	const pathname = usePathname();
 	const router = useRouter();
 
@@ -21,7 +22,8 @@ export function FloatingComposer() {
 		return () => window.clearTimeout(timer);
 	}, []);
 
-	if (!open) return null;
+	// A reply docked in the reader renders through its own host, which outlives the reader while it sends.
+	if (!open || placement !== "popup") return <InlineComposerPortal />;
 	return (
 		<LazyComposeForm
 			key={draftId ?? "new"}

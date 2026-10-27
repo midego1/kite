@@ -14,12 +14,17 @@ permissions:
 
 jobs:
   release-version:
-    # Merging to main deploys production, so every pull request must end with its own
-    # `npm run release:prepare` commit. The check uses only Node built-ins: no npm ci.
+    # Pull requests add a changelog fragment in changelog.d instead of a release, so open pull requests
+    # never conflict on VERSION or CHANGELOG.md; release/* branches must be a complete release
+    # (docs/releasing.md). The check uses only Node built-ins: no npm ci.
     name: Release version
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      # To read the pull request's current labels, so a rerun after adding no-changelog passes.
+      pull-requests: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -31,9 +36,13 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
-      - name: Check the release version against the base
+      - name: Check the changelog fragments against the base
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run release:check -- "$BASE_SHA"
 
   mission-validation:

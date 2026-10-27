@@ -45,6 +45,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/threat-lookups/key`                        | DELETE, PUT            | [source](../src/app/api/admin/threat-lookups/key/route.ts)                        |
 | `/api/admin/threat-lookups/test`                       | POST                   | [source](../src/app/api/admin/threat-lookups/test/route.ts)                       |
 | `/api/agent/actions/[id]/undo`                         | POST                   | [source](../src/app/api/agent/actions/[id]/undo/route.ts)                         |
+| `/api/agent/actions/chat-undo`                         | POST                   | [source](../src/app/api/agent/actions/chat-undo/route.ts)                         |
 | `/api/agent/actions/confirm`                           | POST                   | [source](../src/app/api/agent/actions/confirm/route.ts)                           |
 | `/api/agent/actions`                                   | GET                    | [source](../src/app/api/agent/actions/route.ts)                                   |
 | `/api/agent/approvals/[id]/confirm`                    | POST                   | [source](../src/app/api/agent/approvals/[id]/confirm/route.ts)                    |
@@ -52,6 +53,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/agent/approvals`                                 | POST                   | [source](../src/app/api/agent/approvals/route.ts)                                 |
 | `/api/agent/availability`                              | GET                    | [source](../src/app/api/agent/availability/route.ts)                              |
 | `/api/agent/chat`                                      | POST                   | [source](../src/app/api/agent/chat/route.ts)                                      |
+| `/api/agent/compose`                                   | GET, POST              | [source](../src/app/api/agent/compose/route.ts)                                   |
 | `/api/agent/conversations/[id]`                        | DELETE, GET            | [source](../src/app/api/agent/conversations/[id]/route.ts)                        |
 | `/api/agent/conversations`                             | GET                    | [source](../src/app/api/agent/conversations/route.ts)                             |
 | `/api/agent/jobs/[id]/retry`                           | POST                   | [source](../src/app/api/agent/jobs/[id]/retry/route.ts)                           |
@@ -102,6 +104,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/drafts/[id]/attachments/[attachmentId]`          | DELETE                 | [source](../src/app/api/drafts/[id]/attachments/[attachmentId]/route.ts)          |
 | `/api/drafts/[id]/attachments`                         | POST                   | [source](../src/app/api/drafts/[id]/attachments/route.ts)                         |
 | `/api/drafts/[id]`                                     | DELETE, GET, PATCH     | [source](../src/app/api/drafts/[id]/route.ts)                                     |
+| `/api/drafts/[id]/state`                               | GET                    | [source](../src/app/api/drafts/[id]/state/route.ts)                               |
 | `/api/drafts`                                          | GET, POST              | [source](../src/app/api/drafts/route.ts)                                          |
 | `/api/drive/attachments/[id]/content`                  | GET                    | [source](../src/app/api/drive/attachments/[id]/content/route.ts)                  |
 | `/api/drive/attachments/[id]/save`                     | POST                   | [source](../src/app/api/drive/attachments/[id]/save/route.ts)                     |

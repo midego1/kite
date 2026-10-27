@@ -23,8 +23,8 @@ export const READING_PANE_OPTIONS: ReadingLayoutOption<ReadingPaneMode>[] = [
 ];
 
 export const MESSAGE_DENSITY_OPTIONS: ReadingLayoutOption<MessageListDensity>[] = [
-	{ value: "default", label: "Default", description: "Balanced spacing with a preview line." },
-	{ value: "comfortable", label: "Comfortable", description: "More room around every email." },
+	{ value: "default", label: "Default", description: "Balanced spacing with the sender and subject." },
+	{ value: "comfortable", label: "Comfortable", description: "More room around every email, with a preview line." },
 	{ value: "compact", label: "Compact", description: "Fit more emails on screen." },
 ];
 
@@ -55,16 +55,11 @@ export function getEffectiveReadingPaneMode(mode: ReadingPaneMode, wideViewport:
 	return wideViewport ? mode : "none";
 }
 
-/** Keeps a resizable list between its minimum and what leaves `reserved` pixels for the reading pane. */
-export function clampListSize(requested: number, min: number, containerSize: number, reserved: number): number {
-	return Math.max(min, Math.min(requested, Math.max(min, containerSize - reserved)));
-}
-
 /** Row spacing for the stacked rows of the list beside a reading pane. */
 export function getStackedRowDensity(density: MessageListDensity): MessageRowDensityStyle {
-	if (density === "comfortable") return { rowClassName: "py-4", showPreview: true };
-	if (density === "compact") return { rowClassName: "py-2", showPreview: false };
-	return { rowClassName: "py-3", showPreview: true };
+	if (density === "comfortable") return { rowClassName: "py-3", showPreview: true };
+	if (density === "compact") return { rowClassName: "py-1.5", showPreview: false };
+	return { rowClassName: "py-2.5", showPreview: false };
 }
 
 /** Row height for the single-line rows of a full-width list. */

@@ -22,7 +22,7 @@ links when a message is deleted, and are kept when the module is turned off.
 Logs carry only ids and codes for them, never vendors, amounts, dates or URLs.
 
 Anonymous usage statistics are off unless the owner turns them on under Admin →
-General (`src/lib/telemetry/`, migration 0069). The daily heartbeat then holds a
+General (`src/lib/telemetry/`, migration 0070). The daily heartbeat then holds a
 random install id, the Kite version, the runtime, counts of accounts, active
 accounts, mailboxes and messages, and the modules that are on; never ids,
 addresses, domains, `APP_URL` or error text. It goes to

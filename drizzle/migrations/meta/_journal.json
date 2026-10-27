@@ -510,7 +510,14 @@
       "idx": 72,
       "version": "6",
       "when": 1788851640028,
-      "tag": "0069_add_telemetry_state",
+      "tag": "0069_add_ai_writing",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1788851700028,
+      "tag": "0070_add_telemetry_state",
       "breakpoints": true
     }
   ]

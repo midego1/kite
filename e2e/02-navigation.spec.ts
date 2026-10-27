@@ -27,7 +27,7 @@ test("sidebar folders navigate client-side and update the URL and title", async 
 
 	for (const folder of folders) {
 		const link = nav.getByRole("link", { name: new RegExp(`^${folder.link}\\b`) });
-		if (!(await link.isVisible())) await nav.getByRole("button", { name: "More..." }).click();
+		if (!(await link.isVisible())) await nav.getByRole("button", { name: "Management" }).click();
 		await link.click();
 		await expect(page).toHaveURL(folder.path);
 		await expect(page).toHaveTitle(folder.title);

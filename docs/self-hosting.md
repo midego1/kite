@@ -34,6 +34,14 @@ DMARC records to create. Domain routing rules work as on Cloudflare: reject
 rules answer the sender with a 550 during delivery, forward rules relay the
 message through your outbound SMTP.
 
+Kite does not check SPF, DKIM or DMARC for mail that arrives on the
+listener, and it ignores any `Authentication-Results` header already in the
+message, since the sender could have written it. Such mail counts as
+unverified, so the spam filter and automatic reading rely on its other
+signals (see [Sender authentication](spam-protection.md#sender-authentication)).
+Receive through the Cloudflare relay below if you want Cloudflare's checks to
+count.
+
 Optional: `SMTP_TLS_KEY` and `SMTP_TLS_CERT` (paths inside the container)
 enable STARTTLS with your own certificate. Without them STARTTLS is not
 offered, which is safe but means transport encryption depends on the sender.
@@ -41,7 +49,18 @@ offered, which is safe but means transport encryption depends on the sender.
 **Cloudflare Email Routing relay.** Keep MX on Cloudflare and deploy the
 Worker in `deploy/cloudflare-email-relay`. It posts each message to
 `/api/inbound` on your server, signed with `INBOUND_WEBHOOK_SECRET`, and acts
-on the reject or forward decision the server returns. Set
+on the reject or forward decision the server returns. Cloudflare's SPF, DKIM
+and DMARC results count because the relay also signs the header map it sends;
+after updating the server, redeploy the relay so it sends that signature,
+otherwise its mail counts as unverified and admins see a "redeploy the relay"
+operational alert. The header map signature uses a key derived from
+`INBOUND_WEBHOOK_SECRET`; the server still accepts the earlier form, made with
+the secret itself, from relays deployed before that change, but logs
+`relay.headers_signature_legacy` with a low-priority "update the relay"
+operational alert, and stops accepting it in the first release on or after
+2027-01-31 ([#118](https://github.com/midego1/kite/issues/118)); after that such
+mail counts as unverified.
+Set
 `SMTP_INBOUND_PORT=0` if you do not want the listener at all.
 
 ## Sending mail

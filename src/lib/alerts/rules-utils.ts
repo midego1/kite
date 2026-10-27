@@ -19,14 +19,29 @@ export const RULE_LABELS: Record<AlertRuleId, { name: string; path: string }> = 
 	outbound_failed: { name: "Failed outbound sends in the last hour", path: "/admin" },
 	outbound_stuck: { name: "Outbound messages stuck in the queue", path: "/admin" },
 	webhook_exhausted: { name: "Webhook deliveries that ran out of retries", path: "/webhooks" },
+	relay_signature: {
+		name: "Email relay requests without a valid header signature (update the relay)",
+		path: "/admin",
+	},
+	relay_signature_legacy: {
+		name: "Email relay uses the older header signature (low priority: update the relay before 2027-01-31)",
+		path: "/admin",
+	},
 };
 
-export const RULE_ORDER: AlertRuleId[] = ["backup_failed", "outbound_failed", "outbound_stuck", "webhook_exhausted"];
+export const RULE_ORDER: AlertRuleId[] = [
+	"backup_failed",
+	"outbound_failed",
+	"outbound_stuck",
+	"webhook_exhausted",
+	"relay_signature",
+	"relay_signature_legacy",
+];
 
 /** Turn a snapshot into the alerts that are active right now. The fingerprint changes when a new problem joins an existing rule. */
 export function evaluateAlertRules(
 	snapshot: AlertSnapshot,
-	_now: Date,
+	now: Date,
 	policy: AlertPolicy = ALERT_POLICY,
 ): ActiveAlert[] {
 	const alerts: ActiveAlert[] = [];
@@ -47,6 +62,16 @@ export function evaluateAlertRules(
 			count: snapshot.webhookExhausted,
 		});
 	}
+	// Mail from such a relay still arrives, but with its authentication unknown.
+	const recent = (at: number | undefined) => at !== undefined && now.getTime() - at < policy.windowMinutes * MINUTE;
+	const relayProblems = (["missing", "invalid"] as const).filter((kind) =>
+		recent(snapshot.relaySignature?.[`${kind}At`]),
+	);
+	if (relayProblems.length > 0)
+		alerts.push({ rule: "relay_signature", fingerprint: relayProblems.join(","), count: relayProblems.length });
+	// Still accepted, so it only asks for an update; it ends with issue #118.
+	if (recent(snapshot.relaySignature?.legacyAt))
+		alerts.push({ rule: "relay_signature_legacy", fingerprint: "legacy", count: 1 });
 	return alerts;
 }
 

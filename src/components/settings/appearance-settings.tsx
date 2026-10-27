@@ -5,6 +5,7 @@ import { Select } from "@/components/ui/select";
 import {
 	isStylePreference,
 	isThemePreference,
+	DEFAULT_THEME,
 	readThemePreference,
 	saveThemePreference,
 	THEME_CHANGED_EVENT,
@@ -47,6 +48,7 @@ function getThemeSnapshot(): ThemePreference {
 
 const STYLE_OPTIONS: { value: StylePreference; label: string }[] = [
 	{ value: "kite", label: "Kite" },
+	{ value: "lavender", label: "Kite classic" },
 	{ value: "classic", label: "Classic" },
 ];
 
@@ -58,7 +60,7 @@ export function AppearanceSettings() {
 			<PreferenceRow
 				preference={FONT_PREFERENCE}
 				label="Font"
-				description="The typeface for the whole app. Match style uses Manrope in Kite and Geist in Classic."
+				description="The typeface for the whole app. Match style uses Manrope in Kite classic and Geist otherwise."
 			/>
 			<PreferenceRow
 				preference={TEXT_SIZE_PREFERENCE}
@@ -161,7 +163,8 @@ function StyleSetting() {
 			<span className="flex-1">
 				<span className="block text-sm font-medium text-neutral-900">Style</span>
 				<span className="mt-1 block text-sm text-neutral-500">
-					Kite uses indigo and lavender with script accents. Classic uses the original blue. Saved in this browser.
+					Kite is neutral grey with one blue accent. Kite classic uses indigo and lavender with script accents. Classic
+					uses the original blue. Saved in this browser.
 				</span>
 			</span>
 			<Select
@@ -185,7 +188,7 @@ function StyleSetting() {
 }
 
 function ThemeSetting() {
-	const preference = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, () => "system" as const);
+	const preference = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, () => DEFAULT_THEME);
 
 	return (
 		<label className="flex items-start gap-3 rounded-xl bg-neutral-50 p-4">

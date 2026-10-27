@@ -7,20 +7,31 @@
 const CC_SECOND_LEVELS = new Set(["ac", "co", "com", "edu", "go", "gob", "gov", "ne", "net", "or", "org"]);
 
 /**
- * A small stand-in for the Public Suffix List: shared hosting names where every subdomain belongs to
- * someone else, so `attacker.github.io` is not treated as part of `github.io`.
+ * A small stand-in for the Public Suffix List (https://publicsuffix.org): names under which every
+ * subdomain belongs to someone else, so `attacker.github.io` is not treated as part of `github.io`,
+ * and two shops on `myshopify.com` are not one organization for DKIM alignment. The full list is
+ * about 130 KB, so only the public and shared suffixes that mail and phishing links use are here;
+ * `registrableDomain` also handles `k12.<state>.us`, `blogspot.<suffix>` and `amazonaws.com`.
+ * Extend it when a shared host shows up in mail.
  */
 const SHARED_SUFFIXES = new Set([
 	"appspot.com",
 	"azurewebsites.net",
 	"blogspot.com",
 	"cloudfront.net",
+	"duckdns.org",
+	"dyndns.org",
 	"firebaseapp.com",
 	"github.io",
 	"gitlab.io",
 	"herokuapp.com",
+	"ltd.uk",
+	"me.uk",
+	"myshopify.com",
 	"netlify.app",
+	"onrender.com",
 	"pages.dev",
+	"plc.uk",
 	"r2.dev",
 	"vercel.app",
 	"web.app",
@@ -67,19 +78,36 @@ export function isIpHost(host: string): boolean {
 	return IPV4.test(value) || IPV6.test(value);
 }
 
+/** A ccTLD's common second level, as in `co.uk` or `com.au`. */
+function isCcSecondLevel(labels: string[]): boolean {
+	return labels.length === 2 && labels[1]!.length === 2 && CC_SECOND_LEVELS.has(labels[0]!);
+}
+
+/** Whether `labels` (a tail of a hostname) is a public suffix, beyond a bare TLD. */
+function isPublicSuffix(labels: string[]): boolean {
+	const name = labels.join(".");
+	if (SHARED_SUFFIXES.has(name) || isCcSecondLevel(labels)) return true;
+	// School districts (`k12.ca.us`) and Blogger's country names (`blogspot.co.uk`, `blogspot.de`).
+	if (labels.length === 3 && labels[0] === "k12" && labels[2] === "us" && /^[a-z]{2}$/.test(labels[1]!)) return true;
+	return labels[0] === "blogspot" && (labels.length === 2 || isCcSecondLevel(labels.slice(1)));
+}
+
 /**
  * The part of a hostname one owner controls: `mail.example.co.uk` gives `example.co.uk`. IP addresses
- * and single labels come back as they are.
+ * and single labels come back as they are. Under `amazonaws.com`, where AWS hands out names per
+ * bucket, instance and region (`bucket.s3.amazonaws.com`), the whole hostname counts.
  */
 export function registrableDomain(host: string): string {
 	const value = cleanHost(host).replace(/^www\./, "");
 	if (isIpHost(value)) return value;
 	const labels = value.split(".").filter(Boolean);
 	if (labels.length <= 2) return labels.join(".");
-	const lastTwo = labels.slice(-2).join(".");
-	const shared = SHARED_SUFFIXES.has(lastTwo);
-	const ccSecondLevel = labels.at(-1)!.length === 2 && CC_SECOND_LEVELS.has(labels.at(-2)!);
-	return labels.slice(shared || ccSecondLevel ? -3 : -2).join(".");
+	if (labels.slice(-2).join(".") === "amazonaws.com") return labels.join(".");
+	// The longest public suffix that leaves a label in front of it.
+	for (let length = labels.length - 1; length >= 2; length--) {
+		if (isPublicSuffix(labels.slice(-length))) return labels.slice(-length - 1).join(".");
+	}
+	return labels.slice(-2).join(".");
 }
 
 export function sameRegistrableDomain(a: string, b: string): boolean {

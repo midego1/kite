@@ -21,7 +21,7 @@ Open **Admin → Domains**, expand a domain, and use the **Setup receiving email
 
 **Skip DNS setup** (in **New domain**, in onboarding and in the first-run domain step) adds the domain now and leaves its DNS for later: Kite does not look the domain up on Cloudflare, does not check or change any record, and selects no receiving or sending provider. Mail does not arrive until the records are set. Ported from upstream Mailflare #152.
 
-Until then, admins who can manage domains see a banner above the mailbox naming the domain, with **Review** (the Domains page) and **Mark as done**, which clears the reminder once the records are in place; the domain shows **DNS skipped** on the Domains page. On an install with Cloudflare credentials, the first Setup on the domain page (a DNS record, Cloudflare Email Routing or Cloudflare Email Sending) finds the domain's Cloudflare zone and attaches it; it is refused when the zone belongs to another account on this install or is not on the configured Cloudflare account. On a self-hosted install without Cloudflare credentials, create the records where the domain's nameservers are hosted.
+Until then, admins who can manage domains see a notice in the sidebar (over the page on phones) naming the domain, with **Review** (the Domains page) and **Mark as done**, which clears the reminder once the records are in place; the domain shows **DNS skipped** on the Domains page. On an install with Cloudflare credentials, the first Setup on the domain page (a DNS record, Cloudflare Email Routing or Cloudflare Email Sending) finds the domain's Cloudflare zone and attaches it; it is refused when the zone belongs to another account on this install or is not on the configured Cloudflare account. On a self-hosted install without Cloudflare credentials, create the records where the domain's nameservers are hosted.
 
 ## Resend
 
@@ -65,7 +65,7 @@ Only the sending statements are needed if you use SES just for sending.
 3. a receipt rule for the domain in the account's active rule set (Kite creates and activates `mailflare-inbound` only if the account has none, and otherwise adds its rule beside yours);
 4. the MX record `inbound-smtp.<region>.amazonaws.com`.
 
-Each message is read from your own bucket, handed to the normal inbound pipeline, and deleted. SES's virus scan is enabled and infected messages are dropped. `APP_URL` has to be a public HTTPS address so SNS can reach the endpoint. The bucket and topic are shared by all SES domains; **Clean up** removes only the domain's rule and MX, so Kite never deletes resources another domain may still use.
+Each message is read from your own bucket, handed to the normal inbound pipeline, and deleted. SES's SPF, DKIM and DMARC verdicts count only when the SNS notification's signature verifies ([Sender authentication](spam-protection.md#sender-authentication)). SES's virus scan is enabled and infected messages are dropped. `APP_URL` has to be a public HTTPS address so SNS can reach the endpoint. The bucket and topic are shared by all SES domains; **Clean up** removes only the domain's rule and MX, so Kite never deletes resources another domain may still use.
 
 ## MX records and switching receiving provider
 

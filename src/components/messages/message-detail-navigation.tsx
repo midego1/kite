@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
+import { useHotkeys, useShortcuts } from "@/components/shortcuts";
 import { authFetch } from "@/lib/auth/client";
 import type { MessageNavigationResponse } from "@/app/api/messages/navigation/types";
 import type {
@@ -15,7 +16,11 @@ import type {
 	MessageDetailNavigationSnapshot,
 	OpenedUnreadMessages,
 } from "./message-detail-navigation-types";
-import { getMessageDetailNavigationState, takeOpenedUnreadMessage } from "./message-detail-navigation-utils";
+import {
+	getMessageDetailNavigationState,
+	readerNavigationShortcuts,
+	takeOpenedUnreadMessage,
+} from "./message-detail-navigation-utils";
 import { useConversationView } from "./use-conversation-view";
 
 const NavigationContext = createContext<MessageDetailNavigationContextValue | null>(null);
@@ -89,39 +94,50 @@ export function useMessageListHref(): string | null {
 export function MessageDetailNavigation({ messageId, unread }: MessageDetailNavigationProps) {
 	const context = useContext(NavigationContext);
 	const router = useRouter();
+	const { shortcutsEnabled } = useShortcuts();
 	useEffect(() => {
 		if (unread) context?.recordUnread(messageId);
 	}, [context?.recordUnread, messageId, unread]);
+	const { previousId, nextId, unreadOrder, totalUnread } = getMessageDetailNavigationState(
+		context?.entries ?? [],
+		messageId,
+	);
+	const open = (id: string | null) => {
+		if (id && context) router.push(`${context.hrefPrefix}/${id}`);
+	};
+	useHotkeys(
+		readerNavigationShortcuts((direction) => open(direction === "older" ? nextId : previousId)),
+		{ enabled: shortcutsEnabled && !!context },
+	);
 	if (!context) return null;
-	const { previousId, nextId, unreadOrder, totalUnread } = getMessageDetailNavigationState(context.entries, messageId);
 
 	return (
-		<div className="ml-auto flex shrink-0 items-center gap-2 text-neutral-500">
+		<div className="flex shrink-0 items-center gap-1 text-neutral-500">
 			{totalUnread > 0 && (
-				<span className="mr-2 whitespace-nowrap text-xs" aria-live="polite">
+				<span className="mr-2 whitespace-nowrap text-xs max-sm:sr-only" aria-live="polite">
 					{unreadOrder} of {totalUnread} unread
 				</span>
 			)}
-			<Tooltip label="Newer email">
+			<Tooltip label={shortcutsEnabled ? "Newer email (k)" : "Newer email"}>
 				<Button
 					type="button"
 					variant="ghost"
 					size="roundedSM"
 					aria-label="Newer email"
 					disabled={!previousId}
-					onClick={() => previousId && router.push(`${context.hrefPrefix}/${previousId}`)}
+					onClick={() => open(previousId)}
 				>
 					<ChevronLeft size={18} />
 				</Button>
 			</Tooltip>
-			<Tooltip label="Older email">
+			<Tooltip label={shortcutsEnabled ? "Older email (j)" : "Older email"}>
 				<Button
 					type="button"
 					variant="ghost"
 					size="roundedSM"
 					aria-label="Older email"
 					disabled={!nextId}
-					onClick={() => nextId && router.push(`${context.hrefPrefix}/${nextId}`)}
+					onClick={() => open(nextId)}
 				>
 					<ChevronRight size={18} />
 				</Button>

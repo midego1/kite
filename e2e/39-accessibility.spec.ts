@@ -43,7 +43,7 @@ test("a message row is reachable by keyboard and Enter opens the message", async
 	await expect(row.getByText("Unread", { exact: true })).toBeAttached();
 
 	await row.getByRole("checkbox").focus();
-	await page.keyboard.press("Tab");
+	// The star sits in the row's corner after the link, so the link is the next stop.
 	await page.keyboard.press("Tab");
 	const link = row.getByRole("link", { name: new RegExp(subject) });
 	await expect(link).toBeFocused();
@@ -273,13 +273,10 @@ test("Escape closes the mobile menu drawer and returns focus to the menu button"
 	await page.goto("/inbox");
 	const button = page.getByRole("button", { name: "Open menu" });
 	await button.click();
-	await expect(button).toHaveAttribute("aria-expanded", "true");
-	await expect(
-		page
-			.locator("aside")
-			.first()
-			.getByRole("link", { name: /^Inbox\b/ }),
-	).toBeVisible();
+	// The drawer is a modal sheet, which hides the page behind it, menu button included, from assistive technology.
+	const sheet = page.getByRole("dialog", { name: "Menu" });
+	await expect(sheet.getByRole("link", { name: /^Inbox\b/ })).toBeVisible();
+	await expect(page.locator("[data-mobile-menu]")).toHaveAttribute("aria-expanded", "true");
 	await page.keyboard.press("Escape");
 	await expect(button).toHaveAttribute("aria-expanded", "false");
 	await expect(button).toBeFocused();

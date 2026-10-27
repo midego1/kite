@@ -3,7 +3,7 @@
 ## Branches and deploys
 
 - A push to `main` deploys to production through the Cloudflare Git integration. Never push to `main` from automated or mission work. Work on a branch named `mission/<topic>` (or `feature/<topic>`), push only that branch, and leave merging to a human.
-- Every merge to `main` is a production deploy and a release, so every pull request to `main` ends with a `chore(release): <version>` commit made by `npm run release:prepare` after rebasing on `main`. The CI "Release version" job (`npm run release:check`) fails without it; see `docs/releasing.md`.
+- Every merge to `main` is a production deploy, but pull requests do not release: each one with a user-visible change adds a changelog fragment, `changelog.d/<short-slug>.md` (format in `changelog.d/README.md`), and never edits `VERSION`, the package versions, `docs/openapi.json`'s version or "Unreleased" in `CHANGELOG.md`. The CI "Release version" job (`npm run release:check`) fails without a fragment unless the pull request is labelled `no-changelog`. The release workflow keeps a "Release <version>" pull request from `release/next` that runs `npm run release:prepare`; see `docs/releasing.md`.
 - Never run `npm run deploy`, `npm run db:migrate:remote`, or any `wrangler ... --remote` command.
 - Do not rename Cloudflare resource names (Worker and D1 `kite`, R2 `kite-raw`, queues `kite-*`, dataset `kite_metrics`). Installs from before the rename to Kite still depend on the old names in a few places, so keep that compatibility: the server accepts `X-Mailflare-*` relay headers and `X-Mailflare-Forwarded`, calendar UIDs keep the `@mailflare` suffix, `mailflare-*` browser keys are moved on first load, `mailflare-database-backup` documents restore, and the HKDF info string in `src/lib/security/secret-box.ts` and the AWS SES resource names never change. User-facing text says Kite.
 
@@ -23,7 +23,7 @@ For a fresh Mission worker, run `npm run setup:mission` (or open `.devcontainer`
 
 ## UI conventions
 
-- Two styles share one codebase: Kite (default) and Classic, switched by `data-style` on `<html>` (sidebar toggle, Settings → Appearance). Components use Tailwind's `blue-*` palette, which `src/app/globals.css` remaps to Kite indigo; keep using `blue-*` rather than hard-coded hex so both styles and dark mode work. Check new UI in Kite, Classic and dark mode.
+- Three styles share one codebase, switched by `data-style` on `<html>` (Settings → Appearance; the sidebar's **Kite classic** switch): Kite (`kite`, the default, Zero's neutral zinc look, dark unless the user picks light), Kite classic (`lavender`, the earlier indigo and lavender look) and Classic (`classic`, the original blue). Components use Tailwind's `blue-*` palette, which `src/app/globals.css` remaps per style: in Kite the tints (50–300) are the muted zinc fills of active and selected items, 400–500 the one blue accent (focus, the unread dot) and 600–950 the near-black primary (white in dark mode). Keep using `blue-*` rather than hard-coded hex so every style and dark mode work, and check new UI in all three styles and dark mode.
 - Per-browser preferences (font, text size, assistant layout) go through `src/components/appearance-preferences.ts`.
 
 ## Database backup and restore

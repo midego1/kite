@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { GENERAL_INSTRUCTIONS_MAX_CHARS, TASK_INSTRUCTIONS_MAX_CHARS } from "../instruction-utils";
+import { instructionText } from "../instruction-schema";
 import type {
 	AutoReadCapabilities,
 	AutoReadInstallSettings,
@@ -25,7 +27,10 @@ export const mailboxAgentSettingsUpdateSchema = z.object({
 	modelId: z.string().max(200).nullable().optional(),
 	autoDraftEnabled: z.boolean().optional(),
 	reviewerUserId: z.string().nullable().optional(),
-	instructions: z.string().max(4_000).optional(),
+	instructions: instructionText(GENERAL_INSTRUCTIONS_MAX_CHARS).optional(),
+	chatInstructions: instructionText(TASK_INSTRUCTIONS_MAX_CHARS).optional(),
+	draftInstructions: instructionText(TASK_INSTRUCTIONS_MAX_CHARS).optional(),
+	summaryInstructions: instructionText(TASK_INSTRUCTIONS_MAX_CHARS).optional(),
 	dailyLimit: z.number().int().min(1).max(100).optional(),
 	autonomy: z.enum(AUTONOMY_LEVELS).optional(),
 	capabilities: z
@@ -58,7 +63,13 @@ const SETTINGS_ERRORS: Record<string, string> = {
 	pausedUntil: "The pause end must be an ISO date",
 	dailyLimit: "The daily draft limit must be between 1 and 100",
 	instructions: "Instructions can be at most 4000 characters",
+	chatInstructions: "Chat instructions can be at most 2000 characters",
+	draftInstructions: "Drafting instructions can be at most 2000 characters",
+	summaryInstructions: "Summary instructions can be at most 2000 characters",
 };
+
+/** The `mailbox_agent_settings` columns migration 0069 adds, by their keys in the settings state. */
+export const TASK_INSTRUCTION_KEYS = ["chatInstructions", "draftInstructions", "summaryInstructions"] as const;
 
 /** A short message naming the first invalid field of a settings update. */
 export function describeSettingsError(error: z.ZodError): string {
@@ -177,6 +188,9 @@ export function resolveMailboxAgentSettings(
 			autoDraftEnabled: false,
 			reviewerUserId: context.ownerUserId,
 			instructions: "",
+			chatInstructions: "",
+			draftInstructions: "",
+			summaryInstructions: "",
 			dailyLimit: 25,
 			autonomy: "off",
 			capabilities,
@@ -191,6 +205,9 @@ export function resolveMailboxAgentSettings(
 		autoDraftEnabled: row.autoDraftEnabled,
 		reviewerUserId: row.reviewerUserId,
 		instructions: row.instructions,
+		chatInstructions: row.chatInstructions ?? "",
+		draftInstructions: row.draftInstructions ?? "",
+		summaryInstructions: row.summaryInstructions ?? "",
 		dailyLimit: row.dailyLimit,
 		autonomy: storedAutonomy(row.autonomy),
 		capabilities: parseCapabilities(row.capabilities, capabilities),
@@ -221,6 +238,9 @@ export function applyMailboxAgentSettingsUpdate(
 		autoDraftEnabled: pick(input.autoDraftEnabled, current.autoDraftEnabled),
 		reviewerUserId: pick(input.reviewerUserId, current.reviewerUserId),
 		instructions: pick(input.instructions, current.instructions),
+		chatInstructions: pick(input.chatInstructions, current.chatInstructions),
+		draftInstructions: pick(input.draftInstructions, current.draftInstructions),
+		summaryInstructions: pick(input.summaryInstructions, current.summaryInstructions),
 		dailyLimit: pick(input.dailyLimit, current.dailyLimit),
 		autonomy: pick(input.autonomy, current.autonomy),
 		capabilities: mergeCapabilities(current.capabilities, input.capabilities),
@@ -270,13 +290,23 @@ export function autoReadInstallFlags(install: AutoReadInstallSettings, provider:
 	};
 }
 
-const AUTO_READ_ADMIN_KEYS = ["autoReadEnabled", "externalAutoReadAllowed", "dailySpendCapMicros"];
+const AUTO_READ_ADMIN_KEYS = [
+	"autoReadEnabled",
+	"externalAutoReadAllowed",
+	"dailySpendCapMicros",
+	"autoReadTokenCap",
+	"chatTokenCap",
+];
+/** A daily input-token allowance: at least 1,000 tokens, at most a billion. */
+const tokenCap = z.number().int().min(1_000).max(1_000_000_000);
 
 export const autoReadAdminSchema = z
 	.object({
 		autoReadEnabled: z.boolean().optional(),
 		externalAutoReadAllowed: z.boolean().optional(),
 		dailySpendCapMicros: z.number().int().min(0).max(MAX_SPEND_CAP_MICROS).optional(),
+		autoReadTokenCap: tokenCap.optional(),
+		chatTokenCap: tokenCap.optional(),
 	})
 	.strict();
 

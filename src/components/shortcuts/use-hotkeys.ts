@@ -4,6 +4,10 @@ import { useEffect, useRef } from "react";
 import type { ShortcutDefinition } from "./types";
 import { findSequenceMatch, isBrowserChord, isModifierKey } from "./use-hotkeys-utils";
 
+/** Where bare-key shortcuts never fire; mark other areas that own their keys with `data-shortcuts-off`. */
+const SHORTCUT_FREE_ZONES =
+	'[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [data-shortcuts-off]';
+
 interface UseHotkeysOptions {
 	enabled?: boolean;
 }
@@ -13,7 +17,10 @@ export function isTypingInInput(target: EventTarget | null): boolean {
 	const tagName = target.tagName.toUpperCase();
 	const isInputOrTextarea = tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
 	const isContentEditable = target.isContentEditable || target.getAttribute("contenteditable") === "true";
-	return isInputOrTextarea || isContentEditable;
+	// A Select trigger is a button with role="combobox" that types ahead through its options, as a native
+	// select does, so its keys belong to it.
+	const isCombobox = target.getAttribute("role") === "combobox";
+	return isInputOrTextarea || isContentEditable || isCombobox;
 }
 
 function matchModifiers(e: KeyboardEvent, shortcut: ShortcutDefinition): boolean {
@@ -94,9 +101,9 @@ export function useHotkeys(shortcuts: ShortcutDefinition[], options: UseHotkeysO
 				return;
 			}
 
-			// Single keys inside a dialog, menu or listbox belong to it: `e` in the snooze picker must not archive the message behind it.
-			if (e.target instanceof HTMLElement && e.target.closest('[role="dialog"], [role="menu"], [role="listbox"]'))
-				return;
+			// Bare keys inside a dialog, menu, listbox or the composer belong to it: `e` on a focused button there
+			// must not archive the message behind it.
+			if (e.target instanceof HTMLElement && e.target.closest(SHORTCUT_FREE_ZONES)) return;
 
 			// Handle sequence buffer
 			sequenceBufferRef.current.push(key);

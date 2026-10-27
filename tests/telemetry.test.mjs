@@ -315,7 +315,7 @@ test("statistics start off; opting in makes an install id and opting out deletes
 	assert.equal((await getTelemetryStatus({ ...env, KITE_TELEMETRY_URL: "http://plain.example.test/" })).endpoint, null);
 });
 
-test("before migration 0069 statistics are off and cannot be turned on", async (t) => {
+test("before migration 0070 statistics are off and cannot be turned on", async (t) => {
 	const sqlite = await setup(t);
 	sqlite.db.exec("DROP TABLE telemetry_state");
 	const env = { DB: sqlite };

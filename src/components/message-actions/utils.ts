@@ -30,11 +30,11 @@ export function getMessageBackHref(direction: "inbound" | "outbound", status: st
 	return direction === "inbound" ? "/inbox" : "/sent";
 }
 
-export async function runSingleMessageAction(messageId: string, action: BulkMessageAction) {
+export async function runSingleMessageAction(messageId: string, action: BulkMessageAction, folderId?: string) {
 	const response = await authFetch("/api/messages/bulk", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ messageIds: [messageId], action }),
+		body: JSON.stringify({ messageIds: [messageId], action, folderId }),
 	});
 
 	if (!response.ok) {

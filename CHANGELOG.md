@@ -6,17 +6,92 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [2026.10.26.2] - 2026-10-26
-
-Apply database migration 0069 after deploying, from the database card on the admin overview or the banner in the mailbox. It adds the `telemetry_state` table; until it is applied, usage statistics stay off and the card asks for the update.
-
-### Added
-
-- Anonymous usage statistics, **off by default**. The owner can turn them on under [Admin → General](/general). Kite then sends one small report a day, around 02:00 UTC: a random install ID made when statistics are turned on, the Kite version, Workers or Node, how many accounts, active accounts and mailboxes there are, how many messages came in and went out in the last day, and which modules are on. It never contains names, email addresses, domains, IDs, `APP_URL` or message content; on Cloudflare Workers, Cloudflare itself adds a header naming the Worker's zone to the request, which the collector ignores. The card lists every field, and turning statistics on or off is listed under [Admin → Activity](/activity). Turning statistics off deletes the install ID. Operators can set `KITE_TELEMETRY=0` to keep them off whatever the owner chooses, and `KITE_TELEMETRY_URL` to send them to another collector instead. Reports go to `kite-telemetry.midego.net`, run by the Kite maintainer on Cloudflare. Nothing is sent at setup. See [Privacy](https://github.com/midego1/kite/blob/main/docs/privacy.md#usage-statistics-opt-in).
+## [2026.10.27.3] - 2026-10-27
 
 ### Changed
 
-- The privacy statement in the README and the privacy page now describe the opt-in usage statistics instead of saying Kite has no telemetry.
+- The inbox is now three resizable panes: the sidebar, the message list and the open email. Drag the line between two panes (or focus it and use the arrow keys) to resize them; Kite remembers the sizes per account, and dragging the sidebar narrow folds it to its icon rail, as the menu button does.
+- The message list has a cleaner look: an unread dot, the sender and date, the subject and a two-line preview, with **Suspicious** and **Snoozed** badges where they apply. **All mail** and **Unread** buttons above the list replace the unread filter button, and they are there in every folder except Sent and Drafts.
+- The reader's toolbar gains **Snooze** and **Move to** buttons, and a **Reply to …** box under each email starts a reply in the composer.
+- Keyboard shortcuts work like Gmail's: in the list, `j` and `k` move between emails, Enter or `o` opens one, `x` selects it, `e` archives and `#` deletes it; in an open email, `j` and `k` go to the older and newer email and `a` and `f` reply to all and forward, next to the existing `r`, `e`, `#` and `u`. The Cmd+K command palette has been rebuilt and the shortcuts sheet (`?`) lists the new keys. Shortcuts can be turned off in [Settings → Inbox](/settings/inbox).
+- On phones the menu opens as a sheet over the page, and an open email's toolbar stays on one line.
+
+## [2026.10.27.2] - 2026-10-27
+
+### Fixed
+
+- Confirming an assistant draft's send review no longer keeps failing with "Draft changed; review it again" while the draft is open in the composer. After **Review send** stored a file you added, the composer saved the unchanged draft again a moment later, and every save counted as an edit and voided the review. A save that changes nothing about what would be sent (sender, recipients, subject, body or send time) no longer counts as an edit, the composer skips saves that would write the same content and pauses saving while a review is open. When the draft really did change after the review, the dialog now offers **Review again**, which opens a new review of the draft as it is now. **Approve to send** in the chat reviews the draft as the card shows it, including changes made in the composer since.
+
+## [2026.10.27.1] - 2026-10-27
+
+### Added
+
+- **Write with Kite** in the composer (the sparkles button, or ⌘J): write an email from a short request, or rewrite the selection or the whole body shorter, longer, more formal, more casual, with spelling and grammar fixed, translated (the original stays below the translation) or as you instruct. The answer streams into a preview and enters your message only when you click Insert or Replace, with Undo afterwards; the quoted message and your signature are never sent or changed. In a reply Kite reads the email being answered from the mailbox itself. It has no tools, removes addresses and links that are not in your text or the conversation, and stores nothing but token counts and cost. It needs the assistant on and, with an external AI provider, the primary admin's opt-in, and counts against the same daily caps as chat. See [Assistant settings](/inbox) for the **Drafting and composer** instructions it uses.
+
+### Changed
+
+- The install-wide switch is now called **Allow an external AI provider for automatic reading and the composer** in [Admin → Agent](/agent): it also governs Write with Kite. The mailbox instruction field **Drafting** is now **Drafting and composer**, and the chat token allowance is shared with Write with Kite (**Chat and Write with Kite**).
+
+### Fixed
+
+- In a new message or reply the text you type no longer starts inside the signature block: the body begins with an empty line of its own above the signature.
+
+## [2026.10.27.0] - 2026-10-27
+
+### Added
+
+- Editable prompts for the assistant. Under [Assistant settings](/inbox) a mailbox now has instruction fields for **Chat**, **Drafting** and **Summaries** next to its general instructions, and every user has **My instructions**, which apply in every mailbox they work in and are visible only to them. They are added to the system prompt below Kite's own rules (shown read-only under **What Kite always tells the AI**) and can never replace them; the mailbox's instructions come first. The Drafting fields also reach the reply drafts Kite writes on its own. Apply migration **0069** (`0069_add_ai_writing.sql`) from the admin overview to use them; until then only the general mailbox instructions can be saved.
+
+### Changed
+
+- Assistant chat now counts against the daily AI spend caps, like automatic reading: each step reserves its estimated cost against the mailbox and install caps before it is sent and is settled with its real usage, and a turn that reaches a cap ends with "Daily AI spend cap reached". Chat usage rows now carry their mailbox. Chat and automatic reading now share the install's dollar cap (default $2.00 a day), so an install that chats a lot may want to raise it in [Admin → Agent](/agent). A refused turn says which cap was reached, that it resets at 00:00 UTC and where to change it.
+- Without model prices, Kite counts input tokens instead of dollars, and chat now has its own daily allowance next to automatic reading's (2,000,000 input tokens each by default, so neither can use up the other's). The primary admin can change both under **Daily token allowances without model prices** in [Admin → Agent](/agent); until migration 0069 is applied they stay at the default. Kite still ships no default model prices.
+
+## [2026.10.26.6] - 2026-10-26
+
+### Added
+
+- The assistant chat can now organize more mail for you, always after you approve it in the chat: mark up to 20 emails as read or unread, list the mailbox's folders, create a folder and file up to 20 emails into one. Moves to the archive, trash or spam already covered 20 emails at once; the assistant now searches first and proposes a batch for you to approve. Every approved change shows **Undo** in the chat and appears in the assistant's **Activity** with Undo for 7 days. Creating folders and moving mail need full access to the mailbox; read state needs only read access, as in the inbox. Undo puts back only the emails still where the change left them and says how many went back; it does not reverse what the spam filter learned from a move to or out of Spam. MCP keys with **Organize mail** get the same tools (they act at once, as MCP moves always did), and **Read mail** keys can list folders.
+
+- Design specs for AI writing (a writing style profile learned from sent mail, AI in the composer and editable per-task instructions), thread summaries (a Summarize button and optional one-line summaries in the message list), search by meaning, and the assistant by email. They are proposals for roadmap milestones 27 to 30 in `docs/specs/` and change nothing in Kite yet.
+
+### Changed
+
+- The README is brought up to date: it now covers Drive and object storage, lists all six modules, states the current test counts and CI setup, describes the AI assistant and **Skip DNS setup** accurately, and no longer names individual migrations.
+
+### Fixed
+
+- In the assistant panel, a reply draft you approved no longer shows "Preview unavailable" with **Edit draft** and **Approve to send** after it was sent. The card now says **Sent** with the subject and recipient and links to the sent message, **Scheduled for** the time it goes out, **Sending…** while delivery is still under way, or **Sending failed**, and checks again by itself with growing waits until the send finishes (also when this device's clock runs ahead of the server), keeping what it showed if a check fails. A draft that was deleted, discarded or whose send you undid says "This draft is no longer available." and offers no buttons. A finished card no longer re-checks the draft each time new mail arrives.
+
+## [2026.10.26.5] - 2026-10-26
+
+### Security
+
+- A DKIM signature now verifies the sender only when it comes from the From address's own domain (or the same organization); another domain's signature alone no longer counts as authenticated. A passing DMARC check verifies the sender even when SPF failed, as for forwarded mail, and the failed SPF check still shows as a warning sign. This applies to automatic reading's trust in contacts and marked senders, the unverified-sender warning on invitations and Money Watch's unverified mark.
+- Shared hosting names such as `github.io`, `myshopify.com`, `amazonaws.com` and `me.uk` count as separate owners per subdomain, for DKIM alignment and for link checks.
+- SPF now reads the check of the envelope sender rather than the HELO check that Cloudflare reports first.
+- Passes count only from Cloudflare's own `Authentication-Results` copy, which Kite tells apart from the sender's by comparing it with the raw message; whenever that is ambiguous, the results count as unverified, never as passed. This relies on Cloudflare adding its header to every message, as Email Routing does.
+- Mail received through Amazon SES now uses the SPF, DKIM and DMARC verdicts SES reports for it, once the SNS notification's signature is verified.
+- The email relay's header signature now uses a key derived from `INBOUND_WEBHOOK_SECRET`. Update the relay: the earlier signature is accepted until the first release on or after 2027-01-31 and raises a low-priority operational alert, and a request without a header signature, or with a wrong one, raises an "update the relay" alert.
+
+## [2026.10.26.4] - 2026-10-26
+
+### Changed
+
+- Dropdowns, checkboxes, switches and tooltips across Kite are now built on Radix, the accessible component library behind shadcn/ui. They look as before, but a dropdown now opens a list styled like the rest of Kite (in light and dark mode) instead of the browser's own menu, and you can type to jump to an option.
+
+## [2026.10.26.3] - 2026-10-26
+
+### Security
+
+- SPF, DKIM and DMARC results now count only when the server that received the message from the internet checked them. Kite trusts the topmost `Authentication-Results` header Cloudflare Email Routing adds (directly or through the email relay) and ignores every copy the sender could have written. Mail that arrives through the built-in SMTP listener, Resend or Amazon SES is treated as unverified instead of passed, so a forged header can no longer soften spam scoring, phishing warnings or automatic reading's trust in a sender.
+- The email relay now signs the header map it sends with `INBOUND_WEBHOOK_SECRET`. Redeploy the relay (`deploy/cloudflare-email-relay`) after updating the server: until then mail still arrives, but its authentication counts as unverified.
+
+## [2026.10.26.2] - 2026-10-26
+
+### Changed
+
+- CI: allowlist a public key-derivation label and a policy-date log value in the secret scan.
 
 ## [2026.10.26.1] - 2026-10-26
 

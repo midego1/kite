@@ -27,7 +27,7 @@ export type TelemetryStatus = {
 	enabled: boolean;
 	/** `KITE_TELEMETRY` turns it off; the switch is then disabled. */
 	forcedOff: boolean;
-	/** False until migration 0069 is applied. */
+	/** False until migration 0070 is applied. */
 	available: boolean;
 	installId: string | null;
 	/** UTC day of the last heartbeat attempt, whether or not the collector got it. */

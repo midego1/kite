@@ -39,6 +39,15 @@ test("stores mail through the real handler with a verifiable envelope-bound HMAC
 			.update(mime)
 			.digest("hex");
 		assert.equal(options.headers["X-Kite-Signature"], signature);
+		// The headers signature has its own key, derived from the secret with a label.
+		const headersKey = createHmac("sha256", env.INBOUND_WEBHOOK_SECRET)
+			.update("kite-relay-headers-signature-key-v1")
+			.digest();
+		const headersSignature = createHmac("sha256", headersKey)
+			.update(`kite-headers\n${msg.from}\n${msg.to}\n${options.headers["X-Kite-Headers"]}\n`)
+			.update(mime)
+			.digest("hex");
+		assert.equal(options.headers["X-Kite-Headers-Signature"], headersSignature);
 		return Response.json({ action: "store", forwardTo: null });
 	});
 	await relay.email(msg, env);

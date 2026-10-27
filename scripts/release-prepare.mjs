@@ -1,36 +1,29 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { openApiPath, renderOpenApi } from "./docs-generate.mjs";
-import { changelogSection, NO_CHANGES_NOTE, nextVersion, packageVersion, releaseChangelog } from "./version-utils.mjs";
+import { NO_CHANGES_NOTE } from "./version-utils.mjs";
+import { prepareRelease, releasePending } from "./release-prepare-utils.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const file = (name) => path.join(root, name);
 
-// Writes the next calendar version into VERSION, package.json, package-lock.json, CHANGELOG.md and the
-// OpenAPI document. It commits, tags and pushes nothing; docs/releasing.md lists the steps after it.
+// Folds the changelog.d fragments into a new CHANGELOG.md section, writes the next calendar version into
+// VERSION, package.json, package-lock.json and the OpenAPI document, and deletes the fragments. It
+// commits, tags and pushes nothing; the release workflow (or docs/releasing.md) does the rest.
+// `--pending` only prints whether anything is waiting to be released, using Node built-ins alone.
 async function main() {
-	const now = new Date();
-	const version = nextVersion(readFileSync(file("VERSION"), "utf8"), now);
-	const npmVersion = packageVersion(version);
-	const changelog = releaseChangelog(readFileSync(file("CHANGELOG.md"), "utf8"), version, now);
-
-	const pkg = readFileSync(file("package.json"), "utf8");
-	const versionLine = /^(\t"version": )"[^"]*"/m;
-	if (!versionLine.test(pkg)) throw new Error('package.json has no top-level "version" line');
-	const lock = JSON.parse(readFileSync(file("package-lock.json"), "utf8"));
-	lock.version = npmVersion;
-	lock.packages[""].version = npmVersion;
-
-	writeFileSync(file("VERSION"), `${version}\n`);
-	writeFileSync(file("package.json"), pkg.replace(versionLine, `$1"${npmVersion}"`));
-	writeFileSync(file("package-lock.json"), `${JSON.stringify(lock, null, 2)}\n`);
-	writeFileSync(file("CHANGELOG.md"), changelog);
-	// renderOpenApi reads info.version from the VERSION file written above.
-	writeFileSync(openApiPath, await renderOpenApi());
-	const empty = changelogSection(changelog, version) === NO_CHANGES_NOTE;
+	if (process.argv.includes("--pending")) {
+		process.stdout.write(`${releasePending(root)}\n`);
+		return;
+	}
+	const result = await prepareRelease({
+		root,
+		writeOpenApi: async () => {
+			// Loaded only here: rendering the OpenAPI document needs TypeScript and Prettier.
+			const { openApiPath, renderOpenApi } = await import("./docs-generate.mjs");
+			writeFileSync(openApiPath, await renderOpenApi());
+		},
+	});
 	process.stdout.write(
-		`Prepared ${version} (package.json ${npmVersion}).${empty ? ` Nothing was under Unreleased, so it says "${NO_CHANGES_NOTE}"` : ""} Review CHANGELOG.md, then commit it as "chore(release): ${version}", the last commit of this branch (docs/releasing.md).\n`,
+		`Prepared ${result.version} (package.json ${result.npmVersion}) from ${result.fragments} fragment(s).${result.empty ? ` There were no changelog entries, so it says "${NO_CHANGES_NOTE}"` : ""} Review CHANGELOG.md, then commit it as "chore(release): ${result.version}" on a release/* branch (docs/releasing.md).\n`,
 	);
 }
 

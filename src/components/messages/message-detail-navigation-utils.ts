@@ -1,3 +1,4 @@
+import type { ShortcutDefinition } from "@/components/shortcuts/types";
 import type { MessageNavigationEntry } from "@/app/api/messages/navigation/types";
 import type { MessageDetailNavigationState } from "./message-detail-navigation-types";
 
@@ -34,4 +35,12 @@ export function getMessageDetailNavigationState(
 		unreadOrder: index >= 0 && index < unread.length ? index + 1 : 0,
 		totalUnread: unread.length,
 	};
+}
+
+/** The reader's j and k, Gmail's keys: j for the older email below in the list, k for the newer one above. */
+export function readerNavigationShortcuts(open: (direction: "older" | "newer") => void): ShortcutDefinition[] {
+	return [
+		{ key: "j", label: "Older email", category: "Navigation", action: () => open("older") },
+		{ key: "k", label: "Newer email", category: "Navigation", action: () => open("newer") },
+	];
 }

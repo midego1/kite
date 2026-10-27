@@ -1,9 +1,21 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Archive, Clock, FileText, Folder, Inbox, MailPlus, Plus, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
+import {
+	Archive,
+	Clock,
+	FileText,
+	Folder,
+	Inbox,
+	Plus,
+	Send,
+	ShieldAlert,
+	SquarePen,
+	Star,
+	Trash2,
+} from "lucide-react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,18 +39,18 @@ import { NavItem } from "./components-nav";
 import type { NavLink } from "./components-nav-types";
 import type { CustomFolder } from "./dashboard-nav-types";
 import { getFolderNavCount, moveMessagesToCustomFolder, moveMessagesToSystemFolder } from "./dashboard-nav-utils";
-import { NavSectionHeader, useSectionOpen } from "./nav-section-header";
+import { NavSectionHeader, NavSectionLabel, useSectionOpen } from "./nav-section-header";
 import { ReorderableList } from "./reorderable-list";
 import { useStoredState } from "@/hooks/use-stored-state";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { SidebarFooter } from "./sidebar-footer";
-import { SidebarHeader } from "./sidebar-header";
+import { SidebarAccounts } from "./sidebar-accounts";
 import { SidebarScaffold } from "./sidebar-scaffold";
 import { SidebarMailboxSwitcher } from "./sidebar-mailbox-switcher";
 import { useSidebar } from "./sidebar-state";
 
 const links = [
-	{ href: "/compose", label: "Compose", icon: MailPlus, primary: true },
+	{ href: "/compose", label: "New email", icon: SquarePen, primary: true },
 	{ href: "/inbox", label: "Inbox", icon: Inbox, preloadMessages: true },
 	{ href: "/starred", label: "Starred", icon: Star, preloadMessages: true },
 	{ href: "/snoozed", label: "Snoozed", icon: Clock, preloadMessages: true },
@@ -54,8 +66,8 @@ const links = [
 	{ href: "/trash", label: "Trash", icon: Trash2, preloadMessages: true },
 ];
 
-// Drafts, Archived, Spam and Trash start tucked under "More...".
-const MORE_LINK_HREFS = ["/drafts", "/archived", "/spam", "/trash"];
+// Archived, Spam and Trash sit in the folding "Management" section.
+const MORE_LINK_HREFS = ["/archived", "/spam", "/trash"];
 const MAX_VISIBLE_FOLDERS = 3;
 const MORE_OPEN_KEY = "kite:nav:more-open";
 const FOLDERS_OPEN_KEY = "kite:nav:folders-open";
@@ -83,7 +95,18 @@ function NavToggle({
 	);
 }
 
-export function DashboardNav({ className }: { className?: string }) {
+export function DashboardNav({
+	className,
+	assistantToggle,
+	accountMenu,
+	notices,
+}: {
+	className?: string;
+	assistantToggle?: ReactNode;
+	accountMenu?: ReactNode;
+	/** Operational and setup notices, shown above Settings on wider screens. */
+	notices?: ReactNode;
+}) {
 	const { minimal } = useSidebar();
 	const pathname = usePathname();
 	const [moreOpen, setMoreOpen] = useStoredState(MORE_OPEN_KEY, false);
@@ -168,18 +191,29 @@ export function DashboardNav({ className }: { className?: string }) {
 		if (!selectedMailbox?.id) return;
 
 		let cancelled = false;
+		// Only the newest request may set the list, so a slow earlier reload cannot bring back a removed folder.
+		let latest = 0;
 		const params = new URLSearchParams({ mailboxId: selectedMailbox.id });
-		authFetch(`/api/folders?${params.toString()}`)
-			.then((response) => response.json() as Promise<{ folders?: CustomFolder[] }>)
-			.then((data) => {
-				if (!cancelled) setFolders(data.folders ?? []);
-			})
-			.catch(() => {
-				if (!cancelled) setFolders([]);
-			});
+		const load = () => {
+			const request = ++latest;
+			const current = () => !cancelled && request === latest;
+			return authFetch(`/api/folders?${params.toString()}`)
+				.then((response) => response.json() as Promise<{ folders?: CustomFolder[] }>)
+				.then((data) => {
+					if (current()) setFolders(data.folders ?? []);
+				})
+				.catch(() => {
+					if (current()) setFolders([]);
+				});
+		};
+		void load();
 
+		// Folders created or removed outside this component (the assistant's chat actions) ask for a reload.
+		const onFoldersChanged = () => void load();
+		window.addEventListener("kite:folders-changed", onFoldersChanged);
 		return () => {
 			cancelled = true;
+			window.removeEventListener("kite:folders-changed", onFoldersChanged);
 		};
 	}, [selectedMailbox?.id]);
 
@@ -210,10 +244,14 @@ export function DashboardNav({ className }: { className?: string }) {
 	}
 
 	return (
-		<SidebarScaffold className={className} header={<SidebarHeader href="/inbox" />} footer={<SidebarFooter />}>
+		<SidebarScaffold
+			className={className}
+			header={<SidebarAccounts accountMenu={accountMenu} />}
+			footer={<SidebarFooter extra={assistantToggle} notices={notices} />}
+		>
 			<SidebarMailboxSwitcher />
-			{composeLink && <NavItem labelClassName="font-medium" link={composeLink} />}
-			{minimal && <hr className="mx-6 my-2 border-neutral-200/70" />}
+			{composeLink && <NavItem link={composeLink} />}
+			{minimal ? <hr className="mx-6 my-2 border-neutral-200/70" /> : <NavSectionLabel label="Core" />}
 			<ReorderableList
 				storageKey="kite:nav:layout"
 				enabled={!minimal}
@@ -225,7 +263,7 @@ export function DashboardNav({ className }: { className?: string }) {
 					},
 					{
 						id: "more",
-						before: minimal ? undefined : <NavToggle expanded={moreOpen} onClick={toggleMore} />,
+						before: minimal ? undefined : <NavSectionHeader label="Management" open={moreOpen} onToggle={toggleMore} />,
 						visibleIds: (ordered) =>
 							forYou.visibleIds(showAllMoreLinks ? ordered : ordered.filter((id) => isActiveHref(id))),
 						items: moreLinks.map((link) => ({ id: link.href!, node: <NavItem link={link} /> })),

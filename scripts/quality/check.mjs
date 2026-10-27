@@ -177,11 +177,16 @@ if (!formatOnly) {
 		if (file.startsWith("deploy/cloudflare-email-relay/src/"))
 			for (const spec of imports) {
 				const dest = resolve(file, spec);
-				// Portable shared observability helpers intentionally serve both deployments.
+				// Portable shared observability and request-signing helpers intentionally serve both deployments.
 				if (
 					dest &&
 					!dest.startsWith("deploy/cloudflare-email-relay/") &&
-					!["src/lib/logger.mjs", "src/lib/trace.mjs", "src/lib/metrics.mjs"].includes(dest)
+					![
+						"src/lib/logger.mjs",
+						"src/lib/trace.mjs",
+						"src/lib/metrics.mjs",
+						"src/lib/email/inbound-signature.mjs",
+					].includes(dest)
 				)
 					add(`boundary:relay:${file}->${dest}`);
 			}

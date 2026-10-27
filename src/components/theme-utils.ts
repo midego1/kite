@@ -1,7 +1,10 @@
 export type ThemePreference = "light" | "dark" | "system";
-export type StylePreference = "kite" | "classic";
+/** `kite` is the default (neutral) look, `lavender` is "Kite classic" and `classic` the original palette. */
+export type StylePreference = "kite" | "lavender" | "classic";
 
 export const THEME_STORAGE_KEY = "kite-theme";
+/** Kite is dark-first: without a saved choice the theme is dark. "Match system" is saved like any other choice. */
+export const DEFAULT_THEME: ThemePreference = "dark";
 export const THEME_CHANGED_EVENT = "kite:theme-changed";
 export const STYLE_STORAGE_KEY = "kite-style";
 export const STYLE_CHANGED_EVENT = "kite:style-changed";
@@ -12,16 +15,17 @@ export const DEFAULT_STYLE: StylePreference = "kite";
 export const themeBootstrapScript = `(() => {
 	try {
 		const saved = localStorage.getItem("kite-theme");
-		const preference = saved === "light" || saved === "dark" ? saved : "system";
+		const preference = saved === "light" || saved === "dark" || saved === "system" ? saved : "dark";
 		const dark = preference === "dark" || (preference === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
 		document.documentElement.classList.toggle("dark", dark);
 		document.documentElement.classList.toggle("light", !dark);
-		document.documentElement.dataset.style = localStorage.getItem("kite-style") === "classic" ? "classic" : "kite";
+		const style = localStorage.getItem("kite-style");
+		document.documentElement.dataset.style = style === "classic" || style === "lavender" ? style : "kite";
 	} catch {}
 })();`;
 
 export function isStylePreference(value: unknown): value is StylePreference {
-	return value === "kite" || value === "classic";
+	return value === "kite" || value === "lavender" || value === "classic";
 }
 
 export function readStylePreference(): StylePreference {
@@ -55,12 +59,12 @@ export function isThemePreference(value: unknown): value is ThemePreference {
 }
 
 export function readThemePreference(): ThemePreference {
-	if (typeof window === "undefined") return "system";
+	if (typeof window === "undefined") return DEFAULT_THEME;
 	try {
 		const saved = localStorage.getItem(THEME_STORAGE_KEY);
-		return isThemePreference(saved) ? saved : "system";
+		return isThemePreference(saved) ? saved : DEFAULT_THEME;
 	} catch {
-		return "system";
+		return DEFAULT_THEME;
 	}
 }
 
@@ -79,7 +83,7 @@ export function applyTheme(preference: ThemePreference): void {
 
 export function saveThemePreference(preference: ThemePreference): void {
 	try {
-		if (preference === "system") localStorage.removeItem(THEME_STORAGE_KEY);
+		if (preference === DEFAULT_THEME) localStorage.removeItem(THEME_STORAGE_KEY);
 		else localStorage.setItem(THEME_STORAGE_KEY, preference);
 	} catch {
 		// Storage can be unavailable in private windows; the theme still applies for this page.

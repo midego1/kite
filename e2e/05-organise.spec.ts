@@ -54,6 +54,8 @@ test("stars and unstars a message", async ({ page }) => {
 	const { subject } = await deliver("Star me");
 	await page.goto("/inbox");
 	const row = messageRow(page, subject);
+	// The star toggle sits with the row's other actions, shown on hover.
+	await row.hover();
 	await row.getByRole("button", { name: "Star", exact: true, pressed: false }).click();
 	await expect(row.getByRole("button", { name: "Star", exact: true, pressed: true })).toBeVisible();
 
@@ -66,6 +68,7 @@ test("stars and unstars a message", async ({ page }) => {
 	await expect(page.getByRole("main").getByText(subject, { exact: true })).toBeVisible();
 
 	await page.goto("/inbox");
+	await messageRow(page, subject).hover();
 	await messageRow(page, subject).getByRole("button", { name: "Star", exact: true, pressed: true }).click();
 	await expect(
 		messageRow(page, subject).getByRole("button", { name: "Star", exact: true, pressed: false }),
@@ -244,6 +247,8 @@ test("deleting a page of messages forever shows progress and removes them", asyn
 	await expect(mine.first()).toBeVisible();
 	// Messages arriving in the same instant have no fixed order, so read which ones the page shows.
 	const shown = await mine.allTextContents();
+	// Checkboxes show once Select is on.
+	await page.getByRole("button", { name: "Select", exact: true }).click();
 	await page.getByRole("checkbox", { name: "Select all visible messages" }).check();
 	await page.getByRole("button", { name: "Delete forever" }).click();
 	await page

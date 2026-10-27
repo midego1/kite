@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/d1";
 import * as coreTables from "@/db/schema";
 import * as autoReadTables from "@/db/schema/agent-auto-read";
+import * as writingTables from "@/db/schema/agent-writing";
 import * as driveTables from "@/db/schema/drive";
 import * as financeTables from "@/db/schema/finance";
 import * as moduleTables from "@/db/schema/modules";
@@ -11,6 +12,7 @@ import * as telemetryTables from "@/db/schema/telemetry";
 const schema = {
 	...coreTables,
 	...autoReadTables,
+	...writingTables,
 	...moduleTables,
 	...financeTables,
 	...driveTables,

@@ -1028,7 +1028,7 @@ async function arrowToPaletteRow(page: Page, search: Locator, title: string) {
 	const row = page.getByRole("option", { name: new RegExp(`^${title}`) });
 	await expect(row).toBeVisible();
 	for (let step = 0; step < 60; step++) {
-		if (/bg-blue-600/.test((await row.getAttribute("class")) ?? "")) return;
+		if ((await row.getAttribute("aria-selected")) === "true") return;
 		await search.press("ArrowDown");
 	}
 	throw new Error(`The palette never highlighted ${title}`);
@@ -1063,11 +1063,11 @@ test("ArrowUp from the first row wraps to the last row and Enter runs that comma
 	await page.goto("/inbox");
 	await expect(page.getByRole("button", { name: "Compose" })).toBeVisible();
 	const search = await openPalette(page);
-	const rows = page.locator("div.max-h-80 > div > button");
-	await expect(rows.first()).toHaveClass(/bg-blue-600/);
+	const rows = page.getByRole("listbox", { name: "Commands" }).getByRole("option");
+	await expect(rows.first()).toHaveAttribute("aria-selected", "true");
 	await search.press("ArrowUp");
 	const last = rows.last();
-	await expect(last).toHaveClass(/bg-blue-600/);
+	await expect(last).toHaveAttribute("aria-selected", "true");
 	const title = (await last.locator("span").first().innerText()).trim();
 	expect(title.length).toBeGreaterThan(0);
 	await search.press("Enter");
@@ -3196,7 +3196,7 @@ test("with migration 0062 applied the owner sees every module surface as before 
 		await expect(page.getByRole("button", { name: "Compose" })).toBeVisible();
 		await page.getByRole("button", { name: "Open account menu" }).click();
 		await shot("click-1-account-menu");
-		await page.getByRole("banner").getByRole("link", { name: "Admin", exact: true }).click();
+		await page.locator('[data-placement="sidebar"]').getByRole("link", { name: "Admin", exact: true }).click();
 		await expect(page).toHaveURL(/\/admin$/);
 		await shot("click-2-admin");
 		await page.getByRole("complementary", { name: "Admin menu" }).getByRole("link", { name: "Modules" }).click();

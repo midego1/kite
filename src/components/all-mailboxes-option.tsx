@@ -9,7 +9,7 @@ import type { MailboxCount } from "@/hooks/types";
 import { cn } from "@/lib/utils";
 
 /** The All mailboxes mark: the same footprint as a mailbox avatar. */
-export function AllMailboxesIcon({ className }: { className?: string }) {
+function AllMailboxesIcon({ className }: { className?: string }) {
 	return (
 		<span
 			className={cn(

@@ -105,10 +105,6 @@ export function ComposeForm({
 	const previousSignature = useRef("");
 
 	useEffect(() => {
-		if (!selectedMailbox && mailboxes.length === 1) setSelectedMailbox(mailboxes[0]);
-	}, [mailboxes, selectedMailbox, setSelectedMailbox]);
-
-	useEffect(() => {
 		let active = true;
 		void authFetch("/api/attachment-policy", { cache: "no-store" })
 			.then(async (response) => {
@@ -411,7 +407,6 @@ export function ComposeForm({
 			return;
 		}
 		rememberFrom(selectedMailbox, selectedFrom);
-
 		if (sent.draftId) {
 			void authFetch(`/api/drafts/${sent.draftId}`, { method: "DELETE" }).finally(() => {
 				window.dispatchEvent(new Event("kite:messages-changed"));

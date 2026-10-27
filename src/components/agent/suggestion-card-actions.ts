@@ -70,7 +70,7 @@ const TOAST_TEXT: Record<CardAction, string> = {
 	dismiss: "Suggestion dismissed",
 	mute: "Kite will only warn about phishing from this sender",
 	pause: "Kite is paused for this mailbox for 24 hours",
-	mark_spam: "Moved to Spam",
+	mark_spam: "Reported as spam",
 	not_phishing: notPhishingToast(null),
 };
 

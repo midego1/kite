@@ -533,6 +533,13 @@
       "when": 1788851760028,
       "tag": "0072_add_ai_summaries",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1788851880028,
+      "tag": "0073_add_spam_report_receipts",
+      "breakpoints": true
     }
   ]
 }

@@ -110,8 +110,23 @@ function placeList(value: unknown): MessagePlace[] {
 const CHAT_ACTION_SOURCE = "chat";
 
 /** The state a chat action row keeps for its undo: each message before and right after the effect. */
-export function chatActionState(before: MessagePlace[], after: MessagePlace[]): ChatActionState {
-	return { source: CHAT_ACTION_SOURCE, messages: before, applied: after };
+export function chatActionState(
+	before: MessagePlace[],
+	after: MessagePlace[],
+	receipts: Record<string, string> = {},
+): ChatActionState {
+	return {
+		source: CHAT_ACTION_SOURCE,
+		messages: before,
+		applied: after,
+		...(Object.keys(receipts).length > 0 ? { receipts } : {}),
+	};
+}
+
+function receiptMap(value: unknown): Record<string, string> | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const entries = Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+	return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 /**
@@ -150,7 +165,13 @@ export function appliedPlaces(before: MessagePlace[], plan: ChatActionPlan): Mes
 /** The saved state of a row written by an approved chat action, or null for any other row (a phishing "Mark as spam"). */
 export function storedChatActionState(before: Record<string, unknown> | null): ChatActionState | null {
 	if (before?.source !== CHAT_ACTION_SOURCE) return null;
-	return { source: CHAT_ACTION_SOURCE, messages: placeList(before.messages), applied: placeList(before.applied) };
+	const receipts = receiptMap(before.receipts);
+	return {
+		source: CHAT_ACTION_SOURCE,
+		messages: placeList(before.messages),
+		applied: placeList(before.applied),
+		...(receipts ? { receipts } : {}),
+	};
 }
 
 /**

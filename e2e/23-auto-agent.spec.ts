@@ -3137,13 +3137,21 @@ test.describe("reply suggestions", () => {
 			const accepted = page.waitForResponse((response) =>
 				response.url().endsWith(`/api/agent/suggestions/${warning.id}/accept`),
 			);
+			// Marking spam trains the filter, so it asks first; Cancel changes nothing.
 			await phishingBlock(page).getByRole("button", { name: "Mark as spam" }).click();
+			const spamQuestion = page.getByRole("alertdialog", { name: "Report as spam?" });
+			await expect(spamQuestion).toBeVisible();
+			await spamQuestion.getByRole("button", { name: "Cancel" }).click();
+			await expect(phishingBlock(page)).toHaveCount(1);
+			expect((await warningOf(mismatch.id)).status).toBe("open");
+			await phishingBlock(page).getByRole("button", { name: "Mark as spam" }).click();
+			await spamQuestion.getByRole("button", { name: "Report spam" }).click();
 			expect((await accepted).status()).toBe(200);
 			await expect(phishingBlock(page)).toHaveCount(0);
 			await waitForMessage(account.api, mismatch.subject!, { status: "spam" });
 			expect((await warningOf(mismatch.id)).status).toBe("accepted");
 			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openBefore - 1}$`));
-			const toast = page.getByRole("status").filter({ hasText: "Moved to Spam" });
+			const toast = page.getByRole("status").filter({ hasText: "Reported as spam" });
 			const undone = page.waitForResponse((response) => /\/api\/agent\/actions\/[^/]+\/undo$/.test(response.url()));
 			await toast.getByRole("button", { name: "Undo" }).click();
 			expect((await undone).status()).toBe(200);

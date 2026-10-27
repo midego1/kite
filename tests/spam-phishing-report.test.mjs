@@ -197,7 +197,7 @@ test("Move to Inbox clears snoozes on spam and normal messages while recording h
 });
 
 test("the confirmation and the toast say what happened to each sender", () => {
-	assert.equal(phishingConfirmCopy(1).title, "Report this message as phishing?");
+	assert.equal(phishingConfirmCopy(1).title, "Report as phishing?");
 	assert.match(phishingConfirmCopy(3).description, /blocks the senders/);
 	assert.equal(describePhishingReports([]), null);
 	assert.equal(

@@ -198,6 +198,57 @@ test.describe("Write with Kite", () => {
 		}
 	});
 
+	test("in a reply docked under the message the panel and its preview show in full", async ({ browser }) => {
+		const account = await newAccount("wwi");
+		const token = uniqueToken("inline");
+		await postInbound(account.api, {
+			from: "Sam Partner <sam@partner.test>",
+			to: account.address,
+			subject: `Docked ${token}`,
+			text: `Shall we meet on Tuesday? Reference ${token}.`,
+		});
+		await waitForMessage(account.api, `Docked ${token}`);
+		const { context, page } = await signedInPage(browser, account);
+		try {
+			await page.setViewportSize({ width: 1280, height: 720 });
+			await page.goto("/inbox");
+			await openMessage(page, `Docked ${token}`);
+			await page
+				.getByRole("button", { name: /^Reply( \(r\))?$/ })
+				.first()
+				.click();
+			const composer = page.getByRole("main").getByRole("region", { name: "Compose message" });
+			await expect(composer.getByRole("button", { name: "Pop out composer" })).toBeVisible();
+			const panel = await openPanel(page);
+			await panel.getByLabel("What should this email say?").fill("Say yes [[scenario:compose-write]]");
+			await panel.getByRole("button", { name: "Write" }).click();
+			const preview = panel.getByRole("region", { name: "Preview" });
+			await expect(preview).toContainText("Tuesday at ten works for me.");
+			// Nothing clips the panel: its corners and the preview are on screen and are what is drawn there.
+			for (const target of [panel, preview, panel.getByRole("button", { name: "Insert", exact: true })]) {
+				const box = (await target.boundingBox())!;
+				expect(box.y).toBeGreaterThanOrEqual(0);
+				expect(box.y + box.height).toBeLessThanOrEqual(720);
+				const topmost = await target.evaluate((element) => {
+					const rect = element.getBoundingClientRect();
+					const points = [
+						[rect.left + 4, rect.top + 4],
+						[rect.right - 4, rect.bottom - 4],
+					];
+					return points.every(([x, y]) => element.contains(document.elementFromPoint(x, y)));
+				});
+				expect(topmost).toBe(true);
+			}
+			await panel.getByRole("button", { name: "Insert", exact: true }).click();
+			await expect(composer.getByRole("textbox", { name: "Message body" })).toContainText(
+				"Tuesday at ten works for me.",
+			);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
 	test("rewrites only the selection, keeps the signature, and translating keeps the original below", async ({
 		browser,
 	}) => {
@@ -398,8 +449,9 @@ test.describe("Write with Kite", () => {
 		const account = await newAccount("wwr");
 		try {
 			let limited = false;
-			// Each refused body still counts against the per-user limit (120 a minute), which runs first.
-			for (let attempt = 0; attempt < 130 && !limited; attempt++) {
+			// Each refused body still counts against the per-user limit (120 a minute), which runs first. The window is
+			// fixed, so 130 requests can straddle two windows without passing 120 in either; 250 cannot.
+			for (let attempt = 0; attempt < 250 && !limited; attempt++) {
 				const response = await account.api.post("/api/agent/compose", { data: { mailboxId: account.mailboxId } });
 				if (response.status() === 429) limited = true;
 				else expect(response.status()).toBe(400);

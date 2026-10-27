@@ -43,7 +43,7 @@ test("a message row is reachable by keyboard and Enter opens the message", async
 	await expect(row.getByText("Unread", { exact: true })).toBeAttached();
 
 	await row.getByRole("checkbox").focus();
-	await page.keyboard.press("Tab");
+	// The star sits in the row's corner after the link, so the link is the next stop.
 	await page.keyboard.press("Tab");
 	const link = row.getByRole("link", { name: new RegExp(subject) });
 	await expect(link).toBeFocused();

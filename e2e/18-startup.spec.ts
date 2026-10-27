@@ -4,7 +4,7 @@ import { RELEASE_VERSION } from "./support/constants";
 test("a stale offline hint cannot pause the session check indefinitely", async ({ page }) => {
 	await page.addInitScript(() => Object.defineProperty(navigator, "onLine", { get: () => false }));
 	await page.goto("/inbox");
-	await expect(page.getByRole("button", { name: "Compose", exact: true })).toBeVisible({ timeout: 15_000 });
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 15_000 });
 	await expect(
 		page.getByText(new RegExp(`Kite v${RELEASE_VERSION.replaceAll(".", "\\.")} \\([a-f0-9]{7}\\)`)),
 	).toBeVisible();
@@ -19,7 +19,7 @@ test("preferences saved before the rename to Kite still apply", async ({ page })
 		localStorage.setItem("mailflare-style", "classic");
 	});
 	await page.goto("/inbox");
-	await expect(page.getByRole("button", { name: "Compose", exact: true })).toBeVisible({ timeout: 15_000 });
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 15_000 });
 	await expect(page.locator("html")).toHaveClass(/\bdark\b/);
 	await expect(page.locator("html")).toHaveAttribute("data-style", "classic");
 	const stored = await page.evaluate(() => ({
@@ -33,7 +33,7 @@ test("preferences saved before the rename to Kite still apply", async ({ page })
 test("a failed session check does not leave the startup overlay open", async ({ page }) => {
 	await page.route("**/api/auth/me", (route) => route.abort("failed"));
 	await page.goto("/inbox");
-	await expect(page.getByRole("button", { name: "Compose", exact: true })).toBeVisible({ timeout: 15_000 });
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 15_000 });
 	await expect(page.locator("[data-loading-overlay]")).not.toHaveClass(/opacity-100/);
 });
 
@@ -48,8 +48,8 @@ test("a stalled startup offers a reload without bypassing the session check", as
 		if (requests > 1) return route.continue();
 	});
 	await page.goto("/inbox");
-	await expect(page.getByRole("button", { name: "Compose", exact: true })).toBeHidden();
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeHidden();
 	await page.getByRole("button", { name: "Reload Kite" }).click({ timeout: 20_000 });
-	await expect(page.getByRole("button", { name: "Compose", exact: true })).toBeVisible({ timeout: 15_000 });
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 15_000 });
 	expect(requests).toBeGreaterThan(1);
 });

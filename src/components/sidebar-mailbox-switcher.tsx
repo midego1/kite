@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { getAccountInitial, getMailboxAddress, getMailboxName } from "./mailbox-selector-utils";
 import { useSidebar } from "./sidebar-state";
 
-function MailboxAvatar({ mailbox, className }: { mailbox: MailboxOption; className?: string }) {
+export function MailboxAvatar({ mailbox, className }: { mailbox: MailboxOption; className?: string }) {
 	const [failed, setFailed] = useState(false);
 	const name = getMailboxName(mailbox);
 	return (
@@ -92,10 +92,14 @@ export function SidebarMailboxSwitcher() {
 				aria-haspopup="listbox"
 				aria-expanded={open}
 				aria-label={`Switch mailbox, current: ${getMailboxAddress(selectedMailbox)}`}
-				className="flex h-10 w-full items-center gap-2.5 rounded-xl border max-md:h-11 border-neutral-200 bg-white px-3 text-left text-sm transition-colors hover:border-neutral-300"
+				className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-neutral-200/60 max-md:min-h-11"
 			>
-				<MailboxAvatar mailbox={selectedMailbox} />
-				<span className="min-w-0 flex-1 truncate font-medium text-neutral-900">{getMailboxName(selectedMailbox)}</span>
+				<span className="min-w-0 flex-1">
+					<span className="block truncate text-[15px] font-medium text-neutral-900">
+						{getMailboxName(selectedMailbox)}
+					</span>
+					<span className="block truncate text-sm text-neutral-500">{getMailboxAddress(selectedMailbox)}</span>
+				</span>
 				<ChevronsUpDown className="h-4 w-4 shrink-0 text-neutral-400" />
 			</button>
 			{open &&

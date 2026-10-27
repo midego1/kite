@@ -11,7 +11,12 @@ import { useLoadRemoteImages } from "@/components/messages/use-load-remote-image
 import { runSingleMessageAction } from "@/components/message-actions/utils";
 import { sanitizeEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/email-html-sanitizer";
 import { collapseQuotedEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/quote-collapse-utils";
-import { getMessageBodyDisplay, resolveInlineAttachmentUrls } from "@/app/(dashboard)/inbox/[messageId]/utils";
+import {
+	formatAttachmentSize,
+	getMessageBodyDisplay,
+	resolveInlineAttachmentUrls,
+} from "@/app/(dashboard)/inbox/[messageId]/utils";
+import { getAttachmentVisual } from "@/components/message-attachment-card-utils";
 
 import { cn } from "@/lib/utils";
 import type { ConversationMessageCardProps, ConversationThreadProps } from "./conversation-thread-types";
@@ -23,8 +28,6 @@ import {
 	partitionThread,
 } from "./conversation-thread-utils";
 import clsx from "clsx";
-import { useMessageListVisibility } from "./message-list-visibility";
-import { useAssistantOpen } from "../agent/assistant-open-state";
 import { SuggestionCard } from "../agent/suggestion-card";
 
 /**
@@ -67,13 +70,7 @@ export function ConversationThread({
 				}
 				className={cn(position === (latestMessagesFirst ? "before" : "after") ? "pb-6" : "")}
 			>
-				<ol
-					className={cn(
-						!collapsed && "divide-y divide-neutral-200/50",
-						latestMessagesFirst ? "border-t" : "border-b",
-						"border-neutral-200",
-					)}
-				>
+				<ol>
 					<li className={"border-t-0"}>
 						<ConversationMessageCard
 							message={firstMessage}
@@ -85,8 +82,8 @@ export function ConversationThread({
 						/>
 					</li>
 					{collapsed ? (
-						<li className="flex items-center justify-center gap-1 py-2 text-center border-y border-neutral-100 h-px my-4">
-							<span className="bg-white px-6 flex flex-row items-center gap-2">
+						<li className="flex items-center justify-center gap-1 border-t border-neutral-200 py-3 text-center">
+							<span className="flex flex-row items-center gap-2 px-6">
 								<span className="text-sm font-medium text-neutral-600">{collapsedLabel}</span>
 								<button
 									type="button"
@@ -131,6 +128,33 @@ export function ConversationThread({
 	);
 }
 
+/** An earlier message's attachment as the same chip as the open message's: its type, name and size. */
+function ThreadAttachmentChip({
+	messageId,
+	attachment,
+}: {
+	messageId: string;
+	attachment: ConversationMessageCardProps["message"]["attachments"][number];
+}) {
+	const visual = getAttachmentVisual(attachment);
+	const Icon = visual.icon;
+	const iconColor = visual.iconClassName
+		.split(" ")
+		.filter((name) => name.startsWith("text-"))
+		.join(" ");
+	return (
+		<a
+			href={`/api/messages/${messageId}/attachments/${attachment.id}`}
+			title={`${attachment.filename} · ${visual.label}`}
+			className="flex h-9 max-w-full items-center gap-2 rounded-lg bg-neutral-100 px-2.5 text-sm transition-colors hover:bg-neutral-200"
+		>
+			<Icon className={cn("h-4 w-4 shrink-0", iconColor)} aria-hidden="true" />
+			<span className="min-w-0 max-w-48 truncate text-neutral-900">{attachment.filename}</span>
+			<span className="shrink-0 text-neutral-500">{formatAttachmentSize(attachment.size)}</span>
+		</a>
+	);
+}
+
 export function ConversationMessageCard({
 	message,
 	mailboxId,
@@ -151,9 +175,6 @@ export function ConversationMessageCard({
 	// const href = `${getMessageBackHref(message.direction, message.status)}/${message.id}`;
 	const outbound = message.direction === "outbound";
 	const attachments = message.attachments.filter((attachment) => attachment.disposition === "attachment");
-	const { visible: messageListVisible } = useMessageListVisibility();
-	const isAssistantOpen = useAssistantOpen();
-	const isAnyPanelVisible = messageListVisible || isAssistantOpen;
 
 	let body: { html: string | null; text: string; quotedHtml: string | null; blockedRemoteImages: number } | null = null;
 	if (expanded) {
@@ -182,13 +203,13 @@ export function ConversationMessageCard({
 	return (
 		<article
 			className={cn(
-				"bg-white transition-colors px-3 sm:px-6",
+				// Each message is a section under a hairline, like the open one, as in Zero's reader.
+				"border-t border-neutral-200 bg-white px-4 transition-colors sm:px-7",
 				!expanded && "hover:bg-neutral-50",
-				!isAnyPanelVisible && "sm:pl-12",
 			)}
 		>
 			<div className="w-full">
-				<div className="flex w-full flex-wrap items-start gap-x-3 py-3 sm:pl-4">
+				<div className="flex w-full flex-wrap items-start gap-x-3 py-4">
 					<button
 						type="button"
 						onClick={() => {
@@ -256,7 +277,7 @@ export function ConversationMessageCard({
 					/>
 				</div>
 				{expanded && body && (
-					<div className="pb-4 pt-2 sm:pl-16">
+					<div className="pb-6 pt-1">
 						{body.blockedRemoteImages > 0 && <RemoteImagesNotice onShow={() => setRemoteImagesShown(true)} />}
 						{body.html ? (
 							<EmailHtmlFrame html={body.html} className="email-body max-w-none" />
@@ -268,13 +289,7 @@ export function ConversationMessageCard({
 							<ul className="mt-4 flex flex-wrap gap-2">
 								{attachments.map((attachment) => (
 									<li key={attachment.id}>
-										<a
-											href={`/api/messages/${message.id}/attachments/${attachment.id}`}
-											className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
-										>
-											<Paperclip className="h-3 w-3" />
-											<span className="max-w-48 truncate">{attachment.filename}</span>
-										</a>
+										<ThreadAttachmentChip messageId={message.id} attachment={attachment} />
 									</li>
 								))}
 							</ul>

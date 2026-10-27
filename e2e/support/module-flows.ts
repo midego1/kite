@@ -8,11 +8,11 @@ export async function expectNotFoundPage(page: Page, path: string) {
 	await expect(page.getByRole("link", { name: "Go to inbox" })).toHaveAttribute("href", "/inbox");
 }
 
-/** Opens the menu in the page header and returns it, so its links are not confused with the sidebar's. */
+/** Opens the account menu (at the top of the sidebar) and returns it, so its links are not confused with the sidebar's. */
 export async function openAccountMenu(page: Page) {
 	await page.goto("/inbox");
 	await page.getByRole("button", { name: "Open account menu" }).click();
-	const menu = page.getByRole("banner");
+	const menu = page.locator('[data-placement="sidebar"]');
 	await expect(menu.getByRole("link", { name: "Inbox", exact: true })).toBeVisible();
 	return menu;
 }

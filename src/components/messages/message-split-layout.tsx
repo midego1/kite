@@ -1,5 +1,6 @@
 "use client";
 
+import clsx from "clsx";
 import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSidebar } from "@/components/sidebar-state";
@@ -28,6 +29,8 @@ import { useReadingPaneMode, useWideReadingViewport } from "./use-reading-layout
 import { getSelectionToolbarFolder } from "./utils";
 import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
 
+// The list and the reader are separate rounded panels on the page background, a few pixels apart.
+const PANEL_CLASS = "rounded-xl border border-neutral-200 shadow-xs";
 const LIST_WIDTH = { fallback: 360, min: 250, max: 1200, reserved: 280 };
 const LIST_HEIGHT = { fallback: 320, min: 120, max: 1200, reserved: 200 };
 // Panel ids are DOM ids too, so they carry a prefix.
@@ -170,7 +173,9 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const detail = (
 		<MessageListVisibilityContext.Provider value={visibility}>
 			<MessageDetailNavigationProvider config={config}>
-				<section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white">
+				<section
+					className={clsx("flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white", split && PANEL_CLASS)}
+				>
 					{split && !below && selectedMessages.length > 0 ? (
 						<BulkMessageSelectionPane
 							folder={getSelectionToolbarFolder(config)}
@@ -222,7 +227,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 				}}
 			>
 				<aside
-					className="h-full min-h-0 min-w-0 overflow-hidden bg-white"
+					className={clsx("h-full min-h-0 min-w-0 overflow-hidden bg-white", PANEL_CLASS)}
 					aria-hidden={!listVisible}
 					inert={!listVisible}
 				>
@@ -246,7 +251,11 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 				// A hidden list has no handle: it is not a tab stop, and arrow keys cannot drag the list back open.
 				disabled={!listVisible}
 				aria-hidden={listVisible ? undefined : true}
-				className={listVisible ? undefined : "pointer-events-none opacity-0"}
+				className={clsx(
+					// The handle sits in the gap between the two panels.
+					"bg-transparent aria-[orientation=horizontal]:my-1 aria-[orientation=vertical]:mx-1",
+					!listVisible && "pointer-events-none opacity-0",
+				)}
 			/>
 			<ResizablePanel id="kite-reader-panel" minSize={listLimits.reserved}>
 				{detail}

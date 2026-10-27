@@ -13,4 +13,4 @@ Every pull request with a user-visible change adds one file here instead of edit
 - Opening a long thread no longer scrolls the reader back to the top when new mail arrives.
 ```
 
-The "Changelog" check (`npm run release:check -- origin/main`) validates every fragment and fails a pull request that adds none without the label.
+The CI "Release version" check (`npm run release:check -- origin/main`) validates every fragment and fails a pull request that adds none without the label.

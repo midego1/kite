@@ -9,20 +9,36 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const git = (...args) =>
 	execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trimEnd();
 
-/** The labels CI passes as JSON in PR_LABELS; anything unreadable counts as no labels. */
-function pullRequestLabels() {
+/**
+ * The pull request's labels. CI reads them live from the API (PR_NUMBER, GITHUB_TOKEN, GITHUB_REPOSITORY),
+ * so rerunning the job after adding no-changelog sees the label; otherwise, or when that fails, it uses
+ * the JSON in PR_LABELS from the event. Anything unreadable counts as no labels.
+ */
+async function pullRequestLabels() {
+	const { PR_NUMBER, GITHUB_TOKEN, GITHUB_REPOSITORY, PR_LABELS } = process.env;
+	if (PR_NUMBER && GITHUB_TOKEN && GITHUB_REPOSITORY) {
+		try {
+			const response = await fetch(
+				`https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${encodeURIComponent(PR_NUMBER)}/labels?per_page=100`,
+				{ headers: { authorization: `Bearer ${GITHUB_TOKEN}`, accept: "application/vnd.github+json" } },
+			);
+			if (response.ok) return (await response.json()).map((label) => String(label.name));
+		} catch {
+			// Fall back to the labels in the event.
+		}
+	}
 	try {
-		const labels = JSON.parse(process.env.PR_LABELS || "[]");
+		const labels = JSON.parse(PR_LABELS || "[]");
 		return Array.isArray(labels) ? labels.map(String) : [];
 	} catch {
 		return [];
 	}
 }
 
-// The "Changelog" pull request check (docs/releasing.md). Uses only Node built-ins, so CI can run it
+// The "Release version" pull request check (docs/releasing.md). Uses only Node built-ins, so CI can run it
 // without installing dependencies. CI passes the branch in HEAD_REF and the labels in PR_LABELS;
 // locally the current branch is used.
-function main() {
+async function main() {
 	const base = process.argv[2];
 	if (!base || !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(base)) {
 		console.error("Usage: release-check.mjs <base-ref>");
@@ -41,7 +57,7 @@ function main() {
 		.filter((file) => file && isFragmentFile(path.basename(file)));
 	const problems = checkPullRequest({
 		branch,
-		labels: pullRequestLabels(),
+		labels: await pullRequestLabels(),
 		baseVersion,
 		headVersion: readFileSync(path.join(root, "VERSION"), "utf8"),
 		changelog: readFileSync(path.join(root, "CHANGELOG.md"), "utf8"),
@@ -63,4 +79,4 @@ function main() {
 	return 1;
 }
 
-process.exitCode = main();
+process.exitCode = await main();

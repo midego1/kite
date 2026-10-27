@@ -73,9 +73,8 @@ if (!token || !repo) {
 try {
 	const result = await publishRelease({ sha: plan.sha, version, notes }, { fetch, token, repo });
 	if (result.outcome === "not-bumped") {
-		console.log(
-			`::warning::This deploy did not bump VERSION: ${tag} already names ${result.taggedSha}, not ${plan.sha}. Run npm run release:prepare as the last commit of each pull request.`,
-		);
+		// Feature merges deploy without a release; the next release pull request bumps VERSION.
+		console.log(`VERSION is still ${version}, released as ${tag} at ${result.taggedSha}; nothing to publish.`);
 	} else if (result.outcome === "already-published") {
 		console.log(`${tag} is already published (${result.url}); leaving its notes untouched.`);
 	} else {

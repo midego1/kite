@@ -1,19 +1,24 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { fragmentProblems, readFragments } from "./changelog-fragments.mjs";
 import { openApiPath, renderOpenApi } from "./docs-generate.mjs";
 import { changelogSection, NO_CHANGES_NOTE, nextVersion, packageVersion, releaseChangelog } from "./version-utils.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const file = (name) => path.join(root, name);
 
-// Writes the next calendar version into VERSION, package.json, package-lock.json, CHANGELOG.md and the
-// OpenAPI document. It commits, tags and pushes nothing; docs/releasing.md lists the steps after it.
+// Folds the changelog.d fragments into a new CHANGELOG.md section, writes the next calendar version into
+// VERSION, package.json, package-lock.json and the OpenAPI document, and deletes the fragments. It
+// commits, tags and pushes nothing; the release workflow (or docs/releasing.md) does the rest.
 async function main() {
 	const now = new Date();
+	const fragments = readFragments(root);
+	const problems = fragmentProblems(fragments);
+	if (problems.length) throw new Error(`Fix the changelog fragments first:\n- ${problems.join("\n- ")}`);
 	const version = nextVersion(readFileSync(file("VERSION"), "utf8"), now);
 	const npmVersion = packageVersion(version);
-	const changelog = releaseChangelog(readFileSync(file("CHANGELOG.md"), "utf8"), version, now);
+	const changelog = releaseChangelog(readFileSync(file("CHANGELOG.md"), "utf8"), version, now, fragments);
 
 	const pkg = readFileSync(file("package.json"), "utf8");
 	const versionLine = /^(\t"version": )"[^"]*"/m;
@@ -26,11 +31,12 @@ async function main() {
 	writeFileSync(file("package.json"), pkg.replace(versionLine, `$1"${npmVersion}"`));
 	writeFileSync(file("package-lock.json"), `${JSON.stringify(lock, null, 2)}\n`);
 	writeFileSync(file("CHANGELOG.md"), changelog);
+	for (const fragment of fragments) rmSync(fragment.path);
 	// renderOpenApi reads info.version from the VERSION file written above.
 	writeFileSync(openApiPath, await renderOpenApi());
 	const empty = changelogSection(changelog, version) === NO_CHANGES_NOTE;
 	process.stdout.write(
-		`Prepared ${version} (package.json ${npmVersion}).${empty ? ` Nothing was under Unreleased, so it says "${NO_CHANGES_NOTE}"` : ""} Review CHANGELOG.md, then commit it as "chore(release): ${version}", the last commit of this branch (docs/releasing.md).\n`,
+		`Prepared ${version} (package.json ${npmVersion}) from ${fragments.length} fragment(s).${empty ? ` There were no changelog entries, so it says "${NO_CHANGES_NOTE}"` : ""} Review CHANGELOG.md, then commit it as "chore(release): ${version}" on a release/* branch (docs/releasing.md).\n`,
 	);
 }
 

@@ -129,6 +129,9 @@ test("release:prepare folds the fragments, bumps every version file and deletes 
 		},
 	});
 	assert.equal(releasePending(root), true);
+	mkdirSync(join(root, "bundle-growth.d"));
+	writeFileSync(join(root, "bundle-growth.d", "big-editor.json"), "{}");
+	writeFileSync(join(root, "bundle-growth.d", "notes.txt"), "kept");
 	let openApiWrites = 0;
 	const result = await prepareRelease({
 		root,
@@ -151,6 +154,8 @@ test("release:prepare folds the fragments, bumps every version file and deletes 
 	assert.equal(existsSync(join(root, "changelog.d", "a.md")), false);
 	assert.equal(existsSync(join(root, "changelog.d", "b.md")), false);
 	assert.equal(existsSync(join(root, "changelog.d", "README.md")), true);
+	assert.equal(existsSync(join(root, "bundle-growth.d", "big-editor.json")), false);
+	assert.equal(existsSync(join(root, "bundle-growth.d", "notes.txt")), true);
 	assert.equal(releasePending(root), false);
 });
 

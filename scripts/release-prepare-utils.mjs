@@ -1,6 +1,7 @@
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fragmentProblems, readFragments } from "./changelog-fragments.mjs";
+import { ALLOWANCE_DIRECTORY, isAllowanceFile } from "./quality/bundle-budget-utils.mjs";
 import {
 	changelogSection,
 	hasPendingChanges,
@@ -17,7 +18,8 @@ export function releasePending(root) {
 
 /**
  * Folds the changelog.d fragments of `root` into a new CHANGELOG.md section, writes the next calendar
- * version into VERSION, package.json and package-lock.json, deletes the fragments, then lets
+ * version into VERSION, package.json and package-lock.json, deletes the fragments (and the bundle growth
+ * allowances in bundle-growth.d, which only mattered to the pull requests that added them), then lets
  * `writeOpenApi` rewrite the OpenAPI document (it reads the new VERSION). Malformed fragments are refused
  * before anything is written. Returns the version and whether the release says NO_CHANGES_NOTE.
  */
@@ -42,6 +44,10 @@ export async function prepareRelease({ root, now = new Date(), writeOpenApi }) {
 	writeFileSync(file("package-lock.json"), `${JSON.stringify(lock, null, 2)}\n`);
 	writeFileSync(file("CHANGELOG.md"), changelog);
 	for (const fragment of fragments) rmSync(fragment.path);
+	const allowances = file(ALLOWANCE_DIRECTORY);
+	if (existsSync(allowances))
+		for (const name of readdirSync(allowances))
+			if (isAllowanceFile(`${ALLOWANCE_DIRECTORY}/${name}`)) rmSync(path.join(allowances, name));
 	await writeOpenApi();
 	return {
 		version,

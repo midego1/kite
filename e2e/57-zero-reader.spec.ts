@@ -155,7 +155,7 @@ function replyBox(page: Page) {
 
 /** Opens the docked reply from the reply box and waits until its body has the focus, ready to type in. */
 async function openReply(page: Page) {
-	await openReply(page);
+	await replyBox(page).click();
 	const body = inlineComposer(page).getByRole("textbox", { name: "Message body" });
 	await expect(body).toBeFocused();
 	return body;

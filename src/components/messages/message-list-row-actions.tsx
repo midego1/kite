@@ -5,12 +5,13 @@ import { useState } from "react";
 import { Archive, Clock, Mail, MailOpen, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import type { MessageListRowActionsProps } from "./types";
 import { isMessageSnoozed, unsnoozeMessage } from "./message-list-row-actions-utils";
 import { SnoozePicker } from "./snooze-picker";
 import { reportListActionError } from "./list-action-toast";
 
-export function MessageListRowActions({ message, onAction, compact = false }: MessageListRowActionsProps) {
+export function MessageListRowActions({ message, onAction, compact = false, star }: MessageListRowActionsProps) {
 	const [snoozeOpen, setSnoozeOpen] = useState(false);
 	const snoozed = isMessageSnoozed(message.snoozedUntil);
 	const readAction = message.read ? "unread" : "read";
@@ -21,6 +22,22 @@ export function MessageListRowActions({ message, onAction, compact = false }: Me
 			<div
 				className={`absolute z-10 flex items-center gap-1 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100 ${snoozeOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"} ${compact ? "-right-1 -top-1 h-7 gap-0.5 rounded-lg border border-neutral-200 bg-white px-0.5 shadow-sm" : "right-6 top-1/2 -translate-y-1/2 bg-[#f2f6fc] pl-3"}`}
 			>
+				{star && (
+					// One name in both states, so the pressed state carries it ("Star", pressed); the tooltip says what a click does.
+					<Tooltip label={star.starred ? "Unstar" : "Star"}>
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							className={buttonClassName}
+							onClick={star.onToggle}
+							aria-label="Star"
+							aria-pressed={star.starred}
+						>
+							<star.icon className={cn("h-4 w-4", star.starred && "fill-amber-400 text-amber-400")} />
+						</Button>
+					</Tooltip>
+				)}
 				<Tooltip label="Archive">
 					<Button
 						type="button"

@@ -87,13 +87,22 @@ function RowCornerStar({
 	hoverActions: boolean;
 }) {
 	if (!row.starToggle) return null;
+	const Icon = icon;
+	// With hover actions the toggle lives in their pill; the corner then only marks a starred row at rest.
+	if (hoverActions)
+		return row.starred ? (
+			<span
+				aria-hidden="true"
+				className="absolute bottom-1 right-1 group-hover:hidden group-has-[:focus-visible]:hidden"
+			>
+				<Icon className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+			</span>
+		) : null;
 	return (
 		<span
 			className={clsx(
 				"absolute bottom-0 right-0",
 				!row.starred && "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
-				// The hover actions take the row's right edge; keyboard focus keeps the star reachable.
-				hoverActions && "group-hover:hidden",
 			)}
 		>
 			<MessageRowStar starred={row.starred} compact icon={icon} onToggle={row.toggleStar} />
@@ -137,7 +146,7 @@ function StackedMessageRow(props: RowViewProps) {
 					<span
 						className={clsx(
 							"flex items-baseline justify-between gap-3",
-							showHoverActions && "group-hover:pr-[7.75rem] group-has-[:focus-visible]:pr-[7.75rem]",
+							showHoverActions && "group-hover:pr-[9.25rem] group-has-[:focus-visible]:pr-[9.25rem]",
 						)}
 					>
 						<MessageRowParty
@@ -176,7 +185,14 @@ function StackedMessageRow(props: RowViewProps) {
 				</Link>
 				<RowCornerStar row={row} icon={Icon} hoverActions={showHoverActions} />
 				<ScreenerRowControls message={row.rowMessage} compact />
-				{showHoverActions && <MessageListRowActions message={row.rowMessage} onAction={row.runRowAction} compact />}
+				{showHoverActions && (
+					<MessageListRowActions
+						message={row.rowMessage}
+						onAction={row.runRowAction}
+						compact
+						star={row.starToggle ? { starred: row.starred, icon: Icon, onToggle: row.toggleStar } : undefined}
+					/>
+				)}
 			</div>
 		</div>
 	);

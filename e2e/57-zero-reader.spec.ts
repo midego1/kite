@@ -359,7 +359,7 @@ test("notices show over the page while the sidebar is the icon rail and on phone
 	await phone.close();
 });
 
-test("a row's hover actions get their own space, clear of the sender and the star, at narrow and wide list widths", async ({
+test("a row's hover actions, the star first, get their own space clear of the sender at narrow and wide list widths", async ({
 	page,
 }) => {
 	const subject = await deliverOne("Inline hover");
@@ -383,7 +383,10 @@ test("a row's hover actions get their own space, clear of the sender and the sta
 		const rowBox = (await row.boundingBox())!;
 		expect(sender.x + sender.width, key).toBeLessThanOrEqual(pill.x);
 		expect(pill.x + pill.width, key).toBeLessThanOrEqual(rowBox.x + rowBox.width);
-		await expect(row.getByRole("button", { name: "Star", exact: true })).toBeHidden();
+		// The star is the pill's first action, inside it.
+		const star = (await row.getByRole("button", { name: "Star", exact: true }).boundingBox())!;
+		expect(star.x, key).toBeGreaterThanOrEqual(pill.x);
+		expect(star.x + star.width, key).toBeLessThanOrEqual(pill.x + pill.width);
 		await page.mouse.move(0, 0);
 	}
 });

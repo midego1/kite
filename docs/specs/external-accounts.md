@@ -1,6 +1,6 @@
 # Spec: external mail accounts (ROADMAP Milestone 6)
 
-Status: draft for review. Written against `main` at `d7810f9`; every path is relative to the repository root. Migration numbers are left open: the last migration on `main` is `0070_add_writing_style.sql`, so this work starts at the next free number when each PR is built, keeping `tests/migration-order.test.mjs` passing. Scope: [ROADMAP Milestone 6](../../ROADMAP.md#milestone-6-external-mail-accounts), phases 1 to 3 in full, and phase 4 (OAuth) designed here but sized and approved separately.
+Status: accepted by Michiel on 2026-10-27 (see [Decisions](#18-decisions-2026-10-27-michiel)); ready to build. Written against `main` at `d7810f9`; every path is relative to the repository root. Migration numbers are left open: the last migration on `main` is `0070_add_writing_style.sql`, so this work starts at the next free number when each PR is built, keeping `tests/migration-order.test.mjs` passing. Scope: [ROADMAP Milestone 6](../../ROADMAP.md#milestone-6-external-mail-accounts), phases 1 to 3 in full, and phase 4 (OAuth) designed here but sized and approved separately.
 
 ## 1. Summary
 
@@ -54,18 +54,18 @@ So the HTML body is stored twice (D1 and inside the raw MIME) and is usually the
 
 | # | Question | Decision | Why |
 | --- | --- | --- | --- |
-| D1 | Where does an account's mail go? | Into a Kite mailbox the owner chooses (default: their personal mailbox), tagged with `messages.external_account_id`, shown as a "via Gmail" chip and filterable. Not a mailbox of its own. | `mailboxes.domain_id` is `NOT NULL` and every mailbox path (routing, sender addresses, DNS, Cloudflare rules) assumes a Kite domain. A synthetic domain for `gmail.com` would let the SMTP listener and relay route mail for it. Open question Q1. |
+| D1 | Where does an account's mail go? | Into a Kite mailbox the owner chooses (default: their personal mailbox), tagged with `messages.external_account_id`, shown as a "via Gmail" chip and filterable. Not a mailbox of its own. | `mailboxes.domain_id` is `NOT NULL` and every mailbox path (routing, sender addresses, DNS, Cloudflare rules) assumes a Kite domain. A synthetic domain for `gmail.com` would let the SMTP listener and relay route mail for it. Accepted. |
 | D2 | Import, sync and send-as: module or core? | The one-time import stays in the **Mail import module**. Connected accounts, sync and send-as are **core**, in `src/lib/external-accounts/`, with the protocol clients in core `src/lib/imap/`, `src/lib/smtp/` and `src/lib/net/`. | Sync is a receiving provider and send-as a sending provider. Both run inside core surfaces that may not import module code (`worker.ts`, the inbound pipeline, `send.ts`, `outbound_jobs`, the composer). Turning a module off must not leave a mailbox half-receiving or a scheduled send without a transport. §9. |
 | D3 | Spam filter and Screener on synced mail | **Both apply**, exactly as for received mail. The provider's `Authentication-Results` is trusted only for known providers whose header can be tied to their own hop (§6.6). Imported mail is never filtered or screened. | A Screener that unknown senders bypass by writing to the Gmail address is not a Screener, and the user's own training, blocked senders and phishing checks are the point of reading mail in Kite. History is already "decided" by the user. |
 | D4 | Automatic reading | **Synced mail: yes**, through `scheduleAgentWork` with the usual gates and the mailbox's daily limit. **Imported mail: never.** | Synced mail is new mail. Running the model over years of history would cost money and fill For you with stale suggestions. |
 | D5 | Deletes and moves at the source | Ignored. Kite fetches each new INBOX message once and never looks back. | Principle 1. A two-way mirror needs a held connection Workers cannot keep and per-provider conflict rules (roadmap, "not planned"). |
 | D6 | IDLE | Not used. Polling every 5 minutes (the cron tick), with **Check now**. | §6.2. |
 | D7 | Sending as the external address | Through the provider's SMTP submission server only, never through Kite's Cloudflare, Resend or SES sending. | §7.1. |
-| D8 | Sent copy at the source | Appended with IMAP `APPEND` when the provider does not save SMTP submissions itself (preset), with a per-account switch. | Keeps the provider's Sent folder complete for the user's phone and for leaving Kite, at the cost of one write. Open question Q4. |
+| D8 | Sent copy at the source | Appended with IMAP `APPEND` when the provider does not save SMTP submissions itself (preset), with a per-account switch. | Keeps the provider's Sent folder complete for the user's phone and for leaving Kite, at the cost of one write. Accepted. |
 | D9 | Credentials without `APP_ENCRYPTION_KEY` | Connecting an account is refused. The one-time import keeps working as today. | A mailbox password stored for months in plain text is not acceptable; import holds it for minutes. |
-| D10 | Plain-text IMAP and SMTP | Removed. Implicit TLS (993, 465) or `STARTTLS` (143, 587) with certificate verification, no "ignore certificate" option. A loopback-only dev flag exists for the fakes. | `secure: false` sends the password in clear text today. |
+| D10 | Plain-text IMAP and SMTP | Removed, imports included (a `### Security` changelog entry ships with the PR that does it). Implicit TLS (993, 465) or `STARTTLS` (143, 587) with certificate verification, no "ignore certificate" option. A loopback-only dev flag exists for the fakes. | `secure: false` sends the password in clear text today. |
 | D11 | Socket adapter | `env.TCP_CONNECT`, a function with the `cloudflare:sockets` `connect()` shape. Unset on Workers (the code falls back to `cloudflare:sockets`); set by `server/runtime/env.ts` on Node with DNS pinning. | Mirrors `env.RESOLVE_HOST`. One client implementation on both runtimes. §8. |
-| D12 | Message bodies of imported and synced mail | HTML bodies above 16 KB go to the Mail store (`bodies/<messageId>.html`), not D1; `text_body` stays in D1 for search, snippets and AI. | §5.3. Open question Q2 on whether this ships in phase 1. |
+| D12 | Message bodies of imported and synced mail | HTML bodies above 16 KB go to the Mail store (`bodies/<messageId>.html`), not D1; `text_body` stays in D1 for search, snippets and AI. | §5.3. Ships in phase 1 (PR 5). |
 
 ## 4. Phase 1: better import
 
@@ -112,7 +112,7 @@ Each fetch becomes `UID FETCH <uids> (UID FLAGS INTERNALDATE RFC822.SIZE BODY.PE
 
 ### 4.4 Threading of imported mail
 
-Imports run newest first, so replies are stored before their parents and conversations split. For imported (and synced) messages, `resolveThreadId` gets a `fallback: "references-root"` option: when no parent is stored, the thread key is the first Message-ID in `References` (else `In-Reply-To`, else the message's own). Parent and replies then converge on the root's id whatever the order. Received mail keeps today's behaviour; whether to switch it too is open question Q8.
+Imports run newest first, so replies are stored before their parents and conversations split. For imported (and synced) messages, `resolveThreadId` gets a `fallback: "references-root"` option: when no parent is stored, the thread key is the first Message-ID in `References` (else `In-Reply-To`, else the message's own). Parent and replies then converge on the root's id whatever the order. Received mail keeps today's behaviour; it is not switched for now (decision 8); measure on real mail first.
 
 ### 4.5 Progress, pause and resume
 
@@ -175,7 +175,7 @@ IDLE needs one TCP connection held open per account, indefinitely. On Workers a 
 
 ### 6.3 Sync loop
 
-- **Schedule.** The `*/5` cron (and `server/runtime/scheduler.ts` on Node) runs `planExternalSync(env)`: up to 200 accounts with `sync_enabled`, status `active` or `error`, and `next_sync_at <= now`, oldest first, are claimed (`next_sync_at` pushed forward in the same `UPDATE … RETURNING`) and sent as `{ kind: "accounts.sync", accountId }` on `AGENT_QUEUE`, next to `import.imap` (no new queue binding). Interval per account: 5 (default), 15 or 60 minutes. **Check now** enqueues one at once, at most once a minute per account.
+- **Schedule.** The `*/5` cron (and `server/runtime/scheduler.ts` on Node) runs `planExternalSync(env)`: up to 200 accounts with `sync_enabled`, status `active` or `error`, and `next_sync_at <= now`, oldest first, are claimed (`next_sync_at` pushed forward in the same `UPDATE … RETURNING`) and sent as `{ kind: "accounts.sync", accountId }` on `AGENT_QUEUE`, next to `import.imap` (no new queue binding). Interval per account: 5 (default and shortest), 15 or 60 minutes; forwarding (§6.1) is the answer for real-time. **Check now** enqueues one at once, at most once a minute per account.
 - **Run** (`syncExternalAccount`, one account, lease `LEASE_MS` like imports, one connection):
   1. Connect, authenticate, `EXAMINE INBOX`; read `UIDVALIDITY` and `UIDNEXT` from the response.
   2. Same `UIDVALIDITY` and `UIDNEXT` as stored → nothing new: `LOGOUT`, record `last_success_at`, done. This is the common case and costs one short connection.
@@ -295,7 +295,7 @@ Sync is not part of the import module because its consumers are all core surface
 
 ### 9.3 Controls
 
-- Install switch **Allow connected accounts** under Admin → General (`app_settings.external_accounts_enabled`), on by default but inert without `APP_ENCRYPTION_KEY` (the page explains why). Turning it off pauses every account's sync and hides send-as; credentials stay until removed or the switch has been off for 30 days, after which the daily cron erases them and marks the accounts `disabled`.
+- Install switch **Allow connected accounts** under Admin → General (`app_settings.external_accounts_enabled`). It is on by default only when `APP_ENCRYPTION_KEY` is set; without the key it is off and cannot be turned on (the page explains why). Turning it off pauses every account's sync and hides send-as; credentials stay until removed or the switch has been off for 30 days, after which the daily cron erases them and marks the accounts `disabled`.
 - Per user: a core permission `users.can_connect_accounts` (default true) under Accounts → Permissions, next to the other `canManage*` flags. Revoking it pauses that user's accounts the same way.
 - Routes `/api/external-accounts/*` use `requireSessionUser`; nothing is reachable with an API key or MCP in these phases.
 
@@ -317,7 +317,7 @@ Numbers are taken at build time; each PR adds its own migration, with backup lis
 - `messages`: `external_account_id text REFERENCES external_accounts(id) ON DELETE SET NULL`. No new index at first; the "via account" filter rides `messages_counts_idx` plus a column filter, measured before adding one.
 - `users`: `can_connect_accounts integer NOT NULL DEFAULT 1`. `app_settings` keys need no migration.
 - `import_jobs`: `external_account_id text` (FK `SET NULL`).
-- Backups: `external_accounts` and `external_account_folders` in the `accounts` group after `mailboxes` (FK order), so a restore resumes sync from the backup's cursors and dedupe drops what was already there. **The export strips `secret` and the token columns** and a restore sets those accounts to `auth_failed` with "Reconnect after restore": a backup document travels (downloads, the Backups store), and reconnecting takes a minute. Open question Q6.
+- Backups: `external_accounts` and `external_account_folders` in the `accounts` group after `mailboxes` (FK order), so a restore resumes sync from the backup's cursors and dedupe drops what was already there. **The export strips `secret` and the token columns** and a restore sets those accounts to `auth_failed` with "Reconnect after restore": a backup document travels (downloads, the Backups store), and reconnecting takes a minute (decision 6).
 - Before the migration is applied: reads answer `{ accounts: [], migrationPending: true }` and writes 409 `MIGRATION_PENDING`, like Drive (`answerDrive`); the cron skips sync while the table is missing (`sqlite_master` check, cached per isolate).
 
 ### 10.3 Phase 3
@@ -443,12 +443,12 @@ Outlook.com ended password sign-in for IMAP, POP and SMTP in September 2024, and
 
 ### 15.6 Sizing
 
-About 6 to 9 days: the OAuth framework with the fake token server (3 to 4), Microsoft (2 to 3, first, because nothing else reaches Outlook) and Google (1 to 2).
+About 6 to 9 days: the OAuth framework with the fake token server (3 to 4), Microsoft (2 to 3) and Google (1 to 2). Microsoft is the first OAuth provider, because app passwords already cover personal Gmail, iCloud, Yahoo and Fastmail and nothing else reaches Outlook.com or Microsoft 365.
 
 ## 16. Rollout
 
 1. Phase 1 ships inside the Mail import module; there is no switch beyond the module's. The old single-folder form remains as **One folder**.
-2. Phase 2 ships with the install switch on, inert without `APP_ENCRYPTION_KEY`. The forwarding guide ships first, in the same release as phase 2's first PR.
+2. Phase 2 ships with the install switch on by default only when `APP_ENCRYPTION_KEY` is set, and off otherwise. The forwarding guide ships first, in the same release as phase 2's first PR.
 3. Phase 3 ships with send-as on for every connected account; an account can turn it off.
 4. Every migration is applied from the admin overview as usual; the pages show "Apply the database update to use this" until then (§10.2).
 5. Docs per PR: `docs/external-accounts.md` (user guide: forwarding, connecting, import, states), `docs/providers.md` (presets, app passwords, OAuth registration), `docs/privacy.md`, `docs/operations.md` (logs `external.sync.*`, `external.submit.*`, the database warning, body objects in backups), `docs/modules.md` (import now does whole accounts), `CLAUDE.md` (architecture: connected accounts, the socket adapter), each with a `changelog.d/` fragment that names its migration.
@@ -458,7 +458,7 @@ About 6 to 9 days: the OAuth framework with the fake token server (3 to 4), Micr
 
 | # | PR | Phase | Size |
 | --- | --- | --- | --- |
-| 1 | Socket adapter (`TCP_CONNECT`, Node connector with pinning), IMAP client moved to `src/lib/imap/` with `CAPABILITY`/`STARTTLS`/`AUTHENTICATE PLAIN`, plain text removed, port limits; fake IMAP server; Node integration tests. The existing single-folder import now works on Node. | 1 | M (1.5–2 d) |
+| 1 | Socket adapter (`TCP_CONNECT`, Node connector with pinning), IMAP client moved to `src/lib/imap/` with `CAPABILITY`/`STARTTLS`/`AUTHENTICATE PLAIN`, plain text removed (with a Security changelog entry), port limits; fake IMAP server; Node integration tests. The existing single-folder import now works on Node. | 1 | M (1.5–2 d) |
 | 2 | Read and starred state, `INTERNALDATE`, bracket-insensitive dedupe, SHA-256 fallback key, references-root threading for imports | 1 | S (1 d) |
 | 3 | Whole-account jobs: `import_job_folders`, special-use and Gmail mapping, mapping table, progress per folder, pause and resume | 1 | L (2–3 d) |
 | 4 | Database size (`getDatabaseSize`, Node `size_after`), estimate, thresholds, self-pause, admin overview warning | 1 | M (1–1.5 d) |
@@ -469,21 +469,21 @@ About 6 to 9 days: the OAuth framework with the fake token server (3 to 4), Micr
 | 9 | SMTP client and MIME builder; fake SMTP server | 3 | M (1.5 d) |
 | 10 | Send-as: identities in the From menu, authorization, `smtp` transport in `outbound-provider.ts`, reply default, Sent raw, Sent copy via `APPEND`, error mapping | 3 | L (2–3 d) |
 | 11 | Alias verification codes (`external_identities`) | 3 | S (1 d) |
-| 12–14 | OAuth framework, Microsoft, Google (§15.6) | 4 | 6–9 d, separate approval |
+| 12–14 | OAuth framework, Microsoft first, then Google (§15.6) | 4 | 6–9 d, separate approval |
 
-Phases 1 to 3: about 16 to 22 days of work in 11 PRs. PR 5 can move after PR 7 without blocking anything (open question Q2). PRs 1 and 9 are the only ones that change shared protocol code; review them first. PRs 6, 7 and 10 touch credentials and authentication, so they get the Foreman's review before auto-merge.
+Phases 1 to 3: about 16 to 22 days of work in 11 PRs. PR 5 stays in phase 1 (decision 2), even though nothing blocks it from landing after PR 7. PRs 1 and 9 are the only ones that change shared protocol code; review them first. PRs 6, 7 and 10 touch credentials and authentication, so they get the Foreman's review before auto-merge.
 
-## 18. Open questions for Michiel
+## 18. Decisions (2026-10-27, Michiel)
 
-Each has a recommended answer; the spec is written as if it were accepted.
+Michiel accepted the recommended answer to each open question of the draft. The spec above is written to match.
 
-1. **Q1. Own mailbox per account, or mail into an existing mailbox?** *Recommend:* an existing mailbox with a "via Gmail" chip and filter for phases 1 to 3 (D1). An account as its own sidebar mailbox needs mailboxes without a Kite domain, which touches routing, DNS and every address path; revisit if users ask.
-2. **Q2. HTML body offload in phase 1 or later?** *Recommend:* in phase 1 (PR 5), limited to imported and synced mail. A single whole-account Gmail import can be what fills D1, and the estimate warns but does not prevent it.
-3. **Q3. Spam filter and Screener on synced mail?** *Recommend:* yes to both, with the provider's `Authentication-Results` trusted only for proven presets (D3, §6.6).
-4. **Q4. Append a Sent copy to the provider?** *Recommend:* yes where the provider does not save submissions itself, on by default with a per-account switch (D8).
-5. **Q5. Connected accounts on by default?** *Recommend:* yes, but only with `APP_ENCRYPTION_KEY` set, with an install switch and a per-user permission to turn them off (§9.3).
-6. **Q6. Credentials in backups?** *Recommend:* keep the accounts and sync cursors in backups but strip the sealed secrets; a restore asks the user to reconnect. Storage and AWS credentials stay sealed in backups as today; this is stricter because these are personal mailbox passwords.
-7. **Q7. Remove plain-text IMAP (port 143 without `STARTTLS`)?** *Recommend:* yes, for imports too (D10), with a changelog `### Security` entry.
-8. **Q8. References-root threading for all received mail too?** *Recommend:* imports and sync only now; measure on real mail before changing threading of received mail.
-9. **Q9. Minimum sync interval?** *Recommend:* 5 minutes (the cron tick) as default and minimum, with 15 and 60 as options; forwarding is the answer for real-time.
-10. **Q10. Order of phase 4?** *Recommend:* Microsoft first, since app passwords already cover personal Gmail, iCloud, Yahoo and Fastmail, and nothing reaches Outlook.com or Microsoft 365 without OAuth.
+1. **Where mail goes.** An external account delivers into an existing mailbox, with a "via <provider>" chip and a filter (D1). An account as its own sidebar mailbox needs mailboxes without a Kite domain, which touches routing, DNS and every address path; revisit if users ask.
+2. **Large HTML bodies.** Offloaded to object storage in phase 1 (PR 5), only for imported and synced mail (D12, §5.3). A single whole-account import can be what fills D1, and the estimate warns but does not prevent it.
+3. **Spam filter and Screener.** Both apply to synced mail (D3). The provider's `Authentication-Results` is trusted only where it is proven to come from that provider's own server (§6.6).
+4. **Sent copies.** Appended at the provider unless it saves submissions itself (Gmail), on by default, with a per-account switch (D8, §7.4).
+5. **Connected accounts by default.** On by default only when `APP_ENCRYPTION_KEY` is set, with an install switch and a per-user permission (§9.3).
+6. **Credentials in backups.** Backups keep accounts and sync positions but strip encrypted passwords and tokens; users reconnect after a restore (§10.2). This is stricter than storage and AWS credentials, which stay sealed in backups, because these are personal mailbox passwords.
+7. **Plain-text IMAP.** Dropped (no TLS or STARTTLS), imports included, with a `### Security` changelog entry when it is built (D10, PR 1).
+8. **Conversation grouping.** The references-root rule applies only to imported and synced mail for now (§4.4).
+9. **Shortest check interval.** 5 minutes, with 15 and 60 as options (§6.3).
+10. **First OAuth provider.** Microsoft, in phase 4 (§15.6).

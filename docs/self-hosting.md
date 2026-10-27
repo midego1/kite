@@ -113,6 +113,8 @@ and the DNS page shows what to set by hand.
 | `INBOUND_WEBHOOK_SECRET` | unset | Enables `/api/inbound` for the relay Worker |
 | `URLHAUS_AUTH_KEY` | unset | abuse.ch Auth-Key; checks links, link hosts and attachment hashes of risky incoming mail against URLhaus and ThreatFox. Takes precedence over a key saved in Admin → General (see [Spam protection](spam-protection.md#urlhaus-and-threatfox-lookups-optional)) |
 | `ABUSE_CH_AUTH_KEY` | unset | Another name for `URLHAUS_AUTH_KEY`, used only when that is unset |
+| `KITE_TELEMETRY` | unset | `0` (or `false`, `off`, `no`) keeps usage statistics from being turned on or sent, whatever the owner chooses in Admin → General (the owner can still turn them off); they are off by default and no value turns them on (see [Privacy](privacy.md#usage-statistics-opt-in)) |
+| `KITE_TELEMETRY_URL` | unset | https address the daily usage heartbeat goes to, when the owner turned it on, instead of the project's collector at `https://kite-telemetry.midego.net/v1/heartbeat` (run by Michiel de Gooijer (midego) on Cloudflare). Set but empty sends nothing |
 | `TURNSTILE_SECRET_KEY` | unset | Bot protection on login and reset forms (`NEXT_PUBLIC_TURNSTILE_SITE_KEY` at build time) |
 | `AI_BASE_URL` | unset | OpenAI-compatible model API base URL for the assistant |
 | `AI_API_KEY` | unset | Server-only key for that model API |

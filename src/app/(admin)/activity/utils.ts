@@ -23,6 +23,8 @@ export function getActivityLabel(action: string): string {
 	if (action === "module.enabled") return "Module on";
 	if (action === "module.disabled") return "Module off";
 	if (action === "module.user_access") return "Module access";
+	if (action === "telemetry.enabled") return "Usage statistics on";
+	if (action === "telemetry.disabled") return "Usage statistics off";
 	return action;
 }
 

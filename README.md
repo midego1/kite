@@ -21,7 +21,7 @@ The recording shows invented demo data. `npm run demo:record` makes it again (se
 
 Kite is for developers, indie founders and small teams who already keep domains on Cloudflare and want a real inbox for `you@yourdomain` without paying per seat or running a mail server. It is also for self-hosters who want hackable email with an API.
 
-- **Your mail, your account.** Messages live in your own D1 database and files (attachments, Drive, backups) in your own R2 bucket, or in an S3-compatible store you choose. There is no update check, license check or telemetry.
+- **Your mail, your account.** Messages live in your own D1 database and files (attachments, Drive, backups) in your own R2 bucket, or in an S3-compatible store you choose. There is no update check or license check, and no telemetry unless the owner turns on pseudonymous usage statistics (off by default; [what is sent](docs/privacy.md#usage-statistics-opt-in)).
 - **No server to run.** It deploys with one button to Cloudflare Workers. Receiving through Email Routing is free, and sending uses the free tiers of Resend or Amazon SES, or Cloudflare's own sending on a paid Workers plan. A Docker and SQLite path exists if you would rather run it on a box ([Self-host with Docker](#self-host-with-docker)).
 - **A real inbox, not just forwarding.** Shared mailboxes, search, folders, snooze, undo send, routing rules, a calendar with booking pages, Drive for files, JMAP, an API, webhooks and MCP.
 
@@ -122,7 +122,7 @@ This version started from [Mailflare by hieunc229](https://github.com/hieunc229/
 | | Original Mailflare | This version |
 | --- | --- | --- |
 | **Features** | Pro and Team features need a paid license key | Every feature is free; access is set by roles and mailbox sharing |
-| **Updates** | Checks for and pulls updates from the original repository | No update check, license check or telemetry; a new version runs only after you deploy it. Apart from the services you configure, Kite contacts only Gravatar (contact avatars) and Cloudflare's public DNS resolver (DNS checks); see [Privacy](docs/privacy.md) |
+| **Updates** | Checks for and pulls updates from the original repository | No update check or license check; a new version runs only after you deploy it. Apart from the services you configure, Kite contacts only Gravatar (contact avatars), Cloudflare's public DNS resolver (DNS checks) and, only if the owner opts in, the Kite project's statistics collector (`kite-telemetry.midego.net`) once a day with pseudonymous usage ranges; see [Privacy](docs/privacy.md) |
 | **Email display** | Email HTML inserted directly into the page | Sandboxed frame with no scripts; remote images blocked until you allow them |
 | **Sessions and requests** | Session token also kept in `localStorage`; CSP allows inline scripts | Session only in an `HttpOnly` cookie, central CSRF checks, nonce-based CSP |
 | **Stored secrets** | Provider keys stored as plain text | Provider keys and IMAP passwords encrypted with AES-GCM (`APP_ENCRYPTION_KEY`) |

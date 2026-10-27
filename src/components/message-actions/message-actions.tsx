@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, useState, useMemo, useCallback } from "react";
+import { createElement, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import * as Popover from "@radix-ui/react-popover";
 import {
@@ -17,7 +17,6 @@ import {
 	ShieldAlert,
 	Trash2,
 } from "lucide-react";
-import { useCompose } from "@/components/compose/compose-context";
 import { MessageSourceDialog } from "@/components/messages/message-source-dialog";
 import { useMessageListHref } from "@/components/messages/message-detail-navigation";
 import { SnoozeMenuItem } from "@/components/messages/snooze-picker";
@@ -25,13 +24,15 @@ import { useMessageMenuSlots } from "./message-menu-slots";
 import { ReportPhishingItem } from "./report-phishing-item";
 import { confirmReportPhishing } from "@/components/messages/phishing-report";
 import { messageShortcuts } from "./message-shortcuts";
+import { useMessageReply } from "./use-message-reply";
+import { MoveToolbarMenu, SnoozeToolbarButton } from "./message-toolbar-menus";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
-import type { MessageActionsProps, ReplyMode } from "./types";
+import type { MessageActionsProps } from "./types";
 import {
 	getPermanentDeleteConfirmText,
 	PartialDeleteError,
@@ -40,14 +41,9 @@ import {
 import {
 	confirmTrashWithoutUnsubscribe,
 	blockMessageContact,
-	createForwardDraft,
-	createReplyDraft,
 	createTrashSenderRule,
 	getMessageBackHref,
 	getMoveMessageActions,
-	getReplyRecipients,
-	getReplyThreading,
-	hasAdditionalRecipients,
 	movesMessageOutOfList,
 	openUnsubscribeUrl,
 	runSingleMessageAction,
@@ -72,11 +68,8 @@ export function MessageActions({
 }: MessageActionsProps) {
 	const router = useRouter();
 	const isMobile = useIsMobile();
-	const { openDraftComposer } = useCompose();
 	const { shortcutsEnabled } = useShortcuts();
-	const [pendingAction, setPendingAction] = useState<
-		BulkMessageAction | "unsubscribe" | ReplyMode | "forward" | "block" | null
-	>(null);
+	const [pendingAction, setPendingAction] = useState<BulkMessageAction | "unsubscribe" | "block" | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [moreOpen, setMoreOpen] = useState(false);
 	const [sourceOpen, setSourceOpen] = useState(false);
@@ -85,12 +78,12 @@ export function MessageActions({
 	const listHref = useMessageListHref() ?? getMessageBackHref(direction, status);
 
 	const runAction = useCallback(
-		async (action: BulkMessageAction) => {
+		async (action: BulkMessageAction, folderId?: string) => {
 			setMoreOpen(false);
 			setPendingAction(action);
 			setError(null);
 			try {
-				await runSingleMessageAction(messageId, action);
+				await runSingleMessageAction(messageId, action, folderId);
 				if (movesMessageOutOfList(action)) router.push(listHref);
 				router.refresh();
 			} catch {
@@ -129,65 +122,21 @@ export function MessageActions({
 	const onTrashClick = () => (canDeleteForever ? void deleteForever() : void runAction("trash"));
 	const trashLabel = canDeleteForever ? "Delete forever" : "Move to trash";
 
-	const replyable = useMemo(
-		() =>
-			message ?? {
-				direction,
-				fromAddr: senderAddress,
-				toAddr: "",
-				ccAddr: null,
-				providerMessageId: null,
-				references: null,
-				threadId: null,
-			},
-		[message, direction, senderAddress],
-	);
-	const canReplyAll = hasAdditionalRecipients(replyable, ownAddresses);
-	const sentAt = messageMeta?.createdAt;
-
-	const handleReply = useCallback(
-		async (mode: ReplyMode) => {
-			setPendingAction(mode);
-			setError(null);
-			try {
-				const draftId = await createReplyDraft({
-					mailboxId,
-					senderAddress,
-					ownAddress,
-					subject,
-					bodyText,
-					bodyHtml,
-					sentAt,
-					recipients: getReplyRecipients(replyable, ownAddresses, mode),
-					threading: getReplyThreading(replyable),
-				});
-				openDraftComposer(draftId);
-			} catch (replyError) {
-				setError(replyError instanceof Error ? replyError.message : "Could not start reply");
-			} finally {
-				setPendingAction(null);
-			}
-		},
-		[
-			mailboxId,
-			senderAddress,
-			ownAddress,
-			subject,
-			bodyText,
-			bodyHtml,
-			sentAt,
-			replyable,
-			ownAddresses,
-			openDraftComposer,
-		],
-	);
-
-	const shortcuts = useMemo(
-		() => messageShortcuts({ status, direction, runAction, handleReply, back: () => router.back() }),
-		[status, direction, runAction, handleReply, router],
-	);
-
-	useHotkeys(shortcuts, { enabled: shortcutsEnabled });
+	const replyActions = useMessageReply({
+		mailboxId,
+		senderAddress,
+		direction,
+		subject,
+		bodyText,
+		bodyHtml,
+		ownAddress,
+		ownAddresses,
+		message,
+		messageMeta,
+	});
+	const { canReplyAll, canForward } = replyActions;
+	const handleReply = replyActions.reply;
+	const handleForward = replyActions.forward;
 
 	async function onUnsubscribe() {
 		setMoreOpen(false);
@@ -214,25 +163,17 @@ export function MessageActions({
 		}
 	}
 
-	async function handleForward() {
-		if (!message || !messageMeta) return;
-		setPendingAction("forward");
-		setError(null);
-		try {
-			const draftId = await createForwardDraft({
-				mailboxId,
-				ownAddress,
-				message: { ...message, ...messageMeta },
-				bodyText,
-				bodyHtml,
-			});
-			openDraftComposer(draftId);
-		} catch (forwardError) {
-			setError(forwardError instanceof Error ? forwardError.message : "Could not start forward");
-		} finally {
-			setPendingAction(null);
-		}
-	}
+	const shortcuts = messageShortcuts({
+		status,
+		direction,
+		runAction,
+		handleReply,
+		forward: handleForward,
+		canReplyAll,
+		back: () => router.back(),
+	});
+	useHotkeys(shortcuts, { enabled: shortcutsEnabled });
+
 	async function onBlockContact() {
 		setMoreOpen(false);
 		setError(null);
@@ -258,15 +199,16 @@ export function MessageActions({
 		setMoreOpen(false);
 		if (await confirmReportPhishing(1)) await runAction("phishing");
 	};
-	const disabled = pendingAction !== null;
+	const disabled = pendingAction !== null || replyActions.pending !== null;
+	const shownError = error ?? replyActions.error;
 	const markAction: BulkMessageAction = read ? "unread" : "read";
 	const moveActions = getMoveMessageActions(status, direction);
 
 	return (
-		<div className="flex flex-wrap items-center gap-3 text-neutral-600 flex-1 min-w-0">
-			{error && (
+		<div className="flex min-w-0 flex-1 items-center gap-1 text-neutral-600 md:flex-wrap md:gap-3">
+			{shownError && (
 				<span role="alert" className="text-xs text-red-600">
-					{error}
+					{shownError}
 				</span>
 			)}
 
@@ -309,6 +251,19 @@ export function MessageActions({
 							<Archive size={iconSize} />
 						</Button>
 					</Tooltip>
+					<SnoozeToolbarButton
+						messageId={messageId}
+						snoozable={direction === "inbound" && status === "received"}
+						disabled={disabled}
+						iconSize={iconSize}
+					/>
+					<MoveToolbarMenu
+						actions={moveActions}
+						mailboxId={mailboxId}
+						disabled={disabled}
+						iconSize={iconSize}
+						onAction={(action, folderId) => void runAction(action, folderId)}
+					/>
 					<Tooltip label={shortcutsEnabled ? "Report spam (!)" : "Report spam"}>
 						<Button
 							variant="ghost"
@@ -360,7 +315,7 @@ export function MessageActions({
 							</Button>
 						</Tooltip>
 					)}
-					{message && messageMeta && (
+					{canForward && (
 						<Tooltip label="Forward">
 							<Button
 								type="button"
@@ -434,7 +389,7 @@ export function MessageActions({
 										Reply all
 									</button>
 								)}
-								{message && messageMeta && (
+								{canForward && (
 									<button
 										type="button"
 										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"

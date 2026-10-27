@@ -15,8 +15,8 @@ The object storage adapter and the Drive module are derived from Mailflare commi
 Third-party code
 ----------------
 
-The primitives in src/components/ui (select, checkbox, switch, tooltip, separator, tabs) are ported
-from shadcn/ui (https://github.com/shadcn-ui/ui), MIT License:
+The primitives in src/components/ui (select, checkbox, switch, tooltip, separator, tabs, resizable,
+sheet, command) are ported from shadcn/ui (https://github.com/shadcn-ui/ui), MIT License:
 
   Copyright (c) 2023 shadcn
 

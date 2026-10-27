@@ -14,6 +14,7 @@ import { commandParamFields, listCommands, listShortcutBindings, runCommand } fr
 import { useHotkeys } from "./use-hotkeys";
 import { ShortcutsHelpDialog } from "./shortcuts-help-dialog";
 import { useShortcutsEnabled } from "./use-shortcuts-enabled";
+import { withMailKeyHints } from "./mail-key-hints-utils";
 
 interface ShortcutsContextValue {
 	shortcutsEnabled: boolean;
@@ -157,6 +158,7 @@ export function ShortcutsProvider({
 	}, [commands, perform, customShortcuts]);
 
 	useHotkeys(baseShortcuts, { enabled: shortcutsEnabled && !shortcutsPreferenceLoading });
+	const helpShortcuts = useMemo(() => withMailKeyHints(baseShortcuts), [baseShortcuts]);
 
 	const allCommands = useMemo<CommandItem[]>(() => {
 		const items = commands.map((command): CommandItem => {
@@ -198,7 +200,7 @@ export function ShortcutsProvider({
 			{shortcutsEnabled && !shortcutsPreferenceLoading && (
 				<>
 					{isCommandPaletteOpen && <LazyCommandPalette isOpen onClose={closeCommandPalette} commands={allCommands} />}
-					<ShortcutsHelpDialog isOpen={isHelpModalOpen} onClose={closeHelpModal} shortcuts={baseShortcuts} />
+					<ShortcutsHelpDialog isOpen={isHelpModalOpen} onClose={closeHelpModal} shortcuts={helpShortcuts} />
 				</>
 			)}
 		</ShortcutsContext.Provider>

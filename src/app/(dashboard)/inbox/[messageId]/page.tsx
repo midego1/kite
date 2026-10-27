@@ -17,6 +17,7 @@ import { usePageLoading } from "@/components/page-loading";
 import { PreviousMessage } from "@/components/previous-message";
 import { ConversationThread } from "@/components/messages/conversation-thread";
 import { MessageDetailNavigation } from "@/components/messages/message-detail-navigation";
+import { QuickReply } from "@/components/message-actions/quick-reply";
 import { MessageReadingHeaderButton } from "@/components/messages/message-reading-header-button";
 import { QuotedEmailToggle } from "@/components/messages/quoted-email-toggle";
 import { EmailHtmlFrame, RemoteImagesNotice } from "@/components/messages/email-html-frame";
@@ -189,6 +190,7 @@ export default function MessageDetailPage() {
 				{!message.read && <MarkAsRead messageId={message.id} />}
 
 				<h1
+					dir="auto"
 					className={clsx(
 						!isAnyPanelVisible ? "sm:pl-16" : "sm:pl-10",
 						"pl-3 pr-3 pb-2 pt-2 text-2xl text-neutral-900 sm:pr-6",
@@ -241,7 +243,7 @@ export default function MessageDetailPage() {
 								/>
 								<div className="flex-1 min-w-0">
 									<p className="text-sm text-neutral-900 mt-1.25 flex flex-row items-center gap-1 w-full  overflow-hidden">
-										<b className="whitespace-nowrap">
+										<b dir="auto" className="whitespace-nowrap">
 											{message.direction === "inbound" ? (
 												<ContactDetailsTrigger
 													mailboxId={message.mailboxId}
@@ -394,6 +396,7 @@ export default function MessageDetailPage() {
 					}}
 				/>
 			</div>
+			<QuickReply name={fromName} message={message} body={body} ownAddress={ownAddress} ownAddresses={ownAddresses} />
 		</>
 	);
 }

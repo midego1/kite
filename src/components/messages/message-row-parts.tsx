@@ -6,7 +6,9 @@ import type { LucideIcon } from "lucide-react";
 import { SuggestionBadge } from "@/components/agent/suggestion-badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import type { Message } from "@/hooks/types";
 import type { SuggestionCount } from "@/lib/agent/auto-read/suggestion-types";
+import { getMessageRowBadges } from "./message-row-badges-utils";
 
 type MessageRowStarProps = {
 	starred: boolean;
@@ -73,6 +75,37 @@ export function MessageRowParty({
 			{party}
 			{threadCount > 1 && <span className={clsx("ml-2 text-xs text-neutral-500", countClassName)}>{threadCount}</span>}
 			<SuggestionBadge suggestions={suggestions} />
+		</span>
+	);
+}
+
+/** The blue dot that marks an unread row; the "Unread" text for screen readers is in `MessageRowParty`. */
+export function UnreadDot({ unread }: { unread: boolean }) {
+	return (
+		<span
+			aria-hidden="true"
+			className={clsx("h-2 w-2 shrink-0 rounded-full", unread ? "bg-blue-600" : "bg-transparent")}
+		/>
+	);
+}
+
+/** Short state labels for a row: why it might need attention beyond its folder. */
+export function MessageRowBadges({ message, folder }: { message: Message; folder: string }) {
+	const badges = getMessageRowBadges(message, folder);
+	if (badges.length === 0) return null;
+	return (
+		<span className="mt-1.5 flex flex-wrap gap-1">
+			{badges.map((badge) => (
+				<span
+					key={badge.label}
+					className={clsx(
+						"inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium leading-none",
+						badge.tone === "warning" ? "bg-amber-100 text-amber-800" : "bg-neutral-100 text-neutral-600",
+					)}
+				>
+					{badge.label}
+				</span>
+			))}
 		</span>
 	);
 }

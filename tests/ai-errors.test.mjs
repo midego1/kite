@@ -286,14 +286,41 @@ test("only the newest 200 failures are kept, and the list shows the last 20, new
 	const { db, env } = await database(t);
 	captureLogs(t);
 	for (let index = 0; index < 205; index++)
-		await reportAiErrorClass({ code: "rate_limited", status: index }, { env, feature: "chat" });
+		await reportAiErrorClass({ code: "provider_unavailable", status: 300 + index }, { env, feature: "chat" });
 	assert.equal(auditRows(db).length, 200);
 	const recent = await listRecentAiErrors(env);
 	assert.equal(recent.length, 20);
-	assert.equal(recent[0].status, 204);
-	// A refusal of background work Activity already shows is logged but not kept.
-	await reportAiErrorClass({ code: "spend_cap", status: null }, { env, feature: "auto_triage", record: false });
+	assert.equal(recent[0].status, 504);
+	// A turn the person stopped is logged but not kept.
+	await reportAiErrorClass({ code: "network", status: null }, { env, feature: "chat", record: false });
 	assert.equal(auditRows(db).length, 200);
+});
+
+test("refusals before any provider call are never kept and logged once a minute per user, code and feature", async (t) => {
+	const { db, env } = await database(t);
+	const logs = captureLogs(t);
+	await reportAiErrorClass({ code: "provider_unavailable", status: 503 }, { env, feature: "chat", userId: "owner" });
+	const refusals = ["rate_limited", "assistant_off", "no_provider", "external_provider_not_allowed", "spend_cap"];
+	// Someone hammering the button past the rate limit: no D1 write, and the real failure stays in the list.
+	for (let attempt = 0; attempt < 50; attempt++)
+		for (const code of refusals) {
+			const body = await reportAiErrorClass({ code, status: null }, { env, feature: "summary", userId: "spammer" });
+			assert.equal(body.code, code, "the client still gets the code and message");
+		}
+	// Refusals are not recorded even when a caller asks for it.
+	await reportAiErrorClass({ code: "rate_limited", status: null }, { env, feature: "compose", record: true });
+	assert.deepEqual(
+		auditRows(db).map((row) => JSON.parse(row.metadata).code),
+		["provider_unavailable"],
+	);
+	const logged = logs.map((line) => JSON.parse(line).fields);
+	assert.deepEqual(
+		logged.map((fields) => `${fields.code}:${fields.feature}`),
+		["provider_unavailable:chat", ...refusals.map((code) => `${code}:summary`), "rate_limited:compose"],
+	);
+	// Another user's refusal is logged too.
+	await reportAiErrorClass({ code: "rate_limited", status: null }, { env, feature: "summary", userId: "other" });
+	assert.equal(logs.length, 8);
 });
 
 const realFetch = globalThis.fetch;

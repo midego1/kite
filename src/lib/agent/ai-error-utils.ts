@@ -88,6 +88,19 @@ const CONFIG = new Set<AiErrorCode>([
 	"no_provider",
 ]);
 
+/** Refused by Kite before any provider call: a cap, a rate limit or a setting, not a provider or model failure. */
+const REFUSALS_BEFORE_CALL = new Set<AiErrorCode>([
+	"spend_cap",
+	"rate_limited",
+	"external_provider_not_allowed",
+	"assistant_off",
+	"no_provider",
+]);
+
+export function aiErrorIsRefusal(code: AiErrorCode): boolean {
+	return REFUSALS_BEFORE_CALL.has(code);
+}
+
 export function isAiErrorCode(value: unknown): value is AiErrorCode {
 	return typeof value === "string" && (AI_ERROR_CODES as readonly string[]).includes(value);
 }

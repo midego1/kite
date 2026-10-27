@@ -9,4 +9,4 @@
 
 ### Added
 
-- [Admin → Agent](/agent) lists the last 20 **Recent AI errors** (feature, code, model, provider, HTTP status, duration, token counts and finish reason; never what was asked or answered), so the primary admin can see what failed without server access. They are kept in the audit log; no migration is needed.
+- [Admin → Agent](/agent) lists the last 20 **Recent AI errors** (feature, code, model, provider, HTTP status, duration, token counts and finish reason; never what was asked or answered), so the primary admin can see what failed without server access. Only provider and model failures are listed, not refusals such as a spend cap or the rate limit. They are kept in the audit log; no migration is needed.

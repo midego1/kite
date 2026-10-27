@@ -7,12 +7,14 @@ import { createAuditLog } from "@/lib/mailboxes/audit";
 import {
 	AI_FEATURE_LABELS,
 	aiErrorIsConfig,
+	aiErrorIsRefusal,
 	aiErrorMessage,
 	aiErrorRetryable,
 	classifyAiError,
 	isAiErrorCode,
 	type AiErrorBody,
 	type AiErrorClass,
+	type AiErrorCode,
 	type AiFeature,
 } from "./ai-error-utils";
 import type { AiErrorRecord, RecentAiError } from "./ai-error-types";
@@ -37,7 +39,7 @@ export type AiFailureContext = {
 	timeoutMs?: number | null;
 	userId?: string | null;
 	mailboxId?: string | null;
-	/** Whether to keep a row for Admin → Agent; refusals of background work skip it (Activity shows them). */
+	/** False to skip the row for Admin → Agent (a turn the person stopped); refusals are never kept. */
 	record?: boolean;
 };
 
@@ -79,6 +81,21 @@ export function traceAiError<T>(error: T, trace: Omit<AiTrace, "reported">): T {
  * prompt, the answer or the provider's error text), keeps it for Admin → Agent and returns what the client gets.
  * An error that was already reported (a job rethrows what it reported) is not logged twice.
  */
+const REFUSAL_LOG_INTERVAL_MS = 60_000;
+const REFUSAL_LOG_KEYS_MAX = 1_000;
+// When each user's refusal was last logged in this isolate, per code and feature.
+const refusalsLogged = new Map<string, number>();
+
+/** Whether to log a refusal: at most once a minute per user, code and feature, so a spammed button logs once. */
+function shouldLogRefusal(context: AiFailureContext, code: AiErrorCode, now = Date.now()): boolean {
+	const key = `${context.userId ?? "-"}:${code}:${context.feature}`;
+	const last = refusalsLogged.get(key);
+	if (last !== undefined && now - last < REFUSAL_LOG_INTERVAL_MS) return false;
+	if (refusalsLogged.size >= REFUSAL_LOG_KEYS_MAX) refusalsLogged.clear();
+	refusalsLogged.set(key, now);
+	return true;
+}
+
 export async function reportAiFailure(error: unknown, context: AiFailureContext): Promise<AiErrorBody> {
 	const trace = error && typeof error === "object" ? traces.get(error) : undefined;
 	if (trace?.reported) return trace.reported;
@@ -110,10 +127,15 @@ export async function reportAiErrorClass(
 		outputTokens: context.usage?.outputTokens ?? null,
 		finishReason: context.finishReason ?? null,
 	};
+	// A refusal before any provider call (a cap, a rate limit, a setting) is no provider or model failure: it is
+	// logged at most once a minute per user and never kept, so a spammed button neither writes to D1 on every
+	// request nor pushes real failures out of the list.
+	const refusal = aiErrorIsRefusal(code);
 	// Token counts are nested: the logger redacts any key containing "token".
 	const { inputTokens, outputTokens, ...fields } = metadata;
-	logger.warn("ai.failed", { ...fields, usage: { input: inputTokens, output: outputTokens } });
-	if (context.record !== false)
+	if (!refusal || shouldLogRefusal(context, code))
+		logger.warn("ai.failed", { ...fields, usage: { input: inputTokens, output: outputTokens } });
+	if (!refusal && context.record !== false)
 		await recordAiError(context, metadata).catch(() => logger.warn("ai.failed_unrecorded", { code }));
 	return {
 		error:

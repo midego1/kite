@@ -53,43 +53,43 @@ export function SidebarAccounts({ accountMenu }: { accountMenu?: ReactNode }) {
 			{squares.map((mailbox) => {
 				const active = mailbox.id === selectedMailbox?.id;
 				return (
-					<Tooltip key={mailbox.id} label={getMailboxAddress(mailbox)}>
-						<button
-							type="button"
-							aria-label={`Open ${getMailboxAddress(mailbox)}`}
-							aria-pressed={active}
-							onClick={() => {
-								if (active) return;
-								setSelectedMailbox(mailbox);
-								router.push("/inbox");
-							}}
-							className={cn(
-								"relative flex h-8 w-8 items-center justify-center rounded-lg",
-								active ? "ring-1 ring-neutral-300" : "opacity-70 hover:opacity-100",
-							)}
-						>
-							<MailboxAvatar mailbox={mailbox} className="h-7 w-7 rounded-md text-xs" />
-							{active && (
-								<span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-[var(--background)]">
-									<Check className="h-2.5 w-2.5 text-[#fff]" strokeWidth={3} />
-								</span>
-							)}
-						</button>
-					</Tooltip>
+					// A title rather than a Tooltip: the first stop in the phone menu must leave Escape to the sheet.
+					<button
+						key={mailbox.id}
+						type="button"
+						title={getMailboxAddress(mailbox)}
+						aria-label={`Open ${getMailboxAddress(mailbox)}`}
+						aria-pressed={active}
+						onClick={() => {
+							if (active) return;
+							setSelectedMailbox(mailbox);
+							router.push("/inbox");
+						}}
+						className={cn(
+							"relative flex h-8 w-8 items-center justify-center rounded-lg",
+							active ? "ring-1 ring-neutral-300" : "opacity-70 hover:opacity-100",
+						)}
+					>
+						<MailboxAvatar mailbox={mailbox} className="h-7 w-7 rounded-md text-xs" />
+						{active && (
+							<span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-[var(--background)]">
+								<Check className="h-2.5 w-2.5 text-[#fff]" strokeWidth={3} />
+							</span>
+						)}
+					</button>
 				);
 			})}
 			{user?.role === "admin" && (
-				<Tooltip label="Add mailbox">
-					{/* A button, so the Admin menu's link stays the one link to Mailboxes on the page. */}
-					<button
-						type="button"
-						aria-label="Add mailbox"
-						onClick={() => router.push("/mailboxes")}
-						className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900"
-					>
-						<Plus size={16} />
-					</button>
-				</Tooltip>
+				// A button, so the Admin menu's link stays the one link to Mailboxes on the page.
+				<button
+					type="button"
+					title="Add mailbox"
+					aria-label="Add mailbox"
+					onClick={() => router.push("/mailboxes")}
+					className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900"
+				>
+					<Plus size={16} />
+				</button>
 			)}
 			<span className="flex-1" />
 			{accountMenu && (

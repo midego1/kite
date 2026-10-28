@@ -538,7 +538,7 @@ test("a hint-only request that fails is not retried: the steps run without the m
 	failWith = 500;
 	const { jobId } = insertMessage(db, raw, { headers: AUTOMATIC });
 	await processAgentTriageJob(env, jobId);
-	assert.deepEqual(jobOf(db, jobId), { status: "completed", reason: "model_failed" });
+	assert.deepEqual(jobOf(db, jobId), { status: "completed", reason: "model_failed:provider_unavailable" });
 	assert.equal(requests.length, 1);
 	assert.equal(stepModel("extmod"), null);
 });
@@ -555,7 +555,7 @@ test("a failed model core needed is retried, and on the last attempt the steps r
 	assert.equal(globalThis.__stepInputs.length, 1);
 	assert.equal(stepModel("extmod"), null);
 	// A step ran, so core plans without the model and the job completes with the note.
-	assert.deepEqual(jobOf(db, last.jobId), { status: "completed", reason: "model_failed" });
+	assert.deepEqual(jobOf(db, last.jobId), { status: "completed", reason: "model_failed:provider_unavailable" });
 });
 
 test("a last-attempt model failure still stores the deterministic phishing warning when a step ran", async (t) => {
@@ -564,7 +564,7 @@ test("a last-attempt model failure still stores the deterministic phishing warni
 	const { jobId, messageId } = insertMessage(db, raw, { spamVerdict: "suspicious", attempts: 2 });
 	await processAgentTriageJob(env, jobId);
 	assert.equal(globalThis.__stepInputs.length, 1);
-	assert.deepEqual(jobOf(db, jobId), { status: "completed", reason: "model_failed" });
+	assert.deepEqual(jobOf(db, jobId), { status: "completed", reason: "model_failed:provider_unavailable" });
 	assert.deepEqual(kindsOf(db, messageId), ["phishing"]);
 });
 

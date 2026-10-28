@@ -11,7 +11,7 @@ export type AgentEvent =
 			result?: unknown;
 			recordId?: string;
 	  }
-	| { type: "error"; message: string }
+	| { type: "error"; message: string; code?: string; details?: unknown }
 	| { type: "done" };
 
 export type AgentMessage = {
@@ -110,7 +110,7 @@ export type AgentPanelView = "chat" | "settings";
 export type AgentConversation = { id: string; title: string };
 export type AgentJob = {
 	id: string;
-	kind: "draft" | "triage";
+	kind: "draft" | "triage" | "line_summary";
 	status: string;
 	reason: string | null;
 	draftId: string | null;

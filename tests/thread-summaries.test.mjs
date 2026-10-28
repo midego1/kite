@@ -33,6 +33,7 @@ const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const {
 	canTranslate,
 	checkSummaryOutput,
+	summaryProblemText,
 	coverageDigest,
 	instructionsDigest,
 	languageCode,
@@ -241,6 +242,11 @@ test("empty, non-JSON and meta answers are refused", () => {
 		references: [],
 	});
 	assert.deepEqual(meta, { ok: false, error: "the overview describes the summary instead of being it" });
+	assert.deepEqual(checkSummaryOutput(" \n", { references: [] }), { ok: false, error: "the reply is empty" });
+	// The card says what was wrong in plain words, never the model's answer.
+	assert.equal(summaryProblemText("the reply is not a JSON object"), "it was not in the format Kite asked for");
+	assert.equal(summaryProblemText("the reply is empty"), "it was empty");
+	assert.equal(summaryProblemText("anything else"), "it did not pass Kite's checks");
 	assert.equal(checkSummaryOutput(JSON.stringify({ overview: "   " }), { references: [] }).ok, false);
 });
 
@@ -289,8 +295,20 @@ test("the reader's helpers: URL, visibility, copy text and error text", async ()
 	assert.equal(showsCurrentSummary({ summary: { ...summary, stale: true } }, false), false);
 	assert.equal(showsCurrentSummary(null, false), false);
 	assert.equal(summaryCopyText(summary), "Overview.\nDates: Tuesday.");
-	assert.equal(await summaryError(Response.json({ error: "Cap reached" }, { status: 429 })), "Cap reached");
-	assert.equal(await summaryError(new Response("oops", { status: 500 })), "Kite could not summarize this. Try again.");
+	assert.deepEqual(await summaryError(Response.json({ error: "Cap reached" }, { status: 429 })), {
+		message: "Cap reached",
+		failure: null,
+	});
+	assert.deepEqual(await summaryError(new Response("oops", { status: 500 })), {
+		message: "Kite could not summarize this. Try again.",
+		failure: null,
+	});
+	const details = { code: "timeout", feature: "summary", model: "m", provider: "cloudflare", status: null, at: "x" };
+	const timedOut = await summaryError(
+		Response.json({ error: "The AI took too long (60 s).", code: "timeout", details }, { status: 504 }),
+	);
+	assert.equal(timedOut.message, "The AI took too long (60 s).");
+	assert.deepEqual(timedOut.failure?.details, { ...details, retryable: true, config: false });
 });
 
 test("the route schemas accept a scope, a browser language and a two-letter target", () => {

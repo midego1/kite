@@ -3,6 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { Copy, Languages, RefreshCw, Sparkles, X } from "lucide-react";
+import { AiErrorNotice } from "@/components/agent/ai-error-notice";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { SummaryPoint, SummaryScope, SummaryState } from "@/lib/agent/summaries/summary-types";
@@ -178,9 +179,7 @@ export function ThreadSummaryCard({ controller }: { controller: ThreadSummaryCon
 					</div>
 				)}
 				{error && (
-					<p role="alert" className="mt-2 text-xs text-red-600">
-						{error}
-					</p>
+					<AiErrorNotice className="mt-2" message={error} error={controller.failure} onRetry={controller.retry} />
 				)}
 				{shown && (
 					<Footnote controller={controller} shown={shown} original={original} onToggle={() => setOriginal(!original)} />

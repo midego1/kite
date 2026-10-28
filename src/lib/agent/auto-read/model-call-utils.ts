@@ -222,6 +222,8 @@ type TriageAttemptInput = {
 	options: ModelCallOptions;
 	/** The module ids of the active extensions, whose `modules` keys the parse keeps. */
 	activeModuleIds?: readonly string[];
+	/** The request asked for the one-line summary, which the parse then keeps when it is usable. */
+	oneLine?: boolean;
 	generate: (prompt: TriagePrompt, options: ModelCallOptions) => Promise<ModelCallResult>;
 	now?: Date;
 };
@@ -230,7 +232,8 @@ type TriageAttemptInput = {
 export async function runTriageAttempt(input: TriageAttemptInput): Promise<{ result: TriageResult; calls: number }> {
 	const run = (prompt: TriagePrompt) =>
 		callWithFallback(input.options, (options) => input.generate(prompt, options)).then(completedText);
-	const parse = (text: string) => parseTriageOutput(text, input.now, input.activeModuleIds);
+	const parse = (text: string) =>
+		parseTriageOutput(text, input.now, input.activeModuleIds, input.oneLine ? { oneLine: true } : {});
 	const first = await run(input.prompt);
 	const parsed = parse(first);
 	if (parsed.ok) return { result: parsed.result, calls: 1 };

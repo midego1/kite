@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Sparkles, X } from "lucide-react";
+import { AiErrorNotice } from "@/components/agent/ai-error-notice";
+import type { AiErrorBody } from "@/lib/agent/ai-error-utils";
 import { htmlToPlainText } from "./rich-text-utils";
 import { canReplace, insertComposeText } from "./write-with-kite-insert";
 import { streamCompose } from "./write-with-kite-request";
@@ -21,7 +23,7 @@ type Phase =
 	| { name: "ask" }
 	| { name: "running"; preview: string }
 	| { name: "done"; text: string; warnings: string[] }
-	| { name: "error"; message: string }
+	| { name: "error"; message: string; error?: AiErrorBody | null }
 	/** `after` is the editor HTML right after the insert, to tell whether Undo would also drop later edits. */
 	| { name: "inserted"; previous: string; after: string };
 
@@ -158,9 +160,10 @@ export default function WriteWithKitePanel({
 		).catch((error: unknown) => ({
 			ok: false as const,
 			message: error instanceof Error ? error.message : "Kite could not write this.",
+			error: null,
 		}));
 		if (abort.signal.aborted) return;
-		setPhase(answer.ok ? { name: "done", ...answer } : { name: "error", message: answer.message });
+		setPhase(answer.ok ? { name: "done", ...answer } : { name: "error", message: answer.message, error: answer.error });
 	}
 
 	function insert(text: string, below: boolean) {
@@ -217,11 +220,8 @@ export default function WriteWithKitePanel({
 					{selection ? "The selected text" : "Your message"} changed meanwhile, so Kite adds its text below instead.
 				</p>
 			)}
-			{phase.name === "error" && (
-				<p role="alert" className="text-red-700">
-					{phase.message}
-				</p>
-			)}
+			{/* The actions below already offer Try again. */}
+			{phase.name === "error" && <AiErrorNotice message={phase.message} error={phase.error} />}
 			{phase.name === "inserted" && (
 				<InsertedNote
 					editedSince={composer.html !== phase.after}

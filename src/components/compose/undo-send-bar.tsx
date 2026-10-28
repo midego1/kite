@@ -1,17 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { TOAST_ACTION_CLASS, TOAST_CORNER_CLASS, TOAST_SURFACE_CLASS } from "@/components/ui/toast-styles";
 import type { SendingBarProps, UndoSendBarProps } from "./undo-send-types";
 
-const BAR_CLASS =
-	"fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-4 rounded-lg bg-neutral-900 px-4 py-3 text-sm text-white shadow-lg";
+const BAR_CLASS = `${TOAST_CORNER_CLASS} ${TOAST_SURFACE_CLASS} z-[60] flex items-center gap-4`;
 
 export function SendingBar({ onUndo, undoRequested }: SendingBarProps) {
 	return (
 		<div role="status" className={BAR_CLASS}>
 			<span>{undoRequested ? "Undoing…" : "Sending…"}</span>
 			{onUndo && !undoRequested && (
-				<button type="button" className="font-semibold text-blue-300 hover:text-blue-200" onClick={onUndo}>
+				<button type="button" className={TOAST_ACTION_CLASS} onClick={onUndo}>
 					Undo
 				</button>
 			)}
@@ -40,7 +40,7 @@ export function UndoSendBar({ until, onUndo, onExpire }: UndoSendBarProps) {
 	return (
 		<div role="status" className={BAR_CLASS}>
 			<span>Sending in {Math.ceil(remainingMs / 1000)}s</span>
-			<button type="button" className="font-semibold text-blue-300 hover:text-blue-200" onClick={onUndo}>
+			<button type="button" className={TOAST_ACTION_CLASS} onClick={onUndo}>
 				Undo
 			</button>
 		</div>

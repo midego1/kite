@@ -1540,7 +1540,8 @@ test("assistant controls answer the same with Calendar on and off and gain no mo
 			const off = await api.put("/api/admin/agent", { data: { enabled: false } });
 			expect(off.ok(), await off.text()).toBe(true);
 			const refusal = await api.post("/api/agent/chat", { data: { mailboxId, text: "Hello" } });
-			expect(refusal.status()).toBe(400);
+			expect(refusal.status()).toBe(403);
+			expect(await refusal.json()).toMatchObject({ code: "assistant_off" });
 			const on = await api.put("/api/admin/agent", { data: { enabled: true } });
 			expect(on.ok(), await on.text()).toBe(true);
 		}

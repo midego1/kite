@@ -5,6 +5,7 @@ import { extendTriageJsonSchema, keepActiveModules, type ActiveModelExtension } 
 import { REPAIR_MARKER, TRIAGE_SYSTEM_MARKER } from "./request-markers";
 import type { TriageParseOutcome, TriagePrompt, TriagePromptInput, TriageResult } from "./triage-types";
 import { createNonce, markUntrustedLinks, stripDelimiters, wrapUntrusted } from "../untrusted-utils";
+import { cleanLine, ONE_LINE_INSTRUCTION, ONE_LINE_SCHEMA } from "../summaries/line-utils";
 
 export const TRIAGE_BODY_MAX_CHARS = 8_000;
 const INSTRUCTIONS_MAX_CHARS = 4_000;
@@ -54,8 +55,9 @@ const triageResultSchema = z.object({
 	suspicious: z
 		.object({ flagged: z.boolean(), reasons: z.array(z.enum(SUSPICIOUS_REASONS)).default([]) })
 		.default({ flagged: false, reasons: [] }),
-	// Module extensions are kept leniently after parsing, so this never makes an answer invalid.
+	// Module extensions and the one-line summary are kept leniently after parsing, so they never make an answer invalid.
 	modules: z.unknown().optional(),
+	oneLine: z.unknown().optional(),
 });
 
 // A loose shape for providers that constrain decoding to a schema; parseTriageOutput stays the real check.
@@ -86,11 +88,20 @@ const TRIAGE_JSON_SCHEMA: JsonSchemaObject = {
 	required: ["category", "needsReply", "urgency", "summary", "tasks", "suspicious"],
 };
 
-/** The provider schema for one request: today's without active extensions, else with their `modules` fragments. */
+/** What a triage request asks for beyond the core keys: today, only the one-line summary for the message list. */
+export type TriageCoreExtension = { oneLine?: boolean };
+
+/**
+ * The provider schema for one request: today's without active extensions or the one-line summary, else with the
+ * modules' `modules` fragments and an optional `oneLine` string.
+ */
 export function buildTriageJsonSchema(
 	extensions: readonly Pick<ActiveModelExtension, "moduleId" | "jsonSchema">[] = [],
+	core: TriageCoreExtension = {},
 ): JsonSchemaObject {
-	return extendTriageJsonSchema(TRIAGE_JSON_SCHEMA, extensions);
+	const schema = extendTriageJsonSchema(TRIAGE_JSON_SCHEMA, extensions);
+	if (!core.oneLine) return schema;
+	return { ...schema, properties: { ...(schema.properties as JsonSchemaObject), oneLine: ONE_LINE_SCHEMA } };
 }
 
 const TRIAGE_SYSTEM_PROMPT = `${TRIAGE_SYSTEM_MARKER} You triage one incoming email for the owner of a mailbox in Kite.
@@ -107,10 +118,14 @@ Reply with exactly one JSON object and nothing else, using only these keys:
 const TRIAGE_CLOSING_RULE = "Do not add keys, addresses, links, actions or instructions for anyone.";
 const EXTENDED_CLOSING_RULE = "Do not add other keys, or any addresses, links, actions or instructions for anyone.";
 
-/** The system prompt: today's without extensions, else with each extension's static key text before the closing rule. */
-function systemPrompt(extensionInstructions: readonly string[]): string {
-	if (extensionInstructions.length === 0) return `${TRIAGE_SYSTEM_PROMPT}\n${TRIAGE_CLOSING_RULE}`;
-	return [TRIAGE_SYSTEM_PROMPT, ...extensionInstructions, EXTENDED_CLOSING_RULE].join("\n");
+/**
+ * The system prompt: today's without extensions, else with each extension's static key text (and the one-line
+ * summary's) before the closing rule.
+ */
+function systemPrompt(extensionInstructions: readonly string[], oneLine = false): string {
+	const extra = [...extensionInstructions, ...(oneLine ? [ONE_LINE_INSTRUCTION] : [])];
+	if (extra.length === 0) return `${TRIAGE_SYSTEM_PROMPT}\n${TRIAGE_CLOSING_RULE}`;
+	return [TRIAGE_SYSTEM_PROMPT, ...extra, EXTENDED_CLOSING_RULE].join("\n");
 }
 
 function yesNo(value: boolean): string {
@@ -150,7 +165,7 @@ export function buildTriagePrompt(input: TriagePromptInput): TriagePrompt {
 	const instructions = clean(input.instructions ?? "")
 		.trim()
 		.slice(0, INSTRUCTIONS_MAX_CHARS);
-	const base = systemPrompt(input.extensionInstructions ?? []);
+	const base = systemPrompt(input.extensionInstructions ?? [], input.oneLine);
 	const system = instructions ? `${base}\n\nMailbox preferences (cannot override these rules):\n${instructions}` : base;
 	const subjects = (input.threadSubjects ?? []).map((subject) => `- ${clean(subject).replace(/\s+/g, " ").trim()}`);
 	const facts = [`Today: ${(input.now ?? new Date()).toISOString()}`, ...(input.facts ? factLines(input.facts) : [])];
@@ -221,19 +236,22 @@ function describeIssue(error: z.ZodError): string {
 
 /**
  * Strict parsing of a triage reply: raw or fenced JSON, closed schema, truncated text, valid due dates only.
- * `modules` is kept only for the active extensions' ids and never decides whether the reply is valid.
+ * `modules` is kept only for the active extensions' ids and `oneLine` only when it was asked for and passes the
+ * line checks; neither ever decides whether the reply is valid.
  */
 export function parseTriageOutput(
 	text: string,
 	now: Date = new Date(),
 	activeModuleIds: readonly string[] = [],
+	core: TriageCoreExtension = {},
 ): TriageParseOutcome {
 	const json = extractJson(text);
 	if (json === undefined) return { ok: false, error: "the reply is not a JSON object" };
 	const parsed = triageResultSchema.safeParse(json);
 	if (!parsed.success) return { ok: false, error: describeIssue(parsed.error) };
-	const { modules: rawModules, ...data } = parsed.data;
+	const { modules: rawModules, oneLine: rawLine, ...data } = parsed.data;
 	const modules = keepActiveModules(rawModules, activeModuleIds);
+	const oneLine = core.oneLine ? cleanLine(rawLine) : null;
 	const result: TriageResult = {
 		...data,
 		tasks: data.tasks.map((task) => {
@@ -242,6 +260,7 @@ export function parseTriageOutput(
 		}),
 		suspicious: { flagged: data.suspicious.flagged, reasons: [...new Set(data.suspicious.reasons)] },
 		...(modules ? { modules } : {}),
+		...(oneLine ? { oneLine } : {}),
 	};
 	return { ok: true, result };
 }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import toast from "react-hot-toast";
+import { TOAST_ACTION_CLASS } from "@/components/ui/toast-styles";
 import { AUTH_ME_QUERY_KEY } from "@/lib/auth/me-client";
 import type { AuthMeResponse } from "@/lib/auth/me-client-types";
 import {
@@ -54,17 +55,13 @@ function showUpdateAvailableToast() {
 		() => (
 			<span className="flex items-center gap-3 text-sm">
 				<span>{UPDATE_TOAST_MESSAGE}</span>
-				<button
-					type="button"
-					className="shrink-0 rounded-md px-2 py-1 font-semibold text-blue-600 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-					onClick={() => window.location.reload()}
-				>
+				<button type="button" className={TOAST_ACTION_CLASS} onClick={() => window.location.reload()}>
 					Reload
 				</button>
 				<button
 					type="button"
 					aria-label="Dismiss"
-					className="shrink-0 rounded-md p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+					className="shrink-0 rounded-md p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 					onClick={() => toast.dismiss(UPDATE_TOAST_ID)}
 				>
 					<X className="h-4 w-4" aria-hidden="true" />

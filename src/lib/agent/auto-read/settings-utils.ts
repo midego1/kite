@@ -50,6 +50,9 @@ export const mailboxAgentSettingsUpdateSchema = z.object({
 	autoReadDailyLimit: z.number().int().min(1).max(1_000).optional(),
 	dailySpendCapMicros: z.number().int().min(0).max(MAX_SPEND_CAP_MICROS).nullable().optional(),
 	pausedUntil: z.iso.datetime({ offset: true }).nullable().optional(),
+	listSummaries: z.boolean().optional(),
+	listSummariesBulk: z.boolean().optional(),
+	listSummaryDailyLimit: z.number().int().min(1).max(1_000).optional(),
 });
 
 type MailboxAgentSettingsUpdate = z.infer<typeof mailboxAgentSettingsUpdateSchema>;
@@ -66,10 +69,14 @@ const SETTINGS_ERRORS: Record<string, string> = {
 	chatInstructions: "Chat instructions can be at most 2000 characters",
 	draftInstructions: "Drafting instructions can be at most 2000 characters",
 	summaryInstructions: "Summary instructions can be at most 2000 characters",
+	listSummaryDailyLimit: "The daily one-line summary limit must be between 1 and 1000",
 };
 
 /** The `mailbox_agent_settings` columns migration 0069 adds, by their keys in the settings state. */
 export const TASK_INSTRUCTION_KEYS = ["chatInstructions", "draftInstructions", "summaryInstructions"] as const;
+
+/** The `mailbox_agent_settings` columns migration 0072 adds, with the values that mean "nothing set". */
+export const LIST_SUMMARY_DEFAULTS = { listSummaries: false, listSummariesBulk: false, listSummaryDailyLimit: 100 };
 
 /** A short message naming the first invalid field of a settings update. */
 export function describeSettingsError(error: z.ZodError): string {
@@ -198,6 +205,7 @@ export function resolveMailboxAgentSettings(
 			autoReadDailyLimit: 200,
 			dailySpendCapMicros: null,
 			pausedUntil: null,
+			...LIST_SUMMARY_DEFAULTS,
 		};
 	return {
 		mailboxId: row.mailboxId,
@@ -215,6 +223,9 @@ export function resolveMailboxAgentSettings(
 		autoReadDailyLimit: row.autoReadDailyLimit,
 		dailySpendCapMicros: row.dailySpendCapMicros,
 		pausedUntil: row.pausedUntil,
+		listSummaries: row.listSummaries ?? LIST_SUMMARY_DEFAULTS.listSummaries,
+		listSummariesBulk: row.listSummariesBulk ?? LIST_SUMMARY_DEFAULTS.listSummariesBulk,
+		listSummaryDailyLimit: row.listSummaryDailyLimit ?? LIST_SUMMARY_DEFAULTS.listSummaryDailyLimit,
 	};
 }
 
@@ -248,6 +259,9 @@ export function applyMailboxAgentSettingsUpdate(
 		autoReadDailyLimit: pick(input.autoReadDailyLimit, current.autoReadDailyLimit),
 		dailySpendCapMicros: pick(input.dailySpendCapMicros, current.dailySpendCapMicros),
 		pausedUntil: parsePausedUntil(input.pausedUntil, current.pausedUntil),
+		listSummaries: pick(input.listSummaries, current.listSummaries),
+		listSummariesBulk: pick(input.listSummariesBulk, current.listSummariesBulk),
+		listSummaryDailyLimit: pick(input.listSummaryDailyLimit, current.listSummaryDailyLimit),
 	};
 }
 

@@ -15,6 +15,7 @@ import { parseAgentModelIds, toggleAgentModelId } from "@/lib/agent/model-ids";
 import { mergePublishedAgentRates } from "@/lib/agent/model-rates-utils";
 import { AutoReadAdminSettings } from "@/components/agent/auto-read-admin-settings";
 import { HaimakerReferralCard } from "./haimaker-referral-card";
+import { RecentAiErrors } from "./recent-ai-errors";
 import type { AgentAdminForm, AgentModelLoadState } from "./types";
 import {
 	agentModelInputError,
@@ -381,6 +382,7 @@ export default function AdminAgentPage() {
 				</CardContent>
 			</Card>
 			<AutoReadAdminSettings />
+			<RecentAiErrors />
 		</div>
 	);
 }

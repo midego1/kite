@@ -17,6 +17,9 @@ import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
 import { isAutomaticMessage } from "../auto-read/facts-utils";
 import { generateReplyDraft, loadDraftThread } from "./draft-generation";
 import { isCleanDraftBody } from "./draft-prompt-utils";
+import { traceAiError } from "../ai-errors";
+import { UnusableAnswerError } from "../ai-error-utils";
+import { InteractiveModelRefusedError } from "../interactive-model";
 
 export type AgentDraftQueueMessage = { kind: "agent.draft"; jobId: string };
 
@@ -141,7 +144,8 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 			: [];
 		if (newer) return void (await skip("A newer message or sent reply superseded this draft"));
 		const selection = await getAgentModel(env, settings.modelId);
-		if (!selection) throw new Error("AI provider is not configured");
+		if (!selection) throw new InteractiveModelRefusedError("not_configured");
+		const trace = { feature: "auto_draft" as const, model: selection.modelId, provider: selection.provider };
 		const { text: body } = await generateReplyDraft({
 			model: selection.model,
 			instructions: settings.instructions,
@@ -160,8 +164,10 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 					mailboxId: job.mailboxId,
 					jobId: job.id,
 				}),
+		}).catch((error: unknown) => {
+			throw traceAiError(error, trace);
 		});
-		if (!isCleanDraftBody(body)) throw new Error("Model did not produce a clean draft");
+		if (!isCleanDraftBody(body)) throw traceAiError(new UnusableAnswerError("it was not a clean draft"), trace);
 		if (!(await getAgentEnabled(env))) return void (await skip("Assistant disabled during generation"));
 		const [currentSettings] = await db
 			.select({ autoDraftEnabled: mailboxAgentSettings.autoDraftEnabled })

@@ -5,12 +5,13 @@ import { domains, messages } from "@/db/schema";
 import { getEmailDisplayName } from "@/lib/email/address";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
-import { createLogger } from "@/lib/logger.mjs";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import type { SessionUser } from "@/lib/auth/types";
 import { getAutoReadInstallSettings } from "./auto-read/install-settings";
 import { readMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
 import { buildModelCallOptions } from "./auto-read/model-call-utils";
+import { reportAiErrorClass, reportAiFailure, type AiFailureContext } from "./ai-errors";
+import type { AiErrorDetails } from "./ai-error-utils";
 import { keepReservedEstimate, reconcileAiSpend, refusedSpendCap, reserveAiSpend } from "./auto-read/spend";
 import type { ReserveAiSpendInput, SpendReservation } from "./auto-read/spend-types";
 import { spendCapMessage } from "./chat-spend-utils";
@@ -35,12 +36,13 @@ export type ComposeRequest = {
 	threadId?: string | null;
 };
 
-/** A request refused before any model call, answered with its status. */
+/** A request refused before any model call, answered with its status (and the details of an AI refusal). */
 export class ComposeRefusal extends Error {
 	constructor(
 		readonly status: number,
 		message: string,
 		readonly code?: string,
+		readonly details?: AiErrorDetails,
 	) {
 		super(message);
 		this.name = "ComposeRefusal";
@@ -160,10 +162,20 @@ export async function createComposeStream(
 		mailboxCapMicros: settings?.dailySpendCapMicros ?? null,
 		tokenCap: install.chatTokenCap,
 	};
+	const failure: AiFailureContext = {
+		env,
+		feature: "compose",
+		model: selection.modelId,
+		provider: selection.provider,
+		userId: user.id,
+		mailboxId: request.mailboxId,
+	};
 	const reservation = await reserveAiSpend(reserve);
 	if (!reservation) {
 		const cap = await refusedSpendCap(reserve);
-		throw new ComposeRefusal(429, spendCapMessage(cap, { ...reserve, tokenCap: install.chatTokenCap }), "spend_cap");
+		const message = spendCapMessage(cap, { ...reserve, tokenCap: install.chatTokenCap });
+		const body = await reportAiErrorClass({ code: "spend_cap", status: null, message }, failure);
+		throw new ComposeRefusal(429, body.error, body.code, body.details);
 	}
 	// One abort for the request and for a reader that cancels the stream, so either stops the provider call.
 	const abort = new AbortController();
@@ -179,22 +191,12 @@ export async function createComposeStream(
 		onError: () => undefined,
 	});
 	// The subject and recipients are not references: a link in them would otherwise authorize itself.
-	return streamComposeAnswer(env, result, reservation, selection.rates, abort, {
+	return streamComposeAnswer(env, result, reservation, selection.rates, abort, failure, {
 		mode: request.mode,
 		input: (request.mode === "rewrite" ? request.text : request.instruction) ?? "",
 		userReferences: [request.text, request.instruction],
 		sourceReferences: [source?.body, source?.from],
 	});
-}
-
-const logger = createLogger("agent");
-
-/** The client gets a short fixed message and a code; the provider's own text, which may echo content, is not sent. */
-function failure(error: unknown): { error: string; code: string } {
-	const status = (error as { statusCode?: unknown } | null)?.statusCode;
-	const code = typeof status === "number" ? `provider_${status}` : "provider_error";
-	logger.warn("compose.failed", { code });
-	return { error: "The AI provider could not finish this. Try again.", code };
 }
 
 function streamComposeAnswer(
@@ -203,8 +205,10 @@ function streamComposeAnswer(
 	reservation: SpendReservation,
 	rates: ReserveAiSpendInput["details"]["rates"],
 	abort: AbortController,
+	failure: AiFailureContext,
 	check: Parameters<typeof checkComposeOutput>[1],
 ) {
+	const startedAt = Date.now();
 	const encoder = new TextEncoder();
 	let closed = false;
 	return new ReadableStream<Uint8Array>({
@@ -214,6 +218,11 @@ function streamComposeAnswer(
 				if (!closed) controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
 			};
 			let settled = false;
+			let usage: Awaited<typeof result.totalUsage> | null = null;
+			// The client gets a fixed message, a code and the details; the provider's own text, which may echo
+			// content, is neither sent nor logged.
+			const fail = async (body: ReturnType<typeof reportAiFailure>) => emit({ type: "error", ...(await body) });
+			const context = () => ({ ...failure, startedAt, usage });
 			try {
 				let text = "";
 				for await (const part of result.fullStream) {
@@ -223,21 +232,20 @@ function streamComposeAnswer(
 					} else if (part.type === "error") throw part.error;
 				}
 				if (abort.signal.aborted) return;
-				await reconcileAiSpend({ env, reservation, rates, usage: await result.totalUsage });
+				usage = await result.totalUsage;
+				await reconcileAiSpend({ env, reservation, rates, usage });
 				settled = true;
 				// An answer that ran out of tokens ends mid-sentence; none of it may be inserted.
-				if ((await result.finishReason) === "length") {
-					logger.warn("compose.cut_off", { mode: check.mode });
-					return emit({ type: "error", error: "The answer was cut off. Try again.", code: "cut_off" });
-				}
+				if ((await result.finishReason) === "length")
+					return await fail(
+						reportAiErrorClass({ code: "cut_off", status: null }, { ...context(), finishReason: "length" }),
+					);
 				const outcome = checkComposeOutput(text, check);
-				emit(
-					outcome.ok
-						? { type: "done", text: outcome.text, warnings: outcome.warnings }
-						: { type: "error", error: outcome.error, code: "unusable_answer" },
-				);
+				if (outcome.ok) emit({ type: "done", text: outcome.text, warnings: outcome.warnings });
+				else
+					await fail(reportAiErrorClass({ code: "unusable_answer", status: null, reason: outcome.error }, context()));
 			} catch (error) {
-				if (!abort.signal.aborted) emit({ type: "error", ...failure(error) });
+				if (!abort.signal.aborted) await fail(reportAiFailure(error, context()));
 			} finally {
 				// Aborted, cancelled or failed before the provider reported usage: the estimate stays as the spend.
 				if (!settled) await keepReservedEstimate(env, reservation).catch(() => undefined);

@@ -1,7 +1,7 @@
 import { requireSessionUser } from "@/lib/api/auth";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
-import { InteractiveModelRefusedError, type InteractiveRefusal } from "@/lib/agent/interactive-model";
+import { reportAiErrorClass } from "@/lib/agent/ai-errors";
 import { allowAgentRequest } from "@/lib/agent/rate-limit";
 import { createSummary, getSummaryState, SummaryRefusal } from "@/lib/agent/summaries/service";
 import { primaryLanguage } from "@/lib/agent/summaries/summary-utils";
@@ -12,23 +12,12 @@ type RouteParams = { params: Promise<{ messageId: string }> };
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
-const REFUSALS: Record<InteractiveRefusal, { status: number; error: string; code: string }> = {
-	assistant_disabled: { status: 403, error: "Assistant is disabled", code: "assistant_off" },
-	external_provider_not_allowed: {
-		status: 403,
-		error: "The primary admin has not allowed the external AI provider to read mail",
-		code: "external_provider_not_allowed",
-	},
-	not_configured: { status: 503, error: "AI provider is not configured", code: "no_provider" },
-};
-
 function refused(error: unknown) {
 	if (error instanceof SummaryRefusal)
-		return Response.json({ error: error.message, code: error.code }, { status: error.status, headers: NO_STORE });
-	if (error instanceof InteractiveModelRefusedError) {
-		const { status, ...body } = REFUSALS[error.reason];
-		return Response.json(body, { status, headers: NO_STORE });
-	}
+		return Response.json(
+			{ error: error.message, code: error.code, ...(error.details ? { details: error.details } : {}) },
+			{ status: error.status, headers: NO_STORE },
+		);
 	throw error;
 }
 
@@ -63,11 +52,13 @@ export async function POST(request: Request, { params }: RouteParams) {
 	if (!hasValidSessionMutationOrigin(request)) return Response.json({ error: "Invalid origin" }, { status: 403 });
 	const parsed = summaryRequestSchema.safeParse(await readJsonBody(request, 4_000).catch(() => null));
 	if (!parsed.success) return Response.json({ error: "Invalid request" }, { status: 400 });
-	if (!(await allowAgentRequest(env, `summary:${auth.user.id}`)))
-		return Response.json(
-			{ error: "Too many requests. Wait a moment and try again.", code: "rate_limited" },
-			{ status: 429, headers: NO_STORE },
+	if (!(await allowAgentRequest(env, `summary:${auth.user.id}`))) {
+		const body = await reportAiErrorClass(
+			{ code: "rate_limited", status: null },
+			{ env, feature: parsed.data.translateTo ? "summary_translation" : "summary", userId: auth.user.id },
 		);
+		return Response.json(body, { status: 429, headers: NO_STORE });
+	}
 	const { messageId } = await params;
 	try {
 		const state = await createSummary(env, auth.user, messageId, {

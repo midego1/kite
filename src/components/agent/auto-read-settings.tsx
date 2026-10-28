@@ -22,6 +22,7 @@ import {
 	toAutoReadState,
 } from "./auto-read-settings-utils";
 import { SenderLists } from "./sender-lists";
+import { ListSummarySettings } from "./list-summary-settings";
 
 const fieldClass =
 	"mt-2 w-full rounded-xl border border-neutral-200 bg-white p-2 outline-none focus:border-blue-400 disabled:cursor-not-allowed disabled:opacity-60";
@@ -325,45 +326,49 @@ export function AutoReadSettings({ mailboxId }: AutoReadSettingsProps) {
 		setState((current) => (current ? { ...current, form: { ...current.form, ...update } } : current));
 
 	return (
-		<section
-			aria-labelledby={`auto-read-heading-${mailboxId}`}
-			className="space-y-3 rounded-2xl border border-neutral-200 p-3"
-		>
-			<p id={`auto-read-heading-${mailboxId}`} className="font-medium text-neutral-800">
-				Automatic reading
-			</p>
-			<p className="text-xs text-neutral-500">
-				Kite reads new mail in this mailbox and suggests summaries, replies and warnings. Nothing changes until you
-				accept a suggestion.
-			</p>
-			<AutoReadNotices state={state} />
-			<AutoReadFields mailboxId={mailboxId} state={state} busy={busy} setForm={setForm} />
-			{state.canManage && (
-				<SenderLists
-					mailboxId={mailboxId}
-					senders={state.senders}
-					disabled={busy}
-					onChange={(senders) => setState((current) => (current ? { ...current, senders } : current))}
-				/>
-			)}
-			<p className="text-xs text-neutral-500">Message content is sent to {state.providerLabel}.</p>
-			{state.canManage && (
-				<div className="flex flex-wrap items-center gap-3">
-					<Button type="button" size="sm" disabled={busy} onClick={save}>
-						Save automatic reading
-					</Button>
-					<PauseControl
-						pausedUntil={state.pausedUntil}
-						disabled={busy || (state.savedAutonomy === "off" && !state.pausedUntil)}
-						onPause={pause}
-					/>
-				</div>
-			)}
-			{status && (
-				<p role="status" className={`text-xs ${status.tone === "error" ? "text-red-600" : "text-neutral-500"}`}>
-					{status.text}
+		<>
+			<section
+				aria-labelledby={`auto-read-heading-${mailboxId}`}
+				className="space-y-3 rounded-2xl border border-neutral-200 p-3"
+			>
+				<p id={`auto-read-heading-${mailboxId}`} className="font-medium text-neutral-800">
+					Automatic reading
 				</p>
-			)}
-		</section>
+				<p className="text-xs text-neutral-500">
+					Kite reads new mail in this mailbox and suggests summaries, replies and warnings. Nothing changes until you
+					accept a suggestion.
+				</p>
+				<AutoReadNotices state={state} />
+				<AutoReadFields mailboxId={mailboxId} state={state} busy={busy} setForm={setForm} />
+				{state.canManage && (
+					<SenderLists
+						mailboxId={mailboxId}
+						senders={state.senders}
+						disabled={busy}
+						onChange={(senders) => setState((current) => (current ? { ...current, senders } : current))}
+					/>
+				)}
+				<p className="text-xs text-neutral-500">Message content is sent to {state.providerLabel}.</p>
+				{state.canManage && (
+					<div className="flex flex-wrap items-center gap-3">
+						<Button type="button" size="sm" disabled={busy} onClick={save}>
+							Save automatic reading
+						</Button>
+						<PauseControl
+							pausedUntil={state.pausedUntil}
+							disabled={busy || (state.savedAutonomy === "off" && !state.pausedUntil)}
+							onPause={pause}
+						/>
+					</div>
+				)}
+				{status && (
+					<p role="status" className={`text-xs ${status.tone === "error" ? "text-red-600" : "text-neutral-500"}`}>
+						{status.text}
+					</p>
+				)}
+			</section>
+			{/* One-line summaries ride on automatic reading's model and caps, so their settings sit right below. */}
+			<ListSummarySettings mailboxId={mailboxId} />
+		</>
 	);
 }

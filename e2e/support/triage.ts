@@ -3,22 +3,27 @@ import { okJson } from "./auto-read";
 
 export type AgentJobRow = {
 	id: string;
-	kind: "draft" | "triage";
+	kind: "draft" | "triage" | "line_summary";
 	status: string;
 	reason: string | null;
 	draftId: string | null;
 	sourceMessageId: string;
 };
 
-export async function readJobs(api: APIRequestContext, mailboxId: string): Promise<AgentJobRow[]> {
-	const { jobs } = await okJson<{ jobs: AgentJobRow[] }>(
-		await api.get(`/api/agent/jobs?mailboxId=${encodeURIComponent(mailboxId)}`),
-	);
+/** The mailbox's draft and triage jobs; one-line summary jobs are listed only with `kind: "line_summary"`. */
+export async function readJobs(
+	api: APIRequestContext,
+	mailboxId: string,
+	kind?: "line_summary",
+): Promise<AgentJobRow[]> {
+	const query = new URLSearchParams({ mailboxId, ...(kind ? { kind } : {}) });
+	const { jobs } = await okJson<{ jobs: AgentJobRow[] }>(await api.get(`/api/agent/jobs?${query}`));
 	return jobs;
 }
 
-async function jobsForMessage(api: APIRequestContext, mailboxId: string, messageId: string) {
-	return (await readJobs(api, mailboxId)).filter((job) => job.sourceMessageId === messageId);
+async function jobsForMessage(api: APIRequestContext, mailboxId: string, messageId: string, kind?: string) {
+	const jobs = await readJobs(api, mailboxId, kind === "line_summary" ? kind : undefined);
+	return jobs.filter((job) => job.sourceMessageId === messageId);
 }
 
 /** Polls until the message has a job of this kind in a finished state, and returns it. */
@@ -33,7 +38,7 @@ export async function waitForFinishedJob(
 	await expect
 		.poll(
 			async () => {
-				found = (await jobsForMessage(api, mailboxId, messageId)).find((job) => job.kind === kind);
+				found = (await jobsForMessage(api, mailboxId, messageId, kind)).find((job) => job.kind === kind);
 				return found?.status ?? "none";
 			},
 			{ timeout, intervals: [250, 500, 1000] },

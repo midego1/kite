@@ -12,6 +12,7 @@ import {
 	getActivityMetadata,
 	isModuleActivity,
 } from "./utils";
+import { TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 
 export default function ActivityPage() {
 	const activity = useQuery({
@@ -33,7 +34,7 @@ export default function ActivityPage() {
 				className="overflow-x-auto rounded-xl border border-neutral-200 bg-white"
 			>
 				<table className="w-full min-w-[760px] table-fixed text-left text-sm">
-					<thead className="border-b border-neutral-200 bg-[#f6f8fc] text-xs font-medium text-neutral-500">
+					<thead className={TABLE_HEAD_CLASS}>
 						<tr>
 							<th scope="col" className="w-40 px-5 py-3">
 								Activity

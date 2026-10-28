@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { MailboxAutoReplySettings } from "./types";
 import { updateMailboxAutoReply } from "./utils";
 import { Switch } from "../ui/switch";
+import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
 
 const defaultSettings: MailboxAutoReplySettings = {
 	enabled: false,
@@ -72,7 +73,7 @@ export function MailboxAutoReplyForm() {
 
 	return (
 		<form onSubmit={onSubmit} className="space-y-4">
-			<label className="flex items-start gap-3 rounded-lg bg-neutral-50 p-4">
+			<label className={SETTING_ROW_CLASS}>
 				<span className="flex-1">
 					<span className="block text-sm font-medium text-neutral-900">Enable auto-reply for {address}</span>
 					<span className="mt-1 block text-sm text-neutral-500">

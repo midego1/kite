@@ -41,7 +41,7 @@ export function DashboardSectionShell({ children, nav, ...guard }: DashboardSect
 								<SidebarFrame
 									sidebar={
 										<SidebarAside className="md:w-full">
-											<div className="h-full">
+											<div className="h-full min-h-0">
 												{nav ?? (
 													<DashboardNav
 														accountMenu={<MailboxSelector placement="sidebar" />}

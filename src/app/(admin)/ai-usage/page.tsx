@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import type { AiUsageResponse } from "./types";
 import { fetchAiUsage, formatEstimatedUsd, formatTokenCount, formatUsageDate, formatUsageProvider } from "./utils";
 import { UsageChart } from "./usage-chart";
+import { TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 
 export default function AiUsagePage() {
 	const [data, setData] = useState<AiUsageResponse | null>(null);
@@ -77,7 +78,7 @@ export default function AiUsagePage() {
 				aria-busy={loadingPage}
 			>
 				<table className="w-full min-w-[850px] text-left text-sm">
-					<thead className="border-b border-neutral-200 bg-[#f6f8fc] text-xs font-medium text-neutral-500">
+					<thead className={TABLE_HEAD_CLASS}>
 						<tr>
 							<th scope="col" className="px-4 py-3">
 								Date & time

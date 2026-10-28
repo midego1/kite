@@ -5,6 +5,7 @@ import { authFetch } from "@/lib/auth/client";
 import { TRASH_RETENTION_OPTIONS, describeTrashRetention } from "@/lib/email/trash-retention-utils";
 import type { TrashRetentionSettingsResponse } from "@/app/api/settings/trash-retention/types";
 import { Select } from "@/components/ui/select";
+import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
 
 export function TrashRetentionSettings() {
 	const [days, setDays] = useState<number | null>(null);
@@ -56,7 +57,7 @@ export function TrashRetentionSettings() {
 
 	return (
 		<div>
-			<label className="flex items-start gap-3 rounded-lg bg-neutral-50 p-4">
+			<label className={SETTING_ROW_CLASS}>
 				<span className="flex-1">
 					<span className="block text-sm font-medium text-neutral-900">Auto-delete Trash and Spam</span>
 					<span className="mt-1 block text-sm text-neutral-500">

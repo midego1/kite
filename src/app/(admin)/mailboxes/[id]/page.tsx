@@ -28,6 +28,8 @@ import {
 import { getMailboxesBase, mailboxIdParam } from "../utils";
 import MailboxAvatarForm from "./MailboxAvatarForm";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { DangerZone } from "@/components/ui/page";
+import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
 
 export default function MailboxSettingsPage() {
 	const params = useParams<{ id: string | string[] }>();
@@ -160,7 +162,7 @@ export default function MailboxSettingsPage() {
 							disabled={mailbox.isLoading || updateName.isPending}
 						/>
 					</div>
-					<label className="flex items-start gap-3 rounded-lg bg-neutral-50 p-4">
+					<label className={SETTING_ROW_CLASS}>
 						<Checkbox
 							checked={useAllDomains}
 							onChange={(event) => setUseAllDomains(event.target.checked)}
@@ -356,46 +358,44 @@ export default function MailboxSettingsPage() {
 					</CardContent>
 				</Card>
 			)}
-			<Card>
-				<CardHeader>
-					<CardTitle className="text-red-700">Danger zone</CardTitle>
-					<CardDescription>
+			<DangerZone
+				description={
+					<>
 						Deleting this mailbox removes its Cloudflare Email Routing rule, so new mail sent to{" "}
 						{address || "this address"} will no longer be accepted. Messages already received are kept in the database
 						but will no longer appear in any inbox. This cannot be undone.
-					</CardDescription>
-				</CardHeader>
-				<CardContent className="pt-4">
-					{removeMailbox.isError && (
-						<p
-							role="alert"
-							className="mb-4 rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
-						>
-							{removeMailbox.error instanceof Error ? removeMailbox.error.message : "Failed to delete mailbox"}
-						</p>
-					)}
-					<Button
-						type="button"
-						variant="destructive"
-						disabled={!mailbox.data || removeMailbox.isPending}
-						onClick={async () => {
-							if (
-								!(await requestConfirmation({
-									title: `Delete ${address}?`,
-									description:
-										"This permanently deletes the mailbox with all its messages and attachments, and removes its email routing. Large mailboxes finish deleting in the background. This cannot be undone.",
-									confirmLabel: "Delete mailbox",
-								}))
-							)
-								return;
-							removeMailbox.mutate();
-						}}
+					</>
+				}
+			>
+				{removeMailbox.isError && (
+					<p
+						role="alert"
+						className="mb-4 rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
 					>
-						<Trash2 className="h-4 w-4" />
-						{removeMailbox.isPending ? "Deleting..." : "Delete mailbox"}
-					</Button>
-				</CardContent>
-			</Card>
+						{removeMailbox.error instanceof Error ? removeMailbox.error.message : "Failed to delete mailbox"}
+					</p>
+				)}
+				<Button
+					type="button"
+					variant="destructive"
+					disabled={!mailbox.data || removeMailbox.isPending}
+					onClick={async () => {
+						if (
+							!(await requestConfirmation({
+								title: `Delete ${address}?`,
+								description:
+									"This permanently deletes the mailbox with all its messages and attachments, and removes its email routing. Large mailboxes finish deleting in the background. This cannot be undone.",
+								confirmLabel: "Delete mailbox",
+							}))
+						)
+							return;
+						removeMailbox.mutate();
+					}}
+				>
+					<Trash2 className="h-4 w-4" />
+					{removeMailbox.isPending ? "Deleting..." : "Delete mailbox"}
+				</Button>
+			</DangerZone>
 
 			{/* 
       <Card>

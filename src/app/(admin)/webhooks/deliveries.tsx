@@ -13,6 +13,7 @@ import {
 	isRetryable,
 	retryDelivery,
 } from "./utils";
+import { TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 
 const STATUS_STYLES: Record<WebhookDelivery["status"], string> = {
 	delivered: "bg-green-600/10 text-green-700",
@@ -55,7 +56,7 @@ export function WebhookDeliveries({ webhookId }: { webhookId: string }) {
 			className="overflow-x-auto rounded-xl border border-neutral-200"
 		>
 			<table className="w-full min-w-[820px] text-left text-sm">
-				<thead className="bg-neutral-50 text-xs font-medium text-neutral-500">
+				<thead className={TABLE_HEAD_CLASS}>
 					<tr>
 						<th scope="col" className="px-3 py-2 font-medium">
 							Event

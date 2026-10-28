@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import type { AccountAliasesProps } from "./types";
+import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
 
 export function AccountAliases({
 	domains,
@@ -19,7 +20,7 @@ export function AccountAliases({
 	const availableDomains = domains.filter((domain) => domain.status === "active");
 	return (
 		<div className="space-y-4 border-t border-neutral-200 pt-4">
-			<label className="flex items-start gap-3 rounded-lg bg-neutral-50 p-4">
+			<label className={SETTING_ROW_CLASS}>
 				<Checkbox checked={useAllDomains} onChange={(event) => onUseAllDomainsChange(event.target.checked)} />
 				<span>
 					<span className="block text-sm font-medium">Use all domains</span>

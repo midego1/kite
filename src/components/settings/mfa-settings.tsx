@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import type { MfaStatusResponse } from "./types";
 import type { MfaDialogStep } from "./mfa-settings-types";
 import { beginMfaEnrollment, confirmMfaEnrollment, disableMfa, loadMfaStatus, regenerateRecoveryCodes } from "./utils";
+import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
 
 /**
  * Settings > Account > Security card for TOTP. Enrolment is a three-step
@@ -36,7 +37,7 @@ export function MfaSettings() {
 
 	return (
 		<div className="space-y-4">
-			<div className="flex items-start gap-3 rounded-lg bg-neutral-50 p-4">
+			<div className={SETTING_ROW_CLASS}>
 				{status.enabled ? (
 					<ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
 				) : (

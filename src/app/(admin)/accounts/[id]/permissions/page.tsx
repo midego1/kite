@@ -25,6 +25,7 @@ import {
 	transferPrimaryAdmin,
 	type TransferCandidate,
 } from "../utils";
+import { TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 
 export default function AccountPermissionsPage() {
 	const { id } = useParams<{ id: string }>();
@@ -128,7 +129,7 @@ export default function AccountPermissionsPage() {
 			</section>
 			<div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
 				<table className="w-full text-left">
-					<thead className="border-b border-neutral-200 bg-[#f6f8fc] text-xs font-medium text-neutral-500">
+					<thead className={TABLE_HEAD_CLASS}>
 						<tr>
 							<th scope="col" className="px-5 py-3">
 								Permission

@@ -2,6 +2,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { storeMessageAttachments } from "@/lib/email/attachments";
+import { canOffloadHtmlBodies, putOffloadedHtmlBody, recordOffloadedHtmlBody } from "@/lib/email/bodies";
+import { planHtmlBodyOffload } from "@/lib/email/bodies-utils";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import { buildSnippet, parseRawMime } from "@/lib/email/parse";
 import type { ParsedEmail } from "@/lib/email/parse";
@@ -38,6 +40,7 @@ export async function importMessagesToMailbox(
 	}
 
 	// One lookup per batch instead of one per message.
+	const offloadBodies = await canOffloadHtmlBodies(env);
 	const existing = await findExistingDedupeKeys(
 		db,
 		input.mailboxId,
@@ -55,6 +58,7 @@ export async function importMessagesToMailbox(
 				mailboxId: input.mailboxId,
 				destination: input.destination,
 				message,
+				offloadBodies,
 			});
 			result.imported += 1;
 		} catch (error) {
@@ -98,6 +102,7 @@ async function importParsedMessage(
 		mailboxId: string;
 		destination: ImportDestination;
 		message: ParsedImport;
+		offloadBodies: boolean;
 	},
 ): Promise<void> {
 	const { parsed, providerMessageId, raw, read, starred, receivedAt } = input.message;
@@ -109,8 +114,13 @@ async function importParsedMessage(
 	// The Date header first, the source's INTERNALDATE when it has none (or none that parses); never far in the future.
 	const createdAt = importMessageDate([parsed.date, receivedAt], new Date());
 	const placement = getImportMessagePlacement(input.destination);
+	// A large HTML body goes to the Mail store; the row keeps a text body for search and snippets. The object is
+	// written first and the row is inserted with its key in one batch, so a failure at any step leaves at most an
+	// orphan object, never a row whose HTML is missing.
+	const offload = input.offloadBodies ? planHtmlBodyOffload(messageId, parsed) : null;
+	if (offload) await putOffloadedHtmlBody(env, offload);
 
-	await db.insert(messages).values({
+	const insert = db.insert(messages).values({
 		id: messageId,
 		userId: input.userId,
 		mailboxId: input.mailboxId,
@@ -122,8 +132,8 @@ async function importParsedMessage(
 		ccAddr: parsed.ccAddr,
 		subject: parsed.subject,
 		snippet: buildSnippet(parsed.text, parsed.html),
-		textBody: parsed.text,
-		htmlBody: parsed.html,
+		textBody: offload ? offload.textBody : parsed.text,
+		htmlBody: offload ? null : parsed.html,
 		rawR2Key,
 		status: placement.status,
 		read: placement.direction === "outbound" || read === true,
@@ -140,23 +150,29 @@ async function importParsedMessage(
 		references: parsed.references.length ? parsed.references.join(" ") : null,
 		createdAt,
 	});
-
 	try {
-		const contactAddress = placement.direction === "outbound" ? toAddr : fromAddr;
-		// Independent writes; run them together instead of one after another.
-		await Promise.all([
-			env.BUCKET.put(rawR2Key, raw, {
-				httpMetadata: { contentType: "message/rfc822" },
-			}),
-			storeMessageAttachments(env, messageId, parsed.attachments, { validate: false }),
-			upsertContactFromAddress(env, {
-				userId: input.userId,
-				address: contactAddress,
-				source: placement.direction === "outbound" ? "outbound" : "inbound",
-			}),
-		]);
+		await (offload ? db.batch([insert, recordOffloadedHtmlBody(db, messageId, offload)]) : insert);
 	} catch (error) {
-		await deleteMessageWithObjects(env, db, messageId, rawR2Key);
+		if (offload) await env.BUCKET.delete(offload.key).catch(() => undefined);
 		throw error;
+	}
+
+	const contactAddress = placement.direction === "outbound" ? toAddr : fromAddr;
+	// Independent writes, run together; every one settles before a failure cleans up, so none lands afterwards.
+	const writes = await Promise.allSettled([
+		env.BUCKET.put(rawR2Key, raw, {
+			httpMetadata: { contentType: "message/rfc822" },
+		}),
+		storeMessageAttachments(env, messageId, parsed.attachments, { validate: false }),
+		upsertContactFromAddress(env, {
+			userId: input.userId,
+			address: contactAddress,
+			source: placement.direction === "outbound" ? "outbound" : "inbound",
+		}),
+	]);
+	const failed = writes.find((write) => write.status === "rejected");
+	if (failed) {
+		await deleteMessageWithObjects(env, db, messageId, rawR2Key);
+		throw failed.reason;
 	}
 }

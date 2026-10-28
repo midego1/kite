@@ -10,6 +10,7 @@ import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { newId } from "@/lib/ids";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import { listMessageAttachments } from "@/lib/email/attachments";
+import { loadMessageBodies, loadMessageBody } from "@/lib/email/bodies";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
 import type { AgentToolContext, EmailToolName } from "./types";
 import { getReplyRecipients } from "./reply";
@@ -258,7 +259,7 @@ export async function runEmailTool(
 		};
 	}
 	if (name === "get_email") {
-		const row = await ownMessage(context, input.emailId as string);
+		const row = await loadMessageBody(context.env, await ownMessage(context, input.emailId as string));
 		const attachments = await listMessageAttachments(context.env, row.id);
 		const text = (row.textBody || htmlToReadableText(row.htmlBody)).slice(0, 30_000);
 		const [metadata] =
@@ -285,7 +286,7 @@ export async function runEmailTool(
 	}
 	if (name === "get_thread") {
 		const anchor = await ownMessage(context, input.emailId as string);
-		const rows = anchor.threadId
+		const stored = anchor.threadId
 			? await db
 					.select()
 					.from(messages)
@@ -293,6 +294,7 @@ export async function runEmailTool(
 					.orderBy(desc(messages.createdAt))
 					.limit(21)
 			: [anchor];
+		const rows = await loadMessageBodies(context.env, stored, { textFirst: true });
 		return {
 			emails: rows
 				.slice(0, 20)

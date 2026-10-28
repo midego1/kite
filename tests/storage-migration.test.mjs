@@ -283,6 +283,60 @@ test("purge deletes only the migrated keys from the old store and drops it from 
 	assert.ok(audit.some((row) => row.action === "storage.migration_purged"));
 });
 
+test("a mail migration moves offloaded HTML bodies, and the purge removes the old copies", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "m1");
+	await addMessage(env, "m2");
+	env.DB.db.exec("UPDATE messages SET html_body_key = 'bodies/m1.html' WHERE id = 'm1'");
+	await env.BUCKET.put("bodies/m1.html", "<p>Offloaded body</p>", { httpMetadata: { contentType: "text/html" } });
+	// A body object no row names stays where it is, like any other orphan.
+	await env.BUCKET.put("bodies/m2.html", "<p>Not offloaded</p>");
+	setRoute(env, "mail", "sto_target", "default");
+	const id = await migration.queueStorageMigration(env, {
+		objectClass: "mail",
+		fromStoreId: "default",
+		toStoreId: "sto_target",
+		createdByUserId: null,
+	});
+	assert.equal(job(env, id).objects_total, 3, "two raw messages and one body");
+	await drain(env, queue);
+	assert.equal(job(env, id).status, "completed");
+	assert.equal(job(env, id).objects_done, 3);
+	assert.equal(targetText("bodies/m1.html"), "<p>Offloaded body</p>");
+	assert.equal(target().get("bodies/m1.html").meta.contentType, "text/html");
+	assert.equal(target().has("bodies/m2.html"), false);
+	const purge = await routeSwitch.runMigrationAction(env, { id: "owner" }, id, {
+		action: "purge-source",
+		confirm: "local files",
+	});
+	assert.equal(purge.ok, true);
+	await drain(env, queue);
+	assert.equal(JSON.parse(job(env, id).cursor).phase, "purged");
+	assert.equal(await env.BUCKET.get("bodies/m1.html"), null);
+	assert.equal(targetText("bodies/m1.html"), "<p>Offloaded body</p>");
+	assert.equal(await (await env.BUCKET.get("bodies/m2.html")).text(), "<p>Not offloaded</p>");
+});
+
+test("before migration 0074 a mail migration moves raw mail and attachments without the bodies source", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "m1", { attachments: ["a"] });
+	env.DB.db.exec("ALTER TABLE messages DROP COLUMN html_body_key");
+	setRoute(env, "mail", "sto_target", "default");
+	const id = await migration.queueStorageMigration(env, {
+		objectClass: "mail",
+		fromStoreId: "default",
+		toStoreId: "sto_target",
+		createdByUserId: null,
+	});
+	assert.equal(job(env, id).objects_total, 2);
+	await drain(env, queue);
+	assert.equal(job(env, id).status, "completed");
+	assert.equal(job(env, id).errors, 0);
+	assert.equal(targetText("inbound/m1.eml"), "raw m1");
+});
+
 test("the cron restarts stalled jobs and finishes migrations completed a week ago", async (t) => {
 	const { env, queue } = await fixture(t);
 	await addStore(env, "sto_target", "kite-target");

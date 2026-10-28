@@ -12,6 +12,7 @@ import { getEmailAddress } from "@/lib/email/address";
 import { sendMailboxAutoReply } from "@/lib/email/auto-reply";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { listMessageAttachments, storeMessageAttachments } from "@/lib/email/attachments";
+import { loadMessageBody } from "@/lib/email/bodies";
 import { inboundAttachmentLimitReason } from "@/lib/email/inbound-attachments";
 import { inboundMessageId } from "@/lib/email/inbound-id";
 import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
@@ -397,10 +398,11 @@ export async function getMessageWithBody(env: CloudflareEnv, userId: string, mes
 
 export async function getMessageWithBodyForUser(env: CloudflareEnv, user: SessionUser, messageId: string) {
 	const db = getDb(env);
-	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
-	if (!message?.mailboxId) return null;
-	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
+	const [row] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+	if (!row?.mailboxId) return null;
+	const access = await getMailboxAccessLevel(db, user, row.mailboxId);
 	if (!access?.canRead) return null;
+	const message = await loadMessageBody(env, row);
 	const contactNames = await getMessageContactNames(env, message.userId, message.fromAddr, message.toAddr);
 	const attachments = await listMessageAttachments(env, messageId);
 	const unsubscribeUrl = await getUnsubscribeUrlFromRawR2Key(env, message.rawR2Key);

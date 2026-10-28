@@ -11,12 +11,16 @@ export const DialogClose = DialogPrimitive.Close;
 
 export function DialogContent({
 	className,
+	overlayClassName,
 	children,
 	...props
-}: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>) {
+}: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+	/** For a dialog that opens from above a layer such as the phone sidebar sheet (z-[100]). */
+	overlayClassName?: string;
+}) {
 	return (
 		<DialogPrimitive.Portal>
-			<DialogPrimitive.Overlay className="dialog-overlay fixed inset-0 z-50 bg-black/35" />
+			<DialogPrimitive.Overlay className={cn("dialog-overlay fixed inset-0 z-50 bg-black/35", overlayClassName)} />
 			<DialogPrimitive.Content
 				className={cn(
 					"dialog-content fixed left-1/2 top-1/2 z-50 w-[min(520px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl",

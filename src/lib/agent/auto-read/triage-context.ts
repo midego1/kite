@@ -2,6 +2,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { domains, messageAttachments, messages } from "@/db/schema";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
+import { loadMessageBody } from "@/lib/email/bodies";
 import { readRawHeaders } from "@/lib/email/raw-headers";
 import { hostAndParents, linkHostsOf, summarizeLinks } from "@/lib/spam/analyzers/link-host-utils";
 import { htmlLinkText } from "@/lib/spam/tokenizer-utils";
@@ -50,10 +51,12 @@ async function isOwnDomain(db: AppDatabase, senderAddress: string): Promise<bool
  */
 export async function loadTriageContext(
 	env: CloudflareEnv,
-	source: SourceMessage,
+	stored: SourceMessage,
 	ownerUserId: string,
 ): Promise<TriageContext> {
 	const db = getDb(env);
+	// Link hosts are read from the HTML too, so an offloaded body is read whole.
+	const source = await loadMessageBody(env, stored);
 	const sender = collectFacts({ message: source });
 	const [headers, attachments, trustedContacts, thread, ownDomain] = await Promise.all([
 		readRawHeaders(env, source.rawR2Key),

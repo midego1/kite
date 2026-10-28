@@ -8,6 +8,7 @@ import { formatEmailAddress, joinEmailAddressList } from "@/lib/email/address";
 import { resolveThreadId } from "@/lib/email/threading";
 import { storeMessageAttachments } from "@/lib/email/attachments";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
+import { canOffloadHtmlBodies, loadMessageBodies } from "@/lib/email/bodies";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { LIMITS, KEYWORD_FLAGGED, KEYWORD_SEEN } from "./constants";
 import { JmapError, invalidArguments } from "./errors";
@@ -33,6 +34,9 @@ import type {
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 
 type MessageRow = typeof messages.$inferSelect;
+
+/** Email properties built from the bodies; anything else reads only the row, so offloaded HTML is not fetched. */
+const BODY_PROPERTIES = new Set(["size", "bodyStructure", "bodyValues", "textBody", "htmlBody"]);
 
 /** Insert a draft and return its id. Drafts are outbound mail that has not been sent. */
 async function insertDraft(ctx: JmapContext, row: DraftRow): Promise<string> {
@@ -105,7 +109,11 @@ export const emailGet: JmapMethodHandler = async (ctx, args) => {
 	const fetchBodies = !!(args.fetchTextBodyValues || args.fetchHTMLBodyValues || args.fetchAllBodyValues);
 	const maxBodyValueBytes = Number(args.maxBodyValueBytes ?? 0);
 
-	const rows = await loadMessages(ctx, ids);
+	const stored = await loadMessages(ctx, ids);
+	const rows =
+		fetchBodies || !properties || properties.some((key) => BODY_PROPERTIES.has(key))
+			? await loadMessageBodies(ctx.env, stored)
+			: stored;
 	const attachments = await loadAttachmentsByMessage(
 		ctx,
 		rows.map((row) => row.id),
@@ -132,9 +140,10 @@ export const emailGet: JmapMethodHandler = async (ctx, args) => {
 
 export const emailQuery: JmapMethodHandler = async (ctx, args) => {
 	const { ids: accessibleIds, condition } = await scope(ctx);
-	const filter = filterToSql(args.filter as Filter | null | undefined, new Set(accessibleIds));
+	const sizing = { bodySizeColumn: await canOffloadHtmlBodies(ctx.env) };
+	const filter = filterToSql(args.filter as Filter | null | undefined, new Set(accessibleIds), sizing);
 	const where = filter ? and(condition, filter) : condition;
-	const order = sortToSql(args.sort as Comparator[] | null | undefined);
+	const order = sortToSql(args.sort as Comparator[] | null | undefined, sizing);
 	const collapse = !!args.collapseThreads;
 	const limit = Math.min(Math.max(Number(args.limit ?? LIMITS.maxQueryLimit), 0), LIMITS.maxQueryLimit);
 	let position = Number(args.position ?? 0);

@@ -1,7 +1,8 @@
 import { and, desc, eq } from "drizzle-orm";
 import { generateText, type JSONValue, type LanguageModel, type LanguageModelUsage } from "ai";
-import type { AppDatabase } from "@/db";
+import { getDb } from "@/db";
 import { messages } from "@/db/schema";
+import { loadMessageBodies } from "@/lib/email/bodies";
 import type { DraftPreferences } from "../instruction-types";
 import { buildReplyDraftPrompt } from "./draft-prompt-utils";
 
@@ -12,18 +13,19 @@ type ThreadMessage = typeof messages.$inferSelect;
 
 /** The last twenty messages of the source's thread, oldest first (just the source when it has no thread). */
 export async function loadDraftThread(
-	db: AppDatabase,
+	env: CloudflareEnv,
 	mailboxId: string,
 	source: ThreadMessage,
 ): Promise<ThreadMessage[]> {
-	if (!source.threadId) return [source];
-	const rows = await db
+	if (!source.threadId) return loadMessageBodies(env, [source]);
+	const rows = await getDb(env)
 		.select()
 		.from(messages)
 		.where(and(eq(messages.mailboxId, mailboxId), eq(messages.threadId, source.threadId)))
 		.orderBy(desc(messages.createdAt))
 		.limit(DRAFT_THREAD_WINDOW);
-	return rows.reverse();
+	// The guard checks the draft against links and facts in the HTML too, so the bodies are read whole.
+	return loadMessageBodies(env, rows.reverse());
 }
 
 type GenerateReplyDraftInput = {

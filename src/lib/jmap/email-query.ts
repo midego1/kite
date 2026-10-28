@@ -88,7 +88,21 @@ function headerCondition(header: string[]): SQL {
 	}
 }
 
-function conditionToSql(condition: FilterCondition, accessible: Set<string>): SQL[] {
+/** How a query measures messages; `bodySizeColumn` once migration 0074 added `messages.body_size`. */
+export type QuerySizing = { bodySizeColumn: boolean };
+
+/**
+ * A message's size the way Email/get counts it (`buildEmailObject`): the UTF-8 bytes of its text and HTML bodies
+ * plus its attachments. An offloaded row has no HTML in D1, so its body bytes come from `body_size`, recorded at
+ * import; casting to a blob makes `length` count bytes rather than characters.
+ */
+function messageSizeSql(sizing: QuerySizing): SQL {
+	const inline = sql`length(cast(coalesce(${messages.textBody}, '') as blob)) + length(cast(coalesce(${messages.htmlBody}, '') as blob))`;
+	const bodies = sizing.bodySizeColumn ? sql`coalesce(${messages}.${sql.identifier("body_size")}, ${inline})` : inline;
+	return sql`(${bodies} + (SELECT coalesce(sum(${messageAttachments.size}), 0) FROM ${messageAttachments} WHERE ${messageAttachments.messageId} = ${messages.id}))`;
+}
+
+function conditionToSql(condition: FilterCondition, accessible: Set<string>, sizing: QuerySizing): SQL[] {
 	const parts: SQL[] = [];
 	if (condition.inMailbox !== undefined) {
 		const ref = decodeMailboxRef(condition.inMailbox);
@@ -113,6 +127,8 @@ function conditionToSql(condition: FilterCondition, accessible: Set<string>): SQ
 	if (condition.cc) parts.push(like(messages.ccAddr, likePattern(condition.cc)));
 	if (condition.bcc) parts.push(like(messages.bccAddr, likePattern(condition.bcc)));
 	if (condition.subject) parts.push(like(messages.subject, likePattern(condition.subject)));
+	// The body filter reads what D1 keeps: the text part, and the HTML unless it was offloaded at import, in which
+	// case the row's text body (the text part, or the readable text of the HTML) is what matches.
 	if (condition.body)
 		parts.push(
 			or(like(messages.textBody, likePattern(condition.body)), like(messages.htmlBody, likePattern(condition.body)))!,
@@ -137,29 +153,21 @@ function conditionToSql(condition: FilterCondition, accessible: Set<string>): SQ
 		);
 		parts.push(condition.hasAttachment ? hasOne : not(hasOne));
 	}
-	if (condition.minSize !== undefined)
-		parts.push(
-			gte(
-				sql`length(coalesce(${messages.textBody}, '')) + length(coalesce(${messages.htmlBody}, ''))`,
-				condition.minSize,
-			),
-		);
-	if (condition.maxSize !== undefined)
-		parts.push(
-			lt(
-				sql`length(coalesce(${messages.textBody}, '')) + length(coalesce(${messages.htmlBody}, ''))`,
-				condition.maxSize,
-			),
-		);
+	if (condition.minSize !== undefined) parts.push(gte(messageSizeSql(sizing), condition.minSize));
+	if (condition.maxSize !== undefined) parts.push(lt(messageSizeSql(sizing), condition.maxSize));
 	return parts;
 }
 
 /** FilterOperator trees become nested AND/OR/NOT; a bare condition is an AND of its fields. */
-export function filterToSql(filter: Filter | null | undefined, accessible: Set<string>): SQL | undefined {
+export function filterToSql(
+	filter: Filter | null | undefined,
+	accessible: Set<string>,
+	sizing: QuerySizing = { bodySizeColumn: false },
+): SQL | undefined {
 	if (!filter) return undefined;
 	if ("operator" in filter) {
 		const children = (filter.conditions ?? [])
-			.map((child) => filterToSql(child, accessible))
+			.map((child) => filterToSql(child, accessible, sizing))
 			.filter((part): part is SQL => !!part);
 		if (children.length === 0) return undefined;
 		if (filter.operator === "AND") return and(...children);
@@ -167,11 +175,14 @@ export function filterToSql(filter: Filter | null | undefined, accessible: Set<s
 		if (filter.operator === "NOT") return not(and(...children)!);
 		throw invalidArguments(`Unknown operator ${String(filter.operator)}`);
 	}
-	const parts = conditionToSql(filter, accessible);
+	const parts = conditionToSql(filter, accessible, sizing);
 	return parts.length ? and(...parts) : undefined;
 }
 
-export function sortToSql(sort: Comparator[] | null | undefined): SQL[] {
+export function sortToSql(
+	sort: Comparator[] | null | undefined,
+	sizing: QuerySizing = { bodySizeColumn: false },
+): SQL[] {
 	const comparators = sort && sort.length ? sort : [{ property: "receivedAt", isAscending: false }];
 	return comparators.map((item) => {
 		const direction = item.isAscending ? asc : desc;
@@ -186,7 +197,7 @@ export function sortToSql(sort: Comparator[] | null | undefined): SQL[] {
 			case "to":
 				return direction(messages.toAddr);
 			case "size":
-				return direction(sql`length(coalesce(${messages.textBody}, '')) + length(coalesce(${messages.htmlBody}, ''))`);
+				return direction(messageSizeSql(sizing));
 			case "hasKeyword":
 			case "allInThreadHaveKeyword":
 			case "someInThreadHaveKeyword": {

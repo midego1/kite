@@ -3,6 +3,7 @@ import { and, desc, eq, gt, gte, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { agentDraftMetadata, agentJobs, mailboxAgentSettings, mailboxes, messages, users } from "@/db/schema";
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
+import { ModelOutputTruncatedError } from "../auto-read/model-call-utils";
 import { personalInstructionsFor } from "../user-ai-settings";
 import { styleDescriptionFor } from "../writing-style";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
@@ -53,18 +54,25 @@ async function generateRecordedDraft(
 			finishReason,
 			failure: errorCode ? { errorCode } : null,
 		});
-	let body: string;
+	let generated: Awaited<ReturnType<typeof generateReplyDraft>>;
 	try {
-		({ text: body } = await generateReplyDraft({
+		generated = await generateReplyDraft({
 			...input,
 			onUsage: async (reported, reason) => {
 				usage = reported;
 				finishReason = reason;
 			},
-		}));
+		});
 	} catch (error) {
 		await record(classifyAiError(error).code);
 		throw traceAiError(error, trace);
+	}
+	const body = generated.text;
+	// A draft that ran out of tokens ends mid-sentence: refused like Write with Kite's, its usage still counted.
+	if (generated.finishReason === "length") {
+		finishReason = "length";
+		await record("cut_off");
+		throw traceAiError(new ModelOutputTruncatedError(), trace);
 	}
 	if (!isCleanDraftBody(body)) {
 		await record("unusable_answer");

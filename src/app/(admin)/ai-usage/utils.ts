@@ -103,7 +103,7 @@ export const STATUS_LABELS: Record<UsageRowStatus, string> = {
 
 const ERROR_LABELS: Record<string, string> = {
 	timeout: "Timed out",
-	cut_off: "Answer cut off",
+	cut_off: "Cut off: hit the output limit; tokens still counted",
 	provider_rejected: "Provider refused",
 	provider_auth: "API key not accepted",
 	provider_unavailable: "Provider unavailable",

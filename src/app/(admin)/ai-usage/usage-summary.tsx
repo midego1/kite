@@ -221,7 +221,7 @@ export function UsageOutcomes({ report }: { report: UsageReport }) {
 			</h2>
 			<p className="mt-1 text-xs text-neutral-500">
 				{report.detailsRecorded
-					? "How each request ended. An answer cut off at the output limit counts as failed; a request still open after 15 minutes was interrupted. Requests from before this was recorded show as not recorded."
+					? "How each request ended. A cut-off answer (hit the output limit; tokens still counted) counts as failed; a request still open after 15 minutes was interrupted. Requests from before this was recorded show as not recorded."
 					: "Apply the pending database update to record how each request ends."}
 			</p>
 			{total > 0 && (

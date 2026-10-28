@@ -6,6 +6,7 @@
 ### Changed
 
 - Requests that stored no cost, because they ran before their model had a rate, are now priced on [AI usage](/ai-usage) at today's rate and marked estimated, instead of being left out of the spend. A request that ended before the provider reported its usage keeps its reserved estimate, also marked estimated, and one left open after a worker stopped shows as interrupted. The page lists the models that still have no rate, with a link to set one in [Admin → Agent](/agent).
+- An answer that hit the output limit is recorded as failed with "cut off" in every feature, and its tokens still count. Automatic drafts (auto-drafting with autonomy off) now refuse such an answer, as Write with Kite does, instead of saving a draft that ends mid-sentence.
 - **Database migration 0078** adds status, error code, duration, finish reason, the rate used and whether the cost is an estimate to each AI usage row. Apply it from the Admin overview; until then AI usage shows those details as not recorded and everything else works as before.
 
 ### Fixed

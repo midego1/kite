@@ -61,7 +61,7 @@ test("an app password is created for the chosen mailbox, listed and usable over 
 	await expect(page).toHaveURL(/\/settings\/api-keys$/);
 	const row = page
 		.locator("strong", { hasText: name })
-		.locator("xpath=ancestor::div[contains(@class, 'rounded-lg')][1]");
+		.locator("xpath=ancestor::div[1]");
 	await expect(row).toBeVisible();
 	await expect(row).toContainText("jmap");
 	await expect(row).toContainText(`Mailboxes: ${SUPPORT_ADDRESS}`);

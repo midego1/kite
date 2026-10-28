@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { messageAttachments, messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
+import { loadMessageBody } from "@/lib/email/bodies";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { LIMITS } from "./constants";
 import { decodeBlobId, uploadBlobId } from "./ids";
@@ -110,6 +111,7 @@ export async function readBlob(
 		if (object) return { body: object.body, type: "message/rfc822", name: `${row.id}.eml`, size: object.size };
 	}
 	// Outbound and imported mail keeps no raw copy; rebuild a minimal RFC 5322 message.
+	const { htmlBody, textBody } = await loadMessageBody(ctx.env, row);
 	const lines = [
 		`From: ${row.fromAddr}`,
 		`To: ${row.toAddr}`,
@@ -119,9 +121,9 @@ export async function readBlob(
 		...(row.providerMessageId ? [`Message-ID: ${row.providerMessageId}`] : []),
 		...(row.inReplyTo ? [`In-Reply-To: <${row.inReplyTo}>`] : []),
 		"MIME-Version: 1.0",
-		`Content-Type: ${row.htmlBody ? "text/html" : "text/plain"}; charset=utf-8`,
+		`Content-Type: ${htmlBody ? "text/html" : "text/plain"}; charset=utf-8`,
 		"",
-		row.htmlBody ?? row.textBody ?? "",
+		htmlBody ?? textBody ?? "",
 	];
 	const bytes = new TextEncoder().encode(lines.join("\r\n"));
 	return { body: bytes.buffer as ArrayBuffer, type: "message/rfc822", name: `${row.id}.eml`, size: bytes.byteLength };

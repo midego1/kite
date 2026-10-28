@@ -47,9 +47,13 @@ A module that is off is absent, not broken:
 ### What an import keeps
 
 - **Read and starred.** An IMAP import keeps the source's state: mail marked read there (`\Seen`) is read in Kite, and flagged mail (`\Flagged`) is starred. Answered marks and keywords are not kept. Imported sent mail and drafts are always read. Uploaded `.eml` and `.mbox` files carry no state, so their mail arrives unread and not starred, as before.
-- **Dates.** A message keeps the date in its `Date` header. When it has none (or one that cannot be read), an IMAP import uses the date the source server received it (`INTERNALDATE`) instead of the time of the import.
+- **Dates.** A message keeps the date in its `Date` header. When it has none (or one that cannot be read), an IMAP import uses the date the source server received it (`INTERNALDATE`) instead of the time of the import. A date more than a day in the future is not believed: the import uses the next date that is, and otherwise the time of the import.
 - **No duplicates.** A message already in the target mailbox is skipped, by its Message-ID, whether it was stored with angle brackets (received mail) or without (mail Kite sent). So importing the provider's Sent folder does not add copies of mail you sent from Kite, and running the same import again only adds what is missing. A message without a Message-ID is recognised by a SHA-256 hash of its bytes, across re-runs and folders. Messages imported without a Message-ID before this change were keyed by file name and size, so a re-run can add those once more.
 - **Conversations.** Imports run newest first, so a reply often arrives before the message it answers. An imported message whose parent is not stored yet joins the conversation of the first message its `References` header names, so the replies and the original meet in one conversation whatever order they arrive in. Received mail is grouped as before.
+
+### Large imported messages
+
+Imported mail whose HTML body is larger than 16 KB keeps that HTML in the Mail store (the store routed for Mail under **Admin → Storage**, the default R2 bucket otherwise), at `bodies/<message id>.html`, instead of in the database (migration 0074). This keeps a whole-account import from filling D1 with newsletter markup. Nothing changes for the reader: the message, its conversation, replies and forwards, search, the assistant, JMAP, the REST API and the mbox export show the same message as before. The database keeps the message's text part for search, snippets and automatic reading; a message without a text part keeps the readable text of its HTML, so search still finds it by its words. Words that appear only in the HTML part of a message that also has a text part are not searchable, as the two parts normally say the same. Until migration 0074 is applied, imports keep the HTML in the database as before. Mail Kite receives itself is not offloaded.
 
 ### IMAP connections
 

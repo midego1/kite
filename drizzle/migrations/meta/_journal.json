@@ -544,6 +544,13 @@
     {
       "idx": 77,
       "version": "6",
+      "when": 1788851910028,
+      "tag": "0074_add_message_html_body_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
       "when": 1788851940028,
       "tag": "0075_add_telemetry_notice",
       "breakpoints": true

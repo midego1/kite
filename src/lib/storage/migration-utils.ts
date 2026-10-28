@@ -26,7 +26,7 @@ export function isStorageMigrateMessage(payload: unknown): payload is StorageMig
 	);
 }
 
-export type MigrationSource = "messages" | "attachments" | "drive" | "backups";
+export type MigrationSource = "messages" | "attachments" | "bodies" | "drive" | "backups";
 /** `copy` moves every object; `verify` checks each on the target and copies what is missing; `purge` deletes the source copies. */
 export type MigrationPhase = "copy" | "verify" | "done" | "purge" | "purged";
 
@@ -47,7 +47,7 @@ const DONE = "done";
  * @public Exercised by the unit tests.
  */
 export function sourcesFor(objectClass: RoutableClass): MigrationSource[] {
-	if (objectClass === "mail") return ["messages", "attachments"];
+	if (objectClass === "mail") return ["messages", "attachments", "bodies"];
 	if (objectClass === "drive") return ["drive"];
 	return ["backups"];
 }

@@ -267,17 +267,24 @@ test("validation failures are explained with the fix, by error code", () => {
 });
 
 test("the migration planner walks each source, then verifies, with bounded batches", () => {
-	assert.deepEqual(pure.sourcesFor("mail"), ["messages", "attachments"]);
+	assert.deepEqual(pure.sourcesFor("mail"), ["messages", "attachments", "bodies"]);
 	assert.deepEqual(pure.sourcesFor("drive"), ["drive"]);
 	assert.deepEqual(pure.sourcesFor("backups"), ["backups"]);
 	let cursor = pure.initialCursor("mail");
-	assert.deepEqual(cursor, { phase: "copy", sources: { messages: null, attachments: null } });
+	assert.deepEqual(cursor, { phase: "copy", sources: { messages: null, attachments: null, bodies: null } });
 	assert.equal(pure.nextSource(cursor, "mail"), "messages");
 	cursor = pure.advance(cursor, "messages", "m50", false);
 	assert.equal(cursor.sources.messages, "m50");
 	cursor = pure.advance(cursor, "messages", "m60", true);
 	assert.equal(pure.nextSource(cursor, "mail"), "attachments");
 	cursor = pure.advance(cursor, "attachments", null, true);
+	assert.equal(pure.nextSource(cursor, "mail"), "bodies");
+	// A cursor saved before bodies were a source walks them too.
+	assert.equal(
+		pure.nextSource({ phase: "copy", sources: { messages: "done", attachments: "done" } }, "mail"),
+		"bodies",
+	);
+	cursor = pure.advance(cursor, "bodies", null, true);
 	assert.equal(pure.nextSource(cursor, "mail"), null);
 	cursor = pure.nextPhase(cursor, "mail");
 	assert.equal(cursor.phase, "verify");

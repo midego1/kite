@@ -2,6 +2,7 @@ import { inArray } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { messageAttachments, messages } from "@/db/schema";
 import { chunkArray, queryInChunks, runInChunks } from "@/db/chunk-utils";
+import { htmlBodyObjectKey } from "@/lib/email/bodies-utils";
 import { createAuditLogs } from "@/lib/mailboxes/audit";
 
 type DeletableMessage = {
@@ -15,7 +16,7 @@ type DeletableMessage = {
 const R2_DELETE_BATCH = 1000;
 
 /**
- * Permanently remove messages (row, raw MIME and attachment objects) and audit
+ * Permanently remove messages (row, raw MIME, offloaded HTML body and attachment objects) and audit
  * each one. Objects go first, so a failure never leaves a row whose files are gone
  * unnoticed; rows and audit entries are written in chunks instead of per message.
  * The audit row cannot point at the deleted message, since its `message_id` is a
@@ -39,6 +40,8 @@ export async function permanentlyDeleteMessages(
 	const keys = [
 		...attachments.map((attachment) => attachment.r2Key),
 		...rows.flatMap((row) => (row.rawR2Key ? [row.rawR2Key] : [])),
+		// Offloaded HTML bodies have one key per message, so no column read is needed to find them.
+		...ids.map(htmlBodyObjectKey),
 	];
 	for (const batch of chunkArray(keys, R2_DELETE_BATCH)) await env.BUCKET.delete(batch);
 	await runInChunks(ids, (chunk) => db.delete(messages).where(inArray(messages.id, chunk)));

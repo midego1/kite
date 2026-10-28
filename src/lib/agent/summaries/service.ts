@@ -2,6 +2,7 @@ import { generateText, type LanguageModelUsage } from "ai";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
+import { loadMessageBodies } from "@/lib/email/bodies";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { SessionUser } from "@/lib/auth/types";
 import { getAutoReadInstallSettings } from "../auto-read/install-settings";
@@ -126,8 +127,9 @@ async function loadCoveredIds(db: AppDatabase, anchor: Anchor, scope: SummarySco
  * The covered messages as the prompt reads them, oldest first: headers for all of them, bodies only for the newest
  * `SUMMARY_FULL_MESSAGES` (the earlier ones appear as one line each).
  */
-async function loadCoveredMessages(db: AppDatabase, anchor: Anchor, scope: SummaryScope): Promise<SummaryMessage[]> {
+async function loadCoveredMessages(env: CloudflareEnv, anchor: Anchor, scope: SummaryScope): Promise<SummaryMessage[]> {
 	if (!isSummaryEligible(anchor)) return [];
+	const db = getDb(env);
 	const rows = await db
 		.select({
 			id: messages.id,
@@ -142,10 +144,13 @@ async function loadCoveredMessages(db: AppDatabase, anchor: Anchor, scope: Summa
 		.limit(MAX_COVERED_MESSAGES);
 	const newest = rows.slice(0, SUMMARY_FULL_MESSAGES).map((row) => row.id);
 	const bodies = newest.length
-		? await db
-				.select({ id: messages.id, textBody: messages.textBody, htmlBody: messages.htmlBody })
-				.from(messages)
-				.where(inArray(messages.id, newest))
+		? await loadMessageBodies(
+				env,
+				await db
+					.select({ id: messages.id, textBody: messages.textBody, htmlBody: messages.htmlBody })
+					.from(messages)
+					.where(inArray(messages.id, newest)),
+			)
 		: [];
 	const text = new Map(bodies.map((row) => [row.id, summaryText(row)]));
 	return rows.reverse().map((row) => ({
@@ -421,7 +426,7 @@ export async function createSummary(
 		const db = getDb(env);
 		const settings = await readMailboxAgentSettingsRow(db, loaded.anchor.mailboxId);
 		// Bodies are read only here; the saved coverage is exactly what the model read.
-		const covered = await loadCoveredMessages(db, loaded.anchor, request.scope);
+		const covered = await loadCoveredMessages(env, loaded.anchor, request.scope);
 		if (!covered.length) throw changed();
 		const coveredIds = covered.map((message) => message.id);
 		const { summary, modelId } = await generate({

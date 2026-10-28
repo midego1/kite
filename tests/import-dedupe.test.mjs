@@ -3,11 +3,12 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { bundleModules } from "./support/modules-bundle.mjs";
 
-const { importDedupeKey, storedIdVariants, dedupeKeyOfStored, threadSeed, decodeHostImportMessage } =
+const { importDedupeKey, storedIdVariants, dedupeKeyOfStored, threadSeed, decodeHostImportMessage, importMessageDate } =
 	await bundleModules("kite-import-dedupe-", [
 		["importDedupeKey, storedIdVariants, dedupeKeyOfStored", "src/lib/import/dedupe-utils.ts"],
 		["threadSeed", "src/lib/email/threading.ts"],
 		["decodeHostImportMessage", "src/lib/email/module-import-utils.ts"],
+		["importMessageDate", "src/lib/import/date-utils.ts"],
 	]);
 
 const bytes = (text) => new TextEncoder().encode(text).buffer;
@@ -72,4 +73,19 @@ test("host import messages keep only real read, starred and receivedAt values", 
 	assert.deepEqual(Object.keys(plain).sort(), ["filename", "raw"]);
 	const junk = decodeHostImportMessage({ ...base, read: "yes", starred: 1, receivedAt: "yesterday" }, 0);
 	assert.deepEqual(Object.keys(junk).sort(), ["filename", "raw"]);
+});
+
+test("an imported date may not lie far in the future: the next candidate or now is used instead", () => {
+	const now = new Date("2026-10-28T12:00:00Z");
+	const header = new Date("2026-10-01T09:00:00Z");
+	const internal = new Date("2026-10-02T09:00:00Z");
+	assert.equal(importMessageDate([header, internal], now), header);
+	assert.equal(importMessageDate([null, internal], now), internal);
+	assert.equal(importMessageDate([undefined, null], now), now);
+	// A day of clock skew is kept as it is; beyond that the date is not believed.
+	const skewed = new Date("2026-10-29T11:59:59Z");
+	assert.equal(importMessageDate([skewed], now), skewed);
+	assert.equal(importMessageDate([new Date("2026-10-29T12:00:01Z"), internal], now), internal);
+	assert.equal(importMessageDate([new Date("2099-01-01T00:00:00Z"), new Date("2098-01-01T00:00:00Z")], now), now);
+	assert.equal(importMessageDate([new Date(Number.NaN), internal], now), internal);
 });

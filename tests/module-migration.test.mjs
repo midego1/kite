@@ -42,8 +42,11 @@ const LATER_MIGRATIONS = [
 	"0071_add_telemetry_state.sql",
 	"0072_add_ai_summaries.sql",
 	"0073_add_spam_report_receipts.sql",
+	"0074_add_message_html_body_key.sql",
 	"0075_add_telemetry_notice.sql",
 ];
+/** Columns a later migration adds to a table this test pins; everything else must stay as it was. */
+const LATER_COLUMNS = { messages: ["html_body_key", "body_size"] };
 /** The modules 0062 seeds a row for; later modules have no row, which means `defaultEnabled`. */
 const MODULES = ["calendar", "booking", "templates", "import"];
 
@@ -171,7 +174,7 @@ test("the module tables are unique per module and per user and module, and casca
 	);
 });
 
-test("upgrading from 0061 changes no existing table and indexes the events that already exist", async (t) => {
+test("upgrading from 0061 changes no existing table beyond later columns and indexes the events that already exist", async (t) => {
 	const db = await database(t, preDirectory);
 	assert.equal(
 		names(db, "SELECT name FROM sqlite_master WHERE name = 'module_settings' OR name LIKE 'calendar_events_fts%'")
@@ -184,7 +187,8 @@ test("upgrading from 0061 changes no existing table and indexes the events that 
 	);
 	assert.deepEqual(await applyMigrations(db, migrationsDir), [MIGRATION, ...LATER_MIGRATIONS]);
 
-	for (const [table, expected] of Object.entries(before)) assert.deepEqual(columns(db, table), expected, table);
+	for (const [table, expected] of Object.entries(before))
+		assert.deepEqual(columns(db, table), [...expected, ...(LATER_COLUMNS[table] ?? [])], table);
 	assert.deepEqual(names(db, "SELECT module_id AS name FROM module_settings ORDER BY rowid"), MODULES);
 	assert.equal(db.db.prepare("SELECT count(*) AS count FROM module_settings WHERE enabled = 1").get().count, 4);
 	assert.equal(db.db.prepare("SELECT count(*) AS count FROM calendar_events").get().count, 2);

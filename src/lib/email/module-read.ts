@@ -13,6 +13,7 @@ import type {
 import { pickMessageHeaders, utf8Excerpt } from "@/lib/modules/host-utils";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import { getAttachmentForUser } from "./attachments";
+import { loadMessageBody } from "./bodies";
 import { encodeRawMime } from "./module-import-utils";
 import { readRawHeaders } from "./raw-headers";
 import { htmlToReadableText } from "./reply-content-utils";
@@ -87,7 +88,11 @@ export async function getModuleMessage(
 		...toHostMessageView({ ...message, mailboxId: message.mailboxId }, attachments.get(message.id) ?? []),
 		fromName: getContactNameFromAddress(message.fromAddr),
 	};
-	if (options.text) view.textExcerpt = utf8Excerpt(readableBody(message), options.text.maxBytes);
+	if (options.text)
+		view.textExcerpt = utf8Excerpt(
+			readableBody(await loadMessageBody(env, message, { textFirst: true })),
+			options.text.maxBytes,
+		);
 	if (options.headers?.length)
 		view.headers = pickMessageHeaders(await readRawHeaders(env, message.rawR2Key), options.headers);
 	return view;

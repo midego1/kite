@@ -213,6 +213,29 @@ test.describe("One-line summaries in the message list", () => {
 		}
 	});
 
+	test("an unusable line is retried, then fails with the shared error code, and shows in Admin → Agent", async () => {
+		// Three attempts with the jobs' 5 s and 10 s backoff.
+		test.setTimeout(150_000);
+		const account = await newAccount("lsu", { autonomy: "off" });
+		try {
+			const message = await deliver(account, { text: `${LONG_BODY} [[scenario:line-unusable]]` });
+			const job = await waitForFinishedJob(account.api, account.mailboxId, message.id, "line_summary", 90_000);
+			expect([job.status, job.reason]).toEqual(["failed", "ai_error:unusable_answer"]);
+			// Each attempt was a request of its own, all counted toward the daily limit; no line was written.
+			expect(requestsFor(message.id, "line_summary")).toHaveLength(3);
+			expect(await lineOf(account, message.id)).toBeUndefined();
+			const { errors } = await okJson<{ errors: { code: string; feature: string; mailbox: string | null }[] }>(
+				await api.get("/api/admin/agent/errors"),
+			);
+			expect(errors.find((error) => error.mailbox === account.address)).toMatchObject({
+				code: "unusable_answer",
+				feature: "line_summary",
+			});
+		} finally {
+			await account.api.dispose();
+		}
+	});
+
 	test("off by default: no line job and no extra key in the triage request", async () => {
 		const username = `lsd${uniqueToken("")}`;
 		const created = await createSignedInAccount(api, username);

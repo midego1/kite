@@ -73,6 +73,11 @@ export const LINE_FROM_TRIAGE = "Sam asks whether Tuesday at ten still works for
 export const LINE_FROM_JOB = "A short note about the quarterly budget review and the slides it needs.";
 
 export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
+	// The line's own request answers with a note and a link, which never passes the line checks.
+	"line-unusable": {
+		triage: () => json(benignTriage),
+		line: () => text("Here is a summary: see https://evil.test/pay"),
+	},
 	"line-question": {
 		triage: () =>
 			json({

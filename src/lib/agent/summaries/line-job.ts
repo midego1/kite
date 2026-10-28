@@ -20,6 +20,8 @@ import { withReservedSpend } from "../auto-read/spend";
 import { loadTriageContext } from "../auto-read/triage-context";
 import { buildLinePrompt, cleanLine, LINE_MAX_OUTPUT_TOKENS } from "./line-utils";
 import { lineGateFor, notifyLine, saveLine } from "./lines";
+import { traceAiError } from "../ai-errors";
+import { UnusableAnswerError } from "../ai-error-utils";
 
 type AgentJobRow = typeof agentJobs.$inferSelect;
 type Outcome = { skip: string } | { skip: null; line: string; modelId: string };
@@ -75,6 +77,14 @@ async function writeLine(
 	});
 	// The options' budget includes a reasoning model's headroom; keep it on top of the line's own.
 	const base = { ...options, maxOutputTokens: LINE_MAX_OUTPUT_TOKENS + Math.max(0, options.maxOutputTokens - 900) };
+	// A failure keeps the model and provider, so the job's failure handler reports it under the shared codes.
+	const trace = {
+		feature: "line_summary" as const,
+		model: selection.modelId,
+		provider: selection.provider,
+		startedAt: Date.now(),
+		timeoutMs: LINE_CALL_TIMEOUT_MS,
+	};
 	const reply = await callWithFallback(base, async (current) => {
 		const model = await selectAutoReadModel(env, requested);
 		return withReservedSpend(
@@ -101,16 +111,28 @@ async function writeLine(
 					abortSignal: AbortSignal.timeout(LINE_CALL_TIMEOUT_MS),
 				}),
 		);
+	}).catch((error: unknown) => {
+		throw traceAiError(error, trace);
 	});
+	// A refusal before the call is a skip, never a recorded failure.
 	if (!reply) return { skip: "spend_cap" };
-	const line = cleanLine(completedText(reply));
-	return line ? { skip: null, line, modelId: selection.modelId } : { skip: "unusable_answer" };
+	let text: string;
+	try {
+		text = completedText(reply);
+	} catch (error) {
+		throw traceAiError(error, { ...trace, finishReason: reply.finishReason, usage: reply.usage });
+	}
+	const line = cleanLine(text);
+	// Like a draft that fails its checks: retried, then failed as `ai_error:unusable_answer`.
+	if (!line) throw traceAiError(new UnusableAnswerError("it was not a usable one-line summary"), trace);
+	return { skip: null, line, modelId: selection.modelId };
 }
 
 /**
  * Writes the one-line summary of a message automatic reading did not read with the model. It runs under the
  * automatic-reading rules (assistant and install switch, pause, external opt-in, burst limit, the mailbox and
- * install spend caps) and the line's own gate, and records a skip reason when any of them refuses.
+ * install spend caps) and the line's own gate, and records a skip reason when any of them refuses. A failed request
+ * is retried and reported under the shared AI error codes (`ai_error:<code>` on the job, Admin → Agent's list).
  */
 export async function processLineSummaryJob(env: CloudflareEnv, jobId: string) {
 	const db = getDb(env);

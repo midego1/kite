@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { DOMAIN, RELEASE_VERSION, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, openMessage, signIn, uniqueToken } from "./support/helpers";
 import { contrastBetween } from "./support/contrast";
-import { chooseOption, expectSelectValue } from "./support/select";
+import { chooseOption, expectSelectValue, readOptions } from "./support/select";
 
 const PENDING_API = "/api/migrations/pending";
 const APPLY_API = "/api/admin/migrations";
@@ -190,8 +190,11 @@ test.describe("the release list in the What's new dialog", () => {
 		const dialog = await openReleaseNotes(page);
 		const nav = dialog.getByRole("navigation", { name: "Releases" });
 		const items = nav.getByRole("button");
-		await expect(items.first()).toContainText("Unreleased");
-		await expect(items.first()).toHaveAttribute("aria-current", "location");
+		// "Unreleased" is listed only while changelog fragments wait for a release; right after one, the newest release leads.
+		const newest = items.first();
+		const newestName = ((await newest.getAttribute("data-release-nav")) ?? "").trim();
+		expect(["Unreleased", RELEASE_VERSION]).toContain(newestName);
+		await expect(newest).toHaveAttribute("aria-current", "location");
 		const current = nav.getByRole("button", { name: new RegExp(`^${RELEASE_VERSION.replaceAll(".", "\\.")}`) });
 		await expect(current).toContainText("Current");
 		await expect(current).toContainText(/\d{4}-\d{2}-\d{2}/);
@@ -209,7 +212,7 @@ test.describe("the release list in the What's new dialog", () => {
 		await expect(oldestHeading).toBeVisible();
 		await expect(oldestHeading).toBeFocused();
 		await expect(oldest).toHaveAttribute("aria-current", "location");
-		await expect(items.first()).not.toHaveAttribute("aria-current", "location");
+		await expect(newest).not.toHaveAttribute("aria-current", "location");
 		const notes = dialog.getByTestId("changelog-notes");
 		await expect
 			.poll(async () => {
@@ -221,7 +224,7 @@ test.describe("the release list in the What's new dialog", () => {
 
 		// Scrolling the notes by hand moves the highlight back.
 		await notes.evaluate((element) => element.scrollTo({ top: 0 }));
-		await expect(items.first()).toHaveAttribute("aria-current", "location", { timeout: 5000 });
+		await expect(newest).toHaveAttribute("aria-current", "location", { timeout: 5000 });
 		await expect(oldest).not.toHaveAttribute("aria-current", "location");
 
 		await current.click();
@@ -255,10 +258,16 @@ test.describe("the release list in the What's new dialog", () => {
 		await expect(dialog.getByRole("navigation", { name: "Releases" })).toBeHidden();
 		const menu = dialog.getByRole("combobox", { name: "Jump to release" });
 		await expect(menu).toBeVisible();
-		await chooseOption(menu, RELEASE_VERSION);
-		const heading = dialog.getByRole("heading", { name: RELEASE_VERSION, exact: true });
+		// Choosing the release the menu already shows changes nothing, so pick one that is not selected: the current
+		// release, or the one before it when the current one leads the list (no "Unreleased" right after a release).
+		const options = await readOptions(menu);
+		const selected = await menu.getAttribute("data-value");
+		const target =
+			selected === RELEASE_VERSION ? options.find((option) => option.value !== selected)!.value : RELEASE_VERSION;
+		await chooseOption(menu, target);
+		const heading = dialog.getByRole("heading", { name: target, exact: true });
 		await expect(heading).toBeFocused();
-		await expectSelectValue(menu, RELEASE_VERSION);
+		await expectSelectValue(menu, target);
 		await expect(dialog.getByTestId("changelog-notes")).toBeVisible();
 		const box = (await dialog.boundingBox())!;
 		expect(box.width).toBeLessThanOrEqual(390);

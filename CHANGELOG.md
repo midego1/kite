@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.28.1] - 2026-10-28
+
+### Added
+
+- The **What's new in Kite** dialog has a list of releases on the left ("Unreleased" first, then every version with its date, and "Current" on the release this build is running). Click one to jump to its notes; the list highlights the release you are reading as you scroll, and works with the up and down arrow keys. On a phone the list is a menu at the top. Notes further down are drawn only as you scroll to them, so a long changelog opens quickly.
+
+### Changed
+
+- Imported mail whose HTML body is larger than 16 KB keeps that HTML in the Mail store instead of the database, so a large import fills the database much more slowly. The message, its conversation, replies and forwards, search, the assistant, JMAP, the REST API and the mbox export read it as before; search uses the message's text, or the text of its HTML when it has no text part. Switching the Mail store under [Admin → Storage](/storage) moves these bodies too, and a mailbox export that cannot read one fails with a message to try again rather than saving that message as text. Database backups carry the reference but not the HTML itself, like attachments, so back up the Mail store too. Needs migration 0074, applied from the Admin overview; until then imports keep the HTML in the database. Mail Kite receives itself is unchanged.
+- IMAP imports keep the source's read and starred state: mail read there is read in Kite, and flagged mail is starred. Mail without a `Date` header gets the date the source server received it instead of the time of the import. Uploaded `.eml` and `.mbox` files arrive unread, as before.
+- Imports skip a message the mailbox already holds whether its Message-ID was stored with angle brackets or without, so importing a provider's Sent folder no longer adds copies of mail sent from Kite. A message without a Message-ID is recognised by a SHA-256 hash of its bytes, so running an import again only adds what is missing. Messages imported without a Message-ID before this release were keyed differently and can be added once more by a re-run.
+- Settings and Admin have the new look of the mailbox: the same sidebar, with its notices, beside rounded panels. The Settings or Admin menu is a panel of its own, with the page search at the top, the **Settings**/**Admin** switch under it and muted group labels; the page beside it shows where you are (for example *Settings / Personal / Inbox*) and a **Need a hand?** button. On phones the sidebar and the menu open as sheets, as before.
+- Every Settings and Admin page uses the same parts: a page title with its line and actions, bordered cards, lists of rows, tables with muted headers, empty states and quieter success, warning and error notes. Drop-down menus on [Admin → Alerts](/alerts), [Admin → Agent](/agent), new domains, routing rules and [Settings → Inbox](/settings/inbox) are now the same menus as elsewhere, and badges are no longer in capitals.
+- Buttons, fields and the database cards on the [Admin overview](/admin) follow the Zero look too; **Kite classic** keeps its own colours on these pages.
+
+### Fixed
+
+- The Kite AI side panel is now a panel like the message list and the reader: the same top and bottom edge, the same gap, a rounded border with the same soft shadow, and a header as tall as the list's, so the bottom borders line up.
+- In a short window the sidebar's menu keeps scrolling above Settings and Support, so the Folders heading is no longer half hidden behind them; a tall notice scrolls inside the bottom group instead of squeezing the menu.
+- IMAP imports no longer accept an impossible receipt date from the source server (minute 60, a zone offset of 99 hours, a year before 1970); such a message keeps its `Date` header or the time of the import.
+- An imported message dated more than a day in the future, by its `Date` header or by the source server, is dated by the next believable date (the server's receipt date, else the time of the import), so a source can no longer pin mail to the top of the list.
+- Imported conversations no longer split when a reply is imported before the message it answers: the reply joins the conversation of the first message its `References` header names. Received mail is grouped as before.
+
 ## [2026.10.28.0] - 2026-10-28
 
 ### Added

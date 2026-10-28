@@ -845,6 +845,28 @@
 			"output": 4,
 			"source": "https://console.groq.com/docs/models",
 			"asOf": "2026-10-28"
+		},
+		{
+			"id": "deepseek-flash",
+			"provider": "deepseek",
+			"input": 0.3,
+			"output": 1.2,
+			"aliases": [
+				"deepseek-v4.1-flash",
+				"deepseek-v4.1-flash-1017",
+				"deepseek-v4-flash",
+				"deepseek-v4-flash-vision-exp"
+			],
+			"source": "https://api-docs.deepseek.com/quick_start/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "deepseek-v4-pro",
+			"provider": "deepseek",
+			"input": 1.32,
+			"output": 3.96,
+			"source": "https://api-docs.deepseek.com/quick_start/pricing",
+			"asOf": "2026-10-28"
 		}
 	]
 }

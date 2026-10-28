@@ -146,6 +146,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 		const selection = await getAgentModel(env, settings.modelId);
 		if (!selection) throw new InteractiveModelRefusedError("not_configured");
 		const trace = { feature: "auto_draft" as const, model: selection.modelId, provider: selection.provider };
+		const startedAt = Date.now();
 		const { text: body } = await generateReplyDraft({
 			model: selection.model,
 			instructions: settings.instructions,
@@ -155,7 +156,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 				writingStyle: await styleDescriptionFor(db, reviewer.id, job.mailboxId),
 			},
 			thread: await loadDraftThread(env, job.mailboxId, source),
-			onUsage: (usage) =>
+			onUsage: (usage, finishReason) =>
 				recordAiUsage({
 					env,
 					details: selection,
@@ -163,6 +164,8 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 					source: "auto_draft",
 					mailboxId: job.mailboxId,
 					jobId: job.id,
+					durationMs: Date.now() - startedAt,
+					finishReason,
 				}),
 		}).catch((error: unknown) => {
 			throw traceAiError(error, trace);

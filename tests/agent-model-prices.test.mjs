@@ -41,6 +41,7 @@ const OFFICIAL_HOSTS = {
 	google: "ai.google.dev",
 	cloudflare: "developers.cloudflare.com",
 	groq: "console.groq.com",
+	deepseek: "api-docs.deepseek.com",
 };
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const rate = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1_000;
@@ -101,8 +102,44 @@ test("model ids match exactly, by alias, by an allowed dated suffix, case-insens
 	assert.equal(prices.builtinModelPrice("gpt-4o-2024-05-13", NOW).input, 5);
 	assert.equal(id("gpt-4o-2024-08-06"), null);
 	assert.equal(id("@cf/moonshotai/kimi-k2.5"), "@cf/moonshotai/kimi-k2.5");
-	for (const unknown of ["fake-triage", "claude-opus-5-5-preview", "anthropic/claude-opus-5-5", "", "gpt-4o-mini-2"])
+	for (const unknown of ["fake-triage", "claude-opus-5-5-preview", "", "gpt-4o-mini-2"])
 		assert.equal(id(unknown), null, unknown);
+});
+
+test("a router's vendor/model id matches the vendor's own model, and only that vendor's", () => {
+	const id = (modelId) => prices.builtinModelPrice(modelId, NOW)?.id ?? null;
+	// OpenRouter and Haimaker put the vendor before the model and pass on its list price.
+	assert.equal(id("anthropic/claude-opus-5-5"), "claude-opus-5-5");
+	assert.equal(id("anthropic/claude-sonnet-4.5"), "claude-sonnet-4-5");
+	assert.equal(id("anthropic/claude-haiku-4-5-20251001"), "claude-haiku-4-5");
+	assert.equal(id("openai/gpt-5-mini"), "gpt-5-mini");
+	assert.equal(id("google/gemini-2.5-flash"), "gemini-2.5-flash");
+	assert.equal(id("deepseek/deepseek-v4.1-flash"), "deepseek-flash");
+	// A listed vendor/model id (Groq's) keeps its own price.
+	assert.equal(prices.builtinModelPrice("openai/gpt-oss-120b", NOW).input, 0.15);
+	// The vendor must be the entry's provider, and unknown vendors or deeper paths never match.
+	for (const unknown of [
+		"openai/claude-opus-5-5",
+		"anthropic/gpt-5",
+		"meta/claude-opus-5-5",
+		"openrouter/anthropic/claude-opus-5-5",
+		"deepseek/deepseek-v9",
+	])
+		assert.equal(id(unknown), null, unknown);
+});
+
+test("DeepSeek's models are priced at DeepSeek's peak rate, the higher of its two", () => {
+	const at = (modelId) => {
+		const price = prices.builtinModelPrice(modelId, NOW);
+		return price && [price.id, price.input, price.output];
+	};
+	assert.deepEqual(at("deepseek-flash"), ["deepseek-flash", 0.3, 1.2]);
+	assert.deepEqual(at("deepseek-v4-flash"), ["deepseek-flash", 0.3, 1.2]);
+	assert.deepEqual(at("deepseek-v4-pro"), ["deepseek-v4-pro", 1.32, 3.96]);
+	// The same model on Workers AI keeps Cloudflare's own entry.
+	assert.equal(at("@cf/deepseek-ai/deepseek-v4.1-flash-1017")[0], "@cf/deepseek-ai/deepseek-v4.1-flash-1017");
+	const rates = prices.resolveAgentModelRates({}, ["deepseek/deepseek-v4.1-flash"], NOW);
+	assert.deepEqual(rates["deepseek/deepseek-v4.1-flash"], { input: 0.3, output: 1.2 });
 });
 
 test("the current Anthropic Opus, Sonnet and Haiku models have built-in prices", () => {

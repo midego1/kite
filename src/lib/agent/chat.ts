@@ -196,8 +196,8 @@ export async function createAgentChatStream(
 		},
 		maxOutputTokens: CHAT_STEP_MAX_OUTPUT_TOKENS,
 		abortSignal: signal,
-		onStepFinish: async ({ usage }) => {
-			await spend.afterStep(usage);
+		onStepFinish: async ({ usage, finishReason }) => {
+			await spend.afterStep(usage, finishReason);
 		},
 		// A step refused at the spend cap is an expected end of the turn, not an error worth a stack trace.
 		onError: ({ error }) => {
@@ -229,6 +229,7 @@ export async function createAgentChatStream(
 			let lastFinishReason: string | null = null;
 			let toolChoiceIgnored = false;
 			let capReached = false;
+			let errorCode: string | null = null;
 			const emit = (event: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
 			emit({ type: "conversation", conversationId: id });
 			try {
@@ -275,7 +276,9 @@ export async function createAgentChatStream(
 						if (ToolChoiceViolationError.isInstance(part.error)) toolChoiceIgnored = true;
 						else {
 							capReached ||= !!chatSpendCapError(part.error);
-							emit(await chatError(chatFailure(part.error), failure(lastFinishReason)));
+							const failed = chatFailure(part.error);
+							errorCode = failed.code;
+							emit(await chatError(failed, failure(lastFinishReason)));
 						}
 					}
 				}
@@ -292,9 +295,11 @@ export async function createAgentChatStream(
 				emit({ type: "done" });
 			} catch (error) {
 				await saveTurnText(db, id, response, reasoning);
-				emit(await chatError(chatFailure(error), failure(lastFinishReason)));
+				const failed = chatFailure(error);
+				errorCode = failed.code;
+				emit(await chatError(failed, failure(lastFinishReason)));
 			} finally {
-				await spend.settle().catch(() => undefined);
+				await spend.settle(errorCode).catch(() => undefined);
 				controller.close();
 			}
 		},

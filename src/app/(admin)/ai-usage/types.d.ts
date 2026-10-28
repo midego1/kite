@@ -1,30 +1,20 @@
-export type AiUsageRow = {
-	id: string;
-	createdAt: string;
-	provider: string;
-	model: string;
-	source: string;
-	inputTokens: number | null;
-	outputTokens: number | null;
-	costUsdMicros: number | null;
-};
-export type AiUsageDaily = { date: string; requests: number; inputTokens: number; outputTokens: number };
-export type AiUsageTotals = {
-	requests: number;
-	inputTokens: number;
-	outputTokens: number;
-	totalTokens: number;
-	costUsdMicros: number;
-	pricedRequests: number;
-};
-export type AiUsageResponse = {
-	totals: AiUsageTotals;
-	daily: AiUsageDaily[];
+import type { UsageDay, UsageFilters, UsageReport } from "@/lib/ai/usage-report-types";
+
+/** What the chart's bars and the breakdowns' share measure. */
+export type UsageMetric = "tokens" | "cost" | "requests";
+
+export type UsageChartProps = {
+	daily: UsageDay[];
 	timeZone: string;
-	rows: AiUsageRow[];
-	page: number;
-	pageSize: number;
-	totalPages: number;
-	error?: string;
+	metric: UsageMetric;
+	onMetricChange: (metric: UsageMetric) => void;
 };
-export type UsageChartProps = { daily: AiUsageDaily[]; timeZone?: string };
+
+export type UsageSectionProps = { report: UsageReport; metric: UsageMetric };
+
+export type UsageActivityProps = {
+	report: UsageReport;
+	loading: boolean;
+	onFiltersChange: (filters: UsageFilters) => void;
+	onPageChange: (page: number) => void;
+};

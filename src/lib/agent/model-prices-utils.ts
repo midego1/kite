@@ -44,18 +44,49 @@ function priceIndex(entries: readonly ModelPriceEntry[]): Map<string, ModelPrice
 	return index;
 }
 
-/** The entry for a model id: an exact id or alias first, then the id without a dated suffix where allowed. */
+/** An exact id or alias first, then the id without a dated suffix where allowed. */
+function matchModelId(index: Map<string, ModelPriceEntry>, id: string): ModelPriceEntry | null {
+	const exact = index.get(id);
+	if (exact) return exact;
+	const undated = id.replace(DATED_SUFFIX, "");
+	const entry = undated === id ? undefined : index.get(undated);
+	return entry?.datedIds ? entry : null;
+}
+
+/**
+ * The vendor prefix routers put before a model id (`anthropic/claude-opus-5-5` on OpenRouter, `deepseek/deepseek-v4.1-flash`
+ * on Haimaker), mapped to the provider whose list price the router passes on. OpenRouter writes Anthropic's version
+ * with dots (`claude-opus-4.5`), so those ids also match with dashes.
+ */
+const ROUTER_VENDORS: Record<string, string> = {
+	anthropic: "anthropic",
+	openai: "openai",
+	google: "google",
+	deepseek: "deepseek",
+};
+const VENDOR_PREFIXED = /^([a-z0-9-]+)\/([^/]+)$/;
+
+/**
+ * The entry for a model id: as listed, else (for a router's `vendor/model` id that is not itself listed, such as Groq's
+ * `openai/gpt-oss-120b`) the vendor's own model, but only an entry of that vendor.
+ */
 function findModelPriceEntry(
 	modelId: string,
 	entries: readonly ModelPriceEntry[] = MODEL_PRICES,
 ): ModelPriceEntry | null {
 	const index = priceIndex(entries);
 	const id = normalizeModelId(modelId);
-	const exact = index.get(id);
-	if (exact) return exact;
-	const undated = id.replace(DATED_SUFFIX, "");
-	const entry = undated === id ? undefined : index.get(undated);
-	return entry?.datedIds ? entry : null;
+	const listed = matchModelId(index, id);
+	if (listed) return listed;
+	const [, vendor, model] = VENDOR_PREFIXED.exec(id) ?? [];
+	const provider = vendor ? ROUTER_VENDORS[vendor] : undefined;
+	if (!provider) return null;
+	const candidates = provider === "anthropic" ? [model, model.replace(/(\d)\.(\d)/g, "$1-$2")] : [model];
+	for (const candidate of candidates) {
+		const entry = matchModelId(index, candidate);
+		if (entry?.provider === provider) return entry;
+	}
+	return null;
 }
 
 /** A model's built-in price on `now`'s UTC date, or null when Kite's list does not know the model. */

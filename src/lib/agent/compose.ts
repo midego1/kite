@@ -12,7 +12,7 @@ import { getAutoReadInstallSettings } from "./auto-read/install-settings";
 import { readMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
 import { buildModelCallOptions } from "./auto-read/model-call-utils";
 import { reportAiErrorClass, reportAiFailure, type AiFailureContext } from "./ai-errors";
-import type { AiErrorDetails } from "./ai-error-utils";
+import { classifyAiError, type AiErrorDetails } from "./ai-error-utils";
 import { keepReservedEstimate, reconcileAiSpend, refusedSpendCap, reserveAiSpend } from "./auto-read/spend";
 import type { ReserveAiSpendInput, SpendReservation } from "./auto-read/spend-types";
 import { spendCapMessage } from "./chat-spend-utils";
@@ -226,6 +226,7 @@ function streamComposeAnswer(
 			};
 			let settled = false;
 			let usage: Awaited<typeof result.totalUsage> | null = null;
+			let errorCode: string | null = null;
 			// The client gets a fixed message, a code and the details; the provider's own text, which may echo
 			// content, is neither sent nor logged.
 			const fail = async (body: ReturnType<typeof reportAiFailure>) => emit({ type: "error", ...(await body) });
@@ -240,10 +241,18 @@ function streamComposeAnswer(
 				}
 				if (abort.signal.aborted) return;
 				usage = await result.totalUsage;
-				await reconcileAiSpend({ env, reservation, rates, usage });
+				const finishReason = await result.finishReason;
+				const cutOff = finishReason === "length";
+				await reconcileAiSpend({
+					env,
+					reservation,
+					rates,
+					usage,
+					outcome: cutOff ? { status: "failed", errorCode: "cut_off", finishReason } : { status: "ok", finishReason },
+				});
 				settled = true;
 				// An answer that ran out of tokens ends mid-sentence; none of it may be inserted.
-				if ((await result.finishReason) === "length")
+				if (cutOff)
 					return await fail(
 						reportAiErrorClass({ code: "cut_off", status: null }, { ...context(), finishReason: "length" }),
 					);
@@ -252,10 +261,14 @@ function streamComposeAnswer(
 				else
 					await fail(reportAiErrorClass({ code: "unusable_answer", status: null, reason: outcome.error }, context()));
 			} catch (error) {
-				if (!abort.signal.aborted) await fail(reportAiFailure(error, context()));
+				if (!abort.signal.aborted) {
+					errorCode = classifyAiError(error).code;
+					await fail(reportAiFailure(error, context()));
+				}
 			} finally {
 				// Aborted, cancelled or failed before the provider reported usage: the estimate stays as the spend.
-				if (!settled) await keepReservedEstimate(env, reservation).catch(() => undefined);
+				const outcome = errorCode ? ({ status: "failed", errorCode } as const) : undefined;
+				if (!settled) await keepReservedEstimate(env, reservation, outcome).catch(() => undefined);
 				if (!closed) controller.close();
 				closed = true;
 			}

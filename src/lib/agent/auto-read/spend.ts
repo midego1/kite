@@ -1,10 +1,14 @@
 import type { LanguageModelUsage } from "ai";
 import { newId } from "@/lib/ids";
+import { updateAiUsage } from "@/lib/ai/usage-details";
+import type { AiUsageOutcome } from "@/lib/ai/usage-types";
+import { classifyAiError } from "../ai-error-utils";
 import type { ReconcileAiSpendInput, ReserveAiSpendInput, SpendCapKind, SpendReservation } from "./spend-types";
 import {
 	INTERACTIVE_SPEND_SOURCES,
 	actualSpend,
 	estimateSpend,
+	ratesForPrompt,
 	tokenAllowanceKind,
 	utcDayStartSeconds,
 	type TokenAllowanceKind,
@@ -71,7 +75,7 @@ export async function reserveAiSpend(input: ReserveAiSpendInput): Promise<SpendR
 					input.mailboxCapMicros,
 				);
 	const result = await statement.run();
-	return result.meta.changes > 0 ? { id, ...estimate } : null;
+	return result.meta.changes > 0 ? { id, startedAt: Date.now(), ...estimate } : null;
 }
 
 /**
@@ -85,31 +89,68 @@ export async function withReservedSpend<T extends { usage: LanguageModelUsage | 
 	const reservation = await reserveAiSpend(input);
 	if (!reservation) return null;
 	let usage: LanguageModelUsage | undefined;
+	let outcome: Pick<AiUsageOutcome, "status" | "errorCode" | "finishReason"> = { status: "ok" };
 	try {
 		const result = await call();
 		usage = result.usage;
+		outcome = { status: "ok", finishReason: finishReasonOf(result) };
 		return result;
+	} catch (error) {
+		outcome = { status: "failed", errorCode: classifyAiError(error).code };
+		throw error;
 	} finally {
-		await reconcileAiSpend({ env: input.env, reservation, rates: input.details.rates, usage });
+		await reconcileAiSpend({ env: input.env, reservation, rates: input.details.rates, usage, outcome });
 	}
 }
 
-/** Replaces a reservation's estimate with the call's actual usage and releases it. */
-export async function reconcileAiSpend({ env, reservation, rates, usage }: ReconcileAiSpendInput): Promise<void> {
+/** The `finishReason` of a model result, when it has one. */
+export function finishReasonOf(result: unknown): string | null {
+	const reason = (result as { finishReason?: unknown } | null)?.finishReason;
+	return typeof reason === "string" ? reason : null;
+}
+
+/** Milliseconds since the reservation, for a request settled now. */
+function elapsed(reservation: SpendReservation): number | null {
+	return typeof reservation.startedAt === "number" ? Date.now() - reservation.startedAt : null;
+}
+
+/**
+ * Replaces a reservation's estimate with the call's actual usage and releases it, recording how the call ended:
+ * `outcome` when given, else answered with usage or failed without.
+ */
+export async function reconcileAiSpend({
+	env,
+	reservation,
+	rates,
+	usage,
+	outcome,
+}: ReconcileAiSpendInput): Promise<void> {
 	const actual = actualSpend(reservation.mode, usage, rates);
-	await env.DB.prepare(
-		"UPDATE ai_usage SET input_tokens = ?, output_tokens = ?, cost_usd_micros = ?, reserved = 0 WHERE id = ?",
-	)
-		.bind(actual.inputTokens, actual.outputTokens, actual.costUsdMicros, reservation.id)
-		.run();
+	await updateAiUsage(
+		env,
+		reservation.id,
+		"input_tokens = ?, output_tokens = ?, cost_usd_micros = ?, reserved = 0",
+		[actual.inputTokens, actual.outputTokens, actual.costUsdMicros],
+		{
+			status: usage ? "ok" : "failed",
+			...outcome,
+			durationMs: elapsed(reservation),
+			rates: actual.costUsdMicros === null ? null : ratesForPrompt(rates, actual.inputTokens),
+		},
+	);
 }
 
 /**
  * Settles a reservation whose call ended without reporting usage (aborted or failed mid-stream): the estimate
- * stays as the recorded spend, so the cap errs on the side of stopping.
+ * stays as the recorded spend, so the cap errs on the side of stopping. Recorded as stopped unless `outcome` says
+ * it failed.
  */
-export async function keepReservedEstimate(env: CloudflareEnv, reservation: SpendReservation): Promise<void> {
-	await env.DB.prepare("UPDATE ai_usage SET reserved = 0 WHERE id = ?").bind(reservation.id).run();
+export async function keepReservedEstimate(
+	env: CloudflareEnv,
+	reservation: SpendReservation,
+	outcome: Pick<AiUsageOutcome, "status" | "errorCode"> = { status: "stopped" },
+): Promise<void> {
+	await updateAiUsage(env, reservation.id, "reserved = 0", [], { ...outcome, durationMs: elapsed(reservation) });
 }
 
 /**

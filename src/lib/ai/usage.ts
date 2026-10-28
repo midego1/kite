@@ -2,14 +2,26 @@ import { getDb } from "@/db";
 import { aiUsage } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { calculateAgentCostUsdMicros } from "@/lib/agent/pricing";
+import { ratesForPrompt } from "@/lib/agent/auto-read/spend-utils";
+import { updateAiUsage } from "./usage-details";
 import type { RecordAiUsageInput } from "./usage-types";
 
-export async function recordAiUsage({ env, details, usage, source, mailboxId, jobId }: RecordAiUsageInput) {
+export async function recordAiUsage({
+	env,
+	details,
+	usage,
+	source,
+	mailboxId,
+	jobId,
+	durationMs,
+	finishReason,
+}: RecordAiUsageInput) {
 	try {
+		const id = newId("usage");
 		await getDb(env)
 			.insert(aiUsage)
 			.values({
-				id: newId("usage"),
+				id,
 				provider: details.provider,
 				model: details.modelId,
 				source,
@@ -19,6 +31,12 @@ export async function recordAiUsage({ env, details, usage, source, mailboxId, jo
 				mailboxId: mailboxId ?? null,
 				jobId: jobId ?? null,
 			});
+		await updateAiUsage(env, id, "", [], {
+			status: "ok",
+			durationMs,
+			finishReason,
+			rates: ratesForPrompt(details.rates, usage.inputTokens ?? 0),
+		});
 	} catch (error) {
 		console.error("Could not record AI usage", error);
 	}

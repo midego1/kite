@@ -64,7 +64,7 @@ export function CostRates({ form, models, selectedModelIds, setForm }: CostRates
 		});
 
 	return (
-		<div className="space-y-3">
+		<div id="cost-rates" className="scroll-mt-4 space-y-3">
 			<p className="text-sm font-medium">Estimated cost rates</p>
 			<p className="text-xs text-neutral-500">
 				USD per 1 million tokens. Rates published by the provider are used automatically, and for well-known models

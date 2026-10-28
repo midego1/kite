@@ -7,7 +7,7 @@ import toast from "react-hot-toast";
 import { TOAST_ACTION_CLASS } from "@/components/ui/toast-styles";
 import { AUTH_ME_QUERY_KEY } from "@/lib/auth/me-client";
 import type { AuthMeResponse } from "@/lib/auth/me-client-types";
-import { STALE_ASSETS_EVENT, markAppReady } from "./asset-recovery-utils";
+import { STALE_ASSETS_EVENT, markAppReady, takeStaleAssetsSignal } from "./asset-recovery-utils";
 import {
 	UPDATE_CHECK_INTERVAL_MS,
 	UPDATE_TOAST_ID,
@@ -86,6 +86,7 @@ export function UpdateAvailableHost() {
 	const shown = useRef(false);
 
 	useEffect(() => {
+		// The first client commit has happened; see ASSET_RECOVERY_READY_FLAG for what that does and does not mean.
 		markAppReady();
 	}, []);
 
@@ -120,10 +121,13 @@ export function UpdateAvailableHost() {
 
 		const onChange = () => void check();
 		const onStaleAssets = () => {
+			takeStaleAssetsSignal();
 			lastCheckAt = null;
 			void check();
 		};
-		void check();
+		// A chunk may have failed before the session was known and this listener existed.
+		if (takeStaleAssetsSignal()) onStaleAssets();
+		else void check();
 		const interval = window.setInterval(onChange, UPDATE_CHECK_INTERVAL_MS);
 		window.addEventListener("focus", onChange);
 		window.addEventListener(STALE_ASSETS_EVENT, onStaleAssets);

@@ -76,7 +76,12 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 		>
 			<head>
 				{/* First, so it is listening before the app's entry script is parsed. */}
-				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: assetRecoveryScript }} />
+				<script
+					nonce={nonce}
+					dangerouslySetInnerHTML={{
+						__html: assetRecoveryScript({ dev: process.env.NODE_ENV !== "production" }),
+					}}
+				/>
 				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: legacyStorageMigrationScript }} />
 				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: sidebarBootstrapScript }} />
 				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />

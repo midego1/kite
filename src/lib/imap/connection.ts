@@ -200,11 +200,17 @@ export class ImapConnection {
 	 * BODY.PEEK[] returns the full RFC 822 source without setting \Seen on the source server. A server may put
 	 * the attributes before or after the literal, so the text of the whole response is read before it is parsed.
 	 */
-	async fetchMessages(uids: string[]): Promise<Map<string, ImapFetchedMessage>> {
+	async fetchMessages(
+		uids: string[],
+		options: { gmailLabels?: boolean } = {},
+	): Promise<Map<string, ImapFetchedMessage>> {
 		const result = new Map<string, ImapFetchedMessage>();
 		if (uids.length === 0) return result;
 		const tag = this.nextTag();
-		await this.write(`${tag} UID FETCH ${uids.join(",")} (UID FLAGS INTERNALDATE RFC822.SIZE BODY.PEEK[])\r\n`);
+		const labels = options.gmailLabels ? " X-GM-LABELS" : "";
+		await this.write(
+			`${tag} UID FETCH ${uids.join(",")} (UID FLAGS INTERNALDATE RFC822.SIZE${labels} BODY.PEEK[])\r\n`,
+		);
 		let response: { text: string; raw: ArrayBuffer | null } | null = null;
 		let batchBytes = 0;
 
@@ -391,6 +397,6 @@ function addFetchedMessage(
 	response: { text: string; raw: ArrayBuffer | null },
 ): void {
 	if (!response.raw) return;
-	const { uid, flags, internalDate, size } = parseFetchAttributes(response.text);
-	if (uid) result.set(uid, { raw: response.raw, flags, internalDate, size });
+	const { uid, flags, internalDate, size, labels } = parseFetchAttributes(response.text);
+	if (uid) result.set(uid, { raw: response.raw, flags, internalDate, size, labels });
 }

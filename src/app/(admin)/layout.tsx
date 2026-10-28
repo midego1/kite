@@ -10,7 +10,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 	const pathname = usePathname();
 
 	return (
-		<DashboardSectionShell requireMailbox requireRole="admin" requirePrimary={requiresPrimaryAdmin(pathname)}>
+		<DashboardSectionShell
+			requireMailbox
+			requireRole="admin"
+			requirePrimary={requiresPrimaryAdmin(pathname)}
+			// Admin shows the full notice above its pages, with the details and both choices; not also the short one.
+			telemetryNotice="page"
+		>
 			<SectionLayout mode="admin">
 				<TelemetryNotice variant="page" />
 				{children}

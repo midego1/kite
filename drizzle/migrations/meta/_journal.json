@@ -554,6 +554,13 @@
       "when": 1788851940028,
       "tag": "0075_add_telemetry_notice",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "6",
+      "when": 1788851970028,
+      "tag": "0076_add_import_job_folders",
+      "breakpoints": true
     }
   ]
 }

@@ -6,7 +6,11 @@ import {
 	chooseAuthMethod,
 	imapLimits,
 	IMAP_PORTS,
+	parseListLine,
 	parseListMailboxName,
+	parseStatusLine,
+	parseUidValidity,
+	type ImapListedMailbox,
 	parseSearchUids,
 	plainAuthToken,
 	planStartTls,
@@ -15,11 +19,20 @@ import {
 import type { ImapFetchedMessage, ImapLogin } from "./types";
 
 export type ImapSession = {
-	/** Opens `folder` read-only. */
-	examine(folder: string): Promise<void>;
+	/** The capabilities the server announced after sign-in (upper-case), such as `X-GM-EXT-1` on Gmail. */
+	readonly capabilities: readonly string[];
+	/** Opens `folder` read-only; `uidValidity` is null when the server did not say. */
+	examine(folder: string): Promise<{ uidValidity: number | null }>;
 	searchUids(): Promise<string[]>;
-	fetchMessages(uids: string[]): Promise<Map<string, ImapFetchedMessage>>;
+	fetchMessages(uids: string[], options?: { gmailLabels?: boolean }): Promise<Map<string, ImapFetchedMessage>>;
 	listMailboxNames(): Promise<string[]>;
+	/**
+	 * Every mailbox with its attributes, asking for special-use attributes (`LIST "" "*" RETURN (SPECIAL-USE)`)
+	 * where the server offers SPECIAL-USE or LIST-EXTENDED; plain LIST otherwise.
+	 */
+	listMailboxes(): Promise<ImapListedMailbox[]>;
+	/** MESSAGES, UIDNEXT, UIDVALIDITY and, with STATUS=SIZE, SIZE of one mailbox; null when the server refuses. */
+	status(folder: string): Promise<ReturnType<typeof parseStatusLine>>;
 	close(): Promise<void>;
 };
 
@@ -39,19 +52,39 @@ export async function openImapSession(
 	const imap = new ImapConnection(socket, { ...imapLimits(env.KITE_RUNTIME), ...options });
 	try {
 		await signIn(imap, login, allowsPlainText(login.host, mailHostPolicy(env, process.env.NODE_ENV)));
+		// Servers announce more after sign-in (Gmail's X-GM-EXT-1, SPECIAL-USE), and not always in the OK.
+		await imap.capability();
 	} catch (error) {
 		await imap.close();
 		throw error;
 	}
 	return {
+		get capabilities() {
+			return imap.capabilities;
+		},
 		async examine(folder) {
-			await imap.command(`EXAMINE ${quoteImapString(folder)}`);
+			return { uidValidity: parseUidValidity(await imap.command(`EXAMINE ${quoteImapString(folder)}`)) };
 		},
 		async searchUids() {
 			const lines = await imap.command("UID SEARCH ALL");
 			return lines.flatMap(parseSearchUids);
 		},
-		fetchMessages: (uids) => imap.fetchMessages(uids),
+		fetchMessages: (uids, options) => imap.fetchMessages(uids, options),
+		async listMailboxes() {
+			const extended = imap.capabilities.some((name) => name === "SPECIAL-USE" || name === "LIST-EXTENDED");
+			const lines = await imap.command(extended ? 'LIST "" "*" RETURN (SPECIAL-USE)' : 'LIST "" "*"');
+			const seen = new Set<string>();
+			return lines
+				.map(parseListLine)
+				.filter((entry): entry is ImapListedMailbox => !!entry && !seen.has(entry.name) && !!seen.add(entry.name));
+		},
+		async status(folder) {
+			const items = imap.capabilities.includes("STATUS=SIZE")
+				? "MESSAGES UIDNEXT UIDVALIDITY SIZE"
+				: "MESSAGES UIDNEXT UIDVALIDITY";
+			const lines = await imap.command(`STATUS ${quoteImapString(folder)} (${items})`).catch(() => null);
+			return lines?.map(parseStatusLine).find((entry) => entry) ?? null;
+		},
 		async listMailboxNames() {
 			const lines = await imap.command('LIST "" "*"');
 			return Array.from(new Set(lines.map(parseListMailboxName).filter((name): name is string => !!name)));

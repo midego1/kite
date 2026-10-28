@@ -11,8 +11,10 @@ import {
 	getImportJobPercent,
 	isActiveImportJob,
 	isPausedImportJob,
+	pauseImportJob,
 	resumeImportJob,
 } from "@/app/(import)/settings/import/utils";
+import { ImportJobFolders } from "./import-job-folders";
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -109,6 +111,18 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 		}
 	}
 
+	async function onPause(id: string) {
+		setCancelling(id);
+		try {
+			await pauseImportJob(id);
+			await load();
+		} catch (pauseError) {
+			setError(pauseError instanceof Error ? pauseError.message : "Unable to pause import");
+		} finally {
+			setCancelling(null);
+		}
+	}
+
 	async function onCancel(id: string) {
 		setCancelling(id);
 		try {
@@ -151,7 +165,7 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 									<p className="truncate text-sm font-medium text-neutral-900">
 										{job.label}
 										<span className="ml-2 text-xs font-normal text-neutral-500">
-											{job.folder} · {job.username}
+											{job.scope === "account" ? job.host : job.folder} · {job.username}
 										</span>
 									</p>
 									<p className="text-xs text-neutral-500">
@@ -175,6 +189,17 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 											Resume
 										</Button>
 									)}
+									{isActiveImportJob(job) && (
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											disabled={cancelling === job.id}
+											onClick={() => void onPause(job.id)}
+										>
+											Pause
+										</Button>
+									)}
 									{(isActiveImportJob(job) || isPausedImportJob(job)) && (
 										<Button
 											type="button"
@@ -194,6 +219,7 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 									style={{ width: `${percent}%` }}
 								/>
 							</div>
+							<ImportJobFolders job={job} />
 							{job.lastError && (
 								<p className={`text-xs ${isImportConfirmed(job.lastError) ? "text-neutral-500" : "text-red-600"}`}>
 									{job.lastError}

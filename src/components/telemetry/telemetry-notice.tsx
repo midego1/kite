@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ChartNoAxesColumn, X } from "lucide-react";
-import { createContext, useContext, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ROW_BUTTON_CLASS } from "@/components/ui/page-utils";
 import { NOTICE_LINK_CLASS, WARNING_NOTICE_CLASS } from "@/components/notice-styles";
@@ -25,9 +25,6 @@ function HideButton({ label, onClick, disabled }: { label: string; onClick: () =
 	);
 }
 
-/** Set by the admin layout, which shows the notice above its pages; the sidebar copy then stays out of the way. */
-export const TelemetryNoticeOnPage = createContext(false);
-
 /**
  * Tells the primary admin of an install that never chose (an upgrade, or a setup without the switch) that usage
  * statistics start on the start day unless they turn them off. Shown until they choose or hide it, first in the
@@ -38,9 +35,8 @@ export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
 	const { startDay, unseen, markShown, save } = useTelemetryNotice();
 	const [error, setError] = useState<string | null>(null);
 	const ref = useRef<HTMLElement>(null);
-	const onPage = useContext(TelemetryNoticeOnPage);
 	useWhenVisible(ref, unseen, markShown);
-	if (!startDay || (variant === "sidebar" && onPage)) return null;
+	if (!startDay) return null;
 
 	const choose = (update: TelemetryUpdate) => {
 		setError(null);

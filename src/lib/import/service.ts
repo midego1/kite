@@ -8,6 +8,7 @@ import type { ParsedEmail } from "@/lib/email/parse";
 import { resolveThreadId } from "@/lib/email/threading";
 import { upsertContactFromAddress } from "@/lib/contacts/service";
 import { newId } from "@/lib/ids";
+import { dedupeKeyOfStored, importDedupeKey, storedIdVariants } from "./dedupe-utils";
 import { getImportMessagePlacement } from "./destination";
 import type { ImportDestination } from "./destination-types";
 import type { ImportMailboxResult, ImportMessageInput } from "./types";
@@ -27,11 +28,8 @@ export async function importMessagesToMailbox(
 	for (const message of input.messages) {
 		try {
 			const parsed = await parseRawMime(message.raw);
-			parsedMessages.push({
-				...message,
-				parsed,
-				providerMessageId: parsed.messageId ?? `import:${message.filename}:${message.raw.byteLength}`,
-			});
+			const identity = await importDedupeKey(parsed.messageId, message.raw);
+			parsedMessages.push({ ...message, parsed, providerMessageId: identity.stored, dedupeKey: identity.key });
 		} catch (error) {
 			result.skipped += 1;
 			result.errors.push(`${message.filename}: ${error instanceof Error ? error.message : "Import failed"}`);
@@ -39,17 +37,17 @@ export async function importMessagesToMailbox(
 	}
 
 	// One lookup per batch instead of one per message.
-	const existing = await findExistingProviderMessageIds(
+	const existing = await findExistingDedupeKeys(
 		db,
 		input.mailboxId,
-		parsedMessages.map((message) => message.providerMessageId),
+		parsedMessages.map((message) => message.dedupeKey),
 	);
 	for (const message of parsedMessages) {
-		if (existing.has(message.providerMessageId)) {
+		if (existing.has(message.dedupeKey)) {
 			result.skipped += 1;
 			continue;
 		}
-		existing.add(message.providerMessageId);
+		existing.add(message.dedupeKey);
 		try {
 			await importParsedMessage(env, {
 				userId: input.userId,
@@ -66,24 +64,28 @@ export async function importMessagesToMailbox(
 	return result;
 }
 
-type ParsedImport = ImportMessageInput & { parsed: ParsedEmail; providerMessageId: string };
+type ParsedImport = ImportMessageInput & { parsed: ParsedEmail; providerMessageId: string; dedupeKey: string };
 
-async function findExistingProviderMessageIds(
+/** The dedupe keys of `keys` the mailbox already holds, whichever spelling (brackets or not) a row stored. */
+async function findExistingDedupeKeys(
 	db: ReturnType<typeof getDb>,
 	mailboxId: string,
-	providerMessageIds: string[],
+	keys: string[],
 ): Promise<Set<string>> {
 	const found = new Set<string>();
-	const unique = Array.from(new Set(providerMessageIds));
+	const variants = Array.from(new Set(keys)).flatMap(storedIdVariants);
 	// D1 allows 100 bound parameters per query.
-	for (let index = 0; index < unique.length; index += 90) {
+	for (let index = 0; index < variants.length; index += 90) {
 		const rows = await db
 			.select({ providerMessageId: messages.providerMessageId })
 			.from(messages)
 			.where(
-				and(eq(messages.mailboxId, mailboxId), inArray(messages.providerMessageId, unique.slice(index, index + 90))),
+				and(eq(messages.mailboxId, mailboxId), inArray(messages.providerMessageId, variants.slice(index, index + 90))),
 			);
-		for (const row of rows) if (row.providerMessageId) found.add(row.providerMessageId);
+		for (const row of rows) {
+			const key = dedupeKeyOfStored(row.providerMessageId);
+			if (key) found.add(key);
+		}
 	}
 	return found;
 }
@@ -97,13 +99,14 @@ async function importParsedMessage(
 		message: ParsedImport;
 	},
 ): Promise<void> {
-	const { parsed, providerMessageId, raw } = input.message;
+	const { parsed, providerMessageId, raw, read, starred, receivedAt } = input.message;
 	const db = getDb(env);
 	const messageId = newId("msg");
 	const rawR2Key = `imports/${messageId}.eml`;
 	const fromAddr = parsed.fromAddr ?? "unknown";
 	const toAddr = parsed.toAddr ?? "";
-	const createdAt = parsed.date ?? new Date();
+	// The Date header first; the source's INTERNALDATE when it has none (or none that parses).
+	const createdAt = parsed.date ?? receivedAt ?? new Date();
 	const placement = getImportMessagePlacement(input.destination);
 
 	await db.insert(messages).values({
@@ -122,12 +125,15 @@ async function importParsedMessage(
 		htmlBody: parsed.html,
 		rawR2Key,
 		status: placement.status,
-		read: placement.direction === "outbound",
+		read: placement.direction === "outbound" || read === true,
+		starred: starred === true,
 		threadId: await resolveThreadId(db, {
 			mailboxId: input.mailboxId,
 			messageId: parsed.messageId,
 			inReplyTo: parsed.inReplyTo,
 			references: parsed.references,
+			// Imports run newest first, so a reply often arrives before its parent (spec §4.4).
+			fallback: "references-root",
 		}),
 		inReplyTo: parsed.inReplyTo,
 		references: parsed.references.length ? parsed.references.join(" ") : null,

@@ -1,3 +1,4 @@
+import type { ImportMessageInput } from "@/lib/import/types";
 import type { HostImportMessage } from "@/lib/modules/host-types";
 
 const BASE64_CHUNK = 0x8000;
@@ -18,11 +19,24 @@ function decodeBase64(value: string): ArrayBuffer {
 	return bytes.buffer;
 }
 
-/** The bytes of one host import message: a byte array, base64 text or UTF-8 text. */
-export function decodeHostImportMessage(message: HostImportMessage, index: number) {
-	const { raw } = message;
+/** The bytes of one host import message (a byte array, base64 text or UTF-8 text) and the source state it carries. */
+export function decodeHostImportMessage(message: HostImportMessage, index: number): ImportMessageInput {
 	const filename = message.filename?.trim() || `message-${index + 1}.eml`;
-	if (Array.isArray(raw)) return { filename, raw: new Uint8Array(raw).buffer as ArrayBuffer };
-	if (message.encoding === "base64") return { filename, raw: decodeBase64(raw) };
-	return { filename, raw: new TextEncoder().encode(raw).buffer as ArrayBuffer };
+	return { filename, raw: decodeHostRaw(message), ...hostImportState(message) };
+}
+
+function decodeHostRaw({ raw, encoding }: HostImportMessage): ArrayBuffer {
+	if (Array.isArray(raw)) return new Uint8Array(raw).buffer as ArrayBuffer;
+	if (encoding === "base64") return decodeBase64(raw);
+	return new TextEncoder().encode(raw).buffer as ArrayBuffer;
+}
+
+/** Only real booleans and a parseable time are kept; anything else leaves the default. */
+function hostImportState(message: HostImportMessage): Pick<ImportMessageInput, "read" | "starred" | "receivedAt"> {
+	const receivedAt = typeof message.receivedAt === "string" ? new Date(message.receivedAt) : null;
+	return {
+		...(typeof message.read === "boolean" ? { read: message.read } : {}),
+		...(typeof message.starred === "boolean" ? { starred: message.starred } : {}),
+		...(receivedAt && !Number.isNaN(receivedAt.getTime()) ? { receivedAt } : {}),
+	};
 }

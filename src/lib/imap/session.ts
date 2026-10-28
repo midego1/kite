@@ -12,13 +12,13 @@ import {
 	planStartTls,
 	quoteImapString,
 } from "./protocol-utils";
-import type { ImapLogin } from "./types";
+import type { ImapFetchedMessage, ImapLogin } from "./types";
 
 export type ImapSession = {
 	/** Opens `folder` read-only. */
 	examine(folder: string): Promise<void>;
 	searchUids(): Promise<string[]>;
-	fetchMessages(uids: string[]): Promise<Map<string, ArrayBuffer>>;
+	fetchMessages(uids: string[]): Promise<Map<string, ImapFetchedMessage>>;
 	listMailboxNames(): Promise<string[]>;
 	close(): Promise<void>;
 };

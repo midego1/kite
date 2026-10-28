@@ -1,7 +1,9 @@
+import { readAiErrorBody, type AiErrorBody } from "@/lib/agent/ai-error-utils";
 import { authFetch } from "@/lib/auth/client";
 import { parseComposeEvents } from "./write-with-kite-utils";
 
-export type ComposeAnswer = { ok: true; text: string; warnings: string[] } | { ok: false; message: string };
+export type ComposeAnswer =
+	{ ok: true; text: string; warnings: string[] } | { ok: false; message: string; error?: AiErrorBody | null };
 
 /**
  * One composer request: posts it, passes each streamed delta to `onPreview` and resolves with the checked final text
@@ -20,7 +22,7 @@ export async function streamCompose(
 	});
 	if (!response.ok || !response.body) {
 		const data = (await response.json().catch(() => ({}))) as { error?: string };
-		return { ok: false, message: data.error || "Kite could not write this. Try again." };
+		return { ok: false, message: data.error || "Kite could not write this. Try again.", error: readAiErrorBody(data) };
 	}
 	const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = "";
@@ -34,7 +36,7 @@ export async function streamCompose(
 		for (const event of parsed.events) {
 			if (event.type === "text") onPreview((preview += event.text));
 			else if (event.type === "done") answer = { ok: true, text: event.text, warnings: event.warnings };
-			else answer = { ok: false, message: event.error };
+			else answer = { ok: false, message: event.error, error: readAiErrorBody(event) };
 		}
 	}
 }

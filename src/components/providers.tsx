@@ -12,6 +12,7 @@ import { NewMessagePopup } from "@/components/new-message-popup";
 import { ThemeSync } from "@/components/theme-sync";
 import { UpdateAvailableHost } from "@/components/update-available-host";
 import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
+import { TOASTER_PROPS } from "@/components/ui/toast-styles";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useMessagePolling } from "@/hooks/use-message-polling";
 import { clearMessageClientState } from "@/hooks/utils";
@@ -73,7 +74,7 @@ export function Providers({ children, initialBranding }: { children: React.React
 				<ThemeSync />
 				<ConfirmDialogHost />
 				<CopyCodeHost />
-				<Toaster position="bottom-center" />
+				<Toaster {...TOASTER_PROPS} />
 				<ModuleNoticeHost />
 				<UpdateAvailableHost />
 				{/* A live region without role="status": specs and pages look up the single status line by role. */}

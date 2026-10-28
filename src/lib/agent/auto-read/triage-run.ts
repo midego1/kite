@@ -5,7 +5,8 @@ import { extensionOutputTokens, type ActiveModelExtension } from "./model-extens
 import type { MailboxAgentSettingsState } from "./settings-types";
 import { withReservedSpend } from "./spend";
 import type { TriageContext } from "./triage-context";
-import { generateTriageText } from "./triage-model";
+import { generateTriageText, TRIAGE_CALL_TIMEOUT_MS } from "./triage-model";
+import { traceAiError } from "../ai-errors";
 import type { TriagePrompt, TriageResult } from "./triage-types";
 import { buildTriageJsonSchema, buildTriagePrompt } from "./triage-utils";
 import { ONE_LINE_OUTPUT_TOKENS } from "../summaries/line-utils";
@@ -69,7 +70,7 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 		extensionInstructions: extensions.map((extension) => extension.instructions),
 		oneLine: input.oneLine,
 	});
-	const { result } = await runTriageAttempt({
+	const attempt = runTriageAttempt({
 		prompt,
 		options: buildModelCallOptions({
 			provider: selection.providerKind,
@@ -102,6 +103,14 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 			if (!reply) throw new SpendCapReachedError();
 			return reply;
 		},
+	});
+	const { result } = await attempt.catch((error: unknown) => {
+		throw traceAiError(error, {
+			feature: "auto_triage",
+			model: selection.modelId,
+			provider: selection.provider,
+			timeoutMs: TRIAGE_CALL_TIMEOUT_MS,
+		});
 	});
 	return { result, modelId: selection.modelId };
 }

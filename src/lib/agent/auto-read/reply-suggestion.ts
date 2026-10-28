@@ -17,6 +17,7 @@ import { withReservedSpend } from "./spend";
 import type { PlannedSuggestion } from "./suggestion-types";
 import { upsertSuggestion } from "./suggestions";
 import { SpendCapReachedError } from "./triage-run";
+import { traceAiError } from "../ai-errors";
 
 // Same bound as a triage call: well inside the job's 10-minute lease.
 const DRAFT_CALL_TIMEOUT_MS = 60_000;
@@ -161,7 +162,13 @@ async function guardedDraftText(
 			await blockDraft(input, "spend_cap");
 			return null;
 		}
-		if (!(error instanceof ExternalProviderNotAllowedError)) throw error;
+		if (!(error instanceof ExternalProviderNotAllowedError))
+			throw traceAiError(error, {
+				feature: "auto_draft",
+				model: selection.modelId,
+				provider: selection.provider,
+				timeoutMs: DRAFT_CALL_TIMEOUT_MS,
+			});
 		await blockDraft(input, "external_provider_not_allowed");
 		return null;
 	}

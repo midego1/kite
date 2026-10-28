@@ -3,15 +3,17 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
-import { createLogger } from "@/lib/logger.mjs";
 import type { SessionUser } from "@/lib/auth/types";
 import { getAutoReadInstallSettings } from "../auto-read/install-settings";
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
 import { buildModelCallOptions, callWithFallback, completedText } from "../auto-read/model-call-utils";
+import { reportAiErrorClass } from "../ai-errors";
+import { aiErrorHttpStatus, classifyAiError, UnusableAnswerError, type AiErrorDetails } from "../ai-error-utils";
+import { aiCallTimeoutMs } from "../provider-url-utils";
 import { keepReservedEstimate, reconcileAiSpend, refusedSpendCap, reserveAiSpend } from "../auto-read/spend";
 import type { AutoSpendSource, ReserveAiSpendInput } from "../auto-read/spend-types";
 import { spendCapMessage } from "../chat-spend-utils";
-import { InteractiveModelRefusedError, interactiveRefusal, selectInteractiveModel } from "../interactive-model";
+import { interactiveRefusal, selectInteractiveModel } from "../interactive-model";
 import { getAgentProviderPublicConfig } from "../provider";
 import { personalInstructionsFor } from "../user-ai-settings";
 import {
@@ -27,20 +29,30 @@ import {
 } from "./summary-prompt-utils";
 import { readCachedSummary, saveSummary, saveTranslation, storedContent, type SummaryKey } from "./store";
 import type { SummaryContent, SummaryMessage, SummaryPrompt, SummaryScope, SummaryState } from "./summary-types";
-import { canTranslate, checkSummaryOutput, coverageDigest, instructionsDigest, languageCode } from "./summary-utils";
+import {
+	canTranslate,
+	checkSummaryOutput,
+	coverageDigest,
+	instructionsDigest,
+	languageCode,
+	summaryProblemText,
+} from "./summary-utils";
 
-const logger = createLogger("agent");
 // Conversations longer than this are summarised from their newest messages; the rest are left out.
 const MAX_COVERED_MESSAGES = 200;
 const SUMMARY_CALL_TIMEOUT_MS = 60_000;
 const ELIGIBLE = [...SUMMARY_STATUSES];
 
-/** A request answered with its status and a code before or instead of a saved summary. */
+/**
+ * A request answered with its status and a code before or instead of a saved summary; a failed AI request also
+ * carries the details the card shows under Details.
+ */
 export class SummaryRefusal extends Error {
 	constructor(
 		readonly status: number,
 		message: string,
 		readonly code: string,
+		readonly details?: AiErrorDetails,
 	) {
 		super(message);
 		this.name = "SummaryRefusal";
@@ -224,12 +236,21 @@ type ModelSelection = Awaited<ReturnType<typeof selectInteractiveModel>>;
 
 type GenerateInput = {
 	env: CloudflareEnv;
+	userId: string;
 	mailboxId: string;
-	source: AutoSpendSource;
+	source: Extract<AutoSpendSource, "summary" | "summary_translation">;
 	prompt: SummaryPrompt;
 	references: string[];
 	language?: string;
 };
+
+/** The reservation was refused at a cap; the message names which one. */
+class SpendCapRefusal extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "SpendCapReachedError";
+	}
+}
 
 /** A provider's HTTP status when it refused the request outright (a 4xx), which costs nothing. */
 function rejectedOutright(error: unknown): boolean {
@@ -247,10 +268,7 @@ async function reserved<T extends { usage: LanguageModelUsage | undefined }>(
 	call: () => Promise<T>,
 ) {
 	const reservation = await reserveAiSpend(reserve);
-	if (!reservation) {
-		const cap = await refusedSpendCap(reserve);
-		throw new SummaryRefusal(429, spendCapMessage(cap, reserve), "spend_cap");
-	}
+	if (!reservation) throw new SpendCapRefusal(spendCapMessage(await refusedSpendCap(reserve), reserve));
 	let result: T;
 	try {
 		result = await call();
@@ -264,17 +282,31 @@ async function reserved<T extends { usage: LanguageModelUsage | undefined }>(
 	return result;
 }
 
+/** What the last model request of a summary said, for the log line of a failure. */
+type CallTrace = {
+	modelId: string | null;
+	provider: string | null;
+	usage: LanguageModelUsage | null;
+	finishReason: string | null;
+};
+
 /**
  * One summary or translation: the model chosen and the opt-in checked again for every request (the repair turn
  * too), each request's estimate reserved against the mailbox and install caps and settled with its usage, the
- * answer checked by code. An unusable answer gets one repair turn; a second one is an error.
+ * answer checked by code. An unusable answer gets one repair turn; a second one is an error. Every failure is
+ * logged once and answered with its own code and message (`ai-error-utils.ts`).
  */
 async function generate(input: GenerateInput): Promise<{ summary: SummaryContent; modelId: string }> {
 	const db = getDb(input.env);
 	const settings = await readMailboxAgentSettingsRow(db, input.mailboxId);
 	const install = await getAutoReadInstallSettings(input.env);
+	const timeoutMs = aiCallTimeoutMs(input.env, process.env.NODE_ENV, SUMMARY_CALL_TIMEOUT_MS);
+	const startedAt = Date.now();
+	const trace: CallTrace = { modelId: null, provider: null, usage: null, finishReason: null };
 	const call = async (prompt: SummaryPrompt) => {
 		const selection: ModelSelection = await selectInteractiveModel(input.env, settings?.modelId);
+		trace.modelId = selection.modelId;
+		trace.provider = selection.provider;
 		const options = buildModelCallOptions({
 			provider: selection.providerKind,
 			preset: selection.preset,
@@ -286,7 +318,7 @@ async function generate(input: GenerateInput): Promise<{ summary: SummaryContent
 			...options,
 			maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS + Math.max(0, options.maxOutputTokens - 900),
 		};
-		const text = await callWithFallback(base, (current) =>
+		const result = await callWithFallback(base, (current) =>
 			reserved(
 				{
 					env: input.env,
@@ -308,11 +340,13 @@ async function generate(input: GenerateInput): Promise<{ summary: SummaryContent
 						maxOutputTokens: current.maxOutputTokens,
 						providerOptions: current.providerOptions,
 						maxRetries: 0,
-						abortSignal: AbortSignal.timeout(SUMMARY_CALL_TIMEOUT_MS),
+						abortSignal: AbortSignal.timeout(timeoutMs),
 					}),
 			),
-		).then(completedText);
-		return { text, modelId: selection.modelId };
+		);
+		trace.usage = result.usage ?? null;
+		trace.finishReason = result.finishReason;
+		return { text: completedText(result), modelId: selection.modelId };
 	};
 	const check = (text: string) =>
 		checkSummaryOutput(text, { references: input.references, ...(input.language ? { language: input.language } : {}) });
@@ -323,15 +357,26 @@ async function generate(input: GenerateInput): Promise<{ summary: SummaryContent
 		const second = await call(buildSummaryRepairPrompt(input.prompt, first.text, parsed.error));
 		const repaired = check(second.text);
 		if (repaired.ok) return { summary: repaired.summary, modelId: second.modelId };
-		logger.warn("summary.unusable_answer", { source: input.source });
-		throw new SummaryRefusal(502, "Kite could not write a usable summary. Try again.", "unusable_answer");
+		throw new UnusableAnswerError(summaryProblemText(repaired.error));
 	} catch (error) {
 		if (error instanceof SummaryRefusal) throw error;
-		// The provider's own text may echo content; only a code is logged and a fixed message returned.
-		if (error instanceof InteractiveModelRefusedError) throw error;
-		const status = (error as { statusCode?: unknown } | null)?.statusCode;
-		logger.warn("summary.failed", { code: typeof status === "number" ? `provider_${status}` : "provider_error" });
-		throw new SummaryRefusal(502, "The AI provider could not finish this. Try again.", "provider_error");
+		const failure = classifyAiError(error);
+		const body = await reportAiErrorClass(
+			error instanceof SpendCapRefusal ? { ...failure, message: error.message } : failure,
+			{
+				env: input.env,
+				feature: input.source,
+				model: trace.modelId,
+				provider: trace.provider,
+				startedAt,
+				usage: trace.usage,
+				finishReason: trace.finishReason,
+				timeoutMs,
+				userId: input.userId,
+				mailboxId: input.mailboxId,
+			},
+		);
+		throw new SummaryRefusal(aiErrorHttpStatus(body.code), body.error, body.code, body.details);
 	}
 }
 
@@ -360,6 +405,7 @@ export async function createSummary(
 			const content = storedContent(current);
 			const { summary, modelId } = await generate({
 				env,
+				userId: user.id,
 				mailboxId: loaded.anchor.mailboxId,
 				source: "summary_translation",
 				prompt: buildTranslationPrompt({ summary: content, target }),
@@ -380,6 +426,7 @@ export async function createSummary(
 		const coveredIds = covered.map((message) => message.id);
 		const { summary, modelId } = await generate({
 			env,
+			userId: user.id,
 			mailboxId: loaded.anchor.mailboxId,
 			source: "summary",
 			prompt: buildSummaryPrompt({

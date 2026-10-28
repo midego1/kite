@@ -1,3 +1,4 @@
+import type { AiErrorBody } from "@/lib/agent/ai-error-utils";
 import type { SummaryScope, SummaryState } from "@/lib/agent/summaries/summary-types";
 
 export type ThreadSummaryBusy = "summarize" | "translate" | null;
@@ -8,6 +9,8 @@ export type ThreadSummaryController = {
 	state: SummaryState | null;
 	busy: ThreadSummaryBusy;
 	error: string | null;
+	/** The code and details of a failed AI request, for the card's Details. */
+	failure: AiErrorBody | null;
 	/** Why the button is disabled after a cap or the rate limit refused it. */
 	blocked: string | null;
 	hidden: boolean;
@@ -17,5 +20,7 @@ export type ThreadSummaryController = {
 	/** Summarizes the open message alone; undefined where it cannot be summarised. */
 	summarizeMessage: (() => void) | undefined;
 	translate: () => void;
+	/** Repeats the request that failed; undefined while a request runs or a cap blocks the button. */
+	retry: (() => void) | undefined;
 	hide: () => void;
 };

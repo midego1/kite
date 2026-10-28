@@ -7,6 +7,9 @@ import { newId } from "@/lib/ids";
 import { getAgentModel } from "./model";
 import { agentSystemPrompt } from "./system-prompt-utils";
 import { agentProviderErrorMessage } from "./errors";
+import { reportAiErrorClass, type AiFailureContext } from "./ai-errors";
+import { classifyAiError, type AiErrorClass } from "./ai-error-utils";
+import { InteractiveModelRefusedError } from "./interactive-model";
 import { getAgentEnabled } from "./provider";
 import { readMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
 import { getAutoReadInstallSettings } from "./auto-read/install-settings";
@@ -99,9 +102,26 @@ async function recordToolError(
 	return { type: "tool", id: part.toolCallId, name: part.toolName, state: "failed", result: message };
 }
 
-/** A spend cap explains itself; anything else is reported as the provider's error. */
-function chatErrorMessage(error: unknown): string {
-	return chatSpendCapError(error)?.message ?? agentProviderErrorMessage(error);
+/**
+ * The stream's error event for a failed turn: a spend cap explains itself, anything else gets its code's message;
+ * the provider's own text is never sent. Logged and recorded once.
+ */
+async function chatError(failure: AiErrorClass & { message?: string }, context: AiFailureContext) {
+	const body = await reportAiErrorClass(failure, context);
+	return { type: "error", message: body.error, code: body.code, details: body.details };
+}
+
+/** The usage of the turn so far plus one step's. */
+function addUsage(total: { inputTokens: number; outputTokens: number }, step: AiFailureContext["usage"]) {
+	return {
+		inputTokens: total.inputTokens + (step?.inputTokens ?? 0),
+		outputTokens: total.outputTokens + (step?.outputTokens ?? 0),
+	};
+}
+
+function chatFailure(error: unknown): AiErrorClass & { message?: string } {
+	const cap = chatSpendCapError(error);
+	return cap ? { code: "spend_cap", status: null, message: cap.message } : classifyAiError(error);
 }
 
 export async function createAgentChatStream(
@@ -117,10 +137,10 @@ export async function createAgentChatStream(
 	const db = getDb(context.env);
 	const access = await getMailboxAccessLevel(db, context.user, context.mailboxId);
 	if (!access?.canRead) throw new Error("Mailbox not found");
-	if (!(await getAgentEnabled(context.env))) throw new Error("Assistant is disabled");
+	if (!(await getAgentEnabled(context.env))) throw new InteractiveModelRefusedError("assistant_disabled");
 	const settings = await readMailboxAgentSettingsRow(db, context.mailboxId);
 	const selection = await getAgentModel(context.env, settings?.modelId);
-	if (!selection) throw new Error("AI provider is not configured");
+	if (!selection) throw new InteractiveModelRefusedError("not_configured");
 	const currentEmailId = await resolveCurrentEmailId(context, currentMessageId);
 	let conversation = conversationId ? await getAgentConversation(context, conversationId) : null;
 	if (conversationId && !conversation) throw new Error("Conversation not found");
@@ -186,6 +206,21 @@ export async function createAgentChatStream(
 	});
 	const encoder = new TextEncoder();
 	const id = conversation.id;
+	const startedAt = Date.now();
+	let usage = { inputTokens: 0, outputTokens: 0 };
+	const failure = (finishReason: string | null = null): AiFailureContext => ({
+		env: context.env,
+		feature: "chat",
+		model: selection.modelId,
+		provider: selection.provider,
+		startedAt,
+		usage,
+		finishReason,
+		userId: context.user.id,
+		mailboxId: context.mailboxId,
+		// A turn the person stopped is not an AI failure worth keeping.
+		record: !signal?.aborted,
+	});
 	const stream = new ReadableStream<Uint8Array>({
 		async start(controller) {
 			let response = "";
@@ -207,6 +242,7 @@ export async function createAgentChatStream(
 						emit({ type: "reasoning", text: part.text });
 					} else if (part.type === "finish-step") {
 						lastFinishReason = part.finishReason;
+						usage = addUsage(usage, part.usage);
 						if (part.finishReason === "tool-calls" && stepText) {
 							response = response.slice(0, -stepText.length);
 							reasoning += stepText;
@@ -239,7 +275,7 @@ export async function createAgentChatStream(
 						if (ToolChoiceViolationError.isInstance(part.error)) toolChoiceIgnored = true;
 						else {
 							capReached ||= !!chatSpendCapError(part.error);
-							emit({ type: "error", message: chatErrorMessage(part.error) });
+							emit(await chatError(chatFailure(part.error), failure(lastFinishReason)));
 						}
 					}
 				}
@@ -249,12 +285,14 @@ export async function createAgentChatStream(
 					response = AGENT_STEP_LIMIT_FALLBACK;
 					emit({ type: "text", text: response });
 				}
+				// A reply that ran out of tokens ends mid-sentence; the text stays, with a note that it was cut off.
+				if (lastFinishReason === "length") emit(await chatError({ code: "cut_off", status: null }, failure("length")));
 				await saveTurnText(db, id, response, reasoning);
 				await db.update(agentConversations).set({ updatedAt: new Date() }).where(eq(agentConversations.id, id));
 				emit({ type: "done" });
 			} catch (error) {
 				await saveTurnText(db, id, response, reasoning);
-				emit({ type: "error", message: chatErrorMessage(error) });
+				emit(await chatError(chatFailure(error), failure(lastFinishReason)));
 			} finally {
 				await spend.settle().catch(() => undefined);
 				controller.close();

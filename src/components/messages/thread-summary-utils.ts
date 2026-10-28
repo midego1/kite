@@ -1,3 +1,4 @@
+import { readAiErrorBody, type AiErrorBody } from "@/lib/agent/ai-error-utils";
 import type { SummaryScope, SummaryState } from "@/lib/agent/summaries/summary-types";
 import { languageName } from "@/lib/agent/summaries/summary-utils";
 
@@ -28,8 +29,11 @@ export function summaryCopyText(summary: Pick<NonNullable<SummaryState["summary"
 	return [summary.overview, ...summary.points.map((point) => `${point.label}: ${point.text}`)].join("\n");
 }
 
-/** The error text of a failed summary request, from the route's `{ error }` body. */
-export async function summaryError(response: Response): Promise<string> {
+/** The error text of a failed summary request, from the route's `{ error }` body, with an AI failure's details. */
+export async function summaryError(response: Response): Promise<{ message: string; failure: AiErrorBody | null }> {
 	const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
-	return typeof body?.error === "string" ? body.error : "Kite could not summarize this. Try again.";
+	return {
+		message: typeof body?.error === "string" ? body.error : "Kite could not summarize this. Try again.",
+		failure: readAiErrorBody(body),
+	};
 }

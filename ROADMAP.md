@@ -93,6 +93,8 @@ Automatic reading of incoming mail, with suggestions and an audit log (item 2), 
 
 Bring mail from Gmail, Outlook, iCloud and other providers into Kite, keep new mail arriving, and reply from the same address. Kite stays the place where the mail lives; the other provider is a source, not a mirror.
 
+Phases 1 to 3 are specified in [docs/specs/external-accounts.md](docs/specs/external-accounts.md), with phase 4 (OAuth) designed there and sized separately.
+
 **Where it stands today.** Settings → Import copies one IMAP folder at a time as a background job (`src/lib/import/jobs.ts`, 200 messages per run), skips messages it already has by Message-ID, never marks anything read on the source server and erases the encrypted password when the job ends. Gaps:
 
 - Every imported inbound message arrives unread, and stars are lost.

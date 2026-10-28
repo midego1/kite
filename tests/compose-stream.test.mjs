@@ -232,11 +232,26 @@ test("a mailbox the user cannot send from answers 404, and a failed call keeps i
 		await createComposeStream(env, user, { mailboxId: "mailbox-a", mode: "rewrite", action: "grammar", text: "Helo" }),
 	);
 	// A short fixed message and a code; the provider's own text is neither sent nor logged.
-	assert.deepEqual(result.at(-1), {
-		type: "error",
-		error: "The AI provider could not finish this. Try again.",
-		code: "provider_400",
-	});
+	const failure = result.at(-1);
+	assert.deepEqual(
+		{ ...failure, details: { ...failure.details, at: undefined } },
+		{
+			type: "error",
+			error: "The AI provider refused the request (HTTP 400). Check the provider and model in Admin → Agent.",
+			code: "provider_rejected",
+			details: {
+				code: "provider_rejected",
+				feature: "compose",
+				model: "priced",
+				provider: "custom",
+				status: 400,
+				at: undefined,
+				retryable: false,
+				config: true,
+			},
+		},
+	);
+	assert.doesNotMatch(JSON.stringify(result), /model overloaded/);
 	const [row] = usage(db);
 	assert.equal(row.reserved, 0);
 	assert.ok(row.output_tokens > 0, "the estimate stays");
@@ -249,7 +264,8 @@ test("an answer cut off at the output budget is refused, with its spend settled"
 	const { db, env, user } = await setup(t);
 	finish = "length";
 	const result = await events(await createComposeStream(env, user, write()));
-	assert.deepEqual(result.at(-1), { type: "error", error: "The answer was cut off. Try again.", code: "cut_off" });
+	assert.equal(result.at(-1).code, "cut_off");
+	assert.match(result.at(-1).error, /^The AI's answer was cut off before it was finished\./);
 	assert.equal(
 		result.some((event) => event.type === "done"),
 		false,

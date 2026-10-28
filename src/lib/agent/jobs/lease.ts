@@ -1,7 +1,8 @@
 import { and, eq, lt, lte, or, sql } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { agentJobs } from "@/db/schema";
-import { agentProviderErrorMessage } from "../errors";
+import { reportAiFailure } from "../ai-errors";
+import { aiJobReason } from "../ai-error-utils";
 import { agentJobQueueMessage } from "../queue-utils";
 
 type AgentJobRow = typeof agentJobs.$inferSelect;
@@ -68,7 +69,7 @@ export async function skipAgentJob(db: AppDatabase, jobId: string, reason: strin
  * the third attempt. `job` is the row as it was before the claim. Returns the backoff in ms when
  * the job will run again, or null when it failed for good.
  */
-async function failAgentJob(db: AppDatabase, job: AgentJobRow, error: unknown): Promise<number | null> {
+async function failAgentJob(db: AppDatabase, job: AgentJobRow, reason: string): Promise<number | null> {
 	const attempts = job.attempts + 1;
 	const backoffMs = Math.min(60_000, 5_000 * 2 ** job.attempts);
 	const failed = attempts >= MAX_ATTEMPTS;
@@ -78,7 +79,7 @@ async function failAgentJob(db: AppDatabase, job: AgentJobRow, error: unknown): 
 			status: failed ? "failed" : "pending",
 			nextAttemptAt: new Date(Date.now() + backoffMs),
 			leaseUntil: null,
-			reason: agentProviderErrorMessage(error).slice(0, 300),
+			reason,
 		})
 		.where(eq(agentJobs.id, job.id));
 	return failed ? null : backoffMs;
@@ -89,7 +90,14 @@ async function failAgentJob(db: AppDatabase, job: AgentJobRow, error: unknown): 
  * not wait for the maintenance cron. A delivery that arrives early is refused by the claim.
  */
 export async function failAndRequeueAgentJob(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow, error: unknown) {
-	const backoffMs = await failAgentJob(db, job, error);
+	// The job keeps only the code (`ai_error:<code>`), which Activity puts in words; never the provider's text.
+	const failure = await reportAiFailure(error, {
+		env,
+		feature: job.kind === "triage" ? "auto_triage" : "auto_draft",
+		userId: job.reviewerUserId,
+		mailboxId: job.mailboxId,
+	});
+	const backoffMs = await failAgentJob(db, job, aiJobReason(failure.code));
 	if (backoffMs === null) return;
 	await env.AGENT_QUEUE?.send(agentJobQueueMessage(job.kind, job.id), {
 		delaySeconds: Math.ceil(backoffMs / 1000) + 1,

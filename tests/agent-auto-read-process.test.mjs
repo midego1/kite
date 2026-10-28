@@ -251,7 +251,8 @@ test("a length finish fails the attempt without parsing or repair, and the retry
 	const failed = jobOf(db, jobId);
 	assert.equal(failed.status, "pending");
 	assert.equal(failed.attempts, 1);
-	assert.match(failed.reason, /output tokens/);
+	// Only the code is stored; Activity puts it in words.
+	assert.equal(failed.reason, "ai_error:cut_off");
 	assert.ok(failed.nextAttemptAt >= before + 4 && failed.nextAttemptAt <= before + 6, "first backoff is 5 s");
 	assert.equal(requests.length, 1, "no repair request");
 	assert.deepEqual(suggestionsOf(db, messageId), []);
@@ -279,7 +280,7 @@ test("invalid output is repaired once per attempt and the job fails after three 
 	const job = jobOf(db, jobId);
 	assert.equal(job.status, "failed");
 	assert.equal(job.attempts, 3);
-	assert.match(job.reason, /valid triage object/);
+	assert.equal(job.reason, "ai_error:unusable_answer");
 	assert.equal(requests.length, 6);
 	assert.deepEqual(
 		requests.map(({ body }) => body.messages.at(-1).content.startsWith(REPAIR_MARKER)),
@@ -355,7 +356,7 @@ for (const reason of ["external_provider_not_allowed", "rate_limited", "spend_ca
 			}
 			await processAgentTriageJob(env, jobId);
 			assert.equal(jobOf(db, jobId).status, "completed");
-			assert.equal(jobOf(db, jobId).reason, reason);
+			assert.equal(jobOf(db, jobId).reason, reason === "model_failed" ? "model_failed:provider_unavailable" : reason);
 			const warnings = suggestionsOf(db, messageId);
 			assert.equal(warnings.length, 1, "only the deterministic warning is stored");
 			assert.equal(warnings[0].kind, "phishing");

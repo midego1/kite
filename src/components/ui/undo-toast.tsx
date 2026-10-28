@@ -1,6 +1,7 @@
 "use client";
 
 import toast from "react-hot-toast";
+import { TOAST_ACTION_CLASS } from "./toast-styles";
 
 const UNDO_TOAST_DURATION_MS = 8000;
 
@@ -12,7 +13,7 @@ export function showUndoToast(message: string, onUndo: () => Promise<void>) {
 				<span>{message}</span>
 				<button
 					type="button"
-					className="rounded-md px-2 py-1 font-semibold text-blue-600 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+					className={TOAST_ACTION_CLASS}
 					onClick={() => {
 						toast.dismiss(current.id);
 						void onUndo().catch(() => toast.error("Could not undo. Please try again."));

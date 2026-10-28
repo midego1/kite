@@ -66,6 +66,8 @@ interface CloudflareEnv {
 	ALERT_WEBHOOK_ALLOW_INSECURE?: string;
 	/** Dev/test only: "1" lets a custom AI provider be http://127.0.0.1 or http://localhost (the fake model); ignored in production. */
 	AI_ALLOW_INSECURE_LOOPBACK?: string;
+	/** Dev/test only, with AI_ALLOW_INSECURE_LOOPBACK: a shorter timeout (ms) for Summarize requests, so specs can make one time out; ignored in production. */
+	AI_TEST_TIMEOUT_MS?: string;
 	/** Dev/test only: "1" lets the remote image proxy fetch http://127.0.0.1 on any port (the e2e image server); ignored in production. */
 	REMOTE_IMAGES_ALLOW_LOOPBACK?: string;
 	/** Dev/test only: "1" or "true" lets an object store use plain http and loopback hosts (the fake S3, local MinIO); ignored in production. */

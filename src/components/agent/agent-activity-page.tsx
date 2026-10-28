@@ -4,6 +4,8 @@ import { useState } from "react";
 import { History } from "lucide-react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
+import { EmptyState, PanelHeader } from "@/components/ui/page";
+import { Select } from "@/components/ui/select";
 import { AgentActivity } from "./agent-activity";
 import { pickActivityMailbox } from "./agent-activity-utils";
 
@@ -15,39 +17,39 @@ export function AgentActivityPage() {
 	const mailboxId = pickActivityMailbox(mailboxes, chosen ?? selectedMailbox?.id);
 
 	return (
-		<div className="mx-auto w-full max-w-3xl space-y-4 overflow-y-auto p-6 max-md:p-4">
-			<div className="flex flex-wrap items-end justify-between gap-3">
-				<div>
-					<h1 className="flex items-center gap-2 text-2xl font-semibold text-neutral-900">
-						<History aria-hidden className="h-5 w-5 text-blue-600" />
-						Activity
-					</h1>
-					<p className="mt-1 text-sm text-neutral-600">What Kite and people did with Kite&apos;s suggestions.</p>
-				</div>
-				{mailboxes.length > 1 && (
-					<label className="text-sm text-neutral-700">
-						Mailbox
-						<select
-							className="ml-2 rounded-lg border border-neutral-200 bg-white p-1.5 outline-none focus:border-blue-400"
-							value={mailboxId ?? ""}
-							onChange={(event) => setChosen(event.target.value)}
-						>
-							{mailboxes.map((mailbox) => (
-								<option key={mailbox.id} value={mailbox.id}>
-									{mailbox.address}
-								</option>
-							))}
-						</select>
-					</label>
+		<div className="flex min-h-full flex-col">
+			<PanelHeader
+				icon={History}
+				title="Activity"
+				actions={
+					mailboxes.length > 1 && (
+						<label className="flex min-w-0 items-center gap-2 text-sm text-neutral-700">
+							{/* Phones keep the label for screen readers; a long address then truncates instead of overflowing. */}
+							<span className="max-sm:sr-only">Mailbox</span>
+							<Select
+								containerClassName="h-8 min-w-0 max-w-[min(16rem,55vw)]"
+								className="text-sm"
+								value={mailboxId ?? ""}
+								onChange={(event) => setChosen(event.target.value)}
+							>
+								{mailboxes.map((mailbox) => (
+									<option key={mailbox.id} value={mailbox.id}>
+										{mailbox.address}
+									</option>
+								))}
+							</Select>
+						</label>
+					)
+				}
+			/>
+			<div className="mx-auto w-full max-w-3xl space-y-4 p-6 max-md:p-4">
+				<p className="text-sm text-neutral-500">What Kite and people did with Kite&apos;s suggestions.</p>
+				{!loaded && <p className="text-sm text-neutral-500">Loading…</p>}
+				{loaded && !mailboxId && (
+					<EmptyState title="Only people with full access to a mailbox can see Kite's activity." />
 				)}
+				{mailboxId && <AgentActivity key={mailboxId} mailboxId={mailboxId} />}
 			</div>
-			{!loaded && <p className="text-sm text-neutral-500">Loading…</p>}
-			{loaded && !mailboxId && (
-				<p className="rounded-lg border border-dashed border-neutral-200 px-4 py-6 text-center text-sm text-neutral-500">
-					Only people with full access to a mailbox can see Kite&apos;s activity.
-				</p>
-			)}
-			{mailboxId && <AgentActivity key={mailboxId} mailboxId={mailboxId} />}
 		</div>
 	);
 }

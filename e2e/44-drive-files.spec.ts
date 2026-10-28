@@ -171,6 +171,30 @@ test("Save to Drive from a message attachment puts it in the chosen folder, and 
 	}
 });
 
+test("Drive's menu leads back to the inbox in one click, also as the icon rail", async ({ browser }) => {
+	const admin = await apiContext(STORAGE_STATE);
+	const account = await driveAccount(admin, "drvback");
+	const { context, page } = await signedInPage(browser, account);
+	try {
+		await page.goto("/drive");
+		const menu = page.getByRole("group", { name: "Mail" });
+		await menu.getByRole("link", { name: "Inbox" }).click();
+		await expect(page).toHaveURL(/\/inbox$/);
+
+		await page.goto("/drive");
+		await page.getByRole("button", { name: "Collapse menu" }).click();
+		await expect(page.getByRole("button", { name: "Expand menu" })).toBeVisible();
+		const railInbox = page.getByRole("group", { name: "Mail" }).getByRole("link", { name: "Inbox" });
+		await expect(railInbox).toHaveAttribute("title", "Inbox");
+		await railInbox.click();
+		await expect(page).toHaveURL(/\/inbox$/);
+		await page.getByRole("button", { name: "Expand menu" }).click();
+	} finally {
+		await context.close();
+		await admin.dispose();
+	}
+});
+
 test("a storage override refuses an upload that does not fit, and the sidebar shows the usage", async ({ browser }) => {
 	test.setTimeout(120_000);
 	const admin = await apiContext(STORAGE_STATE);

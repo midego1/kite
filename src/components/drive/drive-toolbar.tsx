@@ -10,22 +10,22 @@ import type { DriveCommand } from "./drive-utils";
 import { folderHref } from "./drive-utils";
 
 export function DriveBreadcrumbs({ title, rootHref, path }: { title: string; rootHref: string; path: DriveCrumb[] }) {
-	if (!path.length) return <h1 className="px-2 py-1 text-xl font-normal text-neutral-800 max-md:text-lg">{title}</h1>;
+	if (!path.length) return <h1 className="truncate px-1 text-base font-medium text-neutral-900">{title}</h1>;
 	return (
-		<nav
-			aria-label="Folder path"
-			className="flex min-w-0 flex-wrap items-center gap-1 text-xl text-neutral-800 max-md:text-lg"
-		>
-			<Link href={rootHref} className="rounded-full px-2 py-1 hover:bg-neutral-100">
+		<nav aria-label="Folder path" className="flex min-w-0 flex-wrap items-center gap-0.5 text-base text-neutral-500">
+			<Link href={rootHref} className="rounded-md px-1.5 py-0.5 hover:bg-neutral-100 hover:text-neutral-900">
 				{title}
 			</Link>
 			{path.map((crumb, index) => (
 				<span key={crumb.id} className="flex min-w-0 items-center gap-1">
-					<ChevronRight size={18} className="shrink-0 text-neutral-500" aria-hidden="true" />
+					<ChevronRight size={16} className="shrink-0 text-neutral-400" aria-hidden="true" />
 					{index === path.length - 1 ? (
-						<h1 className="truncate px-2 py-1 font-normal">{crumb.name}</h1>
+						<h1 className="truncate px-1.5 py-0.5 font-medium text-neutral-900">{crumb.name}</h1>
 					) : (
-						<Link href={folderHref(crumb.id)} className="truncate rounded-full px-2 py-1 hover:bg-neutral-100">
+						<Link
+							href={folderHref(crumb.id)}
+							className="truncate rounded-md px-1.5 py-0.5 hover:bg-neutral-100 hover:text-neutral-900"
+						>
 							{crumb.name}
 						</Link>
 					)}
@@ -39,15 +39,15 @@ export function DriveCreateButtons({ onCommand }: { onCommand: (command: DriveCo
 	return (
 		<div className="flex flex-wrap items-center gap-2">
 			<Button type="button" size="sm" variant="outline" onClick={() => onCommand("new-folder")}>
-				<FolderPlus size={16} className="mr-1.5" />
+				<FolderPlus size={16} />
 				New folder
 			</Button>
 			<Button type="button" size="sm" variant="outline" onClick={() => onCommand("upload-files")}>
-				<Upload size={16} className="mr-1.5" />
+				<Upload size={16} />
 				Upload files
 			</Button>
 			<Button type="button" size="sm" variant="outline" onClick={() => onCommand("upload-folder")}>
-				<FolderUp size={16} className="mr-1.5" />
+				<FolderUp size={16} />
 				Upload folder
 			</Button>
 		</div>
@@ -74,10 +74,10 @@ export function DriveTypeChips({
 						aria-pressed={active}
 						onClick={() => toggle(category)}
 						className={clsx(
-							"h-8 rounded-full border px-3 text-xs font-medium transition-colors",
+							"h-8 rounded-lg px-3 text-xs font-medium transition-colors",
 							active
-								? "border-blue-200 bg-blue-100 text-blue-900"
-								: "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100",
+								? "bg-blue-600 text-white"
+								: "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900",
 						)}
 					>
 						{DRIVE_CATEGORY_LABELS[category]}
@@ -112,17 +112,17 @@ export function DriveBulkBar({
 		<div
 			role="toolbar"
 			aria-label="Selected items"
-			className="flex flex-wrap items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-sm text-blue-900"
+			className="flex flex-wrap items-center gap-1 rounded-lg bg-blue-50 px-1 py-0.5 text-sm text-blue-900"
 		>
 			<button
 				type="button"
 				onClick={handlers.onClear}
 				aria-label="Clear selection"
-				className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-blue-100"
+				className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-blue-100"
 			>
 				<X size={16} />
 			</button>
-			<span className="pr-2">{selected.length} selected</span>
+			<span className="pr-2 font-medium">{selected.length} selected</span>
 			{inTrash ? (
 				<>
 					<BulkButton icon={RotateCcw} label="Restore" onClick={handlers.onRestore} />
@@ -144,7 +144,7 @@ function BulkButton({ icon: Icon, label, onClick }: { icon: typeof X; label: str
 		<button
 			type="button"
 			onClick={onClick}
-			className="flex h-8 items-center gap-1.5 rounded-full px-3 hover:bg-blue-100"
+			className="flex h-8 items-center gap-1.5 rounded-md px-2.5 hover:bg-blue-100"
 		>
 			<Icon size={15} />
 			{label}

@@ -3,6 +3,7 @@
 import type { CurrencyTotal } from "@/lib/finance/totals-utils";
 import type { SubscriptionItem } from "./subscriptions-types";
 import { costLines, paidLines, unpricedCount } from "./subscriptions-utils";
+import { CARD_CLASS } from "@/components/ui/page-utils";
 
 /** Monthly and yearly cost per currency (never converted) and what the ledger says was paid in 12 months. */
 export function SubscriptionTotals({
@@ -21,9 +22,9 @@ export function SubscriptionTotals({
 	);
 	const unpriced = unpricedCount(items);
 	return (
-		<section className="grid gap-4 rounded-3xl bg-white p-5 sm:grid-cols-2" data-finance-totals>
+		<section className={`grid gap-4 ${CARD_CLASS} p-5 sm:grid-cols-2`} data-finance-totals>
 			<div className="min-w-0 space-y-1">
-				<h2 className="text-xs font-medium uppercase tracking-wide text-neutral-500">Cost of active subscriptions</h2>
+				<h2 className="text-xs font-medium text-neutral-500">Cost of active subscriptions</h2>
 				{costs.length === 0 && <p className="text-sm text-neutral-600">Nothing with a price yet</p>}
 				{costs.map((line) => (
 					<div key={line.currency} data-finance-cost={line.currency}>
@@ -42,7 +43,7 @@ export function SubscriptionTotals({
 				)}
 			</div>
 			<div className="min-w-0 space-y-1">
-				<h2 className="text-xs font-medium uppercase tracking-wide text-neutral-500">Paid in the last 12 months</h2>
+				<h2 className="text-xs font-medium text-neutral-500">Paid in the last 12 months</h2>
 				{paid.length === 0 && <p className="text-sm text-neutral-600">Nothing recorded yet</p>}
 				{paid.map((line) => (
 					<p

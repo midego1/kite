@@ -161,6 +161,25 @@ for (const [name, appearance] of [
 	});
 }
 
+// The pages around the mail: what Kite noticed, subscriptions, files and booking events.
+for (const [name, path, ready, appearance] of [
+	["for-you", "/for-you", "What Kite noticed in your mail.", {}],
+	["for-you-dark", "/for-you", "What Kite noticed in your mail.", { theme: "dark" }],
+	["finance", "/finance", "Paid in the last 12 months", {}],
+	["finance-dark", "/finance", "Paid in the last 12 months", { theme: "dark" }],
+	["drive", "/drive", "My Drive", {}],
+	["drive-dark", "/drive", "My Drive", { theme: "dark" }],
+	["booking", "/booking", "Set the meetings people can book with you.", {}],
+	["booking-dark", "/booking", "Set the meetings people can book with you.", { theme: "dark" }],
+] as const) {
+	test(name, async ({ browser }) => {
+		const page = await open(browser, appearance);
+		await page.goto(path);
+		await expect(page.getByRole("main").getByText(ready, { exact: false }).first()).toBeVisible();
+		await capture(page, `pages/${name}`);
+	});
+}
+
 test("command-palette", async ({ browser }) => {
 	const page = await open(browser);
 	await page.goto("/inbox");

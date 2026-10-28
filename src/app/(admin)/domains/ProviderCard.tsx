@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { AlertTriangle, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { ROW_BUTTON_CLASS } from "./utils";
 
 type Props = {
 	title: string;
@@ -60,7 +61,7 @@ export default function ProviderCard({
 					<Button
 						size="sm"
 						variant="outline"
-						className="bg-white"
+						className={ROW_BUTTON_CLASS}
 						disabled={cleanup.busy || cleanup.disabled}
 						onClick={cleanup.onClick}
 					>

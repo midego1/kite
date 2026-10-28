@@ -21,12 +21,14 @@ export function getDnsAuthStatusLabel(status: DnsAuthStatus): string {
 	}
 }
 
+export { ROW_BUTTON_CLASS } from "@/components/ui/page-utils";
+
 export function getDnsAuthItemClass(status: DnsAuthStatus): string {
 	switch (status) {
 		case "ok":
-			return "bg-green-50 text-green-800";
+			return "bg-[#22c55e]/10";
 		case "missing":
-			return "bg-red-50 text-red-800";
+			return "bg-[#ef4444]/10";
 		default:
 			return "bg-neutral-100 text-neutral-600";
 	}

@@ -6,6 +6,7 @@ import { authFetch } from "@/lib/auth/client";
 import type { ResendDomainView } from "@/lib/domains/resend-domain-types";
 import ResendKeyRow from "./ResendKeyRow";
 import { StatusRow } from "./status-row";
+import { ROW_BUTTON_CLASS } from "./utils";
 
 type ResendResponse = {
 	keyConfigured?: boolean;
@@ -151,7 +152,7 @@ export default function ResendDomainSection({
 								<Button
 									size="sm"
 									variant="outline"
-									className="bg-white"
+									className={ROW_BUTTON_CLASS}
 									disabled={busy !== null}
 									onClick={() => void sendTest()}
 								>
@@ -161,7 +162,7 @@ export default function ResendDomainSection({
 								<Button
 									size="sm"
 									variant="outline"
-									className="bg-white"
+									className={ROW_BUTTON_CLASS}
 									disabled={!canManage || busy !== null}
 									title={canManage ? undefined : needsFullKey}
 									onClick={() =>

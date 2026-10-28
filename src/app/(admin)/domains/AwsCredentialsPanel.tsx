@@ -8,6 +8,7 @@ import { ApiError, requestJson } from "./api";
 import { missingPermissionsReport, refusedAwsSave } from "./aws-credentials-panel-utils";
 import { StatusRow } from "./status-row";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { ROW_BUTTON_CLASS } from "./utils";
 
 type Props = {
 	/** Which capabilities the caller needs, so only those rows are shown. */
@@ -155,7 +156,7 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 								<Button
 									size="sm"
 									variant="outline"
-									className="bg-white"
+									className={ROW_BUTTON_CLASS}
 									disabled={busy !== null}
 									onClick={() => void check()}
 								>
@@ -165,7 +166,7 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 									<Button
 										size="sm"
 										variant="outline"
-										className="bg-white"
+										className={ROW_BUTTON_CLASS}
 										disabled={busy !== null}
 										onClick={() => {
 											setEditing(true);
@@ -180,7 +181,7 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 									<Button
 										size="sm"
 										variant="outline"
-										className="bg-white"
+										className={ROW_BUTTON_CLASS}
 										disabled={busy !== null}
 										onClick={() => void remove()}
 									>
@@ -242,7 +243,7 @@ export default function AwsCredentialsPanel({ need, onChanged }: Props) {
 										type="button"
 										size="sm"
 										variant="outline"
-										className="bg-white"
+										className={ROW_BUTTON_CLASS}
 										onClick={() => {
 											setEditing(false);
 											setError("");

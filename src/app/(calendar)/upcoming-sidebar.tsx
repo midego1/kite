@@ -99,12 +99,12 @@ export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }
 		</div>
 	);
 	const list = !minimal && (
-		<div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain rounded-t-3xl px-5 py-5">
+		<div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain px-4 py-4">
 			{awaiting ? (
 				SKELETON
 			) : groups.length === 0 ? (
 				<div>
-					<h2 className="text-lg font-semibold text-neutral-900">Upcoming</h2>
+					<h2 className="text-base font-medium text-neutral-900">Upcoming</h2>
 					<p className="mt-4 text-sm text-neutral-500">
 						{loadError ? "Could not load upcoming events." : "No upcoming events."}
 					</p>
@@ -112,7 +112,7 @@ export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }
 			) : (
 				visibleGroups.map((group) => (
 					<section key={group.key} className="mb-6 last:mb-0">
-						<h2 className="sticky -top-5 z-10 -mx-5 mb-2 bg-white px-5 py-2 text-base font-semibold text-neutral-900">
+						<h2 className="sticky -top-4 z-10 -mx-4 mb-2 bg-white px-4 py-2 text-xs font-medium text-neutral-500">
 							{group.label}
 						</h2>
 						<div className="space-y-2">
@@ -163,8 +163,10 @@ export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }
 	return (
 		<aside
 			className={clsx(
-				"relative shrink-0 rounded-t-3xl bg-white transition-[width,max-height] duration-200 ease-in-out motion-reduce:transition-none lg:h-full lg:max-h-none",
-				minimal ? "w-0 max-h-0" : "w-full max-h-[36vh] lg:w-[var(--sidebar-width)]",
+				"relative shrink-0 overflow-hidden bg-white transition-[width,max-height] duration-200 ease-in-out motion-reduce:transition-none lg:h-full lg:max-h-none md:rounded-xl",
+				minimal
+					? "w-0 max-h-0"
+					: "w-full max-h-[36vh] md:border md:border-neutral-200 md:shadow-xs lg:w-[var(--sidebar-width)]",
 			)}
 			aria-hidden={minimal}
 		>

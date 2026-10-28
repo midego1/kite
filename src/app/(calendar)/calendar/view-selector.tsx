@@ -1,5 +1,6 @@
-import { Check, ChevronDown } from "lucide-react";
+import { Check } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Select } from "@/components/ui/select";
 import type { CalendarView } from "./types";
 
 type Props = { value: CalendarView; onChange: (view: CalendarView) => void };
@@ -20,20 +21,18 @@ export function CalendarViewOptions({ value, onChange }: Props) {
 
 export function CalendarViewSelect({ value, onChange }: Props) {
 	return (
-		<div className="relative max-md:hidden">
-			<select
-				value={value}
-				onChange={(event) => onChange(event.target.value as CalendarView)}
-				aria-label="Calendar view"
-				className="h-10 appearance-none rounded-full border-0 bg-white pl-4 pr-10 text-sm font-medium capitalize text-neutral-700 hover:bg-neutral-50"
-			>
-				{views.map((view) => (
-					<option key={view} value={view} className="capitalize">
-						{view}
-					</option>
-				))}
-			</select>
-			<ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-600" />
-		</div>
+		<Select
+			value={value}
+			onChange={(event) => onChange(event.target.value as CalendarView)}
+			aria-label="Calendar view"
+			containerClassName="h-8 bg-white max-md:hidden"
+			className="text-sm font-medium text-neutral-700"
+		>
+			{views.map((view) => (
+				<option key={view} value={view}>
+					{view.charAt(0).toUpperCase() + view.slice(1)}
+				</option>
+			))}
+		</Select>
 	);
 }

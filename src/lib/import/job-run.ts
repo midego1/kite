@@ -40,6 +40,8 @@ export type ImportRun = {
 	progress: { processed: number; imported: number; skipped: number };
 	total: number | null;
 	errors: string[];
+	/** Shown on a job that completes with something left out (an account job's failed folders). */
+	finishNote: string | null;
 };
 
 /** `done`: nothing left; `more`: enqueue the next invocation; `stopped`: cancelled, paused or out of the run. */
@@ -103,7 +105,9 @@ export function addChunkResult(run: ImportRun, handled: number, result: HostImpo
 
 /**
  * Saves a finished chunk. The progress is kept also when the job was paused meanwhile (its cursor must not go back);
- * false when the job is no longer running or paused itself because the database is full.
+ * false when the job is no longer running or paused itself because the database is full. A job paused and resumed
+ * while this run held its lease is pending again: the run takes it back and goes on, since a user pause keeps the
+ * lease and no other run could start it meanwhile.
  */
 export async function recordChunk(
 	env: CloudflareEnv,
@@ -122,29 +126,38 @@ export async function recordChunk(
 	const [row] = await db
 		.update(importJobs)
 		.set({ ...fields, errors: JSON.stringify(errors) })
-		.where(and(eq(importJobs.id, job.id), inArray(importJobs.status, ["running", "paused"])))
+		.where(and(eq(importJobs.id, job.id), inArray(importJobs.status, ["running", "paused", "pending"])))
 		.returning({ status: importJobs.status });
-	if (row?.status !== "running") return false;
-	await db
+	if (row?.status !== "running" && row?.status !== "pending") return false;
+	const [held] = await db
 		.update(importJobs)
-		.set({ leaseUntil: new Date(Date.now() + LEASE_MS), updatedAt: new Date() })
-		.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")));
+		.set({ status: "running", leaseUntil: new Date(Date.now() + LEASE_MS), updatedAt: new Date() })
+		.where(and(eq(importJobs.id, job.id), inArray(importJobs.status, ["running", "pending"])))
+		.returning({ id: importJobs.id });
+	if (!held) return false;
 	return !(await pauseIfDatabaseFull(env, job));
 }
 
 /**
  * Sets a job paused with its reason. `pause_reason` and `paused_at` arrive with migration 0076; before it the status
- * alone is written, which is all that pausing needs.
+ * alone is written, which is all that pausing needs. `keepLease` leaves a running batch's lease in place, so a quick
+ * Resume cannot start a second run next to it; the run releases the lease when it stops (`releaseImportLease`).
  */
 export async function markPaused(
 	env: CloudflareEnv,
 	where: ReturnType<typeof and>,
 	fields: Partial<typeof importJobs.$inferInsert> & { pauseReason: string },
+	options: { keepLease?: boolean } = {},
 ): Promise<boolean> {
 	const db = getDb(env);
 	const now = new Date();
 	const { pauseReason, ...rest } = fields;
-	const base = { ...rest, status: "paused" as const, leaseUntil: null, updatedAt: now };
+	const base = {
+		...rest,
+		status: "paused" as const,
+		...(options.keepLease ? {} : { leaseUntil: null }),
+		updatedAt: now,
+	};
 	try {
 		const rows = await db
 			.update(importJobs)

@@ -19,6 +19,8 @@ export type AccountFolderRequest = {
 	sourceName: string;
 	role: ImportFolderRole;
 	destination: string;
+	/** The message count the plan reported, as the folder's first total; null when unknown. Advisory only. */
+	messages: number | null;
 	/** The size the plan reported, for the job's estimate; null when the server did not say. */
 	bytes: number | null;
 };

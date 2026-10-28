@@ -19,6 +19,7 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  * - `specialUse`: advertise SPECIAL-USE and report `folderAttributes` (`{ [name]: ["\\Sent"] }`) in LIST.
  * - `statusSize`: advertise STATUS=SIZE. `delimiter`: the hierarchy delimiter (default `/`).
  * - `fetchDelayMs`: answer every UID FETCH that much later (a slow server, so a test can pause mid-run).
+ * - `examineRefusals`: `{ [folder]: "NO [THROTTLED] …" }`, the tagged answer to SELECT or EXAMINE of that folder.
  * - `gmail`: advertise X-GM-EXT-1 and report each message's `labels` in FETCH when asked for X-GM-LABELS.
  * - `users`: `{ [username]: password }`. `LOGIN` takes quoted strings or synchronizing literals.
  * - Misbehaviour: `hugeLiteral` (a FETCH announcing a 4 GB literal), `endlessLine` (a greeting that never ends),
@@ -215,6 +216,8 @@ export async function startFakeImap(options = {}) {
 			}
 			if (name === "SELECT" || name === "EXAMINE") {
 				const [folder] = parseQuoted(args);
+				const refusal = options.examineRefusals?.[folder];
+				if (refusal) return send(`${tag} ${refusal}\r\n`);
 				const entry = folders.get(folder);
 				if (!entry) return send(`${tag} NO [NONEXISTENT] No such folder\r\n`);
 				state.selected = folder;

@@ -117,7 +117,7 @@ Imports run newest first, so replies are stored before their parents and convers
 ### 4.5 Progress, pause and resume
 
 - Progress per folder (`total`, `processed`, `imported`, `skipped`, bytes) and for the job, polled by the existing jobs panel (`src/components/settings/import-jobs-panel.tsx`) every few seconds while a job is active.
-- **Pause** sets `status = 'paused'` and keeps the sealed password, the per-folder cursors and the lease free; **Resume** sets it back to `pending` and enqueues it. **Cancel** works as today and erases the password.
+- **Pause** sets `status = 'paused'` and keeps the sealed password and the per-folder cursors; a batch that is running keeps its lease until it stops and then releases it (`releaseImportLease`). **Resume** sets the job back to `pending` and enqueues it, leaving any live lease alone: a run still holding it takes the job back at its next chunk (`recordChunk`), and the queued run meets the lease and leaves, so a quick Pause and Resume never run two batches side by side. **Cancel** works as today and erases the password.
 - A job also pauses itself, with a `pause_reason`, when the database crosses the stop threshold (§5.2) or when the module is turned off (today's behaviour, now visible as "Paused: Mail import is off").
 - A paused job keeps its sealed password. To bound that, a job paused for more than 7 days is cancelled by `resumeStalledImports` (password erased, reason shown); the user starts it again and dedupe skips what is done.
 

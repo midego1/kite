@@ -12,13 +12,15 @@ const {
 	gmailLabelDestination,
 	flattenFolderName,
 	parseAccountFolderRequest,
+	isFolderRefusal,
+	advisoryCount,
 } = await bundleModules("kite-import-folder-mapping-", [
 	[
 		"parseListLine, parseStatusLine, parseUidValidity, parseGmailLabels, decodeModifiedUtf7",
 		"src/lib/imap/protocol-utils.ts",
 	],
 	[
-		"planAccountFolders, gmailLabelDestination, flattenFolderName, parseAccountFolderRequest",
+		"planAccountFolders, gmailLabelDestination, flattenFolderName, parseAccountFolderRequest, isFolderRefusal, advisoryCount",
 		"src/lib/import/folder-mapping-utils.ts",
 	],
 ]);
@@ -184,19 +186,19 @@ test("a Gmail message goes by Inbox, then Sent, then its first user label, else 
 
 test("account job requests keep the included folders and refuse anything else", () => {
 	const folders = parseAccountFolderRequest([
-		{ sourceName: "INBOX", role: "inbox", destination: "system:inbox", include: true, bytes: 1200 },
+		{ sourceName: "INBOX", role: "inbox", destination: "system:inbox", include: true, bytes: 1200, messages: 12 },
 		{ sourceName: "Junk", role: "junk", destination: "system:spam", include: false },
-		{ sourceName: "Work", role: "user", destination: "new:Work", bytes: "x" },
+		{ sourceName: "Work", role: "user", destination: "new:Work", bytes: "x", messages: null },
 		{ sourceName: "Clients", role: "user", destination: "folder:fld_abc-1" },
 		{ sourceName: "[Gmail]/All Mail", role: "all", destination: "gmail:labels" },
 	]);
 	assert.deepEqual(
-		folders.map(({ sourceName, destination, bytes }) => [sourceName, destination, bytes]),
+		folders.map(({ sourceName, destination, bytes, messages }) => [sourceName, destination, bytes, messages]),
 		[
-			["INBOX", "system:inbox", 1200],
-			["Work", "new:Work", null],
-			["Clients", "folder:fld_abc-1", null],
-			["[Gmail]/All Mail", "gmail:labels", null],
+			["INBOX", "system:inbox", 1200, 12],
+			["Work", "new:Work", null, null],
+			["Clients", "folder:fld_abc-1", null, null],
+			["[Gmail]/All Mail", "gmail:labels", null, null],
 		],
 	);
 	for (const [entry, message] of [
@@ -214,4 +216,38 @@ test("account job requests keep the included folders and refuse anything else", 
 		/at least one/,
 	);
 	assert.throws(() => parseAccountFolderRequest(Array.from({ length: 501 }, () => ({}))), /at most 500/);
+});
+
+test("a count the client sends back is a whole number or unknown, never 0 for a missing one", () => {
+	assert.equal(advisoryCount(12.7), 12);
+	assert.equal(advisoryCount(0), 0);
+	for (const value of [null, undefined, "12", -1, Number.NaN, Number.POSITIVE_INFINITY, {}])
+		assert.equal(advisoryCount(value), null, String(value));
+});
+
+test("only a plain NO or BAD, [NONEXISTENT] or [CANNOT] fails a folder; transient refusals are retried", () => {
+	const failure = (line) => new Error(`IMAP command failed: ${line}`);
+	for (const line of [
+		"NO [NONEXISTENT] No such folder",
+		"NO [CANNOT] Folder is not selectable",
+		"NO Mailbox does not exist",
+		"BAD Invalid mailbox name",
+		"no [nonexistent] lower case",
+	])
+		assert.equal(isFolderRefusal(failure(line)), true, line);
+	for (const line of [
+		"NO [THROTTLED] Slow down",
+		"NO [UNAVAILABLE] Backend down",
+		"NO [LIMIT] Too many folders open",
+		"NO [AUTHENTICATIONFAILED] Session expired",
+		"NO [INUSE] Mailbox in use",
+		"NO [SERVERBUG] Oops",
+		"NO [ALERT] Server busy",
+		"NO Too many simultaneous connections. (Failure)",
+		"BAD Try again later",
+	])
+		assert.equal(isFolderRefusal(failure(line)), false, line);
+	assert.equal(isFolderRefusal(new Error("IMAP connection timed out")), false);
+	assert.equal(isFolderRefusal(new Error("IMAP command failed: OK? unexpected")), false);
+	assert.equal(isFolderRefusal("NO [NONEXISTENT]"), false);
 });

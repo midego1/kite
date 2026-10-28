@@ -1,13 +1,14 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
-import { getDb } from "@/db";
+import { and, asc, eq, getTableColumns, inArray } from "drizzle-orm";
+import { getDb, type AppDatabase } from "@/db";
+import { D1_MAX_BOUND_PARAMETERS, chunkArray, runInChunks } from "@/db/chunk-utils";
 import { folders as kiteFolders } from "@/db/schema";
 import { importJobFolders } from "@/db/schema/import-jobs";
 import { newId } from "@/lib/ids";
 import { encodeRawMime } from "@/lib/email/module-import-utils";
 import type { HostImportMessage, HostImportResult } from "@/lib/modules/host-types";
 import { ensureImportFolder } from "./folders";
-import { GMAIL_LABELS_DESTINATION, gmailLabelDestination } from "./folder-mapping-utils";
-import type { ImportFolderRole } from "./folder-mapping-types";
+import { GMAIL_LABELS_DESTINATION, gmailLabelDestination, isFolderRefusal } from "./folder-mapping-utils";
+import type { AccountFolderRequest } from "./folder-mapping-types";
 import { hostImportMessageFromImap, selectRemainingUids } from "./imap-utils";
 import {
 	addChunkResult,
@@ -31,6 +32,13 @@ export class ImportMigrationPendingError extends Error {
 	}
 }
 
+/** A new account job could not be saved with its folders; nothing of it was kept. */
+export class ImportJobSaveError extends Error {
+	constructor() {
+		super("The import could not be saved. Try again.");
+	}
+}
+
 /** Throws `ImportMigrationPendingError` while the folder table is missing. */
 export async function assertAccountImportsReady(env: CloudflareEnv): Promise<void> {
 	try {
@@ -40,13 +48,16 @@ export async function assertAccountImportsReady(env: CloudflareEnv): Promise<voi
 	}
 }
 
-/** Saves the folders of a new account job in order; D1 binds at most 100 parameters per statement. */
-export async function insertJobFolders(
-	env: CloudflareEnv,
-	jobId: string,
-	folders: { sourceName: string; role: ImportFolderRole; destination: string; bytes: number | null }[],
-): Promise<void> {
-	const now = new Date();
+/**
+ * @public Exercised by the unit tests. Rows per `import_job_folders` insert. Drizzle binds a parameter for every column it has a value or a default for,
+ * so a row costs at most one per column and this many rows stay within D1's 100 bound parameters.
+ */
+export const JOB_FOLDER_ROWS_PER_INSERT = Math.floor(
+	D1_MAX_BOUND_PARAMETERS / Object.keys(getTableColumns(importJobFolders)).length,
+);
+
+/** @public Exercised by the unit tests. The insert statements for a new account job's folders, in order. */
+export function jobFolderInserts(db: AppDatabase, jobId: string, folders: AccountFolderRequest[], now = new Date()) {
 	const rows = folders.map((folder, position) => ({
 		id: newId("ijf"),
 		jobId,
@@ -54,13 +65,17 @@ export async function insertJobFolders(
 		sourceName: folder.sourceName,
 		role: folder.role,
 		destination: folder.destination,
+		// The plan's count, so the job's progress bar has a total before the run examines each folder.
+		total: folder.messages,
 		totalBytes: folder.bytes,
 		updatedAt: now,
 	}));
-	for (let index = 0; index < rows.length; index += 10)
-		await getDb(env)
-			.insert(importJobFolders)
-			.values(rows.slice(index, index + 10));
+	return chunkArray(rows, JOB_FOLDER_ROWS_PER_INSERT).map((part) => db.insert(importJobFolders).values(part));
+}
+
+/** Saves the folders of a new account job in order. */
+export async function insertJobFolders(env: CloudflareEnv, jobId: string, folders: AccountFolderRequest[]) {
+	for (const insert of jobFolderInserts(getDb(env), jobId, folders)) await insert;
 }
 
 /** The folders of these jobs by job id, in order; empty before migration 0076. */
@@ -130,10 +145,6 @@ async function updateFolder(env: CloudflareEnv, folder: ImportJobFolderRow, fiel
 		.where(eq(importJobFolders.id, folder.id));
 }
 
-/** A NO or BAD to EXAMINE (the folder is gone or not selectable) fails that folder, not the whole job. */
-const isFolderRefusal = (error: unknown) =>
-	error instanceof Error && /^IMAP command failed: (NO|BAD)\b/.test(error.message);
-
 /**
  * One invocation of a whole-account job (spec §4.1): its folders one after another on the job's lease, each from
  * its own cursor, until the run's budget or time is spent.
@@ -148,6 +159,9 @@ export async function runAccountJob(run: ImportRun): Promise<ImportRunOutcome> {
 		if (outcome !== "next") return outcome;
 	}
 	run.total = jobTotal(folders);
+	const failed = folders.filter((folder) => folder.status === "failed").length;
+	// The job completes, but not as if every folder had been copied: the jobs list shows this under it.
+	if (failed) run.finishNote = `${failed} folder${failed === 1 ? "" : "s"} could not be imported`;
 	return "done";
 }
 
@@ -245,9 +259,13 @@ async function labelDestination(run: ImportRun, cache: Map<string, string>, dest
 }
 
 /** The job row's own fields of a new account job, before its folders are inserted. */
-export function accountJobFields(options: { gmail: boolean; estimateBytes: number | null }) {
+export function accountJobFields(options: { gmail: boolean; estimateBytes: number | null; total: number | null }) {
 	return {
 		scope: "account" as const,
+		// The plan's counts until the run has examined the folders.
+		total: options.total,
+		// Placeholders for the NOT NULL columns of a folder job: an account job reads its source folders and their
+		// destinations from `import_job_folders`, never from these.
 		folder: "",
 		destination: "account",
 		options: JSON.stringify({ gmail: options.gmail }),
@@ -255,11 +273,13 @@ export function accountJobFields(options: { gmail: boolean; estimateBytes: numbe
 	};
 }
 
-/** Marks every unfinished folder of a job as skipped, when the job ends without them. */
-export async function closeOpenFolders(env: CloudflareEnv, jobId: string): Promise<void> {
-	await getDb(env)
-		.update(importJobFolders)
-		.set({ status: "skipped", updatedAt: new Date() })
-		.where(and(eq(importJobFolders.jobId, jobId), inArray(importJobFolders.status, ["pending", "running"])))
-		.catch(() => undefined);
+/** Marks every unfinished folder of these jobs as skipped, when the jobs end without them. */
+export async function closeOpenFolders(env: CloudflareEnv, jobIds: string[]): Promise<void> {
+	await runInChunks(jobIds, (ids) =>
+		getDb(env)
+			.update(importJobFolders)
+			.set({ status: "skipped", updatedAt: new Date() })
+			.where(and(inArray(importJobFolders.jobId, ids), inArray(importJobFolders.status, ["pending", "running"])))
+			.catch(() => undefined),
+	);
 }

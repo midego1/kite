@@ -192,6 +192,34 @@ function parseFolderEntry(entry: Record<string, unknown>): AccountFolderRequest 
 		/^new:.{1,80}$/su.test(destination) ||
 		(destination === GMAIL_LABELS_DESTINATION && role === "all");
 	if (!valid) throw new Error(`Choose where ${sourceName} goes`);
-	const bytes = Number(entry.bytes);
-	return { sourceName, role, destination, bytes: Number.isFinite(bytes) && bytes >= 0 ? Math.floor(bytes) : null };
+	return { sourceName, role, destination, messages: advisoryCount(entry.messages), bytes: advisoryCount(entry.bytes) };
+}
+
+/**
+ * @public Exercised by the unit tests. A count the plan reported and the client sent back: a whole number, or null when it is missing or not a number
+ * (never 0, which would read as an empty folder). These counts are advisory: they feed the size estimate and the
+ * progress bar, while the run counts what the server holds and the size guard checks the database as it goes.
+ */
+export function advisoryCount(value: unknown): number | null {
+	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
+}
+
+/**
+ * Response codes (RFC 5530) that mean the folder itself cannot be read; anything else in a NO or BAD (throttling,
+ * a server that is busy, too many connections, failed sign-in) may pass, so the run is retried instead.
+ */
+const FOLDER_REFUSAL_CODES = new Set(["NONEXISTENT", "CANNOT"]);
+const TRANSIENT_REFUSAL = /too many (simultaneous )?connections|try again later/i;
+
+/**
+ * Whether an EXAMINE failure fails only that folder of an account job: a NO or BAD with no response code, or with
+ * `[NONEXISTENT]` or `[CANNOT]`. A transient code or text is not, and is rethrown so the run is retried with backoff.
+ */
+export function isFolderRefusal(error: unknown): boolean {
+	if (!(error instanceof Error)) return false;
+	const match = /^IMAP command failed: (?:NO|BAD)\b\s*(?:\[([A-Z-]+)[^\]]*\])?(.*)$/is.exec(error.message);
+	if (!match) return false;
+	const [, code, text] = match;
+	if (code) return FOLDER_REFUSAL_CODES.has(code.toUpperCase());
+	return !TRANSIENT_REFUSAL.test(text);
 }

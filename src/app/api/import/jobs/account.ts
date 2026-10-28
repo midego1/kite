@@ -1,5 +1,5 @@
 import { getDb } from "@/db";
-import { ImportMigrationPendingError } from "@/lib/import/account-jobs";
+import { ImportJobSaveError, ImportMigrationPendingError, assertAccountImportsReady } from "@/lib/import/account-jobs";
 import { GMAIL_LABELS_DESTINATION, parseAccountFolderRequest } from "@/lib/import/folder-mapping-utils";
 import { resolveImportDestination } from "@/lib/import/folders";
 import { importServerProblem } from "@/lib/import/imap";
@@ -13,7 +13,7 @@ type SessionUser = Parameters<typeof getMailboxAccessLevel>[1];
 
 /**
  * `POST /api/import/jobs` with `scope: "account"`: one job over the folders the user kept in the mapping table.
- * New Kite folders are created only once the request has passed every check.
+ * New Kite folders are created only once the request has passed every check, the folder destinations included.
  */
 export async function createAccountJobResponse(
 	env: CloudflareEnv,
@@ -35,22 +35,31 @@ export async function createAccountJobResponse(
 	const access = await getMailboxAccessLevel(getDb(env), user, body.mailboxId);
 	if (!access?.canManage) return Response.json({ error: "Mailbox not found" }, { status: 404 });
 
-	const counts = (Array.isArray(body.folders) ? body.folders : [])
-		.filter((folder) => folder?.include !== false)
-		.map((folder) => Number(folder?.messages));
-	const messages = counts.every((count) => Number.isFinite(count) && count >= 0)
-		? counts.reduce((sum, count) => sum + count, 0)
+	// The plan's counts come back from the client, so they are advisory: one unknown count makes the total unknown
+	// (the estimate then looks at the database as it is), and the run's size guard pauses the job at the stop point
+	// whatever the client claimed.
+	const counts = folders.map((folder) => folder.messages);
+	const messages = counts.every((count) => count !== null)
+		? counts.reduce<number>((sum, count) => sum + count!, 0)
 		: null;
 	const sizeCheck = await checkImportStart(env, request, { messages, confirmed: body.confirmDatabaseFull === true });
 	if (sizeCheck.refusal) return sizeCheck.refusal;
 
 	const mailbox = { id: access.mailbox.id, userId: access.mailbox.userId };
 	try {
+		await assertAccountImportsReady(env);
+		// Every existing destination is checked before any new folder is created, so a refused request leaves none.
+		for (const folder of folders)
+			if (
+				folder.destination.startsWith("folder:") &&
+				!(await resolveImportDestination(env, mailbox, folder.destination))
+			)
+				return Response.json({ error: "Folder not found" }, { status: 404 });
 		const resolved = [];
 		for (const folder of folders) {
-			const destination = await resolveImportDestination(env, mailbox, folder.destination);
-			if (!destination) return Response.json({ error: "Folder not found" }, { status: 404 });
-			resolved.push({ ...folder, destination });
+			const isNew = folder.destination.startsWith("new:");
+			const destination = isNew ? await resolveImportDestination(env, mailbox, folder.destination) : folder.destination;
+			resolved.push({ ...folder, destination: destination! });
 		}
 		const job = await createAccountImportJob(env, {
 			userId: user.id,
@@ -69,6 +78,9 @@ export async function createAccountJobResponse(
 	} catch (error) {
 		if (error instanceof ImportMigrationPendingError)
 			return Response.json({ error: error.message, code: "MIGRATION_PENDING" }, { status: 409 });
-		throw error;
+		if (error instanceof ImportJobSaveError) return Response.json({ error: error.message }, { status: 500 });
+		// A database error's message carries the SQL; only its name is logged and the user gets a plain answer.
+		console.error("import.account_job_failed", error instanceof Error ? error.name : "unknown");
+		return Response.json({ error: "The import could not be started. Try again." }, { status: 500 });
 	}
 }

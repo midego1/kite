@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE } from "./support/constants";
 import { apiContext, uniqueToken, waitForMessage } from "./support/helpers";
 import { chooseOption } from "./support/select";
@@ -189,6 +190,56 @@ test("a Gmail account is copied once from All Mail by label, and an import pause
 		await waitForMessage(api, `${token} bulk 149`);
 	} finally {
 		if (jobId) await api.delete(`/api/import/jobs/${jobId}`);
+		await api.dispose();
+		await fake.close();
+	}
+});
+
+test("only the owner can pause, resume or cancel an account import, and Cancel stops its folders", async () => {
+	test.setTimeout(120_000);
+	const token = uniqueToken("own");
+	const fake = await startFakeImap({
+		authPlain: true,
+		// A slow server, so the job is still copying when it is paused and cancelled.
+		fetchDelayMs: 3000,
+		folders: {
+			INBOX: Array.from({ length: 60 }, (_, index) => sampleMessage(index + 1, { subject: `${token} ${index}` })),
+			Later: [sampleMessage(100, { subject: `${token} later` })],
+		},
+	});
+	const api = await apiContext(STORAGE_STATE);
+	const other = await createSignedInAccount(api, uniqueToken("imp"));
+	let jobId = "";
+	try {
+		const account = { host: fake.host, port: fake.port, secure: false, username: USER, password: PASSWORD };
+		const plan = (await (await api.post("/api/import/account/plan", { data: account })).json()) as {
+			folders: unknown[];
+		};
+		const created = await api.post("/api/import/jobs", {
+			data: { scope: "account", mailboxId: await firstMailboxId(api), ...account, folders: plan.folders },
+		});
+		expect(created.status(), await created.text()).toBe(201);
+		jobId = ((await created.json()) as { job: { id: string } }).job.id;
+		await expect.poll(async () => (await readJob(api, jobId))?.processed, { timeout: 60_000 }).toBeGreaterThan(0);
+
+		expect((await other.api.post(`/api/import/jobs/${jobId}/pause`)).status()).toBe(404);
+		expect((await api.post(`/api/import/jobs/${jobId}/pause`)).status()).toBe(200);
+		expect((await other.api.post(`/api/import/jobs/${jobId}/resume`, { data: {} })).status()).toBe(404);
+		expect((await other.api.delete(`/api/import/jobs/${jobId}`)).status()).toBe(404);
+		expect((await readJob(api, jobId))?.status).toBe("paused");
+
+		expect((await api.delete(`/api/import/jobs/${jobId}`)).status()).toBe(200);
+		const job = (await readJob(api, jobId))!;
+		expect(job.status).toBe("cancelled");
+		expect(job.folders.map((folder) => [folder.sourceName, folder.status])).toEqual([
+			["INBOX", "skipped"],
+			["Later", "skipped"],
+		]);
+		expect((await api.delete(`/api/import/jobs/${jobId}`)).status()).toBe(404);
+		jobId = "";
+	} finally {
+		if (jobId) await api.delete(`/api/import/jobs/${jobId}`);
+		await other.api.dispose();
 		await api.dispose();
 		await fake.close();
 	}

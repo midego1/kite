@@ -38,7 +38,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	try {
 		body = await readJsonBody<ImapImportJobRequest>(request, 256 * 1024);
 		if ((body as { scope?: string }).scope === "account")
-			return createAccountJobResponse(env, request, user, body as unknown as AccountImportJobRequest);
+			return await createAccountJobResponse(env, request, user, body as unknown as AccountImportJobRequest);
 		input = parseImapImportRequest(body);
 	} catch (error) {
 		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;

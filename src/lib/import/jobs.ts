@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { mailboxes } from "@/db/schema";
-import { importJobs } from "@/db/schema/import-jobs";
+import { importJobFolders, importJobs } from "@/db/schema/import-jobs";
 import { newId } from "@/lib/ids";
 import { openSetting, sealSetting } from "@/lib/security/secret-box";
 import { getDatabaseSize } from "@/lib/db/size";
@@ -19,6 +19,7 @@ import {
 } from "./size-guard-utils";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import {
+	ImportJobSaveError,
 	accountJobFields,
 	assertAccountImportsReady,
 	closeOpenFolders,
@@ -134,10 +135,21 @@ export async function createAccountImportJob(
 	const { folders, gmail, ...credentials } = input;
 	const sizes = folders.map((folder) => folder.bytes);
 	const estimateBytes = sizes.every((bytes) => bytes !== null) ? sizes.reduce((sum, bytes) => sum + bytes!, 0) : null;
-	const fields = accountJobFields({ gmail, estimateBytes });
+	const counts = folders.map((folder) => folder.messages);
+	const total = counts.every((count) => count !== null) ? counts.reduce((sum, count) => sum + count!, 0) : null;
+	const fields = accountJobFields({ gmail, estimateBytes, total });
 	// The folders go in before the first run is queued, so the run never sees a job without them.
 	const job = await insertImportJob(env, credentials, fields, { enqueue: false });
-	await insertJobFolders(env, job.id, folders);
+	try {
+		await insertJobFolders(env, job.id, folders);
+	} catch (error) {
+		// No job without its folders: the row goes, and the sealed source password with it.
+		console.warn("import.account_job_save_failed", error instanceof Error ? error.name : "unknown");
+		const db = getDb(env);
+		await db.delete(importJobFolders).where(eq(importJobFolders.jobId, job.id));
+		await db.delete(importJobs).where(eq(importJobs.id, job.id));
+		throw new ImportJobSaveError();
+	}
 	await enqueueImportJob(env, job.id);
 	return job;
 }
@@ -163,12 +175,16 @@ export async function listImportJobs(env: CloudflareEnv, userId: string, limit =
 		.map((row) => ({ ...row, folders: folders.get(row.id) ?? [] }));
 }
 
-/** Pause from the jobs list: the job keeps its password, cursors and folders and waits for Resume. */
+/**
+ * Pause from the jobs list: the job keeps its password, cursors and folders and waits for Resume. A running batch
+ * keeps its lease until it stops, so Resume right after cannot start a second run beside it.
+ */
 export async function pauseImportJob(env: CloudflareEnv, userId: string, jobId: string): Promise<boolean> {
 	return markPaused(
 		env,
 		and(eq(importJobs.id, jobId), eq(importJobs.userId, userId), inArray(importJobs.status, [...ACTIVE_STATUSES])),
 		{ pauseReason: "user" },
+		{ keepLease: true },
 	);
 }
 
@@ -185,13 +201,14 @@ export async function cancelImportJob(env: CloudflareEnv, userId: string, jobId:
 			),
 		)
 		.returning({ id: importJobs.id });
-	if (cancelled.length) await closeOpenFolders(env, jobId);
+	if (cancelled.length) await closeOpenFolders(env, [jobId]);
 	return cancelled.length > 0;
 }
 
 /**
- * Puts a job paused for the database size back in the queue. Above 90% of the limit it needs `confirmed`, which
- * lets the job go on to 98%; `"needs_confirmation"` asks the caller to ask the user first.
+ * Puts a paused job back in the queue. Above 90% of the limit it needs `confirmed`, which lets the job go on to 98%;
+ * `"needs_confirmation"` asks the caller to ask the user first. A lease a running batch still holds is kept: that
+ * run takes the job back when it saves its chunk, or hands it on when it stops.
  */
 export async function resumeImportJob(
 	env: CloudflareEnv,
@@ -215,7 +232,6 @@ export async function resumeImportJob(
 		.update(importJobs)
 		.set({
 			status: "pending",
-			leaseUntil: null,
 			attempts: 0,
 			lastError: confirmNeeded || isImportConfirmed(job.lastError) ? IMPORT_CONFIRMED_NOTE : null,
 			updatedAt: new Date(),
@@ -305,11 +321,12 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 			progress: { processed: job.processed, imported: job.imported, skipped: job.skipped },
 			total: job.total,
 			errors: parseErrors(job.errors),
+			finishNote: null,
 		};
 		const outcome = job.scope === "account" ? await runAccountJob(run) : await runFolderJob(run);
 		if (outcome === "stopped") return;
 		if (outcome === "done") {
-			await finishJob(env, { ...job, total: run.total }, "completed");
+			await finishJob(env, { ...job, total: run.total }, "completed", run.finishNote ?? undefined);
 			return;
 		}
 		await db
@@ -321,7 +338,21 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 		await recordRunError(env, { ...job, total: run?.total ?? job.total }, error);
 	} finally {
 		await run?.session.close().catch(() => undefined);
+		await releaseImportLease(env, job.id);
 	}
+}
+
+/**
+ * Ends this run's hold on a job that was paused while it ran (a user pause keeps the lease), so Resume can start it
+ * at once; when it was resumed meanwhile and is waiting, it is queued, since the queued run met the lease and left.
+ */
+async function releaseImportLease(env: CloudflareEnv, jobId: string): Promise<void> {
+	const [row] = await getDb(env)
+		.update(importJobs)
+		.set({ leaseUntil: null })
+		.where(and(eq(importJobs.id, jobId), inArray(importJobs.status, ["pending", "paused"])))
+		.returning({ status: importJobs.status });
+	if (row?.status === "pending") await enqueueImportJob(env, jobId);
 }
 
 /**
@@ -400,7 +431,7 @@ async function finishJob(
 			finishedAt: now,
 		})
 		.where(eq(importJobs.id, job.id));
-	if (status === "failed" && job.scope === "account") await closeOpenFolders(env, job.id);
+	if (status === "failed" && job.scope === "account") await closeOpenFolders(env, [job.id]);
 	await startNextJobForAccount(env, job);
 }
 
@@ -441,7 +472,7 @@ export async function resumeStalledImportJobs(
 ): Promise<void> {
 	const db = getDb(env);
 	const now = new Date();
-	await db
+	const expired = await db
 		.update(importJobs)
 		.set({
 			status: "cancelled",
@@ -451,7 +482,13 @@ export async function resumeStalledImportJobs(
 			updatedAt: now,
 			finishedAt: now,
 		})
-		.where(and(eq(importJobs.status, "paused"), lt(importJobs.updatedAt, new Date(now.getTime() - PAUSED_MAX_AGE_MS))));
+		.where(and(eq(importJobs.status, "paused"), lt(importJobs.updatedAt, new Date(now.getTime() - PAUSED_MAX_AGE_MS))))
+		.returning({ id: importJobs.id });
+	// As Cancel does: the folders the job never reached are not left waiting.
+	await closeOpenFolders(
+		env,
+		expired.map((job) => job.id),
+	);
 	const stale = new Date(now.getTime() - 2 * 60_000);
 	const stalled = and(
 		inArray(importJobs.status, [...ACTIVE_STATUSES]),

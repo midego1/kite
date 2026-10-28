@@ -21,21 +21,31 @@ const {
 	processImportJob,
 	pauseImportJob,
 	resumeImportJob,
+	cancelImportJob,
+	resumeStalledImportJobs,
 	listImportJobs,
 	serializeImportJob,
 	resolveImportDestination,
 	ImportMigrationPendingError,
+	ImportJobSaveError,
+	JOB_FOLDER_ROWS_PER_INSERT,
+	jobFolderInserts,
+	createDb,
 } = await bundleModules("kite-import-account-node-", [
 	["createTcpConnect", "server/runtime/tcp-connect.ts"],
 	["SqliteDatabase", "server/runtime/sqlite-database.ts"],
 	["applyMigrations", "server/runtime/migrate.ts"],
 	["planAccountImport", "src/lib/import/imap.ts"],
 	[
-		"createAccountImportJob, createImportJob, processImportJob, pauseImportJob, resumeImportJob, listImportJobs, serializeImportJob",
+		"createAccountImportJob, createImportJob, processImportJob, pauseImportJob, resumeImportJob, cancelImportJob, resumeStalledImportJobs, listImportJobs, serializeImportJob",
 		"src/lib/import/jobs.ts",
 	],
 	["resolveImportDestination", "src/lib/import/folders.ts"],
-	["ImportMigrationPendingError", "src/lib/import/account-jobs.ts"],
+	[
+		"ImportMigrationPendingError, ImportJobSaveError, JOB_FOLDER_ROWS_PER_INSERT, jobFolderInserts",
+		"src/lib/import/account-jobs.ts",
+	],
+	["createDb", "src/db/index.ts"],
 ]);
 
 const HOST = "imap.kite.test";
@@ -55,8 +65,31 @@ async function fake(t, options) {
 	return server;
 }
 
+/** D1's limits on top of the SQLite database: at most 100 bound parameters, and `refuse` to fail chosen statements. */
+function withD1Limits(db, limits) {
+	return new Proxy(db, {
+		get(target, key) {
+			if (key !== "prepare") {
+				const value = target[key];
+				return typeof value === "function" ? value.bind(target) : value;
+			}
+			return (sql) => {
+				if (limits.refuse?.(sql)) throw new Error("D1_ERROR: refused by the test");
+				const statement = target.prepare(sql);
+				const bind = statement.bind.bind(statement);
+				statement.bind = (...values) => {
+					if (values.length > 100) throw new Error(`D1_ERROR: too many SQL variables (${values.length})`);
+					return bind(...values);
+				};
+				return statement;
+			};
+		},
+	});
+}
+
 async function setup(t, server, migrationsDir = join(root, "drizzle/migrations")) {
 	const db = new SqliteDatabase(":memory:");
+	const limits = {};
 	t.after(() => db.db.close());
 	await applyMigrations(db, migrationsDir);
 	db.db.exec(`
@@ -69,9 +102,9 @@ async function setup(t, server, migrationsDir = join(root, "drizzle/migrations")
 	const env = {
 		KITE_RUNTIME: "node",
 		TCP_CONNECT: (address, options) => connect({ ...address, port: server.port }, options),
-		DB: db,
+		DB: withD1Limits(db, limits),
 		BUCKET: {
-			put: async () => undefined,
+			put: async () => limits.onPut?.(),
 			get: async () => null,
 			head: async () => null,
 			delete: async () => undefined,
@@ -79,7 +112,7 @@ async function setup(t, server, migrationsDir = join(root, "drizzle/migrations")
 		AGENT_QUEUE: { send: async (message) => queued.push(message) },
 	};
 	globalThis.__kiteNodeEnv = env;
-	return { db, env, queued };
+	return { db, env, queued, limits };
 }
 
 const account = { host: HOST, port: 993, secure: true, username: USER, password: PASSWORD };
@@ -304,6 +337,157 @@ test("a folder the server refuses fails alone and the rest of the account is cop
 	assert.match(folders[0].last_error, /NONEXISTENT/);
 	assert.equal(folders[1].status, "completed");
 	assert.deepEqual(placements(db), { "Still copied": "received" });
+	const finished = db.db.prepare("SELECT status, last_error FROM import_jobs").get();
+	assert.deepEqual(finished, { status: "completed", last_error: "1 folder could not be imported" });
+});
+
+test("a transient refusal of a folder retries the run instead of failing the folder", async (t) => {
+	const examineRefusals = { INBOX: "NO [THROTTLED] Too many requests, slow down" };
+	const server = await fake(t, {
+		examineRefusals,
+		folders: { INBOX: [sampleMessage(1, { subject: "After the wait" })] },
+	});
+	const { db, env, queued } = await setup(t, server);
+	const job = await startAccountJob(env, await planAccountImport(env, account));
+	await processImportJob(env, job.id, CTX);
+	const retried = db.db.prepare("SELECT status, attempts, last_error FROM import_jobs").get();
+	assert.equal(retried.status, "running");
+	assert.equal(retried.attempts, 1);
+	assert.match(retried.last_error, /THROTTLED/);
+	assert.equal(db.db.prepare("SELECT status FROM import_job_folders").get().status, "pending");
+	assert.deepEqual(queued.at(-1), { kind: "import.imap", jobId: job.id }, "the retry is queued");
+
+	delete examineRefusals.INBOX;
+	assert.equal(await drain(env, db, job.id), "completed");
+	assert.deepEqual(placements(db), { "After the wait": "received" });
+	assert.equal(db.db.prepare("SELECT last_error FROM import_jobs").get().last_error, null);
+});
+
+test("thirty folders are saved within D1's 100 bound parameters, with the plan's counts as totals", async (t) => {
+	const names = Array.from({ length: 30 }, (_, index) => `Folder ${String(index + 1).padStart(2, "0")}`);
+	const server = await fake(t, {
+		folders: Object.fromEntries(names.map((name, index) => [name, [sampleMessage(index + 1, { subject: name })]])),
+	});
+	const { db, env } = await setup(t, server);
+	const plan = await planAccountImport(env, account);
+	assert.equal(plan.folders.length, 30);
+	const job = await startAccountJob(env, plan);
+	const saved = db.db.prepare("SELECT source_name, total FROM import_job_folders ORDER BY position").all();
+	assert.deepEqual(
+		saved.map((row) => row.source_name),
+		names,
+	);
+	assert.ok(saved.every((row) => row.total === 1));
+	assert.equal(db.db.prepare("SELECT total FROM import_jobs").get().total, 30, "the progress bar has a total at once");
+	assert.equal(await drain(env, db, job.id), "completed");
+	assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 30);
+});
+
+test("every folder insert statement binds at most 100 parameters", () => {
+	const db = createDb(new SqliteDatabase(":memory:"));
+	assert.ok(JOB_FOLDER_ROWS_PER_INSERT >= 1 && JOB_FOLDER_ROWS_PER_INSERT <= 7);
+	const folders = Array.from({ length: 500 }, (_, index) => ({
+		sourceName: `Folder ${index}`,
+		role: "user",
+		destination: `folder:fld_${index}`,
+		messages: index,
+		bytes: index * 1000,
+	}));
+	const inserts = jobFolderInserts(db, "ijob_test", folders);
+	assert.equal(inserts.length, Math.ceil(500 / JOB_FOLDER_ROWS_PER_INSERT));
+	for (const insert of inserts) assert.ok(insert.toSQL().params.length <= 100, `${insert.toSQL().params.length}`);
+	assert.deepEqual(
+		jobFolderInserts(db, "ijob_test", folders.slice(0, 1)).map((insert) => insert.toSQL().params.length > 0),
+		[true],
+	);
+});
+
+test("a job whose folders cannot be saved is removed with its password and answers a save error", async (t) => {
+	const server = await fake(t, {});
+	const { db, env, queued, limits } = await setup(t, server);
+	const plan = await planAccountImport(env, account);
+	limits.refuse = (sql) => /^insert into "import_job_folders"/i.test(sql);
+	await assert.rejects(startAccountJob(env, plan), ImportJobSaveError);
+	assert.equal(db.db.prepare("SELECT count(*) AS count FROM import_jobs").get().count, 0);
+	assert.equal(db.db.prepare("SELECT count(*) AS count FROM import_job_folders").get().count, 0);
+	assert.deepEqual(queued, [], "nothing was queued");
+});
+
+test("Pause and a quick Resume during a batch never start a second run beside it", async (t) => {
+	const inbox = Array.from({ length: 60 }, (_, index) => sampleMessage(index + 1, { subject: `Race ${index + 1}` }));
+	const server = await fake(t, { folders: { INBOX: inbox } });
+	const { db, env, limits } = await setup(t, server);
+	const job = await startAccountJob(env, await planAccountImport(env, account));
+	const signIns = () => server.commands.filter((entry) => /^\S+ (LOGIN|AUTHENTICATE)\b/i.test(entry.line)).length;
+	let second = null;
+	limits.onPut = async () => {
+		if (second) return;
+		limits.onPut = undefined;
+		// While the first batch is being written: Pause, Resume, and the run that Resume queued.
+		assert.equal(await pauseImportJob(env, "owner", job.id), true);
+		assert.equal(await resumeImportJob(env, "owner", job.id, { confirmed: false }), "resumed");
+		const before = signIns();
+		second = processImportJob(env, job.id, CTX);
+		await second;
+		assert.equal(signIns(), before, "the queued run met the lease and left without signing in");
+	};
+	await processImportJob(env, job.id, CTX);
+	assert.ok(second, "the batch was interrupted");
+	// The first run took the job back and finished it; every message landed once.
+	assert.equal(db.db.prepare("SELECT status FROM import_jobs").get().status, "completed");
+	assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 60);
+});
+
+test("a run stopped by Pause hands the job back, so Resume starts it at once", async (t) => {
+	const inbox = Array.from({ length: 60 }, (_, index) => sampleMessage(index + 1, { subject: `Hand ${index + 1}` }));
+	const server = await fake(t, { folders: { INBOX: inbox } });
+	const { db, env, queued, limits } = await setup(t, server);
+	const job = await startAccountJob(env, await planAccountImport(env, account));
+	limits.onPut = async () => {
+		limits.onPut = undefined;
+		assert.equal(await pauseImportJob(env, "owner", job.id), true);
+	};
+	await processImportJob(env, job.id, CTX);
+	const paused = db.db.prepare("SELECT status, lease_until, processed FROM import_jobs").get();
+	assert.deepEqual([paused.status, paused.lease_until, paused.processed], ["paused", null, 25]);
+	queued.length = 0;
+	assert.equal(await resumeImportJob(env, "owner", job.id, { confirmed: false }), "resumed");
+	assert.deepEqual(queued, [{ kind: "import.imap", jobId: job.id }]);
+	await processImportJob(env, job.id, CTX);
+	assert.equal(db.db.prepare("SELECT status FROM import_jobs").get().status, "completed");
+	assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 60);
+});
+
+test("Cancel and the 7-day limit on a paused job close the folders it never reached", async (t) => {
+	const server = await fake(t, {
+		folders: { INBOX: [sampleMessage(1)], Archive: [sampleMessage(2)], Work: [sampleMessage(3)] },
+	});
+	const { db, env } = await setup(t, server);
+	const plan = await planAccountImport(env, account);
+	const cancelled = await startAccountJob(env, plan);
+	const expired = await startAccountJob(env, plan);
+	assert.equal(await cancelImportJob(env, "someone-else", cancelled.id), false);
+	assert.equal(await cancelImportJob(env, "owner", cancelled.id), true);
+	assert.equal(await pauseImportJob(env, "owner", expired.id), true);
+	db.db.prepare("UPDATE import_jobs SET updated_at = 1 WHERE id = ?").run(expired.id);
+	await resumeStalledImportJobs(env, CTX, async () => true);
+	for (const id of [cancelled.id, expired.id]) {
+		const row = db.db.prepare("SELECT status, password FROM import_jobs WHERE id = ?").get(id);
+		assert.deepEqual(row, { status: "cancelled", password: "" });
+		const statuses = db.db.prepare("SELECT DISTINCT status FROM import_job_folders WHERE job_id = ?").all(id);
+		assert.deepEqual(statuses, [{ status: "skipped" }]);
+	}
+});
+
+test("another user's job cannot be paused, resumed or cancelled", async (t) => {
+	const server = await fake(t, {});
+	const { db, env } = await setup(t, server);
+	const job = await startAccountJob(env, await planAccountImport(env, account));
+	assert.equal(await pauseImportJob(env, "intruder", job.id), false);
+	assert.equal(await pauseImportJob(env, "owner", job.id), true);
+	assert.equal(await resumeImportJob(env, "intruder", job.id, { confirmed: false }), "not_found");
+	assert.equal(await cancelImportJob(env, "intruder", job.id), false);
+	assert.equal(db.db.prepare("SELECT status FROM import_jobs").get().status, "paused");
 });
 
 test("before migration 0076 folder jobs keep working and account jobs wait for the update", async (t) => {

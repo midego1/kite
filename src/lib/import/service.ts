@@ -184,11 +184,14 @@ async function importParsedMessage(
 			httpMetadata: { contentType: "message/rfc822" },
 		}),
 		storeMessageAttachments(env, messageId, parsed.attachments, { validate: false }),
-		upsertContactFromAddress(env, {
-			userId: input.userId,
-			address: contactAddress,
-			source: placement.direction === "outbound" ? "outbound" : "inbound",
-		}),
+		// A spammer does not become a contact (and is not looked up on Gravatar).
+		placement.status === "spam"
+			? null
+			: upsertContactFromAddress(env, {
+					userId: input.userId,
+					address: contactAddress,
+					source: placement.direction === "outbound" ? "outbound" : "inbound",
+				}),
 	]);
 	const failed = writes.find((write) => write.status === "rejected");
 	if (failed) {

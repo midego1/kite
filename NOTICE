@@ -9,9 +9,9 @@ Originally based on Mailflare by hieunc229 (https://github.com/hieunc229/mailfla
 AGPL-3.0; substantially extended since. Copyright notices of the original work
 are retained.
 
-The object storage adapter and the Drive module are derived from Mailflare commits
-83ade98, 9f66e13 and 3c90a03 by Hieu Nguyen (AGPL-3.0). Reading an upload's state from its
-headers (src/lib/import/message-hints-utils.ts) follows the idea of commit 4aaf066 by the same author.
+The object storage adapter, the Drive module and the import message hints
+(src/lib/import/message-hints-utils.ts) are derived from Mailflare commits 83ade98,
+9f66e13, 3c90a03 and 4aaf066 by Hieu Nguyen (AGPL-3.0).
 
 Third-party code
 ----------------

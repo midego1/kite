@@ -62,15 +62,17 @@ test("an upload to the Inbox keeps the read state and files spam and trash from 
 				message(`${token}takeoutspam`, ["X-Gmail-Labels: Spam,Unread"]),
 				message(`${token}takeouttrash`, ["X-Gmail-Labels: Trash"]),
 				message(`${token}spamflag`, ["X-Spam-Flag: YES"]),
+				message(`${token}gmailwins`, ["X-Gmail-Labels: Inbox,Important", "X-Spam-Flag: YES"]),
+				message(`${token}localized`, ["X-Gmail-Labels: Posteingang"]),
 				message(`${token}hostile`, ["Status: <script>", "X-Spam-Flag: " + "y".repeat(5000)]),
 			]),
 		);
-		expect(result).toMatchObject({ imported: 9, skipped: 0, errors: [] });
+		expect(result).toMatchObject({ imported: 11, skipped: 0, errors: [] });
 
 		const inbox = await rowsOf(api, token, "received");
 		const byName = (rows: Row[], name: string) => rows.find((row) => row.subject === `${token}${name}`);
 		expect(inbox.map((row) => row.subject?.slice(token.length)).sort()).toEqual(
-			["hostile", "plain", "statusnew", "statusread", "takeoutread", "takeoutunread"].sort(),
+			["gmailwins", "hostile", "localized", "plain", "statusnew", "statusread", "takeoutread", "takeoutunread"].sort(),
 		);
 		expect(byName(inbox, "plain")?.read).toBe(false);
 		expect(byName(inbox, "statusread")?.read).toBe(true);
@@ -78,6 +80,9 @@ test("an upload to the Inbox keeps the read state and files spam and trash from 
 		expect(byName(inbox, "takeoutunread")?.read).toBe(false);
 		expect(byName(inbox, "takeoutread")?.read).toBe(true);
 		expect(byName(inbox, "takeoutread")?.starred).toBe(true);
+		// Gmail's labels decide placement, not a spam filter's flag; a localized list does not make mail read.
+		expect(byName(inbox, "gmailwins")?.read).toBe(true);
+		expect(byName(inbox, "localized")?.read).toBe(false);
 		// Garbage headers are ignored: the message is imported as it always was.
 		expect(byName(inbox, "hostile")?.read).toBe(false);
 

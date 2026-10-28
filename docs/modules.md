@@ -44,6 +44,13 @@ A module that is off is absent, not broken:
 - **Existing webhook subscriptions keep their events.** They just receive nothing while the module is off.
 - **Integrity hooks still run.** When a user changes their time zone, Calendar still freezes their legacy recurring series, so the calendar is correct when it comes back.
 
+### What an import keeps
+
+- **Read and starred.** An IMAP import keeps the source's state: mail marked read there (`\Seen`) is read in Kite, and flagged mail (`\Flagged`) is starred. Answered marks and keywords are not kept. Imported sent mail and drafts are always read. Uploaded `.eml` and `.mbox` files carry no state, so their mail arrives unread and not starred, as before.
+- **Dates.** A message keeps the date in its `Date` header. When it has none (or one that cannot be read), an IMAP import uses the date the source server received it (`INTERNALDATE`) instead of the time of the import.
+- **No duplicates.** A message already in the target mailbox is skipped, by its Message-ID, whether it was stored with angle brackets (received mail) or without (mail Kite sent). So importing the provider's Sent folder does not add copies of mail you sent from Kite, and running the same import again only adds what is missing. A message without a Message-ID is recognised by a SHA-256 hash of its bytes, across re-runs and folders. Messages imported without a Message-ID before this change were keyed by file name and size, so a re-run can add those once more.
+- **Conversations.** Imports run newest first, so a reply often arrives before the message it answers. An imported message whose parent is not stored yet joins the conversation of the first message its `References` header names, so the replies and the original meet in one conversation whatever order they arrive in. Received mail is grouped as before.
+
 ### IMAP connections
 
 IMAP imports connect only over an encrypted connection: TLS on port 993, or STARTTLS on port 143 (the import form's **Encryption** choice). Kite checks the server's certificate and never sends a password in plain text, so a server that offers neither is refused, and so are ports other than 993 and 143 and private or local addresses. The same client runs on Cloudflare and on the Node runtime; on Node, Kite resolves the server's name itself, refuses it when any address is private, and connects only to the addresses it checked. `EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS=1` lets a self-hosted install import from a mail server on its LAN, and `EXTERNAL_ACCOUNTS_EXTRA_PORTS` adds ports for a bridge such as DavMail (see [Self-hosting](self-hosting.md)). The client also limits what a server can send and how long it may take, so a broken or hostile server cannot fill memory or hold an import:

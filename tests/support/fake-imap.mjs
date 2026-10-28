@@ -21,7 +21,9 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  *   `slowLoris` (a greeting trickled one byte at a time, forever), `silent` (no greeting at all), `silentTls` (OK to
  *   STARTTLS, then no handshake), `secondChallenge` (a second `+` during AUTHENTICATE PLAIN), `untaggedFlood` (CAPABILITY answered by
  *   an endless stream of untagged lines of that many bytes each).
- * - `folders`: `{ [name]: [raw message, …] }`; UIDs count up from 1 per folder.
+ * - `folders`: `{ [name]: [message, …] }`, each a raw message or `{ raw, flags, internalDate }` (an IMAP date-time
+ *   string); UIDs count up from 1 per folder. FETCH reports `FLAGS`, `INTERNALDATE` and `RFC822.SIZE` before the
+ *   body, or after it with `attributesAfterLiteral`.
  */
 export async function startFakeImap(options = {}) {
 	const users = options.users ?? { "user@example.test": "app-password" };
@@ -30,11 +32,16 @@ export async function startFakeImap(options = {}) {
 	const connections = new Set();
 	let nextLoginFails = false;
 
-	function addMessage(folder, raw) {
+	function addMessage(folder, message) {
 		if (!folders.has(folder)) folders.set(folder, { nextUid: 1, messages: [] });
 		const entry = folders.get(folder);
 		const uid = entry.nextUid++;
-		entry.messages.push({ uid, raw: Buffer.from(raw) });
+		const {
+			raw,
+			flags = [],
+			internalDate = "27-Oct-2026 10:00:00 +0000",
+		} = typeof message === "string" || Buffer.isBuffer(message) ? { raw: message } : message;
+		entry.messages.push({ uid, raw: Buffer.from(raw), flags, internalDate });
 		return uid;
 	}
 	if (!options.folders) addMessage("INBOX", sampleMessage(1));
@@ -190,7 +197,14 @@ export async function startFakeImap(options = {}) {
 					if (options.hugeLiteral) return send(`* 1 FETCH (UID 1 BODY[] {4000000000}\r\n${"x".repeat(1000)}`);
 					entry.messages.forEach((message, index) => {
 						if (!wanted.has(message.uid)) return;
-						send(`* ${index + 1} FETCH (UID ${message.uid} BODY[] {${message.raw.length}}\r\n`);
+						const attributes = `FLAGS (${message.flags.join(" ")}) INTERNALDATE "${message.internalDate}" RFC822.SIZE ${message.raw.length}`;
+						if (options.attributesAfterLiteral) {
+							send(`* ${index + 1} FETCH (BODY[] {${message.raw.length}}\r\n`);
+							send(message.raw);
+							send(` UID ${message.uid} ${attributes})\r\n`);
+							return;
+						}
+						send(`* ${index + 1} FETCH (UID ${message.uid} ${attributes} BODY[] {${message.raw.length}}\r\n`);
 						send(message.raw);
 						send(")\r\n");
 					});
@@ -276,14 +290,32 @@ function parseQuoted(args) {
 	return values;
 }
 
-/** A small RFC 5322 message with a unique Message-ID. */
-export function sampleMessage(index, { subject = `Fake IMAP message ${index}`, from = "sender@example.org" } = {}) {
+/**
+ * A small RFC 5322 message with a unique Message-ID. `messageId: null` leaves the header out (and `date: null` the
+ * Date header); `inReplyTo` and `references` add those headers.
+ *
+ * @param {number} index
+ * @param {{ subject?: string, from?: string, messageId?: string | null, date?: string | null, inReplyTo?: string | null, references?: string | null }} [options]
+ */
+export function sampleMessage(
+	index,
+	{
+		subject = `Fake IMAP message ${index}`,
+		from = "sender@example.org",
+		messageId = `<fake-imap-${index}-${Date.now()}@example.org>`,
+		date = "Tue, 27 Oct 2026 10:00:00 +0000",
+		inReplyTo = null,
+		references = null,
+	} = {},
+) {
 	return [
 		`From: Sender <${from}>`,
 		"To: user@example.test",
 		`Subject: ${subject}`,
-		`Message-ID: <fake-imap-${index}-${Date.now()}@example.org>`,
-		"Date: Tue, 27 Oct 2026 10:00:00 +0000",
+		...(messageId ? [`Message-ID: ${messageId}`] : []),
+		...(date ? [`Date: ${date}`] : []),
+		...(inReplyTo ? [`In-Reply-To: ${inReplyTo}`] : []),
+		...(references ? [`References: ${references}`] : []),
 		"Content-Type: text/plain; charset=utf-8",
 		"",
 		`Body of message ${index}.`,

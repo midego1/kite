@@ -384,7 +384,7 @@ test("withReservedSpend records an answer's finish reason and a thrown error's c
 	assert.ok(byJob["job-b"].error_code, "a failure keeps its error code");
 });
 
-test("before migration 0077 settling still releases the reservation and stores the actual spend", async (t) => {
+test("before migration 0078 settling still releases the reservation and stores the actual spend", async (t) => {
 	const db = await database(t);
 	for (const column of ["status", "error_code", "duration_ms", "finish_reason", "input_rate", "output_rate"])
 		db.db.exec(`ALTER TABLE ai_usage DROP COLUMN ${column}`);

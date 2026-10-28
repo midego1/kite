@@ -6,7 +6,7 @@
 ### Changed
 
 - Requests that stored no cost, because they ran before their model had a rate, are now priced on [AI usage](/ai-usage) at today's rate and marked estimated, instead of being left out of the spend. The page lists the models that still have no rate, with a link to set one in [Admin → Agent](/agent).
-- **Database migration 0077** adds status, error code, duration, finish reason and the rate used to each AI usage row. Apply it from the Admin overview; until then AI usage shows those details as not recorded and everything else works as before.
+- **Database migration 0078** adds status, error code, duration, finish reason and the rate used to each AI usage row. Apply it from the Admin overview; until then AI usage shows those details as not recorded and everything else works as before.
 
 ### Fixed
 

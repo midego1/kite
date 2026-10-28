@@ -82,7 +82,7 @@ Chat counts against the same mailbox and install dollar caps, and without rates 
 - **Breakdowns** by model, provider, feature and mailbox, with requests, tokens, cost and share. Mailboxes you cannot open are counted together as "Other mailboxes".
 - **Activity:** every request, newest first, filtered by model, provider, feature or status. Opening a row shows its feature, mailbox, status or error, duration, finish reason, cost and the rate it was counted at.
 
-Status, error code, duration, finish reason and rate are recorded from migration 0077 on; earlier requests show them as not recorded. Usage rows hold counts, costs and codes only, never prompts or answers.
+Status, error code, duration, finish reason and rate are recorded from migration 0078 on; earlier requests show them as not recorded. Usage rows hold counts, costs and codes only, never prompts or answers.
 
 ## Writing style
 

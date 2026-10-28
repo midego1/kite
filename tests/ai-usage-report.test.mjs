@@ -379,7 +379,7 @@ test("loadUsageReport answers the range, the filters, today's spend and the acti
 	assert.deepEqual([page2.rows.length, page2.totalPages], [0, 1]);
 });
 
-test("before migration 0077 the report still loads, with every settled row not recorded", async (t) => {
+test("before migration 0078 the report still loads, with every settled row not recorded", async (t) => {
 	const db = await database(t, { details: false });
 	insert(db, {
 		id: "u",

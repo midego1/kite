@@ -1,7 +1,7 @@
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import type { AiUsageOutcome } from "./usage-types";
 
-/** The columns migration 0077 adds to `ai_usage`. */
+/** The columns migration 0078 adds to `ai_usage`. */
 const AI_USAGE_DETAIL_COLUMNS = [
 	"status",
 	"error_code",
@@ -33,7 +33,7 @@ function detailValues(outcome: AiUsageOutcome) {
 
 /**
  * Runs `UPDATE ai_usage SET <assignments>, <details> WHERE id = ?`. A deploy runs before its migrations are applied,
- * so without migration 0077 the same update runs again without the details: spend must settle either way.
+ * so without migration 0078 the same update runs again without the details: spend must settle either way.
  */
 export async function updateAiUsage(
 	env: CloudflareEnv,
@@ -59,7 +59,7 @@ export async function updateAiUsage(
 const detailsReady = new WeakSet<object>();
 
 /**
- * Whether `ai_usage` has the detail columns (migration 0077). A positive answer is kept for the database binding; a
+ * Whether `ai_usage` has the detail columns (migration 0078). A positive answer is kept for the database binding; a
  * negative one is asked again, since an admin can apply the update at any time.
  */
 export async function aiUsageDetailsReady(env: CloudflareEnv): Promise<boolean> {

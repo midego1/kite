@@ -3,7 +3,7 @@ export type UsageRange = 7 | 30 | 90;
 
 /**
  * How a request ended, as the page shows it: the recorded status, `running` while its reservation is open, and
- * `unrecorded` for rows from before migration 0077.
+ * `unrecorded` for rows from before migration 0078.
  */
 export type UsageRowStatus = "ok" | "failed" | "stopped" | "running" | "unrecorded";
 
@@ -93,7 +93,7 @@ export type UsageActivityRow = {
 export type UsageReport = {
 	range: UsageRange;
 	timeZone: string;
-	/** False until migration 0077: statuses, durations, finish reasons and rates are not recorded yet. */
+	/** False until migration 0078: statuses, durations, finish reasons and rates are not recorded yet. */
 	detailsRecorded: boolean;
 	totals: UsageSums & { totalTokens: number };
 	daily: UsageDay[];

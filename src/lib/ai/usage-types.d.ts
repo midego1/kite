@@ -6,7 +6,7 @@ export type AiUsageDetails = { modelId: string; provider: string; rates: AgentMo
 /** How a request ended: answered, failed with an error, or stopped (aborted or cut off before usage was reported). */
 export type AiUsageStatus = "ok" | "failed" | "stopped";
 
-/** What `ai_usage` records about a settled request besides its tokens and cost (migration 0077). */
+/** What `ai_usage` records about a settled request besides its tokens and cost (migration 0078). */
 export type AiUsageOutcome = {
 	status: AiUsageStatus;
 	/** The shared AI error code (`ai-error-utils.ts`) of a failed request. */

@@ -269,7 +269,7 @@ export function dayBucketSql(days: readonly { date: string; end: Date }[], colum
 	return `CASE ${branches.join(" ")} END`;
 }
 
-/** The status the page shows, as SQL; without migration 0077 every settled row is `unrecorded`. */
+/** The status the page shows, as SQL; without migration 0078 every settled row is `unrecorded`. */
 export function usageStatusSql(detailsRecorded: boolean): string {
 	return detailsRecorded
 		? "CASE WHEN reserved = 1 THEN 'running' WHEN status IS NULL THEN 'unrecorded' ELSE status END"

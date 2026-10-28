@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ADMIN, STORAGE_STATE } from "./support/constants";
-import { apiContext, signIn, waitForHydration } from "./support/helpers";
+import { ADMIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { contrastBetween } from "./support/contrast";
+import { apiContext, deliverInbound, signIn, uniqueToken, waitForHydration } from "./support/helpers";
 
 const MESSAGE = "Kite was updated. Reload to get the latest version.";
 
@@ -177,4 +178,93 @@ test("an unknown version and failed checks never show the toast", async ({ page 
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 	await expect.poll(() => failures).toBeGreaterThan(0);
 	await expect(updateToast(page)).toHaveCount(0);
+});
+
+const LOOKS = [
+	{ label: "Kite dark", theme: "dark", classic: false },
+	{ label: "Classic dark", theme: "dark", classic: true },
+	{ label: "Kite light", theme: "light", classic: false },
+	{ label: "Classic light", theme: "light", classic: true },
+] as const;
+
+for (const look of LOOKS) {
+	test(`${look.label}: the update toast follows the theme and Reload is readable`, async ({ page }) => {
+		await page.addInitScript(({ theme, classic }) => {
+			localStorage.setItem("kite-theme", theme);
+			if (classic) localStorage.setItem("kite-style", "classic");
+			else localStorage.removeItem("kite-style");
+		}, look);
+		const version = await routeVersion(page, "deploy-1");
+		await openInbox(page, version);
+		version.current = "deploy-2";
+		await returnToTab(page, version);
+		const toast = updateToast(page);
+		await expect(toast).toBeVisible();
+
+		// react-hot-toast paints the card inline; it must use the theme's card colour, not its own white.
+		const card = toast.locator("xpath=ancestor-or-self::*[contains(@style, 'background')][1]");
+		const background = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
+		if (look.theme === "dark") expect(background).not.toBe("rgb(255, 255, 255)");
+		else expect(background).toBe("rgb(255, 255, 255)");
+
+		expect(await contrastBetween(toast.getByText(MESSAGE), card), `${look.label} message`).toBeGreaterThanOrEqual(4.5);
+		const reload = toast.getByRole("button", { name: "Reload" });
+		expect(await contrastBetween(reload), `${look.label} Reload label`).toBeGreaterThanOrEqual(4.5);
+		// The button is its own fill, clearly apart from the card behind it, not text floating on it.
+		const fill = await reload.evaluate((element) => getComputedStyle(element).backgroundColor);
+		expect(fill).not.toBe(background);
+		const dismiss = toast.getByRole("button", { name: "Dismiss" });
+		expect(await contrastBetween(dismiss, card), `${look.label} Dismiss`).toBeGreaterThanOrEqual(3);
+	});
+}
+
+test("toasts never cover the reader's reply box, in the bottom-right corner on desktop and phones", async ({
+	page,
+}) => {
+	const api = await apiContext(STORAGE_STATE);
+	const subject = `Toast position ${uniqueToken()}`;
+	try {
+		const message = await deliverInbound(api, {
+			from: `"Toast Sender" <toast@outside.test>`,
+			to: SUPPORT_ADDRESS,
+			subject,
+		});
+		const version = await routeVersion(page, "deploy-1");
+		await page.clock.install();
+		for (const size of [
+			{ width: 1400, height: 900 },
+			{ width: 1100, height: 700 },
+			{ width: 390, height: 780 },
+		]) {
+			await page.setViewportSize(size);
+			await page.goto(`/inbox/${message.id}`);
+			const replyBox = page.locator("[data-reply-box]");
+			await expect(replyBox).toBeVisible();
+			await expect.poll(() => version.requests).toBeGreaterThan(0);
+			version.current = `deploy-${size.width}`;
+			await returnToTab(page, version);
+			const toast = updateToast(page);
+			await expect(toast).toBeVisible();
+			const label = `${size.width}px`;
+			// The toast slides in, so wait for it to settle before measuring.
+			await expect
+				.poll(
+					async () => {
+						const box = (await toast.boundingBox())!;
+						const reply = (await replyBox.boundingBox())!;
+						return { above: box.y + box.height <= reply.y, inside: box.x + box.width <= size.width };
+					},
+					{ message: `${label}: above the reply box and inside the viewport` },
+				)
+				.toEqual({ above: true, inside: true });
+			const toastBox = (await toast.boundingBox())!;
+			expect(toastBox.y + toastBox.height, `${label}: at the bottom`).toBeGreaterThan(size.height / 2);
+			// The reply box still takes a click through where the toast would have been.
+			await expect(replyBox).toBeEnabled();
+			await toast.getByRole("button", { name: "Dismiss" }).click();
+			await expect(toast).toHaveCount(0);
+		}
+	} finally {
+		await api.dispose();
+	}
 });

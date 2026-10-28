@@ -1,16 +1,24 @@
 import { useEffect, useState } from "react";
 
-/** A `blob:` URL for a local file while it is given, revoked when it changes or the component unmounts; "" until ready. */
+/**
+ * A `blob:` URL for a copy of a local file while it is given, revoked when it changes or the component unmounts;
+ * "" until the copy is ready. The bytes are read first and the URL is made from that copy, so nothing about the
+ * picked File (name, type) reaches an attribute.
+ */
 export function useObjectUrl(file: File | null): string {
 	const [url, setUrl] = useState("");
 	useEffect(() => {
 		if (!file) return;
-		const next = URL.createObjectURL(file);
-		// The URL only exists once the effect has made it, so it cannot be derived during render.
-		// eslint-disable-next-line react-hooks/set-state-in-effect
-		setUrl(next);
+		let cancelled = false;
+		let created = "";
+		void file.arrayBuffer().then((bytes) => {
+			if (cancelled) return;
+			created = URL.createObjectURL(new Blob([bytes], { type: file.type }));
+			setUrl(created);
+		});
 		return () => {
-			URL.revokeObjectURL(next);
+			cancelled = true;
+			if (created) URL.revokeObjectURL(created);
 			setUrl("");
 		};
 	}, [file]);

@@ -20,9 +20,10 @@ import { formatAttachmentSize } from "./utils";
 const ITEM_CLASS =
 	"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-neutral-100";
 
-/** Downloads a file that is not stored yet from the browser's own copy; a stored one uses the authenticated route. */
-function downloadLocalFile(file: File) {
-	const url = URL.createObjectURL(file);
+/** Downloads a file that is not stored yet from a copy of the browser's own bytes; a stored one uses the authenticated route. */
+async function downloadLocalFile(file: File) {
+	const copy = new Blob([await file.arrayBuffer()], { type: "application/octet-stream" });
+	const url = URL.createObjectURL(copy);
 	const link = document.createElement("a");
 	link.href = safeAttachmentUrl(url);
 	link.download = file.name;
@@ -52,7 +53,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 	const downloadUrl = storedDownloadUrl(entry, draftId);
 
 	function download() {
-		if (entry.kind === "local") return downloadLocalFile(entry.file);
+		if (entry.kind === "local") return void downloadLocalFile(entry.file);
 		if (!downloadUrl) return;
 		const link = document.createElement("a");
 		link.href = safeAttachmentUrl(downloadUrl);

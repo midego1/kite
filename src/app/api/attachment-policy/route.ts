@@ -6,7 +6,10 @@ import {
 	sendsThroughCloudflare,
 } from "@/lib/email/attachment-policy";
 
-/** `?from=<address>` tells the composer whether that From domain's provider turns big files into links. */
+/**
+ * `?from=<address>` tells the composer whether that From domain's provider turns big files into links. Only domains
+ * of mailboxes the user can access are answered for.
+ */
 export async function GET(request: Request) {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
@@ -16,7 +19,7 @@ export async function GET(request: Request) {
 		{
 			maxMb: await getOutboundAttachmentMaxMb(env),
 			cloudThresholdBytes: CLOUD_ATTACHMENT_THRESHOLD_BYTES,
-			cloudLinks: from ? await sendsThroughCloudflare(env, from) : true,
+			cloudLinks: from ? await sendsThroughCloudflare(env, auth.user, from) : true,
 		},
 		{ headers: { "Cache-Control": "no-store" } },
 	);

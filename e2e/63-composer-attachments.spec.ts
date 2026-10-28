@@ -1,6 +1,7 @@
 import { deflateSync } from "node:zlib";
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { createSignedInAccount, shareMailbox } from "./support/auto-read";
 import { apiContext, deliverInbound, setSendingSettings, uniqueToken } from "./support/helpers";
 
 // Attachments in the composer are chips that open: a click previews images (and PDFs, text) in the reader's
@@ -331,32 +332,60 @@ test("the Cloudflare link notice and the Attach tooltip follow the From domain's
 	void composer;
 });
 
-test("the attachment policy tells the composer whether the From domain sends through Cloudflare", async () => {
-	const api = await apiContext(STORAGE_STATE);
+test("the attachment policy answers only for domains of mailboxes the user can access", async () => {
+	const owner = await apiContext(STORAGE_STATE);
 	const hostname = `policy-${uniqueToken("")}.example.test`.toLowerCase();
-	const created = await api.post("/api/domains", { data: { hostname, skipDns: true } });
+	const created = await owner.post("/api/domains", { data: { hostname, skipDns: true } });
 	expect(created.ok(), await created.text()).toBe(true);
-	const listed = (await (await api.get("/api/domains")).json()) as { domains: { id: string; hostname: string }[] };
+	const listed = (await (await owner.get("/api/domains")).json()) as { domains: { id: string; hostname: string }[] };
 	const domain = listed.domains.find((item) => item.hostname === hostname)!;
-	const policy = async (from: string) =>
+	const mailbox = await owner.post("/api/mailboxes", {
+		data: { domainId: domain.id, localPart: "me", displayName: "Me", type: "shared" },
+	});
+	expect(mailbox.ok(), await mailbox.text()).toBe(true);
+	const { id: mailboxId } = (await mailbox.json()) as { id: string };
+	const other = await createSignedInAccount(owner, `policy${uniqueToken("")}`);
+	const policy = async (api: APIRequestContext, from: string) =>
 		(await (await api.get(`/api/attachment-policy?from=${encodeURIComponent(from)}`)).json()) as {
 			cloudLinks: boolean;
 			cloudThresholdBytes: number;
 		};
 	try {
 		// A domain without a sending provider, an unknown one and no address at all keep the Cloudflare wording.
-		expect((await policy(`me@${hostname}`)).cloudLinks).toBe(true);
-		expect((await policy("me@unknown.example.test")).cloudLinks).toBe(true);
-		expect(((await (await api.get("/api/attachment-policy")).json()) as { cloudLinks: boolean }).cloudLinks).toBe(true);
+		expect((await policy(owner, `me@${hostname}`)).cloudLinks).toBe(true);
+		expect((await policy(owner, "me@unknown.example.test")).cloudLinks).toBe(true);
+		expect(((await (await owner.get("/api/attachment-policy")).json()) as { cloudLinks: boolean }).cloudLinks).toBe(
+			true,
+		);
 		for (const provider of ["resend", "ses"]) {
-			const set = await api.put(`/api/domains/${domain.id}/sending`, { data: { provider } });
+			const set = await owner.put(`/api/domains/${domain.id}/sending`, { data: { provider } });
 			expect(set.ok(), await set.text()).toBe(true);
-			expect(await policy(`Me <me@${hostname}>`)).toMatchObject({ cloudLinks: false, cloudThresholdBytes: 3_000_000 });
+			expect(await policy(owner, `Me <me@${hostname}>`)).toMatchObject({
+				cloudLinks: false,
+				cloudThresholdBytes: 3_000_000,
+			});
+			// Another account has no mailbox on the domain, so it learns nothing about it.
+			expect((await policy(other.api, `me@${hostname}`)).cloudLinks).toBe(true);
 		}
-		await api.put(`/api/domains/${domain.id}/sending`, { data: { provider: "none" } });
-		expect((await policy(`me@${hostname}`)).cloudLinks).toBe(true);
+		// A shared mailbox on the domain gives its readers the same answer as its owner.
+		await shareMailbox(owner, mailboxId, other.id, "read_only");
+		expect((await policy(other.api, `me@${hostname}`)).cloudLinks).toBe(false);
+		await owner.put(`/api/domains/${domain.id}/sending`, { data: { provider: "none" } });
+		expect((await policy(owner, `me@${hostname}`)).cloudLinks).toBe(true);
 	} finally {
-		await api.delete(`/api/domains/${domain.id}`);
-		await api.dispose();
+		await owner.delete(`/api/mailboxes/${mailboxId}`);
+		await owner.delete(`/api/domains/${domain.id}`);
+		await other.api.dispose();
+		await owner.dispose();
 	}
+});
+
+test("the reader's attachment viewer returns the focus to the attachment it was opened from", async ({ page }) => {
+	const subject = await deliverOne("Attach reader focus", true);
+	await openMessage(page, subject);
+	const card = page.getByRole("main").getByRole("button", { name: `${IMAGE_NAME} 11 KB` });
+	await card.click();
+	await expectImagePreview(page);
+	await page.keyboard.press("Escape");
+	await expect(card).toBeFocused();
 });

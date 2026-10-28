@@ -3747,9 +3747,11 @@ test.describe("reply suggestions", () => {
 
 				await forYouItem(page).getByRole("link").click();
 				await expect(page).toHaveURL(/\/for-you$/);
-				const icon = page.getByRole("heading", { level: 1 }).locator("svg");
+				// The page's title bar carries a muted icon beside the heading, as the list panel does.
+				const icon = page.locator("[data-panel-header] svg").first();
+				await expect(page.getByRole("heading", { level: 1, name: "For you" })).toBeVisible();
 				await expect(page.locator(`[data-for-you-entry]`)).toHaveCount(1);
-				const iconColor = await colorProbe(page, icon, "color", "text-blue-600");
+				const iconColor = await colorProbe(page, icon, "color", "text-neutral-500");
 				expect(iconColor.actual, `${style.name} For you`).toEqual(iconColor.expected);
 				await expect(page.locator("body")).not.toContainText(/mailflare/i);
 			}

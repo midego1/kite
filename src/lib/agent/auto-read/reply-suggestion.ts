@@ -147,7 +147,7 @@ async function guardedDraftText(
 	reviewer: { id: string; name: string },
 ): Promise<string | null> {
 	const db = getDb(input.env);
-	const thread = await loadDraftThread(db, input.job.mailboxId, input.source);
+	const thread = await loadDraftThread(input.env, input.job.mailboxId, input.source);
 	let text: string;
 	try {
 		text = await generateDraft(

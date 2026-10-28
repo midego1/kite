@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { storageMigrations, storageRoutes } from "@/db/schema/storage";
 import { newId } from "@/lib/ids";
 import { createLogger } from "@/lib/logger.mjs";
+import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { clearStorageConfigCache } from "./config";
 import { DEFAULT_STORE_ID, isRoutableClass } from "./config-utils";
@@ -48,12 +49,29 @@ async function enqueue(env: MigrationEnv, jobId: string, delaySeconds?: number):
 	await env.OUTBOUND_QUEUE.send(message, delaySeconds ? { delaySeconds } : undefined);
 }
 
+/** Offloaded HTML bodies (`src/lib/email/bodies.ts`); the column exists from migration 0074. */
+const BODY_KEY_COLUMN = "html_body_key";
+
+/** Runs a query over `messages.html_body_key`, answering `whenPending` before migration 0074 added it. */
+async function beforeBodyColumn<T>(query: () => Promise<T>, whenPending: T): Promise<T> {
+	try {
+		return await query();
+	} catch (error) {
+		if (missingColumnFromError(error) === BODY_KEY_COLUMN) return whenPending;
+		throw error;
+	}
+}
+
 async function countKeys(env: MigrationEnv, objectClass: RoutableClass, fromStoreId: string): Promise<number> {
 	const first = async (sql: string) => Number((await env.DB.prepare(sql).first<{ n: number }>())?.n ?? 0);
 	if (objectClass === "mail")
 		return (
 			(await first("SELECT count(*) AS n FROM messages WHERE raw_r2_key IS NOT NULL")) +
-			(await first("SELECT count(*) AS n FROM message_attachments"))
+			(await first("SELECT count(*) AS n FROM message_attachments")) +
+			(await beforeBodyColumn(
+				() => first(`SELECT count(*) AS n FROM messages WHERE ${BODY_KEY_COLUMN} IS NOT NULL`),
+				0,
+			))
 		);
 	if (objectClass === "backups")
 		return first("SELECT count(*) AS n FROM backups WHERE r2_key IS NOT NULL AND status = 'completed'");
@@ -86,12 +104,20 @@ async function d1Page(env: MigrationEnv, source: MigrationSource, after: string 
 	const queries: Record<Exclude<MigrationSource, "drive">, string> = {
 		messages: "SELECT id, raw_r2_key AS key, NULL AS size FROM messages WHERE raw_r2_key IS NOT NULL AND id > ?",
 		attachments: "SELECT id, r2_key AS key, size FROM message_attachments WHERE id > ?",
+		// The key a body has is always its own (`htmlBodyObjectKey`), whatever the column holds.
+		bodies: `SELECT id, 'bodies/' || id || '.html' AS key, NULL AS size FROM messages WHERE ${BODY_KEY_COLUMN} IS NOT NULL AND id > ?`,
 		backups: "SELECT id, r2_key AS key, size FROM backups WHERE r2_key IS NOT NULL AND status = 'completed' AND id > ?",
 	};
 	const sql = `${queries[source as Exclude<MigrationSource, "drive">]} ORDER BY id LIMIT ?`;
-	const { results } = await env.DB.prepare(sql)
-		.bind(after ?? "", MAX_BATCH_OBJECTS)
-		.all<Item>();
+	const results = await beforeBodyColumn(
+		async () =>
+			(
+				await env.DB.prepare(sql)
+					.bind(after ?? "", MAX_BATCH_OBJECTS)
+					.all<Item>()
+			).results,
+		[] as Item[],
+	);
 	return { items: results ?? [], exhausted: (results ?? []).length < MAX_BATCH_OBJECTS };
 }
 

@@ -4,6 +4,7 @@ import { messages, users } from "@/db/schema";
 import { aiAssistedDrafts, composerSends, writingStyleProfiles } from "@/db/schema/agent-writing";
 import type { SessionUser } from "@/lib/auth/types";
 import { createLogger } from "@/lib/logger.mjs";
+import { loadMessageBodies } from "@/lib/email/bodies";
 import { getMailboxAccessLevel, listAccessibleMailboxes } from "@/lib/mailboxes/access";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { readUserAiSettings } from "./user-ai-settings";
@@ -336,12 +337,15 @@ export async function processStyleBackfill(env: CloudflareEnv, message: StyleBac
 	for (let start = 0; start < ids.length; start += BACKFILL_PAGE) {
 		// Access or the opt-in was lost, or the profile was reset: the job is over, so another may be requested.
 		if (!(await backfillAllowed(db, userId, mailboxId))) return void (await releaseBackfill(db, userId, mailboxId));
-		const page = await db
-			.select({ html: messages.htmlBody, text: messages.textBody })
-			.from(messages)
-			.where(inArray(messages.id, ids.slice(start, start + BACKFILL_PAGE)));
+		const page = await loadMessageBodies(
+			env,
+			await db
+				.select({ id: messages.id, htmlBody: messages.htmlBody, textBody: messages.textBody })
+				.from(messages)
+				.where(inArray(messages.id, ids.slice(start, start + BACKFILL_PAGE))),
+		);
 		const measured = page
-			.map((row) => measureMessage(ownText(row.html, row.text)))
+			.map((row) => measureMessage(ownText(row.htmlBody, row.textBody)))
 			.filter((value): value is StyleMeasurement => value !== null);
 		// The row is gone, or its samples could not be saved after the compare-and-set retries: stop and release.
 		if (!(await updateStyleProfile(db, userId, mailboxId, measured)))

@@ -5,6 +5,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { authenticateApiKey, requireScope } from "@/lib/api/auth";
 import { getDb } from "@/db";
 import { messages, users } from "@/db/schema";
+import { loadMessageBodies } from "@/lib/email/bodies";
 import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { buildSearchConditions } from "@/lib/search/conditions";
 import { getRequestTimeZone } from "@/lib/time/utils";
@@ -64,12 +65,15 @@ export async function GET(request: Request) {
 	if (query) conditions.push(...buildSearchConditions(query, getRequestTimeZone(request, user.timeZone)));
 	if (cursor) conditions.push(afterCursor(messages.createdAt, messages.id, cursor));
 
-	const rows = await db
-		.select()
-		.from(messages)
-		.where(and(...conditions))
-		.orderBy(desc(messages.createdAt), desc(messages.id))
-		.limit(limit);
+	const rows = await loadMessageBodies(
+		env,
+		await db
+			.select()
+			.from(messages)
+			.where(and(...conditions))
+			.orderBy(desc(messages.createdAt), desc(messages.id))
+			.limit(limit),
+	);
 
 	return NextResponse.json({ messages: rows, nextCursor: getNextMessageCursor(rows, limit) });
 }

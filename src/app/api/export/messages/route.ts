@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { requireSessionUser } from "@/lib/api/auth";
 import { getEnv } from "@/lib/cloudflare";
+import { MessageBodyUnavailableError } from "@/lib/email/bodies";
 import { exportMailboxToMbox } from "@/lib/export/mbox";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 
@@ -18,7 +19,16 @@ export async function GET(request: Request) {
 		return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
 	}
 
-	const mbox = await exportMailboxToMbox(env, mailboxId);
+	let mbox: string;
+	try {
+		mbox = await exportMailboxToMbox(env, mailboxId);
+	} catch (failure) {
+		if (!(failure instanceof MessageBodyUnavailableError)) throw failure;
+		return NextResponse.json(
+			{ error: "Some messages could not be read from mail storage. Try the export again.", code: "BODY_UNAVAILABLE" },
+			{ status: 503 },
+		);
+	}
 	const address = `${access.mailbox.localPart}.mbox`;
 	return new Response(mbox, {
 		headers: {

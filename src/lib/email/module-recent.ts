@@ -13,6 +13,7 @@ import {
 } from "@/lib/modules/host-utils";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import { actingUser, attachmentsByMessage, readableBody, toHostMessageView } from "./module-read";
+import { loadMessageBodies } from "./bodies";
 
 /** Candidates read per call; a `from` match on the address inside another one is dropped after reading. */
 const CANDIDATE_ROWS = 25;
@@ -52,7 +53,8 @@ export async function recentModuleMessagesFromSender(
 		env,
 		matches.map((row) => row.id),
 	);
-	return matches.map((row) => ({
+	const bodies = await loadMessageBodies(env, matches, { textFirst: true });
+	return bodies.map((row) => ({
 		...toHostMessageView({ ...row, mailboxId: query.mailboxId }, attachments.get(row.id) ?? []),
 		textExcerpt: utf8Excerpt(readableBody(row), RECENT_EXCERPT_BYTES),
 	}));

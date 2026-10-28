@@ -104,6 +104,7 @@ export function parseFetchAttributes(text: string): {
 	flags: string[];
 	internalDate: Date | null;
 	size: number | null;
+	labels: string[] | null;
 } {
 	const flags = text.match(/\bFLAGS \(([^)]*)\)/i)?.[1];
 	const internalDate = text.match(/\bINTERNALDATE "([^"]*)"/i)?.[1];
@@ -113,6 +114,7 @@ export function parseFetchAttributes(text: string): {
 		flags: flags ? flags.trim().split(/\s+/).filter(Boolean) : [],
 		internalDate: internalDate ? parseInternalDate(internalDate) : null,
 		size: size ? Number(size) : null,
+		labels: parseGmailLabels(text),
 	};
 }
 
@@ -191,4 +193,114 @@ export function plainAuthToken(username: string, password: string): string {
 	let binary = "";
 	for (const byte of bytes) binary += String.fromCharCode(byte);
 	return btoa(binary);
+}
+
+/**
+ * The items of a parenthesized IMAP list that starts at `text[open]` (`(`): atoms and quoted strings (unescaped),
+ * with `NIL` as null. Nested lists and literals are not expected here and end the list.
+ */
+function parseParenthesizedList(text: string, open: number): (string | null)[] {
+	const items: (string | null)[] = [];
+	let index = open + 1;
+	while (index < text.length) {
+		const char = text[index];
+		if (char === ")") return items;
+		if (char === " ") {
+			index += 1;
+			continue;
+		}
+		if (char === '"') {
+			let value = "";
+			index += 1;
+			while (index < text.length && text[index] !== '"') {
+				if (text[index] === "\\" && index + 1 < text.length) index += 1;
+				value += text[index];
+				index += 1;
+			}
+			items.push(value);
+			index += 1;
+			continue;
+		}
+		const atom = /^[^\s()"]+/.exec(text.slice(index))?.[0];
+		if (!atom) return items;
+		items.push(atom.toUpperCase() === "NIL" ? null : atom);
+		index += atom.length;
+	}
+	return items;
+}
+
+/**
+ * @public Exercised by the unit tests. Gmail's `X-GM-LABELS (…)` of a FETCH response: system labels as `\Inbox`, `\Sent`, `\Draft`, `\Important`,
+ * user labels by name (modified UTF-7, decoded). Null when the response carries none.
+ */
+export function parseGmailLabels(text: string): string[] | null {
+	const match = /\bX-GM-LABELS \(/i.exec(text);
+	if (!match) return null;
+	return parseParenthesizedList(text, match.index + match[0].length - 1)
+		.filter((label): label is string => !!label)
+		.map((label) => (label.startsWith("\\") ? label : decodeModifiedUtf7(label)));
+}
+
+/** One mailbox of a LIST response: its name as the server spells it, the hierarchy delimiter and the attributes. */
+export type ImapListedMailbox = { name: string; delimiter: string | null; attributes: string[] };
+
+/** `* LIST (\HasNoChildren \Sent) "/" "Sent Items"`, with a quoted or atom name and a NIL delimiter allowed. */
+export function parseListLine(line: string): ImapListedMailbox | null {
+	const match = /^\* LIST \(([^)]*)\) (NIL|"(?:[^"\\]|\\.)*") (.+)$/i.exec(line.trim());
+	if (!match) return null;
+	const attributes = match[1].trim().split(/\s+/).filter(Boolean);
+	const delimiter = match[2].toUpperCase() === "NIL" ? null : match[2].slice(1, -1).replace(/\\(.)/g, "$1");
+	const rest = match[3].trim();
+	let name: string;
+	if (rest.startsWith('"')) {
+		const quoted = /^"((?:[^"\\]|\\.)*)"/.exec(rest);
+		if (!quoted) return null;
+		name = quoted[1].replace(/\\(.)/g, "$1");
+	} else {
+		// An atom name; LIST-EXTENDED data may follow it.
+		name = rest.split(" ")[0];
+	}
+	return name ? { name, delimiter, attributes } : null;
+}
+
+/** `* STATUS "INBOX" (MESSAGES 231 UIDNEXT 44292 UIDVALIDITY 1 SIZE 9000)`; missing items are null. */
+export function parseStatusLine(
+	line: string,
+): { messages: number | null; uidNext: number | null; uidValidity: number | null; size: number | null } | null {
+	if (!/^\* STATUS /i.test(line)) return null;
+	const items = line.slice(line.lastIndexOf("(") + 1, line.lastIndexOf(")"));
+	const item = (name: string) => {
+		const value = new RegExp(`\\b${name} (\\d+)`, "i").exec(items)?.[1];
+		return value === undefined ? null : Number(value);
+	};
+	return { messages: item("MESSAGES"), uidNext: item("UIDNEXT"), uidValidity: item("UIDVALIDITY"), size: item("SIZE") };
+}
+
+/** The `[UIDVALIDITY n]` an EXAMINE or SELECT answer carries, or null. */
+export function parseUidValidity(lines: readonly string[]): number | null {
+	for (const line of lines) {
+		const value = /\[UIDVALIDITY (\d+)\]/i.exec(line)?.[1];
+		if (value) return Number(value);
+	}
+	return null;
+}
+
+/**
+ * A mailbox name in IMAP's modified UTF-7 (RFC 3501 §5.1.3): `&` starts base64 of UTF-16 with `,` for `/`, `-` ends
+ * it, and `&-` is `&`. A malformed run is left as it is.
+ */
+export function decodeModifiedUtf7(value: string): string {
+	return value.replace(/&([^-]*)-/g, (whole, encoded: string) => {
+		if (encoded === "") return "&";
+		try {
+			const binary = atob(encoded.replace(/,/g, "/").padEnd(Math.ceil(encoded.length / 4) * 4, "="));
+			if (binary.length % 2) return whole;
+			let text = "";
+			for (let index = 0; index < binary.length; index += 2)
+				text += String.fromCharCode((binary.charCodeAt(index) << 8) | binary.charCodeAt(index + 1));
+			return text;
+		} catch {
+			return whole;
+		}
+	});
 }

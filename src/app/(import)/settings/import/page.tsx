@@ -2,7 +2,6 @@
 
 import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
-import { Upload } from "lucide-react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,43 +11,16 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { importMessageFiles } from "@/components/settings/import-messages-utils";
 import { ImportJobsPanel } from "@/components/settings/import-jobs-panel";
-import { ImportSizeNotice } from "@/components/settings/import-size-notice";
-import type {
-	ImapFormState,
-	ImportResult,
-	ImportSourceItem,
-	ImportSourceSection,
-	ImportTab,
-	ImportProgress,
-} from "./types";
+import { ImapImportForm } from "./imap-import-form";
+import type { ImportResult, ImportSourceItem, ImportSourceSection, ImportTab, ImportProgress } from "./types";
 import {
-	canSubmitImap,
-	createImapImportJob,
-	estimatedImapMessages,
 	ensureImportDestination,
-	fetchImapFolders,
-	filterCustomImapFolders,
 	formatImportResult,
 	getFileImportSource,
-	getFolderImportSource,
 	getSelectedImportSources,
 	importSourceOptions,
-	imapSecurityValue,
-	withImapSecurity,
-	resolveImapSourceFolder,
 } from "./utils";
 import { PageHeader } from "@/components/ui/page";
-
-const initialImapForm: ImapFormState = {
-	host: "",
-	port: "993",
-	secure: true,
-	username: "",
-	password: "",
-	folder: "INBOX",
-	limit: "100",
-	importAll: true,
-};
 
 const defaultSections = importSourceOptions.map((option) => option.value);
 
@@ -62,14 +34,7 @@ export default function SettingsImportPage() {
 	const [fileError, setFileError] = useState<string | null>(null);
 	const [fileLoading, setFileLoading] = useState(false);
 	const [fileProgress, setFileProgress] = useState<ImportProgress | null>(null);
-	const [imapForm, setImapForm] = useState<ImapFormState>(initialImapForm);
-	const [imapResult, setImapResult] = useState<ImportResult | null>(null);
-	const [imapError, setImapError] = useState<string | null>(null);
-	const [imapLoading, setImapLoading] = useState(false);
-	const [imapProgress, setImapProgress] = useState<ImportProgress | null>(null);
 	const [jobsRefreshKey, setJobsRefreshKey] = useState(0);
-	const [sizeConfirmRequired, setSizeConfirmRequired] = useState(false);
-	const [importAnyway, setImportAnyway] = useState(false);
 	const selectedSources = useMemo(() => getSelectedImportSources(selectedSections), [selectedSections]);
 	const fileImportSource = getFileImportSource(selectedSources);
 	const sourceSummary =
@@ -113,53 +78,6 @@ export default function SettingsImportPage() {
 		}
 	}
 
-	async function onImapSubmit(event: FormEvent<HTMLFormElement>) {
-		event.preventDefault();
-		if (!selectedMailbox?.id || selectedSources.length === 0) return;
-		setImapLoading(true);
-		setImapError(null);
-		setImapResult(null);
-		setImapProgress({
-			completed: 0,
-			total: 1,
-			label: "Discovering IMAP folders",
-		});
-		try {
-			const discoveredFolders = await fetchImapFolders(imapForm);
-			const expandedSources: ImportSourceItem[] = [];
-			for (const source of selectedSources) {
-				if (source.id === "system:others") {
-					expandedSources.push(
-						...filterCustomImapFolders(discoveredFolders, selectedSources).map(getFolderImportSource),
-					);
-				} else {
-					expandedSources.push(source);
-				}
-			}
-
-			// Each folder becomes a background job; the server works through them
-			// one at a time per source account, so the page can be closed.
-			for (const [index, source] of expandedSources.entries()) {
-				setImapProgress({
-					completed: index,
-					total: expandedSources.length,
-					label: `Queueing ${source.label}`,
-				});
-				const destination = await getDestination(source);
-				const folder = resolveImapSourceFolder(source, discoveredFolders);
-				await createImapImportJob(selectedMailbox.id, { ...imapForm, folder }, destination, source.label, importAnyway);
-				setJobsRefreshKey((key) => key + 1);
-			}
-			setImapProgress(null);
-			setImapResult({ queued: expandedSources.length });
-			setImapForm((current) => ({ ...current, password: "" }));
-		} catch (error) {
-			setImapError(error instanceof Error ? error.message : "IMAP import failed");
-		} finally {
-			setImapLoading(false);
-		}
-	}
-
 	return (
 		<div className="space-y-6">
 			<PageHeader
@@ -187,7 +105,7 @@ export default function SettingsImportPage() {
 								<option value="imap">IMAP</option>
 							</Select>
 						</div>
-						<div className="space-y-2">
+						<div className="space-y-2" hidden={activeTab !== "file"}>
 							<Label>Choose import sections</Label>
 
 							<div className="relative">
@@ -283,163 +201,10 @@ export default function SettingsImportPage() {
 								</form>
 							</>
 						) : (
-							<>
-								<form onSubmit={onImapSubmit} className="space-y-4">
-									<div className="grid gap-3 md:grid-cols-[1fr_110px]">
-										<div className="space-y-2">
-											<Label htmlFor="imap-host">Host</Label>
-											<Input
-												id="imap-host"
-												value={imapForm.host}
-												onChange={(event) => setImapForm({ ...imapForm, host: event.target.value })}
-												placeholder="imap.gmail.com"
-											/>
-										</div>
-										<div className="space-y-2">
-											<Label htmlFor="imap-port">Port</Label>
-											<Input
-												id="imap-port"
-												type="number"
-												value={imapForm.port}
-												onChange={(event) => setImapForm({ ...imapForm, port: event.target.value })}
-											/>
-										</div>
-									</div>
-									<div className="grid gap-3 md:grid-cols-2">
-										<div className="space-y-2">
-											<Label htmlFor="imap-username">Username</Label>
-											<Input
-												id="imap-username"
-												value={imapForm.username}
-												onChange={(event) =>
-													setImapForm({
-														...imapForm,
-														username: event.target.value,
-													})
-												}
-												placeholder="you@example.com"
-											/>
-										</div>
-										<div className="space-y-2">
-											<Label htmlFor="imap-password">Password or app password</Label>
-											<Input
-												id="imap-password"
-												type="password"
-												value={imapForm.password}
-												onChange={(event) =>
-													setImapForm({
-														...imapForm,
-														password: event.target.value,
-													})
-												}
-												autoComplete="off"
-											/>
-										</div>
-									</div>
-									<div className="grid gap-3 md:grid-cols-2">
-										<div className="space-y-2" hidden={imapForm.importAll}>
-											<Label htmlFor="imap-limit">Message limit per source</Label>
-											<Input
-												id="imap-limit"
-												type="number"
-												min={1}
-												max={10000}
-												value={imapForm.limit}
-												onChange={(event) =>
-													setImapForm({
-														...imapForm,
-														limit: event.target.value,
-													})
-												}
-											/>
-										</div>
-										<label className="flex items-end gap-2 pb-2 text-sm text-neutral-700">
-											<Checkbox
-												checked={imapForm.importAll}
-												onChange={(event) =>
-													setImapForm({
-														...imapForm,
-														importAll: event.target.checked,
-													})
-												}
-											/>
-											Import all messages (newest first)
-										</label>
-										<div className="space-y-2">
-											<Label htmlFor="imap-security">Encryption</Label>
-											<Select
-												id="imap-security"
-												value={imapSecurityValue(imapForm)}
-												onChange={(event) => setImapForm(withImapSecurity(imapForm, event.target.value === "tls"))}
-											>
-												<option value="tls">TLS (port 993)</option>
-												<option value="starttls">STARTTLS (port 143)</option>
-											</Select>
-											<p className="text-xs text-neutral-500">
-												Kite only connects over an encrypted connection and checks the server&apos;s certificate.
-											</p>
-										</div>
-									</div>
-									<p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs leading-5 text-neutral-500">
-										IMAP imports selected source sections automatically. Folders are discovered from the source account
-										and imported into matching new or existing Kite folders. Imports run in the background, so you can
-										leave this page.
-									</p>
-									<ImportSizeNotice
-										messages={estimatedImapMessages(imapForm, selectedSources.length)}
-										importAnyway={importAnyway}
-										onImportAnywayChange={setImportAnyway}
-										onRequiresConfirmation={setSizeConfirmRequired}
-									/>
-									<Button
-										type="submit"
-										disabled={
-											!canSubmitImap({
-												form: imapForm,
-												hasMailbox: !!selectedMailbox,
-												sources: selectedSources.length,
-												loading: imapLoading,
-												blockedBySize: sizeConfirmRequired && !importAnyway,
-											})
-										}
-									>
-										<Upload className="h-4 w-4" />
-										{imapLoading ? "Starting..." : "Import selected sources"}
-									</Button>
-									{imapProgress && (
-										<div className="space-y-1 text-xs text-neutral-500" aria-live="polite">
-											<div className="flex justify-between">
-												<span>{imapProgress.label}</span>
-												<span>
-													{imapProgress.completed}/{imapProgress.total}
-												</span>
-											</div>
-											<div className="h-1.5 overflow-hidden rounded-full bg-neutral-100">
-												<div
-													className="h-full bg-blue-600 transition-[width]"
-													style={{
-														width: `${Math.round((imapProgress.completed / imapProgress.total) * 100)}%`,
-													}}
-												/>
-											</div>
-										</div>
-									)}
-									{imapResult?.queued !== undefined && (
-										<p className="rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
-											Started {imapResult.queued} background import
-											{imapResult.queued === 1 ? "" : "s"}. Progress is shown below.
-										</p>
-									)}
-									{imapError && (
-										<p
-											role="alert"
-											className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
-										>
-											{imapError}
-										</p>
-									)}
-								</form>
-							</>
+							<ImapImportForm
+								mailboxId={selectedMailbox?.id ?? null}
+								onStarted={() => setJobsRefreshKey((key) => key + 1)}
+							/>
 						)}
 					</CardContent>
 				</div>

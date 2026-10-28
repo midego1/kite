@@ -147,6 +147,7 @@
 		"src/app/(dashboard)/inbox/[messageId]/email-html-sanitizer-utils.ts",
 		"src/lib/import/imap-utils.ts",
 		"src/lib/import/dedupe-utils.ts",
+		"src/lib/import/folder-mapping-utils.ts",
 		"src/lib/import/date-utils.ts",
 		"src/lib/imap/protocol-utils.ts",
 		"src/lib/net/host-guard-utils.ts",

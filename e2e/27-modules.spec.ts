@@ -401,6 +401,15 @@ test("Import off hides it from Settings and answers not-found on its page and AP
 			expect(await jobs.json()).toEqual({ error: "Not found" });
 			expect((await caller.post("/api/import/messages")).status()).toBe(404);
 			expect((await caller.post("/api/import/imap/folders", { data: {} })).status()).toBe(404);
+			// Whole-account imports: the plan and the job actions answer the module's 404, not their own errors.
+			for (const response of [
+				await caller.post("/api/import/account/plan", { data: {} }),
+				await caller.post("/api/import/jobs/ijob_missing/pause"),
+				await caller.post("/api/import/jobs/ijob_missing/resume", { data: {} }),
+			]) {
+				expect(response.status()).toBe(404);
+				expect(await response.json()).toEqual({ error: "Not found" });
+			}
 		}
 
 		await page.goto("/import-export");

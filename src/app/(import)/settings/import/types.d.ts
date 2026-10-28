@@ -9,7 +9,13 @@ export type ImportResult = {
 	queued?: number;
 };
 
+/** `account`: the whole account through the mapping table; `folder`: one source folder into one place. */
+export type ImapImportMode = "account" | "folder";
+
 export type ImapFormState = {
+	mode: ImapImportMode;
+	/** One-folder mode: where the folder goes (`system:<status>`). */
+	destination: string;
 	host: string;
 	port: string;
 	secure: boolean;
@@ -73,4 +79,40 @@ export type ImportJob = {
 	updatedAt: string;
 	startedAt: string | null;
 	finishedAt: string | null;
+	scope: "folder" | "account";
+	pauseReason: string | null;
+	folders: ImportJobFolder[];
 };
+
+export type ImportFolderRole = "inbox" | "sent" | "archive" | "junk" | "trash" | "all" | "user";
+
+/** One folder of a whole-account job, as `GET /api/import/jobs` reports it. */
+export type ImportJobFolder = {
+	sourceName: string;
+	role: ImportFolderRole;
+	destination: string;
+	/** The Kite folder's name when `destination` is `folder:<id>`. */
+	destinationName: string | null;
+	status: "pending" | "running" | "completed" | "skipped" | "failed";
+	total: number | null;
+	totalBytes: number | null;
+	processed: number;
+	imported: number;
+	skipped: number;
+	multiLabel: number;
+	lastError: string | null;
+};
+
+/** One row of the mapping table (`POST /api/import/account/plan`). */
+export type AccountPlanFolder = {
+	sourceName: string;
+	displayName: string;
+	role: ImportFolderRole;
+	include: boolean;
+	/** `system:<status>`, `folder:<id>`, `new:<name>` or `gmail:labels`. */
+	destination: string;
+	messages: number | null;
+	bytes: number | null;
+};
+
+export type AccountPlan = { gmail: boolean; folders: AccountPlanFolder[] };

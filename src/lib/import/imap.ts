@@ -4,6 +4,8 @@ import { mailHostPolicy, mailServerHostProblem } from "@/lib/net/host-guard-util
 import type { ImportMessageInput } from "./types";
 import type { ImapImportInput } from "./imap-types";
 import { chunk, imapSecurity, importMessageFromImap, selectImapUidBatch } from "./imap-utils";
+import { planAccountFolders } from "./folder-mapping-utils";
+import type { PlannedImportFolder } from "./folder-mapping-types";
 
 /** Messages fetched per UID FETCH command. */
 const FETCH_CHUNK_SIZE = 25;
@@ -58,6 +60,32 @@ export async function listImapFolders(env: ImapImportEnv, input: ImapAccount): P
 	const session = await openImportSession(env, input);
 	try {
 		return await session.listMailboxNames();
+	} finally {
+		await session.close();
+	}
+}
+
+export type AccountImportPlan = {
+	/** Gmail (`X-GM-EXT-1`): All Mail is copied once and each message filed by its labels. */
+	gmail: boolean;
+	folders: (PlannedImportFolder & { messages: number | null; bytes: number | null })[];
+};
+
+/**
+ * The mapping table of a whole-account import: the source's folders with their proposed role and destination, and
+ * each one's message count and size from STATUS (the size only where the server offers STATUS=SIZE).
+ */
+export async function planAccountImport(env: ImapImportEnv, input: ImapAccount): Promise<AccountImportPlan> {
+	const session = await openImportSession(env, input);
+	try {
+		const gmail = session.capabilities.includes("X-GM-EXT-1");
+		const planned = planAccountFolders(await session.listMailboxes(), { gmail });
+		const folders: AccountImportPlan["folders"] = [];
+		for (const folder of planned) {
+			const status = await session.status(folder.sourceName);
+			folders.push({ ...folder, messages: status?.messages ?? null, bytes: status?.size ?? null });
+		}
+		return { gmail, folders };
 	} finally {
 		await session.close();
 	}

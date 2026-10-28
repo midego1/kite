@@ -135,9 +135,11 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/finance/subscriptions/[id]`                      | DELETE, GET, PATCH     | [source](../src/app/api/finance/subscriptions/[id]/route.ts)                      |
 | `/api/finance/subscriptions`                           | GET, POST              | [source](../src/app/api/finance/subscriptions/route.ts)                           |
 | `/api/folders`                                         | GET, POST              | [source](../src/app/api/folders/route.ts)                                         |
+| `/api/import/account/plan`                             | POST                   | [source](../src/app/api/import/account/plan/route.ts)                             |
 | `/api/import/estimate`                                 | POST                   | [source](../src/app/api/import/estimate/route.ts)                                 |
 | `/api/import/imap/folders`                             | POST                   | [source](../src/app/api/import/imap/folders/route.ts)                             |
 | `/api/import/imap`                                     | POST                   | [source](../src/app/api/import/imap/route.ts)                                     |
+| `/api/import/jobs/[id]/pause`                          | POST                   | [source](../src/app/api/import/jobs/[id]/pause/route.ts)                          |
 | `/api/import/jobs/[id]/resume`                         | POST                   | [source](../src/app/api/import/jobs/[id]/resume/route.ts)                         |
 | `/api/import/jobs/[id]`                                | DELETE                 | [source](../src/app/api/import/jobs/[id]/route.ts)                                |
 | `/api/import/jobs`                                     | GET, POST              | [source](../src/app/api/import/jobs/route.ts)                                     |

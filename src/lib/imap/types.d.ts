@@ -21,6 +21,8 @@ export type ImapFetchedMessage = {
 	internalDate: Date | null;
 	/** RFC822.SIZE, or null. */
 	size: number | null;
+	/** Gmail's X-GM-LABELS when they were asked for, else null. */
+	labels: string[] | null;
 };
 
 /** What one connection accepts from a server, and how long it waits (`imapLimits`). */

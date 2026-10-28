@@ -139,7 +139,7 @@ test("a stored form is rebuilt only from the listed phrase and {name}, in any sc
 		"Met vriendelijke groet,": "met vriendelijke groet,",
 		"Best, Sam Smith": "best, {name}",
 		"Cheers!": "cheers!",
-		"Groetjes, Michiel de Gooijer | +31 6 12345678": null,
+		"Groetjes, Jan de Vries | +31 6 12345678": null,
 		"cheers jan": null,
 		"Thanks for your help": null,
 		"Jan de Vries,": null,

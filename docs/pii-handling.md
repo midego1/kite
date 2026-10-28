@@ -27,7 +27,7 @@ the daily heartbeat holds a random install id, the Kite version, the runtime,
 the ranges (never exact numbers) of accounts, active accounts, mailboxes and
 messages, and the modules that are on; never ids, addresses, domains,
 `APP_URL` or error text. It goes to `kite-telemetry.midego.net`, run by
-Michiel de Gooijer (midego) on Cloudflare (data requests: privacy@midego.net),
+the Kite project on Cloudflare (data requests: privacy@midego.net),
 unless `KITE_TELEMETRY_URL` names another collector or is empty. On Workers,
 Cloudflare adds a `CF-Worker` header naming the Worker's zone (the domain or
 `workers.dev` subdomain) to the request, which Kite cannot remove; on Node the

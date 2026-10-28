@@ -6,7 +6,7 @@ What Kite sends, when, and how operators turn it off is documented in [Privacy â
 
 ## Operator and data protection
 
-- **Operator (controller):** Michiel de Gooijer (midego).
+- **Operator (controller):** the Kite project.
 - **Contact for questions and data requests:** privacy@midego.net. An install id from Admin â†’ General is enough to find and erase an install's reports. `midego.net` receives mail through Cloudflare Email Routing: confirm this address has a routing rule to a mailbox you read (step 0 below) before going live.
 - **Legal basis:** legitimate interest (Art. 6(1)(f) GDPR), with notice and the right to object (Art. 21), as [the privacy page](../../docs/privacy.md#usage-statistics) describes. Statistics are on by default, but an install sends nothing before its owner was told: at setup, or by a notice at least 14 days before the first report. The owner objects by turning them off at any time, which asks this collector to erase the install's reports (best effort, below).
 - **Maintainer check:** `midego.net` receives mail through Cloudflare Email Routing. Before the privacy page is relied on, and again whenever the routing changes, confirm that `privacy@midego.net` has a routing rule and that a test message arrives.

@@ -34,7 +34,7 @@ export function UsageStatisticsSetup({
 		<section
 			aria-labelledby="setup-usage-statistics-title"
 			data-setup-telemetry
-			className="space-y-3 rounded-2xl bg-neutral-50 px-4 py-4 text-xs leading-5 text-neutral-600"
+			className="space-y-3 rounded-lg bg-neutral-50 px-4 py-4 text-xs leading-5 text-neutral-600"
 		>
 			<h2 id="setup-usage-statistics-title" className="text-sm font-medium text-neutral-900">
 				Usage statistics

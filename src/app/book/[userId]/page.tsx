@@ -47,17 +47,17 @@ export default function PublicBookingListPage() {
 			{loading && <RouteLoadingBar />}
 			<div className="mx-auto flex w-full max-w-2xl flex-1 flex-col">
 				<div className="mb-7">
-					<h1 className="text-2xl md:text-3xl font-semibold">Book a meeting{name ? ` with ${name}` : ""}</h1>
-					<p className="mt-2 text-sm text-neutral-500">Choose a meeting to see available times.</p>
+					<h1 className="text-xl font-semibold tracking-tight">Book a meeting{name ? ` with ${name}` : ""}</h1>
+					<p className="mt-1.5 text-sm text-neutral-500">Choose a meeting to see available times.</p>
 				</div>
 				{loading ? (
 					<BookingListSkeleton />
 				) : error ? (
-					<p className="rounded-2xl border border-neutral-200 bg-white p-6 text-sm text-neutral-600 shadow-sm">
+					<p className="rounded-xl border border-neutral-200 bg-white p-6 text-sm text-neutral-600 shadow-xs">
 						{error}
 					</p>
 				) : events.length === 0 ? (
-					<p className="rounded-2xl border border-neutral-200 bg-white p-6 text-sm text-neutral-600">
+					<p className="rounded-xl border border-neutral-200 bg-white p-6 text-sm text-neutral-600">
 						No meetings are available to book right now.
 					</p>
 				) : (
@@ -66,7 +66,7 @@ export default function PublicBookingListPage() {
 							<Link
 								key={event.id}
 								href={username ? `/c/${username}/${event.slug}` : `/book/${userId}/${event.id}`}
-								className="group flex items-center gap-4 rounded-2xl bg-white p-5 transition-colors"
+								className="group flex items-center gap-4 rounded-xl border border-neutral-200 bg-white p-5 shadow-xs transition-colors hover:bg-neutral-50"
 							>
 								<div className="min-w-0 flex-1">
 									<h2 className="font-semibold group-hover:text-blue-700">{event.name}</h2>

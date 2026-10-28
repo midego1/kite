@@ -129,7 +129,7 @@ export default function MailboxesPage() {
 							New mailbox
 						</Button>
 					</DialogTrigger>
-					<DialogContent>
+					<DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto">
 						<DialogHeader>
 							<DialogTitle>Create mailbox</DialogTitle>
 							<DialogDescription>Add an address and provision its routing rule automatically.</DialogDescription>

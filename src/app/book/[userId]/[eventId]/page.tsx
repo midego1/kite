@@ -164,10 +164,12 @@ export default function PublicBookingEventPage() {
 				{loading ? (
 					<BookingDetailSkeleton />
 				) : !event ? (
-					<p className="rounded-2xl bg-white p-8 text-sm text-neutral-600 shadow-sm">{error}</p>
+					<p className="rounded-xl border border-neutral-200 bg-white p-8 text-sm text-neutral-600 shadow-xs">
+						{error}
+					</p>
 				) : (
 					<div
-						className={`page-transition-enter grid overflow-hidden rounded-t-3xl bg-white shadow-xl shadow-neutral-200/50 lg:min-h-0 lg:flex-1 ${selectedSlot || done ? "lg:grid-cols-[minmax(260px,1fr)_minmax(420px,2fr)]" : "lg:grid-cols-[minmax(240px,.95fr)_minmax(380px,1.65fr)_minmax(240px,.95fr)]"}`}
+						className={`page-transition-enter grid overflow-hidden border border-neutral-200 bg-white shadow-xs max-sm:rounded-t-xl max-sm:border-x-0 max-sm:border-b-0 sm:rounded-t-xl lg:mb-4 lg:rounded-xl lg:min-h-0 lg:flex-1 ${selectedSlot || done ? "lg:grid-cols-[minmax(260px,1fr)_minmax(420px,2fr)]" : "lg:grid-cols-[minmax(240px,.95fr)_minmax(380px,1.65fr)_minmax(240px,.95fr)]"}`}
 					>
 						<aside className="min-w-0 border-b border-neutral-200 p-7 max-sm:p-5 sm:p-9 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 flex flex-col border-r">
 							<h1 className="text-xl font-semibold tracking-tight">{event.name}</h1>
@@ -176,7 +178,7 @@ export default function PublicBookingEventPage() {
 								<p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-600">{event.description}</p>
 							)}
 
-							<div className="mt-4 space-y-5 text-sm font-medium text-neutral-600 border-t border-neutral-100 pt-4">
+							<div className="mt-4 space-y-5 border-t border-neutral-200 pt-4 text-sm font-medium text-neutral-600">
 								<p className="flex items-start gap-3">
 									<Clock3 size={18} className="shrink-0 text-neutral-600" />
 									{event.durationMinutes} min
@@ -238,10 +240,10 @@ export default function PublicBookingEventPage() {
 						</aside>
 						{done ? (
 							<section className="flex min-h-0 flex-col items-center justify-center px-8 py-20 text-center">
-								<div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-green-700">
+								<div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d]">
 									<Check className="h-7 w-7" />
 								</div>
-								<h2 className="text-2xl font-semibold">Meeting booked</h2>
+								<h2 className="text-xl font-semibold tracking-tight">Meeting booked</h2>
 								<p className="mt-3 text-sm text-neutral-500">
 									Your meeting is scheduled for{" "}
 									{selectedSlot &&
@@ -259,7 +261,7 @@ export default function PublicBookingEventPage() {
 								}}
 								className="page-transition-enter min-h-0 space-y-6 overflow-y-auto p-7 max-sm:p-5 sm:p-10"
 							>
-								<h2 className="text-2xl font-medium">Enter Details</h2>
+								<h2 className="text-lg font-semibold tracking-tight">Enter Details</h2>
 								<label className="block text-sm font-medium text-neutral-700">
 									Name <span aria-hidden="true">*</span>
 									<Input
@@ -295,12 +297,7 @@ export default function PublicBookingEventPage() {
 										/>
 									</label>
 								) : (
-									<Button
-										type="button"
-										variant="outline"
-										onClick={() => setShowGuests(true)}
-										className="rounded-full text-blue-700"
-									>
+									<Button type="button" variant="outline" onClick={() => setShowGuests(true)} className="text-blue-700">
 										Add guests
 									</Button>
 								)}
@@ -319,11 +316,7 @@ export default function PublicBookingEventPage() {
 										{error}
 									</p>
 								)}
-								<Button
-									type="submit"
-									disabled={submitting || !name.trim() || !email.trim()}
-									className="h-11 rounded-full bg-blue-600 px-7 text-sm font-medium hover:bg-blue-700"
-								>
+								<Button type="submit" disabled={submitting || !name.trim() || !email.trim()} className="h-10 px-6">
 									{submitting ? "Booking…" : "Schedule Event"}
 								</Button>
 							</form>
@@ -339,7 +332,7 @@ export default function PublicBookingEventPage() {
 											aria-label="Previous month"
 											disabled={!firstMonth || moveMonth(visibleMonth, -1) < firstMonth}
 											onClick={() => setMonth(moveMonth(visibleMonth, -1))}
-											className="flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30"
+											className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30"
 										>
 											<ChevronLeft className="h-5 w-5" />
 										</button>
@@ -348,7 +341,7 @@ export default function PublicBookingEventPage() {
 											aria-label="Next month"
 											disabled={!lastMonth || moveMonth(visibleMonth, 1) > lastMonth}
 											onClick={() => setMonth(moveMonth(visibleMonth, 1))}
-											className="flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30"
+											className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30"
 										>
 											<ChevronRight className="h-5 w-5" />
 										</button>

@@ -83,7 +83,7 @@ export function ContactDetailsTrigger({ mailboxId, address, name, label, classNa
 				{shownName}
 			</button>
 			<Dialog open={open} onOpenChange={handleOpenChange}>
-				<DialogContent>
+				<DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto">
 					<DialogHeader>
 						<DialogTitle>Contact details</DialogTitle>
 						<DialogDescription>Update how this contact appears in your mailbox.</DialogDescription>

@@ -69,18 +69,18 @@ function PublicDriveView({
 		<PublicDriveFrame wide>
 			<nav
 				aria-label="Folder path"
-				className="mb-4 flex flex-wrap items-center gap-1 text-lg text-neutral-800 dark:text-neutral-200"
+				className="mb-4 flex min-h-10 flex-wrap items-center gap-0.5 text-base text-neutral-500"
 			>
 				{path.map((crumb, index) => (
 					<span key={crumb.id} className="flex items-center gap-1">
 						{index > 0 && <ChevronRight size={18} className="text-neutral-500" />}
 						{index === path.length - 1 ? (
-							<h1 className="px-2 py-1 font-medium">{crumb.name}</h1>
+							<h1 className="px-1.5 py-0.5 font-medium text-neutral-900">{crumb.name}</h1>
 						) : (
 							<button
 								type="button"
 								onClick={() => onOpen(crumb.id)}
-								className="rounded-full px-2 py-1 hover:bg-neutral-200/60 dark:hover:bg-neutral-800"
+								className="rounded-md px-1.5 py-0.5 hover:bg-neutral-200/60 hover:text-neutral-900"
 							>
 								{crumb.name}
 							</button>
@@ -90,7 +90,7 @@ function PublicDriveView({
 				{isFile && (
 					<a
 						href={publicContentUrl(token, item.id, true)}
-						className="ml-auto inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+						className="ml-auto inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700"
 					>
 						<Download size={16} />
 						Download
@@ -98,7 +98,7 @@ function PublicDriveView({
 				)}
 			</nav>
 			{isFile ? (
-				<div className="min-h-[70vh] flex-1 rounded-2xl bg-neutral-900 p-3">
+				<div className="min-h-[70vh] flex-1 rounded-xl border border-neutral-200 bg-[#18181b] p-3">
 					<DrivePreviewBody
 						src={publicContentUrl(token, item.id)}
 						downloadHref={publicContentUrl(token, item.id, true)}
@@ -107,7 +107,11 @@ function PublicDriveView({
 					/>
 				</div>
 			) : (
-				<div role="list" aria-label={item.name} className="rounded-2xl bg-white p-2 shadow-sm dark:bg-neutral-900">
+				<div
+					role="list"
+					aria-label={item.name}
+					className="divide-y divide-neutral-200 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xs"
+				>
 					{items.length === 0 ? (
 						<p className="p-10 text-center text-sm text-neutral-500">This folder is empty.</p>
 					) : (
@@ -124,17 +128,14 @@ function PublicDriveView({
 function PublicRow({ entry, token, onOpen }: { entry: PublicDriveItem; token: string; onOpen: (id: string) => void }) {
 	const { Icon, className } = driveIconFor(entry);
 	return (
-		<div
-			role="listitem"
-			className="flex items-center gap-4 rounded-lg px-3 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800"
-		>
+		<div role="listitem" className="flex items-center gap-4 px-4 text-sm hover:bg-neutral-50">
 			<button
 				type="button"
 				onClick={() => onOpen(entry.id)}
 				className="flex min-w-0 flex-1 items-center gap-4 py-3 text-left"
 			>
 				<Icon size={16} className={className} fill={entry.kind === "folder" ? "currentColor" : "none"} />
-				<span className="truncate text-neutral-900 dark:text-neutral-100">{entry.name}</span>
+				<span className="truncate text-neutral-900">{entry.name}</span>
 			</button>
 			{entry.kind === "file" && (
 				<span className="hidden shrink-0 text-neutral-500 sm:block">{formatDriveSize(entry.size)}</span>
@@ -143,7 +144,7 @@ function PublicRow({ entry, token, onOpen }: { entry: PublicDriveItem; token: st
 				<a
 					href={publicContentUrl(token, entry.id, true)}
 					aria-label={`Download ${entry.name}`}
-					className="shrink-0 rounded-full p-2 text-neutral-600 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+					className="shrink-0 rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 				>
 					<Download size={16} />
 				</a>

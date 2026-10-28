@@ -13,11 +13,12 @@ after(() => rmSync(directory, { recursive: true, force: true }));
 /** The IMAP session and the module host are replaced; everything else in the job code is real and runs on SQLite. */
 const stubs = {
 	"./imap": `
-		export async function openImapSession() {
+		export async function openImportSession() {
 			const fake = globalThis.__fakeImport;
 			if (fake.openError) throw new Error(fake.openError);
 			fake.opened += 1;
 			return {
+				examine: async () => undefined,
 				searchUids: async () => fake.uids.map(String),
 				fetchMessages: async (uids) => new Map(uids.map((uid) => [uid, new TextEncoder().encode("Subject: x\\r\\n\\r\\nbody")])),
 				close: async () => undefined,

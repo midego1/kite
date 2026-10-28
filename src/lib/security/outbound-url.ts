@@ -77,6 +77,13 @@ function parseIpv6(value: string): number[] | null {
 	return values.length === 8 ? values : null;
 }
 
+/** Prefixes that carry or translate to an IPv4 address the literal check cannot see, so they are refused outright. */
+function isIpv4TunnelPrefix(a: number, b: number, c: number): boolean {
+	if (a === 0x64 && b === 0xff9b && c === 1) return true; // 64:ff9b:1::/48 local-use NAT64
+	if (a === 0x2002) return true; // 6to4 2002::/16
+	return a === 0x2001 && b === 0; // Teredo 2001::/32
+}
+
 function isBlockedIpv6(groups: number[]): boolean {
 	const [a, b, c, d, e, f, g, h] = groups;
 	const embeddedIpv4 = g * 65536 + h;
@@ -99,7 +106,7 @@ export function isPrivateIpAddress(value: string): boolean {
 	const ipv4 = parseIpv4(address);
 	if (ipv4 !== null) return isBlockedIpv4(ipv4);
 	const ipv6 = parseIpv6(address);
-	if (ipv6) return isBlockedIpv6(ipv6);
+	if (ipv6) return isBlockedIpv6(ipv6) || isIpv4TunnelPrefix(ipv6[0], ipv6[1], ipv6[2]);
 	return false;
 }
 

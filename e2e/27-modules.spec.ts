@@ -2829,8 +2829,8 @@ test("a queued import retry that arrives while Import is off is skipped and the 
 			data: {
 				mailboxId: mailboxes.mailboxes[0].id,
 				host: "imap.no-such-host.example.net",
-				port: 1,
-				secure: false,
+				port: 993,
+				secure: true,
 				username: "nobody",
 				password: "not-a-password",
 				folder: "INBOX",

@@ -44,6 +44,14 @@ A module that is off is absent, not broken:
 - **Existing webhook subscriptions keep their events.** They just receive nothing while the module is off.
 - **Integrity hooks still run.** When a user changes their time zone, Calendar still freezes their legacy recurring series, so the calendar is correct when it comes back.
 
+### IMAP connections
+
+IMAP imports connect only over an encrypted connection: TLS on port 993, or STARTTLS on port 143 (the import form's **Encryption** choice). Kite checks the server's certificate and never sends a password in plain text, so a server that offers neither is refused, and so are ports other than 993 and 143 and private or local addresses. The same client runs on Cloudflare and on the Node runtime; on Node, Kite resolves the server's name itself, refuses it when any address is private, and connects only to the addresses it checked. `EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS=1` lets a self-hosted install import from a mail server on its LAN, and `EXTERNAL_ACCOUNTS_EXTRA_PORTS` adds ports for a bridge such as DavMail (see [Self-hosting](self-hosting.md)). The client also limits what a server can send and how long it may take, so a broken or hostile server cannot fill memory or hold an import:
+
+- A message may be at most 36 MB on Cloudflare (enough for a message at Gmail's 25 MB attachment limit; a Worker has 128 MB of memory) and 64 MB on the Node runtime, and one batch of messages 48 MB or 96 MB. A message above the limit fails its batch: the job retries a few times and then fails with the reason. It is not skipped yet.
+- A response line may be at most 8 MB, and the lines answering one command 32 MB or 200,000 lines.
+- A command gets three minutes. Data that keeps arriving at 64 KB/s or more extends that, up to ten minutes, so a large batch on a slow link finishes while a server that sends a byte at a time does not.
+
 ### Paused imports
 
 Turning Mail import off pauses background IMAP jobs. They are not failed or cancelled:

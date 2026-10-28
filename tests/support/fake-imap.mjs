@@ -16,7 +16,10 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  * - `authPlain`, `saslIr`: advertise `AUTH=PLAIN` and `SASL-IR`.
  * - `loginDisabledWithoutTls`: advertise `LOGINDISABLED` and refuse sign-in until the connection is encrypted.
  * - `greetingCapabilities`: put `[CAPABILITY …]` in the greeting (default true).
- * - `users`: `{ [username]: password }`.
+ * - `users`: `{ [username]: password }`. `LOGIN` takes quoted strings or synchronizing literals.
+ * - Misbehaviour: `hugeLiteral` (a FETCH announcing a 4 GB literal), `endlessLine` (a greeting that never ends),
+ *   `slowLoris` (a greeting trickled one byte at a time, forever), `silent` (no greeting at all), `silentTls` (OK to
+ *   STARTTLS, then no handshake), `secondChallenge` (a second `+` during AUTHENTICATE PLAIN).
  * - `folders`: `{ [name]: [raw message, …] }`; UIDs count up from 1 per folder.
  */
 export async function startFakeImap(options = {}) {
@@ -43,7 +46,17 @@ export async function startFakeImap(options = {}) {
 		connections.add(socket);
 		socket.on("close", () => connections.delete(socket));
 		socket.on("error", () => undefined);
-		const state = { socket, encrypted, authenticated: false, selected: null, pendingAuth: null, buffer: "" };
+		const state = {
+			socket,
+			encrypted,
+			authenticated: false,
+			selected: null,
+			pendingAuth: null,
+			challenged: false,
+			buffer: Buffer.alloc(0),
+			partial: "",
+			literal: null,
+		};
 
 		const capabilities = () => {
 			const list = ["IMAP4rev1"];
@@ -55,12 +68,30 @@ export async function startFakeImap(options = {}) {
 		};
 		const send = (text) => state.socket.write(text);
 
+		// Lines, with a `{n}` literal folded back into the line as a quoted string once its bytes have arrived.
 		const onData = (chunk) => {
-			state.buffer += chunk.toString("utf8");
-			let index;
-			while ((index = state.buffer.indexOf("\r\n")) >= 0) {
-				const line = state.buffer.slice(0, index);
-				state.buffer = state.buffer.slice(index + 2);
+			state.buffer = Buffer.concat([state.buffer, chunk]);
+			while (true) {
+				if (state.literal !== null) {
+					if (state.buffer.length < state.literal) return;
+					const value = state.buffer.subarray(0, state.literal).toString("utf8");
+					state.buffer = state.buffer.subarray(state.literal);
+					state.literal = null;
+					state.partial += `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+					continue;
+				}
+				const index = state.buffer.indexOf("\r\n");
+				if (index < 0) return;
+				const line = state.partial + state.buffer.subarray(0, index).toString("utf8");
+				state.buffer = state.buffer.subarray(index + 2);
+				const literal = state.pendingAuth ? null : line.match(/\{(\d+)\}$/);
+				if (literal) {
+					state.partial = line.slice(0, -literal[0].length);
+					state.literal = Number(literal[1]);
+					send("+ go ahead\r\n");
+					continue;
+				}
+				state.partial = "";
 				if (respond(line) === "starttls") return;
 			}
 		};
@@ -84,6 +115,14 @@ export async function startFakeImap(options = {}) {
 			commands.push({ line, encrypted: state.encrypted });
 			if (state.pendingAuth) {
 				const tag = state.pendingAuth;
+				if (line.trim() === "*") {
+					state.pendingAuth = null;
+					return send(`${tag} BAD Authentication cancelled\r\n`);
+				}
+				if (options.secondChallenge && !state.challenged) {
+					state.challenged = true;
+					return send("+ again\r\n");
+				}
 				state.pendingAuth = null;
 				plain(tag, line.trim());
 				return;
@@ -102,13 +141,14 @@ export async function startFakeImap(options = {}) {
 				if (state.encrypted || !options.starttls) return send(`${tag} BAD STARTTLS not available\r\n`);
 				state.socket.off("data", onData);
 				send(`${tag} OK Begin TLS negotiation now\r\n${options.injectAfterStartTls ?? ""}`);
+				if (options.silentTls) return "starttls";
 				const secure = new TLSSocket(state.socket, { isServer: true, ...options.tls });
 				secure.on("error", () => undefined);
 				connections.add(secure);
 				secure.on("close", () => connections.delete(secure));
 				state.socket = secure;
 				state.encrypted = true;
-				state.buffer = "";
+				state.buffer = Buffer.alloc(0);
 				secure.on("data", onData);
 				return "starttls";
 			}
@@ -144,6 +184,7 @@ export async function startFakeImap(options = {}) {
 					return send(`* SEARCH ${entry.messages.map((message) => message.uid).join(" ")}\r\n${tag} OK done\r\n`);
 				if (sub.toUpperCase() === "FETCH") {
 					const wanted = new Set(set.split(",").map(Number));
+					if (options.hugeLiteral) return send(`* 1 FETCH (UID 1 BODY[] {4000000000}\r\n${"x".repeat(1000)}`);
 					entry.messages.forEach((message, index) => {
 						if (!wanted.has(message.uid)) return;
 						send(`* ${index + 1} FETCH (UID ${message.uid} BODY[] {${message.raw.length}}\r\n`);
@@ -157,6 +198,13 @@ export async function startFakeImap(options = {}) {
 		}
 
 		state.socket.on("data", onData);
+		if (options.silent) return;
+		if (options.endlessLine) return streamEndlessLine(state.socket);
+		if (options.slowLoris) {
+			const timer = setInterval(() => (socket.destroyed ? clearInterval(timer) : socket.write("x")), 20);
+			socket.on("close", () => clearInterval(timer));
+			return socket.write("* OK ");
+		}
 		send(
 			options.greetingCapabilities === false
 				? "* OK fake IMAP ready\r\n"
@@ -175,6 +223,8 @@ export async function startFakeImap(options = {}) {
 		host: options.host ?? "127.0.0.1",
 		commands,
 		addMessage,
+		/** Connections the server still holds open. */
+		openConnections: () => connections.size,
 		failNextLogin() {
 			nextLoginFails = true;
 		},
@@ -183,6 +233,20 @@ export async function startFakeImap(options = {}) {
 			await new Promise((resolve) => server.close(() => resolve()));
 		},
 	};
+}
+
+/** Up to 16 MB of a line without CRLF, a megabyte at a time, until the client goes away. */
+function streamEndlessLine(socket) {
+	const chunk = Buffer.alloc(1024 * 1024, "x");
+	let sent = 0;
+	const next = () => {
+		while (!socket.destroyed && sent < 16) {
+			sent += 1;
+			if (!socket.write(sent === 1 ? Buffer.concat([Buffer.from("* OK "), chunk]) : chunk))
+				return socket.once("drain", next);
+		}
+	};
+	next();
 }
 
 /** The quoted (or atom) arguments of a command line, unescaped. */

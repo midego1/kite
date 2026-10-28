@@ -116,6 +116,7 @@ export function createNodeRuntime(): NodeRuntime {
 			(await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address),
 		EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK: optional("EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK"),
 		EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS: optional("EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS"),
+		EXTERNAL_ACCOUNTS_EXTRA_PORTS: optional("EXTERNAL_ACCOUNTS_EXTRA_PORTS"),
 		// Mail server connections (IMAP import): DNS pinned, private addresses refused, certificates verified.
 		TCP_CONNECT: createTcpConnect({
 			allowPrivate: mailHosts.allowPrivate,

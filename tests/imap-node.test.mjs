@@ -43,8 +43,8 @@ after(() => {
  * like the dev flag allows it), trusts the test certificate, and sends the real IMAP ports to the fake's port.
  */
 /** `ca: null` trusts only the system store, where the test certificate is not. */
-function nodeEnv(fake, { ca = tls.cert, resolve = async () => ["127.0.0.1"], ...env } = {}) {
-	const connect = createTcpConnect({ ca: ca ?? undefined, resolve, allowLoopback: true });
+function nodeEnv(fake, { ca = tls.cert, resolve = async () => ["127.0.0.1"], connectTimeoutMs, ...env } = {}) {
+	const connect = createTcpConnect({ ca: ca ?? undefined, resolve, allowLoopback: true, connectTimeoutMs });
 	return {
 		KITE_RUNTIME: "node",
 		TCP_CONNECT: (address, options) => connect({ ...address, port: fake.port }, options),
@@ -172,10 +172,15 @@ test("the connector pins a vetted address and refuses a name with any private ad
 		strict({ hostname: HOST, port: server.port }, { secureTransport: "on", allowHalfOpen: false }).opened,
 		MailServerRefusedError,
 	);
-	const lan = createTcpConnect({ ca: tls.cert, resolve: async () => ["127.0.0.1"], allowPrivate: true });
-	const socket = lan({ hostname: HOST, port: server.port }, { secureTransport: "on", allowHalfOpen: false });
-	await socket.opened;
-	await socket.close();
+	// The private-host setting opens LAN ranges, never loopback, link-local or 0.0.0.0/8.
+	for (const address of ["127.0.0.1", "169.254.169.254", "0.0.0.0", "fe80::1"]) {
+		const lan = createTcpConnect({ ca: tls.cert, resolve: async () => [address], allowPrivate: true });
+		await assert.rejects(
+			lan({ hostname: HOST, port: server.port }, { secureTransport: "on", allowHalfOpen: false }).opened,
+			MailServerRefusedError,
+			address,
+		);
+	}
 	await assert.rejects(
 		createTcpConnect({ resolve: async () => [] })(
 			{ hostname: HOST, port: 993 },
@@ -318,4 +323,74 @@ test("a job against a server without TLS fails at once with the reason", async (
 	assert.equal(row.password, "");
 	assert.match(row.last_error, /does not offer STARTTLS/);
 	assert.equal(secretSentInPlainText(server), false);
+});
+
+test("a literal larger than 64 MB is refused before it is read", async (t) => {
+	const server = await fake(t, { implicitTls: true, authPlain: true, saslIr: true, hugeLiteral: true });
+	const session = await openImapSession(nodeEnv(server), login());
+	try {
+		await session.examine("INBOX");
+		await assert.rejects(session.fetchMessages(["1"]), (error) => {
+			assert.equal(error.message, "The IMAP server sent a message larger than 64 MB");
+			return true;
+		});
+	} finally {
+		await session.close();
+	}
+});
+
+test("a line that never ends is refused at 8 MB", async (t) => {
+	const server = await fake(t, { implicitTls: true, endlessLine: true });
+	await assert.rejects(openImapSession(nodeEnv(server), login()), (error) => {
+		assert.equal(error.message, "The IMAP server sent a line longer than 8 MB");
+		return true;
+	});
+});
+
+test("a server that trickles one byte at a time, or sends nothing, times out per command", async (t) => {
+	for (const misbehaviour of [{ slowLoris: true }, { silent: true }]) {
+		const server = await fake(t, { implicitTls: true, ...misbehaviour });
+		const started = Date.now();
+		await assert.rejects(
+			openImapSession(nodeEnv(server), login(), { commandTimeoutMs: 400 }),
+			/The IMAP server did not answer in time/,
+		);
+		assert.ok(Date.now() - started < 5_000, "the deadline, not the idle timeout, ends it");
+	}
+});
+
+test("a server that goes silent after STARTTLS is dropped when the handshake times out", async (t) => {
+	const server = await fake(t, { starttls: true, authPlain: true, silentTls: true });
+	await assert.rejects(
+		openImapSession(nodeEnv(server, { connectTimeoutMs: 300 }), login({ port: 143, security: "starttls" })),
+		/TLS handshake .*failed: Timed out during the TLS handshake/,
+	);
+	// Both the TLS socket and the raw one are destroyed, so the server sees the connection close.
+	for (let attempt = 0; attempt < 50 && server.openConnections() > 0; attempt += 1)
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	assert.equal(server.openConnections(), 0);
+	assert.equal(secretSentInPlainText(server), false);
+});
+
+test("a second AUTHENTICATE PLAIN challenge is cancelled, never answered with the password again", async (t) => {
+	const server = await fake(t, { implicitTls: true, authPlain: true, secondChallenge: true });
+	await assert.rejects(
+		openImapSession(nodeEnv(server), login()),
+		/IMAP sign-in failed: the server asked for more than one response/,
+	);
+	const token = Buffer.from(`\0${USER}\0${PASSWORD}`).toString("base64");
+	assert.equal(server.commands.filter((entry) => entry.line === token).length, 1);
+	assert.ok(server.commands.some((entry) => entry.line === "*"));
+});
+
+test("LOGIN sends a non-ASCII password as a literal, and NUL is refused for every mechanism", async (t) => {
+	const password = 'pässwörd "quoted" ✓';
+	const server = await fake(t, { implicitTls: true, users: { [USER]: password } });
+	const session = await openImapSession(nodeEnv(server), login({ password }));
+	await session.close();
+	assert.ok(server.commands.some((entry) => / LOGIN /.test(entry.line) && entry.line.includes("pässwörd")));
+	await assert.rejects(openImapSession(nodeEnv(server), login({ password: "a\0b" })), /cannot contain a NUL/);
+	const plain = await fake(t, { implicitTls: true, authPlain: true, saslIr: true });
+	await assert.rejects(openImapSession(nodeEnv(plain), login({ username: "a\0b" })), /cannot contain a NUL/);
+	assert.equal(plain.commands.filter((entry) => / AUTHENTICATE /.test(entry.line)).length, 0);
 });

@@ -107,6 +107,8 @@ interface CloudflareEnv {
 	TCP_CONNECT?: import("./src/lib/net/types").TcpConnect;
 	/** Dev/test only: "1" or "true" lets mail server connections reach loopback hosts on any port without TLS (the fake IMAP server); ignored in production. */
 	EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK?: string;
-	/** Node server only: "1" or "true" lets mail server connections reach private and LAN hosts (still over TLS); ignored on Workers. */
+	/** Node server only: "1" or "true" lets mail server connections reach LAN hosts (RFC 1918, IPv6 ULA; still over TLS, never loopback or link-local); ignored on Workers. */
 	EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS?: string;
+	/** Node server only: comma-separated extra ports mail server connections may use besides 993 and 143 (DavMail, Proton Bridge on 1143); ignored on Workers. */
+	EXTERNAL_ACCOUNTS_EXTRA_PORTS?: string;
 }

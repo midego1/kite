@@ -46,7 +46,7 @@ A module that is off is absent, not broken:
 
 ### IMAP connections
 
-IMAP imports connect only over an encrypted connection: TLS on port 993, or STARTTLS on port 143 (the import form's **Encryption** choice). Kite checks the server's certificate and never sends a password in plain text, so a server that offers neither is refused, and so are ports other than 993 and 143 and private or local addresses. The same client runs on Cloudflare and on the Node runtime; on Node, Kite resolves the server's name itself, refuses it when any address is private, and connects only to the addresses it checked. `EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS=1` lets a self-hosted install import from a mail server on its own network (see [Self-hosting](self-hosting.md)).
+IMAP imports connect only over an encrypted connection: TLS on port 993, or STARTTLS on port 143 (the import form's **Encryption** choice). Kite checks the server's certificate and never sends a password in plain text, so a server that offers neither is refused, and so are ports other than 993 and 143 and private or local addresses. The same client runs on Cloudflare and on the Node runtime; on Node, Kite resolves the server's name itself, refuses it when any address is private, and connects only to the addresses it checked. `EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS=1` lets a self-hosted install import from a mail server on its LAN, and `EXTERNAL_ACCOUNTS_EXTRA_PORTS` adds ports for a bridge such as DavMail (see [Self-hosting](self-hosting.md)). The client also limits what a server can send (64 MB per message, 8 MB per line, 96 MB per fetch) and how long one command may take (three minutes), so a broken or hostile server cannot fill memory or hold an import.
 
 ### Paused imports
 

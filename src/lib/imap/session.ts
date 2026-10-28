@@ -1,7 +1,7 @@
 import { openMailSocket } from "@/lib/net/connect";
 import { MailServerRefusedError } from "@/lib/net/errors";
 import { allowsPlainText, mailHostPolicy } from "@/lib/net/host-guard-utils";
-import { ImapConnection } from "./connection";
+import { ImapConnection, type ImapConnectionOptions } from "./connection";
 import {
 	chooseAuthMethod,
 	IMAP_PORTS,
@@ -29,9 +29,13 @@ type ImapEnv = Parameters<typeof openMailSocket>[0];
  * signs in with `AUTHENTICATE PLAIN` or `LOGIN`. Credentials are never sent over a plain connection, except to a
  * loopback fake under `EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK` outside production.
  */
-export async function openImapSession(env: ImapEnv, login: ImapLogin): Promise<ImapSession> {
+export async function openImapSession(
+	env: ImapEnv,
+	login: ImapLogin,
+	options: ImapConnectionOptions = {},
+): Promise<ImapSession> {
 	const socket = await openMailSocket(env, login, IMAP_PORTS);
-	const imap = new ImapConnection(socket);
+	const imap = new ImapConnection(socket, options);
 	try {
 		await signIn(imap, login, allowsPlainText(login.host, mailHostPolicy(env, process.env.NODE_ENV)));
 	} catch (error) {
@@ -71,10 +75,7 @@ async function signIn(imap: ImapConnection, login: ImapLogin, plainTextAllowed: 
 	const method = chooseAuthMethod(imap.capabilities);
 	if (!method) throw new MailServerRefusedError("The IMAP server does not accept a password sign-in");
 	if (method === "login") {
-		await imap.command(
-			`LOGIN ${quoteImapString(login.username)} ${quoteImapString(login.password)}`,
-			"IMAP sign-in failed",
-		);
+		await imap.login(login.username, login.password);
 		return;
 	}
 	await imap.authenticatePlain(plainAuthToken(login.username, login.password), method === "plain-ir");

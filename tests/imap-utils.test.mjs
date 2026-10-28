@@ -15,13 +15,14 @@ const {
 	planStartTls,
 	chooseAuthMethod,
 	plainAuthToken,
+	imapLoginArgument,
 	selectImapUidBatch,
 	selectRemainingUids,
 	chunk,
 	imapSecurity,
 } = await bundleModules("kite-imap-utils-", [
 	[
-		"quoteImapString, parseSearchUids, getLiteralLength, isTaggedCompletion, isTaggedOk, parseListMailboxName, parseFetchUid, parseCapabilities, parseGreeting, planStartTls, chooseAuthMethod, plainAuthToken",
+		"quoteImapString, parseSearchUids, getLiteralLength, isTaggedCompletion, isTaggedOk, parseListMailboxName, parseFetchUid, parseCapabilities, parseGreeting, planStartTls, chooseAuthMethod, plainAuthToken, imapLoginArgument",
 		"src/lib/imap/protocol-utils.ts",
 	],
 	["selectImapUidBatch, selectRemainingUids, chunk, imapSecurity", "src/lib/import/imap-utils.ts"],
@@ -152,4 +153,19 @@ test("plainAuthToken encodes the RFC 4616 message as UTF-8", () => {
 test("imapSecurity maps the TLS switch to implicit TLS or STARTTLS, never plain text", () => {
 	assert.equal(imapSecurity(true), "tls");
 	assert.equal(imapSecurity(false), "starttls");
+});
+
+test("plainAuthToken refuses a NUL that would shift the PLAIN fields", () => {
+	assert.throws(() => plainAuthToken("a\0b", "pass"), /NUL/);
+	assert.throws(() => plainAuthToken("user", "pa\0ss"), /NUL/);
+});
+
+test("imapLoginArgument quotes printable ASCII and turns anything else into a literal", () => {
+	assert.deepEqual(imapLoginArgument('pa"ss'), { kind: "quoted", text: '"pa\\"ss"' });
+	const literal = imapLoginArgument("pässword");
+	assert.equal(literal.kind, "literal");
+	assert.equal(new TextDecoder().decode(literal.bytes), "pässword");
+	assert.equal(literal.bytes.byteLength, 9);
+	assert.equal(imapLoginArgument("line\r\nbreak").kind, "literal");
+	assert.throws(() => imapLoginArgument("a\0b"), /NUL/);
 });

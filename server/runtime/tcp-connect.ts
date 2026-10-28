@@ -2,14 +2,14 @@ import { lookup } from "node:dns/promises";
 import { isIP, connect as netConnect, type Socket } from "node:net";
 import { connect as tlsConnect, type TLSSocket } from "node:tls";
 import { MailServerRefusedError } from "../../src/lib/net/errors";
-import { isLoopbackHost } from "../../src/lib/net/host-guard-utils";
+import { isLanAddress, isLoopbackHost } from "../../src/lib/net/host-guard-utils";
 import type { MailSocket, TcpConnect } from "../../src/lib/net/types";
 import { isPrivateIpAddress } from "../../src/lib/security/outbound-url";
 
 export type TcpConnectOptions = {
 	/** Every address of a name; the default is `dns.lookup` with `all: true`. */
 	resolve?: (hostname: string) => Promise<string[]>;
-	/** `EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS`: private and LAN addresses are allowed. */
+	/** `EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS`: LAN addresses (RFC 1918, IPv6 ULA) are allowed. */
 	allowPrivate?: boolean;
 	/** `EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK` outside production: loopback addresses are allowed. */
 	allowLoopback?: boolean;
@@ -62,8 +62,11 @@ async function vetAddresses(
 		addresses = await resolve(host).catch(() => []);
 		if (!addresses.length) throw new Error(`Could not resolve ${host}`);
 	}
+	// The private-host setting opens LAN ranges only; loopback needs the dev flag, link-local and 0/8 never pass.
 	const allowed = (value: string) =>
-		!isPrivateIpAddress(value) || options.allowPrivate || (options.allowLoopback && isLoopbackHost(value));
+		!isPrivateIpAddress(value) ||
+		(options.allowPrivate && isLanAddress(value)) ||
+		(options.allowLoopback && isLoopbackHost(value));
 	if (!addresses.every(allowed)) throw new MailServerRefusedError("Private and local mail servers are not allowed");
 	return addresses.slice(0, MAX_ADDRESSES_TRIED);
 }
@@ -139,13 +142,29 @@ function openNodeSocket(
 	});
 }
 
+/**
+ * Upgrades with `tls.connect({ socket })`. A handshake that fails or does not finish within the connect timeout
+ * destroys both the TLS socket and the raw one, so a server that goes silent after STARTTLS cannot hold the job.
+ */
 function upgradeNodeSocket(raw: Socket, hostname: string, options: TcpConnectOptions): Promise<Socket> {
 	return new Promise((resolvePromise, reject) => {
 		raw.setTimeout(0);
 		const secure: TLSSocket = tlsConnect({ socket: raw, ...tlsOptions(hostname, options) });
-		const fail = (error: Error) => reject(error);
+		const fail = (error: Error) => {
+			clearTimeout(timer);
+			secure.destroy();
+			raw.destroy();
+			reject(error);
+		};
+		const timer = setTimeout(
+			() => fail(new Error("Timed out during the TLS handshake with the mail server")),
+			options.connectTimeoutMs ?? CONNECT_TIMEOUT_MS,
+		);
 		secure.once("error", fail);
+		// Errors after a failure (the destroy above) must not become uncaught exceptions.
+		secure.on("error", () => undefined);
 		secure.once("secureConnect", () => {
+			clearTimeout(timer);
 			secure.off("error", fail);
 			secure.setTimeout(options.idleTimeoutMs ?? IDLE_TIMEOUT_MS, () =>
 				secure.destroy(new Error("The mail server stopped responding")),

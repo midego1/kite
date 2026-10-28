@@ -99,8 +99,25 @@ export function chooseAuthMethod(capabilities: readonly string[]): ImapAuthMetho
 	return "login";
 }
 
-/** The SASL PLAIN response (RFC 4616): base64 of NUL, the user name, NUL and the password, UTF-8 encoded. */
+/**
+ * One `LOGIN` argument: a quoted string when the value is printable ASCII, else a literal of its UTF-8 bytes (a
+ * quoted string cannot carry a line break, and 8-bit characters in one are not allowed). NUL is never valid.
+ */
+export function imapLoginArgument(
+	value: string,
+): { kind: "quoted"; text: string } | { kind: "literal"; bytes: Uint8Array } {
+	if (value.includes("\0")) throw new Error("IMAP user names and passwords cannot contain a NUL character");
+	if (/^[\x20-\x7e]*$/.test(value)) return { kind: "quoted", text: quoteImapString(value) };
+	return { kind: "literal", bytes: new TextEncoder().encode(value) };
+}
+
+/**
+ * The SASL PLAIN response (RFC 4616): base64 of NUL, the user name, NUL and the password, UTF-8 encoded. A NUL inside
+ * either value would shift the fields, so it is refused.
+ */
 export function plainAuthToken(username: string, password: string): string {
+	if (username.includes("\0") || password.includes("\0"))
+		throw new Error("IMAP user names and passwords cannot contain a NUL character");
 	const bytes = new TextEncoder().encode(`\0${username}\0${password}`);
 	let binary = "";
 	for (const byte of bytes) binary += String.fromCharCode(byte);

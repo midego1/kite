@@ -220,3 +220,33 @@ test("a greeting other than OK or PREAUTH is refused, and PREAUTH is reported", 
 	const preauth = fakeSocket(() => "", "* PREAUTH hi\r\n");
 	assert.equal(await new ImapConnection(preauth.socket).readGreeting(), true);
 });
+
+test("a silent server times out per command and the socket is closed, whatever the runtime", async () => {
+	let closed = 0;
+	const never = {
+		readable: new ReadableStream(),
+		writable: new WritableStream(),
+		opened: Promise.resolve(),
+		close: async () => {
+			closed += 1;
+		},
+	};
+	const imap = new ImapConnection(never, { commandTimeoutMs: 50 });
+	await assert.rejects(imap.readGreeting(), /did not answer in time/);
+	assert.equal(closed, 1);
+});
+
+test("a FETCH whose literals add up past the batch cap is refused", async () => {
+	const body = "Subject: x\r\n\r\nbody\r\n";
+	const { socket } = fakeSocket((command, tag) =>
+		command.includes("UID FETCH")
+			? `* 1 FETCH (UID 1 BODY[] {${body.length}}\r\n${body})\r\n* 2 FETCH (UID 2 BODY[] {${body.length}}\r\n${body})\r\n${tag} OK\r\n`
+			: `${tag} OK\r\n`,
+	);
+	const imap = new ImapConnection(socket, { maxFetchBatchBytes: body.length + 1 });
+	await imap.readGreeting();
+	await assert.rejects(imap.fetchMessages(["1", "2"]), (error) => {
+		assert.match(error.message, /^The IMAP server sent more than .* MB in one fetch$/);
+		return true;
+	});
+});

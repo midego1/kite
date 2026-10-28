@@ -4,6 +4,7 @@ import { messageAttachments, messages } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/types";
 import { getContactNameFromAddress } from "@/lib/contacts/utils";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import type {
 	HostAttachmentContent,
 	HostMessageDetail,
@@ -80,7 +81,7 @@ export async function getModuleMessage(
 	const user = actingUser(ctx);
 	const db = getDb(env);
 	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
-	if (!message?.mailboxId) return null;
+	if (!message?.mailboxId || isHiddenDraft(message, user.id)) return null;
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canRead) return null;
 	const attachments = await attachmentsByMessage(env, [message.id]);

@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { createAuditLogs } from "@/lib/mailboxes/audit";
+import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import { queryInChunks, runInChunks } from "@/db/chunk-utils";
 import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import { permanentlyDeleteMessages } from "@/lib/email/permanent-delete";
@@ -108,6 +109,7 @@ export async function POST(request: Request) {
 				rawR2Key: messages.rawR2Key,
 				status: messages.status,
 				folderId: messages.folderId,
+				userId: messages.userId,
 			})
 			.from(messages)
 			.where(inArray(messages.id, ids)),
@@ -121,7 +123,8 @@ export async function POST(request: Request) {
 
 	for (const message of selectedMessages) {
 		const mailboxId = actionMailboxId(message.mailboxId, folderMailboxId);
-		if (!mailboxId) continue;
+		// Another user's draft is private to them, so it is treated as if it did not exist.
+		if (!mailboxId || isHiddenDraft(message, user.id)) continue;
 		let accessRequest = accessByMailbox.get(mailboxId);
 		if (!accessRequest) {
 			accessRequest = getMailboxAccessLevel(db, user, mailboxId);

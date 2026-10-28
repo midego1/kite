@@ -6,6 +6,7 @@ import { getContactAvatarMap, getContactDisplayNameMap } from "@/lib/contacts/se
 import { getFirstEmailAddressEntry, normalizeEmailAddress } from "@/lib/email/address";
 import { loadMessageBodies } from "@/lib/email/bodies";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import type { SessionUser } from "@/lib/auth/types";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 
@@ -25,11 +26,16 @@ function withoutRawKey<T extends { rawR2Key: string | null }>(row: T): Omit<T, "
 export async function getMessageThreadForUser(env: CloudflareEnv, user: SessionUser, messageId: string) {
 	const db = getDb(env);
 	const [message] = await db
-		.select({ mailboxId: messages.mailboxId, userId: messages.userId, threadId: messages.threadId })
+		.select({
+			mailboxId: messages.mailboxId,
+			userId: messages.userId,
+			threadId: messages.threadId,
+			status: messages.status,
+		})
 		.from(messages)
 		.where(eq(messages.id, messageId))
 		.limit(1);
-	if (!message?.mailboxId) return null;
+	if (!message?.mailboxId || isHiddenDraft(message, user.id)) return null;
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canRead) return null;
 

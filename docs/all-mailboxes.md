@@ -28,6 +28,10 @@ While **All mailboxes** is on, the mailbox selector shows a **Show** list with a
 - **Search, the keyboard shortcuts** (`j`/`k`, `e`, `#`, `x`, and `r`/`a`/`f` in an open email) and the command palette work as in a single mailbox.
 - **Bulk actions** (mark read, archive, spam, delete, move) work on a selection across mailboxes, and each email stays within its own mailbox. **Move to** a folder lists folders when the selection is from one mailbox; with mail from several, it says to select mail from one mailbox.
 
+## Drafts in shared mailboxes
+
+Drafts are private to the person who wrote them, in a shared mailbox too. Drafts shows only your own drafts, and the Drafts count, search, the conversation view, mailbox export, the REST API and JMAP leave out everyone else's, whatever your access to the mailbox, and also when you own the mailbox or are an administrator. Opening another person's draft or one of its attachments by its link answers "not found". Once a draft is sent, the message is in Sent for everyone who can read the mailbox.
+
 ## Shared mailboxes with read-only access
 
 Mail in a mailbox shared with you as read-only can be read and marked read or unread, never archived, moved or deleted, in the combined view as anywhere else. Its rows have no archive or delete buttons, the reader's buttons for those are off, and `e` or `#` say that read-only mail can't be moved or deleted. When a bulk action includes read-only mail, the rest is done and a notice says how many read-only emails were left as they were. The server checks this on every request.

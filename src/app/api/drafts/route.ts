@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { markAiAssistedDraft } from "@/lib/agent/writing-style";
 import { and, desc, eq } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
-import { getDb } from "@/db";
+import { getDb, type AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
 import { requireSessionUser } from "@/lib/api/auth";
+import type { SessionUser } from "@/lib/auth/types";
 import { newId } from "@/lib/ids";
 import { buildSnippet } from "@/lib/email/parse";
 import { copyMessageAttachments } from "@/lib/email/attachments";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import { getDraftSender, readDraftPayload } from "./utils";
 
 export async function GET(request: Request) {
@@ -35,6 +37,18 @@ export async function GET(request: Request) {
 	return NextResponse.json({ drafts: rows });
 }
 
+/** The id of the message a new draft forwards, when the user may read it; another user's draft is not found. */
+async function readableForwardSource(db: AppDatabase, user: SessionUser, messageId: string): Promise<string | null> {
+	const [source] = await db
+		.select({ id: messages.id, mailboxId: messages.mailboxId, status: messages.status, userId: messages.userId })
+		.from(messages)
+		.where(eq(messages.id, messageId))
+		.limit(1);
+	if (!source?.mailboxId || isHiddenDraft(source, user.id)) return null;
+	const access = await getMailboxAccessLevel(db, user, source.mailboxId);
+	return access?.canRead ? source.id : null;
+}
+
 export async function POST(request: Request) {
 	const env = getEnv();
 	const { user, error } = await requireSessionUser(env, request);
@@ -48,18 +62,11 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: sender.error }, { status: 403 });
 	}
 	// Forwarding: the source must be readable by this user before its files are copied.
-	let forwardSourceId: string | null = null;
-	if (input.forwardOfMessageId) {
-		const [source] = await db
-			.select({ id: messages.id, mailboxId: messages.mailboxId })
-			.from(messages)
-			.where(eq(messages.id, input.forwardOfMessageId))
-			.limit(1);
-		const sourceAccess = source?.mailboxId ? await getMailboxAccessLevel(db, user, source.mailboxId) : null;
-		if (!source || !sourceAccess?.canRead) {
-			return NextResponse.json({ error: "Message not found" }, { status: 404 });
-		}
-		forwardSourceId = source.id;
+	const forwardSourceId = input.forwardOfMessageId
+		? await readableForwardSource(db, user, input.forwardOfMessageId)
+		: null;
+	if (input.forwardOfMessageId && !forwardSourceId) {
+		return NextResponse.json({ error: "Message not found" }, { status: 404 });
 	}
 
 	const draftId = newId("msg");

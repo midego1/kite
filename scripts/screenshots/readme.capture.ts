@@ -118,8 +118,9 @@ async function visit(page: Page, path: string, ready: Locator) {
 /**
  * Takes the shot once the page is settled. `rail` is whether the mailbox rail (with its "Add mailbox" button, which
  * only appears once the session check has answered) is on screen; a shot taken before it completes is not used.
+ * `unread` is whether the sidebar's Inbox item shows its unread count, which arrives with the message counts.
  */
-async function capture(page: Page, name: string, theme: Theme, { rail = true } = {}) {
+async function capture(page: Page, name: string, theme: Theme, { rail = true, unread = rail } = {}) {
 	// Playwright's click retries can leave the message list scrolled a little; shots start at its top.
 	await page.evaluate(() => {
 		for (const list of document.querySelectorAll("[data-density]")) list.scrollTop = 0;
@@ -128,6 +129,7 @@ async function capture(page: Page, name: string, theme: Theme, { rail = true } =
 	await expect(page.locator('[aria-label="Loading"].opacity-100')).toHaveCount(0);
 	await expect(page.getByRole("progressbar", { name: "Loading page" })).toHaveCount(0);
 	if (rail) await expect(page.getByRole("button", { name: "Add mailbox" })).toBeVisible();
+	if (unread) await expect(page.getByRole("link", { name: /^Inbox\s*\d+$/ }).first()).toBeVisible();
 	expect(sessionCheck.get(page)!.failed, "the session check failed, so the sidebar is incomplete").toBe(false);
 	// The first-load splash fades out over 300 ms after the page has its data.
 	await expect(page.locator("[data-loading-overlay]")).toHaveCSS("opacity", "0");
@@ -203,7 +205,7 @@ for (const theme of THEMES) {
 		await page.goto("/drive");
 		await expect(page.getByText("Launch plan.pdf").first()).toBeVisible();
 		await expect(page.getByText("Brand assets").first()).toBeVisible();
-		await capture(page, "drive", theme);
+		await capture(page, "drive", theme, { unread: false });
 	});
 
 	test(`settings (${theme})`, async ({ browser }) => {

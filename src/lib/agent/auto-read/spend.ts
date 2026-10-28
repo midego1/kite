@@ -75,7 +75,10 @@ export async function reserveAiSpend(input: ReserveAiSpendInput): Promise<SpendR
 					input.mailboxCapMicros,
 				);
 	const result = await statement.run();
-	return result.meta.changes > 0 ? { id, startedAt: Date.now(), ...estimate } : null;
+	if (result.meta.changes === 0) return null;
+	// The rates the estimate was counted at, kept for a request that settles at its estimate.
+	const rates = estimate.mode === "cost" ? ratesForPrompt(input.details.rates, estimate.inputTokens) : null;
+	return { id, startedAt: Date.now(), rates, ...estimate };
 }
 
 /**
@@ -150,7 +153,13 @@ export async function keepReservedEstimate(
 	reservation: SpendReservation,
 	outcome: Pick<AiUsageOutcome, "status" | "errorCode"> = { status: "stopped" },
 ): Promise<void> {
-	await updateAiUsage(env, reservation.id, "reserved = 0", [], { ...outcome, durationMs: elapsed(reservation) });
+	const kept = reservation.costUsdMicros !== null;
+	await updateAiUsage(env, reservation.id, "reserved = 0", [], {
+		...outcome,
+		durationMs: elapsed(reservation),
+		rates: kept ? (reservation.rates ?? null) : null,
+		costEstimated: kept,
+	});
 }
 
 /**

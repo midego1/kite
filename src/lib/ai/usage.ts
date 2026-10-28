@@ -15,9 +15,11 @@ export async function recordAiUsage({
 	jobId,
 	durationMs,
 	finishReason,
+	failure,
 }: RecordAiUsageInput) {
 	try {
 		const id = newId("usage");
+		const cost = usage ? calculateAgentCostUsdMicros(usage, details.rates) : null;
 		await getDb(env)
 			.insert(aiUsage)
 			.values({
@@ -25,17 +27,17 @@ export async function recordAiUsage({
 				provider: details.provider,
 				model: details.modelId,
 				source,
-				inputTokens: usage.inputTokens ?? null,
-				outputTokens: usage.outputTokens ?? null,
-				costUsdMicros: calculateAgentCostUsdMicros(usage, details.rates),
+				inputTokens: usage?.inputTokens ?? null,
+				outputTokens: usage?.outputTokens ?? null,
+				costUsdMicros: cost,
 				mailboxId: mailboxId ?? null,
 				jobId: jobId ?? null,
 			});
 		await updateAiUsage(env, id, "", [], {
-			status: "ok",
+			...(failure ? { status: "failed", errorCode: failure.errorCode } : { status: "ok" }),
 			durationMs,
 			finishReason,
-			rates: ratesForPrompt(details.rates, usage.inputTokens ?? 0),
+			rates: cost === null ? null : ratesForPrompt(details.rates, usage?.inputTokens ?? 0),
 		});
 	} catch (error) {
 		console.error("Could not record AI usage", error);

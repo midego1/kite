@@ -5,7 +5,7 @@ import type { AgentProviderConfig, AgentProviderPreset, AgentProviderPublicConfi
 import { AGENT_SETTINGS_ID, DEFAULT_CLOUDFLARE_MODEL, PROVIDER_BASE_URLS } from "./provider-constants";
 import { parseAgentModelIds } from "./model-ids";
 import { parseAgentModelRates } from "./pricing";
-import { resolveAgentModelRates } from "./model-prices-utils";
+import { resolveAgentModelRates, routesVendorModelIds } from "./model-prices-utils";
 import { openSetting } from "@/lib/security/secret-box";
 import { isAgentLoopbackAllowed, parseCustomAgentBaseUrl } from "./provider-url-utils";
 
@@ -30,7 +30,11 @@ export async function getAgentEnabled(env: CloudflareEnv): Promise<boolean> {
 
 export async function getAgentProviderConfig(env: CloudflareEnv): Promise<AgentProviderConfig> {
 	const config = await readAgentProviderConfig(env);
-	return { ...config, effectiveRates: resolveAgentModelRates(config.rates, config.models) };
+	const vendorPrefixed = routesVendorModelIds(config.provider === "cloudflare" ? "cloudflare" : config.preset);
+	return {
+		...config,
+		effectiveRates: resolveAgentModelRates(config.rates, config.models, undefined, undefined, { vendorPrefixed }),
+	};
 }
 
 async function readAgentProviderConfig(env: CloudflareEnv): Promise<Omit<AgentProviderConfig, "effectiveRates">> {

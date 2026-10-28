@@ -25,6 +25,7 @@ import { futureAt, inviteAttachment } from "./support/invites";
 import { restoreModules, setModuleState } from "./support/modules";
 import { chooseOption, readOptions } from "./support/select";
 import { readActions, readJobs, readSuggestions, waitForFinishedJob } from "./support/triage";
+import { readUsageRows } from "./support/ai-usage";
 
 // Every test snapshots and restores the automatic-reading state in beforeEach
 // and afterEach, so none depends on another. Declaring that lets CI spread this
@@ -1689,14 +1690,12 @@ test.describe("reply suggestions", () => {
 			expect(JSON.stringify(draft)).toContain(QUESTION_DRAFT_BODY);
 			expect(await draftIds(account.api)).toContain(draftId);
 
-			const { rows } = await okJson<{
-				rows: { source: string; mailboxId: string | null; jobId: string | null; reserved: unknown }[];
-			}>(await api.get("/api/admin/ai-usage"));
-			const usage = rows.filter((row) => row.jobId === job.id);
+			const usage = readUsageRows({ jobId: job.id });
 			expect(usage.map((row) => row.source).sort()).toEqual(["auto_draft", "auto_triage"]);
 			for (const row of usage) {
 				expect(row.mailboxId).toBe(account.mailboxId);
 				expect(row.reserved).toBeFalsy();
+				expect(row.status).toBe("ok");
 			}
 		} finally {
 			await stopAutoRead(account.api, account.mailboxId);

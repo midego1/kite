@@ -242,24 +242,28 @@ function streamComposeAnswer(
 				if (abort.signal.aborted) return;
 				usage = await result.totalUsage;
 				const finishReason = await result.finishReason;
+				// An answer that ran out of tokens ends mid-sentence; none of it may be inserted. The usage row records it
+				// as cut off (`settledOutcome`), and an answer that fails Kite's checks as unusable.
 				const cutOff = finishReason === "length";
+				const checked = cutOff ? null : checkComposeOutput(text, check);
 				await reconcileAiSpend({
 					env,
 					reservation,
 					rates,
 					usage,
-					outcome: cutOff ? { status: "failed", errorCode: "cut_off", finishReason } : { status: "ok", finishReason },
+					outcome:
+						checked && !checked.ok
+							? { status: "failed", errorCode: "unusable_answer", finishReason }
+							: { status: "ok", finishReason },
 				});
 				settled = true;
-				// An answer that ran out of tokens ends mid-sentence; none of it may be inserted.
-				if (cutOff)
+				if (!checked)
 					return await fail(
 						reportAiErrorClass({ code: "cut_off", status: null }, { ...context(), finishReason: "length" }),
 					);
-				const outcome = checkComposeOutput(text, check);
-				if (outcome.ok) emit({ type: "done", text: outcome.text, warnings: outcome.warnings });
+				if (checked.ok) emit({ type: "done", text: checked.text, warnings: checked.warnings });
 				else
-					await fail(reportAiErrorClass({ code: "unusable_answer", status: null, reason: outcome.error }, context()));
+					await fail(reportAiErrorClass({ code: "unusable_answer", status: null, reason: checked.error }, context()));
 			} catch (error) {
 				if (!abort.signal.aborted) {
 					errorCode = classifyAiError(error).code;

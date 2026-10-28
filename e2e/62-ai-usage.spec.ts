@@ -77,6 +77,11 @@ test("hovering or focusing a day's bar shows its tokens, requests, cost, failure
 	])
 		await expect(tooltip).toContainText(text);
 	await expect(bar).toHaveAttribute("aria-describedby", (await tooltip.getAttribute("id")) ?? "");
+	// Escape closes a tooltip a pointer opened too.
+	await page.keyboard.press("Escape");
+	await expect(tooltip).toBeHidden();
+	await bar.hover({ position: { x: 2, y: 2 } });
+	await expect(tooltip).toBeVisible();
 	await page.mouse.move(0, 0);
 	await expect(tooltip).toBeHidden();
 
@@ -183,4 +188,19 @@ test("activity filters by model, provider, feature and status, and a row opens i
 	await expect(activity.locator("dl")).toContainText("stop");
 	await expect(activity.locator("dl")).toContainText("support@example.com");
 	await expect(page.getByText(/Page 1 of 1/)).toBeVisible();
+});
+
+test("on a phone the day's details open under the chart instead of over the bars", async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await openUsage(page);
+	const bar = page.locator(`button[data-date="${seededDate()}"]`);
+	await bar.focus();
+	const tooltip = page.getByRole("tooltip");
+	await expect(tooltip).toBeVisible();
+	await expect(tooltip).toContainText(PRICED);
+	const chart = page.getByRole("group", { name: /per day$/ });
+	const [tip, plot] = [await tooltip.boundingBox(), await chart.boundingBox()];
+	expect(tip && plot && tip.y >= plot.y + plot.height).toBe(true);
+	await page.keyboard.press("Escape");
+	await expect(tooltip).toBeHidden();
 });

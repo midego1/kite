@@ -107,7 +107,7 @@ test("model ids match exactly, by alias, by an allowed dated suffix, case-insens
 });
 
 test("a router's vendor/model id matches the vendor's own model, and only that vendor's", () => {
-	const id = (modelId) => prices.builtinModelPrice(modelId, NOW)?.id ?? null;
+	const id = (modelId) => prices.builtinModelPrice(modelId, NOW, undefined, { vendorPrefixed: true })?.id ?? null;
 	// OpenRouter and Haimaker put the vendor before the model and pass on its list price.
 	assert.equal(id("anthropic/claude-opus-5-5"), "claude-opus-5-5");
 	assert.equal(id("anthropic/claude-sonnet-4.5"), "claude-sonnet-4-5");
@@ -115,7 +115,8 @@ test("a router's vendor/model id matches the vendor's own model, and only that v
 	assert.equal(id("openai/gpt-5-mini"), "gpt-5-mini");
 	assert.equal(id("google/gemini-2.5-flash"), "gemini-2.5-flash");
 	assert.equal(id("deepseek/deepseek-v4.1-flash"), "deepseek-flash");
-	// A listed vendor/model id (Groq's) keeps its own price.
+	// A listed vendor/model id (Groq's) keeps its own price, through a router or not.
+	assert.equal(prices.builtinModelPrice("openai/gpt-oss-120b", NOW, undefined, { vendorPrefixed: true }).input, 0.15);
 	assert.equal(prices.builtinModelPrice("openai/gpt-oss-120b", NOW).input, 0.15);
 	// The vendor must be the entry's provider, and unknown vendors or deeper paths never match.
 	for (const unknown of [
@@ -128,6 +129,23 @@ test("a router's vendor/model id matches the vendor's own model, and only that v
 		assert.equal(id(unknown), null, unknown);
 });
 
+test("only router providers match vendor/model ids; a direct vendor's id never takes another vendor's price", () => {
+	for (const router of ["openrouter", "haimaker", "custom"])
+		assert.equal(prices.routesVendorModelIds(router), true, router);
+	for (const direct of ["anthropic", "openai", "groq", "cloudflare", "", null, undefined])
+		assert.equal(prices.routesVendorModelIds(direct), false, String(direct));
+	// Without the router option (Anthropic, OpenAI, Groq, Workers AI) the prefixed id has no built-in price.
+	assert.equal(prices.builtinModelPrice("anthropic/claude-opus-5-5", NOW), null);
+	assert.equal(prices.builtinModelPrice("deepseek/deepseek-v4.1-flash", NOW), null);
+	assert.deepEqual(prices.resolveAgentModelRates({}, ["anthropic/claude-opus-5-5"], NOW), {});
+	assert.deepEqual(
+		prices.resolveAgentModelRates({}, ["anthropic/claude-opus-5-5"], NOW, undefined, { vendorPrefixed: true })[
+			"anthropic/claude-opus-5-5"
+		],
+		{ input: 4, output: 20 },
+	);
+});
+
 test("DeepSeek's models are priced at DeepSeek's peak rate, the higher of its two", () => {
 	const at = (modelId) => {
 		const price = prices.builtinModelPrice(modelId, NOW);
@@ -138,7 +156,9 @@ test("DeepSeek's models are priced at DeepSeek's peak rate, the higher of its tw
 	assert.deepEqual(at("deepseek-v4-pro"), ["deepseek-v4-pro", 1.32, 3.96]);
 	// The same model on Workers AI keeps Cloudflare's own entry.
 	assert.equal(at("@cf/deepseek-ai/deepseek-v4.1-flash-1017")[0], "@cf/deepseek-ai/deepseek-v4.1-flash-1017");
-	const rates = prices.resolveAgentModelRates({}, ["deepseek/deepseek-v4.1-flash"], NOW);
+	const rates = prices.resolveAgentModelRates({}, ["deepseek/deepseek-v4.1-flash"], NOW, undefined, {
+		vendorPrefixed: true,
+	});
 	assert.deepEqual(rates["deepseek/deepseek-v4.1-flash"], { input: 0.3, output: 1.2 });
 });
 

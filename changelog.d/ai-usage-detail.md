@@ -5,9 +5,9 @@
 
 ### Changed
 
-- Requests that stored no cost, because they ran before their model had a rate, are now priced on [AI usage](/ai-usage) at today's rate and marked estimated, instead of being left out of the spend. The page lists the models that still have no rate, with a link to set one in [Admin → Agent](/agent).
-- **Database migration 0078** adds status, error code, duration, finish reason and the rate used to each AI usage row. Apply it from the Admin overview; until then AI usage shows those details as not recorded and everything else works as before.
+- Requests that stored no cost, because they ran before their model had a rate, are now priced on [AI usage](/ai-usage) at today's rate and marked estimated, instead of being left out of the spend. A request that ended before the provider reported its usage keeps its reserved estimate, also marked estimated, and one left open after a worker stopped shows as interrupted. The page lists the models that still have no rate, with a link to set one in [Admin → Agent](/agent).
+- **Database migration 0078** adds status, error code, duration, finish reason, the rate used and whether the cost is an estimate to each AI usage row. Apply it from the Admin overview; until then AI usage shows those details as not recorded and everything else works as before.
 
 ### Fixed
 
-- A model id written the way routers such as OpenRouter and Haimaker write it, with the vendor in front (`anthropic/claude-opus-5-5`, `deepseek/deepseek-v4.1-flash`), now gets the vendor's price from Kite's price list. Such models now count against the daily dollar spend cap instead of the token allowances.
+- With a router provider (OpenRouter, Haimaker or a custom API), a model id with the vendor in front (`anthropic/claude-opus-5-5`, `deepseek/deepseek-v4.1-flash`) now gets the vendor's price from Kite's price list. Such models now count against the daily dollar spend cap instead of the token allowances.

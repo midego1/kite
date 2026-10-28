@@ -45,8 +45,12 @@ export type ReserveAiSpendInput = {
 /** Which daily cap refused a reservation. */
 export type SpendCapKind = "chat_tokens" | "auto_read_tokens" | "install_dollars" | "mailbox_dollars";
 
-/** `startedAt` is epoch milliseconds, for the request's duration. */
-export type SpendReservation = SpendEstimate & { id: string; startedAt?: number };
+/** `startedAt` is epoch milliseconds, for the request's duration; `rates` priced the estimate (cost mode only). */
+export type SpendReservation = SpendEstimate & {
+	id: string;
+	startedAt?: number;
+	rates?: { input: number; output: number } | null;
+};
 
 export type ReconcileAiSpendInput = {
 	env: CloudflareEnv;

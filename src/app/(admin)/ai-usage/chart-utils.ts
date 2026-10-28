@@ -43,6 +43,14 @@ export function tooltipLeft(x: number, width: number, tooltipWidth: number) {
 	return Math.round(Math.max(0, Math.min(width - tooltipWidth, left)));
 }
 
+/** Highest the tooltip starts below the chart's top, so a tall tooltip beside a short bar stays near the chart. */
+const TOOLTIP_TOP_MAX = 96;
+
+/** The tooltip's top edge: level with the top of the hovered bar (`barTop` from the chart's top), within limits. */
+export function tooltipTop(barTop: number) {
+	return Math.round(Math.max(0, Math.min(TOOLTIP_TOP_MAX, barTop - 24)));
+}
+
 /** The largest rows by `metric`, with the rest folded into one "N more" count. */
 export function topRows(rows: readonly UsageBreakdownRow[], metric: UsageMetric, limit = 4) {
 	const sorted = [...rows].sort(

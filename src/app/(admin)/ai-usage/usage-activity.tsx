@@ -26,6 +26,7 @@ const STATUS_TEXT: Record<UsageActivityRow["status"], string> = {
 	failed: "text-red-700",
 	stopped: "text-amber-800",
 	running: "text-blue-700",
+	interrupted: "text-amber-800",
 	unrecorded: "text-neutral-500",
 };
 
@@ -65,7 +66,7 @@ function FilterSelect({
 }
 
 function costText(row: UsageActivityRow) {
-	if (row.costUsdMicros !== null) return formatEstimatedUsd(row.costUsdMicros);
+	if (row.costUsdMicros !== null) return `${formatEstimatedUsd(row.costUsdMicros)}${row.costEstimated ? " est." : ""}`;
 	if (row.estimatedCostUsdMicros !== null) return `${formatEstimatedUsd(row.estimatedCostUsdMicros)} est.`;
 	return "—";
 }
@@ -92,15 +93,17 @@ function RowDetails({ row, detailsRecorded }: { row: UsageActivityRow; detailsRe
 			<Detail label="Duration">{row.durationMs === null ? notRecorded : formatDuration(row.durationMs)}</Detail>
 			<Detail label="Finish reason">{row.finishReason ?? notRecorded}</Detail>
 			<Detail label="Cost">
-				{row.costUsdMicros !== null
-					? `${formatEstimatedUsd(row.costUsdMicros)} recorded`
-					: row.estimatedCostUsdMicros !== null
-						? `${formatEstimatedUsd(row.estimatedCostUsdMicros)} estimated at today's rate`
-						: "No rate, so no cost"}
+				{row.costUsdMicros !== null && row.costEstimated
+					? `${formatEstimatedUsd(row.costUsdMicros)} estimated: ${row.reserved ? "reserved before the call, not settled yet" : "the request ended before the provider reported its usage"}`
+					: row.costUsdMicros !== null
+						? `${formatEstimatedUsd(row.costUsdMicros)} recorded`
+						: row.estimatedCostUsdMicros !== null
+							? `${formatEstimatedUsd(row.estimatedCostUsdMicros)} estimated at today's rate`
+							: "No rate, so no cost"}
 			</Detail>
 			<Detail label="Rate used">
 				{row.rate
-					? `${formatRate(row.rate)}${row.rate.kind === "current" ? " (today's rate)" : ""}`
+					? `${formatRate(row.rate)}${row.rate.kind === "current" ? " (today's rate)" : row.costEstimated ? " (the estimate's rate)" : ""}`
 					: row.costUsdMicros !== null
 						? notRecorded
 						: "None"}

@@ -1,11 +1,25 @@
 import { authFetch } from "@/lib/auth/client";
 import { AI_FEATURE_LABELS } from "@/lib/agent/ai-error-utils";
 import { formatUserDate } from "@/lib/time/utils";
-import type { UsageFilters, UsageRange, UsageReport, UsageRowStatus, UsageSums } from "@/lib/ai/usage-report-types";
+import type {
+	UsageActivityPage,
+	UsageFilters,
+	UsageRange,
+	UsageReport,
+	UsageRowStatus,
+	UsageSums,
+} from "@/lib/ai/usage-report-types";
 import type { UsageMetric } from "./types";
 
-export async function fetchAiUsage(range: UsageRange, page: number, filters: UsageFilters): Promise<UsageReport> {
+/** The whole report, or with `activityOnly` just the activity page for a filter or page change. */
+export async function fetchAiUsage(
+	range: UsageRange,
+	page: number,
+	filters: UsageFilters,
+	activityOnly = false,
+): Promise<UsageReport | UsageActivityPage> {
 	const params = new URLSearchParams({ range: String(range), page: String(page) });
+	if (activityOnly) params.set("part", "activity");
 	for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
 	const response = await authFetch(`/api/admin/ai-usage?${params}`);
 	const data = (await response.json()) as UsageReport & { error?: string };
@@ -22,10 +36,13 @@ export function formatCompact(value: number) {
 	return new Intl.NumberFormat(undefined, { notation: "compact", maximumSignificantDigits: 3 }).format(value);
 }
 
+/** Dollars with cents, or up to four decimals under a cent, so small costs neither vanish nor sprawl. */
 export function formatEstimatedUsd(micros: number | null) {
 	if (micros === null) return "—";
 	const dollars = micros / 1_000_000;
-	return `$${dollars.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: dollars < 0.01 && dollars > 0 ? 6 : 2 })}`;
+	if (dollars > 0 && dollars < 0.0001) return "<$0.0001";
+	const small = dollars > 0 && dollars < 0.01;
+	return `$${dollars.toLocaleString(undefined, { minimumFractionDigits: small ? 4 : 2, maximumFractionDigits: small ? 4 : 2 })}`;
 }
 
 /** USD per 1M tokens, as Admin → Agent writes rates. */
@@ -80,6 +97,7 @@ export const STATUS_LABELS: Record<UsageRowStatus, string> = {
 	failed: "Failed",
 	stopped: "Stopped",
 	running: "Running",
+	interrupted: "Interrupted",
 	unrecorded: "Not recorded",
 };
 

@@ -36,8 +36,8 @@ await build({
 	tsconfig: join(root, "tsconfig.json"),
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
-const { loadUsageReport } = await load("report");
-const { axisLabelEvery, chartParts, tooltipLeft, topRows } = await load("chart");
+const { loadUsageActivity, loadUsageReport } = await load("report");
+const { axisLabelEvery, chartParts, tooltipLeft, tooltipTop, topRows } = await load("chart");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
 
@@ -53,16 +53,33 @@ const group = (overrides) => ({
 	outputTokens: 0,
 	costUsdMicros: 0,
 	pricedRequests: 0,
+	estimatedStoredCostUsdMicros: 0,
+	estimatedStoredRequests: 0,
 	unpricedInputTokens: 0,
 	unpricedOutputTokens: 0,
 	...overrides,
 });
 
+/** Rates by model, the same for every provider. */
+const ratesByModel =
+	(rates, sources = {}) =>
+	(_provider, model) => ({
+		rates: rates[model],
+		source: sources[model] ?? null,
+	});
+
 test("parseUsageQuery accepts the three ranges, a page and the activity filters, and refuses anything else", () => {
-	assert.deepEqual(parseUsageQuery(new URLSearchParams()), { range: 30, page: 1, filters: {} });
+	assert.deepEqual(parseUsageQuery(new URLSearchParams()), { range: 30, page: 1, filters: {}, activityOnly: false });
 	assert.deepEqual(
-		parseUsageQuery(new URLSearchParams("range=90&page=3&model=m&provider=p&feature=chat&status=failed")),
-		{ range: 90, page: 3, filters: { model: "m", provider: "p", feature: "chat", status: "failed" } },
+		parseUsageQuery(
+			new URLSearchParams("range=90&page=3&model=m&provider=p&feature=chat&status=interrupted&part=activity"),
+		),
+		{
+			range: 90,
+			page: 3,
+			filters: { model: "m", provider: "p", feature: "chat", status: "interrupted" },
+			activityOnly: true,
+		},
 	);
 	for (const bad of ["range=14", "range=abc", "page=0", "page=1.5", "status=done", `model=${"x".repeat(201)}`])
 		assert.ok("error" in parseUsageQuery(new URLSearchParams(bad)), bad);
@@ -84,8 +101,10 @@ test("dayBucketSql writes literal boundaries, so 90 days bind no parameters, and
 		"CASE WHEN created_at < 1793145600 THEN '2026-10-27' WHEN created_at < 1793232000 THEN '2026-10-28' END",
 	);
 	assert.throws(() => dayBucketSql([{ date: "2026-10-27' OR 1=1 --", end: new Date() }]));
-	assert.match(usageStatusSql(false), /'unrecorded'/);
-	assert.match(usageStatusSql(true), /status IS NULL/);
+	assert.match(usageStatusSql(false, 1000), /'unrecorded'/);
+	assert.match(usageStatusSql(true, 1000), /status IS NULL/);
+	assert.match(usageStatusSql(true, 1000), /reserved = 1 AND created_at < 1000 THEN 'interrupted'/);
+	assert.throws(() => usageStatusSql(true, Number.NaN));
 });
 
 test("buildUsageReport sums days, breakdowns, statuses and error codes, and estimates rows without a stored cost", () => {
@@ -120,12 +139,23 @@ test("buildUsageReport sums days, breakdowns, statuses and error codes, and esti
 			group({ date: null, requests: 1, inputTokens: 10, costUsdMicros: 40, pricedRequests: 1 }),
 		],
 		mailboxGroups: [
-			{ mailboxId: "mine", model: "claude-opus-5-5", ...sums(2, 1_000, 100, 6_000, 2), failedRequests: 0 },
-			{ mailboxId: "hidden", model: "mystery", ...sums(4, 500, 0, 0, 0, 500), failedRequests: 4 },
-			{ mailboxId: null, model: "claude-opus-5-5", ...sums(3, 2_000, 200, 0, 0, 2_000, 200), failedRequests: 0 },
+			{
+				mailboxId: "mine",
+				provider: "anthropic",
+				model: "claude-opus-5-5",
+				...sums(2, 1_000, 100, 6_000, 2),
+				failedRequests: 0,
+			},
+			{ mailboxId: "hidden", provider: "custom", model: "mystery", ...sums(4, 500, 0, 0, 0, 500), failedRequests: 4 },
+			{
+				mailboxId: null,
+				provider: "anthropic",
+				model: "claude-opus-5-5",
+				...sums(3, 2_000, 200, 0, 0, 2_000, 200),
+				failedRequests: 0,
+			},
 		],
-		rates: { "claude-opus-5-5": { input: 4, output: 20 } },
-		rateSources: { "claude-opus-5-5": "price_list" },
+		rateFor: ratesByModel({ "claude-opus-5-5": { input: 4, output: 20 } }, { "claude-opus-5-5": "price_list" }),
 		configuredModels: ["claude-opus-5-5", "mystery"],
 		mailboxLabels: new Map([["mine", "me@example.com"]]),
 	});
@@ -208,6 +238,8 @@ function sums(requests, input, output, cost, priced, unpricedInput = 0, unpriced
 		outputTokens: output,
 		costUsdMicros: cost,
 		pricedRequests: priced,
+		estimatedStoredCostUsdMicros: 0,
+		estimatedStoredRequests: 0,
 		unpricedInputTokens: unpricedInput,
 		unpricedOutputTokens: unpricedOutput,
 	};
@@ -230,6 +262,8 @@ test("chart helpers stack each metric's parts, space the axis labels and keep th
 	assert.equal(tooltipLeft(100, 1000, 288), 112);
 	assert.equal(tooltipLeft(900, 1000, 288), 600);
 	assert.equal(tooltipLeft(150, 300, 288), 0);
+	// Level with the bar's top, but never above the chart or far below its top.
+	assert.deepEqual([10, 80, 400].map(tooltipTop), [0, 56, 96]);
 	const rows = ["a", "b", "c", "d", "e", "f"].map((key, index) => ({
 		key,
 		...sums(index + 1, 10 * (6 - index), 0, 0, 0),
@@ -250,7 +284,15 @@ async function database(t, { details = true } = {}) {
 	t.after(() => db.db.close());
 	await applyMigrations(db, join(root, "drizzle/migrations"));
 	if (!details)
-		for (const column of ["status", "error_code", "duration_ms", "finish_reason", "input_rate", "output_rate"])
+		for (const column of [
+			"status",
+			"error_code",
+			"duration_ms",
+			"finish_reason",
+			"input_rate",
+			"output_rate",
+			"cost_estimated",
+		])
 			db.db.exec(`ALTER TABLE ai_usage DROP COLUMN ${column}`);
 	db.db.exec(`
 		INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES
@@ -296,6 +338,7 @@ test("loadUsageReport answers the range, the filters, today's spend and the acti
 	});
 	insert(db, {
 		...base,
+		job_id: "job-theirs",
 		id: "u-old",
 		created_at: now() - 3 * 86_400,
 		source: "auto_triage",
@@ -345,11 +388,12 @@ test("loadUsageReport answers the range, the filters, today's spend and the acti
 		[failed.status, failed.errorCode, failed.rate, failed.estimatedCostUsdMicros],
 		["failed", "timeout", null, null],
 	);
-	// A row from before the price list: estimated at today's rate, and its mailbox is not named to this admin.
+	// A row from before the price list: estimated at today's rate; its mailbox and job are not shown to this admin.
 	assert.deepEqual(
-		[old.status, old.estimatedCostUsdMicros, old.rate, old.mailboxId, old.mailboxLabel],
-		["unrecorded", 12_000, { input: 4, output: 20, kind: "current" }, "theirs", null],
+		[old.status, old.estimatedCostUsdMicros, old.rate, old.mailboxId, old.jobId, old.mailboxLabel],
+		["unrecorded", 12_000, { input: 4, output: 20, kind: "current" }, null, null, null],
 	);
+	assert.deepEqual([ok.mailboxId, ok.costEstimated], ["mine", false]);
 	// Today's spend: the install cap, and only the mailbox caps this admin can see.
 	assert.equal(report.spendToday.installSpentMicros, 6_000);
 	assert.equal(report.spendToday.chatTokensUsed, 1_000);
@@ -377,6 +421,102 @@ test("loadUsageReport answers the range, the filters, today's spend and the acti
 	assert.equal(all90.totals.requests, 3);
 	const page2 = await loadUsageReport(env, OWNER, { range: 30, page: 2, filters: {} }, "UTC");
 	assert.deepEqual([page2.rows.length, page2.totalPages], [0, 1]);
+	// A filter or page change asks for the activity page alone: no totals, chart or breakdowns.
+	const activity = await loadUsageActivity(
+		env,
+		OWNER,
+		{ range: 7, page: 1, filters: { status: "failed" }, activityOnly: true },
+		"UTC",
+	);
+	assert.deepEqual(
+		[activity.rows.map((row) => row.id), activity.totalRows, "totals" in activity, "daily" in activity],
+		[["u-failed"], 1, false, false],
+	);
+});
+
+test("an open reservation is running for 15 minutes, then interrupted; a cost kept from an estimate counts as estimated", async (t) => {
+	const db = await database(t);
+	const env = { DB: db };
+	const base = {
+		provider: "anthropic",
+		model: "claude-opus-5-5",
+		source: "chat",
+		input_tokens: 100,
+		output_tokens: 10,
+	};
+	insert(db, { ...base, id: "fresh", created_at: now() - 60, reserved: 1, cost_usd_micros: 600 });
+	insert(db, { ...base, id: "stale", created_at: now() - 20 * 60, reserved: 1, cost_usd_micros: 600 });
+	insert(db, {
+		...base,
+		id: "kept",
+		created_at: now() - 120,
+		reserved: 0,
+		status: "stopped",
+		cost_usd_micros: 600,
+		cost_estimated: 1,
+		input_rate: 4,
+		output_rate: 20,
+	});
+	insert(db, { ...base, id: "settled", created_at: now() - 180, reserved: 0, status: "ok", cost_usd_micros: 600 });
+	const report = await loadUsageReport(env, OWNER, { range: 7, page: 1, filters: {} }, "UTC");
+	assert.deepEqual(
+		report.rows.map((row) => [row.id, row.status, row.costEstimated]),
+		[
+			["fresh", "running", true],
+			["kept", "stopped", true],
+			["settled", "ok", false],
+			["stale", "interrupted", true],
+		],
+	);
+	assert.deepEqual(report.statuses, [
+		{ status: "ok", requests: 1 },
+		{ status: "stopped", requests: 1 },
+		{ status: "running", requests: 1 },
+		{ status: "interrupted", requests: 1 },
+	]);
+	// Only the settled request's cost is from reported usage; the three estimates count as estimated.
+	assert.deepEqual(
+		[report.totals.costUsdMicros, report.totals.estimatedCostUsdMicros, report.totals.estimatedRequests],
+		[600, 1_800, 3],
+	);
+	const interrupted = await loadUsageReport(
+		env,
+		OWNER,
+		{ range: 7, page: 1, filters: { status: "interrupted" } },
+		"UTC",
+	);
+	assert.deepEqual(
+		interrupted.rows.map((row) => row.id),
+		["stale"],
+	);
+});
+
+test("a router's vendor/model id is priced at the vendor's rate, a direct provider's is not", async (t) => {
+	const db = await database(t);
+	const base = {
+		model: "anthropic/claude-opus-5-5",
+		source: "chat",
+		input_tokens: 1_000,
+		output_tokens: 100,
+		reserved: 0,
+	};
+	insert(db, { ...base, id: "routed", provider: "openrouter", created_at: now() - 60 });
+	insert(db, { ...base, id: "direct", provider: "groq", created_at: now() - 120 });
+	const report = await loadUsageReport({ DB: db }, OWNER, { range: 7, page: 1, filters: {} }, "UTC");
+	assert.deepEqual(
+		report.rows.map((row) => [row.id, row.estimatedCostUsdMicros]),
+		[
+			["routed", 1_000 * 4 + 100 * 20],
+			["direct", null],
+		],
+	);
+	assert.deepEqual(
+		report.missingRates.map((item) => [item.provider, item.rateSource]),
+		[
+			["groq", null],
+			["openrouter", "price_list"],
+		],
+	);
 });
 
 test("before migration 0078 the report still loads, with every settled row not recorded", async (t) => {

@@ -107,6 +107,8 @@ const usageRows = (db) =>
 		.prepare("SELECT source, mailbox_id, reserved, input_tokens, output_tokens, cost_usd_micros FROM ai_usage")
 		.all();
 
+const outcomes = (db) => db.db.prepare("SELECT status, error_code, finish_reason, cost_estimated FROM ai_usage").all();
+
 test("a chat step aborted mid-stream keeps its estimate and releases the reservation", async (t) => {
 	const { db, context } = await setup(t);
 	respond = (init) =>
@@ -133,6 +135,8 @@ test("a chat step aborted mid-stream keeps its estimate and releases the reserva
 	// The estimate stays: 1,200 output tokens at 2 micros plus the prompt's input tokens.
 	assert.equal(rows[0].output_tokens, 1_200);
 	assert.ok(rows[0].cost_usd_micros > 2_400);
+	// Stopped by the person, not failed with the error the abort surfaced as; the cost is the estimate.
+	assert.deepEqual(outcomes(db), [{ status: "stopped", error_code: null, finish_reason: null, cost_estimated: 1 }]);
 });
 
 test("a chat step the provider refuses keeps its estimate, closes the reservation and reports the error", async (t) => {
@@ -151,6 +155,9 @@ test("a chat step the provider refuses keeps its estimate, closes the reservatio
 	assert.equal(rows.length, 1);
 	assert.equal(rows[0].reserved, 0);
 	assert.equal(rows[0].output_tokens, 1_200);
+	assert.deepEqual(outcomes(db), [
+		{ status: "failed", error_code: "provider_rejected", finish_reason: null, cost_estimated: 1 },
+	]);
 });
 
 test("a finished chat step is settled with the usage the provider reported", async (t) => {
@@ -172,4 +179,5 @@ test("a finished chat step is settled with the usage the provider reported", asy
 	assert.deepEqual(usageRows(db), [
 		{ source: "chat", mailbox_id: "mailbox-a", reserved: 0, input_tokens: 900, output_tokens: 4, cost_usd_micros: 908 },
 	]);
+	assert.deepEqual(outcomes(db), [{ status: "ok", error_code: null, finish_reason: "stop", cost_estimated: 0 }]);
 });

@@ -1,11 +1,11 @@
 "use client";
 
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import type { UsageBreakdownRow, UsageDay } from "@/lib/ai/usage-report-types";
 import { CARD_CLASS } from "@/components/ui/page-utils";
 import { cn } from "@/lib/utils";
 import type { UsageChartProps, UsageMetric } from "./types";
-import { CHART_SERIES, axisLabelEvery, chartParts, tooltipLeft, topRows } from "./chart-utils";
+import { CHART_SERIES, axisLabelEvery, chartParts, tooltipLeft, tooltipTop, topRows } from "./chart-utils";
 import { SegmentedControl } from "./segmented-control";
 import {
 	METRIC_LABELS,
@@ -35,8 +35,15 @@ function dayLabel(day: UsageDay, metric: UsageMetric) {
 }
 
 export function UsageChart({ daily, timeZone, metric, onMetricChange }: UsageChartProps) {
-	// The day whose tooltip shows, and where: measured when it is hovered or focused, not during render.
-	const [active, setActive] = useState<{ index: number; left: number; width: number } | null>(null);
+	// The day whose tooltip shows, and where: measured when it is hovered or focused, not during render. On a narrow
+	// chart (`below`) it is shown under the chart instead of over the bars.
+	const [active, setActive] = useState<{
+		index: number;
+		left: number;
+		top: number;
+		width: number;
+		below: boolean;
+	} | null>(null);
 	const [focusIndex, setFocusIndex] = useState(daily.length - 1);
 	const bars = useRef<(HTMLButtonElement | null)[]>([]);
 	const frame = useRef<HTMLDivElement | null>(null);
@@ -47,12 +54,30 @@ export function UsageChart({ daily, timeZone, metric, onMetricChange }: UsageCha
 	const current = Math.min(focusIndex, daily.length - 1);
 
 	const show = (index: number) => {
-		const bar = bars.current[index]?.getBoundingClientRect();
+		const button = bars.current[index];
+		const bar = button?.getBoundingClientRect();
 		const box = frame.current?.getBoundingClientRect();
-		if (!bar || !box) return;
+		if (!button || !bar || !box) return;
 		const width = Math.min(TOOLTIP_WIDTH, box.width);
-		setActive({ index, width, left: tooltipLeft(bar.left + bar.width / 2 - box.left, box.width, width) });
+		const barTop = (button.firstElementChild as HTMLElement | null)?.getBoundingClientRect().top ?? bar.top;
+		setActive({
+			index,
+			width,
+			left: tooltipLeft(bar.left + bar.width / 2 - box.left, box.width, width),
+			top: tooltipTop(barTop - box.top),
+			below: box.width < 2 * TOOLTIP_WIDTH + 48,
+		});
 	};
+	// Escape closes the tooltip whether a pointer or the keyboard opened it.
+	const open = active !== null;
+	useEffect(() => {
+		if (!open) return;
+		const close = (event: globalThis.KeyboardEvent) => {
+			if (event.key === "Escape") setActive(null);
+		};
+		document.addEventListener("keydown", close);
+		return () => document.removeEventListener("keydown", close);
+	}, [open]);
 	const focusBar = (index: number) => {
 		const next = Math.max(0, Math.min(daily.length - 1, index));
 		setFocusIndex(next);
@@ -65,10 +90,9 @@ export function UsageChart({ daily, timeZone, metric, onMetricChange }: UsageCha
 			Home: 0,
 			End: daily.length - 1,
 		}[event.key];
-		if (target !== undefined) {
-			event.preventDefault();
-			focusBar(target);
-		} else if (event.key === "Escape") setActive(null);
+		if (target === undefined) return;
+		event.preventDefault();
+		focusBar(target);
 	};
 
 	return (
@@ -93,7 +117,7 @@ export function UsageChart({ daily, timeZone, metric, onMetricChange }: UsageCha
 				))}
 			</div>
 			<div ref={frame} className="relative mt-4 flex gap-2" onPointerLeave={() => setActive(null)}>
-				<div className="flex h-48 flex-col justify-between pb-5 text-right text-[10px] tabular-nums text-neutral-500">
+				<div className="flex h-48 flex-col justify-between pb-5 text-right text-[11px] tabular-nums text-neutral-500">
 					<span>{metric === "cost" ? formatEstimatedUsd(max) : formatCompact(max)}</span>
 					<span>0</span>
 				</div>
@@ -137,23 +161,25 @@ export function UsageChart({ daily, timeZone, metric, onMetricChange }: UsageCha
 										{top > 0 && <span className={cn("w-full", series[1].className)} style={{ flexGrow: top }} />}
 									</span>
 								</button>
-								<span className="h-5 whitespace-nowrap pt-1 text-[9px] text-neutral-500" aria-hidden="true">
+								<span className="h-5 whitespace-nowrap pt-1 text-[11px] leading-4 text-neutral-500" aria-hidden="true">
 									{index % every === 0 || index === daily.length - 1 ? formatDailyLabel(day.date) : ""}
 								</span>
 							</div>
 						);
 					})}
 				</div>
-				{active && daily[active.index] && (
+				{active && !active.below && daily[active.index] && (
 					<DayTooltip
 						id={tooltipId}
 						day={daily[active.index]}
 						metric={metric}
-						left={active.left}
-						width={active.width}
+						style={{ left: active.left, top: active.top, width: active.width }}
 					/>
 				)}
 			</div>
+			{active?.below && daily[active.index] && (
+				<DayTooltip id={tooltipId} day={daily[active.index]} metric={metric} below />
+			)}
 		</section>
 	);
 }
@@ -162,14 +188,14 @@ function DayTooltip({
 	id,
 	day,
 	metric,
-	left,
-	width,
+	style,
+	below,
 }: {
 	id: string;
 	day: UsageDay;
 	metric: UsageMetric;
-	left: number;
-	width: number;
+	style?: CSSProperties;
+	below?: boolean;
 }) {
 	const cost = totalCostMicros(day);
 	return (
@@ -177,8 +203,11 @@ function DayTooltip({
 			id={id}
 			role="tooltip"
 			data-testid="usage-tooltip"
-			className="pointer-events-none absolute top-0 z-10 rounded-lg border border-neutral-200 bg-white p-3 text-xs text-neutral-600 shadow-lg"
-			style={{ left, width }}
+			className={cn(
+				"pointer-events-none rounded-lg border border-neutral-200 bg-white p-3 text-xs text-neutral-600",
+				below ? "mt-3" : "absolute z-10 shadow-lg",
+			)}
+			style={style}
 		>
 			<p className="font-medium text-neutral-900">{formatDayHeading(day.date)}</p>
 			<dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 tabular-nums">

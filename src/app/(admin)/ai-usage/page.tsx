@@ -19,22 +19,27 @@ import { UsageActivity } from "./usage-activity";
 const RANGE_OPTIONS = [7, 30, 90].map((value) => ({ value: value as UsageRange, label: `${value} days` }));
 
 export default function AiUsagePage() {
-	const [range, setRange] = useState<UsageRange>(DEFAULT_USAGE_RANGE);
 	const [metric, setMetric] = useState<UsageMetric>("tokens");
-	const [query, setQuery] = useState<{ page: number; filters: UsageFilters }>({ page: 1, filters: {} });
+	// A range change loads the whole report; a filter or page change only the activity page (`activityOnly`).
+	const [query, setQuery] = useState<{
+		range: UsageRange;
+		page: number;
+		filters: UsageFilters;
+		activityOnly: boolean;
+	}>({ range: DEFAULT_USAGE_RANGE, page: 1, filters: {}, activityOnly: false });
 	// The last answer and the request it answered; the page is loading while that is not the current request.
 	const [result, setResult] = useState<{ key: string; error?: string } | null>(null);
 	const [data, setData] = useState<UsageReport | null>(null);
-	const key = JSON.stringify([range, query.page, query.filters]);
+	const key = JSON.stringify(query);
 	const loading = result?.key !== key;
 	const error = result?.key === key ? (result.error ?? null) : null;
 
 	useEffect(() => {
 		let active = true;
-		void fetchAiUsage(range, query.page, query.filters)
-			.then((report) => {
+		void fetchAiUsage(query.range, query.page, query.filters, query.activityOnly)
+			.then((answer) => {
 				if (!active) return;
-				setData(report);
+				setData((current) => (query.activityOnly && current ? { ...current, ...answer } : (answer as UsageReport)));
 				setResult({ key });
 			})
 			.catch((cause) => {
@@ -43,7 +48,7 @@ export default function AiUsagePage() {
 		return () => {
 			active = false;
 		};
-	}, [key, range, query]);
+	}, [key, query]);
 
 	return (
 		<div className="space-y-6">
@@ -62,12 +67,9 @@ export default function AiUsagePage() {
 			/>
 			<SegmentedControl
 				label="Date range"
-				value={range}
+				value={query.range}
 				options={RANGE_OPTIONS}
-				onChange={(value) => {
-					setRange(value);
-					setQuery((current) => ({ ...current, page: 1 }));
-				}}
+				onChange={(range) => setQuery((current) => ({ ...current, range, page: 1, activityOnly: false }))}
 			/>
 			{error && (
 				<p role="alert" className="text-sm text-red-700">
@@ -82,7 +84,10 @@ export default function AiUsagePage() {
 			)}
 			{!data && !error && <p className="text-sm text-neutral-500">Loading usage…</p>}
 			{data && (
-				<div className={cn("space-y-6 transition-opacity", loading && "opacity-60")} aria-busy={loading}>
+				<div
+					className={cn("space-y-6 transition-opacity", loading && !query.activityOnly && "opacity-60")}
+					aria-busy={loading && !query.activityOnly}
+				>
 					<UsageSummaryCards report={data} />
 					{data.totals.requests === 0 && (
 						<EmptyState
@@ -101,8 +106,8 @@ export default function AiUsagePage() {
 					<UsageActivity
 						report={data}
 						loading={loading}
-						onFiltersChange={(filters) => setQuery({ page: 1, filters })}
-						onPageChange={(page) => setQuery((current) => ({ ...current, page }))}
+						onFiltersChange={(filters) => setQuery((current) => ({ ...current, page: 1, filters, activityOnly: true }))}
+						onPageChange={(page) => setQuery((current) => ({ ...current, page, activityOnly: true }))}
 					/>
 					<p className="text-xs text-neutral-500">
 						Spending is estimated from the per-model rates in Agent settings: yours, the provider&apos;s, or Kite&apos;s

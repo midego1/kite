@@ -51,7 +51,7 @@ export function UsageSummaryCards({ report }: { report: UsageReport }) {
 				<p>
 					{formatEstimatedUsd(totals.costUsdMicros)} recorded
 					{totals.estimatedRequests > 0 &&
-						` + ${formatEstimatedUsd(totals.estimatedCostUsdMicros)} estimated for ${formatTokenCount(totals.estimatedRequests)} older requests`}
+						` + ${formatEstimatedUsd(totals.estimatedCostUsdMicros)} estimated for ${formatTokenCount(totals.estimatedRequests)} ${totals.estimatedRequests === 1 ? "request" : "requests"}`}
 				</p>
 				{totals.unratedRequests > 0 && (
 					<p>
@@ -221,7 +221,7 @@ export function UsageOutcomes({ report }: { report: UsageReport }) {
 			</h2>
 			<p className="mt-1 text-xs text-neutral-500">
 				{report.detailsRecorded
-					? "How each request ended. Requests from before this was recorded show as not recorded."
+					? "How each request ended. An answer cut off at the output limit counts as failed; a request still open after 15 minutes was interrupted. Requests from before this was recorded show as not recorded."
 					: "Apply the pending database update to record how each request ends."}
 			</p>
 			{total > 0 && (
@@ -271,5 +271,6 @@ const STATUS_BAR: Record<keyof typeof STATUS_LABELS, string> = {
 	failed: "bg-red-500",
 	stopped: "bg-amber-500",
 	running: "bg-sky-300",
+	interrupted: "bg-orange-400",
 	unrecorded: "bg-neutral-300",
 };

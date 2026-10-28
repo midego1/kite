@@ -16,6 +16,7 @@ import { execFileSync } from "node:child_process";
 import { AGENT_STEP_LIMIT_FALLBACK } from "../src/lib/agent/step-limit-utils";
 import { apiContext, postInbound, uniqueToken } from "./support/helpers";
 import { readJobs } from "./support/triage";
+import { readUsageRows } from "./support/ai-usage";
 
 let api: APIRequestContext;
 let fake: FakeModel;
@@ -308,10 +309,7 @@ test.describe("chat spend", () => {
 			expect(history.messages.some((message) => message.content.includes(AGENT_STEP_LIMIT_FALLBACK))).toBe(false);
 			expect(history.messages.filter((message) => message.role === "assistant")).toEqual([]);
 			expect(chatRequests(fake)).toHaveLength(1);
-			const { rows } = await okJson<{
-				rows: { mailboxId: string | null; source: string; reserved: boolean; outputTokens: number | null }[];
-			}>(await api.get("/api/admin/ai-usage"));
-			const mine = rows.filter((row) => row.mailboxId === account.mailboxId);
+			const mine = readUsageRows({ mailboxId: account.mailboxId });
 			expect(mine).toHaveLength(1);
 			expect(mine[0]).toMatchObject({ source: "chat", reserved: false, outputTokens: 5_000 });
 		} finally {

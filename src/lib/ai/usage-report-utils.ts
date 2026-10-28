@@ -14,7 +14,12 @@ import type {
 const USAGE_RANGES: readonly UsageRange[] = [7, 30, 90];
 export const DEFAULT_USAGE_RANGE: UsageRange = 30;
 export const USAGE_PAGE_SIZE = 20;
-const USAGE_STATUSES: readonly UsageRowStatus[] = ["ok", "failed", "stopped", "running", "unrecorded"];
+const USAGE_STATUSES: readonly UsageRowStatus[] = ["ok", "failed", "stopped", "running", "interrupted", "unrecorded"];
+/**
+ * A reservation still open after this long was never settled (its isolate died mid-call): every model call times out
+ * after at most 60 s, and chat and compose streams end with their request, so 15 minutes is a wide margin.
+ */
+export const STALE_RESERVATION_SECONDS = 15 * 60;
 const MAX_FILTER_LENGTH = 200;
 
 /** One group of the range query: requests of one day, model, provider, feature, status and error code. */
@@ -28,14 +33,18 @@ export type UsageGroupRow = {
 	requests: number;
 	inputTokens: number;
 	outputTokens: number;
+	/** Cost the provider's usage was counted at. */
 	costUsdMicros: number;
 	pricedRequests: number;
+	/** Cost of rows that kept their reservation's estimate (settled without usage, or still reserved). */
+	estimatedStoredCostUsdMicros: number;
+	estimatedStoredRequests: number;
 	unpricedInputTokens: number;
 	unpricedOutputTokens: number;
 };
 
-/** One group of the mailbox query: requests of one mailbox and model. */
-export type UsageMailboxGroupRow = Omit<UsageGroupRow, "date" | "provider" | "source" | "status" | "errorCode"> & {
+/** One group of the mailbox query: requests of one mailbox, provider and model. */
+export type UsageMailboxGroupRow = Omit<UsageGroupRow, "date" | "source" | "status" | "errorCode"> & {
 	mailboxId: string | null;
 	failedRequests: number;
 };
@@ -63,7 +72,7 @@ export function parseUsageQuery(params: URLSearchParams): UsageQuery | { error: 
 		if (!isUsageRowStatus(status)) return { error: "Invalid status" };
 		filters.status = status;
 	}
-	return { range: range as UsageRange, page, filters };
+	return { range: range as UsageRange, page, filters, activityOnly: params.get("part") === "activity" };
 }
 
 /** USD micros for `input` and `output` tokens at a model's base rates, or null without both rates. */
@@ -93,6 +102,9 @@ function emptyUsageSums(): UsageSums {
 type GroupSums = Pick<
 	UsageGroupRow,
 	| "model"
+	| "provider"
+	| "estimatedStoredCostUsdMicros"
+	| "estimatedStoredRequests"
 	| "requests"
 	| "inputTokens"
 	| "outputTokens"
@@ -102,11 +114,18 @@ type GroupSums = Pick<
 	| "unpricedOutputTokens"
 > & { failedRequests: number };
 
+/** A model's current rates as one provider's requests resolve them, and where they come from. */
+export type UsageRateLookup = (
+	provider: string,
+	model: string,
+) => { rates: AgentModelRates | undefined; source: "saved" | "price_list" | null };
+
 /**
- * Adds a group to `sums`. Rows that stored no cost (before Kite knew the model's price, or a model without one) are
- * priced at the model's current rate; long-context tiers are not applied to these estimates.
+ * Adds a group to `sums`. A cost kept from the reservation's estimate counts as estimated; rows that stored no cost
+ * (before Kite knew the model's price, or a model without one) are priced at the model's current rate, without
+ * long-context tiers.
  */
-function addGroup(sums: UsageSums, group: GroupSums, rates: Record<string, AgentModelRates>) {
+function addGroup(sums: UsageSums, group: GroupSums, rateFor: UsageRateLookup) {
 	const unpriced = group.requests - group.pricedRequests;
 	sums.requests += group.requests;
 	sums.inputTokens += group.inputTokens;
@@ -114,8 +133,11 @@ function addGroup(sums: UsageSums, group: GroupSums, rates: Record<string, Agent
 	sums.costUsdMicros += group.costUsdMicros;
 	sums.pricedRequests += group.pricedRequests;
 	sums.failedRequests += group.failedRequests;
+	sums.estimatedCostUsdMicros += group.estimatedStoredCostUsdMicros;
+	sums.estimatedRequests += group.estimatedStoredRequests;
 	if (unpriced <= 0) return;
-	const estimate = estimateCostMicros(rates[group.model], group.unpricedInputTokens, group.unpricedOutputTokens);
+	const { rates } = rateFor(group.provider, group.model);
+	const estimate = estimateCostMicros(rates, group.unpricedInputTokens, group.unpricedOutputTokens);
 	if (estimate === null) sums.unratedRequests += unpriced;
 	else {
 		sums.estimatedCostUsdMicros += estimate;
@@ -125,10 +147,10 @@ function addGroup(sums: UsageSums, group: GroupSums, rates: Record<string, Agent
 
 class SumsByKey {
 	private readonly sums = new Map<string, UsageSums>();
-	add(key: string, group: GroupSums, rates: Record<string, AgentModelRates>) {
+	add(key: string, group: GroupSums, rateFor: UsageRateLookup) {
 		let sums = this.sums.get(key);
 		if (!sums) this.sums.set(key, (sums = emptyUsageSums()));
-		addGroup(sums, group, rates);
+		addGroup(sums, group, rateFor);
 	}
 	/** Largest first by tokens, then requests, then key. */
 	rows(): UsageBreakdownRow[] {
@@ -147,10 +169,8 @@ export type BuildUsageReportInput = {
 	days: readonly { date: string }[];
 	groups: readonly UsageGroupRow[];
 	mailboxGroups: readonly UsageMailboxGroupRow[];
-	/** Each model's current rates (saved, then Kite's price list). */
-	rates: Record<string, AgentModelRates>;
-	/** Where each model's current rate comes from. */
-	rateSources: Record<string, "saved" | "price_list">;
+	/** Each model's current rates (saved, then Kite's price list) as its provider resolves them. */
+	rateFor: UsageRateLookup;
 	/** The models in Admin → Agent's list. */
 	configuredModels: readonly string[];
 	/** Addresses of the mailboxes the admin can open. */
@@ -159,7 +179,7 @@ export type BuildUsageReportInput = {
 
 /** Totals, days, breakdowns, statuses, error codes and models without a rate, from the grouped range queries. */
 export function buildUsageReport(input: BuildUsageReportInput) {
-	const { rates } = input;
+	const { rateFor: rates } = input;
 	const totals = emptyUsageSums();
 	const days = new Map(
 		input.days.map(({ date }) => [
@@ -194,14 +214,15 @@ export function buildUsageReport(input: BuildUsageReportInput) {
 			const entry = missing.get(key);
 			if (entry) entry.requests += unpriced;
 			else {
-				const rate = rates[group.model];
+				const current = rates(group.provider, group.model);
+				const rate = current.rates;
 				const known = rate && rate.input !== null && rate.output !== null;
 				missing.set(key, {
 					model: group.model,
 					provider: group.provider,
 					requests: unpriced,
 					rate: known ? { input: rate.input as number, output: rate.output as number } : null,
-					rateSource: known ? (input.rateSources[group.model] ?? null) : null,
+					rateSource: known ? current.source : null,
 					configured: input.configuredModels.includes(group.model),
 				});
 			}
@@ -269,9 +290,19 @@ export function dayBucketSql(days: readonly { date: string; end: Date }[], colum
 	return `CASE ${branches.join(" ")} END`;
 }
 
-/** The status the page shows, as SQL; without migration 0078 every settled row is `unrecorded`. */
-export function usageStatusSql(detailsRecorded: boolean): string {
+/**
+ * The status the page shows, as SQL: a reservation opened before `staleBefore` (epoch seconds) that is still open was
+ * `interrupted`, a newer one is `running`; without migration 0078 every settled row is `unrecorded`.
+ */
+export function usageStatusSql(detailsRecorded: boolean, staleBefore: number): string {
+	if (!Number.isSafeInteger(staleBefore)) throw new Error("Invalid time");
+	const reserved = `WHEN reserved = 1 AND created_at < ${staleBefore} THEN 'interrupted' WHEN reserved = 1 THEN 'running'`;
 	return detailsRecorded
-		? "CASE WHEN reserved = 1 THEN 'running' WHEN status IS NULL THEN 'unrecorded' ELSE status END"
-		: "CASE WHEN reserved = 1 THEN 'running' ELSE 'unrecorded' END";
+		? `CASE ${reserved} WHEN status IS NULL THEN 'unrecorded' ELSE status END`
+		: `CASE ${reserved} ELSE 'unrecorded' END`;
+}
+
+/** Whether a row's cost is its reservation's estimate, as SQL: still reserved, or settled without usage (0078). */
+export function estimatedCostSql(detailsRecorded: boolean): string {
+	return detailsRecorded ? "(reserved = 1 OR cost_estimated = 1)" : "(reserved = 1)";
 }

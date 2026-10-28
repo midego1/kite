@@ -207,6 +207,8 @@ export async function createAgentChatStream(
 	const encoder = new TextEncoder();
 	const id = conversation.id;
 	const startedAt = Date.now();
+	// A turn the person stopped is recorded as stopped, not as the error the abort surfaced as.
+	const usageErrorCode = (failed: { code: string }) => (signal?.aborted ? null : failed.code);
 	let usage = { inputTokens: 0, outputTokens: 0 };
 	const failure = (finishReason: string | null = null): AiFailureContext => ({
 		env: context.env,
@@ -277,7 +279,7 @@ export async function createAgentChatStream(
 						else {
 							capReached ||= !!chatSpendCapError(part.error);
 							const failed = chatFailure(part.error);
-							errorCode = failed.code;
+							errorCode = usageErrorCode(failed);
 							emit(await chatError(failed, failure(lastFinishReason)));
 						}
 					}
@@ -296,7 +298,7 @@ export async function createAgentChatStream(
 			} catch (error) {
 				await saveTurnText(db, id, response, reasoning);
 				const failed = chatFailure(error);
-				errorCode = failed.code;
+				errorCode = usageErrorCode(failed);
 				emit(await chatError(failed, failure(lastFinishReason)));
 			} finally {
 				await spend.settle(errorCode).catch(() => undefined);

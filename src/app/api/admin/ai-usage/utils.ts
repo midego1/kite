@@ -1,7 +1,7 @@
 import { getEnv } from "@/lib/cloudflare";
 import { requireSessionUser } from "@/lib/api/auth";
 import { isPrimaryAdmin } from "@/lib/auth/admin";
-import { loadUsageReport } from "@/lib/ai/usage-report";
+import { loadUsageActivity, loadUsageReport } from "@/lib/ai/usage-report";
 import { parseUsageQuery } from "@/lib/ai/usage-report-utils";
 import { getRequestTimeZone } from "@/lib/time/utils";
 
@@ -13,6 +13,8 @@ export async function GET(request: Request) {
 	const query = parseUsageQuery(new URL(request.url).searchParams);
 	if ("error" in query) return Response.json({ error: query.error }, { status: 400 });
 	const timeZone = getRequestTimeZone(request, session.user.timeZone);
-	const report = await loadUsageReport(env, session.user, query, timeZone);
+	const report = query.activityOnly
+		? await loadUsageActivity(env, session.user, query, timeZone)
+		: await loadUsageReport(env, session.user, query, timeZone);
 	return Response.json(report, { headers: { "Cache-Control": "no-store" } });
 }

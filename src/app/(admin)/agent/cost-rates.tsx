@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { routesVendorModelIds } from "@/lib/agent/model-prices-utils";
 import type { AgentModelOption } from "@/lib/agent/provider-types";
 import type { AgentAdminForm } from "./types";
 import { updateAgentModelRate } from "./utils";
@@ -73,7 +74,14 @@ export function CostRates({ form, models, selectedModelIds, setForm }: CostRates
 				counts against the token allowances instead.
 			</p>
 			{selectedModelIds.map((model) => {
-				const view = costRateView(model, form.rates, models, overriding.has(model));
+				const view = costRateView(
+					model,
+					form.rates,
+					models,
+					overriding.has(model),
+					undefined,
+					routesVendorModelIds(form.provider === "cloudflare" ? "cloudflare" : form.preset),
+				);
 				if (view.kind === "provider")
 					return (
 						<div

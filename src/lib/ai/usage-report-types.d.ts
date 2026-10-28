@@ -2,27 +2,32 @@
 export type UsageRange = 7 | 30 | 90;
 
 /**
- * How a request ended, as the page shows it: the recorded status, `running` while its reservation is open, and
- * `unrecorded` for rows from before migration 0078.
+ * How a request ended, as the page shows it: the recorded status, `running` while its reservation is open,
+ * `interrupted` when it stayed open far longer than any call can take, and `unrecorded` for rows from before
+ * migration 0078.
  */
-export type UsageRowStatus = "ok" | "failed" | "stopped" | "running" | "unrecorded";
+export type UsageRowStatus = "ok" | "failed" | "stopped" | "running" | "interrupted" | "unrecorded";
 
 export type UsageFilters = { model?: string; provider?: string; feature?: string; status?: UsageRowStatus };
 
-export type UsageQuery = { range: UsageRange; page: number; filters: UsageFilters };
+/** `activityOnly` answers just the activity page, for a filter or page change that keeps the rest of the report. */
+export type UsageQuery = { range: UsageRange; page: number; filters: UsageFilters; activityOnly?: boolean };
 
 /** Sums over a set of requests. Costs are USD micros; `estimatedCostUsdMicros` prices rows that stored no cost. */
 export type UsageSums = {
 	requests: number;
 	inputTokens: number;
 	outputTokens: number;
-	/** The cost stored with the rows. */
+	/** The cost stored from the provider's reported usage. */
 	costUsdMicros: number;
-	/** Requests that stored a cost. */
+	/** Requests that stored a cost, from usage or from their estimate. */
 	pricedRequests: number;
-	/** Rows without a stored cost, priced at the model's current rate. */
+	/**
+	 * Estimated cost: the reservation's estimate kept by a request that ended without usage (or is still reserved),
+	 * and rows without a stored cost priced at the model's current rate.
+	 */
 	estimatedCostUsdMicros: number;
-	/** Rows without a stored cost whose model has a rate now. */
+	/** Requests counted in `estimatedCostUsdMicros`. */
 	estimatedRequests: number;
 	/** Rows without a stored cost whose model still has no rate. */
 	unratedRequests: number;
@@ -75,10 +80,12 @@ export type UsageActivityRow = {
 	inputTokens: number | null;
 	outputTokens: number | null;
 	costUsdMicros: number | null;
+	/** True when `costUsdMicros` is the reservation's estimate, not the provider's reported usage. */
+	costEstimated: boolean;
 	/** The cost at the model's current rate, for a row that stored none. */
 	estimatedCostUsdMicros: number | null;
 	mailboxId: string | null;
-	/** The mailbox's address, only for a mailbox the admin can open. */
+	/** The mailbox, its address and the job are only given for a mailbox the admin can open (or none). */
 	mailboxLabel: string | null;
 	jobId: string | null;
 	reserved: boolean;
@@ -86,9 +93,15 @@ export type UsageActivityRow = {
 	errorCode: string | null;
 	durationMs: number | null;
 	finishReason: string | null;
-	/** USD per 1M tokens: what the cost was counted at (`recorded`), or today's rate for an estimate (`current`). */
+	/** USD per 1M tokens: what the stored cost was counted at (`recorded`), or today's rate for an estimate (`current`). */
 	rate: { input: number; output: number; kind: "recorded" | "current" } | null;
 };
+
+/** The activity page alone (`part=activity`). */
+export type UsageActivityPage = Pick<
+	UsageReport,
+	"range" | "timeZone" | "detailsRecorded" | "filters" | "rows" | "page" | "pageSize" | "totalPages" | "totalRows"
+>;
 
 export type UsageReport = {
 	range: UsageRange;

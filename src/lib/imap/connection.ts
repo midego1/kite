@@ -7,10 +7,10 @@ import {
 	isTaggedCompletion,
 	isTaggedOk,
 	parseCapabilities,
-	parseFetchUid,
+	parseFetchAttributes,
 	parseGreeting,
 } from "./protocol-utils";
-import type { ImapLimits } from "./types";
+import type { ImapFetchedMessage, ImapLimits } from "./types";
 
 export type ImapConnectionOptions = Partial<ImapLimits>;
 
@@ -196,57 +196,52 @@ export class ImapConnection {
 	}
 
 	/**
-	 * Fetches several messages with a single UID FETCH round trip. BODY.PEEK[]
-	 * returns the full RFC 822 source without setting \Seen on the source server.
+	 * Fetches several messages with a single UID FETCH round trip, with their flags, INTERNALDATE and size.
+	 * BODY.PEEK[] returns the full RFC 822 source without setting \Seen on the source server. A server may put
+	 * the attributes before or after the literal, so the text of the whole response is read before it is parsed.
 	 */
-	async fetchMessages(uids: string[]): Promise<Map<string, ArrayBuffer>> {
-		const result = new Map<string, ArrayBuffer>();
+	async fetchMessages(uids: string[]): Promise<Map<string, ImapFetchedMessage>> {
+		const result = new Map<string, ImapFetchedMessage>();
 		if (uids.length === 0) return result;
 		const tag = this.nextTag();
-		await this.write(`${tag} UID FETCH ${uids.join(",")} (UID BODY.PEEK[])\r\n`);
-		let pendingRaw: ArrayBuffer | null = null;
-		let pendingUid: string | null = null;
+		await this.write(`${tag} UID FETCH ${uids.join(",")} (UID FLAGS INTERNALDATE RFC822.SIZE BODY.PEEK[])\r\n`);
+		let response: { text: string; raw: ArrayBuffer | null } | null = null;
 		let batchBytes = 0;
 
 		while (true) {
 			const line = await this.readLine();
 			if (isTaggedCompletion(line, tag)) {
-				if (!isTaggedOk(line, tag)) {
-					throw new Error(`IMAP fetch failed: ${line}`);
-				}
+				if (!isTaggedOk(line, tag)) throw new Error(`IMAP fetch failed: ${line}`);
 				return result;
 			}
-			const lineUid = parseFetchUid(line);
+			if (!response || line.startsWith("* ")) response = { text: line, raw: null };
+			else response.text += ` ${line}`;
 			const literalLength = getLiteralLength(line);
-			if (line.startsWith("* ")) {
-				// A new FETCH response starts; the UID may sit before or after the literal.
-				pendingUid = lineUid;
-				pendingRaw = null;
-			} else if (lineUid && !pendingUid) {
-				pendingUid = lineUid;
+			if (literalLength === null) {
+				// A line without a literal ends the response.
+				addFetchedMessage(result, response);
+				response = null;
+				continue;
 			}
-			if (literalLength !== null) {
-				if (literalLength > this.limits.literalBytes)
-					throw new Error(`The IMAP server sent a message larger than ${Math.round(this.limits.literalBytes / MB)} MB`);
-				batchBytes += literalLength;
-				if (batchBytes > this.limits.fetchBatchBytes)
-					throw new Error(
-						`The IMAP server sent more than ${Math.round(this.limits.fetchBatchBytes / MB)} MB in one fetch`,
-					);
-				pendingRaw = await this.readBytes(literalLength);
-			}
-			if (pendingUid && pendingRaw) {
-				result.set(pendingUid, pendingRaw);
-				pendingUid = null;
-				pendingRaw = null;
-			}
+			batchBytes += literalLength;
+			this.assertLiteralFits(literalLength, batchBytes);
+			const bytes = await this.readBytes(literalLength);
+			// BODY[] is the only literal asked for; keep the first one.
+			response.raw ??= bytes;
 		}
 	}
 
 	async fetchMessage(uid: string): Promise<ArrayBuffer> {
-		const raw = (await this.fetchMessages([uid])).get(uid);
-		if (!raw) throw new Error("IMAP fetch returned no message");
-		return raw;
+		const fetched = (await this.fetchMessages([uid])).get(uid);
+		if (!fetched) throw new Error("IMAP fetch returned no message");
+		return fetched.raw;
+	}
+
+	private assertLiteralFits(length: number, batchBytes: number): void {
+		if (length > this.limits.literalBytes)
+			throw new Error(`The IMAP server sent a message larger than ${Math.round(this.limits.literalBytes / MB)} MB`);
+		if (batchBytes > this.limits.fetchBatchBytes)
+			throw new Error(`The IMAP server sent more than ${Math.round(this.limits.fetchBatchBytes / MB)} MB in one fetch`);
 	}
 
 	private noteCapabilities(line: string): void {
@@ -379,4 +374,14 @@ export class ImapConnection {
 		this.buffer.set(value, this.end);
 		this.end += value.byteLength;
 	}
+}
+
+/** Adds a finished FETCH response that carried a UID and a body; flag-only responses are ignored. */
+function addFetchedMessage(
+	result: Map<string, ImapFetchedMessage>,
+	response: { text: string; raw: ArrayBuffer | null },
+): void {
+	if (!response.raw) return;
+	const { uid, flags, internalDate, size } = parseFetchAttributes(response.text);
+	if (uid) result.set(uid, { raw: response.raw, flags, internalDate, size });
 }

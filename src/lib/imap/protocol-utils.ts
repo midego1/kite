@@ -63,10 +63,51 @@ export function parseListMailboxName(line: string): string | null {
 	return value || null;
 }
 
-/** Reads the UID out of an untagged FETCH response line, if it carries one. */
+/** @public Exercised by the unit tests. Reads the UID out of an untagged FETCH response line, if it carries one. */
 export function parseFetchUid(line: string): string | null {
 	const match = line.match(/\bUID\s+(\d+)/i);
 	return match ? match[1] : null;
+}
+
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/**
+ * @public Exercised by the unit tests. An IMAP `date-time` (RFC 9051 §9: `dd-Mon-yyyy hh:mm:ss +zzzz`, the day possibly space-padded) as a Date, or
+ * null when it is not one.
+ */
+export function parseInternalDate(value: string): Date | null {
+	const match = value.trim().match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4}) (\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})$/);
+	if (!match) return null;
+	const [, day, monthName, year, hour, minute, second, sign, zoneHours, zoneMinutes] = match;
+	const month = MONTHS.indexOf(monthName.toLowerCase());
+	if (month < 0) return null;
+	const utc = Date.UTC(Number(year), month, Number(day), Number(hour), Number(minute), Number(second));
+	const offset = (Number(zoneHours) * 60 + Number(zoneMinutes)) * (sign === "+" ? 1 : -1);
+	const date = new Date(utc - offset * 60_000);
+	// Date.UTC rolls 31-Feb over into March; such a value is not a date.
+	if (Number.isNaN(date.getTime()) || new Date(utc).getUTCDate() !== Number(day) || Number(hour) > 23) return null;
+	return date;
+}
+
+/**
+ * The attributes of one FETCH response, from its text with the literals left out: `UID`, `FLAGS (…)`,
+ * `INTERNALDATE "…"` and `RFC822.SIZE`, in any order. A missing FLAGS list is an empty one.
+ */
+export function parseFetchAttributes(text: string): {
+	uid: string | null;
+	flags: string[];
+	internalDate: Date | null;
+	size: number | null;
+} {
+	const flags = text.match(/\bFLAGS \(([^)]*)\)/i)?.[1];
+	const internalDate = text.match(/\bINTERNALDATE "([^"]*)"/i)?.[1];
+	const size = text.match(/\bRFC822\.SIZE (\d+)/i)?.[1];
+	return {
+		uid: parseFetchUid(text),
+		flags: flags ? flags.trim().split(/\s+/).filter(Boolean) : [],
+		internalDate: internalDate ? parseInternalDate(internalDate) : null,
+		size: size ? Number(size) : null,
+	};
 }
 
 /**

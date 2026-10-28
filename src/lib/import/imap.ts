@@ -3,7 +3,7 @@ import { IMAP_PORTS } from "@/lib/imap/protocol-utils";
 import { mailHostPolicy, mailServerHostProblem } from "@/lib/net/host-guard-utils";
 import type { ImportMessageInput } from "./types";
 import type { ImapImportInput } from "./imap-types";
-import { chunk, imapSecurity, selectImapUidBatch } from "./imap-utils";
+import { chunk, imapSecurity, importMessageFromImap, selectImapUidBatch } from "./imap-utils";
 
 /** Messages fetched per UID FETCH command. */
 const FETCH_CHUNK_SIZE = 25;
@@ -44,8 +44,8 @@ export async function fetchImapMessages(env: ImapImportEnv, input: ImapImportInp
 		for (const uids of chunk(batch.uids, FETCH_CHUNK_SIZE)) {
 			const fetched = await session.fetchMessages(uids);
 			for (const uid of uids) {
-				const raw = fetched.get(uid);
-				if (raw) messages.push({ filename: `${input.folder}-${uid}.eml`, raw });
+				const message = fetched.get(uid);
+				if (message) messages.push(importMessageFromImap(`${input.folder}-${uid}.eml`, message));
 			}
 		}
 		return { messages, total: batch.total, nextOffset: batch.nextOffset };

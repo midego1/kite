@@ -20,7 +20,13 @@ const stubs = {
 			return {
 				examine: async () => undefined,
 				searchUids: async () => fake.uids.map(String),
-				fetchMessages: async (uids) => new Map(uids.map((uid) => [uid, new TextEncoder().encode("Subject: x\\r\\n\\r\\nbody")])),
+				fetchMessages: async (uids) =>
+					new Map(
+						uids.map((uid) => [
+							uid,
+							{ raw: new TextEncoder().encode("Subject: x\\r\\n\\r\\nbody"), flags: [], internalDate: null, size: null },
+						]),
+					),
 				close: async () => undefined,
 			};
 		}

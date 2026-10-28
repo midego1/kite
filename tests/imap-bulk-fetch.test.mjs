@@ -118,9 +118,9 @@ test("fetchMessages reads several literals from one UID FETCH, UID before or aft
 	const imap = new ImapConnection(socket);
 	await imap.readGreeting();
 	const result = await imap.fetchMessages(["10", "11"]);
-	assert.match(written[0], /UID FETCH 10,11 \(UID BODY\.PEEK\[\]\)/);
-	assert.equal(decoder.decode(result.get("10")), bodyA);
-	assert.equal(decoder.decode(result.get("11")), bodyB);
+	assert.match(written[0], /UID FETCH 10,11 \(UID FLAGS INTERNALDATE RFC822\.SIZE BODY\.PEEK\[\]\)/);
+	assert.equal(decoder.decode(result.get("10").raw), bodyA);
+	assert.equal(decoder.decode(result.get("11").raw), bodyB);
 	assert.equal(result.size, 2);
 });
 
@@ -299,7 +299,7 @@ test("arriving bytes extend the deadline: a slow but steady FETCH finishes past 
 	await imap.readGreeting();
 	const started = Date.now();
 	const fetched = await imap.fetchMessages(["1"]);
-	assert.equal(fetched.get("1").byteLength, 3000);
+	assert.equal(fetched.get("1").raw.byteLength, 3000);
 	assert.ok(Date.now() - started > 1000);
 });
 
@@ -341,9 +341,34 @@ test("a literal is read into a buffer of exactly its size, and bytes behind it s
 	);
 	const imap = new ImapConnection(socket);
 	await imap.readGreeting();
-	const raw = (await imap.fetchMessages(["3"])).get("3");
+	const raw = (await imap.fetchMessages(["3"])).get("3").raw;
 	assert.equal(raw.byteLength, body.length);
 	assert.equal(decoder.decode(raw), body);
 	// The connection is still in step: the next command reads its own answer.
 	assert.deepEqual(await imap.command("NOOP"), ["A0002 OK"]);
+});
+
+test("fetchMessages returns flags, INTERNALDATE and size wherever the server puts them, and skips flag-only responses", async () => {
+	const body = "Subject: a\r\n\r\nhello\r\n";
+	const { socket } = fakeSocket((command, tag) =>
+		command.includes("UID FETCH")
+			? `* 1 FETCH (UID 4 FLAGS (\\Seen) INTERNALDATE "27-Oct-2026 10:00:00 +0000" RFC822.SIZE ${body.length} BODY[] {${body.length}}\r\n${body})\r\n` +
+				`* 2 FETCH (BODY[] {${body.length}}\r\n${body} UID 5 FLAGS (\\Flagged \\Answered))\r\n` +
+				`* 3 FETCH (UID 6 FLAGS (\\Deleted))\r\n` +
+				`${tag} OK done\r\n`
+			: `${tag} OK\r\n`,
+	);
+	const imap = new ImapConnection(socket);
+	await imap.readGreeting();
+	const result = await imap.fetchMessages(["4", "5", "6"]);
+	assert.deepEqual([...result.keys()], ["4", "5"]);
+	const first = result.get("4");
+	assert.deepEqual(first.flags, ["\\Seen"]);
+	assert.equal(first.internalDate.toISOString(), "2026-10-27T10:00:00.000Z");
+	assert.equal(first.size, body.length);
+	const second = result.get("5");
+	assert.deepEqual(second.flags, ["\\Flagged", "\\Answered"]);
+	assert.equal(second.internalDate, null);
+	assert.equal(second.size, null);
+	assert.equal(decoder.decode(second.raw), body);
 });

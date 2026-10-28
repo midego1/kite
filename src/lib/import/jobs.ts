@@ -8,7 +8,7 @@ import { getDatabaseSize } from "@/lib/db/size";
 import { getImportMessageUserId, parseImportDestination } from "./destination";
 import { MailServerRefusedError } from "@/lib/net/errors";
 import { openImportSession } from "./imap";
-import { chunk, selectRemainingUids } from "./imap-utils";
+import { chunk, hostImportMessageFromImap, selectRemainingUids } from "./imap-utils";
 import {
 	IMPORT_CONFIRMED_NOTE,
 	carriedImportNote,
@@ -299,8 +299,8 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 
 			const batch: HostImportMessage[] = [];
 			for (const uid of uids) {
-				const raw = fetched.get(String(uid));
-				if (raw) batch.push({ filename: `${job.folder}-${uid}.eml`, raw: encodeRawMime(raw), encoding: "base64" });
+				const message = fetched.get(String(uid));
+				if (message) batch.push(hostImportMessageFromImap(`${job.folder}-${uid}.eml`, message, encodeRawMime));
 			}
 			const result = await moduleHost.mail.importMessages(ctx, {
 				userId,

@@ -7,3 +7,4 @@
 ### Fixed
 
 - The **Setup** buttons in the DNS rows of [Admin → Domains](/domains) were hard to read, most of all while DNS is managed by hand; they now have a solid face and readable text in light and dark mode.
+- On phones, bordered cards in Settings, Admin and Money Watch kept no side padding, so their text touched the border.

@@ -7,6 +7,7 @@
 		"src/lib/db/size-utils.ts",
 		"src/lib/import/estimate-utils.ts",
 		"src/lib/import/size-guard-utils.ts",
+		"src/lib/import/message-hints-utils.ts",
 		"src/lib/alerts/webhook-utils.ts",
 		"src/lib/email/bodies-utils.ts",
 		"src/lib/http/content-type-utils.ts",

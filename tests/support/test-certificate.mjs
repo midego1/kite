@@ -41,7 +41,8 @@ export function createTestCertificate(names = ["localhost", "127.0.0.1"]) {
 		...names.map((value) => (isIP(value) ? tlv(0x87, ipBytes(value)) : tlv(0x82, Buffer.from(value)))),
 	);
 	const serial = randomBytes(8);
-	serial[0] &= 0x7f;
+	// Positive and without a leading zero byte, which DER rejects as padding (one certificate in 256 otherwise).
+	serial[0] = (serial[0] & 0x7f) | 0x01;
 	const now = Date.now();
 	const tbs = seq(
 		tlv(0xa0, tlv(0x02, Buffer.from([2]))),

@@ -25,6 +25,8 @@ const {
 	resumeStalledImportJobs,
 	listImportJobs,
 	serializeImportJob,
+	DEFAULT_IMPORT_TIMING,
+	nextLease,
 	resolveImportDestination,
 	ImportMigrationPendingError,
 	ImportJobSaveError,
@@ -40,6 +42,7 @@ const {
 		"createAccountImportJob, createImportJob, processImportJob, pauseImportJob, resumeImportJob, cancelImportJob, resumeStalledImportJobs, listImportJobs, serializeImportJob",
 		"src/lib/import/jobs.ts",
 	],
+	["DEFAULT_IMPORT_TIMING, nextLease", "src/lib/import/job-run.ts"],
 	["resolveImportDestination", "src/lib/import/folders.ts"],
 	[
 		"ImportMigrationPendingError, ImportJobSaveError, JOB_FOLDER_ROWS_PER_INSERT, jobFolderInserts",
@@ -99,6 +102,7 @@ async function setup(t, server, migrationsDir = join(root, "drizzle/migrations")
 	`);
 	const connect = createTcpConnect({ ca: tls.cert, resolve: async () => ["127.0.0.1"], allowLoopback: true });
 	const queued = [];
+	const delays = [];
 	const env = {
 		KITE_RUNTIME: "node",
 		TCP_CONNECT: (address, options) => connect({ ...address, port: server.port }, options),
@@ -109,10 +113,15 @@ async function setup(t, server, migrationsDir = join(root, "drizzle/migrations")
 			head: async () => null,
 			delete: async () => undefined,
 		},
-		AGENT_QUEUE: { send: async (message) => queued.push(message) },
+		AGENT_QUEUE: {
+			send: async (message, options) => {
+				queued.push(message);
+				delays.push(options?.delaySeconds ?? 0);
+			},
+		},
 	};
 	globalThis.__kiteNodeEnv = env;
-	return { db, env, queued, limits };
+	return { db, env, queued, delays, limits };
 }
 
 const account = { host: HOST, port: 993, secure: true, username: USER, password: PASSWORD };
@@ -478,6 +487,296 @@ test("Cancel and the 7-day limit on a paused job close the folders it never reac
 		assert.deepEqual(statuses, [{ status: "skipped" }]);
 	}
 });
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Polls `check` until it holds; fails the test with `what` after `ms` instead of hanging. */
+async function until(check, what, ms = 20_000) {
+	const deadline = Date.now() + ms;
+	while (!(await check())) {
+		if (Date.now() > deadline) assert.fail(`timed out waiting for ${what}`);
+		await sleep(20);
+	}
+}
+const examines = (server) => server.commands.filter((entry) => /^\S+ (EXAMINE|SELECT)\b/i.test(entry.line)).length;
+const fetches = (server) => server.commands.filter((entry) => /UID FETCH/i.test(entry.line)).length;
+const signIns = (server) => server.commands.filter((entry) => /^\S+ (LOGIN|AUTHENTICATE)\b/i.test(entry.line)).length;
+const folderStatuses = (db) => db.db.prepare("SELECT DISTINCT status FROM import_job_folders").all();
+const jobRow = (db) => db.db.prepare("SELECT status, lease_until, processed, imported FROM import_jobs").get();
+const gate = () => {
+	let open;
+	const promise = new Promise((resolve) => (open = resolve));
+	return { promise, open };
+};
+const slowSuite = { timeout: 60_000 };
+
+/**
+ * Makes the first write to `import_job_folders` of a run meet a job that ended just before it, as `status`. `closing`
+ * adds what Cancel does besides: closing the open folders.
+ */
+function endBeforeFirstFolderWrite(db, limits, jobId, status, closing) {
+	limits.refuse = (sql) => {
+		if (!/^update "import_job_folders"/i.test(sql)) return false;
+		limits.refuse = undefined;
+		db.db.prepare("UPDATE import_jobs SET status = ?, lease_until = NULL WHERE id = ?").run(status, jobId);
+		if (closing)
+			db.db
+				.prepare(
+					"UPDATE import_job_folders SET status = 'skipped' WHERE job_id = ? AND status IN ('pending', 'running')",
+				)
+				.run(jobId);
+		return false;
+	};
+}
+
+for (const [name, status, folders, closing] of [
+	[
+		"a Cancel before the first folder is opened (folders left open)",
+		"cancelled",
+		{ INBOX: [1], Archive: [2], Work: [3] },
+		false,
+	],
+	[
+		"a Cancel before the first folder is opened (folders closed)",
+		"cancelled",
+		{ INBOX: [1], Archive: [2], Work: [3] },
+		true,
+	],
+	["empty folders, Cancel not yet closing them", "cancelled", { INBOX: [], Archive: [], Work: [] }, false],
+	["empty folders, Cancel already closing them", "cancelled", { INBOX: [], Archive: [], Work: [] }, true],
+	["a job that failed meanwhile (folders left open)", "failed", { INBOX: [1], Archive: [2], Work: [3] }, false],
+]) {
+	test(`${name}: no folder is left running and the later ones are not opened`, async (t) => {
+		const server = await fake(t, {
+			folders: Object.fromEntries(
+				Object.entries(folders).map(([folder, uids]) => [folder, uids.map((uid) => sampleMessage(uid))]),
+			),
+		});
+		const { db, env, limits } = await setup(t, server);
+		const job = await startAccountJob(env, await planAccountImport(env, account));
+		assert.equal(db.db.prepare("SELECT count(*) AS count FROM import_job_folders").get().count, 3);
+		endBeforeFirstFolderWrite(db, limits, job.id, status, closing);
+		await processImportJob(env, job.id, CTX);
+		assert.equal(examines(server), 1, "the later folders were not opened");
+		assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 0);
+		assert.equal(db.db.prepare("SELECT status FROM import_jobs").get().status, status);
+		// Not left running, pending, completed or failed: the guard keeps Cancel's skipped, and the run's end closes the rest.
+		assert.deepEqual(folderStatuses(db), [{ status: "skipped" }]);
+	});
+}
+
+test("a folder the server refuses is not marked failed once the job was cancelled", async (t) => {
+	const server = await fake(t, { folders: { INBOX: [sampleMessage(1)] } });
+	const { db, env, limits } = await setup(t, server);
+	const plan = await planAccountImport(env, account);
+	const job = await startAccountJob(env, {
+		...plan,
+		folders: [
+			{ sourceName: "Gone", role: "user", include: true, destination: "new:Gone", bytes: null },
+			...plan.folders,
+		],
+	});
+	endBeforeFirstFolderWrite(db, limits, job.id, "cancelled", true);
+	await processImportJob(env, job.id, CTX);
+	assert.equal(examines(server), 1, "the folder after the refused one was not opened");
+	assert.deepEqual(folderStatuses(db), [{ status: "skipped" }]);
+	assert.equal(
+		db.db.prepare("SELECT last_error FROM import_job_folders WHERE source_name = 'Gone'").get().last_error,
+		null,
+	);
+});
+
+test(
+	"a heartbeat keeps the lease through a FETCH that outlasts it, so a Resume meanwhile starts no second run",
+	slowSuite,
+	async (t) => {
+		const slow = gate();
+		t.after(() => slow.open());
+		const inbox = Array.from({ length: 30 }, (_, index) => sampleMessage(index + 1, { subject: `Slow ${index + 1}` }));
+		const server = await fake(t, { folders: { INBOX: inbox }, fetchGate: slow.promise });
+		const { db, env } = await setup(t, server);
+		const job = await startAccountJob(env, await planAccountImport(env, account));
+		// A lease of a few seconds that the FETCH outlasts, as an eight-minute one is outlasted by a ten-minute command.
+		const timing = { leaseMs: 3000, heartbeatMs: 300 };
+		const first = processImportJob(env, job.id, CTX, timing);
+		await until(() => fetches(server) === 1, "the first FETCH");
+		assert.equal(await pauseImportJob(env, "owner", job.id), true);
+		assert.equal(await resumeImportJob(env, "owner", job.id, { confirmed: false }), "resumed");
+		await sleep(4500);
+		assert.ok(jobRow(db).lease_until * 1000 > Date.now(), "the lease was renewed while the FETCH was open");
+		const before = signIns(server);
+		await processImportJob(env, job.id, CTX, timing);
+		assert.equal(signIns(server), before, "no second claim");
+		slow.open();
+		await first;
+		assert.equal(db.db.prepare("SELECT status FROM import_jobs").get().status, "completed");
+		assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 30);
+		assert.equal(jobRow(db).lease_until, null);
+	},
+);
+
+test("the heartbeat never revives a cancelled job", slowSuite, async (t) => {
+	const slow = gate();
+	t.after(() => slow.open());
+	const server = await fake(t, { folders: { INBOX: [sampleMessage(1)] }, fetchGate: slow.promise });
+	const { db, env } = await setup(t, server);
+	const job = await startAccountJob(env, await planAccountImport(env, account));
+	const first = processImportJob(env, job.id, CTX, { leaseMs: 3000, heartbeatMs: 200 });
+	await until(() => fetches(server) === 1, "the FETCH");
+	assert.equal(await cancelImportJob(env, "owner", job.id), true);
+	await sleep(700);
+	assert.deepEqual(db.db.prepare("SELECT status, lease_until FROM import_jobs").get(), {
+		status: "cancelled",
+		lease_until: null,
+	});
+	slow.open();
+	await first;
+	assert.deepEqual(db.db.prepare("SELECT status, lease_until, password FROM import_jobs").get(), {
+		status: "cancelled",
+		lease_until: null,
+		password: "",
+	});
+	assert.deepEqual(folderStatuses(db), [{ status: "skipped" }]);
+});
+
+/**
+ * Run A's lease runs out because it never beats; run B claims the job and holds it in its own FETCH; then A wakes up.
+ * `aGate` and `bGate` hold the two runs' first FETCH.
+ */
+async function staleRunAndTakeover(t, { aBeatsAfterMs }) {
+	const aGate = gate();
+	const bGate = gate();
+	t.after(() => {
+		aGate.open();
+		bGate.open();
+	});
+	const inbox = Array.from({ length: 60 }, (_, index) => sampleMessage(index + 1, { subject: `Fence ${index + 1}` }));
+	const server = await fake(t, {
+		folders: { INBOX: inbox },
+		// A's first FETCH, then B's; the prefetches that follow answer at once.
+		fetchGate: (n) => (n === 0 ? aGate.promise : n === 1 ? bGate.promise : Promise.resolve()),
+	});
+	const { db, env } = await setup(t, server);
+	const job = await startAccountJob(env, await planAccountImport(env, account));
+	const a = processImportJob(env, job.id, CTX, { leaseMs: 2000, heartbeatMs: aBeatsAfterMs });
+	await until(() => fetches(server) === 1, "A's FETCH");
+	const startedA = Date.now();
+	await until(() => jobRow(db).lease_until * 1000 + 1000 < Date.now(), "A's lease to run out");
+	const b = processImportJob(env, job.id, CTX, { leaseMs: 60_000, heartbeatMs: 1e9 });
+	await until(() => fetches(server) === 2, "B's FETCH");
+	return { server, db, env, job, a, b, aGate, bGate, startedA, lease: jobRow(db).lease_until };
+}
+
+test(
+	"a run that missed its beats while another claimed the job stops without writing progress or clearing the new lease",
+	slowSuite,
+	async (t) => {
+		const { db, a, b, aGate, bGate, lease } = await staleRunAndTakeover(t, { aBeatsAfterMs: 1e9 });
+		assert.deepEqual(jobRow(db), { status: "running", lease_until: lease, processed: 0, imported: 0 });
+		aGate.open();
+		await a;
+		// A saved nothing to the job or its folders and left B's lease alone.
+		assert.deepEqual(jobRow(db), { status: "running", lease_until: lease, processed: 0, imported: 0 });
+		assert.deepEqual(db.db.prepare("SELECT status, processed, cursor_uid FROM import_job_folders").all(), [
+			{ status: "running", processed: 0, cursor_uid: null },
+		]);
+		bGate.open();
+		await b;
+		assert.equal(db.db.prepare("SELECT status FROM import_jobs").get().status, "completed");
+		// Whatever A imported before it noticed, every message is in Kite once.
+		assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 60);
+		assert.equal(jobRow(db).processed, 60);
+	},
+);
+
+test(
+	"a late beat of a run that lost its lease does not extend the lease of the run that took the job",
+	slowSuite,
+	async (t) => {
+		const { db, a, b, aGate, bGate, startedA, lease } = await staleRunAndTakeover(t, { aBeatsAfterMs: 4000 });
+		// A's first beat comes after B claimed; B's own lease is long and B does not beat.
+		await sleep(Math.max(startedA + 4600 - Date.now(), 0));
+		assert.deepEqual(jobRow(db), { status: "running", lease_until: lease, processed: 0, imported: 0 });
+		aGate.open();
+		await a;
+		assert.deepEqual(jobRow(db), { status: "running", lease_until: lease, processed: 0, imported: 0 });
+		bGate.open();
+		await b;
+		assert.equal(db.db.prepare("SELECT status FROM import_jobs").get().status, "completed");
+	},
+);
+
+test("a new lease is always later than the one it replaces, even within the same second", () => {
+	const second = Math.floor(Date.now() / 1000) * 1000;
+	// A short lease taken over one that runs well past it: still a second later than the old value.
+	assert.equal(nextLease(new Date(second + 300_000), 1).getTime(), second + 301_000);
+	assert.equal(nextLease(new Date(second), 1).getTime(), second + 1000);
+	const fresh = nextLease(null, 5000).getTime();
+	assert.ok(fresh % 1000 === 0 && fresh >= second + 4000 && fresh <= second + 6000, `${fresh - second}`);
+});
+
+test("a dead worker's job is reclaimed within the short lease after Resume, without the cron", slowSuite, async (t) => {
+	const inbox = Array.from({ length: 30 }, (_, index) => sampleMessage(index + 1, { subject: `Dead ${index + 1}` }));
+	const server = await fake(t, { folders: { INBOX: inbox } });
+	const { db, env, queued, delays } = await setup(t, server);
+	const job = await startAccountJob(env, await planAccountImport(env, account));
+	assert.ok(DEFAULT_IMPORT_TIMING.leaseMs <= 5 * 60_000, "a dead worker is found within minutes");
+	assert.ok(
+		DEFAULT_IMPORT_TIMING.heartbeatMs * 2 <= DEFAULT_IMPORT_TIMING.leaseMs,
+		"a missed beat does not lose the lease",
+	);
+	assert.equal(await pauseImportJob(env, "owner", job.id), true);
+	// A worker evicted mid-batch: the pause kept its lease and no heartbeat renews it any more.
+	db.db.prepare("UPDATE import_jobs SET lease_until = ? WHERE id = ?").run(Math.floor(Date.now() / 1000) + 5, job.id);
+	queued.length = 0;
+	delays.length = 0;
+	assert.equal(await resumeImportJob(env, "owner", job.id, { confirmed: false }), "resumed");
+	assert.deepEqual(queued, [
+		{ kind: "import.imap", jobId: job.id },
+		{ kind: "import.imap", jobId: job.id },
+	]);
+	assert.equal(delays[0], 0);
+	assert.ok(delays[1] >= 5 && delays[1] <= 7, `${delays[1]}`);
+	// Before the lease expires neither message starts a run beside the lease holder.
+	await processImportJob(env, job.id, CTX);
+	assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 0);
+	await sleep(delays[1] * 1000 + 100);
+	await processImportJob(env, job.id, CTX);
+	assert.equal(db.db.prepare("SELECT status FROM import_jobs").get().status, "completed");
+	assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 30);
+});
+
+test(
+	"a database-full pause from a saved chunk keeps the lease until the open FETCH is finished",
+	slowSuite,
+	async (t) => {
+		const second = gate();
+		t.after(() => second.open());
+		const inbox = Array.from({ length: 60 }, (_, index) => sampleMessage(index + 1, { subject: `Full ${index + 1}` }));
+		// The first FETCH answers at once; the prefetch of the second chunk stays open until the test lets it go.
+		const server = await fake(t, {
+			folders: { INBOX: inbox },
+			fetchGate: (n) => (n === 0 ? Promise.resolve() : second.promise),
+		});
+		const { db, env, limits } = await setup(t, server);
+		const job = await startAccountJob(env, await planAccountImport(env, account));
+		limits.onPut = () => {
+			limits.onPut = undefined;
+			// From now on the database counts as full.
+			delete env.KITE_RUNTIME;
+			env.D1_MAX_BYTES = "1";
+		};
+		const run = processImportJob(env, job.id, CTX);
+		const state = () => db.db.prepare("SELECT status, lease_until, pause_reason FROM import_jobs").get();
+		await until(() => state().status === "paused", "the database-full pause");
+		assert.equal(state().pause_reason, "database");
+		await sleep(300);
+		assert.equal(fetches(server), 2, "the prefetch is still open");
+		assert.notEqual(state().lease_until, null, "the open FETCH still holds the job");
+		second.open();
+		await run;
+		assert.equal(state().lease_until, null, "the run's end released it");
+	},
+);
 
 test("another user's job cannot be paused, resumed or cancelled", async (t) => {
 	const server = await fake(t, {});

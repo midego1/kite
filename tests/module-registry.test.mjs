@@ -407,7 +407,8 @@ test("queue and cron declarations match their descriptors both ways", () => {
 	const long = MODULE_CAPABILITIES.find((entry) => entry.moduleId === "import").descriptors.filter(
 		(descriptor) => descriptor.surfaces.includes("queue") || descriptor.surfaces.includes("cron"),
 	);
-	for (const descriptor of long) assert.ok(descriptor.timeoutMs > 5 * 60_000 && descriptor.timeoutMs < 8 * 60_000);
+	// Longer than a run's budget plus one ten-minute IMAP command, within the 15-minute limit of a queue invocation.
+	for (const descriptor of long) assert.ok(descriptor.timeoutMs > 12 * 60_000 && descriptor.timeoutMs < 15 * 60_000);
 });
 
 test("actions name existing suggestion kinds and every action type and reason has a label", () => {

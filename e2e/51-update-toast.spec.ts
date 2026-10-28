@@ -103,6 +103,103 @@ test("a new deployment shows the toast once, and Reload reloads the page", async
 	await expect(updateToast(page)).toHaveCount(0);
 });
 
+/**
+ * Answers the app's entry module with a 404 while `failing()` holds, as a Cloudflare location still on the previous
+ * deployment does for the new deployment's chunks. Under `vite dev` the entry is the vite-rsc browser entry (each
+ * page requests it more than once); a production build names it `/_next/static/chunks/index-<hash>.js`.
+ */
+async function failEntryModule(page: Page, failing: () => boolean) {
+	const entry = { failed: 0 };
+	await page.route(
+		(url) => url.pathname.endsWith("/entry-browser"),
+		async (route) => {
+			if (!failing()) return route.continue();
+			entry.failed += 1;
+			await route.fulfill({ status: 404, contentType: "text/plain", body: "Not Found" });
+		},
+	);
+	return entry;
+}
+
+function countDocumentLoads(page: Page) {
+	const documents = { count: 0 };
+	page.on("request", (request) => {
+		if (request.resourceType() === "document" && request.frame() === page.mainFrame()) documents.count += 1;
+	});
+	return documents;
+}
+
+function setMarker(page: Page) {
+	return page.evaluate(() => {
+		(window as unknown as { __sameDocument?: boolean }).__sameDocument = true;
+	});
+}
+
+function readMarker(page: Page) {
+	return page.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument);
+}
+
+test("a chunk of the previous deployment that is gone shows the toast, and Reload loads the new one even before its files reach every location", async ({
+	page,
+}) => {
+	const version = await routeVersion(page, "deploy-1");
+	await page.goto("/inbox");
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible();
+	await expect.poll(() => version.requests).toBeGreaterThan(0);
+	const documents = countDocumentLoads(page);
+
+	// The open tab lazily loads a chunk the new deployment no longer has: it checks the version at once and offers
+	// a reload, without reloading under the user. A production build's preload helper reports the failed import as
+	// `vite:preloadError`; doing the same here keeps an unhandled rejection from opening the dev error overlay.
+	version.current = "deploy-2";
+	await setMarker(page);
+	await page.evaluate(async () => {
+		try {
+			await import(`/_next/static/chunks/removed-${Date.now()}.js`);
+		} catch (error) {
+			window.dispatchEvent(Object.assign(new Event("vite:preloadError", { cancelable: true }), { payload: error }));
+		}
+	});
+	const toast = updateToast(page);
+	await expect(toast).toBeVisible();
+	// Longer than the wait before the first automatic reload.
+	await page.waitForTimeout(1_500);
+	expect(await readMarker(page)).toBe(true);
+	expect(documents.count).toBe(0);
+
+	// The first two loads get the new page but not its files; it used to stay on "Loading" until a manual refresh.
+	const entry = await failEntryModule(page, () => documents.count <= 2);
+	await toast.getByRole("button", { name: "Reload" }).click();
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 30_000 });
+	expect(entry.failed).toBeGreaterThanOrEqual(2);
+	expect(documents.count).toBe(3);
+	expect(await readMarker(page)).toBe(undefined);
+	// Once the app has rendered, the reload count starts over.
+	await expect.poll(() => page.evaluate(() => sessionStorage.getItem("kite:asset-reload"))).toBeNull();
+	await expect(updateToast(page)).toHaveCount(0);
+});
+
+test("files that never load stop the automatic reloads after four tries", async ({ page }) => {
+	await page.goto("/inbox");
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible();
+	const documents = countDocumentLoads(page);
+	const errors: string[] = [];
+	page.on("console", (message) => {
+		if (message.type() === "error") errors.push(message.text());
+	});
+
+	await failEntryModule(page, () => true);
+	await page.reload();
+	// The first load plus four automatic reloads, 1 + 2 + 4 + 8 seconds apart.
+	await expect.poll(() => documents.count, { timeout: 60_000 }).toBe(5);
+	await expect.poll(() => errors.some((text) => text.includes("could not be loaded after 4 reloads"))).toBe(true);
+	// Longer than the longest wait: no fifth reload follows.
+	await page.waitForTimeout(9_000);
+	expect(documents.count).toBe(5);
+
+	await page.unroute((url) => url.pathname.endsWith("/entry-browser"));
+});
+
 test("Dismiss hides the toast for the rest of the tab's life", async ({ page }) => {
 	const version = await routeVersion(page, "deploy-1");
 	await openInbox(page, version);

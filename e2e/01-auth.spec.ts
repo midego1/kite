@@ -74,7 +74,12 @@ test.describe("authentication", () => {
 
 		// What a restore or an admin password reset does: the cookie dies, the tab still remembers the user.
 		await page.request.post("/api/auth/logout", { headers: { Origin: BASE_URL } });
-		await page.evaluate(() => window.location.assign("/login"));
+		// Any background request of the open page that now answers 401 sends it to /login by itself (authFetch), at a
+		// moment we do not control. A script run in the page then loses its execution context, and a goto of ours is
+		// aborted when that redirect wins, so navigate from the test side and treat "aborted" as "already on its way".
+		await page.goto("/login").catch((error: Error) => {
+			if (!error.message.includes("net::ERR_ABORTED")) throw error;
+		});
 		await expect(page).toHaveURL(/\/login/);
 
 		await signIn(page, ADMIN.email, ADMIN.password);

@@ -10,6 +10,7 @@ import { DRIVE_MAX_TRASH_DAYS } from "@/lib/drive/settings-utils";
 import type { DriveSettingsValues } from "@/lib/drive/types";
 import { driveRequest } from "./drive-api";
 import { parseQuotaGb, quotaToGb } from "./drive-utils";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Form = { quotaGb: string; linksOn: boolean; linkMaxDays: string; trashRetentionDays: string };
 
@@ -85,11 +86,11 @@ export function DriveSettingsForm({ onSaved }: { onSaved: (settings: DriveSettin
 	const update = (change: Partial<Form>) => setForm((current) => current && { ...current, ...change });
 
 	return (
-		<Card className="rounded-3xl border-0 bg-white p-6">
-			<CardHeader className="py-0">
+		<Card>
+			<CardHeader>
 				<CardTitle>Defaults</CardTitle>
 			</CardHeader>
-			<CardContent className="pt-6">
+			<CardContent className="pt-4">
 				<form onSubmit={(event) => void save(event)} className="space-y-5" data-drive-settings>
 					<div className="space-y-2">
 						<Label htmlFor="drive-quota">Storage per account (GB)</Label>
@@ -106,8 +107,7 @@ export function DriveSettingsForm({ onSaved }: { onSaved: (settings: DriveSettin
 					</div>
 					<div className="space-y-2">
 						<label className="flex items-center gap-2 text-sm font-medium text-neutral-900">
-							<input
-								type="checkbox"
+							<Checkbox
 								checked={form?.linksOn ?? false}
 								onChange={(event) => update({ linksOn: event.target.checked })}
 								disabled={!form || saving}

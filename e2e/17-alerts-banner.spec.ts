@@ -97,9 +97,12 @@ test.describe("operational alerts banner", () => {
 				(window as Window & { __bannerNoReload?: boolean }).__bannerNoReload = true;
 			});
 
+			// Admin pages show the notices in their sidebar too: let that request finish before the job exists.
+			const onAdmin = page.waitForResponse((response) => response.url().endsWith(ACTIVE_API));
 			await page.getByRole("button", { name: "Open account menu" }).click();
 			await page.getByRole("link", { name: "Admin", exact: true }).click();
 			await expect(page).toHaveURL(/\/admin$/);
+			expect(((await (await onAdmin).json()) as { alerts: unknown[] }).alerts).toEqual([]);
 			insertStuckJob();
 
 			const refreshed = page.waitForResponse((response) => response.url().endsWith(ACTIVE_API));

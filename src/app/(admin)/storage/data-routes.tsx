@@ -114,14 +114,14 @@ export function DataRoutes({ overview, onChanged }: { overview: StorageOverview;
 	const options = routableStores(overview);
 
 	return (
-		<section aria-labelledby="where-data-lives" className="rounded-3xl bg-white p-6">
+		<section aria-labelledby="where-data-lives" className="rounded-xl border border-neutral-200 bg-white p-5">
 			<h2 id="where-data-lives" className="text-lg font-semibold text-neutral-900">
 				Where data lives
 			</h2>
 			<p className="mt-1 text-sm text-neutral-500">
 				Each kind of data can live in its own store. Search indexes, settings and the database stay in Kite.
 			</p>
-			<div className="mt-4 divide-y divide-neutral-100">
+			<div className="mt-4 divide-y divide-neutral-200">
 				{overview.routes.map((route) => {
 					const choice = choices[route.objectClass] ?? route.storeId;
 					const running = overview.migrations.some(
@@ -152,6 +152,7 @@ export function DataRoutes({ overview, onChanged }: { overview: StorageOverview;
 								value={choice}
 								disabled={running}
 								containerClassName="h-9"
+								className="text-sm"
 								onChange={(event) => setChoices((current) => ({ ...current, [route.objectClass]: event.target.value }))}
 							>
 								{options.map((option) => (

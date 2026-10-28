@@ -53,16 +53,16 @@ export default function GeneralSettingsPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">General</h1>
-				<p className="mt-2 text-sm text-neutral-500">
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">General</h1>
+				<p className="mt-1 text-sm text-neutral-500">
 					Set limits for outgoing mail, outside checks of incoming mail and usage statistics.
 				</p>
 			</div>
-			<Card className="rounded-3xl border-0 bg-white p-6">
-				<CardHeader className="py-0">
+			<Card>
+				<CardHeader>
 					<CardTitle>File attachments</CardTitle>
 				</CardHeader>
-				<CardContent className="pt-6">
+				<CardContent className="pt-4">
 					<form onSubmit={save} className="space-y-4">
 						<div className="space-y-2">
 							<Label htmlFor="attachment-limit">Maximum attachments per email (MB)</Label>
@@ -82,7 +82,7 @@ export default function GeneralSettingsPage() {
 								Applies to each file and all files combined. Maximum: 25 MB; up to 10 files.
 							</p>
 						</div>
-						<div className="space-y-2 rounded-xl bg-neutral-50 p-4 text-sm text-neutral-700">
+						<div className="space-y-2 rounded-lg bg-neutral-50 p-4 text-sm text-neutral-700">
 							<p>
 								Cloudflare Email Sending limits the complete email, including attachments and encoding, to 5 MiB for
 								general recipients. The 25 MiB exception applies only to verified destination addresses.

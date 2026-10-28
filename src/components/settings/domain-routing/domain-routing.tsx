@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Forward, Inbox, Info, Pencil, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -108,7 +108,7 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 			<div className="flex flex-wrap items-end justify-between gap-4">
 				<div>
 					<div className="flex items-center gap-2">
-						<h2 className="text-2xl font-semibold">Domain routing</h2>
+						<h2 className="text-base font-semibold text-neutral-900">Domain routing</h2>
 						<Tooltip label="Block, forward, or deliver mail arriving at this domain.">
 							<button
 								type="button"
@@ -132,20 +132,19 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 				<CardGridSkeleton />
 			) : !domain && !mailboxId ? (
 				<Card>
-					<CardContent className="pt-6 text-sm text-neutral-500">
+					<CardContent className="p-0 text-sm text-neutral-500">
 						Select an inbox before creating routing rules.
 					</CardContent>
 				</Card>
 			) : !canManage ? (
 				<Card>
-					<CardContent className="pt-6 text-sm text-neutral-500">
+					<CardContent className="p-0 text-sm text-neutral-500">
 						Domain routing is managed by an admin. Use inbox rules below to sort mail in your own inbox.
 					</CardContent>
 				</Card>
 			) : (
-				<div className="space-y-1 overflow-hidden rounded-3xl">
+				<div className="divide-y divide-neutral-200 rounded-xl border border-neutral-200 bg-white">
 					<RuleSection
-						className="rounded-b-lg rounded-t-3xl"
 						title="Block rules"
 						description="Evaluated before delivery. Matching mail is rejected at the edge."
 						rules={blockRules}
@@ -156,7 +155,6 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 						onToggle={(rule) => toggle.mutate(rule)}
 					/>
 					<RuleSection
-						className="rounded-b-3xl rounded-t-lg"
 						title="Catch-all and forwarding"
 						description="Evaluated only when no mailbox on the domain matched the recipient."
 						rules={fallbackRules}
@@ -390,7 +388,6 @@ export function DomainRouting({ domain }: DomainRoutingProps = {}) {
 }
 
 function RuleSection({
-	className,
 	title,
 	description,
 	rules,
@@ -400,7 +397,6 @@ function RuleSection({
 	onDelete,
 	onToggle,
 }: {
-	className: string;
 	title: string;
 	description: string;
 	rules: DomainRule[];
@@ -411,18 +407,16 @@ function RuleSection({
 	onToggle: (rule: DomainRule) => void;
 }) {
 	return (
-		<Card className={`${className} border-0 bg-white px-6`}>
-			<CardHeader>
-				<div className="flex items-center gap-2">
-					<CardTitle className="text-xs uppercase">{title}</CardTitle>
-					<Tooltip label={description}>
-						<button type="button" aria-label={description} className="text-neutral-500 hover:text-neutral-700">
-							<Info className="h-4 w-4" />
-						</button>
-					</Tooltip>
-				</div>
-			</CardHeader>
-			<CardContent className="space-y-2 pb-5">
+		<div className="px-5">
+			<div className="flex items-center gap-2 py-4">
+				<h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
+				<Tooltip label={description}>
+					<button type="button" aria-label={description} className="text-neutral-500 hover:text-neutral-700">
+						<Info className="h-4 w-4" />
+					</button>
+				</Tooltip>
+			</div>
+			<div className="space-y-2 pb-5">
 				{rules.length === 0 ? (
 					<p className="text-sm text-neutral-500">No rules yet.</p>
 				) : (
@@ -477,7 +471,7 @@ function RuleSection({
 						);
 					})
 				)}
-			</CardContent>
-		</Card>
+			</div>
+		</div>
 	);
 }

@@ -77,7 +77,7 @@ function ModuleAccessControls({ accountId }: { accountId: string }) {
 	}
 
 	return (
-		<section aria-labelledby="module-access" className="space-y-4 rounded-3xl bg-white p-6">
+		<section aria-labelledby="module-access" className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5">
 			<div>
 				<h2 id="module-access" className="text-sm font-semibold text-neutral-900">
 					Modules
@@ -92,7 +92,7 @@ function ModuleAccessControls({ accountId }: { accountId: string }) {
 					Apply the pending database update to manage modules.
 				</p>
 			)}
-			<ul className="divide-y divide-neutral-100">
+			<ul className="divide-y divide-neutral-200">
 				{view?.modules.map((entry) => (
 					<li key={entry.id} className="flex items-center justify-between gap-4 py-3">
 						<div className="min-w-0">

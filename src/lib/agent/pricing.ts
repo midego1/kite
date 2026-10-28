@@ -1,5 +1,6 @@
 import type { LanguageModelUsage } from "ai";
 import type { AgentModelRates } from "./provider-types";
+import { ratesForPrompt } from "./auto-read/spend-utils";
 import { parseAgentReasoningEffort } from "./reasoning-effort-utils";
 
 export function parseAgentModelRates(value: string | null): Record<string, AgentModelRates> {
@@ -36,13 +37,8 @@ export function calculateAgentCostUsdMicros(
 	usage: LanguageModelUsage,
 	rates: AgentModelRates | undefined,
 ): number | null {
-	if (
-		!rates ||
-		rates.input === null ||
-		rates.output === null ||
-		usage.inputTokens === undefined ||
-		usage.outputTokens === undefined
-	)
-		return null;
-	return Math.round(usage.inputTokens * rates.input + usage.outputTokens * rates.output);
+	if (usage.inputTokens === undefined || usage.outputTokens === undefined) return null;
+	const priced = ratesForPrompt(rates, usage.inputTokens);
+	if (!priced) return null;
+	return Math.round(usage.inputTokens * priced.input + usage.outputTokens * priced.output);
 }

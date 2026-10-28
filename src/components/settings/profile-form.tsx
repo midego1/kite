@@ -74,7 +74,7 @@ export function ProfileForm({ initialName, initialResetEmail, email }: ProfileFo
 
 	return (
 		<>
-			<form onSubmit={onProfileSubmit} className="space-y-6 rounded-b-lg rounded-t-3xl bg-white p-6">
+			<form onSubmit={onProfileSubmit} className="space-y-6 p-5">
 				<div className="flex items-center gap-4">
 					<ProfileAvatarForm name={name} colorSeed={email} />
 					<div>
@@ -114,9 +114,9 @@ export function ProfileForm({ initialName, initialResetEmail, email }: ProfileFo
 				</div>
 			</form>
 
-			<form onSubmit={onRecoverySubmit} className="space-y-4 rounded-lg bg-white p-6">
+			<form onSubmit={onRecoverySubmit} className="space-y-4 p-5">
 				<div>
-					<h3 className="text-lg font-semibold text-neutral-900">Recovery email</h3>
+					<h3 className="text-sm font-semibold text-neutral-900">Recovery email</h3>
 					<p className="mt-1 text-sm text-neutral-500">Used to recover access if you cannot sign in.</p>
 				</div>
 				<div className="space-y-2">

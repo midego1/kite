@@ -15,6 +15,7 @@ import { parseAgentModelIds, toggleAgentModelId } from "@/lib/agent/model-ids";
 import { mergePublishedAgentRates } from "@/lib/agent/model-rates-utils";
 import { AutoReadAdminSettings } from "@/components/agent/auto-read-admin-settings";
 import { HaimakerReferralCard } from "./haimaker-referral-card";
+import { CostRates } from "./cost-rates";
 import { RecentAiErrors } from "./recent-ai-errors";
 import type { AgentAdminForm, AgentModelLoadState } from "./types";
 import {
@@ -25,8 +26,8 @@ import {
 	saveAgentAdminSettings,
 	saveAgentEnabled,
 	selectAgentProvider,
-	updateAgentModelRate,
 } from "./utils";
+import { Select } from "@/components/ui/select";
 
 const initialForm: AgentAdminForm = {
 	provider: "cloudflare",
@@ -149,19 +150,16 @@ export default function AdminAgentPage() {
 		<div className="space-y-6">
 			<div className="flex items-start justify-between gap-4">
 				<div>
-					<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Agent</h1>
-					<p className="mt-2 text-sm text-neutral-500">
+					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Agent</h1>
+					<p className="mt-1 text-sm text-neutral-500">
 						Choose the AI provider and models used by the email assistant for chat and drafts.
 					</p>
 				</div>
-				<Link
-					href="/ai-usage"
-					className="shrink-0 rounded-xl border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
-				>
-					View Usage
-				</Link>
+				<Button asChild variant="outline" className="shrink-0">
+					<Link href="/ai-usage">View Usage</Link>
+				</Button>
 			</div>
-			<Card className="rounded-3xl border-0 bg-white p-6">
+			<Card>
 				<CardContent className="flex items-center justify-between gap-4 p-0">
 					<div>
 						<p className="font-medium text-neutral-900">Enable assistant</p>
@@ -194,8 +192,8 @@ export default function AdminAgentPage() {
 					</p>
 				)}
 			</Card>
-			<Card className="rounded-3xl border-0 bg-white p-6">
-				<CardHeader className="py-0">
+			<Card>
+				<CardHeader>
 					<CardTitle className="flex items-center gap-2">
 						<Bot className="h-5 w-5" />
 						AI provider
@@ -205,13 +203,14 @@ export default function AdminAgentPage() {
 						requires human approval.
 					</CardDescription>
 				</CardHeader>
-				<CardContent className="pt-6">
+				<CardContent className="pt-4">
 					<form onSubmit={submit} className="space-y-5">
 						<div className="space-y-2">
 							<Label htmlFor="agent-provider">Provider</Label>
-							<select
+							<Select
 								id="agent-provider"
-								className="flex h-10 w-full rounded-md border border-neutral-200 bg-transparent px-3 text-sm shadow-sm shadow-neutral-200/50 focus-visible:border-blue-600 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+								containerClassName="h-10 w-full"
+								className="text-sm"
 								value={form.provider === "cloudflare" ? "cloudflare" : form.preset}
 								disabled={!loaded}
 								onChange={(event) => setForm((current) => selectAgentProvider(current, event.target.value))}
@@ -222,7 +221,7 @@ export default function AdminAgentPage() {
 									</option>
 								))}
 								<option value="cloudflare">Cloudflare Workers AI</option>
-							</select>
+							</Select>
 							{form.provider === "cloudflare" && !cloudflareAvailable && (
 								<p className="text-xs text-amber-700">
 									Cloudflare Workers AI requires an AI binding on this installation.
@@ -307,60 +306,7 @@ export default function AdminAgentPage() {
 								model is the default.
 							</p>
 						</div>
-						<div className="space-y-3">
-							<p className="text-sm font-medium">Estimated cost rates</p>
-							<p className="text-xs text-neutral-500">
-								USD per 1 million tokens. Rates published by the provider are used automatically; enter them yourself
-								for models that don&apos;t publish any. Usage without both rates shows spending as unavailable.
-							</p>
-							{selectedModelIds.map((model) =>
-								models.find((item) => item.id === model)?.rates ? (
-									<div
-										key={model}
-										className="grid gap-2 rounded-xl border border-neutral-200 p-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto]"
-									>
-										<span className="min-w-0 break-all">{model}</span>
-										<span className="text-neutral-500">
-											Input ${form.rates[model]?.input} · Output ${form.rates[model]?.output} / 1M{" "}
-											<span className="text-xs">(from provider)</span>
-										</span>
-									</div>
-								) : (
-									<div
-										key={model}
-										className="grid gap-2 rounded-xl border border-neutral-200 p-3 sm:grid-cols-[minmax(0,1fr)_6rem_6rem]"
-									>
-										<span className="min-w-0 break-all text-sm">{model}</span>
-										<label className="text-xs text-neutral-500">
-											Input{" "}
-											<Input
-												type="number"
-												min="0"
-												step="any"
-												value={form.rates[model]?.input ?? ""}
-												onChange={(event) =>
-													setForm((current) => updateAgentModelRate(current, model, "input", event.target.value))
-												}
-												placeholder="USD / 1M"
-											/>
-										</label>
-										<label className="text-xs text-neutral-500">
-											Output{" "}
-											<Input
-												type="number"
-												min="0"
-												step="any"
-												value={form.rates[model]?.output ?? ""}
-												onChange={(event) =>
-													setForm((current) => updateAgentModelRate(current, model, "output", event.target.value))
-												}
-												placeholder="USD / 1M"
-											/>
-										</label>
-									</div>
-								),
-							)}
-						</div>
+						<CostRates form={form} models={models} selectedModelIds={selectedModelIds} setForm={setForm} />
 						{status && (
 							<p role="status" className="text-sm text-neutral-700">
 								{status}

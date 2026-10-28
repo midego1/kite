@@ -6,6 +6,7 @@ import type { SendingSettings as SendingSettingsValue } from "@/components/compo
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { UNDO_SEND_SECONDS_OPTIONS } from "@/lib/email/undo-send-utils";
+import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
 
 export function SendingSettings() {
 	const { settings, error, isLoading, update } = useSendingSettings();
@@ -24,7 +25,7 @@ export function SendingSettings() {
 
 	return (
 		<div className="space-y-3">
-			<label className="flex items-start gap-3 rounded-xl bg-neutral-50 p-4">
+			<label className={SETTING_ROW_CLASS}>
 				<span className="flex-1">
 					<span className="block text-sm font-medium text-neutral-900">Preview before sending</span>
 					<span className="mt-1 block text-sm text-neutral-500">
@@ -39,7 +40,7 @@ export function SendingSettings() {
 					aria-label="Preview before sending"
 				/>
 			</label>
-			<label className="flex items-start gap-3 rounded-xl bg-neutral-50 p-4">
+			<label className={SETTING_ROW_CLASS}>
 				<span className="flex-1">
 					<span className="block text-sm font-medium text-neutral-900">Undo send</span>
 					<span className="mt-1 block text-sm text-neutral-500">

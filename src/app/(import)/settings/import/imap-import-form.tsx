@@ -274,7 +274,7 @@ function AccountFields(props: {
 }) {
 	return (
 		<div className="space-y-3">
-			<p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs leading-5 text-neutral-500">
+			<p className="rounded-lg bg-neutral-50 px-4 py-3 text-xs leading-5 text-neutral-500">
 				Kite lists the account&apos;s folders and proposes where each one goes: Inbox, Sent and Archive to the same
 				places in Kite, your own folders to Kite folders of the same name. Spam and Trash are left out unless you tick
 				them. Mail already in Kite is skipped, and read and starred state is kept.
@@ -293,12 +293,15 @@ function Feedback({ started, error }: { started: string | null; error: string | 
 	return (
 		<>
 			{started && (
-				<p className="rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-700">
+				<p className="rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 px-4 py-3 text-sm text-[#166534] dark:text-[#86c99d]">
 					{started} Progress is shown below.
 				</p>
 			)}
 			{error && (
-				<p role="alert" className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+				<p
+					role="alert"
+					className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 px-4 py-3 text-sm text-[#b91c1c] dark:text-[#f19999]"
+				>
 					{error}
 				</p>
 			)}

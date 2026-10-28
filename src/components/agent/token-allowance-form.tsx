@@ -40,9 +40,9 @@ export function TokenAllowanceForm({ values, locked, onSave, onInvalid }: TokenA
 					Daily token allowances without model prices
 				</p>
 				<p className="mt-1 text-sm text-neutral-500">
-					When a model has no prices in the provider settings, Kite cannot count dollars and counts input tokens
-					instead. Automatic reading and chat each have their own allowance, counted from midnight UTC. Setting prices
-					gives you the dollar cap above instead.
+					When a model has no prices (none entered in the provider settings, published by the provider or in Kite&apos;s
+					price list), Kite cannot count dollars and counts input tokens instead. Automatic reading and chat each have
+					their own allowance, counted from midnight UTC. Setting prices gives you the dollar cap above instead.
 				</p>
 				{pending && (
 					<p className="mt-1 text-sm text-amber-700">Apply the pending database update to change these allowances.</p>

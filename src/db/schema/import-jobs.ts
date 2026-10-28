@@ -2,7 +2,7 @@ import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
 import { mailboxes, users } from "./index";
 
 /**
- * Background IMAP imports. A `folder` job walks one source folder newest first; an `account` job (migration 0075)
+ * Background IMAP imports. A `folder` job walks one source folder newest first; an `account` job (migration 0076)
  * walks the `import_job_folders` rows in order. The queue consumer advances them; `cursorUid` is the lowest UID
  * already handled. The source password is kept only while the job is active or paused and cleared when it ends.
  */

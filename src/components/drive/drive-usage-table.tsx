@@ -129,13 +129,13 @@ export function DriveUsageTable({ reloadKey }: { reloadKey: number }) {
 	const nextCursor = pages.at(-1)?.nextCursor ?? null;
 
 	return (
-		<Card className="rounded-3xl border-0 bg-white p-6">
-			<CardHeader className="py-0">
+		<Card>
+			<CardHeader>
 				<CardTitle>Accounts</CardTitle>
 			</CardHeader>
 			<CardContent className="pt-4">
 				{error && <p className="text-sm text-red-600">{error}</p>}
-				<ul className="divide-y divide-neutral-100" data-drive-usage-table>
+				<ul className="divide-y divide-neutral-200" data-drive-usage-table>
 					{accounts.map((account) => (
 						<AccountRow key={account.id} account={account} onChanged={() => void load(null)} />
 					))}

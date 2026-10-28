@@ -92,7 +92,7 @@ type ImportJobCredentials = {
 
 /**
  * Saves a job and queues its first run. Rows are written and read column by column (`insertRow`, `selectRow`), so a
- * folder job keeps working before migration 0075 adds the account columns.
+ * folder job keeps working before migration 0076 adds the account columns.
  */
 async function insertImportJob(
 	env: CloudflareEnv,
@@ -124,7 +124,7 @@ async function insertImportJob(
 
 /**
  * A whole-account job (spec §4.1): the chosen folders, in order, each with its destination already resolved
- * (`folder:<id>`, `system:<status>` or `gmail:labels`). Throws `ImportMigrationPendingError` before migration 0075.
+ * (`folder:<id>`, `system:<status>` or `gmail:labels`). Throws `ImportMigrationPendingError` before migration 0076.
  */
 export async function createAccountImportJob(
 	env: CloudflareEnv,
@@ -222,7 +222,7 @@ export async function resumeImportJob(
 		})
 		.where(and(eq(importJobs.id, jobId), eq(importJobs.status, "paused")))
 		.returning({ id: importJobs.id });
-	// Before migration 0075 there is no reason to clear.
+	// Before migration 0076 there is no reason to clear.
 	if (resumed.length)
 		await db
 			.update(importJobs)

@@ -8,7 +8,7 @@ import { insertRow, selectRow } from "@/lib/db/pending-columns";
 import { aiWritingMigrationApplied } from "../ai-writing-migration";
 import type { AutoReadInstallSettings } from "./settings-types";
 import { DEFAULT_INSTALL_SPEND_CAP_MICROS, type autoReadAdminSchema } from "./settings-utils";
-import { UNKNOWN_RATES_INPUT_TOKEN_CAP } from "./spend-utils";
+import { UNKNOWN_RATES_INPUT_TOKEN_CAP, utcDayStartSeconds } from "./spend-utils";
 
 /**
  * The install-wide assistant settings. The whole row goes through `selectRow`, so the token allowances read as
@@ -35,6 +35,16 @@ export async function getAutoReadInstallSettings(env: CloudflareEnv): Promise<Au
 	};
 }
 
+/** Dollars spent today (UTC) across the install, the total the install's daily spend cap compares against. */
+async function spentTodayMicros(env: CloudflareEnv): Promise<number> {
+	const row = await env.DB.prepare(
+		"SELECT coalesce(sum(cost_usd_micros), 0) AS spent FROM ai_usage WHERE created_at >= ?",
+	)
+		.bind(utcDayStartSeconds(new Date()))
+		.first<{ spent: number }>();
+	return Number(row?.spent ?? 0);
+}
+
 /** The install-wide fields the primary admin sees; Full auto stays internal until it ships. */
 export async function getAutoReadAdminSettings(env: CloudflareEnv) {
 	const install = await getAutoReadInstallSettings(env);
@@ -46,6 +56,7 @@ export async function getAutoReadAdminSettings(env: CloudflareEnv) {
 		autoReadTokenCap,
 		chatTokenCap,
 		tokenCapsReady: await aiWritingMigrationApplied(env),
+		spentTodayMicros: await spentTodayMicros(env),
 	};
 }
 

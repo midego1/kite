@@ -126,7 +126,7 @@ const INTERNAL_TABLES = [
 	// server's password while running and point at queue messages, so restoring
 	// them would resume imports against a database they no longer match.
 	"import_jobs",
-	// The folders of a whole-account import (migration 0075): progress rows of an import_jobs row, transient with it.
+	// The folders of a whole-account import (migration 0076): progress rows of an import_jobs row, transient with it.
 	"import_job_folders",
 	// Drive multipart parts of uploads in progress: the store's upload ids they
 	// name do not survive a restore, so the parts would only point at nothing.
@@ -134,8 +134,8 @@ const INTERNAL_TABLES = [
 	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
 	// restored database would restart a copy between stores that may no longer match.
 	"storage_migrations",
-	// Opt-in usage statistics: the install id identifies this deployment, so a restore into another one must not
-	// clone it, and the owner's choice starts off again there.
+	// Usage statistics: the install id identifies this deployment, so a restore into another one must not clone it,
+	// and the choice, the notice and its start day stay those of the deployment restored into.
 	"telemetry_state",
 	// AI summaries (migration 0072): derived from the messages and made again on demand, so a backup skips them.
 	// A restore replaces the messages, whose triggers and cascades remove the old summaries with them.

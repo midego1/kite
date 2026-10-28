@@ -75,9 +75,12 @@ test("a whole account is shown as a mapping table, copied folder by folder and l
 		await expect(page.getByLabel(`Where Projects / ${token} goes`)).toContainText(`New folder: Projects / ${token}`);
 		// Drafts are not offered; Junk and Trash are, switched off.
 		await expect(table).not.toContainText("Drafts");
-		await expect(page.getByRole("checkbox", { name: "Import Junk" })).not.toBeChecked();
-		await expect(page.getByRole("checkbox", { name: "Import Trash" })).not.toBeChecked();
-		await page.getByRole("checkbox", { name: "Import Junk" }).check();
+		const junk = page.getByRole("switch", { name: "Import Junk" });
+		await expect(junk).not.toBeChecked();
+		await expect(page.getByRole("switch", { name: "Import Trash" })).not.toBeChecked();
+		await expect(page.getByRole("switch", { name: "Import INBOX" })).toBeChecked();
+		await junk.click();
+		await expect(junk).toBeChecked();
 
 		const created = page.waitForResponse(
 			(response) => response.url().endsWith("/api/import/jobs") && response.request().method() === "POST",

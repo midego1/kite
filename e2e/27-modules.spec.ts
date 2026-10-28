@@ -3221,7 +3221,7 @@ async function modulesPageColors(page: Page) {
 			return Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3));
 		};
 		const card = document.querySelector('[data-module="calendar"]') as HTMLElement;
-		const note = document.querySelector('[data-module="import"] p.rounded-2xl') as HTMLElement;
+		const note = document.querySelector('[data-module="import"] p.rounded-xl') as HTMLElement;
 		return {
 			card: rgb(getComputedStyle(card).backgroundColor),
 			title: rgb(getComputedStyle(card.querySelector("h2")!).color),

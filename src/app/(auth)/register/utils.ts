@@ -75,6 +75,7 @@ export async function submitRegistration(
 		enableSending?: boolean;
 		replaceMxRecords?: boolean;
 		skipDns?: boolean;
+		usageStatistics?: boolean;
 	},
 ): Promise<{ ok: boolean; data: RegisterResult }> {
 	const res = await fetch("/api/auth/register", {
@@ -87,6 +88,7 @@ export async function submitRegistration(
 						enableSending: payload.enableSending,
 						replaceMxRecords: payload.replaceMxRecords,
 						skipDns: payload.skipDns || undefined,
+						usageStatistics: payload.usageStatistics,
 						username: form.get("username"),
 						password: form.get("password"),
 						resetEmail: form.get("resetEmail"),

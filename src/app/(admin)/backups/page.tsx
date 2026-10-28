@@ -111,7 +111,7 @@ export default function BackupsPage() {
 		<div className="space-y-6">
 			<div className="flex items-start justify-between gap-4">
 				<div>
-					<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Database Backups</h1>
+					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Database Backups</h1>
 					<p className="mt-1 text-sm text-neutral-500">
 						Export database records and store them in the configured R2 bucket.
 					</p>
@@ -185,7 +185,7 @@ export default function BackupsPage() {
 					</DialogHeader>
 					{settings && (
 						<div className="space-y-5">
-							<div className="divide-y divide-neutral-100">
+							<div className="divide-y divide-neutral-200">
 								{BACKUP_TABLE_GROUPS.map((group) => {
 									const enabled = !settings.excludedTableGroups.includes(group.id);
 									const lastEnabled = enabled && settings.excludedTableGroups.length === BACKUP_TABLE_GROUPS.length - 1;
@@ -227,29 +227,32 @@ export default function BackupsPage() {
 			</Dialog>
 
 			{error && (
-				<p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+				<p
+					role="alert"
+					className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
+				>
 					{error instanceof Error ? error.message : "Backup operation failed"}
 				</p>
 			)}
 
 			{configuration && !configuration.configured && (
-				<Card className="rounded-3xl border border-amber-200 bg-amber-50 p-6">
-					<CardHeader className="py-0">
+				<Card className="border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a]">
+					<CardHeader>
 						<div className="flex items-start gap-3">
-							<AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+							<AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
 							<div>
-								<CardTitle className="text-amber-950">Complete backup setup</CardTitle>
-								<CardDescription className="mt-1 text-amber-800">
+								<CardTitle>Complete backup setup</CardTitle>
+								<CardDescription className="mt-1 text-current">
 									Add the missing values under the deployed Worker&apos;s Variables and Secrets settings. This check
 									disappears after backup configuration is complete.
 								</CardDescription>
 							</div>
 						</div>
 					</CardHeader>
-					<CardContent className="pt-5">
+					<CardContent className="pt-4">
 						<div className="flex flex-wrap items-center gap-2">
 							{configuration.missing.map((item) => (
-								<Badge key={item} variant="outline" className="border-amber-300 bg-white/70 text-amber-900">
+								<Badge key={item} variant="outline" className="border-current/30 bg-transparent text-current">
 									{item}
 								</Badge>
 							))}
@@ -269,15 +272,15 @@ export default function BackupsPage() {
 				</Card>
 			)}
 
-			<Card className="rounded-3xl border-0 bg-white p-6">
-				<CardHeader className="py-0">
+			<Card>
+				<CardHeader>
 					<CardTitle>Automatic backup</CardTitle>
 					<CardDescription>The schedule runs at 02:00 UTC. Monthly schedules are limited to days 1-28.</CardDescription>
 				</CardHeader>
-				<CardContent className="space-y-5 pt-5">
+				<CardContent className="space-y-5 pt-4">
 					{settings && (
 						<>
-							<div className="flex items-center justify-between gap-4 border-t border-neutral-100 pt-5">
+							<div className="flex items-center justify-between gap-4 border-t border-neutral-200 pt-5">
 								<Label htmlFor="automatic-backup-switch">Enable Automatic backup</Label>
 								<Switch
 									id="automatic-backup-switch"
@@ -366,7 +369,7 @@ export default function BackupsPage() {
 										)}
 									</div>
 
-									<div className="grid gap-4 border-t border-neutral-100 pt-5">
+									<div className="grid gap-4 border-t border-neutral-200 pt-5">
 										<div className="flex items-center justify-between gap-4">
 											<Label htmlFor="retention-switch">Delete old backups automatically</Label>
 											<Switch
@@ -415,12 +418,12 @@ export default function BackupsPage() {
 				</CardContent>
 			</Card>
 
-			<section className="overflow-hidden rounded-3xl bg-white">
-				<div className="flex items-center gap-3 border-b border-neutral-100 px-4 py-4">
+			<section className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+				<div className="flex items-center gap-3 border-b border-neutral-200 px-4 py-4">
 					<DatabaseBackup className="h-5 w-5 text-neutral-500" />
 					<h2 className="font-semibold text-neutral-900">Backup history</h2>
 				</div>
-				<div className="grid grid-cols-[1fr_110px_110px_170px_120px] gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+				<div className="grid grid-cols-[1fr_110px_110px_170px_120px] gap-4 border-b border-neutral-200 bg-[#f6f8fc] px-4 py-2 text-xs font-medium text-neutral-500">
 					<span>File</span>
 					<span>Status</span>
 					<span>Size</span>
@@ -434,7 +437,7 @@ export default function BackupsPage() {
 				{(backups.data?.backups ?? []).map((backup: BackupItem) => (
 					<div
 						key={backup.id}
-						className="grid grid-cols-[1fr_110px_110px_170px_120px] items-center gap-4 border-b border-neutral-100 px-4 py-3 last:border-b-0"
+						className="grid grid-cols-[1fr_110px_110px_170px_120px] items-center gap-4 border-b border-neutral-200 px-4 py-3 last:border-b-0"
 					>
 						<div className="min-w-0">
 							<p className="truncate text-sm font-medium text-neutral-900">{backup.filename ?? backup.id}</p>

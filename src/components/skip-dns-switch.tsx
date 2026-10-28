@@ -10,7 +10,7 @@ export function SkipDnsSwitch({ id, checked, onCheckedChange, disabled, classNam
 	const hintId = `${id}-hint`;
 	return (
 		<div className={cn("space-y-2", className)}>
-			<div className="flex items-center justify-between gap-4 rounded-2xl bg-neutral-50 px-4 py-3">
+			<div className="flex items-center justify-between gap-4 rounded-lg bg-neutral-50 px-4 py-3">
 				<div>
 					<Label htmlFor={id}>Skip DNS setup</Label>
 					<p id={hintId} className="mt-1 text-xs leading-5 text-neutral-500">
@@ -26,7 +26,7 @@ export function SkipDnsSwitch({ id, checked, onCheckedChange, disabled, classNam
 				/>
 			</div>
 			{checked && (
-				<p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
+				<p className="rounded-lg border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a] px-4 py-3 text-xs leading-5">
 					Kite will not check or change DNS. Mail will not arrive until the records are set.
 				</p>
 			)}

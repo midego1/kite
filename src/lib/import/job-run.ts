@@ -133,7 +133,7 @@ export async function recordChunk(
 }
 
 /**
- * Sets a job paused with its reason. `pause_reason` and `paused_at` arrive with migration 0075; before it the status
+ * Sets a job paused with its reason. `pause_reason` and `paused_at` arrive with migration 0076; before it the status
  * alone is written, which is all that pausing needs.
  */
 export async function markPaused(

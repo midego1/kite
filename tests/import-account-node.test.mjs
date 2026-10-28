@@ -9,7 +9,7 @@ import { createTestCertificate } from "./support/test-certificate.mjs";
 
 // Whole-account imports (spec §4.1, §4.5) through the Node connector against the fake IMAP server: the mapping
 // table, folders one after another, dedupe across folders, Gmail's labels, pause and resume, a changed UIDVALIDITY,
-// and folder jobs on a database that has not applied migration 0075 yet.
+// and folder jobs on a database that has not applied migration 0076 yet.
 
 const {
 	createTcpConnect,
@@ -306,12 +306,12 @@ test("a folder the server refuses fails alone and the rest of the account is cop
 	assert.deepEqual(placements(db), { "Still copied": "received" });
 });
 
-test("before migration 0075 folder jobs keep working and account jobs wait for the update", async (t) => {
+test("before migration 0076 folder jobs keep working and account jobs wait for the update", async (t) => {
 	const directory = mkdtempSync(join(tmpdir(), "kite-migrations-"));
 	t.after(() => rmSync(directory, { recursive: true, force: true }));
 	cpSync(join(root, "drizzle/migrations"), directory, {
 		recursive: true,
-		filter: (source) => !source.endsWith("0075_add_import_job_folders.sql"),
+		filter: (source) => !source.endsWith("0076_add_import_job_folders.sql"),
 	});
 	const server = await fake(t, { folders: { INBOX: [sampleMessage(1, { subject: "Old schema" })] } });
 	const { db, env } = await setup(t, server, directory);

@@ -7,7 +7,7 @@ export function UsageChart({ daily, timeZone = getUserTimeZone() }: UsageChartPr
 	const maxTokens = Math.max(0, ...days.map((day) => day.inputTokens + day.outputTokens));
 
 	return (
-		<section className="rounded-2xl bg-white p-5">
+		<section className="rounded-xl border border-neutral-200 bg-white p-5">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div>
 					<h2 className="text-base font-semibold text-neutral-900">Usage by day</h2>

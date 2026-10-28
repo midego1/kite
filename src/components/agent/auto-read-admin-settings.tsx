@@ -13,6 +13,7 @@ import {
 	microsToDollarInput,
 	parseDollarInput,
 	saveAutoReadAdmin,
+	spentTodayText,
 } from "./auto-read-settings-utils";
 import { TokenAllowanceForm } from "./token-allowance-form";
 
@@ -91,15 +92,15 @@ export function AutoReadAdminSettings() {
 
 	const locked = !values || busy;
 	return (
-		<Card className="rounded-3xl border-0 bg-white p-6">
-			<CardHeader className="py-0">
+		<Card>
+			<CardHeader>
 				<CardTitle>Automatic reading</CardTitle>
 				<CardDescription>
 					Mailboxes that turn on automatic reading have new mail read by the assistant, which suggests summaries,
 					replies and warnings. Nothing is sent or changed without a person accepting it.
 				</CardDescription>
 			</CardHeader>
-			<CardContent className="space-y-5 pt-6">
+			<CardContent className="space-y-5 pt-4">
 				<SwitchRow
 					title="Enable automatic reading"
 					description="Turning this off stops all automatic reading at once and skips queued work."
@@ -133,8 +134,14 @@ export function AutoReadAdminSettings() {
 					</div>
 					<p className="text-xs text-neutral-500">
 						Shared by automatic reading and assistant chat in every mailbox, counted from midnight UTC. Both stop for
-						the day when it is reached.
+						the day when it is reached. It counts every model with a cost rate, including rates from Kite&apos;s price
+						list.
 					</p>
+					{values?.spentTodayMicros !== undefined && (
+						<p className="text-xs text-neutral-700" data-testid="spent-today">
+							{spentTodayText(values.spentTodayMicros, values.dailySpendCapMicros)}
+						</p>
+					)}
 				</form>
 				<TokenAllowanceForm
 					key={values ? `${values.autoReadTokenCap}:${values.chatTokenCap}` : "loading"}

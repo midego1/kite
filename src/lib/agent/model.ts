@@ -14,7 +14,7 @@ export async function getAgentModel(env: CloudflareEnv, requestedModel?: string 
 		provider: config.provider === "cloudflare" ? "cloudflare" : config.preset,
 		preset: config.preset,
 		providerKind: config.provider,
-		rates: config.rates[modelId],
+		rates: config.effectiveRates[modelId],
 		reasoningEffort: config.rates[modelId]?.reasoningEffort ?? null,
 	};
 	if (config.provider === "cloudflare")

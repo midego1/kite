@@ -23,6 +23,7 @@ import type { InboundMail } from "./support/helpers-types";
 import { apiContext, deliverInbound, postInbound, signIn, uniqueToken, waitForMessage } from "./support/helpers";
 import { futureAt, inviteAttachment } from "./support/invites";
 import { restoreModules, setModuleState } from "./support/modules";
+import { chooseOption, readOptions } from "./support/select";
 import { readActions, readJobs, readSuggestions, waitForFinishedJob } from "./support/triage";
 
 // Every test snapshots and restores the automatic-reading state in beforeEach
@@ -124,12 +125,14 @@ test("lists Haimaker first and shows its referral card when selected", async ({ 
 	await page.goto("/agent");
 	const provider = page.getByLabel("Provider", { exact: true });
 	await expect(provider).toBeEnabled();
-	await expect(provider.locator("option").nth(0)).toHaveText("Haimaker.ai");
-	await expect(provider.locator("option").nth(1)).toHaveText("Anthropic");
-	await expect(provider.locator("option").nth(2)).toHaveText("OpenAI");
-	await expect(provider.locator("option").nth(3)).toHaveText("OpenRouter");
+	expect((await readOptions(provider)).slice(0, 4).map((option) => option.label)).toEqual([
+		"Haimaker.ai",
+		"Anthropic",
+		"OpenAI",
+		"OpenRouter",
+	]);
 
-	await provider.selectOption("haimaker");
+	await chooseOption(provider, "haimaker");
 	await expect(page.getByText("CKQHV8", { exact: true })).toBeVisible();
 	await expect(page.getByRole("button", { name: "Copy code" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "Copy share link" })).toBeVisible();
@@ -431,7 +434,7 @@ test.describe("admin automatic reading settings", () => {
 				expect((await api.put("/api/admin/agent", { data })).status(), JSON.stringify(data)).toBe(400);
 			expect(await readAdminAgent(api)).toEqual(before);
 
-			const changed = await okJson<typeof before>(
+			const { spentTodayMicros, ...changed } = await okJson<typeof before & { spentTodayMicros: number }>(
 				await api.put("/api/admin/agent", {
 					data: {
 						autoReadEnabled: !before.autoReadEnabled,
@@ -446,6 +449,8 @@ test.describe("admin automatic reading settings", () => {
 				externalAutoReadAllowed: !before.externalAutoReadAllowed,
 				dailySpendCapMicros: 1,
 			});
+			// Today's spend is reported next to the cap; other tests may be spending at the same time.
+			expect(spentTodayMicros).toBeGreaterThanOrEqual(0);
 		} finally {
 			await api.put("/api/admin/agent", {
 				data: {
@@ -584,6 +589,62 @@ test.describe("admin automatic reading settings", () => {
 			// The auto-read branch never touches provider fields.
 			await okJson(await api.put("/api/admin/agent", { data: { dailySpendCapMicros: 2_000_000 } }));
 			expect((await readAdminAgent(api)).config).toEqual(config);
+		} finally {
+			await restore();
+		}
+	});
+
+	test("a model on Kite's price list shows its built-in rate greyed, and an override is saved and can be undone", async ({
+		page,
+	}) => {
+		const errors = collectConsoleErrors(page);
+		const restore = await useFakeProvider(api, fake);
+		const settings = fakeProviderSettings(fake);
+		try {
+			// The dated snapshot id matches the price list's claude-haiku-4-5 entry ($1 / $5).
+			await okJson(
+				await api.put("/api/admin/agent", {
+					data: { ...settings, model: "fake-triage, claude-haiku-4-5-20251001" },
+				}),
+			);
+			expect((await readAdminAgent(api)).config.rates["claude-haiku-4-5-20251001"]).toEqual({
+				input: null,
+				output: null,
+			});
+			await page.goto("/agent");
+			const row = page.getByTestId("cost-rate-claude-haiku-4-5-20251001");
+			await expect(row.getByLabel("Input")).toHaveValue("1");
+			await expect(row.getByLabel("Output")).toHaveValue("5");
+			await expect(row.getByLabel("Input")).toBeDisabled();
+			await expect(row).toContainText(/From Kite's price list \(as of \d{4}-\d{2}-\d{2}\) · source/);
+			await expect(row.getByRole("link", { name: "source" })).toHaveAttribute(
+				"href",
+				"https://platform.claude.com/docs/en/about-claude/pricing",
+			);
+			await expect(page.getByTestId("spent-today")).toContainText(/^Spent today: \$\d+\.\d{2} of \$2\.00$/);
+
+			await row.getByRole("button", { name: "Override" }).click();
+			await expect(row.getByLabel("Input")).toBeEnabled();
+			await expect(row.getByLabel("Input")).toHaveValue("1");
+			await row.getByLabel("Input").fill("0.8");
+			const saved = page.waitForResponse(
+				(response) => response.url().endsWith("/api/admin/agent") && response.request().method() === "PUT",
+			);
+			await page.getByRole("button", { name: "Save agent settings" }).click();
+			expect((await saved).status()).toBe(200);
+			expect((await readAdminAgent(api)).config.rates["claude-haiku-4-5-20251001"]).toEqual({ input: 0.8, output: 5 });
+
+			await page.reload();
+			await expect(row.getByLabel("Input")).toHaveValue("0.8");
+			await expect(row).toContainText("Your rate is used instead of Kite's price list");
+			await row.getByRole("button", { name: "Use Kite's price" }).click();
+			await expect(row.getByLabel("Input")).toBeDisabled();
+			await expect(row.getByLabel("Input")).toHaveValue("1");
+			await page.getByRole("button", { name: "Save agent settings" }).click();
+			await expect
+				.poll(async () => (await readAdminAgent(api)).config.rates["claude-haiku-4-5-20251001"])
+				.toEqual({ input: null, output: null });
+			expect(errors).toEqual([]);
 		} finally {
 			await restore();
 		}

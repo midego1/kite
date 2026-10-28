@@ -63,6 +63,12 @@ export function microsToDollarInput(micros: number | null | undefined): string {
 	return Number.isInteger(micros / 10_000) ? dollars.toFixed(2) : String(dollars);
 }
 
+/** "Spent today: $0.37 of $2.00"; the spend is rounded up to the cent, so a nearly reached cap never reads as lower. */
+export function spentTodayText(spentMicros: number, capMicros: number): string {
+	const spent = (Math.ceil(Math.max(0, spentMicros) / 10_000) / 100).toFixed(2);
+	return `Spent today: $${spent} of $${microsToDollarInput(capMicros)}`;
+}
+
 /** Whole micro-dollars for a dollar amount; null for an empty input, undefined when it is not a valid amount. */
 export function parseDollarInput(value: string): number | null | undefined {
 	const trimmed = value.trim();
@@ -229,6 +235,7 @@ function pickAutoReadAdmin(data: AutoReadAdminValues): AutoReadAdminValues {
 		autoReadTokenCap: data.autoReadTokenCap,
 		chatTokenCap: data.chatTokenCap,
 		tokenCapsReady: data.tokenCapsReady,
+		spentTodayMicros: data.spentTodayMicros,
 	};
 }
 

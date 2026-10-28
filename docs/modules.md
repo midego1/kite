@@ -65,7 +65,7 @@ Drafts and virtual folders (Flagged, Important) are not offered. Each row can be
 
 The jobs list below the form shows each folder's progress. **Pause** stops an import after the batch that is running: it keeps its saved password and its place in every folder, and **Resume** continues from there. A job paused for more than seven days is cancelled and its password erased; start it again and the mail already imported is skipped. If the source server rebuilds a folder (a new UIDVALIDITY), Kite reads that folder again from the start and skips what it already has.
 
-Whole-account imports need database migration 0075. Until it is applied from the admin overview, starting one answers "Apply the database update to import a whole account", while **One folder** imports keep working.
+Whole-account imports need database migration 0076. Until it is applied from the admin overview, starting one answers "Apply the database update to import a whole account", while **One folder** imports keep working.
 
 ### What an import keeps
 

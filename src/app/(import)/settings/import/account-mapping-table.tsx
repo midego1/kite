@@ -1,7 +1,8 @@
 "use client";
 
-import { Checkbox } from "@/components/ui/checkbox";
+import { CARD_CLASS, TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import type { AccountPlan, AccountPlanFolder, ImportFolderSummary } from "./types";
 import { formatPlannedBytes, systemDestinations } from "./utils";
 
@@ -33,17 +34,17 @@ export function AccountMappingTable({ plan, kiteFolders, onChange }: Props) {
 	return (
 		<div className="space-y-2">
 			{plan.gmail && (
-				<p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs leading-5 text-neutral-500">
+				<p className="rounded-lg bg-neutral-50 px-4 py-3 text-xs leading-5 text-neutral-500">
 					This is a Gmail account. Kite copies All Mail once and files each message by its labels: Inbox, then Sent,
 					then its first label as a Kite folder, otherwise Archive. Drafts are left out.
 				</p>
 			)}
-			<div className="overflow-x-auto rounded-xl border border-neutral-200">
+			<div className={`overflow-x-auto ${CARD_CLASS}`}>
 				<table className="w-full text-left text-sm">
 					<caption className="sr-only">Folders to import</caption>
-					<thead className="bg-neutral-50 text-xs text-neutral-500">
+					<thead className={TABLE_HEAD_CLASS}>
 						<tr>
-							<th scope="col" className="w-10 px-3 py-2">
+							<th scope="col" className="w-14 px-3 py-2">
 								<span className="sr-only">Import</span>
 							</th>
 							<th scope="col" className="px-3 py-2 font-medium">
@@ -62,12 +63,12 @@ export function AccountMappingTable({ plan, kiteFolders, onChange }: Props) {
 					</thead>
 					<tbody>
 						{plan.folders.map((folder, index) => (
-							<tr key={folder.sourceName} className="border-t border-neutral-100">
+							<tr key={folder.sourceName} className="border-t border-neutral-200 first:border-t-0">
 								<td className="px-3 py-2">
-									<Checkbox
+									<Switch
 										aria-label={`Import ${folder.displayName}`}
 										checked={folder.include}
-										onChange={(event) => update(index, { include: event.target.checked })}
+										onCheckedChange={(include) => update(index, { include })}
 									/>
 								</td>
 								<td className="px-3 py-2">

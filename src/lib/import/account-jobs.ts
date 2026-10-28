@@ -24,7 +24,7 @@ export type ImportJobFolderRow = typeof importJobFolders.$inferSelect & {
 	destinationName?: string | null;
 };
 
-/** Before migration 0075 there is no `import_job_folders`; account imports wait for it. */
+/** Before migration 0076 there is no `import_job_folders`; account imports wait for it. */
 export class ImportMigrationPendingError extends Error {
 	constructor() {
 		super("Apply the database update to import a whole account");
@@ -63,7 +63,7 @@ export async function insertJobFolders(
 			.values(rows.slice(index, index + 10));
 }
 
-/** The folders of these jobs by job id, in order; empty before migration 0075. */
+/** The folders of these jobs by job id, in order; empty before migration 0076. */
 export async function listJobFolders(env: CloudflareEnv, jobIds: string[]): Promise<Map<string, ImportJobFolderRow[]>> {
 	const byJob = new Map<string, ImportJobFolderRow[]>();
 	if (!jobIds.length) return byJob;

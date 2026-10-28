@@ -109,11 +109,11 @@ function MigrationRow({
 export function MigrationsCard({ overview, onChanged }: { overview: StorageOverview; onChanged: () => void }) {
 	if (!overview.migrations.length) return null;
 	return (
-		<section aria-labelledby="storage-migrations" className="rounded-3xl bg-white p-6">
+		<section aria-labelledby="storage-migrations" className="rounded-xl border border-neutral-200 bg-white p-5">
 			<h2 id="storage-migrations" className="text-lg font-semibold text-neutral-900">
 				Migrations
 			</h2>
-			<ul className="mt-2 divide-y divide-neutral-100">
+			<ul className="mt-2 divide-y divide-neutral-200">
 				{overview.migrations.map((migration) => (
 					<MigrationRow key={migration.id} overview={overview} migration={migration} onChanged={onChanged} />
 				))}

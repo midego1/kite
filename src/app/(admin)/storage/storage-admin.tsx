@@ -133,7 +133,7 @@ function StoresCard({
 	const { defaultStore } = overview;
 	const canAdd = overview.encryptionReady;
 	return (
-		<section aria-labelledby="storage-stores" className="rounded-3xl bg-white p-6">
+		<section aria-labelledby="storage-stores" className="rounded-xl border border-neutral-200 bg-white p-5">
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div>
 					<h2 id="storage-stores" className="text-lg font-semibold text-neutral-900">
@@ -146,7 +146,7 @@ function StoresCard({
 					Add store
 				</Button>
 			</div>
-			<ul className="mt-2 divide-y divide-neutral-100">
+			<ul className="mt-2 divide-y divide-neutral-200">
 				<li data-store="default" className="flex flex-wrap items-center gap-3 py-3">
 					<div className="min-w-48 flex-1">
 						<p className="font-medium text-neutral-900">
@@ -196,8 +196,8 @@ export function StorageAdmin() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Storage</h1>
-				<p className="mt-2 text-sm text-neutral-500">
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Storage</h1>
+				<p className="mt-1 text-sm text-neutral-500">
 					Keep mail, Drive files and backups in Cloudflare R2 or any S3-compatible bucket, and move them between stores
 					without downtime.
 				</p>
@@ -209,12 +209,12 @@ export function StorageAdmin() {
 			)}
 			{overview.isLoading && <SkeletonRows count={4} />}
 			{data?.migrationPending && (
-				<p role="status" className="rounded-3xl bg-blue-50 p-6 text-sm font-medium text-blue-900">
+				<p role="status" className="rounded-xl bg-blue-50 p-6 text-sm font-medium text-blue-900">
 					Apply the pending database update to set up storage. Until then everything stays in the default store.
 				</p>
 			)}
 			{data && !data.migrationPending && !data.encryptionReady && (
-				<p role="status" className="rounded-3xl bg-blue-50 p-6 text-sm font-medium text-blue-900">
+				<p role="status" className="rounded-xl bg-blue-50 p-6 text-sm font-medium text-blue-900">
 					Set APP_ENCRYPTION_KEY to add stores. Store keys are only ever saved encrypted.
 				</p>
 			)}

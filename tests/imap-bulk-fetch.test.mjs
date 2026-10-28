@@ -221,7 +221,10 @@ test("a greeting other than OK or PREAUTH is refused, and PREAUTH is reported", 
 	assert.equal(await new ImapConnection(preauth.socket).readGreeting(), true);
 });
 
-test("a silent server times out per command and the socket is closed, whatever the runtime", async () => {
+test("a silent server times out per command and the socket is closed, whatever the runtime", async (t) => {
+	// Fake timers: the deadline fires when the test moves the clock, never by real time. `Date` stays real, so by the
+	// wall clock the timer fires before the deadline, as real timers sometimes do; the socket must be closed anyway.
+	t.mock.timers.enable({ apis: ["setTimeout"] });
 	let closed = 0;
 	const never = {
 		readable: new ReadableStream(),
@@ -231,8 +234,11 @@ test("a silent server times out per command and the socket is closed, whatever t
 			closed += 1;
 		},
 	};
-	const imap = new ImapConnection(never, { commandTimeoutMs: 50 });
-	await assert.rejects(imap.readGreeting(), /did not answer in time/);
+	const imap = new ImapConnection(never, { commandTimeoutMs: 60_000 });
+	const greeting = assert.rejects(imap.readGreeting(), /did not answer in time/);
+	assert.equal(closed, 0);
+	t.mock.timers.tick(60_000);
+	await greeting;
 	assert.equal(closed, 1);
 });
 

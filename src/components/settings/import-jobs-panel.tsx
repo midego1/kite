@@ -140,15 +140,18 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 	return (
 		<section className="space-y-4">
 			<div>
-				<h2 className="text-xl font-semibold text-neutral-900">Imports</h2>
+				<h2 className="text-base font-semibold text-neutral-900">Imports</h2>
 				<p className="mt-1 text-sm text-neutral-500">
 					IMAP imports run in the background on the server. You can leave this page or close the browser; progress
 					continues.
 				</p>
 			</div>
-			<div className="space-y-3 rounded-3xl bg-white p-6">
+			<div className="space-y-3 rounded-xl border border-neutral-200 bg-white p-5">
 				{error && (
-					<p role="alert" className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+					<p
+						role="alert"
+						className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
+					>
 						{error}
 					</p>
 				)}
@@ -156,7 +159,7 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 					const percent = getImportJobPercent(job);
 					const rate = formatRate(job);
 					return (
-						<div key={job.id} className="space-y-2 rounded-xl border border-neutral-100 p-4">
+						<div key={job.id} className="space-y-2 rounded-xl border border-neutral-200 p-4">
 							<div className="flex flex-wrap items-center justify-between gap-2">
 								<div className="min-w-0">
 									<p className="truncate text-sm font-medium text-neutral-900">

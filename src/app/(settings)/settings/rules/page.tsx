@@ -1,16 +1,14 @@
 import { InboxRules } from "@/components/settings/inbox-rules";
 import { DomainRouting } from "@/components/settings/domain-routing/domain-routing";
+import { PageHeader } from "@/components/ui/page";
 
 export default function SettingsRulesPage() {
 	return (
 		<div className="space-y-8">
-			<h1 className="sr-only">Rules &amp; routing</h1>
-			{/* <div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Rules</h1>
-				<p className="mt-1 text-sm text-neutral-500">
-					Rules for the selected inbox.
-				</p>
-			</div> */}
+			<PageHeader
+				title="Rules & routing"
+				description="Rules for the selected inbox, and how mail to your domains is delivered."
+			/>
 			<div>
 				<DomainRouting />
 			</div>

@@ -20,6 +20,7 @@ import {
 	getSelectedImportSources,
 	importSourceOptions,
 } from "./utils";
+import { PageHeader } from "@/components/ui/page";
 
 const defaultSections = importSourceOptions.map((option) => option.value);
 
@@ -79,22 +80,18 @@ export default function SettingsImportPage() {
 
 	return (
 		<div className="space-y-6">
-			<h1 className="sr-only">Import</h1>
-			{/* <div>
-        <h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Import</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Move mail from selected source sections into the matching sections of
-          the current mailbox.
-        </p>
-      </div> */}
+			<PageHeader
+				title="Import"
+				description="Move mail from selected source sections into the matching sections of the current mailbox."
+			/>
 
 			<section className="space-y-4">
 				<div>
-					<h2 className="text-xl font-semibold text-neutral-900">Import mailbox</h2>
+					<h2 className="text-base font-semibold text-neutral-900">Import mailbox</h2>
 					<p className="mt-1 text-sm text-neutral-500">Choose what to import and how Kite should receive it.</p>
 				</div>
-				<div className="space-y-1 overflow-hidden rounded-3xl">
-					<CardContent className="space-y-6 rounded-b-lg rounded-t-3xl bg-white p-6">
+				<div className="divide-y divide-neutral-200 rounded-xl border border-neutral-200 bg-white">
+					<CardContent className="space-y-6 p-5">
 						<div className="flex flex-col gap-2">
 							<Label htmlFor="import-source">Import source</Label>
 							<Select
@@ -163,7 +160,7 @@ export default function SettingsImportPage() {
 										</p>
 									</div>
 									{selectedSections.includes("others") && (
-										<p className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+										<p className="rounded-lg border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a] px-4 py-3 text-sm">
 											Other folders can be imported automatically from IMAP. File import cannot discover which section a
 											message belongs to.
 										</p>
@@ -189,14 +186,14 @@ export default function SettingsImportPage() {
 										</div>
 									)}
 									{fileResult && (
-										<p className="rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-700">
+										<p className="rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
 											{formatImportResult(fileResult)}
 										</p>
 									)}
 									{fileError && (
 										<p
 											role="alert"
-											className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700"
+											className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
 										>
 											{fileError}
 										</p>

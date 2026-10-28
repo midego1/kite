@@ -4,7 +4,7 @@ function Group({ title, items }: { title: string; items: { key: string; text: st
 	if (!items.length) return null;
 	return (
 		<div>
-			<h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{title}</h4>
+			<h4 className="text-xs font-medium text-neutral-500">{title}</h4>
 			<ul className="mt-1.5 flex flex-wrap gap-1.5">
 				{items.map((item) => (
 					<li

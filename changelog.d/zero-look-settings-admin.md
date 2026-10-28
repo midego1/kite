@@ -1,0 +1,5 @@
+### Changed
+
+- Settings and Admin have the new look of the mailbox: the same sidebar, with its notices, beside rounded panels. The Settings or Admin menu is a panel of its own, with the page search at the top, the **Settings**/**Admin** switch under it and muted group labels; the page beside it shows where you are (for example *Settings / Personal / Inbox*) and a **Need a hand?** button. On phones the sidebar and the menu open as sheets, as before.
+- Every Settings and Admin page uses the same parts: a page title with its line and actions, bordered cards, lists of rows, tables with muted headers, empty states and quieter success, warning and error notes. Drop-down menus on [Admin → Alerts](/alerts), [Admin → Agent](/agent), new domains, routing rules and [Settings → Inbox](/settings/inbox) are now the same menus as elsewhere, and badges are no longer in capitals.
+- Buttons, fields and the database cards on the [Admin overview](/admin) follow the Zero look too; **Kite classic** keeps its own colours on these pages.

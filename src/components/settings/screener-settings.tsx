@@ -17,6 +17,7 @@ import {
 } from "@/components/screener/screener-api";
 import type { ScreenerMode, ScreenerOverview, ScreenerSettingsPatch } from "@/lib/screener/screener-types";
 import { ScreenerSenderList } from "./screener-sender-list";
+import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
 
 const MODES: { value: ScreenerMode; label: string; description: string }[] = [
 	{
@@ -67,7 +68,7 @@ export function ScreenerSettings() {
 	if (!current) return <p className="text-sm text-neutral-500">{status ?? "Loading the Screener…"}</p>;
 	if (!current.available)
 		return (
-			<p className="rounded-xl bg-neutral-50 p-4 text-sm text-neutral-600">
+			<p className="rounded-lg bg-neutral-50 p-4 text-sm text-neutral-600">
 				The Screener needs database migration 0067. An admin can apply it from the database card in Admin settings.
 			</p>
 		);
@@ -137,7 +138,7 @@ export function ScreenerSettings() {
 
 	return (
 		<div className="space-y-4">
-			<label className="flex items-start gap-3 rounded-xl bg-neutral-50 p-4">
+			<label className={SETTING_ROW_CLASS}>
 				<span className="flex-1">
 					<span className="block text-sm font-medium text-neutral-900">Screen new senders for {address}</span>
 					<span className="mt-1 block text-sm text-neutral-500">

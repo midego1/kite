@@ -61,12 +61,14 @@ export async function startFakeImap(options = {}) {
 	}
 
 	const delimiter = options.delimiter ?? "/";
+	/** An IMAP quoted string: backslashes first, then quotes. */
+	const quoted = (value) => `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 	const listLine = (folder) => {
 		const attributes = ["\\HasNoChildren", ...(options.specialUse ? (options.folderAttributes?.[folder] ?? []) : [])];
-		return `* LIST (${attributes.join(" ")}) "${delimiter}" "${folder.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"\r\n`;
+		return `* LIST (${attributes.join(" ")}) "${delimiter}" ${quoted(folder)}\r\n`;
 	};
 	const labelList = (labels) =>
-		`(${labels.map((label) => (label.startsWith("\\") ? label : `"${label.replace(/"/g, '\\"')}"`)).join(" ")})`;
+		`(${labels.map((label) => (label.startsWith("\\") ? label : quoted(label))).join(" ")})`;
 	if (!options.folders) addMessage("INBOX", sampleMessage(1));
 	for (const [name, messages] of Object.entries(options.folders ?? {})) {
 		if (!folders.has(name)) folders.set(name, { nextUid: 1, uidValidity: 1, messages: [] });
@@ -208,7 +210,7 @@ export async function startFakeImap(options = {}) {
 				const size = entry.messages.reduce((sum, message) => sum + message.raw.length, 0);
 				const items = `MESSAGES ${entry.messages.length} UIDNEXT ${entry.nextUid} UIDVALIDITY ${entry.uidValidity}`;
 				return send(
-					`* STATUS "${folder}" (${items}${options.statusSize ? ` SIZE ${size}` : ""})\r\n${tag} OK done\r\n`,
+					`* STATUS ${quoted(folder)} (${items}${options.statusSize ? ` SIZE ${size}` : ""})\r\n${tag} OK done\r\n`,
 				);
 			}
 			if (name === "SELECT" || name === "EXAMINE") {

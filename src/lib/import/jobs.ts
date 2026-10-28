@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import { mailboxes } from "@/db/schema";
 import { importJobFolders, importJobs } from "@/db/schema/import-jobs";
@@ -7,17 +7,24 @@ import { openSetting, sealSetting } from "@/lib/security/secret-box";
 import { getDatabaseSize } from "@/lib/db/size";
 import { insertRow, selectRow, selectRows } from "@/lib/db/pending-columns";
 import { parseImportDestination } from "./destination";
-import { MailServerRefusedError } from "@/lib/net/errors";
 import { openImportSession } from "./imap";
 import {
 	IMPORT_CONFIRMED_NOTE,
 	carriedImportNote,
-	noteAfterError,
 	isDatabaseFull,
 	isImportConfirmed,
 	needsStartConfirmation,
 } from "./size-guard-utils";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
+import {
+	ACTIVE_STATUSES,
+	claimJob,
+	closeFoldersOfEndedJob,
+	enqueueImportJob,
+	finishJob,
+	recordRunError,
+	releaseImportLease,
+} from "./job-end";
 import {
 	ImportJobSaveError,
 	accountJobFields,
@@ -31,12 +38,16 @@ import {
 } from "./account-jobs";
 import type { AccountFolderRequest } from "./folder-mapping-types";
 import {
-	LEASE_MS,
+	DEFAULT_IMPORT_TIMING,
 	MESSAGES_PER_RUN,
+	newLeaseHold,
+	underLease,
 	markPaused,
 	pauseIfDatabaseFull,
 	runFolderJob,
+	startLeaseHeartbeat,
 	type ImportJobRow,
+	type ImportTiming,
 	type ImportRun,
 } from "./job-run";
 
@@ -44,17 +55,8 @@ import {
 export type ImportJobQueueMessage = { kind: "import.imap"; jobId: string };
 export type { ImportJobRow } from "./job-run";
 
-const MAX_ATTEMPTS = 5;
-const ACTIVE_STATUSES = ["pending", "running"] as const;
 /** A job paused this long is cancelled (its saved source password erased) by the cron safety net. */
 const PAUSED_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
-
-export async function enqueueImportJob(env: CloudflareEnv, jobId: string, delaySeconds?: number): Promise<boolean> {
-	const queue = env.AGENT_QUEUE;
-	if (!queue) return false;
-	await queue.send({ kind: "import.imap", jobId }, delaySeconds ? { delaySeconds } : undefined);
-	return true;
-}
 
 export async function createImportJob(
 	env: CloudflareEnv,
@@ -218,7 +220,7 @@ export async function resumeImportJob(
 ): Promise<"resumed" | "not_found" | "needs_confirmation" | "full"> {
 	const db = getDb(env);
 	const [job] = await db
-		.select({ id: importJobs.id, lastError: importJobs.lastError })
+		.select({ id: importJobs.id, lastError: importJobs.lastError, leaseUntil: importJobs.leaseUntil })
 		.from(importJobs)
 		.where(and(eq(importJobs.id, jobId), eq(importJobs.userId, userId), eq(importJobs.status, "paused")))
 		.limit(1);
@@ -246,7 +248,13 @@ export async function resumeImportJob(
 			.where(eq(importJobs.id, jobId))
 			.catch(() => undefined);
 	if (!resumed.length) return "not_found";
+	// A lease still held means a run is finishing its batch, or its worker died. The run queued now would meet the
+	// lease and leave, so a second one is queued for when the lease runs out. A live run renews its lease every
+	// minute, so that message then finds it held and leaves (the run itself hands the job on); a dead worker's job is
+	// claimed by it within one lease (three minutes) instead of waiting for the lease and then the next cron tick.
 	await enqueueImportJob(env, jobId);
+	const leaseSeconds = job.leaseUntil ? Math.ceil((job.leaseUntil.getTime() - Date.now()) / 1000) : 0;
+	if (leaseSeconds > 0) await enqueueImportJob(env, jobId, leaseSeconds + 1);
 	return "resumed";
 }
 
@@ -284,16 +292,23 @@ export function serializeImportJob(job: ImportJobRow & { folders?: ImportJobFold
  * account run one at a time, because providers such as iCloud and Gmail limit
  * concurrent IMAP connections per account.
  */
-export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: CapabilityCallContext): Promise<void> {
+export async function processImportJob(
+	env: CloudflareEnv,
+	jobId: string,
+	ctx: CapabilityCallContext,
+	timing: ImportTiming = DEFAULT_IMPORT_TIMING,
+): Promise<void> {
 	const db = getDb(env);
 	const now = new Date();
 	const job = await selectRow(db, importJobs, eq(importJobs.id, jobId));
 	if (!job || !ACTIVE_STATUSES.includes(job.status as (typeof ACTIVE_STATUSES)[number])) return;
 	if (job.leaseUntil && job.leaseUntil > now) return;
-	if (!(await claimJob(env, job, now))) {
+	const lease = await claimJob(env, job, now, timing.leaseMs);
+	if (!lease) {
 		// Another job for the same account holds the connection; it starts this one when it finishes.
 		return;
 	}
+	const hold = newLeaseHold(job.id, lease);
 
 	const [mailbox] = await db
 		.select({ id: mailboxes.id, userId: mailboxes.userId })
@@ -301,13 +316,16 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 		.where(eq(mailboxes.id, job.mailboxId))
 		.limit(1);
 	if (!mailbox) {
-		await finishJob(env, job, "failed", "Mailbox no longer exists");
+		await finishJob(env, job, hold, "failed", "Mailbox no longer exists");
 		return;
 	}
 
-	if (await pauseIfDatabaseFull(env, job)) return;
+	if (await pauseIfDatabaseFull(env, job, { lease })) return;
 
 	let run: ImportRun | null = null;
+	const closeSource = () => run?.session.close().catch(() => undefined);
+	// From here the lease is renewed for as long as this run lives, however long one IMAP command takes.
+	const heartbeat = startLeaseHeartbeat(env, hold, timing);
 	try {
 		const session = await openImportSession(env, { ...job, password: (await openSetting(env, job.password)) ?? "" });
 		run = {
@@ -316,6 +334,8 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 			job,
 			mailbox,
 			session,
+			hold,
+			timing,
 			startedAt: Date.now(),
 			budget: MESSAGES_PER_RUN,
 			progress: { processed: job.processed, imported: job.imported, skipped: job.skipped },
@@ -325,132 +345,37 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 		};
 		const outcome = job.scope === "account" ? await runAccountJob(run) : await runFolderJob(run);
 		if (outcome === "stopped") return;
+		// The source connection is closed before the job is released or finished, so the next run never meets it open.
+		await closeSource();
 		if (outcome === "done") {
-			await finishJob(env, { ...job, total: run.total }, "completed", run.finishNote ?? undefined);
+			await finishJob(env, { ...job, total: run.total }, hold, "completed", run.finishNote ?? undefined);
 			return;
 		}
-		await db
-			.update(importJobs)
-			.set({ leaseUntil: null, attempts: 0, lastError: carriedImportNote(job.lastError), updatedAt: new Date() })
-			.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")));
-		await enqueueImportJob(env, job.id);
+		const handedOn = await underLease(hold, async (held) => {
+			const rows = await db
+				.update(importJobs)
+				.set({ leaseUntil: null, attempts: 0, lastError: carriedImportNote(job.lastError), updatedAt: new Date() })
+				.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running"), eq(importJobs.leaseUntil, held)))
+				.returning({ id: importJobs.id });
+			hold.ended = true;
+			return rows.length > 0;
+		});
+		// Paused, resumed or taken over meanwhile: Resume, the release below or the other run queues what is next.
+		if (handedOn) await enqueueImportJob(env, job.id);
 	} catch (error) {
-		await recordRunError(env, { ...job, total: run?.total ?? job.total }, error);
+		await closeSource();
+		await recordRunError(env, { ...job, total: run?.total ?? job.total }, hold, error);
 	} finally {
-		await run?.session.close().catch(() => undefined);
-		await releaseImportLease(env, job.id);
+		// The heartbeat outlives the source connection, so the lease cannot run out while the socket is still open.
+		await closeSource();
+		await heartbeat.stop();
+		try {
+			await releaseImportLease(env, hold);
+		} finally {
+			// A run in flight when Cancel closed the folders (or that failed) must not leave one open.
+			if (job.scope === "account") await closeFoldersOfEndedJob(env, job.id);
+		}
 	}
-}
-
-/**
- * Ends this run's hold on a job that was paused while it ran (a user pause keeps the lease), so Resume can start it
- * at once; when it was resumed meanwhile and is waiting, it is queued, since the queued run met the lease and left.
- */
-async function releaseImportLease(env: CloudflareEnv, jobId: string): Promise<void> {
-	const [row] = await getDb(env)
-		.update(importJobs)
-		.set({ leaseUntil: null })
-		.where(and(eq(importJobs.id, jobId), inArray(importJobs.status, ["pending", "paused"])))
-		.returning({ status: importJobs.status });
-	if (row?.status === "pending") await enqueueImportJob(env, jobId);
-}
-
-/**
- * Takes the job's lease. Jobs that share a source account run one at a time, because providers such as iCloud and
- * Gmail limit concurrent IMAP connections per account.
- */
-async function claimJob(env: CloudflareEnv, job: ImportJobRow, now: Date): Promise<boolean> {
-	const nowSeconds = Math.floor(now.getTime() / 1000);
-	const claimed = await getDb(env)
-		.update(importJobs)
-		.set({
-			status: "running",
-			leaseUntil: new Date(now.getTime() + LEASE_MS),
-			startedAt: job.startedAt ?? now,
-			updatedAt: now,
-		})
-		.where(
-			and(
-				eq(importJobs.id, job.id),
-				inArray(importJobs.status, [...ACTIVE_STATUSES]),
-				or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
-				sql`NOT EXISTS (SELECT 1 FROM import_jobs other WHERE other.id <> ${job.id} AND other.host = ${job.host} AND other.username = ${job.username} AND other.status = 'running' AND other.lease_until > ${nowSeconds})`,
-			),
-		)
-		.returning({ id: importJobs.id });
-	return claimed.length > 0;
-}
-
-/** A failed run: permanent errors end the job, others are retried with a growing delay. */
-async function recordRunError(env: CloudflareEnv, job: ImportJobRow, error: unknown): Promise<void> {
-	const message = error instanceof Error ? error.message : "IMAP import failed";
-	const attempts = job.attempts + 1;
-	if (isPermanentImportError(error, message) || attempts >= MAX_ATTEMPTS) {
-		await finishJob(env, job, "failed", message);
-		return;
-	}
-	await getDb(env)
-		.update(importJobs)
-		.set({
-			attempts,
-			// A transient error is retried; the confirmation to go on above 90% must survive it.
-			lastError: noteAfterError(job.lastError, message),
-			leaseUntil: null,
-			total: job.total,
-			updatedAt: new Date(),
-		})
-		.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")));
-	await enqueueImportJob(env, job.id, 30 * attempts);
-}
-
-/** Refused connections (no TLS, a private host), authentication and missing-folder errors will not fix themselves. */
-function isPermanentImportError(error: unknown, message: string): boolean {
-	return (
-		error instanceof MailServerRefusedError ||
-		/AUTHENTICATIONFAILED|LOGIN|sign-in failed|NONEXISTENT|does not exist|not allowed/i.test(message)
-	);
-}
-
-async function finishJob(
-	env: CloudflareEnv,
-	job: ImportJobRow,
-	status: "completed" | "failed",
-	lastError?: string,
-): Promise<void> {
-	const db = getDb(env);
-	const now = new Date();
-	await db
-		.update(importJobs)
-		.set({
-			status,
-			password: "",
-			leaseUntil: null,
-			lastError: lastError ?? null,
-			total: job.total,
-			updatedAt: now,
-			finishedAt: now,
-		})
-		.where(eq(importJobs.id, job.id));
-	if (status === "failed" && job.scope === "account") await closeOpenFolders(env, [job.id]);
-	await startNextJobForAccount(env, job);
-}
-
-/** Starts the oldest waiting job that uses the same source account. */
-async function startNextJobForAccount(env: CloudflareEnv, job: ImportJobRow): Promise<void> {
-	const [next] = await getDb(env)
-		.select({ id: importJobs.id })
-		.from(importJobs)
-		.where(
-			and(
-				eq(importJobs.host, job.host),
-				eq(importJobs.username, job.username),
-				ne(importJobs.id, job.id),
-				inArray(importJobs.status, [...ACTIVE_STATUSES]),
-			),
-		)
-		.orderBy(importJobs.createdAt)
-		.limit(1);
-	if (next) await enqueueImportJob(env, next.id);
 }
 
 /** Stalled rows read per page, and the pages one tick may read before it gives up until the next tick. */

@@ -7,11 +7,12 @@ test.describe("authentication", () => {
 	// These tests sign in and out on their own, so they must not share (and revoke) the suite's admin session.
 	test.use({ storageState: { cookies: [], origins: [] } });
 
-	test("the sign-in card reads at WCAG AA in Kite, Classic and dark mode", async ({ page }) => {
+	test("the sign-in card reads at WCAG AA in Kite, Classic and Kite classic, light and dark", async ({ page }) => {
 		for (const [style, theme] of [
 			["kite", "light"],
 			["classic", "light"],
 			["kite", "dark"],
+			["classic", "dark"],
 			["lavender", "dark"],
 		] as const) {
 			await page.addInitScript(
@@ -24,12 +25,16 @@ test.describe("authentication", () => {
 			await page.goto("/login");
 			const heading = page.getByRole("heading", { level: 1, name: "Sign in" });
 			await expect(heading).toBeVisible();
-			const card = page.locator("main section").first();
+			// Measure only once the page shows the style and theme this round asked for.
+			const html = page.locator("html");
+			await expect(html).toHaveAttribute("data-style", style);
+			if (theme === "dark") await expect(html).toHaveClass(/(^|\s)dark(\s|$)/);
+			else await expect(html).not.toHaveClass(/(^|\s)dark(\s|$)/);
+			const card = page.locator("main section").filter({ has: heading });
 			const label = `${style} ${theme}`;
 			expect(await contrastBetween(heading, card), `${label} title`).toBeGreaterThanOrEqual(4.5);
-			expect(await contrastBetween(card.locator("p").first(), card), `${label} description`).toBeGreaterThanOrEqual(
-				4.5,
-			);
+			const description = card.getByText("Open your mailbox and continue from the same inbox workspace.");
+			expect(await contrastBetween(description, card), `${label} description`).toBeGreaterThanOrEqual(4.5);
 			const forgot = page.getByRole("link", { name: "Forgot password?" });
 			expect(await contrastBetween(forgot, card), `${label} link`).toBeGreaterThanOrEqual(4.5);
 			const button = page.getByRole("button", { name: "Sign in" });

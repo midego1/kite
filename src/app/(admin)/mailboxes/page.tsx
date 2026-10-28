@@ -129,12 +129,13 @@ export default function MailboxesPage() {
 							New mailbox
 						</Button>
 					</DialogTrigger>
-					<DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto">
+					{/* Only the form scrolls in a short window, so the title and the close button stay in view. */}
+					<DialogContent className="flex max-h-[calc(100vh-4rem)] flex-col">
 						<DialogHeader>
 							<DialogTitle>Create mailbox</DialogTitle>
 							<DialogDescription>Add an address and provision its routing rule automatically.</DialogDescription>
 						</DialogHeader>
-						<div className="space-y-4">
+						<div className="-mx-6 -mt-1 min-h-0 overflow-y-auto px-6 pt-1 pb-1 space-y-4">
 							{mailboxes.data?.canCreateShared && (
 								<div className="space-y-2">
 									<Label htmlFor="mailbox-type">Type</Label>

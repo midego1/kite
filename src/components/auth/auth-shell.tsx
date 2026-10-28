@@ -37,7 +37,7 @@ export function AuthShell({ icon: Icon, title, description, children, footer, st
 
 				<section className="rounded-xl border border-neutral-200 bg-white p-6 shadow-xs sm:p-8">
 					{steps && (
-						<ol className="mb-6 flex flex-wrap gap-2 text-xs font-medium">
+						<ol aria-label="Setup steps" className="mb-6 flex flex-wrap gap-2 text-xs font-medium">
 							{steps.map((step, index) => (
 								<li key={step.label} className="flex items-center gap-2">
 									<span
@@ -48,7 +48,11 @@ export function AuthShell({ icon: Icon, title, description, children, footer, st
 									>
 										{index + 1} {step.label}
 									</span>
-									{index < steps.length - 1 && <span className="text-neutral-300">/</span>}
+									{index < steps.length - 1 && (
+										<span aria-hidden="true" className="text-neutral-300">
+											/
+										</span>
+									)}
 								</li>
 							))}
 						</ol>

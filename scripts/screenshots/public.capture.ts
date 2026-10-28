@@ -54,47 +54,76 @@ for (const [name, path, ready, appearance] of [
 	});
 }
 
-// What a visitor sees from a booking link and a Drive link.
-test("public booking and Drive pages", async ({ browser }) => {
-	const setup = await open(browser);
-	await setup.goto("/booking");
-	const event = setup.locator("article", { hasText: "30 Minute Meeting" });
+/** Turns the demo meeting on or off from the Bookings page, as its owner would; true when it changed. */
+async function setMeeting(browser: Browser, enabled: boolean): Promise<boolean> {
+	const page = await open(browser);
+	await page.goto("/booking");
+	const event = page.locator("article", { hasText: MEETING });
 	await expect(event).toBeVisible({ timeout: 120_000 });
-	const turnOn = event.getByRole("button", { name: "Turn on" });
-	if (await turnOn.isVisible()) {
-		const saved = setup.waitForResponse((response) => response.url().includes("/api/booking") && response.request().method() !== "GET");
-		await turnOn.click();
+	const isOn = (await event.getByRole("button", { name: "Turn on" }).count()) === 0;
+	if (isOn !== enabled) {
+		const saved = page.waitForResponse(
+			(response) => response.url().includes("/api/booking") && response.request().method() !== "GET",
+		);
+		if (enabled) await event.getByRole("button", { name: "Turn on" }).click();
+		else {
+			await event.getByRole("button", { name: `More options for ${MEETING}` }).click();
+			await event.getByRole("button", { name: "Turn off" }).click();
+		}
 		await saved;
 	}
-	await expect(event.getByRole("button", { name: "Turn on" })).toHaveCount(0);
-	await setup.context().close();
+	await expect(event.getByRole("button", { name: "Turn on" })).toHaveCount(enabled ? 0 : 1);
+	await page.context().close();
+	return isOn !== enabled;
+}
 
+const MEETING = "30 Minute Meeting";
+const FOLDER = "Launch kit";
+
+// What a visitor sees from a booking link and a Drive link. Everything it adds to the shared demo account (the
+// folder, its files and link, the meeting it turns on) is removed again, so the README shots never show it.
+test("public booking and Drive pages", async ({ browser }) => {
 	const api = await apiContext(STORAGE_STATE);
-	const me = (await (await api.get("/api/auth/me")).json()) as { user: { id: string } };
-	const booking = (await (await api.get("/api/booking")).json()) as {
-		username: string;
-		events: { id: string; name: string }[];
-	};
-	const meeting = booking.events.find((item) => item.name === "30 Minute Meeting")!;
-	const folder = await createFolder(api, `Launch kit ${Date.now()}`);
-	await uploadFile(api, "launch-plan.txt", "Launch plan", { parentId: folder.id });
-	await uploadFile(api, "rollout-checklist.csv", "step,owner", { contentType: "text/csv", parentId: folder.id });
-	const { token } = await createLink(api, folder.id);
-	await api.dispose();
+	let turnedOn = false;
+	let folderId: string | null = null;
+	let linkId: string | null = null;
+	try {
+		turnedOn = await setMeeting(browser, true);
+		const me = (await (await api.get("/api/auth/me")).json()) as { user: { id: string } };
+		const booking = (await (await api.get("/api/booking")).json()) as {
+			username: string;
+			events: { id: string; name: string }[];
+		};
+		const meeting = booking.events.find((item) => item.name === MEETING)!;
+		const folder = await createFolder(api, FOLDER);
+		folderId = folder.id;
+		await uploadFile(api, "launch-plan.txt", "Launch plan", { parentId: folder.id });
+		await uploadFile(api, "rollout-checklist.csv", "step,owner", { contentType: "text/csv", parentId: folder.id });
+		const { link, token } = await createLink(api, folder.id);
+		linkId = link.id;
 
-	for (const [name, path, ready, appearance] of [
-		["booking", `/c/${booking.username}`, "30 Minute Meeting", {}],
-		["booking-event", `/book/${me.user.id}/${meeting.id}`, "30 Minute Meeting", {}],
-		["booking-event-dark", `/book/${me.user.id}/${meeting.id}`, "30 Minute Meeting", { theme: "dark" }],
-		["booking-event-phone", `/book/${me.user.id}/${meeting.id}`, "30 Minute Meeting", { phone: true }],
-		["drive-link", `/d/${token}`, "launch-plan.txt", {}],
-		["drive-link-dark", `/d/${token}`, "launch-plan.txt", { theme: "dark" }],
-	] as const) {
-		const page = await open(browser, { ...appearance, signedOut: true });
-		await page.goto(path);
-		// Public pages compile on their first visit in a dev server.
-		await expect(page.getByText(ready, { exact: false }).first()).toBeVisible({ timeout: 120_000 });
-		await capture(page, `public/${name}`);
+		for (const [name, path, ready, appearance] of [
+			["booking", `/c/${booking.username}`, MEETING, {}],
+			["booking-event", `/book/${me.user.id}/${meeting.id}`, MEETING, {}],
+			["booking-event-dark", `/book/${me.user.id}/${meeting.id}`, MEETING, { theme: "dark" }],
+			["booking-event-phone", `/book/${me.user.id}/${meeting.id}`, MEETING, { phone: true }],
+			["drive-link", `/d/${token}`, "launch-plan.txt", {}],
+			["drive-link-dark", `/d/${token}`, "launch-plan.txt", { theme: "dark" }],
+		] as const) {
+			const page = await open(browser, { ...appearance, signedOut: true });
+			await page.goto(path);
+			// Public pages compile on their first visit in a dev server.
+			await expect(page.getByText(ready, { exact: false }).first()).toBeVisible({ timeout: 120_000 });
+			await capture(page, `public/${name}`);
+		}
+	} finally {
+		if (linkId) expect((await api.delete(`/api/drive/links/${linkId}`)).ok()).toBe(true);
+		if (folderId) {
+			for (const action of ["trash", "delete"])
+				expect((await api.post("/api/drive/items/bulk", { data: { ids: [folderId], action } })).ok()).toBe(true);
+		}
+		await api.dispose();
+		if (turnedOn) await setMeeting(browser, false);
 	}
 });
 

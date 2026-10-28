@@ -2,6 +2,7 @@ import { MailServerRefusedError } from "@/lib/net/errors";
 import type { MailSocket } from "@/lib/net/types";
 import {
 	getLiteralLength,
+	imapLimits,
 	imapLoginArgument,
 	isTaggedCompletion,
 	isTaggedOk,
@@ -9,17 +10,9 @@ import {
 	parseFetchUid,
 	parseGreeting,
 } from "./protocol-utils";
+import type { ImapLimits } from "./types";
 
-/** The largest single literal (one message) the client accepts. */
-const MAX_LITERAL_BYTES = 64 * 1024 * 1024;
-/** The longest response line, so a server that never sends CRLF cannot fill memory. */
-const MAX_LINE_BYTES = 8 * 1024 * 1024;
-/** The most message bytes one UID FETCH may return in total. */
-const MAX_FETCH_BATCH_BYTES = 96 * 1024 * 1024;
-/** How long one command (or the greeting, or the TLS handshake) may take, however slowly the bytes trickle in. */
-const COMMAND_TIMEOUT_MS = 180_000;
-
-export type ImapConnectionOptions = { commandTimeoutMs?: number; maxFetchBatchBytes?: number };
+export type ImapConnectionOptions = Partial<ImapLimits>;
 
 const MB = 1024 * 1024;
 
@@ -38,10 +31,10 @@ export class ImapConnection {
 	private end = 0;
 	private scanFrom = 0;
 	private tagCounter = 0;
-	private readonly commandTimeoutMs: number;
-	private readonly maxFetchBatchBytes: number;
-	/** When the current command must have finished; set by every write and by the greeting. */
-	private deadline: number;
+	private readonly limits: ImapLimits;
+	/** When the current command (or the greeting) started, and how many bytes have arrived for it since. */
+	private commandStart = Date.now();
+	private received = 0;
 	/** The latest capabilities the server announced; replaced after STARTTLS and sign-in. */
 	capabilities: string[] = [];
 
@@ -49,9 +42,8 @@ export class ImapConnection {
 		this.socket = socket;
 		this.reader = socket.readable.getReader();
 		this.writer = socket.writable.getWriter();
-		this.commandTimeoutMs = options.commandTimeoutMs ?? COMMAND_TIMEOUT_MS;
-		this.maxFetchBatchBytes = options.maxFetchBatchBytes ?? MAX_FETCH_BATCH_BYTES;
-		this.deadline = Date.now() + this.commandTimeoutMs;
+		// Without a runtime the stricter Workers limits apply.
+		this.limits = { ...imapLimits(undefined), ...options };
 	}
 
 	async close(): Promise<void> {
@@ -95,7 +87,7 @@ export class ImapConnection {
 		this.socket = secure;
 		this.reader = secure.readable.getReader();
 		this.writer = secure.writable.getWriter();
-		this.deadline = Date.now() + this.commandTimeoutMs;
+		this.restartDeadline();
 		try {
 			await this.beforeDeadline(secure.opened);
 		} catch (error) {
@@ -181,9 +173,20 @@ export class ImapConnection {
 		const tag = this.nextTag();
 		await this.write(`${tag} ${command}\r\n`);
 		const lines: string[] = [];
+		let bytes = 0;
 		while (true) {
 			const line = await this.readLine();
 			lines.push(line);
+			// The lines are kept until the command ends, so their total is capped, not only each line.
+			bytes += line.length + 2;
+			if (bytes > this.limits.commandResponseBytes)
+				throw new Error(
+					`The IMAP server sent more than ${Math.round(this.limits.commandResponseBytes / MB)} MB in answer to one command`,
+				);
+			if (lines.length > this.limits.commandResponseLines)
+				throw new Error(
+					`The IMAP server sent more than ${this.limits.commandResponseLines} lines in answer to one command`,
+				);
 			this.noteCapabilities(line);
 			if (isTaggedCompletion(line, tag)) {
 				if (!isTaggedOk(line, tag)) throw new Error(`${failure}: ${line.slice(tag.length + 1)}`);
@@ -223,11 +226,13 @@ export class ImapConnection {
 				pendingUid = lineUid;
 			}
 			if (literalLength !== null) {
-				if (literalLength > MAX_LITERAL_BYTES)
-					throw new Error(`The IMAP server sent a message larger than ${MAX_LITERAL_BYTES / MB} MB`);
+				if (literalLength > this.limits.literalBytes)
+					throw new Error(`The IMAP server sent a message larger than ${Math.round(this.limits.literalBytes / MB)} MB`);
 				batchBytes += literalLength;
-				if (batchBytes > this.maxFetchBatchBytes)
-					throw new Error(`The IMAP server sent more than ${Math.round(this.maxFetchBatchBytes / MB)} MB in one fetch`);
+				if (batchBytes > this.limits.fetchBatchBytes)
+					throw new Error(
+						`The IMAP server sent more than ${Math.round(this.limits.fetchBatchBytes / MB)} MB in one fetch`,
+					);
 				pendingRaw = await this.readBytes(literalLength);
 			}
 			if (pendingUid && pendingRaw) {
@@ -260,8 +265,27 @@ export class ImapConnection {
 
 	/** Every write starts (or continues) a command, so it resets the deadline for the answer. */
 	private async writeBytes(bytes: Uint8Array): Promise<void> {
-		this.deadline = Date.now() + this.commandTimeoutMs;
+		this.restartDeadline();
 		await this.beforeDeadline(this.writer.write(bytes));
+	}
+
+	private restartDeadline(): void {
+		this.commandStart = Date.now();
+		this.received = 0;
+	}
+
+	/**
+	 * The current command's deadline: `commandTimeoutMs`, plus time earned by the bytes that arrived at
+	 * `minBytesPerSecond`, never past `commandMaxMs`. A slow but steady link finishes a large FETCH; a server that
+	 * trickles a byte at a time earns next to nothing and still times out.
+	 */
+	private get deadline(): number {
+		const earned = (this.received / this.limits.minBytesPerSecond) * 1000;
+		const allowed = Math.min(
+			this.limits.commandTimeoutMs + earned,
+			Math.max(this.limits.commandMaxMs, this.limits.commandTimeoutMs),
+		);
+		return this.commandStart + allowed;
 	}
 
 	/**
@@ -298,25 +322,45 @@ export class ImapConnection {
 				}
 			}
 			this.scanFrom = Math.max(this.start, this.end - 1);
-			if (this.end - this.start > MAX_LINE_BYTES)
-				throw new Error(`The IMAP server sent a line longer than ${MAX_LINE_BYTES / MB} MB`);
+			if (this.end - this.start > this.limits.lineBytes)
+				throw new Error(`The IMAP server sent a line longer than ${Math.round(this.limits.lineBytes / MB)} MB`);
 			await this.readMore();
 		}
 	}
 
+	/**
+	 * Reads a literal into a buffer of exactly its length: what is already buffered first, then chunks straight from
+	 * the socket, so a large message costs its own size once instead of a doubled receive buffer plus a copy.
+	 */
 	private async readBytes(length: number): Promise<ArrayBuffer> {
-		while (this.end - this.start < length) {
-			await this.readMore();
-		}
-		const bytes = this.buffer.slice(this.start, this.start + length);
-		this.start += length;
+		const out = new Uint8Array(length);
+		let filled = Math.min(this.end - this.start, length);
+		out.set(this.buffer.subarray(this.start, this.start + filled));
+		this.start += filled;
+		if (this.start === this.end) this.start = this.end = 0;
 		this.scanFrom = this.start;
-		return bytes.buffer as ArrayBuffer;
+		while (filled < length) {
+			const value = await this.readChunk();
+			const take = Math.min(value.byteLength, length - filled);
+			out.set(value.subarray(0, take), filled);
+			filled += take;
+			if (take < value.byteLength) this.append(value.subarray(take));
+		}
+		return out.buffer;
+	}
+
+	private async readChunk(): Promise<Uint8Array> {
+		const { value, done } = await this.beforeDeadline(this.reader.read());
+		if (done || !value) throw new Error("IMAP connection closed unexpectedly");
+		this.received += value.byteLength;
+		return value;
 	}
 
 	private async readMore(): Promise<void> {
-		const { value, done } = await this.beforeDeadline(this.reader.read());
-		if (done || !value) throw new Error("IMAP connection closed unexpectedly");
+		this.append(await this.readChunk());
+	}
+
+	private append(value: Uint8Array): void {
 		const unread = this.end - this.start;
 		if (this.end + value.byteLength > this.buffer.byteLength) {
 			if (unread + value.byteLength <= this.buffer.byteLength / 2) {

@@ -347,6 +347,19 @@ test("a line that never ends is refused at 8 MB", async (t) => {
 	});
 });
 
+test("untagged lines that never end a command are capped by count and by size", async (t) => {
+	for (const [lineBytes, limit] of [
+		[16, /^The IMAP server sent more than 200000 lines in answer to one command$/],
+		[4096, /^The IMAP server sent more than 32 MB in answer to one command$/],
+	]) {
+		const server = await fake(t, { implicitTls: true, greetingCapabilities: false, untaggedFlood: lineBytes });
+		await assert.rejects(openImapSession(nodeEnv(server), login()), (error) => {
+			assert.match(error.message, limit);
+			return true;
+		});
+	}
+});
+
 test("a server that trickles one byte at a time, or sends nothing, times out per command", async (t) => {
 	for (const misbehaviour of [{ slowLoris: true }, { silent: true }]) {
 		const server = await fake(t, { implicitTls: true, ...misbehaviour });

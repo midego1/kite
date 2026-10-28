@@ -134,11 +134,26 @@ test("IPv4 shorthands are checked as the address they spell", () => {
 	assert.equal(canonicalMailHost("2130706433"), "127.0.0.1");
 	assert.equal(canonicalMailHost(" Imap.Example.COM. "), "imap.example.com");
 	assert.equal(canonicalMailHost("bücher.example"), "xn--bcher-kva.example");
-	for (const host of ["a b", "user@host.example", "host.example:99", "host.example/x", "host.example?x", "::zz", ""])
+	for (const host of [
+		"a b",
+		"user@host.example",
+		"host.example:99",
+		"host.example/x",
+		"host.example?x",
+		"::zz",
+		"",
+		"127.0.0.1...",
+		"127.0.0.1..",
+		".imap.example.com",
+		"imap..example.com",
+		"imap.example.com..",
+	])
 		assert.equal(canonicalMailHost(host), null, host);
 	for (const host of ["0177.0.0.1", "127.1", "0x7f.0.0.1", "2130706433", "0x0a.1", "0251.0376.0251.0376", "0xa9fea9fe"])
 		assert.match(mailServerHostProblem(host, 993, strict), /Private and local/, host);
 	assert.match(mailServerHostProblem("user@imap.example.com", 993, strict), /invalid/);
+	assert.match(mailServerHostProblem("127.0.0.1...", 993, loopback), /invalid/);
+	assert.equal(canonicalMailHost("imap.example.com."), "imap.example.com");
 	for (const host of ["127.1", "0x7f.0.0.1"]) assert.equal(isLoopbackHost(host), true, host);
 });
 

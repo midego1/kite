@@ -19,7 +19,8 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  * - `users`: `{ [username]: password }`. `LOGIN` takes quoted strings or synchronizing literals.
  * - Misbehaviour: `hugeLiteral` (a FETCH announcing a 4 GB literal), `endlessLine` (a greeting that never ends),
  *   `slowLoris` (a greeting trickled one byte at a time, forever), `silent` (no greeting at all), `silentTls` (OK to
- *   STARTTLS, then no handshake), `secondChallenge` (a second `+` during AUTHENTICATE PLAIN).
+ *   STARTTLS, then no handshake), `secondChallenge` (a second `+` during AUTHENTICATE PLAIN), `untaggedFlood` (CAPABILITY answered by
+ *   an endless stream of untagged lines of that many bytes each).
  * - `folders`: `{ [name]: [raw message, …] }`; UIDs count up from 1 per folder.
  */
 export async function startFakeImap(options = {}) {
@@ -130,6 +131,8 @@ export async function startFakeImap(options = {}) {
 			const [tag, rawName, ...rest] = line.split(" ");
 			const name = (rawName ?? "").toUpperCase();
 			const args = rest.join(" ");
+			if (name === "CAPABILITY" && options.untaggedFlood)
+				return streamUntaggedFlood(state.socket, options.untaggedFlood);
 			if (name === "CAPABILITY") return send(`* CAPABILITY ${capabilities()}\r\n${tag} OK done\r\n`);
 			if (name === "NOOP") return send(`${tag} OK done\r\n`);
 			if (name === "LOGOUT") {
@@ -244,6 +247,20 @@ function streamEndlessLine(socket) {
 			sent += 1;
 			if (!socket.write(sent === 1 ? Buffer.concat([Buffer.from("* OK "), chunk]) : chunk))
 				return socket.once("drain", next);
+		}
+	};
+	next();
+}
+
+/** Untagged lines of `lineBytes` each, up to 64 MB, until the client goes away; the tagged answer never comes. */
+function streamUntaggedFlood(socket, lineBytes) {
+	const line = `* OK ${"x".repeat(Math.max(lineBytes - 7, 0))}\r\n`;
+	const chunk = Buffer.from(line.repeat(Math.max(1, Math.floor((256 * 1024) / line.length))));
+	let sent = 0;
+	const next = () => {
+		while (!socket.destroyed && sent < 64 * 1024 * 1024) {
+			sent += chunk.length;
+			if (!socket.write(chunk)) return socket.once("drain", next);
 		}
 	};
 	next();

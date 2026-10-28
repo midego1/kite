@@ -4,6 +4,7 @@ import { allowsPlainText, mailHostPolicy } from "@/lib/net/host-guard-utils";
 import { ImapConnection, type ImapConnectionOptions } from "./connection";
 import {
 	chooseAuthMethod,
+	imapLimits,
 	IMAP_PORTS,
 	parseListMailboxName,
 	parseSearchUids,
@@ -35,7 +36,7 @@ export async function openImapSession(
 	options: ImapConnectionOptions = {},
 ): Promise<ImapSession> {
 	const socket = await openMailSocket(env, login, IMAP_PORTS);
-	const imap = new ImapConnection(socket, options);
+	const imap = new ImapConnection(socket, { ...imapLimits(env.KITE_RUNTIME), ...options });
 	try {
 		await signIn(imap, login, allowsPlainText(login.host, mailHostPolicy(env, process.env.NODE_ENV)));
 	} catch (error) {

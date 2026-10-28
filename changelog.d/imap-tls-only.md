@@ -1,7 +1,7 @@
 ### Security
 
 - IMAP imports no longer connect in plain text. Turning off **Use TLS** in [Settings → Import](/settings/import) used to send the source password unencrypted on port 143; the form now offers **TLS (port 993)** or **STARTTLS (port 143)**, Kite always checks the server's certificate, and a server that offers neither is refused before any password is sent. Background jobs saved with TLS off now upgrade with STARTTLS and fail with the reason if the server cannot. Imports also only connect to ports 993 and 143.
-- IMAP imports limit what a source server can send (64 MB per message, 8 MB per response line, 96 MB per batch) and give every command three minutes, so a broken or hostile server can no longer fill memory or hold an import forever. Server addresses written in shorthand (such as `127.1`) are checked as the address they spell.
+- IMAP imports limit what a source server can send (per message 36 MB on Cloudflare and 64 MB on Node, per batch 48 MB or 96 MB, 8 MB per response line, 32 MB or 200,000 lines per command) and how long a command may take (three minutes, extended while data keeps arriving at 64 KB/s or more, at most ten minutes), so a broken or hostile server can no longer fill memory or hold an import forever. A message above the limit fails the import with the reason. Server addresses written in shorthand (such as `127.1`) are checked as the address they spell.
 - The guard that keeps webhooks, alert webhooks, remote images, object stores and imports off private networks now also refuses IPv6 tunnel addresses that can carry a private IPv4 address (6to4 `2002::/16`, Teredo `2001::/32`, `64:ff9b:1::/48`).
 
 ### Added

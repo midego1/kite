@@ -67,6 +67,8 @@ export function canonicalMailHost(host: string): string | null {
 		.replace(/\.$/, "");
 	if (!value) return null;
 	if (value.includes(":")) return isIpAddressLiteral(value) ? value : null;
+	// One trailing dot is the DNS root; any other empty label (`127.0.0.1..`, `.host`, `a..b`) is not a host name.
+	if (value.split(".").some((label) => !label)) return null;
 	try {
 		const url = new URL(`http://${value}/`);
 		const bare = !url.username && !url.password && !url.port && url.pathname === "/" && !url.search && !url.hash;

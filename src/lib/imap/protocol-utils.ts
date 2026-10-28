@@ -1,7 +1,29 @@
-import type { ImapAuthMethod, ImapTlsPlan } from "./types";
+import type { ImapAuthMethod, ImapLimits, ImapTlsPlan } from "./types";
 
 /** IMAP ports: implicit TLS on 993, STARTTLS on 143. */
 export const IMAP_PORTS = [993, 143] as const;
+
+const MB = 1024 * 1024;
+
+/**
+ * The limits of one IMAP connection. A Worker isolate has 128 MB of memory, so on Workers a message may be at most
+ * 36 MB (a message at Gmail's 25 MB attachment limit, base64-encoded) and a FETCH batch 48 MB; the Node server
+ * allows 64 MB and 96 MB. A message above the limit fails its batch: the job retries and then fails with the reason.
+ * Every command gets three minutes, extended by the bytes that keep arriving at 64 KB/s or more, up to ten minutes.
+ */
+export function imapLimits(runtime: "node" | undefined): ImapLimits {
+	const node = runtime === "node";
+	return {
+		literalBytes: (node ? 64 : 36) * MB,
+		fetchBatchBytes: (node ? 96 : 48) * MB,
+		lineBytes: 8 * MB,
+		commandResponseBytes: 32 * MB,
+		commandResponseLines: 200_000,
+		commandTimeoutMs: 180_000,
+		minBytesPerSecond: 64 * 1024,
+		commandMaxMs: 600_000,
+	};
+}
 
 export function quoteImapString(value: string): string {
 	if (/[\r\n\0]/.test(value)) throw new Error("IMAP values cannot contain line breaks");

@@ -243,10 +243,107 @@ test("a FETCH whose literals add up past the batch cap is refused", async () => 
 			? `* 1 FETCH (UID 1 BODY[] {${body.length}}\r\n${body})\r\n* 2 FETCH (UID 2 BODY[] {${body.length}}\r\n${body})\r\n${tag} OK\r\n`
 			: `${tag} OK\r\n`,
 	);
-	const imap = new ImapConnection(socket, { maxFetchBatchBytes: body.length + 1 });
+	const imap = new ImapConnection(socket, { fetchBatchBytes: body.length + 1 });
 	await imap.readGreeting();
 	await assert.rejects(imap.fetchMessages(["1", "2"]), (error) => {
 		assert.match(error.message, /^The IMAP server sent more than .* MB in one fetch$/);
 		return true;
 	});
+});
+
+/**
+ * A socket that answers the first UID FETCH by sending `total` bytes of one literal, `piece` bytes every `everyMs`,
+ * then the tagged OK. `total: Infinity` never ends.
+ */
+function streamingSocket({ total, piece, everyMs }) {
+	let controller;
+	let timer;
+	const readable = new ReadableStream({
+		start: (c) => {
+			controller = c;
+			c.enqueue(encoder.encode("* OK ready\r\n"));
+		},
+		cancel: () => clearInterval(timer),
+	});
+	const writable = new WritableStream({
+		write(bytes) {
+			const command = decoder.decode(bytes);
+			const tag = command.split(" ")[0];
+			if (!command.includes("UID FETCH")) return controller.enqueue(encoder.encode(`${tag} OK\r\n`));
+			const size = Number.isFinite(total) ? total : 1024 * 1024 * 1024;
+			controller.enqueue(encoder.encode(`* 1 FETCH (UID 1 BODY[] {${size}}\r\n`));
+			let sent = 0;
+			timer = setInterval(() => {
+				const count = Math.min(piece, size - sent);
+				controller.enqueue(new Uint8Array(count).fill(120));
+				sent += count;
+				if (sent >= size) {
+					clearInterval(timer);
+					controller.enqueue(encoder.encode(`)\r\n${tag} OK done\r\n`));
+				}
+			}, everyMs);
+			// Never keep the test process alive.
+			timer.unref?.();
+		},
+	});
+	return { readable, writable, opened: Promise.resolve(), close: async () => clearInterval(timer) };
+}
+
+test("arriving bytes extend the deadline: a slow but steady FETCH finishes past the base timeout", async () => {
+	// 3000 bytes at 2000 B/s take 1.5 s; the base deadline is 300 ms, and each byte earns 1 ms (1000 B/s).
+	const imap = new ImapConnection(streamingSocket({ total: 3000, piece: 100, everyMs: 50 }), {
+		commandTimeoutMs: 300,
+		minBytesPerSecond: 1000,
+		commandMaxMs: 10_000,
+	});
+	await imap.readGreeting();
+	const started = Date.now();
+	const fetched = await imap.fetchMessages(["1"]);
+	assert.equal(fetched.get("1").byteLength, 3000);
+	assert.ok(Date.now() - started > 1000);
+});
+
+test("a trickle earns next to nothing and still times out", async () => {
+	const imap = new ImapConnection(streamingSocket({ total: Infinity, piece: 1, everyMs: 20 }), {
+		commandTimeoutMs: 300,
+		minBytesPerSecond: 1000,
+		commandMaxMs: 10_000,
+		literalBytes: 2 * 1024 * 1024 * 1024,
+		fetchBatchBytes: 2 * 1024 * 1024 * 1024,
+	});
+	await imap.readGreeting();
+	const started = Date.now();
+	await assert.rejects(imap.fetchMessages(["1"]), /did not answer in time/);
+	assert.ok(Date.now() - started < 1000, "50 B/s buys about 15 ms");
+});
+
+test("a fast stream that never ends stops at the hard cap", async () => {
+	const imap = new ImapConnection(streamingSocket({ total: Infinity, piece: 64 * 1024, everyMs: 5 }), {
+		commandTimeoutMs: 100,
+		minBytesPerSecond: 1000,
+		commandMaxMs: 600,
+		literalBytes: 2 * 1024 * 1024 * 1024,
+		fetchBatchBytes: 2 * 1024 * 1024 * 1024,
+	});
+	await imap.readGreeting();
+	const started = Date.now();
+	await assert.rejects(imap.fetchMessages(["1"]), /did not answer in time/);
+	const elapsed = Date.now() - started;
+	assert.ok(elapsed >= 550 && elapsed < 2000, `stopped after ${elapsed} ms`);
+});
+
+test("a literal is read into a buffer of exactly its size, and bytes behind it stay buffered", async () => {
+	const body = "y".repeat(70_000);
+	const { socket } = fakeSocket((command, tag) =>
+		command.includes("UID FETCH")
+			? `* 1 FETCH (UID 3 BODY[] {${body.length}}\r\n${body})\r\n${tag} OK\r\n`
+			: `${tag} OK\r\n`,
+	);
+	const imap = new ImapConnection(socket);
+	await imap.readGreeting();
+	const raw = (await imap.fetchMessages(["3"])).get("3");
+	assert.equal(raw.byteLength, body.length);
+	assert.equal(decoder.decode(raw), body);
+	// The connection is still in step: the next command reads its own answer.
+	assert.deepEqual(await imap.command("NOOP"), ["A0002 OK"]);
 });

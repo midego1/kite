@@ -16,13 +16,14 @@ const {
 	chooseAuthMethod,
 	plainAuthToken,
 	imapLoginArgument,
+	imapLimits,
 	selectImapUidBatch,
 	selectRemainingUids,
 	chunk,
 	imapSecurity,
 } = await bundleModules("kite-imap-utils-", [
 	[
-		"quoteImapString, parseSearchUids, getLiteralLength, isTaggedCompletion, isTaggedOk, parseListMailboxName, parseFetchUid, parseCapabilities, parseGreeting, planStartTls, chooseAuthMethod, plainAuthToken, imapLoginArgument",
+		"quoteImapString, parseSearchUids, getLiteralLength, isTaggedCompletion, isTaggedOk, parseListMailboxName, parseFetchUid, parseCapabilities, parseGreeting, planStartTls, chooseAuthMethod, plainAuthToken, imapLoginArgument, imapLimits",
 		"src/lib/imap/protocol-utils.ts",
 	],
 	["selectImapUidBatch, selectRemainingUids, chunk, imapSecurity", "src/lib/import/imap-utils.ts"],
@@ -168,4 +169,31 @@ test("imapLoginArgument quotes printable ASCII and turns anything else into a li
 	assert.equal(literal.bytes.byteLength, 9);
 	assert.equal(imapLoginArgument("line\r\nbreak").kind, "literal");
 	assert.throws(() => imapLoginArgument("a\0b"), /NUL/);
+});
+
+test("imapLimits keeps Workers inside an isolate's memory and gives the Node server more room", () => {
+	const MB = 1024 * 1024;
+	const workers = imapLimits(undefined);
+	const node = imapLimits("node");
+	assert.equal(workers.literalBytes, 36 * MB);
+	assert.equal(workers.fetchBatchBytes, 48 * MB);
+	assert.equal(node.literalBytes, 64 * MB);
+	assert.equal(node.fetchBatchBytes, 96 * MB);
+	// A message at Gmail's 25 MB attachment limit, base64 encoded with headers, fits on Workers.
+	assert.ok(workers.literalBytes > Math.ceil((25 * MB * 4) / 3) + 512 * 1024);
+	for (const limits of [workers, node]) {
+		assert.ok(limits.literalBytes <= limits.fetchBatchBytes);
+		assert.equal(limits.lineBytes, 8 * MB);
+		assert.equal(limits.commandResponseBytes, 32 * MB);
+		assert.equal(limits.commandResponseLines, 200_000);
+		assert.equal(limits.commandTimeoutMs, 180_000);
+		assert.equal(limits.commandMaxMs, 600_000);
+		// 96 MB at 4 Mbit/s (500 KB/s) takes about 197 s: more than the base timeout, inside what it earns and the cap.
+		const seconds = (96 * MB) / 500_000;
+		const allowed = Math.min(
+			limits.commandTimeoutMs / 1000 + (96 * MB) / limits.minBytesPerSecond,
+			limits.commandMaxMs / 1000,
+		);
+		assert.ok(seconds > limits.commandTimeoutMs / 1000 && seconds < allowed);
+	}
 });

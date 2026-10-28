@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * Which mailbox a row belongs to in the All mailboxes view: a neutral pill (the palette variables, so it
- * follows light, dark and both styles) with a dot in the mailbox's avatar colour.
+ * follows light, dark and both styles) with a dot in the mailbox's avatar colour. Rows place it at their right
+ * edge; on a narrow list the pill shortens its own name before the subject loses its room.
  */
 export function MessageMailboxLabel({
 	mailbox,
@@ -25,7 +26,7 @@ export function MessageMailboxLabel({
 			data-testid="message-mailbox-label"
 			title={address}
 			className={cn(
-				"mr-1.5 inline-flex max-w-32 shrink-0 items-center gap-1 rounded-full px-2 py-0 align-middle text-[11px] font-medium normal-case text-neutral-600",
+				"inline-flex min-w-0 max-w-32 shrink items-center gap-1 rounded-full px-2 py-0 text-[11px] font-medium normal-case text-neutral-600",
 				className,
 			)}
 		>

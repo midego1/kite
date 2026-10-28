@@ -133,6 +133,29 @@ test("All mailboxes lists every mailbox with labels and summed counts, and the f
 		await expect(row(page, subject).getByTestId("message-mailbox-label")).toHaveText(`Mailbox: ${box.name}`);
 	}
 
+	// The pill sits on the row's second line, right of the subject. In rows the account can manage it is flush
+	// with the date above; the read-only mailbox's rows keep their corner star's slot (as on phones).
+	const rightEdges: number[] = [];
+	for (const [subject, readOnly] of [
+		[subjects.home, false],
+		[subjects.work, false],
+		[subjects.desk, true],
+	] as const) {
+		const line = row(page, subject);
+		const pill = await line.getByTestId("message-mailbox-label").boundingBox();
+		const date = await line.locator("time").boundingBox();
+		const title = await line.getByText(subject, { exact: true }).boundingBox();
+		expect(pill && date && title, subject).toBeTruthy();
+		const pillRight = pill!.x + pill!.width;
+		const dateRight = date!.x + date!.width;
+		if (readOnly) expect(pillRight, `${subject}: pill inside the row`).toBeLessThanOrEqual(dateRight);
+		else rightEdges.push(Math.round(pillRight));
+		expect(pill!.y, `${subject}: pill under the date`).toBeGreaterThan(date!.y + date!.height - 2);
+		expect(title!.x + title!.width, `${subject}: subject ends before the pill`).toBeLessThanOrEqual(pill!.x);
+		if (!readOnly) expect(pillRight, `${subject}: pill right edge`).toBeCloseTo(dateRight, 0);
+	}
+	expect(new Set(rightEdges).size).toBe(1);
+
 	const counts = async (query = "") =>
 		(await json<{ counts: { folders: { inbox: { unread: number } } } }>(await user.get(`/api/messages/counts${query}`)))
 			.counts.folders.inbox.unread;

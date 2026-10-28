@@ -3,6 +3,7 @@ import {
 	BASE_URL,
 	E2E_PERSIST_DIR,
 	E2E_PORT,
+	E2E_TELEMETRY_URL,
 	E2E_VITE_CACHE_DIR,
 	FAKE_ABUSE_CH_PORT,
 	STORAGE_STATE,
@@ -61,8 +62,9 @@ export default defineConfig({
 			ABUSE_CH_TEST_ORIGIN: `http://127.0.0.1:${FAKE_ABUSE_CH_PORT}`,
 			// Lets specs inject a database size with X-Kite-Test-Database-Size (e2e/60-database-size.spec.ts).
 			DATABASE_SIZE_TEST_HEADER: "1",
-			// A `.invalid` host turns sending off, so no e2e run can post usage statistics to the real collector.
-			KITE_TELEMETRY_URL: "https://kite-telemetry.e2e.invalid/v1/heartbeat",
+			// A usable https address (so the usage statistics notice can be tested) where nothing listens: no e2e run
+			// can post statistics to the real collector, and no spec runs the 02:00 cron anyway.
+			KITE_TELEMETRY_URL: E2E_TELEMETRY_URL,
 			// Storage credentials are only ever saved encrypted, so the storage spec needs a key; invented, e2e only.
 			APP_ENCRYPTION_KEY: "e2e-only-invented-encryption-key-not-a-secret-0123456789",
 		},

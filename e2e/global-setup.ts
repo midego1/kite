@@ -30,6 +30,10 @@ export default async function globalSetup(config: FullConfig) {
 	const admin = await apiSignIn(ADMIN.email, ADMIN.password);
 	mkdirSync(dirname(STORAGE_STATE), { recursive: true });
 	await admin.storageState({ path: STORAGE_STATE });
+	// The seeded install never chose, so its owner would get the one-time usage statistics notice in every spec's
+	// sidebar. Record "off" here; e2e/54-telemetry.spec.ts brings the notice back where it tests it.
+	const telemetry = await admin.put("/api/admin/telemetry", { data: { enabled: false } });
+	if (!telemetry.ok()) throw new Error(`Turning usage statistics off failed: ${telemetry.status()}`);
 	await admin.dispose();
 
 	const browser = await chromium.launch();

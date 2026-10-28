@@ -88,6 +88,7 @@
 		"src/lib/agent/current-email-utils.ts",
 		"src/lib/agent/jobs/draft-prompt-utils.ts",
 		"src/lib/agent/model-rates-utils.ts",
+		"src/lib/agent/model-prices-utils.ts",
 		"src/lib/agent/provider-url-utils.ts",
 		"src/lib/agent/provider-models-utils.ts",
 		"src/lib/agent/queue-utils.ts",
@@ -194,7 +195,8 @@
 		"src/lib/agent/auto-read/step-input-utils.ts",
 		"src/lib/booking/working-hours-utils.ts",
 		"src/lib/screener/screener-utils.ts",
-		"src/lib/telemetry/telemetry-utils.ts"
+		"src/lib/telemetry/telemetry-utils.ts",
+		"src/lib/telemetry/notice-utils.ts"
 	],
 	"ungated": {
 		"src/lib/agent/fixed-rules-utils.ts": "Only the two prompt rule strings; the prompt fixture tests pin their text byte for byte.",

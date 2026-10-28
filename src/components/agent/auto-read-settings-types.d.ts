@@ -70,6 +70,8 @@ export type AutoReadAdminValues = {
 	chatTokenCap: number;
 	/** False until migration 0069 is applied; the allowances cannot be saved before. */
 	tokenCapsReady?: boolean;
+	/** Dollars counted against the daily spend cap since 00:00 UTC. */
+	spentTodayMicros?: number;
 };
 
 export type AutoReadSettingsProps = { mailboxId: string };

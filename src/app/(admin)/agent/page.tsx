@@ -15,6 +15,7 @@ import { parseAgentModelIds, toggleAgentModelId } from "@/lib/agent/model-ids";
 import { mergePublishedAgentRates } from "@/lib/agent/model-rates-utils";
 import { AutoReadAdminSettings } from "@/components/agent/auto-read-admin-settings";
 import { HaimakerReferralCard } from "./haimaker-referral-card";
+import { CostRates } from "./cost-rates";
 import { RecentAiErrors } from "./recent-ai-errors";
 import type { AgentAdminForm, AgentModelLoadState } from "./types";
 import {
@@ -25,7 +26,6 @@ import {
 	saveAgentAdminSettings,
 	saveAgentEnabled,
 	selectAgentProvider,
-	updateAgentModelRate,
 } from "./utils";
 import { Select } from "@/components/ui/select";
 
@@ -306,60 +306,7 @@ export default function AdminAgentPage() {
 								model is the default.
 							</p>
 						</div>
-						<div className="space-y-3">
-							<p className="text-sm font-medium">Estimated cost rates</p>
-							<p className="text-xs text-neutral-500">
-								USD per 1 million tokens. Rates published by the provider are used automatically; enter them yourself
-								for models that don&apos;t publish any. Usage without both rates shows spending as unavailable.
-							</p>
-							{selectedModelIds.map((model) =>
-								models.find((item) => item.id === model)?.rates ? (
-									<div
-										key={model}
-										className="grid gap-2 rounded-xl border border-neutral-200 p-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto]"
-									>
-										<span className="min-w-0 break-all">{model}</span>
-										<span className="text-neutral-500">
-											Input ${form.rates[model]?.input} · Output ${form.rates[model]?.output} / 1M{" "}
-											<span className="text-xs">(from provider)</span>
-										</span>
-									</div>
-								) : (
-									<div
-										key={model}
-										className="grid gap-2 rounded-xl border border-neutral-200 p-3 sm:grid-cols-[minmax(0,1fr)_6rem_6rem]"
-									>
-										<span className="min-w-0 break-all text-sm">{model}</span>
-										<label className="text-xs text-neutral-500">
-											Input{" "}
-											<Input
-												type="number"
-												min="0"
-												step="any"
-												value={form.rates[model]?.input ?? ""}
-												onChange={(event) =>
-													setForm((current) => updateAgentModelRate(current, model, "input", event.target.value))
-												}
-												placeholder="USD / 1M"
-											/>
-										</label>
-										<label className="text-xs text-neutral-500">
-											Output{" "}
-											<Input
-												type="number"
-												min="0"
-												step="any"
-												value={form.rates[model]?.output ?? ""}
-												onChange={(event) =>
-													setForm((current) => updateAgentModelRate(current, model, "output", event.target.value))
-												}
-												placeholder="USD / 1M"
-											/>
-										</label>
-									</div>
-								),
-							)}
-						</div>
+						<CostRates form={form} models={models} selectedModelIds={selectedModelIds} setForm={setForm} />
 						{status && (
 							<p role="status" className="text-sm text-neutral-700">
 								{status}

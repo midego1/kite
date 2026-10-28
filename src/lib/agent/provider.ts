@@ -5,6 +5,7 @@ import type { AgentProviderConfig, AgentProviderPreset, AgentProviderPublicConfi
 import { AGENT_SETTINGS_ID, DEFAULT_CLOUDFLARE_MODEL, PROVIDER_BASE_URLS } from "./provider-constants";
 import { parseAgentModelIds } from "./model-ids";
 import { parseAgentModelRates } from "./pricing";
+import { resolveAgentModelRates } from "./model-prices-utils";
 import { openSetting } from "@/lib/security/secret-box";
 import { isAgentLoopbackAllowed, parseCustomAgentBaseUrl } from "./provider-url-utils";
 
@@ -28,6 +29,11 @@ export async function getAgentEnabled(env: CloudflareEnv): Promise<boolean> {
 }
 
 export async function getAgentProviderConfig(env: CloudflareEnv): Promise<AgentProviderConfig> {
+	const config = await readAgentProviderConfig(env);
+	return { ...config, effectiveRates: resolveAgentModelRates(config.rates, config.models) };
+}
+
+async function readAgentProviderConfig(env: CloudflareEnv): Promise<Omit<AgentProviderConfig, "effectiveRates">> {
 	const [saved] = await getDb(env)
 		.select({
 			provider: appSettings.agentProvider,
@@ -70,6 +76,14 @@ export async function getAgentProviderConfig(env: CloudflareEnv): Promise<AgentP
 			source: "saved",
 		};
 	}
+	return unsavedAgentProviderConfig(env, rates);
+}
+
+/** The provider when none is saved: the Workers AI binding, else the `AI_BASE_URL` endpoint, else the default. */
+function unsavedAgentProviderConfig(
+	env: CloudflareEnv,
+	rates: AgentProviderConfig["rates"],
+): Omit<AgentProviderConfig, "effectiveRates"> {
 	if (env.AI) {
 		const model = env.AI_MODEL || DEFAULT_CLOUDFLARE_MODEL;
 		return {
@@ -109,7 +123,7 @@ export async function getAgentProviderConfig(env: CloudflareEnv): Promise<AgentP
 }
 
 export async function getAgentProviderPublicConfig(env: CloudflareEnv): Promise<AgentProviderPublicConfig> {
-	const { apiKey, ...config } = await getAgentProviderConfig(env);
+	const { apiKey, effectiveRates: _effectiveRates, ...config } = await getAgentProviderConfig(env);
 	return {
 		...config,
 		hasApiKey: !!apiKey,

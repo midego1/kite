@@ -56,6 +56,7 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 		triageModelId: settings.triageModelId,
 		mailboxModelId: settings.modelId,
 		models: config.models,
+		// The saved rates, not Kite's price list: a Kite update must not move automatic reading to another model.
 		rates: config.rates,
 	});
 	const selection = await selectAutoReadModel(env, requested);

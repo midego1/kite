@@ -25,6 +25,9 @@ import { SkipDnsSwitch } from "@/components/skip-dns-switch";
 import { isDomainHostname } from "@/lib/domains/skip-dns-utils";
 import { mxCheckBlocksSubmit } from "./mx-status-utils";
 import { RegisterMxStatus } from "./register-mx-status";
+import { UsageStatisticsSetup } from "./usage-statistics-setup";
+import { setupUsageStatisticsChoice } from "@/lib/telemetry/notice-utils";
+import type { SetupTelemetryStatus } from "@/lib/telemetry/types";
 
 export function RegisterClient() {
 	const router = useRouter();
@@ -50,6 +53,9 @@ export function RegisterClient() {
 	const [turnstileReset, setTurnstileReset] = useState(0);
 	const [setupTokenNeeded, setSetupTokenNeeded] = useState(false);
 	const [skipDns, setSkipDns] = useState(false);
+	const [telemetry, setTelemetry] = useState<SetupTelemetryStatus>();
+	// On by default; the owner sees the "Usage statistics" section and can turn it off before finishing.
+	const [usageStatistics, setUsageStatistics] = useState(true);
 	const domainCheckRevision = useRef(0);
 
 	useEffect(() => {
@@ -111,6 +117,7 @@ export function RegisterClient() {
 			setHasPrimaryDomain(data.hasPrimaryDomain);
 			setPrimaryDomain(data.primaryDomain?.hostname ?? null);
 			setPrimaryDomainSendingRequested(data.primaryDomain?.sendingRequested ?? null);
+			setTelemetry(data.telemetry);
 			setPreparationComplete(true);
 		} catch (error) {
 			setError(error instanceof Error ? error.message : "Installation preparation failed");
@@ -193,6 +200,7 @@ export function RegisterClient() {
 			enableSending: setupDomain ? setupEnableSending : (primaryDomainSendingRequested ?? undefined),
 			replaceMxRecords,
 			skipDns: !!setupDomain && skipDns,
+			usageStatistics: setupUsageStatisticsChoice(telemetry, usageStatistics),
 		});
 		setLoading(false);
 		if (!ok) {
@@ -478,6 +486,13 @@ export function RegisterClient() {
 						/>
 						{/* <p className="text-xs leading-5 text-neutral-500">Used later for password reset.</p> */}
 					</div>
+
+					<UsageStatisticsSetup
+						status={telemetry}
+						checked={usageStatistics}
+						onCheckedChange={setUsageStatistics}
+						disabled={loading}
+					/>
 
 					{error && (
 						<p

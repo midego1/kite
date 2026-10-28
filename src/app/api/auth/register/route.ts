@@ -20,6 +20,23 @@ import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { verifyTurnstileToken } from "@/lib/auth/turnstile";
 import { getDomainProvisioningError } from "@/lib/domains/errors";
 import { emitLifecycleEvent } from "@/lib/modules/lifecycle";
+import { createAuditLog } from "@/lib/mailboxes/audit";
+import { recordSetupTelemetryChoice } from "@/lib/telemetry/state";
+import { TELEMETRY_AUDIT_ACTIONS } from "@/lib/telemetry/telemetry-utils";
+
+/**
+ * Setup is complete: only now is the "Usage statistics" switch recorded (and an install id made when it is on).
+ * A failure leaves the install undecided, so the owner gets the notice later; it never fails the registration.
+ */
+async function recordSetupTelemetry(env: CloudflareEnv, userId: string, requested: boolean | undefined) {
+	try {
+		const decision = await recordSetupTelemetryChoice(env, requested);
+		if (decision)
+			await createAuditLog(env, { actorUserId: userId, action: TELEMETRY_AUDIT_ACTIONS[decision === "on" ? 0 : 1] });
+	} catch (error) {
+		console.warn("Could not record the usage statistics choice of the setup", error);
+	}
+}
 
 export async function POST(request: Request) {
 	const env = getEnv();
@@ -113,6 +130,7 @@ export async function POST(request: Request) {
 	}
 
 	await emitLifecycleEvent({ type: "user.created", userId });
+	await recordSetupTelemetry(env, userId, firstRunParsed.data.usageStatistics);
 
 	const response = NextResponse.json({ ok: true, redirect: "/login" });
 	response.headers.set("Cache-Control", "no-store");

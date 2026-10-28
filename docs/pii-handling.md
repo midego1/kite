@@ -35,7 +35,7 @@ collector sees the server's IP address. The collector logs and stores
 neither (an erasure request's address is only its rate-limit key); daily reports are kept 90 days, then only totals without ids.
 Turning statistics off asks the collector to erase the install's reports. `telemetry_state` is not in Kite's backups, but a copy
 of the database file or a D1 Time Travel restore carries the same install id.
-See [Privacy](privacy.md#usage-statistics-opt-in).
+See [Privacy](privacy.md#usage-statistics).
 
 Review [the database schema](../src/db/schema/index.ts), `src/lib/backups/export.ts`, and
 `src/lib/backups/table-groups.ts` for the current persisted model. D1/SQLite holds

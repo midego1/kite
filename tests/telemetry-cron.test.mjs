@@ -7,8 +7,10 @@ import { build } from "esbuild";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
 
 /**
- * A default install (statistics never chosen) makes no outside request from either 02:00 cron path: the Worker's
- * `scheduled` handler and the Node scheduler. Both run with the global `fetch` replaced by a recorder.
+ * Nothing is sent without a decision. An install whose owner never chose (setup not finished, or an upgrade whose
+ * owner was not told yet) makes no outside request from either 02:00 cron path, the Worker's `scheduled` handler
+ * and the Node scheduler, and once the notice was shown none before its start day. Both run with the global `fetch`
+ * replaced by a recorder.
  */
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = makeBundleDirectory("kite-telemetry-cron-");
@@ -60,9 +62,21 @@ const { default: worker } = await load("worker");
 const { startScheduler } = await load("scheduler");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
-const { readTelemetryState, setTelemetryEnabled } = await load("state");
+const { markTelemetryNotice, readTelemetryState, recordSetupTelemetryChoice, setTelemetryEnabled } =
+	await load("state");
 
+const UNDECIDED = {
+	available: true,
+	noticeAvailable: true,
+	enabled: false,
+	decision: null,
+	installId: null,
+	lastSentDay: null,
+	startDay: null,
+	noticeDismissed: false,
+};
 const AT_TWO = Date.parse("2026-10-27T02:00:00Z");
+const DAY_MS = 86_400_000;
 const NEXT_DAY = AT_TWO + 86_400_000;
 const HEARTBEAT = "https://kite-telemetry.midego.net/v1/heartbeat";
 const requests = [];
@@ -94,8 +108,7 @@ async function defaultInstall(t, extra = {}) {
 		...extra,
 	};
 	globalThis.__kiteNodeEnv = env;
-	const state = await readTelemetryState(env);
-	assert.deepEqual(state, { available: true, enabled: false, installId: null, lastSentDay: null }, "no saved choice");
+	assert.deepEqual(await readTelemetryState(env), UNDECIDED, "no saved choice");
 	return env;
 }
 
@@ -142,13 +155,39 @@ test("the Node scheduler's 02:00 run sends nothing for a default install", async
 	requests.length = 0;
 	await runNodeScheduler(env, AT_TWO + 30_000);
 	assert.deepEqual(requests, []);
-	assert.deepEqual(await readTelemetryState(env), {
-		available: true,
-		enabled: false,
-		installId: null,
-		lastSentDay: null,
-	});
+	assert.deepEqual(await readTelemetryState(env), UNDECIDED);
 	await setTelemetryEnabled(env, true);
 	await runNodeScheduler(env, NEXT_DAY + 30_000);
 	assert.deepEqual(requests, [HEARTBEAT], "the same run once opted in");
+});
+
+test("after the notice, neither cron path sends before the start day, and both do on it", async (t) => {
+	for (const [name, run, extra] of [
+		["Worker", (env, time) => runWorkerCron(env, time), {}],
+		["Node", (env, time) => runNodeScheduler(env, time + 30_000), { KITE_RUNTIME: "node" }],
+	]) {
+		const env = await defaultInstall(t, extra);
+		requests.length = 0;
+		// Seen on 26 October at 15:00 UTC: sending may start on 10 November.
+		await markTelemetryNotice(env, "shown", new Date(AT_TWO - 11 * 3_600_000));
+		assert.equal((await readTelemetryState(env)).startDay, "2026-11-10", name);
+		for (let time = AT_TWO; time < Date.parse("2026-11-10T02:00:00Z"); time += DAY_MS) await run(env, time);
+		assert.deepEqual(requests, [], `${name}: nothing during the 14 days`);
+		assert.equal((await readTelemetryState(env)).installId, null, `${name}: no id during the 14 days`);
+		await run(env, Date.parse("2026-11-10T02:00:00Z"));
+		assert.deepEqual(requests, [HEARTBEAT], `${name}: the start day's run reports`);
+	}
+});
+
+test("a setup finished with the switch off never reports from either cron path", async (t) => {
+	for (const extra of [{}, { KITE_RUNTIME: "node" }]) {
+		const env = await defaultInstall(t, extra);
+		requests.length = 0;
+		await recordSetupTelemetryChoice(env, false);
+		for (let day = 0; day < 30; day += 1)
+			if (extra.KITE_RUNTIME) await runNodeScheduler(env, AT_TWO + day * DAY_MS + 30_000);
+			else await runWorkerCron(env, AT_TWO + day * DAY_MS);
+		assert.deepEqual(requests, []);
+		assert.deepEqual(await readTelemetryState(env), { ...UNDECIDED, decision: "off" });
+	}
 });

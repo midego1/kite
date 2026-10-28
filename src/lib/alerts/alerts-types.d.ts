@@ -4,7 +4,8 @@ export type AlertRuleId =
 	| "outbound_stuck"
 	| "webhook_exhausted"
 	| "relay_signature"
-	| "relay_signature_legacy";
+	| "relay_signature_legacy"
+	| "database_nearly_full";
 
 /** When the email relay last sent a request without a headers signature, a wrong one, or the legacy form (ms). */
 export type RelaySignatureState = { missingAt?: number; invalidAt?: number; legacyAt?: number };
@@ -17,6 +18,8 @@ export type AlertSnapshot = {
 	webhookExhausted: number;
 	webhookLastAttemptAt: number | null;
 	relaySignature: RelaySignatureState;
+	/** Percent of the database size limit in use; null when the size or the limit is unknown. */
+	databaseUsedPercent?: number | null;
 };
 
 export type ActiveAlert = { rule: AlertRuleId; fingerprint: string; count: number };

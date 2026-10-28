@@ -139,6 +139,7 @@ export async function createImapImportJob(
 	form: ImapFormState,
 	destination: string,
 	label: string,
+	confirmDatabaseFull = false,
 ): Promise<ImportJob> {
 	const response = await authFetch("/api/import/jobs", {
 		method: "POST",
@@ -155,6 +156,7 @@ export async function createImapImportJob(
 			folder: form.folder,
 			limit: Number(form.limit),
 			importAll: form.importAll,
+			confirmDatabaseFull,
 		}),
 	});
 	const data = (await response.json()) as { job?: ImportJob; error?: string };
@@ -179,6 +181,26 @@ export async function cancelImportJob(id: string): Promise<void> {
 
 export function isActiveImportJob(job: ImportJob): boolean {
 	return job.status === "pending" || job.status === "running";
+}
+
+/** A job that stopped itself (the database is nearly full) and waits for Resume or Cancel. */
+export function isPausedImportJob(job: ImportJob): boolean {
+	return job.status === "paused";
+}
+
+export async function resumeImportJob(
+	id: string,
+	confirmDatabaseFull = false,
+): Promise<"resumed" | "needs_confirmation"> {
+	const response = await authFetch(`/api/import/jobs/${encodeURIComponent(id)}/resume`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ confirmDatabaseFull }),
+	});
+	if (response.ok) return "resumed";
+	const data = (await response.json().catch(() => ({}))) as { error?: string; code?: string };
+	if (data.code === "DATABASE_NEARLY_FULL") return "needs_confirmation";
+	throw new Error(data.error ?? "Unable to resume import");
 }
 
 export function getImportJobPercent(job: ImportJob): number {
@@ -230,4 +252,22 @@ function normalizeFolderName(value: string): string {
 		.replace(/^\[gmail\]\//, "")
 		.replace(/\s+/g, " ")
 		.trim();
+}
+
+/** Messages a limited IMAP import will read across the selected sources; null for whole folders. */
+export function estimatedImapMessages(form: ImapFormState, sources: number): number | null {
+	return form.importAll ? null : Math.max(Number(form.limit) || 0, 0) * sources;
+}
+
+export function canSubmitImap(input: {
+	form: ImapFormState;
+	hasMailbox: boolean;
+	sources: number;
+	loading: boolean;
+	/** The database is or would be above 90% of its limit and "Import anyway" is unchecked. */
+	blockedBySize: boolean;
+}): boolean {
+	const { form } = input;
+	const filled = !!form.host && !!form.username && !!form.password;
+	return filled && input.hasMailbox && input.sources > 0 && !input.loading && !input.blockedBySize;
 }

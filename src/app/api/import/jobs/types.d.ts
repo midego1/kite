@@ -5,4 +5,6 @@ export type ImapImportJobRequest = ImapImportRequest & {
 	label?: string;
 	/** false imports only the newest `limit` messages. Defaults to the whole folder. */
 	importAll?: boolean;
+	/** "Import anyway": the database is or would be above 90% of its limit. */
+	confirmDatabaseFull?: boolean;
 };

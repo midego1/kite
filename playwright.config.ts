@@ -59,6 +59,8 @@ export default defineConfig({
 			EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK: "1",
 			// Sends both abuse.ch APIs to the fake on 127.0.0.1 (e2e/support/fake-abuse-ch.ts); nothing reaches abuse.ch.
 			ABUSE_CH_TEST_ORIGIN: `http://127.0.0.1:${FAKE_ABUSE_CH_PORT}`,
+			// Lets specs inject a database size with X-Kite-Test-Database-Size (e2e/60-database-size.spec.ts).
+			DATABASE_SIZE_TEST_HEADER: "1",
 			// A `.invalid` host turns sending off, so no e2e run can post usage statistics to the real collector.
 			KITE_TELEMETRY_URL: "https://kite-telemetry.e2e.invalid/v1/heartbeat",
 			// Storage credentials are only ever saved encrypted, so the storage spec needs a key; invented, e2e only.

@@ -7,10 +7,22 @@ import Database from "better-sqlite3";
  */
 type Row = Record<string, unknown>;
 
-function meta(info?: Database.RunResult) {
+/** What D1 reports as `size_after`: the database size in bytes (`page_count * page_size`; WAL pages included). */
+const pageSizes = new WeakMap<Database.Database, number>();
+
+function sizeAfter(db: Database.Database): number {
+	let pageSize = pageSizes.get(db);
+	if (pageSize === undefined) {
+		pageSize = Number(db.pragma("page_size", { simple: true }));
+		pageSizes.set(db, pageSize);
+	}
+	return Number(db.pragma("page_count", { simple: true })) * pageSize;
+}
+
+function meta(db: Database.Database, info?: Database.RunResult) {
 	return {
 		duration: 0,
-		size_after: 0,
+		size_after: sizeAfter(db),
 		rows_read: 0,
 		rows_written: info?.changes ?? 0,
 		last_row_id: Number(info?.lastInsertRowid ?? 0),
@@ -67,10 +79,10 @@ class SqlitePreparedStatement {
 			const results = this.statement()
 				.raw(false)
 				.all(...this.params) as T[];
-			return { results, success: true as const, meta: meta() };
+			return { results, success: true as const, meta: meta(this.db) };
 		}
 		const info = this.statement().run(...this.params);
-		return { results: [] as T[], success: true as const, meta: meta(info) };
+		return { results: [] as T[], success: true as const, meta: meta(this.db, info) };
 	}
 
 	async run<T = Row>() {

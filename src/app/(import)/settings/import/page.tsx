@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { importMessageFiles } from "@/components/settings/import-messages-utils";
 import { ImportJobsPanel } from "@/components/settings/import-jobs-panel";
+import { ImportSizeNotice } from "@/components/settings/import-size-notice";
 import type {
 	ImapFormState,
 	ImportResult,
@@ -21,7 +22,9 @@ import type {
 	ImportProgress,
 } from "./types";
 import {
+	canSubmitImap,
 	createImapImportJob,
+	estimatedImapMessages,
 	ensureImportDestination,
 	fetchImapFolders,
 	filterCustomImapFolders,
@@ -64,6 +67,8 @@ export default function SettingsImportPage() {
 	const [imapLoading, setImapLoading] = useState(false);
 	const [imapProgress, setImapProgress] = useState<ImportProgress | null>(null);
 	const [jobsRefreshKey, setJobsRefreshKey] = useState(0);
+	const [sizeConfirmRequired, setSizeConfirmRequired] = useState(false);
+	const [importAnyway, setImportAnyway] = useState(false);
 	const selectedSources = useMemo(() => getSelectedImportSources(selectedSections), [selectedSections]);
 	const fileImportSource = getFileImportSource(selectedSources);
 	const sourceSummary =
@@ -141,7 +146,7 @@ export default function SettingsImportPage() {
 				});
 				const destination = await getDestination(source);
 				const folder = resolveImapSourceFolder(source, discoveredFolders);
-				await createImapImportJob(selectedMailbox.id, { ...imapForm, folder }, destination, source.label);
+				await createImapImportJob(selectedMailbox.id, { ...imapForm, folder }, destination, source.label, importAnyway);
 				setJobsRefreshKey((key) => key + 1);
 			}
 			setImapProgress(null);
@@ -383,15 +388,22 @@ export default function SettingsImportPage() {
 										and imported into matching new or existing Kite folders. Imports run in the background, so you can
 										leave this page.
 									</p>
+									<ImportSizeNotice
+										messages={estimatedImapMessages(imapForm, selectedSources.length)}
+										importAnyway={importAnyway}
+										onImportAnywayChange={setImportAnyway}
+										onRequiresConfirmation={setSizeConfirmRequired}
+									/>
 									<Button
 										type="submit"
 										disabled={
-											!selectedMailbox ||
-											selectedSources.length === 0 ||
-											!imapForm.host ||
-											!imapForm.username ||
-											!imapForm.password ||
-											imapLoading
+											!canSubmitImap({
+												form: imapForm,
+												hasMailbox: !!selectedMailbox,
+												sources: selectedSources.length,
+												loading: imapLoading,
+												blockedBySize: sizeConfirmRequired && !importAnyway,
+											})
 										}
 									>
 										<Upload className="h-4 w-4" />

@@ -57,6 +57,8 @@ Turning Mail import off pauses background IMAP jobs. They are not failed or canc
 - The safety net that restarts stalled jobs does not run while the module is off.
 - Within about five minutes of turning Mail import on again, every paused job continues from where it stopped, on Cloudflare and on the Node runtime.
 
+A job can also pause itself when the database is nearly full: at 90% of its size limit it stops with the status **Paused** and keeps its saved credentials until you press **Resume** (which asks for confirmation while the database is still above 90%) or cancel it. A job paused for more than 7 days is cancelled and its credentials erased. See [Database size](operations.md#database-size).
+
 Cancelling a job needs Mail import to be on, because the cancel button and its API belong to the module. The Modules page reminds you that paused jobs keep their saved credentials.
 
 ## Per-user access

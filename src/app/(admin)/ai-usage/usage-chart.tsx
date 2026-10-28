@@ -161,7 +161,13 @@ export function UsageChart({ daily, timeZone, metric, onMetricChange }: UsageCha
 										{top > 0 && <span className={cn("w-full", series[1].className)} style={{ flexGrow: top }} />}
 									</span>
 								</button>
-								<span className="h-5 whitespace-nowrap pt-1 text-[11px] leading-4 text-neutral-500" aria-hidden="true">
+								<span
+									className={cn(
+										"h-5 whitespace-nowrap pt-1 text-[11px] leading-4 text-neutral-500",
+										index === daily.length - 1 && "self-end",
+									)}
+									aria-hidden="true"
+								>
 									{index % every === 0 || index === daily.length - 1 ? formatDailyLabel(day.date) : ""}
 								</span>
 							</div>

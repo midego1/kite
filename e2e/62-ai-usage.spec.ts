@@ -80,7 +80,8 @@ test("hovering or focusing a day's bar shows its tokens, requests, cost, failure
 	// Escape closes a tooltip a pointer opened too.
 	await page.keyboard.press("Escape");
 	await expect(tooltip).toBeHidden();
-	await bar.hover({ position: { x: 2, y: 2 } });
+	await page.mouse.move(0, 0);
+	await bar.hover();
 	await expect(tooltip).toBeVisible();
 	await page.mouse.move(0, 0);
 	await expect(tooltip).toBeHidden();

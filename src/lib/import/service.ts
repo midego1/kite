@@ -14,6 +14,7 @@ import { dedupeKeyOfStored, importDedupeKey, storedIdVariants } from "./dedupe-u
 import { importMessageDate } from "./date-utils";
 import { getImportMessagePlacement } from "./destination";
 import type { ImportDestination } from "./destination-types";
+import { applyImportHints, getImportMessageHints } from "./message-hints-utils";
 import type { ImportMailboxResult, ImportMessageInput } from "./types";
 
 export async function importMessagesToMailbox(
@@ -23,6 +24,12 @@ export async function importMessagesToMailbox(
 		mailboxId: string;
 		destination: ImportDestination;
 		messages: ImportMessageInput[];
+		/**
+		 * Uploaded files carry their state in their headers (`Status`, `X-Gmail-Labels`, `X-Spam-Flag`): read it for
+		 * messages without source flags and let it move Inbox uploads to spam or trash. IMAP and module imports leave
+		 * it off.
+		 */
+		headerHints?: boolean;
 	},
 ): Promise<ImportMailboxResult> {
 	const result: ImportMailboxResult = { imported: 0, skipped: 0, errors: [] };
@@ -32,7 +39,16 @@ export async function importMessagesToMailbox(
 		try {
 			const parsed = await parseRawMime(message.raw);
 			const identity = await importDedupeKey(parsed.messageId, message.raw);
-			parsedMessages.push({ ...message, parsed, providerMessageId: identity.stored, dedupeKey: identity.key });
+			const hints = input.headerHints ? getImportMessageHints(message.raw) : {};
+			parsedMessages.push({
+				...message,
+				read: message.read ?? hints.read,
+				starred: message.starred ?? hints.starred,
+				destination: applyImportHints(input.destination, hints),
+				parsed,
+				providerMessageId: identity.stored,
+				dedupeKey: identity.key,
+			});
 		} catch (error) {
 			result.skipped += 1;
 			result.errors.push(`${message.filename}: ${error instanceof Error ? error.message : "Import failed"}`);
@@ -56,7 +72,6 @@ export async function importMessagesToMailbox(
 			await importParsedMessage(env, {
 				userId: input.userId,
 				mailboxId: input.mailboxId,
-				destination: input.destination,
 				message,
 				offloadBodies,
 			});
@@ -69,7 +84,13 @@ export async function importMessagesToMailbox(
 	return result;
 }
 
-type ParsedImport = ImportMessageInput & { parsed: ParsedEmail; providerMessageId: string; dedupeKey: string };
+type ParsedImport = ImportMessageInput & {
+	/** Where this message goes: the batch's destination, unless its own headers refine it. */
+	destination: ImportDestination;
+	parsed: ParsedEmail;
+	providerMessageId: string;
+	dedupeKey: string;
+};
 
 /** The dedupe keys of `keys` the mailbox already holds, whichever spelling (brackets or not) a row stored. */
 async function findExistingDedupeKeys(
@@ -100,7 +121,6 @@ async function importParsedMessage(
 	input: {
 		userId: string;
 		mailboxId: string;
-		destination: ImportDestination;
 		message: ParsedImport;
 		offloadBodies: boolean;
 	},
@@ -113,7 +133,7 @@ async function importParsedMessage(
 	const toAddr = parsed.toAddr ?? "";
 	// The Date header first, the source's INTERNALDATE when it has none (or none that parses); never far in the future.
 	const createdAt = importMessageDate([parsed.date, receivedAt], new Date());
-	const placement = getImportMessagePlacement(input.destination);
+	const placement = getImportMessagePlacement(input.message.destination);
 	// A large HTML body goes to the Mail store; the row keeps a text body for search and snippets. The object is
 	// written first and the row is inserted with its key in one batch, so a failure at any step leaves at most an
 	// orphan object, never a row whose HTML is missing.
@@ -164,11 +184,14 @@ async function importParsedMessage(
 			httpMetadata: { contentType: "message/rfc822" },
 		}),
 		storeMessageAttachments(env, messageId, parsed.attachments, { validate: false }),
-		upsertContactFromAddress(env, {
-			userId: input.userId,
-			address: contactAddress,
-			source: placement.direction === "outbound" ? "outbound" : "inbound",
-		}),
+		// A spammer does not become a contact (and is not looked up on Gravatar).
+		placement.status === "spam"
+			? null
+			: upsertContactFromAddress(env, {
+					userId: input.userId,
+					address: contactAddress,
+					source: placement.direction === "outbound" ? "outbound" : "inbound",
+				}),
 	]);
 	const failed = writes.find((write) => write.status === "rejected");
 	if (failed) {

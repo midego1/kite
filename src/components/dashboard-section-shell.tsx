@@ -63,7 +63,7 @@ export function DashboardSectionShell({ children, nav, ...guard }: DashboardSect
 										<main
 											id={MAIN_CONTENT_ID}
 											tabIndex={-1}
-											className="page-flush min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable bg-white focus:outline-none max-md:rounded-t-xl md:my-2 md:mr-2 md:rounded-xl md:border md:border-neutral-200 md:shadow-xs md:has-[[data-page-panels]]:overflow-hidden md:has-[[data-page-panels]]:border-transparent md:has-[[data-page-panels]]:bg-transparent md:has-[[data-page-panels]]:shadow-none md:has-[[data-page-panels]]:[scrollbar-gutter:auto]"
+											className="page-flush min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable bg-white focus:outline-none max-md:rounded-t-xl md:my-2 md:mr-2 md:rounded-xl md:border md:border-neutral-200 md:shadow-xs md:has-[[data-page-panels]]:overflow-hidden md:has-[[data-page-panels]]:border-transparent md:has-[[data-page-panels]]:bg-transparent md:has-[[data-page-panels]]:shadow-none md:has-[[data-page-panels]]:[scrollbar-gutter:auto] has-[[data-panel-header]]:[scrollbar-gutter:auto]"
 										>
 											{children}
 										</main>

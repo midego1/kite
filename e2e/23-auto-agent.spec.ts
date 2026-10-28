@@ -4528,7 +4528,7 @@ test.describe("calendar invite card", () => {
 			);
 
 			await page.goto("/calendar");
-			await page.getByRole("combobox", { name: "Calendar view" }).selectOption("month");
+			await chooseOption(page.getByRole("combobox", { name: "Calendar view" }), "month");
 			const label = (date: Date) =>
 				date.toLocaleDateString("en-US", {
 					weekday: "long",

@@ -51,7 +51,7 @@ function RowMenu({ item, onAction }: { item: DriveItemDto; onAction: (action: Dr
 				<button
 					type="button"
 					aria-label={`Actions for ${item.name}`}
-					className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-600 hover:bg-neutral-200"
+					className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 				>
 					<MoreVertical size={16} />
 				</button>
@@ -60,7 +60,7 @@ function RowMenu({ item, onAction }: { item: DriveItemDto; onAction: (action: Dr
 				<DropdownMenu.Content
 					align="end"
 					sideOffset={4}
-					className="z-[200] min-w-52 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl"
+					className="z-[200] min-w-52 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg"
 				>
 					{actions.map((action) => {
 						const { label, icon: Icon, danger } = ACTION_META[action];

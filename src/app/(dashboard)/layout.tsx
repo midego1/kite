@@ -150,7 +150,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 														id={MAIN_CONTENT_ID}
 														tabIndex={-1}
 														// One bordered panel for the page; the split mail views draw their own panels on the page background.
-														className="focus:outline-none min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable bg-white md:mt-2 md:mb-2 md:rounded-xl md:border md:border-neutral-200 md:shadow-xs has-[[data-reading-pane]]:border-transparent has-[[data-reading-pane]]:bg-transparent has-[[data-reading-pane]]:shadow-none has-[[data-reading-pane]]:[scrollbar-gutter:auto]"
+														className="focus:outline-none min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable bg-white md:mt-2 md:mb-2 md:rounded-xl md:border md:border-neutral-200 md:shadow-xs has-[[data-reading-pane]]:border-transparent has-[[data-reading-pane]]:bg-transparent has-[[data-reading-pane]]:shadow-none has-[[data-reading-pane]]:[scrollbar-gutter:auto] has-[[data-panel-header]]:[scrollbar-gutter:auto]"
 														aria-hidden={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
 														inert={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
 													>

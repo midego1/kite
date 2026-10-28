@@ -152,11 +152,11 @@ function ActivityLists({
 	return (
 		<>
 			<section aria-labelledby="agent-activity-actions" className="space-y-2">
-				<h3 id="agent-activity-actions" className="text-sm font-medium text-neutral-800">
+				<h3 id="agent-activity-actions" className="text-xs font-medium text-neutral-500">
 					Actions
 				</h3>
 				{data.actions.length === 0 ? (
-					<p className="rounded-lg border border-dashed border-neutral-200 px-4 py-6 text-center text-sm text-neutral-500">
+					<p className="rounded-xl border border-dashed border-neutral-300 px-4 py-8 text-center text-sm text-neutral-500">
 						Kite has not done anything in this mailbox yet.
 					</p>
 				) : (
@@ -169,7 +169,7 @@ function ActivityLists({
 			</section>
 			{data.skippedJobs.length > 0 && (
 				<section aria-labelledby="agent-activity-skipped" className="space-y-2">
-					<h3 id="agent-activity-skipped" className="text-sm font-medium text-neutral-800">
+					<h3 id="agent-activity-skipped" className="text-xs font-medium text-neutral-500">
 						Messages Kite did not read
 					</h3>
 					<ul className={LIST_CLASS}>
@@ -213,7 +213,7 @@ export function AgentActivity({ mailboxId }: { mailboxId: string }) {
 			)}
 			{value.state === "loading" && <p className="text-sm text-neutral-500">Loading…</p>}
 			{value.state === "no-access" && (
-				<p className="rounded-lg border border-dashed border-neutral-200 px-4 py-6 text-center text-sm text-neutral-500">
+				<p className="rounded-xl border border-dashed border-neutral-300 px-4 py-8 text-center text-sm text-neutral-500">
 					Only people with full access to this mailbox can see Kite&apos;s activity.
 				</p>
 			)}

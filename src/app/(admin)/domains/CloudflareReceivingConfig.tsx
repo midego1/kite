@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { runReceivingSetup } from "./api";
 import { StatusRow } from "./status-row";
+import { ROW_BUTTON_CLASS } from "./utils";
 
 type Props = {
 	domainId: string;
@@ -42,7 +43,7 @@ export default function CloudflareReceivingConfig({ domainId, routingOk, routing
 							<Button
 								size="sm"
 								variant="outline"
-								className="bg-white"
+								className={ROW_BUTTON_CLASS}
 								disabled={busy || manual}
 								title={manual ? "DNS for this domain is managed manually" : undefined}
 								onClick={() => void setup()}

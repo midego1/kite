@@ -166,7 +166,9 @@ function HiddenInputs({
 
 function ColumnHeader({ view, selection }: { view: DriveListingView; selection: DriveSelection }) {
 	return (
-		<div className={`${DRIVE_GRID} shrink-0 border-b border-neutral-200 px-5 py-2 text-sm text-neutral-600`}>
+		<div
+			className={`${DRIVE_GRID} shrink-0 border-b border-neutral-200 bg-[#f6f8fc] px-5 py-2 text-xs text-neutral-500`}
+		>
 			<Checkbox
 				checked={selection.allSelected}
 				onChange={selection.toggleAll}
@@ -190,7 +192,7 @@ function LoadMore({ onLoad, loading }: { onLoad: () => void; loading: boolean })
 				type="button"
 				onClick={onLoad}
 				disabled={loading}
-				className="rounded-full px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+				className="rounded-lg px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900"
 			>
 				{loading ? "Loading…" : "Load more"}
 			</button>
@@ -200,7 +202,7 @@ function LoadMore({ onLoad, loading }: { onLoad: () => void; loading: boolean })
 
 function DropOverlay() {
 	return (
-		<div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-blue-500 bg-blue-50/80 text-blue-700">
+		<div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-blue-500 bg-blue-50/80 text-neutral-900">
 			<UploadCloud size={28} />
 			<span className="ml-3 text-base font-medium">Drop to upload</span>
 		</div>
@@ -237,7 +239,7 @@ function listingTitles(view: DriveListingView, folderId: string | null, listing:
 
 function TrashNote() {
 	return (
-		<p className="shrink-0 border-b border-neutral-200 bg-neutral-50 px-5 py-2 text-xs text-neutral-600">
+		<p className="shrink-0 border-b border-neutral-200 bg-[#f6f8fc] px-5 py-2 text-xs text-neutral-600">
 			Items in the trash are deleted forever after the retention period an admin sets.
 		</p>
 	);
@@ -261,8 +263,8 @@ type DriveHeaderProps = {
 function DriveHeader(props: DriveHeaderProps) {
 	const { view, folderId, query, selection, runBulk } = props;
 	return (
-		<div className="flex shrink-0 flex-col gap-3 border-b border-neutral-200 px-5 py-3">
-			<div className="flex flex-wrap items-center justify-between gap-3">
+		<div data-panel-header className="flex shrink-0 flex-col border-b border-neutral-200">
+			<div className="flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-neutral-200 px-4 py-2">
 				<DriveBreadcrumbs title={props.title} rootHref={props.rootHref} path={props.listing?.path ?? []} />
 				<div className="flex flex-wrap items-center gap-2">
 					{view === "my" && !folderId && (
@@ -271,7 +273,7 @@ function DriveHeader(props: DriveHeaderProps) {
 					{props.canWrite && <DriveCreateButtons onCommand={props.onCommand} />}
 				</div>
 			</div>
-			<div className="flex flex-wrap items-center justify-between gap-3">
+			<div className="flex min-h-12 flex-wrap items-center justify-between gap-3 px-4 py-2">
 				<DriveTypeChips
 					value={query.types}
 					onChange={(next: DriveCategory[]) => props.setParam("types", next.join(","))}
@@ -322,7 +324,7 @@ export function DriveBrowser({ view, folderId = null }: { view: DriveListingView
 				onFiles={(files) => uploads.uploadFiles(files, parentId)}
 				onFolder={(files) => void uploads.uploadFolder(files, parentId)}
 			/>
-			<div className="flex min-h-0 flex-1 flex-col rounded-t-3xl bg-white">
+			<div className="flex min-h-0 flex-1 flex-col bg-white">
 				<DriveHeader
 					{...{ view, folderId, title, rootHref, listing, query, canWrite, selection, onCommand, setParam, runBulk }}
 					onMove={() => setDialog({ kind: "move", items: selection.selected })}

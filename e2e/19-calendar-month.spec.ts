@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { chooseOption, expectSelectValue } from "./support/select";
 
 test.use({ timezoneId: "UTC" });
 
@@ -56,7 +57,7 @@ for (const variant of [
 			});
 		});
 		await page.goto("/calendar");
-		await page.getByRole("combobox", { name: "Calendar view" }).selectOption("month");
+		await chooseOption(page.getByRole("combobox", { name: "Calendar view" }), "month");
 		const month = page.locator('[aria-label="Monthly calendar"]');
 		await expect(month.getByRole("button", { name: "Show day 2026-01-31", exact: true })).toBeVisible();
 		await expect(month.getByRole("button", { name: /Month-end review/ })).toBeVisible();
@@ -76,8 +77,8 @@ for (const variant of [
 		);
 		await page.getByRole("button", { name: "Close event editor" }).click();
 		await month.getByRole("button", { name: "Show day 2026-06-30", exact: true }).click();
-		await expect(page.getByRole("combobox", { name: "Calendar view" })).toHaveValue("day");
-		await page.getByRole("combobox", { name: "Calendar view" }).selectOption("month");
+		await expectSelectValue(page.getByRole("combobox", { name: "Calendar view" }), "day");
+		await chooseOption(page.getByRole("combobox", { name: "Calendar view" }), "month");
 		await month.getByRole("button", { name: "Add event on 2026-06-30", exact: true }).click();
 		await expect(page.getByRole("dialog", { name: "Create event" })).toBeVisible();
 	});
@@ -142,7 +143,7 @@ test("tentative events carry a Tentative label and dashed border in month, week 
 	const week = page.locator('button[data-status="tentative"][title*="Hold for intro"]');
 	await expect(week).toHaveClass(/border-dashed/);
 	await expect(week).toContainText("Tentative");
-	await page.getByRole("combobox", { name: "Calendar view" }).selectOption("month");
+	await chooseOption(page.getByRole("combobox", { name: "Calendar view" }), "month");
 	const month = page.locator('[aria-label="Monthly calendar"]');
 	const chip = month.locator('button[data-status="tentative"]');
 	await expect(chip).toHaveCount(1);

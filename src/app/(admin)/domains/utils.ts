@@ -21,12 +21,19 @@ export function getDnsAuthStatusLabel(status: DnsAuthStatus): string {
 	}
 }
 
+/**
+ * The outline buttons inside the DNS and provider rows. They sit on tinted rows, so they keep an opaque face and,
+ * when disabled (DNS managed by hand, a setup in flight), readable grey text instead of half opacity (WCAG AA).
+ */
+export const ROW_BUTTON_CLASS =
+	"bg-white text-neutral-900 disabled:bg-neutral-50 disabled:text-neutral-500 disabled:opacity-100";
+
 export function getDnsAuthItemClass(status: DnsAuthStatus): string {
 	switch (status) {
 		case "ok":
-			return "bg-green-50 text-green-800";
+			return "bg-[#22c55e]/10";
 		case "missing":
-			return "bg-red-50 text-red-800";
+			return "bg-[#ef4444]/10";
 		default:
 			return "bg-neutral-100 text-neutral-600";
 	}

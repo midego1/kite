@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { importJobs } from "@/db/schema/import-jobs";
 import { getDatabaseSize } from "@/lib/db/size";
@@ -23,7 +23,16 @@ const FETCH_CHUNK_SIZE = 25;
  */
 export const MESSAGES_PER_RUN = 200;
 const RUN_TIME_BUDGET_MS = 5 * 60_000;
-export const LEASE_MS = 8 * 60_000;
+/**
+ * A run holds its job through a lease that it renews every `HEARTBEAT_MS` while it is alive (`startLeaseHeartbeat`),
+ * so the lease only has to outlast a few missed beats, and a worker that died is found within `LEASE_MS`. A single
+ * IMAP command may take up to ten minutes; the heartbeat keeps the lease through it.
+ */
+const LEASE_MS = 3 * 60_000;
+const HEARTBEAT_MS = 60_000;
+/** The lease and heartbeat intervals of a run; the tests pass shorter ones. */
+export type ImportTiming = { leaseMs: number; heartbeatMs: number };
+export const DEFAULT_IMPORT_TIMING: ImportTiming = { leaseMs: LEASE_MS, heartbeatMs: HEARTBEAT_MS };
 const MAX_STORED_ERRORS = 20;
 
 /** One queue invocation of a job: its signed-in session, what it may still do and what it did so far. */
@@ -33,6 +42,7 @@ export type ImportRun = {
 	job: ImportJobRow;
 	mailbox: { id: string; userId: string };
 	session: ImapSession;
+	timing: ImportTiming;
 	startedAt: number;
 	/** Messages this invocation may still read. */
 	budget: number;
@@ -120,6 +130,7 @@ export async function recordChunk(
 		total: number | null;
 		errors: string[];
 	},
+	leaseMs = LEASE_MS,
 ): Promise<boolean> {
 	const { errors, ...fields } = chunk;
 	const db = getDb(env);
@@ -131,11 +142,56 @@ export async function recordChunk(
 	if (row?.status !== "running" && row?.status !== "pending") return false;
 	const [held] = await db
 		.update(importJobs)
-		.set({ status: "running", leaseUntil: new Date(Date.now() + LEASE_MS), updatedAt: new Date() })
+		.set({ status: "running", leaseUntil: new Date(Date.now() + leaseMs), updatedAt: new Date() })
 		.where(and(eq(importJobs.id, job.id), inArray(importJobs.status, ["running", "pending"])))
 		.returning({ id: importJobs.id });
 	if (!held) return false;
-	return !(await pauseIfDatabaseFull(env, job));
+	// This run still has its batch open; it releases the lease when it stops, so a Resume cannot start a second run.
+	return !(await pauseIfDatabaseFull(env, job, { keepLease: true }));
+}
+
+/**
+ * Renews the lease of the job this run holds every `timing.heartbeatMs` until `stop()`. A beat touches only
+ * `lease_until`, and only while the job is running, pending or paused (a user pause keeps the lease until the run
+ * stops) and its lease has not expired, so it can neither revive a cancelled, failed or completed job nor take a lease
+ * another run has claimed since. `stop()` waits for a beat in flight, so none lands after the run released the lease.
+ */
+export function startLeaseHeartbeat(
+	env: CloudflareEnv,
+	jobId: string,
+	timing: ImportTiming,
+): { stop: () => Promise<void> } {
+	let beating: Promise<void> | null = null;
+	let stopped = false;
+	const beat = () => {
+		if (stopped || beating) return;
+		const now = new Date();
+		beating = getDb(env)
+			.update(importJobs)
+			.set({ leaseUntil: new Date(now.getTime() + timing.leaseMs) })
+			.where(
+				and(
+					eq(importJobs.id, jobId),
+					inArray(importJobs.status, ["running", "pending", "paused"]),
+					gt(importJobs.leaseUntil, now),
+				),
+			)
+			.then(
+				() => undefined,
+				() => undefined,
+			)
+			.finally(() => {
+				beating = null;
+			});
+	};
+	const timer = setInterval(beat, timing.heartbeatMs);
+	return {
+		stop: async () => {
+			stopped = true;
+			clearInterval(timer);
+			await beating;
+		},
+	};
 }
 
 /**
@@ -175,13 +231,19 @@ export async function markPaused(
  * Pauses a running job whose database has reached its stop point (90% of the limit, 98% once confirmed). It keeps
  * the saved source password and cursor and waits for Resume.
  */
-export async function pauseIfDatabaseFull(env: CloudflareEnv, job: ImportJobRow): Promise<boolean> {
+export async function pauseIfDatabaseFull(
+	env: CloudflareEnv,
+	job: ImportJobRow,
+	options: { keepLease?: boolean } = {},
+): Promise<boolean> {
 	const note = importPauseNote(await getDatabaseSize(env), job.lastError);
 	if (!note) return false;
-	await markPaused(env, and(eq(importJobs.id, job.id), eq(importJobs.status, "running")), {
-		lastError: note,
-		pauseReason: "database",
-	});
+	await markPaused(
+		env,
+		and(eq(importJobs.id, job.id), eq(importJobs.status, "running")),
+		{ lastError: note, pauseReason: "database" },
+		options,
+	);
 	return true;
 }
 
@@ -204,7 +266,12 @@ export async function runFolderJob(run: ImportRun): Promise<ImportRunOutcome> {
 		const result = await importBatch(run, job.destination, batch);
 		addChunkResult(run, uids.length, { ...result, missing: uids.length - batch.length });
 		cursorUid = uids[uids.length - 1];
-		return recordChunk(run.env, job, { ...run.progress, cursorUid, total: run.total, errors: run.errors });
+		return recordChunk(
+			run.env,
+			job,
+			{ ...run.progress, cursorUid, total: run.total, errors: run.errors },
+			run.timing.leaseMs,
+		);
 	});
 	if (handled === null) return "stopped";
 	return handled >= remaining.length ? "done" : "more";

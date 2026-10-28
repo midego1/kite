@@ -272,7 +272,12 @@ async function runAccountFolder(
 				cursorUid: part[part.length - 1],
 			});
 			addChunkResult(run, part.length, { ...result, missing: missing + drafts });
-			return recordChunk(run.env, run.job, { ...run.progress, cursorUid: null, total: run.total, errors: run.errors });
+			return recordChunk(
+				run.env,
+				run.job,
+				{ ...run.progress, cursorUid: null, total: run.total, errors: run.errors },
+				run.timing.leaseMs,
+			);
 		},
 	);
 	if (handled === null) return "stopped";

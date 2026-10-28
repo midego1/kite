@@ -31,12 +31,14 @@ import {
 } from "./account-jobs";
 import type { AccountFolderRequest } from "./folder-mapping-types";
 import {
-	LEASE_MS,
+	DEFAULT_IMPORT_TIMING,
 	MESSAGES_PER_RUN,
 	markPaused,
 	pauseIfDatabaseFull,
 	runFolderJob,
+	startLeaseHeartbeat,
 	type ImportJobRow,
+	type ImportTiming,
 	type ImportRun,
 } from "./job-run";
 
@@ -247,9 +249,9 @@ export async function resumeImportJob(
 			.catch(() => undefined);
 	if (!resumed.length) return "not_found";
 	// A lease still held means a run is finishing its batch, or its worker died. The run queued now would meet the
-	// lease and leave, so a second one is queued for when the lease has expired: a dead worker's job then restarts
-	// at once instead of waiting for the next cron tick as well. A live run renews its lease, and the lease keeps
-	// this message from starting a second run beside it.
+	// lease and leave, so a second one is queued for when the lease runs out. A live run renews its lease every
+	// minute, so that message then finds it held and leaves (the run itself hands the job on); a dead worker's job is
+	// claimed by it within one lease (three minutes) instead of waiting for the lease and then the next cron tick.
 	await enqueueImportJob(env, jobId);
 	const leaseSeconds = job.leaseUntil ? Math.ceil((job.leaseUntil.getTime() - Date.now()) / 1000) : 0;
 	if (leaseSeconds > 0) await enqueueImportJob(env, jobId, leaseSeconds + 1);
@@ -290,13 +292,18 @@ export function serializeImportJob(job: ImportJobRow & { folders?: ImportJobFold
  * account run one at a time, because providers such as iCloud and Gmail limit
  * concurrent IMAP connections per account.
  */
-export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: CapabilityCallContext): Promise<void> {
+export async function processImportJob(
+	env: CloudflareEnv,
+	jobId: string,
+	ctx: CapabilityCallContext,
+	timing: ImportTiming = DEFAULT_IMPORT_TIMING,
+): Promise<void> {
 	const db = getDb(env);
 	const now = new Date();
 	const job = await selectRow(db, importJobs, eq(importJobs.id, jobId));
 	if (!job || !ACTIVE_STATUSES.includes(job.status as (typeof ACTIVE_STATUSES)[number])) return;
 	if (job.leaseUntil && job.leaseUntil > now) return;
-	if (!(await claimJob(env, job, now))) {
+	if (!(await claimJob(env, job, now, timing.leaseMs))) {
 		// Another job for the same account holds the connection; it starts this one when it finishes.
 		return;
 	}
@@ -314,6 +321,8 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 	if (await pauseIfDatabaseFull(env, job)) return;
 
 	let run: ImportRun | null = null;
+	// From here the lease is renewed for as long as this run lives, however long one IMAP command takes.
+	const heartbeat = startLeaseHeartbeat(env, job.id, timing);
 	try {
 		const session = await openImportSession(env, { ...job, password: (await openSetting(env, job.password)) ?? "" });
 		run = {
@@ -322,6 +331,7 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 			job,
 			mailbox,
 			session,
+			timing,
 			startedAt: Date.now(),
 			budget: MESSAGES_PER_RUN,
 			progress: { processed: job.processed, imported: job.imported, skipped: job.skipped },
@@ -343,10 +353,14 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 	} catch (error) {
 		await recordRunError(env, { ...job, total: run?.total ?? job.total }, error);
 	} finally {
+		await heartbeat.stop();
 		await run?.session.close().catch(() => undefined);
-		await releaseImportLease(env, job.id);
-		// A run in flight when Cancel closed the folders (or that failed) must not leave one open.
-		if (job.scope === "account") await closeFoldersOfEndedJob(env, job.id);
+		try {
+			await releaseImportLease(env, job.id);
+		} finally {
+			// A run in flight when Cancel closed the folders (or that failed) must not leave one open.
+			if (job.scope === "account") await closeFoldersOfEndedJob(env, job.id);
+		}
 	}
 }
 
@@ -378,13 +392,13 @@ async function releaseImportLease(env: CloudflareEnv, jobId: string): Promise<vo
  * Takes the job's lease. Jobs that share a source account run one at a time, because providers such as iCloud and
  * Gmail limit concurrent IMAP connections per account.
  */
-async function claimJob(env: CloudflareEnv, job: ImportJobRow, now: Date): Promise<boolean> {
+async function claimJob(env: CloudflareEnv, job: ImportJobRow, now: Date, leaseMs: number): Promise<boolean> {
 	const nowSeconds = Math.floor(now.getTime() / 1000);
 	const claimed = await getDb(env)
 		.update(importJobs)
 		.set({
 			status: "running",
-			leaseUntil: new Date(now.getTime() + LEASE_MS),
+			leaseUntil: new Date(now.getTime() + leaseMs),
 			startedAt: job.startedAt ?? now,
 			updatedAt: now,
 		})

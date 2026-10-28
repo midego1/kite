@@ -6,6 +6,7 @@ import { legacyStorageMigrationScript } from "@/components/legacy-storage-utils"
 import { sidebarBootstrapScript } from "@/components/sidebar-state-utils";
 import { themeBootstrapScript } from "@/components/theme-utils";
 import { appearanceBootstrapScript } from "@/components/appearance-preferences";
+import { assetRecoveryScript } from "@/components/asset-recovery-utils";
 import { isNodeRuntime } from "@/lib/runtime";
 import { getHomeBranding } from "./home-server-utils";
 import "./globals.css";
@@ -74,6 +75,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 			suppressHydrationWarning
 		>
 			<head>
+				{/* First, so it is listening before the app's entry script is parsed. */}
+				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: assetRecoveryScript }} />
 				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: legacyStorageMigrationScript }} />
 				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: sidebarBootstrapScript }} />
 				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />

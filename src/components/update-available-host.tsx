@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import { TOAST_ACTION_CLASS } from "@/components/ui/toast-styles";
 import { AUTH_ME_QUERY_KEY } from "@/lib/auth/me-client";
 import type { AuthMeResponse } from "@/lib/auth/me-client-types";
+import { STALE_ASSETS_EVENT, markAppReady } from "./asset-recovery-utils";
 import {
 	UPDATE_CHECK_INTERVAL_MS,
 	UPDATE_TOAST_ID,
@@ -75,13 +76,18 @@ function showUpdateAvailableToast() {
 /**
  * Tells a signed-in tab once that a newer deployment of this install is live.
  * It only compares the server's own version over time; nothing outside the
- * install is asked.
+ * install is asked. A chunk that fails to load after the app has rendered
+ * (see asset-recovery-utils.ts) checks at once instead of waiting for the next check.
  */
 export function UpdateAvailableHost() {
 	const userId = useSessionUserId();
 	// The version belongs to the code this tab loaded, so it outlives sign-out and account switches.
 	const knownVersion = useRef("");
 	const shown = useRef(false);
+
+	useEffect(() => {
+		markAppReady();
+	}, []);
 
 	useEffect(() => {
 		if (!userId) return;
@@ -113,14 +119,20 @@ export function UpdateAvailableHost() {
 		}
 
 		const onChange = () => void check();
+		const onStaleAssets = () => {
+			lastCheckAt = null;
+			void check();
+		};
 		void check();
 		const interval = window.setInterval(onChange, UPDATE_CHECK_INTERVAL_MS);
 		window.addEventListener("focus", onChange);
+		window.addEventListener(STALE_ASSETS_EVENT, onStaleAssets);
 		document.addEventListener("visibilitychange", onChange);
 		return () => {
 			active = false;
 			window.clearInterval(interval);
 			window.removeEventListener("focus", onChange);
+			window.removeEventListener(STALE_ASSETS_EVENT, onStaleAssets);
 			document.removeEventListener("visibilitychange", onChange);
 			if (shown.current) {
 				// Hide on sign-out without allowing another notice in this tab.

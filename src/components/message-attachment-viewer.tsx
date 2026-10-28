@@ -1,49 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { ArrowDownToLine, FileWarning } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { authFetch } from "@/lib/auth/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { MessageAttachmentViewerProps } from "./message-attachment-viewer-types";
+import { useAttachmentText } from "./use-attachment-text";
+import { useObjectUrl } from "./use-object-url";
 import { getAttachmentFileUrl, getAttachmentPreviewKind } from "./message-attachment-viewer-utils";
 
-export function MessageAttachmentViewer({ attachment, messageId, onOpenChange, open }: MessageAttachmentViewerProps) {
-	const [textPreview, setTextPreview] = useState<{ url: string; content: string; error: string } | null>(null);
-
+export function MessageAttachmentViewer({
+	attachment,
+	file = null,
+	messageId,
+	onOpenChange,
+	open,
+}: MessageAttachmentViewerProps) {
 	const previewKind = attachment ? getAttachmentPreviewKind(attachment) : "unsupported";
-	const previewUrl = attachment ? getAttachmentFileUrl(messageId, attachment.id, "preview") : "";
-	const downloadUrl = attachment ? getAttachmentFileUrl(messageId, attachment.id, "download") : "";
-
-	const currentTextPreview = textPreview?.url === previewUrl ? textPreview : null;
-	const textContent = currentTextPreview?.content ?? "";
-	const textError = currentTextPreview?.error ?? "";
-
-	useEffect(() => {
-		if (!open || !attachment || previewKind !== "text") return;
-		let cancelled = false;
-
-		authFetch(previewUrl)
-			.then(async (response) => {
-				if (!response.ok) throw new Error("Could not load this attachment");
-				const content = await response.text();
-				if (!cancelled) setTextPreview({ url: previewUrl, content, error: "" });
-			})
-			.catch((error) => {
-				if (!cancelled) {
-					setTextPreview({
-						url: previewUrl,
-						content: "",
-						error: error instanceof Error ? error.message : "Could not load this attachment",
-					});
-				}
-			});
-
-		return () => {
-			cancelled = true;
-		};
-	}, [attachment, open, previewKind, previewUrl]);
+	const fileUrl = useObjectUrl(open ? file : null);
+	const previewUrl = file ? fileUrl : attachment ? getAttachmentFileUrl(messageId, attachment.id, "preview") : "";
+	const downloadUrl = file ? fileUrl : attachment ? getAttachmentFileUrl(messageId, attachment.id, "download") : "";
+	const { content: textContent, error: textError } = useAttachmentText({
+		enabled: open && !!attachment && previewKind === "text",
+		file,
+		url: previewUrl,
+	});
 
 	if (!attachment) return null;
 

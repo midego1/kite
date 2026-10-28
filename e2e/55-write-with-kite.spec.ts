@@ -5,6 +5,7 @@ import { createSignedInAccount, okJson, selectMailbox } from "./support/auto-rea
 import { startFakeModel } from "./support/fake-model";
 import { COMPOSE_SHORTER_BODY, COMPOSE_TRANSLATE_BODY, COMPOSE_WRITE_BODY } from "./support/fake-model-scenarios";
 import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types";
+import { contrastBetween } from "./support/contrast";
 import { apiContext, openMessage, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
 
 let api: APIRequestContext;
@@ -149,6 +150,52 @@ test.describe("Write with Kite", () => {
 			await account.api.dispose();
 		}
 	});
+
+	for (const style of ["kite", "lavender", "classic"] as const) {
+		for (const theme of ["dark", "light"] as const) {
+			test(`the suggested text is readable in ${style} ${theme}`, async ({ browser }, testInfo) => {
+				const account = await newAccount(`wwc${style[0]}${theme[0]}`);
+				const context = await browser.newContext({ storageState: await account.api.storageState() });
+				await context.addInitScript(
+					({ style, theme }) => {
+						localStorage.setItem("kite-style", style);
+						localStorage.setItem("kite-theme", theme);
+					},
+					{ style, theme },
+				);
+				const page = await context.newPage();
+				try {
+					await selectMailbox(page, account.mailboxId);
+					await openComposer(page);
+					const panel = await openPanel(page);
+					await panel
+						.getByLabel("What should this email say?")
+						.fill("Tell Sam Tuesday at ten works [[scenario:compose-write]]");
+					await panel.getByRole("button", { name: "Write" }).click();
+					const preview = panel.getByRole("region", { name: "Preview" });
+					await expect(preview).toContainText("Tuesday at ten works for me.");
+					await expect(panel.getByRole("button", { name: "Insert", exact: true })).toBeVisible();
+					await expect(page.locator("html")).toHaveClass(theme === "dark" ? /dark/ : /light/);
+					// WCAG AA for normal text: the preview's own colours against each other, and its box against the panel.
+					expect(await contrastBetween(preview)).toBeGreaterThanOrEqual(4.5);
+					expect(await contrastBetween(preview, panel)).toBeGreaterThan(1.05);
+					if (theme === "dark") {
+						// The old preview was near-white in dark mode; the box must now be darker than its text.
+						const [text, background] = await preview.evaluate((element) => {
+							const style = getComputedStyle(element);
+							return [style.color, style.backgroundColor];
+						});
+						const lightness = (color: string) => Number(color.match(/\d+/g)?.[0] ?? 0);
+						expect(lightness(background)).toBeLessThan(lightness(text));
+					}
+					await page.screenshot({ path: testInfo.outputPath(`write-with-kite-${style}-${theme}.png`) });
+				} finally {
+					await context.close();
+					await account.api.dispose();
+				}
+			});
+		}
+	}
 
 	test("a reply uses the email the server loads, never the folded quote, and the quote stays untouched", async ({
 		browser,

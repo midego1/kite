@@ -206,7 +206,7 @@ test("public booking and Drive pages", async ({ browser }) => {
 	const setup = await open(browser);
 	await setup.goto("/booking");
 	const event = setup.locator("article", { hasText: "30 Minute Meeting" });
-	await expect(event).toBeVisible();
+	await expect(event).toBeVisible({ timeout: 120_000 });
 	const turnOn = event.getByRole("button", { name: "Turn on" });
 	if (await turnOn.isVisible()) {
 		const saved = setup.waitForResponse((response) => response.url().includes("/api/booking") && response.request().method() !== "GET");
@@ -227,7 +227,6 @@ test("public booking and Drive pages", async ({ browser }) => {
 	await uploadFile(api, "launch-plan.txt", "Launch plan", { parentId: folder.id });
 	await uploadFile(api, "rollout-checklist.csv", "step,owner", { contentType: "text/csv", parentId: folder.id });
 	const { token } = await createLink(api, folder.id);
-	const locked = await createLink(api, folder.id, { password: "demo-link-password" });
 	await api.dispose();
 
 	for (const [name, path, ready, appearance] of [
@@ -237,7 +236,6 @@ test("public booking and Drive pages", async ({ browser }) => {
 		["booking-event-phone", `/book/${me.user.id}/${meeting.id}`, "30 Minute Meeting", { phone: true }],
 		["drive-link", `/d/${token}`, "launch-plan.txt", {}],
 		["drive-link-dark", `/d/${token}`, "launch-plan.txt", { theme: "dark" }],
-		["drive-link-password", `/d/${locked.token}`, "This link needs a password", {}],
 	] as const) {
 		const page = await open(browser, { ...appearance, signedOut: true });
 		await page.goto(path);

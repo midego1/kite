@@ -116,7 +116,7 @@ export function LoginClient({ adding = false }: { adding?: boolean }) {
 					</Button>
 					<button
 						type="button"
-						className="w-full text-center text-sm text-neutral-500 hover:text-neutral-800"
+						className="w-full rounded-md text-center text-sm text-neutral-500 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500"
 						onClick={() => {
 							setChallengeToken(null);
 							setCode("");

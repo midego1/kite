@@ -1,10 +1,41 @@
 import { expect, test } from "@playwright/test";
 import { ADMIN, BASE_URL } from "./support/constants";
+import { contrastBetween } from "./support/contrast";
 import { apiSignIn, signIn } from "./support/helpers";
 
 test.describe("authentication", () => {
 	// These tests sign in and out on their own, so they must not share (and revoke) the suite's admin session.
 	test.use({ storageState: { cookies: [], origins: [] } });
+
+	test("the sign-in card reads at WCAG AA in Kite, Classic and dark mode", async ({ page }) => {
+		for (const [style, theme] of [
+			["kite", "light"],
+			["classic", "light"],
+			["kite", "dark"],
+			["lavender", "dark"],
+		] as const) {
+			await page.addInitScript(
+				([nextStyle, nextTheme]) => {
+					localStorage.setItem("kite-style", nextStyle);
+					localStorage.setItem("kite-theme", nextTheme);
+				},
+				[style, theme],
+			);
+			await page.goto("/login");
+			const heading = page.getByRole("heading", { level: 1, name: "Sign in" });
+			await expect(heading).toBeVisible();
+			const card = page.locator("main section").first();
+			const label = `${style} ${theme}`;
+			expect(await contrastBetween(heading, card), `${label} title`).toBeGreaterThanOrEqual(4.5);
+			expect(await contrastBetween(card.locator("p").first(), card), `${label} description`).toBeGreaterThanOrEqual(
+				4.5,
+			);
+			const forgot = page.getByRole("link", { name: "Forgot password?" });
+			expect(await contrastBetween(forgot, card), `${label} link`).toBeGreaterThanOrEqual(4.5);
+			const button = page.getByRole("button", { name: "Sign in" });
+			expect(await contrastBetween(button), `${label} button`).toBeGreaterThanOrEqual(4.5);
+		}
+	});
 
 	test("rejects a wrong password and stays on the login page", async ({ page }) => {
 		await signIn(page, ADMIN.email, "not-the-password");

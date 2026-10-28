@@ -12,6 +12,7 @@ const DEV_ONLY_VARS = [
 	"REMOTE_IMAGES_ALLOW_LOOPBACK",
 	"STORAGE_ALLOW_INSECURE_ENDPOINT",
 	"ABUSE_CH_TEST_ORIGIN",
+	"DATABASE_SIZE_TEST_HEADER",
 	// The e2e server points it at a `.invalid` host so it never posts usage statistics; deployments set it as a variable.
 	"KITE_TELEMETRY_URL",
 	// Only so the e2e server can save storage credentials; a real install sets it as a secret or in .dev.vars.

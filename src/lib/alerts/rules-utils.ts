@@ -14,6 +14,9 @@ export const ALERT_POLICY: AlertPolicy = {
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
+/** Percent of the database limit from which the alert fires; the same 90% that pauses imports. */
+const DATABASE_ALERT_PERCENT = 90;
+
 export const RULE_LABELS: Record<AlertRuleId, { name: string; path: string }> = {
 	backup_failed: { name: "Failed backups", path: "/backups" },
 	outbound_failed: { name: "Failed outbound sends in the last hour", path: "/admin" },
@@ -27,6 +30,10 @@ export const RULE_LABELS: Record<AlertRuleId, { name: string; path: string }> = 
 		name: "Email relay uses the older header signature (low priority: update the relay before 2027-01-31)",
 		path: "/admin",
 	},
+	database_nearly_full: {
+		name: "Database above 90% of its size limit (percent used; imports pause, see Operations)",
+		path: "/admin",
+	},
 };
 
 export const RULE_ORDER: AlertRuleId[] = [
@@ -36,6 +43,7 @@ export const RULE_ORDER: AlertRuleId[] = [
 	"webhook_exhausted",
 	"relay_signature",
 	"relay_signature_legacy",
+	"database_nearly_full",
 ];
 
 /** Turn a snapshot into the alerts that are active right now. The fingerprint changes when a new problem joins an existing rule. */
@@ -72,6 +80,13 @@ export function evaluateAlertRules(
 	// Still accepted, so it only asks for an update; it ends with issue #118.
 	if (recent(snapshot.relaySignature?.legacyAt))
 		alerts.push({ rule: "relay_signature_legacy", fingerprint: "legacy", count: 1 });
+	if (snapshot.databaseUsedPercent != null && snapshot.databaseUsedPercent >= DATABASE_ALERT_PERCENT) {
+		alerts.push({
+			rule: "database_nearly_full",
+			fingerprint: "active",
+			count: Math.floor(snapshot.databaseUsedPercent),
+		});
+	}
 	return alerts;
 }
 

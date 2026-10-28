@@ -52,7 +52,7 @@ export type ImportProgress = {
 	total: number;
 };
 
-export type ImportJobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type ImportJobStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
 
 export type ImportJob = {
 	id: string;

@@ -4,9 +4,19 @@ import { mailboxes } from "@/db/schema";
 import { importJobs } from "@/db/schema/import-jobs";
 import { newId } from "@/lib/ids";
 import { openSetting, sealSetting } from "@/lib/security/secret-box";
+import { getDatabaseSize } from "@/lib/db/size";
 import { getImportMessageUserId, parseImportDestination } from "./destination";
 import { openImapSession } from "./imap";
 import { chunk, selectRemainingUids } from "./imap-utils";
+import {
+	IMPORT_CONFIRMED_NOTE,
+	carriedImportNote,
+	noteAfterError,
+	importPauseNote,
+	isDatabaseFull,
+	isImportConfirmed,
+	needsStartConfirmation,
+} from "./size-guard-utils";
 import { encodeRawMime } from "@/lib/email/module-import-utils";
 import { moduleHost } from "@/lib/modules/host";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
@@ -29,6 +39,8 @@ const LEASE_MS = 8 * 60_000;
 const MAX_ATTEMPTS = 5;
 const MAX_STORED_ERRORS = 20;
 const ACTIVE_STATUSES = ["pending", "running"] as const;
+/** A job paused this long is cancelled (its saved source password erased) by the cron safety net. */
+const PAUSED_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 
 export async function enqueueImportJob(env: CloudflareEnv, jobId: string, delaySeconds?: number): Promise<boolean> {
 	const queue = env.AGENT_QUEUE;
@@ -51,16 +63,20 @@ export async function createImportJob(
 		password: string;
 		folder: string;
 		maxMessages: number | null;
+		/** "Import anyway" was confirmed while the database is above 90% of its limit. */
+		confirmedDatabaseFull?: boolean;
 	},
 ): Promise<ImportJobRow> {
 	parseImportDestination(input.destination);
+	const { confirmedDatabaseFull, ...fields } = input;
 	const db = getDb(env);
 	const now = new Date();
 	const [job] = await db
 		.insert(importJobs)
 		.values({
 			id: newId("ijob"),
-			...input,
+			...fields,
+			lastError: confirmedDatabaseFull ? IMPORT_CONFIRMED_NOTE : null,
 			password: await sealSetting(env, input.password),
 			status: "pending",
 			createdAt: now,
@@ -86,10 +102,98 @@ export async function cancelImportJob(env: CloudflareEnv, userId: string, jobId:
 		.update(importJobs)
 		.set({ status: "cancelled", password: "", leaseUntil: null, updatedAt: now, finishedAt: now })
 		.where(
-			and(eq(importJobs.id, jobId), eq(importJobs.userId, userId), inArray(importJobs.status, [...ACTIVE_STATUSES])),
+			and(
+				eq(importJobs.id, jobId),
+				eq(importJobs.userId, userId),
+				inArray(importJobs.status, [...ACTIVE_STATUSES, "paused"]),
+			),
 		)
 		.returning({ id: importJobs.id });
 	return cancelled.length > 0;
+}
+
+/**
+ * Puts a job paused for the database size back in the queue. Above 90% of the limit it needs `confirmed`, which
+ * lets the job go on to 98%; `"needs_confirmation"` asks the caller to ask the user first.
+ */
+export async function resumeImportJob(
+	env: CloudflareEnv,
+	userId: string,
+	jobId: string,
+	options: { confirmed: boolean; sizeOverride?: Parameters<typeof getDatabaseSize>[1] },
+): Promise<"resumed" | "not_found" | "needs_confirmation" | "full"> {
+	const db = getDb(env);
+	const [job] = await db
+		.select({ id: importJobs.id, lastError: importJobs.lastError })
+		.from(importJobs)
+		.where(and(eq(importJobs.id, jobId), eq(importJobs.userId, userId), eq(importJobs.status, "paused")))
+		.limit(1);
+	if (!job) return "not_found";
+	const size = await getDatabaseSize(env, options.sizeOverride);
+	// Past the hard stop it would only run one batch and pause again.
+	if (isDatabaseFull(size)) return "full";
+	const confirmNeeded = needsStartConfirmation(size);
+	if (confirmNeeded && !options.confirmed) return "needs_confirmation";
+	const resumed = await db
+		.update(importJobs)
+		.set({
+			status: "pending",
+			leaseUntil: null,
+			attempts: 0,
+			lastError: confirmNeeded || isImportConfirmed(job.lastError) ? IMPORT_CONFIRMED_NOTE : null,
+			updatedAt: new Date(),
+		})
+		.where(and(eq(importJobs.id, jobId), eq(importJobs.status, "paused")))
+		.returning({ id: importJobs.id });
+	if (!resumed.length) return "not_found";
+	await enqueueImportJob(env, jobId);
+	return "resumed";
+}
+
+/** Waits for a prefetch nobody will use, so it does not end as an unhandled rejection. */
+async function settle(pending: Promise<unknown> | null): Promise<void> {
+	await pending?.catch(() => undefined);
+}
+
+/** Saves a finished chunk; false when the job is no longer running or paused itself because the database is full. */
+async function recordChunk(
+	env: CloudflareEnv,
+	job: ImportJobRow,
+	chunk: {
+		processed: number;
+		imported: number;
+		skipped: number;
+		cursorUid: number | null;
+		total: number | null;
+		errors: string[];
+	},
+): Promise<boolean> {
+	const { errors, ...fields } = chunk;
+	const stillRunning = await getDb(env)
+		.update(importJobs)
+		.set({
+			...fields,
+			errors: JSON.stringify(errors),
+			leaseUntil: new Date(Date.now() + LEASE_MS),
+			updatedAt: new Date(),
+		})
+		.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")))
+		.returning({ id: importJobs.id });
+	return stillRunning.length > 0 && !(await pauseIfDatabaseFull(env, job));
+}
+
+/**
+ * Pauses a running job whose database has reached its stop point (90% of the limit, 98% once confirmed). It keeps
+ * the saved source password and cursor and waits for Resume.
+ */
+async function pauseIfDatabaseFull(env: CloudflareEnv, job: ImportJobRow): Promise<boolean> {
+	const note = importPauseNote(await getDatabaseSize(env), job.lastError);
+	if (!note) return false;
+	await getDb(env)
+		.update(importJobs)
+		.set({ status: "paused", leaseUntil: null, lastError: note, updatedAt: new Date() })
+		.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")));
+	return true;
 }
 
 /** Public shape for the API: never includes the source password. */
@@ -161,6 +265,8 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 		return;
 	}
 
+	if (await pauseIfDatabaseFull(env, job)) return;
+
 	const destination = parseImportDestination(job.destination);
 	const userId = getImportMessageUserId(destination, job.userId, mailbox.userId);
 	const startedAt = Date.now();
@@ -209,20 +315,9 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 			};
 			errors = [...errors, ...result.errors].slice(-MAX_STORED_ERRORS);
 
-			const stillRunning = await db
-				.update(importJobs)
-				.set({
-					...progress,
-					total,
-					errors: JSON.stringify(errors),
-					leaseUntil: new Date(Date.now() + LEASE_MS),
-					updatedAt: new Date(),
-				})
-				.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")))
-				.returning({ id: importJobs.id });
-			if (!stillRunning.length) {
-				// Cancelled from the UI.
-				await nextFetch?.catch(() => undefined);
+			// False when the job was cancelled from the UI or paused for the database size.
+			if (!(await recordChunk(env, job, { ...progress, total, errors }))) {
+				await settle(nextFetch);
 				return;
 			}
 			if (!nextFetch) break;
@@ -235,7 +330,12 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 		}
 		await db
 			.update(importJobs)
-			.set({ leaseUntil: null, attempts: 0, lastError: null, updatedAt: new Date() })
+			.set({
+				leaseUntil: null,
+				attempts: 0,
+				lastError: carriedImportNote(job.lastError),
+				updatedAt: new Date(),
+			})
 			.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")));
 		await enqueueImportJob(env, job.id);
 	} catch (error) {
@@ -249,7 +349,14 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 		}
 		await db
 			.update(importJobs)
-			.set({ attempts, lastError: message, leaseUntil: null, total, updatedAt: new Date() })
+			.set({
+				attempts,
+				// A transient error is retried; the confirmation to go on above 90% must survive it.
+				lastError: noteAfterError(job.lastError, message),
+				leaseUntil: null,
+				total,
+				updatedAt: new Date(),
+			})
 			.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")));
 		await enqueueImportJob(env, job.id, 30 * attempts);
 	} finally {
@@ -317,6 +424,17 @@ export async function resumeStalledImportJobs(
 ): Promise<void> {
 	const db = getDb(env);
 	const now = new Date();
+	await db
+		.update(importJobs)
+		.set({
+			status: "cancelled",
+			password: "",
+			leaseUntil: null,
+			lastError: "Cancelled: paused for more than 7 days.",
+			updatedAt: now,
+			finishedAt: now,
+		})
+		.where(and(eq(importJobs.status, "paused"), lt(importJobs.updatedAt, new Date(now.getTime() - PAUSED_MAX_AGE_MS))));
 	const stale = new Date(now.getTime() - 2 * 60_000);
 	const stalled = and(
 		inArray(importJobs.status, [...ACTIVE_STATUSES]),

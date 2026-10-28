@@ -12,6 +12,7 @@ export const PROVIDER_BASE_URLS: Record<Exclude<AgentProviderPreset, "custom">, 
 /** Audit actions of saved AI providers (Admin → Agent), listed on Activity. */
 export const AGENT_PROVIDER_AUDIT_ACTIONS = [
 	"agent.provider_added",
+	"agent.provider_updated",
 	"agent.provider_switched",
 	"agent.provider_deleted",
 ] as const;

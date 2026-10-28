@@ -3,7 +3,8 @@ import { getAgentModel } from "./model";
 import { getAgentEnabled, getAgentProviderConfig } from "./provider";
 
 /** Why a request a person starts (the composer) may not run; each maps to its own answer. */
-export type InteractiveRefusal = "assistant_disabled" | "not_configured" | "external_provider_not_allowed";
+export type InteractiveRefusal =
+	"assistant_disabled" | "not_configured" | "provider_key_unreadable" | "external_provider_not_allowed";
 
 export class InteractiveModelRefusedError extends Error {
 	constructor(readonly reason: InteractiveRefusal) {
@@ -19,6 +20,7 @@ export class InteractiveModelRefusedError extends Error {
 export async function interactiveRefusal(env: CloudflareEnv): Promise<InteractiveRefusal | null> {
 	if (!(await getAgentEnabled(env))) return "assistant_disabled";
 	const config = await getAgentProviderConfig(env);
+	if (config.keyUnreadable) return "provider_key_unreadable";
 	if (config.provider === "compatible" && !(await getAutoReadInstallSettings(env)).externalAutoReadAllowed)
 		return "external_provider_not_allowed";
 	return null;

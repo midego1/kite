@@ -8,7 +8,15 @@ import type { AgentProviderConnection } from "@/lib/agent/provider-types";
 import { ProviderForm } from "./provider-form";
 import { SavedProviders } from "./saved-providers";
 import type { AgentAdminSettingsResponse, AgentProviderEditTarget } from "./types";
-import { activateAgentProvider, agentProviderForm, deleteAgentProvider, initialEditTarget } from "./utils";
+import {
+	activateAgentProvider,
+	agentProviderForm,
+	agentProviderSavedMessage,
+	deleteAgentProvider,
+	initialEditTarget,
+	loadAgentAdminSettings,
+	switchConfirmation,
+} from "./utils";
 
 type AgentProvidersProps = {
 	data: AgentAdminSettingsResponse;
@@ -51,12 +59,15 @@ export function AgentProviders({ data, onChange }: AgentProvidersProps) {
 	}
 
 	const use = (provider: AgentProviderConnection) =>
-		run(async () =>
+		run(async () => {
+			// Read the opt-in again: it may have been changed further down this page since it loaded.
+			const question = switchConfirmation(await loadAgentAdminSettings(), provider);
+			if (question && !(await confirm({ ...question, confirmLabel: "Switch provider", destructive: false }))) return;
 			update(await activateAgentProvider(provider.id), `Now using ${provider.name}.`, {
 				kind: "saved",
 				id: provider.id,
-			}),
-		);
+			});
+		});
 
 	const remove = (provider: AgentProviderConnection) =>
 		run(async () => {
@@ -127,13 +138,14 @@ export function AgentProviders({ data, onChange }: AgentProvidersProps) {
 						hasSavedKey={source?.hasApiKey ?? false}
 						cloudflareAvailable={data.cloudflareAvailable}
 						providersReady={data.providersReady}
-						onSaved={(next, message) => {
+						keyUnreadable={source?.keyUnreadable ?? false}
+						onSaved={(next) => {
 							const added = next.providers.find(
 								(provider) => !data.providers.some((existing) => existing.id === provider.id),
 							);
 							update(
 								next,
-								message,
+								agentProviderSavedMessage(shown, added?.active ?? false),
 								added ? { kind: "saved", id: added.id } : shown.kind === "active" ? initialEditTarget(next) : undefined,
 							);
 						}}

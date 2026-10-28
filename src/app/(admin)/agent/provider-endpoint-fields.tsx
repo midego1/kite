@@ -8,11 +8,12 @@ import type { AgentAdminForm } from "./types";
 type ProviderEndpointFieldsProps = {
 	form: AgentAdminForm;
 	canUseSavedKey: boolean;
+	keyUnreadable: boolean;
 	setForm: (update: (current: AgentAdminForm) => AgentAdminForm) => void;
 };
 
 /** Base URL and API key of an OpenAI-compatible provider, with Haimaker's referral card for Haimaker. */
-export function ProviderEndpointFields({ form, canUseSavedKey, setForm }: ProviderEndpointFieldsProps) {
+export function ProviderEndpointFields({ form, canUseSavedKey, keyUnreadable, setForm }: ProviderEndpointFieldsProps) {
 	return (
 		<>
 			{form.preset === "haimaker" && <HaimakerReferralCard />}
@@ -38,6 +39,11 @@ export function ProviderEndpointFields({ form, canUseSavedKey, setForm }: Provid
 					placeholder={canUseSavedKey ? "Saved key (leave blank to keep)" : "Enter API key"}
 					onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
 				/>
+				{keyUnreadable && (
+					<p role="alert" className="text-xs text-amber-700">
+						Key unreadable, enter it again: the saved key was encrypted with another APP_ENCRYPTION_KEY.
+					</p>
+				)}
 				<p className="text-xs text-neutral-500">
 					{canUseSavedKey
 						? "An API key is saved on the server. Enter a new one to replace it."

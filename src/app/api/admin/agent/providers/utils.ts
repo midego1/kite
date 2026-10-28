@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { auditAgentProvider, prepareAgentProviderValues, providerSchema } from "@/lib/agent/provider-admin";
-import { AgentProvidersPendingError, createAgentProvider, listAgentProviders } from "@/lib/agent/provider-connections";
+import {
+	activeAgentProviderId,
+	AgentProvidersPendingError,
+	createAgentProvider,
+	listAgentProviders,
+} from "@/lib/agent/provider-connections";
+import { getAgentProviderConfig } from "@/lib/agent/provider";
 import { adminAgentResponse, authorizeAgentAdmin } from "../utils";
 
 const createSchema = providerSchema.extend({ activate: z.boolean().optional() });
@@ -9,7 +15,10 @@ export function providersPendingResponse() {
 	return Response.json({ error: new AgentProvidersPendingError().message, code: "MIGRATION_PENDING" }, { status: 409 });
 }
 
-/** Saves another provider; it is used at once only when `activate` is set or nothing else is saved. */
+/**
+ * Saves another provider. It is used at once only when `activate` is set, or when no provider is set up at all (none
+ * saved, none in the legacy columns, none from the environment); the response's `active` flag says which happened.
+ */
 export async function POST(request: Request) {
 	const access = await authorizeAgentAdmin(request, true);
 	if (access.error) return access.error;
@@ -19,7 +28,10 @@ export async function POST(request: Request) {
 	const { activate, ...input } = parsed.data;
 	const prepared = await prepareAgentProviderValues(access.env, input, "new");
 	if (prepared.error !== undefined) return Response.json({ error: prepared.error }, { status: 400 });
-	const id = await createAgentProvider(access.env, prepared.values, { activate });
+	// Never switch away from a working provider by surprise: only when asked, or when nothing at all is set up.
+	const nothingConfigured =
+		!(await activeAgentProviderId(access.env)) && (await getAgentProviderConfig(access.env)).source === "default";
+	const id = await createAgentProvider(access.env, prepared.values, { activate: activate || nothingConfigured });
 	const saved = (await listAgentProviders(access.env)).providers.find((provider) => provider.id === id);
 	await auditAgentProvider(access.env, access.user.id, "agent.provider_added", {
 		providerId: id,

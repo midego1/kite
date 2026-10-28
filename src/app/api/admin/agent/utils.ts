@@ -8,7 +8,7 @@ import { isPrimaryAdmin } from "@/lib/auth/admin";
 import { getAgentEnabled, getAgentProviderPublicConfig } from "@/lib/agent/provider";
 import { AGENT_SETTINGS_ID } from "@/lib/agent/provider-constants";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
-import { prepareAgentProviderValues, providerSchema } from "@/lib/agent/provider-admin";
+import { auditAgentProvider, prepareAgentProviderValues, providerSchema } from "@/lib/agent/provider-admin";
 import {
 	activeAgentProviderId,
 	createAgentProvider,
@@ -98,16 +98,24 @@ async function saveAutoRead(env: CloudflareEnv, body: unknown) {
  * The provider form without an id saves the provider in use: the active saved provider (created when none is saved
  * yet), or before migration 0077 the legacy `app_settings` columns, as it always did.
  */
-async function saveActiveProvider(env: CloudflareEnv, body: unknown) {
+async function saveActiveProvider(env: CloudflareEnv, actorUserId: string, body: unknown) {
 	const parsed = providerSchema.safeParse(body);
 	if (!parsed.success) return Response.json({ error: "Invalid provider settings" }, { status: 400 });
-	const prepared = await prepareAgentProviderValues(env, parsed.data, "active");
-	if (prepared.error !== undefined) return Response.json({ error: prepared.error }, { status: 400 });
+	// The provider in use is looked up first, so a blank key keeps exactly that row's key.
 	const { ready } = await listAgentProviders(env);
 	const activeId = ready ? await activeAgentProviderId(env) : null;
+	const prepared = await prepareAgentProviderValues(env, parsed.data, activeId ? { id: activeId } : "active");
+	if (prepared.error !== undefined) return Response.json({ error: prepared.error }, { status: 400 });
+	let providerId = activeId ?? "legacy";
 	if (!ready) await saveLegacyAgentProvider(env, prepared.values);
 	else if (activeId) await updateAgentProvider(env, activeId, prepared.values);
-	else await createAgentProvider(env, prepared.values, { activate: true });
+	else providerId = await createAgentProvider(env, prepared.values, { activate: true });
+	const name = (await listAgentProviders(env)).providers.find((provider) => provider.id === providerId)?.name;
+	await auditAgentProvider(env, actorUserId, "agent.provider_updated", {
+		providerId,
+		name: name ?? "Provider in use",
+		keyReplaced: prepared.keyReplaced,
+	});
 	return adminAgentResponse(env);
 }
 
@@ -118,5 +126,5 @@ export async function PUT(request: Request) {
 	const enabled = enabledSchema.strict().safeParse(body);
 	if (enabled.success) return saveAssistantEnabled(access.env, enabled.data.enabled);
 	if (isAutoReadAdminBody(body)) return saveAutoRead(access.env, body);
-	return saveActiveProvider(access.env, body);
+	return saveActiveProvider(access.env, access.user.id, body);
 }

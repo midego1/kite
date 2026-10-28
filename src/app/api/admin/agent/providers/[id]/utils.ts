@@ -30,7 +30,12 @@ export async function PUT(request: Request, { params }: Params) {
 	try {
 		const prepared = await prepareAgentProviderValues(access.env, parsed.data, { id });
 		if (prepared.error !== undefined) return Response.json({ error: prepared.error }, { status: 400 });
-		await updateAgentProvider(access.env, id, prepared.values);
+		const { name } = await updateAgentProvider(access.env, id, prepared.values);
+		await auditAgentProvider(access.env, access.user.id, "agent.provider_updated", {
+			providerId: id,
+			name,
+			keyReplaced: prepared.keyReplaced,
+		});
 	} catch (error) {
 		const response = providerErrorResponse(error);
 		if (response) return response;

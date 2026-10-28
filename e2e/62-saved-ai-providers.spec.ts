@@ -1,11 +1,11 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { STORAGE_STATE } from "./support/constants";
+import { DOMAIN, STORAGE_STATE } from "./support/constants";
 import { FAKE_API_KEY, useFakeProvider } from "./support/agent";
 import { collectConsoleErrors } from "./support/auto-read";
 import { chatRequests, firstMailboxId, sendChat } from "./support/chat";
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
-import { apiContext, uniqueToken } from "./support/helpers";
+import { apiContext, apiSignIn, uniqueToken } from "./support/helpers";
 import { chooseOption } from "./support/select";
 
 /**
@@ -16,6 +16,8 @@ import { chooseOption } from "./support/select";
 
 type SavedProvider = { id: string; name: string; active: boolean; models: string[]; hasApiKey: boolean };
 type AdminAgent = { providers: SavedProvider[]; providersReady: boolean; config: { baseUrl: string } };
+
+const ADMIN_PASSWORD = "second-admin-password-123";
 
 let api: APIRequestContext;
 let fakeA: FakeModel;
@@ -115,8 +117,12 @@ test("save a second provider, switch to it in one click, chat uses it, and switc
 		expect(chatRequests(fakeA)).toHaveLength(chatA + 1);
 		expect(chatRequests(fakeB)).toHaveLength(0);
 
-		// One click switches every AI feature to provider B.
+		// One click switches every AI feature to provider B. External providers may read mail (useFakeProvider allowed
+		// it), so the switch first says that the permission moves to the new vendor.
 		await rowB.getByRole("button", { name: `Use ${nameB}` }).click();
+		const question = page.getByRole("alertdialog").or(page.getByRole("dialog"));
+		await expect(question).toContainText(`That permission will apply to ${nameB} (${fakeB.url})`);
+		await question.getByRole("button", { name: "Switch provider" }).click();
 		await expect(page.getByRole("status").filter({ hasText: `Now using ${nameB}.` })).toBeVisible();
 		await expect(rowB).toContainText("In use");
 		await expect(page.getByRole("button", { name: `Delete ${nameB}` })).toBeDisabled();
@@ -144,6 +150,7 @@ test("save a second provider, switch to it in one click, chat uses it, and switc
 			.filter({ hasText: original!.name })
 			.getByRole("button", { name: `Use ${original!.name}` })
 			.click();
+		await page.getByRole("button", { name: "Switch provider" }).click();
 		await expect(page.getByRole("status").filter({ hasText: `Now using ${original!.name}.` })).toBeVisible();
 		fakeA.scriptChat({ content: "Provider A again." });
 		expect((await sendChat(api, mailboxId, "And now?")).some((event) => event.type === "error")).toBe(false);
@@ -176,14 +183,45 @@ test("save a second provider, switch to it in one click, chat uses it, and switc
 	}
 });
 
-test("only the primary admin reaches saved providers, and unknown ids answer 404", async () => {
+test("only the primary admin reaches saved providers, writes need the same origin, and unknown ids answer 404", async () => {
 	const missing = "aip_missing";
 	expect((await api.post(`/api/admin/agent/providers/${missing}/activate`)).status()).toBe(404);
 	expect((await api.delete(`/api/admin/agent/providers/${missing}`)).status()).toBe(404);
+	const { providers } = await adminAgent();
+	const target = providers[0].id;
+	const body = { provider: "cloudflare", preset: "openai", baseUrl: "", model: "@cf/meta/llama" };
+	const writes = (client: APIRequestContext, headers?: Record<string, string>) => [
+		client.post("/api/admin/agent/providers", { data: body, headers }),
+		client.put(`/api/admin/agent/providers/${target}`, { data: body, headers }),
+		client.delete(`/api/admin/agent/providers/${target}`, { headers }),
+		client.post(`/api/admin/agent/providers/${target}/activate`, { headers }),
+	];
+
 	const anonymous = await apiContext();
+	const token = uniqueToken("aiadmin");
+	const domains = (await (await api.get("/api/domains")).json()) as { domains: { id: string; hostname: string }[] };
+	const created = await api.post("/api/accounts", {
+		data: {
+			username: token,
+			domainId: domains.domains.find((domain) => domain.hostname === DOMAIN)!.id,
+			password: ADMIN_PASSWORD,
+			role: "admin",
+			useAllDomains: false,
+		},
+	});
+	expect(created.ok(), await created.text()).toBe(true);
+	const otherAdmin = await apiSignIn(`${token}@${DOMAIN}`, ADMIN_PASSWORD);
 	try {
-		expect((await anonymous.post("/api/admin/agent/providers", { data: {} })).status()).toBe(401);
+		for (const response of await Promise.all(writes(anonymous))) expect(response.status()).toBe(401);
+		// An admin who is not the primary admin reaches none of them, the list included.
+		for (const response of await Promise.all(writes(otherAdmin))) expect(response.status()).toBe(403);
+		expect((await otherAdmin.get("/api/admin/agent")).status()).toBe(403);
+		// The primary admin's session from another origin is refused before anything changes.
+		for (const response of await Promise.all(writes(api, { Origin: "https://evil.example" })))
+			expect(response.status()).toBe(403);
+		expect(await adminAgent()).toMatchObject({ providers });
 	} finally {
 		await anonymous.dispose();
+		await otherAdmin.dispose();
 	}
 });

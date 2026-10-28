@@ -87,11 +87,13 @@ function resolveStoredAgentProvider(
 			provider: "compatible",
 			preset,
 			baseUrl,
-			apiKey: saved.apiKey || (env.AI_BASE_URL === baseUrl ? env.AI_API_KEY : "") || "",
+			// An unreadable key never falls back to the environment's: requests fail and say why instead.
+			apiKey: saved.keyUnreadable ? "" : saved.apiKey || (env.AI_BASE_URL === baseUrl ? env.AI_API_KEY : "") || "",
 			model: models[0] || "",
 			models,
 			rates,
 			source: "saved",
+			...(saved.keyUnreadable ? { keyUnreadable: true } : {}),
 		};
 	}
 	return unsavedAgentProviderConfig(env, rates);

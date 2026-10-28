@@ -80,6 +80,8 @@ test("every failure kind maps to its code", () => {
 		[named("ExternalProviderNotAllowedError"), "external_provider_not_allowed"],
 		[named("InteractiveModelRefusedError", { reason: "assistant_disabled" }), "assistant_off"],
 		[named("InteractiveModelRefusedError", { reason: "not_configured" }), "no_provider"],
+		[named("InteractiveModelRefusedError", { reason: "provider_key_unreadable" }), "provider_key_unreadable"],
+		[named("AgentProviderKeyUnreadableError"), "provider_key_unreadable"],
 		[
 			named("InteractiveModelRefusedError", { reason: "external_provider_not_allowed" }),
 			"external_provider_not_allowed",
@@ -133,6 +135,10 @@ test("each code says what happened and what to do, with the provider's status bu
 	assert.match(aiErrorMessage("external_provider_not_allowed"), /not allowed the external AI provider/);
 	assert.match(aiErrorMessage("assistant_off"), /turned off/);
 	assert.match(aiErrorMessage("no_provider"), /No AI provider is set up/);
+	assert.match(
+		aiErrorMessage("provider_key_unreadable"),
+		/saved API key can't be read.*enter it again in Admin → Agent/,
+	);
 	assert.match(aiErrorMessage("network"), /could not reach/);
 	const secret = apiError(400, "Prompt was: SECRET MAIL BODY", { responseBody: '{"error":"SECRET MAIL BODY"}' });
 	const failure = classifyAiError(secret);
@@ -300,7 +306,14 @@ test("refusals before any provider call are never kept and logged once a minute 
 	const { db, env } = await database(t);
 	const logs = captureLogs(t);
 	await reportAiErrorClass({ code: "provider_unavailable", status: 503 }, { env, feature: "chat", userId: "owner" });
-	const refusals = ["rate_limited", "assistant_off", "no_provider", "external_provider_not_allowed", "spend_cap"];
+	const refusals = [
+		"rate_limited",
+		"assistant_off",
+		"no_provider",
+		"provider_key_unreadable",
+		"external_provider_not_allowed",
+		"spend_cap",
+	];
 	// Someone hammering the button past the rate limit: no D1 write, and the real failure stays in the list.
 	for (let attempt = 0; attempt < 50; attempt++)
 		for (const code of refusals) {
@@ -320,7 +333,7 @@ test("refusals before any provider call are never kept and logged once a minute 
 	);
 	// Another user's refusal is logged too.
 	await reportAiErrorClass({ code: "rate_limited", status: null }, { env, feature: "summary", userId: "other" });
-	assert.equal(logs.length, 8);
+	assert.equal(logs.length, refusals.length + 3);
 });
 
 const realFetch = globalThis.fetch;

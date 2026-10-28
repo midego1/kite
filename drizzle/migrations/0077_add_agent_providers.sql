@@ -1,5 +1,5 @@
 CREATE TABLE `agent_providers` (`id` text PRIMARY KEY NOT NULL, `name` text NOT NULL, `provider` text NOT NULL, `preset` text, `base_url` text, `api_key` text, `model` text NOT NULL, `model_rates` text, `active` integer DEFAULT 0 NOT NULL, `created_at` integer NOT NULL, `updated_at` integer NOT NULL);--> statement-breakpoint
-CREATE UNIQUE INDEX `agent_providers_active_idx` ON `agent_providers` (`active`) WHERE "agent_providers"."active" = 1;--> statement-breakpoint
+CREATE INDEX `agent_providers_active_idx` ON `agent_providers` (`active`);--> statement-breakpoint
 CREATE INDEX `agent_providers_created_idx` ON `agent_providers` (`created_at`);--> statement-breakpoint
 INSERT INTO `agent_providers` (`id`, `name`, `provider`, `preset`, `base_url`, `api_key`, `model`, `model_rates`, `active`, `created_at`, `updated_at`)
 SELECT 'aip_migrated',

@@ -16,6 +16,8 @@ export type AgentAdminSettingsResponse = {
 	providersReady: boolean;
 	assistantEnabled: boolean;
 	cloudflareAvailable: boolean;
+	/** The install-wide opt-in that lets an external provider read mail (automatic reading, composer, summaries). */
+	externalAutoReadAllowed?: boolean;
 	error?: string;
 };
 export type AgentEnabledResponse = { assistantEnabled: boolean; error?: string };

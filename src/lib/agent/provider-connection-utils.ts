@@ -15,6 +15,8 @@ export type StoredAgentProvider = {
 	apiKey: string | null;
 	model: string | null;
 	rates: string | null;
+	/** The stored key is sealed under another APP_ENCRYPTION_KEY and could not be opened; `apiKey` is then null. */
+	keyUnreadable?: boolean;
 };
 
 export type StoredAgentProviderRow = Omit<StoredAgentProvider, "provider" | "model"> & {
@@ -53,8 +55,24 @@ export function agentProviderName(
 	return trimmed || defaultAgentProviderName(provider, preset);
 }
 
-/** What the admin page lists for a saved provider: never the key, only whether one is stored. */
-export function publicAgentProvider(row: StoredAgentProviderRow): AgentProviderConnection {
+/**
+ * Whether a compatible provider without a stored key uses `AI_API_KEY`: its base URL is `AI_BASE_URL`. That key is
+ * read from the environment on every request and never copied into the database.
+ */
+export function environmentKeyApplies(
+	env: Pick<CloudflareEnv, "AI_BASE_URL" | "AI_API_KEY">,
+	row: Pick<StoredAgentProvider, "provider" | "baseUrl" | "apiKey">,
+): boolean {
+	return (
+		row.provider === "compatible" && !row.apiKey && !!env.AI_API_KEY && !!row.baseUrl && env.AI_BASE_URL === row.baseUrl
+	);
+}
+
+/** What the admin page lists for a saved provider: never the key, only whether one is stored and readable. */
+export function publicAgentProvider(
+	row: StoredAgentProviderRow,
+	key: { keyUnreadable?: boolean; environmentKey?: boolean } = {},
+): AgentProviderConnection {
 	const models = parseAgentModelIds(row.model);
 	return {
 		id: row.id,
@@ -65,14 +83,10 @@ export function publicAgentProvider(row: StoredAgentProviderRow): AgentProviderC
 		model: models[0] ?? "",
 		models,
 		rates: parseAgentModelRates(row.rates),
-		hasApiKey: !!row.apiKey,
+		hasApiKey: key.keyUnreadable ? false : !!row.apiKey || !!key.environmentKey,
+		keyUnreadable: !!key.keyUnreadable,
 		active: row.active,
 	};
-}
-
-/** Saved providers in the order they were added, the active one marked. */
-export function sortAgentProviders<T extends { createdAt: Date; id: string }>(rows: T[]): T[] {
-	return [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
 }
 
 /** The saved model rates of `modelIds` only, in the shape `agent_model_rates` stores. */

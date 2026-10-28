@@ -1,11 +1,11 @@
-import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 /**
  * Saved AI provider connections (migration 0077), so an admin can switch providers without typing a key again.
- * Exactly one row is active once any exists; the partial unique index allows at most one. Before 0077 (or while the
- * table is empty) the provider is read from the legacy `app_settings.agent_*` columns, which 0077 copies into the
- * first row and leaves in place.
+ * At most one row is active: switching is one UPDATE that sets `active = (id = ?)` on every row. (A partial unique
+ * index cannot back it, because SQLite checks UNIQUE row by row and would refuse that statement midway.) Before 0077,
+ * or while no row is active, the provider is read from the legacy `app_settings.agent_*` columns, which 0077 copies
+ * into the first row; they are cleared once a saved provider is in use.
  */
 export const agentProviders = sqliteTable(
 	"agent_providers",
@@ -31,10 +31,5 @@ export const agentProviders = sqliteTable(
 			.notNull()
 			.$defaultFn(() => new Date()),
 	},
-	(t) => [
-		uniqueIndex("agent_providers_active_idx")
-			.on(t.active)
-			.where(sql`${t.active} = 1`),
-		index("agent_providers_created_idx").on(t.createdAt),
-	],
+	(t) => [index("agent_providers_active_idx").on(t.active), index("agent_providers_created_idx").on(t.createdAt)],
 );

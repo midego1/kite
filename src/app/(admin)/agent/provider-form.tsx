@@ -14,7 +14,6 @@ import type { AgentAdminForm, AgentAdminSettingsResponse, AgentProviderEditTarge
 import { useAgentModels } from "./use-agent-models";
 import {
 	agentProviderFormBlocked,
-	agentProviderSavedMessage,
 	agentProviderSubmitLabel,
 	PROVIDER_PRESETS,
 	saveAgentProvider,
@@ -29,13 +28,15 @@ type ProviderFormProps = {
 	cloudflareAvailable: boolean;
 	/** False before migration 0077: there is one provider and it has no name. */
 	providersReady: boolean;
-	onSaved: (data: AgentAdminSettingsResponse, status: string) => void;
+	onSaved: (data: AgentAdminSettingsResponse) => void;
+	/** The stored key could not be opened (sealed under another APP_ENCRYPTION_KEY). */
+	keyUnreadable?: boolean;
 	onCancel?: () => void;
 };
 
 /** The settings of one provider: kind, endpoint, key, models and their rates. */
 export function ProviderForm(props: ProviderFormProps) {
-	const { target, initial, hasSavedKey, cloudflareAvailable, providersReady, onSaved, onCancel } = props;
+	const { target, initial, hasSavedKey, cloudflareAvailable, providersReady, onSaved, onCancel, keyUnreadable } = props;
 	const [form, setForm] = useState<AgentAdminForm>(initial);
 	const [activate, setActivate] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -50,7 +51,8 @@ export function ProviderForm(props: ProviderFormProps) {
 		setSaving(true);
 		setError(null);
 		try {
-			onSaved(await saveAgentProvider(target, form, activate), agentProviderSavedMessage(target, activate));
+			const data = await saveAgentProvider(target, form, activate);
+			onSaved(data);
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : "Could not save agent settings");
 		} finally {
@@ -93,7 +95,12 @@ export function ProviderForm(props: ProviderFormProps) {
 				)}
 			</div>
 			{form.provider === "compatible" && (
-				<ProviderEndpointFields form={form} canUseSavedKey={canUseSavedKey} setForm={setForm} />
+				<ProviderEndpointFields
+					form={form}
+					canUseSavedKey={canUseSavedKey}
+					keyUnreadable={!!keyUnreadable}
+					setForm={setForm}
+				/>
 			)}
 			<ModelPicker form={form} selectedModelIds={selectedModelIds} catalog={catalog} setForm={setForm} />
 			<CostRates form={form} models={catalog.models} selectedModelIds={selectedModelIds} setForm={setForm} />

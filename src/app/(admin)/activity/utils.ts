@@ -26,6 +26,7 @@ export function getActivityLabel(action: string): string {
 	if (action === "telemetry.enabled") return "Usage statistics on";
 	if (action === "telemetry.disabled") return "Usage statistics off";
 	if (action === "agent.provider_added") return "AI provider added";
+	if (action === "agent.provider_updated") return "AI provider edited";
 	if (action === "agent.provider_switched") return "AI provider switched";
 	if (action === "agent.provider_deleted") return "AI provider deleted";
 	return action;
@@ -36,6 +37,8 @@ export function describeAgentProviderActivity(log: ActivityLog, metadata: Activi
 	const name = metadata.name ?? "an AI provider";
 	if (log.action === "agent.provider_added") return `Saved ${name}`;
 	if (log.action === "agent.provider_deleted") return `Deleted ${name}`;
+	if (log.action === "agent.provider_updated")
+		return metadata.keyReplaced ? `Edited ${name} and replaced its API key` : `Edited ${name}`;
 	if (log.action !== "agent.provider_switched") return null;
 	return metadata.previous ? `Switched from ${metadata.previous} to ${name}` : `Switched to ${name}`;
 }

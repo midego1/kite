@@ -181,7 +181,8 @@ export function agentProviderSummary(provider: AgentProviderConnection): string 
 			: (PROVIDER_PRESETS.find((item) => item.id === provider.preset)?.label ?? "Custom endpoint");
 	const parts = [kind, provider.model || "no model"];
 	if (provider.preset === "custom" && provider.provider === "compatible") parts.push(provider.baseUrl);
-	if (provider.provider === "compatible") parts.push(provider.hasApiKey ? "key saved" : "no key");
+	if (provider.provider === "compatible")
+		parts.push(provider.keyUnreadable ? "key unreadable, enter it again" : provider.hasApiKey ? "key saved" : "no key");
 	return parts.join(" · ");
 }
 
@@ -211,7 +212,27 @@ export function agentProviderSubmitLabel(target: AgentProviderEditTarget, provid
 	return target.kind === "new" || providersReady ? "Save provider" : "Save agent settings";
 }
 
-export function agentProviderSavedMessage(target: AgentProviderEditTarget, activate: boolean): string {
+/** What saving said: for a new provider, whether the server put it in use (its `active` flag), not what was asked. */
+export function agentProviderSavedMessage(target: AgentProviderEditTarget, addedActive: boolean): string {
 	if (target.kind !== "new") return "Agent provider saved. Assistant settings can now choose from these models.";
-	return activate ? "Provider added and in use." : "Provider added. Choose Use this provider to switch to it.";
+	return addedActive ? "Provider added and in use." : "Provider added. Choose Use this provider to switch to it.";
+}
+
+/**
+ * The confirmation a switch needs, or null: switching to another external vendor while external providers may read
+ * mail moves that permission to the new vendor.
+ */
+export function switchConfirmation(
+	data: Pick<AgentAdminSettingsResponse, "config" | "externalAutoReadAllowed">,
+	provider: AgentProviderConnection,
+): { title: string; description: string } | null {
+	if (provider.provider !== "compatible" || !data.externalAutoReadAllowed) return null;
+	const { config } = data;
+	if (config.provider === "compatible" && config.preset === provider.preset && config.baseUrl === provider.baseUrl)
+		return null;
+	const vendor = provider.preset === "custom" ? provider.baseUrl : agentProviderSummary(provider).split(" · ")[0];
+	return {
+		title: `Switch to ${provider.name}?`,
+		description: `External AI providers are allowed to read mail for automatic reading, Write with Kite and summaries. That permission will apply to ${provider.name} (${vendor}) from now on, and message content will be sent there.`,
+	};
 }

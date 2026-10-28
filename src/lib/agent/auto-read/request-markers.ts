@@ -7,3 +7,4 @@ export const DRAFT_SYSTEM_MARKER = "[kite:auto-read:draft]";
 export const COMPOSE_SYSTEM_MARKER = "[kite:composer]";
 export const SUMMARY_SYSTEM_MARKER = "[kite:summary]";
 export const SUMMARY_TRANSLATION_MARKER = "[kite:summary-translation]";
+export const LINE_SUMMARY_SYSTEM_MARKER = "[kite:list-line]";

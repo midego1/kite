@@ -2,6 +2,8 @@
 
 import type { MouseEvent } from "react";
 import { useSyncedState } from "@/hooks/use-synced-state";
+import { LIST_SUMMARIES_PREFERENCE } from "@/components/appearance-preferences";
+import { useAppearancePreference } from "@/components/use-appearance-preference";
 import { affectsInboxUnreadCount, getInboxUnreadDelta, withReadState } from "@/lib/messages/thread-unread-utils";
 import { reportListActionError } from "./list-action-toast";
 import { rememberOpenedUnreadMessage } from "./message-detail-navigation-utils";
@@ -25,6 +27,7 @@ export function useMessageListRow({
 	const [read, setRead] = useSyncedState(message.read);
 	const [threadUnread, setThreadUnread] = useSyncedState(message.threadUnread);
 	const [starred, setStarred] = useSyncedState(message.starred);
+	const [listSummaries] = useAppearancePreference(LIST_SUMMARIES_PREFERENCE);
 	const rowMessage = { ...message, read, starred, threadUnread };
 	const href = `${config.hrefPrefix}/${message.id}`;
 	const navigation = useMessageNavigation(href, rowMessage);
@@ -92,6 +95,7 @@ export function useMessageListRow({
 		unread: isMessageListRowUnread(rowMessage),
 		party: getMessageParty(rowMessage, config.folder, currentAccountName),
 		preview: getMessagePreview(rowMessage, config.folder),
+		line: listSummaries === "summaries" ? message.lineSummary : undefined,
 		draggable: config.folder === "inbox" && inbound && canManage,
 		starToggle: config.folder === "inbox" && inbound,
 		hasRowActions,

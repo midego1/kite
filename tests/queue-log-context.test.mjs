@@ -21,6 +21,7 @@ test("queue messages are described by kind without addresses or headers", () => 
 	assert.deepEqual(describeQueueMessage({ kind: "email.scheduled", jobId: "j1" }), { kind: "outbound" });
 	assert.deepEqual(describeQueueMessage({ kind: "agent.draft", jobId: "j1" }), { kind: "agent_draft" });
 	assert.deepEqual(describeQueueMessage({ kind: "agent.triage", jobId: "j1" }), { kind: "agent_triage" });
+	assert.deepEqual(describeQueueMessage({ kind: "agent.line_summary", jobId: "j1" }), { kind: "agent_line_summary" });
 	assert.deepEqual(describeQueueMessage({ kind: "agent.style_backfill", userId: "u1", mailboxId: "m1" }), {
 		kind: "agent_style_backfill",
 	});

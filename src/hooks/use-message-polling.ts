@@ -105,6 +105,12 @@ export function useMessagePolling(): MessageRealtimeState {
 					relayToOtherTabs(payload, fromSocket);
 					return;
 				}
+				// A list row's one-line summary arrived: the lists refetch, like after new mail.
+				if (parsed.type === "message_summary" && parsed.mailboxId) {
+					dispatchMessagesChanged();
+					relayToOtherTabs(payload, fromSocket);
+					return;
+				}
 				if (parsed.type === "module_notice") {
 					const notice = parseModuleNoticeEvent(payload);
 					if (!notice) return;

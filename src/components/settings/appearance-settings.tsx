@@ -17,6 +17,7 @@ import {
 	ASSISTANT_DETAIL_PREFERENCE,
 	ASSISTANT_LAYOUT_PREFERENCE,
 	ASSISTANT_STEPS_PREFERENCE,
+	LIST_SUMMARIES_PREFERENCE,
 	FONT_PREFERENCE,
 	TEXT_SIZE_PREFERENCE,
 	type AppearancePreference,
@@ -73,6 +74,11 @@ export function AppearanceSettings() {
 				description="Open the assistant as a resizable side panel, or as a floating chat window like a new message."
 			/>
 			<AssistantOutputSettings />
+			<PreferenceRow
+				preference={LIST_SUMMARIES_PREFERENCE}
+				label="Show AI summaries instead of previews"
+				description="In mailboxes that write one-line summaries of new mail, the message list shows them in place of the first words of the email."
+			/>
 			<p className="rounded-xl border border-neutral-200 p-4 text-sm text-neutral-700">
 				<span className="block font-semibold text-neutral-900">Preview: A fresh direction for Kite</span>
 				The updated brand files are ready. We kept things light, clear, and connected.

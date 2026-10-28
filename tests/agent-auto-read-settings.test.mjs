@@ -63,6 +63,9 @@ test("a mailbox without a settings row gets the automatic reading defaults", () 
 		autoReadDailyLimit: 200,
 		dailySpendCapMicros: null,
 		pausedUntil: null,
+		listSummaries: false,
+		listSummariesBulk: false,
+		listSummaryDailyLimit: 100,
 	});
 	assert.equal(settings.resolveMailboxAgentSettings(undefined, shared).capabilities.calendar, false);
 });

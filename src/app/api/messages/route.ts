@@ -15,6 +15,7 @@ import { queryInChunks } from "@/db/chunk-utils";
 import { decodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor-utils";
 import { ownedStatusCondition } from "@/lib/modules/message-status";
 import { loadRowSuggestions } from "@/lib/agent/auto-read/message-suggestions";
+import { loadRowLines } from "@/lib/agent/summaries/lines";
 import { suggestionVisibilityFor } from "@/lib/agent/auto-read/suggestion-visibility";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { screenerPendingRows } from "@/lib/screener/views";
@@ -226,6 +227,10 @@ export async function GET(request: Request) {
 		await suggestionVisibilityFor(env, user),
 	);
 	const screenerPending = await screenerPendingRows(db, rows);
+	// One-line summaries, for mailboxes that have them on; a conversation row shows its newest message's line.
+	const rowLines = await loadRowLines(db, rows, (row) =>
+		groupByThread ? (scopedThreads.ids.get(rowConversationKey(row)) ?? [row.id]) : [row.id],
+	);
 	// `Message.textBody`/`htmlBody` are optional on the wire type and the
 	// reading pane loads them from /api/messages/[id]/thread, so they are
 	// neither selected nor sent here.
@@ -246,6 +251,7 @@ export async function GET(request: Request) {
 			// A conversation row is unread only when a message it stands for in this folder is.
 			threadUnread: (groupByThread ? scopedThreads.unread.get(key) : threadCount?.unread) || 0,
 			...rowSuggestions(message.id),
+			...rowLines(message.id),
 			...(screenerPending.has(message.id) ? { screenerPending: true } : {}),
 			...(groupByThread
 				? {

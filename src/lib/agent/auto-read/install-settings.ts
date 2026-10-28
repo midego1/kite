@@ -93,7 +93,7 @@ export async function saveAutoReadAdminSettings(env: CloudflareEnv, input: z.inf
 export async function skipPendingMailboxJobs(
 	env: CloudflareEnv,
 	mailboxId: string,
-	kind: "draft" | "triage",
+	kind: "draft" | "triage" | "line_summary",
 	reason: string,
 ) {
 	await getDb(env)

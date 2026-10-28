@@ -50,6 +50,8 @@ export type Message = {
 	agentSuggestions?: SuggestionCount[];
 	/** The sender waits for a Screener decision: held mail, or a new sender in an Inbox-mode mailbox. */
 	screenerPending?: boolean;
+	/** The one-line AI summary shown instead of the preview, when the mailbox has them on and this mail got one. */
+	lineSummary?: string;
 	createdAt: string;
 };
 

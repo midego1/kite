@@ -11,7 +11,7 @@ import { setMessageDragData } from "@/lib/messages/drag-utils";
 import { MessageListRowActions } from "./message-list-row-actions";
 import { MessageNavigationProgress } from "./message-navigation";
 import { rowCheckboxHandlers } from "./message-range-selection-utils";
-import { MessageRowBadges, MessageRowParty, MessageRowStar, UnreadDot } from "./message-row-parts";
+import { MessageRowBadges, MessageRowParty, MessageRowPreview, MessageRowStar, UnreadDot } from "./message-row-parts";
 import { getStackedRowDensity, getWideRowDensity } from "./reading-layout-utils";
 import { SwipeableRow } from "./swipeable-row";
 import type { MessageListRowProps } from "./types";
@@ -178,9 +178,10 @@ function StackedMessageRow(props: RowViewProps) {
 						<MessageRowBadges message={row.rowMessage} folder={config.folder} />
 						{row.starToggle && <span className="w-5 shrink-0" />}
 					</span>
-					{stackedDensity.showPreview && (
+					{/* A one-line summary shows even where the density leaves the plain preview out: it is the row's gist. */}
+					{(stackedDensity.showPreview || row.line) && (
 						<span dir="auto" className="mt-0.5 block truncate text-xs text-neutral-500">
-							{row.preview}
+							<MessageRowPreview preview={row.preview} line={row.line} />
 						</span>
 					)}
 				</Link>
@@ -265,7 +266,7 @@ function WideMessageRow(props: RowViewProps) {
 					</span>
 					<span dir="auto" className="text-neutral-500">
 						{" "}
-						- {row.preview}
+						- <MessageRowPreview preview={row.preview} line={row.line} />
 					</span>
 				</Link>
 			</span>

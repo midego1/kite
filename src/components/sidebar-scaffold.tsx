@@ -5,11 +5,13 @@ import { useSidebar } from "./sidebar-state";
 
 // Header and footer stay put; only the middle scrolls. The padding inside the scroller
 // matches the mask's fade length, so nothing looks faded until content actually scrolls under it.
+// A tall footer (notices, Settings, the version line) scrolls on its own past half the sidebar, so in a
+// short window it can never push the menu out of sight or sit over it.
 export function SidebarScaffold({ header, footer, children, className }: SidebarScaffoldProps) {
 	const { minimal } = useSidebar();
 	const { appName } = useBranding();
 	return (
-		<nav aria-label={appName} className={cn("flex h-full min-h-0 flex-col", className)}>
+		<nav aria-label={appName} className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
 			<div className="shrink-0 px-4 pt-4">{header}</div>
 			<div
 				className={cn(
@@ -20,7 +22,9 @@ export function SidebarScaffold({ header, footer, children, className }: Sidebar
 			>
 				{children}
 			</div>
-			{footer && <div className="shrink-0 px-4 pb-3">{footer}</div>}
+			{footer && (
+				<div className="max-h-[50%] min-h-0 shrink-0 overflow-y-auto overscroll-contain px-4 pb-3">{footer}</div>
+			)}
 		</nav>
 	);
 }

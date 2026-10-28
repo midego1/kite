@@ -125,7 +125,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 									<SidebarFrame
 										sidebar={
 											<SidebarAside className="md:w-full">
-												<div className="h-full">
+												<div className="h-full min-h-0">
 													<DashboardNav
 														assistantToggle={assistantToggle("nav")}
 														accountMenu={<MailboxSelector placement="sidebar" />}
@@ -144,7 +144,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 												<MailboxSelector />
 											</header>
 											<DashboardNotices slot="page" />
-											<div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+											<div className="group/page flex min-h-0 min-w-0 flex-1 overflow-hidden">
 												<AssistantOpenContext.Provider value={assistantVisible && assistantLayout === "sidebar"}>
 													<main
 														id={MAIN_CONTENT_ID}
@@ -162,8 +162,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 												{assistantLayout === "sidebar" && (
 													<aside
 														className={clsx(
-															assistantFullSize ? "pl-0" : "pl-4",
-															"relative min-h-0 min-w-0 shrink-0 overflow-hidden pr-2 pb-2 max-md:p-0",
+															// Beside the page the panel sits where the list and the reader do: the page's 8px inset,
+															// plus the 1px their transparent border adds while the split view is showing.
+															assistantFullSize
+																? "pl-0 pb-2"
+																: "pl-2 md:py-2 md:group-has-[[data-reading-pane]]/page:py-[9px]",
+															"relative min-h-0 min-w-0 shrink-0 overflow-hidden pr-2 max-md:p-0",
 															!resizingAssistant &&
 																"transition-[width] duration-300 ease-in-out motion-reduce:transition-none",
 															assistantVisible ? "" : "opacity-0",
@@ -179,7 +183,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 														inert={!assistantVisible}
 													>
 														{assistantVisible && !assistantFullSize && (
-															<div className="absolute inset-y-0 left-2 hidden w-0 md:block">
+															<div className="absolute inset-y-0 left-1 hidden w-0 md:block">
 																<ResizeHandle
 																	label="Resize assistant"
 																	onResizeStart={() => {
@@ -200,6 +204,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 															<LazyAgentPanel
 																open={assistantVisible}
 																fullSize={assistantFullSize}
+																docked={!assistantFullSize}
 																onToggleFullSize={() => setAssistantFullSize((current) => !current)}
 																onClose={() => {
 																	setAssistantOpen(false);

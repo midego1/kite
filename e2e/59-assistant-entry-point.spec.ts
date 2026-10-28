@@ -160,4 +160,81 @@ test.describe("Kite AI entry points", () => {
 		await expect(page.getByRole("button", { name: "Minimize composer" })).toBeVisible();
 		await expect(bubble).toBeHidden();
 	});
+	test("the docked assistant is a panel level with the list and the reader", async ({ page }) => {
+		// With nothing open the list and the reader both show beside the assistant.
+		await page.goto("/inbox");
+		const toggle = page.getByTestId("assistant-button-list");
+		await expect(toggle).toBeVisible();
+		if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+		const panel = page.getByRole("region", { name: "Email assistant" });
+		await expect(panel).toBeVisible();
+		// The slide-in animation ends with the panel at its final width.
+		await expect.poll(async () => (await panel.boundingBox())?.width ?? 0).toBe(390 - 16);
+
+		const reader = page.locator("#kite-reader-panel section").first();
+		const list = page.locator("#kite-message-list-panel aside").first();
+		const [panelBox, readerBox, listBox] = await Promise.all([
+			panel.boundingBox(),
+			reader.boundingBox(),
+			list.boundingBox(),
+		]);
+		expect(panelBox && readerBox && listBox).toBeTruthy();
+		expect(Math.abs(panelBox!.y - readerBox!.y)).toBeLessThanOrEqual(1);
+		expect(Math.abs(panelBox!.y + panelBox!.height - (readerBox!.y + readerBox!.height))).toBeLessThanOrEqual(1);
+		// The same gap as between the list and the reader.
+		const gap = panelBox!.x - (readerBox!.x + readerBox!.width);
+		const listGap = readerBox!.x - (listBox!.x + listBox!.width);
+		expect(Math.abs(gap - listGap)).toBeLessThanOrEqual(1);
+
+		// Its header is as tall as the list's, so the bottom borders line up.
+		const headerBox = await panel.locator("header").boundingBox();
+		const listHeaderBox = await page.getByTestId("assistant-button-list").evaluate((button) => {
+			const row = button.closest("div.border-b");
+			const rect = row?.getBoundingClientRect();
+			return rect ? { y: rect.y, height: rect.height } : null;
+		});
+		expect(headerBox && listHeaderBox).toBeTruthy();
+		expect(Math.abs(headerBox!.y + headerBox!.height - (listHeaderBox!.y + listHeaderBox!.height))).toBeLessThanOrEqual(
+			1,
+		);
+
+		const style = await panel.evaluate((element) => {
+			const computed = getComputedStyle(element);
+			return { border: computed.borderTopWidth, radius: computed.borderTopLeftRadius, shadow: computed.boxShadow };
+		});
+		const readerStyle = await reader.evaluate((element) => {
+			const computed = getComputedStyle(element);
+			return { border: computed.borderTopWidth, radius: computed.borderTopLeftRadius, shadow: computed.boxShadow };
+		});
+		expect(style).toEqual(readerStyle);
+	});
+
+	test("the sidebar menu scrolls above the pinned bottom group in a short window", async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 700 });
+		await page.goto("/inbox");
+		const sidebar = page.locator("nav:has(a[href='/settings/account'])").first();
+		await expect(sidebar).toBeVisible();
+		const scroller = sidebar.locator("> div").nth(1);
+		const footer = sidebar.locator("> div").nth(2);
+		// A notice as tall as the real ones can get must not squeeze the menu away or sit over it.
+		await footer.evaluate((element) => {
+			const notice = document.createElement("div");
+			notice.style.cssText = "height:400px;flex:none";
+			element.insertBefore(notice, element.firstChild);
+		});
+		const foldersHeader = scroller.getByText("Folders", { exact: true });
+		await foldersHeader.scrollIntoViewIfNeeded();
+		await scroller.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+
+		const [scrollerBox, footerBox, foldersBox] = await Promise.all([
+			scroller.boundingBox(),
+			footer.boundingBox(),
+			foldersHeader.boundingBox(),
+		]);
+		expect(scrollerBox && footerBox && foldersBox).toBeTruthy();
+		expect(scrollerBox!.y + scrollerBox!.height).toBeLessThanOrEqual(footerBox!.y + 1);
+		expect(scrollerBox!.height).toBeGreaterThan(120);
+		expect(foldersBox!.y).toBeGreaterThanOrEqual(scrollerBox!.y);
+		expect(foldersBox!.y + foldersBox!.height).toBeLessThanOrEqual(scrollerBox!.y + scrollerBox!.height);
+	});
 });

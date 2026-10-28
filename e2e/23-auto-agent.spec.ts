@@ -562,9 +562,22 @@ test.describe("admin automatic reading settings", () => {
 			await restoreOriginal();
 			await starting.close();
 		}
-		// Restoring saves the provider, so one that came from the environment or the defaults reads back as saved.
-		const restored = await readAdminAgent(api);
-		expect({ ...restored, config: { ...restored.config, source: original.config.source } }).toEqual(original);
+		// Restoring saves the provider, so one that came from the environment or the defaults reads back as saved,
+		// with an empty rate (no input, no output) for each of its models. Which of the two the first run in a fresh
+		// database starts from depends on the specs that ran before it in the same shard.
+		const withoutEmptyRates = (state: typeof original) => ({
+			...state,
+			config: {
+				...state.config,
+				source: original.config.source,
+				rates: Object.fromEntries(
+					Object.entries(state.config.rates).filter(
+						([, rate]) => rate.input !== null || rate.output !== null || rate.reasoningEffort,
+					),
+				),
+			},
+		});
+		expect(withoutEmptyRates(await readAdminAgent(api))).toEqual(withoutEmptyRates(original));
 	});
 
 	test("a reasoning effort can be saved per model, and none is refused", async () => {

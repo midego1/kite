@@ -1,9 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useCallback, useEffect, useState, type RefObject } from "react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { authFetch } from "@/lib/auth/client";
+import { telemetryStartDay } from "@/lib/telemetry/telemetry-utils";
 import type { TelemetrySaveResult, TelemetryStatus } from "@/lib/telemetry/types";
 
 /** One cache for the Admin → General card and the notice, so a choice made in one shows in the other. */
@@ -49,17 +50,36 @@ export function useTelemetryStatus() {
 }
 
 /**
- * The one-time notice of an install whose owner never chose. The first time it is due, it records that it was
- * shown, which fixes the start day, and only then appears, so the date it names is the stored one.
+ * The one-time notice of an install whose owner never chose. Until it has been seen it names the date the server
+ * would store now (the same rule, `telemetryStartDay`); `markShown`, called once the notice is actually on screen,
+ * records that it was shown, which fixes that date, and from then on the stored date is shown.
  */
 export function useTelemetryNotice() {
 	const { owner, query, save } = useTelemetryStatus();
+	const [provisionalDay] = useState(() => telemetryStartDay(new Date()));
 	const status = query.data;
-	const unseen = Boolean(owner && status?.notice && !status.startDay);
+	const due = Boolean(owner && status?.notice);
+	const unseen = due && !status?.startDay;
 	const { mutate, isIdle } = save;
-	useEffect(() => {
+	const markShown = useCallback(() => {
 		if (unseen && isIdle) mutate({ notice: "shown" });
 	}, [unseen, isIdle, mutate]);
-	const startDay = owner && status?.notice ? status.startDay : null;
-	return { startDay, save };
+	const startDay = due ? (status?.startDay ?? provisionalDay) : null;
+	return { startDay, unseen, markShown, save };
+}
+
+/** Calls `onVisible` once the element is at least half on screen (not scrolled out of the notices box). */
+export function useWhenVisible(ref: RefObject<HTMLElement | null>, active: boolean, onVisible: () => void) {
+	useEffect(() => {
+		const element = ref.current;
+		if (!active || !element) return;
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((entry) => entry.isIntersecting)) onVisible();
+			},
+			{ threshold: 0.5 },
+		);
+		observer.observe(element);
+		return () => observer.disconnect();
+	}, [ref, active, onVisible]);
 }

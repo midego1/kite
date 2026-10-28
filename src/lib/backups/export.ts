@@ -132,8 +132,8 @@ const INTERNAL_TABLES = [
 	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
 	// restored database would restart a copy between stores that may no longer match.
 	"storage_migrations",
-	// Opt-in usage statistics: the install id identifies this deployment, so a restore into another one must not
-	// clone it, and the owner's choice starts off again there.
+	// Usage statistics: the install id identifies this deployment, so a restore into another one must not clone it,
+	// and the choice, the notice and its start day stay those of the deployment restored into.
 	"telemetry_state",
 	// AI summaries (migration 0072): derived from the messages and made again on demand, so a backup skips them.
 	// A restore replaces the messages, whose triggers and cascades remove the old summaries with them.

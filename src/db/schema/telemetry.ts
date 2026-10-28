@@ -12,7 +12,7 @@ export const telemetryState = sqliteTable("telemetry_state", {
 	installId: text("install_id"),
 	/** UTC day (YYYY-MM-DD) of the last heartbeat attempt, so at most one is sent per day. */
 	lastSentDay: text("last_sent_day"),
-	/** `on` or `off` once decided (at setup, in Admin or by the start day passing); null while undecided. Migration 0074. */
+	/** `on` or `off` once decided (at setup, in Admin or by the start day passing); null while undecided. Migration 0075. */
 	decision: text("decision").$type<"on" | "off">(),
 	/** Undecided installs: the UTC day sending starts unless turned off, set when the owner first saw the notice. */
 	startDay: text("start_day"),

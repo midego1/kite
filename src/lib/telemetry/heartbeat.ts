@@ -52,6 +52,9 @@ async function collectHeartbeatCounts(env: Pick<CloudflareEnv, "DB">, now: Date)
 type Outcome = "disabled" | "forced_off" | "no_endpoint" | "already_sent" | "sent" | "rejected" | "failed";
 
 async function sendHeartbeat(env: CloudflareEnv, now: Date, fetcher: typeof fetch): Promise<Outcome> {
+	// An install that never chose sends only from the start day its owner was told about on the notice (a day that
+	// comes while nothing can be sent is cleared instead, so this runs before the checks below).
+	await applyTelemetryStartDay(env, now);
 	if (telemetryForcedOff(env.KITE_TELEMETRY)) return "forced_off";
 	const endpoint = telemetryUrl(env.KITE_TELEMETRY_URL);
 	if (!endpoint) return "no_endpoint";

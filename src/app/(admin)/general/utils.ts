@@ -92,7 +92,7 @@ export function telemetryStatusText(status: TelemetryStatus | null): string {
 			? "On, but KITE_TELEMETRY_URL is empty or not a usable https address, so nothing is sent"
 			: "Off";
 	if (telemetryStartsLater(status))
-		return `On by default: sending starts on ${telemetryDayLabel(status.startDay)} unless you turn it off`;
+		return `On by default: sending starts at 02:00 UTC on ${telemetryDayLabel(status.startDay)} unless you turn it off`;
 	if (!status.enabled) return "Off";
 	return status.lastSentDay ? `On, last attempted on ${status.lastSentDay} (UTC)` : "On, nothing sent yet";
 }

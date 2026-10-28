@@ -7,7 +7,7 @@ import {
 	telemetryForcedOff,
 	telemetryNoticeDue,
 	telemetryStartDay,
-	telemetryStartDayReached,
+	telemetryStartDayOutcome,
 	telemetryUrl,
 	utcDay,
 	type TelemetryChoice,
@@ -20,7 +20,7 @@ const ROW_ID = "default";
 type StoredState = TelemetryChoice & {
 	/** False until migration 0071 is applied. */
 	available: boolean;
-	/** False until migration 0074 is applied: the notice cannot be stored, so it is never shown. */
+	/** False until migration 0075 is applied: the notice cannot be stored, so it is never shown. */
 	noticeAvailable: boolean;
 	enabled: boolean;
 	installId: string | null;
@@ -48,7 +48,7 @@ const UNAVAILABLE: StoredState = {
 	noticeDismissed: false,
 };
 
-/** Thrown by the writes below while migration 0071 (or, for the notice, 0074) has not been applied. */
+/** Thrown by the writes below while migration 0071 (or, for the notice, 0075) has not been applied. */
 export class TelemetryUnavailableError extends Error {
 	constructor() {
 		super("Kite's database needs an update first. Apply the pending updates from the admin overview, then try again.");
@@ -66,7 +66,7 @@ async function readRow(env: Pick<CloudflareEnv, "DB">): Promise<{ row: Row | nul
 	} catch (error) {
 		if (!missingColumnFromError(error)) throw error;
 	}
-	// Before migration 0074 only the owner's switch wrote a row, so a row is an explicit choice.
+	// Before migration 0075 only the owner's switch wrote a row, so a row is an explicit choice.
 	const row = await select(COLUMNS);
 	return { row: row && { ...row, decision: row.enabled ? "on" : "off" }, noticeAvailable: false };
 }
@@ -94,24 +94,35 @@ export async function readTelemetryState(env: Pick<CloudflareEnv, "DB">): Promis
 
 /**
  * An undecided install whose start day has come is turned on, with a fresh install id: the owner was told on the
- * notice and did not turn statistics off. Runs before every heartbeat and status read; true when it changed the row.
+ * notice and did not turn statistics off. If the day came while nothing could be sent (`KITE_TELEMETRY=0`, no usable
+ * `KITE_TELEMETRY_URL`), the date and the dismissal are cleared instead and nothing turns on, so a later notice names
+ * a new date (`telemetryStartDayOutcome`). Runs before every heartbeat and status read; answers what it did.
  */
 export async function applyTelemetryStartDay(
-	env: Pick<CloudflareEnv, "DB" | "KITE_TELEMETRY">,
+	env: Pick<CloudflareEnv, "DB" | "KITE_TELEMETRY" | "KITE_TELEMETRY_URL">,
 	now: Date,
-): Promise<boolean> {
+): Promise<"started" | "expired" | null> {
 	const today = utcDay(now);
 	const state = await readTelemetryState(env);
-	if (!state.noticeAvailable || !telemetryStartDayReached(state, today, telemetryForcedOff(env.KITE_TELEMETRY)))
-		return false;
-	const result = await env.DB.prepare(
-		"UPDATE telemetry_state SET decision = 'on', enabled = 1, install_id = ?, updated_at = ? WHERE id = ? AND decision IS NULL AND start_day IS NOT NULL AND start_day <= ?",
-	)
-		.bind(crypto.randomUUID(), seconds(now), ROW_ID, today)
-		.run();
-	const changed = (result.meta?.changes ?? 0) === 1;
-	if (changed) logger.info("telemetry.start_day_reached", {});
-	return changed;
+	if (!state.noticeAvailable) return null;
+	const outcome = telemetryStartDayOutcome(state, today, {
+		forcedOff: telemetryForcedOff(env.KITE_TELEMETRY),
+		endpoint: telemetryUrl(env.KITE_TELEMETRY_URL),
+	});
+	if (outcome === "wait") return null;
+	const guard = "WHERE id = ? AND decision IS NULL AND start_day IS NOT NULL AND start_day <= ?";
+	const statement =
+		outcome === "start"
+			? env.DB.prepare(
+					`UPDATE telemetry_state SET decision = 'on', enabled = 1, install_id = ?, updated_at = ? ${guard}`,
+				).bind(crypto.randomUUID(), seconds(now), ROW_ID, today)
+			: env.DB.prepare(
+					`UPDATE telemetry_state SET start_day = NULL, notice_dismissed = 0, updated_at = ? ${guard}`,
+				).bind(seconds(now), ROW_ID, today);
+	const result = await statement.run();
+	if ((result.meta?.changes ?? 0) !== 1) return null;
+	logger.info(outcome === "start" ? "telemetry.start_day_reached" : "telemetry.start_day_expired", {});
+	return outcome === "start" ? "started" : "expired";
 }
 
 export async function getTelemetryStatus(
@@ -137,9 +148,9 @@ export async function getTelemetryStatus(
 
 /**
  * The owner's explicit choice, from Admin → General or the notice's buttons. Turning statistics on makes a fresh
- * random install id; turning them off deletes it, so a later opt-in cannot be linked to earlier reports, and records
- * `off`, which nothing turns on again. Returns the state before the change, so an opt-out can ask the collector to
- * erase the old id's reports (`eraseAfterOptOut`).
+ * random install id; turning them off deletes it, so turning them on again cannot be linked to earlier reports, and
+ * records `off`, which nothing turns on again. Returns the state before the change, so an opt-out can ask the
+ * collector to erase the old id's reports (`eraseAfterOptOut`).
  */
 export async function setTelemetryEnabled(env: Pick<CloudflareEnv, "DB">, enabled: boolean): Promise<StoredState> {
 	const current = await readTelemetryState(env);

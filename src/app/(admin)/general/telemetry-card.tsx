@@ -92,12 +92,12 @@ export function TelemetryCard() {
 					</p>
 				)}
 				<p>
-					On by default, and off for good once you turn it off: a new install asks at setup, and an install that existed
-					before starts only 14 days after a notice told its owner. Once a day, around 02:00 UTC, Kite sends one small
-					report with the fields below, so the project can see how many installs are in use. Counts are sent as ranges,
-					never exact numbers. The report is pseudonymous, not anonymous: a random install ID links one install’s daily
-					reports. It never contains names, email addresses, domains, message content or anything else that identifies
-					you or your users.
+					On by default, and never turned back on automatically once you turn it off: a new install asks at setup, and
+					an install that existed before starts only 14 days after a notice told its owner. Once a day, around 02:00
+					UTC, Kite sends one small report with the fields below, so the project can see how many installs are in use.
+					Counts are sent as ranges, never exact numbers. The report is pseudonymous, not anonymous: a random install ID
+					links one install’s daily reports. It never contains names, email addresses, domains, message content or
+					anything else that identifies you or your users.
 				</p>
 				<p>
 					The request itself can say more than the report. On Cloudflare Workers, Cloudflare adds a{" "}

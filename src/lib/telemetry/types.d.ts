@@ -47,7 +47,7 @@ export type TelemetryStatus = {
 	decision: TelemetryDecision | null;
 	/** While undecided and once the owner saw the notice: the UTC day sending starts unless they turn it off. */
 	startDay: string | null;
-	/** Show the one-time notice: undecided, not dismissed, something would be sent, and migration 0074 applied. */
+	/** Show the one-time notice: undecided, not dismissed, something would be sent, and migration 0075 applied. */
 	notice: boolean;
 	/** `KITE_TELEMETRY` keeps it off; the switch can then only be turned off. */
 	forcedOff: boolean;

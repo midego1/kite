@@ -2,19 +2,19 @@
 
 import Link from "next/link";
 import { ChartNoAxesColumn, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { NOTICE_LINK_CLASS, WARNING_NOTICE_CLASS } from "@/components/notice-styles";
-import { TELEMETRY_NOTICE_DETAIL } from "@/lib/telemetry/notice-utils";
+import { TELEMETRY_NOTICE_DETAIL, TELEMETRY_NOTICE_SHORT, telemetryHideLabel } from "@/lib/telemetry/notice-utils";
 import { telemetryNoticeText } from "@/lib/telemetry/telemetry-utils";
-import { useTelemetryNotice, type TelemetryUpdate } from "./use-telemetry-status";
+import { useTelemetryNotice, useWhenVisible, type TelemetryUpdate } from "./use-telemetry-status";
 
-function DismissButton({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
+function HideButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled: boolean }) {
 	return (
 		<button
 			type="button"
-			aria-label="Dismiss"
-			title="Dismiss"
+			aria-label={label}
+			title={label}
 			disabled={disabled}
 			className="-mr-1.5 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-[#f59e0b]/15"
 			onClick={onClick}
@@ -26,12 +26,15 @@ function DismissButton({ onClick, disabled }: { onClick: () => void; disabled: b
 
 /**
  * Tells the primary admin of an install that never chose (an upgrade, or a setup without the switch) that usage
- * statistics start on the stored start day unless they turn them off. Shown until they choose or dismiss it, in the
- * sidebar notice slot and above the admin pages; dismissing keeps the start day.
+ * statistics start on the start day unless they turn them off. Shown until they choose or hide it, first in the
+ * sidebar notice slot and above the admin pages; the start day is fixed only once the notice is on screen, and
+ * hiding it keeps that day.
  */
 export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
-	const { startDay, save } = useTelemetryNotice();
+	const { startDay, unseen, markShown, save } = useTelemetryNotice();
 	const [error, setError] = useState<string | null>(null);
+	const ref = useRef<HTMLElement>(null);
+	useWhenVisible(ref, unseen, markShown);
 	if (!startDay) return null;
 
 	const choose = (update: TelemetryUpdate) => {
@@ -42,6 +45,9 @@ export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
 	};
 	const busy = save.isPending;
 	const lead = telemetryNoticeText(startDay);
+	const hide = (
+		<HideButton label={telemetryHideLabel(startDay)} disabled={busy} onClick={() => choose({ notice: "dismissed" })} />
+	);
 	const alert = error && (
 		<p role="alert" className="mt-1 text-red-600">
 			{error}
@@ -50,11 +56,12 @@ export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
 
 	if (variant === "sidebar")
 		return (
-			<section aria-label="Usage statistics notice" data-telemetry-notice className={WARNING_NOTICE_CLASS}>
+			<section ref={ref} aria-label="Usage statistics notice" data-telemetry-notice className={WARNING_NOTICE_CLASS}>
 				<ChartNoAxesColumn className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
 				<div className="min-w-0 flex-1">
 					<p className="font-medium">Usage statistics</p>
 					<p className="mt-0.5 opacity-90">{lead}</p>
+					<p className="mt-0.5 opacity-90">{TELEMETRY_NOTICE_SHORT}</p>
 					{alert}
 					<div className="mt-1.5 flex flex-wrap items-center gap-3">
 						<button
@@ -78,12 +85,13 @@ export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
 						</Link>
 					</div>
 				</div>
-				<DismissButton disabled={busy} onClick={() => choose({ notice: "dismissed" })} />
+				{hide}
 			</section>
 		);
 
 	return (
 		<section
+			ref={ref}
 			aria-label="Usage statistics notice"
 			data-telemetry-notice
 			className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900"
@@ -100,15 +108,16 @@ export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
 					>
 						Exactly what is sent
 					</Link>
+					{/* The two choices look the same: neither is the suggested one. */}
 					<Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => choose({ enabled: false })}>
 						Turn off
 					</Button>
-					<Button type="button" size="sm" disabled={busy} onClick={() => choose({ enabled: true })}>
+					<Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => choose({ enabled: true })}>
 						Keep on
 					</Button>
 				</div>
 			</div>
-			<DismissButton disabled={busy} onClick={() => choose({ notice: "dismissed" })} />
+			{hide}
 		</section>
 	);
 }

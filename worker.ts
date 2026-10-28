@@ -240,7 +240,8 @@ export default {
 					.then(() => runDatabasePruning(env, now))
 					.catch((error) => logger.error("database.pruning_failed", { error })),
 			);
-			// Opt-in usage statistics; does nothing unless the owner turned them on. Never throws.
+			// Usage statistics: does nothing unless the owner kept them on (at setup, on the notice or after its start
+			// day). Never throws.
 			ctx.waitUntil(runTelemetryHeartbeat(env, now));
 		}
 		// Only the 5-minute trigger: both crons fire at 02:00 and a backup may still be running then.

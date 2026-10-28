@@ -29,7 +29,7 @@ function dayLabel(day: string): string {
 }
 
 const noticeText = (day: string) =>
-	`Kite will start sending usage statistics on ${dayLabel(day)} unless you turn them off.`;
+	`Kite will start sending usage statistics from 02:00 UTC on ${dayLabel(day)} unless you turn them off.`;
 
 /** An install whose owner never chose, as after an upgrade: no row at all. */
 function forgetChoice() {
@@ -186,7 +186,11 @@ test("an install whose owner never chose is told first in Admin, and Turn off is
 	await expect(notice).toContainText(noticeText(startDay));
 	await expect(notice).toContainText("Nothing has been sent yet.");
 	await expect(notice.getByRole("link", { name: "Exactly what is sent" })).toHaveAttribute("href", "/general");
-	// Showing the notice fixed the start day; nothing is on yet and there is no install id.
+	// Turn off and Keep on look the same.
+	const buttonClass = (name: string) => notice.getByRole("button", { name }).getAttribute("class");
+	expect(await buttonClass("Turn off")).toBe(await buttonClass("Keep on"));
+	// The notice on screen fixed the start day; nothing is on yet and there is no install id.
+	await expect.poll(async () => (await telemetryStatus()).startDay).toBe(startDay);
 	expect(await telemetryStatus()).toMatchObject({
 		decision: null,
 		enabled: false,
@@ -198,7 +202,7 @@ test("an install whose owner never chose is told first in Admin, and Turn off is
 	await page.goto("/general");
 	const card = page.locator("[data-telemetry]");
 	await expect(card.locator("[data-telemetry-status]")).toHaveText(
-		`On by default: sending starts on ${dayLabel(startDay)} unless you turn it off`,
+		`On by default: sending starts at 02:00 UTC on ${dayLabel(startDay)} unless you turn it off`,
 	);
 	const toggle = card.getByRole("switch", { name: SWITCH });
 	await expect(toggle).toHaveAttribute("aria-checked", "true");
@@ -223,7 +227,7 @@ test("an install whose owner never chose is told first in Admin, and Turn off is
 	expect(errors).toEqual([]);
 });
 
-test("the sidebar notice: Dismiss keeps the start day, Keep on starts at once, the start day turns it on", async ({
+test("the sidebar notice: Hide keeps the start day, Keep on starts at once, the start day turns it on", async ({
 	page,
 }) => {
 	forgetChoice();
@@ -231,7 +235,11 @@ test("the sidebar notice: Dismiss keeps the start day, Keep on starts at once, t
 	const notice = page.getByRole("region", { name: NOTICE });
 	const startDay = expectedStartDay();
 	await expect(notice).toContainText(noticeText(startDay));
-	await notice.getByRole("button", { name: "Dismiss" }).click();
+	await expect(notice).toContainText(
+		"One pseudonymous daily report, ranges only, to the Kite project run by Michiel de Gooijer (midego).",
+	);
+	await expect.poll(async () => (await telemetryStatus()).startDay).toBe(startDay);
+	await notice.getByRole("button", { name: `Hide (statistics still start on ${dayLabel(startDay)} UTC)` }).click();
 	await expect(notice).toHaveCount(0);
 	expect(await telemetryStatus()).toMatchObject({ decision: null, enabled: false, notice: false, startDay });
 	await gotoAndWaitForStatus(page, "/inbox");
@@ -239,6 +247,7 @@ test("the sidebar notice: Dismiss keeps the start day, Keep on starts at once, t
 
 	forgetChoice();
 	await page.reload();
+	await expect.poll(async () => (await telemetryStatus()).startDay).toBe(startDay);
 	await notice.getByRole("button", { name: "Keep on" }).click();
 	await expect(notice).toHaveCount(0);
 	const kept = await telemetryStatus();

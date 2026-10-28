@@ -42,7 +42,7 @@ const LATER_MIGRATIONS = [
 	"0071_add_telemetry_state.sql",
 	"0072_add_ai_summaries.sql",
 	"0073_add_spam_report_receipts.sql",
-	"0074_add_telemetry_notice.sql",
+	"0075_add_telemetry_notice.sql",
 ];
 /** The modules 0062 seeds a row for; later modules have no row, which means `defaultEnabled`. */
 const MODULES = ["calendar", "booking", "templates", "import"];

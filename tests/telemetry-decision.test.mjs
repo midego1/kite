@@ -47,10 +47,16 @@ const {
 	telemetryNoticeDue,
 	telemetryNoticeText,
 	telemetryStartDay,
-	telemetryStartDayReached,
+	telemetryStartDayOutcome,
 } = await load("utils");
-const { setupUsageStatisticsChoice, telemetryStartsLater, telemetrySwitchOn, usageStatisticsSetupHint } =
-	await load("notice");
+const {
+	setupUsageStatisticsChoice,
+	TELEMETRY_NOTICE_SHORT,
+	telemetryHideLabel,
+	telemetryStartsLater,
+	telemetrySwitchOn,
+	usageStatisticsSetupHint,
+} = await load("notice");
 const {
 	applyTelemetryStartDay,
 	getTelemetryStatus,
@@ -111,24 +117,23 @@ test("the start day is the UTC day after 14 full days, named the same everywhere
 	assert.equal(telemetryDayLabel(START_DAY), "12 November 2026");
 	assert.equal(
 		telemetryNoticeText(START_DAY),
-		"Kite will start sending usage statistics on 12 November 2026 unless you turn them off.",
+		"Kite will start sending usage statistics from 02:00 UTC on 12 November 2026 unless you turn them off.",
 	);
 });
 
 test("the rules: only an undecided install starts, only from a start day it was told about", () => {
-	assert.equal(telemetryStartDayReached(choice(), "2027-01-01", false), false, "never told: never starts");
-	assert.equal(telemetryStartDayReached(choice({ startDay: START_DAY }), "2026-11-11", false), false);
-	assert.equal(telemetryStartDayReached(choice({ startDay: START_DAY }), START_DAY, false), true);
-	assert.equal(
-		telemetryStartDayReached(choice({ startDay: START_DAY, noticeDismissed: true }), START_DAY, false),
-		true,
-	);
-	assert.equal(telemetryStartDayReached(choice({ startDay: START_DAY }), START_DAY, true), false, "KITE_TELEMETRY");
-	assert.equal(
-		telemetryStartDayReached(choice({ decision: "off", startDay: START_DAY }), "2030-01-01", false),
-		false,
-		"an explicit off stays off",
-	);
+	const live = { forcedOff: false, endpoint: COLLECTOR };
+	const outcome = (overrides, today, context = live) => telemetryStartDayOutcome(choice(overrides), today, context);
+	assert.equal(outcome({}, "2027-01-01"), "wait", "never told: never starts");
+	assert.equal(outcome({ startDay: START_DAY }, "2026-11-11"), "wait");
+	assert.equal(outcome({ startDay: START_DAY }, START_DAY), "start");
+	assert.equal(outcome({ startDay: START_DAY, noticeDismissed: true }, START_DAY), "start");
+	assert.equal(outcome({ decision: "off", startDay: START_DAY }, "2030-01-01"), "wait", "an explicit off stays off");
+	assert.equal(outcome({ decision: "on", startDay: START_DAY }, "2030-01-01"), "wait");
+	// The day came while nothing could be sent: the date is dropped, never acted on later.
+	assert.equal(outcome({ startDay: START_DAY }, START_DAY, { ...live, forcedOff: true }), "expire", "KITE_TELEMETRY");
+	assert.equal(outcome({ startDay: START_DAY }, START_DAY, { ...live, endpoint: null }), "expire", "no collector");
+	assert.equal(outcome({ startDay: START_DAY }, "2026-11-11", { ...live, forcedOff: true }), "wait", "not yet");
 
 	const context = { noticeAvailable: true, forcedOff: false, endpoint: COLLECTOR };
 	assert.equal(telemetryNoticeDue(choice(), context), true);
@@ -156,6 +161,11 @@ test("the rules: only an undecided install starts, only from a start day it was 
 	assert.equal(setupUsageStatisticsChoice({ forcedOff: false, endpoint: COLLECTOR }, false), false);
 	assert.equal(setupUsageStatisticsChoice(undefined, true), true);
 	assert.equal(setupUsageStatisticsChoice({ forcedOff: true, endpoint: COLLECTOR }, true), undefined);
+	assert.equal(telemetryHideLabel(START_DAY), "Hide (statistics still start on 12 November 2026 UTC)");
+	assert.equal(
+		TELEMETRY_NOTICE_SHORT,
+		"One pseudonymous daily report, ranges only, to the Kite project run by Michiel de Gooijer (midego).",
+	);
 	assert.match(usageStatisticsSetupHint({ forcedOff: true, endpoint: COLLECTOR, checked: true }), /KITE_TELEMETRY/);
 	assert.match(usageStatisticsSetupHint({ forcedOff: false, endpoint: null, checked: true }), /nothing is sent/);
 	assert.match(usageStatisticsSetupHint({ forcedOff: false, endpoint: COLLECTOR, checked: false }), /no install ID/);
@@ -268,7 +278,7 @@ test("dismissing the notice keeps its start day; Keep on starts at once; Turn of
 	);
 	const sent = requests.length;
 	assert.deepEqual(await everyDay(turnedOff, "2026-10-29", "2027-06-01", fetcher), ["disabled"]);
-	assert.equal(await applyTelemetryStartDay(turnedOff, at("2027-06-01")), false);
+	assert.equal(await applyTelemetryStartDay(turnedOff, at("2027-06-01")), null);
 	await markTelemetryNotice(turnedOff, "shown", at("2027-06-01"));
 	assert.equal((await getTelemetryStatus(turnedOff, at("2027-06-01"))).decision, "off", "never re-enabled");
 	assert.equal(requests.length, sent);
@@ -277,18 +287,18 @@ test("dismissing the notice keeps its start day; Keep on starts at once; Turn of
 test("an owner who turned statistics off before the upgrade stays off; one who turned them on stays on", async (t) => {
 	const scratch = makeBundleDirectory("kite-telemetry-decision-migrations-");
 	t.after(() => rmSync(scratch, { recursive: true, force: true }));
-	const before0074 = copyMigrationsBefore(scratch, 74);
+	const before0075 = copyMigrationsBefore(scratch, 75);
 	const { fetcher, requests } = recorder();
 	for (const [enabled, decision] of [
 		[0, "off"],
 		[1, "on"],
 	]) {
-		const sqlite = await database(t, before0074);
+		const sqlite = await database(t, before0075);
 		const env = { DB: sqlite, KITE_TELEMETRY_URL: COLLECTOR };
 		sqlite.db
 			.prepare("INSERT INTO telemetry_state (id, enabled, install_id, updated_at) VALUES ('default', ?, ?, 1)")
 			.run(enabled, enabled ? "3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e" : null);
-		// Before 0074: a row is the owner's choice, the notice cannot be stored and is never shown.
+		// Before 0075: a row is the owner's choice, the notice cannot be stored and is never shown.
 		const legacy = await readTelemetryState(env);
 		assert.deepEqual(
 			{ decision: legacy.decision, noticeAvailable: legacy.noticeAvailable },
@@ -310,10 +320,10 @@ test("an owner who turned statistics off before the upgrade stays off; one who t
 	);
 });
 
-test("before migration 0074 the switch still works and nothing starts by itself", async (t) => {
-	const scratch = makeBundleDirectory("kite-telemetry-decision-0073-");
+test("before migration 0075 the switch still works and nothing starts by itself", async (t) => {
+	const scratch = makeBundleDirectory("kite-telemetry-decision-pre-0075-");
 	t.after(() => rmSync(scratch, { recursive: true, force: true }));
-	const sqlite = await database(t, copyMigrationsBefore(scratch, 74));
+	const sqlite = await database(t, copyMigrationsBefore(scratch, 75));
 	const env = { DB: sqlite, KITE_TELEMETRY_URL: COLLECTOR };
 	const { fetcher, requests } = recorder();
 	assert.equal((await getTelemetryStatus(env, SEEN)).notice, false, "no row, but the notice cannot be stored");
@@ -334,13 +344,32 @@ test("KITE_TELEMETRY=0 and an empty KITE_TELEMETRY_URL override every decision",
 	await markTelemetryNotice(forcedEnv, "shown", SEEN);
 	assert.equal((await readTelemetryState(forcedEnv)).startDay, null, "the clock never starts while forced off");
 
-	// Told before KITE_TELEMETRY=0 was set: the start day passes without turning anything on.
+	// Told (and the notice hidden) before KITE_TELEMETRY=0 was set: the start day comes without turning anything on,
+	// no id is made, and the stale date and the dismissal are cleared, so the notice comes back with a new date.
 	const told = { DB: await database(t), KITE_TELEMETRY_URL: COLLECTOR };
 	await markTelemetryNotice(told, "shown", SEEN);
+	await markTelemetryNotice(told, "dismissed", SEEN);
 	const toldForced = { ...told, KITE_TELEMETRY: "off" };
-	assert.equal((await getTelemetryStatus(toldForced, at(START_DAY))).startDay, null);
+	assert.equal(await runTelemetryHeartbeat(toldForced, at(START_DAY), fetcher), "forced_off");
+	assert.deepEqual(
+		(({ decision, enabled, installId, startDay, noticeDismissed }) => ({
+			decision,
+			enabled,
+			installId,
+			startDay,
+			noticeDismissed,
+		}))(await readTelemetryState(told)),
+		{ decision: null, enabled: false, installId: null, startDay: null, noticeDismissed: false },
+	);
 	assert.deepEqual(await everyDay(toldForced, START_DAY, "2026-12-31", fetcher), ["forced_off"]);
-	assert.equal((await readTelemetryState(told)).decision, null);
+	const back = await getTelemetryStatus(told, at("2026-12-31", "09:00:00"));
+	assert.deepEqual(
+		{ notice: back.notice, startDay: back.startDay, enabled: back.enabled },
+		{ notice: true, startDay: null, enabled: false },
+	);
+	await markTelemetryNotice(told, "shown", at("2026-12-31", "09:00:00"));
+	assert.equal((await readTelemetryState(told)).startDay, "2027-01-15", "a new date, 14 full days ahead");
+	assert.equal(await runTelemetryHeartbeat(told, at("2027-01-14"), fetcher), "disabled", "not before the new date");
 	await setTelemetryEnabled(told, true);
 	assert.equal(await runTelemetryHeartbeat(toldForced, at("2026-12-31"), fetcher), "forced_off");
 
@@ -348,7 +377,38 @@ test("KITE_TELEMETRY=0 and an empty KITE_TELEMETRY_URL override every decision",
 	assert.equal((await getTelemetryStatus(empty, SEEN)).notice, false, "nothing would be sent: no notice");
 	await markTelemetryNotice(empty, "shown", SEEN);
 	assert.equal((await readTelemetryState(empty)).startDay, null);
+	// A date set while an address was usable, reached after it was emptied: cleared, nothing turns on.
+	const emptied = { DB: await database(t), KITE_TELEMETRY_URL: COLLECTOR };
+	await markTelemetryNotice(emptied, "shown", SEEN);
+	const emptiedNow = { ...emptied, KITE_TELEMETRY_URL: "" };
+	assert.equal(await applyTelemetryStartDay(emptiedNow, at(START_DAY)), "expired");
+	assert.equal(await runTelemetryHeartbeat(emptiedNow, at(START_DAY), fetcher), "no_endpoint");
+	const cleared = await readTelemetryState(emptied);
+	assert.deepEqual(
+		{ decision: cleared.decision, installId: cleared.installId, startDay: cleared.startDay },
+		{ decision: null, installId: null, startDay: null },
+	);
 	await recordSetupTelemetryChoice(empty, true, SEEN);
 	assert.deepEqual(await everyDay(empty, "2026-10-29", "2026-12-01", fetcher), ["no_endpoint"]);
 	assert.equal(requests.length, 0);
+});
+
+test("the date is the same UTC day whatever the server's time zone", () => {
+	const previous = process.env.TZ;
+	process.env.TZ = "America/Los_Angeles";
+	try {
+		// 28 October 23:30 UTC is still 28 October in Los Angeles; 29 October 01:30 UTC is 28 October 18:30 there.
+		assert.equal(new Date("2026-10-29T01:30:00Z").getDate(), 28, "the zone is in effect");
+		assert.equal(telemetryStartDay(new Date("2026-10-28T23:30:00Z")), START_DAY);
+		assert.equal(telemetryStartDay(new Date("2026-10-29T01:30:00Z")), "2026-11-13");
+		assert.equal(telemetryDayLabel(START_DAY), "12 November 2026");
+		assert.equal(
+			telemetryNoticeText(START_DAY),
+			"Kite will start sending usage statistics from 02:00 UTC on 12 November 2026 unless you turn them off.",
+		);
+		assert.equal(telemetryHideLabel(START_DAY), "Hide (statistics still start on 12 November 2026 UTC)");
+	} finally {
+		if (previous === undefined) delete process.env.TZ;
+		else process.env.TZ = previous;
+	}
 });

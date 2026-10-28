@@ -142,23 +142,30 @@ export function telemetryDayLabel(day: string): string {
 
 /** The sentence the one-time notice for an existing install leads with. */
 export function telemetryNoticeText(startDay: string): string {
-	return `Kite will start sending usage statistics on ${telemetryDayLabel(startDay)} unless you turn them off.`;
+	return `Kite will start sending usage statistics from 02:00 UTC on ${telemetryDayLabel(startDay)} unless you turn them off.`;
 }
 
 /** The stored parts of the choice the rules below read. */
 export type TelemetryChoice = { decision: TelemetryDecision | null; startDay: string | null; noticeDismissed: boolean };
 
 /**
- * An undecided install whose start day has come now counts as on. Never while `KITE_TELEMETRY` forces statistics
- * off, never without a start day (the owner was never told) and never over a decision: an explicit `off` stays off.
+ * What an undecided install's start day means today. `wait`: no start day (the owner was never told), a decision
+ * (an explicit `off` stays off) or the day has not come. `start`: the day has come and statistics turn on. `expire`:
+ * the day came while `KITE_TELEMETRY` forced statistics off or no collector address was usable, so nothing could
+ * start; the date is cleared, never acted on later, and the notice comes back with a new one once it is due again.
  */
-export function telemetryStartDayReached(choice: TelemetryChoice, today: string, forcedOff: boolean): boolean {
-	return !forcedOff && choice.decision === null && choice.startDay !== null && today >= choice.startDay;
+export function telemetryStartDayOutcome(
+	choice: TelemetryChoice,
+	today: string,
+	context: { forcedOff: boolean; endpoint: string | null },
+): "wait" | "start" | "expire" {
+	if (choice.decision !== null || choice.startDay === null || today < choice.startDay) return "wait";
+	return context.forcedOff || context.endpoint === null ? "expire" : "start";
 }
 
 /**
  * Whether the primary admin gets the one-time notice: only while undecided and not dismissed, only when something
- * would actually be sent, and only once migration 0074 can store that it was shown.
+ * would actually be sent, and only once migration 0075 can store that it was shown.
  */
 export function telemetryNoticeDue(
 	choice: TelemetryChoice,

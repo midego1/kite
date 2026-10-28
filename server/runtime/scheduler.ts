@@ -43,7 +43,7 @@ export function startScheduler(env: CloudflareEnv) {
 			.then(() => runDatabasePruning(env, now))
 			.catch((error) => logger.error("database.pruning_failed", { error }));
 		runModuleCronTasks(env, "0 2 * * *", now).catch((error) => logger.error("modules.cron_failed", { error }));
-		// Opt-in usage statistics, matching worker.ts; does nothing unless the owner turned them on. Never throws.
+		// Usage statistics, matching worker.ts; does nothing unless they are on for this install. Never throws.
 		void runTelemetryHeartbeat(env, now);
 	}, 60_000);
 	return () => clearInterval(timer);

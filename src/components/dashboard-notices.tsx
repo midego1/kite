@@ -23,10 +23,10 @@ export function DashboardNotices({ slot }: { slot: "sidebar" | "page" }) {
 					: "flex flex-col gap-2 px-2 pb-2 empty:hidden"
 			}
 		>
+			<TelemetryNotice variant="sidebar" />
 			<AlertsBanner />
 			<MigrationsBanner />
 			<DnsSkippedBanner />
-			<TelemetryNotice variant="sidebar" />
 		</div>
 	);
 }

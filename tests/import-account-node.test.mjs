@@ -99,6 +99,7 @@ async function setup(t, server, migrationsDir = join(root, "drizzle/migrations")
 	`);
 	const connect = createTcpConnect({ ca: tls.cert, resolve: async () => ["127.0.0.1"], allowLoopback: true });
 	const queued = [];
+	const delays = [];
 	const env = {
 		KITE_RUNTIME: "node",
 		TCP_CONNECT: (address, options) => connect({ ...address, port: server.port }, options),
@@ -109,10 +110,15 @@ async function setup(t, server, migrationsDir = join(root, "drizzle/migrations")
 			head: async () => null,
 			delete: async () => undefined,
 		},
-		AGENT_QUEUE: { send: async (message) => queued.push(message) },
+		AGENT_QUEUE: {
+			send: async (message, options) => {
+				queued.push(message);
+				delays.push(options?.delaySeconds ?? 0);
+			},
+		},
 	};
 	globalThis.__kiteNodeEnv = env;
-	return { db, env, queued, limits };
+	return { db, env, queued, delays, limits };
 }
 
 const account = { host: HOST, port: 993, secure: true, username: USER, password: PASSWORD };
@@ -477,6 +483,55 @@ test("Cancel and the 7-day limit on a paused job close the folders it never reac
 		const statuses = db.db.prepare("SELECT DISTINCT status FROM import_job_folders WHERE job_id = ?").all(id);
 		assert.deepEqual(statuses, [{ status: "skipped" }]);
 	}
+});
+
+test("a Cancel that lands while a folder is opening leaves no folder running and the later ones unopened", async (t) => {
+	const server = await fake(t, {
+		folders: { INBOX: [sampleMessage(1)], Archive: [sampleMessage(2)], Work: [sampleMessage(3)] },
+	});
+	const { db, env, limits } = await setup(t, server);
+	const job = await startAccountJob(env, await planAccountImport(env, account));
+	const opened = () => server.commands.filter((entry) => /^\S+ (EXAMINE|SELECT)\b/i.test(entry.line)).length;
+	// The first folder's "running" write meets a job that was cancelled just before it, and nothing closed the folders.
+	limits.refuse = (sql) => {
+		if (!/^update "import_job_folders"/i.test(sql)) return false;
+		limits.refuse = undefined;
+		db.db.prepare("UPDATE import_jobs SET status = 'cancelled', lease_until = NULL WHERE id = ?").run(job.id);
+		return false;
+	};
+	await processImportJob(env, job.id, CTX);
+	assert.equal(opened(), 1, "the later folders were not opened");
+	assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 0);
+	assert.equal(db.db.prepare("SELECT status FROM import_jobs").get().status, "cancelled");
+	// Not left running or pending: the run's end closes what Cancel did not.
+	assert.deepEqual(db.db.prepare("SELECT DISTINCT status FROM import_job_folders").all(), [{ status: "skipped" }]);
+});
+
+test("Resume of a paused job whose run still holds the lease queues a run for when the lease expires", async (t) => {
+	const inbox = Array.from({ length: 30 }, (_, index) => sampleMessage(index + 1, { subject: `Dead ${index + 1}` }));
+	const server = await fake(t, { folders: { INBOX: inbox } });
+	const { db, env, queued, delays } = await setup(t, server);
+	const job = await startAccountJob(env, await planAccountImport(env, account));
+	assert.equal(await pauseImportJob(env, "owner", job.id), true);
+	// A worker that was evicted mid-batch: the pause kept its lease.
+	db.db.prepare("UPDATE import_jobs SET lease_until = ? WHERE id = ?").run(Math.floor(Date.now() / 1000) + 300, job.id);
+	queued.length = 0;
+	delays.length = 0;
+	assert.equal(await resumeImportJob(env, "owner", job.id, { confirmed: false }), "resumed");
+	assert.deepEqual(queued, [
+		{ kind: "import.imap", jobId: job.id },
+		{ kind: "import.imap", jobId: job.id },
+	]);
+	assert.equal(delays[0], 0);
+	assert.ok(delays[1] >= 300 && delays[1] <= 302, `${delays[1]}`);
+	// Before the lease expires neither message starts a run beside the lease holder.
+	await processImportJob(env, job.id, CTX);
+	assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 0);
+	// The delayed one finds it expired and takes the job.
+	db.db.prepare("UPDATE import_jobs SET lease_until = ? WHERE id = ?").run(Math.floor(Date.now() / 1000) - 1, job.id);
+	await processImportJob(env, job.id, CTX);
+	assert.equal(db.db.prepare("SELECT status FROM import_jobs").get().status, "completed");
+	assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 30);
 });
 
 test("another user's job cannot be paused, resumed or cancelled", async (t) => {

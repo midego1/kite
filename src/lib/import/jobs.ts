@@ -218,7 +218,7 @@ export async function resumeImportJob(
 ): Promise<"resumed" | "not_found" | "needs_confirmation" | "full"> {
 	const db = getDb(env);
 	const [job] = await db
-		.select({ id: importJobs.id, lastError: importJobs.lastError })
+		.select({ id: importJobs.id, lastError: importJobs.lastError, leaseUntil: importJobs.leaseUntil })
 		.from(importJobs)
 		.where(and(eq(importJobs.id, jobId), eq(importJobs.userId, userId), eq(importJobs.status, "paused")))
 		.limit(1);
@@ -246,7 +246,13 @@ export async function resumeImportJob(
 			.where(eq(importJobs.id, jobId))
 			.catch(() => undefined);
 	if (!resumed.length) return "not_found";
+	// A lease still held means a run is finishing its batch, or its worker died. The run queued now would meet the
+	// lease and leave, so a second one is queued for when the lease has expired: a dead worker's job then restarts
+	// at once instead of waiting for the next cron tick as well. A live run renews its lease, and the lease keeps
+	// this message from starting a second run beside it.
 	await enqueueImportJob(env, jobId);
+	const leaseSeconds = job.leaseUntil ? Math.ceil((job.leaseUntil.getTime() - Date.now()) / 1000) : 0;
+	if (leaseSeconds > 0) await enqueueImportJob(env, jobId, leaseSeconds + 1);
 	return "resumed";
 }
 
@@ -339,7 +345,20 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 	} finally {
 		await run?.session.close().catch(() => undefined);
 		await releaseImportLease(env, job.id);
+		// A run in flight when Cancel closed the folders (or that failed) must not leave one open.
+		if (job.scope === "account") await closeFoldersOfEndedJob(env, job.id);
 	}
+}
+
+/** Marks the unfinished folders of this job as skipped when it ended cancelled or failed while the run was going. */
+async function closeFoldersOfEndedJob(env: CloudflareEnv, jobId: string): Promise<void> {
+	const [row] = await getDb(env)
+		.select({ status: importJobs.status })
+		.from(importJobs)
+		.where(eq(importJobs.id, jobId))
+		.limit(1)
+		.catch(() => []);
+	if (row?.status === "cancelled" || row?.status === "failed") await closeOpenFolders(env, [jobId]);
 }
 
 /**

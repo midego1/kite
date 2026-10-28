@@ -2,7 +2,7 @@ import { and, asc, eq, getTableColumns, inArray } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { D1_MAX_BOUND_PARAMETERS, chunkArray, runInChunks } from "@/db/chunk-utils";
 import { folders as kiteFolders } from "@/db/schema";
-import { importJobFolders } from "@/db/schema/import-jobs";
+import { importJobFolders, importJobs } from "@/db/schema/import-jobs";
 import { newId } from "@/lib/ids";
 import { encodeRawMime } from "@/lib/email/module-import-utils";
 import type { HostImportMessage, HostImportResult } from "@/lib/modules/host-types";
@@ -146,6 +146,37 @@ async function updateFolder(env: CloudflareEnv, folder: ImportJobFolderRow, fiel
 }
 
 /**
+ * Changes a folder's status only while its job is still running or waiting. Cancel closes the open folders while a
+ * run is in flight; without this guard the run would set a skipped folder back to running or completed. Returns
+ * false, leaving the row alone, when the job has ended or is paused.
+ */
+async function updateFolderStatus(
+	env: CloudflareEnv,
+	folder: ImportJobFolderRow,
+	fields: Partial<ImportJobFolderRow> & { status: string },
+): Promise<boolean> {
+	const db = getDb(env);
+	const updated = await db
+		.update(importJobFolders)
+		.set({ ...fields, updatedAt: new Date() })
+		.where(
+			and(
+				eq(importJobFolders.id, folder.id),
+				inArray(
+					importJobFolders.jobId,
+					db
+						.select({ id: importJobs.id })
+						.from(importJobs)
+						.where(and(eq(importJobs.id, folder.jobId), inArray(importJobs.status, ["pending", "running"]))),
+				),
+			),
+		)
+		.returning({ id: importJobFolders.id });
+	if (updated.length) Object.assign(folder, fields);
+	return updated.length > 0;
+}
+
+/**
  * One invocation of a whole-account job (spec §4.1): its folders one after another on the job's lease, each from
  * its own cursor, until the run's budget or time is spent.
  */
@@ -176,19 +207,21 @@ async function runAccountFolder(
 		({ uidValidity } = await run.session.examine(folder.sourceName));
 	} catch (error) {
 		if (!isFolderRefusal(error)) throw error;
-		await updateFolder(run.env, folder, { status: "failed", lastError: (error as Error).message });
-		return "next";
+		const failed = await updateFolderStatus(run.env, folder, { status: "failed", lastError: (error as Error).message });
+		return failed ? "next" : "stopped";
 	}
 	// A new UIDVALIDITY means the old UIDs mean nothing: start the folder over; dedupe skips what is in Kite.
 	const restart = folder.uidvalidity !== null && uidValidity !== null && uidValidity !== folder.uidvalidity;
 	const uids = await run.session.searchUids();
 	const remaining = selectRemainingUids(uids, restart ? null : folder.cursorUid);
-	await updateFolder(run.env, folder, {
+	// Not while the job is cancelled, failed or paused: the run stops here instead of walking the later folders.
+	const opened = await updateFolderStatus(run.env, folder, {
 		status: "running",
 		uidvalidity: uidValidity,
 		total: restart ? folder.processed + remaining.length : Math.max(uids.length, folder.processed),
 		cursorUid: restart ? null : folder.cursorUid,
 	});
+	if (!opened) return "stopped";
 	run.total = jobTotal(folders);
 	const gmail = folder.destination === GMAIL_LABELS_DESTINATION;
 	const handled = await fetchInChunks(
@@ -244,8 +277,7 @@ async function runAccountFolder(
 	);
 	if (handled === null) return "stopped";
 	if (handled < remaining.length) return "more";
-	await updateFolder(run.env, folder, { status: "completed", lastError: null });
-	return "next";
+	return (await updateFolderStatus(run.env, folder, { status: "completed", lastError: null })) ? "next" : "stopped";
 }
 
 /** A Gmail label's Kite folder, created the first time this run meets it. */

@@ -10,7 +10,8 @@ AGPL-3.0; substantially extended since. Copyright notices of the original work
 are retained.
 
 The object storage adapter and the Drive module are derived from Mailflare commits
-83ade98, 9f66e13 and 3c90a03 by Hieu Nguyen (AGPL-3.0).
+83ade98, 9f66e13 and 3c90a03 by Hieu Nguyen (AGPL-3.0). Reading an upload's state from its
+headers (src/lib/import/message-hints-utils.ts) follows the idea of commit 4aaf066 by the same author.
 
 Third-party code
 ----------------

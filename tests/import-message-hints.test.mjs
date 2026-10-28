@@ -1,0 +1,96 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { bundleModules } from "./support/modules-bundle.mjs";
+
+const { applyImportHints, getImportMessageHints, parseGmailLabelHeader } = await bundleModules("kite-import-hints-", [
+	["applyImportHints, getImportMessageHints, parseGmailLabelHeader", "src/lib/import/message-hints-utils.ts"],
+]);
+
+const raw = (headers, body = "body") => new TextEncoder().encode(`${headers}\n\n${body}`).buffer;
+const hints = (headers) => getImportMessageHints(raw(headers));
+
+test("mbox Status and X-Status set the read state", () => {
+	assert.equal(hints("Status: RO\nSubject: a").read, true);
+	assert.equal(hints("Status: R\nSubject: a").read, true);
+	assert.equal(hints("Status: O\nSubject: a").read, false);
+	assert.equal(hints("status: ro").read, true);
+	assert.equal(hints("X-Status: AR").read, true);
+	assert.equal(hints("Status: O\nX-Status: A").read, false);
+	assert.equal(hints("Subject: a").read, undefined);
+});
+
+test("X-Status F stars the message", () => {
+	assert.equal(hints("X-Status: AF").starred, true);
+	assert.equal(hints("X-Status: A").starred, undefined);
+});
+
+test("a Status that is not a status is ignored", () => {
+	assert.equal(hints("Status: read it please\nSubject: a").read, undefined);
+	assert.equal(hints("Status:\nSubject: a").read, undefined);
+	assert.equal(hints("Status: " + "R".repeat(5000)).read, undefined);
+});
+
+test("Gmail Takeout labels give the read state, star and spam or trash", () => {
+	assert.equal(hints("X-Gmail-Labels: Inbox,Unread").read, false);
+	assert.equal(hints("X-Gmail-Labels: Inbox,Important").read, true);
+	assert.equal(hints("X-Gmail-Labels: Inbox, UNREAD").read, false);
+	assert.equal(hints("X-Gmail-Labels: Starred,Inbox").starred, true);
+	assert.equal(hints("X-Gmail-Labels: Inbox").starred, undefined);
+	assert.equal(hints("X-Gmail-Labels: Spam,Unread").section, "spam");
+	assert.equal(hints("X-Gmail-Labels: Spam,Unread").read, false);
+	assert.equal(hints("X-Gmail-Labels: Trash").section, "trash");
+	assert.equal(hints("X-Gmail-Labels: Spam,Trash").section, "trash");
+	assert.equal(hints("X-Gmail-Labels: Inbox").section, undefined);
+	// Labels win over Status where they speak.
+	assert.equal(hints("Status: O\nX-Gmail-Labels: Inbox").read, true);
+});
+
+test("a user label that contains a system label's name does not count", () => {
+	assert.equal(hints('X-Gmail-Labels: Inbox,"Spam, ham",Work').section, undefined);
+	assert.equal(hints("X-Gmail-Labels: Inbox,Spammy,Trash can").section, undefined);
+	assert.deepEqual(parseGmailLabelHeader('Inbox, "Spam, ham" ,,Work'), ["inbox", "spam, ham", "work"]);
+});
+
+test("X-Spam-Flag YES means spam", () => {
+	assert.equal(hints("X-Spam-Flag: YES").section, "spam");
+	assert.equal(hints("x-spam-flag: yes").section, "spam");
+	assert.equal(hints("X-Spam-Flag: NO").section, undefined);
+	assert.equal(hints("X-Spam-Flag: yesterday").section, undefined);
+	// A message in the Trash label stays in the trash.
+	assert.equal(hints("X-Spam-Flag: YES\nX-Gmail-Labels: Trash").section, "trash");
+});
+
+test("folded headers are joined and CRLF is understood", () => {
+	assert.equal(hints("X-Gmail-Labels: Inbox,\n Spam").section, "spam");
+	const crlf = new TextEncoder().encode("Subject: a\r\nStatus: RO\r\n\r\nStatus: O").buffer;
+	assert.equal(getImportMessageHints(crlf).read, true);
+});
+
+test("only the headers are read, never the body", () => {
+	const message = raw("Subject: a", "Status: RO\nX-Spam-Flag: YES\nX-Gmail-Labels: Spam");
+	assert.deepEqual(getImportMessageHints(message), {});
+});
+
+test("headers beyond the first 64 KiB are not read, and garbage does not throw", () => {
+	const long = `Subject: a\n${"X-Pad: x\n".repeat(9000)}X-Spam-Flag: YES`;
+	assert.deepEqual(hints(long), {});
+	assert.deepEqual(getImportMessageHints(new Uint8Array([0xff, 0xfe, 0, 58, 10]).buffer), {});
+	assert.deepEqual(getImportMessageHints(new ArrayBuffer(0)), {});
+});
+
+test("hints only refine the Inbox destination", () => {
+	const spam = { section: "spam" };
+	assert.deepEqual(applyImportHints({ type: "system", section: "inbox" }, spam), { type: "system", section: "spam" });
+	assert.deepEqual(applyImportHints({ type: "system", section: "inbox" }, { section: "trash" }), {
+		type: "system",
+		section: "trash",
+	});
+	assert.deepEqual(applyImportHints({ type: "system", section: "inbox" }, { read: true }), {
+		type: "system",
+		section: "inbox",
+	});
+	for (const section of ["sent", "drafts", "archived", "trash"]) {
+		assert.deepEqual(applyImportHints({ type: "system", section }, spam), { type: "system", section });
+	}
+	assert.deepEqual(applyImportHints({ type: "folder", folderId: "f" }, spam), { type: "folder", folderId: "f" });
+});

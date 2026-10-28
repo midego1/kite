@@ -42,7 +42,43 @@ function CrossMailboxFolderHint({ show }: { show: boolean }) {
 	);
 }
 
-export function BulkMessageToolbar({
+/**
+ * The selection toolbar of the Drafts list. Drafts are private to their author and leave Drafts only by being
+ * sent or deleted, so it offers Delete (which removes them outright) and nothing that moves them.
+ */
+function DraftSelectionToolbar({
+	selectedCount,
+	hideSelectedCount,
+	onAction,
+	onClearSelection,
+	pending,
+}: Pick<BulkMessageToolbarProps, "selectedCount" | "hideSelectedCount" | "onAction" | "onClearSelection" | "pending">) {
+	return (
+		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full">
+			{!hideSelectedCount && (
+				<span className="mr-2 text-sm font-medium text-neutral-800">{selectedCount} selected</span>
+			)}
+			<span className="flex-1 md:hidden" />
+			<Tooltip label="Delete">
+				<Button variant="ghost" size="sm" onClick={() => onAction("trash")} disabled={pending} aria-label="Delete">
+					<Trash2 className="h-4 w-4" />
+				</Button>
+			</Tooltip>
+			<span className="flex-1 max-md:hidden" />
+			<Tooltip label="Clear selection">
+				<Button variant="ghost" size="sm" onClick={onClearSelection} disabled={pending} aria-label="Clear selection">
+					<X className="h-4 w-4" />
+				</Button>
+			</Tooltip>
+		</div>
+	);
+}
+
+export function BulkMessageToolbar(props: BulkMessageToolbarProps) {
+	return props.folder === "drafts" ? <DraftSelectionToolbar {...props} /> : <MailSelectionToolbar {...props} />;
+}
+
+function MailSelectionToolbar({
 	selectedCount,
 	hasUnreadSelection,
 	hideSelectedCount = false,

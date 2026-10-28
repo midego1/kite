@@ -63,7 +63,8 @@ export function useMessageListKeyboard({
 				if (id) toggleRowSelection(id);
 			},
 			archive: () => {
-				if (folder !== "archived") runOnRows("archive", focusedId());
+				// Drafts never move to Archive; they are sent or deleted.
+				if (folder !== "archived" && folder !== "drafts") runOnRows("archive", focusedId());
 			},
 			trash: () => {
 				if (folder !== "trash") runOnRows("trash", focusedId());

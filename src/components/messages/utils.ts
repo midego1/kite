@@ -11,6 +11,7 @@ import type { PageRange } from "./types";
 import type { BulkMessageResponse, PermanentDeleteFolder } from "@/app/api/messages/bulk/types";
 import { announcePhishingReports } from "./phishing-report";
 import { offerUndoForMove } from "./undo-utils";
+import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import type { EmptyFolderResponse } from "@/app/api/messages/empty/types";
 
 export function getMessageParty(message: Message, folder: MessageFolderConfig["folder"], currentAccountName?: string) {
@@ -112,6 +113,29 @@ export async function runBulkMessageAction(messageIds: string[], action: string,
 	offerUndoForMove(action, data);
 	if (action === "phishing") announcePhishingReports(data);
 	return data;
+}
+
+/**
+ * An action on rows of the Drafts list. Drafts are private to their author, so Delete removes them outright
+ * through the drafts API, as the composer's Discard does, after asking (there is no Undo); read state changes
+ * as anywhere, and nothing moves a draft to another folder.
+ */
+export async function runDraftListAction(draftIds: string[], action: string) {
+	if (action === "read" || action === "unread") return runBulkMessageAction(draftIds, action);
+	if (action !== "trash" && action !== "delete") throw new Error("Drafts can only be sent or deleted");
+	const confirmed = await requestConfirmation({
+		title: draftIds.length === 1 ? "Delete this draft?" : `Delete ${draftIds.length} drafts?`,
+		description: "Deleted drafts and their attachments are removed at once. This can't be undone.",
+		confirmLabel: "Delete",
+	});
+	if (!confirmed) return null;
+	const responses = await Promise.all(
+		draftIds.map((id) => authFetch(`/api/drafts/${encodeURIComponent(id)}`, { method: "DELETE" })),
+	);
+	window.dispatchEvent(new Event("kite:messages-changed"));
+	// A draft that is already gone (sent or deleted elsewhere) is fine.
+	if (responses.some((response) => !response.ok && response.status !== 404)) throw new Error("Unable to delete drafts");
+	return null;
 }
 
 /** Messages sent per permanent-delete request, so progress can be shown between requests. */

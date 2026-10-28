@@ -4,7 +4,8 @@ import { messages, domains, mailboxes } from "@/db/schema";
 import { selectRow } from "@/lib/db/pending-columns";
 import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { createAuditLog } from "@/lib/mailboxes/audit";
-import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
+import { DRAFT_STATUS, isDraftMoveRefused, isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
+import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import type { SessionUser } from "@/lib/auth/types";
 import { applySpamFeedbackWithReceipt } from "@/lib/spam/feedback";
 
@@ -106,6 +107,12 @@ export async function updateMessageStatusForUser(
 	if (!message?.mailboxId || isHiddenDraft(message, user.id)) return false;
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canManage) return false;
+	// A draft is private: Trash deletes it outright, and no other move takes it out of Drafts or makes a draft.
+	if (message.status === DRAFT_STATUS && status === "trash") {
+		await deleteMessageWithObjects(env, db, message.id, message.rawR2Key);
+		return true;
+	}
+	if (isDraftMoveRefused(message.status, status)) return false;
 	const classification = status === "spam" ? "spam" : status === "received" && message.status === "spam" ? "ham" : null;
 	if (classification) {
 		const result = await applySpamFeedbackWithReceipt(env, user, messageId, classification);

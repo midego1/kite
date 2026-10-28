@@ -33,6 +33,10 @@ export type BulkMessageResponse = {
 	superseded?: number;
 	/** True when a report could not record what it trained, so Undo moves the mail back but cannot untrain it. */
 	trainingUndoUnavailable?: boolean;
+	/** Your own drafts a Delete or Trash removed outright: a draft never goes to Trash, where the mailbox would see it. */
+	draftsDeleted?: number;
+	/** Drafts left where they were, because a draft leaves Drafts only by being sent or deleted. */
+	draftsRefused?: number;
 	/** For "phishing": what happened to each reported message's sender. */
 	reports?: PhishingReport[];
 };

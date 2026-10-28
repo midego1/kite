@@ -36,13 +36,15 @@ await build({
 			export { POST as postDraft } from "./src/app/api/drafts/route.ts";
 			export { GET as getExport } from "./src/app/api/export/messages/route.ts";
 			export { GET as getV1Messages } from "./src/app/api/v1/messages/route.ts";
-			export { emailGet, emailQuery, threadGet } from "./src/lib/jmap/emails.ts";
+			export { emailGet, emailQuery, emailSet, threadGet, searchSnippetGet } from "./src/lib/jmap/emails.ts";
+			export { DELETE as deleteAccess } from "./src/app/api/mailboxes/[id]/access/route.ts";
 			export { mailboxGet } from "./src/lib/jmap/mailboxes.ts";
 			export { readBlob } from "./src/lib/jmap/blobs.ts";
 			export { attachmentBlobId, messageBlobId } from "./src/lib/jmap/ids.ts";
 			export { getModuleMessage, readModuleAttachment } from "./src/lib/email/module-read.ts";
 			export { canProxyMessageImage } from "./src/lib/remote-images/message-access.ts";
-			export { isHiddenDraft } from "./src/lib/messages/draft-privacy-utils.ts";
+			export { isHiddenDraft, isDraftMoveRefused } from "./src/lib/messages/draft-privacy-utils.ts";
+			export { bulkDraftHandling } from "./src/app/api/messages/bulk/utils.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "draft-privacy-test-entry.ts",
@@ -97,8 +99,9 @@ function memoryBucket() {
 }
 
 /**
- * Alice owns `shared` and gave Bob full access. Each wrote a draft there; `mail-1` is ordinary mail both read.
- * Alice's draft has an attachment, an image and the word "zebra" a search would find.
+ * Alice owns `shared` and gave Bob and Carol, an administrator, full access. Alice and Bob each wrote a draft
+ * there; `mail-1` is ordinary mail everyone reads. Alice's draft has an attachment, an image and the word
+ * "zebra" a search would find.
  */
 async function fixture(t) {
 	const database = new m.SqliteDatabase(":memory:");
@@ -107,9 +110,12 @@ async function fixture(t) {
 	database.db.exec(`
 		INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES ('alice', 'alice@example.com', 'hash', 'Alice', 'user', 1);
 		INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES ('bob', 'bob@example.com', 'hash', 'Bob', 'user', 1);
+		INSERT INTO users (id, email, password_hash, name, role, is_primary_admin, created_at) VALUES ('carol', 'carol@example.com', 'hash', 'Carol', 'admin', 1, 1);
 		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'alice', 'example.com', 'zone-1', 'active', 1);
 		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('shared', 'alice', 'domain-1', 'team', 'shared', 1);
 		INSERT INTO mailbox_access (id, mailbox_id, user_id, permission, created_at) VALUES ('access-1', 'shared', 'bob', 'full_access', 1);
+		INSERT INTO mailbox_access (id, mailbox_id, user_id, permission, created_at) VALUES ('access-2', 'shared', 'carol', 'full_access', 1);
+		INSERT INTO folders (id, user_id, mailbox_id, name, created_at) VALUES ('folder-1', 'alice', 'shared', 'Projects', 1);
 		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, snippet, text_body, html_body, status, thread_id, created_at) VALUES
 			('mail-1', 'alice', 'shared', 'inbound', 'sam@partner.test', 'team@example.com', 'Hello zebra', 'Hello zebra', 'Hello zebra', NULL, 'received', 'thread-1', 1790000000),
 			('draft-alice', 'alice', 'shared', 'outbound', 'team@example.com', 'sam@partner.test', 'Secret plan', 'Confidential zebra', 'Confidential zebra', '<p>Confidential zebra <img src="${IMAGE}"></p>', 'draft', 'thread-1', 1790000100),
@@ -128,7 +134,11 @@ async function fixture(t) {
 	const env = { DB: database, BUCKET: bucket, AI: {} };
 	globalThis.__kiteNodeEnv = env;
 	t.after(() => delete globalThis.__kiteNodeEnv);
-	const tokens = { alice: await m.createSession(env, "alice"), bob: await m.createSession(env, "bob") };
+	const tokens = {
+		alice: await m.createSession(env, "alice"),
+		bob: await m.createSession(env, "bob"),
+		carol: await m.createSession(env, "carol"),
+	};
 	const as = (who, path, init = {}) =>
 		new Request(`${ORIGIN}${path}`, {
 			...init,
@@ -136,7 +146,8 @@ async function fixture(t) {
 		});
 	const params = (value) => ({ params: Promise.resolve(value) });
 	const status = (id) => database.db.prepare("SELECT status, starred, read FROM messages WHERE id = ?").get(id);
-	return { env, bucket, as, params, status };
+	const exists = (id) => !!database.db.prepare("SELECT 1 FROM messages WHERE id = ?").get(id);
+	return { database, env, bucket, as, params, status, exists };
 }
 
 const jmap = (env, userId) => ({
@@ -306,4 +317,200 @@ test("the REST API, JMAP and module hosts leave another user's draft out", async
 	assert.ok(await m.getModuleMessage(env, viewer("alice"), "draft-alice"));
 	assert.equal(await m.canProxyMessageImage(env, { id: "bob", role: "user" }, "draft-alice", IMAGE, ORIGIN), false);
 	assert.equal(await m.canProxyMessageImage(env, { id: "alice", role: "user" }, "draft-alice", IMAGE, ORIGIN), true);
+});
+
+test("an administrator with full access to the mailbox is still not shown another user's draft", async (t) => {
+	const { as, params } = await fixture(t);
+	const one = { messageId: "draft-alice" };
+	assert.equal((await m.getMessage(as("carol", "/api/messages/draft-alice"), params(one))).status, 404);
+	const attachment = { messageId: "draft-alice", attachmentId: "att-alice" };
+	assert.equal(
+		(await m.getAttachment(as("carol", "/api/messages/draft-alice/attachments/att-alice"), params(attachment))).status,
+		404,
+	);
+	const list = async (query) =>
+		ids(await (await m.listMessages(as("carol", `/api/messages?mailboxId=shared&${query}`))).json());
+	assert.deepEqual(await list("status=draft"), []);
+	assert.deepEqual(await list("q=zebra"), ["mail-1"]);
+	const counts = await (await m.getCounts(as("carol", "/api/messages/counts?mailboxId=shared"))).json();
+	assert.equal(counts.counts.folders.drafts.total, 0);
+	const bulk = await m.postBulk(
+		as("carol", "/api/messages/bulk", {
+			method: "POST",
+			body: JSON.stringify({ action: "trash", messageIds: ["draft-alice"] }),
+		}),
+	);
+	assert.equal(bulk.status, 404);
+});
+
+test("a draft leaves Drafts only by being sent or deleted, and nothing becomes a draft", () => {
+	assert.equal(m.isDraftMoveRefused("draft", "trash"), true);
+	assert.equal(m.isDraftMoveRefused("draft", "archived"), true);
+	assert.equal(m.isDraftMoveRefused("received", "draft"), true);
+	assert.equal(m.isDraftMoveRefused("draft", "draft"), false);
+	assert.equal(m.isDraftMoveRefused("received", "trash"), false);
+	assert.equal(m.bulkDraftHandling("trash", "draft"), "discard");
+	assert.equal(m.bulkDraftHandling("delete", "draft"), "discard");
+	assert.equal(m.bulkDraftHandling("read", "draft"), "normal");
+	for (const action of ["archive", "spam", "phishing", "inbox", "folder", "restore"])
+		assert.equal(m.bulkDraftHandling(action, "draft", "trash"), "refuse", action);
+	assert.equal(m.bulkDraftHandling("restore", "trash", "draft"), "refuse");
+	assert.equal(m.bulkDraftHandling("restore", "trash", "received"), "normal");
+	assert.equal(m.bulkDraftHandling("archive", "received"), "normal");
+});
+
+test("deleting your own draft removes it outright, with its attachment, and never exposes it", async (t) => {
+	const { as, params, bucket, exists } = await fixture(t);
+	const trash = await m.postBulk(
+		as("alice", "/api/messages/bulk", {
+			method: "POST",
+			body: JSON.stringify({ action: "trash", messageIds: ["draft-alice"] }),
+		}),
+	);
+	assert.equal(trash.status, 200);
+	const body = await trash.json();
+	assert.equal(body.draftsDeleted, 1);
+	assert.equal(body.undo, undefined);
+	assert.equal(exists("draft-alice"), false);
+	assert.equal(bucket.objects.has("attachments/draft-alice/att-alice/plan.txt"), false);
+	// Nothing landed in Trash for the rest of the mailbox.
+	const bobTrash = await (await m.listMessages(as("bob", "/api/messages?mailboxId=shared&status=trash"))).json();
+	assert.deepEqual(ids(bobTrash), []);
+
+	const single = await m.postStatus(
+		as("alice", "/api/messages/draft-alice-alone/status", {
+			method: "POST",
+			body: JSON.stringify({ status: "trash" }),
+		}),
+		params({ messageId: "draft-alice-alone" }),
+	);
+	assert.equal(single.status, 200);
+	assert.equal(exists("draft-alice-alone"), false);
+
+	// Permanent delete takes a draft too; another user's draft in the same selection is untouched.
+	const mixed = await m.postBulk(
+		as("bob", "/api/messages/bulk", {
+			method: "POST",
+			body: JSON.stringify({ action: "delete", messageIds: ["draft-bob", "draft-alice"] }),
+		}),
+	);
+	assert.equal(mixed.status, 200);
+	assert.equal(exists("draft-bob"), false);
+});
+
+test("moving your own draft to Archive, Spam, Inbox or a folder is refused and it stays private", async (t) => {
+	const { as, params, status } = await fixture(t);
+	for (const [action, extra] of [
+		["archive", {}],
+		["spam", {}],
+		["phishing", {}],
+		["inbox", {}],
+		["folder", { folderId: "folder-1" }],
+	]) {
+		const response = await m.postBulk(
+			as("alice", "/api/messages/bulk", {
+				method: "POST",
+				body: JSON.stringify({ action, messageIds: ["draft-alice"], ...extra }),
+			}),
+		);
+		assert.equal(response.status, 409, action);
+		assert.equal((await response.json()).code, "DRAFT_MOVE_REFUSED", action);
+		assert.equal(status("draft-alice").status, "draft", action);
+	}
+	for (const target of ["spam", "received", "sent"]) {
+		const response = await m.postStatus(
+			as("alice", "/api/messages/draft-alice/status", { method: "POST", body: JSON.stringify({ status: target }) }),
+			params({ messageId: "draft-alice" }),
+		);
+		assert.equal(response.status, 404, target);
+		assert.equal(status("draft-alice").status, "draft", target);
+	}
+	// A mixed selection moves the mail and leaves the draft where it is.
+	const mixed = await m.postBulk(
+		as("alice", "/api/messages/bulk", {
+			method: "POST",
+			body: JSON.stringify({ action: "archive", messageIds: ["draft-alice", "mail-1"] }),
+		}),
+	);
+	assert.equal(mixed.status, 200);
+	assert.equal((await mixed.json()).draftsRefused, 1);
+	assert.equal(status("mail-1").status, "archived");
+	assert.equal(status("draft-alice").status, "draft");
+	assert.equal(
+		(await m.getMessage(as("bob", "/api/messages/draft-alice"), params({ messageId: "draft-alice" }))).status,
+		404,
+	);
+});
+
+test("nobody can move a message into Drafts, where it would be hidden from the mailbox", async (t) => {
+	const { env, as, params, status } = await fixture(t);
+	const move = await m.postStatus(
+		as("bob", "/api/messages/mail-1/status", { method: "POST", body: JSON.stringify({ status: "draft" }) }),
+		params({ messageId: "mail-1" }),
+	);
+	assert.equal(move.status, 400);
+	const restore = await m.postBulk(
+		as("bob", "/api/messages/bulk", {
+			method: "POST",
+			body: JSON.stringify({ action: "restore", restore: [{ id: "mail-1", status: "draft", folderId: null }] }),
+		}),
+	);
+	assert.equal(restore.status, 409);
+	assert.equal(status("mail-1").status, "received");
+
+	const set = await m.emailSet(jmap(env, "bob"), {
+		accountId: "bob",
+		update: { "mail-1": { mailboxIds: { "shared~drafts": true } } },
+	});
+	assert.equal(set.notUpdated["mail-1"].type, "invalidProperties");
+	assert.equal(status("mail-1").status, "received");
+});
+
+test("JMAP cannot change, destroy or snippet another user's draft, and moves none out of Drafts", async (t) => {
+	const { env, exists, status, bucket } = await fixture(t);
+	const bob = jmap(env, "bob");
+	const set = await m.emailSet(bob, {
+		accountId: "bob",
+		update: { "draft-alice": { "keywords/$flagged": true, mailboxIds: { "shared~trash": true } } },
+		destroy: ["draft-alice"],
+	});
+	assert.equal(set.notUpdated["draft-alice"].type, "notFound");
+	assert.equal(set.notDestroyed["draft-alice"].type, "notFound");
+	assert.deepEqual({ ...status("draft-alice") }, { status: "draft", starred: 0, read: 0 });
+
+	const snippets = await m.searchSnippetGet(bob, {
+		accountId: "bob",
+		emailIds: ["draft-alice", "mail-1"],
+		filter: { text: "zebra" },
+	});
+	assert.deepEqual(
+		snippets.list.map((snippet) => snippet.emailId),
+		["mail-1"],
+	);
+	assert.deepEqual(snippets.notFound, ["draft-alice"]);
+	assert.doesNotMatch(JSON.stringify(snippets), /Confidential/);
+
+	const alice = jmap(env, "alice");
+	const moved = await m.emailSet(alice, {
+		accountId: "alice",
+		update: { "draft-alice": { mailboxIds: { "shared~inbox": true } } },
+	});
+	assert.equal(moved.notUpdated["draft-alice"].type, "invalidProperties");
+	assert.equal(status("draft-alice").status, "draft");
+	const destroyed = await m.emailSet(alice, { accountId: "alice", destroy: ["draft-alice"] });
+	assert.deepEqual(destroyed.destroyed, ["draft-alice"]);
+	assert.equal(exists("draft-alice"), false);
+	assert.equal(bucket.objects.has("attachments/draft-alice/att-alice/plan.txt"), false);
+});
+
+test("revoking a member's access deletes their drafts in that mailbox", async (t) => {
+	const { database, as, exists } = await fixture(t);
+	database.db.exec("UPDATE users SET role = 'admin' WHERE id = 'alice'");
+	const response = await m.deleteAccess(as("alice", "/api/mailboxes/shared/access?userId=bob", { method: "DELETE" }), {
+		params: Promise.resolve({ id: "shared" }),
+	});
+	assert.equal(response.status, 200);
+	assert.equal(exists("draft-bob"), false);
+	assert.equal(exists("draft-alice"), true);
+	assert.equal(exists("mail-1"), true);
 });

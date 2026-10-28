@@ -20,7 +20,7 @@ import { filterToSql, mailboxRefCondition, sortToSql } from "./email-query";
 import { getEmailState } from "./state";
 import { unescapePointerToken } from "./pointer-utils";
 import { listAccessibleMailboxIdSet, listJmapMailboxes } from "./access";
-import { emailWriteAccess } from "./email-access";
+import { emailWriteAccess, refuseDraftMove } from "./email-access";
 import { deleteUpload, readUpload, storeRawDraftMime } from "./blobs";
 import type {
 	Comparator,
@@ -194,11 +194,14 @@ export const emailQueryChanges: JmapMethodHandler = async () => {
 };
 
 /** Where a patched `mailboxIds` puts the message: exactly one JMAP mailbox is supported. */
-function targetFromMailboxIds(
-	row: MessageRow,
-	patch: Record<string, unknown>,
-	accessible: Set<string>,
-): { status?: string; folderId?: string | null } | { error: Record<string, unknown> } | null {
+type MoveTarget = { status?: string; folderId?: string | null } | { error: Record<string, unknown> } | null;
+
+/** The move a patch asks for; never into or out of Drafts (`refuseDraftMove`). */
+function targetFromMailboxIds(row: MessageRow, patch: Record<string, unknown>, accessible: Set<string>): MoveTarget {
+	return refuseDraftMove(row.status, requestedMove(row, patch, accessible));
+}
+
+function requestedMove(row: MessageRow, patch: Record<string, unknown>, accessible: Set<string>): MoveTarget {
 	let ids: string[] | null = null;
 	if (patch.mailboxIds && typeof patch.mailboxIds === "object") {
 		ids = Object.entries(patch.mailboxIds as Record<string, boolean>)

@@ -8,3 +8,12 @@ export const DRAFT_STATUS = "draft";
 export function isHiddenDraft(row: { status: string; userId: string }, viewerId: string): boolean {
 	return row.status === DRAFT_STATUS && row.userId !== viewerId;
 }
+
+/**
+ * Whether a status change would move a message into or out of Drafts. Either would change who can see
+ * it (a draft is private, everything else is shared with the mailbox), so a draft leaves Drafts only by
+ * being sent or deleted, and nothing else is ever turned into a draft.
+ */
+export function isDraftMoveRefused(currentStatus: string, targetStatus: string): boolean {
+	return (currentStatus === DRAFT_STATUS) !== (targetStatus === DRAFT_STATUS);
+}

@@ -24,6 +24,7 @@ import {
 	ALL_MAILBOXES_LABEL,
 	getMailboxAddress,
 	runBulkMessageAction,
+	runDraftListAction,
 	emptyMessageFolder,
 	planEmptyFolderInView,
 	deleteMessagesForever,
@@ -190,6 +191,13 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 		}
 	}
 
+	// Drafts are private to their author: they are deleted outright, never moved (see runDraftListAction).
+	function runListAction(ids: string[], action: BulkMessageAction, folderId?: string) {
+		return config.folder === "drafts"
+			? runDraftListAction(ids, action)
+			: runBulkMessageAction(ids, action, true, folderId);
+	}
+
 	async function runSelectedAction(action: BulkMessageAction, folderId?: string) {
 		if (selectedIds.length === 0) return;
 		// The server skips read-only mail too; leaving it out here keeps the list and the toasts honest.
@@ -247,7 +255,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 			if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta });
 		}
 		try {
-			await runBulkMessageAction(expandSelectedIds(actionIds), action, true, folderId);
+			await runListAction(expandSelectedIds(actionIds), action, folderId);
 			clearSelection();
 		} catch (error) {
 			if (readValue !== null) {
@@ -271,8 +279,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 				const focused = messages.find((message) => message.id === focusedId);
 				const { allowed, skipped } = access.split(focused ? [focused] : [], action);
 				reportReadOnlySkipped(skipped, allowed.length === 0);
-				if (allowed.length > 0)
-					void runBulkMessageAction(expandSelectedIds(allowed), action, true).catch(reportListActionError);
+				if (allowed.length > 0) void runListAction(expandSelectedIds(allowed), action).catch(reportListActionError);
 			}
 		},
 		toggleRowSelection: (messageId) => updateSelectedMessage(messageId, !selectedIds.includes(messageId)),

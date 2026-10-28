@@ -1,10 +1,11 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { DOMAIN, STORAGE_STATE } from "./support/constants";
-import { apiContext, apiSignIn, uniqueToken } from "./support/helpers";
+import { apiContext, apiSignIn, deliverInbound, uniqueToken } from "./support/helpers";
 import { turnScreenerOff } from "./support/screener";
 
 // Drafts are private to their author, even in a shared mailbox: a teammate with full access reads the
-// mailbox's mail but never another user's draft, by id, in a list, in a count or in search.
+// mailbox's mail but never another user's draft, by id, in a list, in a count or in search. A draft leaves
+// Drafts only by being sent or deleted (Delete removes it outright), and nothing is moved into Drafts.
 
 const PASSWORD = "draft-privacy-password-123";
 
@@ -94,7 +95,7 @@ test("a teammate on a shared mailbox cannot read another user's draft; its autho
 	await test.step("the teammate's Drafts view lists their own draft only", async () => {
 		const context = await browser.newContext({ storageState: await mate.storageState() });
 		const page = await context.newPage();
-		await page.goto("/drafts");
+		await page.goto("/inbox");
 		const switcher = page.getByRole("button", { name: /^Switch mailbox, current:/ });
 		// The first visit compiles the dashboard on a cold dev server.
 		await expect(switcher).toBeVisible({ timeout: 60_000 });
@@ -103,10 +104,47 @@ test("a teammate on a shared mailbox cannot read another user's draft; its autho
 			.getByRole("dialog", { name: "Switch mailbox" })
 			.getByRole("option", { name: /All mailboxes/ })
 			.click();
+		await expect(page.getByRole("button", { name: "Switch mailbox, current: All mailboxes" })).toBeVisible();
+		// The browser keeps the choice, so Drafts opens on All mailboxes too.
+		await page.goto("/drafts");
+		await expect(page.getByRole("button", { name: "Switch mailbox, current: All mailboxes" })).toBeVisible();
 		const list = page.getByRole("list", { name: "Drafts" });
 		await expect(list.getByText(mateSubject)).toBeVisible();
 		await expect(page.getByText(secret)).toHaveCount(0);
+
+		// Delete removes the draft outright; the toolbar offers nothing that would move it into shared view.
+		const row = list.locator("[data-message-row]").filter({ has: page.getByText(mateSubject, { exact: true }) });
+		await row.getByRole("checkbox").check();
+		await expect(page.getByRole("button", { name: "Archive" })).toHaveCount(0);
+		await expect(page.getByRole("button", { name: "Report spam" })).toHaveCount(0);
+		await expect(page.getByRole("button", { name: "Move to" })).toHaveCount(0);
+		await page.getByRole("button", { name: "Delete", exact: true }).click();
+		const confirm = page.getByRole("alertdialog", { name: "Delete this draft?" });
+		await confirm.getByRole("button", { name: "Delete" }).click();
+		await expect(list.getByText(mateSubject)).toHaveCount(0);
 		await context.close();
+		expect((await mate.get(`/api/messages/${mateDraftId}`)).status()).toBe(404);
+		const trash = await json<Listed>(await admin.get(`/api/messages?mailboxId=${sharedId}&status=trash`));
+		expect(trash.messages.map((item) => item.subject)).not.toContain(mateSubject);
+	});
+
+	await test.step("a draft never moves out of Drafts, and nothing moves into it", async () => {
+		const archive = await admin.post("/api/messages/bulk", { data: { action: "archive", messageIds: [draftId] } });
+		expect(archive.status()).toBe(409);
+		expect((await mate.get(`/api/messages/${draftId}`)).status()).toBe(404);
+
+		const mail = await deliverInbound(admin, {
+			from: `"Customer" <customer@outside.test>`,
+			to: address,
+			subject: `Hello ${token}`,
+		});
+		expect((await mate.post(`/api/messages/${mail.id}/status`, { data: { status: "draft" } })).status()).toBe(400);
+		const restore = await mate.post("/api/messages/bulk", {
+			data: { action: "restore", restore: [{ id: mail.id, status: "draft", folderId: null }] },
+		});
+		expect(restore.status()).toBe(409);
+		const stored = await json<{ message: { status: string } }>(await admin.get(`/api/messages/${mail.id}`));
+		expect(stored.message.status).toBe("received");
 	});
 
 	await mate.dispose();

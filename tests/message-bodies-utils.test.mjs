@@ -1,7 +1,27 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { bundleModules } from "./support/modules-bundle.mjs";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
+import test, { after } from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "esbuild";
+import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+import { root } from "./support/modules-bundle.mjs";
 
+const outDir = makeBundleDirectory("kite-message-bodies-utils-");
+after(() => rmSync(outDir, { recursive: true, force: true }));
+// import.meta.resolve (rather than a joined path) lets knip see which modules this test uses.
+await build({
+	entryPoints: { utils: fileURLToPath(import.meta.resolve("../src/lib/email/bodies-utils.ts")) },
+	outdir: outDir,
+	outExtension: { ".js": ".mjs" },
+	bundle: true,
+	sourcemap: "inline",
+	platform: "node",
+	format: "esm",
+	target: "node22",
+	logLevel: "silent",
+	tsconfig: join(root, "tsconfig.json"),
+});
 const {
 	BODY_OFFLOAD_BYTES,
 	derivedTextBody,
@@ -10,12 +30,7 @@ const {
 	isHtmlBodyObjectKey,
 	planHtmlBodyOffload,
 	withoutDerivedText,
-} = await bundleModules("kite-message-bodies-utils-", [
-	[
-		"BODY_OFFLOAD_BYTES, derivedTextBody, exceedsBodyOffloadBytes, htmlBodyObjectKey, isHtmlBodyObjectKey, planHtmlBodyOffload, withoutDerivedText",
-		"src/lib/email/bodies-utils.ts",
-	],
-]);
+} = await import(pathToFileURL(join(outDir, "utils.mjs")).href);
 
 test("the threshold is 16 KB of UTF-8, counted in bytes rather than characters", () => {
 	assert.equal(BODY_OFFLOAD_BYTES, 16 * 1024);

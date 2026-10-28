@@ -8,6 +8,7 @@
 				"scripts/**/*.mjs",
 				"tests/**/*.test.mjs",
 				"e2e/**/*.spec.ts",
+				"scripts/screenshots/*.capture.ts",
 				"src/app/**/{page,layout,route,loading,error,not-found,global-error,template,default}.{ts,tsx}"
 			],
 			"project": [
@@ -17,6 +18,7 @@
 				"scripts/**/*.mjs",
 				"tests/**/*.mjs",
 				"e2e/**/*.ts",
+				"scripts/screenshots/*.ts",
 				"*.{ts,mjs}"
 			],
 			"ignore": ["cloudflare-env.d.ts", "next-env.d.ts"]

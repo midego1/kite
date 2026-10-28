@@ -92,18 +92,18 @@ export default function AccountPermissionsPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Permissions</h1>
-				<p className="mt-2 text-sm text-neutral-500">Control what this account can manage.</p>
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Permissions</h1>
+				<p className="mt-1 text-sm text-neutral-500">Control what this account can manage.</p>
 			</div>
 			{account?.isPrimaryAdmin && (
-				<section className="rounded-3xl bg-amber-50 p-6">
-					<p className="text-sm font-semibold text-amber-900">Primary admin</p>
-					<p className="mt-1 text-sm text-amber-800">
+				<section className="rounded-xl border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a] p-5">
+					<p className="text-sm font-semibold">Primary admin</p>
+					<p className="mt-1 text-sm">
 						This account owns administration and cannot be demoted or disabled. Transfer the role to hand it over.
 					</p>
 				</section>
 			)}
-			<section className="space-y-3 rounded-3xl bg-white p-6">
+			<section className="space-y-3 rounded-xl border border-neutral-200 bg-white p-5">
 				<label htmlFor="account-role" className="block text-sm font-semibold text-neutral-900">
 					Role
 				</label>
@@ -126,9 +126,9 @@ export default function AccountPermissionsPage() {
 						: "Only the primary admin can change roles."}
 				</p>
 			</section>
-			<div className="overflow-hidden rounded-3xl bg-white">
+			<div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
 				<table className="w-full text-left">
-					<thead className="border-b border-neutral-100 bg-neutral-50 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+					<thead className="border-b border-neutral-200 bg-[#f6f8fc] text-xs font-medium text-neutral-500">
 						<tr>
 							<th scope="col" className="px-5 py-3">
 								Permission
@@ -138,7 +138,7 @@ export default function AccountPermissionsPage() {
 							</th>
 						</tr>
 					</thead>
-					<tbody className="divide-y divide-neutral-100">
+					<tbody className="divide-y divide-neutral-200">
 						<tr>
 							<td className="px-5 py-4">
 								<p className="text-sm font-semibold text-neutral-900">Manage mailboxes</p>
@@ -191,7 +191,7 @@ export default function AccountPermissionsPage() {
 			)}
 			<ModuleAccessSection accountId={id} account={account} />
 			{isPrimary && (
-				<section className="space-y-4 rounded-3xl bg-white p-6">
+				<section className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5">
 					<div>
 						<h2 className="text-sm font-semibold text-neutral-900">Transfer primary admin</h2>
 						<p className="mt-1 text-xs text-neutral-500">
@@ -232,7 +232,7 @@ export default function AccountPermissionsPage() {
 						<DialogDescription>You will lose primary admin access and become a regular admin.</DialogDescription>
 					</DialogHeader>
 					{transferTarget && (
-						<div className="flex items-center gap-4 rounded-2xl border border-neutral-200 p-4">
+						<div className="flex items-center gap-4 rounded-xl border border-neutral-200 p-4">
 							<span
 								className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold text-white"
 								style={getAvatarColorStyle(transferTarget.email)}

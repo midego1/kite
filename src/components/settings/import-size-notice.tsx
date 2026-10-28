@@ -16,8 +16,8 @@ type Props = {
 };
 
 const toneClasses = {
-	warn: "border-amber-200 bg-amber-50 text-amber-900",
-	critical: "border-red-200 bg-red-50 text-red-800",
+	warn: "border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a]",
+	critical: "border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999]",
 } as const;
 
 /** What the import adds to the database, with a warning from 70% of its limit and "Import anyway" above 90%. */

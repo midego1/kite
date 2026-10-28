@@ -44,20 +44,20 @@ export default function BrandingPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Branding</h1>
-				<p className="mt-2 text-sm text-neutral-500">
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Branding</h1>
+				<p className="mt-1 text-sm text-neutral-500">
 					Customize the app identity shown to everyone using this installation.
 				</p>
 			</div>
-			<Card className="rounded-3xl border-0 bg-white p-6">
-				<CardHeader className="py-0">
+			<Card>
+				<CardHeader>
 					<CardTitle className="flex items-center gap-2">
 						<Palette className="h-5 w-5" />
 						App identity
 					</CardTitle>
 					<CardDescription>The icon is also used as the browser favicon.</CardDescription>
 				</CardHeader>
-				<CardContent className="pt-6">
+				<CardContent className="pt-4">
 					<form onSubmit={submit} className="space-y-6">
 						<div className="space-y-2">
 							<Label htmlFor="appName">App name</Label>
@@ -81,12 +81,12 @@ export default function BrandingPage() {
 							<button
 								type="button"
 								onClick={() => inputRef.current?.click()}
-								className="flex items-center gap-4 rounded-2xl border border-dashed border-neutral-300 p-4 text-left hover:bg-neutral-50"
+								className="flex items-center gap-4 rounded-xl border border-dashed border-neutral-300 p-4 text-left hover:bg-neutral-50"
 							>
 								<img
 									src={preview ?? branding.iconUrl}
 									alt="App icon preview"
-									className="h-16 w-16 rounded-2xl object-cover"
+									className="h-16 w-16 rounded-xl object-cover"
 								/>
 								<span className="text-sm text-neutral-600">
 									<ImagePlus className="mb-1 h-5 w-5" />

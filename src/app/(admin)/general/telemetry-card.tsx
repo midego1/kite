@@ -76,11 +76,11 @@ export function TelemetryCard() {
 	const locked = !status || !status.available || (status.forcedOff && !status.enabled);
 	const erasureText = telemetryErasureText(erasure);
 	return (
-		<Card data-telemetry className="rounded-3xl border-0 bg-white p-6">
-			<CardHeader className="py-0">
+		<Card data-telemetry>
+			<CardHeader>
 				<CardTitle>Usage statistics</CardTitle>
 			</CardHeader>
-			<CardContent className="space-y-3 pt-6 text-sm text-neutral-700">
+			<CardContent className="space-y-3 pt-4 text-sm text-neutral-700">
 				<div className="flex items-center gap-3">
 					<Switch
 						id="telemetry-enabled"
@@ -116,7 +116,7 @@ export function TelemetryCard() {
 					cannot remove; on Node/Docker the collector sees your server’s IP address. The collector does not log or store
 					either, but Cloudflare’s own analytics for the collector’s zone may record a sample of IP addresses.
 				</p>
-				<div className="space-y-2 rounded-xl bg-neutral-50 p-4">
+				<div className="space-y-2 rounded-lg bg-neutral-50 p-4">
 					<p className="font-medium text-neutral-900">Exactly what is sent</p>
 					<ul className="space-y-1">
 						{TELEMETRY_FIELDS.map(({ key, description }) => (

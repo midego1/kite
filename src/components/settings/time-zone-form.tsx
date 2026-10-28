@@ -25,7 +25,7 @@ export function TimeZoneForm({ userId, initialTimeZone }: TimeZoneFormProps) {
 
 	return (
 		<form
-			className="space-y-4 rounded-lg bg-white p-6"
+			className="space-y-4 p-5"
 			onSubmit={(event) => {
 				event.preventDefault();
 				setSaving(true);
@@ -42,7 +42,7 @@ export function TimeZoneForm({ userId, initialTimeZone }: TimeZoneFormProps) {
 			}}
 		>
 			<div>
-				<h3 className="text-lg font-semibold text-neutral-900">Time zone</h3>
+				<h3 className="text-sm font-semibold text-neutral-900">Time zone</h3>
 				<p className="mt-1 text-sm text-neutral-500">
 					Choose the time zone used for dates, search, and scheduling. Leave blank to follow this device (
 					{deviceTimeZone}).

@@ -35,8 +35,8 @@ export function AdminDatabaseSizeCard() {
 	const tone = tones[level];
 	const percent = size.limitBytes ? Math.min(100, Math.round((size.usedBytes / size.limitBytes) * 100)) : null;
 	return (
-		<Card className="rounded-3xl border-0 bg-white p-6" data-testid="database-size-card" data-level={level}>
-			<CardHeader className="flex-row items-center gap-4 space-y-0 py-0">
+		<Card data-testid="database-size-card" data-level={level}>
+			<CardHeader className="flex-row items-center gap-4 space-y-0">
 				<div className={`flex h-10 w-10 items-center justify-center rounded-full ${tone.icon}`}>
 					{level === "ok" ? <HardDrive className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
 				</div>
@@ -51,7 +51,7 @@ export function AdminDatabaseSizeCard() {
 				</div>
 			</CardHeader>
 			{size.limitBytes && (
-				<CardContent className="space-y-3 pt-5">
+				<CardContent className="space-y-3 pt-4">
 					<div className="h-2 overflow-hidden rounded-full bg-neutral-100" aria-hidden>
 						<div className={`h-full ${tone.bar}`} style={{ width: `${percent}%` }} />
 					</div>

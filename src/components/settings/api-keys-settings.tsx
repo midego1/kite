@@ -34,6 +34,7 @@ import {
 	scopesNeedMailboxes,
 } from "./api-keys-settings-utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { EmptyState } from "@/components/ui/page";
 
 export function ApiKeysSettings() {
 	const { mailboxes, selectedMailbox } = useSelectedMailbox();
@@ -128,7 +129,7 @@ export function ApiKeysSettings() {
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between gap-4">
-				<h1 className="text-2xl md:text-3xl font-medium">API keys</h1>
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">API keys</h1>
 				<Dialog
 					open={createOpen}
 					onOpenChange={(open) => {
@@ -317,9 +318,7 @@ export function ApiKeysSettings() {
 			)}
 			<section className="space-y-3">
 				{loading && <SectionRowSkeleton />}
-				{!loading && keys.length === 0 && (
-					<p className="rounded-2xl bg-white px-5 py-4 text-sm text-neutral-500">No API keys yet</p>
-				)}
+				{!loading && keys.length === 0 && <EmptyState icon={KeyRound} title="No API keys yet" />}
 				<List>
 					{keys.map((key) => (
 						<ListRow key={key.id} className="px-5 py-4">

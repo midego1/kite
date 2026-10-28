@@ -113,7 +113,7 @@ export default function MailboxSettingsPage() {
 		<div className="space-y-6">
 			<div className="flex items-start justify-between gap-4">
 				<div className="min-w-0">
-					<h1 className="truncate text-2xl md:text-3xl font-medium text-neutral-900">Settings</h1>
+					<h1 className="truncate text-xl font-semibold tracking-tight text-neutral-900">Settings</h1>
 					{address ? (
 						<p className="mt-1 truncate no-font-mono text-sm text-neutral-500">{address}</p>
 					) : (
@@ -127,16 +127,19 @@ export default function MailboxSettingsPage() {
 			</div>
 
 			{mailbox.isError && (
-				<p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+				<p
+					role="alert"
+					className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
+				>
 					{mailbox.error instanceof Error ? mailbox.error.message : "Failed to load mailbox"}
 				</p>
 			)}
 
-			<Card className="rounded-3xl border-0 bg-white p-6">
-				<CardHeader className="py-0">
+			<Card>
+				<CardHeader>
 					<CardTitle>Account</CardTitle>
 				</CardHeader>
-				<CardContent className="space-y-4 pt-5">
+				<CardContent className="space-y-4 pt-4">
 					{mailbox.data ? (
 						<MailboxAvatarForm
 							mailboxId={mailbox.data.id}
@@ -157,7 +160,7 @@ export default function MailboxSettingsPage() {
 							disabled={mailbox.isLoading || updateName.isPending}
 						/>
 					</div>
-					<label className="flex items-start gap-3 rounded-xl bg-neutral-50 p-4">
+					<label className="flex items-start gap-3 rounded-lg bg-neutral-50 p-4">
 						<Checkbox
 							checked={useAllDomains}
 							onChange={(event) => setUseAllDomains(event.target.checked)}
@@ -183,17 +186,17 @@ export default function MailboxSettingsPage() {
 				</CardContent>
 			</Card>
 
-			<Card className="rounded-3xl border-0 bg-white p-6">
-				<CardHeader className="py-0">
+			<Card>
+				<CardHeader>
 					<CardTitle>Aliases</CardTitle>
 					<CardDescription>
 						Extra addresses that deliver to this mailbox. You can also send mail from any alias.
 					</CardDescription>
 				</CardHeader>
-				<CardContent className="space-y-4 pt-5">
-					{aliases.isLoading && <Skeleton className="h-12 w-full rounded-2xl" />}
+				<CardContent className="space-y-4 pt-4">
+					{aliases.isLoading && <Skeleton className="h-12 w-full rounded-xl" />}
 					{(aliases.data?.aliases ?? []).map((alias) => (
-						<div key={alias.id} className="flex items-center justify-between gap-3 rounded-2xl bg-neutral-50 px-4 py-3">
+						<div key={alias.id} className="flex items-center justify-between gap-3 rounded-lg bg-neutral-50 px-4 py-3">
 							<div className="flex min-w-0 items-center gap-2">
 								<AtSign className="h-4 w-4 shrink-0 text-neutral-400" />
 								<p className="truncate no-font-mono text-sm font-medium text-neutral-900">
@@ -223,7 +226,7 @@ export default function MailboxSettingsPage() {
 						</div>
 					))}
 					{aliases.data && aliases.data.aliases.length === 0 && (
-						<p className="rounded-2xl bg-neutral-50 px-4 py-3 text-sm text-neutral-500">No aliases yet.</p>
+						<p className="rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-500">No aliases yet.</p>
 					)}
 					{aliases.isError && (
 						<p role="alert" className="text-sm text-red-600">
@@ -273,19 +276,19 @@ export default function MailboxSettingsPage() {
 			</Card>
 
 			{mailbox.data?.type === "shared" && (
-				<Card className="rounded-3xl border-0 bg-white p-6">
-					<CardHeader className="py-0">
+				<Card>
+					<CardHeader>
 						<CardTitle>Shared access</CardTitle>
 						<CardDescription>
 							People added here can read, send, organize, and manage mail in this inbox.
 						</CardDescription>
 					</CardHeader>
-					<CardContent className="space-y-4 pt-5">
-						{sharedAccess.isLoading && <Skeleton className="h-16 w-full rounded-2xl" />}
+					<CardContent className="space-y-4 pt-4">
+						{sharedAccess.isLoading && <Skeleton className="h-16 w-full rounded-xl" />}
 						{(sharedAccess.data?.members ?? []).map((member) => (
 							<div
 								key={member.userId}
-								className="flex items-center justify-between gap-3 rounded-2xl bg-neutral-50 px-4 py-3"
+								className="flex items-center justify-between gap-3 rounded-lg bg-neutral-50 px-4 py-3"
 							>
 								<div className="min-w-0">
 									<p className="truncate text-sm font-semibold text-neutral-900">{member.userName}</p>
@@ -313,9 +316,7 @@ export default function MailboxSettingsPage() {
 							</div>
 						))}
 						{sharedAccess.data && sharedAccess.data.members.length === 0 && (
-							<p className="rounded-2xl bg-neutral-50 px-4 py-3 text-sm text-neutral-500">
-								No one else has access yet.
-							</p>
+							<p className="rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-500">No one else has access yet.</p>
 						)}
 						{sharedAccess.isError && (
 							<p role="alert" className="text-sm text-red-600">
@@ -355,8 +356,8 @@ export default function MailboxSettingsPage() {
 					</CardContent>
 				</Card>
 			)}
-			<Card className="rounded-3xl border-0 bg-white p-6">
-				<CardHeader className="py-0">
+			<Card>
+				<CardHeader>
 					<CardTitle className="text-red-700">Danger zone</CardTitle>
 					<CardDescription>
 						Deleting this mailbox removes its Cloudflare Email Routing rule, so new mail sent to{" "}
@@ -364,9 +365,12 @@ export default function MailboxSettingsPage() {
 						but will no longer appear in any inbox. This cannot be undone.
 					</CardDescription>
 				</CardHeader>
-				<CardContent className="pt-5">
+				<CardContent className="pt-4">
 					{removeMailbox.isError && (
-						<p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+						<p
+							role="alert"
+							className="mb-4 rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
+						>
 							{removeMailbox.error instanceof Error ? removeMailbox.error.message : "Failed to delete mailbox"}
 						</p>
 					)}
@@ -394,15 +398,15 @@ export default function MailboxSettingsPage() {
 			</Card>
 
 			{/* 
-      <Card className="rounded-3xl border-0 bg-white p-6">
-        <CardHeader className="py-0">
+      <Card>
+        <CardHeader>
           <CardTitle>Address</CardTitle>
           <CardDescription>
             The email address, username, and domain are managed as routing
             resources.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 pt-5">
+        <CardContent className="grid gap-4 pt-4">
           <div className="space-y-1">
             <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
               Email

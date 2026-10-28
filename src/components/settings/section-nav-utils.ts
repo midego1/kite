@@ -28,6 +28,10 @@ import type { ModuleId } from "@/lib/modules/module-types";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import type { NavItem, NavMode, NavSearchGroup, NavSection } from "./section-nav-types";
 
+// The Settings and Admin menu and the page are separate rounded panels on the page background, like the inbox's
+// list and reader; on phones the menu is a sheet and the page fills the screen.
+export const SECTION_PANEL_CLASS = "md:rounded-xl md:border md:border-neutral-200 md:bg-white md:shadow-xs";
+
 /** Core Settings items sit among a module's by this order; Export stays after Import. */
 const EXPORT_ORDER = 20;
 
@@ -242,6 +246,11 @@ export function findActiveNavItem(mode: NavMode, pathname: string): NavItem | un
 	return navSectionsFor(mode)
 		.flatMap((section) => section.items)
 		.find((item) => isActiveNavPath(pathname, item.href));
+}
+
+/** The menu group holding the current page, for the page panel's trail. */
+export function findActiveNavSection(mode: NavMode, pathname: string): NavSection | undefined {
+	return navSectionsFor(mode).find((section) => section.items.some((item) => isActiveNavPath(pathname, item.href)));
 }
 
 function canSeeNavItem(item: NavItem, user: AuthMeUser | null, modules?: readonly ModuleId[]): boolean {

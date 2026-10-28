@@ -39,11 +39,11 @@ export function ThreatLookupsCard({ status, onStatusChange }: Props) {
 	}
 
 	return (
-		<Card data-threat-lookups className="rounded-3xl border-0 bg-white p-6">
-			<CardHeader className="py-0">
+		<Card data-threat-lookups>
+			<CardHeader>
 				<CardTitle>Threat lookups</CardTitle>
 			</CardHeader>
-			<CardContent className="space-y-3 pt-6 text-sm text-neutral-700">
+			<CardContent className="space-y-3 pt-4 text-sm text-neutral-700">
 				<ul className="space-y-1">
 					{THREAT_LOOKUP_SERVICES.map(({ service, name }) => (
 						<li key={service} className="font-medium text-neutral-900" data-lookup-status={service}>
@@ -62,7 +62,7 @@ export function ThreatLookupsCard({ status, onStatusChange }: Props) {
 					links as they are, so they may carry personal details; ThreatFox gets only the names of the sites they lead
 					to. A lookup that fails or takes longer than 3 seconds is skipped.
 				</p>
-				<div className="space-y-2 rounded-xl bg-neutral-50 p-4">
+				<div className="space-y-2 rounded-lg bg-neutral-50 p-4">
 					<p className="font-medium text-neutral-900" data-key-source={status?.source ?? "none"}>
 						{keyStatusText(status)}
 					</p>

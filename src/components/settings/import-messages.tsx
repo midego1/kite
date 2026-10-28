@@ -70,7 +70,7 @@ export function ImportMessages({ destination, sourceLabel }: ImportMessagesProps
 					</Button>
 
 					{result && (
-						<div className="rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-700">
+						<div className="rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
 							<p className="font-medium">{getImportSummary(result)}</p>
 							{result.errors && result.errors.length > 0 && (
 								<ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
@@ -83,7 +83,10 @@ export function ImportMessages({ destination, sourceLabel }: ImportMessagesProps
 					)}
 
 					{error && (
-						<p role="alert" className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+						<p
+							role="alert"
+							className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
+						>
 							{error}
 						</p>
 					)}

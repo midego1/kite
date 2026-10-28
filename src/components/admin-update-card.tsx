@@ -53,8 +53,8 @@ export function AdminUpdateCard() {
 	const unknown = migrationStatus?.unknown.length ?? 0;
 
 	return (
-		<Card className="rounded-3xl border-0 bg-white p-6">
-			<CardHeader className="flex-row items-center gap-4 space-y-0 py-0">
+		<Card>
+			<CardHeader className="flex-row items-center gap-4 space-y-0">
 				<div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700">
 					<Database className="h-5 w-5" />
 				</div>
@@ -65,8 +65,8 @@ export function AdminUpdateCard() {
 					</p>
 				</div>
 			</CardHeader>
-			<CardContent className="space-y-5 pt-5">
-				<div className="divide-y divide-neutral-100 overflow-hidden rounded-2xl border border-neutral-100">
+			<CardContent className="space-y-5 pt-4">
+				<div className="divide-y divide-neutral-200 overflow-hidden rounded-xl border border-neutral-200">
 					{isCheckingMigrations && (
 						<div className="flex items-center gap-3 px-4 py-4">
 							<Skeleton className="h-4 w-4 rounded-full" />

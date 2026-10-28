@@ -6,19 +6,19 @@ export default function SecuritySettingsPage() {
 		<div className="space-y-8 py-4">
 			<section className="space-y-4">
 				<div>
-					<h1 className="text-xl font-semibold text-neutral-900">Security</h1>
+					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Security</h1>
 					<p className="mt-1 text-sm text-neutral-500">Manage how you sign in to your account.</p>
 				</div>
-				<div className="space-y-4 rounded-3xl bg-white p-6">
+				<div className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5">
 					<div>
-						<h2 className="text-lg font-semibold text-neutral-900">Change password</h2>
+						<h2 className="text-base font-semibold text-neutral-900">Change password</h2>
 						<p className="mt-1 text-sm text-neutral-500">Use at least 8 characters for your new password.</p>
 					</div>
 					<ChangePasswordForm />
 				</div>
-				<div className="space-y-4 rounded-3xl bg-white p-6">
+				<div className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5">
 					<div>
-						<h2 className="text-lg font-semibold text-neutral-900">Two-factor authentication</h2>
+						<h2 className="text-base font-semibold text-neutral-900">Two-factor authentication</h2>
 						<p className="mt-1 text-sm text-neutral-500">Require a code from an authenticator app when signing in.</p>
 					</div>
 					<MfaSettings />

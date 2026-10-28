@@ -56,7 +56,7 @@ export function EmailClientsSettings() {
 				address and an API key as the password.
 			</p>
 			{key ? (
-				<div className="space-y-3 rounded-2xl bg-neutral-50 p-4">
+				<div className="space-y-3 rounded-lg bg-neutral-50 p-4">
 					<Field label="Server" value={server} onCopy={copy} copied={copied} />
 					<Field label="Username" value="any value" onCopy={copy} copied={copied} />
 					<Field label="Password (API key)" value={key} onCopy={copy} copied={copied} mono />

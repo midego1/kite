@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth/client";
 import { TRASH_RETENTION_OPTIONS, describeTrashRetention } from "@/lib/email/trash-retention-utils";
 import type { TrashRetentionSettingsResponse } from "@/app/api/settings/trash-retention/types";
+import { Select } from "@/components/ui/select";
 
 export function TrashRetentionSettings() {
 	const [days, setDays] = useState<number | null>(null);
@@ -55,7 +56,7 @@ export function TrashRetentionSettings() {
 
 	return (
 		<div>
-			<label className="flex items-start gap-3 rounded-xl bg-neutral-50 p-4">
+			<label className="flex items-start gap-3 rounded-lg bg-neutral-50 p-4">
 				<span className="flex-1">
 					<span className="block text-sm font-medium text-neutral-900">Auto-delete Trash and Spam</span>
 					<span className="mt-1 block text-sm text-neutral-500">
@@ -63,11 +64,12 @@ export function TrashRetentionSettings() {
 						own.
 					</span>
 				</span>
-				<select
+				<Select
 					value={days ?? ""}
 					disabled={loading}
 					onChange={(event) => void updateDays(event.target.value ? Number(event.target.value) : null)}
-					className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-800 disabled:opacity-60"
+					containerClassName="h-9 shrink-0"
+					className="text-sm text-neutral-900"
 					aria-label="Auto-delete Trash and Spam"
 				>
 					<option value="">{describeTrashRetention(null)}</option>
@@ -76,7 +78,7 @@ export function TrashRetentionSettings() {
 							{describeTrashRetention(value)}
 						</option>
 					))}
-				</select>
+				</Select>
 			</label>
 			{error && (
 				<p role="alert" className="mt-2 px-4 text-sm text-red-600">

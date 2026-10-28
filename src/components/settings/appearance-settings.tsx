@@ -133,7 +133,7 @@ function PreferenceRow<T extends string>({
 			className={
 				compact
 					? "flex flex-wrap items-center justify-between gap-2 py-1"
-					: "flex items-start gap-3 rounded-xl bg-neutral-50 p-4"
+					: "flex items-start gap-3 rounded-lg bg-neutral-50 p-4"
 			}
 		>
 			<span className="flex-1">
@@ -165,7 +165,7 @@ function StyleSetting() {
 	const [style, saveStylePreference] = useStylePreference();
 
 	return (
-		<label className="flex items-start gap-3 rounded-xl bg-neutral-50 p-4">
+		<label className="flex items-start gap-3 rounded-lg bg-neutral-50 p-4">
 			<span className="flex-1">
 				<span className="block text-sm font-medium text-neutral-900">Style</span>
 				<span className="mt-1 block text-sm text-neutral-500">
@@ -197,7 +197,7 @@ function ThemeSetting() {
 	const preference = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, () => DEFAULT_THEME);
 
 	return (
-		<label className="flex items-start gap-3 rounded-xl bg-neutral-50 p-4">
+		<label className="flex items-start gap-3 rounded-lg bg-neutral-50 p-4">
 			<span className="flex-1">
 				<span className="block text-sm font-medium text-neutral-900">Theme</span>
 				<span className="mt-1 block text-sm text-neutral-500">

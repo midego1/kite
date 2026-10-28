@@ -3,15 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { ChevronLeft, LifeBuoy, Search } from "lucide-react";
+import { ArrowLeft, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useModules } from "@/components/modules/modules-context";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import type { AuthMeUser } from "@/lib/auth/me-client-types";
-import { SOURCE_CODE_URL } from "@/lib/source-code";
+import { PageSearchInput } from "@/components/mail-search/page-search-input";
+import { Tooltip } from "@/components/ui/tooltip";
 import { SectionNavSheet } from "../section-nav-sheet";
 import type { NavMode, NavSearchGroup, NavSection } from "./section-nav-types";
 import {
+	SECTION_PANEL_CLASS,
 	canShowModeSwitch,
 	filterNavSections,
 	findActiveNavItem,
@@ -28,9 +30,14 @@ import {
 const focusRing = "outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1";
 const modes: NavMode[] = ["settings", "admin"];
 
+/** Settings or Admin, as a segmented control under the search field, like the list panel's chips. */
 function ModeSwitch({ mode, user }: { mode: NavMode; user: AuthMeUser | null }) {
 	return (
-		<div role="group" aria-label="Settings or admin" className="grid grid-cols-2 gap-1 rounded-lg bg-neutral-100 p-1">
+		<div
+			role="group"
+			aria-label="Settings or admin"
+			className="grid grid-cols-2 gap-1 rounded-lg border border-neutral-200 bg-[#f6f8fc] p-0.5"
+		>
 			{modes.map((option) => {
 				const selected = option === mode;
 				return (
@@ -39,11 +46,11 @@ function ModeSwitch({ mode, user }: { mode: NavMode; user: AuthMeUser | null }) 
 						href={selected ? navModeHome(option, user) : switchTarget(mode, user)}
 						aria-current={selected ? "page" : undefined}
 						className={cn(
-							"rounded-md px-3 py-1.5 text-center text-sm font-medium transition-colors",
+							"rounded-md px-3 py-1 text-center text-sm transition-colors",
 							focusRing,
 							selected
-								? "bg-white text-blue-900 shadow-sm ring-1 ring-blue-200"
-								: "text-neutral-600 hover:bg-white/60 hover:text-neutral-900",
+								? "bg-white font-medium text-neutral-900 shadow-xs ring-1 ring-neutral-200"
+								: "text-neutral-500 hover:text-neutral-900",
 						)}
 					>
 						{navModeLabels[option]}
@@ -66,9 +73,10 @@ function NavGroup({
 	withMode: boolean;
 }) {
 	return (
-		<div className="space-y-1.5">
+		<div>
 			{section.label && (
-				<h2 className="px-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">{section.label}</h2>
+				// A muted label over the group, like the mail sidebar's "Core".
+				<h2 className="flex h-7 items-center px-3 text-xs font-medium text-neutral-500">{section.label}</h2>
 			)}
 			<nav aria-label={navSectionLabel(mode, section, withMode)} className="space-y-px">
 				{section.items.map((item) => {
@@ -80,12 +88,14 @@ function NavGroup({
 							href={item.href}
 							aria-current={active ? "page" : undefined}
 							className={cn(
-								"flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+								"flex h-9 items-center gap-3 rounded-lg px-3 text-sm transition-colors max-md:min-h-11 max-md:text-base",
 								focusRing,
-								active ? "bg-blue-100 text-blue-900" : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900",
+								active
+									? "bg-blue-100 font-medium text-blue-900"
+									: "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900",
 							)}
 						>
-							<Icon className={cn("h-4 w-4 shrink-0", active ? "text-blue-700" : "text-neutral-500")} />
+							<Icon className={cn("h-4 w-4 shrink-0", active ? "text-neutral-900" : "text-neutral-500")} />
 							{item.label}
 						</Link>
 					);
@@ -99,9 +109,9 @@ function NavResults({ groups, mode, pathname }: { groups: NavSearchGroup[]; mode
 	return groups.map((group) => {
 		const withMode = group.mode !== mode;
 		return (
-			<div key={group.mode} className="flex flex-col gap-5">
+			<div key={group.mode} className="flex flex-col gap-3">
 				{withMode && (
-					<p className="-mb-3 border-t border-neutral-200/70 px-3 pt-4 text-xs font-semibold text-blue-700">
+					<p className="-mb-2 border-t border-neutral-200 px-3 pt-3 text-xs font-medium text-neutral-500">
 						In {navModeLabels[group.mode]}
 					</p>
 				)}
@@ -135,48 +145,41 @@ export function SectionNav({ mode: modeProp }: { mode?: NavMode }) {
 		<SectionNavSheet
 			title={`${title} menu`}
 			label={findActiveNavItem(mode, pathname)?.label ?? title}
-			className="w-full px-4 py-4 md:min-h-full md:w-64 md:shrink-0 md:border-r md:border-neutral-200/70 md:py-6"
+			className={`w-full md:flex md:min-h-0 md:w-64 md:shrink-0 md:flex-col ${SECTION_PANEL_CLASS}`}
 		>
-			<div className="sticky top-6 flex flex-col gap-5">
-				<div className="space-y-3 px-2">
+			<div className="flex h-14 shrink-0 items-center gap-1 border-b border-neutral-200 px-2">
+				<Tooltip label="Back to inbox">
 					<Link
 						href="/inbox"
+						aria-label="Back to inbox"
 						className={cn(
-							"flex w-fit items-center gap-1.5 rounded-md text-sm font-medium text-neutral-600 hover:text-neutral-900",
+							"flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
 							focusRing,
 						)}
 					>
-						<ChevronLeft className="h-4 w-4" />
-						Back to inbox
+						<ArrowLeft className="h-4 w-4" />
 					</Link>
-					{canShowModeSwitch(user) && <ModeSwitch mode={mode} user={user} />}
-					<h2 className="text-2xl font-bold tracking-tight text-neutral-900">{title}</h2>
-					<label className="flex h-9 md:hidden items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-500 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/20">
-						<Search className="h-4 w-4 shrink-0" />
-						<input
-							type="search"
-							value={query}
-							onChange={(event) => setQuery(event.target.value)}
-							placeholder={`Search ${title.toLowerCase()}`}
-							aria-label={`Search ${title.toLowerCase()}`}
-							className="min-w-0 flex-1 bg-transparent text-neutral-900 outline-none! border-none! shadow-none! p-0 placeholder:text-neutral-400"
-						/>
-					</label>
-				</div>
+				</Tooltip>
+				<h2 className="min-w-0 truncate text-base font-medium text-neutral-900">{title}</h2>
+			</div>
+			<div className="flex shrink-0 flex-col gap-2 px-3 pt-3">
+				<PageSearchInput />
+				<label className="flex h-9 md:hidden items-center gap-2 rounded-lg border border-neutral-200 bg-[#f6f8fc] px-3 text-sm text-neutral-500 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/20">
+					<Search className="h-4 w-4 shrink-0" />
+					<input
+						type="search"
+						value={query}
+						onChange={(event) => setQuery(event.target.value)}
+						placeholder={`Search ${title.toLowerCase()}`}
+						aria-label={`Search ${title.toLowerCase()}`}
+						className="min-w-0 flex-1 bg-transparent text-neutral-900 outline-none! border-none! shadow-none! p-0 placeholder:text-neutral-500"
+					/>
+				</label>
+				{canShowModeSwitch(user) && <ModeSwitch mode={mode} user={user} />}
+			</div>
+			<div className="flex flex-col gap-3 px-2 pt-3 pb-4 md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain">
 				{groups.length === 0 && <p className="px-3 text-sm text-neutral-500">No pages match “{query.trim()}”.</p>}
 				<NavResults groups={groups} mode={mode} pathname={pathname} />
-				<a
-					href={`${SOURCE_CODE_URL}/issues`}
-					target="_blank"
-					rel="noreferrer"
-					className={cn(
-						"flex items-center gap-3 border-t border-neutral-200/70 px-3 pt-4 text-sm text-neutral-600 hover:text-neutral-900",
-						focusRing,
-					)}
-				>
-					<LifeBuoy className="h-4 w-4" />
-					Need a hand?
-				</a>
 			</div>
 		</SectionNavSheet>
 	);

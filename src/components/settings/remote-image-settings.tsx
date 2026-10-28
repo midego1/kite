@@ -7,7 +7,7 @@ export function RemoteImageSettings() {
 	const [enabled, setEnabled] = useLoadRemoteImages();
 
 	return (
-		<label className="flex items-start gap-3 rounded-xl bg-neutral-50 p-4">
+		<label className="flex items-start gap-3 rounded-lg bg-neutral-50 p-4">
 			<span className="flex-1">
 				<span className="block text-sm font-medium text-neutral-900">Always show remote images</span>
 				<span className="mt-1 block text-sm text-neutral-500">

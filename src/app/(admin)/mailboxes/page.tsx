@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { Plus, UsersRound } from "lucide-react";
+import { Mail, Plus, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -27,6 +27,7 @@ import { useAuthMe } from "@/hooks/use-auth-me";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import type { Domain, MailboxOwner, MailboxesResponse } from "./types";
 import { getMailboxAddress, getMailboxesBase, getMailboxName, listedMailboxes } from "./utils";
+import { EmptyState } from "@/components/ui/page";
 
 export default function MailboxesPage() {
 	const qc = useQueryClient();
@@ -120,7 +121,7 @@ export default function MailboxesPage() {
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between gap-4">
-				<h1 className="text-2xl md:text-3xl font-medium">Mailboxes</h1>
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Mailboxes</h1>
 				<Dialog open={createOpen} onOpenChange={setCreateOpen}>
 					<DialogTrigger asChild>
 						<Button className={mobilePrimaryActionAboveNavClass}>
@@ -141,7 +142,8 @@ export default function MailboxesPage() {
 										id="mailbox-type"
 										value={mailboxType}
 										onChange={(event) => setMailboxType(event.target.value as "personal" | "shared")}
-										className="flex h-10 w-full rounded-md border border-neutral-200 bg-white px-3 text-sm shadow-sm shadow-neutral-200/50 focus-visible:border-blue-600 focus-visible:outline-none"
+										containerClassName="h-10 w-full"
+										className="text-sm"
 									>
 										<option value="personal">Personal inbox</option>
 										<option value="shared">Shared inbox</option>
@@ -159,7 +161,8 @@ export default function MailboxesPage() {
 											setOwnerUserId(event.target.value);
 											if (owner) setDisplayName(owner.name);
 										}}
-										className="flex h-10 w-full rounded-md border border-neutral-200 bg-white px-3 text-sm shadow-sm shadow-neutral-200/50 focus-visible:border-blue-600 focus-visible:outline-none"
+										containerClassName="h-10 w-full"
+										className="text-sm"
 									>
 										{mailboxOwners.map((owner) => (
 											<option key={owner.id} value={owner.id}>
@@ -169,7 +172,7 @@ export default function MailboxesPage() {
 									</Select>
 								</div>
 							) : (
-								<p className="rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
+								<p className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
 									After creating the shared inbox, choose which accounts can access it.
 								</p>
 							)}
@@ -236,9 +239,7 @@ export default function MailboxesPage() {
 					</span>
 				</div> */}
 				{mailboxes.isLoading && <SectionRowSkeleton />}
-				{!mailboxes.isLoading && visibleMailboxes.length === 0 && (
-					<p className="rounded-2xl bg-white px-5 py-4 text-sm text-neutral-500">No mailboxes yet</p>
-				)}
+				{!mailboxes.isLoading && visibleMailboxes.length === 0 && <EmptyState icon={Mail} title="No mailboxes yet" />}
 				<List>
 					{visibleMailboxes.map((mailbox) => {
 						const mailboxWithHostname = {

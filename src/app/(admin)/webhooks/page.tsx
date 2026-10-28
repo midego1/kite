@@ -3,7 +3,7 @@
 import { mobilePrimaryActionAboveNavClass } from "@/components/page-header-utils";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
+import { Activity, Plus, RefreshCw, Send, Trash2, Webhook as WebhookIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,6 +17,8 @@ import type { Webhook, WebhookEvent } from "./types";
 import { createWebhook, deleteWebhook, fetchWebhooks, testWebhook, updateWebhook } from "./utils";
 import { WebhookDeliveries } from "./deliveries";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { EmptyState } from "@/components/ui/page";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function WebhooksPage() {
 	const qc = useQueryClient();
@@ -85,7 +87,7 @@ export default function WebhooksPage() {
 		<div className="space-y-6">
 			<div className="flex flex-wrap items-end justify-between gap-4">
 				<div>
-					<h1 className="text-2xl font-semibold">Webhooks</h1>
+					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Webhooks</h1>
 					<p className="mt-1 text-sm text-neutral-500">
 						Deliver mail and module events to your own endpoints, with automatic retries.
 					</p>
@@ -103,7 +105,7 @@ export default function WebhooksPage() {
 
 			{secret && (
 				<Card>
-					<CardContent className="pt-6 text-sm">
+					<CardContent className="p-0 text-sm">
 						<p className="font-medium">Signing secret — shown once</p>
 						<p className="mt-1 text-neutral-500">
 							Verify the <code>X-Email-Platform-Signature</code> header (HMAC-SHA256 of the raw body) with this secret.
@@ -124,13 +126,9 @@ export default function WebhooksPage() {
 			{webhooks.isLoading ? (
 				<SectionRowSkeleton />
 			) : !hooks?.length ? (
-				<Card>
-					<CardContent className="pt-6 text-sm text-neutral-500">
-						No endpoints yet. Add one to start receiving events.
-					</CardContent>
-				</Card>
+				<EmptyState icon={WebhookIcon} title="No endpoints yet" description="Add one to start receiving events." />
 			) : (
-				<section className="divide-y divide-neutral-100 overflow-hidden rounded-3xl bg-white">
+				<section className="divide-y divide-neutral-200 overflow-hidden rounded-xl border border-neutral-200 bg-white">
 					{hooks.map((hook) => (
 						<div key={hook.id} className="px-5 py-6 sm:px-6">
 							<div className="flex flex-wrap items-start justify-between gap-4">
@@ -154,7 +152,7 @@ export default function WebhooksPage() {
 									/>
 								</div>
 							</div>
-							<div className="mt-5 grid grid-cols-2 overflow-hidden rounded-2xl bg-neutral-50 sm:grid-cols-5">
+							<div className="mt-5 grid grid-cols-2 overflow-hidden rounded-xl bg-neutral-50 sm:grid-cols-5">
 								<div className="px-4 py-3">
 									<span className="block text-lg font-semibold text-neutral-900">{hook.stats.total}</span>
 									<span className="block text-xs text-neutral-500">Deliveries</span>
@@ -293,12 +291,7 @@ export default function WebhooksPage() {
 										<span className="block text-sm font-medium">{event.label}</span>
 										<span className="block text-xs text-neutral-500">{event.hint}</span>
 									</span>
-									<input
-										type="checkbox"
-										className="h-4 w-4"
-										checked={events.includes(event.value)}
-										onChange={() => toggleEvent(event.value)}
-									/>
+									<Checkbox checked={events.includes(event.value)} onChange={() => toggleEvent(event.value)} />
 								</label>
 							))}
 						</div>

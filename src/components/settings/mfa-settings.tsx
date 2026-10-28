@@ -36,7 +36,7 @@ export function MfaSettings() {
 
 	return (
 		<div className="space-y-4">
-			<div className="flex items-start gap-3 rounded-2xl bg-neutral-50 p-4">
+			<div className="flex items-start gap-3 rounded-lg bg-neutral-50 p-4">
 				{status.enabled ? (
 					<ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
 				) : (
@@ -79,7 +79,7 @@ function RecoveryCodesList({ codes }: { codes: string[] }) {
 	const [copied, setCopied] = useState(false);
 	return (
 		<div className="space-y-3">
-			<ul className="grid grid-cols-2 gap-2 rounded-xl bg-neutral-50 p-4 font-mono text-sm text-neutral-800">
+			<ul className="grid grid-cols-2 gap-2 rounded-lg bg-neutral-50 p-4 font-mono text-sm text-neutral-800">
 				{codes.map((code) => (
 					<li key={code}>{code}</li>
 				))}

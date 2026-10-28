@@ -19,7 +19,7 @@ function ManualDnsNotice({ skipped, canSetUp }: { skipped: boolean; canSetUp: bo
 		);
 	}
 	return (
-		<p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+		<p className="rounded-lg border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a] px-3 py-2 text-xs leading-5">
 			DNS setup was skipped when this domain was added, so Kite has not checked or changed its records and mail will not
 			arrive until they are set.{" "}
 			{canSetUp

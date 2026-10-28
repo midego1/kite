@@ -19,7 +19,11 @@ export function ModuleCard({ entry, disabled, error, onToggle }: ModuleCardProps
 	const headingId = `module-${entry.id}`;
 	const blocked = entry.offBecause;
 	return (
-		<section aria-labelledby={headingId} data-module={entry.id} className="space-y-4 rounded-3xl bg-white p-6">
+		<section
+			aria-labelledby={headingId}
+			data-module={entry.id}
+			className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5"
+		>
 			<div className="flex items-start justify-between gap-4">
 				<div className="min-w-0">
 					<h2 id={headingId} className="text-lg font-semibold text-neutral-900">
@@ -57,7 +61,7 @@ export function ModuleCard({ entry, disabled, error, onToggle }: ModuleCardProps
 				</p>
 			)}
 			{entry.adminNotes.map((note) => (
-				<p key={note} className="rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-900">
+				<p key={note} className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-900">
 					{note}
 				</p>
 			))}

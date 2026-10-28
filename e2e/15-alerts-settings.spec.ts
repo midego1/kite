@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { STORAGE_STATE } from "./support/constants";
+import { chooseOption, expectSelectValue, readOptions } from "./support/select";
 import { apiContext, waitForHydration } from "./support/helpers";
 
 const WEBHOOK_API = "/api/admin/alerts/webhook";
@@ -95,7 +96,13 @@ test("rejects an http URL to a public host and a private address", async ({ page
 test("shows the detected format and persists a chosen one", async ({ page }) => {
 	await openAlerts(page);
 	const format = page.getByLabel("Format");
-	await expect(format.locator("option")).toHaveText(["Auto-detect", "Slack", "Discord", "ntfy", "Generic JSON"]);
+	expect((await readOptions(format)).map((option) => option.label)).toEqual([
+		"Auto-detect",
+		"Slack",
+		"Discord",
+		"ntfy",
+		"Generic JSON",
+	]);
 
 	await page.getByLabel("Webhook URL").fill(SLACK_URL);
 	let saved = waitForWebhook(page, "PUT");
@@ -104,13 +111,13 @@ test("shows the detected format and persists a chosen one", async ({ page }) => 
 	await expect(page.getByText("Detected format: Slack")).toBeVisible();
 	await expect(page.getByText("hooks.slack.com/…")).toBeVisible();
 
-	await format.selectOption({ label: "ntfy" });
+	await chooseOption(format, { label: "ntfy" });
 	saved = waitForWebhook(page, "PUT");
 	await page.getByRole("button", { name: "Save" }).click();
 	expect((await saved).ok()).toBe(true);
 
 	await page.reload();
-	await expect(page.getByLabel("Format")).toHaveValue("ntfy");
+	await expectSelectValue(page.getByLabel("Format"), "ntfy");
 	await expect(page.getByText(/^Detected format/)).toHaveCount(0);
 	const api = await apiContext(STORAGE_STATE);
 	expect(await (await api.get(WEBHOOK_API)).json()).toMatchObject({ configured: true, kind: "ntfy" });

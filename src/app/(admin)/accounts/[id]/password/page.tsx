@@ -25,12 +25,12 @@ export default function AccountPasswordPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Password</h1>
-				<p className="mt-2 text-sm text-neutral-500">Reset the password for {account?.name ?? "this account"}.</p>
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Password</h1>
+				<p className="mt-1 text-sm text-neutral-500">Reset the password for {account?.name ?? "this account"}.</p>
 			</div>
 			<form
 				onSubmit={(event) => void saveAccountPassword({ event, account, password, setPassword, setSaving, setMessage })}
-				className="space-y-5 rounded-3xl bg-white p-6"
+				className="space-y-5 rounded-xl border border-neutral-200 bg-white p-5"
 			>
 				{account && !account.editable ? (
 					<p className="text-sm text-neutral-500">Only the primary admin can reset an admin account password.</p>

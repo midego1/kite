@@ -85,14 +85,14 @@ export default function AccountMailboxesPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Mailboxes</h1>
-				<p className="mt-2 text-sm text-neutral-500">Manage inboxes owned by {account?.name ?? "this account"}.</p>
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Mailboxes</h1>
+				<p className="mt-1 text-sm text-neutral-500">Manage inboxes owned by {account?.name ?? "this account"}.</p>
 			</div>
-			<section className="space-y-4 rounded-3xl bg-white p-6">
+			<section className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5">
 				<h2 className="text-base font-semibold text-neutral-900">Current inboxes</h2>
 				<div className="space-y-2">
 					{mailboxes.map((mailbox) => (
-						<div key={mailbox.id} className="flex items-center justify-between rounded-2xl bg-neutral-50 px-4 py-3">
+						<div key={mailbox.id} className="flex items-center justify-between rounded-lg bg-neutral-50 px-4 py-3">
 							<span className="min-w-0">
 								<span className="block truncate font-medium">{mailbox.displayName || mailbox.localPart}</span>
 								<span className="block truncate text-sm text-neutral-500">

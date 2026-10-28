@@ -1,6 +1,7 @@
 import { LoaderCircle } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import type { AddDomainProviderFieldsProps, ReceivingProvider, SendingProvider } from "./types";
+import { Select } from "@/components/ui/select";
 
 function receivingHint(provider: ReceivingProvider): string {
 	if (provider === "cloudflare") return "Cloudflare Email Routing is enabled on the zone.";
@@ -25,40 +26,42 @@ export default function AddDomainProviderFields({
 }: AddDomainProviderFieldsProps) {
 	return (
 		<>
-			<div className="flex items-center justify-between gap-4 rounded-xl bg-neutral-50 px-4 py-3">
+			<div className="flex items-center justify-between gap-4 rounded-lg bg-neutral-50 px-4 py-3">
 				<div>
 					<Label htmlFor="receiving-provider">Receive mail with</Label>
 					<p className="mt-1 text-xs leading-5 text-neutral-500">{receivingHint(receivingProvider)}</p>
 				</div>
-				<select
+				<Select
 					id="receiving-provider"
 					value={receivingProvider}
 					onChange={(e) => onReceivingProviderChange(e.target.value as ReceivingProvider)}
-					className="h-9 shrink-0 rounded-md border border-neutral-200 bg-white px-3 text-sm"
+					containerClassName="h-9 shrink-0"
+					className="text-sm"
 				>
 					<option value="cloudflare">Cloudflare Email Routing</option>
 					<option value="resend">Resend</option>
 					<option value="ses">Amazon SES</option>
 					<option value="none">Not selected</option>
-				</select>
+				</Select>
 			</div>
-			<div className="flex items-center justify-between gap-4 rounded-xl bg-neutral-50 px-4 py-3">
+			<div className="flex items-center justify-between gap-4 rounded-lg bg-neutral-50 px-4 py-3">
 				<div>
 					<Label htmlFor="sending-provider">Send mail with</Label>
 					<p className="mt-1 text-xs leading-5 text-neutral-500">{sendingHint(sendingProvider, checking)}</p>
 				</div>
 				{checking && <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-neutral-500" />}
-				<select
+				<Select
 					id="sending-provider"
 					value={sendingProvider}
 					onChange={(e) => onSendingProviderChange(e.target.value as SendingProvider)}
-					className="h-9 shrink-0 rounded-md border border-neutral-200 bg-white px-3 text-sm"
+					containerClassName="h-9 shrink-0"
+					className="text-sm"
 				>
 					<option value="cloudflare">Cloudflare Email Sending</option>
 					<option value="resend">Resend</option>
 					<option value="ses">Amazon SES</option>
 					<option value="none">Not selected</option>
-				</select>
+				</Select>
 			</div>
 		</>
 	);

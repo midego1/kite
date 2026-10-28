@@ -100,8 +100,8 @@ export default function AccountsPage() {
 		<div className="space-y-6">
 			<div className="flex items-center justify-between gap-4">
 				<div>
-					<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Accounts</h1>
-					<p className="mt-2 text-sm text-neutral-500">Manage user accounts and their inboxes.</p>
+					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Accounts</h1>
+					<p className="mt-1 text-sm text-neutral-500">Manage user accounts and their inboxes.</p>
 				</div>
 				{canManage && (
 					<Button className={mobilePrimaryActionAboveNavClass} onClick={() => setCreateOpen(true)}>

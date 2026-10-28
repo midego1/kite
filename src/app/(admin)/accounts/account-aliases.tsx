@@ -18,8 +18,8 @@ export function AccountAliases({
 }: AccountAliasesProps) {
 	const availableDomains = domains.filter((domain) => domain.status === "active");
 	return (
-		<div className="space-y-4 border-t border-neutral-100 pt-4">
-			<label className="flex items-start gap-3 rounded-xl bg-neutral-50 p-4">
+		<div className="space-y-4 border-t border-neutral-200 pt-4">
+			<label className="flex items-start gap-3 rounded-lg bg-neutral-50 p-4">
 				<Checkbox checked={useAllDomains} onChange={(event) => onUseAllDomainsChange(event.target.checked)} />
 				<span>
 					<span className="block text-sm font-medium">Use all domains</span>

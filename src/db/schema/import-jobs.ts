@@ -25,7 +25,7 @@ export const importJobs = sqliteTable(
 		password: text("password").notNull().default(""),
 		folder: text("folder").notNull(),
 		maxMessages: integer("max_messages"),
-		status: text("status", { enum: ["pending", "running", "completed", "failed", "cancelled"] })
+		status: text("status", { enum: ["pending", "running", "paused", "completed", "failed", "cancelled"] })
 			.notNull()
 			.default("pending"),
 		total: integer("total"),

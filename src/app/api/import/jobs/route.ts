@@ -7,6 +7,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { readJsonBody } from "@/lib/http/request";
 import { createImportJob, listImportJobs, serializeImportJob } from "@/lib/import/jobs";
+import { checkImportStart } from "@/lib/import/size-guard";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { parseImapImportRequest } from "../imap/utils";
 import type { ImapImportJobRequest } from "./types";
@@ -53,6 +54,12 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	}
 
 	const maxMessages = body.importAll === false ? Math.min(Math.max(Number(body.limit) || 100, 1), 10_000) : null;
+	// Above 90% of the database limit (now, or once `maxMessages` more are added) the user has to say "Import anyway".
+	const sizeCheck = await checkImportStart(env, request, {
+		messages: maxMessages,
+		confirmed: body.confirmDatabaseFull === true,
+	});
+	if (sizeCheck.refusal) return sizeCheck.refusal;
 	const job = await createImportJob(env, {
 		userId: user.id,
 		mailboxId: access.mailbox.id,
@@ -65,6 +72,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 		password: input.password,
 		folder: input.folder,
 		maxMessages,
+		confirmedDatabaseFull: sizeCheck.confirmed,
 	});
 	return Response.json({ job: serializeImportJob(job) }, { status: 201 });
 });

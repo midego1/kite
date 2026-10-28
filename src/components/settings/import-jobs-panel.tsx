@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { ImportJob } from "@/app/(import)/settings/import/types";
 import {
 	cancelImportJob,
 	fetchImportJobs,
 	getImportJobPercent,
 	isActiveImportJob,
+	isPausedImportJob,
+	resumeImportJob,
 } from "@/app/(import)/settings/import/utils";
 
 const POLL_INTERVAL_MS = 3000;
@@ -15,6 +18,7 @@ const POLL_INTERVAL_MS = 3000;
 const statusStyles: Record<ImportJob["status"], string> = {
 	pending: "bg-neutral-100 text-neutral-600",
 	running: "bg-blue-50 text-blue-700",
+	paused: "bg-amber-50 text-amber-800",
 	completed: "bg-green-50 text-green-700",
 	failed: "bg-red-50 text-red-700",
 	cancelled: "bg-neutral-100 text-neutral-500",
@@ -23,6 +27,7 @@ const statusStyles: Record<ImportJob["status"], string> = {
 const statusLabels: Record<ImportJob["status"], string> = {
 	pending: "Waiting",
 	running: "Importing",
+	paused: "Paused",
 	completed: "Done",
 	failed: "Failed",
 	cancelled: "Cancelled",
@@ -51,6 +56,7 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 	const [jobs, setJobs] = useState<ImportJob[]>([]);
 	const [error, setError] = useState<string | null>(null);
 	const [cancelling, setCancelling] = useState<string | null>(null);
+	const confirm = useConfirm();
 	const importedRef = useRef<number | null>(null);
 
 	const load = useCallback(async () => {
@@ -80,6 +86,27 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 		const timer = window.setInterval(() => void load(), POLL_INTERVAL_MS);
 		return () => window.clearInterval(timer);
 	}, [hasActive, load]);
+
+	async function onResume(id: string) {
+		setCancelling(id);
+		try {
+			if ((await resumeImportJob(id)) === "needs_confirmation") {
+				const confirmed = await confirm({
+					title: "Resume the import anyway?",
+					description:
+						"The database is above 90% of its size limit. The import keeps adding mail and pauses again at 98%. Free space first if you can.",
+					confirmLabel: "Resume anyway",
+					destructive: false,
+				});
+				if (confirmed) await resumeImportJob(id, true);
+			}
+			await load();
+		} catch (resumeError) {
+			setError(resumeError instanceof Error ? resumeError.message : "Unable to resume import");
+		} finally {
+			setCancelling(null);
+		}
+	}
 
 	async function onCancel(id: string) {
 		setCancelling(id);
@@ -134,7 +161,17 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 									<span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[job.status]}`}>
 										{statusLabels[job.status]}
 									</span>
-									{isActiveImportJob(job) && (
+									{isPausedImportJob(job) && (
+										<Button
+											type="button"
+											size="sm"
+											disabled={cancelling === job.id}
+											onClick={() => void onResume(job.id)}
+										>
+											Resume
+										</Button>
+									)}
+									{(isActiveImportJob(job) || isPausedImportJob(job)) && (
 										<Button
 											type="button"
 											variant="outline"

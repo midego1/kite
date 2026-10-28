@@ -141,6 +141,7 @@ A cron trigger (`*/5 * * * *`) runs the alert check in the Worker; Node/Docker r
 | Exhausted webhooks  | any webhook delivery ran out of retries in the last 60 minutes      |
 | Failed backups      | any backup failed in the last 60 minutes                            |
 | Email relay header signature | the email relay sent a request without a header signature, or with a wrong one, in the last 60 minutes: its mail arrives, but sender authentication counts as unknown until the relay is updated (or `INBOUND_WEBHOOK_SECRET` matches) |
+| Database nearly full | the database is above 90% of its size limit (see [Database size](#database-size)); never fires on Node, where there is no limit |
 | Email relay older signature (low priority) | the email relay still signs with the older header signature form, accepted until the first release on or after 2027-01-31 ([#118](https://github.com/midego1/kite/issues/118)); update the relay |
 
 Behaviour:
@@ -261,6 +262,17 @@ While any rule is active, every admin sees a compact notice in the sidebar, abov
 #### Blind spots
 
 Email alerts need working outbound sending, and webhook alerts need the receiver to be reachable. Configure the webhook so a sending outage still reaches you. If both fail, check the logs for `alerts.notify_failed` and `alerts.channel_failed`.
+
+### Database size
+
+D1 holds the whole mailbox, and a database has a hard size limit: 10 GB on Workers Paid, 500 MB on Workers Free. Kite reads the current size from the `size_after` field that every D1 result carries (`getDatabaseSize` in `src/lib/db/size.ts`; on Node the SQLite wrapper fills the same field from `page_count * page_size`, and there is no limit).
+
+- **Limit.** The default is 10 GB. On Workers Free set the variable `D1_MAX_BYTES=500000000` so the warnings use the right limit. Values are decimal bytes, as Cloudflare states the limits.
+- **Admin → Overview** shows the size against the limit for the primary admin: amber from 70%, red from 90%. The operational alert "Database nearly full" fires at 90% (see [Operational alerts](#operational-alerts)).
+- **Imports.** Settings → Import estimates what a limited import adds (messages × the install's average D1 bytes per message, 40 KB until it holds 1,000 messages, at most 128 KB per message) and warns from 70% of the limit. Above 90%, now or after the import, **Start** needs **Import anyway**, and the server refuses the request with 409 `DATABASE_NEARLY_FULL` without `confirmDatabaseFull`. Whole-folder imports do not know their size before they start, so only the current size counts; the per-folder counts of whole-account imports will feed the same estimate.
+- **Running imports pause themselves.** After every batch an import checks the size. At 90% it sets itself to **Paused** (keeping its saved source password and cursor), shows why, and the primary admin gets the operational alert. **Resume** asks for confirmation while the database is still above 90%; a confirmed import stops again at 98%, so the database never fills completely. A job paused for more than 7 days is cancelled and its saved password erased.
+- **What to do.** Delete mail and empty Trash and Spam, take and download a backup first ([backups](#recovery-and-data-handling)), or move to a plan with a larger limit. Deleting rows frees space for new rows, but D1 may report the old size until it compacts.
+- **Tests only.** Outside production the header `X-Kite-Test-Database-Size: used=<bytes>;limit=<bytes>` makes the admin size, the import estimate and the import start and resume checks use that size (`e2e/60-database-size.spec.ts`). It is ignored when `NODE_ENV` is `production`.
 
 ### Remote image proxy
 

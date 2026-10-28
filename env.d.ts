@@ -48,6 +48,8 @@ interface CloudflareEnv {
 	CF_ACCOUNT_ID?: string;
 	/** Public origin of this install (https://mail.example.com) when it sits behind a proxy. */
 	APP_URL?: string;
+	/** Database size limit in bytes for the warnings and the import guard; defaults to D1's 10 GB (Workers Free: 500000000). Ignored on Node. */
+	D1_MAX_BYTES?: string;
 	/** "off" disables operational alert emails; anything else leaves them on. */
 	OPERATIONAL_ALERTS?: string;
 	/**

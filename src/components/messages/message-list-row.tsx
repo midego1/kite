@@ -111,6 +111,39 @@ function RowCornerStar({
 }
 
 /**
+ * The second line of a stacked row: the subject, then the badges, a starred row's star and the mailbox label
+ * flush right under the date.
+ */
+function StackedSubjectLine({ inlineStar, ...props }: RowViewProps & { inlineStar: boolean }) {
+	const { config, row } = props;
+	const Icon = config.icon;
+	return (
+		<span className="mt-0.5 flex items-center gap-2">
+			<span
+				dir="auto"
+				className={clsx(
+					"min-w-0 flex-1 truncate text-sm",
+					// Keeps a few letters of the subject when the pill is wide: the pill shortens first.
+					props.mailboxLabel && "min-w-[4.5rem]",
+					row.unread ? "text-neutral-700" : "text-neutral-500",
+				)}
+			>
+				{row.rowMessage.subject ?? "(no subject)"}
+			</span>
+			<MessageRowBadges message={row.rowMessage} folder={config.folder} />
+			{inlineStar && row.starToggle && row.starred && (
+				<Icon
+					aria-hidden="true"
+					className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400 group-hover:hidden group-has-[:focus-visible]:hidden"
+				/>
+			)}
+			{props.mailboxLabel}
+			{row.starToggle && !inlineStar && <span className="w-5 shrink-0" />}
+		</span>
+	);
+}
+
+/**
  * The row of the list beside a reading pane (and on phones), after Zero's: a round avatar carrying the unread
  * dot, the sender with the conversation count and the date, the subject as a muted second line and the badges
  * as small icons. The checkbox takes the avatar's place while selecting; it stays in the tab order and shows
@@ -122,6 +155,10 @@ function StackedMessageRow(props: RowViewProps) {
 	const showHoverActions = row.hasRowActions && hoverActions;
 	const showCheckbox = props.selecting || selected;
 	const Icon = config.icon;
+	// With a mailbox label the pill sits flush right under the date, so a starred row's star moves in front of
+	// it instead of into the corner (where it would cover the pill). Without hover actions (phones) the star is
+	// a tap target in the corner, which keeps its own slot.
+	const inlineStar = Boolean(props.mailboxLabel) && showHoverActions;
 	return (
 		<div
 			data-message-row={message.id}
@@ -167,17 +204,7 @@ function StackedMessageRow(props: RowViewProps) {
 							{formatMessageListTimestamp(message.createdAt)}
 						</time>
 					</span>
-					<span className="mt-0.5 flex items-center gap-2">
-						<span
-							dir="auto"
-							className={clsx("min-w-0 flex-1 truncate text-sm", row.unread ? "text-neutral-700" : "text-neutral-500")}
-						>
-							{row.rowMessage.subject ?? "(no subject)"}
-						</span>
-						{props.mailboxLabel}
-						<MessageRowBadges message={row.rowMessage} folder={config.folder} />
-						{row.starToggle && <span className="w-5 shrink-0" />}
-					</span>
+					<StackedSubjectLine {...props} inlineStar={inlineStar} />
 					{/* A one-line summary shows even where the density leaves the plain preview out: it is the row's gist. */}
 					{(stackedDensity.showPreview || row.line) && (
 						<span dir="auto" className="mt-0.5 block truncate text-xs text-neutral-500">
@@ -185,7 +212,7 @@ function StackedMessageRow(props: RowViewProps) {
 						</span>
 					)}
 				</Link>
-				<RowCornerStar row={row} icon={Icon} hoverActions={showHoverActions} />
+				{!inlineStar && <RowCornerStar row={row} icon={Icon} hoverActions={showHoverActions} />}
 				<ScreenerRowControls message={row.rowMessage} compact />
 				{showHoverActions && (
 					<MessageListRowActions
@@ -250,25 +277,27 @@ function WideMessageRow(props: RowViewProps) {
 				/>
 				<UnreadDot unread={row.unread} />
 			</span>
-			<span className="truncate text-neutral-700">
+			<span className="flex min-w-0 items-center gap-2 text-neutral-700">
 				{/* The overlay stretches the link over the whole row, so a click anywhere opens the message
 				while the row has one keyboard stop; the checkbox, star and hover actions sit above it. */}
-				<ScreenerRowControls message={row.rowMessage} />
-				<Link
-					href={row.href}
-					onClick={config.folder === "drafts" ? undefined : row.onNavigate}
-					aria-current={active ? "true" : undefined}
-					className="after:absolute after:inset-0 focus-visible:outline-none"
-				>
-					{props.mailboxLabel}
-					<span dir="auto" className={row.unread ? "font-medium text-neutral-900" : ""}>
-						{row.rowMessage.subject ?? "(no subject)"}
-					</span>
-					<span dir="auto" className="text-neutral-500">
-						{" "}
-						- <MessageRowPreview preview={row.preview} line={row.line} />
-					</span>
-				</Link>
+				<span className="min-w-[4.5rem] flex-1 truncate">
+					<ScreenerRowControls message={row.rowMessage} />
+					<Link
+						href={row.href}
+						onClick={config.folder === "drafts" ? undefined : row.onNavigate}
+						aria-current={active ? "true" : undefined}
+						className="after:absolute after:inset-0 focus-visible:outline-none"
+					>
+						<span dir="auto" className={row.unread ? "font-medium text-neutral-900" : ""}>
+							{row.rowMessage.subject ?? "(no subject)"}
+						</span>
+						<span dir="auto" className="text-neutral-500">
+							{" "}
+							- <MessageRowPreview preview={row.preview} line={row.line} />
+						</span>
+					</Link>
+				</span>
+				{props.mailboxLabel}
 			</span>
 			<time
 				dateTime={message.createdAt}

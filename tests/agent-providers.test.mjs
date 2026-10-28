@@ -88,7 +88,7 @@ async function database(t, dir = migrationsDir) {
 }
 
 const envFor = (sqlite, extra = {}) => ({ DB: sqlite, APP_ENCRYPTION_KEY, ...extra });
-const rows = (sqlite) => sqlite.db.prepare("SELECT * FROM agent_providers ORDER BY created_at, id").all();
+const rows = (sqlite) => sqlite.db.prepare("SELECT * FROM agent_providers ORDER BY created_at, rowid").all();
 
 /** An earlier migration already inserts the `default` row, so the legacy provider is written over it. */
 async function seedLegacyProvider(sqlite, values) {

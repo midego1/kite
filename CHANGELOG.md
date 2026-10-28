@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.28.1] - 2026-10-28
+
+### Changed
+
+- IMAP imports keep the source's read and starred state: mail read there is read in Kite, and flagged mail is starred. Mail without a `Date` header gets the date the source server received it instead of the time of the import. Uploaded `.eml` and `.mbox` files arrive unread, as before.
+- Imports skip a message the mailbox already holds whether its Message-ID was stored with angle brackets or without, so importing a provider's Sent folder no longer adds copies of mail sent from Kite. A message without a Message-ID is recognised by a SHA-256 hash of its bytes, so running an import again only adds what is missing. Messages imported without a Message-ID before this release were keyed differently and can be added once more by a re-run.
+
+### Fixed
+
+- IMAP imports no longer accept an impossible receipt date from the source server (minute 60, a zone offset of 99 hours, a year before 1970); such a message keeps its `Date` header or the time of the import.
+- An imported message dated more than a day in the future, by its `Date` header or by the source server, is dated by the next believable date (the server's receipt date, else the time of the import), so a source can no longer pin mail to the top of the list.
+- Imported conversations no longer split when a reply is imported before the message it answers: the reply joins the conversation of the first message its `References` header names. Received mail is grouped as before.
+
 ## [2026.10.28.0] - 2026-10-28
 
 ### Added

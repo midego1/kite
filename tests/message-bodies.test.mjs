@@ -17,7 +17,7 @@ await build({
 			export { SqliteDatabase } from "./server/runtime/sqlite-database.ts";
 			export { applyMigrations } from "./server/runtime/migrate.ts";
 			export { getDb } from "./src/db/index.ts";
-			export { loadMessageBodies, canOffloadHtmlBodies } from "./src/lib/email/bodies.ts";
+			export { loadMessageBodies, canOffloadHtmlBodies, MessageBodyUnavailableError } from "./src/lib/email/bodies.ts";
 			export { derivedTextBody } from "./src/lib/email/bodies-utils.ts";
 			export { importMessagesToMailbox } from "./src/lib/import/service.ts";
 			export { deleteMessageWithObjects } from "./src/lib/email/message-cleanup.ts";
@@ -26,7 +26,7 @@ await build({
 			export { exportDatabaseRecords, restoreDatabaseRecords } from "./src/lib/backups/export.ts";
 			export { getMessageWithBodyForUser } from "./src/lib/email/inbound.ts";
 			export { getMessageThreadForUser } from "./src/lib/email/thread-view.ts";
-			export { emailGet } from "./src/lib/jmap/emails.ts";
+			export { emailGet, emailQuery } from "./src/lib/jmap/emails.ts";
 			export { readBlob } from "./src/lib/jmap/blobs.ts";
 			export { messageBlobId } from "./src/lib/jmap/ids.ts";
 			export { GET as getV1Messages } from "./src/app/api/v1/messages/route.ts";
@@ -66,7 +66,7 @@ const BODY_KEY = "bodies/imp-1.html";
 const IMAGE = "https://images.partner.test/logo.png";
 // Over 16 KB, with a link, an image, an entity and a quoted part, so every reader has something to read.
 const HTML = [
-	`<div><p>Hello Alex,</p><p>The quarterly report is attached &amp; the agenda is at <a href="https://partner.test/agenda">partner.test/agenda</a>.</p>`,
+	`<div><p>Hello Alex, from the Café,</p><p>The quarterly report is attached &amp; the agenda is at <a href="https://partner.test/agenda">partner.test/agenda</a>.</p>`,
 	`<img src="${IMAGE}" alt="Partner">`,
 	`<p>${"Revenue grew in every region; the figures follow in the table. ".repeat(300)}</p>`,
 	`<p>Kind regards, Sam</p></div><blockquote><p>On Monday Alex wrote: could you send the report?</p></blockquote>`,
@@ -150,7 +150,9 @@ async function fixture(t, { offloaded, text = TEXT, migrations = migrationsDir }
 	`);
 	// Written as the import does, after the insert; both variants update the row, since JMAP's state counts changes.
 	if (migrations === migrationsDir)
-		database.db.prepare("UPDATE messages SET html_body_key = ? WHERE id = 'imp-1'").run(offloaded ? BODY_KEY : null);
+		database.db
+			.prepare("UPDATE messages SET html_body_key = ?, body_size = ? WHERE id = 'imp-1'")
+			.run(offloaded ? BODY_KEY : null, offloaded ? Buffer.byteLength(text ?? "") + Buffer.byteLength(HTML) : null);
 	if (offloaded) bucket.objects.set(BODY_KEY, HTML);
 	const env = { DB: database, BUCKET: bucket, AI: {} };
 	globalThis.__kiteNodeEnv = env;
@@ -399,7 +401,7 @@ test("an object read that fails shows the text body instead of failing the reade
 });
 
 /** A minimal RFC 5322 message; `html` alone makes it single-part. */
-function mime({ id, html, text = null }) {
+function mime({ id, html, text = null, attachment = null }) {
 	const headers = [
 		"From: Sam <sam@partner.test>",
 		"To: alex@example.com",
@@ -423,7 +425,21 @@ function mime({ id, html, text = null }) {
 				"--b--",
 			]
 		: ["Content-Type: text/html; charset=utf-8", "", html];
-	return new TextEncoder().encode([...headers, ...body].join("\r\n")).buffer;
+	const parts = attachment
+		? [
+				'Content-Type: multipart/mixed; boundary="mixed"',
+				"",
+				"--mixed",
+				...body,
+				"--mixed",
+				'Content-Type: text/plain; name="notes.txt"',
+				'Content-Disposition: attachment; filename="notes.txt"',
+				"",
+				attachment,
+				"--mixed--",
+			]
+		: body;
+	return new TextEncoder().encode([...headers, ...parts].join("\r\n")).buffer;
 }
 
 async function importMessages(env, list) {
@@ -550,3 +566,123 @@ test("a backup keeps the body key and a restore reads the body from the store ag
 	const restored = await m.getMessageWithBodyForUser(target.env, user, "imp-1");
 	assert.equal(restored.body.htmlBody, HTML);
 });
+
+test("an import that fails between its steps leaves no row without its HTML", async (t) => {
+	const { env, bucket, database } = await fixture(t, { offloaded: false });
+	const bodies = () => [...bucket.objects.keys()].filter((key) => key.startsWith("bodies/"));
+	const imported = () =>
+		database.db.prepare("SELECT count(*) AS n FROM messages WHERE subject LIKE 'Imported %'").get().n;
+
+	// The object write fails: nothing is stored.
+	const put = bucket.put;
+	bucket.put = async (key, value, options) => {
+		if (key.startsWith("bodies/")) throw new Error("store unreachable");
+		return put(key, value, options);
+	};
+	let result = await importMessages(env, [{ id: "put-fails", html: HTML, text: TEXT }]);
+	assert.equal(result.imported, 0);
+	assert.equal(imported(), 0);
+	bucket.put = put;
+
+	// Recording the key fails after the insert ran: the batch rolls the insert back, so no row lacks its HTML,
+	// and the object written first is removed (a crash at this point would leave only that orphan object).
+	database.db.exec(
+		"CREATE TRIGGER crash_on_key BEFORE UPDATE OF html_body_key ON messages BEGIN SELECT RAISE(ABORT, 'simulated crash'); END",
+	);
+	result = await importMessages(env, [{ id: "key-fails", html: HTML, text: TEXT }]);
+	assert.equal(result.imported, 0);
+	assert.match(result.errors[0], /simulated crash/);
+	assert.equal(imported(), 0);
+	assert.deepEqual(bodies(), []);
+	database.db.exec("DROP TRIGGER crash_on_key");
+
+	// A later write fails while another is still running: cleanup waits for both, so nothing lands afterwards.
+	bucket.put = async (key, value, options) => {
+		if (key.startsWith("attachments/")) throw new Error("attachment write failed");
+		if (key.startsWith("imports/")) await new Promise((resolve) => setTimeout(resolve, 50));
+		return put(key, value, options);
+	};
+	result = await importMessages(env, [{ id: "late-fails", html: HTML, text: TEXT, attachment: "Meeting notes" }]);
+	assert.equal(result.imported, 0);
+	// Long enough for a write still running after an early cleanup to land.
+	await new Promise((resolve) => setTimeout(resolve, 150));
+	assert.equal(imported(), 0);
+	assert.equal(database.db.prepare("SELECT count(*) AS n FROM message_attachments").get().n, 0);
+	assert.deepEqual(
+		[...bucket.objects.keys()].filter((key) => /^(bodies|imports|attachments)\//.test(key)),
+		[],
+		"no object outlives the failed import",
+	);
+	bucket.put = put;
+
+	// With nothing failing, the same message imports with its key and size recorded together.
+	result = await importMessages(env, [{ id: "works", html: HTML, text: TEXT, attachment: "Meeting notes" }]);
+	assert.equal(result.imported, 1);
+	const row = database.db
+		.prepare("SELECT id, html_body, html_body_key, body_size FROM messages WHERE subject = 'Imported works'")
+		.get();
+	assert.equal(row.html_body, null);
+	assert.equal(row.html_body_key, `bodies/${row.id}.html`);
+	assert.ok(bucket.objects.has(row.html_body_key));
+	assert.ok(row.body_size > Buffer.byteLength(HTML) - 100, "the size counts the HTML in bytes");
+});
+
+test("the mbox export fails visibly when a body cannot be read, and reads many bodies in pages", async (t) => {
+	const { env, bucket, database } = await fixture(t, { offloaded: true });
+	const insert = database.db.prepare(
+		`INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, html_body_key, body_size, created_at)
+		VALUES (?, 'owner', 'mailbox-a', 'inbound', 'sam@partner.test', 'alex@example.com', 'Bulk', 'Bulk text', 'received', ?, 1, ?)`,
+	);
+	for (let index = 0; index < 230; index++) {
+		const id = `bulk-${String(index).padStart(3, "0")}`;
+		insert.run(id, `bodies/${id}.html`, 1_790_001_000 + index);
+		bucket.objects.set(`bodies/${id}.html`, `<p>Bulk body ${id}</p>`);
+	}
+	const mbox = await m.exportMailboxToMbox(env, "mailbox-a");
+	assert.equal(mbox.match(/^From MAILER-DAEMON/gm).length, 232);
+	assert.ok(mbox.includes("Revenue grew in every region"));
+	for (const id of ["bulk-000", "bulk-099", "bulk-100", "bulk-229"]) assert.ok(mbox.includes(`Bulk body ${id}`), id);
+
+	const get = bucket.get;
+	bucket.get = async (key) => {
+		if (key === "bodies/bulk-150.html") throw new Error("store unreachable");
+		return get(key);
+	};
+	await assert.rejects(m.exportMailboxToMbox(env, "mailbox-a"), (error) => {
+		assert.ok(error instanceof m.MessageBodyUnavailableError);
+		assert.equal(error.messageId, "bulk-150");
+		return true;
+	});
+	// The reader still shows the text body for the same failure.
+	bucket.get = async () => {
+		throw new Error("store unreachable");
+	};
+	assert.equal((await m.getMessageWithBodyForUser(env, user, "imp-1")).body.htmlBody, null);
+});
+
+for (const variant of [
+	{ label: "with a text part", text: TEXT },
+	{ label: "HTML only", text: null },
+])
+	test(`JMAP Email/query sizes agree with Email/get for an offloaded message (${variant.label})`, async (t) => {
+		const sizes = [];
+		for (const offloaded of [false, true]) {
+			const { env, database } = await fixture(t, { offloaded, text: variant.text });
+			database.db.exec(
+				"INSERT INTO message_attachments (id, message_id, filename, content_type, size, r2_key, created_at) VALUES ('att-1', 'imp-1', 'notes.txt', 'text/plain', 1234, 'attachments/imp-1/0', 1)",
+			);
+			const ctx = jmapContext(env);
+			const got = await m.emailGet(ctx, { accountId: "owner", ids: ["imp-1", "reply-1"], properties: ["size"] });
+			const size = Object.fromEntries(got.list.map((email) => [email.id, email.size]));
+			sizes.push(size);
+			const query = async (args) => (await m.emailQuery(ctx, { accountId: "owner", ...args })).ids;
+			assert.deepEqual(await query({ filter: { minSize: size["imp-1"], maxSize: size["imp-1"] + 1 } }), ["imp-1"]);
+			assert.deepEqual(await query({ filter: { minSize: size["imp-1"] + 1 } }), []);
+			assert.deepEqual(await query({ filter: { maxSize: size["imp-1"] } }), ["reply-1"]);
+			assert.deepEqual(await query({ sort: [{ property: "size", isAscending: true }] }), ["reply-1", "imp-1"]);
+			// The body filter reads the text D1 keeps: the text part, or the readable text of HTML-only mail.
+			assert.deepEqual(await query({ filter: { body: "agenda" } }), ["imp-1"]);
+		}
+		assert.deepEqual(sizes[1], sizes[0]);
+		assert.ok(sizes[0]["imp-1"] > Buffer.byteLength(HTML) + 1234 - 1, "bytes, attachments included");
+	});

@@ -8,7 +8,7 @@ import { formatEmailAddress, joinEmailAddressList } from "@/lib/email/address";
 import { resolveThreadId } from "@/lib/email/threading";
 import { storeMessageAttachments } from "@/lib/email/attachments";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
-import { loadMessageBodies } from "@/lib/email/bodies";
+import { canOffloadHtmlBodies, loadMessageBodies } from "@/lib/email/bodies";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { LIMITS, KEYWORD_FLAGGED, KEYWORD_SEEN } from "./constants";
 import { JmapError, invalidArguments } from "./errors";
@@ -140,9 +140,10 @@ export const emailGet: JmapMethodHandler = async (ctx, args) => {
 
 export const emailQuery: JmapMethodHandler = async (ctx, args) => {
 	const { ids: accessibleIds, condition } = await scope(ctx);
-	const filter = filterToSql(args.filter as Filter | null | undefined, new Set(accessibleIds));
+	const sizing = { bodySizeColumn: await canOffloadHtmlBodies(ctx.env) };
+	const filter = filterToSql(args.filter as Filter | null | undefined, new Set(accessibleIds), sizing);
 	const where = filter ? and(condition, filter) : condition;
-	const order = sortToSql(args.sort as Comparator[] | null | undefined);
+	const order = sortToSql(args.sort as Comparator[] | null | undefined, sizing);
 	const collapse = !!args.collapseThreads;
 	const limit = Math.min(Math.max(Number(args.limit ?? LIMITS.maxQueryLimit), 0), LIMITS.maxQueryLimit);
 	let position = Number(args.position ?? 0);

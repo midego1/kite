@@ -61,8 +61,12 @@ test("only HTML over the threshold is offloaded, and the row keeps a text body f
 	assert.deepEqual(planHtmlBodyOffload("m", { text: "The text part", html: big }), {
 		key: "bodies/m.html",
 		html: big,
+		bodySize: "The text part".length + big.length,
 		textBody: "The text part",
 	});
+	// Bytes, as Email/get counts them: a derived text body is not counted, it is not a part of the message.
+	assert.equal(planHtmlBodyOffload("m", { text: "Café", html: "<p>€</p>" }, 4).bodySize, 5 + 10);
+	assert.equal(planHtmlBodyOffload("m", { text: null, html: "<p>€</p>" }, 4).bodySize, 10);
 	const htmlOnly = planHtmlBodyOffload("m", { text: null, html: big });
 	assert.equal(htmlOnly.textBody, derivedTextBody(big));
 	assert.match(htmlOnly.textBody, /^ Quarterly numbers & notes\./);

@@ -30,6 +30,8 @@ export function exceedsBodyOffloadBytes(html: string | null | undefined, limit =
 export type HtmlBodyOffload = {
 	key: string;
 	html: string;
+	/** UTF-8 bytes of the text part and the HTML, as an inline row would measure them (`messages.body_size`). */
+	bodySize: number;
 	/** What the row keeps instead: the text part, or `derivedTextBody(html)` when there is none. */
 	textBody: string;
 };
@@ -59,9 +61,11 @@ export function planHtmlBodyOffload(
 ): HtmlBodyOffload | null {
 	const html = body.html;
 	if (!html || !exceedsBodyOffloadBytes(html, limit)) return null;
+	const encoder = new TextEncoder();
 	return {
 		key: htmlBodyObjectKey(messageId),
 		html,
+		bodySize: encoder.encode(body.text ?? "").byteLength + encoder.encode(html).byteLength,
 		textBody: body.text || derivedTextBody(html),
 	};
 }

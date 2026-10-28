@@ -45,7 +45,7 @@ const LATER_MIGRATIONS = [
 	"0074_add_message_html_body_key.sql",
 ];
 /** Columns a later migration adds to a table this test pins; everything else must stay as it was. */
-const LATER_COLUMNS = { messages: ["html_body_key"] };
+const LATER_COLUMNS = { messages: ["html_body_key", "body_size"] };
 /** The modules 0062 seeds a row for; later modules have no row, which means `defaultEnabled`. */
 const MODULES = ["calendar", "booking", "templates", "import"];
 

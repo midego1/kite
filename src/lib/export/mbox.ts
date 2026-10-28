@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
+import { chunkArray } from "@/db/chunk-utils";
 import { loadMessageBodies } from "@/lib/email/bodies";
 
 function escapeHeader(value: string | null): string {
@@ -11,10 +12,17 @@ function escapeMboxBody(value: string): string {
 	return value.replace(/\nFrom /g, "\n>From ");
 }
 
+/** Messages whose offloaded bodies are read together. */
+const BODY_PAGE = 100;
+
 function getMboxFromLine(date: Date): string {
 	return `From MAILER-DAEMON ${date.toUTCString()}`;
 }
 
+/**
+ * The mailbox as an mbox file. An offloaded body that cannot be read fails the whole export
+ * (`MessageBodyUnavailableError`) rather than leaving that message as text in a file the user keeps.
+ */
 export async function exportMailboxToMbox(env: CloudflareEnv, mailboxId: string): Promise<string> {
 	const db = getDb(env);
 	const stored = await db
@@ -36,7 +44,9 @@ export async function exportMailboxToMbox(env: CloudflareEnv, mailboxId: string)
 		.from(messages)
 		.where(eq(messages.mailboxId, mailboxId))
 		.orderBy(asc(messages.createdAt));
-	const rows = await loadMessageBodies(env, stored);
+	const rows = [];
+	for (const page of chunkArray(stored, BODY_PAGE))
+		rows.push(...(await loadMessageBodies(env, page, { strict: true })));
 
 	return rows
 		.map((message) => {

@@ -23,6 +23,7 @@ export type DatabaseBackupTable =
 	| "storage_stores"
 	| "storage_routes"
 	| "app_settings"
+	| "agent_providers"
 	| "module_settings"
 	| "user_module_access"
 	| "booking_appointments"

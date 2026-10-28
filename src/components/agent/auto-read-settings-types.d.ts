@@ -1,3 +1,4 @@
+import type { UnavailableModels } from "./model-fallback-utils";
 import type { AutoReadCapabilities, AutonomyLevel } from "@/lib/agent/auto-read/settings-types";
 import type { SenderListName } from "@/lib/agent/auto-read/sender-lists-utils";
 
@@ -19,6 +20,7 @@ export type AutoReadSettingsResponse = {
 		listSummaryDailyLimit?: number;
 	};
 	models?: string[];
+	unavailableModels?: UnavailableModels;
 	canManage?: boolean;
 	autoReadAvailable?: boolean;
 	externalProviderBlocked?: boolean;
@@ -43,6 +45,8 @@ export type AutoReadSettingsState = {
 	/** Saved on their own by each add or remove, so they are not part of the form. */
 	senders: SenderLists;
 	models: string[];
+	/** Why the triage model shows "Automatic" although another was saved, or null. */
+	triageModelNotice: string | null;
 	canManage: boolean;
 	autoReadAvailable: boolean;
 	externalProviderBlocked: boolean;

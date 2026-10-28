@@ -46,3 +46,10 @@ export type AgentProviderPublicConfig = Omit<AgentProviderConfig, "apiKey" | "ef
 
 // rates are USD per 1M tokens, present only when the provider's own model catalog publishes pricing.
 export type AgentModelOption = { id: string; name: string; rates?: AgentModelRates };
+
+/** A saved provider as the admin page lists it: never the key, only whether one is stored. */
+export type AgentProviderConnection = Omit<AgentProviderPublicConfig, "source" | "configured"> & {
+	id: string;
+	name: string;
+	active: boolean;
+};

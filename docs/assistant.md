@@ -29,7 +29,7 @@ When Kite does call the model, the call has no tools. The model reads the messag
 
 ## Privacy
 
-Message content goes to the AI provider you configured for the assistant.
+Message content goes to the AI provider in use for the assistant (see [AI providers](#ai-providers)).
 
 - **Workers AI** (Cloudflare). The content is processed on Cloudflare, which already hosts your Kite install. It is not sent anywhere else.
 - **External providers.** Anthropic receives content through its native API. Haimaker, OpenAI, OpenRouter, Groq and custom endpoints use an OpenAI-compatible API. The content is sent to the configured provider, outside your install. Automatic reading with an external provider needs a separate opt-in from the primary admin (**Allow an external AI provider for automatic reading and the composer** in the install-wide automatic reading settings). Without it, Kite skips the message and says why, and Write with Kite is not offered in the composer. Some providers may retain what you send or train on it. Read your provider's terms, or use a provider you run yourself.
@@ -37,6 +37,17 @@ Message content goes to the AI provider you configured for the assistant.
 What is sent: the message's sender, subject and text, the facts Kite computed and the mailbox's own instructions. When a module asks for a few extra fields (Money Watch's vendor, amount, cycle and dates), the same request also carries that module's fixed instructions; nothing else from the message is added, and PDF text is never sent. Prompts and responses are not stored by Kite. It stores the suggestions and the audit log of what was done, plus token counts and cost for each request. Conversation summaries made with **Summarize** are the exception: they are stored, see [Summaries in the reader](#summaries-in-the-reader). The provider may store more under its own policy.
 
 Message text is treated as untrusted. A message that tries to give the model orders cannot make Kite act: the model has no tools, its answer is validated, and anything that changes something needs your click at Suggest only.
+
+## AI providers
+
+The primary admin chooses the provider in [Admin → Agent](/agent) and can save several: Workers AI, Anthropic, Haimaker, OpenAI, OpenRouter, Groq or a custom OpenAI-compatible endpoint, each with a name, its base URL, its API key and its models with their rates. **Saved providers** lists them; exactly one is **In use**, and every AI feature (chat, Write with Kite, automatic reading, summaries, agent drafts, spend and the model choices in each mailbox) uses that one, as before with the single provider. **Use this provider** switches to another in one click, without typing its key or models again, and a request that starts afterwards uses it. The external-provider opt-in still applies to whichever provider is in use.
+
+- **Adding and editing.** **Add provider** opens an empty form; the provider is saved without being used unless you tick **Use this provider now** (the first one saved is used at once). **Edit** opens a saved provider. The model list loads with the key you typed or, when you leave the key empty, with that provider's own saved key, never another provider's. A blank name becomes the provider's name, such as "Haimaker.ai".
+- **Keys.** Each key is stored on the server, sealed with `APP_ENCRYPTION_KEY` when it is set (as the single key always was), and is never sent back to the browser: the page only shows whether one is saved.
+- **Deleting.** The provider in use cannot be deleted (409 `ACTIVE_PROVIDER`); switch to another first. Deleting removes its key and models.
+- **Mailbox model choices.** A mailbox's chat or triage model that the provider in use does not offer falls back to the provider's default model (triage: chosen automatically), and the mailbox's assistant settings say which model was saved and which one is used. Switching back to the provider that offers it uses the saved choice again, unless the settings were saved in between.
+- **Audit.** Adding, switching and deleting a provider are written to the audit log (`agent.provider_added`, `agent.provider_switched`, `agent.provider_deleted`, with names only) and listed on [Activity](/activity).
+- **Migration 0077.** Saved providers need database migration 0077, which copies the provider configured until then into the first saved provider, in use. Until it is applied, Admin → Agent keeps the single provider form and says so, and everything reads and saves the provider in the earlier `app_settings` columns, which the migration leaves in place. The same columns are read when no provider is saved, for example after restoring a backup made before 0077. Backups include the saved providers (`agent_providers`, in the app settings group), with their keys sealed as stored.
 
 ## Instructions
 

@@ -9,3 +9,9 @@ export const PROVIDER_BASE_URLS: Record<Exclude<AgentProviderPreset, "custom">, 
 	openrouter: "https://openrouter.ai/api/v1",
 	groq: "https://api.groq.com/openai/v1",
 };
+/** Audit actions of saved AI providers (Admin → Agent), listed on Activity. */
+export const AGENT_PROVIDER_AUDIT_ACTIONS = [
+	"agent.provider_added",
+	"agent.provider_switched",
+	"agent.provider_deleted",
+] as const;

@@ -44,6 +44,8 @@ export type FakeRecordedRequest = {
 	receivedAt: string;
 	method: string;
 	path: string;
+	/** The Authorization header, so a spec can tell which saved key a request carried. */
+	authorization: string | null;
 	kind: FakeRequestKind | null;
 	scenario: string | null;
 	emailId: string | null;

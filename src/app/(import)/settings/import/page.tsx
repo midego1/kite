@@ -155,14 +155,16 @@ export default function SettingsImportPage() {
 											className="block w-full rounded-md border border-neutral-200 bg-white px-3 py-1 text-sm shadow-sm shadow-neutral-200/50 file:mr-3 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-1.5 file:text-sm file:font-medium"
 										/>
 										<p className="text-xs leading-5 text-neutral-500">
-											Upload exported .eml or .mbox files. File exports do not reliably include source section metadata,
-											so files are imported once into {fileImportSource.label}
+											Upload exported .eml or .mbox files. They are imported once into {fileImportSource.label}. Read
+											and starred state is taken from each message&apos;s headers. For Inbox, mail the export marks as
+											Spam or Trash (Gmail Takeout labels, X-Spam-Flag) is filed there instead; choose Archive or a
+											folder to keep everything in place.
 										</p>
 									</div>
 									{selectedSections.includes("others") && (
 										<p className="rounded-lg border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a] px-4 py-3 text-sm">
 											Other folders can be imported automatically from IMAP. File import cannot discover which section a
-											message belongs to.
+											message belongs to, apart from the Spam and Trash hints in its headers.
 										</p>
 									)}
 									<Button

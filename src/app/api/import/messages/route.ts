@@ -50,6 +50,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 		mailboxId: access.mailbox.id,
 		destination: input.destination,
 		messages: input.messages,
+		headerHints: true,
 	});
 	return NextResponse.json(result);
 });

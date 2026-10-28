@@ -84,11 +84,12 @@ test("the import page asks for Import anyway only above 90% of the database limi
 	await injectSize(page, sizeAt(9.4 * GB));
 	await page.goto("/settings/import");
 	await chooseOption(page.locator("#import-source"), { label: "IMAP" });
+	await chooseOption(page.locator("#imap-mode"), "folder");
 	await page.locator("#imap-host").fill("imap.e2e.invalid");
 	await page.locator("#imap-username").fill("someone@e2e.invalid");
 	await page.locator("#imap-password").fill("not-a-real-password");
 
-	const submit = page.getByRole("button", { name: "Import selected sources" });
+	const submit = page.getByRole("button", { name: "Import folder" });
 	const notice = page.getByTestId("import-size-notice");
 	await expect(notice).toContainText("The database is now 9.4 GB of 10 GB");
 	await expect(notice).toContainText("above 90%");

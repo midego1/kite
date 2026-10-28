@@ -11,7 +11,8 @@ import { createImportJob, listImportJobs, serializeImportJob } from "@/lib/impor
 import { checkImportStart } from "@/lib/import/size-guard";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { parseImapImportRequest } from "../imap/utils";
-import type { ImapImportJobRequest } from "./types";
+import { createAccountJobResponse } from "./account";
+import type { AccountImportJobRequest, ImapImportJobRequest } from "./types";
 import { withModule } from "@/lib/modules/route-guard";
 
 export const GET = withModule("import", async (request, { checkUser }) => {
@@ -35,7 +36,9 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	let body: ImapImportJobRequest;
 	let input: ReturnType<typeof parseImapImportRequest>;
 	try {
-		body = await readJsonBody<ImapImportJobRequest>(request, 16 * 1024);
+		body = await readJsonBody<ImapImportJobRequest>(request, 256 * 1024);
+		if ((body as { scope?: string }).scope === "account")
+			return createAccountJobResponse(env, request, user, body as unknown as AccountImportJobRequest);
 		input = parseImapImportRequest(body);
 	} catch (error) {
 		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;

@@ -16,6 +16,10 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  * - `authPlain`, `saslIr`: advertise `AUTH=PLAIN` and `SASL-IR`.
  * - `loginDisabledWithoutTls`: advertise `LOGINDISABLED` and refuse sign-in until the connection is encrypted.
  * - `greetingCapabilities`: put `[CAPABILITY …]` in the greeting (default true).
+ * - `specialUse`: advertise SPECIAL-USE and report `folderAttributes` (`{ [name]: ["\\Sent"] }`) in LIST.
+ * - `statusSize`: advertise STATUS=SIZE. `delimiter`: the hierarchy delimiter (default `/`).
+ * - `fetchDelayMs`: answer every UID FETCH that much later (a slow server, so a test can pause mid-run).
+ * - `gmail`: advertise X-GM-EXT-1 and report each message's `labels` in FETCH when asked for X-GM-LABELS.
  * - `users`: `{ [username]: password }`. `LOGIN` takes quoted strings or synchronizing literals.
  * - Misbehaviour: `hugeLiteral` (a FETCH announcing a 4 GB literal), `endlessLine` (a greeting that never ends),
  *   `slowLoris` (a greeting trickled one byte at a time, forever), `silent` (no greeting at all), `silentTls` (OK to
@@ -33,20 +37,39 @@ export async function startFakeImap(options = {}) {
 	let nextLoginFails = false;
 
 	function addMessage(folder, message) {
-		if (!folders.has(folder)) folders.set(folder, { nextUid: 1, messages: [] });
+		if (!folders.has(folder)) folders.set(folder, { nextUid: 1, uidValidity: 1, messages: [] });
 		const entry = folders.get(folder);
 		const uid = entry.nextUid++;
 		const {
 			raw,
 			flags = [],
 			internalDate = "27-Oct-2026 10:00:00 +0000",
+			labels = [],
 		} = typeof message === "string" || Buffer.isBuffer(message) ? { raw: message } : message;
-		entry.messages.push({ uid, raw: Buffer.from(raw), flags, internalDate });
+		entry.messages.push({ uid, raw: Buffer.from(raw), flags, internalDate, labels });
 		return uid;
 	}
+
+	/** A new UIDVALIDITY renumbers the folder's messages from 1, as a server that rebuilt it would. */
+	function bumpUidValidity(folder) {
+		const entry = folders.get(folder);
+		entry.uidValidity += 1;
+		entry.messages.forEach((message, index) => {
+			message.uid = index + 1;
+		});
+		entry.nextUid = entry.messages.length + 1;
+	}
+
+	const delimiter = options.delimiter ?? "/";
+	const listLine = (folder) => {
+		const attributes = ["\\HasNoChildren", ...(options.specialUse ? (options.folderAttributes?.[folder] ?? []) : [])];
+		return `* LIST (${attributes.join(" ")}) "${delimiter}" "${folder.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"\r\n`;
+	};
+	const labelList = (labels) =>
+		`(${labels.map((label) => (label.startsWith("\\") ? label : `"${label.replace(/"/g, '\\"')}"`)).join(" ")})`;
 	if (!options.folders) addMessage("INBOX", sampleMessage(1));
 	for (const [name, messages] of Object.entries(options.folders ?? {})) {
-		if (!folders.has(name)) folders.set(name, { nextUid: 1, messages: [] });
+		if (!folders.has(name)) folders.set(name, { nextUid: 1, uidValidity: 1, messages: [] });
 		for (const raw of messages) addMessage(name, raw);
 	}
 
@@ -72,6 +95,9 @@ export async function startFakeImap(options = {}) {
 			if (!state.encrypted && options.loginDisabledWithoutTls) list.push("LOGINDISABLED");
 			if (options.authPlain) list.push("AUTH=PLAIN");
 			if (options.saslIr) list.push("SASL-IR");
+			if (state.authenticated && options.specialUse) list.push("SPECIAL-USE");
+			if (state.authenticated && options.statusSize) list.push("STATUS=SIZE");
+			if (state.authenticated && options.gmail) list.push("X-GM-EXT-1");
 			return list.join(" ");
 		};
 		const send = (text) => state.socket.write(text);
@@ -174,9 +200,16 @@ export async function startFakeImap(options = {}) {
 				return send("+ \r\n");
 			}
 			if (!state.authenticated) return send(`${tag} BAD sign in first\r\n`);
-			if (name === "LIST") {
-				const lines = [...folders.keys()].map((folder) => `* LIST (\\HasNoChildren) "/" "${folder}"\r\n`);
-				return send(`${lines.join("")}${tag} OK done\r\n`);
+			if (name === "LIST") return send(`${[...folders.keys()].map(listLine).join("")}${tag} OK done\r\n`);
+			if (name === "STATUS") {
+				const [folder] = parseQuoted(args);
+				const entry = folders.get(folder);
+				if (!entry) return send(`${tag} NO [NONEXISTENT] No such folder\r\n`);
+				const size = entry.messages.reduce((sum, message) => sum + message.raw.length, 0);
+				const items = `MESSAGES ${entry.messages.length} UIDNEXT ${entry.nextUid} UIDVALIDITY ${entry.uidValidity}`;
+				return send(
+					`* STATUS "${folder}" (${items}${options.statusSize ? ` SIZE ${size}` : ""})\r\n${tag} OK done\r\n`,
+				);
 			}
 			if (name === "SELECT" || name === "EXAMINE") {
 				const [folder] = parseQuoted(args);
@@ -184,7 +217,7 @@ export async function startFakeImap(options = {}) {
 				if (!entry) return send(`${tag} NO [NONEXISTENT] No such folder\r\n`);
 				state.selected = folder;
 				return send(
-					`* ${entry.messages.length} EXISTS\r\n* OK [UIDVALIDITY 1] ok\r\n* OK [UIDNEXT ${entry.nextUid}] ok\r\n${tag} OK [READ-ONLY] done\r\n`,
+					`* ${entry.messages.length} EXISTS\r\n* OK [UIDVALIDITY ${entry.uidValidity}] ok\r\n* OK [UIDNEXT ${entry.nextUid}] ok\r\n${tag} OK [READ-ONLY] done\r\n`,
 				);
 			}
 			const entry = state.selected ? folders.get(state.selected) : null;
@@ -195,23 +228,33 @@ export async function startFakeImap(options = {}) {
 				if (sub.toUpperCase() === "FETCH") {
 					const wanted = new Set(set.split(",").map(Number));
 					if (options.hugeLiteral) return send(`* 1 FETCH (UID 1 BODY[] {4000000000}\r\n${"x".repeat(1000)}`);
-					entry.messages.forEach((message, index) => {
-						if (!wanted.has(message.uid)) return;
-						const attributes = `FLAGS (${message.flags.join(" ")}) INTERNALDATE "${message.internalDate}" RFC822.SIZE ${message.raw.length}`;
-						if (options.attributesAfterLiteral) {
-							send(`* ${index + 1} FETCH (BODY[] {${message.raw.length}}\r\n`);
-							send(message.raw);
-							send(` UID ${message.uid} ${attributes})\r\n`);
-							return;
-						}
-						send(`* ${index + 1} FETCH (UID ${message.uid} ${attributes} BODY[] {${message.raw.length}}\r\n`);
-						send(message.raw);
-						send(")\r\n");
-					});
-					return send(`${tag} OK done\r\n`);
+					if (options.fetchDelayMs) {
+						const later = () => respondFetch(tag, args, entry, wanted);
+						setTimeout(() => !state.socket.destroyed && later(), options.fetchDelayMs);
+						return;
+					}
+					return respondFetch(tag, args, entry, wanted);
 				}
 			}
 			return send(`${tag} BAD unknown command\r\n`);
+		}
+
+		function respondFetch(tag, args, entry, wanted) {
+			entry.messages.forEach((message, index) => {
+				if (!wanted.has(message.uid)) return;
+				const labels = /X-GM-LABELS/i.test(args) ? ` X-GM-LABELS ${labelList(message.labels)}` : "";
+				const attributes = `FLAGS (${message.flags.join(" ")}) INTERNALDATE "${message.internalDate}" RFC822.SIZE ${message.raw.length}${labels}`;
+				if (options.attributesAfterLiteral) {
+					send(`* ${index + 1} FETCH (BODY[] {${message.raw.length}}\r\n`);
+					send(message.raw);
+					send(` UID ${message.uid} ${attributes})\r\n`);
+					return;
+				}
+				send(`* ${index + 1} FETCH (UID ${message.uid} ${attributes} BODY[] {${message.raw.length}}\r\n`);
+				send(message.raw);
+				send(")\r\n");
+			});
+			send(`${tag} OK done\r\n`);
 		}
 
 		state.socket.on("data", onData);
@@ -242,6 +285,7 @@ export async function startFakeImap(options = {}) {
 		addMessage,
 		/** Connections the server still holds open. */
 		openConnections: () => connections.size,
+		bumpUidValidity,
 		failNextLogin() {
 			nextLoginFails = true;
 		},

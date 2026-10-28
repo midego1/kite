@@ -230,6 +230,7 @@ test("parseFetchAttributes reads UID, FLAGS, INTERNALDATE and RFC822.SIZE in any
 			flags: ["\\Seen", "\\Flagged", "$Forwarded"],
 			internalDate: new Date("1996-07-17T09:44:25Z"),
 			size: 4286,
+			labels: null,
 		},
 	);
 	assert.deepEqual(parseFetchAttributes("* 2 FETCH (BODY[] {5}  UID 11 RFC822.SIZE 5 FLAGS ())"), {
@@ -237,12 +238,14 @@ test("parseFetchAttributes reads UID, FLAGS, INTERNALDATE and RFC822.SIZE in any
 		flags: [],
 		internalDate: null,
 		size: 5,
+		labels: null,
 	});
 	assert.deepEqual(parseFetchAttributes('* 3 FETCH (UID 12 BODY[] {5} INTERNALDATE "not a date")'), {
 		uid: "12",
 		flags: [],
 		internalDate: null,
 		size: null,
+		labels: null,
 	});
 });
 

@@ -44,6 +44,29 @@ A module that is off is absent, not broken:
 - **Existing webhook subscriptions keep their events.** They just receive nothing while the module is off.
 - **Integrity hooks still run.** When a user changes their time zone, Calendar still freezes their legacy recurring series, so the calendar is correct when it comes back.
 
+### Importing a whole account
+
+Settings → Import → **IMAP** → **Whole account** copies every folder of an account in one background job. **Show folders** signs in, lists the account's folders and proposes where each one goes, in a table with the number of messages and, where the server reports it, the size:
+
+| Source folder | Goes to | Ticked |
+| --- | --- | --- |
+| Inbox | Inbox | yes |
+| Sent | Sent | yes |
+| Archive | Archive | yes |
+| Your own folders | A Kite folder of the same name, created if missing; nested folders become `Parent / Child`, since Kite folders are flat | yes |
+| Junk or Spam | Spam | no |
+| Trash | Trash (emptied by trash retention) | no |
+
+Drafts and virtual folders (Flagged, Important) are not offered. Each row can be unticked or sent elsewhere. Kite recognises the standard folders by the special-use attributes the server announces, or by their usual names where it announces none. Folders are copied one after another in the order of the table, so the provider sees a single connection; a message filed in two folders lands once, in the first. A folder the server refuses to open is marked failed and the others go on.
+
+**Gmail** shows labels as folders, so the same message appears in several of them. On Gmail Kite copies **All Mail** once and files each message by its labels: Inbox, else Sent, else its first label (alphabetically) as a Kite folder, else Archive. A message with several labels goes to the folder of the first, and the jobs list says how many did. Gmail's Spam and Trash are offered separately, switched off; drafts are skipped.
+
+**One folder** is the earlier form: one source folder into one place, optionally only its newest messages.
+
+The jobs list below the form shows each folder's progress. **Pause** stops an import after the batch that is running: it keeps its saved password and its place in every folder, and **Resume** continues from there. A job paused for more than seven days is cancelled and its password erased; start it again and the mail already imported is skipped. If the source server rebuilds a folder (a new UIDVALIDITY), Kite reads that folder again from the start and skips what it already has.
+
+Whole-account imports need database migration 0075. Until it is applied from the admin overview, starting one answers "Apply the database update to import a whole account", while **One folder** imports keep working.
+
 ### What an import keeps
 
 - **Read and starred.** An IMAP import keeps the source's state: mail marked read there (`\Seen`) is read in Kite, and flagged mail (`\Flagged`) is starred. Answered marks and keywords are not kept. Imported sent mail and drafts are always read. Uploaded `.eml` and `.mbox` files carry no state, so their mail arrives unread and not starred, as before.

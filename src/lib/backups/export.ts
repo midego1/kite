@@ -126,6 +126,8 @@ const INTERNAL_TABLES = [
 	// server's password while running and point at queue messages, so restoring
 	// them would resume imports against a database they no longer match.
 	"import_jobs",
+	// The folders of a whole-account import (migration 0075): progress rows of an import_jobs row, transient with it.
+	"import_job_folders",
 	// Drive multipart parts of uploads in progress: the store's upload ids they
 	// name do not survive a restore, so the parts would only point at nothing.
 	"drive_upload_parts",

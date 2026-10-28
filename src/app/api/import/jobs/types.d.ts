@@ -1,5 +1,13 @@
 import type { ImapImportRequest } from "../imap/types";
 
+/** `scope: "account"`: the folders of the mapping table, each `{ sourceName, role, destination, include, messages, bytes }`. */
+export type AccountImportJobRequest = ImapImportRequest & {
+	scope: "account";
+	label?: string;
+	folders?: { include?: boolean; messages?: number | null; [key: string]: unknown }[];
+	confirmDatabaseFull?: boolean;
+};
+
 export type ImapImportJobRequest = ImapImportRequest & {
 	/** Shown in the jobs list, e.g. "Sent". */
 	label?: string;

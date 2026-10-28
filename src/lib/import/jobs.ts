@@ -5,40 +5,45 @@ import { importJobs } from "@/db/schema/import-jobs";
 import { newId } from "@/lib/ids";
 import { openSetting, sealSetting } from "@/lib/security/secret-box";
 import { getDatabaseSize } from "@/lib/db/size";
-import { getImportMessageUserId, parseImportDestination } from "./destination";
+import { insertRow, selectRow, selectRows } from "@/lib/db/pending-columns";
+import { parseImportDestination } from "./destination";
 import { MailServerRefusedError } from "@/lib/net/errors";
 import { openImportSession } from "./imap";
-import { chunk, hostImportMessageFromImap, selectRemainingUids } from "./imap-utils";
 import {
 	IMPORT_CONFIRMED_NOTE,
 	carriedImportNote,
 	noteAfterError,
-	importPauseNote,
 	isDatabaseFull,
 	isImportConfirmed,
 	needsStartConfirmation,
 } from "./size-guard-utils";
-import { encodeRawMime } from "@/lib/email/module-import-utils";
-import { moduleHost } from "@/lib/modules/host";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
-import type { HostImportMessage } from "@/lib/modules/host-types";
+import {
+	accountJobFields,
+	assertAccountImportsReady,
+	closeOpenFolders,
+	insertJobFolders,
+	listJobFolders,
+	runAccountJob,
+	serializeJobFolder,
+	type ImportJobFolderRow,
+} from "./account-jobs";
+import type { AccountFolderRequest } from "./folder-mapping-types";
+import {
+	LEASE_MS,
+	MESSAGES_PER_RUN,
+	markPaused,
+	pauseIfDatabaseFull,
+	runFolderJob,
+	type ImportJobRow,
+	type ImportRun,
+} from "./job-run";
 
 /** @public Named by `env.d.ts` to widen the queue payload; Knip does not scan that file. */
 export type ImportJobQueueMessage = { kind: "import.imap"; jobId: string };
-export type ImportJobRow = typeof importJobs.$inferSelect;
+export type { ImportJobRow } from "./job-run";
 
-/** Messages fetched per IMAP round trip. */
-const FETCH_CHUNK_SIZE = 25;
-/**
- * Work per queue invocation. Each message costs a handful of D1/R2 calls, so this
- * keeps one invocation well inside the Workers subrequest and wall-time limits;
- * the job re-enqueues itself to continue.
- */
-const MESSAGES_PER_RUN = 200;
-const RUN_TIME_BUDGET_MS = 5 * 60_000;
-const LEASE_MS = 8 * 60_000;
 const MAX_ATTEMPTS = 5;
-const MAX_STORED_ERRORS = 20;
 const ACTIVE_STATUSES = ["pending", "running"] as const;
 /** A job paused this long is cancelled (its saved source password erased) by the cron safety net. */
 const PAUSED_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
@@ -69,32 +74,102 @@ export async function createImportJob(
 	},
 ): Promise<ImportJobRow> {
 	parseImportDestination(input.destination);
+	return insertImportJob(env, input, {});
+}
+
+type ImportJobCredentials = {
+	userId: string;
+	mailboxId: string;
+	label: string;
+	host: string;
+	port: number;
+	secure: boolean;
+	username: string;
+	password: string;
+	/** "Import anyway" was confirmed while the database is above 90% of its limit. */
+	confirmedDatabaseFull?: boolean;
+};
+
+/**
+ * Saves a job and queues its first run. Rows are written and read column by column (`insertRow`, `selectRow`), so a
+ * folder job keeps working before migration 0075 adds the account columns.
+ */
+async function insertImportJob(
+	env: CloudflareEnv,
+	input: ImportJobCredentials & { destination?: string; folder?: string; maxMessages?: number | null },
+	extra: Partial<typeof importJobs.$inferInsert>,
+	options: { enqueue: boolean } = { enqueue: true },
+): Promise<ImportJobRow> {
 	const { confirmedDatabaseFull, ...fields } = input;
 	const db = getDb(env);
 	const now = new Date();
-	const [job] = await db
-		.insert(importJobs)
-		.values({
-			id: newId("ijob"),
-			...fields,
-			lastError: confirmedDatabaseFull ? IMPORT_CONFIRMED_NOTE : null,
-			password: await sealSetting(env, input.password),
-			status: "pending",
-			createdAt: now,
-			updatedAt: now,
-		})
-		.returning();
+	const id = newId("ijob");
+	await insertRow(db, importJobs, {
+		destination: "",
+		folder: "",
+		...fields,
+		...extra,
+		id,
+		lastError: confirmedDatabaseFull ? IMPORT_CONFIRMED_NOTE : null,
+		password: await sealSetting(env, input.password),
+		status: "pending",
+		createdAt: now,
+		updatedAt: now,
+	});
+	const job = await selectRow(db, importJobs, eq(importJobs.id, id));
+	if (!job) throw new Error("The import could not be saved");
+	if (options.enqueue) await enqueueImportJob(env, job.id);
+	return job;
+}
+
+/**
+ * A whole-account job (spec §4.1): the chosen folders, in order, each with its destination already resolved
+ * (`folder:<id>`, `system:<status>` or `gmail:labels`). Throws `ImportMigrationPendingError` before migration 0075.
+ */
+export async function createAccountImportJob(
+	env: CloudflareEnv,
+	input: ImportJobCredentials & { folders: AccountFolderRequest[]; gmail: boolean },
+): Promise<ImportJobRow> {
+	await assertAccountImportsReady(env);
+	const { folders, gmail, ...credentials } = input;
+	const sizes = folders.map((folder) => folder.bytes);
+	const estimateBytes = sizes.every((bytes) => bytes !== null) ? sizes.reduce((sum, bytes) => sum + bytes!, 0) : null;
+	const fields = accountJobFields({ gmail, estimateBytes });
+	// The folders go in before the first run is queued, so the run never sees a job without them.
+	const job = await insertImportJob(env, credentials, fields, { enqueue: false });
+	await insertJobFolders(env, job.id, folders);
 	await enqueueImportJob(env, job.id);
 	return job;
 }
 
-export async function listImportJobs(env: CloudflareEnv, userId: string, limit = 20): Promise<ImportJobRow[]> {
-	return getDb(env)
-		.select()
+export type ListedImportJob = ImportJobRow & { folders: ImportJobFolderRow[] };
+
+/** The user's newest jobs with the folders of their account jobs. */
+export async function listImportJobs(env: CloudflareEnv, userId: string, limit = 20): Promise<ListedImportJob[]> {
+	const db = getDb(env);
+	const newest = await db
+		.select({ id: importJobs.id })
 		.from(importJobs)
 		.where(eq(importJobs.userId, userId))
 		.orderBy(desc(importJobs.createdAt))
 		.limit(limit);
+	if (!newest.length) return [];
+	const order = new Map(newest.map((row, index) => [row.id, index]));
+	const rows = await selectRows(db, importJobs, inArray(importJobs.id, [...order.keys()]));
+	const accountIds = rows.filter((row) => row.scope === "account").map((row) => row.id);
+	const folders = await listJobFolders(env, accountIds);
+	return rows
+		.sort((a, b) => order.get(a.id)! - order.get(b.id)!)
+		.map((row) => ({ ...row, folders: folders.get(row.id) ?? [] }));
+}
+
+/** Pause from the jobs list: the job keeps its password, cursors and folders and waits for Resume. */
+export async function pauseImportJob(env: CloudflareEnv, userId: string, jobId: string): Promise<boolean> {
+	return markPaused(
+		env,
+		and(eq(importJobs.id, jobId), eq(importJobs.userId, userId), inArray(importJobs.status, [...ACTIVE_STATUSES])),
+		{ pauseReason: "user" },
+	);
 }
 
 export async function cancelImportJob(env: CloudflareEnv, userId: string, jobId: string): Promise<boolean> {
@@ -110,6 +185,7 @@ export async function cancelImportJob(env: CloudflareEnv, userId: string, jobId:
 			),
 		)
 		.returning({ id: importJobs.id });
+	if (cancelled.length) await closeOpenFolders(env, jobId);
 	return cancelled.length > 0;
 }
 
@@ -146,61 +222,27 @@ export async function resumeImportJob(
 		})
 		.where(and(eq(importJobs.id, jobId), eq(importJobs.status, "paused")))
 		.returning({ id: importJobs.id });
+	// Before migration 0075 there is no reason to clear.
+	if (resumed.length)
+		await db
+			.update(importJobs)
+			.set({ pauseReason: null, pausedAt: null })
+			.where(eq(importJobs.id, jobId))
+			.catch(() => undefined);
 	if (!resumed.length) return "not_found";
 	await enqueueImportJob(env, jobId);
 	return "resumed";
 }
 
-/** Waits for a prefetch nobody will use, so it does not end as an unhandled rejection. */
-async function settle(pending: Promise<unknown> | null): Promise<void> {
-	await pending?.catch(() => undefined);
-}
-
-/** Saves a finished chunk; false when the job is no longer running or paused itself because the database is full. */
-async function recordChunk(
-	env: CloudflareEnv,
-	job: ImportJobRow,
-	chunk: {
-		processed: number;
-		imported: number;
-		skipped: number;
-		cursorUid: number | null;
-		total: number | null;
-		errors: string[];
-	},
-): Promise<boolean> {
-	const { errors, ...fields } = chunk;
-	const stillRunning = await getDb(env)
-		.update(importJobs)
-		.set({
-			...fields,
-			errors: JSON.stringify(errors),
-			leaseUntil: new Date(Date.now() + LEASE_MS),
-			updatedAt: new Date(),
-		})
-		.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")))
-		.returning({ id: importJobs.id });
-	return stillRunning.length > 0 && !(await pauseIfDatabaseFull(env, job));
-}
-
-/**
- * Pauses a running job whose database has reached its stop point (90% of the limit, 98% once confirmed). It keeps
- * the saved source password and cursor and waits for Resume.
- */
-async function pauseIfDatabaseFull(env: CloudflareEnv, job: ImportJobRow): Promise<boolean> {
-	const note = importPauseNote(await getDatabaseSize(env), job.lastError);
-	if (!note) return false;
-	await getDb(env)
-		.update(importJobs)
-		.set({ status: "paused", leaseUntil: null, lastError: note, updatedAt: new Date() })
-		.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")));
-	return true;
-}
-
 /** Public shape for the API: never includes the source password. */
-export function serializeImportJob(job: ImportJobRow) {
+export function serializeImportJob(job: ImportJobRow & { folders?: ImportJobFolderRow[] }) {
 	return {
 		id: job.id,
+		scope: job.scope,
+		pauseReason: job.pauseReason,
+		pausedAt: job.pausedAt?.toISOString() ?? null,
+		estimateBytes: job.estimateBytes,
+		folders: (job.folders ?? []).map(serializeJobFolder),
 		mailboxId: job.mailboxId,
 		label: job.label,
 		folder: job.folder,
@@ -229,29 +271,10 @@ export function serializeImportJob(job: ImportJobRow) {
 export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: CapabilityCallContext): Promise<void> {
 	const db = getDb(env);
 	const now = new Date();
-	const [job] = await db.select().from(importJobs).where(eq(importJobs.id, jobId)).limit(1);
+	const job = await selectRow(db, importJobs, eq(importJobs.id, jobId));
 	if (!job || !ACTIVE_STATUSES.includes(job.status as (typeof ACTIVE_STATUSES)[number])) return;
 	if (job.leaseUntil && job.leaseUntil > now) return;
-
-	const nowSeconds = Math.floor(now.getTime() / 1000);
-	const claimed = await db
-		.update(importJobs)
-		.set({
-			status: "running",
-			leaseUntil: new Date(now.getTime() + LEASE_MS),
-			startedAt: job.startedAt ?? now,
-			updatedAt: now,
-		})
-		.where(
-			and(
-				eq(importJobs.id, jobId),
-				inArray(importJobs.status, [...ACTIVE_STATUSES]),
-				or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
-				sql`NOT EXISTS (SELECT 1 FROM import_jobs other WHERE other.id <> ${jobId} AND other.host = ${job.host} AND other.username = ${job.username} AND other.status = 'running' AND other.lease_until > ${nowSeconds})`,
-			),
-		)
-		.returning({ id: importJobs.id });
-	if (!claimed.length) {
+	if (!(await claimJob(env, job, now))) {
 		// Another job for the same account holds the connection; it starts this one when it finishes.
 		return;
 	}
@@ -268,100 +291,85 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 
 	if (await pauseIfDatabaseFull(env, job)) return;
 
-	const destination = parseImportDestination(job.destination);
-	const userId = getImportMessageUserId(destination, job.userId, mailbox.userId);
-	const startedAt = Date.now();
-	let progress = { processed: job.processed, imported: job.imported, skipped: job.skipped, cursorUid: job.cursorUid };
-	let errors = parseErrors(job.errors);
-	let total = job.total;
-	let session: Awaited<ReturnType<typeof openImportSession>> | null = null;
-
+	let run: ImportRun | null = null;
 	try {
-		session = await openImportSession(env, { ...job, password: (await openSetting(env, job.password)) ?? "" });
-		await session.examine(job.folder);
-		const allUids = await session.searchUids();
-		total = job.maxMessages ? Math.min(job.maxMessages, allUids.length) : allUids.length;
-		let remaining = selectRemainingUids(allUids, progress.cursorUid);
-		if (job.maxMessages) remaining = remaining.slice(0, Math.max(job.maxMessages - progress.processed, 0));
-		const runUids = remaining.slice(0, MESSAGES_PER_RUN);
-		const chunks = chunk(runUids, FETCH_CHUNK_SIZE);
-		const activeSession = session;
-		const fetchChunk = (uids: number[]) => activeSession.fetchMessages(uids.map(String));
-
-		// Fetch the next chunk from IMAP while the current one is written to D1/R2.
-		let nextFetch = chunks.length ? fetchChunk(chunks[0]) : null;
-		for (let index = 0; index < chunks.length; index += 1) {
-			const uids = chunks[index];
-			const fetched = await nextFetch!;
-			const hasTime = Date.now() - startedAt < RUN_TIME_BUDGET_MS;
-			nextFetch = hasTime && index + 1 < chunks.length ? fetchChunk(chunks[index + 1]) : null;
-			nextFetch?.catch(() => undefined);
-
-			const batch: HostImportMessage[] = [];
-			for (const uid of uids) {
-				const message = fetched.get(String(uid));
-				if (message) batch.push(hostImportMessageFromImap(`${job.folder}-${uid}.eml`, message, encodeRawMime));
-			}
-			const result = await moduleHost.mail.importMessages(ctx, {
-				userId,
-				mailboxId: mailbox.id,
-				destination: job.destination,
-				messages: batch,
-			});
-			const missing = uids.length - batch.length;
-			progress = {
-				processed: progress.processed + uids.length,
-				imported: progress.imported + result.imported,
-				skipped: progress.skipped + result.skipped + result.failed + missing,
-				cursorUid: uids[uids.length - 1],
-			};
-			errors = [...errors, ...result.errors].slice(-MAX_STORED_ERRORS);
-
-			// False when the job was cancelled from the UI or paused for the database size.
-			if (!(await recordChunk(env, job, { ...progress, total, errors }))) {
-				await settle(nextFetch);
-				return;
-			}
-			if (!nextFetch) break;
-		}
-
-		const done = remaining.length <= progress.processed - job.processed;
-		if (done) {
-			await finishJob(env, { ...job, total }, "completed");
+		const session = await openImportSession(env, { ...job, password: (await openSetting(env, job.password)) ?? "" });
+		run = {
+			env,
+			ctx,
+			job,
+			mailbox,
+			session,
+			startedAt: Date.now(),
+			budget: MESSAGES_PER_RUN,
+			progress: { processed: job.processed, imported: job.imported, skipped: job.skipped },
+			total: job.total,
+			errors: parseErrors(job.errors),
+		};
+		const outcome = job.scope === "account" ? await runAccountJob(run) : await runFolderJob(run);
+		if (outcome === "stopped") return;
+		if (outcome === "done") {
+			await finishJob(env, { ...job, total: run.total }, "completed");
 			return;
 		}
 		await db
 			.update(importJobs)
-			.set({
-				leaseUntil: null,
-				attempts: 0,
-				lastError: carriedImportNote(job.lastError),
-				updatedAt: new Date(),
-			})
+			.set({ leaseUntil: null, attempts: 0, lastError: carriedImportNote(job.lastError), updatedAt: new Date() })
 			.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")));
 		await enqueueImportJob(env, job.id);
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "IMAP import failed";
-		const attempts = job.attempts + 1;
-		if (isPermanentImportError(error, message) || attempts >= MAX_ATTEMPTS) {
-			await finishJob(env, { ...job, total }, "failed", message);
-			return;
-		}
-		await db
-			.update(importJobs)
-			.set({
-				attempts,
-				// A transient error is retried; the confirmation to go on above 90% must survive it.
-				lastError: noteAfterError(job.lastError, message),
-				leaseUntil: null,
-				total,
-				updatedAt: new Date(),
-			})
-			.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")));
-		await enqueueImportJob(env, job.id, 30 * attempts);
+		await recordRunError(env, { ...job, total: run?.total ?? job.total }, error);
 	} finally {
-		await session?.close().catch(() => undefined);
+		await run?.session.close().catch(() => undefined);
 	}
+}
+
+/**
+ * Takes the job's lease. Jobs that share a source account run one at a time, because providers such as iCloud and
+ * Gmail limit concurrent IMAP connections per account.
+ */
+async function claimJob(env: CloudflareEnv, job: ImportJobRow, now: Date): Promise<boolean> {
+	const nowSeconds = Math.floor(now.getTime() / 1000);
+	const claimed = await getDb(env)
+		.update(importJobs)
+		.set({
+			status: "running",
+			leaseUntil: new Date(now.getTime() + LEASE_MS),
+			startedAt: job.startedAt ?? now,
+			updatedAt: now,
+		})
+		.where(
+			and(
+				eq(importJobs.id, job.id),
+				inArray(importJobs.status, [...ACTIVE_STATUSES]),
+				or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
+				sql`NOT EXISTS (SELECT 1 FROM import_jobs other WHERE other.id <> ${job.id} AND other.host = ${job.host} AND other.username = ${job.username} AND other.status = 'running' AND other.lease_until > ${nowSeconds})`,
+			),
+		)
+		.returning({ id: importJobs.id });
+	return claimed.length > 0;
+}
+
+/** A failed run: permanent errors end the job, others are retried with a growing delay. */
+async function recordRunError(env: CloudflareEnv, job: ImportJobRow, error: unknown): Promise<void> {
+	const message = error instanceof Error ? error.message : "IMAP import failed";
+	const attempts = job.attempts + 1;
+	if (isPermanentImportError(error, message) || attempts >= MAX_ATTEMPTS) {
+		await finishJob(env, job, "failed", message);
+		return;
+	}
+	await getDb(env)
+		.update(importJobs)
+		.set({
+			attempts,
+			// A transient error is retried; the confirmation to go on above 90% must survive it.
+			lastError: noteAfterError(job.lastError, message),
+			leaseUntil: null,
+			total: job.total,
+			updatedAt: new Date(),
+		})
+		.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")));
+	await enqueueImportJob(env, job.id, 30 * attempts);
 }
 
 /** Refused connections (no TLS, a private host), authentication and missing-folder errors will not fix themselves. */
@@ -392,6 +400,7 @@ async function finishJob(
 			finishedAt: now,
 		})
 		.where(eq(importJobs.id, job.id));
+	if (status === "failed" && job.scope === "account") await closeOpenFolders(env, job.id);
 	await startNextJobForAccount(env, job);
 }
 

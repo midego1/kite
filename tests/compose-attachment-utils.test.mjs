@@ -19,9 +19,8 @@ await build({
 	alias: { "@": join(root, "src") },
 	logLevel: "silent",
 });
-const { attachmentNotice, attachmentNoticeText, canPreviewEntry, splitFilename, storedDownloadUrl } = await import(
-	pathToFileURL(join(outDir, "utils.mjs")).href
-);
+const { attachmentNotice, attachmentNoticeText, canPreviewEntry, safeAttachmentUrl, splitFilename, storedDownloadUrl } =
+	await import(pathToFileURL(join(outDir, "utils.mjs")).href);
 
 const THRESHOLD = 3_000_000;
 const stored = (type) => ({ kind: "stored", id: "att-1", stored: { id: "att-1", filename: "f", size: 1, type } });
@@ -61,4 +60,12 @@ test("the size notice shows only when a file becomes a link or the files near th
 	assert.equal(attachmentNotice([2_000_000, 2_000_000], THRESHOLD), "near-budget");
 	assert.match(attachmentNoticeText("links", THRESHOLD), /over 3 MB are sent as 30-day R2 download links/);
 	assert.match(attachmentNoticeText("near-budget", THRESHOLD), /close to that/);
+});
+
+test("only blob and attachment-route URLs may feed a link or image", () => {
+	assert.equal(safeAttachmentUrl("blob:https://mail.example.com/abc"), "blob:https://mail.example.com/abc");
+	assert.equal(safeAttachmentUrl("/api/messages/d/attachments/a?preview=1"), "/api/messages/d/attachments/a?preview=1");
+	assert.equal(safeAttachmentUrl("javascript:alert(1)"), "");
+	assert.equal(safeAttachmentUrl("https://evil.test/x.png"), "");
+	assert.equal(safeAttachmentUrl(null), "");
 });

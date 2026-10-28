@@ -39,15 +39,20 @@ export function canPreviewEntry(entry: ComposeAttachmentEntry): boolean {
 	return kind !== "unsupported";
 }
 
+/** Only the browser's own `blob:` copy of a file or our authenticated attachment route may feed a link or an image. */
+export function safeAttachmentUrl(url: string | null): string {
+	return url !== null && (url.startsWith("blob:") || url.startsWith("/api/messages/")) ? url : "";
+}
+
 /** The authenticated route a stored file downloads from; a local file has no URL until the viewer makes one. */
 export function storedDownloadUrl(entry: ComposeAttachmentEntry, draftId: string | null): string | null {
 	if (entry.kind !== "stored" || !draftId) return null;
-	return getAttachmentFileUrl(draftId, entry.id, "download");
+	return getAttachmentFileUrl(encodeURIComponent(draftId), encodeURIComponent(entry.id), "download");
 }
 
 export function storedThumbnailUrl(entry: ComposeAttachmentEntry, draftId: string | null): string | null {
 	if (entry.kind !== "stored" || !draftId) return null;
-	return getAttachmentFileUrl(draftId, entry.id, "preview");
+	return getAttachmentFileUrl(encodeURIComponent(draftId), encodeURIComponent(entry.id), "preview");
 }
 
 function entryAttachmentType(entry: ComposeAttachmentEntry): string {

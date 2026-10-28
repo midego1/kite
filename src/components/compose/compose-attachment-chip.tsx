@@ -10,6 +10,7 @@ import type { ComposeAttachmentChipProps } from "./compose-attachment-types";
 import {
 	canPreviewEntry,
 	entryAttachment,
+	safeAttachmentUrl,
 	splitFilename,
 	storedDownloadUrl,
 	storedThumbnailUrl,
@@ -23,7 +24,7 @@ const ITEM_CLASS =
 function downloadLocalFile(file: File) {
 	const url = URL.createObjectURL(file);
 	const link = document.createElement("a");
-	link.href = url;
+	link.href = safeAttachmentUrl(url);
 	link.download = file.name;
 	link.click();
 	setTimeout(() => URL.revokeObjectURL(url), 0);
@@ -54,7 +55,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 		if (entry.kind === "local") return downloadLocalFile(entry.file);
 		if (!downloadUrl) return;
 		const link = document.createElement("a");
-		link.href = downloadUrl;
+		link.href = safeAttachmentUrl(downloadUrl);
 		link.download = attachment.filename;
 		link.click();
 	}
@@ -79,7 +80,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 			>
 				{thumbnail && !thumbnailFailed ? (
 					<img
-						src={thumbnail}
+						src={safeAttachmentUrl(thumbnail)}
 						alt=""
 						onError={() => setThumbnailFailed(true)}
 						className="h-7 w-7 shrink-0 rounded-md object-cover"

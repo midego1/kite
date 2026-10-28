@@ -53,7 +53,8 @@ const {
 	saveLegacyAgentProvider,
 	updateAgentProvider,
 } = await load("connections");
-const { agentProviderName, publicAgentProvider, unavailableModelChoice } = await load("connectionUtils");
+const { agentProviderName, publicAgentProvider, savedAgentModelRates, sortAgentProviders, unavailableModelChoice } =
+	await load("connectionUtils");
 const { prepareAgentProviderValues } = await load("admin");
 const { sealSecret, isSealed } = await load("secrets");
 const { SqliteDatabase } = await load("runtime");
@@ -339,6 +340,37 @@ test("names, public rows and model fallbacks", () => {
 		hasApiKey: true,
 		active: true,
 	});
+	assert.deepEqual(
+		publicAgentProvider({ ...row, provider: "cloudflare", preset: null, baseUrl: null, apiKey: null, model: "" }),
+		{
+			id: "aip_1",
+			name: "Haimaker",
+			provider: "cloudflare",
+			preset: "openai",
+			baseUrl: "",
+			model: "",
+			models: [],
+			rates: {},
+			hasApiKey: false,
+			active: true,
+		},
+	);
+	assert.equal(agentProviderName("", "compatible", null), "Custom endpoint");
+	assert.deepEqual(
+		sortAgentProviders([
+			{ id: "b", createdAt: new Date(2) },
+			{ id: "c", createdAt: new Date(1) },
+			{ id: "a", createdAt: new Date(2) },
+		]).map((item) => item.id),
+		["c", "a", "b"],
+	);
+	assert.equal(
+		savedAgentModelRates(["m", "n"], {
+			m: { input: 1, output: 2, reasoningEffort: "high" },
+			x: { input: 9, output: 9 },
+		}),
+		JSON.stringify({ m: { input: 1, output: 2, reasoningEffort: "high" }, n: { input: null, output: null } }),
+	);
 	assert.equal(unavailableModelChoice("a", ["a", "b"], "a"), null);
 	assert.equal(unavailableModelChoice(null, ["a"], "a"), null);
 	assert.deepEqual(unavailableModelChoice("old/model", ["a", "b"], "a"), { saved: "old/model", using: "a" });

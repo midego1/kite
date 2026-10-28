@@ -91,6 +91,7 @@
 		"src/lib/agent/model-prices-utils.ts",
 		"src/lib/agent/provider-url-utils.ts",
 		"src/lib/agent/provider-models-utils.ts",
+		"src/lib/agent/provider-connection-utils.ts",
 		"src/lib/agent/queue-utils.ts",
 		"src/lib/agent/reasoning-effort-utils.ts",
 		"src/lib/agent/step-limit-utils.ts",

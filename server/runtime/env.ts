@@ -3,6 +3,7 @@ import { lookup } from "node:dns/promises";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createNoopMetrics } from "../../src/lib/metrics.mjs";
+import { mailHostPolicy } from "../../src/lib/net/host-guard-utils";
 import { withStorage } from "../../src/lib/storage/router";
 import { openFileBucket } from "./file-bucket";
 import { openMailer, type Mailer, type MailerConfig } from "./mailer";
@@ -11,6 +12,7 @@ import { adoptLegacyDatabaseFile } from "./data-files";
 import { adoptQueueMessages, openQueue, type InProcessQueue } from "./queue";
 import { RealtimeHubRegistry } from "./realtime";
 import { openSqliteDatabase, type SqliteDatabase } from "./sqlite-database";
+import { createTcpConnect } from "./tcp-connect";
 import type { NodeRuntime } from "./types";
 
 function optional(name: string): string | undefined {
@@ -51,6 +53,14 @@ export function createNodeRuntime(): NodeRuntime {
 	const agentQueue = openKiteQueue("agent", sqlite);
 	const realtime = new RealtimeHubRegistry();
 	const publicDir = resolve(optional("PUBLIC_DIR") ?? "./public");
+	const mailHosts = mailHostPolicy(
+		{
+			EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK: optional("EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK"),
+			EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS: optional("EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS"),
+			KITE_RUNTIME: "node",
+		},
+		process.env.NODE_ENV,
+	);
 
 	const platform = {
 		DB: database,
@@ -104,6 +114,13 @@ export function createNodeRuntime(): NodeRuntime {
 		SEND_LIMIT_PER_DAY: optional("SEND_LIMIT_PER_DAY"),
 		RESOLVE_HOST: async (hostname: string) =>
 			(await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address),
+		EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK: optional("EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK"),
+		EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS: optional("EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS"),
+		// Mail server connections (IMAP import): DNS pinned, private addresses refused, certificates verified.
+		TCP_CONNECT: createTcpConnect({
+			allowPrivate: mailHosts.allowPrivate,
+			allowLoopback: mailHosts.allowInsecureLoopback,
+		}),
 	} as unknown as CloudflareEnv;
 	// Wrapped before anything holds the env, so the realtime hub, the scheduler and the queues all see the router.
 	const env = withStorage(platform);

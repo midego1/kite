@@ -6,6 +6,7 @@ import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { readJsonBody } from "@/lib/http/request";
+import { importServerProblem } from "@/lib/import/imap";
 import { createImportJob, listImportJobs, serializeImportJob } from "@/lib/import/jobs";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { parseImapImportRequest } from "../imap/utils";
@@ -39,6 +40,9 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
 		return Response.json({ error: error instanceof Error ? error.message : "Invalid IMAP import request" }, { status });
 	}
+
+	const refused = importServerProblem(env, input);
+	if (refused) return Response.json({ error: refused }, { status: 400 });
 
 	const db = getDb(env);
 	const access = await getMailboxAccessLevel(db, user, input.mailboxId);

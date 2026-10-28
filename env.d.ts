@@ -99,4 +99,14 @@ interface CloudflareEnv {
 	SEND_LIMIT_PER_DAY?: string;
 	/** Self-hosted only: resolves a hostname to its addresses so outbound requests can refuse private ones. */
 	RESOLVE_HOST?: (hostname: string) => Promise<string[]>;
+	/**
+	 * Self-hosted only: opens TCP connections to mail servers (IMAP import) in the shape of `cloudflare:sockets`
+	 * `connect()`, resolving the host itself and refusing private addresses (`server/runtime/tcp-connect.ts`).
+	 * Unset on Workers, where `src/lib/net/connect.ts` uses `cloudflare:sockets`.
+	 */
+	TCP_CONNECT?: import("./src/lib/net/types").TcpConnect;
+	/** Dev/test only: "1" or "true" lets mail server connections reach loopback hosts on any port without TLS (the fake IMAP server); ignored in production. */
+	EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK?: string;
+	/** Node server only: "1" or "true" lets mail server connections reach private and LAN hosts (still over TLS); ignored on Workers. */
+	EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS?: string;
 }

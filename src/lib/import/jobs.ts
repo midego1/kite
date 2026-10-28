@@ -5,7 +5,8 @@ import { importJobs } from "@/db/schema/import-jobs";
 import { newId } from "@/lib/ids";
 import { openSetting, sealSetting } from "@/lib/security/secret-box";
 import { getImportMessageUserId, parseImportDestination } from "./destination";
-import { openImapSession } from "./imap";
+import { MailServerRefusedError } from "@/lib/net/errors";
+import { openImportSession } from "./imap";
 import { chunk, selectRemainingUids } from "./imap-utils";
 import { encodeRawMime } from "@/lib/email/module-import-utils";
 import { moduleHost } from "@/lib/modules/host";
@@ -167,10 +168,11 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 	let progress = { processed: job.processed, imported: job.imported, skipped: job.skipped, cursorUid: job.cursorUid };
 	let errors = parseErrors(job.errors);
 	let total = job.total;
-	let session: Awaited<ReturnType<typeof openImapSession>> | null = null;
+	let session: Awaited<ReturnType<typeof openImportSession>> | null = null;
 
 	try {
-		session = await openImapSession({ ...job, password: (await openSetting(env, job.password)) ?? "" });
+		session = await openImportSession(env, { ...job, password: (await openSetting(env, job.password)) ?? "" });
+		await session.examine(job.folder);
 		const allUids = await session.searchUids();
 		total = job.maxMessages ? Math.min(job.maxMessages, allUids.length) : allUids.length;
 		let remaining = selectRemainingUids(allUids, progress.cursorUid);
@@ -241,9 +243,7 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "IMAP import failed";
 		const attempts = job.attempts + 1;
-		// Authentication and missing-folder errors will not fix themselves.
-		const permanent = /AUTHENTICATIONFAILED|LOGIN|NONEXISTENT|does not exist|not allowed/i.test(message);
-		if (permanent || attempts >= MAX_ATTEMPTS) {
+		if (isPermanentImportError(error, message) || attempts >= MAX_ATTEMPTS) {
 			await finishJob(env, { ...job, total }, "failed", message);
 			return;
 		}
@@ -255,6 +255,14 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 	} finally {
 		await session?.close().catch(() => undefined);
 	}
+}
+
+/** Refused connections (no TLS, a private host), authentication and missing-folder errors will not fix themselves. */
+function isPermanentImportError(error: unknown, message: string): boolean {
+	return (
+		error instanceof MailServerRefusedError ||
+		/AUTHENTICATIONFAILED|LOGIN|sign-in failed|NONEXISTENT|does not exist|not allowed/i.test(message)
+	);
 }
 
 async function finishJob(

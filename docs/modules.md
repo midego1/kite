@@ -44,6 +44,10 @@ A module that is off is absent, not broken:
 - **Existing webhook subscriptions keep their events.** They just receive nothing while the module is off.
 - **Integrity hooks still run.** When a user changes their time zone, Calendar still freezes their legacy recurring series, so the calendar is correct when it comes back.
 
+### IMAP connections
+
+IMAP imports connect only over an encrypted connection: TLS on port 993, or STARTTLS on port 143 (the import form's **Encryption** choice). Kite checks the server's certificate and never sends a password in plain text, so a server that offers neither is refused, and so are ports other than 993 and 143 and private or local addresses. The same client runs on Cloudflare and on the Node runtime; on Node, Kite resolves the server's name itself, refuses it when any address is private, and connects only to the addresses it checked. `EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS=1` lets a self-hosted install import from a mail server on its own network (see [Self-hosting](self-hosting.md)).
+
 ### Paused imports
 
 Turning Mail import off pauses background IMAP jobs. They are not failed or cancelled:

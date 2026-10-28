@@ -55,6 +55,8 @@ export default defineConfig({
 			REMOTE_IMAGES_ALLOW_LOOPBACK: "1",
 			// Lets specs add the fake S3 store on http://localhost (e2e/48-storage-s3.spec.ts).
 			STORAGE_ALLOW_INSECURE_ENDPOINT: "1",
+			// Lets specs import from the fake IMAP server on 127.0.0.1 in plain text (tests/support/fake-imap.mjs).
+			EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK: "1",
 			// Sends both abuse.ch APIs to the fake on 127.0.0.1 (e2e/support/fake-abuse-ch.ts); nothing reaches abuse.ch.
 			ABUSE_CH_TEST_ORIGIN: `http://127.0.0.1:${FAKE_ABUSE_CH_PORT}`,
 			// A `.invalid` host turns sending off, so no e2e run can post usage statistics to the real collector.

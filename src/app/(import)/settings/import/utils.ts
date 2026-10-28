@@ -19,6 +19,19 @@ export const importSourceOptions: ImportSourceOption[] = [
 	{ value: "others", label: "Others", imapFolder: "", destination: "system:inbox" },
 ];
 
+/** The Encryption select's value: `secure` is implicit TLS, otherwise STARTTLS (there is no plain-text choice). */
+export function imapSecurityValue(form: ImapFormState): "tls" | "starttls" {
+	return form.secure ? "tls" : "starttls";
+}
+
+/** Switches between implicit TLS and STARTTLS, moving the port along when it is still the other one's default. */
+export function withImapSecurity(form: ImapFormState, secure: boolean): ImapFormState {
+	const defaults = { tls: "993", starttls: "143" };
+	const port =
+		form.port === (secure ? defaults.starttls : defaults.tls) ? (secure ? defaults.tls : defaults.starttls) : form.port;
+	return { ...form, secure, port };
+}
+
 export function getImportSourceOption(section: ImportSourceSection): ImportSourceOption {
 	return importSourceOptions.find((option) => option.value === section) ?? importSourceOptions[0];
 }

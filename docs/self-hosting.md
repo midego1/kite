@@ -119,6 +119,7 @@ and the DNS page shows what to set by hand.
 | `AI_BASE_URL` | unset | OpenAI-compatible model API base URL for the assistant |
 | `AI_API_KEY` | unset | Server-only key for that model API |
 | `AI_MODEL` | `gpt-4o-mini` | Model ID supported by the configured API |
+| `EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS` | unset | Lets IMAP imports reach a mail server on a private or LAN address (a mail server beside Kite). Still TLS or STARTTLS with a verified certificate (for a private CA, add it with Node's `NODE_EXTRA_CA_CERTS`), and still only on ports 993 and 143. Ignored on Workers |
 | `STORAGE_ALLOW_PRIVATE_ENDPOINTS` | unset | Lets an S3-compatible store live on a private or LAN address (MinIO beside the server), over `http` or `https`; see [Object storage](#object-storage-optional) |
 | `STORAGE_S3_ENDPOINT`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY` | unset | An S3-compatible store defined by the environment, listed read-only under Admin → Storage |
 | `STORAGE_S3_REGION`, `STORAGE_S3_ADDRESSING` | `us-east-1`, `path` | Signing region and `path` or `virtual` addressing of that store |

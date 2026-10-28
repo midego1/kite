@@ -2,6 +2,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { storeMessageAttachments } from "@/lib/email/attachments";
+import { canOffloadHtmlBodies, storeOffloadedHtmlBody } from "@/lib/email/bodies";
+import { planHtmlBodyOffload } from "@/lib/email/bodies-utils";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import { buildSnippet, parseRawMime } from "@/lib/email/parse";
 import type { ParsedEmail } from "@/lib/email/parse";
@@ -39,6 +41,7 @@ export async function importMessagesToMailbox(
 	}
 
 	// One lookup per batch instead of one per message.
+	const offloadBodies = await canOffloadHtmlBodies(env);
 	const existing = await findExistingProviderMessageIds(
 		db,
 		input.mailboxId,
@@ -56,6 +59,7 @@ export async function importMessagesToMailbox(
 				mailboxId: input.mailboxId,
 				destination: input.destination,
 				message,
+				offloadBodies,
 			});
 			result.imported += 1;
 		} catch (error) {
@@ -95,6 +99,7 @@ async function importParsedMessage(
 		mailboxId: string;
 		destination: ImportDestination;
 		message: ParsedImport;
+		offloadBodies: boolean;
 	},
 ): Promise<void> {
 	const { parsed, providerMessageId, raw } = input.message;
@@ -105,6 +110,8 @@ async function importParsedMessage(
 	const toAddr = parsed.toAddr ?? "";
 	const createdAt = parsed.date ?? new Date();
 	const placement = getImportMessagePlacement(input.destination);
+	// A large HTML body goes to the Mail store; the row keeps a text body for search and snippets.
+	const offload = input.offloadBodies ? planHtmlBodyOffload(messageId, parsed) : null;
 
 	await db.insert(messages).values({
 		id: messageId,
@@ -118,8 +125,8 @@ async function importParsedMessage(
 		ccAddr: parsed.ccAddr,
 		subject: parsed.subject,
 		snippet: buildSnippet(parsed.text, parsed.html),
-		textBody: parsed.text,
-		htmlBody: parsed.html,
+		textBody: offload ? offload.textBody : parsed.text,
+		htmlBody: offload ? null : parsed.html,
 		rawR2Key,
 		status: placement.status,
 		read: placement.direction === "outbound",
@@ -147,6 +154,7 @@ async function importParsedMessage(
 				address: contactAddress,
 				source: placement.direction === "outbound" ? "outbound" : "inbound",
 			}),
+			offload ? storeOffloadedHtmlBody(env, messageId, offload) : null,
 		]);
 	} catch (error) {
 		await deleteMessageWithObjects(env, db, messageId, rawR2Key);

@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { getDb } from "@/db";
 import { domains, mailboxes, messageAttachments, messages } from "@/db/schema";
+import { htmlBodyObjectKey } from "@/lib/email/bodies-utils";
 import type { MailboxDeletionResult, MailboxPurgeMessage } from "./delete-types";
 import {
 	MAILBOX_PURGE_BATCH_SIZE,
@@ -56,7 +57,11 @@ async function purgeMessageBatch(env: CloudflareEnv, db: AppDatabase, mailboxId:
 
 	// Attachment rows, shared links, spam feedback and assistant rows cascade from the message.
 	await db.delete(messages).where(inArray(messages.id, ids));
-	await deleteObjects(env, [...attachmentKeys, ...selectDeletableRawKeys(rawKeys, keptRawKeys)]);
+	await deleteObjects(env, [
+		...attachmentKeys,
+		...selectDeletableRawKeys(rawKeys, keptRawKeys),
+		...ids.map(htmlBodyObjectKey),
+	]);
 	return batch.length;
 }
 

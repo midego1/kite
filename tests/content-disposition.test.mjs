@@ -33,7 +33,14 @@ test("quotes, backslashes and line breaks never reach the header", () => {
 });
 
 test("object keys map to their storage class by prefix", () => {
-	for (const key of ["inbound/a.eml", "imports/x", "drafts/d.eml", "attachments/m/1", "jmap-uploads/u"])
+	for (const key of [
+		"inbound/a.eml",
+		"imports/x",
+		"drafts/d.eml",
+		"attachments/m/1",
+		"jmap-uploads/u",
+		"bodies/m.html",
+	])
 		assert.equal(objectClassOf(key), "mail", key);
 	assert.equal(objectClassOf("drive/drv_1"), "drive");
 	assert.equal(objectClassOf("backups/database/2026.json"), "backups");

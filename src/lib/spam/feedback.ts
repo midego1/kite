@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages, spamFeedback } from "@/db/schema";
+import { loadMessageBody } from "@/lib/email/bodies";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { SessionUser } from "@/lib/auth/types";
 import { createAuditLog } from "@/lib/mailboxes/audit";
@@ -56,10 +57,12 @@ export async function applySpamFeedbackWithReceipt(
 		return { receiptId, ...place };
 	}
 
+	// Training tokenizes the HTML too (link hosts, markup), so an offloaded body is read whole.
+	const body = await loadMessageBody(env, message);
 	const parsed = {
 		subject: message.subject,
-		text: message.textBody,
-		html: message.htmlBody,
+		text: body.textBody,
+		html: body.htmlBody,
 		messageId: message.providerMessageId,
 		fromAddr: message.fromAddr,
 		toAddr: message.toAddr,

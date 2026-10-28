@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
+import { loadMessageBodies } from "@/lib/email/bodies";
 
 function escapeHeader(value: string | null): string {
 	return (value ?? "").replace(/\r?\n/g, " ").trim();
@@ -16,7 +17,7 @@ function getMboxFromLine(date: Date): string {
 
 export async function exportMailboxToMbox(env: CloudflareEnv, mailboxId: string): Promise<string> {
 	const db = getDb(env);
-	const rows = await db
+	const stored = await db
 		.select({
 			id: messages.id,
 			fromAddr: messages.fromAddr,
@@ -35,6 +36,7 @@ export async function exportMailboxToMbox(env: CloudflareEnv, mailboxId: string)
 		.from(messages)
 		.where(eq(messages.mailboxId, mailboxId))
 		.orderBy(asc(messages.createdAt));
+	const rows = await loadMessageBodies(env, stored);
 
 	return rows
 		.map((message) => {

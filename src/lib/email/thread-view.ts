@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { messageAttachments, messages } from "@/db/schema";
 import { getContactAvatarMap, getContactDisplayNameMap } from "@/lib/contacts/service";
 import { getFirstEmailAddressEntry, normalizeEmailAddress } from "@/lib/email/address";
+import { loadMessageBodies } from "@/lib/email/bodies";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { SessionUser } from "@/lib/auth/types";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
@@ -32,7 +33,7 @@ export async function getMessageThreadForUser(env: CloudflareEnv, user: SessionU
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canRead) return null;
 
-	const rows = message.threadId
+	const stored = message.threadId
 		? await db
 				.select()
 				.from(messages)
@@ -48,6 +49,7 @@ export async function getMessageThreadForUser(env: CloudflareEnv, user: SessionU
 				.orderBy(asc(messages.createdAt))
 				.limit(200)
 		: await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+	const rows = await loadMessageBodies(env, stored);
 
 	const ids = rows.map((row) => row.id);
 	const attachmentRows = await queryInChunks(ids, (chunk) =>

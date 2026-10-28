@@ -154,7 +154,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 				personal: await personalInstructionsFor(db, reviewer),
 				writingStyle: await styleDescriptionFor(db, reviewer.id, job.mailboxId),
 			},
-			thread: await loadDraftThread(db, job.mailboxId, source),
+			thread: await loadDraftThread(env, job.mailboxId, source),
 			onUsage: (usage) =>
 				recordAiUsage({
 					env,

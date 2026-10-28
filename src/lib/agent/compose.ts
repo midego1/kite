@@ -3,6 +3,7 @@ import { streamText } from "ai";
 import { getDb, type AppDatabase } from "@/db";
 import { domains, messages } from "@/db/schema";
 import { getEmailDisplayName } from "@/lib/email/address";
+import { loadMessageBody } from "@/lib/email/bodies";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
@@ -57,7 +58,12 @@ const NOT_A_SOURCE = [SCREENING_STATUS, "spam", "trash"];
  * user's draft (all filtered in SQL). When a Message-ID is stored twice (a copy in Sent and the one received), the
  * received copy wins, then the newest; without a Message-ID match the newest received message of the thread.
  */
-async function loadSource(db: AppDatabase, user: SessionUser, request: ComposeRequest): Promise<ComposeSource | null> {
+async function loadSource(
+	env: CloudflareEnv,
+	user: SessionUser,
+	request: ComposeRequest,
+): Promise<ComposeSource | null> {
+	const db = getDb(env);
 	const allowed = and(
 		eq(messages.mailboxId, request.mailboxId),
 		notInArray(messages.status, NOT_A_SOURCE),
@@ -81,12 +87,13 @@ async function loadSource(db: AppDatabase, user: SessionUser, request: ComposeRe
 			.orderBy(...preference)
 			.limit(1);
 	if (!row) return null;
+	const { textBody, htmlBody } = await loadMessageBody(env, row, { textFirst: true });
 	return {
 		id: row.id,
 		from: row.fromAddr,
 		subject: row.subject ?? "",
 		date: row.createdAt,
-		body: row.textBody || htmlToReadableText(row.htmlBody),
+		body: textBody || htmlToReadableText(htmlBody),
 	};
 }
 
@@ -130,7 +137,7 @@ export async function createComposeStream(
 	if (!access?.canSendOnBehalf) throw new ComposeRefusal(404, "Mailbox not found");
 	const settings = await readMailboxAgentSettingsRow(db, request.mailboxId);
 	const selection = await selectInteractiveModel(env, settings?.modelId);
-	const source = request.mode === "write" ? await loadSource(db, user, request) : null;
+	const source = request.mode === "write" ? await loadSource(env, user, request) : null;
 	const prompt = buildComposePrompt({
 		...request,
 		recipientNames: recipientNames(request.to),

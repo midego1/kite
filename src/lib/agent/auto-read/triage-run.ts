@@ -56,7 +56,7 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 		triageModelId: settings.triageModelId,
 		mailboxModelId: settings.modelId,
 		models: config.models,
-		rates: config.rates,
+		rates: config.effectiveRates,
 	});
 	const selection = await selectAutoReadModel(env, requested);
 	const prompt = buildTriagePrompt({

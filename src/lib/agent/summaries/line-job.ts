@@ -65,7 +65,7 @@ async function writeLine(
 		triageModelId: settings.triageModelId,
 		mailboxModelId: settings.modelId,
 		models: config.models,
-		rates: config.rates,
+		rates: config.effectiveRates,
 	});
 	const prompt = buildLinePrompt({ messageId: source.id, subject: source.subject, body: context.bodyText });
 	const selection = await selectAutoReadModel(env, requested);

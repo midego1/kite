@@ -19,10 +19,17 @@ export function tokenAllowanceKind(source: string): TokenAllowanceKind {
 
 const SECONDS_PER_DAY = 86_400;
 
-type KnownRates = { input: number; output: number };
-
-function knownRates(rates: AgentModelRates | undefined): KnownRates | null {
+/**
+ * The flat input and output rates for one request: the long-context tier when the prompt is over its threshold,
+ * else the base rates. Null when either base rate is unknown.
+ */
+export function ratesForPrompt(
+	rates: AgentModelRates | undefined,
+	inputTokens: number,
+): { input: number; output: number } | null {
 	if (!rates || rates.input === null || rates.output === null) return null;
+	const long = rates.longContext;
+	if (long && inputTokens > long.aboveInputTokens) return { input: long.input, output: long.output };
 	return { input: rates.input, output: rates.output };
 }
 
@@ -31,7 +38,7 @@ function wholeTokens(value: number | undefined): number {
 }
 
 export function spendMode(rates: AgentModelRates | undefined): SpendMode {
-	return knownRates(rates) ? "cost" : "tokens";
+	return ratesForPrompt(rates, 0) ? "cost" : "tokens";
 }
 
 /** Rates are USD per million tokens, so tokens × rate is already USD micros. */
@@ -42,7 +49,7 @@ export function estimateSpend(
 ): SpendEstimate {
 	const inputTokens = Math.ceil(wholeTokens(promptChars) / 4);
 	const outputTokens = wholeTokens(maxOutputTokens);
-	const priced = knownRates(rates);
+	const priced = ratesForPrompt(rates, inputTokens);
 	return {
 		mode: priced ? "cost" : "tokens",
 		inputTokens,
@@ -75,7 +82,7 @@ export function actualSpend(
 ): ActualSpend {
 	const inputTokens = usage ? wholeTokens(usage.inputTokens) : 0;
 	const outputTokens = usage ? billedOutputTokens(usage) : 0;
-	const priced = mode === "cost" ? knownRates(rates) : null;
+	const priced = mode === "cost" ? ratesForPrompt(rates, inputTokens) : null;
 	if (mode === "cost" && !priced) return { inputTokens, outputTokens, costUsdMicros: 0 };
 	return {
 		inputTokens,

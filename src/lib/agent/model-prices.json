@@ -1,0 +1,850 @@
+{
+	"version": 1,
+	"models": [
+		{
+			"id": "claude-fable-5-1",
+			"provider": "anthropic",
+			"input": 10,
+			"output": 50,
+			"datedIds": true,
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-mythos-5-1",
+			"provider": "anthropic",
+			"input": 10,
+			"output": 50,
+			"datedIds": true,
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-fable-5",
+			"provider": "anthropic",
+			"input": 10,
+			"output": 50,
+			"datedIds": true,
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-mythos-5",
+			"provider": "anthropic",
+			"input": 10,
+			"output": 50,
+			"datedIds": true,
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-opus-5-5",
+			"provider": "anthropic",
+			"input": 4,
+			"output": 20,
+			"datedIds": true,
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-opus-5",
+			"provider": "anthropic",
+			"input": 5,
+			"output": 25,
+			"datedIds": true,
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-opus-4-8",
+			"provider": "anthropic",
+			"input": 5,
+			"output": 25,
+			"datedIds": true,
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-opus-4-7",
+			"provider": "anthropic",
+			"input": 5,
+			"output": 25,
+			"datedIds": true,
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-opus-4-6",
+			"provider": "anthropic",
+			"input": 5,
+			"output": 25,
+			"datedIds": true,
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-opus-4-5",
+			"provider": "anthropic",
+			"input": 5,
+			"output": 25,
+			"datedIds": true,
+			"aliases": ["claude-opus-4-5-20251101"],
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-sonnet-5-5",
+			"provider": "anthropic",
+			"input": 2,
+			"output": 10,
+			"datedIds": true,
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-sonnet-5",
+			"provider": "anthropic",
+			"input": 2,
+			"output": 10,
+			"datedIds": true,
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-sonnet-4-6",
+			"provider": "anthropic",
+			"input": 3,
+			"output": 15,
+			"datedIds": true,
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-sonnet-4-5",
+			"provider": "anthropic",
+			"input": 3,
+			"output": 15,
+			"datedIds": true,
+			"aliases": ["claude-sonnet-4-5-20250929"],
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-haiku-5-5",
+			"provider": "anthropic",
+			"input": 0.1,
+			"output": 0.5,
+			"datedIds": true,
+			"longContext": {
+				"aboveInputTokens": 100000,
+				"input": 0.5,
+				"output": 2.5
+			},
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "claude-haiku-4-5",
+			"provider": "anthropic",
+			"input": 1,
+			"output": 5,
+			"datedIds": true,
+			"aliases": ["claude-haiku-4-5-20251001"],
+			"source": "https://platform.claude.com/docs/en/about-claude/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-6-astra",
+			"provider": "openai",
+			"input": 10,
+			"output": 50,
+			"longContext": {
+				"aboveInputTokens": 272000,
+				"input": 20,
+				"output": 75
+			},
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-6.1-sol",
+			"provider": "openai",
+			"input": 2,
+			"output": 10,
+			"longContext": {
+				"aboveInputTokens": 272000,
+				"input": 4,
+				"output": 15
+			},
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-6.1-terra",
+			"provider": "openai",
+			"input": 1,
+			"output": 5,
+			"longContext": {
+				"aboveInputTokens": 272000,
+				"input": 2,
+				"output": 7.5
+			},
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-6-sol",
+			"provider": "openai",
+			"input": 2,
+			"output": 10,
+			"longContext": {
+				"aboveInputTokens": 272000,
+				"input": 4,
+				"output": 15
+			},
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-6-luna",
+			"provider": "openai",
+			"input": 0.1,
+			"output": 0.5,
+			"longContext": {
+				"aboveInputTokens": 272000,
+				"input": 0.2,
+				"output": 0.75
+			},
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-5.6-terra",
+			"provider": "openai",
+			"input": 2,
+			"output": 12,
+			"longContext": {
+				"aboveInputTokens": 272000,
+				"input": 4,
+				"output": 18
+			},
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-5.6-luna",
+			"provider": "openai",
+			"input": 0.2,
+			"output": 1.2,
+			"longContext": {
+				"aboveInputTokens": 272000,
+				"input": 0.4,
+				"output": 1.8
+			},
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-5.5",
+			"provider": "openai",
+			"input": 5,
+			"output": 30,
+			"longContext": {
+				"aboveInputTokens": 272000,
+				"input": 10,
+				"output": 45
+			},
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-5.4",
+			"provider": "openai",
+			"input": 2.5,
+			"output": 15,
+			"longContext": {
+				"aboveInputTokens": 272000,
+				"input": 5,
+				"output": 22.5
+			},
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-5.4-mini",
+			"provider": "openai",
+			"input": 0.75,
+			"output": 4.5,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-5.4-nano",
+			"provider": "openai",
+			"input": 0.2,
+			"output": 1.25,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-5.2",
+			"provider": "openai",
+			"input": 1.75,
+			"output": 14,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-5.1",
+			"provider": "openai",
+			"input": 1.25,
+			"output": 10,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-5",
+			"provider": "openai",
+			"input": 1.25,
+			"output": 10,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-5-mini",
+			"provider": "openai",
+			"input": 0.25,
+			"output": 2,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-5-nano",
+			"provider": "openai",
+			"input": 0.05,
+			"output": 0.4,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-4.1",
+			"provider": "openai",
+			"input": 2,
+			"output": 8,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-4.1-mini",
+			"provider": "openai",
+			"input": 0.4,
+			"output": 1.6,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-4.1-nano",
+			"provider": "openai",
+			"input": 0.1,
+			"output": 0.4,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-4o",
+			"provider": "openai",
+			"input": 2.5,
+			"output": 10,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-4o-2024-05-13",
+			"provider": "openai",
+			"input": 5,
+			"output": 15,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gpt-4o-mini",
+			"provider": "openai",
+			"input": 0.15,
+			"output": 0.6,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "o3",
+			"provider": "openai",
+			"input": 2,
+			"output": 8,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "o3-mini",
+			"provider": "openai",
+			"input": 1.1,
+			"output": 4.4,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "o4-mini",
+			"provider": "openai",
+			"input": 1.1,
+			"output": 4.4,
+			"source": "https://platform.openai.com/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gemini-4-argon",
+			"provider": "google",
+			"input": 2,
+			"output": 10,
+			"changes": [
+				{
+					"from": "2026-12-01",
+					"input": 4,
+					"output": 20
+				}
+			],
+			"source": "https://ai.google.dev/gemini-api/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gemini-3.8-flash",
+			"provider": "google",
+			"input": 0.75,
+			"output": 3.75,
+			"changes": [
+				{
+					"from": "2027-01-01",
+					"input": 1.5,
+					"output": 7.5
+				}
+			],
+			"source": "https://ai.google.dev/gemini-api/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gemini-3.6-flash",
+			"provider": "google",
+			"input": 0.75,
+			"output": 3.75,
+			"changes": [
+				{
+					"from": "2027-01-01",
+					"input": 1.5,
+					"output": 7.5
+				}
+			],
+			"source": "https://ai.google.dev/gemini-api/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gemini-3.5-flash-lite",
+			"provider": "google",
+			"input": 0.3,
+			"output": 2.5,
+			"source": "https://ai.google.dev/gemini-api/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gemini-3.1-flash-lite",
+			"provider": "google",
+			"input": 0.25,
+			"output": 1.5,
+			"source": "https://ai.google.dev/gemini-api/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gemini-3.1-pro-preview",
+			"provider": "google",
+			"input": 2,
+			"output": 12,
+			"aliases": ["gemini-3.1-pro-preview-customtools"],
+			"longContext": {
+				"aboveInputTokens": 200000,
+				"input": 4,
+				"output": 18
+			},
+			"source": "https://ai.google.dev/gemini-api/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gemini-3-flash-preview",
+			"provider": "google",
+			"input": 0.5,
+			"output": 3,
+			"source": "https://ai.google.dev/gemini-api/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gemini-2.5-pro",
+			"provider": "google",
+			"input": 1.25,
+			"output": 10,
+			"longContext": {
+				"aboveInputTokens": 200000,
+				"input": 2.5,
+				"output": 15
+			},
+			"source": "https://ai.google.dev/gemini-api/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gemini-2.5-flash",
+			"provider": "google",
+			"input": 0.3,
+			"output": 2.5,
+			"source": "https://ai.google.dev/gemini-api/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "gemini-2.5-flash-lite",
+			"provider": "google",
+			"input": 0.1,
+			"output": 0.4,
+			"source": "https://ai.google.dev/gemini-api/docs/pricing",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-3.2-1b-instruct",
+			"provider": "cloudflare",
+			"input": 0.027,
+			"output": 0.201,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-3.2-3b-instruct",
+			"provider": "cloudflare",
+			"input": 0.051,
+			"output": 0.335,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-3.1-8b-instruct-fp8-fast",
+			"provider": "cloudflare",
+			"input": 0.045,
+			"output": 0.384,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-3.2-11b-vision-instruct",
+			"provider": "cloudflare",
+			"input": 0.049,
+			"output": 0.676,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-3.1-70b-instruct-fp8-fast",
+			"provider": "cloudflare",
+			"input": 0.293,
+			"output": 2.253,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+			"provider": "cloudflare",
+			"input": 0.293,
+			"output": 2.253,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+			"provider": "cloudflare",
+			"input": 0.497,
+			"output": 4.881,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/deepseek-ai/deepseek-v4-flash-0731",
+			"provider": "cloudflare",
+			"input": 0.44,
+			"output": 1.32,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+			"provider": "cloudflare",
+			"input": 0.3,
+			"output": 1.2,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/deepseek-ai/deepseek-v4-pro-0813",
+			"provider": "cloudflare",
+			"input": 1.32,
+			"output": 3.96,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/mistral/mistral-7b-instruct-v0.1",
+			"provider": "cloudflare",
+			"input": 0.11,
+			"output": 0.19,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+			"provider": "cloudflare",
+			"input": 0.351,
+			"output": 0.555,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-3.1-8b-instruct",
+			"provider": "cloudflare",
+			"input": 0.282,
+			"output": 0.827,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-3.1-8b-instruct-fp8",
+			"provider": "cloudflare",
+			"input": 0.152,
+			"output": 0.287,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-3.1-8b-instruct-awq",
+			"provider": "cloudflare",
+			"input": 0.123,
+			"output": 0.266,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-3-8b-instruct",
+			"provider": "cloudflare",
+			"input": 0.282,
+			"output": 0.827,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-3-8b-instruct-awq",
+			"provider": "cloudflare",
+			"input": 0.123,
+			"output": 0.266,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-2-7b-chat-fp16",
+			"provider": "cloudflare",
+			"input": 0.556,
+			"output": 6.667,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-guard-3-8b",
+			"provider": "cloudflare",
+			"input": 0.484,
+			"output": 0.03,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/meta/llama-4-scout-17b-16e-instruct",
+			"provider": "cloudflare",
+			"input": 0.27,
+			"output": 0.85,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/google/gemma-3-12b-it",
+			"provider": "cloudflare",
+			"input": 0.345,
+			"output": 0.556,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/qwen/qwq-32b",
+			"provider": "cloudflare",
+			"input": 0.66,
+			"output": 1,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/qwen/qwen2.5-coder-32b-instruct",
+			"provider": "cloudflare",
+			"input": 0.66,
+			"output": 1,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/qwen/qwen3-30b-a3b-fp8",
+			"provider": "cloudflare",
+			"input": 0.051,
+			"output": 0.335,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/qwen/qwen3.8-27b",
+			"provider": "cloudflare",
+			"input": 0.45,
+			"output": 3.2,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/openai/gpt-oss-120b",
+			"provider": "cloudflare",
+			"input": 0.35,
+			"output": 0.75,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/openai/gpt-oss-20b",
+			"provider": "cloudflare",
+			"input": 0.2,
+			"output": 0.3,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/aisingapore/gemma-sea-lion-v4-27b-it",
+			"provider": "cloudflare",
+			"input": 0.351,
+			"output": 0.555,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/ibm-granite/granite-4.0-h-micro",
+			"provider": "cloudflare",
+			"input": 0.017,
+			"output": 0.112,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/zai-org/glm-4.7-flash",
+			"provider": "cloudflare",
+			"input": 0.06,
+			"output": 0.4,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/zai-org/glm-5.2",
+			"provider": "cloudflare",
+			"input": 1.4,
+			"output": 4.4,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/zai-org/glm-5.3",
+			"provider": "cloudflare",
+			"input": 1.4,
+			"output": 4.4,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/zai-org/glm-5.3-flash",
+			"provider": "cloudflare",
+			"input": 0.15,
+			"output": 0.5,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/nvidia/nemotron-3-120b-a12b",
+			"provider": "cloudflare",
+			"input": 0.5,
+			"output": 1.5,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/moonshotai/kimi-k2.5",
+			"provider": "cloudflare",
+			"input": 0.6,
+			"output": 3,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/moonshotai/kimi-k2.6",
+			"provider": "cloudflare",
+			"input": 0.95,
+			"output": 4,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/moonshotai/kimi-k2.7-code",
+			"provider": "cloudflare",
+			"input": 0.95,
+			"output": 4,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/google/gemma-4-26b-a4b-it",
+			"provider": "cloudflare",
+			"input": 0.1,
+			"output": 0.3,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "@cf/daily-co/phonellm-mini-alpha-2",
+			"provider": "cloudflare",
+			"input": 0.06,
+			"output": 0.24,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "openai/gpt-oss-120b",
+			"provider": "groq",
+			"input": 0.15,
+			"output": 0.6,
+			"source": "https://console.groq.com/docs/models",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "openai/gpt-oss-20b",
+			"provider": "groq",
+			"input": 0.075,
+			"output": 0.3,
+			"source": "https://console.groq.com/docs/models",
+			"asOf": "2026-10-28"
+		},
+		{
+			"id": "qwen/qwen3.8-27b",
+			"provider": "groq",
+			"input": 0.8,
+			"output": 4,
+			"source": "https://console.groq.com/docs/models",
+			"asOf": "2026-10-28"
+		}
+	]
+}

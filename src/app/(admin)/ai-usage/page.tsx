@@ -167,8 +167,8 @@ export default function AiUsagePage() {
 				</div>
 			)}
 			<p className="text-xs text-neutral-500">
-				Spending is estimated from the per-model rates saved in Agent settings. A dash means no rate or token count was
-				available.
+				Spending is estimated from the per-model rates in Agent settings: yours, the provider&apos;s, or Kite&apos;s
+				price list for well-known models. A dash means no rate or token count was available.
 			</p>
 		</div>
 	);

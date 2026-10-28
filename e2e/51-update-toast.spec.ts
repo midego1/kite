@@ -150,11 +150,16 @@ test("a chunk of the previous deployment that is gone shows the toast, and Reloa
 	const documents = countDocumentLoads(page);
 
 	// The open tab lazily loads a chunk the new deployment no longer has: it checks the version at once and offers
-	// a reload, without reloading under the user.
+	// a reload, without reloading under the user. A production build's preload helper reports the failed import as
+	// `vite:preloadError`; doing the same here keeps an unhandled rejection from opening the dev error overlay.
 	version.current = "deploy-2";
 	await setMarker(page);
-	await page.evaluate(() => {
-		void import(`/_next/static/chunks/removed-${Date.now()}.js`);
+	await page.evaluate(async () => {
+		try {
+			await import(`/_next/static/chunks/removed-${Date.now()}.js`);
+		} catch (error) {
+			window.dispatchEvent(Object.assign(new Event("vite:preloadError", { cancelable: true }), { payload: error }));
+		}
 	});
 	const toast = updateToast(page);
 	await expect(toast).toBeVisible();

@@ -19,7 +19,8 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  * - `specialUse`: advertise SPECIAL-USE and report `folderAttributes` (`{ [name]: ["\\Sent"] }`) in LIST.
  * - `statusSize`: advertise STATUS=SIZE. `delimiter`: the hierarchy delimiter (default `/`).
  * - `fetchDelayMs`: answer every UID FETCH that much later (a slow server, so a test can pause mid-run).
- * - `fetchGate`: a promise; every UID FETCH is answered only once it resolves (a FETCH that outlasts a lease).
+ * - `fetchGate`: a promise, or a function from the FETCH's number (0, 1, …) to one; each UID FETCH is answered only once
+ *   its promise resolves (a FETCH that outlasts a lease).
  * - `examineRefusals`: `{ [folder]: "NO [THROTTLED] …" }`, the tagged answer to SELECT or EXAMINE of that folder.
  * - `gmail`: advertise X-GM-EXT-1 and report each message's `labels` in FETCH when asked for X-GM-LABELS.
  * - `users`: `{ [username]: password }`. `LOGIN` takes quoted strings or synchronizing literals.
@@ -32,6 +33,7 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  *   body, or after it with `attributesAfterLiteral`.
  */
 export async function startFakeImap(options = {}) {
+	let fetches = 0;
 	const users = options.users ?? { "user@example.test": "app-password" };
 	const folders = new Map();
 	const commands = [];
@@ -235,7 +237,8 @@ export async function startFakeImap(options = {}) {
 					const wanted = new Set(set.split(",").map(Number));
 					if (options.hugeLiteral) return send(`* 1 FETCH (UID 1 BODY[] {4000000000}\r\n${"x".repeat(1000)}`);
 					if (options.fetchGate) {
-						options.fetchGate.then(() => !state.socket.destroyed && respondFetch(tag, args, entry, wanted));
+						const gate = typeof options.fetchGate === "function" ? options.fetchGate(fetches++) : options.fetchGate;
+						gate.then(() => !state.socket.destroyed && respondFetch(tag, args, entry, wanted));
 						return;
 					}
 					if (options.fetchDelayMs) {

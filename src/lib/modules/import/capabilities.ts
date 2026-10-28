@@ -2,8 +2,13 @@ import type { ModuleCapabilities } from "../module-types";
 import { describeCapability } from "../schema-utils";
 import { importSchemas } from "./schemas";
 
-/** Above the run budget of one import batch and below the job lease. */
-const IMPORT_RUN_TIMEOUT_MS = 7 * 60_000;
+/**
+ * One import run, kept just under the 15-minute wall-clock limit of a queue invocation: the platform ends it there
+ * anyway, so an earlier timeout would only report an error while the run carried on. A run starts no new chunk after
+ * its four-minute budget (`RUN_TIME_BUDGET_MS`), and one IMAP command may take up to ten minutes (`imapLimits`), which
+ * together fit. The run's lease is renewed by its own heartbeat, so it does not bound this.
+ */
+const IMPORT_RUN_TIMEOUT_MS = 14 * 60_000;
 
 const describe = (name: string, meta: Parameters<typeof describeCapability>[2]) =>
 	describeCapability(importSchemas, name, meta);

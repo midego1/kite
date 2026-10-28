@@ -68,7 +68,7 @@ export const THREAD = [
 
 const EVENTS = [
 	{ day: 0, start: "09:00", end: "09:30", title: "Team standup", color: "blue", repeat: "weekdays" },
-	{ day: 0, start: "13:00", end: "14:00", title: "Design review: onboarding", color: "violet" },
+	{ day: 0, start: "13:00", end: "14:30", title: "Design review: onboarding", color: "violet" },
 	{ day: 1, start: "11:00", end: "12:00", title: "Customer call: Contoso", color: "emerald", location: "Video call" },
 	{ day: 2, start: "15:00", end: "16:30", title: "Quarterly metrics review", color: "orange" },
 	{ day: 3, start: "10:00", end: "11:30", title: "Offsite planning", color: "rose" },
@@ -138,6 +138,7 @@ export async function seedDemoData(): Promise<void> {
 	const api = await apiContext(STORAGE_STATE);
 	// A server kept across runs (E2E_REUSE_SERVER=1) already holds the demo data; seeding it twice would double it.
 	const seeded = await api.get(`/api/messages?${new URLSearchParams({ q: THREAD[0]!.subject, limit: "1" })}`);
+	expect(seeded.ok(), `Looking for earlier demo data failed: ${seeded.status()} ${await seeded.text()}`).toBe(true);
 	const { messages: existing } = (await seeded.json()) as { messages: unknown[] };
 	if (existing.length > 0) {
 		await seedDrive(api);

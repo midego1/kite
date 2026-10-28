@@ -61,6 +61,7 @@ import type {
 	AgentSettingsResponse,
 	QueuedAgentMessage,
 } from "./types";
+import { agentPanelStyle } from "./agent-panel-style-utils";
 import {
 	activeAgentTool,
 	activeAgentToolLabel,
@@ -80,7 +81,7 @@ import {
 	uniqueAgentDraftActions,
 } from "./utils";
 
-export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentPanelProps) {
+export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }: AgentPanelProps) {
 	const { selectedMailbox } = useSelectedMailbox();
 	const pathname = usePathname();
 	const { openDraftComposer } = useCompose();
@@ -577,13 +578,10 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 	};
 	const draftActions = uniqueAgentDraftActions(messages);
 	const activeTool = busy ? activeAgentTool(messages) : null;
+	const panelStyle = agentPanelStyle(docked);
 	return (
-		<section
-			id="email-assistant-panel"
-			className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-blue-200/70 bg-white text-neutral-900 shadow-xl shadow-blue-900/10 max-md:rounded-b-none max-md:border-0 max-md:shadow-none"
-			aria-label="Email assistant"
-		>
-			<header className="flex h-16 shrink-0 items-center justify-between gap-1 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-blue-100/50 pl-3 pr-2">
+		<section id="email-assistant-panel" className={panelStyle.section} aria-label="Email assistant">
+			<header className={panelStyle.header}>
 				<div className="flex min-w-0 items-center gap-2.5">
 					{view === "settings" ? (
 						<button

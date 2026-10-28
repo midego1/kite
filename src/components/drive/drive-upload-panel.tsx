@@ -80,7 +80,7 @@ export function DriveUploadPanel({
 	return (
 		<section
 			aria-label="Uploads"
-			className="fixed bottom-4 right-4 z-[90] w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl"
+			className="fixed bottom-4 right-4 z-[90] w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg"
 		>
 			<header className="flex items-center justify-between gap-3 bg-neutral-50 px-4 py-2.5 text-sm font-medium text-neutral-800">
 				<span aria-live="polite">

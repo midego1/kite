@@ -6,6 +6,7 @@ import type { SesSendingView } from "@/lib/aws/ses-sending-types";
 import AwsCredentialsPanel from "./AwsCredentialsPanel";
 import { requestJson } from "./api";
 import { StatusRow } from "./status-row";
+import { ROW_BUTTON_CLASS } from "./utils";
 
 type SesResponse = { credentials?: boolean; ses?: SesSendingView | null; error?: string };
 
@@ -127,7 +128,7 @@ export default function SesSendingConfig({
 								<Button
 									size="sm"
 									variant="outline"
-									className="bg-white"
+									className={ROW_BUTTON_CLASS}
 									disabled={busy !== null}
 									onClick={() => void sendTest()}
 								>
@@ -137,7 +138,7 @@ export default function SesSendingConfig({
 								<Button
 									size="sm"
 									variant="outline"
-									className="bg-white"
+									className={ROW_BUTTON_CLASS}
 									disabled={busy !== null}
 									onClick={() =>
 										void domainAction(

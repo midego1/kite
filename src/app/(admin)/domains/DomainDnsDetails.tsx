@@ -1,6 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { LoaderCircle } from "lucide-react";
-import { dnsAuthDescriptions, dnsAuthRecords, getDnsAuthItemClass, getSendingStatusLabel } from "./utils";
+import {
+	ROW_BUTTON_CLASS,
+	dnsAuthDescriptions,
+	dnsAuthRecords,
+	getDnsAuthItemClass,
+	getSendingStatusLabel,
+} from "./utils";
 import { ROW_GRID, StatusBadge, StatusRow } from "./status-row";
 import CloudflareReceivingConfig from "./CloudflareReceivingConfig";
 import DnsSetupFeedback from "./DnsSetupFeedback";
@@ -78,7 +84,7 @@ export default function DomainDnsDetails({
 					<Button
 						variant="outline"
 						size="sm"
-						className="shrink-0 bg-white"
+						className={`shrink-0 ${ROW_BUTTON_CLASS}`}
 						disabled={manual || setupStatus?.state === "pending"}
 						title={manual ? "DNS for this domain is managed manually" : `Create the ${item.label} record`}
 						onClick={() => onSetup?.(record)}

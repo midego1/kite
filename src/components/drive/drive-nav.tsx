@@ -10,6 +10,7 @@ import {
 	FolderPlus,
 	FolderUp,
 	HardDrive,
+	Inbox,
 	Paperclip,
 	Plus,
 	Trash2,
@@ -18,7 +19,10 @@ import {
 	type LucideIcon,
 } from "lucide-react";
 import { SidebarFooter } from "@/components/sidebar-footer";
-import { SidebarHeader } from "@/components/sidebar-header";
+import { DashboardNotices } from "@/components/dashboard-notices";
+import { MailboxSelector } from "@/components/mailbox-selector";
+import { NavSectionLabel } from "@/components/nav-section-header";
+import { SidebarAccounts } from "@/components/sidebar-accounts";
 import { SidebarScaffold } from "@/components/sidebar-scaffold";
 import { useSidebar } from "@/components/sidebar-state";
 import { formatDriveSize } from "@/lib/drive/name-utils";
@@ -55,7 +59,7 @@ const LINKS: { href: string; label: string; icon: LucideIcon; match: (path: stri
 ];
 
 const menuItemClass =
-	"flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-neutral-700 outline-none data-[highlighted]:bg-neutral-100";
+	"flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-neutral-700 outline-none data-[highlighted]:bg-neutral-100 data-[highlighted]:text-neutral-900";
 
 function sendCommand(command: DriveCommand) {
 	window.dispatchEvent(new CustomEvent(DRIVE_COMMAND_EVENT, { detail: command }));
@@ -68,12 +72,13 @@ function NewMenu({ compact }: { compact: boolean }) {
 				<button
 					type="button"
 					aria-label="New"
+					// Zero's "New email": a full-width muted button rather than a floating card.
 					className={clsx(
-						"mb-3 flex h-12 items-center gap-3 rounded-2xl bg-white text-sm font-medium text-neutral-800 shadow-sm ring-1 ring-neutral-200 transition-shadow hover:shadow-md",
-						compact ? "mx-auto w-12 justify-center" : "ml-3 w-fit px-5",
+						"mb-2 flex h-9 items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-neutral-100 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-200 max-md:min-h-11",
+						compact ? "mx-auto w-10 px-0" : "ml-3 w-[calc(100%-0.75rem)] px-3",
 					)}
 				>
-					<Plus size={20} />
+					<Plus size={16} />
 					{!compact && "New"}
 				</button>
 			</DropdownMenu.Trigger>
@@ -81,19 +86,19 @@ function NewMenu({ compact }: { compact: boolean }) {
 				<DropdownMenu.Content
 					align="start"
 					sideOffset={6}
-					className="z-[200] min-w-52 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl"
+					className="z-[200] min-w-52 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg"
 				>
 					<DropdownMenu.Item className={menuItemClass} onSelect={() => sendCommand("new-folder")}>
-						<FolderPlus size={18} />
+						<FolderPlus size={16} />
 						New folder
 					</DropdownMenu.Item>
-					<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
+					<DropdownMenu.Separator className="-mx-1 my-1 h-px bg-neutral-200" />
 					<DropdownMenu.Item className={menuItemClass} onSelect={() => sendCommand("upload-files")}>
-						<Upload size={18} />
+						<Upload size={16} />
 						Upload files
 					</DropdownMenu.Item>
 					<DropdownMenu.Item className={menuItemClass} onSelect={() => sendCommand("upload-folder")}>
-						<FolderUp size={18} />
+						<FolderUp size={16} />
 						Upload folder
 					</DropdownMenu.Item>
 				</DropdownMenu.Content>
@@ -117,7 +122,7 @@ function UsageBar({ usage }: { usage: DriveUsage | null }) {
 				className="mb-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-200"
 			>
 				<div
-					className={clsx("h-full rounded-full transition-[width]", percent >= 90 ? "bg-red-500" : "bg-blue-600")}
+					className={clsx("h-full rounded-full transition-[width]", percent >= 90 ? "bg-red-500" : "bg-blue-500")}
 					style={{ width: `${percent}%` }}
 				/>
 			</div>
@@ -128,7 +133,41 @@ function UsageBar({ usage }: { usage: DriveUsage | null }) {
 	);
 }
 
-/** The Drive sidebar: the New menu, the views, and the storage you have used. */
+function DriveNavLink({
+	href,
+	label,
+	icon: Icon,
+	active,
+	compact,
+	onClick,
+}: {
+	href: string;
+	label: string;
+	icon: LucideIcon;
+	active: boolean;
+	compact: boolean;
+	onClick?: () => void;
+}) {
+	return (
+		<Link
+			href={href}
+			onClick={onClick}
+			aria-current={active ? "page" : undefined}
+			aria-label={compact ? label : undefined}
+			title={compact ? label : undefined}
+			className={clsx(
+				"flex h-9 items-center gap-3 rounded-lg text-sm text-neutral-700 transition-colors max-md:min-h-11 max-md:text-base",
+				compact ? "mx-auto w-10 justify-center rounded-full" : "ml-3 px-3",
+				active ? "bg-blue-100 font-medium text-blue-900" : "hover:bg-neutral-200/60 hover:text-neutral-900",
+			)}
+		>
+			<Icon size={16} className="shrink-0" />
+			{!compact && <span className="truncate">{label}</span>}
+		</Link>
+	);
+}
+
+/** The Drive sidebar: the New menu, a way back to the mail, the views, and the storage you have used. */
 export function DriveNav() {
 	const { minimal, mobile, toggle } = useSidebar();
 	const pathname = usePathname();
@@ -143,36 +182,40 @@ export function DriveNav() {
 
 	return (
 		<SidebarScaffold
-			header={<SidebarHeader href="/inbox" />}
+			header={<SidebarAccounts accountMenu={<MailboxSelector placement="sidebar" />} />}
 			footer={
 				<>
 					{!compact && <UsageBar usage={usage} />}
-					<SidebarFooter />
+					<SidebarFooter notices={<DashboardNotices slot="sidebar" />} />
 				</>
 			}
 		>
 			<NewMenu compact={compact} />
+			{/* One click back to the mail, also from the icon rail. */}
+			{!compact && <NavSectionLabel label="Mail" />}
+			<div aria-label="Mail" role="group" className="space-y-px">
+				<DriveNavLink
+					href="/inbox"
+					label="Inbox"
+					icon={Inbox}
+					active={false}
+					compact={compact}
+					onClick={mobile ? toggle : undefined}
+				/>
+			</div>
+			{compact ? <hr className="mx-6 my-2 border-neutral-200/70" /> : <NavSectionLabel label="Drive" />}
 			<div aria-label="Drive" role="group" className="space-y-px">
-				{LINKS.map(({ href, label, icon: Icon, match }) => {
-					const active = match(pathname);
-					return (
-						<Link
-							key={href}
-							href={href}
-							onClick={mobile ? toggle : undefined}
-							aria-current={active ? "page" : undefined}
-							title={compact ? label : undefined}
-							className={clsx(
-								"flex h-9 items-center gap-3 rounded-lg text-sm text-neutral-700 transition-colors max-md:min-h-11 max-md:text-base",
-								compact ? "mx-auto w-10 justify-center rounded-full" : "rounded-l-none rounded-r-full pl-6 pr-3",
-								active ? "bg-blue-100 font-semibold text-blue-900" : "hover:bg-neutral-200/60",
-							)}
-						>
-							<Icon size={16} className="shrink-0" />
-							{!compact && <span className="truncate">{label}</span>}
-						</Link>
-					);
-				})}
+				{LINKS.map(({ href, label, icon, match }) => (
+					<DriveNavLink
+						key={href}
+						href={href}
+						label={label}
+						icon={icon}
+						active={match(pathname)}
+						compact={compact}
+						onClick={mobile ? toggle : undefined}
+					/>
+				))}
 			</div>
 		</SidebarScaffold>
 	);

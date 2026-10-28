@@ -7,6 +7,7 @@ import AwsCredentialsPanel from "./AwsCredentialsPanel";
 import ResendKeyRow from "./ResendKeyRow";
 import { requestJson, runReceivingSetup } from "./api";
 import { StatusRow } from "./status-row";
+import { ROW_BUTTON_CLASS } from "./utils";
 
 type ViewResponse = {
 	credentials?: boolean;
@@ -131,7 +132,13 @@ export default function ReceivingProviderConfig({ domainId, provider, onReady }:
 				<div className="flex flex-wrap items-center justify-between gap-2">
 					<p className="text-xs text-neutral-500">{COPY[provider].hint}</p>
 					<span className="flex gap-2">
-						<Button size="sm" variant="outline" className="bg-white" disabled={busy || loading} onClick={refresh}>
+						<Button
+							size="sm"
+							variant="outline"
+							className={ROW_BUTTON_CLASS}
+							disabled={busy || loading}
+							onClick={refresh}
+						>
 							{loading ? "Checking…" : "Check again"}
 						</Button>
 						{needsSetup && (

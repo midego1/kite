@@ -15,7 +15,7 @@ export function SearchDropdown({ sections, activeKey, onPick }: SearchDropdownPr
 			role="listbox"
 			aria-label="Search results"
 			data-testid="search-dropdown"
-			className="absolute inset-x-0 top-full z-50 mt-2 max-h-96 overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-2 text-neutral-800 shadow-lg"
+			className="absolute inset-x-0 top-full z-50 mt-1 max-h-96 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 text-neutral-800 shadow-lg"
 		>
 			{sections.map((section) => (
 				<div key={section.id} role="group" aria-label={section.label} data-search-section={section.id}>

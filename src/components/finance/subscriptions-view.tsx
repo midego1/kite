@@ -14,6 +14,8 @@ import { SubscriptionTotals } from "./subscription-totals";
 import type { StatusFilter, SubscriptionGroups, SubscriptionItem } from "./subscriptions-types";
 import { groupSubscriptions, visibleSections } from "./subscriptions-utils";
 import { useSubscriptionDetail, useSubscriptionList, viewerLocale, viewerToday } from "./use-subscriptions";
+import { EmptyState, PanelHeader } from "@/components/ui/page";
+import { CARD_CLASS } from "@/components/ui/page-utils";
 
 const FILTERS: { value: StatusFilter; label: string }[] = [
 	{ value: "current", label: "Active and trials" },
@@ -24,10 +26,10 @@ const FILTERS: { value: StatusFilter; label: string }[] = [
 function Section({ id, title, count, children }: { id: string; title: string; count: number; children: ReactNode }) {
 	return (
 		<section aria-labelledby={`finance-section-${id}`} data-finance-section={id}>
-			<h2 id={`finance-section-${id}`} className="mb-2 px-1 text-sm font-semibold text-neutral-700">
+			<h2 id={`finance-section-${id}`} className="mb-2 px-1 text-xs font-medium text-neutral-500">
 				{title} <span className="font-normal text-neutral-500">{count}</span>
 			</h2>
-			<ul className="divide-y divide-neutral-100 overflow-hidden rounded-3xl bg-white">{children}</ul>
+			<ul className={`divide-y divide-neutral-200 overflow-hidden ${CARD_CLASS}`}>{children}</ul>
 		</section>
 	);
 }
@@ -55,14 +57,14 @@ function EndedSection({
 					aria-expanded={expanded}
 					disabled={filter === "ended"}
 					onClick={() => setOpen((current) => !current)}
-					className="flex items-center gap-1 rounded text-sm font-semibold text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+					className="flex items-center gap-1 rounded text-xs font-medium text-neutral-500 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 				>
 					<ChevronDown aria-hidden className={cn("h-4 w-4 transition-transform", !expanded && "-rotate-90")} />
 					Cancelled and expired <span className="font-normal text-neutral-500">{items.length}</span>
 				</button>
 			</h2>
 			{expanded && (
-				<ul className="divide-y divide-neutral-100 overflow-hidden rounded-3xl bg-white">
+				<ul className={`divide-y divide-neutral-200 overflow-hidden ${CARD_CLASS}`}>
 					{items.map((item) => (
 						<SubscriptionRow key={item.id} item={item} {...rowProps} />
 					))}
@@ -145,69 +147,80 @@ export function SubscriptionsView() {
 	};
 
 	return (
-		<div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-8" data-finance-page>
-			<header className="flex flex-wrap items-center gap-3">
-				<WalletCards className="size-6 text-blue-600" aria-hidden />
-				<h1 className="mr-auto text-2xl font-semibold text-neutral-900 md:text-3xl">Subscriptions</h1>
-				<Select
-					aria-label="Show"
-					containerClassName="flex h-9 text-sm"
-					value={filter}
-					onChange={(event) => setFilter(event.target.value as StatusFilter)}
-				>
-					{FILTERS.map((option) => (
-						<option key={option.value} value={option.value}>
-							{option.label}
-						</option>
-					))}
-				</Select>
-				<Button type="button" className={mobilePrimaryActionClass} onClick={() => setEditing(null)}>
-					<Plus aria-hidden className="h-4 w-4" />
-					Add subscription
-				</Button>
-			</header>
-
-			{error && (
-				<p role="alert" className="text-sm text-red-600">
-					{error}
-				</p>
-			)}
-			{list?.migrationPending && (
-				<p className="rounded-3xl bg-white p-5 text-sm text-neutral-600">
-					The database update for Money Watch has not been applied yet.
-				</p>
-			)}
-			{list && !list.migrationPending && (
-				<>
-					<SubscriptionTotals totals={list.totals} items={items} locale={locale} />
-					{items.length === 0 && (
-						<p className="rounded-3xl bg-white p-6 text-sm text-neutral-600">
-							Money Watch lists the subscriptions you track here, with their renewals and documents. Track one from a
-							receipt, or add it by hand.
-						</p>
-					)}
-					<SubscriptionSections items={items} groups={groups} filter={filter} rowProps={rowProps} />
-				</>
-			)}
-
-			<SubscriptionDrawer
-				state={drawer}
-				today={today}
-				locale={locale}
-				onClose={() => router.replace("/finance", { scroll: false })}
-				onEdit={(item) => setEditing(item)}
-				onChanged={reload}
+		<div className="flex min-h-full flex-col" data-finance-page>
+			<PanelHeader
+				icon={WalletCards}
+				title="Subscriptions"
+				actions={
+					<>
+						<Select
+							aria-label="Show"
+							containerClassName="flex h-8 text-sm"
+							value={filter}
+							onChange={(event) => setFilter(event.target.value as StatusFilter)}
+						>
+							{FILTERS.map((option) => (
+								<option key={option.value} value={option.value}>
+									{option.label}
+								</option>
+							))}
+						</Select>
+						<Button type="button" size="sm" className="h-8 text-sm max-md:hidden" onClick={() => setEditing(null)}>
+							<Plus aria-hidden className="h-4 w-4" />
+							Add subscription
+						</Button>
+					</>
+				}
 			/>
-			<SubscriptionDialog
-				item={adding ? null : (editing ?? null)}
-				open={dialogOpen}
-				onOpenChange={(open) => {
-					if (open) return;
-					setEditing(undefined);
-					if (adding) router.replace(openId ? `/finance?subscription=${encodeURIComponent(openId)}` : "/finance");
-				}}
-				onChanged={reload}
-			/>
+			{/* On phones the button floats over the page, outside the sticky title bar so no layer covers it. */}
+			<Button type="button" className={cn("md:hidden", mobilePrimaryActionClass)} onClick={() => setEditing(null)}>
+				<Plus aria-hidden className="h-4 w-4" />
+				Add subscription
+			</Button>
+			<div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-8">
+				{error && (
+					<p role="alert" className="text-sm text-red-600">
+						{error}
+					</p>
+				)}
+				{list?.migrationPending && (
+					<p className={`${CARD_CLASS} p-5 text-sm text-neutral-600`}>
+						The database update for Money Watch has not been applied yet.
+					</p>
+				)}
+				{list && !list.migrationPending && (
+					<>
+						<SubscriptionTotals totals={list.totals} items={items} locale={locale} />
+						{items.length === 0 && (
+							<EmptyState
+								icon={WalletCards}
+								title="No subscriptions yet"
+								description="Money Watch lists the subscriptions you track here, with their renewals and documents. Track one from a receipt, or add it by hand."
+							/>
+						)}
+						<SubscriptionSections items={items} groups={groups} filter={filter} rowProps={rowProps} />
+					</>
+				)}
+
+				<SubscriptionDrawer
+					state={drawer}
+					today={today}
+					locale={locale}
+					onClose={() => router.replace("/finance", { scroll: false })}
+					onEdit={(item) => setEditing(item)}
+					onChanged={reload}
+				/>
+				<SubscriptionDialog
+					item={adding ? null : (editing ?? null)}
+					open={dialogOpen}
+					onOpenChange={(open) => {
+						if (open) return;
+						setEditing(undefined);
+						if (adding) router.replace(openId ? `/finance?subscription=${encodeURIComponent(openId)}` : "/finance");
+					}}
+					onChanged={reload}
+				/>
+			</div>
 		</div>
 	);
 }

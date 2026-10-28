@@ -26,6 +26,37 @@ export function PageHeader({
 	);
 }
 
+/**
+ * The top bar of a page that fills one panel (For you, Money Watch, Drive): the title and the page's actions in
+ * a 56 px bar, the height of the inbox list and reader headers. It stays put while the page scrolls.
+ */
+export function PanelHeader({
+	title,
+	icon: Icon,
+	actions,
+	className,
+}: {
+	title: ReactNode;
+	icon?: LucideIcon;
+	actions?: ReactNode;
+	className?: string;
+}) {
+	return (
+		<header
+			data-panel-header
+			className={cn(
+				"sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-4 max-md:px-3",
+				className,
+			)}
+		>
+			{/* The accent: near-black (white in dark mode) in Kite, blue or indigo in Classic and Kite classic. */}
+			{Icon && <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-blue-600" />}
+			<h1 className="min-w-0 flex-1 truncate text-base font-medium text-neutral-900">{title}</h1>
+			{actions && <div className="flex min-w-0 shrink items-center justify-end gap-2">{actions}</div>}
+		</header>
+	);
+}
+
 /** A titled group of settings on a page: a muted heading and line, then its cards. */
 export function PageSection({
 	title,

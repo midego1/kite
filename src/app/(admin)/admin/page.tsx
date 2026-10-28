@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminDatabaseSizeCard } from "@/components/admin-database-size-card";
 import { AdminUpdateCard } from "@/components/admin-update-card";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
@@ -12,7 +13,12 @@ export default function AdminSettingsPage() {
 				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Admin settings</h1>
 				<p className="mt-2 text-sm text-neutral-500">Manage workspace-level mail infrastructure and integrations.</p>
 			</div>
-			{user?.isPrimaryAdmin && <AdminUpdateCard />}
+			{user?.isPrimaryAdmin && (
+				<div className="space-y-6">
+					<AdminDatabaseSizeCard />
+					<AdminUpdateCard />
+				</div>
+			)}
 		</div>
 	);
 }

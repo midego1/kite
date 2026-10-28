@@ -185,6 +185,10 @@ test("an install whose owner never chose is told first in Admin, and Turn off is
 	const startDay = expectedStartDay();
 	await expect(notice).toContainText(noticeText(startDay));
 	await expect(notice).toContainText("Nothing has been sent yet.");
+	// One notice: the full one above the Admin page, not also the short one in the sidebar.
+	await expect(notice).toHaveCount(1);
+	await expect(page.getByTestId("kite-page-panel").getByRole("region", { name: NOTICE })).toHaveCount(1);
+	await expect(page.getByTestId("kite-sidebar-panel").getByRole("region", { name: NOTICE })).toHaveCount(0);
 	await expect(notice.getByRole("link", { name: "Exactly what is sent" })).toHaveAttribute("href", "/general");
 	// Turn off and Keep on look the same.
 	const buttonClass = (name: string) => notice.getByRole("button", { name }).getAttribute("class");
@@ -225,6 +229,16 @@ test("an install whose owner never chose is told first in Admin, and Turn off is
 	await gotoAndWaitForStatus(page, "/inbox");
 	await expect(page.getByRole("region", { name: NOTICE })).toHaveCount(0);
 	expect(errors).toEqual([]);
+});
+
+test("Settings shows the short notice once, in the sidebar", async ({ page }) => {
+	forgetChoice();
+	await page.goto("/settings/appearance");
+	const notice = page.getByRole("region", { name: NOTICE });
+	await expect(notice).toContainText(noticeText(expectedStartDay()));
+	await expect(notice).toHaveCount(1);
+	await expect(page.getByTestId("kite-sidebar-panel").getByRole("region", { name: NOTICE })).toHaveCount(1);
+	forgetChoice();
 });
 
 test("the sidebar notice: Hide keeps the start day, Keep on starts at once, the start day turns it on", async ({

@@ -26,9 +26,9 @@ function HideButton({ label, onClick, disabled }: { label: string; onClick: () =
 
 /**
  * Tells the primary admin of an install that never chose (an upgrade, or a setup without the switch) that usage
- * statistics start on the start day unless they turn them off. Shown until they choose or hide it, first in the
- * sidebar notice slot and above the admin pages; the start day is fixed only once the notice is on screen, and
- * hiding it keeps that day.
+ * statistics start on the start day unless they turn them off. Shown until they choose or hide it, in one place per
+ * page: the sidebar notice slot in the mail views and Settings, and above the page on Admin (whose frame then leaves
+ * the sidebar one out). The start day is fixed only once the notice is on screen, and hiding it keeps that day.
  */
 export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
 	const { startDay, unseen, markShown, save } = useTelemetryNotice();

@@ -1,5 +1,5 @@
 import { SOURCE_CODE_URL } from "@/lib/source-code";
-import { TELEMETRY_OPERATOR, telemetryDayLabel } from "./telemetry-utils";
+import { telemetryDayLabel } from "./telemetry-utils";
 import type { SetupTelemetryStatus, TelemetryStatus } from "./types";
 
 /** The privacy page's section on usage statistics, linked from setup, the notice and Admin → General. */
@@ -30,10 +30,11 @@ export function telemetrySwitchOn(status: TelemetryStatus | null): boolean {
 }
 
 /** The details under the notice's lead sentence, on the admin pages. */
-export const TELEMETRY_NOTICE_DETAIL = `Once a day, around 02:00 UTC, it would send ${TELEMETRY_OPERATOR}, who runs the Kite project, one small pseudonymous report: ranges, never exact numbers, and no names, email addresses, domains or message content. Nothing has been sent yet. Keep on starts with the next daily report; Turn off means nothing is ever sent.`;
+export const TELEMETRY_NOTICE_DETAIL = `The only purpose is to see how many active Kite installs there are, out of interest, and nothing else. Once a day, around 02:00 UTC, it would send the Kite project one small pseudonymous report: ranges, never exact numbers, and no names, email addresses, domains or message content. Nothing has been sent yet. Keep on starts with the next daily report; Turn off means nothing is ever sent.`;
 
 /** The sidebar notice's second line. */
-export const TELEMETRY_NOTICE_SHORT = `One pseudonymous daily report, ranges only, to the Kite project run by ${TELEMETRY_OPERATOR}.`;
+export const TELEMETRY_NOTICE_SHORT =
+	"Only to see how many active Kite installs there are, out of interest, and nothing else. One pseudonymous daily report, ranges only.";
 
 /** The notice's close button: hiding it is not a choice, and the date still holds. */
 export function telemetryHideLabel(startDay: string): string {

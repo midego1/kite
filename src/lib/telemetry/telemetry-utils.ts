@@ -14,14 +14,13 @@ const TELEMETRY_SCHEMA_VERSION = 2;
 
 /**
  * Where heartbeats go unless `KITE_TELEMETRY_URL` is set: the collector in `deploy/telemetry-collector/`, run by
- * Michiel de Gooijer (midego) on Cloudflare. Nothing else is ever contacted for statistics.
+ * the Kite project on Cloudflare. Nothing else is ever contacted for statistics.
  */
 export const DEFAULT_TELEMETRY_URL = "https://kite-telemetry.midego.net/v1/heartbeat";
 /** The default collector's public totals (no install ids), so anyone can see what the reports add up to. */
 export const TELEMETRY_SUMMARY_URL = "https://kite-telemetry.midego.net/v1/summary";
 
-/** Who runs the default collector and where data requests go, as the card and the docs name them. */
-export const TELEMETRY_OPERATOR = "Michiel de Gooijer (midego)";
+/** Where data requests about the default collector go, as the card and the setup name it. */
 export const TELEMETRY_PRIVACY_CONTACT = "privacy@midego.net";
 
 /** Audit actions of the owner's choice, listed in Admin → Activity. */

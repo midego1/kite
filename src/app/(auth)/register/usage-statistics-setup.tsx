@@ -3,12 +3,7 @@
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { TELEMETRY_DOCS_URL, usageStatisticsSetupHint } from "@/lib/telemetry/notice-utils";
-import {
-	DEFAULT_TELEMETRY_URL,
-	TELEMETRY_FIELDS,
-	TELEMETRY_OPERATOR,
-	TELEMETRY_PRIVACY_CONTACT,
-} from "@/lib/telemetry/telemetry-utils";
+import { DEFAULT_TELEMETRY_URL, TELEMETRY_FIELDS, TELEMETRY_PRIVACY_CONTACT } from "@/lib/telemetry/telemetry-utils";
 import type { SetupTelemetryStatus } from "@/lib/telemetry/types";
 
 const LINK = "text-blue-600 underline underline-offset-2";
@@ -40,9 +35,9 @@ export function UsageStatisticsSetup({
 				Usage statistics
 			</h2>
 			<p>
-				Kite sends the Kite project one small report a day, around 02:00 UTC, so it can see how many installs are in
-				use. It is on unless you turn it off here, and you can change it later under Admin → General. Nothing is sent
-				before you finish setup.
+				Kite sends the Kite project one small report a day, around 02:00 UTC. The only purpose is to see how many active
+				Kite installs there are, out of interest, and nothing else. It is on unless you turn it off here, and you can
+				change it later under Admin → General. Nothing is sent before you finish setup.
 			</p>
 			<p>
 				The report holds ranges, never exact numbers, and no names, email addresses, domains or message content. It is
@@ -63,8 +58,8 @@ export function UsageStatisticsSetup({
 			<p>
 				{endpoint === null || endpoint === DEFAULT_TELEMETRY_URL ? (
 					<>
-						Reports go to <code>kite-telemetry.midego.net</code>, run by {TELEMETRY_OPERATOR}. Daily reports are kept
-						for 90 days, then only totals without the install ID. Questions and data requests:{" "}
+						Reports go to <code>kite-telemetry.midego.net</code>, run by the Kite project. Daily reports are kept for 90
+						days, then only totals without the install ID. Questions and data requests:{" "}
 						<a href={`mailto:${TELEMETRY_PRIVACY_CONTACT}`} className={LINK}>
 							{TELEMETRY_PRIVACY_CONTACT}
 						</a>

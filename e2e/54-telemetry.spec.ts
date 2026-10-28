@@ -120,11 +120,13 @@ test("the first-run setup explains usage statistics and its switch is on until t
 			"pseudonymous, not anonymous",
 			"CF-Worker",
 			"kite-telemetry.midego.net",
-			"Michiel de Gooijer (midego)",
+			"run by the Kite project",
+			"The only purpose is to see how many active Kite installs there are, out of interest, and nothing else.",
 			"kept for 90 days, then only totals without the install ID",
 			"privacy@midego.net",
 		])
 			await expect(section).toContainText(text);
+		await expect(section).not.toContainText(/Michiel|Gooijer|\(midego\)/);
 		await expect(section.getByRole("link", { name: "Read the privacy page" })).toHaveAttribute(
 			"href",
 			/docs\/privacy\.md#usage-statistics$/,
@@ -250,8 +252,9 @@ test("the sidebar notice: Hide keeps the start day, Keep on starts at once, the 
 	const startDay = expectedStartDay();
 	await expect(notice).toContainText(noticeText(startDay));
 	await expect(notice).toContainText(
-		"One pseudonymous daily report, ranges only, to the Kite project run by Michiel de Gooijer (midego).",
+		"Only to see how many active Kite installs there are, out of interest, and nothing else. One pseudonymous daily report, ranges only.",
 	);
+	await expect(notice).not.toContainText(/Michiel|Gooijer|\(midego\)/);
 	await expect.poll(async () => (await telemetryStatus()).startDay).toBe(startDay);
 	await notice.getByRole("button", { name: `Hide (statistics still start on ${dayLabel(startDay)} UTC)` }).click();
 	await expect(notice).toHaveCount(0);
@@ -296,6 +299,10 @@ test("the owner turns usage statistics on and off in Admin General; nobody else 
 	await expect(card).toContainText("KITE_TELEMETRY=0");
 	await expect(card).toContainText("CF-Worker");
 	await expect(card).toContainText("pseudonymous");
+	await expect(card).toContainText(
+		"The only purpose is to see how many active Kite installs there are, out of interest, and nothing else.",
+	);
+	await expect(card).not.toContainText(/Michiel|Gooijer|\(midego\)/);
 	const toggle = card.getByRole("switch", { name: SWITCH });
 	await expect(toggle).toHaveAttribute("aria-checked", "false");
 	const before = await auditCounts();

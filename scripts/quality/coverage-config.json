@@ -160,6 +160,7 @@
 		"src/lib/maintenance/pruning-utils.ts",
 		"src/lib/messages/cursor-utils.ts",
 		"src/lib/messages/detail-cache-utils.ts",
+		"src/lib/messages/draft-privacy-utils.ts",
 		"src/lib/messages/permanent-delete-utils.ts",
 		"src/lib/messages/thread-unread-utils.ts",
 		"src/lib/modules/admin-utils.ts",

@@ -54,8 +54,8 @@ export default function ModulesPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Modules</h1>
-				<p className="mt-2 text-sm text-neutral-500">
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Modules</h1>
+				<p className="mt-1 text-sm text-neutral-500">
 					Turn optional parts of Kite on or off for everyone. Turning a module off hides it and removes what it adds,
 					and keeps its data.
 				</p>
@@ -64,7 +64,7 @@ export default function ModulesPage() {
 				</p>
 			</div>
 			{view?.migrationPending && (
-				<p role="status" className="rounded-3xl bg-blue-50 p-6 text-sm font-medium text-blue-900">
+				<p role="status" className="rounded-xl bg-blue-50 p-6 text-sm font-medium text-blue-900">
 					Apply the pending database update to manage modules. Every module stays on until then.
 				</p>
 			)}
@@ -74,7 +74,7 @@ export default function ModulesPage() {
 				</p>
 			)}
 			{modules.isLoading &&
-				Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-40 w-full rounded-3xl" />)}
+				Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-40 w-full rounded-xl" />)}
 			{view?.modules.map((entry) => (
 				<ModuleCard
 					key={entry.id}
@@ -84,7 +84,7 @@ export default function ModulesPage() {
 					onToggle={(item, enabled) => void toggle(item, enabled)}
 				/>
 			))}
-			<section aria-labelledby="core-areas" className="rounded-3xl bg-white p-6">
+			<section aria-labelledby="core-areas" className="rounded-xl border border-neutral-200 bg-white p-5">
 				<h2 id="core-areas" className="text-lg font-semibold text-neutral-900">
 					Always on
 				</h2>

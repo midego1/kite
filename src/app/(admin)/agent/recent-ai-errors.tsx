@@ -51,8 +51,8 @@ export function RecentAiErrors() {
 	}, [load]);
 
 	return (
-		<Card className="rounded-3xl border-0 bg-white p-6" role="region" aria-label="Recent AI errors">
-			<CardHeader className="py-0">
+		<Card role="region" aria-label="Recent AI errors">
+			<CardHeader>
 				<div className="flex items-start justify-between gap-4">
 					<div>
 						<CardTitle className="flex items-center gap-2">
@@ -70,7 +70,7 @@ export function RecentAiErrors() {
 					</Button>
 				</div>
 			</CardHeader>
-			<CardContent className="pt-5">
+			<CardContent className="pt-4">
 				{error && (
 					<p role="alert" className="text-sm text-red-700">
 						{error}
@@ -79,7 +79,7 @@ export function RecentAiErrors() {
 				{!error && rows === null && <p className="text-sm text-neutral-500">Loading…</p>}
 				{!error && rows?.length === 0 && <p className="text-sm text-neutral-500">No AI errors recorded.</p>}
 				{!!rows?.length && (
-					<ul className="divide-y divide-neutral-100 text-sm">
+					<ul className="divide-y divide-neutral-200 text-sm">
 						{rows.map((row) => (
 							<li key={row.id} data-ai-error-row={row.code} className="space-y-0.5 py-3">
 								<div className="flex flex-wrap items-baseline gap-x-2">

@@ -12,6 +12,7 @@ import {
 	getActivityMetadata,
 	isModuleActivity,
 } from "./utils";
+import { TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 
 export default function ActivityPage() {
 	const activity = useQuery({
@@ -22,13 +23,18 @@ export default function ActivityPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Activity</h1>
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Activity</h1>
 				<p className="mt-1 text-sm text-neutral-500">Sign-ins, sign-outs and module changes across user accounts.</p>
 			</div>
 
-			<section role="region" tabIndex={0} aria-label="Activity" className="overflow-x-auto rounded-3xl bg-white">
-				<table className="w-full min-w-[760px] table-fixed text-left">
-					<thead className="border-b border-neutral-100 bg-neutral-50 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+			<section
+				role="region"
+				tabIndex={0}
+				aria-label="Activity"
+				className="overflow-x-auto rounded-xl border border-neutral-200 bg-white"
+			>
+				<table className="w-full min-w-[760px] table-fixed text-left text-sm">
+					<thead className={TABLE_HEAD_CLASS}>
 						<tr>
 							<th scope="col" className="w-40 px-5 py-3">
 								Activity
@@ -44,7 +50,7 @@ export default function ActivityPage() {
 							</th>
 						</tr>
 					</thead>
-					<tbody className="divide-y divide-neutral-100">
+					<tbody className="divide-y divide-neutral-200">
 						{activity.isLoading &&
 							Array.from({ length: 7 }, (_, index) => (
 								<tr key={index}>

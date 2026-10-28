@@ -59,12 +59,12 @@ export default function AccountDetailsPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Details</h1>
-				<p className="mt-2 text-sm text-neutral-500">Update this account&apos;s profile and status.</p>
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Details</h1>
+				<p className="mt-1 text-sm text-neutral-500">Update this account&apos;s profile and status.</p>
 			</div>
-			<section className="space-y-5 rounded-3xl bg-white p-6">
+			<section className="space-y-5 rounded-xl border border-neutral-200 bg-white p-5">
 				{!account.editable && (
-					<p className="rounded-2xl bg-neutral-50 p-4 text-sm text-neutral-500">
+					<p className="rounded-lg bg-neutral-50 p-4 text-sm text-neutral-500">
 						You do not have permission to edit this account. Only the primary admin can manage admin accounts.
 					</p>
 				)}
@@ -121,7 +121,7 @@ export default function AccountDetailsPage() {
 						Incoming mail will also be sent to this verified Cloudflare Email Routing destination.
 					</p>
 				</div>
-				<div className="flex items-center justify-between gap-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+				<div className="flex items-center justify-between gap-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
 					<div className="space-y-1">
 						<Label htmlFor="account-enabled" className="font-semibold text-neutral-900">
 							Account enabled

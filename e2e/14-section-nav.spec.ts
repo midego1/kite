@@ -87,8 +87,11 @@ async function signInFresh(browser: Browser, email: string) {
 	return { context, page };
 }
 
+// The page search heads the Settings or Admin menu panel, where the list panel has its mail search.
 function pageSearch(page: Page, mode: "settings" | "admin" = "settings"): Locator {
-	return page.getByRole("banner").getByRole("combobox", { name: `Search ${mode}` });
+	return page
+		.getByRole("complementary", { name: mode === "settings" ? "Settings menu" : "Admin menu" })
+		.getByRole("combobox", { name: `Search ${mode}` });
 }
 
 function pageResults(page: Page): Locator {
@@ -149,7 +152,7 @@ test("an admin's Settings menu has the mode switch and only the Personal, Securi
 		await expect(menu.getByRole("navigation").locator(`a[href="${href}"]`)).toHaveCount(0);
 });
 
-test("the top-bar search finds admin pages from Settings and can be cleared", async ({ page }) => {
+test("the menu search finds admin pages from Settings and can be cleared", async ({ page }) => {
 	await page.goto("/settings/account");
 	const menu = settingsMenu(page);
 	const field = pageSearch(page);
@@ -185,7 +188,7 @@ test("the top-bar search finds admin pages from Settings and can be cleared", as
 	await expect(pageResults(page)).toBeHidden();
 });
 
-test("the top-bar results work from the keyboard", async ({ page }) => {
+test("the menu search results work from the keyboard", async ({ page }) => {
 	await page.goto("/settings/account");
 	const field = pageSearch(page);
 	await search(page, "a");
@@ -233,7 +236,7 @@ test("clicking a result opens it and closes the list", async ({ page }) => {
 	await expect(pageResults(page)).toBeHidden();
 });
 
-test("the / shortcut focuses the top-bar search on Settings and Admin pages", async ({ page }) => {
+test("the / shortcut focuses the menu search on Settings and Admin pages", async ({ page }) => {
 	for (const [path, mode] of [
 		["/settings/account", "settings"],
 		["/admin", "admin"],
@@ -258,6 +261,8 @@ test("the switch, search and links work from the keyboard with visible focus", a
 		locator.evaluate((element) => element.matches(":focus-visible") && getComputedStyle(element).boxShadow !== "none");
 
 	await menu.getByRole("link", { name: "Back to inbox" }).focus();
+	await page.keyboard.press("Tab");
+	await expect(pageSearch(page)).toBeFocused();
 	for (const target of [
 		modeSwitch.getByRole("link", { name: "Settings" }),
 		modeSwitch.getByRole("link", { name: "Admin" }),
@@ -276,11 +281,10 @@ test("the switch, search and links work from the keyboard with visible focus", a
 	await page.keyboard.press("Enter");
 	await expect(page).toHaveURL(/\/admin$/);
 
-	// The page search sits in the top bar, before the menu in tab order.
+	// The page search sits at the top of the menu, between Back to inbox and the switch.
 	await adminMenu(page).getByRole("link", { name: "Back to inbox" }).focus();
+	await page.keyboard.press("Tab");
 	const field = pageSearch(page, "admin");
-	for (let step = 0; step < 6 && !(await field.evaluate((element) => element === document.activeElement)); step++)
-		await page.keyboard.press("Shift+Tab");
 	await expect(field).toBeFocused();
 	const pillRing = await field.evaluate((element) => getComputedStyle(element.parentElement!).boxShadow);
 	expect(pillRing).toContain("inset");
@@ -319,7 +323,7 @@ test("a non-primary admin gets the switch but never primary-only pages in search
 	await context.close();
 });
 
-test("admin pages use the Settings layout with the mail sidebar, top bar and Admin menu", async ({ page }) => {
+test("admin pages use the Settings layout with the mail sidebar and the Admin menu panel", async ({ page }) => {
 	await page.goto("/admin");
 	const menu = adminMenu(page);
 	await expectMode(menu, "Admin", "Overview");
@@ -454,7 +458,7 @@ test("the switch follows the URL through browser Back and Forward", async ({ pag
 	await expectMode(adminMenu(page), "Admin", "Domains");
 });
 
-test("the top-bar search on Admin pages finds Settings pages", async ({ page }) => {
+test("the menu search on Admin pages finds Settings pages", async ({ page }) => {
 	await page.goto("/admin");
 	await expect(pageSearch(page, "admin")).toHaveAttribute("placeholder", "Search admin");
 	await search(page, "appearance", "admin");
@@ -465,7 +469,7 @@ test("the top-bar search on Admin pages finds Settings pages", async ({ page }) 
 	await expect(pageSearch(page)).toHaveAttribute("placeholder", "Search settings");
 });
 
-test("the top-bar search on admin pages never searches mail, and the inbox search still does", async ({ page }) => {
+test("the menu search on admin pages never searches mail, and the inbox search still does", async ({ page }) => {
 	await page.goto("/domains");
 	await adminMenu(page).getByRole("link", { name: "Back to inbox" }).click();
 	await expect(page).toHaveURL(/\/inbox$/);
@@ -591,7 +595,7 @@ test.describe("on a phone", () => {
 		await expect(page).toHaveURL(/\/admin$/);
 	});
 
-	test("the sheet keeps its own page search while the top-bar field is hidden", async ({ page }) => {
+	test("the sheet keeps its own page search while the desktop field is hidden", async ({ page }) => {
 		await page.goto("/settings/account");
 		await expect(page.getByRole("combobox", { name: "Search settings" })).toBeHidden();
 		await page.getByRole("button", { name: "My account", exact: true }).click();

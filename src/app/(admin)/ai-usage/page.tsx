@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import type { AiUsageResponse } from "./types";
 import { fetchAiUsage, formatEstimatedUsd, formatTokenCount, formatUsageDate, formatUsageProvider } from "./utils";
 import { UsageChart } from "./usage-chart";
+import { TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 
 export default function AiUsagePage() {
 	const [data, setData] = useState<AiUsageResponse | null>(null);
@@ -31,12 +32,12 @@ export default function AiUsagePage() {
 		<div className="space-y-6">
 			<div className="flex items-start justify-between gap-4">
 				<div>
-					<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">AI Usage</h1>
-					<p className="mt-2 text-sm text-neutral-500">Requests recorded since usage tracking was added.</p>
+					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">AI Usage</h1>
+					<p className="mt-1 text-sm text-neutral-500">Requests recorded since usage tracking was added.</p>
 				</div>
-				<Link href="/agent" className="shrink-0 text-sm font-medium text-blue-700 hover:underline">
-					Back to Agent
-				</Link>
+				<Button asChild variant="outline" className="shrink-0">
+					<Link href="/agent">Back to Agent</Link>
+				</Button>
 			</div>
 			{error && (
 				<p role="alert" className="text-sm text-red-700">
@@ -44,19 +45,19 @@ export default function AiUsagePage() {
 				</p>
 			)}
 			<div className="grid gap-4 sm:grid-cols-3">
-				<section className="rounded-2xl bg-white p-5">
+				<section className="rounded-xl border border-neutral-200 bg-white p-5">
 					<p className="text-sm text-neutral-500">Total tokens</p>
 					<p className="mt-2 text-2xl font-semibold text-neutral-900">
 						{totals ? formatTokenCount(totals.totalTokens) : "—"}
 					</p>
 				</section>
-				<section className="rounded-2xl bg-white p-5">
+				<section className="rounded-xl border border-neutral-200 bg-white p-5">
 					<p className="text-sm text-neutral-500">Total requests</p>
 					<p className="mt-2 text-2xl font-semibold text-neutral-900">
 						{totals ? formatTokenCount(totals.requests) : "—"}
 					</p>
 				</section>
-				<section className="rounded-2xl bg-white p-5">
+				<section className="rounded-xl border border-neutral-200 bg-white p-5">
 					<p className="text-sm text-neutral-500">Estimated spend</p>
 					<p className="mt-2 text-2xl font-semibold text-neutral-900">
 						{totals && totals.pricedRequests ? formatEstimatedUsd(totals.costUsdMicros) : "—"}
@@ -73,11 +74,11 @@ export default function AiUsagePage() {
 				role="region"
 				tabIndex={0}
 				aria-label="AI usage"
-				className="overflow-x-auto rounded-2xl bg-white"
+				className="overflow-x-auto rounded-xl border border-neutral-200 bg-white"
 				aria-busy={loadingPage}
 			>
 				<table className="w-full min-w-[850px] text-left text-sm">
-					<thead className="border-b border-neutral-100 bg-neutral-50 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+					<thead className={TABLE_HEAD_CLASS}>
 						<tr>
 							<th scope="col" className="px-4 py-3">
 								Date & time
@@ -99,7 +100,7 @@ export default function AiUsagePage() {
 							</th>
 						</tr>
 					</thead>
-					<tbody className="divide-y divide-neutral-100">
+					<tbody className="divide-y divide-neutral-200">
 						{data?.rows.map((row) => (
 							<tr key={row.id}>
 								<td className="whitespace-nowrap px-4 py-3 text-neutral-600">{formatUsageDate(row.createdAt)}</td>

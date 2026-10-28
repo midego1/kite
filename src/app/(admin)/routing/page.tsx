@@ -20,16 +20,16 @@ export default function RoutingPage() {
 	return (
 		<div className="space-y-8">
 			<div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Routing</h1>
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Routing</h1>
 				<p className="mt-1 text-sm text-neutral-500">Configure domain-wide delivery, forwarding, and blocking rules.</p>
 			</div>
 
 			<section className="space-y-4">
 				<div>
-					<h2 className="text-xl font-semibold text-neutral-900">Domain</h2>
+					<h2 className="text-base font-semibold text-neutral-900">Domain</h2>
 					<p className="mt-1 text-sm text-neutral-500">Choose which domain these global rules apply to.</p>
 				</div>
-				<div className="rounded-3xl bg-white p-6">
+				<div className="rounded-xl border border-neutral-200 bg-white p-5">
 					{domains.isLoading ? (
 						<Skeleton className="h-10 w-full" />
 					) : domains.isError ? (

@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { STORAGE_STATE } from "./support/constants";
+import { chooseOption } from "./support/select";
 import { apiContext, waitForHydration } from "./support/helpers";
 
 const WEBHOOK_API = "/api/admin/alerts/webhook";
@@ -54,7 +55,7 @@ async function saveReceiver(page: Page) {
 	const input = page.getByLabel("Webhook URL");
 	await expect(input).toBeEnabled();
 	await input.fill(`http://127.0.0.1:${port}/hook`);
-	await page.getByLabel("Format").selectOption({ label: "Generic JSON" });
+	await chooseOption(page.getByLabel("Format"), { label: "Generic JSON" });
 	const saved = page.waitForResponse(
 		(response) => response.url().endsWith(WEBHOOK_API) && response.request().method() === "PUT",
 	);

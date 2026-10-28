@@ -34,7 +34,7 @@ export default function DomainItemCard({
 	const auth = dns?.auth;
 
 	return (
-		<ListRow className="group relative flex-col items-stretch gap-3 max-md:rounded-none max-md:border-b max-md:border-neutral-100 max-md:px-0 max-md:py-4 max-md:last:border-b-0">
+		<ListRow className="group relative flex-col items-stretch gap-3 max-md:rounded-none max-md:border-b max-md:border-neutral-200 max-md:px-0 max-md:py-4 max-md:last:border-b-0">
 			<div className="flex flex-col items-start gap-3 md:flex-row md:gap-4">
 				<span className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100 text-neutral-600">
 					<Globe2 className="h-5 w-5" />

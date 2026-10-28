@@ -111,7 +111,7 @@ export function InboxRules() {
 		<section className="space-y-4">
 			<div className="flex flex-row items-center">
 				<header className="flex-1">
-					<h2 className="text-2xl font-semibold text-neutral-900">Mailbox rules</h2>
+					<h2 className="text-base font-semibold text-neutral-900">Mailbox rules</h2>
 					<p className="mt-1 text-sm text-neutral-500">Applied after delivery.</p>
 				</header>
 
@@ -120,7 +120,7 @@ export function InboxRules() {
 					New rule
 				</Button>
 			</div>
-			<div className="rounded-3xl bg-white p-6">
+			<div className="rounded-xl border border-neutral-200 bg-white p-5">
 				{(rules.data?.rules ?? []).length === 0 && <p className="text-sm text-neutral-500">No rules yet</p>}
 				<div className="space-y-1">
 					{(rules.data?.rules ?? []).map((rule) => (

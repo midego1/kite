@@ -17,6 +17,7 @@ import {
 	saveAlertWebhook,
 	sendTestAlert,
 } from "./utils";
+import { Select } from "@/components/ui/select";
 
 type Notice = { tone: "ok" | "error"; text: string };
 
@@ -99,14 +100,14 @@ export default function AlertsSettingsPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Alerts</h1>
-				<p className="mt-2 text-sm text-neutral-500">
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Alerts</h1>
+				<p className="mt-1 text-sm text-neutral-500">
 					Kite checks for failed backups, failed or stuck outbound mail and exhausted webhook retries every five
 					minutes.
 				</p>
 			</div>
-			<Card className="rounded-3xl border-0 bg-white p-6">
-				<CardHeader className="py-0">
+			<Card>
+				<CardHeader>
 					<CardTitle>Email</CardTitle>
 				</CardHeader>
 				<CardContent className="pt-4">
@@ -120,8 +121,8 @@ export default function AlertsSettingsPage() {
 					</p>
 				</CardContent>
 			</Card>
-			<Card className="rounded-3xl border-0 bg-white p-6">
-				<CardHeader className="py-0">
+			<Card>
+				<CardHeader>
 					<CardTitle>Webhook</CardTitle>
 				</CardHeader>
 				<CardContent className="pt-4">
@@ -154,9 +155,10 @@ export default function AlertsSettingsPage() {
 						</div>
 						<div className="space-y-2">
 							<Label htmlFor="alert-webhook-kind">Format</Label>
-							<select
+							<Select
 								id="alert-webhook-kind"
-								className="flex h-10 w-full max-w-60 rounded-md border border-neutral-200 bg-transparent px-3 text-sm text-neutral-900 shadow-sm shadow-neutral-200/50 focus-visible:border-blue-600 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+								containerClassName="flex h-10 w-full max-w-60"
+								className="text-sm"
 								value={kind}
 								disabled={!loaded || busy}
 								onChange={(event) => setKind(event.target.value as AlertWebhookKindSetting)}
@@ -166,7 +168,7 @@ export default function AlertsSettingsPage() {
 										{option.label}
 									</option>
 								))}
-							</select>
+							</Select>
 							{saved?.kind === "auto" && saved.effectiveKind && (
 								<p className="text-sm text-neutral-500">Detected format: {kindLabel(saved.effectiveKind)}</p>
 							)}
@@ -177,7 +179,7 @@ export default function AlertsSettingsPage() {
 								className={
 									notice.tone === "ok"
 										? "rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800"
-										: "rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700"
+										: "rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
 								}
 							>
 								{notice.text}

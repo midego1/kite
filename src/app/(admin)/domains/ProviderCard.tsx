@@ -29,7 +29,7 @@ export default function ProviderCard({
 	cleanup,
 }: Props) {
 	return (
-		<li className="rounded-xl bg-neutral-50 px-4 py-3 text-sm">
+		<li className="rounded-lg bg-neutral-50 px-4 py-3 text-sm">
 			<div className="flex items-center justify-between gap-3">
 				{ok !== null &&
 					(ok ? (

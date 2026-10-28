@@ -91,15 +91,15 @@ export function AutoReadAdminSettings() {
 
 	const locked = !values || busy;
 	return (
-		<Card className="rounded-3xl border-0 bg-white p-6">
-			<CardHeader className="py-0">
+		<Card>
+			<CardHeader>
 				<CardTitle>Automatic reading</CardTitle>
 				<CardDescription>
 					Mailboxes that turn on automatic reading have new mail read by the assistant, which suggests summaries,
 					replies and warnings. Nothing is sent or changed without a person accepting it.
 				</CardDescription>
 			</CardHeader>
-			<CardContent className="space-y-5 pt-6">
+			<CardContent className="space-y-5 pt-4">
 				<SwitchRow
 					title="Enable automatic reading"
 					description="Turning this off stops all automatic reading at once and skips queued work."

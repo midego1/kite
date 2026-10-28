@@ -45,7 +45,7 @@ export function MessageDetailSkeleton() {
 
 export function TableSkeleton() {
 	return (
-		<div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+		<div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
 			<Skeleton className="h-10 w-full rounded-none" />
 			<SkeletonRows count={6} />
 		</div>
@@ -56,7 +56,7 @@ export function CardGridSkeleton() {
 	return (
 		<div className="grid gap-3 md:grid-cols-2">
 			{Array.from({ length: 4 }, (_, index) => (
-				<div key={index} className="flex min-h-24 items-start gap-3 rounded-lg border border-neutral-200 bg-white p-4">
+				<div key={index} className="flex min-h-24 items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4">
 					<Skeleton className="h-10 w-10 shrink-0 rounded-lg" />
 					<div className="min-w-0 flex-1 space-y-2">
 						<Skeleton className="h-4 w-2/5" />
@@ -71,7 +71,7 @@ export function CardGridSkeleton() {
 
 export function SectionRowSkeleton() {
 	return (
-		<div className="flex min-h-20 items-center gap-4 rounded-3xl bg-white px-5 py-4">
+		<div className="flex min-h-20 items-center gap-4 rounded-xl border border-neutral-200 bg-white px-4 py-3.5">
 			<Skeleton className="h-10 w-10 shrink-0 rounded-full" />
 			<div className="min-w-0 flex-1 space-y-2">
 				<Skeleton className="h-4 w-2/5 max-w-48" />

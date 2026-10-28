@@ -10,8 +10,8 @@ export function DriveSettingsView() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl md:text-3xl font-medium text-neutral-900">Drive</h1>
-				<p className="mt-2 text-sm text-neutral-500">
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Drive</h1>
+				<p className="mt-1 text-sm text-neutral-500">
 					Set how much each account can store, how long public links may last and how long the trash keeps files. Turn
 					Drive on or off for everyone under Modules, and for one account under Accounts → Permissions.
 				</p>

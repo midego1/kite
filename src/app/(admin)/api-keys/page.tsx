@@ -25,6 +25,7 @@ import type { AdminApiKeyScope } from "@/lib/api/scopes-types";
 import type { ApiKey } from "./types";
 import { ADMIN_KEY_PERMISSIONS, parseApiKeyScopes } from "./utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { EmptyState } from "@/components/ui/page";
 
 export default function ApiKeysPage() {
 	const qc = useQueryClient();
@@ -76,7 +77,7 @@ export default function ApiKeysPage() {
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between gap-4">
-				<h1 className="text-2xl md:text-3xl font-medium">Admin API keys</h1>
+				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Admin API keys</h1>
 				<Dialog
 					open={createOpen}
 					onOpenChange={(open) => {
@@ -201,9 +202,7 @@ export default function ApiKeysPage() {
 					</p>
 				)}
 				{isLoading && <SectionRowSkeleton />}
-				{!isLoading && (data?.apiKeys ?? []).length === 0 && (
-					<p className="rounded-2xl bg-white px-5 py-4 text-sm text-neutral-500">No API keys yet</p>
-				)}
+				{!isLoading && (data?.apiKeys ?? []).length === 0 && <EmptyState icon={KeyRound} title="No API keys yet" />}
 				<List>
 					{(data?.apiKeys ?? []).map((key) => (
 						<ListRow key={key.id} className="px-5 py-4">

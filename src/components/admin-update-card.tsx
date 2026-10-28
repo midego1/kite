@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CheckCircle2, CircleX, Database } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { applyDatabaseMigrations, getMigrationStatus } from "./admin-update-card-utils";
@@ -53,9 +54,9 @@ export function AdminUpdateCard() {
 	const unknown = migrationStatus?.unknown.length ?? 0;
 
 	return (
-		<Card className="rounded-3xl border-0 bg-white p-6">
-			<CardHeader className="flex-row items-center gap-4 space-y-0 py-0">
-				<div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+		<Card>
+			<CardHeader className="flex-row items-center gap-4 space-y-0">
+				<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-[#f6f8fc] text-neutral-600">
 					<Database className="h-5 w-5" />
 				</div>
 				<div>
@@ -65,8 +66,8 @@ export function AdminUpdateCard() {
 					</p>
 				</div>
 			</CardHeader>
-			<CardContent className="space-y-5 pt-5">
-				<div className="divide-y divide-neutral-100 overflow-hidden rounded-2xl border border-neutral-100">
+			<CardContent className="space-y-5 pt-4">
+				<div className="divide-y divide-neutral-200 overflow-hidden rounded-lg border border-neutral-200">
 					{isCheckingMigrations && (
 						<div className="flex items-center gap-3 px-4 py-4">
 							<Skeleton className="h-4 w-4 rounded-full" />
@@ -87,14 +88,15 @@ export function AdminUpdateCard() {
 							<p className="text-sm text-neutral-700">
 								{pending} database {pending === 1 ? "migration is" : "migrations are"} pending.
 							</p>
-							<button
+							<Button
 								type="button"
+								size="sm"
 								onClick={handleMigrate}
 								disabled={isMigrating}
-								className="ml-auto shrink-0 text-sm font-medium text-blue-700 hover:underline disabled:pointer-events-none disabled:opacity-50"
+								className="ml-auto shrink-0"
 							>
 								{isMigrating ? "Updating database..." : "Update database"}
-							</button>
+							</Button>
 						</div>
 					)}
 

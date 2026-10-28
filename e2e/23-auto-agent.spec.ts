@@ -23,6 +23,7 @@ import type { InboundMail } from "./support/helpers-types";
 import { apiContext, deliverInbound, postInbound, signIn, uniqueToken, waitForMessage } from "./support/helpers";
 import { futureAt, inviteAttachment } from "./support/invites";
 import { restoreModules, setModuleState } from "./support/modules";
+import { chooseOption, readOptions } from "./support/select";
 import { readActions, readJobs, readSuggestions, waitForFinishedJob } from "./support/triage";
 
 // Every test snapshots and restores the automatic-reading state in beforeEach
@@ -124,12 +125,14 @@ test("lists Haimaker first and shows its referral card when selected", async ({ 
 	await page.goto("/agent");
 	const provider = page.getByLabel("Provider", { exact: true });
 	await expect(provider).toBeEnabled();
-	await expect(provider.locator("option").nth(0)).toHaveText("Haimaker.ai");
-	await expect(provider.locator("option").nth(1)).toHaveText("Anthropic");
-	await expect(provider.locator("option").nth(2)).toHaveText("OpenAI");
-	await expect(provider.locator("option").nth(3)).toHaveText("OpenRouter");
+	expect((await readOptions(provider)).slice(0, 4).map((option) => option.label)).toEqual([
+		"Haimaker.ai",
+		"Anthropic",
+		"OpenAI",
+		"OpenRouter",
+	]);
 
-	await provider.selectOption("haimaker");
+	await chooseOption(provider, "haimaker");
 	await expect(page.getByText("CKQHV8", { exact: true })).toBeVisible();
 	await expect(page.getByRole("button", { name: "Copy code" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "Copy share link" })).toBeVisible();

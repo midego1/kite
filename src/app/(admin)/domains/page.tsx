@@ -15,7 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { List } from "@/components/ui/list";
-import { CheckCircle2, Plus } from "lucide-react";
+import { CheckCircle2, Globe2, Plus } from "lucide-react";
 import { authFetch } from "@/lib/auth/client";
 import { useAuthMe } from "@/hooks/use-auth-me";
 import type {
@@ -35,6 +35,7 @@ import { SectionRowSkeleton } from "@/components/page-skeletons";
 import { checkDomain } from "./utils";
 import { confirmMxReplacement, postJson } from "./api";
 import toast from "react-hot-toast";
+import { EmptyState } from "@/components/ui/page";
 
 type DnsSetupFeedback = {
 	domainId: string;
@@ -322,7 +323,7 @@ export default function DomainsPage() {
 		<div className="space-y-6">
 			<div className="flex items-center justify-between gap-4">
 				<div>
-					<h1 className="text-2xl md:text-3xl font-medium">Domains</h1>
+					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Domains</h1>
 					<p className="mt-1 text-sm text-neutral-500">
 						{managesDns
 							? "Domains must be on your Cloudflare account, which manages their DNS. Choose per domain whether Cloudflare, Resend or Amazon SES receives and sends its mail."
@@ -382,18 +383,24 @@ export default function DomainsPage() {
 								/>
 							)}
 							{domainCheck && !skipDns && (
-								<div className="flex items-center gap-3 rounded-xl bg-green-50 px-4 py-3 text-sm text-green-700">
+								<div className="flex items-center gap-3 rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
 									<CheckCircle2 className="h-4 w-4" />
 									Domain found in Cloudflare as {domainCheck.zone.name}
 								</div>
 							)}
 							{domainCheckError && (
-								<p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+								<p
+									role="alert"
+									className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
+								>
 									{domainCheckError}
 								</p>
 							)}
 							{create.isError && (
-								<div role="alert" className="space-y-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+								<div
+									role="alert"
+									className="space-y-3 rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
+								>
 									<p>{(create.error as Error).message}</p>
 									<div className={skipDns ? "hidden" : "space-y-2"}>
 										<p className="font-medium">Check that your Cloudflare API token has these permissions:</p>
@@ -422,9 +429,7 @@ export default function DomainsPage() {
 					<span className="text-sm text-neutral-500">{(data?.domains ?? []).length} total</span>
 				</div> */}
 				{isLoading && <SectionRowSkeleton />}
-				{!isLoading && (data?.domains ?? []).length === 0 && (
-					<p className="rounded-2xl bg-white px-5 py-4 text-sm text-neutral-500">No domains yet</p>
-				)}
+				{!isLoading && (data?.domains ?? []).length === 0 && <EmptyState icon={Globe2} title="No domains yet" />}
 				<List>
 					{(data?.domains ?? []).map((d) => {
 						const dns = data?.dns?.[d.id];

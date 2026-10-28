@@ -290,13 +290,22 @@ export class ImapConnection {
 	private async beforeDeadline<T>(promise: Promise<T>): Promise<T> {
 		const remaining = this.deadline - Date.now();
 		let timer: ReturnType<typeof setTimeout> | undefined;
+		// Set by the timer itself: a timer may fire a millisecond before `Date.now()` reaches the deadline, so the
+		// clock must not be asked again whether this was the timeout.
+		let timedOut = false;
 		const expired = new Promise<never>((_, reject) => {
-			timer = setTimeout(() => reject(new Error("The IMAP server did not answer in time")), Math.max(remaining, 0));
+			timer = setTimeout(
+				() => {
+					timedOut = true;
+					reject(new Error("The IMAP server did not answer in time"));
+				},
+				Math.max(remaining, 0),
+			);
 		});
 		try {
 			return await Promise.race([promise, expired]);
 		} catch (error) {
-			if (Date.now() >= this.deadline) {
+			if (timedOut) {
 				promise.catch(() => undefined);
 				await this.socket.close().catch(() => undefined);
 			}

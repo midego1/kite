@@ -206,17 +206,29 @@ test("long-context rates apply to a prompt over the threshold, in estimates, rec
 	assert.equal(pricing.calculateAgentCostUsdMicros({ inputTokens: 1_000, outputTokens: 100 }, undefined), null);
 });
 
-test("automatic reading picks the cheapest configured model once the price list prices them", () => {
+test("the price list does not change which model automatic reading and line summaries choose", () => {
 	const models = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
 	const choose = (saved) =>
-		triage.chooseTriageModelId({
-			triageModelId: null,
-			mailboxModelId: "claude-opus-5-5",
-			models,
-			rates: prices.resolveAgentModelRates(saved, models, NOW),
-		});
-	assert.equal(choose({}), "claude-haiku-5-5");
-	assert.equal(choose({ "claude-sonnet-5-5": { input: 0.01, output: 0.01 } }), "claude-sonnet-5-5");
+		triage.chooseTriageModelId({ triageModelId: null, mailboxModelId: "claude-opus-5-5", models, rates: saved });
+	const saved = Object.fromEntries(models.map((id) => [id, { input: null, output: null }]));
+	// The price list prices every one of them, and spend counts with those rates...
+	const effective = prices.resolveAgentModelRates(saved, models, NOW);
+	assert.ok(models.every((id) => spend.spendMode(effective[id]) === "cost"));
+	// ...but the choice runs over the saved rates, so it stays on the mailbox's model, as before the list existed.
+	assert.equal(choose(saved), "claude-opus-5-5");
+	assert.equal(choose({}), "claude-opus-5-5");
+	// Rates the admin entered (or the provider published) still steer it, as before.
+	assert.equal(choose({ ...saved, "claude-sonnet-5-5": { input: 0.01, output: 0.01 } }), "claude-sonnet-5-5");
+	// Both callers pass the saved rates, never the resolved ones.
+	for (const file of ["src/lib/agent/auto-read/triage-run.ts", "src/lib/agent/summaries/line-job.ts"]) {
+		const source = readFileSync(join(root, file), "utf8");
+		const call = source.slice(
+			source.indexOf("chooseTriageModelId({"),
+			source.indexOf("});", source.indexOf("chooseTriageModelId({")),
+		);
+		assert.match(call, /rates: config\.rates,/, file);
+		assert.doesNotMatch(call, /effectiveRates/, file);
+	}
 });
 
 test("the cost rates list shows the provider's rate, then Kite's greyed price, and an override", () => {

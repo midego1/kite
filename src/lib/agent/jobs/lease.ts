@@ -2,7 +2,7 @@ import { and, eq, lt, lte, or, sql } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { agentJobs } from "@/db/schema";
 import { reportAiFailure } from "../ai-errors";
-import { aiJobReason } from "../ai-error-utils";
+import { aiJobReason, type AiFeature } from "../ai-error-utils";
 import { agentJobQueueMessage } from "../queue-utils";
 
 type AgentJobRow = typeof agentJobs.$inferSelect;
@@ -85,6 +85,13 @@ async function failAgentJob(db: AppDatabase, job: AgentJobRow, reason: string): 
 	return failed ? null : backoffMs;
 }
 
+/** The AI feature each job kind's failures are logged and listed under. */
+const JOB_FEATURES: Record<AgentJobRow["kind"], AiFeature> = {
+	draft: "auto_draft",
+	triage: "auto_triage",
+	line_summary: "line_summary",
+};
+
 /**
  * Fails the attempt and, when another one is due, queues it for after the backoff so retries do
  * not wait for the maintenance cron. A delivery that arrives early is refused by the claim.
@@ -93,7 +100,7 @@ export async function failAndRequeueAgentJob(env: CloudflareEnv, db: AppDatabase
 	// The job keeps only the code (`ai_error:<code>`), which Activity puts in words; never the provider's text.
 	const failure = await reportAiFailure(error, {
 		env,
-		feature: job.kind === "triage" ? "auto_triage" : "auto_draft",
+		feature: JOB_FEATURES[job.kind],
 		userId: job.reviewerUserId,
 		mailboxId: job.mailboxId,
 	});

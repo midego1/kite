@@ -7,6 +7,7 @@ interface CloudflareEnv {
 	AGENT_QUEUE?: Queue<
 		| { kind: "agent.draft"; jobId: string }
 		| { kind: "agent.triage"; jobId: string }
+		| { kind: "agent.line_summary"; jobId: string }
 		| import("./src/lib/agent/writing-style").StyleBackfillMessage
 		| import("./src/lib/import/jobs").ImportJobQueueMessage
 	>;

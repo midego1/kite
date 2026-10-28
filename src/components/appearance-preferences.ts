@@ -77,6 +77,19 @@ export const ASSISTANT_DETAIL_PREFERENCE: AppearancePreference<AssistantDetailPr
 	],
 };
 
+export type ListSummariesPreference = "summaries" | "previews";
+
+/** One-line AI summaries in the message list, where a mailbox has them: per browser, on by default. */
+export const LIST_SUMMARIES_PREFERENCE: AppearancePreference<ListSummariesPreference> = {
+	storageKey: "kite-list-summaries",
+	attribute: "list-summaries",
+	defaultValue: "summaries",
+	options: [
+		{ value: "summaries", label: "AI summaries" },
+		{ value: "previews", label: "Previews" },
+	],
+};
+
 export const APPEARANCE_PREFERENCES = [FONT_PREFERENCE, TEXT_SIZE_PREFERENCE] as const;
 
 function isOption<T extends string>(preference: AppearancePreference<T>, value: unknown): value is T {

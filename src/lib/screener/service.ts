@@ -36,6 +36,7 @@ async function scheduleApprovedMail(env: CloudflareEnv, mailbox: Mailbox, rows: 
 				folderId: row.folderId,
 				spamVerdict: row.spamVerdict,
 				spamAnalysisError: row.spamAnalysisError,
+				released: true,
 			});
 		} catch (error) {
 			console.error(`Agent work scheduling failed for approved message ${row.id}`, error);

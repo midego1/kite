@@ -26,6 +26,7 @@ import { settleTriageSuggestions } from "./suggestion-lifecycle";
 import { storeTriageSuggestions } from "./suggestions";
 import { loadTriageContext } from "./triage-context";
 import { runTriageModel, SpendCapReachedError } from "./triage-run";
+import { lineGateFor, settleTriageLine } from "../summaries/lines";
 
 type AgentJobRow = typeof agentJobs.$inferSelect;
 
@@ -86,8 +87,9 @@ async function modelStep(input: {
 	install: AutoReadInstallSettings;
 	extensions: readonly ActiveModelExtension[];
 	hintOnly: boolean;
+	oneLine: boolean;
 }): Promise<ModelStep> {
-	const { env, job, settings, context, install, extensions, hintOnly } = input;
+	const { env, job, settings, context, install, extensions, hintOnly, oneLine } = input;
 	const config = await getAgentProviderConfig(env);
 	if (config.provider === "compatible" && !install.externalAutoReadAllowed)
 		return { skip: "external_provider_not_allowed", model: null, hintOnly };
@@ -102,6 +104,7 @@ async function modelStep(input: {
 			installCapMicros: install.dailySpendCapMicros,
 			tokenCap: install.autoReadTokenCap,
 			extensions,
+			oneLine,
 		});
 		return { skip: null, model, hintOnly };
 	} catch (error) {
@@ -130,6 +133,8 @@ async function decideModel(input: {
 	install: AutoReadInstallSettings;
 	stepRun: StepRunInput;
 	stepsOnly: boolean;
+	/** The message qualifies for a one-line summary, which then rides on the request if one is made. */
+	oneLine: boolean;
 }): Promise<ModelStep> {
 	const { context, settings, stepRun } = input;
 	const extensions = await activeModelExtensions(stepRun);
@@ -174,6 +179,7 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 	if (prepared.skip !== null) return { skip: prepared.skip };
 	const { install, source, mailbox, settings, reviewer, access } = prepared;
 	const context = await loadTriageContext(env, source, mailbox.userId);
+	const wantLine = (await lineGateFor(db, { settings, source, mailbox, facts: context.facts })) === null;
 	// Mail a program sent is only let in for the steps that opted in to it; only a module hint can ask the model.
 	const stepsOnly = isAutoSubmitted(context.headers);
 	const stepRun: StepRunInput = {
@@ -193,8 +199,8 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 		model: null,
 		automaticOnly: stepsOnly,
 	};
-	const modelRun = await decideModel({ env, job, settings, context, install, stepRun, stepsOnly });
-	const steps = await runModuleTriageSteps({ ...stepRun, model: modelRun.model?.result ?? null });
+	const modelRun = await decideModel({ env, job, settings, context, install, stepRun, stepsOnly, oneLine: wantLine });
+	const steps = await runModuleTriageSteps({ ...stepRun, model: withoutLine(modelRun.model?.result) });
 	// A request only a module hint asked for reaches the steps alone: core plans as if the model had not run.
 	const model = modelRun.hintOnly ? null : modelRun.model;
 	// Module cards can carry links and amounts from the mail; none is offered for mail the model
@@ -231,6 +237,17 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 			tokenCap: install.autoReadTokenCap,
 		});
 	await settleTriageSuggestions(env, job.mailboxId, source);
+	await settleTriageLine(env, {
+		wanted: wantLine,
+		model: modelRun.model
+			? { line: modelRun.model.result.oneLine, modelId: modelRun.model.modelId, flagged: modelFlagged }
+			: null,
+		refused: !!modelRun.skip,
+		warned: planned.some((suggestion) => suggestion.kind === "phishing"),
+		source,
+		mailbox,
+		reviewerUserId: job.reviewerUserId,
+	});
 	return {
 		skip: null,
 		note: joinSkipReasons(
@@ -238,6 +255,13 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 			modelRun.skip ?? phishingFlagNote(context.facts, model, settings.capabilities),
 		),
 	};
+}
+
+/** The model answer module steps see: without the message list's line, which is core's alone. */
+function withoutLine(result: TriageModelRun["result"] | undefined) {
+	if (!result) return null;
+	const { oneLine: _oneLine, ...rest } = result;
+	return rest;
 }
 
 /** A flag that did not warn is still worth a line in Activity, so the owner can see the model was wary. */

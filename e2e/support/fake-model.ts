@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import {
 	COMPOSE_SYSTEM_MARKER,
 	DRAFT_SYSTEM_MARKER,
+	LINE_SUMMARY_SYSTEM_MARKER,
 	REPAIR_MARKER,
 	SUMMARY_SYSTEM_MARKER,
 	SUMMARY_TRANSLATION_MARKER,
@@ -49,6 +50,7 @@ function classifyFakeRequest(messages: ChatMessage[]): FakeRequestKind {
 	if (system.includes(COMPOSE_SYSTEM_MARKER)) return "compose";
 	if (system.includes(SUMMARY_TRANSLATION_MARKER)) return "summary_translation";
 	if (system.includes(SUMMARY_SYSTEM_MARKER)) return "summary";
+	if (system.includes(LINE_SUMMARY_SYSTEM_MARKER)) return "line_summary";
 	return "other";
 }
 

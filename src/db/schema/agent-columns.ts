@@ -14,6 +14,19 @@ export function instructionColumns() {
 }
 
 /**
+ * The columns only `mailbox_agent_settings` has after its instructions: the one-line summaries in the message list
+ * (migration 0072), off by default, newsletters only when allowed, and their daily limit.
+ */
+export function mailboxAgentExtraColumns() {
+	return {
+		...instructionColumns(),
+		listSummaries: integer("list_summaries", { mode: "boolean" }).notNull().default(false),
+		listSummariesBulk: integer("list_summaries_bulk", { mode: "boolean" }).notNull().default(false),
+		listSummaryDailyLimit: integer("list_summary_daily_limit").notNull().default(100),
+	};
+}
+
+/**
  * The assistant's install-wide daily caps on `app_settings`: the dollar cap that automatic reading and chat share,
  * and (migration 0069) the input-token allowances used without model rates, one for automatic reading and one for
  * chat, so neither can use up the other's.

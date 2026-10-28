@@ -12,10 +12,13 @@ import { automaticStepOpen } from "./module-steps";
 import { isPaused, triageMessageGate, withinRecoveryWindow } from "./schedule-utils";
 import { resolveMailboxAgentSettings } from "./settings-utils";
 import { supersedeOlderReplies } from "./suggestion-lifecycle";
+import { scheduleLineSummary } from "../summaries/lines";
 
 export type AgentWorkInput = Parameters<typeof scheduleAutoDraft>[1] & {
 	/** Set on the duplicate-raw-key recovery path: when the already stored message was received. */
 	recoveryReceivedAt?: Date;
+	/** Released from the Screener by an approval: new mail for a one-line summary, whatever its age. */
+	released?: boolean;
 };
 
 type MailboxSettings = typeof mailboxAgentSettings.$inferSelect;
@@ -82,7 +85,8 @@ async function triageAllowed(env: CloudflareEnv, input: AgentWorkInput, settings
 
 /**
  * Schedules the automatic work for a delivered message: a triage job when the mailbox reads
- * mail automatically, otherwise the legacy auto-draft job exactly as before.
+ * mail automatically, otherwise the legacy auto-draft job exactly as before. A message no triage
+ * job reads gets its one-line summary from a job of its own, when the mailbox has them on.
  */
 export async function scheduleAgentWork(env: CloudflareEnv, input: AgentWorkInput) {
 	if (!withinRecoveryWindow(input.recoveryReceivedAt)) return;
@@ -91,11 +95,17 @@ export async function scheduleAgentWork(env: CloudflareEnv, input: AgentWorkInpu
 	if (!settings) return;
 	// Before every gate: the older reply is outdated even when this message is never triaged.
 	await supersedeOlderReplies(env, input.sourceMessageId);
+	if (!(await scheduleTriageOrDraft(env, input, settings))) await scheduleLineSummary(env, input);
+}
+
+/** The triage job (or the legacy auto-draft); true when a triage job now reads the message. */
+async function scheduleTriageOrDraft(env: CloudflareEnv, input: AgentWorkInput, settings: MailboxSettings) {
+	const db = getDb(env);
 	if (settings.autonomy === "off") {
 		if (settings.autoDraftEnabled) await scheduleAutoDraft(env, input);
-		return;
+		return false;
 	}
-	if (!(await triageAllowed(env, input, settings))) return;
+	if (!(await triageAllowed(env, input, settings))) return false;
 	await insertTriageJob(env, input, settings.reviewerUserId || input.ownerUserId);
 	const [job] = await db
 		.select({ id: agentJobs.id, status: agentJobs.status })
@@ -109,4 +119,5 @@ export async function scheduleAgentWork(env: CloudflareEnv, input: AgentWorkInpu
 		)
 		.limit(1);
 	if (job?.status === "pending") await env.AGENT_QUEUE?.send(agentJobQueueMessage("triage", job.id));
+	return !!job;
 }

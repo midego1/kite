@@ -1,4 +1,5 @@
-export type FakeRequestKind = "triage" | "repair" | "draft" | "compose" | "summary" | "summary_translation" | "other";
+export type FakeRequestKind =
+	"triage" | "repair" | "draft" | "compose" | "summary" | "summary_translation" | "line_summary" | "other";
 
 export type FakeToolCall = { name: string; arguments?: unknown };
 
@@ -27,6 +28,8 @@ export type FakeScenario = {
 	summary?: (context: FakeScenarioContext) => FakeModelReply;
 	/** Summary translations; scenarios without one answer with `summary-thread`'s. */
 	translation?: (context: FakeScenarioContext) => FakeModelReply;
+	/** One-line summary requests of their own; scenarios without one answer with `LINE_FROM_JOB`. */
+	line?: (context: FakeScenarioContext) => FakeModelReply;
 	/** Repair requests get the scenario's triage reply too; otherwise they get benign valid JSON. */
 	repairsToo?: boolean;
 };

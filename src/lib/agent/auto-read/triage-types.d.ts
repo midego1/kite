@@ -17,6 +17,8 @@ export type TriageResult = {
 	suspicious: { flagged: boolean; reasons: TriageSuspiciousReason[] };
 	/** What the model answered for the active module extensions, by module id: untrusted JSON, never read by core. */
 	modules?: Record<string, unknown>;
+	/** The message list's one-line summary, when the request asked for it and the answer passed the line checks. */
+	oneLine?: string;
 };
 
 export type TriageParseOutcome = { ok: true; result: TriageResult } | { ok: false; error: string };
@@ -39,6 +41,8 @@ export type TriagePromptInput = {
 	instructions?: string;
 	/** The active module extensions' static key text, appended to the key list outside the email block. */
 	extensionInstructions?: readonly string[];
+	/** Asks for the message list's one-line summary as an optional `oneLine` key. */
+	oneLine?: boolean;
 	nonce?: string;
 	/** Lets the model resolve relative due dates; defaults to the current time. */
 	now?: Date;

@@ -27,7 +27,8 @@ const AI_ERROR_CODES = [
 export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
 
 /** The feature a request belongs to, as logs and the admin list name it. */
-export type AiFeature = "chat" | "compose" | "summary" | "summary_translation" | "auto_triage" | "auto_draft";
+export type AiFeature =
+	"chat" | "compose" | "summary" | "summary_translation" | "auto_triage" | "auto_draft" | "line_summary";
 
 export const AI_FEATURE_LABELS: Record<AiFeature, string> = {
 	chat: "Assistant chat",
@@ -36,6 +37,7 @@ export const AI_FEATURE_LABELS: Record<AiFeature, string> = {
 	summary_translation: "Summary translation",
 	auto_triage: "Automatic reading",
 	auto_draft: "Agent draft",
+	line_summary: "One-line summary",
 };
 
 /** What the UI shows under Details: never a secret, a prompt or an answer. */

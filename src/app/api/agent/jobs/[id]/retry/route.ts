@@ -18,8 +18,8 @@ export async function POST(request: Request, { params }: Params) {
 	const db = getDb(env);
 	const [job] = await db.select().from(agentJobs).where(eq(agentJobs.id, id)).limit(1);
 	const access = job && (await getMailboxAccessLevel(db, user, job.mailboxId));
-	// Triage only reads mail, so its reviewer needs read access; a draft job needs send-on-behalf.
-	if (!job || job.reviewerUserId !== user.id || !(job.kind === "triage" ? access?.canRead : access?.canSendOnBehalf))
+	// Only a draft job writes mail, so it needs send-on-behalf; triage and one-line summaries only read it.
+	if (!job || job.reviewerUserId !== user.id || !(job.kind === "draft" ? access?.canSendOnBehalf : access?.canRead))
 		return Response.json({ error: "Job not found" }, { status: 404 });
 	if (job.status !== "failed") return Response.json({ error: "Job cannot be retried" }, { status: 409 });
 	await db

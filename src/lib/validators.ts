@@ -68,6 +68,8 @@ export const firstRunRegisterSchema = z.object({
 	enableSending: z.boolean().optional(),
 	replaceMxRecords: z.boolean().optional(),
 	skipDns: z.boolean().optional(),
+	/** The setup page's "Usage statistics" switch; without it the install stays undecided and gets the notice. */
+	usageStatistics: z.boolean().optional(),
 	username: z
 		.string()
 		.min(1)

@@ -6,6 +6,7 @@ import type {
 	HeartbeatCounts,
 	HeartbeatPayload,
 	MessageBucket,
+	TelemetryDecision,
 	TelemetryRuntime,
 } from "./types";
 
@@ -25,6 +26,9 @@ export const TELEMETRY_PRIVACY_CONTACT = "privacy@midego.net";
 
 /** Audit actions of the owner's choice, listed in Admin → Activity. */
 export const TELEMETRY_AUDIT_ACTIONS = ["telemetry.enabled", "telemetry.disabled"] as const;
+
+/** An install whose owner never chose starts sending at least this many days after the notice first told them. */
+export const TELEMETRY_NOTICE_DAYS = 14;
 
 /** A heartbeat or an erasure request that takes longer is abandoned. */
 export const TELEMETRY_TIMEOUT_MS = 5_000;
@@ -117,6 +121,66 @@ export function utcDay(now: Date): string {
 
 export function isInstallId(value: unknown): value is string {
 	return typeof value === "string" && UUID.test(value);
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The day an undecided install starts sending when the owner first sees the notice at `now`: the UTC day after
+ * `TELEMETRY_NOTICE_DAYS` full days, so the first heartbeat (02:00 UTC that day) comes at least 14 days later.
+ */
+export function telemetryStartDay(now: Date): string {
+	return utcDay(new Date(now.getTime() + (TELEMETRY_NOTICE_DAYS + 1) * DAY_MS));
+}
+
+/** `2026-11-12` as `12 November 2026`, the same everywhere: the day is a UTC day. */
+export function telemetryDayLabel(day: string): string {
+	return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(
+		new Date(`${day}T00:00:00Z`),
+	);
+}
+
+/** The sentence the one-time notice for an existing install leads with. */
+export function telemetryNoticeText(startDay: string): string {
+	return `Kite will start sending usage statistics on ${telemetryDayLabel(startDay)} unless you turn them off.`;
+}
+
+/** The stored parts of the choice the rules below read. */
+export type TelemetryChoice = { decision: TelemetryDecision | null; startDay: string | null; noticeDismissed: boolean };
+
+/**
+ * An undecided install whose start day has come now counts as on. Never while `KITE_TELEMETRY` forces statistics
+ * off, never without a start day (the owner was never told) and never over a decision: an explicit `off` stays off.
+ */
+export function telemetryStartDayReached(choice: TelemetryChoice, today: string, forcedOff: boolean): boolean {
+	return !forcedOff && choice.decision === null && choice.startDay !== null && today >= choice.startDay;
+}
+
+/**
+ * Whether the primary admin gets the one-time notice: only while undecided and not dismissed, only when something
+ * would actually be sent, and only once migration 0074 can store that it was shown.
+ */
+export function telemetryNoticeDue(
+	choice: TelemetryChoice,
+	context: { noticeAvailable: boolean; forcedOff: boolean; endpoint: string | null },
+): boolean {
+	return (
+		context.noticeAvailable &&
+		!context.forcedOff &&
+		context.endpoint !== null &&
+		choice.decision === null &&
+		!choice.noticeDismissed
+	);
+}
+
+/**
+ * What finishing the first-run setup records. The setup page sends the switch; a request without it (an API
+ * client that never showed the notice) and a deployment with `KITE_TELEMETRY=0` record nothing, so the install
+ * stays undecided and gets the notice like an upgraded one.
+ */
+export function setupTelemetryDecision(requested: unknown, forcedOff: boolean): TelemetryDecision | null {
+	if (forcedOff || typeof requested !== "boolean") return null;
+	return requested ? "on" : "off";
 }
 
 function count(value: unknown): number {

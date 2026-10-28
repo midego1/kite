@@ -4,6 +4,7 @@ import { AlertsBanner } from "./alerts-banner";
 import { DnsSkippedBanner } from "./dns-skipped-banner";
 import { MigrationsBanner } from "./migrations-banner";
 import { useSidebar } from "./sidebar-state";
+import { TelemetryNotice } from "./telemetry/telemetry-notice";
 
 /**
  * The operational and setup notices, rendered once: above Settings in the expanded sidebar, or over the page
@@ -25,6 +26,7 @@ export function DashboardNotices({ slot }: { slot: "sidebar" | "page" }) {
 			<AlertsBanner />
 			<MigrationsBanner />
 			<DnsSkippedBanner />
+			<TelemetryNotice variant="sidebar" />
 		</div>
 	);
 }

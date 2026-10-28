@@ -3,7 +3,7 @@ import { createLogger } from "@/lib/logger.mjs";
 import { listEnabledModules } from "@/lib/modules/state";
 import { isNodeRuntime } from "@/lib/runtime";
 import { eraseTelemetryInstall } from "./erase";
-import { claimTelemetryDay, readTelemetryState } from "./state";
+import { applyTelemetryStartDay, claimTelemetryDay, readTelemetryState } from "./state";
 import {
 	buildHeartbeatPayload,
 	TELEMETRY_TIMEOUT_MS,
@@ -55,6 +55,8 @@ async function sendHeartbeat(env: CloudflareEnv, now: Date, fetcher: typeof fetc
 	if (telemetryForcedOff(env.KITE_TELEMETRY)) return "forced_off";
 	const endpoint = telemetryUrl(env.KITE_TELEMETRY_URL);
 	if (!endpoint) return "no_endpoint";
+	// An install that never chose sends only from the start day its owner was told about on the notice.
+	await applyTelemetryStartDay(env, now);
 	const state = await readTelemetryState(env);
 	if (!state.available || !state.enabled) return "disabled";
 	if (!(await claimTelemetryDay(env, utcDay(now)))) return "already_sent";

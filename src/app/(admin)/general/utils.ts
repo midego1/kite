@@ -5,8 +5,9 @@ import type {
 	KeyTestResult,
 	KeyTestResults,
 } from "@/lib/spam/providers/abuse-ch-types";
-import { TELEMETRY_PRIVACY_CONTACT } from "@/lib/telemetry/telemetry-utils";
-import type { TelemetryErasure, TelemetrySaveResult, TelemetryStatus } from "@/lib/telemetry/types";
+import { TELEMETRY_PRIVACY_CONTACT, telemetryDayLabel } from "@/lib/telemetry/telemetry-utils";
+import { telemetryStartsLater } from "@/lib/telemetry/notice-utils";
+import type { TelemetryErasure, TelemetryStatus } from "@/lib/telemetry/types";
 import type { GeneralSettings, ThreatLookupKeySaved } from "./types";
 
 export const THREAT_LOOKUP_SERVICES: readonly { service: AbuseChService; name: string }[] = [
@@ -90,6 +91,8 @@ export function telemetryStatusText(status: TelemetryStatus | null): string {
 		return status.enabled
 			? "On, but KITE_TELEMETRY_URL is empty or not a usable https address, so nothing is sent"
 			: "Off";
+	if (telemetryStartsLater(status))
+		return `On by default: sending starts on ${telemetryDayLabel(status.startDay)} unless you turn it off`;
 	if (!status.enabled) return "Off";
 	return status.lastSentDay ? `On, last attempted on ${status.lastSentDay} (UTC)` : "On, nothing sent yet";
 }
@@ -99,22 +102,4 @@ export function telemetryErasureText(erasure: TelemetryErasure | null): string |
 	if (!erasure || erasure.outcome === "not_needed") return null;
 	if (erasure.outcome === "erased") return "The collector erased this install’s reports.";
 	return `Kite could not confirm that the collector erased this install’s reports. To have them removed, send this ID to ${TELEMETRY_PRIVACY_CONTACT}:`;
-}
-
-export async function loadTelemetryStatus(): Promise<TelemetryStatus> {
-	const response = await authFetch("/api/admin/telemetry", { cache: "no-store" });
-	const data = (await response.json().catch(() => ({}))) as TelemetryStatus & { error?: string };
-	if (!response.ok) throw new Error(data.error ?? "Could not load usage statistics");
-	return data;
-}
-
-export async function saveTelemetryEnabled(enabled: boolean): Promise<TelemetrySaveResult> {
-	const response = await authFetch("/api/admin/telemetry", {
-		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ enabled }),
-	});
-	const data = (await response.json().catch(() => ({}))) as TelemetrySaveResult & { error?: string };
-	if (!response.ok) throw new Error(data.error ?? "Could not save usage statistics");
-	return data;
 }

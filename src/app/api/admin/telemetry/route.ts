@@ -4,7 +4,12 @@ import { isPrimaryAdmin } from "@/lib/auth/admin";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { eraseAfterOptOut } from "@/lib/telemetry/erase";
-import { getTelemetryStatus, setTelemetryEnabled, TelemetryUnavailableError } from "@/lib/telemetry/state";
+import {
+	getTelemetryStatus,
+	markTelemetryNotice,
+	setTelemetryEnabled,
+	TelemetryUnavailableError,
+} from "@/lib/telemetry/state";
 import { TELEMETRY_AUDIT_ACTIONS, telemetryForcedOff } from "@/lib/telemetry/telemetry-utils";
 import type { TelemetrySaveResult } from "@/lib/telemetry/types";
 
@@ -18,9 +23,22 @@ export async function GET(request: Request) {
 	return Response.json(await getTelemetryStatus(env), { headers: NO_STORE });
 }
 
+/** `{ notice: "shown" | "dismissed" }`: the one-time notice of an install that never chose (`markTelemetryNotice`). */
+async function updateNotice(env: CloudflareEnv, notice: "shown" | "dismissed") {
+	try {
+		await markTelemetryNotice(env, notice);
+	} catch (error) {
+		if (!(error instanceof TelemetryUnavailableError)) throw error;
+		return Response.json({ error: error.message }, { status: 409, headers: NO_STORE });
+	}
+	return Response.json(await getTelemetryStatus(env), { headers: NO_STORE });
+}
+
 /**
  * Owner only: `{ enabled }` turns statistics on (with a fresh install id) or off (deleting it, then asking the
- * collector to erase that id's reports). Turning them off always works, also under `KITE_TELEMETRY=0`.
+ * collector to erase that id's reports); both are the owner's decision, which the start day of the notice never
+ * overrides. Turning them off always works, also under `KITE_TELEMETRY=0`. `{ notice }` records that the notice was
+ * shown or dismissed.
  */
 export async function PUT(request: Request) {
 	const env = getEnv();
@@ -28,9 +46,13 @@ export async function PUT(request: Request) {
 	if (auth.error) return auth.error;
 	if (!hasValidSessionMutationOrigin(request))
 		return Response.json({ error: "Invalid origin" }, { status: 403, headers: NO_STORE });
-	const body = (await request.json().catch(() => null)) as { enabled?: unknown } | null;
+	const body = (await request.json().catch(() => null)) as { enabled?: unknown; notice?: unknown } | null;
+	if (body?.notice === "shown" || body?.notice === "dismissed") return updateNotice(env, body.notice);
 	if (typeof body?.enabled !== "boolean")
-		return Response.json({ error: "Send enabled as true or false" }, { status: 400, headers: NO_STORE });
+		return Response.json(
+			{ error: 'Send enabled as true or false, or notice as "shown" or "dismissed"' },
+			{ status: 400, headers: NO_STORE },
+		);
 	if (body.enabled && telemetryForcedOff(env.KITE_TELEMETRY))
 		return Response.json(
 			{ error: "Usage statistics are turned off by the KITE_TELEMETRY setting of this deployment." },

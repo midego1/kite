@@ -1,8 +1,8 @@
 # Kite telemetry collector
 
-A small, standalone Cloudflare Worker (`kite-telemetry`) that receives the opt-in, pseudonymous usage statistics Kite installs send once a day, erases them on request and publishes totals. It runs at `https://kite-telemetry.midego.net`, the app's default (`DEFAULT_TELEMETRY_URL` in `src/lib/telemetry/telemetry-utils.ts`; operators can point `KITE_TELEMETRY_URL` elsewhere, or set it empty to send nothing). It is not part of the Kite app, its build or its deploy, and Kite deployments never need it.
+A small, standalone Cloudflare Worker (`kite-telemetry`) that receives the pseudonymous usage statistics Kite installs send once a day, erases them on request and publishes totals. It runs at `https://kite-telemetry.midego.net`, the app's default (`DEFAULT_TELEMETRY_URL` in `src/lib/telemetry/telemetry-utils.ts`; operators can point `KITE_TELEMETRY_URL` elsewhere, or set it empty to send nothing). It is not part of the Kite app, its build or its deploy, and Kite deployments never need it.
 
-What Kite sends, when, and how operators turn it off is documented in [Privacy → Usage statistics](../../docs/privacy.md#usage-statistics-opt-in). The sender is `src/lib/telemetry/` in the app.
+What Kite sends, when, and how operators turn it off is documented in [Privacy → Usage statistics](../../docs/privacy.md#usage-statistics). The sender is `src/lib/telemetry/` in the app.
 
 ## Operator and data protection
 

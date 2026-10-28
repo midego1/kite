@@ -1,11 +1,12 @@
 "use client";
 
 import { Copy } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { SOURCE_CODE_URL } from "@/lib/source-code";
+import { useTelemetryStatus } from "@/components/telemetry/use-telemetry-status";
+import { TELEMETRY_DOCS_URL, telemetrySwitchOn } from "@/lib/telemetry/notice-utils";
 import {
 	DEFAULT_TELEMETRY_URL,
 	TELEMETRY_FIELDS,
@@ -13,10 +14,8 @@ import {
 	TELEMETRY_PRIVACY_CONTACT,
 	TELEMETRY_SUMMARY_URL,
 } from "@/lib/telemetry/telemetry-utils";
-import type { TelemetryErasure, TelemetryStatus } from "@/lib/telemetry/types";
-import { loadTelemetryStatus, saveTelemetryEnabled, telemetryErasureText, telemetryStatusText } from "./utils";
-
-const DOCS_URL = `${SOURCE_CODE_URL}/blob/main/docs/privacy.md#usage-statistics-opt-in`;
+import type { TelemetryErasure } from "@/lib/telemetry/types";
+import { telemetryErasureText, telemetryStatusText } from "./utils";
 const LINK = "text-blue-600 underline underline-offset-2";
 
 function InstallId({ id }: { id: string }) {
@@ -37,39 +36,27 @@ function InstallId({ id }: { id: string }) {
 	);
 }
 
-/** The owner's opt-in for the daily pseudonymous heartbeat. Off by default; `KITE_TELEMETRY=0` keeps it off. */
+/**
+ * The owner's switch for the daily pseudonymous heartbeat. On by default once decided at setup, or from the
+ * notice's start day; an explicit off stays off. `KITE_TELEMETRY=0` keeps it off.
+ */
 export function TelemetryCard() {
-	const [status, setStatus] = useState<TelemetryStatus | null>(null);
+	const { query, save } = useTelemetryStatus();
+	const status = query.data ?? null;
 	const [erasure, setErasure] = useState<TelemetryErasure | null>(null);
-	const [saving, setSaving] = useState(false);
-	const [error, setError] = useState("");
+	const [saveError, setSaveError] = useState("");
+	const saving = save.isPending;
+	const error = saveError || (query.error ? query.error.message : "");
 
-	useEffect(() => {
-		let active = true;
-		void loadTelemetryStatus()
-			.then((next) => {
-				if (active) setStatus(next);
-			})
-			.catch((failure) => {
-				if (active) setError(failure instanceof Error ? failure.message : "Could not load usage statistics");
-			});
-		return () => {
-			active = false;
-		};
-	}, []);
-
-	async function change(enabled: boolean) {
-		setSaving(true);
-		setError("");
-		try {
-			const { erasure: next, ...saved } = await saveTelemetryEnabled(enabled);
-			setStatus(saved);
-			setErasure(next ?? null);
-		} catch (failure) {
-			setError(failure instanceof Error ? failure.message : "Could not save usage statistics");
-		} finally {
-			setSaving(false);
-		}
+	function change(enabled: boolean) {
+		setSaveError("");
+		save.mutate(
+			{ enabled },
+			{
+				onSuccess: (result) => setErasure(result.erasure ?? null),
+				onError: (failure) => setSaveError(failure.message || "Could not save usage statistics"),
+			},
+		);
 	}
 
 	// KITE_TELEMETRY=0 keeps statistics from being turned on, never from being turned off.
@@ -84,8 +71,8 @@ export function TelemetryCard() {
 				<div className="flex items-center gap-3">
 					<Switch
 						id="telemetry-enabled"
-						checked={Boolean(status?.enabled)}
-						onCheckedChange={(enabled) => void change(enabled)}
+						checked={telemetrySwitchOn(status)}
+						onCheckedChange={change}
 						disabled={locked || saving}
 					/>
 					<label htmlFor="telemetry-enabled" className="font-medium text-neutral-900">
@@ -105,10 +92,12 @@ export function TelemetryCard() {
 					</p>
 				)}
 				<p>
-					Off unless you turn it on. Once a day, around 02:00 UTC, Kite then sends one small report with the fields
-					below, so the project can see how many installs are in use. Counts are sent as ranges, never exact numbers.
-					The report is pseudonymous, not anonymous: a random install ID links one install’s daily reports. It never
-					contains names, email addresses, domains, message content or anything else that identifies you or your users.
+					On by default, and off for good once you turn it off: a new install asks at setup, and an install that existed
+					before starts only 14 days after a notice told its owner. Once a day, around 02:00 UTC, Kite sends one small
+					report with the fields below, so the project can see how many installs are in use. Counts are sent as ranges,
+					never exact numbers. The report is pseudonymous, not anonymous: a random install ID links one install’s daily
+					reports. It never contains names, email addresses, domains, message content or anything else that identifies
+					you or your users.
 				</p>
 				<p>
 					The request itself can say more than the report. On Cloudflare Workers, Cloudflare adds a{" "}
@@ -130,8 +119,9 @@ export function TelemetryCard() {
 							Sent to <code>{status.endpoint}</code>.{" "}
 							{status.endpoint === DEFAULT_TELEMETRY_URL ? (
 								<>
-									Run by {TELEMETRY_OPERATOR} on Cloudflare (its processor), on the basis of your consent. Daily reports
-									are kept for 90 days, then only totals without the install ID. Questions and data requests:{" "}
+									Run by {TELEMETRY_OPERATOR} on Cloudflare (its processor), on the basis of the project’s legitimate
+									interest in knowing how Kite is used, with notice and an easy opt-out. Daily reports are kept for 90
+									days, then only totals without the install ID. Questions and data requests:{" "}
 									<a href={`mailto:${TELEMETRY_PRIVACY_CONTACT}`} className={LINK}>
 										{TELEMETRY_PRIVACY_CONTACT}
 									</a>
@@ -155,7 +145,7 @@ export function TelemetryCard() {
 					<p>
 						Set <code>KITE_TELEMETRY=0</code> on the deployment to keep statistics from being turned on or sent; they
 						can still be turned off here. Set <code>KITE_TELEMETRY_URL</code> to an empty value to send nothing.{" "}
-						<a href={DOCS_URL} target="_blank" rel="noreferrer" className={LINK}>
+						<a href={TELEMETRY_DOCS_URL} target="_blank" rel="noreferrer" className={LINK}>
 							Read more about usage statistics
 						</a>
 					</p>

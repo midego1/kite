@@ -78,15 +78,21 @@ const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "
 export function parseInternalDate(value: string): Date | null {
 	const match = value.trim().match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4}) (\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})$/);
 	if (!match) return null;
-	const [, day, monthName, year, hour, minute, second, sign, zoneHours, zoneMinutes] = match;
-	const month = MONTHS.indexOf(monthName.toLowerCase());
-	if (month < 0) return null;
-	const utc = Date.UTC(Number(year), month, Number(day), Number(hour), Number(minute), Number(second));
-	const offset = (Number(zoneHours) * 60 + Number(zoneMinutes)) * (sign === "+" ? 1 : -1);
-	const date = new Date(utc - offset * 60_000);
-	// Date.UTC rolls 31-Feb over into March; such a value is not a date.
-	if (Number.isNaN(date.getTime()) || new Date(utc).getUTCDate() !== Number(day) || Number(hour) > 23) return null;
-	return date;
+	const [day, year, hour, minute, second, zoneHours, zoneMinutes] = [1, 3, 4, 5, 6, 8, 9].map((index) =>
+		Number(match[index]),
+	);
+	const month = MONTHS.indexOf(match[2].toLowerCase());
+	// Second 60 is a leap second; zones run from -23:59 to +23:59. Nothing before the epoch is a real receipt time.
+	if (month < 0 || year < 1970 || hour > 23 || minute > 59 || second > 60 || zoneHours > 23 || zoneMinutes > 59)
+		return null;
+	const date = new Date(0);
+	// setUTCFullYear, unlike Date.UTC, never reads a two-digit year as 19xx.
+	date.setUTCFullYear(year, month, day);
+	// Day 31 of a 30-day month rolls over into the next one; such a value is not a date.
+	if (date.getUTCMonth() !== month || date.getUTCDate() !== day) return null;
+	date.setUTCHours(hour, minute, second, 0);
+	const offset = (zoneHours * 60 + zoneMinutes) * (match[7] === "+" ? 1 : -1);
+	return new Date(date.getTime() - offset * 60_000);
 }
 
 /**

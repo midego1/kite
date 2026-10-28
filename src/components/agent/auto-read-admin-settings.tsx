@@ -13,6 +13,7 @@ import {
 	microsToDollarInput,
 	parseDollarInput,
 	saveAutoReadAdmin,
+	spentTodayText,
 } from "./auto-read-settings-utils";
 import { TokenAllowanceForm } from "./token-allowance-form";
 
@@ -133,8 +134,14 @@ export function AutoReadAdminSettings() {
 					</div>
 					<p className="text-xs text-neutral-500">
 						Shared by automatic reading and assistant chat in every mailbox, counted from midnight UTC. Both stop for
-						the day when it is reached.
+						the day when it is reached. It counts every model with a cost rate, including rates from Kite&apos;s price
+						list.
 					</p>
+					{values?.spentTodayMicros !== undefined && (
+						<p className="text-xs text-neutral-700" data-testid="spent-today">
+							{spentTodayText(values.spentTodayMicros, values.dailySpendCapMicros)}
+						</p>
+					)}
 				</form>
 				<TokenAllowanceForm
 					key={values ? `${values.autoReadTokenCap}:${values.chatTokenCap}` : "loading"}

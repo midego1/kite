@@ -88,6 +88,7 @@
 		"src/lib/agent/current-email-utils.ts",
 		"src/lib/agent/jobs/draft-prompt-utils.ts",
 		"src/lib/agent/model-rates-utils.ts",
+		"src/lib/agent/model-prices-utils.ts",
 		"src/lib/agent/provider-url-utils.ts",
 		"src/lib/agent/provider-models-utils.ts",
 		"src/lib/agent/queue-utils.ts",

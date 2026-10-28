@@ -65,6 +65,7 @@ async function writeLine(
 		triageModelId: settings.triageModelId,
 		mailboxModelId: settings.modelId,
 		models: config.models,
+		// The saved rates, not Kite's price list: a Kite update must not move automatic reading to another model.
 		rates: config.rates,
 	});
 	const prompt = buildLinePrompt({ messageId: source.id, subject: source.subject, body: context.bodyText });

@@ -35,7 +35,11 @@ export function fakeProviderSettings(fake: FakeModel) {
 export async function readAdminAgent(api: APIRequestContext): Promise<AdminAgentState> {
 	const response = await api.get("/api/admin/agent");
 	expect(response.ok(), await response.text()).toBe(true);
-	return (await response.json()) as AdminAgentState;
+	// Today's spend moves with every model call in parallel tests, so state comparisons leave it out.
+	const { spentTodayMicros: _spentToday, ...state } = (await response.json()) as AdminAgentState & {
+		spentTodayMicros?: number;
+	};
+	return state;
 }
 
 /**

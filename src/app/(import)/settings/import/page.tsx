@@ -33,6 +33,8 @@ import {
 	getFolderImportSource,
 	getSelectedImportSources,
 	importSourceOptions,
+	imapSecurityValue,
+	withImapSecurity,
 	resolveImapSourceFolder,
 } from "./utils";
 
@@ -366,18 +368,20 @@ export default function SettingsImportPage() {
 											/>
 											Import all messages (newest first)
 										</label>
-										<label className="flex items-end gap-2 pb-2 text-sm text-neutral-700">
-											<Checkbox
-												checked={imapForm.secure}
-												onChange={(event) =>
-													setImapForm({
-														...imapForm,
-														secure: event.target.checked,
-													})
-												}
-											/>
-											Use TLS
-										</label>
+										<div className="space-y-2">
+											<Label htmlFor="imap-security">Encryption</Label>
+											<Select
+												id="imap-security"
+												value={imapSecurityValue(imapForm)}
+												onChange={(event) => setImapForm(withImapSecurity(imapForm, event.target.value === "tls"))}
+											>
+												<option value="tls">TLS (port 993)</option>
+												<option value="starttls">STARTTLS (port 143)</option>
+											</Select>
+											<p className="text-xs text-neutral-500">
+												Kite only connects over an encrypted connection and checks the server&apos;s certificate.
+											</p>
+										</div>
 									</div>
 									<p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs leading-5 text-neutral-500">
 										IMAP imports selected source sections automatically. Folders are discovered from the source account

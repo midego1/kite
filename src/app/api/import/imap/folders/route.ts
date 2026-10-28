@@ -3,7 +3,7 @@ import { requireSessionUser } from "@/lib/api/auth";
 import { getEnv } from "@/lib/cloudflare";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { readJsonBody } from "@/lib/http/request";
-import { listImapFolders } from "@/lib/import/imap";
+import { importServerProblem, listImapFolders } from "@/lib/import/imap";
 import type { ImapFolderListRequest } from "./types";
 import { parseImapFolderListRequest } from "./utils";
 import { withModule } from "@/lib/modules/route-guard";
@@ -26,8 +26,11 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 		);
 	}
 
+	const refused = importServerProblem(env, input);
+	if (refused) return NextResponse.json({ error: refused }, { status: 400 });
+
 	try {
-		const folders = await listImapFolders(input);
+		const folders = await listImapFolders(env, input);
 		return NextResponse.json({ folders });
 	} catch (error) {
 		return NextResponse.json(

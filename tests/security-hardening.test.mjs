@@ -54,9 +54,23 @@ test("private, loopback, link-local and metadata addresses are blocked", () => {
 		"::ffff:7f00:1",
 		"[::1]",
 		"64:ff9b::a9fe:a9fe",
+		// Tunnels that carry an IPv4 address inside: 6to4, Teredo and local-use NAT64.
+		"2002:7f00:1::1",
+		"2002:a9fe:a9fe::",
+		"2001:0:4136:e378:8000:63bf:3fff:fdd2",
+		"2001::1",
+		"64:ff9b:1::a9fe:a9fe",
 	])
 		assert.equal(outbound.isPrivateIpAddress(address), true, address);
-	for (const address of ["8.8.8.8", "1.1.1.1", "172.32.0.1", "2606:4700:4700::1111", "::ffff:8.8.8.8"]) {
+	for (const address of [
+		"8.8.8.8",
+		"1.1.1.1",
+		"172.32.0.1",
+		"2606:4700:4700::1111",
+		"::ffff:8.8.8.8",
+		"2001:4860:4860::8888",
+		"2001:db9::1",
+	]) {
 		assert.equal(outbound.isPrivateIpAddress(address), false, address);
 	}
 });

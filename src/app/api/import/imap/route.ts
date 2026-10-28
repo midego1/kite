@@ -7,7 +7,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { readJsonBody } from "@/lib/http/request";
 import { getImportMessageUserId } from "@/lib/import/destination";
-import { fetchImapMessages } from "@/lib/import/imap";
+import { fetchImapMessages, importServerProblem } from "@/lib/import/imap";
 import { importMessagesToMailbox } from "@/lib/import/service";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { ImapImportRequest } from "./types";
@@ -32,6 +32,9 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 		);
 	}
 
+	const refused = importServerProblem(env, input);
+	if (refused) return NextResponse.json({ error: refused }, { status: 400 });
+
 	const access = await getMailboxAccessLevel(getDb(env), user, input.mailboxId);
 	if (!access?.canManage) {
 		return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
@@ -49,7 +52,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	}
 
 	try {
-		const { messages: rawMessages, total, nextOffset } = await fetchImapMessages(input);
+		const { messages: rawMessages, total, nextOffset } = await fetchImapMessages(env, input);
 		const result = await importMessagesToMailbox(env, {
 			userId: getImportMessageUserId(input.destination, user.id, access.mailbox.userId),
 			mailboxId: access.mailbox.id,

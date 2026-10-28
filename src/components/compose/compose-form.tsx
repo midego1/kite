@@ -82,6 +82,7 @@ export function ComposeForm({
 	const [attachmentPolicy, setAttachmentPolicy] = useState<ComposeAttachmentPolicy>({
 		maxMb: 25,
 		cloudThresholdBytes: 3_000_000,
+		cloudLinks: true,
 	});
 	const [draggingFiles, setDraggingFiles] = useState(false);
 	const [modalMode, setModalMode] = useState(false);
@@ -105,20 +106,9 @@ export function ComposeForm({
 	const [undoRequestedWhileSending, setUndoRequestedWhileSending] = useState(false);
 	const undoRequested = useRef(false);
 	const attachmentInput = useRef<HTMLInputElement | null>(null);
+	const attachButton = useRef<HTMLButtonElement | null>(null);
 	const fileDragDepth = useRef(0);
 	const previousSignature = useRef("");
-
-	useEffect(() => {
-		let active = true;
-		void authFetch("/api/attachment-policy", { cache: "no-store" })
-			.then(async (response) => {
-				if (response.ok && active) setAttachmentPolicy((await response.json()) as ComposeAttachmentPolicy);
-			})
-			.catch(() => {});
-		return () => {
-			active = false;
-		};
-	}, []);
 
 	const senderAddresses = useMemo(() => {
 		if (!selectedMailbox) return [];
@@ -150,6 +140,20 @@ export function ComposeForm({
 	const selectedFrom = pickFromAddress(senderAddresses, [chosenFrom, defaultFrom]);
 	const kiteComposer = { html, setHtml, subject, to, threading, onInserted: () => setAiAssisted(true) };
 	const fromAddr = selectedMailbox && selectedFrom ? formatEmailAddress(selectedFrom, selectedMailbox.displayName) : "";
+
+	// The From domain's sending provider decides whether big files become download links.
+	useEffect(() => {
+		let active = true;
+		const query = selectedFrom ? `?from=${encodeURIComponent(selectedFrom)}` : "";
+		void authFetch(`/api/attachment-policy${query}`, { cache: "no-store" })
+			.then(async (response) => {
+				if (response.ok && active) setAttachmentPolicy((await response.json()) as ComposeAttachmentPolicy);
+			})
+			.catch(() => {});
+		return () => {
+			active = false;
+		};
+	}, [selectedFrom]);
 
 	const draftSnapshot = useMemo(
 		(): ComposeDraftSnapshot | null =>
@@ -612,6 +616,8 @@ export function ComposeForm({
 			localAttachments={attachments}
 			storedAttachments={storedAttachments}
 			cloudThresholdBytes={attachmentPolicy.cloudThresholdBytes}
+			cloudLinks={attachmentPolicy.cloudLinks}
+			onFocusFallback={() => attachButton.current?.focus()}
 			onRemoveLocal={(id) => setAttachments((current) => current.filter((item) => item.id !== id))}
 			onRemoveStored={(id) => void removeStoredAttachment(id)}
 		/>
@@ -881,9 +887,14 @@ export function ComposeForm({
 									onChange={(event) => addAttachments(event.target.files)}
 								/>
 								<Tooltip
-									label={`Attach files (up to ${attachmentPolicy.maxMb} MB total). Files over 3 MB are sent as 30-day R2 download links.`}
+									label={
+										attachmentPolicy.cloudLinks
+											? `Attach files (up to ${attachmentPolicy.maxMb} MB total). Files over ${Math.round(attachmentPolicy.cloudThresholdBytes / 1_000_000)} MB are sent as 30-day R2 download links.`
+											: `Attach files (up to ${attachmentPolicy.maxMb} MB total)`
+									}
 								>
 									<button
+										ref={attachButton}
 										type="button"
 										aria-label="Attach files"
 										onClick={() => attachmentInput.current?.click()}

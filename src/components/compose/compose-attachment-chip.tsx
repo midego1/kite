@@ -1,7 +1,7 @@
 "use client";
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowDownToLine, Eye, MoreVertical, Trash2 } from "lucide-react";
 import { useObjectUrl } from "@/components/use-object-url";
 import { getAttachmentVisual } from "@/components/message-attachment-card-utils";
@@ -10,6 +10,7 @@ import type { ComposeAttachmentChipProps } from "./compose-attachment-types";
 import {
 	canPreviewEntry,
 	entryAttachment,
+	entryKey,
 	safeAttachmentUrl,
 	splitFilename,
 	storedDownloadUrl,
@@ -20,6 +21,8 @@ import { formatAttachmentSize } from "./utils";
 const ITEM_CLASS =
 	"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-neutral-100";
 
+const BLOB_URL_LIFETIME_MS = 60_000;
+
 /** Downloads a file that is not stored yet from a copy of the browser's own bytes; a stored one uses the authenticated route. */
 async function downloadLocalFile(file: File) {
 	const copy = new Blob([await file.arrayBuffer()], { type: "application/octet-stream" });
@@ -28,7 +31,8 @@ async function downloadLocalFile(file: File) {
 	link.href = safeAttachmentUrl(url);
 	link.download = file.name;
 	link.click();
-	setTimeout(() => URL.revokeObjectURL(url), 0);
+	// Safari and Firefox start the download after the click returns, so the URL has to outlive it.
+	setTimeout(() => URL.revokeObjectURL(url), BLOB_URL_LIFETIME_MS);
 }
 
 /**
@@ -51,9 +55,12 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 	const thumbnail = isImage ? localUrl || storedThumbnailUrl(entry, draftId) : null;
 	const [thumbnailFailed, setThumbnailFailed] = useState(false);
 	const downloadUrl = storedDownloadUrl(entry, draftId);
+	// The viewer opens once the menu has closed: opening a modal dialog while the menu still holds the page's
+	// pointer-events and focus lock leaves both stuck, so Preview waits for onCloseAutoFocus.
+	const previewAfterClose = useRef(false);
 
 	function download() {
-		if (entry.kind === "local") return void downloadLocalFile(entry.file);
+		if (entry.kind === "local") return void downloadLocalFile(entry.file).catch(() => {});
 		if (!downloadUrl) return;
 		const link = document.createElement("a");
 		link.href = safeAttachmentUrl(downloadUrl);
@@ -69,6 +76,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 	return (
 		<div
 			data-compose-attachment={attachment.filename}
+			data-compose-attachment-key={entryKey(entry)}
 			data-compose-attachment-state={entry.kind === "stored" ? "saved" : "local"}
 			className="flex h-9 max-w-64 shrink-0 items-center rounded-lg bg-neutral-100 text-sm transition-colors hover:bg-neutral-200"
 		>
@@ -77,7 +85,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 				onClick={open}
 				aria-label={`${previewable ? "Preview" : "Download"} ${attachment.filename}, ${formatAttachmentSize(attachment.size)}`}
 				title={`${attachment.filename} · ${visual.label}`}
-				className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-l-lg pl-1.5 pr-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+				className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-l-lg pl-1.5 pr-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 			>
 				{thumbnail && !thumbnailFailed ? (
 					<img
@@ -100,7 +108,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger
 					aria-label={`More actions for ${attachment.filename}`}
-					className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-500 outline-none hover:bg-neutral-200 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-400 data-[state=open]:bg-neutral-200"
+					className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-500 outline-none hover:bg-neutral-200 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-600 data-[state=open]:bg-neutral-200"
 				>
 					<MoreVertical className="h-4 w-4" aria-hidden="true" />
 				</DropdownMenu.Trigger>
@@ -110,10 +118,20 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 						sideOffset={4}
 						collisionPadding={8}
 						aria-label={`Actions for ${attachment.filename}`}
+						onCloseAutoFocus={() => {
+							if (!previewAfterClose.current) return;
+							previewAfterClose.current = false;
+							onPreview(entry);
+						}}
 						className="z-[130] min-w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg"
 					>
 						{previewable && (
-							<DropdownMenu.Item className={ITEM_CLASS} onSelect={() => onPreview(entry)}>
+							<DropdownMenu.Item
+								className={ITEM_CLASS}
+								onSelect={() => {
+									previewAfterClose.current = true;
+								}}
+							>
 								<Eye className="h-4 w-4 shrink-0" aria-hidden="true" />
 								Preview
 							</DropdownMenu.Item>

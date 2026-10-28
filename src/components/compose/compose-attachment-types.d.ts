@@ -11,8 +11,12 @@ export interface ComposeAttachmentListProps {
 	storedAttachments: ComposeStoredAttachment[];
 	/** The size limits the notice under the chips is based on. */
 	cloudThresholdBytes: number;
+	/** False when the From domain sends through Resend or SES, which take big files directly: no link notice then. */
+	cloudLinks: boolean;
 	onRemoveLocal: (id: string) => void;
 	onRemoveStored: (id: string) => void;
+	/** Where focus goes when the last chip is removed. */
+	onFocusFallback: () => void;
 }
 
 export interface ComposeAttachmentChipProps {

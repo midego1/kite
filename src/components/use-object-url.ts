@@ -11,11 +11,15 @@ export function useObjectUrl(file: File | null): string {
 		if (!file) return;
 		let cancelled = false;
 		let created = "";
-		void file.arrayBuffer().then((bytes) => {
-			if (cancelled) return;
-			created = URL.createObjectURL(new Blob([bytes], { type: file.type }));
-			setUrl(created);
-		});
+		file
+			.arrayBuffer()
+			.then((bytes) => {
+				if (cancelled) return;
+				created = URL.createObjectURL(new Blob([bytes], { type: file.type }));
+				setUrl(created);
+			})
+			// A file that cannot be read any more (moved or changed on disk) just has no preview.
+			.catch(() => {});
 		return () => {
 			cancelled = true;
 			if (created) URL.revokeObjectURL(created);

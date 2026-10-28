@@ -4,5 +4,5 @@
 
 ### Fixed
 
-- The size notice under the attachments ("Cloudflare limits general email messages to 5 MiB…") only shows when a file will be sent as a download link or the files come close to the message limit, no longer for every attachment.
+- The size notice under the attachments ("Cloudflare limits general email messages to 5 MiB…") only shows when a file will be sent as a download link or the files come close to the message limit, no longer for every attachment, and not at all when the From domain sends through Resend or SES, which take big files directly (the Attach button's tooltip follows).
 - The text Write with Kite suggests is readable in dark mode: the preview had a near-white background with light grey text.

@@ -141,6 +141,7 @@ test("a file attached in the inline reply opens in the viewer, downloads from it
 	await page.keyboard.press("Enter");
 	await expectImagePreview(page);
 	await page.keyboard.press("Escape");
+	await expect(open).toBeFocused();
 
 	const menuButton = composer.getByRole("button", { name: `More actions for ${IMAGE_NAME}` });
 	await menuButton.click();
@@ -229,4 +230,133 @@ test("the full composer shows the same chips for a forwarded file", async ({ pag
 	await expect(window.getByRole("button", { name: "Minimize composer" })).toBeVisible();
 	await chip(window).click();
 	await expectImagePreview(page);
+});
+
+const textFile = (name: string, text = `${name} contents`) => ({
+	name,
+	mimeType: "text/plain",
+	buffer: Buffer.from(text),
+});
+
+/** A composer whose uploads to the draft fail, so every file stays a local attachment. */
+async function localOnlyComposer(page: Page, label: string) {
+	const subject = await deliverOne(label);
+	await page.route("**/api/drafts/*/attachments", (route) => route.abort());
+	return openReply(page, subject);
+}
+
+test("removing a chip from its menu moves the focus to the next chip, else the previous one, else Attach", async ({
+	page,
+}) => {
+	const composer = await localOnlyComposer(page, "Attach focus");
+	await composer.locator('input[type="file"]').setInputFiles([textFile("a.txt"), textFile("b.txt"), textFile("c.txt")]);
+	await expect(composer.locator("[data-compose-attachment]")).toHaveCount(3);
+
+	async function removeViaMenu(name: string) {
+		await composer.getByRole("button", { name: `More actions for ${name}` }).click();
+		await page.getByRole("menuitem", { name: "Remove" }).click();
+		await expect(composer.locator(`[data-compose-attachment="${name}"]`)).toHaveCount(0);
+	}
+
+	await removeViaMenu("b.txt");
+	await expect(chip(composer, "c.txt")).toBeFocused();
+	await removeViaMenu("c.txt");
+	await expect(chip(composer, "a.txt")).toBeFocused();
+	await removeViaMenu("a.txt");
+	await expect(composer.getByRole("button", { name: "Attach files" })).toBeFocused();
+});
+
+test("menu → Preview opens the viewer, Escape returns the focus to the menu button and the page stays clickable", async ({
+	page,
+}) => {
+	const composer = await localOnlyComposer(page, "Attach menu focus");
+	await composer.locator('input[type="file"]').setInputFiles(textFile("notes.txt"));
+	const menuButton = composer.getByRole("button", { name: "More actions for notes.txt" });
+	await menuButton.click();
+	await page.getByRole("menuitem", { name: "Preview" }).click();
+	const dialog = page.getByRole("dialog", { name: "notes.txt" });
+	await expect(dialog).toBeVisible();
+	await expect(dialog.getByText("notes.txt contents")).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(dialog).toHaveCount(0);
+
+	await expect(menuButton).toBeFocused();
+	// A menu that opened the dialog while still closing would leave the page's pointer-events locked.
+	await expect.poll(() => page.evaluate(() => document.body.style.pointerEvents)).not.toBe("none");
+	const body = composer.getByRole("textbox", { name: "Message body" });
+	await body.click();
+	await expect(body).toBeFocused();
+});
+
+test("an unsaved text file with markup previews as literal text and runs nothing", async ({ page }) => {
+	const composer = await localOnlyComposer(page, "Attach script");
+	const markup =
+		'<script>window.__attachmentScriptRan = true</script><img src=x onerror="window.__attachmentScriptRan = true">';
+	await composer.locator('input[type="file"]').setInputFiles(textFile("markup.txt", markup));
+	await chip(composer, "markup.txt").click();
+	const dialog = page.getByRole("dialog", { name: "markup.txt" });
+	await expect(dialog.locator("pre")).toHaveText(markup);
+	await expect(dialog.locator("script, img[onerror]")).toHaveCount(0);
+	expect(
+		await page.evaluate(() => (window as unknown as { __attachmentScriptRan?: boolean }).__attachmentScriptRan),
+	).toBeUndefined();
+});
+
+test("the Cloudflare link notice and the Attach tooltip follow the From domain's sending provider", async ({
+	page,
+}) => {
+	const composer = await localOnlyComposer(page, "Attach provider");
+	for (const cloudLinks of [true, false]) {
+		await page.route("**/api/attachment-policy*", (route) =>
+			route.fulfill({ json: { maxMb: 25, cloudThresholdBytes: 3_000_000, cloudLinks } }),
+		);
+		await page.reload();
+		await page.getByRole("button", { name: /^Reply to Inline Sender/ }).click();
+		const reply = inlineComposer(page);
+		await reply.locator('input[type="file"]').setInputFiles({
+			name: "big.zip",
+			mimeType: "application/zip",
+			buffer: Buffer.alloc(3_200_000, 1),
+		});
+		await expect(chip(reply, "big.zip")).toBeVisible();
+		const notice = reply.getByText(/Cloudflare limits general email messages/);
+		if (cloudLinks) await expect(notice).toBeVisible();
+		else await expect(notice).toHaveCount(0);
+		await reply.getByRole("button", { name: "Attach files" }).hover();
+		const tooltip = page.getByRole("tooltip");
+		await expect(tooltip).toContainText("Attach files (up to 25 MB total)");
+		if (cloudLinks) await expect(tooltip).toContainText("R2 download links");
+		else await expect(tooltip).not.toContainText("R2 download links");
+	}
+	void composer;
+});
+
+test("the attachment policy tells the composer whether the From domain sends through Cloudflare", async () => {
+	const api = await apiContext(STORAGE_STATE);
+	const hostname = `policy-${uniqueToken("")}.example.test`.toLowerCase();
+	const created = await api.post("/api/domains", { data: { hostname, skipDns: true } });
+	expect(created.ok(), await created.text()).toBe(true);
+	const listed = (await (await api.get("/api/domains")).json()) as { domains: { id: string; hostname: string }[] };
+	const domain = listed.domains.find((item) => item.hostname === hostname)!;
+	const policy = async (from: string) =>
+		(await (await api.get(`/api/attachment-policy?from=${encodeURIComponent(from)}`)).json()) as {
+			cloudLinks: boolean;
+			cloudThresholdBytes: number;
+		};
+	try {
+		// A domain without a sending provider, an unknown one and no address at all keep the Cloudflare wording.
+		expect((await policy(`me@${hostname}`)).cloudLinks).toBe(true);
+		expect((await policy("me@unknown.example.test")).cloudLinks).toBe(true);
+		expect(((await (await api.get("/api/attachment-policy")).json()) as { cloudLinks: boolean }).cloudLinks).toBe(true);
+		for (const provider of ["resend", "ses"]) {
+			const set = await api.put(`/api/domains/${domain.id}/sending`, { data: { provider } });
+			expect(set.ok(), await set.text()).toBe(true);
+			expect(await policy(`Me <me@${hostname}>`)).toMatchObject({ cloudLinks: false, cloudThresholdBytes: 3_000_000 });
+		}
+		await api.put(`/api/domains/${domain.id}/sending`, { data: { provider: "none" } });
+		expect((await policy(`me@${hostname}`)).cloudLinks).toBe(true);
+	} finally {
+		await api.delete(`/api/domains/${domain.id}`);
+		await api.dispose();
+	}
 });

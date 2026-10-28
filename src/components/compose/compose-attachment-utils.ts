@@ -15,6 +15,11 @@ export function splitFilename(filename: string): { base: string; extension: stri
 	return { base: filename.slice(0, dot), extension: filename.slice(dot) };
 }
 
+/** A stable key for one chip; a file gets a new key when the autosave stores it. */
+export function entryKey(entry: ComposeAttachmentEntry): string {
+	return `${entry.kind}-${entry.id}`;
+}
+
 /** The attachment shape the reader's viewer and visuals expect, for either kind of composer file. */
 export function entryAttachment(entry: ComposeAttachmentEntry, draftId: string | null): MessageAttachment {
 	if (entry.kind === "stored") return { ...entry.stored, contentId: null, messageId: draftId ?? "" };

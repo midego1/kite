@@ -5,7 +5,7 @@ import { createSignedInAccount, okJson, selectMailbox } from "./support/auto-rea
 import { startFakeModel } from "./support/fake-model";
 import { COMPOSE_SHORTER_BODY, COMPOSE_TRANSLATE_BODY, COMPOSE_WRITE_BODY } from "./support/fake-model-scenarios";
 import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types";
-import { contrastBetween } from "./support/contrast";
+import { contrastBetween, luminancesBetween } from "./support/contrast";
 import { apiContext, openMessage, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
 
 let api: APIRequestContext;
@@ -181,12 +181,8 @@ test.describe("Write with Kite", () => {
 					expect(await contrastBetween(preview, panel)).toBeGreaterThan(1.05);
 					if (theme === "dark") {
 						// The old preview was near-white in dark mode; the box must now be darker than its text.
-						const [text, background] = await preview.evaluate((element) => {
-							const style = getComputedStyle(element);
-							return [style.color, style.backgroundColor];
-						});
-						const lightness = (color: string) => Number(color.match(/\d+/g)?.[0] ?? 0);
-						expect(lightness(background)).toBeLessThan(lightness(text));
+						const { text, background } = await luminancesBetween(preview);
+						expect(background).toBeLessThan(text);
 					}
 					await page.screenshot({ path: testInfo.outputPath(`write-with-kite-${style}-${theme}.png`) });
 				} finally {

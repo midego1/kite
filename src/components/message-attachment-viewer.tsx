@@ -4,10 +4,11 @@ import { ArrowDownToLine, FileWarning } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useReturnFocus } from "@/components/ui/use-return-focus";
 import type { MessageAttachmentViewerProps } from "./message-attachment-viewer-types";
 import { useAttachmentText } from "./use-attachment-text";
 import { useObjectUrl } from "./use-object-url";
-import { getAttachmentFileUrl, getAttachmentPreviewKind } from "./message-attachment-viewer-utils";
+import { getAttachmentPreviewKind, getViewerUrls } from "./message-attachment-viewer-utils";
 
 export function MessageAttachmentViewer({
 	attachment,
@@ -16,10 +17,11 @@ export function MessageAttachmentViewer({
 	onOpenChange,
 	open,
 }: MessageAttachmentViewerProps) {
+	// The viewer has no Trigger of its own, so focus goes back to the chip or menu button that opened it.
+	const returnFocus = useReturnFocus();
 	const previewKind = attachment ? getAttachmentPreviewKind(attachment) : "unsupported";
 	const fileUrl = useObjectUrl(open ? file : null);
-	const previewUrl = file ? fileUrl : attachment ? getAttachmentFileUrl(messageId, attachment.id, "preview") : "";
-	const downloadUrl = file ? fileUrl : attachment ? getAttachmentFileUrl(messageId, attachment.id, "download") : "";
+	const { previewUrl, downloadUrl } = getViewerUrls(attachment, messageId, file ? fileUrl : null);
 	const { content: textContent, error: textError } = useAttachmentText({
 		enabled: open && !!attachment && previewKind === "text",
 		file,
@@ -30,7 +32,10 @@ export function MessageAttachmentViewer({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="flex h-[min(88vh,900px)] w-[min(1100px,calc(100vw-32px))] flex-col overflow-hidden">
+			<DialogContent
+				{...returnFocus}
+				className="flex h-[min(88vh,900px)] w-[min(1100px,calc(100vw-32px))] flex-col overflow-hidden"
+			>
 				<DialogHeader className="shrink-0 pr-10">
 					<DialogTitle className="truncate">{attachment.filename}</DialogTitle>
 					<DialogDescription>{attachment.type}</DialogDescription>
@@ -66,12 +71,20 @@ export function MessageAttachmentViewer({
 				</div>
 
 				<div className="flex shrink-0 justify-end">
-					<Button asChild>
-						<a href={downloadUrl} download={attachment.filename}>
+					{downloadUrl ? (
+						<Button asChild>
+							<a href={downloadUrl} download={attachment.filename}>
+								<ArrowDownToLine className="h-4 w-4" />
+								Download
+							</a>
+						</Button>
+					) : (
+						// A local file's copy is still being made.
+						<Button disabled>
 							<ArrowDownToLine className="h-4 w-4" />
 							Download
-						</a>
-					</Button>
+						</Button>
+					)}
 				</div>
 			</DialogContent>
 		</Dialog>

@@ -28,7 +28,7 @@ export const TELEMETRY_PRIVACY_CONTACT = "privacy@midego.net";
 export const TELEMETRY_AUDIT_ACTIONS = ["telemetry.enabled", "telemetry.disabled"] as const;
 
 /** An install whose owner never chose starts sending at least this many days after the notice first told them. */
-export const TELEMETRY_NOTICE_DAYS = 14;
+const TELEMETRY_NOTICE_DAYS = 14;
 
 /** A heartbeat or an erasure request that takes longer is abandoned. */
 export const TELEMETRY_TIMEOUT_MS = 5_000;

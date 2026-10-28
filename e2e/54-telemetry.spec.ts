@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { BASE_URL, DOMAIN, STORAGE_STATE } from "./support/constants";
+import { BASE_URL, DOMAIN, E2E_TELEMETRY_URL, STORAGE_STATE } from "./support/constants";
 import { collectConsoleErrors, createSignedInAccount } from "./support/auto-read";
 import { sql } from "./support/drive";
 import { apiContext, uniqueToken } from "./support/helpers";
@@ -108,8 +108,8 @@ test("the first-run setup explains usage statistics and its switch is on until t
 			await page.goto("/setup");
 			return (await anonymous.get("/api/setup/status")).json();
 		});
-		// The e2e server's KITE_TELEMETRY_URL names a `.invalid` host, so its real setup status says nothing is sent.
-		expect(realStatus.telemetry).toEqual({ forcedOff: false, endpoint: null });
+		// Until the first account exists, the real setup status tells the page where reports would go.
+		expect(realStatus.telemetry).toEqual({ forcedOff: false, endpoint: E2E_TELEMETRY_URL });
 
 		await page.getByRole("button", { name: "Continue" }).click();
 		const section = page.locator("[data-setup-telemetry]");
@@ -246,7 +246,7 @@ test("the sidebar notice: Dismiss keeps the start day, Keep on starts at once, t
 	expect(kept.installId).toMatch(UUID);
 
 	// Told long ago and never answered: once the start day has come, statistics are on with a fresh id. (Nothing is
-	// posted: the e2e collector address is unusable.)
+	// posted: no spec runs the 02:00 cron.)
 	forgetChoice();
 	sql(
 		"INSERT INTO telemetry_state (id, enabled, start_day, notice_dismissed, updated_at) VALUES ('default', 0, '2026-01-01', 1, 0)",
@@ -279,10 +279,11 @@ test("the owner turns usage statistics on and off in Admin General; nobody else 
 
 	await toggle.click();
 	await expect(toggle).toHaveAttribute("aria-checked", "true");
-	// The e2e server points KITE_TELEMETRY_URL at a `.invalid` host: nothing is sent.
-	await expect(card.locator("[data-telemetry-status]")).toContainText("not a usable https address");
+	// No spec runs the 02:00 cron, and the e2e collector address answers nothing: nothing is sent.
+	await expect(card.locator("[data-telemetry-status]")).toHaveText("On, nothing sent yet");
+	await expect(card).toContainText(`Sent to ${E2E_TELEMETRY_URL}`);
 	const on = await (await api.get("/api/admin/telemetry")).json();
-	expect(on).toMatchObject({ enabled: true, forcedOff: false, available: true, endpoint: null });
+	expect(on).toMatchObject({ enabled: true, forcedOff: false, available: true, endpoint: E2E_TELEMETRY_URL });
 	expect(on.installId).toMatch(UUID);
 	await expect(card.locator("[data-telemetry-install-id]")).toHaveText(on.installId);
 	await expect(card.getByRole("button", { name: "Copy ID" })).toBeVisible();
@@ -306,7 +307,7 @@ test("the owner turns usage statistics on and off in Admin General; nobody else 
 	await expect(toggle).toHaveAttribute("aria-checked", "false");
 	await expect(card.locator("[data-telemetry-status]")).toHaveText("Off");
 	await expect(card).not.toContainText(on.installId);
-	// Nothing was ever sent (the endpoint is unusable), so there is nothing for the collector to erase.
+	// Nothing was ever sent (no heartbeat ran), so there is nothing for the collector to erase.
 	await expect(card.locator("[data-telemetry-erasure]")).toHaveCount(0);
 	expect(await (await api.get("/api/admin/telemetry")).json()).toMatchObject({ enabled: false, installId: null });
 	expect(await auditCounts()).toEqual({

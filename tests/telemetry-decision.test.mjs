@@ -49,7 +49,8 @@ const {
 	telemetryStartDay,
 	telemetryStartDayReached,
 } = await load("utils");
-const { telemetryStartsLater, telemetrySwitchOn, usageStatisticsSetupHint } = await load("notice");
+const { setupUsageStatisticsChoice, telemetryStartsLater, telemetrySwitchOn, usageStatisticsSetupHint } =
+	await load("notice");
 const {
 	applyTelemetryStartDay,
 	getTelemetryStatus,
@@ -152,6 +153,9 @@ test("the rules: only an undecided install starts, only from a start day it was 
 	assert.equal(telemetrySwitchOn({ ...status, decision: "off", startDay: null }), false);
 	assert.equal(telemetrySwitchOn({ ...status, startDay: null }), false);
 	assert.equal(telemetrySwitchOn({ ...status, enabled: true, decision: "on" }), true);
+	assert.equal(setupUsageStatisticsChoice({ forcedOff: false, endpoint: COLLECTOR }, false), false);
+	assert.equal(setupUsageStatisticsChoice(undefined, true), true);
+	assert.equal(setupUsageStatisticsChoice({ forcedOff: true, endpoint: COLLECTOR }, true), undefined);
 	assert.match(usageStatisticsSetupHint({ forcedOff: true, endpoint: COLLECTOR, checked: true }), /KITE_TELEMETRY/);
 	assert.match(usageStatisticsSetupHint({ forcedOff: false, endpoint: null, checked: true }), /nothing is sent/);
 	assert.match(usageStatisticsSetupHint({ forcedOff: false, endpoint: COLLECTOR, checked: false }), /no install ID/);

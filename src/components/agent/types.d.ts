@@ -96,7 +96,14 @@ export type AgentSettings = {
 	dailyLimit: number;
 };
 
-export type AgentPanelProps = { open: boolean; fullSize: boolean; onClose: () => void; onToggleFullSize: () => void };
+export type AgentPanelProps = {
+	open: boolean;
+	fullSize: boolean;
+	/** Beside the page as a panel, not in a floating window. */
+	docked?: boolean;
+	onClose: () => void;
+	onToggleFullSize: () => void;
+};
 export type QueuedAgentMessage = { id: string; text: string };
 export type QueuedAgentMessagesProps = {
 	messages: QueuedAgentMessage[];

@@ -8,7 +8,8 @@ import type { MailboxOption } from "@/components/mailbox-provider";
 import type { EmailPageTitleInput } from "./types";
 import type { MessageFolderConfig } from "./types";
 import type { PageRange } from "./types";
-import type { BulkMessageResponse, PermanentDeleteFolder } from "@/app/api/messages/bulk/types";
+import type { BulkMessageAction, BulkMessageResponse, PermanentDeleteFolder } from "@/app/api/messages/bulk/types";
+import { postBulkMessageAction } from "./bulk-request";
 import { announcePhishingReports } from "./phishing-report";
 import { offerUndoForMove } from "./undo-utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
@@ -100,12 +101,9 @@ export function getSelectionToolbarFolder(config: Pick<MessageFolderConfig, "fol
 }
 
 export async function runBulkMessageAction(messageIds: string[], action: string, notify = true, folderId?: string) {
-	const response = await authFetch("/api/messages/bulk", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ messageIds, action, folderId }),
-	});
-
+	const response = await postBulkMessageAction({ messageIds, action: action as BulkMessageAction, folderId });
+	// Cancelled: the selection held drafts and the user chose not to delete them.
+	if (!response) return null;
 	if (!response.ok) throw new Error("Unable to update selected messages");
 	const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
 	if (action === "read" || action === "unread") markMessagesReadInCaches(messageIds, action === "read");

@@ -40,6 +40,7 @@ export function applySelection(
 				id: message.id,
 				read: message.read && !(message.threadUnread ?? 0),
 				...(message.mailboxId ? { mailboxId: message.mailboxId } : {}),
+				...(message.status === "draft" ? { status: message.status } : {}),
 			});
 		}
 	}

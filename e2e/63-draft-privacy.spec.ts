@@ -1,11 +1,12 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { DOMAIN, STORAGE_STATE } from "./support/constants";
 import { apiContext, apiSignIn, deliverInbound, uniqueToken } from "./support/helpers";
 import { turnScreenerOff } from "./support/screener";
 
 // Drafts are private to their author, even in a shared mailbox: a teammate with full access reads the
 // mailbox's mail but never another user's draft, by id, in a list, in a count or in search. A draft leaves
-// Drafts only by being sent or deleted (Delete removes it outright), and nothing is moved into Drafts.
+// Drafts only by being sent or deleted (Delete removes it outright, after asking, even for a member without full
+// access), nothing is moved into Drafts, and removing a member's access deletes their drafts, after a warning.
 
 const PASSWORD = "draft-privacy-password-123";
 
@@ -15,6 +16,24 @@ type Counts = { counts: { folders: { drafts: { total: number } } } };
 async function json<T>(response: Awaited<ReturnType<APIRequestContext["get"]>>): Promise<T> {
 	expect(response.ok(), `${response.url()} -> ${response.status()} ${await response.text()}`).toBe(true);
 	return (await response.json()) as T;
+}
+
+/** Opens `path` in the All mailboxes view, which the browser remembers once chosen. */
+async function showAllMailboxes(page: Page, path: string) {
+	await page.goto("/inbox");
+	const switcher = page.getByRole("button", { name: /^Switch mailbox, current:/ });
+	// The first visit compiles the dashboard on a cold dev server.
+	await expect(switcher).toBeVisible({ timeout: 60_000 });
+	if (!(await page.getByRole("button", { name: "Switch mailbox, current: All mailboxes" }).isVisible())) {
+		await switcher.click();
+		await page
+			.getByRole("dialog", { name: "Switch mailbox" })
+			.getByRole("option", { name: /All mailboxes/ })
+			.click();
+		await expect(page.getByRole("button", { name: "Switch mailbox, current: All mailboxes" })).toBeVisible();
+	}
+	await page.goto(path);
+	await expect(page.getByRole("button", { name: "Switch mailbox, current: All mailboxes" })).toBeVisible();
 }
 
 async function saveDraft(api: APIRequestContext, from: string, mailboxId: string, subject: string, text: string) {
@@ -92,22 +111,14 @@ test("a teammate on a shared mailbox cannot read another user's draft; its autho
 		expect((await admin.get(`/api/messages/${mateDraftId}`)).status()).toBe(404);
 	});
 
-	await test.step("the teammate's Drafts view lists their own draft only", async () => {
+	await test.step("with Send as access only, the teammate's Drafts lists their own draft and deletes it", async () => {
+		// Deleting your own draft needs no full access to the mailbox.
+		await json(
+			await admin.post(`/api/mailboxes/${sharedId}/access`, { data: { userId: account.id, permission: "send_as" } }),
+		);
 		const context = await browser.newContext({ storageState: await mate.storageState() });
 		const page = await context.newPage();
-		await page.goto("/inbox");
-		const switcher = page.getByRole("button", { name: /^Switch mailbox, current:/ });
-		// The first visit compiles the dashboard on a cold dev server.
-		await expect(switcher).toBeVisible({ timeout: 60_000 });
-		await switcher.click();
-		await page
-			.getByRole("dialog", { name: "Switch mailbox" })
-			.getByRole("option", { name: /All mailboxes/ })
-			.click();
-		await expect(page.getByRole("button", { name: "Switch mailbox, current: All mailboxes" })).toBeVisible();
-		// The browser keeps the choice, so Drafts opens on All mailboxes too.
-		await page.goto("/drafts");
-		await expect(page.getByRole("button", { name: "Switch mailbox, current: All mailboxes" })).toBeVisible();
+		await showAllMailboxes(page, "/drafts");
 		const list = page.getByRole("list", { name: "Drafts" });
 		await expect(list.getByText(mateSubject)).toBeVisible();
 		await expect(page.getByText(secret)).toHaveCount(0);
@@ -145,6 +156,58 @@ test("a teammate on a shared mailbox cannot read another user's draft; its autho
 		expect(restore.status()).toBe(409);
 		const stored = await json<{ message: { status: string } }>(await admin.get(`/api/messages/${mail.id}`));
 		expect(stored.message.status).toBe("received");
+	});
+
+	await test.step("Delete in Starred asks before deleting a starred draft, which never reaches Trash", async () => {
+		const subject = `Starred draft ${token}`;
+		const starredDraft = await saveDraft(admin, address, sharedId, subject, "Starred words");
+		const mailSubject = `Starred mail ${token}`;
+		const mail = await deliverInbound(admin, {
+			from: `"Customer" <customer@outside.test>`,
+			to: address,
+			subject: mailSubject,
+		});
+		for (const id of [starredDraft, mail.id]) await json(await admin.post(`/api/messages/${id}/star`));
+
+		const context = await browser.newContext({ storageState: STORAGE_STATE });
+		const page = await context.newPage();
+		await showAllMailboxes(page, "/starred");
+		for (const text of [subject, mailSubject]) {
+			const row = page.locator("[data-message-row]").filter({ has: page.getByText(text, { exact: true }) });
+			await expect(row).toBeVisible();
+			await row.getByRole("checkbox").check();
+		}
+		await page.getByRole("button", { name: "Delete", exact: true }).click();
+		const confirm = page.getByRole("alertdialog", { name: "Delete a draft permanently?" });
+		await expect(confirm).toContainText("can't be restored");
+		await confirm.getByRole("button", { name: "Delete" }).click();
+		await expect(page.getByText("1 draft deleted permanently")).toBeVisible();
+		// Undo covers the mail that went to Trash, never the deleted draft.
+		await expect(page.getByText("Message moved to Trash")).toBeVisible();
+		await context.close();
+		expect((await admin.get(`/api/messages/${starredDraft}`)).status()).toBe(404);
+		const moved = await json<{ message: { status: string } }>(await admin.get(`/api/messages/${mail.id}`));
+		expect(moved.message.status).toBe("trash");
+	});
+
+	await test.step("removing the teammate's access warns that their drafts will be deleted, and deletes them", async () => {
+		const leftBehind = await saveDraft(mate, address, sharedId, `Left behind ${token}`, "Mate's last words");
+		const context = await browser.newContext({ storageState: STORAGE_STATE });
+		const page = await context.newPage();
+		await page.goto(`/mailboxes/${sharedId}`);
+		await page.getByRole("button", { name: /^Remove / }).click();
+		const confirm = page.getByRole("alertdialog", { name: /access to this mailbox\?$/ });
+		await expect(confirm).toContainText("Their drafts in this mailbox will be deleted. This can't be undone.");
+		await confirm.getByRole("button", { name: "Remove access" }).click();
+		await expect(page.getByText("No one else has access yet.")).toBeVisible();
+		await context.close();
+		// Given access again, the teammate finds none of their old drafts there.
+		await json(
+			await admin.post(`/api/mailboxes/${sharedId}/access`, { data: { userId: account.id, permission: "send_as" } }),
+		);
+		const drafts = await json<Listed>(await mate.get(`/api/messages?mailboxId=${sharedId}&status=draft`));
+		expect(drafts.messages.map((row) => row.id)).not.toContain(leftBehind);
+		expect(drafts.messages).toHaveLength(0);
 	});
 
 	await mate.dispose();

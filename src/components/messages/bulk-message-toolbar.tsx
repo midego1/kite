@@ -87,6 +87,7 @@ function MailSelectionToolbar({
 	pending,
 	folder,
 	mailboxIds,
+	hasDraftSelection = false,
 }: BulkMessageToolbarProps) {
 	// In archived, spam and trash the usual button would be a no-op, so it becomes the way back to the inbox.
 	const archive =
@@ -151,7 +152,8 @@ function MailSelectionToolbar({
 					variant="ghost"
 					size="sm"
 					onClick={() => onAction(trash.action as BulkMessageAction)}
-					disabled={manageDisabled}
+					// The user may always delete their own drafts; the server deletes them after a confirmation.
+					disabled={manageDisabled && !(hasDraftSelection && trash.action === "trash" && !pending)}
 					aria-label={trash.label}
 				>
 					<trash.Icon className="h-4 w-4" />

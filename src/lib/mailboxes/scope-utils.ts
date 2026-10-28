@@ -48,10 +48,18 @@ export function canManageMailboxMail(permission: MailboxPermission | null | unde
 }
 
 /**
+ * Whether the user may delete a listed message whatever their access to its mailbox: a draft, since a listed
+ * draft is always the user's own (other users' drafts are never listed), and its author may always delete it.
+ */
+function isOwnDraftDeletion(item: { status?: string }, action: string): boolean {
+	return item.status === "draft" && (action === "trash" || action === "delete");
+}
+
+/**
  * Splits a selection by what the user may do to each message's mailbox. `permissionOf`
  * answers undefined for a mailbox the user cannot open, which is never allowed.
  */
-export function splitByMailboxAccess<T extends { id: string; mailboxId?: string | null }>(
+export function splitByMailboxAccess<T extends { id: string; mailboxId?: string | null; status?: string }>(
 	items: readonly T[],
 	action: string,
 	permissionOf: (mailboxId: string) => MailboxPermission | undefined,
@@ -60,7 +68,9 @@ export function splitByMailboxAccess<T extends { id: string; mailboxId?: string 
 	let skipped = 0;
 	for (const item of items) {
 		const permission = item.mailboxId ? permissionOf(item.mailboxId) : undefined;
-		const ok = permission !== undefined && (!actionNeedsManage(action) || canManageMailboxMail(permission));
+		const ok =
+			permission !== undefined &&
+			(!actionNeedsManage(action) || canManageMailboxMail(permission) || isOwnDraftDeletion(item, action));
 		if (ok) allowed.push(item.id);
 		else skipped += 1;
 	}

@@ -29,7 +29,7 @@ export function useMessageAccess() {
 		[permissionOf],
 	);
 	const split = useCallback(
-		<T extends { id: string; mailboxId?: string | null }>(items: readonly T[], action: string) =>
+		<T extends { id: string; mailboxId?: string | null; status?: string }>(items: readonly T[], action: string) =>
 			splitByMailboxAccess(items, action, permissionOf),
 		[permissionOf],
 	);

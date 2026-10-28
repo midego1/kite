@@ -12,6 +12,11 @@ export type BulkMessagePayload = {
 	folderId?: string;
 	/** For "restore": the state an undone archive or trash puts each message back into. */
 	restore?: MessageRestoreState[];
+	/**
+	 * For "trash" and "delete": also delete the caller's own drafts in the selection, permanently. Without it a
+	 * selection holding drafts changes nothing and answers 409 `DRAFTS_NEED_CONFIRMATION` with their count.
+	 */
+	deleteDrafts?: boolean;
 };
 
 /** Where a message was before an archive or trash, as returned for undo. */
@@ -33,6 +38,9 @@ export type BulkMessageResponse = {
 	superseded?: number;
 	/** True when a report could not record what it trained, so Undo moves the mail back but cannot untrain it. */
 	trainingUndoUnavailable?: boolean;
+	/** With 409 `DRAFTS_NEED_CONFIRMATION`: how many of your own drafts the selection holds. */
+	drafts?: number;
+	code?: string;
 	/** Your own drafts a Delete or Trash removed outright: a draft never goes to Trash, where the mailbox would see it. */
 	draftsDeleted?: number;
 	/** Drafts left where they were, because a draft leaves Drafts only by being sent or deleted. */

@@ -17,3 +17,6 @@ export function isHiddenDraft(row: { status: string; userId: string }, viewerId:
 export function isDraftMoveRefused(currentStatus: string, targetStatus: string): boolean {
 	return (currentStatus === DRAFT_STATUS) !== (targetStatus === DRAFT_STATUS);
 }
+
+/** The warning on removing a member's access to a shared mailbox, which deletes their (private) drafts in it. */
+export const REMOVE_ACCESS_DESCRIPTION = "Their drafts in this mailbox will be deleted. This can't be undone.";

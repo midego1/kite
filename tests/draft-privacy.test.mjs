@@ -45,6 +45,13 @@ await build({
 			export { canProxyMessageImage } from "./src/lib/remote-images/message-access.ts";
 			export { isHiddenDraft, isDraftMoveRefused } from "./src/lib/messages/draft-privacy-utils.ts";
 			export { bulkDraftHandling } from "./src/app/api/messages/bulk/utils.ts";
+			export { REMOVE_ACCESS_DESCRIPTION } from "./src/lib/messages/draft-privacy-utils.ts";
+			export { splitByMailboxAccess } from "./src/lib/mailboxes/scope-utils.ts";
+			export {
+				describeDraftsDeleted,
+				draftDeletionConfirmation,
+				draftsNeedingConfirmation,
+			} from "./src/components/messages/bulk-request-utils.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "draft-privacy-test-entry.ts",
@@ -359,23 +366,36 @@ test("a draft leaves Drafts only by being sent or deleted, and nothing becomes a
 	assert.equal(m.bulkDraftHandling("archive", "received"), "normal");
 });
 
-test("deleting your own draft removes it outright, with its attachment, and never exposes it", async (t) => {
-	const { as, params, bucket, exists } = await fixture(t);
-	const trash = await m.postBulk(
-		as("alice", "/api/messages/bulk", {
-			method: "POST",
-			body: JSON.stringify({ action: "trash", messageIds: ["draft-alice"] }),
-		}),
-	);
+test("deleting your own draft asks first, then removes it outright with its attachment, never exposing it", async (t) => {
+	const { as, params, bucket, exists, status } = await fixture(t);
+	const bulk = (who, body) => m.postBulk(as(who, "/api/messages/bulk", { method: "POST", body: JSON.stringify(body) }));
+
+	// Without deleteDrafts a selection holding drafts changes nothing, the mail in it included.
+	const unconfirmed = await bulk("alice", { action: "trash", messageIds: ["draft-alice", "mail-1"] });
+	assert.equal(unconfirmed.status, 409);
+	assert.deepEqual(await unconfirmed.json(), {
+		error: "Deleting drafts can't be undone; confirm with deleteDrafts",
+		code: "DRAFTS_NEED_CONFIRMATION",
+		drafts: 1,
+	});
+	assert.equal(exists("draft-alice"), true);
+	assert.equal(status("mail-1").status, "received");
+
+	// Confirmed: the draft is deleted for good and the mail goes to Trash, with Undo for the mail only.
+	const trash = await bulk("alice", { action: "trash", messageIds: ["draft-alice", "mail-1"], deleteDrafts: true });
 	assert.equal(trash.status, 200);
 	const body = await trash.json();
 	assert.equal(body.draftsDeleted, 1);
-	assert.equal(body.undo, undefined);
+	assert.deepEqual(
+		body.undo.map((state) => state.id),
+		["mail-1"],
+	);
 	assert.equal(exists("draft-alice"), false);
 	assert.equal(bucket.objects.has("attachments/draft-alice/att-alice/plan.txt"), false);
-	// Nothing landed in Trash for the rest of the mailbox.
+	assert.equal(status("mail-1").status, "trash");
+	// Nothing of the draft landed in Trash for the rest of the mailbox.
 	const bobTrash = await (await m.listMessages(as("bob", "/api/messages?mailboxId=shared&status=trash"))).json();
-	assert.deepEqual(ids(bobTrash), []);
+	assert.deepEqual(ids(bobTrash), ["mail-1"]);
 
 	const single = await m.postStatus(
 		as("alice", "/api/messages/draft-alice-alone/status", {
@@ -388,14 +408,75 @@ test("deleting your own draft removes it outright, with its attachment, and neve
 	assert.equal(exists("draft-alice-alone"), false);
 
 	// Permanent delete takes a draft too; another user's draft in the same selection is untouched.
-	const mixed = await m.postBulk(
-		as("bob", "/api/messages/bulk", {
-			method: "POST",
-			body: JSON.stringify({ action: "delete", messageIds: ["draft-bob", "draft-alice"] }),
-		}),
-	);
+	assert.equal((await bulk("bob", { action: "delete", messageIds: ["draft-bob", "draft-alice"] })).status, 409);
+	const mixed = await bulk("bob", { action: "delete", messageIds: ["draft-bob", "draft-alice"], deleteDrafts: true });
 	assert.equal(mixed.status, 200);
 	assert.equal(exists("draft-bob"), false);
+});
+
+test("a member with send access but not full access deletes their own drafts, and only those", async (t) => {
+	const { database, env, as, params, exists, status } = await fixture(t);
+	database.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES ('dave', 'dave@example.com', 'hash', 'Dave', 'user', 1);
+		INSERT INTO mailbox_access (id, mailbox_id, user_id, permission, created_at) VALUES ('access-3', 'shared', 'dave', 'send_as', 1);
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at) VALUES
+			('draft-dave', 'dave', 'shared', 'outbound', 'team@example.com', 'sam@partner.test', 'Dave notes', 'Dave', 'draft', 1790000300),
+			('draft-dave-2', 'dave', 'shared', 'outbound', 'team@example.com', 'sam@partner.test', 'Dave more', 'Dave', 'draft', 1790000400);
+	`);
+	const token = await m.createSession(env, "dave");
+	const dave = (path, body) =>
+		new Request(`${ORIGIN}${path}`, {
+			method: "POST",
+			headers: { Origin: ORIGIN, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+		});
+	const deleted = await m.postBulk(
+		dave("/api/messages/bulk", { action: "trash", messageIds: ["draft-dave"], deleteDrafts: true }),
+	);
+	assert.equal(deleted.status, 200);
+	assert.equal(exists("draft-dave"), false);
+	const single = await m.postStatus(dave("/api/messages/draft-dave-2/status", { status: "trash" }), {
+		params: Promise.resolve({ messageId: "draft-dave-2" }),
+	});
+	assert.equal(single.status, 200);
+	assert.equal(exists("draft-dave-2"), false);
+	// Without full access, other mail of the mailbox still cannot be moved, nor another user's draft deleted.
+	const mail = await m.postBulk(
+		dave("/api/messages/bulk", { action: "trash", messageIds: ["mail-1", "draft-alice"], deleteDrafts: true }),
+	);
+	assert.equal(mail.status, 404);
+	assert.equal(status("mail-1").status, "received");
+	assert.equal(exists("draft-alice"), true);
+	assert.equal(
+		(await m.postStatus(dave("/api/messages/mail-1/status", { status: "trash" }), params({ messageId: "mail-1" })))
+			.status,
+		404,
+	);
+});
+
+test("the client asks before deleting drafts, reports them apart and lets their author delete them", () => {
+	assert.equal(m.draftsNeedingConfirmation(409, { code: "DRAFTS_NEED_CONFIRMATION", drafts: 3 }), 3);
+	assert.equal(m.draftsNeedingConfirmation(409, { code: "DRAFT_MOVE_REFUSED" }), null);
+	assert.equal(m.draftsNeedingConfirmation(200, { code: "DRAFTS_NEED_CONFIRMATION", drafts: 3 }), null);
+	assert.equal(m.draftDeletionConfirmation(1).title, "Delete a draft permanently?");
+	assert.equal(m.draftDeletionConfirmation(2).title, "Delete 2 drafts permanently?");
+	assert.match(m.draftDeletionConfirmation(2).description, /can't be restored/);
+	assert.equal(m.describeDraftsDeleted(1), "1 draft deleted permanently");
+	assert.equal(m.describeDraftsDeleted(4), "4 drafts deleted permanently");
+	assert.equal(m.REMOVE_ACCESS_DESCRIPTION, "Their drafts in this mailbox will be deleted. This can't be undone.");
+
+	const permissionOf = () => "send_as";
+	const rows = [
+		{ id: "draft", mailboxId: "shared", status: "draft" },
+		{ id: "mail", mailboxId: "shared", status: "received" },
+	];
+	assert.deepEqual(m.splitByMailboxAccess(rows, "trash", permissionOf), { allowed: ["draft"], skipped: 1 });
+	assert.deepEqual(m.splitByMailboxAccess(rows, "archive", permissionOf), { allowed: [], skipped: 2 });
+	assert.deepEqual(m.splitByMailboxAccess(rows, "read", permissionOf), { allowed: ["draft", "mail"], skipped: 0 });
+	assert.deepEqual(
+		m.splitByMailboxAccess(rows, "trash", () => undefined),
+		{ allowed: [], skipped: 2 },
+	);
 });
 
 test("moving your own draft to Archive, Spam, Inbox or a folder is refused and it stays private", async (t) => {

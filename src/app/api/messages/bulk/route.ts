@@ -122,7 +122,13 @@ export async function POST(request: Request) {
 	const accessByMailbox = new Map<string, Promise<MailboxAccessLevel | null>>();
 
 	// Drafts never move: Delete and Trash remove the caller's own outright, other moves leave them alone.
-	const drafts = await settleDrafts(env, db, user.id, payload.action, selectedMessages, restoreStates);
+	const drafts = await settleDrafts(
+		env,
+		db,
+		user.id,
+		{ action: payload.action, deleteDrafts: payload.deleteDrafts === true, restore: restoreStates },
+		selectedMessages,
+	);
 	for (const message of drafts.rest) {
 		const mailboxId = actionMailboxId(message.mailboxId, folderMailboxId);
 		if (!mailboxId) continue;

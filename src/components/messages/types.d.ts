@@ -95,9 +95,12 @@ export type BulkMessageToolbarProps = {
 	folder?: MessageFolder;
 	/** The mailbox of each selected row: folders are offered for one mailbox only, and read-only mail stays put. */
 	mailboxIds?: Array<string | null | undefined>;
+	/** The selection holds the user's own drafts, so Delete stays on without full access to their mailbox. */
+	hasDraftSelection?: boolean;
 };
 
-export type SelectedMessage = Pick<Message, "id" | "read"> & { mailboxId?: string | null };
+/** A selected row; `status` lets a member without full access still delete their own drafts. */
+export type SelectedMessage = Pick<Message, "id" | "read"> & { mailboxId?: string | null; status?: string };
 
 export type BulkSelectionAction = (action: BulkMessageAction, folderId?: string) => Promise<void>;
 

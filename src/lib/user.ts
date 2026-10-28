@@ -105,14 +105,15 @@ export async function updateMessageStatusForUser(
 	const db = getDb(env);
 	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
 	if (!message?.mailboxId || isHiddenDraft(message, user.id)) return false;
-	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
-	if (!access?.canManage) return false;
-	// A draft is private: Trash deletes it outright, and no other move takes it out of Drafts or makes a draft.
+	// A draft is private (only its author gets here): Trash deletes it outright, whatever the author's access to
+	// the mailbox, as the drafts API does, and no other move takes it out of Drafts or makes a draft.
 	if (message.status === DRAFT_STATUS && status === "trash") {
 		await deleteMessageWithObjects(env, db, message.id, message.rawR2Key);
 		return true;
 	}
 	if (isDraftMoveRefused(message.status, status)) return false;
+	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
+	if (!access?.canManage) return false;
 	const classification = status === "spam" ? "spam" : status === "received" && message.status === "spam" ? "ham" : null;
 	if (classification) {
 		const result = await applySpamFeedbackWithReceipt(env, user, messageId, classification);

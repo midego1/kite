@@ -120,7 +120,8 @@ async function visit(page: Page, path: string, ready: Locator) {
  * only appears once the session check has answered) is on screen; a shot taken before it completes is not used.
  * `unread` is whether the sidebar's Inbox item shows its unread count, which arrives with the message counts.
  */
-async function capture(page: Page, name: string, theme: Theme, { rail = true, unread = rail } = {}) {
+async function capture(page: Page, name: string, theme: Theme, { rail = true, unread = rail }: { rail?: boolean; unread?: boolean } = {},
+) {
 	// Playwright's click retries can leave the message list scrolled a little; shots start at its top.
 	await page.evaluate(() => {
 		for (const list of document.querySelectorAll("[data-density]")) list.scrollTop = 0;

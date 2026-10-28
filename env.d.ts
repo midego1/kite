@@ -50,6 +50,8 @@ interface CloudflareEnv {
 	APP_URL?: string;
 	/** Database size limit in bytes for the warnings and the import guard; defaults to D1's 10 GB (Workers Free: 500000000). Ignored on Node. */
 	D1_MAX_BYTES?: string;
+	/** Dev/test only: "1" lets the X-Kite-Test-Database-Size request header stand in for the database size; ignored in production. */
+	DATABASE_SIZE_TEST_HEADER?: string;
 	/** "off" disables operational alert emails; anything else leaves them on. */
 	OPERATIONAL_ALERTS?: string;
 	/**

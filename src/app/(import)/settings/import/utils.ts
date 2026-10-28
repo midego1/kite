@@ -184,12 +184,10 @@ export async function resumeImportJob(
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ confirmDatabaseFull }),
 	});
-	if (response.status === 409) return "needs_confirmation";
-	if (!response.ok) {
-		const data = (await response.json().catch(() => ({}))) as { error?: string };
-		throw new Error(data.error ?? "Unable to resume import");
-	}
-	return "resumed";
+	if (response.ok) return "resumed";
+	const data = (await response.json().catch(() => ({}))) as { error?: string; code?: string };
+	if (data.code === "DATABASE_NEARLY_FULL") return "needs_confirmation";
+	throw new Error(data.error ?? "Unable to resume import");
 }
 
 export function getImportJobPercent(job: ImportJob): number {

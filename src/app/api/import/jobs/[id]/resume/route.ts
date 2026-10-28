@@ -4,6 +4,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { readJsonBody } from "@/lib/http/request";
 import { resumeImportJob } from "@/lib/import/jobs";
 import { testDatabaseSize } from "@/lib/db/size";
+import { DATABASE_FULL_NOTE } from "@/lib/import/size-guard-utils";
 import { withModule } from "@/lib/modules/route-guard";
 
 type Params = { params: Promise<{ id: string }> };
@@ -23,9 +24,12 @@ export const POST = withModule<Params>("import", async (request, { params, check
 	const { id } = await params;
 	const outcome = await resumeImportJob(env, user.id, id, {
 		confirmed: (body as { confirmDatabaseFull?: boolean }).confirmDatabaseFull === true,
-		sizeOverride: testDatabaseSize(request),
+		sizeOverride: testDatabaseSize(env, request),
 	});
 	if (outcome === "not_found") return Response.json({ error: "Paused import not found" }, { status: 404 });
+	if (outcome === "full") {
+		return Response.json({ error: DATABASE_FULL_NOTE, code: "DATABASE_FULL" }, { status: 409 });
+	}
 	if (outcome === "needs_confirmation") {
 		return Response.json(
 			{

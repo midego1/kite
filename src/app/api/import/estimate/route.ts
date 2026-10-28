@@ -26,7 +26,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	const estimate = await estimateImportForInstall(
 		env,
 		{ messages: count(body.messages), rawBytes: count(body.rawBytes) },
-		testDatabaseSize(request),
+		testDatabaseSize(env, request),
 	);
 	return Response.json({ estimate }, { headers: { "Cache-Control": "no-store" } });
 });

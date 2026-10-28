@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { isImportConfirmed } from "@/lib/import/size-guard-utils";
 import type { ImportJob } from "@/app/(import)/settings/import/types";
 import {
 	cancelImportJob,
@@ -190,7 +191,11 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 									style={{ width: `${percent}%` }}
 								/>
 							</div>
-							{job.lastError && <p className="text-xs text-red-600">{job.lastError}</p>}
+							{job.lastError && (
+								<p className={`text-xs ${isImportConfirmed(job.lastError) ? "text-neutral-500" : "text-red-600"}`}>
+									{job.lastError}
+								</p>
+							)}
 							{job.errors.length > 0 && (
 								<details className="text-xs text-neutral-500">
 									<summary className="cursor-pointer">

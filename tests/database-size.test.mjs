@@ -115,15 +115,23 @@ test("sizes read in decimal units, like Cloudflare's limits", () => {
 	assert.equal(size.formatDatabaseBytes(12), "12 B");
 });
 
-test("the test size header is honoured outside production only", () => {
+test("the test size header is honoured only with the explicit flag, and never in production", () => {
 	const header = "used=8000000000;limit=10000000000";
-	assert.deepEqual(size.parseTestDatabaseSize(header, "development"), { usedBytes: 8 * GB, limitBytes: 10 * GB });
-	assert.deepEqual(size.parseTestDatabaseSize(header, undefined), { usedBytes: 8 * GB, limitBytes: 10 * GB });
-	assert.equal(size.parseTestDatabaseSize(header, "production"), null);
-	assert.equal(size.parseTestDatabaseSize(null, "development"), null);
-	assert.equal(size.parseTestDatabaseSize("used=abc", "development"), null);
-	assert.deepEqual(size.parseTestDatabaseSize("used=5;limit=none", "development"), { usedBytes: 5, limitBytes: null });
-	assert.deepEqual(size.parseTestDatabaseSize("used=5", "development"), { usedBytes: 5, limitBytes: 10 * GB });
+	const injected = { usedBytes: 8 * GB, limitBytes: 10 * GB };
+	assert.deepEqual(size.parseTestDatabaseSize(header, "1", "development"), injected);
+	assert.deepEqual(size.parseTestDatabaseSize(header, "true", undefined), injected);
+	// A bare `node dist/server.mjs` has NODE_ENV unset: without the flag the header does nothing.
+	assert.equal(size.parseTestDatabaseSize(header, undefined, undefined), null);
+	assert.equal(size.parseTestDatabaseSize(header, "", "development"), null);
+	assert.equal(size.parseTestDatabaseSize(header, "0", "development"), null);
+	assert.equal(size.parseTestDatabaseSize(header, "1", "production"), null);
+	assert.equal(size.parseTestDatabaseSize(null, "1", "development"), null);
+	assert.equal(size.parseTestDatabaseSize("used=abc", "1", "development"), null);
+	assert.deepEqual(size.parseTestDatabaseSize("used=5;limit=none", "1", "development"), {
+		usedBytes: 5,
+		limitBytes: null,
+	});
+	assert.deepEqual(size.parseTestDatabaseSize("used=5", "1", "development"), { usedBytes: 5, limitBytes: 10 * GB });
 });
 
 const base = { usedBytes: 3.1 * GB, limitBytes: 10 * GB, installMessageCount: 2000 };
@@ -240,6 +248,11 @@ test("only the confirmation note is carried to the next run", () => {
 	assert.equal(guard.carriedImportNote(guard.IMPORT_CONFIRMED_NOTE), guard.IMPORT_CONFIRMED_NOTE);
 	assert.equal(guard.carriedImportNote("IMAP timed out"), null);
 	assert.equal(guard.carriedImportNote(null), null);
+});
+
+test("a transient error never replaces the confirmation", () => {
+	assert.equal(guard.noteAfterError(guard.IMPORT_CONFIRMED_NOTE, "IMAP timed out"), guard.IMPORT_CONFIRMED_NOTE);
+	assert.equal(guard.noteAfterError(null, "IMAP timed out"), "IMAP timed out");
 });
 
 test("starting or resuming needs confirmation from 90%", () => {

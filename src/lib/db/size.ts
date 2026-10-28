@@ -26,7 +26,14 @@ export async function getDatabaseSize(
 	}
 }
 
-/** The size a test injected with a request header; always null in production. */
-export function testDatabaseSize(request: Request): DatabaseSize | null {
-	return parseTestDatabaseSize(request.headers.get(TEST_DATABASE_SIZE_HEADER), process.env.NODE_ENV);
+/** The size a test injected with a request header; null unless `DATABASE_SIZE_TEST_HEADER` opts in, and always in production. */
+export function testDatabaseSize(
+	env: Pick<CloudflareEnv, "DATABASE_SIZE_TEST_HEADER">,
+	request: Request,
+): DatabaseSize | null {
+	return parseTestDatabaseSize(
+		request.headers.get(TEST_DATABASE_SIZE_HEADER),
+		env.DATABASE_SIZE_TEST_HEADER,
+		process.env.NODE_ENV,
+	);
 }

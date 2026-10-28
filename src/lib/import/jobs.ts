@@ -11,7 +11,9 @@ import { chunk, selectRemainingUids } from "./imap-utils";
 import {
 	IMPORT_CONFIRMED_NOTE,
 	carriedImportNote,
+	noteAfterError,
 	importPauseNote,
+	isDatabaseFull,
 	isImportConfirmed,
 	needsStartConfirmation,
 } from "./size-guard-utils";
@@ -119,7 +121,7 @@ export async function resumeImportJob(
 	userId: string,
 	jobId: string,
 	options: { confirmed: boolean; sizeOverride?: Parameters<typeof getDatabaseSize>[1] },
-): Promise<"resumed" | "not_found" | "needs_confirmation"> {
+): Promise<"resumed" | "not_found" | "needs_confirmation" | "full"> {
 	const db = getDb(env);
 	const [job] = await db
 		.select({ id: importJobs.id, lastError: importJobs.lastError })
@@ -127,7 +129,10 @@ export async function resumeImportJob(
 		.where(and(eq(importJobs.id, jobId), eq(importJobs.userId, userId), eq(importJobs.status, "paused")))
 		.limit(1);
 	if (!job) return "not_found";
-	const confirmNeeded = needsStartConfirmation(await getDatabaseSize(env, options.sizeOverride));
+	const size = await getDatabaseSize(env, options.sizeOverride);
+	// Past the hard stop it would only run one batch and pause again.
+	if (isDatabaseFull(size)) return "full";
+	const confirmNeeded = needsStartConfirmation(size);
 	if (confirmNeeded && !options.confirmed) return "needs_confirmation";
 	const resumed = await db
 		.update(importJobs)
@@ -344,7 +349,14 @@ export async function processImportJob(env: CloudflareEnv, jobId: string, ctx: C
 		}
 		await db
 			.update(importJobs)
-			.set({ attempts, lastError: message, leaseUntil: null, total, updatedAt: new Date() })
+			.set({
+				attempts,
+				// A transient error is retried; the confirmation to go on above 90% must survive it.
+				lastError: noteAfterError(job.lastError, message),
+				leaseUntil: null,
+				total,
+				updatedAt: new Date(),
+			})
 			.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running")));
 		await enqueueImportJob(env, job.id, 30 * attempts);
 	} finally {

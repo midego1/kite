@@ -4,6 +4,7 @@ import { messages } from "@/db/schema";
 import { getDatabaseSize, testDatabaseSize } from "@/lib/db/size";
 import type { DatabaseSize } from "@/lib/db/size-utils";
 import { type ImportEstimate, estimateImport } from "./estimate-utils";
+import { DATABASE_FULL_NOTE, isDatabaseFull } from "./size-guard-utils";
 
 /**
  * What an import of `messages` messages (and `rawBytes` of source mail, when known) would do to the database.
@@ -26,7 +27,8 @@ export async function estimateImportForInstall(
 }
 
 /**
- * The 409 `DATABASE_NEARLY_FULL` answer for an import start that needs "Import anyway" and did not get it, else null.
+ * The 409 answer for an import start that needs "Import anyway" and did not get it (`DATABASE_NEARLY_FULL`), or that
+ * cannot start at all because the database is at its hard stop (`DATABASE_FULL`); else no refusal.
  * `confirmed` tells the job to keep going above 90%.
  */
 export async function checkImportStart(
@@ -37,8 +39,14 @@ export async function checkImportStart(
 	const estimate = await estimateImportForInstall(
 		env,
 		{ messages: input.messages, rawBytes: null },
-		testDatabaseSize(request),
+		testDatabaseSize(env, request),
 	);
+	if (estimate && isDatabaseFull(estimate)) {
+		return {
+			refusal: Response.json({ error: DATABASE_FULL_NOTE, code: "DATABASE_FULL", estimate }, { status: 409 }),
+			confirmed: false,
+		};
+	}
 	const required = !!estimate?.requiresConfirmation;
 	if (required && !input.confirmed) {
 		const error = "The database is or would be above 90% of its size limit. Confirm to import anyway.";

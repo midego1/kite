@@ -37,15 +37,18 @@ function trim(value: number): string {
 
 /**
  * Specs and e2e inject a size with `X-Kite-Test-Database-Size: used=<bytes>;limit=<bytes>` (`limit=none` for
- * no limit). Ignored in production.
+ * no limit). Needs `DATABASE_SIZE_TEST_HEADER=1`; ignored in production.
  */
 export const TEST_DATABASE_SIZE_HEADER = "x-kite-test-database-size";
 
 export function parseTestDatabaseSize(
 	header: string | null | undefined,
+	flag: string | undefined,
 	nodeEnv: string | undefined,
 ): DatabaseSize | null {
-	if (nodeEnv === "production" || !header) return null;
+	// An explicit opt-in (set only for dev and e2e by vite.config.ts), and never in production: a bare
+	// `node dist/server.mjs` leaves NODE_ENV unset, so the environment alone is not a gate.
+	if (nodeEnv === "production" || !header || !(flag === "1" || flag === "true")) return null;
 	const fields = new Map(header.split(";").map((part) => part.trim().split("=") as [string, string | undefined]));
 	const used = Number(fields.get("used"));
 	if (!Number.isFinite(used) || used < 0) return null;

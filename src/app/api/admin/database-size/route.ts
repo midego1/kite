@@ -9,7 +9,7 @@ export async function GET(request: Request) {
 	const env = getEnv();
 	const auth = await requireSessionAdmin(env, request, isPrimaryAdmin);
 	if (auth.error) return auth.error;
-	const size = await getDatabaseSize(env, testDatabaseSize(request));
+	const size = await getDatabaseSize(env, testDatabaseSize(env, request));
 	return Response.json(
 		{ size, level: size ? databaseUseLevel(size.usedBytes, size.limitBytes) : "ok" },
 		{ headers: { "Cache-Control": "no-store" } },

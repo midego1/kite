@@ -165,6 +165,14 @@ test("an import that paused for the database size resumes only after confirmatio
 				`VALUES ('${JOB_ID}', (SELECT id FROM users WHERE email='admin@example.com'), '${id}', 'Paused e2e', 'system:inbox', 'imap.e2e.invalid', 993, 1, 'someone@e2e.invalid', '', 'INBOX', 'paused', 'Paused: the database is above 90% of its size limit.', unixepoch(), unixepoch())`,
 		);
 		const critical = { [SIZE_HEADER]: sizeAt(9.2 * GB) };
+		// At the hard stop (98%) nothing can resume, confirmed or not.
+		const full = await api.post(`/api/import/jobs/${JOB_ID}/resume`, {
+			data: { confirmDatabaseFull: true },
+			headers: { [SIZE_HEADER]: sizeAt(9.9 * GB) },
+		});
+		expect(full.status()).toBe(409);
+		expect(((await full.json()) as { code: string }).code).toBe("DATABASE_FULL");
+
 		const asked = await api.post(`/api/import/jobs/${JOB_ID}/resume`, { data: {}, headers: critical });
 		expect(asked.status()).toBe(409);
 		expect(((await asked.json()) as { code: string }).code).toBe("DATABASE_NEARLY_FULL");

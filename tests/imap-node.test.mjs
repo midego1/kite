@@ -521,3 +521,34 @@ test("an import keeps read and starred state, dates undated mail by INTERNALDATE
 	assert.ok(again.some((row) => row.imported === 0 && row.skipped === 5));
 	assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 4);
 });
+
+test("a Date header or INTERNALDATE far in the future does not pin imported mail to the top", async (t) => {
+	const server = await fake(t, {
+		implicitTls: true,
+		authPlain: true,
+		saslIr: true,
+		folders: {
+			INBOX: [
+				{
+					raw: sampleMessage(1, { subject: "Future header", date: "Fri, 01 Jan 2099 10:00:00 +0000" }),
+					internalDate: "01-Feb-2025 08:30:00 +0000",
+				},
+				{
+					raw: sampleMessage(2, { subject: "Future everything", date: null }),
+					internalDate: "01-Jan-2099 10:00:00 +0000",
+				},
+			],
+		},
+	});
+	const { db, env } = await importDatabase(t, server);
+	const before = Math.floor(Date.now() / 1000);
+	await runInboxJob(env);
+	const rows = Object.fromEntries(
+		db.db
+			.prepare("SELECT subject, created_at FROM messages")
+			.all()
+			.map((row) => [row.subject, row.created_at]),
+	);
+	assert.equal(rows["Future header"], Date.parse("2025-02-01T08:30:00Z") / 1000);
+	assert.ok(rows["Future everything"] >= before && rows["Future everything"] <= Math.ceil(Date.now() / 1000));
+});

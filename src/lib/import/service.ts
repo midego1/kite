@@ -11,6 +11,7 @@ import { resolveThreadId } from "@/lib/email/threading";
 import { upsertContactFromAddress } from "@/lib/contacts/service";
 import { newId } from "@/lib/ids";
 import { dedupeKeyOfStored, importDedupeKey, storedIdVariants } from "./dedupe-utils";
+import { importMessageDate } from "./date-utils";
 import { getImportMessagePlacement } from "./destination";
 import type { ImportDestination } from "./destination-types";
 import type { ImportMailboxResult, ImportMessageInput } from "./types";
@@ -110,8 +111,8 @@ async function importParsedMessage(
 	const rawR2Key = `imports/${messageId}.eml`;
 	const fromAddr = parsed.fromAddr ?? "unknown";
 	const toAddr = parsed.toAddr ?? "";
-	// The Date header first; the source's INTERNALDATE when it has none (or none that parses).
-	const createdAt = parsed.date ?? receivedAt ?? new Date();
+	// The Date header first, the source's INTERNALDATE when it has none (or none that parses); never far in the future.
+	const createdAt = importMessageDate([parsed.date, receivedAt], new Date());
 	const placement = getImportMessagePlacement(input.destination);
 	// A large HTML body goes to the Mail store; the row keeps a text body for search and snippets. The object is
 	// written first and the row is inserted with its key in one batch, so a failure at any step leaves at most an

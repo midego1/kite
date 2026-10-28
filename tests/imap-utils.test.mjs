@@ -210,10 +210,25 @@ test("parseInternalDate reads IMAP date-times with their zone, and nothing else"
 	assert.equal(parseInternalDate("17-Jul-1996 02:44:25 -0700").toISOString(), "1996-07-17T09:44:25.000Z");
 	assert.equal(parseInternalDate(" 7-Jan-2026 23:00:00 +0100").toISOString(), "2026-01-07T22:00:00.000Z");
 	assert.equal(parseInternalDate("07-jan-2026 00:00:00 +0000").toISOString(), "2026-01-07T00:00:00.000Z");
+	assert.equal(parseInternalDate("01-Jan-1970 00:00:00 +0000").toISOString(), "1970-01-01T00:00:00.000Z");
+	assert.equal(parseInternalDate("29-Feb-2024 12:00:00 +2359").toISOString(), "2024-02-28T12:01:00.000Z");
+	// A leap second is valid and lands on the next minute.
+	assert.equal(parseInternalDate("31-Dec-2016 23:59:60 +0000").toISOString(), "2017-01-01T00:00:00.000Z");
 	for (const value of [
 		"31-Feb-2026 10:00:00 +0000",
+		"31-Apr-2026 10:00:00 +0000",
+		"29-Feb-2025 10:00:00 +0000",
+		"00-Jan-2026 10:00:00 +0000",
 		"01-Foo-2026 10:00:00 +0000",
-		"01-Jan-2026 25:00:00 +0000",
+		"01-Jan-2026 24:00:00 +0000",
+		"01-Jan-2026 10:60:00 +0000",
+		"01-Jan-2026 10:00:61 +0000",
+		"01-Jan-2026 10:00:00 +0060",
+		"01-Jan-2026 10:00:00 +2400",
+		"01-Jan-2026 10:00:00 -9999",
+		"31-Dec-1969 23:59:59 +0000",
+		"01-Jan-0099 10:00:00 +0000",
+		"01-Jan-0000 10:00:00 +0000",
 		"2026-01-01T00:00:00Z",
 		"",
 	])

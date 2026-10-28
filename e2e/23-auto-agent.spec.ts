@@ -3772,6 +3772,7 @@ test.describe("reply suggestions", () => {
 				localStorage.setItem("kite-reading-pane", "right");
 			});
 			const buttons: Record<string, number[]> = {};
+			const icons: Record<string, number[]> = {};
 			for (const style of [
 				{ name: "kite", theme: "light", classic: false },
 				{ name: "classic", theme: "light", classic: true },
@@ -3805,15 +3806,17 @@ test.describe("reply suggestions", () => {
 
 				await forYouItem(page).getByRole("link").click();
 				await expect(page).toHaveURL(/\/for-you$/);
-				// The page's title bar carries a muted icon beside the heading, as the list panel does.
+				// The title bar's icon takes the style's accent: neutral in Kite, blue in Classic.
 				const icon = page.locator("[data-panel-header] svg").first();
 				await expect(page.getByRole("heading", { level: 1, name: "For you" })).toBeVisible();
 				await expect(page.locator(`[data-for-you-entry]`)).toHaveCount(1);
-				const iconColor = await colorProbe(page, icon, "color", "text-neutral-500");
+				const iconColor = await colorProbe(page, icon, "color", "text-blue-600");
 				expect(iconColor.actual, `${style.name} For you`).toEqual(iconColor.expected);
+				icons[style.name] = iconColor.actual;
 				await expect(page.locator("body")).not.toContainText(/mailflare/i);
 			}
 			expect(buttons.kite).not.toEqual(buttons.classic);
+			expect(icons.kite, "For you icon: Kite neutral, Classic blue").not.toEqual(icons.classic);
 			expect(buttons["kite-dark"]).not.toEqual(buttons["classic-dark"]);
 			expect(serverErrors).toEqual([]);
 			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);

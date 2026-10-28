@@ -19,6 +19,7 @@ import { visibleBookingEvents } from "./default-events";
 import type { BookingEvent, BookingForm, BookingHost } from "./types";
 import { availabilityLabel, durationLabel, emptyBookingForm, formFromEvent } from "./utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { EmptyState } from "@/components/ui/page";
 
 export default function BookingsPage() {
 	const { minimal: sidebarMinimal, mobile } = useSidebar();
@@ -212,17 +213,13 @@ export default function BookingsPage() {
 										<p className="mt-1 text-sm text-neutral-500">Set the meetings people can book with you.</p>
 									</div>
 									<div className="flex shrink-0 items-center gap-2">
-										<Button
-											asChild
-											variant="ghost"
-											size="icon"
-											className="text-neutral-500 hover:text-neutral-900 max-md:-mr-2"
-										>
+										<Button asChild variant="ghost" size="icon" className="max-md:-mr-2">
 											<Link
 												href={`/c/${username}`}
 												target="_blank"
 												rel="noopener noreferrer"
 												aria-label="Open your booking page"
+												className="text-blue-700"
 											>
 												<ExternalLink size={18} aria-hidden="true" />
 											</Link>
@@ -243,18 +240,19 @@ export default function BookingsPage() {
 								{loading ? (
 									<BookingListSkeleton />
 								) : listEvents.length === 0 ? (
-									<div className="rounded-xl border border-dashed border-neutral-300 px-6 py-12 text-center">
-										<CalendarDays className="mx-auto mb-3 h-8 w-8 text-neutral-400" />
-										<h2 className="font-medium text-neutral-900">No booking events yet</h2>
-										<p className="mt-1 text-sm text-neutral-500">Create an event to share your availability.</p>
-									</div>
+									<EmptyState
+										icon={CalendarDays}
+										title="No booking events yet"
+										description="Create an event to share your availability."
+									/>
 								) : (
 									<div>
 										{listEvents.map((event) => (
 											<article
 												key={event.id}
 												className={clsx(
-													!event.enabled && "opacity-65",
+													// A turned-off event fades its content, not the list's border.
+													!event.enabled && "[&>*]:opacity-65",
 													`relative flex flex-wrap items-center gap-4 border-x border-b border-neutral-200 bg-white px-5 py-4 first:rounded-t-xl first:border-t last:rounded-b-xl max-md:gap-3 max-md:rounded-none max-md:border-x-0 max-md:border-t-0 max-md:px-0 max-md:py-4 max-md:last:border-b-0`,
 												)}
 											>
@@ -268,7 +266,7 @@ export default function BookingsPage() {
 														<button
 															type="button"
 															onClick={() => startEdit(event)}
-															className="text-left text-base font-semibold text-neutral-900 hover:underline"
+															className="text-left text-base font-semibold text-neutral-900 hover:text-blue-700"
 														>
 															{event.name}
 														</button>

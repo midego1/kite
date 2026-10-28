@@ -13,6 +13,7 @@ import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
 import { authFetch } from "@/lib/auth/client";
 import { isSameOriginPath } from "@/lib/modules/path-utils";
 import { FOR_YOU_KIND_LABELS, groupForYou, keepListedSelection } from "@/lib/agent/auto-read/for-you-utils";
+import { CARD_CLASS, TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 
 async function dismissAll(ids: string[]): Promise<number> {
 	let failed = 0;
@@ -153,12 +154,9 @@ export function ForYouView() {
 					<section
 						key={group.kind}
 						aria-labelledby={`for-you-${group.kind}`}
-						className="mt-6 overflow-hidden rounded-xl border border-neutral-200 bg-white"
+						className={`mt-6 overflow-hidden ${CARD_CLASS}`}
 					>
-						<h2
-							id={`for-you-${group.kind}`}
-							className="border-b border-neutral-200 bg-[#f6f8fc] px-4 py-2 text-xs font-medium text-neutral-500"
-						>
+						<h2 id={`for-you-${group.kind}`} className={`${TABLE_HEAD_CLASS} px-4 py-2`}>
 							{FOR_YOU_KIND_LABELS[group.kind] ?? group.kind}{" "}
 							<span className="font-normal text-neutral-500">({kindTotals[group.kind] ?? group.items.length})</span>
 						</h2>

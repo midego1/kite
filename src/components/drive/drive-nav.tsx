@@ -10,6 +10,7 @@ import {
 	FolderPlus,
 	FolderUp,
 	HardDrive,
+	Inbox,
 	Paperclip,
 	Plus,
 	Trash2,
@@ -132,7 +133,41 @@ function UsageBar({ usage }: { usage: DriveUsage | null }) {
 	);
 }
 
-/** The Drive sidebar: the New menu, the views, and the storage you have used. */
+function DriveNavLink({
+	href,
+	label,
+	icon: Icon,
+	active,
+	compact,
+	onClick,
+}: {
+	href: string;
+	label: string;
+	icon: LucideIcon;
+	active: boolean;
+	compact: boolean;
+	onClick?: () => void;
+}) {
+	return (
+		<Link
+			href={href}
+			onClick={onClick}
+			aria-current={active ? "page" : undefined}
+			aria-label={compact ? label : undefined}
+			title={compact ? label : undefined}
+			className={clsx(
+				"flex h-9 items-center gap-3 rounded-lg text-sm text-neutral-700 transition-colors max-md:min-h-11 max-md:text-base",
+				compact ? "mx-auto w-10 justify-center rounded-full" : "ml-3 px-3",
+				active ? "bg-blue-100 font-medium text-blue-900" : "hover:bg-neutral-200/60 hover:text-neutral-900",
+			)}
+		>
+			<Icon size={16} className="shrink-0" />
+			{!compact && <span className="truncate">{label}</span>}
+		</Link>
+	);
+}
+
+/** The Drive sidebar: the New menu, a way back to the mail, the views, and the storage you have used. */
 export function DriveNav() {
 	const { minimal, mobile, toggle } = useSidebar();
 	const pathname = usePathname();
@@ -156,28 +191,31 @@ export function DriveNav() {
 			}
 		>
 			<NewMenu compact={compact} />
+			{/* One click back to the mail, also from the icon rail. */}
+			{!compact && <NavSectionLabel label="Mail" />}
+			<div aria-label="Mail" role="group" className="space-y-px">
+				<DriveNavLink
+					href="/inbox"
+					label="Inbox"
+					icon={Inbox}
+					active={false}
+					compact={compact}
+					onClick={mobile ? toggle : undefined}
+				/>
+			</div>
 			{compact ? <hr className="mx-6 my-2 border-neutral-200/70" /> : <NavSectionLabel label="Drive" />}
 			<div aria-label="Drive" role="group" className="space-y-px">
-				{LINKS.map(({ href, label, icon: Icon, match }) => {
-					const active = match(pathname);
-					return (
-						<Link
-							key={href}
-							href={href}
-							onClick={mobile ? toggle : undefined}
-							aria-current={active ? "page" : undefined}
-							title={compact ? label : undefined}
-							className={clsx(
-								"flex h-9 items-center gap-3 rounded-lg text-sm text-neutral-700 transition-colors max-md:min-h-11 max-md:text-base",
-								compact ? "mx-auto w-10 justify-center rounded-full" : "ml-3 px-3",
-								active ? "bg-blue-100 font-medium text-blue-900" : "hover:bg-neutral-200/60 hover:text-neutral-900",
-							)}
-						>
-							<Icon size={16} className="shrink-0" />
-							{!compact && <span className="truncate">{label}</span>}
-						</Link>
-					);
-				})}
+				{LINKS.map(({ href, label, icon, match }) => (
+					<DriveNavLink
+						key={href}
+						href={href}
+						label={label}
+						icon={icon}
+						active={match(pathname)}
+						compact={compact}
+						onClick={mobile ? toggle : undefined}
+					/>
+				))}
 			</div>
 		</SidebarScaffold>
 	);

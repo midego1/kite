@@ -18,6 +18,8 @@ import {
 	statusLabel,
 	undoDisabledReason,
 } from "./agent-activity-utils";
+import { EmptyState } from "@/components/ui/page";
+import { CARD_CLASS } from "@/components/ui/page-utils";
 
 async function errorMessage(response: Response, fallback: string): Promise<string> {
 	const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
@@ -138,7 +140,7 @@ function SkippedRow({ job }: { job: ActivitySkippedJob }) {
 	);
 }
 
-const LIST_CLASS = "divide-y divide-neutral-200 overflow-hidden rounded-xl border border-neutral-200 bg-white";
+const LIST_CLASS = `divide-y divide-neutral-200 overflow-hidden ${CARD_CLASS}`;
 
 function ActivityLists({
 	data,
@@ -156,9 +158,7 @@ function ActivityLists({
 					Actions
 				</h3>
 				{data.actions.length === 0 ? (
-					<p className="rounded-xl border border-dashed border-neutral-300 px-4 py-8 text-center text-sm text-neutral-500">
-						Kite has not done anything in this mailbox yet.
-					</p>
+					<EmptyState title="Kite has not done anything in this mailbox yet." />
 				) : (
 					<ul className={LIST_CLASS}>
 						{data.actions.map((row) => (
@@ -213,9 +213,7 @@ export function AgentActivity({ mailboxId }: { mailboxId: string }) {
 			)}
 			{value.state === "loading" && <p className="text-sm text-neutral-500">Loading…</p>}
 			{value.state === "no-access" && (
-				<p className="rounded-xl border border-dashed border-neutral-300 px-4 py-8 text-center text-sm text-neutral-500">
-					Only people with full access to this mailbox can see Kite&apos;s activity.
-				</p>
+				<EmptyState title="Only people with full access to this mailbox can see Kite's activity." />
 			)}
 			{value.state === "error" && (
 				<p role="alert" className="text-sm text-red-600">

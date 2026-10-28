@@ -44,7 +44,13 @@ export const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
 		};
 
 		return (
-			<span className={cn("relative inline-flex rounded-lg border border-neutral-200 px-2", containerClassName)}>
+			<span
+				className={cn(
+					// The trigger drops its own outline; the field draws the keyboard focus ring instead.
+					"relative inline-flex rounded-lg border border-neutral-200 px-2 has-[button:focus-visible]:border-blue-500 has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-blue-500/30",
+					containerClassName,
+				)}
+			>
 				<SelectPrimitive.Root
 					value={selected ? toItemValue(selected.value) : undefined}
 					onValueChange={choose}

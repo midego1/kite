@@ -112,13 +112,13 @@ export function DriveBulkBar({
 		<div
 			role="toolbar"
 			aria-label="Selected items"
-			className="flex flex-wrap items-center gap-1 rounded-lg border border-neutral-200 bg-white px-1 py-0.5 text-sm text-neutral-900 shadow-xs"
+			className="flex flex-wrap items-center gap-1 rounded-lg bg-blue-50 px-1 py-0.5 text-sm text-blue-900"
 		>
 			<button
 				type="button"
 				onClick={handlers.onClear}
 				aria-label="Clear selection"
-				className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+				className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-blue-100"
 			>
 				<X size={16} />
 			</button>
@@ -144,7 +144,7 @@ function BulkButton({ icon: Icon, label, onClick }: { icon: typeof X; label: str
 		<button
 			type="button"
 			onClick={onClick}
-			className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900"
+			className="flex h-8 items-center gap-1.5 rounded-md px-2.5 hover:bg-blue-100"
 		>
 			<Icon size={15} />
 			{label}

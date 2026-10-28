@@ -28,6 +28,7 @@ import { useDriveActions } from "./use-drive-actions";
 import { useDriveSelection, useFileDropZone, useFileParam, useRowDrag, type DriveSelection } from "./use-drive-browser";
 import { useDriveListing } from "./use-drive-listing";
 import { useDriveUploads } from "./use-drive-uploads";
+import { TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 
 const EMPTY_TEXT: Record<DriveListingView, string> = {
 	my: "Nothing here yet. Upload files or create a folder.",
@@ -166,9 +167,7 @@ function HiddenInputs({
 
 function ColumnHeader({ view, selection }: { view: DriveListingView; selection: DriveSelection }) {
 	return (
-		<div
-			className={`${DRIVE_GRID} shrink-0 border-b border-neutral-200 bg-[#f6f8fc] px-5 py-2 text-xs text-neutral-500`}
-		>
+		<div className={`${DRIVE_GRID} ${TABLE_HEAD_CLASS} shrink-0 px-5 py-2`}>
 			<Checkbox
 				checked={selection.allSelected}
 				onChange={selection.toggleAll}
@@ -192,7 +191,7 @@ function LoadMore({ onLoad, loading }: { onLoad: () => void; loading: boolean })
 				type="button"
 				onClick={onLoad}
 				disabled={loading}
-				className="rounded-lg px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900"
+				className="rounded-lg px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
 			>
 				{loading ? "Loading…" : "Load more"}
 			</button>

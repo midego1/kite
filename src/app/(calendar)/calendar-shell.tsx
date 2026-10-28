@@ -97,7 +97,7 @@ function CalendarFrame({ children }: { children: React.ReactNode }) {
 														className={clsx(
 															"rounded-md px-3 py-1 text-center text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
 															pathname === tab.href
-																? "bg-neutral-100 font-medium text-neutral-900"
+																? "bg-blue-100 font-medium text-blue-900"
 																: "text-neutral-500 hover:text-neutral-900",
 														)}
 													>

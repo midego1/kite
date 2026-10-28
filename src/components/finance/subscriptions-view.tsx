@@ -15,6 +15,7 @@ import type { StatusFilter, SubscriptionGroups, SubscriptionItem } from "./subsc
 import { groupSubscriptions, visibleSections } from "./subscriptions-utils";
 import { useSubscriptionDetail, useSubscriptionList, viewerLocale, viewerToday } from "./use-subscriptions";
 import { EmptyState, PanelHeader } from "@/components/ui/page";
+import { CARD_CLASS } from "@/components/ui/page-utils";
 
 const FILTERS: { value: StatusFilter; label: string }[] = [
 	{ value: "current", label: "Active and trials" },
@@ -28,9 +29,7 @@ function Section({ id, title, count, children }: { id: string; title: string; co
 			<h2 id={`finance-section-${id}`} className="mb-2 px-1 text-xs font-medium text-neutral-500">
 				{title} <span className="font-normal text-neutral-500">{count}</span>
 			</h2>
-			<ul className="divide-y divide-neutral-200 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-				{children}
-			</ul>
+			<ul className={`divide-y divide-neutral-200 overflow-hidden ${CARD_CLASS}`}>{children}</ul>
 		</section>
 	);
 }
@@ -65,7 +64,7 @@ function EndedSection({
 				</button>
 			</h2>
 			{expanded && (
-				<ul className="divide-y divide-neutral-200 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+				<ul className={`divide-y divide-neutral-200 overflow-hidden ${CARD_CLASS}`}>
 					{items.map((item) => (
 						<SubscriptionRow key={item.id} item={item} {...rowProps} />
 					))}
@@ -166,18 +165,18 @@ export function SubscriptionsView() {
 								</option>
 							))}
 						</Select>
-						<Button
-							type="button"
-							size="sm"
-							className={cn("h-8 text-sm", mobilePrimaryActionClass)}
-							onClick={() => setEditing(null)}
-						>
+						<Button type="button" size="sm" className="h-8 text-sm max-md:hidden" onClick={() => setEditing(null)}>
 							<Plus aria-hidden className="h-4 w-4" />
 							Add subscription
 						</Button>
 					</>
 				}
 			/>
+			{/* On phones the button floats over the page, outside the sticky title bar so no layer covers it. */}
+			<Button type="button" className={cn("md:hidden", mobilePrimaryActionClass)} onClick={() => setEditing(null)}>
+				<Plus aria-hidden className="h-4 w-4" />
+				Add subscription
+			</Button>
 			<div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-8">
 				{error && (
 					<p role="alert" className="text-sm text-red-600">
@@ -185,7 +184,7 @@ export function SubscriptionsView() {
 					</p>
 				)}
 				{list?.migrationPending && (
-					<p className="rounded-xl border border-neutral-200 bg-white p-5 text-sm text-neutral-600">
+					<p className={`${CARD_CLASS} p-5 text-sm text-neutral-600`}>
 						The database update for Money Watch has not been applied yet.
 					</p>
 				)}

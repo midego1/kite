@@ -49,9 +49,10 @@ export function PanelHeader({
 				className,
 			)}
 		>
-			{Icon && <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-neutral-500" />}
+			{/* The accent: near-black (white in dark mode) in Kite, blue or indigo in Classic and Kite classic. */}
+			{Icon && <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-blue-600" />}
 			<h1 className="min-w-0 flex-1 truncate text-base font-medium text-neutral-900">{title}</h1>
-			{actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+			{actions && <div className="flex min-w-0 shrink items-center justify-end gap-2">{actions}</div>}
 		</header>
 	);
 }

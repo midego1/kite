@@ -23,10 +23,11 @@ export function AgentActivityPage() {
 				title="Activity"
 				actions={
 					mailboxes.length > 1 && (
-						<label className="flex items-center gap-2 text-sm text-neutral-700">
-							Mailbox
+						<label className="flex min-w-0 items-center gap-2 text-sm text-neutral-700">
+							{/* Phones keep the label for screen readers; a long address then truncates instead of overflowing. */}
+							<span className="max-sm:sr-only">Mailbox</span>
 							<Select
-								containerClassName="h-8"
+								containerClassName="h-8 min-w-0 max-w-[min(16rem,55vw)]"
 								className="text-sm"
 								value={mailboxId ?? ""}
 								onChange={(event) => setChosen(event.target.value)}

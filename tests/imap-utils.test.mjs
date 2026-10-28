@@ -17,16 +17,24 @@ const {
 	plainAuthToken,
 	imapLoginArgument,
 	imapLimits,
+	parseFetchAttributes,
+	parseInternalDate,
 	selectImapUidBatch,
 	selectRemainingUids,
 	chunk,
 	imapSecurity,
+	importFlagState,
+	importMessageFromImap,
+	hostImportMessageFromImap,
 } = await bundleModules("kite-imap-utils-", [
 	[
-		"quoteImapString, parseSearchUids, getLiteralLength, isTaggedCompletion, isTaggedOk, parseListMailboxName, parseFetchUid, parseCapabilities, parseGreeting, planStartTls, chooseAuthMethod, plainAuthToken, imapLoginArgument, imapLimits",
+		"quoteImapString, parseSearchUids, getLiteralLength, isTaggedCompletion, isTaggedOk, parseListMailboxName, parseFetchUid, parseCapabilities, parseGreeting, planStartTls, chooseAuthMethod, plainAuthToken, imapLoginArgument, imapLimits, parseFetchAttributes, parseInternalDate",
 		"src/lib/imap/protocol-utils.ts",
 	],
-	["selectImapUidBatch, selectRemainingUids, chunk, imapSecurity", "src/lib/import/imap-utils.ts"],
+	[
+		"selectImapUidBatch, selectRemainingUids, chunk, imapSecurity, importFlagState, importMessageFromImap, hostImportMessageFromImap",
+		"src/lib/import/imap-utils.ts",
+	],
 ]);
 
 test("quoteImapString escapes backslashes and quotes and refuses line breaks", () => {
@@ -196,4 +204,83 @@ test("imapLimits keeps Workers inside an isolate's memory and gives the Node ser
 		);
 		assert.ok(seconds > limits.commandTimeoutMs / 1000 && seconds < allowed);
 	}
+});
+
+test("parseInternalDate reads IMAP date-times with their zone, and nothing else", () => {
+	assert.equal(parseInternalDate("17-Jul-1996 02:44:25 -0700").toISOString(), "1996-07-17T09:44:25.000Z");
+	assert.equal(parseInternalDate(" 7-Jan-2026 23:00:00 +0100").toISOString(), "2026-01-07T22:00:00.000Z");
+	assert.equal(parseInternalDate("07-jan-2026 00:00:00 +0000").toISOString(), "2026-01-07T00:00:00.000Z");
+	for (const value of [
+		"31-Feb-2026 10:00:00 +0000",
+		"01-Foo-2026 10:00:00 +0000",
+		"01-Jan-2026 25:00:00 +0000",
+		"2026-01-01T00:00:00Z",
+		"",
+	])
+		assert.equal(parseInternalDate(value), null, value);
+});
+
+test("parseFetchAttributes reads UID, FLAGS, INTERNALDATE and RFC822.SIZE in any order", () => {
+	assert.deepEqual(
+		parseFetchAttributes(
+			'* 1 FETCH (UID 10 FLAGS (\\Seen \\Flagged $Forwarded) INTERNALDATE "17-Jul-1996 02:44:25 -0700" RFC822.SIZE 4286 BODY[] {4286} )',
+		),
+		{
+			uid: "10",
+			flags: ["\\Seen", "\\Flagged", "$Forwarded"],
+			internalDate: new Date("1996-07-17T09:44:25Z"),
+			size: 4286,
+		},
+	);
+	assert.deepEqual(parseFetchAttributes("* 2 FETCH (BODY[] {5}  UID 11 RFC822.SIZE 5 FLAGS ())"), {
+		uid: "11",
+		flags: [],
+		internalDate: null,
+		size: 5,
+	});
+	assert.deepEqual(parseFetchAttributes('* 3 FETCH (UID 12 BODY[] {5} INTERNALDATE "not a date")'), {
+		uid: "12",
+		flags: [],
+		internalDate: null,
+		size: null,
+	});
+});
+
+test("importFlagState keeps \\Seen as read and \\Flagged as starred, whatever the case", () => {
+	assert.deepEqual(importFlagState(["\\Seen", "\\Flagged"]), { read: true, starred: true });
+	assert.deepEqual(importFlagState(["\\SEEN"]), { read: true, starred: false });
+	assert.deepEqual(importFlagState(["\\flagged", "\\Answered", "$Important"]), { read: false, starred: true });
+	assert.deepEqual(importFlagState(["Seen", "\\Draft", "\\Recent"]), { read: false, starred: false });
+	assert.deepEqual(importFlagState([]), { read: false, starred: false });
+});
+
+test("IMAP messages carry their state into the direct and the background import", () => {
+	const raw = new TextEncoder().encode("Subject: x\r\n\r\nbody").buffer;
+	const internalDate = new Date("2026-10-27T10:00:00Z");
+	const fetched = { raw, flags: ["\\Seen"], internalDate, size: 18 };
+	assert.deepEqual(importMessageFromImap("INBOX-1.eml", fetched), {
+		filename: "INBOX-1.eml",
+		raw,
+		read: true,
+		starred: false,
+		receivedAt: internalDate,
+	});
+	assert.deepEqual(
+		hostImportMessageFromImap("INBOX-1.eml", fetched, () => "b64"),
+		{
+			filename: "INBOX-1.eml",
+			raw: "b64",
+			encoding: "base64",
+			read: true,
+			starred: false,
+			receivedAt: "2026-10-27T10:00:00.000Z",
+		},
+	);
+	const undated = hostImportMessageFromImap(
+		"x.eml",
+		{ ...fetched, flags: ["\\Flagged"], internalDate: null },
+		() => "b",
+	);
+	assert.equal("receivedAt" in undated, false);
+	assert.equal(undated.starred, true);
 });

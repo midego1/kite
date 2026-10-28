@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import test, { after } from "node:test";
 import { startFakeImap, sampleMessage } from "./support/fake-imap.mjs";
@@ -71,7 +72,7 @@ async function readInbox(session) {
 	await session.examine("INBOX");
 	const uids = await session.searchUids();
 	const fetched = await session.fetchMessages(uids);
-	return uids.map((uid) => new TextDecoder().decode(fetched.get(uid)));
+	return uids.map((uid) => new TextDecoder().decode(fetched.get(uid).raw));
 }
 
 const secretSentInPlainText = (server) =>
@@ -406,4 +407,117 @@ test("LOGIN sends a non-ASCII password as a literal, and NUL is refused for ever
 	const plain = await fake(t, { implicitTls: true, authPlain: true, saslIr: true });
 	await assert.rejects(openImapSession(nodeEnv(plain), login({ username: "a\0b" })), /cannot contain a NUL/);
 	assert.equal(plain.commands.filter((entry) => / AUTHENTICATE /.test(entry.line)).length, 0);
+});
+
+/** A migrated SQLite database with one mailbox, and an env over it that reaches `server` through the Node connector. */
+async function importDatabase(t, server) {
+	const db = new SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await applyMigrations(db, join(root, "drizzle/migrations"));
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'a', 'personal', 1);
+	`);
+	const env = {
+		...nodeEnv(server),
+		DB: db,
+		BUCKET: {
+			put: async () => undefined,
+			get: async () => null,
+			head: async () => null,
+			delete: async () => undefined,
+		},
+		AGENT_QUEUE: { send: async () => undefined },
+	};
+	globalThis.__kiteNodeEnv = env;
+	return { db, env };
+}
+
+async function runInboxJob(env) {
+	const job = await createImportJob(env, {
+		userId: "owner",
+		mailboxId: "mailbox-a",
+		label: "Old inbox",
+		destination: "system:inbox",
+		host: HOST,
+		port: 993,
+		secure: true,
+		username: USER,
+		password: PASSWORD,
+		folder: "INBOX",
+		maxMessages: null,
+	});
+	await processImportJob(env, job.id, { viewer: { userId: "owner" }, moduleId: "import", grants: ["import.run"] });
+	return job.id;
+}
+
+test("an import keeps read and starred state, dates undated mail by INTERNALDATE, dedupes and threads replies", async (t) => {
+	const undated = sampleMessage(3, { subject: "No id, no date", messageId: null, date: null });
+	const server = await fake(t, {
+		implicitTls: true,
+		authPlain: true,
+		saslIr: true,
+		// FLAGS, INTERNALDATE and UID come after the body here, as some servers send them.
+		attributesAfterLiteral: true,
+		folders: {
+			INBOX: [
+				{ raw: sampleMessage(1, { subject: "Root", messageId: "<root@example.org>" }), flags: ["\\Seen"] },
+				// Newer than its parent, so it is imported first: the parent is not stored yet.
+				{
+					raw: sampleMessage(2, {
+						subject: "Re: Root",
+						messageId: "<reply@example.org>",
+						inReplyTo: "<root@example.org>",
+						references: "<root@example.org>",
+					}),
+					flags: ["\\Flagged", "\\Answered"],
+				},
+				{ raw: undated, internalDate: " 1-Feb-2025 08:30:00 +0100" },
+				// Kite sent this one itself: the outbound row stores the Message-ID without brackets.
+				{ raw: sampleMessage(4, { subject: "Sent from Kite", messageId: "<sent@example.org>" }), flags: ["\\Seen"] },
+				// The same bytes again, without a Message-ID: recognised by their SHA-256. Imports run newest first, so
+				// this copy is the one kept, read, and the older one is the duplicate.
+				{ raw: undated, flags: ["\\Seen"], internalDate: " 1-Feb-2025 08:30:00 +0100" },
+			],
+		},
+	});
+	const { db, env } = await importDatabase(t, server);
+	db.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, provider_message_id, from_addr, to_addr, subject, text_body, status, read, created_at)
+		VALUES ('msg-sent', 'owner', 'mailbox-a', 'outbound', 'sent@example.org', 'a@example.com', 'user@example.test', 'Sent from Kite', 'x', 'sent', 1, 1);
+	`);
+
+	await runInboxJob(env);
+	const job = db.db.prepare("SELECT status, imported, skipped, processed FROM import_jobs").get();
+	assert.deepEqual(job, { status: "completed", imported: 3, skipped: 2, processed: 5 });
+
+	const rows = Object.fromEntries(
+		db.db
+			.prepare(
+				"SELECT subject, read, starred, thread_id, provider_message_id, created_at FROM messages WHERE id <> 'msg-sent'",
+			)
+			.all()
+			.map((row) => [row.subject, row]),
+	);
+	assert.deepEqual(Object.keys(rows).sort(), ["No id, no date", "Re: Root", "Root"]);
+	assert.equal(rows.Root.read, 1);
+	assert.equal(rows.Root.starred, 0);
+	assert.equal(rows["Re: Root"].read, 0);
+	assert.equal(rows["Re: Root"].starred, 1);
+	// The reply came first and still shares the root's thread.
+	assert.equal(rows["Re: Root"].thread_id, "root@example.org");
+	assert.equal(rows.Root.thread_id, "root@example.org");
+	const undatedRow = rows["No id, no date"];
+	assert.equal(undatedRow.read, 1);
+	assert.equal(undatedRow.provider_message_id, `import:sha256:${createHash("sha256").update(undated).digest("hex")}`);
+	assert.equal(undatedRow.created_at, Date.parse("2025-02-01T07:30:00Z") / 1000);
+	// A message with a Date header keeps it.
+	assert.equal(rows.Root.created_at, Date.parse("2026-10-27T10:00:00Z") / 1000);
+
+	// A second run of the same folder adds nothing.
+	await runInboxJob(env);
+	const again = db.db.prepare("SELECT imported, skipped FROM import_jobs ORDER BY created_at DESC, id DESC").all();
+	assert.ok(again.some((row) => row.imported === 0 && row.skipped === 5));
+	assert.equal(db.db.prepare("SELECT count(*) AS count FROM messages").get().count, 4);
 });

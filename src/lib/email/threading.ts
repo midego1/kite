@@ -63,5 +63,15 @@ export async function resolveThreadId(db: Db, input: ResolveThreadInput): Promis
 		}
 	}
 
-	return normalizeMessageId(input.messageId) ?? newId("thr");
+	return threadSeed(input) ?? newId("thr");
+}
+
+/**
+ * @public Exercised by the unit tests. The thread key of a message with no stored parent: its own Message-ID, or
+ * the conversation root's for imports.
+ */
+export function threadSeed(input: ResolveThreadInput): string | null {
+	const own = normalizeMessageId(input.messageId);
+	if (input.fallback !== "references-root") return own;
+	return normalizeMessageId(input.references?.[0]) ?? normalizeMessageId(input.inReplyTo) ?? own;
 }

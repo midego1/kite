@@ -1,3 +1,7 @@
+import type { ImapFetchedMessage } from "@/lib/imap/types";
+import type { HostImportMessage } from "@/lib/modules/host-types";
+import type { ImportMessageInput } from "./types";
+
 export type ImapUidBatch = {
 	uids: string[];
 	total: number;
@@ -39,4 +43,33 @@ export function chunk<T>(values: T[], size: number): T[][] {
 /** `import_jobs.secure` and the import form's TLS switch: on is implicit TLS, off is a required STARTTLS upgrade. */
 export function imapSecurity(secure: boolean): "tls" | "starttls" {
 	return secure ? "tls" : "starttls";
+}
+
+/**
+ * @public Exercised by the unit tests. The source's state to keep (spec §4.2): `\Seen` is read and `\Flagged` is starred, compared without case.
+ * `\Answered`, `\Draft` and keywords are ignored.
+ */
+export function importFlagState(flags: readonly string[]): { read: boolean; starred: boolean } {
+	const set = new Set(flags.map((flag) => flag.toLowerCase()));
+	return { read: set.has("\\seen"), starred: set.has("\\flagged") };
+}
+
+/** An IMAP message for the direct import route: its bytes, read and starred state and INTERNALDATE. */
+export function importMessageFromImap(filename: string, fetched: ImapFetchedMessage): ImportMessageInput {
+	return { filename, raw: fetched.raw, ...importFlagState(fetched.flags), receivedAt: fetched.internalDate };
+}
+
+/** The same for a background job, which hands messages to the module host as JSON (`encode` makes the base64). */
+export function hostImportMessageFromImap(
+	filename: string,
+	fetched: ImapFetchedMessage,
+	encode: (raw: ArrayBuffer) => string,
+): HostImportMessage {
+	return {
+		filename,
+		raw: encode(fetched.raw),
+		encoding: "base64",
+		...importFlagState(fetched.flags),
+		...(fetched.internalDate ? { receivedAt: fetched.internalDate.toISOString() } : {}),
+	};
 }

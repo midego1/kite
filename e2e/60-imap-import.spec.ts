@@ -73,6 +73,78 @@ test("IMAP import reads folders, imports a batch and runs a background job from 
 	}
 });
 
+type ImportedRow = { subject: string; read: boolean; starred: boolean; threadId: string | null; createdAt: string };
+
+test("IMAP import keeps read and starred state, dedupes without a Message-ID and threads a reply imported first", async () => {
+	test.setTimeout(120_000);
+	const token = uniqueToken("imapstate");
+	const root = `<${token}-root@example.org>`;
+	const fake = await startFakeImap({
+		authPlain: true,
+		folders: {
+			INBOX: [
+				{ raw: sampleMessage(1, { subject: `${token} root`, messageId: root }), flags: ["\\Seen"] },
+				{
+					raw: sampleMessage(2, { subject: `${token} reply`, inReplyTo: root, references: root }),
+					flags: ["\\Flagged"],
+				},
+				{
+					raw: sampleMessage(3, { subject: `${token} undated`, messageId: null, date: null }),
+					internalDate: "01-Feb-2025 08:30:00 +0000",
+				},
+			],
+		},
+	});
+	const api = await apiContext(STORAGE_STATE);
+	let jobId = "";
+	try {
+		const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as { mailboxes: { id: string }[] };
+		const source = {
+			host: fake.host,
+			port: fake.port,
+			secure: false,
+			username: USER,
+			password: PASSWORD,
+			mailboxId: mailboxes[0].id,
+			folder: "INBOX",
+			destination: "system:inbox",
+		};
+		const imported = await api.post("/api/import/imap", { data: { ...source, limit: 10 } });
+		expect(imported.status(), await imported.text()).toBe(200);
+		expect(await imported.json()).toMatchObject({ imported: 3, skipped: 0 });
+
+		const row = async (suffix: string) => (await waitForMessage(api, `${token} ${suffix}`)) as unknown as ImportedRow;
+		const [rootRow, replyRow, undatedRow] = [await row("root"), await row("reply"), await row("undated")];
+		expect([rootRow.read, rootRow.starred]).toEqual([true, false]);
+		expect([replyRow.read, replyRow.starred]).toEqual([false, true]);
+		expect(undatedRow.read).toBe(false);
+		// The reply (newest) was imported before its parent and still joined its conversation.
+		expect(replyRow.threadId).toBe(rootRow.threadId);
+		expect(new Date(undatedRow.createdAt).toISOString()).toBe("2025-02-01T08:30:00.000Z");
+
+		// A background job over the same folder recognises all three, including the one without a Message-ID.
+		const created = await api.post("/api/import/jobs", { data: { ...source, importAll: true } });
+		expect(created.status(), await created.text()).toBe(201);
+		jobId = ((await created.json()) as { job: { id: string } }).job.id;
+		await expect
+			.poll(
+				async () => {
+					const { jobs } = (await (await api.get("/api/import/jobs")).json()) as {
+						jobs: { id: string; status: string; imported: number; skipped: number }[];
+					};
+					const job = jobs.find((entry) => entry.id === jobId);
+					return job && `${job.status}:${job.imported}:${job.skipped}`;
+				},
+				{ timeout: 60_000, intervals: [500, 1000] },
+			)
+			.toBe("completed:0:3");
+	} finally {
+		if (jobId) await api.delete(`/api/import/jobs/${jobId}`);
+		await api.dispose();
+		await fake.close();
+	}
+});
+
 test("IMAP import refuses other ports and local hosts before it connects", async () => {
 	const api = await apiContext(STORAGE_STATE);
 	try {

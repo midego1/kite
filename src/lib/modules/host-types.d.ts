@@ -35,7 +35,17 @@ export type HostDraft = {
 };
 
 /** Raw MIME as a byte array, or as text in `encoding` (UTF-8 unless `base64` is named). */
-export type HostImportMessage = { raw: string | number[]; encoding?: "utf8" | "base64"; filename?: string };
+export type HostImportMessage = {
+	raw: string | number[];
+	encoding?: "utf8" | "base64";
+	filename?: string;
+	/** The source's read state (IMAP `\Seen`); unset keeps the default: unread, or read for outbound mail. */
+	read?: boolean;
+	/** The source's starred state (IMAP `\Flagged`); unset is not starred. */
+	starred?: boolean;
+	/** ISO 8601 time the source received the message, the date when the message has no usable `Date` header. */
+	receivedAt?: string;
+};
 
 /** `skipped` counts duplicates, `failed` the messages that could not be read or written, `errors` says why. */
 export type HostImportResult = { imported: number; skipped: number; failed: number; errors: string[] };

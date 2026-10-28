@@ -149,6 +149,18 @@ function checkPoints(value: unknown, references: ThreadReferences): SummaryPoint
 	return points;
 }
 
+const PROBLEM_TEXT: Record<string, string> = {
+	"the reply is empty": "it was empty",
+	"the reply is not a JSON object": "it was not in the format Kite asked for",
+	"the overview is empty": "it had no overview",
+	"the overview describes the summary instead of being it": "it talked about the summary instead of giving one",
+};
+
+/** What was wrong with an unusable answer, in plain words for the reader's card. */
+export function summaryProblemText(error: string): string {
+	return PROBLEM_TEXT[error] ?? "it did not pass Kite's checks";
+}
+
 export type SummaryCheckContext = {
 	/** The texts and addresses of the summarised messages, or the source summary of a translation. */
 	references: (string | null | undefined)[];
@@ -164,6 +176,7 @@ export type SummaryCheckContext = {
  * ("Here is a summary…") instead of being it, is refused.
  */
 export function checkSummaryOutput(raw: string, context: SummaryCheckContext): SummaryOutcome {
+	if (!raw.trim()) return { ok: false, error: "the reply is empty" };
 	const json = extractJson(raw);
 	if (!json || typeof json !== "object" || Array.isArray(json))
 		return { ok: false, error: "the reply is not a JSON object" };

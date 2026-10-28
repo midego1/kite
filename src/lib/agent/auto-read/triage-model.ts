@@ -12,7 +12,7 @@ import { buildTriageJsonSchema } from "./triage-utils";
 
 // Longer than any provider takes for a triage answer (and the fake model's 20 s `slow` reply), far
 // shorter than the job's 10-minute lease.
-const TRIAGE_CALL_TIMEOUT_MS = 60_000;
+export const TRIAGE_CALL_TIMEOUT_MS = 60_000;
 
 const TRIAGE_JSON_SCHEMA = jsonSchema(buildTriageJsonSchema());
 

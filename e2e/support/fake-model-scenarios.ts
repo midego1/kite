@@ -98,6 +98,20 @@ export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
 						],
 					}),
 	},
+	// Failures for the card's error messages: no answer within Kite's timeout, an answer cut off at the output budget,
+	// and an answer that stays a note about the summary after the repair turn.
+	"summary-slow": {
+		triage: () => json(benignTriage),
+		summary: ({ slowMs }) => ({ ...json(summaryJson), delayMs: slowMs }),
+	},
+	"summary-cut-off": {
+		triage: () => json(benignTriage),
+		summary: () => ({ content: JSON.stringify(summaryJson).slice(0, 60), finishReason: "length" }),
+	},
+	"summary-unusable": {
+		triage: () => json(benignTriage),
+		summary: () => text("Here is a summary of the conversation you asked for."),
+	},
 	"finance-receipt": {
 		triage: () =>
 			json({

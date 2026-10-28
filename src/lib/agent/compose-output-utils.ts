@@ -113,10 +113,10 @@ export function checkComposeOutput(raw: string, context: ComposeCheckContext): C
 		.replace(/[ \t]{2,}/g, " ")
 		.replace(/ +([.,;:!?])/g, "$1")
 		.trim();
-	if (!text) return { ok: false, error: "Kite returned no usable text. Try again." };
+	if (!text) return { ok: false, error: "it had no text Kite could use" };
 	const rewritingSamePrefix = context.mode === "rewrite" && META_PREFIX.test(context.input.trim());
 	if (!rewritingSamePrefix && META_PREFIX.test(text))
-		return { ok: false, error: "Kite answered with a note instead of the text. Try again." };
+		return { ok: false, error: "it was a note about the text instead of the text" };
 	const cap = composeLengthCap(context.mode, context.input.length);
 	if (text.length > cap) {
 		text = cutAtSentence(text, cap);

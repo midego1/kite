@@ -6,6 +6,9 @@ import { allowAgentRequest } from "@/lib/agent/rate-limit";
 import { readJsonBody } from "@/lib/http/request";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { agentProviderErrorMessage } from "@/lib/agent/errors";
+import { reportAiErrorClass, reportAiFailure } from "@/lib/agent/ai-errors";
+import { aiErrorHttpStatus } from "@/lib/agent/ai-error-utils";
+import { InteractiveModelRefusedError } from "@/lib/agent/interactive-model";
 import { getRequestTimeZone } from "@/lib/time/utils";
 
 const schema = z.object({
@@ -22,7 +25,10 @@ export async function POST(request: Request) {
 	if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 	if (!hasValidSessionMutationOrigin(request)) return Response.json({ error: "Invalid origin" }, { status: 403 });
 	if (!(await allowAgentRequest(env, `chat:${user.id}`)))
-		return Response.json({ error: "Rate limit exceeded" }, { status: 429 });
+		return Response.json(
+			await reportAiErrorClass({ code: "rate_limited", status: null }, { env, feature: "chat", userId: user.id }),
+			{ status: 429 },
+		);
 	const raw = await readJsonBody(request, 8_000).catch(() => null);
 	const parsed = schema.safeParse(raw);
 	if (!parsed.success) return Response.json({ error: "Invalid request" }, { status: 400 });
@@ -43,6 +49,15 @@ export async function POST(request: Request) {
 			},
 		});
 	} catch (error) {
+		if (error instanceof InteractiveModelRefusedError) {
+			const body = await reportAiFailure(error, {
+				env,
+				feature: "chat",
+				userId: user.id,
+				mailboxId: parsed.data.mailboxId,
+			});
+			return Response.json(body, { status: aiErrorHttpStatus(body.code) });
+		}
 		return Response.json({ error: agentProviderErrorMessage(error) }, { status: 400 });
 	}
 }

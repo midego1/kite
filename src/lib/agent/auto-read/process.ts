@@ -4,6 +4,8 @@ import { agentJobs, mailboxAgentSettings, mailboxes, messages, users } from "@/d
 import { readMailboxAgentSettingsRow } from "./mailbox-settings";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { normalizeTimeZone } from "@/lib/time/utils";
+import { reportAiFailure } from "../ai-errors";
+import { modelFailedReason } from "../ai-error-utils";
 import { claimAgentJob, failAndRequeueAgentJob, isLastAttempt, skipAgentJob } from "../jobs/lease";
 import { getAgentProviderConfig } from "../provider";
 import { ExternalProviderNotAllowedError } from "./auto-read-model";
@@ -51,9 +53,16 @@ async function reviewerAccess(db: AppDatabase, job: AgentJobRow) {
 type TriageModelRun = Awaited<ReturnType<typeof runTriageModel>>;
 /**
  * The model's part of a job. `hintOnly` is true when only a module's `wantsModel` hint asked for the
- * request, so core plans its own kinds as if the model had not run. `error` is kept for a failed request.
+ * request, so core plans its own kinds as if the model had not run. `error` is kept for a failed request, whose
+ * skip reason is `model_failed:<code>`.
  */
-type ModelStep = { skip: string | null; model: TriageModelRun | null; hintOnly: boolean; error?: unknown };
+type ModelStep = {
+	skip: string | null;
+	model: TriageModelRun | null;
+	hintOnly: boolean;
+	failed?: boolean;
+	error?: unknown;
+};
 
 const NO_MODEL: ModelStep = { skip: null, model: null, hintOnly: false };
 
@@ -98,8 +107,14 @@ async function modelStep(input: {
 	} catch (error) {
 		const refusal = thrownRefusal(error);
 		if (refusal) return { skip: refusal, model: null, hintOnly };
-		if (hintOnly || isLastAttempt(job)) return { skip: "model_failed", model: null, hintOnly, error };
-		throw error;
+		if (!hintOnly && !isLastAttempt(job)) throw error;
+		const failure = await reportAiFailure(error, {
+			env,
+			feature: "auto_triage",
+			userId: job.reviewerUserId,
+			mailboxId: job.mailboxId,
+		});
+		return { skip: modelFailedReason(failure.code), model: null, hintOnly, failed: true, error };
 	}
 }
 
@@ -198,7 +213,7 @@ async function triage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow): Pr
 	});
 	// A refused or failed model must not discard deterministic warnings, even with every module off.
 	if (modelRun.skip && steps.ran === 0 && planned.length === 0) {
-		if (modelRun.skip === "model_failed" && !modelRun.hintOnly) throw modelRun.error;
+		if (modelRun.failed && !modelRun.hintOnly) throw modelRun.error;
 		return { skip: modelRun.skip };
 	}
 	await storeTriageSuggestions({ env, job, source, planned, model: modelRun.model?.modelId ?? null });

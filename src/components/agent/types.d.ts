@@ -11,7 +11,7 @@ export type AgentEvent =
 			result?: unknown;
 			recordId?: string;
 	  }
-	| { type: "error"; message: string }
+	| { type: "error"; message: string; code?: string; details?: unknown }
 	| { type: "done" };
 
 export type AgentMessage = {

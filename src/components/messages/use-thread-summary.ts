@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { primaryLanguage } from "@/lib/agent/summaries/summary-utils";
 import type { SummaryScope, SummaryState } from "@/lib/agent/summaries/summary-types";
 import { useKeyChanged } from "@/hooks/use-synced-state";
+import type { AiErrorBody } from "@/lib/agent/ai-error-utils";
 import type { ThreadSummaryBusy, ThreadSummaryController } from "./thread-summary-types";
 import { canSummarize, summaryError, summaryUrl } from "./thread-summary-utils";
 
@@ -39,6 +40,12 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 	const [state, setState] = useState<SummaryState | null>(null);
 	const [busy, setBusy] = useState<ThreadSummaryBusy>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [failure, setFailure] = useState<AiErrorBody | null>(null);
+	const lastRequest = useRef<{
+		kind: Exclude<ThreadSummaryBusy, null>;
+		scope: SummaryScope;
+		translateTo?: string;
+	} | null>(null);
 	const [blocked, setBlocked] = useState<string | null>(null);
 	const [hidden, setHidden] = useState(false);
 	const [language] = useState(browserLanguage);
@@ -50,6 +57,7 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 		setState(null);
 		setBusy(null);
 		setError(null);
+		setFailure(null);
 		setBlocked(null);
 		setHidden(false);
 	}
@@ -74,6 +82,8 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 			const current = () => shownKey.current === key;
 			setBusy(kind);
 			setError(null);
+			setFailure(null);
+			lastRequest.current = { kind, ...body };
 			try {
 				const response = await fetch(`/api/messages/${encodeURIComponent(messageId)}/summary`, {
 					method: "POST",
@@ -82,8 +92,9 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 				});
 				if (!current()) return;
 				if (!response.ok) {
-					const message = await summaryError(response);
+					const { message, failure: details } = await summaryError(response);
 					if (!current()) return;
+					setFailure(details);
 					if (response.status === 429) setBlocked(message);
 					// The conversation changed under the request: show what is there now, with Summarize again.
 					if (response.status === 409) refetch();
@@ -119,6 +130,7 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 		state,
 		busy,
 		error,
+		failure,
 		blocked,
 		hidden,
 		language,
@@ -127,6 +139,13 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 		translate: () => {
 			if (language) void post("translate", { scope, translateTo: language });
 		},
+		retry:
+			busy === null && !blocked
+				? () => {
+						const last = lastRequest.current;
+						if (last?.scope === scope) void post(last.kind, { scope: last.scope, translateTo: last.translateTo });
+					}
+				: undefined,
 		hide: () => setHidden(true),
 	};
 }

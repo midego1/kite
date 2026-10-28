@@ -41,6 +41,7 @@ import { PersonalInstructionsSetting } from "./personal-instructions-setting";
 import { AutoReadSettings } from "./auto-read-settings";
 import { AssistantSettingsTabs } from "./assistant-settings-tabs";
 import { reasonText } from "./agent-activity-utils";
+import { chatEventFailure, ChatErrorNotice, chatRequestFailure, type ChatFailure } from "./chat-error-notice";
 import { legacyAgentSettingsBody } from "./auto-read-settings-utils";
 import type { ReviewSnapshot } from "./send-review-types";
 import { approveAgentAction, requestDraftReview } from "./client-actions";
@@ -103,6 +104,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 	const [queuedMessages, setQueuedMessages] = useState<QueuedAgentMessage[]>([]);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [failure, setFailure] = useState<ChatFailure | null>(null);
 	const [approvingId, setApprovingId] = useState<string | null>(null);
 	const [draftReview, setDraftReview] = useState<{
 		approvalId: string;
@@ -362,6 +364,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 		runningRef.current = true;
 		setBusy(true);
 		setError(null);
+		setFailure(null);
 		setMessages((current) => [
 			...current,
 			{ id: userMessageId, role: "user", content: text, createdAt: new Date(startedAt).toISOString() },
@@ -380,8 +383,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 				}),
 				signal: controller.signal,
 			});
-			if (!response.ok)
-				throw new Error(((await response.json()) as AgentErrorResponse).error || "Assistant unavailable");
+			if (!response.ok) throw new Error(await chatRequestFailure(response, text, setFailure));
 			accepted = true;
 			const responseConversationId = response.headers.get("X-Conversation-Id");
 			if (responseConversationId && generation === queueGenerationRef.current) {
@@ -429,6 +431,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 				if (event.type === "error") {
 					streamErrored = true;
 					setError(event.message);
+					setFailure(chatEventFailure(event, text));
 				}
 			});
 			if (generation === queueGenerationRef.current) {
@@ -686,14 +689,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 					</button>
 				</div>
 			</header>
-			{error && (
-				<p
-					role="alert"
-					className="mx-4 mt-3 break-words rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700"
-				>
-					{error}
-				</p>
-			)}
+			{error && <ChatErrorNotice error={error} failure={failure} busy={busy} onRetry={(text) => void send(text)} />}
 			{view === "chat" && (
 				<>
 					<ChatContext selectedMessageId={currentEmail.contextMessageId} />

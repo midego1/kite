@@ -37,9 +37,18 @@ export type HeartbeatPayload = {
 	modules_enabled: ModuleId[];
 } & HeartbeatBuckets;
 
+export type TelemetryDecision = "on" | "off";
+
 /** What Admin → General shows. `installId` is shown to the owner only, so they can ask for its data to be removed. */
 export type TelemetryStatus = {
+	/** Heartbeats are sent (the decision is `on`). */
 	enabled: boolean;
+	/** `on` or `off` once chosen at setup, in Admin or by the start day passing; null while undecided. */
+	decision: TelemetryDecision | null;
+	/** While undecided and once the owner saw the notice: the UTC day sending starts unless they turn it off. */
+	startDay: string | null;
+	/** Show the one-time notice: undecided, not dismissed, something would be sent, and migration 0075 applied. */
+	notice: boolean;
 	/** `KITE_TELEMETRY` keeps it off; the switch can then only be turned off. */
 	forcedOff: boolean;
 	/** False until migration 0071 is applied. */
@@ -50,6 +59,9 @@ export type TelemetryStatus = {
 	/** Collector URL, or null when `KITE_TELEMETRY_URL` is empty or unusable (nothing is sent). */
 	endpoint: string | null;
 };
+
+/** What the first-run setup needs to explain the switch before an account exists. */
+export type SetupTelemetryStatus = Pick<TelemetryStatus, "forcedOff" | "endpoint">;
 
 /**
  * What became of the collector's copy when the owner turned statistics off: `erased` (the collector confirmed),

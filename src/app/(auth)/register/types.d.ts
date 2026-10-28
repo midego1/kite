@@ -1,8 +1,12 @@
+import type { SetupTelemetryStatus } from "@/lib/telemetry/types";
+
 export type SetupStatus = {
 	hasAdminAccount: boolean;
 	hasPrimaryDomain: boolean;
 	setupTokenRequired?: boolean;
 	primaryDomain?: { hostname: string; sendingRequested: boolean } | null;
+	/** Only until the first account exists. */
+	telemetry?: SetupTelemetryStatus;
 	error?: string;
 };
 

@@ -15,7 +15,7 @@ const DEV_ONLY_VARS = [
 	// Lets e2e/60-imap-import.spec.ts import from the fake IMAP server on 127.0.0.1 without TLS.
 	"EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK",
 	"DATABASE_SIZE_TEST_HEADER",
-	// The e2e server points it at a `.invalid` host so it never posts usage statistics; deployments set it as a variable.
+	// The e2e server points it at a loopback port where nothing listens; deployments set it as a variable.
 	"KITE_TELEMETRY_URL",
 	// Only so the e2e server can save storage credentials; a real install sets it as a secret or in .dev.vars.
 	"APP_ENCRYPTION_KEY",

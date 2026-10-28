@@ -386,15 +386,21 @@ test("counts come from users, sessions, audit rows and recent messages", async (
 	});
 });
 
-test("statistics start off; opting in makes an install id and opting out deletes it", async (t) => {
+const UNDECIDED = {
+	available: true,
+	noticeAvailable: true,
+	enabled: false,
+	decision: null,
+	installId: null,
+	lastSentDay: null,
+	startDay: null,
+	noticeDismissed: false,
+};
+
+test("statistics start undecided and off; opting in makes an install id and opting out deletes it", async (t) => {
 	const sqlite = await setup(t);
 	const env = { DB: sqlite };
-	assert.deepEqual(await readTelemetryState(env), {
-		available: true,
-		enabled: false,
-		installId: null,
-		lastSentDay: null,
-	});
+	assert.deepEqual(await readTelemetryState(env), UNDECIDED);
 	await setTelemetryEnabled(env, true);
 	const on = await readTelemetryState(env);
 	assert.equal(on.enabled, true);
@@ -404,13 +410,9 @@ test("statistics start off; opting in makes an install id and opting out deletes
 	assert.equal(await claimTelemetryDay(env, "2026-10-26"), true);
 	assert.equal(await claimTelemetryDay(env, "2026-10-26"), false, "once per day");
 	assert.equal(await claimTelemetryDay(env, "2026-10-27"), true);
+	assert.equal(on.decision, "on");
 	await setTelemetryEnabled(env, false);
-	assert.deepEqual(await readTelemetryState(env), {
-		available: true,
-		enabled: false,
-		installId: null,
-		lastSentDay: null,
-	});
+	assert.deepEqual(await readTelemetryState(env), { ...UNDECIDED, decision: "off" });
 	assert.equal(await claimTelemetryDay(env, "2026-10-28"), false, "never while off");
 	await setTelemetryEnabled(env, true);
 	assert.notEqual((await readTelemetryState(env)).installId, on.installId, "a new id after opting in again");
@@ -469,7 +471,7 @@ test("the heartbeat sends one allowlisted report a day, only when opted in", asy
 	const env = { DB: sqlite, KITE_TELEMETRY_URL: COLLECTOR };
 	const { requests, fetcher } = recorder();
 
-	assert.equal(await runTelemetryHeartbeat(env, NOW, fetcher), "disabled", "off by default");
+	assert.equal(await runTelemetryHeartbeat(env, NOW, fetcher), "disabled", "nothing without a decision");
 	await setTelemetryEnabled(env, true);
 	assert.equal(
 		await runTelemetryHeartbeat(

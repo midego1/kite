@@ -9,9 +9,13 @@ type Params = { params: Promise<{ id: string }> };
  * running finishes first; `POST …/resume` continues it.
  */
 export const POST = withModule<Params>("import", (request, { params, checkUser }) =>
-	importJobMutation(request, params, checkUser, async ({ env, userId, jobId }) =>
-		(await pauseImportJob(env, userId, jobId))
-			? Response.json({ ok: true })
-			: Response.json({ error: "Import job not found or not running" }, { status: 404 }),
+	importJobMutation(
+		request,
+		params,
+		(user) => checkUser(user),
+		async ({ env, userId, jobId }) =>
+			(await pauseImportJob(env, userId, jobId))
+				? Response.json({ ok: true })
+				: Response.json({ error: "Import job not found or not running" }, { status: 404 }),
 	),
 );

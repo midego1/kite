@@ -104,17 +104,16 @@ test("a new deployment shows the toast once, and Reload reloads the page", async
 });
 
 /**
- * Answers the app's entry module with a 404 for the next `failures` requests, as a Cloudflare location still on
- * the previous deployment does for the new deployment's chunks. Under `vite dev` the entry is the vite-rsc
- * browser entry; a production build names it `/_next/static/chunks/index-<hash>.js`.
+ * Answers the app's entry module with a 404 while `failing()` holds, as a Cloudflare location still on the previous
+ * deployment does for the new deployment's chunks. Under `vite dev` the entry is the vite-rsc browser entry (each
+ * page requests it more than once); a production build names it `/_next/static/chunks/index-<hash>.js`.
  */
-async function failEntryModule(page: Page, failures: number) {
-	const entry = { remaining: failures, failed: 0 };
+async function failEntryModule(page: Page, failing: () => boolean) {
+	const entry = { failed: 0 };
 	await page.route(
 		(url) => url.pathname.endsWith("/entry-browser"),
 		async (route) => {
-			if (entry.remaining <= 0) return route.continue();
-			entry.remaining -= 1;
+			if (!failing()) return route.continue();
 			entry.failed += 1;
 			await route.fulfill({ status: 404, contentType: "text/plain", body: "Not Found" });
 		},
@@ -169,10 +168,10 @@ test("a chunk of the previous deployment that is gone shows the toast, and Reloa
 	expect(documents.count).toBe(0);
 
 	// The first two loads get the new page but not its files; it used to stay on "Loading" until a manual refresh.
-	const entry = await failEntryModule(page, 2);
+	const entry = await failEntryModule(page, () => documents.count <= 2);
 	await toast.getByRole("button", { name: "Reload" }).click();
 	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 30_000 });
-	expect(entry.failed).toBe(2);
+	expect(entry.failed).toBeGreaterThanOrEqual(2);
 	expect(documents.count).toBe(3);
 	expect(await readMarker(page)).toBe(undefined);
 	// Once the app has rendered, the reload count starts over.
@@ -189,7 +188,7 @@ test("files that never load stop the automatic reloads after four tries", async 
 		if (message.type() === "error") errors.push(message.text());
 	});
 
-	await failEntryModule(page, Number.POSITIVE_INFINITY);
+	await failEntryModule(page, () => true);
 	await page.reload();
 	// The first load plus four automatic reloads, 1 + 2 + 4 + 8 seconds apart.
 	await expect.poll(() => documents.count, { timeout: 60_000 }).toBe(5);

@@ -7,3 +7,4 @@
 ### Fixed
 
 - The **Setup** buttons in the DNS rows of [Admin → Domains](/domains) were hard to read, most of all while DNS is managed by hand; they now have a solid face and readable text in light and dark mode.
+- In Admin, the usage statistics notice appeared twice, above the page and in the sidebar; it now shows once, above the page, in the same muted amber as the other notices.

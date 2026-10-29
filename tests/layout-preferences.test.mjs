@@ -13,7 +13,6 @@ const {
 	readLayoutPreferences,
 	saveLayoutPreferences,
 	parseLayoutPatch,
-	parseLayoutPreferences,
 	parseStoredLayout,
 	layoutStorageEntries,
 	withoutKeys,
@@ -22,7 +21,7 @@ const {
 	["applyMigrations", "server/runtime/migrate.ts"],
 	["createDb", "src/db/index.ts"],
 	["LayoutPreferencesPendingError, readLayoutPreferences, saveLayoutPreferences", "src/lib/preferences/layout.ts"],
-	["parseLayoutPatch, parseLayoutPreferences, parseStoredLayout", "src/lib/preferences/layout-utils.ts"],
+	["parseLayoutPatch, parseStoredLayout", "src/lib/preferences/layout-utils.ts"],
 	["layoutStorageEntries, withoutKeys", "src/components/layout-preferences-utils.ts"],
 ]);
 
@@ -42,7 +41,8 @@ async function database(t, dir = migrationsDir) {
 	return { sqlite, db: createDb(sqlite) };
 }
 
-test("parseLayoutPreferences keeps only valid choices and clamps sizes", () => {
+test("a stored layout keeps only valid choices and clamps sizes", () => {
+	const parseLayoutPreferences = (value) => parseStoredLayout(JSON.stringify(value));
 	assert.deepEqual(
 		parseLayoutPreferences({
 			readingPane: "below",

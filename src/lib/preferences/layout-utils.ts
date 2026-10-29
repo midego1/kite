@@ -16,7 +16,7 @@ function size(value: unknown, limits: { min: number; max: number }): number | un
  * Keeps only well-formed choices, clamping sizes into range. Used on stored JSON and on what a client
  * sends, so an old or hand-edited value can never break a layout.
  */
-export function parseLayoutPreferences(value: unknown): LayoutPreferences {
+function parseLayoutPreferences(value: unknown): LayoutPreferences {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
 	const input = value as Record<string, unknown>;
 	const layout: LayoutPreferences = {};

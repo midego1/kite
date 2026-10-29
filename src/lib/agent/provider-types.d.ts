@@ -37,6 +37,8 @@ export type AgentProviderConfig = {
 	/** What spend counts with for each configured model: the saved rates, else Kite's price list. */
 	effectiveRates: Record<string, AgentModelRates>;
 	source: "saved" | "environment" | "default";
+	/** The saved key could not be opened (sealed under another APP_ENCRYPTION_KEY); requests fail until it is entered again. */
+	keyUnreadable?: boolean;
 };
 
 export type AgentProviderPublicConfig = Omit<AgentProviderConfig, "apiKey" | "effectiveRates"> & {
@@ -46,3 +48,10 @@ export type AgentProviderPublicConfig = Omit<AgentProviderConfig, "apiKey" | "ef
 
 // rates are USD per 1M tokens, present only when the provider's own model catalog publishes pricing.
 export type AgentModelOption = { id: string; name: string; rates?: AgentModelRates };
+
+/** A saved provider as the admin page lists it: never the key, only whether one is stored. */
+export type AgentProviderConnection = Omit<AgentProviderPublicConfig, "source" | "configured"> & {
+	id: string;
+	name: string;
+	active: boolean;
+};

@@ -45,6 +45,7 @@ const LATER_MIGRATIONS = [
 	"0074_add_message_html_body_key.sql",
 	"0075_add_telemetry_notice.sql",
 	"0076_add_import_job_folders.sql",
+	"0077_add_agent_providers.sql",
 ];
 /** Columns a later migration adds to a table this test pins; everything else must stay as it was. */
 const LATER_COLUMNS = { messages: ["html_body_key", "body_size"] };

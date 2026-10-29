@@ -1,5 +1,5 @@
 import type { AgentModelOption, AgentModelRates, AgentProviderPreset } from "./provider-types";
-import { getAgentProviderConfig, resolveAgentBaseUrl } from "./provider";
+import { getTargetAgentProviderConfig, resolveAgentBaseUrl } from "./provider";
 import { compatibleModelsRequest, parseCompatibleAgentModelOptions, perMillion } from "./provider-models-utils";
 
 export const CLOUDFLARE_TOOL_MODELS: AgentModelOption[] = [
@@ -55,13 +55,18 @@ export async function listCloudflareAgentModels(
 
 export async function listCompatibleAgentModels(
 	env: CloudflareEnv,
-	input: { preset: AgentProviderPreset; baseUrl: string; apiKey?: string },
+	input: { preset: AgentProviderPreset; baseUrl: string; apiKey?: string; providerId?: string | null },
 ) {
 	const baseUrl = resolveAgentBaseUrl(input.preset, input.baseUrl, env);
-	const saved = await getAgentProviderConfig(env);
+	// A blank key stands for the saved key of `providerId`, of the provider in use when omitted, none when null.
+	const target =
+		input.providerId === undefined ? "active" : input.providerId === null ? "new" : { id: input.providerId };
+	const saved = input.apiKey?.trim() ? null : await getTargetAgentProviderConfig(env, target);
 	const key =
 		input.apiKey?.trim() ||
-		(saved.provider === "compatible" && saved.preset === input.preset && saved.baseUrl === baseUrl ? saved.apiKey : "");
+		(saved?.provider === "compatible" && saved.preset === input.preset && saved.baseUrl === baseUrl
+			? saved.apiKey
+			: "");
 	if (!key) throw new Error("Enter an API key to load models");
 	const request = compatibleModelsRequest(input.preset, baseUrl, key);
 	const response = await fetch(request.url, {

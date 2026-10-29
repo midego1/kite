@@ -6,6 +6,7 @@ import { auditLogs, users } from "@/db/schema";
 import { authorizeActivityRead } from "@/lib/auth/activity-access";
 import { MODULE_AUDIT_ACTIONS } from "@/lib/modules/admin-utils";
 import { TELEMETRY_AUDIT_ACTIONS } from "@/lib/telemetry/telemetry-utils";
+import { AGENT_PROVIDER_AUDIT_ACTIONS } from "@/lib/agent/provider-constants";
 
 export async function GET(request: Request) {
 	const access = await authorizeActivityRead(request);
@@ -25,7 +26,13 @@ export async function GET(request: Request) {
 		.leftJoin(users, eq(users.id, auditLogs.actorUserId))
 		.leftJoin(targetUsers, eq(targetUsers.id, auditLogs.targetUserId))
 		.where(
-			inArray(auditLogs.action, ["auth.login", "auth.logout", ...MODULE_AUDIT_ACTIONS, ...TELEMETRY_AUDIT_ACTIONS]),
+			inArray(auditLogs.action, [
+				"auth.login",
+				"auth.logout",
+				...MODULE_AUDIT_ACTIONS,
+				...TELEMETRY_AUDIT_ACTIONS,
+				...AGENT_PROVIDER_AUDIT_ACTIONS,
+			]),
 		)
 		.orderBy(desc(auditLogs.createdAt))
 		.limit(limit);

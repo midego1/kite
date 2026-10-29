@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/d1";
 import * as coreTables from "@/db/schema";
 import * as autoReadTables from "@/db/schema/agent-auto-read";
+import * as agentProviderTables from "@/db/schema/agent-providers";
 import * as summaryTables from "@/db/schema/agent-summaries";
 import * as writingTables from "@/db/schema/agent-writing";
 import * as spamReportTables from "@/db/schema/spam-reports";
@@ -14,6 +15,7 @@ import * as telemetryTables from "@/db/schema/telemetry";
 const schema = {
 	...coreTables,
 	...autoReadTables,
+	...agentProviderTables,
 	...writingTables,
 	...summaryTables,
 	...spamReportTables,

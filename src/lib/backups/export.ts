@@ -36,6 +36,7 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"storage_stores",
 	"storage_routes",
 	"app_settings",
+	"agent_providers",
 	"module_settings",
 	"email_templates",
 	"booking_events",

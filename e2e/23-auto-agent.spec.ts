@@ -640,10 +640,13 @@ test.describe("admin automatic reading settings", () => {
 			await expect(row.getByLabel("Input")).toBeEnabled();
 			await expect(row.getByLabel("Input")).toHaveValue("1");
 			await row.getByLabel("Input").fill("0.8");
+			// The page edits the saved provider in use, which the fake provider was written into.
 			const saved = page.waitForResponse(
-				(response) => response.url().endsWith("/api/admin/agent") && response.request().method() === "PUT",
+				(response) =>
+					/\/api\/admin\/agent\/providers\/[^/]+$/.test(new URL(response.url()).pathname) &&
+					response.request().method() === "PUT",
 			);
-			await page.getByRole("button", { name: "Save agent settings" }).click();
+			await page.getByRole("button", { name: "Save provider" }).click();
 			expect((await saved).status()).toBe(200);
 			expect((await readAdminAgent(api)).config.rates["claude-haiku-4-5-20251001"]).toEqual({ input: 0.8, output: 5 });
 
@@ -653,7 +656,7 @@ test.describe("admin automatic reading settings", () => {
 			await row.getByRole("button", { name: "Use Kite's price" }).click();
 			await expect(row.getByLabel("Input")).toBeDisabled();
 			await expect(row.getByLabel("Input")).toHaveValue("1");
-			await page.getByRole("button", { name: "Save agent settings" }).click();
+			await page.getByRole("button", { name: "Save provider" }).click();
 			await expect
 				.poll(async () => (await readAdminAgent(api)).config.rates["claude-haiku-4-5-20251001"])
 				.toEqual({ input: null, output: null });

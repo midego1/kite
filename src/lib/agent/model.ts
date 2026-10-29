@@ -2,11 +2,13 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createWorkersAI } from "workers-ai-provider";
 import { getAgentProviderConfig } from "./provider";
+import { AgentProviderKeyUnreadableError } from "./provider-connections";
 import { COMPATIBLE_PROVIDER_NAME } from "./auto-read/model-call-utils";
 import { withDedupedStreams } from "./workers-ai-stream-utils";
 
 export async function getAgentModel(env: CloudflareEnv, requestedModel?: string | null) {
 	const config = await getAgentProviderConfig(env);
+	if (config.keyUnreadable) throw new AgentProviderKeyUnreadableError();
 	const modelId = requestedModel && config.models.includes(requestedModel) ? requestedModel : config.model;
 	const details = {
 		modelId,

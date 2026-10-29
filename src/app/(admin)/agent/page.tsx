@@ -2,149 +2,38 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { DEFAULT_CLOUDFLARE_MODEL } from "@/lib/agent/provider-constants";
 import { saveAssistantAvailability } from "@/lib/agent/availability-client";
-import { parseAgentModelIds, toggleAgentModelId } from "@/lib/agent/model-ids";
-import { mergePublishedAgentRates } from "@/lib/agent/model-rates-utils";
 import { AutoReadAdminSettings } from "@/components/agent/auto-read-admin-settings";
-import { HaimakerReferralCard } from "./haimaker-referral-card";
-import { CostRates } from "./cost-rates";
+import { AgentProviders } from "./agent-providers";
 import { RecentAiErrors } from "./recent-ai-errors";
-import type { AgentAdminForm, AgentModelLoadState } from "./types";
-import {
-	agentModelInputError,
-	loadAgentAdminSettings,
-	loadAgentModels,
-	PROVIDER_PRESETS,
-	saveAgentAdminSettings,
-	saveAgentEnabled,
-	selectAgentProvider,
-} from "./utils";
-import { Select } from "@/components/ui/select";
-
-const initialForm: AgentAdminForm = {
-	provider: "cloudflare",
-	preset: "openai",
-	baseUrl: "",
-	apiKey: "",
-	model: DEFAULT_CLOUDFLARE_MODEL,
-	rates: {},
-};
+import type { AgentAdminSettingsResponse } from "./types";
+import { loadAgentAdminSettings, saveAgentEnabled } from "./utils";
 
 export default function AdminAgentPage() {
-	const [form, setForm] = useState<AgentAdminForm>(initialForm);
+	const [data, setData] = useState<AgentAdminSettingsResponse | null>(null);
 	const [assistantEnabled, setAssistantEnabled] = useState(true);
 	const [enabledSaving, setEnabledSaving] = useState(false);
 	const [enabledStatus, setEnabledStatus] = useState<string | null>(null);
-	const [loaded, setLoaded] = useState(false);
-	const [cloudflareAvailable, setCloudflareAvailable] = useState(false);
-	const [hasSavedKey, setHasSavedKey] = useState(false);
-	const [savedEndpoint, setSavedEndpoint] = useState("");
-	const [modelLoad, setModelLoad] = useState<AgentModelLoadState | null>(null);
-	const [status, setStatus] = useState<string | null>(null);
-	const [saving, setSaving] = useState(false);
+	const [loadError, setLoadError] = useState<string | null>(null);
 
 	useEffect(() => {
 		let active = true;
 		void loadAgentAdminSettings()
-			.then((data) => {
+			.then((loaded) => {
 				if (!active) return;
-				setForm({
-					provider: data.config.provider,
-					preset: data.config.preset,
-					baseUrl: data.config.baseUrl,
-					apiKey: "",
-					model: data.config.models.join(", "),
-					rates: data.config.rates,
-				});
-				setAssistantEnabled(data.assistantEnabled);
-				setCloudflareAvailable(data.cloudflareAvailable);
-				setHasSavedKey(data.config.hasApiKey);
-				setSavedEndpoint(`${data.config.preset}|${data.config.baseUrl}`);
-				setLoaded(true);
+				setData(loaded);
+				setAssistantEnabled(loaded.assistantEnabled);
 			})
 			.catch((error) => {
-				if (active) setStatus(error instanceof Error ? error.message : "Could not load agent settings");
+				if (active) setLoadError(error instanceof Error ? error.message : "Could not load agent settings");
 			});
 		return () => {
 			active = false;
 		};
 	}, []);
-
-	const canUseSavedKey = hasSavedKey && savedEndpoint === `${form.preset}|${form.baseUrl}`;
-	const selectedModelIds = parseAgentModelIds(form.model);
-	const modelInputError = agentModelInputError(form, canUseSavedKey);
-	// Model results belong to the provider settings they were loaded for; any change hides them.
-	const modelsKey = JSON.stringify([form.provider, form.preset, form.baseUrl, form.apiKey, canUseSavedKey]);
-	const currentModelLoad = modelLoad?.key === modelsKey ? modelLoad : null;
-	const models = currentModelLoad?.models ?? [];
-	const modelSource = currentModelLoad?.source ?? null;
-	const modelsLoading = currentModelLoad?.loading ?? false;
-	const modelError = loaded ? (modelInputError ?? currentModelLoad?.error ?? null) : null;
-	useEffect(() => {
-		if (!loaded || modelInputError) return;
-		const controller = new AbortController();
-		const timer = window.setTimeout(
-			() => {
-				setModelLoad({ key: modelsKey, loading: true, models: [], source: null, error: null });
-				void loadAgentModels(form, controller.signal)
-					.then((data) => {
-						setModelLoad({ key: modelsKey, loading: false, models: data.models, source: data.source, error: null });
-						const published = Object.fromEntries(
-							data.models.flatMap((item) => (item.rates ? [[item.id, item.rates]] : [])),
-						);
-						if (Object.keys(published).length)
-							setForm((current) => ({ ...current, rates: mergePublishedAgentRates(current.rates, published) }));
-					})
-					.catch((error) => {
-						if (!controller.signal.aborted)
-							setModelLoad({
-								key: modelsKey,
-								loading: false,
-								models: [],
-								source: null,
-								error: error instanceof Error ? error.message : "Could not load models",
-							});
-					});
-			},
-			form.provider === "cloudflare" ? 0 : 500,
-		);
-		return () => {
-			window.clearTimeout(timer);
-			controller.abort();
-		};
-		// The request sends the whole form, but only provider settings decide which models exist.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [loaded, modelsKey, modelInputError]);
-
-	async function submit(event: React.FormEvent<HTMLFormElement>) {
-		event.preventDefault();
-		setSaving(true);
-		setStatus(null);
-		try {
-			const data = await saveAgentAdminSettings(form);
-			setForm((current) => ({
-				...current,
-				apiKey: "",
-				model: data.config.models.join(", "),
-				rates: data.config.rates,
-			}));
-			setHasSavedKey(data.config.hasApiKey);
-			setSavedEndpoint(`${data.config.preset}|${data.config.baseUrl}`);
-			setStatus("Agent provider saved. Assistant settings can now choose from these models.");
-		} catch (error) {
-			setStatus(error instanceof Error ? error.message : "Could not save agent settings");
-		} finally {
-			setSaving(false);
-		}
-	}
 
 	return (
 		<div className="space-y-6">
@@ -169,14 +58,14 @@ export default function AdminAgentPage() {
 					</div>
 					<Switch
 						checked={assistantEnabled}
-						disabled={!loaded || enabledSaving}
+						disabled={!data || enabledSaving}
 						onCheckedChange={(checked) => {
 							setEnabledSaving(true);
 							setEnabledStatus(null);
 							void saveAgentEnabled(checked)
-								.then((data) => {
-									setAssistantEnabled(data.assistantEnabled);
-									saveAssistantAvailability(data.assistantEnabled);
+								.then((saved) => {
+									setAssistantEnabled(saved.assistantEnabled);
+									saveAssistantAvailability(saved.assistantEnabled);
 								})
 								.catch((error) =>
 									setEnabledStatus(error instanceof Error ? error.message : "Could not update assistant availability"),
@@ -192,141 +81,12 @@ export default function AdminAgentPage() {
 					</p>
 				)}
 			</Card>
-			<Card>
-				<CardHeader>
-					<CardTitle className="flex items-center gap-2">
-						<Bot className="h-5 w-5" />
-						AI provider
-					</CardTitle>
-					<CardDescription>
-						Email content is sent to the selected provider when someone uses the assistant. Sending a draft still
-						requires human approval.
-					</CardDescription>
-				</CardHeader>
-				<CardContent className="pt-4">
-					<form onSubmit={submit} className="space-y-5">
-						<div className="space-y-2">
-							<Label htmlFor="agent-provider">Provider</Label>
-							<Select
-								id="agent-provider"
-								containerClassName="h-10 w-full"
-								className="text-sm"
-								value={form.provider === "cloudflare" ? "cloudflare" : form.preset}
-								disabled={!loaded}
-								onChange={(event) => setForm((current) => selectAgentProvider(current, event.target.value))}
-							>
-								{PROVIDER_PRESETS.map((item) => (
-									<option key={item.id} value={item.id}>
-										{item.label}
-									</option>
-								))}
-								<option value="cloudflare">Cloudflare Workers AI</option>
-							</Select>
-							{form.provider === "cloudflare" && !cloudflareAvailable && (
-								<p className="text-xs text-amber-700">
-									Cloudflare Workers AI requires an AI binding on this installation.
-								</p>
-							)}
-						</div>
-						{form.provider === "compatible" && (
-							<>
-								{form.preset === "haimaker" && <HaimakerReferralCard />}
-								<div className="space-y-2">
-									<Label htmlFor="agent-url">API base URL</Label>
-									<Input
-										id="agent-url"
-										type="url"
-										value={form.baseUrl}
-										readOnly={form.preset !== "custom"}
-										placeholder="https://provider.example/v1"
-										onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value, model: "" }))}
-										required
-									/>
-								</div>
-								<div className="space-y-2">
-									<Label htmlFor="agent-key">API key</Label>
-									<Input
-										id="agent-key"
-										type="password"
-										value={form.apiKey}
-										autoComplete="new-password"
-										placeholder={canUseSavedKey ? "Saved key (leave blank to keep)" : "Enter API key"}
-										onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
-									/>
-									<p className="text-xs text-neutral-500">
-										{canUseSavedKey
-											? "An API key is saved on the server. Enter a new one to replace it."
-											: "The API key is stored on the server and is never shown again."}
-									</p>
-								</div>
-							</>
-						)}
-						<div className="space-y-2">
-							<p className="text-sm font-medium">Models</p>
-							<div className="max-h-64 space-y-2 overflow-y-auto rounded-md border border-neutral-200 p-3">
-								{modelsLoading && <p className="text-sm text-neutral-500">Loading models…</p>}
-								{!modelsLoading && !models.length && <p className="text-sm text-neutral-500">Models unavailable</p>}
-								{models.map((item) => (
-									<label key={item.id} className="flex items-start gap-2 text-sm">
-										<Checkbox
-											checked={selectedModelIds.includes(item.id)}
-											onChange={(event) =>
-												setForm((current) => ({
-													...current,
-													model: toggleAgentModelId(current.model, item.id, event.target.checked),
-												}))
-											}
-										/>
-										<span>{item.name === item.id ? item.id : `${item.name} · ${item.id}`}</span>
-									</label>
-								))}
-							</div>
-							{modelSource === "suggested" && (
-								<p className="text-xs text-neutral-500">
-									Showing suggested Cloudflare models because a full catalog is unavailable.
-								</p>
-							)}
-							{modelError && <p className="text-xs text-amber-700">{modelError}</p>}
-							<Label htmlFor="agent-model-id" className="block pt-2 text-xs text-neutral-500">
-								Or enter model IDs (comma-separated)
-							</Label>
-							<Input
-								id="agent-model-id"
-								value={form.model}
-								onChange={(event) => setForm((current) => ({ ...current, model: event.target.value }))}
-								placeholder={
-									form.provider === "cloudflare"
-										? DEFAULT_CLOUDFLARE_MODEL
-										: "provider/model-id, provider/another-model"
-								}
-								required
-							/>
-							<p className="text-xs text-neutral-500">
-								Choose models that support tool calling so the assistant can read mail and create drafts. The first
-								model is the default.
-							</p>
-						</div>
-						<CostRates form={form} models={models} selectedModelIds={selectedModelIds} setForm={setForm} />
-						{status && (
-							<p role="status" className="text-sm text-neutral-700">
-								{status}
-							</p>
-						)}
-						<Button
-							type="submit"
-							disabled={
-								!loaded ||
-								saving ||
-								!selectedModelIds.length ||
-								(form.provider === "cloudflare" && !cloudflareAvailable) ||
-								(form.provider === "compatible" && (!form.baseUrl || (!form.apiKey.trim() && !canUseSavedKey)))
-							}
-						>
-							{saving ? "Saving…" : "Save agent settings"}
-						</Button>
-					</form>
-				</CardContent>
-			</Card>
+			{loadError && (
+				<p role="status" className="text-sm text-red-700">
+					{loadError}
+				</p>
+			)}
+			{data && <AgentProviders data={data} onChange={setData} />}
 			<AutoReadAdminSettings />
 			<RecentAiErrors />
 		</div>

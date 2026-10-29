@@ -1,3 +1,4 @@
+import type { UnavailableModels } from "./model-fallback-utils";
 export type AgentEvent =
 	| { type: "conversation"; conversationId: string }
 	| { type: "text"; text: string }
@@ -127,6 +128,7 @@ export type AgentProvider = { kind: string; model: string };
 export type AgentSettingsResponse = {
 	settings: AgentSettings;
 	models: string[];
+	unavailableModels?: UnavailableModels;
 	canManage: boolean;
 	instructionContext?: InstructionContext;
 	canConfigureProvider: boolean;

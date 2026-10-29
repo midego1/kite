@@ -5,6 +5,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { getAgentProviderPublicConfig } from "@/lib/agent/provider";
+import { unavailableModelChoice } from "@/lib/agent/provider-connection-utils";
 import { isPrimaryAdmin } from "@/lib/auth/admin";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import type { AppDatabase } from "@/db";
@@ -79,6 +80,11 @@ export async function GET(request: Request) {
 			triageModelId: configuredModelId(settings.triageModelId, models, null),
 		},
 		models,
+		// A choice saved under another provider is kept until the next save, which stores what is shown instead.
+		unavailableModels: {
+			chat: unavailableModelChoice(settings.modelId, models, models[0] ?? null),
+			triage: unavailableModelChoice(settings.triageModelId, models, null),
+		},
 		canManage: access.canManage,
 		instructionContext: {
 			// False until migration 0069 adds the task instruction columns; the fields cannot be saved before.

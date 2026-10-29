@@ -10,6 +10,8 @@ const requestSchema = z.object({
 	preset: z.enum(["haimaker", "anthropic", "openai", "openrouter", "groq", "custom"]),
 	baseUrl: z.string().max(500),
 	apiKey: z.string().max(2_000).optional(),
+	/** Whose saved key a blank key stands for: a saved provider, null for a new one, omitted for the one in use. */
+	providerId: z.string().max(100).nullable().optional(),
 });
 
 export async function POST(request: Request) {

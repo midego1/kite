@@ -179,7 +179,7 @@ type SummaryRequest = { scope: SummaryScope; language: string | null };
 async function unavailableReason(env: CloudflareEnv, eligible: boolean): Promise<SummaryState["reason"]> {
 	const refusal = await interactiveRefusal(env);
 	if (refusal === "assistant_disabled") return "assistant_off";
-	if (refusal === "external_provider_not_allowed") return refusal;
+	if (refusal === "external_provider_not_allowed" || refusal === "provider_key_unreadable") return refusal;
 	if (refusal === "not_configured" || !(await getAgentProviderPublicConfig(env)).configured) return "no_provider";
 	return eligible ? undefined : "not_eligible";
 }

@@ -6,6 +6,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSidebar } from "@/components/sidebar-state";
 import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 import { readColumnWidth, readInitialColumnWidth, saveColumnWidth } from "@/components/column-width-preferences";
+import { queueLayoutSave } from "@/components/layout-preferences-client";
+import { LAYOUT_PREFERENCES_APPLIED_EVENT } from "@/components/layout-preferences-utils";
+import { LIST_HEIGHT_LIMITS, LIST_WIDTH_LIMITS } from "@/lib/preferences/layout-utils";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, usePanelRef } from "@/components/ui/resizable";
 import { layoutPixels, pixelsPerPercent } from "@/components/ui/resizable-utils";
 import { useSyncedPanel } from "@/components/ui/use-synced-panel";
@@ -31,10 +34,18 @@ import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProp
 
 // The list and the reader are separate rounded panels on the page background, a few pixels apart.
 const PANEL_CLASS = "rounded-xl border border-neutral-200 shadow-xs";
-const LIST_WIDTH = { fallback: 360, min: 250, max: 1200, reserved: 280 };
-const LIST_HEIGHT = { fallback: 320, min: 120, max: 1200, reserved: 200 };
+const LIST_WIDTH = { fallback: 360, ...LIST_WIDTH_LIMITS, reserved: 280 };
+const LIST_HEIGHT = { fallback: 320, ...LIST_HEIGHT_LIMITS, reserved: 200 };
 // Panel ids are DOM ids too, so they carry a prefix.
 const LIST_PANEL_ID = "kite-message-list-panel";
+
+function readSavedListSize(
+	userId: string,
+	column: "message-list" | "message-list-height",
+	limits: { fallback: number; min: number; max: number },
+) {
+	return readColumnWidth(userId, column, limits.fallback, limits.min, limits.max);
+}
 
 /**
  * Opening a message ends a checkbox selection; otherwise the selection pane would keep covering
@@ -106,6 +117,17 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 
 	useEffect(() => {
 		if (!userId) return;
+		const readSaved = () => {
+			// The account's sizes arrive in localStorage once the session is known, or later from another device.
+			setListWidth(readSavedListSize(userId, "message-list", LIST_WIDTH));
+			setListHeight(readSavedListSize(userId, "message-list-height", LIST_HEIGHT));
+		};
+		window.addEventListener(LAYOUT_PREFERENCES_APPLIED_EVENT, readSaved);
+		return () => window.removeEventListener(LAYOUT_PREFERENCES_APPLIED_EVENT, readSaved);
+	}, [userId]);
+
+	useEffect(() => {
+		if (!userId) return;
 		const savedWidth = readColumnWidth(
 			userId,
 			"message-list",
@@ -151,6 +173,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 			return;
 		}
 		saveColumnWidth(userId, below ? "message-list-height" : "message-list", next);
+		queueLayoutSave(below ? { listHeight: next } : { listWidth: next });
 		if (!listVisible) {
 			changedByPanel();
 			setListVisible(true);

@@ -10,11 +10,13 @@ import {
 	EVENT_COLOR_CLASSES,
 	eventPosition,
 	formatEventRange,
+	formatEventTime,
 	PAST_EVENT_COLOR_CLASSES,
 	TENTATIVE_EVENT_CLASSES,
 } from "./utils";
 import type { CalendarEvent, EventResizeEdge } from "./types";
 import type { DayEventsProps } from "./day-events-types";
+import { eventBlockLayout, inlineEventSuffix } from "./event-block-utils";
 
 // Memoized so pointer-move / drag-over preview updates in the page do not
 // recompute positions (timezone math) and re-render every event block.
@@ -45,6 +47,7 @@ function DayEventsImpl({
 						position,
 						color: normalizeCalendarColor(event.color),
 						range: formatEventRange(event),
+						startLabel: formatEventTime(new Date(event.startsAt)),
 						canResizeStart: dateKey(new Date(event.startsAt)) === dateKey(day),
 						canResizeEnd: new Date(event.endsAt).getTime() <= nextDay.getTime(),
 					},
@@ -55,10 +58,11 @@ function DayEventsImpl({
 
 	return (
 		<>
-			{items.map(({ event, position, color, range, canResizeStart, canResizeEnd }) => {
+			{items.map(({ event, position, color, range, startLabel, canResizeStart, canResizeEnd }) => {
 				const isPastEvent = new Date(event.endsAt).getTime() <= currentTime;
 				const edges = (["start", "end"] as const).filter((edge) => (edge === "start" ? canResizeStart : canResizeEnd));
 				// Keep the grab zone inside the event so it never steals clicks from neighbours.
+				const layout = eventBlockLayout(position.height);
 				const handleHeight = Math.max(4, Math.min(10, position.height / 3));
 				return (
 					<Fragment key={event.id}>
@@ -70,20 +74,26 @@ function DayEventsImpl({
 							onDragEnd={onDragEnd}
 							title={`${event.title} · ${range}${event.status === "tentative" ? " (Tentative)" : ""}`}
 							data-status={event.status === "tentative" ? "tentative" : undefined}
-							className={`absolute left-1 right-1 z-10 flex cursor-move flex-col items-start justify-start overflow-hidden rounded-lg pr-2 pl-4 text-left hover:brightness-95 ${isPastEvent ? PAST_EVENT_COLOR_CLASSES[color] : EVENT_COLOR_CLASSES[color]} ${position.height >= 20 ? "py-1.5" : "py-0"} ${activeEventId === event.id ? "opacity-40" : ""} ${event.status === "tentative" ? TENTATIVE_EVENT_CLASSES : ""}`}
+							className={`absolute left-1 right-1 z-10 flex cursor-move flex-col items-start justify-start overflow-hidden rounded-lg pr-2 pl-4 text-left hover:brightness-95 ${isPastEvent ? PAST_EVENT_COLOR_CLASSES[color] : EVENT_COLOR_CLASSES[color]} ${layout.paddingClass} ${activeEventId === event.id ? "opacity-40" : ""} ${event.status === "tentative" ? TENTATIVE_EVENT_CLASSES : ""}`}
 							style={{ top: position.top, height: position.height }}
 						>
 							<span className="absolute top-1 left-1 block h-[calc(100%-8px)] w-1 rounded-xl bg-current" />
-							{position.height >= 15 && (
-								<span className="block w-full truncate text-[12px] font-semibold leading-4">
-									{event.title}
-									{event.status === "tentative" && (
-										<span className="ml-1 text-[10px] font-normal italic">Tentative</span>
-									)}
-								</span>
+							{layout.mode === "stacked" && (
+								<>
+									<span className="block w-full truncate text-[12px] font-semibold leading-4">
+										{event.title}
+										{event.status === "tentative" && (
+											<span className="ml-1 text-[10px] font-normal italic">Tentative</span>
+										)}
+									</span>
+									<span className="block w-full truncate text-[11px] leading-4 opacity-70">{range}</span>
+								</>
 							)}
-							{position.height >= 34 && (
-								<span className="block w-full truncate text-[11px] leading-4 opacity-70">{range}</span>
+							{layout.mode === "inline" && (
+								<span className="flex w-full min-w-0 text-[12px] font-semibold leading-4">
+									<span className="truncate">{event.title}</span>
+									<span className="shrink-0 whitespace-nowrap">{inlineEventSuffix(startLabel)}</span>
+								</span>
 							)}
 						</button>
 						{edges.map((edge: EventResizeEdge) => (

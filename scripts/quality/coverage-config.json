@@ -161,6 +161,8 @@
 		"src/lib/external-accounts/presets-utils.ts",
 		"src/lib/external-accounts/serialize-utils.ts",
 		"src/lib/backups/external-accounts-utils.ts",
+		"src/lib/smtp/protocol-utils.ts",
+		"src/lib/email/mime-build-utils.ts",
 		"src/lib/net/host-guard-utils.ts",
 		"src/lib/jmap/email-import-utils.ts",
 		"src/lib/jmap/module-utils.ts",

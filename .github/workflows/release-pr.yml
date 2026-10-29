@@ -5,6 +5,9 @@ name: Release pull request
 # main and opens or updates one "Release <version>" pull request from release/next. It never pushes to
 # main: merging that pull request is the release (docs/releasing.md). The prepare job runs npm with a
 # read-only token; the publish job holds the write token and runs no npm or repository scripts.
+# Pushes made with GITHUB_TOKEN start no workflow runs, so the publish job dispatches the required
+# check workflows on release/next itself (workflow_dispatch is exempt from that rule) and enables
+# auto-merge, so the release pull request merges once those checks are green.
 on:
   push:
     branches: [main]
@@ -91,7 +94,7 @@ jobs:
           {
             echo "Merging this pull request releases **Kite $version**: it deploys production, and the Release publish workflow then tags \`v$version\` and publishes the GitHub release."
             echo
-            echo "**Checks:** pushes made by this workflow start no CI runs (GitHub never triggers workflows from \`GITHUB_TOKEN\` pushes). Before merging, close and reopen this pull request to run the required checks on its latest commit."
+            echo "**Checks and merge:** pushes made by this workflow start no CI runs (GitHub never triggers workflows from \`GITHUB_TOKEN\` pushes), so the workflow dispatches CI, the documentation contract and the security scans on \`release/next\` itself, and enables auto-merge (squash). The pull request merges, and so releases, once every required check is green; there is nothing to close, reopen or approve."
             echo
             echo "\`release/next\` is prepared again by \`.github/workflows/release-pr.yml\` after every push to \`main\` while fragments remain, so edits made on this branch by hand are lost then; edit just before merging. See [Releasing](docs/releasing.md)."
             echo
@@ -118,6 +121,10 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+      # To dispatch the check workflows on release/next (gh workflow run).
+      actions: write
+      # To read which required checks already passed on the head (the rerun guard).
+      checks: read
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -159,6 +166,7 @@ jobs:
       # the previous release/next, so the branch only ever moves forward (no force push).
       - if: needs.prepare.outputs.state == 'ready'
         name: Push release/next
+        id: push
         env:
           REPOSITORY: ${{ github.repository }}
           GIT_AUTHOR_NAME: github-actions[bot]
@@ -166,6 +174,7 @@ jobs:
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898237+github-actions[bot]@users.noreply.github.com
         run: |
+          echo "pushed=false" >> "$GITHUB_OUTPUT"
           version=$(cat "$RUNNER_TEMP/release/VERSION")
           remote="https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git"
           git apply --index "$RUNNER_TEMP/release/release.patch"
@@ -187,6 +196,7 @@ jobs:
           fi
           commit=$(git commit-tree "$tree" "${parents[@]}" -m "chore(release): $version")
           git push "$remote" "$commit:refs/heads/release/next"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
       - if: needs.prepare.outputs.state == 'ready'
         name: Open or update the pull request
         run: |
@@ -201,3 +211,68 @@ jobs:
           fi
           issue=$(gh issue list --state open --search "\"$FAILURE_TITLE\" in:title" --json number,title --jq "map(select(.title == env.FAILURE_TITLE))[0].number // empty")
           if [ -n "$issue" ]; then gh issue close "$issue" --comment "Prepared $version in the release pull request."; fi
+      # Hold switch and rerun guard. Dispatching and auto-merge are decided here, once, from the pull request
+      # as it is now: auto-merge is never enabled while the pull request has the release-hold label or the
+      # repository variable RELEASE_HOLD is 1 (the pull request body then says so), and a rerun that pushed
+      # nothing only dispatches the checks again when the head has no successful required check.
+      - if: needs.prepare.outputs.state == 'ready'
+        name: Decide on checks and auto-merge
+        id: gate
+        env:
+          PUSHED: ${{ steps.push.outputs.pushed }}
+          RELEASE_HOLD: ${{ vars.RELEASE_HOLD }}
+        run: |
+          number=$(gh pr list --head release/next --base main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$number" ]; then
+            echo "::error::The release pull request is not open; nothing to check or auto-merge."
+            exit 1
+          fi
+          info=$(gh pr view "$number" --json labels,autoMergeRequest,headRefOid)
+          head=$(jq -r .headRefOid <<< "$info")
+          held=false
+          if [ "${RELEASE_HOLD:-}" = 1 ] || jq -e 'any(.labels[]; .name == "release-hold")' <<< "$info" > /dev/null; then held=true; fi
+          # The contexts the "Protect main" ruleset requires from GitHub Actions.
+          green=$(gh api --paginate "repos/$GH_REPO/commits/$head/check-runs?per_page=100" --jq '.check_runs[] | select(.conclusion == "success") | .name')
+          missing=false
+          for name in "Mission validation" "Node build" "docs" "Gitleaks history scan" "Offline source security rules"; do
+            grep -Fxq -- "$name" <<< "$green" || missing=true
+          done
+          dispatch=false
+          if [ "$PUSHED" = true ] || [ "$missing" = true ]; then dispatch=true; fi
+          merge=false
+          if [ "$held" = false ] && jq -e '.autoMergeRequest == null' <<< "$info" > /dev/null; then merge=true; fi
+          if [ "$held" = true ]; then
+            echo "::notice::Release is on hold (release-hold label or RELEASE_HOLD=1): auto-merge is not enabled."
+            {
+              cat "$RUNNER_TEMP/release/body.md"
+              echo
+              echo "> **On hold:** the \`release-hold\` label or the \`RELEASE_HOLD\` repository variable is set, so auto-merge is not enabled. Remove it and run the Release pull request workflow again to release."
+            } > "$RUNNER_TEMP/release/body-held.md"
+            gh pr edit "$number" --body-file "$RUNNER_TEMP/release/body-held.md"
+            # A hold also cancels auto-merge enabled earlier; it fails harmlessly when there is none.
+            gh pr merge "$number" --disable-auto || true
+          fi
+          {
+            echo "number=$number"
+            echo "dispatch=$dispatch"
+            echo "merge=$merge"
+          } >> "$GITHUB_OUTPUT"
+      # Check runs of a workflow_dispatch run attach to the tip of release/next and carry the job names
+      # (Mission validation, Node build, docs, Gitleaks history scan, Offline source security rules) the
+      # ruleset requires. The pull-request-only jobs (Release version, PR report) are skipped on dispatch.
+      - if: steps.gate.outputs.dispatch == 'true'
+        name: Run the required checks on release/next
+        run: |
+          for workflow in ci.yml docs.yml security.yml; do
+            gh workflow run "$workflow" --ref release/next
+          done
+      # Waits for the required checks, which are pending (or not reported yet) after the step above.
+      # Enabling it can fail (for example when auto-merge is off for the repository); that only warns.
+      - if: steps.gate.outputs.merge == 'true'
+        name: Enable auto-merge
+        env:
+          NUMBER: ${{ steps.gate.outputs.number }}
+        run: |
+          if ! gh pr merge "$NUMBER" --auto --squash; then
+            echo "::warning::Could not enable auto-merge on pull request #$NUMBER; merge it by hand once the checks are green."
+          fi

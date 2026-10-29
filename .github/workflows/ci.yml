@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Dispatched on release/next by release-pr.yml, whose GITHUB_TOKEN push starts no run (docs/releasing.md).
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}

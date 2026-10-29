@@ -3,6 +3,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Dispatched on release/next by release-pr.yml (docs/releasing.md).
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

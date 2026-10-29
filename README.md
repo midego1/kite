@@ -198,7 +198,7 @@ This version started from [Mailflare by hieunc229](https://github.com/hieunc229/
 | **Sending** | Sends immediately | Optional preview before sending and undo send |
 | **Reading** | Optional two-column view | Sidebar, list and reading pane as resizable panes that remember their sizes; reading pane beside or below the list, or full width; density options; Gmail-style keys (`j`/`k`, `e`, `#`, `r`/`a`/`f`), Shift-click and Cmd/Ctrl-click to select a range or single emails (middle-click opens a new tab), and a Cmd+K command palette; one pane at a time on phones |
 | **Backups** | Whole database built in memory as one JSON document | Streamed to object storage in parts, so large mailboxes back up within Worker limits; automatic backup before every migration and restore |
-| **Restore** | Deletes the current data, then inserts the backup | Validated first; a failed restore rolls back to the automatic safety backup |
+| **Restore** | Deletes the current data, then inserts the backup | Validated first, then read from storage in pages and written in batches, so backups larger than Worker memory restore; a failed restore rolls back to the automatic safety backup |
 | **MCP** | Every tool listed for every key, fixed version `0.1.0` | Only the tools a key's scopes allow; reports the real app version |
 | **Quality** | Unit tests, no CI or browser tests | Strict TypeScript, lint, over 2,000 unit tests and over 400 browser tests on every pull request and push to `main` |
 

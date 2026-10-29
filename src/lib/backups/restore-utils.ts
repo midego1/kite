@@ -1,5 +1,5 @@
 import type { DatabaseRecord } from "./types";
-import type { RestoreBatchLimits, RestorePlan, RestoreStatement, RestoreTablePlan } from "./restore-types";
+import type { RestoreBatchLimits, RestoreStatement } from "./restore-types";
 
 /**
  * The storage configuration says where this install's objects live right now. A backup's copy may name
@@ -20,7 +20,8 @@ export const MAX_BOUND_PARAMETERS = 100;
 /**
  * Sized to stay well inside D1's per-call duration and payload limits. A
  * restore whose statements fit in one batch runs as one transaction; larger
- * ones run batch by batch and rely on the pre-restore backup for rollback.
+ * ones run batch by batch and rely on the pre-restore backup for rollback
+ * (RestoreBatchWriter in restore-writer.ts).
  */
 export const DEFAULT_RESTORE_BATCH_LIMITS: RestoreBatchLimits = { maxStatements: 500, maxBytes: 4_000_000 };
 
@@ -28,22 +29,9 @@ function quoteIdentifier(name: string): string {
 	return `\`${name.replaceAll("`", "``")}\``;
 }
 
-/**
- * Turns the tables of a validated backup into DELETE statements (children
- * first) followed by multi-row INSERT statements (parents first). Columns the
- * target table no longer has are dropped, so a backup taken before a column
- * was removed still restores.
- */
-export function planRestoreStatements(tables: RestoreTablePlan[]): {
-	deletes: RestoreStatement[];
-	inserts: RestoreStatement[];
-} {
-	const deletes = [...tables]
-		.reverse()
-		.map((table) => ({ sql: `DELETE FROM ${quoteIdentifier(table.name)}`, params: [] }));
-	const inserts: RestoreStatement[] = [];
-	for (const table of tables) inserts.push(...planTableInserts(table));
-	return { deletes, inserts };
+/** Empties the given tables, children first; `tables` is in insert order, parents first. */
+export function planRestoreDeletes(tables: string[]): RestoreStatement[] {
+	return [...tables].reverse().map((table) => ({ sql: `DELETE FROM ${quoteIdentifier(table)}`, params: [] }));
 }
 
 type TableInsertOptions = {
@@ -53,29 +41,45 @@ type TableInsertOptions = {
 	maxRowsPerStatement?: number;
 };
 
-function planTableInserts(table: RestoreTablePlan, options: TableInsertOptions = {}): RestoreStatement[] {
-	const statements: RestoreStatement[] = [];
-	let columns: string[] = [];
-	let rows: DatabaseRecord[] = [];
+/**
+ * Builds a table's multi-row INSERT statements one row at a time, each under
+ * the bound-parameter limit, so rows can be streamed in without holding the
+ * table. `add` returns a statement whenever the previous rows are complete.
+ */
+export class TableInsertBuilder {
+	private columns: string[] = [];
+	private rows: DatabaseRecord[] = [];
 
-	for (const row of table.rows) {
-		const rowColumns = Object.keys(row).filter((column) => !table.columns || table.columns.has(column));
-		if (rowColumns.length === 0) throw new Error(`Backup contains an invalid ${table.name} record`);
+	constructor(
+		private readonly table: string,
+		private readonly targetColumns: Set<string> | null,
+		private readonly options: TableInsertOptions = {},
+	) {}
+
+	add(row: DatabaseRecord): RestoreStatement | null {
+		const rowColumns = Object.keys(row).filter((column) => !this.targetColumns || this.targetColumns.has(column));
+		if (rowColumns.length === 0) throw new Error(`Backup contains an invalid ${this.table} record`);
 		if (rowColumns.length > MAX_BOUND_PARAMETERS)
-			throw new Error(`Backup ${table.name} records have more columns than a restore can insert`);
+			throw new Error(`Backup ${this.table} records have more columns than a restore can insert`);
 		const rowsPerStatement = Math.min(
 			Math.floor(MAX_BOUND_PARAMETERS / rowColumns.length),
-			options.maxRowsPerStatement ?? Number.POSITIVE_INFINITY,
+			this.options.maxRowsPerStatement ?? Number.POSITIVE_INFINITY,
 		);
-		if (rows.length > 0 && (rows.length >= rowsPerStatement || !sameColumns(columns, rowColumns))) {
-			statements.push(createInsert(table.name, columns, rows, options.ignoreConflicts));
-			rows = [];
+		let statement: RestoreStatement | null = null;
+		if (this.rows.length > 0 && (this.rows.length >= rowsPerStatement || !sameColumns(this.columns, rowColumns))) {
+			statement = this.finish();
 		}
-		columns = rowColumns;
-		rows.push(row);
+		this.columns = rowColumns;
+		this.rows.push(row);
+		return statement;
 	}
-	if (rows.length > 0) statements.push(createInsert(table.name, columns, rows, options.ignoreConflicts));
-	return statements;
+
+	finish(): RestoreStatement | null {
+		if (!this.rows.length) return null;
+		const statement = createInsert(this.table, this.columns, this.rows, this.options.ignoreConflicts);
+		this.rows = [];
+		return statement;
+	}
 }
 
 function sameColumns(left: string[], right: string[]): boolean {
@@ -101,44 +105,4 @@ export function estimateStatementBytes(statement: RestoreStatement): number {
 	let bytes = statement.sql.length;
 	for (const param of statement.params) bytes += typeof param === "string" ? encoder.encode(param).byteLength : 8;
 	return bytes;
-}
-
-/** Groups statements into consecutive batches that each respect the limits. */
-export function chunkRestoreStatements(
-	statements: RestoreStatement[],
-	limits: RestoreBatchLimits = DEFAULT_RESTORE_BATCH_LIMITS,
-): RestoreStatement[][] {
-	const chunks: RestoreStatement[][] = [];
-	let current: RestoreStatement[] = [];
-	let currentBytes = 0;
-	for (const statement of statements) {
-		const bytes = estimateStatementBytes(statement);
-		if (current.length > 0 && (current.length >= limits.maxStatements || currentBytes + bytes > limits.maxBytes)) {
-			chunks.push(current);
-			current = [];
-			currentBytes = 0;
-		}
-		current.push(statement);
-		currentBytes += bytes;
-	}
-	if (current.length > 0) chunks.push(current);
-	return chunks;
-}
-
-export function createRestorePlan(
-	statements: RestoreStatement[],
-	rowCount: number,
-	limits: RestoreBatchLimits = DEFAULT_RESTORE_BATCH_LIMITS,
-): RestorePlan {
-	const chunks = chunkRestoreStatements(statements, limits);
-	return { statements, chunks, atomic: chunks.length <= 1, rowCount };
-}
-
-/** Adds statements that must run in the same final batch as the restore itself. */
-export function appendToRestorePlan(
-	plan: RestorePlan,
-	statements: RestoreStatement[],
-	limits: RestoreBatchLimits = DEFAULT_RESTORE_BATCH_LIMITS,
-): RestorePlan {
-	return createRestorePlan([...plan.statements, ...statements], plan.rowCount, limits);
 }

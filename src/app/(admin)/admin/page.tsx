@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminBackupHealthCard } from "@/components/admin-backup-health-card";
 import { AdminDatabaseSizeCard } from "@/components/admin-database-size-card";
 import { AdminUpdateCard } from "@/components/admin-update-card";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -16,6 +17,7 @@ export default function AdminSettingsPage() {
 			{user?.isPrimaryAdmin && (
 				<div className="space-y-6">
 					<AdminDatabaseSizeCard />
+					<AdminBackupHealthCard />
 					<AdminUpdateCard />
 				</div>
 			)}

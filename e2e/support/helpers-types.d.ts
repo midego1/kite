@@ -35,6 +35,7 @@ export type StoredMessage = {
 export type BackupRow = {
 	id: string;
 	status: "queued" | "running" | "completed" | "failed";
+	trigger: string;
 	error: string | null;
 	filename: string | null;
 };

@@ -1,15 +1,31 @@
 import { clearModuleStateCache } from "@/lib/modules/state";
 import { clearStorageConfigCache } from "@/lib/storage/config";
 import type { BackupTableGroupId, DatabaseBackupDocument, DatabaseBackupTable, DatabaseRecord } from "./types";
-import { dropRetiredBackupTables, mergeLegacyMessageBodies, RETIRED_BACKUP_TABLES } from "./utils";
+import {
+	dropRetiredBackupTables,
+	fillBookingEventSlug,
+	indexLegacyMessageBodies,
+	isDatabaseRecord,
+	mergeLegacyMessageBody,
+	RETIRED_BACKUP_TABLES,
+} from "./utils";
 import { BACKUP_TABLE_GROUPS, getSelectedBackupTables, isPartialBackupDocument } from "./table-groups";
 import {
-	createRestorePlan,
-	planRestoreStatements,
-	PRESERVED_ON_RESTORE,
-	preservedRestoreTables,
-} from "./restore-utils";
-import type { RestoreBatchLimits, RestorePlan, RestoreTablePlan } from "./restore-types";
+	BackupDocumentScanner,
+	INVALID_BACKUP_MESSAGE,
+	memoryBackupSource,
+	parseJsonBytes,
+	readSourcePages,
+} from "./backup-reader-utils";
+import { planRestoreDeletes, PRESERVED_ON_RESTORE, preservedRestoreTables, TableInsertBuilder } from "./restore-utils";
+import { RestoreBatchWriter } from "./restore-writer";
+import type {
+	BackupSource,
+	BackupTableRange,
+	PreparedRestore,
+	PreparedRestoreTable,
+	RestoreStatement,
+} from "./restore-types";
 
 const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"users",
@@ -294,45 +310,142 @@ export async function listApplicationTables(db: D1Database): Promise<Set<string>
 }
 
 /**
- * Validates a backup document against the current database and turns it into
- * the statements that replace every backed-up table. Nothing is written, so
- * an unusable file fails here before any data is touched.
+ * Validates a backup against the current database without writing anything,
+ * so an unusable file fails before any data is touched. The file is read in
+ * ranged pages and only its outer structure is kept: every row is parsed and
+ * checked, then dropped, and each table's byte range is recorded so
+ * executeDatabaseRestore can read the rows again table by table.
  */
 export async function prepareDatabaseRestore(
 	db: D1Database,
-	content: ArrayBuffer,
-	options: { limits?: RestoreBatchLimits } = {},
-): Promise<RestorePlan> {
-	const document = parseDatabaseBackup(content);
+	content: BackupSource | ArrayBuffer | Uint8Array,
+): Promise<PreparedRestore> {
+	const source = "read" in content ? content : memoryBackupSource(content);
+	const { document, ranges } = await indexBackupDocument(source);
 	if (isPartialBackupDocument(document))
 		throw new Error(
 			"This backup contains selected table groups only. Restore requires a backup that includes every table group.",
 		);
-	mergeLegacyMessageBodies(document);
-	fillMissingBackupTables(document);
-	validateDatabaseBackup(document);
 	const databaseTables = await listApplicationTables(db);
 	const preserved = await livePreservedTables(db, databaseTables);
-	const tables: RestoreTablePlan[] = [];
+	const tables: PreparedRestoreTable[] = [];
 	for (const table of BACKUP_TABLES) {
 		if (preserved.has(table)) continue;
-		const rows = document.tables[table] ?? [];
+		const range = ranges.get(table) ?? null;
 		if (!databaseTables.has(table)) {
-			if (rows.length)
+			if (range?.rows)
 				throw new Error(`Apply pending database migrations before restoring ${table.replaceAll("_", " ")}.`);
 			continue;
 		}
 		const columns = new Set(
 			(await db.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>()).results.map((column) => column.name),
 		);
-		tables.push({ name: table, rows, columns });
+		tables.push({ name: table, range, columns });
 	}
-	const { deletes, inserts } = planRestoreStatements(tables);
-	return createRestorePlan(
-		[...deletes, ...inserts],
-		tables.reduce((total, table) => total + table.rows.length, 0),
-		options.limits,
-	);
+	return {
+		source,
+		tables,
+		legacyBodies: ranges.get("message_bodies") ?? null,
+		rowCount: tables.reduce((total, table) => total + (table.range?.rows ?? 0), 0),
+	};
+}
+
+/** Pass one over the file: the document without its rows, and where each table's rows are. */
+async function indexBackupDocument(
+	source: BackupSource,
+): Promise<{ document: DatabaseBackupDocument; ranges: Map<string, BackupTableRange> }> {
+	const scanner = new BackupDocumentScanner("document");
+	const value: Record<string, unknown> = {};
+	const tables: Record<string, unknown> = {};
+	const ranges = new Map<string, BackupTableRange>();
+	const checked = new Set<string>([...BACKUP_TABLES, "message_bodies"]);
+	let rowError: string | null = null;
+	const claim = (record: Record<string, unknown>, key: string, entry: unknown) => {
+		if (key in record) throw new Error(INVALID_BACKUP_MESSAGE);
+		record[key] = entry;
+	};
+	for await (const page of readSourcePages(source)) {
+		for (const event of scanner.push(page)) {
+			if (event.type === "member") claim(value, event.key, parseJsonBytes(event.raw));
+			else if (event.type === "tableValue") claim(tables, event.name, parseJsonBytes(event.raw));
+			else if (event.type === "tableStart") {
+				claim(tables, event.name, []);
+				ranges.set(event.name, { start: event.start, end: event.start, rows: 0 });
+			} else if (event.type === "tableEnd") ranges.get(event.name)!.end = event.end;
+			else {
+				ranges.get(event.name)!.rows++;
+				if (checked.has(event.name) && !rowError && !isDatabaseRecord(parseJsonBytes(event.raw)))
+					rowError = `Backup contains an invalid ${event.name} record`;
+			}
+		}
+	}
+	scanner.finish();
+	if ("tables" in value) throw new Error(INVALID_BACKUP_MESSAGE);
+	if (ranges.size || Object.keys(tables).length) value.tables = tables;
+	dropRetiredBackupTables(value);
+	if (!isDatabaseBackupDocument(value)) throw new Error(INVALID_BACKUP_MESSAGE);
+	if (rowError) throw new Error(rowError);
+	return { document: value, ranges };
+}
+
+/** Reads one table's rows back by its range, a page at a time. */
+async function* readTableRange(source: BackupSource, range: BackupTableRange): AsyncGenerator<DatabaseRecord> {
+	const scanner = new BackupDocumentScanner("rows");
+	for await (const page of readSourcePages(source, range.start, range.end)) {
+		for (const event of scanner.push(page)) {
+			if (event.type !== "row") continue;
+			const row = parseJsonBytes(event.raw);
+			if (!isDatabaseRecord(row)) throw new Error(INVALID_BACKUP_MESSAGE);
+			yield row;
+		}
+	}
+	scanner.finish();
+}
+
+/**
+ * Pass two: empties the restored tables (children first) and inserts each
+ * table's rows (parents first) as they are read, through `writer`, followed by
+ * `finalStatements`. A restore that fits in one D1 batch is one transaction; a
+ * larger one commits batch by batch, so the caller must hold a snapshot to roll
+ * back to when this throws after `writer.committedBatches` became non-zero.
+ */
+export async function executeDatabaseRestore(
+	db: D1Database,
+	prepared: PreparedRestore,
+	writer: RestoreBatchWriter = new RestoreBatchWriter(db),
+	finalStatements: RestoreStatement[] = [],
+): Promise<void> {
+	try {
+		const bodies = prepared.legacyBodies
+			? indexLegacyMessageBodies(await collectRows(prepared.source, prepared.legacyBodies))
+			: null;
+		for (const statement of planRestoreDeletes(prepared.tables.map((table) => table.name))) await writer.add(statement);
+		for (const table of prepared.tables) {
+			if (!table.range?.rows) continue;
+			const builder = new TableInsertBuilder(table.name, table.columns);
+			for await (const row of readTableRange(prepared.source, table.range)) {
+				if (table.name === "messages" && bodies) mergeLegacyMessageBody(row, bodies);
+				if (table.name === "booking_events") fillBookingEventSlug(row);
+				const statement = builder.add(row);
+				if (statement) await writer.add(statement);
+			}
+			const last = builder.finish();
+			if (last) await writer.add(last);
+		}
+		for (const statement of finalStatements) await writer.add(statement);
+		await writer.flush();
+	} finally {
+		// The restore rewrites the module and storage tables behind the isolate's 30-second caches, even when it
+		// fails part way.
+		clearModuleStateCache();
+		clearStorageConfigCache();
+	}
+}
+
+async function collectRows(source: BackupSource, range: BackupTableRange): Promise<DatabaseRecord[]> {
+	const rows: DatabaseRecord[] = [];
+	for await (const row of readTableRange(source, range)) rows.push(row);
+	return rows;
 }
 
 async function livePreservedTables(db: D1Database, databaseTables: Set<string>): Promise<Set<string>> {
@@ -345,38 +458,11 @@ async function livePreservedTables(db: D1Database, databaseTables: Set<string>):
 	return preservedRestoreTables(counts);
 }
 
-/**
- * Runs a prepared restore. A plan that fits in one D1 batch is a single
- * transaction; a larger one commits batch by batch, so the caller must hold a
- * snapshot to roll back to if this throws.
- */
-export async function executeDatabaseRestore(db: D1Database, plan: RestorePlan): Promise<void> {
-	try {
-		for (const chunk of plan.chunks) {
-			await db.batch(chunk.map((statement) => db.prepare(statement.sql).bind(...statement.params)));
-		}
-	} finally {
-		// The restore rewrites the module and storage tables behind the isolate's 30-second caches, even when it
-		// fails part way.
-		clearModuleStateCache();
-		clearStorageConfigCache();
-	}
-}
-
-export async function restoreDatabaseRecords(db: D1Database, content: ArrayBuffer): Promise<void> {
+export async function restoreDatabaseRecords(
+	db: D1Database,
+	content: BackupSource | ArrayBuffer | Uint8Array,
+): Promise<void> {
 	await executeDatabaseRestore(db, await prepareDatabaseRestore(db, content));
-}
-
-function parseDatabaseBackup(content: ArrayBuffer): DatabaseBackupDocument {
-	let value: unknown;
-	try {
-		value = JSON.parse(new TextDecoder().decode(content));
-	} catch {
-		throw new Error("The selected file is not a valid Kite backup");
-	}
-	dropRetiredBackupTables(value);
-	if (!isDatabaseBackupDocument(value)) throw new Error("The selected file is not a valid Kite backup");
-	return value;
 }
 
 const BACKUP_FORMATS: string[] = ["kite-database-backup", "mailflare-database-backup"];
@@ -408,27 +494,4 @@ function isDatabaseBackupDocument(value: unknown): value is DatabaseBackupDocume
 		const rows = document.tables?.[table];
 		return rows === undefined || Array.isArray(rows);
 	});
-}
-
-/** Backups written before a table joined BACKUP_TABLES simply omit it. */
-function fillMissingBackupTables(document: DatabaseBackupDocument): void {
-	for (const table of BACKUP_TABLES) {
-		if (!document.tables[table]) document.tables[table] = [];
-	}
-	for (const row of document.tables.booking_events ?? []) {
-		if (row.slug === undefined && typeof row.id === "string")
-			row.slug = Array.from(new TextEncoder().encode(row.id))
-				.map((byte) => byte.toString(16).padStart(2, "0"))
-				.join("");
-	}
-}
-
-function validateDatabaseBackup(document: DatabaseBackupDocument): void {
-	for (const table of BACKUP_TABLES) {
-		for (const row of document.tables[table] ?? []) {
-			if (!row || typeof row !== "object" || Array.isArray(row)) {
-				throw new Error(`Backup contains an invalid ${table} record`);
-			}
-		}
-	}
 }

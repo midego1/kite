@@ -36,10 +36,12 @@ import {
 	getStatusClass,
 	removeBackup,
 	restoreBackup,
+	restoreStoredBackup,
 	saveBackupSettings,
 	startBackup,
 } from "./utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { RestoreStoredBackupButton } from "./restore-stored-button";
 
 export default function BackupsPage() {
 	const queryClient = useQueryClient();
@@ -92,18 +94,20 @@ export default function BackupsPage() {
 	});
 
 	const download = useMutation({ mutationFn: downloadBackup });
-	const restore = useMutation({
-		mutationFn: restoreBackup,
-		onSuccess: () => window.location.assign("/login"),
-	});
-	const error =
-		backups.error ||
-		saveSettings.error ||
-		autoSaveSettings.error ||
-		runBackup.error ||
-		deleteBackup.error ||
-		download.error ||
-		restore.error;
+	// A restore replaces the sessions too, so sign in again.
+	const signInAgain = () => window.location.assign("/login");
+	const restore = useMutation({ mutationFn: restoreBackup, onSuccess: signInAgain });
+	const restoreStored = useMutation({ mutationFn: restoreStoredBackup, onSuccess: signInAgain });
+	const error = [
+		backups.error,
+		saveSettings.error,
+		autoSaveSettings.error,
+		runBackup.error,
+		deleteBackup.error,
+		download.error,
+		restore.error,
+		restoreStored.error,
+	].find(Boolean);
 	const configuration = backups.data?.configuration;
 	const backupConfigured = configuration?.configured === true;
 
@@ -423,7 +427,7 @@ export default function BackupsPage() {
 					<DatabaseBackup className="h-5 w-5 text-neutral-500" />
 					<h2 className="font-semibold text-neutral-900">Backup history</h2>
 				</div>
-				<div className="grid grid-cols-[1fr_110px_110px_170px_120px] gap-4 border-b border-neutral-200 bg-[#f6f8fc] px-4 py-2 text-xs font-medium text-neutral-500">
+				<div className="grid grid-cols-[1fr_110px_110px_170px_150px] gap-4 border-b border-neutral-200 bg-[#f6f8fc] px-4 py-2 text-xs font-medium text-neutral-500">
 					<span>File</span>
 					<span>Status</span>
 					<span>Size</span>
@@ -437,7 +441,7 @@ export default function BackupsPage() {
 				{(backups.data?.backups ?? []).map((backup: BackupItem) => (
 					<div
 						key={backup.id}
-						className="grid grid-cols-[1fr_110px_110px_170px_120px] items-center gap-4 border-b border-neutral-200 px-4 py-3 last:border-b-0"
+						className="grid grid-cols-[1fr_110px_110px_170px_150px] items-center gap-4 border-b border-neutral-200 px-4 py-3 last:border-b-0"
 					>
 						<div className="min-w-0">
 							<p className="truncate text-sm font-medium text-neutral-900">{backup.filename ?? backup.id}</p>
@@ -463,6 +467,11 @@ export default function BackupsPage() {
 							>
 								<Download className="h-4 w-4" />
 							</Button>
+							<RestoreStoredBackupButton
+								backup={backup}
+								disabled={restoreStored.isPending || restore.isPending}
+								onRestore={(id) => restoreStored.mutate(id)}
+							/>
 							<Button
 								size="sm"
 								variant="ghost"

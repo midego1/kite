@@ -1,10 +1,12 @@
-import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { backups, backupSettings } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import type { BackupScheduleType, BackupTableGroupId } from "./types";
 import { BACKUP_SETTINGS_ID, STALE_BACKUP_ERROR, getUtcDayBounds, isBackupDue, isStaleBackup } from "./utils";
 import { parseExcludedBackupTableGroups } from "./table-groups";
+import type { BackupHealth } from "./health-types";
+import { summarizeBackupHealth } from "./health-utils";
 
 export async function getBackupSettings(env: CloudflareEnv) {
 	const db = getDb(env);
@@ -109,4 +111,42 @@ export async function deleteBackup(env: CloudflareEnv, id: string): Promise<bool
 	if (backup.r2Key) await env.BUCKET.delete(backup.r2Key);
 	await db.delete(backups).where(eq(backups.id, id));
 	return true;
+}
+
+/** The latest successful backup, whether the latest finished one failed, and the schedule, for the admin overview. */
+export async function getBackupHealth(env: CloudflareEnv): Promise<BackupHealth> {
+	const db = getDb(env);
+	const [[lastCompleted], [lastFinished], [running], settings] = await Promise.all([
+		db
+			.select()
+			.from(backups)
+			.where(eq(backups.status, "completed"))
+			.orderBy(desc(sql`coalesce(${backups.completedAt}, ${backups.createdAt})`))
+			.limit(1),
+		db
+			.select()
+			.from(backups)
+			.where(inArray(backups.status, ["completed", "failed"]))
+			.orderBy(desc(sql`coalesce(${backups.completedAt}, ${backups.createdAt})`))
+			.limit(1),
+		db
+			.select({ id: backups.id })
+			.from(backups)
+			.where(inArray(backups.status, ["queued", "running"]))
+			.limit(1),
+		getBackupSettings(env),
+	]);
+	return summarizeBackupHealth({
+		lastCompleted: lastCompleted ?? null,
+		lastFinished: lastFinished ?? null,
+		inProgress: !!running,
+		automatic: settings
+			? {
+					enabled: settings.enabled,
+					scheduleType: settings.scheduleType,
+					retentionEnabled: settings.retentionEnabled,
+					retentionDays: settings.retentionDays,
+				}
+			: null,
+	});
 }

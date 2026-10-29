@@ -1,7 +1,9 @@
-import type { BackupScheduleType, DatabaseBackupDocument, DatabaseRecord } from "./types";
+import type { BackupScheduleType, DatabaseRecord } from "./types";
 
 export const BACKUP_SETTINGS_ID = "default";
 export const BACKUP_PREFIX = "backups/database";
+/** Uploaded backup files wait here while they are restored, and are deleted afterwards. */
+export const BACKUP_UPLOAD_PREFIX = "backups/uploads";
 
 /**
  * How long a backup may stay queued or running before it counts as interrupted.
@@ -64,12 +66,8 @@ export function createBackupFilename(now: Date): string {
 	return `kite-${now.toISOString().replace(/[:.]/g, "-")}.json`;
 }
 
-/** Moves records from the pre-0019 body table into their message records. */
-export function mergeLegacyMessageBodies(document: DatabaseBackupDocument): void {
-	const tables = document.tables as Record<string, DatabaseRecord[]>;
-	const bodyRows = tables.message_bodies;
-	if (!bodyRows) return;
-
+/** Indexes the records of the pre-0019 body table by their message. */
+export function indexLegacyMessageBodies(bodyRows: unknown[]): Map<string, DatabaseRecord> {
 	const bodiesByMessageId = new Map<string, DatabaseRecord>();
 	for (const body of bodyRows) {
 		if (!isDatabaseRecord(body) || typeof body.message_id !== "string") {
@@ -77,16 +75,24 @@ export function mergeLegacyMessageBodies(document: DatabaseBackupDocument): void
 		}
 		bodiesByMessageId.set(body.message_id, body);
 	}
+	return bodiesByMessageId;
+}
 
-	for (const message of tables.messages) {
-		const body = bodiesByMessageId.get(message.id as string);
-		if (!body) continue;
-		copyMissingBodyField(message, body, "text_body");
-		copyMissingBodyField(message, body, "html_body");
-		copyMissingBodyField(message, body, "raw_r2_key");
-	}
+/** Moves a pre-0019 body record into its message record, keeping fields the message already has. */
+export function mergeLegacyMessageBody(message: DatabaseRecord, bodiesByMessageId: Map<string, DatabaseRecord>): void {
+	const body = bodiesByMessageId.get(message.id as string);
+	if (!body) return;
+	copyMissingBodyField(message, body, "text_body");
+	copyMissingBodyField(message, body, "html_body");
+	copyMissingBodyField(message, body, "raw_r2_key");
+}
 
-	delete tables.message_bodies;
+/** Booking events from backups written before slugs existed get the hex of their id, which is unique per event. */
+export function fillBookingEventSlug(row: DatabaseRecord): void {
+	if (row.slug === undefined && typeof row.id === "string")
+		row.slug = Array.from(new TextEncoder().encode(row.id))
+			.map((byte) => byte.toString(16).padStart(2, "0"))
+			.join("");
 }
 
 function copyMissingBodyField(
@@ -97,6 +103,6 @@ function copyMissingBodyField(
 	if (!(field in message) && field in body) message[field] = body[field];
 }
 
-function isDatabaseRecord(value: unknown): value is DatabaseRecord {
+export function isDatabaseRecord(value: unknown): value is DatabaseRecord {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }

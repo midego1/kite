@@ -15,6 +15,7 @@ await build({
 			export { InProcessQueue } from "./server/runtime/queue.ts";
 			export * from "./server/runtime/queue-utils.ts";
 			export * from "./src/lib/backups/restore-utils.ts";
+			export { RestoreBatchWriter } from "./src/lib/backups/restore-writer.ts";
 			export * from "./src/lib/mailboxes/delete-utils.ts";
 			export { runPostDeliveryStep } from "./src/lib/email/post-delivery-utils.ts";
 			export { matchesTypedConfirmation, requestConfirmation, settleConfirmation, subscribeToConfirmations } from "./src/components/ui/confirm-dialog-utils.ts";
@@ -68,42 +69,42 @@ test("sqlite batch rolls back every statement when one fails", async () => {
 	database.db.close();
 });
 
-test("restore plan deletes children first, inserts parents first and stays under the parameter limit", () => {
-	const parents = Array.from({ length: 60 }, (_, index) => ({ id: `p${index}`, name: `parent ${index}` }));
-	const children = [{ id: "c1", parentId: "p1", dropped: "old column" }];
-	const { deletes, inserts } = lib.planRestoreStatements([
-		{ name: "parents", rows: parents, columns: new Set(["id", "name"]) },
-		{ name: "children", rows: children, columns: new Set(["id", "parentId"]) },
-	]);
+/** Every statement a builder produces for `rows`, in order. */
+function buildInserts(table, rows, columns = null) {
+	const builder = new lib.TableInsertBuilder(table, columns);
+	const statements = rows.map((row) => builder.add(row)).filter(Boolean);
+	const last = builder.finish();
+	return last ? [...statements, last] : statements;
+}
+
+test("restore deletes children first, inserts parents first and stays under the parameter limit", () => {
 	assert.deepEqual(
-		deletes.map((statement) => statement.sql),
+		lib.planRestoreDeletes(["parents", "children"]).map((statement) => statement.sql),
 		["DELETE FROM `children`", "DELETE FROM `parents`"],
 	);
-	for (const statement of inserts) assert.ok(statement.params.length <= lib.MAX_BOUND_PARAMETERS);
-	const parentInserts = inserts.filter((statement) => statement.sql.startsWith("INSERT INTO `parents`"));
+	const parents = Array.from({ length: 60 }, (_, index) => ({ id: `p${index}`, name: `parent ${index}` }));
+	const parentInserts = buildInserts("parents", parents, new Set(["id", "name"]));
+	for (const statement of parentInserts) assert.ok(statement.params.length <= lib.MAX_BOUND_PARAMETERS);
 	assert.equal(parentInserts.length, 2);
 	assert.equal(
 		parentInserts.reduce((total, statement) => total + statement.params.length, 0),
 		120,
 	);
-	assert.ok(
-		inserts.indexOf(parentInserts[0]) <
-			inserts.findIndex((statement) => statement.sql.startsWith("INSERT INTO `children`")),
+	const [childInsert] = buildInserts(
+		"children",
+		[{ id: "c1", parentId: "p1", dropped: "old column" }],
+		new Set(["id", "parentId"]),
 	);
-	const childInsert = inserts.at(-1);
 	assert.equal(childInsert.sql, "INSERT INTO `children` (`id`, `parentId`) VALUES (?, ?)");
 	assert.deepEqual(childInsert.params, ["c1", "p1"]);
 });
 
-test("restore plan splits rows with different columns and rejects empty rows", () => {
-	const { inserts } = lib.planRestoreStatements([{ name: "t", rows: [{ a: 1 }, { a: 2 }, { a: 3, b: 4 }] }]);
+test("restore inserts split rows with different columns and reject empty rows", () => {
+	const inserts = buildInserts("t", [{ a: 1 }, { a: 2 }, { a: 3, b: 4 }]);
 	assert.equal(inserts.length, 2);
 	assert.deepEqual(inserts[0].params, [1, 2]);
 	assert.deepEqual(inserts[1].params, [3, 4]);
-	assert.throws(
-		() => lib.planRestoreStatements([{ name: "t", rows: [{ gone: 1 }], columns: new Set(["a"]) }]),
-		/invalid t record/,
-	);
+	assert.throws(() => buildInserts("t", [{ gone: 1 }], new Set(["a"])), /invalid t record/);
 });
 
 test("restore keeps the live storage config and restores it only into an empty install", () => {
@@ -116,41 +117,62 @@ test("restore keeps the live storage config and restores it only into an empty i
 	);
 });
 
-test("restore chunks respect statement and byte limits and report atomicity", () => {
+/** Records the size of every batch it is sent. */
+function recordingDatabase() {
+	const batches = [];
+	return {
+		batches,
+		prepare: (sql) => ({ bind: (...params) => ({ sql, params }) }),
+		batch: async (statements) => {
+			batches.push(statements.length);
+			return [];
+		},
+	};
+}
+
+test("restore batches respect statement and byte limits and count what was committed", async () => {
 	const statements = Array.from({ length: 7 }, (_, index) => ({
 		sql: "INSERT INTO t VALUES (?)",
 		params: [`row-${index}`],
 	}));
-	const chunks = lib.chunkRestoreStatements(statements, { maxStatements: 3, maxBytes: 1_000_000 });
-	assert.deepEqual(
-		chunks.map((chunk) => chunk.length),
-		[3, 3, 1],
-	);
+	const byCount = recordingDatabase();
+	const writer = new lib.RestoreBatchWriter(byCount, { maxStatements: 3, maxBytes: 1_000_000 });
+	for (const statement of statements) await writer.add(statement);
+	assert.equal(writer.committedBatches, 2, "full batches go out as soon as the next statement arrives");
+	await writer.flush();
+	assert.deepEqual(byCount.batches, [3, 3, 1]);
+	assert.equal(writer.committedBatches, 3);
+
 	const bytes = lib.estimateStatementBytes(statements[0]);
-	assert.deepEqual(
-		lib.chunkRestoreStatements(statements, { maxStatements: 100, maxBytes: bytes * 2 }).map((chunk) => chunk.length),
-		[2, 2, 2, 1],
-	);
-	const small = lib.createRestorePlan(statements.slice(0, 2), 2);
-	assert.equal(small.atomic, true);
-	const appended = lib.appendToRestorePlan(small, [{ sql: "INSERT INTO backups VALUES (?)", params: ["keep"] }]);
-	assert.equal(appended.atomic, true);
-	assert.equal(appended.chunks[0].at(-1).params[0], "keep");
-	assert.equal(lib.createRestorePlan(statements, 7, { maxStatements: 3, maxBytes: 1_000_000 }).atomic, false);
+	const bySize = recordingDatabase();
+	const sized = new lib.RestoreBatchWriter(bySize, { maxStatements: 100, maxBytes: bytes * 2 });
+	for (const statement of statements) await sized.add(statement);
+	await sized.flush();
+	assert.deepEqual(bySize.batches, [2, 2, 2, 1]);
+
+	const small = recordingDatabase();
+	const one = new lib.RestoreBatchWriter(small);
+	for (const statement of statements.slice(0, 2)) await one.add(statement);
+	await one.add({ sql: "INSERT INTO backups VALUES (?)", params: ["keep"] });
+	await one.flush();
+	assert.deepEqual(small.batches, [3], "a small restore is one batch, so one transaction");
 });
 
-test("restore plan applied in one sqlite batch replaces the data", async () => {
+test("restore statements applied in one sqlite batch replace the data", async () => {
 	const database = openDatabase();
 	database.db.exec(
 		"CREATE TABLE parents (id TEXT PRIMARY KEY); CREATE TABLE children (id TEXT PRIMARY KEY, parent_id TEXT REFERENCES parents(id) ON DELETE CASCADE)",
 	);
 	database.db.exec("INSERT INTO parents VALUES ('old'); INSERT INTO children VALUES ('old-child', 'old')");
-	const { deletes, inserts } = lib.planRestoreStatements([
-		{ name: "parents", rows: [{ id: "p" }] },
-		{ name: "children", rows: [{ id: "c", parent_id: "p" }] },
-	]);
-	const plan = lib.createRestorePlan([...deletes, ...inserts], 2);
-	await database.batch(plan.chunks[0].map((statement) => database.prepare(statement.sql).bind(...statement.params)));
+	const writer = new lib.RestoreBatchWriter(database);
+	for (const statement of [
+		...lib.planRestoreDeletes(["parents", "children"]),
+		...buildInserts("parents", [{ id: "p" }]),
+		...buildInserts("children", [{ id: "c", parent_id: "p" }]),
+	])
+		await writer.add(statement);
+	await writer.flush();
+	assert.equal(writer.committedBatches, 1);
 	assert.deepEqual(database.db.prepare("SELECT id, parent_id FROM children").all(), [{ id: "c", parent_id: "p" }]);
 	database.db.close();
 });

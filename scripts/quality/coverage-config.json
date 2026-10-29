@@ -143,6 +143,8 @@
 		"src/components/finance/dialog-utils.ts",
 		"src/components/finance/subscriptions-utils.ts",
 		"src/lib/backups/restore-utils.ts",
+		"src/lib/backups/backup-reader-utils.ts",
+		"src/lib/backups/health-utils.ts",
 		"src/lib/email/send-limits-utils.ts",
 		"src/lib/email/trash-retention-utils.ts",
 		"src/lib/email/undo-send-utils.ts",

@@ -2,7 +2,7 @@ import { newId } from "@/lib/ids";
 import { writeBackupObject } from "./backup-writer";
 import { streamDatabaseSnapshot } from "./export";
 import type { RestoreStatement } from "./restore-types";
-import type { SafetyBackup, SafetyBackupTrigger } from "./safety-types";
+import type { KeptBackupRecord, SafetyBackup, SafetyBackupTrigger } from "./safety-types";
 import { BACKUP_PREFIX, createBackupFilename } from "./utils";
 
 /**
@@ -53,6 +53,11 @@ export async function createSafetyBackup(
  * creator is only linked when that user exists in the restored data.
  */
 export function createSafetyBackupRecordStatement(record: Omit<SafetyBackup, "content">): RestoreStatement {
+	return createKeptBackupRecordStatement({ ...record, startedAt: record.createdAt });
+}
+
+/** The same upsert for any completed backup a restore must keep listed, such as the one being restored. */
+export function createKeptBackupRecordStatement(record: KeptBackupRecord): RestoreStatement {
 	return {
 		sql: "INSERT OR REPLACE INTO backups (id, status, `trigger`, r2_key, filename, size, error, created_by_user_id, created_at, started_at, completed_at) VALUES (?, 'completed', ?, ?, ?, ?, NULL, (SELECT id FROM users WHERE id = ?), ?, ?, ?)",
 		params: [
@@ -63,7 +68,7 @@ export function createSafetyBackupRecordStatement(record: Omit<SafetyBackup, "co
 			record.size,
 			record.createdByUserId,
 			record.createdAt,
-			record.createdAt,
+			record.startedAt,
 			record.completedAt,
 		],
 	};

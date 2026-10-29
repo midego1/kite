@@ -52,10 +52,20 @@ export async function removeBackup(id: string): Promise<void> {
 	if (!response.ok) throw new Error(data.error ?? "Failed to delete backup");
 }
 
+/** Sends the file as the raw request body, which the server streams to storage instead of buffering. */
 export async function restoreBackup(file: File): Promise<void> {
-	const form = new FormData();
-	form.set("backup", file);
-	const response = await authFetch("/api/backups/restore", { method: "POST", body: form });
+	const response = await authFetch("/api/backups/restore", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: file,
+	});
+	const data = (await response.json()) as { error?: string };
+	if (!response.ok) throw new Error(data.error ?? "Failed to restore backup");
+}
+
+/** Restores a completed backup from storage, without downloading and uploading it again. */
+export async function restoreStoredBackup(id: string): Promise<void> {
+	const response = await authFetch(`/api/backups/${id}/restore`, { method: "POST" });
 	const data = (await response.json()) as { error?: string };
 	if (!response.ok) throw new Error(data.error ?? "Failed to restore backup");
 }

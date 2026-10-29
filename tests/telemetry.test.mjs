@@ -65,8 +65,6 @@ const KEYS = [
 	"users_active_30d",
 	"mailboxes_total",
 	"mailboxes_active_1d",
-	"inbound_1d",
-	"outbound_1d",
 	"modules_enabled",
 ];
 const COLLECTOR = "https://collector.example.test/v1/heartbeat";
@@ -94,8 +92,6 @@ function input(overrides = {}) {
 			users_active_30d: 3,
 			mailboxes_total: 4,
 			mailboxes_active_1d: 2,
-			inbound_1d: 10,
-			outbound_1d: 5,
 		},
 		modulesEnabled: ["calendar", "drive"],
 		...overrides,
@@ -110,8 +106,6 @@ const INPUT_BUCKETS = {
 	users_active_30d: "2-5",
 	mailboxes_total: "2-5",
 	mailboxes_active_1d: "2-5",
-	inbound_1d: "1-10",
-	outbound_1d: "1-10",
 };
 
 test("the heartbeat payload has exactly the schema's keys, whatever else the input carries", () => {
@@ -119,7 +113,13 @@ test("the heartbeat payload has exactly the schema's keys, whatever else the inp
 		...input(),
 		email: "owner@example.com",
 		hostname: "mail.example.com",
-		counts: { ...input().counts, user_id: "usr_1", APP_URL: "https://mail.example.com" },
+		counts: {
+			...input().counts,
+			inbound_1d: 99,
+			outbound_1d: 99,
+			user_id: "usr_1",
+			APP_URL: "https://mail.example.com",
+		},
 	});
 	assert.deepEqual(Object.keys(payload).sort(), [...KEYS].sort());
 	assert.deepEqual(payload, {
@@ -141,26 +141,13 @@ test("the heartbeat payload has exactly the schema's keys, whatever else the inp
 
 /** The ranges every count of a payload falls in when all counts are `value`. */
 function rangesOf(value) {
-	const counts = Object.fromEntries(KEYS.slice(4, 12).map((key) => [key, value]));
+	const counts = Object.fromEntries(KEYS.slice(4, 10).map((key) => [key, value]));
 	const payload = buildHeartbeatPayload(input({ counts }));
-	return { account: payload.users_total, message: payload.inbound_1d };
+	return { account: payload.users_total };
 }
-const messageBucket = (value) => rangesOf(value).message;
 const accountBucket = (value) => rangesOf(value).account;
 
 test("counts are sent as ranges, never as exact numbers", () => {
-	const messages = [
-		[0, "0"],
-		[1, "1-10"],
-		[10, "1-10"],
-		[11, "11-100"],
-		[100, "11-100"],
-		[101, "101-1000"],
-		[1000, "101-1000"],
-		[1001, "1000+"],
-		[1e12, "1000+"],
-	];
-	for (const [value, range] of messages) assert.equal(messageBucket(value), range, String(value));
 	const accounts = [
 		[0, "0"],
 		[1, "1"],
@@ -188,20 +175,16 @@ test("counts are sent as ranges, never as exact numbers", () => {
 				users_active_30d: 21,
 				mailboxes_total: 1,
 				mailboxes_active_1d: "3",
-				inbound_1d: 54_321,
-				outbound_1d: 101,
 			},
 		}),
 	);
-	assert.deepEqual(Object.fromEntries(KEYS.slice(4, 12).map((key) => [key, payload[key]])), {
+	assert.deepEqual(Object.fromEntries(KEYS.slice(4, 10).map((key) => [key, payload[key]])), {
 		users_total: "100+",
 		users_active_1d: "0",
 		users_active_7d: "6-20",
 		users_active_30d: "21-100",
 		mailboxes_total: "1",
 		mailboxes_active_1d: "0",
-		inbound_1d: "1000+",
-		outbound_1d: "101-1000",
 	});
 	assert.doesNotMatch(JSON.stringify(payload), /250|54321/);
 });
@@ -370,8 +353,6 @@ test("counts come from users, sessions, audit rows and recent messages", async (
 		users_active_30d: 3,
 		mailboxes_total: 3,
 		mailboxes_active_1d: 2,
-		inbound_1d: 2,
-		outbound_1d: 1,
 	});
 	const { telemetry_schema_version, install_id, version, runtime, modules_enabled, ...ranges } = requests[0].body;
 	assert.deepEqual(ranges, {
@@ -381,8 +362,6 @@ test("counts come from users, sessions, audit rows and recent messages", async (
 		users_active_30d: "2-5",
 		mailboxes_total: "2-5",
 		mailboxes_active_1d: "2-5",
-		inbound_1d: "1-10",
-		outbound_1d: "1-10",
 	});
 });
 
@@ -497,7 +476,7 @@ test("the heartbeat sends one allowlisted report a day, only when opted in", asy
 	assert.equal(request.body.version, "2026.10.26.0");
 	assert.equal(request.body.runtime, "workers");
 	assert.equal(request.body.users_total, "2-5");
-	assert.equal(request.body.inbound_1d, "1-10");
+	assert.ok(!("inbound_1d" in request.body) && !("outbound_1d" in request.body), "no message volume");
 	assert.deepEqual(request.body.modules_enabled, ["calendar", "booking", "templates", "import", "finance", "drive"]);
 	assert.equal(parseHeartbeat(request.init.body).ok, true);
 	for (const forbidden of ["example.com", "usr_", "mbx_", "dom_", "203.0.113.9"])

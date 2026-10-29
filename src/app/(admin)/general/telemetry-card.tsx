@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { useTelemetryStatus } from "@/components/telemetry/use-telemetry-status";
-import { TELEMETRY_DOCS_URL, telemetrySwitchOn } from "@/lib/telemetry/notice-utils";
+import { TELEMETRY_DOCS_URL, TELEMETRY_PURPOSE, telemetrySwitchOn } from "@/lib/telemetry/notice-utils";
 import {
 	DEFAULT_TELEMETRY_URL,
 	TELEMETRY_FIELDS,
@@ -93,10 +93,10 @@ export function TelemetryCard() {
 				<p>
 					On by default, and never turned back on automatically once you turn it off: a new install asks at setup, and
 					an install that existed before starts only 14 days after a notice told its owner. Once a day, around 02:00
-					UTC, Kite sends one small report with the fields below. The only purpose is to see how many active Kite
-					installs there are, out of interest, and nothing else. Counts are sent as ranges, never exact numbers. The
-					report is pseudonymous, not anonymous: a random install ID links one install’s daily reports. It never
-					contains names, email addresses, domains, message content or anything else that identifies you or your users.
+					UTC, Kite sends one small report with the fields below, {TELEMETRY_PURPOSE}. Counts are sent as ranges, never
+					exact numbers. The report is pseudonymous, not anonymous: a random install ID links one install’s daily
+					reports. It never contains names, email addresses, domains, message content or anything else that identifies
+					you or your users.
 				</p>
 				<p>
 					The request itself can say more than the report. On Cloudflare Workers, Cloudflare adds a{" "}
@@ -119,8 +119,9 @@ export function TelemetryCard() {
 							{status.endpoint === DEFAULT_TELEMETRY_URL ? (
 								<>
 									Run by the Kite project on Cloudflare (its processor), on the basis of the project’s legitimate
-									interest in knowing how Kite is used, with notice and an easy opt-out. Daily reports are kept for 90
-									days, then only totals without the install ID. Questions and data requests:{" "}
+									interest in knowing how many installs are active and what they run, with notice and an easy opt-out.
+									Daily reports are kept for 90 days, then only totals without the install ID. Questions and data
+									requests:{" "}
 									<a href={`mailto:${TELEMETRY_PRIVACY_CONTACT}`} className={LINK}>
 										{TELEMETRY_PRIVACY_CONTACT}
 									</a>

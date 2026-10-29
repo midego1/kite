@@ -5,7 +5,6 @@ import type {
 	HeartbeatBuckets,
 	HeartbeatCounts,
 	HeartbeatPayload,
-	MessageBucket,
 	TelemetryDecision,
 	TelemetryRuntime,
 } from "./types";
@@ -32,12 +31,9 @@ const TELEMETRY_NOTICE_DAYS = 14;
 /** A heartbeat or an erasure request that takes longer is abandoned. */
 export const TELEMETRY_TIMEOUT_MS = 5_000;
 
-/** Message counts are sent as one of these ranges, never as a number. `1000+` means more than 1,000. */
-const MESSAGE_BUCKETS = ["0", "1-10", "11-100", "101-1000", "1000+"] as const;
 /** Account and mailbox counts are sent as one of these ranges. `100+` means more than 100. */
 const ACCOUNT_BUCKETS = ["0", "1", "2-5", "6-20", "21-100", "100+"] as const;
 /** The highest value of each range but the last, in the order of the labels above. */
-const MESSAGE_BOUNDS = [0, 10, 100, 1000];
 const ACCOUNT_BOUNDS = [0, 1, 5, 20, 100];
 
 const ACCOUNT_FIELDS = [
@@ -48,10 +44,8 @@ const ACCOUNT_FIELDS = [
 	"mailboxes_total",
 	"mailboxes_active_1d",
 ] as const satisfies readonly (keyof HeartbeatCounts)[];
-const MESSAGE_FIELDS = ["inbound_1d", "outbound_1d"] as const satisfies readonly (keyof HeartbeatCounts)[];
 
 const ACCOUNT_RANGES = "as a range: 0, 1, 2-5, 6-20, 21-100 or 100+";
-const MESSAGE_RANGES = "as a range: 0, 1-10, 11-100, 101-1000 or 1000+";
 
 /** Every field a heartbeat carries, with the words Admin → General and the docs use for it. */
 export const TELEMETRY_FIELDS: readonly { key: keyof HeartbeatPayload; description: string }[] = [
@@ -68,8 +62,6 @@ export const TELEMETRY_FIELDS: readonly { key: keyof HeartbeatPayload; descripti
 	{ key: "users_active_30d", description: "The same, in the last 30 days" },
 	{ key: "mailboxes_total", description: `Mailboxes, ${ACCOUNT_RANGES}` },
 	{ key: "mailboxes_active_1d", description: "Mailboxes that received mail or sent it successfully in the last day" },
-	{ key: "inbound_1d", description: `Messages received in the last day, ${MESSAGE_RANGES}` },
-	{ key: "outbound_1d", description: "Messages sent successfully in the last day, as the same range" },
 	{ key: "modules_enabled", description: "Which modules are on, such as calendar or drive" },
 ];
 
@@ -199,11 +191,6 @@ function bucket<T extends string>(labels: readonly T[], bounds: readonly number[
 	return labels[index === -1 ? labels.length - 1 : index];
 }
 
-/** The range a message count is sent as. */
-function messageBucket(value: unknown): MessageBucket {
-	return bucket(MESSAGE_BUCKETS, MESSAGE_BOUNDS, value);
-}
-
 /** The range an account or mailbox count is sent as. */
 function accountBucket(value: unknown): AccountBucket {
 	return bucket(ACCOUNT_BUCKETS, ACCOUNT_BOUNDS, value);
@@ -233,7 +220,6 @@ export function buildHeartbeatPayload(input: HeartbeatInput): HeartbeatPayload |
 	const version = typeof input.version === "string" && CALENDAR_VERSION.test(input.version) ? input.version : "unknown";
 	const buckets = Object.fromEntries([
 		...ACCOUNT_FIELDS.map((key) => [key, accountBucket(input.counts[key])]),
-		...MESSAGE_FIELDS.map((key) => [key, messageBucket(input.counts[key])]),
 	]) as HeartbeatBuckets;
 	return {
 		telemetry_schema_version: TELEMETRY_SCHEMA_VERSION,

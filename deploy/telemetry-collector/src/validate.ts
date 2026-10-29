@@ -1,10 +1,7 @@
 /** Ranges of account and mailbox counts, as Kite's `accountBucket` makes them. `100+` means more than 100. */
 export const ACCOUNT_BUCKETS = ["0", "1", "2-5", "6-20", "21-100", "100+"] as const;
-/** Ranges of message counts, as Kite's `messageBucket` makes them. `1000+` means more than 1,000. */
-export const MESSAGE_BUCKETS = ["0", "1-10", "11-100", "101-1000", "1000+"] as const;
 
 type AccountBucket = (typeof ACCOUNT_BUCKETS)[number];
-type MessageBucket = (typeof MESSAGE_BUCKETS)[number];
 
 /** Heartbeat body, `telemetry_schema_version` 2, as Kite's `buildHeartbeatPayload` makes it. */
 export type Heartbeat = {
@@ -18,8 +15,6 @@ export type Heartbeat = {
 	users_active_30d: AccountBucket;
 	mailboxes_total: AccountBucket;
 	mailboxes_active_1d: AccountBucket;
-	inbound_1d: MessageBucket;
-	outbound_1d: MessageBucket;
 	modules_enabled: string[];
 };
 
@@ -36,9 +31,13 @@ export const ACCOUNT_KEYS = [
 	"mailboxes_total",
 	"mailboxes_active_1d",
 ] as const;
-export const MESSAGE_KEYS = ["inbound_1d", "outbound_1d"] as const;
 /** Every field that holds a range, in column order. */
-export const BUCKET_KEYS = [...ACCOUNT_KEYS, ...MESSAGE_KEYS] as const;
+export const BUCKET_KEYS = ACCOUNT_KEYS;
+/**
+ * Sent by installs before message volume was dropped from the report. Accepted so those installs keep working, and
+ * ignored: never validated, stored or summed.
+ */
+const IGNORED_KEYS = new Set<string>(["inbound_1d", "outbound_1d"]);
 
 const KEYS = new Set<string>([
 	"telemetry_schema_version",
@@ -63,8 +62,9 @@ export function isInstallId(value: unknown): value is string {
 }
 
 /**
- * Strict: exactly the schema's keys, each with its type and range, or a refusal naming the first problem. The
- * refusal names a field, never echoes a value. Version 1, which carried exact counts, is refused.
+ * Strict: exactly the schema's keys (and, from older installs, the ignored message-volume keys), each with its type
+ * and range, or a refusal naming the first problem. The refusal names a field, never echoes a value. Version 1,
+ * which carried exact counts, is refused.
  */
 export function parseHeartbeat(body: string): ParseResult {
 	if (new TextEncoder().encode(body).byteLength > MAX_BODY_BYTES) return fail("too_large");
@@ -77,13 +77,12 @@ export function parseHeartbeat(body: string): ParseResult {
 	if (!data || typeof data !== "object" || Array.isArray(data)) return fail("not_an_object");
 	const record = data as Record<string, unknown>;
 	if (record.telemetry_schema_version !== 2) return fail("unsupported_schema_version");
-	for (const key of Object.keys(record)) if (!KEYS.has(key)) return fail("unknown_key");
+	for (const key of Object.keys(record)) if (!KEYS.has(key) && !IGNORED_KEYS.has(key)) return fail("unknown_key");
 	for (const key of KEYS) if (!Object.hasOwn(record, key)) return fail(`missing_${key}`);
 	if (!isInstallId(record.install_id)) return fail("invalid_install_id");
 	if (typeof record.version !== "string" || !VERSION.test(record.version)) return fail("invalid_version");
 	if (record.runtime !== "workers" && record.runtime !== "node") return fail("invalid_runtime");
 	for (const key of ACCOUNT_KEYS) if (!oneOf(ACCOUNT_BUCKETS, record[key])) return fail(`invalid_${key}`);
-	for (const key of MESSAGE_KEYS) if (!oneOf(MESSAGE_BUCKETS, record[key])) return fail(`invalid_${key}`);
 	const modules = record.modules_enabled;
 	if (!Array.isArray(modules) || modules.length > MAX_MODULES) return fail("invalid_modules_enabled");
 	if (!modules.every((id) => typeof id === "string" && MODULE_ID.test(id))) return fail("invalid_modules_enabled");

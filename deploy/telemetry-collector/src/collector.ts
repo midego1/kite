@@ -101,7 +101,7 @@ const count = async (db: D1Database, sql: string, ...values: unknown[]) =>
 const LATEST = `SELECT * FROM daily AS d WHERE d.day >= ? AND d.day = (SELECT MAX(day) FROM daily WHERE install_id = d.install_id)`;
 /**
  * Installs per range field and range, in one statement without UNION: D1 refuses a compound SELECT with more than
- * five terms (local SQLite allows 500), so eight `UNION ALL` terms fail only on Cloudflare.
+ * five terms (local SQLite allows 500), so a query with one term per range field would fail only on Cloudflare.
  */
 const RANGES = `SELECT field.value AS field, CASE field.value ${BUCKET_KEYS.map(
 	(key) => `WHEN '${key}' THEN latest.${key}`,

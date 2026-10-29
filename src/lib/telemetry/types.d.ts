@@ -10,12 +10,9 @@ export type HeartbeatCounts = {
 	users_active_30d: number;
 	mailboxes_total: number;
 	mailboxes_active_1d: number;
-	inbound_1d: number;
-	outbound_1d: number;
 };
 
 export type AccountBucket = "0" | "1" | "2-5" | "6-20" | "21-100" | "100+";
-export type MessageBucket = "0" | "1-10" | "11-100" | "101-1000" | "1000+";
 
 export type HeartbeatBuckets = {
 	users_total: AccountBucket;
@@ -24,8 +21,6 @@ export type HeartbeatBuckets = {
 	users_active_30d: AccountBucket;
 	mailboxes_total: AccountBucket;
 	mailboxes_active_1d: AccountBucket;
-	inbound_1d: MessageBucket;
-	outbound_1d: MessageBucket;
 };
 
 /** Heartbeat body, `telemetry_schema_version` 2. The collector rejects any other key or value. */

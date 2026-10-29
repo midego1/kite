@@ -66,8 +66,6 @@ function heartbeat(overrides = {}) {
 		users_active_30d: "2-5",
 		mailboxes_total: "2-5",
 		mailboxes_active_1d: "2-5",
-		inbound_1d: "1-10",
-		outbound_1d: "1-10",
 		modules_enabled: ["calendar", "drive"],
 		...overrides,
 	};
@@ -78,8 +76,6 @@ test("the validator accepts exactly schema version 2, with every count a range",
 	assert.equal(parseHeartbeat(JSON.stringify(heartbeat({ version: "unknown", runtime: "node" }))).ok, true);
 	for (const value of ["0", "1", "2-5", "6-20", "21-100", "100+"])
 		assert.equal(parseHeartbeat(JSON.stringify(heartbeat({ users_total: value }))).ok, true, value);
-	for (const value of ["0", "1-10", "11-100", "101-1000", "1000+"])
-		assert.equal(parseHeartbeat(JSON.stringify(heartbeat({ inbound_1d: value }))).ok, true, value);
 	const refused = (body) => {
 		const result = parseHeartbeat(typeof body === "string" ? body : JSON.stringify(body));
 		assert.equal(result.ok, false, JSON.stringify(body).slice(0, 80));
@@ -90,10 +86,10 @@ test("the validator accepts exactly schema version 2, with every count a range",
 	assert.equal(refused(null), "not_an_object");
 	assert.equal(refused({ ...heartbeat(), hostname: "mail.example.com" }), "unknown_key");
 	assert.equal(refused({ ...heartbeat(), email: "owner@example.com" }), "unknown_key");
-	const { inbound_1d: _omitted, ...missing } = heartbeat();
-	assert.equal(refused(missing), "missing_inbound_1d");
+	const { mailboxes_total: _omitted, ...missing } = heartbeat();
+	assert.equal(refused(missing), "missing_mailboxes_total");
 	// Version 1 carried exact counts; it is refused, not stored.
-	const v1 = { ...heartbeat({ telemetry_schema_version: 1 }), users_total: 3, inbound_1d: 10 };
+	const v1 = { ...heartbeat({ telemetry_schema_version: 1 }), users_total: 3, inbound_1d: 10, outbound_1d: 5 };
 	assert.equal(refused(v1), "unsupported_schema_version");
 	assert.equal(refused(heartbeat({ telemetry_schema_version: 3 })), "unsupported_schema_version");
 	assert.equal(refused(heartbeat({ install_id: "owner@example.com" })), "invalid_install_id");
@@ -101,8 +97,6 @@ test("the validator accepts exactly schema version 2, with every count a range",
 	assert.equal(refused(heartbeat({ runtime: "lambda" })), "invalid_runtime");
 	for (const value of [3, "3", "1-10", "1000+", "", null, "2-5 "])
 		assert.equal(refused(heartbeat({ users_total: value })), "invalid_users_total", String(value));
-	for (const value of [10, "10", "2-5", "100+", "1001+"])
-		assert.equal(refused(heartbeat({ outbound_1d: value })), "invalid_outbound_1d", String(value));
 	for (const value of [
 		"calendar",
 		["Calendar"],
@@ -112,6 +106,48 @@ test("the validator accepts exactly schema version 2, with every count a range",
 	])
 		assert.equal(refused(heartbeat({ modules_enabled: value })), "invalid_modules_enabled", JSON.stringify(value));
 	assert.equal(refused(JSON.stringify(heartbeat()).padEnd(2049, " ")), "too_large");
+});
+
+test("message volume from older installs is accepted and ignored, and never stored", async (t) => {
+	const old = { ...heartbeat(), inbound_1d: "1000+", outbound_1d: "not even a range" };
+	assert.equal(parseHeartbeat(JSON.stringify(old)).ok, true);
+	assert.equal(parseHeartbeat(JSON.stringify({ ...heartbeat(), inbound_1d: 54321 })).ok, true);
+	assert.equal(parseHeartbeat(JSON.stringify({ ...heartbeat(), inbound_count: "1" })).ok, false);
+	const { sqlite, env } = await setup(t);
+	assert.equal((await collector.fetch(post(old), env)).status, 204);
+	const [row] = sqlite.db.prepare("SELECT * FROM daily").all();
+	assert.equal(row.users_total, "2-5");
+	assert.ok(!("inbound_1d" in row) && !("outbound_1d" in row));
+	assert.ok(
+		!Buffer.from(await sqlite.dump())
+			.toString("latin1")
+			.includes("1000+"),
+	);
+});
+
+test("migration 0003 drops the stored message volume, its totals and the cached summary", async (t) => {
+	const sqlite = new SqliteDatabase(":memory:");
+	t.after(() => sqlite.db.close());
+	const migrations = join(collectorDir, "migrations");
+	const files = readdirSync(migrations).sort();
+	const last = files.findIndex((file) => file.startsWith("0003_"));
+	assert.ok(last > 0, "migration 0003 exists");
+	for (const file of files.slice(0, last)) sqlite.db.exec(readFileSync(join(migrations, file), "utf8"));
+	sqlite.db
+		.exec(`INSERT INTO daily VALUES ('2026-10-01', '${INSTALL_ID}', '2026.10.26.0', 'workers', '2-5', '1', '2-5', '2-5', '2-5', '2-5', '1-10', '11-100', '["drive"]');
+		INSERT INTO aggregates VALUES ('2026-01-01', 'inbound_1d', '1-10', 4), ('2026-01-01', 'outbound_1d', '0', 2), ('2026-01-01', 'users_total', '1', 7);
+		INSERT INTO summary_cache VALUES (1, '{"ranges":{"inbound_1d":{"1-10":12}}}');`);
+	for (const file of files.slice(last)) sqlite.db.exec(readFileSync(join(migrations, file), "utf8"));
+	const columns = sqlite.db
+		.prepare("PRAGMA table_info(daily)")
+		.all()
+		.map((column) => column.name);
+	assert.deepEqual(columns, COLUMNS);
+	assert.equal(sqlite.db.prepare("SELECT users_total FROM daily").get().users_total, "2-5", "other fields survive");
+	assert.deepEqual(sqlite.db.prepare("SELECT dimension FROM aggregates").all(), [{ dimension: "users_total" }]);
+	assert.equal(sqlite.db.prepare("SELECT COUNT(*) AS n FROM summary_cache").get().n, 0);
+	const schema = sqlite.db.prepare("SELECT group_concat(sql) AS sql FROM sqlite_master").get().sql;
+	assert.ok(!schema.includes("inbound_1d") && !schema.includes("outbound_1d"));
 });
 
 async function setup(t, overrides = {}) {
@@ -166,8 +202,6 @@ const COLUMNS = [
 	"users_active_30d",
 	"mailboxes_total",
 	"mailboxes_active_1d",
-	"inbound_1d",
-	"outbound_1d",
 	"modules_enabled",
 ];
 
@@ -299,8 +333,9 @@ test("the public summary shows totals and ranges, small counts as <5 and never a
 		{ module: "drive", installs: "<5" },
 	]);
 	assert.deepEqual(body.ranges.users_total, { "100+": "<5", "2-5": 10 });
-	assert.deepEqual(body.ranges.inbound_1d, { "1-10": 12 });
-	assert.equal(Object.keys(body.ranges).length, 8);
+	assert.deepEqual(body.ranges.mailboxes_total, { "2-5": 12 });
+	assert.ok(!("inbound_1d" in body.ranges) && !("outbound_1d" in body.ranges));
+	assert.equal(Object.keys(body.ranges).length, 6);
 	assert.deepEqual(body.installs_by_day, [
 		{ day: daysAgo(200), installs: 7 },
 		{ day: daysAgo(45), installs: "<5" },
@@ -418,8 +453,8 @@ test("after 90 days daily rows become aggregates without install ids", async (t)
 	);
 	assert.equal(
 		sqlite.db.prepare("SELECT COUNT(DISTINCT dimension) AS n FROM aggregates").get().n,
-		12,
-		"installs, version, runtime, module and the eight ranges",
+		10,
+		"installs, version, runtime, module and the six ranges",
 	);
 	const dump = Buffer.from(await sqlite.dump()).toString("latin1");
 	assert.ok(!dump.includes(`'${old}','${idFor("a")}'`));

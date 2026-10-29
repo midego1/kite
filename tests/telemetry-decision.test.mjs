@@ -164,7 +164,7 @@ test("the rules: only an undecided install starts, only from a start day it was 
 	assert.equal(telemetryHideLabel(START_DAY), "Hide (statistics still start on 12 November 2026 UTC)");
 	assert.equal(
 		TELEMETRY_NOTICE_SHORT,
-		"Only to see how many active Kite installs there are, out of interest, and nothing else. One pseudonymous daily report, ranges only.",
+		"So the Kite project can see how many active installs there are and which versions, setups and modules they run. One pseudonymous daily report, rough counts only.",
 	);
 	assert.match(usageStatisticsSetupHint({ forcedOff: true, endpoint: COLLECTOR, checked: true }), /KITE_TELEMETRY/);
 	assert.match(usageStatisticsSetupHint({ forcedOff: false, endpoint: null, checked: true }), /nothing is sent/);

@@ -115,13 +115,13 @@ test("the first-run setup explains usage statistics and its switch is on until t
 		const section = page.locator("[data-setup-telemetry]");
 		await expect(section.getByRole("heading", { name: "Usage statistics" })).toBeVisible();
 		for (const text of [
-			"one small report a day, around 02:00 UTC",
+			"one small pseudonymous report a day, around 02:00 UTC",
 			"Nothing is sent before you finish setup.",
 			"pseudonymous, not anonymous",
 			"CF-Worker",
 			"kite-telemetry.midego.net",
 			"run by the Kite project",
-			"The only purpose is to see how many active Kite installs there are, out of interest, and nothing else.",
+			"so the Kite project can see how many active installs there are and which versions, setups and modules they run",
 			"kept for 90 days, then only totals without the install ID",
 			"privacy@midego.net",
 		])
@@ -132,7 +132,7 @@ test("the first-run setup explains usage statistics and its switch is on until t
 			/docs\/privacy\.md#usage-statistics$/,
 		);
 		await section.getByText("Exactly what is sent").click();
-		for (const field of ["install_id", "users_active_30d", "inbound_1d", "modules_enabled"])
+		for (const field of ["install_id", "users_active_30d", "mailboxes_active_1d", "modules_enabled"])
 			await expect(section.getByText(field, { exact: true })).toBeVisible();
 
 		const toggle = section.getByRole("switch", { name: "Send usage statistics" });
@@ -252,7 +252,7 @@ test("the sidebar notice: Hide keeps the start day, Keep on starts at once, the 
 	const startDay = expectedStartDay();
 	await expect(notice).toContainText(noticeText(startDay));
 	await expect(notice).toContainText(
-		"Only to see how many active Kite installs there are, out of interest, and nothing else. One pseudonymous daily report, ranges only.",
+		"So the Kite project can see how many active installs there are and which versions, setups and modules they run. One pseudonymous daily report, rough counts only.",
 	);
 	await expect(notice).not.toContainText(/Michiel|Gooijer|\(midego\)/);
 	await expect.poll(async () => (await telemetryStatus()).startDay).toBe(startDay);
@@ -294,13 +294,13 @@ test("the owner turns usage statistics on and off in Admin General; nobody else 
 	const card = page.locator("[data-telemetry]");
 	await expect(card.getByRole("heading", { name: "Usage statistics" })).toBeVisible();
 	await expect(card.locator("[data-telemetry-status]")).toHaveText("Off");
-	for (const field of ["install_id", "users_active_30d", "inbound_1d", "modules_enabled"])
+	for (const field of ["install_id", "users_active_30d", "mailboxes_active_1d", "modules_enabled"])
 		await expect(card.getByText(field, { exact: true })).toBeVisible();
 	await expect(card).toContainText("KITE_TELEMETRY=0");
 	await expect(card).toContainText("CF-Worker");
 	await expect(card).toContainText("pseudonymous");
 	await expect(card).toContainText(
-		"The only purpose is to see how many active Kite installs there are, out of interest, and nothing else.",
+		"so the Kite project can see how many active installs there are and which versions, setups and modules they run",
 	);
 	await expect(card).not.toContainText(/Michiel|Gooijer|\(midego\)/);
 	const toggle = card.getByRole("switch", { name: SWITCH });

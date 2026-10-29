@@ -29,12 +29,16 @@ export function telemetrySwitchOn(status: TelemetryStatus | null): boolean {
 	return Boolean(status?.enabled) || telemetryStartsLater(status);
 }
 
+/** What the report is for, in the words the notice, the setup section and Admin → General share. */
+export const TELEMETRY_PURPOSE =
+	"so the Kite project can see how many active installs there are and which versions, setups and modules they run";
+
 /** The details under the notice's lead sentence, on the admin pages. */
-export const TELEMETRY_NOTICE_DETAIL = `The only purpose is to see how many active Kite installs there are, out of interest, and nothing else. Once a day, around 02:00 UTC, it would send the Kite project one small pseudonymous report: ranges, never exact numbers, and no names, email addresses, domains or message content. Nothing has been sent yet. Keep on starts with the next daily report; Turn off means nothing is ever sent.`;
+export const TELEMETRY_NOTICE_DETAIL = `Once a day, around 02:00 UTC, it would send the Kite project one small pseudonymous report ${TELEMETRY_PURPOSE}. It holds rough counts only: ranges, never exact numbers, and no names, email addresses, domains or message content. The collector does not store IP addresses. Nothing has been sent yet. Keep on starts with the next daily report; Turn off means nothing is ever sent.`;
 
 /** The sidebar notice's second line. */
 export const TELEMETRY_NOTICE_SHORT =
-	"Only to see how many active Kite installs there are, out of interest, and nothing else. One pseudonymous daily report, ranges only.";
+	"So the Kite project can see how many active installs there are and which versions, setups and modules they run. One pseudonymous daily report, rough counts only.";
 
 /** The notice's close button: hiding it is not a choice, and the date still holds. */
 export function telemetryHideLabel(startDay: string): string {

@@ -14,6 +14,7 @@ import { parseImapImportRequest } from "../imap/utils";
 import { createAccountJobResponse } from "./account";
 import type { AccountImportJobRequest, ImapImportJobRequest } from "./types";
 import { withModule } from "@/lib/modules/route-guard";
+import { jobSourceFields, resolveImportSource, type ConnectedSource } from "../connected-account";
 
 export const GET = withModule("import", async (request, { checkUser }) => {
 	const env = getEnv();
@@ -25,6 +26,14 @@ export const GET = withModule("import", async (request, { checkUser }) => {
 	return Response.json({ jobs: jobs.map(serializeImportJob), queue: !!env.AGENT_QUEUE });
 });
 
+/** The job's label in the list (the folder unless named) and where the folder's mail goes (Inbox unless chosen). */
+function folderJobPlace(body: ImapImportJobRequest, folder: string) {
+	return {
+		label: (body.label?.trim() || folder).slice(0, 200),
+		destination: body.destination?.trim() || "system:inbox",
+	};
+}
+
 export const POST = withModule("import", async (request, { checkUser }) => {
 	const env = getEnv();
 	const user = await getCurrentUser(env, request);
@@ -34,11 +43,14 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	if (!hasValidSessionMutationOrigin(request)) return Response.json({ error: "Invalid origin" }, { status: 403 });
 
 	let body: ImapImportJobRequest;
+	let source: ConnectedSource | null;
 	let input: ReturnType<typeof parseImapImportRequest>;
 	try {
-		body = await readJsonBody<ImapImportJobRequest>(request, 256 * 1024);
+		const resolved = await resolveImportSource(user, await readJsonBody<ImapImportJobRequest>(request, 256 * 1024));
+		if ("error" in resolved) return resolved.error;
+		({ body, source } = resolved);
 		if ((body as { scope?: string }).scope === "account")
-			return await createAccountJobResponse(env, request, user, body as unknown as AccountImportJobRequest);
+			return await createAccountJobResponse(env, request, user, body as unknown as AccountImportJobRequest, source);
 		input = parseImapImportRequest(body);
 	} catch (error) {
 		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
@@ -70,13 +82,13 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	const job = await createImportJob(env, {
 		userId: user.id,
 		mailboxId: access.mailbox.id,
-		label: (body.label?.trim() || input.folder).slice(0, 200),
-		destination: body.destination?.trim() || "system:inbox",
+		...folderJobPlace(body, input.folder),
 		host: input.host,
 		port: input.port,
 		secure: input.secure,
 		username: input.username,
-		password: input.password,
+		// A job from a connected account asks for the login on every run and keeps no password of its own.
+		...jobSourceFields(source, input.password),
 		folder: input.folder,
 		maxMessages,
 		confirmedDatabaseFull: sizeCheck.confirmed,

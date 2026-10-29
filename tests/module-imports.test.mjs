@@ -41,6 +41,11 @@ const CORE_PATHS = [
 	"src/lib/storage/",
 	"src/lib/net/",
 	"src/lib/imap/",
+	// Connected accounts are core (spec §9.1): the import module reaches them only through moduleHost.accounts.
+	"src/lib/external-accounts/",
+	"src/app/api/external-accounts/",
+	"src/app/(settings)/settings/connected-accounts/",
+	"src/components/settings/connected-accounts/",
 	"src/app/api/admin/storage/",
 	"server/runtime/file-bucket.ts",
 	"src/lib/backups/",

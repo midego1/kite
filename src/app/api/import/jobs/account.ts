@@ -7,6 +7,7 @@ import { createAccountImportJob, serializeImportJob } from "@/lib/import/jobs";
 import { checkImportStart } from "@/lib/import/size-guard";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { parseImapFolderListRequest } from "../imap/folders/utils";
+import { jobSourceFields, type ConnectedSource } from "../connected-account";
 import type { AccountImportJobRequest } from "./types";
 
 type SessionUser = Parameters<typeof getMailboxAccessLevel>[1];
@@ -20,6 +21,7 @@ export async function createAccountJobResponse(
 	request: Request,
 	user: SessionUser & { id: string },
 	body: AccountImportJobRequest,
+	source: ConnectedSource | null,
 ): Promise<Response> {
 	let account: ReturnType<typeof parseImapFolderListRequest>;
 	let folders: ReturnType<typeof parseAccountFolderRequest>;
@@ -69,7 +71,8 @@ export async function createAccountJobResponse(
 			port: account.port,
 			secure: account.secure,
 			username: account.username,
-			password: account.password,
+			// A job from a connected account asks for the login on every run and keeps no password of its own.
+			...jobSourceFields(source, account.password),
 			folders: resolved,
 			gmail: resolved.some((folder) => folder.destination === GMAIL_LABELS_DESTINATION),
 			confirmedDatabaseFull: sizeCheck.confirmed,

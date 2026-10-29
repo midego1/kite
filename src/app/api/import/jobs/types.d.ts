@@ -9,6 +9,8 @@ export type AccountImportJobRequest = ImapImportRequest & {
 };
 
 export type ImapImportJobRequest = ImapImportRequest & {
+	/** Import from this connected account instead of the typed host and password. */
+	accountId?: unknown;
 	/** Shown in the jobs list, e.g. "Sent". */
 	label?: string;
 	/** false imports only the newest `limit` messages. Defaults to the whole folder. */

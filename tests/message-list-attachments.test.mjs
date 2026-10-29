@@ -53,11 +53,16 @@ async function fixture(t, extraThreadMessages = 0) {
 			('plain', 'owner', 'box', NULL, 'inbound', 'b@partner.test', 'owner@example.test', 'Hello', 'received', 0, 2),
 			('inline-only', 'owner', 'box', NULL, 'inbound', 'c@partner.test', 'owner@example.test', 'Newsletter', 'received', 0, 3),
 			('t-old', 'owner', 'box', 'thread', 'inbound', 'd@partner.test', 'owner@example.test', 'Plan', 'received', 0, 4),
-			('t-new', 'owner', 'box', 'thread', 'inbound', 'd@partner.test', 'owner@example.test', 'Re: Plan', 'received', 0, 5);
+			('t-new', 'owner', 'box', 'thread', 'inbound', 'd@partner.test', 'owner@example.test', 'Re: Plan', 'received', 0, 5),
+			('p-in', 'owner', 'box', 'private', 'inbound', 'f@partner.test', 'owner@example.test', 'Offer', 'received', 0, 6),
+			('p-trash', 'owner', 'box', 'private', 'inbound', 'f@partner.test', 'owner@example.test', 'Re: Offer', 'trash', 1, 7),
+			('p-draft', 'owner', 'box', 'private', 'outbound', 'owner@example.test', 'f@partner.test', 'Re: Offer', 'draft', 1, 8);
 		INSERT INTO message_attachments (id, message_id, filename, content_type, size, disposition, content_id, r2_key, created_at) VALUES
 			('att-pdf', 'with-pdf', 'invoice.pdf', 'application/pdf', 10, 'attachment', NULL, 'k1', 1),
 			('att-logo', 'inline-only', 'logo.png', 'image/png', 10, 'inline', 'logo@cid', 'k2', 1),
-			('att-old', 't-old', 'plan.pdf', 'application/pdf', 10, 'attachment', NULL, 'k3', 1);
+			('att-old', 't-old', 'plan.pdf', 'application/pdf', 10, 'attachment', NULL, 'k3', 1),
+			('att-trash', 'p-trash', 'old.pdf', 'application/pdf', 10, 'attachment', NULL, 'k5', 1),
+			('att-draft', 'p-draft', 'draft.pdf', 'application/pdf', 10, 'attachment', NULL, 'k6', 1);
 	`);
 	for (let index = 0; index < extraThreadMessages; index++) {
 		database.db
@@ -81,9 +86,12 @@ async function fixture(t, extraThreadMessages = 0) {
 	const session = await m.createSession(env, "owner");
 	return async (query) => {
 		const response = await m.listMessages(
-			new Request(`https://kite.test/api/messages?mailboxId=box&status=received&limit=100&${query}`, {
-				headers: { Authorization: `Bearer ${session}` },
-			}),
+			new Request(
+				`https://kite.test/api/messages?mailboxId=box&${query.includes("status=") ? "" : "status=received&"}limit=100&${query}`,
+				{
+					headers: { Authorization: `Bearer ${session}` },
+				},
+			),
 		);
 		assert.equal(response.status, 200);
 		const body = await response.json();
@@ -107,6 +115,15 @@ test("a conversation row has hasAttachments when any message it stands for does"
 	assert.equal(rows.get("t-new").hasAttachments, true, "the newest message has none, an older one does");
 	assert.equal(rows.get("with-pdf").hasAttachments, true);
 	assert.equal(rows.get("plain").hasAttachments, false);
+});
+
+test("a conversation row ignores attachments on messages outside the folder view (trash, drafts)", async (t) => {
+	const list = await fixture(t);
+	const rows = await list("group=thread");
+	const row = rows.get("p-in");
+	assert.deepEqual(row.threadMessageIds, ["p-in"]);
+	assert.equal(row.hasAttachments, false, "the only attachments are on a trashed message and a draft");
+	assert.equal((await list("status=trash")).get("p-trash").hasAttachments, true, "the trash view itself shows it");
 });
 
 test("a conversation of far more than 100 messages still answers in one lookup", async (t) => {

@@ -99,7 +99,7 @@ export function UnreadDot({ unread }: { unread: boolean }) {
 export function AttachmentIndicator({ message }: { message: Pick<Message, "hasAttachments"> }) {
 	if (!message.hasAttachments) return null;
 	return (
-		<span data-attachment-indicator title="Has attachments" className="inline-flex shrink-0 items-center">
+		<span data-attachment-indicator className="inline-flex shrink-0 items-center self-center">
 			<Paperclip aria-hidden="true" className="h-3.5 w-3.5 text-neutral-500" />
 			<span className="sr-only">Has attachments</span>
 		</span>

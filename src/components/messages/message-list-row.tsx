@@ -206,7 +206,7 @@ function StackedMessageRow(props: RowViewProps) {
 						/>
 						<span
 							className={clsx(
-								"flex shrink-0 items-center gap-1.5",
+								"flex shrink-0 items-baseline gap-1.5",
 								showHoverActions && "group-hover:hidden group-has-[:focus-visible]:hidden",
 							)}
 						>
@@ -313,7 +313,7 @@ function WideMessageRow(props: RowViewProps) {
 				<SendStateBadge message={row.rowMessage} />
 				{props.mailboxLabel}
 			</span>
-			<span className="flex min-w-[96px] items-center justify-end gap-1.5 group-hover:opacity-0">
+			<span className="flex min-w-[96px] items-baseline justify-end gap-1.5 group-hover:opacity-0">
 				<AttachmentIndicator message={message} />
 				<time
 					dateTime={message.createdAt}

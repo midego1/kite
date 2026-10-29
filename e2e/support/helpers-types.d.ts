@@ -20,6 +20,8 @@ export type InboundAttachment = {
 	content: string | Buffer;
 	/** Defaults to `attachment`. */
 	disposition?: "inline" | "attachment";
+	/** Sent as a `Content-ID` header, which a cid: reference in the HTML points at. */
+	contentId?: string;
 };
 
 export type StoredMessage = {

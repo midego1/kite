@@ -26,7 +26,9 @@ test.beforeAll(async () => {
 		to: SUPPORT_ADDRESS,
 		subject: subjects.inlineOnly,
 		html: `<p>Logo <img src="cid:logo@e2e"></p>`,
-		attachments: [{ filename: "logo.png", contentType: "image/png", content: "png", disposition: "inline" }],
+		attachments: [
+			{ filename: "logo.png", contentType: "image/png", content: "png", disposition: "inline", contentId: "logo@e2e" },
+		],
 	});
 	// The attachment is on the older message; the newest message of the conversation has none.
 	const root = await deliverInbound(api, {
@@ -82,7 +84,6 @@ for (const pane of ["right", "none"]) {
 				await expect(clip).toHaveCount(1);
 				await expect(clip).toBeVisible();
 				await expect(clip).toHaveText("Has attachments");
-				await expect(clip).toHaveAttribute("title", "Has attachments");
 				await expect(clipOf(page, subjects.plain)).toHaveCount(0);
 				await expect(clipOf(page, subjects.inlineOnly)).toHaveCount(0);
 				// It sits on the date's line, left of the date, inside the row.
@@ -92,6 +93,14 @@ for (const pane of ["right", "none"]) {
 				expect(clipBox.x + clipBox.width).toBeLessThanOrEqual(dateBox.x + 1);
 				expect(clipBox.x).toBeGreaterThanOrEqual(rowBox.x);
 				expect(Math.abs(clipBox.y + clipBox.height / 2 - (dateBox.y + dateBox.height / 2))).toBeLessThan(8);
+				// The icon leaves the date where it is: same offset from the row's top as on a row without one.
+				const plainDate = await rowOf(page, subjects.plain).locator("time").boundingBox();
+				const plainRow = await rowOf(page, subjects.plain).boundingBox();
+				expect(Math.abs(dateBox.y - rowBox.y - (plainDate!.y - plainRow!.y))).toBeLessThan(0.5);
+				expect(Math.abs(dateBox.height - plainDate!.height)).toBeLessThan(0.5);
+				await rowOf(page, subjects.plain).screenshot({
+					path: testInfo.outputPath(`attachment-icon-${pane}-${density}-${theme}-without.png`),
+				});
 				await rowOf(page, subjects.withFile).screenshot({
 					path: testInfo.outputPath(`attachment-icon-${pane}-${density}-${theme}.png`),
 				});

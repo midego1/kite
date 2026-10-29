@@ -80,6 +80,7 @@ function attachmentPart(attachment: InboundAttachment): string[] {
 	return [
 		`Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
 		`Content-Disposition: ${attachment.disposition ?? "attachment"}; filename="${attachment.filename}"`,
+		...(attachment.contentId ? [`Content-ID: <${attachment.contentId}>`] : []),
 		"Content-Transfer-Encoding: base64",
 		"",
 		...(base64.match(/.{1,76}/g) ?? []),

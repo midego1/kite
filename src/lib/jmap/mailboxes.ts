@@ -3,6 +3,7 @@ import { queryInChunks } from "@/db/chunk-utils";
 import { folders, messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
+import { visibleDraftsCondition } from "@/lib/messages/mailbox-scope";
 import { JmapError } from "./errors";
 import { decodeMailboxRef, encodeMailboxRef, roleToStatus, SYSTEM_ROLES } from "./ids";
 import { getMailboxState } from "./state";
@@ -39,7 +40,7 @@ async function loadCounts(ctx: JmapContext, mailboxIds: string[]): Promise<Map<s
 				unread: sql<number>`sum(case when ${messages.read} = 0 and ${messages.direction} = 'inbound' then 1 else 0 end)`,
 			})
 			.from(messages)
-			.where(inArray(messages.mailboxId, chunk))
+			.where(and(inArray(messages.mailboxId, chunk), visibleDraftsCondition(ctx.auth.userId)))
 			.groupBy(messages.mailboxId, messages.status, messages.folderId),
 	);
 

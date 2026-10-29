@@ -9,6 +9,11 @@ export type ActivityMetadata = {
 	moduleId?: string;
 	allowed?: boolean;
 	ref?: { kind: string; id: string };
+	/** Saved AI provider changes: the provider's name and, for a switch, the one used before. */
+	name?: string;
+	previous?: string | null;
+	/** An edited provider got a new API key (never the key itself). */
+	keyReplaced?: boolean;
 };
 
 export type ActivityLog = {

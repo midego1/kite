@@ -33,7 +33,7 @@ export function SendReview({ approvalId, snapshot, onClose, onReviewAgain, onSen
 			aria-modal="true"
 			aria-label="Review email before sending"
 		>
-			<div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl">
+			<div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-neutral-200 bg-white p-5 shadow-lg">
 				<h2 className="text-lg font-semibold">{snapshot.scheduledAt ? "Review and schedule" : "Review and send"}</h2>
 				<p className="mt-1 text-sm text-neutral-500">
 					Confirm this exact AI draft before it is {snapshot.scheduledAt ? "scheduled" : "delivered"}.

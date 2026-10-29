@@ -1,8 +1,9 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { chunkArray } from "@/db/chunk-utils";
 import { loadMessageBodies } from "@/lib/email/bodies";
+import { visibleDraftsCondition } from "@/lib/messages/mailbox-scope";
 
 function escapeHeader(value: string | null): string {
 	return (value ?? "").replace(/\r?\n/g, " ").trim();
@@ -23,7 +24,7 @@ function getMboxFromLine(date: Date): string {
  * The mailbox as an mbox file. An offloaded body that cannot be read fails the whole export
  * (`MessageBodyUnavailableError`) rather than leaving that message as text in a file the user keeps.
  */
-export async function exportMailboxToMbox(env: CloudflareEnv, mailboxId: string): Promise<string> {
+export async function exportMailboxToMbox(env: CloudflareEnv, mailboxId: string, viewerId: string): Promise<string> {
 	const db = getDb(env);
 	const stored = await db
 		.select({
@@ -42,7 +43,8 @@ export async function exportMailboxToMbox(env: CloudflareEnv, mailboxId: string)
 			htmlBody: messages.htmlBody,
 		})
 		.from(messages)
-		.where(eq(messages.mailboxId, mailboxId))
+		// Drafts go along only for their author.
+		.where(and(eq(messages.mailboxId, mailboxId), visibleDraftsCondition(viewerId)))
 		.orderBy(asc(messages.createdAt));
 	const rows = [];
 	for (const page of chunkArray(stored, BODY_PAGE))

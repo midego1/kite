@@ -53,6 +53,7 @@ export type SummaryState = {
 	translation: { language: string; overview: string; points: SummaryPoint[] } | null;
 	translatable: boolean;
 	eligible: boolean;
-	reason?: "not_eligible" | "assistant_off" | "no_provider" | "external_provider_not_allowed";
+	reason?:
+		"not_eligible" | "assistant_off" | "no_provider" | "external_provider_not_allowed" | "provider_key_unreadable";
 	migrationPending?: boolean;
 };

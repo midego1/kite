@@ -4,6 +4,8 @@ import { messages, domains, mailboxes } from "@/db/schema";
 import { selectRow } from "@/lib/db/pending-columns";
 import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { createAuditLog } from "@/lib/mailboxes/audit";
+import { DRAFT_STATUS, isDraftMoveRefused, isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
+import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import type { SessionUser } from "@/lib/auth/types";
 import { applySpamFeedbackWithReceipt } from "@/lib/spam/feedback";
 
@@ -79,7 +81,7 @@ export async function markMessageAsRead(env: CloudflareEnv, userId: string, mess
 export async function markMessageAsReadForUser(env: CloudflareEnv, user: SessionUser, messageId: string) {
 	const db = getDb(env);
 	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
-	if (!message?.mailboxId) return false;
+	if (!message?.mailboxId || isHiddenDraft(message, user.id)) return false;
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canRead) return false;
 	await db.update(messages).set({ read: true }).where(eq(messages.id, messageId));
@@ -102,7 +104,14 @@ export async function updateMessageStatusForUser(
 ) {
 	const db = getDb(env);
 	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
-	if (!message?.mailboxId) return false;
+	if (!message?.mailboxId || isHiddenDraft(message, user.id)) return false;
+	// A draft is private (only its author gets here): Trash deletes it outright, whatever the author's access to
+	// the mailbox, as the drafts API does, and no other move takes it out of Drafts or makes a draft.
+	if (message.status === DRAFT_STATUS && status === "trash") {
+		await deleteMessageWithObjects(env, db, message.id, message.rawR2Key);
+		return true;
+	}
+	if (isDraftMoveRefused(message.status, status)) return false;
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canManage) return false;
 	const classification = status === "spam" ? "spam" : status === "received" && message.status === "spam" ? "ham" : null;

@@ -25,3 +25,20 @@ export function getAttachmentPreviewKind(attachment: Pick<MessageAttachment, "ty
 	}
 	return "unsupported";
 }
+
+/**
+ * Where the viewer loads an attachment from: the authenticated route for a stored one, or the `blob:` URL of the
+ * browser's copy of a file that is not stored yet ("" until that copy is ready).
+ */
+export function getViewerUrls(
+	attachment: Pick<MessageAttachment, "id"> | null,
+	messageId: string,
+	localUrl: string | null,
+): { previewUrl: string; downloadUrl: string } {
+	if (localUrl !== null) return { previewUrl: localUrl, downloadUrl: localUrl };
+	if (!attachment) return { previewUrl: "", downloadUrl: "" };
+	return {
+		previewUrl: getAttachmentFileUrl(messageId, attachment.id, "preview"),
+		downloadUrl: getAttachmentFileUrl(messageId, attachment.id, "download"),
+	};
+}

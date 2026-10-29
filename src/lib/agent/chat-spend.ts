@@ -46,9 +46,11 @@ export function createChatSpend(input: ChatSpendInput) {
 		pending = null;
 		return reservation;
 	};
-	const settle = async () => {
+	// A step that never finished keeps its estimate: stopped, or failed with the turn's error code.
+	const settle = async (errorCode?: string | null) => {
 		const reservation = take();
-		if (reservation) await keepReservedEstimate(input.env, reservation);
+		if (reservation)
+			await keepReservedEstimate(input.env, reservation, errorCode ? { status: "failed", errorCode } : undefined);
 	};
 	return {
 		async beforeStep(promptChars: number): Promise<void> {
@@ -67,9 +69,16 @@ export function createChatSpend(input: ChatSpendInput) {
 			}
 			pending = reservation;
 		},
-		async afterStep(usage: LanguageModelUsage | undefined): Promise<void> {
+		async afterStep(usage: LanguageModelUsage | undefined, finishReason?: string | null): Promise<void> {
 			const reservation = take();
-			if (reservation) await reconcileAiSpend({ env: input.env, reservation, rates: input.details.rates, usage });
+			if (reservation)
+				await reconcileAiSpend({
+					env: input.env,
+					reservation,
+					rates: input.details.rates,
+					usage,
+					outcome: { status: usage ? "ok" : "failed", finishReason: finishReason ?? null },
+				});
 		},
 		settle,
 	};

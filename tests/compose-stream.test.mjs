@@ -123,6 +123,7 @@ async function events(stream) {
 
 const usage = (db) =>
 	db.db.prepare("SELECT source, mailbox_id, reserved, input_tokens, output_tokens FROM ai_usage").all();
+const outcome = (db) => db.db.prepare("SELECT status, error_code, finish_reason, cost_estimated FROM ai_usage").get();
 
 test("an external provider needs the primary admin's opt-in on every request; Workers AI does not", async (t) => {
 	const { db, env } = await setup(t, { allowed: 0 });
@@ -273,6 +274,25 @@ test("an answer cut off at the output budget is refused, with its spend settled"
 	assert.deepEqual(usage(db), [
 		{ source: "compose", mailbox_id: "mailbox-a", reserved: 0, input_tokens: 500, output_tokens: 10 },
 	]);
+	assert.deepEqual(outcome(db), {
+		status: "failed",
+		error_code: "cut_off",
+		finish_reason: "length",
+		cost_estimated: 0,
+	});
+});
+
+test("an answer that fails Kite's checks is recorded as failed with unusable_answer", async (t) => {
+	const { db, env, user } = await setup(t);
+	answer = "   ";
+	const result = await events(await createComposeStream(env, user, write()));
+	assert.equal(result.at(-1).code, "unusable_answer");
+	assert.deepEqual(outcome(db), {
+		status: "failed",
+		error_code: "unusable_answer",
+		finish_reason: "stop",
+		cost_estimated: 0,
+	});
 });
 
 async function settled(db) {
@@ -307,6 +327,7 @@ test("an aborted request stops the provider call and keeps the estimate", async 
 	assert.equal(row.reserved, 0);
 	assert.ok(row.output_tokens >= 900);
 	assert.equal(signals[0].aborted, true);
+	assert.deepEqual(outcome(db), { status: "stopped", error_code: null, finish_reason: null, cost_estimated: 1 });
 });
 
 test("a hostile email being answered stays data: its links are marked, and repeating one warns", async (t) => {

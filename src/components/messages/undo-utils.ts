@@ -2,6 +2,7 @@ import type { BulkMessageResponse, MessageRestoreState } from "@/app/api/message
 import toast from "react-hot-toast";
 import { showUndoToast } from "@/components/ui/undo-toast";
 import { authFetch } from "@/lib/auth/client";
+import { describeDraftsDeleted } from "./bulk-request-utils";
 
 export function describeUndoableMove(action: string, count: number): string | null {
 	const subject = count === 1 ? "Message" : `${count} messages`;
@@ -25,6 +26,8 @@ export async function restoreMessages(states: MessageRestoreState[]): Promise<vo
 
 /** Offers to undo an archive or trash the bulk endpoint reported previous states for. */
 export function offerUndoForMove(action: string, response: BulkMessageResponse | null) {
+	// Drafts in the selection were deleted for good, so they are reported apart and never part of the Undo.
+	if (response?.draftsDeleted) toast(describeDraftsDeleted(response.draftsDeleted));
 	const states = response?.undo ?? [];
 	const message = describeUndoableMove(action, states.length);
 	if (!message || states.length === 0) return;

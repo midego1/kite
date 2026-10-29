@@ -11,7 +11,13 @@ import { buildModelCallOptions, callWithFallback, completedText } from "../auto-
 import { reportAiErrorClass } from "../ai-errors";
 import { aiErrorHttpStatus, classifyAiError, UnusableAnswerError, type AiErrorDetails } from "../ai-error-utils";
 import { aiCallTimeoutMs } from "../provider-url-utils";
-import { keepReservedEstimate, reconcileAiSpend, refusedSpendCap, reserveAiSpend } from "../auto-read/spend";
+import {
+	finishReasonOf,
+	keepReservedEstimate,
+	reconcileAiSpend,
+	refusedSpendCap,
+	reserveAiSpend,
+} from "../auto-read/spend";
 import type { AutoSpendSource, ReserveAiSpendInput } from "../auto-read/spend-types";
 import { spendCapMessage } from "../chat-spend-utils";
 import { interactiveRefusal, selectInteractiveModel } from "../interactive-model";
@@ -179,7 +185,7 @@ type SummaryRequest = { scope: SummaryScope; language: string | null };
 async function unavailableReason(env: CloudflareEnv, eligible: boolean): Promise<SummaryState["reason"]> {
 	const refusal = await interactiveRefusal(env);
 	if (refusal === "assistant_disabled") return "assistant_off";
-	if (refusal === "external_provider_not_allowed") return refusal;
+	if (refusal === "external_provider_not_allowed" || refusal === "provider_key_unreadable") return refusal;
 	if (refusal === "not_configured" || !(await getAgentProviderPublicConfig(env)).configured) return "no_provider";
 	return eligible ? undefined : "not_eligible";
 }
@@ -278,12 +284,19 @@ async function reserved<T extends { usage: LanguageModelUsage | undefined }>(
 	try {
 		result = await call();
 	} catch (error) {
+		const outcome = { status: "failed", errorCode: classifyAiError(error).code } as const;
 		if (rejectedOutright(error))
-			await reconcileAiSpend({ env: reserve.env, reservation, rates: reserve.details.rates });
-		else await keepReservedEstimate(reserve.env, reservation);
+			await reconcileAiSpend({ env: reserve.env, reservation, rates: reserve.details.rates, outcome });
+		else await keepReservedEstimate(reserve.env, reservation, outcome);
 		throw error;
 	}
-	await reconcileAiSpend({ env: reserve.env, reservation, rates: reserve.details.rates, usage: result.usage });
+	await reconcileAiSpend({
+		env: reserve.env,
+		reservation,
+		rates: reserve.details.rates,
+		usage: result.usage,
+		outcome: { status: "ok", finishReason: finishReasonOf(result) },
+	});
 	return result;
 }
 

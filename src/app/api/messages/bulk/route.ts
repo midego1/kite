@@ -11,6 +11,7 @@ import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import { permanentlyDeleteMessages } from "@/lib/email/permanent-delete";
 import { applySpamFeedback } from "@/lib/spam/feedback";
 import { reportPhishingBulk, reportSpamBulk, restoreMessageStates } from "./report";
+import { draftCounts, draftsOnlyResponse, settleDrafts } from "./drafts";
 import type { BulkMessagePayload } from "./types";
 import {
 	getReadValueForBulkAction,
@@ -108,6 +109,7 @@ export async function POST(request: Request) {
 				rawR2Key: messages.rawR2Key,
 				status: messages.status,
 				folderId: messages.folderId,
+				userId: messages.userId,
 			})
 			.from(messages)
 			.where(inArray(messages.id, ids)),
@@ -119,7 +121,15 @@ export async function POST(request: Request) {
 	// A bulk selection usually spans one or two mailboxes; resolve each once.
 	const accessByMailbox = new Map<string, Promise<MailboxAccessLevel | null>>();
 
-	for (const message of selectedMessages) {
+	// Drafts never move: Delete and Trash remove the caller's own outright, other moves leave them alone.
+	const drafts = await settleDrafts(
+		env,
+		db,
+		user.id,
+		{ action: payload.action, deleteDrafts: payload.deleteDrafts === true, restore: restoreStates },
+		selectedMessages,
+	);
+	for (const message of drafts.rest) {
 		const mailboxId = actionMailboxId(message.mailboxId, folderMailboxId);
 		if (!mailboxId) continue;
 		let accessRequest = accessByMailbox.get(mailboxId);
@@ -134,9 +144,7 @@ export async function POST(request: Request) {
 		approvedMailbox.set(message.id, mailboxId);
 	}
 
-	if (allowedMessageIds.length === 0) {
-		return NextResponse.json({ error: "No accessible messages" }, { status: 404 });
-	}
+	if (allowedMessageIds.length === 0) return draftsOnlyResponse(drafts);
 	if (payload.action === "restore") {
 		const superseded = await restoreMessageStates(env, db, restoreStates, selectedMessages, approvedMailbox);
 		return NextResponse.json({ ok: true, ...(superseded > 0 ? { superseded } : {}) });
@@ -176,5 +184,5 @@ export async function POST(request: Request) {
 		})),
 	);
 
-	return NextResponse.json({ ok: true, ...(undo ? { undo } : {}) });
+	return NextResponse.json({ ok: true, ...(undo ? { undo } : {}), ...draftCounts(drafts) });
 }

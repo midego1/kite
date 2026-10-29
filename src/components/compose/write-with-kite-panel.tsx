@@ -193,7 +193,7 @@ export default function WriteWithKitePanel({
 			aria-modal="true"
 			aria-label="Write with Kite"
 			onKeyDown={(event) => panelKeyDown(event, close)}
-			className="absolute bottom-full left-2 right-2 z-20 mb-1 max-h-[min(28rem,70vh)] space-y-2 overflow-y-auto rounded-xl border border-blue-100 bg-white p-3 text-sm shadow-lg dark:border-blue-900"
+			className="absolute bottom-full left-2 right-2 z-20 mb-1 max-h-[min(28rem,70vh)] space-y-2 overflow-y-auto rounded-xl border border-blue-100 bg-white p-3 text-sm shadow-lg"
 		>
 			<div className="flex items-center gap-2">
 				<Sparkles className="h-4 w-4 text-blue-600" />

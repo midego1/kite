@@ -236,11 +236,7 @@ export function RegisterClient() {
 					<p className="text-sm leading-6 text-neutral-600">
 						This installation already has an account for {primaryDomain ?? "this workspace"}.
 					</p>
-					<Button
-						type="button"
-						className="h-11 w-full rounded-full px-6 active:scale-[0.98]"
-						onClick={() => router.push("/login")}
-					>
+					<Button type="button" className="h-10 w-full" onClick={() => router.push("/login")}>
 						Go to login
 					</Button>
 				</div>
@@ -271,7 +267,7 @@ export function RegisterClient() {
 					</p>
 					<div className="space-y-2">
 						{loading && checks.length === 0 && (
-							<div className="flex items-center gap-3 rounded-2xl bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+							<div className="flex items-center gap-3 rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
 								<LoaderCircle className="h-4 w-4 animate-spin" />
 								Checking installation
 							</div>
@@ -279,14 +275,14 @@ export function RegisterClient() {
 						{checks.map((check) => (
 							<div
 								key={check.key}
-								className={`flex items-start gap-3 rounded-2xl px-4 py-3 ${
-									!check.configured && check.severity === "recommended" ? "bg-amber-50" : "bg-neutral-50"
+								className={`flex items-start gap-3 rounded-lg px-4 py-3 ${
+									!check.configured && check.severity === "recommended" ? "bg-[#f59e0b]/10" : "bg-neutral-50"
 								}`}
 							>
 								{check.configured ? (
 									<CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
 								) : check.severity === "recommended" ? (
-									<AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+									<AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#d97706]" />
 								) : (
 									<XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
 								)}
@@ -302,7 +298,7 @@ export function RegisterClient() {
 							</div>
 						))}
 						{preparationComplete && (
-							<div className="flex items-center gap-3 rounded-2xl bg-green-50 px-4 py-3 text-sm text-green-700">
+							<div className="flex items-center gap-3 rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
 								<CheckCircle2 className="h-4 w-4" />
 								{databaseMigrated ? "Clean database migrated successfully" : "Database schema is ready"}
 							</div>
@@ -330,7 +326,7 @@ export function RegisterClient() {
 								The SETUP_TOKEN secret configured for this installation. The self-hosted server prints one in its log
 								when none is set.
 							</p>
-							<Button type="submit" className="h-11 w-full rounded-full px-6 active:scale-[0.98]" disabled={loading}>
+							<Button type="submit" className="h-10 w-full" disabled={loading}>
 								{loading ? "Checking..." : "Use setup token"}
 							</Button>
 						</form>
@@ -338,24 +334,20 @@ export function RegisterClient() {
 					{error && (
 						<p
 							role="alert"
-							className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+							className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm font-medium"
 						>
 							{error}
 						</p>
 					)}
 					{preparationComplete ? (
-						<Button
-							type="button"
-							className="h-11 w-full rounded-full px-6 active:scale-[0.98]"
-							onClick={() => setStep(hasPrimaryDomain ? 3 : 2)}
-						>
+						<Button type="button" className="h-10 w-full" onClick={() => setStep(hasPrimaryDomain ? 3 : 2)}>
 							Continue
 						</Button>
 					) : setupTokenNeeded ? null : (
 						<Button
 							type="button"
 							variant="outline"
-							className="h-11 w-full rounded-full px-6 active:scale-[0.98]"
+							className="h-10 w-full"
 							disabled={loading}
 							onClick={() => void runPreparation()}
 						>
@@ -398,7 +390,7 @@ export function RegisterClient() {
 					/>
 					{!skipDns && (
 						<>
-							<div className="flex items-center justify-between gap-4 rounded-2xl bg-neutral-50 px-4 py-3">
+							<div className="flex items-center justify-between gap-4 rounded-lg bg-neutral-50 px-4 py-3">
 								<div>
 									<Label htmlFor="setup-enable-sending">Enable sending</Label>
 									<p className="mt-1 text-xs leading-5 text-neutral-500">
@@ -419,7 +411,7 @@ export function RegisterClient() {
 								/>
 							</div>
 							{domainCheck && (
-								<div className="flex items-center gap-3 rounded-2xl bg-green-50 px-4 py-3 text-sm text-green-700">
+								<div className="flex items-center gap-3 rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
 									<CheckCircle2 className="h-4 w-4" />
 									Domain found in Cloudflare as {domainCheck.zone.name}
 								</div>
@@ -429,16 +421,12 @@ export function RegisterClient() {
 					{error && (
 						<p
 							role="alert"
-							className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+							className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm font-medium"
 						>
 							{error}
 						</p>
 					)}
-					<Button
-						type="submit"
-						className="h-11 w-full rounded-full px-6 active:scale-[0.98]"
-						disabled={loading || domainChecking}
-					>
+					<Button type="submit" className="h-10 w-full" disabled={loading || domainChecking}>
 						{loading ? "Adding domain..." : "Continue"}
 					</Button>
 				</form>
@@ -497,7 +485,7 @@ export function RegisterClient() {
 					{error && (
 						<p
 							role="alert"
-							className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+							className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm font-medium"
 						>
 							{error}
 						</p>
@@ -505,7 +493,7 @@ export function RegisterClient() {
 					<TurnstileField resetSignal={turnstileReset} />
 					<Button
 						type="submit"
-						className="h-11 w-full rounded-full px-6 active:scale-[0.98] mt-8"
+						className="h-10 w-full mt-8"
 						disabled={
 							loading ||
 							mxCheckBlocksSubmit({

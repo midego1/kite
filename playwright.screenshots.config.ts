@@ -7,7 +7,8 @@ export default defineConfig({
 	testDir: "./scripts/screenshots",
 	testMatch: /.*\.capture\.ts$/,
 	outputDir: "test-results/screenshots",
-	retries: 0,
+	// A shot taken while the app's session check failed (slow machine) is refused, and the test starts over.
+	retries: 3,
 	webServer:
 		base.webServer && !Array.isArray(base.webServer) ? { ...base.webServer, timeout: 900_000 } : base.webServer,
 	// A capture waits for the app instead of asserting on its speed, so a busy machine only makes it slower.

@@ -30,6 +30,7 @@ import type { NewMessageNotification } from "@/lib/realtime/types";
 import { scheduleAgentWork } from "@/lib/agent/auto-read/schedule";
 import { applyScreener } from "@/lib/screener/inbound";
 import { screenerPendingRows } from "@/lib/screener/views";
+import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 
 export type InboundQueueMessage = {
 	from: string;
@@ -399,7 +400,7 @@ export async function getMessageWithBody(env: CloudflareEnv, userId: string, mes
 export async function getMessageWithBodyForUser(env: CloudflareEnv, user: SessionUser, messageId: string) {
 	const db = getDb(env);
 	const [row] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
-	if (!row?.mailboxId) return null;
+	if (!row?.mailboxId || isHiddenDraft(row, user.id)) return null;
 	const access = await getMailboxAccessLevel(db, user, row.mailboxId);
 	if (!access?.canRead) return null;
 	const message = await loadMessageBody(env, row);
@@ -412,11 +413,16 @@ export async function getMessageWithBodyForUser(env: CloudflareEnv, user: Sessio
 export async function getMessageMetadataForUser(env: CloudflareEnv, user: SessionUser, messageId: string) {
 	const db = getDb(env);
 	const [message] = await db
-		.select({ mailboxId: messages.mailboxId, rawR2Key: messages.rawR2Key })
+		.select({
+			mailboxId: messages.mailboxId,
+			rawR2Key: messages.rawR2Key,
+			status: messages.status,
+			userId: messages.userId,
+		})
 		.from(messages)
 		.where(eq(messages.id, messageId))
 		.limit(1);
-	if (!message?.mailboxId) return null;
+	if (!message?.mailboxId || isHiddenDraft(message, user.id)) return null;
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canRead) return null;
 	const [attachments, unsubscribeUrl] = await Promise.all([

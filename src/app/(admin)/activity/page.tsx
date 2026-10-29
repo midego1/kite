@@ -5,6 +5,7 @@ import { Blocks, LogIn, LogOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+	describeAgentProviderActivity,
 	describeModuleActivity,
 	fetchActivity,
 	formatActivityDate,
@@ -78,7 +79,7 @@ export default function ActivityPage() {
 						{(activity.data ?? []).map((log) => {
 							const metadata = getActivityMetadata(log);
 							const moduleChange = isModuleActivity(log.action);
-							const summary = describeModuleActivity(log, metadata);
+							const summary = describeModuleActivity(log, metadata) ?? describeAgentProviderActivity(log, metadata);
 							const Icon = moduleChange ? Blocks : log.action === "auth.logout" ? LogOut : LogIn;
 							return (
 								<tr key={log.id} className="align-top hover:bg-neutral-50/70">

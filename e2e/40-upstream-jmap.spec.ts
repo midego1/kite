@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 
 type Invocation = [string, Record<string, unknown>, string];
 
@@ -98,34 +98,18 @@ test("Email/set accepts RFC 6901-escaped patch keys for a move and a flag (upstr
 		id: string;
 		role: string | null;
 	}[];
-	const drafts = boxes.find((box) => box.role === "drafts")!.id;
-	const trash = boxes.find((box) => box.role === "trash")!.id;
-	expect(drafts).toContain("~");
-	expect(trash).toContain("~");
+	const inbox = boxes.find((box) => box.role === "inbox")!.id;
+	const archive = boxes.find((box) => box.role === "archive")!.id;
+	expect(inbox).toContain("~");
+	expect(archive).toContain("~");
 	const escape = (token: string) => token.replace(/~/g, "~0").replace(/\//g, "~1");
 
-	const created = await call(CORE, [
-		[
-			"Email/set",
-			{
-				accountId,
-				create: {
-					d: {
-						mailboxIds: { [drafts]: true },
-						from: [{ email: SUPPORT_ADDRESS }],
-						subject: uniqueToken("pointer"),
-						bodyValues: { t: { value: "Escaped patch keys" } },
-						textBody: [{ partId: "t", type: "text/plain" }],
-					},
-				},
-			},
-			"c",
-		],
-	]);
-	expect(created.status(), await created.text()).toBe(200);
-	const createResult = ((await created.json()) as { methodResponses: Invocation[] }).methodResponses[0][1];
-	const id = (createResult.created as Record<string, { id: string }> | undefined)?.d?.id;
-	expect(id, JSON.stringify(createResult)).toBeDefined();
+	// Received mail, since a draft never moves out of Drafts (it is sent or destroyed instead).
+	const { id } = await deliverInbound(admin, {
+		from: `"Pointer" <pointer@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: uniqueToken("pointer"),
+	});
 
 	try {
 		const moved = await call(CORE, [
@@ -134,9 +118,9 @@ test("Email/set accepts RFC 6901-escaped patch keys for a move and a flag (upstr
 				{
 					accountId,
 					update: {
-						[id!]: {
-							[`mailboxIds/${escape(drafts)}`]: null,
-							[`mailboxIds/${escape(trash)}`]: true,
+						[id]: {
+							[`mailboxIds/${escape(inbox)}`]: null,
+							[`mailboxIds/${escape(archive)}`]: true,
 							"keywords/$flagged": true,
 						},
 					},
@@ -150,7 +134,7 @@ test("Email/set accepts RFC 6901-escaped patch keys for a move and a flag (upstr
 		expect(update.notUpdated ?? {}, JSON.stringify(update)).toEqual({});
 		expect(Object.keys(update.updated as Record<string, unknown>)).toEqual([id]);
 		const [email] = got.list as { mailboxIds: Record<string, boolean>; keywords: Record<string, boolean> }[];
-		expect(email.mailboxIds).toEqual({ [trash]: true });
+		expect(email.mailboxIds).toEqual({ [archive]: true });
 		expect(email.keywords.$flagged).toBe(true);
 	} finally {
 		await call(CORE, [["Email/set", { accountId, destroy: [id] }, "x"]]);

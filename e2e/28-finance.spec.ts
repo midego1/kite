@@ -20,6 +20,7 @@ import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/
 import { openPalette } from "./support/module-flows";
 import { restoreModules, setModuleState } from "./support/modules";
 import { readSuggestions, waitForFinishedJob } from "./support/triage";
+import { readUsageRows } from "./support/ai-usage";
 import { chooseOption, expectSelectValue, readOptions } from "./support/select";
 
 let fake: FakeModel;
@@ -497,14 +498,17 @@ test.describe("Money Watch model extension", () => {
 				},
 			});
 
-			const { rows } = await okJson<{
-				rows: { source: string; mailboxId: string | null; jobId: string | null; reserved: unknown }[];
-			}>(await api.get("/api/admin/ai-usage"));
-			const usage = rows.filter((row) => row.jobId === job.id);
+			const usage = readUsageRows({ jobId: job.id });
 			expect(usage.map((row) => [row.source, row.mailboxId])).toEqual([["auto_triage", account.mailboxId]]);
 			expect(usage[0].reserved).toBeFalsy();
 			// Usage rows carry counts and costs only, never the prompt or the answer.
 			expect(JSON.stringify(usage)).not.toContain(vendor);
+			// Admin → AI usage lists the request but names neither the job nor the mailbox the admin cannot open.
+			const { rows } = await okJson<{ rows: { mailboxId: string | null; jobId: string | null }[] }>(
+				await api.get("/api/admin/ai-usage"),
+			);
+			expect(rows.some((row) => row.jobId === job.id || row.mailboxId === account.mailboxId)).toBe(false);
+			expect(JSON.stringify(rows)).not.toContain(vendor);
 
 			const page = await context.newPage();
 			await selectMailbox(page, account.mailboxId);

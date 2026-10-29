@@ -248,9 +248,9 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 				<div
 					data-placement={placement}
 					// In the sidebar the menu is fixed to the window, so the sidebar's overflow cannot clip it.
-					className={`absolute right-0 top-14 z-90 data-[placement=sidebar]:fixed data-[placement=sidebar]:left-3 data-[placement=sidebar]:right-auto data-[placement=sidebar]:z-[200] w-[360px] overflow-hidden rounded-[28px] border border-neutral-200 bg-[#eef3fb] p-3 shadow-2xl shadow-neutral-900/20 max-h-[82vh] overflow-y-auto`}
+					className={`absolute right-0 top-14 z-90 data-[placement=sidebar]:fixed data-[placement=sidebar]:left-3 data-[placement=sidebar]:right-auto data-[placement=sidebar]:z-[200] w-[360px] overflow-hidden rounded-xl border border-neutral-200 bg-[#eef3fb] p-2 shadow-lg shadow-neutral-900/20 max-h-[82vh] overflow-y-auto`}
 				>
-					<div className="rounded-[22px] bg-white px-5 py-5">
+					<div className="rounded-lg bg-white px-5 py-5">
 						<div className="flex items-center gap-4">
 							<AccountAvatar
 								name={selectedName}
@@ -330,7 +330,7 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 					</div>
 
 					{otherAccounts.length > 0 && (
-						<div className="mt-2 rounded-[22px] bg-white/55 p-1">
+						<div className="mt-2 rounded-lg bg-white/55 p-1">
 							<p className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-neutral-500">
 								Other accounts
 							</p>
@@ -356,7 +356,7 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 						</div>
 					)}
 
-					<div className="mt-2 overflow-hidden rounded-[22px] bg-white">
+					<div className="mt-2 overflow-hidden rounded-lg bg-white">
 						{user?.role === "admin" && (
 							<Link
 								href="/admin"

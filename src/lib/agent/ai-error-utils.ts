@@ -20,6 +20,7 @@ const AI_ERROR_CODES = [
 	"external_provider_not_allowed",
 	"assistant_off",
 	"no_provider",
+	"provider_key_unreadable",
 	"network",
 	"internal",
 ] as const;
@@ -88,6 +89,7 @@ const CONFIG = new Set<AiErrorCode>([
 	"external_provider_not_allowed",
 	"assistant_off",
 	"no_provider",
+	"provider_key_unreadable",
 ]);
 
 /** Refused by Kite before any provider call: a cap, a rate limit or a setting, not a provider or model failure. */
@@ -97,6 +99,7 @@ const REFUSALS_BEFORE_CALL = new Set<AiErrorCode>([
 	"external_provider_not_allowed",
 	"assistant_off",
 	"no_provider",
+	"provider_key_unreadable",
 ]);
 
 export function aiErrorIsRefusal(code: AiErrorCode): boolean {
@@ -146,6 +149,8 @@ const MESSAGES: Record<AiErrorCode, (input: MessageInput) => string> = {
 		"The primary admin has not allowed the external AI provider to read mail. They can allow it in Admin → Agent.",
 	assistant_off: () => "The assistant is turned off. An admin can turn it on in Admin → Agent.",
 	no_provider: () => "No AI provider is set up. An admin can set one up in Admin → Agent.",
+	provider_key_unreadable: () =>
+		"The AI provider's saved API key can't be read (APP_ENCRYPTION_KEY may have changed). The primary admin can enter it again in Admin → Agent.",
 	network: () => "Kite could not reach the AI provider. Try again in a moment.",
 	internal: () =>
 		"Something went wrong in Kite while asking the AI. Try again; if it keeps happening, the primary admin can see the error in Admin → Agent.",
@@ -210,6 +215,7 @@ function fromStatus(status: number, error: unknown): AiErrorClass {
 const REFUSALS: Record<string, AiErrorCode> = {
 	assistant_disabled: "assistant_off",
 	not_configured: "no_provider",
+	provider_key_unreadable: "provider_key_unreadable",
 	external_provider_not_allowed: "external_provider_not_allowed",
 };
 
@@ -229,6 +235,7 @@ const KITE_ERRORS: Record<string, (error: unknown) => AiErrorClass> = {
 	SpendCapReachedError: () => ({ code: "spend_cap", status: null }),
 	ChatSpendCapError: () => ({ code: "spend_cap", status: null }),
 	ExternalProviderNotAllowedError: () => ({ code: "external_provider_not_allowed", status: null }),
+	AgentProviderKeyUnreadableError: () => ({ code: "provider_key_unreadable", status: null }),
 	InteractiveModelRefusedError: (error) => {
 		const reason = record(error)?.reason;
 		return { code: (typeof reason === "string" && REFUSALS[reason]) || "no_provider", status: null };
@@ -276,6 +283,7 @@ export function aiErrorHttpStatus(code: AiErrorCode): number {
 		case "external_provider_not_allowed":
 			return 403;
 		case "no_provider":
+		case "provider_key_unreadable":
 		case "provider_rate_limited":
 			return 503;
 		case "internal":
@@ -326,6 +334,7 @@ const CAUSES: Record<AiErrorCode, string> = {
 	external_provider_not_allowed: "the external provider is not allowed to read mail",
 	assistant_off: "the assistant is turned off",
 	no_provider: "no AI provider is set up",
+	provider_key_unreadable: "the AI provider's saved API key can't be read",
 	network: "Kite could not reach the provider",
 	internal: "Kite hit an unexpected error",
 };

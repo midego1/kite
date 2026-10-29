@@ -214,6 +214,7 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 			receivedAt: new Date().toISOString(),
 			method: request.method ?? "GET",
 			path,
+			authorization: request.headers.authorization ?? null,
 			kind: null,
 			scenario: null,
 			emailId: null,

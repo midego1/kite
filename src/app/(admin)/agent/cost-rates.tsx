@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { routesVendorModelIds } from "@/lib/agent/model-prices-utils";
 import type { AgentModelOption } from "@/lib/agent/provider-types";
 import type { AgentAdminForm } from "./types";
 import { updateAgentModelRate } from "./utils";
@@ -64,7 +65,7 @@ export function CostRates({ form, models, selectedModelIds, setForm }: CostRates
 		});
 
 	return (
-		<div className="space-y-3">
+		<div id="cost-rates" className="scroll-mt-4 space-y-3">
 			<p className="text-sm font-medium">Estimated cost rates</p>
 			<p className="text-xs text-neutral-500">
 				USD per 1 million tokens. Rates published by the provider are used automatically, and for well-known models
@@ -73,7 +74,14 @@ export function CostRates({ form, models, selectedModelIds, setForm }: CostRates
 				counts against the token allowances instead.
 			</p>
 			{selectedModelIds.map((model) => {
-				const view = costRateView(model, form.rates, models, overriding.has(model));
+				const view = costRateView(
+					model,
+					form.rates,
+					models,
+					overriding.has(model),
+					undefined,
+					routesVendorModelIds(form.provider === "cloudflare" ? "cloudflare" : form.preset),
+				);
 				if (view.kind === "provider")
 					return (
 						<div

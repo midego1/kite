@@ -1,12 +1,13 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { appSettings } from "@/db/schema";
+import { readSavedAgentProvider, readStoredAgentProvider } from "./provider-connections";
+import type { StoredAgentProvider } from "./provider-connection-utils";
 import type { AgentProviderConfig, AgentProviderPreset, AgentProviderPublicConfig } from "./provider-types";
 import { AGENT_SETTINGS_ID, DEFAULT_CLOUDFLARE_MODEL, PROVIDER_BASE_URLS } from "./provider-constants";
 import { parseAgentModelIds } from "./model-ids";
 import { parseAgentModelRates } from "./pricing";
-import { resolveAgentModelRates } from "./model-prices-utils";
-import { openSetting } from "@/lib/security/secret-box";
+import { resolveAgentModelRates, routesVendorModelIds } from "./model-prices-utils";
 import { isAgentLoopbackAllowed, parseCustomAgentBaseUrl } from "./provider-url-utils";
 
 export function resolveAgentBaseUrl(
@@ -30,23 +31,44 @@ export async function getAgentEnabled(env: CloudflareEnv): Promise<boolean> {
 
 export async function getAgentProviderConfig(env: CloudflareEnv): Promise<AgentProviderConfig> {
 	const config = await readAgentProviderConfig(env);
-	return { ...config, effectiveRates: resolveAgentModelRates(config.rates, config.models) };
+	const vendorPrefixed = routesVendorModelIds(config.provider === "cloudflare" ? "cloudflare" : config.preset);
+	return {
+		...config,
+		effectiveRates: resolveAgentModelRates(config.rates, config.models, undefined, undefined, { vendorPrefixed }),
+	};
 }
 
 async function readAgentProviderConfig(env: CloudflareEnv): Promise<Omit<AgentProviderConfig, "effectiveRates">> {
-	const [saved] = await getDb(env)
-		.select({
-			provider: appSettings.agentProvider,
-			preset: appSettings.agentPreset,
-			baseUrl: appSettings.agentBaseUrl,
-			apiKey: appSettings.agentApiKey,
-			model: appSettings.agentModel,
-			rates: appSettings.agentModelRates,
-		})
-		.from(appSettings)
-		.where(eq(appSettings.id, AGENT_SETTINGS_ID))
-		.limit(1);
-	if (saved) saved.apiKey = await openSetting(env, saved.apiKey);
+	return resolveStoredAgentProvider(env, await readStoredAgentProvider(env));
+}
+
+/** Which provider a form edits: the one in use, a saved one, or a new one that has nothing stored yet. */
+export type AgentProviderTarget = "active" | "new" | { id: string };
+
+/**
+ * The provider a form edits as requests would use it (an env key included), so a blank key field can keep its
+ * stored key; null for a new provider, a missing one or one whose stored URL no longer resolves.
+ */
+export async function getTargetAgentProviderConfig(
+	env: CloudflareEnv,
+	target: AgentProviderTarget,
+): Promise<Omit<AgentProviderConfig, "effectiveRates"> | null> {
+	if (target === "new") return null;
+	if (target === "active") return readAgentProviderConfig(env);
+	const saved = await readSavedAgentProvider(env, target.id).catch(() => null);
+	if (!saved) return null;
+	try {
+		return resolveStoredAgentProvider(env, saved);
+	} catch {
+		return null;
+	}
+}
+
+/** The provider a stored row (saved, or the legacy columns) describes, with its key already opened. */
+function resolveStoredAgentProvider(
+	env: CloudflareEnv,
+	saved: StoredAgentProvider | null,
+): Omit<AgentProviderConfig, "effectiveRates"> {
 	const rates = parseAgentModelRates(saved?.rates ?? null);
 	if (saved?.provider === "cloudflare") {
 		const models = parseAgentModelIds(saved.model || env.AI_MODEL || DEFAULT_CLOUDFLARE_MODEL);
@@ -69,11 +91,13 @@ async function readAgentProviderConfig(env: CloudflareEnv): Promise<Omit<AgentPr
 			provider: "compatible",
 			preset,
 			baseUrl,
-			apiKey: saved.apiKey || (env.AI_BASE_URL === baseUrl ? env.AI_API_KEY : "") || "",
+			// An unreadable key never falls back to the environment's: requests fail and say why instead.
+			apiKey: saved.keyUnreadable ? "" : saved.apiKey || (env.AI_BASE_URL === baseUrl ? env.AI_API_KEY : "") || "",
 			model: models[0] || "",
 			models,
 			rates,
 			source: "saved",
+			...(saved.keyUnreadable ? { keyUnreadable: true } : {}),
 		};
 	}
 	return unsavedAgentProviderConfig(env, rates);

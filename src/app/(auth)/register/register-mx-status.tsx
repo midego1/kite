@@ -13,7 +13,7 @@ export function RegisterMxStatus({
 }: RegisterMxStatusProps) {
 	if (checking) {
 		return (
-			<div className="flex items-center gap-3 rounded-2xl bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+			<div className="flex items-center gap-3 rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
 				<LoaderCircle className="h-4 w-4 animate-spin" />
 				Checking existing MX records
 			</div>
@@ -21,7 +21,7 @@ export function RegisterMxStatus({
 	}
 	if (recordsExist === false) {
 		return (
-			<div className="flex items-center gap-3 rounded-2xl bg-green-50 px-4 py-3 text-sm text-green-700">
+			<div className="flex items-center gap-3 rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
 				<CheckCircle2 className="h-4 w-4" />
 				No existing MX records found
 			</div>
@@ -29,18 +29,13 @@ export function RegisterMxStatus({
 	}
 	if (recordsExist === null) {
 		return (
-			<Button
-				type="button"
-				variant="outline"
-				className="h-11 w-full rounded-full px-6 active:scale-[0.98]"
-				onClick={onRetry}
-			>
+			<Button type="button" variant="outline" className="h-10 w-full" onClick={onRetry}>
 				Check MX records again
 			</Button>
 		);
 	}
 	return (
-		<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-900">
+		<label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a] px-4 py-4">
 			<Checkbox
 				checked={replaceRecords}
 				onChange={(event) => onReplaceRecordsChange(event.target.checked)}

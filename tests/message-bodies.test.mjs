@@ -320,7 +320,7 @@ const READERS = [
 			return database.db.prepare("SELECT classification, training_tokens, reputation_keys FROM spam_feedback").all();
 		},
 	},
-	{ name: "mbox export", html: true, run: ({ env }) => m.exportMailboxToMbox(env, "mailbox-a") },
+	{ name: "mbox export", html: true, run: ({ env }) => m.exportMailboxToMbox(env, "mailbox-a", "owner") },
 	{
 		name: "summaries (the model's prompt)",
 		html: false,
@@ -638,7 +638,7 @@ test("the mbox export fails visibly when a body cannot be read, and reads many b
 		insert.run(id, `bodies/${id}.html`, 1_790_001_000 + index);
 		bucket.objects.set(`bodies/${id}.html`, `<p>Bulk body ${id}</p>`);
 	}
-	const mbox = await m.exportMailboxToMbox(env, "mailbox-a");
+	const mbox = await m.exportMailboxToMbox(env, "mailbox-a", "owner");
 	assert.equal(mbox.match(/^From MAILER-DAEMON/gm).length, 232);
 	assert.ok(mbox.includes("Revenue grew in every region"));
 	for (const id of ["bulk-000", "bulk-099", "bulk-100", "bulk-229"]) assert.ok(mbox.includes(`Bulk body ${id}`), id);
@@ -648,7 +648,7 @@ test("the mbox export fails visibly when a body cannot be read, and reads many b
 		if (key === "bodies/bulk-150.html") throw new Error("store unreachable");
 		return get(key);
 	};
-	await assert.rejects(m.exportMailboxToMbox(env, "mailbox-a"), (error) => {
+	await assert.rejects(m.exportMailboxToMbox(env, "mailbox-a", "owner"), (error) => {
 		assert.ok(error instanceof m.MessageBodyUnavailableError);
 		assert.equal(error.messageId, "bulk-150");
 		return true;

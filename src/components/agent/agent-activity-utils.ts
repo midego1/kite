@@ -40,6 +40,7 @@ const REASON_TEXT: Record<string, string> = {
 		"Paused: daily spend cap reached, or without model prices the automatic reading token allowance. It resets at 00:00 UTC; the primary admin can change both in Admin → Agent.",
 	kill_switch: "Skipped: automatic reading is turned off for this install",
 	external_provider_not_allowed: "Skipped: the external AI provider is not allowed to read mail automatically",
+	provider_key_unreadable: "Skipped: the AI provider's saved API key can't be read; enter it again in Admin → Agent",
 	paused: "Skipped: Kite is paused for this mailbox",
 	rate_limited: "Skipped: rate limited, too many messages at once",
 	model_failed: "The AI model did not answer; the message was checked without it",

@@ -1,6 +1,6 @@
 import type { LanguageModelUsage } from "ai";
 import type { AgentModelRates } from "@/lib/agent/provider-types";
-import type { AiUsageDetails } from "@/lib/ai/usage-types";
+import type { AiUsageDetails, AiUsageOutcome } from "@/lib/ai/usage-types";
 
 /**
  * Every source that reserves spend: automatic reading, chat steps, composer requests and the Summarize button and its
@@ -45,7 +45,12 @@ export type ReserveAiSpendInput = {
 /** Which daily cap refused a reservation. */
 export type SpendCapKind = "chat_tokens" | "auto_read_tokens" | "install_dollars" | "mailbox_dollars";
 
-export type SpendReservation = SpendEstimate & { id: string };
+/** `startedAt` is epoch milliseconds, for the request's duration; `rates` priced the estimate (cost mode only). */
+export type SpendReservation = SpendEstimate & {
+	id: string;
+	startedAt?: number;
+	rates?: { input: number; output: number } | null;
+};
 
 export type ReconcileAiSpendInput = {
 	env: CloudflareEnv;
@@ -53,6 +58,8 @@ export type ReconcileAiSpendInput = {
 	rates: AgentModelRates | undefined;
 	/** Usage reported for the call; omit when the call failed without reporting any. */
 	usage?: LanguageModelUsage;
+	/** How the call ended; by default answered when it reported usage and failed when not. */
+	outcome?: Pick<AiUsageOutcome, "status" | "errorCode" | "finishReason">;
 };
 
 export type ActualSpend = { inputTokens: number; outputTokens: number; costUsdMicros: number | null };

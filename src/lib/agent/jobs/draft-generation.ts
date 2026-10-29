@@ -38,7 +38,7 @@ type GenerateReplyDraftInput = {
 	providerOptions?: Record<string, Record<string, JSONValue>>;
 	maxRetries?: number;
 	abortSignal?: AbortSignal;
-	onUsage?: (usage: LanguageModelUsage) => Promise<void>;
+	onUsage?: (usage: LanguageModelUsage, finishReason: string) => Promise<void>;
 };
 
 export type GeneratedReplyDraft = { text: string; finishReason: string; usage: LanguageModelUsage | undefined };
@@ -58,7 +58,12 @@ export async function generateReplyDraft(input: GenerateReplyDraftInput): Promis
 		...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
 		...(input.maxRetries === undefined ? {} : { maxRetries: input.maxRetries }),
 		...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
-		...(onUsage ? { onStepFinish: async ({ usage }: { usage: LanguageModelUsage }) => onUsage(usage) } : {}),
+		...(onUsage
+			? {
+					onStepFinish: async ({ usage, finishReason }: { usage: LanguageModelUsage; finishReason: string }) =>
+						onUsage(usage, finishReason),
+				}
+			: {}),
 	});
 	return { text: generated.text.trim(), finishReason: generated.finishReason, usage: generated.usage };
 }

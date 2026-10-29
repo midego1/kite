@@ -58,7 +58,7 @@ function ShortcutsHelpDialogContent({ onClose, shortcuts }: Omit<ShortcutsHelpDi
 					event.stopPropagation();
 					onClose();
 				}}
-				className="relative w-full max-w-2xl bg-white border border-neutral-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col z-10 max-h-[85vh]"
+				className="relative w-full max-w-2xl bg-white border border-neutral-200 rounded-xl shadow-lg overflow-hidden flex flex-col z-10 max-h-[85vh]"
 			>
 				{/* Header */}
 				<div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">

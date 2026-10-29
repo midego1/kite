@@ -44,3 +44,11 @@ test("restore routes check the session mutation origin after authenticating", ()
 		assert.ok(origin < source.search(/\bstart\w+\(env/), `${file} checks the origin before starting the restore`);
 	}
 });
+
+test("the admin migration route refuses to apply anything while a restore runs", () => {
+	const source = readFileSync("src/app/api/admin/migrations/POST.ts", "utf8");
+	const guard = source.indexOf("if (await restoreBlocksMigrations(env.BUCKET))");
+	assert.ok(guard > source.indexOf("authorizeMigrationRequest(request)"), "after authorizing");
+	assert.ok(guard < source.indexOf("createSafetyBackup("), "before the backup and the migrations");
+	assert.match(source.slice(guard, guard + 300), /status: 409/);
+});

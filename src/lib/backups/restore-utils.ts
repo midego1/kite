@@ -1,5 +1,13 @@
 import type { DatabaseRecord } from "./types";
-import type { RestoreBatchLimits, RestorePlan, RestoreProbe, RestoreSegment, RestoreStatement } from "./restore-types";
+import type {
+	RestoreBatchLimits,
+	RestorePlan,
+	RestoreProbe,
+	RestoreProbeSource,
+	RestoreProbeValue,
+	RestoreSegment,
+	RestoreStatement,
+} from "./restore-types";
 
 /**
  * The storage configuration says where this install's objects live right now. A backup's copy may name

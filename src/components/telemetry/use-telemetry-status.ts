@@ -10,7 +10,7 @@ import type { TelemetrySaveResult, TelemetryStatus } from "@/lib/telemetry/types
 /** One cache for the Admin → General card and the notice, so a choice made in one shows in the other. */
 const TELEMETRY_STATUS_QUERY_KEY = ["admin", "telemetry"];
 
-/** The id of the Admin → General card: the sidebar notice's Details link is `/general#usage-statistics`. */
+/** The id of the Admin → General card, so `/general#usage-statistics` lands on it. */
 export const TELEMETRY_CARD_ID = "usage-statistics";
 
 export type TelemetryUpdate = { enabled: boolean } | { notice: "shown" | "dismissed" };
@@ -76,18 +76,7 @@ export function useTelemetryNotice() {
 	return { startDay, unseen, markShown, save, endpoint: status?.endpoint ?? null };
 }
 
-/**
- * Brings the card into view when the page was opened with its hash. The card is rendered only once the page's data is
- * there, after the browser already looked for the anchor, so it scrolls again when `ready`.
- */
-export function useScrollToTelemetryCard(ready: boolean) {
-	useEffect(() => {
-		if (!ready || window.location.hash !== `#${TELEMETRY_CARD_ID}`) return;
-		document.getElementById(TELEMETRY_CARD_ID)?.scrollIntoView({ block: "start" });
-	}, [ready]);
-}
-
-/** Calls `onVisible` once the element is at least half on screen (not scrolled out of the notices box). */
+/** Calls `onVisible` once the element is at least half on screen (not scrolled out of view). */
 export function useWhenVisible(ref: RefObject<HTMLElement | null>, active: boolean, onVisible: () => void) {
 	useEffect(() => {
 		const element = ref.current;

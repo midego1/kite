@@ -5,11 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import {
-	TELEMETRY_CARD_ID,
-	useScrollToTelemetryCard,
-	useTelemetryStatus,
-} from "@/components/telemetry/use-telemetry-status";
+import { TELEMETRY_CARD_ID, useTelemetryStatus } from "@/components/telemetry/use-telemetry-status";
 import {
 	TELEMETRY_DOCS_URL,
 	telemetryCollectorLogging,
@@ -51,7 +47,6 @@ function InstallId({ id }: { id: string }) {
 export function TelemetryCard() {
 	const { query, save } = useTelemetryStatus();
 	const status = query.data ?? null;
-	useScrollToTelemetryCard(Boolean(status));
 	const [erasure, setErasure] = useState<TelemetryErasure | null>(null);
 	const [saveError, setSaveError] = useState("");
 	const saving = save.isPending;

@@ -95,24 +95,25 @@ export async function readTelemetryState(env: Pick<CloudflareEnv, "DB">): Promis
 
 /**
  * An undecided install that was told a later date (the earlier 14-day rule) moves to the date the current rule gives
- * for `now`: the first 02:00 UTC run more than an hour away. Only ever earlier, only while undecided, and a no-op once
- * every date is in line, so it can run on every status read and heartbeat. Answers the new day, or null.
+ * for `now`: the first 02:00 UTC run more than an hour away. A notice the owner hid comes back in the same statement,
+ * naming the new date. Only ever earlier, only while undecided, and a no-op once every date is in line, so it can run
+ * on every status read and heartbeat. Answers the new choice, or null.
  */
 async function moveStartDayEarlier(
 	env: Pick<CloudflareEnv, "DB">,
 	state: StoredState,
 	now: Date,
-): Promise<string | null> {
-	const day = telemetryEarlierStartDay(state, now);
-	if (!day) return null;
+): Promise<TelemetryChoice | null> {
+	const moved = telemetryEarlierStartDay(state, now);
+	if (!moved?.startDay) return null;
 	const result = await env.DB.prepare(
-		"UPDATE telemetry_state SET start_day = ?, updated_at = ? WHERE id = ? AND decision IS NULL AND start_day IS NOT NULL AND start_day > ?",
+		"UPDATE telemetry_state SET start_day = ?, notice_dismissed = ?, updated_at = ? WHERE id = ? AND decision IS NULL AND start_day IS NOT NULL AND start_day > ?",
 	)
-		.bind(day, seconds(now), ROW_ID, day)
+		.bind(moved.startDay, moved.noticeDismissed ? 1 : 0, seconds(now), ROW_ID, moved.startDay)
 		.run();
 	if ((result.meta?.changes ?? 0) !== 1) return null;
 	logger.info("telemetry.start_day_moved_earlier", {});
-	return day;
+	return moved;
 }
 
 /**
@@ -129,11 +130,11 @@ export async function applyTelemetryStartDay(
 	const today = utcDay(now);
 	const stored = await readTelemetryState(env);
 	if (!stored.noticeAvailable) return null;
-	const state = { ...stored, startDay: (await moveStartDayEarlier(env, stored, now)) ?? stored.startDay };
-	const outcome = telemetryStartDayOutcome(state, now, {
-		forcedOff: telemetryForcedOff(env.KITE_TELEMETRY),
-		endpoint: telemetryUrl(env.KITE_TELEMETRY_URL),
-	});
+	const context = { forcedOff: telemetryForcedOff(env.KITE_TELEMETRY), endpoint: telemetryUrl(env.KITE_TELEMETRY_URL) };
+	// Where nothing can be sent no notice is due, so no date is moved or brought back.
+	const canSend = !context.forcedOff && context.endpoint !== null;
+	const state = (canSend && (await moveStartDayEarlier(env, stored, now))) || stored;
+	const outcome = telemetryStartDayOutcome(state, now, context);
 	if (outcome === "wait") return null;
 	const guard = "WHERE id = ? AND decision IS NULL AND start_day IS NOT NULL AND start_day <= ?";
 	const statement =

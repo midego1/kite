@@ -66,7 +66,8 @@ export type ExternalAccountInput = {
 };
 
 /** Why an account's address cannot be chosen as From right now (`sendBlock`), or null when it can. */
-export type SendBlock = "not_allowed" | "no_smtp" | "send_off" | "alias" | "reconnect" | "paused" | "not_verified";
+export type SendBlock =
+	"not_allowed" | "no_smtp" | "send_off" | "alias" | "unproven" | "reconnect" | "paused" | "not_verified";
 
 /** The send-as part of an account as the API returns it (spec §7). */
 export type ExternalAccountSending = {

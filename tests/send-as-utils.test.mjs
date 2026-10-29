@@ -57,6 +57,7 @@ const reply = (code, text) => buildReply([{ code, text }]);
 const account = (overrides = {}) => ({
 	address: "me@gmail.com",
 	username: "me@gmail.com",
+	preset: "gmail",
 	status: "active",
 	smtpHost: "smtp.gmail.com",
 	sendEnabled: true,
@@ -73,6 +74,12 @@ test("an address may be sent as only when it signs in, sending is on, it works a
 	assert.equal(sendBlock(account({ smtpHost: null }), null), "no_smtp");
 	assert.equal(sendBlock(account({ sendEnabled: false }), null), "send_off");
 	assert.equal(sendBlock(account({ username: "me" }), null), "alias");
+	// An "Other" provider's address is unproven even when it is the user name and its SMTP sign-in worked.
+	assert.equal(
+		sendBlock(account({ preset: "other", address: "me@own.example", username: "me@own.example" }), null),
+		"unproven",
+	);
+	assert.equal(sendBlock(account({ preset: "fastmail" }), null), null);
 	for (const status of ["auth_failed", "tls_failed", "disabled"])
 		assert.equal(sendBlock(account({ status }), null), "reconnect", status);
 	assert.equal(sendBlock(account({ hasPassword: false }), null), "reconnect");
@@ -81,7 +88,9 @@ test("an address may be sent as only when it signs in, sending is on, it works a
 	assert.equal(sendBlock(account({ status: "error" }), null), null);
 	assert.equal(sendBlock(account({ smtpVerifiedAt: null }), null), "not_verified");
 	assert.deepEqual(
-		["not_allowed", "no_smtp", "send_off", "alias", "reconnect", "paused", "not_verified", null].filter(listsIdentity),
+		["not_allowed", "no_smtp", "send_off", "alias", "unproven", "reconnect", "paused", "not_verified", null].filter(
+			listsIdentity,
+		),
 		["reconnect", "not_verified", null],
 	);
 	for (const text of Object.values(SEND_BLOCK_TEXT)) assert.ok(text.endsWith("."), text);

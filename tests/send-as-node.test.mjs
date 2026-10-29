@@ -52,7 +52,8 @@ const USER = "user@example.test";
 const PASSWORD = "app-password";
 const KITE_PASSWORD = "kite-password-1";
 const KEY = "test-only-invented-encryption-key-0123456789abcdef";
-const tls = createTestCertificate([HOST]);
+// Fastmail's own server names too: the stubbed resolver sends them to the fakes on loopback.
+const tls = createTestCertificate([HOST, "imap.fastmail.com", "smtp.fastmail.com"]);
 
 const previousEnv = globalThis.__kiteNodeEnv;
 after(() => {
@@ -145,6 +146,15 @@ const connectBody = (overrides = {}) => ({
 	...overrides,
 });
 
+/**
+ * Connects the fake account as a known provider's (Fastmail, whose server names the stubbed resolver sends to the
+ * fakes): an "Other" provider's address is never sent as, since the user chose the server and its sign-in proves
+ * nothing about the address.
+ */
+async function connectKnown(env, overrides = {}) {
+	return connectExternalAccount(env, owner, connectBody({ preset: "fastmail", ...overrides }));
+}
+
 const send = (env, overrides = {}) =>
 	sendEmail(env, {
 		userId: "owner",
@@ -176,7 +186,14 @@ const accountRow = (db) => db.db.prepare("SELECT * FROM external_accounts").get(
 test("connecting verifies the SMTP sign-in; the From menu offers the address to its owner only", async (t) => {
 	const fakes = await servers(t);
 	const { env, db } = await setup(t, fakes);
-	const account = await connectExternalAccount(env, owner, connectBody());
+	// An "Other" provider's address is not offered or sent as, however its sign-in went.
+	const connected = await connectExternalAccount(env, owner, connectBody());
+	assert.equal(connected.sending.block, "unproven");
+	assert.equal(connected.sending.verified, true);
+	assert.equal((await listSendIdentities(env, "owner")).size, 0);
+	assert.match(await rejection(send(env)), /Kite cannot prove an address at a server you entered yourself/);
+	await removeExternalAccount(env, owner, connected.id);
+	const account = await connectKnown(env);
 	assert.deepEqual(account.sending, {
 		enabled: true,
 		appendSent: true,
@@ -185,7 +202,8 @@ test("connecting verifies the SMTP sign-in; the From menu offers the address to 
 		block: null,
 	});
 	assert.ok(accountRow(db).smtp_verified_at > 0);
-	assert.equal(fakes.smtp.auths.length, 1);
+	// One SMTP sign-in per connect (the "Other" one above, then this one), and nothing sent.
+	assert.equal(fakes.smtp.auths.length, 2);
 	assert.equal(fakes.smtp.messages.length, 0, "the test sends nothing");
 
 	const identities = await listSendIdentities(env, "owner");
@@ -194,7 +212,7 @@ test("connecting verifies the SMTP sign-in; the From menu offers the address to 
 			accountId: account.id,
 			address: USER,
 			displayName: "Pat Example",
-			presetLabel: "Other IMAP provider",
+			presetLabel: "Fastmail",
 			available: true,
 			action: null,
 			hint: null,
@@ -218,7 +236,7 @@ test("a failed SMTP sign-in at connect keeps the account but not the address; Te
 	const fakes = await servers(t);
 	const { env } = await setup(t, fakes);
 	fakes.smtp.failNext("auth", 535, "5.7.8 Username and Password not accepted");
-	const account = await connectExternalAccount(env, owner, connectBody());
+	const account = await connectKnown(env);
 	assert.equal(account.status, "active");
 	assert.equal(account.sending.verified, false);
 	assert.equal(account.sending.block, "not_verified");
@@ -235,7 +253,7 @@ test("a failed SMTP sign-in at connect keeps the account but not the address; Te
 test("a send goes out through the account with Bcc in the envelope only, keeps its bytes and is saved in Sent", async (t) => {
 	const fakes = await servers(t);
 	const { env, db, queued, bucket } = await setup(t, fakes);
-	const account = await connectExternalAccount(env, owner, connectBody());
+	const account = await connectKnown(env);
 
 	const { messageId } = await send(env);
 	const [delivered] = fakes.smtp.messages;
@@ -280,7 +298,7 @@ test("a send goes out through the account with Bcc in the envelope only, keeps i
 test("a failed Sent copy is tried three times and then recorded, never failing the send", async (t) => {
 	const fakes = await servers(t, { imap: { appendRefusal: "NO [OVERQUOTA] Mailbox is full" } });
 	const { env, db, queued } = await setup(t, fakes);
-	await connectExternalAccount(env, owner, connectBody());
+	await connectKnown(env);
 	const { messageId } = await send(env);
 	let next = queued.find(({ message }) => message.kind === "accounts.append_sent").message;
 	for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -297,7 +315,7 @@ test("a failed Sent copy is tried three times and then recorded, never failing t
 test("nothing is sent as an account while connected accounts are off, revoked, sending is off or the account is gone", async (t) => {
 	const fakes = await servers(t);
 	const { env, db } = await setup(t, fakes);
-	const account = await connectExternalAccount(env, owner, connectBody());
+	const account = await connectKnown(env);
 
 	await setInstallEnabled(env, false);
 	assert.match(await rejection(send(env)), /You cannot send from this address right now/);
@@ -330,7 +348,7 @@ test("nothing is sent as an account while connected accounts are off, revoked, s
 test("a 4xx is tried again later with the same Message-ID; a 5xx fails with the server's reply", async (t) => {
 	const fakes = await servers(t);
 	const { env, db, queued } = await setup(t, fakes);
-	await connectExternalAccount(env, owner, connectBody());
+	await connectKnown(env);
 
 	fakes.smtp.failNext("data", 451, "4.3.0 Try again later");
 	const first = await send(env);
@@ -360,7 +378,7 @@ test("a 4xx is tried again later with the same Message-ID; a 5xx fails with the 
 test("535 at sign-in fails the send and sets the account to Reconnect", async (t) => {
 	const fakes = await servers(t);
 	const { env, db } = await setup(t, fakes);
-	await connectExternalAccount(env, owner, connectBody());
+	await connectKnown(env);
 	fakes.smtp.failNext("auth", 535, "5.7.8 Username and Password not accepted");
 	assert.match(await rejection(send(env)), /SMTP sign-in failed: 535 5\.7\.8.*Reconnect the account/);
 	const row = accountRow(db);
@@ -376,7 +394,7 @@ test("535 at sign-in fails the send and sets the account to Reconnect", async (t
 test("a connection lost after the message went out is 'delivery unknown' and never sent again", async (t) => {
 	const fakes = await servers(t, { smtp: { afterData: "drop" } });
 	const { env, db, queued } = await setup(t, fakes);
-	await connectExternalAccount(env, owner, connectBody());
+	await connectKnown(env);
 	const message = await rejection(send(env));
 	assert.equal(message, "Delivery unknown: check the recipient or the provider's Sent folder before sending again");
 	const [row] = db.db.prepare("SELECT * FROM messages WHERE status = 'failed'").all();
@@ -398,7 +416,7 @@ test("a connection lost after the message went out is 'delivery unknown' and nev
 test("a message over the provider's limit is refused before it is queued, naming the limit", async (t) => {
 	const fakes = await servers(t);
 	const { env, db } = await setup(t, fakes);
-	await connectExternalAccount(env, owner, connectBody());
+	await connectKnown(env);
 	// iCloud accepts 20 MB as sent; 16 MB of attachment is about 22 MB in base64 lines.
 	db.db.exec("UPDATE external_accounts SET preset = 'icloud'");
 	const big = new Uint8Array(16_000_000).buffer;
@@ -419,7 +437,7 @@ const scheduledJob = async (env, db, messageId) => ({
 test("a scheduled send stops when the account moved to another mailbox, access was lost or the owner is disabled", async (t) => {
 	const fakes = await servers(t);
 	const { env, db } = await setup(t, fakes);
-	await connectExternalAccount(env, owner, connectBody());
+	await connectKnown(env);
 	const cases = [
 		{
 			change: "UPDATE external_accounts SET mailbox_id = 'mailbox-b'",
@@ -431,6 +449,11 @@ test("a scheduled send stops when the account moved to another mailbox, access w
 			change: "UPDATE mailboxes SET user_id = 'other' WHERE id = 'mailbox-a'",
 			undo: "UPDATE mailboxes SET user_id = 'owner' WHERE id = 'mailbox-a'",
 			reason: "You can no longer send from this mailbox",
+		},
+		{
+			change: "UPDATE external_accounts SET preset = 'other'",
+			undo: "UPDATE external_accounts SET preset = 'fastmail'",
+			reason: "Kite cannot prove an address at a server you entered yourself",
 		},
 		{
 			change: "UPDATE users SET disabled = 1 WHERE id = 'owner'",
@@ -453,7 +476,7 @@ test("a send held up by a slow provider renews its claim, so it is never taken b
 	t.mock.timers.enable({ apis: ["setInterval"] });
 	const fakes = await servers(t, { smtp: { afterData: "hang" } });
 	const { env, db } = await setup(t, fakes);
-	await connectExternalAccount(env, owner, connectBody());
+	await connectKnown(env);
 	const sending = send(env).catch((error) => error);
 	// The provider has the message and keeps the final answer back (a tarpit).
 	const deadline = Date.now() + 10_000;
@@ -495,7 +518,7 @@ test("a send taken back before DATA stops there, and nothing reaches the provide
 		},
 	});
 	const { env, db, bucket } = await setup(t, fakes);
-	await connectExternalAccount(env, owner, connectBody());
+	await connectKnown(env);
 	const sending = send(env).catch((error) => error);
 	const deadline = Date.now() + 10_000;
 	while (!gated && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
@@ -515,7 +538,7 @@ test("a send taken back before DATA stops there, and nothing reaches the provide
 test("stored bytes: kept with a retry, deleted after a refusal, never left without a message", async (t) => {
 	const fakes = await servers(t);
 	const { env, db, bucket, queued } = await setup(t, fakes);
-	await connectExternalAccount(env, owner, connectBody());
+	await connectKnown(env);
 
 	fakes.smtp.failNext("data", 451, "4.3.0 Try again later");
 	const retried = await send(env);
@@ -538,7 +561,7 @@ test("stored bytes: kept with a retry, deleted after a refusal, never left witho
 test("a 4xx whose next try cannot be queued fails the send instead of leaving it queued forever", async (t) => {
 	const fakes = await servers(t);
 	const { env, db } = await setup(t, fakes);
-	await connectExternalAccount(env, owner, connectBody());
+	await connectKnown(env);
 	env.OUTBOUND_QUEUE.send = async () => {
 		throw new Error("queue unavailable");
 	};
@@ -553,7 +576,7 @@ test("a 4xx whose next try cannot be queued fails the send instead of leaving it
 test("a Sent copy tried again is not appended twice when the provider already has it", async (t) => {
 	const fakes = await servers(t);
 	const { env, queued } = await setup(t, fakes);
-	await connectExternalAccount(env, owner, connectBody());
+	await connectKnown(env);
 	const { messageId } = await send(env);
 	const first = queued.find(({ message }) => message.kind === "accounts.append_sent").message;
 	await processAppendSent(env, first);

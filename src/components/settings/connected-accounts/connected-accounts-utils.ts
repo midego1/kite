@@ -165,6 +165,8 @@ export function sendingText(account: Pick<ExternalAccountView, "address" | "send
 			return "Sending from this address is off.";
 		case "alias":
 			return "Kite sends only from the address the account signs in with.";
+		case "unproven":
+			return "Sending from an address at a server you entered yourself needs a verification code, which comes in a later version.";
 		case "not_verified":
 			return "Test the connection to send from this address.";
 		case "paused":

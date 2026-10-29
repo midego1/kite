@@ -4,6 +4,7 @@ import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/aut
 import { STORAGE_STATE } from "./support/constants";
 import { apiContext, openMessage, setSendingSettings, uniqueToken, waitForMessage } from "./support/helpers";
 import { chooseOption, readOptions } from "./support/select";
+import { markKnownProvider } from "./support/send-as";
 import { startFakeImap } from "../tests/support/fake-imap.mjs";
 import { startFakeSmtp } from "../tests/support/fake-smtp.mjs";
 
@@ -51,8 +52,12 @@ async function connectSendAs(
 		},
 	});
 	expect(response.status(), await response.text()).toBe(201);
-	return ((await response.json()) as { account: { id: string; sending: { verified: boolean; block: string | null } } })
-		.account;
+	const { account } = (await response.json()) as {
+		account: { id: string; sending: { verified: boolean; block: string | null } };
+	};
+	// Connected as "Other" (the only way to reach the fakes), the address is unproven until it is a known provider's.
+	if (!extra.username) markKnownProvider(address);
+	return account;
 }
 
 async function userPage(browser: Browser, api: APIRequestContext) {
@@ -73,7 +78,8 @@ test("the From menu offers the connected address; mail goes out through its SMTP
 	const { context, page } = await userPage(browser, user.api);
 	try {
 		const account = await connectSendAs(user.api, user.mailboxId, address, fakes);
-		expect(account.sending).toMatchObject({ verified: true, block: null });
+		// As "Other" the address was not offered: the server the user entered proves nothing about it.
+		expect(account.sending).toMatchObject({ verified: true, block: "unproven" });
 		expect(fakes.smtp.messages).toHaveLength(0);
 
 		await page.goto("/settings/connected-accounts");
@@ -86,8 +92,8 @@ test("the From menu offers the connected address; mail goes out through its SMTP
 		await page.getByRole("button", { name: "Compose" }).click();
 		const from = page.getByRole("combobox", { name: "From" });
 		const options = await readOptions(from);
-		expect(options.map((option) => option.label)).toContain(`${address} (via Other IMAP provider)`);
-		await chooseOption(from, { label: `${address} (via Other IMAP provider)` });
+		expect(options.map((option) => option.label)).toContain(`${address} (via Fastmail)`);
+		await chooseOption(from, { label: `${address} (via Fastmail)` });
 		const to = page.getByLabel("To", { exact: true });
 		await to.fill(RECIPIENT);
 		await to.press("Enter");
@@ -229,7 +235,7 @@ test("a refused SMTP sign-in fails the send and asks to reconnect the account", 
 		await page.goto("/inbox");
 		await page.getByRole("button", { name: "Compose" }).click();
 		await chooseOption(page.getByRole("combobox", { name: "From" }), {
-			label: `${address} (via Other IMAP provider)`,
+			label: `${address} (via Fastmail)`,
 		});
 		const to = page.getByLabel("To", { exact: true });
 		await to.fill(RECIPIENT);

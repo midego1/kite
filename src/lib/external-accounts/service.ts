@@ -321,6 +321,22 @@ export async function updateExternalAccount(
 ): Promise<ExternalAccountView> {
 	const current = await ownView(env, actor.id, id);
 	await assertAllowed(env, actor.id);
+	// Only the send-as switches: nothing about the sign-in or the servers is read or checked again.
+	const keys = Object.keys(body);
+	if (keys.length && keys.every((key) => key === "sendEnabled" || key === "appendSent")) {
+		const switches = sendingSwitches(body);
+		await getDb(env)
+			.update(externalAccounts)
+			.set({ ...switches, updatedAt: new Date() })
+			.where(and(eq(externalAccounts.id, id), eq(externalAccounts.userId, actor.id)));
+		await auditExternalAccount(env, {
+			actorUserId: actor.id,
+			action: "external_account.updated",
+			mailboxId: current.mailboxId,
+			metadata: { accountId: id, address: current.address, signInChanged: false, passwordChanged: false, ...switches },
+		});
+		return ownView(env, actor.id, id);
+	}
 	const input = parse(body, current);
 	const password = passwordFrom(body.password);
 	const signIn = password !== null || changesSignIn(current, input);

@@ -3,6 +3,7 @@ import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/aut
 import { STORAGE_STATE } from "./support/constants";
 import { apiContext, openMessage, setSendingSettings, uniqueToken, waitForMessage } from "./support/helpers";
 import { chooseOption, readOptions } from "./support/select";
+import { markKnownProvider } from "./support/send-as";
 import { startFakeImap } from "../tests/support/fake-imap.mjs";
 import { startFakeSmtp } from "../tests/support/fake-smtp.mjs";
 
@@ -38,6 +39,8 @@ async function setUp(prefix: string, smtpOptions: Record<string, unknown> = {}) 
 		},
 	});
 	expect(response.status(), await response.text()).toBe(201);
+	// An "Other" provider's address is never sent as; see `markKnownProvider`.
+	markKnownProvider(address);
 	const close = () => Promise.all([fakes.smtp.close(), fakes.imap.close()]);
 	return { token, address, fakes, admin, user, close };
 }
@@ -66,7 +69,7 @@ test("Undo send takes the message back before it reaches the provider", async ({
 		await page.goto("/inbox");
 		await page.getByRole("button", { name: "Compose" }).click();
 		await chooseOption(page.getByRole("combobox", { name: "From" }), {
-			label: `${address} (via Other IMAP provider)`,
+			label: `${address} (via Fastmail)`,
 		});
 		const to = page.getByLabel("To", { exact: true });
 		await to.fill(RECIPIENT);

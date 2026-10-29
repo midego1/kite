@@ -5,12 +5,20 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { useTelemetryStatus } from "@/components/telemetry/use-telemetry-status";
-import { TELEMETRY_DOCS_URL, telemetrySwitchOn } from "@/lib/telemetry/notice-utils";
+import {
+	TELEMETRY_CARD_ID,
+	useScrollToTelemetryCard,
+	useTelemetryStatus,
+} from "@/components/telemetry/use-telemetry-status";
+import {
+	TELEMETRY_DOCS_URL,
+	telemetryCollectorLogging,
+	telemetryPurposeClause,
+	telemetrySwitchOn,
+} from "@/lib/telemetry/notice-utils";
 import {
 	DEFAULT_TELEMETRY_URL,
 	TELEMETRY_FIELDS,
-	TELEMETRY_OPERATOR,
 	TELEMETRY_PRIVACY_CONTACT,
 	TELEMETRY_SUMMARY_URL,
 } from "@/lib/telemetry/telemetry-utils";
@@ -43,6 +51,7 @@ function InstallId({ id }: { id: string }) {
 export function TelemetryCard() {
 	const { query, save } = useTelemetryStatus();
 	const status = query.data ?? null;
+	useScrollToTelemetryCard(Boolean(status));
 	const [erasure, setErasure] = useState<TelemetryErasure | null>(null);
 	const [saveError, setSaveError] = useState("");
 	const saving = save.isPending;
@@ -62,8 +71,9 @@ export function TelemetryCard() {
 	// KITE_TELEMETRY=0 keeps statistics from being turned on, never from being turned off.
 	const locked = !status || !status.available || (status.forcedOff && !status.enabled);
 	const erasureText = telemetryErasureText(erasure);
+	const endpoint = status?.endpoint;
 	return (
-		<Card data-telemetry>
+		<Card id={TELEMETRY_CARD_ID} data-telemetry className="scroll-mt-6">
 			<CardHeader>
 				<CardTitle>Usage statistics</CardTitle>
 			</CardHeader>
@@ -93,8 +103,8 @@ export function TelemetryCard() {
 				)}
 				<p>
 					On by default, and never turned back on automatically once you turn it off: a new install asks at setup, and
-					an install that existed before starts only 14 days after a notice told its owner. Once a day, around 02:00
-					UTC, Kite sends one small report with the fields below, so the project can see how many installs are in use.
+					an install that existed before starts at the first 02:00 UTC run after its owner first saw a notice. Once a
+					day, around 02:00 UTC, Kite sends one small report with the fields below, {telemetryPurposeClause(endpoint)}.
 					Counts are sent as ranges, never exact numbers. The report is pseudonymous, not anonymous: a random install ID
 					links one install’s daily reports. It never contains names, email addresses, domains, message content or
 					anything else that identifies you or your users.
@@ -102,8 +112,8 @@ export function TelemetryCard() {
 				<p>
 					The request itself can say more than the report. On Cloudflare Workers, Cloudflare adds a{" "}
 					<code>CF-Worker</code> header naming this Worker’s zone (your domain or workers.dev subdomain), which Kite
-					cannot remove; on Node/Docker the collector sees your server’s IP address. The collector does not log or store
-					either, but Cloudflare’s own analytics for the collector’s zone may record a sample of IP addresses.
+					cannot remove; on Node/Docker the collector sees your server’s IP address.{" "}
+					{telemetryCollectorLogging(endpoint)}
 				</p>
 				<div className="space-y-2 rounded-lg bg-neutral-50 p-4">
 					<p className="font-medium text-neutral-900">Exactly what is sent</p>
@@ -114,14 +124,15 @@ export function TelemetryCard() {
 							</li>
 						))}
 					</ul>
-					{status?.endpoint && (
+					{endpoint && (
 						<p>
-							Sent to <code>{status.endpoint}</code>.{" "}
-							{status.endpoint === DEFAULT_TELEMETRY_URL ? (
+							Sent to <code>{endpoint}</code>.{" "}
+							{endpoint === DEFAULT_TELEMETRY_URL ? (
 								<>
-									Run by {TELEMETRY_OPERATOR} on Cloudflare (its processor), on the basis of the project’s legitimate
-									interest in knowing how Kite is used, with notice and an easy opt-out. Daily reports are kept for 90
-									days, then only totals without the install ID. Questions and data requests:{" "}
+									Run by the Kite project on Cloudflare (its processor), on the basis of the project’s legitimate
+									interest in knowing how many installs are active and what they run, with notice and an easy opt-out.
+									Daily reports are kept for 90 days, then only totals without the install ID. Questions and data
+									requests:{" "}
 									<a href={`mailto:${TELEMETRY_PRIVACY_CONTACT}`} className={LINK}>
 										{TELEMETRY_PRIVACY_CONTACT}
 									</a>

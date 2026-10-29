@@ -105,7 +105,7 @@ export async function applyTelemetryStartDay(
 	const today = utcDay(now);
 	const state = await readTelemetryState(env);
 	if (!state.noticeAvailable) return null;
-	const outcome = telemetryStartDayOutcome(state, today, {
+	const outcome = telemetryStartDayOutcome(state, now, {
 		forcedOff: telemetryForcedOff(env.KITE_TELEMETRY),
 		endpoint: telemetryUrl(env.KITE_TELEMETRY_URL),
 	});

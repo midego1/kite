@@ -18,15 +18,16 @@ const DAY_SECONDS = 86_400;
 
 /**
  * Counts only. Activity is a sign-in (a new session) or any audited action (reading, sending, deleting, settings) by
- * the account; `messages` is read through `messages_user_created_idx` (one range per account). Outbound rows count
- * only once delivered (`sent`): drafts, templates and queued or failed sends are not mail that moved.
+ * the account; `messages` is read through `messages_user_created_idx` (one range per account) only to find the mailboxes
+ * that moved mail in the last day, never to count it. Outbound rows count only once delivered (`sent`): drafts,
+ * templates and queued or failed sends are not mail that moved.
  */
 const COUNTS_SQL = `WITH activity(user_id, at) AS (
 	SELECT actor_user_id, created_at FROM audit_logs WHERE actor_user_id IS NOT NULL AND created_at >= ?
 	UNION ALL
 	SELECT user_id, created_at FROM sessions WHERE created_at >= ?
 ), recent AS (
-	SELECT mailbox_id, direction FROM messages
+	SELECT mailbox_id FROM messages
 	WHERE user_id IN (SELECT id FROM users) AND created_at >= ?
 		AND ((direction = 'inbound' AND status NOT IN ('draft', 'template')) OR (direction = 'outbound' AND status = 'sent'))
 )
@@ -36,9 +37,7 @@ SELECT
 	(SELECT COUNT(DISTINCT user_id) FROM activity WHERE at >= ?) AS users_active_7d,
 	(SELECT COUNT(DISTINCT user_id) FROM activity) AS users_active_30d,
 	(SELECT COUNT(*) FROM mailboxes) AS mailboxes_total,
-	(SELECT COUNT(DISTINCT mailbox_id) FROM recent WHERE mailbox_id IS NOT NULL) AS mailboxes_active_1d,
-	(SELECT COUNT(*) FROM recent WHERE direction = 'inbound') AS inbound_1d,
-	(SELECT COUNT(*) FROM recent WHERE direction = 'outbound') AS outbound_1d`;
+	(SELECT COUNT(DISTINCT mailbox_id) FROM recent WHERE mailbox_id IS NOT NULL) AS mailboxes_active_1d`;
 
 async function collectHeartbeatCounts(env: Pick<CloudflareEnv, "DB">, now: Date): Promise<HeartbeatCounts> {
 	const seconds = Math.floor(now.getTime() / 1000);

@@ -161,21 +161,21 @@ test("the Node scheduler's 02:00 run sends nothing for a default install", async
 	assert.deepEqual(requests, [HEARTBEAT], "the same run once opted in");
 });
 
-test("after the notice, neither cron path sends before the start day, and both do on it", async (t) => {
+test("after the notice, neither cron path sends before the next 02:00 UTC run, and both do at it", async (t) => {
 	for (const [name, run, extra] of [
 		["Worker", (env, time) => runWorkerCron(env, time), {}],
 		["Node", (env, time) => runNodeScheduler(env, time + 30_000), { KITE_RUNTIME: "node" }],
 	]) {
 		const env = await defaultInstall(t, extra);
 		requests.length = 0;
-		// Seen on 26 October at 15:00 UTC: sending may start on 10 November.
-		await markTelemetryNotice(env, "shown", new Date(AT_TWO - 11 * 3_600_000));
-		assert.equal((await readTelemetryState(env)).startDay, "2026-11-10", name);
-		for (let time = AT_TWO; time < Date.parse("2026-11-10T02:00:00Z"); time += DAY_MS) await run(env, time);
-		assert.deepEqual(requests, [], `${name}: nothing during the 14 days`);
-		assert.equal((await readTelemetryState(env)).installId, null, `${name}: no id during the 14 days`);
-		await run(env, Date.parse("2026-11-10T02:00:00Z"));
-		assert.deepEqual(requests, [HEARTBEAT], `${name}: the start day's run reports`);
+		// The run of 27 October 02:00 UTC happens before the notice is seen (15:00 UTC that day).
+		await run(env, AT_TWO);
+		assert.deepEqual(requests, [], `${name}: never told, nothing sent`);
+		await markTelemetryNotice(env, "shown", new Date(AT_TWO + 13 * 3_600_000));
+		assert.equal((await readTelemetryState(env)).startDay, "2026-10-28", name);
+		assert.equal((await readTelemetryState(env)).installId, null, `${name}: no id before the run`);
+		await run(env, NEXT_DAY);
+		assert.deepEqual(requests, [HEARTBEAT], `${name}: the next 02:00 UTC run reports`);
 	}
 });
 

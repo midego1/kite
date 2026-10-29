@@ -8,6 +8,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 const SWITCH = "Share pseudonymous usage statistics with the Kite project";
 const NOTICE = "Usage statistics notice";
 const DAY_MS = 86_400_000;
+const PURPOSE =
+	"how many active installs there are, which versions, runtimes and modules they run, and roughly how many accounts and mailboxes they have and use";
+const DEFAULT_COLLECTOR = "https://kite-telemetry.midego.net/v1/heartbeat";
 
 let api: APIRequestContext;
 
@@ -17,9 +20,12 @@ async function telemetryStatus() {
 	return response.json();
 }
 
-/** The day a notice first seen now names: the UTC day after 14 full days. */
+/** The day a notice first seen now names: the UTC day of the first 02:00 UTC run more than an hour from now. */
 function expectedStartDay(): string {
-	return new Date(Date.now() + 15 * DAY_MS).toISOString().slice(0, 10);
+	const now = Date.now() + 3_600_000;
+	const today = new Date(now).toISOString().slice(0, 10);
+	const run = Date.parse(`${today}T02:00:00Z`);
+	return new Date(now < run ? run : run + DAY_MS).toISOString().slice(0, 10);
 }
 
 function dayLabel(day: string): string {
@@ -115,22 +121,24 @@ test("the first-run setup explains usage statistics and its switch is on until t
 		const section = page.locator("[data-setup-telemetry]");
 		await expect(section.getByRole("heading", { name: "Usage statistics" })).toBeVisible();
 		for (const text of [
-			"one small report a day, around 02:00 UTC",
+			"one small pseudonymous report a day, around 02:00 UTC",
 			"Nothing is sent before you finish setup.",
 			"pseudonymous, not anonymous",
 			"CF-Worker",
 			"kite-telemetry.midego.net",
-			"Michiel de Gooijer (midego)",
+			"run by the Kite project",
+			`so the Kite project can see ${PURPOSE}`,
 			"kept for 90 days, then only totals without the install ID",
 			"privacy@midego.net",
 		])
 			await expect(section).toContainText(text);
+		await expect(section).not.toContainText(/Michiel|Gooijer|\(midego\)/);
 		await expect(section.getByRole("link", { name: "Read the privacy page" })).toHaveAttribute(
 			"href",
 			/docs\/privacy\.md#usage-statistics$/,
 		);
 		await section.getByText("Exactly what is sent").click();
-		for (const field of ["install_id", "users_active_30d", "inbound_1d", "modules_enabled"])
+		for (const field of ["install_id", "users_active_30d", "mailboxes_active_1d", "modules_enabled"])
 			await expect(section.getByText(field, { exact: true })).toBeVisible();
 
 		const toggle = section.getByRole("switch", { name: "Send usage statistics" });
@@ -166,6 +174,13 @@ test("the first-run setup explains usage statistics and its switch is on until t
 		await page.getByRole("button", { name: "Create account" }).click();
 		await expect.poll(() => registrations.length).toBe(2);
 		expect(registrations[1]).not.toHaveProperty("usageStatistics");
+		// A collector set by KITE_TELEMETRY_URL: no claim about who runs it.
+		telemetry = { forcedOff: false, endpoint: "https://collector.example.test/v1/heartbeat" };
+		await withoutAdmins(() => page.goto("/setup"));
+		await page.getByRole("button", { name: "Continue" }).click();
+		const custom = page.locator("[data-setup-telemetry]");
+		await expect(custom).toContainText("to the collector this deployment is set up to use");
+		await expect(custom).not.toContainText("Kite project");
 		// Nothing above reached the server's choice.
 		expect(await telemetryStatus()).toMatchObject({ decision: "off", enabled: false, installId: null });
 	} finally {
@@ -185,11 +200,26 @@ test("an install whose owner never chose is told first in Admin, and Turn off is
 	const startDay = expectedStartDay();
 	await expect(notice).toContainText(noticeText(startDay));
 	await expect(notice).toContainText("Nothing has been sent yet.");
+	await expect(notice).toContainText("to the collector this deployment is set up to use");
 	// One notice: the full one above the Admin page, not also the short one in the sidebar.
 	await expect(notice).toHaveCount(1);
 	await expect(page.getByTestId("kite-page-panel").getByRole("region", { name: NOTICE })).toHaveCount(1);
 	await expect(page.getByTestId("kite-sidebar-panel").getByRole("region", { name: NOTICE })).toHaveCount(0);
-	await expect(notice.getByRole("link", { name: "Exactly what is sent" })).toHaveAttribute("href", "/general");
+	// "Exactly what is sent" opens the list in place; it is not a link to the page the notice may be on.
+	await expect(notice.getByRole("link", { name: "Exactly what is sent" })).toHaveCount(0);
+	const fieldsButton = notice.getByRole("button", { name: "Exactly what is sent" });
+	await expect(fieldsButton).toHaveAttribute("aria-expanded", "false");
+	await expect(notice.getByText("install_id", { exact: true })).toBeHidden();
+	await fieldsButton.click();
+	await expect(fieldsButton).toHaveAttribute("aria-expanded", "true");
+	for (const field of ["install_id", "users_active_30d", "mailboxes_active_1d", "modules_enabled"])
+		await expect(notice.getByText(field, { exact: true })).toBeVisible();
+	await expect(notice.getByRole("link", { name: "Read the privacy page" })).toHaveAttribute(
+		"href",
+		/docs\/privacy\.md#usage-statistics$/,
+	);
+	await fieldsButton.click();
+	await expect(notice.getByText("install_id", { exact: true })).toBeHidden();
 	// Turn off and Keep on look the same.
 	const buttonClass = (name: string) => notice.getByRole("button", { name }).getAttribute("class");
 	expect(await buttonClass("Turn off")).toBe(await buttonClass("Keep on"));
@@ -241,6 +271,61 @@ test("Settings shows the short notice once, in the sidebar", async ({ page }) =>
 	forgetChoice();
 });
 
+/** Shows the status as if reports went to the Kite project's own collector (the e2e server uses another address). */
+async function withDefaultCollector(page: Page) {
+	await page.route("**/api/admin/telemetry", async (route) => {
+		// Every answer, not only GET: saving the notice as shown answers with the status too.
+		const response = await route.fetch();
+		await route.fulfill({ response, json: { ...(await response.json()), endpoint: DEFAULT_COLLECTOR } });
+	});
+}
+
+test("with the Kite project's own collector the notices and the card say what the report is for", async ({ page }) => {
+	await withDefaultCollector(page);
+	forgetChoice();
+	await page.goto("/inbox");
+	const sidebar = page.getByRole("region", { name: NOTICE });
+	await expect(sidebar).toContainText(
+		"So the Kite project can see how many active installs there are, which versions and modules they run, and roughly how many accounts and mailboxes they have. One pseudonymous daily report, rough counts only.",
+	);
+	await page.goto("/admin");
+	const full = page.getByRole("region", { name: NOTICE });
+	await expect(full).toContainText(`so it can see ${PURPOSE}`);
+	await expect(full).toContainText("The collector does not store IP addresses.");
+	expect((await full.innerText()).match(/the Kite project/gi)).toHaveLength(1);
+	await page.goto("/general");
+	const card = page.locator("[data-telemetry]");
+	await expect(card).toContainText(`so the Kite project can see ${PURPOSE}`);
+	forgetChoice();
+});
+
+test("Exactly what is sent works on Admin → General itself, and the sidebar's Details lands on the card", async ({
+	page,
+}) => {
+	forgetChoice();
+	// On /general the notice sits above the very card a link would lead to: the list opens in the notice.
+	await page.goto("/general");
+	const notice = page.getByRole("region", { name: NOTICE });
+	await expect(notice).toBeVisible();
+	const fields = notice.getByText("modules_enabled", { exact: true });
+	await expect(fields).toBeHidden();
+	await notice.getByRole("button", { name: "Exactly what is sent" }).click();
+	await expect(fields).toBeVisible();
+	await expect(page).toHaveURL(/\/general$/);
+
+	// From a mail page the short notice links to the card, which is scrolled into view.
+	await page.goto("/inbox");
+	const sidebar = page.getByRole("region", { name: NOTICE });
+	await expect(sidebar).toBeVisible();
+	await sidebar.getByRole("link", { name: "Details" }).click();
+	await expect(page).toHaveURL(/\/general#usage-statistics$/);
+	const card = page.locator("#usage-statistics");
+	await expect(card).toHaveAttribute("data-telemetry", "true");
+	await expect(card.getByRole("heading", { name: "Usage statistics" })).toBeInViewport();
+	await expect(card.getByText("users_active_30d", { exact: true })).toBeVisible();
+	forgetChoice();
+});
+
 test("the sidebar notice: Hide keeps the start day, Keep on starts at once, the start day turns it on", async ({
 	page,
 }) => {
@@ -250,8 +335,10 @@ test("the sidebar notice: Hide keeps the start day, Keep on starts at once, the 
 	const startDay = expectedStartDay();
 	await expect(notice).toContainText(noticeText(startDay));
 	await expect(notice).toContainText(
-		"One pseudonymous daily report, ranges only, to the Kite project run by Michiel de Gooijer (midego).",
+		"One pseudonymous daily report, rough counts only, to the collector this deployment is set up to use.",
 	);
+	await expect(notice).not.toContainText("Kite project");
+	await expect(notice).not.toContainText(/Michiel|Gooijer|\(midego\)/);
 	await expect.poll(async () => (await telemetryStatus()).startDay).toBe(startDay);
 	await notice.getByRole("button", { name: `Hide (statistics still start on ${dayLabel(startDay)} UTC)` }).click();
 	await expect(notice).toHaveCount(0);
@@ -291,11 +378,14 @@ test("the owner turns usage statistics on and off in Admin General; nobody else 
 	const card = page.locator("[data-telemetry]");
 	await expect(card.getByRole("heading", { name: "Usage statistics" })).toBeVisible();
 	await expect(card.locator("[data-telemetry-status]")).toHaveText("Off");
-	for (const field of ["install_id", "users_active_30d", "inbound_1d", "modules_enabled"])
+	for (const field of ["install_id", "users_active_30d", "mailboxes_active_1d", "modules_enabled"])
 		await expect(card.getByText(field, { exact: true })).toBeVisible();
 	await expect(card).toContainText("KITE_TELEMETRY=0");
 	await expect(card).toContainText("CF-Worker");
 	await expect(card).toContainText("pseudonymous");
+	await expect(card).toContainText("to the collector this deployment is set up to use");
+	await expect(card).not.toContainText("so the Kite project can see");
+	await expect(card).not.toContainText(/Michiel|Gooijer|\(midego\)/);
 	const toggle = card.getByRole("switch", { name: SWITCH });
 	await expect(toggle).toHaveAttribute("aria-checked", "false");
 	const before = await auditCounts();

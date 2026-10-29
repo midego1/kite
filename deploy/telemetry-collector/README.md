@@ -6,9 +6,9 @@ What Kite sends, when, and how operators turn it off is documented in [Privacy â
 
 ## Operator and data protection
 
-- **Operator (controller):** Michiel de Gooijer (midego).
+- **Operator (controller):** the Kite project.
 - **Contact for questions and data requests:** privacy@midego.net. An install id from Admin â†’ General is enough to find and erase an install's reports. `midego.net` receives mail through Cloudflare Email Routing: confirm this address has a routing rule to a mailbox you read (step 0 below) before going live.
-- **Legal basis:** legitimate interest (Art. 6(1)(f) GDPR), with notice and the right to object (Art. 21), as [the privacy page](../../docs/privacy.md#usage-statistics) describes. Statistics are on by default, but an install sends nothing before its owner was told: at setup, or by a notice at least 14 days before the first report. The owner objects by turning them off at any time, which asks this collector to erase the install's reports (best effort, below).
+- **Legal basis:** legitimate interest (Art. 6(1)(f) GDPR), with notice and the right to object (Art. 21), as [the privacy page](../../docs/privacy.md#usage-statistics) describes. Statistics are on by default, but an install sends nothing before its owner was told: at setup, or by a notice the owner saw first (reports start at the first 02:00 UTC run at least an hour after that). The owner objects by turning them off at any time, which asks this collector to erase the install's reports (best effort, below).
 - **Maintainer check:** `midego.net` receives mail through Cloudflare Email Routing. Before the privacy page is relied on, and again whenever the routing changes, confirm that `privacy@midego.net` has a routing rule and that a test message arrives.
 - **Processor:** Cloudflare (Workers, D1 and the `midego.net` zone).
 - **Retention:** daily reports, the only rows with an install id, are kept for 90 days. The daily cron then counts them into per-day totals without ids (`aggregates`) and deletes them.
@@ -34,14 +34,13 @@ Do not add code that logs or stores `CF-Worker`, `CF-Connecting-IP` or similar h
 	"users_active_30d": "2-5",
 	"mailboxes_total": "2-5",
 	"mailboxes_active_1d": "2-5",
-	"inbound_1d": "1-10",
-	"outbound_1d": "1-10",
 	"modules_enabled": ["calendar", "drive"]
 }
 ```
 
 - `install_id` is a lowercase UUID v4, `version` a calendar version or `unknown`, `runtime` `workers` or `node`, and `modules_enabled` at most 32 distinct slugs.
-- Counts are ranges, never numbers: the `users_*` and `mailboxes_*` fields are one of `0`, `1`, `2-5`, `6-20`, `21-100`, `100+`; `inbound_1d` and `outbound_1d` one of `0`, `1-10`, `11-100`, `101-1000`, `1000+`.
+- Counts are ranges, never numbers: the `users_*` and `mailboxes_*` fields are one of `0`, `1`, `2-5`, `6-20`, `21-100`, `100+`.
+- Older installs also send `inbound_1d` and `outbound_1d` (message volume, dropped from the report in the release that added migration `0003`). They are accepted with any value and ignored: never validated, stored or counted. Any other unknown key is still refused.
 - Version 1 (exact counts) is refused with `unsupported_schema_version`.
 - Answers `204` when stored, `400 { "error": "<code>" }` for a body that does not match (an unknown or missing key, a wrong type or value; the code names the field, never a value), `413` over the size limit or without `Content-Length`, `415` for another content type and `405` for another method.
 - Stores the fields under the collector's own UTC date. A second heartbeat from the same install on the same day replaces the first.
@@ -64,12 +63,12 @@ Public, cached for an hour, `Access-Control-Allow-Origin: *`. Totals only, never
 	"versions": [{ "version": "2026.10.26.0", "installs": 50 }, { "version": "2026.10.20.0", "installs": "<5" }],
 	"runtimes": [{ "runtime": "workers", "installs": 70 }, { "runtime": "node", "installs": 10 }],
 	"modules": [{ "module": "calendar", "installs": 65 }],
-	"ranges": { "users_total": { "1": 40, "2-5": 30, "6-20": 10 }, "inbound_1d": { "11-100": 50 } },
+	"ranges": { "users_total": { "1": 40, "2-5": 30, "6-20": 10 }, "mailboxes_total": { "1": 60, "2-5": 20 } },
 	"installs_by_day": [{ "day": "2026-10-25", "installs": 41 }]
 }
 ```
 
-- `installs_30d`, `versions`, `runtimes`, `modules` and `ranges` describe the installs that reported in the last 30 days, by their latest report. `ranges` has all eight range fields.
+- `installs_30d`, `versions`, `runtimes`, `modules` and `ranges` describe the installs that reported in the last 30 days, by their latest report. `ranges` has all six range fields.
 - `installs_by_day` counts the installs that reported on each UTC day of the last 365, from the daily rows and, past 90 days, from the totals.
 
 ### `GET /v1/stats`
@@ -99,7 +98,7 @@ Anyone can post a heartbeat, so the figures are indicative: a bogus install infl
 
 ## Deploy
 
-**Status:** deployed at `https://kite-telemetry.midego.net` (October 2026), with the D1 database `kite-telemetry` (`database_id` in `wrangler.jsonc`), both migrations applied, `STATS_TOKEN` set and the custom domain live. To ship a change, redeploy with step 4 (and step 2 when there is a new migration); steps 1 and 3 are done.
+**Status:** deployed at `https://kite-telemetry.midego.net` with the D1 database `kite-telemetry` (`database_id` in `wrangler.jsonc`), `STATS_TOKEN` set and the custom domain live. Steps 1 and 3 are done; to ship a change, redeploy with step 4, and run step 2 first when there is a new migration. `npx wrangler d1 migrations list DB --remote --config wrangler.jsonc` shows which migrations are applied.
 
 `src/index.ts` is the Worker entrypoint and must export only `default`: workerd treats every named export of the main module as an entrypoint and refuses the Worker (error 1101) when one is not a handler. Everything else lives in `src/collector.ts`. Keep every statement to at most five compound `SELECT` terms (`UNION ALL`), D1's limit; local SQLite allows far more. `tests/telemetry-collector.test.mjs` checks both.
 
@@ -140,6 +139,8 @@ curl -i https://kite-telemetry.midego.net/v1/summary   # HTTP/2 200, {"generated
 If `curl` reports a certificate problem or the old server answers, the certificate or DNS is still being issued; wait a few minutes and try again (`dig +short kite-telemetry.midego.net` should show Cloudflare addresses, not `159.195.70.154`).
 
 The `database_id` is not a secret and is committed. The `STATS_TOKEN` must never be committed. Read the statistics with `curl -H "Authorization: Bearer $STATS_TOKEN" https://kite-telemetry.midego.net/v1/stats`, and never paste the token into issues, pull requests or chat.
+
+**Migration `0003`** drops the `inbound_1d` and `outbound_1d` columns of `daily`, deletes their rows from `aggregates` and clears `summary_cache` (the next cron, or the first public request, recomputes it without them). It erases data already stored: message volume is no longer collected. Deploy the Worker code first (`wrangler deploy`), then apply the migration (`wrangler d1 migrations apply DB --remote`), outside the 02:00 and 04:30 UTC windows when installs report and the cron runs. In between, the new code cannot insert while the old columns are still NOT NULL, so a heartbeat that lands in that gap is refused and its install tries again the next day; the old code cannot insert once they are dropped, which is why the code goes first. The collector must be deployed before the Kite release that stops sending the two fields merges and ships: the old collector refuses a heartbeat that lacks them (`missing_inbound_1d`).
 
 Installs that opted in start reporting at their next 02:00 UTC run once this is live; until then their heartbeats fail and are not retried that day.
 

@@ -2,13 +2,13 @@
 
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { TELEMETRY_DOCS_URL, usageStatisticsSetupHint } from "@/lib/telemetry/notice-utils";
 import {
-	DEFAULT_TELEMETRY_URL,
-	TELEMETRY_FIELDS,
-	TELEMETRY_OPERATOR,
-	TELEMETRY_PRIVACY_CONTACT,
-} from "@/lib/telemetry/telemetry-utils";
+	isDefaultCollector,
+	TELEMETRY_DOCS_URL,
+	telemetryPurposeClause,
+	usageStatisticsSetupHint,
+} from "@/lib/telemetry/notice-utils";
+import { DEFAULT_TELEMETRY_URL, TELEMETRY_FIELDS, TELEMETRY_PRIVACY_CONTACT } from "@/lib/telemetry/telemetry-utils";
 import type { SetupTelemetryStatus } from "@/lib/telemetry/types";
 
 const LINK = "text-blue-600 underline underline-offset-2";
@@ -30,6 +30,7 @@ export function UsageStatisticsSetup({
 }) {
 	const forcedOff = Boolean(status?.forcedOff);
 	const endpoint = status?.endpoint ?? null;
+	const projectCollector = isDefaultCollector(endpoint);
 	return (
 		<section
 			aria-labelledby="setup-usage-statistics-title"
@@ -40,15 +41,15 @@ export function UsageStatisticsSetup({
 				Usage statistics
 			</h2>
 			<p>
-				Kite sends the Kite project one small report a day, around 02:00 UTC, so it can see how many installs are in
-				use. It is on unless you turn it off here, and you can change it later under Admin → General. Nothing is sent
-				before you finish setup.
+				Kite sends one small pseudonymous report a day, around 02:00 UTC, {telemetryPurposeClause(endpoint)}. It is on
+				unless you turn it off here, and you can change it later under Admin → General. Nothing is sent before you
+				finish setup.
 			</p>
 			<p>
-				The report holds ranges, never exact numbers, and no names, email addresses, domains or message content. It is
-				pseudonymous, not anonymous: a random install ID links one install’s daily reports. On Cloudflare Workers,
-				Cloudflare adds a <code>CF-Worker</code> header naming this Worker’s domain; on Node/Docker the collector sees
-				your server’s IP address.
+				The report holds rough counts only (ranges, never exact numbers) and no names, email addresses, domains or
+				message content. It is pseudonymous, not anonymous: a random install ID links one install’s daily reports. On
+				Cloudflare Workers, Cloudflare adds a <code>CF-Worker</code> header naming this Worker’s domain; on Node/Docker
+				the collector sees your server’s IP address.{projectCollector && " The collector does not store IP addresses."}
 			</p>
 			<details>
 				<summary className="cursor-pointer font-medium text-neutral-800">Exactly what is sent</summary>
@@ -63,8 +64,8 @@ export function UsageStatisticsSetup({
 			<p>
 				{endpoint === null || endpoint === DEFAULT_TELEMETRY_URL ? (
 					<>
-						Reports go to <code>kite-telemetry.midego.net</code>, run by {TELEMETRY_OPERATOR}. Daily reports are kept
-						for 90 days, then only totals without the install ID. Questions and data requests:{" "}
+						Reports go to <code>kite-telemetry.midego.net</code>, run by the Kite project. Daily reports are kept for 90
+						days, then only totals without the install ID. Questions and data requests:{" "}
 						<a href={`mailto:${TELEMETRY_PRIVACY_CONTACT}`} className={LINK}>
 							{TELEMETRY_PRIVACY_CONTACT}
 						</a>

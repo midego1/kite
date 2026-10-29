@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { ChartNoAxesColumn, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ROW_BUTTON_CLASS } from "@/components/ui/page-utils";
 import { NOTICE_LINK_CLASS, WARNING_NOTICE_CLASS } from "@/components/notice-styles";
-import { TELEMETRY_NOTICE_DETAIL, TELEMETRY_NOTICE_SHORT, telemetryHideLabel } from "@/lib/telemetry/notice-utils";
-import { telemetryNoticeText } from "@/lib/telemetry/telemetry-utils";
-import { useTelemetryNotice, useWhenVisible, type TelemetryUpdate } from "./use-telemetry-status";
+import { TELEMETRY_DOCS_URL, telemetryHideLabel, telemetryNoticeCopy } from "@/lib/telemetry/notice-utils";
+import { TELEMETRY_FIELDS, telemetryLocalStart, telemetryNoticeText } from "@/lib/telemetry/telemetry-utils";
+import { TELEMETRY_CARD_ID, useTelemetryNotice, useWhenVisible, type TelemetryUpdate } from "./use-telemetry-status";
 
 function HideButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled: boolean }) {
 	return (
@@ -25,6 +25,52 @@ function HideButton({ label, onClick, disabled }: { label: string; onClick: () =
 	);
 }
 
+/** The start moment in the browser's time zone, when that reads differently from UTC. */
+function localStartText(startDay: string): string | null {
+	const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+	const local = zone ? telemetryLocalStart(startDay, zone) : null;
+	return local && `That is ${local} in your time zone (${zone}).`;
+}
+
+/**
+ * "Exactly what is sent", opened in place: the Admin page notice can sit on the very page a link would lead to, so
+ * a link there would do nothing.
+ */
+function FieldsDisclosure() {
+	const [open, setOpen] = useState(false);
+	const listId = useId();
+	return (
+		<>
+			<button
+				type="button"
+				aria-expanded={open}
+				aria-controls={listId}
+				className="mr-auto text-xs underline underline-offset-2 hover:opacity-80"
+				onClick={() => setOpen((value) => !value)}
+			>
+				Exactly what is sent
+			</button>
+			<div id={listId} hidden={!open} className="basis-full text-xs">
+				<ul className="space-y-1">
+					{TELEMETRY_FIELDS.map(({ key, description }) => (
+						<li key={key}>
+							<code>{key}</code>: {description}
+						</li>
+					))}
+				</ul>
+				<a
+					href={TELEMETRY_DOCS_URL}
+					target="_blank"
+					rel="noreferrer"
+					className="mt-2 inline-block underline underline-offset-2 hover:opacity-80"
+				>
+					Read the privacy page
+				</a>
+			</div>
+		</>
+	);
+}
+
 /**
  * Tells the primary admin of an install that never chose (an upgrade, or a setup without the switch) that usage
  * statistics start on the start day unless they turn them off. Shown until they choose or hide it, in one place per
@@ -32,7 +78,7 @@ function HideButton({ label, onClick, disabled }: { label: string; onClick: () =
  * the sidebar one out). The start day is fixed only once the notice is on screen, and hiding it keeps that day.
  */
 export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
-	const { startDay, unseen, markShown, save } = useTelemetryNotice();
+	const { startDay, unseen, markShown, save, endpoint } = useTelemetryNotice();
 	const [error, setError] = useState<string | null>(null);
 	const ref = useRef<HTMLElement>(null);
 	useWhenVisible(ref, unseen, markShown);
@@ -46,6 +92,8 @@ export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
 	};
 	const busy = save.isPending;
 	const lead = telemetryNoticeText(startDay);
+	const copy = telemetryNoticeCopy(endpoint);
+	const localStart = localStartText(startDay);
 	const hide = (
 		<HideButton label={telemetryHideLabel(startDay)} disabled={busy} onClick={() => choose({ notice: "dismissed" })} />
 	);
@@ -61,8 +109,10 @@ export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
 				<ChartNoAxesColumn className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
 				<div className="min-w-0 flex-1">
 					<p className="font-medium">Usage statistics</p>
-					<p className="mt-0.5 opacity-90">{lead}</p>
-					<p className="mt-0.5 opacity-90">{TELEMETRY_NOTICE_SHORT}</p>
+					<p className="mt-0.5 opacity-90" title={localStartText(startDay) ?? undefined}>
+						{lead}
+					</p>
+					<p className="mt-0.5 opacity-90">{copy.short}</p>
 					{alert}
 					<div className="mt-1.5 flex flex-wrap items-center gap-3">
 						<button
@@ -81,7 +131,7 @@ export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
 						>
 							Keep on
 						</button>
-						<Link href="/general" className={NOTICE_LINK_CLASS}>
+						<Link href={`/general#${TELEMETRY_CARD_ID}`} className={NOTICE_LINK_CLASS}>
 							Details
 						</Link>
 					</div>
@@ -100,12 +150,11 @@ export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
 			<ChartNoAxesColumn className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
 			<div className="min-w-0 flex-1">
 				<p className="font-medium">{lead}</p>
-				<p className="mt-1">{TELEMETRY_NOTICE_DETAIL}</p>
+				<p className="mt-1">{copy.detail}</p>
+				{localStart && <p className="mt-1">{localStart}</p>}
 				{alert}
 				<div className="mt-4 flex flex-wrap items-center justify-end gap-3">
-					<Link href="/general" className="mr-auto text-xs underline underline-offset-2 hover:opacity-80">
-						Exactly what is sent
-					</Link>
+					<FieldsDisclosure />
 					{/* The two choices look the same: neither is the suggested one. */}
 					<Button
 						type="button"

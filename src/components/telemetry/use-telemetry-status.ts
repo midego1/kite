@@ -10,6 +10,9 @@ import type { TelemetrySaveResult, TelemetryStatus } from "@/lib/telemetry/types
 /** One cache for the Admin → General card and the notice, so a choice made in one shows in the other. */
 const TELEMETRY_STATUS_QUERY_KEY = ["admin", "telemetry"];
 
+/** The id of the Admin → General card: the sidebar notice's Details link is `/general#usage-statistics`. */
+export const TELEMETRY_CARD_ID = "usage-statistics";
+
 export type TelemetryUpdate = { enabled: boolean } | { notice: "shown" | "dismissed" };
 
 async function loadTelemetryStatus(): Promise<TelemetryStatus> {
@@ -51,21 +54,37 @@ export function useTelemetryStatus() {
 
 /**
  * The one-time notice of an install whose owner never chose. Until it has been seen it names the date the server
- * would store now (the same rule, `telemetryStartDay`); `markShown`, called once the notice is actually on screen,
- * records that it was shown, which fixes that date, and from then on the stored date is shown.
+ * would store now (the same rule, `telemetryStartDay`), worked out when the notice becomes visible, never when the
+ * page was opened: a tab left open since before 02:00 UTC must not name a time that has passed. `markShown`, called
+ * once the notice is actually on screen, records that it was shown, which fixes that date, and from then on the
+ * stored date is shown.
  */
 export function useTelemetryNotice() {
 	const { owner, query, save } = useTelemetryStatus();
-	const [provisionalDay] = useState(() => telemetryStartDay(new Date()));
+	const [shownDay, setShownDay] = useState<string | null>(null);
 	const status = query.data;
 	const due = Boolean(owner && status?.notice);
 	const unseen = due && !status?.startDay;
 	const { mutate, isIdle } = save;
 	const markShown = useCallback(() => {
-		if (unseen && isIdle) mutate({ notice: "shown" });
+		if (!unseen) return;
+		setShownDay(telemetryStartDay(new Date()));
+		if (isIdle) mutate({ notice: "shown" });
 	}, [unseen, isIdle, mutate]);
-	const startDay = due ? (status?.startDay ?? provisionalDay) : null;
-	return { startDay, unseen, markShown, save };
+	// Before it is visible nothing reads the date; the fallback only keeps the text from being empty.
+	const startDay = due ? (status?.startDay ?? shownDay ?? telemetryStartDay(new Date())) : null;
+	return { startDay, unseen, markShown, save, endpoint: status?.endpoint ?? null };
+}
+
+/**
+ * Brings the card into view when the page was opened with its hash. The card is rendered only once the page's data is
+ * there, after the browser already looked for the anchor, so it scrolls again when `ready`.
+ */
+export function useScrollToTelemetryCard(ready: boolean) {
+	useEffect(() => {
+		if (!ready || window.location.hash !== `#${TELEMETRY_CARD_ID}`) return;
+		document.getElementById(TELEMETRY_CARD_ID)?.scrollIntoView({ block: "start" });
+	}, [ready]);
 }
 
 /** Calls `onVisible` once the element is at least half on screen (not scrolled out of the notices box). */

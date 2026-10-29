@@ -65,8 +65,16 @@ test("the server renders a button disabled until it is hydrated, but not a link"
 	assert.match(html, /<button[^>]*disabled=""[^>]*>Sign in<\/button>/);
 	assert.match(html, /<button[^>]*data-hydrating=""/);
 	assert.doesNotMatch(html, /<a[^>]*\sdisabled=/);
-	// It keeps its look while it waits, rather than flashing dimmed.
-	assert.match(html, /data-hydrating:disabled:opacity-100/);
+	// It keeps its look while it waits, rather than flashing dimmed: classes scoped to [data-hydrating] undo the
+	// disabled styling.
+	const hydrating = /<button[^>]*class="([^"]*)"/
+		.exec(html)[1]
+		.split(" ")
+		.filter((name) => name.startsWith("data-hydrating:"));
+	assert.ok(
+		hydrating.some((name) => name.endsWith(":opacity-100")),
+		hydrating.join(" "),
+	);
 });
 
 test("hydration enables the button and its handler runs", async (t) => {

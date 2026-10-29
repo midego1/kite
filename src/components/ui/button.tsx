@@ -39,7 +39,8 @@ export interface ButtonProps
 /**
  * Until React has hydrated a server-rendered page, a button has no handler: a click does nothing, or a submit
  * button posts the form natively. So a button is disabled until then (only for that first render; later mounts
- * are interactive at once), which also makes an early automated click wait. It keeps its look meanwhile.
+ * are interactive at once): the browser drops an early click, and Enter in a field no longer submits the form.
+ * Playwright waits for it to be enabled. It keeps its look meanwhile.
  */
 const HYDRATING_CLASS =
 	"data-hydrating:disabled:pointer-events-auto data-hydrating:disabled:cursor-progress data-hydrating:disabled:opacity-100";

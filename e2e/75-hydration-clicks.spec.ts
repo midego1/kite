@@ -31,7 +31,8 @@ test("an early click on Sign in waits for the page to become interactive and sig
 
 	await page.getByLabel("Email").fill(ADMIN.email);
 	await page.getByLabel("Password").fill(ADMIN.password);
-	// The click is issued now and lands once the button is enabled; before, it posted the form to /login natively.
+	// Playwright issues the click once the button is enabled; before the fix it landed at once and posted the form
+	// to /login natively. A person's click in that window is dropped by the browser instead.
 	const clicked = submit.click();
 	release();
 	await clicked;
@@ -41,19 +42,57 @@ test("an early click on Sign in waits for the page to become interactive and sig
 	expect(page.url()).not.toContain("password");
 });
 
-test("a click right after navigation is never lost on a public form", async ({ page }) => {
-	const requests: string[] = [];
+/** Counts the app's reset requests and any navigation that carries the form in its URL. */
+function watchResetRequests(page: Page) {
+	const seen = { api: 0, nativeSubmits: [] as string[] };
 	page.on("request", (request) => {
-		if (request.url().includes("/api/auth/") && request.method() === "POST")
-			requests.push(new URL(request.url()).pathname);
+		const url = new URL(request.url());
+		if (url.pathname === "/api/auth/password-reset/request" && request.method() === "POST") seen.api += 1;
+		if (request.isNavigationRequest() && url.searchParams.has("email")) seen.nativeSubmits.push(request.url());
 	});
-	// No wait for hydration: fill and click as soon as the controls exist.
+	return seen;
+}
+
+test("a click right after navigation on a public form waits for the page and goes through the app", async ({
+	page,
+}) => {
+	const seen = watchResetRequests(page);
+	const release = await holdScripts(page);
 	await page.goto("/forgot-password", { waitUntil: "commit" });
 	await page.getByLabel("Email").fill(ADMIN.email);
-	await page.getByRole("button", { name: "Send reset link" }).click();
+	const submit = page.getByRole("button", { name: "Send reset link" });
+	await expect(submit).toBeDisabled();
+
+	const clicked = submit.click();
+	release();
+	await clicked;
 
 	await expect(page.getByText("If that account has a recovery email, a reset link is on its way.")).toBeVisible();
 	// The request went through the app, not a native form submit that puts the address in the URL.
 	expect(new URL(page.url()).search).toBe("");
-	expect(requests).toHaveLength(1);
+	expect(seen.api).toBe(1);
+	expect(seen.nativeSubmits).toEqual([]);
+});
+
+test("Enter in a field before the page is ready does not submit the form natively", async ({ page }) => {
+	const seen = watchResetRequests(page);
+	const release = await holdScripts(page);
+	await page.goto("/forgot-password", { waitUntil: "commit" });
+	const email = page.getByLabel("Email");
+	await email.fill(ADMIN.email);
+	await expect(page.getByRole("button", { name: "Send reset link" })).toBeDisabled();
+	// Implicit submission needs an enabled default button, so this does nothing yet.
+	await email.press("Enter");
+
+	release();
+	const submit = page.getByRole("button", { name: "Send reset link" });
+	await expect(submit).toBeEnabled({ timeout: 30_000 });
+	expect(seen.nativeSubmits).toEqual([]);
+	expect(new URL(page.url()).search).toBe("");
+	expect(seen.api).toBe(0);
+	// The address typed before the page was ready is still there, and sending it works.
+	await expect(email).toHaveValue(ADMIN.email);
+	await submit.click();
+	await expect(page.getByText("If that account has a recovery email, a reset link is on its way.")).toBeVisible();
+	expect(seen.api).toBe(1);
 });

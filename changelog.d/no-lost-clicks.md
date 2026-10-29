@@ -1,3 +1,3 @@
 ### Fixed
 
-- A click on a button before the page has finished loading is no longer lost: buttons on the sign-in, password reset, registration, booking and shared Drive pages stay disabled until the page is ready and then act on the click, instead of reloading the page with the form contents (for **Send reset link**, the address in the URL).
+- Buttons on the sign-in, password reset, registration, booking and shared Drive pages stay disabled until the page has finished loading, then become active. A click or Enter before then no longer submits the form natively, which reloaded the page and, for **Send reset link**, put the address in the URL.

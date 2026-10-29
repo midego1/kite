@@ -190,7 +190,11 @@ test("a reply goes out from the address the mail came to; an alias is never offe
 
 		await page.goto("/inbox");
 		await openMessage(page, subject);
-		await page.getByRole("button", { name: "Reply", exact: true }).first().click();
+		// "Reply (r)" while keyboard shortcuts are on.
+		await page
+			.getByRole("button", { name: /^Reply( \(r\))?$/ })
+			.first()
+			.click();
 		await page.getByRole("textbox", { name: "Message body" }).fill("Here are the notes.");
 		const sent = page.waitForResponse(
 			(response) => response.url().endsWith("/api/send") && response.request().method() === "POST",

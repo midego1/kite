@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.29.1] - 2026-10-29
+
+### Added
+
+- Select several emails in a list the way desktop mail clients do. Click an email to open it, then Shift-click another to select every email in between (Shift-click again to move the end of the range), or Cmd-click (Ctrl-click on Windows and Linux) to add or remove single emails without opening them; if an email is open, it joins the selection first. Cmd/Ctrl+Shift-click adds a range to the selection. In conversation view a row stands for its whole conversation. Shift+↑ and Shift+↓ extend the selection from the keyboard, and Escape clears it. Only emails that are loaded on the current page are selected, so a range never reaches onto the next page. Cmd/Ctrl-click on an email no longer opens it in a new tab (it selects it); middle-click still does. Shift-click on a row checkbox now selects a range the same way, and phone gestures work as before. Escape only clears the selection: an open email stays open.
+
+### Changed
+
+- Usage statistics no longer include how many messages came in and went out (`inbound_1d` and `outbound_1d`). The report is now a random install id, the Kite version, Workers or Node, which modules are on, and ranges for accounts, active accounts, mailboxes and active mailboxes. The collector accepts reports from older installs that still send the two fields and ignores them; run its migration `0003` to drop what it stored (it is not part of the Kite app, so no Kite migration is needed).
+- The usage statistics notice, the setup section and the card in [Admin → General](/general) now say what the report is for: so the Kite project can see how many active installs there are, which versions, runtimes and modules they run, and roughly how many accounts and mailboxes they have and use, with rough counts only and no IP addresses stored by the collector. With `KITE_TELEMETRY_URL` set to another collector, the notice, setup section and card say only that reports go to that collector. What is sent otherwise, how often and the start date are unchanged, and they name "the Kite project" instead of a person.
+- The privacy page and the deployment docs name "the Kite project" as the controller of the usage statistics collector instead of a person, and describe the same purpose. The contact address and the collector address are unchanged.
+- An install that never chose no longer waits 14 days: usage statistics start at the first 02:00 UTC run at least an hour after the primary admin first saw the notice (tonight's run when it was first seen before 01:00 UTC, otherwise tomorrow's), and the notice names that date and, when your time zone reads differently, the same moment in it. Nothing is sent before the notice was on screen, **Turn off** is still final, **Keep on** still starts with the next daily report, new installs are unchanged (the setup switch decides), and a date announced before this change keeps its date.
+
+### Fixed
+
+- **Exactly what is sent** in the usage statistics notice opens the list of fields in place. It was a link to the page the notice is on, so it did nothing in Admin → General. The short notice in the sidebar links to the card (`/general#usage-statistics`) and scrolls to it.
+
 ## [2026.10.29.0] - 2026-10-29
 
 ### Added

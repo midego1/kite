@@ -139,7 +139,7 @@ export function ComposePreview({ text, warnings, done }: { text: string; warning
 				role="region"
 				aria-busy={!done}
 				aria-label="Preview"
-				className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-lg bg-blue-50 p-2 text-neutral-900 dark:bg-blue-950"
+				className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-lg border border-neutral-200 bg-neutral-100 p-2 text-neutral-900"
 			>
 				{text || "Writing…"}
 			</div>

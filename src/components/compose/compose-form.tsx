@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { FileText, Paperclip, Trash2, X } from "lucide-react";
+import { Paperclip, Trash2 } from "lucide-react";
 import { ComposeHeader, composeTitle } from "./compose-header";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,8 @@ import { formatEmailAddress, getEmailAddress } from "@/lib/email/address";
 import { cn } from "@/lib/utils";
 import { SendReview } from "@/components/agent/send-review";
 import type { ReviewSnapshot } from "@/components/agent/send-review-types";
-import { buildSendFormData, fetchDraft, formatAttachmentSize } from "./utils";
+import { buildSendFormData, fetchDraft } from "./utils";
+import { ComposeAttachmentList } from "./compose-attachment-list";
 import { SendPreview } from "./send-preview";
 import { composeFrameAria, composeFrameClass, useComposerBesideAssistant, useDraftBodyFocus } from "./compose-frame";
 import { ComposeToast, type ComposeToastState } from "./compose-toast";
@@ -81,6 +82,7 @@ export function ComposeForm({
 	const [attachmentPolicy, setAttachmentPolicy] = useState<ComposeAttachmentPolicy>({
 		maxMb: 25,
 		cloudThresholdBytes: 3_000_000,
+		cloudLinks: true,
 	});
 	const [draggingFiles, setDraggingFiles] = useState(false);
 	const [modalMode, setModalMode] = useState(false);
@@ -104,20 +106,9 @@ export function ComposeForm({
 	const [undoRequestedWhileSending, setUndoRequestedWhileSending] = useState(false);
 	const undoRequested = useRef(false);
 	const attachmentInput = useRef<HTMLInputElement | null>(null);
+	const attachButton = useRef<HTMLButtonElement | null>(null);
 	const fileDragDepth = useRef(0);
 	const previousSignature = useRef("");
-
-	useEffect(() => {
-		let active = true;
-		void authFetch("/api/attachment-policy", { cache: "no-store" })
-			.then(async (response) => {
-				if (response.ok && active) setAttachmentPolicy((await response.json()) as ComposeAttachmentPolicy);
-			})
-			.catch(() => {});
-		return () => {
-			active = false;
-		};
-	}, []);
 
 	const senderAddresses = useMemo(() => {
 		if (!selectedMailbox) return [];
@@ -149,6 +140,20 @@ export function ComposeForm({
 	const selectedFrom = pickFromAddress(senderAddresses, [chosenFrom, defaultFrom]);
 	const kiteComposer = { html, setHtml, subject, to, threading, onInserted: () => setAiAssisted(true) };
 	const fromAddr = selectedMailbox && selectedFrom ? formatEmailAddress(selectedFrom, selectedMailbox.displayName) : "";
+
+	// The From domain's sending provider decides whether big files become download links.
+	useEffect(() => {
+		let active = true;
+		const query = selectedFrom ? `?from=${encodeURIComponent(selectedFrom)}` : "";
+		void authFetch(`/api/attachment-policy${query}`, { cache: "no-store" })
+			.then(async (response) => {
+				if (response.ok && active) setAttachmentPolicy((await response.json()) as ComposeAttachmentPolicy);
+			})
+			.catch(() => {});
+		return () => {
+			active = false;
+		};
+	}, [selectedFrom]);
 
 	const draftSnapshot = useMemo(
 		(): ComposeDraftSnapshot | null =>
@@ -606,56 +611,16 @@ export function ComposeForm({
 	}
 
 	const attachmentContent = (attachments.length > 0 || storedAttachments.length > 0) && (
-		<div>
-			<div className="flex min-w-0 flex-nowrap gap-2 overflow-x-auto overflow-y-hidden px-3 py-2">
-				{storedAttachments.map((attachment) => (
-					<div
-						key={attachment.id}
-						className="flex max-w-full shrink-0 items-center gap-2 rounded-lg bg-neutral-100 px-2 py-1 text-xs"
-						title="Saved with the draft"
-					>
-						<FileText className="h-4 w-4 shrink-0 text-neutral-500" />
-						<span className="max-w-48 truncate">{attachment.filename}</span>
-						<span className="text-xs text-neutral-500">{formatAttachmentSize(attachment.size)}</span>
-						<button
-							type="button"
-							onClick={() => void removeStoredAttachment(attachment.id)}
-							className="rounded-full p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700"
-						>
-							<X className="h-3.5 w-3.5" />
-							<span className="sr-only">Remove attachment</span>
-						</button>
-					</div>
-				))}
-				{attachments.map((attachment) => (
-					<div
-						key={attachment.id}
-						className="flex max-w-full shrink-0 items-center gap-2 rounded-lg bg-neutral-100 px-2 py-1 text-xs"
-					>
-						<FileText className="h-4 w-4 shrink-0 text-neutral-500" />
-						<span className="max-w-48 truncate font-medium">{attachment.file.name}</span>
-						<span className="text-xs text-neutral-500">{formatAttachmentSize(attachment.file.size)}</span>
-						<button
-							type="button"
-							onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-							className="rounded-full p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700"
-						>
-							<X className="h-3.5 w-3.5" />
-							<span className="sr-only">Remove attachment</span>
-						</button>
-					</div>
-				))}
-			</div>
-			<p className="px-3 pb-2 text-xs text-amber-700">
-				Cloudflare limits general email messages to 5 MiB including encoding. Files over 3 MB
-				{[...attachments.map((item) => item.file.size), ...storedAttachments.map((item) => item.size)].some(
-					(size) => size > attachmentPolicy.cloudThresholdBytes,
-				)
-					? " here will"
-					: " or files that exceed the message budget may"}{" "}
-				be sent as 30-day R2 download links.
-			</p>
-		</div>
+		<ComposeAttachmentList
+			draftId={draftSaves.draftId ?? draftId}
+			localAttachments={attachments}
+			storedAttachments={storedAttachments}
+			cloudThresholdBytes={attachmentPolicy.cloudThresholdBytes}
+			cloudLinks={attachmentPolicy.cloudLinks}
+			onFocusFallback={() => attachButton.current?.focus()}
+			onRemoveLocal={(id) => setAttachments((current) => current.filter((item) => item.id !== id))}
+			onRemoveStored={(id) => void removeStoredAttachment(id)}
+		/>
 	);
 
 	const frameClass = composeFrameClass({ mode, minimized, modalMode }, besideAssistant);
@@ -922,9 +887,14 @@ export function ComposeForm({
 									onChange={(event) => addAttachments(event.target.files)}
 								/>
 								<Tooltip
-									label={`Attach files (up to ${attachmentPolicy.maxMb} MB total). Files over 3 MB are sent as 30-day R2 download links.`}
+									label={
+										attachmentPolicy.cloudLinks
+											? `Attach files (up to ${attachmentPolicy.maxMb} MB total). Files over ${Math.round(attachmentPolicy.cloudThresholdBytes / 1_000_000)} MB are sent as 30-day R2 download links.`
+											: `Attach files (up to ${attachmentPolicy.maxMb} MB total)`
+									}
 								>
 									<button
+										ref={attachButton}
 										type="button"
 										aria-label="Attach files"
 										onClick={() => attachmentInput.current?.click()}

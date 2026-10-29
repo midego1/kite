@@ -1,55 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { ArrowDownToLine, FileWarning } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { authFetch } from "@/lib/auth/client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useReturnFocus } from "@/components/ui/use-return-focus";
 import type { MessageAttachmentViewerProps } from "./message-attachment-viewer-types";
-import { getAttachmentFileUrl, getAttachmentPreviewKind } from "./message-attachment-viewer-utils";
+import { useAttachmentText } from "./use-attachment-text";
+import { useObjectUrl } from "./use-object-url";
+import { getAttachmentPreviewKind, getViewerUrls } from "./message-attachment-viewer-utils";
 
-export function MessageAttachmentViewer({ attachment, messageId, onOpenChange, open }: MessageAttachmentViewerProps) {
-	const [textPreview, setTextPreview] = useState<{ url: string; content: string; error: string } | null>(null);
-
+export function MessageAttachmentViewer({
+	attachment,
+	file = null,
+	messageId,
+	onOpenChange,
+	open,
+}: MessageAttachmentViewerProps) {
+	// The viewer has no Trigger of its own, so focus goes back to the chip or menu button that opened it.
+	const returnFocus = useReturnFocus();
 	const previewKind = attachment ? getAttachmentPreviewKind(attachment) : "unsupported";
-	const previewUrl = attachment ? getAttachmentFileUrl(messageId, attachment.id, "preview") : "";
-	const downloadUrl = attachment ? getAttachmentFileUrl(messageId, attachment.id, "download") : "";
-
-	const currentTextPreview = textPreview?.url === previewUrl ? textPreview : null;
-	const textContent = currentTextPreview?.content ?? "";
-	const textError = currentTextPreview?.error ?? "";
-
-	useEffect(() => {
-		if (!open || !attachment || previewKind !== "text") return;
-		let cancelled = false;
-
-		authFetch(previewUrl)
-			.then(async (response) => {
-				if (!response.ok) throw new Error("Could not load this attachment");
-				const content = await response.text();
-				if (!cancelled) setTextPreview({ url: previewUrl, content, error: "" });
-			})
-			.catch((error) => {
-				if (!cancelled) {
-					setTextPreview({
-						url: previewUrl,
-						content: "",
-						error: error instanceof Error ? error.message : "Could not load this attachment",
-					});
-				}
-			});
-
-		return () => {
-			cancelled = true;
-		};
-	}, [attachment, open, previewKind, previewUrl]);
+	const fileUrl = useObjectUrl(open ? file : null);
+	const { previewUrl, downloadUrl } = getViewerUrls(attachment, messageId, file ? fileUrl : null);
+	const { content: textContent, error: textError } = useAttachmentText({
+		enabled: open && !!attachment && previewKind === "text",
+		file,
+		url: previewUrl,
+	});
 
 	if (!attachment) return null;
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="flex h-[min(88vh,900px)] w-[min(1100px,calc(100vw-32px))] flex-col overflow-hidden">
+			<DialogContent
+				{...returnFocus}
+				className="flex h-[min(88vh,900px)] w-[min(1100px,calc(100vw-32px))] flex-col overflow-hidden"
+			>
 				<DialogHeader className="shrink-0 pr-10">
 					<DialogTitle className="truncate">{attachment.filename}</DialogTitle>
 					<DialogDescription>{attachment.type}</DialogDescription>
@@ -85,12 +71,20 @@ export function MessageAttachmentViewer({ attachment, messageId, onOpenChange, o
 				</div>
 
 				<div className="flex shrink-0 justify-end">
-					<Button asChild>
-						<a href={downloadUrl} download={attachment.filename}>
+					{downloadUrl ? (
+						<Button asChild>
+							<a href={downloadUrl} download={attachment.filename}>
+								<ArrowDownToLine className="h-4 w-4" />
+								Download
+							</a>
+						</Button>
+					) : (
+						// A local file's copy is still being made.
+						<Button disabled>
 							<ArrowDownToLine className="h-4 w-4" />
 							Download
-						</a>
-					</Button>
+						</Button>
+					)}
 				</div>
 			</DialogContent>
 		</Dialog>

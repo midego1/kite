@@ -22,6 +22,7 @@ import { AssistantButton } from "@/components/agent/assistant-button";
 import { MessageReadingHeaderButton } from "@/components/messages/message-reading-header-button";
 import { QuotedEmailToggle } from "@/components/messages/quoted-email-toggle";
 import { EmailHtmlFrame, RemoteImagesNotice } from "@/components/messages/email-html-frame";
+import { LinkifiedText } from "@/components/messages/linkified-text";
 import { useLoadRemoteImages } from "@/components/messages/use-load-remote-images";
 import { ThreadMessageActions } from "@/components/messages/thread-message-actions";
 import { useMessageThread } from "@/components/messages/use-message-thread";
@@ -38,6 +39,7 @@ import { MessageReplyButtons } from "@/components/message-actions/message-reply-
 import { InlineComposerHost, InlineReplyComposer } from "@/components/compose/inline-reply-composer";
 import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
 import { OneTimeCodeChip } from "@/components/messages/one-time-code-chip";
+import { SendStateBanner } from "@/components/messages/send-state-banner";
 import { ScreenerBanner } from "@/components/screener/screener-banner";
 import { RecipientList } from "@/components/messages/recipient-list";
 import { useShowFullRecipientAddresses } from "@/components/messages/use-show-full-recipient-addresses";
@@ -148,6 +150,7 @@ export default function MessageDetailPage() {
 		blockRemoteImages: !alwaysLoadRemoteImages && remoteImagesShownFor !== message.id,
 		stats: { blockedRemoteImages: 0 },
 		proxyRemoteImagesFor: message.id,
+		linkify: true,
 	};
 	const htmlBody = collapseQuotedEmailHtml(
 		sanitizeEmailHtml(resolveInlineAttachmentUrls(bodyDisplay.htmlBody, message.id, attachments), imageOptions),
@@ -215,6 +218,7 @@ export default function MessageDetailPage() {
 				/>
 				<OneTimeCodeChip code={oneTimeCode} alignWide={!isAnyPanelVisible} />
 				<ScreenerBanner message={message} mailbox={messageMailbox} alignWide={!isAnyPanelVisible} />
+				<SendStateBanner message={message} alignWide={!isAnyPanelVisible} />
 				<ThreadSummaryCard key={message.id} controller={summary} />
 				{/* <div className="px-6">
         <div className="mx-auto w-full max-w-[640px]">
@@ -334,7 +338,9 @@ export default function MessageDetailPage() {
 							{htmlBody ? (
 								<EmailHtmlFrame html={htmlBody} className="email-body mx-auto" />
 							) : (
-								<pre className="whitespace-pre-wrap text-sm text mx-auto">{cloudAttachmentResult.content}</pre>
+								<pre className="whitespace-pre-wrap text-sm text mx-auto">
+									<LinkifiedText text={cloudAttachmentResult.content} />
+								</pre>
 							)}
 							{quotedHtml && <QuotedEmailToggle html={quotedHtml} />}
 							{bodyDisplay.quotedContent.map((quotedContent) => (

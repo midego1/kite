@@ -113,6 +113,7 @@ export function MessageListHeader({
 						folder={getSelectionToolbarFolder(config)}
 						mailboxIds={selection.mailboxIds}
 						hasDraftSelection={selection.hasDrafts}
+						hasPendingSendSelection={selection.hasPendingSend}
 					/>
 				) : (
 					<p

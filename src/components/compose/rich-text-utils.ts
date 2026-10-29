@@ -179,7 +179,7 @@ function renderNode(node: Node, state: RenderState): string {
 	let inner = renderChildren(element, state);
 	if (tag === "a") {
 		const href = element.getAttribute("href") ?? "";
-		if (href && href !== inner.trim() && !href.startsWith("mailto:")) inner = `${inner} (${href})`;
+		if (href && !href.startsWith("mailto:") && !isShownAddress(href, inner)) inner = `${inner} (${href})`;
 	}
 	if (tag === "blockquote") {
 		const quoted = inner
@@ -191,6 +191,19 @@ function renderNode(node: Node, state: RenderState): string {
 	}
 	if (BLOCK_TAGS.has(tag)) return `\n${inner}\n`;
 	return inner;
+}
+
+/** Scheme and host are case-insensitive; the path, query and fragment are not. */
+function normalizeAddress(value: string): string {
+	const parts = /^((?:[a-z][a-z0-9+.-]*:\/\/)?[^/?#]*)([\s\S]*)$/i.exec(value);
+	return parts ? `${(parts[1] as string).toLowerCase()}${parts[2]}` : value;
+}
+
+/** A link whose text already is its address (`www.example.com` for `https://www.example.com`) needs no "(href)". */
+function isShownAddress(href: string, text: string): boolean {
+	const shown = text.trim();
+	const target = normalizeAddress(href);
+	return [shown, `https://${shown}`, `http://${shown}`].some((candidate) => normalizeAddress(candidate) === target);
 }
 
 function renderChildren(element: Element, state: RenderState): string {

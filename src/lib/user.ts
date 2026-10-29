@@ -5,6 +5,7 @@ import { selectRow } from "@/lib/db/pending-columns";
 import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { DRAFT_STATUS, isDraftMoveRefused, isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
+import { isSendPending } from "@/lib/messages/send-state-utils";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import type { SessionUser } from "@/lib/auth/types";
 import { applySpamFeedbackWithReceipt } from "@/lib/spam/feedback";
@@ -112,6 +113,8 @@ export async function updateMessageStatusForUser(
 		return true;
 	}
 	if (isDraftMoveRefused(message.status, status)) return false;
+	// A message still in the outbound queue goes out wherever it is filed; it can only be cancelled first.
+	if (isSendPending(message.status)) return false;
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canManage) return false;
 	const classification = status === "spam" ? "spam" : status === "received" && message.status === "spam" ? "ham" : null;

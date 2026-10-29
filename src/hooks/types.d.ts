@@ -1,4 +1,5 @@
 import type { SuggestionCount } from "@/lib/agent/auto-read/suggestion-types";
+import type { SendState } from "@/lib/messages/send-state-utils";
 
 export type MessageStatus = "received" | "sent" | "draft" | "queued" | "failed" | "archived" | "trash" | "spam";
 
@@ -48,6 +49,8 @@ export type Message = {
 	threadMessageIds?: string[];
 	/** Open Kite suggestions per kind over the row's messages; only sent to users with full access. */
 	agentSuggestions?: SuggestionCount[];
+	/** A queued (scheduled, or held for undo) or failed outbound message: when it goes out, or why it did not. */
+	sendState?: SendState;
 	/** The sender waits for a Screener decision: held mail, or a new sender in an Inbox-mode mailbox. */
 	screenerPending?: boolean;
 	/** The one-line AI summary shown instead of the preview, when the mailbox has them on and this mail got one. */

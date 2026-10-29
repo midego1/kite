@@ -68,3 +68,16 @@ test("applySelection over every visible row selects them and only unselects visi
 	]);
 	assert.deepEqual(applySelection([{ id: "z", read: true }, ...rows], rows, ids, false), [{ id: "z", read: true }]);
 });
+
+test("applySelection remembers the status of drafts and of sends waiting to go out, and of nothing else", () => {
+	const rows = [
+		{ id: "d", read: true, status: "draft", mailboxId: "m" },
+		{ id: "q", read: true, status: "queued", mailboxId: "m" },
+		{ id: "s", read: true, status: "sent", mailboxId: "m" },
+	];
+	const selected = helpers.applySelection([], rows, ["d", "q", "s"], true);
+	assert.deepEqual(
+		selected.map((message) => message.status),
+		["draft", "queued", undefined],
+	);
+});

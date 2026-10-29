@@ -193,6 +193,8 @@ test("files that never load stop the automatic reloads after four tries", async 
 	// The first load plus four automatic reloads, 1 + 2 + 4 + 8 seconds apart.
 	await expect.poll(() => documents.count, { timeout: 60_000 }).toBe(5);
 	await expect.poll(() => errors.some((text) => text.includes("could not be loaded after 4 reloads"))).toBe(true);
+	// Instead of the startup screen forever, a static message with a Reload button (no React).
+	await expect(page.getByRole("alert").filter({ hasText: "Kite couldn't load." })).toBeVisible();
 	// Longer than the longest wait: no fifth reload follows.
 	await page.waitForTimeout(9_000);
 	expect(documents.count).toBe(5);

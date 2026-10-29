@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useIsFetching } from "@tanstack/react-query";
 import { useBranding } from "@/components/branding-provider";
+import { markLoaderMounted } from "@/components/asset-recovery-utils";
 import { PageLoadingContext } from "@/components/page-loading";
 import { RouteLoadingBar } from "@/components/route-loading-bar";
 import { useSyncedState } from "@/hooks/use-synced-state";
@@ -14,7 +15,7 @@ const COMPLETION_TIME = 220;
 const MAXIMUM_DATA_WAIT = 10_000;
 let hasShownInitialLoadingTransition = false;
 
-export function LoadingTransition({ children, ready }: LoadingTransitionProps) {
+export function LoadingTransition({ children, ready, failure }: LoadingTransitionProps) {
 	const branding = useBranding();
 	const [showInitialLoader] = useState(() => !hasShownInitialLoadingTransition);
 	const [startedAt] = useState(() => Date.now());
@@ -36,6 +37,12 @@ export function LoadingTransition({ children, ready }: LoadingTransitionProps) {
 	}, []);
 	const loadingContext = useMemo(() => ({ reportLoading }), [reportLoading]);
 	const canComplete = ready && pageMounted && (dataWaitExpired || (pendingLoads === 0 && fetchingQueries === 0));
+	const overlayVisible = loaderVisible || failure != null;
+
+	// The boot watchdog (asset-recovery-utils.ts) leaves a startup screen that React runs alone. A layout effect
+	// runs in the same task as the hydration commit, so the watchdog never sees a committed screen as the server's;
+	// a render alone could still be thrown away, so it is not enough.
+	useLayoutEffect(() => markLoaderMounted(), []);
 
 	useEffect(() => {
 		if (canComplete) return;
@@ -75,7 +82,7 @@ export function LoadingTransition({ children, ready }: LoadingTransitionProps) {
 		};
 	}, [canComplete, showInitialLoader, startedAt]);
 
-	const showTopLoadingBar = initialLoadComplete && (!ready || pendingLoads > 0);
+	const showTopLoadingBar = initialLoadComplete && failure == null && (!ready || pendingLoads > 0);
 
 	return (
 		<PageLoadingContext.Provider value={loadingContext}>
@@ -88,29 +95,33 @@ export function LoadingTransition({ children, ready }: LoadingTransitionProps) {
 				)}
 				<div
 					data-loading-overlay
-					role={loaderVisible ? "status" : undefined}
-					aria-hidden={loaderVisible ? undefined : true}
+					role={loaderVisible && failure == null ? "status" : undefined}
+					aria-hidden={overlayVisible ? undefined : true}
 					className={`fixed inset-0 z-[100] flex items-center justify-center bg-[#f6f8fc] transition-opacity duration-300 ${
-						loaderVisible ? "opacity-100" : "pointer-events-none opacity-0"
+						overlayVisible ? "opacity-100" : "pointer-events-none opacity-0"
 					}`}
 				>
-					<div className="flex w-64 flex-col items-center gap-6">
+					<div className={`flex flex-col items-center gap-6 ${failure == null ? "w-64" : "w-80"}`}>
 						<img
 							src={iconUrl}
 							onError={() => setIconUrl("/icon-96.png")}
 							alt=""
 							className="h-20 w-20 rounded-2xl object-contain"
 						/>
-						{loaderVisible && <span className="sr-only">Loading</span>}
-						<div className="w-full">
-							<div className="h-1.5 overflow-hidden rounded-full bg-blue-100">
-								<div
-									className="h-full rounded-full bg-blue-600 transition-[width] duration-200 ease-out"
-									style={{ width: `${progress}%` }}
-								/>
-							</div>
-						</div>
-						<LoadingRecovery active={loaderVisible} />
+						{failure ?? (
+							<>
+								{loaderVisible && <span className="sr-only">Loading</span>}
+								<div className="w-full">
+									<div className="h-1.5 overflow-hidden rounded-full bg-blue-100">
+										<div
+											className="h-full rounded-full bg-blue-600 transition-[width] duration-200 ease-out"
+											style={{ width: `${progress}%` }}
+										/>
+									</div>
+								</div>
+								<LoadingRecovery active={loaderVisible} />
+							</>
+						)}
 					</div>
 				</div>
 			</div>

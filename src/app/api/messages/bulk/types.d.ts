@@ -45,6 +45,8 @@ export type BulkMessageResponse = {
 	draftsDeleted?: number;
 	/** Drafts left where they were, because a draft leaves Drafts only by being sent or deleted. */
 	draftsRefused?: number;
+	/** Messages waiting in the outbound queue that were left where they are: cancel the send before moving them. */
+	sendPendingRefused?: number;
 	/** For "phishing": what happened to each reported message's sender. */
 	reports?: PhishingReport[];
 };

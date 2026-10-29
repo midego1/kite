@@ -11,6 +11,7 @@ import { setMessageDragData } from "@/lib/messages/drag-utils";
 import { MessageListRowActions } from "./message-list-row-actions";
 import { MessageNavigationProgress } from "./message-navigation";
 import { rowCheckboxHandlers } from "./message-range-selection-utils";
+import { SendStateBadge } from "./send-state-badge";
 import { MessageRowBadges, MessageRowParty, MessageRowPreview, MessageRowStar, UnreadDot } from "./message-row-parts";
 import { getStackedRowDensity, getWideRowDensity } from "./reading-layout-utils";
 import { SwipeableRow } from "./swipeable-row";
@@ -130,6 +131,7 @@ function StackedSubjectLine({ inlineStar, ...props }: RowViewProps & { inlineSta
 			>
 				{row.rowMessage.subject ?? "(no subject)"}
 			</span>
+			<SendStateBadge message={row.rowMessage} />
 			<MessageRowBadges message={row.rowMessage} folder={config.folder} />
 			{inlineStar && row.starToggle && row.starred && (
 				<Icon
@@ -299,6 +301,7 @@ function WideMessageRow(props: RowViewProps) {
 						</span>
 					</Link>
 				</span>
+				<SendStateBadge message={row.rowMessage} />
 				{props.mailboxLabel}
 			</span>
 			<time

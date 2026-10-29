@@ -11,8 +11,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 	if (auth.error) return auth.error;
 	try {
 		const { id } = await params;
-		if (!(await startBackupObjectsRestore(env, id)))
+		const started = await startBackupObjectsRestore(env, id);
+		if (started === "none")
 			return NextResponse.json({ error: "This backup has no copied mail files" }, { status: 404 });
+		if (started === "busy")
+			return NextResponse.json(
+				{ error: "The mail files of this backup are already being copied or restored" },
+				{ status: 409 },
+			);
 		return NextResponse.json({ ok: true, status: "restoring" }, { status: 202 });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Failed to restore the mail files";

@@ -51,8 +51,10 @@ test("a full backup copies the mail files and restores them", async ({ page }) =
 
 	await page.goto("/backups");
 	const estimate = page.getByTestId("backup-objects-estimate");
-	// The size is shown before a full backup ever runs.
-	await expect(estimate).toContainText(/About [\d,]+ files, [\d.]+ (B|KB|MB)/, { timeout: 60_000 });
+	// The size is shown before a full backup ever runs, on request, so loading the page never counts every message.
+	await estimate.getByRole("button", { name: "Estimate the size" }).click({ timeout: 60_000 });
+	await expect(estimate).toContainText(/About [\d,]+ files, [\d.]+ (B|KB|MB) per backup/);
+	await expect(estimate).toContainText(/Every full backup holds its own copy|kept until you delete them/);
 	const toggle = page.getByLabel("Include mail files");
 	await expect(toggle).not.toBeChecked();
 	await toggle.click();
@@ -93,6 +95,8 @@ test("a full backup copies the mail files and restores them", async ({ page }) =
 			intervals: [500, 1000, 2000],
 		})
 		.toBe("completed");
+	await page.reload();
+	await expect(row).toContainText(/Last restore of mail files: 0 restored, [\d,]+ already there/, { timeout: 60_000 });
 
 	// Deleting the backup also removes its copied files (on the queue).
 	const removed = await api.delete(`/api/backups/${backupId}`);

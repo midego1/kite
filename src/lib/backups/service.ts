@@ -5,7 +5,8 @@ import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { selectRow, selectRows } from "@/lib/db/pending-columns";
 import { newId } from "@/lib/ids";
 import { queueBackupObjectsDelete } from "./objects";
-import { isStaleObjectsRun, STALE_OBJECTS_ERROR } from "./objects-utils";
+import type { BackupObjectsRestoreResult } from "./objects-types";
+import { isStaleObjectsRun, parseObjectsRun, STALE_OBJECTS_ERROR } from "./objects-utils";
 import type { BackupScheduleType, BackupTableGroupId } from "./types";
 import { BACKUP_SETTINGS_ID, STALE_BACKUP_ERROR, getUtcDayBounds, isBackupDue, isStaleBackup } from "./utils";
 import { parseExcludedBackupTableGroups } from "./table-groups";
@@ -43,14 +44,19 @@ export async function failStaleBackups(env: CloudflareEnv, now = new Date()): Pr
 
 /**
  * The same for copies and restores of a full backup's mail objects. An interrupted copy is failed (its database
- * backup stays usable); an interrupted restore goes back to completed, so it can be started again.
+ * backup stays usable, and Retry resumes it from its saved position); an interrupted restore goes back to completed
+ * with what it did so far, so it can be started again.
  */
 async function failStaleObjectRuns(env: CloudflareEnv, now: Date): Promise<number> {
-	const db = getDb(env);
 	let running;
 	try {
-		running = await db
-			.select({ id: backups.id, objectsStatus: backups.objectsStatus, objectsUpdatedAt: backups.objectsUpdatedAt })
+		running = await getDb(env)
+			.select({
+				id: backups.id,
+				objectsStatus: backups.objectsStatus,
+				objectsUpdatedAt: backups.objectsUpdatedAt,
+				objectsCursor: backups.objectsCursor,
+			})
 			.from(backups)
 			.where(inArray(backups.objectsStatus, ["copying", "restoring"]));
 	} catch (error) {
@@ -60,14 +66,30 @@ async function failStaleObjectRuns(env: CloudflareEnv, now: Date): Promise<numbe
 	}
 	const stale = running.filter((backup) => isStaleObjectsRun(backup, now));
 	for (const backup of stale) {
-		await db
-			.update(backups)
-			.set(
-				backup.objectsStatus === "copying"
-					? { objectsStatus: "failed", error: STALE_OBJECTS_ERROR }
-					: { objectsStatus: "completed" },
+		const run = parseObjectsRun(backup.objectsCursor);
+		const result: BackupObjectsRestoreResult | null =
+			run?.run === "restore"
+				? {
+						restored: run.restored,
+						present: run.present,
+						failed: run.failed,
+						finishedAt: now.toISOString(),
+						interrupted: true,
+					}
+				: null;
+		await env.DB.prepare(
+			`UPDATE backups SET objects_status = ?, error = coalesce(?, error), objects_restore = coalesce(?, objects_restore)
+			 WHERE id = ? AND objects_status = ? AND coalesce(objects_cursor, '') = ?`,
+		)
+			.bind(
+				backup.objectsStatus === "copying" ? "failed" : "completed",
+				backup.objectsStatus === "copying" ? STALE_OBJECTS_ERROR : null,
+				result ? JSON.stringify(result) : null,
+				backup.id,
+				backup.objectsStatus,
+				backup.objectsCursor ?? "",
 			)
-			.where(and(eq(backups.id, backup.id), eq(backups.objectsStatus, backup.objectsStatus!)));
+			.run();
 	}
 	return stale.length;
 }
@@ -78,13 +100,13 @@ export async function createBackupRecord(
 	createdByUserId?: string,
 ) {
 	const id = newId("bak");
-	await getDb(env)
-		.insert(backups)
-		.values({
-			id,
-			trigger,
-			createdByUserId: createdByUserId ?? null,
-		});
+	// Only the columns of migration 0009: a Drizzle insert lists every column of the schema, so before migration 0081
+	// it would name the objects_* columns and fail, stopping manual and scheduled backups alike.
+	await env.DB.prepare(
+		"INSERT INTO backups (id, status, `trigger`, created_by_user_id, created_at) VALUES (?, 'queued', ?, ?, ?)",
+	)
+		.bind(id, trigger, createdByUserId ?? null, Math.floor(Date.now() / 1000))
+		.run();
 	return id;
 }
 
@@ -123,33 +145,18 @@ export async function updateBackupSettings(
 	},
 ) {
 	const { excludedTableGroups, includeObjects, ...settings } = input;
-	try {
-		await getDb(env)
+	const save = (values: Partial<typeof backupSettings.$inferInsert>) =>
+		getDb(env)
 			.update(backupSettings)
-			// Left out while off, so the other settings save before migration 0081 adds the column.
-			.set({
-				...settings,
-				...(includeObjects ? { includeObjects } : {}),
-				excludedTableGroups: JSON.stringify(excludedTableGroups),
-				updatedAt: new Date(),
-			})
+			.set({ ...values, excludedTableGroups: JSON.stringify(excludedTableGroups), updatedAt: new Date() })
 			.where(eq(backupSettings.id, BACKUP_SETTINGS_ID));
-	} catch (error) {
-		if (missingColumnFromError(error) === "include_objects")
-			throw new Error("Apply pending database migrations before backing up mail files.");
-		throw error;
-	}
-	if (!includeObjects) await setIncludeObjectsOff(env);
-}
-
-async function setIncludeObjectsOff(env: CloudflareEnv): Promise<void> {
 	try {
-		await getDb(env)
-			.update(backupSettings)
-			.set({ includeObjects: false })
-			.where(eq(backupSettings.id, BACKUP_SETTINGS_ID));
+		await save({ ...settings, includeObjects });
 	} catch (error) {
 		if (missingColumnFromError(error) !== "include_objects") throw error;
+		// Before migration 0081 the switch cannot be on; everything else still saves, in one statement.
+		if (includeObjects) throw new Error("Apply pending database migrations before backing up mail files.");
+		await save(settings);
 	}
 }
 

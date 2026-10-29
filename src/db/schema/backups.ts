@@ -49,6 +49,12 @@ export const backups = sqliteTable(
 		objectsMissing: integer("objects_missing"),
 		/** The copy's heartbeat: an object copy that stops updating it is marked failed. */
 		objectsUpdatedAt: integer("objects_updated_at", { mode: "timestamp" }),
+		/** Objects that could not be copied because reading or writing them failed. */
+		objectsFailed: integer("objects_failed"),
+		/** JSON state of the running copy or restore (`BackupObjectsRun`), with its step and lease. */
+		objectsCursor: text("objects_cursor"),
+		/** JSON result of the last restore of the mail files (`BackupObjectsRestoreResult`). */
+		objectsRestore: text("objects_restore"),
 	},
 	(t) => [index("backups_created_idx").on(t.createdAt), index("backups_status_idx").on(t.status)],
 );

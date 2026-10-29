@@ -37,12 +37,13 @@ import {
 	isBackupBusy,
 	removeBackup,
 	restoreBackupObjects,
+	retryBackupObjects,
 	restoreBackup,
 	saveBackupSettings,
 	startBackup,
 } from "./utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
-import { BackupObjectsSetting, BackupObjectsSummary, RestoreObjectsButton } from "./backup-objects";
+import { BackupObjectsSetting, BackupObjectsSummary, RestoreObjectsButton, RetryObjectsButton } from "./backup-objects";
 
 export default function BackupsPage() {
 	const queryClient = useQueryClient();
@@ -96,6 +97,10 @@ export default function BackupsPage() {
 		mutationFn: restoreBackupObjects,
 		onSuccess: () => queryClient.invalidateQueries({ queryKey: ["backups"] }),
 	});
+	const retryObjects = useMutation({
+		mutationFn: retryBackupObjects,
+		onSuccess: () => queryClient.invalidateQueries({ queryKey: ["backups"] }),
+	});
 	const restore = useMutation({
 		mutationFn: restoreBackup,
 		onSuccess: () => window.location.assign("/login"),
@@ -109,6 +114,7 @@ export default function BackupsPage() {
 		download.error,
 		restore.error,
 		restoreObjects.error,
+		retryObjects.error,
 	].find(Boolean);
 	const configuration = backups.data?.configuration;
 	const backupConfigured = configuration?.configured === true;
@@ -419,7 +425,7 @@ export default function BackupsPage() {
 								</div>
 							</div>
 							<BackupObjectsSetting
-								checked={settings.includeObjects}
+								settings={settings}
 								disabled={autoSaveSettings.isPending}
 								onCheckedChange={(includeObjects) => autoSaveSettings.mutate({ ...settings, includeObjects })}
 							/>
@@ -453,7 +459,8 @@ export default function BackupsPage() {
 							<p className="truncate text-sm font-medium text-neutral-900">{backup.filename ?? backup.id}</p>
 							<p className="truncate text-xs text-neutral-500">{getBackupTriggerLabel(backup.trigger)}</p>
 							<BackupObjectsSummary backup={backup} />
-							{backup.error && (
+							{/* A failed copy of the mail files shows its reason in the summary below. */}
+							{backup.error && backup.objectsStatus !== "failed" && (
 								<p className="truncate text-xs text-red-700" title={backup.error}>
 									{backup.error}
 								</p>
@@ -478,6 +485,11 @@ export default function BackupsPage() {
 								backup={backup}
 								disabled={restoreObjects.isPending}
 								onRestore={(id) => restoreObjects.mutate(id)}
+							/>
+							<RetryObjectsButton
+								backup={backup}
+								disabled={retryObjects.isPending}
+								onRetry={(id) => retryObjects.mutate(id)}
 							/>
 							<Button
 								size="sm"

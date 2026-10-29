@@ -72,6 +72,7 @@
 	"/api/auth/register",
 	"/api/auth/switch",
 	"/api/backups/[id]/download",
+	"/api/backups/[id]/objects/retry",
 	"/api/backups/[id]/objects",
 	"/api/backups/[id]",
 	"/api/backups/objects",

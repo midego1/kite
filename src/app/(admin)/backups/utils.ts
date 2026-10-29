@@ -1,4 +1,5 @@
 import { authFetch } from "@/lib/auth/client";
+import type { BackupObjectsRestoreResult } from "@/lib/backups/objects-types";
 import { formatUserDate } from "@/lib/time/utils";
 import type { BackupItem, BackupsResponse, BackupSettings } from "./types";
 
@@ -59,6 +60,24 @@ export async function restoreBackupObjects(id: string): Promise<void> {
 	const response = await authFetch(`/api/backups/${id}/objects`, { method: "POST" });
 	const data = (await response.json()) as { error?: string };
 	if (!response.ok) throw new Error(data.error ?? "Failed to restore the mail files");
+}
+
+/** Copies the mail files of a backup again after the copy failed or missed files. */
+export async function retryBackupObjects(id: string): Promise<void> {
+	const response = await authFetch(`/api/backups/${id}/objects/retry`, { method: "POST" });
+	const data = (await response.json()) as { error?: string };
+	if (!response.ok) throw new Error(data.error ?? "Failed to retry copying the mail files");
+}
+
+/** The stored result of the last restore of a backup's mail files, or null. */
+export function parseObjectsRestore(value: string | null): BackupObjectsRestoreResult | null {
+	if (!value) return null;
+	try {
+		const result = JSON.parse(value) as BackupObjectsRestoreResult;
+		return typeof result.restored === "number" ? result : null;
+	} catch {
+		return null;
+	}
 }
 
 /** True while an export, a copy of mail files or a restore of them is still going, so the list keeps polling. */

@@ -85,6 +85,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/auth/register`                                   | POST                   | [source](../src/app/api/auth/register/route.ts)                                   |
 | `/api/auth/switch`                                     | POST                   | [source](../src/app/api/auth/switch/route.ts)                                     |
 | `/api/backups/[id]/download`                           | GET                    | [source](../src/app/api/backups/[id]/download/route.ts)                           |
+| `/api/backups/[id]/objects/retry`                      | POST                   | [source](../src/app/api/backups/[id]/objects/retry/route.ts)                      |
 | `/api/backups/[id]/objects`                            | POST                   | [source](../src/app/api/backups/[id]/objects/route.ts)                            |
 | `/api/backups/[id]`                                    | DELETE                 | [source](../src/app/api/backups/[id]/route.ts)                                    |
 | `/api/backups/objects`                                 | GET                    | [source](../src/app/api/backups/objects/route.ts)                                 |

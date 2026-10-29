@@ -32,6 +32,9 @@ export type BackupItem = {
 	objectsCount: number | null;
 	objectsSize: number | null;
 	objectsMissing: number | null;
+	objectsFailed: number | null;
+	/** JSON `BackupObjectsRestoreResult` of the last restore of the mail files. */
+	objectsRestore: string | null;
 };
 
 export type BackupsResponse = {

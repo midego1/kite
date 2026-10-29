@@ -5,6 +5,9 @@ name: Release pull request
 # main and opens or updates one "Release <version>" pull request from release/next. It never pushes to
 # main: merging that pull request is the release (docs/releasing.md). The prepare job runs npm with a
 # read-only token; the publish job holds the write token and runs no npm or repository scripts.
+# Pushes made with GITHUB_TOKEN start no workflow runs, so the publish job dispatches the required
+# check workflows on release/next itself (workflow_dispatch is exempt from that rule) and enables
+# auto-merge, so the release pull request merges once those checks are green.
 on:
   push:
     branches: [main]
@@ -91,7 +94,7 @@ jobs:
           {
             echo "Merging this pull request releases **Kite $version**: it deploys production, and the Release publish workflow then tags \`v$version\` and publishes the GitHub release."
             echo
-            echo "**Checks:** pushes made by this workflow start no CI runs (GitHub never triggers workflows from \`GITHUB_TOKEN\` pushes). Before merging, close and reopen this pull request to run the required checks on its latest commit."
+            echo "**Checks and merge:** pushes made by this workflow start no CI runs (GitHub never triggers workflows from \`GITHUB_TOKEN\` pushes), so the workflow dispatches CI, the documentation contract and the security scans on \`release/next\` itself, and enables auto-merge (squash). The pull request merges, and so releases, once every required check is green; there is nothing to close, reopen or approve."
             echo
             echo "\`release/next\` is prepared again by \`.github/workflows/release-pr.yml\` after every push to \`main\` while fragments remain, so edits made on this branch by hand are lost then; edit just before merging. See [Releasing](docs/releasing.md)."
             echo
@@ -118,6 +121,8 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+      # To dispatch the check workflows on release/next (gh workflow run).
+      actions: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -201,3 +206,22 @@ jobs:
           fi
           issue=$(gh issue list --state open --search "\"$FAILURE_TITLE\" in:title" --json number,title --jq "map(select(.title == env.FAILURE_TITLE))[0].number // empty")
           if [ -n "$issue" ]; then gh issue close "$issue" --comment "Prepared $version in the release pull request."; fi
+      # Check runs of a workflow_dispatch run attach to the tip of release/next and carry the job names
+      # (Mission validation, Node build, docs, Gitleaks history scan, Offline source security rules) the
+      # ruleset requires. The pull-request-only jobs (Release version, PR report) are skipped on dispatch.
+      - if: needs.prepare.outputs.state == 'ready'
+        name: Run the required checks on release/next
+        run: |
+          for workflow in ci.yml docs.yml security.yml; do
+            gh workflow run "$workflow" --ref release/next
+          done
+      # Waits for the required checks, which are pending (or not reported yet) after the step above.
+      - if: needs.prepare.outputs.state == 'ready'
+        name: Enable auto-merge
+        run: |
+          number=$(gh pr list --head release/next --base main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$number" ]; then
+            echo "::error::The release pull request is not open; nothing to auto-merge."
+            exit 1
+          fi
+          gh pr merge "$number" --auto --squash

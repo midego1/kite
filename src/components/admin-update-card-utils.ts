@@ -13,3 +13,8 @@ export async function applyDatabaseMigrations(): Promise<MigrationStatusResponse
 	if (!response.ok) throw new Error(data.error ?? "Could not apply database migrations");
 	return data;
 }
+
+/** The heading of the pending-updates panel on the admin overview. */
+export function pendingMigrationsTitle(count: number): string {
+	return count === 1 ? "1 database update is waiting" : `${count} database updates are waiting`;
+}

@@ -23,6 +23,7 @@ await build({
 });
 const {
 	PENDING_MIGRATIONS_REFRESH_MS,
+	migrationApplierText,
 	migrationApplySummary,
 	migrationsBannerContent,
 	parsePendingMigrations,
@@ -41,6 +42,31 @@ test("parsePendingMigrations keeps a count and only well-formed names", () => {
 	});
 	assert.deepEqual(parsePendingMigrations({ pending: 1.6 }), { pending: 1 });
 	assert.deepEqual(parsePendingMigrations({ pending: 3, names: [] }), { pending: 3 });
+});
+
+test("parsePendingMigrations keeps a well-formed primary admin", () => {
+	assert.deepEqual(parsePendingMigrations({ pending: 1, appliedBy: { name: " Owner ", email: "owner@example.com" } }), {
+		pending: 1,
+		appliedBy: { name: "Owner", email: "owner@example.com" },
+	});
+	assert.deepEqual(parsePendingMigrations({ pending: 1, appliedBy: { name: "Owner" } }), { pending: 1 });
+	assert.deepEqual(parsePendingMigrations({ pending: 1, appliedBy: "owner@example.com" }), { pending: 1 });
+	// Nothing pending: nobody needs to be asked.
+	assert.deepEqual(parsePendingMigrations({ pending: 0, appliedBy: { name: "Owner", email: "o@example.com" } }), {
+		pending: 0,
+	});
+});
+
+test("migrationApplierText names the primary admin when it is known", () => {
+	assert.equal(migrationApplierText(undefined), "Ask an administrator to apply them.");
+	assert.equal(
+		migrationApplierText({ name: "Owner", email: "owner@example.com" }),
+		"Only the primary admin, Owner (owner@example.com), can apply them.",
+	);
+	assert.equal(
+		migrationApplierText({ name: "", email: "owner@example.com" }),
+		"Only the primary admin, owner@example.com, can apply them.",
+	);
 });
 
 test("parsePendingMigrations reads unexpected bodies as up to date", () => {

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.29.4] - 2026-10-29
+
+### Changed
+
+- The title of a message list ("Inbox", "Archived", a folder name) is no longer cut off when the list is narrow. The list header drops the Kite AI button and the sidebar toggle, and below 20 rem of list width "Select" shows only its icon. Open Kite AI from the **Assistant** item in the sidebar, the button in the reader toolbar, the `.` key or the command palette; collapse and expand the sidebar with the button in its header, which stays in the icon rail, and the collapsed rail shows the assistant as an icon.
+
 ## [2026.10.29.3] - 2026-10-29
 
 ### Fixed

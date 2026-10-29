@@ -43,7 +43,7 @@ export function CommandDialog({
 					onEscapeKeyDown={onEscapeKeyDown}
 					{...returnFocus}
 					className={cn(
-						"dialog-content fixed left-1/2 top-24 z-50 flex w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl focus:outline-none",
+						"dialog-content fixed left-1/2 top-24 z-50 flex w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-2xl focus:outline-none",
 						className,
 					)}
 				>

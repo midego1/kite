@@ -106,17 +106,17 @@ export function LoginClient({ adding = false }: { adding?: boolean }) {
 						<p
 							id="login-error"
 							role="alert"
-							className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+							className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm font-medium"
 						>
 							{error}
 						</p>
 					)}
-					<Button type="submit" className="h-11 w-full rounded-full px-6 active:scale-[0.98]" disabled={loading}>
+					<Button type="submit" className="h-10 w-full" disabled={loading}>
 						{loading ? "Verifying..." : "Verify"}
 					</Button>
 					<button
 						type="button"
-						className="w-full text-center text-sm text-neutral-500 hover:text-neutral-800"
+						className="w-full rounded-md text-center text-sm text-neutral-500 outline-hidden hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500"
 						onClick={() => {
 							setChallengeToken(null);
 							setCode("");
@@ -174,13 +174,13 @@ export function LoginClient({ adding = false }: { adding?: boolean }) {
 					<p
 						id="login-error"
 						role="alert"
-						className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+						className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm font-medium"
 					>
 						{error}
 					</p>
 				)}
 				<TurnstileField resetSignal={turnstileReset} />
-				<Button type="submit" className="h-11 w-full rounded-full px-6 active:scale-[0.98]" disabled={loading}>
+				<Button type="submit" className="h-10 w-full" disabled={loading}>
 					{loading ? "Signing in..." : "Sign in"}
 				</Button>
 			</form>

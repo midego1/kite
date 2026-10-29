@@ -12,55 +12,61 @@ export function AuthShell({ icon: Icon, title, description, children, footer, st
 	if (useKeyChanged(branding.iconUrl)) setIconFailed(false);
 
 	return (
-		<div className="min-h-dvh bg-[#f1f4fa] px-4 py-6 text-neutral-900 sm:px-6 lg:flex lg:items-center lg:px-10 lg:py-10">
-			<main className="mx-auto grid w-full max-w-6xl overflow-hidden rounded-4xl bg-white lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-				<section className="flex flex-col p-7 sm:p-10 lg:p-14">
-					<div className="flex items-center gap-2">
-						<span className="flex items-center justify-center overflow-hidden">
-							{iconFailed ? (
-								<Icon className="h-8 w-8 text-blue-600" />
-							) : (
-								<img
-									src={iconUrl}
-									onError={() => {
-										if (iconUrl !== "/icon-96.png") setIconUrl("/icon-96.png");
-										else setIconFailed(true);
-									}}
-									alt=""
-									className="h-8 w-8 object-contain"
-								/>
-							)}
-						</span>
-						<span className="truncate text-lg font-bold text-neutral-900">{branding.appName}</span>
-					</div>
+		// The Zero look's sign-in: one bordered card on the page background, the product above it. Forms with steps
+		// (first-run setup, onboarding) get a wider card.
+		<div className="flex min-h-dvh flex-col items-center bg-[#f6f8fc] px-4 py-10 text-neutral-900 sm:justify-center sm:py-12">
+			<main className={`w-full ${steps ? "max-w-xl" : "max-w-md"}`}>
+				<div className="mb-6 flex items-center justify-center gap-2">
+					<span className="flex items-center justify-center overflow-hidden">
+						{iconFailed ? (
+							<Icon className="h-7 w-7 text-blue-600" />
+						) : (
+							<img
+								src={iconUrl}
+								onError={() => {
+									if (iconUrl !== "/icon-96.png") setIconUrl("/icon-96.png");
+									else setIconFailed(true);
+								}}
+								alt=""
+								className="h-7 w-7 object-contain"
+							/>
+						)}
+					</span>
+					<span className="truncate text-base font-semibold text-neutral-900">{branding.appName}</span>
+				</div>
 
-					<div className="mt-2 lg:mt-8">
-						<h1 className="max-w-md text-xl font-medium leading-tight tracking-tight text-neutral-950 sm:text-4xl">
-							{title}
-						</h1>
-						{description && <p className="mt-5 max-w-md text-base leading-7 text-neutral-600">{description}</p>}
-					</div>
-					<p aria-hidden="true" className="mt-auto hidden pt-12 font-script text-4xl text-blue-600 lg:block">
-						Email that flows.
-					</p>
-				</section>
-
-				<section className="flex min-w-0 flex-col justify-center p-7 sm:p-10 lg:p-14">
+				<section className="rounded-xl border border-neutral-200 bg-white p-6 shadow-xs sm:p-8">
 					{steps && (
-						<div className="mb-7 flex flex-wrap gap-2 text-xs font-semibold">
+						<ol aria-label="Setup steps" className="mb-6 flex flex-wrap gap-2 text-xs font-medium">
 							{steps.map((step, index) => (
-								<span key={step.label} className="flex items-center gap-2">
-									<span className={step.active ? "text-blue-700" : "text-neutral-500"}>
+								<li key={step.label} className="flex items-center gap-2">
+									<span
+										aria-current={step.active ? "step" : undefined}
+										className={
+											step.active ? "rounded-md bg-blue-50 px-2 py-0.5 text-blue-900" : "px-2 py-0.5 text-neutral-500"
+										}
+									>
 										{index + 1} {step.label}
 									</span>
-									{index < steps.length - 1 && <span className="text-neutral-300">/</span>}
-								</span>
+									{index < steps.length - 1 && (
+										<span aria-hidden="true" className="text-neutral-300">
+											/
+										</span>
+									)}
+								</li>
 							))}
-						</div>
+						</ol>
 					)}
-					<div className="w-full">{children}</div>
-					{footer && <div className="mt-8 text-sm font-medium text-blue-700">{footer}</div>}
+					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">{title}</h1>
+					{description && <p className="mt-1.5 text-sm leading-6 text-neutral-500">{description}</p>}
+					<div className="mt-6 w-full">{children}</div>
+					{footer && (
+						<div className="mt-6 border-t border-neutral-200 pt-4 text-sm font-medium text-blue-700">{footer}</div>
+					)}
 				</section>
+				<p aria-hidden="true" className="mt-8 text-center font-script text-3xl text-blue-600">
+					Email that flows.
+				</p>
 			</main>
 		</div>
 	);

@@ -45,7 +45,7 @@ export function SendPreview({
 			aria-modal="true"
 			aria-label="Preview email before sending"
 		>
-			<div className="flex max-h-[calc(100vh-4rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+			<div className="flex max-h-[calc(100vh-4rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg">
 				<div className="border-b border-neutral-100 p-5">
 					<h2 className="text-lg font-semibold">{scheduledAt ? "Preview and schedule" : "Preview and send"}</h2>
 					<dl className="mt-3 grid grid-cols-[5rem_1fr] gap-x-2 gap-y-1 text-sm break-words">

@@ -10,11 +10,11 @@ import { Input } from "@/components/ui/input";
 export function PublicDriveFrame({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
 	const branding = useBranding();
 	return (
-		<div className="min-h-dvh bg-neutral-50 dark:bg-neutral-950">
-			<header className="flex items-center gap-2 px-4 py-3 md:px-8">
+		<div className="min-h-dvh bg-[#f6f8fc]">
+			<header className="flex h-14 items-center gap-2 px-4 md:px-8">
 				{/* eslint-disable-next-line @next/next/no-img-element -- the branding icon route is same-origin and tiny */}
 				<img src={branding.iconUrl} alt="" width={28} height={28} className="size-7 rounded-md" />
-				<span className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{branding.appName}</span>
+				<span className="text-base font-semibold text-neutral-900">{branding.appName}</span>
 			</header>
 			<main className={`mx-auto flex w-full flex-col px-4 pb-8 md:px-8 ${wide ? "max-w-5xl" : "max-w-md"}`}>
 				{children}
@@ -26,9 +26,9 @@ export function PublicDriveFrame({ children, wide = false }: { children: ReactNo
 function Notice({ title, text }: { title: string; text: string }) {
 	return (
 		<PublicDriveFrame>
-			<div className="mt-16 rounded-2xl bg-white p-8 text-center shadow-sm dark:bg-neutral-900">
-				<h1 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{title}</h1>
-				<p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">{text}</p>
+			<div className="mt-16 rounded-xl border border-neutral-200 bg-white p-8 text-center shadow-xs">
+				<h1 className="text-lg font-semibold tracking-tight text-neutral-900">{title}</h1>
+				<p className="mt-1.5 text-sm text-neutral-500">{text}</p>
 			</div>
 		</PublicDriveFrame>
 	);
@@ -78,14 +78,14 @@ export function PublicDrivePassword({ token, onUnlocked }: { token: string; onUn
 		<PublicDriveFrame>
 			<form
 				onSubmit={(event) => void submit(event)}
-				className="mt-16 space-y-4 rounded-2xl bg-white p-8 shadow-sm dark:bg-neutral-900"
+				className="mt-16 space-y-4 rounded-xl border border-neutral-200 bg-white p-8 shadow-xs"
 			>
 				<div className="flex items-center gap-2">
 					<Lock size={18} className="text-neutral-500" />
-					<h1 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">This link needs a password</h1>
+					<h1 className="text-lg font-semibold tracking-tight text-neutral-900">This link needs a password</h1>
 				</div>
 				<label className="block space-y-1 text-sm">
-					<span className="text-neutral-700 dark:text-neutral-300">Password</span>
+					<span className="font-medium text-neutral-900">Password</span>
 					<Input
 						type="password"
 						autoComplete="off"

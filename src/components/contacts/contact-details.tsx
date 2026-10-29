@@ -83,12 +83,13 @@ export function ContactDetailsTrigger({ mailboxId, address, name, label, classNa
 				{shownName}
 			</button>
 			<Dialog open={open} onOpenChange={handleOpenChange}>
-				<DialogContent>
+				{/* Only the details scroll in a short window, so the title and the close button stay in view. */}
+				<DialogContent className="flex max-h-[calc(100vh-4rem)] flex-col">
 					<DialogHeader>
 						<DialogTitle>Contact details</DialogTitle>
 						<DialogDescription>Update how this contact appears in your mailbox.</DialogDescription>
 					</DialogHeader>
-					<div className="space-y-5">
+					<div className="-mx-6 -mt-1 min-h-0 overflow-y-auto px-6 pt-1 pb-1 space-y-5">
 						<div className="flex flex-col items-start gap-4">
 							<ContactAvatarForm
 								mailboxId={mailboxId}

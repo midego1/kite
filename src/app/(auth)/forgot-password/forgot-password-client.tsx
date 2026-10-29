@@ -60,13 +60,13 @@ export function ForgotPasswordClient() {
 					{error && (
 						<p
 							role="alert"
-							className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+							className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm font-medium"
 						>
 							{error}
 						</p>
 					)}
 					<TurnstileField resetSignal={turnstileReset} />
-					<Button type="submit" className="h-11 w-full rounded-full px-6 active:scale-[0.98]" disabled={loading}>
+					<Button type="submit" className="h-10 w-full" disabled={loading}>
 						{loading ? "Sending..." : "Send reset link"}
 					</Button>
 				</form>

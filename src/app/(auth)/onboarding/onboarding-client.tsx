@@ -142,7 +142,7 @@ export function OnboardingClient() {
 			<div className="space-y-5">
 				{step === 1 && (
 					<>
-						<p className="rounded-2xl bg-[#eaf1fb] px-4 py-3 text-sm leading-6 text-neutral-700">
+						<p className="rounded-lg bg-[#eaf1fb] px-4 py-3 text-sm leading-6 text-neutral-700">
 							Your domain must use Cloudflare DNS on the same account as{" "}
 							<code className="no-font-mono text-xs font-semibold text-blue-800">CF_TOKEN</code>.
 						</p>
@@ -177,7 +177,7 @@ export function OnboardingClient() {
 						/>
 						{!skipDns && (
 							<>
-								<div className="flex items-center justify-between gap-4 rounded-2xl bg-neutral-50 px-4 py-3">
+								<div className="flex items-center justify-between gap-4 rounded-lg bg-neutral-50 px-4 py-3">
 									<div>
 										<Label htmlFor="onboarding-enable-sending">Enable sending</Label>
 										<p className="mt-1 text-xs leading-5 text-neutral-500">
@@ -202,7 +202,7 @@ export function OnboardingClient() {
 									)}
 								</div>
 								{domainCheck && (
-									<div className="flex items-center gap-3 rounded-2xl bg-green-50 px-4 py-3 text-sm text-green-700">
+									<div className="flex items-center gap-3 rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
 										<CheckCircle2 className="h-4 w-4" />
 										Domain found in Cloudflare as {domainCheck.zone.name}
 									</div>
@@ -210,7 +210,7 @@ export function OnboardingClient() {
 							</>
 						)}
 						{mxConflict && (
-							<div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-900">
+							<div className="space-y-3 rounded-lg border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a] px-4 py-4">
 								<div className="flex items-start gap-3">
 									<AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
 									<p className="text-sm leading-6">
@@ -218,11 +218,7 @@ export function OnboardingClient() {
 										them with Cloudflare Email Routing, so the previous provider will stop receiving mail.
 									</p>
 								</div>
-								<Button
-									onClick={() => void addDomain(true)}
-									disabled={loading}
-									className="h-11 w-full rounded-full px-6 active:scale-[0.98]"
-								>
+								<Button onClick={() => void addDomain(true)} disabled={loading} className="h-10 w-full">
 									{loading ? "Replacing MX records..." : "Delete MX records and continue"}
 								</Button>
 							</div>
@@ -231,7 +227,7 @@ export function OnboardingClient() {
 							<Button
 								onClick={() => void addDomain()}
 								disabled={!hostname || loading || domainChecking}
-								className="h-11 w-full rounded-full px-6 active:scale-[0.98]"
+								className="h-10 w-full"
 							>
 								{loading ? "Adding..." : "Add domain"}
 							</Button>
@@ -252,11 +248,7 @@ export function OnboardingClient() {
 								<span className="max-w-36 truncate text-sm font-medium text-neutral-500">@{hostname}</span>
 							</div>
 						</div>
-						<Button
-							onClick={addMailbox}
-							disabled={!localPart || loading}
-							className="h-11 w-full rounded-full px-6 active:scale-[0.98]"
-						>
+						<Button onClick={addMailbox} disabled={!localPart || loading} className="h-10 w-full">
 							{loading ? "Creating..." : "Go to inbox"}
 						</Button>
 					</>
@@ -264,7 +256,7 @@ export function OnboardingClient() {
 				{error && (
 					<p
 						role="alert"
-						className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+						className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm font-medium"
 					>
 						{error}
 					</p>

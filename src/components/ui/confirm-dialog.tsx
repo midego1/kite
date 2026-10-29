@@ -34,7 +34,7 @@ function ConfirmDialogBody({ pending }: { pending: PendingConfirmation }) {
 				<DialogPrimitive.Overlay className="dialog-overlay fixed inset-0 z-[60] bg-black/35" />
 				<DialogPrimitive.Content
 					role="alertdialog"
-					className="dialog-content fixed left-1/2 top-1/2 z-[60] max-h-[calc(100vh-4rem)] w-[min(440px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+					className="dialog-content fixed left-1/2 top-1/2 z-[60] max-h-[calc(100vh-4rem)] w-[min(440px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-6 shadow-lg"
 					onOpenAutoFocus={(event) => {
 						if (pending.typedConfirmation) return;
 						// Land on Cancel, so pressing Enter by reflex does not confirm a destructive action.
@@ -48,7 +48,7 @@ function ConfirmDialogBody({ pending }: { pending: PendingConfirmation }) {
 							if (canConfirm) settleConfirmation(pending.id, true);
 						}}
 					>
-						<DialogPrimitive.Title className="text-lg font-semibold text-neutral-900">
+						<DialogPrimitive.Title className="text-lg font-semibold tracking-tight text-neutral-900">
 							{pending.title}
 						</DialogPrimitive.Title>
 						{pending.description ? (

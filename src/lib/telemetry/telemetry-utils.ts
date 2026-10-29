@@ -136,6 +136,19 @@ export function telemetryStartDay(now: Date): string {
 	return earliest.getTime() < telemetryRunTime(day) ? day : utcDay(new Date(telemetryRunTime(day) + DAY_MS));
 }
 
+/**
+ * The date an undecided install that was told earlier moves to when this rule first runs on it, or null when it keeps
+ * its date. A start day announced under the earlier 14-day rule is later than the day the first 02:00 UTC run more
+ * than an hour from `now` gives, so it moves to that day; a date that rule already gave is never later than it, so
+ * running this again changes nothing. Only an undecided install with a start day (one that was told, so a notice was
+ * on screen) is touched, and a date only ever moves earlier. A decision, on or off, is never revisited.
+ */
+export function telemetryEarlierStartDay(choice: TelemetryChoice, now: Date): string | null {
+	if (choice.decision !== null || choice.startDay === null) return null;
+	const day = telemetryStartDay(now);
+	return day < choice.startDay ? day : null;
+}
+
 /** `2026-11-12` as `12 November 2026`, the same everywhere: the day is a UTC day. */
 export function telemetryDayLabel(day: string): string {
 	return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(

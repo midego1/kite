@@ -1,14 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { ChartNoAxesColumn, X } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ROW_BUTTON_CLASS } from "@/components/ui/page-utils";
-import { NOTICE_LINK_CLASS, WARNING_NOTICE_CLASS } from "@/components/notice-styles";
 import { TELEMETRY_DOCS_URL, telemetryHideLabel, telemetryNoticeCopy } from "@/lib/telemetry/notice-utils";
 import { TELEMETRY_FIELDS, telemetryLocalStart, telemetryNoticeText } from "@/lib/telemetry/telemetry-utils";
-import { TELEMETRY_CARD_ID, useTelemetryNotice, useWhenVisible, type TelemetryUpdate } from "./use-telemetry-status";
+import { useTelemetryNotice, useWhenVisible, type TelemetryUpdate } from "./use-telemetry-status";
 
 function HideButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled: boolean }) {
 	return (
@@ -73,11 +71,11 @@ function FieldsDisclosure() {
 
 /**
  * Tells the primary admin of an install that never chose (an upgrade, or a setup without the switch) that usage
- * statistics start on the start day unless they turn them off. Shown until they choose or hide it, in one place per
- * page: the sidebar notice slot in the mail views and Settings, and above the page on Admin (whose frame then leaves
- * the sidebar one out). The start day is fixed only once the notice is on screen, and hiding it keeps that day.
+ * statistics start on the start day unless they turn them off. Shown above the Admin pages only, until they choose
+ * or hide it; the mail views, Settings and the module pages never show it. The start day is fixed only once the
+ * notice is on screen, and hiding it keeps that day.
  */
-export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
+export function TelemetryNotice() {
 	const { startDay, unseen, markShown, save, endpoint } = useTelemetryNotice();
 	const [error, setError] = useState<string | null>(null);
 	const ref = useRef<HTMLElement>(null);
@@ -102,43 +100,6 @@ export function TelemetryNotice({ variant }: { variant: "sidebar" | "page" }) {
 			{error}
 		</p>
 	);
-
-	if (variant === "sidebar")
-		return (
-			<section ref={ref} aria-label="Usage statistics notice" data-telemetry-notice className={WARNING_NOTICE_CLASS}>
-				<ChartNoAxesColumn className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-				<div className="min-w-0 flex-1">
-					<p className="font-medium">Usage statistics</p>
-					<p className="mt-0.5 opacity-90" title={localStartText(startDay) ?? undefined}>
-						{lead}
-					</p>
-					<p className="mt-0.5 opacity-90">{copy.short}</p>
-					{alert}
-					<div className="mt-1.5 flex flex-wrap items-center gap-3">
-						<button
-							type="button"
-							className={NOTICE_LINK_CLASS}
-							disabled={busy}
-							onClick={() => choose({ enabled: false })}
-						>
-							Turn off
-						</button>
-						<button
-							type="button"
-							className={NOTICE_LINK_CLASS}
-							disabled={busy}
-							onClick={() => choose({ enabled: true })}
-						>
-							Keep on
-						</button>
-						<Link href={`/general#${TELEMETRY_CARD_ID}`} className={NOTICE_LINK_CLASS}>
-							Details
-						</Link>
-					</div>
-				</div>
-				{hide}
-			</section>
-		);
 
 	return (
 		<section

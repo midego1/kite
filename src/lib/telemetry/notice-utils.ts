@@ -38,20 +38,12 @@ export function isDefaultCollector(endpoint: string | null | undefined): boolean
 const TELEMETRY_PURPOSE =
 	"how many active installs there are, which versions, runtimes and modules they run, and roughly how many accounts and mailboxes they have and use";
 
-/** The details under the notice's lead sentence, on the admin pages, for the Kite project's collector. */
+/** The details under the notice's lead sentence, for the Kite project's collector. */
 const TELEMETRY_NOTICE_DETAIL = `Once a day, around 02:00 UTC, it would send the Kite project one small pseudonymous report, so it can see ${TELEMETRY_PURPOSE}. It holds rough counts only: ranges, never exact numbers, and no names, email addresses, domains or message content. The collector does not store IP addresses. Nothing has been sent yet. Keep on starts with the next daily report; Turn off means nothing is ever sent.`;
 
 /** The same details when `KITE_TELEMETRY_URL` sends reports to another collector: nothing is claimed about who runs it. */
 const TELEMETRY_NOTICE_DETAIL_CUSTOM =
 	"Once a day, around 02:00 UTC, it would send one small pseudonymous report to the collector this deployment is set up to use. It holds rough counts only: ranges, never exact numbers, and no names, email addresses, domains or message content. Nothing has been sent yet. Keep on starts with the next daily report; Turn off means nothing is ever sent.";
-
-/** The sidebar notice's second line, for the Kite project's collector. */
-const TELEMETRY_NOTICE_SHORT =
-	"So the Kite project can see how many active installs there are, which versions and modules they run, and roughly how many accounts and mailboxes they have. One pseudonymous daily report, rough counts only.";
-
-/** The sidebar notice's second line for another collector. */
-const TELEMETRY_NOTICE_SHORT_CUSTOM =
-	"One pseudonymous daily report, rough counts only, to the collector this deployment is set up to use.";
 
 /** What the report is for, as the end of a sentence that starts "Kite sends one small report …". */
 export function telemetryPurposeClause(endpoint: string | null | undefined): string {
@@ -67,11 +59,9 @@ export function telemetryCollectorLogging(endpoint: string | null | undefined): 
 		: "What another collector logs or stores is up to whoever runs it.";
 }
 
-/** The notice's detail and short line for where reports go (a null endpoint never shows a notice). */
+/** The notice's detail for where reports go (a null endpoint never shows a notice). */
 export function telemetryNoticeCopy(endpoint: string | null | undefined) {
-	return isDefaultCollector(endpoint)
-		? { detail: TELEMETRY_NOTICE_DETAIL, short: TELEMETRY_NOTICE_SHORT }
-		: { detail: TELEMETRY_NOTICE_DETAIL_CUSTOM, short: TELEMETRY_NOTICE_SHORT_CUSTOM };
+	return { detail: isDefaultCollector(endpoint) ? TELEMETRY_NOTICE_DETAIL : TELEMETRY_NOTICE_DETAIL_CUSTOM };
 }
 
 /** The notice's close button: hiding it is not a choice, and the date still holds. */

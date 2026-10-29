@@ -1,5 +1,7 @@
 import { authFetch } from "@/lib/auth/client";
 import { formatUserDate } from "@/lib/time/utils";
+import type { BackupHealth } from "@/lib/backups/health-types";
+import type { RestoreSummary } from "@/lib/backups/restore-job-types";
 import type { BackupItem, BackupsResponse, BackupSettings } from "./types";
 
 export const WEEKDAYS = [
@@ -47,31 +49,53 @@ export async function startBackup(): Promise<void> {
 }
 
 export async function removeBackup(id: string): Promise<void> {
-	const response = await authFetch(`/api/backups/${id}`, { method: "DELETE" });
+	const response = await authFetch(`/api/backups/${encodeURIComponent(id)}`, { method: "DELETE" });
 	const data = (await response.json()) as { error?: string };
 	if (!response.ok) throw new Error(data.error ?? "Failed to delete backup");
 }
 
-/** Sends the file as the raw request body, which the server streams to storage instead of buffering. */
-export async function restoreBackup(file: File): Promise<void> {
-	const response = await authFetch("/api/backups/restore", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: file,
-	});
-	const data = (await response.json()) as { error?: string };
-	if (!response.ok) throw new Error(data.error ?? "Failed to restore backup");
+type RestoreStarted = { restoreId: string };
+
+async function restoreResponse(response: Response): Promise<string> {
+	const data = (await response.json()) as Partial<RestoreStarted> & { error?: string };
+	if (!response.ok || !data.restoreId) throw new Error(data.error ?? "Failed to restore backup");
+	return data.restoreId;
+}
+
+/**
+ * Sends the file as the raw request body, which the server streams to storage instead of buffering, and returns
+ * the id of the queued restore.
+ */
+export async function restoreBackup(file: File): Promise<string> {
+	return restoreResponse(
+		await authFetch("/api/backups/restore", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: file,
+		}),
+	);
 }
 
 /** Restores a completed backup from storage, without downloading and uploading it again. */
-export async function restoreStoredBackup(id: string): Promise<void> {
-	const response = await authFetch(`/api/backups/${id}/restore`, { method: "POST" });
-	const data = (await response.json()) as { error?: string };
-	if (!response.ok) throw new Error(data.error ?? "Failed to restore backup");
+export async function restoreStoredBackup(id: string): Promise<string> {
+	return restoreResponse(await authFetch(`/api/backups/${encodeURIComponent(id)}/restore`, { method: "POST" }));
+}
+
+/** Restores the safety backup of a restore that could not be rolled back. */
+export async function recoverPreviousData(): Promise<string> {
+	return restoreResponse(await authFetch("/api/backups/restore/recover", { method: "POST" }));
+}
+
+/** The latest restore, as the admin overview sees it. A restore replaces the sessions, so a 401 signs in again. */
+export async function fetchRestoreSummary(): Promise<RestoreSummary | null> {
+	const response = await authFetch("/api/backups/health", { cache: "no-store" });
+	const data = (await response.json()) as Partial<BackupHealth> & { error?: string };
+	if (!response.ok) throw new Error(data.error ?? "Failed to read the restore");
+	return data.restore ?? null;
 }
 
 export async function downloadBackup(backup: BackupItem): Promise<void> {
-	const response = await authFetch(`/api/backups/${backup.id}/download`);
+	const response = await authFetch(`/api/backups/${encodeURIComponent(backup.id)}/download`);
 	if (!response.ok) {
 		const data = (await response.json()) as { error?: string };
 		throw new Error(data.error ?? "Failed to download backup");

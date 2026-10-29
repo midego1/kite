@@ -75,6 +75,7 @@
 	"/api/backups/[id]/restore",
 	"/api/backups/[id]",
 	"/api/backups/health",
+	"/api/backups/restore/recover",
 	"/api/backups/restore",
 	"/api/backups",
 	"/api/booking/[eventId]",

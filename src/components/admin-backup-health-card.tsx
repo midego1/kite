@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, DatabaseBackup } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AdminBackupRestoreStatus } from "@/components/admin-backup-restore-status";
 import type { BackupHealth } from "@/lib/backups/health-types";
 import { formatBackupDuration } from "@/lib/backups/health-utils";
 import { formatDatabaseBytes } from "@/lib/db/size-utils";
@@ -23,7 +24,10 @@ function scheduleText(automatic: BackupHealth["automatic"]): string {
 		: `Automatic backups run ${schedule} and are kept until you delete them.`;
 }
 
-/** The latest successful backup and a warning when the latest run failed (docs/operations.md#backup-health). */
+/**
+ * The latest successful backup, a warning when the latest run failed, and the latest restore
+ * (docs/operations.md#backup-health).
+ */
 export function AdminBackupHealthCard() {
 	const [health, setHealth] = useState<BackupHealth | null>(null);
 
@@ -42,7 +46,7 @@ export function AdminBackupHealthCard() {
 
 	if (!health) return null;
 	const { lastSuccess, lastFailure } = health;
-	const warn = health.level !== "ok";
+	const warn = health.level !== "ok" || !!health.restore?.needsRecovery;
 	return (
 		<Card data-testid="backup-health-card" data-level={health.level}>
 			<CardHeader className="flex-row items-center gap-4 space-y-0">
@@ -74,6 +78,7 @@ export function AdminBackupHealthCard() {
 					</p>
 				)}
 				{health.inProgress && <p className="text-neutral-500">A backup is running now.</p>}
+				<AdminBackupRestoreStatus restore={health.restore} />
 				<p className="text-neutral-500">
 					{scheduleText(health.automatic)}{" "}
 					<Link href="/backups" className="font-medium text-neutral-900 underline underline-offset-2">

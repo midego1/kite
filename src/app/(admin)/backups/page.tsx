@@ -35,13 +35,13 @@ import {
 	getBackupTriggerLabel,
 	getStatusClass,
 	removeBackup,
-	restoreBackup,
-	restoreStoredBackup,
 	saveBackupSettings,
 	startBackup,
 } from "./utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { RestoreStoredBackupButton } from "./restore-stored-button";
+import { RestoreRunningNotice } from "./restore-running-notice";
+import { useRestoreJob } from "./use-restore-job";
 
 export default function BackupsPage() {
 	const queryClient = useQueryClient();
@@ -94,10 +94,7 @@ export default function BackupsPage() {
 	});
 
 	const download = useMutation({ mutationFn: downloadBackup });
-	// A restore replaces the sessions too, so sign in again.
-	const signInAgain = () => window.location.assign("/login");
-	const restore = useMutation({ mutationFn: restoreBackup, onSuccess: signInAgain });
-	const restoreStored = useMutation({ mutationFn: restoreStoredBackup, onSuccess: signInAgain });
+	const restore = useRestoreJob();
 	const error = [
 		backups.error,
 		saveSettings.error,
@@ -106,7 +103,6 @@ export default function BackupsPage() {
 		deleteBackup.error,
 		download.error,
 		restore.error,
-		restoreStored.error,
 	].find(Boolean);
 	const configuration = backups.data?.configuration;
 	const backupConfigured = configuration?.configured === true;
@@ -136,7 +132,7 @@ export default function BackupsPage() {
 									"This replaces all current database records and may sign you out. A backup of the current data is saved first, and the restore is rolled back if it fails.",
 								confirmLabel: "Restore",
 							}).then((confirmed) => {
-								if (confirmed) restore.mutate(file);
+								if (confirmed) restore.restoreUpload(file);
 							});
 						}}
 					/>
@@ -157,12 +153,12 @@ export default function BackupsPage() {
 								className="z-50 min-w-48 rounded-lg border border-neutral-200 bg-white p-1 text-sm shadow-lg"
 							>
 								<DropdownMenu.Item
-									disabled={restore.isPending}
+									disabled={restore.running}
 									onSelect={() => restoreInput.current?.click()}
 									className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-neutral-900 outline-none hover:bg-neutral-100 focus:bg-neutral-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
 								>
 									<Upload className="h-4 w-4" />
-									{restore.isPending ? "Restoring..." : "Restore from backup"}
+									{restore.running ? "Restoring..." : "Restore from backup"}
 								</DropdownMenu.Item>
 								<DropdownMenu.Item
 									disabled={!settings || autoSaveSettings.isPending}
@@ -229,6 +225,8 @@ export default function BackupsPage() {
 					)}
 				</DialogContent>
 			</Dialog>
+
+			<RestoreRunningNotice running={restore.running} />
 
 			{error && (
 				<p
@@ -467,11 +465,7 @@ export default function BackupsPage() {
 							>
 								<Download className="h-4 w-4" />
 							</Button>
-							<RestoreStoredBackupButton
-								backup={backup}
-								disabled={restoreStored.isPending || restore.isPending}
-								onRestore={(id) => restoreStored.mutate(id)}
-							/>
+							<RestoreStoredBackupButton backup={backup} disabled={restore.running} onRestore={restore.restoreStored} />
 							<Button
 								size="sm"
 								variant="ghost"

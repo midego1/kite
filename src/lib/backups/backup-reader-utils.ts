@@ -67,11 +67,26 @@ export function parseJsonBytes(bytes: Uint8Array): unknown {
 export class BackupDocumentScanner {
 	private stack: Frame[] = [];
 	private capture: Capture | null = null;
-	private offset = 0;
+	private offset: number;
 	private started = false;
 	private done = false;
 
-	constructor(private readonly mode: BackupScanMode = "document") {}
+	/**
+	 * `baseOffset` is the absolute position of the first byte pushed, so event offsets stay absolute when a table
+	 * is read back by range. With `resumeAfterRow` (rows mode) the scanner starts inside the array, right after a
+	 * row, which is how a restore picks up again from a checkpoint.
+	 */
+	constructor(
+		private readonly mode: BackupScanMode = "document",
+		{ baseOffset = 0, resumeAfterRow = false }: { baseOffset?: number; resumeAfterRow?: boolean } = {},
+	) {
+		this.offset = baseOffset;
+		if (resumeAfterRow) {
+			if (mode !== "rows") throw new Error("Only a rows scan can resume after a row");
+			this.started = true;
+			this.stack.push({ role: "table", array: true, expect: "next", key: null, name: "" });
+		}
+	}
 
 	push(page: Uint8Array): BackupScanEvent[] {
 		const events: BackupScanEvent[] = [];
@@ -209,6 +224,7 @@ export class BackupDocumentScanner {
 	private value(frame: Frame, byte: number, absolute: number, index: number, events: BackupScanEvent[]): number {
 		if (frame.role === "root" && frame.key === "tables" && byte === OPEN_OBJECT) {
 			frame.expect = "next";
+			events.push({ type: "tablesStart" });
 			this.stack.push({ role: "tables", array: false, expect: "first", key: null, name: null });
 			return index + 1;
 		}

@@ -14,6 +14,7 @@ export function summarizeBackupHealth(input: {
 	lastFinished: BackupHealthRow | null;
 	inProgress: boolean;
 	automatic: BackupHealth["automatic"];
+	restore?: BackupHealth["restore"];
 }): BackupHealth {
 	const { lastCompleted, lastFinished } = input;
 	const lastSuccess =
@@ -43,6 +44,7 @@ export function summarizeBackupHealth(input: {
 		lastFailure,
 		inProgress: input.inProgress,
 		automatic: input.automatic,
+		restore: input.restore ?? null,
 	};
 }
 

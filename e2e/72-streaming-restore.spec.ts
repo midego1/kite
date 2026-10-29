@@ -69,9 +69,21 @@ test("restores a backup of several thousand messages straight from storage", asy
 	await row.getByTitle("Restore this backup").click();
 	const confirm = page.getByRole("alertdialog", { name: "Restore this backup?" });
 	await confirm.getByRole("button", { name: "Restore" }).click();
+	// The restore is queued; the page follows it and signs in again once the restored sessions replace this one.
+	await expect(page.getByTestId("restore-running")).toBeVisible();
 	await expect(page).toHaveURL(/\/login/, { timeout: 180_000 });
 	await context.close();
 
+	// The suite's own session is in the restored backup, so it answers again once the job is done.
+	await expect
+		.poll(
+			async () => {
+				const response = await api.get("/api/backups/health");
+				return response.ok() ? ((await response.json()) as { restore?: { status: string } }).restore?.status : null;
+			},
+			{ timeout: 180_000, intervals: [1000] },
+		)
+		.toBe("completed");
 	expect(bulkCount()).toBe(BULK);
 	const backups = await readBackups(api);
 	// The restored backup is newer than the data it restored and stays listed, next to the safety backup.
@@ -112,4 +124,45 @@ test("the admin overview shows the last successful backup and warns when the las
 	await expect(card.getByRole("alert")).toContainText("Backup was interrupted before it finished");
 	await expect(card).toContainText("No successful backup yet.");
 	await expect(card).toContainText("Automatic backups run daily and are kept for 14 days.");
+});
+
+test("a restore that could not be rolled back offers the data from before it on the admin overview", async ({
+	page,
+}) => {
+	const health = {
+		level: "ok",
+		lastSuccess: null,
+		lastFailure: null,
+		inProgress: false,
+		automatic: null,
+		restore: {
+			id: "rst_failed",
+			status: "failed",
+			active: false,
+			createdAt: new Date().toISOString(),
+			finishedAt: new Date().toISOString(),
+			error: "batch failed, and the automatic rollback also failed: batch failed",
+			needsRecovery: true,
+			safetyBackup: { id: "bak_safety", filename: "pre-restore-kite-2026.json" },
+		},
+	};
+	// Interrupting a restore twice on purpose is not practical here; tests/backup-restore-stream.test.mjs covers it.
+	await page.route("**/api/backups/health", (route) => route.fulfill({ json: health }));
+	let recovered = false;
+	await page.route("**/api/backups/restore/recover", (route) => {
+		recovered = route.request().method() === "POST";
+		return route.fulfill({ status: 202, json: { ok: true, restoreId: "rst_recovery" } });
+	});
+	await page.goto("/admin");
+	const card = page.getByTestId("backup-health-card");
+	const status = card.getByTestId("restore-status");
+	await expect(status).toContainText("The restore failed and could not be rolled back", { timeout: 60_000 });
+	await expect(status).toContainText("pre-restore-kite-2026.json");
+	await status.getByRole("button", { name: "Restore previous data" }).click();
+	await page
+		.getByRole("alertdialog", { name: "Restore the previous data?" })
+		.getByRole("button", { name: "Restore" })
+		.click();
+	await expect(page).toHaveURL(/\/backups/);
+	expect(recovered).toBe(true);
 });

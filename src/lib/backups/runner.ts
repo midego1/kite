@@ -12,7 +12,8 @@ import {
 	queueBackupObjectsDelete,
 	startBackupObjectsCopy,
 } from "./objects";
-import { createScheduledBackupIfDue, failBackupRecord, getBackupSettings, isObjectsRunActive } from "./service";
+import { isObjectsRunActive } from "./objects-utils";
+import { createScheduledBackupIfDue, failBackupRecord, getBackupSettings } from "./service";
 import { BACKUP_PREFIX, createBackupFilename } from "./utils";
 
 const log = createLogger("backups");

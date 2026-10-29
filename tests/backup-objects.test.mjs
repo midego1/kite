@@ -15,6 +15,21 @@ after(() => {
 	rmSync(directory, { recursive: true, force: true });
 	rmSync(bucketRoot, { recursive: true, force: true });
 });
+/** The migration status check reads the generated bundle; these tests run on a fully migrated database. */
+const migrationStatusStub = {
+	name: "migration-status-stub",
+	setup(builder) {
+		builder.onResolve({ filter: /^@\/lib\/migrations\/service$/ }, () => ({
+			path: "migration-status-stub",
+			namespace: "stub",
+		}));
+		builder.onLoad({ filter: /.*/, namespace: "stub" }, () => ({
+			contents: "export async function getMigrationStatus() { return { pending: [], unknown: [] }; }",
+			loader: "js",
+		}));
+	},
+};
+
 await build({
 	stdin: {
 		contents: `
@@ -23,6 +38,8 @@ await build({
 			export { FileBucket } from "./server/runtime/file-bucket.ts";
 			export { withStorage } from "./src/lib/storage/router.ts";
 			export * from "./src/lib/backups/objects-utils.ts";
+			export { RestoreBusyError, startStoredRestore } from "./src/lib/backups/restore.ts";
+			export { processRestoreMessage } from "./src/lib/backups/restore-job.ts";
 			export { parseBackupSettingsInput } from "./src/app/api/backups/utils.ts";
 			export { estimateBackupObjects, markBackupObjectsPending, processBackupObjectsMessage, retryBackupObjectsCopy, startBackupObjectsRestore } from "./src/lib/backups/objects.ts";
 			export { runDatabaseBackup, deleteExpiredBackups } from "./src/lib/backups/runner.ts";
@@ -41,6 +58,7 @@ await build({
 	tsconfig: join(root, "tsconfig.json"),
 	packages: "external",
 	alias: { "cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts") },
+	plugins: [migrationStatusStub],
 	logLevel: "silent",
 });
 const lib = await import(pathToFileURL(join(directory, "entry.mjs")).href);
@@ -293,6 +311,7 @@ async function fixture(t) {
 		while (queue.length) {
 			const body = queue.shift();
 			if (body.kind === "backup.run") await lib.runDatabaseBackup(env, body.backupId);
+			else if (body.kind === "backup.restore") await lib.processRestoreMessage(env, body);
 			else await lib.processBackupObjectsMessage(env, body);
 			delivered++;
 		}
@@ -561,6 +580,49 @@ test("Retry works for a copy that failed before it had a folder", async (t) => {
 	assert.deepEqual(queue, [{ kind: "backup.objects.copy", backupId: "bak_nostart", step: 1 }]);
 	await drain();
 	assert.equal(backupRow(db, "bak_nostart").objects_status, "completed");
+});
+
+test("restoring a full backup keeps its mail files, which can then be restored", async (t) => {
+	const { db, env, bucket, drain } = await fixture(t);
+	queuedBackup(db, "bak_whole");
+	await lib.runDatabaseBackup(env, "bak_whole");
+	// Its own document holds its row as it was while exporting: running, files pending.
+	assert.equal(backupRow(db, "bak_whole").objects_status, "copying", "the copy is started right after the export");
+	await drain();
+	const before = backupRow(db, "bak_whole");
+	assert.equal(before.objects_status, "completed");
+
+	db.db.exec("DELETE FROM messages WHERE id = 'msg-003'");
+	await bucket.delete("inbound/3-raw.eml");
+	await lib.startStoredRestore(env, "bak_whole", "owner");
+	await drain();
+	assert.ok(db.db.prepare("SELECT id FROM messages WHERE id = 'msg-003'").get(), "the database came back");
+	const after = backupRow(db, "bak_whole");
+	for (const column of [
+		"objects_status",
+		"objects_prefix",
+		"objects_count",
+		"objects_size",
+		"objects_missing",
+		"objects_failed",
+		"objects_cursor",
+		"objects_restore",
+		"objects_updated_at",
+	])
+		assert.equal(after[column], before[column], column);
+
+	assert.equal(await lib.startBackupObjectsRestore(env, "bak_whole"), "started");
+	await drain();
+	assert.equal(await (await bucket.get("inbound/3-raw.eml")).text(), "raw mail 3");
+	assert.equal(JSON.parse(backupRow(db, "bak_whole").objects_restore).restored, 1);
+});
+
+test("a backup whose mail files are being copied is not restored under the copy", async (t) => {
+	const { db, env } = await fixture(t);
+	queuedBackup(db, "bak_busy");
+	await lib.runDatabaseBackup(env, "bak_busy");
+	assert.equal(backupRow(db, "bak_busy").objects_status, "copying");
+	await assert.rejects(lib.startStoredRestore(env, "bak_busy", "owner"), lib.RestoreBusyError);
 });
 
 /** A database migrated up to, but not including, 0081. */

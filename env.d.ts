@@ -22,6 +22,7 @@ interface CloudflareEnv {
 		| import("./src/lib/mailboxes/delete-types").MailboxPurgeMessage
 		| import("./src/lib/backups/queue-types").BackupRunMessage
 		| import("./src/lib/backups/objects-types").BackupObjectsMessage
+		| import("./src/lib/backups/restore-job-types").RestoreJobMessage
 		| import("./src/lib/storage/migration-utils").StorageMigrateMessage
 	>;
 	ASSETS: Fetcher;

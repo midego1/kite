@@ -36,7 +36,9 @@ objects and encryption keys as confidential; see [PII handling](../pii-handling.
    groups. Never download a production backup into the Mission workspace.
 5. Document snapshot timestamp, selected groups, estimated loss window and
    recovery steps; obtain the operator's explicit approval for destructive
-   restore before they use the existing admin restore flow.
+   restore before they use the existing admin restore flow. A backup still in
+   storage is restored from its row in **Admin → Backups**, without a download
+   and upload, whatever its size.
 6. The operator verifies restored account/mailbox access, expected record counts,
    object retrieval, sending/receiving and future backup completion. Reapply
    deletion requests newer than the restored snapshot. Keep evidence restricted.

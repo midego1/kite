@@ -38,7 +38,7 @@ import {
 	type Account,
 	type SubscriptionView,
 } from "./support/finance";
-import { apiContext, apiSignIn, uniqueToken, waitForBackup } from "./support/helpers";
+import { apiContext, apiSignIn, uniqueToken, waitForBackup, waitForRestore } from "./support/helpers";
 import { createMcpKey, mcpCall, mcpToolNames } from "./support/mcp";
 import { expectNotFoundPage, expectPaletteCommands } from "./support/module-flows";
 import { restoreModules, setModuleState } from "./support/modules";
@@ -852,6 +852,8 @@ test.describe("Money Watch backups", () => {
 				},
 			});
 			expect(restored.ok(), await restored.text()).toBe(true);
+			const restore = await waitForRestore(api, ((await restored.json()) as { restoreId: string }).restoreId);
+			expect(restore.status, restore.error ?? "").toBe("completed");
 
 			signedIn = await apiSignIn(account.address, AUTO_READ_ACCOUNT_PASSWORD);
 			const back = { ...account, api: signedIn };

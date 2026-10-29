@@ -4,7 +4,7 @@ import Link from "next/link";
 import { CheckCircle2, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NOTICE_LINK_CLASS, SUCCESS_NOTICE_CLASS, WARNING_NOTICE_CLASS } from "./notice-styles";
-import { migrationsBannerContent, shouldShowMigrationsBanner } from "./migrations-banner-utils";
+import { migrationApplierText, migrationsBannerContent, shouldShowMigrationsBanner } from "./migrations-banner-utils";
 import { useMigrationsCardVisible, useMigrationsNotice } from "./use-migrations-notice";
 
 function AppliedNotice({
@@ -67,7 +67,7 @@ export function MigrationsNoticeCard() {
 							{error}
 						</p>
 					)}
-					{!isPrimaryAdmin && <p className="mt-2">Ask an administrator to apply them.</p>}
+					{!isPrimaryAdmin && <p className="mt-2">{migrationApplierText(data.appliedBy)}</p>}
 				</div>
 			</div>
 			{isPrimaryAdmin || user.role === "admin" ? (
@@ -109,7 +109,7 @@ export function MigrationsBanner() {
 					) : isPrimaryAdmin ? (
 						content.body
 					) : (
-						"Ask an administrator to apply them."
+						migrationApplierText(data.appliedBy)
 					)}
 				</p>
 				{isPrimaryAdmin ? (

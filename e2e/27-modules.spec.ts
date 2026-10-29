@@ -27,6 +27,7 @@ import {
 	uniqueToken,
 	waitForBackup,
 	waitForMessage,
+	waitForRestore,
 } from "./support/helpers";
 import { createSignedInAccount, okJson, selectMailbox } from "./support/auto-read";
 import { turnScreenerOff } from "./support/screener";
@@ -3465,6 +3466,8 @@ test("a mail-only install backs up and restores with its module data and with ev
 		const confirm = restorer.getByRole("alertdialog", { name: "Restore this backup?" });
 		await confirm.getByRole("button", { name: "Restore" }).click();
 		await expect(restorer).toHaveURL(/\/login/, { timeout: 60_000 });
+		const restore = await waitForRestore(api);
+		expect(restore.status, restore.error ?? "").toBe("completed");
 		await signIn(restorer, ADMIN.email, ADMIN.password);
 		await expect(restorer).toHaveURL(/\/inbox/);
 		await restorer.goto("/modules");

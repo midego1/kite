@@ -44,6 +44,7 @@ const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"backup.objects.copy": "backup",
 	"backup.objects.restore": "backup",
 	"backup.objects.delete": "backup",
+	"backup.restore": "backup",
 	"storage.migrate": "storage_migration",
 	...Object.fromEntries(
 		MODULE_MANIFESTS.flatMap((manifest) => manifest.queueMessageTypes.map((entry) => [entry.kind, entry.metricClass])),

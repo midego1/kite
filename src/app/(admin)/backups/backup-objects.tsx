@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderInput, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
@@ -9,7 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { keptFullBackupCopies } from "@/lib/backups/objects-utils";
 import type { BackupItem, BackupSettings } from "./types";
-import { fetchObjectsEstimate, formatBackupSize, parseObjectsRestore } from "./utils";
+import {
+	fetchObjectsEstimate,
+	formatBackupSize,
+	parseObjectsRestore,
+	restoreBackupObjects,
+	retryBackupObjects,
+} from "./utils";
 
 function copiesText(settings: BackupSettings, bytes: number | null): string {
 	const copies = keptFullBackupCopies(settings);
@@ -168,4 +174,13 @@ export function RetryObjectsButton({
 			<RefreshCw className="h-4 w-4" />
 		</Button>
 	);
+}
+
+/** Restore mail files and Retry copying, each refreshing the backup list when it was accepted. */
+export function useBackupObjectsActions() {
+	const queryClient = useQueryClient();
+	const refresh = () => queryClient.invalidateQueries({ queryKey: ["backups"] });
+	const restoreObjects = useMutation({ mutationFn: restoreBackupObjects, onSuccess: refresh });
+	const retryObjects = useMutation({ mutationFn: retryBackupObjects, onSuccess: refresh });
+	return { restoreObjects, retryObjects };
 }

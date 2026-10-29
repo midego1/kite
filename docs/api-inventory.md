@@ -87,8 +87,11 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/backups/[id]/download`                           | GET                    | [source](../src/app/api/backups/[id]/download/route.ts)                           |
 | `/api/backups/[id]/objects/retry`                      | POST                   | [source](../src/app/api/backups/[id]/objects/retry/route.ts)                      |
 | `/api/backups/[id]/objects`                            | POST                   | [source](../src/app/api/backups/[id]/objects/route.ts)                            |
+| `/api/backups/[id]/restore`                            | POST                   | [source](../src/app/api/backups/[id]/restore/route.ts)                            |
 | `/api/backups/[id]`                                    | DELETE                 | [source](../src/app/api/backups/[id]/route.ts)                                    |
+| `/api/backups/health`                                  | GET                    | [source](../src/app/api/backups/health/route.ts)                                  |
 | `/api/backups/objects`                                 | GET                    | [source](../src/app/api/backups/objects/route.ts)                                 |
+| `/api/backups/restore/recover`                         | POST                   | [source](../src/app/api/backups/restore/recover/route.ts)                         |
 | `/api/backups/restore`                                 | POST                   | [source](../src/app/api/backups/restore/route.ts)                                 |
 | `/api/backups`                                         | GET, POST, PUT         | [source](../src/app/api/backups/route.ts)                                         |
 | `/api/booking/[eventId]`                               | DELETE, PATCH          | [source](../src/app/api/booking/[eventId]/route.ts)                               |

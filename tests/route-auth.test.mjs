@@ -28,3 +28,27 @@ test("requireSessionAdmin is exported from the shared session auth module", () =
 	const source = readFileSync("src/lib/api/auth.ts", "utf8");
 	assert.match(source, /export async function requireSessionAdmin\(/);
 });
+
+test("restore routes check the session mutation origin after authenticating", () => {
+	// A restore replaces the whole database, so a cross-site POST carrying the owner's cookie must be refused.
+	for (const file of [
+		"src/app/api/backups/restore/route.ts",
+		"src/app/api/backups/[id]/restore/route.ts",
+		"src/app/api/backups/restore/recover/route.ts",
+	]) {
+		const source = readFileSync(file, "utf8");
+		const auth = source.indexOf("requireSessionAdmin(env, request, isPrimaryAdmin)");
+		const origin = source.indexOf("if (!hasValidSessionMutationOrigin(request))");
+		assert.ok(auth > 0, `${file} authenticates the primary admin`);
+		assert.ok(origin > auth, `${file} checks the origin after authenticating`);
+		assert.ok(origin < source.search(/\bstart\w+\(env/), `${file} checks the origin before starting the restore`);
+	}
+});
+
+test("the admin migration route refuses to apply anything while a restore runs", () => {
+	const source = readFileSync("src/app/api/admin/migrations/POST.ts", "utf8");
+	const guard = source.indexOf("if (await restoreBlocksMigrations(env.BUCKET))");
+	assert.ok(guard > source.indexOf("authorizeMigrationRequest(request)"), "after authorizing");
+	assert.ok(guard < source.indexOf("createSafetyBackup("), "before the backup and the migrations");
+	assert.match(source.slice(guard, guard + 300), /status: 409/);
+});

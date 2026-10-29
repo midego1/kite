@@ -14,6 +14,7 @@ await build({
 	stdin: {
 		contents: `
 			export * from "./src/lib/migrations/pending.ts";
+			export * from "./src/lib/migrations/pending-utils.ts";
 			export * from "./src/lib/migrations/auto-apply.ts";
 			export { SqliteDatabase } from "./server/runtime/sqlite-database.ts";
 		`,
@@ -31,8 +32,13 @@ await build({
 	packages: "external",
 	logLevel: "silent",
 });
-const { SqliteDatabase, getPendingMigrationStatus, maybeAutoApplyPendingMigrations, queueRetryDelaySeconds } =
-	await import(pathToFileURL(join(bundleDirectory, "entry.mjs")).href);
+const {
+	SqliteDatabase,
+	getPendingMigrationStatus,
+	maybeAutoApplyPendingMigrations,
+	pendingStatusOptions,
+	queueRetryDelaySeconds,
+} = await import(pathToFileURL(join(bundleDirectory, "entry.mjs")).href);
 
 const bundled = readMigrationBundle(join(root, "drizzle", "migrations")).map((migration) => migration.name);
 
@@ -67,6 +73,67 @@ test("the status counts unapplied migrations and sends names only when asked", a
 			.run();
 		for (const name of bundled) await database.prepare("INSERT INTO d1_migrations (name) VALUES (?)").bind(name).run();
 		assert.deepEqual(await getPendingMigrationStatus(database, { includeNames: true }), { pending: 0 });
+	} finally {
+		database.db.close();
+	}
+});
+
+test("only the primary admin gets the names, only other admins the primary admin, members neither", () => {
+	assert.deepEqual(pendingStatusOptions({ role: "user", isPrimaryAdmin: false }), {
+		includeNames: false,
+		includeApplier: false,
+	});
+	// A stray flag on a member never makes it an admin.
+	assert.deepEqual(pendingStatusOptions({ role: "user", isPrimaryAdmin: true }), {
+		includeNames: false,
+		includeApplier: false,
+	});
+	assert.deepEqual(pendingStatusOptions({ role: "admin", isPrimaryAdmin: false }), {
+		includeNames: false,
+		includeApplier: true,
+	});
+	assert.deepEqual(pendingStatusOptions({ role: "admin", isPrimaryAdmin: true }), {
+		includeNames: true,
+		includeApplier: false,
+	});
+});
+
+test("a users table from before is_primary_admin is not read, and the status still answers", async (t) => {
+	const database = new SqliteDatabase(":memory:");
+	t.after(() => database.db.close());
+	const warnings = [];
+	t.mock.method(console, "warn", (...args) => warnings.push(args));
+	await database
+		.prepare(
+			"CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT, name TEXT, role TEXT, disabled INTEGER, created_at INTEGER)",
+		)
+		.run();
+	await database.prepare("INSERT INTO users VALUES ('u1', 'owner@example.com', 'Owner', 'admin', 0, 1)").run();
+	assert.deepEqual(await getPendingMigrationStatus(database, { includeApplier: true }), { pending: bundled.length });
+	// A missing column is expected on an old schema, not a failure worth a warning.
+	assert.deepEqual(warnings, []);
+});
+
+test("other admins are told which account can apply the migrations", async () => {
+	const database = new SqliteDatabase(":memory:");
+	try {
+		// No users table yet: the status still answers, without a name.
+		assert.deepEqual(await getPendingMigrationStatus(database, { includeApplier: true }), { pending: bundled.length });
+		await database
+			.prepare(
+				"CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT, name TEXT, role TEXT, is_primary_admin INTEGER, disabled INTEGER, created_at INTEGER)",
+			)
+			.run();
+		const insert = "INSERT INTO users VALUES (?, ?, ?, ?, ?, ?, ?)";
+		await database.prepare(insert).bind("u1", "member@example.com", "Member", "user", 0, 0, 1).run();
+		await database.prepare(insert).bind("u2", "gone@example.com", "Gone", "admin", 1, 1, 2).run();
+		await database.prepare(insert).bind("u3", "owner@example.com", "Owner", "admin", 1, 0, 3).run();
+		assert.deepEqual(await getPendingMigrationStatus(database, { includeApplier: true }), {
+			pending: bundled.length,
+			appliedBy: { name: "Owner", email: "owner@example.com" },
+		});
+		// Without the option the primary admin is never named.
+		assert.deepEqual(await getPendingMigrationStatus(database), { pending: bundled.length });
 	} finally {
 		database.db.close();
 	}
@@ -113,10 +180,40 @@ test("a failed run is retried by the next check", async () => {
 	assert.ok(database.reads > afterFirst);
 });
 
+/** A bucket holding only the restore job's state object, as `status` says; counts its reads. */
+function restoreBucket(status) {
+	const bucket = {
+		reads: 0,
+		async get(key) {
+			bucket.reads++;
+			if (key !== "system/backup-restore.json" || !status) return null;
+			const body = new TextEncoder().encode(JSON.stringify({ id: "rst_1", status }));
+			return { etag: "e1", arrayBuffer: async () => body.buffer };
+		},
+	};
+	return bucket;
+}
+
+test("auto-apply waits while a backup restore runs and tries again at the next check", async () => {
+	const database = new SqliteDatabase(":memory:");
+	try {
+		const bucket = restoreBucket("restoring");
+		const env = { DB: database, BUCKET: bucket, AUTO_APPLY_MIGRATIONS: "1" };
+		await maybeAutoApplyPendingMigrations(env);
+		assert.equal(isEmptyDatabase(database), true, "nothing applied under the restore");
+		assert.equal(bucket.reads, 1);
+		await maybeAutoApplyPendingMigrations(env);
+		assert.equal(bucket.reads, 2, "the deferred run is not remembered as done");
+		assert.equal((await getPendingMigrationStatus(database)).pending, bundled.length);
+	} finally {
+		database.db.close();
+	}
+});
+
 test("auto-apply applies every pending migration once per instance", async () => {
 	const database = new SqliteDatabase(":memory:");
 	try {
-		const env = { DB: database, AUTO_APPLY_MIGRATIONS: "TRUE" };
+		const env = { DB: database, BUCKET: restoreBucket("completed"), AUTO_APPLY_MIGRATIONS: "TRUE" };
 		await maybeAutoApplyPendingMigrations(env);
 		assert.equal((await getPendingMigrationStatus(database)).pending, 0);
 

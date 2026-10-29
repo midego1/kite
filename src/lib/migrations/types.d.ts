@@ -17,8 +17,18 @@ export interface MigrationNameRow {
 	name: string;
 }
 
-/** What the mailbox banner's status check answers; names are only sent to the primary admin. */
+/** The account that can apply pending migrations, named to the other admins. */
+export interface MigrationApplier {
+	name: string;
+	email: string;
+}
+
+/**
+ * What the mailbox banner's status check answers; names are only sent to the
+ * primary admin, and the primary admin's name and address only to other admins.
+ */
 export interface PendingMigrationStatus {
 	pending: number;
 	names?: string[];
+	appliedBy?: MigrationApplier;
 }

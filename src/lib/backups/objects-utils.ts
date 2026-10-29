@@ -154,6 +154,11 @@ export function keptFullBackupCopies(settings: {
 	return Math.max(1, Math.ceil(settings.retentionDays / interval));
 }
 
+/** A copy or restore of the backup's mail objects is still running. */
+export function isObjectsRunActive(backup: { objectsStatus: string | null }): boolean {
+	return backup.objectsStatus === "copying" || backup.objectsStatus === "restoring";
+}
+
 /** True when an object copy or restore stopped reporting progress, judged like an interrupted export. */
 export function isStaleObjectsRun(
 	backup: { objectsStatus: string | null; objectsUpdatedAt: Date | null },

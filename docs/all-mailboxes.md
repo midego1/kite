@@ -25,7 +25,7 @@ While **All mailboxes** is on, the mailbox selector shows a **Show** list with a
 
 - **Reply, reply all and forward** go out from the mailbox the email arrived in, whichever mailbox you were in before.
 - **A new email** (Compose) asks for the From address and starts from the one you used last.
-- **Search, the keyboard shortcuts** (`j`/`k`, `e`, `#`, `x`, and `r`/`a`/`f` in an open email) and the command palette work as in a single mailbox.
+- **Search, the keyboard shortcuts** (`j`/`k`, `e`, `#`, `x`, Shift+↑/↓, Shift-click and Cmd/Ctrl-click on rows, and `r`/`a`/`f` in an open email) and the command palette work as in a single mailbox.
 - **Bulk actions** (mark read, archive, spam, delete, move) work on a selection across mailboxes, and each email stays within its own mailbox. **Move to** a folder lists folders when the selection is from one mailbox; with mail from several, it says to select mail from one mailbox.
 
 ## Drafts in shared mailboxes

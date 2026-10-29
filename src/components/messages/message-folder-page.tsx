@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { useMailSearch } from "@/components/mail-search/mail-search-context";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
@@ -13,7 +14,14 @@ import type { Message } from "@/hooks/types";
 import { useClearSelection } from "./use-clear-selection";
 import { MessageListHeader } from "./message-list-header";
 import { MessageListRow } from "./message-list-row";
-import { applySelection, getRangeSelectionIds } from "./message-range-selection-utils";
+import {
+	applySelection,
+	openIdFromPath,
+	planRowSelection,
+	replaceSelection,
+	resolveSelectionAnchor,
+	type RowClickModifiers,
+} from "./message-range-selection-utils";
 import { dispatchMessageCountsDelta } from "./message-list-row-actions-utils";
 import { useConversationView } from "./use-conversation-view";
 import { useMessageListDensity } from "./use-reading-layout";
@@ -29,6 +37,7 @@ import {
 	planEmptyFolderInView,
 	deleteMessagesForever,
 	supportsUnreadFilter,
+	LIST_ACTION_CANCELLED,
 } from "./utils";
 import {
 	describePermanentDeleteResult,
@@ -125,24 +134,71 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 	// The setter can come from a parent's selection state and is not stable, so it is
 	// left out of the dependencies; listing it would clear the selection on every render.
 	const selectionAnchor = useRef<string | null>(null);
+	// The open message (or draft) is the anchor of the next range, whether a click, a key or a link opened it.
+	const pathname = usePathname();
+	const openMessageId = selectedMessageId ?? openIdFromPath(pathname, config.hrefPrefix);
+	useEffect(() => {
+		if (openMessageId) selectionAnchor.current = openMessageId;
+	}, [openMessageId]);
 	useEffect(() => {
 		selectionAnchor.current = null;
 		setSelectedMessages([]);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [listKey, offset]);
 
-	const { clearSelection, leaveOpenMessage } = useClearSelection(selection, setSelectedMessages, messages, isLoading);
+	const { clearSelection: clearAndLeave, leaveOpenMessage } = useClearSelection(
+		selection,
+		setSelectedMessages,
+		messages,
+		isLoading,
+	);
+	// An empty selection has no anchor: the next range starts from the open message or the focused row.
+	function clearSelection() {
+		selectionAnchor.current = null;
+		clearAndLeave();
+	}
+	/** Escape: empties the selection and leaves the open message open (the pane falls back to it). */
+	function clearSelectionKeepOpen() {
+		selectionAnchor.current = null;
+		setSelectedMessages([]);
+	}
 
 	useEmailPageTitle(
 		{ location: config.title, total: titleTotal, unread: titleUnread, emailAddress: mailboxAddress },
 		mailboxesLoading,
 	);
 
+	/** A row checkbox. Shift-click on one selects a range exactly as Shift-click on the row does. */
 	function updateSelectedMessage(messageId: string, selected: boolean, extendRange = false) {
-		const orderedIds = orderedMessages.map((message) => message.id);
-		const ids = extendRange ? getRangeSelectionIds(orderedIds, selectionAnchor.current, messageId) : [messageId];
+		if (extendRange) {
+			selectRow(messageId, { shift: true, toggle: false });
+			return;
+		}
 		selectionAnchor.current = messageId;
-		setSelectedMessages((current) => applySelection(current, messages, ids, selected));
+		setSelectedMessages((current) => applySelection(current, messages, [messageId], selected));
+	}
+
+	/**
+	 * Shift-, Cmd- and Ctrl-click on a row (and Shift+Arrow). Rows beyond the loaded page are not in the list, so
+	 * a range selects only the loaded ones. A click without modifiers just becomes the anchor of the next range.
+	 */
+	function selectRow(messageId: string, modifiers: RowClickModifiers | null, anchorId = selectionAnchor.current) {
+		if (!modifiers) {
+			// A plain click opens the row (or is on the open one already) and ends the selection.
+			selectionAnchor.current = messageId;
+			if (selectedIds.length > 0) setSelectedMessages([]);
+			return;
+		}
+		const plan = planRowSelection({
+			orderedIds: orderedMessages.map((message) => message.id),
+			selectedIds,
+			anchorId,
+			openId: openMessageId,
+			targetId: messageId,
+			modifiers,
+		});
+		selectionAnchor.current = plan.anchorId;
+		setSelectedMessages((current) => replaceSelection(current, messages, plan.selectedIds));
 	}
 
 	function toggleAllVisible(selected: boolean) {
@@ -255,7 +311,8 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 			if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta });
 		}
 		try {
-			await runListAction(expandSelectedIds(actionIds), action, folderId);
+			// A declined confirmation did nothing, so the selection stays.
+			if ((await runListAction(expandSelectedIds(actionIds), action, folderId)) === LIST_ACTION_CANCELLED) return;
 			clearSelection();
 		} catch (error) {
 			if (readValue !== null) {
@@ -283,6 +340,21 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 			}
 		},
 		toggleRowSelection: (messageId) => updateSelectedMessage(messageId, !selectedIds.includes(messageId)),
+		// With nothing selected the range starts from the focused row, not from an earlier click.
+		extendSelection: (focusedId, targetId) =>
+			selectRow(
+				targetId,
+				{ shift: true, toggle: false },
+				selectedIds.length === 0
+					? focusedId
+					: (resolveSelectionAnchor(
+							orderedMessages.map((message) => message.id),
+							selectionAnchor.current,
+							openMessageId,
+						) ?? focusedId),
+			),
+		selectionCount: selectedIds.length,
+		clearSelection: clearSelectionKeepOpen,
 	});
 
 	const registerAction = selection?.registerAction;
@@ -293,7 +365,12 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 	});
 
 	return (
-		<div className="flex h-full min-h-0 flex-col">
+		<div className="flex h-full min-h-0 flex-col" data-selection-scope="">
+			<p role="status" aria-live="polite" className="sr-only">
+				{selectedIds.length > 0
+					? `${selectedIds.length} ${selectedIds.length === 1 ? "email" : "emails"} selected`
+					: ""}
+			</p>
 			<MessageListHeader
 				config={config}
 				compact={compact || isMobile}
@@ -386,6 +463,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 								}
 								canManage={access.canManage(message.mailboxId)}
 								onSelectedChange={updateSelectedMessage}
+								onRowClick={selectRow}
 								onMessageAction={async (messageId, action) => {
 									await runBulkMessageAction(
 										expandSelectedIds([messageId]),

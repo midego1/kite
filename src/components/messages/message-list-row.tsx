@@ -177,6 +177,7 @@ function StackedMessageRow(props: RowViewProps) {
 				<Link
 					href={row.href}
 					onClick={row.onNavigate}
+					onMouseDown={row.onMouseDown}
 					aria-current={active ? "true" : undefined}
 					className="block min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 				>
@@ -284,7 +285,8 @@ function WideMessageRow(props: RowViewProps) {
 					<ScreenerRowControls message={row.rowMessage} />
 					<Link
 						href={row.href}
-						onClick={config.folder === "drafts" ? undefined : row.onNavigate}
+						onClick={config.folder === "drafts" ? row.onSelectClick : row.onNavigate}
+						onMouseDown={row.onMouseDown}
 						aria-current={active ? "true" : undefined}
 						className="after:absolute after:inset-0 focus-visible:outline-none"
 					>

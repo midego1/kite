@@ -9,6 +9,7 @@ import { reportListActionError } from "./list-action-toast";
 import { rememberOpenedUnreadMessage } from "./message-detail-navigation-utils";
 import { dispatchMessageCountsDelta, toggleMessageStar } from "./message-list-row-actions-utils";
 import { useMessageNavigation } from "./message-navigation";
+import { isApplePlatform, rowClickModifiers } from "./message-range-selection-utils";
 import type { MessageListRowProps, RowMessageAction } from "./types";
 import { getMessageParty, getMessagePreview, isMessageListRowUnread, runBulkMessageAction } from "./utils";
 
@@ -23,7 +24,11 @@ export function useMessageListRow({
 	currentAccountName,
 	canManage = true,
 	onMessageAction,
-}: Pick<MessageListRowProps, "message" | "config" | "currentAccountName" | "canManage" | "onMessageAction">) {
+	onRowClick,
+}: Pick<
+	MessageListRowProps,
+	"message" | "config" | "currentAccountName" | "canManage" | "onMessageAction" | "onRowClick"
+>) {
 	const [read, setRead] = useSyncedState(message.read);
 	const [threadUnread, setThreadUnread] = useSyncedState(message.threadUnread);
 	const [starred, setStarred] = useSyncedState(message.starred);
@@ -81,7 +86,25 @@ export function useMessageListRow({
 		});
 	}
 
+	/**
+	 * Shift-, Cmd- or Ctrl-click selects the row for the list instead of opening it; any other click is also
+	 * reported, so a plain click can become the anchor of the next range. Returns true when the click selected.
+	 */
+	function selectedByClick(event: MouseEvent<HTMLAnchorElement>) {
+		const modifiers = rowClickModifiers(event, isApplePlatform(navigator.platform || navigator.userAgent));
+		// A plain click anchors the next range; Alt-click and a Mac context click leave the selection alone.
+		if (modifiers || isPlainClick(event)) onRowClick?.(message.id, modifiers);
+		if (modifiers) event.preventDefault();
+		return modifiers !== null;
+	}
+
+	/** The click handler of a row that has no navigation of its own (drafts open in the composer). */
+	function onSelectClick(event: MouseEvent<HTMLAnchorElement>) {
+		selectedByClick(event);
+	}
+
 	function onNavigate(event: MouseEvent<HTMLAnchorElement>) {
+		if (selectedByClick(event)) return;
 		if (!read && isPlainClick(event)) markOpenedRead();
 		navigation.onNavigate(event, !read);
 	}
@@ -102,5 +125,12 @@ export function useMessageListRow({
 		runRowAction,
 		toggleStar,
 		onNavigate,
+		onSelectClick,
+		/** Cancels the text selection a Shift-click would start; the row still takes the focus, without scrolling. */
+		onMouseDown: (event: MouseEvent<HTMLAnchorElement>) => {
+			if (!event.shiftKey) return;
+			event.preventDefault();
+			event.currentTarget.focus({ preventScroll: true });
+		},
 	};
 }

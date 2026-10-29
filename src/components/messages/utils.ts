@@ -113,10 +113,14 @@ export async function runBulkMessageAction(messageIds: string[], action: string,
 	return data;
 }
 
+/** What `runDraftListAction` resolves to when the user declines the confirmation: nothing happened. */
+export const LIST_ACTION_CANCELLED = "cancelled";
+
 /**
  * An action on rows of the Drafts list. Drafts are private to their author, so Delete removes them outright
  * through the drafts API, as the composer's Discard does, after asking (there is no Undo); read state changes
- * as anywhere, and nothing moves a draft to another folder.
+ * as anywhere, and nothing moves a draft to another folder. Resolves to `LIST_ACTION_CANCELLED` when the user
+ * declines the confirmation.
  */
 export async function runDraftListAction(draftIds: string[], action: string) {
 	if (action === "read" || action === "unread") return runBulkMessageAction(draftIds, action);
@@ -126,7 +130,7 @@ export async function runDraftListAction(draftIds: string[], action: string) {
 		description: "Deleted drafts and their attachments are removed at once. This can't be undone.",
 		confirmLabel: "Delete",
 	});
-	if (!confirmed) return null;
+	if (!confirmed) return LIST_ACTION_CANCELLED;
 	const responses = await Promise.all(
 		draftIds.map((id) => authFetch(`/api/drafts/${encodeURIComponent(id)}`, { method: "DELETE" })),
 	);

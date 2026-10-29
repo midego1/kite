@@ -5,6 +5,7 @@ import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { Message, MessageFolder } from "@/hooks/types";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { MessageListDensity } from "./reading-layout-types";
+import type { RowClickModifiers } from "./message-range-selection-utils";
 
 export type MessageFolderConfig = {
 	folder: MessageFolder;
@@ -36,6 +37,11 @@ export type MessageListRowProps = {
 	canManage?: boolean;
 	/** `extendRange` is set for Shift-click and selects every row since the last one clicked. */
 	onSelectedChange: (messageId: string, selected: boolean, extendRange?: boolean) => void;
+	/**
+	 * Every primary click on the row; `modifiers` is set for Shift-, Cmd- and Ctrl-click, which select the row
+	 * instead of opening it.
+	 */
+	onRowClick?: (messageId: string, modifiers: RowClickModifiers | null) => void;
 	onMessageAction: (messageId: string, action: RowMessageAction) => Promise<void>;
 	dragMessageIds: string[];
 };

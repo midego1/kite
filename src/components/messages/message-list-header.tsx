@@ -2,8 +2,10 @@
 
 import clsx from "clsx";
 import Link from "next/link";
-import { Check, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2 } from "lucide-react";
+import { useLayoutEffect } from "react";
+import { Check, ChevronLeft, ChevronRight, PanelLeft, SlidersHorizontal, Trash2 } from "lucide-react";
 import { MailSearchInput } from "@/components/mail-search/mail-search-input";
+import { useSidebar } from "@/components/sidebar-state";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
@@ -68,7 +70,35 @@ function EmptyFolderButton({
 }
 
 /**
- * The top of a folder list, after Zero's: the title, "Select" and the list settings, then the
+ * Zero's panel icon at the left of the title: collapses the expanded sidebar to its icon rail (desktop only). It
+ * tells the sidebar header to drop its own button while it is here; the collapsed rail keeps its Expand button.
+ */
+function SidebarToggleButton() {
+	const { minimal, mobile, toggle, setToggleInListHeader } = useSidebar();
+	const shown = !minimal && !mobile;
+	useLayoutEffect(() => {
+		setToggleInListHeader(shown);
+		return () => setToggleInListHeader(false);
+	}, [shown, setToggleInListHeader]);
+	if (!shown) return null;
+	return (
+		<Tooltip label="Collapse menu">
+			<Button
+				type="button"
+				variant="ghost"
+				size="sm"
+				aria-label="Collapse menu"
+				onClick={toggle}
+				className="h-8 w-8 shrink-0 p-0 text-neutral-500 hover:text-neutral-900 max-md:hidden"
+			>
+				<PanelLeft className="h-4 w-4" />
+			</Button>
+		</Tooltip>
+	);
+}
+
+/**
+ * The top of a folder list, after Zero's: the panel icon (while the sidebar is expanded), the title, "Select" and the list settings, then the
  * search field and the category chips. Checkboxes show while selecting; the bulk toolbar replaces the title
  * once something is selected. Below 20rem of list width "Select" shows only its icon, so the title keeps the room.
  * The pager row appears only when there is more than one page.
@@ -93,6 +123,7 @@ export function MessageListHeader({
 		<div className="@container shrink-0">
 			<div className="flex h-14 items-center gap-2 border-b border-neutral-200 px-3">
 				<FolderHeading title={config.title} nested={nested} />
+				<SidebarToggleButton />
 				{(selecting.value || selection.count > 0) && (
 					<Tooltip label="Select all visible messages">
 						<Checkbox

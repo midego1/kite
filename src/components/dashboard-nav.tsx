@@ -253,8 +253,9 @@ export function DashboardNav({
 	return (
 		<SidebarScaffold
 			className={className}
-			header={<SidebarAccounts accountMenu={accountMenu} />}
+			header={<SidebarAccounts />}
 			footer={<SidebarFooter extra={assistantToggle} notices={notices} />}
+			account={accountMenu}
 		>
 			<SidebarMailboxSwitcher />
 			{composeLink && <NavItem link={composeLink} />}

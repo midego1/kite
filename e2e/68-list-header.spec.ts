@@ -4,7 +4,9 @@ import { STORAGE_STATE } from "./support/constants";
 import { apiContext, uniqueToken } from "./support/helpers";
 
 // The list header at the narrowest and the default list width: the title stays readable in every style and
-// theme, the removed buttons stay gone, and the sidebar still comes back from its icon rail and on phones.
+// theme next to the sidebar toggle, the Kite AI button stays gone, and the sidebar still comes back from its
+// icon rail and on phones. The account menu sits at the bottom of the sidebar, expanded, as a rail icon and in
+// the phone sheet.
 
 const MIN_WIDTH = 250;
 const DEFAULT_WIDTH = 360;
@@ -90,32 +92,74 @@ test.describe("message list header", () => {
 		}
 	}
 
-	test("the list header has no Kite AI or sidebar toggle button", async ({ browser }) => {
+	test("the list header has the collapse toggle and no Kite AI button", async ({ browser }) => {
 		const { page, context } = await openList(browser, "/inbox", DEFAULT_WIDTH, "kite", "light");
 		const header = headerOf(page);
 		await expect(header.getByRole("button", { name: /Kite AI/ })).toHaveCount(0);
-		await expect(header.getByRole("button", { name: /menu/i })).toHaveCount(0);
 		await expect(page.getByTestId("assistant-button-list")).toHaveCount(0);
+		await expect(header.getByRole("button", { name: "Collapse menu" })).toBeVisible();
+		await expect(header.getByRole("button", { name: "Expand menu" })).toHaveCount(0);
 		await context.close();
 	});
 
-	test("the sidebar's own toggle collapses it to the icon rail and brings it back", async ({ browser }) => {
+	test("the toggle sits left of the title in every list view and leaves the sidebar header", async ({ browser }) => {
+		const { page, context } = await openList(browser, "/inbox", DEFAULT_WIDTH, "kite", "light");
+		const sidebar = page.getByRole("navigation", { name: "Kite" });
+		const expectToggleBeforeTitle = async (view: string) => {
+			const header = headerOf(page);
+			const toggle = header.getByRole("button", { name: "Collapse menu" });
+			await expect(toggle, view).toBeVisible();
+			await expect(toggle, view).toHaveAttribute("aria-label", "Collapse menu");
+			const [toggleBox, titleBox] = await Promise.all([
+				toggle.boundingBox(),
+				header.locator("p.truncate").boundingBox(),
+			]);
+			expect(toggleBox!.x + toggleBox!.width, view).toBeLessThanOrEqual(titleBox!.x + 1);
+			// One toggle on the page: the sidebar header has dropped its own.
+			await expect(page.getByRole("button", { name: "Collapse menu" }), view).toHaveCount(1);
+			await expect(sidebar.getByRole("button", { name: "Collapse menu" }), view).toHaveCount(0);
+		};
+		await expectToggleBeforeTitle("Inbox");
+		await page.getByRole("textbox", { name: /Search mail/ }).fill("nomatchzzqq");
+		await page.getByRole("textbox", { name: /Search mail/ }).press("Enter");
+		await expectToggleBeforeTitle("Search");
+		for (const [view, path] of [
+			["Sent", "/sent"],
+			["Drafts", "/drafts"],
+			["Archived", "/archived"],
+			["Folder", longFolderPath],
+		] as const) {
+			await page.goto(path);
+			await expect(page.getByRole("link", { name: "List settings" })).toBeVisible({ timeout: 60_000 });
+			await expectToggleBeforeTitle(view);
+		}
+		await page.goto("/inbox");
+		await page.getByRole("button", { name: "Open All mailboxes" }).click();
+		await expect(page.getByRole("button", { name: "Open All mailboxes" })).toHaveAttribute("aria-pressed", "true");
+		await expectToggleBeforeTitle("All mailboxes");
+		await context.close();
+	});
+
+	test("the list header toggle collapses the sidebar to the icon rail, whose Expand button brings it back", async ({
+		browser,
+	}) => {
 		const { page, context } = await openList(browser, "/inbox", DEFAULT_WIDTH, "kite", "light");
 		const sidebar = page.locator("#kite-sidebar-layout > [data-panel]").first();
 		const expanded = (await sidebar.boundingBox())!.width;
-		await page.getByRole("button", { name: "Collapse menu" }).click();
+		await headerOf(page).getByRole("button", { name: "Collapse menu" }).click();
 		await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeLessThan(80);
-		// The rail keeps a way back, and the list header still has no toggle of its own.
+		// The rail keeps its own button; the list header's toggle is gone while the rail shows.
 		await expect(headerOf(page).getByRole("button", { name: /menu/i })).toHaveCount(0);
-		await page.getByRole("button", { name: "Expand menu" }).click();
+		await sidebar.getByRole("button", { name: "Expand menu" }).click();
 		await expect.poll(async () => Math.abs((await sidebar.boundingBox())!.width - expanded)).toBeLessThan(3);
+		await expect(headerOf(page).getByRole("button", { name: "Collapse menu" })).toBeVisible();
 		await context.close();
 	});
 
 	test("with the sidebar collapsed to the icon rail the assistant opens from the rail", async ({ browser }) => {
 		const { page, context } = await openList(browser, "/inbox", DEFAULT_WIDTH, "kite", "light", undefined, true);
 		const sidebar = page.locator("#kite-sidebar-layout > [data-panel]").first();
-		await page.getByRole("button", { name: "Collapse menu" }).click();
+		await headerOf(page).getByRole("button", { name: "Collapse menu" }).click();
 		await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeLessThan(80);
 		await expect(page.getByText("Assistant", { exact: true })).toHaveCount(0);
 
@@ -135,7 +179,76 @@ test.describe("message list header", () => {
 		await context.close();
 	});
 
-	test("on a phone the menu opens as a sheet from the page header, not the list header", async ({ browser }) => {
+	test("the account menu opens upward from the bottom of the expanded sidebar", async ({ browser }, testInfo) => {
+		const { page, context } = await openList(browser, "/inbox", DEFAULT_WIDTH, "kite", "light");
+		const sidebar = page.getByRole("navigation", { name: "Kite" });
+		const button = sidebar.getByRole("button", { name: "Open account menu" });
+		await expect(button).toBeVisible();
+		// The mailbox avatar row stays at the top; the account is the last item, under Settings, Support and the build info.
+		await expect(sidebar.getByRole("button", { name: /^Open .*@/ }).first()).toBeVisible();
+		const [accountBox, supportBox, buildBox, sidebarBox] = await Promise.all([
+			button.boundingBox(),
+			sidebar.getByRole("link", { name: "Support" }).boundingBox(),
+			sidebar.getByText(/Kite v/).boundingBox(),
+			sidebar.boundingBox(),
+		]);
+		expect(accountBox!.y).toBeGreaterThan(supportBox!.y + supportBox!.height - 1);
+		expect(accountBox!.y).toBeGreaterThan(buildBox!.y + buildBox!.height - 1);
+		expect(accountBox!.y + accountBox!.height).toBeLessThanOrEqual(sidebarBox!.y + sidebarBox!.height + 1);
+		await expect(button).toContainText(/\S+@\S+/);
+		await page.screenshot({ path: testInfo.outputPath("account-bottom-expanded-closed.png") });
+
+		await button.focus();
+		await page.keyboard.press("Enter");
+		await expect(button).toHaveAttribute("aria-expanded", "true");
+		const menu = page.locator('[data-placement="sidebar"]');
+		await expect(menu.getByRole("link", { name: "Inbox", exact: true })).toBeVisible();
+		await expect(menu.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+		await expect(menu.getByRole("link", { name: "Admin" })).toBeVisible();
+		await expect(menu.getByRole("link", { name: "Add another account" })).toBeVisible();
+		await expect(menu.getByRole("button", { name: "Sign out" })).toBeVisible();
+		const menuBox = (await menu.boundingBox())!;
+		expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(accountBox!.y);
+		expect(menuBox.y).toBeGreaterThanOrEqual(0);
+		await page.screenshot({ path: testInfo.outputPath("account-bottom-expanded-open.png") });
+
+		await page.keyboard.press("Escape");
+		await expect(button).toHaveAttribute("aria-expanded", "false");
+		await expect(button).toBeFocused();
+		await context.close();
+	});
+
+	test("the account avatar sits at the bottom of the icon rail and opens the same menu", async ({
+		browser,
+	}, testInfo) => {
+		const { page, context } = await openList(browser, "/inbox", DEFAULT_WIDTH, "kite", "light");
+		const sidebar = page.locator("#kite-sidebar-layout > [data-panel]").first();
+		await headerOf(page).getByRole("button", { name: "Collapse menu" }).click();
+		await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeLessThan(80);
+		const button = sidebar.getByRole("button", { name: "Open account menu" });
+		await expect(button).toBeVisible();
+		await expect(button).not.toContainText("@");
+		const [buttonBox, sidebarBox] = await Promise.all([button.boundingBox(), sidebar.boundingBox()]);
+		expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(sidebarBox!.x + sidebarBox!.width);
+		expect(buttonBox!.y + buttonBox!.height).toBeGreaterThan(sidebarBox!.y + sidebarBox!.height - 80);
+		await page.screenshot({ path: testInfo.outputPath("account-bottom-rail-closed.png") });
+
+		await button.click();
+		const menu = page.locator('[data-placement="sidebar"]');
+		await expect(menu.getByRole("button", { name: "Sign out" })).toBeVisible();
+		await expect(menu.getByRole("link", { name: "Add another account" })).toBeVisible();
+		const menuBox = (await menu.boundingBox())!;
+		expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(buttonBox!.y);
+		await page.screenshot({ path: testInfo.outputPath("account-bottom-rail-open.png") });
+		await page.keyboard.press("Escape");
+		await expect(menu).toBeHidden();
+		await expect(button).toBeFocused();
+		await context.close();
+	});
+
+	test("on a phone the menu sheet ends with the account, and the list header has no toggle", async ({
+		browser,
+	}, testInfo) => {
 		const { page, context } = await openList(browser, "/inbox", DEFAULT_WIDTH, "kite", "light", {
 			width: 390,
 			height: 844,
@@ -144,8 +257,25 @@ test.describe("message list header", () => {
 		await page.getByRole("button", { name: "Open menu" }).click();
 		const sheet = page.getByRole("dialog", { name: "Menu" });
 		await expect(sheet).toBeVisible();
+		const account = sheet.getByRole("button", { name: "Open account menu" });
+		await expect(account).toBeVisible();
+		const [accountBox, supportBox] = await Promise.all([
+			account.boundingBox(),
+			sheet.getByRole("link", { name: "Support" }).boundingBox(),
+		]);
+		expect(accountBox!.y).toBeGreaterThan(supportBox!.y);
+		await page.screenshot({ path: testInfo.outputPath("account-bottom-phone-sheet.png") });
+
+		await account.click();
+		const menu = page.locator('[data-placement="sidebar"]');
+		await expect(menu.getByRole("button", { name: "Sign out" })).toBeVisible();
+		const menuBox = (await menu.boundingBox())!;
+		expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(accountBox!.y);
+		expect(menuBox.x).toBeGreaterThanOrEqual(0);
+		expect(menuBox.x + 1).toBeLessThanOrEqual(390);
+		await page.screenshot({ path: testInfo.outputPath("account-bottom-phone-open.png") });
 		await page.keyboard.press("Escape");
-		await expect(sheet).toBeHidden();
+		await expect(menu).toBeHidden();
 		await context.close();
 	});
 });

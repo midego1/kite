@@ -182,7 +182,8 @@ export function DriveNav() {
 
 	return (
 		<SidebarScaffold
-			header={<SidebarAccounts accountMenu={<MailboxSelector placement="sidebar" />} />}
+			header={<SidebarAccounts />}
+			account={<MailboxSelector placement="sidebar" />}
 			footer={
 				<>
 					{!compact && <UsageBar usage={usage} />}

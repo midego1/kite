@@ -22,3 +22,12 @@ export type DraftSaveQueue<T> = {
 	/** Abandons pending work and makes `draftId` the draft later saves update. */
 	reset(draftId: string | null): void;
 };
+
+export type SavedDraftKey = {
+	/** The draft and content the last finished save stored; null before any save. */
+	readonly key: string | null;
+	/** Whether a snapshot with this key differs from what the last finished save stored. */
+	needsSave(candidate: string): boolean;
+	/** Records a finished save and asks the owner to check its current snapshot again. */
+	saved(key: string): void;
+};

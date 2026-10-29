@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { authFetch } from "@/lib/auth/client";
-import { createDraftSaveQueue, withoutAttachmentIds } from "./draft-autosave-utils";
+import { createDraftSaveQueue, createSavedDraftKey, withoutAttachmentIds } from "./draft-autosave-utils";
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment } from "./types";
 
 const AUTOSAVE_DELAY_MS = 900;
@@ -22,8 +22,9 @@ type DraftUploads = { tried: Set<string>; stored: Set<string> };
  * Saves the composer to its draft 900 ms after the last change, one save at a
  * time, and stores the composer's files on the draft. A change still waiting
  * when the composer unmounts is saved then instead of being dropped. A
- * snapshot equal to what the last save stored is not saved again, and nothing
- * is saved while `paused` (a send review is open).
+ * snapshot equal to what the last save stored is not saved again (checked again
+ * whenever a save finishes, so a revert made while a save was in flight is
+ * saved after it), and nothing is saved while `paused` (a send review is open).
  *
  * The setters must be stable (React state setters): the save queue keeps the
  * ones from the first render.
@@ -36,17 +37,19 @@ export function useDraftAutosave(
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// The debounced save not started yet; it still runs if the composer closes first.
 	const pendingSave = useRef<ComposeDraftSnapshot | null>(null);
+	// Counts finished saves so the effect below compares the current snapshot with what they stored.
+	const [savedCount, setSavedCount] = useState(0);
 	const [{ draftSaves, uploads, lastSaved }] = useState(() => {
 		const created: DraftUploads = { tried: new Set(), stored: new Set() };
-		// The draft and content the last save stored; a snapshot that would write the same again is not saved.
-		const lastSaved: { key: string | null } = { key: null };
+		// A snapshot that would write what the last save stored is not saved again.
+		const lastSaved = createSavedDraftKey(() => setSavedCount((count) => count + 1));
 		return {
 			uploads: created,
 			lastSaved,
 			draftSaves: createDraftSaveQueue<ComposeDraftSnapshot>({
 				save: async (next, existingId, stale) => {
 					const saved = await saveDraftSnapshot(next, existingId, stale, created, setters);
-					if (saved && !stale()) lastSaved.key = autosaveKey(saved, next);
+					if (saved && !stale()) lastSaved.saved(autosaveKey(saved, next));
 					return saved;
 				},
 				discard: (id) => void authFetch(`/api/drafts/${id}`, { method: "DELETE" }).catch(() => {}),
@@ -57,7 +60,8 @@ export function useDraftAutosave(
 
 	useEffect(() => {
 		// A save while a send review is open would change the draft under the review and void it.
-		const next = snapshot && !paused && autosaveKey(draftSaves.draftId, snapshot) !== lastSaved.key ? snapshot : null;
+		const next =
+			snapshot && !paused && lastSaved.needsSave(autosaveKey(draftSaves.draftId, snapshot)) ? snapshot : null;
 		pendingSave.current = next;
 		if (!next) return;
 		const timer = setTimeout(() => {
@@ -66,7 +70,7 @@ export function useDraftAutosave(
 		}, AUTOSAVE_DELAY_MS);
 		saveTimer.current = timer;
 		return () => clearTimeout(timer);
-	}, [draftSaves, lastSaved, paused, snapshot]);
+	}, [draftSaves, lastSaved, paused, savedCount, snapshot]);
 
 	// Closing the composer (or opening another draft) unmounts it; save what was typed in the last moment.
 	useEffect(() => {

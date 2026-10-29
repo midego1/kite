@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	createDraftSaveQueue,
+	createSavedDraftKey,
 	hasDraftContent,
 	withoutAttachmentIds,
 } from "../src/components/compose/draft-autosave-utils.ts";
@@ -225,4 +226,64 @@ test("an accepted schedule still wins over the undo window", () => {
 	const at = "2026-10-13T15:00:00.000Z";
 	assert.equal(isPastScheduledSend(at, now), false);
 	assert.deepEqual(resolveComposerSendTime(at, 10, now), { scheduledAt: at, undoUntil: null });
+});
+
+test("the saved key skips only a snapshot that matches what the last save stored", () => {
+	const saved = createSavedDraftKey(() => {});
+	assert.equal(saved.key, null);
+	assert.equal(saved.needsSave("A"), true);
+	saved.saved("A");
+	assert.equal(saved.key, "A");
+	assert.equal(saved.needsSave("A"), false);
+	assert.equal(saved.needsSave("B"), true);
+});
+
+test("a finished save tells the owner to compare its current snapshot again", () => {
+	let notified = 0;
+	const saved = createSavedDraftKey(() => (notified += 1));
+	saved.saved("A");
+	saved.saved("B");
+	assert.equal(notified, 2);
+});
+
+test("a revert made while a save is in flight is saved once that save finishes", async () => {
+	// The composer's side of the autosave, reduced: what the last save stored, the snapshot on screen,
+	// and the check the effect makes when either changes.
+	const { calls, save } = controlledSaves();
+	let current = "A";
+	const queued = [];
+	const recheck = () => {
+		if (saved.needsSave(current)) queued.push(current);
+	};
+	const saved = createSavedDraftKey(recheck);
+	const queue = createDraftSaveQueue({
+		save: async (snapshot, draftId, stale) => {
+			const id = await save(snapshot, draftId, stale);
+			if (id && !stale()) saved.saved(snapshot);
+			return id;
+		},
+		discard() {},
+	});
+
+	const first = queue.enqueue("A");
+	await tick();
+	calls[0].resolve("draft_1");
+	await first;
+	assert.deepEqual(queued, [], "A is what the draft holds, so nothing else is waiting");
+
+	current = "B";
+	recheck();
+	assert.deepEqual(queued, ["B"]);
+	const second = queue.enqueue("B");
+	await tick();
+	assert.equal(calls.length, 2);
+
+	// The user reverts to A while B is on the wire: A still equals the key stored by the last finished save.
+	current = "A";
+	recheck();
+	assert.deepEqual(queued, ["B"], "nothing is queued while B is in flight");
+
+	calls[1].resolve("draft_1");
+	await second;
+	assert.deepEqual(queued, ["B", "A"], "B finishing re-checks the composer and finds A unsaved");
 });

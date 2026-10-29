@@ -1,4 +1,4 @@
-import type { DraftSave, DraftSaveQueue } from "./draft-autosave-types";
+import type { DraftSave, DraftSaveQueue, SavedDraftKey } from "./draft-autosave-types";
 
 /**
  * Runs draft autosaves one at a time. The first save of a new draft is a POST
@@ -71,6 +71,29 @@ export function createDraftSaveQueue<T>(options: {
 			pending = null;
 			generation += 1;
 			draftId = next;
+		},
+	};
+}
+
+/**
+ * Remembers the draft and content the last finished save stored, so a snapshot
+ * that would write the same again is not saved. That is only true until the
+ * next save finishes: a save in flight may replace what the dedupe compared
+ * against, so `onSaved` tells the owner to compare the composer's current
+ * snapshot again, or a revert made during the request would never be saved.
+ */
+export function createSavedDraftKey(onSaved: () => void): SavedDraftKey {
+	let key: string | null = null;
+	return {
+		get key() {
+			return key;
+		},
+		needsSave(candidate) {
+			return candidate !== key;
+		},
+		saved(next) {
+			key = next;
+			onSaved();
 		},
 	};
 }

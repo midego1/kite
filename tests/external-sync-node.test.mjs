@@ -108,7 +108,9 @@ globalThis.fetch = async () => new Response("", { status: 404 });
 /** Today's IMAP INTERNALDATE, so `UID SEARCH SINCE` (two days back) finds the messages. */
 function today() {
 	const date = new Date();
-	const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][date.getUTCMonth()];
+	const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][
+		date.getUTCMonth()
+	];
 	return `${String(date.getUTCDate()).padStart(2, "0")}-${month}-${date.getUTCFullYear()} 08:00:00 +0000`;
 }
 
@@ -218,7 +220,9 @@ async function refusal(promise) {
 
 const auditActions = (db) =>
 	db.db
-		.prepare("SELECT action, metadata FROM audit_logs WHERE action LIKE 'external_account.sync%' ORDER BY created_at, rowid")
+		.prepare(
+			"SELECT action, metadata FROM audit_logs WHERE action LIKE 'external_account.sync%' ORDER BY created_at, rowid",
+		)
 		.all();
 
 test("new INBOX mail arrives once, with its source flags, in the account's mailbox; Kite never writes to the source", async (t) => {
@@ -250,7 +254,11 @@ test("new INBOX mail arrives once, with its source flags, in the account's mailb
 		inbound.map((message) => [message.rawR2Key, message.to, message.source]),
 		[
 			[`external/${account.id}/1/2.eml`, USER, { kind: "external", accountId: account.id, read: true, starred: true }],
-			[`external/${account.id}/1/3.eml`, USER, { kind: "external", accountId: account.id, read: false, starred: false }],
+			[
+				`external/${account.id}/1/3.eml`,
+				USER,
+				{ kind: "external", accountId: account.id, read: false, starred: false },
+			],
 		],
 	);
 	assert.ok(bucket.objects.has(`external/${account.id}/1/2.eml`));
@@ -278,7 +286,10 @@ test("new INBOX mail arrives once, with its source flags, in the account's mailb
 	// The same Message-ID again (moved back into INBOX: a new UID) is dropped and its object removed.
 	server.addMessage("INBOX", sampleMessage(4, { subject: "Moved back" }));
 	const original = db.db.prepare("SELECT provider_message_id FROM messages WHERE subject = 'Brand new'").get();
-	server.addMessage("INBOX", sampleMessage(5, { subject: "Brand new (again)", messageId: original.provider_message_id }));
+	server.addMessage(
+		"INBOX",
+		sampleMessage(5, { subject: "Brand new (again)", messageId: original.provider_message_id }),
+	);
 	due();
 	assert.equal((await syncExternalAccount(env, account.id)).delivered, 2);
 	await deliver();
@@ -292,7 +303,9 @@ test("new INBOX mail arrives once, with its source flags, in the account's mailb
 	const verbs = new Set(server.commands.map((command) => command.line.split(" ").slice(1, 3).join(" ").toUpperCase()));
 	for (const verb of verbs)
 		assert.match(verb, /^(CAPABILITY|AUTHENTICATE PLAIN|EXAMINE "INBOX"|UID FETCH|UID SEARCH|LOGOUT)/, verb);
-	assert.ok(server.commands.some((command) => /UID FETCH 4:\* \(UID FLAGS INTERNALDATE RFC822\.SIZE\)/.test(command.line)));
+	assert.ok(
+		server.commands.some((command) => /UID FETCH 4:\* \(UID FLAGS INTERNALDATE RFC822\.SIZE\)/.test(command.line)),
+	);
 });
 
 test("synced mail goes through spam, the Screener and webhooks; only a Gmail account's own header counts", async (t) => {
@@ -381,18 +394,15 @@ test("errors become states: a failed sign-in stops sync until reconnecting, thro
 	state = row();
 	assert.deepEqual([state.status, state.status_reason, state.consecutive_failures], ["active", "transient", 2]);
 	assert.ok(Math.abs(state.next_sync_at * 1000 - Date.now() - 20 * 60_000) < 5_000);
-	assert.deepEqual(
-		(await listExternalAccounts(env, "owner"))[0].sync,
-		{
-			enabled: true,
-			intervalMinutes: 5,
-			lastSuccessAt: new Date(state.last_success_at * 1000).toISOString(),
-			nextSyncAt: new Date(state.next_sync_at * 1000).toISOString(),
-			failures: 2,
-			problem: "transient",
-			running: false,
-		},
-	);
+	assert.deepEqual((await listExternalAccounts(env, "owner"))[0].sync, {
+		enabled: true,
+		intervalMinutes: 5,
+		lastSuccessAt: new Date(state.last_success_at * 1000).toISOString(),
+		nextSyncAt: new Date(state.next_sync_at * 1000).toISOString(),
+		failures: 2,
+		problem: "transient",
+		running: false,
+	});
 
 	// After a day of failing (three or more in a row): `error`, every 6 hours, and the notice lists it.
 	db.db.exec(`UPDATE external_accounts SET last_success_at = ${Math.floor(Date.now() / 1000) - 2 * 86_400}`);
@@ -411,12 +421,10 @@ test("errors become states: a failed sign-in stops sync until reconnecting, thro
 	due();
 	assert.equal((await syncExternalAccount(env, account.id, steady)).delivered, 0);
 	state = row();
-	assert.deepEqual([state.status, state.status_reason, state.consecutive_failures, state.last_error], [
-		"active",
-		null,
-		0,
-		null,
-	]);
+	assert.deepEqual(
+		[state.status, state.status_reason, state.consecutive_failures, state.last_error],
+		["active", null, 0, null],
+	);
 
 	// The password changed at the provider: sign-in failed, sync stops, the owner is told.
 	server.setPassword(USER, "changed-at-provider");
@@ -569,11 +577,12 @@ test("a rebuilt INBOX is checked again for two days and dedupe drops what Kite h
 	// The two days hold the message from before connecting (never delivered), the one Kite has and the new one.
 	assert.equal(result.delivered, 3);
 	await deliver();
-	assert.deepEqual(synced().map((message) => message.subject).sort(), [
-		"After the reset",
-		"Before the reset",
-		"Fake IMAP message 1",
-	]);
+	assert.deepEqual(
+		synced()
+			.map((message) => message.subject)
+			.sort(),
+		["After the reset", "Before the reset", "Fake IMAP message 1"],
+	);
 	assert.equal(db.db.prepare("SELECT uidvalidity FROM external_account_folders").get().uidvalidity, 2);
 	assert.match(row().recent_errors, /The provider reset the Inbox; Kite checked the last two days again/);
 
@@ -645,7 +654,11 @@ test("an Other account's address proves nothing: it claims no slot and is never 
 	});
 	assert.notEqual(real.id, squatter.id);
 	// A second "Other" connect of the same address is not told it is taken, so it cannot be used to probe.
-	const second = await connectExternalAccount(env, owner, connectBody({ address: "me@gmail.com", username: "me@gmail.com" }));
+	const second = await connectExternalAccount(
+		env,
+		owner,
+		connectBody({ address: "me@gmail.com", username: "me@gmail.com" }),
+	);
 	assert.ok(second.id);
 	// A proven address is still unique: a second Gmail connect, or turning an Other one into Gmail, is refused.
 	assert.equal(

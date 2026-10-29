@@ -160,6 +160,8 @@
 		"src/lib/external-accounts/input-utils.ts",
 		"src/lib/external-accounts/presets-utils.ts",
 		"src/lib/external-accounts/serialize-utils.ts",
+		"src/lib/external-accounts/sync-utils.ts",
+		"src/components/connected-accounts-banner-utils.ts",
 		"src/lib/backups/external-accounts-utils.ts",
 		"src/lib/smtp/protocol-utils.ts",
 		"src/lib/email/mime-build-utils.ts",

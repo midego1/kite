@@ -43,7 +43,10 @@ const {
 	["externalAuthenticationResults", "src/lib/spam/authentication-results-utils.ts"],
 	["detachMissingExternalAccounts", "src/lib/backups/external-accounts-utils.ts"],
 	["parseAttentionAccounts, connectedAccountsBannerContent", "src/components/connected-accounts-banner-utils.ts"],
-	["syncStatusText, canCheckNow, relativeTime", "src/components/settings/connected-accounts/connected-accounts-utils.ts"],
+	[
+		"syncStatusText, canCheckNow, relativeTime",
+		"src/components/settings/connected-accounts/connected-accounts-utils.ts",
+	],
 	["describeQueueMessage", "worker-utils.ts"],
 	["shortServerText", "src/lib/external-accounts/connection-utils.ts"],
 	["MailServerRefusedError", "src/lib/net/errors.ts"],
@@ -90,7 +93,13 @@ test("a run takes only UIDs above the cursor, oldest first, at most the cap", ()
 		more: false,
 	});
 	assert.deepEqual(selectNewMessages(summaries, 10, 2), { take: [{ uid: 11 }, { uid: 12 }], more: true });
-	assert.equal(selectNewMessages(Array.from({ length: 250 }, (_, i) => ({ uid: i + 1 })), 0).take.length, 200);
+	assert.equal(
+		selectNewMessages(
+			Array.from({ length: 250 }, (_, i) => ({ uid: i + 1 })),
+			0,
+		).take.length,
+		200,
+	);
 });
 
 test("synced objects have deterministic keys and the source flags become read and starred", () => {
@@ -108,10 +117,10 @@ test("synced objects have deterministic keys and the source flags become read an
 	assert.equal(isExternalSyncMessage(null), false);
 	assert.equal(isExternalSyncMessage({ kind: "import.imap", accountId: "x" }), false);
 	// Failure logs name the synced object's key (account id, UIDVALIDITY, UID: no address) and the kind.
-	assert.deepEqual(
-		describeQueueMessage({ from: "a@b.test", to: "c@d.test", rawR2Key: "external/xacct_1/7/42.eml" }),
-		{ kind: "inbound", rawR2Key: "external/xacct_1/7/42.eml" },
-	);
+	assert.deepEqual(describeQueueMessage({ from: "a@b.test", to: "c@d.test", rawR2Key: "external/xacct_1/7/42.eml" }), {
+		kind: "inbound",
+		rawR2Key: "external/xacct_1/7/42.eml",
+	});
 	assert.deepEqual(describeQueueMessage(externalSyncMessage("xacct_1")), { kind: "external_sync" });
 });
 
@@ -319,12 +328,13 @@ test("the account list says where checking stands", () => {
 		"Kite checks for new mail within five minutes.",
 	);
 	assert.equal(syncStatusText(account("active", { running: true }), now, time), "Checking for new mail…");
+	assert.equal(syncStatusText(account("active", { enabled: false }), now, time), "Checking for new mail is paused.");
 	assert.equal(
-		syncStatusText(account("active", { enabled: false }), now, time),
-		"Checking for new mail is paused.",
-	);
-	assert.equal(
-		syncStatusText(account("active", { problem: "throttled", failures: 1, nextSyncAt: "2026-10-29T14:35:00Z" }), now, time),
+		syncStatusText(
+			account("active", { problem: "throttled", failures: 1, nextSyncAt: "2026-10-29T14:35:00Z" }),
+			now,
+			time,
+		),
 		"The provider is limiting connections; Kite will try again at 14:35.",
 	);
 	assert.equal(
@@ -333,7 +343,11 @@ test("the account list says where checking stands", () => {
 		"two failures are not worth a word yet",
 	);
 	assert.equal(
-		syncStatusText(account("active", { problem: "transient", failures: 3, lastSuccessAt: "2026-10-29T09:10:00Z" }), now, time),
+		syncStatusText(
+			account("active", { problem: "transient", failures: 3, lastSuccessAt: "2026-10-29T09:10:00Z" }),
+			now,
+			time,
+		),
 		"Could not reach imap.example.test since 09:10; retrying.",
 	);
 	assert.equal(

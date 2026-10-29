@@ -246,7 +246,10 @@ export async function startFakeImap(options = {}) {
 					return send(`* SEARCH ${found.map((message) => message.uid).join(" ")}\r\n${tag} OK done\r\n`);
 				}
 				if (sub.toUpperCase() === "FETCH") {
-					const wanted = uidSet(set, entry.messages.map((message) => message.uid));
+					const wanted = uidSet(
+						set,
+						entry.messages.map((message) => message.uid),
+					);
 					if (options.hugeLiteral) return send(`* 1 FETCH (UID 1 BODY[] {4000000000}\r\n${"x".repeat(1000)}`);
 					if (options.fetchGate) {
 						const gate = typeof options.fetchGate === "function" ? options.fetchGate(fetches++) : options.fetchGate;

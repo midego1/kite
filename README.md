@@ -66,10 +66,10 @@ Kite is **early beta**. It is tested, but it has not had the time in the field t
 Kite has a light and a dark theme, and this page shows both: GitHub serves the dark screenshots to readers in dark mode and the light ones otherwise. Click one to open it at full size.
 
 <p align="center">
-	<a href="/screenshots/inbox-light.webp">
+	<a href="screenshots/inbox-light.webp">
 		<picture>
-			<source media="(prefers-color-scheme: dark)" srcset="/screenshots/inbox-dark.webp">
-			<img src="/screenshots/inbox-light.webp" width="900" alt="The inbox with a conversation open in the reader">
+			<source media="(prefers-color-scheme: dark)" srcset="screenshots/inbox-dark.webp">
+			<img src="screenshots/inbox-light.webp" width="900" alt="The inbox with a conversation open in the reader">
 		</picture>
 	</a>
 	<br>
@@ -79,74 +79,74 @@ Kite has a light and a dark theme, and this page shows both: GitHub serves the d
 <table>
 	<tr>
 		<td align="center" valign="top" width="50%">
-			<a href="/screenshots/compose-light.webp"><picture>
-				<source media="(prefers-color-scheme: dark)" srcset="/screenshots/compose-dark.webp">
-				<img src="/screenshots/compose-light.webp" width="440" alt="Writing a reply under the open conversation">
+			<a href="screenshots/compose-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/compose-dark.webp">
+				<img src="screenshots/compose-light.webp" width="440" alt="Writing a reply under the open conversation">
 			</picture></a><br>
 			<b>Reply</b><br>Reply inline under the conversation, with a send preview and undo.
 		</td>
 		<td align="center" valign="top" width="50%">
-			<a href="/screenshots/assistant-light.webp"><picture>
-				<source media="(prefers-color-scheme: dark)" srcset="/screenshots/assistant-dark.webp">
-				<img src="/screenshots/assistant-light.webp" width="440" alt="The Kite AI side panel with a drafted reply">
+			<a href="screenshots/assistant-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/assistant-dark.webp">
+				<img src="screenshots/assistant-light.webp" width="440" alt="The Kite AI side panel with a drafted reply">
 			</picture></a><br>
 			<b>Kite AI</b><br>Ask about your mail and review drafts before anything is sent.
 		</td>
 	</tr>
 	<tr>
 		<td align="center" valign="top" width="50%">
-			<a href="/screenshots/for-you-light.webp"><picture>
-				<source media="(prefers-color-scheme: dark)" srcset="/screenshots/for-you-dark.webp">
-				<img src="/screenshots/for-you-light.webp" width="440" alt="The For you page with suggestions grouped by kind">
+			<a href="screenshots/for-you-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/for-you-dark.webp">
+				<img src="screenshots/for-you-light.webp" width="440" alt="The For you page with suggestions grouped by kind">
 			</picture></a><br>
 			<b>For you</b><br>What automatic reading noticed: replies, invitations, subscriptions and warnings. Nothing happens until you act.
 		</td>
 		<td align="center" valign="top" width="50%">
-			<a href="/screenshots/calendar-light.webp"><picture>
-				<source media="(prefers-color-scheme: dark)" srcset="/screenshots/calendar-dark.webp">
-				<img src="/screenshots/calendar-light.webp" width="440" alt="Week view of the calendar">
+			<a href="screenshots/calendar-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/calendar-dark.webp">
+				<img src="screenshots/calendar-light.webp" width="440" alt="Week view of the calendar">
 			</picture></a><br>
 			<b>Calendar</b><br>Day, week and month views with booking pages.
 		</td>
 	</tr>
 	<tr>
 		<td align="center" valign="top" width="50%">
-			<a href="/screenshots/drive-light.webp"><picture>
-				<source media="(prefers-color-scheme: dark)" srcset="/screenshots/drive-dark.webp">
-				<img src="/screenshots/drive-light.webp" width="440" alt="Files and folders in Drive">
+			<a href="screenshots/drive-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/drive-dark.webp">
+				<img src="screenshots/drive-light.webp" width="440" alt="Files and folders in Drive">
 			</picture></a><br>
 			<b>Drive</b><br>Files and folders next to your mail, with sharing and public links.
 		</td>
 		<td align="center" valign="top" width="50%">
-			<a href="/screenshots/settings-light.webp"><picture>
-				<source media="(prefers-color-scheme: dark)" srcset="/screenshots/settings-dark.webp">
-				<img src="/screenshots/settings-light.webp" width="440" alt="Inbox settings">
+			<a href="screenshots/settings-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/settings-dark.webp">
+				<img src="screenshots/settings-light.webp" width="440" alt="Inbox settings">
 			</picture></a><br>
 			<b>Settings</b><br>Reading, sending, privacy and notification preferences for your account.
 		</td>
 	</tr>
 	<tr>
 		<td align="center" valign="top" width="50%">
-			<a href="/screenshots/admin-light.webp"><picture>
-				<source media="(prefers-color-scheme: dark)" srcset="/screenshots/admin-dark.webp">
-				<img src="/screenshots/admin-light.webp" width="440" alt="The Admin overview">
+			<a href="screenshots/admin-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/admin-dark.webp">
+				<img src="screenshots/admin-light.webp" width="440" alt="The Admin overview">
 			</picture></a><br>
 			<b>Admin</b><br>Database size and updates up front, with users, domains, backups and the rest in the side menu.
 		</td>
 		<td align="center" valign="top" width="50%">
-			<a href="/screenshots/ai-usage-light.webp"><picture>
-				<source media="(prefers-color-scheme: dark)" srcset="/screenshots/ai-usage-dark.webp">
-				<img src="/screenshots/ai-usage-light.webp" width="440" alt="The AI usage page with a chart and a table">
+			<a href="screenshots/ai-usage-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/ai-usage-dark.webp">
+				<img src="screenshots/ai-usage-light.webp" width="440" alt="The AI usage page with a chart and a table">
 			</picture></a><br>
 			<b>AI usage</b><br>Tokens, requests and estimated spend per day and per request.
 		</td>
 	</tr>
 	<tr>
 		<td align="center" valign="top" width="50%">
-			<a href="/screenshots/inbox-phone-light.webp">
+			<a href="screenshots/inbox-phone-light.webp">
 				<picture>
-					<source media="(prefers-color-scheme: dark)" srcset="/screenshots/inbox-phone-dark.webp">
-					<img src="/screenshots/inbox-phone-light.webp" width="200" alt="A message open on a phone">
+					<source media="(prefers-color-scheme: dark)" srcset="screenshots/inbox-phone-dark.webp">
+					<img src="screenshots/inbox-phone-light.webp" width="200" alt="A message open on a phone">
 				</picture>
 			</a><br>
 			<b>On a phone</b><br>One pane at a time, in the same look.

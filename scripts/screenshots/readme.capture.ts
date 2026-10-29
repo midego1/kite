@@ -1,16 +1,32 @@
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "../../e2e/support/constants";
-import { openMessage } from "../../e2e/support/helpers";
+import { apiContext, openMessage } from "../../e2e/support/helpers";
 import { OPENED, THREAD, seedDemoData } from "./demo-data";
 import { mockAiUsage, mockAssistant, mockForYou } from "./demo-mocks";
 
 // The README screenshots: every feature once in light and once in dark, in the default "Zero" look, as
 // screenshots/<name>-light.webp and screenshots/<name>-dark.webp (the README picks one per reader with <picture>).
 // Desktop shots are a 1440x900 window at 2x; the phone shot is 390x844 at 2x.
-test.describe.configure({ mode: "serial" });
-
 test.beforeAll(seedDemoData);
+
+// Opening a message marks it read, so without this the dark shot of a pair would show fewer unread messages
+// than its light partner, which ran first. Every test starts from the same state: everything unread.
+test.beforeEach(async () => {
+	const api = await apiContext(STORAGE_STATE);
+	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as {
+		mailboxes: { id: string; address?: string; email?: string }[];
+	};
+	const mailbox = mailboxes.find((item) => (item.address ?? item.email) === SUPPORT_ADDRESS) ?? mailboxes[0]!;
+	const listed = await api.get(`/api/messages?${new URLSearchParams({ mailboxId: mailbox.id, status: "received", limit: "100" })}`);
+	expect(listed.ok(), await listed.text()).toBe(true);
+	const { messages } = (await listed.json()) as { messages: { id: string }[] };
+	const marked = await api.post("/api/messages/bulk", {
+		data: { messageIds: messages.map((message) => message.id), action: "unread" },
+	});
+	expect(marked.ok(), await marked.text()).toBe(true);
+	await api.dispose();
+});
 
 type Theme = "light" | "dark";
 const THEMES: Theme[] = ["light", "dark"];
@@ -96,10 +112,16 @@ async function visit(page: Page, path: string, ready: Locator) {
 		// The session check is one of the requests that must have settled by now, and answered.
 		await page.waitForLoadState("networkidle");
 		expect(check.failed, "the session check answered").toBe(false);
-	}).toPass({ timeout: 600_000, intervals: [1000] });
+	}).toPass({ timeout: 300_000, intervals: [1000] });
 }
 
-async function capture(page: Page, name: string, theme: Theme) {
+/**
+ * Takes the shot once the page is settled. `rail` is whether the mailbox rail (with its "Add mailbox" button, which
+ * only appears once the session check has answered) is on screen; a shot taken before it completes is not used.
+ * `unread` is whether the sidebar's Inbox item shows its unread count, which arrives with the message counts.
+ */
+async function capture(page: Page, name: string, theme: Theme, { rail = true, unread = rail }: { rail?: boolean; unread?: boolean } = {},
+) {
 	// Playwright's click retries can leave the message list scrolled a little; shots start at its top.
 	await page.evaluate(() => {
 		for (const list of document.querySelectorAll("[data-density]")) list.scrollTop = 0;
@@ -107,6 +129,9 @@ async function capture(page: Page, name: string, theme: Theme) {
 	// A visible loading overlay, if the page has one, must be gone.
 	await expect(page.locator('[aria-label="Loading"].opacity-100')).toHaveCount(0);
 	await expect(page.getByRole("progressbar", { name: "Loading page" })).toHaveCount(0);
+	if (rail) await expect(page.getByRole("button", { name: "Add mailbox" })).toBeVisible();
+	if (unread) await expect(page.getByRole("link", { name: /^Inbox\s*\d+$/ }).first()).toBeVisible();
+	expect(sessionCheck.get(page)!.failed, "the session check failed, so the sidebar is incomplete").toBe(false);
 	// The first-load splash fades out over 300 ms after the page has its data.
 	await expect(page.locator("[data-loading-overlay]")).toHaveCSS("opacity", "0");
 	await page.waitForLoadState("networkidle");
@@ -173,7 +198,7 @@ for (const theme of THEMES) {
 		const page = await open(browser, theme);
 		await page.goto("/calendar");
 		await expect(page.getByRole("button", { name: /Design review: onboarding/ }).first()).toBeVisible();
-		await capture(page, "calendar", theme);
+		await capture(page, "calendar", theme, { rail: false });
 	});
 
 	test(`drive (${theme})`, async ({ browser }) => {
@@ -181,7 +206,7 @@ for (const theme of THEMES) {
 		await page.goto("/drive");
 		await expect(page.getByText("Launch plan.pdf").first()).toBeVisible();
 		await expect(page.getByText("Brand assets").first()).toBeVisible();
-		await capture(page, "drive", theme);
+		await capture(page, "drive", theme, { unread: false });
 	});
 
 	test(`settings (${theme})`, async ({ browser }) => {
@@ -206,6 +231,6 @@ for (const theme of THEMES) {
 	test(`inbox on a phone (${theme})`, async ({ browser }) => {
 		const page = await open(browser, theme, true);
 		await openLenasMessage(page);
-		await capture(page, "inbox-phone", theme);
+		await capture(page, "inbox-phone", theme, { rail: false });
 	});
 }

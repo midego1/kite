@@ -1,0 +1,1 @@
+`manrope-latin.woff2` is the Latin subset of Manrope (variable, weights 200 to 800) from Google Fonts, licensed under the SIL Open Font License 1.1 (https://openfontlicense.org). `social-preview.html` loads it so `npm run social:preview` renders the same typeface the app uses on any machine.

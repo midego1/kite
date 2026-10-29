@@ -1,6 +1,7 @@
 import type { MouseEvent } from "react";
 import type { CheckboxChangeEvent } from "@/components/ui/checkbox-types";
 import type { Message } from "@/hooks/types";
+import { isSendPending } from "@/lib/messages/send-state-utils";
 
 type SelectedMessage = { id: string; read: boolean; mailboxId?: string | null };
 
@@ -124,7 +125,8 @@ export function applySelection(
 				id: message.id,
 				read: message.read && !(message.threadUnread ?? 0),
 				...(message.mailboxId ? { mailboxId: message.mailboxId } : {}),
-				...(message.status === "draft" ? { status: message.status } : {}),
+				// Drafts and sends waiting to go out are told apart, since the toolbar treats them differently.
+				...(message.status === "draft" || isSendPending(message.status) ? { status: message.status } : {}),
 			});
 		}
 	}

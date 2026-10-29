@@ -36,21 +36,31 @@ export async function loadSendStates(
 	);
 	const newest = new Map<string, (typeof jobs)[number]>();
 	for (const job of jobs) if (job.messageId && !newest.has(job.messageId)) newest.set(job.messageId, job);
-	for (const row of open) {
-		const job = newest.get(row.id);
-		const inFlight = row.status === PENDING_SEND_STATUS && job?.status === "sending";
-		const sendingFor = inFlight && job?.updatedAt ? now - job.updatedAt.getTime() : 0;
-		states.set(row.id, {
-			status: row.status === PENDING_SEND_STATUS ? PENDING_SEND_STATUS : FAILED_SEND_STATUS,
-			scheduledAt: job?.scheduledAt ? job.scheduledAt.toISOString() : null,
-			cancellable: row.status === PENDING_SEND_STATUS && job?.status === "queued",
-			inFlight,
-			...(sendingFor >= STUCK_SENDING_AFTER_MS ? { stuckMinutes: Math.floor(sendingFor / 60_000) } : {}),
-			own: row.userId === viewerId,
-			...(row.status === FAILED_SEND_STATUS && row.userId === viewerId ? { error: job?.error ?? null } : {}),
-		});
-	}
+	for (const row of open) states.set(row.id, describeSendState(row, newest.get(row.id), viewerId, now));
 	return states;
+}
+
+type OutboundJobRow = { status: string; updatedAt: Date | null; scheduledAt: Date | null; error: string | null };
+
+function describeSendState(
+	row: { status: string; userId: string },
+	job: OutboundJobRow | undefined,
+	viewerId: string,
+	now: number,
+): SendState {
+	const queued = row.status === PENDING_SEND_STATUS;
+	const own = row.userId === viewerId;
+	const inFlight = queued && job?.status === "sending";
+	const sendingFor = inFlight && job?.updatedAt ? now - job.updatedAt.getTime() : 0;
+	return {
+		status: queued ? PENDING_SEND_STATUS : FAILED_SEND_STATUS,
+		scheduledAt: job?.scheduledAt ? job.scheduledAt.toISOString() : null,
+		cancellable: queued && job?.status === "queued",
+		inFlight,
+		...(sendingFor >= STUCK_SENDING_AFTER_MS ? { stuckMinutes: Math.floor(sendingFor / 60_000) } : {}),
+		own,
+		...(!queued && own ? { error: job?.error ?? null } : {}),
+	};
 }
 
 /** The list condition for a `status` filter naming one status or, for the Sent folder, several. */

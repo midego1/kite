@@ -78,6 +78,13 @@ export function BulkMessageToolbar(props: BulkMessageToolbarProps) {
 	return props.folder === "drafts" ? <DraftSelectionToolbar {...props} /> : <MailSelectionToolbar {...props} />;
 }
 
+/** The user may always delete their own drafts, unless the selection also holds a send waiting to go out. */
+function canDeleteOwnDrafts(
+	selection: Pick<BulkMessageToolbarProps, "hasDraftSelection" | "hasPendingSendSelection" | "pending">,
+) {
+	return !!selection.hasDraftSelection && !selection.hasPendingSendSelection && !selection.pending;
+}
+
 function MailSelectionToolbar({
 	selectedCount,
 	hasUnreadSelection,
@@ -87,8 +94,8 @@ function MailSelectionToolbar({
 	pending,
 	folder,
 	mailboxIds,
-	hasDraftSelection = false,
-	hasPendingSendSelection = false,
+	hasDraftSelection,
+	hasPendingSendSelection,
 }: BulkMessageToolbarProps) {
 	// In archived, spam and trash the usual button would be a no-op, so it becomes the way back to the inbox.
 	const archive =
@@ -122,6 +129,7 @@ function MailSelectionToolbar({
 	const { folders, spansMailboxes, manageDisabled: accessDisabled } = useBulkSelectionAccess(mailboxIds, pending);
 	// A message waiting to be sent goes out wherever it is filed, so nothing that moves it is offered.
 	const manageDisabled = accessDisabled || hasPendingSendSelection;
+	const trashDisabled = manageDisabled && !canDeleteOwnDrafts({ hasDraftSelection, hasPendingSendSelection, pending });
 	return (
 		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full">
 			{!hideSelectedCount && (
@@ -155,10 +163,7 @@ function MailSelectionToolbar({
 					variant="ghost"
 					size="sm"
 					onClick={() => onAction(trash.action as BulkMessageAction)}
-					// The user may always delete their own drafts; the server deletes them after a confirmation.
-					disabled={
-						manageDisabled && !(hasDraftSelection && !hasPendingSendSelection && trash.action === "trash" && !pending)
-					}
+					disabled={trashDisabled}
 					aria-label={trash.label}
 				>
 					<trash.Icon className="h-4 w-4" />

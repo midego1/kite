@@ -173,7 +173,9 @@ export async function processAppendSent(env: CloudflareEnv, payload: AppendSentM
 		.limit(1);
 	// Only the account owner's own sent message, from the bytes Kite stored for it.
 	if (!row || !message || message.userId !== row.userId || message.rawR2Key !== sentRawKey(payload.messageId)) return;
-	if (!row.appendSent || (await connectRefusal(env, row.userId))) return;
+	// Turned off, or an account that needs reconnecting: no sign-in is attempted with a password known to fail.
+	if (!row.appendSent || row.status === "auth_failed" || row.status === "disabled") return;
+	if (await connectRefusal(env, row.userId)) return;
 	try {
 		const object = await env.BUCKET.get(message.rawR2Key);
 		if (!object) throw new Error("The sent message is no longer stored");

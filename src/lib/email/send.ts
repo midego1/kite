@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { messages, outboundJobs, users } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { STUCK_SENDING_AFTER_MS } from "@/lib/messages/send-state-utils";
+import { isJobClaimed } from "@/lib/email/job-claim";
 import { newId } from "@/lib/ids";
 import { buildSnippet } from "@/lib/email/parse";
 import { dispatchWebhooks } from "@/lib/email/webhooks";
@@ -201,11 +202,20 @@ export async function sendEmail(
 		return { messageId, scheduled: true };
 	}
 
-	await deliverEmail(env, delivery);
+	await deliverOrThrow(env, delivery);
 	return { messageId };
 }
 
-async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Promise<void> {
+/** An immediate send whose claim was taken back before the provider call was not delivered: say so. */
+async function deliverOrThrow(env: CloudflareEnv, delivery: PreparedDelivery): Promise<void> {
+	if (!(await deliverEmail(env, delivery))) throw new Error("The send was taken back before it was delivered");
+}
+
+/**
+ * Delivers a claimed send. Resolves to false when the send was taken back before the provider call, so
+ * nothing was delivered; true once the provider accepted it, even if it had been taken back by then.
+ */
+async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Promise<boolean> {
 	const { input, messageId, jobId, from, mailboxId, to, cc, bcc, headers, attachments } = delivery;
 	const db = getDb(env);
 	const toAddr = joinEmailAddressList(to);
@@ -241,7 +251,12 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 			await db
 				.update(messages)
 				.set({ textBody: prepared.text ?? null, htmlBody: prepared.html ?? null })
-				.where(eq(messages.id, messageId));
+				.where(and(eq(messages.id, messageId), eq(messages.status, "queued")));
+		}
+		// Just before the provider call: a send taken back (moved to Drafts after it stalled) is not delivered.
+		if (!(await isJobClaimed(db, jobId))) {
+			console.warn(`Outbound job ${jobId} for ${messageId} is no longer claimed; not delivering`);
+			return false;
 		}
 		response = await sendThroughProvider(
 			env,
@@ -268,38 +283,69 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 	} catch (err) {
 		record("failed");
 		const error = err instanceof Error ? err.message : "Send failed";
-		await db.update(messages).set({ status: "failed" }).where(eq(messages.id, messageId));
+		// Only the worker that still holds the send may mark it failed: after a stuck recovery or a cancel the
+		// message is a draft again and a late failure must not touch it.
+		const [failedMessage] = await db
+			.update(messages)
+			.set({ status: "failed" })
+			.where(and(eq(messages.id, messageId), eq(messages.status, "queued")))
+			.returning({ id: messages.id });
 		await db
 			.update(outboundJobs)
 			.set({ status: "failed", error, updatedAt: new Date() })
-			.where(eq(outboundJobs.id, jobId));
-		await runPostDeliveryStep(`message.failed webhook for ${messageId}`, () =>
-			dispatchWebhooks(env, input.userId, "message.failed", { messageId, error }),
-		);
+			.where(and(eq(outboundJobs.id, jobId), eq(outboundJobs.status, "sending")));
+		if (failedMessage) {
+			await runPostDeliveryStep(`message.failed webhook for ${messageId}`, () =>
+				dispatchWebhooks(env, input.userId, "message.failed", { messageId, error }),
+			);
+		}
 		throw err;
 	}
 
 	record("sent");
 	// The provider has accepted the message from here on. Nothing below may mark it
 	// failed or rethrow, or a retry would deliver it a second time.
-	await runPostDeliveryStep(`sent status for ${messageId}`, async () => {
+	let markedSent = false;
+	const statusWritten = await runPostDeliveryStep(`sent status for ${messageId}`, async () => {
 		// A fresh message starts its own conversation; Cloudflare's Message-ID is what
-		// any reply will name in In-Reply-To, so key the thread by it.
-		await db
+		// any reply will name in In-Reply-To, so key the thread by it. Only a message still queued becomes
+		// sent: one moved back to Drafts after a stuck recovery stays the draft it is.
+		const updated = await db
 			.update(messages)
 			.set({
 				status: "sent",
 				providerMessageId: response.messageId,
 				threadId: input.threadId ?? normalizeMessageId(response.messageId) ?? messageId,
 			})
-			.where(eq(messages.id, messageId));
+			.where(and(eq(messages.id, messageId), eq(messages.status, "queued")))
+			.returning({ id: messages.id });
+		markedSent = updated.length > 0;
 	});
+	// Late only when the write ran and matched nothing; a write that failed (a transient database error) says
+	// nothing about the message, so the normal steps below still run.
+	if (statusWritten && !markedSent) {
+		// The mail went out, but the send had been taken back: keep a trace and leave the draft alone.
+		console.warn(`Outbound job ${jobId} for ${messageId} was delivered after it was taken back`);
+		await runPostDeliveryStep(`audit log for late delivery of ${messageId}`, () =>
+			createAuditLog(env, {
+				actorUserId: input.userId,
+				mailboxId,
+				messageId,
+				action: "email.send",
+				metadata: { to: toAddr, subject: input.subject, lateAfterRecovery: true },
+			}),
+		);
+		return true;
+	}
 	await runPostDeliveryStep(`agent reply suggestions for ${messageId}`, () => supersedeOlderReplies(env, messageId));
 	await runPostDeliveryStep(`screener approvals for ${messageId}`, () =>
 		approveSentRecipients(env, mailboxId, input.userId, [...to, ...cc, ...bcc]),
 	);
 	await runPostDeliveryStep(`sent job status for ${jobId}`, () =>
-		db.update(outboundJobs).set({ status: "sent", updatedAt: new Date() }).where(eq(outboundJobs.id, jobId)),
+		db
+			.update(outboundJobs)
+			.set({ status: "sent", updatedAt: new Date() })
+			.where(and(eq(outboundJobs.id, jobId), eq(outboundJobs.status, "sending"))),
 	);
 	await runPostDeliveryStep(`message.outbound webhook for ${messageId}`, () =>
 		dispatchWebhooks(env, input.userId, "message.outbound", {
@@ -318,6 +364,7 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 			metadata: { to: toAddr, cc: cc.length ? joinEmailAddressList(cc) : undefined, subject: input.subject },
 		}),
 	);
+	return true;
 }
 
 export type OutboundQueueMessage = {

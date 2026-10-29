@@ -20,6 +20,7 @@ import { suggestionVisibilityFor } from "@/lib/agent/auto-read/suggestion-visibi
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { loadSendStates, statusFilterCondition } from "@/lib/messages/send-state";
 import { parseStatusFilter } from "@/lib/messages/send-state-utils";
+import { loadRowsWithAttachments } from "@/lib/messages/attachment-flags";
 import { screenerPendingRows } from "@/lib/screener/views";
 import { resolveMailboxScope } from "@/lib/mailboxes/scope-utils";
 import { mailboxScopeCondition } from "@/lib/messages/mailbox-scope";
@@ -232,6 +233,10 @@ export async function GET(request: Request) {
 	);
 	const screenerPending = await screenerPendingRows(db, rows);
 	const sendStates = await loadSendStates(db, rows, user.id);
+	// A conversation row has an attachment when any message it stands for in this folder does.
+	const withAttachments = await loadRowsWithAttachments(db, rows, (row) =>
+		groupByThread ? (scopedThreads.ids.get(rowConversationKey(row)) ?? [row.id]) : [row.id],
+	);
 	// One-line summaries, for mailboxes that have them on; a conversation row shows its newest message's line.
 	const rowLines = await loadRowLines(db, rows, (row) =>
 		groupByThread ? (scopedThreads.ids.get(rowConversationKey(row)) ?? [row.id]) : [row.id],
@@ -255,6 +260,7 @@ export async function GET(request: Request) {
 			threadCount: threadCount?.total || 1,
 			// A conversation row is unread only when a message it stands for in this folder is.
 			threadUnread: (groupByThread ? scopedThreads.unread.get(key) : threadCount?.unread) || 0,
+			hasAttachments: withAttachments.has(message.id),
 			...rowSuggestions(message.id),
 			...rowLines(message.id),
 			...(screenerPending.has(message.id) ? { screenerPending: true } : {}),

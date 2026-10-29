@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import type { MouseEvent } from "react";
-import { Clock, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react";
+import { Clock, Paperclip, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react";
 import { SuggestionBadge } from "@/components/agent/suggestion-badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -92,6 +92,17 @@ export function UnreadDot({ unread }: { unread: boolean }) {
 			aria-hidden="true"
 			className={clsx("h-2 w-2 shrink-0 rounded-full", unread ? "bg-blue-500" : "bg-transparent")}
 		/>
+	);
+}
+
+/** The paperclip beside a row's date when its message (or any message of its conversation) has an attachment. */
+export function AttachmentIndicator({ message }: { message: Pick<Message, "hasAttachments"> }) {
+	if (!message.hasAttachments) return null;
+	return (
+		<span data-attachment-indicator className="inline-flex shrink-0 items-center self-center">
+			<Paperclip aria-hidden="true" className="h-3.5 w-3.5 text-neutral-500" />
+			<span className="sr-only">Has attachments</span>
+		</span>
 	);
 }
 

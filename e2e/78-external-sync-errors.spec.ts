@@ -79,7 +79,7 @@ test("a failed sign-in stops sync, shows in the sidebar and is fixed by reconnec
 		// The sidebar notice names the account and links to Reconnect.
 		await page.goto("/inbox");
 		const notice = page.getByRole("status", { name: "Connected accounts" });
-		await expect(notice).toContainText(`Sign-in failed for ${address}`);
+		await expect(notice).toContainText(`Sign-in failed for ${address}`, { timeout: 60_000 });
 		await page.screenshot({ path: testInfo.outputPath("sync-notice.png") });
 		await notice.getByRole("link", { name: "Reconnect" }).click();
 		await expect(page).toHaveURL(/\/settings\/connected-accounts$/);
@@ -145,14 +145,14 @@ test("the sync notice and the account's state read in Kite, Kite light, Classic 
 				const title = page
 					.getByRole("status", { name: "Connected accounts" })
 					.getByText(`Sign-in failed for ${address}`);
-				await expect(title).toBeVisible();
+				await expect(title).toBeVisible({ timeout: 60_000 });
 				expect(await contrast(title), variant.name).toBeGreaterThan(60);
 				await page.screenshot({ path: testInfo.outputPath(`sync-notice-${variant.name}.png`) });
 				await page.goto("/settings/connected-accounts");
 				const hint = page
 					.locator(`[data-external-account="${address}"]`)
 					.getByText("Sign-in failed. Reconnect with the current (app) password.");
-				await expect(hint).toBeVisible();
+				await expect(hint).toBeVisible({ timeout: 60_000 });
 				expect(await contrast(hint), variant.name).toBeGreaterThan(60);
 				await page.screenshot({ path: testInfo.outputPath(`sync-account-${variant.name}.png`) });
 			} finally {

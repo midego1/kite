@@ -448,7 +448,11 @@ test("errors become states: a failed sign-in stops sync until reconnecting, thro
 		kitePassword: KITE_PASSWORD,
 	});
 	assert.equal(reconnected.status, "active");
-	assert.deepEqual([row().next_sync_at, row().consecutive_failures, row().status_reason], [null, 0, null]);
+	assert.deepEqual(
+		[row().next_sync_at, row().last_sync_at, row().consecutive_failures, row().status_reason],
+		[null, null, 0, null],
+		"due at once, and Check now works right after reconnecting",
+	);
 	assert.equal(await planExternalSync(env), 1);
 	assert.equal((await retestExternalAccount(env, owner, account.id)).problem, null);
 

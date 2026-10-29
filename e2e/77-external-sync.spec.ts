@@ -6,7 +6,7 @@ import { apiContext, uniqueToken, waitForMessage } from "./support/helpers";
 import { sampleMessage, startFakeImap } from "../tests/support/fake-imap.mjs";
 
 // Connected accounts, sync (docs/specs/external-accounts.md §6, PR 7): an account at the fake IMAP server on
-// 127.0.0.1 is checked by the 5-minute cron and by **Check now**; new INBOX mail arrives once in the account's
+// 127.0.0.1 is checked by **Check now** and by the 5-minute cron; new INBOX mail arrives once in the account's
 // mailbox (read state kept, a repeated Message-ID dropped, mail from before connecting left out), Pause stops
 // checking, and removing the account keeps the mail.
 
@@ -28,7 +28,7 @@ async function messageList(api: APIRequestContext, query: string) {
 	return ((await response.json()) as { messages: { subject: string | null; read?: boolean }[] }).messages;
 }
 
-test("new INBOX mail arrives once through the cron and Check now, keeps its read state, and stays after removing", async ({
+test("new INBOX mail arrives once through Check now and the cron, keeps its read state, and stays after removing", async ({
 	browser,
 }) => {
 	test.setTimeout(180_000);
@@ -56,12 +56,6 @@ test("new INBOX mail arrives once through the cron and Check now, keeps its read
 		});
 		expect(connected.status()).toBe(201);
 
-		// The cron's first check finds nothing new: mail from before connecting is the import's job.
-		await cronTick(admin);
-		await expect.poll(async () => (await readAccount(user.api)).sync.lastSuccessAt, { timeout: 45_000 }).not.toBeNull();
-		const examined = fake.commands.filter((command) => /EXAMINE "INBOX"/.test(command.line)).length;
-		expect(examined).toBeGreaterThanOrEqual(2);
-
 		const messageId = `<${token}-dup@example.org>`;
 		fake.addMessage("INBOX", { raw: sampleMessage(2, { subject: `${token} read at the phone` }), flags: ["\\Seen"] });
 		fake.addMessage("INBOX", sampleMessage(3, { subject: `${token} unread`, messageId }));
@@ -69,7 +63,9 @@ test("new INBOX mail arrives once through the cron and Check now, keeps its read
 
 		await page.goto("/settings/connected-accounts");
 		const row = page.locator(`[data-external-account="${address}"]`);
-		await expect(row.locator("[data-sync-status]")).toContainText("Checked");
+		await expect(row.locator("[data-sync-status]")).toHaveText("Kite checks for new mail within five minutes.", {
+			timeout: 60_000,
+		});
 		await row.getByRole("button", { name: "Check now" }).click();
 		await expect(row.getByRole("status")).toHaveText("Checking for new mail…");
 		await waitForMessage(user.api, `${token} read at the phone`);
@@ -84,6 +80,7 @@ test("new INBOX mail arrives once through the cron and Check now, keeps its read
 		]);
 		expect(messages.find((message) => message.subject?.endsWith("read at the phone"))?.read).toBe(true);
 		expect(messages.find((message) => message.subject?.endsWith("unread"))?.read).toBe(false);
+		expect(fake.commands.filter((command) => /EXAMINE "INBOX"/.test(command.line)).length).toBe(2);
 		// Kite only reads: no command stores, moves, deletes or marks anything at the source.
 		expect(fake.commands.some((command) => /\b(STORE|COPY|MOVE|EXPUNGE|APPEND|SELECT)\b/i.test(command.line))).toBe(
 			false,

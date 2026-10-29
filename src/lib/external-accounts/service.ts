@@ -369,8 +369,9 @@ async function reconnect(
 		statusReason: null,
 		lastError: null,
 		consecutiveFailures: 0,
-		// Checking starts again at the next tick.
+		// Checking starts again at the next tick, and Check now works at once.
 		nextSyncAt: null,
+		lastSyncAt: null,
 	};
 }
 
@@ -417,7 +418,7 @@ export async function retestExternalAccount(
 			.set({
 				...(row.status === "paused" || row.status === "disabled"
 					? {}
-					: { status: "active" as const, statusReason: null, nextSyncAt: null }),
+					: { status: "active" as const, statusReason: null, nextSyncAt: null, lastSyncAt: null }),
 				lastError: null,
 				consecutiveFailures: 0,
 				updatedAt: now,

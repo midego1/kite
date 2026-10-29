@@ -14,6 +14,7 @@ await build({
 	stdin: {
 		contents: `
 			export { findLinks, splitLinkedText } from "./src/lib/email/linkify-utils.ts";
+			export { htmlToPlainText } from "./src/components/compose/rich-text-utils.ts";
 			export { linkifyTextNodes } from "./src/lib/email/linkify-dom-utils.ts";
 			export { createEmailHtmlSanitizer } from "./src/app/(dashboard)/inbox/[messageId]/email-html-sanitizer-utils.ts";
 		`,
@@ -31,7 +32,7 @@ await build({
 	packages: "external",
 	logLevel: "silent",
 });
-const { findLinks, splitLinkedText, linkifyTextNodes, createEmailHtmlSanitizer } = await import(
+const { findLinks, splitLinkedText, linkifyTextNodes, createEmailHtmlSanitizer, htmlToPlainText } = await import(
 	pathToFileURL(join(directory, "entry.mjs")).href
 );
 
@@ -178,4 +179,65 @@ test("the reader sanitizer does not link what a hostile message only looks like"
 	const hrefs = [...bodyOf(linked).querySelectorAll("a[href]")].map((anchor) => anchor.getAttribute("href"));
 	assert.deepEqual(hrefs, ["https://y.example"]);
 	assert.doesNotMatch(linked, /javascript:alert\(1\)<\/a>/);
+});
+
+test("hostile 200k-character inputs are scanned in linear time", () => {
+	const size = 200_000;
+	const inputs = {
+		closing: `http://a.com/${")".repeat(size)}`,
+		closingAfterText: `see http://a.com/x${"]".repeat(size)} end`,
+		opening: `http://a.com/${"(".repeat(size)}`,
+		dots: `http://a.com/${".".repeat(size)}`,
+		bareDots: ".".repeat(size),
+		wordDots: "a.".repeat(size / 2),
+		ats: "@".repeat(size),
+		atsAndLetters: "a@".repeat(size / 2),
+		emailLabels: `a@${"b.".repeat(size / 2)}`,
+		emailDashes: `a@b.c${"-".repeat(size)}x`,
+		longLocal: `${"a".repeat(size)}@`,
+		schemes: "http://".repeat(size / 7),
+		www: "www.".repeat(size / 4),
+		colons: ":".repeat(size),
+		mixed: "(http://a.com/x).,;!?)(".repeat(size / 22),
+		spaced: "https://a.example/x) ".repeat(size / 21),
+	};
+	for (const [name, input] of Object.entries(inputs)) {
+		findLinks(input);
+		let fastest = Infinity;
+		for (let run = 0; run < 3; run += 1) {
+			const started = performance.now();
+			findLinks(input);
+			fastest = Math.min(fastest, performance.now() - started);
+		}
+		assert.ok(fastest < 50, `${name} took ${fastest.toFixed(1)} ms`);
+	}
+});
+
+test("addresses over the length limit are rejected before they are trimmed", () => {
+	assert.deepEqual(texts(`http://a.com/${")".repeat(5000)}`), []);
+	assert.deepEqual(texts(`${"a".repeat(3000)}@example.com`), []);
+});
+
+test("the plain-text part keeps a typed address plain, with no (href) copy after it", () => {
+	window.document.body.innerHTML = "";
+	globalThis.DOMParser = window.DOMParser;
+	globalThis.Node = window.Node;
+	try {
+		const html =
+			'<div>see <a href="https://www.example.com">www.example.com</a> and <a href="https://example.org/a">https://example.org/a</a> or <a href="mailto:a@b.co">a@b.co</a></div>';
+		assert.equal(htmlToPlainText(html), "see www.example.com and https://example.org/a or a@b.co");
+		// A link whose text says something else still shows where it goes.
+		assert.equal(
+			htmlToPlainText('<div><a href="https://example.org/a">my page</a></div>'),
+			"my page (https://example.org/a)",
+		);
+	} finally {
+		delete globalThis.DOMParser;
+		delete globalThis.Node;
+	}
+});
+
+test("trailing punctuation before the space is not part of a link", () => {
+	assert.deepEqual(texts("go to https://x.com. Then"), ["https://x.com"]);
+	assert.deepEqual(texts("(www.example.com),"), ["www.example.com"]);
 });

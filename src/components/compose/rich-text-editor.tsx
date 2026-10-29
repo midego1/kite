@@ -133,12 +133,12 @@ export function RichTextEditor({
 	// The space the author just typed ends a web or email address: link it, keeping the caret after the space.
 	function onInput(event: FormEvent<HTMLDivElement>) {
 		const { inputType, data } = event.nativeEvent as InputEvent;
-		if (inputType === "insertText" && (data === " " || data === " ")) autolinkBeforeCaret(event.currentTarget, 1);
+		if (inputType === "insertText" && (data === " " || data === " ")) autolinkBeforeCaret(event.currentTarget);
 		emit();
 	}
 
 	function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-		if (event.key === "Enter" && !event.nativeEvent.isComposing) autolinkBeforeCaret(event.currentTarget, 0);
+		if (event.key === "Enter" && !event.nativeEvent.isComposing) autolinkBeforeCaret(event.currentTarget);
 		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
 			event.preventDefault();
 			openLink();

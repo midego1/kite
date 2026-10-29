@@ -121,3 +121,35 @@ test("a URL typed in the composer is a link in the sent message", async ({ page 
 	await expect(body.getByRole("link", { name: REPO, exact: true })).toHaveAttribute("href", REPO);
 	await api.dispose();
 });
+
+test("the composer links an address as it is typed, keeps sentence punctuation outside it, and Ctrl+Z undoes the link", async ({
+	page,
+}) => {
+	await page.goto("/inbox");
+	await page.getByRole("button", { name: "Compose" }).click();
+	const editor = page.getByRole("textbox", { name: "Message body" });
+	await editor.click();
+
+	await editor.pressSequentially("Open https://example.net/docs. ");
+	const link = editor.getByRole("link", { name: "https://example.net/docs", exact: true });
+	await expect(link).toHaveAttribute("href", "https://example.net/docs");
+	// The full stop stays outside the link, and the link is one undo step that leaves the text.
+	await expect(editor.locator("a")).toHaveCount(1);
+	await expect(editor).toContainText("Open https://example.net/docs. ");
+	await editor.press("Control+z");
+	await expect(editor.locator("a")).toHaveCount(0);
+	await expect(editor).toContainText("Open https://example.net/docs.");
+
+	// Enter after an address links it too, and the next line is not part of the link.
+	await editor.press("Control+a");
+	await editor.press("Delete");
+	await editor.pressSequentially("mail first@example.com");
+	await editor.press("Enter");
+	await editor.pressSequentially("second line");
+	await expect(editor.getByRole("link", { name: "first@example.com" })).toHaveAttribute(
+		"href",
+		"mailto:first@example.com",
+	);
+	await expect(editor.locator("a", { hasText: "second" })).toHaveCount(0);
+	await expect(editor).toContainText("second line");
+});

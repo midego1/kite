@@ -311,7 +311,8 @@ export function ComposeForm({
 		await draftSaves.idle();
 		const currentDraftId = draftSaves.draftId;
 		const unsent = withoutAttachmentIds(attachments, storedUploads);
-		const fullHtml = linkifyOutgoingHtml(joinQuotedHtml(html, quotedHtml));
+		// Only what the author wrote is linked, never the quoted or forwarded original.
+		const fullHtml = joinQuotedHtml(linkifyOutgoingHtml(html), quotedHtml);
 		if (draftId && agentRevision !== null) {
 			try {
 				if (attachments.length > 0) {

@@ -1,4 +1,4 @@
-import { findLinks } from "./linkify-utils";
+import { LINK_TAIL, findLinks } from "./linkify-utils";
 import type { LinkMatch } from "./linkify-utils";
 
 // Text that is already a link, or that is code or a control, keeps its text as it is.
@@ -54,28 +54,36 @@ export function linkifyOutgoingHtml(html: string): string {
 	return linkifyTextNodes(doc.body) > 0 ? doc.body.innerHTML : html;
 }
 
+function escapeHtml(value: string): string {
+	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 /**
- * Links the address that ends `trailing` characters before the caret, in the editor's own text
- * node, and puts the caret back where it was. Called after the space the author typed
- * (`trailing` 1) or just before Enter (0). Returns whether it linked anything.
+ * Links the address the author has just finished typing in the editor's own text node: the last
+ * address before the caret, followed only by sentence punctuation and the space (or nothing, for
+ * Enter) that ended it. It replaces the address and what follows with one `insertHTML` command,
+ * so the browser records a single undo step and leaves the caret after the inserted text.
+ * Returns whether it linked anything.
  */
-export function autolinkBeforeCaret(editor: HTMLElement, trailing: number): boolean {
-	const selection = editor.ownerDocument.defaultView?.getSelection();
+export function autolinkBeforeCaret(editor: HTMLElement): boolean {
+	const doc = editor.ownerDocument;
+	const selection = doc.defaultView?.getSelection();
 	const node = selection?.anchorNode;
 	if (!selection || !selection.isCollapsed || !node || node.nodeType !== TEXT_NODE || !editor.contains(node)) {
 		return false;
 	}
 	const text = node as Text;
 	if (text.parentElement?.closest(SKIPPED_ANCESTORS)) return false;
-	const end = selection.anchorOffset - trailing;
-	if (end <= 0) return false;
-	const link = findLinks(text.data.slice(0, end)).find((candidate) => candidate.end === end);
+	const caret = selection.anchorOffset;
+	const before = text.data.slice(0, caret);
+	const link = findLinks(before).pop();
 	if (!link) return false;
+	const tail = before.slice(link.end);
+	if (!LINK_TAIL.test(tail)) return false;
 
-	const linked = text.splitText(link.start);
-	const rest = linked.splitText(link.end - link.start);
-	const anchor = createAnchor(editor.ownerDocument, link, {});
-	linked.replaceWith(anchor);
-	selection.collapse(rest, trailing);
-	return true;
+	selection.setBaseAndExtent(text, link.start, text, caret);
+	const html = `<a href="${escapeHtml(link.href)}">${escapeHtml(link.text)}</a>${escapeHtml(tail)}`;
+	if (doc.execCommand("insertHTML", false, html)) return true;
+	selection.collapse(text, caret);
+	return false;
 }

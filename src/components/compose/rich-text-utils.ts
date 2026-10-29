@@ -179,7 +179,7 @@ function renderNode(node: Node, state: RenderState): string {
 	let inner = renderChildren(element, state);
 	if (tag === "a") {
 		const href = element.getAttribute("href") ?? "";
-		if (href && href !== inner.trim() && !href.startsWith("mailto:")) inner = `${inner} (${href})`;
+		if (href && !href.startsWith("mailto:") && !isShownAddress(href, inner)) inner = `${inner} (${href})`;
 	}
 	if (tag === "blockquote") {
 		const quoted = inner
@@ -191,6 +191,13 @@ function renderNode(node: Node, state: RenderState): string {
 	}
 	if (BLOCK_TAGS.has(tag)) return `\n${inner}\n`;
 	return inner;
+}
+
+/** A link whose text already is its address (`www.example.com` for `https://www.example.com`) needs no "(href)". */
+function isShownAddress(href: string, text: string): boolean {
+	const shown = text.trim().toLowerCase();
+	const target = href.toLowerCase();
+	return shown === target || `https://${shown}` === target || `http://${shown}` === target;
 }
 
 function renderChildren(element: Element, state: RenderState): string {

@@ -37,20 +37,21 @@ const CLOSING_PAIRS: Record<string, string> = {
 	"》": "《",
 };
 
-function count(value: string, character: string): number {
-	return value.split(character).length - 1;
-}
-
-/** Drops what ends a sentence rather than an address: "(see https://x.com/a)." links "https://x.com/a". */
+/**
+ * Drops what ends a sentence rather than an address: "(see https://x.com/a)." links "https://x.com/a".
+ * One pass from the end over bracket counts taken once, so hostile input stays linear.
+ */
 function trimTrailing(value: string): string {
+	const balance: Record<string, number> = {};
+	for (const character of value) balance[character] = (balance[character] ?? 0) + 1;
 	let end = value.length;
 	while (end > 0) {
 		const last = value[end - 1] as string;
 		const opener = CLOSING_PAIRS[last];
-		const head = value.slice(0, end);
 		if (TRAILING_PUNCTUATION.has(last)) {
 			end -= 1;
-		} else if (opener && count(head, last) > count(head, opener)) {
+		} else if (opener && (balance[last] ?? 0) > (balance[opener] ?? 0)) {
+			balance[last] = (balance[last] ?? 0) - 1;
 			end -= 1;
 		} else {
 			break;
@@ -59,9 +60,14 @@ function trimTrailing(value: string): string {
 	return value.slice(0, end);
 }
 
+/** The punctuation `trimTrailing` leaves out of an address, for callers that look past a link's end. */
+export const LINK_TAIL = /^[\s'.,;:!?*~`…。、，；：！？)\]}）」』】》]*$/u;
+
 function urlMatch(raw: string, index: number): LinkMatch | null {
+	// Before any work on it: the match runs to the next space, however long that is.
+	if (raw.length > MAX_LINK_LENGTH) return null;
 	const text = trimTrailing(raw);
-	if (!text || text.length > MAX_LINK_LENGTH) return null;
+	if (!text) return null;
 	const href = /^www\./i.test(text) ? `https://${text}` : text;
 	let url: URL;
 	try {
@@ -79,11 +85,12 @@ function urlMatch(raw: string, index: number): LinkMatch | null {
 }
 
 function emailMatch(raw: string, index: number): LinkMatch | null {
+	if (raw.length > MAX_LINK_LENGTH) return null;
 	const text = raw.replace(/[-_.%+]+$/, "");
 	const at = text.lastIndexOf("@");
 	const domain = text.slice(at + 1);
 	const topLevel = domain.slice(domain.lastIndexOf(".") + 1);
-	if (text.length > MAX_LINK_LENGTH || text.length - at > 255) return null;
+	if (text.length - at > 255) return null;
 	if (!/^(?:\p{L}{2,}|xn--[a-z0-9-]+)$/iu.test(topLevel)) return null;
 	if (/(?:^|\.)-|-(?:\.|$)/.test(domain)) return null;
 	return { start: index, end: index + text.length, text, href: `mailto:${text}`, kind: "email" };

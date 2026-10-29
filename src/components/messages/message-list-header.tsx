@@ -2,10 +2,8 @@
 
 import clsx from "clsx";
 import Link from "next/link";
-import { Check, ChevronLeft, ChevronRight, PanelLeft, SlidersHorizontal, Trash2 } from "lucide-react";
-import { AssistantButton } from "@/components/agent/assistant-button";
+import { Check, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2 } from "lucide-react";
 import { MailSearchInput } from "@/components/mail-search/mail-search-input";
-import { useSidebar } from "@/components/sidebar-state";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
@@ -69,30 +67,11 @@ function EmptyFolderButton({
 	);
 }
 
-/** Zero's panel icon at the top left of the list: hides or shows the sidebar (desktop only). */
-function SidebarToggleButton() {
-	const { minimal, toggle } = useSidebar();
-	const label = minimal ? "Show menu" : "Hide menu";
-	return (
-		<Tooltip label={label}>
-			<Button
-				type="button"
-				variant="ghost"
-				size="sm"
-				aria-label={label}
-				onClick={toggle}
-				className="h-8 w-8 shrink-0 p-0 text-neutral-500 hover:text-neutral-900 max-md:hidden"
-			>
-				<PanelLeft className="h-4 w-4" />
-			</Button>
-		</Tooltip>
-	);
-}
-
 /**
- * The top of a folder list, after Zero's: the panel icon, the title, "Select" and the list settings, then the
+ * The top of a folder list, after Zero's: the title, "Select" and the list settings, then the
  * search field and the category chips. Checkboxes show while selecting; the bulk toolbar replaces the title
- * once something is selected. The pager row appears only when there is more than one page.
+ * once something is selected. Below 20rem of list width "Select" shows only its icon, so the title keeps the room.
+ * The pager row appears only when there is more than one page.
  */
 export function MessageListHeader({
 	config,
@@ -111,10 +90,9 @@ export function MessageListHeader({
 	const headerIcons = config.headerIcons ?? [];
 	const paged = pager.canPrevious || pager.canNext;
 	return (
-		<div className="shrink-0">
+		<div className="@container shrink-0">
 			<div className="flex h-14 items-center gap-2 border-b border-neutral-200 px-3">
 				<FolderHeading title={config.title} nested={nested} />
-				<SidebarToggleButton />
 				{(selecting.value || selection.count > 0) && (
 					<Tooltip label="Select all visible messages">
 						<Checkbox
@@ -137,7 +115,11 @@ export function MessageListHeader({
 						hasDraftSelection={selection.hasDrafts}
 					/>
 				) : (
-					<p aria-hidden="true" className="min-w-0 truncate text-base font-medium text-neutral-900">
+					<p
+						aria-hidden="true"
+						title={config.title}
+						className="min-w-0 truncate text-base font-medium text-neutral-900"
+					>
 						{config.title}
 					</p>
 				)}
@@ -145,21 +127,23 @@ export function MessageListHeader({
 					<div className="ml-auto flex shrink-0 items-center gap-1">
 						{emptyFolder && <EmptyFolderButton emptyFolder={emptyFolder} compact={compact} />}
 						{!compact && headerIcons.map((Icon, index) => <Icon key={index} className="h-4 w-4 text-neutral-500" />)}
-						<Button
-							type="button"
-							variant="ghost"
-							size="sm"
-							aria-pressed={selecting.value}
-							onClick={() => selecting.onChange(!selecting.value)}
-							className={clsx(
-								"h-8 gap-1.5 px-2 text-sm font-normal",
-								selecting.value ? "bg-neutral-100 text-neutral-900" : "text-neutral-500 hover:text-neutral-900",
-							)}
-						>
-							<Check className="h-4 w-4" />
-							Select
-						</Button>
-						<AssistantButton testId="assistant-button-list" showLabel />
+						<Tooltip label="Select messages">
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								aria-label="Select"
+								aria-pressed={selecting.value}
+								onClick={() => selecting.onChange(!selecting.value)}
+								className={clsx(
+									"h-8 gap-1.5 px-2 text-sm font-normal",
+									selecting.value ? "bg-neutral-100 text-neutral-900" : "text-neutral-500 hover:text-neutral-900",
+								)}
+							>
+								<Check className="h-4 w-4" />
+								<span className="@max-[20rem]:hidden">Select</span>
+							</Button>
+						</Tooltip>
 						<Separator orientation="vertical" className="mx-1 h-4" />
 						<Tooltip label="List settings">
 							<Link

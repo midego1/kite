@@ -151,16 +151,24 @@ export function sesAuthenticationResults(
 
 /**
  * The provider's verdict on mail a connected account synced (spec §6.6), or null. The provider's server is the hop
- * that verified the sender, so only the topmost header of the raw message counts (`rawFields`, in message order, null
- * when the header block could not be read whole), and only when its authserv-id is exactly the one the account's
- * preset names: such providers remove copies carrying their own authserv-id from incoming mail (RFC 8601 §5). A preset
- * without one (custom hosts, providers whose header is not tied to their own hop) never gets results.
+ * that verified the sender, so only the topmost header of the raw message counts (`fields`, every header field in
+ * message order, null when the header block could not be read whole), and only when its authserv-id is exactly the
+ * one the account's preset names (such providers remove copies carrying their own authserv-id from incoming mail,
+ * RFC 8601 §5) and a `Received` field above it records that same host accepting the message (`… by mx.google.com`),
+ * as the provider writes at delivery. A message placed in the Inbox some other way (an IMAP APPEND, a migration
+ * tool) normally has neither in that order. A preset without an authserv-id never gets results.
  */
 export function externalAuthenticationResults(
-	rawFields: readonly string[] | null,
+	fields: readonly { name: string; value: string }[] | null,
 	authservId: string | null,
 ): string | null {
-	if (!authservId || !rawFields?.length) return null;
-	const topmost = whitespace(rawFields[0]);
-	return parseAuthenticationResults(topmost).authservId === authservId.toLowerCase() ? topmost : null;
+	if (!authservId || !fields) return null;
+	const index = fields.findIndex((field) => field.name === "authentication-results");
+	if (index < 0) return null;
+	const topmost = whitespace(fields[index].value);
+	if (parseAuthenticationResults(topmost).authservId !== authservId.toLowerCase()) return null;
+	const host = authservId.toLowerCase().replace(/\./g, "\\.");
+	const acceptedBy = new RegExp(`\\bby\\s+${host}(?![\\w.-])`, "i");
+	const received = fields.slice(0, index).some((field) => field.name === "received" && acceptedBy.test(field.value));
+	return received ? topmost : null;
 }

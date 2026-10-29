@@ -17,6 +17,14 @@ export function isWebhookRetryMessage(payload: unknown): payload is WebhookRetry
 	);
 }
 
+/** `max_retries` of the queue consumers in wrangler.jsonc. */
+const QUEUE_MAX_RETRIES = 3;
+
+/** Whether this delivery is the queue's last: `attempts` starts at 1, and a message gets `max_retries` more. */
+export function isFinalQueueAttempt(attempts: number, maxRetries = QUEUE_MAX_RETRIES): boolean {
+	return attempts > maxRetries;
+}
+
 type CoreQueueMessageKind =
 	| "inbound"
 	| "webhook_retry"

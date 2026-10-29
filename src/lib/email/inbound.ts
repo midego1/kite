@@ -37,9 +37,17 @@ export type InboundQueueMessage = {
 	source?: InboundQueueSource;
 };
 
-export async function processInboundMessage(env: CloudflareEnv, payload: InboundQueueMessage): Promise<void> {
+/**
+ * One inbound queue message. `finalAttempt` tells it the queue will not retry it again, so a failure can be recorded
+ * where its owner sees it (a synced message's account).
+ */
+export async function processInboundMessage(
+	env: CloudflareEnv,
+	payload: InboundQueueMessage,
+	options: { finalAttempt?: boolean } = {},
+): Promise<void> {
 	if (payload.source?.kind === "external") {
-		await processExternalInbound(env, payload, payload.source);
+		await processExternalInbound(env, payload, payload.source, options);
 		return;
 	}
 	const db = getDb(env);

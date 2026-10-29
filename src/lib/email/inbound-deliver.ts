@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, like, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages, users } from "@/db/schema";
 import { messageExternalAccounts } from "@/db/schema/external-accounts";
@@ -50,7 +50,8 @@ export type InboundDelivery = {
 export type DeliveryOutcome =
 	| { delivered: true; messageId: string }
 	| { delivered: false; reason: "attachment_limit"; detail: string }
-	| { delivered: false; reason: "duplicate" | "stored" };
+	| { delivered: false; reason: "duplicate"; duplicateOf: string }
+	| { delivered: false; reason: "stored" };
 
 type InboundNotificationInput = {
 	messageId: string;
@@ -127,19 +128,36 @@ export async function storedFromRaw(env: CloudflareEnv, mailboxId: string, rawR2
 }
 
 /**
- * Whether the mailbox already holds a message with this Message-ID, whichever spelling (with or without angle
- * brackets) its row stored. Synced mail is checked this way (spec §6.4): import and sync overlap, a message moved
- * back into INBOX gets a new UID, and a rebuilt INBOX is read again.
+ * The message of this mailbox a synced message duplicates, or null (spec §6.4): the same Message-ID (whichever
+ * spelling, with or without angle brackets, its row stored) on a row that came from the same account (a rebuilt
+ * INBOX, a message moved back into it), an import (`imports/…`, mail the users brought in themselves) or Kite's own
+ * sending. Mail that reached the mailbox any other way is not compared: anyone can send the Kite address a copy with
+ * a Message-ID they made up, and that copy must not hide the real message.
  */
-async function holdsMessageId(env: CloudflareEnv, mailboxId: string, messageId: string | null): Promise<boolean> {
+async function duplicateOf(
+	env: CloudflareEnv,
+	mailboxId: string,
+	accountId: string,
+	messageId: string | null,
+): Promise<string | null> {
 	const normalized = normalizeMessageId(messageId);
-	if (!normalized) return false;
+	if (!normalized) return null;
 	const [found] = await getDb(env)
 		.select({ id: messages.id })
 		.from(messages)
-		.where(and(eq(messages.mailboxId, mailboxId), inArray(messages.providerMessageId, [normalized, `<${normalized}>`])))
+		.where(
+			and(
+				eq(messages.mailboxId, mailboxId),
+				inArray(messages.providerMessageId, [normalized, `<${normalized}>`]),
+				or(
+					sql`${messageExternalAccounts}.${sql.identifier("external_account_id")} = ${accountId}`,
+					like(messages.rawR2Key, "imports/%"),
+					eq(messages.direction, "outbound"),
+				),
+			),
+		)
 		.limit(1);
-	return !!found;
+	return found?.id ?? null;
 }
 
 /**
@@ -278,7 +296,7 @@ async function deliveryThreadId(env: CloudflareEnv, input: InboundDelivery, pars
 	} catch (error) {
 		console.error("Inbound thread lookup failed", {
 			rawR2Key: input.rawR2Key,
-			recipient: input.to,
+			...(input.external ? { accountId: input.external.accountId } : { recipient: input.to }),
 			referenceCount: parsed.references.length,
 			error,
 		});
@@ -376,13 +394,17 @@ export async function deliverInboundMessage(env: CloudflareEnv, input: InboundDe
 	const parsed = await parseRawMime(input.raw);
 	const attachmentLimitReason = inboundAttachmentLimitReason(parsed.attachments);
 	if (attachmentLimitReason) {
-		console.warn(`Inbound attachment limit reached for ${input.to}: ${attachmentLimitReason}`);
+		// A synced message names its account, never the external address.
+		console.warn(
+			`Inbound attachment limit reached for ${input.external ? `account ${input.external.accountId}` : input.to}: ${attachmentLimitReason}`,
+		);
 		await env.BUCKET.delete(input.rawR2Key);
 		return { delivered: false, reason: "attachment_limit", detail: attachmentLimitReason };
 	}
-	if (external && (await holdsMessageId(env, target.mailboxId, parsed.messageId))) {
+	const duplicate = external ? await duplicateOf(env, target.mailboxId, external.accountId, parsed.messageId) : null;
+	if (duplicate) {
 		await env.BUCKET.delete(input.rawR2Key);
-		return { delivered: false, reason: "duplicate" };
+		return { delivered: false, reason: "duplicate", duplicateOf: duplicate };
 	}
 	const messageId = await inboundMessageId(input.rawR2Key);
 	const snippet = buildSnippet(parsed.text, parsed.html);

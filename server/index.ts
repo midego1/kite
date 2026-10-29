@@ -63,8 +63,8 @@ async function main() {
 	}
 	const trustProxy = isTrustProxyEnabled(process.env.TRUST_PROXY);
 
-	runtime.inboundQueue.setConsumer(async (body) => {
-		if (isInboundQueueMessage(body)) await processInboundMessage(env, body);
+	runtime.inboundQueue.setConsumer(async (body, delivery) => {
+		if (isInboundQueueMessage(body)) await processInboundMessage(env, body, { finalAttempt: delivery.final });
 		else await dispatchModuleQueueMessage(env, "inbound", body);
 	});
 	runtime.outboundQueue.setConsumer(async (body) => {

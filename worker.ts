@@ -6,7 +6,13 @@ import { createLogger } from "./src/lib/logger.mjs";
 import vinextHandler from "vinext/server/fetch-handler";
 import { processInboundMessage, storeRawToR2, type InboundQueueMessage } from "./src/lib/email/inbound";
 import { processOutboundQueue, type OutboundQueueMessage } from "./src/lib/email/send";
-import { describeQueueMessage, isInboundQueueMessage, isWebhookRetryMessage, queueMetric } from "./worker-utils";
+import {
+	describeQueueMessage,
+	isFinalQueueAttempt,
+	isInboundQueueMessage,
+	isWebhookRetryMessage,
+	queueMetric,
+} from "./worker-utils";
 import { processWebhookRetry, type WebhookRetryMessage } from "./src/lib/email/webhooks";
 import { processMailboxPurge } from "./src/lib/mailboxes/delete";
 import { isMailboxPurgeMessage } from "./src/lib/mailboxes/delete-utils";
@@ -186,7 +192,7 @@ export default {
 			const version = env.CF_VERSION_METADATA?.id ?? "";
 			try {
 				if (isInboundQueueMessage(msg.body)) {
-					await processInboundMessage(env, msg.body);
+					await processInboundMessage(env, msg.body, { finalAttempt: isFinalQueueAttempt(msg.attempts) });
 				} else if (await processAgentQueueMessage(env, msg.body)) {
 					// Draft and triage jobs both run through the agent dispatcher.
 				} else if (isExternalSyncMessage(msg.body)) {

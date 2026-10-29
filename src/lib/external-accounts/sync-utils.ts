@@ -44,8 +44,8 @@ export function parseSyncInterval(value: unknown): number | null {
 
 /** Where Kite stands in a folder: the UIDVALIDITY it knows and the last UID it fetched. */
 export type InboxCursor = { uidValidity: number | null; lastUid: number | null };
-/** What EXAMINE said now. */
-export type InboxState = { uidValidity: number | null; uidNext: number | null };
+/** What EXAMINE said now; `exists` is the message count (null when the server did not say). */
+export type InboxState = { uidValidity: number | null; uidNext: number | null; exists?: number | null };
 
 export type InboxPlan =
 	/** No position yet (a database restored without one): start after what is there now. */
@@ -93,6 +93,59 @@ export function selectNewMessages<T extends { uid: number }>(
 		.filter((entry) => entry.uid > lastUid && !seen.has(entry.uid) && !!seen.add(entry.uid))
 		.sort((a, b) => a.uid - b.uid);
 	return { take: fresh.slice(0, cap), more: fresh.length > cap };
+}
+
+/**
+ * The UIDs a run asks about after `lastUid`: bounded by `UIDNEXT − 1` when the server named it, so a run never asks
+ * for `n:*` (whose answer includes the highest UID even when it is below `n`), and null when there is nothing to ask:
+ * an empty INBOX (some servers refuse `UID FETCH 1:*` there) or no UID above the cursor.
+ */
+export function fetchRange(state: InboxState, lastUid: number): { from: number; to: number | null } | null {
+	if (state.exists === 0) return null;
+	const from = lastUid + 1;
+	if (state.uidNext === null) return { from, to: null };
+	const to = state.uidNext - 1;
+	return to >= from ? { from, to } : null;
+}
+
+/** One step of a run: fetch these messages in one UID FETCH, or skip one Kite cannot receive. */
+export type FetchStep<T> = { kind: "fetch"; entries: T[] } | { kind: "skip"; entry: T };
+
+/**
+ * The fetches of a run, in UID order, so the cursor can move after each one (spec §6.3, review H1). A step holds at
+ * most `maxCount` messages whose RFC822.SIZE adds up to `maxBytes` (the connection refuses a FETCH whose literals
+ * exceed its batch limit); a message without a size, or alone above `maxBytes`, gets a step of its own; one above
+ * `maxMessageBytes` (what Kite receives, and what one literal may be) is skipped.
+ */
+export function planFetchSteps<T extends { uid: number; size: number | null }>(
+	entries: readonly T[],
+	limits: { maxCount: number; maxBytes: number; maxMessageBytes: number },
+): FetchStep<T>[] {
+	const steps: FetchStep<T>[] = [];
+	let batch: T[] = [];
+	let bytes = 0;
+	const flush = () => {
+		if (batch.length) steps.push({ kind: "fetch", entries: batch });
+		batch = [];
+		bytes = 0;
+	};
+	for (const entry of entries) {
+		if (entry.size !== null && entry.size > limits.maxMessageBytes) {
+			flush();
+			steps.push({ kind: "skip", entry });
+			continue;
+		}
+		if (entry.size === null || entry.size > limits.maxBytes) {
+			flush();
+			steps.push({ kind: "fetch", entries: [entry] });
+			continue;
+		}
+		if (batch.length >= limits.maxCount || bytes + entry.size > limits.maxBytes) flush();
+		batch.push(entry);
+		bytes += entry.size;
+	}
+	flush();
+	return steps;
 }
 
 /** The Mail store key of a synced message: deterministic, so a retried run writes the same object. */

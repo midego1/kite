@@ -281,6 +281,15 @@ export function parseUidValidity(lines: readonly string[]): number | null {
 	return parseResponseCodeNumber(lines, "UIDVALIDITY");
 }
 
+/** The `* n EXISTS` an EXAMINE or SELECT answer carries (the folder's message count), or null. */
+export function parseExists(lines: readonly string[]): number | null {
+	for (const line of lines) {
+		const value = /^\* (\d+) EXISTS\b/i.exec(line)?.[1];
+		if (value) return Number(value);
+	}
+	return null;
+}
+
 /** The `[UIDNEXT n]` an EXAMINE or SELECT answer carries (the UID the next message will get), or null. */
 export function parseUidNext(lines: readonly string[]): number | null {
 	return parseResponseCodeNumber(lines, "UIDNEXT");

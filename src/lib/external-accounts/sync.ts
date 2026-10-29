@@ -1,47 +1,34 @@
-import { and, asc, eq, inArray, isNull, lt, lte, ne, or } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, lt, lte, ne, or } from "drizzle-orm";
 import { getDb } from "@/db";
-import { externalAccountFolders, externalAccounts } from "@/db/schema/external-accounts";
-import { getEmailAddress } from "@/lib/email/address";
-import { parseRawHeaders } from "@/lib/email/raw-headers";
-import { openImapSession, type ImapSession } from "@/lib/imap/session";
-import type { ImapMessageSummary } from "@/lib/imap/protocol-utils";
+import { users } from "@/db/schema";
+import { externalAccounts } from "@/db/schema/external-accounts";
+import type { ImapLimits } from "@/lib/imap/types";
 import { createLogger } from "@/lib/logger.mjs";
 import { recordMetric } from "@/lib/metrics.mjs";
 import { MailServerRefusedError } from "@/lib/net/errors";
 import { notifyUsersOfNewMessage } from "@/lib/realtime/utils";
-import { openSetting, SecretBoxError } from "@/lib/security/secret-box";
 import { auditExternalAccount } from "./audit";
 import { externalAccountTablesReady } from "./errors";
-import { assertMailServerHost } from "./host-guard";
+import { appendRecentErrors } from "./recent-errors";
 import { readInstallState } from "./settings";
-import { appendRecentError, type ExternalAccountRow } from "./serialize-utils";
+import type { ExternalAccountRow } from "./serialize-utils";
+import { runSync, SyncRefusedError, type RunOutcome } from "./sync-run";
 import { externalSyncRefusal } from "./sync-target";
 import {
-	baselineLastUid,
 	CHECK_NOW_COOLDOWN_MS,
 	classifySyncError,
-	externalRawKey,
 	externalSyncMessage,
 	isSyncStateChange,
 	nextRegularSync,
-	planInboxSync,
-	RESET_LOOKBACK_MS,
-	resetLastUid,
-	selectNewMessages,
-	sourceFlags,
-	SYNC_FETCH_CHUNK,
 	SYNC_LEASE_MS,
-	SYNC_MAX_MESSAGE_BYTES,
 	SYNC_PLAN_LIMIT,
 	SYNC_RUN_BUDGET_MS,
 	syncFailureUpdate,
-	type InboxState,
 	type SyncProblem,
 } from "./sync-utils";
 
 const logger = createLogger("external-sync");
 
-const INBOX = "INBOX";
 /** Queue messages per `sendBatch` (the Workers limit is 100). */
 const SEND_BATCH = 100;
 
@@ -68,22 +55,23 @@ export async function planExternalSync(env: CloudflareEnv, now = new Date()): Pr
 	if (!env.AGENT_QUEUE || !(await externalAccountTablesReady(env))) return 0;
 	if (!(await readInstallState(env)).enabled) return 0;
 	const db = getDb(env);
+	const isDue = and(
+		syncable(),
+		leaseFree(now),
+		// A disabled Kite account's connected accounts are never claimed (a run would only refuse them).
+		inArray(externalAccounts.userId, db.select({ id: users.id }).from(users).where(eq(users.disabled, false))),
+		or(
+			and(
+				eq(externalAccounts.status, "active"),
+				or(isNull(externalAccounts.nextSyncAt), lte(externalAccounts.nextSyncAt, now)),
+			),
+			and(eq(externalAccounts.status, "error"), lte(externalAccounts.nextSyncAt, now)),
+		),
+	);
 	const due = db
 		.select({ id: externalAccounts.id })
 		.from(externalAccounts)
-		.where(
-			and(
-				syncable(),
-				leaseFree(now),
-				or(
-					and(
-						eq(externalAccounts.status, "active"),
-						or(isNull(externalAccounts.nextSyncAt), lte(externalAccounts.nextSyncAt, now)),
-					),
-					and(eq(externalAccounts.status, "error"), lte(externalAccounts.nextSyncAt, now)),
-				),
-			),
-		)
+		.where(isDue)
 		.orderBy(asc(externalAccounts.nextSyncAt))
 		.limit(SYNC_PLAN_LIMIT);
 	const claimed = await db
@@ -95,6 +83,11 @@ export async function planExternalSync(env: CloudflareEnv, now = new Date()): Pr
 		await env.AGENT_QUEUE.sendBatch(
 			claimed.slice(index, index + SEND_BATCH).map((account) => ({ body: externalSyncMessage(account.id) })),
 		);
+	// More due than one tick takes: they wait for the next ticks, oldest first. Said once per tick, so it shows.
+	if (claimed.length === SYNC_PLAN_LIMIT) {
+		const [left] = await db.select({ due: count() }).from(externalAccounts).where(isDue);
+		if (left?.due) logger.warn("external.sync.backlog", { claimed: claimed.length, stillDue: left.due });
+	}
 	return claimed.length;
 }
 
@@ -103,23 +96,14 @@ export type SyncRunOptions = {
 	/** For the jitter of the backoff; tests pin it. */
 	random?: () => number;
 	budgetMs?: number;
+	/** Tests only: smaller connection limits. */
+	limits?: Partial<ImapLimits>;
 };
 
 export type SyncRunResult =
 	| { skipped: "migration_pending" | "removed" | "not_syncing" | "not_allowed" | "busy" }
 	| { delivered: number; skipped: number; more: boolean }
 	| { failed: SyncProblem["class"] };
-
-/** A refusal Kite meets before the server answers anything: the class it gets is `config`, never a retry. */
-class SyncRefusedError extends Error {
-	constructor(
-		message: string,
-		readonly problem: SyncProblem["class"] = "config",
-	) {
-		super(message);
-		this.name = "SyncRefusedError";
-	}
-}
 
 /**
  * One sync run of one account (spec §6.3): checks again that the account may be used, takes its lease, signs in,
@@ -138,6 +122,8 @@ export async function syncExternalAccount(
 	if (!account) return { skipped: "removed" };
 	const now = clock();
 	const lease = new Date(now.getTime() + SYNC_LEASE_MS);
+	// A lease nobody gave back means the last run was stopped by the platform (out of time or memory) mid-way.
+	const unfinished = !!account.leaseUntil && account.leaseUntil <= now;
 	const [claimed] = await db
 		.update(externalAccounts)
 		.set({ leaseUntil: lease, lastSyncAt: now })
@@ -156,7 +142,18 @@ export async function syncExternalAccount(
 			throw new SyncRefusedError(
 				"Kite can no longer deliver into this account's mailbox. Edit the account to choose another one.",
 			);
-		const outcome = await runSync(env, account, { budgetMs: options.budgetMs ?? SYNC_RUN_BUDGET_MS, clock });
+		// Counted as a failure, so runs the platform keeps stopping back off and show on the account.
+		if (unfinished)
+			throw new SyncRefusedError(
+				"The last check did not finish: it ran out of time or was stopped. Kite tries again later.",
+				"transient",
+			);
+		const outcome = await runSync(env, account, {
+			budgetMs: options.budgetMs ?? SYNC_RUN_BUDGET_MS,
+			clock,
+			lease,
+			limits: options.limits,
+		});
 		await recordSuccess(env, account, lease, outcome, clock());
 		logger.info("external.sync.checked", {
 			accountId,
@@ -205,150 +202,6 @@ function classify(error: unknown, account: ExternalAccountRow): SyncProblem {
 	});
 }
 
-type RunOutcome = { delivered: number; skipped: number; more: boolean; reset: boolean; notes: string[] };
-
-/** Signs in with the saved password, opened only for this run. */
-async function openSession(env: CloudflareEnv, account: ExternalAccountRow): Promise<ImapSession> {
-	let password: string | null;
-	try {
-		password = await openSetting(env, account.secret);
-	} catch (error) {
-		if (error instanceof SecretBoxError)
-			throw new SyncRefusedError("The saved password can no longer be opened. Reconnect the account.", "auth");
-		throw error;
-	}
-	if (!password)
-		throw new SyncRefusedError("The saved password is no longer available. Reconnect the account.", "auth");
-	await assertMailServerHost(env, account.imapHost, account.imapPort);
-	try {
-		return await openImapSession(env, {
-			host: account.imapHost,
-			port: account.imapPort,
-			security: account.imapSecurity,
-			username: account.username,
-			password,
-		});
-	} catch (error) {
-		// A server that echoes the password back must not get it into the account's error text.
-		if (error instanceof Error && password && error.message.includes(password))
-			error.message = error.message.split(password).join("•••");
-		throw error;
-	}
-}
-
-async function runSync(
-	env: CloudflareEnv,
-	account: ExternalAccountRow,
-	options: { budgetMs: number; clock: () => Date },
-): Promise<RunOutcome> {
-	const session = await openSession(env, account);
-	try {
-		const state = await session.examine(INBOX);
-		const db = getDb(env);
-		const [cursor] = await db
-			.select()
-			.from(externalAccountFolders)
-			.where(and(eq(externalAccountFolders.accountId, account.id), eq(externalAccountFolders.name, INBOX)))
-			.limit(1);
-		const plan = planInboxSync(cursor ? { uidValidity: cursor.uidvalidity, lastUid: cursor.lastUid } : null, state);
-		const outcome: RunOutcome = { delivered: 0, skipped: 0, more: false, reset: false, notes: [] };
-		if (plan.kind === "baseline") {
-			const uids = state.uidNext === null ? (await session.searchUids()).map(Number) : [];
-			await saveCursor(env, account.id, state, baselineLastUid(state.uidNext, uids), options.clock());
-			return outcome;
-		}
-		if (plan.kind === "unchanged") {
-			await saveCursor(env, account.id, state, cursor!.lastUid!, options.clock());
-			return outcome;
-		}
-		let lastUid = plan.kind === "fetch" ? plan.fromUid - 1 : 0;
-		if (plan.kind === "reset") {
-			const since = new Date((account.lastSuccessAt ?? options.clock()).getTime() - RESET_LOOKBACK_MS);
-			lastUid = resetLastUid(await session.searchUidsSince(since), state.uidNext);
-			await saveCursor(env, account.id, state, lastUid, options.clock());
-			outcome.reset = true;
-			outcome.notes.push("The provider reset the Inbox; Kite checked the last two days again.");
-		}
-		const { take, more } = selectNewMessages(await session.fetchSummaries(lastUid + 1), lastUid);
-		outcome.more = more;
-		const started = Date.now();
-		for (let index = 0; index < take.length; index += SYNC_FETCH_CHUNK) {
-			if (Date.now() - started > options.budgetMs) {
-				outcome.more = true;
-				break;
-			}
-			const chunk = take.slice(index, index + SYNC_FETCH_CHUNK);
-			await deliverChunk(env, session, account, state, chunk, outcome);
-			lastUid = chunk[chunk.length - 1].uid;
-			await saveCursor(env, account.id, state, lastUid, options.clock());
-		}
-		return outcome;
-	} finally {
-		await session.close().catch(() => undefined);
-	}
-}
-
-const megabytes = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`;
-
-/**
- * Fetches one chunk's bodies and hands each to the inbound pipeline: the raw message at its deterministic key in the
- * Mail store, then one `INBOUND_QUEUE` message with the source flags. A message above the size Kite receives is
- * skipped and named in the account's problems; one expunged meanwhile is simply gone.
- */
-async function deliverChunk(
-	env: CloudflareEnv,
-	session: ImapSession,
-	account: ExternalAccountRow,
-	state: InboxState,
-	chunk: ImapMessageSummary[],
-	outcome: RunOutcome,
-): Promise<void> {
-	const tooLarge = (entry: ImapMessageSummary) => entry.size !== null && entry.size > SYNC_MAX_MESSAGE_BYTES;
-	const wanted = chunk.filter((entry) => !tooLarge(entry)).map((entry) => String(entry.uid));
-	const bodies = wanted.length ? await session.fetchMessages(wanted) : new Map();
-	for (const entry of chunk) {
-		if (tooLarge(entry)) {
-			outcome.skipped += 1;
-			const received = entry.internalDate ? ` received ${entry.internalDate.toISOString().slice(0, 10)}` : "";
-			outcome.notes.push(
-				`Skipped a ${megabytes(entry.size!)} message${received}: Kite receives messages up to ${megabytes(SYNC_MAX_MESSAGE_BYTES)}.`,
-			);
-			continue;
-		}
-		const message = bodies.get(String(entry.uid));
-		if (!message) continue;
-		const key = externalRawKey(account.id, state.uidValidity, entry.uid);
-		await env.BUCKET.put(key, message.raw, {
-			httpMetadata: { contentType: "message/rfc822" },
-			customMetadata: { accountId: account.id },
-		});
-		await env.INBOUND_QUEUE.send({
-			from: envelopeSender(message.raw),
-			to: account.address,
-			rawR2Key: key,
-			source: {
-				kind: "external",
-				accountId: account.id,
-				...sourceFlags(message.flags.length ? message.flags : entry.flags),
-			},
-		});
-		outcome.delivered += 1;
-	}
-}
-
-/** The envelope sender the provider recorded (`Return-Path`, written at its final delivery), or empty. */
-function envelopeSender(raw: ArrayBuffer): string {
-	return getEmailAddress(parseRawHeaders(raw).get("return-path")?.[0] ?? "") || "";
-}
-
-async function saveCursor(env: CloudflareEnv, accountId: string, state: InboxState, lastUid: number, now: Date) {
-	const values = { uidvalidity: state.uidValidity, uidnext: state.uidNext, lastUid, lastCheckedAt: now };
-	await getDb(env)
-		.insert(externalAccountFolders)
-		.values({ accountId, name: INBOX, role: "inbox", ...values })
-		.onConflictDoUpdate({ target: [externalAccountFolders.accountId, externalAccountFolders.name], set: values });
-}
-
 async function releaseLease(env: CloudflareEnv, accountId: string, lease: Date): Promise<void> {
 	await getDb(env)
 		.update(externalAccounts)
@@ -371,15 +224,13 @@ async function recordSuccess(
 	now: Date,
 ): Promise<void> {
 	const db = getDb(env);
-	let recentErrors = account.recentErrors;
-	for (const note of outcome.notes) recentErrors = appendRecentError(recentErrors, note, now);
 	const [saved] = await db
 		.update(externalAccounts)
 		.set({
 			consecutiveFailures: 0,
 			lastError: null,
 			lastSuccessAt: now,
-			recentErrors,
+			...(outcome.notes.length ? { recentErrors: appendRecentErrors(outcome.notes, now) } : {}),
 			nextSyncAt: outcome.more
 				? new Date(now.getTime() + SYNC_LEASE_MS)
 				: nextRegularSync(now, account.syncIntervalMinutes),
@@ -422,7 +273,7 @@ async function recordFailure(
 		lastError: update.lastError,
 		consecutiveFailures: update.consecutiveFailures,
 		nextSyncAt: update.nextSyncAt,
-		recentErrors: appendRecentError(account.recentErrors, update.lastError, now),
+		recentErrors: appendRecentErrors([update.lastError], now),
 		leaseUntil: null,
 		updatedAt: now,
 	};

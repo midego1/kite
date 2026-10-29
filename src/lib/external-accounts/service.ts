@@ -16,7 +16,8 @@ import { ExternalAccountRefusal, externalAccountTablesReady } from "./errors";
 import { assertMailServerHost } from "./host-guard";
 import { AccountInputError, changesSignIn, parseAccountInput, passwordFrom } from "./input-utils";
 import { addressDomain, findPreset, presetTrustsAuthResults } from "./presets-utils";
-import { appendRecentError, serializeExternalAccount, type ExternalAccountRow } from "./serialize-utils";
+import { appendRecentErrors } from "./recent-errors";
+import { serializeExternalAccount, type ExternalAccountRow } from "./serialize-utils";
 import { queueSyncNow } from "./sync";
 import { DEFAULT_SYNC_INTERVAL_MINUTES, parseSyncInterval } from "./sync-utils";
 import type { ExternalAccountInput, ExternalAccountView } from "./types";
@@ -215,6 +216,22 @@ const isUniqueViolation = (error: unknown) =>
 	/UNIQUE constraint failed/i.test(error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : "");
 
 /**
+ * The refusal for a write the address index refused. A known provider's address is proven, so "already connected"
+ * may be said. An "Other" account only meets the index before migration 0082 (which leaves Other addresses out of
+ * it); saying "taken" there would tell anyone running a server which addresses are connected, so it gets the same
+ * answer as any other pending update.
+ */
+function addressConflict(preset: ExternalAccountInput["preset"]): ExternalAccountRefusal {
+	if (preset === "other")
+		return new ExternalAccountRefusal(
+			409,
+			"Kite cannot save this account until the pending database update is applied",
+			"MIGRATION_PENDING",
+		);
+	return new ExternalAccountRefusal(409, "This address is already connected", "ADDRESS_TAKEN");
+}
+
+/**
  * Connects an account (spec §6.3, §11): the Kite password again, the checks on the mailbox, the address and the
  * servers, a successful IMAP sign-in, then the row with the password sealed and the INBOX baseline.
  */
@@ -254,8 +271,7 @@ export async function connectExternalAccount(
 				updatedAt: now,
 			});
 	} catch (error) {
-		if (isUniqueViolation(error))
-			throw new ExternalAccountRefusal(409, "This address is already connected", "ADDRESS_TAKEN");
+		if (isUniqueViolation(error)) throw addressConflict(input.preset);
 		throw error;
 	}
 	await saveBaseline(env, id, test.baseline);
@@ -293,10 +309,15 @@ export async function updateExternalAccount(
 		updatedAt: new Date(),
 	};
 	if (signIn) Object.assign(changes, await reconnect(env, actor, { id, current, input, password, body }));
-	await getDb(env)
-		.update(externalAccounts)
-		.set(changes)
-		.where(and(eq(externalAccounts.id, id), eq(externalAccounts.userId, actor.id)));
+	try {
+		await getDb(env)
+			.update(externalAccounts)
+			.set(changes)
+			.where(and(eq(externalAccounts.id, id), eq(externalAccounts.userId, actor.id)));
+	} catch (error) {
+		if (isUniqueViolation(error)) throw addressConflict(input.preset);
+		throw error;
+	}
 	await auditExternalAccount(env, {
 		actorUserId: actor.id,
 		action: "external_account.updated",
@@ -431,7 +452,7 @@ export async function retestExternalAccount(
 			.set({
 				...(status ? { status } : {}),
 				lastError: test.problem.message,
-				recentErrors: appendRecentError(row.recentErrors, test.problem.message, now),
+				recentErrors: appendRecentErrors([test.problem.message], now),
 				updatedAt: now,
 			})
 			.where(eq(externalAccounts.id, id));

@@ -46,10 +46,16 @@ const exports = [
 	["setInstallEnabled", "src/lib/external-accounts/settings.ts"],
 	["setCanConnect", "src/lib/external-accounts/access.ts"],
 	["processInboundMessage", "src/lib/email/inbound.ts"],
+	["appendRecentErrors", "src/lib/external-accounts/recent-errors.ts"],
+	["getDb", "src/db/index.ts"],
+	["externalAccounts", "src/db/schema/external-accounts.ts"],
+	["eq", "drizzle-orm"],
 ];
 await build({
 	stdin: {
-		contents: exports.map(([names, file]) => `export { ${names} } from "./${file}";`).join("\n"),
+		contents: exports
+			.map(([names, file]) => `export { ${names} } from "${file.includes("/") ? `./${file}` : file}";`)
+			.join("\n"),
 		resolveDir: root,
 		sourcefile: "external-sync-test-entry.ts",
 	},
@@ -83,6 +89,10 @@ const {
 	setInstallEnabled,
 	setCanConnect,
 	processInboundMessage,
+	appendRecentErrors,
+	getDb,
+	externalAccounts,
+	eq,
 } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 
 const HOST = "imap.kite.test";
@@ -303,9 +313,11 @@ test("new INBOX mail arrives once, with its source flags, in the account's mailb
 	const verbs = new Set(server.commands.map((command) => command.line.split(" ").slice(1, 3).join(" ").toUpperCase()));
 	for (const verb of verbs)
 		assert.match(verb, /^(CAPABILITY|AUTHENTICATE PLAIN|EXAMINE "INBOX"|UID FETCH|UID SEARCH|LOGOUT)/, verb);
+	// Ranges are bounded by UIDNEXT: a run never asks for `n:*`.
 	assert.ok(
-		server.commands.some((command) => /UID FETCH 4:\* \(UID FLAGS INTERNALDATE RFC822\.SIZE\)/.test(command.line)),
+		server.commands.some((command) => /UID FETCH 4:5 \(UID FLAGS INTERNALDATE RFC822\.SIZE\)/.test(command.line)),
 	);
+	assert.ok(!server.commands.some((command) => /UID FETCH \d+:\*/.test(command.line)));
 });
 
 test("synced mail goes through spam, the Screener and webhooks; only a Gmail account's own header counts", async (t) => {
@@ -332,6 +344,7 @@ test("synced mail goes through spam, the Screener and webhooks; only a Gmail acc
 	`);
 
 	const authenticated = [
+		"Received: from mail.partner.test (mail.partner.test. [192.0.2.7]) by mx.google.com with ESMTPS id abc;",
 		"Authentication-Results: mx.google.com; dkim=pass header.i=@partner.test; spf=pass smtp.mailfrom=a@partner.test; dmarc=pass header.from=partner.test",
 		"Authentication-Results: evil.example; dmarc=fail",
 		sampleMessage(10, { subject: "Signed", from: "a@partner.test" }),
@@ -692,4 +705,235 @@ test("an Other account's address proves nothing: it claims no slot and is never 
 		"ADDRESS_TAKEN",
 	);
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM external_accounts WHERE address = 'me@gmail.com'").get().n, 3);
+});
+
+test("fetches stay under the connection's byte limit; a message the server will not send is skipped, not a blocker", async (t) => {
+	const padded = (index, bytes) => sampleMessage(index, { subject: `Padded ${index}` }) + "x".repeat(bytes);
+	const server = await fake(t, { folders: { INBOX: [] } });
+	const { env, inbound, row, due, db } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	// Five ~1.2 KB messages under a 3 KB batch limit (2.7 KB planned): at most two per FETCH.
+	for (let index = 1; index <= 5; index += 1) server.addMessage("INBOX", padded(index, 1000));
+	// One the server refuses to send (Gmail: "Some messages could not be FETCHed"), between good ones.
+	server.addMessage("INBOX", { raw: padded(6, 10), unfetchable: true });
+	server.addMessage("INBOX", padded(7, 10));
+	// No RFC822.SIZE, and larger than one literal may be: fetched alone, fails twice, skipped.
+	server.addMessage("INBOX", { raw: padded(8, 6000), size: null });
+	// Deleted at the provider between the summary and the body.
+	server.addMessage("INBOX", { raw: padded(9, 10), vanishes: true });
+	server.addMessage("INBOX", padded(10, 10));
+	due();
+	const commands = server.commands.length;
+	const result = await syncExternalAccount(env, account.id, { limits: { fetchBatchBytes: 3000, literalBytes: 4000 } });
+	assert.deepEqual(result, { delivered: 7, skipped: 3, more: false });
+	const bodyFetches = server.commands
+		.slice(commands)
+		.map(
+			(command) => /UID FETCH ([\d,]+) \(UID FLAGS INTERNALDATE RFC822\.SIZE BODY\.PEEK\[\]\)/.exec(command.line)?.[1],
+		)
+		.filter(Boolean);
+	// 1.2 KB each: two fit under 2.7 KB, the small ones join the fifth; the refused FETCH is split into singles.
+	assert.deepEqual(bodyFetches.slice(0, 4), ["1,2", "3,4", "5,6,7", "5"]);
+	assert.ok(bodyFetches.includes("6") && bodyFetches.includes("8"), "the failing ones were tried alone");
+	assert.deepEqual(
+		inbound.map((message) => Number(message.rawR2Key.split("/").pop().replace(".eml", ""))),
+		[1, 2, 3, 4, 5, 7, 10],
+	);
+	assert.equal(
+		db.db.prepare("SELECT last_uid FROM external_account_folders").get().last_uid,
+		10,
+		"the cursor moved past all",
+	);
+	const notes = JSON.parse(row().recent_errors).map((entry) => entry.message);
+	assert.equal(notes.filter((note) => /the server would not send/.test(note)).length, 2);
+	assert.ok(notes.some((note) => /deleted at the provider before Kite fetched it/.test(note)));
+	assert.equal(row().status, "active");
+});
+
+test("an empty INBOX without UIDNEXT is never asked for `1:*`", async (t) => {
+	const server = await fake(t, { folders: { INBOX: [] }, omitUidNext: true, strictEmptyFetch: true });
+	const { env, row, due } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	assert.deepEqual(await syncExternalAccount(env, account.id), { delivered: 0, skipped: 0, more: false });
+	due();
+	assert.deepEqual(await syncExternalAccount(env, account.id), { delivered: 0, skipped: 0, more: false });
+	assert.ok(!server.commands.some((command) => /UID FETCH/.test(command.line)));
+	assert.equal(row().consecutive_failures, 0);
+	server.addMessage("INBOX", sampleMessage(1, { subject: "First" }));
+	due();
+	assert.equal((await syncExternalAccount(env, account.id)).delivered, 1);
+});
+
+test("dedupe trusts only this account, imports and Kite's own sends; a forged copy cannot hide the real message", async (t) => {
+	const server = await fake(t);
+	const { db, env, bucket, synced, deliver, due } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	// Someone sends the Kite address a copy carrying the Message-ID of a message about to arrive at the provider.
+	const forged = sampleMessage(60, { subject: "Forged copy", messageId: "<real-60@example.org>" });
+	await bucket.put("inbound/1-forged.eml", Buffer.from(forged));
+	await processInboundMessage(env, { from: "x@evil.test", to: "a@example.com", rawR2Key: "inbound/1-forged.eml" });
+	// An import of the same mailbox did bring in another message already.
+	db.db
+		.exec(`INSERT INTO messages (id, user_id, mailbox_id, direction, provider_message_id, from_addr, to_addr, subject, status, raw_r2_key, created_at)
+		VALUES ('imported-1', 'owner', 'mailbox-a', 'inbound', '<imported-61@example.org>', 'a@b.test', 'user@example.test', 'Imported', 'received', 'imports/imported-1.eml', 1)`);
+	server.addMessage("INBOX", sampleMessage(60, { subject: "Real message", messageId: "<real-60@example.org>" }));
+	server.addMessage("INBOX", sampleMessage(61, { subject: "Imported again", messageId: "<imported-61@example.org>" }));
+	due();
+	await syncExternalAccount(env, account.id);
+	await deliver();
+	assert.deepEqual(
+		synced()
+			.map((message) => message.subject)
+			.sort(),
+		["Forged copy", "Imported", "Real message"],
+	);
+});
+
+test("a run the platform stopped counts as a failure, backs off and shows", async (t) => {
+	const server = await fake(t);
+	const { db, env, row } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	// The last run took its lease and never gave it back.
+	const past = Math.floor(Date.now() / 1000) - 60;
+	db.db.exec(`UPDATE external_accounts SET lease_until = ${past}, next_sync_at = 0, last_sync_at = ${past - 900}`);
+	const commands = server.commands.length;
+	assert.deepEqual(await syncExternalAccount(env, account.id, steady), { failed: "transient" });
+	assert.equal(server.commands.length, commands, "the run itself is not repeated at once");
+	const state = row();
+	assert.deepEqual([state.status, state.consecutive_failures, state.lease_until], ["active", 1, null]);
+	assert.match(state.last_error, /did not finish/);
+	assert.ok(state.next_sync_at * 1000 > Date.now() + 5 * 60_000, "backs off");
+	db.db.exec("UPDATE external_accounts SET next_sync_at = 0");
+	assert.equal((await syncExternalAccount(env, account.id, steady)).delivered, 0, "the next run runs");
+	assert.equal(row().consecutive_failures, 0);
+});
+
+test("mail refused at delivery is fetched again once allowed; a last failed delivery is noted", async (t) => {
+	const server = await fake(t);
+	const { db, env, inbound, synced, deliver, due, row, bucket } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	server.addMessage("INBOX", sampleMessage(70, { subject: "Waiting 1" }));
+	server.addMessage("INBOX", sampleMessage(71, { subject: "Waiting 2" }));
+	due();
+	assert.equal((await syncExternalAccount(env, account.id)).delivered, 2);
+	await setCanConnect(env, "owner", false);
+	await deliver();
+	assert.equal(synced().length, 0);
+	assert.equal(db.db.prepare("SELECT last_uid FROM external_account_folders").get().last_uid, 1, "moved back");
+	await setCanConnect(env, "owner", true);
+	due();
+	assert.equal((await syncExternalAccount(env, account.id)).delivered, 2);
+	await deliver();
+	assert.deepEqual(
+		synced().map((message) => message.subject),
+		["Waiting 1", "Waiting 2"],
+	);
+
+	// A delivery that keeps failing: the queue's last attempt notes it on the account.
+	server.addMessage("INBOX", sampleMessage(72, { subject: "Broken" }));
+	due();
+	await syncExternalAccount(env, account.id);
+	const [queued] = inbound.splice(0);
+	const realGet = bucket.get;
+	bucket.get = async () => {
+		throw new Error("store unavailable");
+	};
+	await assert.rejects(processInboundMessage(env, queued, { finalAttempt: false }));
+	assert.doesNotMatch(row().recent_errors, /after several tries/);
+	await assert.rejects(processInboundMessage(env, queued, { finalAttempt: true }));
+	assert.match(row().recent_errors, /could not deliver a synced message after several tries/);
+	bucket.get = realGet;
+});
+
+test("a run that lost its lease never moves the cursor", async (t) => {
+	let release;
+	const gate = new Promise((resolve) => (release = resolve));
+	// FETCH 0 is the summary of the second run, 1 its bodies.
+	const server = await fake(t, { fetchGate: (index) => (index === 1 ? gate : Promise.resolve()) });
+	const { db, env, due, row } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	server.addMessage("INBOX", sampleMessage(80, { subject: "Slow" }));
+	due();
+	const running = syncExternalAccount(env, account.id);
+	await new Promise((resolve) => {
+		const timer = setInterval(() => {
+			if (server.commands.filter((command) => /BODY\.PEEK/.test(command.line)).length) {
+				clearInterval(timer);
+				resolve();
+			}
+		}, 10);
+	});
+	// Another run took over meanwhile (the lease ran out).
+	const takenOver = Math.floor(Date.now() / 1000) + 3600;
+	db.db.exec(`UPDATE external_accounts SET lease_until = ${takenOver}`);
+	release();
+	await running;
+	assert.equal(db.db.prepare("SELECT last_uid FROM external_account_folders").get().last_uid, 1, "unchanged");
+	assert.equal(row().lease_until, takenOver, "the other run's lease stays");
+});
+
+test("synced mail in a shared mailbox belongs to the mailbox's owner, as received mail does", async (t) => {
+	const server = await fake(t);
+	const { db, env, deliver, due } = await setup(t, server);
+	// "other" has full access to the shared mailbox-a, which "owner" owns.
+	const account = await connectExternalAccount(env, other, connectBody());
+	server.addMessage("INBOX", sampleMessage(90, { subject: "Shared" }));
+	due();
+	await syncExternalAccount(env, account.id);
+	await deliver();
+	const message = db.db.prepare("SELECT user_id, mailbox_id, external_account_id FROM messages").get();
+	assert.deepEqual(message, { user_id: "owner", mailbox_id: "mailbox-a", external_account_id: account.id });
+});
+
+test("the planner never claims a disabled owner's accounts", async (t) => {
+	const server = await fake(t);
+	const { db, env, agent } = await setup(t, server);
+	await connectExternalAccount(env, owner, connectBody());
+	db.db.exec("UPDATE users SET disabled = 1 WHERE id = 'owner'");
+	assert.equal(await planExternalSync(env), 0);
+	db.db.exec("UPDATE users SET disabled = 0 WHERE id = 'owner'");
+	assert.equal(await planExternalSync(env), 1);
+	assert.equal(agent.length, 1);
+});
+
+test("recent problems are appended in the database: damaged lists reset, non-entries dropped, the last 20 kept", async (t) => {
+	const server = await fake(t);
+	const { db, env, row } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	const note = (messages) =>
+		getDb(env)
+			.update(externalAccounts)
+			.set({ recentErrors: appendRecentErrors(messages, new Date("2026-10-29T10:00:00Z")) })
+			.where(eq(externalAccounts.id, account.id));
+	db.db.exec("UPDATE external_accounts SET recent_errors = 'not json'");
+	await note(["first"]);
+	assert.deepEqual(JSON.parse(row().recent_errors), [{ at: "2026-10-29T10:00:00.000Z", message: "first" }]);
+	db.db.exec(`UPDATE external_accounts SET recent_errors = '{"a":1}'`);
+	await note(["only"]);
+	assert.equal(JSON.parse(row().recent_errors).length, 1);
+	db.db.exec(`UPDATE external_accounts SET recent_errors = '[{"at":"x","message":"kept"},null,"dropped",3]'`);
+	await note(["new"]);
+	assert.deepEqual(
+		JSON.parse(row().recent_errors).map((entry) => entry.message),
+		["kept", "new"],
+	);
+	await note(Array.from({ length: 25 }, (_, index) => `problem ${index}`));
+	const list = JSON.parse(row().recent_errors);
+	assert.equal(list.length, 20);
+	assert.deepEqual([list[0].message, list[19].message], ["problem 5", "problem 24"]);
+	// Two writers at once both land.
+	db.db.exec("UPDATE external_accounts SET recent_errors = '[]'");
+	await Promise.all([note(["a"]), note(["b"])]);
+	assert.equal(JSON.parse(row().recent_errors).length, 2);
+});
+
+test("before migration 0082 an Other address that is taken gets the pending-update answer, never ADDRESS_TAKEN", async (t) => {
+	const server = await fake(t);
+	const { db, env } = await setup(t, server);
+	db.db.exec(
+		"DROP INDEX external_accounts_address_idx; CREATE UNIQUE INDEX external_accounts_address_idx ON external_accounts (address);",
+	);
+	await connectExternalAccount(env, owner, connectBody());
+	const refused = await refusal(connectExternalAccount(env, other, connectBody({ mailboxId: "mailbox-b" })));
+	assert.deepEqual([refused.status, refused.code], [409, "MIGRATION_PENDING"]);
 });

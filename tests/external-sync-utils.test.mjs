@@ -24,6 +24,11 @@ const {
 	MAX_SYNC_BACKOFF_MS,
 	parseFetchSummaries,
 	imapSearchDate,
+	parseExists,
+	completeRawHeaderFields,
+	isFinalQueueAttempt,
+	fetchRange,
+	planFetchSteps,
 	externalAuthenticationResults,
 	detachMissingExternalAccounts,
 	redactBackupRow,
@@ -39,10 +44,11 @@ const {
 	MailServerRefusedError,
 } = await bundleModules("kite-external-sync-utils-", [
 	[
-		"planInboxSync, baselineLastUid, resetLastUid, selectNewMessages, externalRawKey, sourceFlags, classifySyncError, failureDelayMs, syncFailureUpdate, isSyncStateChange, nextRegularSync, parseSyncInterval, isExternalSyncMessage, externalSyncMessage, MAX_SYNC_BACKOFF_MS",
+		"planInboxSync, baselineLastUid, resetLastUid, selectNewMessages, externalRawKey, sourceFlags, classifySyncError, failureDelayMs, syncFailureUpdate, isSyncStateChange, nextRegularSync, parseSyncInterval, isExternalSyncMessage, externalSyncMessage, MAX_SYNC_BACKOFF_MS, fetchRange, planFetchSteps",
 		"src/lib/external-accounts/sync-utils.ts",
 	],
-	["parseFetchSummaries, imapSearchDate", "src/lib/imap/protocol-utils.ts"],
+	["parseFetchSummaries, imapSearchDate, parseExists", "src/lib/imap/protocol-utils.ts"],
+	["completeRawHeaderFields", "src/lib/email/raw-headers.ts"],
 	["externalAuthenticationResults", "src/lib/spam/authentication-results-utils.ts"],
 	["detachMissingExternalAccounts, redactBackupRow, restoredBackupRow", "src/lib/backups/external-accounts-utils.ts"],
 	["parseAttentionAccounts, connectedAccountsBannerContent", "src/components/connected-accounts-banner-utils.ts"],
@@ -50,7 +56,7 @@ const {
 		"syncStatusText, canCheckNow, showLastError, relativeTime",
 		"src/components/settings/connected-accounts/connected-accounts-utils.ts",
 	],
-	["describeQueueMessage", "worker-utils.ts"],
+	["describeQueueMessage, isFinalQueueAttempt", "worker-utils.ts"],
 	["shortServerText", "src/lib/external-accounts/connection-utils.ts"],
 	["MailServerRefusedError", "src/lib/net/errors.ts"],
 ]);
@@ -229,20 +235,110 @@ test("a failure stops sync for sign-in, certificate and configuration problems a
 	assert.equal(isSyncStateChange({ status: "active", consecutiveFailures: 5 }, error), true);
 });
 
-test("only the topmost Authentication-Results with the preset's own authserv-id is trusted", () => {
+test("only the topmost Authentication-Results with the preset's own authserv-id, below its Received, is trusted", () => {
 	const google = "mx.google.com; dkim=pass header.i=@example.org; spf=pass smtp.mailfrom=a@example.org; dmarc=pass";
-	assert.equal(externalAuthenticationResults([google, "evil.example; spf=pass"], "mx.google.com"), google);
+	const field = (name, value) => ({ name, value });
+	const received = field(
+		"received",
+		"from mail.example.org (mail.example.org. [192.0.2.1]) by mx.google.com with ESMTPS id x;",
+	);
+	const delivered = [
+		field("delivered-to", "me@gmail.com"),
+		field("received", "by 2002:a05:6000:1:b0:1 with SMTP id y;"),
+		field("arc-authentication-results", "i=1; mx.google.com; spf=pass"),
+		received,
+		field("received-spf", "pass"),
+		field("authentication-results", google),
+		field("authentication-results", "evil.example; spf=pass"),
+	];
+	assert.equal(externalAuthenticationResults(delivered, "mx.google.com"), google);
 	assert.equal(
-		externalAuthenticationResults(["MX.Google.com;   spf=pass"], "mx.google.com"),
+		externalAuthenticationResults(
+			[received, field("authentication-results", "MX.Google.com;   spf=pass")],
+			"mx.google.com",
+		),
 		"MX.Google.com; spf=pass",
 	);
+	// Placed in the Inbox some other way (APPEND, a migration tool): no Received by Google above the header.
+	assert.equal(externalAuthenticationResults([field("authentication-results", google)], "mx.google.com"), null);
+	assert.equal(
+		externalAuthenticationResults([field("authentication-results", google), received], "mx.google.com"),
+		null,
+	);
+	const lookalike = field("received", "from x by mx.google.com.evil.example with SMTP");
+	assert.equal(
+		externalAuthenticationResults([lookalike, field("authentication-results", google)], "mx.google.com"),
+		null,
+	);
 	// A sender's own copy further down never counts, nor a topmost copy of another hop.
-	assert.equal(externalAuthenticationResults(["evil.example; spf=pass", google], "mx.google.com"), null);
-	assert.equal(externalAuthenticationResults(["mx.google.com.evil.example; spf=pass"], "mx.google.com"), null);
+	assert.equal(
+		externalAuthenticationResults(
+			[received, field("authentication-results", "evil.example; spf=pass"), field("authentication-results", google)],
+			"mx.google.com",
+		),
+		null,
+	);
+	assert.equal(
+		externalAuthenticationResults(
+			[received, field("authentication-results", "mx.google.com.evil.example; spf=pass")],
+			"mx.google.com",
+		),
+		null,
+	);
 	// Presets without an authserv-id (custom hosts, Microsoft) get none, and nor does an unreadable header block.
-	assert.equal(externalAuthenticationResults([google], null), null);
+	assert.equal(externalAuthenticationResults(delivered, null), null);
 	assert.equal(externalAuthenticationResults(null, "mx.google.com"), null);
-	assert.equal(externalAuthenticationResults([], "mx.google.com"), null);
+	assert.equal(externalAuthenticationResults([received], "mx.google.com"), null);
+	// The raw header block, in order, folded lines joined.
+	const raw = new TextEncoder().encode(
+		"Received: from a\r\n by mx.google.com with ESMTPS\r\nAuthentication-Results: mx.google.com;\r\n spf=pass\r\nSubject: x\r\n\r\nbody",
+	).buffer;
+	assert.deepEqual(completeRawHeaderFields(raw), [
+		{ name: "received", value: "from a by mx.google.com with ESMTPS" },
+		{ name: "authentication-results", value: "mx.google.com; spf=pass" },
+		{ name: "subject", value: "x" },
+	]);
+	assert.equal(completeRawHeaderFields(new TextEncoder().encode("Subject: x").buffer)?.length, 1);
+});
+
+test("fetches are bounded by UIDNEXT and planned by size: one bad message cannot take a whole chunk down", () => {
+	assert.deepEqual(fetchRange({ uidValidity: 1, uidNext: 10, exists: 4 }, 6), { from: 7, to: 9 });
+	assert.equal(fetchRange({ uidValidity: 1, uidNext: 7, exists: 4 }, 6), null);
+	assert.equal(fetchRange({ uidValidity: 1, uidNext: null, exists: 0 }, 0), null, "an empty INBOX is never asked");
+	assert.deepEqual(fetchRange({ uidValidity: 1, uidNext: null, exists: 3 }, 2), { from: 3, to: null });
+	assert.deepEqual(fetchRange({ uidValidity: 1, uidNext: 5 }, 2), { from: 3, to: 4 });
+
+	const entry = (uid, size) => ({ uid, size });
+	const limits = { maxCount: 3, maxBytes: 100, maxMessageBytes: 500 };
+	const steps = planFetchSteps(
+		[
+			entry(1, 40),
+			entry(2, 40),
+			entry(3, 40),
+			entry(4, 10),
+			entry(5, null),
+			entry(6, 120),
+			entry(7, 600),
+			entry(8, 10),
+			entry(9, 10),
+			entry(10, 10),
+			entry(11, 10),
+		],
+		limits,
+	);
+	assert.deepEqual(
+		steps.map((step) =>
+			step.kind === "skip" ? `skip ${step.entry.uid}` : step.entries.map((item) => item.uid).join(","),
+		),
+		["1,2", "3,4", "5", "6", "skip 7", "8,9,10", "11"],
+	);
+	assert.deepEqual(planFetchSteps([], limits), []);
+
+	assert.equal(parseExists(["* 3 EXISTS", "* OK [UIDNEXT 4] ok"]), 3);
+	assert.equal(parseExists(["* OK [UIDNEXT 4] ok"]), null);
+	assert.equal(isFinalQueueAttempt(3), false);
+	assert.equal(isFinalQueueAttempt(4), true);
+	assert.equal(isFinalQueueAttempt(1, 0), true);
 });
 
 test("a restore drops the account of messages whose connected account is not restored with them", () => {

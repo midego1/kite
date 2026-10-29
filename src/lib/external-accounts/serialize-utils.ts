@@ -43,19 +43,3 @@ export function serializeExternalAccount(row: ExternalAccountRow, now = new Date
 		updatedAt: row.updatedAt.toISOString(),
 	};
 }
-
-/** The last 20 problems of an account, newest last, as stored in `recent_errors`. */
-export function appendRecentError(stored: string, message: string, at: Date): string {
-	let list: { at: string; message: string }[] = [];
-	try {
-		const parsed = JSON.parse(stored) as unknown;
-		if (Array.isArray(parsed))
-			list = parsed.filter(
-				(entry): entry is { at: string; message: string } =>
-					!!entry && typeof entry.at === "string" && typeof entry.message === "string",
-			);
-	} catch {
-		list = [];
-	}
-	return JSON.stringify([...list, { at: at.toISOString(), message }].slice(-20));
-}

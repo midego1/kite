@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { mockAssistant } from "./support/assistant-mock";
 import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 
 // Where people find Kite AI: the Assistant item in the sidebar, the button in the reader toolbar, the "." key,
@@ -7,32 +8,6 @@ import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 
 /** The sidebar's Assistant item, which toggles the same panel as the reader toolbar button. */
 const sidebarAssistant = (page: Page) => page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
-
-async function mockAssistant(page: Page) {
-	await page.route("**/api/agent/availability", (route) => route.fulfill({ json: { enabled: true } }));
-	await page.route("**/api/agent/settings?*", (route) =>
-		route.fulfill({
-			json: {
-				settings: {
-					mailboxId: "demo",
-					enabled: true,
-					modelId: "demo",
-					autoDraftEnabled: false,
-					reviewerUserId: null,
-					instructions: "",
-					dailyLimit: 5,
-				},
-				models: ["demo"],
-				canManage: true,
-				providerConfigured: true,
-				autoReplyEnabled: false,
-				reviewers: [],
-			},
-		}),
-	);
-	await page.route("**/api/agent/jobs?*", (route) => route.fulfill({ json: { jobs: [] } }));
-	await page.route("**/api/agent/conversations?*", (route) => route.fulfill({ json: { conversations: [] } }));
-}
 
 async function openMessage(page: Page): Promise<string> {
 	const api = await apiContext(STORAGE_STATE);

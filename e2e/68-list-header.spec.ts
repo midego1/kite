@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
+import { mockAssistant } from "./support/assistant-mock";
 import { STORAGE_STATE } from "./support/constants";
 import { apiContext, uniqueToken } from "./support/helpers";
 
@@ -20,9 +21,11 @@ async function openList(
 	style: string,
 	theme: string,
 	viewport = { width: 1400, height: 900 },
+	assistant = false,
 ) {
 	const context = await browser.newContext({ storageState: STORAGE_STATE, viewport });
 	const page = await context.newPage();
+	if (assistant) await mockAssistant(page);
 	await page.addInitScript(
 		({ width, style, theme }) => {
 			localStorage.setItem("kite-style", style);
@@ -106,6 +109,29 @@ test.describe("message list header", () => {
 		await expect(headerOf(page).getByRole("button", { name: /menu/i })).toHaveCount(0);
 		await page.getByRole("button", { name: "Expand menu" }).click();
 		await expect.poll(async () => Math.abs((await sidebar.boundingBox())!.width - expanded)).toBeLessThan(3);
+		await context.close();
+	});
+
+	test("with the sidebar collapsed to the icon rail the assistant opens from the rail", async ({ browser }) => {
+		const { page, context } = await openList(browser, "/inbox", DEFAULT_WIDTH, "kite", "light", undefined, true);
+		const sidebar = page.locator("#kite-sidebar-layout > [data-panel]").first();
+		await page.getByRole("button", { name: "Collapse menu" }).click();
+		await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeLessThan(80);
+		await expect(page.getByText("Assistant", { exact: true })).toHaveCount(0);
+
+		const rail = sidebar.getByRole("button", { name: "Open email assistant" });
+		const panel = page.getByRole("region", { name: "Email assistant" });
+		await expect(rail).toBeVisible();
+		await rail.hover();
+		await expect(page.getByRole("tooltip", { name: "Open email assistant" })).toBeVisible();
+		await rail.click();
+		await expect(panel).toBeVisible();
+		await expect(sidebar.getByRole("button", { name: "Close email assistant" })).toHaveAttribute(
+			"aria-expanded",
+			"true",
+		);
+		await sidebar.getByRole("button", { name: "Close email assistant" }).click();
+		await expect(panel).toBeHidden();
 		await context.close();
 	});
 

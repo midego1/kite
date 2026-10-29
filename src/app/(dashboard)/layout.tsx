@@ -1,21 +1,20 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Sparkles } from "lucide-react";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { ComposeProvider } from "@/components/compose/compose-context";
 import { FloatingComposer } from "@/components/compose/floating-composer";
 import { MailSearchProvider } from "@/components/mail-search/mail-search-context";
 import { MailboxProvider } from "@/components/mailbox-provider";
 import { MailboxSelector } from "@/components/mailbox-selector";
-import { LazyAgentPanel, preloadAgentPanel } from "@/components/agent/agent-panel-lazy";
+import { LazyAgentPanel } from "@/components/agent/agent-panel-lazy";
+import { AssistantIconButton, AssistantNavItem } from "@/components/agent/assistant-nav-item";
 import {
 	AssistantDockedContext,
 	AssistantOpenContext,
 	AssistantToggleContext,
 	type AssistantToggleState,
 } from "@/components/agent/assistant-open-state";
-import { Button } from "@/components/ui/button";
 import { DashboardNav } from "@/components/dashboard-nav";
 import { SidebarProvider } from "@/components/sidebar-state";
 import { SidebarAside, MobileMenuButton } from "@/components/sidebar-aside";
@@ -90,27 +89,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 		toggle: toggleAssistant,
 	};
 
-	const assistantToggle = (variant: "icon" | "nav") =>
-		assistantEnabled ? (
-			<Button
-				type="button"
-				variant="ghost"
-				size="sm"
-				className={clsx(
-					assistantOpen ? "bg-blue-50 text-blue-700" : "text-neutral-600",
-					variant === "nav" && "h-9 w-full justify-start gap-3 rounded-lg px-3 text-sm font-normal",
-				)}
-				onPointerEnter={() => void preloadAgentPanel().catch(() => undefined)}
-				onClick={toggleAssistant}
-				aria-label={assistantOpen ? "Close email assistant" : "Open email assistant"}
-				aria-expanded={assistantOpen}
-				aria-controls="email-assistant-panel"
-			>
-				<Sparkles className={variant === "nav" ? "h-4 w-4" : "h-5 w-5"} />
-				{variant === "nav" && "Assistant"}
-			</Button>
-		) : null;
-
 	return (
 		<AuthGuard>
 			<SidebarProvider mobileOverlay>
@@ -127,7 +105,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 											<SidebarAside className="md:w-full">
 												<div className="h-full min-h-0">
 													<DashboardNav
-														assistantToggle={assistantToggle("nav")}
+														assistantToggle={<AssistantNavItem assistant={assistantToggleState} />}
 														accountMenu={<MailboxSelector placement="sidebar" />}
 														notices={<DashboardNotices slot="sidebar" />}
 													/>
@@ -140,7 +118,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 											<header className="flex h-14 w-full shrink-0 items-center gap-2 px-2 text-sm md:hidden">
 												<MobileMenuButton />
 												<span className="flex-1" />
-												{assistantToggle("icon")}
+												<AssistantIconButton assistant={assistantToggleState} />
 												<MailboxSelector />
 											</header>
 											<DashboardNotices slot="page" />

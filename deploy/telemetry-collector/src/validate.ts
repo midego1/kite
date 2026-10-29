@@ -87,5 +87,7 @@ export function parseHeartbeat(body: string): ParseResult {
 	if (!Array.isArray(modules) || modules.length > MAX_MODULES) return fail("invalid_modules_enabled");
 	if (!modules.every((id) => typeof id === "string" && MODULE_ID.test(id))) return fail("invalid_modules_enabled");
 	if (new Set(modules).size !== modules.length) return fail("invalid_modules_enabled");
+	// Dropped, not just skipped: the parsed record is exactly the schema, so no later code can store or sum them.
+	for (const key of IGNORED_KEYS) delete record[key];
 	return { ok: true, value: record as Heartbeat };
 }

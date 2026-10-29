@@ -25,8 +25,8 @@ export const TELEMETRY_PRIVACY_CONTACT = "privacy@midego.net";
 /** Audit actions of the owner's choice, listed in Admin → Activity. */
 export const TELEMETRY_AUDIT_ACTIONS = ["telemetry.enabled", "telemetry.disabled"] as const;
 
-/** An install whose owner never chose starts sending at least this many days after the notice first told them. */
-const TELEMETRY_NOTICE_DAYS = 14;
+/** The daily heartbeat runs at this hour, UTC (the `0 2 * * *` cron on Workers, the scheduler on Node). */
+const TELEMETRY_RUN_HOUR_UTC = 2;
 
 /** A heartbeat or an erasure request that takes longer is abandoned. */
 export const TELEMETRY_TIMEOUT_MS = 5_000;
@@ -116,12 +116,19 @@ export function isInstallId(value: unknown): value is string {
 
 const DAY_MS = 86_400_000;
 
+/** The moment of the daily run on a UTC day, which is when statistics start on that day. */
+function telemetryRunTime(day: string): number {
+	return Date.parse(`${day}T${String(TELEMETRY_RUN_HOUR_UTC).padStart(2, "0")}:00:00Z`);
+}
+
 /**
- * The day an undecided install starts sending when the owner first sees the notice at `now`: the UTC day after
- * `TELEMETRY_NOTICE_DAYS` full days, so the first heartbeat (02:00 UTC that day) comes at least 14 days later.
+ * The day an undecided install starts sending when the owner first sees the notice at `now`: the UTC day of the
+ * first 02:00 UTC run strictly after `now`, so today before 02:00 and tomorrow from 02:00 on. Nothing is ever sent
+ * before the notice was on screen, and nothing waits longer than a day after it.
  */
 export function telemetryStartDay(now: Date): string {
-	return utcDay(new Date(now.getTime() + (TELEMETRY_NOTICE_DAYS + 1) * DAY_MS));
+	const today = utcDay(now);
+	return now.getTime() < telemetryRunTime(today) ? today : utcDay(new Date(telemetryRunTime(today) + DAY_MS));
 }
 
 /** `2026-11-12` as `12 November 2026`, the same everywhere: the day is a UTC day. */
@@ -129,6 +136,29 @@ export function telemetryDayLabel(day: string): string {
 	return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(
 		new Date(`${day}T00:00:00Z`),
 	);
+}
+
+/**
+ * The start moment in another time zone, such as `30 October 2026 at 04:00`, or null when it reads the same as in UTC
+ * (the notice then says nothing more). The day and hour are the ones of the 02:00 UTC run, whatever the zone.
+ */
+export function telemetryLocalStart(day: string, timeZone: string): string | null {
+	const format = (zone: string) =>
+		new Intl.DateTimeFormat("en-GB", {
+			day: "numeric",
+			month: "long",
+			year: "numeric",
+			hour: "2-digit",
+			minute: "2-digit",
+			hourCycle: "h23",
+			timeZone: zone,
+		}).format(new Date(telemetryRunTime(day)));
+	try {
+		const local = format(timeZone);
+		return local === format("UTC") ? null : local.replace(",", " at");
+	} catch {
+		return null;
+	}
 }
 
 /** The sentence the one-time notice for an existing install leads with. */
@@ -140,17 +170,18 @@ export function telemetryNoticeText(startDay: string): string {
 export type TelemetryChoice = { decision: TelemetryDecision | null; startDay: string | null; noticeDismissed: boolean };
 
 /**
- * What an undecided install's start day means today. `wait`: no start day (the owner was never told), a decision
- * (an explicit `off` stays off) or the day has not come. `start`: the day has come and statistics turn on. `expire`:
+ * What an undecided install's start day means at `now`. `wait`: no start day (the owner was never told), a decision
+ * (an explicit `off` stays off) or the start day's 02:00 UTC run has not come. `start`: the day has come and statistics turn on. `expire`:
  * the day came while `KITE_TELEMETRY` forced statistics off or no collector address was usable, so nothing could
  * start; the date is cleared, never acted on later, and the notice comes back with a new one once it is due again.
  */
 export function telemetryStartDayOutcome(
 	choice: TelemetryChoice,
-	today: string,
+	now: Date,
 	context: { forcedOff: boolean; endpoint: string | null },
 ): "wait" | "start" | "expire" {
-	if (choice.decision !== null || choice.startDay === null || today < choice.startDay) return "wait";
+	if (choice.decision !== null || choice.startDay === null || now.getTime() < telemetryRunTime(choice.startDay))
+		return "wait";
 	return context.forcedOff || context.endpoint === null ? "expire" : "start";
 }
 

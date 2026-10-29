@@ -2,7 +2,12 @@
 
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { TELEMETRY_DOCS_URL, TELEMETRY_PURPOSE, usageStatisticsSetupHint } from "@/lib/telemetry/notice-utils";
+import {
+	isDefaultCollector,
+	TELEMETRY_DOCS_URL,
+	telemetryPurposeClause,
+	usageStatisticsSetupHint,
+} from "@/lib/telemetry/notice-utils";
 import { DEFAULT_TELEMETRY_URL, TELEMETRY_FIELDS, TELEMETRY_PRIVACY_CONTACT } from "@/lib/telemetry/telemetry-utils";
 import type { SetupTelemetryStatus } from "@/lib/telemetry/types";
 
@@ -25,6 +30,7 @@ export function UsageStatisticsSetup({
 }) {
 	const forcedOff = Boolean(status?.forcedOff);
 	const endpoint = status?.endpoint ?? null;
+	const projectCollector = isDefaultCollector(endpoint);
 	return (
 		<section
 			aria-labelledby="setup-usage-statistics-title"
@@ -35,14 +41,15 @@ export function UsageStatisticsSetup({
 				Usage statistics
 			</h2>
 			<p>
-				Kite sends one small pseudonymous report a day, around 02:00 UTC, {TELEMETRY_PURPOSE}. It is on unless you turn
-				it off here, and you can change it later under Admin → General. Nothing is sent before you finish setup.
+				Kite sends one small pseudonymous report a day, around 02:00 UTC, {telemetryPurposeClause(endpoint)}. It is on
+				unless you turn it off here, and you can change it later under Admin → General. Nothing is sent before you
+				finish setup.
 			</p>
 			<p>
 				The report holds rough counts only (ranges, never exact numbers) and no names, email addresses, domains or
 				message content. It is pseudonymous, not anonymous: a random install ID links one install’s daily reports. On
 				Cloudflare Workers, Cloudflare adds a <code>CF-Worker</code> header naming this Worker’s domain; on Node/Docker
-				the collector sees your server’s IP address. The collector does not store IP addresses.
+				the collector sees your server’s IP address.{projectCollector && " The collector does not store IP addresses."}
 			</p>
 			<details>
 				<summary className="cursor-pointer font-medium text-neutral-800">Exactly what is sent</summary>

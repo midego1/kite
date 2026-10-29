@@ -113,6 +113,10 @@ test("message volume from older installs is accepted and ignored, and never stor
 	assert.equal(parseHeartbeat(JSON.stringify(old)).ok, true);
 	assert.equal(parseHeartbeat(JSON.stringify({ ...heartbeat(), inbound_1d: 54321 })).ok, true);
 	assert.equal(parseHeartbeat(JSON.stringify({ ...heartbeat(), inbound_count: "1" })).ok, false);
+	// The parsed record is exactly the schema: the ignored keys are gone, whatever they held.
+	const parsed = parseHeartbeat(JSON.stringify(old));
+	assert.deepEqual(Object.keys(parsed.value).sort(), Object.keys(heartbeat()).sort());
+	assert.ok(!("inbound_1d" in parsed.value) && !("outbound_1d" in parsed.value));
 	const { sqlite, env } = await setup(t);
 	assert.equal((await collector.fetch(post(old), env)).status, 204);
 	const [row] = sqlite.db.prepare("SELECT * FROM daily").all();

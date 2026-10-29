@@ -10,6 +10,9 @@ import type { TelemetrySaveResult, TelemetryStatus } from "@/lib/telemetry/types
 /** One cache for the Admin → General card and the notice, so a choice made in one shows in the other. */
 const TELEMETRY_STATUS_QUERY_KEY = ["admin", "telemetry"];
 
+/** The id of the Admin → General card: the sidebar notice's Details link is `/general#usage-statistics`. */
+export const TELEMETRY_CARD_ID = "usage-statistics";
+
 export type TelemetryUpdate = { enabled: boolean } | { notice: "shown" | "dismissed" };
 
 async function loadTelemetryStatus(): Promise<TelemetryStatus> {
@@ -65,7 +68,18 @@ export function useTelemetryNotice() {
 		if (unseen && isIdle) mutate({ notice: "shown" });
 	}, [unseen, isIdle, mutate]);
 	const startDay = due ? (status?.startDay ?? provisionalDay) : null;
-	return { startDay, unseen, markShown, save };
+	return { startDay, unseen, markShown, save, endpoint: status?.endpoint ?? null };
+}
+
+/**
+ * Brings the card into view when the page was opened with its hash. The card is rendered only once the page's data is
+ * there, after the browser already looked for the anchor, so it scrolls again when `ready`.
+ */
+export function useScrollToTelemetryCard(ready: boolean) {
+	useEffect(() => {
+		if (!ready || window.location.hash !== `#${TELEMETRY_CARD_ID}`) return;
+		document.getElementById(TELEMETRY_CARD_ID)?.scrollIntoView({ block: "start" });
+	}, [ready]);
 }
 
 /** Calls `onVisible` once the element is at least half on screen (not scrolled out of the notices box). */

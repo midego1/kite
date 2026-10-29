@@ -1,6 +1,9 @@
+"use client";
+
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
@@ -33,10 +36,32 @@ export interface ButtonProps
 	asChild?: boolean;
 }
 
+/**
+ * Until React has hydrated a server-rendered page, a button has no handler: a click does nothing, or a submit
+ * button posts the form natively. So a button is disabled until then (only for that first render; later mounts
+ * are interactive at once), which also makes an early automated click wait. It keeps its look meanwhile.
+ */
+const HYDRATING_CLASS =
+	"data-hydrating:disabled:pointer-events-auto data-hydrating:disabled:cursor-progress data-hydrating:disabled:opacity-100";
+
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 	({ className, variant, size, asChild = false, ...props }, ref) => {
-		const Comp = asChild ? Slot : "button";
-		return <Comp className={cn("cursor-pointer", buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+		const hydrated = useHydrated();
+		if (asChild) {
+			// A link or other child keeps its own behaviour, which works without JavaScript.
+			return (
+				<Slot className={cn("cursor-pointer", buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+			);
+		}
+		return (
+			<button
+				className={cn("cursor-pointer", buttonVariants({ variant, size, className }), HYDRATING_CLASS)}
+				ref={ref}
+				{...props}
+				disabled={props.disabled || !hydrated}
+				data-hydrating={hydrated ? undefined : ""}
+			/>
+		);
 	},
 );
 Button.displayName = "Button";

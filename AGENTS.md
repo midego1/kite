@@ -25,6 +25,7 @@ For a fresh Mission worker, run `npm run setup:mission` (or open `.devcontainer`
 
 - Three styles share one codebase, switched by `data-style` on `<html>` (Settings → Appearance; the sidebar's **Kite classic** switch): Kite (`kite`, the default, Zero's neutral zinc look, dark unless the user picks light), Kite classic (`lavender`, the earlier indigo and lavender look) and Classic (`classic`, the original blue). Components use Tailwind's `blue-*` palette, which `src/app/globals.css` remaps per style: in Kite the tints (50–300) are the muted zinc fills of active and selected items, 400–500 the one blue accent (focus, the unread dot) and 600–950 the near-black primary (white in dark mode). Keep using `blue-*` rather than hard-coded hex so every style and dark mode work, and check new UI in all three styles and dark mode.
 - Per-browser preferences (font, text size, assistant layout) go through `src/components/appearance-preferences.ts`.
+- Use `Button` from `src/components/ui/button.tsx` for anything that starts a request. On a server-rendered page it stays disabled (without looking dimmed) until React has hydrated, so an early click is never lost and a form is never posted natively; a raw `<button>` there has no such guard. E2E tests can click right after navigation (`e2e/75-hydration-clicks.spec.ts`).
 
 ## Database backup and restore
 

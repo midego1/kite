@@ -17,7 +17,8 @@ export function BrandingProvider({
 	const [branding, setBranding] = useState(initialBranding ?? DEFAULT_BRANDING);
 	const [iconVersion, setIconVersion] = useState(0);
 
-	function applyBranding(nextBranding: Awaited<ReturnType<typeof fetchBranding>>) {
+	function applyBranding(nextBranding: Branding | null) {
+		if (!nextBranding) return;
 		setBranding(nextBranding);
 		setIconVersion(Date.now());
 		if (document.title === DEFAULT_BRANDING.appName || document.title === branding.appName) {

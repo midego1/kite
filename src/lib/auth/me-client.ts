@@ -2,6 +2,7 @@
 
 import { authFetch } from "@/lib/auth/client";
 import type { AuthMeResponse } from "./me-client-types";
+import { AUTH_ME_TIMEOUT_MS } from "./me-client-utils";
 
 export const AUTH_ME_QUERY_KEY = ["auth", "me"] as const;
 
@@ -15,11 +16,11 @@ export class AuthMeRequestError extends Error {
 }
 
 /** Resolves to null when there is no valid session; throws for any other failure. */
-export async function fetchAuthMe(): Promise<AuthMeResponse | null> {
+export async function fetchAuthMe(timeoutMs = AUTH_ME_TIMEOUT_MS): Promise<AuthMeResponse | null> {
 	const response = await authFetch("/api/auth/me", {
 		redirectOnUnauthorized: false,
 		cache: "no-store",
-		signal: AbortSignal.timeout(5_000),
+		signal: AbortSignal.timeout(timeoutMs),
 	});
 	if (response.status === 401) return null;
 	if (!response.ok) throw new AuthMeRequestError(response.status);

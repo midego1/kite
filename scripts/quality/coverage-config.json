@@ -102,6 +102,7 @@
 		"src/lib/agent/tool-schema-utils.ts",
 		"src/lib/agent/workers-ai-stream-utils.ts",
 		"src/lib/auth/client-utils.ts",
+		"src/lib/auth/me-client-utils.ts",
 		"src/lib/auth/setup-token-utils.ts",
 		"src/lib/auth/user-lookup-utils.ts",
 		"src/lib/db/pending-columns-utils.ts",

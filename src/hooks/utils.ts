@@ -2,6 +2,7 @@ import { authFetch } from "@/lib/auth/client";
 import { parseSearchQuery } from "@/lib/search/query-utils";
 import { getUserTimeZone } from "@/lib/time/utils";
 import { setCachedMessageRead } from "@/lib/messages/detail-cache";
+import { SENT_FOLDER_STATUS_PARAM } from "@/lib/messages/send-state-utils";
 import { withReadState } from "@/lib/messages/thread-unread-utils";
 import type { MessageFilterOptions, MessageFolder } from "./types";
 import type { MessageCounts, MessageListResponse } from "./types";
@@ -26,7 +27,7 @@ export function parseMessageSearchQuery(query: string): MessageFilterOptions {
 const FOLDER_QUERY: Partial<Record<MessageFolder, { direction?: "inbound" | "outbound"; status: string }>> = {
 	inbox: { direction: "inbound", status: "received" },
 	screener: { direction: "inbound", status: "screening" },
-	sent: { direction: "outbound", status: "sent" },
+	sent: { direction: "outbound", status: SENT_FOLDER_STATUS_PARAM },
 	drafts: { direction: "outbound", status: "draft" },
 	archived: { status: "archived" },
 	trash: { status: "trash" },

@@ -1,4 +1,5 @@
 import type { MessageCounts, MessageFolder } from "@/hooks/types";
+import { isSentFolderStatus } from "@/lib/messages/send-state-utils";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import type { CountableFolder, MessageCountRow } from "./types";
 
@@ -9,7 +10,7 @@ export function getMessageFolder(row: MessageCountRow): CountableFolder {
 	if (row.status === "spam") return "spam";
 	if (row.status === "archived") return "archived";
 	if (row.direction === "inbound" && row.status === "received" && !row.folderId) return "inbox";
-	if (row.direction === "outbound" && row.status === "sent") return "sent";
+	if (row.direction === "outbound" && isSentFolderStatus(row.status)) return "sent";
 	if (row.direction === "outbound" && row.status === "draft") return "drafts";
 	return null;
 }

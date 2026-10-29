@@ -135,6 +135,7 @@ export function MessageListHeader({
 						folder={getSelectionToolbarFolder(config)}
 						mailboxIds={selection.mailboxIds}
 						hasDraftSelection={selection.hasDrafts}
+						hasPendingSendSelection={selection.hasPendingSend}
 					/>
 				) : (
 					<p aria-hidden="true" className="min-w-0 truncate text-base font-medium text-neutral-900">

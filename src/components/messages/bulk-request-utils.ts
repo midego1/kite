@@ -23,3 +23,10 @@ export function draftDeletionConfirmation(count: number) {
 export function describeDraftsDeleted(count: number): string {
 	return count === 1 ? "1 draft deleted permanently" : `${count} drafts deleted permanently`;
 }
+
+/** The notice for messages a move skipped because they are still waiting to be sent. */
+export function describeSendPendingRefused(count: number): string {
+	return count === 1
+		? "1 message waiting to be sent was left where it is. Cancel the send to move it."
+		: `${count} messages waiting to be sent were left where they are. Cancel the sends to move them.`;
+}

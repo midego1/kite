@@ -21,6 +21,8 @@ export type MessageListHeaderProps = {
 		mailboxIds: Array<string | null | undefined>;
 		/** The selection holds the user's own drafts, which they may delete whatever their mailbox access. */
 		hasDrafts?: boolean;
+		/** The selection holds a message waiting to be sent, which cannot be moved. */
+		hasPendingSend?: boolean;
 		toggleAll: (selected: boolean) => void;
 		run: (action: BulkMessageAction, folderId?: string) => Promise<void>;
 		clear: () => void;

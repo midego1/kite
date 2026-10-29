@@ -1,5 +1,6 @@
 "use client";
 
+import { isSendPending } from "@/lib/messages/send-state-utils";
 import { CheckSquare2 } from "lucide-react";
 import { useState } from "react";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
@@ -44,6 +45,7 @@ export function BulkMessageSelectionPane({
 						folder={folder}
 						mailboxIds={selectedMessages.map((message) => message.mailboxId)}
 						hasDraftSelection={selectedMessages.some((message) => message.status === "draft")}
+						hasPendingSendSelection={selectedMessages.some((message) => isSendPending(message.status))}
 						hideSelectedCount
 					/>
 				</div>

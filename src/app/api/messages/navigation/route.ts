@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, gt, isNull, lte, ne, or } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
@@ -9,6 +9,7 @@ import { listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { resolveMailboxScope } from "@/lib/mailboxes/scope-utils";
 import { rowConversationKey } from "@/lib/messages/conversation-key";
 import { mailboxScopeCondition } from "@/lib/messages/mailbox-scope";
+import { SENT_FOLDER_STATUSES } from "@/lib/messages/send-state-utils";
 import type { MessageFolder } from "@/hooks/types";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import type { MessageNavigationEntry } from "./types";
@@ -35,7 +36,7 @@ function folderConditions(folder: MessageFolder, folderId: string | null): SQL[]
 		conditions.push(gt(messages.snoozedUntil, new Date()));
 	} else if (folder === "sent") {
 		conditions.push(eq(messages.direction, "outbound"));
-		conditions.push(eq(messages.status, "sent"));
+		conditions.push(inArray(messages.status, [...SENT_FOLDER_STATUSES]));
 	} else {
 		conditions.push(eq(messages.status, folder));
 	}

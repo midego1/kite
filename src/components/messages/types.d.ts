@@ -103,6 +103,8 @@ export type BulkMessageToolbarProps = {
 	mailboxIds?: Array<string | null | undefined>;
 	/** The selection holds the user's own drafts, so Delete stays on without full access to their mailbox. */
 	hasDraftSelection?: boolean;
+	/** The selection holds a message waiting to be sent, which can only be cancelled, so the moving actions are off. */
+	hasPendingSendSelection?: boolean;
 };
 
 /** A selected row; `status` lets a member without full access still delete their own drafts. */

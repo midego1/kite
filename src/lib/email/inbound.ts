@@ -31,6 +31,7 @@ import { scheduleAgentWork } from "@/lib/agent/auto-read/schedule";
 import { applyScreener } from "@/lib/screener/inbound";
 import { screenerPendingRows } from "@/lib/screener/views";
 import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
+import { loadSendStates } from "@/lib/messages/send-state";
 
 export type InboundQueueMessage = {
 	from: string;
@@ -407,7 +408,13 @@ export async function getMessageWithBodyForUser(env: CloudflareEnv, user: Sessio
 	const contactNames = await getMessageContactNames(env, message.userId, message.fromAddr, message.toAddr);
 	const attachments = await listMessageAttachments(env, messageId);
 	const unsubscribeUrl = await getUnsubscribeUrlFromRawR2Key(env, message.rawR2Key);
-	return { message: { ...message, ...contactNames }, body: message, attachments, unsubscribeUrl };
+	const sendState = (await loadSendStates(db, [message], user.id)).get(message.id);
+	return {
+		message: { ...message, ...contactNames, ...(sendState ? { sendState } : {}) },
+		body: message,
+		attachments,
+		unsubscribeUrl,
+	};
 }
 
 export async function getMessageMetadataForUser(env: CloudflareEnv, user: SessionUser, messageId: string) {

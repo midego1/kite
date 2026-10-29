@@ -23,8 +23,8 @@ await build({
 });
 
 const {
-	getRangeSelectionIds,
 	isApplePlatform,
+	openIdFromPath,
 	planRowSelection,
 	replaceSelection,
 	resolveSelectionAnchor,
@@ -32,16 +32,25 @@ const {
 } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 const ids = ["a", "b", "c", "d", "e"];
 
+const range = (anchorId, targetId) =>
+	planRowSelection({
+		orderedIds: ids,
+		selectedIds: [],
+		anchorId,
+		targetId,
+		modifiers: { shift: true, toggle: false },
+	}).selectedIds;
+
 test("Shift-click selects from the anchor to the target in list order, either direction", () => {
-	assert.deepEqual(getRangeSelectionIds(ids, "b", "d"), ["b", "c", "d"]);
-	assert.deepEqual(getRangeSelectionIds(ids, "d", "b"), ["b", "c", "d"]);
-	assert.deepEqual(getRangeSelectionIds(ids, "c", "c"), ["c"]);
+	assert.deepEqual(range("b", "d"), ["b", "c", "d"]);
+	assert.deepEqual(range("d", "b"), ["b", "c", "d"]);
+	assert.deepEqual(range("c", "c"), ["c"]);
 });
 
 test("without an anchor on the page only the clicked row is used", () => {
-	assert.deepEqual(getRangeSelectionIds(ids, null, "c"), ["c"]);
-	assert.deepEqual(getRangeSelectionIds(ids, "gone", "c"), ["c"]);
-	assert.deepEqual(getRangeSelectionIds(ids, "a", "gone"), []);
+	assert.deepEqual(range(null, "c"), ["c"]);
+	assert.deepEqual(range("gone", "c"), ["c"]);
+	assert.deepEqual(range("a", "gone"), []);
 });
 
 test("rows that left the list leave the selection, and an unchanged selection keeps its identity", async () => {
@@ -169,4 +178,11 @@ test("replaceSelection keeps rows already selected and swaps the rest", () => {
 	);
 	assert.equal(next[0].read, false);
 	assert.equal(next[1].mailboxId, "m1");
+});
+
+test("the open message or draft is read from its route", () => {
+	assert.equal(openIdFromPath("/inbox/msg_1", "/inbox"), "msg_1");
+	assert.equal(openIdFromPath("/drafts/msg_2/", "/drafts"), "msg_2");
+	assert.equal(openIdFromPath("/drafts", "/drafts"), undefined);
+	assert.equal(openIdFromPath("/sent/msg_3", "/inbox"), undefined);
 });

@@ -8,7 +8,7 @@ type SelectedMessage = { id: string; read: boolean; mailboxId?: string | null };
  * The ids from the anchor row to the target row, inclusive and in list order, for
  * Shift-click selection. Without a usable anchor only the target is returned.
  */
-export function getRangeSelectionIds(orderedIds: string[], anchorId: string | null, targetId: string): string[] {
+function getRangeSelectionIds(orderedIds: string[], anchorId: string | null, targetId: string): string[] {
 	const target = orderedIds.indexOf(targetId);
 	if (target === -1) return [];
 	const anchor = anchorId ? orderedIds.indexOf(anchorId) : -1;
@@ -38,6 +38,16 @@ export function rowClickModifiers(
 	if (apple ? event.ctrlKey : event.metaKey) return null;
 	const toggle = apple ? event.metaKey : event.ctrlKey;
 	return event.shiftKey || toggle ? { shift: event.shiftKey, toggle } : null;
+}
+
+/**
+ * The message id a detail route names (`/inbox/<id>`, `/drafts/<id>`), or undefined on the list itself. Drafts
+ * open in the composer from their own route, outside the split layout that passes the open message down.
+ */
+export function openIdFromPath(pathname: string, hrefPrefix: string): string | undefined {
+	const prefix = `${hrefPrefix}/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	return pathname.slice(prefix.length).split("/")[0] || undefined;
 }
 
 /** The row a range grows from: the last anchor still in the list, else the open message, else none. */

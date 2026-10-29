@@ -17,13 +17,30 @@ type ListKeyboardOptions = {
 	/** Shift+Arrow: selects from the anchor (else the focused row) to `targetId`, the row the focus moved to. */
 	extendSelection: (focusedId: string, targetId: string) => void;
 	selectionCount: number;
-	/** Escape clears the selection. */
+	/** Escape empties the selection and nothing else: an open message stays open. */
 	clearSelection: () => void;
 };
 
-/** Where Escape belongs to something else: a dialog, a menu, a listbox or an area that owns its keys. */
-const ESCAPE_OWNERS =
+/** Open popups: while one is on screen, Escape belongs to it, wherever the focus is. */
+const OPEN_POPUPS =
 	'[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [data-shortcuts-off]';
+
+/** The folder page (list and header) and the bulk-selection pane carry `data-selection-scope`; focus elsewhere is not the selection's. */
+
+/** The keys are the selection's when the focus is on the page itself or inside its list. */
+function focusIsInList(list: HTMLElement | null): boolean {
+	const active = document.activeElement;
+	return !active || active === document.body || !!list?.contains(active);
+}
+
+/** Escape clears the selection when the focus is on the page or in the selection's own area, and no popup is open. */
+function escapeClearsSelection(event: KeyboardEvent): boolean {
+	if (event.key !== "Escape" || event.defaultPrevented || isTypingInInput(event.target)) return false;
+	if (document.querySelector(OPEN_POPUPS)) return false;
+	const target = event.target;
+	if (!(target instanceof HTMLElement) || target === document.body || target === document.documentElement) return true;
+	return !!target.closest("[data-selection-scope]");
+}
 
 function rows(list: HTMLElement | null): HTMLElement[] {
 	return list ? Array.from(list.querySelectorAll<HTMLElement>("[data-message-row]")) : [];
@@ -57,7 +74,7 @@ export function useMessageListKeyboard({
 }: ListKeyboardOptions) {
 	const { shortcutsEnabled } = useShortcuts();
 
-	const shortcuts = useMemo<ShortcutDefinition[]>(() => {
+	const shortcuts = useMemo<Array<ShortcutDefinition & { extend: boolean }>>(() => {
 		const move = (step: 1 | -1) => {
 			const all = rows(listRef.current);
 			const current = focusedRow(listRef.current);
@@ -67,6 +84,7 @@ export function useMessageListKeyboard({
 			link?.scrollIntoView({ block: "nearest" });
 		};
 		const extend = (step: 1 | -1) => {
+			if (!focusIsInList(listRef.current)) return;
 			const all = rows(listRef.current);
 			const current = focusedRow(listRef.current);
 			const next = all[adjacentRowIndex(all.length, current ? all.indexOf(current) : -1, step)];
@@ -96,20 +114,27 @@ export function useMessageListKeyboard({
 				if (folder !== "trash") runOnRows("trash", focusedId());
 			},
 		};
-		return LIST_KEYS.map(({ id, ...meta }) => ({ ...meta, action: handlers[id] }));
+		return LIST_KEYS.map(({ id, ...meta }) => ({ ...meta, action: handlers[id], extend: id.startsWith("extend") }));
 	}, [folder, listRef, runOnRows, toggleRowSelection, extendSelection]);
 
-	useHotkeys(shortcuts, { enabled: shortcutsEnabled && !messageOpen });
+	// While the selection pane covers the open message the list is what the user works with, so Shift+Arrow stays on.
+	useHotkeys(
+		shortcuts.filter((shortcut) => !shortcut.extend),
+		{ enabled: shortcutsEnabled && !messageOpen },
+	);
+	useHotkeys(
+		shortcuts.filter((shortcut) => shortcut.extend),
+		{ enabled: shortcutsEnabled && (!messageOpen || selectionCount > 0) },
+	);
 
-	// Escape also works with a message open, where a selection replaces the reading pane.
+	// Escape also works with a message open, where a selection replaces the reading pane. Another handler has
+	// already claimed the key by the time it bubbles (the global "dismiss" shortcut always does), so listen first.
 	useEffect(() => {
 		if (selectionCount === 0) return;
 		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key !== "Escape" || isTypingInInput(event.target)) return;
-			if (event.target instanceof HTMLElement && event.target.closest(ESCAPE_OWNERS)) return;
-			clearSelection();
+			if (escapeClearsSelection(event)) clearSelection();
 		};
-		window.addEventListener("keydown", onKeyDown);
-		return () => window.removeEventListener("keydown", onKeyDown);
+		window.addEventListener("keydown", onKeyDown, true);
+		return () => window.removeEventListener("keydown", onKeyDown, true);
 	}, [selectionCount, clearSelection]);
 }

@@ -36,11 +36,11 @@ test("Shift-click selects every message between two checkboxes", async ({ page }
 	await expect(page.getByText("4 selected")).toBeVisible();
 	expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
 
-	// Shift-click on a checked row clears the range back to the previous click.
+	// Shift-click on another checkbox re-extends from the same anchor (D), here shrinking the range to D..C.
 	await box(c).click({ modifiers: ["Shift"] });
-	for (const subject of [c, b, a]) await expect(box(subject)).not.toBeChecked();
-	await expect(box(d)).toBeChecked();
-	await expect(page.getByText("1 selected")).toBeVisible();
+	for (const subject of [b, a]) await expect(box(subject)).not.toBeChecked();
+	for (const subject of [d, c]) await expect(box(subject)).toBeChecked();
+	await expect(page.getByText("2 selected")).toBeVisible();
 });
 
 test("opening a message while others are selected shows it in the reading pane", async ({ page }) => {

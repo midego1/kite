@@ -92,7 +92,8 @@ export function useMessageListRow({
 	 */
 	function selectedByClick(event: MouseEvent<HTMLAnchorElement>) {
 		const modifiers = rowClickModifiers(event, isApplePlatform(navigator.platform || navigator.userAgent));
-		onRowClick?.(message.id, modifiers);
+		// A plain click anchors the next range; Alt-click and a Mac context click leave the selection alone.
+		if (modifiers || isPlainClick(event)) onRowClick?.(message.id, modifiers);
 		if (modifiers) event.preventDefault();
 		return modifiers !== null;
 	}
@@ -125,9 +126,11 @@ export function useMessageListRow({
 		toggleStar,
 		onNavigate,
 		onSelectClick,
-		/** Cancels the text selection a Shift-click would start. */
+		/** Cancels the text selection a Shift-click would start; the row still takes the focus, without scrolling. */
 		onMouseDown: (event: MouseEvent<HTMLAnchorElement>) => {
-			if (event.shiftKey) event.preventDefault();
+			if (!event.shiftKey) return;
+			event.preventDefault();
+			event.currentTarget.focus({ preventScroll: true });
 		},
 	};
 }

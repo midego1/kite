@@ -27,7 +27,7 @@ export function BulkMessageSelectionPane({
 	}
 
 	return (
-		<div className="flex h-full items-center justify-center p-8">
+		<div className="flex h-full items-center justify-center p-8" data-selection-scope="">
 			<div className="w-full max-w-xl text-center">
 				<div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-700">
 					<CheckSquare2 className="h-6 w-6" />

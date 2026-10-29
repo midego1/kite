@@ -56,6 +56,11 @@ export const externalAccounts = sqliteTable(
 		lastSyncAt: integer("last_sync_at", { mode: "timestamp" }),
 		lastSuccessAt: integer("last_success_at", { mode: "timestamp" }),
 		leaseUntil: integer("lease_until", { mode: "timestamp" }),
+		/**
+		 * Since when Kite may not use the saved password (the owner's permission revoked, or the install switch off),
+		 * whatever the account's status; null while it may. The daily run erases the password 30 days after it.
+		 */
+		suspendedAt: integer("suspended_at", { mode: "timestamp" }),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),
@@ -105,7 +110,7 @@ export const externalAccountSettings = sqliteTable("app_settings", {
 	id: text("id").primaryKey(),
 	/** Null follows the default: on when APP_ENCRYPTION_KEY is set. */
 	externalAccountsEnabled: integer("external_accounts_enabled", { mode: "boolean" }),
-	/** When the owner turned the switch off; 30 days later the daily cron erases the saved passwords. */
+	/** When the owner turned the switch off (each account's own `suspended_at` drives the erase). */
 	externalAccountsDisabledAt: integer("external_accounts_disabled_at", { mode: "timestamp" }),
 	updatedAt: integer("updated_at", { mode: "timestamp" })
 		.notNull()

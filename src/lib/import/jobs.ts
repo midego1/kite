@@ -423,7 +423,8 @@ async function importSource(
 ): Promise<Parameters<typeof openImportSession>[1] | { refused: string }> {
 	if (!isConnectedAccountJob(job)) return { ...job, password: (await openSetting(env, job.password)) ?? "" };
 	if (!job.externalAccountId) return { refused: "The account was removed" };
-	const answer = await moduleHost.accounts.sourceLogin(ctx, { accountId: job.externalAccountId, userId: job.userId });
+	// Core reads the job's owner and account itself; the module never names an account in the background.
+	const answer = await moduleHost.accounts.sourceLogin(ctx, "import", { jobId: job.id });
 	if (!answer.ok) return { refused: answer.message };
 	const { login } = answer;
 	return {

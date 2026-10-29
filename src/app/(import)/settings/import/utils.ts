@@ -94,11 +94,7 @@ export async function importFromImap(
 		body: JSON.stringify({
 			mailboxId,
 			destination,
-			host: form.host,
-			port: Number(form.port),
-			secure: form.secure,
-			username: form.username,
-			password: form.password,
+			...imapAccountBody(form),
 			folder: form.folder,
 			limit: Number(form.limit),
 			offset,

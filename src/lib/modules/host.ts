@@ -117,6 +117,6 @@ export const moduleHost: ModuleHost = {
 		importMessages: (_ctx, request) => importModuleMessages(getEnv(), request),
 	},
 	users: { getProfile: (_ctx, userId) => getUserProfile(getEnv(), userId) },
-	accounts: { sourceLogin: (ctx, request) => externalSourceLogin(getEnv(), ctx, request) },
+	accounts: { sourceLogin: (ctx, moduleId, request) => externalSourceLogin(getEnv(), ctx, moduleId, request) },
 	audit: (ctx, action, metadata) => recordModuleAudit(getEnv(), ctx, action, metadata),
 };

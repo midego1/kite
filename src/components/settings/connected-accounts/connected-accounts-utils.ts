@@ -67,7 +67,8 @@ function accountRequestBody(form: AccountFormState) {
 		preset: form.preset,
 		label: form.label.trim() || form.address.trim(),
 		mailboxId: form.mailboxId,
-		username: form.username.trim() || form.address.trim(),
+		// A known provider signs in with the address; only "Other" sends its own user name.
+		username: (custom && form.username.trim()) || form.address.trim(),
 		...(form.password ? { password: form.password } : {}),
 		...(form.kitePassword ? { kitePassword: form.kitePassword } : {}),
 		...(custom
@@ -126,7 +127,7 @@ export function statusHint(account: Pick<ExternalAccountView, "status" | "status
 	if (account.statusReason === "permission_revoked") return "Paused because your admin removed your permission.";
 	if (account.statusReason === "restored") return "Restored from a backup without its password. Reconnect it.";
 	if (account.status === "disabled")
-		return "The saved password was erased while connected accounts were off. Reconnect it.";
+		return "The saved password was erased after connected accounts were not allowed for 30 days. Reconnect it.";
 	if (account.status === "auth_failed") return "Sign-in failed. Reconnect with the current (app) password.";
 	if (account.status === "tls_failed") return "The server's certificate is not valid. Edit the server to retry.";
 	return null;

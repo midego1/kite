@@ -32,14 +32,21 @@ const CONNECTION_TESTS_PER_WINDOW = 10;
 const TEST_WINDOW_MS = 10 * 60_000;
 
 /**
- * Counts the user's recent tests from their audit rows and records this one, so the limit holds on both runtimes
- * without a rate-limit binding (whose longest period is a minute). Throws 429 past the limit.
+ * Records one connection attempt and refuses it (429) when it is past the limit. The attempt is written first and the
+ * count read afterwards, including it, so requests racing in parallel can never all see room: the n-th row written
+ * always counts at least n. Every attempt counts, refused ones too, and it runs before the Kite password or anything
+ * else is checked, so none of those checks can be tried more often than the limit allows.
  */
 export async function recordConnectionTest(
 	env: CloudflareEnv,
 	userId: string,
 	metadata: { host: string; port: number; preset: string; accountId?: string },
 ): Promise<void> {
+	await auditExternalAccount(env, {
+		actorUserId: userId,
+		action: "external_account.connection_tested",
+		metadata,
+	});
 	const [row] = await getDb(env)
 		.select({ tests: count() })
 		.from(auditLogs)
@@ -50,15 +57,10 @@ export async function recordConnectionTest(
 				gt(auditLogs.createdAt, new Date(Date.now() - TEST_WINDOW_MS)),
 			),
 		);
-	if ((row?.tests ?? 0) >= CONNECTION_TESTS_PER_WINDOW)
+	if ((row?.tests ?? 0) > CONNECTION_TESTS_PER_WINDOW)
 		throw new ExternalAccountRefusal(
 			429,
-			"Too many connection tests. Wait ten minutes before trying again.",
+			"Too many connection attempts. Wait ten minutes before trying again.",
 			"RATE_LIMITED",
 		);
-	await auditExternalAccount(env, {
-		actorUserId: userId,
-		action: "external_account.connection_tested",
-		metadata,
-	});
 }

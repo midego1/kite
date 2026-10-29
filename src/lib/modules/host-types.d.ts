@@ -105,7 +105,11 @@ export type HostNotice = { notice: string; title: string; body?: string; href?: 
 
 export type HostContact = { id: string; displayName: string | null };
 
-export type HostSourceLoginRequest = { accountId: string; userId: string };
+/**
+ * Whose login: `jobId` names the import job a background run is working on (core reads its owner and account), and
+ * `accountId` one of the session viewer's own accounts, for requests made before a job exists.
+ */
+export type HostSourceLoginRequest = { jobId: string } | { accountId: string };
 
 /**
  * The login of a connected account, for one run of an import from it. `auth` is a password today; OAuth accounts
@@ -187,10 +191,15 @@ export type ModuleHost = {
 	users: { getProfile(ctx: CapabilityCallContext, userId: string): Promise<HostUserProfile | null> };
 	accounts: {
 		/**
-		 * The login of `accountId` when it belongs to `userId` (the viewer's own, for a session caller) and connected
-		 * accounts are allowed for that user; otherwise why not. Opened per run, never copied into module state.
+		 * The login of a connected account for the import module only: the account of an active import job (`jobId`),
+		 * or one of the session viewer's own accounts (`accountId`, refused without a viewer), when connected accounts
+		 * are allowed for its owner; otherwise why not. Opened per run, never copied into module state.
 		 */
-		sourceLogin(ctx: CapabilityCallContext, request: HostSourceLoginRequest): Promise<HostSourceLogin>;
+		sourceLogin(
+			ctx: CapabilityCallContext,
+			moduleId: ModuleId,
+			request: HostSourceLoginRequest,
+		): Promise<HostSourceLogin>;
 	};
 	audit(ctx: CapabilityCallContext, action: string, metadata: JsonValue): Promise<void>;
 };

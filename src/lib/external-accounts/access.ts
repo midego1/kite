@@ -4,6 +4,7 @@ import { externalAccounts, userConnectPermissions } from "@/db/schema/external-a
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { externalAccountTablesReady, migrationPending } from "./errors";
 import { readInstallState } from "./settings";
+import { suspendAccounts } from "./suspend";
 import type { ConnectRefusal } from "./types";
 
 type AccessEnv = Pick<CloudflareEnv, "DB" | "APP_ENCRYPTION_KEY">;
@@ -45,9 +46,10 @@ export const CONNECT_REFUSAL_TEXT: Record<ConnectRefusal, string> = {
 };
 
 /**
- * Grants or revokes the permission. Revoking pauses the user's active accounts (reason `permission_revoked`), and
- * granting it again resumes exactly those; the daily cron erases the password of an account paused this way for
- * 30 days.
+ * Grants or revokes the permission. Revoking marks every account of the user that still holds a password as suspended
+ * from now (whatever its status), so the daily run erases those passwords 30 days later, and shows active ones as
+ * paused (`permission_revoked`). Granting it again lifts the suspension, unless the install switch is off, and resumes
+ * exactly the accounts it paused.
  */
 export async function setCanConnect(env: AccessEnv, userId: string, allowed: boolean): Promise<void> {
 	if (!(await externalAccountTablesReady(env))) throw migrationPending();
@@ -57,20 +59,18 @@ export async function setCanConnect(env: AccessEnv, userId: string, allowed: boo
 		.set({ canConnectAccounts: allowed })
 		.where(eq(userConnectPermissions.id, userId));
 	const now = new Date();
-	if (allowed)
+	const mine = eq(externalAccounts.userId, userId);
+	if (allowed) {
+		if ((await readInstallState(env)).enabled) await db.update(externalAccounts).set({ suspendedAt: null }).where(mine);
 		await db
 			.update(externalAccounts)
 			.set({ status: "active", statusReason: null, updatedAt: now })
-			.where(
-				and(
-					eq(externalAccounts.userId, userId),
-					eq(externalAccounts.status, "paused"),
-					eq(externalAccounts.statusReason, "permission_revoked"),
-				),
-			);
-	else
-		await db
-			.update(externalAccounts)
-			.set({ status: "paused", statusReason: "permission_revoked", updatedAt: now })
-			.where(and(eq(externalAccounts.userId, userId), eq(externalAccounts.status, "active")));
+			.where(and(mine, eq(externalAccounts.status, "paused"), eq(externalAccounts.statusReason, "permission_revoked")));
+		return;
+	}
+	await suspendAccounts(env, mine, now);
+	await db
+		.update(externalAccounts)
+		.set({ status: "paused", statusReason: "permission_revoked", updatedAt: now })
+		.where(and(mine, eq(externalAccounts.status, "active")));
 }

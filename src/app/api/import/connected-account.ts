@@ -25,7 +25,8 @@ async function connectedAccountSource(
 		viewer: { userId: user.id, role: user.role, isPrimaryAdmin: user.isPrimaryAdmin },
 		timeZone: normalizeTimeZone(user.timeZone),
 	});
-	const answer = await moduleHost.accounts.sourceLogin(ctx, { accountId, userId: user.id });
+	// The session context names the viewer, so core hands out only the viewer's own account.
+	const answer = await moduleHost.accounts.sourceLogin(ctx, "import", { accountId });
 	if (!answer.ok) {
 		const status = answer.reason === "removed" ? 404 : 409;
 		return { error: Response.json({ error: answer.message, code: answer.reason.toUpperCase() }, { status }) };

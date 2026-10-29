@@ -78,39 +78,46 @@ function parse(body: unknown, current?: ExternalAccountView): ExternalAccountInp
 	}
 }
 
-/** The checks on where an account's mail goes and which address it is (spec §7.2, §12). */
-async function assertTarget(
-	env: CloudflareEnv,
-	actor: AccountActor,
-	input: ExternalAccountInput,
-	exceptId?: string,
-): Promise<void> {
-	const db = getDb(env);
-	const access = await getMailboxAccessLevel(db, actor, input.mailboxId);
+/** The account's mail goes to a mailbox the user has full access to (spec §12). */
+async function assertMailbox(env: CloudflareEnv, actor: AccountActor, mailboxId: string): Promise<void> {
+	const access = await getMailboxAccessLevel(getDb(env), actor, mailboxId);
 	if (!access?.canManage) throw new ExternalAccountRefusal(404, "Mailbox not found");
-	const domain = addressDomain(input.address)!;
-	const [kiteDomain] = await db.select({ id: domains.id }).from(domains).where(eq(domains.hostname, domain)).limit(1);
+}
+
+/** An address on one of this install's own domains already arrives here and is never connected (spec §7.2). */
+async function assertNotKiteDomain(env: CloudflareEnv, address: string): Promise<void> {
+	const domain = addressDomain(address)!;
+	const [kiteDomain] = await getDb(env)
+		.select({ id: domains.id })
+		.from(domains)
+		.where(eq(domains.hostname, domain))
+		.limit(1);
 	if (kiteDomain)
 		throw new ExternalAccountRefusal(
 			409,
 			`${domain} is a domain of this Kite. Its mail already arrives here, so it cannot be connected.`,
 			"KITE_DOMAIN",
 		);
-	const [taken] = await db
-		.select({ id: externalAccounts.id, userId: externalAccounts.userId })
+}
+
+/**
+ * An address is connected once per install. Checked only after a successful sign-in, so nobody learns whether an
+ * address is connected without proving its password, and the answer never says by whom.
+ */
+async function assertAddressFree(env: CloudflareEnv, actor: AccountActor, address: string, exceptId?: string) {
+	const [taken] = await getDb(env)
+		.select({ userId: externalAccounts.userId })
 		.from(externalAccounts)
 		.where(
 			exceptId
-				? and(eq(externalAccounts.address, input.address), ne(externalAccounts.id, exceptId))
-				: eq(externalAccounts.address, input.address),
+				? and(eq(externalAccounts.address, address), ne(externalAccounts.id, exceptId))
+				: eq(externalAccounts.address, address),
 		)
 		.limit(1);
 	if (taken)
 		throw new ExternalAccountRefusal(
 			409,
-			taken.userId === actor.id
-				? "You have already connected this account"
-				: "This address is already connected by another Kite user",
+			taken.userId === actor.id ? "You have already connected this account" : "This address is already connected",
 			"ADDRESS_TAKEN",
 		);
 }
@@ -130,21 +137,19 @@ function loginFor(input: Pick<ExternalAccountInput, "imap" | "username">, passwo
 	return { ...input.imap, username: input.username, password };
 }
 
-/** Rate-limits, records and runs one test; the password never leaves this function's arguments. */
-async function runTest(
+/** Counts one attempt against the user's limit (429 past it); runs before any other check of the attempt. */
+function countAttempt(
 	env: CloudflareEnv,
 	userId: string,
-	input: Pick<ExternalAccountInput, "imap" | "username" | "preset">,
-	password: string,
+	input: Pick<ExternalAccountInput, "imap" | "preset">,
 	accountId?: string,
 ) {
-	await recordConnectionTest(env, userId, {
+	return recordConnectionTest(env, userId, {
 		host: input.imap.host,
 		port: input.imap.port,
 		preset: input.preset,
 		...(accountId ? { accountId } : {}),
 	});
-	return testImapConnection(env, loginFor(input, password));
 }
 
 function failedTest(problem: ConnectionProblem): ExternalAccountRefusal {
@@ -210,11 +215,15 @@ export async function connectExternalAccount(
 	const fromPreset = presetFields(input);
 	const password = passwordFrom(body.password);
 	if (!password) throw new ExternalAccountRefusal(400, "Enter the account's password or app password");
+	// The limit comes first, so the Kite password and the other checks cannot be tried more often than it allows.
+	await countAttempt(env, actor.id, input);
 	assertKitePassword(actor, body.kitePassword);
-	await assertTarget(env, actor, input);
+	await assertMailbox(env, actor, input.mailboxId);
+	await assertNotKiteDomain(env, input.address);
 	await assertServers(env, input);
-	const test = await runTest(env, actor.id, input, password);
+	const test = await testImapConnection(env, loginFor(input, password));
 	if (!test.ok) throw failedTest(test.problem);
+	await assertAddressFree(env, actor, input.address);
 	const now = new Date();
 	const id = newId("xacct");
 	try {
@@ -246,8 +255,10 @@ export async function connectExternalAccount(
 }
 
 /**
- * Edits an account. Changing what Kite signs in with (password, user name, servers, provider) needs the Kite password
- * and a successful test, and makes the account active again; the label, display name and mailbox change at once.
+ * Edits an account, only while the user may use connected accounts. The label, display name and mailbox change at
+ * once. Changing what Kite signs in with or where the password goes (address, user name, provider, IMAP or SMTP
+ * server) needs the account's password again, the Kite password and a passing test with that new password: a saved
+ * password is never sent to a server other than the one it was saved for.
  */
 export async function updateExternalAccount(
 	env: CloudflareEnv,
@@ -256,33 +267,14 @@ export async function updateExternalAccount(
 	body: Record<string, unknown>,
 ): Promise<ExternalAccountView> {
 	const row = await ownAccount(env, actor.id, id);
+	await assertAllowed(env, actor.id);
 	const current = serializeExternalAccount(row);
 	const input = parse(body, current);
 	const password = passwordFrom(body.password);
-	const signIn = changesSignIn(current, input, password);
-	if (input.mailboxId !== current.mailboxId || input.address !== current.address)
-		await assertTarget(env, actor, input, id);
+	const signIn = password !== null || changesSignIn(current, input);
+	if (input.mailboxId !== current.mailboxId) await assertMailbox(env, actor, input.mailboxId);
 	const changes: Partial<typeof externalAccounts.$inferInsert> = { ...accountColumns(input), updatedAt: new Date() };
-	if (signIn) {
-		await assertAllowed(env, actor.id);
-		Object.assign(changes, presetFields(input));
-		assertKitePassword(actor, body.kitePassword);
-		await assertServers(env, input);
-		const secret = password ?? (await openStoredSecret(env, row));
-		if (!secret) throw new ExternalAccountRefusal(400, "Enter the account's password or app password");
-		const test = await runTest(env, actor.id, input, secret, id);
-		if (!test.ok) throw failedTest(test.problem);
-		Object.assign(changes, {
-			...(password ? { secret: await sealSetting(env, password) } : {}),
-			status: "active",
-			statusReason: null,
-			lastError: null,
-			consecutiveFailures: 0,
-		});
-		await saveBaseline(env, id, test.baseline);
-	} else if (input.smtp && (input.smtp.host !== current.smtp?.host || input.smtp.port !== current.smtp?.port)) {
-		await assertServers(env, input);
-	}
+	if (signIn) Object.assign(changes, await reconnect(env, actor, { id, current, input, password, body }));
 	await getDb(env)
 		.update(externalAccounts)
 		.set(changes)
@@ -294,6 +286,50 @@ export async function updateExternalAccount(
 		metadata: { accountId: id, address: input.address, signInChanged: signIn, passwordChanged: !!password },
 	});
 	return serializeExternalAccount(await ownAccount(env, actor.id, id));
+}
+
+/** The sign-in part of an edit: the checks of a connect, with the new password; returns the columns to write. */
+async function reconnect(
+	env: CloudflareEnv,
+	actor: AccountActor,
+	edit: {
+		id: string;
+		current: ExternalAccountView;
+		input: ExternalAccountInput;
+		password: string | null;
+		body: Record<string, unknown>;
+	},
+): Promise<Partial<typeof externalAccounts.$inferInsert>> {
+	const { id, current, input, password } = edit;
+	const fromPreset = presetFields(input);
+	if (!password)
+		throw new ExternalAccountRefusal(
+			400,
+			"Enter the account's password again to change its address, user name or servers",
+			"PASSWORD_REQUIRED",
+		);
+	await countAttempt(env, actor.id, input, id);
+	assertKitePassword(actor, edit.body.kitePassword);
+	if (input.address !== current.address) await assertNotKiteDomain(env, input.address);
+	await assertServers(env, input);
+	const test = await testImapConnection(env, loginFor(input, password));
+	if (!test.ok) throw failedTest(test.problem);
+	if (input.address !== current.address) await assertAddressFree(env, actor, input.address, id);
+	// Another server or login is another mailbox: its INBOX position starts again from this test.
+	const sameInbox =
+		current.imap.host === input.imap.host &&
+		current.imap.port === input.imap.port &&
+		current.username === input.username;
+	if (!sameInbox) await getDb(env).delete(externalAccountFolders).where(eq(externalAccountFolders.accountId, id));
+	await saveBaseline(env, id, test.baseline);
+	return {
+		...fromPreset,
+		secret: await sealSetting(env, password),
+		status: "active",
+		statusReason: null,
+		lastError: null,
+		consecutiveFailures: 0,
+	};
 }
 
 /** The saved password, or null when it was erased or can no longer be opened (APP_ENCRYPTION_KEY changed). */
@@ -330,7 +366,8 @@ export async function retestExternalAccount(
 			.where(eq(externalAccounts.id, id));
 		return { account: serializeExternalAccount(await ownAccount(env, actor.id, id)), problem };
 	}
-	const test = await runTest(env, actor.id, view, secret, id);
+	await countAttempt(env, actor.id, view, id);
+	const test = await testImapConnection(env, loginFor(view, secret));
 	if (test.ok) {
 		// A paused account stays paused: a test proves the sign-in, not that the owner wants it running.
 		await db

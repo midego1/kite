@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { externalAccounts } from "@/db/schema/external-accounts";
@@ -7,7 +7,6 @@ import type { SessionUser } from "@/lib/auth/types";
 import { readCanConnect, setCanConnect } from "./access";
 import { auditExternalAccount } from "./audit";
 import { ExternalAccountRefusal, externalAccountTablesReady } from "./errors";
-import { findPreset } from "./presets-utils";
 import { readInstallState, setInstallEnabled } from "./settings";
 
 type Actor = Pick<SessionUser, "id" | "role" | "isPrimaryAdmin" | "canManageUsers">;
@@ -57,29 +56,25 @@ const mayEdit = (actor: Actor, target: Target) =>
 	isPrimaryAdmin(actor) || (canManageUsers(actor) && target.role === "user" && !target.isPrimaryAdmin);
 
 /**
- * A user's permission and their accounts as admins see them (spec §11.1): the address, provider and state, never
- * credentials or mail.
+ * A user's permission and their connected accounts as admins see them (spec §11.1): how many there are and in which
+ * states, never the addresses, servers, credentials or mail.
  */
 export async function loadUserConnectAccess(env: CloudflareEnv, actor: Actor, userId: string) {
 	const target = await loadTarget(env, userId);
 	const ready = await externalAccountTablesReady(env);
 	const rows = ready
 		? await getDb(env)
-				.select({
-					id: externalAccounts.id,
-					address: externalAccounts.address,
-					preset: externalAccounts.preset,
-					status: externalAccounts.status,
-				})
+				.select({ status: externalAccounts.status })
 				.from(externalAccounts)
 				.where(eq(externalAccounts.userId, userId))
-				.orderBy(asc(externalAccounts.createdAt))
 		: [];
+	const states: Partial<Record<(typeof rows)[number]["status"], number>> = {};
+	for (const row of rows) states[row.status] = (states[row.status] ?? 0) + 1;
 	return {
 		allowed: await readCanConnect(env, userId),
 		editable: mayEdit(actor, target),
 		migrationPending: !ready,
-		accounts: rows.map((row) => ({ ...row, presetLabel: findPreset(row.preset)?.label ?? "IMAP" })),
+		accounts: { total: rows.length, states },
 	};
 }
 

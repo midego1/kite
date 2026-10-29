@@ -10,7 +10,7 @@ type View = {
 	allowed: boolean;
 	editable: boolean;
 	migrationPending: boolean;
-	accounts: { id: string; address: string; presetLabel: string; status: ExternalAccountStatus }[];
+	accounts: { total: number; states: Partial<Record<ExternalAccountStatus, number>> };
 };
 
 async function readView(response: Response, fallback: string): Promise<View> {
@@ -19,9 +19,18 @@ async function readView(response: Response, fallback: string): Promise<View> {
 	return data as View;
 }
 
+/** "2 connected accounts: 1 Connected, 1 Sign-in failed"; never which accounts. */
+function accountSummary(accounts: View["accounts"]): string {
+	const states = Object.entries(accounts.states)
+		.map(([status, count]) => `${count} ${STATUS_LABELS[status as ExternalAccountStatus]}`)
+		.join(", ");
+	return `${accounts.total} connected account${accounts.total === 1 ? "" : "s"}: ${states}`;
+}
+
 /**
- * The **Connect accounts** permission (spec §9.3) and this user's connected accounts with their states: admins see
- * that they exist and how they are doing, never their passwords or mail. Saved as soon as it is ticked.
+ * The **Connect accounts** permission (spec §9.3) and how many connected accounts this user has in which states:
+ * admins see that they exist and how they are doing, never which accounts, their passwords or mail. Saved as soon as
+ * it is ticked.
  */
 export function ConnectedAccountsSection({ accountId }: { accountId: string }) {
 	const [view, setView] = useState<View | null>(null);
@@ -84,18 +93,7 @@ export function ConnectedAccountsSection({ accountId }: { accountId: string }) {
 					Apply the pending database update to manage connected accounts.
 				</p>
 			)}
-			{!!view?.accounts.length && (
-				<ul className="divide-y divide-neutral-200 text-sm" aria-label="This account's connected accounts">
-					{view.accounts.map((account) => (
-						<li key={account.id} className="flex items-center justify-between gap-3 py-2">
-							<span className="min-w-0 truncate text-neutral-900">
-								{account.address} <span className="text-neutral-500">· {account.presetLabel}</span>
-							</span>
-							<span className="text-xs text-neutral-500">{STATUS_LABELS[account.status]}</span>
-						</li>
-					))}
-				</ul>
-			)}
+			{!!view?.accounts.total && <p className="text-sm text-neutral-700">{accountSummary(view.accounts)}</p>}
 			{message && (
 				<p role="status" className="text-sm text-neutral-500">
 					{message}

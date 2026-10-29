@@ -327,23 +327,58 @@ test("without APP_ENCRYPTION_KEY, with the switch off or without the permission 
 	assert.equal((await refusal(connectExternalAccount(env, owner, connectBody()))).status, 403);
 });
 
-test("sourceLogin hands the login to the owner's job only, and stops when the account cannot be used", async (t) => {
+/** A queued folder job importing INBOX from `accountId` for `userId`, as the import route creates it. */
+const accountJob = (accountId, userId = "owner", mailboxId = "mailbox-a") =>
+	createImportJob(globalThis.__kiteNodeEnv, {
+		userId,
+		mailboxId,
+		label: "INBOX",
+		destination: "system:inbox",
+		host: HOST,
+		port: 993,
+		secure: true,
+		username: USER,
+		password: "",
+		externalAccountId: accountId,
+		folder: "INBOX",
+		maxMessages: null,
+	});
+
+test("sourceLogin opens an account only for the import module, for its own job or the viewer's own account", async (t) => {
 	const server = await fake(t);
 	const { db, env } = await setup(t, server);
 	const account = await connectExternalAccount(env, owner, connectBody());
-	const request = { accountId: account.id, userId: "owner" };
-
-	const answer = await externalSourceLogin(env, CTX, request);
-	assert.deepEqual(answer, {
+	const job = await accountJob(account.id);
+	const byJob = { jobId: job.id };
+	const ownerViewer = { ...CTX, trigger: "api", viewer: { userId: "owner", role: "user", isPrimaryAdmin: false } };
+	const otherViewer = { ...CTX, trigger: "api", viewer: { userId: "other", role: "user", isPrimaryAdmin: false } };
+	const login = {
 		ok: true,
 		login: { host: HOST, port: 993, security: "tls", username: USER, auth: { kind: "password", password: PASSWORD } },
-	});
-	assert.equal((await externalSourceLogin(env, CTX, { ...request, userId: "other" })).reason, "removed");
-	const otherViewer = { ...CTX, viewer: { userId: "other", role: "user", isPrimaryAdmin: false } };
-	assert.equal((await externalSourceLogin(env, otherViewer, request)).reason, "removed");
+	};
+
+	assert.deepEqual(await externalSourceLogin(env, CTX, "import", byJob), login);
+	assert.deepEqual(await externalSourceLogin(env, ownerViewer, "import", { accountId: account.id }), login);
+	// Another module, a background caller naming an account, another user's viewer or job: nothing.
+	assert.equal((await externalSourceLogin(env, CTX, "finance", byJob)).reason, "not_allowed");
+	assert.equal((await externalSourceLogin(env, CTX, "import", { accountId: account.id })).reason, "removed");
+	assert.equal(
+		(await externalSourceLogin(env, CTX, "import", { accountId: account.id, userId: "owner" })).reason,
+		"removed",
+	);
+	assert.equal((await externalSourceLogin(env, otherViewer, "import", { accountId: account.id })).reason, "removed");
+	assert.equal((await externalSourceLogin(env, otherViewer, "import", byJob)).reason, "removed");
+	// A job of another user that names this account (written straight to the table) gets nothing either.
+	db.db.prepare("UPDATE import_jobs SET user_id = 'other', mailbox_id = 'mailbox-b' WHERE id = ?").run(job.id);
+	assert.equal((await externalSourceLogin(env, CTX, "import", byJob)).reason, "removed");
+	db.db.prepare("UPDATE import_jobs SET user_id = 'owner', mailbox_id = 'mailbox-a' WHERE id = ?").run(job.id);
+	// A job that is not running gets nothing.
+	db.db.prepare("UPDATE import_jobs SET status = 'cancelled' WHERE id = ?").run(job.id);
+	assert.equal((await externalSourceLogin(env, CTX, "import", byJob)).reason, "removed");
+	db.db.prepare("UPDATE import_jobs SET status = 'pending' WHERE id = ?").run(job.id);
 
 	await setCanConnect(env, "owner", false);
-	assert.equal((await externalSourceLogin(env, CTX, request)).reason, "not_allowed");
+	assert.equal((await externalSourceLogin(env, CTX, "import", byJob)).reason, "not_allowed");
 	assert.equal(
 		db.db.prepare("SELECT status, status_reason FROM external_accounts").get().status_reason,
 		"permission_revoked",
@@ -352,22 +387,91 @@ test("sourceLogin hands the login to the owner's job only, and stops when the ac
 	assert.equal(db.db.prepare("SELECT status FROM external_accounts").get().status, "active");
 
 	// A key that no longer opens the password marks the account for reconnecting.
-	globalThis.__kiteNodeEnv = { ...env, APP_ENCRYPTION_KEY: "another-invented-key-0123456789abcdefghijkl" };
-	assert.equal(
-		(
-			await externalSourceLogin(
-				{ ...env, APP_ENCRYPTION_KEY: "another-invented-key-0123456789abcdefghijkl" },
-				CTX,
-				request,
-			)
-		).reason,
-		"auth_failed",
-	);
+	const otherKey = { ...env, APP_ENCRYPTION_KEY: "another-invented-key-0123456789abcdefghijkl" };
+	globalThis.__kiteNodeEnv = otherKey;
+	assert.equal((await externalSourceLogin(otherKey, CTX, "import", byJob)).reason, "auth_failed");
 	globalThis.__kiteNodeEnv = env;
 	assert.equal(db.db.prepare("SELECT status FROM external_accounts").get().status, "auth_failed");
 
 	await removeExternalAccount(env, owner, account.id);
-	assert.equal((await externalSourceLogin(env, CTX, request)).reason, "removed");
+	assert.equal((await externalSourceLogin(env, CTX, "import", byJob)).reason, "removed");
+});
+
+test("an edit never sends the saved password to a changed server or login", async (t) => {
+	const server = await fake(t);
+	const { db, env } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	const commands = server.commands.length;
+	const attacker = { imap: { host: "imap.attacker.example", port: 993, security: "tls" }, kitePassword: KITE_PASSWORD };
+	for (const change of [
+		attacker,
+		{ imap: { host: HOST, port: 143, security: "starttls" }, kitePassword: KITE_PASSWORD },
+		{ username: "someone-else", kitePassword: KITE_PASSWORD },
+		{ smtp: { host: "smtp.attacker.example", port: 465, security: "tls" }, kitePassword: KITE_PASSWORD },
+		{ preset: "fastmail", address: "me@fastmail.com", username: "me@fastmail.com", kitePassword: KITE_PASSWORD },
+	])
+		assert.equal((await refusal(updateExternalAccount(env, owner, account.id, change))).code, "PASSWORD_REQUIRED");
+	assert.equal(server.commands.length, commands, "nothing connected to any server");
+	const row = db.db.prepare("SELECT imap_host, smtp_host, username FROM external_accounts").get();
+	assert.deepEqual([row.imap_host, row.smtp_host, row.username], [HOST, null, USER]);
+
+	// With the account's password again, a new SMTP server is accepted after a passing IMAP test.
+	const moved = await updateExternalAccount(env, owner, account.id, {
+		smtp: { host: "smtp.kite.test", port: 465, security: "tls" },
+		password: PASSWORD,
+		kitePassword: KITE_PASSWORD,
+	});
+	assert.deepEqual(moved.smtp, { host: "smtp.kite.test", port: 465, security: "tls" });
+	assert.ok(server.commands.length > commands);
+});
+
+test("a known provider signs in with the address itself; only Other takes another user name", () => {
+	assert.throws(
+		() => parseAccountInput({ address: "me@gmail.com", preset: "gmail", mailboxId: "m", username: "you@gmail.com" }),
+		/For Gmail the user name is the email address/,
+	);
+	assert.equal(
+		parseAccountInput({ address: "me@gmail.com", preset: "gmail", mailboxId: "m", username: "ME@gmail.com" }).username,
+		"me@gmail.com",
+	);
+	assert.equal(
+		parseAccountInput({
+			address: "me@x.org",
+			preset: "other",
+			mailboxId: "m",
+			username: "login-name",
+			imap: { host: "imap.x.org", port: 993, security: "tls" },
+		}).username,
+		"login-name",
+	);
+});
+
+test("while the user may not use connected accounts, only Remove works", async (t) => {
+	const server = await fake(t);
+	const { db, env } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	await setCanConnect(env, "owner", false);
+	assert.equal((await refusal(updateExternalAccount(env, owner, account.id, { label: "Renamed" }))).status, 403);
+	assert.equal((await refusal(retestExternalAccount(env, owner, account.id))).status, 403);
+	assert.equal(db.db.prepare("SELECT label FROM external_accounts").get().label, USER);
+	await removeExternalAccount(env, owner, account.id);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM external_accounts").get().n, 0);
+});
+
+test("parallel attempts can never get past the limit", async (t) => {
+	const server = await fake(t);
+	const { env } = await setup(t, server);
+	const results = await Promise.all(
+		Array.from({ length: 15 }, () =>
+			refusal(connectExternalAccount(env, owner, connectBody({ kitePassword: "nope" }))),
+		),
+	);
+	const passed = results.filter((result) => result.code === "KITE_PASSWORD").length;
+	const limited = results.filter((result) => result.code === "RATE_LIMITED").length;
+	assert.equal(passed + limited, 15);
+	assert.ok(passed <= 10, `${passed} attempts got past the limit`);
+	// The limit is checked before the Kite password, so a right password is refused too now.
+	assert.equal((await refusal(connectExternalAccount(env, owner, connectBody()))).code, "RATE_LIMITED");
 });
 
 test("Test connection records a failed sign-in, and reconnecting with a new password makes the account active", async (t) => {
@@ -461,7 +565,7 @@ test("an import from a connected account keeps no password and stops once the ac
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages").get().n, 2);
 });
 
-test("passwords are erased 30 days after the switch went off or the permission was taken away", async (t) => {
+test("passwords are erased 30 days after the switch went off or the permission was taken away, whatever the state", async (t) => {
 	const server = await fake(t);
 	const { db, env } = await setup(t, server);
 	const mine = await connectExternalAccount(env, owner, connectBody());
@@ -470,19 +574,39 @@ test("passwords are erased 30 days after the switch went off or the permission w
 		other,
 		connectBody({ address: "them@example.test", username: USER, mailboxId: "mailbox-b" }),
 	);
-	await setCanConnect(env, "other", false);
+	// An account whose sign-in failed still holds its password, so revoking counts it too.
+	db.db.prepare("UPDATE external_accounts SET status = 'auth_failed' WHERE id = ?").run(theirs.id);
 	const now = new Date();
+	await setCanConnect(env, "other", false);
+	const row = (id) => db.db.prepare("SELECT secret, status, suspended_at FROM external_accounts WHERE id = ?").get(id);
+	assert.equal(row(theirs.id).status, "auth_failed", "only active accounts are shown as paused");
+	assert.ok(row(theirs.id).suspended_at > 0);
+	assert.equal(row(mine.id).suspended_at, null);
+	// Later edits of any kind cannot move the clock (they are refused anyway).
+	db.db
+		.prepare("UPDATE external_accounts SET updated_at = ? WHERE id = ?")
+		.run(Math.floor(Date.now() / 1000) + 40 * 86400, theirs.id);
 	assert.equal(await eraseIdleExternalCredentials(env, now), 0);
 	const later = new Date(now.getTime() + 31 * 24 * 60 * 60_000);
 	assert.equal(await eraseIdleExternalCredentials(env, later), 1);
-	const row = (id) => db.db.prepare("SELECT secret, status FROM external_accounts WHERE id = ?").get(id);
-	assert.deepEqual(row(theirs.id), { secret: "", status: "disabled" });
+	assert.deepEqual([row(theirs.id).secret, row(theirs.id).status], ["", "disabled"]);
 	assert.equal(row(mine.id).status, "active");
 
+	// Granting it back within the 30 days stops the clock.
+	const third = await connectExternalAccount(
+		env,
+		owner,
+		connectBody({ address: "third@example.test", username: USER }),
+	);
+	await setCanConnect(env, "owner", false);
+	await setCanConnect(env, "owner", true);
+	assert.equal(row(third.id).suspended_at, null);
+
 	await setInstallEnabled(env, false);
+	assert.ok(row(mine.id).suspended_at > 0);
 	assert.equal(await eraseIdleExternalCredentials(env, new Date()), 0);
-	assert.equal(await eraseIdleExternalCredentials(env, later), 1);
-	assert.deepEqual(row(mine.id), { secret: "", status: "disabled" });
+	assert.equal(await eraseIdleExternalCredentials(env, later), 2);
+	assert.deepEqual([row(mine.id).secret, row(mine.id).status], ["", "disabled"]);
 });
 
 test("backups leave the password out and restore accounts waiting to be reconnected", () => {

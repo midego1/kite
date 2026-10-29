@@ -259,17 +259,20 @@ function CredentialFields({
 }: FieldsProps & { preset: PresetOption | undefined; editing: boolean }) {
 	return (
 		<>
-			<div className="grid gap-3 md:grid-cols-2">
-				<div className="space-y-2">
-					<Label htmlFor="external-username">User name</Label>
-					<Input
-						id="external-username"
-						value={form.username}
-						onChange={(event) => setForm({ ...form, username: event.target.value })}
-						placeholder={form.address || "Same as the address"}
-						autoComplete="off"
-					/>
-				</div>
+			<div className={form.preset === "other" ? "grid gap-3 md:grid-cols-2" : "space-y-2"}>
+				{/* A known provider signs in with the address itself; only "Other" may use another user name. */}
+				{form.preset === "other" && (
+					<div className="space-y-2">
+						<Label htmlFor="external-username">User name</Label>
+						<Input
+							id="external-username"
+							value={form.username}
+							onChange={(event) => setForm({ ...form, username: event.target.value })}
+							placeholder={form.address || "Same as the address"}
+							autoComplete="off"
+						/>
+					</div>
+				)}
 				<div className="space-y-2">
 					<Label htmlFor="external-password">Password or app password</Label>
 					<Input
@@ -277,7 +280,7 @@ function CredentialFields({
 						type="password"
 						value={form.password}
 						onChange={(event) => setForm({ ...form, password: event.target.value })}
-						placeholder={editing ? "Leave empty to keep it" : undefined}
+						placeholder={editing ? "Leave empty to keep it (unless a server changes)" : undefined}
 						autoComplete="new-password"
 					/>
 				</div>
@@ -294,7 +297,7 @@ function CredentialFields({
 				/>
 				<p className="text-xs text-neutral-500">
 					{editing
-						? "Needed when you change the password, the user name or the server."
+						? "Needed, with the account's password, when you change the password, the user name or a server."
 						: "Asked again because Kite saves the account's password."}
 				</p>
 			</div>

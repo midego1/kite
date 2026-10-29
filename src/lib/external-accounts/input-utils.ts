@@ -46,6 +46,21 @@ function kept<T>(value: unknown, fallback: T, parse: (raw: unknown) => T): T {
 }
 
 /**
+ * The user name of an account. With a known provider it is the address itself, so the address is the one the
+ * sign-in proves; only "Other" accepts a different one (spec §7.2).
+ */
+function parseUsername(
+	input: Body,
+	presetId: ExternalAccountInput["preset"],
+	address: string,
+	current?: ExternalAccountView,
+) {
+	const username = kept(input.username, current?.username ?? address, (raw) => text(raw, 254) ?? address);
+	if (presetId === "other" || username.toLowerCase() === address) return presetId === "other" ? username : address;
+	throw new AccountInputError(`For ${findPreset(presetId)!.label} the user name is the email address`);
+}
+
+/**
  * The account settings of a connect request, or of an edit merged over `current`. A known preset always brings its
  * own servers, so only "Other" takes servers from the request; the user name defaults to the address.
  */
@@ -64,24 +79,25 @@ export function parseAccountInput(body: unknown, current?: ExternalAccountView):
 		preset: presetId,
 		mailboxId,
 		...parseServers(input, presetId, current),
-		username: kept(input.username, current?.username ?? address, (raw) => text(raw, 254) ?? address),
+		username: parseUsername(input, presetId, address, current),
 	};
 }
 
-/** Whether an edit changes what Kite signs in with, which needs a new test (and the Kite password). */
-export function changesSignIn(
-	current: ExternalAccountView,
-	next: ExternalAccountInput,
-	password: string | null,
-): boolean {
+const sameServer = (a: ExternalAccountInput["smtp"], b: ExternalAccountInput["smtp"]) =>
+	a?.host === b?.host && a?.port === b?.port && a?.security === b?.security;
+
+/**
+ * Whether an edit changes what Kite signs in with or where it sends the password: the address, the user name, the
+ * provider, or any part of the IMAP or SMTP server. Such an edit needs the account's password again, the Kite
+ * password and a passing test; a saved password is never sent to a server other than the one it was saved for.
+ */
+export function changesSignIn(current: ExternalAccountView, next: ExternalAccountInput): boolean {
 	return (
-		password !== null ||
 		current.address !== next.address ||
 		current.username !== next.username ||
 		current.preset !== next.preset ||
-		current.imap.host !== next.imap.host ||
-		current.imap.port !== next.imap.port ||
-		current.imap.security !== next.imap.security
+		!sameServer(current.imap, next.imap) ||
+		!sameServer(current.smtp, next.smtp)
 	);
 }
 

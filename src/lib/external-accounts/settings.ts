@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
-import { externalAccountSettings } from "@/db/schema/external-accounts";
+import { externalAccounts, externalAccountSettings, userConnectPermissions } from "@/db/schema/external-accounts";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
+import { suspendAccounts } from "./suspend";
 import { ExternalAccountRefusal, migrationPending } from "./errors";
 
 export type ExternalAccountsInstallState = {
@@ -48,8 +49,9 @@ export async function readInstallState(
 }
 
 /**
- * Turns the switch on or off. Off records when, so the daily cron can erase the saved passwords 30 days later; on
- * clears it (accounts whose password was already erased need reconnecting). Without a key it cannot be turned on.
+ * Turns the switch on or off. Off suspends every account that holds a password, so the daily run erases them 30 days
+ * later; on lifts that for owners who may connect (accounts whose password was already erased need reconnecting).
+ * Without a key it cannot be turned on.
  */
 export async function setInstallEnabled(
 	env: Pick<CloudflareEnv, "DB" | "APP_ENCRYPTION_KEY">,
@@ -69,5 +71,20 @@ export async function setInstallEnabled(
 		.insert(externalAccountSettings)
 		.values({ id: "default", ...values })
 		.onConflictDoUpdate({ target: externalAccountSettings.id, set: values });
+	// Off starts every account's 30-day erase clock; on stops it for owners who are still allowed to connect.
+	if (!enabled) await suspendAccounts(env, undefined, now);
+	else
+		await getDb(env)
+			.update(externalAccounts)
+			.set({ suspendedAt: null })
+			.where(
+				inArray(
+					externalAccounts.userId,
+					getDb(env)
+						.select({ id: userConnectPermissions.id })
+						.from(userConnectPermissions)
+						.where(eq(userConnectPermissions.canConnectAccounts, true)),
+				),
+			);
 	return readInstallState(env);
 }

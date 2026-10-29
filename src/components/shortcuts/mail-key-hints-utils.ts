@@ -15,7 +15,16 @@ function hint({ key, label, category, modifiers }: ShortcutDefinition): Shortcut
  */
 function mailKeyHints(): ShortcutHint[] {
 	const bindings = [
-		...listShortcuts({ next: noop, previous: noop, open: noop, select: noop, archive: noop, trash: noop }),
+		...listShortcuts({
+			next: noop,
+			previous: noop,
+			open: noop,
+			select: noop,
+			extendNext: noop,
+			extendPrevious: noop,
+			archive: noop,
+			trash: noop,
+		}),
 		...readerNavigationShortcuts(noop),
 		...messageShortcuts({
 			status: "received",

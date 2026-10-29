@@ -11,6 +11,8 @@ interface ShortcutsHelpDialogProps {
 	shortcuts: ShortcutHint[];
 }
 
+const KEY_SYMBOLS: Record<string, string> = { ArrowDown: "↓", ArrowUp: "↑" };
+
 export function ShortcutsHelpDialog({ isOpen, onClose, shortcuts }: ShortcutsHelpDialogProps) {
 	if (!isOpen) return null;
 	return <ShortcutsHelpDialogContent onClose={onClose} shortcuts={shortcuts} />;
@@ -41,7 +43,7 @@ function ShortcutsHelpDialogContent({ onClose, shortcuts }: Omit<ShortcutsHelpDi
 				if (m === "shift") parts.push("Shift");
 			});
 		}
-		parts.push(shortcut.key.toUpperCase());
+		parts.push(KEY_SYMBOLS[shortcut.key] ?? shortcut.key.toUpperCase());
 		return parts.join(" + ");
 	};
 

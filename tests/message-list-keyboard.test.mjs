@@ -61,9 +61,21 @@ test("rows show a suspicious verdict outside Spam and a future snooze outside Sn
 test("the shortcuts sheet lists the keys the list and the reader actually bind", () => {
 	const mailKeyHints = () => withMailKeyHints([]);
 	const keys = new Set(mailKeyHints().map((hint) => hint.key));
-	for (const key of ["j", "k", "o", "x", "e", "#", "y", "!", "r", "a", "f", "u"]) assert.ok(keys.has(key), key);
+	for (const key of ["j", "k", "o", "x", "ArrowDown", "ArrowUp", "e", "#", "y", "!", "r", "a", "f", "u"])
+		assert.ok(keys.has(key), key);
 	const noop = () => {};
-	const bound = listShortcuts({ next: noop, previous: noop, open: noop, select: noop, archive: noop, trash: noop });
+	const bound = listShortcuts({
+		next: noop,
+		previous: noop,
+		open: noop,
+		select: noop,
+		extendNext: noop,
+		extendPrevious: noop,
+		archive: noop,
+		trash: noop,
+	});
+	const extend = bound.find((binding) => binding.key === "ArrowDown");
+	assert.deepEqual(extend?.modifiers, ["shift"]);
 	for (const binding of bound)
 		assert.ok(
 			mailKeyHints().some((hint) => hint.key === binding.key && hint.label === binding.label),

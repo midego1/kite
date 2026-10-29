@@ -1,0 +1,3 @@
+### Added
+
+- Select several emails in a list the way desktop mail clients do. Click an email to open it, then Shift-click another to select every email in between (Shift-click again to move the end of the range), or Cmd-click (Ctrl-click on Windows and Linux) to add or remove single emails without opening them; if an email is open, it joins the selection first. Cmd/Ctrl+Shift-click adds a range to the selection. In conversation view a row stands for its whole conversation. Shift+↑ and Shift+↓ extend the selection from the keyboard, and Escape clears it. Only emails that are loaded on the current page are selected, so a range never reaches onto the next page. Middle-click still opens an email in a new tab, and the row checkboxes and phone gestures work as before.

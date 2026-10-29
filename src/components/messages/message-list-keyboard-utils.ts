@@ -1,4 +1,4 @@
-import type { ShortcutDefinition } from "@/components/shortcuts/types";
+import type { ModifierKey, ShortcutDefinition } from "@/components/shortcuts/types";
 
 /**
  * The row j (`step` 1) or k (`step` -1) moves to: from no focused row, j starts at the first row and k at the
@@ -16,6 +16,20 @@ export const LIST_KEYS = [
 	{ id: "previous", key: "k", label: "Previous email in the list", category: "Navigation" },
 	{ id: "open", key: "o", label: "Open email (or Enter)", category: "Navigation" },
 	{ id: "select", key: "x", label: "Select email", category: "Selection" },
+	{
+		id: "extendNext",
+		key: "ArrowDown",
+		modifiers: ["shift"] as ModifierKey[],
+		label: "Extend selection to the next email",
+		category: "Selection",
+	},
+	{
+		id: "extendPrevious",
+		key: "ArrowUp",
+		modifiers: ["shift"] as ModifierKey[],
+		label: "Extend selection to the previous email",
+		category: "Selection",
+	},
 	{ id: "archive", key: "e", label: "Archive", category: "Actions" },
 	{ id: "trash", key: "#", label: "Move to Trash", category: "Actions" },
 ] as const satisfies ReadonlyArray<{ id: string } & Omit<ShortcutDefinition, "action">>;

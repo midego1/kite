@@ -13,7 +13,14 @@ import type { Message } from "@/hooks/types";
 import { useClearSelection } from "./use-clear-selection";
 import { MessageListHeader } from "./message-list-header";
 import { MessageListRow } from "./message-list-row";
-import { applySelection, getRangeSelectionIds } from "./message-range-selection-utils";
+import {
+	applySelection,
+	getRangeSelectionIds,
+	planRowSelection,
+	replaceSelection,
+	resolveSelectionAnchor,
+	type RowClickModifiers,
+} from "./message-range-selection-utils";
 import { dispatchMessageCountsDelta } from "./message-list-row-actions-utils";
 import { useConversationView } from "./use-conversation-view";
 import { useMessageListDensity } from "./use-reading-layout";
@@ -125,6 +132,10 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 	// The setter can come from a parent's selection state and is not stable, so it is
 	// left out of the dependencies; listing it would clear the selection on every render.
 	const selectionAnchor = useRef<string | null>(null);
+	// The message that opens is the anchor of the next range, whether a click, a key or a link opened it.
+	useEffect(() => {
+		if (selectedMessageId) selectionAnchor.current = selectedMessageId;
+	}, [selectedMessageId]);
 	useEffect(() => {
 		selectionAnchor.current = null;
 		setSelectedMessages([]);
@@ -143,6 +154,27 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 		const ids = extendRange ? getRangeSelectionIds(orderedIds, selectionAnchor.current, messageId) : [messageId];
 		selectionAnchor.current = messageId;
 		setSelectedMessages((current) => applySelection(current, messages, ids, selected));
+	}
+
+	/**
+	 * Shift-, Cmd- and Ctrl-click on a row (and Shift+Arrow). Rows beyond the loaded page are not in the list, so
+	 * a range selects only the loaded ones. A click without modifiers just becomes the anchor of the next range.
+	 */
+	function selectRow(messageId: string, modifiers: RowClickModifiers | null, anchorId = selectionAnchor.current) {
+		if (!modifiers) {
+			selectionAnchor.current = messageId;
+			return;
+		}
+		const plan = planRowSelection({
+			orderedIds: orderedMessages.map((message) => message.id),
+			selectedIds,
+			anchorId,
+			openId: selectedMessageId,
+			targetId: messageId,
+			modifiers,
+		});
+		selectionAnchor.current = plan.anchorId;
+		setSelectedMessages((current) => replaceSelection(current, messages, plan.selectedIds));
 	}
 
 	function toggleAllVisible(selected: boolean) {
@@ -283,6 +315,18 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 			}
 		},
 		toggleRowSelection: (messageId) => updateSelectedMessage(messageId, !selectedIds.includes(messageId)),
+		extendSelection: (focusedId, targetId) =>
+			selectRow(
+				targetId,
+				{ shift: true, toggle: false },
+				resolveSelectionAnchor(
+					orderedMessages.map((message) => message.id),
+					selectionAnchor.current,
+					selectedMessageId,
+				) ?? focusedId,
+			),
+		selectionCount: selectedIds.length,
+		clearSelection,
 	});
 
 	const registerAction = selection?.registerAction;
@@ -386,6 +430,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 								}
 								canManage={access.canManage(message.mailboxId)}
 								onSelectedChange={updateSelectedMessage}
+								onRowClick={selectRow}
 								onMessageAction={async (messageId, action) => {
 									await runBulkMessageAction(
 										expandSelectedIds([messageId]),

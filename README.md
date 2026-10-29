@@ -196,7 +196,7 @@ This version started from [Mailflare by hieunc229](https://github.com/hieunc229/
 | **Sessions and requests** | Session token also kept in `localStorage`; CSP allows inline scripts | Session only in an `HttpOnly` cookie, central CSRF checks, nonce-based CSP |
 | **Stored secrets** | Provider keys stored as plain text | Provider keys and IMAP passwords encrypted with AES-GCM (`APP_ENCRYPTION_KEY`) |
 | **Sending** | Sends immediately | Optional preview before sending and undo send |
-| **Reading** | Optional two-column view | Sidebar, list and reading pane as resizable panes that remember their sizes; reading pane beside or below the list, or full width; density options; Gmail-style keys (`j`/`k`, `e`, `#`, `r`/`a`/`f`) and a Cmd+K command palette; one pane at a time on phones |
+| **Reading** | Optional two-column view | Sidebar, list and reading pane as resizable panes that remember their sizes; reading pane beside or below the list, or full width; density options; Gmail-style keys (`j`/`k`, `e`, `#`, `r`/`a`/`f`), Shift-click and Cmd/Ctrl-click to select a range or single emails, and a Cmd+K command palette; one pane at a time on phones |
 | **Backups** | Whole database built in memory as one JSON document | Streamed to object storage in parts, so large mailboxes back up within Worker limits; automatic backup before every migration and restore |
 | **Restore** | Deletes the current data, then inserts the backup | Validated first; a failed restore rolls back to the automatic safety backup |
 | **MCP** | Every tool listed for every key, fixed version `0.1.0` | Only the tools a key's scopes allow; reports the real app version |

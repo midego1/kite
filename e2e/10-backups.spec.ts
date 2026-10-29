@@ -2,7 +2,15 @@ import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { ADMIN, E2E_PERSIST_DIR, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, deliverInbound, readBackups, signIn, uniqueToken, waitForBackup } from "./support/helpers";
+import {
+	apiContext,
+	deliverInbound,
+	readBackups,
+	signIn,
+	uniqueToken,
+	waitForBackup,
+	waitForRestore,
+} from "./support/helpers";
 
 // Restoring replaces every table, so these run in order and last in the suite.
 test.describe.configure({ mode: "serial" });
@@ -120,6 +128,9 @@ test("restores the downloaded backup", async ({ browser }) => {
 	await expect(confirm).toBeVisible();
 	await confirm.getByRole("button", { name: "Restore" }).click();
 	await expect(page).toHaveURL(/\/login/, { timeout: 60_000 });
+	// The restore runs as a queued job; the page signs out as soon as it replaces the sessions.
+	const restore = await waitForRestore();
+	expect(restore.status, restore.error ?? "").toBe("completed");
 
 	await signIn(page, ADMIN.email, ADMIN.password);
 	await expect(page).toHaveURL(/\/inbox/);

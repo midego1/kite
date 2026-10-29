@@ -41,3 +41,6 @@ export type BackupRow = {
 	error: string | null;
 	filename: string | null;
 };
+
+/** The latest restore as `GET /api/backups/health` reports it. */
+export type RestoreSummary = { id: string; status: string; active: boolean; error: string | null };

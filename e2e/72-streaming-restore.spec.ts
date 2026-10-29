@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { ADMIN, DOMAIN, E2E_PERSIST_DIR, STORAGE_STATE } from "./support/constants";
-import { apiContext, readBackups, signIn, waitForBackup } from "./support/helpers";
+import { apiContext, readBackups, signIn, waitForBackup, waitForRestore } from "./support/helpers";
 
 // Restoring replaces every table, so these run in order; the restored backup is taken here, moments earlier.
 test.describe.configure({ mode: "serial" });
@@ -75,15 +75,8 @@ test("restores a backup of several thousand messages straight from storage", asy
 	await context.close();
 
 	// The suite's own session is in the restored backup, so it answers again once the job is done.
-	await expect
-		.poll(
-			async () => {
-				const response = await api.get("/api/backups/health");
-				return response.ok() ? ((await response.json()) as { restore?: { status: string } }).restore?.status : null;
-			},
-			{ timeout: 180_000, intervals: [1000] },
-		)
-		.toBe("completed");
+	const restore = await waitForRestore(api);
+	expect(restore.status, restore.error ?? "").toBe("completed");
 	expect(bulkCount()).toBe(BULK);
 	const backups = await readBackups(api);
 	// The restored backup is newer than the data it restored and stays listed, next to the safety backup.

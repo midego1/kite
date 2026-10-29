@@ -49,10 +49,10 @@ export async function createSafetyBackup(
 
 /**
  * Upserts the safety backup's row. Restore replaces the whole `backups`
- * table, so this runs again at its end to keep the snapshot listed; the
+ * table, so the restore writes it again right after that table; the
  * creator is only linked when that user exists in the restored data.
  */
-export function createSafetyBackupRecordStatement(record: Omit<SafetyBackup, "content">): RestoreStatement {
+function createSafetyBackupRecordStatement(record: Omit<SafetyBackup, "content">): RestoreStatement {
 	return createKeptBackupRecordStatement({ ...record, startedAt: record.createdAt });
 }
 

@@ -13,6 +13,7 @@ import * as moduleTables from "@/db/schema/modules";
 import * as screenerTables from "@/db/schema/screener";
 import * as storageTables from "@/db/schema/storage";
 import * as telemetryTables from "@/db/schema/telemetry";
+import * as userPreferenceTables from "@/db/schema/user-preferences";
 
 const schema = {
 	...coreTables,
@@ -30,6 +31,7 @@ const schema = {
 	...telemetryTables,
 	externalAccounts,
 	externalAccountFolders,
+	...userPreferenceTables,
 };
 
 export type AppDatabase = ReturnType<typeof createDb>;

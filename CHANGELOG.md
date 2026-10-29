@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.29.9] - 2026-10-29
+
+### Added
+
+- Your reading layout follows your account: when you change the reading pane position, list density, conversation view or the size of the message list, the choice is saved to the account and applied in every browser you sign in to, with each browser keeping a copy for a fast start. A layout chosen before this release stays in its browser until you change it. A browser can keep its own layout instead under [Settings → Inbox → Layout](/settings/inbox). Needs migration `0080_add_user_preferences` (the new `user_preferences` table, included in backups); until it is applied, layouts stay in each browser as before.
+
 ## [2026.10.29.8] - 2026-10-29
 
 ### Added

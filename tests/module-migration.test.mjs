@@ -48,6 +48,7 @@ const LATER_MIGRATIONS = [
 	"0077_add_agent_providers.sql",
 	"0078_add_ai_usage_details.sql",
 	"0079_add_external_accounts.sql",
+	"0080_add_user_preferences.sql",
 	"0081_add_backup_objects.sql",
 ];
 /** Columns a later migration adds to a table this test pins; everything else must stay as it was. */

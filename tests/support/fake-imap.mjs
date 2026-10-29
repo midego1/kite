@@ -41,7 +41,8 @@ export async function startFakeImap(options = {}) {
 	let nextLoginFails = false;
 	/** A tagged answer the next sign-in gets instead of OK (`NO [THROTTLED] …`), once. */
 	let nextLoginAnswer = null;
-	const examineRefusals = { ...(options.examineRefusals ?? {}) };
+	// The caller's object itself, so a test can change it while the server runs.
+	const examineRefusals = options.examineRefusals ?? {};
 
 	function addMessage(folder, message) {
 		if (!folders.has(folder)) folders.set(folder, { nextUid: 1, uidValidity: 1, messages: [] });

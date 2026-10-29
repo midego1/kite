@@ -181,6 +181,8 @@ export async function syncExternalAccount(
 		logger.warn("external.sync.failed", {
 			accountId,
 			class: problem.class,
+			// The error's name only: its message may carry server text.
+			error: error instanceof Error ? error.name : "unknown",
 			failures: account.consecutiveFailures + 1,
 			durationMs: Date.now() - started,
 		});

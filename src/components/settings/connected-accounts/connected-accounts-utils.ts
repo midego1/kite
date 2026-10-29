@@ -201,6 +201,15 @@ export function syncStatusText(account: ExternalAccountView, now: Date, time = c
 	return `Checked ${relativeTime(sync.lastSuccessAt, now)}${next}`;
 }
 
+/**
+ * Whether the account's last error is worth showing under its state: always once it stopped working, but for a
+ * working account only from the third failed check in a row (one missed check is not news), and never twice.
+ */
+export function showLastError(account: ExternalAccountView, shown: string | null): boolean {
+	if (!account.lastError || account.lastError === shown) return false;
+	return account.status !== "active" || account.sync.failures >= 3 || !account.sync.problem;
+}
+
 /** Whether **Check now** applies: the account is checked at all (connected and not paused). */
 export function canCheckNow(account: ExternalAccountView): boolean {
 	return account.hasPassword && account.sync.enabled && (account.status === "active" || account.status === "error");

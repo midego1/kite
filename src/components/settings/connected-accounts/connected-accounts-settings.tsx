@@ -16,6 +16,7 @@ import { AccountFormDialog } from "./account-form-dialog";
 import type { ConnectedAccountsState } from "./connected-accounts-types";
 import {
 	canCheckNow,
+	showLastError,
 	checkAccountNow,
 	CONNECTED_ACCOUNTS_QUERY_KEY,
 	fetchConnectedAccounts,
@@ -234,9 +235,7 @@ function AccountDetails({ account, message }: { account: ExternalAccountView; me
 					{syncText}
 				</p>
 			)}
-			{account.lastError && account.lastError !== syncText && (
-				<p className="text-xs text-neutral-500">{account.lastError}</p>
-			)}
+			{showLastError(account, syncText) && <p className="text-xs text-neutral-500">{account.lastError}</p>}
 			{message && (
 				<p role="status" className="text-xs text-neutral-700">
 					{message}

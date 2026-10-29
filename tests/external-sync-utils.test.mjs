@@ -30,6 +30,7 @@ const {
 	connectedAccountsBannerContent,
 	syncStatusText,
 	canCheckNow,
+	showLastError,
 	relativeTime,
 	describeQueueMessage,
 	shortServerText,
@@ -44,7 +45,7 @@ const {
 	["detachMissingExternalAccounts", "src/lib/backups/external-accounts-utils.ts"],
 	["parseAttentionAccounts, connectedAccountsBannerContent", "src/components/connected-accounts-banner-utils.ts"],
 	[
-		"syncStatusText, canCheckNow, relativeTime",
+		"syncStatusText, canCheckNow, showLastError, relativeTime",
 		"src/components/settings/connected-accounts/connected-accounts-utils.ts",
 	],
 	["describeQueueMessage", "worker-utils.ts"],
@@ -368,6 +369,18 @@ test("the account list says where checking stands", () => {
 	assert.equal(canCheckNow(account("active", { enabled: false })), false);
 	assert.equal(canCheckNow(account("auth_failed", {})), false);
 	assert.equal(canCheckNow(account("active", {}, { hasPassword: false })), false);
+	const failing = (status, failures, lastError = "NO [UNAVAILABLE]") =>
+		account(status, { problem: "transient", failures }, { lastError });
+	assert.equal(showLastError(failing("active", 2), null), false, "a missed check or two is not news");
+	assert.equal(showLastError(failing("active", 3), null), true);
+	assert.equal(showLastError(failing("error", 1), null), true);
+	assert.equal(showLastError(failing("error", 1, "Same"), "Same"), false, "never twice");
+	assert.equal(showLastError(failing("active", 0, null), null), false);
+	assert.equal(
+		showLastError(account("active", {}, { lastError: "A failed test" }), null),
+		true,
+		"a failed Test connection shows",
+	);
 	assert.equal(relativeTime("2026-10-29T11:59:45Z", now), "just now");
 	assert.equal(relativeTime("2026-10-29T11:59:00Z", now), "1 minute ago");
 	assert.equal(relativeTime("2026-10-29T10:00:00Z", now), "2 hours ago");

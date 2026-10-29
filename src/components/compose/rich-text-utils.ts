@@ -193,11 +193,17 @@ function renderNode(node: Node, state: RenderState): string {
 	return inner;
 }
 
+/** Scheme and host are case-insensitive; the path, query and fragment are not. */
+function normalizeAddress(value: string): string {
+	const parts = /^((?:[a-z][a-z0-9+.-]*:\/\/)?[^/?#]*)([\s\S]*)$/i.exec(value);
+	return parts ? `${(parts[1] as string).toLowerCase()}${parts[2]}` : value;
+}
+
 /** A link whose text already is its address (`www.example.com` for `https://www.example.com`) needs no "(href)". */
 function isShownAddress(href: string, text: string): boolean {
-	const shown = text.trim().toLowerCase();
-	const target = href.toLowerCase();
-	return shown === target || `https://${shown}` === target || `http://${shown}` === target;
+	const shown = text.trim();
+	const target = normalizeAddress(href);
+	return [shown, `https://${shown}`, `http://${shown}`].some((candidate) => normalizeAddress(candidate) === target);
 }
 
 function renderChildren(element: Element, state: RenderState): string {

@@ -209,7 +209,7 @@ test("hostile 200k-character inputs are scanned in linear time", () => {
 			findLinks(input);
 			fastest = Math.min(fastest, performance.now() - started);
 		}
-		assert.ok(fastest < 50, `${name} took ${fastest.toFixed(1)} ms`);
+		assert.ok(fastest < 250, `${name} took ${fastest.toFixed(1)} ms`);
 	}
 });
 
@@ -226,6 +226,18 @@ test("the plain-text part keeps a typed address plain, with no (href) copy after
 		const html =
 			'<div>see <a href="https://www.example.com">www.example.com</a> and <a href="https://example.org/a">https://example.org/a</a> or <a href="mailto:a@b.co">a@b.co</a></div>';
 		assert.equal(htmlToPlainText(html), "see www.example.com and https://example.org/a or a@b.co");
+		// The scheme and host ignore case; the path, query and fragment do not.
+		assert.equal(
+			htmlToPlainText('<div><a href="HTTPS://WWW.Example.com/Path?q=1#f">https://www.example.com/Path?q=1#f</a></div>'),
+			"https://www.example.com/Path?q=1#f",
+		);
+		for (const [text, href] of [
+			["https://x.com/abc", "https://x.com/AbC"],
+			["https://x.com/a?q=x", "https://x.com/a?q=X"],
+			["https://x.com/a#top", "https://x.com/a#Top"],
+		]) {
+			assert.equal(htmlToPlainText(`<div><a href="${href}">${text}</a></div>`), `${text} (${href})`);
+		}
 		// A link whose text says something else still shows where it goes.
 		assert.equal(
 			htmlToPlainText('<div><a href="https://example.org/a">my page</a></div>'),

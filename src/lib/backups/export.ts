@@ -3,7 +3,7 @@ import { clearStorageConfigCache } from "@/lib/storage/config";
 import type { BackupTableGroupId, DatabaseBackupDocument, DatabaseBackupTable, DatabaseRecord } from "./types";
 import { dropRetiredBackupTables, mergeLegacyMessageBodies, RETIRED_BACKUP_TABLES } from "./utils";
 import { BACKUP_TABLE_GROUPS, getSelectedBackupTables, isPartialBackupDocument } from "./table-groups";
-import { redactBackupRow, restoredBackupRow } from "./external-accounts-utils";
+import { detachMissingExternalAccounts, redactBackupRow, restoredBackupRow } from "./external-accounts-utils";
 import {
 	createRestorePlan,
 	planRestoreStatements,
@@ -332,7 +332,7 @@ export async function prepareDatabaseRestore(
 		);
 		tables.push({ name: table, rows: rows.map((row) => restoredBackupRow(table, row)), columns });
 	}
-	const { deletes, inserts } = planRestoreStatements(tables);
+	const { deletes, inserts } = planRestoreStatements(detachMissingExternalAccounts(tables));
 	return createRestorePlan(
 		[...deletes, ...inserts],
 		tables.reduce((total, table) => total + table.rows.length, 0),

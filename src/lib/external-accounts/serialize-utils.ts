@@ -4,11 +4,14 @@ import type { ExternalAccountView } from "./types";
 
 export type ExternalAccountRow = typeof externalAccounts.$inferSelect;
 
+/** The `status_reason` values a sync failure writes (`syncFailureUpdate`). */
+const SYNC_PROBLEMS = new Set(["throttled", "transient", "config", "sync"]);
+
 /**
  * The public shape of an account. Fields are listed one by one, so the sealed password (and, later, OAuth tokens or
  * cursors) can never reach a response by being added to the table.
  */
-export function serializeExternalAccount(row: ExternalAccountRow): ExternalAccountView {
+export function serializeExternalAccount(row: ExternalAccountRow, now = new Date()): ExternalAccountView {
 	return {
 		id: row.id,
 		label: row.label,
@@ -27,6 +30,15 @@ export function serializeExternalAccount(row: ExternalAccountRow): ExternalAccou
 		statusReason: row.statusReason,
 		lastError: row.lastError,
 		hasPassword: row.secret.length > 0,
+		sync: {
+			enabled: row.syncEnabled,
+			intervalMinutes: row.syncIntervalMinutes,
+			lastSuccessAt: row.lastSuccessAt?.toISOString() ?? null,
+			nextSyncAt: row.nextSyncAt?.toISOString() ?? null,
+			failures: row.consecutiveFailures,
+			problem: SYNC_PROBLEMS.has(row.statusReason ?? "") ? row.statusReason : null,
+			running: !!row.leaseUntil && row.leaseUntil.getTime() > now.getTime(),
+		},
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};

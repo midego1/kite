@@ -46,6 +46,7 @@ export type ExternalAccountView = {
 	lastError: string | null;
 	/** Whether a password is saved (false once it was erased). */
 	hasPassword: boolean;
+	sync: ExternalAccountSyncView;
 	createdAt: string;
 	updatedAt: string;
 };
@@ -60,4 +61,21 @@ export type ExternalAccountInput = {
 	imap: MailServerSettings;
 	smtp: MailServerSettings | null;
 	username: string;
+};
+
+/** Where checking an account for new mail stands (spec §6.5), for the Connected accounts list and the sidebar notice. */
+export type ExternalAccountSyncView = {
+	/** False while the owner paused checking. */
+	enabled: boolean;
+	intervalMinutes: number;
+	/** The last check that worked. */
+	lastSuccessAt: string | null;
+	/** When Kite checks next; null when checking stopped (sign-in, certificate or configuration problem). */
+	nextSyncAt: string | null;
+	/** Failed checks in a row. */
+	failures: number;
+	/** `throttled` or `transient` while Kite retries, `config` or `sync` once a problem stopped checking. */
+	problem: string | null;
+	/** A check is running now. */
+	running: boolean;
 };

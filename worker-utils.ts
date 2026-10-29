@@ -28,6 +28,7 @@ type CoreQueueMessageKind =
 	| "mailbox_purge"
 	| "backup"
 	| "storage_migration"
+	| "external_sync"
 	| "unknown";
 
 /** Core kinds plus the metric class each module declares for its own queue messages. */
@@ -42,13 +43,15 @@ const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"mailbox.purge": "mailbox_purge",
 	"backup.run": "backup",
 	"storage.migrate": "storage_migration",
+	"accounts.sync": "external_sync",
 	...Object.fromEntries(
 		MODULE_MANIFESTS.flatMap((manifest) => manifest.queueMessageTypes.map((entry) => [entry.kind, entry.metricClass])),
 	),
 };
 
-// Matches the keys storeRawToR2 and intakeIncomingMail write: a timestamp and a nanoid, no addresses.
-const RAW_R2_KEY = /^inbound\/\d+-[A-Za-z0-9_-]+\.eml$/;
+// Matches the keys storeRawToR2 and intakeIncomingMail write (a timestamp and a nanoid) and the keys a connected
+// account's sync writes (account id, UIDVALIDITY, UID); no addresses.
+const RAW_R2_KEY = /^(?:inbound\/\d+-[A-Za-z0-9_-]+|external\/[A-Za-z0-9_-]+\/\d+\/\d+)\.eml$/;
 
 /**
  * Log context for a failed queue message. Only the message kind and the raw

@@ -10,6 +10,7 @@ import { runModuleCronTasks } from "@/lib/modules/background";
 import { runStorageMigrationMaintenance } from "@/lib/storage/migration";
 import { runTelemetryHeartbeat } from "@/lib/telemetry/heartbeat";
 import { eraseIdleExternalCredentials } from "@/lib/external-accounts/retention";
+import { planExternalSync } from "@/lib/external-accounts/sync";
 
 const logger = createLogger("node-scheduler");
 
@@ -35,6 +36,8 @@ export function startScheduler(env: CloudflareEnv) {
 			runStorageMigrationMaintenance(env, now).catch((error) =>
 				logger.error("storage.migration_maintenance_failed", { error }),
 			);
+			// Connected accounts, matching worker.ts.
+			planExternalSync(env, now).catch((error) => logger.error("external.sync_plan_failed", { error }));
 		}
 		const day = now.toISOString().slice(0, 10);
 		if (now.getUTCHours() !== 2 || lastRunDay === day) return;

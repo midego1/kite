@@ -5,6 +5,7 @@ import { ImapConnection, type ImapConnectionOptions } from "./connection";
 import {
 	chooseAuthMethod,
 	imapLimits,
+	imapSearchDate,
 	IMAP_PORTS,
 	parseListLine,
 	parseListMailboxName,
@@ -12,6 +13,8 @@ import {
 	parseUidNext,
 	parseUidValidity,
 	type ImapListedMailbox,
+	type ImapMessageSummary,
+	parseFetchSummaries,
 	parseSearchUids,
 	plainAuthToken,
 	planStartTls,
@@ -25,6 +28,13 @@ export type ImapSession = {
 	/** Opens `folder` read-only; `uidValidity` and `uidNext` are null when the server did not say. */
 	examine(folder: string): Promise<{ uidValidity: number | null; uidNext: number | null }>;
 	searchUids(): Promise<string[]>;
+	/** The UIDs of the open folder's messages received on or after `date`'s day (`UID SEARCH SINCE`). */
+	searchUidsSince(date: Date): Promise<number[]>;
+	/**
+	 * Flags, INTERNALDATE and size of the open folder's messages from `fromUid` on (`UID FETCH n:* …`), without bodies.
+	 * A server answers `n:*` with the highest UID even when it is below `n`; the caller drops what it has seen.
+	 */
+	fetchSummaries(fromUid: number): Promise<ImapMessageSummary[]>;
 	fetchMessages(uids: string[], options?: { gmailLabels?: boolean }): Promise<Map<string, ImapFetchedMessage>>;
 	listMailboxNames(): Promise<string[]>;
 	/**
@@ -70,6 +80,16 @@ export async function openImapSession(
 		async searchUids() {
 			const lines = await imap.command("UID SEARCH ALL");
 			return lines.flatMap(parseSearchUids);
+		},
+		async searchUidsSince(date) {
+			const lines = await imap.command(`UID SEARCH SINCE ${imapSearchDate(date)}`);
+			return lines.flatMap(parseSearchUids).map(Number);
+		},
+		async fetchSummaries(fromUid) {
+			const lines = await imap.command(
+				`UID FETCH ${Math.max(1, Math.floor(fromUid))}:* (UID FLAGS INTERNALDATE RFC822.SIZE)`,
+			);
+			return parseFetchSummaries(lines);
 		},
 		fetchMessages: (uids, options) => imap.fetchMessages(uids, options),
 		async listMailboxes() {

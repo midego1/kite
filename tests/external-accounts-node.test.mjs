@@ -259,8 +259,11 @@ test("connecting tests the sign-in, seals the password, stores the INBOX baselin
 	);
 	assert.deepEqual(await listExternalAccounts(env, "other"), []);
 
-	// The same address cannot be connected twice, by anyone.
-	assert.equal((await refusal(connectExternalAccount(env, owner, connectBody()))).code, "ADDRESS_TAKEN");
+	// An "Other" account's address is not proven by its sign-in (its owner names the server), so it claims nothing
+	// and a second one is never told whether the address is taken (migration 0082; tests/external-sync-node.test.mjs
+	// covers the known providers, whose addresses stay unique).
+	const again = await connectExternalAccount(env, owner, connectBody());
+	assert.notEqual(again.id, account.id);
 });
 
 test("connecting is refused without the Kite password, for a Kite domain, a foreign mailbox or a wrong password", async (t) => {

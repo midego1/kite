@@ -15,11 +15,15 @@ import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import { AccountFormDialog } from "./account-form-dialog";
 import type { ConnectedAccountsState } from "./connected-accounts-types";
 import {
+	canCheckNow,
+	checkAccountNow,
 	CONNECTED_ACCOUNTS_QUERY_KEY,
 	fetchConnectedAccounts,
 	removeAccount,
+	setAccountChecking,
 	STATUS_LABELS,
 	statusHint,
+	syncStatusText,
 	testAccount,
 } from "./connected-accounts-utils";
 
@@ -32,6 +36,8 @@ export function ConnectedAccountsSettings() {
 		queryKey: CONNECTED_ACCOUNTS_QUERY_KEY,
 		queryFn: fetchConnectedAccounts,
 		refetchOnWindowFocus: false,
+		// While a check runs, the list follows it until it is done.
+		refetchInterval: (query) => (query.state.data?.accounts.some((account) => account.sync.running) ? 3_000 : 60_000),
 	});
 	const [editing, setEditing] = useState<Editing>(null);
 	const [notice, setNotice] = useState<{ text: string; accountId?: string } | null>(null);
@@ -42,7 +48,7 @@ export function ConnectedAccountsSettings() {
 		<div className="space-y-6">
 			<PageHeader
 				title="Connected accounts"
-				description="Connect a Gmail, iCloud, Fastmail, Yahoo or other IMAP account, so Kite can bring in its mail without asking for the password each time."
+				description="Connect a Gmail, iCloud, Fastmail, Yahoo or other IMAP account: Kite checks its Inbox for new mail every few minutes and can import the mail already there."
 				actions={
 					allowed && (
 						<Button onClick={() => setEditing({ account: null })}>
@@ -119,7 +125,7 @@ function AccountList({
 			<EmptyState
 				icon={Link2}
 				title="No connected accounts"
-				description="Connect an account to import its mail. Kite signs in over an encrypted connection and never changes anything at the provider."
+				description="Connect an account to bring in its new mail and import what is already there. Kite signs in over an encrypted connection and never changes anything at the provider."
 			/>
 		);
 	return (
@@ -152,12 +158,8 @@ function AccountRow({
 	onChanged: () => void;
 }) {
 	const confirm = useConfirm();
-	const { isEnabled } = useModules();
-	const { mailboxes } = useSelectedMailbox();
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
-	const mailbox = mailboxes.find((entry) => entry.id === account.mailboxId);
-	const hint = statusHint(account);
 
 	async function act(task: () => Promise<string | null>) {
 		setBusy(true);
@@ -172,62 +174,121 @@ function AccountRow({
 		}
 	}
 
-	const test = () =>
-		act(async () => {
-			const outcome = await testAccount(account.id);
-			return outcome.problem ? outcome.problem.message : "The connection works.";
-		});
-
-	const remove = () =>
-		act(async () => {
-			const confirmed = await confirm({
-				title: `Remove ${account.address}?`,
-				description:
-					"Kite forgets the account and its saved password. Mail already in Kite stays where it is, and nothing changes at the provider.",
-				confirmLabel: "Remove",
-			});
-			if (!confirmed) return null;
-			await removeAccount(account.id);
-			return null;
-		});
+	const actions: AccountActionHandlers = {
+		test: () =>
+			act(async () => {
+				const outcome = await testAccount(account.id);
+				return outcome.problem ? outcome.problem.message : "The connection works.";
+			}),
+		checkNow: () =>
+			act(async () => {
+				await checkAccountNow(account.id);
+				return "Checking for new mail…";
+			}),
+		toggleChecking: () =>
+			act(async () => {
+				await setAccountChecking(account.id, !account.sync.enabled);
+				return account.sync.enabled ? "Checking paused." : "Checking resumed.";
+			}),
+		remove: () =>
+			act(async () => {
+				const confirmed = await confirm({
+					title: `Remove ${account.address}?`,
+					description:
+						"Kite forgets the account and its saved password. Mail already in Kite stays where it is, and nothing changes at the provider.",
+					confirmLabel: "Remove",
+				});
+				if (!confirmed) return null;
+				await removeAccount(account.id);
+				return null;
+			}),
+		edit: onEdit,
+	};
 
 	return (
 		<li className="flex flex-wrap items-start justify-between gap-3 p-4" data-external-account={account.address}>
-			<div className="min-w-0 space-y-1">
-				<div className="flex flex-wrap items-center gap-2">
-					<p className="truncate text-sm font-semibold text-neutral-900">{account.label}</p>
-					<Badge variant={account.status === "active" ? "success" : "outline"}>{STATUS_LABELS[account.status]}</Badge>
-				</div>
-				<p className="text-xs text-neutral-500">
-					{account.address} · {account.presetLabel}
-					{mailbox ? ` · Mail goes to ${mailbox.displayName || `${mailbox.localPart}@${mailbox.hostname}`}` : ""}
-				</p>
-				{hint && <p className="text-xs text-[#8a4b0a] dark:text-[#d4a35a]">{hint}</p>}
-				{account.lastError && <p className="text-xs text-neutral-500">{account.lastError}</p>}
-				{message && (
-					<p role="status" className="text-xs text-neutral-700">
-						{message}
-					</p>
-				)}
-			</div>
-			<div className="flex flex-wrap items-center gap-2">
-				{usable && isEnabled("import") && account.status === "active" && (
-					<Button asChild size="sm" variant="outline">
-						<Link href={`/settings/import?account=${encodeURIComponent(account.id)}`}>Import mail</Link>
-					</Button>
-				)}
-				{usable && (
-					<Button size="sm" variant="outline" disabled={busy || !account.hasPassword} onClick={() => void test()}>
-						Test connection
-					</Button>
-				)}
-				<Button size="sm" variant="outline" disabled={busy || !usable} onClick={onEdit}>
-					{account.status === "active" ? "Edit" : "Reconnect"}
-				</Button>
-				<Button size="sm" variant="outline" disabled={busy} onClick={() => void remove()}>
-					Remove
-				</Button>
-			</div>
+			<AccountDetails account={account} message={message} />
+			<AccountActions account={account} usable={usable} busy={busy} actions={actions} />
 		</li>
+	);
+}
+
+function AccountDetails({ account, message }: { account: ExternalAccountView; message: string | null }) {
+	const { mailboxes } = useSelectedMailbox();
+	const mailbox = mailboxes.find((entry) => entry.id === account.mailboxId);
+	const hint = statusHint(account);
+	const syncText = syncStatusText(account, new Date());
+	return (
+		<div className="min-w-0 space-y-1">
+			<div className="flex flex-wrap items-center gap-2">
+				<p className="truncate text-sm font-semibold text-neutral-900">{account.label}</p>
+				<Badge variant={account.status === "active" ? "success" : "outline"}>{STATUS_LABELS[account.status]}</Badge>
+			</div>
+			<p className="text-xs text-neutral-500">
+				{account.address} · {account.presetLabel}
+				{mailbox ? ` · Mail goes to ${mailbox.displayName || `${mailbox.localPart}@${mailbox.hostname}`}` : ""}
+			</p>
+			{hint && <p className="text-xs text-[#8a4b0a] dark:text-[#d4a35a]">{hint}</p>}
+			{syncText && (
+				<p className="text-xs text-neutral-600" data-sync-status>
+					{syncText}
+				</p>
+			)}
+			{account.lastError && account.lastError !== syncText && (
+				<p className="text-xs text-neutral-500">{account.lastError}</p>
+			)}
+			{message && (
+				<p role="status" className="text-xs text-neutral-700">
+					{message}
+				</p>
+			)}
+		</div>
+	);
+}
+
+type AccountActionHandlers = Record<"test" | "checkNow" | "toggleChecking" | "remove" | "edit", () => void>;
+
+function AccountActions({
+	account,
+	usable,
+	busy,
+	actions,
+}: {
+	account: ExternalAccountView;
+	usable: boolean;
+	busy: boolean;
+	actions: AccountActionHandlers;
+}) {
+	const { isEnabled } = useModules();
+	const checked = account.status === "active" || account.status === "error";
+	return (
+		<div className="flex flex-wrap items-center gap-2">
+			{usable && isEnabled("import") && account.status === "active" && (
+				<Button asChild size="sm" variant="outline">
+					<Link href={`/settings/import?account=${encodeURIComponent(account.id)}`}>Import mail</Link>
+				</Button>
+			)}
+			{usable && canCheckNow(account) && (
+				<Button size="sm" variant="outline" disabled={busy || account.sync.running} onClick={actions.checkNow}>
+					Check now
+				</Button>
+			)}
+			{usable && checked && account.hasPassword && (
+				<Button size="sm" variant="outline" disabled={busy} onClick={actions.toggleChecking}>
+					{account.sync.enabled ? "Pause" : "Resume"}
+				</Button>
+			)}
+			{usable && (
+				<Button size="sm" variant="outline" disabled={busy || !account.hasPassword} onClick={actions.test}>
+					Test connection
+				</Button>
+			)}
+			<Button size="sm" variant="outline" disabled={busy || !usable} onClick={actions.edit}>
+				{account.status === "active" ? "Edit" : "Reconnect"}
+			</Button>
+			<Button size="sm" variant="outline" disabled={busy} onClick={actions.remove}>
+				Remove
+			</Button>
+		</div>
 	);
 }

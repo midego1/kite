@@ -148,3 +148,19 @@ export function sesAuthenticationResults(
 	if (dmarc) results.push(`dmarc=${dmarc}`);
 	return results.length ? [SES_AUTHSERV_ID, ...results].join("; ") : null;
 }
+
+/**
+ * The provider's verdict on mail a connected account synced (spec §6.6), or null. The provider's server is the hop
+ * that verified the sender, so only the topmost header of the raw message counts (`rawFields`, in message order, null
+ * when the header block could not be read whole), and only when its authserv-id is exactly the one the account's
+ * preset names: such providers remove copies carrying their own authserv-id from incoming mail (RFC 8601 §5). A preset
+ * without one (custom hosts, providers whose header is not tied to their own hop) never gets results.
+ */
+export function externalAuthenticationResults(
+	rawFields: readonly string[] | null,
+	authservId: string | null,
+): string | null {
+	if (!authservId || !rawFields?.length) return null;
+	const topmost = whitespace(rawFields[0]);
+	return parseAuthenticationResults(topmost).authservId === authservId.toLowerCase() ? topmost : null;
+}

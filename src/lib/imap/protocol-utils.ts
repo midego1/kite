@@ -314,3 +314,26 @@ export function decodeModifiedUtf7(value: string): string {
 		}
 	});
 }
+
+/** One message of a UID FETCH that asked for attributes only (no body): what a sync decides from. */
+export type ImapMessageSummary = { uid: number; flags: string[]; internalDate: Date | null; size: number | null };
+
+/**
+ * The messages of the untagged `* n FETCH (UID … FLAGS (…) INTERNALDATE "…" RFC822.SIZE …)` lines of an
+ * attribute-only UID FETCH. Lines without a UID (an unsolicited flag update) are left out.
+ */
+export function parseFetchSummaries(lines: readonly string[]): ImapMessageSummary[] {
+	const summaries: ImapMessageSummary[] = [];
+	for (const line of lines) {
+		if (!/^\* \d+ FETCH \(/i.test(line)) continue;
+		const { uid, flags, internalDate, size } = parseFetchAttributes(line);
+		if (uid) summaries.push({ uid: Number(uid), flags, internalDate, size });
+	}
+	return summaries;
+}
+
+/** An IMAP `date` for SEARCH SINCE (RFC 9051 §9: `27-Oct-2026`), in UTC. */
+export function imapSearchDate(date: Date): string {
+	const month = MONTHS[date.getUTCMonth()];
+	return `${date.getUTCDate()}-${month[0].toUpperCase()}${month.slice(1)}-${date.getUTCFullYear()}`;
+}

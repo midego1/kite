@@ -582,6 +582,13 @@
       "when": 1788852060028,
       "tag": "0079_add_external_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "6",
+      "when": 1788852090028,
+      "tag": "0082_external_account_address_scope",
+      "breakpoints": true
     }
   ]
 }

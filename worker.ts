@@ -30,6 +30,8 @@ import { runDatabasePruning } from "./src/lib/maintenance/pruning";
 import { runOperationalAlerts } from "./src/lib/alerts/run";
 import { runTelemetryHeartbeat } from "./src/lib/telemetry/heartbeat";
 import { eraseIdleExternalCredentials } from "./src/lib/external-accounts/retention";
+import { planExternalSync, syncExternalAccount } from "./src/lib/external-accounts/sync";
+import { isExternalSyncMessage } from "./src/lib/external-accounts/sync-utils";
 import { dispatchModuleQueueMessage, runModuleCronTasks } from "./src/lib/modules/background";
 import { maybeAutoApplyPendingMigrations } from "./src/lib/migrations/auto-apply";
 import { queueRetryDelaySeconds } from "./src/lib/migrations/pending";
@@ -187,6 +189,9 @@ export default {
 					await processInboundMessage(env, msg.body);
 				} else if (await processAgentQueueMessage(env, msg.body)) {
 					// Draft and triage jobs both run through the agent dispatcher.
+				} else if (isExternalSyncMessage(msg.body)) {
+					// A connected account's check for new mail (core, so it runs whatever modules are on).
+					await syncExternalAccount(env, msg.body.accountId);
 				} else if ((await dispatchModuleQueueMessage(env, batch.queue, msg.body)).handled) {
 					// A module's message kind: the registry routes it and an off module's message is acked.
 				} else if (isWebhookRetryMessage(msg.body)) {
@@ -270,6 +275,8 @@ export default {
 					logger.error("storage.migration_maintenance_failed", { error }),
 				),
 			);
+			// Connected accounts whose check for new mail is due get one queued run each.
+			ctx.waitUntil(planExternalSync(env, now).catch((error) => logger.error("external.sync_plan_failed", { error })));
 		}
 		ctx.waitUntil(runAgentMaintenance(env));
 		ctx.waitUntil(runTrashRetention(env, new Date(controller.scheduledTime)));

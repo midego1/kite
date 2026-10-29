@@ -1,4 +1,4 @@
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import { domains } from "@/db/schema";
 import { externalAccountFolders, externalAccounts } from "@/db/schema/external-accounts";
@@ -17,6 +17,8 @@ import { assertMailServerHost } from "./host-guard";
 import { AccountInputError, changesSignIn, parseAccountInput, passwordFrom } from "./input-utils";
 import { addressDomain, findPreset, presetTrustsAuthResults } from "./presets-utils";
 import { appendRecentError, serializeExternalAccount, type ExternalAccountRow } from "./serialize-utils";
+import { queueSyncNow } from "./sync";
+import { DEFAULT_SYNC_INTERVAL_MINUTES, parseSyncInterval } from "./sync-utils";
 import type { ExternalAccountInput, ExternalAccountView } from "./types";
 
 /** The signed-in user a request acts for. */
@@ -39,7 +41,7 @@ export async function listExternalAccounts(env: CloudflareEnv, userId: string): 
 		.from(externalAccounts)
 		.where(eq(externalAccounts.userId, userId))
 		.orderBy(asc(externalAccounts.createdAt));
-	return rows.map(serializeExternalAccount);
+	return rows.map((row) => serializeExternalAccount(row));
 }
 
 async function ownAccount(env: CloudflareEnv, userId: string, id: string): Promise<ExternalAccountRow> {
@@ -101,17 +103,28 @@ async function assertNotKiteDomain(env: CloudflareEnv, address: string): Promise
 }
 
 /**
- * An address is connected once per install. Checked only after a successful sign-in, so nobody learns whether an
- * address is connected without proving its password, and the answer never says by whom.
+ * An address a known provider proved is connected once per install. Checked only after a successful sign-in at that
+ * provider's own servers, so nobody learns whether an address is connected without its password, and the answer
+ * never says by whom. An "Other" account signs in at a server its owner names, which can accept any address, so its
+ * address proves nothing: it is never checked (that would answer for anyone who runs a server) and claims nothing
+ * (migration 0082 leaves it out of the unique index).
  */
-async function assertAddressFree(env: CloudflareEnv, actor: AccountActor, address: string, exceptId?: string) {
+async function assertAddressFree(
+	env: CloudflareEnv,
+	actor: AccountActor,
+	input: Pick<ExternalAccountInput, "address" | "preset">,
+	exceptId?: string,
+) {
+	if (input.preset === "other") return;
 	const [taken] = await getDb(env)
 		.select({ userId: externalAccounts.userId })
 		.from(externalAccounts)
 		.where(
-			exceptId
-				? and(eq(externalAccounts.address, address), ne(externalAccounts.id, exceptId))
-				: eq(externalAccounts.address, address),
+			and(
+				eq(externalAccounts.address, input.address),
+				ne(externalAccounts.preset, "other"),
+				exceptId ? ne(externalAccounts.id, exceptId) : undefined,
+			),
 		)
 		.limit(1);
 	if (taken)
@@ -223,7 +236,7 @@ export async function connectExternalAccount(
 	await assertServers(env, input);
 	const test = await testImapConnection(env, loginFor(input, password));
 	if (!test.ok) throw failedTest(test.problem);
-	await assertAddressFree(env, actor, input.address);
+	await assertAddressFree(env, actor, input);
 	const now = new Date();
 	const id = newId("xacct");
 	try {
@@ -234,6 +247,7 @@ export async function connectExternalAccount(
 				userId: actor.id,
 				...accountColumns(input),
 				...fromPreset,
+				syncIntervalMinutes: parseSyncInterval(body.syncIntervalMinutes) ?? DEFAULT_SYNC_INTERVAL_MINUTES,
 				secret: await sealSetting(env, password),
 				status: "active",
 				createdAt: now,
@@ -273,7 +287,11 @@ export async function updateExternalAccount(
 	const password = passwordFrom(body.password);
 	const signIn = password !== null || changesSignIn(current, input);
 	if (input.mailboxId !== current.mailboxId) await assertMailbox(env, actor, input.mailboxId);
-	const changes: Partial<typeof externalAccounts.$inferInsert> = { ...accountColumns(input), updatedAt: new Date() };
+	const changes: Partial<typeof externalAccounts.$inferInsert> = {
+		...accountColumns(input),
+		...syncSettings(body, row),
+		updatedAt: new Date(),
+	};
 	if (signIn) Object.assign(changes, await reconnect(env, actor, { id, current, input, password, body }));
 	await getDb(env)
 		.update(externalAccounts)
@@ -286,6 +304,27 @@ export async function updateExternalAccount(
 		metadata: { accountId: id, address: input.address, signInChanged: signIn, passwordChanged: !!password },
 	});
 	return serializeExternalAccount(await ownAccount(env, actor.id, id));
+}
+
+/**
+ * Pausing or resuming checks and their interval (spec §6.3): no sign-in needed. Resuming makes the next check due at
+ * once; an invalid interval is refused.
+ */
+function syncSettings(
+	body: Record<string, unknown>,
+	row: ExternalAccountRow,
+): Partial<typeof externalAccounts.$inferInsert> {
+	const changes: Partial<typeof externalAccounts.$inferInsert> = {};
+	if (body.syncIntervalMinutes !== undefined) {
+		const minutes = parseSyncInterval(body.syncIntervalMinutes);
+		if (minutes === null) throw new ExternalAccountRefusal(400, "Check every 5, 15 or 60 minutes");
+		changes.syncIntervalMinutes = minutes;
+	}
+	if (typeof body.syncEnabled === "boolean" && body.syncEnabled !== row.syncEnabled) {
+		changes.syncEnabled = body.syncEnabled;
+		if (body.syncEnabled) changes.nextSyncAt = null;
+	}
+	return changes;
 }
 
 /** The sign-in part of an edit: the checks of a connect, with the new password; returns the columns to write. */
@@ -314,7 +353,8 @@ async function reconnect(
 	await assertServers(env, input);
 	const test = await testImapConnection(env, loginFor(input, password));
 	if (!test.ok) throw failedTest(test.problem);
-	if (input.address !== current.address) await assertAddressFree(env, actor, input.address, id);
+	if (input.address !== current.address || input.preset !== current.preset)
+		await assertAddressFree(env, actor, input, id);
 	// Another server or login is another mailbox: its INBOX position starts again from this test.
 	const sameInbox =
 		current.imap.host === input.imap.host &&
@@ -329,6 +369,8 @@ async function reconnect(
 		statusReason: null,
 		lastError: null,
 		consecutiveFailures: 0,
+		// Checking starts again at the next tick.
+		nextSyncAt: null,
 	};
 }
 
@@ -375,7 +417,7 @@ export async function retestExternalAccount(
 			.set({
 				...(row.status === "paused" || row.status === "disabled"
 					? {}
-					: { status: "active" as const, statusReason: null }),
+					: { status: "active" as const, statusReason: null, nextSyncAt: null }),
 				lastError: null,
 				consecutiveFailures: 0,
 				updatedAt: now,
@@ -414,4 +456,53 @@ export async function removeExternalAccount(env: CloudflareEnv, actor: AccountAc
 		mailboxId: row.mailboxId,
 		metadata: { accountId: id, address: row.address, preset: row.preset },
 	});
+}
+
+/**
+ * **Check now** (spec §6.3): queues a check of the account at once, at most once a minute. Only an account that is
+ * checked at all can be: not paused, not waiting for a reconnect.
+ */
+export async function checkExternalAccountNow(
+	env: CloudflareEnv,
+	actor: AccountActor,
+	id: string,
+): Promise<ExternalAccountView> {
+	const row = await ownAccount(env, actor.id, id);
+	await assertAllowed(env, actor.id);
+	if (!row.secret || (row.status !== "active" && row.status !== "error"))
+		throw new ExternalAccountRefusal(409, "Reconnect the account before checking it", "RECONNECT_REQUIRED");
+	if (!row.syncEnabled)
+		throw new ExternalAccountRefusal(409, "Checking for new mail is paused. Resume it first.", "SYNC_PAUSED");
+	const queued = await queueSyncNow(env, row);
+	if (queued === "unavailable")
+		throw new ExternalAccountRefusal(503, "Checking for new mail is not available on this server", "SYNC_UNAVAILABLE");
+	if (queued === "too_soon")
+		throw new ExternalAccountRefusal(
+			429,
+			"Kite is checking this account or checked it less than a minute ago. Try again in a minute.",
+			"TOO_SOON",
+		);
+	return serializeExternalAccount(await ownAccount(env, actor.id, id));
+}
+
+/**
+ * The user's accounts that need them (spec §6.5): sign-in or certificate failures, and errors that stopped checking or
+ * have lasted a day. For the sidebar notice; empty while connected accounts are unavailable to the user.
+ */
+export async function listAccountsNeedingAttention(
+	env: CloudflareEnv,
+	userId: string,
+): Promise<Pick<ExternalAccountView, "id" | "address" | "status">[]> {
+	if (await connectRefusal(env, userId)) return [];
+	const rows = await getDb(env)
+		.select({ id: externalAccounts.id, address: externalAccounts.address, status: externalAccounts.status })
+		.from(externalAccounts)
+		.where(
+			and(
+				eq(externalAccounts.userId, userId),
+				inArray(externalAccounts.status, ["auth_failed", "tls_failed", "error"]),
+			),
+		)
+		.orderBy(asc(externalAccounts.createdAt));
+	return rows;
 }

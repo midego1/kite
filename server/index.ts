@@ -16,6 +16,8 @@ import { storageConnectOrigins } from "@/lib/storage";
 import { processInboundMessage } from "@/lib/email/inbound";
 import { processAgentQueueMessage } from "@/lib/agent/queue";
 import { dispatchModuleQueueMessage } from "@/lib/modules/background";
+import { syncExternalAccount } from "@/lib/external-accounts/sync";
+import { isExternalSyncMessage } from "@/lib/external-accounts/sync-utils";
 import { processOutboundQueue, type OutboundQueueMessage } from "@/lib/email/send";
 import { processWebhookRetry, type WebhookRetryMessage } from "@/lib/email/webhooks";
 import { processMailboxPurge } from "@/lib/mailboxes/delete";
@@ -76,6 +78,10 @@ async function main() {
 	});
 	runtime.agentQueue.setConsumer(async (body) => {
 		if (await processAgentQueueMessage(env, body)) return;
+		if (isExternalSyncMessage(body)) {
+			await syncExternalAccount(env, body.accountId);
+			return;
+		}
 		await dispatchModuleQueueMessage(env, "agent", body);
 	});
 

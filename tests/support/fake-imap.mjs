@@ -39,6 +39,9 @@ export async function startFakeImap(options = {}) {
 	const commands = [];
 	const connections = new Set();
 	let nextLoginFails = false;
+	/** A tagged answer the next sign-in gets instead of OK (`NO [THROTTLED] …`), once. */
+	let nextLoginAnswer = null;
+	const examineRefusals = { ...(options.examineRefusals ?? {}) };
 
 	function addMessage(folder, message) {
 		if (!folders.has(folder)) folders.set(folder, { nextUid: 1, uidValidity: 1, messages: [] });
@@ -50,7 +53,8 @@ export async function startFakeImap(options = {}) {
 			internalDate = "27-Oct-2026 10:00:00 +0000",
 			labels = [],
 		} = typeof message === "string" || Buffer.isBuffer(message) ? { raw: message } : message;
-		entry.messages.push({ uid, raw: Buffer.from(raw), flags, internalDate, labels });
+		const size = typeof message === "object" && !Buffer.isBuffer(message) ? message.size : undefined;
+		entry.messages.push({ uid, raw: Buffer.from(raw), flags, internalDate, labels, size });
 		return uid;
 	}
 
@@ -138,6 +142,11 @@ export async function startFakeImap(options = {}) {
 
 		const signIn = (tag, username, password) => {
 			if (!state.encrypted && options.loginDisabledWithoutTls) return send(`${tag} NO [PRIVACYREQUIRED] TLS first\r\n`);
+			if (nextLoginAnswer) {
+				const answer = nextLoginAnswer;
+				nextLoginAnswer = null;
+				return send(`${tag} ${answer}\r\n`);
+			}
 			if (nextLoginFails || users[username] !== password) {
 				nextLoginFails = false;
 				return send(`${tag} NO [AUTHENTICATIONFAILED] Invalid credentials\r\n`);
@@ -219,7 +228,7 @@ export async function startFakeImap(options = {}) {
 			}
 			if (name === "SELECT" || name === "EXAMINE") {
 				const [folder] = parseQuoted(args);
-				const refusal = options.examineRefusals?.[folder];
+				const refusal = examineRefusals[folder];
 				if (refusal) return send(`${tag} ${refusal}\r\n`);
 				const entry = folders.get(folder);
 				if (!entry) return send(`${tag} NO [NONEXISTENT] No such folder\r\n`);
@@ -230,11 +239,14 @@ export async function startFakeImap(options = {}) {
 			}
 			const entry = state.selected ? folders.get(state.selected) : null;
 			if (name === "UID" && entry) {
-				const [sub, set] = args.split(" ");
-				if (sub.toUpperCase() === "SEARCH")
-					return send(`* SEARCH ${entry.messages.map((message) => message.uid).join(" ")}\r\n${tag} OK done\r\n`);
+				const [sub, set, ...criteria] = args.split(" ");
+				if (sub.toUpperCase() === "SEARCH") {
+					const since = set?.toUpperCase() === "SINCE" ? searchDay(criteria[0]) : null;
+					const found = entry.messages.filter((message) => since === null || messageDay(message.internalDate) >= since);
+					return send(`* SEARCH ${found.map((message) => message.uid).join(" ")}\r\n${tag} OK done\r\n`);
+				}
 				if (sub.toUpperCase() === "FETCH") {
-					const wanted = new Set(set.split(",").map(Number));
+					const wanted = uidSet(set, entry.messages.map((message) => message.uid));
 					if (options.hugeLiteral) return send(`* 1 FETCH (UID 1 BODY[] {4000000000}\r\n${"x".repeat(1000)}`);
 					if (options.fetchGate) {
 						const gate = typeof options.fetchGate === "function" ? options.fetchGate(fetches++) : options.fetchGate;
@@ -253,10 +265,12 @@ export async function startFakeImap(options = {}) {
 		}
 
 		function respondFetch(tag, args, entry, wanted) {
+			const withBody = /BODY/i.test(args);
 			entry.messages.forEach((message, index) => {
 				if (!wanted.has(message.uid)) return;
 				const labels = /X-GM-LABELS/i.test(args) ? ` X-GM-LABELS ${labelList(message.labels)}` : "";
-				const attributes = `FLAGS (${message.flags.join(" ")}) INTERNALDATE "${message.internalDate}" RFC822.SIZE ${message.raw.length}${labels}`;
+				const attributes = `FLAGS (${message.flags.join(" ")}) INTERNALDATE "${message.internalDate}" RFC822.SIZE ${message.size ?? message.raw.length}${labels}`;
+				if (!withBody) return send(`* ${index + 1} FETCH (UID ${message.uid} ${attributes})\r\n`);
 				if (options.attributesAfterLiteral) {
 					send(`* ${index + 1} FETCH (BODY[] {${message.raw.length}}\r\n`);
 					send(message.raw);
@@ -302,6 +316,19 @@ export async function startFakeImap(options = {}) {
 		failNextLogin() {
 			nextLoginFails = true;
 		},
+		/** The next sign-in is answered with this tagged response instead (`NO [THROTTLED] Too many logins`). */
+		answerNextLogin(answer) {
+			nextLoginAnswer = answer;
+		},
+		/** Sets (or, with null, clears) the tagged answer SELECT and EXAMINE of `folder` get. */
+		refuseExamine(folder, answer) {
+			if (answer) examineRefusals[folder] = answer;
+			else delete examineRefusals[folder];
+		},
+		/** Sets an account's password, as a user changing it at the provider would. */
+		setPassword(username, password) {
+			users[username] = password;
+		},
 		async close() {
 			for (const socket of connections) socket.destroy();
 			await new Promise((resolve) => server.close(() => resolve()));
@@ -335,6 +362,32 @@ function streamUntaggedFlood(socket, lineBytes) {
 		}
 	};
 	next();
+}
+
+const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/** `27-Oct-2026` (or the date part of an INTERNALDATE) as a comparable day number. */
+function searchDay(value = "") {
+	const match = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})/.exec(value.trim());
+	if (!match) return 0;
+	return Date.UTC(Number(match[3]), MONTH_NAMES.indexOf(match[2].toLowerCase()), Number(match[1])) / 86_400_000;
+}
+
+const messageDay = (internalDate) => searchDay(internalDate);
+
+/**
+ * The UIDs a UID set names among `uids`: numbers, ranges and `*` (the highest UID). As RFC 9051 says, `n:*` with `n`
+ * above every UID still names the highest one.
+ */
+function uidSet(set = "", uids) {
+	const highest = uids.length ? Math.max(...uids) : 0;
+	const wanted = new Set();
+	for (const part of set.split(",")) {
+		const [from, to = from] = part.split(":").map((value) => (value === "*" ? highest : Number(value)));
+		const [low, high] = from <= to ? [from, to] : [to, from];
+		for (const uid of uids) if (uid >= low && uid <= high) wanted.add(uid);
+	}
+	return wanted;
 }
 
 /** The quoted (or atom) arguments of a command line, unescaped. */

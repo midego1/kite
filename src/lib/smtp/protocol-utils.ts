@@ -170,46 +170,60 @@ function printable(value: string): string {
 }
 
 /**
- * The bytes sent after `DATA`: every line ending made CRLF (a bare CR or LF is never sent, so the end-of-data marker
- * cannot be smuggled in as `\n.\n`), a dot at the start of a line doubled (RFC 5321 §4.5.2), a final CRLF added when the
- * message lacks one, then `.` CRLF. Two passes: count, then fill one buffer of exactly that size.
+ * The bytes sent after `DATA`, in chunks of about `chunkBytes`, so a large message is never copied whole: every line
+ * ending made CRLF (a bare CR or LF is never sent, so the end-of-data marker cannot be smuggled in as `\n.\n`), a dot
+ * at the start of a line doubled (RFC 5321 §4.5.2), a final CRLF added when the message lacks one, then `.` CRLF.
  */
-export function smtpDataPayload(raw: Uint8Array): Uint8Array {
+export function* smtpDataChunks(raw: Uint8Array, chunkBytes = 64 * 1024): Generator<Uint8Array> {
 	const CR = 13;
 	const LF = 10;
 	const DOT = 46;
-	const walk = (emit: (byte: number) => void) => {
-		let lineStart = true;
-		for (let index = 0; index < raw.length; index += 1) {
-			const byte = raw[index];
-			if (byte === CR || byte === LF) {
-				if (byte === CR && raw[index + 1] === LF) index += 1;
-				emit(CR);
-				emit(LF);
-				lineStart = true;
-				continue;
-			}
-			if (lineStart && byte === DOT) emit(DOT);
-			emit(byte);
+	// One input byte adds at most two, and the ending at most five, so the buffer never overflows.
+	const out = new Uint8Array(chunkBytes + 8);
+	let length = 0;
+	let lineStart = true;
+	let afterCr = false;
+	for (let index = 0; index < raw.length; index += 1) {
+		const byte = raw[index];
+		if (afterCr) {
+			afterCr = false;
+			// The LF of a CRLF pair: its CRLF is already out.
+			if (byte === LF) continue;
+		}
+		if (byte === CR || byte === LF) {
+			out[length++] = CR;
+			out[length++] = LF;
+			lineStart = true;
+			afterCr = byte === CR;
+		} else {
+			if (lineStart && byte === DOT) out[length++] = DOT;
+			out[length++] = byte;
 			lineStart = false;
 		}
-		if (!lineStart) {
-			emit(CR);
-			emit(LF);
+		if (length >= chunkBytes) {
+			yield out.slice(0, length);
+			length = 0;
 		}
-		emit(DOT);
-		emit(CR);
-		emit(LF);
-	};
-	let length = 0;
-	walk(() => {
-		length += 1;
-	});
-	const out = new Uint8Array(length);
+	}
+	if (!lineStart) {
+		out[length++] = CR;
+		out[length++] = LF;
+	}
+	out[length++] = DOT;
+	out[length++] = CR;
+	out[length++] = LF;
+	yield out.slice(0, length);
+}
+
+/** The whole DATA payload of `smtpDataChunks` in one buffer (for tests and small messages). @public Exercised by the unit tests. */
+export function smtpDataPayload(raw: Uint8Array): Uint8Array {
+	const chunks = [...smtpDataChunks(raw)];
+	const out = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0));
 	let offset = 0;
-	walk((byte) => {
-		out[offset++] = byte;
-	});
+	for (const chunk of chunks) {
+		out.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
 	return out;
 }
 

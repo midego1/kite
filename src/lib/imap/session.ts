@@ -34,6 +34,10 @@ export type ImapSession = {
 	listMailboxes(): Promise<ImapListedMailbox[]>;
 	/** MESSAGES, UIDNEXT, UIDVALIDITY and, with STATUS=SIZE, SIZE of one mailbox; null when the server refuses. */
 	status(folder: string): Promise<ReturnType<typeof parseStatusLine>>;
+	/** Whether `folder` holds a message with this Message-ID header (`UID SEARCH HEADER Message-ID`). */
+	hasMessageId(folder: string, messageId: string): Promise<boolean>;
+	/** Adds one message to `folder` with `flags` (`\\Seen`); the only write at the source (spec §7.4). */
+	append(folder: string, flags: readonly string[], raw: Uint8Array): Promise<void>;
 	close(): Promise<void>;
 };
 
@@ -86,6 +90,12 @@ export async function openImapSession(
 				: "MESSAGES UIDNEXT UIDVALIDITY";
 			const lines = await imap.command(`STATUS ${quoteImapString(folder)} (${items})`).catch(() => null);
 			return lines?.map(parseStatusLine).find((entry) => entry) ?? null;
+		},
+		append: (folder, flags, raw) => imap.appendMessage(folder, flags, raw),
+		async hasMessageId(folder, messageId) {
+			await imap.command(`EXAMINE ${quoteImapString(folder)}`);
+			const lines = await imap.command(`UID SEARCH HEADER Message-ID ${quoteImapString(messageId)}`);
+			return lines.flatMap(parseSearchUids).length > 0;
 		},
 		async listMailboxNames() {
 			const lines = await imap.command('LIST "" "*"');

@@ -17,6 +17,7 @@ const {
 	redactSecrets,
 	transportAddress,
 	smtpDataPayload,
+	smtpDataChunks,
 	hasEightBitBytes,
 	smtpFailureMessage,
 	SmtpReplyError,
@@ -24,7 +25,7 @@ const {
 	SmtpDeliveryUnknownError,
 } = await bundleModules("kite-smtp-utils-", [
 	[
-		"SMTP_PORTS, smtpLimits, parseReplyLine, buildReply, replyText, parseEhloExtensions, planSmtpStartTls, chooseSmtpAuthMethod, base64Utf8, smtpPlainToken, assertCredential, redactSecrets, transportAddress, smtpDataPayload, hasEightBitBytes, smtpFailureMessage",
+		"SMTP_PORTS, smtpLimits, parseReplyLine, buildReply, replyText, parseEhloExtensions, planSmtpStartTls, chooseSmtpAuthMethod, base64Utf8, smtpPlainToken, assertCredential, redactSecrets, transportAddress, smtpDataPayload, smtpDataChunks, hasEightBitBytes, smtpFailureMessage",
 		"src/lib/smtp/protocol-utils.ts",
 	],
 	["SmtpReplyError, SmtpMessageTooLargeError, SmtpDeliveryUnknownError", "src/lib/smtp/errors.ts"],
@@ -200,6 +201,21 @@ test("transportAddress refuses what could break a command or needs SMTPUTF8", ()
 		() => transportAddress(`${"x".repeat(100)} bad`),
 		(error) => error.message.includes("…"),
 	);
+});
+
+test("smtpDataChunks streams the same bytes in bounded chunks, whatever falls on a chunk boundary", () => {
+	const inputs = ["a\r\nb\r\n", ".x\r\n.\r\n..\r\n", "a\r\n.b\nc\r.d\r\n", "x\r\r\ny", "", "line\r\n".repeat(50)];
+	for (const input of inputs) {
+		const whole = text(smtpDataPayload(bytes(input)));
+		for (const size of [1, 2, 3, 5, 7, 64]) {
+			const chunks = [...smtpDataChunks(bytes(input), size)];
+			// One input byte adds at most two, so a chunk is never more than two bytes past its size (plus the ending).
+			for (const chunk of chunks) assert.ok(chunk.byteLength <= size + 5, `chunk of ${chunk.byteLength} for ${size}`);
+			assert.equal(chunks.map(text).join(""), whole, `${JSON.stringify(input)} in chunks of ${size}`);
+		}
+	}
+	// A CR at the end of one chunk and its LF at the start of the next stay one line break.
+	assert.equal([...smtpDataChunks(bytes("ab\r\n.c"), 3)].map(text).join(""), "ab\r\n..c\r\n.\r\n");
 });
 
 test("smtpDataPayload makes every line ending CRLF, doubles leading dots and ends with the marker", () => {

@@ -1,7 +1,7 @@
 import { MailServerRefusedError } from "@/lib/net/errors";
 import type { MailSocket } from "@/lib/net/types";
 import { SmtpDeliveryUnknownError, SmtpReplyError } from "./errors";
-import { buildReply, parseReplyLine, redactSecrets, smtpLimits } from "./protocol-utils";
+import { buildReply, parseReplyLine, redactSecrets, smtpDataChunks, smtpLimits } from "./protocol-utils";
 import type { SmtpLimits, SmtpReply, SmtpStage } from "./types";
 
 export type SmtpConnectionOptions = Partial<SmtpLimits>;
@@ -57,10 +57,10 @@ export class SmtpConnection {
 		line: string,
 		stage: SmtpStage,
 		expected: readonly number[],
-		options: { secrets?: readonly string[]; recipient?: string } = {},
+		options: { secrets?: readonly string[]; recipient?: string; timeoutMs?: number } = {},
 	): Promise<SmtpReply> {
 		if (/[\r\n]/.test(line)) throw new Error("SMTP commands cannot contain line breaks");
-		await this.write(`${line}\r\n`, this.limits.commandTimeoutMs);
+		await this.write(`${line}\r\n`, options.timeoutMs ?? this.limits.commandTimeoutMs);
 		const reply = await this.readReply();
 		if (expected.includes(reply.code)) return reply;
 		const secrets = options.secrets ?? [];
@@ -99,16 +99,17 @@ export class SmtpConnection {
 	}
 
 	/**
-	 * Writes the prepared DATA payload (`smtpDataPayload`: dot-stuffed and ending in `.` CRLF) and reads the server's
-	 * verdict, which may take longer while it queues the message. A refusing reply is an `SmtpReplyError`; anything else
-	 * that goes wrong from the first payload byte on (a timeout, a reset, a closed connection, an unreadable reply) is an
-	 * `SmtpDeliveryUnknownError`, because the server may have queued the message and a retry could send it twice.
+	 * Writes the DATA payload (`smtpDataChunks`: dot-stuffed and ending in `.` CRLF, made one chunk at a time so a large
+	 * message is not copied whole) and reads the server's verdict, which may take longer while it queues the message. A
+	 * refusing reply is an `SmtpReplyError`; anything else that goes wrong from the first payload byte on (a timeout, a
+	 * reset, a closed connection, an unreadable reply) is an `SmtpDeliveryUnknownError`, because the server may have
+	 * queued the message and a retry could send it twice.
 	 */
-	async sendData(payload: Uint8Array): Promise<SmtpReply> {
+	async sendData(raw: Uint8Array): Promise<SmtpReply> {
 		let reply: SmtpReply;
 		try {
-			for (let offset = 0; offset < payload.length; offset += WRITE_CHUNK_BYTES)
-				await this.writeBytes(payload.subarray(offset, offset + WRITE_CHUNK_BYTES), this.limits.commandTimeoutMs);
+			for (const chunk of smtpDataChunks(raw, WRITE_CHUNK_BYTES))
+				await this.writeBytes(chunk, this.limits.commandTimeoutMs);
 			this.restartDeadline(this.limits.dataTimeoutMs);
 			reply = await this.readReply();
 		} catch (error) {

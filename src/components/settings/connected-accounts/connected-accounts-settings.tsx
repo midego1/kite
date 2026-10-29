@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, Plus } from "lucide-react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
+import { MAILBOXES_CHANGED_EVENT } from "@/components/mailbox-provider-utils";
 import { useModules } from "@/components/modules/modules-context";
 import { SUCCESS_NOTICE_CLASS, WARNING_NOTICE_CLASS } from "@/components/notice-styles";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +14,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { EmptyState, PageHeader } from "@/components/ui/page";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import { AccountFormDialog } from "./account-form-dialog";
+import { AccountSending } from "./account-sending";
 import type { ConnectedAccountsState } from "./connected-accounts-types";
 import {
 	CONNECTED_ACCOUNTS_QUERY_KEY,
@@ -35,14 +37,18 @@ export function ConnectedAccountsSettings() {
 	});
 	const [editing, setEditing] = useState<Editing>(null);
 	const [notice, setNotice] = useState<{ text: string; accountId?: string } | null>(null);
-	const refresh = () => queryClient.invalidateQueries({ queryKey: CONNECTED_ACCOUNTS_QUERY_KEY });
+	const refresh = () => {
+		// The composer's From menu lists connected addresses, so the mailbox list follows every change here.
+		window.dispatchEvent(new Event(MAILBOXES_CHANGED_EVENT));
+		return queryClient.invalidateQueries({ queryKey: CONNECTED_ACCOUNTS_QUERY_KEY });
+	};
 	const allowed = !!data && !data.refusal;
 
 	return (
 		<div className="space-y-6">
 			<PageHeader
 				title="Connected accounts"
-				description="Connect a Gmail, iCloud, Fastmail, Yahoo or other IMAP account, so Kite can bring in its mail without asking for the password each time."
+				description="Connect a Gmail, iCloud, Fastmail, Yahoo or other IMAP account, so Kite can bring in its mail and send as its address without asking for the password each time."
 				actions={
 					allowed && (
 						<Button onClick={() => setEditing({ account: null })}>
@@ -203,6 +209,7 @@ function AccountRow({
 					{mailbox ? ` · Mail goes to ${mailbox.displayName || `${mailbox.localPart}@${mailbox.hostname}`}` : ""}
 				</p>
 				{hint && <p className="text-xs text-[#8a4b0a] dark:text-[#d4a35a]">{hint}</p>}
+				<AccountSending account={account} usable={usable} onChanged={onChanged} />
 				{account.lastError && <p className="text-xs text-neutral-500">{account.lastError}</p>}
 				{message && (
 					<p role="status" className="text-xs text-neutral-700">

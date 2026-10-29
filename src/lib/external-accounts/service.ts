@@ -10,13 +10,14 @@ import { MailServerRefusedError } from "@/lib/net/errors";
 import { openSetting, SecretBoxError, sealSetting } from "@/lib/security/secret-box";
 import { CONNECT_REFUSAL_TEXT, connectRefusal } from "./access";
 import { auditExternalAccount, recordConnectionTest } from "./audit";
-import { testImapConnection, type ImapBaseline } from "./connection-test";
+import { testImapConnection, testSmtpConnection, type ImapBaseline } from "./connection-test";
 import type { ConnectionProblem } from "./connection-utils";
 import { ExternalAccountRefusal, externalAccountTablesReady } from "./errors";
 import { assertMailServerHost } from "./host-guard";
 import { AccountInputError, changesSignIn, parseAccountInput, passwordFrom } from "./input-utils";
 import { addressDomain, findPreset, presetTrustsAuthResults } from "./presets-utils";
 import { appendRecentError, serializeExternalAccount, type ExternalAccountRow } from "./serialize-utils";
+import { readSmtpVerified, writeSmtpVerified } from "./send-state";
 import type { ExternalAccountInput, ExternalAccountView } from "./types";
 
 /** The signed-in user a request acts for. */
@@ -39,7 +40,18 @@ export async function listExternalAccounts(env: CloudflareEnv, userId: string): 
 		.from(externalAccounts)
 		.where(eq(externalAccounts.userId, userId))
 		.orderBy(asc(externalAccounts.createdAt));
-	return rows.map(serializeExternalAccount);
+	const verified = await readSmtpVerified(
+		env,
+		rows.map((row) => row.id),
+	);
+	return rows.map((row) => serializeExternalAccount(row, verified.get(row.id) ?? null));
+}
+
+/** The account as the API returns it, with its send-as state. */
+async function ownView(env: CloudflareEnv, userId: string, id: string): Promise<ExternalAccountView> {
+	const row = await ownAccount(env, userId, id);
+	const verified = await readSmtpVerified(env, [id]);
+	return serializeExternalAccount(row, verified.get(id) ?? null);
 }
 
 async function ownAccount(env: CloudflareEnv, userId: string, id: string): Promise<ExternalAccountRow> {
@@ -135,6 +147,34 @@ async function assertServers(env: CloudflareEnv, input: ExternalAccountInput): P
 
 function loginFor(input: Pick<ExternalAccountInput, "imap" | "username">, password: string): ImapLogin {
 	return { ...input.imap, username: input.username, password };
+}
+
+/**
+ * Signs in to the SMTP server too, when the login address could be a send-as identity (an SMTP server, and the user
+ * name is the address, spec §7.2), and records the outcome: the time it worked, or null. A failure never fails the
+ * connect or the test of the IMAP side; its reason is returned for the account's last error.
+ */
+async function verifySending(
+	env: CloudflareEnv,
+	id: string,
+	input: Pick<ExternalAccountInput, "smtp" | "username" | "address">,
+	password: string,
+): Promise<ConnectionProblem | null> {
+	if (!input.smtp || input.username.toLowerCase() !== input.address) {
+		await writeSmtpVerified(env, id, null);
+		return null;
+	}
+	const test = await testSmtpConnection(env, { ...input.smtp, username: input.username, password });
+	await writeSmtpVerified(env, id, test.ok ? new Date() : null);
+	return test.ok ? null : { ...test.problem, message: `Sending: ${test.problem.message}` };
+}
+
+/** The send-as switches of an edit (spec §7.4, §16.3); they need no sign-in. */
+function sendingSwitches(body: Record<string, unknown>): Partial<typeof externalAccounts.$inferInsert> {
+	return {
+		...(typeof body.sendEnabled === "boolean" ? { sendEnabled: body.sendEnabled } : {}),
+		...(typeof body.appendSent === "boolean" ? { appendSent: body.appendSent } : {}),
+	};
 }
 
 /** Counts one attempt against the user's limit (429 past it); runs before any other check of the attempt. */
@@ -234,6 +274,7 @@ export async function connectExternalAccount(
 				userId: actor.id,
 				...accountColumns(input),
 				...fromPreset,
+				...sendingSwitches(body),
 				secret: await sealSetting(env, password),
 				status: "active",
 				createdAt: now,
@@ -245,13 +286,25 @@ export async function connectExternalAccount(
 		throw error;
 	}
 	await saveBaseline(env, id, test.baseline);
+	const sendProblem = await verifySending(env, id, input, password);
+	if (sendProblem)
+		await getDb(env)
+			.update(externalAccounts)
+			.set({ lastError: sendProblem.message, recentErrors: appendRecentError("[]", sendProblem.message, now) })
+			.where(eq(externalAccounts.id, id));
 	await auditExternalAccount(env, {
 		actorUserId: actor.id,
 		action: "external_account.connected",
 		mailboxId: input.mailboxId,
-		metadata: { accountId: id, address: input.address, preset: input.preset, host: input.imap.host },
+		metadata: {
+			accountId: id,
+			address: input.address,
+			preset: input.preset,
+			host: input.imap.host,
+			sendingVerified: !sendProblem && !!input.smtp,
+		},
 	});
-	return serializeExternalAccount(await ownAccount(env, actor.id, id));
+	return ownView(env, actor.id, id);
 }
 
 /**
@@ -266,14 +319,33 @@ export async function updateExternalAccount(
 	id: string,
 	body: Record<string, unknown>,
 ): Promise<ExternalAccountView> {
-	const row = await ownAccount(env, actor.id, id);
+	const current = await ownView(env, actor.id, id);
 	await assertAllowed(env, actor.id);
-	const current = serializeExternalAccount(row);
+	// Only the send-as switches: nothing about the sign-in or the servers is read or checked again.
+	const keys = Object.keys(body);
+	if (keys.length && keys.every((key) => key === "sendEnabled" || key === "appendSent")) {
+		const switches = sendingSwitches(body);
+		await getDb(env)
+			.update(externalAccounts)
+			.set({ ...switches, updatedAt: new Date() })
+			.where(and(eq(externalAccounts.id, id), eq(externalAccounts.userId, actor.id)));
+		await auditExternalAccount(env, {
+			actorUserId: actor.id,
+			action: "external_account.updated",
+			mailboxId: current.mailboxId,
+			metadata: { accountId: id, address: current.address, signInChanged: false, passwordChanged: false, ...switches },
+		});
+		return ownView(env, actor.id, id);
+	}
 	const input = parse(body, current);
 	const password = passwordFrom(body.password);
 	const signIn = password !== null || changesSignIn(current, input);
 	if (input.mailboxId !== current.mailboxId) await assertMailbox(env, actor, input.mailboxId);
-	const changes: Partial<typeof externalAccounts.$inferInsert> = { ...accountColumns(input), updatedAt: new Date() };
+	const changes: Partial<typeof externalAccounts.$inferInsert> = {
+		...accountColumns(input),
+		...sendingSwitches(body),
+		updatedAt: new Date(),
+	};
 	if (signIn) Object.assign(changes, await reconnect(env, actor, { id, current, input, password, body }));
 	await getDb(env)
 		.update(externalAccounts)
@@ -283,9 +355,15 @@ export async function updateExternalAccount(
 		actorUserId: actor.id,
 		action: "external_account.updated",
 		mailboxId: input.mailboxId,
-		metadata: { accountId: id, address: input.address, signInChanged: signIn, passwordChanged: !!password },
+		metadata: {
+			accountId: id,
+			address: input.address,
+			signInChanged: signIn,
+			passwordChanged: !!password,
+			...sendingSwitches(body),
+		},
 	});
-	return serializeExternalAccount(await ownAccount(env, actor.id, id));
+	return ownView(env, actor.id, id);
 }
 
 /** The sign-in part of an edit: the checks of a connect, with the new password; returns the columns to write. */
@@ -322,12 +400,13 @@ async function reconnect(
 		current.username === input.username;
 	if (!sameInbox) await getDb(env).delete(externalAccountFolders).where(eq(externalAccountFolders.accountId, id));
 	await saveBaseline(env, id, test.baseline);
+	const sendProblem = await verifySending(env, id, input, password);
 	return {
 		...fromPreset,
 		secret: await sealSetting(env, password),
 		status: "active",
 		statusReason: null,
-		lastError: null,
+		lastError: sendProblem?.message ?? null,
 		consecutiveFailures: 0,
 	};
 }
@@ -364,10 +443,12 @@ export async function retestExternalAccount(
 			.update(externalAccounts)
 			.set({ status: "auth_failed", lastError: problem.message, updatedAt: now })
 			.where(eq(externalAccounts.id, id));
-		return { account: serializeExternalAccount(await ownAccount(env, actor.id, id)), problem };
+		await writeSmtpVerified(env, id, null);
+		return { account: await ownView(env, actor.id, id), problem };
 	}
 	await countAttempt(env, actor.id, view, id);
 	const test = await testImapConnection(env, loginFor(view, secret));
+	const sendProblem = test.ok ? await verifySending(env, id, view, secret) : null;
 	if (test.ok) {
 		// A paused account stays paused: a test proves the sign-in, not that the owner wants it running.
 		await db
@@ -376,7 +457,8 @@ export async function retestExternalAccount(
 				...(row.status === "paused" || row.status === "disabled"
 					? {}
 					: { status: "active" as const, statusReason: null }),
-				lastError: null,
+				lastError: sendProblem?.message ?? null,
+				...(sendProblem ? { recentErrors: appendRecentError(row.recentErrors, sendProblem.message, now) } : {}),
 				consecutiveFailures: 0,
 				updatedAt: now,
 			})
@@ -394,8 +476,8 @@ export async function retestExternalAccount(
 			.where(eq(externalAccounts.id, id));
 	}
 	return {
-		account: serializeExternalAccount(await ownAccount(env, actor.id, id)),
-		problem: test.ok ? null : test.problem,
+		account: await ownView(env, actor.id, id),
+		problem: test.ok ? sendProblem : test.problem,
 	};
 }
 

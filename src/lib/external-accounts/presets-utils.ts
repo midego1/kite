@@ -3,12 +3,16 @@ import type { ExternalAccountPreset, ExternalAccountPresetId, MailServerSettings
 const tls = (host: string, port: number): MailServerSettings => ({ host, port, security: "tls" });
 const starttls = (host: string, port: number): MailServerSettings => ({ host, port, security: "starttls" });
 
+const MB = 1_000_000;
+
 const GMAIL_SERVERS = { imap: tls("imap.gmail.com", 993), smtp: tls("smtp.gmail.com", 465) };
 
 /**
  * The providers Kite knows (spec §10.2 `preset`). `authservId` is the authserv-id of the provider's own
  * Authentication-Results header (§6.6); it is set only where it has been tied to the provider's hop, and null means
  * the header is never trusted. `appendSent` is false where the provider saves SMTP submissions in Sent itself.
+ * `maxMessageBytes` is the provider's limit on one message as sent (attachments base64-encoded), counted in decimal
+ * megabytes to stay under it; "Other" relies on the size its server announces.
  * Microsoft accounts sign in only with Microsoft's OAuth (§15.5), which Kite does not offer yet.
  */
 export const EXTERNAL_ACCOUNT_PRESETS: readonly ExternalAccountPreset[] = [
@@ -19,6 +23,7 @@ export const EXTERNAL_ACCOUNT_PRESETS: readonly ExternalAccountPreset[] = [
 		mxSuffixes: [],
 		...GMAIL_SERVERS,
 		appendSent: false,
+		maxMessageBytes: 25 * MB,
 		authservId: "mx.google.com",
 		passwordSignIn: true,
 		passwordHelp: "Use an app password: Google Account → Security → 2-Step Verification → App passwords.",
@@ -30,6 +35,7 @@ export const EXTERNAL_ACCOUNT_PRESETS: readonly ExternalAccountPreset[] = [
 		mxSuffixes: ["aspmx.l.google.com", "googlemail.com", "smtp.google.com"],
 		...GMAIL_SERVERS,
 		appendSent: false,
+		maxMessageBytes: 25 * MB,
 		authservId: "mx.google.com",
 		passwordSignIn: true,
 		passwordHelp: "Use an app password, if your Workspace admin allows them.",
@@ -42,6 +48,7 @@ export const EXTERNAL_ACCOUNT_PRESETS: readonly ExternalAccountPreset[] = [
 		imap: tls("outlook.office365.com", 993),
 		smtp: starttls("smtp.office365.com", 587),
 		appendSent: false,
+		maxMessageBytes: 20 * MB,
 		authservId: null,
 		passwordSignIn: false,
 		passwordHelp: "Microsoft accounts need Microsoft sign-in, which Kite does not support yet.",
@@ -54,6 +61,7 @@ export const EXTERNAL_ACCOUNT_PRESETS: readonly ExternalAccountPreset[] = [
 		imap: tls("imap.mail.me.com", 993),
 		smtp: starttls("smtp.mail.me.com", 587),
 		appendSent: true,
+		maxMessageBytes: 20 * MB,
 		authservId: null,
 		passwordSignIn: true,
 		passwordHelp: "Use an app-specific password: Apple Account → Sign-In and Security → App-Specific Passwords.",
@@ -66,6 +74,7 @@ export const EXTERNAL_ACCOUNT_PRESETS: readonly ExternalAccountPreset[] = [
 		imap: tls("imap.mail.yahoo.com", 993),
 		smtp: tls("smtp.mail.yahoo.com", 465),
 		appendSent: true,
+		maxMessageBytes: 25 * MB,
 		authservId: null,
 		passwordSignIn: true,
 		passwordHelp: "Use an app password: Yahoo Account Security → Generate app password.",
@@ -78,6 +87,7 @@ export const EXTERNAL_ACCOUNT_PRESETS: readonly ExternalAccountPreset[] = [
 		imap: tls("imap.aol.com", 993),
 		smtp: tls("smtp.aol.com", 465),
 		appendSent: true,
+		maxMessageBytes: 25 * MB,
 		authservId: null,
 		passwordSignIn: true,
 		passwordHelp: "Use an app password: AOL Account Security → Generate app password.",
@@ -90,6 +100,7 @@ export const EXTERNAL_ACCOUNT_PRESETS: readonly ExternalAccountPreset[] = [
 		imap: tls("imap.fastmail.com", 993),
 		smtp: tls("smtp.fastmail.com", 465),
 		appendSent: true,
+		maxMessageBytes: 70 * MB,
 		authservId: null,
 		passwordSignIn: true,
 		passwordHelp: "Use an app password: Fastmail Settings → Privacy & Security → Manage app passwords.",
@@ -102,6 +113,7 @@ export const EXTERNAL_ACCOUNT_PRESETS: readonly ExternalAccountPreset[] = [
 		imap: tls("", 993),
 		smtp: tls("", 465),
 		appendSent: true,
+		maxMessageBytes: null,
 		authservId: null,
 		passwordSignIn: true,
 		passwordHelp: "Use the password or app password your provider gives mail apps.",

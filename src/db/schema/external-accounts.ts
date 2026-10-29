@@ -116,3 +116,19 @@ export const externalAccountSettings = sqliteTable("app_settings", {
 		.notNull()
 		.$defaultFn(() => new Date()),
 });
+
+/**
+ * Migration 0083's send-as state of an account, a narrow view of `external_accounts` for the same reason: the account
+ * pages and the import keep working on a deploy that runs before the migration. `smtpVerifiedAt` is when the SMTP
+ * sign-in last succeeded with the saved password (spec §7.2); null means the address is not offered as a sender.
+ */
+export const externalAccountSendStates = sqliteTable("external_accounts", {
+	id: text("id").primaryKey(),
+	smtpVerifiedAt: integer("smtp_verified_at", { mode: "timestamp" }),
+});
+
+/** `messages.external_account_id` (migration 0079): the account a sent copy went out through (or synced mail came in by). */
+export const messageExternalAccounts = sqliteTable("messages", {
+	id: text("id").primaryKey(),
+	externalAccountId: text("external_account_id"),
+});

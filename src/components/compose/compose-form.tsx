@@ -41,6 +41,12 @@ import { withoutAttachmentIds } from "./draft-autosave-utils";
 import { buildDraftSnapshot } from "./draft-snapshot-utils";
 import { useDraftAutosave } from "./use-draft-autosave";
 import { pickFromAddress, useComposeMailbox } from "./use-compose-mailbox";
+import {
+	mailboxSendableAddresses,
+	senderOptionLabel,
+	senderOptionsFor,
+	sentToastMessage,
+} from "./sender-options-utils";
 import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-send-utils";
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
 import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
@@ -111,22 +117,11 @@ export function ComposeForm({
 	const fileDragDepth = useRef(0);
 	const previousSignature = useRef("");
 
-	const senderAddresses = useMemo(() => {
-		if (!selectedMailbox) return [];
-		return selectedMailbox.senderAddresses?.length
-			? selectedMailbox.senderAddresses
-			: [`${selectedMailbox.localPart}@${selectedMailbox.hostname}`];
-	}, [selectedMailbox]);
-	const senderOptions = useMemo(
-		() =>
-			mailboxes.flatMap((mailbox) => {
-				const addresses = mailbox.senderAddresses?.length
-					? mailbox.senderAddresses
-					: [`${mailbox.localPart}@${mailbox.hostname}`];
-				return addresses.map((address) => ({ mailbox, address }));
-			}),
-		[mailboxes],
+	const senderAddresses = useMemo(
+		() => (selectedMailbox ? mailboxSendableAddresses(selectedMailbox) : []),
+		[selectedMailbox],
 	);
+	const senderOptions = useMemo(() => senderOptionsFor(mailboxes), [mailboxes]);
 	// A loaded draft's From wins whenever it or the available addresses change.
 	const loadedDraftFromChanged = useKeyChanged(loadedDraftFrom);
 	const senderAddressesChanged = useKeyChanged(senderAddresses);
@@ -140,7 +135,12 @@ export function ComposeForm({
 	}
 	const selectedFrom = pickFromAddress(senderAddresses, [chosenFrom, defaultFrom]);
 	const kiteComposer = { html, setHtml, subject, to, threading, onInserted: () => setAiAssisted(true) };
-	const fromAddr = selectedMailbox && selectedFrom ? formatEmailAddress(selectedFrom, selectedMailbox.displayName) : "";
+	// A connected address sends under the account's own name when it has one (the server decides in the end).
+	const fromIdentity = selectedMailbox?.externalIdentities?.find((identity) => identity.address === selectedFrom);
+	const fromAddr =
+		selectedMailbox && selectedFrom
+			? formatEmailAddress(selectedFrom, fromIdentity?.displayName ?? selectedMailbox.displayName)
+			: "";
 
 	// The From domain's sending provider decides whether big files become download links.
 	useEffect(() => {
@@ -389,7 +389,7 @@ export function ComposeForm({
 		sentDraftId.current = currentDraftId;
 		resetComposer();
 
-		let data: { messageId?: string; scheduled?: boolean; undoUntil?: string; error?: string };
+		let data: { messageId?: string; scheduled?: boolean; retrying?: boolean; undoUntil?: string; error?: string };
 		let ok = false;
 		try {
 			const res = await authFetch("/api/send", { method: "POST", body });
@@ -424,7 +424,7 @@ export function ComposeForm({
 			else setPendingUndo(pending);
 			return;
 		}
-		setToast({ type: "success", message: data.scheduled ? "Message scheduled" : "Message sent" });
+		setToast({ type: "success", message: sentToastMessage(data) });
 	}
 
 	function resetComposer() {
@@ -607,7 +607,7 @@ export function ComposeForm({
 
 	function selectSender(value: string) {
 		const option = senderOptions.find((item) => `${item.mailbox.id}|${item.address}` === value);
-		if (!option) return;
+		if (!option || option.disabled) return;
 		setSelectedFrom(option.address);
 		if (selectedMailbox?.id !== option.mailbox.id) setSelectedMailbox(option.mailbox);
 	}
@@ -767,9 +767,14 @@ export function ComposeForm({
 							containerClassName="border-0 flex-1"
 						>
 							{senderOptions.length === 0 && <option value="">Select a mailbox first</option>}
-							{senderOptions.map(({ mailbox, address }) => (
-								<option key={`${mailbox.id}|${address}`} value={`${mailbox.id}|${address}`}>
-									{address}
+							{senderOptions.map((option) => (
+								<option
+									key={`${option.mailbox.id}|${option.address}`}
+									value={`${option.mailbox.id}|${option.address}`}
+									disabled={option.disabled}
+									title={option.identity?.hint ?? undefined}
+								>
+									{senderOptionLabel(option)}
 								</option>
 							))}
 						</Select>

@@ -23,6 +23,8 @@ import { supersedeOlderReplies } from "@/lib/agent/auto-read/suggestion-lifecycl
 import { approveSentRecipients } from "@/lib/screener/release";
 import { recordMetric } from "@/lib/metrics.mjs";
 import { isNodeRuntime } from "@/lib/runtime";
+import { assertWithinProviderLimit } from "@/lib/external-accounts/submit-utils";
+import { recordConnectedSend, requeueAfterRefusal, submissionFor } from "@/lib/email/send-connected";
 
 export type SendEmailInput = {
 	userId: string;
@@ -48,7 +50,12 @@ export type SendEmailInput = {
 	publicOrigin?: string;
 	/** Caller-chosen id for the stored message, so a retried caller can find the row it already wrote. */
 	messageId?: string;
+	/** Lets From be the user's connected account (spec §7.3): the signed-in composer only, never keys or automations. */
+	connectedAccounts?: boolean;
 };
+
+/** What an outbound job stores: the send as it was authorized, with the connected account it goes through. */
+type OutboundJobPayload = SendEmailInput & { externalAccountId?: string | null };
 
 const MAX_RECIPIENTS = 50;
 const MAX_QUEUE_DELAY_SECONDS = 24 * 60 * 60;
@@ -64,6 +71,10 @@ type PreparedDelivery = {
 	bcc: string[];
 	headers: Record<string, string>;
 	attachments: AttachmentContent[];
+	/** The connected account the message goes out through, or null for the From domain's provider. */
+	externalAccountId: string | null;
+	/** Which try this is; only a send through an account is tried again (after a 4xx). */
+	attempt: number;
 };
 
 function toRecipientList(value: string | string[] | undefined): string[] {
@@ -86,7 +97,7 @@ function chooseMessageId(input: SendEmailInput): string {
 export async function sendEmail(
 	env: CloudflareEnv,
 	input: SendEmailInput,
-): Promise<{ messageId: string; scheduled?: boolean }> {
+): Promise<{ messageId: string; scheduled?: boolean; retrying?: boolean }> {
 	const db = getDb(env);
 	const sender = await getAuthorizedSenderAddress(env, input);
 	await assertWithinSendLimits(env, input.userId);
@@ -101,6 +112,8 @@ export async function sendEmail(
 		throw new Error(`Attachments exceed the administrator's ${maxAttachmentMb} MB outgoing limit`);
 	}
 	if (input.subject.length > 998) throw new Error("Subject exceeds Cloudflare's 998-character limit");
+	// A provider's own limit counts the encoded message, so a send through an account is refused before it is queued.
+	assertWithinProviderLimit(sender.sendLimit, input, attachments);
 
 	const to = toRecipientList(input.to);
 	const cc = toRecipientList(input.cc);
@@ -180,6 +193,7 @@ export async function sendEmail(
 			cc,
 			bcc,
 			mailboxId: sender.mailboxId,
+			externalAccountId: sender.externalAccountId,
 			attachments: attachments.map(({ content: _content, ...attachment }) => attachment),
 		}),
 		scheduledAt,
@@ -196,26 +210,33 @@ export async function sendEmail(
 		bcc,
 		headers,
 		attachments,
+		externalAccountId: sender.externalAccountId,
+		attempt: 1,
 	};
 	if (scheduledAt) {
 		await enqueueScheduledDelivery(env, delivery, scheduledAt);
 		return { messageId, scheduled: true };
 	}
 
-	await deliverOrThrow(env, delivery);
-	return { messageId };
+	return { messageId, ...(await deliverOrThrow(env, delivery)) };
 }
 
 /** An immediate send whose claim was taken back before the provider call was not delivered: say so. */
-async function deliverOrThrow(env: CloudflareEnv, delivery: PreparedDelivery): Promise<void> {
-	if (!(await deliverEmail(env, delivery))) throw new Error("The send was taken back before it was delivered");
+async function deliverOrThrow(env: CloudflareEnv, delivery: PreparedDelivery): Promise<{ retrying?: true }> {
+	const outcome = await deliverEmail(env, delivery);
+	if (outcome === "taken_back") throw new Error("The send was taken back before it was delivered");
+	return outcome === "retrying" ? { retrying: true } : {};
 }
 
 /**
- * Delivers a claimed send. Resolves to false when the send was taken back before the provider call, so
- * nothing was delivered; true once the provider accepted it, even if it had been taken back by then.
+ * Delivers a claimed send. Resolves to `taken_back` when the send was taken back before the provider call, so
+ * nothing was delivered; `sent` once the provider accepted it, even if it had been taken back by then; `retrying`
+ * when a connected account's server asked to try later and the job was queued again.
  */
-async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Promise<boolean> {
+async function deliverEmail(
+	env: CloudflareEnv,
+	delivery: PreparedDelivery,
+): Promise<"sent" | "taken_back" | "retrying"> {
 	const { input, messageId, jobId, from, mailboxId, to, cc, bcc, headers, attachments } = delivery;
 	const db = getDb(env);
 	const toAddr = joinEmailAddressList(to);
@@ -233,7 +254,7 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 			version: env.CF_VERSION_METADATA?.id ?? "",
 		});
 	try {
-		const provider = await getOutboundProviderConfig(env, from);
+		const provider = await getOutboundProviderConfig(env, from, submissionFor(delivery, input.userId));
 		providerName = provider.provider;
 		// Cloudflare's 5 MiB cap forces big files into download links; Resend takes
 		// the attachments directly (the admin's outgoing limit still applies).
@@ -256,7 +277,7 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 		// Just before the provider call: a send taken back (moved to Drafts after it stalled) is not delivered.
 		if (!(await isJobClaimed(db, jobId))) {
 			console.warn(`Outbound job ${jobId} for ${messageId} is no longer claimed; not delivering`);
-			return false;
+			return "taken_back";
 		}
 		response = await sendThroughProvider(
 			env,
@@ -283,6 +304,8 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 	} catch (err) {
 		record("failed");
 		const error = err instanceof Error ? err.message : "Send failed";
+		// Only a 4xx from a connected account's server is tried again; anything that may have been delivered never is.
+		if (await requeueAfterRefusal(env, delivery, err)) return "retrying";
 		// Only the worker that still holds the send may mark it failed: after a stuck recovery or a cancel the
 		// message is a draft again and a late failure must not touch it.
 		const [failedMessage] = await db
@@ -316,6 +339,8 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 				status: "sent",
 				providerMessageId: response.messageId,
 				threadId: input.threadId ?? normalizeMessageId(response.messageId) ?? messageId,
+				// A send through a connected account keeps the exact bytes that went out (spec §7.3).
+				...(response.rawR2Key ? { rawR2Key: response.rawR2Key } : {}),
 			})
 			.where(and(eq(messages.id, messageId), eq(messages.status, "queued")))
 			.returning({ id: messages.id });
@@ -335,8 +360,9 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 				metadata: { to: toAddr, subject: input.subject, lateAfterRecovery: true },
 			}),
 		);
-		return true;
+		return "sent";
 	}
+	await recordConnectedSend(env, delivery, response);
 	await runPostDeliveryStep(`agent reply suggestions for ${messageId}`, () => supersedeOlderReplies(env, messageId));
 	await runPostDeliveryStep(`screener approvals for ${messageId}`, () =>
 		approveSentRecipients(env, mailboxId, input.userId, [...to, ...cc, ...bcc]),
@@ -361,10 +387,15 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 			mailboxId,
 			messageId,
 			action: "email.send",
-			metadata: { to: toAddr, cc: cc.length ? joinEmailAddressList(cc) : undefined, subject: input.subject },
+			metadata: {
+				to: toAddr,
+				cc: cc.length ? joinEmailAddressList(cc) : undefined,
+				subject: input.subject,
+				...(delivery.externalAccountId ? { externalAccountId: delivery.externalAccountId } : {}),
+			},
 		}),
 	);
-	return true;
+	return "sent";
 }
 
 export type OutboundQueueMessage = {
@@ -372,6 +403,8 @@ export type OutboundQueueMessage = {
 	jobId: string;
 	messageId: string;
 	scheduledAt: string;
+	/** The try a send through a connected account is on; 1 when absent. */
+	attempt?: number;
 };
 
 async function enqueueScheduledDelivery(
@@ -389,6 +422,7 @@ async function enqueueScheduledDelivery(
 			jobId: delivery.jobId,
 			messageId: delivery.messageId,
 			scheduledAt: scheduledAt.toISOString(),
+			...(delivery.attempt > 1 ? { attempt: delivery.attempt } : {}),
 		},
 		{ delaySeconds },
 	);
@@ -403,7 +437,7 @@ export async function processOutboundQueue(env: CloudflareEnv, payload: Outbound
 		.limit(1);
 	if (!job || job.status !== "queued") return;
 	const scheduledAt = new Date(payload.scheduledAt);
-	const input = JSON.parse(job.payload) as SendEmailInput;
+	const input = JSON.parse(job.payload) as OutboundJobPayload;
 	const to = toRecipientList(input.to);
 	const cc = toRecipientList(input.cc);
 	const bcc = toRecipientList(input.bcc);
@@ -425,6 +459,8 @@ export async function processOutboundQueue(env: CloudflareEnv, payload: Outbound
 		bcc,
 		headers,
 		attachments: [],
+		externalAccountId: input.externalAccountId ?? null,
+		attempt: Math.max(1, Math.floor(Number(payload.attempt) || 1)),
 	};
 	if (scheduledAt.getTime() > Date.now()) {
 		await enqueueScheduledDelivery(env, delivery, scheduledAt);

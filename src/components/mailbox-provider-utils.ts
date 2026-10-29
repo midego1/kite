@@ -21,6 +21,9 @@ export function isIdentityMailbox(mailbox: Pick<MailboxOption, "type" | "isPrima
 	return mailbox.type === "personal" && !!mailbox.isPrimary;
 }
 
+/** Fired after something the mailbox list carries changed elsewhere (a connected account's From addresses). */
+export const MAILBOXES_CHANGED_EVENT = "kite:mailboxes-changed";
+
 export function clearMailboxesCache() {
 	cacheGeneration += 1;
 	mailboxesCache = null;
@@ -63,6 +66,7 @@ export async function fetchMailboxOptions(force = false): Promise<MailboxOption[
 				permission: m.permission,
 				isPrimary: m.isPrimary,
 				senderAddresses: m.senderAddresses,
+				externalIdentities: m.externalIdentities,
 				screener: m.screener,
 			}));
 			if (requestGeneration === cacheGeneration) {

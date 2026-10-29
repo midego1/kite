@@ -5,16 +5,19 @@ import { readJsonBody } from "@/lib/http/request";
 import type { DraftSendableFields } from "@/lib/agent/approvals/snapshot-utils";
 import type { DraftPayload } from "./types";
 
+/** The draft's From; `connectedAccounts` lets the composer's own drafts use the user's connected addresses. */
 export async function getDraftSender(
 	env: CloudflareEnv,
 	userId: string,
 	input: DraftPayload,
+	options: { connectedAccounts?: boolean } = {},
 ): Promise<{ fromAddr: string; mailboxId: string } | { error: string }> {
 	try {
 		return await getAuthorizedSenderAddress(env, {
 			userId,
 			from: input.from ?? "",
 			mailboxId: input.mailboxId,
+			connectedAccounts: options.connectedAccounts,
 		});
 	} catch (error) {
 		return { error: error instanceof Error ? error.message : "Mailbox is not authorized" };

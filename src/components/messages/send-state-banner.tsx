@@ -7,7 +7,7 @@ import { CalendarClock, CircleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth/client";
 import type { Message } from "@/hooks/types";
-import { formatSendTime, getMessageSendLabel } from "./send-state-utils";
+import { formatSendTime, getMessageSendLabel, getSendBannerActions } from "./send-state-utils";
 
 /** Takes the queued or failed message back into the author's Drafts; null when the server refused. */
 async function takeBackSend(messageId: string): Promise<string | null> {
@@ -42,6 +42,10 @@ export function SendStateBanner({
 	const label = getMessageSendLabel(message);
 	if (!state || !label) return null;
 	const failed = state.status === "failed";
+	const stuck = label.kind === "stuck";
+	// Cancel send and Edit only while delivery has not started; a failed or stalled send is taken back instead.
+	const actions = getSendBannerActions(state);
+	const canCancel = actions === "cancel";
 
 	async function takeBack(openDraft: boolean) {
 		setPending(true);
@@ -52,39 +56,51 @@ export function SendStateBanner({
 			router.push(`/drafts/${draftId}`);
 			return;
 		}
-		toast.success(failed ? "Moved to Drafts" : "Send cancelled. The message is back in Drafts.");
+		toast.success(canCancel ? "Send cancelled. The message is back in Drafts." : "Moved to Drafts");
 		router.push("/sent");
 	}
 
-	const Icon = failed ? CircleAlert : CalendarClock;
+	const alarming = failed || stuck;
+	const Icon = alarming ? CircleAlert : CalendarClock;
 	let text: string;
 	if (failed) text = state.error ? `This message was not sent: ${state.error}` : "This message was not sent.";
+	else if (stuck)
+		text = `${label.text}. It may or may not have been delivered. Move it to Drafts to edit it, and check with the recipient before sending it again.`;
 	else if (label.kind === "sending") text = "This message is being sent.";
 	else text = `This message is scheduled to be sent on ${formatSendTime(state.scheduledAt!)}.`;
+	const regionName = failed
+		? "Send failed"
+		: stuck
+			? "Send stuck"
+			: label.kind === "sending"
+				? "Sending"
+				: "Scheduled send";
 
 	return (
 		<div className={alignWide ? "px-3 sm:px-6 sm:pl-16" : "px-3 sm:px-6 sm:pl-10"}>
 			<div
 				role="region"
-				aria-label={failed ? "Send failed" : label.kind === "sending" ? "Sending" : "Scheduled send"}
+				aria-label={regionName}
 				className={
-					failed
+					alarming
 						? "my-2 flex flex-wrap items-center gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-neutral-800"
 						: "my-2 flex flex-wrap items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-neutral-800"
 				}
 			>
 				<Icon
-					className={failed ? "h-4 w-4 shrink-0 text-red-700" : "h-4 w-4 shrink-0 text-blue-700"}
+					className={alarming ? "h-4 w-4 shrink-0 text-red-700" : "h-4 w-4 shrink-0 text-blue-700"}
 					aria-hidden="true"
 				/>
 				<p className="min-w-0 flex-1">{text}</p>
-				{state.own && (
+				{actions && (
 					<div className="flex gap-2">
-						<Button type="button" size="sm" disabled={pending} onClick={() => void takeBack(true)}>
-							{failed ? "Edit and resend" : "Edit"}
-						</Button>
+						{!stuck && (
+							<Button type="button" size="sm" disabled={pending} onClick={() => void takeBack(true)}>
+								{failed ? "Edit and resend" : "Edit"}
+							</Button>
+						)}
 						<Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => void takeBack(false)}>
-							{failed ? "Move to Drafts" : "Cancel send"}
+							{canCancel ? "Cancel send" : "Move to Drafts"}
 						</Button>
 					</div>
 				)}

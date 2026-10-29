@@ -88,6 +88,7 @@ function MailSelectionToolbar({
 	folder,
 	mailboxIds,
 	hasDraftSelection = false,
+	hasPendingSendSelection = false,
 }: BulkMessageToolbarProps) {
 	// In archived, spam and trash the usual button would be a no-op, so it becomes the way back to the inbox.
 	const archive =
@@ -118,7 +119,9 @@ function MailSelectionToolbar({
 			Report phishing
 		</DropdownMenu.Item>
 	);
-	const { folders, spansMailboxes, manageDisabled } = useBulkSelectionAccess(mailboxIds, pending);
+	const { folders, spansMailboxes, manageDisabled: accessDisabled } = useBulkSelectionAccess(mailboxIds, pending);
+	// A message waiting to be sent goes out wherever it is filed, so nothing that moves it is offered.
+	const manageDisabled = accessDisabled || hasPendingSendSelection;
 	return (
 		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full">
 			{!hideSelectedCount && (
@@ -153,7 +156,9 @@ function MailSelectionToolbar({
 					size="sm"
 					onClick={() => onAction(trash.action as BulkMessageAction)}
 					// The user may always delete their own drafts; the server deletes them after a confirmation.
-					disabled={manageDisabled && !(hasDraftSelection && trash.action === "trash" && !pending)}
+					disabled={
+						manageDisabled && !(hasDraftSelection && !hasPendingSendSelection && trash.action === "trash" && !pending)
+					}
 					aria-label={trash.label}
 				>
 					<trash.Icon className="h-4 w-4" />
@@ -250,11 +255,19 @@ function MailSelectionToolbar({
 						sideOffset={4}
 						className="z-[130] min-w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-xl md:hidden"
 					>
-						<DropdownMenu.Item className={menuItemClass} onSelect={() => onAction(archive.action as BulkMessageAction)}>
+						<DropdownMenu.Item
+							className={menuItemClass}
+							disabled={hasPendingSendSelection}
+							onSelect={() => onAction(archive.action as BulkMessageAction)}
+						>
 							<archive.Icon className="h-4 w-4" />
 							{archive.label}
 						</DropdownMenu.Item>
-						<DropdownMenu.Item className={menuItemClass} onSelect={() => onAction(spam.action as BulkMessageAction)}>
+						<DropdownMenu.Item
+							className={menuItemClass}
+							disabled={hasPendingSendSelection}
+							onSelect={() => onAction(spam.action as BulkMessageAction)}
+						>
 							<spam.Icon className="h-4 w-4" />
 							{spam.label}
 						</DropdownMenu.Item>

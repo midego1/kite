@@ -127,19 +127,45 @@ test("a scheduled send shows its time, cannot be archived or trashed, and Edit o
 	const row = rowFor(page, subject);
 	await expect(row.locator("[data-send-state]")).toContainText(/^Scheduled · /, { timeout: 60_000 });
 
-	await test.step("it cannot be filed away while it waits", async () => {
-		for (const action of ["archive", "trash", "spam"]) {
-			await api.post("/api/messages/bulk", { data: { action, messageIds: [sent.messageId] } });
-			const status = await api.post(`/api/messages/${sent.messageId}/status`, { data: { status: "trash" } });
-			expect(status.status()).toBe(404);
+	await test.step("it cannot be filed away while it waits: the bulk and status APIs answer 409", async () => {
+		for (const action of ["archive", "trash", "spam", "phishing", "delete", "inbox"]) {
+			const refused = await api.post("/api/messages/bulk", { data: { action, messageIds: [sent.messageId] } });
+			expect(refused.status(), action).toBe(409);
+			expect(await refused.json()).toMatchObject({ code: "SEND_PENDING_MOVE_REFUSED", sendPendingRefused: 1 });
 		}
+		const status = await api.post(`/api/messages/${sent.messageId}/status`, { data: { status: "trash" } });
+		expect(status.status()).toBe(409);
+		expect(await status.json()).toMatchObject({ code: "SEND_PENDING_MOVE_REFUSED" });
+		// A mixed selection moves the rest and reports the queued message as left alone, not as handled.
+		const other = await deliverInbound(api, {
+			from: `"Sender" <sender@outside.test>`,
+			to: SUPPORT_ADDRESS,
+			subject: `Mixed ${uniqueToken()}`,
+		});
+		const mixed = await api.post("/api/messages/bulk", {
+			data: { action: "archive", messageIds: [sent.messageId, other.id] },
+		});
+		expect(mixed.ok(), await mixed.text()).toBe(true);
+		expect(await mixed.json()).toMatchObject({ ok: true, sendPendingRefused: 1 });
 		expect((await listSent(api, subject))[0]).toMatchObject({ status: "queued" });
+		// Reading it is not a move.
+		const read = await api.post("/api/messages/bulk", { data: { action: "unread", messageIds: [sent.messageId] } });
+		expect(read.ok()).toBe(true);
+	});
+
+	await test.step("the Sent toolbar offers no archive, spam or delete for it", async () => {
+		await rowFor(page, subject).getByRole("checkbox").check();
+		await expect(page.getByRole("button", { name: "Archive" }).first()).toBeDisabled();
+		await expect(page.getByRole("button", { name: "Report spam" }).first()).toBeDisabled();
+		await expect(page.getByRole("button", { name: "Delete", exact: true }).first()).toBeDisabled();
+		await rowFor(page, subject).getByRole("checkbox").uncheck();
 	});
 
 	await test.step("the reader says when it goes out; Edit moves it to Drafts and opens the composer", async () => {
 		await row.getByText(subject, { exact: true }).click();
 		const banner = page.getByRole("region", { name: "Scheduled send" });
 		await expect(banner).toContainText("This message is scheduled to be sent on");
+		await expect(banner.getByRole("button", { name: "Cancel send" })).toBeVisible();
 		await banner.getByRole("button", { name: "Edit", exact: true }).click();
 		await expect(page).toHaveURL(new RegExp(`/drafts/${sent.messageId}`));
 		await expect(page.getByRole("textbox", { name: "Message body" })).toContainText("Hello from the queue");

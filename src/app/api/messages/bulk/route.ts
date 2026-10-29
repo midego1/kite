@@ -11,7 +11,11 @@ import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import { permanentlyDeleteMessages } from "@/lib/email/permanent-delete";
 import { applySpamFeedback } from "@/lib/spam/feedback";
 import { reportPhishingBulk, reportSpamBulk, restoreMessageStates } from "./report";
-import { isSendPending } from "@/lib/messages/send-state-utils";
+import {
+	SEND_PENDING_MOVE_MESSAGE,
+	SEND_PENDING_MOVE_REFUSED,
+	isMoveRefusedWhileSending,
+} from "@/lib/messages/send-state-utils";
 import { draftCounts, draftsOnlyResponse, settleDrafts } from "./drafts";
 import type { BulkMessagePayload } from "./types";
 import {
@@ -130,9 +134,8 @@ export async function POST(request: Request) {
 		{ action: payload.action, deleteDrafts: payload.deleteDrafts === true, restore: restoreStates },
 		selectedMessages,
 	);
+	let sendPendingRefused = 0;
 	for (const message of drafts.rest) {
-		// A message waiting in the outbound queue goes out wherever it is filed; it can only be cancelled first.
-		if (isSendPending(message.status)) continue;
 		const mailboxId = actionMailboxId(message.mailboxId, folderMailboxId);
 		if (!mailboxId) continue;
 		let accessRequest = accessByMailbox.get(mailboxId);
@@ -143,14 +146,28 @@ export async function POST(request: Request) {
 		const access = await accessRequest;
 		const canUpdate = payload.action === "read" || payload.action === "unread" ? access?.canRead : access?.canManage;
 		if (!canUpdate) continue;
+		// A message waiting in the outbound queue goes out wherever it is filed; it can only be cancelled first.
+		if (isMoveRefusedWhileSending(payload.action, message.status)) {
+			sendPendingRefused += 1;
+			continue;
+		}
 		allowedMessageIds.push(message.id);
 		approvedMailbox.set(message.id, mailboxId);
 	}
 
-	if (allowedMessageIds.length === 0) return draftsOnlyResponse(drafts);
+	const refusals = sendPendingRefused > 0 ? { sendPendingRefused } : {};
+	if (allowedMessageIds.length === 0) {
+		if (sendPendingRefused > 0 && drafts.unconfirmed === 0 && drafts.deleted === 0) {
+			return NextResponse.json(
+				{ error: SEND_PENDING_MOVE_MESSAGE, code: SEND_PENDING_MOVE_REFUSED, sendPendingRefused },
+				{ status: 409 },
+			);
+		}
+		return draftsOnlyResponse(drafts);
+	}
 	if (payload.action === "restore") {
 		const superseded = await restoreMessageStates(env, db, restoreStates, selectedMessages, approvedMailbox);
-		return NextResponse.json({ ok: true, ...(superseded > 0 ? { superseded } : {}) });
+		return NextResponse.json({ ok: true, ...(superseded > 0 ? { superseded } : {}), ...refusals });
 	}
 	if (payload.action === "delete") {
 		// Only mail already in Trash or Spam can be destroyed; anything else is skipped.
@@ -158,17 +175,19 @@ export async function POST(request: Request) {
 			(message) => allowedMessageIds.includes(message.id) && isPermanentlyDeletableStatus(message.status),
 		);
 		const deleted = await permanentlyDeleteMessages(env, db, user.id, deletable, "bulk");
-		return NextResponse.json({ ok: true, deleted, skipped: allowedMessageIds.length - deleted });
+		return NextResponse.json({ ok: true, deleted, skipped: allowedMessageIds.length - deleted, ...refusals });
 	}
-	if (payload.action === "spam") return NextResponse.json(await reportSpamBulk(env, user, allowedMessageIds));
-	if (payload.action === "phishing") return NextResponse.json(await reportPhishingBulk(env, user, allowedMessageIds));
+	if (payload.action === "spam")
+		return NextResponse.json({ ...(await reportSpamBulk(env, user, allowedMessageIds)), ...refusals });
+	if (payload.action === "phishing")
+		return NextResponse.json({ ...(await reportPhishingBulk(env, user, allowedMessageIds)), ...refusals });
 	if (payload.action === "inbox") {
 		const spamMessageIds = selectedMessages
 			.filter((message) => message.status === "spam" && allowedMessageIds.includes(message.id))
 			.map((message) => message.id);
 		for (const messageId of spamMessageIds) await applySpamFeedback(env, user, messageId, "ham");
 		await updateInApprovedMailboxes(db, approvedMailbox, values);
-		return NextResponse.json({ ok: true });
+		return NextResponse.json({ ok: true, ...refusals });
 	}
 
 	const undo = isUndoableBulkAction(payload.action)
@@ -187,5 +206,5 @@ export async function POST(request: Request) {
 		})),
 	);
 
-	return NextResponse.json({ ok: true, ...(undo ? { undo } : {}), ...draftCounts(drafts) });
+	return NextResponse.json({ ok: true, ...(undo ? { undo } : {}), ...draftCounts(drafts), ...refusals });
 }

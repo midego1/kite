@@ -1,5 +1,6 @@
 "use client";
 
+import { isSendPending } from "@/lib/messages/send-state-utils";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useKeyChanged } from "@/hooks/use-synced-state";
@@ -393,6 +394,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 					pending: pendingBulkAction,
 					mailboxIds: selectedMessages.map((message) => message.mailboxId),
 					hasDrafts: selectedMessages.some((message) => message.status === "draft"),
+					hasPendingSend: selectedMessages.some((message) => isSendPending(message.status)),
 					toggleAll: toggleAllVisible,
 					run: runSelectedAction,
 					clear: clearSelection,

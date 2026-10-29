@@ -9,6 +9,7 @@ import type { EmailPageTitleInput } from "./types";
 import type { MessageFolderConfig } from "./types";
 import type { PageRange } from "./types";
 import type { BulkMessageAction, BulkMessageResponse, PermanentDeleteFolder } from "@/app/api/messages/bulk/types";
+import { SEND_PENDING_MOVE_MESSAGE, SEND_PENDING_MOVE_REFUSED } from "@/lib/messages/send-state-utils";
 import { postBulkMessageAction } from "./bulk-request";
 import { announcePhishingReports } from "./phishing-report";
 import { offerUndoForMove } from "./undo-utils";
@@ -104,7 +105,12 @@ export async function runBulkMessageAction(messageIds: string[], action: string,
 	const response = await postBulkMessageAction({ messageIds, action: action as BulkMessageAction, folderId });
 	// Cancelled: the selection held drafts and the user chose not to delete them.
 	if (!response) return null;
-	if (!response.ok) throw new Error("Unable to update selected messages");
+	if (!response.ok) {
+		const refused = (await response.json().catch(() => null)) as BulkMessageResponse | null;
+		throw new Error(
+			refused?.code === SEND_PENDING_MOVE_REFUSED ? SEND_PENDING_MOVE_MESSAGE : "Unable to update selected messages",
+		);
+	}
 	const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
 	if (action === "read" || action === "unread") markMessagesReadInCaches(messageIds, action === "read");
 	if (notify) window.dispatchEvent(new Event("kite:messages-changed"));

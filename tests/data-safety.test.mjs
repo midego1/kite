@@ -72,8 +72,8 @@ test("sqlite batch rolls back every statement when one fails", async () => {
 /** Every statement a builder produces for `rows`, in order. */
 function buildInserts(table, rows, columns = null) {
 	const builder = new lib.TableInsertBuilder(table, columns);
-	const statements = rows.map((row) => builder.add(row)).filter(Boolean);
-	const last = builder.finish();
+	const statements = rows.map((row) => builder.add(row)?.statement).filter(Boolean);
+	const last = builder.finish()?.statement;
 	return last ? [...statements, last] : statements;
 }
 

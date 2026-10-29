@@ -32,10 +32,12 @@ export function useRestoreJob() {
 	}, [completed]);
 
 	const outcome = ended ? restoreOutcomeText(ended) : null;
+	// A followed restore counts as running until it failed; a completed one until the page has reloaded.
+	const following = followed !== null && (!ended || completed);
 	return {
 		restoreUpload: upload.mutate,
 		restoreStored: stored.mutate,
-		running: upload.isPending || stored.isPending || !!restore?.active || completed,
+		running: upload.isPending || stored.isPending || !!restore?.active || following,
 		error: upload.error ?? stored.error ?? (outcome ? new Error(outcome) : null),
 	};
 }

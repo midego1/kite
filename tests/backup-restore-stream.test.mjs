@@ -41,7 +41,7 @@ await build({
 			export { RestoreBatchWriter } from "./src/lib/backups/restore-writer.ts";
 			export { exportDatabaseRecords, prepareDatabaseRestore, restoreDatabaseRecords } from "./src/lib/backups/export.ts";
 			export { executeDatabaseRestore } from "./src/lib/backups/restore-engine.ts";
-			export { RestoreBusyError, startSafetyRecovery, startStoredRestore, startUploadedRestore } from "./src/lib/backups/restore.ts";
+			export { RestoreBusyError, RestoreRecoveryPendingError, startSafetyRecovery, startStoredRestore, startUploadedRestore } from "./src/lib/backups/restore.ts";
 			export { processRestoreMessage, runRestoreMaintenance } from "./src/lib/backups/restore-job.ts";
 			export { readRestoreJob, writeRestoreJob } from "./src/lib/backups/restore-job-store.ts";
 			export { restoreRowError } from "./src/lib/backups/restore-utils.ts";
@@ -402,7 +402,7 @@ test("a restore that fails before the checkpoint after a committed batch still r
 	assert.deepEqual(messageDigest(db), before);
 });
 
-test("a restore whose first batch fails changes nothing and needs no rollback", async (t) => {
+test("a restore whose first batch reports an error rolls back, since its answer may have been lost", async (t) => {
 	const db = await seededDatabase(t);
 	const backup = await lib.exportDatabaseRecords(db);
 	db.db.exec("UPDATE messages SET subject = 'changed after the backup' WHERE id = 'msg-1'");
@@ -413,6 +413,24 @@ test("a restore whose first batch fails changes nothing and needs no rollback", 
 	);
 	await lib.startUploadedRestore(env, upload(backup), "owner");
 	await drain(env, SMALL_BATCHES);
+	const job = await restoreJob(env);
+	assert.equal(job.status, "rolled_back", job.error);
+	assert.equal(job.error, "batch failed");
+	assert.deepEqual(messageDigest(db), before);
+});
+
+test("a restore that fails before sending any batch changes nothing and needs no rollback", async (t) => {
+	const db = await seededDatabase(t);
+	const backup = await lib.exportDatabaseRecords(db);
+	const before = messageDigest(db);
+	const env = jobEnv(db);
+	const started = await lib.startUploadedRestore(env, upload(backup), "owner");
+	// Validation and the snapshot, one message each; then the upload disappears before anything is written.
+	await lib.processRestoreMessage(env, env.OUTBOUND_QUEUE.messages.shift(), { chunkMs: 0 });
+	await lib.processRestoreMessage(env, env.OUTBOUND_QUEUE.messages.shift(), { chunkMs: 0 });
+	assert.equal((await restoreJob(env)).status, "restoring");
+	await env.BUCKET.delete(started.source.key);
+	await drain(env);
 	const job = await restoreJob(env);
 	assert.equal(job.status, "failed");
 	assert.equal(job.changed, false);
@@ -486,37 +504,176 @@ async function expireLease(env) {
 	await lib.writeRestoreJob(env.BUCKET, { ...stored.job, lease: { ...stored.job.lease, until: 0 } }, stored.etag);
 }
 
-for (const commit of [false, true]) {
-	test(`an interrupted restore resumes from its checkpoint (batch ${commit ? "landed" : "lost"})`, async (t) => {
+/** A stored backup of `db` as it is now, listed so it can be restored; then `change` runs on the live data. */
+async function storedBackup(db, files, change = "UPDATE messages SET subject = 'changed' WHERE id LIKE 'msg-2%'") {
+	await files.put("backups/database/full.json", await lib.exportDatabaseRecords(db));
+	db.db.exec(
+		"INSERT INTO backups (id, status, `trigger`, r2_key, filename, size, created_at, completed_at) VALUES ('bak-full', 'completed', 'manual', 'backups/database/full.json', 'full.json', 1, 1, 2)",
+	);
+	db.db.exec(change);
+}
+
+/** Starts restoring `bak-full` and lets its first invocation die in batch `at`; returns the message and the state. */
+async function dieDuringRestore(db, env, at, commit, options) {
+	await lib.startStoredRestore(env, "bak-full", "owner");
+	const message = env.OUTBOUND_QUEUE.messages.shift();
+	const dying = dyingAt(db, at, commit);
+	void lib.processRestoreMessage({ ...env, DB: dying.db }, message, options);
+	await dying.reached;
+	return { message, dead: await restoreJob(env) };
+}
+
+// Production batch limits put every DELETE in batch 1 and inserts from batch 2 on; small ones split everything.
+for (const [limits, at] of [
+	[undefined, 1],
+	[undefined, 2],
+	[SMALL_BATCHES, 5],
+])
+	for (const commit of [false, true]) {
+		const name = `${limits ? "small batches" : "production batches"}, batch ${at} ${commit ? "landed" : "lost"}`;
+		test(`an interrupted restore resumes from its checkpoint (${name})`, async (t) => {
+			const db = await seededDatabase(t);
+			const expected = messageDigest(db);
+			const files = bucket();
+			await storedBackup(db, files);
+			const env = jobEnv(db, files);
+			const options = limits ?? {};
+			const { message, dead } = await dieDuringRestore(db, env, at, commit, options);
+			assert.equal(dead.status, "restoring");
+			assert.ok(dead.lease && dead.cursor.pending, "a lease and the pending batch are left behind");
+
+			// Redelivered while the lease still runs, the message is skipped; once it expired, the job resumes.
+			await lib.processRestoreMessage(env, message, options);
+			assert.equal((await restoreJob(env)).interruptions, 0);
+			await expireLease(env);
+			env.OUTBOUND_QUEUE.messages.push(message);
+			await drain(env, options);
+
+			const job = await restoreJob(env);
+			assert.equal(job.status, "completed", job.error);
+			assert.equal(job.interruptions, 1);
+			assert.deepEqual(messageDigest(db), expected);
+		});
+	}
+
+test("a row created under the key of a lost batch's last row does not pass for it", async (t) => {
+	const db = await seededDatabase(t);
+	const files = bucket();
+	await storedBackup(db, files);
+	const before = messageDigest(db);
+	const env = jobEnv(db, files);
+	const { message, dead } = await dieDuringRestore(db, env, 2, false, {});
+	const { probe } = dead.cursor.pending;
+	assert.equal(probe.table, "messages");
+	// Someone writes a row with that key meanwhile (the mailbox it names was emptied with the rest).
+	db.db.exec("PRAGMA foreign_keys = OFF");
+	db.db
+		.prepare(
+			"INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, created_at) VALUES (?, 'owner', 'mailbox-a', 'inbound', 'a@outside.test', 'alex@example.com', 'concurrent', 'received', 1)",
+		)
+		.run(probe.key.id);
+	db.db.exec("PRAGMA foreign_keys = ON");
+	await expireLease(env);
+	env.OUTBOUND_QUEUE.messages.push(message);
+	await drain(env);
+
+	// The batch runs again, meets that row and the restore rolls back instead of finishing without the batch.
+	const job = await restoreJob(env);
+	assert.equal(job.status, "rolled_back", job.error);
+	assert.match(job.error, /UNIQUE constraint failed: messages.id/);
+	assert.deepEqual(messageDigest(db), before);
+});
+
+/** A database whose batches do what `script(call)` says: "fail", "die" (never answer) or run normally. */
+function scripted(db, script) {
+	const wrapped = Object.create(db);
+	let calls = 0;
+	let reach;
+	const died = new Promise((resolve) => (reach = resolve));
+	wrapped.batch = async (statements) => {
+		const action = script(++calls);
+		if (action === "fail") throw new Error("batch failed");
+		if (action !== "die") return db.batch(statements);
+		reach();
+		return new Promise(() => {});
+	};
+	return { db: wrapped, died };
+}
+
+test("an interrupted rollback resumes from its checkpoint", async (t) => {
+	const db = await seededDatabase(t);
+	const files = bucket();
+	await storedBackup(db, files);
+	const before = messageDigest(db);
+	const env = jobEnv(db, files);
+	await lib.startStoredRestore(env, "bak-full", "owner");
+	const message = env.OUTBOUND_QUEUE.messages.shift();
+	// Batch 3 of the restore fails; the rollback's sixth batch overall never answers.
+	const run = scripted(db, (call) => (call === 3 ? "fail" : call === 6 ? "die" : undefined));
+	void lib.processRestoreMessage({ ...env, DB: run.db }, message, SMALL_BATCHES);
+	await run.died;
+	const dead = await restoreJob(env);
+	assert.equal(dead.status, "rolling_back");
+	assert.ok(dead.rollbackPlan && dead.cursor.pending);
+
+	await expireLease(env);
+	env.OUTBOUND_QUEUE.messages.push(message);
+	await drain(env, SMALL_BATCHES);
+	const job = await restoreJob(env);
+	assert.equal(job.status, "rolled_back", job.error);
+	assert.equal(job.error, "batch failed");
+	assert.deepEqual(messageDigest(db), before);
+});
+
+/** Runs the queued messages one at a time until `until(job)` holds, with one step per message. */
+async function stepUntil(env, until, options = {}) {
+	while (!until(await restoreJob(env))) {
+		const message = env.OUTBOUND_QUEUE.messages.shift();
+		assert.ok(message, "the job stopped before the expected state");
+		await lib.processRestoreMessage(env, message, { ...options, chunkMs: 0 });
+	}
+}
+
+async function patchJob(env, patch) {
+	const stored = await lib.readRestoreJob(env.BUCKET);
+	await lib.writeRestoreJob(env.BUCKET, { ...stored.job, ...patch }, stored.etag);
+}
+
+for (const [cause, change] of [
+	["Kite is updated", (env) => patchJob(env, { version: 0 })],
+	[
+		"database updates are applied",
+		(_env, db) => db.db.exec("INSERT INTO d1_migrations (name) VALUES ('9999_applied_during_the_restore')"),
+	],
+]) {
+	test(`a restore rolls back when ${cause} after it started writing`, async (t) => {
+		const db = await seededDatabase(t);
+		const files = bucket();
+		await storedBackup(db, files);
+		const before = messageDigest(db);
+		const env = jobEnv(db, files);
+		await lib.startStoredRestore(env, "bak-full", "owner");
+		await stepUntil(env, (job) => job.changed && job.cursor?.at.segment > 1, SMALL_BATCHES);
+		await change(env, db);
+		await drain(env, SMALL_BATCHES);
+		const job = await restoreJob(env);
+		assert.equal(job.status, "rolled_back", job.error);
+		assert.match(job.error, /updated|Database updates/);
+		assert.deepEqual(messageDigest(db), before);
+	});
+
+	test(`a restore starts over when ${cause} before it wrote anything`, async (t) => {
 		const db = await seededDatabase(t);
 		const expected = messageDigest(db);
 		const files = bucket();
-		await files.put("backups/database/full.json", await lib.exportDatabaseRecords(db));
-		db.db.exec(
-			"INSERT INTO backups (id, status, `trigger`, r2_key, filename, size, created_at, completed_at) VALUES ('bak-full', 'completed', 'manual', 'backups/database/full.json', 'full.json', 1, 1, 2)",
-		);
-		db.db.exec("UPDATE messages SET subject = 'changed' WHERE id LIKE 'msg-2%'");
+		await storedBackup(db, files);
 		const env = jobEnv(db, files);
 		await lib.startStoredRestore(env, "bak-full", "owner");
-		const message = env.OUTBOUND_QUEUE.messages.shift();
-		// The invocation dies in its fifth batch and never acks: its message comes back.
-		const dying = dyingAt(db, 5, commit);
-		void lib.processRestoreMessage({ ...env, DB: dying.db }, message, SMALL_BATCHES);
-		await dying.reached;
-		const dead = await restoreJob(env);
-		assert.equal(dead.status, "restoring");
-		assert.ok(dead.lease && dead.cursor.pending, "a lease and the pending batch are left behind");
-
-		// Redelivered while the lease still runs, the message is skipped; once it expired, the job resumes.
-		await lib.processRestoreMessage(env, message, SMALL_BATCHES);
-		assert.equal((await restoreJob(env)).interruptions, 0);
-		await expireLease(env);
-		env.OUTBOUND_QUEUE.messages.push(message);
+		await stepUntil(env, (job) => job.status === "snapshot");
+		await change(env, db);
 		await drain(env, SMALL_BATCHES);
-
 		const job = await restoreJob(env);
 		assert.equal(job.status, "completed", job.error);
-		assert.equal(job.interruptions, 1);
 		assert.deepEqual(messageDigest(db), expected);
 	});
 }
@@ -536,7 +693,7 @@ test("only one restore runs at a time", async (t) => {
 	await lib.startUploadedRestore(env, upload(backup), "owner");
 });
 
-test("a restore whose rollback fails too can be recovered from its safety backup", async (t) => {
+test("a restore whose rollback fails too is recovered from its safety backup, and nothing else starts meanwhile", async (t) => {
 	const db = await seededDatabase(t);
 	const backup = await lib.exportDatabaseRecords(db);
 	db.db.exec("UPDATE messages SET subject = 'changed after the backup' WHERE id = 'msg-1'");
@@ -546,21 +703,110 @@ test("a restore whose rollback fails too can be recovered from its safety backup
 		failing(db, (call) => call >= 2),
 		files,
 	);
-	await lib.startUploadedRestore(env, upload(backup), "owner");
+	const original = await lib.startUploadedRestore(env, upload(backup), "owner");
 	await drain(env, FIRST_BATCH_EMPTIES);
 	const job = await restoreJob(env);
 	assert.equal(job.status, "failed");
 	assert.equal(job.needsRecovery, true);
 	assert.match(job.error, /batch failed, and the automatic rollback also failed: batch failed/);
 	assert.notDeepEqual(messageDigest(db), before);
+	const snapshots = async () => (await files.list({ prefix: "backups/database/" })).objects.length;
+	assert.equal(await snapshots(), 1);
+
+	// No other restore may start before the previous data is back.
+	await assert.rejects(
+		lib.startUploadedRestore(jobEnv(db, files), upload(backup), "owner"),
+		lib.RestoreRecoveryPendingError,
+	);
+
+	// A recovery that fails leaves everything as it was: still to be recovered, from the same snapshot.
+	const failingRecovery = jobEnv(
+		failing(db, (call) => call >= 2),
+		files,
+	);
+	const first = await lib.startSafetyRecovery(failingRecovery, "owner");
+	assert.equal(first.source.key, job.safety.r2Key);
+	assert.equal(first.needsRecovery, true);
+	await drain(failingRecovery, FIRST_BATCH_EMPTIES);
+	const failed = await restoreJob(failingRecovery);
+	assert.equal(failed.status, "failed");
+	assert.equal(failed.needsRecovery, true);
+	assert.equal(failed.safety.id, job.safety.id);
+	assert.deepEqual(failed.recoveryOf, { id: original.id, error: job.error });
+	assert.equal(failed.rollbackPlan, null, "a recovery never rolls back");
+	assert.equal(await snapshots(), 1, "a recovery takes no snapshot of the broken data");
+	await assert.rejects(
+		lib.startUploadedRestore(jobEnv(db, files), upload(backup), "owner"),
+		lib.RestoreRecoveryPendingError,
+	);
 
 	const recovery = jobEnv(db, files);
-	const started = await lib.startSafetyRecovery(recovery, "owner");
-	assert.equal(started.source.key, job.safety.r2Key);
+	const second = await lib.startSafetyRecovery(recovery, "owner");
+	assert.deepEqual(second.recoveryOf, { id: original.id, error: job.error });
 	await drain(recovery, SMALL_BATCHES);
-	assert.equal((await restoreJob(recovery)).status, "completed");
+	const done = await restoreJob(recovery);
+	assert.equal(done.status, "completed", done.error);
+	assert.equal(done.needsRecovery, false);
 	assert.deepEqual(messageDigest(db), before);
 	assert.equal(await lib.startSafetyRecovery(recovery, "owner"), null, "nothing left to recover");
+	await lib.startUploadedRestore(jobEnv(db, files), upload(backup), "owner");
+});
+
+/**
+ * Holds `parties` reads of `key` (after the first `skip`) until all of them arrived, so they all see the same
+ * version.
+ */
+function barrier(files, key, parties = 2, skip = 0) {
+	const wrapped = Object.create(files);
+	const waiting = [];
+	let open = false;
+	let reads = 0;
+	wrapped.get = async (name, options) => {
+		if (name === key && !open && ++reads > skip)
+			await new Promise((resolve) => {
+				waiting.push(resolve);
+				if (waiting.length === parties) {
+					open = true;
+					for (const release of waiting) release();
+				}
+			});
+		return files.get(name, options);
+	};
+	return wrapped;
+}
+
+test("two invocations delivered the same message at once: only one claims the job", async (t) => {
+	const db = await seededDatabase(t);
+	const expected = messageDigest(db);
+	const backup = await lib.exportDatabaseRecords(db);
+	db.db.exec("DELETE FROM messages WHERE id LIKE 'msg-1%'");
+	const files = bucket();
+	const env = jobEnv(db, files);
+	await lib.startUploadedRestore(env, upload(backup), "owner");
+	const message = env.OUTBOUND_QUEUE.messages.shift();
+	const racing = { ...env, BUCKET: barrier(files, "system/backup-restore.json") };
+	await Promise.all([lib.processRestoreMessage(racing, message), lib.processRestoreMessage(racing, message)]);
+	const job = await restoreJob(env);
+	assert.equal(job.status, "completed", job.error);
+	assert.equal(job.interruptions, 0);
+	assert.equal((await files.list({ prefix: "backups/database/" })).objects.length, 1, "one snapshot, one restore");
+	assert.deepEqual(messageDigest(db), expected);
+});
+
+test("two restores started at once on a fresh install: the state is created only once", async (t) => {
+	const db = await seededDatabase(t);
+	const backup = await lib.exportDatabaseRecords(db);
+	const files = bucket();
+	// The reads held are the ones just before the state is written, after both uploads were stored.
+	const env = jobEnv(db, barrier(files, "system/backup-restore.json", 2, 2));
+	const results = await Promise.allSettled([
+		lib.startUploadedRestore(env, upload(backup), "owner"),
+		lib.startUploadedRestore(env, upload(backup), "owner"),
+	]);
+	assert.deepEqual(results.map((result) => result.status).sort(), ["fulfilled", "rejected"]);
+	assert.ok(results.find((result) => result.status === "rejected").reason instanceof lib.RestoreBusyError);
+	assert.equal((await files.list({ prefix: "backups/uploads/" })).objects.length, 1, "the loser's upload is gone");
+	assert.equal(env.OUTBOUND_QUEUE.messages.length, 1);
 });
 
 test("the cron revives a stalled restore, gives up an abandoned one and sweeps old uploads", async (t) => {

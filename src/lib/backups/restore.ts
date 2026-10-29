@@ -5,8 +5,8 @@ import { getMigrationStatus } from "@/lib/migrations/service";
 import { newId } from "@/lib/ids";
 import { writeBackupObject } from "./backup-writer";
 import type { RestoreJob } from "./restore-job-types";
-import { readRestoreJob, writeRestoreJob } from "./restore-job-store";
-import { isActiveRestore, restoreJobMessage } from "./restore-job-utils";
+import { readRestoreJob, RestoreLeaseLostError, writeRestoreJob } from "./restore-job-store";
+import { isActiveRestore, RESTORE_JOB_VERSION, restoreJobMessage } from "./restore-job-utils";
 import type { KeptBackupRecord } from "./safety-types";
 import { BACKUP_UPLOAD_PREFIX } from "./utils";
 
@@ -14,6 +14,15 @@ import { BACKUP_UPLOAD_PREFIX } from "./utils";
 export class RestoreBusyError extends Error {
 	constructor() {
 		super("A restore is already running. Wait for it to finish before starting another.");
+	}
+}
+
+/** A restore could not be rolled back and its previous data has not been restored yet. */
+export class RestoreRecoveryPendingError extends Error {
+	constructor() {
+		super(
+			"A restore could not be rolled back. Restore the previous data from the admin overview before restoring another backup.",
+		);
 	}
 }
 
@@ -33,7 +42,15 @@ type RestoreRequest = {
 	source: RestoreJob["source"];
 	kept: KeptBackupRecord[];
 	userId: string | null;
+	/** For a recovery: the snapshot it restores, and the restore it recovers from. */
+	recovery?: { safety: KeptBackupRecord; of: NonNullable<RestoreJob["recoveryOf"]> };
 };
+
+/** Refuses a new restore while one runs, and anything but a recovery while one is needed. */
+function assertCanStart(current: RestoreJob | undefined, recovery: boolean): void {
+	if (current && isActiveRestore(current)) throw new RestoreBusyError();
+	if (current?.needsRecovery && !recovery) throw new RestoreRecoveryPendingError();
+}
 
 async function assertMigrated(env: CloudflareEnv): Promise<void> {
 	const status = await getMigrationStatus(env.DB);
@@ -47,10 +64,11 @@ async function assertMigrated(env: CloudflareEnv): Promise<void> {
  */
 async function startRestore(env: CloudflareEnv, request: RestoreRequest, id = newId("rst")): Promise<RestoreJob> {
 	const current = await readRestoreJob(env.BUCKET);
-	if (current && isActiveRestore(current.job)) throw new RestoreBusyError();
+	assertCanStart(current?.job, !!request.recovery);
 	await assertMigrated(env);
 	const now = new Date().toISOString();
 	const job: RestoreJob = {
+		version: RESTORE_JOB_VERSION,
 		id,
 		status: "validating",
 		seq: 0,
@@ -62,17 +80,25 @@ async function startRestore(env: CloudflareEnv, request: RestoreRequest, id = ne
 		source: request.source,
 		kept: request.kept,
 		plan: null,
-		safety: null,
+		safety: request.recovery?.safety ?? null,
 		rollbackPlan: null,
 		cursor: null,
 		interruptions: 0,
 		rowCount: 0,
 		error: null,
 		changed: false,
-		needsRecovery: false,
+		// A recovery leaves the database needing one until it completes.
+		needsRecovery: !!request.recovery,
+		recoveryOf: request.recovery?.of ?? null,
+		schema: null,
 	};
-	// Conditional on the version read above, so two restores started together cannot both win.
-	await writeRestoreJob(env.BUCKET, job, current?.etag ?? null);
+	// Conditional on the version read above (or on there being none), so two restores started together cannot
+	// both win.
+	try {
+		await writeRestoreJob(env.BUCKET, job, current?.etag ?? null);
+	} catch (error) {
+		throw error instanceof RestoreLeaseLostError ? new RestoreBusyError() : error;
+	}
 	await env.OUTBOUND_QUEUE.send(restoreJobMessage(job.id, job.seq));
 	return job;
 }
@@ -128,13 +154,15 @@ export async function startStoredRestore(
  * `backups` table, which may not list it. Null when the latest restore needs no recovery.
  */
 export async function startSafetyRecovery(env: CloudflareEnv, userId: string | null): Promise<RestoreJob | null> {
-	const current = await readRestoreJob(env.BUCKET);
-	const safety = current?.job.needsRecovery ? current.job.safety : null;
-	if (!safety) return null;
+	const current = (await readRestoreJob(env.BUCKET))?.job;
+	const safety = current?.needsRecovery ? current.safety : null;
+	if (!current || !safety) return null;
 	return startRestore(env, {
 		source: { key: safety.r2Key, upload: false, filename: safety.filename },
-		kept: [safety],
+		kept: [],
 		userId,
+		// A failed recovery hands the original restore on, so the next attempt still names it.
+		recovery: { safety, of: current.recoveryOf ?? { id: current.id, error: current.error } },
 	});
 }
 
@@ -150,8 +178,7 @@ export async function startUploadedRestore(
 	userId: string | null,
 	maxBytes = Number.POSITIVE_INFINITY,
 ): Promise<RestoreJob> {
-	const current = await readRestoreJob(env.BUCKET);
-	if (current && isActiveRestore(current.job)) throw new RestoreBusyError();
+	assertCanStart((await readRestoreJob(env.BUCKET))?.job, false);
 	await assertMigrated(env);
 	const id = newId("rst");
 	const key = `${BACKUP_UPLOAD_PREFIX}/${id}.json`;

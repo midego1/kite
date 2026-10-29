@@ -16,6 +16,8 @@ export type RestoreJobMessage = { kind: "backup.restore"; restoreId: string; seq
  * the restore itself, an interrupted invocation and a restart.
  */
 export type RestoreJob = {
+	/** RESTORE_JOB_VERSION when written; a job of another version is restarted or rolled back, never continued. */
+	version: number;
 	id: string;
 	status: RestoreJobStatus;
 	seq: number;
@@ -40,8 +42,18 @@ export type RestoreJob = {
 	error: string | null;
 	/** True once a batch may have been committed: from then on a failure needs the rollback. */
 	changed: boolean;
-	/** The rollback did not finish either; restoring `safety` puts the previous data back. */
+	/**
+	 * The rollback did not finish either; restoring `safety` puts the previous data back. A recovery job keeps it
+	 * set until it completes, and no other restore may start meanwhile.
+	 */
 	needsRecovery: boolean;
+	/**
+	 * Set on a job restoring the safety backup of a restore that could not be rolled back (`safety` is that
+	 * backup): it takes no snapshot of its own and never rolls back, it only completes or stays to be recovered.
+	 */
+	recoveryOf: { id: string; error: string | null } | null;
+	/** The applied migrations when the current plan was made; a restore does not continue on a changed schema. */
+	schema: string | null;
 };
 
 /** What the admin overview and the Backups page show about the latest restore. */
@@ -53,5 +65,7 @@ export type RestoreSummary = {
 	finishedAt: string | null;
 	error: string | null;
 	needsRecovery: boolean;
+	/** Whether this was a recovery: restoring the data from before a restore that could not be rolled back. */
+	recovery: boolean;
 	safetyBackup: { id: string; filename: string | null } | null;
 };

@@ -25,6 +25,7 @@ const lib = await import(pathToFileURL(join(directory, "entry.mjs")).href);
 const NOW = Date.UTC(2026, 9, 29, 12);
 const minutes = (count) => new Date(NOW - count * 60_000).toISOString();
 const job = (overrides) => ({
+	version: lib.RESTORE_JOB_VERSION,
 	id: "rst_1",
 	status: "restoring",
 	seq: 3,
@@ -44,6 +45,8 @@ const job = (overrides) => ({
 	error: null,
 	changed: true,
 	needsRecovery: false,
+	recoveryOf: null,
+	schema: "80:0080_layout",
 	...overrides,
 });
 
@@ -129,4 +132,45 @@ test("the outcome of a finished restore in words", () => {
 		lib.restoreOutcomeText({ status: "failed", error: "interrupted", needsRecovery: true }),
 		"The restore failed and could not be rolled back: interrupted",
 	);
+});
+
+test("a recovery interrupted too often stays to be recovered instead of rolling back", () => {
+	const patch = lib.interruptedRestorePatch(
+		job({ interruptions: 4, needsRecovery: true, recoveryOf: { id: "rst_0", error: "batch failed" } }),
+	);
+	assert.deepEqual(patch, {
+		status: "failed",
+		error: "Restoring the previous data was interrupted repeatedly",
+		needsRecovery: true,
+	});
+});
+
+test("a job of another version starts over, or rolls back with a fresh plan once it wrote something", () => {
+	assert.equal(lib.versionedRestorePatch(job({})), null);
+	const written = lib.versionedRestorePatch(job({ version: 0, rollbackPlan: { tables: [] }, cursor: {} }));
+	assert.equal(written.status, "rolling_back");
+	assert.equal(written.version, lib.RESTORE_JOB_VERSION);
+	assert.equal(written.rollbackPlan, null);
+	assert.equal(written.cursor, null);
+	assert.match(written.error, /Kite was updated/);
+	assert.equal(lib.versionedRestorePatch(job({ version: 0, error: "batch failed" })).error, "batch failed");
+
+	const untouched = lib.versionedRestorePatch(job({ version: undefined, changed: false, plan: { tables: [] } }));
+	assert.equal(untouched.status, "validating");
+	assert.equal(untouched.plan, null);
+	assert.equal(untouched.safety, null, "a new snapshot is taken");
+
+	const recovery = { recoveryOf: { id: "rst_0", error: null }, needsRecovery: true };
+	const restarted = lib.versionedRestorePatch(job({ version: 0, ...recovery }));
+	assert.equal(restarted.status, "validating", "a recovery starts over, it never rolls back");
+	assert.equal(restarted.safety.id, "bak_safety", "and keeps the snapshot it restores");
+});
+
+test("a failed recovery says so", () => {
+	assert.equal(
+		lib.restoreOutcomeText({ status: "failed", error: "batch failed", needsRecovery: true, recovery: true }),
+		"Restoring the previous data failed: batch failed",
+	);
+	assert.equal(lib.summarizeRestoreJob(job({ recoveryOf: { id: "rst_0", error: null } }), NOW).recovery, true);
+	assert.equal(lib.summarizeRestoreJob(job({}), NOW).recovery, false);
 });

@@ -127,31 +127,42 @@ export class FileBucket {
 		return meta ? new FileObject(key, this.pathFor(key), meta) : null;
 	}
 
-	/** Streams are piped to disk, so a large object is never held in memory; the file appears only once complete. */
+	/**
+	 * Streams are piped to disk, so a large object is never held in memory; the file appears only once complete.
+	 * Like R2, `onlyIf` makes the write conditional on the current etag and a refused write returns null; the check
+	 * and the swap run under a per-object lock, so two writers in this process cannot both pass it.
+	 */
 	async put(key: string, value: BucketValue | null, options?: PutOptions) {
 		const path = this.pathFor(key);
 		await mkdir(dirname(path), { recursive: true });
 		const temporary = `${path}.${randomUUID()}.partial`;
 		try {
 			await pipeline(toReadable(value), createWriteStream(temporary));
-			await rename(temporary, path);
+			const httpMetadata =
+				options?.httpMetadata instanceof Headers
+					? { contentType: options.httpMetadata.get("content-type") ?? undefined }
+					: options?.httpMetadata;
+			return await withObjectLock(path, async () => {
+				if (!conditionHolds(options?.onlyIf, (await this.readMeta(key))?.etag ?? null)) {
+					await rm(temporary, { force: true });
+					return null;
+				}
+				await rename(temporary, path);
+				const { size } = await stat(path);
+				return this.writeMeta(key, path, { httpMetadata, customMetadata: options?.customMetadata, size });
+			});
 		} catch (error) {
 			await rm(temporary, { force: true });
 			throw error;
 		}
-		const { size } = await stat(path);
-		const httpMetadata =
-			options?.httpMetadata instanceof Headers
-				? { contentType: options.httpMetadata.get("content-type") ?? undefined }
-				: options?.httpMetadata;
-		return this.writeMeta(key, path, { httpMetadata, customMetadata: options?.customMetadata, size });
 	}
 
 	private async writeMeta(key: string, path: string, meta: Omit<StoredMeta, "uploaded" | "etag">) {
 		const stored: StoredMeta = {
 			...meta,
 			uploaded: new Date().toISOString(),
-			etag: `${Date.now().toString(16)}-${meta.size.toString(16)}`,
+			// Random, so two writes in the same millisecond never share a version a conditional write could confuse.
+			etag: randomUUID().replaceAll("-", ""),
 		};
 		await writeFile(`${path}.meta.json`, JSON.stringify(stored));
 		return new FileObject(key, path, stored);
@@ -278,7 +289,34 @@ export class FileBucket {
 }
 
 type BucketValue = ArrayBuffer | ArrayBufferView | string | ReadableStream | Blob;
-type PutOptions = { httpMetadata?: StoredMeta["httpMetadata"] | Headers; customMetadata?: Record<string, string> };
+type PutConditional = { etagMatches?: string; etagDoesNotMatch?: string };
+type PutOptions = {
+	httpMetadata?: StoredMeta["httpMetadata"] | Headers;
+	customMetadata?: Record<string, string>;
+	onlyIf?: PutConditional;
+};
+
+/** Whether a conditional write may go ahead against the object's etag (null when absent); "*" matches any object. */
+function conditionHolds(onlyIf: PutConditional | undefined, etag: string | null): boolean {
+	if (!onlyIf) return true;
+	const matches = (wanted: string) => etag !== null && (wanted === "*" || wanted === etag);
+	if (onlyIf.etagMatches !== undefined && !matches(onlyIf.etagMatches)) return false;
+	return onlyIf.etagDoesNotMatch === undefined || !matches(onlyIf.etagDoesNotMatch);
+}
+
+/** The tail of each object's queue of writes in this process, so a check and the write after it are atomic. */
+const objectLocks = new Map<string, Promise<unknown>>();
+
+async function withObjectLock<T>(path: string, run: () => Promise<T>): Promise<T> {
+	const previous = objectLocks.get(path) ?? Promise.resolve();
+	const current = previous.catch(() => undefined).then(run);
+	objectLocks.set(path, current);
+	try {
+		return await current;
+	} finally {
+		if (objectLocks.get(path) === current) objectLocks.delete(path);
+	}
+}
 type UploadMeta = { key: string; httpMetadata?: StoredMeta["httpMetadata"] };
 
 const MULTIPART_DIRECTORY = ".multipart";

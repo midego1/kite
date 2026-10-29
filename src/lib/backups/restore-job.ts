@@ -14,6 +14,7 @@ import {
 	restoreJobMessage,
 	restoreLeaseMs,
 	restoreMaintenanceAction,
+	versionedRestorePatch,
 } from "./restore-job-utils";
 import type { PreparedRestore, RestoreBatchLimits, RestorePlan, RestorePosition } from "./restore-types";
 import { RestoreBatchWriter } from "./restore-writer";
@@ -68,16 +69,33 @@ function strip({ source: _source, ...plan }: PreparedRestore): RestorePlan {
 	return plan;
 }
 
+/**
+ * The applied migrations, as a fingerprint: they only ever grow, so the count and the latest name tell. A plan is
+ * made against one schema and is not continued on another.
+ */
+async function schemaFingerprint(db: D1Database): Promise<string> {
+	const row = await db
+		.prepare("SELECT count(*) AS count, max(name) AS last FROM d1_migrations")
+		.first<{ count: number; last: string | null }>()
+		.catch(() => null);
+	return row ? `${row.count}:${row.last ?? ""}` : "";
+}
+
 async function validate(run: RestoreRun): Promise<void> {
 	try {
 		const status = await getMigrationStatus(run.env.DB);
 		if (status.pending.length || status.unknown.length)
 			throw new Error("Apply pending database migrations in the admin overview before restoring a backup.");
+		const schema = await schemaFingerprint(run.env.DB);
 		const prepared = await prepareDatabaseRestore(
 			run.env.DB,
 			await bucketBackupSource(run.env.BUCKET, run.job.source.key),
 		);
-		await save(run, { status: "snapshot", plan: strip(prepared), rowCount: prepared.rowCount, interruptions: 0 });
+		const plan = { plan: strip(prepared), rowCount: prepared.rowCount, interruptions: 0, schema };
+		// A recovery restores the snapshot it carries and takes none of its own: the data now is the broken half.
+		if (run.job.recoveryOf)
+			await save(run, { ...plan, status: "restoring", cursor: { at: RESTORE_START, pending: null } });
+		else await save(run, { ...plan, status: "snapshot" });
 	} catch (error) {
 		if (error instanceof RestoreLeaseLostError) throw error;
 		await finish(run, { status: "failed", error: describe(error) });
@@ -115,18 +133,40 @@ async function writeChunk(run: RestoreRun, plan: RestorePlan, key: string): Prom
 	return executeDatabaseRestore(env.DB, { ...plan, source }, { writer, keep, from, deadline: run.deadline });
 }
 
+/** Ends a recovery that failed: the database still needs the snapshot it was restoring. */
+function failRecovery(run: RestoreRun, error: unknown): Promise<void> {
+	logger.error("backup.restore_recovery_failed", { restoreId: run.job.id, error });
+	return finish(run, { status: "failed", needsRecovery: true, error: describe(error) });
+}
+
+/** Moves a restore whose schema changed under it on: a fresh start before it wrote anything, a rollback after. */
+async function schemaChanged(run: RestoreRun): Promise<void> {
+	logger.warn("backup.restore_schema_changed", { restoreId: run.job.id });
+	if (!run.job.changed || run.job.recoveryOf)
+		await save(run, { status: "validating", plan: null, cursor: null, schema: null });
+	else
+		await save(run, {
+			status: "rolling_back",
+			error: "Database updates were applied while the restore ran, so it was rolled back",
+			cursor: null,
+			rollbackPlan: null,
+			interruptions: 0,
+		});
+}
+
 async function restore(run: RestoreRun): Promise<void> {
-	const changedBefore = run.job.changed;
+	if ((await schemaFingerprint(run.env.DB)) !== run.job.schema) return schemaChanged(run);
 	try {
 		const next = await writeChunk(run, run.job.plan!, run.job.source.key);
 		if (next) await save(run, { cursor: { at: next, pending: null } });
-		else await finish(run, { status: "completed", cursor: null });
+		else await finish(run, { status: "completed", cursor: null, needsRecovery: false });
 	} catch (error) {
 		if (error instanceof RestoreLeaseLostError) throw error;
-		// D1 runs each batch as a transaction, so a failure in the first one left everything as it was. Every batch
-		// is checkpointed with `changed` first, so an earlier invocation that may have committed one is known too.
-		if (!changedBefore && !run.writer?.committedBatches) {
-			await finish(run, { status: "failed", changed: false, error: describe(error) });
+		if (run.job.recoveryOf) return failRecovery(run, error);
+		// `changed` is saved before the first batch is sent. Until then nothing was written; after, even a batch
+		// that reported an error may have been committed with its answer lost, so only the rollback is safe.
+		if (!run.job.changed) {
+			await finish(run, { status: "failed", error: describe(error) });
 			return;
 		}
 		logger.warn("backup.restore_rolling_back", { restoreId: run.job.id, error });
@@ -137,16 +177,16 @@ async function restore(run: RestoreRun): Promise<void> {
 async function rollBack(run: RestoreRun): Promise<void> {
 	const safety = run.job.safety!;
 	try {
-		if (!run.job.rollbackPlan) {
+		const schema = await schemaFingerprint(run.env.DB);
+		if (!run.job.rollbackPlan || schema !== run.job.schema) {
 			// The restore's own preserved set: the half-restored database may have gained or lost storage rows.
+			const preserved = run.job.plan?.preserved;
 			const prepared = await prepareDatabaseRestore(
 				run.env.DB,
 				await bucketBackupSource(run.env.BUCKET, safety.r2Key),
-				{
-					preserved: run.job.plan?.preserved ?? [],
-				},
+				{ preserved: Array.isArray(preserved) ? preserved : [] },
 			);
-			await save(run, { rollbackPlan: strip(prepared), cursor: { at: RESTORE_START, pending: null } });
+			await save(run, { rollbackPlan: strip(prepared), schema, cursor: { at: RESTORE_START, pending: null } });
 			return;
 		}
 		const next = await writeChunk(run, run.job.rollbackPlan, safety.r2Key);
@@ -204,8 +244,12 @@ export async function processRestoreMessage(
 	try {
 		const run = await claim(env, message, options);
 		if (!run) return;
-		const interrupted = interruptedRestorePatch(run.job);
-		if (interrupted) {
+		const versioned = versionedRestorePatch(run.job);
+		const interrupted = versioned ? null : interruptedRestorePatch(run.job);
+		if (versioned) {
+			logger.warn("backup.restore_version_changed", { restoreId: run.job.id, from: run.job.version ?? null });
+			await save(run, versioned);
+		} else if (interrupted) {
 			if (interrupted.status === "failed") await finish(run, interrupted);
 			else await save(run, interrupted);
 		}
@@ -228,7 +272,7 @@ async function abandon(env: CloudflareEnv, job: RestoreJob, etag: string): Promi
 	const run: RestoreRun = { env, job, etag, deadline: 0, options: {} };
 	await finish(run, {
 		status: "failed",
-		needsRecovery: job.changed,
+		needsRecovery: job.changed || job.needsRecovery,
 		error: `${job.error ? `${job.error}; ` : ""}The restore stopped making progress`,
 	});
 }

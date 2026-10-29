@@ -5,6 +5,7 @@ import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import {
 	NODE_BACKUP_UPLOAD_MAX_BYTES,
 	RestoreBusyError,
+	RestoreRecoveryPendingError,
 	RestoreUploadTooLargeError,
 	startUploadedRestore,
 } from "@/lib/backups/restore";
@@ -22,7 +23,7 @@ async function uploadedBody(request: Request): Promise<ReadableStream<Uint8Array
 }
 
 function errorStatus(error: unknown): number {
-	if (error instanceof RestoreBusyError) return 409;
+	if (error instanceof RestoreBusyError || error instanceof RestoreRecoveryPendingError) return 409;
 	if (error instanceof RestoreUploadTooLargeError) return 413;
 	return 400;
 }

@@ -1,14 +1,20 @@
-import { DEFAULT_RESTORE_BATCH_LIMITS, estimateStatementBytes } from "./restore-utils";
-import type { RestoreBatchLimits, RestorePosition, RestoreProbe, RestoreStatement } from "./restore-types";
+import { DEFAULT_RESTORE_BATCH_LIMITS, estimateStatementBytes, restoreProbe } from "./restore-utils";
+import type {
+	RestoreBatchLimits,
+	RestorePosition,
+	RestoreProbe,
+	RestoreProbeSource,
+	RestoreStatement,
+} from "./restore-types";
 
 /** Called before each batch is sent, with where the restore will stand once it is committed. */
 type BeforeRestoreFlush = (to: RestorePosition | null, probe: RestoreProbe | null) => Promise<void>;
 
 /**
  * Sends restore statements to D1 in batches as they are produced, so a
- * restore never holds more than one batch. Everything that fits in a single
- * batch runs as one transaction; once a batch has been committed the restore
- * is no longer atomic, which `committedBatches` tells the caller.
+ * restore never holds more than one batch. Each batch is one transaction;
+ * once one has been committed the database holds part of the restore, which
+ * `committedBatches` tells the caller.
  */
 export class RestoreBatchWriter {
 	committedBatches = 0;
@@ -17,7 +23,7 @@ export class RestoreBatchWriter {
 	private pending: RestoreStatement[] = [];
 	private pendingBytes = 0;
 	private position: RestorePosition | null = null;
-	private probe: RestoreProbe | null = null;
+	private probe: RestoreProbeSource | null = null;
 
 	constructor(
 		private readonly db: D1Database,
@@ -26,10 +32,10 @@ export class RestoreBatchWriter {
 	) {}
 
 	/**
-	 * Queues a statement. `after` is where the restore stands once it ran; `probe` names a row it inserts, given
+	 * Queues a statement. `after` is where the restore stands once it ran; `probe` is the last row it inserts, given
 	 * for every statement that must not run twice.
 	 */
-	async add(statement: RestoreStatement, after?: RestorePosition, probe?: RestoreProbe | null): Promise<void> {
+	async add(statement: RestoreStatement, after?: RestorePosition, probe?: RestoreProbeSource | null): Promise<void> {
 		const bytes = estimateStatementBytes(statement);
 		if (
 			this.pending.length > 0 &&
@@ -46,11 +52,11 @@ export class RestoreBatchWriter {
 		if (!this.pending.length) return;
 		const batch = this.pending;
 		const to = this.position;
-		const probe = this.probe;
+		const source = this.probe;
 		this.pending = [];
 		this.pendingBytes = 0;
 		this.probe = null;
-		if (this.beforeFlush) await this.beforeFlush(to, probe);
+		if (this.beforeFlush) await this.beforeFlush(to, source ? await restoreProbe(source) : null);
 		await this.db.batch(batch.map((statement) => this.db.prepare(statement.sql).bind(...statement.params)));
 		this.committedBatches++;
 		this.committed = to;

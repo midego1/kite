@@ -113,10 +113,40 @@ test("a failed run is retried by the next check", async () => {
 	assert.ok(database.reads > afterFirst);
 });
 
+/** A bucket holding only the restore job's state object, as `status` says; counts its reads. */
+function restoreBucket(status) {
+	const bucket = {
+		reads: 0,
+		async get(key) {
+			bucket.reads++;
+			if (key !== "system/backup-restore.json" || !status) return null;
+			const body = new TextEncoder().encode(JSON.stringify({ id: "rst_1", status }));
+			return { etag: "e1", arrayBuffer: async () => body.buffer };
+		},
+	};
+	return bucket;
+}
+
+test("auto-apply waits while a backup restore runs and tries again at the next check", async () => {
+	const database = new SqliteDatabase(":memory:");
+	try {
+		const bucket = restoreBucket("restoring");
+		const env = { DB: database, BUCKET: bucket, AUTO_APPLY_MIGRATIONS: "1" };
+		await maybeAutoApplyPendingMigrations(env);
+		assert.equal(isEmptyDatabase(database), true, "nothing applied under the restore");
+		assert.equal(bucket.reads, 1);
+		await maybeAutoApplyPendingMigrations(env);
+		assert.equal(bucket.reads, 2, "the deferred run is not remembered as done");
+		assert.equal((await getPendingMigrationStatus(database)).pending, bundled.length);
+	} finally {
+		database.db.close();
+	}
+});
+
 test("auto-apply applies every pending migration once per instance", async () => {
 	const database = new SqliteDatabase(":memory:");
 	try {
-		const env = { DB: database, AUTO_APPLY_MIGRATIONS: "TRUE" };
+		const env = { DB: database, BUCKET: restoreBucket("completed"), AUTO_APPLY_MIGRATIONS: "TRUE" };
 		await maybeAutoApplyPendingMigrations(env);
 		assert.equal((await getPendingMigrationStatus(database)).pending, 0);
 

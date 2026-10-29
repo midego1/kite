@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireSessionAdmin } from "@/lib/api/auth";
 import { isPrimaryAdmin } from "@/lib/auth/admin";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
-import { RestoreBusyError, startStoredRestore } from "@/lib/backups/restore";
+import { RestoreBusyError, RestoreRecoveryPendingError, startStoredRestore } from "@/lib/backups/restore";
 import { getEnv } from "@/lib/cloudflare";
 
 /** Queues a restore of a completed backup from storage; the Backups page follows it through /api/backups/health. */
@@ -18,6 +18,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 		return NextResponse.json({ ok: true, restoreId: job.id }, { status: 202 });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Failed to restore backup";
-		return NextResponse.json({ error: message }, { status: error instanceof RestoreBusyError ? 409 : 400 });
+		const conflict = error instanceof RestoreBusyError || error instanceof RestoreRecoveryPendingError;
+		return NextResponse.json({ error: message }, { status: conflict ? 409 : 400 });
 	}
 }

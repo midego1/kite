@@ -3,6 +3,9 @@ import type { RestoreJob, RestoreJobMessage, RestoreJobStatus, RestoreSummary } 
 /** The restore's state object. A `system` key, so it stays on the default store whatever the storage routes say. */
 export const RESTORE_JOB_KEY = "system/backup-restore.json";
 
+/** Bumped whenever the job's state or the meaning of its plan and cursor changes. */
+export const RESTORE_JOB_VERSION = 1;
+
 const ACTIVE_RESTORE_STATUSES: readonly RestoreJobStatus[] = ["validating", "snapshot", "restoring", "rolling_back"];
 
 /** Wall-clock time one invocation spends writing before it hands over to the next queue message. */
@@ -57,6 +60,9 @@ export function restoreMaintenanceAction(
 /** The state an interrupted phase moves to once it ran out of attempts, or null while it may try again. */
 export function interruptedRestorePatch(job: RestoreJob): Partial<RestoreJob> | null {
 	if (job.interruptions <= MAX_RESTORE_INTERRUPTIONS) return null;
+	// A recovery has nothing to roll back to but the backup it restores: it stays to be recovered.
+	if (job.recoveryOf)
+		return { status: "failed", error: "Restoring the previous data was interrupted repeatedly", needsRecovery: true };
 	if (job.status === "restoring")
 		return {
 			status: "rolling_back",
@@ -76,6 +82,23 @@ export function interruptedRestorePatch(job: RestoreJob): Partial<RestoreJob> | 
 	};
 }
 
+/**
+ * How a job written by another version of Kite goes on, or null for a job of this version: its plan and cursor
+ * may mean something else now, so it starts over from validation, or rolls back with a plan made afresh once it
+ * may have written something (a recovery simply starts over).
+ */
+export function versionedRestorePatch(job: RestoreJob): Partial<RestoreJob> | null {
+	if (job.version === RESTORE_JOB_VERSION) return null;
+	const reset = { version: RESTORE_JOB_VERSION, cursor: null, rollbackPlan: null, interruptions: 0, schema: null };
+	if (job.changed && !job.recoveryOf)
+		return {
+			...reset,
+			status: "rolling_back",
+			error: job.error ?? "Kite was updated while the restore ran, so it was rolled back",
+		};
+	return { ...reset, status: "validating", plan: null, safety: job.recoveryOf ? job.safety : null };
+}
+
 export function summarizeRestoreJob(job: RestoreJob | null, now: number): RestoreSummary | null {
 	if (!job) return null;
 	const active = isActiveRestore(job);
@@ -89,13 +112,17 @@ export function summarizeRestoreJob(job: RestoreJob | null, now: number): Restor
 		finishedAt: job.finishedAt,
 		error: job.error,
 		needsRecovery: job.needsRecovery,
+		recovery: !!job.recoveryOf,
 		safetyBackup: job.safety ? { id: job.safety.id, filename: job.safety.filename } : null,
 	};
 }
 
 /** The outcome of a finished restore in words, or null while it runs or when it succeeded. */
-export function restoreOutcomeText(restore: Pick<RestoreSummary, "status" | "error" | "needsRecovery">): string | null {
+export function restoreOutcomeText(
+	restore: Pick<RestoreSummary, "status" | "error" | "needsRecovery"> & { recovery?: boolean },
+): string | null {
 	const reason = restore.error ? `: ${restore.error}` : ".";
+	if (restore.recovery && restore.status === "failed") return `Restoring the previous data failed${reason}`;
 	if (restore.status === "rolled_back") return `The restore failed and the previous data was put back${reason}`;
 	if (restore.status !== "failed") return null;
 	return restore.needsRecovery

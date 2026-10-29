@@ -1,4 +1,5 @@
 import { listApplicationTables } from "@/lib/backups/export";
+import { restoreBlocksMigrations } from "@/lib/backups/restore-job-store";
 import { createSafetyBackup } from "@/lib/backups/safety";
 import { applyPendingMigrations, getMigrationStatus } from "./service";
 
@@ -16,15 +17,21 @@ function isAutoApplyEnabled(env: Pick<CloudflareEnv, "AUTO_APPLY_MIGRATIONS">): 
 	return value === "1" || value === "true";
 }
 
+/** The run found migrations to apply but a backup restore is running, so a later call tries again. */
+const DEFERRED = "deferred";
+
 /**
  * Applies every pending migration, taking the same safety backup the admin
  * "Apply now" button takes. Returns the names it applied, or null when there
  * was nothing to do (an empty database takes no backup, as in the admin route).
  */
-async function autoApplyPendingMigrations(env: CloudflareEnv): Promise<string[] | null> {
+async function autoApplyPendingMigrations(env: CloudflareEnv): Promise<string[] | null | typeof DEFERRED> {
 	const status = await getMigrationStatus(env.DB);
 	// Unknown migrations mean the database is ahead of this release: leave it alone.
 	if (!status.pending.length || status.unknown.length) return null;
+	// Never under a running restore, which validated against the schema as it is (the queue consumer calls this
+	// for the restore's own messages too).
+	if (await restoreBlocksMigrations(env.BUCKET)) return DEFERRED;
 	if ((await listApplicationTables(env.DB)).size) await createSafetyBackup(env, "pre-migration");
 	const result = await applyPendingMigrations(env.DB);
 	console.info(JSON.stringify({ event: "migrations.auto_applied", applied: result.applied }));
@@ -44,7 +51,9 @@ async function autoApplyPendingMigrations(env: CloudflareEnv): Promise<string[] 
 export function maybeAutoApplyPendingMigrations(env: CloudflareEnv): Promise<void> {
 	if (!isAutoApplyEnabled(env)) return Promise.resolve();
 	attempted ??= autoApplyPendingMigrations(env)
-		.then(() => undefined)
+		.then((result) => {
+			if (result === DEFERRED) attempted = null;
+		})
 		.catch((error) => {
 			attempted = null;
 			console.error("Automatic database migration failed", error);

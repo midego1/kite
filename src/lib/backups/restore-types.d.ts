@@ -1,12 +1,8 @@
+import type { DatabaseRecord } from "./types";
+
 export type RestoreStatement = { sql: string; params: (string | number | null)[] };
 
 export type RestoreBatchLimits = { maxStatements: number; maxBytes: number };
-
-export type RestoreOutcome = {
-	atomic: boolean;
-	safetyBackupId: string | null;
-	rowCount: number;
-};
 
 /** A backup file read by byte range: an object in storage, or bytes already in memory. */
 export type BackupSource = {
@@ -67,8 +63,22 @@ export type RestoreSegment =
  */
 export type RestorePosition = { segment: number; offset: number | null; rows: number };
 
-/** A row of a batch, by its primary key (or every column), whose presence proves that the batch was committed. */
-export type RestoreProbe = { table: string; values: Record<string, string | number | boolean | null> };
+export type RestoreProbeValue = string | number | null;
+
+/**
+ * The last row a batch inserts: found by its primary key (every inserted column for a table without one) and
+ * compared by a digest of all its inserted columns, so a row someone else created under the same key while the
+ * batch was lost does not pass for it.
+ */
+export type RestoreProbe = {
+	table: string;
+	key: Record<string, RestoreProbeValue>;
+	columns: string[];
+	digest: string;
+};
+
+/** What the writer turns into a RestoreProbe when the batch is sent. */
+export type RestoreProbeSource = { table: string; row: DatabaseRecord; primaryKey: string[]; columns: Set<string> };
 
 /**
  * A restore's checkpoint. `pending` is the batch being committed when it was written: if its probe row exists,

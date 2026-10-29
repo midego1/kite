@@ -129,28 +129,40 @@ export function restoreSegments(plan: RestorePlan): RestoreSegment[] {
 	return segments;
 }
 
-/** The row a resumed restore looks for: its primary key, or every inserted column for a table without one. */
-export function restoreProbe(
-	table: string,
-	row: DatabaseRecord,
-	primaryKey: string[],
-	columns: Set<string>,
-): RestoreProbe {
-	const keys = primaryKey.length ? primaryKey : Object.keys(row).filter((column) => columns.has(column));
+function probeValue(value: unknown): RestoreProbeValue {
+	if (typeof value === "boolean") return value ? 1 : 0;
+	return (value ?? null) as RestoreProbeValue;
+}
+
+/**
+ * SHA-256 of a row's values in `columns`, the same for the row as inserted and as read back (booleans are stored
+ * as 1 and 0). A value SQLite converts on insert (a numeric string in an INTEGER column) reads back different, so
+ * such a batch counts as not committed: running it again then fails on its keys and the restore rolls back.
+ */
+export async function rowDigest(columns: string[], row: Record<string, unknown>): Promise<string> {
+	const text = JSON.stringify(columns.map((column) => probeValue(row[column])));
+	const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+	return Array.from(hash, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** The probe for a batch's last inserted row: its key (every inserted column without a primary key) and digest. */
+export async function restoreProbe({ table, row, primaryKey, columns }: RestoreProbeSource): Promise<RestoreProbe> {
+	const inserted = Object.keys(row).filter((column) => columns.has(column));
+	const keys = primaryKey.length ? primaryKey : inserted;
 	return {
 		table,
-		values: Object.fromEntries(keys.map((key) => [key, (row[key] ?? null) as RestoreProbe["values"][string]])),
+		key: Object.fromEntries(keys.map((key) => [key, probeValue(row[key])])),
+		columns: inserted,
+		digest: await rowDigest(inserted, row),
 	};
 }
 
+/** Reads back the rows under a probe's key, to compare their digest. */
 export function probeStatement(probe: RestoreProbe): RestoreStatement {
-	const columns = Object.keys(probe.values);
+	const keys = Object.keys(probe.key);
 	return {
-		sql: `SELECT 1 AS found FROM ${quoteIdentifier(probe.table)} WHERE ${columns.map((column) => `${quoteIdentifier(column)} IS ?`).join(" AND ")} LIMIT 1`,
-		params: columns.map((column) => {
-			const value = probe.values[column] ?? null;
-			return typeof value === "boolean" ? Number(value) : value;
-		}),
+		sql: `SELECT ${probe.columns.map(quoteIdentifier).join(", ")} FROM ${quoteIdentifier(probe.table)} WHERE ${keys.map((key) => `${quoteIdentifier(key)} IS ?`).join(" AND ")}`,
+		params: keys.map((key) => probe.key[key] ?? null),
 	};
 }
 

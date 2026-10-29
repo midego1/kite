@@ -8,7 +8,7 @@ import {
 	legacyBodyStatement,
 	planRestoreDeletes,
 	probeStatement,
-	restoreProbe,
+	rowDigest,
 	restoreSegments,
 	TableInsertBuilder,
 } from "./restore-utils";
@@ -22,6 +22,7 @@ import type {
 	RestorePosition,
 	RestoreRunOptions,
 	RestoreSegment,
+	RestoreStatement,
 } from "./restore-types";
 
 export const RESTORE_START: RestorePosition = { segment: 0, offset: null, rows: 0 };
@@ -73,7 +74,12 @@ async function writeRows(table: PreparedRestoreTable, context: SegmentContext): 
 	const builder = new TableInsertBuilder<RestorePosition>(table.name, columns);
 	const emit = async (built: ReturnType<typeof builder.finish>) => {
 		if (!built) return;
-		await writer.add(built.statement, built.meta, restoreProbe(table.name, built.last, table.primaryKey, columns));
+		await writer.add(built.statement, built.meta, {
+			table: table.name,
+			row: built.last,
+			primaryKey: table.primaryKey,
+			columns,
+		});
 		context.reached = built.meta!;
 		context.checkDeadline();
 	};
@@ -102,6 +108,17 @@ async function writeBodies(segment: Extract<RestoreSegment, { kind: "bodies" }>,
 		await writer.add(statement, context.reached);
 		context.checkDeadline();
 	}
+}
+
+/**
+ * Statements that may run twice (the DELETEs, the kept upserts): only the last one moves the restore past the
+ * segment, so a resume after a batch in the middle runs the whole segment again rather than skipping its rest.
+ */
+async function writeRepeatable(writer: RestoreBatchWriter, statements: RestoreStatement[], context: SegmentContext) {
+	const start = { segment: context.index, offset: null, rows: 0 };
+	const next = { segment: context.index + 1, offset: null, rows: 0 };
+	for (const [index, statement] of statements.entries())
+		await writer.add(statement, index === statements.length - 1 ? next : start);
 }
 
 /**
@@ -135,10 +152,15 @@ export async function executeDatabaseRestore(
 			const segment = segments[context.index]!;
 			const next = { segment: context.index + 1, offset: null, rows: 0 };
 			if (segment.kind === "deletes") {
-				for (const statement of planRestoreDeletes(prepared.tables.map((table) => table.name)))
-					await writer.add(statement, next);
+				await writeRepeatable(writer, planRestoreDeletes(prepared.tables.map((table) => table.name)), context);
+				// Its own batches: until they are in, rows that look restored may simply be the live ones, so no probe
+				// of a later batch can be trusted before them.
+				await writer.flush();
 			} else if (segment.kind === "kept") {
-				for (const statement of keep) await writer.add(statement, next);
+				// Their own batch too, so a probe row of the `backups` table is never one these upserts replace.
+				await writer.flush();
+				await writeRepeatable(writer, keep, context);
+				await writer.flush();
 			} else if (segment.kind === "rows") await writeRows(segment.table, context);
 			else await writeBodies(segment, context);
 			context.reached = next;
@@ -158,15 +180,20 @@ export async function executeDatabaseRestore(
 	}
 }
 
-/** Where an interrupted restore continues: after its pending batch if that batch's probe row is there. */
+/**
+ * Where an interrupted restore continues: after its pending batch if that batch's last row is there with exactly
+ * the values it inserted, otherwise from before the batch. A batch without a probe holds only statements that
+ * may run twice (the DELETEs, the kept upserts, the legacy body updates), so it simply runs again.
+ */
 export async function resolveRestoreCursor(db: D1Database, cursor: RestoreCursor): Promise<RestorePosition> {
 	const { pending } = cursor;
-	if (!pending) return cursor.at;
-	if (!pending.probe) return cursor.at;
-	const probe = probeStatement(pending.probe);
-	const found = await db
-		.prepare(probe.sql)
-		.bind(...probe.params)
-		.first<{ found: number }>();
-	return found ? pending.to : cursor.at;
+	if (!pending?.probe) return cursor.at;
+	const { probe } = pending;
+	const statement = probeStatement(probe);
+	const { results } = await db
+		.prepare(statement.sql)
+		.bind(...statement.params)
+		.all<Record<string, unknown>>();
+	for (const row of results) if ((await rowDigest(probe.columns, row)) === probe.digest) return pending.to;
+	return cursor.at;
 }

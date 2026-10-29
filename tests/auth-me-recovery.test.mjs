@@ -20,6 +20,7 @@ await build({
 	},
 	outfile: join(bundleDirectory, "auth-me.mjs"),
 	bundle: true,
+	sourcemap: "inline",
 	platform: "node",
 	format: "esm",
 	target: "node24",

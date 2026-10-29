@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { messageAttachments, messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import type { SessionUser } from "@/lib/auth/types";
 import type { AttachmentContent, AttachmentMetadata, StoredAttachment } from "./attachment-types";
 
@@ -224,7 +225,7 @@ export async function getAttachmentForUser(
 ) {
 	const db = getDb(env);
 	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
-	if (!message) return null;
+	if (!message || isHiddenDraft(message, user.id)) return null;
 
 	if (message.mailboxId) {
 		const access = await getMailboxAccessLevel(db, user, message.mailboxId);

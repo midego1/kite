@@ -1,3 +1,4 @@
+import { DRAFT_STATUS, isDraftMoveRefused } from "@/lib/messages/draft-privacy-utils";
 import type { BulkMessageAction, PermanentDeleteFolder } from "./types";
 
 const allowedBulkActions = new Set<BulkMessageAction>([
@@ -66,4 +67,20 @@ export function isPermanentDeleteFolder(folder: unknown): folder is PermanentDel
 export function actionMailboxId(mailboxId: string | null, folderMailboxId: string | null): string | null {
 	if (!mailboxId) return null;
 	return !folderMailboxId || mailboxId === folderMailboxId ? mailboxId : null;
+}
+
+/**
+ * What a bulk action does with a message, as far as Drafts goes: Delete and Trash discard a draft outright
+ * (it would otherwise land in Trash, visible to the whole mailbox), read state changes as usual, and every
+ * other move into or out of Drafts is refused. `restoreStatus` is the status a restore asks for.
+ */
+export function bulkDraftHandling(
+	action: BulkMessageAction,
+	status: string,
+	restoreStatus?: string,
+): "discard" | "refuse" | "normal" {
+	if (action === "read" || action === "unread") return "normal";
+	if (status === DRAFT_STATUS) return action === "trash" || action === "delete" ? "discard" : "refuse";
+	const target = action === "restore" ? restoreStatus : getStatusForBulkAction(action);
+	return target && isDraftMoveRefused(status, target) ? "refuse" : "normal";
 }

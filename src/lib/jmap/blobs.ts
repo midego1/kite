@@ -3,6 +3,7 @@ import { messageAttachments, messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { loadMessageBody } from "@/lib/email/bodies";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
+import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import { LIMITS } from "./constants";
 import { decodeBlobId, uploadBlobId } from "./ids";
 import { listAccessibleMailboxIdSet } from "./access";
@@ -56,11 +57,14 @@ export async function storeRawDraftMime(ctx: JmapContext, messageId: string, raw
 }
 
 /** Held Screener mail stays out of JMAP until its sender is approved. */
-function isReadableRow<T extends { mailboxId: string | null; status: string }>(
+function isReadableRow<T extends { mailboxId: string | null; status: string; userId: string }>(
 	row: T | undefined,
 	accessible: Set<string>,
+	userId: string,
 ): row is T {
-	return Boolean(row?.mailboxId && accessible.has(row.mailboxId) && row.status !== SCREENING_STATUS);
+	return Boolean(
+		row?.mailboxId && accessible.has(row.mailboxId) && row.status !== SCREENING_STATUS && !isHiddenDraft(row, userId),
+	);
 }
 
 /**
@@ -91,12 +95,13 @@ export async function readBlob(
 				size: messageAttachments.size,
 				mailboxId: messages.mailboxId,
 				status: messages.status,
+				userId: messages.userId,
 			})
 			.from(messageAttachments)
 			.innerJoin(messages, eq(messageAttachments.messageId, messages.id))
 			.where(eq(messageAttachments.id, decoded.id))
 			.limit(1);
-		if (!isReadableRow(row, accessible)) return null;
+		if (!isReadableRow(row, accessible, ctx.auth.userId)) return null;
 		const object = await ctx.env.BUCKET.get(row.r2Key);
 		return object ? { body: object.body, type: row.type, name: row.filename, size: row.size } : null;
 	}
@@ -105,7 +110,7 @@ export async function readBlob(
 		.from(messages)
 		.where(and(eq(messages.id, decoded.id)))
 		.limit(1);
-	if (!isReadableRow(row, accessible)) return null;
+	if (!isReadableRow(row, accessible, ctx.auth.userId)) return null;
 	if (row.rawR2Key) {
 		const object = await ctx.env.BUCKET.get(row.rawR2Key);
 		if (object) return { body: object.body, type: "message/rfc822", name: `${row.id}.eml`, size: object.size };

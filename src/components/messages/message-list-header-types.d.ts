@@ -19,6 +19,8 @@ export type MessageListHeaderProps = {
 		pending: boolean;
 		/** The mailbox of each selected row, for the folders and actions the toolbar offers. */
 		mailboxIds: Array<string | null | undefined>;
+		/** The selection holds the user's own drafts, which they may delete whatever their mailbox access. */
+		hasDrafts?: boolean;
 		toggleAll: (selected: boolean) => void;
 		run: (action: BulkMessageAction, folderId?: string) => Promise<void>;
 		clear: () => void;

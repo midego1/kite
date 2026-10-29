@@ -43,6 +43,7 @@ export function BulkMessageSelectionPane({
 						pending={pending}
 						folder={folder}
 						mailboxIds={selectedMessages.map((message) => message.mailboxId)}
+						hasDraftSelection={selectedMessages.some((message) => message.status === "draft")}
 						hideSelectedCount
 					/>
 				</div>

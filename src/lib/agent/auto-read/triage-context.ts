@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { domains, messageAttachments, messages } from "@/db/schema";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
@@ -6,6 +6,7 @@ import { loadMessageBody } from "@/lib/email/bodies";
 import { readRawHeaders } from "@/lib/email/raw-headers";
 import { hostAndParents, linkHostsOf, summarizeLinks } from "@/lib/spam/analyzers/link-host-utils";
 import { htmlLinkText } from "@/lib/spam/tokenizer-utils";
+import { DRAFT_STATUS } from "@/lib/messages/draft-privacy-utils";
 import { collectFacts } from "./facts-utils";
 import type { MessageFacts } from "./facts-types";
 import { loadTrustedContacts } from "./trusted-contacts";
@@ -26,10 +27,17 @@ export type TriageContext = {
 
 async function threadRows(env: CloudflareEnv, source: SourceMessage) {
 	if (!source.threadId || !source.mailboxId) return [source];
+	// Drafts are private to their author, so none of them shapes what automatic reading sees.
 	return getDb(env)
 		.select({ id: messages.id, subject: messages.subject })
 		.from(messages)
-		.where(and(eq(messages.mailboxId, source.mailboxId), eq(messages.threadId, source.threadId)))
+		.where(
+			and(
+				eq(messages.mailboxId, source.mailboxId),
+				eq(messages.threadId, source.threadId),
+				ne(messages.status, DRAFT_STATUS),
+			),
+		)
 		.orderBy(asc(messages.createdAt))
 		.limit(THREAD_WINDOW);
 }

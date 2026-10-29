@@ -7,6 +7,7 @@ import { newId } from "@/lib/ids";
 import { mailboxAccessSchema } from "@/lib/validators";
 import type { MailboxAccessRouteParams } from "./types";
 import { getSharedMailboxForAdmin } from "./utils";
+import { deleteUserDraftsInMailbox } from "@/lib/email/message-cleanup";
 
 export async function GET(request: Request, { params }: MailboxAccessRouteParams) {
 	const access = await requireAccountAdmin(request);
@@ -79,6 +80,11 @@ export async function DELETE(request: Request, { params }: MailboxAccessRoutePar
 	const db = getDb(access.env);
 	const mailbox = await getSharedMailboxForAdmin(db, id, access.user!.id);
 	if (!mailbox) return NextResponse.json({ error: "Shared inbox not found" }, { status: 404 });
-	await db.delete(mailboxAccess).where(and(eq(mailboxAccess.mailboxId, id), eq(mailboxAccess.userId, userId)));
+	const removed = await db
+		.delete(mailboxAccess)
+		.where(and(eq(mailboxAccess.mailboxId, id), eq(mailboxAccess.userId, userId)))
+		.returning({ id: mailboxAccess.id });
+	// Their drafts here were private to them and can no longer be opened or sent by anyone.
+	if (removed.length > 0 && userId !== access.user!.id) await deleteUserDraftsInMailbox(access.env, db, id, userId);
 	return NextResponse.json({ ok: true });
 }

@@ -11,6 +11,7 @@ import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import { permanentlyDeleteMessages } from "@/lib/email/permanent-delete";
 import { applySpamFeedback } from "@/lib/spam/feedback";
 import { reportPhishingBulk, reportSpamBulk, restoreMessageStates } from "./report";
+import { isSendPending } from "@/lib/messages/send-state-utils";
 import { draftCounts, draftsOnlyResponse, settleDrafts } from "./drafts";
 import type { BulkMessagePayload } from "./types";
 import {
@@ -130,6 +131,8 @@ export async function POST(request: Request) {
 		selectedMessages,
 	);
 	for (const message of drafts.rest) {
+		// A message waiting in the outbound queue goes out wherever it is filed; it can only be cancelled first.
+		if (isSendPending(message.status)) continue;
 		const mailboxId = actionMailboxId(message.mailboxId, folderMailboxId);
 		if (!mailboxId) continue;
 		let accessRequest = accessByMailbox.get(mailboxId);

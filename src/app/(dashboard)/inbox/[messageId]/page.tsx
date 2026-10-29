@@ -38,6 +38,7 @@ import { MessageReplyButtons } from "@/components/message-actions/message-reply-
 import { InlineComposerHost, InlineReplyComposer } from "@/components/compose/inline-reply-composer";
 import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
 import { OneTimeCodeChip } from "@/components/messages/one-time-code-chip";
+import { SendStateBanner } from "@/components/messages/send-state-banner";
 import { ScreenerBanner } from "@/components/screener/screener-banner";
 import { RecipientList } from "@/components/messages/recipient-list";
 import { useShowFullRecipientAddresses } from "@/components/messages/use-show-full-recipient-addresses";
@@ -215,6 +216,7 @@ export default function MessageDetailPage() {
 				/>
 				<OneTimeCodeChip code={oneTimeCode} alignWide={!isAnyPanelVisible} />
 				<ScreenerBanner message={message} mailbox={messageMailbox} alignWide={!isAnyPanelVisible} />
+				<SendStateBanner message={message} alignWide={!isAnyPanelVisible} />
 				<ThreadSummaryCard key={message.id} controller={summary} />
 				{/* <div className="px-6">
         <div className="mx-auto w-full max-w-[640px]">

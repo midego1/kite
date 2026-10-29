@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages, outboundJobs } from "@/db/schema";
 import { newId } from "@/lib/ids";
@@ -395,7 +395,10 @@ export async function processOutboundQueue(env: CloudflareEnv, payload: Outbound
 
 export type CancelQueuedSendResult = { ok: true; draftId: string } | { ok: false; reason: "not_found" | "too_late" };
 
-/** Take back a message still waiting in the outbound queue and turn it into a draft again. */
+/**
+ * Take back a message still waiting in the outbound queue and turn it into a draft again. A message whose
+ * send failed is taken back the same way, to be edited and sent again.
+ */
 export async function cancelQueuedSend(
 	env: CloudflareEnv,
 	userId: string,
@@ -403,26 +406,32 @@ export async function cancelQueuedSend(
 ): Promise<CancelQueuedSendResult> {
 	const db = getDb(env);
 	const [message] = await db
-		.select({ id: messages.id })
+		.select({ id: messages.id, status: messages.status })
 		.from(messages)
 		.where(
 			and(
 				eq(messages.id, messageId),
 				eq(messages.userId, userId),
 				eq(messages.direction, "outbound"),
-				eq(messages.status, "queued"),
+				inArray(messages.status, ["queued", "failed"]),
 			),
 		)
 		.limit(1);
 	if (!message) return { ok: false, reason: "not_found" };
 
-	const [cancelled] = await db
-		.update(outboundJobs)
-		.set({ status: "cancelled", updatedAt: new Date() })
-		.where(and(eq(outboundJobs.messageId, messageId), eq(outboundJobs.status, "queued")))
-		.returning({ id: outboundJobs.id });
-	if (!cancelled) return { ok: false, reason: "too_late" };
+	if (message.status === "queued") {
+		const [cancelled] = await db
+			.update(outboundJobs)
+			.set({ status: "cancelled", updatedAt: new Date() })
+			.where(and(eq(outboundJobs.messageId, messageId), eq(outboundJobs.status, "queued")))
+			.returning({ id: outboundJobs.id });
+		if (!cancelled) return { ok: false, reason: "too_late" };
+	}
 
-	await db.update(messages).set({ status: "draft" }).where(eq(messages.id, messageId));
+	// Still the status read above, so a send that failed or went out in between is left as it is.
+	await db
+		.update(messages)
+		.set({ status: "draft" })
+		.where(and(eq(messages.id, messageId), eq(messages.status, message.status)));
 	return { ok: true, draftId: messageId };
 }

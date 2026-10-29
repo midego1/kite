@@ -18,6 +18,8 @@ import { loadRowSuggestions } from "@/lib/agent/auto-read/message-suggestions";
 import { loadRowLines } from "@/lib/agent/summaries/lines";
 import { suggestionVisibilityFor } from "@/lib/agent/auto-read/suggestion-visibility";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
+import { loadSendStates, statusFilterCondition } from "@/lib/messages/send-state";
+import { parseStatusFilter } from "@/lib/messages/send-state-utils";
 import { screenerPendingRows } from "@/lib/screener/views";
 import { resolveMailboxScope } from "@/lib/mailboxes/scope-utils";
 import { mailboxScopeCondition } from "@/lib/messages/mailbox-scope";
@@ -74,8 +76,10 @@ export async function GET(request: Request) {
 	if (folderId) {
 		conditions.push(eq(messages.folderId, folderId));
 	}
-	if (status) {
-		conditions.push(eq(messages.status, status));
+	// `status` may list several (the Sent folder also holds queued and failed sends).
+	const statuses = parseStatusFilter(status);
+	if (statuses) {
+		conditions.push(statusFilterCondition(statuses));
 	}
 	// Held mail shows only in the Screener view, never in starred, folder or search results.
 	if (status !== SCREENING_STATUS) conditions.push(ne(messages.status, SCREENING_STATUS));
@@ -227,6 +231,7 @@ export async function GET(request: Request) {
 		await suggestionVisibilityFor(env, user),
 	);
 	const screenerPending = await screenerPendingRows(db, rows);
+	const sendStates = await loadSendStates(db, rows, user.id);
 	// One-line summaries, for mailboxes that have them on; a conversation row shows its newest message's line.
 	const rowLines = await loadRowLines(db, rows, (row) =>
 		groupByThread ? (scopedThreads.ids.get(rowConversationKey(row)) ?? [row.id]) : [row.id],
@@ -253,6 +258,7 @@ export async function GET(request: Request) {
 			...rowSuggestions(message.id),
 			...rowLines(message.id),
 			...(screenerPending.has(message.id) ? { screenerPending: true } : {}),
+			...(sendStates.has(message.id) ? { sendState: sendStates.get(message.id) } : {}),
 			...(groupByThread
 				? {
 						threadMessageIds: scopedThreads.ids.get(key) ?? [message.id],

@@ -165,6 +165,7 @@
 		"src/lib/messages/detail-cache-utils.ts",
 		"src/lib/messages/draft-privacy-utils.ts",
 		"src/lib/messages/permanent-delete-utils.ts",
+		"src/lib/messages/send-state-utils.ts",
 		"src/lib/messages/thread-unread-utils.ts",
 		"src/lib/modules/admin-utils.ts",
 		"src/lib/modules/background-utils.ts",

@@ -141,7 +141,8 @@ test("tentative events carry a Tentative label and dashed border in month, week 
 		"tentative",
 	);
 	const week = page.locator('button[data-status="tentative"][title*="Hold for intro"]');
-	await expect(week).toHaveClass(/border-dashed/);
+	// The week grid draws its dashed edge as an inset outline, which takes no room from the text.
+	await expect(week).toHaveCSS("outline-style", "dashed");
 	await expect(week).toContainText("Tentative");
 	await chooseOption(page.getByRole("combobox", { name: "Calendar view" }), "month");
 	const month = page.locator('[aria-label="Monthly calendar"]');

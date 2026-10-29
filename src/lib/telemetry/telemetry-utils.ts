@@ -121,14 +121,19 @@ function telemetryRunTime(day: string): number {
 	return Date.parse(`${day}T${String(TELEMETRY_RUN_HOUR_UTC).padStart(2, "0")}:00:00Z`);
 }
 
+/** The owner always has at least this long between seeing the notice and the first report. */
+const TELEMETRY_MIN_LEAD_MS = 60 * 60_000;
+
 /**
  * The day an undecided install starts sending when the owner first sees the notice at `now`: the UTC day of the
- * first 02:00 UTC run strictly after `now`, so today before 02:00 and tomorrow from 02:00 on. Nothing is ever sent
- * before the notice was on screen, and nothing waits longer than a day after it.
+ * first 02:00 UTC run more than an hour after `now`. So a notice first seen before 01:00 UTC starts with tonight's
+ * run, one seen from 01:00 UTC on (including 01:59) with tomorrow's. Nothing is ever sent before the notice was on
+ * screen, and nothing waits longer than a day and an hour after it. Server and browser both use this one rule.
  */
 export function telemetryStartDay(now: Date): string {
-	const today = utcDay(now);
-	return now.getTime() < telemetryRunTime(today) ? today : utcDay(new Date(telemetryRunTime(today) + DAY_MS));
+	const earliest = new Date(now.getTime() + TELEMETRY_MIN_LEAD_MS);
+	const day = utcDay(earliest);
+	return earliest.getTime() < telemetryRunTime(day) ? day : utcDay(new Date(telemetryRunTime(day) + DAY_MS));
 }
 
 /** `2026-11-12` as `12 November 2026`, the same everywhere: the day is a UTC day. */

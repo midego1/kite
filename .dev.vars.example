@@ -57,8 +57,9 @@ CF_TOKEN=your_api_token_with_zone_email_permissions
 # AUTO_APPLY_MIGRATIONS=1
 
 # Optional: pseudonymous usage statistics are on by default; the first-run setup explains
-# them with a switch, and an existing install's owner gets a notice 14 days before the first
-# report. KITE_TELEMETRY=0 (or false, off, no) turns them off for the deployment: nothing is
+# them with a switch, and an existing install's owner gets a notice first, and the first report
+# follows at the first 02:00 UTC run at least an hour after it was shown.
+# KITE_TELEMETRY=0 (or false, off, no) turns them off for the deployment: nothing is
 # sent and the owner cannot turn them on (only off); no value turns them on. Reports go to
 # https://kite-telemetry.midego.net, run by the Kite project on Cloudflare;
 # KITE_TELEMETRY_URL replaces that address (https only), and an empty value sends nothing.

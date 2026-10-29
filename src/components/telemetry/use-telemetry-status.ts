@@ -54,20 +54,25 @@ export function useTelemetryStatus() {
 
 /**
  * The one-time notice of an install whose owner never chose. Until it has been seen it names the date the server
- * would store now (the same rule, `telemetryStartDay`); `markShown`, called once the notice is actually on screen,
- * records that it was shown, which fixes that date, and from then on the stored date is shown.
+ * would store now (the same rule, `telemetryStartDay`), worked out when the notice becomes visible, never when the
+ * page was opened: a tab left open since before 02:00 UTC must not name a time that has passed. `markShown`, called
+ * once the notice is actually on screen, records that it was shown, which fixes that date, and from then on the
+ * stored date is shown.
  */
 export function useTelemetryNotice() {
 	const { owner, query, save } = useTelemetryStatus();
-	const [provisionalDay] = useState(() => telemetryStartDay(new Date()));
+	const [shownDay, setShownDay] = useState<string | null>(null);
 	const status = query.data;
 	const due = Boolean(owner && status?.notice);
 	const unseen = due && !status?.startDay;
 	const { mutate, isIdle } = save;
 	const markShown = useCallback(() => {
-		if (unseen && isIdle) mutate({ notice: "shown" });
+		if (!unseen) return;
+		setShownDay(telemetryStartDay(new Date()));
+		if (isIdle) mutate({ notice: "shown" });
 	}, [unseen, isIdle, mutate]);
-	const startDay = due ? (status?.startDay ?? provisionalDay) : null;
+	// Before it is visible nothing reads the date; the fallback only keeps the text from being empty.
+	const startDay = due ? (status?.startDay ?? shownDay ?? telemetryStartDay(new Date())) : null;
 	return { startDay, unseen, markShown, save, endpoint: status?.endpoint ?? null };
 }
 

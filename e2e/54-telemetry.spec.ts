@@ -20,9 +20,9 @@ async function telemetryStatus() {
 	return response.json();
 }
 
-/** The day a notice first seen now names: the UTC day of the first 02:00 UTC run after now. */
+/** The day a notice first seen now names: the UTC day of the first 02:00 UTC run more than an hour from now. */
 function expectedStartDay(): string {
-	const now = Date.now();
+	const now = Date.now() + 3_600_000;
 	const today = new Date(now).toISOString().slice(0, 10);
 	const run = Date.parse(`${today}T02:00:00Z`);
 	return new Date(now < run ? run : run + DAY_MS).toISOString().slice(0, 10);

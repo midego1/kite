@@ -111,13 +111,16 @@ async function everyDay(env, from, to, fetcher) {
 	return [...outcomes];
 }
 
-test("the start day is the UTC day of the first 02:00 UTC run after the notice was first seen", () => {
+test("the start day is the UTC day of the first 02:00 UTC run more than an hour after the notice was first seen", () => {
 	assert.equal(telemetryStartDay(SEEN), START_DAY);
 	assert.equal(telemetryStartDay(new Date("2026-10-28T00:00:00Z")), "2026-10-28", "tonight's run, still ahead");
-	assert.equal(telemetryStartDay(new Date("2026-10-28T01:59:59.999Z")), "2026-10-28");
+	assert.equal(telemetryStartDay(new Date("2026-10-28T00:59:59.999Z")), "2026-10-28", "just over an hour left");
+	assert.equal(telemetryStartDay(new Date("2026-10-28T01:00:00Z")), START_DAY, "an hour or less left: tomorrow's run");
+	assert.equal(telemetryStartDay(new Date("2026-10-28T01:59:59Z")), START_DAY, "never a second before a run");
 	assert.equal(telemetryStartDay(new Date("2026-10-28T02:00:00Z")), START_DAY, "the run of that moment may have gone");
 	assert.equal(telemetryStartDay(new Date("2026-10-28T23:59:59Z")), START_DAY);
-	// Across midnight UTC, month and year.
+	// Across midnight UTC, month and year (23:00 UTC is the last moment to still leave an hour before 02:00 tomorrow).
+	assert.equal(telemetryStartDay(new Date("2026-10-31T22:59:59Z")), "2026-11-01");
 	assert.equal(telemetryStartDay(new Date("2026-10-31T23:59:59Z")), "2026-11-01");
 	assert.equal(telemetryStartDay(new Date("2026-12-31T23:59:59Z")), "2027-01-01");
 	assert.equal(telemetryDayLabel(START_DAY), "29 October 2026");
@@ -296,11 +299,10 @@ test("an existing install is told first and sends nothing until the first 02:00 
 	assert.equal((await getTelemetryStatus(env, at(START_DAY))).notice, false);
 });
 
-test("a notice first seen before tonight's 02:00 UTC run starts with that run, not before it", async (t) => {
+test("a notice first seen over an hour before tonight's 02:00 UTC run starts with that run, not before it", async (t) => {
 	const env = { DB: await database(t), KITE_TELEMETRY_URL: COLLECTOR };
 	const { requests, fetcher } = recorder();
-	const seen = at("2026-10-28", "01:00:00");
-	await markTelemetryNotice(env, "shown", seen);
+	await markTelemetryNotice(env, "shown", at("2026-10-28", "00:59:00"));
 	assert.equal((await readTelemetryState(env)).startDay, "2026-10-28");
 	// The owner has an hour: reading the status then does not turn anything on.
 	const status = await getTelemetryStatus(env, at("2026-10-28", "01:59:00"));
@@ -311,12 +313,14 @@ test("a notice first seen before tonight's 02:00 UTC run starts with that run, n
 	assert.equal(requests.length, 0);
 	assert.equal(await runTelemetryHeartbeat(env, at("2026-10-28"), fetcher), "sent");
 
-	// Seen exactly at 02:00 or later: the next day's run.
-	const later = { DB: await database(t), KITE_TELEMETRY_URL: COLLECTOR };
-	await markTelemetryNotice(later, "shown", at("2026-10-28"));
-	assert.equal((await readTelemetryState(later)).startDay, "2026-10-29");
-	assert.equal(await runTelemetryHeartbeat(later, at("2026-10-28", "02:00:30"), fetcher), "disabled");
-	assert.equal(await runTelemetryHeartbeat(later, at("2026-10-29"), fetcher), "sent");
+	// Seen with an hour or less to go (01:00, 01:59) or later: the next day's run, never a second before it.
+	for (const time of ["01:00:00", "01:59:59", "02:00:00"]) {
+		const later = { DB: await database(t), KITE_TELEMETRY_URL: COLLECTOR };
+		await markTelemetryNotice(later, "shown", at("2026-10-28", time));
+		assert.equal((await readTelemetryState(later)).startDay, "2026-10-29", time);
+		assert.equal(await runTelemetryHeartbeat(later, at("2026-10-28", "02:00:30"), fetcher), "disabled", time);
+		assert.equal(await runTelemetryHeartbeat(later, at("2026-10-29"), fetcher), "sent", time);
+	}
 });
 
 test("a start day announced before this rule keeps its date", async (t) => {
@@ -493,7 +497,12 @@ test("the date is the same UTC day whatever the server's time zone", () => {
 		// 28 October 23:30 UTC is still 28 October in Los Angeles; 29 October 01:30 UTC is 28 October 18:30 there.
 		assert.equal(new Date("2026-10-29T01:30:00Z").getDate(), 28, "the zone is in effect");
 		assert.equal(telemetryStartDay(new Date("2026-10-28T23:30:00Z")), START_DAY);
-		assert.equal(telemetryStartDay(new Date("2026-10-29T01:30:00Z")), "2026-10-29", "still before that day's run");
+		assert.equal(
+			telemetryStartDay(new Date("2026-10-29T00:30:00Z")),
+			"2026-10-29",
+			"still ahead, with an hour to spare",
+		);
+		assert.equal(telemetryStartDay(new Date("2026-10-29T01:30:00Z")), "2026-10-30", "less than an hour left");
 		assert.equal(telemetryDayLabel(START_DAY), "29 October 2026");
 		assert.equal(
 			telemetryNoticeText(START_DAY),

@@ -16,6 +16,7 @@ import {
 import { ProgressiveAvatarImage } from "@/components/progressive-avatar-image";
 import { getAvatarColorStyle } from "@/lib/avatar-colors";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { ConnectedAccountsSection } from "./connected-accounts-section";
 import { ModuleAccessSection } from "./module-access-section";
 import type { ManagedAccount } from "../types";
 import {
@@ -190,6 +191,7 @@ export default function AccountPermissionsPage() {
 					{saving ? "Saving..." : "Save permissions"}
 				</Button>
 			)}
+			<ConnectedAccountsSection accountId={id} />
 			<ModuleAccessSection accountId={id} account={account} />
 			{isPrimary && (
 				<section className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5">

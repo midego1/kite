@@ -105,6 +105,25 @@ export type HostNotice = { notice: string; title: string; body?: string; href?: 
 
 export type HostContact = { id: string; displayName: string | null };
 
+export type HostSourceLoginRequest = { accountId: string; userId: string };
+
+/**
+ * The login of a connected account, for one run of an import from it. `auth` is a password today; OAuth accounts
+ * (spec §15) will answer `{ kind: "xoauth2", user, accessToken }`. Never store it.
+ */
+export type HostSourceLogin =
+	| {
+			ok: true;
+			login: {
+				host: string;
+				port: number;
+				security: "tls" | "starttls";
+				username: string;
+				auth: { kind: "password"; password: string };
+			};
+	  }
+	| { ok: false; reason: "removed" | "not_allowed" | "auth_failed"; message: string };
+
 /** What `suggestions` and `actions` need from automatic reading, bound by it so this file does not import it. */
 export type HostAgentServices = {
 	getSuggestion(ctx: CapabilityCallContext, moduleId: ModuleId, suggestionId: string): Promise<HostSuggestion | null>;
@@ -166,5 +185,12 @@ export type ModuleHost = {
 		): Promise<HostImportResult>;
 	};
 	users: { getProfile(ctx: CapabilityCallContext, userId: string): Promise<HostUserProfile | null> };
+	accounts: {
+		/**
+		 * The login of `accountId` when it belongs to `userId` (the viewer's own, for a session caller) and connected
+		 * accounts are allowed for that user; otherwise why not. Opened per run, never copied into module state.
+		 */
+		sourceLogin(ctx: CapabilityCallContext, request: HostSourceLoginRequest): Promise<HostSourceLogin>;
+	};
 	audit(ctx: CapabilityCallContext, action: string, metadata: JsonValue): Promise<void>;
 };

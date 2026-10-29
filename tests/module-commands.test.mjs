@@ -128,6 +128,7 @@ test("built-in commands keep the ids, titles and shortcuts they had in shortcuts
 		"nav-activity": "/kite-activity",
 		"nav-settings": "/settings",
 		"settings-account": "/settings/account",
+		"mail.connected-accounts": "/settings/connected-accounts",
 		"mail.export": "/settings/export",
 	});
 	assert.deepEqual(clientHandlers(CORE_COMMANDS), CORE_CLIENT);

@@ -15,6 +15,7 @@ import {
 	isImportConfirmed,
 	needsStartConfirmation,
 } from "./size-guard-utils";
+import { moduleHost } from "@/lib/modules/host";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import {
 	ACTIVE_STATUSES,
@@ -70,6 +71,8 @@ export async function createImportJob(
 		secure: boolean;
 		username: string;
 		password: string;
+		/** A connected account to import from; `password` is then empty. */
+		externalAccountId?: string | null;
 		folder: string;
 		maxMessages: number | null;
 		/** "Import anyway" was confirmed while the database is above 90% of its limit. */
@@ -88,10 +91,35 @@ type ImportJobCredentials = {
 	port: number;
 	secure: boolean;
 	username: string;
+	/** Empty for a job from a connected account, which asks core for the login on every run instead. */
 	password: string;
+	/** The connected account the job imports from (migration 0079); its password is never copied into the job. */
+	externalAccountId?: string | null;
 	/** "Import anyway" was confirmed while the database is above 90% of its limit. */
 	confirmedDatabaseFull?: boolean;
 };
+
+/** `import_jobs.options` of a job from a connected account, so a run can tell it apart once the account is gone. */
+const CONNECTED_OPTION = "connectedAccount";
+
+function withConnectedOption(
+	input: Pick<ImportJobCredentials, "externalAccountId">,
+	extra: Partial<typeof importJobs.$inferInsert>,
+): Partial<typeof importJobs.$inferInsert> {
+	if (!input.externalAccountId) return extra;
+	const options = { ...(JSON.parse(extra.options ?? "{}") as Record<string, unknown>), [CONNECTED_OPTION]: true };
+	return { ...extra, options: JSON.stringify(options) };
+}
+
+/** Whether a job was started from a connected account (its account id is null again once the account is removed). */
+function isConnectedAccountJob(job: Pick<ImportJobRow, "options" | "externalAccountId">): boolean {
+	if (job.externalAccountId) return true;
+	try {
+		return (JSON.parse(job.options) as Record<string, unknown>)[CONNECTED_OPTION] === true;
+	} catch {
+		return false;
+	}
+}
 
 /**
  * Saves a job and queues its first run. Rows are written and read column by column (`insertRow`, `selectRow`), so a
@@ -111,10 +139,10 @@ async function insertImportJob(
 		destination: "",
 		folder: "",
 		...fields,
-		...extra,
+		...withConnectedOption(input, extra),
 		id,
 		lastError: confirmedDatabaseFull ? IMPORT_CONFIRMED_NOTE : null,
-		password: await sealSetting(env, input.password),
+		password: input.password ? await sealSetting(env, input.password) : "",
 		status: "pending",
 		createdAt: now,
 		updatedAt: now,
@@ -267,6 +295,7 @@ export function serializeImportJob(job: ImportJobRow & { folders?: ImportJobFold
 		pausedAt: job.pausedAt?.toISOString() ?? null,
 		estimateBytes: job.estimateBytes,
 		folders: (job.folders ?? []).map(serializeJobFolder),
+		externalAccountId: job.externalAccountId,
 		mailboxId: job.mailboxId,
 		label: job.label,
 		folder: job.folder,
@@ -327,7 +356,12 @@ export async function processImportJob(
 	// From here the lease is renewed for as long as this run lives, however long one IMAP command takes.
 	const heartbeat = startLeaseHeartbeat(env, hold, timing);
 	try {
-		const session = await openImportSession(env, { ...job, password: (await openSetting(env, job.password)) ?? "" });
+		const source = await importSource(env, ctx, job);
+		if ("refused" in source) {
+			await finishJob(env, job, hold, "failed", source.refused);
+			return;
+		}
+		const session = await openImportSession(env, source);
 		run = {
 			env,
 			ctx,
@@ -376,6 +410,29 @@ export async function processImportJob(
 			if (job.scope === "account") await closeFoldersOfEndedJob(env, job.id);
 		}
 	}
+}
+
+/**
+ * The source login of one run: the job's own sealed password, or, for a job from a connected account, the account's
+ * login from core (`moduleHost.accounts.sourceLogin`), so a removed or reconnect-needing account stops the job.
+ */
+async function importSource(
+	env: CloudflareEnv,
+	ctx: CapabilityCallContext,
+	job: ImportJobRow,
+): Promise<Parameters<typeof openImportSession>[1] | { refused: string }> {
+	if (!isConnectedAccountJob(job)) return { ...job, password: (await openSetting(env, job.password)) ?? "" };
+	if (!job.externalAccountId) return { refused: "The account was removed" };
+	const answer = await moduleHost.accounts.sourceLogin(ctx, { accountId: job.externalAccountId, userId: job.userId });
+	if (!answer.ok) return { refused: answer.message };
+	const { login } = answer;
+	return {
+		host: login.host,
+		port: login.port,
+		secure: login.security === "tls",
+		username: login.username,
+		password: login.auth.password,
+	};
 }
 
 /** Stalled rows read per page, and the pages one tick may read before it gives up until the next tick. */

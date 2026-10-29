@@ -1,4 +1,5 @@
 import { authFetch } from "@/lib/auth/client";
+import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type {
 	AccountPlan,
 	AccountPlanFolder,
@@ -7,6 +8,7 @@ import type {
 	ImportFolderSummary,
 	ImportJob,
 	ImportResult,
+	ImportSourceAccount,
 	ImportSourceItem,
 	ImportSourceOption,
 	ImportSourceSection,
@@ -122,11 +124,7 @@ export async function createImapImportJob(
 			mailboxId,
 			destination,
 			label,
-			host: form.host,
-			port: Number(form.port),
-			secure: form.secure,
-			username: form.username,
-			password: form.password,
+			...imapAccountBody(form),
 			folder: form.folder,
 			limit: Number(form.limit),
 			importAll: form.importAll,
@@ -193,6 +191,11 @@ export function estimatedImapMessages(form: ImapFormState, sources: number): num
 	return form.importAll ? null : Math.max(Number(form.limit) || 0, 0) * sources;
 }
 
+/** A connected account is chosen, or the server, user name and password are filled in. */
+export function hasImapSource(form: ImapFormState): boolean {
+	return !!form.accountId || (!!form.host && !!form.username && !!form.password);
+}
+
 export function canSubmitImap(input: {
 	form: ImapFormState;
 	hasMailbox: boolean;
@@ -202,7 +205,7 @@ export function canSubmitImap(input: {
 	blockedBySize: boolean;
 }): boolean {
 	const { form } = input;
-	const filled = !!form.host && !!form.username && !!form.password;
+	const filled = hasImapSource(form);
 	return filled && input.hasMailbox && input.sources > 0 && !input.loading && !input.blockedBySize;
 }
 
@@ -227,7 +230,9 @@ export async function fetchAccountPlan(form: ImapFormState): Promise<AccountPlan
 	return { gmail: data.gmail, folders: data.folders };
 }
 
+/** The source of a request: a connected account by id, or the server and password typed into the form. */
 function imapAccountBody(form: ImapFormState) {
+	if (form.accountId) return { accountId: form.accountId };
 	return {
 		host: form.host,
 		port: Number(form.port),
@@ -298,4 +303,18 @@ export function adoptExistingFolders(plan: AccountPlan, folders: ImportFolderSum
 			return existing ? { ...folder, destination: `folder:${existing}` } : folder;
 		}),
 	};
+}
+
+/** The user's connected accounts that can be imported from now; none when connected accounts are off or unavailable. */
+export async function fetchImportSourceAccounts(): Promise<ImportSourceAccount[]> {
+	const response = await authFetch("/api/external-accounts", { cache: "no-store" });
+	if (!response.ok) return [];
+	const data = (await response.json().catch(() => ({}))) as {
+		accounts?: ExternalAccountView[];
+		refusal?: string | null;
+	};
+	if (data.refusal || !Array.isArray(data.accounts)) return [];
+	return data.accounts
+		.filter((account) => account.status === "active")
+		.map((account) => ({ id: account.id, address: account.address, label: account.label }));
 }

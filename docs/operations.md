@@ -334,6 +334,15 @@ IMAP imports (`src/lib/import/`) run as `import.imap` messages on the agent queu
 - **Cancel** closes the folders of an account job that were not finished (status `skipped`), and a run that was in flight when Cancel landed, or that fails, closes the ones it left open and stops instead of opening the next folder.
 - **Stalled jobs.** The five-minute cron re-queues active jobs whose lease has expired and that have not been updated for two minutes, and cancels jobs paused for more than seven days (erasing their saved password).
 
+### Connected accounts
+
+Connected accounts (`src/lib/external-accounts/`, migration 0079, user guide in [Connected accounts](external-accounts.md)) store sealed IMAP passwords. Connecting needs `APP_ENCRYPTION_KEY`; changing that key makes every saved password unreadable, and the accounts then show **Sign-in failed** until their owners reconnect them.
+
+- **Install switch.** Admin → General → **Allow connected accounts** (`app_settings.external_accounts_enabled`). Off records when (`external_accounts_disabled_at`); the daily 02:00 UTC run (`eraseIdleExternalCredentials`, on both runtimes) erases every saved password once it has been off for 30 days, and the password of each account paused for 30 days because its owner lost the permission, writing `external_account.credentials_erased` audit rows. A failure is logged as `external.credentials_erase_failed`.
+- **Connection tests** are limited to 10 per user in 10 minutes, counted from the `external_account.connection_tested` audit rows (no rate-limit binding needed), and answer 429 past that.
+- **Imports from an account** keep no password: each run calls `moduleHost.accounts.sourceLogin`, and a removed account fails the job with "The account was removed".
+- **Backups** export `external_accounts` with an empty `secret`, and a restore sets every account to `auth_failed` with "Reconnect after restore".
+
 ## Recovery and data handling
 
 Start with [incident response](runbooks/incident.md),

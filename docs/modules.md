@@ -46,7 +46,7 @@ A module that is off is absent, not broken:
 
 ### Importing a whole account
 
-Settings → Import → **IMAP** → **Whole account** copies every folder of an account in one background job. **Show folders** signs in, lists the account's folders and proposes where each one goes, in a table with the number of messages and, where the server reports it, the size:
+Settings → Import → **IMAP** → **Whole account** copies every folder of an account in one background job. **Show folders** signs in, lists the account's folders and proposes where each one goes, in a table with the number of messages and, where the server reports it, the size. Under **Sign in with**, choose one of your [connected accounts](external-accounts.md) instead of typing the server and password: the job then keeps no password of its own and asks core for the account's login on every run (`moduleHost.accounts.sourceLogin`), so removing the account stops the import at its next run with "The account was removed". **Import mail** on Settings → Connected accounts opens this page with the account chosen (`/settings/import?account=<id>`).
 
 | Source folder | Goes to | Ticked |
 | --- | --- | --- |

@@ -74,6 +74,8 @@ export type ExternalAccountSending = {
 	enabled: boolean;
 	/** Save a copy in the provider's Sent folder after each send (default from the preset). */
 	appendSent: boolean;
+	/** The provider saves every message sent through its SMTP server in Sent itself (Gmail), so no copy is needed. */
+	providerSavesSent: boolean;
 	/** The SMTP sign-in succeeded with the saved password at the last connection test. */
 	verified: boolean;
 	/** Why the address is not offered as From, or null when it is. */

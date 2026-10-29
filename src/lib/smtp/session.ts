@@ -17,6 +17,9 @@ import {
 } from "./protocol-utils";
 import type { SmtpEnvelope, SmtpExtensions, SmtpLogin } from "./types";
 
+/** Called between the last RCPT TO and DATA; throwing stops the send there (after RSET), before any message byte. */
+export type SmtpSendHooks = { beforeData?: () => Promise<void> };
+
 export type SmtpSession = {
 	/** What the server announced after TLS and before sign-in. */
 	readonly extensions: SmtpExtensions;
@@ -27,7 +30,7 @@ export type SmtpSession = {
 	 * step (`retryable` for 4xx), and with `SmtpDeliveryUnknownError` (never retryable) when the connection fails once the
 	 * message is on its way: the caller must not send it again automatically.
 	 */
-	send(envelope: SmtpEnvelope, raw: Uint8Array): Promise<{ response: string }>;
+	send(envelope: SmtpEnvelope, raw: Uint8Array, hooks?: SmtpSendHooks): Promise<{ response: string }>;
 	close(): Promise<void>;
 };
 
@@ -59,7 +62,7 @@ export async function openSmtpSession(
 	}
 	return {
 		extensions,
-		send: (envelope, raw) => sendMessage(smtp, extensions, envelope, raw),
+		send: (envelope, raw, hooks) => sendMessage(smtp, extensions, envelope, raw, hooks),
 		async close() {
 			// A polite goodbye only: the message is already queued, so a server slow to answer QUIT is not waited for.
 			await smtp.command("QUIT", "data", [221], { timeoutMs: QUIT_TIMEOUT_MS }).catch(() => undefined);
@@ -75,10 +78,11 @@ export async function submitMessage(
 	envelope: SmtpEnvelope,
 	raw: Uint8Array,
 	options: SmtpConnectionOptions = {},
+	hooks: SmtpSendHooks = {},
 ): Promise<{ response: string }> {
 	const session = await openSmtpSession(env, login, options);
 	try {
-		return await session.send(envelope, raw);
+		return await session.send(envelope, raw, hooks);
 	} finally {
 		await session.close();
 	}
@@ -112,6 +116,7 @@ async function sendMessage(
 	extensions: SmtpExtensions,
 	envelope: SmtpEnvelope,
 	raw: Uint8Array,
+	hooks: SmtpSendHooks = {},
 ): Promise<{ response: string }> {
 	const from = transportAddress(envelope.from);
 	const seen = new Set<string>();
@@ -132,6 +137,7 @@ async function sendMessage(
 	try {
 		await smtp.command([`MAIL FROM:<${from}>`, ...params].join(" "), "mail", [250]);
 		for (const recipient of recipients) await smtp.command(`RCPT TO:<${recipient}>`, "rcpt", [250, 251], { recipient });
+		await hooks.beforeData?.();
 		await smtp.command("DATA", "data", [354]);
 	} catch (error) {
 		// Leave the session clean for another message; a failure here only matters to this one.

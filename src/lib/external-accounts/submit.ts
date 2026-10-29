@@ -1,11 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { messages } from "@/db/schema";
+import { messages, users } from "@/db/schema";
 import { externalAccounts } from "@/db/schema/external-accounts";
+import { renewJobClaim } from "@/lib/email/job-claim";
 import { buildMimeMessage, mintMessageId } from "@/lib/email/mime-build-utils";
 import type { OutboundProviderMessage } from "@/lib/email/outbound-provider-types";
 import { openImapSession } from "@/lib/imap/session";
 import { createLogger } from "@/lib/logger.mjs";
+import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { openSetting, SecretBoxError } from "@/lib/security/secret-box";
 import { submitMessage } from "@/lib/smtp/session";
 import type { SmtpLogin } from "@/lib/smtp/types";
@@ -41,8 +43,26 @@ export class SubmissionError extends Error {
 	}
 }
 
-/** Which send this is: the account, the user it is sent for, and Kite's id of the message. */
-export type SubmissionTarget = { accountId: string; userId: string; messageId: string };
+/**
+ * Which send this is: the account, the user it is sent for, the mailbox it is sent from, Kite's id of the message and
+ * the outbound job that holds the claim on it.
+ */
+export type SubmissionTarget = {
+	accountId: string;
+	userId: string;
+	mailboxId: string;
+	messageId: string;
+	jobId: string;
+};
+
+/**
+ * How often a send under way renews its job's claim. Far below `STUCK_SENDING_AFTER_MS` (10 minutes), which a slow
+ * provider could otherwise outlast with the SMTP timeouts (2 minutes a command, 10 after the data): the send would
+ * look stalled and could be taken back and sent again while this one may still be delivered.
+ */
+const CLAIM_HEARTBEAT_MS = 60_000;
+
+const TAKEN_BACK = "The send was taken back before it was delivered";
 
 type Account = ExternalAccountRow & { password: string };
 
@@ -60,6 +80,7 @@ async function openAccount(env: CloudflareEnv, target: SubmissionTarget): Promis
 		.where(and(eq(externalAccounts.id, target.accountId), eq(externalAccounts.userId, target.userId)))
 		.limit(1);
 	if (!row) throw removed;
+	await assertStillSendable(env, target, row.address, row.mailboxId);
 	const verified = (await readSmtpVerified(env, [row.id])).get(row.id) ?? null;
 	const block = sendBlock(
 		{ ...row, hasPassword: row.secret.length > 0, smtpVerifiedAt: verified },
@@ -77,6 +98,30 @@ async function openAccount(env: CloudflareEnv, target: SubmissionTarget): Promis
 		throw new SubmissionError(`Not sent from ${row.address}. ${SEND_BLOCK_TEXT.reconnect}`, "fail");
 	}
 	return { ...row, password };
+}
+
+/**
+ * What authorization checked when the send was made, checked again when it runs: the account still delivers into the
+ * mailbox it is sent from, and its owner is not disabled and may still send from that mailbox.
+ */
+async function assertStillSendable(
+	env: CloudflareEnv,
+	target: SubmissionTarget,
+	address: string,
+	accountMailboxId: string,
+): Promise<void> {
+	const refuse = (reason: string) => new SubmissionError(`Not sent from ${address}. ${reason}`, "fail");
+	if (accountMailboxId !== target.mailboxId)
+		throw refuse("The account's mail now goes to another mailbox; send from that mailbox instead.");
+	const db = getDb(env);
+	const [owner] = await db
+		.select({ id: users.id, role: users.role, disabled: users.disabled })
+		.from(users)
+		.where(eq(users.id, target.userId))
+		.limit(1);
+	if (!owner || owner.disabled) throw refuse("The sender's Kite account is disabled.");
+	const access = await getMailboxAccessLevel(db, owner, target.mailboxId);
+	if (!access?.canSendOnBehalf) throw refuse("You can no longer send from this mailbox.");
 }
 
 /** The password stopped working: the account shows Reconnect, and the address leaves the From menu. */
@@ -123,13 +168,23 @@ export async function sendViaSubmission(
 	if (preset?.maxMessageBytes && built.raw.byteLength > preset.maxMessageBytes)
 		throw new SubmissionError(tooLargeMessage(built.raw.byteLength, preset.maxMessageBytes, preset.label), "fail");
 	const rawR2Key = sentRawKey(target.messageId);
-	await env.BUCKET.put(rawR2Key, built.raw, { httpMetadata: { contentType: "message/rfc822" } });
+	await storeSentRaw(env, target.messageId, rawR2Key, built.raw);
+	const db = getDb(env);
+	const renewClaim = () => renewJobClaim(db, target.jobId);
+	const heartbeat = setInterval(() => void renewClaim().catch(() => undefined), CLAIM_HEARTBEAT_MS);
 	const started = Date.now();
 	try {
-		await submitMessage(env, smtpLogin(account), submissionEnvelope(message), built.raw);
+		await submitMessage(env, smtpLogin(account), submissionEnvelope(message), built.raw, undefined, {
+			// The last moment the send can still be stopped without anything reaching the provider.
+			beforeData: async () => {
+				if (!(await renewClaim())) throw new SubmissionError(TAKEN_BACK, "fail");
+			},
+		});
 	} catch (error) {
 		const failure = classifySubmitFailure(error, attempt);
 		if (failure.authFailed) await markAuthFailed(env, account, failure.message);
+		// Nothing went out: the stored bytes go too. A retry rewrites them; "delivery unknown" keeps them on its row.
+		if (failure.action === "fail" && !failure.deliveryUnknown) await dropSentRaw(env, target.messageId, rawR2Key);
 		log.warn("external.submit.failed", {
 			accountId: account.id,
 			messageId: target.messageId,
@@ -140,6 +195,8 @@ export async function sendViaSubmission(
 			durationMs: Date.now() - started,
 		});
 		throw new SubmissionError(failure.message, failure.action, failure.deliveryUnknown);
+	} finally {
+		clearInterval(heartbeat);
 	}
 	log.info("external.submit.sent", {
 		accountId: account.id,
@@ -151,9 +208,64 @@ export async function sendViaSubmission(
 	return { messageId: built.messageId.slice(1, -1), rawR2Key, appendSent: account.appendSent };
 }
 
+/**
+ * Stores the bytes about to go out and names them on the still queued row at once, so whatever happens next (a crash
+ * mid-send, "delivery unknown") the object belongs to a message and is deleted with it.
+ */
+async function storeSentRaw(env: CloudflareEnv, messageId: string, key: string, raw: Uint8Array): Promise<void> {
+	await env.BUCKET.put(key, raw, { httpMetadata: { contentType: "message/rfc822" } });
+	await getDb(env)
+		.update(messages)
+		.set({ rawR2Key: key })
+		.where(and(eq(messages.id, messageId), eq(messages.status, "queued")));
+}
+
+/** A send that certainly did not go out keeps no stored bytes. */
+async function dropSentRaw(env: CloudflareEnv, messageId: string, key: string): Promise<void> {
+	await getDb(env)
+		.update(messages)
+		.set({ rawR2Key: null })
+		.where(and(eq(messages.id, messageId), eq(messages.rawR2Key, key)));
+	await env.BUCKET.delete(key);
+}
+
 /** Queues the Sent copy at the provider (spec §7.4); it never holds up or fails the send. */
 export async function enqueueAppendSent(env: CloudflareEnv, accountId: string, messageId: string): Promise<void> {
 	await env.OUTBOUND_QUEUE.send({ kind: APPEND_SENT_KIND, accountId, messageId, attempt: 1 });
+}
+
+/**
+ * Signs in to the account's IMAP server and appends the stored bytes to its Sent folder with `\Seen`. With
+ * `alreadyTriedId` (a later try, whose earlier answer may have been lost after the server took the message) the folder
+ * is searched for that Message-ID first, and nothing is appended when it is there.
+ */
+async function appendToSent(
+	env: CloudflareEnv,
+	row: ExternalAccountRow,
+	rawR2Key: string,
+	alreadyTriedId: string | null,
+): Promise<"saved" | "present"> {
+	const object = await env.BUCKET.get(rawR2Key);
+	if (!object) throw new Error("The sent message is no longer stored");
+	const raw = new Uint8Array(await object.arrayBuffer());
+	const password = await openSetting(env, row.secret).catch(() => null);
+	if (!password) throw new Error("The saved password is not available");
+	const session = await openImapSession(env, {
+		host: row.imapHost,
+		port: row.imapPort,
+		security: row.imapSecurity,
+		username: row.username,
+		password,
+	});
+	try {
+		const folder = pickSentFolder(await session.listMailboxes());
+		if (!folder) throw new Error("The account has no Sent folder");
+		if (alreadyTriedId && (await session.hasMessageId(folder, `<${alreadyTriedId}>`))) return "present";
+		await session.append(folder, ["\\Seen"], raw);
+		return "saved";
+	} finally {
+		await session.close().catch(() => undefined);
+	}
 }
 
 /**
@@ -167,7 +279,7 @@ export async function processAppendSent(env: CloudflareEnv, payload: AppendSentM
 	const db = getDb(env);
 	const [row] = await db.select().from(externalAccounts).where(eq(externalAccounts.id, payload.accountId)).limit(1);
 	const [message] = await db
-		.select({ userId: messages.userId, rawR2Key: messages.rawR2Key })
+		.select({ userId: messages.userId, rawR2Key: messages.rawR2Key, providerMessageId: messages.providerMessageId })
 		.from(messages)
 		.where(eq(messages.id, payload.messageId))
 		.limit(1);
@@ -177,26 +289,12 @@ export async function processAppendSent(env: CloudflareEnv, payload: AppendSentM
 	if (!row.appendSent || row.status === "auth_failed" || row.status === "disabled") return;
 	if (await connectRefusal(env, row.userId)) return;
 	try {
-		const object = await env.BUCKET.get(message.rawR2Key);
-		if (!object) throw new Error("The sent message is no longer stored");
-		const raw = new Uint8Array(await object.arrayBuffer());
-		const password = await openSetting(env, row.secret).catch(() => null);
-		if (!password) throw new Error("The saved password is not available");
-		const session = await openImapSession(env, {
-			host: row.imapHost,
-			port: row.imapPort,
-			security: row.imapSecurity,
-			username: row.username,
-			password,
+		const outcome = await appendToSent(env, row, message.rawR2Key, attempt > 1 ? message.providerMessageId : null);
+		log.info(outcome === "present" ? "external.append_sent.present" : "external.append_sent.saved", {
+			accountId: row.id,
+			messageId: payload.messageId,
+			attempt,
 		});
-		try {
-			const folder = pickSentFolder(await session.listMailboxes());
-			if (!folder) throw new Error("The account has no Sent folder");
-			await session.append(folder, ["\\Seen"], raw);
-		} finally {
-			await session.close().catch(() => undefined);
-		}
-		log.info("external.append_sent.saved", { accountId: row.id, messageId: payload.messageId, attempt });
 	} catch (error) {
 		const reason = error instanceof Error && error.message ? error.message.slice(0, 300) : "unknown error";
 		log.warn("external.append_sent.failed", { accountId: row.id, messageId: payload.messageId, attempt, reason });
@@ -211,6 +309,7 @@ export async function processAppendSent(env: CloudflareEnv, payload: AppendSentM
 			.update(externalAccounts)
 			.set({
 				recentErrors: appendRecentError(row.recentErrors, `Saving a copy in Sent failed: ${reason}`, new Date()),
+				updatedAt: new Date(),
 			})
 			.where(eq(externalAccounts.id, row.id));
 	}

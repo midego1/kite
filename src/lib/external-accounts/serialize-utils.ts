@@ -34,6 +34,7 @@ export function serializeExternalAccount(
 		sending: {
 			enabled: row.sendEnabled,
 			appendSent: row.appendSent,
+			providerSavesSent: findPreset(row.preset)?.appendSent === false,
 			verified: !!smtpVerifiedAt,
 			block: sendBlock({ ...row, hasPassword: row.secret.length > 0, smtpVerifiedAt }, null),
 		},

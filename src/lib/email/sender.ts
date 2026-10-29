@@ -5,7 +5,11 @@ import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { formatEmailAddress, getEmailAddress } from "@/lib/email/address";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
 import { resolveMailboxDisplayName } from "@/lib/profile/identity-utils";
-import { resolveSendIdentity } from "@/lib/external-accounts/identities";
+import {
+	CONNECTED_FROM_COMPOSER_ONLY,
+	isOwnConnectedAddress,
+	resolveSendIdentity,
+} from "@/lib/external-accounts/identities";
 
 export type AuthorizedSender = {
 	fromAddr: string;
@@ -63,9 +67,16 @@ export async function getAuthorizedSenderAddress(
 	const requestedAddress = getEmailAddress(input.from);
 	const permittedAddresses = await getMailboxDomainAddresses(db, mailbox);
 	if (!permittedAddresses.includes(requestedAddress.toLowerCase())) {
-		const identity = input.connectedAccounts
-			? await resolveSendIdentity(env, { userId: actor.id, mailboxId: mailbox.id, address: requestedAddress })
-			: null;
+		if (!input.connectedAccounts) {
+			// A draft from the composer may carry a connected From into approvals, the assistant or JMAP: say why not.
+			if (await isOwnConnectedAddress(env, actor.id, requestedAddress)) throw new Error(CONNECTED_FROM_COMPOSER_ONLY);
+			throw new Error("Sender address does not match the selected mailbox");
+		}
+		const identity = await resolveSendIdentity(env, {
+			userId: actor.id,
+			mailboxId: mailbox.id,
+			address: requestedAddress,
+		});
 		if (!identity) throw new Error("Sender address does not match the selected mailbox");
 		return {
 			fromAddr: formatEmailAddress(identity.address, identity.displayName ?? actor.name),

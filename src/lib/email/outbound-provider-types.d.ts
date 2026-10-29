@@ -7,8 +7,12 @@ export type SmtpSubmissionConfig = {
 	provider: "smtp";
 	accountId: string;
 	userId: string;
+	/** The mailbox it is sent from; the account must still deliver into it. */
+	mailboxId: string;
 	/** Kite's id of the message, which names its Message-ID and its stored raw MIME. */
 	messageId: string;
+	/** The outbound job whose claim the send renews while it runs. */
+	jobId: string;
 	/** 1 for the first try; a 4xx is tried again while attempts remain. */
 	attempt: number;
 };

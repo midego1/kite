@@ -7,12 +7,25 @@ import { enqueueAppendSent, SubmissionError } from "@/lib/external-accounts/subm
 import { submitRetryDelaySeconds } from "@/lib/external-accounts/submit-utils";
 
 /** The parts of a send that a connected account's SMTP transport needs (spec §7.3). */
-type ConnectedDelivery = { jobId: string; messageId: string; externalAccountId: string | null; attempt: number };
+type ConnectedDelivery = {
+	jobId: string;
+	messageId: string;
+	mailboxId: string;
+	externalAccountId: string | null;
+	attempt: number;
+};
 
 /** What `getOutboundProviderConfig` needs to send through the account, or null for the From domain's provider. */
 export function submissionFor(delivery: ConnectedDelivery, userId: string) {
 	return delivery.externalAccountId
-		? { accountId: delivery.externalAccountId, userId, messageId: delivery.messageId, attempt: delivery.attempt }
+		? {
+				accountId: delivery.externalAccountId,
+				userId,
+				mailboxId: delivery.mailboxId,
+				messageId: delivery.messageId,
+				jobId: delivery.jobId,
+				attempt: delivery.attempt,
+			}
 		: null;
 }
 
@@ -34,16 +47,26 @@ export async function requeueAfterRefusal(
 		.returning({ id: outboundJobs.id });
 	if (!requeued) return false;
 	const delaySeconds = submitRetryDelaySeconds(delivery.attempt);
-	await env.OUTBOUND_QUEUE.send(
-		{
-			kind: "email.scheduled",
-			jobId: delivery.jobId,
-			messageId: delivery.messageId,
-			scheduledAt: new Date(Date.now() + delaySeconds * 1000).toISOString(),
-			attempt: delivery.attempt + 1,
-		},
-		{ delaySeconds },
-	);
+	try {
+		await env.OUTBOUND_QUEUE.send(
+			{
+				kind: "email.scheduled",
+				jobId: delivery.jobId,
+				messageId: delivery.messageId,
+				scheduledAt: new Date(Date.now() + delaySeconds * 1000).toISOString(),
+				attempt: delivery.attempt + 1,
+			},
+			{ delaySeconds },
+		);
+	} catch (queueError) {
+		// Nothing would ever run the queued job: take the claim back so the send fails like any other, with the reply.
+		console.warn(`Could not queue another try of ${delivery.messageId}`, queueError);
+		await getDb(env)
+			.update(outboundJobs)
+			.set({ status: "sending", updatedAt: new Date() })
+			.where(and(eq(outboundJobs.id, delivery.jobId), eq(outboundJobs.status, "queued")));
+		return false;
+	}
 	return true;
 }
 

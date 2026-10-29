@@ -15,6 +15,7 @@ import { SMTPServer } from "smtp-server";
  * - `authMethods` (default `["PLAIN", "LOGIN"]`), `users` (`{ [username]: password }`), `size` (announced SIZE),
  *   `hide8BitMime` (do not announce 8BITMIME).
  * - `rejectRecipients`: `{ [address]: [code, text] }`, the answer to RCPT TO for that address.
+ * - `rcptGate`: a function returning a promise; every RCPT TO is answered only once it resolves.
  * - `afterData`: what happens once a message has been received and recorded (it is queued, as far as the server
  *   knows): `"drop"` closes the connection instead of answering, `"hang"` never answers.
  * - Misbehaviour (answered by the proxy itself): `injectAfterStartTls` (bytes sent right behind the 220 to STARTTLS,
@@ -64,9 +65,13 @@ export async function startFakeSmtp(options = {}) {
 			callback(failure("mail") ?? undefined);
 		},
 		onRcptTo(address, _session, callback) {
-			const rejected = options.rejectRecipients?.[address.address];
-			if (rejected) return callback(Object.assign(new Error(rejected[1]), { responseCode: rejected[0] }));
-			callback(failure("rcpt") ?? undefined);
+			const answer = () => {
+				const rejected = options.rejectRecipients?.[address.address];
+				if (rejected) return callback(Object.assign(new Error(rejected[1]), { responseCode: rejected[0] }));
+				callback(failure("rcpt") ?? undefined);
+			};
+			if (options.rcptGate) return void Promise.resolve(options.rcptGate()).then(answer);
+			answer();
 		},
 		onData(stream, session, callback) {
 			const chunks = [];
@@ -138,6 +143,10 @@ export async function startFakeSmtp(options = {}) {
 		},
 		/** Connections the proxy still holds open. */
 		openConnections: () => sockets.size,
+		/** Breaks every open connection, as a network failure would; the server keeps listening. */
+		dropConnections() {
+			for (const socket of sockets) socket.destroy();
+		},
 		async close() {
 			for (const socket of sockets) socket.destroy();
 			await Promise.all([

@@ -48,15 +48,21 @@ export function AccountSending({
 					/>
 					Send from this address
 				</label>
-				<label className="flex items-center gap-2 text-xs text-neutral-700">
-					<Switch
-						checked={account.sending.appendSent}
-						disabled={!usable || saving || !account.sending.enabled}
-						onCheckedChange={(appendSent) => void save({ appendSent })}
-						aria-label={`Save a copy in the Sent folder of ${account.address}`}
-					/>
-					Save a copy in the provider&apos;s Sent folder
-				</label>
+				{account.sending.providerSavesSent ? (
+					<p className="text-xs text-neutral-500">
+						{account.presetLabel} keeps a copy of what you send in its own Sent folder.
+					</p>
+				) : (
+					<label className="flex items-center gap-2 text-xs text-neutral-700">
+						<Switch
+							checked={account.sending.appendSent}
+							disabled={!usable || saving || !account.sending.enabled}
+							onCheckedChange={(appendSent) => void save({ appendSent })}
+							aria-label={`Save a copy in the Sent folder of ${account.address}`}
+						/>
+						Save a copy in the provider&apos;s Sent folder
+					</label>
+				)}
 			</div>
 			{error && (
 				<p role="alert" className="text-xs text-red-600">

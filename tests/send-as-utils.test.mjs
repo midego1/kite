@@ -34,6 +34,8 @@ const {
 	mailboxSendableAddresses,
 	senderOptionsFor,
 	senderOptionLabel,
+	sentToastMessage,
+	sendEmailSchema,
 } = await bundleModules("kite-send-as-utils-", [
 	["sendBlock, listsIdentity, SEND_BLOCK_TEXT, sameAddress", "src/lib/external-accounts/identity-utils.ts"],
 	[
@@ -44,9 +46,10 @@ const {
 	["buildReply", "src/lib/smtp/protocol-utils.ts"],
 	["findPreset, EXTERNAL_ACCOUNT_PRESETS", "src/lib/external-accounts/presets-utils.ts"],
 	[
-		"mailboxOwnAddresses, mailboxSendableAddresses, senderOptionsFor, senderOptionLabel",
+		"mailboxOwnAddresses, mailboxSendableAddresses, senderOptionsFor, senderOptionLabel, sentToastMessage",
 		"src/components/compose/sender-options-utils.ts",
 	],
+	["sendEmailSchema", "src/lib/validators.ts"],
 ]);
 
 const reply = (code, text) => buildReply([{ code, text }]);
@@ -230,4 +233,21 @@ test("the From menu lists each mailbox's own addresses, then its connected ones;
 		senderOptionLabel({ address: "x@y.com", identity: identity("x@y.com", { action: "test_connection" }) }),
 		"x@y.com (Test the connection in Settings)",
 	);
+});
+
+test("a request body cannot switch on connected accounts: the send schema drops the flag", () => {
+	const parsed = sendEmailSchema.parse({
+		from: "me@gmail.com",
+		to: ["a@x.org"],
+		subject: "Hi",
+		text: "Hi",
+		mailboxId: "m1",
+		connectedAccounts: true,
+		externalAccountId: "xacct_1",
+	});
+	assert.equal("connectedAccounts" in parsed, false);
+	assert.equal("externalAccountId" in parsed, false);
+	assert.equal(sentToastMessage({}), "Message sent");
+	assert.equal(sentToastMessage({ scheduled: true }), "Message scheduled");
+	assert.match(sentToastMessage({ retrying: true }), /try again shortly/);
 });

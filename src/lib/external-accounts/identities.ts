@@ -66,6 +66,21 @@ export async function listSendIdentities(env: IdentityEnv, userId: string): Prom
 	return byMailbox;
 }
 
+/** Said when a connected address is used as From anywhere but Kite's composer (spec §9.3). */
+export const CONNECTED_FROM_COMPOSER_ONLY =
+	"Sending as a connected account works only from Kite's composer. Open the draft there, or choose another From.";
+
+/** Whether `address` is one of `userId`'s connected accounts, whatever its state. */
+export async function isOwnConnectedAddress(env: IdentityEnv, userId: string, address: string): Promise<boolean> {
+	if (!(await externalAccountTablesReady(env))) return false;
+	const [row] = await getDb(env)
+		.select({ id: externalAccounts.id })
+		.from(externalAccounts)
+		.where(and(eq(externalAccounts.userId, userId), eq(externalAccounts.address, address.trim().toLowerCase())))
+		.limit(1);
+	return !!row;
+}
+
 /** A From that is a connected address of the sender but cannot be used now, with the reason. */
 class SendIdentityRefusedError extends Error {
 	constructor(readonly block: SendBlock) {

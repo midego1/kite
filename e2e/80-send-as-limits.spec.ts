@@ -159,6 +159,31 @@ test("a connection lost after the message went out is 'Delivery unknown' and nev
 	}
 });
 
+test("an API key cannot send as a connected account, even when it asks to", async () => {
+	test.setTimeout(120_000);
+	const { token, address, fakes, user, close } = await setUp("saapi");
+	try {
+		const created = await user.api.post("/api/api-keys", {
+			data: { name: `send ${token}`, scopes: ["send"], mailboxIds: [user.mailboxId] },
+		});
+		expect(created.ok(), await created.text()).toBe(true);
+		const { key } = (await created.json()) as { key: string };
+		const api = await apiContext();
+		const response = await api.post("/api/v1/send", {
+			headers: { Authorization: `Bearer ${key}` },
+			data: sendBody(address, user.mailboxId, `Key ${token}`, { connectedAccounts: true }),
+		});
+		expect(response.status()).toBe(403);
+		expect(((await response.json()) as { error: string }).error).toBe(
+			"Sending as a connected account works only from Kite's composer. Open the draft there, or choose another From.",
+		);
+		expect(fakes.smtp.messages).toHaveLength(0);
+		await api.dispose();
+	} finally {
+		await close();
+	}
+});
+
 test("the send-as part of the Connected accounts page reads in Kite, Kite light, Classic and dark mode", async ({
 	browser,
 }, testInfo) => {

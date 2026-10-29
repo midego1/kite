@@ -27,6 +27,7 @@ const {
 	listSendIdentities,
 	sendEmail,
 	processOutboundQueue,
+	cancelQueuedSend,
 	processAppendSent,
 	parseRawMime,
 } = await bundleModules("kite-send-as-node-", [
@@ -41,7 +42,7 @@ const {
 	["setInstallEnabled", "src/lib/external-accounts/settings.ts"],
 	["setCanConnect", "src/lib/external-accounts/access.ts"],
 	["listSendIdentities", "src/lib/external-accounts/identities.ts"],
-	["sendEmail, processOutboundQueue", "src/lib/email/send.ts"],
+	["sendEmail, processOutboundQueue, cancelQueuedSend", "src/lib/email/send.ts"],
 	["processAppendSent", "src/lib/external-accounts/submit.ts"],
 	["parseRawMime", "src/lib/email/parse.ts"],
 ]);
@@ -107,7 +108,10 @@ async function setup(t, fakes) {
 		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('other', 'other@example.com', '${hash}', 'Other', 1);
 		INSERT INTO domains (id, user_id, hostname, zone_id, status, sending_provider, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 'cloudflare', 1);
 		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'a', 'shared', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-b', 'owner', 'domain-1', 'b', 'personal', 1);
+		INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES ('admin', 'admin@example.com', '${hash}', 'Admin', 'admin', 1);
 		INSERT INTO mailbox_access (id, mailbox_id, user_id, permission, created_at) VALUES ('access-1', 'mailbox-a', 'other', 'full_access', 1);
+		INSERT INTO mailbox_access (id, mailbox_id, user_id, permission, created_at) VALUES ('access-2', 'mailbox-a', 'admin', 'full_access', 1);
 	`);
 	const connect = createTcpConnect({ ca: tls.cert, resolve: async () => ["127.0.0.1"], allowLoopback: true });
 	const ports = { 993: fakes.imap.port, 465: fakes.smtp.port };
@@ -173,7 +177,13 @@ test("connecting verifies the SMTP sign-in; the From menu offers the address to 
 	const fakes = await servers(t);
 	const { env, db } = await setup(t, fakes);
 	const account = await connectExternalAccount(env, owner, connectBody());
-	assert.deepEqual(account.sending, { enabled: true, appendSent: true, verified: true, block: null });
+	assert.deepEqual(account.sending, {
+		enabled: true,
+		appendSent: true,
+		providerSavesSent: false,
+		verified: true,
+		block: null,
+	});
 	assert.ok(accountRow(db).smtp_verified_at > 0);
 	assert.equal(fakes.smtp.auths.length, 1);
 	assert.equal(fakes.smtp.messages.length, 0, "the test sends nothing");
@@ -193,8 +203,15 @@ test("connecting verifies the SMTP sign-in; the From menu offers the address to 
 	// Sharing the mailbox never shares the account: the other user sees no identity and cannot send as it.
 	assert.equal((await listSendIdentities(env, "other")).size, 0);
 	assert.match(await rejection(send(env, { userId: "other" })), /Sender address does not match/);
-	// Only the signed-in composer may send as a connected account.
-	assert.match(await rejection(send(env, { connectedAccounts: false })), /Sender address does not match/);
+	// Nor does an admin with full access to the mailbox.
+	assert.equal((await listSendIdentities(env, "admin")).size, 0);
+	assert.match(await rejection(send(env, { userId: "admin" })), /Sender address does not match/);
+	// Only the signed-in composer may send as a connected account; elsewhere the owner is told why.
+	assert.equal(
+		await rejection(send(env, { connectedAccounts: false })),
+		"Sending as a connected account works only from Kite's composer. Open the draft there, or choose another From.",
+	);
+	assert.equal(fakes.smtp.messages.length, 0);
 });
 
 test("a failed SMTP sign-in at connect keeps the account but not the address; Test connection retries it", async (t) => {
@@ -390,4 +407,161 @@ test("a message over the provider's limit is refused before it is queued, naming
 	);
 	assert.match(message, /^The message is about 2\d\.\d MB; iCloud Mail accepts at most 20 MB$/);
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages").get().n, 0);
+});
+
+const scheduledJob = async (env, db, messageId) => ({
+	kind: "email.scheduled",
+	jobId: jobRow(db, messageId).id,
+	messageId,
+	scheduledAt: new Date().toISOString(),
+});
+
+test("a scheduled send stops when the account moved to another mailbox, access was lost or the owner is disabled", async (t) => {
+	const fakes = await servers(t);
+	const { env, db } = await setup(t, fakes);
+	await connectExternalAccount(env, owner, connectBody());
+	const cases = [
+		{
+			change: "UPDATE external_accounts SET mailbox_id = 'mailbox-b'",
+			undo: "UPDATE external_accounts SET mailbox_id = 'mailbox-a'",
+			reason: "The account's mail now goes to another mailbox",
+		},
+		{
+			// The shared mailbox now belongs to someone else and the owner has no access row.
+			change: "UPDATE mailboxes SET user_id = 'other' WHERE id = 'mailbox-a'",
+			undo: "UPDATE mailboxes SET user_id = 'owner' WHERE id = 'mailbox-a'",
+			reason: "You can no longer send from this mailbox",
+		},
+		{
+			change: "UPDATE users SET disabled = 1 WHERE id = 'owner'",
+			undo: "UPDATE users SET disabled = 0 WHERE id = 'owner'",
+			reason: "The sender's Kite account is disabled",
+		},
+	];
+	for (const { change, undo, reason } of cases) {
+		const { messageId } = await send(env, { scheduledAt: new Date(Date.now() + 60_000) });
+		db.db.exec(change);
+		await processOutboundQueue(env, await scheduledJob(env, db, messageId)).catch(() => undefined);
+		db.db.exec(undo);
+		assert.equal(messageRow(db, messageId).status, "failed", reason);
+		assert.ok(jobRow(db, messageId).error.startsWith(`Not sent from ${USER}. ${reason}`), jobRow(db, messageId).error);
+	}
+	assert.equal(fakes.smtp.messages.length, 0);
+});
+
+test("a send held up by a slow provider renews its claim, so it is never taken back as stalled", async (t) => {
+	t.mock.timers.enable({ apis: ["setInterval"] });
+	const fakes = await servers(t, { smtp: { afterData: "hang" } });
+	const { env, db } = await setup(t, fakes);
+	await connectExternalAccount(env, owner, connectBody());
+	const sending = send(env).catch((error) => error);
+	// The provider has the message and keeps the final answer back (a tarpit).
+	const deadline = Date.now() + 10_000;
+	while (!fakes.smtp.messages.length && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+	assert.equal(fakes.smtp.messages.length, 1);
+	const { id: messageId } = db.db.prepare("SELECT id FROM messages WHERE status = 'queued'").get();
+	// Eleven minutes pass without an answer…
+	db.db
+		.prepare("UPDATE outbound_jobs SET updated_at = ? WHERE message_id = ?")
+		.run(Math.floor(Date.now() / 1000) - 11 * 60, messageId);
+	// …during which the send renewed its claim every minute.
+	t.mock.timers.tick(60_000);
+	const renewed = Date.now() + 5_000;
+	while (jobRow(db, messageId).updated_at < Math.floor(Date.now() / 1000) - 60 && Date.now() < renewed)
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	assert.deepEqual(await cancelQueuedSend(env, "owner", messageId), { ok: false, reason: "too_late" });
+	assert.equal(messageRow(db, messageId).status, "queued");
+
+	fakes.smtp.dropConnections();
+	const error = await sending;
+	assert.match(error.message, /^Delivery unknown/);
+	assert.equal(messageRow(db, messageId).status, "failed");
+	// The bytes that may have gone out stay with the failed message.
+	assert.equal(messageRow(db, messageId).raw_r2_key, `sent/${messageId}.eml`);
+});
+
+test("a send taken back before DATA stops there, and nothing reaches the provider", async (t) => {
+	let release;
+	const gate = new Promise((resolve) => {
+		release = resolve;
+	});
+	let gated = false;
+	const fakes = await servers(t, {
+		smtp: {
+			rcptGate: () => {
+				gated = true;
+				return gate;
+			},
+		},
+	});
+	const { env, db, bucket } = await setup(t, fakes);
+	await connectExternalAccount(env, owner, connectBody());
+	const sending = send(env).catch((error) => error);
+	const deadline = Date.now() + 10_000;
+	while (!gated && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+	const { id: messageId } = db.db.prepare("SELECT id FROM messages WHERE status = 'queued'").get();
+	// Someone took the send back meanwhile (a stuck recovery or a cancel).
+	db.db.prepare("UPDATE outbound_jobs SET status = 'failed' WHERE message_id = ?").run(messageId);
+	db.db.prepare("UPDATE messages SET status = 'draft' WHERE id = ?").run(messageId);
+	release();
+	const error = await sending;
+	assert.equal(error.message, "The send was taken back before it was delivered");
+	assert.equal(fakes.smtp.messages.length, 0);
+	assert.equal(messageRow(db, messageId).status, "draft");
+	assert.equal(messageRow(db, messageId).raw_r2_key, null);
+	assert.equal(bucket.objects.has(`sent/${messageId}.eml`), false);
+});
+
+test("stored bytes: kept with a retry, deleted after a refusal, never left without a message", async (t) => {
+	const fakes = await servers(t);
+	const { env, db, bucket, queued } = await setup(t, fakes);
+	await connectExternalAccount(env, owner, connectBody());
+
+	fakes.smtp.failNext("data", 451, "4.3.0 Try again later");
+	const retried = await send(env);
+	assert.equal(messageRow(db, retried.messageId).raw_r2_key, `sent/${retried.messageId}.eml`);
+	assert.equal(bucket.objects.has(`sent/${retried.messageId}.eml`), true);
+
+	fakes.smtp.failNext("data", 554, "5.7.1 Message refused");
+	const refused = await rejection(send(env));
+	assert.match(refused, /554 5\.7\.1 Message refused/);
+	const failed = db.db.prepare("SELECT * FROM messages WHERE status = 'failed'").get();
+	assert.equal(failed.raw_r2_key, null);
+	assert.equal(bucket.objects.has(`sent/${failed.id}.eml`), false);
+	assert.deepEqual(
+		[...bucket.objects.keys()].filter((key) => key.startsWith("sent/")),
+		[`sent/${retried.messageId}.eml`],
+	);
+	assert.ok(queued.length > 0);
+});
+
+test("a 4xx whose next try cannot be queued fails the send instead of leaving it queued forever", async (t) => {
+	const fakes = await servers(t);
+	const { env, db } = await setup(t, fakes);
+	await connectExternalAccount(env, owner, connectBody());
+	env.OUTBOUND_QUEUE.send = async () => {
+		throw new Error("queue unavailable");
+	};
+	fakes.smtp.failNext("data", 451, "4.3.0 Try again later");
+	assert.match(await rejection(send(env)), /451 4\.3\.0 Try again later/);
+	const row = db.db.prepare("SELECT * FROM messages WHERE subject = 'Hello from Gmail'").get();
+	assert.equal(row.status, "failed");
+	assert.equal(jobRow(db, row.id).status, "failed");
+	assert.match(jobRow(db, row.id).error, /451/);
+});
+
+test("a Sent copy tried again is not appended twice when the provider already has it", async (t) => {
+	const fakes = await servers(t);
+	const { env, queued } = await setup(t, fakes);
+	await connectExternalAccount(env, owner, connectBody());
+	const { messageId } = await send(env);
+	const first = queued.find(({ message }) => message.kind === "accounts.append_sent").message;
+	await processAppendSent(env, first);
+	assert.equal(fakes.imap.appends.length, 1);
+	// The answer to the first APPEND was lost, so the queue tries again: the copy is found by its Message-ID.
+	await processAppendSent(env, { ...first, attempt: 2 });
+	assert.equal(fakes.imap.appends.length, 1);
+	assert.ok(
+		fakes.imap.commands.some(({ line }) => line.includes(`HEADER Message-ID "<kite.${messageId}@example.test>"`)),
+	);
 });

@@ -245,8 +245,15 @@ export async function startFakeImap(options = {}) {
 			const entry = state.selected ? folders.get(state.selected) : null;
 			if (name === "UID" && entry) {
 				const [sub, set] = args.split(" ");
-				if (sub.toUpperCase() === "SEARCH")
-					return send(`* SEARCH ${entry.messages.map((message) => message.uid).join(" ")}\r\n${tag} OK done\r\n`);
+				if (sub.toUpperCase() === "SEARCH") {
+					// `UID SEARCH ALL`, or `UID SEARCH HEADER Message-ID "<…>"` matched against the raw header.
+					const header = /HEADER Message-ID "((?:[^"\\]|\\.)*)"/i.exec(args)?.[1];
+					const found = entry.messages.filter(
+						(message) =>
+							!header || message.raw.toString("latin1").toLowerCase().includes(`message-id: ${header.toLowerCase()}`),
+					);
+					return send(`* SEARCH ${found.map((message) => message.uid).join(" ")}\r\n${tag} OK done\r\n`);
+				}
 				if (sub.toUpperCase() === "FETCH") {
 					const wanted = new Set(set.split(",").map(Number));
 					if (options.hugeLiteral) return send(`* 1 FETCH (UID 1 BODY[] {4000000000}\r\n${"x".repeat(1000)}`);

@@ -18,7 +18,8 @@ export function getSendErrorStatus(message: string): number {
 		message === "Sender account not found" ||
 		message === "You do not have permission to send from this mailbox" ||
 		message === "Sender address does not match the selected mailbox" ||
-		message.startsWith("You cannot send from this address right now")
+		message.startsWith("You cannot send from this address right now") ||
+		message.startsWith("Sending as a connected account works only from")
 	) {
 		return 403;
 	}

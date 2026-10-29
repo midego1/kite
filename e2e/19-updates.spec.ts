@@ -38,7 +38,10 @@ test("the sidebar footer shows when this build was made and opens the release no
 	const dialog = page.getByRole("dialog", { name: /What's new in Kite/ });
 	await expect(dialog).toBeVisible();
 	await expect(dialog).toContainText(`Kite v${RELEASE_VERSION}`);
-	await expect(dialog).toContainText("Unreleased changes");
+	// Fragments waiting for a release read "Unreleased changes"; right after a release the newest one is the current build.
+	await expect(dialog).toContainText(
+		new RegExp(`Unreleased changes|${RELEASE_VERSION.replaceAll(".", "\\.")} · \\d{4}-\\d{2}-\\d{2} · Current`),
+	);
 	await showRelease(dialog, "2026.10.12.0");
 	await expect(dialog).toContainText("The sidebar footer shows when this build was made");
 	// Inline code and links from the changelog are rendered, not shown as markdown.

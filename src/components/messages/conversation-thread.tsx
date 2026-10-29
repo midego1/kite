@@ -28,6 +28,7 @@ import {
 	partitionThread,
 } from "./conversation-thread-utils";
 import clsx from "clsx";
+import { LinkifiedText } from "./linkified-text";
 import { SuggestionCard } from "../agent/suggestion-card";
 
 /**
@@ -189,6 +190,7 @@ export function ConversationMessageCard({
 			blockRemoteImages: !alwaysLoadRemoteImages && !remoteImagesShown,
 			stats: { blockedRemoteImages: 0 },
 			proxyRemoteImagesFor: message.id,
+			linkify: true,
 		};
 		body = {
 			html: collapseQuotedEmailHtml(
@@ -288,7 +290,9 @@ export function ConversationMessageCard({
 						{body.html ? (
 							<EmailHtmlFrame html={body.html} className="email-body max-w-none" />
 						) : (
-							<pre className="whitespace-pre-wrap font-sans text-sm text-neutral-900">{body.text}</pre>
+							<pre className="whitespace-pre-wrap font-sans text-sm text-neutral-900">
+								<LinkifiedText text={body.text} />
+							</pre>
 						)}
 						{body.quotedHtml && <QuotedEmailToggle html={body.quotedHtml} />}
 						{attachments.length > 0 && (

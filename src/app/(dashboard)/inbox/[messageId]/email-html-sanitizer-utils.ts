@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify";
 import type { Config, DOMPurify as Purifier, WindowLike } from "dompurify";
+import { linkifyTextNodes } from "@/lib/email/linkify-dom-utils";
 import { remoteImageProxyUrl } from "@/lib/remote-images/proxy-url-utils";
 import type { EmailHtmlSanitizer, SanitizeEmailHtmlOptions } from "./email-html-sanitizer-types";
 
@@ -142,6 +143,9 @@ const ALLOWED_STYLE_PROPERTIES = new Set([
 const UNSAFE_STYLE_VALUE = /url\s*\(|expression\s*\(|javascript:|@import|behavior\s*:|-moz-binding/i;
 const APP_FONT_FALLBACK = "var(--font-geist-sans), system-ui, sans-serif";
 
+// Same as the links the sender wrote (target and rel), plus nofollow: nobody vouched for these.
+const LINKIFIED_ANCHOR_ATTRIBUTES = { target: "_blank", rel: "noopener noreferrer nofollow" };
+
 const PURIFY_CONFIG: Config & { RETURN_DOM: true } = {
 	ALLOWED_TAGS,
 	ALLOWED_ATTR: ALLOWED_ATTRIBUTES,
@@ -283,6 +287,9 @@ export function createEmailHtmlSanitizer(root: SanitizerWindow): EmailHtmlSaniti
 		for (const element of Array.from(body.querySelectorAll("*"))) {
 			finishElement(element, root.location.origin, options);
 		}
+		// Last, so the loop above never sees the new anchors: the linkifier only emits http, https
+		// and mailto links, and leaves text inside existing links and code alone.
+		if (options.linkify && !options.forOutgoing) linkifyTextNodes(body, LINKIFIED_ANCHOR_ATTRIBUTES);
 		return body.innerHTML;
 	};
 }

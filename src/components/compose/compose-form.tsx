@@ -25,6 +25,7 @@ import { SendingBar, UndoSendBar } from "./undo-send-bar";
 import { useSendingSettings } from "./use-sending-settings";
 import type { PendingUndoSend, PendingUndoSnapshot } from "./undo-send-types";
 import { RecipientInput } from "./recipient-input";
+import { linkifyOutgoingHtml } from "@/lib/email/linkify-dom-utils";
 import { RichTextEditor } from "./rich-text-editor";
 import { ScheduleSendMenu } from "./schedule-send-menu";
 import { WriteWithKite } from "./write-with-kite";
@@ -310,7 +311,7 @@ export function ComposeForm({
 		await draftSaves.idle();
 		const currentDraftId = draftSaves.draftId;
 		const unsent = withoutAttachmentIds(attachments, storedUploads);
-		const fullHtml = joinQuotedHtml(html, quotedHtml);
+		const fullHtml = linkifyOutgoingHtml(joinQuotedHtml(html, quotedHtml));
 		if (draftId && agentRevision !== null) {
 			try {
 				if (attachments.length > 0) {

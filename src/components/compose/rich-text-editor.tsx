@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ClipboardEvent, KeyboardEvent } from "react";
+import type { ClipboardEvent, FormEvent, KeyboardEvent } from "react";
 import {
 	Bold,
 	Italic,
@@ -14,6 +14,7 @@ import {
 	Underline,
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
+import { autolinkBeforeCaret } from "@/lib/email/linkify-dom-utils";
 import { cn } from "@/lib/utils";
 import type { RichTextEditorProps, ToolbarCommand } from "./rich-text-editor-types";
 
@@ -129,7 +130,15 @@ export function RichTextEditor({
 		document.execCommand("insertText", false, text);
 	}
 
+	// The space the author just typed ends a web or email address: link it, keeping the caret after the space.
+	function onInput(event: FormEvent<HTMLDivElement>) {
+		const { inputType, data } = event.nativeEvent as InputEvent;
+		if (inputType === "insertText" && (data === " " || data === " ")) autolinkBeforeCaret(event.currentTarget, 1);
+		emit();
+	}
+
 	function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+		if (event.key === "Enter" && !event.nativeEvent.isComposing) autolinkBeforeCaret(event.currentTarget, 0);
 		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
 			event.preventDefault();
 			openLink();
@@ -148,7 +157,7 @@ export function RichTextEditor({
 					contentEditable={!disabled}
 					suppressContentEditableWarning
 					data-placeholder={placeholder}
-					onInput={emit}
+					onInput={onInput}
 					onBlur={emit}
 					onPaste={onPaste}
 					onKeyDown={onKeyDown}

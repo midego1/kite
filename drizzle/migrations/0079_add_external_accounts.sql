@@ -1,0 +1,15 @@
+-- Connected accounts (docs/specs/external-accounts.md §10.2): an external IMAP account whose sealed credentials Kite
+-- keeps, the per-folder sync cursors it will use, the message and import job columns that point at it, the per-user
+-- permission and the install switch. A removed account keeps its mail: the message and job columns are set to null.
+-- `suspended_at` is when Kite last stopped being allowed to use the account's password (permission revoked or the
+-- install switch off); the daily run erases the password 30 days after it.
+CREATE TABLE `external_accounts` (`id` text PRIMARY KEY NOT NULL, `user_id` text NOT NULL REFERENCES `users`(`id`) ON DELETE cascade, `mailbox_id` text NOT NULL REFERENCES `mailboxes`(`id`) ON DELETE cascade, `label` text NOT NULL, `address` text NOT NULL, `display_name` text, `preset` text NOT NULL, `auth_kind` text DEFAULT 'password' NOT NULL, `imap_host` text NOT NULL, `imap_port` integer NOT NULL, `imap_security` text NOT NULL, `smtp_host` text, `smtp_port` integer, `smtp_security` text, `username` text NOT NULL, `secret` text DEFAULT '' NOT NULL, `sync_enabled` integer DEFAULT 1 NOT NULL, `sync_interval_minutes` integer DEFAULT 5 NOT NULL, `sync_junk` integer DEFAULT 0 NOT NULL, `send_enabled` integer DEFAULT 1 NOT NULL, `append_sent` integer DEFAULT 1 NOT NULL, `trust_auth_results` integer DEFAULT 0 NOT NULL, `status` text DEFAULT 'active' NOT NULL, `status_reason` text, `last_error` text, `recent_errors` text DEFAULT '[]' NOT NULL, `consecutive_failures` integer DEFAULT 0 NOT NULL, `next_sync_at` integer, `last_sync_at` integer, `last_success_at` integer, `lease_until` integer, `suspended_at` integer, `created_at` integer NOT NULL, `updated_at` integer NOT NULL);--> statement-breakpoint
+CREATE UNIQUE INDEX `external_accounts_address_idx` ON `external_accounts` (`address`);--> statement-breakpoint
+CREATE INDEX `external_accounts_user_idx` ON `external_accounts` (`user_id`);--> statement-breakpoint
+CREATE INDEX `external_accounts_status_idx` ON `external_accounts` (`status`,`next_sync_at`);--> statement-breakpoint
+CREATE TABLE `external_account_folders` (`account_id` text NOT NULL REFERENCES `external_accounts`(`id`) ON DELETE cascade, `name` text NOT NULL, `role` text NOT NULL, `uidvalidity` integer, `last_uid` integer, `uidnext` integer, `last_checked_at` integer, PRIMARY KEY(`account_id`, `name`));--> statement-breakpoint
+ALTER TABLE `messages` ADD `external_account_id` text REFERENCES `external_accounts`(`id`) ON DELETE set null;--> statement-breakpoint
+ALTER TABLE `import_jobs` ADD `external_account_id` text REFERENCES `external_accounts`(`id`) ON DELETE set null;--> statement-breakpoint
+ALTER TABLE `users` ADD `can_connect_accounts` integer DEFAULT 1 NOT NULL;--> statement-breakpoint
+ALTER TABLE `app_settings` ADD `external_accounts_enabled` integer;--> statement-breakpoint
+ALTER TABLE `app_settings` ADD `external_accounts_disabled_at` integer;

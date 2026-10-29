@@ -14,6 +14,8 @@ export type ImapImportMode = "account" | "folder";
 
 export type ImapFormState = {
 	mode: ImapImportMode;
+	/** A connected account to import from; when set, the server fields and the password are not used. */
+	accountId: string;
 	/** One-folder mode: where the folder goes (`system:<status>`). */
 	destination: string;
 	host: string;
@@ -116,3 +118,6 @@ export type AccountPlanFolder = {
 };
 
 export type AccountPlan = { gmail: boolean; folders: AccountPlanFolder[] };
+
+/** A connected account offered as the import source. */
+export type ImportSourceAccount = { id: string; address: string; label: string };

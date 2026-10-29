@@ -8,6 +8,11 @@ function immediateStorageKey(column: ColumnWidthPreference) {
 	return `kite-column-width:${column}`;
 }
 
+/** Where a column's size is kept: for this device, and for the account on this device. */
+export function columnWidthStorageKeys(column: ColumnWidthPreference, userId: string): [string, string] {
+	return [immediateStorageKey(column), storageKey(userId, column)];
+}
+
 export function readInitialColumnWidth(column: ColumnWidthPreference, fallback: number, min: number, max: number) {
 	if (typeof window === "undefined") return fallback;
 	try {

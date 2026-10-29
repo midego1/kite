@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.29.9] - 2026-10-29
+
+### Added
+
+- Your reading layout follows your account: when you change the reading pane position, list density, conversation view or the size of the message list, the choice is saved to the account and applied in every browser you sign in to, with each browser keeping a copy for a fast start. A layout chosen before this release stays in its browser until you change it. A browser can keep its own layout instead under [Settings → Inbox → Layout](/settings/inbox). Needs migration `0080_add_user_preferences` (the new `user_preferences` table, included in backups); until it is applied, layouts stay in each browser as before.
+
+## [2026.10.29.8] - 2026-10-29
+
+### Added
+
+- **Connected accounts** under [Settings → Connected accounts](/settings/connected-accounts): connect a Gmail, Google Workspace, iCloud Mail, Yahoo, AOL, Fastmail or other IMAP account with an app password, and import its mail from [Settings → Import](/settings/import) without typing the password again (**Sign in with**, or **Import mail** on the account). Kite recognises the provider from the address or the domain's MX records, tests the sign-in before saving, asks for your Kite password again, stores the account's password encrypted with `APP_ENCRYPTION_KEY` and never shows it again. **Test connection**, **Edit**/**Reconnect** and **Remove** (the mail stays) are on each account. Outlook.com and Microsoft 365 need Microsoft sign-in and cannot be connected yet.
+- Admins control the feature with **Allow connected accounts** under [Admin → General](/general) (on by default only when `APP_ENCRYPTION_KEY` is set) and per user under Admin → Accounts → Permissions, which also shows how many connected accounts a user has and in which states. While either is off, accounts cannot be used or edited, only removed, and their passwords are erased by the daily run after 30 days.
+- Needs database migration **0079** (`0079_add_external_accounts.sql`), applied from the admin overview; until then the page asks for the database update.
+
+### Fixed
+
+- The Calendar's day and week grids no longer clip the text of short events, tentative ones included. A one-hour event shows its title and time in full, and a shorter one shows a single line, "Title, 10 AM", cut with an ellipsis at the end when the column is narrow, so the title stays readable. The part of an event that continues past midnight says "until 12:30 AM" instead of repeating the start time of the day before.
+
+### Security
+
+- Connected account passwords are left out of backups; a restored account has to be reconnected. Connection attempts are limited to 10 per user in 10 minutes (checked before the Kite password), a saved password is never sent to a changed server (changing a server or the user name needs the password again), connection tests refuse private and local servers and ports other than 993, 143, 465 and 587, and are recorded in the audit log without the password or user name.
+
+## [2026.10.29.7] - 2026-10-29
+
+### Fixed
+
+- #130 A draft no longer keeps text you had already undone. If you changed the message and changed it back while the first change was still being saved, the draft ended up with the change; now the change back is saved too, also when you close the composer right away.
+
+## [2026.10.29.6] - 2026-10-29
+
+### Added
+
+- Message list rows with a real attachment now show a small paperclip next to the date, in the stacked and the wide row at every density. In conversation view the paperclip shows when any message of the conversation in the folder you are viewing has one. An image that is only embedded in the message body (referenced by its content ID) does not count. `GET /api/messages` rows carry the new `hasAttachments` field.
+
 ## [2026.10.29.5] - 2026-10-29
 
 ### Changed

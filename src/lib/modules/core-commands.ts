@@ -98,6 +98,10 @@ export const CORE_COMMANDS: readonly UiCommand[] = [
 		keywords: ["log", "assistant", "history"],
 	}),
 	{ ...navigate("nav-settings", "Go to Settings", "/settings"), group: "Settings" },
+	navigate("mail.connected-accounts", "Connected accounts", "/settings/connected-accounts", {
+		description: "Connect a Gmail, iCloud, Yahoo or other IMAP account",
+		keywords: ["gmail", "icloud", "imap", "external", "account"],
+	}),
 	navigate("mail.export", "Export mail", "/settings/export", {
 		description: "Download a mailbox as an mbox file",
 		keywords: ["download", "backup", "mbox"],

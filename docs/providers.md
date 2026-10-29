@@ -13,6 +13,8 @@ Open **Admin → Domains**, expand a domain, and use the **Setup receiving email
 
 > Selecting a provider does not change DNS. The Setup button inside the provider's card does. This lets you prepare a new provider while the old one keeps working.
 
+Mail accounts at other providers (Gmail, iCloud, Fastmail, Yahoo and other IMAP providers) are not domains: you connect them per user under **Settings → Connected accounts**, with the provider's servers filled in from a preset and an app password. See [Connected accounts](external-accounts.md).
+
 ## Choosing at add time
 
 **New domain** asks which service receives the domain's mail (**Receive mail with**) and which sends it (**Send mail with**), each a dropdown of Cloudflare, Resend, Amazon SES or Not selected. Cloudflare Email Routing and the Cloudflare sending subdomain are only enabled on the zone for the Cloudflare choice. For Resend or SES the domain is added without touching either; finish from the domain page once the credentials are in. The same choices are available over the API as `receivingProvider` and `sendingProvider` (see [API](api.md#domain-management)).

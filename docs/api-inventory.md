@@ -19,6 +19,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/accounts/[id]/transfer-primary`                  | POST                   | [source](../src/app/api/accounts/[id]/transfer-primary/route.ts)                  |
 | `/api/accounts`                                        | GET, POST              | [source](../src/app/api/accounts/route.ts)                                        |
 | `/api/activity`                                        | GET                    | [source](../src/app/api/activity/route.ts)                                        |
+| `/api/admin/accounts/[id]/connected-accounts`          | GET, PUT               | [source](../src/app/api/admin/accounts/[id]/connected-accounts/route.ts)          |
 | `/api/admin/accounts/[id]/modules`                     | GET, PUT               | [source](../src/app/api/admin/accounts/[id]/modules/route.ts)                     |
 | `/api/admin/agent/errors`                              | GET                    | [source](../src/app/api/admin/agent/errors/route.ts)                              |
 | `/api/admin/agent/models`                              | POST                   | [source](../src/app/api/admin/agent/models/route.ts)                              |
@@ -33,6 +34,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/api-keys`                                  | DELETE, GET, POST      | [source](../src/app/api/admin/api-keys/route.ts)                                  |
 | `/api/admin/aws`                                       | DELETE, GET, POST, PUT | [source](../src/app/api/admin/aws/route.ts)                                       |
 | `/api/admin/database-size`                             | GET                    | [source](../src/app/api/admin/database-size/route.ts)                             |
+| `/api/admin/external-accounts`                         | GET, PUT               | [source](../src/app/api/admin/external-accounts/route.ts)                         |
 | `/api/admin/general`                                   | GET, PUT               | [source](../src/app/api/admin/general/route.ts)                                   |
 | `/api/admin/migrations`                                | GET, POST              | [source](../src/app/api/admin/migrations/route.ts)                                |
 | `/api/admin/modules`                                   | GET, PUT               | [source](../src/app/api/admin/modules/route.ts)                                   |
@@ -133,6 +135,10 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/drive/uploads/[id]`                              | DELETE                 | [source](../src/app/api/drive/uploads/[id]/route.ts)                              |
 | `/api/drive/uploads`                                   | POST                   | [source](../src/app/api/drive/uploads/route.ts)                                   |
 | `/api/export/messages`                                 | GET                    | [source](../src/app/api/export/messages/route.ts)                                 |
+| `/api/external-accounts/[id]`                          | DELETE, PATCH          | [source](../src/app/api/external-accounts/[id]/route.ts)                          |
+| `/api/external-accounts/[id]/test`                     | POST                   | [source](../src/app/api/external-accounts/[id]/test/route.ts)                     |
+| `/api/external-accounts/detect`                        | GET                    | [source](../src/app/api/external-accounts/detect/route.ts)                        |
+| `/api/external-accounts`                               | GET, POST              | [source](../src/app/api/external-accounts/route.ts)                               |
 | `/api/finance/badge`                                   | GET                    | [source](../src/app/api/finance/badge/route.ts)                                   |
 | `/api/finance/detect`                                  | POST                   | [source](../src/app/api/finance/detect/route.ts)                                  |
 | `/api/finance/documents/[id]`                          | DELETE                 | [source](../src/app/api/finance/documents/[id]/route.ts)                          |

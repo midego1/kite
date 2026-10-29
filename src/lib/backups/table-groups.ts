@@ -9,6 +9,8 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 			"domains",
 			"mailboxes",
 			"mailbox_access",
+			"external_accounts",
+			"external_account_folders",
 			"mailbox_aliases",
 			"contacts",
 			"api_keys",

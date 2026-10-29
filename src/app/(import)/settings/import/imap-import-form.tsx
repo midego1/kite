@@ -2,6 +2,8 @@
 
 import type { FormEvent } from "react";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -10,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { ImportSizeNotice } from "@/components/settings/import-size-notice";
 import { AccountMappingTable } from "./account-mapping-table";
-import type { AccountPlan, ImapFormState, ImapImportMode, ImportFolderSummary } from "./types";
+import type { AccountPlan, ImapFormState, ImapImportMode, ImportFolderSummary, ImportSourceAccount } from "./types";
 import {
 	adoptExistingFolders,
 	canSubmitImap,
@@ -18,7 +20,9 @@ import {
 	createImapImportJob,
 	estimatedImapMessages,
 	fetchAccountPlan,
+	fetchImportSourceAccounts,
 	fetchMailboxFolders,
+	hasImapSource,
 	imapSecurityValue,
 	plannedMessageCount,
 	systemDestinations,
@@ -27,6 +31,7 @@ import {
 
 const initialImapForm: ImapFormState = {
 	mode: "account",
+	accountId: "",
 	destination: "system:inbox",
 	host: "",
 	port: "993",
@@ -45,7 +50,14 @@ type FormProps = { form: ImapFormState; setForm: (form: ImapFormState) => void }
  * the server copies the mail in the background, so the page can be closed.
  */
 export function ImapImportForm({ mailboxId, onStarted }: { mailboxId: string | null; onStarted: () => void }) {
-	const [form, setFormState] = useState<ImapFormState>(initialImapForm);
+	// Settings → Connected accounts links here with `?account=<id>` to import that account's existing mail.
+	const accountParam = useSearchParams().get("account") ?? "";
+	const [form, setFormState] = useState<ImapFormState>({ ...initialImapForm, accountId: accountParam });
+	const { data: sourceAccounts = [] } = useQuery({
+		queryKey: ["import", "source-accounts"],
+		queryFn: fetchImportSourceAccounts,
+		refetchOnWindowFocus: false,
+	});
 	const [plan, setPlan] = useState<AccountPlan | null>(null);
 	const [kiteFolders, setKiteFolders] = useState<ImportFolderSummary[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -57,7 +69,13 @@ export function ImapImportForm({ mailboxId, onStarted }: { mailboxId: string | n
 
 	function setForm(next: ImapFormState) {
 		// A plan belongs to the account it was read from.
-		if (next.host !== form.host || next.username !== form.username || next.port !== form.port) setPlan(null);
+		if (
+			next.accountId !== form.accountId ||
+			next.host !== form.host ||
+			next.username !== form.username ||
+			next.port !== form.port
+		)
+			setPlan(null);
 		setFormState(next);
 	}
 
@@ -109,13 +127,14 @@ export function ImapImportForm({ mailboxId, onStarted }: { mailboxId: string | n
 	return (
 		<form onSubmit={onSubmit} className="space-y-4">
 			<ModeSelect form={form} setForm={setForm} />
-			<CredentialFields form={form} setForm={setForm} />
+			<SourceSelect form={form} setForm={setForm} accounts={sourceAccounts} />
+			{!form.accountId && <CredentialFields form={form} setForm={setForm} />}
 			{account ? (
 				<AccountFields
 					plan={plan}
 					kiteFolders={kiteFolders}
 					loading={loading}
-					canLoad={!!form.host && !!form.username && !!form.password && !!mailboxId}
+					canLoad={hasImapSource(form) && !!mailboxId}
 					onLoad={() => void loadPlan()}
 					onChange={(folders) => setPlan(plan ? { ...plan, folders } : plan)}
 				/>
@@ -151,6 +170,35 @@ function ModeSelect({ form, setForm }: FormProps) {
 				<option value="account">Whole account</option>
 				<option value="folder">One folder</option>
 			</Select>
+		</div>
+	);
+}
+
+/** Import from a connected account (its saved login) or from a server and password typed here. */
+function SourceSelect({ form, setForm, accounts }: FormProps & { accounts: ImportSourceAccount[] }) {
+	if (!accounts.length && !form.accountId) return null;
+	const known = accounts.some((account) => account.id === form.accountId);
+	return (
+		<div className="space-y-2">
+			<Label htmlFor="imap-account">Sign in with</Label>
+			<Select
+				id="imap-account"
+				value={form.accountId}
+				onChange={(event) => setForm({ ...form, accountId: event.target.value })}
+			>
+				<option value="">Server and password entered here</option>
+				{accounts.map((account) => (
+					<option key={account.id} value={account.id}>
+						{account.label === account.address ? account.address : `${account.label} (${account.address})`}
+					</option>
+				))}
+				{form.accountId && !known && <option value={form.accountId}>Connected account</option>}
+			</Select>
+			{form.accountId && (
+				<p className="text-xs text-neutral-500">
+					Kite signs in with the account&apos;s saved login. Removing the account stops the import.
+				</p>
+			)}
 		</div>
 	);
 }

@@ -10,6 +10,7 @@ import {
 	RETIRED_BACKUP_TABLES,
 } from "./utils";
 import { BACKUP_TABLE_GROUPS, getSelectedBackupTables, isPartialBackupDocument } from "./table-groups";
+import { redactBackupRow, restoredBackupRow } from "./external-accounts-utils";
 import {
 	BackupDocumentScanner,
 	INVALID_BACKUP_MESSAGE,
@@ -33,6 +34,10 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"domains",
 	"mailboxes",
 	"mailbox_access",
+	// Connected accounts (migration 0079), before `messages` and after `mailboxes` in foreign-key order. Exported
+	// without their passwords (`redactBackupRow`) and restored waiting to be reconnected.
+	"external_accounts",
+	"external_account_folders",
 	"contacts",
 	"folders",
 	"api_keys",
@@ -241,7 +246,7 @@ async function* backupDocumentChunks(
 		if (existingTables.has(table)) {
 			let first = true;
 			for await (const row of readTableRows(db, table)) {
-				yield `${first ? "" : ","}${JSON.stringify(row)}`;
+				yield `${first ? "" : ","}${JSON.stringify(redactBackupRow(table, row))}`;
 				first = false;
 			}
 		}
@@ -426,7 +431,7 @@ export async function executeDatabaseRestore(
 			for await (const row of readTableRange(prepared.source, table.range)) {
 				if (table.name === "messages" && bodies) mergeLegacyMessageBody(row, bodies);
 				if (table.name === "booking_events") fillBookingEventSlug(row);
-				const statement = builder.add(row);
+				const statement = builder.add(restoredBackupRow(table.name, row));
 				if (statement) await writer.add(statement);
 			}
 			const last = builder.finish();

@@ -5,6 +5,7 @@ import { getModuleMessage, readModuleAttachment } from "@/lib/email/module-read"
 import { recentModuleMessagesFromSender } from "@/lib/email/module-recent";
 import { sendModuleMail } from "@/lib/email/module-send";
 import { dispatchModuleWebhook } from "@/lib/email/module-webhooks";
+import { externalSourceLogin } from "@/lib/external-accounts/source-login";
 import { findDescriptor, MODULE_CAPABILITIES } from "./capability-registry";
 import type { HostAgentServices, HostResolvedRef, ModuleHost } from "./host-types";
 import {
@@ -116,5 +117,6 @@ export const moduleHost: ModuleHost = {
 		importMessages: (_ctx, request) => importModuleMessages(getEnv(), request),
 	},
 	users: { getProfile: (_ctx, userId) => getUserProfile(getEnv(), userId) },
+	accounts: { sourceLogin: (ctx, moduleId, request) => externalSourceLogin(getEnv(), ctx, moduleId, request) },
 	audit: (ctx, action, metadata) => recordModuleAudit(getEnv(), ctx, action, metadata),
 };

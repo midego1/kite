@@ -47,9 +47,13 @@ const LATER_MIGRATIONS = [
 	"0076_add_import_job_folders.sql",
 	"0077_add_agent_providers.sql",
 	"0078_add_ai_usage_details.sql",
+	"0079_add_external_accounts.sql",
 ];
 /** Columns a later migration adds to a table this test pins; everything else must stay as it was. */
-const LATER_COLUMNS = { messages: ["html_body_key", "body_size"] };
+const LATER_COLUMNS = {
+	messages: ["html_body_key", "body_size", "external_account_id"],
+	users: ["can_connect_accounts"],
+};
 /** The modules 0062 seeds a row for; later modules have no row, which means `defaultEnabled`. */
 const MODULES = ["calendar", "booking", "templates", "import"];
 

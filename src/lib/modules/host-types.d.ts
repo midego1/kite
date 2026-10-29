@@ -105,6 +105,29 @@ export type HostNotice = { notice: string; title: string; body?: string; href?: 
 
 export type HostContact = { id: string; displayName: string | null };
 
+/**
+ * Whose login: `jobId` names the import job a background run is working on (core reads its owner and account), and
+ * `accountId` one of the session viewer's own accounts, for requests made before a job exists.
+ */
+export type HostSourceLoginRequest = { jobId: string } | { accountId: string };
+
+/**
+ * The login of a connected account, for one run of an import from it. `auth` is a password today; OAuth accounts
+ * (spec §15) will answer `{ kind: "xoauth2", user, accessToken }`. Never store it.
+ */
+export type HostSourceLogin =
+	| {
+			ok: true;
+			login: {
+				host: string;
+				port: number;
+				security: "tls" | "starttls";
+				username: string;
+				auth: { kind: "password"; password: string };
+			};
+	  }
+	| { ok: false; reason: "removed" | "not_allowed" | "auth_failed"; message: string };
+
 /** What `suggestions` and `actions` need from automatic reading, bound by it so this file does not import it. */
 export type HostAgentServices = {
 	getSuggestion(ctx: CapabilityCallContext, moduleId: ModuleId, suggestionId: string): Promise<HostSuggestion | null>;
@@ -166,5 +189,17 @@ export type ModuleHost = {
 		): Promise<HostImportResult>;
 	};
 	users: { getProfile(ctx: CapabilityCallContext, userId: string): Promise<HostUserProfile | null> };
+	accounts: {
+		/**
+		 * The login of a connected account for the import module only: the account of an active import job (`jobId`),
+		 * or one of the session viewer's own accounts (`accountId`, refused without a viewer), when connected accounts
+		 * are allowed for its owner; otherwise why not. Opened per run, never copied into module state.
+		 */
+		sourceLogin(
+			ctx: CapabilityCallContext,
+			moduleId: ModuleId,
+			request: HostSourceLoginRequest,
+		): Promise<HostSourceLogin>;
+	};
 	audit(ctx: CapabilityCallContext, action: string, metadata: JsonValue): Promise<void>;
 };

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { AbuseChKeyStatus } from "@/lib/spam/providers/abuse-ch-types";
+import { ConnectedAccountsCard } from "./connected-accounts-card";
 import { TelemetryCard } from "./telemetry-card";
 import { ThreatLookupsCard } from "./threat-lookups-card";
 import { loadGeneralSettings, saveGeneralSettings } from "./utils";
@@ -55,7 +56,7 @@ export default function GeneralSettingsPage() {
 			<div>
 				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">General</h1>
 				<p className="mt-1 text-sm text-neutral-500">
-					Set limits for outgoing mail, outside checks of incoming mail and usage statistics.
+					Set limits for outgoing mail, outside checks of incoming mail, connected accounts and usage statistics.
 				</p>
 			</div>
 			<Card>
@@ -106,6 +107,7 @@ export default function GeneralSettingsPage() {
 				</CardContent>
 			</Card>
 			<ThreatLookupsCard status={threatLookupKey} onStatusChange={setThreatLookupKey} />
+			<ConnectedAccountsCard />
 			<TelemetryCard />
 		</div>
 	);

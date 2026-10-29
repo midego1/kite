@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.29.3] - 2026-10-29
+
+### Fixed
+
+- Web addresses and email addresses in a message are links in the reader. A plain `https://…` or `www.…` address, or an email address, in the text of an email, in a text-only message and in the quoted earlier messages now opens in a new tab (mail addresses open your mail app), the same as links the sender made; the full stop or closing bracket after an address is not part of the link, text that is already a link or sits in code is left alone, and an address that hides its real host behind a `user@` prefix is not linked.
+- A web or email address you type in the composer becomes a link when you press Space or Enter after it, and any you did not finish with a space (such as one pasted at the end) are linked when the message is sent. The plain-text version of the message stays plain.
+- A message you send with an undo delay or schedule for later now appears in Sent at once, instead of nowhere until it went out. Its row says "Sending…" (undo delay) or "Scheduled · Oct 30, 9:00 AM", and a send that failed says "Failed to send". Opening it shows when it goes out; its author can **Cancel send** (it returns to their private Drafts) or **Edit** it in the composer, and a failed one offers **Edit and resend** or **Move to Drafts**. Once it goes out it is an ordinary Sent email. The Sent count, the previous/next arrows in Sent and the conversation view include these messages too. Cancel send and Edit are offered only until delivery starts; a send that is being delivered reads "Sending…", and one still unfinished after 10 minutes reads "Stuck: still sending after N minutes" with a **Move to Drafts** recovery. A message waiting to go out cannot be archived, trashed or marked as spam until it is cancelled, since it would be sent anyway: those actions are refused with a notice and the toolbar buttons are off.
+- Reloading Kite, for example from the "Kite was updated" message, no longer leaves the page on the logo with a progress bar that never moves. When the app's files stop arriving without failing, Kite reloads by itself, twice at most, and then shows "Kite couldn't load" with a Reload button instead of loading forever. It acts after 8 seconds of visible time once nothing is loading any more, and waits while files keep arriving: only 20 seconds without progress (10 after such a reload, or 60 seconds in all) count as stuck, so a load that stays stuck shows the message after about 40 seconds.
+- A failed sign-in check while Kite starts is retried twice (a timed-out one once, so it gives up after about 11 seconds) and then shows "Kite couldn't check your sign-in" with Try again and Continue anyway, instead of opening the app without your account (empty admin menus). It also tries again when you return to the tab or come back online. A signed-out session still goes to the sign-in page.
+- A failed branding request no longer resets a custom app name and icon to Kite's own.
+
 ## [2026.10.29.2] - 2026-10-29
 
 ### Changed

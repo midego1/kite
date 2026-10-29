@@ -1,4 +1,0 @@
-### Fixed
-
-- Web addresses and email addresses in a message are links in the reader. A plain `https://…` or `www.…` address, or an email address, in the text of an email, in a text-only message and in the quoted earlier messages now opens in a new tab (mail addresses open your mail app), the same as links the sender made; the full stop or closing bracket after an address is not part of the link, text that is already a link or sits in code is left alone, and an address that hides its real host behind a `user@` prefix is not linked.
-- A web or email address you type in the composer becomes a link when you press Space or Enter after it, and any you did not finish with a space (such as one pasted at the end) are linked when the message is sent. The plain-text version of the message stays plain.

@@ -231,6 +231,7 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 				onClick={() => setOpen((value) => !value)}
 				className="rounded-full p-1 transition-colors hover:bg-neutral-200"
 				aria-label="Open account menu"
+				aria-haspopup="menu"
 				aria-expanded={open}
 			>
 				<AccountAvatar

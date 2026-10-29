@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useDismissible } from "@/components/use-dismissible";
+import { useMenuAnchor } from "@/components/use-menu-anchor";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { ModuleMenuLinks } from "@/components/modules/module-nav-links";
 import { useKeyChanged } from "@/hooks/use-synced-state";
@@ -40,13 +41,7 @@ import type {
 	MailboxSelectorUser,
 	MailboxSelectorProps,
 } from "./mailbox-selector-types";
-import {
-	getAccountInitial,
-	getMailboxAddress,
-	getMailboxName,
-	isAdminPath,
-	menuAnchorAbove,
-} from "./mailbox-selector-utils";
+import { getAccountInitial, getMailboxAddress, getMailboxName, isAdminPath } from "./mailbox-selector-utils";
 
 const UNSYNCED_SESSION = Symbol("unsynced");
 
@@ -202,7 +197,8 @@ function AccountTrigger({
 					? "flex w-full items-center gap-2 rounded-lg p-1 pr-2 text-left transition-colors hover:bg-neutral-200/60"
 					: "rounded-full p-1 transition-colors hover:bg-neutral-200"
 			}
-			aria-label="Open account menu"
+			// The visible name and address stay in the accessible name (WCAG 2.5.3 Label in Name).
+			aria-label={row ? `Open account menu, ${name} ${email}` : "Open account menu"}
 			aria-haspopup="menu"
 			aria-expanded={open}
 		>
@@ -240,7 +236,6 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 	const [inboxesOpen, setInboxesOpen] = useState(false);
 	const [browserAccounts, setBrowserAccounts] = useState<BrowserAccount[]>([]);
 	// In the sidebar the account sits at the bottom: the menu opens upward from where the button was.
-	const [anchor, setAnchor] = useState<{ bottom: number; maxHeight: number } | null>(null);
 	const { minimal } = useSidebar();
 
 	useEffect(() => {
@@ -258,6 +253,7 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 	const { counts } = useMessageCounts(null, open);
 
 	useDismissible(open, () => setOpen(false), ref);
+	const { anchor, measure } = useMenuAnchor(open, ref);
 
 	const session = useAuthMe();
 	const [syncedSession, setSyncedSession] = useState<unknown>(UNSYNCED_SESSION);
@@ -348,7 +344,7 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 
 	const inSidebar = placement === "sidebar";
 	function toggleMenu() {
-		if (!open) setAnchor(menuAnchorAbove(ref.current));
+		if (!open) measure();
 		setOpen((value) => !value);
 	}
 

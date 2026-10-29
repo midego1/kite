@@ -140,6 +140,38 @@ test.describe("message list header", () => {
 		await context.close();
 	});
 
+	test("a hidden list gives the toggle back to the sidebar header", async ({ browser }) => {
+		const { page, context } = await openList(browser, "/inbox", DEFAULT_WIDTH, "kite", "light", undefined, true);
+		const sidebar = page.getByRole("navigation", { name: "Kite" });
+		const collapse = page.getByRole("button", { name: "Collapse menu" });
+		await headerOf(page).getByRole("button", { name: "Collapse menu" }).waitFor();
+
+		await page.getByRole("list", { name: "Inbox" }).locator("[data-message-row]").first().getByRole("link").click();
+		await expect(page).toHaveURL(/\/inbox\/[^/]+$/);
+		// The list stays beside the open message, with its header holding the one toggle.
+		await expect(headerOf(page).getByRole("button", { name: "Collapse menu" })).toBeVisible();
+		await expect(sidebar.getByRole("button", { name: "Collapse menu" })).toHaveCount(0);
+
+		// Hiding the list leaves the mounted header unseen, so the sidebar header shows the toggle again.
+		await page.getByRole("button", { name: "Hide email list" }).click();
+		await expect(sidebar.getByRole("button", { name: "Collapse menu" })).toBeVisible();
+		await expect(collapse).toHaveCount(1);
+		await page.getByRole("button", { name: "Show email list" }).click();
+		await expect(headerOf(page).getByRole("button", { name: "Collapse menu" })).toBeVisible();
+		await expect(sidebar.getByRole("button", { name: "Collapse menu" })).toHaveCount(0);
+
+		// The assistant hides the list too, unless the user chose to keep it.
+		await page.locator("body").press(".");
+		await expect(page.getByRole("region", { name: "Email assistant" })).toBeVisible();
+		await expect(sidebar.getByRole("button", { name: "Collapse menu" })).toBeVisible();
+		await expect(collapse).toHaveCount(1);
+		await sidebar.getByRole("button", { name: "Collapse menu" }).click();
+		await expect
+			.poll(async () => (await page.locator("#kite-sidebar-layout > [data-panel]").first().boundingBox())!.width)
+			.toBeLessThan(80);
+		await context.close();
+	});
+
 	test("the list header toggle collapses the sidebar to the icon rail, whose Expand button brings it back", async ({
 		browser,
 	}) => {
@@ -196,6 +228,10 @@ test.describe("message list header", () => {
 		expect(accountBox!.y).toBeGreaterThan(buildBox!.y + buildBox!.height - 1);
 		expect(accountBox!.y + accountBox!.height).toBeLessThanOrEqual(sidebarBox!.y + sidebarBox!.height + 1);
 		await expect(button).toContainText(/\S+@\S+/);
+		// The accessible name keeps the visible name and address (WCAG 2.5.3), and the old name still matches.
+		const visible = (await button.locator("span.block").allInnerTexts()).join(" ");
+		await expect(button).toHaveAccessibleName(`Open account menu, ${visible}`);
+		await expect(sidebar.getByRole("button", { name: "Open account menu" })).toHaveCount(1);
 		await page.screenshot({ path: testInfo.outputPath("account-bottom-expanded-closed.png") });
 
 		await button.focus();
@@ -215,6 +251,24 @@ test.describe("message list header", () => {
 		await page.keyboard.press("Escape");
 		await expect(button).toHaveAttribute("aria-expanded", "false");
 		await expect(button).toBeFocused();
+		await context.close();
+	});
+
+	test("the open account menu follows its button when the window is resized", async ({ browser }) => {
+		const { page, context } = await openList(browser, "/inbox", DEFAULT_WIDTH, "kite", "light");
+		const button = page.getByRole("navigation", { name: "Kite" }).getByRole("button", { name: "Open account menu" });
+		await button.click();
+		const menu = page.locator('[data-placement="sidebar"]');
+		await expect(menu.getByRole("button", { name: "Sign out" })).toBeVisible();
+		const gap = async () =>
+			(await button.boundingBox())!.y - ((await menu.boundingBox())!.y + (await menu.boundingBox())!.height);
+		expect(Math.abs((await gap()) - 8)).toBeLessThanOrEqual(2);
+		await page.setViewportSize({ width: 1400, height: 640 });
+		// Still just above the button, and still inside the window.
+		await expect.poll(async () => Math.abs((await gap()) - 8)).toBeLessThanOrEqual(2);
+		const box = (await menu.boundingBox())!;
+		expect(box.y).toBeGreaterThanOrEqual(0);
+		expect(box.y + box.height).toBeLessThanOrEqual(640);
 		await context.close();
 	});
 

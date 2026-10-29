@@ -59,7 +59,13 @@ import { groupListSections } from "./message-list-sections-utils";
 
 const pageSize = 25;
 
-export function MessageFolderPage({ config, compact = false, selectedMessageId, selection }: MessageFolderPageProps) {
+export function MessageFolderPage({
+	config,
+	compact = false,
+	selectedMessageId,
+	selection,
+	listVisible = true,
+}: MessageFolderPageProps) {
 	const {
 		selectedMailbox,
 		allMailboxes,
@@ -377,6 +383,7 @@ export function MessageFolderPage({ config, compact = false, selectedMessageId, 
 				compact={compact || isMobile}
 				selectionInPane={compact}
 				showTitle={compact || isMobile}
+				listVisible={listVisible}
 				selecting={{
 					value: selecting,
 					onChange: (value) => {

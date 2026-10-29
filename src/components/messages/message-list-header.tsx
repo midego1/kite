@@ -73,9 +73,10 @@ function EmptyFolderButton({
  * Zero's panel icon at the left of the title: collapses the expanded sidebar to its icon rail (desktop only). It
  * tells the sidebar header to drop its own button while it is here; the collapsed rail keeps its Expand button.
  */
-function SidebarToggleButton() {
+function SidebarToggleButton({ listVisible }: { listVisible: boolean }) {
 	const { minimal, mobile, toggle, setToggleInListHeader } = useSidebar();
-	const shown = !minimal && !mobile;
+	// A hidden list panel stays mounted, so it must not claim a toggle nobody can see.
+	const shown = !minimal && !mobile && listVisible;
 	useLayoutEffect(() => {
 		setToggleInListHeader(shown);
 		return () => setToggleInListHeader(false);
@@ -114,6 +115,7 @@ export function MessageListHeader({
 	pager,
 	emptyFolder,
 	screenerVisible,
+	listVisible,
 }: MessageListHeaderProps) {
 	// Only a selection pane beside the list replaces the toolbar; compact styling alone (a phone) must not.
 	const bulk = selection.count > 0 && !selectionInPane;
@@ -123,7 +125,7 @@ export function MessageListHeader({
 		<div className="@container shrink-0">
 			<div className="flex h-14 items-center gap-2 border-b border-neutral-200 px-3">
 				<FolderHeading title={config.title} nested={nested} />
-				<SidebarToggleButton />
+				<SidebarToggleButton listVisible={listVisible} />
 				{(selecting.value || selection.count > 0) && (
 					<Tooltip label="Select all visible messages">
 						<Checkbox

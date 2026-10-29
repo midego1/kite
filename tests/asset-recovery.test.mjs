@@ -50,9 +50,9 @@ class HTMLLinkElement extends FakeElement {
  * A minimal DOM: AuthGuard's server-rendered startup screen (`screen` is its role: "status" while the server's
  * screen is up, "" once React hid it, null for a page without one) and a body that records what the script adds.
  */
-function fakeDocument({ screen = "status", declared = [] } = {}) {
+function fakeDocument({ screen = "status", declared = [], readyState = "complete", withBody = true } = {}) {
 	const byId = new Map();
-	const body = {
+	const container = () => ({
 		children: [],
 		append(...elements) {
 			for (const element of elements) {
@@ -60,7 +60,10 @@ function fakeDocument({ screen = "status", declared = [] } = {}) {
 				if (element.id) byId.set(element.id, element);
 			}
 		},
-	};
+	});
+	const body = withBody ? container() : null;
+	const documentElement = container();
+	const fake = {};
 	const createElement = (tagName) => ({
 		tagName,
 		id: "",
@@ -81,27 +84,36 @@ function fakeDocument({ screen = "status", declared = [] } = {}) {
 		append(...children) {
 			this.children.push(...children);
 		},
+		focus() {
+			fake.activeElement = this;
+		},
 		remove() {
-			body.children = body.children.filter((child) => child !== this);
+			for (const parent of [body, documentElement]) {
+				if (parent) parent.children = parent.children.filter((child) => child !== this);
+			}
 			byId.delete(this.id);
 		},
 	});
 	const overlay = screen === null ? null : createElement("div");
 	if (overlay && screen) overlay.setAttribute("role", screen);
-	return {
+	return Object.assign(fake, {
 		body,
+		documentElement,
+		activeElement: null,
 		createElement,
 		getElementById: (id) => byId.get(id) ?? null,
 		querySelector: (selector) => (selector === "[data-loading-overlay]" ? overlay : null),
 		querySelectorAll: () => declared,
+		readyState,
 		visibilityState: "visible",
-	};
+	});
 }
 
 /**
  * A page with the script in its <head>. Timers wait until `runTimers()`; storage survives `reload()`, which is
  * only counted. `clock.now` moves time; `advance(ms)` moves it in watchdog ticks. `finishAsset()` reports a file
- * of ours that finished loading, as a PerformanceObserver resource entry.
+ * of ours that finished loading, as a PerformanceObserver resource entry; `parse()` is the parser adding nodes
+ * while the document streams in (a MutationObserver record).
  */
 function loadPage({
 	storage = new Map(),
@@ -111,6 +123,8 @@ function loadPage({
 	dev = false,
 	screen = "status",
 	declared = [],
+	readyState = "complete",
+	withBody = true,
 	flags = {},
 } = {}) {
 	const listeners = new Map();
@@ -118,7 +132,8 @@ function loadPage({
 	const intervals = new Map();
 	let nextInterval = 1;
 	let observer = null;
-	const document = fakeDocument({ screen, declared });
+	let parser = null;
+	const document = fakeDocument({ screen, declared, readyState, withBody });
 	const page = { reloads: 0, waits: [], dispatched: [], errors: [], storage, clock, document };
 	const sandbox = {
 		location: { href: `${ORIGIN}/inbox`, origin: ORIGIN, reload: () => (page.reloads += 1) },
@@ -144,6 +159,15 @@ function loadPage({
 				observer = callback;
 			}
 			observe() {}
+		},
+		MutationObserver: class {
+			constructor(callback) {
+				parser = callback;
+			}
+			observe() {}
+			disconnect() {
+				parser = null;
+			}
 		},
 		setTimeout: (callback, ms) => {
 			page.waits.push(ms);
@@ -176,6 +200,7 @@ function loadPage({
 		}
 	};
 	page.finishAsset = (name = `${ORIGIN}/_next/static/chunks/a.js`) => observer?.({ getEntries: () => [{ name }] });
+	page.parse = () => parser?.([]);
 	page.failure = () => document.getElementById(BOOT_FAILURE_ID);
 	page.state = () => JSON.parse(storage.get(ASSET_RELOAD_STORAGE_KEY) ?? "null");
 	return page;
@@ -334,51 +359,113 @@ test("without working storage nothing could stop a loop, so it never reloads", (
 	assert.equal(page.reloads, 0);
 });
 
-test("a startup screen React never took over reloads after 8 visible seconds, then shows Kite couldn't load", () => {
+test("a startup screen React never took over reloads after 8 visible seconds, twice, then shows Kite couldn't load", () => {
 	const storage = new Map();
 	const clock = { now: 1_000_000 };
-	for (let attempt = 0; attempt < 4; attempt += 1) {
+	for (let attempt = 0; attempt < 2; attempt += 1) {
 		const page = loadPage({ storage, clock });
 		page.advance(7_500);
 		assert.equal(page.reloads, 0);
 		page.advance(500);
 		assert.equal(page.reloads, 1, `attempt ${attempt}`);
-		assert.equal(page.state().count, attempt + 1);
+		assert.deepEqual([page.state().count, page.state().stalls], [attempt + 1, attempt + 1]);
 		clock.now += 1_000;
 	}
-	// The budget a failed chunk also uses is spent: a static message with a Reload button instead.
+	// The third stall within the window: a static message with a Reload button, which gets the focus.
 	const last = loadPage({ storage, clock });
 	last.advance(8_000);
 	assert.equal(last.reloads, 0);
 	assert.equal(last.watching(), false);
-	last.fire("click", { target: { closest: () => null } });
-	assert.equal(last.reloads, 0);
+	assert.deepEqual(last.errors, ["[kite] The app did not start after 2 automatic reloads."]);
 	const failure = last.failure();
 	assert.equal(failure.getAttribute("role"), "alert");
 	const [text, button] = failure.children;
 	assert.equal(text.textContent, "Kite couldn't load.");
 	assert.equal(button.textContent, "Reload");
-	// Reload starts over with a fresh budget.
+	assert.equal(last.document.activeElement, button);
+	last.fire("click", { target: { closest: () => null } });
+	assert.equal(last.reloads, 0);
 	// The click is handled on window, before React's listener on document could stop it.
 	assert.equal(button.listeners.click, undefined);
 	last.fire("click", {
 		target: { closest: (selector) => (selector === `#${BOOT_FAILURE_ID} button` ? button : null) },
 	});
+	// Reload starts over with a fresh budget.
 	assert.equal(last.reloads, 1);
 	assert.equal(last.state(), null);
 });
 
-test("the watchdog waits while files keep arriving, up to 20 seconds, and counts only visible time", () => {
-	const page = loadPage();
-	for (let elapsed = 0; elapsed < 18_000; elapsed += 1_000) {
-		page.finishAsset();
-		page.advance(1_000);
+test("watchdog reloads share the budget with failed chunks, which keep their own four", () => {
+	const clock = { now: 1_000_000 };
+	// Two chunk reloads already happened: the watchdog still gets its two, then the budget of four is spent.
+	const storage = new Map([[ASSET_RELOAD_STORAGE_KEY, JSON.stringify({ count: 2, since: clock.now })]]);
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		const page = loadPage({ storage, clock });
+		page.advance(8_000);
+		assert.equal(page.reloads, 1);
 	}
-	assert.equal(page.reloads, 0);
-	// Still arriving, but the cap is reached.
-	page.finishAsset();
-	page.advance(2_000);
-	assert.equal(page.reloads, 1);
+	const { count, stalls } = JSON.parse(storage.get(ASSET_RELOAD_STORAGE_KEY));
+	assert.deepEqual([count, stalls], [4, 2]);
+	const spent = loadPage({ storage, clock });
+	spent.fire("error", missingEntry);
+	assert.ok(spent.failure());
+	assert.equal(spent.reloads, 0);
+	// A stall reload leaves a failed chunk its reloads.
+	const stalled = new Map([[ASSET_RELOAD_STORAGE_KEY, JSON.stringify({ count: 2, since: clock.now, stalls: 2 })]]);
+	const chunk = loadPage({ storage: stalled, clock });
+	chunk.fire("error", missingEntry);
+	chunk.runTimers();
+	assert.equal(chunk.reloads, 1);
+});
+
+test("a load that keeps moving is never cut short; a hung one is acted on after 20 quiet seconds", () => {
+	// Files keep arriving: only the 60-second ceiling stops it.
+	const moving = loadPage();
+	for (let elapsed = 0; elapsed < 59_000; elapsed += 1_000) {
+		moving.finishAsset();
+		moving.advance(1_000);
+	}
+	assert.equal(moving.reloads, 0);
+	moving.finishAsset();
+	moving.advance(1_000);
+	assert.equal(moving.reloads, 1);
+
+	// A file the document names has not finished: waits until nothing progressed for 20 seconds.
+	const chunk = `${ORIGIN}/_next/static/chunks/auth-guard.js`;
+	const named = [
+		Object.assign(new HTMLScriptElement(chunk), { tagName: "SCRIPT" }),
+		Object.assign(new HTMLLinkElement("preload", `${ORIGIN}/_next/static/fonts/a.woff2`), { tagName: "LINK" }),
+	];
+	const hung = loadPage({ declared: named });
+	hung.advance(5_000);
+	hung.finishAsset();
+	hung.advance(19_500);
+	assert.equal(hung.reloads, 0);
+	hung.advance(500);
+	assert.equal(hung.reloads, 1);
+	// After a watchdog reload in this window, 10 quiet seconds are enough.
+	const repeat = loadPage({
+		declared: named,
+		storage: new Map([[ASSET_RELOAD_STORAGE_KEY, JSON.stringify({ count: 1, since: 1_000_000, stalls: 1 })]]),
+	});
+	repeat.advance(9_500);
+	assert.equal(repeat.reloads, 0);
+	repeat.advance(500);
+	assert.equal(repeat.reloads, 1);
+	// It arrives within the quiet time: nothing to do once React takes over.
+	const late = loadPage({ declared: named });
+	late.advance(15_000);
+	late.finishAsset(chunk);
+	late.window[LOADER_MOUNTED_FLAG] = true;
+	late.advance(30_000);
+	assert.equal(late.reloads, 0);
+	// Once it has finished, the font preload does not count, and 3 quiet seconds are enough.
+	const done = loadPage({ declared: named });
+	done.finishAsset(chunk);
+	done.advance(7_500);
+	assert.equal(done.reloads, 0);
+	done.advance(500);
+	assert.equal(done.reloads, 1);
 
 	// Only our own files count as progress.
 	const other = loadPage();
@@ -386,7 +473,7 @@ test("the watchdog waits while files keep arriving, up to 20 seconds, and counts
 	other.advance(8_000);
 	assert.equal(other.reloads, 1);
 
-	// A load that went quiet is acted on 3 seconds after its last file.
+	// A load that went quiet with nothing left is acted on 3 seconds after its last file.
 	const quiet = loadPage();
 	quiet.advance(7_000);
 	quiet.finishAsset();
@@ -394,27 +481,26 @@ test("the watchdog waits while files keep arriving, up to 20 seconds, and counts
 	assert.equal(quiet.reloads, 0);
 	quiet.advance(500);
 	assert.equal(quiet.reloads, 1);
+});
 
-	// A file the document names that has not finished holds it, up to the cap.
-	const chunk = `${ORIGIN}/_next/static/chunks/auth-guard.js`;
-	const named = [
-		Object.assign(new HTMLScriptElement(chunk), { tagName: "SCRIPT" }),
-		Object.assign(new HTMLLinkElement("preload", `${ORIGIN}/_next/static/fonts/a.woff2`), { tagName: "LINK" }),
-	];
-	const pending = loadPage({ declared: named });
-	pending.advance(19_500);
-	assert.equal(pending.reloads, 0);
-	pending.advance(500);
-	assert.equal(pending.reloads, 1);
-	const done = loadPage({ declared: named });
-	done.finishAsset(chunk);
-	done.advance(7_500);
-	assert.equal(done.reloads, 0);
-	// The font preload does not count, and the chunk finished more than 3 seconds ago.
-	done.advance(500);
-	assert.equal(done.reloads, 1);
+test("a document still streaming in is progress while the parser adds nodes, and a stalled stream goes quiet", () => {
+	const page = loadPage({ readyState: "loading" });
+	for (let elapsed = 0; elapsed < 30_000; elapsed += 2_000) {
+		page.advance(2_000);
+		page.parse();
+	}
+	assert.equal(page.reloads, 0);
+	page.advance(19_500);
+	assert.equal(page.reloads, 0);
+	page.advance(500);
+	assert.equal(page.reloads, 1);
+	// Parsing done: the observer is gone.
+	const parsed = loadPage({ readyState: "loading" });
+	parsed.fire("DOMContentLoaded");
+	assert.equal(parsed.parse(), undefined);
+});
 
-	// A background tab does not count.
+test("a background tab does not count, and without a body the message goes on the root element", () => {
 	const hidden = loadPage();
 	hidden.document.visibilityState = "hidden";
 	hidden.advance(60_000);
@@ -422,6 +508,10 @@ test("the watchdog waits while files keep arriving, up to 20 seconds, and counts
 	hidden.document.visibilityState = "visible";
 	hidden.advance(8_000);
 	assert.equal(hidden.reloads, 1);
+
+	const noBody = loadPage({ withBody: false, online: false });
+	noBody.advance(8_000);
+	assert.equal(noBody.document.documentElement.children[0], noBody.failure());
 });
 
 test("a page React runs, or one that is done loading, is left alone", () => {

@@ -1,7 +1,11 @@
-/** One `/api/auth/me` attempt gives up after this long; a cold isolate right after a deploy can be slow. */
+/** The first `/api/auth/me` attempt gives up after this long; a cold isolate right after a deploy can be slow. */
 export const AUTH_ME_TIMEOUT_MS = 6_000;
-/** Waits before each retry of a failed session check; their count is the number of retries. */
+/** Each retry gives up sooner, so a check that keeps hanging reaches AuthGuard's error state quickly. */
+const AUTH_ME_RETRY_TIMEOUT_MS = 4_000;
+/** Waits before each retry of a failed session check; their count is the most retries. */
 const AUTH_ME_RETRY_DELAYS_MS = [1_000, 2_000] as const;
+/** A timed-out check is retried this often: 6 + 1 + 4 = 11 seconds before the error state. */
+const AUTH_ME_TIMEOUT_RETRIES = 1;
 
 /**
  * Whether a failed session check is worth repeating: timeouts, network failures and server errors are, a 4xx
@@ -13,9 +17,19 @@ function isRetryableAuthMeError(error: unknown): boolean {
 	return true;
 }
 
+function isTimeout(error: unknown): boolean {
+	return (error as { name?: unknown } | null)?.name === "TimeoutError";
+}
+
+/** The timeout of the next attempt, given how many attempts of this fetch have failed. */
+export function authMeTimeoutMs(failuresSoFar: number): number {
+	return failuresSoFar > 0 ? AUTH_ME_RETRY_TIMEOUT_MS : AUTH_ME_TIMEOUT_MS;
+}
+
 /** React Query `retry`: `retriesSoFar` is 0 when the first attempt fails. */
 export function shouldRetryAuthMe(retriesSoFar: number, error: unknown): boolean {
-	return retriesSoFar < AUTH_ME_RETRY_DELAYS_MS.length && isRetryableAuthMeError(error);
+	if (!isRetryableAuthMeError(error)) return false;
+	return retriesSoFar < (isTimeout(error) ? AUTH_ME_TIMEOUT_RETRIES : AUTH_ME_RETRY_DELAYS_MS.length);
 }
 
 /** React Query `retryDelay`: called with the same count as `shouldRetryAuthMe`. */

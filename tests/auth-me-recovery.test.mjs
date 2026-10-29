@@ -30,21 +30,24 @@ await build({
 });
 const helpers = await import(pathToFileURL(join(bundleDirectory, "auth-me.mjs")).href);
 
-test("a session check is retried twice, after 1 and 2 seconds, for timeouts, network failures and 5xx", () => {
+test("a session check is retried twice for network failures and 5xx, once for a timeout, with a shorter timeout", () => {
 	const timeout = new DOMException("The operation timed out.", "TimeoutError");
 	const network = new TypeError("Failed to fetch");
 	const serverError = Object.assign(new Error("Session check failed with 503"), { status: 503 });
-	for (const error of [timeout, network, serverError, { status: 429 }, { status: 408 }]) {
+	for (const error of [network, serverError, { status: 429 }, { status: 408 }]) {
 		assert.equal(helpers.shouldRetryAuthMe(0, error), true);
 		assert.equal(helpers.shouldRetryAuthMe(1, error), true);
 		assert.equal(helpers.shouldRetryAuthMe(2, error), false);
 	}
+	assert.equal(helpers.shouldRetryAuthMe(0, timeout), true);
+	assert.equal(helpers.shouldRetryAuthMe(1, timeout), false);
 	// Other client errors would answer the same again.
 	for (const status of [400, 403, 404]) assert.equal(helpers.shouldRetryAuthMe(0, { status }), false);
 	assert.deepEqual([0, 1, 2, 5].map(helpers.authMeRetryDelay), [1_000, 2_000, 2_000, 2_000]);
-	// All three attempts and the waits between them end within 30 seconds, so the error state is never far off.
-	const worstCase = helpers.AUTH_ME_TIMEOUT_MS * 3 + 1_000 + 2_000;
-	assert.ok(worstCase <= 30_000, `${worstCase} ms`);
+	assert.deepEqual([0, 1, 2].map(helpers.authMeTimeoutMs), [6_000, 4_000, 4_000]);
+	// A check that keeps hanging reaches the error state after 6 + 1 + 4 seconds.
+	const hanging = helpers.authMeTimeoutMs(0) + helpers.authMeRetryDelay(0) + helpers.authMeTimeoutMs(1);
+	assert.equal(hanging, 11_000);
 });
 
 test("auth guard: a failed check without an answer shows the error state, not a loader", () => {

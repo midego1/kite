@@ -36,7 +36,7 @@ test("a failed session check does not leave the startup overlay loading, and Con
 	await page.route("**/api/auth/me", (route) => route.abort("failed"));
 	await page.goto("/inbox");
 	// After its retries the check shows an error state instead of the progress bar (e2e/65-startup-recovery.spec.ts).
-	const failure = page.getByRole("alert").filter({ hasText: "Kite could not reach the server." });
+	const failure = page.getByRole("alert").filter({ hasText: "Kite couldn't check your sign-in." });
 	await expect(failure).toBeVisible({ timeout: 15_000 });
 	await failure.getByRole("button", { name: "Continue anyway" }).click();
 	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 15_000 });

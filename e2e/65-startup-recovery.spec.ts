@@ -31,7 +31,7 @@ function bootFailure(page: Page) {
 }
 
 function sessionFailure(page: Page) {
-	return page.getByRole("alert").filter({ hasText: "Kite could not reach the server." });
+	return page.getByRole("alert").filter({ hasText: "Kite couldn't check your sign-in." });
 }
 
 test.describe("files that hang", () => {
@@ -50,6 +50,24 @@ test.describe("files that hang", () => {
 		await expect(bootFailure(page)).toHaveCount(0);
 		// React runs the startup screen again, so the reload budget starts over.
 		await expect.poll(() => page.evaluate(() => sessionStorage.getItem("kite:asset-reload"))).toBeNull();
+	});
+
+	test("a module that arrives late is waited for, not reloaded", async ({ page }) => {
+		await openInbox(page);
+		const documents = countDocumentLoads(page);
+		let requests = 0;
+		// The entry module, which the document names: 15 seconds without progress, then it arrives.
+		await page.route(
+			(url) => url.pathname.endsWith("/entry-browser"),
+			async (route) => {
+				if (requests++ === 0) await new Promise((resolve) => setTimeout(resolve, 15_000));
+				await route.continue();
+			},
+		);
+		await page.reload({ waitUntil: "commit" });
+		await expect(page.getByRole("button", COMPOSE)).toBeVisible({ timeout: 45_000 });
+		expect(documents.count).toBe(1);
+		await expect(bootFailure(page)).toHaveCount(0);
 	});
 
 	test("once the reload budget is spent it shows Kite couldn't load, and Reload loads the app", async ({ page }) => {
@@ -97,6 +115,20 @@ test.describe("the session check", () => {
 		await page.reload();
 		// One 6-second timeout and a 1-second wait.
 		await expect(page.getByRole("button", COMPOSE)).toBeVisible({ timeout: 20_000 });
+		expect(requests).toBe(2);
+	});
+
+	test("a session check that keeps hanging shows the error state after one shorter retry", async ({ page }) => {
+		await openInbox(page);
+		let requests = 0;
+		await page.route(AUTH_ME, () => {
+			requests += 1;
+		});
+		const started = Date.now();
+		await page.reload();
+		// 6 seconds, a 1-second wait and 4 seconds.
+		await expect(sessionFailure(page)).toBeVisible({ timeout: 20_000 });
+		expect(Date.now() - started).toBeLessThan(18_000);
 		expect(requests).toBe(2);
 	});
 

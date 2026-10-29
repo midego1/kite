@@ -6,7 +6,7 @@ import type { StartupFailureProps } from "./loading-transition-types";
 export function StartupFailure({ onRetry, onContinue }: StartupFailureProps) {
 	return (
 		<div role="alert" className="text-center text-sm text-neutral-600">
-			<p className="font-medium text-neutral-900">Kite could not reach the server.</p>
+			<p className="font-medium text-neutral-900">{"Kite couldn't check your sign-in."}</p>
 			<p className="mt-1">It tries again when you come back to this tab or your connection returns.</p>
 			<div className="mt-4 flex justify-center gap-2">
 				<button

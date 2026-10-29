@@ -16,11 +16,11 @@ export class AuthMeRequestError extends Error {
 }
 
 /** Resolves to null when there is no valid session; throws for any other failure. */
-export async function fetchAuthMe(): Promise<AuthMeResponse | null> {
+export async function fetchAuthMe(timeoutMs = AUTH_ME_TIMEOUT_MS): Promise<AuthMeResponse | null> {
 	const response = await authFetch("/api/auth/me", {
 		redirectOnUnauthorized: false,
 		cache: "no-store",
-		signal: AbortSignal.timeout(AUTH_ME_TIMEOUT_MS),
+		signal: AbortSignal.timeout(timeoutMs),
 	});
 	if (response.status === 401) return null;
 	if (!response.ok) throw new AuthMeRequestError(response.status);

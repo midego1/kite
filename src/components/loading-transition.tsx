@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useIsFetching } from "@tanstack/react-query";
 import { useBranding } from "@/components/branding-provider";
 import { markLoaderMounted } from "@/components/asset-recovery-utils";
@@ -39,8 +39,10 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 	const canComplete = ready && pageMounted && (dataWaitExpired || (pendingLoads === 0 && fetchingQueries === 0));
 	const overlayVisible = loaderVisible || failure != null;
 
-	// The boot watchdog (asset-recovery-utils.ts) leaves a startup screen that React runs alone.
-	useEffect(() => markLoaderMounted(), []);
+	// The boot watchdog (asset-recovery-utils.ts) leaves a startup screen that React runs alone. A layout effect
+	// runs in the same task as the hydration commit, so the watchdog never sees a committed screen as the server's;
+	// a render alone could still be thrown away, so it is not enough.
+	useLayoutEffect(() => markLoaderMounted(), []);
 
 	useEffect(() => {
 		if (canComplete) return;

@@ -1,4 +1,7 @@
-/** sessionStorage key counting the automatic reloads of this tab: `{ count, since }`. */
+/**
+ * sessionStorage key counting the automatic reloads of this tab: `{ count, since, stalls }`, where `stalls` counts
+ * the boot watchdog's share of `count`.
+ */
 const ASSET_RELOAD_STORAGE_KEY = "kite:asset-reload";
 /**
  * Set on `window` by markAppReady(), from UpdateAvailableHost's first effect: the app's first client commit has
@@ -10,17 +13,31 @@ const ASSET_RECOVERY_READY_FLAG = "__kiteAppReady";
 const LOADER_MOUNTED_FLAG = "__kiteLoaderMounted";
 /** The element the script adds to <body> when it gives up: a static "Kite couldn't load" with a Reload button. */
 const BOOT_FAILURE_ID = "kite-boot-failure";
-/** Visible time the startup screen may stay before the watchdog acts... */
+/** Visible time the startup screen may stay before the watchdog acts. */
 const BOOT_WATCHDOG_MS = 8_000;
 /**
- * ...unless the load is still moving: a file the document names has not finished, or one of ours finished within
- * this long (longer under `vite dev`, which compiles each module on request)...
+ * With nothing left loading, the watchdog acts once the last of our files is this old (longer under `vite dev`,
+ * which compiles each module on request).
  */
 const BOOT_PROGRESS_GRACE_MS = 3_000;
 const DEV_BOOT_PROGRESS_GRACE_MS = 10_000;
-/** ...and never longer than this, however slowly the files arrive (a cold `vite dev` compiles for longer). */
-const BOOT_WATCHDOG_CAP_MS = 20_000;
-const DEV_BOOT_WATCHDOG_CAP_MS = 60_000;
+/**
+ * While something is still loading (a file the document names has not finished, or the document itself is still
+ * streaming), it waits as long as anything arrives and acts only after this long without progress: a hung request.
+ */
+const BOOT_QUIET_CAP_MS = 20_000;
+const DEV_BOOT_QUIET_CAP_MS = 30_000;
+/**
+ * After a watchdog reload in this window the silence is a repeat, not a slow first load: act sooner, so a hang that
+ * survives the reloads reaches "Kite couldn't load" in about 20 + 11 + 11 seconds.
+ */
+const BOOT_REPEAT_QUIET_CAP_MS = 10_000;
+const DEV_BOOT_REPEAT_QUIET_CAP_MS = 15_000;
+/** However the load moves, the watchdog acts after this much visible time. */
+const BOOT_WATCHDOG_CEILING_MS = 60_000;
+const DEV_BOOT_WATCHDOG_CEILING_MS = 120_000;
+/** Watchdog reloads per ASSET_RELOAD_WINDOW_MS (within the shared budget) before it shows "Kite couldn't load". */
+const BOOT_STALL_RELOADS = 2;
 /** Fired on `window` when a chunk fails after the app has rendered, so the update check can run at once. */
 export const STALE_ASSETS_EVENT = "kite:stale-assets";
 /** Set on `window` with the event, so a listener that registers later (before the session is known) still sees it. */
@@ -57,16 +74,25 @@ const DEV_ASSET_PREFIXES = ["/_next/static/", "/@id/", "/@fs/", "/@vite/", "/nod
  * itself. A request that hangs instead of failing (a chunk, or the document stream), an exception while the entry
  * evaluates, or vinext aborting hydration leave the server's screen up with its bar frozen where it started. So
  * when the screen is still the server's (no LOADER_MOUNTED_FLAG; on a page without the screen, no ready flag)
- * after BOOT_WATCHDOG_MS of visible time, and nothing is loading any more (every script, module preload and
- * stylesheet of ours the document names has a resource entry, and none arrived for BOOT_PROGRESS_GRACE_MS) or
- * BOOT_WATCHDOG_CAP_MS of visible time have passed, it reloads within the same budget as a failed chunk. Hidden time does not count. Once
- * the budget is spent, offline, or without storage, it shows a static "Kite couldn't load" with a Reload button
- * instead (no React; markLoaderMounted() removes it if React starts after all), and coming back online reloads.
+ * after BOOT_WATCHDOG_MS of visible time (hidden time does not count), it reloads within the same budget as a
+ * failed chunk, as soon as either:
+ * - nothing is loading any more (every script, module preload and stylesheet of ours the document names has a
+ *   resource entry, the document has been parsed) and the last progress is BOOT_PROGRESS_GRACE_MS old, or
+ * - something is still loading but nothing progressed for BOOT_QUIET_CAP_MS (BOOT_REPEAT_QUIET_CAP_MS after a
+ *   watchdog reload within the window). Progress is one of our files
+ *   finishing (a resource entry appears only when a request completes, so a hung one goes quiet) or the parser
+ *   adding nodes while the document streams in, so a slow load that keeps moving is never cut short, or
+ * - BOOT_WATCHDOG_CEILING_MS of visible time have passed regardless.
+ * After BOOT_STALL_RELOADS watchdog reloads, once the budget is spent, offline, or without storage, it shows a
+ * static "Kite couldn't load" with a Reload button instead (no React; markLoaderMounted() removes it if React starts
+ * after all), and coming back online reloads.
  */
 export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): string {
 	const prefixes = dev ? DEV_ASSET_PREFIXES : PRODUCTION_ASSET_PREFIXES;
-	const watchdogCapMs = dev ? DEV_BOOT_WATCHDOG_CAP_MS : BOOT_WATCHDOG_CAP_MS;
 	const progressGraceMs = dev ? DEV_BOOT_PROGRESS_GRACE_MS : BOOT_PROGRESS_GRACE_MS;
+	const quietCapMs = dev ? DEV_BOOT_QUIET_CAP_MS : BOOT_QUIET_CAP_MS;
+	const repeatQuietCapMs = dev ? DEV_BOOT_REPEAT_QUIET_CAP_MS : BOOT_REPEAT_QUIET_CAP_MS;
+	const ceilingMs = dev ? DEV_BOOT_WATCHDOG_CEILING_MS : BOOT_WATCHDOG_CEILING_MS;
 	return `(() => {
 	const key = ${JSON.stringify(ASSET_RELOAD_STORAGE_KEY)};
 	const readyFlag = ${JSON.stringify(ASSET_RECOVERY_READY_FLAG)};
@@ -127,7 +153,8 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		location.reload();
 	};
 	const showFailure = () => {
-		if (!document.body || document.getElementById(failureId)) return;
+		const parent = document.body || document.documentElement;
+		if (!parent || document.getElementById(failureId)) return;
 		const box = document.createElement("div");
 		box.id = failureId;
 		box.setAttribute("role", "alert");
@@ -140,21 +167,28 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		button.textContent = "Reload";
 		button.style.cssText = "margin-top:12px;border:0;border-radius:8px;background:#2563eb;color:#fff;padding:8px 16px;font:inherit;cursor:pointer";
 		box.append(text, button);
-		document.body.append(box);
+		parent.append(box);
+		button.focus();
 	};
-	const giveUp = () => {
-		if (!gaveUp) console.error("[kite] The app's files could not be loaded after " + delays.length + " reloads.");
+	const giveUp = (message = "[kite] The app's files could not be loaded after " + delays.length + " reloads.") => {
+		if (!gaveUp) console.error(message);
 		gaveUp = true;
 		if (stalled()) showFailure();
 	};
-	// Counts the reload, or gives up when the budget is spent; false when nothing could stop a loop.
-	const takeReload = () => {
+	// Counts the reload (\`stall\`: the watchdog's), or gives up when its budget is spent; false when nothing could
+	// stop a loop.
+	const takeReload = (stall) => {
 		const state = currentState();
+		const stalls = state.stalls || 0;
 		if (state.count >= delays.length) {
 			giveUp();
 			return false;
 		}
-		const next = { count: state.count + 1, since: state.since };
+		if (stall && stalls >= ${BOOT_STALL_RELOADS}) {
+			giveUp("[kite] The app did not start after " + stalls + " automatic reloads.");
+			return false;
+		}
+		const next = { count: state.count + 1, since: state.since, stalls: stalls + (stall ? 1 : 0) };
 		try {
 			sessionStorage.setItem(key, JSON.stringify(next));
 		} catch {
@@ -166,7 +200,7 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	const reloadNow = () => {
 		reloadPending = false;
 		if (window[readyFlag]) return notifyStale();
-		if (takeReload()) location.reload();
+		if (takeReload(false)) location.reload();
 	};
 	const recover = () => {
 		if (navigator.onLine === false) return;
@@ -200,24 +234,34 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		}
 	});
 
+	const quietCap = currentState().stalls > 0 ? ${repeatQuietCapMs} : ${quietCapMs};
 	let visibleMs = 0;
 	let lastProgressAt = Date.now();
 	let lastTickAt = Date.now();
 	let watchdog = null;
+	const progressed = () => {
+		lastProgressAt = Date.now();
+	};
 	// A resource entry appears when a request completes, so a file the document names without one is still loading
-	// (or hangs: the cap decides then).
+	// (or hangs: the quiet cap decides then).
 	const finished = new Set();
 	try {
 		new PerformanceObserver((list) => {
 			for (const entry of list.getEntries()) {
 				if (!isAsset(entry.name)) continue;
 				finished.add(entry.name);
-				lastProgressAt = Date.now();
+				progressed();
 			}
 		}).observe({ type: "resource", buffered: true });
 	} catch {}
+	// While the document streams in, every node the parser adds is progress; a stream that stops goes quiet.
+	try {
+		const parsing = new MutationObserver(progressed);
+		parsing.observe(document, { childList: true, subtree: true });
+		addEventListener("DOMContentLoaded", () => parsing.disconnect());
+	} catch {}
 	const loading = () => {
-		if (Date.now() - lastProgressAt < ${progressGraceMs}) return true;
+		if (document.readyState === "loading") return true;
 		for (const element of document.querySelectorAll("script[src], link[href]")) {
 			if (element.tagName === "LINK" && !/(^|\\s)(modulepreload|stylesheet)(\\s|$)/i.test(element.rel)) continue;
 			const url = element.src || element.href;
@@ -231,11 +275,13 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		lastTickAt = now;
 		if (!stalled()) return clearInterval(watchdog);
 		if (visibleMs < ${BOOT_WATCHDOG_MS}) return;
-		if (visibleMs < ${watchdogCapMs} && loading()) return;
+		const quietMs = now - lastProgressAt;
+		const waiting = quietMs < (loading() ? quietCap : ${progressGraceMs});
+		if (waiting && visibleMs < ${ceilingMs}) return;
 		// A failed chunk's reload is already on its way.
 		if (reloadPending) return;
 		clearInterval(watchdog);
-		if (navigator.onLine === false || !takeReload()) return showFailure();
+		if (navigator.onLine === false || !takeReload(true)) return showFailure();
 		location.reload();
 	};
 	watchdog = setInterval(tick, 500);

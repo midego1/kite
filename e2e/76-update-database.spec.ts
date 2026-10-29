@@ -28,7 +28,7 @@ test("the primary admin sees the pending migrations, the safety backup and a pro
 	await expect(panel).toBeVisible();
 	await expect(panel).toContainText("2 database updates are waiting");
 	await expect(panel.getByRole("list", { name: "Pending migrations" }).getByRole("listitem")).toHaveText(NAMES);
-	await expect(panel).toContainText("A safety backup of the database is saved automatically");
+	await expect(panel).toContainText("Kite saves a safety backup of the database when there is data to save");
 	await expect(panel.getByRole("link", { name: "Backups" })).toHaveAttribute("href", "/backups");
 
 	const button = panel.getByRole("button", { name: "Update database" });
@@ -56,7 +56,7 @@ test("another admin sees what is waiting and who can apply it, without a button"
 		},
 	});
 	expect(created.ok(), await created.text()).toBe(true);
-	await api.dispose();
+	const { account } = (await created.json()) as { account: { id: string } };
 
 	const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const page = await context.newPage();
@@ -81,5 +81,11 @@ test("another admin sees what is waiting and who can apply it, without a button"
 		await expect(panel.getByRole("list", { name: "Pending migrations" })).toHaveCount(0);
 	} finally {
 		await context.close();
+		// There is no account deletion; a disabled member is as good as gone for every other spec.
+		const retired = await api.patch(`/api/accounts/${account.id}`, {
+			data: { name: username, role: "user", disabled: true, canManageMailboxes: false, canManageDomains: false },
+		});
+		expect(retired.ok(), await retired.text()).toBe(true);
+		await api.dispose();
 	}
 });

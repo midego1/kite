@@ -46,7 +46,8 @@ function PendingMigrations({
 					<p className="mt-3 flex items-start gap-2">
 						<ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
 						<span>
-							A safety backup of the database is saved automatically before anything changes. It is listed on the{" "}
+							Before applying them, Kite saves a safety backup of the database when there is data to save. It is listed
+							on the{" "}
 							<Link href="/backups" className="underline underline-offset-2 hover:text-amber-950">
 								Backups
 							</Link>{" "}

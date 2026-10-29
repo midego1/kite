@@ -20,20 +20,30 @@ async function readPendingMigrations(db: D1Database): Promise<string[] | null> {
 	}
 }
 
+/** The `users` columns the applier query needs; `is_primary_admin` arrived with migration 0050. */
+const APPLIER_COLUMNS = ["name", "email", "role", "is_primary_admin", "disabled", "created_at"];
+let warnedApplierUnreadable = false;
+
 /**
- * The primary admin, the only account that can apply migrations. Plain SQL over
- * columns as old as the users table, so it answers while the schema is behind;
- * null when it cannot be read.
+ * The primary admin, the only account that can apply migrations, or null. The pending check promises to read
+ * only `sqlite_master` and `d1_migrations`, so this checks that `users` has every column it needs before reading
+ * it; on an older schema, or any failure, other admins are just not told who can apply (warned once per isolate).
  */
 async function readMigrationApplier(db: D1Database): Promise<MigrationApplier | null> {
 	try {
+		const { results } = await db.prepare("SELECT name FROM pragma_table_info('users')").all<{ name: string }>();
+		const columns = new Set(results.map((column) => column.name));
+		if (!APPLIER_COLUMNS.every((column) => columns.has(column))) return null;
 		return await db
 			.prepare(
 				"SELECT name, email FROM users WHERE role = 'admin' AND is_primary_admin = 1 AND disabled = 0 ORDER BY created_at LIMIT 1",
 			)
 			.first<MigrationApplier>();
 	} catch (error) {
-		console.error("Could not read the primary admin for the migration status", error);
+		if (!warnedApplierUnreadable) {
+			warnedApplierUnreadable = true;
+			console.warn("Could not read the primary admin for the migration status", error);
+		}
 		return null;
 	}
 }
@@ -43,7 +53,8 @@ async function readMigrationApplier(db: D1Database): Promise<MigrationApplier | 
  * every signed-in user sees. It only reads `sqlite_master` and `d1_migrations`,
  * so it answers while the schema is behind, and it never throws: an unreadable
  * database reads as "nothing pending" instead of breaking the page it is on.
- * `includeApplier` adds who can apply them, for admins who cannot.
+ * `includeApplier` adds who can apply them, for admins who cannot, read from
+ * `users` only once its columns are known to exist (`readMigrationApplier`).
  */
 export async function getPendingMigrationStatus(
 	db: D1Database,

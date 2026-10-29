@@ -596,3 +596,38 @@ test("the message and the count go when React takes over the startup screen, not
 		delete globalThis.sessionStorage;
 	}
 });
+
+test("a frozen or hidden page does not wake up to a quiet period and reload at once", () => {
+	const chunk = `${ORIGIN}/_next/static/chunks/auth-guard.js`;
+	const named = [Object.assign(new HTMLScriptElement(chunk), { tagName: "SCRIPT" })];
+	// A load still moving when the page is frozen (an app switch on iOS): no ticks run for a minute.
+	const frozen = loadPage({ declared: named });
+	frozen.advance(10_000);
+	frozen.finishAsset();
+	frozen.clock.now += 60_000;
+	frozen.advance(500);
+	assert.equal(frozen.reloads, 0);
+	// Back on screen, it still waits 20 quiet seconds of its own.
+	frozen.advance(18_500);
+	assert.equal(frozen.reloads, 0);
+	frozen.advance(1_000);
+	assert.equal(frozen.reloads, 1);
+
+	// Hidden ticks count neither as visible nor as quiet time.
+	const hidden = loadPage({ declared: named });
+	hidden.advance(10_000);
+	hidden.finishAsset();
+	hidden.document.visibilityState = "hidden";
+	hidden.advance(120_000);
+	hidden.document.visibilityState = "visible";
+	hidden.advance(19_500);
+	assert.equal(hidden.reloads, 0);
+	hidden.advance(500);
+	assert.equal(hidden.reloads, 1);
+
+	// A clock that jumps back cannot add or remove time.
+	const skewed = loadPage();
+	skewed.clock.now -= 30_000;
+	skewed.advance(7_500);
+	assert.equal(skewed.reloads, 0);
+});

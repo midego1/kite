@@ -1,5 +1,6 @@
 import { PageHeader, PageSection, SettingsCard, SettingsCardSection } from "@/components/ui/page";
 import { InboxThreadingSettings } from "@/components/settings/inbox-threading-settings";
+import { LayoutSyncSetting } from "@/components/settings/layout-sync-setting";
 import { RecipientAddressSettings } from "@/components/settings/recipient-address-settings";
 import { RemoteImageSettings } from "@/components/settings/remote-image-settings";
 import { SendingSettings } from "@/components/settings/sending-settings";
@@ -21,6 +22,9 @@ export default function SettingsInboxPage() {
 				<SettingsCard>
 					<SettingsCardSection title="Threading" description="Choose how emails are organized in your inbox.">
 						<InboxThreadingSettings />
+					</SettingsCardSection>
+					<SettingsCardSection title="Layout" description="Choose whether your layout follows your account.">
+						<LayoutSyncSetting />
 					</SettingsCardSection>
 					<SettingsCardSection
 						title="Addresses"

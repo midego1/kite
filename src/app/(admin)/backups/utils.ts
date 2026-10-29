@@ -85,6 +85,7 @@ export function isBackupBusy(backup: BackupItem): boolean {
 	return (
 		backup.status === "queued" ||
 		backup.status === "running" ||
+		(backup.objectsStatus === "pending" && backup.status === "completed") ||
 		backup.objectsStatus === "copying" ||
 		backup.objectsStatus === "restoring"
 	);

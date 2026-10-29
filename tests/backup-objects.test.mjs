@@ -24,7 +24,7 @@ await build({
 			export { withStorage } from "./src/lib/storage/router.ts";
 			export * from "./src/lib/backups/objects-utils.ts";
 			export { parseBackupSettingsInput } from "./src/app/api/backups/utils.ts";
-			export { estimateBackupObjects, processBackupObjectsMessage, retryBackupObjectsCopy, startBackupObjectsRestore } from "./src/lib/backups/objects.ts";
+			export { estimateBackupObjects, markBackupObjectsPending, processBackupObjectsMessage, retryBackupObjectsCopy, startBackupObjectsRestore } from "./src/lib/backups/objects.ts";
 			export { runDatabaseBackup, deleteExpiredBackups } from "./src/lib/backups/runner.ts";
 			export { createBackupRecord, createScheduledBackupIfDue, deleteBackup, failStaleBackups, getBackupSettings, listBackups, updateBackupSettings } from "./src/lib/backups/service.ts";
 		`,
@@ -281,6 +281,8 @@ async function fixture(t) {
 			objects[key] = "%PDF";
 		}
 	}
+	// A copy of message 1 in another mailbox shares its raw object: it is copied and counted once.
+	message.run("msg-zzz-copy", "inbound/1-raw.eml", null, null);
 	// Named by the database, gone from storage: counted as missing rather than failing the copy.
 	delete objects["inbound/7-raw.eml"];
 	for (const [key, value] of Object.entries(objects)) await files.put(key, value);
@@ -334,8 +336,12 @@ test("a full backup copies raw mail, attachments and bodies with a manifest, and
 	assert.equal(manifest.missing, 1);
 	assert.equal(manifest.failed, 0);
 	assert.equal(manifest.database, row.r2_key);
-	const part = JSON.parse(await (await bucket.get(`${prefix}manifest/000001.json`)).text());
-	assert.ok(part.missing.includes("inbound/7-raw.eml"));
+	const parts = [];
+	for (let index = 1; index <= manifest.parts; index++)
+		parts.push(JSON.parse(await (await bucket.get(`${prefix}manifest/${String(index).padStart(6, "0")}.json`)).text()));
+	assert.ok(parts.some((part) => part.missing.includes("inbound/7-raw.eml")));
+	const listed = parts.flatMap((part) => part.objects.map((object) => object.key));
+	assert.equal(new Set(listed).size, listed.length, "a shared raw object is listed once");
 	assert.equal(await (await bucket.get(`${prefix}files/attachments/msg-030-report..pdf`)).text(), "%PDF");
 
 	// Lose two objects and change one; the restore puts back what is missing and leaves the rest.
@@ -459,7 +465,7 @@ test("with the setting off a backup copies nothing; the estimate reads a sample"
 	assert.equal(backupRow(db, "bak_db").objects_status, null);
 	assert.deepEqual(queue, []);
 	const estimate = await lib.estimateBackupObjects(env);
-	assert.equal(estimate.objects, 120 + 4 + 3);
+	assert.equal(estimate.objects, 121 + 4 + 3);
 	assert.ok(estimate.bytes > 120 * 2048);
 	assert.equal(await lib.startBackupObjectsRestore(env, "bak_db"), "none");
 });
@@ -518,6 +524,43 @@ test("an interrupted copy is failed and resumable, an interrupted restore keeps 
 	assert.equal(await lib.deleteExpiredBackups(env), 1);
 	assert.equal(backupRow(db, "bak_copy"), undefined);
 	assert.deepEqual(queue, [{ kind: "backup.objects.delete", prefix: "backups/objects/2026-09-01-bak_copy/" }]);
+});
+
+test("a full backup whose runner died before the copy started gets its copy from the five-minute check", async (t) => {
+	const { db, env, queue, drain } = await fixture(t);
+	db.db.exec(`
+		INSERT INTO backups (id, status, \`trigger\`, created_at, started_at, completed_at, r2_key)
+		VALUES ('bak_died', 'completed', 'scheduled', unixepoch() - 600, unixepoch() - 600, unixepoch() - 590, 'backups/database/bak_died/x.json'),
+		       ('bak_fresh', 'completed', 'scheduled', unixepoch() - 30, unixepoch() - 30, unixepoch() - 20, 'backups/database/bak_fresh/x.json'),
+		       ('bak_dbonly', 'completed', 'scheduled', unixepoch() - 600, unixepoch() - 600, unixepoch() - 590, 'backups/database/bak_dbonly/x.json');
+	`);
+	await lib.markBackupObjectsPending(env, "bak_died");
+	await lib.markBackupObjectsPending(env, "bak_fresh");
+	assert.equal(await lib.failStaleBackups(env), 1);
+	assert.equal(backupRow(db, "bak_died").objects_status, "copying");
+	assert.match(backupRow(db, "bak_died").objects_prefix, /^backups\/objects\/\d{4}-\d{2}-\d{2}-bak_died\/$/);
+	assert.equal(backupRow(db, "bak_fresh").objects_status, "pending", "its runner may still be starting it");
+	assert.equal(backupRow(db, "bak_dbonly").objects_status, null, "a database-only backup is never copied later");
+	assert.deepEqual(queue, [{ kind: "backup.objects.copy", backupId: "bak_died", step: 1 }]);
+	await drain();
+	assert.equal(backupRow(db, "bak_died").objects_status, "completed");
+	// A second check finds nothing more to start.
+	assert.equal(await lib.failStaleBackups(env), 0);
+});
+
+test("Retry works for a copy that failed before it had a folder", async (t) => {
+	const { db, env, queue, drain } = await fixture(t);
+	db.db.exec(`
+		INSERT INTO backups (id, status, \`trigger\`, created_at, started_at, completed_at, objects_status)
+		VALUES ('bak_nostart', 'completed', 'manual', unixepoch(), unixepoch(), unixepoch(), 'failed');
+	`);
+	assert.equal(await lib.retryBackupObjectsCopy(env, "bak_nostart"), true);
+	const row = backupRow(db, "bak_nostart");
+	assert.equal(row.objects_status, "copying");
+	assert.match(row.objects_prefix, /^backups\/objects\/\d{4}-\d{2}-\d{2}-bak_nostart\/$/);
+	assert.deepEqual(queue, [{ kind: "backup.objects.copy", backupId: "bak_nostart", step: 1 }]);
+	await drain();
+	assert.equal(backupRow(db, "bak_nostart").objects_status, "completed");
 });
 
 /** A database migrated up to, but not including, 0081. */

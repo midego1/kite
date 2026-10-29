@@ -16,7 +16,7 @@ export type BackupSettings = {
 	updatedAt: string;
 };
 
-export type BackupObjectsStatus = "copying" | "completed" | "failed" | "restoring";
+export type BackupObjectsStatus = "pending" | "copying" | "completed" | "failed" | "restoring";
 
 export type BackupItem = {
 	id: string;

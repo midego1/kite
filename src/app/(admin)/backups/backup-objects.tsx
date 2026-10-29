@@ -75,6 +75,9 @@ export function BackupObjectsSetting({
 
 function copyText(backup: BackupItem): { text: string; failed: boolean } | null {
 	const files = `${(backup.objectsCount ?? 0).toLocaleString()} mail files, ${formatBackupSize(backup.objectsSize ?? 0)}`;
+	// Pending on a finished export: the copy starts within minutes (from the five-minute check if not at once).
+	if (backup.objectsStatus === "pending" && backup.status === "completed")
+		return { text: "Waiting to copy the mail files", failed: false };
 	if (backup.objectsStatus === "copying") return { text: `Copying mail files: ${files} so far`, failed: false };
 	if (backup.objectsStatus === "restoring") return { text: `Restoring mail files (${files})`, failed: false };
 	if (backup.objectsStatus === "failed")

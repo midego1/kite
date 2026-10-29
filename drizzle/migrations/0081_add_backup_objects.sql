@@ -1,6 +1,7 @@
 -- Full backups: Admin → Backups can also copy the objects mail lives on (raw MIME, attachments and offloaded HTML
 -- bodies) next to each database backup, under `backups/objects/<date>-<backup id>/` with a manifest. Off by default.
--- `objects_status` is null for a database-only backup, else `copying`, `completed`, `failed` or `restoring`;
+-- `objects_status` is null for a database-only backup, else `pending` (export running, copy not started yet),
+-- `copying`, `completed`, `failed` or `restoring`;
 -- `objects_updated_at` is the copy's heartbeat, so an interrupted copy is marked failed like an interrupted export.
 ALTER TABLE `backup_settings` ADD `include_objects` integer DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE `backups` ADD `objects_status` text;--> statement-breakpoint

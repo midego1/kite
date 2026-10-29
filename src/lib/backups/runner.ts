@@ -5,7 +5,13 @@ import { selectRows } from "@/lib/db/pending-columns";
 import { createLogger } from "@/lib/logger.mjs";
 import { writeBackupObject } from "./backup-writer";
 import { streamDatabaseRecords } from "./export";
-import { markBackupObjectsCopyFailed, queueBackupObjectsDelete, startBackupObjectsCopy } from "./objects";
+import {
+	clearBackupObjectsPending,
+	markBackupObjectsCopyFailed,
+	markBackupObjectsPending,
+	queueBackupObjectsDelete,
+	startBackupObjectsCopy,
+} from "./objects";
 import { createScheduledBackupIfDue, failBackupRecord, getBackupSettings, isObjectsRunActive } from "./service";
 import { BACKUP_PREFIX, createBackupFilename } from "./utils";
 
@@ -24,6 +30,7 @@ export async function runDatabaseBackup(env: CloudflareEnv, backupId: string): P
 
 		const settings = await getBackupSettings(env);
 		includeObjects = settings?.includeObjects === true;
+		if (includeObjects) await markBackupObjectsPending(env, backupId);
 		const chunks = await streamDatabaseRecords(env.DB, settings?.excludedTableGroups ?? []);
 		const filename = createBackupFilename(new Date());
 		const r2Key = `${BACKUP_PREFIX}/${backupId}/${filename}`;
@@ -46,6 +53,7 @@ export async function runDatabaseBackup(env: CloudflareEnv, backupId: string): P
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Backup failed";
 		await failBackupRecord(env, backupId, message);
+		if (includeObjects) await clearBackupObjectsPending(env, backupId).catch(() => undefined);
 		throw error;
 	}
 	await afterBackup(env, backupId, includeObjects, startedAt);
@@ -62,7 +70,7 @@ async function afterBackup(env: CloudflareEnv, backupId: string, includeObjects:
 			await startBackupObjectsCopy(env, backupId, startedAt);
 		} catch (error) {
 			log.warn("backup.objects_start_failed", { backupId, error });
-			await markBackupObjectsCopyFailed(env, backupId).catch(() => undefined);
+			await markBackupObjectsCopyFailed(env, backupId);
 		}
 	}
 	try {

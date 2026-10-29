@@ -54,8 +54,11 @@ async function beforeBodyColumn<T>(query: () => Promise<T>, whenPending: () => P
 }
 
 const SOURCE_QUERIES = {
-	messages: "SELECT id, raw_r2_key AS key FROM messages WHERE raw_r2_key IS NOT NULL AND id > ?",
+	messages:
+		"SELECT DISTINCT raw_r2_key AS id, raw_r2_key AS key FROM messages WHERE raw_r2_key IS NOT NULL AND raw_r2_key > ?",
 	attachments: "SELECT id, r2_key AS key FROM message_attachments WHERE id > ?",
+	// Several messages can share one raw object (copies in other mailboxes), so raw keys are walked by key: each is
+	// copied and counted once across all batches, and the index on raw_r2_key serves the order.
 	// A body's key is always its own (`htmlBodyObjectKey`), whatever the column holds.
 	bodies: `SELECT id, 'bodies/' || id || '.html' AS key FROM messages WHERE ${BODY_KEY_COLUMN} IS NOT NULL AND id > ?`,
 };
@@ -113,28 +116,80 @@ async function changed(env: CloudflareEnv, sql: string, ...params: (string | num
 
 const seconds = (ms: number) => Math.floor(ms / 1000);
 
-/** Starts copying the mail objects of a backup whose database export just finished. */
-export async function startBackupObjectsCopy(env: CloudflareEnv, backupId: string, startedAt: Date): Promise<void> {
+/**
+ * Marks a backup whose export is starting as one whose mail objects are to be copied, before the export runs. If
+ * the Worker dies between finishing the export and starting the copy, the row stays `pending` and
+ * `startPendingBackupObjectsCopies` starts the copy later, so a full backup never silently ends up database-only.
+ */
+export async function markBackupObjectsPending(env: CloudflareEnv, backupId: string): Promise<void> {
+	await changed(env, "UPDATE backups SET objects_status = 'pending' WHERE id = ? AND objects_status IS NULL", backupId);
+}
+
+/**
+ * Starts copying the mail objects of a backup whose database export finished. Only a `pending` row is taken, so the
+ * runner and the five-minute check never both start a copy; false when someone else already did.
+ */
+export async function startBackupObjectsCopy(env: CloudflareEnv, backupId: string, startedAt: Date): Promise<boolean> {
 	const run = initialCopyRun(1);
-	await getDb(env)
-		.update(backups)
-		.set({
-			objectsStatus: "copying",
-			objectsPrefix: backupObjectsPrefix(backupId, startedAt),
-			objectsCount: 0,
-			objectsSize: 0,
-			objectsMissing: 0,
-			objectsFailed: 0,
-			objectsCursor: JSON.stringify(run),
-			objectsUpdatedAt: new Date(),
-		})
-		.where(eq(backups.id, backupId));
-	await enqueue(env, { kind: "backup.objects.copy", backupId, step: run.step });
+	const taken = await changed(
+		env,
+		`UPDATE backups SET objects_status = 'copying', objects_prefix = ?, objects_count = 0, objects_size = 0,
+		 objects_missing = 0, objects_failed = 0, objects_cursor = ?, objects_updated_at = ?
+		 WHERE id = ? AND objects_status = 'pending'`,
+		backupObjectsPrefix(backupId, startedAt),
+		JSON.stringify(run),
+		seconds(Date.now()),
+		backupId,
+	);
+	if (taken) await enqueue(env, { kind: "backup.objects.copy", backupId, step: run.step });
+	return taken > 0;
 }
 
 /** After the export: a failure to start the copy fails only the copy, never the database backup. */
 export async function markBackupObjectsCopyFailed(env: CloudflareEnv, backupId: string): Promise<void> {
-	await changed(env, "UPDATE backups SET objects_status = 'failed' WHERE id = ?", backupId);
+	try {
+		await changed(
+			env,
+			"UPDATE backups SET objects_status = 'failed' WHERE id = ? AND objects_status IN ('pending', 'copying')",
+			backupId,
+		);
+	} catch (error) {
+		// The row stays pending (or copying until its heartbeat runs out); the five-minute check takes it from there.
+		log.error("backup.objects_mark_failed_failed", { backupId, error });
+	}
+}
+
+/** An export that failed has no mail files to copy. */
+export async function clearBackupObjectsPending(env: CloudflareEnv, backupId: string): Promise<void> {
+	await changed(env, "UPDATE backups SET objects_status = NULL WHERE id = ? AND objects_status = 'pending'", backupId);
+}
+
+/** How long a completed backup may stay `pending` before the check assumes its runner died and starts the copy. */
+const PENDING_GRACE_MS = 2 * 60 * 1000;
+
+/** Starts the copies of completed full backups whose runner stopped before starting them. */
+export async function startPendingBackupObjectsCopies(env: CloudflareEnv, now: Date): Promise<number> {
+	let pending: { id: string; startedAt: number | null; createdAt: number }[];
+	try {
+		pending =
+			(
+				await env.DB.prepare(
+					"SELECT id, started_at AS startedAt, created_at AS createdAt FROM backups WHERE status = 'completed' AND objects_status = 'pending' AND completed_at < ?",
+				)
+					.bind(seconds(now.getTime() - PENDING_GRACE_MS))
+					.all<{ id: string; startedAt: number | null; createdAt: number }>()
+			).results ?? [];
+	} catch (error) {
+		// Before migration 0081 no backup has objects.
+		if (missingColumnFromError(error)) return 0;
+		throw error;
+	}
+	let started = 0;
+	for (const backup of pending) {
+		const startedAt = new Date((backup.startedAt ?? backup.createdAt) * 1000);
+		if (await startBackupObjectsCopy(env, backup.id, startedAt)) started++;
+	}
+	return started;
 }
 
 async function loadBackup(env: CloudflareEnv, backupId: string) {
@@ -299,7 +354,10 @@ async function readJson(env: CloudflareEnv, key: string): Promise<unknown> {
  */
 export async function retryBackupObjectsCopy(env: CloudflareEnv, backupId: string): Promise<boolean> {
 	const backup = await loadBackup(env, backupId);
-	if (!backup?.objectsPrefix) return false;
+	if (!backup?.objectsStatus) return false;
+	// A copy that failed before it started has no folder yet: it gets the one it would have had.
+	const prefix =
+		backup.objectsPrefix ?? backupObjectsPrefix(backup.id, backup.startedAt ?? backup.createdAt ?? new Date());
 	const run = parseObjectsRun(backup.objectsCursor);
 	const step = (run?.step ?? 0) + 1;
 	let next: BackupObjectsCopyRun;
@@ -309,9 +367,10 @@ export async function retryBackupObjectsCopy(env: CloudflareEnv, backupId: strin
 	else return false;
 	const taken = await changed(
 		env,
-		`UPDATE backups SET objects_status = 'copying', objects_cursor = ?, objects_count = ?, objects_size = ?,
-		 objects_missing = ?, objects_failed = ?, objects_updated_at = ?, error = NULL
+		`UPDATE backups SET objects_status = 'copying', objects_prefix = ?, objects_cursor = ?, objects_count = ?,
+		 objects_size = ?, objects_missing = ?, objects_failed = ?, objects_updated_at = ?, error = NULL
 		 WHERE id = ? AND objects_status = ? AND coalesce(objects_cursor, '') = ?`,
+		prefix,
 		JSON.stringify(next),
 		next.count,
 		next.size,

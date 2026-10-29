@@ -4,7 +4,7 @@ import { backups, backupSettings } from "@/db/schema/backups";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { selectRow, selectRows } from "@/lib/db/pending-columns";
 import { newId } from "@/lib/ids";
-import { queueBackupObjectsDelete } from "./objects";
+import { queueBackupObjectsDelete, startPendingBackupObjectsCopies } from "./objects";
 import type { BackupObjectsRestoreResult } from "./objects-types";
 import { isStaleObjectsRun, parseObjectsRun, STALE_OBJECTS_ERROR } from "./objects-utils";
 import type { BackupScheduleType, BackupTableGroupId } from "./types";
@@ -29,7 +29,8 @@ export async function failBackupRecord(env: CloudflareEnv, id: string, error: st
 }
 
 /**
- * Marks backups that stopped making progress as failed. A killed invocation
+ * Marks backups that stopped making progress as failed, and starts the mail file copies of full backups whose
+ * runner stopped between the export and the copy. A killed invocation
  * never reaches the runner's own error handler, so without this a manual backup
  * would sit in "running" forever and refuse deletion. Runs from the five-minute
  * maintenance cron and from the list endpoint, so the admin page heals itself.
@@ -39,7 +40,7 @@ export async function failStaleBackups(env: CloudflareEnv, now = new Date()): Pr
 	const unfinished = await selectRows(db, backups, inArray(backups.status, ["queued", "running"]));
 	const stale = unfinished.filter((backup) => isStaleBackup(backup, now));
 	for (const backup of stale) await failBackupRecord(env, backup.id, STALE_BACKUP_ERROR);
-	return stale.length + (await failStaleObjectRuns(env, now));
+	return stale.length + (await failStaleObjectRuns(env, now)) + (await startPendingBackupObjectsCopies(env, now));
 }
 
 /**

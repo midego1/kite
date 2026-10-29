@@ -41,7 +41,7 @@ export const backups = sqliteTable(
 		startedAt: integer("started_at", { mode: "timestamp" }),
 		completedAt: integer("completed_at", { mode: "timestamp" }),
 		/** Migration 0081: the copy of the mail objects; null for a database-only backup. */
-		objectsStatus: text("objects_status", { enum: ["copying", "completed", "failed", "restoring"] }),
+		objectsStatus: text("objects_status", { enum: ["pending", "copying", "completed", "failed", "restoring"] }),
 		objectsPrefix: text("objects_prefix"),
 		objectsCount: integer("objects_count"),
 		objectsSize: integer("objects_size"),

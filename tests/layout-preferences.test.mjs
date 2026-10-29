@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
-import { join } from "node:path";
 import test, { after } from "node:test";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
 import { copyMigrationsBefore, migrationsDir } from "./support/module-database.mjs";
@@ -17,7 +16,6 @@ const {
 	parseLayoutPreferences,
 	parseStoredLayout,
 	layoutStorageEntries,
-	readLocalLayout,
 	withoutKeys,
 } = await bundleModules("kite-layout-preferences-", [
 	["SqliteDatabase", "server/runtime/sqlite-database.ts"],
@@ -25,7 +23,7 @@ const {
 	["createDb", "src/db/index.ts"],
 	["LayoutPreferencesPendingError, readLayoutPreferences, saveLayoutPreferences", "src/lib/preferences/layout.ts"],
 	["parseLayoutPatch, parseLayoutPreferences, parseStoredLayout", "src/lib/preferences/layout-utils.ts"],
-	["layoutStorageEntries, readLocalLayout, withoutKeys", "src/components/layout-preferences-utils.ts"],
+	["layoutStorageEntries, withoutKeys", "src/components/layout-preferences-utils.ts"],
 ]);
 
 const scratch = makeBundleDirectory("kite-layout-preferences-dirs-");
@@ -42,11 +40,6 @@ async function database(t, dir = migrationsDir) {
 			('member', 'member@example.com', 'hash', 'Member', 1);
 	`);
 	return { sqlite, db: createDb(sqlite) };
-}
-
-function memoryStorage(entries = {}) {
-	const map = new Map(Object.entries(entries));
-	return { getItem: (key) => (map.has(key) ? map.get(key) : null) };
 }
 
 test("parseLayoutPreferences keeps only valid choices and clamps sizes", () => {
@@ -97,22 +90,6 @@ test("a layout maps to the browser storage the views read", () => {
 		["kite-column-width:message-list-height:user-1", "300"],
 	]);
 	assert.deepEqual(layoutStorageEntries({}, "user-1"), []);
-});
-
-test("readLocalLayout offers only the choices this browser made, never the list's stored default size", () => {
-	assert.deepEqual(readLocalLayout(memoryStorage()), {});
-	assert.deepEqual(
-		readLocalLayout(
-			memoryStorage({
-				"kite-reading-pane": "below",
-				"kite-message-density": "nonsense",
-				"kite-conversation-view": "on",
-				"kite-column-width:message-list": "360",
-				"kite-column-width:message-list:user-1": "360",
-			}),
-		),
-		{ readingPane: "below", conversationView: true },
-	);
 });
 
 test("withoutKeys leaves out choices made here and not saved yet", () => {

@@ -1,11 +1,9 @@
 import type { LayoutPreferences, LayoutPreferencesResponse } from "@/lib/preferences/layout-types";
-import { parseLayoutPreferences } from "@/lib/preferences/layout-utils";
 import {
 	LAYOUT_PREFERENCES_APPLIED_EVENT,
 	LAYOUT_SYNC_CHANGE_EVENT,
 	LAYOUT_SYNC_DEVICE_KEY,
 	layoutStorageEntries,
-	readLocalLayout,
 	withoutKeys,
 } from "./layout-preferences-utils";
 import { CONVERSATION_VIEW_CHANGE_EVENT } from "./messages/conversation-view-utils";
@@ -105,8 +103,9 @@ function applyLayout(layout: LayoutPreferences, userId: string): void {
 }
 
 /**
- * Loads the account's layout into this browser. An account that has never saved one gets the choices this
- * browser made, so the first device's layout becomes the account's. Called again when the tab comes back.
+ * Loads the account's layout into this browser; called again when the tab comes back. Only choices made
+ * after this shipped are saved: what a browser stored before stays its own until the user changes it, so
+ * an account never takes on whichever browser happened to load first.
  */
 export async function startLayoutSync(userId: string): Promise<void> {
 	const current = { userId, ready: false };
@@ -123,12 +122,8 @@ export async function startLayoutSync(userId: string): Promise<void> {
 	}
 	if (session !== current || !data.ready) return;
 	current.ready = true;
-	if (data.layout === null) {
-		const storage = browserStorage();
-		unsaved = { ...(storage ? readLocalLayout(storage) : {}), ...unsaved };
-	} else {
-		applyLayout(withoutKeys(parseLayoutPreferences(data.layout), unsaved), userId);
-	}
+	// The server answers only validated choices (`parseStoredLayout`).
+	if (data.layout) applyLayout(withoutKeys(data.layout, unsaved), userId);
 	await flushLayoutSave();
 }
 

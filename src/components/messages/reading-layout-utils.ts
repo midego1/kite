@@ -9,6 +9,8 @@ export const READING_PANE_STORAGE_KEY = "kite-reading-pane";
 /** The on/off switch that preceded the reading pane setting; read once to migrate it. */
 export const LEGACY_TWO_COLUMN_STORAGE_KEY = "kite-two-column-reading";
 export const MESSAGE_DENSITY_STORAGE_KEY = "kite-message-density";
+/** Fired after the reading pane or density changes in this tab, so every open list follows it. */
+export const READING_LAYOUT_CHANGE_EVENT = "kite:reading-layout-changed";
 
 export const DEFAULT_READING_PANE_MODE: ReadingPaneMode = "right";
 export const DEFAULT_MESSAGE_DENSITY: MessageListDensity = "default";

@@ -203,6 +203,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/settings/assistant/writing-style/backfill`       | POST                   | [source](../src/app/api/settings/assistant/writing-style/backfill/route.ts)       |
 | `/api/settings/assistant/writing-style`                | DELETE, GET            | [source](../src/app/api/settings/assistant/writing-style/route.ts)                |
 | `/api/settings/forwarding`                             | PATCH                  | [source](../src/app/api/settings/forwarding/route.ts)                             |
+| `/api/settings/layout`                                 | GET, PATCH             | [source](../src/app/api/settings/layout/route.ts)                                 |
 | `/api/settings/mfa/confirm`                            | POST                   | [source](../src/app/api/settings/mfa/confirm/route.ts)                            |
 | `/api/settings/mfa/disable`                            | POST                   | [source](../src/app/api/settings/mfa/disable/route.ts)                            |
 | `/api/settings/mfa/enroll`                             | POST                   | [source](../src/app/api/settings/mfa/enroll/route.ts)                             |

@@ -1,48 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
-
-const STORAGE_KEY = "kite-conversation-view";
-const CHANGE_EVENT = "kite:conversation-view-changed";
+import { queueLayoutSave } from "@/components/layout-preferences-client";
+import { CONVERSATION_VIEW_CHANGE_EVENT, CONVERSATION_VIEW_STORAGE_KEY } from "./conversation-view-utils";
+import { readStoredSwitch, useStoredSwitch } from "./use-stored-switch";
 
 /** Whether lists are grouped by conversation, readable outside React (e.g. to preload a list). */
 export function readConversationViewEnabled(): boolean {
-	return readStored();
+	return readStoredSwitch(CONVERSATION_VIEW_STORAGE_KEY, true);
 }
 
-function readStored(): boolean {
-	try {
-		return localStorage.getItem(STORAGE_KEY) !== "off";
-	} catch {
-		return true;
-	}
-}
+const saveToAccount = (conversationView: boolean) => queueLayoutSave({ conversationView });
 
 /**
- * Whether lists collapse each conversation to one row. On by default and
- * remembered per browser; every open list follows a change immediately.
+ * Whether lists collapse each conversation to one row. On by default, remembered
+ * in the browser and saved to the account; every open list follows a change immediately.
  */
 export function useConversationView(): [boolean, (next: boolean) => void] {
-	const [enabled, setEnabled] = useState(true);
-
-	useEffect(() => {
-		const sync = () => setEnabled(readStored());
-		sync();
-		window.addEventListener(CHANGE_EVENT, sync);
-		window.addEventListener("storage", sync);
-		return () => {
-			window.removeEventListener(CHANGE_EVENT, sync);
-			window.removeEventListener("storage", sync);
-		};
-	}, []);
-
-	const update = useCallback((next: boolean) => {
-		try {
-			localStorage.setItem(STORAGE_KEY, next ? "on" : "off");
-		} catch {
-			// Private mode or blocked storage: the toggle still applies for this page.
-		}
-		setEnabled(next);
-		window.dispatchEvent(new Event(CHANGE_EVENT));
-	}, []);
-
-	return [enabled, update];
+	return useStoredSwitch(CONVERSATION_VIEW_STORAGE_KEY, CONVERSATION_VIEW_CHANGE_EVENT, true, saveToAccount);
 }

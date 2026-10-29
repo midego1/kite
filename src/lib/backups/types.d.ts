@@ -28,6 +28,7 @@ export type DatabaseBackupTable =
 	| "agent_providers"
 	| "module_settings"
 	| "user_module_access"
+	| "user_preferences"
 	| "booking_appointments"
 	| "finance_subscriptions"
 	| "finance_charges"

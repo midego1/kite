@@ -1,12 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import toast from "react-hot-toast";
 import { TOAST_ACTION_CLASS } from "@/components/ui/toast-styles";
-import { AUTH_ME_QUERY_KEY } from "@/lib/auth/me-client";
-import type { AuthMeResponse } from "@/lib/auth/me-client-types";
+import { useSessionUserId } from "@/hooks/use-session-user-id";
 import { STALE_ASSETS_EVENT, markAppReady, takeStaleAssetsSignal } from "./asset-recovery-utils";
 import {
 	UPDATE_CHECK_INTERVAL_MS,
@@ -16,40 +14,6 @@ import {
 	parseDeploymentVersion,
 	shouldCheckForUpdate,
 } from "./update-available-utils";
-
-/**
- * Reads the session that the guards and pages already load rather than requesting
- * it, so public pages (sign-in, booking, shared Drive links) make no extra call.
- * It watches the cache itself because sign-in and account switches clear it.
- * Cache events also fire while other components render (a `useQuery` observer
- * attaching), so the state update waits for a microtask instead of running
- * inside their render.
- */
-function readSessionUserId(client: QueryClient): string | null {
-	return client.getQueryData<AuthMeResponse | null>(AUTH_ME_QUERY_KEY)?.user?.id ?? null;
-}
-
-function useSessionUserId(): string | null {
-	const client = useQueryClient();
-	const [userId, setUserId] = useState(() => readSessionUserId(client));
-
-	useEffect(() => {
-		let scheduled = false;
-		const sync = () => {
-			scheduled = false;
-			setUserId(readSessionUserId(client));
-		};
-		const schedule = () => {
-			if (scheduled) return;
-			scheduled = true;
-			queueMicrotask(sync);
-		};
-		schedule();
-		return client.getQueryCache().subscribe(schedule);
-	}, [client]);
-
-	return userId;
-}
 
 function showUpdateAvailableToast() {
 	toast(

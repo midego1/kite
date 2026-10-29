@@ -16,6 +16,7 @@ import type { BackupSource, BackupTableRange, PreparedRestore, PreparedRestoreTa
 const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"users",
 	"user_module_access",
+	"user_preferences",
 	"domains",
 	"mailboxes",
 	"mailbox_access",

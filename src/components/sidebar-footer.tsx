@@ -73,7 +73,8 @@ export function SidebarFooter({ extra, notices }: { extra?: ReactNode; notices?:
 		setUpdatedLabel(formatBuildTime(BUILD_TIME));
 	}, []);
 
-	if (minimal) return null;
+	// The icon rail keeps only the items that have an icon form: today the assistant toggle.
+	if (minimal) return extra ? <div className="flex flex-col items-center gap-px pt-2">{extra}</div> : null;
 
 	return (
 		<div className="flex flex-col gap-px pt-2">

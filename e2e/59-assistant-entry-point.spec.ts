@@ -1,35 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { mockAssistant } from "./support/assistant-mock";
 import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 
-// Where people find Kite AI: a button in the list header and the reader toolbar, the "." key, and the
-// floating bubble, which only a floating composer hides.
+// Where people find Kite AI: the Assistant item in the sidebar, the button in the reader toolbar, the "." key,
+// the command palette and the floating bubble, which only a floating composer hides. The list header has none.
 
-async function mockAssistant(page: Page) {
-	await page.route("**/api/agent/availability", (route) => route.fulfill({ json: { enabled: true } }));
-	await page.route("**/api/agent/settings?*", (route) =>
-		route.fulfill({
-			json: {
-				settings: {
-					mailboxId: "demo",
-					enabled: true,
-					modelId: "demo",
-					autoDraftEnabled: false,
-					reviewerUserId: null,
-					instructions: "",
-					dailyLimit: 5,
-				},
-				models: ["demo"],
-				canManage: true,
-				providerConfigured: true,
-				autoReplyEnabled: false,
-				reviewers: [],
-			},
-		}),
-	);
-	await page.route("**/api/agent/jobs?*", (route) => route.fulfill({ json: { jobs: [] } }));
-	await page.route("**/api/agent/conversations?*", (route) => route.fulfill({ json: { conversations: [] } }));
-}
+/** The sidebar's Assistant item, which toggles the same panel as the reader toolbar button. */
+const sidebarAssistant = (page: Page) => page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
 
 async function openMessage(page: Page): Promise<string> {
 	const api = await apiContext(STORAGE_STATE);
@@ -76,9 +54,13 @@ test.describe("Kite AI entry points", () => {
 		await expect(reader).toHaveAttribute("aria-expanded", "false");
 	});
 
-	test("the list header button opens and closes the assistant", async ({ page }) => {
+	test("the sidebar item opens and closes the assistant, and the list header has no button for it", async ({
+		page,
+	}) => {
 		await page.goto("/inbox");
-		const list = page.getByTestId("assistant-button-list");
+		await expect(page.getByTestId("assistant-button-list")).toHaveCount(0);
+		await expect(page.getByRole("button", { name: /Kite AI$/ }).filter({ hasText: "Kite AI" })).toHaveCount(0);
+		const list = sidebarAssistant(page);
 		const panel = page.getByRole("region", { name: "Email assistant" });
 		await expect(list).toBeVisible();
 		if ((await list.getAttribute("aria-expanded")) === "true") await list.click();
@@ -95,7 +77,7 @@ test.describe("Kite AI entry points", () => {
 	test("the . key toggles Kite AI, and the palette and the cheat sheet list it", async ({ page }) => {
 		await page.goto("/inbox");
 		const panel = page.getByRole("region", { name: "Email assistant" });
-		const toggle = page.getByTestId("assistant-button-list");
+		const toggle = sidebarAssistant(page);
 		await expect(toggle).toBeVisible();
 		if ((await toggle.getAttribute("aria-expanded")) === "true") await toggle.click();
 		await expect(panel).toBeHidden();
@@ -127,7 +109,7 @@ test.describe("Kite AI entry points", () => {
 		await page.addInitScript(() => localStorage.setItem("kite-assistant-enabled", "false"));
 		await openMessage(page);
 		await expect(page.getByTestId("assistant-button-reader")).toHaveCount(0);
-		await expect(page.getByTestId("assistant-button-list")).toHaveCount(0);
+		await expect(sidebarAssistant(page)).toHaveCount(0);
 		await page.locator("body").press(".");
 		await expect(page.getByRole("region", { name: "Email assistant" })).toBeHidden();
 	});
@@ -163,7 +145,7 @@ test.describe("Kite AI entry points", () => {
 	test("the docked assistant is a panel level with the list and the reader", async ({ page }) => {
 		// With nothing open the list and the reader both show beside the assistant.
 		await page.goto("/inbox");
-		const toggle = page.getByTestId("assistant-button-list");
+		const toggle = sidebarAssistant(page);
 		await expect(toggle).toBeVisible();
 		if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
 		const panel = page.getByRole("region", { name: "Email assistant" });
@@ -188,8 +170,8 @@ test.describe("Kite AI entry points", () => {
 
 		// Its header is as tall as the list's, so the bottom borders line up.
 		const headerBox = await panel.locator("header").boundingBox();
-		const listHeaderBox = await page.getByTestId("assistant-button-list").evaluate((button) => {
-			const row = button.closest("div.border-b");
+		const listHeaderBox = await page.getByRole("link", { name: "List settings" }).evaluate((link) => {
+			const row = link.closest("div.border-b");
 			const rect = row?.getBoundingClientRect();
 			return rect ? { y: rect.y, height: rect.height } : null;
 		});

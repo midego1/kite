@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.29.4] - 2026-10-29
+
+### Changed
+
+- The title of a message list ("Inbox", "Archived", a folder name) is no longer cut off when the list is narrow. The list header drops the Kite AI button and the sidebar toggle, and below 20 rem of list width "Select" shows only its icon. Open Kite AI from the **Assistant** item in the sidebar, the button in the reader toolbar, the `.` key or the command palette; collapse and expand the sidebar with the button in its header, which stays in the icon rail, and the collapsed rail shows the assistant as an icon.
+
+### Fixed
+
+- A send that was moved to Drafts after it stalled (**Move to Drafts** on a message stuck in "Sending…") can no longer be turned back into a sent or failed message by the worker that was still delivering it. The message stays the draft it is, the job keeps the state recovery gave it, no "message failed" webhook is sent for it, and a worker that finds its send already taken back does not deliver at all. A delivery that still went out is recorded in the audit log.
+
 ## [2026.10.29.3] - 2026-10-29
 
 ### Fixed

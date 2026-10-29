@@ -79,7 +79,7 @@ const DEV_ASSET_PREFIXES = ["/_next/static/", "/@id/", "/@fs/", "/@vite/", "/nod
  * - nothing is loading any more (every script, module preload and stylesheet of ours the document names has a
  *   resource entry, the document has been parsed) and the last progress is BOOT_PROGRESS_GRACE_MS old, or
  * - something is still loading but nothing progressed for BOOT_QUIET_CAP_MS (BOOT_REPEAT_QUIET_CAP_MS after a
- *   watchdog reload within the window). Progress is one of our files
+ *   watchdog reload within the window), counted in visible time like the rest. Progress is one of our files
  *   finishing (a resource entry appears only when a request completes, so a hung one goes quiet) or the parser
  *   adding nodes while the document streams in, so a slow load that keeps moving is never cut short, or
  * - BOOT_WATCHDOG_CEILING_MS of visible time have passed regardless.
@@ -235,12 +235,14 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	});
 
 	const quietCap = currentState().stalls > 0 ? ${repeatQuietCapMs} : ${quietCapMs};
+	// Both count visible time tick by tick, at most a second per tick: a frozen or hidden page (an app switch on
+	// iOS, a background tab Chrome or Android froze) must not wake up to 20 seconds of "quiet" and reload at once.
 	let visibleMs = 0;
-	let lastProgressAt = Date.now();
+	let quietMs = 0;
 	let lastTickAt = Date.now();
 	let watchdog = null;
 	const progressed = () => {
-		lastProgressAt = Date.now();
+		quietMs = 0;
 	};
 	// A resource entry appears when a request completes, so a file the document names without one is still loading
 	// (or hangs: the quiet cap decides then).
@@ -271,11 +273,14 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	};
 	const tick = () => {
 		const now = Date.now();
-		if (document.visibilityState !== "hidden") visibleMs += Math.min(now - lastTickAt, 1000);
+		if (document.visibilityState !== "hidden") {
+			const elapsed = Math.min(Math.max(now - lastTickAt, 0), 1000);
+			visibleMs += elapsed;
+			quietMs += elapsed;
+		}
 		lastTickAt = now;
 		if (!stalled()) return clearInterval(watchdog);
 		if (visibleMs < ${BOOT_WATCHDOG_MS}) return;
-		const quietMs = now - lastProgressAt;
 		const waiting = quietMs < (loading() ? quietCap : ${progressGraceMs});
 		if (waiting && visibleMs < ${ceilingMs}) return;
 		// A failed chunk's reload is already on its way.

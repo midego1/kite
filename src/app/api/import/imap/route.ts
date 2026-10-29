@@ -13,6 +13,7 @@ import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { ImapImportRequest } from "./types";
 import { parseImapImportRequest } from "./utils";
 import { withModule } from "@/lib/modules/route-guard";
+import { resolveImportSource } from "../connected-account";
 
 export const POST = withModule("import", async (request, { checkUser }) => {
 	const env = getEnv();
@@ -22,8 +23,13 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	if (denied) return denied;
 	let input: ReturnType<typeof parseImapImportRequest>;
 	try {
-		const body = await readJsonBody<ImapImportRequest>(request, 16 * 1024);
-		input = parseImapImportRequest(body);
+		// With `accountId`, the viewer's connected account signs in instead of a typed password.
+		const resolved = await resolveImportSource(
+			user,
+			await readJsonBody<ImapImportRequest & { accountId?: unknown }>(request, 16 * 1024),
+		);
+		if ("error" in resolved) return resolved.error;
+		input = parseImapImportRequest(resolved.body);
 	} catch (error) {
 		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
 		return NextResponse.json(

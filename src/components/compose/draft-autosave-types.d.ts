@@ -22,3 +22,16 @@ export type DraftSaveQueue<T> = {
 	/** Abandons pending work and makes `draftId` the draft later saves update. */
 	reset(draftId: string | null): void;
 };
+
+export type RequestedDraftKey<T> = {
+	/** The draft and content the draft will hold once every save asked for has finished; null when unknown. */
+	readonly key: string | null;
+	/** Whether a snapshot with this key differs from that. */
+	needsSave(candidate: string): boolean;
+	/** Records that `snapshot` was queued to be saved, whose result is `key` (the id the draft will have). */
+	request(snapshot: T, key: string): void;
+	/** Records the answer for `snapshot` (null: it failed or was abandoned); ignored once a newer one was requested. */
+	settle(snapshot: T, storedKey: string | null): void;
+	/** Forgets what the draft holds, after a waiting snapshot was dropped. */
+	forget(): void;
+};

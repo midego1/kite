@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.29.7] - 2026-10-29
+
+### Fixed
+
+- #130 A draft no longer keeps text you had already undone. If you changed the message and changed it back while the first change was still being saved, the draft ended up with the change; now the change back is saved too, also when you close the composer right away.
+
 ## [2026.10.29.6] - 2026-10-29
 
 ### Added

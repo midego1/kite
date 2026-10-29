@@ -31,6 +31,7 @@ import { runTrashRetention } from "./src/lib/email/trash-retention";
 import { runDatabasePruning } from "./src/lib/maintenance/pruning";
 import { runOperationalAlerts } from "./src/lib/alerts/run";
 import { runTelemetryHeartbeat } from "./src/lib/telemetry/heartbeat";
+import { eraseIdleExternalCredentials } from "./src/lib/external-accounts/retention";
 import { dispatchModuleQueueMessage, runModuleCronTasks } from "./src/lib/modules/background";
 import { maybeAutoApplyPendingMigrations } from "./src/lib/migrations/auto-apply";
 import { queueRetryDelaySeconds } from "./src/lib/migrations/pending";
@@ -247,6 +248,12 @@ export default {
 			// Usage statistics: does nothing unless the owner kept them on (at setup, on the notice or after its start
 			// day). Never throws.
 			ctx.waitUntil(runTelemetryHeartbeat(env, now));
+			// Connected accounts: passwords Kite may no longer use for 30 days are erased.
+			ctx.waitUntil(
+				eraseIdleExternalCredentials(env, now).catch((error) =>
+					logger.error("external.credentials_erase_failed", { error }),
+				),
+			);
 		}
 		// Only the 5-minute trigger: both crons fire at 02:00 and a backup may still be running then.
 		if (controller.cron === "*/5 * * * *") {

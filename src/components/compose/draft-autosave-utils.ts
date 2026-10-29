@@ -1,4 +1,4 @@
-import type { DraftSave, DraftSaveQueue } from "./draft-autosave-types";
+import type { DraftSave, DraftSaveQueue, RequestedDraftKey } from "./draft-autosave-types";
 
 /**
  * Runs draft autosaves one at a time. The first save of a new draft is a POST
@@ -9,6 +9,8 @@ export function createDraftSaveQueue<T>(options: {
 	save: DraftSave<T>;
 	discard: (draftId: string) => void;
 	onDraftId?: (draftId: string) => void;
+	/** Called when a waiting snapshot is dropped without being saved. */
+	onDropped?: () => void;
 }): DraftSaveQueue<T> {
 	let draftId: string | null = null;
 	let pending: { snapshot: T } | null = null;
@@ -44,6 +46,12 @@ export function createDraftSaveQueue<T>(options: {
 		}
 	}
 
+	function drop() {
+		if (!pending) return;
+		pending = null;
+		options.onDropped?.();
+	}
+
 	function idle() {
 		return running ?? Promise.resolve();
 	}
@@ -59,18 +67,52 @@ export function createDraftSaveQueue<T>(options: {
 		},
 		idle,
 		skip() {
-			pending = null;
+			drop();
 		},
 		async cancel() {
-			pending = null;
+			drop();
 			generation += 1;
 			await idle();
 			return draftId;
 		},
 		reset(next) {
-			pending = null;
+			drop();
 			generation += 1;
 			draftId = next;
+		},
+	};
+}
+
+/**
+ * Remembers what the draft will hold once every save asked for so far has
+ * finished, so a snapshot that would write the same is not saved again.
+ * It follows the newest request, not the newest answer: a save in flight, or
+ * waiting behind it, already decides what the server keeps, so a revert to
+ * older content made meanwhile differs from it and is saved like any edit.
+ * An answer only counts while nothing newer was asked for, and a failed or
+ * abandoned save leaves the draft's content unknown (null), so equal content
+ * is saved again.
+ */
+export function createRequestedDraftKey<T>(): RequestedDraftKey<T> {
+	let key: string | null = null;
+	let latest: T | null = null;
+	return {
+		get key() {
+			return key;
+		},
+		needsSave(candidate) {
+			return candidate !== key;
+		},
+		request(snapshot, requestedKey) {
+			latest = snapshot;
+			key = requestedKey;
+		},
+		settle(snapshot, storedKey) {
+			if (latest === snapshot) key = storedKey;
+		},
+		forget() {
+			latest = null;
+			key = null;
 		},
 	};
 }

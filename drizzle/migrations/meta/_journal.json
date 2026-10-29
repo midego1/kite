@@ -567,9 +567,9 @@
       "version": "6",
       "when": 1788852000028,
       "tag": "0077_add_agent_providers",
-        "breakpoints": true
-      },
-      {
+      "breakpoints": true
+    },
+    {
       "idx": 81,
       "version": "6",
       "when": 1788852030028,
@@ -579,7 +579,14 @@
     {
       "idx": 82,
       "version": "6",
-      "when": 1793318400000,
+      "when": 1788852060028,
+      "tag": "0079_add_external_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "6",
+      "when": 1788852120028,
       "tag": "0081_add_backup_objects",
       "breakpoints": true
     }

@@ -9,6 +9,7 @@ import {
 	parseListLine,
 	parseListMailboxName,
 	parseStatusLine,
+	parseUidNext,
 	parseUidValidity,
 	type ImapListedMailbox,
 	parseSearchUids,
@@ -21,8 +22,8 @@ import type { ImapFetchedMessage, ImapLogin } from "./types";
 export type ImapSession = {
 	/** The capabilities the server announced after sign-in (upper-case), such as `X-GM-EXT-1` on Gmail. */
 	readonly capabilities: readonly string[];
-	/** Opens `folder` read-only; `uidValidity` is null when the server did not say. */
-	examine(folder: string): Promise<{ uidValidity: number | null }>;
+	/** Opens `folder` read-only; `uidValidity` and `uidNext` are null when the server did not say. */
+	examine(folder: string): Promise<{ uidValidity: number | null; uidNext: number | null }>;
 	searchUids(): Promise<string[]>;
 	fetchMessages(uids: string[], options?: { gmailLabels?: boolean }): Promise<Map<string, ImapFetchedMessage>>;
 	listMailboxNames(): Promise<string[]>;
@@ -63,7 +64,8 @@ export async function openImapSession(
 			return imap.capabilities;
 		},
 		async examine(folder) {
-			return { uidValidity: parseUidValidity(await imap.command(`EXAMINE ${quoteImapString(folder)}`)) };
+			const lines = await imap.command(`EXAMINE ${quoteImapString(folder)}`);
+			return { uidValidity: parseUidValidity(lines), uidNext: parseUidNext(lines) };
 		},
 		async searchUids() {
 			const lines = await imap.command("UID SEARCH ALL");

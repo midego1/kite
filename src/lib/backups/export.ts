@@ -3,6 +3,7 @@ import { clearStorageConfigCache } from "@/lib/storage/config";
 import type { BackupTableGroupId, DatabaseBackupDocument, DatabaseBackupTable, DatabaseRecord } from "./types";
 import { dropRetiredBackupTables, mergeLegacyMessageBodies, RETIRED_BACKUP_TABLES } from "./utils";
 import { BACKUP_TABLE_GROUPS, getSelectedBackupTables, isPartialBackupDocument } from "./table-groups";
+import { redactBackupRow, restoredBackupRow } from "./external-accounts-utils";
 import {
 	createRestorePlan,
 	planRestoreStatements,
@@ -17,6 +18,10 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"domains",
 	"mailboxes",
 	"mailbox_access",
+	// Connected accounts (migration 0079), before `messages` and after `mailboxes` in foreign-key order. Exported
+	// without their passwords (`redactBackupRow`) and restored waiting to be reconnected.
+	"external_accounts",
+	"external_account_folders",
 	"contacts",
 	"folders",
 	"api_keys",
@@ -225,7 +230,7 @@ async function* backupDocumentChunks(
 		if (existingTables.has(table)) {
 			let first = true;
 			for await (const row of readTableRows(db, table)) {
-				yield `${first ? "" : ","}${JSON.stringify(row)}`;
+				yield `${first ? "" : ","}${JSON.stringify(redactBackupRow(table, row))}`;
 				first = false;
 			}
 		}
@@ -325,7 +330,7 @@ export async function prepareDatabaseRestore(
 		const columns = new Set(
 			(await db.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>()).results.map((column) => column.name),
 		);
-		tables.push({ name: table, rows, columns });
+		tables.push({ name: table, rows: rows.map((row) => restoredBackupRow(table, row)), columns });
 	}
 	const { deletes, inserts } = planRestoreStatements(tables);
 	return createRestorePlan(

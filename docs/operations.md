@@ -348,6 +348,15 @@ IMAP imports (`src/lib/import/`) run as `import.imap` messages on the agent queu
 - **Cancel** closes the folders of an account job that were not finished (status `skipped`), and a run that was in flight when Cancel landed, or that fails, closes the ones it left open and stops instead of opening the next folder.
 - **Stalled jobs.** The five-minute cron re-queues active jobs whose lease has expired and that have not been updated for two minutes, and cancels jobs paused for more than seven days (erasing their saved password).
 
+### Connected accounts
+
+Connected accounts (`src/lib/external-accounts/`, migration 0079, user guide in [Connected accounts](external-accounts.md)) store sealed IMAP passwords. Connecting needs `APP_ENCRYPTION_KEY`; changing that key makes every saved password unreadable, and the accounts then show **Sign-in failed** until their owners reconnect them.
+
+- **Install switch and permission.** Admin → General → **Allow connected accounts** (`app_settings.external_accounts_enabled`) and `users.can_connect_accounts`. Turning either off sets `external_accounts.suspended_at` on every affected account that still holds a password, whatever its status; edits never move it. The daily 02:00 UTC run (`eraseIdleExternalCredentials`, on both runtimes) erases each password 30 days after its `suspended_at`, marks the account `disabled` and writes an `external_account.credentials_erased` audit row; a failure is logged as `external.credentials_erase_failed`. Turning access back on within the 30 days clears `suspended_at`.
+- **Connection attempts** are limited to 10 per user in 10 minutes. Each attempt first writes an `external_account.connection_tested` audit row and then counts the rows in the window, including its own, so parallel requests cannot slip past the limit (no rate-limit binding needed); past it they answer 429. Provider detection (`GET /api/external-accounts/detect`) uses the `LOGIN_RATE_LIMIT` binding per user.
+- **Imports from an account** keep no password: each run calls `moduleHost.accounts.sourceLogin` with its job id, core reads the job's owner and account itself, and a removed account fails the job with "The account was removed".
+- **Backups** export `external_accounts` with an empty `secret`, and a restore sets every account to `auth_failed` with "Reconnect after restore".
+
 ## Recovery and data handling
 
 Start with [incident response](runbooks/incident.md),

@@ -12,11 +12,13 @@ import {
 	planSmtpStartTls,
 	SMTP_CLIENT_NAME,
 	SMTP_PORTS,
-	smtpDataPayload,
 	smtpPlainToken,
 	transportAddress,
 } from "./protocol-utils";
 import type { SmtpEnvelope, SmtpExtensions, SmtpLogin } from "./types";
+
+/** Called between the last RCPT TO and DATA; throwing stops the send there (after RSET), before any message byte. */
+export type SmtpSendHooks = { beforeData?: () => Promise<void> };
 
 export type SmtpSession = {
 	/** What the server announced after TLS and before sign-in. */
@@ -28,11 +30,14 @@ export type SmtpSession = {
 	 * step (`retryable` for 4xx), and with `SmtpDeliveryUnknownError` (never retryable) when the connection fails once the
 	 * message is on its way: the caller must not send it again automatically.
 	 */
-	send(envelope: SmtpEnvelope, raw: Uint8Array): Promise<{ response: string }>;
+	send(envelope: SmtpEnvelope, raw: Uint8Array, hooks?: SmtpSendHooks): Promise<{ response: string }>;
 	close(): Promise<void>;
 };
 
 type SmtpEnv = Parameters<typeof openMailSocket>[0];
+
+/** How long `close()` waits for the answer to QUIT. */
+const QUIT_TIMEOUT_MS = 5_000;
 
 /**
  * Connects to a submission server, makes sure the connection is encrypted (implicit TLS on 465, or STARTTLS on 587
@@ -57,9 +62,10 @@ export async function openSmtpSession(
 	}
 	return {
 		extensions,
-		send: (envelope, raw) => sendMessage(smtp, extensions, envelope, raw),
+		send: (envelope, raw, hooks) => sendMessage(smtp, extensions, envelope, raw, hooks),
 		async close() {
-			await smtp.command("QUIT", "data", [221]).catch(() => undefined);
+			// A polite goodbye only: the message is already queued, so a server slow to answer QUIT is not waited for.
+			await smtp.command("QUIT", "data", [221], { timeoutMs: QUIT_TIMEOUT_MS }).catch(() => undefined);
 			await smtp.close();
 		},
 	};
@@ -72,10 +78,11 @@ export async function submitMessage(
 	envelope: SmtpEnvelope,
 	raw: Uint8Array,
 	options: SmtpConnectionOptions = {},
+	hooks: SmtpSendHooks = {},
 ): Promise<{ response: string }> {
 	const session = await openSmtpSession(env, login, options);
 	try {
-		return await session.send(envelope, raw);
+		return await session.send(envelope, raw, hooks);
 	} finally {
 		await session.close();
 	}
@@ -109,6 +116,7 @@ async function sendMessage(
 	extensions: SmtpExtensions,
 	envelope: SmtpEnvelope,
 	raw: Uint8Array,
+	hooks: SmtpSendHooks = {},
 ): Promise<{ response: string }> {
 	const from = transportAddress(envelope.from);
 	const seen = new Set<string>();
@@ -118,19 +126,24 @@ async function sendMessage(
 	if (!recipients.length) throw new Error("The message has no recipients");
 	if (extensions.size !== null && raw.byteLength > extensions.size)
 		throw new SmtpMessageTooLargeError(raw.byteLength, extensions.size);
+	const eightBit = hasEightBitBytes(raw);
+	// Kite's own messages are 7-bit (`buildMimeMessage`); 8-bit bytes go only to a server that announced 8BITMIME.
+	if (eightBit && !extensions.keywords.includes("8BITMIME"))
+		throw new Error("The message has 8-bit content and the SMTP server does not accept it (no 8BITMIME)");
 	const params = [
 		...(extensions.keywords.includes("SIZE") ? [`SIZE=${raw.byteLength}`] : []),
-		...(extensions.keywords.includes("8BITMIME") && hasEightBitBytes(raw) ? ["BODY=8BITMIME"] : []),
+		...(eightBit ? ["BODY=8BITMIME"] : []),
 	];
 	try {
 		await smtp.command([`MAIL FROM:<${from}>`, ...params].join(" "), "mail", [250]);
 		for (const recipient of recipients) await smtp.command(`RCPT TO:<${recipient}>`, "rcpt", [250, 251], { recipient });
+		await hooks.beforeData?.();
 		await smtp.command("DATA", "data", [354]);
 	} catch (error) {
 		// Leave the session clean for another message; a failure here only matters to this one.
 		await smtp.command("RSET", "mail", [250]).catch(() => undefined);
 		throw error;
 	}
-	const reply = await smtp.sendData(smtpDataPayload(raw));
+	const reply = await smtp.sendData(raw);
 	return { response: reply.lines.join(" ").trim() };
 }

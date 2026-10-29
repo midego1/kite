@@ -23,6 +23,7 @@ interface CloudflareEnv {
 		| import("./src/lib/backups/queue-types").BackupRunMessage
 		| import("./src/lib/backups/restore-job-types").RestoreJobMessage
 		| import("./src/lib/storage/migration-utils").StorageMigrateMessage
+		| import("./src/lib/external-accounts/submit-utils").AppendSentMessage
 	>;
 	ASSETS: Fetcher;
 	IMAGES: ImagesBinding;

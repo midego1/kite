@@ -4,7 +4,7 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
 /**
  * A small in-process IMAP4rev1 server for tests: in-memory folders with UIDs, `CAPABILITY`, `STARTTLS`, `LOGIN`,
  * `AUTHENTICATE PLAIN` (with or without `SASL-IR`), `LIST`, `SELECT`/`EXAMINE`, `UID SEARCH ALL`,
- * `UID FETCH … BODY.PEEK[]`, `NOOP` and `LOGOUT`. It is hand-written so tests can inject failures: no STARTTLS,
+ * `UID FETCH … BODY.PEEK[]`, `APPEND` (recorded in `appends`), `NOOP` and `LOGOUT`. It is hand-written so tests can inject failures: no STARTTLS,
  * a STARTTLS response with injected bytes behind it, `LOGINDISABLED`, failed sign-ins. Every command is recorded with
  * whether the connection was encrypted at the time. Never point it at, or copy it from, a real provider.
  *
@@ -22,6 +22,7 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  * - `fetchGate`: a promise, or a function from the FETCH's number (0, 1, …) to one; each UID FETCH is answered only once
  *   its promise resolves (a FETCH that outlasts a lease).
  * - `examineRefusals`: `{ [folder]: "NO [THROTTLED] …" }`, the tagged answer to SELECT or EXAMINE of that folder.
+ * - `appendRefusal`: the tagged answer to every APPEND (`"NO [OVERQUOTA] …"`); APPEND to a missing folder is refused.
  * - `gmail`: advertise X-GM-EXT-1 and report each message's `labels` in FETCH when asked for X-GM-LABELS.
  * - `users`: `{ [username]: password }`. `LOGIN` takes quoted strings or synchronizing literals.
  * - Misbehaviour: `hugeLiteral` (a FETCH announcing a 4 GB literal), `endlessLine` (a greeting that never ends),
@@ -37,6 +38,8 @@ export async function startFakeImap(options = {}) {
 	const users = options.users ?? { "user@example.test": "app-password" };
 	const folders = new Map();
 	const commands = [];
+	/** Every message added with APPEND: `{ folder, flags, raw }`. */
+	const appends = [];
 	const connections = new Set();
 	let nextLoginFails = false;
 
@@ -206,6 +209,17 @@ export async function startFakeImap(options = {}) {
 				return send("+ \r\n");
 			}
 			if (!state.authenticated) return send(`${tag} BAD sign in first\r\n`);
+			if (name === "APPEND") {
+				const [folder] = parseQuoted(args);
+				const values = parseQuoted(args.slice(args.indexOf(")") + 1));
+				const flags = (/\(([^)]*)\)/.exec(args)?.[1] ?? "").split(" ").filter(Boolean);
+				const refusal = options.appendRefusal ?? (folders.has(folder) ? null : "NO [TRYCREATE] No such folder");
+				if (refusal) return send(`${tag} ${refusal}\r\n`);
+				const raw = values[values.length - 1] ?? "";
+				appends.push({ folder, flags, raw });
+				addMessage(folder, { raw, flags });
+				return send(`${tag} OK APPEND completed\r\n`);
+			}
 			if (name === "LIST") return send(`${[...folders.keys()].map(listLine).join("")}${tag} OK done\r\n`);
 			if (name === "STATUS") {
 				const [folder] = parseQuoted(args);
@@ -231,8 +245,15 @@ export async function startFakeImap(options = {}) {
 			const entry = state.selected ? folders.get(state.selected) : null;
 			if (name === "UID" && entry) {
 				const [sub, set] = args.split(" ");
-				if (sub.toUpperCase() === "SEARCH")
-					return send(`* SEARCH ${entry.messages.map((message) => message.uid).join(" ")}\r\n${tag} OK done\r\n`);
+				if (sub.toUpperCase() === "SEARCH") {
+					// `UID SEARCH ALL`, or `UID SEARCH HEADER Message-ID "<…>"` matched against the raw header.
+					const header = /HEADER Message-ID "((?:[^"\\]|\\.)*)"/i.exec(args)?.[1];
+					const found = entry.messages.filter(
+						(message) =>
+							!header || message.raw.toString("latin1").toLowerCase().includes(`message-id: ${header.toLowerCase()}`),
+					);
+					return send(`* SEARCH ${found.map((message) => message.uid).join(" ")}\r\n${tag} OK done\r\n`);
+				}
 				if (sub.toUpperCase() === "FETCH") {
 					const wanted = new Set(set.split(",").map(Number));
 					if (options.hugeLiteral) return send(`* 1 FETCH (UID 1 BODY[] {4000000000}\r\n${"x".repeat(1000)}`);
@@ -295,6 +316,7 @@ export async function startFakeImap(options = {}) {
 		port: server.address().port,
 		host: options.host ?? "127.0.0.1",
 		commands,
+		appends,
 		addMessage,
 		/** Connections the server still holds open. */
 		openConnections: () => connections.size,

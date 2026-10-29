@@ -24,6 +24,8 @@ import { processRestoreMessage, runRestoreMaintenance } from "./src/lib/backups/
 import { isRestoreJobMessage } from "./src/lib/backups/restore-job-utils";
 import { processStorageMigration, runStorageMigrationMaintenance } from "./src/lib/storage/migration";
 import { isStorageMigrateMessage } from "./src/lib/storage/migration-utils";
+import { processAppendSent } from "./src/lib/external-accounts/submit";
+import { isAppendSentMessage } from "./src/lib/external-accounts/submit-utils";
 import { failStaleBackups } from "./src/lib/backups/service";
 import { processAgentQueueMessage } from "./src/lib/agent/queue";
 import { runAgentMaintenance } from "./src/lib/agent/maintenance";
@@ -201,6 +203,8 @@ export default {
 					await processRestoreMessage(env, msg.body);
 				} else if (isStorageMigrateMessage(msg.body)) {
 					await processStorageMigration(env, msg.body);
+				} else if (isAppendSentMessage(msg.body)) {
+					await processAppendSent(env, msg.body);
 				} else if (
 					typeof msg.body === "object" &&
 					msg.body !== null &&

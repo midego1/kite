@@ -37,6 +37,7 @@ test("object keys map to their storage class by prefix", () => {
 		"inbound/a.eml",
 		"imports/x",
 		"drafts/d.eml",
+		"sent/m.eml",
 		"attachments/m/1",
 		"jmap-uploads/u",
 		"bodies/m.html",

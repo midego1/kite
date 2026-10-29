@@ -52,6 +52,8 @@ const RESERVED_HEADERS = new Set([
 const ADDRESS_HEADERS = new Set(["reply-to", "sender"]);
 
 export function buildMimeMessage(message: OutboundProviderMessage, options: BuildMimeOptions = {}): BuiltMimeMessage {
+	// One author: a From list would need a Sender header (RFC 5322 §3.6.2) and is never what send-as means.
+	if (splitEmailAddressList(message.from).length !== 1) throw new Error("A message has exactly one From address");
 	const random = options.randomBytes ?? ((length: number) => crypto.getRandomValues(new Uint8Array(length)));
 	const custom = customHeaders(message.headers ?? {});
 	const messageId = normalizeMessageId(options.messageId ?? custom.messageId ?? mintMessageId(message.from));
@@ -86,7 +88,7 @@ export function mintMessageId(from: string, id: string = crypto.randomUUID()): s
 	return `<kite.${id.replace(/[^A-Za-z0-9._-]/g, "")}@${domain}>`;
 }
 
-/** A Message-ID in angle brackets; refused when it is empty or could break the header. */
+/** A Message-ID in angle brackets; refused when it is empty or could break the header. @public Exercised by the unit tests. */
 export function normalizeMessageId(value: string): string {
 	const inner = value.trim().replace(/^<|>$/g, "");
 	if (!/^[\x21-\x7e]+@[\x21-\x7e]+$/.test(inner) || /[<>]/.test(inner) || inner.length > 900)
@@ -94,7 +96,7 @@ export function normalizeMessageId(value: string): string {
 	return `<${inner}>`;
 }
 
-/** RFC 5322 §3.3: `Thu, 29 Oct 2026 10:00:00 +0000`, always in UTC. */
+/** RFC 5322 §3.3: `Thu, 29 Oct 2026 10:00:00 +0000`, always in UTC. @public Exercised by the unit tests. */
 export function formatMailDate(date: Date): string {
 	const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 	const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -107,6 +109,7 @@ export function formatMailDate(date: Date): string {
  * that separated them starts the continuation line, so unfolding (removing CRLF) restores the value exactly. The first
  * token may move to a continuation line of its own (`Subject:` CRLF ` =?UTF-8?B?…?=`); one longer than the width stays
  * where it is. Tokens never exceed `MAX_PLAIN_WORD` or an encoded word's 75.
+ * @public Exercised by the unit tests.
  */
 export function foldHeader(name: string, tokens: readonly string[]): string {
 	const lines: string[] = [];
@@ -127,6 +130,7 @@ export function foldHeader(name: string, tokens: readonly string[]): string {
 /**
  * RFC 2047 `B` encoded words of the UTF-8 text, each at most 45 bytes (75 characters with its delimiters) and never
  * splitting a character, so every word decodes on its own.
+ * @public Exercised by the unit tests.
  */
 export function encodedWords(text: string): string[] {
 	const encoder = new TextEncoder();
@@ -152,6 +156,7 @@ function encodedWord(bytes: number[]): string {
  * The tokens of unstructured header text (Subject, other headers): line breaks and runs of whitespace become one
  * space (a header value cannot carry a line break). Printable ASCII stays readable; text with anything else, with a
  * word too long to fold, or with something a reader would decode as an encoded word, is encoded as a whole.
+ * @public Exercised by the unit tests.
  */
 export function textTokens(value: string): string[] {
 	const text = value.replace(/\s+/g, " ").trim();
@@ -168,6 +173,7 @@ const ATOM_PHRASE = /^[A-Za-z0-9!#$%&'*+\-/=?^_`{|}~ ]+$/;
  * The tokens of an address list (`Name <a@b>, c@d`): each address in its ASCII form (`transportAddress`, punycode for
  * an internationalized domain), display names as atoms, a quoted string, or encoded words when they are not ASCII.
  * Commas end every mailbox but the last.
+ * @public Exercised by the unit tests.
  */
 export function addressTokens(values: readonly string[]): string[] {
 	// An element may itself be a comma-joined header value (`A <a@x>, B <b@y>`); every address in it is kept.
@@ -270,7 +276,7 @@ function attachmentPart(attachment: OutboundProviderAttachment, inline: boolean)
 	};
 }
 
-/** The attachment's media type without parameters, or `application/octet-stream` when it is not one. */
+/** The attachment's media type without parameters, or `application/octet-stream` when it is not one. @public Exercised by the unit tests. */
 export function mediaType(value: string): string {
 	const type = value.split(";")[0].trim().toLowerCase();
 	return /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/.test(type) ? type : "application/octet-stream";
@@ -286,6 +292,7 @@ function contentId(attachment: OutboundProviderAttachment): string | null {
  * A MIME parameter as header tokens: `name="value"` for short printable ASCII, else RFC 2231 `name*=utf-8''…` in
  * percent-encoded UTF-8, split into `name*0*`, `name*1*`, … sections that each fit a folded line (never inside a
  * `%XX`). Every token but the last ends with `;`.
+ * @public Exercised by the unit tests.
  */
 export function parameterTokens(name: string, value: string): string[] {
 	if (/^[\x20-\x7e]*$/.test(value) && value.length <= QUOTED_PARAMETER_MAX && !/=\?/.test(value))
@@ -314,6 +321,7 @@ export function parameterTokens(name: string, value: string): string[] {
  * Quoted-printable (RFC 2045 §6.7) of CRLF-separated text, as UTF-8: lines at most 76 characters with `=` soft breaks
  * that never split an `=XX`, `=` and every byte outside printable ASCII escaped, and a space or tab at the end of a
  * line escaped so no transport can strip it.
+ * @public Exercised by the unit tests.
  */
 export function encodeQuotedPrintable(text: string): string {
 	const encoder = new TextEncoder();
@@ -345,6 +353,7 @@ const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
 /**
  * Base64 in 76-character lines, each ending in CRLF, written straight into one buffer: a 25 MB attachment costs its
  * encoded size once, not a string, a wrapped copy and the bytes.
+ * @public Exercised by the unit tests.
  */
 export function encodeBase64Lines(input: Uint8Array): Uint8Array {
 	const LINE_INPUT = 57;

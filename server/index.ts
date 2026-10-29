@@ -26,6 +26,8 @@ import { processRestoreMessage } from "@/lib/backups/restore-job";
 import { isRestoreJobMessage } from "@/lib/backups/restore-job-utils";
 import { processStorageMigration } from "@/lib/storage/migration";
 import { isStorageMigrateMessage } from "@/lib/storage/migration-utils";
+import { processAppendSent } from "@/lib/external-accounts/submit";
+import { isAppendSentMessage } from "@/lib/external-accounts/submit-utils";
 import { isInboundQueueMessage, isWebhookRetryMessage } from "../worker-utils";
 import { createNodeRuntime } from "./runtime/env";
 import { applyMigrations } from "./runtime/migrate";
@@ -73,6 +75,7 @@ async function main() {
 		else if (isBackupRunMessage(body)) await runDatabaseBackup(env, body.backupId);
 		else if (isRestoreJobMessage(body)) await processRestoreMessage(env, body);
 		else if (isStorageMigrateMessage(body)) await processStorageMigration(env, body);
+		else if (isAppendSentMessage(body)) await processAppendSent(env, body);
 		else if ((await dispatchModuleQueueMessage(env, "outbound", body)).handled) {
 			// A module's own message kind, routed through the registry.
 		} else await processOutboundQueue(env, body as OutboundQueueMessage);

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import {
 	clearMailboxesCache,
 	fetchMailboxOptions,
+	MAILBOXES_CHANGED_EVENT,
 	isIdentityMailbox,
 	SELECTED_MAILBOX_STORAGE_KEY,
 	ALL_MAILBOXES_HIDDEN_STORAGE_KEY,
@@ -15,6 +16,7 @@ import { PROFILE_NAME_CHANGED_EVENT } from "@/lib/profile/name-client";
 import { PROFILE_AVATAR_CHANGED_EVENT } from "@/lib/profile/avatar-client";
 import type { ProfileNameChangedDetail } from "@/lib/profile/types";
 import { useStoredState } from "@/hooks/use-stored-state";
+import type { SendIdentity } from "@/lib/external-accounts/types";
 import { mailboxIdsParam, visibleMailboxIds } from "@/lib/mailboxes/scope-utils";
 
 export type MailboxOption = {
@@ -32,6 +34,8 @@ export type MailboxOption = {
 	permission?: "read_only" | "send_as" | "send_on_behalf" | "full_access";
 	isPrimary?: boolean;
 	senderAddresses?: string[];
+	/** The user's connected addresses that deliver into this mailbox; only `available` ones can be chosen as From. */
+	externalIdentities?: SendIdentity[];
 	/** Null when the mailbox has no Screener settings (off). */
 	screener?: { enabled: boolean; mode: "screener" | "inbox" } | null;
 };
@@ -138,6 +142,24 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 
 		window.addEventListener(PROFILE_NAME_CHANGED_EVENT, updatePersonalMailboxNames);
 		return () => window.removeEventListener(PROFILE_NAME_CHANGED_EVENT, updatePersonalMailboxNames);
+	}, []);
+
+	useEffect(() => {
+		// Reloads the list in place, keeping the chosen mailbox (now with its fresh From addresses).
+		function reloadMailboxes() {
+			clearMailboxesCache();
+			const sessionToken = getClientSessionKey();
+			fetchMailboxOptions()
+				.then((items) => {
+					if (sessionToken !== getClientSessionKey()) return;
+					setMailboxes(items);
+					setSelectedMailboxState((current) => items.find((mailbox) => mailbox.id === current?.id) ?? current);
+				})
+				.catch(() => {});
+		}
+
+		window.addEventListener(MAILBOXES_CHANGED_EVENT, reloadMailboxes);
+		return () => window.removeEventListener(MAILBOXES_CHANGED_EVENT, reloadMailboxes);
 	}, []);
 
 	useEffect(() => {

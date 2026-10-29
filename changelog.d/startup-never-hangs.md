@@ -1,5 +1,0 @@
-### Fixed
-
-- Reloading Kite, for example from the "Kite was updated" message, no longer leaves the page on the logo with a progress bar that never moves. When the app's files stop arriving without failing, Kite reloads by itself, twice at most, and then shows "Kite couldn't load" with a Reload button instead of loading forever. It acts after 8 seconds of visible time once nothing is loading any more, and waits while files keep arriving: only 20 seconds without progress (10 after such a reload, or 60 seconds in all) count as stuck, so a load that stays stuck shows the message after about 40 seconds.
-- A failed sign-in check while Kite starts is retried twice (a timed-out one once, so it gives up after about 11 seconds) and then shows "Kite couldn't check your sign-in" with Try again and Continue anyway, instead of opening the app without your account (empty admin menus). It also tries again when you return to the tab or come back online. A signed-out session still goes to the sign-in page.
-- A failed branding request no longer resets a custom app name and icon to Kite's own.

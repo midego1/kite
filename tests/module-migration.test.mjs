@@ -49,7 +49,7 @@ const LATER_MIGRATIONS = [
 	"0078_add_ai_usage_details.sql",
 	"0079_add_external_accounts.sql",
 	"0080_add_user_preferences.sql",
-	"0081_external_account_address_scope.sql",
+	"0082_external_account_address_scope.sql",
 ];
 /** Columns a later migration adds to a table this test pins; everything else must stay as it was. */
 const LATER_COLUMNS = {

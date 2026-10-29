@@ -21,7 +21,7 @@ export const externalAccounts = sqliteTable(
 		label: text("label").notNull(),
 		/**
 		 * Lower-case. Unique per install for the known providers, whose own servers prove the address at sign-in; an
-		 * "Other" account names its own server, so its address proves nothing and claims nothing (migration 0081).
+		 * "Other" account names its own server, so its address proves nothing and claims nothing (migration 0082).
 		 */
 		address: text("address").notNull(),
 		displayName: text("display_name"),

@@ -21,12 +21,13 @@ const {
 	smtpFailureMessage,
 	SmtpReplyError,
 	SmtpMessageTooLargeError,
+	SmtpDeliveryUnknownError,
 } = await bundleModules("kite-smtp-utils-", [
 	[
 		"SMTP_PORTS, smtpLimits, parseReplyLine, buildReply, replyText, parseEhloExtensions, planSmtpStartTls, chooseSmtpAuthMethod, base64Utf8, smtpPlainToken, assertCredential, redactSecrets, transportAddress, smtpDataPayload, hasEightBitBytes, smtpFailureMessage",
 		"src/lib/smtp/protocol-utils.ts",
 	],
-	["SmtpReplyError, SmtpMessageTooLargeError", "src/lib/smtp/errors.ts"],
+	["SmtpReplyError, SmtpMessageTooLargeError, SmtpDeliveryUnknownError", "src/lib/smtp/errors.ts"],
 ]);
 
 const reply = (code, ...lines) => buildReply(lines.map((text) => ({ code, text })));
@@ -182,6 +183,10 @@ test("transportAddress refuses what could break a command or needs SMTPUTF8", ()
 		`user@${"a".repeat(64)}.example.org`,
 	])
 		assert.throws(() => transportAddress(value), /not an address mail can be sent to/, JSON.stringify(value));
+	// A list is never read as its last address.
+	for (const value of ["A <a@x.com>, B <b@y.com>", "<a@x.com><b@y.com>", "a@x.com>>"])
+		assert.throws(() => transportAddress(value), /is more than one address/, value);
+	assert.throws(() => transportAddress("a@x.com, b@y.com"), /not an address mail can be sent to/);
 	assert.throws(
 		() => transportAddress(`${"a".repeat(60)}@${Array(5).fill("b".repeat(60)).join(".")}.org`),
 		/longer than mail servers accept/,
@@ -252,4 +257,14 @@ test("SmtpMessageTooLargeError names both sizes in MB", () => {
 	assert.equal(error.name, "SmtpMessageTooLargeError");
 	assert.equal(error.limitBytes, 25 * 1024 * 1024);
 	assert.equal(error.message, "The message is 30 MB; the SMTP server accepts at most 25 MB");
+});
+
+test("SmtpDeliveryUnknownError is never temporary or retryable; SmtpReplyError retries only 4xx", () => {
+	const unknown = new SmtpDeliveryUnknownError("SMTP connection closed unexpectedly");
+	assert.equal(unknown.name, "SmtpDeliveryUnknownError");
+	assert.equal(unknown.temporary, false);
+	assert.equal(unknown.retryable, false);
+	assert.match(unknown.message, /may have been delivered: SMTP connection closed unexpectedly$/);
+	assert.equal(new SmtpReplyError("data", reply(451, "later")).retryable, true);
+	assert.equal(new SmtpReplyError("data", reply(554, "no")).retryable, false);
 });

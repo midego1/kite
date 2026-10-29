@@ -207,6 +207,15 @@ test("inline attachments without HTML or without a usable Content-ID are plain a
 	}
 });
 
+test("a comma-joined To element keeps every recipient in the header", async () => {
+	const built = build({ to: ["A <a@x.com>, B <b@y.com>"], cc: ["c@w.com, d@w.com"] });
+	const map = headers(built.raw);
+	assert.deepEqual(map.get("to"), ["A <a@x.com>, B <b@y.com>"]);
+	assert.deepEqual(map.get("cc"), ["c@w.com, d@w.com"]);
+	const parsed = await parse(built);
+	assert.match(parsed.toAddr, /a@x\.com.*b@y\.com/);
+});
+
 test("Bcc never becomes a header, and mail with only Bcc says so", async () => {
 	const built = build({ to: [], bcc: ["hidden@example.org"], headers: { Bcc: "hidden@example.org" } });
 	const raw = decode(built.raw);
@@ -281,6 +290,16 @@ test("display names are atoms, quoted strings or encoded words", () => {
 	assert.deepEqual(addressTokens(["Q. Public <q@example.org>"]), ['"Q. Public"', "<q@example.org>"]);
 	assert.deepEqual(addressTokens(['"Back\\slash" <b@example.org>']), ['"Back\\\\slash"', "<b@example.org>"]);
 	assert.deepEqual(addressTokens(["<only@example.org>"]), ["only@example.org"]);
+	// One element holding a comma-joined header value keeps every address in it.
+	assert.deepEqual(addressTokens(["A <a@x.com>, B <b@y.com>", '"Doe, J" <j@z.com>; c@w.com']), [
+		"A",
+		"<a@x.com>,",
+		"B",
+		"<b@y.com>,",
+		'"Doe, J"',
+		"<j@z.com>,",
+		"c@w.com",
+	]);
 	assert.deepEqual(addressTokens(["Shop <info@bücher.example>"]), ["Shop", "<info@xn--bcher-kva.example>"]);
 	assert.match(addressTokens(["Zoë <z@example.org>"])[0], /^=\?UTF-8\?B\?/);
 	assert.throws(() => addressTokens(["jörg@example.org"]), /not an address/);

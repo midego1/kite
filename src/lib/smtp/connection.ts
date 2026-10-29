@@ -1,6 +1,6 @@
 import { MailServerRefusedError } from "@/lib/net/errors";
 import type { MailSocket } from "@/lib/net/types";
-import { SmtpReplyError } from "./errors";
+import { SmtpDeliveryUnknownError, SmtpReplyError } from "./errors";
 import { buildReply, parseReplyLine, redactSecrets, smtpLimits } from "./protocol-utils";
 import type { SmtpLimits, SmtpReply, SmtpStage } from "./types";
 
@@ -100,13 +100,21 @@ export class SmtpConnection {
 
 	/**
 	 * Writes the prepared DATA payload (`smtpDataPayload`: dot-stuffed and ending in `.` CRLF) and reads the server's
-	 * verdict, which may take longer while it queues the message.
+	 * verdict, which may take longer while it queues the message. A refusing reply is an `SmtpReplyError`; anything else
+	 * that goes wrong from the first payload byte on (a timeout, a reset, a closed connection, an unreadable reply) is an
+	 * `SmtpDeliveryUnknownError`, because the server may have queued the message and a retry could send it twice.
 	 */
 	async sendData(payload: Uint8Array): Promise<SmtpReply> {
-		for (let offset = 0; offset < payload.length; offset += WRITE_CHUNK_BYTES)
-			await this.writeBytes(payload.subarray(offset, offset + WRITE_CHUNK_BYTES), this.limits.commandTimeoutMs);
-		this.restartDeadline(this.limits.dataTimeoutMs);
-		const reply = await this.readReply();
+		let reply: SmtpReply;
+		try {
+			for (let offset = 0; offset < payload.length; offset += WRITE_CHUNK_BYTES)
+				await this.writeBytes(payload.subarray(offset, offset + WRITE_CHUNK_BYTES), this.limits.commandTimeoutMs);
+			this.restartDeadline(this.limits.dataTimeoutMs);
+			reply = await this.readReply();
+		} catch (error) {
+			await this.socket.close().catch(() => undefined);
+			throw new SmtpDeliveryUnknownError(error instanceof Error && error.message ? error.message : "unknown error");
+		}
 		if (reply.code !== 250) throw new SmtpReplyError("data", reply);
 		return reply;
 	}
@@ -130,14 +138,15 @@ export class SmtpConnection {
 		while (true) {
 			for (let index = scanFrom; index < this.pending.length - 1; index += 1) {
 				if (this.pending[index] === 13 && this.pending[index + 1] === 10) {
+					// A whole line can arrive in one chunk, so the cap is checked here too, not only while waiting.
+					if (index > this.limits.lineBytes) throw this.lineTooLong();
 					const line = this.decoder.decode(this.pending.subarray(0, index));
 					this.pending = this.pending.slice(index + 2);
 					return line;
 				}
 			}
 			scanFrom = Math.max(this.pending.length - 1, 0);
-			if (this.pending.length > this.limits.lineBytes)
-				throw new Error(`The SMTP server sent a line longer than ${Math.round(this.limits.lineBytes / 1024)} KB`);
+			if (this.pending.length > this.limits.lineBytes) throw this.lineTooLong();
 			const { value, done } = await this.beforeDeadline(this.reader.read());
 			if (done || !value) throw new Error("SMTP connection closed unexpectedly");
 			const next = new Uint8Array(this.pending.length + value.byteLength);
@@ -145,6 +154,10 @@ export class SmtpConnection {
 			next.set(value, this.pending.length);
 			this.pending = next;
 		}
+	}
+
+	private lineTooLong(): Error {
+		return new Error(`The SMTP server sent a line longer than ${Math.round(this.limits.lineBytes / 1024)} KB`);
 	}
 
 	private async write(value: string, timeoutMs: number): Promise<void> {

@@ -14,13 +14,16 @@ const {
 	submitMessage,
 	SmtpReplyError,
 	SmtpMessageTooLargeError,
+	SmtpDeliveryUnknownError,
+	SmtpConnection,
 	MailServerRefusedError,
 	buildMimeMessage,
 	parseRawMime,
 } = await bundleModules("kite-smtp-node-", [
 	["createTcpConnect", "server/runtime/tcp-connect.ts"],
 	["openSmtpSession, submitMessage", "src/lib/smtp/session.ts"],
-	["SmtpReplyError, SmtpMessageTooLargeError", "src/lib/smtp/errors.ts"],
+	["SmtpReplyError, SmtpMessageTooLargeError, SmtpDeliveryUnknownError", "src/lib/smtp/errors.ts"],
+	["SmtpConnection", "src/lib/smtp/connection.ts"],
 	["MailServerRefusedError", "src/lib/net/errors.ts"],
 	["buildMimeMessage", "src/lib/email/mime-build-utils.ts"],
 	["parseRawMime", "src/lib/email/parse.ts"],
@@ -395,4 +398,74 @@ test("a server that trickles, goes silent or sends no SMTP reply is dropped", as
 		openSmtpSession(nodeEnv(garbage), login({ port: 587, security: "starttls" })),
 		/a reply Kite does not understand/,
 	);
+});
+
+test("a connection lost after the end of the data is 'delivery unknown', never a retryable failure", async (t) => {
+	for (const [afterData, reason] of [
+		["drop", /SMTP connection closed unexpectedly/],
+		["hang", /The SMTP server did not answer in time/],
+	]) {
+		const server = await fake(t, { implicitTls: true, afterData });
+		const session = await openSmtpSession(nodeEnv(server), login(), { dataTimeoutMs: 300 });
+		try {
+			await assert.rejects(session.send(envelope, sampleSmtpMessage()), (error) => {
+				assert.ok(error instanceof SmtpDeliveryUnknownError, afterData);
+				assert.equal(error.name, "SmtpDeliveryUnknownError");
+				assert.equal(error.retryable, false);
+				assert.equal(error.temporary, false);
+				assert.match(
+					error.message,
+					/^The connection to the SMTP server failed after the message was sent, so it may have been delivered: /,
+				);
+				assert.match(error.message, reason);
+				return true;
+			});
+		} finally {
+			await session.close();
+		}
+		// The server did queue it: a retry would have sent it twice.
+		assert.equal(server.messages.length, 1, afterData);
+	}
+});
+
+test("a refusal after the data stays a reply error: 4xx retryable, 5xx not", async (t) => {
+	const server = await fake(t, { implicitTls: true });
+	const session = await openSmtpSession(nodeEnv(server), login());
+	try {
+		server.failNext("data", 451, "4.3.0 Queue full");
+		await assert.rejects(session.send(envelope, sampleSmtpMessage()), (error) => {
+			assert.ok(error instanceof SmtpReplyError);
+			assert.equal(error.retryable, true);
+			return true;
+		});
+		server.failNext("data", 552, "5.3.4 Too big");
+		await assert.rejects(session.send(envelope, sampleSmtpMessage()), (error) => error.retryable === false);
+	} finally {
+		await session.close();
+	}
+});
+
+/** A socket whose readable delivers `chunks` as they are, so a test controls how the bytes arrive. */
+function scriptedSocket(chunks) {
+	return {
+		readable: new ReadableStream({
+			start(controller) {
+				for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
+			},
+		}),
+		writable: new WritableStream(),
+		opened: Promise.resolve(),
+		closed: Promise.resolve(),
+		close: async () => undefined,
+		startTls: () => {
+			throw new Error("not used");
+		},
+	};
+}
+
+test("the 16 KB line cap holds when a whole over-long line arrives in one chunk", async () => {
+	const tooLong = new SmtpConnection(scriptedSocket([`220 ${"x".repeat(20 * 1024)}\r\n`]));
+	await assert.rejects(tooLong.greeting(), /^Error: The SMTP server sent a line longer than 16 KB$/);
+	const atLimit = new SmtpConnection(scriptedSocket([`220 ${"x".repeat(16 * 1024 - 4)}\r\n`]));
+	assert.equal((await atLimit.greeting()).code, 220);
 });

@@ -170,13 +170,16 @@ const ATOM_PHRASE = /^[A-Za-z0-9!#$%&'*+\-/=?^_`{|}~ ]+$/;
  * Commas end every mailbox but the last.
  */
 export function addressTokens(values: readonly string[]): string[] {
-	const mailboxes = values.map((value) => {
-		const parts = parseEmailAddressParts(value);
-		const address = transportAddress(parts.address);
-		const name = (parts.name ?? "").replace(/\s+/g, " ").trim();
-		if (!name) return [address];
-		return [...phraseTokens(name), `<${address}>`];
-	});
+	// An element may itself be a comma-joined header value (`A <a@x>, B <b@y>`); every address in it is kept.
+	const mailboxes = values
+		.flatMap((value) => splitEmailAddressList(value))
+		.map((value) => {
+			const parts = parseEmailAddressParts(value);
+			const address = transportAddress(parts.address);
+			const name = (parts.name ?? "").replace(/\s+/g, " ").trim();
+			if (!name) return [address];
+			return [...phraseTokens(name), `<${address}>`];
+		});
 	return mailboxes.flatMap((tokens, index) =>
 		index < mailboxes.length - 1 ? [...tokens.slice(0, -1), `${tokens[tokens.length - 1]},`] : tokens,
 	);

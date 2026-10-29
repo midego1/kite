@@ -24,7 +24,9 @@ export type SmtpSession = {
 	/**
 	 * Sends one message: `MAIL FROM`, one `RCPT TO` per recipient, `DATA` and the dot-stuffed bytes. Any refused
 	 * recipient fails the whole message (after `RSET`), so a send never reaches only some of its recipients. Resolves
-	 * with the server's final reply text (often its queue id).
+	 * with the server's final reply text (often its queue id). Rejects with `SmtpReplyError` when the server refuses a
+	 * step (`retryable` for 4xx), and with `SmtpDeliveryUnknownError` (never retryable) when the connection fails once the
+	 * message is on its way: the caller must not send it again automatically.
 	 */
 	send(envelope: SmtpEnvelope, raw: Uint8Array): Promise<{ response: string }>;
 	close(): Promise<void>;

@@ -14,6 +14,8 @@ import { SMTPServer } from "smtp-server";
  *   Without either the server is plain text and accepts sign-in anyway (the e2e fake on loopback).
  * - `authMethods` (default `["PLAIN", "LOGIN"]`), `users` (`{ [username]: password }`), `size` (announced SIZE).
  * - `rejectRecipients`: `{ [address]: [code, text] }`, the answer to RCPT TO for that address.
+ * - `afterData`: what happens once a message has been received and recorded (it is queued, as far as the server
+ *   knows): `"drop"` closes the connection instead of answering, `"hang"` never answers.
  * - Misbehaviour (answered by the proxy itself): `injectAfterStartTls` (bytes sent right behind the 220 to STARTTLS,
  *   before the handshake), `silent` (no greeting at all), `slowLoris` (a greeting trickled one byte at a time,
  *   forever), `endlessLine` (a greeting line that never ends), `garbage` (a greeting that is not an SMTP reply).
@@ -79,6 +81,11 @@ export async function startFakeSmtp(options = {}) {
 					secure: !!session.secure,
 					user: session.user,
 				});
+				if (options.afterData === "hang") return;
+				if (options.afterData === "drop") {
+					for (const socket of sockets) socket.destroy();
+					return;
+				}
 				callback(null, "2.0.0 OK queued as fake-1");
 			});
 		},

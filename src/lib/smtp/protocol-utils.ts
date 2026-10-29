@@ -126,12 +126,16 @@ export function redactSecrets(text: string, secrets: readonly string[]): string 
 
 /**
  * An address for `MAIL FROM` or `RCPT TO` (and the MIME headers): a bare `local@domain` or one inside `Name <…>`, with
- * an internationalized domain turned into its ASCII (punycode) form. Refused: anything that could break the command
+ * an internationalized domain turned into its ASCII (punycode) form. Refused: a list of addresses, anything that could
+ * break the command
  * (spaces, angle brackets, control characters), quoted or non-ASCII local parts (they need SMTPUTF8), and more than
  * RFC 5321's 64 octets of local part or 254 of address.
  */
 export function transportAddress(value: string): string {
 	const trimmed = value.trim();
+	// One address only: `A <a@x>, B <b@y>` must be split first (`splitEmailAddressList`), never read as its last part.
+	if ((trimmed.match(/</g)?.length ?? 0) > 1 || (trimmed.match(/>/g)?.length ?? 0) > 1)
+		throw new Error(`"${printable(trimmed)}" is more than one address`);
 	const inner = /<([^<>]*)>$/.exec(trimmed)?.[1] ?? trimmed;
 	const at = inner.lastIndexOf("@");
 	const local = inner.slice(0, at);

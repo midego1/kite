@@ -1,4 +1,4 @@
-import { errorText, shortServerText } from "./connection-utils";
+import { redactedErrorMessage, shortServerText } from "./connection-utils";
 import type { ExternalAccountStatus } from "./types";
 
 /**
@@ -127,7 +127,7 @@ export function classifySyncError(
 	error: unknown,
 	options: { refused?: boolean; secrets?: readonly string[]; host?: string } = {},
 ): SyncProblem {
-	const raw = errorText(error, options.secrets);
+	const raw = redactedErrorMessage(error, options.secrets);
 	const message = shortServerText(raw);
 	if (THROTTLED.test(raw)) return { class: "throttled", message };
 	if (TRANSIENT.test(raw)) return { class: "transient", message };

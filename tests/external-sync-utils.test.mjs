@@ -26,6 +26,8 @@ const {
 	imapSearchDate,
 	externalAuthenticationResults,
 	detachMissingExternalAccounts,
+	redactBackupRow,
+	restoredBackupRow,
 	parseAttentionAccounts,
 	connectedAccountsBannerContent,
 	syncStatusText,
@@ -42,7 +44,7 @@ const {
 	],
 	["parseFetchSummaries, imapSearchDate", "src/lib/imap/protocol-utils.ts"],
 	["externalAuthenticationResults", "src/lib/spam/authentication-results-utils.ts"],
-	["detachMissingExternalAccounts", "src/lib/backups/external-accounts-utils.ts"],
+	["detachMissingExternalAccounts, redactBackupRow, restoredBackupRow", "src/lib/backups/external-accounts-utils.ts"],
 	["parseAttentionAccounts, connectedAccountsBannerContent", "src/components/connected-accounts-banner-utils.ts"],
 	[
 		"syncStatusText, canCheckNow, showLastError, relativeTime",
@@ -270,6 +272,30 @@ test("a restore drops the account of messages whose connected account is not res
 	// No accounts table in the plan (a database before migration 0079): every link is dropped.
 	const withoutAccounts = detachMissingExternalAccounts([tables[1]]);
 	assert.equal(withoutAccounts[0].rows[0].external_account_id, null);
+});
+
+test("backup rows of connected accounts leave without secrets and come back waiting for a reconnect", () => {
+	const message = { id: "m1", secret: "not-an-account" };
+	assert.equal(redactBackupRow("messages", message), message);
+	assert.equal(restoredBackupRow("messages", message), message);
+	const sealed = { id: "a1", secret: "sealed", oauth_refresh_token: "r", status: "active" };
+	assert.deepEqual(redactBackupRow("external_accounts", sealed), {
+		id: "a1",
+		secret: "",
+		oauth_refresh_token: null,
+		status: "active",
+	});
+	assert.deepEqual(redactBackupRow("external_accounts", { id: "a2" }), { id: "a2" }, "absent columns stay absent");
+	assert.deepEqual(restoredBackupRow("external_accounts", { ...sealed, lease_until: 5 }), {
+		id: "a1",
+		secret: "",
+		oauth_refresh_token: null,
+		status: "auth_failed",
+		status_reason: "restored",
+		last_error: "Reconnect after restore",
+		lease_until: null,
+	});
+	assert.equal(sealed.secret, "sealed", "the input is not changed");
 });
 
 test("the sidebar notice names failed sign-ins first", () => {

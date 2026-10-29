@@ -4,6 +4,7 @@ import { messages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import type { MessageOriginalRouteParams } from "./types";
 
 export async function GET(request: Request, { params }: MessageOriginalRouteParams) {
@@ -14,11 +15,16 @@ export async function GET(request: Request, { params }: MessageOriginalRoutePara
 	const { messageId } = await params;
 	const db = getDb(env);
 	const [message] = await db
-		.select({ mailboxId: messages.mailboxId, rawR2Key: messages.rawR2Key })
+		.select({
+			mailboxId: messages.mailboxId,
+			rawR2Key: messages.rawR2Key,
+			status: messages.status,
+			userId: messages.userId,
+		})
 		.from(messages)
 		.where(eq(messages.id, messageId))
 		.limit(1);
-	if (!message?.mailboxId) return new Response("Message not found", { status: 404 });
+	if (!message?.mailboxId || isHiddenDraft(message, user.id)) return new Response("Message not found", { status: 404 });
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canRead) return new Response("Message not found", { status: 404 });
 	if (!message.rawR2Key) {

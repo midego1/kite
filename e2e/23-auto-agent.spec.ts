@@ -563,9 +563,22 @@ test.describe("admin automatic reading settings", () => {
 			await restoreOriginal();
 			await starting.close();
 		}
-		// Restoring saves the provider, so one that came from the environment or the defaults reads back as saved.
-		const restored = await readAdminAgent(api);
-		expect({ ...restored, config: { ...restored.config, source: original.config.source } }).toEqual(original);
+		// Restoring saves the provider, so one that came from the environment or the defaults reads back as saved,
+		// with an empty rate (no input, no output) for each of its models. Which of the two the first run in a fresh
+		// database starts from depends on the specs that ran before it in the same shard.
+		const withoutEmptyRates = (state: typeof original) => ({
+			...state,
+			config: {
+				...state.config,
+				source: original.config.source,
+				rates: Object.fromEntries(
+					Object.entries(state.config.rates).filter(
+						([, rate]) => rate.input !== null || rate.output !== null || rate.reasoningEffort,
+					),
+				),
+			},
+		});
+		expect(withoutEmptyRates(await readAdminAgent(api))).toEqual(withoutEmptyRates(original));
 	});
 
 	test("a reasoning effort can be saved per model, and none is refused", async () => {
@@ -628,10 +641,13 @@ test.describe("admin automatic reading settings", () => {
 			await expect(row.getByLabel("Input")).toBeEnabled();
 			await expect(row.getByLabel("Input")).toHaveValue("1");
 			await row.getByLabel("Input").fill("0.8");
+			// The page edits the saved provider in use, which the fake provider was written into.
 			const saved = page.waitForResponse(
-				(response) => response.url().endsWith("/api/admin/agent") && response.request().method() === "PUT",
+				(response) =>
+					/\/api\/admin\/agent\/providers\/[^/]+$/.test(new URL(response.url()).pathname) &&
+					response.request().method() === "PUT",
 			);
-			await page.getByRole("button", { name: "Save agent settings" }).click();
+			await page.getByRole("button", { name: "Save provider" }).click();
 			expect((await saved).status()).toBe(200);
 			expect((await readAdminAgent(api)).config.rates["claude-haiku-4-5-20251001"]).toEqual({ input: 0.8, output: 5 });
 
@@ -641,7 +657,7 @@ test.describe("admin automatic reading settings", () => {
 			await row.getByRole("button", { name: "Use Kite's price" }).click();
 			await expect(row.getByLabel("Input")).toBeDisabled();
 			await expect(row.getByLabel("Input")).toHaveValue("1");
-			await page.getByRole("button", { name: "Save agent settings" }).click();
+			await page.getByRole("button", { name: "Save provider" }).click();
 			await expect
 				.poll(async () => (await readAdminAgent(api)).config.rates["claude-haiku-4-5-20251001"])
 				.toEqual({ input: null, output: null });
@@ -3771,6 +3787,7 @@ test.describe("reply suggestions", () => {
 				localStorage.setItem("kite-reading-pane", "right");
 			});
 			const buttons: Record<string, number[]> = {};
+			const icons: Record<string, number[]> = {};
 			for (const style of [
 				{ name: "kite", theme: "light", classic: false },
 				{ name: "classic", theme: "light", classic: true },
@@ -3804,13 +3821,17 @@ test.describe("reply suggestions", () => {
 
 				await forYouItem(page).getByRole("link").click();
 				await expect(page).toHaveURL(/\/for-you$/);
-				const icon = page.getByRole("heading", { level: 1 }).locator("svg");
+				// The title bar's icon takes the style's accent: neutral in Kite, blue in Classic.
+				const icon = page.locator("[data-panel-header] svg").first();
+				await expect(page.getByRole("heading", { level: 1, name: "For you" })).toBeVisible();
 				await expect(page.locator(`[data-for-you-entry]`)).toHaveCount(1);
 				const iconColor = await colorProbe(page, icon, "color", "text-blue-600");
 				expect(iconColor.actual, `${style.name} For you`).toEqual(iconColor.expected);
+				icons[style.name] = iconColor.actual;
 				await expect(page.locator("body")).not.toContainText(/mailflare/i);
 			}
 			expect(buttons.kite).not.toEqual(buttons.classic);
+			expect(icons.kite, "For you icon: Kite neutral, Classic blue").not.toEqual(icons.classic);
 			expect(buttons["kite-dark"]).not.toEqual(buttons["classic-dark"]);
 			expect(serverErrors).toEqual([]);
 			expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
@@ -4585,7 +4606,7 @@ test.describe("calendar invite card", () => {
 			);
 
 			await page.goto("/calendar");
-			await page.getByRole("combobox", { name: "Calendar view" }).selectOption("month");
+			await chooseOption(page.getByRole("combobox", { name: "Calendar view" }), "month");
 			const label = (date: Date) =>
 				date.toLocaleDateString("en-US", {
 					weekday: "long",

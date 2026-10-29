@@ -4,6 +4,7 @@ import type { SenderListName } from "@/lib/agent/auto-read/sender-lists-utils";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import type { ModuleId } from "@/lib/modules/module-types";
 import type { AgentSettings } from "./types";
+import { modelFallbackText } from "./model-fallback-utils";
 import type {
 	AutoReadAdminValues,
 	AutoReadCapabilityKey,
@@ -98,6 +99,7 @@ export function toAutoReadState(data: AutoReadSettingsResponse, now: number): Au
 			muted: settings.capabilities.mutedSenders ?? [],
 		},
 		models: data.models ?? [],
+		triageModelNotice: modelFallbackText(data.unavailableModels?.triage),
 		canManage: data.canManage === true,
 		autoReadAvailable: data.autoReadAvailable !== false,
 		externalProviderBlocked: data.externalProviderBlocked === true,

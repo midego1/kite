@@ -63,32 +63,101 @@ Kite is **early beta**. It is tested, but it has not had the time in the field t
 
 ## Screenshots
 
+Kite has a light and a dark theme, and this page shows both: GitHub serves the dark screenshots to readers in dark mode and the light ones otherwise. Click one to open it at full size.
+
+<p align="center">
+	<a href="screenshots/inbox-light.webp">
+		<picture>
+			<source media="(prefers-color-scheme: dark)" srcset="screenshots/inbox-dark.webp">
+			<img src="screenshots/inbox-light.webp" width="900" alt="The inbox with a conversation open in the reader">
+		</picture>
+	</a>
+	<br>
+	<b>Inbox</b><br>Three resizable panes: folders, the message list and the reader, with a conversation unfolded.
+</p>
+
 <table>
 	<tr>
-		<td align="center" valign="top" width="33.33%">
-			<a href="/screenshots/inbox.png"><img src="/screenshots/inbox.png" width="250" alt="Inbox with a message open"></a><br><b>Inbox</b>
+		<td align="center" valign="top" width="50%">
+			<a href="screenshots/compose-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/compose-dark.webp">
+				<img src="screenshots/compose-light.webp" width="440" alt="Writing a reply under the open conversation">
+			</picture></a><br>
+			<b>Reply</b><br>Reply inline under the conversation, with a send preview and undo.
 		</td>
-		<td align="center" valign="top" width="33.33%">
-			<a href="/screenshots/inbox-dark.png"><img src="/screenshots/inbox-dark.png" width="250" alt="Inbox in dark mode"></a><br><b>Dark mode</b>
-		</td>
-		<td align="center" valign="top" width="33.33%">
-			<a href="/screenshots/compose.png"><img src="/screenshots/compose.png" width="250" alt="Replying to a message"></a><br><b>Reply</b>
+		<td align="center" valign="top" width="50%">
+			<a href="screenshots/assistant-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/assistant-dark.webp">
+				<img src="screenshots/assistant-light.webp" width="440" alt="The Kite AI side panel with a drafted reply">
+			</picture></a><br>
+			<b>Kite AI</b><br>Ask about your mail and review drafts before anything is sent.
 		</td>
 	</tr>
 	<tr>
-		<td align="center" valign="top" width="33.33%">
-			<a href="/screenshots/calendar.png"><img src="/screenshots/calendar.png" width="250" alt="Week view of the calendar"></a><br><b>Calendar</b>
+		<td align="center" valign="top" width="50%">
+			<a href="screenshots/for-you-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/for-you-dark.webp">
+				<img src="screenshots/for-you-light.webp" width="440" alt="The For you page with suggestions grouped by kind">
+			</picture></a><br>
+			<b>For you</b><br>What automatic reading noticed: replies, invitations, subscriptions and warnings. Nothing happens until you act.
 		</td>
-		<td align="center" valign="top" width="33.33%">
-			<a href="/screenshots/domains.png"><img src="/screenshots/domains.png" width="250" alt="Domain DNS checks"></a><br><b>Domain setup</b>
+		<td align="center" valign="top" width="50%">
+			<a href="screenshots/calendar-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/calendar-dark.webp">
+				<img src="screenshots/calendar-light.webp" width="440" alt="Week view of the calendar">
+			</picture></a><br>
+			<b>Calendar</b><br>Day, week and month views with booking pages.
 		</td>
-		<td align="center" valign="top" width="33.33%">
-			<a href="/screenshots/mailboxes.png"><img src="/screenshots/mailboxes.png" width="250" alt="Mailboxes on a domain"></a><br><b>Mailboxes</b>
+	</tr>
+	<tr>
+		<td align="center" valign="top" width="50%">
+			<a href="screenshots/drive-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/drive-dark.webp">
+				<img src="screenshots/drive-light.webp" width="440" alt="Files and folders in Drive">
+			</picture></a><br>
+			<b>Drive</b><br>Files and folders next to your mail, with sharing and public links.
+		</td>
+		<td align="center" valign="top" width="50%">
+			<a href="screenshots/settings-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/settings-dark.webp">
+				<img src="screenshots/settings-light.webp" width="440" alt="Inbox settings">
+			</picture></a><br>
+			<b>Settings</b><br>Reading, sending, privacy and notification preferences for your account.
+		</td>
+	</tr>
+	<tr>
+		<td align="center" valign="top" width="50%">
+			<a href="screenshots/admin-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/admin-dark.webp">
+				<img src="screenshots/admin-light.webp" width="440" alt="The Admin overview">
+			</picture></a><br>
+			<b>Admin</b><br>Database size and updates up front, with users, domains, backups and the rest in the side menu.
+		</td>
+		<td align="center" valign="top" width="50%">
+			<a href="screenshots/ai-usage-light.webp"><picture>
+				<source media="(prefers-color-scheme: dark)" srcset="screenshots/ai-usage-dark.webp">
+				<img src="screenshots/ai-usage-light.webp" width="440" alt="The AI usage page with a chart and a table">
+			</picture></a><br>
+			<b>AI usage</b><br>Tokens, requests and estimated spend per day and per request.
+		</td>
+	</tr>
+	<tr>
+		<td align="center" valign="top" width="50%">
+			<a href="screenshots/inbox-phone-light.webp">
+				<picture>
+					<source media="(prefers-color-scheme: dark)" srcset="screenshots/inbox-phone-dark.webp">
+					<img src="screenshots/inbox-phone-light.webp" width="200" alt="A message open on a phone">
+				</picture>
+			</a><br>
+			<b>On a phone</b><br>One pane at a time, in the same look.
+		</td>
+		<td align="center" valign="middle" width="50%">
+			<sub>The screenshots and the demo recording show invented demo data.</sub>
 		</td>
 	</tr>
 </table>
 
-Click a screenshot to open it at full size. The screenshots and the demo recording show invented demo data. `npm run screenshots` takes the screenshots again against the same isolated, seeded server the browser tests use (`scripts/screenshots/readme.capture.ts`), `npm run demo:record` records the demo (`scripts/screenshots/demo.capture.ts`, needs `ffmpeg`), and `npm run social:preview` renders the 1280x640 repository social preview (`docs/assets/social-preview.png`).
+`npm run screenshots` takes them again, in light and dark, against the same isolated, seeded server the browser tests use (`scripts/screenshots/readme.capture.ts`, with the demo data in `demo-data.ts`). It writes `screenshots/<name>-light.webp` and `<name>-dark.webp` at 2x scale; the assistant, For you and AI usage shots answer their model-backed requests from fixed demo data (`demo-mocks.ts`). `npm run demo:record` records the demo (`scripts/screenshots/demo.capture.ts`, needs `ffmpeg`), and `npm run social:preview` renders the 1280x640 repository social preview (`docs/assets/social-preview.png`).
 
 ## What you can do
 

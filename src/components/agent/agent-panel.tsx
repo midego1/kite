@@ -62,6 +62,7 @@ import type {
 	QueuedAgentMessage,
 } from "./types";
 import { agentPanelStyle } from "./agent-panel-style-utils";
+import { modelFallbackText } from "./model-fallback-utils";
 import {
 	activeAgentTool,
 	activeAgentToolLabel,
@@ -80,6 +81,7 @@ import {
 	steerQueuedAgentMessage,
 	uniqueAgentDraftActions,
 } from "./utils";
+import { ModelFallbackNotice } from "./model-fallback-notice";
 
 export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }: AgentPanelProps) {
 	const { selectedMailbox } = useSelectedMailbox();
@@ -88,6 +90,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 	const [view, setView] = useState<AgentPanelView>("chat");
 	const [settings, setSettings] = useState<AgentSettings | null>(null);
 	const [availableModels, setAvailableModels] = useState<string[]>([]);
+	const [modelNotice, setModelNotice] = useState<string | null>(null);
 	const [reviewers, setReviewers] = useState<{ id: string; name: string; email: string }[]>([]);
 	const [canManage, setCanManage] = useState(false);
 	const [instructionContext, setInstructionContext] = useState<InstructionContext | null>(null);
@@ -184,6 +187,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 			const data = (await settingsResponse.json()) as AgentSettingsResponse;
 			setSettings(data.settings);
 			setAvailableModels(data.models ?? []);
+			setModelNotice(modelFallbackText(data.unavailableModels?.chat));
 			setCanManage(data.canManage);
 			setInstructionContext(data.instructionContext ?? null);
 			setProviderConfigured(data.providerConfigured);
@@ -891,6 +895,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 										</option>
 									))}
 								</select>
+								<ModelFallbackNotice text={modelNotice} />
 							</label>
 							<div className="flex items-center justify-between gap-3">
 								<span>Automatically draft replies</span>

@@ -1,8 +1,8 @@
 import type { BulkMessageAction, BulkMessageResponse } from "@/app/api/messages/bulk/types";
 import { confirmReportSpam } from "@/components/messages/spam-report";
 import { offerUndoForMove } from "@/components/messages/undo-utils";
+import { postBulkMessageAction } from "@/components/messages/bulk-request";
 import type { MessageCounts, MessageFolder } from "@/hooks/types";
-import { authFetch } from "@/lib/auth/client";
 import { Folder } from "lucide-react";
 import type { NavLink } from "./components-nav-types";
 import type { CustomFolder } from "./dashboard-nav-types";
@@ -13,12 +13,8 @@ export function getFolderNavCount(folder: MessageFolder, counts: MessageCounts["
 }
 
 async function moveMessages(payload: { messageIds: string[]; action: BulkMessageAction; folderId?: string }) {
-	const response = await authFetch("/api/messages/bulk", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(payload),
-	});
-
+	const response = await postBulkMessageAction(payload);
+	if (!response) return;
 	if (!response.ok) throw new Error("Unable to move messages");
 	window.dispatchEvent(new Event("kite:messages-changed"));
 	offerUndoForMove(payload.action, (await response.json().catch(() => null)) as BulkMessageResponse | null);

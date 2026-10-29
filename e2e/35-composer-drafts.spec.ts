@@ -144,7 +144,7 @@ test.describe("composer drafts", () => {
 				await page.getByRole("textbox", { name: "Message body" }).fill("A later edit retries the file.");
 				expect((await stored).ok()).toBe(true);
 				expect(attempts).toBe(2);
-				await expect(composer.locator('[title="Saved with the draft"]')).toContainText("retry-agenda.txt");
+				await expect(composer.locator('[data-compose-attachment-state="saved"]')).toContainText("retry-agenda.txt");
 				await page.getByRole("button", { name: "Close composer" }).click();
 
 				const [draft] = await draftsWithSubject(api, subject);

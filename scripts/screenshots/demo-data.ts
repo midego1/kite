@@ -1,9 +1,10 @@
-import { expect } from "@playwright/test";
+import { expect, type APIRequestContext } from "@playwright/test";
 import { SUPPORT_ADDRESS, STORAGE_STATE } from "../../e2e/support/constants";
+import { createFolder, uploadFile } from "../../e2e/support/drive";
 import { apiContext, postInbound, waitForMessage } from "../../e2e/support/helpers";
 
 // Every name, address and domain here is invented; .test and example.com are reserved for documentation.
-export const MAIL = [
+const MAIL = [
 	{
 		from: `"Wingtip Toys" <orders@wingtip.test>`,
 		subject: "Your order #4821 has shipped",
@@ -67,11 +68,23 @@ export const THREAD = [
 
 const EVENTS = [
 	{ day: 0, start: "09:00", end: "09:30", title: "Team standup", color: "blue", repeat: "weekdays" },
-	{ day: 0, start: "13:00", end: "14:00", title: "Design review: onboarding", color: "violet" },
+	{ day: 0, start: "13:00", end: "14:30", title: "Design review: onboarding", color: "violet" },
 	{ day: 1, start: "11:00", end: "12:00", title: "Customer call: Contoso", color: "emerald", location: "Video call" },
 	{ day: 2, start: "15:00", end: "16:30", title: "Quarterly metrics review", color: "orange" },
 	{ day: 3, start: "10:00", end: "11:30", title: "Offsite planning", color: "rose" },
 	{ day: 4, start: "14:00", end: "15:00", title: "Release check-in", color: "blue" },
+];
+
+/** Drive folders and files; the bytes are filler, only names, types and sizes show. */
+const DRIVE_FOLDERS = ["Brand assets", "Contracts", "Offsite Lisbon", "Receipts 2026"];
+const DRIVE_FILES: { name: string; contentType: string; kilobytes: number }[] = [
+	{ name: "Launch plan.pdf", contentType: "application/pdf", kilobytes: 420 },
+	{ name: "Quarterly support metrics.xlsx", contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", kilobytes: 86 },
+	{ name: "Onboarding flow review.pdf", contentType: "application/pdf", kilobytes: 1310 },
+	{ name: "Team photo.jpg", contentType: "image/jpeg", kilobytes: 1800 },
+	{ name: "Welcome email draft.txt", contentType: "text/plain", kilobytes: 3 },
+	{ name: "Offsite agenda.docx", contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", kilobytes: 58 },
+	{ name: "Product walkthrough.mp4", contentType: "video/mp4", kilobytes: 4600 },
 ];
 
 function plainText(html: string): string {
@@ -100,9 +113,38 @@ function at(monday: Date, day: number, time: string): string {
 	return date.toISOString();
 }
 
+async function seedDrive(api: APIRequestContext): Promise<void> {
+	const response = await api.get("/api/drive/items");
+	const { items } = (await response.json()) as { items: { name: string }[] };
+	const stored = new Set(items.map((item) => item.name));
+	for (const name of DRIVE_FOLDERS) if (!stored.has(name)) await createFolder(api, name);
+	for (const { name, contentType, kilobytes } of DRIVE_FILES) {
+		if (!stored.has(name)) await uploadFile(api, name, Buffer.alloc(kilobytes * 1024, 32), { contentType });
+	}
+}
+
+async function seedCalendar(api: APIRequestContext): Promise<void> {
+	const monday = mondayOfThisWeek();
+	for (const { day, start, end, ...event } of EVENTS) {
+		const response = await api.post("/api/calendar/events", {
+			data: { ...event, startsAt: at(monday, day, start), endsAt: at(monday, day, end), timeZone: "UTC" },
+		});
+		expect(response.ok(), await response.text()).toBe(true);
+	}
+}
+
 /** Posts the demo mail, shared mailboxes and calendar events into the isolated e2e server. */
 export async function seedDemoData(): Promise<void> {
 	const api = await apiContext(STORAGE_STATE);
+	// A server kept across runs (E2E_REUSE_SERVER=1) already holds the demo data; seeding it twice would double it.
+	const seeded = await api.get(`/api/messages?${new URLSearchParams({ q: THREAD[0]!.subject, limit: "1" })}`);
+	expect(seeded.ok(), `Looking for earlier demo data failed: ${seeded.status()} ${await seeded.text()}`).toBe(true);
+	const { messages: existing } = (await seeded.json()) as { messages: unknown[] };
+	if (existing.length > 0) {
+		await seedDrive(api);
+		await api.dispose();
+		return;
+	}
 	for (const mail of MAIL) {
 		await postInbound(api, { ...mail, to: `"Support" <${SUPPORT_ADDRESS}>`, text: plainText(mail.html) });
 		await waitForMessage(api, mail.subject);
@@ -121,12 +163,7 @@ export async function seedDemoData(): Promise<void> {
 		});
 		expect(response.ok(), await response.text()).toBe(true);
 	}
-	const monday = mondayOfThisWeek();
-	for (const { day, start, end, ...event } of EVENTS) {
-		const response = await api.post("/api/calendar/events", {
-			data: { ...event, startsAt: at(monday, day, start), endsAt: at(monday, day, end), timeZone: "UTC" },
-		});
-		expect(response.ok(), await response.text()).toBe(true);
-	}
+	await seedCalendar(api);
+	await seedDrive(api);
 	await api.dispose();
 }

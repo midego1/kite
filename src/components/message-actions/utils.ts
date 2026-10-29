@@ -1,5 +1,6 @@
 import type { BulkMessageAction, BulkMessageResponse } from "@/app/api/messages/bulk/types";
 import { offerUndoForMove } from "@/components/messages/undo-utils";
+import { postBulkMessageAction } from "@/components/messages/bulk-request";
 import { announcePhishingReports } from "@/components/messages/phishing-report";
 import { authFetch } from "@/lib/auth/client";
 import { assertNothingSkipped } from "@/lib/messages/permanent-delete-utils";
@@ -31,12 +32,9 @@ export function getMessageBackHref(direction: "inbound" | "outbound", status: st
 }
 
 export async function runSingleMessageAction(messageId: string, action: BulkMessageAction, folderId?: string) {
-	const response = await authFetch("/api/messages/bulk", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ messageIds: [messageId], action, folderId }),
-	});
-
+	const response = await postBulkMessageAction({ messageIds: [messageId], action, folderId });
+	// Cancelled: the message is a draft and the user chose not to delete it.
+	if (!response) return;
 	if (!response.ok) {
 		throw new Error("Unable to update message");
 	}

@@ -28,6 +28,7 @@ import {
 import { getMailboxesBase, mailboxIdParam } from "../utils";
 import MailboxAvatarForm from "./MailboxAvatarForm";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { REMOVE_ACCESS_DESCRIPTION } from "@/lib/messages/draft-privacy-utils";
 import { DangerZone } from "@/components/ui/page";
 import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
 
@@ -306,6 +307,7 @@ export default function MailboxSettingsPage() {
 										if (
 											!(await requestConfirmation({
 												title: `Remove ${member.userName}'s access to this mailbox?`,
+												description: REMOVE_ACCESS_DESCRIPTION,
 												confirmLabel: "Remove access",
 											}))
 										)

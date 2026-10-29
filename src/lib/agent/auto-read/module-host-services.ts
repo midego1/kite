@@ -4,6 +4,7 @@ import { messages } from "@/db/schema";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import type { SessionUser } from "@/lib/auth/types";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import { getEnv } from "@/lib/cloudflare";
 import { MODULE_CAPABILITIES } from "@/lib/modules/capability-registry";
 import { bindHostAgentServices } from "@/lib/modules/host";
@@ -101,11 +102,11 @@ async function callTargets(
 	}
 	if (messageId) {
 		const [message] = await getDb(getEnv())
-			.select({ id: messages.id })
+			.select({ id: messages.id, status: messages.status, userId: messages.userId })
 			.from(messages)
 			.where(and(eq(messages.id, messageId), eq(messages.mailboxId, call.mailboxId)))
 			.limit(1);
-		if (!message) return null;
+		if (!message || isHiddenDraft(message, ctx.viewer!.userId)) return null;
 	}
 	return { suggestionId: call.suggestionId ?? null, messageId };
 }

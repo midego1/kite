@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import type { SessionUser } from "@/lib/auth/types";
 import {
@@ -56,11 +57,12 @@ export async function getScreenerMessageStatus(
 			status: messages.status,
 			direction: messages.direction,
 			fromAddr: messages.fromAddr,
+			userId: messages.userId,
 		})
 		.from(messages)
 		.where(eq(messages.id, messageId))
 		.limit(1);
-	if (!message?.mailboxId) return null;
+	if (!message?.mailboxId || isHiddenDraft(message, user.id)) return null;
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canRead) return null;
 	const address = screenerAddress(message.fromAddr);

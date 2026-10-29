@@ -137,6 +137,7 @@ test("the settings response becomes form state, and a response without auto-read
 			pausedUntil: null,
 			senders: { trusted: [], muted: ["x@y.test"] },
 			models: [],
+			triageModelNotice: null,
 			canManage: false,
 			autoReadAvailable: true,
 			externalProviderBlocked: false,
@@ -146,6 +147,17 @@ test("the settings response becomes form state, and a response without auto-read
 	assert.equal(sparse.form.triageModelId, "");
 	assert.equal(sparse.form.spendCap, "");
 	assert.equal(sparse.form.dailyLimit, "200");
+});
+
+test("a triage model the active provider does not offer is named with what is used instead", () => {
+	const switched = ui.toAutoReadState(
+		{ ...response, unavailableModels: { triage: { saved: "haimaker/cheap", using: null } } },
+		NOW,
+	);
+	assert.equal(
+		switched.triageModelNotice,
+		"haimaker/cheap is not offered by the AI provider in use, so the model is chosen automatically.",
+	);
 });
 
 test("the update body carries the form values but never the muted senders", () => {

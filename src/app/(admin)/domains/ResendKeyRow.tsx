@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { postJson } from "./api";
 import { StatusRow } from "./status-row";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { ROW_BUTTON_CLASS } from "./utils";
 
 type Props = {
 	configured: boolean | null;
@@ -63,10 +64,22 @@ export default function ResendKeyRow({ configured, onChanged, onError }: Props) 
 				action={
 					configured && !editing ? (
 						<>
-							<Button size="sm" variant="outline" className="bg-white" disabled={busy} onClick={() => setEditing(true)}>
+							<Button
+								size="sm"
+								variant="outline"
+								className={ROW_BUTTON_CLASS}
+								disabled={busy}
+								onClick={() => setEditing(true)}
+							>
 								Replace
 							</Button>
-							<Button size="sm" variant="outline" className="bg-white" disabled={busy} onClick={() => void remove()}>
+							<Button
+								size="sm"
+								variant="outline"
+								className={ROW_BUTTON_CLASS}
+								disabled={busy}
+								onClick={() => void remove()}
+							>
 								Remove
 							</Button>
 						</>
@@ -98,7 +111,7 @@ export default function ResendKeyRow({ configured, onChanged, onError }: Props) 
 								type="button"
 								size="sm"
 								variant="outline"
-								className="bg-white"
+								className={ROW_BUTTON_CLASS}
 								onClick={() => {
 									setEditing(false);
 									setApiKey("");

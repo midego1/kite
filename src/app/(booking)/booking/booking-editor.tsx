@@ -121,7 +121,7 @@ export function BookingEditor({
 								onClick={() => toggle("event")}
 								aria-label="Toggle event details"
 								aria-expanded={activeSection === "event"}
-								className="rounded-full p-1 text-neutral-500 hover:bg-neutral-100"
+								className="rounded-lg p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 							>
 								<ChevronDown
 									className={clsx("h-5 w-5 transition-transform", activeSection === "event" && "rotate-180")}
@@ -367,7 +367,7 @@ export function BookingEditor({
 															timeRanges: form.timeRanges.filter((_, itemIndex) => itemIndex !== index),
 														})
 													}
-													className="mb-1 rounded-full p-2 text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
+													className="mb-1 rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-30"
 												>
 													<Trash2 className="h-4 w-4" />
 												</button>
@@ -425,7 +425,7 @@ export function BookingEditor({
 										const host = hosts.find((item) => item.id === id);
 										const isCurrentUser = id === currentUserId;
 										return (
-											<div key={id} className="flex items-center gap-3 rounded-xl bg-neutral-50 px-3 py-2">
+											<div key={id} className="flex items-center gap-3 rounded-lg bg-neutral-50 px-3 py-2">
 												{host ? (
 													<BookingHostAvatar host={host} currentUserId={currentUserId} />
 												) : (
@@ -494,7 +494,7 @@ export function BookingEditor({
 												aria-describedby={hostError ? "booking-host-error" : undefined}
 												className="min-w-0 flex-1"
 											/>
-											<Button type="submit" variant="outline" className="shrink-0 rounded-full">
+											<Button type="submit" variant="outline" className="shrink-0">
 												Add
 											</Button>
 										</div>
@@ -538,7 +538,7 @@ export function BookingEditor({
 								type="button"
 								variant="outline"
 								onClick={() => setMoreOpen((value) => !value)}
-								className="h-9 rounded-full px-3"
+								className="h-8 px-3"
 							>
 								<MoreHorizontal className="h-4 w-4" />
 								More
@@ -569,10 +569,10 @@ export function BookingEditor({
 							)}
 						</div>
 					)}
-					<Button type="button" variant="ghost" disabled={saving} onClick={onClose} className="h-9 rounded-full px-4">
+					<Button type="button" variant="ghost" disabled={saving} onClick={onClose} className="h-9 px-4">
 						Cancel
 					</Button>
-					<Button type="button" disabled={saving} onClick={onSave} className="h-9 rounded-full px-4">
+					<Button type="button" disabled={saving} onClick={onSave} className="h-9 px-4">
 						{saving ? "Saving…" : editingId ? "Save changes" : "Create"}
 					</Button>
 				</div>

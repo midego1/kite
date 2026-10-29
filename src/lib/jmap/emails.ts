@@ -10,6 +10,7 @@ import { storeMessageAttachments } from "@/lib/email/attachments";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import { canOffloadHtmlBodies, loadMessageBodies } from "@/lib/email/bodies";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
+import { visibleDraftsCondition } from "@/lib/messages/mailbox-scope";
 import { LIMITS, KEYWORD_FLAGGED, KEYWORD_SEEN } from "./constants";
 import { JmapError, invalidArguments } from "./errors";
 import { decodeBlobId, decodeMailboxRef, roleToStatus } from "./ids";
@@ -19,7 +20,7 @@ import { filterToSql, mailboxRefCondition, sortToSql } from "./email-query";
 import { getEmailState } from "./state";
 import { unescapePointerToken } from "./pointer-utils";
 import { listAccessibleMailboxIdSet, listJmapMailboxes } from "./access";
-import { emailWriteAccess } from "./email-access";
+import { emailWriteAccess, refuseDraftMove } from "./email-access";
 import { deleteUpload, readUpload, storeRawDraftMime } from "./blobs";
 import type {
 	Comparator,
@@ -72,9 +73,11 @@ async function scope(ctx: JmapContext) {
 	return {
 		ids,
 		// One JSON parameter however many mailboxes the user reads, so the id batches keep the rest of D1's cap.
-		// Mail held in the Screener is invisible to JMAP until its sender is approved.
+		// Mail held in the Screener is invisible to JMAP until its sender is approved, and another
+		// user's draft always: drafts are private to their author, so each sees only their own in Drafts.
 		condition: and(
 			ne(messages.status, SCREENING_STATUS),
+			visibleDraftsCondition(ctx.auth.userId),
 			ids.length
 				? inJsonArray(messages.mailboxId, ids)
 				: ctx.auth.mailboxIds
@@ -191,11 +194,14 @@ export const emailQueryChanges: JmapMethodHandler = async () => {
 };
 
 /** Where a patched `mailboxIds` puts the message: exactly one JMAP mailbox is supported. */
-function targetFromMailboxIds(
-	row: MessageRow,
-	patch: Record<string, unknown>,
-	accessible: Set<string>,
-): { status?: string; folderId?: string | null } | { error: Record<string, unknown> } | null {
+type MoveTarget = { status?: string; folderId?: string | null } | { error: Record<string, unknown> } | null;
+
+/** The move a patch asks for; never into or out of Drafts (`refuseDraftMove`). */
+function targetFromMailboxIds(row: MessageRow, patch: Record<string, unknown>, accessible: Set<string>): MoveTarget {
+	return refuseDraftMove(row.status, requestedMove(row, patch, accessible));
+}
+
+function requestedMove(row: MessageRow, patch: Record<string, unknown>, accessible: Set<string>): MoveTarget {
 	let ids: string[] | null = null;
 	if (patch.mailboxIds && typeof patch.mailboxIds === "object") {
 		ids = Object.entries(patch.mailboxIds as Record<string, boolean>)

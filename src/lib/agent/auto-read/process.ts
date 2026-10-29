@@ -91,6 +91,7 @@ async function modelStep(input: {
 }): Promise<ModelStep> {
 	const { env, job, settings, context, install, extensions, hintOnly, oneLine } = input;
 	const config = await getAgentProviderConfig(env);
+	if (config.keyUnreadable) return { skip: "provider_key_unreadable", model: null, hintOnly };
 	if (config.provider === "compatible" && !install.externalAutoReadAllowed)
 		return { skip: "external_provider_not_allowed", model: null, hintOnly };
 	if (!(await allowAutoReadRequest(env, job.mailboxId))) return { skip: "rate_limited", model: null, hintOnly };

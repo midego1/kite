@@ -19,6 +19,7 @@ import { visibleBookingEvents } from "./default-events";
 import type { BookingEvent, BookingForm, BookingHost } from "./types";
 import { availabilityLabel, durationLabel, emptyBookingForm, formFromEvent } from "./utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { EmptyState } from "@/components/ui/page";
 
 export default function BookingsPage() {
 	const { minimal: sidebarMinimal, mobile } = useSidebar();
@@ -195,24 +196,24 @@ export default function BookingsPage() {
 	return (
 		<div
 			className={clsx(
-				"flex h-full min-h-0 flex-col bg-[#f6f8fc] pl-3 max-md:pl-0 transition-[gap] duration-200 ease-in-out motion-reduce:transition-none lg:flex-row",
-				minimal ? "gap-0" : "gap-3",
+				"flex h-full min-h-0 flex-col bg-[#f6f8fc] md:px-2 md:pb-2 transition-[gap] duration-200 ease-in-out motion-reduce:transition-none lg:flex-row",
+				minimal ? "gap-0" : "gap-2",
 			)}
 		>
 			{loading && <RouteLoadingBarPortal />}
 			<UpcomingSidebar />
-			<section className="min-h-0 min-w-0 flex-1 overflow-hidden overscroll-contain max-md:rounded-t-3xl max-md:bg-white">
+			<section className="min-h-0 min-w-0 flex-1 overflow-hidden overscroll-contain bg-white max-md:rounded-t-xl md:rounded-xl md:border md:border-neutral-200 md:shadow-xs">
 				<div className="flex h-full min-h-0 min-w-0">
 					<div className="min-w-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable">
 						<div className="mx-auto max-w-6xl px-5 md:px-8">
-							<section aria-label="Booking events" className="space-y-1 pt-3 max-md:pb-24">
+							<section aria-label="Booking events" className="pt-6 pb-8 max-md:pt-4 max-md:pb-24">
 								<div className="flex flex-wrap items-start justify-between gap-4 pb-6 max-md:flex-nowrap max-md:gap-2">
 									<div className="min-w-0">
-										<h1 className="text-xl font-semibold text-neutral-900 md:text-3xl">Bookings</h1>
+										<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Bookings</h1>
 										<p className="mt-1 text-sm text-neutral-500">Set the meetings people can book with you.</p>
 									</div>
 									<div className="flex shrink-0 items-center gap-2">
-										<Button asChild variant="ghost" className="w-10 max-md:-mr-2">
+										<Button asChild variant="ghost" size="icon" className="max-md:-mr-2">
 											<Link
 												href={`/c/${username}`}
 												target="_blank"
@@ -228,7 +229,7 @@ export default function BookingsPage() {
 											type="button"
 											onClick={startCreate}
 											disabled={!currentUserId}
-											className={clsx("rounded-full", mobilePrimaryActionClass)}
+											className={mobilePrimaryActionClass}
 										>
 											<Plus size={18} />
 											New event
@@ -239,129 +240,131 @@ export default function BookingsPage() {
 								{loading ? (
 									<BookingListSkeleton />
 								) : listEvents.length === 0 ? (
-									<div className="rounded-2xl border border-dashed border-neutral-300 bg-white px-6 py-12 text-center">
-										<CalendarDays className="mx-auto mb-3 h-8 w-8 text-neutral-400" />
-										<h2 className="font-medium text-neutral-900">No booking events yet</h2>
-										<p className="mt-1 text-sm text-neutral-500">Create an event to share your availability.</p>
-									</div>
+									<EmptyState
+										icon={CalendarDays}
+										title="No booking events yet"
+										description="Create an event to share your availability."
+									/>
 								) : (
-									listEvents.map((event, i) => (
-										<article
-											key={event.id}
-											className={clsx(
-												!event.enabled && "opacity-65",
-												`relative flex flex-wrap items-center gap-4 rounded-md bg-white px-5 py-5 max-md:gap-3 max-md:rounded-none max-md:border-b max-md:border-neutral-100 max-md:px-0 max-md:py-4 max-md:last:border-b-0`,
-												i === 0 && "rounded-t-3xl",
-											)}
-										>
-											<div className="flex min-w-0 flex-1 items-start gap-4">
-												<span
-													className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${event.enabled ? "border-blue-600 bg-blue-600 text-white" : "border-neutral-300"}`}
-												>
-													{event.enabled && <Check className="h-3.5 w-3.5" />}
-												</span>
-												<div className="min-w-0">
-													<button
-														type="button"
-														onClick={() => startEdit(event)}
-														className="text-left text-lg font-semibold text-neutral-900 hover:text-blue-700 max-md:text-base"
+									<div>
+										{listEvents.map((event) => (
+											<article
+												key={event.id}
+												className={clsx(
+													// A turned-off event fades its content, not the list's border.
+													!event.enabled && "[&>*]:opacity-65",
+													`relative flex flex-wrap items-center gap-4 border-x border-b border-neutral-200 bg-white px-5 py-4 first:rounded-t-xl first:border-t last:rounded-b-xl max-md:gap-3 max-md:rounded-none max-md:border-x-0 max-md:border-t-0 max-md:px-0 max-md:py-4 max-md:last:border-b-0`,
+												)}
+											>
+												<div className="flex min-w-0 flex-1 items-start gap-4">
+													<span
+														className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${event.enabled ? "border-blue-600 bg-blue-600 text-white" : "border-neutral-300"}`}
 													>
-														{event.name}
-													</button>
-													{event.description && (
-														<p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm text-neutral-600">
-															{event.description}
+														{event.enabled && <Check className="h-3.5 w-3.5" />}
+													</span>
+													<div className="min-w-0">
+														<button
+															type="button"
+															onClick={() => startEdit(event)}
+															className="text-left text-base font-semibold text-neutral-900 hover:text-blue-700"
+														>
+															{event.name}
+														</button>
+														{event.description && (
+															<p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm text-neutral-600">
+																{event.description}
+															</p>
+														)}
+														<p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-neutral-500">
+															<span className="inline-flex items-center gap-1">
+																<Clock3 className="h-3.5 w-3.5" />
+																{durationLabel(event.durationMinutes)}
+															</span>
+															<span>·</span>
+															<span className="inline-flex items-center gap-1">
+																<MapPin className="h-3.5 w-3.5" />
+																{event.location || "No location set"}
+															</span>
 														</p>
-													)}
-													<p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-neutral-500">
-														<span className="inline-flex items-center gap-1">
-															<Clock3 className="h-3.5 w-3.5" />
-															{durationLabel(event.durationMinutes)}
-														</span>
-														<span>·</span>
-														<span className="inline-flex items-center gap-1">
-															<MapPin className="h-3.5 w-3.5" />
-															{event.location || "No location set"}
-														</span>
-													</p>
-													<p className="mt-2 text-sm text-neutral-500">{availabilityLabel(event)}</p>
+														<p className="mt-2 text-sm text-neutral-500">{availabilityLabel(event)}</p>
+													</div>
 												</div>
-											</div>
-											<div className="ml-auto flex items-center gap-2 max-md:ml-9 max-md:w-full">
-												{event.enabled ? (
-													<>
+												<div className="ml-auto flex items-center gap-2 max-md:ml-9 max-md:w-full">
+													{event.enabled ? (
+														<>
+															<Button
+																type="button"
+																variant="outline"
+																onClick={() => void copyLink(event)}
+																className="h-8 px-3"
+															>
+																<Copy className="h-4 w-4" />
+																Copy link
+															</Button>
+															{username && (
+																<Link
+																	href={`/c/${username}/${event.slug}`}
+																	target="_blank"
+																	aria-label={`Open booking page for ${event.name}`}
+																	className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+																>
+																	<ExternalLink className="h-4 w-4" />
+																</Link>
+															)}
+														</>
+													) : (
 														<Button
 															type="button"
 															variant="outline"
-															onClick={() => void copyLink(event)}
-															className="h-9 rounded-full px-3"
+															disabled={event.isTemplate && savingTemplateId !== null}
+															onClick={() => void setEnabled(event, true)}
+															className="h-8 px-3"
 														>
-															<Copy className="h-4 w-4" />
-															Copy link
+															{savingTemplateId === event.id ? "Turning on…" : "Turn on"}
 														</Button>
-														{username && (
-															<Link
-																href={`/c/${username}/${event.slug}`}
-																target="_blank"
-																aria-label={`Open booking page for ${event.name}`}
-																className="rounded-full p-2 text-neutral-600 hover:bg-neutral-100"
+													)}
+													{!event.isTemplate && (
+														<div className="relative">
+															<button
+																type="button"
+																aria-label={`More options for ${event.name}`}
+																aria-expanded={menuId === event.id}
+																onClick={() => setMenuId(menuId === event.id ? null : event.id)}
+																className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 															>
-																<ExternalLink className="h-4 w-4" />
-															</Link>
-														)}
-													</>
-												) : (
-													<Button
-														type="button"
-														variant="outline"
-														disabled={event.isTemplate && savingTemplateId !== null}
-														onClick={() => void setEnabled(event, true)}
-														className="h-9 rounded-full px-3"
-													>
-														{savingTemplateId === event.id ? "Turning on…" : "Turn on"}
-													</Button>
-												)}
-												{!event.isTemplate && (
-													<div className="relative">
-														<button
-															type="button"
-															aria-label={`More options for ${event.name}`}
-															aria-expanded={menuId === event.id}
-															onClick={() => setMenuId(menuId === event.id ? null : event.id)}
-															className="rounded-full p-2 text-neutral-600 hover:bg-neutral-100"
-														>
-															<MoreHorizontal className="h-5 w-5" />
-														</button>
-														{menuId === event.id && (
-															<div className="absolute right-0 top-10 z-10 w-36 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
-																<button
-																	type="button"
-																	onClick={() => startEdit(event)}
-																	className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-neutral-100"
-																>
-																	Edit
-																</button>
-																<button
-																	type="button"
-																	onClick={() => void setEnabled(event, !event.enabled)}
-																	className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-neutral-100"
-																>
-																	Turn {event.enabled ? "off" : "on"}
-																</button>
-																<button
-																	type="button"
-																	onClick={() => void remove(event)}
-																	className="block w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-																>
-																	Delete
-																</button>
-															</div>
-														)}
-													</div>
-												)}
-											</div>
-										</article>
-									))
+																<MoreHorizontal className="h-5 w-5" />
+															</button>
+															{menuId === event.id && (
+																<div className="absolute right-0 top-10 z-10 w-36 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+																	<button
+																		type="button"
+																		onClick={() => startEdit(event)}
+																		className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-neutral-100"
+																	>
+																		Edit
+																	</button>
+																	<button
+																		type="button"
+																		onClick={() => void setEnabled(event, !event.enabled)}
+																		className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-neutral-100"
+																	>
+																		Turn {event.enabled ? "off" : "on"}
+																	</button>
+																	<button
+																		type="button"
+																		onClick={() => void remove(event)}
+																		className="block w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+																	>
+																		Delete
+																	</button>
+																</div>
+															)}
+														</div>
+													)}
+												</div>
+											</article>
+										))}
+									</div>
 								)}
 							</section>
 						</div>

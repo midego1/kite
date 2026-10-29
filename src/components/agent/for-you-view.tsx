@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState, PanelHeader } from "@/components/ui/page";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatMessageListTimestamp } from "@/components/messages/utils";
 import { dispatchAgentSuggestionChanged } from "@/hooks/message-realtime-utils";
@@ -12,6 +13,7 @@ import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
 import { authFetch } from "@/lib/auth/client";
 import { isSameOriginPath } from "@/lib/modules/path-utils";
 import { FOR_YOU_KIND_LABELS, groupForYou, keepListedSelection } from "@/lib/agent/auto-read/for-you-utils";
+import { CARD_CLASS, TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 
 async function dismissAll(ids: string[]): Promise<number> {
 	let failed = 0;
@@ -104,76 +106,74 @@ export function ForYouView() {
 	}
 
 	return (
-		<div className="mx-auto w-full max-w-3xl overflow-y-auto p-6 max-md:p-4">
-			<div className="flex flex-wrap items-center justify-between gap-3">
-				<div>
-					<h1 className="flex items-center gap-2 text-2xl font-semibold text-neutral-900">
-						<Sparkles aria-hidden className="h-5 w-5 text-blue-600" />
-						For you
-					</h1>
-					<p className="mt-1 text-sm text-neutral-600">
-						What Kite noticed in your mail. Nothing happens until you act.
+		<div className="flex min-h-full flex-col">
+			<PanelHeader
+				icon={Sparkles}
+				title="For you"
+				actions={
+					suggestions.length > 0 && (
+						<>
+							<label className="flex items-center gap-2 text-sm text-neutral-700">
+								<Checkbox
+									checked={listed.size === suggestions.length}
+									onChange={(event) =>
+										setSelected(event.target.checked ? new Set(suggestions.map((item) => item.id)) : new Set())
+									}
+								/>
+								Select all
+							</label>
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={listed.size === 0 || dismissing}
+								onClick={() => void dismissSelected()}
+							>
+								{dismissing ? "Dismissing..." : listed.size > 0 ? `Dismiss (${listed.size})` : "Dismiss"}
+							</Button>
+						</>
+					)
+				}
+			/>
+			<div className="mx-auto w-full max-w-3xl p-6 max-md:p-4">
+				<p className="text-sm text-neutral-500">What Kite noticed in your mail. Nothing happens until you act.</p>
+				{error && (
+					<p role="alert" className="mt-4 text-sm text-red-600">
+						{error}
 					</p>
-				</div>
-				{suggestions.length > 0 && (
-					<div className="flex items-center gap-3">
-						<label className="flex items-center gap-2 text-sm text-neutral-700">
-							<Checkbox
-								checked={listed.size === suggestions.length}
-								onChange={(event) =>
-									setSelected(event.target.checked ? new Set(suggestions.map((item) => item.id)) : new Set())
-								}
-							/>
-							Select all
-						</label>
-						<Button variant="outline" disabled={listed.size === 0 || dismissing} onClick={() => void dismissSelected()}>
-							{dismissing ? "Dismissing..." : listed.size > 0 ? `Dismiss (${listed.size})` : "Dismiss"}
-						</Button>
-					</div>
 				)}
-			</div>
-			{error && (
-				<p role="alert" className="mt-4 text-sm text-red-600">
-					{error}
-				</p>
-			)}
-			{!loaded && <p className="mt-6 text-sm text-neutral-500">Loading…</p>}
-			{total > suggestions.length && (
-				<p data-for-you-truncated className="mt-4 text-sm text-neutral-600">
-					Showing the newest {suggestions.length} of {total} suggestions.
-				</p>
-			)}
-			{loaded && suggestions.length === 0 && (
-				<p className="mt-6 rounded-lg border border-dashed border-neutral-200 px-4 py-6 text-center text-sm text-neutral-500">
-					Nothing needs your attention right now.
-				</p>
-			)}
-			{groups.map((group) => (
-				<section
-					key={group.kind}
-					aria-labelledby={`for-you-${group.kind}`}
-					className="mt-6 overflow-hidden rounded-xl border border-neutral-200 bg-white"
-				>
-					<h2
-						id={`for-you-${group.kind}`}
-						className="border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-sm font-semibold text-neutral-800"
+				{!loaded && <p className="mt-6 text-sm text-neutral-500">Loading…</p>}
+				{total > suggestions.length && (
+					<p data-for-you-truncated className="mt-4 text-sm text-neutral-600">
+						Showing the newest {suggestions.length} of {total} suggestions.
+					</p>
+				)}
+				{loaded && suggestions.length === 0 && (
+					<EmptyState icon={Sparkles} title="Nothing needs your attention right now." className="mt-6" />
+				)}
+				{groups.map((group) => (
+					<section
+						key={group.kind}
+						aria-labelledby={`for-you-${group.kind}`}
+						className={`mt-6 overflow-hidden ${CARD_CLASS}`}
 					>
-						{FOR_YOU_KIND_LABELS[group.kind] ?? group.kind}{" "}
-						<span className="font-normal text-neutral-500">({kindTotals[group.kind] ?? group.items.length})</span>
-					</h2>
-					<ul className="divide-y divide-neutral-200">
-						{group.items.map((suggestion) => (
-							<ForYouEntry
-								key={suggestion.id}
-								suggestion={suggestion}
-								mailbox={showMailbox ? (addresses.get(suggestion.mailboxId) ?? null) : null}
-								selected={listed.has(suggestion.id)}
-								onToggle={toggle}
-							/>
-						))}
-					</ul>
-				</section>
-			))}
+						<h2 id={`for-you-${group.kind}`} className={`${TABLE_HEAD_CLASS} px-4 py-2`}>
+							{FOR_YOU_KIND_LABELS[group.kind] ?? group.kind}{" "}
+							<span className="font-normal text-neutral-500">({kindTotals[group.kind] ?? group.items.length})</span>
+						</h2>
+						<ul className="divide-y divide-neutral-200">
+							{group.items.map((suggestion) => (
+								<ForYouEntry
+									key={suggestion.id}
+									suggestion={suggestion}
+									mailbox={showMailbox ? (addresses.get(suggestion.mailboxId) ?? null) : null}
+									selected={listed.has(suggestion.id)}
+									onToggle={toggle}
+								/>
+							))}
+						</ul>
+					</section>
+				))}
+			</div>
 		</div>
 	);
 }

@@ -38,7 +38,7 @@ An open relay accepts mail from anyone and delivers it to anyone. Kite does neit
 | --- | --- | --- |
 | Sending allowance per user | At most **100 messages per rolling hour and 500 per rolling day** for each user, counted over every send path above. A refused send answers HTTP 429 with the reason. Undone sends do not count. Change it with `SEND_LIMIT_PER_HOUR` and `SEND_LIMIT_PER_DAY`; `0` removes a limit. Counting is not atomic, so parallel requests can overshoot by a few messages. | `src/lib/email/send-limits.ts` |
 | Recipients per message | At most 50 across To, Cc and Bcc. | `src/lib/email/send.ts` |
-| Attachments | The administrator's outgoing limit, 25 MB at most. Cloudflare Email Sending allows 5 MiB per message, so Kite turns larger files into download links. | `src/lib/email/attachment-policy.ts`, `cloud-attachment-utils.ts` |
+| Attachments | The administrator's outgoing limit, 25 MB at most. Cloudflare Email Sending allows 5 MiB per message, so Kite turns larger files into download links; the composer only warns about this when the From domain sends through Cloudflare. | `src/lib/email/attachment-policy.ts`, `cloud-attachment-utils.ts` |
 | Sign-in attempts | 20 per minute per IP address on `/api/auth/login` and password reset requests (a Workers rate-limit binding, a fixed window in memory when self-hosted). Optional Turnstile. Optional TOTP two-factor sign-in. | `src/lib/auth/rate-limit.ts` |
 | Password reset | One reset email per account per minute. Links are hashed, single use and valid 30 minutes; redeeming one signs the account out everywhere. | `src/lib/auth/password-reset.ts` |
 | Cross-site requests | Central CSRF check on every state-changing request. | `src/lib/security/csrf.ts` |

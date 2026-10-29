@@ -23,6 +23,7 @@ import {
 } from "./auto-read-settings-utils";
 import { SenderLists } from "./sender-lists";
 import { ListSummarySettings } from "./list-summary-settings";
+import { ModelFallbackNotice } from "./model-fallback-notice";
 
 const fieldClass =
 	"mt-2 w-full rounded-xl border border-neutral-200 bg-white p-2 outline-none focus:border-blue-400 disabled:cursor-not-allowed disabled:opacity-60";
@@ -207,6 +208,7 @@ function AutoReadFields({
 						</option>
 					))}
 				</select>
+				<ModelFallbackNotice text={state.triageModelNotice} />
 			</label>
 			<label className="block">
 				Daily triage limit

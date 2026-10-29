@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
 	let mbox: string;
 	try {
-		mbox = await exportMailboxToMbox(env, mailboxId);
+		mbox = await exportMailboxToMbox(env, mailboxId, user.id);
 	} catch (failure) {
 		if (!(failure instanceof MessageBodyUnavailableError)) throw failure;
 		return NextResponse.json(

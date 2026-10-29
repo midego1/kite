@@ -47,6 +47,7 @@ const {
 	telemetryDayLabel,
 	telemetryLocalStart,
 	telemetryNoticeDue,
+	telemetryEarlierStartDay,
 	telemetryNoticeText,
 	telemetryStartDay,
 	telemetryStartDayOutcome,
@@ -195,21 +196,13 @@ test("the rules: only an undecided install starts, only from a start day it was 
 	assert.equal(telemetryHideLabel(START_DAY), "Hide (statistics still start on 29 October 2026 UTC)");
 	const project = telemetryNoticeCopy(DEFAULT_TELEMETRY_URL);
 	assert.equal(
-		project.short,
-		"So the Kite project can see how many active installs there are, which versions and modules they run, and roughly how many accounts and mailboxes they have. One pseudonymous daily report, rough counts only.",
-	);
-	assert.equal(
 		project.detail,
 		"Once a day, around 02:00 UTC, it would send the Kite project one small pseudonymous report, so it can see how many active installs there are, which versions, runtimes and modules they run, and roughly how many accounts and mailboxes they have and use. It holds rough counts only: ranges, never exact numbers, and no names, email addresses, domains or message content. The collector does not store IP addresses. Nothing has been sent yet. Keep on starts with the next daily report; Turn off means nothing is ever sent.",
 	);
 	assert.equal(project.detail.match(/the Kite project/gi).length, 1, "the project is named once");
 	// Another collector (KITE_TELEMETRY_URL): the copy names no operator and claims nothing about its logs.
 	const custom = telemetryNoticeCopy(COLLECTOR);
-	assert.equal(
-		custom.short,
-		"One pseudonymous daily report, rough counts only, to the collector this deployment is set up to use.",
-	);
-	for (const text of [custom.detail, custom.short]) assert.doesNotMatch(text, /Kite project|IP address/);
+	assert.doesNotMatch(custom.detail, /Kite project|IP address/);
 	assert.equal(isDefaultCollector(null), false);
 	assert.equal(telemetryPurposeClause(COLLECTOR), "to the collector this deployment is set up to use");
 	assert.match(telemetryPurposeClause(DEFAULT_TELEMETRY_URL), /^so the Kite project can see how many active installs/);
@@ -323,22 +316,167 @@ test("a notice first seen over an hour before tonight's 02:00 UTC run starts wit
 	}
 });
 
-test("a start day announced before this rule keeps its date", async (t) => {
+/** An undecided install told under the earlier 14-day rule: 12 November, as the notice named it on 28 October. */
+const LEGACY_DAY = "2026-11-12";
+
+function insertLegacyNotice(sqlite, { dismissed = 0, startDay = LEGACY_DAY } = {}) {
+	sqlite.db
+		.prepare(
+			"INSERT INTO telemetry_state (id, enabled, start_day, notice_dismissed, updated_at) VALUES ('default', 0, ?, ?, 1)",
+		)
+		.run(startDay, dismissed);
+}
+
+test("a later start day announced under the 14-day rule moves to the current rule, once, and only earlier", async (t) => {
 	const sqlite = await database(t);
 	const env = { DB: sqlite, KITE_TELEMETRY_URL: COLLECTOR };
 	const { requests, fetcher } = recorder();
-	// Announced earlier under the 14-day rule: 12 November.
-	sqlite.db
-		.prepare(
-			"INSERT INTO telemetry_state (id, enabled, start_day, notice_dismissed, updated_at) VALUES ('default', 0, ?, 0, 1)",
-		)
-		.run("2026-11-12");
-	await markTelemetryNotice(env, "shown", SEEN);
-	assert.equal((await readTelemetryState(env)).startDay, "2026-11-12", "never moved earlier");
-	assert.deepEqual(await everyDay(env, "2026-10-29", "2026-11-12", fetcher), ["disabled"]);
-	assert.equal(await runTelemetryHeartbeat(env, at("2026-11-12", "01:59:59"), fetcher), "disabled");
+	insertLegacyNotice(sqlite);
+	// The release runs at 15:30 UTC on 28 October; the status read moves the date to the next 02:00 UTC run.
+	const status = await getTelemetryStatus(env, SEEN);
+	assert.equal(status.startDay, START_DAY);
+	assert.deepEqual(
+		{ decision: status.decision, enabled: status.enabled, installId: status.installId, notice: status.notice },
+		{ decision: null, enabled: false, installId: null, notice: true },
+		"moving the date turns nothing on",
+	);
+	// Idempotent: later reads and a later markTelemetryNotice leave the date where it is.
+	await getTelemetryStatus(env, at("2026-10-28", "20:00:00"));
+	await markTelemetryNotice(env, "shown", at("2026-10-28", "21:00:00"));
+	assert.equal((await readTelemetryState(env)).startDay, START_DAY);
+	assert.equal(await runTelemetryHeartbeat(env, at("2026-10-28", "23:00:00"), fetcher), "disabled");
+	assert.equal(requests.length, 0, "never before the first run at least an hour after the release");
+	assert.equal(await runTelemetryHeartbeat(env, at(START_DAY), fetcher), "sent");
+	assert.equal((await readTelemetryState(env)).decision, "on");
+});
+
+test("the recompute runs at the next cron when nobody read the status, and keeps the hour of lead", async (t) => {
+	const { requests, fetcher } = recorder();
+	// The release is running at 01:30 UTC: tonight's run is under an hour away, so the first run is tomorrow's.
+	const early = { DB: await database(t), KITE_TELEMETRY_URL: COLLECTOR };
+	insertLegacyNotice(early.DB);
+	assert.equal(await runTelemetryHeartbeat(early, at("2026-10-29", "01:30:00"), fetcher), "disabled");
+	assert.equal((await readTelemetryState(early)).startDay, "2026-10-30");
 	assert.equal(requests.length, 0);
-	assert.equal(await runTelemetryHeartbeat(env, at("2026-11-12"), fetcher), "sent");
+	// The cron of 02:00 itself is the first run that finds the release: statistics start with tomorrow's run.
+	const cron = { DB: await database(t), KITE_TELEMETRY_URL: COLLECTOR };
+	insertLegacyNotice(cron.DB);
+	assert.equal(await runTelemetryHeartbeat(cron, at("2026-10-29"), fetcher), "disabled");
+	assert.equal((await readTelemetryState(cron)).startDay, "2026-10-30");
+	assert.equal(await runTelemetryHeartbeat(cron, at("2026-10-30"), fetcher), "sent");
+	// Running just over an hour before tonight's run: that run starts it.
+	const ahead = { DB: await database(t), KITE_TELEMETRY_URL: COLLECTOR };
+	insertLegacyNotice(ahead.DB);
+	assert.equal(await applyTelemetryStartDay(ahead, at("2026-10-29", "00:59:00")), null);
+	assert.equal((await readTelemetryState(ahead)).startDay, "2026-10-29");
+	assert.equal(await runTelemetryHeartbeat(ahead, at("2026-10-29"), fetcher), "sent");
+});
+
+test("the recompute never moves a date later, never touches a decision and never invents a date", async (t) => {
+	const { requests, fetcher } = recorder();
+	// A date the current rule gave stays, and so does one that has already come (it starts, it is not moved).
+	for (const startDay of [START_DAY, "2026-01-01"]) {
+		const sqlite = await database(t);
+		const env = { DB: sqlite, KITE_TELEMETRY_URL: COLLECTOR };
+		insertLegacyNotice(sqlite, { startDay });
+		await applyTelemetryStartDay(env, SEEN);
+		assert.equal((await readTelemetryState(env)).startDay, startDay, startDay);
+	}
+	// A notice the owner hid promised the old date: it moves too, and the notice comes back naming the new one.
+	const dismissed = await database(t);
+	insertLegacyNotice(dismissed, { dismissed: 1 });
+	const dismissedEnv = { DB: dismissed, KITE_TELEMETRY_URL: COLLECTOR };
+	const dismissedState = await getTelemetryStatus(dismissedEnv, SEEN);
+	assert.deepEqual(
+		{ startDay: dismissedState.startDay, notice: dismissedState.notice, decision: dismissedState.decision },
+		{ startDay: START_DAY, notice: true, decision: null },
+	);
+	assert.equal((await readTelemetryState(dismissedEnv)).noticeDismissed, false);
+	// Hiding it again keeps the new date, and nothing moves it a second time.
+	await markTelemetryNotice(dismissedEnv, "dismissed", at("2026-10-28", "16:00:00"));
+	await getTelemetryStatus(dismissedEnv, at("2026-10-28", "17:00:00"));
+	assert.deepEqual(
+		{
+			startDay: (await readTelemetryState(dismissedEnv)).startDay,
+			hidden: (await readTelemetryState(dismissedEnv)).noticeDismissed,
+		},
+		{ startDay: START_DAY, hidden: true },
+	);
+	// A hidden notice whose date is already in line stays hidden.
+	const inLine = await database(t);
+	insertLegacyNotice(inLine, { dismissed: 1, startDay: START_DAY });
+	await getTelemetryStatus({ DB: inLine, KITE_TELEMETRY_URL: COLLECTOR }, SEEN);
+	assert.equal((await readTelemetryState({ DB: inLine })).noticeDismissed, true);
+
+	// Decided installs keep their decision and never get a date.
+	for (const decision of ["on", "off"]) {
+		const sqlite = await database(t);
+		const env = { DB: sqlite, KITE_TELEMETRY_URL: COLLECTOR };
+		sqlite.db
+			.prepare(
+				"INSERT INTO telemetry_state (id, enabled, install_id, decision, start_day, updated_at) VALUES ('default', ?, ?, ?, ?, 1)",
+			)
+			.run(
+				decision === "on" ? 1 : 0,
+				decision === "on" ? "3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e" : null,
+				decision,
+				LEGACY_DAY,
+			);
+		await getTelemetryStatus(env, SEEN);
+		await applyTelemetryStartDay(env, SEEN);
+		const state = await readTelemetryState(env);
+		assert.deepEqual({ decision: state.decision, startDay: state.startDay }, { decision, startDay: LEGACY_DAY });
+	}
+	// Never told (no start day): nothing is invented, so nothing starts.
+	const unseen = { DB: await database(t), KITE_TELEMETRY_URL: COLLECTOR };
+	assert.equal((await getTelemetryStatus(unseen, SEEN)).startDay, null);
+	assert.equal((await readTelemetryState(unseen)).startDay, null);
+	assert.deepEqual(await everyDay(unseen, "2026-10-29", "2026-12-31", fetcher), ["disabled"]);
+	assert.equal(requests.length, 0);
+});
+
+test("the earlier start day rule is pure: only an undecided, told install with a later date moves", () => {
+	const startDayOf = (input, now = SEEN) => telemetryEarlierStartDay(input, now)?.startDay ?? null;
+	const told = choice({ startDay: LEGACY_DAY });
+	assert.deepEqual(telemetryEarlierStartDay(told, SEEN), {
+		decision: null,
+		startDay: START_DAY,
+		noticeDismissed: false,
+	});
+	assert.equal(startDayOf(choice({ startDay: START_DAY })), null, "same day");
+	assert.equal(startDayOf(choice({ startDay: "2026-10-28" })), null, "never later");
+	assert.equal(startDayOf(choice()), null, "never told");
+	assert.equal(startDayOf(choice({ startDay: LEGACY_DAY, decision: "off" })), null);
+	assert.equal(startDayOf(choice({ startDay: LEGACY_DAY, decision: "on" })), null);
+	// A hidden notice comes back with the new date.
+	assert.deepEqual(telemetryEarlierStartDay(choice({ startDay: LEGACY_DAY, noticeDismissed: true }), SEEN), {
+		decision: null,
+		startDay: START_DAY,
+		noticeDismissed: false,
+	});
+	// Running it again with the result changes nothing, at any later moment.
+	const moved = choice({ startDay: START_DAY });
+	for (const time of ["2026-10-28T16:00:00Z", "2026-10-29T01:00:00Z", "2026-11-30T12:00:00Z"])
+		assert.equal(startDayOf(moved, new Date(time)), null, time);
+	assert.equal(startDayOf(choice({ startDay: telemetryStartDay(SEEN) }), new Date("2027-01-01T00:00:00Z")), null);
+});
+
+test("where nothing can be sent the recompute moves no date and brings no notice back", async (t) => {
+	for (const env of [
+		{ KITE_TELEMETRY: "0", KITE_TELEMETRY_URL: COLLECTOR },
+		{ KITE_TELEMETRY_URL: "" },
+		{ KITE_TELEMETRY_URL: "https://collector.invalid/v1/heartbeat" },
+	]) {
+		const sqlite = await database(t);
+		insertLegacyNotice(sqlite, { dismissed: 1 });
+		await getTelemetryStatus({ DB: sqlite, ...env }, SEEN);
+		const state = await readTelemetryState({ DB: sqlite });
+		assert.deepEqual(
+			{ startDay: state.startDay, hidden: state.noticeDismissed },
+			{ startDay: LEGACY_DAY, hidden: true },
+			JSON.stringify(env),
+		);
+	}
 });
 
 test("dismissing the notice keeps its start day; Keep on starts at once; Turn off is final", async (t) => {

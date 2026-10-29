@@ -50,6 +50,25 @@ async function gotoAndWaitForStatus(page: Page, path: string) {
 }
 
 /**
+ * Opens a page outside Admin and returns the telemetry requests it made: none, because only the Admin pages ask for
+ * the status, so the notice cannot be drawn there and nothing there tells the owner.
+ */
+async function gotoWithoutNotice(page: Page, path: string): Promise<string[]> {
+	const requests: string[] = [];
+	const listener = (request: { url(): string }) => {
+		if (request.url().includes("/api/admin/telemetry")) requests.push(request.url());
+	};
+	page.on("request", listener);
+	await page.goto(path);
+	await expect(page.locator("main").first()).toBeVisible();
+	await page.waitForLoadState("networkidle");
+	page.off("request", listener);
+	await expect(page.getByRole("region", { name: NOTICE })).toHaveCount(0);
+	await expect(page.locator("[data-telemetry-notice]")).toHaveCount(0);
+	return requests;
+}
+
+/**
  * `/setup` renders the first-run flow only while no admin exists. Demotes the admins for the page load only (the
  * page's own requests are routed to fixtures), then restores exactly those accounts.
  */
@@ -253,21 +272,27 @@ test("an install whose owner never chose is told first in Admin, and Turn off is
 	});
 	expect((await auditCounts())["telemetry.disabled"]).toBe(before["telemetry.disabled"] + 1);
 
-	// Shown once: never again, in Admin or in the sidebar.
+	// Shown once: never again in Admin, and the mail views never ask.
 	await gotoAndWaitForStatus(page, "/admin");
 	await expect(page.getByRole("region", { name: NOTICE })).toHaveCount(0);
-	await gotoAndWaitForStatus(page, "/inbox");
-	await expect(page.getByRole("region", { name: NOTICE })).toHaveCount(0);
+	expect(await gotoWithoutNotice(page, "/inbox")).toEqual([]);
 	expect(errors).toEqual([]);
 });
 
-test("Settings shows the short notice once, in the sidebar", async ({ page }) => {
+test("the mail views, Settings and module pages never show the notice, and never tell the owner", async ({ page }) => {
 	forgetChoice();
-	await page.goto("/settings/appearance");
+	for (const path of ["/inbox", "/settings/appearance", "/calendar", "/drive"])
+		expect(await gotoWithoutNotice(page, path), path).toEqual([]);
+	// Not shown, so not told: no start day was fixed and nothing can start.
+	expect(await telemetryStatus()).toMatchObject({ decision: null, enabled: false, notice: true, startDay: null });
+	expect(await telemetryStatus()).toMatchObject({ installId: null });
+
+	// Admin is the one place: there it is shown, once, above the page and not in the sidebar.
+	await page.goto("/admin");
 	const notice = page.getByRole("region", { name: NOTICE });
 	await expect(notice).toContainText(noticeText(expectedStartDay()));
 	await expect(notice).toHaveCount(1);
-	await expect(page.getByTestId("kite-sidebar-panel").getByRole("region", { name: NOTICE })).toHaveCount(1);
+	await expect(page.getByTestId("kite-sidebar-panel").getByRole("region", { name: NOTICE })).toHaveCount(0);
 	forgetChoice();
 });
 
@@ -280,14 +305,9 @@ async function withDefaultCollector(page: Page) {
 	});
 }
 
-test("with the Kite project's own collector the notices and the card say what the report is for", async ({ page }) => {
+test("with the Kite project's own collector the notice and the card say what the report is for", async ({ page }) => {
 	await withDefaultCollector(page);
 	forgetChoice();
-	await page.goto("/inbox");
-	const sidebar = page.getByRole("region", { name: NOTICE });
-	await expect(sidebar).toContainText(
-		"So the Kite project can see how many active installs there are, which versions and modules they run, and roughly how many accounts and mailboxes they have. One pseudonymous daily report, rough counts only.",
-	);
 	await page.goto("/admin");
 	const full = page.getByRole("region", { name: NOTICE });
 	await expect(full).toContainText(`so it can see ${PURPOSE}`);
@@ -299,9 +319,7 @@ test("with the Kite project's own collector the notices and the card say what th
 	forgetChoice();
 });
 
-test("Exactly what is sent works on Admin → General itself, and the sidebar's Details lands on the card", async ({
-	page,
-}) => {
+test("Exactly what is sent works on Admin → General itself", async ({ page }) => {
 	forgetChoice();
 	// On /general the notice sits above the very card a link would lead to: the list opens in the notice.
 	await page.goto("/general");
@@ -313,37 +331,25 @@ test("Exactly what is sent works on Admin → General itself, and the sidebar's 
 	await expect(fields).toBeVisible();
 	await expect(page).toHaveURL(/\/general$/);
 
-	// From a mail page the short notice links to the card, which is scrolled into view.
-	await page.goto("/inbox");
-	const sidebar = page.getByRole("region", { name: NOTICE });
-	await expect(sidebar).toBeVisible();
-	await sidebar.getByRole("link", { name: "Details" }).click();
-	await expect(page).toHaveURL(/\/general#usage-statistics$/);
-	const card = page.locator("#usage-statistics");
-	await expect(card).toHaveAttribute("data-telemetry", "true");
-	await expect(card.getByRole("heading", { name: "Usage statistics" })).toBeInViewport();
-	await expect(card.getByText("users_active_30d", { exact: true })).toBeVisible();
 	forgetChoice();
 });
 
-test("the sidebar notice: Hide keeps the start day, Keep on starts at once, the start day turns it on", async ({
+test("the Admin notice: Hide keeps the start day, Keep on starts at once, the start day turns it on", async ({
 	page,
 }) => {
 	forgetChoice();
-	await page.goto("/inbox");
+	await page.goto("/admin");
 	const notice = page.getByRole("region", { name: NOTICE });
 	const startDay = expectedStartDay();
 	await expect(notice).toContainText(noticeText(startDay));
-	await expect(notice).toContainText(
-		"One pseudonymous daily report, rough counts only, to the collector this deployment is set up to use.",
-	);
+	await expect(notice).toContainText("to the collector this deployment is set up to use");
 	await expect(notice).not.toContainText("Kite project");
 	await expect(notice).not.toContainText(/Michiel|Gooijer|\(midego\)/);
 	await expect.poll(async () => (await telemetryStatus()).startDay).toBe(startDay);
 	await notice.getByRole("button", { name: `Hide (statistics still start on ${dayLabel(startDay)} UTC)` }).click();
 	await expect(notice).toHaveCount(0);
 	expect(await telemetryStatus()).toMatchObject({ decision: null, enabled: false, notice: false, startDay });
-	await gotoAndWaitForStatus(page, "/inbox");
+	await gotoAndWaitForStatus(page, "/admin");
 	await expect(notice).toHaveCount(0);
 
 	forgetChoice();

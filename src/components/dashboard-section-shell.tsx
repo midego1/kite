@@ -20,11 +20,6 @@ type DashboardSectionShellProps = Omit<AuthGuardProps, "children" | "mode" | "al
 	children: ReactNode;
 	/** The sidebar; the mail navigation when absent. */
 	nav?: ReactNode;
-	/**
-	 * Where the usage statistics notice goes: with the other notices (`sidebar`, the default), or nowhere in the
-	 * frame because the page draws its own above its content (`page`, the Admin layout), so it is never shown twice.
-	 */
-	telemetryNotice?: "sidebar" | "page";
 };
 
 /**
@@ -33,13 +28,7 @@ type DashboardSectionShellProps = Omit<AuthGuardProps, "children" | "mode" | "al
  * background. A page that draws its own panels marks its root with `data-page-panels` (as the Settings and Admin
  * layout does), and the frame then steps back like the inbox does for its list and reader.
  */
-export function DashboardSectionShell({
-	children,
-	nav,
-	telemetryNotice = "sidebar",
-	...guard
-}: DashboardSectionShellProps) {
-	const telemetry = telemetryNotice === "sidebar";
+export function DashboardSectionShell({ children, nav, ...guard }: DashboardSectionShellProps) {
 	return (
 		<AuthGuard {...guard}>
 			<SidebarProvider mobileOverlay>
@@ -56,7 +45,7 @@ export function DashboardSectionShell({
 												{nav ?? (
 													<DashboardNav
 														accountMenu={<MailboxSelector placement="sidebar" />}
-														notices={<DashboardNotices slot="sidebar" telemetry={telemetry} />}
+														notices={<DashboardNotices slot="sidebar" />}
 													/>
 												)}
 											</div>
@@ -70,7 +59,7 @@ export function DashboardSectionShell({
 											<span className="flex-1" />
 											<MailboxSelector />
 										</header>
-										<DashboardNotices slot="page" telemetry={telemetry} />
+										<DashboardNotices slot="page" />
 										<main
 											id={MAIN_CONTENT_ID}
 											tabIndex={-1}

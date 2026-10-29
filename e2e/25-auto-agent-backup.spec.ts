@@ -4,7 +4,15 @@ import { useFakeProvider } from "./support/agent";
 import { createSignedInAccount, okJson } from "./support/auto-read";
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
-import { apiContext, apiSignIn, postInbound, uniqueToken, waitForBackup, waitForMessage } from "./support/helpers";
+import {
+	apiContext,
+	apiSignIn,
+	postInbound,
+	uniqueToken,
+	waitForBackup,
+	waitForMessage,
+	waitForRestore,
+} from "./support/helpers";
 import { futureAt, inviteAttachment } from "./support/invites";
 import { readActions, readSuggestions, waitForFinishedJob } from "./support/triage";
 
@@ -142,6 +150,8 @@ test("a backup with live agent data and invite events restores intact, including
 			},
 		});
 		expect(restored.ok(), await restored.text()).toBe(true);
+		const restore = await waitForRestore(admin, ((await restored.json()) as { restoreId: string }).restoreId);
+		expect(restore.status, restore.error ?? "").toBe("completed");
 
 		admin2 = await apiSignIn(ADMIN.email, ADMIN.password);
 		account2 = await apiSignIn(address, "auto-read-password-123");

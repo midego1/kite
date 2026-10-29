@@ -125,3 +125,26 @@ test("keys cannot escape the bucket root", async () => {
 	await assert.rejects(files.put("../outside", "x"), /escapes the bucket root/);
 	await assert.rejects(files.createMultipartUpload("../outside"), /escapes the bucket root/);
 });
+
+test("conditional puts follow R2: a stale etag or an existing object refuses the write and returns null", async () => {
+	const files = bucket();
+	const created = await files.put("state.json", "one", { onlyIf: { etagDoesNotMatch: "*" } });
+	assert.ok(created);
+	assert.equal(await files.put("state.json", "two", { onlyIf: { etagDoesNotMatch: "*" } }), null, "create-only");
+	const updated = await files.put("state.json", "two", { onlyIf: { etagMatches: created.etag } });
+	assert.ok(updated);
+	assert.notEqual(updated.etag, created.etag, "the same size written again still gets a new etag");
+	assert.equal(await files.put("state.json", "three", { onlyIf: { etagMatches: created.etag } }), null, "stale");
+	assert.equal(await (await files.get("state.json")).text(), "two");
+	assert.equal(await files.put("missing.json", "x", { onlyIf: { etagMatches: "*" } }), null);
+	assert.deepEqual(
+		readdirSync(join(root, `bucket-${counter}`)).filter((name) => name.includes(".partial")),
+		[],
+	);
+
+	// Writers racing on one version: exactly one wins.
+	const results = await Promise.all(
+		["a", "b", "c", "d"].map((value) => files.put("state.json", value, { onlyIf: { etagMatches: updated.etag } })),
+	);
+	assert.equal(results.filter(Boolean).length, 1);
+});

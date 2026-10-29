@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { listApplicationTables } from "@/lib/backups/export";
+import { restoreBlocksMigrations } from "@/lib/backups/restore-job-store";
 import { createSafetyBackup } from "@/lib/backups/safety";
 import { applyPendingMigrations, getMigrationStatus } from "@/lib/migrations/service";
 import type { MigrationApplyResponse } from "./types";
@@ -9,6 +10,12 @@ export async function POST(request: Request) {
 	const authorization = await authorizeMigrationRequest(request);
 	if ("error" in authorization) return authorization.error;
 	const { env } = authorization;
+	// A restore plans against the schema it validated; changing it underneath would mix two schemas.
+	if (await restoreBlocksMigrations(env.BUCKET))
+		return NextResponse.json(
+			{ error: "A backup restore is running. Apply the database updates once it has finished." },
+			{ status: 409 },
+		);
 
 	let backupId: string | null = null;
 	try {

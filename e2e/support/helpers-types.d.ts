@@ -37,6 +37,10 @@ export type StoredMessage = {
 export type BackupRow = {
 	id: string;
 	status: "queued" | "running" | "completed" | "failed";
+	trigger: string;
 	error: string | null;
 	filename: string | null;
 };
+
+/** The latest restore as `GET /api/backups/health` reports it. */
+export type RestoreSummary = { id: string; status: string; active: boolean; error: string | null };

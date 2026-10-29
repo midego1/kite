@@ -35,11 +35,13 @@ import {
 	getBackupTriggerLabel,
 	getStatusClass,
 	removeBackup,
-	restoreBackup,
 	saveBackupSettings,
 	startBackup,
 } from "./utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { RestoreStoredBackupButton } from "./restore-stored-button";
+import { RestoreRunningNotice } from "./restore-running-notice";
+import { useRestoreJob } from "./use-restore-job";
 
 export default function BackupsPage() {
 	const queryClient = useQueryClient();
@@ -92,18 +94,16 @@ export default function BackupsPage() {
 	});
 
 	const download = useMutation({ mutationFn: downloadBackup });
-	const restore = useMutation({
-		mutationFn: restoreBackup,
-		onSuccess: () => window.location.assign("/login"),
-	});
-	const error =
-		backups.error ||
-		saveSettings.error ||
-		autoSaveSettings.error ||
-		runBackup.error ||
-		deleteBackup.error ||
-		download.error ||
-		restore.error;
+	const restore = useRestoreJob();
+	const error = [
+		backups.error,
+		saveSettings.error,
+		autoSaveSettings.error,
+		runBackup.error,
+		deleteBackup.error,
+		download.error,
+		restore.error,
+	].find(Boolean);
 	const configuration = backups.data?.configuration;
 	const backupConfigured = configuration?.configured === true;
 
@@ -132,7 +132,7 @@ export default function BackupsPage() {
 									"This replaces all current database records and may sign you out. A backup of the current data is saved first, and the restore is rolled back if it fails.",
 								confirmLabel: "Restore",
 							}).then((confirmed) => {
-								if (confirmed) restore.mutate(file);
+								if (confirmed) restore.restoreUpload(file);
 							});
 						}}
 					/>
@@ -153,12 +153,12 @@ export default function BackupsPage() {
 								className="z-50 min-w-48 rounded-lg border border-neutral-200 bg-white p-1 text-sm shadow-lg"
 							>
 								<DropdownMenu.Item
-									disabled={restore.isPending}
+									disabled={restore.running}
 									onSelect={() => restoreInput.current?.click()}
 									className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-neutral-900 outline-none hover:bg-neutral-100 focus:bg-neutral-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
 								>
 									<Upload className="h-4 w-4" />
-									{restore.isPending ? "Restoring..." : "Restore from backup"}
+									{restore.running ? "Restoring..." : "Restore from backup"}
 								</DropdownMenu.Item>
 								<DropdownMenu.Item
 									disabled={!settings || autoSaveSettings.isPending}
@@ -225,6 +225,8 @@ export default function BackupsPage() {
 					)}
 				</DialogContent>
 			</Dialog>
+
+			<RestoreRunningNotice running={restore.running} />
 
 			{error && (
 				<p
@@ -423,7 +425,7 @@ export default function BackupsPage() {
 					<DatabaseBackup className="h-5 w-5 text-neutral-500" />
 					<h2 className="font-semibold text-neutral-900">Backup history</h2>
 				</div>
-				<div className="grid grid-cols-[1fr_110px_110px_170px_120px] gap-4 border-b border-neutral-200 bg-[#f6f8fc] px-4 py-2 text-xs font-medium text-neutral-500">
+				<div className="grid grid-cols-[1fr_110px_110px_170px_150px] gap-4 border-b border-neutral-200 bg-[#f6f8fc] px-4 py-2 text-xs font-medium text-neutral-500">
 					<span>File</span>
 					<span>Status</span>
 					<span>Size</span>
@@ -437,7 +439,7 @@ export default function BackupsPage() {
 				{(backups.data?.backups ?? []).map((backup: BackupItem) => (
 					<div
 						key={backup.id}
-						className="grid grid-cols-[1fr_110px_110px_170px_120px] items-center gap-4 border-b border-neutral-200 px-4 py-3 last:border-b-0"
+						className="grid grid-cols-[1fr_110px_110px_170px_150px] items-center gap-4 border-b border-neutral-200 px-4 py-3 last:border-b-0"
 					>
 						<div className="min-w-0">
 							<p className="truncate text-sm font-medium text-neutral-900">{backup.filename ?? backup.id}</p>
@@ -463,6 +465,7 @@ export default function BackupsPage() {
 							>
 								<Download className="h-4 w-4" />
 							</Button>
+							<RestoreStoredBackupButton backup={backup} disabled={restore.running} onRestore={restore.restoreStored} />
 							<Button
 								size="sm"
 								variant="ghost"

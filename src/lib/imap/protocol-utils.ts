@@ -278,8 +278,18 @@ export function parseStatusLine(
 
 /** The `[UIDVALIDITY n]` an EXAMINE or SELECT answer carries, or null. */
 export function parseUidValidity(lines: readonly string[]): number | null {
+	return parseResponseCodeNumber(lines, "UIDVALIDITY");
+}
+
+/** The `[UIDNEXT n]` an EXAMINE or SELECT answer carries (the UID the next message will get), or null. */
+export function parseUidNext(lines: readonly string[]): number | null {
+	return parseResponseCodeNumber(lines, "UIDNEXT");
+}
+
+function parseResponseCodeNumber(lines: readonly string[], code: "UIDVALIDITY" | "UIDNEXT"): number | null {
+	const pattern = new RegExp(`\\[${code} (\\d+)\\]`, "i");
 	for (const line of lines) {
-		const value = /\[UIDVALIDITY (\d+)\]/i.exec(line)?.[1];
+		const value = pattern.exec(line)?.[1];
 		if (value) return Number(value);
 	}
 	return null;

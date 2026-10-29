@@ -51,6 +51,8 @@ export type Message = {
 	agentSuggestions?: SuggestionCount[];
 	/** A queued (scheduled, or held for undo) or failed outbound message: when it goes out, or why it did not. */
 	sendState?: SendState;
+	/** The message (in conversation view: any message of the row) has a real attachment; a cid-referenced inline image does not count. */
+	hasAttachments?: boolean;
 	/** The sender waits for a Screener decision: held mail, or a new sender in an Inbox-mode mailbox. */
 	screenerPending?: boolean;
 	/** The one-line AI summary shown instead of the preview, when the mailbox has them on and this mail got one. */

@@ -6,11 +6,13 @@ import * as summaryTables from "@/db/schema/agent-summaries";
 import * as writingTables from "@/db/schema/agent-writing";
 import * as spamReportTables from "@/db/schema/spam-reports";
 import * as driveTables from "@/db/schema/drive";
+import { externalAccountFolders, externalAccounts } from "@/db/schema/external-accounts";
 import * as financeTables from "@/db/schema/finance";
 import * as moduleTables from "@/db/schema/modules";
 import * as screenerTables from "@/db/schema/screener";
 import * as storageTables from "@/db/schema/storage";
 import * as telemetryTables from "@/db/schema/telemetry";
+import * as userPreferenceTables from "@/db/schema/user-preferences";
 
 const schema = {
 	...coreTables,
@@ -25,6 +27,9 @@ const schema = {
 	...storageTables,
 	...screenerTables,
 	...telemetryTables,
+	externalAccounts,
+	externalAccountFolders,
+	...userPreferenceTables,
 };
 
 export type AppDatabase = ReturnType<typeof createDb>;

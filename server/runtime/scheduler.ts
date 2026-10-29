@@ -9,6 +9,7 @@ import { runOperationalAlerts } from "@/lib/alerts/run";
 import { runModuleCronTasks } from "@/lib/modules/background";
 import { runStorageMigrationMaintenance } from "@/lib/storage/migration";
 import { runTelemetryHeartbeat } from "@/lib/telemetry/heartbeat";
+import { eraseIdleExternalCredentials } from "@/lib/external-accounts/retention";
 
 const logger = createLogger("node-scheduler");
 
@@ -45,6 +46,10 @@ export function startScheduler(env: CloudflareEnv) {
 		runModuleCronTasks(env, "0 2 * * *", now).catch((error) => logger.error("modules.cron_failed", { error }));
 		// Usage statistics, matching worker.ts; does nothing unless they are on for this install. Never throws.
 		void runTelemetryHeartbeat(env, now);
+		// Connected accounts, matching worker.ts.
+		eraseIdleExternalCredentials(env, now).catch((error) =>
+			logger.error("external.credentials_erase_failed", { error }),
+		);
 	}, 60_000);
 	return () => clearInterval(timer);
 }

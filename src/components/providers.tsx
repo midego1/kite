@@ -11,6 +11,7 @@ import { ModuleNoticeHost } from "@/components/module-notice-host";
 import { NewMessagePopup } from "@/components/new-message-popup";
 import { ThemeSync } from "@/components/theme-sync";
 import { UpdateAvailableHost } from "@/components/update-available-host";
+import { LayoutPreferencesSync } from "@/components/layout-preferences-sync";
 import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
 import { TOASTER_PROPS } from "@/components/ui/toast-styles";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -77,6 +78,7 @@ export function Providers({ children, initialBranding }: { children: React.React
 				<Toaster {...TOASTER_PROPS} />
 				<ModuleNoticeHost />
 				<UpdateAvailableHost />
+				<LayoutPreferencesSync />
 				{/* A live region without role="status": specs and pages look up the single status line by role. */}
 				<div aria-live="polite" aria-atomic="true">
 					{realtime.notification && (

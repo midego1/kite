@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { externalAccounts } from "./external-accounts";
 import { mailboxes, users } from "./index";
 
 /**
@@ -56,6 +57,11 @@ export const importJobs = sqliteTable(
 		/** Why a paused job waits: `user` (Pause) or `database` (the size guard). */
 		pauseReason: text("pause_reason"),
 		pausedAt: integer("paused_at", { mode: "timestamp" }),
+		/**
+		 * A job importing from a connected account (migration 0079) keeps no password of its own: each run asks core for
+		 * the account's login (`moduleHost.accounts.sourceLogin`), so removing the account stops the job.
+		 */
+		externalAccountId: text("external_account_id").references(() => externalAccounts.id, { onDelete: "set null" }),
 	},
 	(t) => [
 		index("import_jobs_user_idx").on(t.userId, t.createdAt),

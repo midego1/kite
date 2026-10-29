@@ -12,7 +12,14 @@ import { MessageListRowActions } from "./message-list-row-actions";
 import { MessageNavigationProgress } from "./message-navigation";
 import { rowCheckboxHandlers } from "./message-range-selection-utils";
 import { SendStateBadge } from "./send-state-badge";
-import { MessageRowBadges, MessageRowParty, MessageRowPreview, MessageRowStar, UnreadDot } from "./message-row-parts";
+import {
+	AttachmentIndicator,
+	MessageRowBadges,
+	MessageRowParty,
+	MessageRowPreview,
+	MessageRowStar,
+	UnreadDot,
+} from "./message-row-parts";
 import { getStackedRowDensity, getWideRowDensity } from "./reading-layout-utils";
 import { SwipeableRow } from "./swipeable-row";
 import type { MessageListRowProps } from "./types";
@@ -197,15 +204,17 @@ function StackedMessageRow(props: RowViewProps) {
 							className={clsx("min-w-0 truncate text-sm", getMessagePartyClassName(row.rowMessage, config.folder))}
 							countClassName="font-normal"
 						/>
-						<time
-							dateTime={message.createdAt}
+						<span
 							className={clsx(
-								"shrink-0 text-xs text-neutral-500",
+								"flex shrink-0 items-center gap-1.5",
 								showHoverActions && "group-hover:hidden group-has-[:focus-visible]:hidden",
 							)}
 						>
-							{formatMessageListTimestamp(message.createdAt)}
-						</time>
+							<AttachmentIndicator message={message} />
+							<time dateTime={message.createdAt} className="text-xs text-neutral-500">
+								{formatMessageListTimestamp(message.createdAt)}
+							</time>
+						</span>
 					</span>
 					<StackedSubjectLine {...props} inlineStar={inlineStar} />
 					{/* A one-line summary shows even where the density leaves the plain preview out: it is the row's gist. */}
@@ -304,15 +313,18 @@ function WideMessageRow(props: RowViewProps) {
 				<SendStateBadge message={row.rowMessage} />
 				{props.mailboxLabel}
 			</span>
-			<time
-				dateTime={message.createdAt}
-				className={clsx(
-					"min-w-[96px] whitespace-nowrap text-right text-xs group-hover:opacity-0",
-					row.unread ? "font-medium text-neutral-900" : "text-neutral-500",
-				)}
-			>
-				{formatMessageListTimestamp(message.createdAt)}
-			</time>
+			<span className="flex min-w-[96px] items-center justify-end gap-1.5 group-hover:opacity-0">
+				<AttachmentIndicator message={message} />
+				<time
+					dateTime={message.createdAt}
+					className={clsx(
+						"whitespace-nowrap text-right text-xs",
+						row.unread ? "font-medium text-neutral-900" : "text-neutral-500",
+					)}
+				>
+					{formatMessageListTimestamp(message.createdAt)}
+				</time>
+			</span>
 			{row.hasRowActions && <MessageListRowActions message={row.rowMessage} onAction={row.runRowAction} />}
 		</div>
 	);

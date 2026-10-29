@@ -174,6 +174,7 @@ export function ThreadMessageActions({
 								size="sm"
 								className="h-8 w-8 px-0"
 								aria-label="More actions"
+								aria-haspopup="menu"
 								aria-expanded={moreOpen}
 								disabled={pending}
 								onClick={() => setMoreOpen((open) => !open)}

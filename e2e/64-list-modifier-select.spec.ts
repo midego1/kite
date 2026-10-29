@@ -218,6 +218,30 @@ test("Escape in a dialog closes the dialog and leaves the selection alone", asyn
 	await expect(page.getByText("2 selected")).toBeVisible();
 });
 
+test("Escape with the account menu open leaves the selection alone", async ({ page }) => {
+	const [a, b] = await deliverMany(["Menu A", "Menu B"]);
+	await page.goto("/inbox");
+	await subjectOf(page, b).click({ modifiers: ["ControlOrMeta"] });
+	await subjectOf(page, a).click({ modifiers: ["ControlOrMeta"] });
+	await expect(page.getByText("2 selected")).toBeVisible();
+
+	const trigger = page.getByRole("button", { name: "Open account menu" });
+	await trigger.click();
+	await expect(trigger).toHaveAttribute("aria-expanded", "true");
+	// Safari does not focus a button on click, which leaves the focus on the page: the key must still be the menu's.
+	await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+	await page.keyboard.press("Escape");
+	await expect(page.getByText("2 selected")).toBeVisible();
+	await expect(checkbox(page, a)).toBeChecked();
+
+	// With the menu shut, Escape clears the selection again.
+	if ((await trigger.getAttribute("aria-expanded")) === "true") await trigger.click();
+	await expect(trigger).toHaveAttribute("aria-expanded", "false");
+	await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+	await page.keyboard.press("Escape");
+	await expect(page.getByText(/\d+ selected/)).toHaveCount(0);
+});
+
 test("a plain click collapses the selection, also on the message that is already open", async ({ page }) => {
 	const [a, b, c] = await deliverMany(["Plain A", "Plain B", "Plain C"]);
 	await page.goto("/inbox");

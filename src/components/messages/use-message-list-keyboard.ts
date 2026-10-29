@@ -21,11 +21,13 @@ type ListKeyboardOptions = {
 	clearSelection: () => void;
 };
 
-/** Open popups: while one is on screen, Escape belongs to it, wherever the focus is. */
+/**
+ * Open popups: while one is on screen, Escape belongs to it, wherever the focus is. Hand-rolled menus have no
+ * role of their own, so their trigger (`aria-haspopup`) says they are open; plain disclosure buttons, which are
+ * expanded for good, do not count.
+ */
 const OPEN_POPUPS =
-	'[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [data-shortcuts-off]';
-
-/** The folder page (list and header) and the bulk-selection pane carry `data-selection-scope`; focus elsewhere is not the selection's. */
+	'[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [data-shortcuts-off], [aria-haspopup][aria-expanded="true"]';
 
 /** The keys are the selection's when the focus is on the page itself or inside its list. */
 function focusIsInList(list: HTMLElement | null): boolean {
@@ -33,9 +35,13 @@ function focusIsInList(list: HTMLElement | null): boolean {
 	return !active || active === document.body || !!list?.contains(active);
 }
 
-/** Escape clears the selection when the focus is on the page or in the selection's own area, and no popup is open. */
+/**
+ * Escape clears the selection when the focus is on the page or in the selection's own area (the folder page, with
+ * its list and header, and the bulk-selection pane carry `data-selection-scope`), and no popup is open. Another
+ * handler may already have taken the key by the time it bubbles, which is why this listens in the capture phase.
+ */
 function escapeClearsSelection(event: KeyboardEvent): boolean {
-	if (event.key !== "Escape" || event.defaultPrevented || isTypingInInput(event.target)) return false;
+	if (event.key !== "Escape" || isTypingInInput(event.target)) return false;
 	if (document.querySelector(OPEN_POPUPS)) return false;
 	const target = event.target;
 	if (!(target instanceof HTMLElement) || target === document.body || target === document.documentElement) return true;

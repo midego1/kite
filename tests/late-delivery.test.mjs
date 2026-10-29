@@ -16,7 +16,7 @@ await build({
 		contents: `
 			export { SqliteDatabase } from "./server/runtime/sqlite-database.ts";
 			export { applyMigrations } from "./server/runtime/migrate.ts";
-			export { sendEmail, cancelQueuedSend } from "./src/lib/email/send.ts";
+			export { sendEmail, processOutboundQueue } from "./src/lib/email/send.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "late-delivery-entry.ts",
@@ -31,9 +31,30 @@ await build({
 	tsconfig: join(root, "tsconfig.json"),
 	packages: "external",
 	alias: { "cloudflare:workers": "./server/runtime/cloudflare-workers.ts" },
+	plugins: [
+		{
+			// Lets a test stand in for the claim re-check just before the provider call.
+			name: "job-claim-override",
+			setup(build) {
+				build.onResolve({ filter: /^@\/lib\/email\/job-claim$/ }, () => ({
+					path: "job-claim-override",
+					namespace: "job-claim-override",
+				}));
+				// The real check unless a test sets `globalThis.__kiteClaimCheck`.
+				build.onLoad({ filter: /.*/, namespace: "job-claim-override" }, () => ({
+					contents: `
+						import { isJobClaimed as real } from "./src/lib/email/job-claim.ts";
+						export const isJobClaimed = (db, jobId) => (globalThis.__kiteClaimCheck ?? real)(db, jobId);
+					`,
+					resolveDir: root,
+					loader: "ts",
+				}));
+			},
+		},
+	],
 	logLevel: "silent",
 });
-const { SqliteDatabase, applyMigrations, sendEmail } = await import(
+const { SqliteDatabase, applyMigrations, sendEmail, processOutboundQueue } = await import(
 	pathToFileURL(join(bundleDirectory, "entry.mjs")).href
 );
 
@@ -54,7 +75,7 @@ function recover(database) {
 	`);
 }
 
-async function fixture(t, send, { beforeClaimCheck = false } = {}) {
+async function fixture(t, send) {
 	const database = new SqliteDatabase(":memory:");
 	t.after(() => database.db.close());
 	await applyMigrations(database, join(root, "drizzle/migrations"));
@@ -65,18 +86,11 @@ async function fixture(t, send, { beforeClaimCheck = false } = {}) {
 			VALUES ('one', 'admin', 'one.test', 'zone', 'active', 'cloudflare', 1, 1);
 		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mb', 'admin', 'one', 'owner', 1);
 	`);
-	if (beforeClaimCheck) {
-		// Recovery lands between claiming the job and the provider call: the job is re-read right before it.
-		const prepare = database.prepare.bind(database);
-		let done = false;
-		database.prepare = (sql) => {
-			if (!done && /^select "status" from "outbound_jobs"/i.test(sql)) {
-				done = true;
-				recover(database);
-			}
-			return prepare(sql);
-		};
-	}
+	database.db.exec(`
+		INSERT INTO webhooks (id, user_id, url, secret, events, enabled, max_attempts, created_at)
+			VALUES ('hook', 'admin', 'https://hooks.example.com/kite', 'plain', '["message.outbound"]', 1, 1, 1);
+	`);
+	const queued = [];
 	const calls = [];
 	const env = {
 		DB: database,
@@ -87,10 +101,24 @@ async function fixture(t, send, { beforeClaimCheck = false } = {}) {
 				return send(database);
 			},
 		},
+		OUTBOUND_QUEUE: { send: async (message) => void queued.push(message) },
 		KITE_RUNTIME: "node",
 	};
-	return { database, env, calls };
+	return { database, env, calls, queued };
 }
+
+const webhookEvents = (database) =>
+	database.db.prepare("SELECT event_type AS eventType FROM webhook_deliveries ORDER BY id").all();
+const sendAudits = (database) =>
+	database.db.prepare("SELECT metadata FROM audit_logs WHERE action = 'email.send'").all();
+
+// The webhook endpoint is never reached: the delivery row is what these tests read.
+const realFetch = globalThis.fetch;
+globalThis.fetch = async () => new Response("ok");
+after(() => {
+	globalThis.fetch = realFetch;
+	delete globalThis.__kiteClaimCheck;
+});
 
 const rows = (database) => ({
 	message: database.db.prepare("SELECT status, provider_message_id AS providerId FROM messages").get(),
@@ -104,6 +132,51 @@ test("a normal send still ends as sent with its job sent", async (t) => {
 		message: { status: "sent", providerId: "<ok@one.test>" },
 		job: { status: "sent", error: null },
 	});
+	assert.deepEqual(webhookEvents(database), [{ eventType: "message.outbound" }]);
+	const audits = sendAudits(database);
+	assert.equal(audits.length, 1);
+	assert.doesNotMatch(audits[0].metadata, /lateAfterRecovery/);
+});
+
+test("a scheduled send run by the outbound queue ends as sent, with its webhook and audit entry", async (t) => {
+	const { database, env, calls, queued } = await fixture(t, async () => ({ messageId: "<scheduled@one.test>" }));
+	const scheduledAt = new Date(Date.now() + 3_600_000);
+	const result = await sendEmail(env, { ...input, scheduledAt });
+	assert.equal(result.scheduled, true);
+	assert.equal(queued.length, 1);
+	assert.equal(calls.length, 0);
+	assert.deepEqual(rows(database), {
+		message: { status: "queued", providerId: null },
+		job: { status: "queued", error: null },
+	});
+
+	// The consumer gets the message once its time has come.
+	await processOutboundQueue(env, { ...queued[0], scheduledAt: new Date(Date.now() - 1_000).toISOString() });
+	assert.equal(calls.length, 1);
+	assert.deepEqual(rows(database), {
+		message: { status: "sent", providerId: "<scheduled@one.test>" },
+		job: { status: "sent", error: null },
+	});
+	assert.deepEqual(webhookEvents(database), [{ eventType: "message.outbound" }]);
+	assert.equal(sendAudits(database).length, 1);
+	// A redelivered queue message finds the job settled and does nothing.
+	await processOutboundQueue(env, { ...queued[0], scheduledAt: new Date(Date.now() - 1_000).toISOString() });
+	assert.equal(calls.length, 1);
+});
+
+test("a failing status write is not mistaken for a late delivery: the normal steps still run", async (t) => {
+	const { database, env } = await fixture(t, async () => ({ messageId: "<flaky@one.test>" }));
+	// A transient database error on the sent write: the step is swallowed, nothing matched or not is known.
+	database.db.exec(`
+		CREATE TRIGGER flaky_sent_write BEFORE UPDATE OF status ON messages WHEN NEW.status = 'sent'
+		BEGIN SELECT RAISE(ABORT, 'transient D1 error'); END;
+	`);
+	await sendEmail(env, input);
+	assert.equal(rows(database).job.status, "sent");
+	assert.deepEqual(webhookEvents(database), [{ eventType: "message.outbound" }]);
+	const audits = sendAudits(database);
+	assert.equal(audits.length, 1);
+	assert.doesNotMatch(audits[0].metadata, /lateAfterRecovery/);
 });
 
 test("a worker that delivers after recovery leaves the draft and the settled job alone", async (t) => {
@@ -135,12 +208,17 @@ test("a worker that fails after recovery does not mark the draft failed or overw
 	});
 });
 
-test("a worker whose job was taken back before the provider call does not deliver at all", async (t) => {
-	const { database, env, calls } = await fixture(t, async () => ({ messageId: "<x@one.test>" }), {
-		beforeClaimCheck: true,
-	});
-	await sendEmail(env, input);
+test("a worker whose job was taken back before the provider call does not deliver, and says so", async (t) => {
+	const { database, env, calls } = await fixture(t, async () => ({ messageId: "<x@one.test>" }));
+	// Recovery lands between claiming the job and the provider call; the re-check sees it.
+	globalThis.__kiteClaimCheck = async () => {
+		recover(database);
+		return false;
+	};
+	t.after(() => delete globalThis.__kiteClaimCheck);
+	await assert.rejects(sendEmail(env, input), /taken back before it was delivered/);
 	assert.equal(calls.length, 0);
 	assert.equal(rows(database).message.status, "draft");
 	assert.equal(rows(database).job.status, "failed");
+	assert.deepEqual(webhookEvents(database), []);
 });

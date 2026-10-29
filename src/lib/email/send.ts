@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { messages, outboundJobs, users } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { STUCK_SENDING_AFTER_MS } from "@/lib/messages/send-state-utils";
+import { isJobClaimed } from "@/lib/email/job-claim";
 import { newId } from "@/lib/ids";
 import { buildSnippet } from "@/lib/email/parse";
 import { dispatchWebhooks } from "@/lib/email/webhooks";
@@ -201,21 +202,20 @@ export async function sendEmail(
 		return { messageId, scheduled: true };
 	}
 
-	await deliverEmail(env, delivery);
+	await deliverOrThrow(env, delivery);
 	return { messageId };
 }
 
-/** Whether the job is still claimed (`sending`), that is, nothing took the send back since it was claimed. */
-async function isJobClaimed(db: ReturnType<typeof getDb>, jobId: string): Promise<boolean> {
-	const [job] = await db
-		.select({ status: outboundJobs.status })
-		.from(outboundJobs)
-		.where(eq(outboundJobs.id, jobId))
-		.limit(1);
-	return job?.status === "sending";
+/** An immediate send whose claim was taken back before the provider call was not delivered: say so. */
+async function deliverOrThrow(env: CloudflareEnv, delivery: PreparedDelivery): Promise<void> {
+	if (!(await deliverEmail(env, delivery))) throw new Error("The send was taken back before it was delivered");
 }
 
-async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Promise<void> {
+/**
+ * Delivers a claimed send. Resolves to false when the send was taken back before the provider call, so
+ * nothing was delivered; true once the provider accepted it, even if it had been taken back by then.
+ */
+async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Promise<boolean> {
 	const { input, messageId, jobId, from, mailboxId, to, cc, bcc, headers, attachments } = delivery;
 	const db = getDb(env);
 	const toAddr = joinEmailAddressList(to);
@@ -256,7 +256,7 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 		// Just before the provider call: a send taken back (moved to Drafts after it stalled) is not delivered.
 		if (!(await isJobClaimed(db, jobId))) {
 			console.warn(`Outbound job ${jobId} for ${messageId} is no longer claimed; not delivering`);
-			return;
+			return false;
 		}
 		response = await sendThroughProvider(
 			env,
@@ -306,7 +306,7 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 	// The provider has accepted the message from here on. Nothing below may mark it
 	// failed or rethrow, or a retry would deliver it a second time.
 	let markedSent = false;
-	await runPostDeliveryStep(`sent status for ${messageId}`, async () => {
+	const statusWritten = await runPostDeliveryStep(`sent status for ${messageId}`, async () => {
 		// A fresh message starts its own conversation; Cloudflare's Message-ID is what
 		// any reply will name in In-Reply-To, so key the thread by it. Only a message still queued becomes
 		// sent: one moved back to Drafts after a stuck recovery stays the draft it is.
@@ -321,7 +321,9 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 			.returning({ id: messages.id });
 		markedSent = updated.length > 0;
 	});
-	if (!markedSent) {
+	// Late only when the write ran and matched nothing; a write that failed (a transient database error) says
+	// nothing about the message, so the normal steps below still run.
+	if (statusWritten && !markedSent) {
 		// The mail went out, but the send had been taken back: keep a trace and leave the draft alone.
 		console.warn(`Outbound job ${jobId} for ${messageId} was delivered after it was taken back`);
 		await runPostDeliveryStep(`audit log for late delivery of ${messageId}`, () =>
@@ -333,7 +335,7 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 				metadata: { to: toAddr, subject: input.subject, lateAfterRecovery: true },
 			}),
 		);
-		return;
+		return true;
 	}
 	await runPostDeliveryStep(`agent reply suggestions for ${messageId}`, () => supersedeOlderReplies(env, messageId));
 	await runPostDeliveryStep(`screener approvals for ${messageId}`, () =>
@@ -362,6 +364,7 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 			metadata: { to: toAddr, cc: cc.length ? joinEmailAddressList(cc) : undefined, subject: input.subject },
 		}),
 	);
+	return true;
 }
 
 export type OutboundQueueMessage = {

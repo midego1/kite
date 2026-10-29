@@ -30,7 +30,7 @@ import { screenerPendingRows } from "@/lib/screener/views";
 export type DeliveryTarget = { mailboxId: string; userId: string };
 
 /** A message a connected account's sync fetched, with the flags it had at the source (spec §6.4). */
-export type ExternalDelivery = { accountId: string; read: boolean; starred: boolean };
+type ExternalDelivery = { accountId: string; read: boolean; starred: boolean };
 
 export type InboundDelivery = {
 	target: DeliveryTarget;

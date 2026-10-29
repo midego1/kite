@@ -186,7 +186,7 @@ async function setup(t, server) {
 	const synced = () =>
 		db.db
 			.prepare(
-				"SELECT id, subject, status, read, starred, external_account_id, mailbox_id, raw_r2_key, thread_id, spam_signals FROM messages ORDER BY created_at, id",
+				"SELECT id, subject, status, read, starred, external_account_id, mailbox_id, raw_r2_key, thread_id, spam_signals FROM messages ORDER BY rowid",
 			)
 			.all();
 	/** Delivers what the runs queued, as the inbound consumer would. */

@@ -7,12 +7,12 @@ import type { ExternalAccountStatus } from "./types";
  */
 
 /** How often an account is checked, in minutes; 5 is the default and the shortest (decision 9). */
-export const SYNC_INTERVALS_MINUTES = [5, 15, 60] as const;
+const SYNC_INTERVALS_MINUTES = [5, 15, 60] as const;
 export const DEFAULT_SYNC_INTERVAL_MINUTES = 5;
 /** Accounts one cron tick claims and queues. */
 export const SYNC_PLAN_LIMIT = 200;
 /** Messages one run fetches; the rest continue on a run queued right after it. */
-export const SYNC_MESSAGES_PER_RUN = 200;
+const SYNC_MESSAGES_PER_RUN = 200;
 /** Bodies per UID FETCH. */
 export const SYNC_FETCH_CHUNK = 25;
 /** A run stops starting new fetches after this long. */
@@ -25,11 +25,12 @@ export const SYNC_RUN_BUDGET_MS = 4 * 60_000;
 export const SYNC_LEASE_MS = 15 * 60_000;
 /** **Check now** works at most once a minute per account. */
 export const CHECK_NOW_COOLDOWN_MS = 60_000;
+/** @public Exercised by the unit tests. */
 export const MAX_SYNC_BACKOFF_MS = 6 * 60 * 60_000;
 /** After a day of failing to reach the server the account shows as `error`, and Kite keeps trying every 6 hours. */
-export const ERROR_AFTER_MS = 24 * 60 * 60_000;
+const ERROR_AFTER_MS = 24 * 60 * 60_000;
 /** Failures in a row before the owner is told the server cannot be reached. */
-export const NOTICE_AFTER_FAILURES = 3;
+const NOTICE_AFTER_FAILURES = 3;
 /** When the provider rebuilt INBOX (a new UIDVALIDITY), the last two days are checked again. */
 export const RESET_LOOKBACK_MS = 2 * 24 * 60 * 60_000;
 /** A message larger than Kite receives (the Email Routing limit) is skipped and named in the account's problems. */
@@ -106,7 +107,7 @@ export function sourceFlags(flags: readonly string[]): { read: boolean; starred:
 }
 
 /** What kind of problem a sync run met (spec §6.5). */
-export type SyncErrorClass = "auth" | "tls" | "throttled" | "transient" | "config";
+type SyncErrorClass = "auth" | "tls" | "throttled" | "transient" | "config";
 
 export type SyncProblem = { class: SyncErrorClass; message: string };
 
@@ -145,7 +146,7 @@ export function classifySyncError(
 }
 
 /**
- * When to try again after `failures` failures in a row: `interval × 2^failures`, from 15 minutes when the provider
+ * @public Exercised by the unit tests. When to try again after `failures` failures in a row: `interval × 2^failures`, from 15 minutes when the provider
  * limits connections, at most 6 hours, with ±20% jitter (`random` in [0, 1)) so accounts do not retry in step.
  */
 export function failureDelayMs(

@@ -167,7 +167,7 @@ export const SYNC_INTERVAL_OPTIONS = [
 	{ value: "60", label: "Every hour" },
 ];
 
-/** "just now", "3 minutes ago", "2 hours ago", or the date for anything older than a day. */
+/** @public Exercised by the unit tests. "just now", "3 minutes ago", "2 hours ago", or the date past a day. */
 export function relativeTime(iso: string, now: Date): string {
 	const minutes = Math.round((now.getTime() - new Date(iso).getTime()) / 60_000);
 	if (minutes < 1) return "just now";

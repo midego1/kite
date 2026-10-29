@@ -28,6 +28,7 @@ type CoreQueueMessageKind =
 	| "mailbox_purge"
 	| "backup"
 	| "storage_migration"
+	| "append_sent"
 	| "unknown";
 
 /** Core kinds plus the metric class each module declares for its own queue messages. */
@@ -42,6 +43,7 @@ const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"mailbox.purge": "mailbox_purge",
 	"backup.run": "backup",
 	"storage.migrate": "storage_migration",
+	"accounts.append_sent": "append_sent",
 	...Object.fromEntries(
 		MODULE_MANIFESTS.flatMap((manifest) => manifest.queueMessageTypes.map((entry) => [entry.kind, entry.metricClass])),
 	),

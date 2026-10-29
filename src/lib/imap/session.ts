@@ -34,6 +34,8 @@ export type ImapSession = {
 	listMailboxes(): Promise<ImapListedMailbox[]>;
 	/** MESSAGES, UIDNEXT, UIDVALIDITY and, with STATUS=SIZE, SIZE of one mailbox; null when the server refuses. */
 	status(folder: string): Promise<ReturnType<typeof parseStatusLine>>;
+	/** Adds one message to `folder` with `flags` (`\\Seen`); the only write at the source (spec §7.4). */
+	append(folder: string, flags: readonly string[], raw: Uint8Array): Promise<void>;
 	close(): Promise<void>;
 };
 
@@ -87,6 +89,7 @@ export async function openImapSession(
 			const lines = await imap.command(`STATUS ${quoteImapString(folder)} (${items})`).catch(() => null);
 			return lines?.map(parseStatusLine).find((entry) => entry) ?? null;
 		},
+		append: (folder, flags, raw) => imap.appendMessage(folder, flags, raw),
 		async listMailboxNames() {
 			const lines = await imap.command('LIST "" "*"');
 			return Array.from(new Set(lines.map(parseListMailboxName).filter((name): name is string => !!name)));

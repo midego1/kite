@@ -198,6 +198,22 @@ test("Bcc recipients are in the envelope; duplicates are sent once; SIZE and 8BI
 	assert.equal(message.mailParams.BODY, "8BITMIME");
 });
 
+test("8-bit content goes only to a server that announced 8BITMIME", async (t) => {
+	const server = await fake(t, { implicitTls: true, hide8BitMime: true });
+	const session = await openSmtpSession(nodeEnv(server), login());
+	try {
+		await assert.rejects(
+			session.send(envelope, Buffer.from("Subject: caf\xc3\xa9\r\n\r\nBody\r\n", "latin1")),
+			/8BITMIME/,
+		);
+		await session.send(envelope, Buffer.from("Subject: plain\r\n\r\nok\r\n"));
+	} finally {
+		await session.close();
+	}
+	assert.equal(server.messages.length, 1);
+	assert.equal(server.messages[0].mailParams.BODY, undefined);
+});
+
 test("a message over the announced SIZE is refused before MAIL FROM", async (t) => {
 	const server = await fake(t, { implicitTls: true, size: 100 });
 	const session = await openSmtpSession(nodeEnv(server), login());

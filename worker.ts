@@ -22,6 +22,8 @@ import { runDatabaseBackup, runScheduledDatabaseBackup } from "./src/lib/backups
 import { isBackupRunMessage } from "./src/lib/backups/queue-utils";
 import { processStorageMigration, runStorageMigrationMaintenance } from "./src/lib/storage/migration";
 import { isStorageMigrateMessage } from "./src/lib/storage/migration-utils";
+import { processAppendSent } from "./src/lib/external-accounts/submit";
+import { isAppendSentMessage } from "./src/lib/external-accounts/submit-utils";
 import { failStaleBackups } from "./src/lib/backups/service";
 import { processAgentQueueMessage } from "./src/lib/agent/queue";
 import { runAgentMaintenance } from "./src/lib/agent/maintenance";
@@ -197,6 +199,8 @@ export default {
 					await runDatabaseBackup(env, msg.body.backupId);
 				} else if (isStorageMigrateMessage(msg.body)) {
 					await processStorageMigration(env, msg.body);
+				} else if (isAppendSentMessage(msg.body)) {
+					await processAppendSent(env, msg.body);
 				} else if (
 					typeof msg.body === "object" &&
 					msg.body !== null &&

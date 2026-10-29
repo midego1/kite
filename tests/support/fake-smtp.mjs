@@ -12,7 +12,8 @@ import { SMTPServer } from "smtp-server";
  * - `tls`: `{ cert, key }` (from `test-certificate.mjs`); required for `implicitTls` and `starttls`.
  * - `implicitTls`: the whole connection is TLS. `starttls` (default with `tls` and without `implicitTls`): offer it.
  *   Without either the server is plain text and accepts sign-in anyway (the e2e fake on loopback).
- * - `authMethods` (default `["PLAIN", "LOGIN"]`), `users` (`{ [username]: password }`), `size` (announced SIZE).
+ * - `authMethods` (default `["PLAIN", "LOGIN"]`), `users` (`{ [username]: password }`), `size` (announced SIZE),
+ *   `hide8BitMime` (do not announce 8BITMIME).
  * - `rejectRecipients`: `{ [address]: [code, text] }`, the answer to RCPT TO for that address.
  * - `afterData`: what happens once a message has been received and recorded (it is queued, as far as the server
  *   knows): `"drop"` closes the connection instead of answering, `"hang"` never answers.
@@ -44,6 +45,7 @@ export async function startFakeSmtp(options = {}) {
 		authMethods: options.authMethods ?? ["PLAIN", "LOGIN"],
 		allowInsecureAuth: !options.tls,
 		hideSTARTTLS: !starttls,
+		hide8BITMIME: !!options.hide8BitMime,
 		// `smtp-server` falls back to its default mechanisms for an empty list, so no AUTH at all is a disabled command.
 		disabledCommands: [...(starttls ? [] : ["STARTTLS"]), ...(options.authMethods?.length === 0 ? ["AUTH"] : [])],
 		...(options.size ? { size: options.size } : {}),

@@ -61,6 +61,7 @@ import { useMessageContentScroll } from "./use-message-content-scroll";
 import { SummarizeButton, ThreadSummaryCard } from "@/components/messages/thread-summary-card";
 import { useThreadSummary } from "@/components/messages/use-thread-summary";
 import { showsCurrentSummary } from "@/components/messages/thread-summary-utils";
+import { mailboxSendableAddresses } from "@/components/compose/sender-options-utils";
 
 export default function MessageDetailPage() {
 	const params = useParams<{ messageId: string }>();
@@ -134,11 +135,8 @@ export default function MessageDetailPage() {
 	const messageMailbox = mailboxes.find((mailbox) => mailbox.id === message.mailboxId) ?? selectedMailbox;
 	const currentAccountName = messageMailbox?.displayName ?? messageMailbox?.localPart;
 	const { fromName, fromAddress } = getMessageHeaderParties(message, currentAccountName);
-	const ownAddresses = messageMailbox
-		? messageMailbox.senderAddresses?.length
-			? messageMailbox.senderAddresses
-			: [`${messageMailbox.localPart}@${messageMailbox.hostname}`]
-		: [];
+	// Connected addresses count as the mailbox's own, so a reply goes out from the address the mail came to.
+	const ownAddresses = messageMailbox ? mailboxSendableAddresses(messageMailbox) : [];
 	const ownAddress = getOwnAddressForMessage(message, ownAddresses);
 	const toEntries = splitEmailAddressList(message.toAddr);
 	const ccEntries = splitEmailAddressList(message.ccAddr);

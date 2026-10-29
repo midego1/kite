@@ -1,14 +1,18 @@
 import type { externalAccounts } from "@/db/schema/external-accounts";
+import { sendBlock } from "./identity-utils";
 import { findPreset } from "./presets-utils";
 import type { ExternalAccountView } from "./types";
 
 export type ExternalAccountRow = typeof externalAccounts.$inferSelect;
 
 /**
- * The public shape of an account. Fields are listed one by one, so the sealed password (and, later, OAuth tokens or
+ * The public shape of an account, with when its SMTP sign-in last worked (`readSmtpVerified`). Fields are listed one by one, so the sealed password (and, later, OAuth tokens or
  * cursors) can never reach a response by being added to the table.
  */
-export function serializeExternalAccount(row: ExternalAccountRow): ExternalAccountView {
+export function serializeExternalAccount(
+	row: ExternalAccountRow,
+	smtpVerifiedAt: Date | null = null,
+): ExternalAccountView {
 	return {
 		id: row.id,
 		label: row.label,
@@ -27,6 +31,12 @@ export function serializeExternalAccount(row: ExternalAccountRow): ExternalAccou
 		statusReason: row.statusReason,
 		lastError: row.lastError,
 		hasPassword: row.secret.length > 0,
+		sending: {
+			enabled: row.sendEnabled,
+			appendSent: row.appendSent,
+			verified: !!smtpVerifiedAt,
+			block: sendBlock({ ...row, hasPassword: row.secret.length > 0, smtpVerifiedAt }, null),
+		},
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};

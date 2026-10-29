@@ -140,3 +140,36 @@ export function canSubmitAccountForm(form: AccountFormState, editing: boolean, p
 	if (form.preset === "other" && (!form.imapHost.trim() || !Number(form.imapPort))) return false;
 	return true;
 }
+
+/** Saves the send-as switches of an account; they need no password. */
+export async function saveSending(
+	id: string,
+	patch: { sendEnabled?: boolean; appendSent?: boolean },
+): Promise<ExternalAccountView> {
+	const response = await authFetch(`/api/external-accounts/${encodeURIComponent(id)}`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(patch),
+	});
+	return (await readJson<{ account: ExternalAccountView }>(response, "Could not save the account")).account;
+}
+
+/** The account's send-as state in plain words (spec §7.2). */
+export function sendingText(account: Pick<ExternalAccountView, "address" | "sending">): string {
+	switch (account.sending.block) {
+		case null:
+			return `You can send as ${account.address} from the composer's From menu.`;
+		case "no_smtp":
+			return "Add the SMTP server to send from this address.";
+		case "send_off":
+			return "Sending from this address is off.";
+		case "alias":
+			return "Kite sends only from the address the account signs in with.";
+		case "not_verified":
+			return "Test the connection to send from this address.";
+		case "paused":
+			return "Sending is paused with the account.";
+		default:
+			return "Reconnect the account to send from this address.";
+	}
+}

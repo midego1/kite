@@ -9,9 +9,7 @@
 				"tests/**/*.test.mjs",
 				"e2e/**/*.spec.ts",
 				"scripts/screenshots/*.capture.ts",
-				"src/app/**/{page,layout,route,loading,error,not-found,global-error,template,default}.{ts,tsx}",
-				"src/lib/smtp/session.ts",
-				"src/lib/email/mime-build-utils.ts"
+				"src/app/**/{page,layout,route,loading,error,not-found,global-error,template,default}.{ts,tsx}"
 			],
 			"project": [
 				"src/**/*.{ts,tsx}",

@@ -7,8 +7,11 @@ import { getEmailAddress } from "@/lib/email/address";
 import type {
 	OutboundProviderConfig,
 	OutboundProviderMessage,
+	OutboundProviderResult,
 	ResendKeyStatus,
+	SmtpSubmissionConfig,
 } from "@/lib/email/outbound-provider-types";
+import { sendViaSubmission } from "@/lib/external-accounts/submit";
 import { openSetting } from "@/lib/security/secret-box";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
@@ -40,11 +43,17 @@ export async function getResendApiKey(env: CloudflareEnv): Promise<string> {
 	return apiKey;
 }
 
-/** The provider for the domain a message is sent from. */
+/**
+ * The provider for the domain a message is sent from, or, for a send from a connected account's address
+ * (`submission`), that account's own SMTP server: never Kite's Cloudflare, Resend or SES sending, which cannot send
+ * as an address outside Kite's domains (spec §7.1). The account itself is checked again when the message goes out.
+ */
 export async function getOutboundProviderConfig(
 	env: CloudflareEnv,
 	fromAddress: string,
+	submission?: Omit<SmtpSubmissionConfig, "provider"> | null,
 ): Promise<OutboundProviderConfig> {
+	if (submission) return { provider: "smtp", ...submission };
 	const hostname = getEmailAddress(fromAddress).split("@")[1]?.toLowerCase();
 	const [domain] = hostname
 		? await getDb(env)
@@ -120,7 +129,8 @@ export async function sendThroughProvider(
 	config: OutboundProviderConfig,
 	message: OutboundProviderMessage,
 	idempotencyKey?: string,
-): Promise<{ messageId: string }> {
+): Promise<OutboundProviderResult> {
+	if (config.provider === "smtp") return sendViaSubmission(env, config, message, config.attempt);
 	if (config.provider === "resend") return sendWithResend(config.apiKey, message, idempotencyKey);
 	if (config.provider === "ses") return sendSesEmail(config.config, message);
 	const response = await env.EMAIL.send({

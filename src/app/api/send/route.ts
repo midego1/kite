@@ -56,6 +56,8 @@ export async function POST(request: Request) {
 		const result = await sendEmail(env, {
 			userId: user.id,
 			...parsed.data,
+			// The signed-in composer may send from the user's connected accounts (spec §7.3); nothing else may.
+			connectedAccounts: true,
 			scheduledAt: timing.scheduledAt,
 			attachments,
 			publicOrigin: new URL(request.url).origin,

@@ -1,7 +1,7 @@
 import type { ObjectClass } from "./types";
 
 const CLASS_PREFIXES: readonly [ObjectClass, readonly string[]][] = [
-	["mail", ["inbound/", "imports/", "drafts/", "attachments/", "jmap-uploads/", "bodies/"]],
+	["mail", ["inbound/", "imports/", "drafts/", "sent/", "attachments/", "jmap-uploads/", "bodies/"]],
 	["drive", ["drive/"]],
 	["backups", ["backups/"]],
 ];

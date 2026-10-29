@@ -12,7 +12,6 @@ import {
 	planSmtpStartTls,
 	SMTP_CLIENT_NAME,
 	SMTP_PORTS,
-	smtpDataPayload,
 	smtpPlainToken,
 	transportAddress,
 } from "./protocol-utils";
@@ -33,6 +32,9 @@ export type SmtpSession = {
 };
 
 type SmtpEnv = Parameters<typeof openMailSocket>[0];
+
+/** How long `close()` waits for the answer to QUIT. */
+const QUIT_TIMEOUT_MS = 5_000;
 
 /**
  * Connects to a submission server, makes sure the connection is encrypted (implicit TLS on 465, or STARTTLS on 587
@@ -59,7 +61,8 @@ export async function openSmtpSession(
 		extensions,
 		send: (envelope, raw) => sendMessage(smtp, extensions, envelope, raw),
 		async close() {
-			await smtp.command("QUIT", "data", [221]).catch(() => undefined);
+			// A polite goodbye only: the message is already queued, so a server slow to answer QUIT is not waited for.
+			await smtp.command("QUIT", "data", [221], { timeoutMs: QUIT_TIMEOUT_MS }).catch(() => undefined);
 			await smtp.close();
 		},
 	};
@@ -118,9 +121,13 @@ async function sendMessage(
 	if (!recipients.length) throw new Error("The message has no recipients");
 	if (extensions.size !== null && raw.byteLength > extensions.size)
 		throw new SmtpMessageTooLargeError(raw.byteLength, extensions.size);
+	const eightBit = hasEightBitBytes(raw);
+	// Kite's own messages are 7-bit (`buildMimeMessage`); 8-bit bytes go only to a server that announced 8BITMIME.
+	if (eightBit && !extensions.keywords.includes("8BITMIME"))
+		throw new Error("The message has 8-bit content and the SMTP server does not accept it (no 8BITMIME)");
 	const params = [
 		...(extensions.keywords.includes("SIZE") ? [`SIZE=${raw.byteLength}`] : []),
-		...(extensions.keywords.includes("8BITMIME") && hasEightBitBytes(raw) ? ["BODY=8BITMIME"] : []),
+		...(eightBit ? ["BODY=8BITMIME"] : []),
 	];
 	try {
 		await smtp.command([`MAIL FROM:<${from}>`, ...params].join(" "), "mail", [250]);
@@ -131,6 +138,6 @@ async function sendMessage(
 		await smtp.command("RSET", "mail", [250]).catch(() => undefined);
 		throw error;
 	}
-	const reply = await smtp.sendData(smtpDataPayload(raw));
+	const reply = await smtp.sendData(raw);
 	return { response: reply.lines.join(" ").trim() };
 }

@@ -8,9 +8,9 @@ export type EventBlockLayout = {
 
 const LINE_HEIGHT = 16;
 /** One line plus 1px of padding above and below: the half-hour event at 36px per hour. */
-export const INLINE_MIN_HEIGHT = LINE_HEIGHT + 2;
+const INLINE_MIN_HEIGHT = LINE_HEIGHT + 2;
 /** Two lines plus 2px of padding above and below: the one-hour event at 36px per hour. */
-export const STACKED_MIN_HEIGHT = LINE_HEIGHT * 2 + 4;
+const STACKED_MIN_HEIGHT = LINE_HEIGHT * 2 + 4;
 /** Two lines plus 6px of padding above and below. */
 const STACKED_ROOMY_HEIGHT = LINE_HEIGHT * 2 + 12;
 

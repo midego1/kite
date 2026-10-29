@@ -2,15 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { bundleModules } from "./support/modules-bundle.mjs";
 
-const { eventBlockLayout, inlineEventSuffix, INLINE_MIN_HEIGHT, STACKED_MIN_HEIGHT } = await bundleModules(
-	"kite-calendar-event-block-",
-	[
-		["eventBlockLayout", "src/app/(calendar)/calendar/event-block-utils.ts"],
-		["inlineEventSuffix", "src/app/(calendar)/calendar/event-block-utils.ts"],
-		["INLINE_MIN_HEIGHT", "src/app/(calendar)/calendar/event-block-utils.ts"],
-		["STACKED_MIN_HEIGHT", "src/app/(calendar)/calendar/event-block-utils.ts"],
-	],
-);
+const { eventBlockLayout, inlineEventSuffix } = await bundleModules("kite-calendar-event-block-", [
+	["eventBlockLayout", "src/app/(calendar)/calendar/event-block-utils.ts"],
+	["inlineEventSuffix", "src/app/(calendar)/calendar/event-block-utils.ts"],
+]);
 
 // The grid draws 36px per hour (CALENDAR_HOUR_HEIGHT), so these are the real block heights.
 const HOUR = 36;
@@ -35,10 +30,11 @@ test("longer events get roomier padding", () => {
 });
 
 test("each mode leaves room for its lines plus padding", () => {
-	assert.equal(INLINE_MIN_HEIGHT, 18);
-	assert.equal(STACKED_MIN_HEIGHT, 36);
-	assert.equal(eventBlockLayout(INLINE_MIN_HEIGHT - 0.01).mode, "none");
-	assert.equal(eventBlockLayout(STACKED_MIN_HEIGHT - 0.01).mode, "inline");
+	// One 16px line plus 1px of padding on each side, then two lines plus 2px on each side.
+	assert.equal(eventBlockLayout(17.99).mode, "none");
+	assert.equal(eventBlockLayout(18).mode, "inline");
+	assert.equal(eventBlockLayout(35.99).mode, "inline");
+	assert.equal(eventBlockLayout(36).mode, "stacked");
 });
 
 test("the inline line reads title, start time", () => {

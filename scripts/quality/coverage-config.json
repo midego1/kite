@@ -112,6 +112,7 @@
 		"src/lib/changelog/changelog-utils.ts",
 		"src/lib/changelog/changelog-nav-utils.ts",
 		"src/lib/backups/queue-utils.ts",
+		"src/lib/backups/objects-utils.ts",
 		"src/lib/booking/hosts-utils.ts",
 		"src/lib/booking/webhook-event-utils.ts",
 		"src/lib/calendar/availability-utils.ts",

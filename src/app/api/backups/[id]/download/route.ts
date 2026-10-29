@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { backups } from "@/db/schema";
+import { backups } from "@/db/schema/backups";
+import { selectRow } from "@/lib/db/pending-columns";
 import { requireSessionAdmin } from "@/lib/api/auth";
 import { isPrimaryAdmin } from "@/lib/auth/admin";
 import { getEnv } from "@/lib/cloudflare";
@@ -12,7 +13,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 	if (auth.error) return auth.error;
 	try {
 		const { id } = await params;
-		const [backup] = await getDb(env).select().from(backups).where(eq(backups.id, id)).limit(1);
+		const backup = await selectRow(getDb(env), backups, eq(backups.id, id));
 		if (!backup?.r2Key) return NextResponse.json({ error: "Backup file not found" }, { status: 404 });
 		const object = await env.BUCKET.get(backup.r2Key);
 		if (!object) return NextResponse.json({ error: "Backup file not found" }, { status: 404 });

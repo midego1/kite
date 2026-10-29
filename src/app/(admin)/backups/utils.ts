@@ -46,6 +46,31 @@ export async function startBackup(): Promise<void> {
 	if (!response.ok) throw new Error(data.error ?? "Failed to run backup");
 }
 
+/** About how many mail files, and bytes, a full backup copies now. */
+export async function fetchObjectsEstimate(): Promise<{ objects: number; bytes: number }> {
+	const response = await authFetch("/api/backups/objects");
+	const data = (await response.json()) as { objects: number; bytes: number; error?: string };
+	if (!response.ok) throw new Error(data.error ?? "Failed to estimate the mail files");
+	return data;
+}
+
+/** Puts a full backup's mail files back; files that still exist are left alone. */
+export async function restoreBackupObjects(id: string): Promise<void> {
+	const response = await authFetch(`/api/backups/${id}/objects`, { method: "POST" });
+	const data = (await response.json()) as { error?: string };
+	if (!response.ok) throw new Error(data.error ?? "Failed to restore the mail files");
+}
+
+/** True while an export, a copy of mail files or a restore of them is still going, so the list keeps polling. */
+export function isBackupBusy(backup: BackupItem): boolean {
+	return (
+		backup.status === "queued" ||
+		backup.status === "running" ||
+		backup.objectsStatus === "copying" ||
+		backup.objectsStatus === "restoring"
+	);
+}
+
 export async function removeBackup(id: string): Promise<void> {
 	const response = await authFetch(`/api/backups/${id}`, { method: "DELETE" });
 	const data = (await response.json()) as { error?: string };

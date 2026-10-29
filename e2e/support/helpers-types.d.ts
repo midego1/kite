@@ -39,4 +39,6 @@ export type BackupRow = {
 	status: "queued" | "running" | "completed" | "failed";
 	error: string | null;
 	filename: string | null;
+	objectsStatus?: "copying" | "completed" | "failed" | "restoring" | null;
+	objectsCount?: number | null;
 };

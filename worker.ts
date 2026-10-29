@@ -20,6 +20,8 @@ import { buildContentSecurityPolicy, createCspNonce, isDocumentPath } from "./sr
 import { getAccountForwardingDestination, wasForwardedByKite } from "./src/lib/email/account-forwarding";
 import { runDatabaseBackup, runScheduledDatabaseBackup } from "./src/lib/backups/runner";
 import { isBackupRunMessage } from "./src/lib/backups/queue-utils";
+import { processBackupObjectsMessage } from "./src/lib/backups/objects";
+import { isBackupObjectsMessage } from "./src/lib/backups/objects-utils";
 import { processStorageMigration, runStorageMigrationMaintenance } from "./src/lib/storage/migration";
 import { isStorageMigrateMessage } from "./src/lib/storage/migration-utils";
 import { failStaleBackups } from "./src/lib/backups/service";
@@ -194,6 +196,8 @@ export default {
 					await processMailboxPurge(env, msg.body);
 				} else if (isBackupRunMessage(msg.body)) {
 					await runDatabaseBackup(env, msg.body.backupId);
+				} else if (isBackupObjectsMessage(msg.body)) {
+					await processBackupObjectsMessage(env, msg.body);
 				} else if (isStorageMigrateMessage(msg.body)) {
 					await processStorageMigration(env, msg.body);
 				} else if (

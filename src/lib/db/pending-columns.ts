@@ -41,6 +41,7 @@ export async function selectRows<T extends SQLiteTable>(
 	table: T,
 	where?: SQL,
 	limit?: number,
+	orderBy?: SQL,
 ): Promise<T["$inferSelect"][]> {
 	const columns = getTableColumns(table) as Record<string, SQLiteColumn>;
 	const missing = new Set<string>();
@@ -55,6 +56,7 @@ export async function selectRows<T extends SQLiteTable>(
 				.from(table as SQLiteTable)
 				.where(where)
 				.$dynamic();
+			if (orderBy) query.orderBy(orderBy);
 			const rows = (await (limit === undefined ? query : query.limit(limit))) as Record<string, unknown>[];
 			return rows.map((row) => fillMissingColumns<T["$inferSelect"]>(row, columns, missing));
 		} catch (error) {

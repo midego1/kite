@@ -41,6 +41,9 @@ const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"agent.style_backfill": "agent_style_backfill",
 	"mailbox.purge": "mailbox_purge",
 	"backup.run": "backup",
+	"backup.objects.copy": "backup",
+	"backup.objects.restore": "backup",
+	"backup.objects.delete": "backup",
 	"storage.migrate": "storage_migration",
 	...Object.fromEntries(
 		MODULE_MANIFESTS.flatMap((manifest) => manifest.queueMessageTypes.map((entry) => [entry.kind, entry.metricClass])),

@@ -22,6 +22,8 @@ import { processMailboxPurge } from "@/lib/mailboxes/delete";
 import { isMailboxPurgeMessage } from "@/lib/mailboxes/delete-utils";
 import { runDatabaseBackup } from "@/lib/backups/runner";
 import { isBackupRunMessage } from "@/lib/backups/queue-utils";
+import { processBackupObjectsMessage } from "@/lib/backups/objects";
+import { isBackupObjectsMessage } from "@/lib/backups/objects-utils";
 import { processStorageMigration } from "@/lib/storage/migration";
 import { isStorageMigrateMessage } from "@/lib/storage/migration-utils";
 import { isInboundQueueMessage, isWebhookRetryMessage } from "../worker-utils";
@@ -69,6 +71,7 @@ async function main() {
 		if (isWebhookRetryMessage(body)) await processWebhookRetry(env, body as WebhookRetryMessage);
 		else if (isMailboxPurgeMessage(body)) await processMailboxPurge(env, body);
 		else if (isBackupRunMessage(body)) await runDatabaseBackup(env, body.backupId);
+		else if (isBackupObjectsMessage(body)) await processBackupObjectsMessage(env, body);
 		else if (isStorageMigrateMessage(body)) await processStorageMigration(env, body);
 		else if ((await dispatchModuleQueueMessage(env, "outbound", body)).handled) {
 			// A module's own message kind, routed through the registry.

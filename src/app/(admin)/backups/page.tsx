@@ -34,12 +34,15 @@ import {
 	formatBackupSize,
 	getBackupTriggerLabel,
 	getStatusClass,
+	isBackupBusy,
 	removeBackup,
+	restoreBackupObjects,
 	restoreBackup,
 	saveBackupSettings,
 	startBackup,
 } from "./utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { BackupObjectsSetting, BackupObjectsSummary, RestoreObjectsButton } from "./backup-objects";
 
 export default function BackupsPage() {
 	const queryClient = useQueryClient();
@@ -51,10 +54,7 @@ export default function BackupsPage() {
 	const backups = useQuery({
 		queryKey: ["backups"],
 		queryFn: fetchBackups,
-		refetchInterval: (query) =>
-			query.state.data?.backups.some((backup) => backup.status === "queued" || backup.status === "running")
-				? 5000
-				: false,
+		refetchInterval: (query) => (query.state.data?.backups.some(isBackupBusy) ? 5000 : false),
 	});
 
 	const settings = editedSettings ?? backups.data?.settings ?? null;
@@ -92,18 +92,24 @@ export default function BackupsPage() {
 	});
 
 	const download = useMutation({ mutationFn: downloadBackup });
+	const restoreObjects = useMutation({
+		mutationFn: restoreBackupObjects,
+		onSuccess: () => queryClient.invalidateQueries({ queryKey: ["backups"] }),
+	});
 	const restore = useMutation({
 		mutationFn: restoreBackup,
 		onSuccess: () => window.location.assign("/login"),
 	});
-	const error =
-		backups.error ||
-		saveSettings.error ||
-		autoSaveSettings.error ||
-		runBackup.error ||
-		deleteBackup.error ||
-		download.error ||
-		restore.error;
+	const error = [
+		backups.error,
+		saveSettings.error,
+		autoSaveSettings.error,
+		runBackup.error,
+		deleteBackup.error,
+		download.error,
+		restore.error,
+		restoreObjects.error,
+	].find(Boolean);
 	const configuration = backups.data?.configuration;
 	const backupConfigured = configuration?.configured === true;
 
@@ -368,51 +374,55 @@ export default function BackupsPage() {
 											</div>
 										)}
 									</div>
-
-									<div className="grid gap-4 border-t border-neutral-200 pt-5">
-										<div className="flex items-center justify-between gap-4">
-											<Label htmlFor="retention-switch">Delete old backups automatically</Label>
-											<Switch
-												id="retention-switch"
-												checked={settings.retentionEnabled}
-												disabled={autoSaveSettings.isPending}
-												onCheckedChange={(retentionEnabled) =>
-													autoSaveSettings.mutate({
-														...settings,
-														retentionEnabled,
-													})
-												}
-											/>
-										</div>
-
-										<div className="flex items-center justify-between gap-4">
-											<Label htmlFor="retention-days">Delete backups older than</Label>
-											<div className="flex w-1/2 max-w-52 shrink-0 items-center gap-2 relative">
-												<Input
-													id="retention-days"
-													className="min-w-0"
-													type="number"
-													min={1}
-													max={3650}
-													value={settings.retentionDays}
-													disabled={!settings.retentionEnabled || autoSaveSettings.isPending}
-													onChange={(event) =>
-														setSettings({
-															...settings,
-															retentionDays: Number(event.target.value),
-														})
-													}
-													onBlur={(event) => {
-														if (event.currentTarget.checkValidity()) autoSaveSettings.mutate(settings);
-														else setSettings({ ...settings, retentionDays: lastSavedSettings()?.retentionDays ?? 30 });
-													}}
-												/>
-												<span className="text-sm text-neutral-500 absolute z-10 right-6">days</span>
-											</div>
-										</div>
-									</div>
 								</>
 							)}
+							<div className="grid gap-4 border-t border-neutral-200 pt-5">
+								<div className="flex items-center justify-between gap-4">
+									<Label htmlFor="retention-switch">Delete old backups automatically</Label>
+									<Switch
+										id="retention-switch"
+										checked={settings.retentionEnabled}
+										disabled={autoSaveSettings.isPending}
+										onCheckedChange={(retentionEnabled) =>
+											autoSaveSettings.mutate({
+												...settings,
+												retentionEnabled,
+											})
+										}
+									/>
+								</div>
+
+								<div className="flex items-center justify-between gap-4">
+									<Label htmlFor="retention-days">Delete backups older than</Label>
+									<div className="flex w-1/2 max-w-52 shrink-0 items-center gap-2 relative">
+										<Input
+											id="retention-days"
+											className="min-w-0"
+											type="number"
+											min={1}
+											max={3650}
+											value={settings.retentionDays}
+											disabled={!settings.retentionEnabled || autoSaveSettings.isPending}
+											onChange={(event) =>
+												setSettings({
+													...settings,
+													retentionDays: Number(event.target.value),
+												})
+											}
+											onBlur={(event) => {
+												if (event.currentTarget.checkValidity()) autoSaveSettings.mutate(settings);
+												else setSettings({ ...settings, retentionDays: lastSavedSettings()?.retentionDays ?? 30 });
+											}}
+										/>
+										<span className="text-sm text-neutral-500 absolute z-10 right-6">days</span>
+									</div>
+								</div>
+							</div>
+							<BackupObjectsSetting
+								checked={settings.includeObjects}
+								disabled={autoSaveSettings.isPending}
+								onCheckedChange={(includeObjects) => autoSaveSettings.mutate({ ...settings, includeObjects })}
+							/>
 						</>
 					)}
 				</CardContent>
@@ -423,7 +433,7 @@ export default function BackupsPage() {
 					<DatabaseBackup className="h-5 w-5 text-neutral-500" />
 					<h2 className="font-semibold text-neutral-900">Backup history</h2>
 				</div>
-				<div className="grid grid-cols-[1fr_110px_110px_170px_120px] gap-4 border-b border-neutral-200 bg-[#f6f8fc] px-4 py-2 text-xs font-medium text-neutral-500">
+				<div className="grid grid-cols-[1fr_110px_110px_170px_150px] gap-4 border-b border-neutral-200 bg-[#f6f8fc] px-4 py-2 text-xs font-medium text-neutral-500">
 					<span>File</span>
 					<span>Status</span>
 					<span>Size</span>
@@ -437,11 +447,12 @@ export default function BackupsPage() {
 				{(backups.data?.backups ?? []).map((backup: BackupItem) => (
 					<div
 						key={backup.id}
-						className="grid grid-cols-[1fr_110px_110px_170px_120px] items-center gap-4 border-b border-neutral-200 px-4 py-3 last:border-b-0"
+						className="grid grid-cols-[1fr_110px_110px_170px_150px] items-center gap-4 border-b border-neutral-200 px-4 py-3 last:border-b-0"
 					>
 						<div className="min-w-0">
 							<p className="truncate text-sm font-medium text-neutral-900">{backup.filename ?? backup.id}</p>
 							<p className="truncate text-xs text-neutral-500">{getBackupTriggerLabel(backup.trigger)}</p>
+							<BackupObjectsSummary backup={backup} />
 							{backup.error && (
 								<p className="truncate text-xs text-red-700" title={backup.error}>
 									{backup.error}
@@ -463,6 +474,11 @@ export default function BackupsPage() {
 							>
 								<Download className="h-4 w-4" />
 							</Button>
+							<RestoreObjectsButton
+								backup={backup}
+								disabled={restoreObjects.isPending}
+								onRestore={(id) => restoreObjects.mutate(id)}
+							/>
 							<Button
 								size="sm"
 								variant="ghost"

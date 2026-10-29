@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.29.0] - 2026-10-29
+
+### Added
+
+- [AI usage](/ai-usage) is much more detailed. Hover over or focus a bar in the chart (arrow keys move between days) to see that day's input, output and total tokens, requests, failures, estimated cost, requests without a rate, and a breakdown by model and by feature. Switch between the last 7, 30 or 90 days, and chart tokens, cost or requests. New sections show today's spend against the install's daily cap, the token allowances and each mailbox's own cap; succeeded versus failed requests with the most common errors; and breakdowns by model, provider, feature and mailbox (only mailboxes you can open are named), each with requests, tokens, cost and share. The activity table filters by model, provider, feature and status, and each row opens to show its feature, mailbox, status or error, duration, finish reason, cost and the rate it was counted at.
+- Kite's price list now has DeepSeek's models (`deepseek-flash`, which serves DeepSeek V4.1 Flash, and `deepseek-v4-pro`), counted at DeepSeek's peak rate.
+- Attachments in the composer open: a click previews an image, PDF or text file in the same viewer the reader uses (other types download), and each chip has a "…" menu with Preview, Download and Remove. It works for files you just attached, for files carried over by Forward, and in both the reply docked in the reader and the full composer. Chips show a thumbnail for images and keep the file extension visible when a long name is shortened.
+- Save several AI providers in [Admin → Agent](/agent) and switch between them with **Use this provider**, without typing the API key or models again: each saved provider keeps its name, base URL, sealed key, models and rates, and exactly one is in use for chat, Write with Kite, automatic reading, summaries and spend. A new provider is used only when you tick **Use this provider now** (or when nothing at all is set up), and switching to another external vendor while external providers may read mail asks for confirmation first. The provider in use cannot be deleted; switch first. Adding, editing, switching and deleting a provider are listed on [Activity](/activity).
+- A saved API key that can't be decrypted (for example after restoring into an install with another `APP_ENCRYPTION_KEY`) no longer breaks Admin → Agent: the provider shows "key unreadable, enter it again" and AI requests say so.
+- A mailbox whose chosen model the provider in use does not offer uses the provider's default model, and its assistant settings say so.
+
+### Changed
+
+- Requests that stored no cost, because they ran before their model had a rate, are now priced on [AI usage](/ai-usage) at today's rate and marked estimated, instead of being left out of the spend. A request that ended before the provider reported its usage keeps its reserved estimate, also marked estimated, and one left open after a worker stopped shows as interrupted. The page lists the models that still have no rate, with a link to set one in [Admin → Agent](/agent).
+- An answer that hit the output limit is recorded as failed with "cut off" in every feature, and its tokens still count. Automatic drafts (auto-drafting with autonomy off) now refuse such an answer, as Write with Kite does, instead of saving a draft that ends mid-sentence.
+- **Database migration 0078** adds status, error code, duration, finish reason, the rate used and whether the cost is an estimate to each AI usage row. Apply it from the Admin overview; until then AI usage shows those details as not recorded and everything else works as before.
+- Database migration 0077 adds the saved providers and copies the provider configured until now into the first one. Apply it from the admin overview; until then Admin → Agent keeps the single provider form and works as before. Once a saved provider is in use, the old single-provider settings (key included) are cleared.
+- Sign-in, first-run setup, onboarding, password reset and the two-step code have the new look: one bordered card on the page background, with the product name above it. **Kite classic** keeps its script line under the card.
+- The public booking pages and shared Drive links look like the rest of Kite: bordered cards and lists, a quiet header, and buttons and fields in the same style. Shared Drive links follow the light or dark theme without the near-white background they could show in dark mode.
+- The "Page not found" page and the shared dialogs (forms, confirmations, the command palette, the keyboard shortcuts, the account menu and the send preview) use the same rounded, bordered panels. The **New mailbox** form on [Admin → Mailboxes](/mailboxes) and the contact details scroll when the window is short.
+
+### Fixed
+
+- With a router provider (OpenRouter, Haimaker or a custom API), a model id with the vendor in front (`anthropic/claude-opus-5-5`, `deepseek/deepseek-v4.1-flash`) now gets the vendor's price from Kite's price list. Such models now count against the daily dollar spend cap instead of the token allowances.
+- The size notice under the attachments ("Cloudflare limits general email messages to 5 MiB…") only shows when a file will be sent as a download link or the files come close to the message limit, no longer for every attachment, and not at all when the From domain sends through Resend or SES, which take big files directly (the Attach button's tooltip follows).
+- The text Write with Kite suggests is readable in dark mode: the preview had a near-white background with light grey text.
+
+### Security
+
+- Drafts are now private to their author in shared mailboxes. Another person with access to the mailbox, its owner and administrators included, no longer sees your drafts in Drafts, counts, search, mailbox export, the REST API or JMAP, and opening one of them or its attachments by link answers "not found".
+- A draft now leaves Drafts only by being sent or deleted. **Delete** removes drafts at once with their attachments, after asking and without Undo, instead of moving them to Trash: in Drafts, and in Starred, search results or All mailboxes, where a notice says how many drafts were deleted permanently and Undo covers only the rest. You can delete your own drafts with Send as or Send on behalf access too. Drafts no longer offers Archive, Report spam or Move to, and the server and JMAP refuse to move a draft elsewhere or a message into Drafts.
+- Removing a member from a shared mailbox deletes their drafts in it; the confirmation says so.
+
 ## [2026.10.28.1] - 2026-10-28
 
 ### Added

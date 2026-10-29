@@ -23,3 +23,10 @@ export function isAdminPath(pathname: string): boolean {
 		pathname.startsWith("/backups")
 	);
 }
+
+/** Where the account menu goes when it opens upward from `element`: above it, as tall as the window leaves room for. */
+export function menuAnchorAbove(element: HTMLElement | null): { bottom: number; maxHeight: number } | null {
+	if (!element) return null;
+	const top = element.getBoundingClientRect().top;
+	return { bottom: window.innerHeight - top + 8, maxHeight: Math.max(160, top - 8 - 12) };
+}

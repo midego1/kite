@@ -73,6 +73,8 @@ export type MessageFolderPageProps = {
 	compact?: boolean;
 	selectedMessageId?: string;
 	selection?: MessageSelectionControl;
+	/** False while the split layout has the list panel hidden; the header then stops claiming the sidebar toggle. */
+	listVisible?: boolean;
 };
 
 export type MessageSplitLayoutProps = {

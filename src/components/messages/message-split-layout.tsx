@@ -234,6 +234,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 					<MessageFolderPage
 						config={config}
 						compact={!below}
+						listVisible={listVisible}
 						selectedMessageId={selectedMessageId}
 						selection={{
 							selectedMessages,

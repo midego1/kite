@@ -10,6 +10,8 @@ export type MessageListHeaderProps = {
 	/** A selection pane next to the list offers the bulk actions, so the header skips them. */
 	selectionInPane: boolean;
 	showTitle: boolean;
+	/** False while the list panel is hidden: the header is still mounted but unseen, so it keeps the sidebar toggle out. */
+	listVisible: boolean;
 	nested: boolean;
 	selection: {
 		count: number;

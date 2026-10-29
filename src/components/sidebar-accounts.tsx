@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
 import { Check, PanelLeft, Plus } from "lucide-react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -16,9 +15,10 @@ import { Tooltip } from "./ui/tooltip";
 const MAX_MAILBOX_SQUARES = 4;
 
 function CollapseButton() {
-	const { minimal, toggle, mobile } = useSidebar();
-	// On phones the sidebar is a sheet with its own close button.
-	if (mobile) return null;
+	const { minimal, toggle, mobile, toggleInListHeader } = useSidebar();
+	// On phones the sidebar is a sheet with its own close button; a message list header carries the toggle itself
+	// while the sidebar is expanded (the icon rail always keeps its own Expand button).
+	if (mobile || (toggleInListHeader && !minimal)) return null;
 	const label = minimal ? "Expand menu" : "Collapse menu";
 	return (
 		<Tooltip label={label} placement="right">
@@ -36,9 +36,10 @@ function CollapseButton() {
 
 /**
  * The top of the mail sidebar, after Zero's account row: one square per mailbox (the current one checked), a
- * "+" for admins, the account menu and the collapse button. In the icon rail only the collapse button stays.
+ * "+" for admins and the collapse button (unless the page's list header has it). The account menu sits at the
+ * bottom of the sidebar. In the icon rail only the collapse button stays.
  */
-export function SidebarAccounts({ accountMenu }: { accountMenu?: ReactNode }) {
+export function SidebarAccounts() {
 	const { selectedMailbox, setSelectedMailbox, mailboxes, allMailboxes, setAllMailboxes } = useSelectedMailbox();
 	const { minimal } = useSidebar();
 	const user = useCurrentUser();
@@ -103,11 +104,6 @@ export function SidebarAccounts({ accountMenu }: { accountMenu?: ReactNode }) {
 				</button>
 			)}
 			<span className="flex-1" />
-			{accountMenu && (
-				<span className="flex shrink-0 items-center [&>div>button]:p-0.5 [&>div>button>*]:h-7 [&>div>button>*]:w-7 [&>div>button>*]:text-xs">
-					{accountMenu}
-				</span>
-			)}
 			<CollapseButton />
 		</div>
 	);

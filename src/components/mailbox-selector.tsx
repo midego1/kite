@@ -2,14 +2,26 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Check, ChevronDown, Inbox, LogOut, Settings, ShieldCheck, UserPlus, UsersRound } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+	Check,
+	ChevronDown,
+	ChevronUp,
+	Inbox,
+	LogOut,
+	Settings,
+	ShieldCheck,
+	UserPlus,
+	UsersRound,
+} from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useDismissible } from "@/components/use-dismissible";
+import { useMenuAnchor } from "@/components/use-menu-anchor";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { ModuleMenuLinks } from "@/components/modules/module-nav-links";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { ProgressiveAvatarImage } from "@/components/progressive-avatar-image";
 import { isIdentityMailbox } from "@/components/mailbox-provider-utils";
+import { useSidebar } from "@/components/sidebar-state";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useAuthMe } from "@/hooks/use-auth-me";
 import { getAvatarColorStyle } from "@/lib/avatar-colors";
@@ -41,7 +53,8 @@ function AccountAvatar({
 	size = "small",
 	onAvatarError,
 }: AccountAvatarProps) {
-	const sizeClass = size === "large" ? "h-16 w-16 text-xl" : "h-10 w-10 text-sm";
+	const sizeClass =
+		size === "large" ? "h-16 w-16 text-xl" : size === "compact" ? "h-8 w-8 text-xs" : "h-10 w-10 text-sm";
 	const [imageFailed, setImageFailed] = useState(false);
 
 	if (useKeyChanged(`${avatarUrl}|${hasAvatar}`)) setImageFailed(false);
@@ -108,6 +121,108 @@ function MailboxAccountRow({ mailbox, unread, avatarUrl, onSelect }: MailboxAcco
 	);
 }
 
+/** The menu's last group: Admin (for admins), Add another account and Sign out. */
+function AccountMenuActions({
+	isAdmin,
+	adminActive,
+	onNavigate,
+	onLogout,
+}: {
+	isAdmin: boolean;
+	adminActive: boolean;
+	onNavigate: () => void;
+	onLogout: () => void;
+}) {
+	return (
+		<div className="mt-2 overflow-hidden rounded-lg bg-white">
+			{isAdmin && (
+				<Link
+					href="/admin"
+					onClick={() => onNavigate()}
+					className={`flex items-center gap-3 border-t border-neutral-100 px-5 py-4 text-sm font-medium text-neutral-800 hover:bg-[#f2f6fc] ${adminActive ? "bg-blue-50" : ""}`}
+				>
+					<ShieldCheck size={18} className="text-neutral-600" />
+					Admin
+					{adminActive && <Check className="ml-auto h-4 w-4 text-blue-600" />}
+				</Link>
+			)}
+			<Link
+				href="/login?add=1"
+				onClick={() => onNavigate()}
+				className="flex items-center gap-3 px-5 py-4 text-sm font-medium text-neutral-800 hover:bg-[#f2f6fc]"
+			>
+				<UserPlus size={18} className="text-neutral-600" />
+				Add another account
+			</Link>
+			<button
+				type="button"
+				onClick={onLogout}
+				className="flex w-full items-center gap-3 border-t border-neutral-100 px-5 py-4 text-left text-sm font-medium text-neutral-800 hover:bg-[#f2f6fc]"
+			>
+				<LogOut size={18} className="text-neutral-600" />
+				Sign out
+			</button>
+		</div>
+	);
+}
+
+/**
+ * The account button. In the expanded sidebar it is a row with the mailbox name and address; in the icon rail
+ * (with a tooltip) and everywhere else it is the avatar alone.
+ */
+function AccountTrigger({
+	open,
+	onClick,
+	inSidebar,
+	minimal,
+	name,
+	email,
+	avatar,
+}: {
+	open: boolean;
+	onClick: () => void;
+	inSidebar: boolean;
+	minimal: boolean;
+	name: string;
+	email: string;
+	avatar: AccountAvatarProps;
+}) {
+	const row = inSidebar && !minimal;
+	const button = (
+		<button
+			type="button"
+			onClick={onClick}
+			className={
+				row
+					? "flex w-full items-center gap-2 rounded-lg p-1 pr-2 text-left transition-colors hover:bg-neutral-200/60"
+					: "rounded-full p-1 transition-colors hover:bg-neutral-200"
+			}
+			// The visible name and address stay in the accessible name (WCAG 2.5.3 Label in Name).
+			aria-label={row ? `Open account menu, ${name} ${email}` : "Open account menu"}
+			aria-haspopup="menu"
+			aria-expanded={open}
+		>
+			<AccountAvatar {...avatar} size={row ? "compact" : "small"} />
+			{row && (
+				<>
+					<span className="min-w-0 flex-1">
+						<span className="block truncate text-sm font-medium text-neutral-900">{name}</span>
+						<span className="block truncate text-xs text-neutral-500">{email}</span>
+					</span>
+					<ChevronUp size={16} aria-hidden="true" className="shrink-0 text-neutral-500" />
+				</>
+			)}
+		</button>
+	);
+	return inSidebar && minimal ? (
+		<Tooltip label="Account menu" placement="right">
+			{button}
+		</Tooltip>
+	) : (
+		button
+	);
+}
+
 export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps = {}) {
 	const { selectedMailbox, setSelectedMailbox, allMailboxes, setAllMailboxes, mailboxes, isLoading } =
 		useSelectedMailbox();
@@ -120,6 +235,8 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 	const [mailboxAvatarUrls, setMailboxAvatarUrls] = useState<Record<string, string>>({});
 	const [inboxesOpen, setInboxesOpen] = useState(false);
 	const [browserAccounts, setBrowserAccounts] = useState<BrowserAccount[]>([]);
+	// In the sidebar the account sits at the bottom: the menu opens upward from where the button was.
+	const { minimal } = useSidebar();
 
 	useEffect(() => {
 		if (!open) return;
@@ -136,6 +253,7 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 	const { counts } = useMessageCounts(null, open);
 
 	useDismissible(open, () => setOpen(false), ref);
+	const { anchor, measure } = useMenuAnchor(open, ref);
 
 	const session = useAuthMe();
 	const [syncedSession, setSyncedSession] = useState<unknown>(UNSYNCED_SESSION);
@@ -224,32 +342,43 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 		router.refresh();
 	}
 
+	const inSidebar = placement === "sidebar";
+	function toggleMenu() {
+		if (!open) measure();
+		setOpen((value) => !value);
+	}
+
 	return (
-		<div ref={ref} className="relative">
-			<button
-				type="button"
-				onClick={() => setOpen((value) => !value)}
-				className="rounded-full p-1 transition-colors hover:bg-neutral-200"
-				aria-label="Open account menu"
-				aria-haspopup="menu"
-				aria-expanded={open}
-			>
-				<AccountAvatar
-					name={selectedName}
-					colorSeed={selectedEmail || selectedName}
-					hasAvatar={selectedHasAvatar}
-					avatarUrl={selectedAvatarUrl}
-					onAvatarError={() => {
+		<div ref={ref} className={inSidebar && !minimal ? "relative w-full" : "relative"}>
+			<AccountTrigger
+				open={open}
+				onClick={toggleMenu}
+				inSidebar={inSidebar}
+				minimal={minimal}
+				name={selectedName}
+				email={selectedEmail}
+				avatar={{
+					name: selectedName,
+					colorSeed: selectedEmail || selectedName,
+					hasAvatar: selectedHasAvatar,
+					avatarUrl: selectedAvatarUrl,
+					onAvatarError: () => {
 						if (!selectedMailbox) setHasAvatar(false);
-					}}
-				/>
-			</button>
+					},
+				}}
+			/>
 
 			{open && (
 				<div
 					data-placement={placement}
-					// In the sidebar the menu is fixed to the window, so the sidebar's overflow cannot clip it.
-					className={`absolute right-0 top-14 z-90 data-[placement=sidebar]:fixed data-[placement=sidebar]:left-3 data-[placement=sidebar]:right-auto data-[placement=sidebar]:z-[200] w-[360px] overflow-hidden rounded-xl border border-neutral-200 bg-[#eef3fb] p-2 shadow-lg shadow-neutral-900/20 max-h-[82vh] overflow-y-auto`}
+					// In the sidebar the menu is fixed to the window, so the sidebar's overflow cannot clip it, and
+					// opens upward from the account at the bottom.
+					style={
+						anchor
+							? ({ "--menu-bottom": `${anchor.bottom}px`, "--menu-max": `${anchor.maxHeight}px` } as CSSProperties)
+							: undefined
+					}
+					className={`absolute right-0 top-14 z-90 data-[placement=sidebar]:fixed data-[placement=sidebar]:left-3 data-[placement=sidebar]:right-auto data-[placement=sidebar]:top-auto data-[placement=sidebar]:bottom-[var(--menu-bottom)] data-[placement=sidebar]:max-h-[var(--menu-max)] data-[placement=sidebar]:z-[200] w-[360px] overflow-hidden rounded-xl border border-neutral-200 bg-[#eef3fb] p-2 shadow-lg shadow-neutral-900/20 max-h-[82vh] overflow-y-auto`}
 				>
 					<div className="rounded-lg bg-white px-5 py-5">
 						<div className="flex items-center gap-4">
@@ -357,35 +486,12 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 						</div>
 					)}
 
-					<div className="mt-2 overflow-hidden rounded-lg bg-white">
-						{user?.role === "admin" && (
-							<Link
-								href="/admin"
-								onClick={() => setOpen(false)}
-								className={`flex items-center gap-3 border-t border-neutral-100 px-5 py-4 text-sm font-medium text-neutral-800 hover:bg-[#f2f6fc] ${adminActive ? "bg-blue-50" : ""}`}
-							>
-								<ShieldCheck size={18} className="text-neutral-600" />
-								Admin
-								{adminActive && <Check className="ml-auto h-4 w-4 text-blue-600" />}
-							</Link>
-						)}
-						<Link
-							href="/login?add=1"
-							onClick={() => setOpen(false)}
-							className="flex items-center gap-3 px-5 py-4 text-sm font-medium text-neutral-800 hover:bg-[#f2f6fc]"
-						>
-							<UserPlus size={18} className="text-neutral-600" />
-							Add another account
-						</Link>
-						<button
-							type="button"
-							onClick={logout}
-							className="flex w-full items-center gap-3 border-t border-neutral-100 px-5 py-4 text-left text-sm font-medium text-neutral-800 hover:bg-[#f2f6fc]"
-						>
-							<LogOut size={18} className="text-neutral-600" />
-							Sign out
-						</button>
-					</div>
+					<AccountMenuActions
+						isAdmin={user?.role === "admin"}
+						adminActive={adminActive}
+						onNavigate={() => setOpen(false)}
+						onLogout={logout}
+					/>
 				</div>
 			)}
 		</div>

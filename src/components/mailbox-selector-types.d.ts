@@ -10,7 +10,7 @@ export type MailboxSelectorUser = {
 
 export type MailboxSelectorProps = {
 	initialUser?: MailboxSelectorUser;
-	/** In the sidebar the menu is fixed to the window's top left, so the sidebar's overflow cannot clip it. */
+	/** In the sidebar the account sits at the bottom and its menu is fixed to the window, opening upward. */
 	placement?: "header" | "sidebar";
 };
 
@@ -19,7 +19,7 @@ export type AccountAvatarProps = {
 	colorSeed?: string;
 	hasAvatar?: boolean;
 	avatarUrl?: string;
-	size?: "small" | "large";
+	size?: "small" | "compact" | "large";
 	onAvatarError?: () => void;
 };
 

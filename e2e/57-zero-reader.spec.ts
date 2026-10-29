@@ -338,7 +338,7 @@ test("notices show over the page while the sidebar is the icon rail and on phone
 	const notice = page.getByRole("region", { name: "Database updates" });
 	const nav = page.getByRole("navigation", { name: "Kite" });
 	await expect(nav.getByRole("region", { name: "Database updates" })).toBeVisible();
-	await nav.getByRole("button", { name: "Collapse menu" }).click();
+	await page.getByRole("button", { name: "Collapse menu" }).click();
 	await expect(notice).toHaveCount(1);
 	await expect(notice).toBeVisible();
 	await expect(nav.getByRole("region", { name: "Database updates" })).toHaveCount(0);

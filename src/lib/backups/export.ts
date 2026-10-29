@@ -15,6 +15,7 @@ import type { RestoreBatchLimits, RestorePlan, RestoreTablePlan } from "./restor
 const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"users",
 	"user_module_access",
+	"user_preferences",
 	"domains",
 	"mailboxes",
 	"mailbox_access",

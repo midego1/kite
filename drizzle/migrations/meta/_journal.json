@@ -586,8 +586,15 @@
     {
       "idx": 83,
       "version": "6",
-      "when": 1788852090028,
-      "tag": "0080_external_account_address_scope",
+      "when": 1788852120028,
+      "tag": "0080_add_user_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "6",
+      "when": 1788852150028,
+      "tag": "0081_external_account_address_scope",
       "breakpoints": true
     }
   ]

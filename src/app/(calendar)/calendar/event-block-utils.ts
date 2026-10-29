@@ -21,7 +21,22 @@ export function eventBlockLayout(height: number): EventBlockLayout {
 	return { mode: "none", paddingClass: "py-0" };
 }
 
-/** What follows the title on the single line of a short event; the title truncates, this stays whole. */
-export function inlineEventSuffix(startLabel: string): string {
-	return `, ${startLabel}`;
+/**
+ * The grid's dashed edge for a tentative event, drawn inset as an outline so, unlike a border, it takes no
+ * room from the 16px lines inside a block that is only 18px or 36px tall.
+ */
+export const TENTATIVE_BLOCK_CLASSES = "outline outline-1 -outline-offset-1 outline-dashed outline-current";
+
+/**
+ * The single line of a short event, as one string so a narrow column cuts it with an ellipsis at the end
+ * and the title stays visible. A piece of an event that began on an earlier day cannot show its start,
+ * which belongs to that day, so it says when the event ends.
+ */
+export function inlineEventText(input: {
+	title: string;
+	startLabel: string;
+	endLabel: string;
+	startsOnDay: boolean;
+}): string {
+	return `${input.title}, ${input.startsOnDay ? input.startLabel : `until ${input.endLabel}`}`;
 }

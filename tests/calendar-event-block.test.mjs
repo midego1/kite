@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { bundleModules } from "./support/modules-bundle.mjs";
 
-const { eventBlockLayout, inlineEventSuffix } = await bundleModules("kite-calendar-event-block-", [
+const { eventBlockLayout, inlineEventText } = await bundleModules("kite-calendar-event-block-", [
 	["eventBlockLayout", "src/app/(calendar)/calendar/event-block-utils.ts"],
-	["inlineEventSuffix", "src/app/(calendar)/calendar/event-block-utils.ts"],
+	["inlineEventText", "src/app/(calendar)/calendar/event-block-utils.ts"],
 ]);
 
 // The grid draws 36px per hour (CALENDAR_HOUR_HEIGHT), so these are the real block heights.
@@ -38,5 +38,15 @@ test("each mode leaves room for its lines plus padding", () => {
 });
 
 test("the inline line reads title, start time", () => {
-	assert.equal(inlineEventSuffix("10:00 AM"), ", 10:00 AM");
+	assert.equal(
+		inlineEventText({ title: "Standup", startLabel: "10 AM", endLabel: "10:30 AM", startsOnDay: true }),
+		"Standup, 10 AM",
+	);
+});
+
+test("the piece of an event that began on an earlier day says when it ends instead", () => {
+	assert.equal(
+		inlineEventText({ title: "Night shift", startLabel: "11 PM", endLabel: "12:30 AM", startsOnDay: false }),
+		"Night shift, until 12:30 AM",
+	);
 });

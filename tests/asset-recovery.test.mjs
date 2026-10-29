@@ -21,13 +21,14 @@ await build({
 	absWorkingDir: root,
 	logLevel: "silent",
 });
-const { STALE_ASSETS_EVENT, assetRecoveryScript, markAppReady, takeStaleAssetsSignal } = await import(
-	pathToFileURL(join(bundleDirectory, "recovery.mjs")).href
-);
+const { STALE_ASSETS_EVENT, assetRecoveryScript, markAppReady, markLoaderMounted, takeStaleAssetsSignal } =
+	await import(pathToFileURL(join(bundleDirectory, "recovery.mjs")).href);
 const ASSET_RELOAD_STORAGE_KEY = "kite:asset-reload";
 const ASSET_RECOVERY_READY_FLAG = "__kiteAppReady";
 const STALE_ASSETS_PENDING_FLAG = "__kiteStaleAssets";
 const ASSET_RELOAD_WINDOW_MS = 120_000;
+const LOADER_MOUNTED_FLAG = "__kiteLoaderMounted";
+const BOOT_FAILURE_ID = "kite-boot-failure";
 const ORIGIN = "https://mail.example.com";
 
 class FakeElement {}
@@ -46,13 +47,79 @@ class HTMLLinkElement extends FakeElement {
 }
 
 /**
- * A page with the script in its <head>. Timers wait until `runTimers()`; storage survives `reload()`, which is
- * only counted. `clock.now` moves time.
+ * A minimal DOM: AuthGuard's server-rendered startup screen (`screen` is its role: "status" while the server's
+ * screen is up, "" once React hid it, null for a page without one) and a body that records what the script adds.
  */
-function loadPage({ storage = new Map(), clock = { now: 1_000_000 }, online = true, ready = false, dev = false } = {}) {
+function fakeDocument({ screen = "status", declared = [] } = {}) {
+	const byId = new Map();
+	const body = {
+		children: [],
+		append(...elements) {
+			for (const element of elements) {
+				this.children.push(element);
+				if (element.id) byId.set(element.id, element);
+			}
+		},
+	};
+	const createElement = (tagName) => ({
+		tagName,
+		id: "",
+		style: {},
+		attributes: {},
+		listeners: {},
+		children: [],
+		textContent: "",
+		setAttribute(name, value) {
+			this.attributes[name] = value;
+		},
+		getAttribute(name) {
+			return this.attributes[name] ?? null;
+		},
+		addEventListener(type, listener) {
+			this.listeners[type] = listener;
+		},
+		append(...children) {
+			this.children.push(...children);
+		},
+		remove() {
+			body.children = body.children.filter((child) => child !== this);
+			byId.delete(this.id);
+		},
+	});
+	const overlay = screen === null ? null : createElement("div");
+	if (overlay && screen) overlay.setAttribute("role", screen);
+	return {
+		body,
+		createElement,
+		getElementById: (id) => byId.get(id) ?? null,
+		querySelector: (selector) => (selector === "[data-loading-overlay]" ? overlay : null),
+		querySelectorAll: () => declared,
+		visibilityState: "visible",
+	};
+}
+
+/**
+ * A page with the script in its <head>. Timers wait until `runTimers()`; storage survives `reload()`, which is
+ * only counted. `clock.now` moves time; `advance(ms)` moves it in watchdog ticks. `finishAsset()` reports a file
+ * of ours that finished loading, as a PerformanceObserver resource entry.
+ */
+function loadPage({
+	storage = new Map(),
+	clock = { now: 1_000_000 },
+	online = true,
+	ready = false,
+	dev = false,
+	screen = "status",
+	declared = [],
+	flags = {},
+} = {}) {
 	const listeners = new Map();
 	const timers = [];
-	const page = { reloads: 0, waits: [], dispatched: [], errors: [], storage, clock };
+	const intervals = new Map();
+	let nextInterval = 1;
+	let observer = null;
+	const document = fakeDocument({ screen, declared });
+	const page = { reloads: 0, waits: [], dispatched: [], errors: [], storage, clock, document };
 	const sandbox = {
 		location: { href: `${ORIGIN}/inbox`, origin: ORIGIN, reload: () => (page.reloads += 1) },
 		navigator: { onLine: online },
@@ -71,23 +138,45 @@ function loadPage({ storage = new Map(), clock = { now: 1_000_000 }, online = tr
 		},
 		HTMLScriptElement,
 		HTMLLinkElement,
+		document,
+		PerformanceObserver: class {
+			constructor(callback) {
+				observer = callback;
+			}
+			observe() {}
+		},
 		setTimeout: (callback, ms) => {
 			page.waits.push(ms);
 			timers.push(callback);
 		},
+		setInterval: (callback) => {
+			intervals.set(nextInterval, callback);
+			return nextInterval++;
+		},
+		clearInterval: (id) => intervals.delete(id),
 		addEventListener: (type, listener) => listeners.set(type, [...(listeners.get(type) ?? []), listener]),
 		dispatchEvent: (event) => page.dispatched.push(event.type),
+		...flags,
 	};
 	sandbox.window = sandbox;
 	if (ready) sandbox[ASSET_RECOVERY_READY_FLAG] = true;
 	vm.runInNewContext(assetRecoveryScript({ dev }), sandbox);
 	page.window = sandbox;
-	page.fire = (type, event) => {
+	page.fire = (type, event = { type }) => {
 		for (const listener of listeners.get(type) ?? []) listener(event);
 	};
 	page.runTimers = () => {
 		for (const callback of timers.splice(0)) callback();
 	};
+	page.watching = () => intervals.size > 0;
+	page.advance = (ms) => {
+		for (let elapsed = 0; elapsed < ms; elapsed += 500) {
+			clock.now += 500;
+			for (const callback of [...intervals.values()]) callback();
+		}
+	};
+	page.finishAsset = (name = `${ORIGIN}/_next/static/chunks/a.js`) => observer?.({ getEntries: () => [{ name }] });
+	page.failure = () => document.getElementById(BOOT_FAILURE_ID);
 	page.state = () => JSON.parse(storage.get(ASSET_RELOAD_STORAGE_KEY) ?? "null");
 	return page;
 }
@@ -109,7 +198,11 @@ test("a missing chunk before the app renders reloads after a growing wait, four 
 		page.runTimers();
 		waits.push(...page.waits);
 		reloads += page.reloads;
-		if (attempt >= 4) assert.deepEqual(page.errors, ["[kite] The app's files could not be loaded after 4 reloads."]);
+		if (attempt >= 4) {
+			assert.deepEqual(page.errors, ["[kite] The app's files could not be loaded after 4 reloads."]);
+			// The startup screen is still the server's: a static message with a Reload button.
+			assert.ok(page.failure());
+		}
 		clock.now += 1_000;
 	}
 	assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000]);
@@ -239,4 +332,177 @@ test("without working storage nothing could stop a loop, so it never reloads", (
 	page.fire("error", missingEntry);
 	page.runTimers();
 	assert.equal(page.reloads, 0);
+});
+
+test("a startup screen React never took over reloads after 8 visible seconds, then shows Kite couldn't load", () => {
+	const storage = new Map();
+	const clock = { now: 1_000_000 };
+	for (let attempt = 0; attempt < 4; attempt += 1) {
+		const page = loadPage({ storage, clock });
+		page.advance(7_500);
+		assert.equal(page.reloads, 0);
+		page.advance(500);
+		assert.equal(page.reloads, 1, `attempt ${attempt}`);
+		assert.equal(page.state().count, attempt + 1);
+		clock.now += 1_000;
+	}
+	// The budget a failed chunk also uses is spent: a static message with a Reload button instead.
+	const last = loadPage({ storage, clock });
+	last.advance(8_000);
+	assert.equal(last.reloads, 0);
+	assert.equal(last.watching(), false);
+	last.fire("click", { target: { closest: () => null } });
+	assert.equal(last.reloads, 0);
+	const failure = last.failure();
+	assert.equal(failure.getAttribute("role"), "alert");
+	const [text, button] = failure.children;
+	assert.equal(text.textContent, "Kite couldn't load.");
+	assert.equal(button.textContent, "Reload");
+	// Reload starts over with a fresh budget.
+	// The click is handled on window, before React's listener on document could stop it.
+	assert.equal(button.listeners.click, undefined);
+	last.fire("click", {
+		target: { closest: (selector) => (selector === `#${BOOT_FAILURE_ID} button` ? button : null) },
+	});
+	assert.equal(last.reloads, 1);
+	assert.equal(last.state(), null);
+});
+
+test("the watchdog waits while files keep arriving, up to 20 seconds, and counts only visible time", () => {
+	const page = loadPage();
+	for (let elapsed = 0; elapsed < 18_000; elapsed += 1_000) {
+		page.finishAsset();
+		page.advance(1_000);
+	}
+	assert.equal(page.reloads, 0);
+	// Still arriving, but the cap is reached.
+	page.finishAsset();
+	page.advance(2_000);
+	assert.equal(page.reloads, 1);
+
+	// Only our own files count as progress.
+	const other = loadPage();
+	other.finishAsset(`${ORIGIN}/api/auth/me`);
+	other.advance(8_000);
+	assert.equal(other.reloads, 1);
+
+	// A load that went quiet is acted on 3 seconds after its last file.
+	const quiet = loadPage();
+	quiet.advance(7_000);
+	quiet.finishAsset();
+	quiet.advance(2_500);
+	assert.equal(quiet.reloads, 0);
+	quiet.advance(500);
+	assert.equal(quiet.reloads, 1);
+
+	// A file the document names that has not finished holds it, up to the cap.
+	const chunk = `${ORIGIN}/_next/static/chunks/auth-guard.js`;
+	const named = [
+		Object.assign(new HTMLScriptElement(chunk), { tagName: "SCRIPT" }),
+		Object.assign(new HTMLLinkElement("preload", `${ORIGIN}/_next/static/fonts/a.woff2`), { tagName: "LINK" }),
+	];
+	const pending = loadPage({ declared: named });
+	pending.advance(19_500);
+	assert.equal(pending.reloads, 0);
+	pending.advance(500);
+	assert.equal(pending.reloads, 1);
+	const done = loadPage({ declared: named });
+	done.finishAsset(chunk);
+	done.advance(7_500);
+	assert.equal(done.reloads, 0);
+	// The font preload does not count, and the chunk finished more than 3 seconds ago.
+	done.advance(500);
+	assert.equal(done.reloads, 1);
+
+	// A background tab does not count.
+	const hidden = loadPage();
+	hidden.document.visibilityState = "hidden";
+	hidden.advance(60_000);
+	assert.equal(hidden.reloads, 0);
+	hidden.document.visibilityState = "visible";
+	hidden.advance(8_000);
+	assert.equal(hidden.reloads, 1);
+});
+
+test("a page React runs, or one that is done loading, is left alone", () => {
+	const cases = [
+		{ flags: { [LOADER_MOUNTED_FLAG]: true } },
+		// The startup screen is hidden: React rendered it away.
+		{ screen: "" },
+		// No startup screen (sign-in) and the app has rendered.
+		{ screen: null, ready: true },
+	];
+	for (const options of cases) {
+		const page = loadPage(options);
+		page.advance(30_000);
+		assert.deepEqual([page.reloads, page.failure(), page.watching()], [0, null, false], JSON.stringify(options));
+	}
+	// The root rendering is not enough while the part with the startup screen never did.
+	const suspended = loadPage({ ready: true });
+	suspended.advance(8_000);
+	assert.equal(suspended.reloads, 1);
+	// Without a startup screen, an app that never rendered counts as stalled.
+	const blank = loadPage({ screen: null });
+	blank.advance(8_000);
+	assert.equal(blank.reloads, 1);
+});
+
+test("offline or without storage the watchdog shows the message, and coming back online reloads", () => {
+	const offline = loadPage({ online: false });
+	offline.advance(8_000);
+	assert.equal(offline.reloads, 0);
+	assert.ok(offline.failure());
+	offline.fire("online");
+	assert.equal(offline.reloads, 1);
+
+	// Once React runs the page, coming online does nothing.
+	const live = loadPage({ online: false });
+	live.advance(8_000);
+	live.window[LOADER_MOUNTED_FLAG] = true;
+	live.fire("online");
+	assert.equal(live.reloads, 0);
+
+	const noStorage = loadPage({ storage: { has: () => false, get: () => null, set: () => {}, delete: () => {} } });
+	noStorage.advance(8_000);
+	assert.equal(noStorage.reloads, 0);
+	assert.ok(noStorage.failure());
+});
+
+test("a failed chunk's pending reload is left to run, and giving up on chunks shows the message at once", () => {
+	const page = loadPage();
+	page.fire("error", missingEntry);
+	page.advance(8_000);
+	assert.equal(page.reloads, 0);
+	page.runTimers();
+	assert.equal(page.reloads, 1);
+
+	const storage = new Map([[ASSET_RELOAD_STORAGE_KEY, JSON.stringify({ count: 4, since: 1_000_000 })]]);
+	const spent = loadPage({ storage });
+	spent.fire("error", missingEntry);
+	assert.ok(spent.failure());
+	assert.equal(spent.reloads, 0);
+});
+
+test("the message and the count go when React takes over the startup screen, not merely when the root renders", () => {
+	const storage = new Map([[ASSET_RELOAD_STORAGE_KEY, JSON.stringify({ count: 4, since: 1_000_000 })]]);
+	const page = loadPage({ storage });
+	page.advance(8_000);
+	assert.ok(page.failure());
+	globalThis.window = page.window;
+	globalThis.document = page.document;
+	globalThis.sessionStorage = page.window.sessionStorage;
+	try {
+		// The root rendered, but the startup screen is still the server's: keep the message and the budget.
+		markAppReady();
+		assert.ok(page.failure());
+		assert.equal(page.state().count, 4);
+		markLoaderMounted();
+		assert.equal(page.window[LOADER_MOUNTED_FLAG], true);
+		assert.equal(page.failure(), null);
+		assert.equal(page.state(), null);
+	} finally {
+		delete globalThis.window;
+		delete globalThis.document;
+		delete globalThis.sessionStorage;
+	}
 });

@@ -17,9 +17,13 @@ export type AuthGuardDecisionInput = Omit<AuthGuardProps, "children" | "mode"> &
 	status: "pending" | "error" | "success";
 	session: import("@/lib/auth/me-client-types").AuthMeResponse | null | undefined;
 	pathname: string;
+	/** The user chose "Continue anyway" after the session check failed: render without a session. */
+	continueWithoutSession?: boolean;
 };
 
 export type AuthGuardDecision = {
 	authorized: boolean;
 	redirect: string | null;
+	/** The session check failed after its retries: show the error state instead of the loader. */
+	unreachable?: boolean;
 };

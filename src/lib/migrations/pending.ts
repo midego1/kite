@@ -1,5 +1,5 @@
 import { getMigrationStatus } from "./service";
-import type { PendingMigrationStatus } from "./types";
+import type { MigrationApplier, PendingMigrationStatus } from "./types";
 
 /**
  * How long a failed queue message waits before its next attempt while the
@@ -21,18 +21,43 @@ async function readPendingMigrations(db: D1Database): Promise<string[] | null> {
 }
 
 /**
+ * The primary admin, the only account that can apply migrations. Plain SQL over
+ * columns as old as the users table, so it answers while the schema is behind;
+ * null when it cannot be read.
+ */
+async function readMigrationApplier(db: D1Database): Promise<MigrationApplier | null> {
+	try {
+		return await db
+			.prepare(
+				"SELECT name, email FROM users WHERE role = 'admin' AND is_primary_admin = 1 AND disabled = 0 ORDER BY created_at LIMIT 1",
+			)
+			.first<MigrationApplier>();
+	} catch (error) {
+		console.error("Could not read the primary admin for the migration status", error);
+		return null;
+	}
+}
+
+/**
  * The number of migrations the deployed code still has to apply, for the banner
  * every signed-in user sees. It only reads `sqlite_master` and `d1_migrations`,
  * so it answers while the schema is behind, and it never throws: an unreadable
  * database reads as "nothing pending" instead of breaking the page it is on.
+ * `includeApplier` adds who can apply them, for admins who cannot.
  */
 export async function getPendingMigrationStatus(
 	db: D1Database,
-	options: { includeNames?: boolean } = {},
+	options: { includeNames?: boolean; includeApplier?: boolean } = {},
 ): Promise<PendingMigrationStatus> {
 	const pending = await readPendingMigrations(db);
 	if (!pending?.length) return { pending: 0 };
-	return options.includeNames ? { pending: pending.length, names: pending } : { pending: pending.length };
+	const status: PendingMigrationStatus = { pending: pending.length };
+	if (options.includeNames) status.names = pending;
+	if (options.includeApplier) {
+		const applier = await readMigrationApplier(db);
+		if (applier) status.appliedBy = { name: applier.name, email: applier.email };
+	}
+	return status;
 }
 
 /**

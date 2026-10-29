@@ -72,6 +72,31 @@ test("the status counts unapplied migrations and sends names only when asked", a
 	}
 });
 
+test("other admins are told which account can apply the migrations", async () => {
+	const database = new SqliteDatabase(":memory:");
+	try {
+		// No users table yet: the status still answers, without a name.
+		assert.deepEqual(await getPendingMigrationStatus(database, { includeApplier: true }), { pending: bundled.length });
+		await database
+			.prepare(
+				"CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT, name TEXT, role TEXT, is_primary_admin INTEGER, disabled INTEGER, created_at INTEGER)",
+			)
+			.run();
+		const insert = "INSERT INTO users VALUES (?, ?, ?, ?, ?, ?, ?)";
+		await database.prepare(insert).bind("u1", "member@example.com", "Member", "user", 0, 0, 1).run();
+		await database.prepare(insert).bind("u2", "gone@example.com", "Gone", "admin", 1, 1, 2).run();
+		await database.prepare(insert).bind("u3", "owner@example.com", "Owner", "admin", 1, 0, 3).run();
+		assert.deepEqual(await getPendingMigrationStatus(database, { includeApplier: true }), {
+			pending: bundled.length,
+			appliedBy: { name: "Owner", email: "owner@example.com" },
+		});
+		// Without the option the primary admin is never named.
+		assert.deepEqual(await getPendingMigrationStatus(database), { pending: bundled.length });
+	} finally {
+		database.db.close();
+	}
+});
+
 test("a database it cannot read reads as nothing pending and keeps the usual retry", async () => {
 	const database = brokenDatabase();
 	assert.deepEqual(await getPendingMigrationStatus(database), { pending: 0 });

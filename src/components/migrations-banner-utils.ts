@@ -2,13 +2,33 @@ import type { MigrationApplyResponse, PendingMigrationsResponse } from "./migrat
 
 export const PENDING_MIGRATIONS_REFRESH_MS = 5 * 60_000;
 
-/** Accepts only a count and, for the primary admin, names; anything unexpected reads as up to date. */
+function parseApplier(value: unknown): PendingMigrationsResponse["appliedBy"] {
+	if (!value || typeof value !== "object") return undefined;
+	const { name, email } = value as Record<string, unknown>;
+	if (typeof email !== "string" || !email.trim()) return undefined;
+	return { name: typeof name === "string" ? name.trim() : "", email: email.trim() };
+}
+
+/**
+ * Accepts only a count, names for the primary admin and the primary admin for other admins;
+ * anything unexpected reads as up to date.
+ */
 export function parsePendingMigrations(value: unknown): PendingMigrationsResponse {
 	const data = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 	const pending =
 		typeof data.pending === "number" && Number.isFinite(data.pending) ? Math.max(0, Math.floor(data.pending)) : 0;
+	if (pending === 0) return { pending };
 	const names = Array.isArray(data.names) ? data.names.filter((name): name is string => typeof name === "string") : [];
-	return pending > 0 && names.length ? { pending, names } : { pending };
+	const appliedBy = parseApplier(data.appliedBy);
+	return { pending, ...(names.length ? { names } : {}), ...(appliedBy ? { appliedBy } : {}) };
+}
+
+/** Who to ask, for an account that cannot apply the updates itself. */
+export function migrationApplierText(appliedBy: PendingMigrationsResponse["appliedBy"]): string {
+	if (!appliedBy) return "Ask an administrator to apply them.";
+	const who =
+		appliedBy.name && appliedBy.name !== appliedBy.email ? `${appliedBy.name} (${appliedBy.email})` : appliedBy.email;
+	return `Only the primary admin, ${who}, can apply them.`;
 }
 
 /**

@@ -20,21 +20,38 @@ async function readAccount(api: APIRequestContext): Promise<AccountView> {
 	return ((await response.json()) as { accounts: AccountView[] }).accounts[0];
 }
 
-/** The luminance gap between an element's text and the first opaque background behind it. */
+/**
+ * The luminance gap between an element's text and the background behind it: the first background that is mostly
+ * opaque, since the notice's own 10% tint barely changes what it sits on.
+ */
 async function contrast(locator: Locator): Promise<number> {
 	return locator.evaluate((element) => {
 		const canvas = document.createElement("canvas").getContext("2d")!;
 		const luminance = (color: string) => {
 			canvas.clearRect(0, 0, 1, 1);
+			canvas.fillStyle = "#fff";
+			canvas.fillRect(0, 0, 1, 1);
 			canvas.fillStyle = color;
 			canvas.fillRect(0, 0, 1, 1);
 			const [r, g, b] = canvas.getImageData(0, 0, 1, 1).data;
 			return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 		};
+		const alpha = (color: string) => {
+			const parts =
+				/rgba?\(([^)]*)\)/
+					.exec(color)?.[1]
+					.split(/[\s,/]+/)
+					.filter(Boolean) ?? [];
+			return parts.length > 3 ? Number(parts[3]) : color === "transparent" ? 0 : 1;
+		};
 		let node: Element | null = element;
-		let fill = "rgba(0, 0, 0, 0)";
-		while (node && /rgba\(0, 0, 0, 0\)|transparent/.test(fill)) {
-			fill = getComputedStyle(node).backgroundColor;
+		let fill = "rgb(255, 255, 255)";
+		while (node) {
+			const background = getComputedStyle(node).backgroundColor;
+			if (alpha(background) >= 0.5) {
+				fill = background;
+				break;
+			}
 			node = node.parentElement;
 		}
 		return Math.abs(luminance(getComputedStyle(element).color) - luminance(fill));

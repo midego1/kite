@@ -1,3 +1,3 @@
 ### Fixed
 
-- #130 The composer's draft no longer ends up with older text than the composer shows when you undo a change within the moment a save was on its way: the draft is saved again once that save finishes.
+- #130 A draft no longer keeps text you had already undone. If you changed the message and changed it back while the first change was still being saved, the draft ended up with the change; now the change back is saved too, also when you close the composer right away.

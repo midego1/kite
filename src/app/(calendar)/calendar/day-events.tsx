@@ -15,7 +15,12 @@ import {
 } from "./utils";
 import type { CalendarEvent, EventResizeEdge } from "./types";
 import type { DayEventsProps } from "./day-events-types";
-import { eventBlockLayout, inlineEventText, TENTATIVE_BLOCK_CLASSES } from "./event-block-utils";
+import {
+	eventBlockLayout,
+	EVENT_BLOCK_FOCUS_CLASSES,
+	inlineEventText,
+	TENTATIVE_BLOCK_CLASSES,
+} from "./event-block-utils";
 
 // Memoized so pointer-move / drag-over preview updates in the page do not
 // recompute positions (timezone math) and re-render every event block.
@@ -74,7 +79,7 @@ function DayEventsImpl({
 							onDragEnd={onDragEnd}
 							title={`${event.title} · ${range}${event.status === "tentative" ? " (Tentative)" : ""}`}
 							data-status={event.status === "tentative" ? "tentative" : undefined}
-							className={`absolute left-1 right-1 z-10 flex cursor-move flex-col items-start justify-start overflow-hidden rounded-lg pr-2 pl-4 text-left hover:brightness-95 ${isPastEvent ? PAST_EVENT_COLOR_CLASSES[color] : EVENT_COLOR_CLASSES[color]} ${layout.paddingClass} ${activeEventId === event.id ? "opacity-40" : ""} ${event.status === "tentative" ? TENTATIVE_BLOCK_CLASSES : ""}`}
+							className={`absolute left-1 right-1 z-10 flex cursor-move flex-col items-start justify-start overflow-hidden rounded-lg pr-2 pl-4 text-left hover:brightness-95 ${EVENT_BLOCK_FOCUS_CLASSES} ${isPastEvent ? PAST_EVENT_COLOR_CLASSES[color] : EVENT_COLOR_CLASSES[color]} ${layout.paddingClass} ${activeEventId === event.id ? "opacity-40" : ""} ${event.status === "tentative" ? TENTATIVE_BLOCK_CLASSES : ""}`}
 							style={{ top: position.top, height: position.height }}
 						>
 							<span className="absolute top-1 left-1 block h-[calc(100%-8px)] w-1 rounded-xl bg-current" />

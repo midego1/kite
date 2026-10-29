@@ -40,3 +40,10 @@ export function inlineEventText(input: {
 }): string {
 	return `${input.title}, ${input.startsOnDay ? input.startLabel : `until ${input.endLabel}`}`;
 }
+
+/**
+ * Keyboard focus on an event block. It must beat the tentative outline above, which would otherwise replace
+ * the browser's default focus indicator.
+ */
+export const EVENT_BLOCK_FOCUS_CLASSES =
+	"focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-blue-500";

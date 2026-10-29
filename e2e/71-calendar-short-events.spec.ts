@@ -58,7 +58,16 @@ test("short events keep their text inside the block and the title readable", asy
 					return {
 						inside: rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5,
 						clipped: line.scrollHeight > line.clientHeight,
-						width: rect.width,
+						// Whether the first letters of the title are visible, not hidden past the end of the line.
+						titleVisible: (() => {
+							const text = line.firstChild;
+							if (!text || text.nodeType !== Node.TEXT_NODE) return false;
+							const range = document.createRange();
+							range.setStart(text, 0);
+							range.setEnd(text, Math.min(5, text.textContent?.length ?? 0));
+							const letters = range.getBoundingClientRect();
+							return letters.width > 0 && letters.right <= rect.right + 0.5;
+						})(),
 						text: line.textContent ?? "",
 					};
 				}),
@@ -82,8 +91,8 @@ test("short events keep their text inside the block and the title readable", asy
 			expect(line.inside, `${title}: "${line.text}" sits inside the block`).toBe(true);
 			expect(line.clipped, `${title}: "${line.text}" is not cut vertically`).toBe(false);
 		}
-		// The line has room for the title itself, not only a time.
-		expect(fit.lines[0]!.width, `${title}: the title keeps visible width`).toBeGreaterThan(40);
+		// The line shows the start of the title, not only a time.
+		expect(fit.lines[0]!.titleVisible, `${title}: the title is visible`).toBe(true);
 	}
 
 	// The column is narrow enough that the one-line events are cut, and what stays is the start of the line.
@@ -95,6 +104,25 @@ test("short events keep their text inside the block and the title readable", asy
 	const tentative = block("Tentative gypsy jury · 2 PM");
 	await expect(tentative.locator(":scope > span:not([class*='absolute'])")).toHaveCSS("font-style", "italic");
 	await expect(tentative).toContainText("Tentative");
+
+	// Keyboard focus is drawn on a tentative block even though its dashed outline would otherwise replace it.
+	await block("Typography gypsy jury · 1 PM").focus();
+	for (let step = 0; step < 6; step++) {
+		await page.keyboard.press("Tab");
+		if (
+			(await page.evaluate(() => document.activeElement?.getAttribute("title") ?? "")).startsWith(
+				"Tentative gypsy jury",
+			)
+		)
+			break;
+	}
+	await expect(tentative).toBeFocused();
+	await expect(tentative).toHaveCSS("outline-style", "solid");
+	await expect(tentative).toHaveCSS("outline-width", "2px");
+	await page.mouse.move(0, 0);
+	await page.keyboard.press("Tab");
+	await expect(tentative).not.toBeFocused();
+	await expect(tentative).toHaveCSS("outline-style", "dashed");
 
 	// A quarter-hour block is too short for any text, so it draws none instead of a cut line.
 	expect((await measure("Quick sync")).lines).toHaveLength(0);

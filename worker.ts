@@ -26,6 +26,8 @@ import { buildContentSecurityPolicy, createCspNonce, isDocumentPath } from "./sr
 import { getAccountForwardingDestination, wasForwardedByKite } from "./src/lib/email/account-forwarding";
 import { runDatabaseBackup, runScheduledDatabaseBackup } from "./src/lib/backups/runner";
 import { isBackupRunMessage } from "./src/lib/backups/queue-utils";
+import { processRestoreMessage, runRestoreMaintenance } from "./src/lib/backups/restore-job";
+import { isRestoreJobMessage } from "./src/lib/backups/restore-job-utils";
 import { processStorageMigration, runStorageMigrationMaintenance } from "./src/lib/storage/migration";
 import { isStorageMigrateMessage } from "./src/lib/storage/migration-utils";
 import { failStaleBackups } from "./src/lib/backups/service";
@@ -206,6 +208,8 @@ export default {
 					await processMailboxPurge(env, msg.body);
 				} else if (isBackupRunMessage(msg.body)) {
 					await runDatabaseBackup(env, msg.body.backupId);
+				} else if (isRestoreJobMessage(msg.body)) {
+					await processRestoreMessage(env, msg.body);
 				} else if (isStorageMigrateMessage(msg.body)) {
 					await processStorageMigration(env, msg.body);
 				} else if (
@@ -283,6 +287,10 @@ export default {
 			);
 			// Connected accounts whose check for new mail is due get one queued run each.
 			ctx.waitUntil(planExternalSync(env, now).catch((error) => logger.error("external.sync_plan_failed", { error })));
+			// Revives a restore whose invocation died and removes uploaded backup files left behind.
+			ctx.waitUntil(
+				runRestoreMaintenance(env, now).catch((error) => logger.error("backup.restore_maintenance_failed", { error })),
+			);
 		}
 		ctx.waitUntil(runAgentMaintenance(env));
 		ctx.waitUntil(runTrashRetention(env, new Date(controller.scheduledTime)));

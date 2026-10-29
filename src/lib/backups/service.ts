@@ -1,10 +1,14 @@
-import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { backups, backupSettings } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import type { BackupScheduleType, BackupTableGroupId } from "./types";
 import { BACKUP_SETTINGS_ID, STALE_BACKUP_ERROR, getUtcDayBounds, isBackupDue, isStaleBackup } from "./utils";
 import { parseExcludedBackupTableGroups } from "./table-groups";
+import type { BackupHealth } from "./health-types";
+import { summarizeBackupHealth } from "./health-utils";
+import { readRestoreJob } from "./restore-job-store";
+import { summarizeRestoreJob } from "./restore-job-utils";
 
 export async function getBackupSettings(env: CloudflareEnv) {
 	const db = getDb(env);
@@ -109,4 +113,56 @@ export async function deleteBackup(env: CloudflareEnv, id: string): Promise<bool
 	if (backup.r2Key) await env.BUCKET.delete(backup.r2Key);
 	await db.delete(backups).where(eq(backups.id, id));
 	return true;
+}
+
+/** Named columns, so the summary keeps working while a newer release's `backups` columns are not migrated yet. */
+const HEALTH_COLUMNS = {
+	id: backups.id,
+	status: backups.status,
+	trigger: backups.trigger,
+	size: backups.size,
+	error: backups.error,
+	createdAt: backups.createdAt,
+	startedAt: backups.startedAt,
+	completedAt: backups.completedAt,
+};
+
+/** The latest successful backup, whether the latest finished one failed, and the schedule, for the admin overview. */
+export async function getBackupHealth(env: CloudflareEnv): Promise<BackupHealth> {
+	const db = getDb(env);
+	const [[lastCompleted], [lastFinished], [running], settings, restoreJob] = await Promise.all([
+		db
+			.select(HEALTH_COLUMNS)
+			.from(backups)
+			.where(eq(backups.status, "completed"))
+			.orderBy(desc(sql`coalesce(${backups.completedAt}, ${backups.createdAt})`))
+			.limit(1),
+		db
+			.select(HEALTH_COLUMNS)
+			.from(backups)
+			.where(inArray(backups.status, ["completed", "failed"]))
+			.orderBy(desc(sql`coalesce(${backups.completedAt}, ${backups.createdAt})`))
+			.limit(1),
+		db
+			.select({ id: backups.id })
+			.from(backups)
+			.where(inArray(backups.status, ["queued", "running"]))
+			.limit(1),
+		getBackupSettings(env),
+		readRestoreJob(env.BUCKET),
+	]);
+	return summarizeBackupHealth({
+		lastCompleted: lastCompleted ?? null,
+		lastFinished: lastFinished ?? null,
+		inProgress: !!running,
+		restore: summarizeRestoreJob(restoreJob?.job ?? null, Date.now()),
+		automatic: settings
+			? {
+					enabled: settings.enabled,
+					scheduleType: settings.scheduleType,
+					retentionEnabled: settings.retentionEnabled,
+					retentionDays: settings.retentionDays,
+				}
+			: null,
+	});
 }

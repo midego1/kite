@@ -1,6 +1,7 @@
 import { createLogger } from "../../src/lib/logger.mjs";
 
 import { runScheduledDatabaseBackup } from "@/lib/backups/runner";
+import { runRestoreMaintenance } from "@/lib/backups/restore-job";
 import { failStaleBackups } from "@/lib/backups/service";
 import { runAgentMaintenance } from "@/lib/agent/maintenance";
 import { runTrashRetention } from "@/lib/email/trash-retention";
@@ -38,6 +39,7 @@ export function startScheduler(env: CloudflareEnv) {
 			);
 			// Connected accounts, matching worker.ts.
 			planExternalSync(env, now).catch((error) => logger.error("external.sync_plan_failed", { error }));
+			runRestoreMaintenance(env, now).catch((error) => logger.error("backup.restore_maintenance_failed", { error }));
 		}
 		const day = now.toISOString().slice(0, 10);
 		if (now.getUTCHours() !== 2 || lastRunDay === day) return;

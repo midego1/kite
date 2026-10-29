@@ -30,7 +30,7 @@ const {
 	fetchRange,
 	planFetchSteps,
 	externalAuthenticationResults,
-	detachMissingExternalAccounts,
+	detachMissingExternalAccount,
 	redactBackupRow,
 	restoredBackupRow,
 	parseAttentionAccounts,
@@ -50,7 +50,7 @@ const {
 	["parseFetchSummaries, imapSearchDate, parseExists", "src/lib/imap/protocol-utils.ts"],
 	["completeRawHeaderFields", "src/lib/email/raw-headers.ts"],
 	["externalAuthenticationResults", "src/lib/spam/authentication-results-utils.ts"],
-	["detachMissingExternalAccounts, redactBackupRow, restoredBackupRow", "src/lib/backups/external-accounts-utils.ts"],
+	["detachMissingExternalAccount, redactBackupRow, restoredBackupRow", "src/lib/backups/external-accounts-utils.ts"],
 	["parseAttentionAccounts, connectedAccountsBannerContent", "src/components/connected-accounts-banner-utils.ts"],
 	[
 		"syncStatusText, canCheckNow, showLastError, relativeTime",
@@ -342,32 +342,20 @@ test("fetches are bounded by UIDNEXT and planned by size: one bad message cannot
 });
 
 test("a restore drops the account of messages whose connected account is not restored with them", () => {
-	const tables = [
-		{ name: "external_accounts", rows: [{ id: "xacct_kept" }], columns: null },
-		{
-			name: "messages",
-			rows: [
-				{ id: "m1", external_account_id: "xacct_kept" },
-				{ id: "m2", external_account_id: "xacct_gone" },
-				{ id: "m3", external_account_id: null },
-				{ id: "m4" },
-			],
-			columns: null,
-		},
-		{ name: "contacts", rows: [{ id: "c1", external_account_id: "xacct_gone" }], columns: null },
-	];
-	const restored = detachMissingExternalAccounts(tables);
-	assert.deepEqual(restored[1].rows, [
-		{ id: "m1", external_account_id: "xacct_kept" },
-		{ id: "m2", external_account_id: null },
-		{ id: "m3", external_account_id: null },
-		{ id: "m4" },
-	]);
-	assert.equal(restored[2], tables[2], "other tables are untouched");
-	assert.equal(tables[1].rows[1].external_account_id, "xacct_gone", "the input is not changed");
-	// No accounts table in the plan (a database before migration 0079): every link is dropped.
-	const withoutAccounts = detachMissingExternalAccounts([tables[1]]);
-	assert.equal(withoutAccounts[0].rows[0].external_account_id, null);
+	const accounts = new Set(["xacct_kept"]);
+	const kept = { id: "m1", external_account_id: "xacct_kept" };
+	assert.equal(detachMissingExternalAccount("messages", kept, accounts), kept);
+	const gone = { id: "m2", external_account_id: "xacct_gone" };
+	assert.deepEqual(detachMissingExternalAccount("messages", gone, accounts), { id: "m2", external_account_id: null });
+	assert.equal(gone.external_account_id, "xacct_gone", "the input is not changed");
+	const none = { id: "m3", external_account_id: null };
+	assert.equal(detachMissingExternalAccount("messages", none, accounts), none);
+	assert.equal(detachMissingExternalAccount("messages", { id: "m4" }, accounts).external_account_id, undefined);
+	// Only messages, and a plan prepared before the accounts were recorded keeps the row as it is.
+	const contact = { id: "c1", external_account_id: "xacct_gone" };
+	assert.equal(detachMissingExternalAccount("contacts", contact, accounts), contact);
+	assert.equal(detachMissingExternalAccount("messages", gone, null), gone);
+	assert.equal(detachMissingExternalAccount("messages", gone, new Set()).external_account_id, null);
 });
 
 test("backup rows of connected accounts leave without secrets and come back waiting for a reconnect", () => {

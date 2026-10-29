@@ -4,15 +4,15 @@ import { FixedPartBuffer } from "./backup-writer-utils";
 export const BACKUP_PART_SIZE = 8 * 1024 * 1024;
 
 /**
- * Writes a backup document to R2 while it is being produced, so a backup never
- * has to fit in Worker memory. Small documents are a single put; larger ones
+ * Writes a backup document to R2 while it is being produced (or uploaded), so a
+ * backup never has to fit in Worker memory. Small documents are a single put; larger ones
  * become a multipart upload. Buckets without multipart support (the self-hosted
  * file bucket) get one put of the whole document.
  */
 export async function writeBackupObject(
 	bucket: R2Bucket,
 	key: string,
-	chunks: AsyncIterable<string>,
+	chunks: AsyncIterable<string | Uint8Array>,
 	options: { httpMetadata?: R2HTTPMetadata; customMetadata?: Record<string, string> },
 	partSize = BACKUP_PART_SIZE,
 ): Promise<{ size: number }> {
@@ -24,7 +24,7 @@ export async function writeBackupObject(
 	let size = 0;
 	try {
 		for await (const chunk of chunks) {
-			const bytes = encoder.encode(chunk);
+			const bytes = typeof chunk === "string" ? encoder.encode(chunk) : chunk;
 			size += bytes.byteLength;
 			buffer.push(bytes);
 			if (!canStream) continue;

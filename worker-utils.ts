@@ -50,6 +50,7 @@ const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"agent.style_backfill": "agent_style_backfill",
 	"mailbox.purge": "mailbox_purge",
 	"backup.run": "backup",
+	"backup.restore": "backup",
 	"storage.migrate": "storage_migration",
 	"accounts.sync": "external_sync",
 	...Object.fromEntries(

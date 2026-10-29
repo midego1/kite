@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminBackupHealthCard } from "@/components/admin-backup-health-card";
 import { AdminDatabaseSizeCard } from "@/components/admin-database-size-card";
 import { AdminPendingMigrationsNotice, AdminUpdateCard } from "@/components/admin-update-card";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -18,6 +19,7 @@ export default function AdminSettingsPage() {
 					{/* First, so pending database updates are the first thing the primary admin sees. */}
 					<AdminUpdateCard />
 					<AdminDatabaseSizeCard />
+					<AdminBackupHealthCard />
 				</div>
 			) : (
 				user?.role === "admin" && <AdminPendingMigrationsNotice />

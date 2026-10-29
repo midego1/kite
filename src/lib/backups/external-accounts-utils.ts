@@ -27,25 +27,19 @@ export function restoredBackupRow(table: string, row: DatabaseRecord): DatabaseR
 }
 
 /**
- * `messages.external_account_id` (mail group) points at `external_accounts` (accounts group). A restore inserts both
- * from the same document, but the message rows may name an account the document does not hold: one connected while
- * the backup was being read (tables are read one after the other), or a document whose accounts were left out. Such
- * a message is restored without its account, as removing the account would have left it (spec §6.7), so the restore
- * never fails on the foreign key and the mail stays.
+ * A restored message row, as far as its connected account goes. `messages.external_account_id` (mail group) points at
+ * `external_accounts` (accounts group). A restore inserts both from the same document, but a message may name an
+ * account the document does not hold: one connected while the backup was being read (tables are read one after the
+ * other), or a document whose accounts were left out. Such a message is restored without its account, as removing the
+ * account would have left it (spec §6.7), so the restore never fails on the foreign key and the mail stays.
+ * `accountIds` are the accounts the backup restores; null (a restore prepared before this was recorded) keeps the row.
  */
-export function detachMissingExternalAccounts<T extends { name: string; rows: DatabaseRecord[] }>(tables: T[]): T[] {
-	const accounts = tables.find((table) => table.name === "external_accounts");
-	const known = new Set((accounts?.rows ?? []).map((row) => row.id));
-	return tables.map((table) =>
-		table.name !== "messages"
-			? table
-			: {
-					...table,
-					rows: table.rows.map((row) =>
-						row.external_account_id != null && !known.has(row.external_account_id)
-							? { ...row, external_account_id: null }
-							: row,
-					),
-				},
-	);
+export function detachMissingExternalAccount(
+	table: string,
+	row: DatabaseRecord,
+	accountIds: ReadonlySet<string> | null,
+): DatabaseRecord {
+	if (table !== "messages" || !accountIds) return row;
+	const accountId = row.external_account_id;
+	return accountId != null && !accountIds.has(String(accountId)) ? { ...row, external_account_id: null } : row;
 }

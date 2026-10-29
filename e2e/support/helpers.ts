@@ -1,7 +1,7 @@
 import { expect, request, type APIRequestContext, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { BASE_URL } from "./constants";
-import type { InboundAttachment, InboundMail, StoredMessage, BackupRow } from "./helpers-types";
+import { BASE_URL, STORAGE_STATE } from "./constants";
+import type { InboundAttachment, InboundMail, StoredMessage, BackupRow, RestoreSummary } from "./helpers-types";
 
 /** A lowercase word that FTS5 indexes as a single token, for finding test data again. */
 export function uniqueToken(prefix = "e2e"): string {
@@ -178,6 +178,34 @@ export async function readBackups(api: APIRequestContext): Promise<BackupRow[]> 
  * enqueues it, so the row is unfinished when the request returns and the export
  * happens on the outbound queue consumer.
  */
+/**
+ * Waits for the queued restore (`restoreId`, or whichever runs) to end and returns its summary. The restore
+ * replaces the sessions table, so reads fail while it runs; `api` (the suite's admin session by default, which
+ * every backup taken during the run holds) answers again once it is done.
+ */
+export async function waitForRestore(api?: APIRequestContext, restoreId?: string): Promise<RestoreSummary> {
+	const client = api ?? (await apiContext(STORAGE_STATE));
+	let ended: RestoreSummary | undefined;
+	try {
+		await expect
+			.poll(
+				async () => {
+					const response = await client.get("/api/backups/health").catch(() => null);
+					if (!response?.ok()) return "running";
+					const restore = ((await response.json()) as { restore?: RestoreSummary | null }).restore;
+					if (!restore || restore.active || (restoreId && restore.id !== restoreId)) return "running";
+					ended = restore;
+					return "ended";
+				},
+				{ timeout: 180_000, intervals: [500, 1000] },
+			)
+			.toBe("ended");
+	} finally {
+		if (!api) await client.dispose();
+	}
+	return ended!;
+}
+
 export async function waitForBackup(api: APIRequestContext, backupId: string): Promise<BackupRow> {
 	let row: BackupRow | undefined;
 	await expect

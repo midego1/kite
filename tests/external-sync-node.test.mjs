@@ -50,6 +50,7 @@ const exports = [
 	["getDb", "src/db/index.ts"],
 	["externalAccounts", "src/db/schema/external-accounts.ts"],
 	["eq", "drizzle-orm"],
+	["exportDatabaseRecords, restoreDatabaseRecords", "src/lib/backups/export.ts"],
 ];
 await build({
 	stdin: {
@@ -93,6 +94,8 @@ const {
 	getDb,
 	externalAccounts,
 	eq,
+	exportDatabaseRecords,
+	restoreDatabaseRecords,
 } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 
 const HOST = "imap.kite.test";
@@ -936,4 +939,24 @@ test("before migration 0082 an Other address that is taken gets the pending-upda
 	await connectExternalAccount(env, owner, connectBody());
 	const refused = await refusal(connectExternalAccount(env, other, connectBody({ mailboxId: "mailbox-b" })));
 	assert.deepEqual([refused.status, refused.code], [409, "MIGRATION_PENDING"]);
+});
+
+test("a backup whose messages name an account it does not hold restores without a foreign-key error", async (t) => {
+	const server = await fake(t);
+	const { db, env, deliver, due } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	server.addMessage("INBOX", sampleMessage(95, { subject: "Synced before the backup" }));
+	due();
+	await syncExternalAccount(env, account.id);
+	await deliver();
+	const document = JSON.parse(new TextDecoder().decode(await exportDatabaseRecords(db)));
+	assert.equal(document.tables.messages[0].external_account_id, account.id);
+	// The account was connected while the backup was being read: its row is not in the document.
+	document.tables.external_accounts = [];
+	document.tables.external_account_folders = [];
+	await restoreDatabaseRecords(db, new TextEncoder().encode(JSON.stringify(document)).buffer);
+	assert.deepEqual(db.db.prepare("SELECT subject, external_account_id FROM messages").all(), [
+		{ subject: "Synced before the backup", external_account_id: null },
+	]);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM external_accounts").get().n, 0);
 });

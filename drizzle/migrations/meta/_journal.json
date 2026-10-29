@@ -567,6 +567,13 @@
       "version": "6",
       "when": 1788852000028,
       "tag": "0077_add_agent_providers",
+        "breakpoints": true
+      },
+      {
+      "idx": 81,
+      "version": "6",
+      "when": 1788852030028,
+      "tag": "0078_add_ai_usage_details",
       "breakpoints": true
     }
   ]

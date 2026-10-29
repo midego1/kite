@@ -2,175 +2,120 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { AiUsageResponse } from "./types";
-import { fetchAiUsage, formatEstimatedUsd, formatTokenCount, formatUsageDate, formatUsageProvider } from "./utils";
+import { EmptyState, PageHeader } from "@/components/ui/page";
+import type { UsageFilters, UsageRange, UsageReport } from "@/lib/ai/usage-report-types";
+import { DEFAULT_USAGE_RANGE } from "@/lib/ai/usage-report-utils";
+import { cn } from "@/lib/utils";
+import type { UsageMetric } from "./types";
+import { fetchAiUsage } from "./utils";
+import { SegmentedControl } from "./segmented-control";
 import { UsageChart } from "./usage-chart";
-import { TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
+import { MissingRates, SpendToday, UsageOutcomes, UsageSummaryCards } from "./usage-summary";
+import { UsageBreakdowns } from "./usage-breakdowns";
+import { UsageActivity } from "./usage-activity";
+
+const RANGE_OPTIONS = [7, 30, 90].map((value) => ({ value: value as UsageRange, label: `${value} days` }));
 
 export default function AiUsagePage() {
-	const [data, setData] = useState<AiUsageResponse | null>(null);
-	const [error, setError] = useState<string | null>(null);
-	const [loadingPage, setLoadingPage] = useState(false);
+	const [metric, setMetric] = useState<UsageMetric>("tokens");
+	// A range change loads the whole report; a filter or page change only the activity page (`activityOnly`).
+	const [query, setQuery] = useState<{
+		range: UsageRange;
+		page: number;
+		filters: UsageFilters;
+		activityOnly: boolean;
+	}>({ range: DEFAULT_USAGE_RANGE, page: 1, filters: {}, activityOnly: false });
+	// The last answer and the request it answered; the page is loading while that is not the current request.
+	const [result, setResult] = useState<{ key: string; error?: string } | null>(null);
+	const [data, setData] = useState<UsageReport | null>(null);
+	const key = JSON.stringify(query);
+	const loading = result?.key !== key;
+	const error = result?.key === key ? (result.error ?? null) : null;
 
 	useEffect(() => {
 		let active = true;
-		void fetchAiUsage(1)
-			.then((result) => {
-				if (active) setData(result);
+		void fetchAiUsage(query.range, query.page, query.filters, query.activityOnly)
+			.then((answer) => {
+				if (!active) return;
+				setData((current) => (query.activityOnly && current ? { ...current, ...answer } : (answer as UsageReport)));
+				setResult({ key });
 			})
 			.catch((cause) => {
-				if (active) setError(cause instanceof Error ? cause.message : "Could not load AI usage");
+				if (active) setResult({ key, error: cause instanceof Error ? cause.message : "Could not load AI usage" });
 			});
 		return () => {
 			active = false;
 		};
-	}, []);
+	}, [key, query]);
 
-	const totals = data?.totals;
 	return (
 		<div className="space-y-6">
-			<div className="flex items-start justify-between gap-4">
-				<div>
-					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">AI Usage</h1>
-					<p className="mt-1 text-sm text-neutral-500">Requests recorded since usage tracking was added.</p>
-				</div>
-				<Button asChild variant="outline" className="shrink-0">
-					<Link href="/agent">Back to Agent</Link>
-				</Button>
-			</div>
+			<PageHeader
+				title="AI Usage"
+				description={
+					data
+						? `Requests, tokens and estimated spend over the last ${data.range} days (${data.timeZone}).`
+						: "Requests, tokens and estimated spend."
+				}
+				actions={
+					<Button asChild variant="outline">
+						<Link href="/agent">Back to Agent</Link>
+					</Button>
+				}
+			/>
+			<SegmentedControl
+				label="Date range"
+				value={query.range}
+				options={RANGE_OPTIONS}
+				onChange={(range) => setQuery((current) => ({ ...current, range, page: 1, activityOnly: false }))}
+			/>
 			{error && (
 				<p role="alert" className="text-sm text-red-700">
 					{error}
 				</p>
 			)}
-			<div className="grid gap-4 sm:grid-cols-3">
-				<section className="rounded-xl border border-neutral-200 bg-white p-5">
-					<p className="text-sm text-neutral-500">Total tokens</p>
-					<p className="mt-2 text-2xl font-semibold text-neutral-900">
-						{totals ? formatTokenCount(totals.totalTokens) : "—"}
-					</p>
-				</section>
-				<section className="rounded-xl border border-neutral-200 bg-white p-5">
-					<p className="text-sm text-neutral-500">Total requests</p>
-					<p className="mt-2 text-2xl font-semibold text-neutral-900">
-						{totals ? formatTokenCount(totals.requests) : "—"}
-					</p>
-				</section>
-				<section className="rounded-xl border border-neutral-200 bg-white p-5">
-					<p className="text-sm text-neutral-500">Estimated spend</p>
-					<p className="mt-2 text-2xl font-semibold text-neutral-900">
-						{totals && totals.pricedRequests ? formatEstimatedUsd(totals.costUsdMicros) : "—"}
-					</p>
-					{totals && totals.pricedRequests < totals.requests && (
-						<p className="mt-1 text-xs text-neutral-500">
-							{formatTokenCount(totals.requests - totals.pricedRequests)} requests have no rate.
-						</p>
-					)}
-				</section>
-			</div>
-			<UsageChart daily={data?.daily ?? []} timeZone={data?.timeZone} />
-			<section
-				role="region"
-				tabIndex={0}
-				aria-label="AI usage"
-				className="overflow-x-auto rounded-xl border border-neutral-200 bg-white"
-				aria-busy={loadingPage}
-			>
-				<table className="w-full min-w-[850px] text-left text-sm">
-					<thead className={TABLE_HEAD_CLASS}>
-						<tr>
-							<th scope="col" className="px-4 py-3">
-								Date & time
-							</th>
-							<th scope="col" className="px-4 py-3">
-								Model
-							</th>
-							<th scope="col" className="px-4 py-3">
-								Provider
-							</th>
-							<th scope="col" className="px-4 py-3 text-right">
-								Input tokens
-							</th>
-							<th scope="col" className="px-4 py-3 text-right">
-								Output tokens
-							</th>
-							<th scope="col" className="px-4 py-3 text-right">
-								Spending
-							</th>
-						</tr>
-					</thead>
-					<tbody className="divide-y divide-neutral-200">
-						{data?.rows.map((row) => (
-							<tr key={row.id}>
-								<td className="whitespace-nowrap px-4 py-3 text-neutral-600">{formatUsageDate(row.createdAt)}</td>
-								<td className="max-w-56 break-all px-4 py-3">{row.model}</td>
-								<td className="px-4 py-3">{formatUsageProvider(row.provider)}</td>
-								<td className="px-4 py-3 text-right tabular-nums">{formatTokenCount(row.inputTokens)}</td>
-								<td className="px-4 py-3 text-right tabular-nums">{formatTokenCount(row.outputTokens)}</td>
-								<td className="px-4 py-3 text-right tabular-nums">{formatEstimatedUsd(row.costUsdMicros)}</td>
-							</tr>
-						))}
-						{data && data.rows.length === 0 && (
-							<tr>
-								<td colSpan={6} className="px-4 py-8 text-center text-neutral-500">
-									No AI usage recorded yet.
-								</td>
-							</tr>
-						)}
-						{!data && !error && (
-							<tr>
-								<td colSpan={6} className="px-4 py-8 text-center text-neutral-500">
-									Loading usage…
-								</td>
-							</tr>
-						)}
-					</tbody>
-				</table>
-			</section>
+			{data && !data.detailsRecorded && (
+				<p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+					Apply the pending database update (Admin overview) to record each request&apos;s status, duration, finish
+					reason and rate. Until then those details show as not recorded.
+				</p>
+			)}
+			{!data && !error && <p className="text-sm text-neutral-500">Loading usage…</p>}
 			{data && (
-				<div className="flex items-center justify-end gap-3 text-sm text-neutral-600">
-					<span>
-						Page {data.page} of {data.totalPages} · {data.pageSize} per page
-					</span>
-					<Button
-						type="button"
-						variant="outline"
-						size="sm"
-						disabled={loadingPage || data.page <= 1}
-						onClick={() => {
-							setLoadingPage(true);
-							setError(null);
-							void fetchAiUsage(data.page - 1)
-								.then(setData)
-								.catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load usage page"))
-								.finally(() => setLoadingPage(false));
-						}}
-					>
-						Previous
-					</Button>
-					<Button
-						type="button"
-						variant="outline"
-						size="sm"
-						disabled={loadingPage || data.page >= data.totalPages}
-						onClick={() => {
-							setLoadingPage(true);
-							setError(null);
-							void fetchAiUsage(data.page + 1)
-								.then(setData)
-								.catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load usage page"))
-								.finally(() => setLoadingPage(false));
-						}}
-					>
-						Next
-					</Button>
+				<div
+					className={cn("space-y-6 transition-opacity", loading && !query.activityOnly && "opacity-60")}
+					aria-busy={loading && !query.activityOnly}
+				>
+					<UsageSummaryCards report={data} />
+					{data.totals.requests === 0 && (
+						<EmptyState
+							icon={BarChart3}
+							title="No AI usage in this range"
+							description="Requests from chat, Write with Kite, summaries and automatic reading show up here."
+						/>
+					)}
+					<UsageChart daily={data.daily} timeZone={data.timeZone} metric={metric} onMetricChange={setMetric} />
+					<MissingRates report={data} />
+					<div className="grid gap-4 lg:grid-cols-2">
+						<SpendToday report={data} />
+						<UsageOutcomes report={data} />
+					</div>
+					<UsageBreakdowns report={data} metric={metric} />
+					<UsageActivity
+						report={data}
+						loading={loading}
+						onFiltersChange={(filters) => setQuery((current) => ({ ...current, page: 1, filters, activityOnly: true }))}
+						onPageChange={(page) => setQuery((current) => ({ ...current, page, activityOnly: true }))}
+					/>
+					<p className="text-xs text-neutral-500">
+						Spending is estimated from the per-model rates in Agent settings: yours, the provider&apos;s, or Kite&apos;s
+						price list for well-known models. Requests that stored no cost are priced at today&apos;s rate and marked
+						estimated. A dash means no rate or token count was available.
+					</p>
 				</div>
 			)}
-			<p className="text-xs text-neutral-500">
-				Spending is estimated from the per-model rates in Agent settings: yours, the provider&apos;s, or Kite&apos;s
-				price list for well-known models. A dash means no rate or token count was available.
-			</p>
 		</div>
 	);
 }

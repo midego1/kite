@@ -36,11 +36,21 @@ await build({
 	tsconfig: join(root, "tsconfig.json"),
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
-const { reserveAiSpend, reconcileAiSpend, refusedSpendCap } = await load("spend");
+const { reserveAiSpend, reconcileAiSpend, refusedSpendCap, keepReservedEstimate, withReservedSpend } =
+	await load("spend");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
 
 const NOW = new Date("2026-10-10T12:00:00Z");
+const DETAIL_COLUMNS = [
+	"status",
+	"error_code",
+	"duration_ms",
+	"finish_reason",
+	"input_rate",
+	"output_rate",
+	"cost_estimated",
+];
 const DAY_START = Date.UTC(2026, 9, 10) / 1000;
 const PRICED = { provider: "compatible", modelId: "priced", rates: { input: 1, output: 2 } };
 const UNPRICED = { provider: "cloudflare", modelId: "unpriced", rates: undefined };
@@ -122,9 +132,20 @@ test("reservations through two connections to one file still respect the cap", a
 test("a reservation stores the estimate with its mailbox, job and source", async (t) => {
 	const db = await database(t);
 	const reservation = await reserve(db, { source: "auto_draft" });
+	assert.equal(typeof reservation.startedAt, "number");
+	// The rates the estimate was priced at, kept for a request that settles at its estimate.
+	assert.deepEqual(reservation.rates, { input: 1, output: 2 });
 	assert.deepEqual(
-		{ ...reservation, id: undefined },
-		{ id: undefined, mode: "cost", inputTokens: 100, outputTokens: 50, costUsdMicros: PRICED_ESTIMATE },
+		{ ...reservation, id: undefined, startedAt: undefined, rates: undefined },
+		{
+			id: undefined,
+			startedAt: undefined,
+			rates: undefined,
+			mode: "cost",
+			inputTokens: 100,
+			outputTokens: 50,
+			costUsdMicros: PRICED_ESTIMATE,
+		},
 	);
 	const [row] = rows(db);
 	assert.equal(row.id, reservation.id);
@@ -173,9 +194,11 @@ test("unknown rates apply the 2,000,000 input-token cap, including under a race"
 	const granted = results.filter(Boolean);
 	assert.equal(granted.length, 1);
 	assert.deepEqual(
-		{ ...granted[0], id: undefined },
+		{ ...granted[0], id: undefined, startedAt: undefined, rates: undefined },
 		{
 			id: undefined,
+			startedAt: undefined,
+			rates: undefined,
 			mode: "tokens",
 			inputTokens: 100,
 			outputTokens: 50,
@@ -316,4 +339,114 @@ test("a refused priced reservation names the mailbox cap only when that cap alon
 	assert.equal(await refusedSpendCap({ ...input, mailboxCapMicros: 1_000 }), "mailbox_dollars");
 	assert.equal(await refusedSpendCap({ ...input, mailboxCapMicros: 5_000 }), "install_dollars");
 	assert.equal(await refusedSpendCap({ ...input, mailboxCapMicros: null }), "install_dollars");
+});
+
+test("settling a request records its status, error code, duration, finish reason and the rates it was counted at", async (t) => {
+	const db = await database(t);
+	const env = { DB: db };
+	const answered = await reserve(db);
+	await reconcileAiSpend({
+		env,
+		reservation: answered,
+		rates: PRICED.rates,
+		usage: { inputTokens: 80, outputTokens: 30 },
+		outcome: { status: "ok", finishReason: "stop" },
+	});
+	const stopped = await reserve(db, { jobId: "job-stopped" });
+	await keepReservedEstimate(env, stopped);
+	const failed = await reserve(db, { jobId: "job-failed" });
+	await keepReservedEstimate(env, failed, { status: "failed", errorCode: "timeout" });
+	const unpriced = await reserve(db, { details: UNPRICED, jobId: "job-unpriced" });
+	await reconcileAiSpend({ env, reservation: unpriced, rates: undefined, usage: { inputTokens: 5, outputTokens: 5 } });
+	const byId = Object.fromEntries(rows(db).map((row) => [row.id, row]));
+	const pick = (row) => [
+		row.status,
+		row.error_code,
+		row.finish_reason,
+		row.input_rate,
+		row.output_rate,
+		row.cost_estimated,
+		row.reserved,
+	];
+	assert.deepEqual(pick(byId[answered.id]), ["ok", null, "stop", 1, 2, 0, 0]);
+	// Settled at the estimate: the cost is marked estimated and keeps the rates it was priced at.
+	assert.deepEqual(pick(byId[stopped.id]), ["stopped", null, null, 1, 2, 1, 0]);
+	assert.deepEqual(pick(byId[failed.id]), ["failed", "timeout", null, 1, 2, 1, 0]);
+	assert.deepEqual(pick(byId[unpriced.id]), ["ok", null, null, null, null, 0, 0]);
+	for (const row of Object.values(byId)) assert.ok(row.duration_ms >= 0 && row.duration_ms < 60_000, row.id);
+	// The estimate stays as the spend of a request that ended without usage.
+	assert.equal(byId[stopped.id].cost_usd_micros, PRICED_ESTIMATE);
+});
+
+test("withReservedSpend records an answer's finish reason and a thrown error's code", async (t) => {
+	const db = await database(t);
+	const input = {
+		env: { DB: db },
+		details: PRICED,
+		source: "line_summary",
+		mailboxId: "mailbox-a",
+		jobId: "job-a",
+		promptChars: 400,
+		maxOutputTokens: 50,
+		installCapMicros: 10_000,
+		mailboxCapMicros: null,
+		tokenCap: UNKNOWN_RATES_INPUT_TOKEN_CAP,
+		now: NOW,
+	};
+	await withReservedSpend(input, async () => ({ usage: { inputTokens: 10, outputTokens: 5 }, finishReason: "stop" }));
+	await withReservedSpend({ ...input, jobId: "job-c" }, async () => ({
+		usage: { inputTokens: 10, outputTokens: 50 },
+		finishReason: "length",
+	}));
+	const timeout = Object.assign(new Error("The operation timed out"), { name: "TimeoutError" });
+	await assert.rejects(
+		withReservedSpend({ ...input, jobId: "job-b" }, async () => {
+			throw timeout;
+		}),
+	);
+	const byJob = Object.fromEntries(rows(db).map((row) => [row.job_id, row]));
+	assert.deepEqual([byJob["job-a"].status, byJob["job-a"].finish_reason], ["ok", "stop"]);
+	// An answer cut off at the output limit is failed with cut_off in every feature; its usage still counts.
+	assert.deepEqual(
+		[byJob["job-c"].status, byJob["job-c"].error_code, byJob["job-c"].finish_reason, byJob["job-c"].cost_usd_micros],
+		["failed", "cut_off", "length", 10 + 50 * 2],
+	);
+	assert.equal(byJob["job-b"].status, "failed");
+	assert.ok(byJob["job-b"].error_code, "a failure keeps its error code");
+});
+
+test("before migration 0078 settling still releases the reservation and stores the actual spend", async (t) => {
+	const db = await database(t);
+	for (const column of DETAIL_COLUMNS) db.db.exec(`ALTER TABLE ai_usage DROP COLUMN ${column}`);
+	// Count the statements: before the update, settling must not try the detail columns on every call.
+	const statements = [];
+	const env = {
+		DB: new Proxy(db, {
+			get(target, key) {
+				if (key !== "prepare") return Reflect.get(target, key);
+				return (query) => {
+					statements.push(query);
+					return target.prepare(query);
+				};
+			},
+		}),
+	};
+	const answered = await reserve(db);
+	await reconcileAiSpend({
+		env,
+		reservation: answered,
+		rates: PRICED.rates,
+		usage: { inputTokens: 80, outputTokens: 30 },
+	});
+	const stopped = await reserve(db, { jobId: "job-stopped" });
+	await keepReservedEstimate(env, stopped);
+	const third = await reserve(db, { jobId: "job-third" });
+	await reconcileAiSpend({ env, reservation: third, rates: PRICED.rates, usage: { inputTokens: 1, outputTokens: 1 } });
+	// One readiness check for all three settles, and no update that names a detail column.
+	assert.equal(statements.filter((query) => query.includes("LIMIT 0")).length, 1);
+	assert.equal(statements.filter((query) => query.includes("status = ?")).length, 0);
+	const byId = Object.fromEntries(rows(db).map((row) => [row.id, row]));
+	assert.deepEqual([byId[answered.id].reserved, byId[answered.id].cost_usd_micros], [0, 80 + 30 * 2]);
+	assert.equal(byId[stopped.id].reserved, 0);
+	assert.equal("status" in byId[answered.id], false);
 });

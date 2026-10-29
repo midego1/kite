@@ -10,6 +10,7 @@
 		"src/lib/import/message-hints-utils.ts",
 		"src/lib/alerts/webhook-utils.ts",
 		"src/lib/email/bodies-utils.ts",
+		"src/lib/ai/usage-report-utils.ts",
 		"src/lib/http/content-type-utils.ts",
 		"src/lib/http/content-disposition-utils.ts",
 		"src/lib/storage/object-classes-utils.ts",

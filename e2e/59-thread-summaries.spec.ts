@@ -13,6 +13,7 @@ import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types"
 import type { StoredMessage } from "./support/helpers-types";
 import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
 import { setScreener } from "./support/screener";
+import { readUsageRows } from "./support/ai-usage";
 
 let api: APIRequestContext;
 let fake: FakeModel;
@@ -122,12 +123,8 @@ const BODIES = [
 ];
 
 async function usageSources(mailboxId: string): Promise<string[]> {
-	const { rows } = await okJson<{ rows: { mailboxId: string | null; source: string }[] }>(
-		await api.get("/api/admin/ai-usage"),
-	);
 	// Rows of the same second come back in any order.
-	return rows
-		.filter((row) => row.mailboxId === mailboxId)
+	return readUsageRows({ mailboxId })
 		.map((row) => row.source)
 		.sort();
 }

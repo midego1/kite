@@ -44,13 +44,8 @@ function priceIndex(entries: readonly ModelPriceEntry[]): Map<string, ModelPrice
 	return index;
 }
 
-/** The entry for a model id: an exact id or alias first, then the id without a dated suffix where allowed. */
-function findModelPriceEntry(
-	modelId: string,
-	entries: readonly ModelPriceEntry[] = MODEL_PRICES,
-): ModelPriceEntry | null {
-	const index = priceIndex(entries);
-	const id = normalizeModelId(modelId);
+/** An exact id or alias first, then the id without a dated suffix where allowed. */
+function matchModelId(index: Map<string, ModelPriceEntry>, id: string): ModelPriceEntry | null {
 	const exact = index.get(id);
 	if (exact) return exact;
 	const undated = id.replace(DATED_SUFFIX, "");
@@ -58,13 +53,64 @@ function findModelPriceEntry(
 	return entry?.datedIds ? entry : null;
 }
 
+/**
+ * Providers that route to other vendors' models under `vendor/model` ids, as the provider label usage rows record
+ * (`"cloudflare"` or the compatible preset). A direct vendor's own ids never get another vendor's price.
+ */
+const ROUTER_PROVIDERS: readonly string[] = ["openrouter", "haimaker", "custom"];
+
+export function routesVendorModelIds(provider: string | null | undefined): boolean {
+	return !!provider && ROUTER_PROVIDERS.includes(provider);
+}
+
+/** Matching options: `vendorPrefixed` lets a router's `vendor/model` id take the vendor's price. */
+export type ModelPriceMatch = { vendorPrefixed?: boolean };
+
+/**
+ * The vendor prefix routers put before a model id (`anthropic/claude-opus-5-5` on OpenRouter, `deepseek/deepseek-v4.1-flash`
+ * on Haimaker), mapped to the provider whose list price the router passes on. OpenRouter writes Anthropic's version
+ * with dots (`claude-opus-4.5`), so those ids also match with dashes.
+ */
+const ROUTER_VENDORS: Record<string, string> = {
+	anthropic: "anthropic",
+	openai: "openai",
+	google: "google",
+	deepseek: "deepseek",
+};
+const VENDOR_PREFIXED = /^([a-z0-9-]+)\/([^/]+)$/;
+
+/**
+ * The entry for a model id: as listed (Groq's `openai/gpt-oss-120b` is), else, for a router's `vendor/model` id when
+ * `match.vendorPrefixed`, the vendor's own model, but only an entry of that vendor.
+ */
+function findModelPriceEntry(
+	modelId: string,
+	entries: readonly ModelPriceEntry[] = MODEL_PRICES,
+	match: ModelPriceMatch = {},
+): ModelPriceEntry | null {
+	const index = priceIndex(entries);
+	const id = normalizeModelId(modelId);
+	const listed = matchModelId(index, id);
+	if (listed || !match.vendorPrefixed) return listed;
+	const [, vendor, model] = VENDOR_PREFIXED.exec(id) ?? [];
+	const provider = vendor ? ROUTER_VENDORS[vendor] : undefined;
+	if (!provider) return null;
+	const candidates = provider === "anthropic" ? [model, model.replace(/(\d)\.(\d)/g, "$1-$2")] : [model];
+	for (const candidate of candidates) {
+		const entry = matchModelId(index, candidate);
+		if (entry?.provider === provider) return entry;
+	}
+	return null;
+}
+
 /** A model's built-in price on `now`'s UTC date, or null when Kite's list does not know the model. */
 export function builtinModelPrice(
 	modelId: string,
 	now: Date = new Date(),
 	entries: readonly ModelPriceEntry[] = MODEL_PRICES,
+	match: ModelPriceMatch = {},
 ): BuiltinModelPrice | null {
-	const entry = findModelPriceEntry(modelId, entries);
+	const entry = findModelPriceEntry(modelId, entries, match);
 	if (!entry) return null;
 	const today = now.toISOString().slice(0, 10);
 	let change: ModelPriceChange | undefined;
@@ -89,12 +135,13 @@ export function resolveAgentModelRates(
 	modelIds: readonly string[],
 	now: Date = new Date(),
 	entries: readonly ModelPriceEntry[] = MODEL_PRICES,
+	match: ModelPriceMatch = {},
 ): Record<string, AgentModelRates> {
 	const resolved: Record<string, AgentModelRates> = { ...saved };
 	for (const id of new Set([...modelIds, ...Object.keys(saved)])) {
 		const own = saved[id];
 		if (own && own.input !== null && own.output !== null) continue;
-		const builtin = builtinModelPrice(id, now, entries);
+		const builtin = builtinModelPrice(id, now, entries, match);
 		if (!builtin) continue;
 		const manual = own?.input != null || own?.output != null;
 		resolved[id] = {

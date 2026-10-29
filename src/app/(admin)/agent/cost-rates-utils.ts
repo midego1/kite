@@ -21,9 +21,10 @@ export function costRateView(
 	models: AgentModelOption[],
 	overriding: boolean,
 	now: Date = new Date(),
+	vendorPrefixed = false,
 ): CostRateView {
 	if (models.find((item) => item.id === model)?.rates) return { kind: "provider" };
-	const builtin = builtinModelPrice(model, now);
+	const builtin = builtinModelPrice(model, now, undefined, { vendorPrefixed });
 	if (builtin && !overriding && !hasOwnRate(rates[model])) return { kind: "builtin", price: builtin };
 	return { kind: "manual", builtin };
 }

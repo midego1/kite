@@ -1,7 +1,9 @@
+import type { LanguageModelUsage } from "ai";
 import { and, desc, eq, gt, gte, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { agentDraftMetadata, agentJobs, mailboxAgentSettings, mailboxes, messages, users } from "@/db/schema";
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
+import { ModelOutputTruncatedError } from "../auto-read/model-call-utils";
 import { personalInstructionsFor } from "../user-ai-settings";
 import { styleDescriptionFor } from "../writing-style";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
@@ -18,10 +20,67 @@ import { isAutomaticMessage } from "../auto-read/facts-utils";
 import { generateReplyDraft, loadDraftThread } from "./draft-generation";
 import { isCleanDraftBody } from "./draft-prompt-utils";
 import { traceAiError } from "../ai-errors";
-import { UnusableAnswerError } from "../ai-error-utils";
+import { UnusableAnswerError, classifyAiError } from "../ai-error-utils";
 import { InteractiveModelRefusedError } from "../interactive-model";
 
 export type AgentDraftQueueMessage = { kind: "agent.draft"; jobId: string };
+
+type DraftJob = { id: string; mailboxId: string };
+type DraftSelection = NonNullable<Awaited<ReturnType<typeof getAgentModel>>>;
+
+/**
+ * Writes the legacy auto-draft and records its one usage row once the outcome is known: answered, failed with the
+ * shared error code, or unusable when the draft is not clean. This job is not reserved against the daily caps.
+ */
+async function generateRecordedDraft(
+	env: CloudflareEnv,
+	job: DraftJob,
+	selection: DraftSelection,
+	input: Omit<Parameters<typeof generateReplyDraft>[0], "onUsage">,
+): Promise<string> {
+	const trace = { feature: "auto_draft" as const, model: selection.modelId, provider: selection.provider };
+	const startedAt = Date.now();
+	let usage: LanguageModelUsage | undefined;
+	let finishReason: string | null = null;
+	const record = (errorCode?: string) =>
+		recordAiUsage({
+			env,
+			details: selection,
+			usage,
+			source: "auto_draft",
+			mailboxId: job.mailboxId,
+			jobId: job.id,
+			durationMs: Date.now() - startedAt,
+			finishReason,
+			failure: errorCode ? { errorCode } : null,
+		});
+	let generated: Awaited<ReturnType<typeof generateReplyDraft>>;
+	try {
+		generated = await generateReplyDraft({
+			...input,
+			onUsage: async (reported, reason) => {
+				usage = reported;
+				finishReason = reason;
+			},
+		});
+	} catch (error) {
+		await record(classifyAiError(error).code);
+		throw traceAiError(error, trace);
+	}
+	const body = generated.text;
+	// A draft that ran out of tokens ends mid-sentence: refused like Write with Kite's, its usage still counted.
+	if (generated.finishReason === "length") {
+		finishReason = "length";
+		await record("cut_off");
+		throw traceAiError(new ModelOutputTruncatedError(), trace);
+	}
+	if (!isCleanDraftBody(body)) {
+		await record("unusable_answer");
+		throw traceAiError(new UnusableAnswerError("it was not a clean draft"), trace);
+	}
+	await record();
+	return body;
+}
 
 export async function scheduleAutoDraft(
 	env: CloudflareEnv,
@@ -145,8 +204,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 		if (newer) return void (await skip("A newer message or sent reply superseded this draft"));
 		const selection = await getAgentModel(env, settings.modelId);
 		if (!selection) throw new InteractiveModelRefusedError("not_configured");
-		const trace = { feature: "auto_draft" as const, model: selection.modelId, provider: selection.provider };
-		const { text: body } = await generateReplyDraft({
+		const body = await generateRecordedDraft(env, job, selection, {
 			model: selection.model,
 			instructions: settings.instructions,
 			preferences: {
@@ -155,19 +213,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 				writingStyle: await styleDescriptionFor(db, reviewer.id, job.mailboxId),
 			},
 			thread: await loadDraftThread(env, job.mailboxId, source),
-			onUsage: (usage) =>
-				recordAiUsage({
-					env,
-					details: selection,
-					usage,
-					source: "auto_draft",
-					mailboxId: job.mailboxId,
-					jobId: job.id,
-				}),
-		}).catch((error: unknown) => {
-			throw traceAiError(error, trace);
 		});
-		if (!isCleanDraftBody(body)) throw traceAiError(new UnusableAnswerError("it was not a clean draft"), trace);
 		if (!(await getAgentEnabled(env))) return void (await skip("Assistant disabled during generation"));
 		const [currentSettings] = await db
 			.select({ autoDraftEnabled: mailboxAgentSettings.autoDraftEnabled })

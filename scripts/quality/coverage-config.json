@@ -35,6 +35,7 @@
 		"src/lib/remote-images/proxy-url-utils.ts",
 		"src/components/alerts-banner-utils.ts",
 		"src/components/migrations-banner-utils.ts",
+		"src/lib/migrations/pending-utils.ts",
 		"src/components/layout-preferences-utils.ts",
 		"src/lib/preferences/layout-utils.ts",
 		"src/components/dns-skipped-banner-utils.ts",

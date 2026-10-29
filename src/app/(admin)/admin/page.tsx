@@ -1,7 +1,7 @@
 "use client";
 
 import { AdminDatabaseSizeCard } from "@/components/admin-database-size-card";
-import { AdminUpdateCard } from "@/components/admin-update-card";
+import { AdminPendingMigrationsNotice, AdminUpdateCard } from "@/components/admin-update-card";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function AdminSettingsPage() {
@@ -13,11 +13,14 @@ export default function AdminSettingsPage() {
 				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Admin settings</h1>
 				<p className="mt-1 text-sm text-neutral-500">Manage workspace-level mail infrastructure and integrations.</p>
 			</div>
-			{user?.isPrimaryAdmin && (
+			{user?.isPrimaryAdmin ? (
 				<div className="space-y-6">
-					<AdminDatabaseSizeCard />
+					{/* First, so pending database updates are the first thing the primary admin sees. */}
 					<AdminUpdateCard />
+					<AdminDatabaseSizeCard />
 				</div>
+			) : (
+				user?.role === "admin" && <AdminPendingMigrationsNotice />
 			)}
 		</div>
 	);

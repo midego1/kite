@@ -9,6 +9,8 @@ export type SanitizeEmailHtmlOptions = {
 	 * proxy, which checks the image appears in that message, instead of from their host.
 	 */
 	proxyRemoteImagesFor?: string;
+	/** Turn web and email addresses in text (outside links and code) into links; ignored with `forOutgoing`. */
+	linkify?: boolean;
 };
 
 export type EmailHtmlSanitizer = (html: string | null, options?: SanitizeEmailHtmlOptions) => string | null;

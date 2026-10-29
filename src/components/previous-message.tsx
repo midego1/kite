@@ -1,4 +1,5 @@
 import { ChevronRight } from "lucide-react";
+import { LinkifiedText } from "@/components/messages/linkified-text";
 import type { PreviousMessageProps } from "./previous-message-types";
 
 export function PreviousMessage({ message }: PreviousMessageProps) {
@@ -11,7 +12,11 @@ export function PreviousMessage({ message }: PreviousMessageProps) {
 				</span>
 			</summary>
 			<div className="pb-2 pl-5 text-neutral-600">
-				{message.content && <pre className="whitespace-pre-wrap text-sm font-sans">{message.content}</pre>}
+				{message.content && (
+					<pre className="whitespace-pre-wrap text-sm font-sans">
+						<LinkifiedText text={message.content} />
+					</pre>
+				)}
 				{message.quotedContent.map((nestedMessage, index) => (
 					<PreviousMessage
 						key={`${nestedMessage.dateLine}-${nestedMessage.content.slice(0, 24)}-${index}`}

@@ -4,7 +4,7 @@
 
 ### Changed
 
-- An **Other IMAP provider** account names its own server, so its sign-in does not prove the address. Such an address no longer claims the address for the whole install, and connecting one never says whether the address is already connected elsewhere; addresses at the known providers stay unique. Apply database migration **0082** (`0082_external_account_address_scope.sql`) from the admin overview.
+- An **Other IMAP provider** account names its own server, so its sign-in does not prove the address. Such an address no longer claims the address for the whole install, and connecting one never says whether the address is already connected elsewhere; addresses at the known providers stay unique. Apply database migration **0080** (`0080_external_account_address_scope.sql`) from the admin overview.
 
 ### Fixed
 

@@ -107,7 +107,7 @@ async function assertNotKiteDomain(env: CloudflareEnv, address: string): Promise
  * provider's own servers, so nobody learns whether an address is connected without its password, and the answer
  * never says by whom. An "Other" account signs in at a server its owner names, which can accept any address, so its
  * address proves nothing: it is never checked (that would answer for anyone who runs a server) and claims nothing
- * (migration 0082 leaves it out of the unique index).
+ * (migration 0080 leaves it out of the unique index).
  */
 async function assertAddressFree(
 	env: CloudflareEnv,

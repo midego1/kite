@@ -260,7 +260,7 @@ test("connecting tests the sign-in, seals the password, stores the INBOX baselin
 	assert.deepEqual(await listExternalAccounts(env, "other"), []);
 
 	// An "Other" account's address is not proven by its sign-in (its owner names the server), so it claims nothing
-	// and a second one is never told whether the address is taken (migration 0082; tests/external-sync-node.test.mjs
+	// and a second one is never told whether the address is taken (migration 0080; tests/external-sync-node.test.mjs
 	// covers the known providers, whose addresses stay unique).
 	const again = await connectExternalAccount(env, owner, connectBody());
 	assert.notEqual(again.id, account.id);

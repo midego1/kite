@@ -33,7 +33,8 @@ test("an early click on Sign in waits for the page to become interactive and sig
 	await page.getByLabel("Password").fill(ADMIN.password);
 	// Playwright issues the click once the button is enabled; before the fix it landed at once and posted the form
 	// to /login natively. A person's click in that window is dropped by the browser instead.
-	const clicked = submit.click();
+	// The held scripts are compiled only now, so allow for a cold dev server.
+	const clicked = submit.click({ timeout: 60_000 });
 	release();
 	await clicked;
 
@@ -63,7 +64,8 @@ test("a click right after navigation on a public form waits for the page and goe
 	const submit = page.getByRole("button", { name: "Send reset link" });
 	await expect(submit).toBeDisabled();
 
-	const clicked = submit.click();
+	// The held scripts are compiled only now, so allow for a cold dev server.
+	const clicked = submit.click({ timeout: 60_000 });
 	release();
 	await clicked;
 

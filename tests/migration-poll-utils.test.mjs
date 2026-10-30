@@ -17,9 +17,8 @@ await build({
 	platform: "node",
 	logLevel: "silent",
 });
-const { createStallTracker, isRunFlagActive, isTransientStatus, mergeRemaining, startStatusPolling } = await import(
-	pathToFileURL(join(bundleDirectory, "poll.mjs")).href
-);
+const { createStallTracker, isRunFlagActive, isTransientStatus, mergeRemaining, shouldAbortPost, startStatusPolling } =
+	await import(pathToFileURL(join(bundleDirectory, "poll.mjs")).href);
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -87,18 +86,59 @@ test("a failed read is reported as null and polling goes on", async () => {
 	assert.ok(results.length >= 2 && results[1] === 2);
 });
 
-test("the stall tracker fires after the window without the count dropping, and a drop restarts it", () => {
-	const stall = createStallTracker(180_000, 1_000, 4);
-	assert.equal(stall.observe(4, 60_000), false);
-	assert.equal(stall.observe(3, 170_000), false, "a drop restarts the window");
-	assert.equal(stall.observe(3, 340_000), false);
-	assert.equal(stall.observe(3, 350_000), true);
-	assert.equal(stall.observe(2, 351_000), false);
+const MINUTE = 60_000;
+const tracker = (startCount = 4) =>
+	createStallTracker({ stallMs: 3 * MINUTE, capMs: 20 * MINUTE, startedAt: 0, startCount });
+
+test("stall time counts only between polls that answered with an unchanged list", () => {
+	const stall = tracker();
+	// First answer starts the clock; nothing is stalled yet.
+	assert.equal(stall.observe(4, 10_000), false);
+	assert.equal(stall.observe(4, 100_000), false);
+	assert.equal(stall.observe(4, 190_000), true, "180 s of answered, unchanged polls");
 });
 
-test("another tab's run flag counts only while it is fresh", () => {
+test("polls that time out add no stall time, and break the run of answered polls", () => {
+	const stall = tracker();
+	assert.equal(stall.observe(4, 10_000), false);
+	for (let at = 40_000; at <= 600_000; at += 30_000) assert.equal(stall.observe(null, at), false, `timeout at ${at}`);
+	// The long gap is unknown, not stalled: the first answer afterwards only restarts the count.
+	assert.equal(stall.observe(4, 630_000), false);
+	assert.equal(stall.observe(4, 700_000), false);
+	assert.equal(stall.observe(4, 800_000), false);
+	assert.equal(stall.observe(4, 830_000), true, "200 s answered since 630 s");
+});
+
+test("a drop restarts the stall time and the cap", () => {
+	const stall = tracker();
+	stall.observe(4, 10_000);
+	stall.observe(4, 150_000);
+	assert.equal(stall.observe(3, 160_000), false);
+	assert.equal(stall.observe(3, 300_000), false);
+	assert.equal(stall.observe(3, 345_000), true);
+});
+
+test("with every poll timing out the run is followed until the cap, then called unknown", () => {
+	const stall = tracker();
+	assert.equal(stall.observe(null, 19 * MINUTE), false);
+	assert.equal(stall.observe(null, 20 * MINUTE), true);
+});
+
+test("the POST is cut off once the list has been empty a while with it still open, or after the cap", () => {
+	const base = { startedAt: 0 };
+	assert.equal(shouldAbortPost({ ...base, emptySince: null, now: 5 * MINUTE }), false);
+	assert.equal(shouldAbortPost({ ...base, emptySince: 100_000, now: 110_000 }), false, "a normal answer is on its way");
+	assert.equal(shouldAbortPost({ ...base, emptySince: 100_000, now: 115_000 }), true);
+	assert.equal(shouldAbortPost({ ...base, emptySince: null, now: 14 * MINUTE }), false);
+	assert.equal(shouldAbortPost({ ...base, emptySince: null, now: 15 * MINUTE }), true);
+});
+
+test("another tab's run flag counts only while it is fresh, and not when it is from the future", () => {
 	assert.equal(isRunFlagActive(null, 100_000), false);
 	assert.equal(isRunFlagActive("garbage", 100_000), false);
 	assert.equal(isRunFlagActive("95000", 100_000), true);
-	assert.equal(isRunFlagActive("70000", 100_000), false);
+	assert.equal(isRunFlagActive("30000", 100_000), true, "a hidden tab's heartbeat can be a minute apart");
+	assert.equal(isRunFlagActive("20000", 100_000), false);
+	assert.equal(isRunFlagActive("103000", 100_000), true, "a small clock difference between tabs");
+	assert.equal(isRunFlagActive(String(100_000 + 3_600_000), 100_000), false, "an hour ahead is not a heartbeat");
 });

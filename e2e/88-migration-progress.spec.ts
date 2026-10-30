@@ -212,3 +212,21 @@ test("another tab shows the busy state instead of an enabled Update database but
 	await expect(page.getByText("The database schema is up to date.")).toBeVisible();
 	expect(server.state.posts).toBe(1);
 });
+
+test("a request that never answers is cut off once the list is empty, and the run ends as recovered", async ({
+	page,
+}) => {
+	test.setTimeout(90_000);
+	const server = await mockMigrations(page);
+	await page.goto("/inbox");
+	const notice = page.getByRole("region", { name: "Database updates" });
+	await notice.getByRole("button", { name: "Apply now" }).click();
+	await expectBusy(notice, "Updating database…");
+
+	// Every update has landed but the POST stays open (the gate is never released).
+	server.landAll();
+	await expect(notice).toContainText("Database updated", { timeout: 45_000 });
+	await expect(notice).toContainText("4 database updates applied.");
+	await expect(notice).toContainText("The connection dropped meanwhile, so check the Backups page");
+	await expect(notice.getByRole("alert")).toHaveCount(0);
+});

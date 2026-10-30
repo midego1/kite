@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { saveUserTimeZonePreference } from "@/lib/time/client";
 import { formatCurrentTimeInZone, listTimeZones, updateUserTimeZone } from "./time-zone-form-utils";
 import type { TimeZoneFormProps } from "./time-zone-form-types";
+import { FormFooter } from "@/components/ui/page";
 
 export function TimeZoneForm({ userId, initialTimeZone }: TimeZoneFormProps) {
 	const [timeZone, setTimeZone] = useState(initialTimeZone ?? "");
@@ -68,16 +69,11 @@ export function TimeZoneForm({ userId, initialTimeZone }: TimeZoneFormProps) {
 				</datalist>
 				{validZone && <p className="text-sm text-neutral-500">Current time: {validZone}</p>}
 			</div>
-			<div className="flex items-center gap-3">
+			<FormFooter status={status}>
 				<Button type="submit" disabled={saving || timeZone.trim() === savedTimeZone || !validZone}>
 					{saving ? "Saving..." : "Save time zone"}
 				</Button>
-				{status && (
-					<p className="text-sm text-neutral-500" role="status">
-						{status}
-					</p>
-				)}
-			</div>
+			</FormFooter>
 		</form>
 	);
 }

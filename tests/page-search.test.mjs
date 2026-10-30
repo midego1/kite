@@ -56,7 +56,7 @@ test("results come from both menus, the current one first, labelled by menu", ()
 	);
 	const domains = flattenPageResults(searchPages("domains", primary, "settings"))[0];
 	assert.equal(domains.href, "/domains");
-	assert.equal(domains.section, "Email");
+	assert.equal(domains.section, "Mail");
 	assert.ok(domains.icon);
 });
 

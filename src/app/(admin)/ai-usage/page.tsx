@@ -10,7 +10,7 @@ import { DEFAULT_USAGE_RANGE } from "@/lib/ai/usage-report-utils";
 import { cn } from "@/lib/utils";
 import type { UsageMetric } from "./types";
 import { fetchAiUsage } from "./utils";
-import { SegmentedControl } from "./segmented-control";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { UsageChart } from "./usage-chart";
 import { MissingRates, SpendToday, UsageOutcomes, UsageSummaryCards } from "./usage-summary";
 import { UsageBreakdowns } from "./usage-breakdowns";
@@ -53,7 +53,7 @@ export default function AiUsagePage() {
 	return (
 		<div className="space-y-6">
 			<PageHeader
-				title="AI Usage"
+				title="AI usage"
 				description={
 					data
 						? `Requests, tokens and estimated spend over the last ${data.range} days (${data.timeZone}).`

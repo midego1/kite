@@ -7,6 +7,7 @@ import { RoutingRuleSelect } from "@/components/settings/domain-routing/routing-
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchAdminRoutingDomains } from "./utils";
+import { PageHeader } from "@/components/ui/page";
 
 export default function RoutingPage() {
 	const [domainId, setDomainId] = useState("");
@@ -19,10 +20,7 @@ export default function RoutingPage() {
 
 	return (
 		<div className="space-y-8">
-			<div>
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Routing</h1>
-				<p className="mt-1 text-sm text-neutral-500">Configure domain-wide delivery, forwarding, and blocking rules.</p>
-			</div>
+			<PageHeader title="Routing" description="Configure domain-wide delivery, forwarding, and blocking rules." />
 
 			<section className="space-y-4">
 				<div>

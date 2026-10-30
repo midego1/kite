@@ -28,20 +28,20 @@ async function expectMode(menu: Locator, mode: "Settings" | "Admin", current: st
 
 // The admin pages and the heading each one shows.
 const adminPages = [
-	{ label: "Overview", path: "/admin", heading: "Admin settings" },
+	{ label: "Overview", path: "/admin", heading: "Overview" },
 	{ label: "Mailboxes", path: "/mailboxes", heading: "Mailboxes" },
 	{ label: "Domains", path: "/domains", heading: "Domains" },
 	{ label: "Routing", path: "/routing", heading: "Routing" },
 	{ label: "Webhooks", path: "/webhooks", heading: "Webhooks" },
-	{ label: "API keys", path: "/api-keys", heading: "Admin API keys" },
+	{ label: "API keys", path: "/api-keys", heading: "API keys" },
 	{ label: "General", path: "/general", heading: "General" },
 	{ label: "Agent", path: "/agent", heading: "Agent" },
 	{ label: "Modules", path: "/modules", heading: "Modules" },
 	{ label: "Accounts", path: "/accounts", heading: "Accounts" },
 	{ label: "Activity", path: "/activity", heading: "Activity" },
-	{ label: "Backups", path: "/backups", heading: "Database Backups" },
+	{ label: "Backups", path: "/backups", heading: "Backups" },
 	{ label: "Alerts", path: "/alerts", heading: "Alerts" },
-	{ label: "AI usage", path: "/ai-usage", heading: "AI Usage" },
+	{ label: "AI usage", path: "/ai-usage", heading: "AI usage" },
 	{ label: "Branding", path: "/branding", heading: "Branding" },
 	{ label: "Drive", path: "/drive/settings", heading: "Drive" },
 ];
@@ -344,35 +344,37 @@ test("admin pages use the Settings layout with the mail sidebar and the Admin me
 	await expect(page.getByRole("button", { name: "Open account menu" })).toBeVisible();
 
 	await expect(menu.getByRole("navigation", { name: "Admin overview" }).getByRole("link")).toHaveText(["Overview"]);
-	await expect(menu.getByRole("navigation", { name: "Email", exact: true }).getByRole("link")).toHaveText([
+	await expect(menu.getByRole("navigation", { name: "People", exact: true }).getByRole("link")).toHaveText([
+		"Accounts",
+		"Activity",
+	]);
+	await expect(menu.getByRole("navigation", { name: "Mail", exact: true }).getByRole("link")).toHaveText([
 		"Domains",
 		"Mailboxes",
 		"Routing",
-	]);
-	await expect(menu.getByRole("navigation", { name: "People & access", exact: true }).getByRole("link")).toHaveText([
-		"Accounts",
-		"Modules",
-	]);
-	await expect(menu.getByRole("navigation", { name: "Integrations", exact: true }).getByRole("link")).toHaveText([
-		"API keys",
-		"Webhooks",
 	]);
 	await expect(menu.getByRole("navigation", { name: "AI", exact: true }).getByRole("link")).toHaveText([
 		"Agent",
 		"AI usage",
 	]);
+	await expect(menu.getByRole("navigation", { name: "Modules", exact: true }).getByRole("link")).toHaveText([
+		"Modules",
+		"Drive",
+	]);
+	await expect(menu.getByRole("navigation", { name: "Data", exact: true }).getByRole("link")).toHaveText([
+		"Backups",
+		"Storage",
+	]);
 	await expect(menu.getByRole("navigation", { name: "System", exact: true }).getByRole("link")).toHaveText([
 		"General",
 		"Branding",
-		"Storage",
-		"Backups",
 		"Alerts",
-		"Activity",
-		"Drive",
+		"API keys",
+		"Webhooks",
 	]);
 
 	// The overview keeps its heading and the database card but no grid of link cards; the menu is the only nav.
-	await expect(page.getByRole("heading", { level: 1, name: "Admin settings" })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
 	await expect(page.getByText("Database", { exact: true })).toBeVisible();
 	for (const href of ["/domains", "/mailboxes", "/agent", "/branding", "/accounts", "/api-keys"])
 		await expect(page.locator(`a[href="${href}"]`)).toHaveCount(1);
@@ -394,7 +396,9 @@ test("every Admin menu link opens its page and is the only current link", async 
 test("admin detail pages highlight their parent item and do not overflow", async ({ page }) => {
 	const api = await apiContext(STORAGE_STATE);
 	const { accounts } = (await (await api.get("/api/accounts")).json()) as { accounts: { id: string }[] };
-	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as { mailboxes: { id: string }[] };
+	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as {
+		mailboxes: { id: string; localPart: string; displayName: string | null }[];
+	};
 	await api.dispose();
 
 	await page.goto(`/accounts/${accounts[0].id}`);
@@ -403,7 +407,10 @@ test("admin detail pages highlight their parent item and do not overflow", async
 	expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
 
 	await page.goto(`/mailboxes/${mailboxes[0].id}`);
-	await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+	// The page is titled after the mailbox.
+	await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveText(
+		mailboxes[0].displayName || mailboxes[0].localPart,
+	);
 	await expectMode(adminMenu(page), "Admin", "Mailboxes");
 
 	for (const path of ["/domains", "/accounts", "/backups", "/activity", "/ai-usage"]) {
@@ -520,7 +527,7 @@ test("a non-primary admin's Admin menu hides primary-only pages, which stay bloc
 	await page.goto("/admin");
 	const menu = adminMenu(page);
 	await expectMode(menu, "Admin", "Overview");
-	await expect(page.getByRole("heading", { level: 1, name: "Admin settings" })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
 	for (const label of ["Overview", "Mailboxes"])
 		await expect(menu.getByRole("navigation").getByRole("link", { name: label, exact: true })).toBeVisible();
 	// Domain routing follows the domain-management grant, which this admin does not have.
@@ -558,13 +565,13 @@ test.describe("on a phone", () => {
 		const sheet = page.getByRole("dialog", { name: "Admin menu" });
 		await expect(sheet).toBeVisible();
 		await expect(modeSwitchOf(sheet).getByRole("link", { name: "Admin" })).toHaveAttribute("aria-current", "page");
-		for (const name of ["Admin overview", "Email", "People & access", "Integrations", "AI", "System"])
+		for (const name of ["Admin overview", "People", "Mail", "AI", "Modules", "Data", "System"])
 			await expect(sheet.getByRole("navigation", { name, exact: true })).toBeVisible();
 		await sheet.getByRole("link", { name: "Backups" }).click();
 		await expect(page).toHaveURL(/\/backups$/);
 		await expect(sheet).toBeHidden();
 		await expect(page.getByRole("button", { name: "Backups", exact: true })).toBeVisible();
-		await expect(page.getByRole("heading", { level: 1, name: "Database Backups" })).toBeVisible();
+		await expect(page.getByRole("heading", { level: 1, name: "Backups" })).toBeVisible();
 	});
 
 	test("admin pages keep their heading and their content clears the pill", async ({ page }) => {
@@ -614,7 +621,7 @@ test.describe("on a phone", () => {
 		await expect(sheet.getByRole("navigation", { name: "Account" })).toBeVisible();
 
 		await field.fill("backups");
-		await sheet.getByRole("navigation", { name: "Admin: System" }).getByRole("link", { name: "Backups" }).click();
+		await sheet.getByRole("navigation", { name: "Admin: Data" }).getByRole("link", { name: "Backups" }).click();
 		await expect(page).toHaveURL(/\/backups$/);
 		await expect(sheet).toBeHidden();
 	});

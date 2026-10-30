@@ -15,6 +15,7 @@ import {
 	saveManagedAccount,
 	uploadManagedAccountAvatar,
 } from "./utils";
+import { PageHeader } from "@/components/ui/page";
 
 export default function AccountDetailsPage() {
 	const { id } = useParams<{ id: string }>();
@@ -58,10 +59,7 @@ export default function AccountDetailsPage() {
 
 	return (
 		<div className="space-y-6">
-			<div>
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Details</h1>
-				<p className="mt-1 text-sm text-neutral-500">Update this account&apos;s profile and status.</p>
-			</div>
+			<PageHeader title="Details" description="Update this account's profile and status." />
 			<section className="space-y-5 rounded-xl border border-neutral-200 bg-white p-5">
 				{!account.editable && (
 					<p className="rounded-lg bg-neutral-50 p-4 text-sm text-neutral-500">

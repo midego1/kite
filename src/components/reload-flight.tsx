@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { ReloadFlightProps } from "./reload-flight-types";
 import {
 	RELOAD_FLIGHT_ANNOUNCEMENT,
+	RELOAD_FLIGHT_EXPIRE_MS,
 	isFlightEnd,
 	once,
 	planReloadFlight,
@@ -22,7 +23,7 @@ function reloadPage() {
  * and reduced motion reloads at once. The live region is mounted from the start, so "Reloading…" arrives as a change
  * and is announced.
  */
-export function ReloadFlight({ active, onReload = reloadPage }: ReloadFlightProps) {
+export function ReloadFlight({ active, onReload = reloadPage, onExpire }: ReloadFlightProps) {
 	// Decided when the flight starts (a click, so in the browser) and kept until the page is gone; idle and on the
 	// server nothing is read.
 	const plan = useMemo(
@@ -31,18 +32,30 @@ export function ReloadFlight({ active, onReload = reloadPage }: ReloadFlightProp
 	);
 	// Shared by the flight's end and the fallback timer, so the page reloads once however the flight ends.
 	const fire = useRef<(() => void) | null>(null);
+	// The latest callbacks, read when a timer fires: a new function identity must not restart the timers.
+	const latest = useRef({ onReload, onExpire });
+	useEffect(() => {
+		latest.current = { onReload, onExpire };
+	});
 
 	useEffect(() => {
-		if (!active) return;
-		fire.current ??= once(onReload);
-		const reload = fire.current;
-		if (!plan.animate) {
-			reload();
+		if (!active) {
+			fire.current = null;
 			return;
 		}
+		const reload = (fire.current = once(() => latest.current.onReload()));
+		// A reload that never replaced the page was cancelled: take the scene down and let the caller start over.
+		const expire = window.setTimeout(() => latest.current.onExpire?.(), RELOAD_FLIGHT_EXPIRE_MS);
+		if (!plan.animate) {
+			reload();
+			return () => window.clearTimeout(expire);
+		}
 		const timer = window.setTimeout(reload, plan.fallbackMs);
-		return () => window.clearTimeout(timer);
-	}, [active, onReload, plan]);
+		return () => {
+			window.clearTimeout(timer);
+			window.clearTimeout(expire);
+		};
+	}, [active, plan]);
 
 	return (
 		<>
@@ -55,13 +68,13 @@ export function ReloadFlight({ active, onReload = reloadPage }: ReloadFlightProp
 	);
 }
 
-/** The scene sits above every overlay (toasts are at 9999) and swallows clicks while the page is on its way out. */
+/** The scene sits above every overlay (toasts are at 9999) and swallows clicks while the page is on its way out (`pointer-events-auto` keeps that true under a modal that sets `pointer-events: none` on the body). */
 function ReloadFlightScene({ onEnd }: { onEnd: () => void }) {
 	return (
 		<div
 			data-reload-flight
 			aria-hidden="true"
-			className="reload-flight fixed inset-0 z-[10000] flex items-center justify-center overflow-hidden"
+			className="reload-flight pointer-events-auto fixed inset-0 z-[10000] flex items-center justify-center overflow-hidden"
 		>
 			<div className="reload-flight-fade absolute inset-0 bg-background" />
 			<svg

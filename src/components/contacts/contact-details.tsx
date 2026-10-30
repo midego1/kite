@@ -7,7 +7,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { ContactAvatarForm } from "./contact-avatar-form";
 import { Label } from "@/components/ui/label";
-import type { ContactDetailsRecord, ContactDetailsTriggerProps } from "./contact-details-types";
+import type {
+	ContactDetailsDialogProps,
+	ContactDetailsRecord,
+	ContactDetailsTriggerProps,
+} from "./contact-details-types";
 import { fetchContactDetails, updateContactName } from "./contact-details-utils";
 
 export function ContactDetailsTrigger({ mailboxId, address, name, label, className }: ContactDetailsTriggerProps) {
@@ -15,18 +19,55 @@ export function ContactDetailsTrigger({ mailboxId, address, name, label, classNa
 	const visibleLabel = label ?? name;
 	const [renamed, setRenamed] = useState<{ from: string; value: string } | null>(null);
 	const shownName = renamed?.from === visibleLabel ? renamed.value : visibleLabel;
+
+	if (!mailboxId) return <span className={className}>{shownName}</span>;
+
+	return (
+		<>
+			<button
+				type="button"
+				onClick={() => setOpen(true)}
+				className={`${className ?? ""} rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200`}
+			>
+				{shownName}
+			</button>
+			<ContactDetailsDialog
+				mailboxId={mailboxId}
+				address={address}
+				name={name}
+				open={open}
+				onOpenChange={setOpen}
+				onSaved={(nextName) => {
+					if (!label) setRenamed({ from: visibleLabel, value: nextName });
+				}}
+			/>
+		</>
+	);
+}
+
+/** The edit-contact dialog, controlled by its caller: the name links, and the contact card's Edit contact button. */
+export function ContactDetailsDialog({
+	mailboxId,
+	address,
+	name,
+	open,
+	onOpenChange,
+	onSaved,
+}: ContactDetailsDialogProps) {
 	const [contact, setContact] = useState<ContactDetailsRecord | null>(null);
 	const [displayName, setDisplayName] = useState(name);
 	const [loading, setLoading] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	function handleOpenChange(next: boolean) {
-		if (next) {
+	// The loading state starts whenever the dialog opens, whoever opened it.
+	const [wasOpen, setWasOpen] = useState(false);
+	if (open !== wasOpen) {
+		setWasOpen(open);
+		if (open) {
 			setLoading(true);
 			setError(null);
 		}
-		setOpen(next);
 	}
 
 	useEffect(() => {
@@ -57,8 +98,8 @@ export function ContactDetailsTrigger({ mailboxId, address, name, label, classNa
 			const updated = await updateContactName(mailboxId, address, displayName);
 			const nextName = updated.displayName ?? displayName.trim();
 			setContact(updated);
-			if (!label) setRenamed({ from: visibleLabel, value: nextName });
-			setOpen(false);
+			onSaved?.(nextName);
+			onOpenChange(false);
 			window.dispatchEvent(
 				new CustomEvent("kite:contact-changed", {
 					detail: { email: updated.email, displayName: nextName },
@@ -71,73 +112,62 @@ export function ContactDetailsTrigger({ mailboxId, address, name, label, classNa
 		}
 	}
 
-	if (!mailboxId) return <span className={className}>{shownName}</span>;
-
 	return (
-		<>
-			<button
-				type="button"
-				onClick={() => handleOpenChange(true)}
-				className={`${className ?? ""} rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200`}
-			>
-				{shownName}
-			</button>
-			<Dialog open={open} onOpenChange={handleOpenChange}>
-				{/* Only the details scroll in a short window, so the title and the close button stay in view. */}
-				<DialogContent className="flex max-h-[calc(100vh-4rem)] flex-col">
-					<DialogHeader>
-						<DialogTitle>Contact details</DialogTitle>
-						<DialogDescription>Update how this contact appears in your mailbox.</DialogDescription>
-					</DialogHeader>
-					<div className="-mx-6 -mt-1 min-h-0 overflow-y-auto px-6 pt-1 pb-1 space-y-5">
-						<div className="flex flex-col items-start gap-4">
-							<ContactAvatarForm
-								mailboxId={mailboxId}
-								address={address}
-								name={displayName}
-								hasAvatar={contact?.hasAvatar ?? false}
-								onAvatarChange={(hasAvatar) => setContact((current) => (current ? { ...current, hasAvatar } : current))}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="contact-display-name">Name</Label>
-							<Input
-								id="contact-display-name"
-								value={displayName}
-								onChange={(event) => setDisplayName(event.target.value)}
-								disabled={loading || saving}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="contact-email">Email</Label>
-							<Input id="contact-email" value={contact?.email ?? address} disabled />
-						</div>
-						<div className="grid gap-3 rounded-lg border border-neutral-200 bg-[#f6f8fc] p-3 text-sm sm:grid-cols-2">
-							<div>
-								<p className="text-xs font-medium text-neutral-500">Source</p>
-								<p className="mt-1 capitalize text-neutral-700">{contact?.source ?? "Email"}</p>
-							</div>
-							<div>
-								<p className="text-xs font-medium text-neutral-500">Last seen</p>
-								<p className="mt-1 text-neutral-700">
-									{contact?.lastSeenAt
-										? formatUserDate(contact.lastSeenAt, { month: "short", day: "2-digit", year: "numeric" })
-										: "Unknown"}
-								</p>
-							</div>
-							{contact?.blocked && <p className="text-sm font-medium text-red-600">Blocked contact</p>}
-						</div>
-						{error && (
-							<p role="alert" className="text-sm text-red-600">
-								{error}
-							</p>
-						)}
-						<Button type="button" onClick={saveContact} disabled={loading || saving || !displayName.trim()}>
-							{saving ? "Saving..." : "Save contact"}
-						</Button>
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			{/* Only the details scroll in a short window, so the title and the close button stay in view. */}
+			<DialogContent className="flex max-h-[calc(100vh-4rem)] flex-col">
+				<DialogHeader>
+					<DialogTitle>Contact details</DialogTitle>
+					<DialogDescription>Update how this contact appears in your mailbox.</DialogDescription>
+				</DialogHeader>
+				<div className="-mx-6 -mt-1 min-h-0 overflow-y-auto px-6 pt-1 pb-1 space-y-5">
+					<div className="flex flex-col items-start gap-4">
+						<ContactAvatarForm
+							mailboxId={mailboxId}
+							address={address}
+							name={displayName}
+							hasAvatar={contact?.hasAvatar ?? false}
+							onAvatarChange={(hasAvatar) => setContact((current) => (current ? { ...current, hasAvatar } : current))}
+						/>
 					</div>
-				</DialogContent>
-			</Dialog>
-		</>
+					<div className="space-y-2">
+						<Label htmlFor="contact-display-name">Name</Label>
+						<Input
+							id="contact-display-name"
+							value={displayName}
+							onChange={(event) => setDisplayName(event.target.value)}
+							disabled={loading || saving}
+						/>
+					</div>
+					<div className="space-y-2">
+						<Label htmlFor="contact-email">Email</Label>
+						<Input id="contact-email" value={contact?.email ?? address} disabled />
+					</div>
+					<div className="grid gap-3 rounded-lg border border-neutral-200 bg-[#f6f8fc] p-3 text-sm sm:grid-cols-2">
+						<div>
+							<p className="text-xs font-medium text-neutral-500">Source</p>
+							<p className="mt-1 capitalize text-neutral-700">{contact?.source ?? "Email"}</p>
+						</div>
+						<div>
+							<p className="text-xs font-medium text-neutral-500">Last seen</p>
+							<p className="mt-1 text-neutral-700">
+								{contact?.lastSeenAt
+									? formatUserDate(contact.lastSeenAt, { month: "short", day: "2-digit", year: "numeric" })
+									: "Unknown"}
+							</p>
+						</div>
+						{contact?.blocked && <p className="text-sm font-medium text-red-600">Blocked contact</p>}
+					</div>
+					{error && (
+						<p role="alert" className="text-sm text-red-600">
+							{error}
+						</p>
+					)}
+					<Button type="button" onClick={saveContact} disabled={loading || saving || !displayName.trim()}>
+						{saving ? "Saving..." : "Save contact"}
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
 	);
 }

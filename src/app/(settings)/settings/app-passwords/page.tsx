@@ -1,17 +1,14 @@
 import { EmailClientsSettings } from "@/components/settings/email-clients-settings";
+import { PageHeader } from "@/components/ui/page";
 
 export default function EmailAppsSettingsPage() {
 	return (
-		<div className="space-y-8 py-4">
-			<section className="space-y-4">
-				<div>
-					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">App passwords</h1>
-					<p className="mt-1 text-sm text-neutral-500">Use your mail from a desktop or mobile app over JMAP.</p>
-				</div>
-				<div className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5">
-					<EmailClientsSettings />
-				</div>
-			</section>
+		<div className="space-y-6">
+			<PageHeader
+				title="App passwords"
+				description="Use your mail from a desktop or mobile app that supports JMAP. Point the app at this server and sign in with your email address and an app password."
+			/>
+			<EmailClientsSettings />
 		</div>
 	);
 }

@@ -21,3 +21,13 @@ export type ContactDetailsTriggerProps = {
 	label?: string;
 	className?: string;
 };
+
+export type ContactDetailsDialogProps = {
+	mailboxId: string;
+	address: string;
+	name: string;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	/** The name the contact has after a save. */
+	onSaved?: (displayName: string) => void;
+};

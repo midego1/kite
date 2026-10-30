@@ -22,6 +22,7 @@ import {
 	updateInboxRule,
 } from "./inbox-rules-utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { EmptyState } from "@/components/ui/page";
 
 export function InboxRules() {
 	const queryClient = useQueryClient();
@@ -108,11 +109,13 @@ export function InboxRules() {
 	}
 
 	return (
-		<section className="space-y-4">
-			<div className="flex flex-row items-center">
-				<header className="flex-1">
+		<section className="space-y-3">
+			<div className="flex flex-wrap items-end justify-between gap-4">
+				<header className="min-w-0">
 					<h2 className="text-base font-semibold text-neutral-900">Mailbox rules</h2>
-					<p className="mt-1 text-sm text-neutral-500">Applied after delivery.</p>
+					<p className="mt-1 text-sm text-neutral-500">
+						Applied to the selected inbox after delivery: file by sender, subject or content.
+					</p>
 				</header>
 
 				<Button type="button" onClick={openCreateDialog} disabled={!mailboxId}>
@@ -120,54 +123,62 @@ export function InboxRules() {
 					New rule
 				</Button>
 			</div>
-			<div className="rounded-xl border border-neutral-200 bg-white p-5">
-				{(rules.data?.rules ?? []).length === 0 && <p className="text-sm text-neutral-500">No rules yet</p>}
-				<div className="space-y-1">
-					{(rules.data?.rules ?? []).map((rule) => (
-						<div
-							key={rule.id}
-							role="button"
-							tabIndex={0}
-							onClick={() => openEditDialog(rule)}
-							onKeyDown={(event) => onRuleKeyDown(event, rule)}
-							className="group flex cursor-pointer items-center gap-3 rounded-xl bg-neutral-50 px-3 py-3 outline-none transition-colors hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-blue-200"
-						>
-							<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
-								{rule.action === "spam" ? (
-									<ShieldAlert className="h-4 w-4" />
-								) : rule.action === "trash" ? (
-									<Trash2 className="h-4 w-4" />
-								) : (
-									<Folder className="h-4 w-4" />
-								)}
-							</div>
-							<div className="min-w-0 flex-1">
-								<p className="truncate text-sm font-medium text-neutral-900">
-									{getRuleFieldLabel(rule.matchField)} {getRuleOperatorLabel(rule.matchOperator)}{" "}
-									{rule.matchValue || rule.pattern}
-								</p>
-								<p className="truncate text-xs text-neutral-500">{getRuleDestinationLabel(rule)}</p>
-							</div>
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								disabled={remove.isPending}
-								onClick={async (event) => {
-									event.stopPropagation();
-									if (!(await requestConfirmation({ title: "Delete this rule?", confirmLabel: "Delete rule" }))) return;
-									remove.mutate(rule.id);
-								}}
-								onKeyDown={(event) => event.stopPropagation()}
-								className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-								aria-label="Delete rule"
+			{(rules.data?.rules ?? []).length === 0 ? (
+				<EmptyState
+					icon={Folder}
+					title="No rules yet"
+					description="A rule moves matching mail into a folder, Spam or Trash as it arrives."
+				/>
+			) : (
+				<div className="rounded-xl border border-neutral-200 bg-white p-2">
+					<div className="space-y-1">
+						{(rules.data?.rules ?? []).map((rule) => (
+							<div
+								key={rule.id}
+								role="button"
+								tabIndex={0}
+								onClick={() => openEditDialog(rule)}
+								onKeyDown={(event) => onRuleKeyDown(event, rule)}
+								className="group flex cursor-pointer items-center gap-3 rounded-lg bg-neutral-50 px-3 py-2 outline-none transition-colors hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-blue-200"
 							>
-								<Trash2 className="h-4 w-4" />
-							</Button>
-						</div>
-					))}
+								<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+									{rule.action === "spam" ? (
+										<ShieldAlert className="h-4 w-4" />
+									) : rule.action === "trash" ? (
+										<Trash2 className="h-4 w-4" />
+									) : (
+										<Folder className="h-4 w-4" />
+									)}
+								</div>
+								<div className="min-w-0 flex-1">
+									<p className="truncate text-sm font-medium text-neutral-900">
+										{getRuleFieldLabel(rule.matchField)} {getRuleOperatorLabel(rule.matchOperator)}{" "}
+										{rule.matchValue || rule.pattern}
+									</p>
+									<p className="truncate text-xs text-neutral-500">{getRuleDestinationLabel(rule)}</p>
+								</div>
+								<Button
+									type="button"
+									variant="ghost"
+									size="sm"
+									disabled={remove.isPending}
+									onClick={async (event) => {
+										event.stopPropagation();
+										if (!(await requestConfirmation({ title: "Delete this rule?", confirmLabel: "Delete rule" })))
+											return;
+										remove.mutate(rule.id);
+									}}
+									onKeyDown={(event) => event.stopPropagation()}
+									className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+									aria-label="Delete rule"
+								>
+									<Trash2 className="h-4 w-4" />
+								</Button>
+							</div>
+						))}
+					</div>
 				</div>
-			</div>
+			)}
 
 			<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
 				<DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto sm:max-w-[560px]">

@@ -47,6 +47,49 @@
 :root[data-font="system"] {
 	--font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
+/* The dyslexia-friendly font (SIL OFL 1.1, public/fonts/opendyslexic/, see NOTICE). The faces are declared
+   here so the first paint of a page that has it chosen is already set in it (the bootstrap script in
+   appearance-preferences.ts preloads the regular weight); a browser fetches a face only once text uses the
+   family, so nothing is requested while another font is chosen. The reader frame links
+   public/fonts/opendyslexic/opendyslexic.css, the same faces for its own document. */
+@font-face {
+	font-family: "OpenDyslexic";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url("/fonts/opendyslexic/opendyslexic-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+	font-family: "OpenDyslexic";
+	font-style: italic;
+	font-weight: 400;
+	font-display: swap;
+	src: url("/fonts/opendyslexic/opendyslexic-latin-400-italic.woff2") format("woff2");
+}
+@font-face {
+	font-family: "OpenDyslexic";
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url("/fonts/opendyslexic/opendyslexic-latin-700-normal.woff2") format("woff2");
+}
+@font-face {
+	font-family: "OpenDyslexic";
+	font-style: italic;
+	font-weight: 700;
+	font-display: swap;
+	src: url("/fonts/opendyslexic/opendyslexic-latin-700-italic.woff2") format("woff2");
+}
+:root[data-font="opendyslexic"] {
+	--font-ui: "OpenDyslexic", var(--font-geist-sans), system-ui, sans-serif;
+}
+/* Reading text (plain-text mail, what you write) gets a little more room between letters, words and lines;
+   the compact chrome (labels, buttons, the list) keeps its normal spacing so nothing truncates. */
+:root[data-font="opendyslexic"] .reading-text {
+	letter-spacing: 0.02em;
+	word-spacing: 0.08em;
+	line-height: 1.6;
+}
 
 /* Tailwind sizes are in rem, so the root font size scales the whole interface. */
 :root[data-text-size="small"] {

@@ -4,6 +4,8 @@ import type { ReloadFlightInput, ReloadFlightPlan } from "./reload-flight-types"
 const RELOAD_FLIGHT_DURATION_MS = 850;
 /** The reload is never held hostage by the animation: this timer fires it even if `animationend` never comes. */
 const RELOAD_FLIGHT_FALLBACK_MS = 1_200;
+/** A reload that has not replaced the page by now was cancelled (the browser asked to leave the page and the user stayed). */
+export const RELOAD_FLIGHT_EXPIRE_MS = 10_000;
 export const RELOAD_FLIGHT_ANNOUNCEMENT = "Reloading…";
 const RELOAD_FLIGHT_KEYFRAMES = "reload-flight-kite";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";

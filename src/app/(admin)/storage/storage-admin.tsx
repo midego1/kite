@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Zap } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -180,16 +180,12 @@ function StoresCard({
 						</Button>
 					)}
 					{recommendDirect && (
-						<p
-							data-direct-uploads-tip
-							className="flex basis-full items-start gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900"
-						>
-							<Zap aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
-							<span>
-								<span className="font-medium">Recommended:</span> with direct uploads, large Drive uploads go straight
-								to R2: faster, and less load on the Worker. Setting it up takes about two minutes.
-							</span>
-						</p>
+						<div data-direct-uploads-tip className="basis-full">
+							<Notice title="Recommended: turn on direct uploads">
+								Large Drive uploads then go straight to R2: faster, and less load on the Worker. Setting it up takes
+								about two minutes.
+							</Notice>
+						</div>
 					)}
 				</li>
 				{overview.stores.map((store) => (

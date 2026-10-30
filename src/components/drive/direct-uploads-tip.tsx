@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Zap } from "lucide-react";
+import { Notice } from "@/components/ui/notice";
 import { authFetch } from "@/lib/auth/client";
 
 type Overview = {
@@ -40,15 +40,18 @@ export function DirectUploadsTip() {
 	}, []);
 	if (!show) return null;
 	return (
-		<p data-direct-uploads-tip className="flex items-start gap-2 rounded-xl bg-blue-50 p-4 text-sm text-blue-900">
-			<Zap aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
-			<span>
-				<span className="font-medium">Recommended: turn on direct uploads.</span> Large Drive uploads then go straight
-				to R2: faster, and less load on the Worker.{" "}
-				<Link href="/storage?setup=direct" className="font-medium underline underline-offset-2">
-					Set up in Storage
-				</Link>
-			</span>
-		</p>
+		<div data-direct-uploads-tip>
+			<Notice
+				title="Recommended: turn on direct uploads"
+				actions={
+					<Link href="/storage?setup=direct" className="font-medium underline underline-offset-2">
+						Set up in Storage
+					</Link>
+				}
+			>
+				Drive uploads still pass through the Worker. With direct uploads, large files go straight to R2: faster, and
+				less load on the Worker.
+			</Notice>
+		</div>
 	);
 }

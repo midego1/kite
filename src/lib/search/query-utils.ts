@@ -11,6 +11,25 @@ import { dateFromZonedFields, normalizeTimeZone } from "@/lib/time/utils";
  */
 const OPERATOR_RE = /(?:^|\s)(from|to|subject|title|has|is|after|before|newer|older):(?:"([^"]*)"|(\S+))/gi;
 
+/** A value that is one whole email address (a dot in the domain), which `from:` then matches exactly; `maya@acme` stays a word match. */
+function isEmailAddressValue(value: string): boolean {
+	return /^[^\s@<>"]+@[^\s@<>".]+\.[^\s@<>"]+$/.test(value);
+}
+
+/** SQLite's lower() folds only A-Z, so the JS side must fold the same letters: `Ünal@x.de` has to equal itself. */
+function asciiLower(value: string): string {
+	return value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+}
+
+/**
+ * The two shapes a stored `from_addr` takes for one address, as lower-case SQL operands: the bare address, or a
+ * header ending in `<address>` (`LIKE … ESCAPE '\'`, so `_` and `%` in an address are taken literally).
+ */
+export function exactSenderMatch(address: string): { equals: string; endsWith: string } {
+	const equals = asciiLower(address.trim());
+	return { equals, endsWith: `%<${equals.replace(/[\\%_]/g, (char) => `\\${char}`)}>` };
+}
+
 export function parseSearchQuery(raw: string, timeZone = "UTC"): ParsedSearchQuery {
 	const parsed: ParsedSearchQuery = { text: "", needsFullText: false };
 	let rest = raw ?? "";
@@ -19,7 +38,9 @@ export function parseSearchQuery(raw: string, timeZone = "UTC"): ParsedSearchQue
 		const value = (quoted ?? bare ?? "").trim();
 		switch (key.toLowerCase()) {
 			case "from":
-				parsed.from = value;
+				// One whole address is exact: "hi@cursor.com" must not find x.hi@cursor.com or hi@cursor.com.evil.test.
+				if (isEmailAddressValue(value)) parsed.fromAddress = asciiLower(value);
+				else parsed.from = value;
 				break;
 			case "to":
 				parsed.to = value;
@@ -57,7 +78,7 @@ export function parseSearchQuery(raw: string, timeZone = "UTC"): ParsedSearchQue
 	}
 
 	parsed.text = rest.replace(/\s+/g, " ").trim();
-	parsed.needsFullText = !!(parsed.text || parsed.from || parsed.to || parsed.subject);
+	parsed.needsFullText = !!(parsed.text || parsed.from || parsed.fromAddress || parsed.to || parsed.subject);
 	return parsed;
 }
 
@@ -139,6 +160,8 @@ export function buildFtsMatch(parsed: ParsedSearchQuery): string | null {
 	};
 	column("subject", parsed.subject);
 	column("from_addr", parsed.from);
+	// An exact sender (conditions.ts checks it on the row) still narrows by the index first.
+	column("from_addr", parsed.fromAddress);
 	column("{to_addr cc_addr}", parsed.to);
 
 	if (parts.length === 0) return null;

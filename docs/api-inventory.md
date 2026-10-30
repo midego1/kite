@@ -40,6 +40,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/modules`                                   | GET, PUT               | [source](../src/app/api/admin/modules/route.ts)                                   |
 | `/api/admin/resend-key`                                | DELETE, GET, PUT       | [source](../src/app/api/admin/resend-key/route.ts)                                |
 | `/api/admin/search-index`                              | GET, POST              | [source](../src/app/api/admin/search-index/route.ts)                              |
+| `/api/admin/spam-policy`                               | GET, PUT               | [source](../src/app/api/admin/spam-policy/route.ts)                               |
 | `/api/admin/storage/migrations/[id]`                   | GET, POST              | [source](../src/app/api/admin/storage/migrations/[id]/route.ts)                   |
 | `/api/admin/storage`                                   | GET                    | [source](../src/app/api/admin/storage/route.ts)                                   |
 | `/api/admin/storage/routes/[class]`                    | PUT                    | [source](../src/app/api/admin/storage/routes/[class]/route.ts)                    |

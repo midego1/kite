@@ -12,7 +12,7 @@ await build({
 	target: "node22",
 	sourcemap: true,
 	tsconfig: "tsconfig.json",
-	external: ["next", "better-sqlite3", "nodemailer", "smtp-server", "ws", "react", "react-dom"],
+	external: ["next", "better-sqlite3", "nodemailer", "smtp-server", "mailauth", "ws", "react", "react-dom"],
 	alias: { "cloudflare:workers": "./server/runtime/cloudflare-workers.ts" },
 	banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
 	define: { "process.env.KITE_RUNTIME": '"node"' },

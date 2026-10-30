@@ -13,6 +13,10 @@ The object storage adapter, the Drive module and the import message hints
 (src/lib/import/message-hints-utils.ts) are derived from Mailflare commits 83ade98,
 9f66e13, 3c90a03 and 4aaf066 by Hieu Nguyen (AGPL-3.0).
 
+The sender authentication policy (src/lib/spam/engine.ts, src/lib/spam/dmarc-policy-utils.ts) and
+the SMTP listener's limits and SPF/DKIM/DMARC checks (server/runtime/smtp*.ts) are adapted from
+Mailflare commits 43d656a, c824aeb, ec8cb0d and 36b3bed by Hieu Nguyen (AGPL-3.0).
+
 Third-party code
 ----------------
 

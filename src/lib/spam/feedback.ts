@@ -68,6 +68,7 @@ export async function applySpamFeedbackWithReceipt(
 		toAddr: message.toAddr,
 		ccAddr: message.ccAddr,
 		bccAddr: message.bccAddr,
+		replyTo: null,
 		inReplyTo: message.inReplyTo,
 		references: message.references?.split(/\s+/).filter(Boolean) ?? [],
 		date: message.createdAt,

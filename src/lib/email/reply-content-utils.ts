@@ -57,13 +57,52 @@ export function getLatestEmailContent(content: string | null | undefined): strin
 	return splitRepliedEmailContent(content).latestContent;
 }
 
+/** UTF-16 units of HTML read for text: snippets, search and automatic reading need far less, and the cost stays linear. */
+const MAX_READABLE_HTML_CHARS = 250_000;
+
+const STRIPPED_BLOCK_OPENER = /<(style|script|head)\b[^>]*>/gi;
+const STRIPPED_BLOCK_CLOSER: Record<string, RegExp> = { style: /<\/style/gi, script: /<\/script/gi, head: /<\/head/gi };
+
+/** Where the closing tag of `name` starts at or after `from`, or -1; searched in `html` itself, case-insensitively. */
+function closingTagIndex(html: string, name: string, from: number): number {
+	const closer = STRIPPED_BLOCK_CLOSER[name];
+	closer.lastIndex = from;
+	return closer.exec(html)?.index ?? -1;
+}
+
+/**
+ * `html` without its `<style>`, `<script>` and `<head>` blocks, in one pass. An opener without a closing tag is left
+ * in place (its tag is stripped later), and a missing closing tag is looked for once per name, so thousands of
+ * unclosed openers cost no more than one (Mailflare #214).
+ */
+function stripBlocks(html: string): string {
+	const missingClose = new Set<string>();
+	let out = "";
+	let cursor = 0;
+	STRIPPED_BLOCK_OPENER.lastIndex = 0;
+	for (let match = STRIPPED_BLOCK_OPENER.exec(html); match; match = STRIPPED_BLOCK_OPENER.exec(html)) {
+		const name = match[1].toLowerCase();
+		if (match.index < cursor || missingClose.has(name)) continue;
+		const close = closingTagIndex(html, name, match.index + match[0].length);
+		if (close === -1) {
+			missingClose.add(name);
+			continue;
+		}
+		const closeEnd = html.indexOf(">", close);
+		out += `${html.slice(cursor, match.index)} `;
+		cursor = closeEnd === -1 ? html.length : closeEnd + 1;
+		STRIPPED_BLOCK_OPENER.lastIndex = cursor;
+	}
+	return out + html.slice(cursor);
+}
+
 export function htmlToReadableText(html: string | null | undefined): string {
 	return (
-		(html ?? "")
-			.replace(/<(style|script|head)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+		stripBlocks((html ?? "").slice(0, MAX_READABLE_HTML_CHARS))
 			.replace(/<br\s*\/?>/gi, "\n")
 			.replace(/<\/(p|div|li|tr|blockquote|h[1-6])>/gi, "\n")
-			.replace(/<[^>]+>/g, " ")
+			// `[^<>]` keeps an unclosed `<` from scanning to the end of the input for every opener.
+			.replace(/<[^<>]*>/g, " ")
 			.replace(/&nbsp;/g, " ")
 			.replace(/&lt;/g, "<")
 			.replace(/&gt;/g, ">")

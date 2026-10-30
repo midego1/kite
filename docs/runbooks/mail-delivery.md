@@ -17,6 +17,10 @@ Use synthetic messages and a human deployment operator for remote inspection.
 3. For Cloudflare inbound routing, verify the existing route targets the same
    Worker/relay and review store/reject/forward outcomes. For Resend/SES check
    the selected receiving configuration and the existing signed callback path.
+   A bounce saying "No such recipient here" means the address resolved to no
+   active domain, mailbox, alias or catch-all; one starting "Message rejected:"
+   names a size or MIME structure limit
+   ([inbound mail limits](../operations.md#inbound-mail-limits)).
    Never rename resources or change DNS during agent diagnosis.
 4. For outbound delivery, inspect the existing job state and provider result;
    distinguish rate limiting, credentials/configuration and permanent rejection.

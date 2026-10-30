@@ -13,6 +13,7 @@ import {
 	metadataHeaders,
 	objectPath,
 	objectSize,
+	parseLastModified,
 	parseListObjects,
 	parseListParts,
 	rangeHeader,
@@ -125,7 +126,7 @@ export class S3Object {
 		const headers = response.headers;
 		this.size = size ?? objectSize(headers);
 		this.etag = stripQuotes(headers.get("etag"));
-		this.uploaded = new Date(headers.get("last-modified") ?? Date.now());
+		this.uploaded = parseLastModified(headers.get("last-modified"));
 		const meta = readMetadata(headers);
 		this.httpMetadata = meta.httpMetadata;
 		this.customMetadata = meta.customMetadata;

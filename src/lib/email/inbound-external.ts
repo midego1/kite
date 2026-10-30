@@ -132,6 +132,6 @@ async function deliverExternal(env: CloudflareEnv, payload: InboundQueueMessage,
 	if (outcome.delivered) return;
 	if (outcome.reason === "duplicate")
 		logger.info("external.sync.duplicate_dropped", { accountId: account.id, duplicateOf: outcome.duplicateOf });
-	if (outcome.reason === "attachment_limit")
+	if (outcome.reason === "attachment_limit" || outcome.reason === "unparseable")
 		await noteOnAccount(env, account.id, `Kite did not deliver a message: ${outcome.detail}`);
 }

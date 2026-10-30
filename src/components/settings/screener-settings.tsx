@@ -162,7 +162,7 @@ export function ScreenerSettings() {
 				</div>
 			)}
 			{current.settings.enabled && (
-				<fieldset className="grid gap-2 sm:grid-cols-2" disabled={disabled}>
+				<fieldset className="grid gap-2 lg:grid-cols-2" disabled={disabled}>
 					<legend className="mb-2 text-sm font-medium text-neutral-900">Mail from new senders</legend>
 					{MODES.map((mode) => (
 						<label
@@ -175,7 +175,7 @@ export function ScreenerSettings() {
 								value={mode.value}
 								checked={current.settings.mode === mode.value}
 								onChange={() => void update({ mode: mode.value })}
-								className="mt-1 h-4 w-4 shrink-0 accent-blue-600 outline-none"
+								className="mt-1 h-4 w-4 shrink-0 accent-blue-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
 							/>
 							<span className="min-w-0">
 								<span className="block text-sm font-medium text-neutral-900">{mode.label}</span>
@@ -203,7 +203,7 @@ export function ScreenerSettings() {
 					</Button>
 				</form>
 			)}
-			<div className="grid gap-3 sm:grid-cols-2">
+			<div className="grid gap-3 lg:grid-cols-2">
 				<ScreenerSenderList
 					title="Approved senders"
 					emptyText="No approved senders yet."

@@ -23,11 +23,11 @@ async function routeVersion(page: Page, initial: string) {
 	return version;
 }
 
-/** Opens the inbox on one version, then lets the tab learn about a newer one the way a user returning to it would. */
-async function showUpdateToast(page: Page) {
+/** Opens a page on one version, then lets the tab learn about a newer one the way a user returning to it would. */
+async function showUpdateToast(page: Page, path = "/settings/account") {
 	const version = await routeVersion(page, "deploy-1");
 	await page.clock.install();
-	await page.goto("/inbox");
+	await page.goto(path);
 	await expect(page.getByRole("main")).toBeVisible();
 	await expect.poll(() => version.requests).toBeGreaterThan(0);
 	version.current = "deploy-2";
@@ -70,13 +70,13 @@ async function watchOutgoingPage(page: Page) {
 }
 
 /** Resolves with the moment the reload's document request leaves the tab. */
-function reloadRequest(page: Page) {
+function reloadRequest(page: Page, path: string) {
 	return page
 		.waitForRequest(
 			(request) =>
 				request.resourceType() === "document" &&
 				request.frame() === page.mainFrame() &&
-				new URL(request.url()).pathname === "/inbox",
+				new URL(request.url()).pathname === path,
 			{ timeout: 10_000 },
 		)
 		.then(() => Date.now());
@@ -84,8 +84,9 @@ function reloadRequest(page: Page) {
 
 /** Clicks Reload and returns how long the reload took to start. The click must not wait on the navigation it starts. */
 async function clickReload(page: Page, toast: ReturnType<Page["getByRole"]>) {
+	const path = new URL(page.url()).pathname;
 	const loaded = page.waitForEvent("load");
-	const requested = reloadRequest(page);
+	const requested = reloadRequest(page, path);
 	const startedAt = Date.now();
 	await toast.getByRole("button", { name: "Reload" }).click({ noWaitAfter: true });
 	return { startedAt, requested, loaded };
@@ -161,4 +162,69 @@ test("the reload never waits on the animation: with animations disabled the fall
 	expect((await requested) - startedAt, "the fallback reload").toBeLessThan(3_000);
 	await loaded;
 	await expect(page.getByRole("main")).toBeVisible();
+});
+
+test("Reload in the top row of the list plays the same flight and reloads, with one scene", async ({ page }) => {
+	const events = await watchOutgoingPage(page);
+	const version = await routeVersion(page, "deploy-1");
+	await page.clock.install();
+	await page.goto("/inbox");
+	await expect(page.getByRole("main")).toBeVisible();
+	await expect.poll(() => version.requests).toBeGreaterThan(0);
+	version.current = "deploy-2";
+	const before = version.requests;
+	await page.clock.fastForward("01:01");
+	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+	await expect.poll(() => version.requests).toBeGreaterThan(before);
+	const row = page.locator("[data-update-notice]");
+	await expect(row).toBeVisible();
+
+	const { startedAt, requested, loaded } = await clickReload(page, row);
+	const scene = await page.waitForSelector(FLIGHT, { state: "attached", timeout: 2_000 });
+	expect(await page.locator(FLIGHT).count()).toBe(1);
+	expect(await scene.evaluate((element) => getComputedStyle(element.querySelector("svg")!).animationName)).toBe(
+		"reload-flight-kite",
+	);
+	// The notice steps aside for the flight.
+	await expect(row).toHaveCount(0);
+	const elapsed = (await requested) - startedAt;
+	expect(elapsed, "reload after the flight").toBeGreaterThanOrEqual(500);
+	expect(elapsed, "reload within 2.5 s").toBeLessThan(2_500);
+	await loaded;
+	await expect(page.getByRole("main")).toBeVisible();
+	await expect(page.locator(FLIGHT)).toHaveCount(0);
+	expect(events).toContain("seen");
+	expect(events).toContain("announced");
+});
+
+test("the scene blocks clicks even when a modal made the body ignore the pointer, and goes away if the reload was cancelled", async ({
+	page,
+}) => {
+	// Staying on the page when the browser asks whether to leave cancels the reload.
+	await page.addInitScript(() => {
+		window.addEventListener("beforeunload", (event) => {
+			event.preventDefault();
+			event.returnValue = "";
+		});
+	});
+	page.on("dialog", (dialog) => void dialog.dismiss());
+	const toast = await showUpdateToast(page);
+	await toast.getByRole("button", { name: "Reload" }).click({ noWaitAfter: true });
+	await page.waitForSelector(FLIGHT, { state: "attached", timeout: 2_000 });
+	await page.evaluate(() => {
+		document.body.style.pointerEvents = "none";
+	});
+	const covered = await page.evaluate(() => {
+		const hit = document.elementFromPoint(window.innerWidth / 2, window.innerHeight - 20);
+		return !!hit?.closest("[data-reload-flight]");
+	});
+	expect(covered).toBe(true);
+	await page.evaluate(() => {
+		document.body.style.pointerEvents = "";
+	});
+
+	// Ten seconds on, the page is still here: the scene is gone and the notice offers Reload again.
+	await page.clock.fastForward("00:11");
+	await expect(page.locator(FLIGHT)).toHaveCount(0);
+	await expect(page.getByRole("status").filter({ hasText: MESSAGE })).toBeVisible();
 });

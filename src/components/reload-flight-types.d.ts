@@ -16,4 +16,6 @@ export interface ReloadFlightProps {
 	active: boolean;
 	/** Replaces `window.location.reload()`; it is called exactly once. */
 	onReload?: () => void;
+	/** Called when the page is still there well after the reload was asked for (a cancelled reload); the scene is gone by then. */
+	onExpire?: () => void;
 }

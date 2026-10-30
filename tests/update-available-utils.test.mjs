@@ -25,6 +25,10 @@ const UPDATE_CHECK_MIN_GAP_MS = 60_000;
 const {
 	UPDATE_CHECK_INTERVAL_MS,
 	UPDATE_TOAST_MESSAGE,
+	UPDATE_ROW_ANNOUNCEMENT,
+	UPDATE_ROW_PREVIEW,
+	UPDATE_ROW_SUBJECT,
+	chooseUpdateSurface,
 	compareDeploymentVersion,
 	parseDeploymentVersion,
 	shouldCheckForUpdate,
@@ -74,4 +78,31 @@ test("compareDeploymentVersion records the first version and reports a different
 test("compareDeploymentVersion never reports an unknown version as an update", () => {
 	assert.deepEqual(compareDeploymentVersion("", ""), { known: "", changed: false });
 	assert.deepEqual(compareDeploymentVersion("v1", ""), { known: "v1", changed: false });
+});
+
+test("the notice goes to a message list when one is on screen and to a toast elsewhere", () => {
+	const base = { available: true, dismissed: false };
+	assert.equal(chooseUpdateSurface({ ...base, lists: 0 }), "toast");
+	assert.equal(chooseUpdateSurface({ ...base, lists: 1 }), "row");
+	assert.equal(chooseUpdateSurface({ ...base, lists: 2 }), "row");
+	assert.equal(chooseUpdateSurface({ available: false, dismissed: false, lists: 1 }), "none");
+	assert.equal(chooseUpdateSurface({ available: false, dismissed: false, lists: 0 }), "none");
+});
+
+test("choosing Reload takes the notice off both surfaces while the flight plays", () => {
+	assert.equal(chooseUpdateSurface({ available: true, dismissed: false, lists: 1, reloading: true }), "none");
+	assert.equal(chooseUpdateSurface({ available: true, dismissed: false, lists: 0, reloading: true }), "none");
+	assert.equal(chooseUpdateSurface({ available: true, dismissed: false, lists: 1, reloading: false }), "row");
+});
+
+test("a dismissed notice shows nowhere, whatever the page", () => {
+	assert.equal(chooseUpdateSurface({ available: true, dismissed: true, lists: 0 }), "none");
+	assert.equal(chooseUpdateSurface({ available: true, dismissed: true, lists: 1 }), "none");
+});
+
+test("the row's text is fixed and names no deployment id", () => {
+	assert.equal(UPDATE_ROW_SUBJECT, "Kite was updated");
+	assert.equal(UPDATE_ROW_PREVIEW, "Reload to get the latest version");
+	// The live region says something else than the toast, so the two never read as one message twice.
+	assert.notEqual(UPDATE_ROW_ANNOUNCEMENT, UPDATE_TOAST_MESSAGE);
 });

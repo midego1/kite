@@ -49,6 +49,7 @@ import {
 } from "./backup-objects";
 import { RestoreStoredBackupButton } from "./restore-stored-button";
 import { RestoreRunningNotice } from "./restore-running-notice";
+import { PageHeader } from "@/components/ui/page";
 import { useRestoreJob } from "./use-restore-job";
 
 export default function BackupsPage() {
@@ -117,70 +118,68 @@ export default function BackupsPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex items-start justify-between gap-4">
-				<div>
-					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Database Backups</h1>
-					<p className="mt-1 text-sm text-neutral-500">
-						Export database records and store them in the configured R2 bucket.
-					</p>
-				</div>
-				<div className="flex items-center gap-2">
-					<Input
-						ref={restoreInput}
-						type="file"
-						accept="application/json,.json"
-						className="hidden"
-						onChange={(event) => {
-							const file = event.target.files?.[0];
-							event.target.value = "";
-							if (!file) return;
-							void requestConfirmation({
-								title: "Restore this backup?",
-								description:
-									"This replaces all current database records and may sign you out. A backup of the current data is saved first, and the restore is rolled back if it fails.",
-								confirmLabel: "Restore",
-							}).then((confirmed) => {
-								if (confirmed) restore.restoreUpload(file);
-							});
-						}}
-					/>
-					<Button onClick={() => runBackup.mutate()} disabled={runBackup.isPending || !backupConfigured}>
-						<Play size={18} />
-						{runBackup.isPending ? "Starting..." : "Back up"}
-					</Button>
-					<DropdownMenu.Root>
-						<DropdownMenu.Trigger asChild>
-							<Button type="button" variant="outline" className="h-10 w-10 px-0" aria-label="Backup actions">
-								<MoreVertical className="h-4 w-4" />
-							</Button>
-						</DropdownMenu.Trigger>
-						<DropdownMenu.Portal>
-							<DropdownMenu.Content
-								align="end"
-								sideOffset={6}
-								className="z-50 min-w-48 rounded-lg border border-neutral-200 bg-white p-1 text-sm shadow-lg"
-							>
-								<DropdownMenu.Item
-									disabled={restore.running}
-									onSelect={() => restoreInput.current?.click()}
-									className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-neutral-900 outline-none hover:bg-neutral-100 focus:bg-neutral-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+			<PageHeader
+				title="Backups"
+				description="Export database records and store them in the configured R2 bucket."
+				actions={
+					<>
+						<Input
+							ref={restoreInput}
+							type="file"
+							accept="application/json,.json"
+							className="hidden"
+							onChange={(event) => {
+								const file = event.target.files?.[0];
+								event.target.value = "";
+								if (!file) return;
+								void requestConfirmation({
+									title: "Restore this backup?",
+									description:
+										"This replaces all current database records and may sign you out. A backup of the current data is saved first, and the restore is rolled back if it fails.",
+									confirmLabel: "Restore",
+								}).then((confirmed) => {
+									if (confirmed) restore.restoreUpload(file);
+								});
+							}}
+						/>
+						<Button onClick={() => runBackup.mutate()} disabled={runBackup.isPending || !backupConfigured}>
+							<Play size={18} />
+							{runBackup.isPending ? "Starting..." : "Back up"}
+						</Button>
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger asChild>
+								<Button type="button" variant="outline" className="h-10 w-10 px-0" aria-label="Backup actions">
+									<MoreVertical className="h-4 w-4" />
+								</Button>
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Portal>
+								<DropdownMenu.Content
+									align="end"
+									sideOffset={6}
+									className="z-50 min-w-48 rounded-lg border border-neutral-200 bg-white p-1 text-sm shadow-lg"
 								>
-									<Upload className="h-4 w-4" />
-									{restore.running ? "Restoring..." : "Restore from backup"}
-								</DropdownMenu.Item>
-								<DropdownMenu.Item
-									disabled={!settings || autoSaveSettings.isPending}
-									onSelect={() => setSettingsOpen(true)}
-									className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-neutral-900 outline-none hover:bg-neutral-100 focus:bg-neutral-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-								>
-									<Settings className="h-4 w-4" />
-									Settings
-								</DropdownMenu.Item>
-							</DropdownMenu.Content>
-						</DropdownMenu.Portal>
-					</DropdownMenu.Root>
-				</div>
-			</div>
+									<DropdownMenu.Item
+										disabled={restore.running}
+										onSelect={() => restoreInput.current?.click()}
+										className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-neutral-900 outline-none hover:bg-neutral-100 focus:bg-neutral-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+									>
+										<Upload className="h-4 w-4" />
+										{restore.running ? "Restoring..." : "Restore from backup"}
+									</DropdownMenu.Item>
+									<DropdownMenu.Item
+										disabled={!settings || autoSaveSettings.isPending}
+										onSelect={() => setSettingsOpen(true)}
+										className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-neutral-900 outline-none hover:bg-neutral-100 focus:bg-neutral-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+									>
+										<Settings className="h-4 w-4" />
+										Settings
+									</DropdownMenu.Item>
+								</DropdownMenu.Content>
+							</DropdownMenu.Portal>
+						</DropdownMenu.Root>
+					</>
+				}
+			/>
 
 			<Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
 				<DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto">

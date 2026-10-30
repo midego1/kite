@@ -3423,7 +3423,7 @@ test("a mail-only install backs up and restores with its module data and with ev
 		await setModuleState(api, { modules: ALL_MODULES_OFF });
 
 		await page.goto("/backups");
-		await expect(page.getByRole("heading", { name: "Database Backups" })).toBeVisible();
+		await expect(page.getByRole("heading", { name: "Backups", level: 1 })).toBeVisible();
 		// Earlier specs left backups behind; wait for the page to list them all before adding one.
 		const before = (await readBackups(api)).length;
 		await expect(page.getByTitle("Download backup")).toHaveCount(before);
@@ -3458,7 +3458,7 @@ test("a mail-only install backs up and restores with its module data and with ev
 		await signIn(restorer, ADMIN.email, ADMIN.password);
 		await expect(restorer).toHaveURL(/\/inbox/);
 		await restorer.goto("/backups");
-		await expect(restorer.getByRole("heading", { name: "Database Backups" })).toBeVisible();
+		await expect(restorer.getByRole("heading", { name: "Backups", level: 1 })).toBeVisible();
 		await restorer.getByRole("button", { name: "Backup actions" }).click();
 		const chooser = restorer.waitForEvent("filechooser");
 		await restorer.getByRole("menuitem", { name: "Restore from backup" }).click();

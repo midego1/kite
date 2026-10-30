@@ -75,7 +75,7 @@ test.describe("authentication", () => {
 		await signIn(page, ADMIN.email, ADMIN.password);
 		await expect(page).toHaveURL(/\/inbox/);
 		await page.goto("/backups");
-		await expect(page.getByRole("heading", { name: "Database Backups" })).toBeVisible();
+		await expect(page.getByRole("heading", { name: "Backups", level: 1 })).toBeVisible();
 
 		// What a restore or an admin password reset does: the cookie dies, the tab still remembers the user.
 		await page.request.post("/api/auth/logout", { headers: { Origin: BASE_URL } });

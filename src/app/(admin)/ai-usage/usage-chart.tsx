@@ -6,7 +6,7 @@ import { CARD_CLASS } from "@/components/ui/page-utils";
 import { cn } from "@/lib/utils";
 import type { UsageChartProps, UsageMetric } from "./types";
 import { CHART_SERIES, axisLabelEvery, chartParts, tooltipLeft, tooltipTop, topRows } from "./chart-utils";
-import { SegmentedControl } from "./segmented-control";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
 	METRIC_LABELS,
 	formatCompact,

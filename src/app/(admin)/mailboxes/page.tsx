@@ -27,7 +27,7 @@ import { useAuthMe } from "@/hooks/use-auth-me";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import type { Domain, MailboxOwner, MailboxesResponse } from "./types";
 import { getMailboxAddress, getMailboxesBase, getMailboxName, listedMailboxes } from "./utils";
-import { EmptyState } from "@/components/ui/page";
+import { EmptyState, PageHeader } from "@/components/ui/page";
 
 export default function MailboxesPage() {
 	const qc = useQueryClient();
@@ -120,119 +120,122 @@ export default function MailboxesPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex items-center justify-between gap-4">
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Mailboxes</h1>
-				<Dialog open={createOpen} onOpenChange={setCreateOpen}>
-					<DialogTrigger asChild>
-						<Button className={mobilePrimaryActionAboveNavClass}>
-							<Plus className="h-4 w-4" />
-							New mailbox
-						</Button>
-					</DialogTrigger>
-					{/* Only the form scrolls in a short window, so the title and the close button stay in view. */}
-					<DialogContent className="flex max-h-[calc(100vh-4rem)] flex-col">
-						<DialogHeader>
-							<DialogTitle>Create mailbox</DialogTitle>
-							<DialogDescription>Add an address and provision its routing rule automatically.</DialogDescription>
-						</DialogHeader>
-						<div className="-mx-6 -mt-1 min-h-0 overflow-y-auto px-6 pt-1 pb-1 space-y-4">
-							{mailboxes.data?.canCreateShared && (
-								<div className="space-y-2">
-									<Label htmlFor="mailbox-type">Type</Label>
-									<Select
-										id="mailbox-type"
-										value={mailboxType}
-										onChange={(event) => setMailboxType(event.target.value as "personal" | "shared")}
-										containerClassName="h-10 w-full"
-										className="text-sm"
-									>
-										<option value="personal">Personal inbox</option>
-										<option value="shared">Shared inbox</option>
-									</Select>
-								</div>
-							)}
-							{mailboxType === "personal" ? (
-								<div className="space-y-2">
-									<Label htmlFor="mailbox-owner">Account</Label>
-									<Select
-										id="mailbox-owner"
-										value={ownerUserId}
-										onChange={(event) => {
-											const owner = mailboxOwners.find((item) => item.id === event.target.value);
-											setOwnerUserId(event.target.value);
-											if (owner) setDisplayName(owner.name);
-										}}
-										containerClassName="h-10 w-full"
-										className="text-sm"
-									>
-										{mailboxOwners.map((owner) => (
-											<option key={owner.id} value={owner.id}>
-												{owner.name} ({owner.email})
-											</option>
-										))}
-									</Select>
-								</div>
-							) : (
-								<p className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
-									After creating the shared inbox, choose which accounts can access it.
-								</p>
-							)}
-							<div className="space-y-2">
-								<Label htmlFor="mailbox-name">Name</Label>
-								<Input
-									id="mailbox-name"
-									value={displayName}
-									onChange={(event) => setDisplayName(event.target.value)}
-									placeholder="Mailbox name"
-								/>
-							</div>
-							<div className="space-y-2">
-								<Label htmlFor="mailbox-username">Email address</Label>
-								<div className="flex h-10 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-sm shadow-neutral-200/50 focus-within:border-blue-600">
-									<Input
-										id="mailbox-username"
-										value={localPart}
-										onChange={(event) => setLocalPart(event.target.value)}
-										placeholder="support"
-										className="min-w-0 flex-1 rounded-none border-0 shadow-none focus-visible:border-0"
-									/>
-									<span className="flex items-center text-sm text-neutral-500">@</span>
-									<Select
-										aria-label="Domain"
-										className="min-w-0 max-w-[55%] bg-transparent px-3 text-sm text-neutral-700 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-										value={domainId}
-										onChange={(event) => setDomainId(event.target.value)}
-									>
-										<option value="">Select domain</option>
-										{(domains.data?.domains ?? []).map((domain) => (
-											<option key={domain.id} value={domain.id}>
-												{domain.hostname}
-											</option>
-										))}
-									</Select>
-								</div>
-							</div>
-							{create.isError && (
-								<p role="alert" className="text-sm text-red-600">
-									{(create.error as Error).message}
-								</p>
-							)}
-							<Button
-								onClick={() => create.mutate()}
-								disabled={
-									(mailboxType === "personal" && !ownerUserId) ||
-									!displayName.trim() ||
-									!domainId ||
-									!localPart ||
-									create.isPending
-								}
-							>
-								{create.isPending ? "Creating..." : "Create mailbox"}
+			<PageHeader
+				title="Mailboxes"
+				description="Every address mail is delivered to: personal inboxes and shared inboxes a team reads together."
+				actions={
+					<Dialog open={createOpen} onOpenChange={setCreateOpen}>
+						<DialogTrigger asChild>
+							<Button className={mobilePrimaryActionAboveNavClass}>
+								<Plus className="h-4 w-4" />
+								New mailbox
 							</Button>
-						</div>
-					</DialogContent>
-				</Dialog>
-			</div>
+						</DialogTrigger>
+						{/* Only the form scrolls in a short window, so the title and the close button stay in view. */}
+						<DialogContent className="flex max-h-[calc(100vh-4rem)] flex-col">
+							<DialogHeader>
+								<DialogTitle>Create mailbox</DialogTitle>
+								<DialogDescription>Add an address and provision its routing rule automatically.</DialogDescription>
+							</DialogHeader>
+							<div className="-mx-6 -mt-1 min-h-0 overflow-y-auto px-6 pt-1 pb-1 space-y-4">
+								{mailboxes.data?.canCreateShared && (
+									<div className="space-y-2">
+										<Label htmlFor="mailbox-type">Type</Label>
+										<Select
+											id="mailbox-type"
+											value={mailboxType}
+											onChange={(event) => setMailboxType(event.target.value as "personal" | "shared")}
+											containerClassName="h-10 w-full"
+											className="text-sm"
+										>
+											<option value="personal">Personal inbox</option>
+											<option value="shared">Shared inbox</option>
+										</Select>
+									</div>
+								)}
+								{mailboxType === "personal" ? (
+									<div className="space-y-2">
+										<Label htmlFor="mailbox-owner">Account</Label>
+										<Select
+											id="mailbox-owner"
+											value={ownerUserId}
+											onChange={(event) => {
+												const owner = mailboxOwners.find((item) => item.id === event.target.value);
+												setOwnerUserId(event.target.value);
+												if (owner) setDisplayName(owner.name);
+											}}
+											containerClassName="h-10 w-full"
+											className="text-sm"
+										>
+											{mailboxOwners.map((owner) => (
+												<option key={owner.id} value={owner.id}>
+													{owner.name} ({owner.email})
+												</option>
+											))}
+										</Select>
+									</div>
+								) : (
+									<p className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
+										After creating the shared inbox, choose which accounts can access it.
+									</p>
+								)}
+								<div className="space-y-2">
+									<Label htmlFor="mailbox-name">Name</Label>
+									<Input
+										id="mailbox-name"
+										value={displayName}
+										onChange={(event) => setDisplayName(event.target.value)}
+										placeholder="Mailbox name"
+									/>
+								</div>
+								<div className="space-y-2">
+									<Label htmlFor="mailbox-username">Email address</Label>
+									<div className="flex h-10 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-sm shadow-neutral-200/50 focus-within:border-blue-600">
+										<Input
+											id="mailbox-username"
+											value={localPart}
+											onChange={(event) => setLocalPart(event.target.value)}
+											placeholder="support"
+											className="min-w-0 flex-1 rounded-none border-0 shadow-none focus-visible:border-0"
+										/>
+										<span className="flex items-center text-sm text-neutral-500">@</span>
+										<Select
+											aria-label="Domain"
+											className="min-w-0 max-w-[55%] bg-transparent px-3 text-sm text-neutral-700 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+											value={domainId}
+											onChange={(event) => setDomainId(event.target.value)}
+										>
+											<option value="">Select domain</option>
+											{(domains.data?.domains ?? []).map((domain) => (
+												<option key={domain.id} value={domain.id}>
+													{domain.hostname}
+												</option>
+											))}
+										</Select>
+									</div>
+								</div>
+								{create.isError && (
+									<p role="alert" className="text-sm text-red-600">
+										{(create.error as Error).message}
+									</p>
+								)}
+								<Button
+									onClick={() => create.mutate()}
+									disabled={
+										(mailboxType === "personal" && !ownerUserId) ||
+										!displayName.trim() ||
+										!domainId ||
+										!localPart ||
+										create.isPending
+									}
+								>
+									{create.isPending ? "Creating..." : "Create mailbox"}
+								</Button>
+							</div>
+						</DialogContent>
+					</Dialog>
+				}
+			/>
 			<section className="space-y-3">
 				{/* <div className="flex items-center justify-between">
 					<span className="text-sm text-neutral-500">

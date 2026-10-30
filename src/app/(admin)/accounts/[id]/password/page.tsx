@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import type { ManagedAccount } from "../types";
 import { fetchManagedAccount } from "../utils";
 import { saveAccountPassword } from "./utils";
+import { PageHeader } from "@/components/ui/page";
 
 export default function AccountPasswordPage() {
 	const { id } = useParams<{ id: string }>();
@@ -24,10 +25,7 @@ export default function AccountPasswordPage() {
 
 	return (
 		<div className="space-y-6">
-			<div>
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Password</h1>
-				<p className="mt-1 text-sm text-neutral-500">Reset the password for {account?.name ?? "this account"}.</p>
-			</div>
+			<PageHeader title="Password" description={<>Reset the password for {account?.name ?? "this account"}.</>} />
 			<form
 				onSubmit={(event) => void saveAccountPassword({ event, account, password, setPassword, setSaving, setMessage })}
 				className="space-y-5 rounded-xl border border-neutral-200 bg-white p-5"

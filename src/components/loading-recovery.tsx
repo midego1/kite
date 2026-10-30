@@ -11,7 +11,7 @@ export function LoadingRecovery({ active }: { active: boolean }) {
 	}, [active]);
 	if (!active || !expired) return null;
 	return (
-		<div className="text-center text-sm text-neutral-600">
+		<div className="loading-recovery text-center text-sm text-neutral-600">
 			<p>Startup is taking longer than expected.</p>
 			<button
 				type="button"

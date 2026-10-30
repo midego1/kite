@@ -30,7 +30,7 @@ export const driveClientData: ClientModuleData = {
 			href: "/drive/settings",
 			icon: "HardDrive",
 			placement: "admin-nav",
-			group: "System",
+			group: "Modules",
 			keywords: ["drive", "files", "storage", "quota", "links", "trash", "retention"],
 			order: 30,
 		},

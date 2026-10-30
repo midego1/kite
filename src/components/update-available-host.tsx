@@ -17,14 +17,8 @@ import {
 	parseDeploymentVersion,
 	shouldCheckForUpdate,
 } from "./update-available-utils";
-import { reloadToNewVersion } from "./update-reload";
-import {
-	announceUpdate,
-	cancelReload,
-	dismissUpdateNotice,
-	hideUpdateNotice,
-	useUpdateNotice,
-} from "./update-notice-store";
+import { cancelReloadToNewVersion, reloadToNewVersion } from "./update-reload";
+import { announceUpdate, dismissUpdateNotice, hideUpdateNotice, useUpdateNotice } from "./update-notice-store";
 
 function showUpdateAvailableToast() {
 	toast(
@@ -136,7 +130,7 @@ export function UpdateAvailableHost() {
 			<span aria-live="polite" className="sr-only">
 				{surface === "row" ? UPDATE_ROW_ANNOUNCEMENT : ""}
 			</span>
-			<ReloadFlight active={notice.reloading} onExpire={cancelReload} />
+			<ReloadFlight active={notice.reloading} onExpire={cancelReloadToNewVersion} />
 		</>
 	);
 }

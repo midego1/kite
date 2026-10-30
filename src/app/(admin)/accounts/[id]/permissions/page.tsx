@@ -27,6 +27,7 @@ import {
 	type TransferCandidate,
 } from "../utils";
 import { TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
+import { PageHeader } from "@/components/ui/page";
 
 export default function AccountPermissionsPage() {
 	const { id } = useParams<{ id: string }>();
@@ -93,10 +94,7 @@ export default function AccountPermissionsPage() {
 
 	return (
 		<div className="space-y-6">
-			<div>
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Permissions</h1>
-				<p className="mt-1 text-sm text-neutral-500">Control what this account can manage.</p>
-			</div>
+			<PageHeader title="Permissions" description="Control what this account can manage." />
 			{account?.isPrimaryAdmin && (
 				<section className="rounded-xl border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a] p-5">
 					<p className="text-sm font-semibold">Primary admin</p>

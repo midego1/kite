@@ -14,6 +14,7 @@ import {
 	isModuleActivity,
 } from "./utils";
 import { TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
+import { PageHeader } from "@/components/ui/page";
 
 export default function ActivityPage() {
 	const activity = useQuery({
@@ -23,10 +24,7 @@ export default function ActivityPage() {
 
 	return (
 		<div className="space-y-6">
-			<div>
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Activity</h1>
-				<p className="mt-1 text-sm text-neutral-500">Sign-ins, sign-outs and module changes across user accounts.</p>
-			</div>
+			<PageHeader title="Activity" description="Sign-ins, sign-outs and module changes across user accounts." />
 
 			<section
 				role="region"

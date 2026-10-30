@@ -56,7 +56,7 @@ Kite is **early beta**. It is tested, but it has not had the time in the field t
 - **Resend and SES receiving are more limited than Cloudflare's.** Mail that a routing rule would reject is dropped rather than bounced, and forward rules are not applied. Inbound messages are capped at 25 MiB.
 - **No IMAP or SMTP server for desktop clients.** Standard mail apps cannot connect. Kite offers a web app, [JMAP](docs/api.md), an API, webhooks and MCP. IMAP is used only to import mail.
 - **No native mobile app.** The web interface has a mobile layout.
-- **Updates and migrations are manual.** Nothing updates itself: you deploy a new version, then apply database migrations from Admin settings (or set `AUTO_APPLY_MIGRATIONS=1` to apply them automatically).
+- **Updates and migrations are manual.** Nothing updates itself: you deploy a new version, then apply database migrations from the Admin overview (or set `AUTO_APPLY_MIGRATIONS=1` to apply them automatically).
 - **No Wrangler D1 export.** `wrangler d1 export` does not work because of the search index; use the in-app backups.
 - **No published third-party security audit.** The security measures are listed under [How this version differs](#how-this-version-differs), and vulnerabilities are handled as described in [SECURITY.md](SECURITY.md).
 - **The sign-in limit is per IP address and API keys are not rate limited.** See [known gaps](docs/sending-and-deliverability.md#known-gaps).
@@ -318,7 +318,7 @@ npm run db:migrate:local
 npm run dev
 ```
 
-Add your Cloudflare credentials to `.dev.vars`, then open [http://localhost:3000](http://localhost:3000). To load sample data, run `npm run db:seed` while the dev server is running. `npm run db:migrate:local` applies every migration in `drizzle/migrations`. On a deployed install, new migrations are applied from the migrations banner or the database card in Admin settings after each deploy.
+Add your Cloudflare credentials to `.dev.vars`, then open [http://localhost:3000](http://localhost:3000). To load sample data, run `npm run db:seed` while the dev server is running. `npm run db:migrate:local` applies every migration in `drizzle/migrations`. On a deployed install, new migrations are applied from the migrations banner or the database card on the Admin overview after each deploy.
 
 The Cloudflare app uses vinext and the Cloudflare Vite plugin, with local D1, R2, Queues, and Durable Objects. Remote bindings are off by default. To use Workers AI locally, log in with Wrangler, set `CLOUDFLARE_ACCOUNT_ID`, and run `CLOUDFLARE_REMOTE_BINDINGS=true npm run dev`.
 

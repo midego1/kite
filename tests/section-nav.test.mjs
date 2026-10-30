@@ -70,26 +70,26 @@ test("Settings holds the Account, Mail, Integrations and Data groups, and no adm
 test("Admin groups its pages by task, with AI usage and no separate Audit logs", () => {
 	assert.deepEqual(
 		adminNavSections.map((section) => section.label),
-		["", "Email", "People & access", "Integrations", "AI", "System"],
+		["", "People", "Mail", "AI", "Modules", "Data", "System"],
 	);
 	assert.deepEqual(hrefs(adminNavSections), [
 		"/admin",
+		"/accounts",
+		"/activity",
 		"/domains",
 		"/mailboxes",
 		"/routing",
-		"/accounts",
-		"/modules",
-		"/api-keys",
-		"/webhooks",
 		"/agent",
 		"/ai-usage",
+		"/modules",
+		"/drive/settings",
+		"/backups",
+		"/storage",
 		"/general",
 		"/branding",
-		"/storage",
-		"/backups",
 		"/alerts",
-		"/activity",
-		"/drive/settings",
+		"/api-keys",
+		"/webhooks",
 	]);
 	for (const item of adminNavSections.flatMap((section) => section.items)) assert.ok(item.permission, item.href);
 });
@@ -131,13 +131,13 @@ test("permission gates follow role, primary admin and per-user grants", () => {
 	assert.ok(visible(primary).includes("/alerts"));
 	assert.ok(visible(primary).includes("/storage"));
 	// Domain routing applies to every address on a domain, so it follows the domain grant like Domains does.
-	assert.deepEqual(visible(admin), ["/admin", "/mailboxes", "/accounts", "/drive/settings"]);
+	assert.deepEqual(visible(admin), ["/admin", "/accounts", "/mailboxes", "/drive/settings"]);
 	assert.deepEqual(visible({ ...admin, canManageDomains: true }), [
 		"/admin",
+		"/accounts",
 		"/domains",
 		"/mailboxes",
 		"/routing",
-		"/accounts",
 		"/drive/settings",
 	]);
 	assert.deepEqual(visible(member), []);
@@ -181,10 +181,17 @@ test("search never returns items the user cannot see", () => {
 	assert.deepEqual(searchHrefs("members", admin), { admin: ["/accounts"] });
 });
 
-test("Alerts sits in System after Backups for the primary admin only", () => {
+test("Backups and Storage form the Data group, with the old System name still searchable", () => {
+	const data = adminNavSections.find((section) => section.label === "Data");
+	assert.deepEqual(hrefs([data]), ["/backups", "/storage"]);
+	const bySystem = searchHrefs("system", primary, "admin").admin;
+	for (const href of ["/activity", "/backups", "/storage", "/general"]) assert.ok(bySystem.includes(href), href);
+});
+
+test("Alerts sits in System after Branding, before the integration keys, for the primary admin only", () => {
 	const administration = adminNavSections.find((section) => section.label === "System");
 	const items = administration.items.map((item) => item.href);
-	assert.equal(items.indexOf("/alerts"), items.indexOf("/backups") + 1);
+	assert.deepEqual(items, ["/general", "/branding", "/alerts", "/api-keys", "/webhooks"]);
 	const alerts = administration.items.find((item) => item.href === "/alerts");
 	assert.equal(alerts.label, "Alerts");
 	assert.equal(alerts.permission, "primary");
@@ -202,8 +209,10 @@ test("Alerts sits in System after Backups for the primary admin only", () => {
 	}
 });
 
-test("Modules is a People & access page for the primary admin only", () => {
-	const modules = adminNavSections.flatMap((section) => section.items).find((item) => item.href === "/modules");
+test("Modules heads its own group, before the module settings pages, for the primary admin only", () => {
+	const group = adminNavSections.find((section) => section.label === "Modules");
+	assert.deepEqual(hrefs([group]), ["/modules", "/drive/settings"]);
+	const modules = group.items[0];
 	assert.equal(modules.label, "Modules");
 	assert.equal(modules.permission, "primary");
 	assert.equal(canSee(modules, primary), true);
@@ -211,14 +220,16 @@ test("Modules is a People & access page for the primary admin only", () => {
 	assert.equal(canSee(modules, member), false);
 	assert.equal(getNavMode("/modules"), "admin");
 	assert.equal(findActiveNavItem("admin", "/modules")?.label, "Modules");
-	assert.deepEqual(searchHrefs("modules", primary), { admin: ["/modules"] });
-	for (const user of [admin, member]) assert.deepEqual(searchHrefs("modules", user), {});
+	assert.deepEqual(searchHrefs("modules", primary), { admin: ["/modules", "/drive/settings"] });
+	assert.deepEqual(searchHrefs("people access", primary), { admin: ["/accounts", "/modules"] });
+	assert.deepEqual(searchHrefs("modules", member), {});
+	assert.deepEqual(searchHrefs("modules", admin), { admin: ["/drive/settings"] });
 });
 
 test("group landmarks always have a name", () => {
-	const [overview, email] = adminNavSections;
+	const [overview, people] = adminNavSections;
 	assert.equal(navSectionLabel("admin", overview, false), "Admin overview");
 	assert.equal(navSectionLabel("admin", overview, true), "Admin");
-	assert.equal(navSectionLabel("admin", email, true), "Admin: Email");
+	assert.equal(navSectionLabel("admin", people, true), "Admin: People");
 	assert.equal(navSectionLabel("settings", settingsNavSections[0], false), "Account");
 });

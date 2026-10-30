@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import toast from "react-hot-toast";
 import { TOAST_ACTION_CLASS } from "@/components/ui/toast-styles";
 import { useSessionUserId } from "@/hooks/use-session-user-id";
 import { STALE_ASSETS_EVENT, markAppReady, takeStaleAssetsSignal } from "./asset-recovery-utils";
+import { ReloadFlight } from "./reload-flight";
 import {
 	UPDATE_CHECK_INTERVAL_MS,
 	UPDATE_TOAST_ID,
@@ -15,12 +16,12 @@ import {
 	shouldCheckForUpdate,
 } from "./update-available-utils";
 
-function showUpdateAvailableToast() {
+function showUpdateAvailableToast(onReload: () => void) {
 	toast(
 		() => (
 			<span className="flex items-center gap-3 text-sm">
 				<span>{UPDATE_TOAST_MESSAGE}</span>
-				<button type="button" className={TOAST_ACTION_CLASS} onClick={() => window.location.reload()}>
+				<button type="button" className={TOAST_ACTION_CLASS} onClick={onReload}>
 					Reload
 				</button>
 				<button
@@ -41,13 +42,15 @@ function showUpdateAvailableToast() {
  * Tells a signed-in tab once that a newer deployment of this install is live.
  * It only compares the server's own version over time; nothing outside the
  * install is asked. A chunk that fails to load after the app has rendered
- * (see asset-recovery-utils.ts) checks at once instead of waiting for the next check.
+ * (see asset-recovery-utils.ts) checks at once instead of waiting for the next check. Reload plays the kite's
+ * flight (reload-flight.tsx) and then reloads; the flight exists only for this reload to a new version.
  */
 export function UpdateAvailableHost() {
 	const userId = useSessionUserId();
 	// The version belongs to the code this tab loaded, so it outlives sign-out and account switches.
 	const knownVersion = useRef("");
 	const shown = useRef(false);
+	const [reloading, setReloading] = useState(false);
 
 	useEffect(() => {
 		// The first client commit has happened; see ASSET_RECOVERY_READY_FLAG for what that does and does not mean.
@@ -74,7 +77,10 @@ export function UpdateAvailableHost() {
 				knownVersion.current = decision.known;
 				if (decision.changed && active && !shown.current) {
 					shown.current = true;
-					showUpdateAvailableToast();
+					showUpdateAvailableToast(() => {
+						toast.dismiss(UPDATE_TOAST_ID);
+						setReloading(true);
+					});
 				}
 			} catch {
 				// Offline or mid-deploy: the next check tries again.
@@ -109,5 +115,5 @@ export function UpdateAvailableHost() {
 		};
 	}, [userId]);
 
-	return null;
+	return <ReloadFlight active={reloading} />;
 }

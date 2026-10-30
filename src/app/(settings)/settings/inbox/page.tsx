@@ -17,10 +17,10 @@ export default function SettingsInboxPage() {
 			/>
 			<PageSection title="Reading" description="How messages are listed and shown.">
 				<SettingsCard>
-					<SettingsCardSection title="Conversations">
+					<SettingsCardSection headingLevel={3} title="Conversations">
 						<InboxThreadingSettings />
 					</SettingsCardSection>
-					<SettingsCardSection title="Layout and reading">
+					<SettingsCardSection headingLevel={3} title="Layout and reading">
 						<SettingRows>
 							<LayoutSyncSetting />
 							<RecipientAddressSettings />
@@ -36,15 +36,16 @@ export default function SettingsInboxPage() {
 			>
 				<SettingsCard>
 					<SettingsCardSection
+						headingLevel={3}
 						title="Screener"
 						description="Decide who can reach the inbox selected in the sidebar the first time they write."
 					>
 						<ScreenerSettings />
 					</SettingsCardSection>
-					<SettingsCardSection title="Spam protection">
+					<SettingsCardSection headingLevel={3} title="Spam protection">
 						<SpamFilterSettings />
 					</SettingsCardSection>
-					<SettingsCardSection title="Trash and Spam clean-up">
+					<SettingsCardSection headingLevel={3} title="Trash and Spam clean-up">
 						<TrashRetentionSettings />
 					</SettingsCardSection>
 				</SettingsCard>

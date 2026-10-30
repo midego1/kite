@@ -557,8 +557,77 @@ pre {
 	transform-origin: 60% 80%;
 }
 
+/* The reload to a new version (reload-flight.tsx): the page fades to its background while the logo kite lifts
+   off the middle of the screen, sways once and sails up and to the right out of view, its tail trailing behind.
+   The durations match RELOAD_FLIGHT_DURATION_MS in reload-flight-utils.ts. */
+@keyframes reload-flight-fade {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+@keyframes reload-flight-kite {
+	0% {
+		transform: translate(0, 10vh) rotate(-4deg) scale(0.9);
+		opacity: 0;
+	}
+	15% {
+		transform: translate(-2vw, 4vh) rotate(-10deg) scale(1);
+		opacity: 1;
+	}
+	40% {
+		transform: translate(5vw, -10vh) rotate(6deg) scale(1.04);
+		opacity: 1;
+	}
+	65% {
+		transform: translate(20vw, -28vh) rotate(16deg) scale(0.85);
+		opacity: 1;
+	}
+	100% {
+		transform: translate(52vw, -64vh) rotate(26deg) scale(0.4);
+		opacity: 0;
+	}
+}
+
+@keyframes reload-flight-tail {
+	from {
+		transform: rotate(-14deg);
+	}
+	to {
+		transform: rotate(12deg);
+	}
+}
+
+.reload-flight-fade {
+	animation: reload-flight-fade 850ms ease-in both;
+}
+
+.reload-flight-kite {
+	width: clamp(7rem, 22vmin, 11rem);
+	height: auto;
+	transform-origin: 50% 35%;
+	animation: reload-flight-kite 850ms cubic-bezier(0.4, 0, 0.3, 1) both;
+	will-change: transform, opacity;
+}
+
+.reload-flight-tail {
+	transform-origin: 28px 91px;
+	transform-box: view-box;
+	animation: reload-flight-tail 280ms ease-in-out infinite alternate;
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.kite-fly-away {
+		animation: none;
+	}
+
+	/* reload-flight.tsx does not draw the flight under reduced motion; this keeps a stale scene still. */
+	.reload-flight-fade,
+	.reload-flight-kite,
+	.reload-flight-tail {
 		animation: none;
 	}
 

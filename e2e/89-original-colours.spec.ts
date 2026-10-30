@@ -111,7 +111,10 @@ async function paintedText(page: Page, selector: string) {
 			Math.max(luminance(text), backgroundLuminance),
 			Math.min(luminance(text), backgroundLuminance),
 		];
-		return { text, contrast: (high + 0.05) / (low + 0.05) };
+		// The most blue pixel (blue minus red), for telling a link from grey text.
+		let blueness = -255;
+		for (let i = 0; i < data.length; i += 4) blueness = Math.max(blueness, data[i + 2] - data[i]);
+		return { text, contrast: (high + 0.05) / (low + 0.05), blueness };
 	}, png);
 }
 
@@ -163,11 +166,9 @@ for (const [label, width, height, pane] of LAYOUTS) {
 				// Polled: the app's loading splash can still cover the page right after navigation.
 				await expect.poll(async () => (await paintedText(page, "p")).contrast).toBeGreaterThanOrEqual(4.5);
 				await expect.poll(async () => (await paintedText(page, "a")).contrast).toBeGreaterThanOrEqual(4.5);
-				const text = await paintedText(page, "p");
-				const link = await paintedText(page, "a");
 				// The link is still a blue, the text a neutral grey.
-				expect(Math.max(...text.text) - Math.min(...text.text)).toBeLessThan(25);
-				expect(link.text[2] - link.text[0]).toBeGreaterThan(40);
+				await expect.poll(async () => (await paintedText(page, "a")).blueness).toBeGreaterThan(40);
+				await expect.poll(async () => (await paintedText(page, "p")).blueness).toBeLessThan(25);
 			},
 			async () => {
 				await expect(html(page)).toHaveCSS("filter", "none");

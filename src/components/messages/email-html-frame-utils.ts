@@ -53,7 +53,7 @@ const INVERTED_STYLES = [
 const STYLE_ATTRIBUTE = /\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
 const OWN_TEXT_COLOUR = /(?:^|;)\s*color\s*:\s*(?!\s*(?:inherit|initial|unset|currentcolor)\b)[^;\s]/i;
 
-export function hasOwnBackground(html: string): boolean {
+function hasOwnBackground(html: string): boolean {
 	return OWN_BACKGROUND.test(html);
 }
 

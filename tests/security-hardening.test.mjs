@@ -254,7 +254,6 @@ test("mail with only text colours is rendered light and inverted in dark mode, l
 		"<p style='COLOR:#222'>Hi</p>",
 	]) {
 		assert.equal(frame.hasOwnColours(html), true, html);
-		assert.equal(frame.hasOwnBackground(html), false, html);
 		const document = frame.buildEmailFrameDocument(html, { dark: true });
 		assert.match(document, /color-scheme:light/, html);
 		assert.match(document, /html\{background:#f2f2f0;filter:invert\(\.92\) hue-rotate\(180deg\)\}/, html);

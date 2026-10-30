@@ -1,3 +1,0 @@
-### Changed
-
-- The [Admin overview](/admin) now starts with what needs attention: waiting database updates, a failed or missing backup, a restore that needs recovery, a database near its size limit, webhooks with failed deliveries, AI requests that failed in the last 24 hours and domains that are not active yet, each with a link to where to fix it, or "Nothing needs your attention". Under it, tiles count accounts, mailboxes and domains (and the database size for the primary admin) and open the matching page; the database, size and backup cards follow. Admins who are not the primary admin get the same list and tiles for what they may read, instead of an empty page.

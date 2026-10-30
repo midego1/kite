@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.30.4] - 2026-10-30
+
+### Added
+
+- [Admin → Storage](/storage): **Test connection** in the Add store, Edit store and Enable direct uploads dialogs runs every check (endpoint, credentials, bucket, write, read, list, delete, multipart, signed link, CORS) without saving, and lists each with ✓ or ✗ and a fix in the provider's own words; a missing CORS rule comes with the rule for this site and a **Copy** button.
+- The store form is grouped into Where, Credentials and Direct uploads, with provider presets: Cloudflare R2 asks only for the account ID, Amazon S3, Backblaze B2, Wasabi and Hetzner pick a region and build the endpoint, and each provider links to the page that creates its keys. The secret has a show and hide toggle, and mistakes are explained under the field.
+- **Enable direct uploads** for the default R2 bucket is a four-step guide (create the token, paste the keys and account ID, test, save), and the Storage page and [Drive settings](/drive/settings) recommend it while Drive uploads still pass through the Worker.
+- After **Reload** in the "Kite was updated" notice, the loading screen continues the story: the kite flies back in from the top right and floats on its string above the progress bar, its tail rippling and a cloud drifting by, until the new version is ready and the screen fades into the app. The screen follows your theme. Browsers set to reduced motion see the kite standing still with "Updating Kite…", and an ordinary reload keeps the plain loading screen.
+
+### Changed
+
+- The Admin menu groups its pages by task: Overview, People (Accounts, Activity), Mail (Domains, Mailboxes, Routing), AI, Modules (with each module's settings page), Data (Backups, Storage) and System (General, Branding, Alerts, API keys, Webhooks). Every address stays the same. Page titles now match the menu: the overview is "Overview", "Database Backups" is "Backups", "Admin API keys" is "API keys", and a mailbox's admin page is titled after the mailbox.
+- A saved store's check list folds into "All N checks passed · Checked <time>" with **Show details** when nothing failed, and the **Switch** button under Where data lives explains why it is unavailable.
+- A refused access key or secret now says which one and why (a space or line break, or its length), instead of "That does not look like an access key pair".
+
+### Fixed
+
+- Applying database updates holds up better on slow or unreliable connections: a timed-out update is followed for up to 20 minutes before it is reported as unknown, a request that never answers is cut off once every update has landed, and other tabs show the busy state reliably, even while hidden.
+- Dark mode no longer leaves dark text unreadable on mail that sets its own text colours, and no longer turns ordinary replies into inverted cards. Near-black text (Outlook's `color:black`, Gmail's `#222`) simply takes the theme's text colour. Mail with a background, or with a colour that would still be unreadable on dark (a dark-blue signature), is rendered light and inverted with links still blue. Light text is left alone. "Original colours" is offered above every message dark mode changed, in every layout and at every width, and also restores its quoted history: one small button at the top right of the message body, reachable with the keyboard, with one fixed label and a pressed state.
+
+### Security
+
+- Editing a store's endpoint, bucket, region, addressing or provider now asks for its access key ID and secret again: the saved keys only ever sign requests to where they were saved for. Storage checks no longer follow redirects and give up after 15 seconds.
+
 ## [2026.10.30.3] - 2026-10-30
 
 ### Added

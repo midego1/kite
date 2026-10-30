@@ -22,6 +22,8 @@ import {
 	statusBadge,
 	storageRequest,
 } from "./utils";
+import { Notice } from "@/components/ui/notice";
+import { PageHeader } from "@/components/ui/page";
 
 type DialogState = { store: StoreView | null; binding?: boolean } | null;
 
@@ -231,28 +233,19 @@ export function StorageAdmin() {
 
 	return (
 		<div className="space-y-6">
-			<div>
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Storage</h1>
-				<p className="mt-1 text-sm text-neutral-500">
-					Keep mail, Drive files and backups in Cloudflare R2 or any S3-compatible bucket, and move them between stores
-					without downtime.
-				</p>
-			</div>
-			{overview.isError && (
-				<p role="alert" className="text-sm text-red-600">
-					{errorText(overview.error, "Failed to load storage")}
-				</p>
-			)}
+			<PageHeader
+				title="Storage"
+				description="Keep mail, Drive files and backups in Cloudflare R2 or any S3-compatible bucket, and move them between stores without downtime."
+			/>
+			{overview.isError && <Notice tone="error">{errorText(overview.error, "Failed to load storage")}</Notice>}
 			{overview.isLoading && <SkeletonRows count={4} />}
 			{data?.migrationPending && (
-				<p role="status" className="rounded-xl bg-blue-50 p-6 text-sm font-medium text-blue-900">
+				<Notice>
 					Apply the pending database update to set up storage. Until then everything stays in the default store.
-				</p>
+				</Notice>
 			)}
 			{data && !data.migrationPending && !data.encryptionReady && (
-				<p role="status" className="rounded-xl bg-blue-50 p-6 text-sm font-medium text-blue-900">
-					Set APP_ENCRYPTION_KEY to add stores. Store keys are only ever saved encrypted.
-				</p>
+				<Notice>Set APP_ENCRYPTION_KEY to add stores. Store keys are only ever saved encrypted.</Notice>
 			)}
 			{data && !data.migrationPending && (
 				<>

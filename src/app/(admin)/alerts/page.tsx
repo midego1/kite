@@ -18,6 +18,7 @@ import {
 	sendTestAlert,
 } from "./utils";
 import { Select } from "@/components/ui/select";
+import { PageHeader } from "@/components/ui/page";
 
 type Notice = { tone: "ok" | "error"; text: string };
 
@@ -99,13 +100,10 @@ export default function AlertsSettingsPage() {
 
 	return (
 		<div className="space-y-6">
-			<div>
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Alerts</h1>
-				<p className="mt-1 text-sm text-neutral-500">
-					Kite checks for failed backups, failed or stuck outbound mail and exhausted webhook retries every five
-					minutes.
-				</p>
-			</div>
+			<PageHeader
+				title="Alerts"
+				description="Kite checks for failed backups, failed or stuck outbound mail and exhausted webhook retries every five minutes."
+			/>
 			<Card>
 				<CardHeader>
 					<CardTitle>Email</CardTitle>

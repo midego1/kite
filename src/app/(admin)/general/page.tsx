@@ -10,6 +10,7 @@ import { ConnectedAccountsCard } from "./connected-accounts-card";
 import { TelemetryCard } from "./telemetry-card";
 import { ThreatLookupsCard } from "./threat-lookups-card";
 import { loadGeneralSettings, saveGeneralSettings } from "./utils";
+import { PageHeader } from "@/components/ui/page";
 
 export default function GeneralSettingsPage() {
 	const [maxMb, setMaxMb] = useState(25);
@@ -53,12 +54,10 @@ export default function GeneralSettingsPage() {
 
 	return (
 		<div className="space-y-6">
-			<div>
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">General</h1>
-				<p className="mt-1 text-sm text-neutral-500">
-					Set limits for outgoing mail, outside checks of incoming mail, connected accounts and usage statistics.
-				</p>
-			</div>
+			<PageHeader
+				title="General"
+				description="Set limits for outgoing mail, outside checks of incoming mail, connected accounts and usage statistics."
+			/>
 			<Card>
 				<CardHeader>
 					<CardTitle>File attachments</CardTitle>

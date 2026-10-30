@@ -17,7 +17,7 @@ import type { Webhook, WebhookEvent } from "./types";
 import { createWebhook, deleteWebhook, fetchWebhooks, testWebhook, updateWebhook } from "./utils";
 import { WebhookDeliveries } from "./deliveries";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
-import { EmptyState } from "@/components/ui/page";
+import { EmptyState, PageHeader } from "@/components/ui/page";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export default function WebhooksPage() {
@@ -85,23 +85,21 @@ export default function WebhooksPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex flex-wrap items-end justify-between gap-4">
-				<div>
-					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Webhooks</h1>
-					<p className="mt-1 text-sm text-neutral-500">
-						Deliver mail and module events to your own endpoints, with automatic retries.
-					</p>
-				</div>
-				<Button
-					className={mobilePrimaryActionAboveNavClass}
-					onClick={() => {
-						setError(null);
-						setDialogOpen(true);
-					}}
-				>
-					<Plus className="h-4 w-4" /> Add endpoint
-				</Button>
-			</div>
+			<PageHeader
+				title="Webhooks"
+				description="Deliver mail and module events to your own endpoints, with automatic retries."
+				actions={
+					<Button
+						className={mobilePrimaryActionAboveNavClass}
+						onClick={() => {
+							setError(null);
+							setDialogOpen(true);
+						}}
+					>
+						<Plus className="h-4 w-4" /> Add endpoint
+					</Button>
+				}
+			/>
 
 			{secret && (
 				<Card>

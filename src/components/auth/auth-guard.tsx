@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AuthGuardProps } from "./auth-guard-types";
 import { getAuthGuardDecision } from "./auth-guard-utils";
 import { LoadingTransition } from "@/components/loading-transition";
+import { endReloadReturn } from "@/components/reload-return-utils";
 import { StartupFailure } from "@/components/startup-failure";
 import { ModulesProvider } from "@/components/modules/modules-context";
 import { useAuthMe } from "@/hooks/use-auth-me";
@@ -63,7 +64,10 @@ export function AuthGuard({
 	}, [user?.id, user?.timeZone]);
 
 	useEffect(() => {
-		if (decision.redirect) router.replace(decision.redirect);
+		if (!decision.redirect) return;
+		// Leaving for the sign-in page ends a kite's return (reload-return-scene.tsx): the next load is an ordinary one.
+		endReloadReturn();
+		router.replace(decision.redirect);
 	}, [decision.redirect, router]);
 
 	useEffect(() => {

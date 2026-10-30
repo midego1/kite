@@ -90,7 +90,7 @@ export function migrationApplyFailure(status: number, serverMessage: string | un
 
 /** After a dropped connection, the pending list stopped changing: whether it finished is not known. */
 export const MIGRATION_OUTCOME_UNKNOWN =
-	"It is not known whether the database update finished: the connection timed out and the list of waiting updates has not changed for 3 minutes. Check the Backups page and the list above, and try again later.";
+	"It is not known whether the database update finished: the connection timed out and the list of waiting updates showed no progress. Check the Backups page and the list above, and try again later.";
 
 /** What the admin reads when the list emptied after the connection dropped, so the backup is not confirmed. */
 export function migrationRecoveredSummary(applied: string[], elapsedSeconds: number): string {

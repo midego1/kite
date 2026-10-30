@@ -15,6 +15,7 @@ import { getAvatarColorStyle } from "@/lib/avatar-colors";
 import { List, ListRow } from "@/components/ui/list";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { AccountAliases } from "./account-aliases";
+import { PageHeader } from "@/components/ui/page";
 import type { Account, AccountAliasDraft, AccountResponse, Domain } from "./types";
 
 async function fetchAccounts(): Promise<Account[]> {
@@ -98,18 +99,18 @@ export default function AccountsPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex items-center justify-between gap-4">
-				<div>
-					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Accounts</h1>
-					<p className="mt-1 text-sm text-neutral-500">Manage user accounts and their inboxes.</p>
-				</div>
-				{canManage && (
-					<Button className={mobilePrimaryActionAboveNavClass} onClick={() => setCreateOpen(true)}>
-						<Plus className="h-4 w-4" />
-						New account
-					</Button>
-				)}
-			</div>
+			<PageHeader
+				title="Accounts"
+				description="Manage user accounts and their inboxes."
+				actions={
+					canManage && (
+						<Button className={mobilePrimaryActionAboveNavClass} onClick={() => setCreateOpen(true)}>
+							<Plus className="h-4 w-4" />
+							New account
+						</Button>
+					)
+				}
+			/>
 			<div className="relative">
 				<List>
 					{loading && <p className="text-sm text-neutral-500">Loading...</p>}

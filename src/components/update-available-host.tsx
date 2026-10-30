@@ -6,28 +6,39 @@ import toast from "react-hot-toast";
 import { TOAST_ACTION_CLASS } from "@/components/ui/toast-styles";
 import { useSessionUserId } from "@/hooks/use-session-user-id";
 import { STALE_ASSETS_EVENT, markAppReady, takeStaleAssetsSignal } from "./asset-recovery-utils";
+import { ReloadFlight } from "./reload-flight";
 import {
 	UPDATE_CHECK_INTERVAL_MS,
+	UPDATE_ROW_ANNOUNCEMENT,
 	UPDATE_TOAST_ID,
 	UPDATE_TOAST_MESSAGE,
+	chooseUpdateSurface,
 	compareDeploymentVersion,
 	parseDeploymentVersion,
 	shouldCheckForUpdate,
 } from "./update-available-utils";
+import { reloadToNewVersion } from "./update-reload";
+import {
+	announceUpdate,
+	cancelReload,
+	dismissUpdateNotice,
+	hideUpdateNotice,
+	useUpdateNotice,
+} from "./update-notice-store";
 
 function showUpdateAvailableToast() {
 	toast(
 		() => (
 			<span className="flex items-center gap-3 text-sm">
 				<span>{UPDATE_TOAST_MESSAGE}</span>
-				<button type="button" className={TOAST_ACTION_CLASS} onClick={() => window.location.reload()}>
+				<button type="button" className={TOAST_ACTION_CLASS} onClick={reloadToNewVersion}>
 					Reload
 				</button>
 				<button
 					type="button"
 					aria-label="Dismiss"
 					className="shrink-0 rounded-md p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-					onClick={() => toast.dismiss(UPDATE_TOAST_ID)}
+					onClick={dismissUpdateNotice}
 				>
 					<X className="h-4 w-4" aria-hidden="true" />
 				</button>
@@ -41,13 +52,23 @@ function showUpdateAvailableToast() {
  * Tells a signed-in tab once that a newer deployment of this install is live.
  * It only compares the server's own version over time; nothing outside the
  * install is asked. A chunk that fails to load after the app has rendered
- * (see asset-recovery-utils.ts) checks at once instead of waiting for the next check.
+ * (see asset-recovery-utils.ts) checks at once instead of waiting for the next check. Reload plays the kite's
+ * flight (reload-flight.tsx) and then reloads; the flight exists only for this reload to a new version.
  */
 export function UpdateAvailableHost() {
 	const userId = useSessionUserId();
 	// The version belongs to the code this tab loaded, so it outlives sign-out and account switches.
 	const knownVersion = useRef("");
 	const shown = useRef(false);
+	const notice = useUpdateNotice();
+	const surface = chooseUpdateSurface(notice);
+
+	// A message list on screen carries the notice as its first row; everywhere else it is this toast.
+	useEffect(() => {
+		if (surface === "toast") showUpdateAvailableToast();
+		// `remove`, not `dismiss`: a dismissed toast is deleted a second later, which would take a toast shown again with it.
+		else toast.remove(UPDATE_TOAST_ID);
+	}, [surface]);
 
 	useEffect(() => {
 		// The first client commit has happened; see ASSET_RECOVERY_READY_FLAG for what that does and does not mean.
@@ -70,11 +91,12 @@ export function UpdateAvailableHost() {
 			try {
 				const response = await fetch("/api/version", { cache: "no-store" });
 				if (!response.ok || !active) return;
-				const decision = compareDeploymentVersion(knownVersion.current, parseDeploymentVersion(await response.json()));
+				const latest = parseDeploymentVersion(await response.json());
+				const decision = compareDeploymentVersion(knownVersion.current, latest);
 				knownVersion.current = decision.known;
 				if (decision.changed && active && !shown.current) {
 					shown.current = true;
-					showUpdateAvailableToast();
+					announceUpdate();
 				}
 			} catch {
 				// Offline or mid-deploy: the next check tries again.
@@ -102,12 +124,19 @@ export function UpdateAvailableHost() {
 			window.removeEventListener("focus", onChange);
 			window.removeEventListener(STALE_ASSETS_EVENT, onStaleAssets);
 			document.removeEventListener("visibilitychange", onChange);
-			if (shown.current) {
-				// Hide on sign-out without allowing another notice in this tab.
-				toast.dismiss(UPDATE_TOAST_ID);
-			}
+			// Hide on sign-out without allowing another notice in this tab.
+			if (shown.current) hideUpdateNotice();
 		};
 	}, [userId]);
 
-	return null;
+	// The row has no live region of its own: this one is empty until the row appears, so it is read out once.
+	// The one flight serves both surfaces: either Reload asks for it through `reloadToNewVersion`.
+	return (
+		<>
+			<span aria-live="polite" className="sr-only">
+				{surface === "row" ? UPDATE_ROW_ANNOUNCEMENT : ""}
+			</span>
+			<ReloadFlight active={notice.reloading} onExpire={cancelReload} />
+		</>
+	);
 }

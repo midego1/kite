@@ -23,6 +23,7 @@ import { DashboardNotices } from "@/components/dashboard-notices";
 import { MailboxSelector } from "@/components/mailbox-selector";
 import { NavSectionLabel } from "@/components/nav-section-header";
 import { SidebarAccounts } from "@/components/sidebar-accounts";
+import { RAIL_ICON_SIZE, RAIL_ITEM_CLASS } from "@/components/sidebar-rail-utils";
 import { SidebarScaffold } from "@/components/sidebar-scaffold";
 import { useSidebar } from "@/components/sidebar-state";
 import { formatDriveSize } from "@/lib/drive/name-utils";
@@ -74,11 +75,11 @@ function NewMenu({ compact }: { compact: boolean }) {
 					aria-label="New"
 					// Zero's "New email": a full-width muted button rather than a floating card.
 					className={clsx(
-						"mb-2 flex h-9 items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-neutral-100 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-200 max-md:min-h-11",
-						compact ? "mx-auto w-10 px-0" : "ml-3 w-[calc(100%-0.75rem)] px-3",
+						"flex items-center justify-center gap-2 border border-neutral-200 bg-neutral-100 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-200",
+						compact ? RAIL_ITEM_CLASS : "mb-2 ml-3 h-9 w-[calc(100%-0.75rem)] rounded-lg px-3 max-md:min-h-11",
 					)}
 				>
-					<Plus size={16} />
+					<Plus size={compact ? RAIL_ICON_SIZE : 16} />
 					{!compact && "New"}
 				</button>
 			</DropdownMenu.Trigger>
@@ -156,12 +157,12 @@ function DriveNavLink({
 			aria-label={compact ? label : undefined}
 			title={compact ? label : undefined}
 			className={clsx(
-				"flex h-9 items-center gap-3 rounded-lg text-sm text-neutral-700 transition-colors max-md:min-h-11 max-md:text-base",
-				compact ? "mx-auto w-10 justify-center rounded-full" : "ml-3 px-3",
+				"flex items-center gap-3 text-sm text-neutral-700 transition-colors",
+				compact ? RAIL_ITEM_CLASS : "ml-3 h-9 rounded-lg px-3 max-md:min-h-11 max-md:text-base",
 				active ? "bg-blue-100 font-medium text-blue-900" : "hover:bg-neutral-200/60 hover:text-neutral-900",
 			)}
 		>
-			<Icon size={16} className="shrink-0" />
+			<Icon size={compact ? RAIL_ICON_SIZE : 16} className="shrink-0" />
 			{!compact && <span className="truncate">{label}</span>}
 		</Link>
 	);

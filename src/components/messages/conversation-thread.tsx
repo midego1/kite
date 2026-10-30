@@ -8,6 +8,7 @@ import { ContactAvatar } from "@/components/contacts/contact-avatar";
 import { EmailBody } from "@/components/messages/email-body";
 import { RemoteImagesNotice } from "@/components/messages/email-html-frame";
 import { useLoadRemoteImages } from "@/components/messages/use-load-remote-images";
+import { useReaderFont } from "@/components/messages/use-reader-font";
 import { runSingleMessageAction } from "@/components/message-actions/utils";
 import { sanitizeEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/email-html-sanitizer";
 import { collapseQuotedEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/quote-collapse-utils";
@@ -174,6 +175,7 @@ export function ConversationMessageCard({
 	const [locallyExpanded, setLocallyExpanded] = useState(defaultExpanded);
 	const [locallyRead, setLocallyRead] = useSyncedState(message.read);
 	const [alwaysLoadRemoteImages] = useLoadRemoteImages();
+	const readerFont = useReaderFont();
 	const [remoteImagesShown, setRemoteImagesShown] = useState(false);
 	const expanded = locallyExpanded;
 	const sender = getConversationSender(message, currentAccountName);
@@ -191,6 +193,7 @@ export function ConversationMessageCard({
 			stats: { blockedRemoteImages: 0 },
 			proxyRemoteImagesFor: message.id,
 			linkify: true,
+			dropFontFamily: readerFont !== undefined,
 		};
 		body = {
 			html: collapseQuotedEmailHtml(
@@ -292,7 +295,7 @@ export function ConversationMessageCard({
 							quotedHtml={body.quotedHtml}
 							className="email-body max-w-none"
 							fallback={
-								<pre className="whitespace-pre-wrap font-sans text-sm text-neutral-900">
+								<pre className="reading-text whitespace-pre-wrap font-sans text-sm text-neutral-900">
 									<LinkifiedText text={body.text} />
 								</pre>
 							}

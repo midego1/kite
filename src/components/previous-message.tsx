@@ -13,7 +13,7 @@ export function PreviousMessage({ message }: PreviousMessageProps) {
 			</summary>
 			<div className="pb-2 pl-5 text-neutral-600">
 				{message.content && (
-					<pre className="whitespace-pre-wrap text-sm font-sans">
+					<pre className="reading-text whitespace-pre-wrap text-sm font-sans">
 						<LinkifiedText text={message.content} />
 					</pre>
 				)}

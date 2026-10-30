@@ -2,6 +2,8 @@ export type ParsedSearchQuery = {
 	/** Free text after operators are removed; matched against every indexed column. */
 	text: string;
 	from?: string;
+	/** `from:` with one whole address: the sender is exactly this address (lower case). */
+	fromAddress?: string;
 	to?: string;
 	subject?: string;
 	hasAttachment?: boolean;

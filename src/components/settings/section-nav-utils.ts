@@ -1,5 +1,6 @@
 import {
 	Activity,
+	Bell,
 	BellRing,
 	Blocks,
 	Bot,
@@ -14,6 +15,7 @@ import {
 	Lock,
 	Mail,
 	Palette,
+	PenLine,
 	Route,
 	Settings,
 	Shield,
@@ -38,58 +40,71 @@ const EXPORT_ORDER = 20;
 
 const settingsNavSections: NavSection[] = [
 	{
-		label: "Personal",
+		label: "Account",
 		items: [
 			{
 				href: "/settings/account",
 				label: "My account",
 				icon: User,
-				keywords: "profile name photo avatar time zone language",
+				keywords: "profile name photo avatar time zone language recovery forwarding",
 			},
 			{
 				href: "/settings/appearance",
 				label: "Appearance",
 				icon: Palette,
-				keywords: "theme dark light style font text size kite classic",
+				keywords: "theme dark light style font text size kite classic assistant dyslexia opendyslexic accessibility",
 			},
+			{ href: "/settings/security", label: "Security", icon: Shield, keywords: "password two-factor mfa totp" },
+		],
+	},
+	{
+		label: "Mail",
+		items: [
 			{
 				href: "/settings/inbox",
 				label: "Inbox",
 				icon: Inbox,
 				keywords:
-					"threading conversation notifications shortcuts sending undo images screener new senders approve deny spam trash auto reply",
+					"threading conversation layout shortcuts images screener new senders approve deny spam trash clean-up",
+			},
+			{
+				href: "/settings/composing",
+				label: "Composing",
+				icon: PenLine,
+				keywords: "sending undo send preview signature auto reply out of office vacation",
+			},
+			{
+				href: "/settings/notifications",
+				label: "Notifications",
+				icon: Bell,
+				keywords: "browser notifications one-time codes new mail",
 			},
 			{ href: "/settings/rules", label: "Rules & routing", icon: Route, keywords: "filters automations" },
-		],
-	},
-	{
-		label: "Security",
-		items: [
-			{ href: "/settings/security", label: "Security", icon: Shield, keywords: "password two-factor mfa totp" },
-			{ href: "/settings/app-passwords", label: "App passwords", icon: Lock, keywords: "imap smtp client" },
-			{ href: "/settings/api-keys", label: "API keys", icon: KeyRound, keywords: "token mcp jmap" },
-		],
-	},
-	{
-		label: "Mailbox",
-		items: [
 			{
 				href: "/settings/mailboxes",
 				label: "Mailboxes",
 				icon: Mail,
 				keywords: "addresses aliases display name",
 				permission: "mailboxes",
-				order: 0,
 			},
+		],
+	},
+	{
+		label: "Integrations",
+		items: [
 			{
 				href: "/settings/connected-accounts",
 				label: "Connected accounts",
 				icon: Link2,
 				keywords: "gmail icloud outlook yahoo fastmail imap external account app password",
-				order: 5,
 			},
-			{ href: "/settings/export", label: "Export", icon: Upload, keywords: "backup download" },
+			{ href: "/settings/app-passwords", label: "App passwords", icon: Lock, keywords: "imap smtp jmap client" },
+			{ href: "/settings/api-keys", label: "API keys", icon: KeyRound, keywords: "token mcp jmap" },
 		],
+	},
+	{
+		label: "Data",
+		items: [{ href: "/settings/export", label: "Export", icon: Upload, keywords: "backup download mbox" }],
 	},
 ];
 

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ForwardingEmailFormProps } from "./types";
 import { updateForwardingEmail } from "./utils";
+import { FieldHint, FormFooter } from "@/components/ui/page";
 
 export function ForwardingEmailForm({ initialForwardingEmail }: ForwardingEmailFormProps) {
 	const [forwardingEmail, setForwardingEmail] = useState(initialForwardingEmail);
@@ -41,20 +42,13 @@ export function ForwardingEmailForm({ initialForwardingEmail }: ForwardingEmailF
 					autoComplete="email"
 					placeholder="destination@example.com"
 				/>
-				<p className="text-xs leading-5 text-neutral-500">
-					Incoming mail will also be sent to this verified Cloudflare Email Routing destination.
-				</p>
+				<FieldHint>Incoming mail will also be sent to this verified Cloudflare Email Routing destination.</FieldHint>
 			</div>
-			<div className="flex items-center gap-3">
+			<FormFooter status={status}>
 				<Button type="submit" disabled={saving || forwardingEmail.trim() === savedForwardingEmail}>
 					{saving ? "Saving..." : "Save forwarding"}
 				</Button>
-				{status && (
-					<p role="status" className="text-sm text-neutral-500">
-						{status}
-					</p>
-				)}
-			</div>
+			</FormFooter>
 		</form>
 	);
 }

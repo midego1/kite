@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CARD_CLASS } from "./page-utils";
+import { CARD_CLASS, FIELD_HINT_CLASS, SETTING_ROW_CLASS } from "./page-utils";
 
 /** A page's title, the line under it and its actions (the primary "New ..." button, for instance). */
 export function PageHeader({
@@ -90,24 +90,118 @@ export function SettingsCard({ children, className }: { children: ReactNode; cla
 	return <div className={cn(CARD_CLASS, "divide-y divide-neutral-200", className)}>{children}</div>;
 }
 
-/** One part of a `SettingsCard`: a small heading and line, then the controls. */
+/**
+ * One part of a `SettingsCard`: a small heading and line, then the controls. The heading is an h2 straight under
+ * the page title; pass `headingLevel={3}` inside a `PageSection` (an h2), so the outline never skips a level.
+ */
 export function SettingsCardSection({
 	title,
 	description,
+	headingLevel = 2,
 	children,
 }: {
 	title: ReactNode;
 	description?: ReactNode;
+	headingLevel?: 2 | 3;
 	children: ReactNode;
 }) {
+	const Heading = headingLevel === 3 ? "h3" : "h2";
 	return (
-		<div className="p-5">
-			<div className="mb-4">
-				<h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
+		<div className="p-4 md:p-5">
+			<div className="mb-3">
+				<Heading className="text-sm font-semibold text-neutral-900">{title}</Heading>
 				{description && <p className="mt-0.5 text-sm text-neutral-500">{description}</p>}
 			</div>
 			{children}
 		</div>
+	);
+}
+
+/**
+ * One setting: its name and line on the left, the switch or select on the right, on the muted fill. The row is a
+ * `label`, so clicking the text reaches the control; give the control its own `aria-label` when the name should be
+ * shorter than the text. `children` render under the row, full width (an error, or the fields a switch reveals).
+ */
+export function SettingRow({
+	label,
+	description,
+	control,
+	htmlFor,
+	children,
+	className,
+}: {
+	label: ReactNode;
+	description?: ReactNode;
+	control: ReactNode;
+	/** Ties the text to a control that is not inside the row (a native input elsewhere). */
+	htmlFor?: string;
+	children?: ReactNode;
+	className?: string;
+}) {
+	const Row = htmlFor === undefined ? "label" : "div";
+	const Text = htmlFor === undefined ? "span" : "label";
+	return (
+		<div className={className}>
+			<Row className={SETTING_ROW_CLASS}>
+				<Text htmlFor={htmlFor} className="min-w-0 flex-1">
+					<span className="block text-sm font-medium text-neutral-900">{label}</span>
+					{description && <span className="mt-0.5 block text-sm text-neutral-500">{description}</span>}
+				</Text>
+				<span className="flex shrink-0 items-center self-center">{control}</span>
+			</Row>
+			{children}
+		</div>
+	);
+}
+
+/** Rows of settings inside a card section, one under the other. */
+export function SettingRows({ children, className }: { children: ReactNode; className?: string }) {
+	return <div className={cn("space-y-2", className)}>{children}</div>;
+}
+
+/**
+ * A form's last line: its buttons, then the result as a status message (`role="status"`, so it is announced), or
+ * a note on why the form is read-only.
+ */
+export function FormFooter({
+	children,
+	status,
+	note,
+	className,
+}: {
+	children: ReactNode;
+	status?: ReactNode;
+	note?: ReactNode;
+	className?: string;
+}) {
+	return (
+		<div className={cn("flex flex-wrap items-center gap-x-3 gap-y-2", className)}>
+			{children}
+			{note && <p className="text-sm text-neutral-500">{note}</p>}
+			{status && (
+				<p role="status" className="text-sm text-neutral-500">
+					{status}
+				</p>
+			)}
+		</div>
+	);
+}
+
+/** The line under a field explaining what it takes. */
+export function FieldHint({ children, className, id }: { children: ReactNode; className?: string; id?: string }) {
+	return (
+		<p id={id} className={cn(FIELD_HINT_CLASS, className)}>
+			{children}
+		</p>
+	);
+}
+
+/** A failure under a form or a row, announced at once. */
+export function FormError({ children, className }: { children: ReactNode; className?: string }) {
+	return (
+		<p role="alert" className={cn("text-sm text-red-600", className)}>
+			{children}
+		</p>
 	);
 }
 

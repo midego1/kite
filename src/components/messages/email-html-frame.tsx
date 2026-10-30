@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ImageOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useReaderFont } from "@/components/messages/use-reader-font";
 import { useDarkTheme } from "./use-dark-theme";
 import { buildEmailFrameDocument, EMAIL_FRAME_SANDBOX, emailFrameColorScheme } from "./email-html-frame-utils";
 import type { EmailHtmlFrameProps, RemoteImagesNoticeProps } from "./email-html-frame-types";
@@ -18,7 +19,11 @@ export function EmailHtmlFrame({
 	const [height, setHeight] = useState(0);
 	const dark = useDarkTheme();
 	const scheme = emailFrameColorScheme(html, { dark, original });
-	const srcDoc = useMemo(() => buildEmailFrameDocument(html, { dark, muted, original }), [html, dark, muted, original]);
+	const font = useReaderFont();
+	const srcDoc = useMemo(
+		() => buildEmailFrameDocument(html, { dark, muted, original, font }),
+		[html, dark, muted, original, font],
+	);
 
 	const pendingFrame = useRef(0);
 

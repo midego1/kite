@@ -4,6 +4,7 @@ import { domains } from "@/db/schema";
 import { normalizeEmailAddress } from "@/lib/email/address";
 import { inboundAttachmentLimitReasonFromRaw } from "@/lib/email/inbound-attachments";
 import { intakeIncomingMail } from "@/lib/email/intake";
+import { readProviderHeaderMap } from "@/lib/email/provider-headers-utils";
 
 export const MAX_PROVIDER_MESSAGE_BYTES = 25 * 1024 * 1024;
 
@@ -14,7 +15,8 @@ export const MAX_PROVIDER_MESSAGE_BYTES = 25 * 1024 * 1024;
  * cannot refuse the message after it has been accepted, so a reject or a size
  * limit simply drops it. Throws on infrastructure failure so the provider retries.
  * `authenticationResults` is the provider's own verdict (SES builds one from its receipt), never
- * the message's Authentication-Results headers, which may be the sender's. Resend passes none.
+ * the message's Authentication-Results headers, which may be the sender's. Resend passes neither, so its header
+ * map is read from the message without any header that claims a verification.
  */
 export async function intakeProviderMail(
 	env: CloudflareEnv,
@@ -31,6 +33,8 @@ export async function intakeProviderMail(
 	const limit = await inboundAttachmentLimitReasonFromRaw(input.raw);
 	if (limit) return { delivered: 0, dropped: limit };
 
+	// A provider that gives no header map (Resend) still gets the plain headers, read from the message.
+	const headers = input.headers ?? readProviderHeaderMap(input.raw);
 	const db = getDb(env);
 	let delivered = 0;
 	for (const recipient of [...new Set(input.recipients.map(normalizeEmailAddress).filter(Boolean))]) {
@@ -43,7 +47,7 @@ export async function intakeProviderMail(
 				from: normalizeEmailAddress(input.from),
 				to: recipient,
 				raw: input.raw,
-				headers: input.headers ?? {},
+				headers,
 				authenticationResults: input.authenticationResults ?? null,
 			},
 			{ forward: async () => false },

@@ -1,5 +1,5 @@
 import { MAX_ATTACHMENT_COUNT, MAX_ATTACHMENT_SIZE, MAX_TOTAL_ATTACHMENT_SIZE } from "@/lib/email/attachments";
-import { parseRawMime } from "@/lib/email/parse";
+import { MimeLimitError, parseRawMime } from "@/lib/email/parse";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 
 export function inboundAttachmentLimitReason(attachments: AttachmentContent[]): string | null {
@@ -20,7 +20,20 @@ export function inboundAttachmentLimitReason(attachments: AttachmentContent[]): 
 	return null;
 }
 
+/** Answered when a message cannot be parsed at all; delivery would fail on it the same way every time. */
+export const UNPARSEABLE_MESSAGE_REASON = "Message rejected: the message could not be parsed.";
+
+/**
+ * Why intake refuses a raw message (its limits or its structure), or null. Every intake path runs this before the
+ * message is stored, so mail that can never be delivered is refused at the edge instead of retried by the queue.
+ */
 export async function inboundAttachmentLimitReasonFromRaw(raw: ArrayBuffer): Promise<string | null> {
-	const parsed = await parseRawMime(raw);
-	return inboundAttachmentLimitReason(parsed.attachments);
+	try {
+		const parsed = await parseRawMime(raw);
+		return inboundAttachmentLimitReason(parsed.attachments);
+	} catch (error) {
+		if (error instanceof MimeLimitError) return error.message;
+		console.warn("Inbound MIME parse failed", error instanceof Error ? error.message : error);
+		return UNPARSEABLE_MESSAGE_REASON;
+	}
 }

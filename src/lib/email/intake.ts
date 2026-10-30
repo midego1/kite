@@ -4,7 +4,7 @@ import {
 	KITE_FORWARDED_HEADER,
 	wasForwardedByKite,
 } from "@/lib/email/account-forwarding";
-import { resolveIncomingMail } from "@/lib/email/incoming";
+import { NO_ROUTE, NO_ROUTE_REJECT_REASON, resolveIncomingMail } from "@/lib/email/incoming";
 import type { InboundQueueMessage } from "@/lib/email/inbound";
 import type { IntakeActions, IntakeInput, IntakeResult } from "@/lib/email/intake-types";
 
@@ -12,7 +12,8 @@ import type { IntakeActions, IntakeInput, IntakeResult } from "@/lib/email/intak
  * What the Worker `email` handler does, for runtimes that hand us the whole
  * message as bytes (an SMTP listener, or the Cloudflare relay webhook):
  * resolve domain rules, act on reject and forward through the supplied
- * callbacks, then store the raw MIME and enqueue it for parsing.
+ * callbacks, then store the raw MIME and enqueue it for parsing. An address
+ * nothing routes is refused like a reject rule; a failed lookup is stored.
  */
 export async function intakeIncomingMail(
 	env: CloudflareEnv,
@@ -21,8 +22,9 @@ export async function intakeIncomingMail(
 ): Promise<IntakeResult> {
 	const decision = await resolveIncomingMail(env, input.from, input.to);
 
-	if (decision?.action === "reject") {
-		const reason = decision.rejectReason ?? "Message rejected by routing rule";
+	if (decision === NO_ROUTE || decision?.action === "reject") {
+		const reason =
+			decision === NO_ROUTE ? NO_ROUTE_REJECT_REASON : (decision.rejectReason ?? "Message rejected by routing rule");
 		await actions.reject?.(reason);
 		return { action: "reject", reason };
 	}

@@ -5,6 +5,7 @@ import { runRestoreMaintenance } from "@/lib/backups/restore-job";
 import { failStaleBackups } from "@/lib/backups/service";
 import { runAgentMaintenance } from "@/lib/agent/maintenance";
 import { runTrashRetention } from "@/lib/email/trash-retention";
+import { sweepOrphanedRawMail } from "@/lib/email/raw-sweeper";
 import { runDatabasePruning } from "@/lib/maintenance/pruning";
 import { runOperationalAlerts } from "@/lib/alerts/run";
 import { runModuleCronTasks } from "@/lib/modules/background";
@@ -15,7 +16,7 @@ import { planExternalSync } from "@/lib/external-accounts/sync";
 
 const logger = createLogger("node-scheduler");
 
-/** Fire the daily 02:00 UTC backup, pruning and usage heartbeat, the 5-minute operational alerts and the recurring maintenance jobs, matching the cron triggers in wrangler.jsonc. */
+/** Fire the daily 02:00 UTC backup, pruning, usage heartbeat and raw mail sweep, the 5-minute operational alerts and the recurring maintenance jobs, matching the cron triggers in wrangler.jsonc. */
 export function startScheduler(env: CloudflareEnv) {
 	let lastRunDay = "";
 	let lastAlertMinute = 0;
@@ -55,6 +56,8 @@ export function startScheduler(env: CloudflareEnv) {
 		eraseIdleExternalCredentials(env, now).catch((error) =>
 			logger.error("external.credentials_erase_failed", { error }),
 		);
+		// Orphaned raw MIME, matching worker.ts.
+		sweepOrphanedRawMail(env, now).catch((error) => logger.error("email.raw_sweep_failed", { error }));
 	}, 60_000);
 	return () => clearInterval(timer);
 }

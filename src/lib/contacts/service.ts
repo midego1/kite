@@ -39,20 +39,32 @@ export async function upsertContactFromAddress(env: CloudflareEnv, input: Contac
 	}
 
 	const id = getContactId(input.userId, email);
-	await db.insert(contacts).values({
-		id,
-		userId: input.userId,
-		email,
-		displayName,
-		source: input.source,
-		lastSeenAt: now,
-	});
-	const avatarKey = await importGravatarAvatar(env, input.userId, email);
-	if (avatarKey) {
-		await db.update(contacts).set({ avatarKey }).where(eq(contacts.id, id));
+	// Two first messages from one sender delivered at once both get here; the one that loses the race keeps the row
+	// the other wrote instead of failing its delivery.
+	const inserted = await db
+		.insert(contacts)
+		.values({
+			id,
+			userId: input.userId,
+			email,
+			displayName,
+			source: input.source,
+			lastSeenAt: now,
+		})
+		.onConflictDoNothing()
+		.returning({ id: contacts.id });
+	if (inserted.length) {
+		const avatarKey = await importGravatarAvatar(env, input.userId, email);
+		if (avatarKey) {
+			await db.update(contacts).set({ avatarKey }).where(eq(contacts.id, id));
+		}
 	}
 
-	const [created] = await db.select().from(contacts).where(eq(contacts.id, id)).limit(1);
+	const [created] = await db
+		.select()
+		.from(contacts)
+		.where(and(eq(contacts.userId, input.userId), eq(contacts.email, email)))
+		.limit(1);
 	return created ?? null;
 }
 

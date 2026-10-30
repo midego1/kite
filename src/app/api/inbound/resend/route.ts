@@ -49,6 +49,9 @@ export async function POST(request: Request) {
 	const rawResponse = await fetch(download);
 	if (!rawResponse.ok) return NextResponse.json({ error: "Could not download the raw message" }, { status: 502 });
 
+	// Resend does not document whether these are envelope or header recipients (a delivered message carries no Bcc
+	// header, so `bcc` at least is the envelope). Each address still goes through routing like an envelope recipient,
+	// and naming one in To or Cc gains a sender nothing it could not get by adding it to RCPT TO.
 	const recipients = [...(email.to ?? []), ...(email.cc ?? []), ...(email.bcc ?? [])].flatMap((value) =>
 		getEmailAddressList(value),
 	);

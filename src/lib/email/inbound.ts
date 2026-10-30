@@ -55,13 +55,31 @@ export async function processInboundMessage(
 	// do in the Worker email handler.
 	const decision = await resolveInboundAddress(db, payload.to, payload.from);
 
+	// Nothing is stored on these four paths, so nothing would reference the raw object (Mailflare #219), unless an
+	// earlier delivery of this queue message stored it before its mailbox changed. A thrown error never gets here:
+	// the queue retries it and needs the object.
+	const dropRaw = async () => {
+		try {
+			const [referenced] = await db
+				.select({ id: messages.id })
+				.from(messages)
+				.where(eq(messages.rawR2Key, payload.rawR2Key))
+				.limit(1);
+			if (!referenced) await env.BUCKET.delete(payload.rawR2Key);
+		} catch (error) {
+			console.error(`Raw cleanup failed for ${payload.rawR2Key}`, error);
+		}
+	};
+
 	if (!decision) {
 		console.warn(`No routing for inbound address: ${payload.to}`);
+		await dropRaw();
 		return;
 	}
 
 	if (decision.action === "reject") {
 		console.warn(`Rejected inbound: ${payload.to}`);
+		await dropRaw();
 		return;
 	}
 
@@ -69,10 +87,14 @@ export async function processInboundMessage(
 	// destination mailbox there is nothing to store.
 	if (decision.action === "forward" && !decision.keepCopy) {
 		console.info(`Forward ${payload.to} -> ${decision.forwardTo}`);
+		await dropRaw();
 		return;
 	}
 
-	if (!decision.mailbox) return;
+	if (!decision.mailbox) {
+		await dropRaw();
+		return;
+	}
 	const target = { mailboxId: decision.mailbox.mailboxId, userId: decision.mailbox.userId };
 	const stored = await storedFromRaw(env, target.mailboxId, payload.rawR2Key);
 	if (stored) {

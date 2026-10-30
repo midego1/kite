@@ -103,7 +103,7 @@ and the DNS page shows what to set by hand.
 | `APP_ENCRYPTION_KEY` | unset | Encrypts provider keys and webhook secrets stored in the database. Plaintext values keep working and are encrypted when next saved; losing the key makes them unreadable |
 | `SMTP_INBOUND_PORT` | `25` | Inbound SMTP; `0` disables |
 | `MAIL_HOSTNAME` | `mail.<domain>` | Host the MX record points at; SMTP banner |
-| `SMTP_MAX_SIZE` | 36 MiB | Largest raw inbound message; allows for encoding overhead on up to 25 MB of attachments. Oversized mail receives an SMTP rejection, which the sender's mail provider can report as a delivery failure. |
+| `SMTP_MAX_SIZE` | 36 MiB | Largest raw inbound message; allows for encoding overhead on up to 25 MB of attachments. Oversized mail receives an SMTP rejection, which the sender's mail provider can report as a delivery failure. Mail over the MIME structure limits, or that cannot be parsed, gets `552` too ([inbound mail limits](operations.md#inbound-mail-limits)). |
 | `SMTP_TLS_KEY`, `SMTP_TLS_CERT` | unset | STARTTLS certificate for the listener |
 | `SMTP_URL` | unset | Outbound relay |
 | `SMTP_TLS_REJECT_UNAUTHORIZED` | `true` | Trust self-signed relay certificates when `false` |

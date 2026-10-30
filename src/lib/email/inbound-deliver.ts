@@ -3,14 +3,17 @@ import { getDb } from "@/db";
 import { messages, users } from "@/db/schema";
 import { messageExternalAccounts } from "@/db/schema/external-accounts";
 import { newId } from "@/lib/ids";
-import { buildSnippet, parseRawMime } from "@/lib/email/parse";
+import { buildSnippet, MimeLimitError, parseRawMime } from "@/lib/email/parse";
 import { resolveInboxRuleDestination } from "@/lib/email/routing";
 import type { ParsedEmail } from "@/lib/email/parse";
 import { dispatchWebhooks } from "@/lib/email/webhooks";
 import { upsertContactFromAddress } from "@/lib/contacts/service";
 import { sendMailboxAutoReply } from "@/lib/email/auto-reply";
 import { storeMessageAttachments } from "@/lib/email/attachments";
-import { inboundAttachmentLimitReason } from "@/lib/email/inbound-attachments";
+import { inboundAttachmentLimitReason, UNPARSEABLE_MESSAGE_REASON } from "@/lib/email/inbound-attachments";
+import { boundParsedEmail } from "@/lib/email/inbound-limits";
+import { canOffloadHtmlBodies, putOffloadedHtmlBody, recordOffloadedHtmlBody } from "@/lib/email/bodies";
+import { planHtmlBodyOffload } from "@/lib/email/bodies-utils";
 import { inboundMessageId } from "@/lib/email/inbound-id";
 import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
@@ -50,6 +53,8 @@ export type InboundDelivery = {
 export type DeliveryOutcome =
 	| { delivered: true; messageId: string }
 	| { delivered: false; reason: "attachment_limit"; detail: string }
+	/** Over the MIME limits or not parseable at all: the same every attempt, so the raw object is deleted. */
+	| { delivered: false; reason: "unparseable"; detail: string }
 	| { delivered: false; reason: "duplicate"; duplicateOf: string }
 	| { delivered: false; reason: "stored" };
 
@@ -304,19 +309,26 @@ async function deliveryThreadId(env: CloudflareEnv, input: InboundDelivery, pars
 	}
 }
 
-/** The row, its account, its attachments and the reputation observation; false when a retry already stored it. */
+/**
+ * The row, its account, its attachments and the reputation observation; false when a retry already stored it. An
+ * HTML body over `BODY_OFFLOAD_BYTES` goes to the Mail store first and the row is inserted with its key in one batch,
+ * as imports do (the row keeps a text body for search and snippets), so a failure leaves neither behind.
+ */
 async function storeDelivered(
 	env: CloudflareEnv,
 	input: InboundDelivery,
 	parsed: ParsedEmail,
 	row: { id: string; snippet: string; fromAddr: string; toAddr: string; threadId: string },
 	placement: Placement,
+	offloadHtml: boolean,
 ): Promise<boolean> {
 	const db = getDb(env);
 	const { target, external } = input;
 	const { spamAnalysis } = placement;
+	const offload = offloadHtml ? planHtmlBodyOffload(row.id, parsed) : null;
 	try {
-		const inserted = await db
+		if (offload) await putOffloadedHtmlBody(env, offload);
+		const insert = db
 			.insert(messages)
 			.values({
 				id: row.id,
@@ -330,8 +342,8 @@ async function storeDelivered(
 				ccAddr: parsed.ccAddr,
 				subject: parsed.subject,
 				snippet: row.snippet,
-				textBody: parsed.text,
-				htmlBody: parsed.html,
+				textBody: offload ? offload.textBody : parsed.text,
+				htmlBody: offload ? null : parsed.html,
 				rawR2Key: input.rawR2Key,
 				status: placement.status,
 				threadId: row.threadId,
@@ -346,7 +358,9 @@ async function storeDelivered(
 			})
 			.onConflictDoNothing()
 			.returning({ id: messages.id });
-		if (!inserted.length) return false;
+		// The row id comes from the raw key, so a concurrent attempt that already stored it wrote the same body object.
+		const [rows] = offload ? await db.batch([insert, recordOffloadedHtmlBody(db, row.id, offload)]) : [await insert];
+		if (!rows.length) return false;
 		if (external)
 			await db
 				.update(messageExternalAccounts)
@@ -358,6 +372,7 @@ async function storeDelivered(
 		return true;
 	} catch (error) {
 		await db.delete(messages).where(eq(messages.id, row.id));
+		if (offload) await env.BUCKET.delete(offload.key).catch(() => undefined);
 		throw error;
 	}
 }
@@ -391,13 +406,23 @@ async function observeReputation(
  */
 export async function deliverInboundMessage(env: CloudflareEnv, input: InboundDelivery): Promise<DeliveryOutcome> {
 	const { target, external } = input;
-	const parsed = await parseRawMime(input.raw);
+	const delivery = input.external ? `account ${input.external.accountId}` : input.to;
+	let parsed: ParsedEmail;
+	try {
+		parsed = await parseRawMime(input.raw);
+	} catch (error) {
+		// Parsing the same bytes fails the same way every time: a queue retry would only repeat the work.
+		const detail = error instanceof MimeLimitError ? error.message : UNPARSEABLE_MESSAGE_REASON;
+		console.warn(`Inbound message not parseable for ${delivery}: ${detail}`);
+		await env.BUCKET.delete(input.rawR2Key);
+		return { delivered: false, reason: "unparseable", detail };
+	}
+	const offloadHtml = await canOffloadHtmlBodies(env);
+	parsed = boundParsedEmail(parsed, { offloadHtml });
 	const attachmentLimitReason = inboundAttachmentLimitReason(parsed.attachments);
 	if (attachmentLimitReason) {
 		// A synced message names its account, never the external address.
-		console.warn(
-			`Inbound attachment limit reached for ${input.external ? `account ${input.external.accountId}` : input.to}: ${attachmentLimitReason}`,
-		);
+		console.warn(`Inbound attachment limit reached for ${delivery}: ${attachmentLimitReason}`);
 		await env.BUCKET.delete(input.rawR2Key);
 		return { delivered: false, reason: "attachment_limit", detail: attachmentLimitReason };
 	}
@@ -414,14 +439,19 @@ export async function deliverInboundMessage(env: CloudflareEnv, input: InboundDe
 	const fromAddr = parsed.fromAddr ?? input.from;
 	const placement = await placeMessage(env, input, parsed, { id: messageId, snippet, fromAddr });
 	const { status, folderId, spamAnalysis, spamAnalysisError } = placement;
+	// Best effort: the mail matters more than its sender's contact row.
 	const contact = await upsertContactFromAddress(env, {
 		userId: target.userId,
 		address: fromAddr,
 		source: "inbound",
+	}).catch((error) => {
+		console.error(`Contact upsert failed for ${messageId}`, error);
+		return null;
 	});
 	const threadId = await deliveryThreadId(env, input, parsed);
 	const row = { id: messageId, snippet, fromAddr, toAddr, threadId };
-	if (!(await storeDelivered(env, input, parsed, row, placement))) return { delivered: false, reason: "stored" };
+	if (!(await storeDelivered(env, input, parsed, row, placement, offloadHtml)))
+		return { delivered: false, reason: "stored" };
 
 	// Mail from a sender waiting in the Screener gets no auto-reply and no notification.
 	if (!placement.awaiting)

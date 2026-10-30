@@ -47,17 +47,23 @@ const INVERTED_STYLES = [
 ].join("");
 
 // The reader's sanitizer drops `bgcolor` and keeps only `background-color`, so plenty of designed mail arrives
-// without any background and only inline text colours (dark grey on white in the sender's eyes). Dark mode cannot
-// leave those colours alone either, so such mail counts as adapted too and offers the same way back.
-const OWN_TEXT_COLOUR = /(?:^|[^-\w])color\s*:\s*(?!\s*(?:inherit|initial|unset|currentcolor)\b)[^;"'}]/i;
+// without any background and only inline text colours (dark grey on white in the sender's eyes). On the dark
+// canvas those colours are unreadable, so such mail is rendered light and inverted like mail with a background.
+// Only style attribute values count: the words "color: blue" in a message's text are not a text colour.
+const STYLE_ATTRIBUTE = /\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+const OWN_TEXT_COLOUR = /(?:^|;)\s*color\s*:\s*(?!\s*(?:inherit|initial|unset|currentcolor)\b)[^;\s]/i;
 
 export function hasOwnBackground(html: string): boolean {
 	return OWN_BACKGROUND.test(html);
 }
 
-/** Mail that paints a background or sets text colours: what dark mode adapts and "Original colours" restores. */
+/** Mail that paints a background or sets text colours in its styles: what dark mode adapts and "Original colours" restores. */
 export function hasOwnColours(html: string): boolean {
-	return hasOwnBackground(html) || OWN_TEXT_COLOUR.test(html);
+	if (hasOwnBackground(html)) return true;
+	for (const [, double, single] of html.matchAll(STYLE_ATTRIBUTE)) {
+		if (OWN_TEXT_COLOUR.test(double ?? single ?? "")) return true;
+	}
+	return false;
 }
 
 /**
@@ -65,11 +71,11 @@ export function hasOwnColours(html: string): boolean {
  * when they differ, Chromium paints an opaque canvas (#121212 for dark) behind the mail.
  */
 export function emailFrameColorScheme(html: string, options: EmailFrameDocumentOptions = {}): "dark" | "light" {
-	return options.dark && !hasOwnBackground(html) && !(options.original && hasOwnColours(html)) ? "dark" : "light";
+	return options.dark && !hasOwnColours(html) ? "dark" : "light";
 }
 
 export function buildEmailFrameDocument(html: string, options: EmailFrameDocumentOptions = {}): string {
-	const inverted = !!options.dark && !options.original && hasOwnBackground(html);
+	const inverted = !!options.dark && !options.original && hasOwnColours(html);
 	const dark = emailFrameColorScheme(html, options) === "dark";
 	const lightCanvas = !!options.dark && !dark && !inverted;
 	const colorStyles =

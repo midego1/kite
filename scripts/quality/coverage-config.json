@@ -39,6 +39,7 @@
 		"src/components/layout-preferences-utils.ts",
 		"src/lib/preferences/layout-utils.ts",
 		"src/components/dns-skipped-banner-utils.ts",
+		"src/components/reload-flight-utils.ts",
 		"src/components/messages/bulk-request-utils.ts",
 		"src/components/update-available-utils.ts",
 		"src/app/(auth)/register/mx-status-utils.ts",

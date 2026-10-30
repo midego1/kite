@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.30.3] - 2026-10-30
+
+### Added
+
+- Reload in the "Kite was updated" notice now sends the kite off: the logo lifts off the page, sways up and to the right out of view while the page fades, and the new version loads right after. Browsers set to reduced motion reload at once, and the reload never waits on the animation.
+
+### Changed
+
+- Settings is regrouped into Account, Mail, Integrations and Data. Sending, the signature and automatic replies moved from Inbox and My account to a new [Settings → Composing](/settings/composing) page, and browser notifications to [Settings → Notifications](/settings/notifications); the Inbox page keeps reading, the Screener, spam protection and clean-up. Every address stays valid and `/settings/auto-reply` now opens Composing. Setting rows, form footers and field hints share one compact style across the settings pages.
+- [Settings → My account](/settings/account) is one card: profile, recovery email, time zone and forwarding, without the extra "Account details" heading. [Settings → Appearance](/settings/appearance) groups the look (theme, style, font, text size) apart from the assistant's display choices and says once that they are saved in the browser. [Settings → Security](/settings/security) uses the same card layout, and the Screener's "Mail from new senders" choice on [Settings → Inbox](/settings/inbox) is two side-by-side options with its approved and denied senders beside each other.
+
+### Fixed
+
+- The collapsed sidebar's icon rail is aligned: every item (the menu button, New email, the folders, the assistant and the account) is the same 40px rounded square on one centred axis with one icon size, the active item is the same shape as a hovered one, and the unread count is a small pill on the corner that never covers the icon, with "99+" readable. Folders in the rail are as neutral as the system folders unless you gave them a colour other than the default blue.
+- The Drive sidebar's icon rail matches the mail rail: the same 40px rounded squares and icon size, also for its New button. The rail keeps those sizes in a narrow window, and the sidebar's top and bottom fade shows only while the list is long enough to scroll.
+
 ## [2026.10.30.2] - 2026-10-30
 
 ### Added

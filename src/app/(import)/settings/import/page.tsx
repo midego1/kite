@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -20,7 +19,7 @@ import {
 	getSelectedImportSources,
 	importSourceOptions,
 } from "./utils";
-import { PageHeader } from "@/components/ui/page";
+import { FieldHint, FormError, PageHeader, SettingsCard, SettingsCardSection } from "@/components/ui/page";
 
 const defaultSections = importSourceOptions.map((option) => option.value);
 
@@ -28,7 +27,6 @@ export default function SettingsImportPage() {
 	const { selectedMailbox } = useSelectedMailbox();
 	const [activeTab, setActiveTab] = useState<ImportTab>("file");
 	const [selectedSections, setSelectedSections] = useState<ImportSourceSection[]>(defaultSections);
-	const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false);
 	const [files, setFiles] = useState<File[]>([]);
 	const [fileResult, setFileResult] = useState<ImportResult | null>(null);
 	const [fileError, setFileError] = useState<string | null>(null);
@@ -37,8 +35,6 @@ export default function SettingsImportPage() {
 	const [jobsRefreshKey, setJobsRefreshKey] = useState(0);
 	const selectedSources = useMemo(() => getSelectedImportSources(selectedSections), [selectedSections]);
 	const fileImportSource = getFileImportSource(selectedSources);
-	const sourceSummary =
-		selectedSources.length > 0 ? selectedSources.map((source) => source.label).join(", ") : "Select source sections";
 
 	function toggleSection(section: ImportSourceSection, checked: boolean) {
 		setSelectedSections((current) => {
@@ -82,49 +78,31 @@ export default function SettingsImportPage() {
 		<div className="space-y-6">
 			<PageHeader
 				title="Import"
-				description="Move mail from selected source sections into the matching sections of the current mailbox."
+				description="Bring mail from a backup file or another mail server into the inbox selected in the sidebar."
 			/>
 
-			<section className="space-y-4">
-				<div>
-					<h2 className="text-base font-semibold text-neutral-900">Import mailbox</h2>
-					<p className="mt-1 text-sm text-neutral-500">Choose what to import and how Kite should receive it.</p>
-				</div>
-				<div className="divide-y divide-neutral-200 rounded-xl border border-neutral-200 bg-white">
-					<CardContent className="space-y-6 p-5">
+			<SettingsCard>
+				<SettingsCardSection title="Source" description="What to import and how Kite should receive it.">
+					<div className="space-y-5">
 						<div className="flex flex-col gap-2">
-							<Label htmlFor="import-source">Import source</Label>
+							<Label htmlFor="import-source">Import from</Label>
 							<Select
 								id="import-source"
 								value={activeTab}
 								onChange={(event) => setActiveTab(event.target.value as ImportTab)}
 								className="text-sm w-full py-2"
-								// className="h-10 w-full rounded-md border border-neutral-200 bg-white px-3 text-sm text-neutral-900 shadow-sm shadow-neutral-200/50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
 							>
-								<option value="file">Backup File</option>
-								<option value="imap">IMAP</option>
+								<option value="file">Backup file (.eml or .mbox)</option>
+								<option value="imap">IMAP server</option>
 							</Select>
 						</div>
-						<div className="space-y-2" hidden={activeTab !== "file"}>
-							<Label>Choose import sections</Label>
-
-							<div className="relative">
-								<button
-									type="button"
-									onClick={() => setSourceDropdownOpen((open) => !open)}
-									className="flex w-full items-center justify-between rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-sm shadow-sm shadow-neutral-200/50"
-								>
-									<label className="flex-1">Selected</label>
-									<span className="truncate">{sourceSummary}</span>
-									<span className="text-neutral-400 px-2">▾</span>
-								</button>
-								{sourceDropdownOpen && (
-									<div className="absolute z-20 mt-2 w-full rounded-xl border border-neutral-200 bg-white p-2 shadow-lg">
+						{activeTab === "file" ? (
+							<form onSubmit={onFileSubmit} className="space-y-5">
+								<fieldset className="space-y-2">
+									<legend className="text-sm font-medium text-neutral-900">Sections to import</legend>
+									<div className="grid gap-2 sm:grid-cols-2">
 										{importSourceOptions.map((option) => (
-											<label
-												key={option.value}
-												className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-											>
+											<label key={option.value} className="flex items-center gap-3 text-sm text-neutral-700">
 												<Checkbox
 													checked={selectedSections.includes(option.value)}
 													onChange={(event) => toggleSection(option.value, event.target.checked)}
@@ -133,84 +111,65 @@ export default function SettingsImportPage() {
 											</label>
 										))}
 									</div>
+									<FieldHint>
+										Files are imported into {fileImportSource.label}. Read and starred state is taken from each
+										message&apos;s headers. For Inbox, mail the export marks as Spam or Trash (Gmail Takeout labels,
+										X-Spam-Flag) is filed there instead; choose Archive or a folder to keep everything in place.
+									</FieldHint>
+								</fieldset>
+								<div className="space-y-2">
+									<Label htmlFor="import-files">Backup files</Label>
+									<Input
+										id="import-files"
+										type="file"
+										accept=".eml,.mbox,.mbx,message/rfc822,application/mbox"
+										multiple
+										onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+										className="block w-full rounded-md border border-neutral-200 bg-white px-3 py-1 text-sm shadow-sm shadow-neutral-200/50 file:mr-3 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-1.5 file:text-sm file:font-medium"
+									/>
+								</div>
+								{selectedSections.includes("others") && (
+									<p className="rounded-lg border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a] px-4 py-3 text-sm">
+										Other folders can be imported automatically from IMAP. File import cannot discover which section a
+										message belongs to, apart from the Spam and Trash hints in its headers.
+									</p>
 								)}
-							</div>
-							{/* <p className="text-xs leading-5 text-neutral-500">
-            Select Folders to import every source IMAP folder into matching
-            Kite folders.
-          </p> */}
-						</div>
-
-						{activeTab === "file" ? (
-							<>
-								<form onSubmit={onFileSubmit} className="space-y-4">
-									<div className="space-y-2">
-										<Label htmlFor="import-files">Select Backup File</Label>
-										<Input
-											id="import-files"
-											type="file"
-											accept=".eml,.mbox,.mbx,message/rfc822,application/mbox"
-											multiple
-											onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-											className="block w-full rounded-md border border-neutral-200 bg-white px-3 py-1 text-sm shadow-sm shadow-neutral-200/50 file:mr-3 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-1.5 file:text-sm file:font-medium"
-										/>
-										<p className="text-xs leading-5 text-neutral-500">
-											Upload exported .eml or .mbox files. They are imported once into {fileImportSource.label}. Read
-											and starred state is taken from each message&apos;s headers. For Inbox, mail the export marks as
-											Spam or Trash (Gmail Takeout labels, X-Spam-Flag) is filed there instead; choose Archive or a
-											folder to keep everything in place.
-										</p>
-									</div>
-									{selectedSections.includes("others") && (
-										<p className="rounded-lg border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a] px-4 py-3 text-sm">
-											Other folders can be imported automatically from IMAP. File import cannot discover which section a
-											message belongs to, apart from the Spam and Trash hints in its headers.
-										</p>
-									)}
-									<Button
-										type="submit"
-										disabled={!selectedMailbox || selectedSources.length === 0 || files.length === 0 || fileLoading}
-									>
-										{fileLoading ? "Importing..." : "Import selected files"}
-									</Button>
-									{fileProgress && (
-										<div className="space-y-1 text-xs text-neutral-500" aria-live="polite">
-											<div className="flex justify-between">
-												<span>{fileProgress.label}</span>
-												<span>{fileProgress.completed}%</span>
-											</div>
-											<div className="h-1.5 overflow-hidden rounded-full bg-neutral-100">
-												<div
-													className="h-full bg-blue-600 transition-[width]"
-													style={{ width: `${fileProgress.completed}%` }}
-												/>
-											</div>
+								<Button
+									type="submit"
+									disabled={!selectedMailbox || selectedSources.length === 0 || files.length === 0 || fileLoading}
+								>
+									{fileLoading ? "Importing..." : "Import selected files"}
+								</Button>
+								{fileProgress && (
+									<div className="space-y-1 text-xs text-neutral-500" aria-live="polite">
+										<div className="flex justify-between">
+											<span>{fileProgress.label}</span>
+											<span>{fileProgress.completed}%</span>
 										</div>
-									)}
-									{fileResult && (
-										<p className="rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
-											{formatImportResult(fileResult)}
-										</p>
-									)}
-									{fileError && (
-										<p
-											role="alert"
-											className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
-										>
-											{fileError}
-										</p>
-									)}
-								</form>
-							</>
+										<div className="h-1.5 overflow-hidden rounded-full bg-neutral-100">
+											<div
+												className="h-full bg-blue-600 transition-[width]"
+												style={{ width: `${fileProgress.completed}%` }}
+											/>
+										</div>
+									</div>
+								)}
+								{fileResult && (
+									<p className="rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
+										{formatImportResult(fileResult)}
+									</p>
+								)}
+								{fileError && <FormError>{fileError}</FormError>}
+							</form>
 						) : (
 							<ImapImportForm
 								mailboxId={selectedMailbox?.id ?? null}
 								onStarted={() => setJobsRefreshKey((key) => key + 1)}
 							/>
 						)}
-					</CardContent>
-				</div>
-			</section>
+					</div>
+				</SettingsCardSection>
+			</SettingsCard>
 			<ImportJobsPanel refreshKey={jobsRefreshKey} />
 		</div>
 	);

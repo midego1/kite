@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { API_KEY_MAX_MAILBOXES } from "@/lib/api/scopes";
 import { defaultAppPasswordMailboxIds, toggleMailboxId } from "./email-clients-settings-utils";
 import { createJmapApiKey } from "./utils";
+import { FieldHint, FormError } from "@/components/ui/page";
 
 /**
  * Settings > App passwords card for connecting an external mail app over JMAP.
@@ -51,10 +52,6 @@ export function EmailClientsSettings() {
 
 	return (
 		<div className="space-y-4">
-			<p className="text-sm text-neutral-500">
-				App Password for email clients that support JMAP. Point the app at this server and sign in with your email
-				address and an API key as the password.
-			</p>
 			{key ? (
 				<div className="space-y-3 rounded-lg bg-neutral-50 p-4">
 					<Field label="Server" value={server} onCopy={copy} copied={copied} />
@@ -91,11 +88,7 @@ export function EmailClientsSettings() {
 						selectedIds={mailboxIds}
 						onToggle={(id, checked) => setChosenMailboxIds(toggleMailboxId(mailboxIds, id, checked))}
 					/>
-					{error && (
-						<p role="alert" className="text-sm text-red-600">
-							{error}
-						</p>
-					)}
+					{error && <FormError>{error}</FormError>}
 				</form>
 			)}
 		</div>
@@ -140,11 +133,11 @@ function AppPasswordMailboxes({
 					})}
 				</div>
 			)}
-			<p className="text-xs text-neutral-500">
+			<FieldHint>
 				{!loading && mailboxes.length > 0 && selectedIds.length === 0
 					? "Choose at least one mailbox."
 					: `Aliases are included with their mailbox. Up to ${API_KEY_MAX_MAILBOXES} mailboxes per app password.`}
-			</p>
+			</FieldHint>
 		</fieldset>
 	);
 }

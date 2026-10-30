@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { CheckCircle2, Database } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { NOTICE_LINK_CLASS, SUCCESS_NOTICE_CLASS, WARNING_NOTICE_CLASS } from "./notice-styles";
+import { MigrationApplyButton, MigrationApplyProgress } from "./migration-progress";
 import { migrationApplierText, migrationsBannerContent, shouldShowMigrationsBanner } from "./migrations-banner-utils";
 import { useMigrationsCardVisible, useMigrationsNotice } from "./use-migrations-notice";
 
@@ -26,7 +26,7 @@ function AppliedNotice({
 			}
 		>
 			<CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-			<div className="min-w-0 flex-1">
+			<div role="status" className="min-w-0 flex-1">
 				<p className="font-medium">Database updated</p>
 				<p className="mt-1">{summary}</p>
 			</div>
@@ -39,7 +39,7 @@ function AppliedNotice({
  * its migrations are applied, and until then new mail cannot be stored.
  */
 export function MigrationsNoticeCard() {
-	const { user, isPrimaryAdmin, data, applying, summary, error, apply } = useMigrationsNotice();
+	const { user, isPrimaryAdmin, data, progress, applying, showProgress, summary, error, apply } = useMigrationsNotice();
 	if (!user) return null;
 	if (!data || !shouldShowMigrationsBanner(data)) {
 		// Everything applied: the result of the run stays until the page is left.
@@ -61,6 +61,7 @@ export function MigrationsNoticeCard() {
 					<p className="font-medium">{content.title}</p>
 					<p className="mt-1">{content.body}</p>
 					{data.names?.length ? <p className="mt-2 break-all text-xs text-amber-800">{data.names.join(", ")}</p> : null}
+					{showProgress && <MigrationApplyProgress progress={progress} />}
 					{summary && <p className="mt-2">{summary}</p>}
 					{error && (
 						<p role="alert" className="mt-2 text-red-700">
@@ -75,11 +76,7 @@ export function MigrationsNoticeCard() {
 					<Link href="/admin" className="text-xs text-amber-800 underline underline-offset-2 hover:text-amber-900">
 						Admin overview
 					</Link>
-					{isPrimaryAdmin && (
-						<Button type="button" size="sm" disabled={applying} onClick={apply}>
-							{applying ? "Applying…" : "Apply now"}
-						</Button>
-					)}
+					{isPrimaryAdmin && <MigrationApplyButton busy={applying} idleLabel="Apply now" onClick={apply} />}
 				</div>
 			) : null}
 		</section>
@@ -88,7 +85,7 @@ export function MigrationsNoticeCard() {
 
 /** One line above the mailbox, for whenever the empty reading pane (and its card) is not on screen. */
 export function MigrationsBanner() {
-	const { user, isPrimaryAdmin, data, applying, summary, error, apply } = useMigrationsNotice();
+	const { user, isPrimaryAdmin, data, progress, applying, showProgress, summary, error, apply } = useMigrationsNotice();
 	const cardVisible = useMigrationsCardVisible();
 	if (!user || cardVisible) return null;
 	if (!data || !shouldShowMigrationsBanner(data)) {
@@ -101,21 +98,28 @@ export function MigrationsBanner() {
 			<Database className={`mt-px h-3.5 w-3.5 shrink-0 ${applying ? "animate-pulse" : ""}`} aria-hidden="true" />
 			<div className="min-w-0 flex-1">
 				<p className="truncate font-medium">{content.title}</p>
-				<p className="mt-0.5 line-clamp-2 opacity-90">
-					{error ? (
-						<span role="alert" className="text-red-600">
-							{error}
-						</span>
-					) : isPrimaryAdmin ? (
-						content.body
-					) : (
-						migrationApplierText(data.appliedBy)
-					)}
-				</p>
+				{showProgress ? (
+					<MigrationApplyProgress progress={progress} />
+				) : (
+					<p className={`mt-0.5 opacity-90 ${error ? "" : "line-clamp-2"}`}>
+						{error ? (
+							<span role="alert" className="text-red-600 dark:text-red-400">
+								{error}
+							</span>
+						) : isPrimaryAdmin ? (
+							content.body
+						) : (
+							migrationApplierText(data.appliedBy)
+						)}
+					</p>
+				)}
 				{isPrimaryAdmin ? (
-					<Button type="button" size="sm" className="mt-1.5 h-6 px-2 text-xs" disabled={applying} onClick={apply}>
-						{applying ? "Applying…" : "Apply now"}
-					</Button>
+					<MigrationApplyButton
+						busy={applying}
+						idleLabel="Apply now"
+						onClick={apply}
+						className="mt-1.5 h-7 px-2 text-xs"
+					/>
 				) : user.role === "admin" ? (
 					<Link href="/admin" className={`mt-1 inline-block ${NOTICE_LINK_CLASS}`}>
 						Admin overview

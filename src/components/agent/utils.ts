@@ -368,11 +368,10 @@ const PROPOSAL_STATUSES = new Set(["pending_approval", "processing", "approved",
 
 export function agentActionProposal(content: string): AgentActionProposal | null {
 	const value = parseAgentToolContent(content);
-	return value &&
-		(AGENT_ACTION_NAMES as readonly unknown[]).includes(value.action) &&
-		PROPOSAL_STATUSES.has(value.status as string)
-		? (value as AgentActionProposal)
-		: null;
+	const known =
+		(AGENT_ACTION_NAMES as readonly unknown[]).includes(value?.action) ||
+		(typeof value?.moduleId === "string" && typeof value.action === "string" && Array.isArray(value.items));
+	return value && known && PROPOSAL_STATUSES.has(value.status as string) ? (value as AgentActionProposal) : null;
 }
 
 /** Tools whose label counts the emails they prepared or changed, with the verb for a done change. */

@@ -234,7 +234,8 @@ test("admin MCP forwards alias selection to the same account creation handler", 
 	const handlers = new Map();
 	registerAdminMcpTools(
 		{ registerTool: (name, _schema, handler) => handlers.set(name, handler) },
-		{ scopes: ["accounts"] },
+		globalThis.__kiteNodeEnv,
+		{ keyId: "key-1", user: { id: "admin" }, scopes: ["accounts"], mailboxIds: [] },
 		"https://kite.test",
 		`Bearer ${key.fullKey}`,
 	);
@@ -251,6 +252,18 @@ test("admin MCP forwards alias selection to the same account creation handler", 
 	assert.equal(result.isError, false);
 	assert.equal(JSON.parse(result.content[0].text).status, 201);
 	assert.deepEqual((await getMailboxDomainAddresses(f.db, f.mailbox())).sort(), ["sales@two.test", "sam@one.test"]);
+	// The call leaves one audit row: the tool, the key and the admin action, never the password or other arguments.
+	const audit = f.database.db
+		.prepare("SELECT actor_user_id, metadata FROM audit_logs WHERE action = 'mcp.tool_call'")
+		.all();
+	assert.equal(audit.length, 1);
+	assert.equal(audit[0].actor_user_id, "admin");
+	assert.deepEqual(JSON.parse(audit[0].metadata), {
+		tool: "manage_accounts",
+		keyId: "key-1",
+		outcome: "ok",
+		adminAction: "create",
+	});
 });
 
 test("invalid, duplicate, foreign, and inactive aliases fail before provisioning", async (t) => {

@@ -69,9 +69,9 @@ export const calendarToolDescriptions: Record<CalendarToolName, string> = {
 	create_event:
 		"Create an event in the user's personal calendar. This saves immediately; attendees are recorded but invitations are not sent.",
 	update_events:
-		"Update up to 20 owned event series by series ID. Changes apply to the whole series and save immediately; invitations are not sent.",
+		"Update up to 20 owned event series by series ID. Changes apply to the whole series; invitations are not sent. In the Kite assistant this only proposes the change and the user approves it; an MCP call saves immediately, so confirm with the user first.",
 	delete_events:
-		"Delete up to 20 owned event series by series ID. This saves immediately and does not send cancellations.",
+		"Delete up to 20 owned event series by series ID; cancellations are not sent. In the Kite assistant this only proposes the deletion and the user approves it; an MCP call deletes immediately, so confirm with the user first.",
 	find_free_time:
 		"Find available slots using the user's events in an ISO 8601 time range, up to 90 days. Returns UTC instants.",
 	get_calendars: "List the calendars available here. Kite currently has one personal calendar per user.",

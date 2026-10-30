@@ -7,6 +7,7 @@ import { toJsonOutput, withCalendarToolRefs } from "@/lib/calendar/tool-ref-util
 import { searchCalendarEvents } from "@/lib/calendar/search";
 import { freezeLegacySeriesTimeZone } from "@/lib/calendar/time-zone";
 import { runCalendarTool } from "@/lib/calendar/tools";
+import { previewCalendarToolChange, type CalendarPreviewTool } from "@/lib/calendar/tool-preview";
 import { getEnv } from "@/lib/cloudflare";
 import { AgentActionError } from "@/lib/agent/auto-read/action-error";
 import {
@@ -72,6 +73,12 @@ function toolHandler(name: CalendarToolName): CapabilityHandler {
 	};
 }
 
+const previewHandler: CapabilityHandler = async (input, ctx) => {
+	if (!ctx.viewer) throw new Error("Calendar tools need a viewer");
+	const { tool, input: toolInput } = input as { tool: CalendarPreviewTool; input: JsonValue };
+	return previewCalendarToolChange(getEnv(), { userId: ctx.viewer.userId, timeZone: ctx.timeZone }, tool, toolInput);
+};
+
 const searchHandler: CapabilityHandler = async (input, ctx) => {
 	if (!ctx.viewer) return { items: [] };
 	const { query, limit } = input as { query: string; limit: number };
@@ -98,6 +105,7 @@ export const calendarHandlers: Record<string, CapabilityHandler> = {
 	resolveRefs: resolveCalendarRefs,
 	invite: inviteStep,
 	answerInvite: answerInviteHandler,
+	previewToolChange: previewHandler,
 	createEvent: actionHandler("createEvent"),
 	deleteEvent: actionHandler("deleteEvent"),
 	sendRsvp: actionHandler("sendRsvp"),

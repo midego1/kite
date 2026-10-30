@@ -21,6 +21,14 @@ export function resolveRefsSchemas(kinds: [RecordKind, ...RecordKind[]]): Capabi
 	};
 }
 
+/** The lines an approval card shows for a proposed tool call, from the module's `approval.preview` service. */
+export const approvalPreviewOutputSchema = z.object({
+	items: z
+		.array(z.object({ label: z.string().max(300), detail: z.string().max(1_000).nullable() }))
+		.min(1)
+		.max(20),
+});
+
 export const searchSchemas: CapabilitySchemas = {
 	input: z.object({ query: z.string().trim().min(1).max(300), limit: z.number().int().min(1).max(20).default(5) }),
 	output: z.object({

@@ -9,6 +9,8 @@ import { GET as getAccount, PATCH as updateAccount } from "@/app/api/v1/accounts
 import { GET as listMailboxes, POST as createMailbox } from "@/app/api/v1/mailboxes/route";
 import { GET as getMailbox, PATCH as updateMailbox, DELETE as deleteMailbox } from "@/app/api/v1/mailboxes/[id]/route";
 import type { McpPrincipal } from "./types";
+import { audited } from "./audit";
+import { coreToolAnnotations } from "./server-utils";
 
 const adminInput = z.object({
 	action: z.string(),
@@ -39,8 +41,11 @@ function adminRequest(
 	});
 }
 
+type AdminInput = z.infer<typeof adminInput>;
+
 export function registerAdminMcpTools(
 	server: McpServer,
+	env: CloudflareEnv,
 	principal: McpPrincipal,
 	baseUrl: string,
 	authorization: string,
@@ -52,47 +57,56 @@ export function registerAdminMcpTools(
 				description:
 					"List, inspect, create, or delete domains and inspect or set up DNS records. Actions: list, get, create, delete, dns, setup_dns. Pass id for a domain action and data for create or setup_dns.",
 				inputSchema: adminInput,
+				annotations: coreToolAnnotations("manage_domains"),
 			},
-			async ({ action, id, data }) => {
-				if (!principal.scopes.includes("domains")) return result({ error: "Permission denied" }, true);
-				if (["get", "delete", "dns", "setup_dns"].includes(action) && !id)
-					return result({ error: "Domain id required" }, true);
-				const path = id ? `/api/v1/domains/${encodeURIComponent(id)}` : "/api/v1/domains";
-				try {
-					switch (action) {
-						case "list":
-							return responseResult(await listDomains(adminRequest(baseUrl, path, authorization)));
-						case "get":
-							return responseResult(
-								await getDomain(adminRequest(baseUrl, path, authorization), { params: Promise.resolve({ id: id! }) }),
-							);
-						case "create":
-							return responseResult(await createDomain(adminRequest(baseUrl, path, authorization, "POST", data ?? {})));
-						case "delete":
-							return responseResult(
-								await deleteDomain(adminRequest(baseUrl, path, authorization, "DELETE"), {
-									params: Promise.resolve({ id: id! }),
-								}),
-							);
-						case "dns":
-							return responseResult(
-								await getDomainDns(adminRequest(baseUrl, `${path}/dns`, authorization), {
-									params: Promise.resolve({ id: id! }),
-								}),
-							);
-						case "setup_dns":
-							return responseResult(
-								await setupDomainDns(adminRequest(baseUrl, `${path}/dns/setup`, authorization, "POST", data ?? {}), {
-									params: Promise.resolve({ id: id! }),
-								}),
-							);
-						default:
-							return result({ error: "Unknown action" }, true);
+			audited(
+				env,
+				principal,
+				"manage_domains",
+				async ({ action, id, data }: AdminInput) => {
+					if (!principal.scopes.includes("domains")) return result({ error: "Permission denied" }, true);
+					if (["get", "delete", "dns", "setup_dns"].includes(action) && !id)
+						return result({ error: "Domain id required" }, true);
+					const path = id ? `/api/v1/domains/${encodeURIComponent(id)}` : "/api/v1/domains";
+					try {
+						switch (action) {
+							case "list":
+								return responseResult(await listDomains(adminRequest(baseUrl, path, authorization)));
+							case "get":
+								return responseResult(
+									await getDomain(adminRequest(baseUrl, path, authorization), { params: Promise.resolve({ id: id! }) }),
+								);
+							case "create":
+								return responseResult(
+									await createDomain(adminRequest(baseUrl, path, authorization, "POST", data ?? {})),
+								);
+							case "delete":
+								return responseResult(
+									await deleteDomain(adminRequest(baseUrl, path, authorization, "DELETE"), {
+										params: Promise.resolve({ id: id! }),
+									}),
+								);
+							case "dns":
+								return responseResult(
+									await getDomainDns(adminRequest(baseUrl, `${path}/dns`, authorization), {
+										params: Promise.resolve({ id: id! }),
+									}),
+								);
+							case "setup_dns":
+								return responseResult(
+									await setupDomainDns(adminRequest(baseUrl, `${path}/dns/setup`, authorization, "POST", data ?? {}), {
+										params: Promise.resolve({ id: id! }),
+									}),
+								);
+							default:
+								return result({ error: "Unknown action" }, true);
+						}
+					} catch (error) {
+						return result({ error: error instanceof Error ? error.message : "Domain action failed" }, true);
 					}
-				} catch (error) {
-					return result({ error: error instanceof Error ? error.message : "Domain action failed" }, true);
-				}
-			},
+				},
+				(args) => ({ adminAction: args.action }),
+			),
 		);
 
 	if (principal.scopes.includes("accounts"))
@@ -102,36 +116,45 @@ export function registerAdminMcpTools(
 				description:
 					"List, inspect, create, or update managed accounts. Actions: list, get, create, update. Pass id for get or update and data for create or update. For create, data accepts username, domainId, password, role?, useAllDomains? (defaults to true for compatibility), and aliases?: [{ domainId, localPart }]. Set useAllDomains to false to assign only the primary address and explicit aliases.",
 				inputSchema: adminInput,
+				annotations: coreToolAnnotations("manage_accounts"),
 			},
-			async ({ action, id, data }) => {
-				if (!principal.scopes.includes("accounts")) return result({ error: "Permission denied" }, true);
-				if (["get", "update"].includes(action) && !id) return result({ error: "Account id required" }, true);
-				const path = id ? `/api/v1/accounts/${encodeURIComponent(id)}` : "/api/v1/accounts";
-				try {
-					switch (action) {
-						case "list":
-							return responseResult(await listAccounts(adminRequest(baseUrl, path, authorization)));
-						case "get":
-							return responseResult(
-								await getAccount(adminRequest(baseUrl, path, authorization), { params: Promise.resolve({ id: id! }) }),
-							);
-						case "create":
-							return responseResult(
-								await createAccount(adminRequest(baseUrl, path, authorization, "POST", data ?? {})),
-							);
-						case "update":
-							return responseResult(
-								await updateAccount(adminRequest(baseUrl, path, authorization, "PATCH", data ?? {}), {
-									params: Promise.resolve({ id: id! }),
-								}),
-							);
-						default:
-							return result({ error: "Unknown action" }, true);
+			audited(
+				env,
+				principal,
+				"manage_accounts",
+				async ({ action, id, data }: AdminInput) => {
+					if (!principal.scopes.includes("accounts")) return result({ error: "Permission denied" }, true);
+					if (["get", "update"].includes(action) && !id) return result({ error: "Account id required" }, true);
+					const path = id ? `/api/v1/accounts/${encodeURIComponent(id)}` : "/api/v1/accounts";
+					try {
+						switch (action) {
+							case "list":
+								return responseResult(await listAccounts(adminRequest(baseUrl, path, authorization)));
+							case "get":
+								return responseResult(
+									await getAccount(adminRequest(baseUrl, path, authorization), {
+										params: Promise.resolve({ id: id! }),
+									}),
+								);
+							case "create":
+								return responseResult(
+									await createAccount(adminRequest(baseUrl, path, authorization, "POST", data ?? {})),
+								);
+							case "update":
+								return responseResult(
+									await updateAccount(adminRequest(baseUrl, path, authorization, "PATCH", data ?? {}), {
+										params: Promise.resolve({ id: id! }),
+									}),
+								);
+							default:
+								return result({ error: "Unknown action" }, true);
+						}
+					} catch (error) {
+						return result({ error: error instanceof Error ? error.message : "Account action failed" }, true);
 					}
-				} catch (error) {
-					return result({ error: error instanceof Error ? error.message : "Account action failed" }, true);
-				}
-			},
+				},
+				(args) => ({ adminAction: args.action }),
+			),
 		);
 
 	if (principal.scopes.includes("mailboxes"))
@@ -141,41 +164,51 @@ export function registerAdminMcpTools(
 				description:
 					"List, inspect, create, update, or delete mailboxes. These actions manage mailbox configuration, not message content. Actions: list, get, create, update, delete. Pass id for get, update, or delete and data for create or update.",
 				inputSchema: adminInput,
+				annotations: coreToolAnnotations("manage_mailboxes"),
 			},
-			async ({ action, id, data }) => {
-				if (!principal.scopes.includes("mailboxes")) return result({ error: "Permission denied" }, true);
-				if (["get", "update", "delete"].includes(action) && !id) return result({ error: "Mailbox id required" }, true);
-				const path = id ? `/api/v1/mailboxes/${encodeURIComponent(id)}` : "/api/v1/mailboxes";
-				try {
-					switch (action) {
-						case "list":
-							return responseResult(await listMailboxes(adminRequest(baseUrl, path, authorization)));
-						case "get":
-							return responseResult(
-								await getMailbox(adminRequest(baseUrl, path, authorization), { params: Promise.resolve({ id: id! }) }),
-							);
-						case "create":
-							return responseResult(
-								await createMailbox(adminRequest(baseUrl, path, authorization, "POST", data ?? {})),
-							);
-						case "update":
-							return responseResult(
-								await updateMailbox(adminRequest(baseUrl, path, authorization, "PATCH", data ?? {}), {
-									params: Promise.resolve({ id: id! }),
-								}),
-							);
-						case "delete":
-							return responseResult(
-								await deleteMailbox(adminRequest(baseUrl, path, authorization, "DELETE"), {
-									params: Promise.resolve({ id: id! }),
-								}),
-							);
-						default:
-							return result({ error: "Unknown action" }, true);
+			audited(
+				env,
+				principal,
+				"manage_mailboxes",
+				async ({ action, id, data }: AdminInput) => {
+					if (!principal.scopes.includes("mailboxes")) return result({ error: "Permission denied" }, true);
+					if (["get", "update", "delete"].includes(action) && !id)
+						return result({ error: "Mailbox id required" }, true);
+					const path = id ? `/api/v1/mailboxes/${encodeURIComponent(id)}` : "/api/v1/mailboxes";
+					try {
+						switch (action) {
+							case "list":
+								return responseResult(await listMailboxes(adminRequest(baseUrl, path, authorization)));
+							case "get":
+								return responseResult(
+									await getMailbox(adminRequest(baseUrl, path, authorization), {
+										params: Promise.resolve({ id: id! }),
+									}),
+								);
+							case "create":
+								return responseResult(
+									await createMailbox(adminRequest(baseUrl, path, authorization, "POST", data ?? {})),
+								);
+							case "update":
+								return responseResult(
+									await updateMailbox(adminRequest(baseUrl, path, authorization, "PATCH", data ?? {}), {
+										params: Promise.resolve({ id: id! }),
+									}),
+								);
+							case "delete":
+								return responseResult(
+									await deleteMailbox(adminRequest(baseUrl, path, authorization, "DELETE"), {
+										params: Promise.resolve({ id: id! }),
+									}),
+								);
+							default:
+								return result({ error: "Unknown action" }, true);
+						}
+					} catch (error) {
+						return result({ error: error instanceof Error ? error.message : "Mailbox action failed" }, true);
 					}
-				} catch (error) {
-					return result({ error: error instanceof Error ? error.message : "Mailbox action failed" }, true);
-				}
-			},
+				},
+				(args) => ({ adminAction: args.action }),
+			),
 		);
 }

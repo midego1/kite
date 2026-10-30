@@ -6,11 +6,16 @@ import { auditLogs, domains, mailboxes, users } from "@/db/schema";
 import { authorizeActivityRead } from "@/lib/auth/activity-access";
 import { MODULE_AUDIT_ACTIONS } from "@/lib/modules/admin-utils";
 import { TELEMETRY_AUDIT_ACTIONS } from "@/lib/telemetry/telemetry-utils";
+import { MCP_TOOL_CALL_ACTION } from "@/lib/mcp/audit";
+
+const LISTED_ACTIONS = ["auth.login", "auth.logout", ...MODULE_AUDIT_ACTIONS, ...TELEMETRY_AUDIT_ACTIONS];
 
 export async function GET(request: Request) {
 	const access = await authorizeActivityRead(request);
 	if (access.error) return access.error;
 	const { env, limit } = access;
+	// MCP tool calls are one row each, so they are listed only when asked for and never crowd out the rest.
+	const mcpCalls = new URL(request.url).searchParams.get("action") === MCP_TOOL_CALL_ACTION;
 	const db = getDb(env);
 	const targetUsers = alias(users, "target_users");
 	const rows = await db
@@ -29,9 +34,7 @@ export async function GET(request: Request) {
 		.leftJoin(targetUsers, eq(targetUsers.id, auditLogs.targetUserId))
 		.leftJoin(mailboxes, eq(mailboxes.id, auditLogs.mailboxId))
 		.leftJoin(domains, eq(domains.id, mailboxes.domainId))
-		.where(
-			inArray(auditLogs.action, ["auth.login", "auth.logout", ...MODULE_AUDIT_ACTIONS, ...TELEMETRY_AUDIT_ACTIONS]),
-		)
+		.where(mcpCalls ? eq(auditLogs.action, MCP_TOOL_CALL_ACTION) : inArray(auditLogs.action, LISTED_ACTIONS))
 		.orderBy(desc(auditLogs.createdAt))
 		.limit(limit);
 

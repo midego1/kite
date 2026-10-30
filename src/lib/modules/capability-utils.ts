@@ -22,6 +22,17 @@ export function surfacesAreCombinable(surfaces: readonly CapabilitySurface[]): b
 	return surfaces.length === 1 || surfaces.every((surface) => surface === "assistant_tool" || surface === "mcp_tool");
 }
 
+/** Effects an assistant tool may only have once the user approved the call in chat. */
+const APPROVAL_EFFECTS: readonly CapabilityDescriptor["effect"][] = ["update", "delete", "send"];
+
+/**
+ * Whether a module's assistant tool is proposed in chat and runs only after the user approves it: it changes or
+ * removes data, or sends, or its descriptor asks for approval.
+ */
+export function needsChatApproval(descriptor: Pick<CapabilityDescriptor, "effect" | "approval">): boolean {
+	return !!descriptor.approval || APPROVAL_EFFECTS.includes(descriptor.effect);
+}
+
 export type ListedCapability = { moduleId: ModuleId; descriptor: CapabilityDescriptor };
 
 /** The descriptors for one surface from the enabled modules, in registry order. */

@@ -2,6 +2,7 @@ import { and, eq, inArray, lt, sql, type SQL } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { getDb } from "@/db";
 import {
+	auditLogs,
 	autoReplyDeliveries,
 	loginChallenges,
 	outboundJobs,
@@ -11,6 +12,7 @@ import {
 } from "@/db/schema";
 import { agentActions } from "@/db/schema/agent-auto-read";
 import { aiSummaries } from "@/db/schema/agent-summaries";
+import { MCP_TOOL_CALL_ACTION } from "@/lib/mcp/audit";
 import type { PruningPolicy, PruningResult } from "./pruning-types";
 import {
 	PRUNABLE_OUTBOUND_JOB_STATUSES,
@@ -86,6 +88,12 @@ export async function runDatabasePruning(
 			passwordResetTokens,
 			policy.expiredPasswordResetTokensDays,
 			(cutoff) => lt(passwordResetTokens.expiresAt, cutoff),
+		],
+		[
+			"mcp_tool_call_audit_logs",
+			auditLogs,
+			policy.mcpToolCallAuditDays,
+			(cutoff) => and(eq(auditLogs.action, MCP_TOOL_CALL_ACTION), lt(auditLogs.createdAt, cutoff)),
 		],
 		["agent_actions", agentActions, policy.agentActionsDays, (cutoff) => lt(agentActions.createdAt, cutoff)],
 		[

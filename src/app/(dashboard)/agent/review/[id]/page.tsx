@@ -39,6 +39,7 @@ export default function AgentReviewPage() {
 				<SendReview
 					approvalId={id}
 					snapshot={request.snapshot}
+					unfamiliarRecipients={request.unfamiliarRecipients ?? []}
 					onClose={() => router.push("/drafts")}
 					onSent={() => router.push("/sent")}
 				/>

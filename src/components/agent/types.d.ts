@@ -44,8 +44,11 @@ export type AgentActionName =
 	| "create_folder"
 	| "move_emails_to_folder"
 	| "discard_draft";
+/** One line of a module tool proposal: the record it touches and what would change. */
+export type AgentProposalItem = { label: string; detail: string | null };
 export type AgentActionProposal = {
-	action: AgentActionName;
+	/** A core action, or the name of a module tool when `moduleId` is set. */
+	action: AgentActionName | (string & {});
 	status: "pending_approval" | "processing" | "approved" | "undone";
 	emailId?: string;
 	emailIds?: string[];
@@ -60,6 +63,10 @@ export type AgentActionProposal = {
 	/** `move_emails_to_folder`: the target folder. */
 	folderId?: string;
 	folderName?: string;
+	/** A module tool waiting for approval (`update_events`, ...): its module, effect and preview lines. */
+	moduleId?: string;
+	effect?: "update" | "delete" | "send";
+	items?: AgentProposalItem[];
 	/** Set once approved, for an action that can be undone. */
 	actionId?: string;
 	undoUntil?: string | null;

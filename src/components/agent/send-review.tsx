@@ -7,7 +7,39 @@ import { htmlToPlainText } from "@/components/compose/rich-text-utils";
 import { DRAFT_CHANGED_ERROR } from "@/lib/agent/approvals/snapshot-utils";
 import type { SendReviewProps } from "./send-review-types";
 
-export function SendReview({ approvalId, snapshot, onClose, onReviewAgain, onSent }: SendReviewProps) {
+/** Who wrote the draft, and the recipients the user has never written to or saved (upstream Mailflare #225). */
+function ReviewNotices({ unfamiliarRecipients }: { unfamiliarRecipients: string[] }) {
+	const one = unfamiliarRecipients.length === 1;
+	return (
+		<>
+			<p
+				className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900"
+				data-send-review-ai-origin=""
+			>
+				The AI assistant wrote this message, partly from email content that anyone could have written. Read it before
+				sending.
+			</p>
+			{unfamiliarRecipients.length > 0 && (
+				<p
+					className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-800 break-words"
+					data-send-review-unfamiliar=""
+				>
+					You have never written to {one ? "this address" : "these addresses"} and {one ? "it is" : "they are"} not in
+					your contacts: {unfamiliarRecipients.join(", ")}. Check that you mean to send this to {one ? "it" : "them"}.
+				</p>
+			)}
+		</>
+	);
+}
+
+export function SendReview({
+	approvalId,
+	snapshot,
+	unfamiliarRecipients = [],
+	onClose,
+	onReviewAgain,
+	onSent,
+}: SendReviewProps) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	async function confirm() {
@@ -38,6 +70,7 @@ export function SendReview({ approvalId, snapshot, onClose, onReviewAgain, onSen
 				<p className="mt-1 text-sm text-neutral-500">
 					Confirm this exact AI draft before it is {snapshot.scheduledAt ? "scheduled" : "delivered"}.
 				</p>
+				<ReviewNotices unfamiliarRecipients={unfamiliarRecipients} />
 				<dl className="mt-4 grid grid-cols-[5rem_1fr] gap-2 text-sm break-words">
 					<dt className="text-neutral-500">From</dt>
 					<dd>{snapshot.from}</dd>

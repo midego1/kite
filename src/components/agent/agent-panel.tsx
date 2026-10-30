@@ -43,7 +43,7 @@ import { AssistantSettingsTabs } from "./assistant-settings-tabs";
 import { reasonText } from "./agent-activity-utils";
 import { chatEventFailure, ChatErrorNotice, chatRequestFailure, type ChatFailure } from "./chat-error-notice";
 import { legacyAgentSettingsBody } from "./auto-read-settings-utils";
-import type { ReviewSnapshot } from "./send-review-types";
+import type { OpenedSendReview } from "./send-review-types";
 import { approveAgentAction, requestDraftReview } from "./client-actions";
 import type {
 	AgentConversation,
@@ -110,11 +110,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 	const [error, setError] = useState<string | null>(null);
 	const [failure, setFailure] = useState<ChatFailure | null>(null);
 	const [approvingId, setApprovingId] = useState<string | null>(null);
-	const [draftReview, setDraftReview] = useState<{
-		approvalId: string;
-		snapshot: ReviewSnapshot;
-		draftId: string;
-	} | null>(null);
+	const [draftReview, setDraftReview] = useState<(OpenedSendReview & { draftId: string }) | null>(null);
 	const abort = useRef<AbortController | null>(null);
 	const queuedMessagesRef = useRef<QueuedAgentMessage[]>([]);
 	const runningRef = useRef(false);
@@ -956,6 +952,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 				<SendReview
 					approvalId={draftReview.approvalId}
 					snapshot={draftReview.snapshot}
+					unfamiliarRecipients={draftReview.unfamiliarRecipients}
 					onClose={() => setDraftReview(null)}
 					onReviewAgain={() => void startDraftReview(draftReview.draftId)}
 					onSent={() => {

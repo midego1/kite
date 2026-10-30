@@ -621,11 +621,12 @@ pre {
 
 /* The kite's return after a reload to a new version (reload-return-scene.tsx, in the startup screen of
    loading-transition.tsx). The inline script in <head> (reload-return-utils.ts) puts `kite-reload-return` on <html>
-   when the previous page left with the flight above; without it the scene is display: none and the startup
-   screen is as before. The kite sails in from the top right, then hangs on its string above the progress bar:
-   the string's hand is the pivot of a slow swing, the kite bobs on its own period, the tail ripples, a soft cloud
-   drifts and a few wind lines pass. Everything is CSS, so it moves before any chunk arrives and adds no nodes
-   for the boot watchdog (asset-recovery-utils.ts) to count as progress. */
+   when the previous page left with the flight above; without it both parts are display: none and the startup
+   screen is as before. The kite sails in from the top right, then hangs on its string just above the progress
+   bar: the hand is the pivot of a slow swing, the kite bobs on its own period, the tail ripples, two clouds drift
+   and two wind lines pass. Everything is CSS, so it moves before any chunk arrives and adds no nodes for the boot
+   watchdog (asset-recovery-utils.ts) to count as progress; when that watchdog gives up (its #kite-boot-failure
+   box) the scene goes away and the theme's text stays readable on the theme's background. */
 html.kite-reload-return {
 	--reload-return-width: clamp(7rem, 22vmin, 11rem);
 	--reload-return-cloud: rgba(173, 194, 236, 0.45);
@@ -641,15 +642,19 @@ html.dark.kite-reload-return {
 	--reload-return-track: rgba(127, 162, 255, 0.25);
 }
 
-.reload-return,
+.reload-return-sky,
+.reload-return-kite,
 .reload-return-only,
 .reload-return-static {
 	display: none;
 }
 
-html.kite-reload-return .reload-return {
+html.kite-reload-return :is(.reload-return-sky, .reload-return-kite) {
 	display: block;
-	overflow: hidden;
+}
+
+html.kite-reload-return:has(#kite-boot-failure) :is(.reload-return-sky, .reload-return-kite) {
+	display: none;
 }
 
 html.kite-reload-return .reload-return-only {
@@ -674,14 +679,10 @@ html.kite-reload-return .reload-return-progress {
 	background: linear-gradient(90deg, #7fa2ff, #9b7bf7);
 }
 
-html.dark.kite-reload-return .loading-recovery {
-	color: #bdc1c6;
-}
-
 .reload-return-arrive {
 	position: absolute;
 	left: 50%;
-	bottom: calc(50% + 0.75rem);
+	bottom: 0.75rem;
 	width: var(--reload-return-width);
 	margin-left: calc(var(--reload-return-width) / -2);
 	animation: reload-return-arrive 1300ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
@@ -693,7 +694,7 @@ html.dark.kite-reload-return .loading-recovery {
 	animation: reload-return-swing 3200ms ease-in-out infinite alternate;
 }
 
-.reload-return-kite {
+.reload-return-glyph {
 	display: block;
 	width: 100%;
 	height: auto;
@@ -732,6 +733,7 @@ html.dark.kite-reload-return .loading-recovery {
 
 .reload-return-wind {
 	position: absolute;
+	left: calc(50% + 4rem);
 	height: 2px;
 	border-radius: 1px;
 	background: var(--reload-return-wind);
@@ -740,24 +742,30 @@ html.dark.kite-reload-return .loading-recovery {
 }
 
 .reload-return-wind-1 {
-	top: calc(50% - 11rem);
-	left: calc(50% + 4rem);
+	bottom: 11rem;
 	width: 3.5rem;
 	animation-delay: 1400ms;
 }
 
 .reload-return-wind-2 {
-	top: calc(50% - 8.5rem);
+	bottom: 8.5rem;
 	left: calc(50% + 6rem);
 	width: 2.25rem;
 	animation-delay: 2300ms;
 }
 
-.reload-return-wind-3 {
-	top: calc(50% - 13.5rem);
-	left: calc(50% + 2rem);
-	width: 2.5rem;
-	animation-delay: 3100ms;
+/* Below the bar without moving it (the kite hangs from the bar); the slow-start recovery takes its place. */
+.reload-return-static {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	right: 0;
+	margin-top: 0.75rem;
+	text-align: center;
+}
+
+div:has(+ .loading-recovery) > .reload-return-static {
+	display: none;
 }
 
 @keyframes reload-return-arrive {
@@ -839,7 +847,7 @@ html.dark.kite-reload-return .loading-recovery {
 	/* The kite's return (reload-return-scene.tsx) stands still, without wind, and says what is happening. */
 	.reload-return-arrive,
 	.reload-return-swing,
-	.reload-return-kite,
+	.reload-return-glyph,
 	.reload-return-tail,
 	.reload-return-cloud {
 		animation: none;

@@ -6,7 +6,7 @@ import { useBranding } from "@/components/branding-provider";
 import { markLoaderMounted } from "@/components/asset-recovery-utils";
 import { PageLoadingContext } from "@/components/page-loading";
 import { RouteLoadingBar } from "@/components/route-loading-bar";
-import { ReloadReturnScene } from "@/components/reload-return-scene";
+import { ReloadReturnKite, ReloadReturnSky } from "@/components/reload-return-scene";
 import {
 	RELOAD_RETURN_ANNOUNCEMENT,
 	RELOAD_RETURN_STATIC_TEXT,
@@ -52,6 +52,12 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 	// runs in the same task as the hydration commit, so the watchdog never sees a committed screen as the server's;
 	// a render alone could still be thrown away, so it is not enough.
 	useLayoutEffect(() => markLoaderMounted(), []);
+
+	// A failed startup ends the kite's return (reload-return-scene.tsx) before the failure paints: the plain light
+	// screen carries the failure's own colours, and a later ordinary reload must not replay the return.
+	useLayoutEffect(() => {
+		if (failure != null && isReloadReturnActive()) endReloadReturn();
+	}, [failure]);
 
 	useEffect(() => {
 		if (canComplete) return;
@@ -117,7 +123,7 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 					}`}
 				>
 					{/* Shown only after a reload from the "Kite was updated" notice; otherwise display: none. */}
-					<ReloadReturnScene />
+					<ReloadReturnSky />
 					<div className={`relative flex flex-col items-center gap-6 ${failure == null ? "w-64" : "w-80"}`}>
 						<img
 							src={iconUrl}
@@ -133,18 +139,20 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 										<span className="sr-only reload-return-only">{RELOAD_RETURN_ANNOUNCEMENT}</span>
 									</>
 								)}
-								<div className="w-full">
+								<div className="relative w-full">
+									{/* The kite hangs from just above the bar, so the two never cross. */}
+									<ReloadReturnKite />
 									<div className="reload-return-track h-1.5 overflow-hidden rounded-full bg-blue-100">
 										<div
 											className="reload-return-progress h-full rounded-full bg-blue-600 transition-[width] duration-200 ease-out"
 											style={{ width: `${progress}%` }}
 										/>
 									</div>
+									{/* The reduced-motion caption, below the bar without moving it; the live region above says what happens. */}
+									<p aria-hidden="true" className="reload-return-static text-sm">
+										{RELOAD_RETURN_STATIC_TEXT}
+									</p>
 								</div>
-								{/* The reduced-motion variant's caption; the live region above already says what happens. */}
-								<p aria-hidden="true" className="reload-return-static text-sm">
-									{RELOAD_RETURN_STATIC_TEXT}
-								</p>
 								<LoadingRecovery active={loaderVisible} />
 							</>
 						)}

@@ -111,6 +111,9 @@ function readScreen(page: Page) {
 					rect.top >= 0 && rect.left >= 0 && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
 				// The boot watchdog's "Kite couldn't load" box sits 80 px below the middle: the kite stays above it.
 				kiteAboveFailureBox: rect.bottom <= window.innerHeight / 2 + 80,
+				// The string ends at the hand just above the progress bar and never crosses it.
+				kiteAboveBar: rect.bottom <= overlay.querySelector(".reload-return-track")!.getBoundingClientRect().top,
+				skyDisplay: displayOf(overlay.querySelector(".reload-return-sky")),
 				logoDisplay: displayOf(overlay.querySelector("img")),
 				role: overlay.getAttribute("role"),
 				// The live region says what is happening; the plain "Loading" is not in the tree.
@@ -195,6 +198,36 @@ test("Reload in the update notice brings the kite back on the loading screen, wh
 	expect(floating.loaderMounted).toBe(false);
 	expect(floating.kiteInViewport).toBe(true);
 	expect(floating.kiteAboveFailureBox).toBe(true);
+	expect(floating.kiteAboveBar).toBe(true);
+	expect(floating.skyDisplay).toBe("block");
+
+	// When the boot watchdog gives up it adds its "Kite couldn't load" box (asset-recovery-utils.ts); the scene
+	// steps aside for it and the box's text keeps the theme's colour on the theme's background.
+	await page.evaluate(() => {
+		const box = document.createElement("div");
+		box.id = "kite-boot-failure";
+		box.setAttribute("role", "alert");
+		box.textContent = "Kite couldn't load.";
+		box.style.cssText = "position:fixed;left:50%;top:calc(50% + 80px);transform:translateX(-50%);z-index:110";
+		document.body.appendChild(box);
+	});
+	await expect(page.locator(`${SCENE} svg`)).toBeHidden();
+	await expect(page.locator(".reload-return-sky")).toBeHidden();
+	const boxColours = await page.evaluate(() => {
+		const box = document.getElementById("kite-boot-failure")!;
+		const overlay = document.querySelector("[data-loading-overlay]")!;
+		return { text: getComputedStyle(box).color, background: getComputedStyle(overlay).backgroundColor };
+	});
+	const sum = (colour: string) =>
+		colour
+			.match(/\d+/g)!
+			.slice(0, 3)
+			.reduce((total, part) => total + Number(part), 0);
+	// Light text on the dark overlay (the default theme is dark).
+	expect(sum(boxColours.text)).toBeGreaterThan(600);
+	expect(sum(boxColours.background)).toBeLessThan(200);
+	await page.evaluate(() => document.getElementById("kite-boot-failure")!.remove());
+	await expect(page.locator(`${SCENE} svg`)).toBeVisible();
 
 	// The app arrives: the screen fades out into it, the scene stops and the marker is gone.
 	await entry.release();
@@ -202,7 +235,7 @@ test("Reload in the update notice brings the kite back on the loading screen, wh
 	await expect(page.getByRole("main")).toBeVisible({ timeout: 30_000 });
 	await expect(page.locator(OVERLAY)).not.toHaveClass(/opacity-100/);
 	await expect(page.locator("html")).not.toHaveClass(new RegExp(`\\b${RETURN_CLASS}\\b`));
-	await expect(page.locator(SCENE)).toBeHidden();
+	await expect(page.locator(`${SCENE} svg`)).toBeHidden();
 	await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), MARKER_KEY)).toBeNull();
 	await expect(page.getByRole("status").filter({ hasText: MESSAGE })).toHaveCount(0);
 	await shot(page, "return-app");
@@ -243,7 +276,15 @@ test("with reduced motion the kite stands still and the screen says Updating Kit
 	expect(screen.wind).toBe("none");
 	expect(screen.staticTextDisplay).toBe("block");
 	expect(screen.announced).toBe(true);
-	await expect(page.getByText(STATIC_TEXT)).toBeVisible();
+	// The caption sits below the bar without moving it: the string still ends above the bar.
+	expect(screen.kiteAboveBar).toBe(true);
+	const caption = page.getByText(STATIC_TEXT);
+	await expect(caption).toBeVisible();
+	const [captionBox, trackBox] = await Promise.all([
+		caption.boundingBox(),
+		page.locator(".reload-return-track").boundingBox(),
+	]);
+	expect(captionBox!.y).toBeGreaterThanOrEqual(trackBox!.y + trackBox!.height);
 	await entry.release();
 	await loaded;
 	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 30_000 });
@@ -303,3 +344,51 @@ for (const look of LOOKS) {
 		await expect(page.getByRole("main")).toBeVisible({ timeout: 30_000 });
 	});
 }
+
+test("a startup failure ends the return: the plain failure screen shows and the marker is gone", async ({ page }) => {
+	await markReturn(page);
+	await page.route("**/api/auth/me", (route) => route.abort("failed"));
+	await page.goto("/inbox");
+	const failure = page.getByRole("alert").filter({ hasText: "Kite couldn't check your sign-in." });
+	await expect(failure).toBeVisible({ timeout: 15_000 });
+	await expect(page.locator("html")).not.toHaveClass(new RegExp(`\\b${RETURN_CLASS}\\b`));
+	await expect(page.locator(`${SCENE} svg`)).toBeHidden();
+	await expect(page.locator(".reload-return-sky")).toBeHidden();
+	await shot(page, "return-startup-failure");
+	// The plain screen of the theme (dark by default: the dark theme remaps the screen's palette, so it is dark
+	// too) with the failure's text readable on it.
+	const colours = await page.evaluate(() => {
+		const overlay = document.querySelector("[data-loading-overlay]")!;
+		const alert = overlay.querySelector('[role="alert"] p')!;
+		return { background: getComputedStyle(overlay).backgroundColor, text: getComputedStyle(alert).color };
+	});
+	const sum = (colour: string) =>
+		colour
+			.match(/\d+/g)!
+			.slice(0, 3)
+			.reduce((total, part) => total + Number(part), 0);
+	expect(sum(colours.background)).toBeLessThan(200);
+	expect(sum(colours.text)).toBeGreaterThan(600);
+	expect(await page.evaluate((key) => sessionStorage.getItem(key), MARKER_KEY)).toBeNull();
+	// Continue anyway opens the app without a replay.
+	await page.unroute("**/api/auth/me");
+	await failure.getByRole("button", { name: "Continue anyway" }).click();
+	await expect(page.getByRole("main")).toBeVisible({ timeout: 15_000 });
+});
+
+test.describe("signed out", () => {
+	test.use({ storageState: { cookies: [], origins: [] } });
+
+	test("being sent to the sign-in page ends the return, so signing in within the minute loads plainly", async ({
+		page,
+	}) => {
+		await markReturn(page);
+		await page.goto("/inbox");
+		await expect(page).toHaveURL(/\/login/);
+		await expect(page.locator("html")).not.toHaveClass(new RegExp(`\\b${RETURN_CLASS}\\b`));
+		await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), MARKER_KEY)).toBeNull();
+		// A reload of the sign-in page within the minute is an ordinary load.
+		await page.reload();
+		await expect(page.locator("html")).not.toHaveClass(new RegExp(`\\b${RETURN_CLASS}\\b`));
+	});
+});

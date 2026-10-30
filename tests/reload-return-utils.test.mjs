@@ -26,6 +26,8 @@ const {
 	RELOAD_RETURN_ANNOUNCEMENT,
 	RELOAD_RETURN_STATIC_TEXT,
 	clearReloadReturnMarker,
+	endReloadReturn,
+	isReloadReturnActive,
 	markReloadReturn,
 	reloadReturnBootstrapScript,
 } = await import(pathToFileURL(join(bundleDirectory, "return.mjs")).href);
@@ -143,4 +145,77 @@ test("the boot script only toggles a class: no DOM nodes the boot watchdog could
 test("the screen's words", () => {
 	assert.equal(RELOAD_RETURN_ANNOUNCEMENT, "Loading the new version…");
 	assert.equal(RELOAD_RETURN_STATIC_TEXT, "Updating Kite…");
+});
+
+/** Installs a browser-like `sessionStorage` and `document` for the duration of `run`. */
+function withBrowser({ storage, classes = [] }, run) {
+	const classList = new Set(classes);
+	const descriptors = {
+		sessionStorage: Object.getOwnPropertyDescriptor(globalThis, "sessionStorage"),
+		document: Object.getOwnPropertyDescriptor(globalThis, "document"),
+	};
+	Object.defineProperty(globalThis, "sessionStorage", { configurable: true, get: () => storage() });
+	Object.defineProperty(globalThis, "document", {
+		configurable: true,
+		value: {
+			documentElement: {
+				classList: {
+					contains: (name) => classList.has(name),
+					remove: (name) => void classList.delete(name),
+				},
+			},
+		},
+	});
+	try {
+		return run(classList);
+	} finally {
+		for (const [name, descriptor] of Object.entries(descriptors)) {
+			if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+			else delete globalThis[name];
+		}
+	}
+}
+
+test("markReloadReturn and clearReloadReturnMarker use the page's sessionStorage by default", () => {
+	const storage = fakeStorage();
+	withBrowser({ storage: () => storage }, () => {
+		markReloadReturn();
+		assert.equal(typeof storage.getItem(RELOAD_RETURN_STORAGE_KEY), "string");
+		assert.ok(Math.abs(Number(storage.getItem(RELOAD_RETURN_STORAGE_KEY)) - Date.now()) < 5_000);
+		clearReloadReturnMarker();
+		assert.equal(storage.getItem(RELOAD_RETURN_STORAGE_KEY), null);
+	});
+});
+
+test("isReloadReturnActive reads the class the boot script set, and endReloadReturn removes it with the marker", () => {
+	const storage = fakeStorage({ [RELOAD_RETURN_STORAGE_KEY]: String(Date.now()) });
+	withBrowser({ storage: () => storage, classes: ["dark", RELOAD_RETURN_CLASS] }, (classList) => {
+		assert.equal(isReloadReturnActive(), true);
+		endReloadReturn();
+		assert.equal(isReloadReturnActive(), false);
+		assert.deepEqual([...classList], ["dark"]);
+		assert.equal(storage.getItem(RELOAD_RETURN_STORAGE_KEY), null);
+		// Ending twice (the loader's reveal after a failure already ended it) is harmless.
+		assert.doesNotThrow(() => endReloadReturn());
+	});
+});
+
+test("the helpers survive a page whose sessionStorage throws and a server without a document", () => {
+	withBrowser(
+		{
+			storage: () => {
+				throw new Error("SecurityError: access is denied");
+			},
+			classes: [RELOAD_RETURN_CLASS],
+		},
+		() => {
+			assert.doesNotThrow(() => markReloadReturn());
+			assert.doesNotThrow(() => clearReloadReturnMarker());
+			assert.doesNotThrow(() => endReloadReturn());
+			assert.equal(isReloadReturnActive(), false);
+		},
+	);
+	assert.equal(typeof document, "undefined");
+	assert.equal(isReloadReturnActive(), false);
+	assert.doesNotThrow(() => endReloadReturn());
 });

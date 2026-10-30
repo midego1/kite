@@ -15,7 +15,7 @@ import { authFetch } from "@/lib/auth/client";
 import { formatEmailAddress, getEmailAddress } from "@/lib/email/address";
 import { cn } from "@/lib/utils";
 import { SendReview } from "@/components/agent/send-review";
-import type { ReviewSnapshot } from "@/components/agent/send-review-types";
+import type { OpenedSendReview, ReviewSnapshot } from "@/components/agent/send-review-types";
 import { buildSendFormData, fetchDraft } from "./utils";
 import { ComposeAttachmentList } from "./compose-attachment-list";
 import { SendPreview } from "./send-preview";
@@ -70,7 +70,7 @@ export function ComposeForm({
 	const { selectedMailbox, setSelectedMailbox, mailboxes, defaultFrom, rememberFrom } = useComposeMailbox();
 	const [draftId, setDraftId] = useState<string | null>(null);
 	const [agentRevision, setAgentRevision] = useState<number | null>(null);
-	const [agentReview, setAgentReview] = useState<{ approvalId: string; snapshot: ReviewSnapshot } | null>(null);
+	const [agentReview, setAgentReview] = useState<OpenedSendReview | null>(null);
 	const [to, setTo] = useState<string[]>([]);
 	const [cc, setCc] = useState<string[]>([]);
 	const [bcc, setBcc] = useState<string[]>([]);
@@ -351,10 +351,19 @@ export function ComposeForm({
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({ draftId, expectedRevision: current.agent.revision }),
 				});
-				const result = (await response.json()) as { approvalId?: string; snapshot?: ReviewSnapshot; error?: string };
+				const result = (await response.json()) as {
+					approvalId?: string;
+					snapshot?: ReviewSnapshot;
+					unfamiliarRecipients?: string[];
+					error?: string;
+				};
 				if (!response.ok || !result.approvalId || !result.snapshot)
 					throw new Error(result.error || "Could not create review");
-				setAgentReview({ approvalId: result.approvalId, snapshot: result.snapshot });
+				setAgentReview({
+					approvalId: result.approvalId,
+					snapshot: result.snapshot,
+					unfamiliarRecipients: result.unfamiliarRecipients ?? [],
+				});
 			} catch (cause) {
 				setToast({ type: "error", message: cause instanceof Error ? cause.message : "Could not review draft" });
 			} finally {
@@ -633,6 +642,7 @@ export function ComposeForm({
 				<SendReview
 					approvalId={agentReview.approvalId}
 					snapshot={agentReview.snapshot}
+					unfamiliarRecipients={agentReview.unfamiliarRecipients}
 					onClose={() => setAgentReview(null)}
 					onReviewAgain={() => {
 						setAgentReview(null);
@@ -840,7 +850,7 @@ export function ComposeForm({
 							placeholder="Subject"
 							required
 							disabled={loadingDraft}
-							className="h-8 border-0 px-0 py-1 shadow-none focus-visible:ring-0"
+							className="reading-font h-8 border-0 px-0 py-1 shadow-none focus-visible:ring-0"
 						/>
 					</div>
 					<Label htmlFor={`${mode}-text`} className="sr-only">

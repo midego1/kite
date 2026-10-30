@@ -10,6 +10,8 @@ import { requestAgentSend, getAgentSendRequest } from "@/lib/agent/approvals/uti
 import type { EmailToolName } from "@/lib/agent/types";
 import type { McpPrincipal } from "./types";
 import { registerAdminMcpTools } from "./admin-tools";
+import { audited } from "./audit";
+import { coreToolAnnotations, markUntrusted, MCP_INSTRUCTIONS, moduleToolAnnotations } from "./server-utils";
 import { BUILD_VERSION } from "@/lib/build-version";
 import { listCapabilities } from "@/lib/modules/capability-registry";
 import { buildCallContext } from "@/lib/modules/capability-utils";
@@ -56,6 +58,11 @@ function output(value: unknown, isError = false) {
 	return { content: [{ type: "text" as const, text: JSON.stringify(value) }], isError };
 }
 
+/** A successful result, marked as third-party content for the model that reads it. */
+function untrustedOutput(value: unknown) {
+	return output(markUntrusted(value));
+}
+
 export async function createKiteMcpHandler(
 	env: CloudflareEnv,
 	principal: McpPrincipal,
@@ -81,7 +88,10 @@ export async function createKiteMcpHandler(
 		() => {
 			// Declared up front so `tools/list` answers an empty list when no tool applies, for example a key whose
 			// only scope belongs to a module that is off; without it the method is never registered.
-			const server = new McpServer({ name: "kite", version: BUILD_VERSION }, { capabilities: { tools: {} } });
+			const server = new McpServer(
+				{ name: "kite", version: BUILD_VERSION },
+				{ capabilities: { tools: {} }, instructions: MCP_INSTRUCTIONS },
+			);
 			const has = (scope: string) => principal.scopes.includes(scope);
 			if (principal.scopes.some((scope) => scope.startsWith("mcp:"))) {
 				const taken = new Set(CORE_TOOL_NAMES);
@@ -92,18 +102,28 @@ export async function createKiteMcpHandler(
 					taken.add(descriptor.name);
 					server.registerTool(
 						descriptor.name,
-						{ description: descriptor.description, inputSchema },
-						async (args: unknown) => {
-							const result = await invokeCapability(moduleId, descriptor.name, args as JsonValue, callContext);
-							return result.ok ? output(result.output) : output({ error: result.error.message }, true);
-						},
+						{ description: descriptor.description, inputSchema, annotations: moduleToolAnnotations(descriptor) },
+						audited(
+							env,
+							principal,
+							descriptor.name,
+							async (args: unknown) => {
+								const result = await invokeCapability(moduleId, descriptor.name, args as JsonValue, callContext);
+								return result.ok ? untrustedOutput(result.output) : output({ error: result.error.message }, true);
+							},
+							() => ({ moduleId }),
+						),
 					);
 				}
 				if (has("mcp:read"))
 					server.registerTool(
 						"list_mailboxes",
-						{ description: "List mailboxes allowed for this key", inputSchema: z.object({}) },
-						async () => {
+						{
+							description: "List mailboxes allowed for this key",
+							inputSchema: z.object({}),
+							annotations: coreToolAnnotations("list_mailboxes"),
+						},
+						audited(env, principal, "list_mailboxes", async () => {
 							if (!principal.scopes.includes("mcp:read")) return output({ error: "Permission denied" }, true);
 							const accessible = await listAccessibleMailboxes(getDb(env), principal.user);
 							return output(
@@ -115,7 +135,7 @@ export async function createKiteMcpHandler(
 										displayName,
 									})),
 							);
-						},
+						}),
 					);
 				for (const name of EMAIL_TOOL_NAMES) {
 					if (name === "edit_draft" || name === "review_draft_send" || !has(scopeByTool[name])) continue;
@@ -124,22 +144,29 @@ export async function createKiteMcpHandler(
 						{
 							description: emailToolDescriptions[name],
 							inputSchema: z.object({ mailboxId: z.string().min(1), ...emailToolSchemas[name].shape }),
+							annotations: coreToolAnnotations(name),
 						},
-						async (args) => {
-							if (!principal.scopes.includes(scopeByTool[name]) || !principal.mailboxIds.includes(args.mailboxId))
-								return output({ error: "Permission denied" }, true);
-							try {
-								return output(
-									await runEmailTool(
-										{ env, user: principal.user, mailboxId: args.mailboxId, origin: "mcp" },
-										name,
-										args,
-									),
-								);
-							} catch (error) {
-								return output({ error: error instanceof Error ? error.message : "Tool failed" }, true);
-							}
-						},
+						audited(
+							env,
+							principal,
+							name,
+							async (args: { mailboxId: string } & Record<string, unknown>) => {
+								if (!principal.scopes.includes(scopeByTool[name]) || !principal.mailboxIds.includes(args.mailboxId))
+									return output({ error: "Permission denied" }, true);
+								try {
+									return untrustedOutput(
+										await runEmailTool(
+											{ env, user: principal.user, mailboxId: args.mailboxId, origin: "mcp" },
+											name,
+											args,
+										),
+									);
+								} catch (error) {
+									return output({ error: error instanceof Error ? error.message : "Tool failed" }, true);
+								}
+							},
+							(args) => ({ mailboxId: args.mailboxId }),
+						),
 					);
 				}
 				if (has("mcp:draft"))
@@ -148,17 +175,26 @@ export async function createKiteMcpHandler(
 						{
 							description: emailToolDescriptions.edit_draft,
 							inputSchema: z.object({ mailboxId: z.string(), ...emailToolSchemas.edit_draft.shape }),
+							annotations: coreToolAnnotations("update_draft"),
 						},
-						async (args) => {
-							const { mailboxId } = args;
-							if (!principal.scopes.includes("mcp:draft") || !principal.mailboxIds.includes(mailboxId))
-								return output({ error: "Permission denied" }, true);
-							try {
-								return output(await editAgentDraft({ env, user: principal.user, mailboxId, origin: "mcp" }, args));
-							} catch (error) {
-								return output({ error: error instanceof Error ? error.message : "Draft update failed" }, true);
-							}
-						},
+						audited(
+							env,
+							principal,
+							"update_draft",
+							async (args: z.infer<typeof emailToolSchemas.edit_draft> & { mailboxId: string }) => {
+								const { mailboxId } = args;
+								if (!principal.scopes.includes("mcp:draft") || !principal.mailboxIds.includes(mailboxId))
+									return output({ error: "Permission denied" }, true);
+								try {
+									return untrustedOutput(
+										await editAgentDraft({ env, user: principal.user, mailboxId, origin: "mcp" }, args),
+									);
+								} catch (error) {
+									return output({ error: error instanceof Error ? error.message : "Draft update failed" }, true);
+								}
+							},
+							(args) => ({ mailboxId: args.mailboxId }),
+						),
 					);
 				if (has("mcp:request-send"))
 					server.registerTool(
@@ -170,23 +206,49 @@ export async function createKiteMcpHandler(
 								draftId: z.string(),
 								expectedRevision: z.number().int().positive(),
 							}),
+							annotations: coreToolAnnotations("request_send"),
 						},
-						async ({ mailboxId, draftId, expectedRevision }) => {
-							if (!principal.scopes.includes("mcp:request-send") || !principal.mailboxIds.includes(mailboxId))
-								return output({ error: "Permission denied" }, true);
-							const [draft] = await getDb(env)
-								.select({ mailboxId: messages.mailboxId })
-								.from(messages)
-								.where(eq(messages.id, draftId))
-								.limit(1);
-							if (draft?.mailboxId !== mailboxId) return output({ error: "Draft not found" }, true);
-							try {
-								const result = await requestAgentSend(env, principal.user, draftId, expectedRevision, principal.keyId);
-								return output({ ...result, reviewUrl: new URL(result.reviewUrl, env.APP_URL || baseUrl).toString() });
-							} catch (error) {
-								return output({ error: error instanceof Error ? error.message : "Request failed" }, true);
-							}
-						},
+						audited(
+							env,
+							principal,
+							"request_send",
+							async ({
+								mailboxId,
+								draftId,
+								expectedRevision,
+							}: {
+								mailboxId: string;
+								draftId: string;
+								expectedRevision: number;
+							}) => {
+								if (!principal.scopes.includes("mcp:request-send") || !principal.mailboxIds.includes(mailboxId))
+									return output({ error: "Permission denied" }, true);
+								const [draft] = await getDb(env)
+									.select({ mailboxId: messages.mailboxId })
+									.from(messages)
+									.where(eq(messages.id, draftId))
+									.limit(1);
+								if (draft?.mailboxId !== mailboxId) return output({ error: "Draft not found" }, true);
+								try {
+									const result = await requestAgentSend(
+										env,
+										principal.user,
+										draftId,
+										expectedRevision,
+										principal.keyId,
+									);
+									// The recipient warning is for the person reviewing in Kite, not for the client.
+									const { unfamiliarRecipients: _review, ...request } = result;
+									return untrustedOutput({
+										...request,
+										reviewUrl: new URL(request.reviewUrl, env.APP_URL || baseUrl).toString(),
+									});
+								} catch (error) {
+									return output({ error: error instanceof Error ? error.message : "Request failed" }, true);
+								}
+							},
+							(args) => ({ mailboxId: args.mailboxId }),
+						),
 					);
 				if (has("mcp:request-send"))
 					server.registerTool(
@@ -194,8 +256,9 @@ export async function createKiteMcpHandler(
 						{
 							description: "Read the status of this key's send review request",
 							inputSchema: z.object({ approvalId: z.string() }),
+							annotations: coreToolAnnotations("get_send_request"),
 						},
-						async ({ approvalId }) => {
+						audited(env, principal, "get_send_request", async ({ approvalId }: { approvalId: string }) => {
 							if (!principal.scopes.includes("mcp:request-send")) return output({ error: "Permission denied" }, true);
 							const [row] = await getDb(env)
 								.select({ keyId: agentSendApprovals.requestKeyId })
@@ -204,14 +267,19 @@ export async function createKiteMcpHandler(
 								.limit(1);
 							if (row?.keyId !== principal.keyId) return output({ error: "Request not found" }, true);
 							try {
-								return output(await getAgentSendRequest(env, principal.user, approvalId));
+								const { unfamiliarRecipients: _review, ...request } = await getAgentSendRequest(
+									env,
+									principal.user,
+									approvalId,
+								);
+								return untrustedOutput(request);
 							} catch {
 								return output({ error: "Request not found" }, true);
 							}
-						},
+						}),
 					);
 			}
-			registerAdminMcpTools(server, principal, baseUrl, authorization);
+			registerAdminMcpTools(server, env, principal, baseUrl, authorization);
 			return server;
 		},
 		{ responseMode: "json" },

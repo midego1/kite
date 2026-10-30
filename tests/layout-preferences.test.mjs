@@ -78,12 +78,24 @@ test("parseLayoutPatch needs a layout object with at least one valid choice", ()
 });
 
 test("a layout maps to the browser storage the views read", () => {
-	const layout = { readingPane: "below", density: "compact", conversationView: false, listWidth: 420, listHeight: 300 };
+	const layout = {
+		readingPane: "below",
+		density: "compact",
+		conversationView: false,
+		font: "opendyslexic",
+		emailFont: "reader",
+		fontScope: "everywhere",
+		listWidth: 420,
+		listHeight: 300,
+	};
 	const entries = layoutStorageEntries(layout, "user-1");
 	assert.deepEqual(entries, [
 		["kite-reading-pane", "below"],
 		["kite-message-density", "compact"],
 		["kite-conversation-view", "off"],
+		["kite-font", "opendyslexic"],
+		["kite-email-font", "reader"],
+		["kite-font-scope", "everywhere"],
 		["kite-column-width:message-list", "420"],
 		["kite-column-width:message-list:user-1", "420"],
 		["kite-column-width:message-list-height", "300"],

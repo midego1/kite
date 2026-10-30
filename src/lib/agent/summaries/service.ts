@@ -23,6 +23,7 @@ import { spendCapMessage } from "../chat-spend-utils";
 import { interactiveRefusal, selectInteractiveModel } from "../interactive-model";
 import { getAgentProviderPublicConfig } from "../provider";
 import { personalInstructionsFor } from "../user-ai-settings";
+import { agentThreadCondition } from "../thread-context";
 import {
 	buildSummaryPrompt,
 	buildSummaryRepairPrompt,
@@ -111,6 +112,8 @@ function coveredCondition(anchor: Anchor, scope: SummaryScope) {
 			: sql`coalesce(${messages.threadId}, ${messages.id}) = ${anchor.threadKey}`,
 		inArray(messages.status, ELIGIBLE),
 		sql`coalesce(${messages.spamVerdict}, '') <> 'spam'`,
+		// The same rows the assistant's other thread readers see; ELIGIBLE already leaves out drafts.
+		agentThreadCondition(anchor.id, null),
 	);
 }
 

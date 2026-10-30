@@ -1,0 +1,3 @@
+### Changed
+
+- The dyslexia-friendly font (OpenDyslexic) now has a **Use it for** choice under [Settings → Appearance](/settings/appearance), shown with the font and following your account like the font itself. **Text only** (the new default) sets emails, what you write, the message list's sender, subject and preview lines, thread summaries and assistant replies in it, while menus, buttons, labels, headers and the sidebar keep the normal interface font; **Everywhere** is how the font behaved before. If you had already chosen OpenDyslexic, you now get Text only; pick Everywhere to keep the whole app in it. Nothing changes when another font is chosen, and no font file is requested unless OpenDyslexic is.

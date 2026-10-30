@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
-import { agentDraftMetadata, agentSendApprovals, messageAttachments, messages } from "@/db/schema";
+import { agentDraftMetadata, agentSendApprovals, contacts, messageAttachments, messages } from "@/db/schema";
+import { getEmailAddressList } from "@/lib/email/address";
 import { getAuthorizedSenderAddress } from "@/lib/email/sender";
 import { loadMessageAttachmentContents } from "@/lib/email/attachments";
 import { sendEmail } from "@/lib/email/send";
@@ -70,6 +71,35 @@ async function snapshot(
 	return { payload, hash: await sha256(canonicalSnapshotJson(payload)) };
 }
 
+/** Contact sources that mean the user chose the address: saved by hand, or written to before. */
+const FAMILIAR_CONTACT_SOURCES = ["outbound", "manual"] as const;
+
+/**
+ * The recipients of a reviewed draft the user has never written to or saved as a contact: where an instruction
+ * hidden in incoming mail would send private text (upstream Mailflare #225). Lower-cased, in header order.
+ * @public Test-only: exported for tests; the review requests below are its callers.
+ */
+export async function unfamiliarRecipients(
+	env: CloudflareEnv,
+	userId: string,
+	snapshot: Pick<AgentSendSnapshot, "to" | "cc" | "bcc">,
+): Promise<string[]> {
+	const addresses = getEmailAddressList([snapshot.to, snapshot.cc, snapshot.bcc].filter(Boolean).join(", "));
+	if (addresses.length === 0) return [];
+	const known = await getDb(env)
+		.select({ email: contacts.email })
+		.from(contacts)
+		.where(
+			and(
+				eq(contacts.userId, userId),
+				inArray(contacts.email, addresses),
+				inArray(contacts.source, [...FAMILIAR_CONTACT_SOURCES]),
+			),
+		);
+	const familiar = new Set(known.map((row) => row.email));
+	return addresses.filter((address) => !familiar.has(address));
+}
+
 export async function requestAgentSend(
 	env: CloudflareEnv,
 	user: SessionUser,
@@ -104,7 +134,14 @@ export async function requestAgentSend(
 			payloadHash: hash,
 			expiresAt,
 		});
-	return { approvalId: id, status: "pending_approval", expiresAt, snapshot: payload, reviewUrl: `/agent/review/${id}` };
+	return {
+		approvalId: id,
+		status: "pending_approval",
+		expiresAt,
+		snapshot: payload,
+		unfamiliarRecipients: await unfamiliarRecipients(env, user.id, payload),
+		reviewUrl: `/agent/review/${id}`,
+	};
 }
 
 export async function getAgentSendRequest(env: CloudflareEnv, user: SessionUser, approvalId: string) {
@@ -137,6 +174,7 @@ export async function getAgentSendRequest(env: CloudflareEnv, user: SessionUser,
 		expiresAt: approval.expiresAt,
 		snapshot: current,
 		stale,
+		unfamiliarRecipients: current ? await unfamiliarRecipients(env, user.id, current) : [],
 	};
 }
 

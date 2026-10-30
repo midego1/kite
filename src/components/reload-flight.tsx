@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
+import { KiteGlyph } from "./kite-glyph";
 import type { ReloadFlightProps } from "./reload-flight-types";
 import {
 	RELOAD_FLIGHT_ANNOUNCEMENT,
@@ -85,30 +86,7 @@ function ReloadFlightScene({ onEnd }: { onEnd: () => void }) {
 					if (isFlightEnd(event.animationName)) onEnd();
 				}}
 			>
-				<defs>
-					<linearGradient id="reload-flight-fill" x1="14" y1="8" x2="80" y2="88" gradientUnits="userSpaceOnUse">
-						<stop stopColor="#7fa2ff" />
-						<stop offset="1" stopColor="#9b7bf7" />
-					</linearGradient>
-				</defs>
-				{/* The tail trails from the kite's lower tip and sways on its own, slightly behind the kite. */}
-				<g className="reload-flight-tail" stroke="#9b7bf7" strokeWidth="2.5" strokeLinecap="round">
-					<path d="M28 91 C 20 108, 4 112, -2 134 S -10 158, -14 166" opacity="0.8" />
-					<path d="M12 112 l-8 -6 M12 112 l-9 4" />
-					<path d="M-2 134 l-8 -5 M-2 134 l-9 5" />
-					<path d="M-10 156 l-8 -5 M-10 156 l-8 5" />
-				</g>
-				{/* The logo in public/kite.svg. */}
-				<path
-					d="M62 5 L85 50 L28 91 L11 25 Z"
-					fill="url(#reload-flight-fill)"
-					stroke="url(#reload-flight-fill)"
-					strokeWidth="3"
-					strokeLinejoin="round"
-				/>
-				<path d="M62 5 L11 25 L49 37.9 Z" fill="#ffffff" fillOpacity="0.14" />
-				<path d="M85 50 L28 91 L49 37.9 Z" fill="#4f46e5" fillOpacity="0.12" />
-				<path d="M11 25 L85 50 M62 5 L28 91" stroke="#ffffff" strokeWidth="3.5" strokeLinecap="round" />
+				<KiteGlyph fillId="reload-flight-fill" tailClassName="reload-flight-tail" />
 			</svg>
 		</div>
 	);

@@ -57,6 +57,8 @@ export type AwsRequest = {
 	headers?: Record<string, string>;
 	/** Region used to sign; defaults to the config's. */
 	region?: string;
+	/** Aborts the request (and reading its answer) after this many milliseconds; none by default. */
+	timeoutMs?: number;
 	/** Statuses answered without throwing (a HEAD probe's 404). */
 	allowStatuses?: number[];
 	fetch?: typeof fetch;
@@ -125,7 +127,15 @@ export async function awsRequest(request: AwsRequest): Promise<Response> {
 		service,
 		credentials: config,
 	});
-	const init: RequestInit & { duplex?: "half" } = { method, headers, ...body.init };
+	// A redirect is never followed: the signed request would go to a host nobody checked (the store endpoint guard
+	// only vets the configured one). A 3xx is not ok, so it throws like any other refusal.
+	const init: RequestInit & { duplex?: "half" } = {
+		method,
+		headers,
+		redirect: "manual",
+		...(request.timeoutMs ? { signal: AbortSignal.timeout(request.timeoutMs) } : {}),
+		...body.init,
+	};
 	const response = await (request.fetch ?? fetch)(url, init);
 	if (!response.ok && !request.allowStatuses?.includes(response.status)) throw await parseError(response);
 	return response;

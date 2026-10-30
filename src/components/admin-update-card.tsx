@@ -127,7 +127,7 @@ export function AdminUpdateCard() {
 		// The run's own answer replaces the list before the card re-renders, so the pending panel never flashes back.
 		void applyMigrations(migrationStatus?.pending ?? [], "admin", (result) =>
 			setMigrationStatus({
-				ready: true,
+				ready: result.ready ?? !result.pending?.length,
 				pending: result.pending ?? [],
 				unknown: result.unknown ?? [],
 				applied: result.applied,

@@ -2,9 +2,11 @@ import type { S3Provider } from "./types";
 
 export type ValidationStepId =
 	| "endpoint"
+	| "credentials"
 	| "bucket"
 	| "write"
 	| "read"
+	| "list"
 	| "delete"
 	| "multipart"
 	| "presign"
@@ -31,10 +33,12 @@ export type ValidationReport = {
 };
 
 export const STEP_LABELS: Record<ValidationStepId, string> = {
-	endpoint: "Endpoint is allowed",
-	bucket: "Bucket exists and the key can use it",
+	endpoint: "Endpoint is reachable",
+	credentials: "Credentials accepted",
+	bucket: "Bucket found and usable",
 	write: "Write a test object",
 	read: "Read it back",
+	list: "List objects",
 	delete: "Delete it",
 	multipart: "Start and cancel a multipart upload",
 	presign: "Open a signed link",
@@ -49,9 +53,11 @@ export const STEP_LABELS: Record<ValidationStepId, string> = {
  */
 export const REQUIRED_STEPS: readonly ValidationStepId[] = [
 	"endpoint",
+	"credentials",
 	"bucket",
 	"write",
 	"read",
+	"list",
 	"delete",
 	"multipart",
 	"presign",
@@ -85,47 +91,124 @@ const PERMISSION_FOR: Partial<Record<ValidationStepId, string>> = {
 	bucket: "s3:ListBucket",
 	write: "s3:PutObject",
 	read: "s3:GetObject",
+	list: "s3:ListBucket",
 	delete: "s3:DeleteObject",
 	multipart: "s3:PutObject and s3:AbortMultipartUpload",
 	presign: "s3:GetObject",
 };
 
-type FailureShape = { status?: number; code?: string; message?: string; network?: boolean };
+type FailureShape = { status?: number; code?: string; message?: string; network?: boolean; timeout?: boolean };
 
-/** Turns a failed request into what went wrong and how to fix it, by the S3 error code. */
-export function describeFailure(step: ValidationStepId, failure: FailureShape): Pick<ValidationStep, "detail" | "fix"> {
+/** Who the hint is for: the provider names its own console and permission, and the bucket is named. */
+export type HintContext = { provider: S3Provider; bucket: string };
+
+const CREDENTIAL_CODES =
+	/SignatureDoesNotMatch|InvalidAccessKeyId|InvalidClientTokenId|UnrecognizedClient|InvalidToken/i;
+const CLOCK_CODES = /RequestTimeTooSkewed|RequestExpired/i;
+
+/**
+ * Which of the first three steps a failed bucket check belongs to: no answer at all is the endpoint, a key or
+ * signature the store does not accept is the credentials, and anything else (missing, wrong region, denied)
+ * is the bucket.
+ */
+export function bucketFailureStep(failure: FailureShape): "endpoint" | "credentials" | "bucket" {
+	if (failure.network || failure.timeout) return "endpoint";
 	const code = failure.code ?? "";
+	if (CREDENTIAL_CODES.test(code) || CLOCK_CODES.test(code) || failure.status === 401) return "credentials";
+	return "bucket";
+}
+
+/**
+ * The permission to grant, in the words of the provider's own console.
+ * @public Exercised by the unit tests.
+ */
+export function accessFix(step: ValidationStepId, context?: HintContext): string {
+	const permission = PERMISSION_FOR[step];
+	if (!context) return permission ? `Grant ${permission} on the bucket.` : "Grant the permissions in the policy below.";
+	const { bucket } = context;
+	switch (context.provider) {
+		case "r2":
+			return `Access denied: give the R2 API token Object Read & Write on ${bucket} (R2 → Manage API tokens).`;
+		case "b2":
+			return `Access denied: use an application key with Read and Write access to ${bucket}.`;
+		case "hetzner":
+			return `Access denied: use S3 credentials from the Hetzner project that owns ${bucket}.`;
+		case "minio":
+			return `Access denied: allow ${permission ?? "read and write"} on ${bucket} for the access key's user (the built-in readwrite policy covers it).`;
+		case "wasabi":
+			return `Access denied: allow ${permission ?? "read and write"} on ${bucket} in the key's user policy.`;
+		default:
+			return permission
+				? `Access denied: grant ${permission} on ${bucket}.`
+				: "Grant the permissions in the policy below.";
+	}
+}
+
+function credentialsFix(code: string, context?: HintContext): Pick<ValidationStep, "detail" | "fix"> {
+	const shownOnce =
+		context?.provider === "r2"
+			? " R2 shows the secret only once, when the token is created; create a new one if needed."
+			: "";
+	if (/SignatureDoesNotMatch/i.test(code))
+		return {
+			detail: "The store rejected the signature.",
+			fix:
+				context?.provider === "r2"
+					? `Check the secret access key.${shownOnce}`
+					: "Check the secret access key, and that the region matches the bucket's region.",
+		};
+	return {
+		detail: "The store does not know this access key ID.",
+		fix: `Check the access key ID, and that the key has not been deleted.${shownOnce}`,
+	};
+}
+
+/** No answer at all: the network failed or the store did not answer within the check's deadline. */
+function transportFailure(failure: FailureShape): Pick<ValidationStep, "detail" | "fix"> | null {
+	if (failure.timeout)
+		return {
+			detail: "The store did not answer in time.",
+			fix: "Check the endpoint, and that the store is reachable from the server.",
+		};
 	if (failure.network)
 		return {
 			detail: "Could not reach the endpoint.",
 			fix: "Check the endpoint host and port, and that the store is reachable from the server.",
 		};
-	if (/SignatureDoesNotMatch/i.test(code))
-		return {
-			detail: "The store rejected the signature.",
-			fix: "Check the secret access key, and that the region matches the bucket's region.",
-		};
-	if (/InvalidAccessKeyId|InvalidClientTokenId|UnrecognizedClient/i.test(code))
-		return { detail: "The store does not know this access key ID.", fix: "Check the access key ID." };
-	if (/RequestTimeTooSkewed|RequestExpired/i.test(code) || /expired/i.test(failure.message ?? ""))
+	return null;
+}
+
+/** Turns a failed request into what went wrong and how to fix it, by the S3 error code. */
+export function describeFailure(
+	step: ValidationStepId,
+	failure: FailureShape,
+	context?: HintContext,
+): Pick<ValidationStep, "detail" | "fix"> {
+	const code = failure.code ?? "";
+	const transport = transportFailure(failure);
+	if (transport) return transport;
+	if (CREDENTIAL_CODES.test(code)) return credentialsFix(code, context);
+	if (CLOCK_CODES.test(code) || /expired/i.test(failure.message ?? ""))
 		return {
 			detail: "The store refused a signed request as expired.",
 			fix: "The server clock and the store's clock differ; check the server's time.",
 		};
+	if (failure.status === 401) return credentialsFix("InvalidAccessKeyId", context);
 	if (/NoSuchBucket/i.test(code) || (step === "bucket" && failure.status === 404))
-		return { detail: "The bucket does not exist.", fix: "Check the bucket name, or create the bucket first." };
-	if (/PermanentRedirect|AuthorizationHeaderMalformed|IllegalLocationConstraint/i.test(code) || failure.status === 301)
+		return {
+			detail: "The bucket does not exist.",
+			fix: context
+				? `Check the bucket name (${context.bucket}), or create the bucket first.`
+				: "Check the bucket name, or create the bucket first.",
+		};
+	const redirected = !!failure.status && failure.status >= 300 && failure.status < 400;
+	if (/PermanentRedirect|AuthorizationHeaderMalformed|IllegalLocationConstraint/i.test(code) || redirected)
 		return {
 			detail: "The bucket is in another region or needs another endpoint.",
 			fix: "Use the bucket's own region and endpoint.",
 		};
 	if (/AccessDenied|Forbidden/i.test(code) || failure.status === 403)
-		return {
-			detail: "The key is not allowed to do this.",
-			fix: PERMISSION_FOR[step]
-				? `Grant ${PERMISSION_FOR[step]} on the bucket.`
-				: "Grant the permissions in the policy below.",
-		};
+		return { detail: "The key is not allowed to do this.", fix: accessFix(step, context) };
 	return {
 		detail: failure.message ? `The store answered: ${failure.message.slice(0, 200)}` : "The request failed.",
 		fix: PERMISSION_FOR[step] ? `Check that the key has ${PERMISSION_FOR[step]}.` : undefined,
@@ -140,6 +223,7 @@ const headerList = (value: string | null) =>
 
 /** The CORS preflight answer direct uploads need, or what is missing from it. */
 export function preflightProblem(headers: Headers, status: number, origin: string): string | null {
+	if (status >= 300 && status < 400) return "The store redirected the request; use the bucket's own endpoint.";
 	const allowOrigin = headers.get("access-control-allow-origin");
 	if (status >= 400 || !allowOrigin) return "The store did not allow uploads from this site.";
 	if (allowOrigin !== "*" && allowOrigin !== origin) return `The store allows ${allowOrigin}, not ${origin}.`;
@@ -163,7 +247,9 @@ export function uploadResponseProblem(headers: Headers, origin: string): string 
 
 /** Where to set the CORS rule when Kite cannot set it itself. */
 export function corsFix(provider: S3Provider, canApply: boolean): string {
-	if (canApply) return "Use Apply CORS, or add the rule below to the bucket.";
+	if (provider === "r2")
+		return "Add the rule below under R2, the bucket, Settings, CORS policy, or use Apply CORS once the store is saved.";
+	if (canApply) return "Add the rule below to the bucket, or use Apply CORS once the store is saved.";
 	if (provider === "b2") return "Add the rule below with the B2 CLI (b2 bucket update --cors-rules) or the B2 console.";
 	return "Add the rule below in the provider's console or CLI.";
 }

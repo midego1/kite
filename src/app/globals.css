@@ -81,10 +81,20 @@
 	src: url("/fonts/opendyslexic/opendyslexic-latin-700-italic.woff2") format("woff2");
 }
 :root[data-font="opendyslexic"] {
-	--font-ui: "OpenDyslexic", var(--font-geist-sans), system-ui, sans-serif;
+	--font-reading: "OpenDyslexic", var(--font-geist-sans), system-ui, sans-serif;
 }
-/* Reading text (plain-text mail, what you write) gets a little more room between letters, words and lines;
-   the compact chrome (labels, buttons, the list) keeps its normal spacing so nothing truncates. */
+/* "Use it for: Everywhere" (data-font-scope) makes it the interface font too. The default, Text only, leaves
+   --font-ui as the style or Font choice set it, so menus, buttons, labels and headers keep their usual look. */
+:root[data-font="opendyslexic"][data-font-scope="everywhere"] {
+	--font-ui: var(--font-reading);
+}
+/* Reading text: mail, the composer, the message list's sender, subject and preview lines, thread summaries
+   and assistant replies. .reading-font is the typeface alone, for compact rows; .reading-text (long text)
+   also gets a little more room between letters, words and lines, which the list keeps out so nothing truncates. */
+:root[data-font="opendyslexic"] .reading-font,
+:root[data-font="opendyslexic"] .reading-text {
+	font-family: var(--font-reading);
+}
 :root[data-font="opendyslexic"] .reading-text {
 	letter-spacing: 0.02em;
 	word-spacing: 0.08em;
@@ -619,6 +629,219 @@ pre {
 	animation: reload-flight-tail 280ms ease-in-out infinite alternate;
 }
 
+/* The kite's return after a reload to a new version (reload-return-scene.tsx, in the startup screen of
+   loading-transition.tsx). The inline script in <head> (reload-return-utils.ts) puts `kite-reload-return` on <html>
+   when the previous page left with the flight above; without it both parts are display: none and the startup
+   screen is as before. The kite sails in from the top right, then hangs on its string just above the progress
+   bar: the hand is the pivot of a slow swing, the kite bobs on its own period, the tail ripples, two clouds drift
+   and two wind lines pass. Everything is CSS, so it moves before any chunk arrives and adds no nodes for the boot
+   watchdog (asset-recovery-utils.ts) to count as progress; when that watchdog gives up (its #kite-boot-failure
+   box) the scene goes away and the theme's text stays readable on the theme's background. */
+html.kite-reload-return {
+	--reload-return-width: clamp(7rem, 22vmin, 11rem);
+	--reload-return-cloud: rgba(173, 194, 236, 0.45);
+	--reload-return-wind: rgba(107, 134, 196, 0.55);
+	--reload-return-string: rgba(74, 85, 120, 0.5);
+	--reload-return-track: rgba(127, 162, 255, 0.22);
+}
+
+html.dark.kite-reload-return {
+	--reload-return-cloud: rgba(255, 255, 255, 0.07);
+	--reload-return-wind: rgba(255, 255, 255, 0.3);
+	--reload-return-string: rgba(232, 234, 237, 0.4);
+	--reload-return-track: rgba(127, 162, 255, 0.25);
+}
+
+.reload-return-sky,
+.reload-return-kite,
+.reload-return-only,
+.reload-return-static {
+	display: none;
+}
+
+html.kite-reload-return :is(.reload-return-sky, .reload-return-kite) {
+	display: block;
+}
+
+html.kite-reload-return:has(#kite-boot-failure) :is(.reload-return-sky, .reload-return-kite) {
+	display: none;
+}
+
+html.kite-reload-return .reload-return-only {
+	display: inline;
+}
+
+html.kite-reload-return .reload-return-hidden {
+	display: none;
+}
+
+/* The screen follows the theme while the kite is back, instead of the plain light page. */
+html.kite-reload-return [data-loading-overlay] {
+	background: var(--background);
+	color: var(--foreground);
+}
+
+html.kite-reload-return .reload-return-track {
+	background: var(--reload-return-track);
+}
+
+html.kite-reload-return .reload-return-progress {
+	background: linear-gradient(90deg, #7fa2ff, #9b7bf7);
+}
+
+.reload-return-arrive {
+	position: absolute;
+	left: 50%;
+	bottom: 0.75rem;
+	width: var(--reload-return-width);
+	margin-left: calc(var(--reload-return-width) / -2);
+	animation: reload-return-arrive 1300ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+	will-change: transform, opacity;
+}
+
+.reload-return-swing {
+	transform-origin: 50% 100%;
+	animation: reload-return-swing 3200ms ease-in-out infinite alternate;
+}
+
+.reload-return-glyph {
+	display: block;
+	width: 100%;
+	height: auto;
+	color: var(--reload-return-string);
+	animation: reload-return-bob 2100ms ease-in-out infinite alternate;
+}
+
+.reload-return-tail {
+	transform-origin: 28px 91px;
+	transform-box: view-box;
+	animation: reload-return-tail 900ms ease-in-out infinite alternate;
+}
+
+.reload-return-cloud {
+	position: absolute;
+	border-radius: 999px;
+	background: radial-gradient(ellipse at center, var(--reload-return-cloud) 0%, transparent 70%);
+	animation: reload-return-drift 18s ease-in-out infinite alternate;
+}
+
+.reload-return-cloud-1 {
+	top: 16%;
+	left: 6%;
+	width: 20rem;
+	height: 6rem;
+}
+
+.reload-return-cloud-2 {
+	top: 64%;
+	right: 4%;
+	width: 14rem;
+	height: 4.5rem;
+	animation-duration: 24s;
+	animation-direction: alternate-reverse;
+}
+
+.reload-return-wind {
+	position: absolute;
+	left: calc(50% + 4rem);
+	height: 2px;
+	border-radius: 1px;
+	background: var(--reload-return-wind);
+	opacity: 0;
+	animation: reload-return-wind 2800ms ease-in-out infinite;
+}
+
+.reload-return-wind-1 {
+	bottom: 11rem;
+	width: 3.5rem;
+	animation-delay: 1400ms;
+}
+
+.reload-return-wind-2 {
+	bottom: 8.5rem;
+	left: calc(50% + 6rem);
+	width: 2.25rem;
+	animation-delay: 2300ms;
+}
+
+/* Below the bar without moving it (the kite hangs from the bar); the slow-start recovery takes its place. */
+.reload-return-static {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	right: 0;
+	margin-top: 0.75rem;
+	text-align: center;
+}
+
+div:has(+ .loading-recovery) > .reload-return-static {
+	display: none;
+}
+
+@keyframes reload-return-arrive {
+	from {
+		transform: translate(55vw, -55vh) rotate(18deg) scale(0.7);
+		opacity: 0;
+	}
+	45% {
+		opacity: 1;
+	}
+	to {
+		transform: translate(0, 0) rotate(0deg) scale(1);
+		opacity: 1;
+	}
+}
+
+@keyframes reload-return-swing {
+	from {
+		transform: rotate(-3deg);
+	}
+	to {
+		transform: rotate(3deg);
+	}
+}
+
+@keyframes reload-return-bob {
+	from {
+		transform: translateY(0);
+	}
+	to {
+		transform: translateY(-0.5rem);
+	}
+}
+
+@keyframes reload-return-tail {
+	from {
+		transform: rotate(-6deg);
+	}
+	to {
+		transform: rotate(5deg);
+	}
+}
+
+@keyframes reload-return-drift {
+	from {
+		transform: translateX(-6vw);
+	}
+	to {
+		transform: translateX(6vw);
+	}
+}
+
+@keyframes reload-return-wind {
+	0% {
+		transform: translateX(2.5rem);
+		opacity: 0;
+	}
+	35% {
+		opacity: 0.9;
+	}
+	100% {
+		transform: translateX(-4rem);
+		opacity: 0;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.kite-fly-away {
 		animation: none;
@@ -629,6 +852,23 @@ pre {
 	.reload-flight-kite,
 	.reload-flight-tail {
 		animation: none;
+	}
+
+	/* The kite's return (reload-return-scene.tsx) stands still, without wind, and says what is happening. */
+	.reload-return-arrive,
+	.reload-return-swing,
+	.reload-return-glyph,
+	.reload-return-tail,
+	.reload-return-cloud {
+		animation: none;
+	}
+
+	.reload-return-wind {
+		display: none;
+	}
+
+	html.kite-reload-return .reload-return-static {
+		display: block;
 	}
 
 	.dialog-overlay,

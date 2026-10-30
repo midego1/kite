@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { lookup } from "node:dns/promises";
+import { lookup, resolveTxt } from "node:dns/promises";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createNoopMetrics } from "../../src/lib/metrics.mjs";
@@ -114,6 +114,7 @@ export function createNodeRuntime(): NodeRuntime {
 		SEND_LIMIT_PER_DAY: optional("SEND_LIMIT_PER_DAY"),
 		RESOLVE_HOST: async (hostname: string) =>
 			(await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address),
+		RESOLVE_TXT: resolveTxtRecords,
 		EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK: optional("EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK"),
 		EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS: optional("EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS"),
 		EXTERNAL_ACCOUNTS_EXTRA_PORTS: optional("EXTERNAL_ACCOUNTS_EXTRA_PORTS"),
@@ -137,4 +138,15 @@ export function createNodeRuntime(): NodeRuntime {
 		agentQueue: agentQueue as unknown as InProcessQueue,
 		realtime,
 	};
+}
+
+/** TXT records through the system resolver; a name without any (NXDOMAIN, no data) answers an empty list. */
+async function resolveTxtRecords(name: string): Promise<string[]> {
+	try {
+		return (await resolveTxt(name)).map((chunks) => chunks.join(""));
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code === "ENOTFOUND" || code === "ENODATA") return [];
+		throw error;
+	}
 }

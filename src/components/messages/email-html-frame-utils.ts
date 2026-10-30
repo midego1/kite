@@ -1,5 +1,5 @@
 import { readerFontStyles } from "@/components/font-assets-utils";
-import type { EmailFrameDocumentOptions } from "./email-html-frame-types";
+import type { EmailColourFacts, EmailFrameDocumentOptions } from "./email-html-frame-types";
 
 /**
  * Received mail renders in an iframe with `sandbox` but without `allow-scripts`,
@@ -39,35 +39,66 @@ const DARK_STYLES =
 // whole, the way Outlook and Spark do it; media is inverted back so photos and
 // logos keep their colours. invert(.92) instead of 1 keeps whites off pure black
 // and dims media slightly (0.08 + 0.84x after the double inversion).
-const OWN_BACKGROUND =
-	/\bbgcolor\s*=|background(?:-color)?\s*:\s*(?!\s*(?:transparent|none|inherit|initial|unset)\b)[^;"'}]/i;
 const INVERTED_STYLES = [
 	"html{background:#f2f2f0;filter:invert(.92) hue-rotate(180deg)}",
 	"body{padding:12px}",
 	'img,video,picture,svg,iframe,[background],[style*="background-image"],[style*="background:url"],[style*="background: url"]{filter:invert(1) hue-rotate(180deg)}',
 ].join("");
 
-export function hasOwnBackground(html: string): boolean {
-	return OWN_BACKGROUND.test(html);
+// What dark mode does with mail that brings its own colours depends on the colours themselves, which the
+// reader's sanitizer reads from each element's parsed inline style (EmailColourFacts):
+//  1. A background, or a text colour that stays unreadable on the dark canvas (a #1F497D signature): the mail is
+//     rendered light and inverted.
+//  2. Otherwise near-black text (Outlook's `color:black`, Gmail's `#222`), which the sanitizer marked
+//     `data-kite-text="neutral"`, takes the theme's text colour, so an ordinary reply looks like plain mail.
+//  3. Colours that read fine on dark (light text) are left alone.
+// "Original colours" shows the sender's markup on a light canvas whenever 1 or 2 changed something.
+const THEME_TEXT = "#e8eaed";
+const THEME_LINK = "#8ab4f8";
+const THEME_MUTED = "#9aa0a6";
+const NEUTRAL_TEXT = "[data-kite-text=neutral]";
+
+function neutralTextStyles(muted: boolean): string {
+	return (
+		`${NEUTRAL_TEXT}{color:${muted ? THEME_MUTED : THEME_TEXT}!important}` +
+		`blockquote ${NEUTRAL_TEXT}{color:${THEME_MUTED}!important}` +
+		`a${NEUTRAL_TEXT},a ${NEUTRAL_TEXT}{color:${THEME_LINK}!important}`
+	);
+}
+
+/** Whether dark mode changes this mail's colours, so "Original colours" has something to show. */
+export function emailColoursAdapted(colours: EmailColourFacts | undefined): boolean {
+	return !!colours && (colours.background || colours.unreadable || colours.neutral);
+}
+
+type FrameRendering = { scheme: "dark" | "light"; inverted: boolean };
+
+function frameRendering(options: EmailFrameDocumentOptions): FrameRendering {
+	if (!options.dark) return { scheme: "light", inverted: false };
+	const adapted = emailColoursAdapted(options.colours);
+	if (options.original) return { scheme: adapted ? "light" : "dark", inverted: false };
+	const inverted = !!options.colours && (options.colours.background || options.colours.unreadable);
+	return inverted ? { scheme: "light", inverted: true } : { scheme: "dark", inverted: false };
 }
 
 /**
  * The color-scheme the frame document declares. The `<iframe>` element has to declare the same one:
  * when they differ, Chromium paints an opaque canvas (#121212 for dark) behind the mail.
  */
-export function emailFrameColorScheme(html: string, options: EmailFrameDocumentOptions = {}): "dark" | "light" {
-	return options.dark && !hasOwnBackground(html) ? "dark" : "light";
+export function emailFrameColorScheme(options: EmailFrameDocumentOptions = {}): "dark" | "light" {
+	return frameRendering(options).scheme;
 }
 
 export function buildEmailFrameDocument(html: string, options: EmailFrameDocumentOptions = {}): string {
-	const inverted = !!options.dark && !options.original && hasOwnBackground(html);
-	const dark = emailFrameColorScheme(html, options) === "dark";
+	const { scheme, inverted } = frameRendering(options);
+	const dark = scheme === "dark";
 	const lightCanvas = !!options.dark && !dark && !inverted;
 	const colorStyles =
 		(dark ? DARK_STYLES : LIGHT_STYLES) +
 		(inverted ? INVERTED_STYLES : "") +
 		(lightCanvas ? "html{background:#fff}body{padding:12px}" : "");
-	const muted = options.muted ? (dark ? "body{color:#9aa0a6}" : "body{color:#525252}") : "";
+	const muted = options.muted ? (dark ? `body{color:${THEME_MUTED}}` : "body{color:#525252}") : "";
+	const neutral = dark && options.dark && options.colours?.neutral ? neutralTextStyles(!!options.muted) : "";
 	// The font's stylesheet is same-origin (CSP font-src 'self'); the frame has no scripts to add it. The mail's
 	// inline font-family declarations were left out by the sanitizer (`dropFontFamily`), never edited here.
 	const font = options.font
@@ -77,7 +108,7 @@ export function buildEmailFrameDocument(html: string, options: EmailFrameDocumen
 		'<!doctype html><html><head><meta charset="utf-8">',
 		'<meta name="referrer" content="no-referrer">',
 		'<base target="_blank">',
-		`<style>${BASE_STYLES}${colorStyles}${muted}</style>`,
+		`<style>${BASE_STYLES}${colorStyles}${muted}${neutral}</style>`,
 		font,
 		"</head><body>",
 		html,

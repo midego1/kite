@@ -1,16 +1,18 @@
 import { expect, test, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, openMessage, uniqueToken } from "./support/helpers";
-import { chooseOption, expectSelectValue } from "./support/select";
+import { chooseOption, expectSelectValue, readOptions } from "./support/select";
 
-// Settings → Appearance → Font → Dyslexia-friendly (OpenDyslexic): the self-hosted font takes over the app, the
-// composer and plain-text mail, HTML mail only with "Font in HTML emails", it is preloaded before paint on the
-// next load, and while it is not chosen no font file is requested at all.
+// Settings → Appearance → Font → Dyslexia-friendly (OpenDyslexic): the self-hosted font takes over mail, the
+// composer and the message list's text lines (HTML mail only with "Font in HTML emails") while the interface keeps
+// its font ("Use it for: Text only", the default) or the whole app with "Everywhere"; it is preloaded before paint
+// on the next load, and while it is not chosen no font file is requested at all.
 
 const FONT = "Dyslexia-friendly (OpenDyslexic)";
 const DEFAULT_FONT = "Match style";
 let htmlSubject: string;
 let textSubject: string;
+let threadSubject: string;
 
 test.beforeAll(async () => {
 	const api = await apiContext(STORAGE_STATE);
@@ -30,6 +32,23 @@ test.beforeAll(async () => {
 		subject: textSubject,
 		text: "Plain text body.",
 	});
+	// A two-message thread: in conversation view its row carries a "[2]" count, which is interface, not text.
+	threadSubject = `Thread mail ${token}`;
+	const rootId = `<${token}-root@outside.test>`;
+	await deliverInbound(api, {
+		from: `"Font Sender" <fonts@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: threadSubject,
+		text: "First message.",
+		messageId: rootId,
+	});
+	await deliverInbound(api, {
+		from: `"Font Sender" <fonts@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: `Re: ${threadSubject}`,
+		text: "Second message.",
+		inReplyTo: rootId,
+	});
 	await api.dispose();
 });
 
@@ -37,7 +56,9 @@ test.beforeAll(async () => {
 // account's saved layout is reset all the same, in case the API round trip below stopped halfway.
 test.afterAll(async () => {
 	const api = await apiContext(STORAGE_STATE);
-	await api.patch("/api/settings/layout", { data: { layout: { font: "auto", emailFont: "original" } } });
+	await api.patch("/api/settings/layout", {
+		data: { layout: { font: "auto", emailFont: "original", fontScope: "text" } },
+	});
 	await api.dispose();
 });
 
@@ -62,7 +83,7 @@ function readerFrame(page: Page) {
 	return page.frameLocator('iframe[title="Message body"]').first();
 }
 
-test("the app, the composer and the reader switch to OpenDyslexic, which the next load has before paint", async ({
+test("mail, the composer and the list switch to OpenDyslexic, which the next load has before paint", async ({
 	page,
 }) => {
 	await page.goto("/settings/appearance");
@@ -75,7 +96,15 @@ test("the app, the composer and the reader switch to OpenDyslexic, which the nex
 	await chooseOption(font, { label: FONT });
 	await expectSelectValue(font, "opendyslexic");
 	await expect(page.locator("html")).toHaveAttribute("data-font", "opendyslexic");
-	expect(await fontFamilyOf(page, "body")).toContain("OpenDyslexic");
+	// Text only is the default: the interface keeps its own font and nothing is stored for the scope.
+	await expectSelectValue(page.getByRole("combobox", { name: "Use it for" }), "text");
+	await expect(page.locator("html")).not.toHaveAttribute("data-font-scope", /.+/);
+	expect(await fontFamilyOf(page, "body")).not.toContain("OpenDyslexic");
+	await page.getByRole("combobox", { name: "Font in HTML emails" }).waitFor();
+	await page.goto("/inbox");
+	await openMessage(page, textSubject);
+	expect(await fontFamilyOf(page, "main pre")).toContain("OpenDyslexic");
+	await page.goto("/settings/appearance");
 	await expect
 		.poll(() => requests.filter((path) => path.endsWith(".woff2")).length, { message: "the font file is fetched" })
 		.toBeGreaterThan(0);
@@ -93,7 +122,7 @@ test("the app, the composer and the reader switch to OpenDyslexic, which the nex
 		),
 	).toHaveCount(1);
 	await expectSelectValue(font, "opendyslexic");
-	expect(await fontFamilyOf(page, "body")).toContain("OpenDyslexic");
+	expect(await fontFamilyOf(page, "body")).not.toContain("OpenDyslexic");
 
 	// The composer writes in it too.
 	await page.goto("/inbox");
@@ -131,15 +160,93 @@ test("the app, the composer and the reader switch to OpenDyslexic, which the nex
 	// The choice follows the account through the layout sync when a browser has it on.
 	const api = await apiContext(STORAGE_STATE);
 	const saved = await api.patch("/api/settings/layout", {
-		data: { layout: { font: "opendyslexic", emailFont: "reader" } },
+		data: { layout: { font: "opendyslexic", emailFont: "reader", fontScope: "everywhere" } },
 	});
 	expect(saved.status(), await saved.text()).toBe(200);
 	const stored = (await (await api.get("/api/settings/layout")).json()) as { layout?: Record<string, unknown> };
-	expect(stored.layout).toMatchObject({ font: "opendyslexic", emailFont: "reader" });
+	expect(stored.layout).toMatchObject({ font: "opendyslexic", emailFont: "reader", fontScope: "everywhere" });
 	const refused = await api.patch("/api/settings/layout", { data: { layout: { font: "comic-sans" } } });
 	expect(refused.status()).toBe(400);
-	await api.patch("/api/settings/layout", { data: { layout: { font: "auto", emailFont: "original" } } });
+	const refusedScope = await api.patch("/api/settings/layout", { data: { layout: { fontScope: "nowhere" } } });
+	expect(refusedScope.status()).toBe(400);
+	await api.patch("/api/settings/layout", {
+		data: { layout: { font: "auto", emailFont: "original", fontScope: "text" } },
+	});
 	await api.dispose();
+});
+
+/** The computed font of the first element: a subject line of the list, the sidebar, a button and the reader. */
+async function scopeProbe(page: Page) {
+	await page.goto("/inbox");
+	const row = page.locator("[data-message-row]", { hasText: textSubject }).first();
+	await expect(row).toBeVisible();
+	const threadRow = page.locator("[data-message-row]", { hasText: threadSubject }).first();
+	await expect(threadRow).toBeVisible();
+	const probe = {
+		listSubject: await row.getByText(textSubject).first().evaluate(computedFont),
+		listSender: await row.getByText("Font Sender").first().evaluate(computedFont),
+		sidebar: await page.locator("aside nav a").first().evaluate(computedFont),
+		button: await page.getByRole("button", { name: "Compose" }).evaluate(computedFont),
+		// The thread count in a list row sits next to the sender but is interface.
+		threadCount: await threadRow
+			.getByText(/\[\s*2\s*\]/)
+			.first()
+			.evaluate(computedFont),
+		threadSender: await threadRow.getByText("Font Sender").first().evaluate(computedFont),
+	};
+	await page.getByRole("button", { name: "Compose" }).click();
+	const body = page.getByRole("textbox", { name: "Message body" });
+	await expect(body).toBeVisible();
+	const composer = await body.evaluate(computedFont);
+	const subjectField = await page.locator('input[placeholder="Subject"]:visible').evaluate(computedFont);
+	await page.getByRole("button", { name: "Close composer" }).click();
+	await openMessage(page, textSubject);
+	return { ...probe, composer, subjectField, reader: await page.locator("main pre").first().evaluate(computedFont) };
+}
+
+function computedFont(element: Element) {
+	return getComputedStyle(element).fontFamily;
+}
+
+test("Text only keeps the interface in its own font; Everywhere sets it in OpenDyslexic too", async ({
+	page,
+}, testInfo) => {
+	await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "on"));
+	await page.goto("/settings/appearance");
+	const font = page.getByRole("combobox", { name: "Font", exact: true });
+	// The scope choice is only offered with the dyslexia-friendly font.
+	await expect(page.getByRole("combobox", { name: "Use it for" })).toHaveCount(0);
+	await chooseOption(font, { label: FONT });
+	const scope = page.getByRole("combobox", { name: "Use it for" });
+	await expectSelectValue(scope, "text");
+	expect((await readOptions(scope)).map((option) => option.label)).toEqual(["Text only (recommended)", "Everywhere"]);
+
+	const textOnly = await scopeProbe(page);
+	for (const reading of ["listSubject", "listSender", "threadSender", "composer", "subjectField", "reader"] as const)
+		expect(textOnly[reading], reading).toContain("OpenDyslexic");
+	for (const chrome of ["sidebar", "button", "threadCount"] as const)
+		expect(textOnly[chrome], chrome).not.toContain("OpenDyslexic");
+	await page.screenshot({ path: testInfo.outputPath("text-only.png") });
+
+	await page.goto("/settings/appearance");
+	await chooseOption(scope, { label: "Everywhere" });
+	await expectSelectValue(scope, "everywhere");
+	await expect(page.locator("html")).toHaveAttribute("data-font-scope", "everywhere");
+	expect(await fontFamilyOf(page, "body")).toContain("OpenDyslexic");
+	await page.screenshot({ path: testInfo.outputPath("everywhere-settings.png") });
+	await page.reload();
+	await expect(page.locator("html")).toHaveAttribute("data-font-scope", "everywhere");
+	await expectSelectValue(page.getByRole("combobox", { name: "Use it for" }), "everywhere");
+
+	const everywhere = await scopeProbe(page);
+	for (const [name, family] of Object.entries(everywhere)) expect(family, name).toContain("OpenDyslexic");
+	await page.screenshot({ path: testInfo.outputPath("everywhere.png") });
+
+	// Back to Text only: the attribute and the stored value go away.
+	await page.goto("/settings/appearance");
+	await chooseOption(page.getByRole("combobox", { name: "Use it for" }), { label: "Text only (recommended)" });
+	await expect(page.locator("html")).not.toHaveAttribute("data-font-scope", /.+/);
+	expect(await page.evaluate(() => localStorage.getItem("kite-font-scope"))).toBeNull();
 });
 
 test("no font file is requested while the default font is chosen, and switching back removes it", async ({ page }) => {

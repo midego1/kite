@@ -92,8 +92,8 @@ export default function SettingsImportPage() {
 								onChange={(event) => setActiveTab(event.target.value as ImportTab)}
 								className="text-sm w-full py-2"
 							>
-								<option value="file">Backup file (.eml or .mbox)</option>
-								<option value="imap">IMAP server</option>
+								<option value="file">Backup file</option>
+								<option value="imap">IMAP</option>
 							</Select>
 						</div>
 						{activeTab === "file" ? (

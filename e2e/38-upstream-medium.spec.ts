@@ -262,7 +262,8 @@ test.describe("Settings → Mailboxes (upstream #133)", () => {
 
 		await page.goto("/settings/mailboxes");
 		await page.getByRole("button", { name: "New mailbox" }).click();
-		const owner = page.getByLabel("Account", { exact: true });
+		// The Settings menu has a group named Account too, so ask for the dialog's dropdown.
+		const owner = page.getByRole("combobox", { name: "Account", exact: true });
 		await expectSelectValue(owner, user.id);
 		expect((await readOptions(owner)).map((option) => option.value)).toEqual([user.id]);
 
@@ -307,7 +308,7 @@ test.describe("Settings → Mailboxes (upstream #133)", () => {
 		const { context, page } = await memberPage(browser, member.address);
 		try {
 			await page.goto("/settings/account");
-			await expect(settingsNav(page).getByRole("link", { name: "Export" })).toBeVisible();
+			await expect(page.getByRole("navigation", { name: "Data" }).getByRole("link", { name: "Export" })).toBeVisible();
 			await expect(settingsNav(page).getByRole("link", { name: "Mailboxes" })).toHaveCount(0);
 			await page.goto("/settings/mailboxes");
 			await expect(page).toHaveURL(/\/settings\/account$/);

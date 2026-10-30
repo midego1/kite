@@ -3,6 +3,7 @@ import type { Config, DOMPurify as Purifier, WindowLike } from "dompurify";
 import {
 	isNearBlackNeutral,
 	isUnreadableOnDark,
+	MIN_VISIBLE_ALPHA,
 	parseCssColour,
 	paintsBackground,
 } from "@/components/messages/email-colour-utils";
@@ -212,7 +213,8 @@ function displayedImageUrl(src: string, origin: string, options: SanitizeEmailHt
 function noteColours(element: StyledElement, colours: EmailColourFacts): void {
 	if (paintsBackground(element.style.getPropertyValue("background-color"))) colours.background = true;
 	const text = parseCssColour(element.style.getPropertyValue("color"));
-	if (!text) return;
+	// Faint or transparent text is hidden on purpose (preheaders, spacers); dark mode must not reveal it.
+	if (!text || text.alpha < MIN_VISIBLE_ALPHA) return;
 	if (isNearBlackNeutral(text.rgb)) {
 		colours.neutral = true;
 		element.setAttribute(NEUTRAL_TEXT_ATTRIBUTE, "neutral");

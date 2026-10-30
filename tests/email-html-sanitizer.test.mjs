@@ -352,3 +352,39 @@ test("colour parsing knows every CSS name, system text colours and the rgb forms
 	assert.equal(paintsBackground("transparent"), false);
 	assert.equal(paintsBackground("#fff"), true);
 });
+
+test("faint or transparent text is hidden on purpose: never marked, counted or revealed", () => {
+	for (const value of [
+		"transparent",
+		"rgba(0, 0, 0, 0)",
+		"rgb(0 0 0 / 0%)",
+		"rgba(0, 0, 0, .05)",
+		"rgba(31, 73, 125, .1)",
+		"#00000000",
+		"rgba(0, 0, 0, 0.39)",
+	]) {
+		const { colours, output } = colourFacts(`<p style="color: ${value}">Hidden preheader</p>`);
+		assert.deepEqual(colours, NO_COLOURS(), value);
+		assert.doesNotMatch(output, /data-kite-text/, value);
+	}
+	// Visible enough text still counts.
+	assert.equal(colourFacts('<p style="color: rgba(0, 0, 0, .87)">x</p>').colours.neutral, true);
+	assert.equal(colourFacts('<p style="color: rgba(0, 0, 0, .4)">x</p>').colours.neutral, true);
+});
+
+test("faint backgrounds and currentcolor do not make a mail count as designed", () => {
+	for (const value of [
+		"rgba(0, 0, 0, .05)",
+		"rgba(255, 255, 255, 0.2)",
+		"transparent",
+		"currentcolor",
+		"CurrentColor",
+	]) {
+		assert.equal(colourFacts(`<div style="background-color: ${value}">x</div>`).colours.background, false, value);
+	}
+	for (const value of ["rgba(0, 0, 0, .5)", "#f4f4f4", "white"]) {
+		assert.equal(colourFacts(`<div style="background-color: ${value}">x</div>`).colours.background, true, value);
+	}
+	assert.equal(paintsBackground("currentcolor"), false);
+	assert.equal(paintsBackground("rgba(0,0,0,.05)"), false);
+});

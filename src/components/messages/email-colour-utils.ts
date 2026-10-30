@@ -72,9 +72,13 @@ export function isUnreadableOnDark(colour: Rgb): boolean {
 	return (relativeLuminance(colour) + 0.05) / (DARK_CANVAS_LUMINANCE + 0.05) < UNREADABLE_CONTRAST;
 }
 
-/** True when a `background-color` value paints something (not transparent, none or an inherited keyword). */
+/** Colours fainter than this are decoration or hidden text (preheaders, spacers), not something to adapt or reveal. */
+export const MIN_VISIBLE_ALPHA = 0.4;
+
+/** True when a `background-color` value paints something (not faint, transparent, none or an inherited keyword). */
 export function paintsBackground(value: string): boolean {
 	const text = value.trim().toLowerCase();
-	if (!text || /^(?:none|inherit|initial|unset)$/.test(text)) return false;
-	return parseCssColour(text)?.alpha !== 0;
+	if (!text || /^(?:none|inherit|initial|unset|currentcolor)$/.test(text)) return false;
+	const colour = parseCssColour(text);
+	return !colour || colour.alpha >= MIN_VISIBLE_ALPHA;
 }

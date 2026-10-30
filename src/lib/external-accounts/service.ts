@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import { domains } from "@/db/schema";
 import { externalAccountFolders, externalAccounts } from "@/db/schema/external-accounts";
@@ -587,26 +587,4 @@ export async function checkExternalAccountNow(
 			"TOO_SOON",
 		);
 	return ownView(env, actor.id, id);
-}
-
-/**
- * The user's accounts that need them (spec §6.5): sign-in or certificate failures, and errors that stopped checking or
- * have lasted a day. For the sidebar notice; empty while connected accounts are unavailable to the user.
- */
-export async function listAccountsNeedingAttention(
-	env: CloudflareEnv,
-	userId: string,
-): Promise<Pick<ExternalAccountView, "id" | "address" | "status">[]> {
-	if (await connectRefusal(env, userId)) return [];
-	const rows = await getDb(env)
-		.select({ id: externalAccounts.id, address: externalAccounts.address, status: externalAccounts.status })
-		.from(externalAccounts)
-		.where(
-			and(
-				eq(externalAccounts.userId, userId),
-				inArray(externalAccounts.status, ["auth_failed", "tls_failed", "error"]),
-			),
-		)
-		.orderBy(asc(externalAccounts.createdAt));
-	return rows;
 }

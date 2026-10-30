@@ -39,9 +39,10 @@ const exports = [
 	["applyMigrations", "server/runtime/migrate.ts"],
 	["hashPassword", "src/lib/auth/password.ts"],
 	[
-		"connectExternalAccount, updateExternalAccount, removeExternalAccount, retestExternalAccount, checkExternalAccountNow, listAccountsNeedingAttention, listExternalAccounts",
+		"connectExternalAccount, updateExternalAccount, removeExternalAccount, retestExternalAccount, checkExternalAccountNow, listExternalAccounts",
 		"src/lib/external-accounts/service.ts",
 	],
+	["listAccountsNeedingAttention", "src/lib/external-accounts/attention.ts", "src/lib/external-accounts/service.ts"],
 	["planExternalSync, syncExternalAccount", "src/lib/external-accounts/sync.ts"],
 	["setInstallEnabled", "src/lib/external-accounts/settings.ts"],
 	["setCanConnect", "src/lib/external-accounts/access.ts"],

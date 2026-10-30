@@ -1,7 +1,7 @@
 import { requireSessionUser } from "@/lib/api/auth";
 import { getEnv } from "@/lib/cloudflare";
 import { answerExternal } from "@/lib/external-accounts/http";
-import { listAccountsNeedingAttention } from "@/lib/external-accounts/service";
+import { listAccountsNeedingAttention } from "@/lib/external-accounts/attention";
 
 /** The user's connected accounts that need them (sign-in, certificate or lasting errors), for the sidebar notice. */
 export async function GET(request: Request) {

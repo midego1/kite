@@ -1,4 +1,4 @@
-import { readerFontStyles, stripInlineFontFamily } from "@/components/font-assets-utils";
+import { readerFontStyles } from "@/components/font-assets-utils";
 import type { EmailFrameDocumentOptions } from "./email-html-frame-types";
 
 /**
@@ -68,11 +68,11 @@ export function buildEmailFrameDocument(html: string, options: EmailFrameDocumen
 		(inverted ? INVERTED_STYLES : "") +
 		(lightCanvas ? "html{background:#fff}body{padding:12px}" : "");
 	const muted = options.muted ? (dark ? "body{color:#9aa0a6}" : "body{color:#525252}") : "";
-	// The font's stylesheet is same-origin (CSP font-src 'self'); the frame has no scripts to add it.
+	// The font's stylesheet is same-origin (CSP font-src 'self'); the frame has no scripts to add it. The mail's
+	// inline font-family declarations were left out by the sanitizer (`dropFontFamily`), never edited here.
 	const font = options.font
 		? `<link rel="stylesheet" href="${options.font.stylesheet}"><style>${readerFontStyles(options.font)}</style>`
 		: "";
-	const body = options.font ? stripInlineFontFamily(html) : html;
 	return [
 		'<!doctype html><html><head><meta charset="utf-8">',
 		'<meta name="referrer" content="no-referrer">',
@@ -80,7 +80,7 @@ export function buildEmailFrameDocument(html: string, options: EmailFrameDocumen
 		`<style>${BASE_STYLES}${colorStyles}${muted}</style>`,
 		font,
 		"</head><body>",
-		body,
+		html,
 		"</body></html>",
 	].join("");
 }

@@ -30,7 +30,7 @@ export function fontAsset(value: string | null | undefined): FontAsset | undefin
 
 /**
  * The reader frame's override for HTML mail: the message's own fonts are replaced, except in code, which
- * keeps a monospace face. Inline `font-family` declarations are removed by `stripInlineFontFamily` first,
+ * keeps a monospace face. The sanitizer leaves inline `font-family` declarations out (`dropFontFamily`),
  * because an inline `!important` would otherwise beat this stylesheet.
  */
 export function readerFontStyles(asset: FontAsset): string {
@@ -38,25 +38,4 @@ export function readerFontStyles(asset: FontAsset): string {
 		`body,body *{font-family:"${asset.family}",sans-serif!important;letter-spacing:.02em;word-spacing:.08em}`,
 		"pre,code,kbd,samp,tt,pre *,code *{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace!important;letter-spacing:0;word-spacing:0}",
 	].join("");
-}
-
-const STYLE_ATTRIBUTE = /(\sstyle\s*=\s*)("([^"]*)"|'([^']*)')/gi;
-const FONT_FAMILY_DECLARATION = /(^|;)\s*font-family\s*:[^;]*(;\s*|$)/gi;
-
-/**
- * Removes `font-family` from the `style` attributes of sanitized mail, so the reader font wins even over
- * an inline `!important`. The `font` shorthand and `<font face>` are left alone: the stylesheet's own
- * `!important` already beats both. Only the attribute values change; the rest of the markup is untouched.
- */
-export function stripInlineFontFamily(html: string): string {
-	return html.replace(STYLE_ATTRIBUTE, (match, prefix: string, quoted: string) => {
-		const quote = quoted[0];
-		const value = quoted.slice(1, -1);
-		if (!/font-family/i.test(value)) return match;
-		const stripped = value
-			.replace(FONT_FAMILY_DECLARATION, "$1")
-			.replace(/^\s*;\s*/, "")
-			.trim();
-		return `${prefix}${quote}${stripped}${quote}`;
-	});
 }

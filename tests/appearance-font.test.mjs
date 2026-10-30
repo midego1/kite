@@ -9,7 +9,6 @@ const {
 	FONT_ASSETS,
 	fontAsset,
 	readerFontStyles,
-	stripInlineFontFamily,
 	APPEARANCE_PREFERENCES,
 	EMAIL_FONT_PREFERENCE,
 	FONT_PREFERENCE,
@@ -19,7 +18,7 @@ const {
 	layoutStorageEntries,
 	buildEmailFrameDocument,
 } = await bundleModules("kite-appearance-font-", [
-	["FONT_ASSETS, fontAsset, readerFontStyles, stripInlineFontFamily", "src/components/font-assets-utils.ts"],
+	["FONT_ASSETS, fontAsset, readerFontStyles", "src/components/font-assets-utils.ts"],
 	[
 		"APPEARANCE_PREFERENCES, EMAIL_FONT_PREFERENCE, FONT_PREFERENCE, appearanceBootstrapScript, isDyslexiaFont",
 		"src/components/appearance-preferences.ts",
@@ -118,30 +117,15 @@ test("the bootstrap script sets the attribute and preloads only a chosen dyslexi
 });
 
 test("the reader frame replaces the mail's fonts only when asked, keeping code monospace", () => {
-	const html = '<p style="font-family:Comic Sans MS !important;color:red">Hello</p><pre>code</pre>';
+	const html = '<p style="color:red">Hello</p><pre>code</pre>';
 	const plain = buildEmailFrameDocument(html);
 	assert.doesNotMatch(plain, /OpenDyslexic|fonts\//);
-	assert.ok(plain.includes(html), "without the option the mail keeps its inline fonts");
 
 	const styled = buildEmailFrameDocument(html, { font: FONT_ASSETS.opendyslexic });
 	assert.match(styled, /<link rel="stylesheet" href="\/fonts\/opendyslexic\/opendyslexic.css">/);
 	assert.match(styled, /body \*\{font-family:"OpenDyslexic",sans-serif!important/);
 	assert.match(styled, /pre,code[^}]*monospace!important/);
 	assert.ok(styled.indexOf("<link") < styled.indexOf("<body>"), "the font is linked in the head");
-	// An inline !important would beat the stylesheet, so inline font families go; everything else stays.
-	assert.ok(styled.includes('<p style="color:red">Hello</p><pre>code</pre>'), styled);
-});
-
-test("stripInlineFontFamily removes only font-family from style attributes", () => {
-	assert.equal(stripInlineFontFamily('<p style="font-family:Georgia,serif">a</p>'), '<p style="">a</p>');
-	assert.equal(
-		stripInlineFontFamily("<p style='color:red; font-family: Georgia !important; margin:0'>a</p>"),
-		"<p style='color:red;margin:0'>a</p>",
-	);
-	assert.equal(
-		stripInlineFontFamily('<p style="FONT-FAMILY:x;">a</p><span style="color:blue">b</span>'),
-		'<p style="">a</p><span style="color:blue">b</span>',
-	);
-	const untouched = '<p style="font:italic 12px Georgia">font-family: Georgia</p><font face="Georgia">a</font>';
-	assert.equal(stripInlineFontFamily(untouched), untouched);
+	// The frame never edits the sanitized markup; inline font families are the sanitizer's job (dropFontFamily).
+	assert.ok(styled.includes(html), styled);
 });

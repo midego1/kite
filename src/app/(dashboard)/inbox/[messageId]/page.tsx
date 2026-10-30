@@ -24,6 +24,7 @@ import { QuotedEmailToggle } from "@/components/messages/quoted-email-toggle";
 import { EmailHtmlFrame, RemoteImagesNotice } from "@/components/messages/email-html-frame";
 import { LinkifiedText } from "@/components/messages/linkified-text";
 import { useLoadRemoteImages } from "@/components/messages/use-load-remote-images";
+import { useReaderFont } from "@/components/messages/use-reader-font";
 import { ThreadMessageActions } from "@/components/messages/thread-message-actions";
 import { useMessageThread } from "@/components/messages/use-message-thread";
 import { useLatestMessagesFirst } from "@/components/messages/use-latest-messages-first";
@@ -72,6 +73,7 @@ export default function MessageDetailPage() {
 	const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
 	const [threadExpanded, setThreadExpanded] = useState(false);
 	const [alwaysLoadRemoteImages] = useLoadRemoteImages();
+	const readerFont = useReaderFont();
 	const [remoteImagesShownFor, setRemoteImagesShownFor] = useState<string | null>(null);
 	const [latestMessagesFirst] = useLatestMessagesFirst();
 	const { enabled: showFullRecipientAddresses } = useShowFullRecipientAddresses();
@@ -149,6 +151,7 @@ export default function MessageDetailPage() {
 		stats: { blockedRemoteImages: 0 },
 		proxyRemoteImagesFor: message.id,
 		linkify: true,
+		dropFontFamily: readerFont !== undefined,
 	};
 	const htmlBody = collapseQuotedEmailHtml(
 		sanitizeEmailHtml(resolveInlineAttachmentUrls(bodyDisplay.htmlBody, message.id, attachments), imageOptions),

@@ -61,6 +61,39 @@ for (const [index, payload] of XSS_PAYLOADS.entries()) {
 	});
 }
 
+test("dropFontFamily leaves inline font-family out on the DOM and changes nothing else", () => {
+	// Outlook quotes the family; the declarations after it survive.
+	const outlook = '<p style="font-family:&quot;Calibri&quot;,sans-serif;color:#1f497d;margin:0">Hi</p>';
+	const dropped = sanitizeEmailHtml(outlook, { dropFontFamily: true }) ?? "";
+	assert.doesNotMatch(dropped, /font-family|Calibri/);
+	assert.match(dropped, /color: rgb\(31, 73, 125\)/);
+	assert.match(dropped, /margin: 0px/);
+	assert.equal(parse(dropped).textContent, "Hi");
+	assert.match(sanitizeEmailHtml(outlook) ?? "", /font-family: (&quot;|")Calibri(&quot;|"), ?sans-serif/);
+	// Visible text that merely looks like a style attribute is left alone.
+	const text = '<p>Set style="font-family: Georgia" in your signature</p>';
+	assert.equal(sanitizeEmailHtml(text, { dropFontFamily: true }), text);
+	// Attribute boundaries are decided by the parser, never by text edits: a payload shaped to turn a title and
+	// an alt into an image source with the family gone yields no new element, attribute or remote source.
+	const payload =
+		'<img title=" style=\';font-family:" alt="x"><span>AAA;</span><span title="\' src=https://evil.test/t.png data-x=">ok</span>';
+	for (const options of [{ dropFontFamily: true }, { dropFontFamily: true, blockRemoteImages: true }]) {
+		const output = sanitizeEmailHtml(payload, options) ?? "";
+		const body = parse(output);
+		const elements = Array.from(body.querySelectorAll("*"));
+		// The source-less image may be dropped; nothing is added and nothing gains a source.
+		assert.ok(elements.length <= 3 && elements.every((element) => /^(img|span)$/i.test(element.tagName)), output);
+		assert.equal(body.querySelector("[src]"), null, output);
+		// The host stays only as inert text inside the title attribute.
+		assert.deepEqual(
+			elements.flatMap((element) => Array.from(element.attributes).map((attribute) => attribute.name)).sort(),
+			["title"],
+		);
+		assert.deepEqual(findActiveContent(output, parse), [], output);
+		assert.equal(body.textContent, "AAA;ok");
+	}
+});
+
 test("the reader sanitizer keeps ordinary formatting and drops script text", () => {
 	assert.equal(
 		sanitizeEmailHtml("<p>Hello <b>reader</b></p><script>window.parent.__pwned = true</script>"),

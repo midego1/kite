@@ -8,6 +8,7 @@ import { ContactAvatar } from "@/components/contacts/contact-avatar";
 import { QuotedEmailToggle } from "@/components/messages/quoted-email-toggle";
 import { EmailHtmlFrame, RemoteImagesNotice } from "@/components/messages/email-html-frame";
 import { useLoadRemoteImages } from "@/components/messages/use-load-remote-images";
+import { useReaderFont } from "@/components/messages/use-reader-font";
 import { runSingleMessageAction } from "@/components/message-actions/utils";
 import { sanitizeEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/email-html-sanitizer";
 import { collapseQuotedEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/quote-collapse-utils";
@@ -174,6 +175,7 @@ export function ConversationMessageCard({
 	const [locallyExpanded, setLocallyExpanded] = useState(defaultExpanded);
 	const [locallyRead, setLocallyRead] = useSyncedState(message.read);
 	const [alwaysLoadRemoteImages] = useLoadRemoteImages();
+	const readerFont = useReaderFont();
 	const [remoteImagesShown, setRemoteImagesShown] = useState(false);
 	const expanded = locallyExpanded;
 	const sender = getConversationSender(message, currentAccountName);
@@ -191,6 +193,7 @@ export function ConversationMessageCard({
 			stats: { blockedRemoteImages: 0 },
 			proxyRemoteImagesFor: message.id,
 			linkify: true,
+			dropFontFamily: readerFont !== undefined,
 		};
 		body = {
 			html: collapseQuotedEmailHtml(

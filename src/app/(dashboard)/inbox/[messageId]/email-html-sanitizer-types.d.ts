@@ -11,6 +11,11 @@ export type SanitizeEmailHtmlOptions = {
 	proxyRemoteImagesFor?: string;
 	/** Turn web and email addresses in text (outside links and code) into links; ignored with `forOutgoing`. */
 	linkify?: boolean;
+	/**
+	 * Leave `font-family` out of inline styles, for the reader font that replaces the message's fonts
+	 * (Settings → Appearance → Font in HTML emails): an inline `!important` would otherwise beat it.
+	 */
+	dropFontFamily?: boolean;
 };
 
 export type EmailHtmlSanitizer = (html: string | null, options?: SanitizeEmailHtmlOptions) => string | null;

@@ -12,6 +12,8 @@ import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useMessages } from "@/hooks/use-messages";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { Message } from "@/hooks/types";
+import { UpdateNoticeRow } from "@/components/update-notice-row";
+import { useRegisterUpdateList } from "@/components/update-notice-store";
 import { useClearSelection } from "./use-clear-selection";
 import { MessageListHeader } from "./message-list-header";
 import { MessageListRow } from "./message-list-row";
@@ -333,6 +335,8 @@ export function MessageFolderPage({
 	}
 
 	const listRef = useRef<HTMLDivElement>(null);
+	// While this list is on screen the "Kite was updated" notice is its first row instead of a toast.
+	useRegisterUpdateList(listVisible);
 	useMessageListKeyboard({
 		listRef,
 		folder: config.folder,
@@ -441,6 +445,7 @@ export function MessageFolderPage({
 					aria-label={config.title}
 					className={compact || isMobile ? "flex flex-col gap-0.5 py-1.5" : "divide-y divide-neutral-100"}
 				>
+					<UpdateNoticeRow compact={(compact || isMobile) && config.folder !== "drafts"} density={density} />
 					{sections.map((section) => [
 						section.label && (
 							// Decorative: the rows carry everything, and a list may only hold list items.

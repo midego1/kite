@@ -22,7 +22,7 @@ export function LayoutSyncSetting() {
 	return (
 		<SettingRow
 			label="Use the same layout on every device"
-			description="The reading pane, density, conversation view and the size of the message list follow your account. Turn this off to keep this browser's own layout."
+			description="The reading pane, density, conversation view, the size of the message list and the font follow your account. Turn this off to keep this browser's own layout."
 			control={<Switch checked={enabled} onCheckedChange={setLayoutSyncEnabled} />}
 		/>
 	);

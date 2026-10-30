@@ -1,7 +1,7 @@
 import { and, eq, exists, gte, lt, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { messageAttachments, messages } from "@/db/schema";
-import { buildFtsMatch, parseSearchQuery } from "./query-utils";
+import { buildFtsMatch, exactSenderMatch, parseSearchQuery } from "./query-utils";
 
 /**
  * Translate a search string into WHERE conditions on `messages`. Text goes to
@@ -15,6 +15,12 @@ export function buildSearchConditions(raw: string, timeZone = "UTC"): SQL[] {
 	const match = buildFtsMatch(parsed);
 	if (match) {
 		conditions.push(sql`${messages}.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ${match})`);
+	}
+	if (parsed.fromAddress) {
+		const { equals, endsWith } = exactSenderMatch(parsed.fromAddress);
+		conditions.push(
+			sql`(lower(trim(${messages.fromAddr})) = ${equals} OR lower(trim(${messages.fromAddr})) LIKE ${endsWith} ESCAPE '\\')`,
+		);
 	}
 	if (parsed.hasAttachment) {
 		conditions.push(

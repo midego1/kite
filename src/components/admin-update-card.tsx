@@ -4,13 +4,16 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, CircleX, Database, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { applyDatabaseMigrations, getMigrationStatus, pendingMigrationsTitle } from "./admin-update-card-utils";
+import { getMigrationStatus, pendingMigrationsTitle } from "./admin-update-card-utils";
 import type { MigrationStatusResponse } from "./admin-update-card-types";
-import { migrationApplierText, migrationApplySummary, shouldShowMigrationsBanner } from "./migrations-banner-utils";
+import { applyMigrations, useMigrationApply, type MigrationApplyState } from "./migration-apply";
+import { MigrationApplyButton, MigrationApplyProgress } from "./migration-progress";
+import { migrationApplierText, shouldShowMigrationsBanner } from "./migrations-banner-utils";
 import { PENDING_MIGRATIONS_QUERY, useMigrationsNotice } from "./use-migrations-notice";
+import { BACKUP_HEALTH_QUERY } from "./admin-backup-health-query";
+import { DATABASE_SIZE_QUERY } from "./admin-database-size-query";
 import { BUILD_VERSION_LABEL } from "@/lib/build-version";
 
 const PENDING_PANEL_CLASS = "rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900";
@@ -19,13 +22,14 @@ const PENDING_BODY =
 
 function PendingMigrations({
 	names,
-	isMigrating,
+	progress,
 	onMigrate,
 }: {
 	names: string[];
-	isMigrating: boolean;
+	progress: MigrationApplyState;
 	onMigrate: () => void;
 }) {
+	const isMigrating = progress.applying;
 	return (
 		<section aria-label="Pending database updates" className={PENDING_PANEL_CLASS}>
 			<div className="flex items-start gap-3">
@@ -56,23 +60,46 @@ function PendingMigrations({
 					</p>
 				</div>
 			</div>
+			{isMigrating && progress.source === "admin" && <MigrationApplyProgress progress={progress} />}
 			<div className="mt-4 flex justify-end">
-				<Button type="button" size="lg" onClick={onMigrate} disabled={isMigrating} className="w-full sm:w-auto">
-					<Database className="h-4 w-4" aria-hidden="true" />
-					{isMigrating ? "Updating database…" : "Update database"}
-				</Button>
+				<MigrationApplyButton
+					busy={isMigrating}
+					idleLabel="Update database"
+					onClick={onMigrate}
+					size="lg"
+					showIcon
+					className="w-full sm:w-auto"
+				/>
 			</div>
 		</section>
 	);
+}
+
+function UpToDate({ summary }: { summary: string | null }) {
+	return (
+		<div role="status" className="flex items-start gap-3 rounded-lg border border-neutral-200 px-4 py-4">
+			<CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
+			<div className="text-sm text-neutral-700">
+				{summary && <p className="font-medium">Database updated</p>}
+				<p>The database schema is up to date.</p>
+				{summary && <p className="mt-1 text-neutral-500">{summary}</p>}
+			</div>
+		</div>
+	);
+}
+
+/** What this card says about the run: its own result only, so the mailbox notice never repeats it. */
+function adminOutcome(progress: MigrationApplyState, statusError: string) {
+	const owns = progress.source === "admin";
+	return { summary: owns ? progress.summary : null, error: (owns ? progress.error : null) || statusError };
 }
 
 export function AdminUpdateCard() {
 	const queryClient = useQueryClient();
 	const [migrationError, setMigrationError] = useState("");
 	const [migrationStatus, setMigrationStatus] = useState<MigrationStatusResponse>();
-	const [appliedSummary, setAppliedSummary] = useState("");
 	const [isCheckingMigrations, setIsCheckingMigrations] = useState(true);
-	const [isMigrating, setIsMigrating] = useState(false);
+	const progress = useMigrationApply();
 
 	useEffect(() => {
 		let isActive = true;
@@ -95,26 +122,33 @@ export function AdminUpdateCard() {
 		};
 	}, []);
 
-	async function handleMigrate() {
-		if (isMigrating) return;
+	function handleMigrate() {
 		setMigrationError("");
-		setAppliedSummary("");
-		setIsMigrating(true);
-		try {
-			const result = await applyDatabaseMigrations();
-			setMigrationStatus(result);
-			setAppliedSummary(migrationApplySummary(result));
-			// The mailbox notice reads its own status; it must not keep warning after this.
-			await queryClient.invalidateQueries({ queryKey: PENDING_MIGRATIONS_QUERY });
-		} catch (migrationFailure) {
-			setMigrationError(
-				migrationFailure instanceof Error ? migrationFailure.message : "Could not apply database migrations",
-			);
-		} finally {
-			setIsMigrating(false);
-		}
+		// The run's own answer replaces the list before the card re-renders, so the pending panel never flashes back.
+		void applyMigrations(migrationStatus?.pending ?? [], "admin", (result) =>
+			setMigrationStatus({
+				ready: true,
+				pending: result.pending ?? [],
+				unknown: result.unknown ?? [],
+				applied: result.applied,
+				backupId: result.backupId,
+			}),
+		);
 	}
 
+	// A run can end here or in the mailbox notice (it is one shared run); either way the list below is stale.
+	useEffect(() => {
+		if (!progress.summary && !progress.error && !progress.refreshTick) return;
+		getMigrationStatus()
+			.then(setMigrationStatus)
+			.catch(() => undefined);
+		// The mailbox notice and the overview's attention list read the pending query; the run also took a safety
+		// backup and grew the database, so the overview's other parts are read again too.
+		for (const queryKey of [PENDING_MIGRATIONS_QUERY, BACKUP_HEALTH_QUERY, DATABASE_SIZE_QUERY])
+			void queryClient.invalidateQueries({ queryKey });
+	}, [progress.summary, progress.error, progress.refreshTick, queryClient]);
+
+	const outcome = adminOutcome(progress, migrationError);
 	const pending = migrationStatus?.pending ?? [];
 	const unknown = migrationStatus?.unknown.length ?? 0;
 
@@ -140,17 +174,11 @@ export function AdminUpdateCard() {
 				)}
 
 				{!isCheckingMigrations && migrationStatus && !pending.length && !unknown && (
-					<div className="flex items-start gap-3 rounded-lg border border-neutral-200 px-4 py-4">
-						<CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
-						<div className="text-sm text-neutral-700">
-							<p>The database schema is up to date.</p>
-							{appliedSummary && <p className="mt-1 text-neutral-500">{appliedSummary}</p>}
-						</div>
-					</div>
+					<UpToDate summary={outcome.summary} />
 				)}
 
 				{!isCheckingMigrations && !!pending.length && !unknown && (
-					<PendingMigrations names={pending} isMigrating={isMigrating} onMigrate={handleMigrate} />
+					<PendingMigrations names={pending} progress={progress} onMigrate={handleMigrate} />
 				)}
 
 				{!isCheckingMigrations && !!unknown && (
@@ -160,9 +188,9 @@ export function AdminUpdateCard() {
 					</div>
 				)}
 
-				{migrationError && (
-					<p role="alert" className="text-sm text-red-600">
-						{migrationError}
+				{outcome.error && (
+					<p role="alert" className="text-sm text-red-600 dark:text-red-400">
+						{outcome.error}
 					</p>
 				)}
 			</CardContent>

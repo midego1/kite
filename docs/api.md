@@ -221,6 +221,7 @@ When two-factor authentication is on, `POST /api/auth/login` returns `{ ok: true
 | `"private window"` | exact phrase |
 | `-word` | exclude |
 | `from:maya`, `to:sam`, `subject:report` | restrict a term to one field (`to:` covers Cc) |
+| `from:hi@cursor.com` | a whole address (quoted or not) matches that sender exactly, not `x.hi@cursor.com` or `hi@cursor.com.evil.test` |
 | `has:attachment` | at least one non-inline attachment |
 | `is:unread`, `is:read`, `is:starred` | flags |
 | `after:2026-09-01`, `before:2026-09-30` | date bounds (UTC, `before` exclusive) |

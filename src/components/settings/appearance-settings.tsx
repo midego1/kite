@@ -17,13 +17,17 @@ import {
 	ASSISTANT_DETAIL_PREFERENCE,
 	ASSISTANT_LAYOUT_PREFERENCE,
 	ASSISTANT_STEPS_PREFERENCE,
+	EMAIL_FONT_PREFERENCE,
 	LIST_SUMMARIES_PREFERENCE,
 	FONT_PREFERENCE,
+	isDyslexiaFont,
 	TEXT_SIZE_PREFERENCE,
 	type AppearancePreference,
 } from "@/components/appearance-preferences";
 import { useAppearancePreference } from "@/components/use-appearance-preference";
 import { SettingRow, SettingRows, SettingsCard, SettingsCardSection } from "@/components/ui/page";
+import { isLayoutSyncEnabled } from "@/components/layout-preferences-client";
+import { LAYOUT_SYNC_CHANGE_EVENT } from "@/components/layout-preferences-utils";
 
 const OPTIONS: { value: ThemePreference; label: string }[] = [
 	{ value: "system", label: "Match system" },
@@ -61,11 +65,7 @@ export function AppearanceSettings() {
 				<SettingRows>
 					<ThemeSetting />
 					<StyleSetting />
-					<PreferenceRow
-						preference={FONT_PREFERENCE}
-						label="Font"
-						description="The typeface for the whole app. Match style uses Manrope in Kite classic and Geist otherwise."
-					/>
+					<FontSettings />
 					<PreferenceRow
 						preference={TEXT_SIZE_PREFERENCE}
 						label="Text size"
@@ -95,6 +95,37 @@ export function AppearanceSettings() {
 			</SettingsCardSection>
 		</SettingsCard>
 	);
+}
+
+/** The Font choice and, for the dyslexia-friendly font, whether HTML mail is shown in it too. */
+function FontSettings() {
+	const [font] = useAppearancePreference(FONT_PREFERENCE);
+	return (
+		<>
+			<PreferenceRow
+				preference={FONT_PREFERENCE}
+				label="Font"
+				description="The typeface for the whole app, including what you write. Match style uses Manrope in Kite classic and Geist otherwise. The dyslexia-friendly font (OpenDyslexic) is loaded only when chosen and gives what you read and write a little more room between letters, words and lines."
+			/>
+			{isDyslexiaFont(font) && (
+				<PreferenceRow
+					preference={EMAIL_FONT_PREFERENCE}
+					label="Font in HTML emails"
+					description="Plain-text emails already use the dyslexia-friendly font. HTML emails bring their own fonts; this replaces them with the dyslexia-friendly font as well."
+				/>
+			)}
+		</>
+	);
+}
+
+/** Whether this browser shares the account's layout, which is what carries a choice with a layout key along. */
+function subscribeToLayoutSync(onChange: () => void) {
+	window.addEventListener(LAYOUT_SYNC_CHANGE_EVENT, onChange);
+	window.addEventListener("storage", onChange);
+	return () => {
+		window.removeEventListener(LAYOUT_SYNC_CHANGE_EVENT, onChange);
+		window.removeEventListener("storage", onChange);
+	};
 }
 
 export function AssistantOutputSettings({ compact = false }: { compact?: boolean }) {
@@ -137,6 +168,10 @@ function PreferenceRow<T extends string>({
 	compact?: boolean;
 }) {
 	const [value, save] = useAppearancePreference(preference);
+	const synced = useSyncExternalStore(subscribeToLayoutSync, isLayoutSyncEnabled, () => false);
+	// Only a choice with a layout key travels with the account, and only while this browser shares the layout.
+	const note =
+		preference.layoutKey && synced ? `${description} Follows your account to your other devices.` : description;
 	const select = (
 		<Select
 			value={value}
@@ -159,13 +194,13 @@ function PreferenceRow<T extends string>({
 			<label className="flex flex-wrap items-center justify-between gap-2 py-1">
 				<span className="flex-1">
 					<span className="block text-sm font-medium text-neutral-900">{label}</span>
-					<span className="sr-only">{description} Saved in this browser.</span>
+					<span className="sr-only">{note}</span>
 				</span>
 				{select}
 			</label>
 		);
 	}
-	return <SettingRow label={label} description={description} control={select} />;
+	return <SettingRow label={label} description={note} control={select} />;
 }
 
 function StyleSetting() {

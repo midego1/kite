@@ -203,6 +203,7 @@ function sanitizeStyle(element: StyledElement, options: SanitizeEmailHtmlOptions
 	const safeDeclarations: string[] = [];
 	for (const property of Array.from(element.style)) {
 		if (!ALLOWED_STYLE_PROPERTIES.has(property)) continue;
+		if (property === "font-family" && options.dropFontFamily) continue;
 		const value = element.style.getPropertyValue(property);
 		if (UNSAFE_STYLE_VALUE.test(value)) continue;
 		const safeValue = property === "font-family" && !options.forOutgoing ? `${value}, ${APP_FONT_FALLBACK}` : value;

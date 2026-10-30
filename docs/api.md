@@ -232,6 +232,13 @@ Both list endpoints return results newest first and include `nextCursor` (null o
 
 Admins can check or rebuild the index with `GET` / `POST /api/admin/search-index`; triggers keep it current, so a rebuild is only needed after restoring a backup made before the index existed.
 
+## Webhooks
+
+**Admin → Webhooks** (`/webhooks`, primary admin; API `/api/webhooks`) posts events as JSON to an `http` or `https` URL on a public host, signed with the webhook's secret (`X-Email-Platform-Signature`), with failed deliveries retried with backoff.
+
+- `message.inbound` is sent for every message delivered to the Inbox or a folder, including mail the [Screener](screener.md) holds and mail a connected account syncs (`"source": "external"`), with the message's `spamScore` and `spamVerdict`. It is **not** sent for mail filed in Spam or Trash, whether by the spam filter, a mailbox rule, a blocked sender or a denied Screener sender: their From is unverified or unwanted, and a consumer acting on it would be fooled (upstream Mailflare #224). Filter on `spamVerdict` for suspicious mail that was still delivered.
+- `message.outbound` and `message.failed` are sent for mail you send. Modules add their own events while they are on (see [Modules](modules.md)).
+
 ## Real-time updates
 
 Kite uses a Durable Object WebSocket hub to notify connected users after an inbound message is stored. Mailbox owners, the domain administrator, and delegated users receive events for mailboxes they can access.

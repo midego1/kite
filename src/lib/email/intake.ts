@@ -1,5 +1,6 @@
 import { newId } from "@/lib/ids";
 import {
+	forwardedMarker,
 	getAccountForwardingDestination,
 	KITE_FORWARDED_HEADER,
 	wasForwardedByKite,
@@ -17,6 +18,7 @@ type IncomingDecision = Awaited<ReturnType<typeof resolveIncomingMail>>;
 async function applyRouting(
 	decision: IncomingDecision,
 	actions: IntakeActions,
+	marker: Record<string, string>,
 ): Promise<{ result: IntakeResult } | { forwardedTo: string | null }> {
 	if (decision === NO_ROUTE || decision?.action === "reject") {
 		const reason =
@@ -27,7 +29,7 @@ async function applyRouting(
 	if (decision?.action !== "forward" || !decision.forwardTo) return { forwardedTo: null };
 	// A provider that cannot forward (Resend, SES) has nothing to keep for a forward rule without a copy.
 	if (!actions.forward && !decision.keepCopy) return { result: { action: "forward", forwardedTo: null } };
-	const forwarded = await actions.forward?.(decision.forwardTo, { [KITE_FORWARDED_HEADER]: "1" });
+	const forwarded = await actions.forward?.(decision.forwardTo, marker);
 	if (!forwarded) return { forwardedTo: null };
 	// A failed forward is stored, so mail is never silently lost.
 	return decision.keepCopy
@@ -47,13 +49,14 @@ export async function intakeIncomingMail(
 	input: IntakeInput,
 	actions: IntakeActions,
 ): Promise<IntakeResult> {
-	const routed = await applyRouting(await resolveIncomingMail(env, input.from, input.to), actions);
+	const marker = { [KITE_FORWARDED_HEADER]: await forwardedMarker(env) };
+	const routed = await applyRouting(await resolveIncomingMail(env, input.from, input.to), actions, marker);
 	if ("result" in routed) return routed.result;
 	const { forwardedTo } = routed;
 
-	if (!wasForwardedByKite((name) => input.headers[name])) {
+	if (!(await wasForwardedByKite(env, (name) => input.headers[name]))) {
 		const destination = await getAccountForwardingDestination(env, input.to);
-		if (destination) await actions.forward?.(destination, { [KITE_FORWARDED_HEADER]: "1" });
+		if (destination) await actions.forward?.(destination, marker);
 	}
 
 	const rawR2Key = `inbound/${Date.now()}-${newId()}.eml`;

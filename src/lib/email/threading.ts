@@ -1,9 +1,11 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql, type Column } from "drizzle-orm";
 import type { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import type { ResolveThreadInput } from "@/lib/email/threading-types";
 import { normalizeMessageId, selectThreadLookupIds } from "@/lib/email/thread-lookup";
+import { isThreadParticipant } from "@/lib/email/thread-join-utils";
+import { normalizeEmailAddress } from "@/lib/email/address";
 
 export { normalizeMessageId } from "@/lib/email/thread-lookup";
 
@@ -45,6 +47,12 @@ export function buildReplyReferences(parentReferences: string[], parentMessageId
  * In-Reply-To or References; if that parent is stored in the same mailbox, the
  * new message joins the parent's thread. Otherwise it starts a thread keyed by
  * its own Message-ID so later replies can find it.
+ *
+ * Those headers are the sender's to write, so received mail (`input.sender`) joins
+ * only a conversation its sender already takes part in, or when it passed DMARC for
+ * its From domain, and never seeds a thread with a Message-ID that is already a
+ * thread's key (upstream Mailflare #223). Imports, synced mail and JMAP drafts are
+ * the user's own history and keep joining on the headers alone.
  */
 export async function resolveThreadId(db: Db, input: ResolveThreadInput): Promise<string> {
 	const candidates = selectThreadLookupIds(input.inReplyTo, input.references ?? []);
@@ -53,17 +61,77 @@ export async function resolveThreadId(db: Db, input: ResolveThreadInput): Promis
 		// Stored Message-IDs may or may not include their angle brackets.
 		const variants = candidates.flatMap((id) => [id, `<${id}>`]);
 		const [parent] = await db
-			.select({ threadId: messages.threadId, providerMessageId: messages.providerMessageId })
+			.select({ id: messages.id, threadId: messages.threadId, providerMessageId: messages.providerMessageId })
 			.from(messages)
 			.where(and(eq(messages.mailboxId, input.mailboxId), inArray(messages.providerMessageId, variants)))
 			.orderBy(asc(messages.createdAt))
 			.limit(1);
 		if (parent) {
-			return parent.threadId ?? normalizeMessageId(parent.providerMessageId) ?? newId("thr");
+			const threadId = parent.threadId ?? normalizeMessageId(parent.providerMessageId) ?? newId("thr");
+			if (!input.sender || input.sender.dmarcAligned) return threadId;
+			return (await senderTakesPart(db, input.mailboxId, parent.id, threadId, input.sender.address))
+				? threadId
+				: newId("thr");
 		}
 	}
 
-	return threadSeed(input) ?? newId("thr");
+	const seed = threadSeed(input);
+	if (seed && input.sender && input.mailboxId && (await isThreadKey(db, input.mailboxId, seed))) return newId("thr");
+	return seed ?? newId("thr");
+}
+
+/** A `LIKE … ESCAPE '\'` pattern matching `value` anywhere, with `%`, `_` and `\` taken literally. */
+function likeContains(value: string): string {
+	return `%${value.replace(/[%_\\]/g, (char) => `\\${char}`)}%`;
+}
+
+/**
+ * Whether `address` sent, received or was copied on a message of the conversation (the parent itself included, for
+ * rows stored before threads had ids). `LIKE` only narrows the rows; whole addresses are compared in code.
+ */
+async function senderTakesPart(
+	db: Db,
+	mailboxId: string,
+	parentId: string,
+	threadId: string,
+	address: string,
+): Promise<boolean> {
+	const bare = normalizeEmailAddress(address);
+	if (!bare) return false;
+	const pattern = likeContains(bare);
+	const mentions = (column: Column) => sql`lower(${column}) LIKE ${pattern} ESCAPE '\\'`;
+	const rows = await db
+		.select({
+			fromAddr: messages.fromAddr,
+			toAddr: messages.toAddr,
+			ccAddr: messages.ccAddr,
+			bccAddr: messages.bccAddr,
+		})
+		.from(messages)
+		.where(
+			and(
+				eq(messages.mailboxId, mailboxId),
+				or(eq(messages.threadId, threadId), eq(messages.id, parentId)),
+				or(
+					mentions(messages.fromAddr),
+					mentions(messages.toAddr),
+					mentions(messages.ccAddr),
+					mentions(messages.bccAddr),
+				),
+			),
+		)
+		.limit(200);
+	return isThreadParticipant(bare, rows);
+}
+
+/** Whether a conversation of the mailbox already uses `threadId` as its key. */
+async function isThreadKey(db: Db, mailboxId: string, threadId: string): Promise<boolean> {
+	const [taken] = await db
+		.select({ id: messages.id })
+		.from(messages)
+		.where(and(eq(messages.mailboxId, mailboxId), eq(messages.threadId, threadId)))
+		.limit(1);
+	return !!taken;
 }
 
 /**

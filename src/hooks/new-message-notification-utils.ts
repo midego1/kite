@@ -1,4 +1,18 @@
+import { getEmailAddress } from "@/lib/email/address";
 import type { NewMessageEvent, NewMessageNotificationParts } from "./message-realtime-types";
+
+// Control and bidirectional-override characters, which could make a typed name pose as a different address.
+const INVISIBLE = /[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/**
+ * Who a new-mail notice is from, as "Name <address>": the display name is whatever the sender typed, so the real
+ * address always stands beside it (upstream Mailflare #223). Just the address when there is no other name.
+ */
+export function notificationSender(event: Pick<NewMessageEvent, "from" | "fromName">): string {
+	const address = getEmailAddress(event.from).trim() || event.from;
+	const name = (event.fromName ?? "").replace(INVISIBLE, "").trim().slice(0, 120);
+	return name && name.toLowerCase() !== address.toLowerCase() ? `${name} <${address}>` : address;
+}
 
 /**
  * Title and body for a new-mail browser notification. With a code (and the
@@ -10,7 +24,7 @@ export function buildNewMessageNotificationParts(
 	event: NewMessageEvent,
 	showCodes: boolean,
 ): NewMessageNotificationParts {
-	const sender = event.fromName ?? event.from;
+	const sender = notificationSender(event);
 	const code = showCodes ? event.oneTimeCode : null;
 	if (code) {
 		return {

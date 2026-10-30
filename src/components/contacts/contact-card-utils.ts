@@ -1,6 +1,7 @@
 import { getEmailAddress, normalizeEmailAddress } from "@/lib/email/address";
 import { canManageMailboxMail, canSendFromMailbox } from "@/lib/mailboxes/scope-utils";
 import type { MailboxPermission } from "@/lib/mailboxes/types";
+import type { ContactDetailsRecord } from "./contact-details-types";
 
 /** Whether the address is one of the mailbox's own, so the card says "You" and skips the actions that make no sense. */
 export function isOwnAddress(address: string, ownAddresses: readonly string[]): boolean {
@@ -34,4 +35,12 @@ export function fromSearchQuery(address: string): string {
 /** The label of the search action: the name, or the address when the person has none. It searches the Inbox list. */
 export function showMailFromLabel(name: string, address: string): string {
 	return `Search Inbox for mail from ${name.trim() || getEmailAddress(address)}`;
+}
+
+/**
+ * The name the open card switches to once the contact is read: only one the user saved. A name learned from mail
+ * never replaces the message's own From name, as in the list and the conversation (upstream Mailflare #226).
+ */
+export function savedContactName(contact: Pick<ContactDetailsRecord, "displayName" | "source">): string | null {
+	return contact.source === "manual" ? contact.displayName?.trim() || null : null;
 }

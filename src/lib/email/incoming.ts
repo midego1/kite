@@ -1,6 +1,6 @@
 import { getDb } from "@/db";
 import { recordRuleMatch, resolveInboundAddress, type RoutingDecision } from "@/lib/email/routing";
-import { KITE_FORWARDED_HEADER } from "@/lib/email/account-forwarding";
+import { forwardedMarker, KITE_FORWARDED_HEADER } from "@/lib/email/account-forwarding";
 
 /**
  * `resolveIncomingMail` looked the address up and nothing on this install takes it: no active domain, mailbox, alias
@@ -44,10 +44,14 @@ export async function resolveIncomingMail(
  *
  * The destination must be a verified destination address in Cloudflare Email Routing.
  */
-export async function forwardMessage(message: ForwardableEmailMessage, destination: string): Promise<boolean> {
+export async function forwardMessage(
+	env: CloudflareEnv,
+	message: ForwardableEmailMessage,
+	destination: string,
+): Promise<boolean> {
 	try {
 		const headers = new Headers();
-		headers.set(KITE_FORWARDED_HEADER, "1");
+		headers.set(KITE_FORWARDED_HEADER, await forwardedMarker(env));
 		await message.forward(destination, headers);
 		return true;
 	} catch (error) {

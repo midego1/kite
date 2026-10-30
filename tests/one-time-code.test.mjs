@@ -59,9 +59,8 @@ const { extractOneTimeCode } = await import(pathToFileURL(join(outDir, "one-time
 const { getLatestEmailContent, htmlToReadableText } = await import(
 	pathToFileURL(join(outDir, "reply-content-utils.mjs")).href
 );
-const { buildNewMessageNotificationParts, buildTestCodeNotificationParts, makeTestOneTimeCode } = await import(
-	pathToFileURL(join(outDir, "new-message-notification-utils.mjs")).href
-);
+const { buildNewMessageNotificationParts, buildTestCodeNotificationParts, makeTestOneTimeCode, notificationSender } =
+	await import(pathToFileURL(join(outDir, "new-message-notification-utils.mjs")).href);
 const { parseNewMessageEvent } = await import(pathToFileURL(join(outDir, "message-realtime-utils.mjs")).href);
 
 /** Every example below is invented; brand names are fictional. */
@@ -407,7 +406,7 @@ test("notification parts lead with the code when the setting is on", () => {
 	};
 	assert.deepEqual(buildNewMessageNotificationParts(event, true), {
 		title: "481923 · Your sign-in code",
-		body: "From Nodsoft · Click to copy",
+		body: "From Nodsoft <security@nodsoft.example> · Click to copy",
 		code: "481923",
 	});
 	const withoutName = { ...event, fromName: null };
@@ -451,18 +450,18 @@ test("notification parts keep the classic shape without a code or with the setti
 	};
 	assert.deepEqual(buildNewMessageNotificationParts(event, true), {
 		title: "Weekly digest",
-		body: "From Nodsoft",
+		body: "From Nodsoft <news@nodsoft.example>",
 		code: null,
 	});
 	assert.deepEqual(buildNewMessageNotificationParts({ ...event, subject: null }, true), {
 		title: "New email",
-		body: "From Nodsoft",
+		body: "From Nodsoft <news@nodsoft.example>",
 		code: null,
 	});
 	const withCode = { ...event, subject: "Your sign-in code", oneTimeCode: "481923" };
 	assert.deepEqual(buildNewMessageNotificationParts(withCode, false), {
 		title: "Your sign-in code",
-		body: "From Nodsoft",
+		body: "From Nodsoft <news@nodsoft.example>",
 		code: null,
 	});
 });
@@ -490,4 +489,23 @@ test("parseNewMessageEvent passes the one-time code through and rejects junk", (
 	assert.equal(badCode?.oneTimeCode, null);
 	assert.equal(parseNewMessageEvent("not json"), null);
 	assert.equal(parseNewMessageEvent(JSON.stringify({ type: "revision", revision: "1" })), null);
+});
+
+test("a notice names the sender as Name <address>, so a typed name cannot pose as someone else (upstream #223)", () => {
+	assert.equal(
+		notificationSender({ from: '"PayPal" <alerts@phish.example>', fromName: "PayPal" }),
+		"PayPal <alerts@phish.example>",
+	);
+	assert.equal(notificationSender({ from: "alerts@phish.example", fromName: null }), "alerts@phish.example");
+	// A name that is just the address is not repeated.
+	assert.equal(
+		notificationSender({ from: "alerts@phish.example", fromName: "Alerts@Phish.example" }),
+		"alerts@phish.example",
+	);
+	// Bidirectional overrides and control characters are dropped from the name.
+	assert.equal(
+		notificationSender({ from: "x@phish.example", fromName: "\u202ePayPal\u202c\n" }),
+		"PayPal <x@phish.example>",
+	);
+	assert.equal(notificationSender({ from: "x@phish.example", fromName: "\u202e" }), "x@phish.example");
 });

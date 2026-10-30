@@ -1,15 +1,22 @@
 // No "use client" and no React hooks: the root layout (a Server Component) imports
 // appearanceBootstrapScript as a plain string. The hook lives in use-appearance-preference.ts.
 
+import { ensureFontStylesheet, FONT_ASSETS, FONT_LINK_ATTRIBUTE, fontAsset } from "@/components/font-assets-utils";
+import type { LayoutPreferences } from "@/lib/preferences/layout-types";
+
 export type AppearancePreference<T extends string> = {
 	storageKey: string;
 	/** Attribute on <html> as `data-<attribute>`; the default value removes it. */
 	attribute: string;
 	defaultValue: T;
 	options: { value: T; label: string }[];
+	/** Values that need a stylesheet linked when chosen (`FONT_ASSETS`), so the font files load only then. */
+	assets?: boolean;
+	/** Saved to the account as this layout choice as well (`/api/settings/layout`), so it follows the user. */
+	layoutKey?: keyof LayoutPreferences;
 };
 
-export type FontPreference = "auto" | "manrope" | "geist" | "inter" | "system";
+export type FontPreference = "auto" | "manrope" | "geist" | "inter" | "system" | "opendyslexic";
 export type TextSizePreference = "small" | "default" | "large" | "larger";
 
 export const APPEARANCE_CHANGED_EVENT = "kite:appearance-changed";
@@ -18,14 +25,39 @@ export const FONT_PREFERENCE: AppearancePreference<FontPreference> = {
 	storageKey: "kite-font",
 	attribute: "font",
 	defaultValue: "auto",
+	assets: true,
+	layoutKey: "font",
 	options: [
 		{ value: "auto", label: "Match style" },
 		{ value: "manrope", label: "Manrope" },
 		{ value: "geist", label: "Geist" },
 		{ value: "inter", label: "Inter" },
 		{ value: "system", label: "System font" },
+		{ value: "opendyslexic", label: "Dyslexia-friendly (OpenDyslexic)" },
 	],
 };
+
+export type EmailFontPreference = "original" | "reader";
+
+/**
+ * Whether a dyslexia-friendly Font also replaces the fonts of HTML mail in the reader. Plain-text mail and
+ * Kite's own text use the chosen font either way; without a dyslexia-friendly font this has no effect.
+ */
+export const EMAIL_FONT_PREFERENCE: AppearancePreference<EmailFontPreference> = {
+	storageKey: "kite-email-font",
+	attribute: "email-font",
+	defaultValue: "original",
+	layoutKey: "emailFont",
+	options: [
+		{ value: "original", label: "The email's own fonts" },
+		{ value: "reader", label: "Dyslexia-friendly font" },
+	],
+};
+
+/** True for the Font value that loads the self-hosted dyslexia-friendly font. */
+export function isDyslexiaFont(value: string | null | undefined): boolean {
+	return fontAsset(value) !== undefined;
+}
 
 export const TEXT_SIZE_PREFERENCE: AppearancePreference<TextSizePreference> = {
 	storageKey: "kite-text-size",
@@ -90,7 +122,7 @@ export const LIST_SUMMARIES_PREFERENCE: AppearancePreference<ListSummariesPrefer
 	],
 };
 
-export const APPEARANCE_PREFERENCES = [FONT_PREFERENCE, TEXT_SIZE_PREFERENCE] as const;
+export const APPEARANCE_PREFERENCES = [FONT_PREFERENCE, TEXT_SIZE_PREFERENCE, EMAIL_FONT_PREFERENCE] as const;
 
 function isOption<T extends string>(preference: AppearancePreference<T>, value: unknown): value is T {
 	return preference.options.some((option) => option.value === value);
@@ -111,6 +143,7 @@ export function applyAppearancePreference<T extends string>(preference: Appearan
 	const root = document.documentElement;
 	if (value === preference.defaultValue) root.removeAttribute(`data-${preference.attribute}`);
 	else root.setAttribute(`data-${preference.attribute}`, value);
+	if (preference.assets) ensureFontStylesheet(document, value);
 }
 
 export function saveAppearancePreference<T extends string>(preference: AppearancePreference<T>, value: T): void {
@@ -130,7 +163,10 @@ export function applyStoredAppearancePreferences(): void {
 	}
 }
 
-/** Runs in <head> before paint, mirroring applyStoredAppearancePreferences. */
+/**
+ * Runs in <head> before paint, mirroring applyStoredAppearancePreferences. A chosen self-hosted font gets
+ * its stylesheet and a preload of its regular weight here, so the first frame is already set in it.
+ */
 export const appearanceBootstrapScript = `(() => {
 	try {
 		const prefs = ${JSON.stringify(
@@ -139,11 +175,26 @@ export const appearanceBootstrapScript = `(() => {
 				attribute: preference.attribute,
 				fallback: preference.defaultValue,
 				values: preference.options.map((option) => option.value),
+				assets: preference.assets ? FONT_ASSETS : undefined,
 			})),
 		)};
 		for (const pref of prefs) {
 			const saved = localStorage.getItem(pref.key);
-			if (saved && saved !== pref.fallback && pref.values.includes(saved)) document.documentElement.setAttribute("data-" + pref.attribute, saved);
+			if (!saved || saved === pref.fallback || !pref.values.includes(saved)) continue;
+			document.documentElement.setAttribute("data-" + pref.attribute, saved);
+			const asset = pref.assets && pref.assets[saved];
+			if (!asset) continue;
+			const preload = document.createElement("link");
+			preload.rel = "preload";
+			preload.as = "font";
+			preload.type = "font/woff2";
+			preload.crossOrigin = "anonymous";
+			preload.href = asset.preload;
+			const sheet = document.createElement("link");
+			sheet.rel = "stylesheet";
+			sheet.href = asset.stylesheet;
+			sheet.setAttribute(${JSON.stringify(FONT_LINK_ATTRIBUTE)}, saved);
+			document.head.append(preload, sheet);
 		}
 	} catch {}
 })();`;

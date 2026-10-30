@@ -6,6 +6,9 @@ export const LIST_HEIGHT_LIMITS = { min: 120, max: 1200 };
 
 const READING_PANES = new Set(["none", "right", "below"]);
 const DENSITIES = new Set(["default", "comfortable", "compact"]);
+/** The values of `FONT_PREFERENCE` and `EMAIL_FONT_PREFERENCE` (checked by `tests/appearance-font.test.mjs`). */
+const FONTS = new Set(["auto", "manrope", "geist", "inter", "system", "opendyslexic"]);
+const EMAIL_FONTS = new Set(["original", "reader"]);
 
 function size(value: unknown, limits: { min: number; max: number }): number | undefined {
 	if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
@@ -25,6 +28,9 @@ function parseLayoutPreferences(value: unknown): LayoutPreferences {
 	if (typeof input.density === "string" && DENSITIES.has(input.density))
 		layout.density = input.density as LayoutPreferences["density"];
 	if (typeof input.conversationView === "boolean") layout.conversationView = input.conversationView;
+	if (typeof input.font === "string" && FONTS.has(input.font)) layout.font = input.font as LayoutPreferences["font"];
+	if (typeof input.emailFont === "string" && EMAIL_FONTS.has(input.emailFont))
+		layout.emailFont = input.emailFont as LayoutPreferences["emailFont"];
 	const listWidth = size(input.listWidth, LIST_WIDTH_LIMITS);
 	if (listWidth !== undefined) layout.listWidth = listWidth;
 	const listHeight = size(input.listHeight, LIST_HEIGHT_LIMITS);

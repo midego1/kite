@@ -50,7 +50,7 @@ const settingsNavSections: NavSection[] = [
 				href: "/settings/appearance",
 				label: "Appearance",
 				icon: Palette,
-				keywords: "theme dark light style font text size kite classic",
+				keywords: "theme dark light style font text size kite classic dyslexia opendyslexic accessibility",
 			},
 			{
 				href: "/settings/inbox",

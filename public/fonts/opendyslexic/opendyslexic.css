@@ -1,0 +1,5 @@
+/* OpenDyslexic, SIL Open Font License 1.1 (LICENSE.txt in this folder). Loaded only when this font is chosen under Settings → Appearance. */
+@font-face{font-family:"OpenDyslexic";font-style:normal;font-weight:400;font-display:swap;src:url(opendyslexic-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"OpenDyslexic";font-style:italic;font-weight:400;font-display:swap;src:url(opendyslexic-latin-400-italic.woff2) format("woff2")}
+@font-face{font-family:"OpenDyslexic";font-style:normal;font-weight:700;font-display:swap;src:url(opendyslexic-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:"OpenDyslexic";font-style:italic;font-weight:700;font-display:swap;src:url(opendyslexic-latin-700-italic.woff2) format("woff2")}

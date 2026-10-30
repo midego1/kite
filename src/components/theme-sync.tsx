@@ -10,6 +10,7 @@ import {
 	THEME_CHANGED_EVENT,
 } from "@/components/theme-utils";
 import { applyStoredAppearancePreferences } from "@/components/appearance-preferences";
+import { LAYOUT_PREFERENCES_APPLIED_EVENT } from "@/components/layout-preferences-utils";
 
 // Keeps the html class and style in step with the saved preferences and, for "system", with the OS setting.
 export function ThemeSync() {
@@ -24,11 +25,14 @@ export function ThemeSync() {
 		media.addEventListener("change", sync);
 		window.addEventListener(THEME_CHANGED_EVENT, sync);
 		window.addEventListener(STYLE_CHANGED_EVENT, sync);
+		// The account's font arrived from the server (`layout-preferences-client.ts`).
+		window.addEventListener(LAYOUT_PREFERENCES_APPLIED_EVENT, sync);
 		window.addEventListener("storage", sync);
 		return () => {
 			media.removeEventListener("change", sync);
 			window.removeEventListener(THEME_CHANGED_EVENT, sync);
 			window.removeEventListener(STYLE_CHANGED_EVENT, sync);
+			window.removeEventListener(LAYOUT_PREFERENCES_APPLIED_EVENT, sync);
 			window.removeEventListener("storage", sync);
 		};
 	}, []);

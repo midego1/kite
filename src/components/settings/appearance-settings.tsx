@@ -17,8 +17,10 @@ import {
 	ASSISTANT_DETAIL_PREFERENCE,
 	ASSISTANT_LAYOUT_PREFERENCE,
 	ASSISTANT_STEPS_PREFERENCE,
+	EMAIL_FONT_PREFERENCE,
 	LIST_SUMMARIES_PREFERENCE,
 	FONT_PREFERENCE,
+	isDyslexiaFont,
 	TEXT_SIZE_PREFERENCE,
 	type AppearancePreference,
 } from "@/components/appearance-preferences";
@@ -59,11 +61,7 @@ export function AppearanceSettings() {
 		<div className="space-y-3">
 			<ThemeSetting />
 			<StyleSetting />
-			<PreferenceRow
-				preference={FONT_PREFERENCE}
-				label="Font"
-				description="The typeface for the whole app. Match style uses Manrope in Kite classic and Geist otherwise."
-			/>
+			<FontSettings />
 			<PreferenceRow
 				preference={TEXT_SIZE_PREFERENCE}
 				label="Text size"
@@ -86,6 +84,27 @@ export function AppearanceSettings() {
 				<span className="mt-1 block font-script text-2xl text-blue-600">that actually flows.</span>
 			</p>
 		</div>
+	);
+}
+
+/** The Font choice and, for the dyslexia-friendly font, whether HTML mail is shown in it too. */
+function FontSettings() {
+	const [font] = useAppearancePreference(FONT_PREFERENCE);
+	return (
+		<>
+			<PreferenceRow
+				preference={FONT_PREFERENCE}
+				label="Font"
+				description="The typeface for the whole app, including what you write. Match style uses Manrope in Kite classic and Geist otherwise. The dyslexia-friendly font (OpenDyslexic) is loaded only when chosen and adds a little space between letters and words."
+			/>
+			{isDyslexiaFont(font) && (
+				<PreferenceRow
+					preference={EMAIL_FONT_PREFERENCE}
+					label="Font in HTML emails"
+					description="Plain-text emails already use the dyslexia-friendly font. HTML emails bring their own fonts; this replaces them with the dyslexia-friendly font as well."
+				/>
+			)}
+		</>
 	);
 }
 
@@ -140,7 +159,8 @@ function PreferenceRow<T extends string>({
 			<span className="flex-1">
 				<span className="block text-sm font-medium text-neutral-900">{label}</span>
 				<span className={compact ? "sr-only" : "mt-1 block text-sm text-neutral-500"}>
-					{description} Saved in this browser.
+					{description}{" "}
+					{preference.layoutKey ? "Follows your account to your other devices." : "Saved in this browser."}
 				</span>
 			</span>
 			<Select

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { mailboxes, users } from "./index";
 
@@ -18,7 +19,10 @@ export const externalAccounts = sqliteTable(
 			.notNull()
 			.references(() => mailboxes.id, { onDelete: "cascade" }),
 		label: text("label").notNull(),
-		/** Lower-case, unique per install. */
+		/**
+		 * Lower-case. Unique per install for the known providers, whose own servers prove the address at sign-in; an
+		 * "Other" account names its own server, so its address proves nothing and claims nothing (migration 0082).
+		 */
 		address: text("address").notNull(),
 		displayName: text("display_name"),
 		preset: text("preset", {
@@ -69,7 +73,9 @@ export const externalAccounts = sqliteTable(
 			.$defaultFn(() => new Date()),
 	},
 	(t) => [
-		uniqueIndex("external_accounts_address_idx").on(t.address),
+		uniqueIndex("external_accounts_address_idx")
+			.on(t.address)
+			.where(sql`${t.preset} <> 'other'`),
 		index("external_accounts_user_idx").on(t.userId),
 		index("external_accounts_status_idx").on(t.status, t.nextSyncAt),
 	],
@@ -127,7 +133,11 @@ export const externalAccountSendStates = sqliteTable("external_accounts", {
 	smtpVerifiedAt: integer("smtp_verified_at", { mode: "timestamp" }),
 });
 
-/** `messages.external_account_id` (migration 0079): the account a sent copy went out through (or synced mail came in by). */
+/**
+ * `messages.external_account_id` (migration 0079): the connected account a synced message came in by, or a sent copy
+ * went out through. A narrow view of `messages` for the same reason as `messageBodyKeys`: whole-row reads and inserts
+ * of `messages` must not name a column a deploy can run ahead of. Only written once the account tables exist.
+ */
 export const messageExternalAccounts = sqliteTable("messages", {
 	id: text("id").primaryKey(),
 	externalAccountId: text("external_account_id"),

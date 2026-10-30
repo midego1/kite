@@ -288,7 +288,7 @@ test("a copy request the clipboard refuses becomes a dialog with one more Copy",
 
 test("Settings can send a test notification while the tab is visible", async ({ page }) => {
 	await page.addInitScript(stubNotifications());
-	await page.goto("/settings/inbox");
+	await page.goto("/settings/notifications");
 	// The stub hides the tab; a test notification must show regardless.
 	const button = page.getByRole("button", { name: "Send test notification" });
 	await expect(button).toBeEnabled();
@@ -309,7 +309,7 @@ test("Settings can send a test notification while the tab is visible", async ({ 
 test("Settings can send a test code notification whose click copies the code", async ({ page }) => {
 	await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
 	await page.addInitScript(stubNotifications());
-	await page.goto("/settings/inbox");
+	await page.goto("/settings/notifications");
 	const button = page.getByRole("button", { name: "Send test code" });
 	await expect(button).toBeEnabled();
 	await button.click();
@@ -342,7 +342,7 @@ test("turning the code setting off keeps codes out of the notification", async (
 	await seedRealtimeSession(page);
 	await page.addInitScript(stubNotifications());
 	await page.addInitScript(instrumentRealtime());
-	await page.goto("/settings/inbox");
+	await page.goto("/settings/notifications");
 	const codeSwitch = page.getByRole("switch", { name: "Show one-time codes in notifications" });
 	await expect(codeSwitch).toBeEnabled();
 	await codeSwitch.click();

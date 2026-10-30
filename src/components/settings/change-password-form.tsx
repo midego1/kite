@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormFooter } from "@/components/ui/page";
 import { updatePassword } from "./utils";
 
 export function ChangePasswordForm() {
@@ -73,16 +74,11 @@ export function ChangePasswordForm() {
 					required
 				/>
 			</div>
-			<div className="flex items-center gap-3">
+			<FormFooter status={status}>
 				<Button type="submit" disabled={loading}>
 					{loading ? "Changing..." : "Change password"}
 				</Button>
-				{status && (
-					<p role="status" className="text-sm text-neutral-500">
-						{status}
-					</p>
-				)}
-			</div>
+			</FormFooter>
 		</form>
 	);
 }

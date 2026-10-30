@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { apiContext } from "./support/helpers";
+import { apiContext, uniqueToken } from "./support/helpers";
 import { STORAGE_STATE } from "./support/constants";
 
 /** Set to a directory to save the rail's screenshots there (the PR's before and after). */
@@ -20,20 +20,31 @@ const VARIANTS = [
 
 type Box = { x: number; y: number; width: number; height: number };
 
-async function ensureFolders() {
+/** The folders live in a mailbox of their own, deleted with its folders afterwards, so no other spec sees them. */
+let railMailboxId = "";
+
+test.beforeAll(async () => {
 	const api = await apiContext(STORAGE_STATE);
-	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as { mailboxes: { id: string }[] };
-	const mailboxId = mailboxes[0].id;
-	const existing = (await (await api.get(`/api/folders?mailboxId=${mailboxId}`)).json()) as {
-		folders: { name: string }[];
-	};
+	const { domains } = (await (await api.get("/api/domains")).json()) as { domains: { id: string; hostname: string }[] };
+	const domainId = domains.find((domain) => domain.hostname === "example.com")!.id;
+	const created = await api.post("/api/mailboxes", {
+		data: { domainId, localPart: `rail${uniqueToken("")}`.toLowerCase(), displayName: "Rail desk", type: "shared" },
+	});
+	expect(created.ok(), await created.text()).toBe(true);
+	railMailboxId = ((await created.json()) as { id: string }).id;
 	for (const { name, color } of FOLDER_COLORS) {
-		if (existing.folders.some((folder) => folder.name === name)) continue;
-		const created = await api.post("/api/folders", { data: { mailboxId, name, color } });
-		expect(created.ok(), await created.text()).toBe(true);
+		const folder = await api.post("/api/folders", { data: { mailboxId: railMailboxId, name, color } });
+		expect(folder.ok(), await folder.text()).toBe(true);
 	}
 	await api.dispose();
-}
+});
+
+test.afterAll(async () => {
+	if (!railMailboxId) return;
+	const api = await apiContext(STORAGE_STATE);
+	await api.delete(`/api/mailboxes/${railMailboxId}`);
+	await api.dispose();
+});
 
 /** Inbox and Drafts show a count, Inbox past 99, so the rail's badge has its longest label. */
 async function mockCounts(page: Page) {
@@ -52,10 +63,14 @@ async function mockCounts(page: Page) {
 }
 
 async function openRail(page: Page, variant: (typeof VARIANTS)[number]) {
-	await page.addInitScript(({ style, theme }) => {
-		localStorage.setItem("kite-style", style);
-		localStorage.setItem("kite-theme", theme);
-	}, variant);
+	await page.addInitScript(
+		({ style, theme, mailboxId }) => {
+			localStorage.setItem("kite-style", style);
+			localStorage.setItem("kite-theme", theme);
+			localStorage.setItem("selected-mailbox-id", mailboxId);
+		},
+		{ ...variant, mailboxId: railMailboxId },
+	);
 	await mockCounts(page);
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.goto("/inbox");
@@ -77,7 +92,6 @@ const box = async (locator: ReturnType<Page["locator"]>): Promise<Box> => (await
 
 for (const variant of VARIANTS) {
 	test(`the collapsed rail keeps every item on one axis at one size (${variant.name})`, async ({ page }) => {
-		await ensureFolders();
 		const nav = await openRail(page, variant);
 		if (SHOT_DIR) {
 			mkdirSync(SHOT_DIR, { recursive: true });
@@ -106,6 +120,7 @@ for (const variant of VARIANTS) {
 		for (const [index, row] of rows.entries()) {
 			expect(row.label, "every rail item has an accessible name for its tooltip").not.toBe("");
 			expect(Math.abs(centres[index] - firstCentre), `${row.label} centre x`).toBeLessThanOrEqual(0.5);
+			// Deliberately exactly 40×40: the rail's one hit target, not a minimum (a phone's 44px rows are the sheet's).
 			expect(row.box.width, `${row.label} width`).toBeCloseTo(40, 0);
 			expect(row.box.height, `${row.label} height`).toBeCloseTo(40, 0);
 		}
@@ -156,8 +171,46 @@ for (const variant of VARIANTS) {
 		expect(activeBox.width).toBeCloseTo(40, 0);
 		expect(activeBox.height).toBeCloseTo(40, 0);
 
+		// The list fits the window, so the scroller's top and bottom fade is off.
+		const mask = await nav
+			.locator("> div.flex-1.overflow-y-auto")
+			.evaluate((element) => getComputedStyle(element).maskImage);
+		expect(mask).toBe("none");
+
 		// A tooltip on hover.
 		await nav.getByRole("link", { name: "Starred" }).hover();
 		await expect(page.getByRole("tooltip", { name: "Starred" })).toBeVisible();
 	});
 }
+
+test("the Drive rail uses the same squares and icon size as the mail rail", async ({ page }) => {
+	await page.addInitScript(() => localStorage.setItem("kite-sidebar-minimal", "true"));
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await page.goto("/drive");
+	const nav = page.getByRole("navigation").first();
+	const expand = nav.getByRole("button", { name: "Expand menu" });
+	await expect(async () => {
+		const collapse = page.getByRole("button", { name: "Collapse menu" });
+		if (await collapse.isVisible()) await collapse.click();
+		await expect(expand).toBeVisible({ timeout: 1_500 });
+	}).toPass({ timeout: 30_000 });
+	const items = nav.locator("a:visible, button:visible");
+	await expect(nav.getByRole("link", { name: "Inbox" })).toBeVisible();
+	const count = await items.count();
+	expect(count).toBeGreaterThanOrEqual(5);
+	const first = await box(items.first());
+	for (let index = 0; index < count; index++) {
+		const item = items.nth(index);
+		const label = (await item.getAttribute("aria-label")) ?? "";
+		const itemBox = await box(item);
+		expect(
+			Math.abs(itemBox.x + itemBox.width / 2 - (first.x + first.width / 2)),
+			`${label} centre x`,
+		).toBeLessThanOrEqual(0.5);
+		expect(itemBox.width, `${label} width`).toBeCloseTo(40, 0);
+		expect(itemBox.height, `${label} height`).toBeCloseTo(40, 0);
+		if (label === "Open account menu") continue;
+		const icon = await box(item.locator("svg").first());
+		expect(icon.width, `${label} icon`).toBeCloseTo(18, 0);
+	}
+});

@@ -9,8 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { applyDatabaseMigrations, getMigrationStatus, pendingMigrationsTitle } from "./admin-update-card-utils";
 import type { MigrationStatusResponse } from "./admin-update-card-types";
-import { migrationApplierText, migrationApplySummary, shouldShowMigrationsBanner } from "./migrations-banner-utils";
-import { useMigrationsNotice } from "./use-migrations-notice";
+import { migrationApplySummary } from "./migrations-banner-utils";
 import { BUILD_VERSION_LABEL } from "@/lib/build-version";
 
 const PENDING_PANEL_CLASS = "rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900";
@@ -167,24 +166,5 @@ export function AdminUpdateCard() {
 				)}
 			</CardContent>
 		</Card>
-	);
-}
-
-/** For admins other than the primary admin: what is waiting, and the one account that can apply it. */
-export function AdminPendingMigrationsNotice() {
-	const { data } = useMigrationsNotice();
-	if (!data || !shouldShowMigrationsBanner(data)) return null;
-
-	return (
-		<section aria-label="Pending database updates" className={PENDING_PANEL_CLASS}>
-			<div className="flex items-start gap-3">
-				<Database className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" />
-				<div className="min-w-0 flex-1">
-					<p className="font-medium">{pendingMigrationsTitle(data.pending)}</p>
-					<p className="mt-1">{PENDING_BODY}</p>
-					<p className="mt-2 font-medium">{migrationApplierText(data.appliedBy)}</p>
-				</div>
-			</div>
-		</section>
 	);
 }

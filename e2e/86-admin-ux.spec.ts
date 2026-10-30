@@ -92,6 +92,44 @@ test("the Admin menu groups its pages by task, in order, with Drive settings und
 	await expect(page.getByText("People", { exact: true }).first()).toBeVisible();
 });
 
+test("the overview leads with what needs attention, then counts that open their pages", async ({ page }) => {
+	await page.goto("/admin");
+	await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
+	const attention = page.getByRole("region", { name: "Needs attention" });
+	await expect(attention).toBeVisible();
+	// The database is current and small, so neither is listed; the backup line follows the health endpoint, since
+	// specs that ran earlier may have left a backup behind.
+	await expect(attention.getByTestId("attention-migrations")).toHaveCount(0);
+	await expect(attention.getByTestId("attention-database-size")).toHaveCount(0);
+	const api = await apiContext(STORAGE_STATE);
+	const health = (await (await api.get("/api/backups/health")).json()) as {
+		lastSuccess: unknown;
+		lastFailure: unknown;
+		inProgress: boolean;
+	};
+	await api.dispose();
+	if (health.lastFailure) {
+		await expect(attention.getByTestId("attention-backup-failed")).toContainText("The last backup failed");
+	} else if (!health.lastSuccess && !health.inProgress) {
+		await expect(attention.getByTestId("attention-backup-none")).toContainText("No successful backup yet");
+		await expect(attention.getByRole("link", { name: "Open Backups" })).toHaveAttribute("href", "/backups");
+	} else {
+		await expect(attention.getByTestId(/attention-backup/)).toHaveCount(0);
+	}
+
+	const glance = page.getByRole("region", { name: "At a glance" });
+	await expect(glance.getByTestId("stat-accounts")).toContainText("Accounts");
+	await expect(glance.getByTestId("stat-accounts")).toHaveAttribute("href", "/accounts");
+	await expect(glance.getByTestId("stat-mailboxes")).toHaveAttribute("href", "/mailboxes");
+	await expect(glance.getByTestId("stat-domains")).toContainText(/\d+/);
+	await expect(glance.getByTestId("stat-database")).toContainText(/MB|KB/);
+	// The cards below keep their place and their test ids, so the specs that drive them still find them.
+	await expect(page.getByTestId("database-size-card")).toBeVisible();
+	await expect(page.getByTestId("backup-health-card")).toBeVisible();
+	await glance.getByTestId("stat-mailboxes").click();
+	await expect(page).toHaveURL(/\/mailboxes$/);
+});
+
 test.describe("on a phone", () => {
 	test.use({ viewport: { width: 390, height: 844 } });
 
@@ -120,10 +158,14 @@ test("a non-primary admin never sees primary-only controls", async ({ browser })
 	const admin = await createAccount("admin");
 	const { context, page } = await signInFresh(browser, admin.email);
 
-	// The overview has no database card to apply migrations from; the menu holds only the pages they may open.
+	// The overview has no database card to apply migrations from, but the counts they may read; the menu holds only
+	// the pages they may open.
 	await page.goto("/admin");
 	await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "Update database" })).toHaveCount(0);
+	await expect(page.getByTestId("stat-accounts")).toBeVisible();
+	await expect(page.getByTestId("stat-database")).toHaveCount(0);
+	await expect(page.getByRole("region", { name: "Needs attention" })).toBeVisible();
 	const menu = page.getByRole("complementary", { name: "Admin menu" });
 	for (const label of ["Agent", "Backups", "Storage", "General", "Modules", "API keys", "Webhooks", "Alerts"])
 		await expect(menu.getByRole("link", { name: label, exact: true })).toHaveCount(0);

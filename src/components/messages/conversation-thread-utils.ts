@@ -46,17 +46,37 @@ export function getAvatarInitial(message: ThreadMessage, currentAccountName?: st
 	return name.trim().charAt(0).toUpperCase() || "?";
 }
 
-export type ThreadParticipant = { name: string; address: string };
+export type ThreadParticipant = {
+	name: string;
+	address: string;
+	/** Other addresses the same display name wrote from or was sent to in the conversation. */
+	otherAddresses?: string[];
+};
 
-/** The people of a conversation for the reader's chips: senders and recipients, once each, in order. */
+/**
+ * The people of a conversation for the reader's chips: senders and recipients, once each, in order. A display
+ * name that reappears with another address (a person writing from work and from home) stays one chip that
+ * remembers the other addresses; a bare address never merges.
+ */
 export function getThreadParticipants(people: ThreadParticipant[]): ThreadParticipant[] {
 	const seen = new Set<string>();
+	const byName = new Map<string, ThreadParticipant>();
 	const participants: ThreadParticipant[] = [];
 	for (const person of people) {
-		const key = person.address.trim().toLowerCase() || person.name.trim().toLowerCase();
+		const address = person.address.trim();
+		const name = person.name.trim() || address;
+		const key = address.toLowerCase() || name.toLowerCase();
 		if (!key || seen.has(key)) continue;
 		seen.add(key);
-		participants.push({ name: person.name.trim() || person.address, address: person.address });
+		const nameKey = address && name.toLowerCase() !== address.toLowerCase() ? name.toLowerCase() : "";
+		const sameName = nameKey ? byName.get(nameKey) : undefined;
+		if (sameName && address) {
+			sameName.otherAddresses = [...(sameName.otherAddresses ?? []), address];
+			continue;
+		}
+		const participant: ThreadParticipant = { name, address: person.address };
+		participants.push(participant);
+		if (nameKey) byName.set(nameKey, participant);
 	}
 	return participants;
 }

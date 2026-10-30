@@ -7,7 +7,7 @@ import { formatUserDate } from "@/lib/time/utils";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { MarkAsRead } from "@/components/mark-read";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
-import { ContactDetailsTrigger } from "@/components/contacts/contact-details";
+import { ContactCard } from "@/components/contacts/contact-card";
 import { ContactAvatar } from "@/components/contacts/contact-avatar";
 import { MessageActions } from "@/components/message-actions/message-actions";
 import { MessageAttachmentViewer } from "@/components/message-attachment-viewer";
@@ -212,6 +212,8 @@ export default function MessageDetailPage() {
 						...toEntries.map((entry) => ({ name: getEmailDisplayName(entry), address: getEmailAddress(entry) })),
 					])}
 					mailboxId={message.mailboxId}
+					ownAddress={ownAddress}
+					ownAddresses={ownAddresses}
 				/>
 				<OneTimeCodeChip code={oneTimeCode} alignWide={!isAnyPanelVisible} />
 				<ScreenerBanner message={message} mailbox={messageMailbox} alignWide={!isAnyPanelVisible} />
@@ -262,15 +264,17 @@ export default function MessageDetailPage() {
 								<div className="flex-1 min-w-0">
 									<p className="text-sm text-neutral-900 mt-1.25 flex flex-row items-center gap-1 w-full  overflow-hidden">
 										<b dir="auto" className="whitespace-nowrap">
-											{message.direction === "inbound" ? (
-												<ContactDetailsTrigger
-													mailboxId={message.mailboxId}
-													address={message.fromAddr}
-													name={fromName}
-												/>
-											) : (
-												fromName
-											)}
+											<ContactCard
+												mailboxId={message.mailboxId}
+												address={message.fromAddr}
+												name={fromName}
+												ownAddress={ownAddress}
+												ownAddresses={ownAddresses}
+												tooltip={false}
+												triggerClassName="rounded-sm text-left hover:underline"
+											>
+												{fromName}
+											</ContactCard>
 										</b>{" "}
 										<span className="text-neutral-500 text-xs flex-1 overflow-hidden text-ellipsis min-w-0">
 											&lt;{fromAddress}&gt;

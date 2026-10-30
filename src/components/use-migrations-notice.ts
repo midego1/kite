@@ -3,19 +3,12 @@
 import { useCallback, useEffect, useSyncExternalStore, type RefObject } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { AUTH_SESSION_CHANGED_EVENT } from "@/lib/auth/client";
-import type { MigrationApplyResponse, PendingMigrationsResponse } from "./migrations-banner-types";
-import {
-	PENDING_MIGRATIONS_REFRESH_MS,
-	migrationApplySummary,
-	parsePendingMigrations,
-} from "./migrations-banner-utils";
-
-type ApplyState = { applying: boolean; summary: string | null; error: string | null };
+import { applyMigrations, useMigrationApply } from "./migration-apply";
+import type { PendingMigrationsResponse } from "./migrations-banner-types";
+import { PENDING_MIGRATIONS_REFRESH_MS, parsePendingMigrations } from "./migrations-banner-utils";
 
 // The banner and the reading-pane card show the same notice, and the reader can switch
-// between them mid-apply (opening a message), so the apply state lives outside both.
-let applyState: ApplyState = { applying: false, summary: null, error: null };
+// between them mid-apply (opening a message); the apply state lives in migration-apply.ts.
 let visibleCards = 0;
 const listeners = new Set<() => void>();
 
@@ -28,11 +21,6 @@ function subscribe(listener: () => void) {
 	return () => listeners.delete(listener);
 }
 
-function setApplyState(next: Partial<ApplyState>) {
-	applyState = { ...applyState, ...next };
-	emit();
-}
-
 async function fetchPendingMigrations(): Promise<PendingMigrationsResponse> {
 	const response = await fetch("/api/migrations/pending", { cache: "no-store" });
 	if (!response.ok) throw new Error(`Pending migrations request failed (${response.status})`);
@@ -41,19 +29,9 @@ async function fetchPendingMigrations(): Promise<PendingMigrationsResponse> {
 
 export function useMigrationsNotice() {
 	const user = useCurrentUser();
-	// The apply state is module-level, so without this it would survive a logout and
-	// show the previous session's summary or error to whoever signs in next on this tab.
-	useEffect(() => {
-		const reset = () => setApplyState({ applying: false, summary: null, error: null });
-		window.addEventListener(AUTH_SESSION_CHANGED_EVENT, reset);
-		return () => window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, reset);
-	}, []);
 	const isPrimaryAdmin = user?.role === "admin" && user.isPrimaryAdmin;
-	const state = useSyncExternalStore(
-		subscribe,
-		() => applyState,
-		() => applyState,
-	);
+	// Also resets the shared apply state when the session changes, so a sign-out never leaks a summary or error.
+	const progress = useMigrationApply();
 	const { data, refetch } = useQuery({
 		queryKey: ["pending-migrations"],
 		queryFn: fetchPendingMigrations,
@@ -65,26 +43,26 @@ export function useMigrationsNotice() {
 		retry: false,
 	});
 
+	const names = data?.names;
 	const apply = useCallback(async () => {
-		if (applyState.applying) return;
-		setApplyState({ applying: true, error: null });
-		try {
-			const response = await fetch("/api/admin/migrations", { method: "POST" });
-			const result = (await response.json()) as MigrationApplyResponse;
-			if (!response.ok) throw new Error(result.error ?? "Could not apply the database updates");
-			setApplyState({ summary: migrationApplySummary(result) });
-			// The next status answer hides the warning; a failure keeps it with the names.
-			await refetch();
-		} catch (failure) {
-			setApplyState({
-				error: failure instanceof Error ? failure.message : "Could not apply the database updates",
-			});
-		} finally {
-			setApplyState({ applying: false });
-		}
-	}, [refetch]);
+		const outcome = await applyMigrations(names ?? [], "mailbox");
+		// The next status answer hides the warning; after a failure it keeps what is still pending.
+		if (outcome) await refetch();
+	}, [names, refetch]);
 
-	return { user, isPrimaryAdmin, data, ...state, apply };
+	// The admin card owns a run it started; the notice then only shows a busy button, so nothing is said twice.
+	const owns = progress.source === "mailbox";
+	return {
+		user,
+		isPrimaryAdmin,
+		data,
+		progress,
+		applying: progress.applying,
+		showProgress: progress.applying && owns,
+		summary: owns ? progress.summary : null,
+		error: owns ? progress.error : null,
+		apply,
+	};
 }
 
 /** Whether a reading-pane card is on screen, in which case the top banner steps aside. */

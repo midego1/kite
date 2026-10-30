@@ -261,7 +261,7 @@ export function ConversationMessageCard({
 							<div className="flex flex-col">
 								<span
 									className={cn(
-										"truncate text-sm font-semibold mt-1",
+										"reading-font truncate text-sm font-semibold mt-1",
 										locallyRead || outbound ? "text-neutral-900" : "font-semibold text-neutral-900",
 									)}
 								>
@@ -274,7 +274,10 @@ export function ConversationMessageCard({
 							</div>
 							{!expanded && (
 								<span
-									className={clsx(!locallyRead ? "font-semibold" : "text-neutral-500", "block truncate text-[13px]")}
+									className={clsx(
+										!locallyRead ? "font-semibold" : "text-neutral-500",
+										"reading-font block truncate text-[13px]",
+									)}
 								>
 									{message.snippet || "No preview"}
 								</span>

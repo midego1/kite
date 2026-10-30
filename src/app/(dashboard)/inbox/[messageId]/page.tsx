@@ -356,7 +356,7 @@ export default function MessageDetailPage() {
 								quotedColours={quotedColours}
 								className="email-body mx-auto"
 								fallback={
-									<pre className="whitespace-pre-wrap text-sm text mx-auto">
+									<pre className="reading-text whitespace-pre-wrap text-sm text mx-auto">
 										<LinkifiedText text={cloudAttachmentResult.content} />
 									</pre>
 								}

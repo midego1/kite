@@ -30,10 +30,15 @@ export async function previewCalendarToolChange(
 			title: calendarEvents.title,
 			startsAt: calendarEvents.startsAt,
 			repeat: calendarEvents.repeat,
+			updatedAt: calendarEvents.updatedAt,
 		})
 		.from(calendarEvents)
 		.where(and(eq(calendarEvents.userId, viewer.userId), inArray(calendarEvents.id, ids)));
 	const events = new Map(rows.map((row) => [row.id, row]));
 	if (ids.some((id) => !events.has(id))) throw new Error("Event not found");
-	return { items: updates ? previewUpdates(updates, events, timeZone) : previewDeletions(ids, events, timeZone) };
+	return {
+		items: updates ? previewUpdates(updates, events, timeZone) : previewDeletions(ids, events, timeZone),
+		// Each event as it was when the change was proposed: an edit since then makes the approval stale.
+		version: ids.map((id) => `${id}@${events.get(id)!.updatedAt.getTime()}`).join(","),
+	};
 }

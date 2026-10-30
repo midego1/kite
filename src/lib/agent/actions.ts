@@ -144,6 +144,8 @@ async function applyProposal(
 	return { result, actionId: outcome.actionId, undoUntil: row?.undoUntil?.toISOString() ?? null };
 }
 
+const STALE_PROPOSAL = "This changed since it was proposed; ask the assistant again";
+
 /**
  * Runs an approved module tool proposal through `invokeCapability` as the viewer, with the chat trigger, so
  * module state, grants and input validation apply as they would have when the model called it. Only a tool
@@ -162,6 +164,17 @@ async function applyModuleProposal(env: CloudflareEnv, user: SessionUser, propos
 		enabled: await listEnabledModules(env, viewer),
 		manifests: MODULE_MANIFESTS,
 	});
+	if (descriptor.approval && proposal.version) {
+		// The records must still be as the card showed them (upstream Mailflare #225).
+		const preview = await invokeCapability(
+			moduleId,
+			descriptor.approval.preview,
+			{ tool: proposal.action, input: proposal.input as JsonValue },
+			callContext,
+		);
+		if (!preview.ok || (preview.output as { version?: string }).version !== proposal.version)
+			throw new Error(STALE_PROPOSAL);
+	}
 	const result = await invokeCapability(moduleId, proposal.action, proposal.input as JsonValue, callContext);
 	if (!result.ok) throw new Error(safeActionError(new Error(result.error.message)));
 	return { result: result.output };

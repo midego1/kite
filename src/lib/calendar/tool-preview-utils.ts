@@ -31,7 +31,8 @@ function describeEventUpdate(update: z.infer<typeof calendarUpdateSchema>, timeZ
 	if (update.endsAt) changes.push(`ends ${startLabel(new Date(update.endsAt), timeZone)}`);
 	if (update.location !== undefined)
 		changes.push(update.location.trim() ? `location ${quoted(update.location)}` : "no location");
-	if (update.description !== undefined) changes.push("new description");
+	if (update.description !== undefined)
+		changes.push(update.description.trim() ? `description ${quoted(update.description)}` : "no description");
 	if (update.timeZone !== undefined) changes.push(`time zone ${update.timeZone}`);
 	if (update.repeat !== undefined) changes.push(REPEAT_NAMES[update.repeat] ?? update.repeat);
 	else if (update.repeatDays !== undefined) changes.push("new repeat days");

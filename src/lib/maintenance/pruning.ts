@@ -42,6 +42,25 @@ async function pruneInBatches(db: Db, table: PrunableTable, where: SQL | undefin
 }
 
 /**
+ * MCP tool call audit rows past their retention. One row per call can outgrow the daily run's 5,000-row
+ * budget, so this runs from the five-minute cron instead, in the same bounded batches: up to 5,000 rows per run,
+ * about 1.4 million a day.
+ */
+export async function pruneMcpToolCallAudit(
+	env: CloudflareEnv,
+	now = new Date(),
+	policy: PruningPolicy = PRUNING_POLICY,
+): Promise<number> {
+	const cutoff = getRetentionCutoff(now, policy.mcpToolCallAuditDays);
+	if (!cutoff) return 0;
+	return pruneInBatches(
+		getDb(env),
+		auditLogs,
+		and(eq(auditLogs.action, MCP_TOOL_CALL_ACTION), lt(auditLogs.createdAt, cutoff)),
+	);
+}
+
+/**
  * Delete operational rows past their retention so D1 stays small and indexes stay hot.
  * Every table is pruned independently, and a failure in one does not stop the others.
  */
@@ -88,12 +107,6 @@ export async function runDatabasePruning(
 			passwordResetTokens,
 			policy.expiredPasswordResetTokensDays,
 			(cutoff) => lt(passwordResetTokens.expiresAt, cutoff),
-		],
-		[
-			"mcp_tool_call_audit_logs",
-			auditLogs,
-			policy.mcpToolCallAuditDays,
-			(cutoff) => and(eq(auditLogs.action, MCP_TOOL_CALL_ACTION), lt(auditLogs.createdAt, cutoff)),
 		],
 		["agent_actions", agentActions, policy.agentActionsDays, (cutoff) => lt(agentActions.createdAt, cutoff)],
 		[

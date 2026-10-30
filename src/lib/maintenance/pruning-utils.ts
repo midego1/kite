@@ -25,7 +25,8 @@ export const PRUNING_POLICY: PruningPolicy = {
 	agentActionsDays: 180,
 	// Conversation summaries that have been out of date this long (a newer message arrived) are not coming back.
 	staleSummariesDays: 30,
-	// One audit row per MCP tool call; a quarter of history is enough to trace what a key did.
+	// One audit row per MCP tool call; a quarter of history is enough to trace what a key did. Pruned every five
+	// minutes by pruneMcpToolCallAudit, not by the daily run.
 	mcpToolCallAuditDays: 90,
 };
 

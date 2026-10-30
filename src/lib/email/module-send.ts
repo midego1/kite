@@ -55,6 +55,8 @@ export async function sendModuleMail(
 		references: replyTo,
 		messageId: draft.messageId,
 		scheduledAt: draft.scheduledAt,
+		// Module mail (RSVPs, booking notices) answers whoever wrote first: it never makes them a familiar contact.
+		recordContacts: false,
 		attachments: calendar
 			? [
 					{

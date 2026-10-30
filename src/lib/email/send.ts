@@ -7,7 +7,7 @@ import { isJobClaimed } from "@/lib/email/job-claim";
 import { newId } from "@/lib/ids";
 import { buildSnippet } from "@/lib/email/parse";
 import { dispatchWebhooks } from "@/lib/email/webhooks";
-import { upsertContactFromAddress } from "@/lib/contacts/service";
+import { recordOutboundContacts } from "@/lib/email/outbound-contacts";
 import { getAuthorizedSenderAddress } from "@/lib/email/sender";
 import { assertWithinSendLimits } from "@/lib/email/send-limits";
 import { getEmailAddressList, joinEmailAddressList, splitEmailAddressList } from "@/lib/email/address";
@@ -52,6 +52,11 @@ export type SendEmailInput = {
 	messageId?: string;
 	/** Lets From be the user's connected account (spec §7.3): the signed-in composer only, never keys or automations. */
 	connectedAccounts?: boolean;
+	/**
+	 * False for mail a program sends on the user's behalf (module mail such as RSVPs): its recipients are not saved
+	 * as contacts. Auto-replies (an `Auto-Submitted` header) never are either.
+	 */
+	recordContacts?: boolean;
 };
 
 /** What an outbound job stores: the send as it was authorized, with the connected account it goes through. */
@@ -122,10 +127,6 @@ export async function sendEmail(
 	if (to.length + cc.length + bcc.length > MAX_RECIPIENTS) {
 		throw new Error(`A message can have at most ${MAX_RECIPIENTS} recipients`);
 	}
-	for (const address of [...to, ...cc, ...bcc]) {
-		await upsertContactFromAddress(env, { userId: input.userId, address, source: "outbound" });
-	}
-
 	const inReplyTo = normalizeMessageId(input.inReplyTo);
 	const references = Array.isArray(input.references)
 		? input.references.map((id) => normalizeMessageId(id)).filter((id): id is string => !!id)
@@ -364,6 +365,9 @@ async function deliverEmail(
 	}
 	await recordConnectedSend(env, delivery, response);
 	await runPostDeliveryStep(`agent reply suggestions for ${messageId}`, () => supersedeOlderReplies(env, messageId));
+	await runPostDeliveryStep(`outbound contacts for ${messageId}`, () =>
+		recordOutboundContacts(env, input, [...to, ...cc, ...bcc]),
+	);
 	await runPostDeliveryStep(`screener approvals for ${messageId}`, () =>
 		approveSentRecipients(env, mailboxId, input.userId, [...to, ...cc, ...bcc]),
 	);

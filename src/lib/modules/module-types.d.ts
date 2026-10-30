@@ -276,7 +276,8 @@ export type CapabilityDescriptor = {
 	/**
 	 * An assistant tool the user approves in chat before it runs (a tool whose effect is `update`, `delete` or
 	 * `send` always needs it). `preview` names a `service` capability of the same module that core calls with
-	 * `{ tool, input }` and that answers `{ items: { label, detail }[] }`, the lines the approval card shows.
+	 * `{ tool, input }` and that answers `{ items: { label, detail }[], version? }`: the lines the approval card
+	 * shows, and the state of the records they describe, which core checks again before running an approval.
 	 */
 	approval?: { preview: string };
 	event?: { value: string };

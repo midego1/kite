@@ -237,9 +237,11 @@ export async function createKiteMcpHandler(
 										expectedRevision,
 										principal.keyId,
 									);
+									// The recipient warning is for the person reviewing in Kite, not for the client.
+									const { unfamiliarRecipients: _review, ...request } = result;
 									return untrustedOutput({
-										...result,
-										reviewUrl: new URL(result.reviewUrl, env.APP_URL || baseUrl).toString(),
+										...request,
+										reviewUrl: new URL(request.reviewUrl, env.APP_URL || baseUrl).toString(),
 									});
 								} catch (error) {
 									return output({ error: error instanceof Error ? error.message : "Request failed" }, true);
@@ -265,7 +267,12 @@ export async function createKiteMcpHandler(
 								.limit(1);
 							if (row?.keyId !== principal.keyId) return output({ error: "Request not found" }, true);
 							try {
-								return untrustedOutput(await getAgentSendRequest(env, principal.user, approvalId));
+								const { unfamiliarRecipients: _review, ...request } = await getAgentSendRequest(
+									env,
+									principal.user,
+									approvalId,
+								);
+								return untrustedOutput(request);
 							} catch {
 								return output({ error: "Request not found" }, true);
 							}

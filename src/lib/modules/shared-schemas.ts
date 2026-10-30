@@ -27,6 +27,8 @@ export const approvalPreviewOutputSchema = z.object({
 		.array(z.object({ label: z.string().max(300), detail: z.string().max(1_000).nullable() }))
 		.min(1)
 		.max(20),
+	/** The state of the records the lines describe; core refuses the approval when it differs by then. */
+	version: z.string().max(4_000).optional(),
 });
 
 export const searchSchemas: CapabilitySchemas = {

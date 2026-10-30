@@ -50,6 +50,7 @@ async function proposeModuleTool(
 	if (!parsed?.success) throw new Error("Invalid input for this tool");
 	const value = parsed.data as Record<string, unknown>;
 	let items: ModuleProposal["items"] = [];
+	let version: string | undefined;
 	if (descriptor.approval) {
 		const preview = await invokeCapability(
 			moduleId,
@@ -58,7 +59,7 @@ async function proposeModuleTool(
 			callContext,
 		);
 		if (!preview.ok) throw new Error(preview.error.message);
-		items = (preview.output as { items: ModuleProposal["items"] }).items;
+		({ items, version } = preview.output as Pick<ModuleProposal, "items" | "version">);
 	}
 	return {
 		action: descriptor.name,
@@ -67,6 +68,7 @@ async function proposeModuleTool(
 		effect: descriptor.effect === "delete" || descriptor.effect === "send" ? descriptor.effect : "update",
 		input: value,
 		items,
+		...(version ? { version } : {}),
 	};
 }
 

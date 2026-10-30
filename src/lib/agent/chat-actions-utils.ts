@@ -52,6 +52,8 @@ export const moduleProposalSchema = z.object({
 	effect: z.enum(["update", "delete", "send"]),
 	input: z.record(z.string(), z.unknown()),
 	items: z.array(z.object({ label: z.string(), detail: z.string().nullable() })).max(20),
+	/** The module preview's state of the records when proposed; the approval is refused once it changed. */
+	version: z.string().max(4_000).optional(),
 });
 
 export type ModuleProposal = z.infer<typeof moduleProposalSchema>;

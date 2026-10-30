@@ -21,9 +21,14 @@ await build({
 	absWorkingDir: root,
 	logLevel: "silent",
 });
-const { RELOAD_FLIGHT_ANNOUNCEMENT, isFlightEnd, once, planReloadFlight, prefersReducedMotion } = await import(
-	pathToFileURL(join(bundleDirectory, "flight.mjs")).href
-);
+const {
+	RELOAD_FLIGHT_ANNOUNCEMENT,
+	RELOAD_FLIGHT_EXPIRE_MS,
+	isFlightEnd,
+	once,
+	planReloadFlight,
+	prefersReducedMotion,
+} = await import(pathToFileURL(join(bundleDirectory, "flight.mjs")).href);
 
 test("the flight is quick and the fallback reload comes soon after it", () => {
 	const plan = planReloadFlight({ reducedMotion: false });
@@ -32,6 +37,12 @@ test("the flight is quick and the fallback reload comes soon after it", () => {
 	assert.ok(plan.fallbackMs > plan.durationMs, "the fallback waits for the flight");
 	assert.ok(plan.fallbackMs <= 1_500, "the reload never waits longer than 1.5 s");
 	assert.equal(RELOAD_FLIGHT_ANNOUNCEMENT, "Reloading…");
+});
+
+test("a reload that has not replaced the page after ten seconds counts as cancelled", () => {
+	assert.equal(RELOAD_FLIGHT_EXPIRE_MS, 10_000);
+	// Longer than the fallback timer, so the scene never expires while the reload is still on its way.
+	assert.ok(RELOAD_FLIGHT_EXPIRE_MS > planReloadFlight({ reducedMotion: false }).fallbackMs);
 });
 
 test("planReloadFlight skips the flight and reloads at once under reduced motion", () => {

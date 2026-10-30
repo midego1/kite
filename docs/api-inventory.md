@@ -140,7 +140,9 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/drive/uploads`                                   | POST                   | [source](../src/app/api/drive/uploads/route.ts)                                   |
 | `/api/export/messages`                                 | GET                    | [source](../src/app/api/export/messages/route.ts)                                 |
 | `/api/external-accounts/[id]`                          | DELETE, PATCH          | [source](../src/app/api/external-accounts/[id]/route.ts)                          |
+| `/api/external-accounts/[id]/sync`                     | POST                   | [source](../src/app/api/external-accounts/[id]/sync/route.ts)                     |
 | `/api/external-accounts/[id]/test`                     | POST                   | [source](../src/app/api/external-accounts/[id]/test/route.ts)                     |
+| `/api/external-accounts/attention`                     | GET                    | [source](../src/app/api/external-accounts/attention/route.ts)                     |
 | `/api/external-accounts/detect`                        | GET                    | [source](../src/app/api/external-accounts/detect/route.ts)                        |
 | `/api/external-accounts`                               | GET, POST              | [source](../src/app/api/external-accounts/route.ts)                               |
 | `/api/finance/badge`                                   | GET                    | [source](../src/app/api/finance/badge/route.ts)                                   |

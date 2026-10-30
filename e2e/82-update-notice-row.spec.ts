@@ -114,7 +114,7 @@ test("one live region announces the notice once, and the row has none of its own
 	await announceNewVersion(page, "/inbox");
 	await expect(row(page)).toBeVisible();
 	await expect(row(page).getByRole("status")).toHaveCount(0);
-	const live = page.getByRole("status").filter({ hasText: "A new version of Kite is available." });
+	const live = page.locator("[aria-live=polite]").filter({ hasText: "A new version of Kite is available." });
 	await expect(live).toHaveCount(1);
 	await row(page).getByRole("button", { name: "Dismiss" }).click();
 	await expect(live).toHaveCount(0);

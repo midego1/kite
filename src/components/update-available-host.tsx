@@ -122,7 +122,7 @@ export function UpdateAvailableHost() {
 
 	// The row has no live region of its own: this one is empty until the row appears, so it is read out once.
 	return (
-		<span role="status" className="sr-only">
+		<span aria-live="polite" className="sr-only">
 			{surface === "row" ? UPDATE_ROW_ANNOUNCEMENT : ""}
 		</span>
 	);

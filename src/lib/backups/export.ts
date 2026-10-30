@@ -142,6 +142,8 @@ const INTERNAL_TABLES = [
 	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
 	// restored database would restart a copy between stores that may no longer match.
 	"storage_migrations",
+	// The direct-uploads setup note and the dismissed reminder (migration 0085): the outcome of this deployment's own
+	// R2 setup, not user data, so a restore into another install must not carry it over.
 	"storage_state",
 	// Usage statistics: the install id identifies this deployment, so a restore into another one must not clone it,
 	// and the choice, the notice and its start day stay those of the deployment restored into.

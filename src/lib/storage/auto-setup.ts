@@ -12,6 +12,7 @@ import {
 	r2ApiConfigured,
 	r2S3Endpoint,
 	resolveR2Account,
+	restoreR2BucketCors,
 	setR2BucketCors,
 	type R2Bucket,
 } from "./cloudflare-r2";
@@ -22,6 +23,7 @@ import {
 	permissionForStep,
 	permissionMessage,
 	R2_SETUP_STEP_LABELS,
+	type R2CorsRule,
 	type R2Jurisdiction,
 	type R2SetupStepId,
 } from "./cloudflare-r2-utils";
@@ -242,13 +244,20 @@ async function connectBucket(
 ): Promise<R2SetupResult> {
 	const { env } = ctx;
 	let step: R2SetupStepId = "token";
+	let previousCors: R2CorsRule[] | null = null;
 	const credentials = await createR2BucketToken(env, accountId, plan.bucket, plan.jurisdiction).catch((error) => {
 		throw stepErrorOf(error, "token");
 	});
 	progress.ok("token", "Object Read & Write on this bucket only");
 	try {
 		step = "cors";
-		await setR2BucketCors(env, accountId, plan.bucket, plan.jurisdiction, corsOrigins(ctx.origin, env.APP_URL));
+		previousCors = await setR2BucketCors(
+			env,
+			accountId,
+			plan.bucket,
+			plan.jurisdiction,
+			corsOrigins(ctx.origin, env.APP_URL),
+		);
 		progress.ok("cors");
 		const form = storeForm(env, plan, accountId, credentials);
 		const parsed = parseStoreInput(form);
@@ -270,6 +279,8 @@ async function connectBucket(
 		return { ok: true, steps: progress.steps, store: saved.store, report: saved.report };
 	} catch (error) {
 		await deleteR2Token(env, accountId, credentials.accessKeyId);
+		// The bucket's other sites keep the CORS policy they had before this attempt.
+		if (previousCors) await restoreR2BucketCors(env, accountId, plan.bucket, plan.jurisdiction, previousCors);
 		throw stepErrorOf(error, step);
 	}
 }

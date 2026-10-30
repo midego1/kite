@@ -27,7 +27,8 @@ const refuse = (response, status, code, message) =>
  * tokens). `denied` names operations answered with a permission error; `onCreateBucket` and `onCors` let a test
  * mirror buckets and CORS rules into a fake S3 so the checks that follow can pass.
  *
- * Operations: listAccounts, listBuckets, createBucket, putCors, permissionGroups, createToken, deleteToken.
+ * Operations: listAccounts, listBuckets, createBucket, getCors, putCors, deleteCors, permissionGroups, createToken,
+ * deleteToken.
  */
 export async function startFakeCloudflareR2(options = {}) {
 	const state = {
@@ -79,6 +80,27 @@ export async function startFakeCloudflareR2(options = {}) {
 				const bucket = decodeURIComponent(match[2]);
 				state.cors.set(bucket, body);
 				options.onCors?.(bucket, body.rules ?? []);
+				ok(response, {});
+			},
+		],
+		[
+			"GET",
+			/^\/client\/v4\/accounts\/([^/]+)\/r2\/buckets\/([^/]+)\/cors$/,
+			"getCors",
+			(response, match) => {
+				const policy = state.cors.get(decodeURIComponent(match[2]));
+				if (!policy) return refuse(response, 404, 10059, "The CORS configuration does not exist.");
+				ok(response, policy);
+			},
+		],
+		[
+			"DELETE",
+			/^\/client\/v4\/accounts\/([^/]+)\/r2\/buckets\/([^/]+)\/cors$/,
+			"deleteCors",
+			(response, match) => {
+				const bucket = decodeURIComponent(match[2]);
+				state.cors.delete(bucket);
+				options.onCors?.(bucket, []);
 				ok(response, {});
 			},
 		],

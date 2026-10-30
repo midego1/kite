@@ -66,12 +66,21 @@ export function r2Endpoint(accountId: string, jurisdiction: R2Jurisdiction): str
 	return `https://${accountId}${jurisdiction ? `.${jurisdiction}` : ""}.r2.cloudflarestorage.com`;
 }
 
-/** The body of `PUT …/r2/buckets/{bucket}/cors`: the rule direct uploads need, in the R2 API's own shape. */
-export function r2CorsBody(origins: string[]) {
+/** The id of Kite's own CORS rule, so a later setup replaces it and leaves every other rule alone. */
+const KITE_CORS_RULE_ID = "kite-direct-uploads";
+
+export type R2CorsRule = { id?: string; [field: string]: unknown };
+
+/**
+ * The body of `PUT …/r2/buckets/{bucket}/cors`: the bucket's other rules (for other sites) as they were, plus the rule
+ * direct uploads need, in the R2 API's own shape. The PUT replaces the whole policy, so nothing else may be dropped.
+ */
+export function r2CorsBody(origins: string[], existing: R2CorsRule[] = []) {
 	return {
 		rules: [
+			...existing.filter((rule) => rule.id !== KITE_CORS_RULE_ID),
 			{
-				id: "kite-direct-uploads",
+				id: KITE_CORS_RULE_ID,
 				allowed: { origins, methods: ["PUT", "GET", "HEAD"], headers: ["content-type"] },
 				exposeHeaders: ["ETag"],
 				maxAgeSeconds: 3600,

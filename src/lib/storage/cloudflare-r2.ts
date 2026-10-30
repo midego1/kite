@@ -8,6 +8,7 @@ import {
 	r2BucketResource,
 	r2CorsBody,
 	r2Endpoint,
+	type R2CorsRule,
 	type R2Jurisdiction,
 	type R2SetupStepId,
 } from "./cloudflare-r2-utils";
@@ -187,19 +188,59 @@ export async function createR2Bucket(
 	});
 }
 
-/** Replaces the bucket's CORS policy with the one rule direct uploads need. */
+const corsPath = (accountId: string, bucket: string) =>
+	`/accounts/${encodeURIComponent(accountId)}/r2/buckets/${encodeURIComponent(bucket)}/cors`;
+
+/** The bucket's CORS rules; a bucket without a policy answers 404 (code 10059), which reads as none. */
+async function readR2BucketCors(
+	env: Env,
+	accountId: string,
+	bucket: string,
+	jurisdiction: R2Jurisdiction,
+): Promise<R2CorsRule[]> {
+	try {
+		const answer = await cf<{ rules?: R2CorsRule[] } | null>(env, "cors", corsPath(accountId, bucket), {
+			jurisdiction: jurisdiction || undefined,
+		});
+		return answer?.rules ?? [];
+	} catch (error) {
+		if (error instanceof R2ApiError && (error.status === 404 || error.codes.includes(10059))) return [];
+		throw error;
+	}
+}
+
+/**
+ * Adds (or replaces) Kite's rule in the bucket's CORS policy and keeps every other rule. Answers the rules that were
+ * there before, so a setup that fails later can put them back with `restoreR2BucketCors`.
+ */
 export async function setR2BucketCors(
 	env: Env,
 	accountId: string,
 	bucket: string,
 	jurisdiction: R2Jurisdiction,
 	origins: string[],
-): Promise<void> {
-	await cf(env, "cors", `/accounts/${encodeURIComponent(accountId)}/r2/buckets/${encodeURIComponent(bucket)}/cors`, {
+): Promise<R2CorsRule[]> {
+	const previous = await readR2BucketCors(env, accountId, bucket, jurisdiction);
+	await cf(env, "cors", corsPath(accountId, bucket), {
 		method: "PUT",
 		jurisdiction: jurisdiction || undefined,
-		body: r2CorsBody(origins),
+		body: r2CorsBody(origins, previous),
 	});
+	return previous;
+}
+
+/** Puts the bucket's CORS policy back as it was before the setup (deleting it when there was none); best effort. */
+export async function restoreR2BucketCors(
+	env: Env,
+	accountId: string,
+	bucket: string,
+	jurisdiction: R2Jurisdiction,
+	previous: R2CorsRule[],
+): Promise<void> {
+	await cf(env, "cors", corsPath(accountId, bucket), {
+		jurisdiction: jurisdiction || undefined,
+		...(previous.length ? { method: "PUT", body: { rules: previous } } : { method: "DELETE" }),
+	}).catch(() => undefined);
 }
 
 async function sha256Hex(value: string): Promise<string> {

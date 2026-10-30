@@ -337,3 +337,24 @@ test("before migration 0085 the reminder still shows and dismissing waits for th
 	const result = await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST });
 	assert.equal(result.ok, true, "the setup itself does not need the note");
 });
+
+test("connecting an existing bucket keeps other sites' CORS rules, and a failed setup puts the policy back", async (t) => {
+	const { env } = await setup(t);
+	const other = { id: "photos-site", allowed: { origins: ["https://photos.example.com"], methods: ["GET"] } };
+	cf.state.cors.set("kite-media", { rules: [other] });
+	const plan = { sameAsBinding: false, bucket: "kite-media", jurisdiction: "", create: null };
+	s3.state.denied.add("HeadBucket");
+	const failed = await lib.autoSetup.setUpR2(env, actor, APP_ORIGIN, plan, { timing: FAST });
+	assert.equal(failed.ok, false);
+	assert.deepEqual(cf.state.cors.get("kite-media"), { rules: [other] }, "restored exactly as it was");
+	s3.state.denied.clear();
+	const done = await lib.autoSetup.setUpR2(env, actor, APP_ORIGIN, plan, { timing: FAST });
+	assert.equal(done.ok, true, done.error);
+	const rules = cf.state.cors.get("kite-media").rules;
+	assert.deepEqual(rules[0], other, "the other site's rule is still there");
+	assert.equal(rules[1].id, "kite-direct-uploads");
+	s3.state.denied.add("HeadBucket");
+	await lib.autoSetup.setUpR2(env, actor, APP_ORIGIN, { ...plan, bucket: "kite-raw" }, { timing: FAST });
+	assert.equal(cf.state.cors.has("kite-raw"), false, "a bucket without a policy is left without one");
+	assert.ok(cf.state.requests.some((request) => request.operation === "deleteCors"));
+});

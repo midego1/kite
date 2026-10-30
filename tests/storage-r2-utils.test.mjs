@@ -45,6 +45,12 @@ test("the token, endpoint and CORS requests follow Cloudflare's documented shape
 		headers: ["content-type"],
 	});
 	assert.deepEqual(rule.exposeHeaders, ["ETag"]);
+	const other = { id: "photos-site", allowed: { origins: ["https://photos.example.com"], methods: ["GET"] } };
+	const stale = { id: "kite-direct-uploads", allowed: { origins: ["https://old.example.com"], methods: ["PUT"] } };
+	const merged = lib.r2CorsBody(["https://kite.example.com"], [other, stale]).rules;
+	assert.deepEqual(merged[0], other, "another site's rule is kept as it was");
+	assert.equal(merged.length, 2, "Kite's earlier rule is replaced, not repeated");
+	assert.deepEqual(merged[1].allowed.origins, ["https://kite.example.com"]);
 });
 
 test("a refusal names the permission CF_TOKEN needs for that step", () => {

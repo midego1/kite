@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.30.4] - 2026-10-30
+
+### Fixed
+
+- Applying database updates holds up better on slow or unreliable connections: a timed-out update is followed for up to 20 minutes before it is reported as unknown, a request that never answers is cut off once every update has landed, and other tabs show the busy state reliably, even while hidden.
+
 ## [2026.10.30.3] - 2026-10-30
 
 ### Added

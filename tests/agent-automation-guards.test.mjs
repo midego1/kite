@@ -30,6 +30,7 @@ await build({
 			export { createKiteMcpHandler } from "./src/lib/mcp/server.ts";
 			export { coreToolAnnotations, markUntrusted, moduleToolAnnotations, MCP_INSTRUCTIONS } from "./src/lib/mcp/server-utils.ts";
 			export { unfamiliarRecipients } from "./src/lib/agent/approvals/utils.ts";
+			export { previewDeletions, previewUpdates } from "./src/lib/calendar/tool-preview-utils.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "agent-guards-entry.ts",
@@ -385,4 +386,63 @@ test("unfamiliar recipients are those the user neither wrote to nor saved", asyn
 		["sender@example.net", "theirs@example.net", "new@example.org"],
 	);
 	assert.deepEqual(await m.unfamiliarRecipients(env, "user-1", { to: "friend@example.net", cc: null, bcc: null }), []);
+});
+
+test("calendar approval lines name each event and every field an update changes", () => {
+	const events = new Map([
+		["evt-1", { title: "Team sync", startsAt: new Date("2026-11-03T09:00:00Z"), repeat: "weekly" }],
+		["evt-2", { title: "Dentist", startsAt: new Date("2026-11-04T10:00:00Z"), repeat: "none" }],
+		["evt-3", { title: "Gym", startsAt: new Date("2026-11-05T07:00:00Z"), repeat: "fortnightly" }],
+	]);
+	const [full, cleared, unchanged, days] = m.previewUpdates(
+		[
+			{
+				eventId: "evt-1",
+				title: "A very long title that goes on and on and on past the eighty characters the card shows at most",
+				startsAt: "2026-11-03T10:00:00Z",
+				endsAt: "2026-11-03T11:00:00Z",
+				location: "Room 4",
+				description: "New agenda",
+				timeZone: "Europe/Amsterdam",
+				repeat: "daily",
+				attendees: ["a@example.com", "b@example.com"],
+				color: "red",
+			},
+			{ eventId: "evt-2", location: " ", attendees: [], repeat: "none" },
+			{ eventId: "evt-2" },
+			{ eventId: "evt-3", repeatDays: [1, 3] },
+		],
+		events,
+		"UTC",
+	);
+	assert.equal(full.label, "Team sync · Tue, Nov 3, 9:00 AM");
+	assert.match(
+		full.detail,
+		/^Change: title “A very long title.*…”; starts Tue, Nov 3, 10:00 AM; ends Tue, Nov 3, 11:00 AM/,
+	);
+	assert.match(
+		full.detail,
+		/location “Room 4”; new description; time zone Europe\/Amsterdam; repeats daily; attendees a@example.com, b@example.com; new colour \(every occurrence\)$/,
+	);
+	assert.equal(cleared.detail, "Change: no location; does not repeat; no attendees");
+	assert.equal(unchanged.detail, "No fields change");
+	assert.equal(days.detail, "Change: new repeat days (every occurrence)");
+	assert.deepEqual(m.previewDeletions(["evt-2", "evt-1", "evt-3"], events, "Europe/Amsterdam"), [
+		{ label: "Dentist · Wed, Nov 4, 11:00 AM", detail: null },
+		{ label: "Team sync · Tue, Nov 3, 10:00 AM", detail: "Deletes every occurrence (repeats weekly)" },
+		{ label: "Gym · Thu, Nov 5, 8:00 AM", detail: "Deletes every occurrence (fortnightly)" },
+	]);
+});
+
+test("MCP hints for module tools that send or reach outside Kite", () => {
+	assert.deepEqual(m.moduleToolAnnotations({ effect: "send" }), {
+		readOnlyHint: false,
+		destructiveHint: true,
+		openWorldHint: true,
+	});
+	assert.equal(m.moduleToolAnnotations({ effect: "create", approval: { preview: "x" } }).destructiveHint, true);
+	assert.equal(m.moduleToolAnnotations({ effect: "none" }).readOnlyHint, true);
+	assert.equal(m.coreToolAnnotations("mark_emails_read").idempotentHint, true);
+	assert.equal(m.markUntrusted(null), null);
+	assert.equal(m.markUntrusted("text"), "text");
 });

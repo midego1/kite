@@ -5,9 +5,9 @@
  * leaf part and never parses inside it. Adapted from Mailflare (hieunc229/mailflare#214, 8377967 and ac1deac).
  */
 export const MIME_LIMITS = {
-	/** The top-level header block; postal-mime's `maxHeadersSize` caps every part's too. */
+	/** A header block, the top-level one and every part's (postal-mime's `maxHeadersSize`). */
 	maxHeaderBytes: 64 * 1024,
-	/** Boundary lines of declared multipart boundaries: every MIME part costs a parser node. */
+	/** Boundary lines of active multipart boundaries: every MIME part costs a parser node. */
 	maxBoundaryLines: 1_000,
 	/** Multipart levels. */
 	maxNestingDepth: 20,
@@ -23,41 +23,128 @@ export const MIME_LIMITS = {
 
 const NEWLINE = 10;
 const CARRIAGE_RETURN = 13;
-const COLON = 58;
 const DASH = 45;
 const SPACE = 32;
 const TAB = 9;
-/** RFC 2046 allows 70 characters; anything much longer is not a boundary line worth decoding. */
-const MAX_BOUNDARY_LINE_BYTES = 256;
-/** Enough of a folded Content-Type or Content-Transfer-Encoding field to find its boundary or encoding. */
-const MAX_FIELD_CHARS = 4096;
 
-const latin1 = (bytes: Uint8Array, start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
+// postal-mime decodes header lines as UTF-8 and encodes a boundary back the same way.
+const utf8 = new TextDecoder("utf-8");
+const encoder = new TextEncoder();
 
-/**
- * The boundary a Content-Type field declares for postal-mime, or null. Only an unambiguous plain parameter counts
- * (one `boundary=`, no escapes): where this reading could differ from postal-mime's, declaring nothing only makes
- * the scan count more lines as text, never fewer.
- */
-function declaredBoundary(field: string): string | null {
-	if (!/^\s*multipart\//i.test(field) || (field.match(/boundary/gi)?.length ?? 0) !== 1) return null;
-	const match = /(?:^|;)\s*boundary\s*=\s*(?:"([^"]*)"|([^\s;"]+))/i.exec(field);
-	const value = match?.[1] ?? match?.[2] ?? "";
-	return value && !value.includes("\\") ? value : null;
+/** postal-mime's `stripComments`: RFC 822 comments out, quoted strings and escapes kept. */
+function stripComments(value: string): string {
+	let result = "";
+	let depth = 0;
+	let escaped = false;
+	let inQuote = false;
+	for (const chr of value) {
+		const keep = depth === 0;
+		if (escaped || chr === "\\") {
+			escaped = !escaped;
+			if (keep) result += chr;
+		} else if (chr === '"' && keep) {
+			inQuote = !inQuote;
+			result += chr;
+		} else if (!inQuote && chr === "(") {
+			depth++;
+		} else if (!inQuote && chr === ")" && depth > 0) {
+			depth--;
+		} else if (keep) {
+			result += chr;
+		}
+	}
+	return result;
 }
 
-/** One pass over the bytes, following the part structure postal-mime will see. */
+type StructuredHeader = { value: string; params: [string, string][] };
+
+/**
+ * postal-mime's `parseStructuredHeader`, keeping every parameter in order (postal-mime keeps the last of each name)
+ * so a caller can see duplicates.
+ */
+function parseStructuredHeader(input: string): StructuredHeader {
+	const header: StructuredHeader = { value: "", params: [] };
+	let key: string | null = null;
+	let value = "";
+	let inKey = false;
+	let quoted = false;
+	let escaped = false;
+	const finish = () => {
+		if (key === null) header.value = value.trim();
+		else header.params.push([key, value.trim()]);
+	};
+	for (const chr of stripComments(input)) {
+		if (inKey) {
+			if (chr !== "=") value += chr;
+			else [key, inKey, value] = [value.trim().toLowerCase(), false, ""];
+		} else if (escaped || chr === "\\") {
+			if (escaped) value += chr;
+			escaped = !escaped;
+		} else if (chr === '"') {
+			quoted = !quoted;
+		} else if (chr === ";" && !quoted) {
+			finish();
+			[inKey, value] = [true, ""];
+		} else value += chr;
+	}
+	if (!inKey) finish();
+	else if (value.trim()) header.params.push([value.trim().toLowerCase(), ""]);
+	header.value = header.value.toLowerCase();
+	return header;
+}
+
+type PartHeaders = { multipart: boolean; boundary: Uint8Array | null; base64: boolean; ambiguous: boolean };
+
+/** The boundary of a multipart Content-Type, or `ambiguous` where this reading might not be postal-mime's. */
+function multipartBoundary(contentType: string): Pick<PartHeaders, "boundary" | "ambiguous"> {
+	if (contentType.includes("\\")) return { boundary: null, ambiguous: true };
+	const params = parseStructuredHeader(contentType).params;
+	const named = params.filter(([name]) => name === "boundary");
+	// Duplicates and RFC 2231 forms (`boundary*`, `boundary*0`) are read differently by different parsers.
+	if (named.length > 1 || params.some(([name]) => name !== "boundary" && name.includes("boundary")))
+		return { boundary: null, ambiguous: true };
+	const value = named[0]?.[1] ?? "";
+	return { boundary: value ? encoder.encode(value) : null, ambiguous: false };
+}
+
+/**
+ * What postal-mime's `processHeaders` makes of a header block: folded lines (any line but the first starting with
+ * whitespace) join the one above, the last Content-Type and the first Content-Transfer-Encoding count.
+ */
+function describePart(lines: string[]): PartHeaders {
+	const fields: string[] = [];
+	for (const line of lines) {
+		if (fields.length && /^\s/.test(line)) fields[fields.length - 1] += `\n${line}`;
+		else fields.push(line);
+	}
+	let contentType: string | null = null;
+	let encoding: string | null = null;
+	for (const field of fields) {
+		const normalized = field.replace(/\s+/g, " ");
+		const colon = normalized.indexOf(":");
+		const name = (colon < 0 ? normalized : normalized.slice(0, colon)).trim().toLowerCase();
+		const value = colon < 0 ? "" : normalized.slice(colon + 1).trim();
+		if (name === "content-type") contentType = value;
+		if (name === "content-transfer-encoding") encoding ??= value;
+	}
+	const base64 = /base64/i.test((encoding ?? "8bit").toLowerCase().split(/[^\w-]/)[0] ?? "");
+	if (contentType === null || !/^multipart\//i.test(parseStructuredHeader(contentType).value))
+		return { multipart: false, base64, boundary: null, ambiguous: false };
+	return { multipart: true, base64, ...multipartBoundary(contentType) };
+}
+
+/** One pass over the bytes, following the parts postal-mime will see. */
 class PreflightScan {
-	private readonly boundaries = new Set<string>();
+	/** The boundaries postal-mime matches at this point: one per open multipart, outermost first. */
+	private readonly active: Uint8Array[] = [];
 	private boundaryLines = 0;
 	private textLines = 0;
 	private topHeaderEnded = false;
-	/** The current part: in its header block, and whether its body is base64. */
-	private inHeaders = true;
-	private base64 = false;
-	/** The Content-Type or Content-Transfer-Encoding field being read, unfolded. */
-	private field: { name: string; value: string } | null = null;
-	private contentType = "";
+	/** The current part's header block while it is read, then null. */
+	private headerLines: string[] | null = [];
+	private headerBytes = 0;
+	/** The current line is in the body of a leaf whose first Content-Transfer-Encoding is base64. */
+	private exempt = false;
 
 	constructor(private readonly bytes: Uint8Array) {}
 
@@ -66,7 +153,9 @@ class PreflightScan {
 		for (let start = 0; start < bytes.length;) {
 			let lineEnd = bytes.indexOf(NEWLINE, start);
 			if (lineEnd === -1) lineEnd = bytes.length;
-			const end = lineEnd > start && bytes[lineEnd - 1] === CARRIAGE_RETURN ? lineEnd - 1 : lineEnd;
+			// postal-mime drops every carriage return before the line feed.
+			let end = lineEnd;
+			while (end > start && bytes[end - 1] === CARRIAGE_RETURN) end--;
 			const reason = this.line(start, end, lineEnd);
 			if (reason) return reason;
 			start = lineEnd + 1;
@@ -77,75 +166,78 @@ class PreflightScan {
 	private line(start: number, end: number, lineEnd: number): string | null {
 		if (!this.topHeaderEnded && lineEnd > MIME_LIMITS.maxHeaderBytes)
 			return "Message rejected: header block exceeds 64 KiB.";
-		if (this.isBoundary(start, end)) {
-			if (++this.boundaryLines > MIME_LIMITS.maxBoundaryLines) return "Message rejected: too many MIME parts.";
-			this.startPart();
-		} else if (this.inHeaders) {
-			this.headerLine(start, end);
-		}
-		// Header lines count too, and so does every line of a part that is not base64.
-		if ((this.inHeaders || !this.base64) && ++this.textLines > MIME_LIMITS.maxTextLines)
+		const dashes = end - start >= 2 && this.bytes[start] === DASH && this.bytes[start + 1] === DASH;
+		// Base64 has no `-`: a line starting with `--` ends the exemption, boundary or not.
+		if (dashes) this.exempt = false;
+		// postal-mime only matches a boundary on a line longer than `--`.
+		const isBoundary = dashes && end - start > 2 && this.boundary(start, end);
+		const reason = isBoundary ? this.countBoundary() : this.content(start, end);
+		if (reason) return reason;
+		if (!this.exempt && ++this.textLines > MIME_LIMITS.maxTextLines)
 			return "Message rejected: malformed MIME structure (too many lines).";
 		return null;
 	}
 
-	/** Whether the line opens or closes a part of a declared multipart, matched as postal-mime matches it. */
-	private isBoundary(start: number, end: number): boolean {
-		const { bytes } = this;
-		if (!this.boundaries.size || end - start < 3 || end - start > MAX_BOUNDARY_LINE_BYTES) return false;
-		if (bytes[start] !== DASH || bytes[start + 1] !== DASH) return false;
-		let trimmed = end;
-		while (trimmed > start + 2 && (bytes[trimmed - 1] === SPACE || bytes[trimmed - 1] === TAB)) trimmed--;
-		const value = latin1(bytes, start + 2, trimmed);
-		return this.boundaries.has(value) || (value.endsWith("--") && this.boundaries.has(value.slice(0, -2)));
-	}
-
-	private startPart() {
-		this.inHeaders = true;
-		this.base64 = false;
-		this.field = null;
-		this.contentType = "";
-	}
-
-	private headerLine(start: number, end: number) {
-		const { bytes } = this;
-		if (end === start) return this.endHeaders();
-		if (bytes[start] === SPACE || bytes[start] === TAB) {
-			if (this.field && this.field.value.length < MAX_FIELD_CHARS)
-				this.field.value += latin1(bytes, start, Math.min(end, start + MAX_FIELD_CHARS));
-			return;
+	/** Matches the line against the active boundaries, innermost first, and moves to the part it opens or closes. */
+	private boundary(start: number, end: number): boolean {
+		for (let index = this.active.length - 1; index >= 0; index--) {
+			const boundary = this.active[index];
+			if (!this.startsWith(start + 2, end, boundary)) continue;
+			let rest = start + 2 + boundary.length;
+			const terminator = end - rest >= 2 && this.bytes[rest] === DASH && this.bytes[rest + 1] === DASH;
+			if (terminator) rest += 2;
+			if (!this.onlyBlanks(rest, end)) continue;
+			// A closing boundary finishes its multipart and everything in it; an opening one, the parts inside it.
+			this.active.length = terminator ? index : index + 1;
+			this.headerLines = terminator ? null : [];
+			this.headerBytes = 0;
+			return true;
 		}
-		this.flushField();
-		const colon = bytes.subarray(start, Math.min(end, start + 64)).indexOf(COLON);
-		if (colon <= 0) return;
-		const name = latin1(bytes, start, start + colon)
-			.trim()
-			.toLowerCase();
-		if (name !== "content-type" && name !== "content-transfer-encoding") return;
-		const valueStart = start + colon + 1;
-		this.field = { name, value: latin1(bytes, valueStart, Math.min(end, valueStart + MAX_FIELD_CHARS)) };
+		return false;
 	}
 
-	private flushField() {
-		if (this.field?.name === "content-type") this.contentType = this.field.value;
-		if (this.field?.name === "content-transfer-encoding") this.base64 = /^\s*base64\b/i.test(this.field.value);
-		this.field = null;
+	private countBoundary(): string | null {
+		return ++this.boundaryLines > MIME_LIMITS.maxBoundaryLines ? "Message rejected: too many MIME parts." : null;
 	}
 
-	/** postal-mime reads a part's headers when its header block ends; a multipart's boundary counts from then on. */
-	private endHeaders() {
-		this.flushField();
-		const boundary = declaredBoundary(this.contentType);
-		if (boundary) this.boundaries.add(boundary);
+	/** A line that is not a boundary: part of a header block, or of a body. */
+	private content(start: number, end: number): string | null {
+		if (!this.headerLines) return null;
+		if (end === start) return this.endHeaders();
+		this.headerBytes += end - start;
+		if (this.headerBytes > MIME_LIMITS.maxHeaderBytes) return "Message rejected: header block exceeds 64 KiB.";
+		this.headerLines.push(utf8.decode(this.bytes.subarray(start, end)));
+		return null;
+	}
+
+	/** Where postal-mime reads the headers: a multipart's boundary is active from here, a base64 leaf exempt. */
+	private endHeaders(): string | null {
+		const part = describePart(this.headerLines ?? []);
+		this.headerLines = null;
 		this.topHeaderEnded = true;
-		this.inHeaders = false;
+		if (part.ambiguous) return "Message rejected: ambiguous MIME boundary.";
+		if (part.boundary) this.active.push(part.boundary);
+		this.exempt = !part.multipart && part.base64;
+		return null;
+	}
+
+	private startsWith(start: number, end: number, prefix: Uint8Array): boolean {
+		if (end - start < prefix.length) return false;
+		for (let index = 0; index < prefix.length; index++) if (this.bytes[start + index] !== prefix[index]) return false;
+		return true;
+	}
+
+	private onlyBlanks(start: number, end: number): boolean {
+		for (let index = start; index < end; index++)
+			if (this.bytes[index] !== SPACE && this.bytes[index] !== TAB) return false;
+		return true;
 	}
 }
 
 /**
  * Why a raw message is refused before parsing (a reason starting "Message rejected:", fit for a bounce), or null.
- * Rejects header floods, thousands of parts and line floods, all of which make postal-mime burn CPU or memory far
- * beyond the message's size.
+ * Rejects header floods, thousands of parts, line floods and boundaries postal-mime could read differently, all of
+ * which make postal-mime burn CPU or memory far beyond the message's size or would let the scan miss lines it reads.
  */
 export function mimePreflightReason(raw: ArrayBuffer | Uint8Array): string | null {
 	return new PreflightScan(raw instanceof Uint8Array ? raw : new Uint8Array(raw)).run();

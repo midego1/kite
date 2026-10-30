@@ -3,6 +3,9 @@ import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { getEmailAddress } from "@/lib/email/address";
 import { resolveInboundAddress } from "@/lib/email/routing";
+import { createLogger } from "@/lib/logger.mjs";
+
+const logger = createLogger("account-forwarding");
 
 export const KITE_FORWARDED_HEADER = "X-Kite-Forwarded";
 // Set by installs from before the rename to Kite, which may still forward to this one.
@@ -23,7 +26,7 @@ export async function getAccountForwardingDestination(env: CloudflareEnv, recipi
 	try {
 		return await accountForwardingDestination(env, recipient);
 	} catch (error) {
-		console.error(`Account forwarding lookup failed for ${recipient}`, error);
+		logger.error("email.account_forwarding_lookup_failed", { error });
 		return null;
 	}
 }

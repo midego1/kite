@@ -46,6 +46,46 @@ const hostile = {
 	// A text attachment costs postal-mime what a text body does.
 	textAttachment: () =>
 		header + multipart("b") + "--b\\r\\nContent-Type: text/csv\\r\\nContent-Disposition: attachment; filename=a.csv\\r\\n\\r\\n" + "a,b\\r\\n".repeat(262144) + "--b--\\r\\n",
+	// Re-review of #237: shapes where a scan that read the structure differently from postal-mime exempted lines
+	// postal-mime reads as text.
+	// 1. A boundary parameter next to another parameter whose value says "boundary", under a base64 top level.
+	boundaryWordInValue: () =>
+		header +
+		'Content-Type: multipart/mixed; boundary="b"; foo="boundary"\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n' +
+		"--b\\r\\nContent-Type: text/plain\\r\\n\\r\\n" +
+		"a\\r\\n".repeat(300000) +
+		"--b--\\r\\n",
+	boundaryWordInValueParts: () =>
+		header +
+		'Content-Type: multipart/mixed; boundary="b"; foo="boundary"\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n' +
+		"--b\\r\\nContent-Type: text/plain\\r\\n\\r\\nx\\r\\n".repeat(20000),
+	// 2. A boundary line ending in two carriage returns after a base64 part: postal-mime strips them all.
+	carriageReturnBoundary: () =>
+		header +
+		multipart("b") +
+		"--b\\r\\nContent-Type: application/pdf\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\nQUFB\\r\\n" +
+		"--b\\r\\r\\nContent-Type: text/plain\\r\\n\\r\\n" +
+		"a\\r\\n".repeat(300000) +
+		"--b--\\r\\n",
+	// 3. Two transfer encodings: postal-mime uses the first.
+	firstEncodingWins: () =>
+		header +
+		multipart("b") +
+		"--b\\r\\nContent-Type: text/plain\\r\\nContent-Transfer-Encoding: 7bit\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" +
+		"a\\r\\n".repeat(300000) +
+		"--b--\\r\\n",
+	// 4. A closed boundary inside a later text part: postal-mime no longer matches it.
+	staleBoundary: () =>
+		header +
+		multipart("o") +
+		'--o\\r\\nContent-Type: multipart/alternative; boundary="b"\\r\\n\\r\\n--b\\r\\nContent-Type: text/plain\\r\\n\\r\\nhi\\r\\n--b--\\r\\n' +
+		"--o\\r\\nContent-Type: text/plain\\r\\n\\r\\n--b\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" +
+		"a\\r\\n".repeat(300000) +
+		"--o--\\r\\n",
+	// Boundaries a parser may read differently are refused outright.
+	duplicateBoundary: () => header + 'Content-Type: multipart/mixed; boundary="a"; boundary="b"\\r\\n\\r\\n--b\\r\\n\\r\\nx\\r\\n--b--\\r\\n',
+	continuedBoundary: () => header + "Content-Type: multipart/mixed; boundary*0=b; boundary*1=c\\r\\n\\r\\n--bc\\r\\n\\r\\nx\\r\\n--bc--\\r\\n",
+	escapedBoundary: () => header + 'Content-Type: multipart/mixed; boundary="a\\\\b"\\r\\n\\r\\n--ab\\r\\n\\r\\nx\\r\\n--ab--\\r\\n',
 	parts: () => header + multipart("b") + "--b\\r\\nContent-Type: text/plain\\r\\n\\r\\nx\\r\\n".repeat(20000),
 	headerBlock: () => "X-Pad: " + "a".repeat(200 * 1024) + "\\r\\n\\r\\nbody",
 	deepMultipart: () =>
@@ -72,6 +112,14 @@ const pdf =
 	"--b\\r\\nContent-Type: application/pdf\\r\\nContent-Transfer-Encoding: base64\\r\\nContent-Disposition: attachment; filename=a.pdf\\r\\n\\r\\n";
 const legit = header + pdf + base64Lines(340000) + "--b--\\r\\n";
 out.ok.attachments = (await parseRawMime(encoder.encode(legit).buffer)).attachments.length;
+// A base64 attachment of short lines stays cheap however many there are (a 25 MB message holds about 12 million).
+let shortStarted = performance.now();
+const shortLines = header + multipart("b") + "--b\\r\\nContent-Type: application/octet-stream\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" + "A\\r\\n".repeat(3_000_000) + "--b--\\r\\n";
+out.ok.shortLines = (await parseRawMime(encoder.encode(shortLines).buffer)).attachments.length;
+out.ok.shortLinesMs = performance.now() - shortStarted;
+// A comment and a second header line folded with a tab, as postal-mime unfolds them.
+const commented = header + 'Content-Type: multipart/mixed; (a comment; boundary=x)\\r\\n\\tboundary="c"\\r\\n\\r\\n' + pdfPart("c") + "--c--\\r\\n";
+out.ok.commented = (await parseRawMime(encoder.encode(commented).buffer)).attachments.length;
 // The boundary parameter on a folded line, as most mail clients write it.
 const folded = header + 'Content-Type: multipart/mixed;\\r\\n\\tboundary="f"\\r\\n\\r\\n' + pdfPart("f") + "--f--\\r\\n";
 out.ok.folded = (await parseRawMime(encoder.encode(folded).buffer)).attachments.length;
@@ -151,6 +199,9 @@ test("hostile MIME is refused cheaply and legitimate mail still parses, inside a
 	assert.ok(out.slowestMs < 5000, `the slowest hostile message took ${Math.round(out.slowestMs)} ms`);
 	assert.equal(out.ok.attachments, 1);
 	assert.equal(out.ok.folded, 1);
+	assert.equal(out.ok.commented, 1);
+	assert.equal(out.ok.shortLines, 1);
+	assert.ok(out.ok.shortLinesMs < 10_000, `3 million base64 lines took ${Math.round(out.ok.shortLinesMs)} ms`);
 	assert.deepEqual(out.ok.encodedForward, ["message/rfc822"]);
 	assert.equal(out.ok.nested, "x");
 	assert.ok(out.ok.nestedMs < 2000, `nested headers took ${Math.round(out.ok.nestedMs)} ms`);

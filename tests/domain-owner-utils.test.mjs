@@ -13,6 +13,7 @@ await build({
 	entryPoints: [join(root, "src/lib/domains/owner-utils.ts")],
 	outfile: join(bundleDirectory, "owner-utils.mjs"),
 	bundle: true,
+	sourcemap: "inline",
 	platform: "node",
 	format: "esm",
 	target: "node24",

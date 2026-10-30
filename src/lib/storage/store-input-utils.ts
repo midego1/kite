@@ -1,4 +1,5 @@
 import type { StoreRecord } from "./config-utils";
+import { credentialProblem, type CredentialField } from "./credential-utils";
 import {
 	isS3Provider,
 	isValidBucketName,
@@ -19,20 +20,25 @@ export type StoreInput = {
 	sameAsBinding: boolean;
 };
 
-export type StoreInputResult = { ok: true; value: StoreInput } | { ok: false; error: string };
+export type StoreInputResult = { ok: true; value: StoreInput } | { ok: false; error: string; field?: CredentialField };
 
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
 function parseCredentialsInput(
 	body: Record<string, unknown>,
+	provider: S3Provider,
 	existing: StoreRecord | null,
-): S3Credentials | null | { error: string } {
+): S3Credentials | null | { error: string; field: CredentialField } {
 	const accessKeyId = text(body.accessKeyId);
 	const secretAccessKey = text(body.secretAccessKey);
 	if (!accessKeyId && !secretAccessKey && existing) return null;
-	if (!accessKeyId || !secretAccessKey) return { error: "Enter the access key ID and the secret" };
-	if (accessKeyId.length > 256 || secretAccessKey.length > 256 || /\s/.test(accessKeyId + secretAccessKey))
-		return { error: "That does not look like an access key pair" };
+	for (const [field, value] of [
+		["accessKeyId", accessKeyId],
+		["secretAccessKey", secretAccessKey],
+	] as const) {
+		const problem = credentialProblem(field, value, provider);
+		if (problem) return { error: problem, field };
+	}
 	return { accessKeyId, secretAccessKey };
 }
 
@@ -81,17 +87,24 @@ export function parseStoreInput(raw: unknown, existing: StoreRecord | null = nul
 	const sameAsBinding = body.sameAsBinding === undefined ? !!existing?.sameAsBinding : body.sameAsBinding === true;
 	if (sameAsBinding && provider !== "r2")
 		return { ok: false, error: "Direct uploads for the default store need R2 S3 API keys" };
-	const credentials = parseCredentialsInput(body, existing);
-	if (credentials && "error" in credentials) return { ok: false, error: credentials.error };
+	const credentials = parseCredentialsInput(body, provider, existing);
+	if (credentials && "error" in credentials) return { ok: false, ...credentials };
 	return { ok: true, value: { name, provider, location, credentials, sameAsBinding } };
 }
 
 /** Whether an edit changes anything the validation proves, so it must run again before saving. */
 export function needsRevalidation(existing: StoreRecord, input: StoreInput): boolean {
+	return !!input.credentials || locationChanged(existing, input);
+}
+
+/**
+ * Whether the request points the store somewhere else (endpoint, scheme, region, bucket, addressing or provider).
+ * The saved key pair may only sign requests to where it was saved for, so such a change needs the keys again.
+ */
+export function locationChanged(existing: StoreRecord, input: Pick<StoreInput, "location" | "provider">): boolean {
 	const a = existing.location;
 	const b = input.location;
 	return (
-		!!input.credentials ||
 		a.endpoint !== b.endpoint ||
 		a.scheme !== b.scheme ||
 		a.region !== b.region ||

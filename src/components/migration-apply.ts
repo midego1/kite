@@ -4,12 +4,15 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { AUTH_SESSION_CHANGED_EVENT } from "@/lib/auth/client";
 import {
 	MIGRATION_POLL_MS,
+	MIGRATION_RECOVERY_CAP_MS,
 	MIGRATION_RUN_FLAG,
+	MIGRATION_RUN_LOCK,
 	MIGRATION_STALL_MS,
 	createStallTracker,
 	isRunFlagActive,
 	isTransientStatus,
 	mergeRemaining,
+	shouldAbortPost,
 	startStatusPolling,
 } from "./migration-poll-utils";
 import {
@@ -31,7 +34,7 @@ export interface MigrationApplyState {
 	applying: boolean;
 	/** This tab holds the request open. */
 	running: boolean;
-	/** Another tab is applying updates (a flag in localStorage that it keeps fresh). */
+	/** Another tab is applying updates (it holds the run lock, or keeps a flag in localStorage fresh without locks). */
 	remote: boolean;
 	/** The connection dropped while the server may still be migrating; the pending list is being watched. */
 	recovering: boolean;
@@ -72,6 +75,8 @@ let state: MigrationApplyState = IDLE;
 let runId = 0;
 // A run whose session ended: it finishes, but its summary or error belongs to the previous session.
 let discardedRun = -1;
+// Between the click and the answer of the up-front check no run exists yet, but a second click must not start one.
+let starting = false;
 const listeners = new Set<() => void>();
 
 function set(next: Partial<MigrationApplyState>) {
@@ -90,7 +95,13 @@ function warnBeforeLeaving(event: BeforeUnloadEvent) {
 	event.returnValue = "";
 }
 
+/** Web Locks are held for exactly as long as the tab runs, however its timers are throttled; the flag is the fallback. */
+function locksSupported(): boolean {
+	return typeof navigator !== "undefined" && "locks" in navigator;
+}
+
 function writeRunFlag() {
+	if (locksSupported()) return;
 	try {
 		localStorage.setItem(MIGRATION_RUN_FLAG, String(Date.now()));
 	} catch {
@@ -99,6 +110,7 @@ function writeRunFlag() {
 }
 
 function clearRunFlag() {
+	if (locksSupported()) return;
 	try {
 		localStorage.removeItem(MIGRATION_RUN_FLAG);
 	} catch {
@@ -106,7 +118,27 @@ function clearRunFlag() {
 	}
 }
 
-function readRemoteFlag(): boolean {
+// Locks raise no event when they are taken or released, so tabs tell each other (the lock stays the truth).
+let channel: BroadcastChannel | null | undefined;
+
+function runChannel(): BroadcastChannel | null {
+	if (channel === undefined)
+		channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(MIGRATION_RUN_LOCK);
+	return channel;
+}
+
+function tellOtherTabs() {
+	runChannel()?.postMessage("changed");
+}
+
+async function isRunningInAnotherTab(): Promise<boolean> {
+	if (locksSupported()) {
+		try {
+			return (await navigator.locks.query()).held?.some((lock) => lock.name === MIGRATION_RUN_LOCK) ?? false;
+		} catch {
+			return false;
+		}
+	}
 	try {
 		return isRunFlagActive(localStorage.getItem(MIGRATION_RUN_FLAG), Date.now());
 	} catch {
@@ -115,10 +147,11 @@ function readRemoteFlag(): boolean {
 }
 
 /** Another tab started or finished an update; a finished one means this tab's lists are stale. */
-function syncRemote() {
+async function syncRemote() {
 	if (state.running) return;
-	const remote = readRemoteFlag();
-	if (remote === state.remote) return;
+	const remote = await isRunningInAnotherTab();
+	// This tab may have started its own run while the lock manager answered.
+	if (state.running || remote === state.remote) return;
 	set(remote ? { remote } : { remote, refreshTick: state.refreshTick + 1 });
 }
 
@@ -133,10 +166,10 @@ async function readPending(): Promise<string[] | null> {
 
 type PostResult = { transient: true } | { transient: false; ok: boolean; status: number; body: MigrationApplyResult };
 
-async function postApply(): Promise<PostResult> {
+async function postApply(signal: AbortSignal): Promise<PostResult> {
 	let response: Response;
 	try {
-		response = await fetch(STATUS_API, { method: "POST" });
+		response = await fetch(STATUS_API, { method: "POST", signal });
 	} catch {
 		return { transient: true };
 	}
@@ -155,14 +188,19 @@ function watchUntilSettled(
 	listen: (handler: (pending: string[] | null) => void) => void,
 ): Promise<MigrationApplyOutcome> {
 	set({ recovering: true });
-	const stall = createStallTracker(MIGRATION_STALL_MS, Date.now(), state.remaining?.length ?? startNames.length);
+	const stall = createStallTracker({
+		stallMs: MIGRATION_STALL_MS,
+		capMs: MIGRATION_RECOVERY_CAP_MS,
+		startedAt: Date.now(),
+		startCount: state.remaining?.length ?? startNames.length,
+	});
 	return new Promise((resolve) => {
 		listen((pending) => {
 			if (pending && pending.length === 0) {
 				const result = { ready: true, pending: [], unknown: [], applied: startNames };
 				const seconds = (Date.now() - startedAt) / 1000;
 				resolve({ ok: true, result, summary: migrationRecoveredSummary(startNames, seconds) });
-			} else if (stall.observe(state.remaining?.length ?? startNames.length, Date.now())) {
+			} else if (stall.observe(pending ? (state.remaining?.length ?? startNames.length) : null, Date.now())) {
 				resolve({ ok: false, error: MIGRATION_OUTCOME_UNKNOWN });
 			}
 		});
@@ -178,7 +216,15 @@ export async function applyMigrations(
 	source: MigrationApplySource,
 	onSuccess?: (result: MigrationApplyResult) => void,
 ): Promise<MigrationApplyOutcome | null> {
-	if (state.applying || readRemoteFlag()) return null;
+	if (state.applying || starting) return null;
+	// Ask before showing any steps, so a tab that is only watching another tab's run never flashes its own.
+	starting = true;
+	const elsewhere = await isRunningInAnotherTab().finally(() => (starting = false));
+	if (elsewhere) {
+		set({ remote: true });
+		return null;
+	}
+	if (state.applying) return null;
 	const run = ++runId;
 	const startedAt = Date.now();
 	set({
@@ -191,39 +237,64 @@ export async function applyMigrations(
 		summary: null,
 		error: null,
 	});
-	writeRunFlag();
-	window.addEventListener("beforeunload", warnBeforeLeaving);
-	let handler: ((pending: string[] | null) => void) | null = null;
-	const stopPolling = startStatusPolling({
-		read: readPending,
-		delayMs: MIGRATION_POLL_MS,
-		onResult: (pending) => {
-			writeRunFlag();
-			if (pending) set({ remaining: mergeRemaining(state.remaining, pending) });
-			handler?.(pending);
-		},
+	const outcome = await withRunLock(() => {
+		tellOtherTabs();
+		return execute(startNames, startedAt);
 	});
-	let outcome: MigrationApplyOutcome;
-	try {
-		const posted = await postApply();
-		if (posted.transient) {
-			outcome = await watchUntilSettled(startNames, startedAt, (next) => (handler = next));
-		} else if (posted.ok) {
-			const summary = migrationDoneSummary(posted.body, (Date.now() - startedAt) / 1000);
-			outcome = { ok: true, result: posted.body, summary };
-		} else {
-			outcome = { ok: false, error: migrationApplyFailure(posted.status, posted.body.error) };
-		}
-	} finally {
-		stopPolling();
-		clearRunFlag();
-		window.removeEventListener("beforeunload", warnBeforeLeaving);
+	if (!outcome) {
+		// Another tab holds the run; this one shows it as busy instead.
+		set({ running: false, remote: true, source: null, startNames: [], startedAt: null });
+		return null;
 	}
+	tellOtherTabs();
 	if (outcome.ok) onSuccess?.(outcome.result);
 	const ended = { running: false, recovering: false };
 	if (discardedRun === run) set(ended);
 	else set(outcome.ok ? { ...ended, summary: outcome.summary } : { ...ended, error: outcome.error });
 	return outcome;
+}
+
+/** Takes the run lock without waiting; null when another tab holds it. Without Web Locks, the fallback flag decides. */
+async function withRunLock(task: () => Promise<MigrationApplyOutcome>): Promise<MigrationApplyOutcome | null> {
+	if (!locksSupported()) return (await isRunningInAnotherTab()) ? null : task();
+	return navigator.locks.request(MIGRATION_RUN_LOCK, { ifAvailable: true }, (lock) => (lock ? task() : null));
+}
+
+/** Posts the request and follows the pending list; the POST is cut off when the list says it is done or it ran too long. */
+async function execute(startNames: string[], startedAt: number): Promise<MigrationApplyOutcome> {
+	writeRunFlag();
+	window.addEventListener("beforeunload", warnBeforeLeaving);
+	const controller = new AbortController();
+	let handler: ((pending: string[] | null) => void) | null = null;
+	let emptySince: number | null = null;
+	const stopPolling = startStatusPolling({
+		read: readPending,
+		delayMs: MIGRATION_POLL_MS,
+		onResult: (pending) => {
+			const now = Date.now();
+			writeRunFlag();
+			if (pending) set({ remaining: mergeRemaining(state.remaining, pending) });
+			if (pending) emptySince = pending.length === 0 ? (emptySince ?? now) : null;
+			handler?.(pending);
+			if (!handler && shouldAbortPost({ emptySince, now })) controller.abort();
+		},
+	});
+	try {
+		const posted = await postApply(controller.signal);
+		if (posted.transient) return await watchUntilSettled(startNames, startedAt, (next) => (handler = next));
+		if (posted.ok) {
+			return {
+				ok: true,
+				result: posted.body,
+				summary: migrationDoneSummary(posted.body, (Date.now() - startedAt) / 1000),
+			};
+		}
+		return { ok: false, error: migrationApplyFailure(posted.status, posted.body.error) };
+	} finally {
+		stopPolling();
+		clearRunFlag();
+		window.removeEventListener("beforeunload", warnBeforeLeaving);
+	}
 }
 
 export function useMigrationApply(): MigrationApplyState {
@@ -234,17 +305,23 @@ export function useMigrationApply(): MigrationApplyState {
 			discardedRun = state.running ? runId : discardedRun;
 			set({ summary: null, error: null, source: null });
 		};
+		const recheckNow = () => void syncRemote();
 		const onStorage = (event: StorageEvent) => {
-			if (event.key === MIGRATION_RUN_FLAG || event.key === null) syncRemote();
+			if (event.key === MIGRATION_RUN_FLAG || event.key === null) recheckNow();
 		};
 		window.addEventListener(AUTH_SESSION_CHANGED_EVENT, reset);
 		window.addEventListener("storage", onStorage);
-		// A tab that crashed leaves its flag behind; it goes stale on its own, so look again now and then.
-		const recheck = setInterval(syncRemote, 5000);
-		syncRemote();
+		// Looking again now and then costs nothing: the lock (or the flag's age) is the truth, not a timer in this tab.
+		const recheck = setInterval(recheckNow, 5000);
+		document.addEventListener("visibilitychange", recheckNow);
+		const pings = runChannel();
+		pings?.addEventListener("message", recheckNow);
+		recheckNow();
 		return () => {
 			window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, reset);
 			window.removeEventListener("storage", onStorage);
+			document.removeEventListener("visibilitychange", recheckNow);
+			pings?.removeEventListener("message", recheckNow);
 			clearInterval(recheck);
 		};
 	}, []);

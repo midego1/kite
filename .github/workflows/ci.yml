@@ -49,7 +49,10 @@ jobs:
 
   mission-validation:
     name: Mission validation
-    runs-on: ubuntu-latest
+    # Boat bills per runner start ($20 plan: ~200 starts/day), so only this job
+    # uses it: on main, or on PRs labelled boat-ci. A/B showed ~2.9x faster on
+    # boat-large. Everything else stays on ubuntu-latest.
+    runs-on: ${{ (github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'boat-ci')) && 'boat-large' || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

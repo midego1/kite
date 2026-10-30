@@ -52,7 +52,7 @@ jobs:
   mission-validation:
     name: mission-validation (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -76,11 +76,11 @@ jobs:
           MISSION_SKIP_TASKS: build:node,test:e2e
 
   e2e-full:
-    # The unsharded suite (~20 min on ubuntu-latest per ci.yml comment) is the best
-    # single-machine CPU comparison; 10 shards x 3 runners would cost 30 starts per run.
-    name: e2e unsharded (${{ matrix.runner }})
+    # Fair single-shard compare: every runner runs the same 1/10 of the suite (~7-15 min).
+    # The unsharded suite needs 60-90+ min and hit the old 40 min timeout on all arms.
+    name: e2e shard 1/10 (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -100,7 +100,7 @@ jobs:
         run: npm ci
       # Boat sandboxes may lack Chrome system libs that ubuntu-latest ships: install deps on all arms for fairness.
       - run: npx playwright install --with-deps --only-shell chromium
-      - name: Run the end-to-end suite (single shard)
+      - name: Run the end-to-end suite (shard 1/10)
         run: npm run quality:timings -- test:e2e:shard
         env:
-          E2E_SHARD: 1/1
+          E2E_SHARD: 1/10

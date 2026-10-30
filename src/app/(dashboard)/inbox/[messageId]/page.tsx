@@ -342,7 +342,7 @@ export default function MessageDetailPage() {
 							{htmlBody ? (
 								<EmailHtmlFrame html={htmlBody} className="email-body mx-auto" />
 							) : (
-								<pre className="whitespace-pre-wrap text-sm text mx-auto">
+								<pre className="reading-text whitespace-pre-wrap text-sm text mx-auto">
 									<LinkifiedText text={cloudAttachmentResult.content} />
 								</pre>
 							)}

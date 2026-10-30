@@ -41,7 +41,7 @@ export function ReaderThreadHeader({
 	return (
 		<div className="px-4 pb-5 pt-5 sm:px-7">
 			<div className="flex items-baseline gap-2">
-				<h1 dir="auto" className="min-w-0 text-xl font-medium text-neutral-900" title={subject}>
+				<h1 dir="auto" className="reading-font min-w-0 text-xl font-medium text-neutral-900" title={subject}>
 					{subject}
 				</h1>
 				{count > 1 && (

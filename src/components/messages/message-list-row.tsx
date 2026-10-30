@@ -130,7 +130,7 @@ function StackedSubjectLine({ inlineStar, ...props }: RowViewProps & { inlineSta
 			<span
 				dir="auto"
 				className={clsx(
-					"min-w-0 flex-1 truncate text-sm",
+					"reading-font min-w-0 flex-1 truncate text-sm",
 					// Keeps a few letters of the subject when the pill is wide: the pill shortens first.
 					props.mailboxLabel && "min-w-[4.5rem]",
 					row.unread ? "text-neutral-700" : "text-neutral-500",
@@ -201,7 +201,10 @@ function StackedMessageRow(props: RowViewProps) {
 							unread={row.unread}
 							threadCount={message.threadCount}
 							suggestions={message.agentSuggestions}
-							className={clsx("min-w-0 truncate text-sm", getMessagePartyClassName(row.rowMessage, config.folder))}
+							className={clsx(
+								"reading-font min-w-0 truncate text-sm",
+								getMessagePartyClassName(row.rowMessage, config.folder),
+							)}
 							countClassName="font-normal"
 						/>
 						<span
@@ -219,7 +222,7 @@ function StackedMessageRow(props: RowViewProps) {
 					<StackedSubjectLine {...props} inlineStar={inlineStar} />
 					{/* A one-line summary shows even where the density leaves the plain preview out: it is the row's gist. */}
 					{(stackedDensity.showPreview || row.line) && (
-						<span dir="auto" className="mt-0.5 block truncate text-xs text-neutral-500">
+						<span dir="auto" className="reading-font mt-0.5 block truncate text-xs text-neutral-500">
 							<MessageRowPreview preview={row.preview} line={row.line} />
 						</span>
 					)}
@@ -284,7 +287,7 @@ function WideMessageRow(props: RowViewProps) {
 					unread={row.unread}
 					threadCount={message.threadCount}
 					suggestions={message.agentSuggestions}
-					className={getMessagePartyClassName(row.rowMessage, config.folder)}
+					className={clsx("reading-font", getMessagePartyClassName(row.rowMessage, config.folder))}
 					countClassName=""
 				/>
 				<UnreadDot unread={row.unread} />
@@ -292,7 +295,7 @@ function WideMessageRow(props: RowViewProps) {
 			<span className="flex min-w-0 items-center gap-2 text-neutral-700">
 				{/* The overlay stretches the link over the whole row, so a click anywhere opens the message
 				while the row has one keyboard stop; the checkbox, star and hover actions sit above it. */}
-				<span className="min-w-[4.5rem] flex-1 truncate">
+				<span className="reading-font min-w-[4.5rem] flex-1 truncate">
 					<ScreenerRowControls message={row.rowMessage} />
 					<Link
 						href={row.href}

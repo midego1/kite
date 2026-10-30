@@ -4,6 +4,8 @@ export type LayoutDensity = "default" | "comfortable" | "compact";
 export type LayoutFont = "auto" | "manrope" | "geist" | "inter" | "system" | "opendyslexic";
 /** Whether a dyslexia-friendly font also replaces the fonts of HTML mail (`EMAIL_FONT_PREFERENCE`). */
 export type LayoutEmailFont = "original" | "reader";
+/** Where a dyslexia-friendly font applies: reading text only, or the whole interface (`FONT_SCOPE_PREFERENCE`). */
+export type LayoutFontScope = "text" | "everywhere";
 
 /** The layout choices that follow the account; a key that is absent was never chosen. */
 export interface LayoutPreferences {
@@ -16,6 +18,7 @@ export interface LayoutPreferences {
 	listHeight?: number;
 	font?: LayoutFont;
 	emailFont?: LayoutEmailFont;
+	fontScope?: LayoutFontScope;
 }
 
 /** What `GET` and `PATCH /api/settings/layout` answer. */

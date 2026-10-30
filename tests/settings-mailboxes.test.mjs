@@ -43,7 +43,7 @@ test("Settings lists Mailboxes only for users with the mailbox grant", () => {
 	assert.ok(settingsHrefs(mailboxMember).includes("/settings/mailboxes"));
 	assert.ok(settingsHrefs({ ...admin, canManageMailboxes: true }).includes("/settings/mailboxes"));
 	for (const user of [member, admin, null]) assert.ok(!settingsHrefs(user).includes("/settings/mailboxes"));
-	const mailboxGroup = m.navSectionsFor("settings").find((section) => section.label === "Mailbox");
+	const mailboxGroup = m.navSectionsFor("settings").find((section) => section.label === "Mail");
 	assert.ok(mailboxGroup.items.some((item) => item.href === "/settings/mailboxes" && item.label === "Mailboxes"));
 });
 

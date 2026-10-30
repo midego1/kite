@@ -15,7 +15,8 @@ const logger = createLogger("node-queue");
  * the process stopped runs again on the next start. The retry policy matches
  * wrangler.jsonc (three retries, ten seconds apart).
  */
-export type QueueConsumer = (body: unknown) => Promise<void>;
+/** `final` says a failure now is not retried (the last of `maxRetries`). */
+export type QueueConsumer = (body: unknown, delivery: { final: boolean }) => Promise<void>;
 
 type QueueRow = { id: number; body: string; attempts: number; available_at: number };
 
@@ -139,7 +140,7 @@ export class InProcessQueue {
 				return;
 			}
 			try {
-				await this.consumer?.(body);
+				await this.consumer?.(body, { final: !shouldRetryQueueMessage(row.attempts, this.maxRetries) });
 				this.remove(row.id);
 			} catch (error) {
 				const context = { queue: this.name, messageId: row.id, attempts: row.attempts, ...describeQueueMessage(body) };

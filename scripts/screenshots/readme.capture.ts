@@ -211,7 +211,7 @@ for (const theme of THEMES) {
 
 	test(`settings (${theme})`, async ({ browser }) => {
 		const page = await open(browser, theme);
-		await visit(page, "/settings/inbox", page.getByRole("combobox", { name: "Undo send window" }));
+		await visit(page, "/settings/inbox", page.getByRole("switch", { name: "Group emails into conversations" }));
 		await capture(page, "settings", theme);
 	});
 

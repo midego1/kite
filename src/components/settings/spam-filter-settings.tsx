@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth/client";
 import { Switch } from "@/components/ui/switch";
-import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
+import { FormError, SettingRow } from "@/components/ui/page";
 
 export function SpamFilterSettings() {
 	const [enabled, setEnabled] = useState(true);
@@ -46,26 +46,19 @@ export function SpamFilterSettings() {
 	}
 
 	return (
-		<div>
-			<label className={SETTING_ROW_CLASS}>
-				<span className="flex-1">
-					<span className="block text-sm font-medium text-neutral-900">Spam Filter</span>
-					<span className="mt-1 block text-sm text-neutral-500">
-						Analyze incoming messages locally and detect high-confidence spam
-					</span>
-				</span>
+		<SettingRow
+			label="Spam filter"
+			description="Analyze incoming messages locally and move high-confidence spam out of the inbox."
+			control={
 				<Switch
 					checked={enabled}
 					disabled={loading}
 					onCheckedChange={(value) => void updateEnabled(value)}
 					aria-label="Enable spam filter"
 				/>
-			</label>
-			{error && (
-				<p role="alert" className="mt-2 px-4 text-sm text-red-600">
-					{error}
-				</p>
-			)}
-		</div>
+			}
+		>
+			{error && <FormError className="mt-2 px-4">{error}</FormError>}
+		</SettingRow>
 	);
 }

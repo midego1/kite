@@ -22,6 +22,7 @@ import { useKeyChanged } from "@/hooks/use-synced-state";
 import { ProgressiveAvatarImage } from "@/components/progressive-avatar-image";
 import { isIdentityMailbox } from "@/components/mailbox-provider-utils";
 import { useSidebar } from "@/components/sidebar-state";
+import { RAIL_ITEM_CLASS, RAIL_TOOLTIP_CLASS } from "@/components/sidebar-rail-utils";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useAuthMe } from "@/hooks/use-auth-me";
 import { getAvatarColorStyle } from "@/lib/avatar-colors";
@@ -188,6 +189,7 @@ function AccountTrigger({
 	avatar: AccountAvatarProps;
 }) {
 	const row = inSidebar && !minimal;
+	const rail = inSidebar && minimal;
 	const button = (
 		<button
 			type="button"
@@ -195,14 +197,16 @@ function AccountTrigger({
 			className={
 				row
 					? "flex w-full items-center gap-2 rounded-lg p-1 pr-2 text-left transition-colors hover:bg-neutral-200/60"
-					: "rounded-full p-1 transition-colors hover:bg-neutral-200"
+					: rail
+						? `${RAIL_ITEM_CLASS} transition-colors hover:bg-neutral-200/60`
+						: "rounded-full p-1 transition-colors hover:bg-neutral-200"
 			}
 			// The visible name and address stay in the accessible name (WCAG 2.5.3 Label in Name).
 			aria-label={row ? `Open account menu, ${name} ${email}` : "Open account menu"}
 			aria-haspopup="menu"
 			aria-expanded={open}
 		>
-			<AccountAvatar {...avatar} size={row ? "compact" : "small"} />
+			<AccountAvatar {...avatar} size={row || rail ? "compact" : "small"} />
 			{row && (
 				<>
 					<span className="min-w-0 flex-1">
@@ -214,8 +218,8 @@ function AccountTrigger({
 			)}
 		</button>
 	);
-	return inSidebar && minimal ? (
-		<Tooltip label="Account menu" placement="right">
+	return rail ? (
+		<Tooltip label="Account menu" placement="right" className={RAIL_TOOLTIP_CLASS}>
 			{button}
 		</Tooltip>
 	) : (

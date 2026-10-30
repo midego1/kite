@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { Sparkles } from "lucide-react";
 import { useSidebar } from "@/components/sidebar-state";
 import { Button } from "@/components/ui/button";
+import { RAIL_ICON_SIZE, RAIL_ITEM_CLASS, RAIL_TOOLTIP_CLASS } from "@/components/sidebar-rail-utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { preloadAgentPanel } from "./agent-panel-lazy";
 import type { AssistantToggleState } from "./assistant-open-state";
@@ -23,9 +24,7 @@ export function AssistantNavItem({ assistant }: { assistant: AssistantToggleStat
 			size="sm"
 			className={clsx(
 				assistant.open ? "bg-blue-50 text-blue-700" : "text-neutral-600",
-				minimal
-					? "mx-auto h-9 w-10 justify-center rounded-full px-0"
-					: "h-9 w-full justify-start gap-3 rounded-lg px-3 text-sm font-normal",
+				minimal ? RAIL_ITEM_CLASS : "h-9 w-full justify-start gap-3 rounded-lg px-3 text-sm font-normal",
 			)}
 			onPointerEnter={() => void preloadAgentPanel().catch(() => undefined)}
 			onClick={assistant.toggle}
@@ -33,12 +32,12 @@ export function AssistantNavItem({ assistant }: { assistant: AssistantToggleStat
 			aria-expanded={assistant.open}
 			aria-controls="email-assistant-panel"
 		>
-			<Sparkles className="h-4 w-4" />
+			<Sparkles size={minimal ? RAIL_ICON_SIZE : 16} />
 			{!minimal && "Assistant"}
 		</Button>
 	);
 	return minimal ? (
-		<Tooltip label={label} placement="right">
+		<Tooltip label={label} placement="right" className={RAIL_TOOLTIP_CLASS}>
 			{button}
 		</Tooltip>
 	) : (

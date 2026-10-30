@@ -3,32 +3,24 @@
 import { Switch } from "@/components/ui/switch";
 import { useConversationView } from "@/components/messages/use-conversation-view";
 import { useLatestMessagesFirst } from "@/components/messages/use-latest-messages-first";
-import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
+import { SettingRow, SettingRows } from "@/components/ui/page";
 
 export function InboxThreadingSettings() {
 	const [conversationView, setConversationView] = useConversationView();
 	const [latestMessagesFirst, setLatestMessagesFirst] = useLatestMessagesFirst();
 
 	return (
-		<div className="space-y-3">
-			<label className={SETTING_ROW_CLASS}>
-				<span className="flex-1">
-					<span className="block text-sm font-medium text-neutral-900">Group emails into conversations</span>
-					<span className="mt-1 block text-sm text-neutral-500">
-						Show related messages together as a single thread in message lists.
-					</span>
-				</span>
-				<Switch checked={conversationView} onCheckedChange={setConversationView} />
-			</label>
-			<label className={SETTING_ROW_CLASS}>
-				<span className="flex-1">
-					<span className="block text-sm font-medium text-neutral-900">Sort latest messages first</span>
-					<span className="mt-1 block text-sm text-neutral-500">
-						Show the newest email at the top of a conversation. Turn this off to show it last.
-					</span>
-				</span>
-				<Switch checked={latestMessagesFirst} onCheckedChange={setLatestMessagesFirst} />
-			</label>
-		</div>
+		<SettingRows>
+			<SettingRow
+				label="Group emails into conversations"
+				description="Show related messages together as a single thread in message lists."
+				control={<Switch checked={conversationView} onCheckedChange={setConversationView} />}
+			/>
+			<SettingRow
+				label="Sort latest messages first"
+				description="Show the newest email at the top of a conversation. Turn this off to show it last."
+				control={<Switch checked={latestMessagesFirst} onCheckedChange={setLatestMessagesFirst} />}
+			/>
+		</SettingRows>
 	);
 }

@@ -82,7 +82,7 @@ export function AppearanceSettings() {
 				<SettingRows>
 					<PreferenceRow
 						preference={ASSISTANT_LAYOUT_PREFERENCE}
-						label="Assistant"
+						label="Assistant window"
 						description="Open the assistant as a resizable side panel, or as a floating chat window like a new message."
 					/>
 					<AssistantOutputSettings />

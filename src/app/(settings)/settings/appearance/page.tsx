@@ -6,7 +6,7 @@ export default function SettingsAppearancePage() {
 		<div className="space-y-6">
 			<PageHeader
 				title="Appearance"
-				description="Theme, style, font and text size, and how the assistant shows its work. These choices are saved in this browser."
+				description="Theme, style, font and text size, and how the assistant shows its work. Most of these choices are kept per browser."
 			/>
 			<AppearanceSettings />
 		</div>

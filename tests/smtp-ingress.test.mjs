@@ -17,7 +17,9 @@ const {
 	createDataCollector,
 	authenticationResultsFromMailauth,
 	verifySmtpAuthentication,
+	verifyPrivateClientAuthentication,
 	smtpAuthservId,
+	isPrivateClientAddress,
 	stripOwnAuthenticationResults,
 	trustedReceivedHeader,
 	startSmtpListener,
@@ -27,9 +29,9 @@ const {
 	applyMigrations,
 } = await bundleModules("kite-smtp-ingress-", [
 	["SMTP_INGRESS_LIMITS, createSessionLimiter, createDataCollector", "server/runtime/smtp-limits-utils.ts"],
-	["verifySmtpAuthentication", "server/runtime/smtp-auth.ts"],
+	["verifySmtpAuthentication, verifyPrivateClientAuthentication", "server/runtime/smtp-auth.ts"],
 	[
-		"authenticationResultsFromMailauth, smtpAuthservId, stripOwnAuthenticationResults, trustedReceivedHeader",
+		"authenticationResultsFromMailauth, isPrivateClientAddress, smtpAuthservId, stripOwnAuthenticationResults, trustedReceivedHeader",
 		"server/runtime/smtp-auth-utils.ts",
 	],
 	["startSmtpListener", "server/runtime/smtp.ts"],
@@ -327,17 +329,82 @@ test("the listener verifies the sender and stamps a trusted Received field", asy
 	assert.ok(raw.includes("DKIM-Signature:"));
 });
 
-test("a client on a private address is not verified, since its SPF would always fail", async (t) => {
+test("a client on a private address gets DKIM only, and the message says SPF was not checked", async (t) => {
 	const { port, queued } = await listener(t, { verifyPrivateClients: false });
 	const client = await smtpClient(port);
 	await envelope(client);
 	assert.equal((await client.send("DATA")).code, 354);
 	client.write(`${(await signed()).toString()}\r\n.\r\n`);
 	assert.equal((await client.read()).code, 250);
+	assert.equal((await client.send("MAIL FROM:<bounce@bank.test>")).code, 250);
+	assert.equal((await client.send("RCPT TO:<owner@example.com>")).code, 250);
+	assert.equal((await client.send("DATA")).code, 354);
+	client.write(`${MESSAGE}\r\n.\r\n`);
+	assert.equal((await client.read()).code, 250);
 	await client.close();
-	assert.equal(queued.length, 1);
-	assert.equal(queued[0].authenticationResults, null);
-	assert.match(queued[0].headers.received, /\[127\.0\.0\.1\]/);
+	assert.equal(queued.length, 2);
+	// Signed: the aligned DKIM signature carries DMARC; no SPF result at all.
+	assert.equal(
+		queued[0].authenticationResults,
+		"mx.kite.test; dkim=pass header.d=bank.test header.s=s1; dmarc=pass header.from=bank.test policy.dmarc=reject",
+	);
+	// Unsigned from a p=reject domain: no DMARC failure is claimed.
+	assert.equal(queued[1].authenticationResults, "mx.kite.test; dkim=none");
+	for (const payload of queued) {
+		assert.equal(payload.privateClient, true);
+		assert.match(payload.headers.received, /\[127\.0\.0\.1\]/);
+	}
+});
+
+test("verifyPrivateClientAuthentication never reports a DMARC failure", async () => {
+	const tampered = Buffer.from((await signed()).toString().replace("ready", "late"));
+	const value = await verifyPrivateClientAuthentication(tampered, "mx.kite.test", { resolver });
+	assert.match(value, /^mx\.kite\.test; dkim=(fail|neutral) header\.d=bank\.test header\.s=s1$/);
+	assert.deepEqual(ids(analyzeAuthentication(value, "bank.test")).includes("dmarc_failed"), false);
+	const slow = await verifyPrivateClientAuthentication(await signed(), "mx.kite.test", {
+		resolver: () => new Promise(() => {}),
+		timeoutMs: 50,
+	});
+	assert.equal(slow, null);
+});
+
+test("isPrivateClientAddress covers addresses no internet sender has, and nothing more", () => {
+	for (const address of [
+		"10.1.2.3",
+		"127.0.0.1",
+		"172.16.0.1",
+		"172.31.255.255",
+		"192.168.1.10",
+		"169.254.0.5",
+		"100.64.0.1",
+		"100.127.255.254",
+		"::1",
+		"fe80::1",
+		"fe80::1%eth0",
+		"fd12:3456::1",
+		"fc00::1",
+		"::ffff:10.0.0.1",
+		"::ffff:127.0.0.1",
+		"::FFFF:7f00:1",
+		"[::ffff:192.168.0.1]",
+	])
+		assert.equal(isPrivateClientAddress(address), true, address);
+	for (const address of [
+		"8.8.8.8",
+		"172.32.0.1",
+		"172.15.255.255",
+		"100.128.0.1",
+		"192.0.2.1",
+		"198.51.100.7",
+		"2001:4860:4860::8888",
+		"2002:c000:0201::1", // 6to4
+		"2001:0:4136:e378::1", // Teredo
+		"2001:db8::1",
+		"::ffff:8.8.8.8",
+		"not an address",
+		"",
+	])
+		assert.equal(isPrivateClientAddress(address), false, address);
 });
 
 test("stripOwnAuthenticationResults removes only folded copies under Kite's authserv-id", () => {
@@ -361,6 +428,16 @@ test("stripOwnAuthenticationResults removes only folded copies under Kite's auth
 			"Authentication-Results: mx.kite.test; body text stays",
 		].join("\r\n"),
 	);
+	// The removed field is the last header: everything else, the blank line and the body stay byte for byte.
+	for (const newline of ["\r\n", "\n"]) {
+		const last = ["Subject: hi", "Authentication-Results: mx.kite.test;", " dmarc=pass", "", "body", ""].join(newline);
+		assert.equal(
+			stripOwnAuthenticationResults(Buffer.from(last), "mx.kite.test").toString(),
+			["Subject: hi", "", "body", ""].join(newline),
+		);
+	}
+	const only = "Authentication-Results: mx.kite.test; dkim=pass\r\n\r\nbody";
+	assert.equal(stripOwnAuthenticationResults(Buffer.from(only), "mx.kite.test").toString(), "\r\nbody");
 	const untouched = Buffer.from("Subject: x\r\n\r\nbody");
 	assert.equal(stripOwnAuthenticationResults(untouched, "mx.kite.test"), untouched);
 	assert.equal(stripOwnAuthenticationResults(Buffer.from("no header end"), "k").toString(), "no header end");

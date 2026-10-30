@@ -23,6 +23,16 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 	const authentication = analyzeAuthentication(input.authenticationResults, fromDomain);
 	const signals: SpamSignal[] = [
 		...authentication,
+		...(input.privateClient
+			? [
+					{
+						id: "auth_unverified_private_client",
+						score: 0,
+						reason:
+							"The mail server saw a private address instead of the sender's, so SPF could not be checked and DMARC counts only through DKIM",
+					},
+				]
+			: []),
 		...analyzeUrls(input.message, prepared),
 		...analyzeStructure(input.message, input.headers, prepared),
 		...analyzeAttachments(input.message, prepared),
@@ -131,7 +141,7 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 }
 
 /** Signals kept whatever their score, because the score they explain depends on them. */
-const ALWAYS_KEPT = new Set(["score_boundary", "auth_policy"]);
+const ALWAYS_KEPT = new Set(["score_boundary", "auth_policy", "auth_unverified_private_client"]);
 
 type ContactSource = string | null | undefined;
 

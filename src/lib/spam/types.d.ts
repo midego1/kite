@@ -19,6 +19,8 @@ export type SpamAnalysisInput = {
 	headers?: Record<string, string>;
 	/** The `Authentication-Results` value a verifying intake hop vouched for; null when none did. */
 	authenticationResults?: string | null;
+	/** The SMTP listener saw a private client address, so SPF was not checked; recorded as a zero-score signal. */
+	privateClient?: boolean;
 	message: ParsedEmail;
 	intelligenceProvider?: SpamIntelligenceProvider;
 	/** The owner's DMARC switch and the From domain's published policy; without it both count as unknown. */

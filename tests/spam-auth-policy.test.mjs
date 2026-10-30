@@ -279,6 +279,27 @@ test("auth_policy is always kept with the exact lift, so a spam verdict carries 
 	assert.ok(low.signals.find((signal) => signal.id === "auth_policy").score > 70);
 });
 
+test("mail from a private SMTP client carries a zero-score, always-kept note", async (t) => {
+	const { db } = await setup(t);
+	const run = (privateClient) =>
+		analyzeSpam(db, {
+			mailboxId: "mailbox-a",
+			userId: "owner",
+			envelopeFrom: "bounce@bank.test",
+			authenticationResults: "mx.kite.test; dkim=none",
+			privateClient,
+			message: message("Someone <someone@bank.test>"),
+		});
+	const noted = await run(true);
+	const note = noted.signals.find((signal) => signal.id === "auth_unverified_private_client");
+	assert.equal(note.score, 0);
+	assert.match(note.reason, /SPF could not be checked/);
+	const plain = await run(false);
+	assert.equal(plain.score, noted.score);
+	assert.equal(plain.verdict, noted.verdict);
+	assert.ok(!plain.signals.some((signal) => signal.id === "auth_unverified_private_client"));
+});
+
 test("a forged pass in the message's own header never hides the trusted failure", async (t) => {
 	const { db } = await setup(t);
 	const joined = new Headers([

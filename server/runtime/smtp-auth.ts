@@ -1,4 +1,4 @@
-import type { DNSResolver } from "mailauth";
+import type { AuthenticateResult, DNSResolver } from "mailauth";
 import { authenticationResultsFromMailauth } from "./smtp-auth-utils";
 
 /**
@@ -12,6 +12,20 @@ import { authenticationResultsFromMailauth } from "./smtp-auth-utils";
 /** Verification that takes longer is given up, and the message is delivered with authentication unknown. */
 const SMTP_AUTH_TIMEOUT_MS = 10_000;
 
+async function withinTimeout<T>(work: Promise<T>, timeoutMs: number | undefined): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			work,
+			new Promise<never>((_, reject) => {
+				timer = setTimeout(() => reject(new Error("SMTP authentication timed out")), timeoutMs ?? SMTP_AUTH_TIMEOUT_MS);
+			}),
+		]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 /**
  * Verifies the message as received from `connection` and answers the `Authentication-Results` value, or null when
  * verification failed or took longer than `SMTP_AUTH_TIMEOUT_MS` (a DNS outage leaves the sender unknown rather
@@ -22,10 +36,9 @@ export async function verifySmtpAuthentication(
 	connection: { ip: string; helo?: string; sender: string; authservId: string },
 	options: { resolver?: DNSResolver; timeoutMs?: number } = {},
 ): Promise<string | null> {
-	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
 		const { authenticate } = await import("mailauth");
-		const result = await Promise.race([
+		const result = await withinTimeout(
 			authenticate(raw, {
 				ip: connection.ip,
 				helo: connection.helo,
@@ -35,18 +48,58 @@ export async function verifySmtpAuthentication(
 				disableBimi: true,
 				...(options.resolver ? { resolver: options.resolver } : {}),
 			}),
-			new Promise<never>((_, reject) => {
-				timer = setTimeout(
-					() => reject(new Error("SMTP authentication timed out")),
-					options.timeoutMs ?? SMTP_AUTH_TIMEOUT_MS,
-				);
-			}),
-		]);
+			options.timeoutMs,
+		);
 		return authenticationResultsFromMailauth(result, connection.authservId);
 	} catch (error) {
 		console.warn("SMTP authentication check failed", error instanceof Error ? error.name : "unknown error");
 		return null;
-	} finally {
-		clearTimeout(timer);
+	}
+}
+
+/**
+ * For a client on a private address, where the connecting address is not the sender's and SPF cannot be checked:
+ * DKIM only, which does not depend on the address, and DMARC only when an aligned DKIM signature makes it pass. A
+ * DMARC failure is never reported, since without SPF it may be a false one. Null when nothing could be verified.
+ */
+export async function verifyPrivateClientAuthentication(
+	raw: Buffer,
+	authservId: string,
+	options: { resolver?: DNSResolver; timeoutMs?: number } = {},
+): Promise<string | null> {
+	try {
+		const { dkimVerify, dmarc } = await import("mailauth");
+		const resolver = options.resolver ? { resolver: options.resolver } : {};
+		const result = await withinTimeout(
+			(async () => {
+				const dkim = await dkimVerify(raw, resolver);
+				const passing = dkim.results.filter((signature) => signature.status?.result === "pass");
+				const verdict =
+					passing.length && dkim.headerFrom.length
+						? await dmarc({
+								headerFrom: dkim.headerFrom,
+								fromFields: dkim.fromFields,
+								fromSyntax: dkim.fromSyntax,
+								spfDomains: [],
+								dkimDomains: passing.map((signature) => ({
+									id: signature.id,
+									domain: signature.signingDomain ?? "",
+									aligned: signature.status.aligned,
+									underSized: signature.status.underSized,
+								})),
+								...resolver,
+							})
+						: false;
+				return { dkim, dmarc: verdict && verdict.status?.result === "pass" ? verdict : false };
+			})(),
+			options.timeoutMs,
+		);
+		return authenticationResultsFromMailauth(
+			{ spf: false, dkim: result.dkim, dmarc: result.dmarc } as AuthenticateResult,
+			authservId,
+		);
+	} catch (error) {
+		console.warn("SMTP DKIM check failed", error instanceof Error ? error.name : "unknown error");
+		return null;
 	}
 }

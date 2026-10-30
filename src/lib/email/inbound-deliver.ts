@@ -45,6 +45,8 @@ export type InboundDelivery = {
 	headers: Record<string, string> | undefined;
 	/** The intake hop's verified `Authentication-Results`, or null when no trusted hop checked the sender. */
 	authenticationResults: string | null;
+	/** The SMTP listener saw a private client address, so SPF was not checked. */
+	privateClient?: boolean;
 	external?: ExternalDelivery;
 };
 
@@ -253,6 +255,7 @@ async function placeMessage(
 				envelopeFrom: input.from,
 				headers: input.headers,
 				authenticationResults: input.authenticationResults,
+				privateClient: input.privateClient,
 				message: parsed,
 				intelligenceProvider: configuredSpamIntelligenceProvider(env),
 				dmarcPolicy: dmarcPolicySource(env),

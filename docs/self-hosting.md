@@ -56,9 +56,12 @@ refused with `552` without being kept in memory.
 per-address limit all depend on the address the connection comes from. When
 something in front of Kite replaces it with its own:
 
-- If that address is private or loopback (`172.17.0.1`, `10.x`, `127.0.0.1`),
-  Kite does not check SPF, DKIM or DMARC at all, so all mail arrives with its
-  authentication unknown, and it logs a warning once per start.
+- If that address is private, loopback, link-local or CGNAT (`172.17.0.1`,
+  `10.x`, `100.64.x`, `127.0.0.1`, or their IPv6 forms), Kite does not check
+  SPF. It still checks DKIM, which does not depend on the address, and counts
+  DMARC only when an aligned DKIM signature makes it pass, never as a failure.
+  Each such message's spam details say so, and Kite logs a warning once per
+  start.
 - If it is a public address of your own (a load balancer elsewhere), SPF
   fails for every sender, so DMARC fails for all mail without an aligned DKIM
   signature, and a domain publishing `p=reject` or `p=quarantine` goes to Spam.

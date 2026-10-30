@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { API_KEY_MAX_MAILBOXES } from "@/lib/api/scopes";
 import { defaultAppPasswordMailboxIds, toggleMailboxId } from "./email-clients-settings-utils";
 import { createJmapApiKey } from "./utils";
-import { FieldHint, FormError } from "@/components/ui/page";
+import { FieldHint, FormError, SettingsCard, SettingsCardSection } from "@/components/ui/page";
 
 /**
  * Settings > App passwords card for connecting an external mail app over JMAP.
@@ -51,47 +51,56 @@ export function EmailClientsSettings() {
 	}
 
 	return (
-		<div className="space-y-4">
-			{key ? (
-				<div className="space-y-3 rounded-lg bg-neutral-50 p-4">
-					<Field label="Server" value={server} onCopy={copy} copied={copied} />
-					<Field label="Username" value="any value" onCopy={copy} copied={copied} />
-					<Field label="Password (API key)" value={key} onCopy={copy} copied={copied} mono />
-					<p className="text-xs text-neutral-500">
-						This key is shown once. You can revoke it in{" "}
-						<Link href="/settings/api-keys" className="text-blue-700 underline">
-							API keys
-						</Link>
-						. Session discovery is at <code>{server}/.well-known/jmap</code>.
-					</p>
-				</div>
-			) : (
-				<form onSubmit={submit} className="space-y-4">
-					<div className="flex flex-wrap items-end gap-3">
-						<div className="min-w-56 flex-1 space-y-2">
-							<Label htmlFor="jmap-key-name">Device or app name</Label>
-							<Input
-								id="jmap-key-name"
-								value={name}
-								onChange={(event) => setName(event.target.value)}
-								placeholder="Phone"
-							/>
-						</div>
-						<Button type="submit" disabled={busy || isLoading || mailboxIds.length === 0}>
-							<KeyRound className="h-4 w-4" />
-							{busy ? "Creating..." : "Create app password"}
-						</Button>
+		<SettingsCard>
+			<SettingsCardSection
+				title={key ? "Your new app password" : "New app password"}
+				description={
+					key
+						? "Copy these into the app now; the password is not shown again. Revoke it under API keys."
+						: "Shown once, with the server address to enter in the app. Revoke it under API keys."
+				}
+			>
+				{key ? (
+					<div className="space-y-3 rounded-lg bg-neutral-50 p-4">
+						<Field label="Server" value={server} onCopy={copy} copied={copied} />
+						<Field label="Username" value="any value" onCopy={copy} copied={copied} />
+						<Field label="Password (API key)" value={key} onCopy={copy} copied={copied} mono />
+						<p className="text-xs text-neutral-500">
+							This key is shown once. You can revoke it in{" "}
+							<Link href="/settings/api-keys" className="text-blue-700 underline">
+								API keys
+							</Link>
+							. Session discovery is at <code>{server}/.well-known/jmap</code>.
+						</p>
 					</div>
-					<AppPasswordMailboxes
-						mailboxes={mailboxes}
-						loading={isLoading}
-						selectedIds={mailboxIds}
-						onToggle={(id, checked) => setChosenMailboxIds(toggleMailboxId(mailboxIds, id, checked))}
-					/>
-					{error && <FormError>{error}</FormError>}
-				</form>
-			)}
-		</div>
+				) : (
+					<form onSubmit={submit} className="space-y-4">
+						<div className="flex flex-wrap items-end gap-3">
+							<div className="min-w-56 flex-1 space-y-2">
+								<Label htmlFor="jmap-key-name">Device or app name</Label>
+								<Input
+									id="jmap-key-name"
+									value={name}
+									onChange={(event) => setName(event.target.value)}
+									placeholder="Phone"
+								/>
+							</div>
+							<Button type="submit" disabled={busy || isLoading || mailboxIds.length === 0}>
+								<KeyRound className="h-4 w-4" />
+								{busy ? "Creating..." : "Create app password"}
+							</Button>
+						</div>
+						<AppPasswordMailboxes
+							mailboxes={mailboxes}
+							loading={isLoading}
+							selectedIds={mailboxIds}
+							onToggle={(id, checked) => setChosenMailboxIds(toggleMailboxId(mailboxIds, id, checked))}
+						/>
+						{error && <FormError>{error}</FormError>}
+					</form>
+				)}
+			</SettingsCardSection>
+		</SettingsCard>
 	);
 }
 

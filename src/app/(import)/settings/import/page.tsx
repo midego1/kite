@@ -100,7 +100,7 @@ export default function SettingsImportPage() {
 							<form onSubmit={onFileSubmit} className="space-y-5">
 								<fieldset className="space-y-2">
 									<legend className="text-sm font-medium text-neutral-900">Sections to import</legend>
-									<div className="grid gap-2 sm:grid-cols-2">
+									<div className="grid gap-2 lg:grid-cols-2">
 										{importSourceOptions.map((option) => (
 											<label key={option.value} className="flex items-center gap-3 text-sm text-neutral-700">
 												<Checkbox
@@ -111,11 +111,6 @@ export default function SettingsImportPage() {
 											</label>
 										))}
 									</div>
-									<FieldHint>
-										Files are imported into {fileImportSource.label}. Read and starred state is taken from each
-										message&apos;s headers. For Inbox, mail the export marks as Spam or Trash (Gmail Takeout labels,
-										X-Spam-Flag) is filed there instead; choose Archive or a folder to keep everything in place.
-									</FieldHint>
 								</fieldset>
 								<div className="space-y-2">
 									<Label htmlFor="import-files">Backup files</Label>
@@ -125,8 +120,14 @@ export default function SettingsImportPage() {
 										accept=".eml,.mbox,.mbx,message/rfc822,application/mbox"
 										multiple
 										onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+										aria-describedby="import-files-hint"
 										className="block w-full rounded-md border border-neutral-200 bg-white px-3 py-1 text-sm shadow-sm shadow-neutral-200/50 file:mr-3 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-1.5 file:text-sm file:font-medium"
 									/>
+									<FieldHint id="import-files-hint">
+										Files are imported into {fileImportSource.label}. Read and starred state is taken from each
+										message&apos;s headers. For Inbox, mail the export marks as Spam or Trash (Gmail Takeout labels,
+										X-Spam-Flag) is filed there instead; choose Archive or a folder to keep everything in place.
+									</FieldHint>
 								</div>
 								{selectedSections.includes("others") && (
 									<p className="rounded-lg border border-[#f59e0b]/25 bg-[#f59e0b]/10 text-[#8a4b0a] dark:text-[#d4a35a] px-4 py-3 text-sm">

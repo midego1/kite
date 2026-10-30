@@ -321,58 +321,74 @@ export function ApiKeysSettings() {
 						description="Create one for an app, a script or an AI agent that should read or send your mail."
 					/>
 				)}
-				{keys.length > 0 && (
-					<List>
-						{keys.map((key) => (
-							<ListRow key={key.id} className="px-4 py-3">
-								<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
-									<KeyRound className="h-4 w-4" />
-								</span>
-								<span className="min-w-0 flex-1 space-y-1">
-									<span className="flex min-w-0 flex-wrap items-center gap-2">
-										<strong className="truncate text-sm font-semibold text-neutral-900">{key.name}</strong>
-										{key.kind === "mcp" && <Badge variant="outline">MCP</Badge>}
-									</span>
-									<span className="block truncate no-font-mono text-sm text-neutral-500">
-										{key.prefix}… · Created {formatUserDate(key.createdAt, { dateStyle: "short" })}
-										{key.lastUsedAt
-											? ` · Last used ${formatUserDate(key.lastUsedAt, { dateStyle: "short" })}`
-											: " · Never used"}
-									</span>
-									<span className="flex flex-wrap gap-1">
-										{keyPermissions(key).map((scope) => (
-											<Badge key={scope} variant="outline">
-												{scope}
-											</Badge>
-										))}
-									</span>
-									<span className="block text-xs text-neutral-500">
-										Mailboxes:{" "}
-										{key.mailboxScopeEnabled || key.kind === "mcp"
-											? key.mailboxIds
-													.map((id) => {
-														const mailbox = mailboxes.find((item) => item.id === id);
-														return mailbox ? `${mailbox.localPart}@${mailbox.hostname}` : id;
-													})
-													.join(", ") || "None"
-											: "All accessible mailboxes (existing key)"}
-									</span>
-								</span>
-								<Button
-									type="button"
-									size="sm"
-									variant="outline"
-									disabled={revokingId === key.id}
-									onClick={() => void revoke(key)}
-								>
-									<Trash2 className="h-4 w-4" />
-									{revokingId === key.id ? "Revoking…" : "Revoke"}
-								</Button>
-							</ListRow>
-						))}
-					</List>
-				)}
+				<ApiKeyRows keys={keys} mailboxes={mailboxes} revokingId={revokingId} onRevoke={(key) => void revoke(key)} />
 			</section>
 		</div>
+	);
+}
+
+function ApiKeyRows({
+	keys,
+	mailboxes,
+	revokingId,
+	onRevoke,
+}: {
+	keys: ManagedApiKey[];
+	mailboxes: { id: string; localPart: string; hostname: string }[];
+	revokingId: string | null;
+	onRevoke: (key: ManagedApiKey) => void;
+}) {
+	// An empty List would draw a bare rule under the empty state.
+	if (keys.length === 0) return null;
+	return (
+		<List>
+			{keys.map((key) => (
+				<ListRow key={key.id} className="px-4 py-3">
+					<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+						<KeyRound className="h-4 w-4" />
+					</span>
+					<span className="min-w-0 flex-1 space-y-1">
+						<span className="flex min-w-0 flex-wrap items-center gap-2">
+							<strong className="truncate text-sm font-semibold text-neutral-900">{key.name}</strong>
+							{key.kind === "mcp" && <Badge variant="outline">MCP</Badge>}
+						</span>
+						<span className="block truncate no-font-mono text-sm text-neutral-500">
+							{key.prefix}… · Created {formatUserDate(key.createdAt, { dateStyle: "short" })}
+							{key.lastUsedAt
+								? ` · Last used ${formatUserDate(key.lastUsedAt, { dateStyle: "short" })}`
+								: " · Never used"}
+						</span>
+						<span className="flex flex-wrap gap-1">
+							{keyPermissions(key).map((scope) => (
+								<Badge key={scope} variant="outline">
+									{scope}
+								</Badge>
+							))}
+						</span>
+						<span className="block text-xs text-neutral-500">
+							Mailboxes:{" "}
+							{key.mailboxScopeEnabled || key.kind === "mcp"
+								? key.mailboxIds
+										.map((id) => {
+											const mailbox = mailboxes.find((item) => item.id === id);
+											return mailbox ? `${mailbox.localPart}@${mailbox.hostname}` : id;
+										})
+										.join(", ") || "None"
+								: "All accessible mailboxes (existing key)"}
+						</span>
+					</span>
+					<Button
+						type="button"
+						size="sm"
+						variant="outline"
+						disabled={revokingId === key.id}
+						onClick={() => onRevoke(key)}
+					>
+						<Trash2 className="h-4 w-4" />
+						{revokingId === key.id ? "Revoking…" : "Revoke"}
+					</Button>
+				</ListRow>
+			))}
+		</List>
 	);
 }

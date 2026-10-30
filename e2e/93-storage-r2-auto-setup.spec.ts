@@ -186,3 +186,20 @@ test("the reminder can be dismissed from the Admin overview", async ({ page }) =
 		).toBeVisible();
 	});
 });
+
+test("a refused bucket lookup shows its reason instead of waiting forever", async ({ page }) => {
+	await page.route("**/api/admin/storage/cloudflare", (route) =>
+		route.fulfill({ status: 429, json: { error: "Too many bucket lookups; wait a minute and try again" } }),
+	);
+	await page.goto("/storage");
+	await page.getByRole("button", { name: "Add store" }).click();
+	const dialog = page.getByRole("dialog", { name: "Add store" });
+	await chooseOption(dialog.getByLabel("Provider"), "r2");
+	await expect(dialog.locator('[data-auto-setup="unavailable"]')).toContainText("Too many bucket lookups");
+	await expect(dialog.getByText("Checking Cloudflare…")).toHaveCount(0);
+	await dialog.getByRole("button", { name: "Cancel" }).click();
+	await page.locator('[data-store="default"]').getByRole("button", { name: "Enable direct uploads" }).click();
+	await expect(
+		page.getByRole("dialog", { name: "Enable direct uploads" }).locator('[data-auto-setup="unavailable"]'),
+	).toContainText("Too many bucket lookups");
+});

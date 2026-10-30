@@ -106,7 +106,14 @@ function splitBucketValue(value: string): { jurisdiction: string; bucket: string
 	return { jurisdiction: value.slice(0, at), bucket: value.slice(at + 1) };
 }
 
-function Unavailable({ choices }: { choices: R2Choices | undefined }) {
+/**
+ * Why the one-click setup cannot run: still asking, refused (401, 403, 429) or unreachable, or not available here.
+ * A failed lookup shows its reason instead of "Checking Cloudflare…".
+ */
+function Unavailable({ query }: { query: ReturnType<typeof useR2Choices> }) {
+	const choices: R2Choices | undefined = query.isError
+		? { available: false, defaultBucket: "kite-raw", reason: errorText(query.error, "Cloudflare could not be asked.") }
+		: query.data;
 	if (!choices) return <p className="text-sm text-neutral-500">Checking Cloudflare…</p>;
 	return (
 		<p className="text-sm text-neutral-500" data-auto-setup="unavailable">
@@ -129,20 +136,7 @@ export function AutoDirectUploads({ onSaved, onClose }: { onSaved: () => void; o
 	const [picked, setPicked] = useState<string | null>(null);
 	const value = picked ?? (preferred ? bucketValue(preferred) : `:${fallback}`);
 	const target = splitBucketValue(value);
-	if (!data?.available)
-		return (
-			<Unavailable
-				choices={
-					choices.isError
-						? {
-								available: false,
-								defaultBucket: fallback,
-								reason: errorText(choices.error, "Cloudflare could not be asked."),
-							}
-						: data
-				}
-			/>
-		);
+	if (!data?.available) return <Unavailable query={choices} />;
 	return (
 		<Section title="Set up automatically (recommended)">
 			<p className="text-sm text-neutral-600">
@@ -339,7 +333,7 @@ export function R2OneClick({ onSaved, onClose }: { onSaved: () => void; onClose:
 	const setup = useR2Setup(onSaved);
 	const [mode, setMode] = useState<"new" | "existing">("new");
 	const data = choices.data;
-	if (!data?.available) return <Unavailable choices={choices.isError ? undefined : data} />;
+	if (!data?.available) return <Unavailable query={choices} />;
 	return (
 		<Section title="Connect R2 in one click">
 			<div role="radiogroup" aria-label="Bucket" className="flex flex-wrap gap-2">

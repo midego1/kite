@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { messages } from "@/db/schema";
+import { agentDraftMetadata, messages } from "@/db/schema";
 import { sendEmail } from "@/lib/email/send";
 import { loadMessageAttachmentContents } from "@/lib/email/attachments";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
@@ -57,6 +57,33 @@ export const identitySet: JmapMethodHandler = async (ctx, args) => ({
 });
 
 /**
+ * The key user's own draft in the identity's mailbox, or the SetError to answer: another account's message is
+ * `invalidProperties`, and an AI draft is `forbidden` until it is reviewed in Kite, as /api/send enforces
+ * (upstream Mailflare #225).
+ */
+async function loadSubmittableDraft(ctx: JmapContext, emailId: string, mailboxId: string) {
+	const [draft] = await ctx.db
+		.select()
+		.from(messages)
+		.where(and(eq(messages.id, emailId), eq(messages.status, "draft")))
+		.limit(1);
+	if (!draft || draft.userId !== ctx.auth.userId || draft.mailboxId !== mailboxId)
+		return {
+			error: { type: "invalidProperties", properties: ["emailId"], description: "Not a draft of this account" },
+		} as const;
+	const [agentDraft] = await ctx.db
+		.select({ draftId: agentDraftMetadata.draftId })
+		.from(agentDraftMetadata)
+		.where(eq(agentDraftMetadata.draftId, draft.id))
+		.limit(1);
+	if (agentDraft)
+		return {
+			error: { type: "forbidden", description: "Review and confirm this AI draft in Kite before sending" },
+		} as const;
+	return { draft } as const;
+}
+
+/**
  * EmailSubmission/set: send a draft. Kite's send writes a fresh Sent row,
  * so the draft is removed afterwards and the submission id is the sent
  * message's id; onSuccessDestroyEmail / onSuccessUpdateEmail are honoured
@@ -79,19 +106,12 @@ export const emailSubmissionSet: JmapMethodHandler = async (ctx, args) => {
 			notCreated[creationId] = { type: "invalidProperties", properties: ["identityId"] };
 			continue;
 		}
-		const [draft] = await ctx.db
-			.select()
-			.from(messages)
-			.where(and(eq(messages.id, emailId), eq(messages.status, "draft")))
-			.limit(1);
-		if (!draft || draft.userId !== ctx.auth.userId || draft.mailboxId !== identity.mailboxId) {
-			notCreated[creationId] = {
-				type: "invalidProperties",
-				properties: ["emailId"],
-				description: "Not a draft of this account",
-			};
+		const submittable = await loadSubmittableDraft(ctx, emailId, identity.mailboxId);
+		if ("error" in submittable) {
+			notCreated[creationId] = submittable.error;
 			continue;
 		}
+		const { draft } = submittable;
 		try {
 			const attachments = await loadMessageAttachmentContents(ctx.env, draft.id);
 			const result = await sendEmail(ctx.env, {

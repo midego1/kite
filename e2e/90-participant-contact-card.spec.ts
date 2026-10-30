@@ -264,7 +264,8 @@ for (const { permission, newEmail } of [
 test("the sender name in the message opens the same card", async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await openThread(page);
-	const sender = page.locator("article").getByRole("button", { name: NAME });
+	// Exact: a collapsed earlier message of the thread is a button too, named after its sender and snippet.
+	const sender = page.locator("article").getByRole("button", { name: NAME, exact: true });
 	const card = await openCard(page, sender);
 	await expect(card).toContainText(NAME);
 	await expect(card.getByRole("button", { name: "New email" })).toBeVisible();

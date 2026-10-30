@@ -1,7 +1,8 @@
-import { and, eq, inArray, lt, sql, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { getDb } from "@/db";
 import {
+	auditLogs,
 	autoReplyDeliveries,
 	loginChallenges,
 	outboundJobs,
@@ -11,11 +12,15 @@ import {
 } from "@/db/schema";
 import { agentActions } from "@/db/schema/agent-auto-read";
 import { aiSummaries } from "@/db/schema/agent-summaries";
+import { MCP_TOOL_CALL_ACTION } from "@/lib/mcp/audit";
 import type { PruningPolicy, PruningResult } from "./pruning-types";
 import {
+	MCP_AUDIT_DAILY_MAX_BATCHES,
+	MCP_AUDIT_SLICE_MS,
 	PRUNABLE_OUTBOUND_JOB_STATUSES,
 	PRUNABLE_WEBHOOK_DELIVERY_STATUSES,
 	PRUNING_BATCH_SIZE,
+	PRUNING_MAX_BATCHES_PER_TABLE,
 	PRUNING_POLICY,
 	getRetentionCutoff,
 	shouldContinuePruning,
@@ -24,7 +29,12 @@ import {
 type Db = ReturnType<typeof getDb>;
 type PrunableTable = SQLiteTable & { id: SQLiteColumn };
 
-async function pruneInBatches(db: Db, table: PrunableTable, where: SQL | undefined): Promise<number> {
+async function pruneInBatches(
+	db: Db,
+	table: PrunableTable,
+	where: SQL | undefined,
+	maxBatches = PRUNING_MAX_BATCHES_PER_TABLE,
+): Promise<number> {
 	let total = 0;
 	let batches = 0;
 	for (;;) {
@@ -35,8 +45,36 @@ async function pruneInBatches(db: Db, table: PrunableTable, where: SQL | undefin
 			.returning({ id: table.id });
 		total += deleted.length;
 		batches += 1;
-		if (!shouldContinuePruning(deleted.length, batches)) return total;
+		if (!shouldContinuePruning(deleted.length, batches, PRUNING_BATCH_SIZE, maxBatches)) return total;
 	}
+}
+
+/**
+ * The MCP tool call rows that crossed the retention cutoff in the last `MCP_AUDIT_SLICE_MS`: a bounded range of
+ * `audit_logs_created_idx`, so each run reads only those rows, not every older audit row.
+ * @public Test-only: exported so the query plan can be checked.
+ */
+export function mcpAuditSliceCondition(cutoff: Date): SQL {
+	return and(
+		gte(auditLogs.createdAt, new Date(cutoff.getTime() - MCP_AUDIT_SLICE_MS)),
+		lt(auditLogs.createdAt, cutoff),
+		eq(auditLogs.action, MCP_TOOL_CALL_ACTION),
+	)!;
+}
+
+/**
+ * MCP tool call audit rows that just passed their retention, from the five-minute cron: one row per call can
+ * outgrow the daily run's budget. Up to 5,000 rows per run (about 1.4 million a day) from a 15-minute slice of
+ * the `created_at` index; anything left over (heavier bursts, missed runs) goes in the daily run.
+ */
+export async function pruneMcpToolCallAudit(
+	env: CloudflareEnv,
+	now = new Date(),
+	policy: PruningPolicy = PRUNING_POLICY,
+): Promise<number> {
+	const cutoff = getRetentionCutoff(now, policy.mcpToolCallAuditDays);
+	if (!cutoff) return 0;
+	return pruneInBatches(getDb(env), auditLogs, mcpAuditSliceCondition(cutoff));
 }
 
 /**
@@ -50,7 +88,7 @@ export async function runDatabasePruning(
 ): Promise<PruningResult> {
 	const db = getDb(env);
 	const result: PruningResult = {};
-	const jobs: Array<[string, PrunableTable, number, (cutoff: Date) => SQL | undefined]> = [
+	const jobs: Array<[string, PrunableTable, number, (cutoff: Date) => SQL | undefined, number?]> = [
 		[
 			"outbound_jobs",
 			outboundJobs,
@@ -87,6 +125,14 @@ export async function runDatabasePruning(
 			policy.expiredPasswordResetTokensDays,
 			(cutoff) => lt(passwordResetTokens.expiresAt, cutoff),
 		],
+		[
+			// The backlog the five-minute slices missed; it reads the older audit rows once a day.
+			"mcp_tool_call_audit_logs",
+			auditLogs,
+			policy.mcpToolCallAuditDays,
+			(cutoff) => and(eq(auditLogs.action, MCP_TOOL_CALL_ACTION), lt(auditLogs.createdAt, cutoff)),
+			MCP_AUDIT_DAILY_MAX_BATCHES,
+		],
 		["agent_actions", agentActions, policy.agentActionsDays, (cutoff) => lt(agentActions.createdAt, cutoff)],
 		[
 			"ai_summaries",
@@ -101,11 +147,11 @@ export async function runDatabasePruning(
 				),
 		],
 	];
-	for (const [name, table, days, where] of jobs) {
+	for (const [name, table, days, where, maxBatches] of jobs) {
 		const cutoff = getRetentionCutoff(now, days);
 		if (!cutoff) continue;
 		try {
-			result[name] = await pruneInBatches(db, table, where(cutoff));
+			result[name] = await pruneInBatches(db, table, where(cutoff), maxBatches);
 		} catch (error) {
 			console.error(`Pruning ${name} failed`, error);
 		}

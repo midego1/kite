@@ -229,7 +229,9 @@
 		"src/lib/booking/working-hours-utils.ts",
 		"src/lib/screener/screener-utils.ts",
 		"src/lib/telemetry/telemetry-utils.ts",
-		"src/lib/telemetry/notice-utils.ts"
+		"src/lib/telemetry/notice-utils.ts",
+		"src/lib/calendar/tool-preview-utils.ts",
+		"src/lib/mcp/server-utils.ts"
 	],
 	"ungated": {
 		"src/lib/agent/fixed-rules-utils.ts": "Only the two prompt rule strings; the prompt fixture tests pin their text byte for byte.",

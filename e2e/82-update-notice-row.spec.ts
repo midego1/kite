@@ -161,7 +161,7 @@ test("the row follows the list across folders", async ({ page }) => {
 });
 
 test("a page without a message list keeps the toast", async ({ page }) => {
-	await announceNewVersion(page, "/settings");
+	await announceNewVersion(page, "/settings/account");
 	await expect(toast(page)).toBeVisible();
 	await expect(row(page)).toHaveCount(0);
 });

@@ -37,7 +37,7 @@ export function compareDeploymentVersion(known: string, latest: string): UpdateD
  * Where an available update is announced: the top of a message list when one is on screen, otherwise a toast so
  * pages without a list (settings, admin, calendar, drive) still notice it. A dismissed notice stays gone.
  */
-export function chooseUpdateSurface({ available, dismissed, lists }: UpdateNoticeState): UpdateSurface {
-	if (!available || dismissed) return "none";
+export function chooseUpdateSurface({ available, dismissed, lists, reloading }: UpdateNoticeState): UpdateSurface {
+	if (!available || dismissed || reloading) return "none";
 	return lists > 0 ? "row" : "toast";
 }

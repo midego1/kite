@@ -3,7 +3,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { UpdateNoticeState } from "./update-available-types";
 
-const INITIAL: UpdateNoticeState = { available: false, dismissed: false, lists: 0 };
+const INITIAL: UpdateNoticeState = { available: false, dismissed: false, lists: 0, reloading: false };
 
 let snapshot = INITIAL;
 const listeners = new Set<() => void>();
@@ -35,6 +35,16 @@ export function announceUpdate() {
 
 export function dismissUpdateNotice() {
 	update({ dismissed: true });
+}
+
+/** Reload was chosen on either surface; the host's one `ReloadFlight` takes it from here. */
+export function requestReload() {
+	if (!snapshot.reloading) update({ reloading: true });
+}
+
+/** The reload did not happen (the user cancelled the browser's prompt): the notice comes back for another try. */
+export function cancelReload() {
+	update({ reloading: false });
 }
 
 /** Signing out hides the notice without letting the tab announce again (the host remembers it showed). */

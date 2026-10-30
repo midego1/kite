@@ -42,7 +42,7 @@ function updateRow(page: Page) {
 }
 
 /** Settings has no message list, so a new deployment is announced with the toast there. */
-async function openInbox(page: Page, version: { requests: number }, path = "/settings") {
+async function openInbox(page: Page, version: { requests: number }, path = "/settings/account") {
 	await page.clock.install();
 	await page.goto(path);
 	await expect(page.getByRole("main")).toBeVisible();
@@ -176,6 +176,8 @@ test("a chunk of the previous deployment that is gone shows the toast, and Reloa
 	// The first two loads get the new page but not its files; it used to stay on "Loading" until a manual refresh.
 	const entry = await failEntryModule(page, () => documents.count <= 2);
 	await toast.getByRole("button", { name: "Reload" }).click();
+	// Reload flies the kite away first (87-update-reload-flight), so the old page is still there for a moment.
+	await expect.poll(() => documents.count, { timeout: 30_000 }).toBe(3);
 	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 30_000 });
 	expect(entry.failed).toBeGreaterThanOrEqual(2);
 	expect(documents.count).toBe(3);

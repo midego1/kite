@@ -89,6 +89,12 @@ test("the notice goes to a message list when one is on screen and to a toast els
 	assert.equal(chooseUpdateSurface({ available: false, dismissed: false, lists: 0 }), "none");
 });
 
+test("choosing Reload takes the notice off both surfaces while the flight plays", () => {
+	assert.equal(chooseUpdateSurface({ available: true, dismissed: false, lists: 1, reloading: true }), "none");
+	assert.equal(chooseUpdateSurface({ available: true, dismissed: false, lists: 0, reloading: true }), "none");
+	assert.equal(chooseUpdateSurface({ available: true, dismissed: false, lists: 1, reloading: false }), "row");
+});
+
 test("a dismissed notice shows nowhere, whatever the page", () => {
 	assert.equal(chooseUpdateSurface({ available: true, dismissed: true, lists: 0 }), "none");
 	assert.equal(chooseUpdateSurface({ available: true, dismissed: true, lists: 1 }), "none");

@@ -20,15 +20,17 @@ await build({
 	logLevel: "silent",
 	tsconfig: join(root, "tsconfig.json"),
 });
-const RECENT_AI_ERROR_WINDOW_MS = 24 * 60 * 60 * 1000;
 const { attentionItems, overviewStats } = await import(pathToFileURL(join(bundleDirectory, "overview-utils.mjs")).href);
 
-const NOW = Date.parse("2026-10-30T12:00:00Z");
 const quiet = {
-	accounts: [{ role: "admin" }, { role: "user" }, { role: "user", disabled: true }],
-	mailboxes: [{ type: "personal" }, { type: "shared" }],
-	domains: [{ status: "active" }],
 	migrations: { pending: 0 },
+	counts: {
+		accounts: { total: 3, admins: 1, disabled: 1 },
+		mailboxes: { total: 2, shared: 1 },
+		domains: { total: 1, active: 1, inactive: 0 },
+		webhooks: { failingHooks: 0, recentFailures: 0 },
+		aiErrors: { recent: 0, capped: false },
+	},
 	databaseSize: { size: { usedBytes: 1_200_000, limitBytes: 10_000_000_000 }, level: "ok" },
 	backups: {
 		level: "ok",
@@ -38,40 +40,37 @@ const quiet = {
 		automatic: { enabled: true },
 		restore: null,
 	},
-	webhooks: [{ enabled: true, stats: { failing: 0 } }],
-	aiErrors: [],
 };
 
 test("a quiet install needs no attention and shows its counts", () => {
-	assert.deepEqual(attentionItems(quiet, true, NOW), []);
+	assert.deepEqual(attentionItems(quiet, true), []);
 	assert.deepEqual(
-		overviewStats(quiet, "2026.10.30.1").map((stat) => [stat.id, stat.value, stat.hint, stat.href]),
+		overviewStats(quiet).map((stat) => [stat.id, stat.value, stat.hint, stat.href]),
 		[
 			["accounts", "3", "1 admin · 1 disabled", "/accounts"],
 			["mailboxes", "2", "1 shared inbox", "/mailboxes"],
 			["domains", "1", "All active", "/domains"],
-			["database", "1.2 MB", "0% of 10 GB", "#database"],
+			["database", "1.2 MB", "0% of 10 GB", "#database-size"],
 		],
 	);
+	const unlimited = { ...quiet, databaseSize: { size: { usedBytes: 500, limitBytes: null }, level: "ok" } };
+	assert.equal(overviewStats(unlimited).at(-1).hint, "No size limit on this server");
 });
 
 test("errors come before warnings and information, each with where to go", () => {
 	const data = {
 		...quiet,
 		migrations: { pending: 2 },
-		domains: [{ status: "active" }, { status: "pending" }, { status: "pending", dnsSkipped: true }],
+		counts: {
+			...quiet.counts,
+			domains: { total: 3, active: 1, inactive: 2 },
+			webhooks: { failingHooks: 1, recentFailures: 2 },
+			aiErrors: { recent: 1, capped: false },
+		},
 		databaseSize: { size: { usedBytes: 9_500_000_000, limitBytes: 10_000_000_000 }, level: "critical" },
 		backups: { ...quiet.backups, lastFailure: { id: "x", failedAt: "2026-10-30T02:00:00Z", error: "R2 timeout" } },
-		webhooks: [
-			{ enabled: true, stats: { failing: 2 } },
-			{ enabled: false, stats: { failing: 9 } },
-		],
-		aiErrors: [
-			{ at: new Date(NOW - 60_000).toISOString() },
-			{ at: new Date(NOW - RECENT_AI_ERROR_WINDOW_MS - 1).toISOString() },
-		],
 	};
-	const items = attentionItems(data, true, NOW);
+	const items = attentionItems(data, true);
 	assert.deepEqual(
 		items.map((item) => [item.id, item.tone]),
 		[
@@ -88,45 +87,55 @@ test("errors come before warnings and information, each with where to go", () =>
 	assert.equal(byId.migrations.href, "#database");
 	assert.equal(byId["backup-failed"].detail, "R2 timeout");
 	assert.equal(byId["database-size"].title, "The database is at 95% of its size limit");
+	assert.equal(byId["database-size"].href, "#database-size");
 	assert.equal(byId.webhooks.title, "1 webhook with failed deliveries");
-	assert.equal(byId.webhooks.detail, "2 deliveries could not be made.");
+	assert.equal(byId.webhooks.detail, "2 deliveries could not be made in the last 24 hours.");
 	assert.equal(byId["ai-errors"].title, "1 AI request failed in the last 24 hours");
-	assert.equal(byId.domains.title, "1 domain not active yet", "a domain with DNS skipped is not nagged about");
-	assert.equal(overviewStats(data, "x").find((stat) => stat.id === "database").tone, "critical");
-	assert.equal(overviewStats(data, "x").find((stat) => stat.id === "domains").hint, "1 of 3 active");
+	assert.equal(byId.domains.title, "2 domains not active yet");
+	assert.equal(overviewStats(data).find((stat) => stat.id === "database").tone, "critical");
+	assert.equal(overviewStats(data).find((stat) => stat.id === "domains").hint, "1 of 3 active");
+});
+
+test("a full AI error list reads as a lower bound", () => {
+	const data = { ...quiet, counts: { ...quiet.counts, aiErrors: { recent: 200, capped: true } } };
+	assert.equal(attentionItems(data, true)[0].title, "200+ AI requests failed in the last 24 hours");
 });
 
 test("a restore that needs recovery and a missing first backup are reported", () => {
 	const recovery = { ...quiet, backups: { ...quiet.backups, restore: { needsRecovery: true } } };
 	assert.deepEqual(
-		attentionItems(recovery, true, NOW).map((item) => [item.id, item.tone, item.href]),
+		attentionItems(recovery, true).map((item) => [item.id, item.tone, item.href]),
 		[["restore", "error", "#backups"]],
 	);
 	const none = { ...quiet, backups: { ...quiet.backups, lastSuccess: null } };
 	assert.deepEqual(
-		attentionItems(none, true, NOW).map((item) => [item.id, item.tone]),
+		attentionItems(none, true).map((item) => [item.id, item.tone]),
 		[["backup-none", "warning"]],
 	);
-	assert.deepEqual(attentionItems({ ...none, backups: { ...none.backups, inProgress: true } }, true, NOW), []);
+	assert.deepEqual(attentionItems({ ...none, backups: { ...none.backups, inProgress: true } }, true), []);
 });
 
-test("a non-primary admin sees only what they may read, and is told who applies updates", () => {
+test("a non-primary admin sees only what they may read; pending updates come from the notice instead", () => {
 	const data = {
-		...quiet,
 		migrations: { pending: 1 },
+		counts: { ...quiet.counts, domains: null, webhooks: null, aiErrors: null },
 		databaseSize: null,
 		backups: null,
-		webhooks: null,
-		aiErrors: null,
 	};
-	const items = attentionItems(data, false, NOW);
+	assert.deepEqual(attentionItems(data, false), []);
 	assert.deepEqual(
-		items.map((item) => [item.id, item.hrefLabel]),
-		[["migrations", ""]],
+		overviewStats(data).map((stat) => stat.id),
+		["accounts", "mailboxes"],
 	);
-	assert.match(items[0].detail, /Only the primary admin/);
+	const withDomains = { ...data, counts: { ...data.counts, domains: { total: 2, active: 1, inactive: 1 } } };
 	assert.deepEqual(
-		overviewStats(data, "x").map((stat) => stat.id),
-		["accounts", "mailboxes", "domains"],
+		attentionItems(withDomains, false).map((item) => item.id),
+		["domains"],
 	);
+	assert.ok(overviewStats(withDomains).some((stat) => stat.id === "domains"));
+});
+
+test("nothing loaded yet means nothing to show, not zeros", () => {
+	assert.deepEqual(overviewStats({ migrations: null, counts: null, databaseSize: null, backups: null }), []);
+	assert.deepEqual(attentionItems({ migrations: null, counts: null, databaseSize: null, backups: null }, true), []);
 });

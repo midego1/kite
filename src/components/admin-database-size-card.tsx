@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, HardDrive } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { type DatabaseSize, type DatabaseUseLevel, formatDatabaseBytes } from "@/lib/db/size-utils";
-
-type SizeResponse = { size: DatabaseSize | null; level: DatabaseUseLevel };
+import { type DatabaseUseLevel, formatDatabaseBytes } from "@/lib/db/size-utils";
+import { DATABASE_SIZE_QUERY, fetchDatabaseSize } from "./admin-database-size-query";
 
 const tones: Record<DatabaseUseLevel, { icon: string; bar: string; text: string }> = {
 	ok: { icon: "border-neutral-200 bg-[#f6f8fc] text-neutral-600", bar: "bg-blue-500", text: "text-neutral-500" },
@@ -23,20 +22,8 @@ const tones: Record<DatabaseUseLevel, { icon: string; bar: string; text: string 
 
 /** The database against its size limit; amber from 70% and red from 90%, when imports also stop (docs/operations.md). */
 export function AdminDatabaseSizeCard() {
-	const [data, setData] = useState<SizeResponse | null>(null);
-
-	useEffect(() => {
-		let active = true;
-		fetch("/api/admin/database-size", { cache: "no-store" })
-			.then((response) => (response.ok ? (response.json() as Promise<SizeResponse>) : null))
-			.then((next) => {
-				if (active) setData(next);
-			})
-			.catch(() => undefined);
-		return () => {
-			active = false;
-		};
-	}, []);
+	// The overview's tiles read the same query, so the page asks the server once.
+	const { data } = useQuery({ queryKey: DATABASE_SIZE_QUERY, queryFn: fetchDatabaseSize, retry: false });
 
 	if (!data?.size) return null;
 	const { size, level } = data;

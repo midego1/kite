@@ -49,6 +49,7 @@ import {
 } from "./backup-objects";
 import { RestoreStoredBackupButton } from "./restore-stored-button";
 import { RestoreRunningNotice } from "./restore-running-notice";
+import { BACKUP_HEALTH_QUERY } from "@/components/admin-backup-health-query";
 import { PageHeader } from "@/components/ui/page";
 import { useRestoreJob } from "./use-restore-job";
 
@@ -89,15 +90,15 @@ export default function BackupsPage() {
 		},
 	});
 
-	const runBackup = useMutation({
-		mutationFn: startBackup,
-		onSuccess: () => queryClient.invalidateQueries({ queryKey: ["backups"] }),
-	});
+	// The overview's backup line reads the health query, so a run or a deletion refreshes it too.
+	const refreshBackups = () =>
+		Promise.all([
+			queryClient.invalidateQueries({ queryKey: ["backups"] }),
+			queryClient.invalidateQueries({ queryKey: BACKUP_HEALTH_QUERY }),
+		]);
+	const runBackup = useMutation({ mutationFn: startBackup, onSuccess: refreshBackups });
 
-	const deleteBackup = useMutation({
-		mutationFn: removeBackup,
-		onSuccess: () => queryClient.invalidateQueries({ queryKey: ["backups"] }),
-	});
+	const deleteBackup = useMutation({ mutationFn: removeBackup, onSuccess: refreshBackups });
 
 	const download = useMutation({ mutationFn: downloadBackup });
 	const { restoreObjects, retryObjects } = useBackupObjectsActions();

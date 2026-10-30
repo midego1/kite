@@ -123,11 +123,45 @@ test("the overview leads with what needs attention, then counts that open their 
 	await expect(glance.getByTestId("stat-mailboxes")).toHaveAttribute("href", "/mailboxes");
 	await expect(glance.getByTestId("stat-domains")).toContainText(/\d+/);
 	await expect(glance.getByTestId("stat-database")).toContainText(/MB|KB/);
+	await expect(glance.getByTestId("stat-database")).toHaveAttribute("href", "#database-size");
 	// The cards below keep their place and their test ids, so the specs that drive them still find them.
 	await expect(page.getByTestId("database-size-card")).toBeVisible();
 	await expect(page.getByTestId("backup-health-card")).toBeVisible();
 	await glance.getByTestId("stat-mailboxes").click();
 	await expect(page).toHaveURL(/\/mailboxes$/);
+});
+
+test("the overview counts endpoint answers each admin only what they may read, and members not at all", async ({
+	browser,
+}) => {
+	const api = await apiContext(STORAGE_STATE);
+	const counts = (await (await api.get("/api/admin/overview")).json()) as {
+		accounts: { total: number; admins: number };
+		mailboxes: { total: number };
+		domains: { total: number } | null;
+		webhooks: { failingHooks: number } | null;
+		aiErrors: { recent: number; capped: boolean } | null;
+	};
+	await api.dispose();
+	expect(counts.accounts.total).toBeGreaterThanOrEqual(counts.accounts.admins);
+	expect(counts.mailboxes.total).toBeGreaterThan(0);
+	expect(counts.domains?.total).toBeGreaterThan(0);
+	expect(counts.webhooks).toEqual({ failingHooks: expect.any(Number), recentFailures: expect.any(Number) });
+	expect(counts.aiErrors).toEqual({ recent: expect.any(Number), capped: false });
+
+	const admin = await createAccount("admin");
+	const { context, page } = await signInFresh(browser, admin.email);
+	const theirs = (await (await page.request.get("/api/admin/overview")).json()) as typeof counts;
+	expect(theirs.accounts.total).toBe(counts.accounts.total + 1);
+	expect(theirs.domains).toBeNull();
+	expect(theirs.webhooks).toBeNull();
+	expect(theirs.aiErrors).toBeNull();
+	await context.close();
+
+	const member = await createAccount("user");
+	const session = await signInFresh(browser, member.email);
+	expect((await session.page.request.get("/api/admin/overview")).status()).toBe(403);
+	await session.context.close();
 });
 
 test.describe("on a phone", () => {

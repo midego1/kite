@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { recoverPreviousData } from "@/app/(admin)/backups/utils";
 import type { RestoreSummary } from "@/lib/backups/restore-job-types";
+import { BACKUP_HEALTH_QUERY } from "./admin-backup-health-query";
 import { restoreOutcomeText } from "@/lib/backups/restore-job-utils";
 import { formatUserDate } from "@/lib/time/utils";
 
@@ -20,6 +22,7 @@ export function AdminBackupRestoreStatus({ restore }: { restore: RestoreSummary 
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const router = useRouter();
+	const queryClient = useQueryClient();
 	if (!restore) return null;
 	if (restore.active) return <p className="text-neutral-500">A restore is running now.</p>;
 	if (restore.status === "completed")
@@ -41,6 +44,7 @@ export function AdminBackupRestoreStatus({ restore }: { restore: RestoreSummary 
 		setError(null);
 		try {
 			await recoverPreviousData();
+			void queryClient.invalidateQueries({ queryKey: BACKUP_HEALTH_QUERY });
 			// The Backups page picks up the running restore and follows it.
 			router.push("/backups");
 		} catch (failure) {

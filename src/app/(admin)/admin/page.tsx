@@ -2,32 +2,47 @@
 
 import { AdminBackupHealthCard } from "@/components/admin-backup-health-card";
 import { AdminDatabaseSizeCard } from "@/components/admin-database-size-card";
-import { AdminUpdateCard } from "@/components/admin-update-card";
+import { AdminPendingMigrationsNotice, AdminUpdateCard } from "@/components/admin-update-card";
 import { PageHeader } from "@/components/ui/page";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatGrid, StatTile } from "@/components/ui/stat-tile";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { BUILD_VERSION } from "@/lib/build-version";
 import { AttentionList } from "./attention-list";
 import { attentionItems, overviewStats } from "./overview-utils";
 import { useOverview } from "./use-overview";
 
+/** A card the attention list jumps to; focusable, so the jump moves the keyboard and screen reader there too. */
+function Anchor({ id, children }: { id: string; children: React.ReactNode }) {
+	return (
+		<div
+			id={id}
+			tabIndex={-1}
+			className="scroll-mt-6 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+		>
+			{children}
+		</div>
+	);
+}
+
 export default function AdminOverviewPage() {
 	const user = useCurrentUser();
 	const primary = user?.isPrimaryAdmin === true;
-	const overview = useOverview(primary, user?.role === "admin");
-	const data = overview.data;
-	const stats = data ? overviewStats(data, BUILD_VERSION) : [];
+	const { data, loading } = useOverview(primary, user?.role === "admin");
+	const stats = overviewStats(data);
 
 	return (
 		<div className="space-y-8">
-			<PageHeader
-				title="Overview"
-				description={`Kite v${BUILD_VERSION}. What needs attention, the numbers, and the database.`}
-			/>
-			<AttentionList items={data ? attentionItems(data, primary) : []} loading={!data} />
+			<PageHeader title="Overview" description="What needs attention, the numbers, and the database." />
+			<AttentionList items={loading ? [] : attentionItems(data, primary)} loading={loading} />
+			{!primary && <AdminPendingMigrationsNotice />}
 			<section aria-label="At a glance">
-				{data ? (
+				{loading ? (
+					<StatGrid>
+						{Array.from({ length: primary ? 4 : 3 }, (_, index) => (
+							<Skeleton key={index} className="h-24 rounded-xl" />
+						))}
+					</StatGrid>
+				) : (
 					<StatGrid>
 						{stats.map((stat) => (
 							<StatTile
@@ -41,25 +56,19 @@ export default function AdminOverviewPage() {
 							/>
 						))}
 					</StatGrid>
-				) : (
-					<StatGrid>
-						{Array.from({ length: primary ? 4 : 3 }, (_, index) => (
-							<Skeleton key={index} className="h-24 rounded-xl" />
-						))}
-					</StatGrid>
 				)}
 			</section>
 			{primary && (
 				<div className="space-y-6">
-					<div id="database" className="scroll-mt-6">
+					<Anchor id="database">
 						<AdminUpdateCard />
-					</div>
-					<div id="database-size" className="scroll-mt-6">
+					</Anchor>
+					<Anchor id="database-size">
 						<AdminDatabaseSizeCard />
-					</div>
-					<div id="backups" className="scroll-mt-6">
+					</Anchor>
+					<Anchor id="backups">
 						<AdminBackupHealthCard />
-					</div>
+					</Anchor>
 				</div>
 			)}
 		</div>

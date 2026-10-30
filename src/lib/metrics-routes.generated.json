@@ -25,6 +25,7 @@
 	"/api/admin/general",
 	"/api/admin/migrations",
 	"/api/admin/modules",
+	"/api/admin/overview",
 	"/api/admin/resend-key",
 	"/api/admin/search-index",
 	"/api/admin/storage/migrations/[id]",

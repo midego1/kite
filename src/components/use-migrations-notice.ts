@@ -33,7 +33,10 @@ function setApplyState(next: Partial<ApplyState>) {
 	emit();
 }
 
-async function fetchPendingMigrations(): Promise<PendingMigrationsResponse> {
+/** Shared by the mailbox banner, the database card and the admin overview; applying updates invalidates it. */
+export const PENDING_MIGRATIONS_QUERY = ["pending-migrations"] as const;
+
+export async function fetchPendingMigrations(): Promise<PendingMigrationsResponse> {
 	const response = await fetch("/api/migrations/pending", { cache: "no-store" });
 	if (!response.ok) throw new Error(`Pending migrations request failed (${response.status})`);
 	return parsePendingMigrations(await response.json());
@@ -55,7 +58,7 @@ export function useMigrationsNotice() {
 		() => applyState,
 	);
 	const { data, refetch } = useQuery({
-		queryKey: ["pending-migrations"],
+		queryKey: PENDING_MIGRATIONS_QUERY,
 		queryFn: fetchPendingMigrations,
 		enabled: Boolean(user),
 		refetchInterval: PENDING_MIGRATIONS_REFRESH_MS,

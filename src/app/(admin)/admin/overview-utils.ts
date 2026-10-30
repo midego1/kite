@@ -1,25 +1,24 @@
 import { formatDatabaseBytes } from "@/lib/db/size-utils";
 import type { AttentionItem, OverviewData, OverviewStat } from "./overview-types";
 
-/** AI failures older than this are history, not something to act on. */
-const RECENT_AI_ERROR_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 function plural(count: number, one: string, many = `${one}s`): string {
 	return `${count} ${count === 1 ? one : many}`;
 }
 
+/**
+ * Only the primary admin gets a list entry: for other admins the "Pending database updates" notice under the list
+ * already says what waits and who can apply it.
+ */
 function migrationsItem(data: OverviewData, primary: boolean): AttentionItem | null {
 	const pending = data.migrations?.pending ?? 0;
-	if (!pending) return null;
+	if (!pending || !primary) return null;
 	return {
 		id: "migrations",
 		tone: "warning",
 		title: `${plural(pending, "database update")} waiting`,
-		detail: primary
-			? "Until they are applied, new email may not appear and some pages may fail."
-			: "Only the primary admin can apply them. Until then new email may not appear and some pages may fail.",
-		href: primary ? "#database" : "/admin",
-		hrefLabel: primary ? "Update database" : "",
+		detail: "Until they are applied, new email may not appear and some pages may fail.",
+		href: "#database",
+		hrefLabel: "Update database",
 	};
 }
 
@@ -75,42 +74,40 @@ function databaseItem(databaseSize: OverviewData["databaseSize"]): AttentionItem
 	};
 }
 
-function webhooksItem(webhooks: OverviewData["webhooks"]): AttentionItem | null {
-	const failing = (webhooks ?? []).filter((hook) => hook.enabled && hook.stats.failing > 0);
-	if (!failing.length) return null;
-	const deliveries = failing.reduce((sum, hook) => sum + hook.stats.failing, 0);
+function webhooksItem(counts: OverviewData["counts"]): AttentionItem | null {
+	const webhooks = counts?.webhooks;
+	if (!webhooks?.failingHooks) return null;
 	return {
 		id: "webhooks",
 		tone: "warning",
-		title: `${plural(failing.length, "webhook")} with failed deliveries`,
-		detail: `${plural(deliveries, "delivery", "deliveries")} could not be made.`,
+		title: `${plural(webhooks.failingHooks, "webhook")} with failed deliveries`,
+		detail: `${plural(webhooks.recentFailures, "delivery", "deliveries")} could not be made in the last 24 hours.`,
 		href: "/webhooks",
 		hrefLabel: "Open Webhooks",
 	};
 }
 
-function aiErrorsItem(aiErrors: OverviewData["aiErrors"], now: number): AttentionItem | null {
-	const recent = (aiErrors ?? []).filter((row) => {
-		const at = Date.parse(row.at);
-		return Number.isFinite(at) && now - at <= RECENT_AI_ERROR_WINDOW_MS;
-	});
-	if (!recent.length) return null;
+function aiErrorsItem(counts: OverviewData["counts"]): AttentionItem | null {
+	const errors = counts?.aiErrors;
+	if (!errors?.recent) return null;
+	const number = errors.capped ? `${errors.recent}+` : String(errors.recent);
 	return {
 		id: "ai-errors",
 		tone: "warning",
-		title: `${plural(recent.length, "AI request")} failed in the last 24 hours`,
+		title: `${number} AI ${errors.recent === 1 && !errors.capped ? "request" : "requests"} failed in the last 24 hours`,
 		href: "/agent",
 		hrefLabel: "Open Agent",
 	};
 }
 
-function domainsItem(domains: OverviewData["domains"]): AttentionItem | null {
-	const inactive = (domains ?? []).filter((domain) => domain.status !== "active" && !domain.dnsSkipped);
-	if (!inactive.length) return null;
+/** Only shown to someone who can open Domains: the primary admin or an admin with the domain grant. */
+function domainsItem(counts: OverviewData["counts"]): AttentionItem | null {
+	const domains = counts?.domains;
+	if (!domains?.inactive) return null;
 	return {
 		id: "domains",
 		tone: "info",
-		title: `${plural(inactive.length, "domain")} not active yet`,
+		title: `${plural(domains.inactive, "domain")} not active yet`,
 		detail: "Finish its DNS setup so mail can arrive.",
 		href: "/domains",
 		hrefLabel: "Open Domains",
@@ -118,52 +115,49 @@ function domainsItem(domains: OverviewData["domains"]): AttentionItem | null {
 }
 
 /** What needs attention, most urgent first: errors, then warnings, then information. */
-export function attentionItems(data: OverviewData, primary: boolean, now = Date.now()): AttentionItem[] {
+export function attentionItems(data: OverviewData, primary: boolean): AttentionItem[] {
 	const items = [
 		migrationsItem(data, primary),
 		...backupItems(data.backups),
 		databaseItem(data.databaseSize),
-		webhooksItem(data.webhooks),
-		aiErrorsItem(data.aiErrors, now),
-		domainsItem(data.domains),
+		webhooksItem(data.counts),
+		aiErrorsItem(data.counts),
+		domainsItem(data.counts),
 	].filter((item): item is AttentionItem => item !== null);
 	const rank = { error: 0, warning: 1, info: 2 };
 	return items.sort((a, b) => rank[a.tone] - rank[b.tone]);
 }
 
 /** The headline counts; a part the viewer could not read is left out rather than shown as zero. */
-export function overviewStats(data: OverviewData, versionLabel: string): OverviewStat[] {
+export function overviewStats(data: OverviewData): OverviewStat[] {
 	const stats: OverviewStat[] = [];
-	if (data.accounts) {
-		const admins = data.accounts.filter((account) => account.role === "admin").length;
-		const disabled = data.accounts.filter((account) => account.disabled).length;
+	const { counts } = data;
+	if (counts) {
+		const { accounts, mailboxes, domains } = counts;
 		stats.push({
 			id: "accounts",
 			label: "Accounts",
-			value: String(data.accounts.length),
-			hint: [plural(admins, "admin"), disabled ? plural(disabled, "disabled") : ""].filter(Boolean).join(" · "),
+			value: String(accounts.total),
+			hint: [plural(accounts.admins, "admin"), accounts.disabled ? plural(accounts.disabled, "disabled") : ""]
+				.filter(Boolean)
+				.join(" · "),
 			href: "/accounts",
 		});
-	}
-	if (data.mailboxes) {
-		const shared = data.mailboxes.filter((mailbox) => mailbox.type === "shared").length;
 		stats.push({
 			id: "mailboxes",
 			label: "Mailboxes",
-			value: String(data.mailboxes.length),
-			hint: shared ? plural(shared, "shared inbox", "shared inboxes") : "No shared inboxes",
+			value: String(mailboxes.total),
+			hint: mailboxes.shared ? plural(mailboxes.shared, "shared inbox", "shared inboxes") : "No shared inboxes",
 			href: "/mailboxes",
 		});
-	}
-	if (data.domains) {
-		const active = data.domains.filter((domain) => domain.status === "active").length;
-		stats.push({
-			id: "domains",
-			label: "Domains",
-			value: String(data.domains.length),
-			hint: data.domains.length === active ? "All active" : `${active} of ${data.domains.length} active`,
-			href: "/domains",
-		});
+		if (domains)
+			stats.push({
+				id: "domains",
+				label: "Domains",
+				value: String(domains.total),
+				hint: domains.inactive ? `${domains.active} of ${domains.total} active` : "All active",
+				href: "/domains",
+			});
 	}
 	if (data.databaseSize?.size) {
 		const { size, level } = data.databaseSize;
@@ -172,8 +166,11 @@ export function overviewStats(data: OverviewData, versionLabel: string): Overvie
 			id: "database",
 			label: "Database",
 			value: formatDatabaseBytes(size.usedBytes),
-			hint: percent === null ? `Kite v${versionLabel}` : `${percent}% of ${formatDatabaseBytes(size.limitBytes ?? 0)}`,
-			href: "#database",
+			hint:
+				percent === null
+					? "No size limit on this server"
+					: `${percent}% of ${formatDatabaseBytes(size.limitBytes ?? 0)}`,
+			href: "#database-size",
 			tone: level === "ok" ? "neutral" : level === "warn" ? "warning" : "critical",
 		});
 	}

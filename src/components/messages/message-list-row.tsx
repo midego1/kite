@@ -130,7 +130,7 @@ function StackedSubjectLine({ inlineStar, ...props }: RowViewProps & { inlineSta
 			<span
 				dir="auto"
 				className={clsx(
-					"min-w-0 flex-1 truncate text-sm",
+					"reading-font min-w-0 flex-1 truncate text-sm",
 					// Keeps a few letters of the subject when the pill is wide: the pill shortens first.
 					props.mailboxLabel && "min-w-[4.5rem]",
 					row.unread ? "text-neutral-700" : "text-neutral-500",
@@ -219,7 +219,7 @@ function StackedMessageRow(props: RowViewProps) {
 					<StackedSubjectLine {...props} inlineStar={inlineStar} />
 					{/* A one-line summary shows even where the density leaves the plain preview out: it is the row's gist. */}
 					{(stackedDensity.showPreview || row.line) && (
-						<span dir="auto" className="mt-0.5 block truncate text-xs text-neutral-500">
+						<span dir="auto" className="reading-font mt-0.5 block truncate text-xs text-neutral-500">
 							<MessageRowPreview preview={row.preview} line={row.line} />
 						</span>
 					)}
@@ -301,10 +301,10 @@ function WideMessageRow(props: RowViewProps) {
 						aria-current={active ? "true" : undefined}
 						className="after:absolute after:inset-0 focus-visible:outline-none"
 					>
-						<span dir="auto" className={row.unread ? "font-medium text-neutral-900" : ""}>
+						<span dir="auto" className={clsx("reading-font", row.unread && "font-medium text-neutral-900")}>
 							{row.rowMessage.subject ?? "(no subject)"}
 						</span>
-						<span dir="auto" className="text-neutral-500">
+						<span dir="auto" className="reading-font text-neutral-500">
 							{" "}
 							- <MessageRowPreview preview={row.preview} line={row.line} />
 						</span>

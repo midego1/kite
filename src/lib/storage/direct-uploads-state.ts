@@ -15,7 +15,7 @@ export type DirectUploadsSetupRecord = {
 
 export type DirectUploadsState = { setup?: DirectUploadsSetupRecord; dismissedAt?: string };
 
-/** Before migration 0084 the table is missing: reads see an empty state and dismissing waits for the update. */
+/** Before migration 0085 the table is missing: reads see an empty state and dismissing waits for the update. */
 export class DirectUploadsStatePendingError extends Error {
 	constructor() {
 		super("Apply the pending database update first");

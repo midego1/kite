@@ -27,6 +27,7 @@
 	"/api/admin/modules",
 	"/api/admin/resend-key",
 	"/api/admin/search-index",
+	"/api/admin/spam-policy",
 	"/api/admin/storage/cloudflare/buckets",
 	"/api/admin/storage/cloudflare/direct-uploads",
 	"/api/admin/storage/cloudflare",

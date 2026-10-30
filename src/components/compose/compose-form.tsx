@@ -840,7 +840,7 @@ export function ComposeForm({
 							placeholder="Subject"
 							required
 							disabled={loadingDraft}
-							className="h-8 border-0 px-0 py-1 shadow-none focus-visible:ring-0"
+							className="reading-font h-8 border-0 px-0 py-1 shadow-none focus-visible:ring-0"
 						/>
 					</div>
 					<Label htmlFor={`${mode}-text`} className="sr-only">

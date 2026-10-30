@@ -54,7 +54,7 @@ export function AgentTurnView({
 	return (
 		<div className="space-y-3 py-2">
 			{turn.user && (
-				<div className="ml-auto w-fit max-w-[90%] whitespace-pre-wrap break-words rounded-xl rounded-tr-sm bg-blue-100/70 px-3 py-2.5 text-sm leading-relaxed text-neutral-900">
+				<div className="ml-auto reading-font w-fit max-w-[90%] whitespace-pre-wrap break-words rounded-xl rounded-tr-sm bg-blue-100/70 px-3 py-2.5 text-sm leading-relaxed text-neutral-900">
 					{turn.user.content}
 				</div>
 			)}
@@ -90,7 +90,7 @@ export function AgentTurnView({
 							</details>
 						)}
 						{turn.assistant?.content && (
-							<div className="break-words text-sm leading-relaxed text-neutral-900 [&_a]:text-blue-700 [&_li]:ml-4 [&_li]:list-disc [&_p]:mb-3 message-content">
+							<div className="reading-font break-words text-sm leading-relaxed text-neutral-900 [&_a]:text-blue-700 [&_li]:ml-4 [&_li]:list-disc [&_p]:mb-3 message-content">
 								<ReactMarkdown
 									remarkPlugins={[remarkGfm]}
 									skipHtml

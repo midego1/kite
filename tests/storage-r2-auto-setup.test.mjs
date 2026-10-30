@@ -325,7 +325,7 @@ test("the reminder shows on Cloudflare until direct uploads are on or it is dism
 	env.KITE_RUNTIME = "node";
 });
 
-test("before migration 0084 the reminder still shows and dismissing waits for the update", async (t) => {
+test("before migration 0085 the reminder still shows and dismissing waits for the update", async (t) => {
 	const { env } = await setup(t);
 	env.DB.db.exec("DROP TABLE storage_state");
 	delete env.KITE_RUNTIME;

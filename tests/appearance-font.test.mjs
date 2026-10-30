@@ -12,6 +12,7 @@ const {
 	APPEARANCE_PREFERENCES,
 	EMAIL_FONT_PREFERENCE,
 	FONT_PREFERENCE,
+	FONT_SCOPE_PREFERENCE,
 	appearanceBootstrapScript,
 	isDyslexiaFont,
 	parseLayoutPatch,
@@ -20,7 +21,7 @@ const {
 } = await bundleModules("kite-appearance-font-", [
 	["FONT_ASSETS, fontAsset, readerFontStyles", "src/components/font-assets-utils.ts"],
 	[
-		"APPEARANCE_PREFERENCES, EMAIL_FONT_PREFERENCE, FONT_PREFERENCE, appearanceBootstrapScript, isDyslexiaFont",
+		"APPEARANCE_PREFERENCES, EMAIL_FONT_PREFERENCE, FONT_PREFERENCE, FONT_SCOPE_PREFERENCE, appearanceBootstrapScript, isDyslexiaFont",
 		"src/components/appearance-preferences.ts",
 	],
 	["parseLayoutPatch", "src/lib/preferences/layout-utils.ts"],
@@ -83,6 +84,39 @@ test("the layout sync accepts exactly the Font and HTML email font values", () =
 	assert.ok(APPEARANCE_PREFERENCES.includes(EMAIL_FONT_PREFERENCE));
 });
 
+test("the font scope is Text only by default and the layout sync accepts exactly its values", async () => {
+	assert.equal(FONT_SCOPE_PREFERENCE.defaultValue, "text");
+	assert.deepEqual(
+		FONT_SCOPE_PREFERENCE.options.map((option) => option.value),
+		["text", "everywhere"],
+	);
+	assert.equal(FONT_SCOPE_PREFERENCE.layoutKey, "fontScope");
+	assert.ok(APPEARANCE_PREFERENCES.includes(FONT_SCOPE_PREFERENCE));
+	for (const { value } of FONT_SCOPE_PREFERENCE.options)
+		assert.deepEqual(parseLayoutPatch({ layout: { fontScope: value } }), { fontScope: value });
+	assert.deepEqual(parseLayoutPatch({ layout: { font: "opendyslexic", fontScope: "everywhere" } }), {
+		font: "opendyslexic",
+		fontScope: "everywhere",
+	});
+	// A value outside the enum is dropped, and a patch with nothing valid left is refused.
+	assert.equal(parseLayoutPatch({ layout: { fontScope: "nowhere" } }), null);
+	assert.deepEqual(parseLayoutPatch({ layout: { fontScope: "nowhere", font: "inter" } }), { font: "inter" });
+	assert.deepEqual(layoutStorageEntries({ fontScope: "everywhere" }, "user"), [["kite-font-scope", "everywhere"]]);
+
+	// Nothing is stored for an existing OpenDyslexic user, so they land on Text only: the attribute stays off
+	// and --font-ui is left alone; only Everywhere re-points it at the reading font.
+	const globals = await readFile(join(root, "src/app/globals.css"), "utf8");
+	assert.match(
+		globals,
+		/:root\[data-font="opendyslexic"\]\[data-font-scope="everywhere"\]\s*\{\s*--font-ui:\s*var\(--font-reading\);/,
+	);
+	assert.doesNotMatch(globals, /:root\[data-font="opendyslexic"\]\s*\{\s*--font-ui/);
+	assert.match(
+		globals,
+		/\.reading-font,\s*:root\[data-font="opendyslexic"\] \.reading-text\s*\{\s*font-family:\s*var\(--font-reading\)/,
+	);
+});
+
 test("the bootstrap script sets the attribute and preloads only a chosen dyslexia-friendly font", () => {
 	function boot(saved) {
 		const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
@@ -110,6 +144,12 @@ test("the bootstrap script sets the attribute and preloads only a chosen dyslexi
 	]);
 	// Only the regular weight is preloaded; bold and the italics load on first use (font-display: swap).
 	assert.deepEqual(links, [["preload", "font", FONT_ASSETS.opendyslexic.preload, "anonymous", "opendyslexic"]]);
+
+	const everywhere = boot({ "kite-font": "opendyslexic", "kite-font-scope": "everywhere" });
+	assert.equal(everywhere.documentElement.getAttribute("data-font-scope"), "everywhere");
+	const textOnly = boot({ "kite-font": "opendyslexic" });
+	assert.equal(textOnly.documentElement.hasAttribute("data-font-scope"), false);
+	assert.equal(boot({ "kite-font-scope": "bogus" }).documentElement.hasAttribute("data-font-scope"), false);
 
 	const none = boot({});
 	assert.equal(none.documentElement.hasAttribute("data-font"), false);

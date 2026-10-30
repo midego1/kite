@@ -54,6 +54,25 @@ export const EMAIL_FONT_PREFERENCE: AppearancePreference<EmailFontPreference> = 
 	],
 };
 
+export type FontScopePreference = "text" | "everywhere";
+
+/**
+ * Where a dyslexia-friendly Font applies. "Text only" (the default, so an existing choice of the font keeps
+ * the interface as it was) sets mail, the composer, the message list's text lines, thread summaries and
+ * assistant replies in it (`.reading-text` and `.reading-font` in globals.css); "Everywhere" also sets the
+ * interface in it. Without a dyslexia-friendly font this has no effect.
+ */
+export const FONT_SCOPE_PREFERENCE: AppearancePreference<FontScopePreference> = {
+	storageKey: "kite-font-scope",
+	attribute: "font-scope",
+	defaultValue: "text",
+	layoutKey: "fontScope",
+	options: [
+		{ value: "text", label: "Text only (recommended)" },
+		{ value: "everywhere", label: "Everywhere" },
+	],
+};
+
 /** True for the Font value that loads the self-hosted dyslexia-friendly font. */
 export function isDyslexiaFont(value: string | null | undefined): boolean {
 	return fontAsset(value) !== undefined;
@@ -122,7 +141,12 @@ export const LIST_SUMMARIES_PREFERENCE: AppearancePreference<ListSummariesPrefer
 	],
 };
 
-export const APPEARANCE_PREFERENCES = [FONT_PREFERENCE, TEXT_SIZE_PREFERENCE, EMAIL_FONT_PREFERENCE] as const;
+export const APPEARANCE_PREFERENCES = [
+	FONT_PREFERENCE,
+	FONT_SCOPE_PREFERENCE,
+	TEXT_SIZE_PREFERENCE,
+	EMAIL_FONT_PREFERENCE,
+] as const;
 
 function isOption<T extends string>(preference: AppearancePreference<T>, value: unknown): value is T {
 	return preference.options.some((option) => option.value === value);

@@ -171,7 +171,7 @@ export function ThreadSummaryCard({ controller }: { controller: ThreadSummaryCon
 				{!summary && busy === "summarize" && <p className="text-neutral-500">Summarizing…</p>}
 				<StaleNotice controller={controller} />
 				{shown && (
-					<div data-summary-body className={summary?.stale ? "text-neutral-500" : "text-neutral-800"}>
+					<div data-summary-body className={`reading-font ${summary?.stale ? "text-neutral-500" : "text-neutral-800"}`}>
 						<p dir="auto" className="whitespace-pre-line">
 							{shown.overview}
 						</p>

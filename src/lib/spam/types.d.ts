@@ -19,9 +19,23 @@ export type SpamAnalysisInput = {
 	headers?: Record<string, string>;
 	/** The `Authentication-Results` value a verifying intake hop vouched for; null when none did. */
 	authenticationResults?: string | null;
+	/** The SMTP listener saw a private client address, so SPF was not checked; recorded as a zero-score signal. */
+	privateClient?: boolean;
 	message: ParsedEmail;
 	intelligenceProvider?: SpamIntelligenceProvider;
+	/** The owner's DMARC switch and the From domain's published policy; without it both count as unknown. */
+	dmarcPolicy?: DmarcPolicySource;
 };
+
+/** What a sender's domain asks receivers to do with mail failing DMARC; `unknown` when Kite could not learn it. */
+export type DmarcPolicy = "reject" | "quarantine" | "none" | "unknown";
+
+export interface DmarcPolicySource {
+	/** Admin → General: **Treat every DMARC failure as spam**. */
+	strict(): Promise<boolean>;
+	/** The policy the domain publishes in DNS, `unknown` when the lookup fails or times out. */
+	published(domain: string): Promise<DmarcPolicy>;
+}
 
 export type SpamAnalysisResult = {
 	score: number;

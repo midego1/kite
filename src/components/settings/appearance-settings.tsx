@@ -20,6 +20,7 @@ import {
 	EMAIL_FONT_PREFERENCE,
 	LIST_SUMMARIES_PREFERENCE,
 	FONT_PREFERENCE,
+	FONT_SCOPE_PREFERENCE,
 	isDyslexiaFont,
 	TEXT_SIZE_PREFERENCE,
 	type AppearancePreference,
@@ -105,14 +106,21 @@ function FontSettings() {
 			<PreferenceRow
 				preference={FONT_PREFERENCE}
 				label="Font"
-				description="The typeface for the whole app, including what you write. Match style uses Manrope in Kite classic and Geist otherwise. The dyslexia-friendly font (OpenDyslexic) is loaded only when chosen and gives what you read and write a little more room between letters, words and lines."
+				description="The typeface for the app and what you write. Match style uses Manrope in Kite classic and Geist otherwise. The dyslexia-friendly font (OpenDyslexic) is loaded only when chosen and gives what you read and write a little more room between letters, words and lines."
 			/>
 			{isDyslexiaFont(font) && (
-				<PreferenceRow
-					preference={EMAIL_FONT_PREFERENCE}
-					label="Font in HTML emails"
-					description="Plain-text emails already use the dyslexia-friendly font. HTML emails bring their own fonts; this replaces them with the dyslexia-friendly font as well."
-				/>
+				<>
+					<PreferenceRow
+						preference={FONT_SCOPE_PREFERENCE}
+						label="Use it for"
+						description="Text only sets emails, what you write, the message list's sender, subject and preview lines, summaries and assistant replies in the dyslexia-friendly font, and leaves menus, buttons, labels and headers as they are. Everywhere uses it for the whole app."
+					/>
+					<PreferenceRow
+						preference={EMAIL_FONT_PREFERENCE}
+						label="Font in HTML emails"
+						description="Plain-text emails already use the dyslexia-friendly font. HTML emails bring their own fonts; this replaces them with the dyslexia-friendly font as well."
+					/>
+				</>
 			)}
 		</>
 	);

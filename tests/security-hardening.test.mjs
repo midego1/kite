@@ -247,6 +247,24 @@ test("designed mail is rendered light and inverted in dark mode, with media inve
 	}
 	assert.doesNotMatch(frame.buildEmailFrameDocument('<td bgcolor="#fff">x</td>'), /html\{background:#fff\}/);
 });
+test("mail with only text colours is adapted in dark mode and has its original colours on a light canvas", () => {
+	for (const html of [
+		'<p style="color:#333333">Hi</p>',
+		'<span style="font-size:12px; color: rgb(34, 34, 34)">Hi</span>',
+	]) {
+		assert.equal(frame.hasOwnColours(html), true, html);
+		assert.equal(frame.hasOwnBackground(html), false, html);
+		assert.match(frame.buildEmailFrameDocument(html, { dark: true }), /color-scheme:dark/, html);
+		const original = frame.buildEmailFrameDocument(html, { dark: true, original: true });
+		assert.match(original, /color-scheme:light/, html);
+		assert.match(original, /html\{background:#fff\}/, html);
+		assert.equal(frame.emailFrameColorScheme(html, { dark: true, original: true }), "light", html);
+	}
+	for (const html of ["<p>Plain reply</p>", '<p style="border-color:#ccc;background-color:transparent">Hi</p>']) {
+		assert.equal(frame.hasOwnColours(html), false, html);
+		assert.equal(frame.emailFrameColorScheme(html, { dark: true, original: true }), "dark", html);
+	}
+});
 test("the iframe element declares the same color-scheme as the frame document", () => {
 	for (const [html, options] of [
 		["<p>Plain reply</p>", { dark: true }],

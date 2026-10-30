@@ -46,8 +46,18 @@ const INVERTED_STYLES = [
 	'img,video,picture,svg,iframe,[background],[style*="background-image"],[style*="background:url"],[style*="background: url"]{filter:invert(1) hue-rotate(180deg)}',
 ].join("");
 
+// The reader's sanitizer drops `bgcolor` and keeps only `background-color`, so plenty of designed mail arrives
+// without any background and only inline text colours (dark grey on white in the sender's eyes). Dark mode cannot
+// leave those colours alone either, so such mail counts as adapted too and offers the same way back.
+const OWN_TEXT_COLOUR = /(?:^|[^-\w])color\s*:\s*(?!\s*(?:inherit|initial|unset|currentcolor)\b)[^;"'}]/i;
+
 export function hasOwnBackground(html: string): boolean {
 	return OWN_BACKGROUND.test(html);
+}
+
+/** Mail that paints a background or sets text colours: what dark mode adapts and "Original colours" restores. */
+export function hasOwnColours(html: string): boolean {
+	return hasOwnBackground(html) || OWN_TEXT_COLOUR.test(html);
 }
 
 /**
@@ -55,7 +65,7 @@ export function hasOwnBackground(html: string): boolean {
  * when they differ, Chromium paints an opaque canvas (#121212 for dark) behind the mail.
  */
 export function emailFrameColorScheme(html: string, options: EmailFrameDocumentOptions = {}): "dark" | "light" {
-	return options.dark && !hasOwnBackground(html) ? "dark" : "light";
+	return options.dark && !hasOwnBackground(html) && !(options.original && hasOwnColours(html)) ? "dark" : "light";
 }
 
 export function buildEmailFrameDocument(html: string, options: EmailFrameDocumentOptions = {}): string {

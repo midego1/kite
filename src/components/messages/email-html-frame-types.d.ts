@@ -2,7 +2,7 @@ export type EmailFrameDocumentOptions = {
 	dark?: boolean;
 	/** Secondary text colour, for quoted history. */
 	muted?: boolean;
-	/** Keep designed mail in its own light colours instead of inverting it in dark mode. */
+	/** Keep the mail in its own light colours instead of adapting it to dark mode. */
 	original?: boolean;
 };
 

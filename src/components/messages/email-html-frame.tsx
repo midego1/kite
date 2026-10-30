@@ -8,6 +8,7 @@ import {
 	EMAIL_FRAME_SANDBOX,
 	emailFrameColorScheme,
 	hasOwnBackground,
+	hasOwnColours,
 } from "./email-html-frame-utils";
 import type { EmailHtmlFrameProps, RemoteImagesNoticeProps } from "./email-html-frame-types";
 
@@ -30,7 +31,9 @@ export function EmailHtmlFrame({ html, title = "Message body", muted, className 
 	const [height, setHeight] = useState(0);
 	const dark = useDarkTheme();
 	const [original, setOriginal] = useState(false);
-	const designed = dark && hasOwnBackground(html);
+	const adapted = dark && hasOwnColours(html);
+	// Mail with its own canvas (inverted, or shown in its original colours) gets rounded corners like a card.
+	const card = adapted && (original || hasOwnBackground(html));
 	const srcDoc = useMemo(() => buildEmailFrameDocument(html, { dark, muted, original }), [html, dark, muted, original]);
 
 	const pendingFrame = useRef(0);
@@ -80,7 +83,7 @@ export function EmailHtmlFrame({ html, title = "Message body", muted, className 
 
 	return (
 		<>
-			{designed && !muted && (
+			{adapted && !muted && (
 				<div className="mb-2 flex justify-end">
 					<button
 						type="button"
@@ -103,8 +106,8 @@ export function EmailHtmlFrame({ html, title = "Message body", muted, className 
 				sandbox={EMAIL_FRAME_SANDBOX}
 				referrerPolicy="no-referrer"
 				srcDoc={srcDoc}
-				style={{ height, colorScheme: emailFrameColorScheme(html, { dark }) }}
-				className={cn("block w-full border-0 bg-transparent", designed && "rounded-lg", className)}
+				style={{ height, colorScheme: emailFrameColorScheme(html, { dark, original }) }}
+				className={cn("block w-full border-0 bg-transparent", card && "rounded-lg", className)}
 			/>
 		</>
 	);

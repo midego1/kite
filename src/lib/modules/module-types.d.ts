@@ -273,6 +273,13 @@ export type CapabilityDescriptor = {
 		/** After an undo, core reopens the suggestion once no live action of this module remains on it. */
 		reopensSuggestion?: boolean;
 	};
+	/**
+	 * An assistant tool the user approves in chat before it runs (a tool whose effect is `update`, `delete` or
+	 * `send` always needs it). `preview` names a `service` capability of the same module that core calls with
+	 * `{ tool, input }` and that answers `{ items: { label, detail }[], version? }`: the lines the approval card
+	 * shows, and the state of the records they describe, which core checks again before running an approval.
+	 */
+	approval?: { preview: string };
 	event?: { value: string };
 	lifecycle?: { event: "user.created" | "user.time_zone_changed"; dataHook: boolean };
 	cron?: { task: string };

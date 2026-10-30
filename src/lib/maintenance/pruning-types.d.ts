@@ -7,6 +7,7 @@ export type PruningPolicy = {
 	expiredPasswordResetTokensDays: number;
 	agentActionsDays: number;
 	staleSummariesDays: number;
+	mcpToolCallAuditDays: number;
 };
 
 export type PruningResult = Record<string, number>;

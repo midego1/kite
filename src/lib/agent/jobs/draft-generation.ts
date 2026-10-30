@@ -1,29 +1,23 @@
-import { and, desc, eq } from "drizzle-orm";
 import { generateText, type JSONValue, type LanguageModel, type LanguageModelUsage } from "ai";
-import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { loadMessageBodies } from "@/lib/email/bodies";
 import type { DraftPreferences } from "../instruction-types";
 import { buildReplyDraftPrompt } from "./draft-prompt-utils";
+import { agentThreadRows } from "../thread-context";
 
 const DRAFT_THREAD_WINDOW = 20;
 const DEFAULT_MAX_OUTPUT_TOKENS = 900;
 
 type ThreadMessage = typeof messages.$inferSelect;
 
-/** The last twenty messages of the source's thread, oldest first (just the source when it has no thread). */
+/** The last twenty messages of the source's thread a reply may draw on, oldest first (just the source when it has no thread). */
 export async function loadDraftThread(
 	env: CloudflareEnv,
 	mailboxId: string,
 	source: ThreadMessage,
 ): Promise<ThreadMessage[]> {
-	if (!source.threadId) return loadMessageBodies(env, [source]);
-	const rows = await getDb(env)
-		.select()
-		.from(messages)
-		.where(and(eq(messages.mailboxId, mailboxId), eq(messages.threadId, source.threadId)))
-		.orderBy(desc(messages.createdAt))
-		.limit(DRAFT_THREAD_WINDOW);
+	// No drafts, spam, trash or Screener-held mail: only what a reply may answer (agentThreadRows).
+	const rows = await agentThreadRows(env, { mailboxId, anchor: source, viewerId: null, limit: DRAFT_THREAD_WINDOW });
 	// The guard checks the draft against links and facts in the HTML too, so the bodies are read whole.
 	return loadMessageBodies(env, rows.reverse());
 }

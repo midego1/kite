@@ -6,6 +6,7 @@ import { isValidTimeZone } from "@/lib/time/utils";
 import type { ModuleSchemas } from "../schema-utils";
 import {
 	actionSchemas,
+	approvalPreviewOutputSchema,
 	baseTriageStepSchemas,
 	instantSchema,
 	lifecycleSchemas,
@@ -70,6 +71,15 @@ const removeReminder: ModuleSchemas[string] = {
 	output: z.union([z.object({ removed: z.boolean() }), refused]),
 };
 
+/** The approval card lines for a proposed `update_events` or `delete_events` call. */
+const previewToolChange: ModuleSchemas[string] = {
+	input: z.object({
+		tool: z.enum(["update_events", "delete_events"]),
+		input: z.record(z.string(), z.unknown()),
+	}),
+	output: approvalPreviewOutputSchema,
+};
+
 export const calendarSchemas: ModuleSchemas = {
 	...Object.fromEntries(CALENDAR_TOOL_NAMES.map((name) => [name, { input: calendarToolSchemas[name] }])),
 	search: searchSchemas,
@@ -77,6 +87,7 @@ export const calendarSchemas: ModuleSchemas = {
 	invite: baseTriageStepSchemas,
 	calendar_invite: { input: calendarInviteSchema },
 	answerInvite,
+	previewToolChange,
 	createEvent: actionSchemas,
 	deleteEvent: actionSchemas,
 	sendRsvp: actionSchemas,

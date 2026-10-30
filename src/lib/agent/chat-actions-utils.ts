@@ -41,6 +41,23 @@ export const chatProposalSchema = z.discriminatedUnion("action", [
 	}),
 ]);
 
+/**
+ * A module assistant tool proposed in chat (`needsChatApproval`): the validated input runs through
+ * `invokeCapability` only once the user approves it, and `items` are the lines the module's preview gave.
+ */
+export const moduleProposalSchema = z.object({
+	action: z.string().min(1).max(80),
+	status: z.literal("pending_approval"),
+	moduleId: z.string().min(1).max(40),
+	effect: z.enum(["update", "delete", "send"]),
+	input: z.record(z.string(), z.unknown()),
+	items: z.array(z.object({ label: z.string(), detail: z.string().nullable() })).max(20),
+	/** The module preview's state of the records when proposed; the approval is refused once it changed. */
+	version: z.string().max(4_000).optional(),
+});
+
+export type ModuleProposal = z.infer<typeof moduleProposalSchema>;
+
 /** The tool call that performs an approved proposal, and the audit row that makes it undoable. */
 export function chatActionPlan(proposal: z.infer<typeof chatProposalSchema>): ChatActionPlan {
 	const tool = proposal.action;

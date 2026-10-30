@@ -715,7 +715,12 @@ test.describe("Money Watch across areas", () => {
 			expect((await subscriptionSearch(api, vendor))?.items.map((item) => item.ref.id)).toEqual([id]);
 			const key = await createMcpKey(member.api, "E2E finance shared", ["mcp:finance-read"], []);
 			made.keys.push({ api: member.api, id: key.id });
-			expect(await listTool(key.key, { status: "all" })).toEqual({ subscriptions: [], totals: [] });
+			// MCP results carry the untrusted-content marker (upstream Mailflare #225); nothing else may be in it.
+			expect(await listTool(key.key, { status: "all" })).toEqual({
+				contentTrust: "untrusted_third_party_content",
+				subscriptions: [],
+				totals: [],
+			});
 			const shown = (await activity({ api: member.api, mailboxId: sharedId })).find(
 				(item) => item.id === tracked.actionId,
 			);

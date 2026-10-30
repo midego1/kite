@@ -6,7 +6,8 @@ export function calendarSearchMatch(query: string): string | null {
 	return text ? buildFtsMatch({ text, needsFullText: true }) : null;
 }
 
-function startLabel(startsAt: Date, timeZone: string): string {
+/** "Mon, Apr 1, 9:00 AM": when the event starts in the viewer's zone (UTC for an unknown zone). */
+export function startLabel(startsAt: Date, timeZone: string): string {
 	const format = (zone: string) =>
 		new Intl.DateTimeFormat("en-US", {
 			weekday: "short",

@@ -23,6 +23,7 @@ import { ownMessage, publicMessage, requireAccess } from "./tool-messages";
 import { isOrganizeTool, runOrganizeTool } from "./organize-tools";
 import { FOLDER_COLOR_NAMES } from "./organize-tools-utils";
 import { currentThreadSummary } from "./summaries/service";
+import { agentThreadRows } from "./thread-context";
 
 const id = z.string().min(1).max(160);
 const body = z
@@ -286,20 +287,17 @@ export async function runEmailTool(
 	}
 	if (name === "get_thread") {
 		const anchor = await ownMessage(context, input.emailId as string);
-		const stored = anchor.threadId
-			? await db
-					.select()
-					.from(messages)
-					.where(and(eq(messages.mailboxId, context.mailboxId), eq(messages.threadId, anchor.threadId)))
-					.orderBy(desc(messages.createdAt))
-					.limit(21)
-			: [anchor];
+		const stored = await agentThreadRows(context.env, {
+			mailboxId: context.mailboxId,
+			anchor,
+			viewerId: context.user.id,
+			limit: 21,
+		});
 		const rows = await loadMessageBodies(context.env, stored, { textFirst: true });
 		return {
 			emails: rows
 				.slice(0, 20)
 				.reverse()
-				.filter((row) => row.status !== "draft" || row.userId === context.user.id)
 				.map((row) => ({
 					...publicMessage(row),
 					text: (row.textBody || htmlToReadableText(row.htmlBody)).slice(0, 5_000),

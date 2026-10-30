@@ -5,6 +5,13 @@ import { agentActions } from "@/db/schema/agent-auto-read";
 import type { SessionUser } from "@/lib/auth/types";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { findDescriptor } from "@/lib/modules/capability-registry";
+import { buildCallContext, needsChatApproval } from "@/lib/modules/capability-utils";
+import { invokeCapability } from "@/lib/modules/invoke";
+import type { JsonValue, ModuleId } from "@/lib/modules/module-types";
+import { MODULE_MANIFESTS } from "@/lib/modules/registry";
+import { listEnabledModules } from "@/lib/modules/state";
+import { normalizeTimeZone } from "@/lib/time/utils";
 import { UNDO_VARIANT_PREFIX, parseActionState } from "./auto-read/actions-utils";
 import { executeAction, undoAgentAction } from "./auto-read/execute";
 import type { ChatActionAudit, MessagePlace, UndoCounts } from "./chat-actions-types";
@@ -13,7 +20,9 @@ import {
 	chatActionPlan,
 	chatActionState,
 	chatProposalSchema,
+	moduleProposalSchema,
 	safeActionError,
+	type ModuleProposal,
 } from "./chat-actions-utils";
 import { runEmailTool } from "./tools";
 
@@ -135,13 +144,50 @@ async function applyProposal(
 	return { result, actionId: outcome.actionId, undoUntil: row?.undoUntil?.toISOString() ?? null };
 }
 
+const STALE_PROPOSAL = "This changed since it was proposed; ask the assistant again";
+
+/**
+ * Runs an approved module tool proposal through `invokeCapability` as the viewer, with the chat trigger, so
+ * module state, grants and input validation apply as they would have when the model called it. Only a tool
+ * that still needs approval is run this way: anything else was never proposed by Kite.
+ */
+async function applyModuleProposal(env: CloudflareEnv, user: SessionUser, proposal: ModuleProposal) {
+	const moduleId = proposal.moduleId as ModuleId;
+	const descriptor = findDescriptor(moduleId, proposal.action);
+	if (!descriptor?.surfaces.includes("assistant_tool") || !needsChatApproval(descriptor))
+		throw new Error("Action is unavailable or already approved");
+	const viewer = { userId: user.id, role: user.role, isPrimaryAdmin: user.isPrimaryAdmin };
+	const callContext = buildCallContext({
+		trigger: "chat",
+		viewer,
+		timeZone: normalizeTimeZone(user.timeZone),
+		enabled: await listEnabledModules(env, viewer),
+		manifests: MODULE_MANIFESTS,
+	});
+	if (descriptor.approval && proposal.version) {
+		// The records must still be as the card showed them (upstream Mailflare #225).
+		const preview = await invokeCapability(
+			moduleId,
+			descriptor.approval.preview,
+			{ tool: proposal.action, input: proposal.input as JsonValue },
+			callContext,
+		);
+		if (!preview.ok || (preview.output as { version?: string }).version !== proposal.version)
+			throw new Error(STALE_PROPOSAL);
+	}
+	const result = await invokeCapability(moduleId, proposal.action, proposal.input as JsonValue, callContext);
+	if (!result.ok) throw new Error(safeActionError(new Error(result.error.message)));
+	return { result: result.output };
+}
+
 export async function confirmAgentAction(env: CloudflareEnv, user: SessionUser, toolMessageId: string) {
 	const db = getDb(env);
 	const row = await loadToolMessage(env, user, toolMessageId);
 	const stored = parseContent(row.message.content);
 	const proposal = chatProposalSchema.safeParse(stored);
-	if (!proposal.success || row.message.toolName !== proposal.data.action)
-		throw new Error("Action is unavailable or already approved");
+	const moduleProposal = proposal.success ? null : moduleProposalSchema.safeParse(stored);
+	const action = proposal.success ? proposal.data.action : moduleProposal?.success ? moduleProposal.data.action : null;
+	if (!action || row.message.toolName !== action) throw new Error("Action is unavailable or already approved");
 	const claimed = await db
 		.update(agentChatMessages)
 		.set({ content: JSON.stringify({ ...stored, status: "processing" }) })
@@ -149,7 +195,9 @@ export async function confirmAgentAction(env: CloudflareEnv, user: SessionUser, 
 		.returning({ id: agentChatMessages.id });
 	if (!claimed.length) throw new Error("Action is already being processed");
 	try {
-		const applied = await applyProposal(env, user, row.conversation.mailboxId, chatActionPlan(proposal.data));
+		const applied = proposal.success
+			? await applyProposal(env, user, row.conversation.mailboxId, chatActionPlan(proposal.data))
+			: await applyModuleProposal(env, user, moduleProposal!.data!);
 		const updated = { ...stored, status: "approved", ...applied };
 		await db
 			.update(agentChatMessages)

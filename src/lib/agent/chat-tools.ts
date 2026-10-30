@@ -1,9 +1,15 @@
 import { jsonSchema, type ToolSet } from "ai";
 import { listCommands } from "@/components/shortcuts/command-palette-utils";
 import { MODULE_CAPABILITIES, listCapabilities } from "@/lib/modules/capability-registry";
-import { buildCallContext, selectPromptFragments } from "@/lib/modules/capability-utils";
-import { invokeCapability } from "@/lib/modules/invoke";
-import type { JsonSchemaObject, JsonValue } from "@/lib/modules/module-types";
+import { buildCallContext, needsChatApproval, selectPromptFragments } from "@/lib/modules/capability-utils";
+import { capabilityInputSchema, invokeCapability } from "@/lib/modules/invoke";
+import type {
+	CapabilityCallContext,
+	CapabilityDescriptor,
+	JsonSchemaObject,
+	JsonValue,
+	ModuleId,
+} from "@/lib/modules/module-types";
 import { MODULE_MANIFESTS } from "@/lib/modules/registry";
 import { listEnabledModules } from "@/lib/modules/state";
 import { resolveRecordRefs } from "@/lib/modules/record-refs";
@@ -20,6 +26,7 @@ import {
 import { EMAIL_TOOL_NAMES, emailToolDescriptions, emailToolSchemas, runEmailTool } from "./tools";
 import { agentToday } from "./time";
 import type { AgentToolContext } from "./types";
+import type { ModuleProposal } from "./chat-actions-utils";
 
 type ToolSchema = Parameters<typeof jsonSchema>[0];
 
@@ -27,6 +34,42 @@ type ToolSchema = Parameters<typeof jsonSchema>[0];
 function toolSchema(schema: JsonSchemaObject): ToolSchema {
 	const { $schema: _draft, ...rest } = schema;
 	return rest as ToolSchema;
+}
+
+/**
+ * A module tool call the user must approve first: the input is validated now and the module's preview names
+ * what would change, but nothing runs until `confirmAgentAction` (upstream Mailflare #225).
+ */
+async function proposeModuleTool(
+	moduleId: ModuleId,
+	descriptor: CapabilityDescriptor,
+	input: unknown,
+	callContext: CapabilityCallContext,
+): Promise<ModuleProposal> {
+	const parsed = capabilityInputSchema(moduleId, descriptor.name)?.safeParse(input);
+	if (!parsed?.success) throw new Error("Invalid input for this tool");
+	const value = parsed.data as Record<string, unknown>;
+	let items: ModuleProposal["items"] = [];
+	let version: string | undefined;
+	if (descriptor.approval) {
+		const preview = await invokeCapability(
+			moduleId,
+			descriptor.approval.preview,
+			{ tool: descriptor.name, input: value as JsonValue },
+			callContext,
+		);
+		if (!preview.ok) throw new Error(preview.error.message);
+		({ items, version } = preview.output as Pick<ModuleProposal, "items" | "version">);
+	}
+	return {
+		action: descriptor.name,
+		status: "pending_approval",
+		moduleId,
+		effect: descriptor.effect === "delete" || descriptor.effect === "send" ? descriptor.effect : "update",
+		input: value,
+		items,
+		...(version ? { version } : {}),
+	};
 }
 
 /**
@@ -69,6 +112,7 @@ export async function buildChatTools(context: AgentToolContext) {
 			description: descriptor.description,
 			inputSchema: jsonSchema(toolSchema(descriptor.inputSchema)),
 			execute: async (input: unknown) => {
+				if (needsChatApproval(descriptor)) return proposeModuleTool(moduleId, descriptor, input, callContext);
 				const result = await invokeCapability(moduleId, descriptor.name, input as JsonValue, callContext);
 				if (!result.ok) throw new Error(result.error.message);
 				return result.output;

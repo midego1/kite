@@ -42,10 +42,11 @@ test("the Settings menu groups pages by Account, Mail, Integrations and Data", a
 	await expect(groups.nth(2)).toHaveAttribute("aria-label", "Integrations");
 	await expect(groups.nth(3)).toHaveAttribute("aria-label", "Data");
 	await expect(menu.getByRole("navigation", { name: "Data" }).getByRole("link")).toHaveText(["Import", "Export"]);
-	// The page panel's trail names the group the page sits in.
 	await page.getByRole("link", { name: "Composing" }).click();
 	await expect(page).toHaveURL(/\/settings\/composing$/);
 	await expect(page.getByRole("heading", { level: 1, name: "Composing" })).toBeVisible();
+	// The page panel's trail (decorative, hidden from assistive technology) names the group the page sits in.
+	await expect(page.locator('p[aria-hidden="true"]', { hasText: "Composing" })).toHaveText(/Settings.*Mail.*Composing/);
 	await expect(page.getByRole("switch", { name: "Preview before sending" })).toBeVisible();
 	await expect(page.getByLabel(/^Signature for /)).toBeVisible();
 	await expect(page.getByRole("switch", { name: /^Enable auto-reply for / })).toBeVisible();

@@ -23,7 +23,7 @@ import {
 	type AppearancePreference,
 } from "@/components/appearance-preferences";
 import { useAppearancePreference } from "@/components/use-appearance-preference";
-import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
+import { SettingRow, SettingRows, SettingsCard, SettingsCardSection } from "@/components/ui/page";
 
 const OPTIONS: { value: ThemePreference; label: string }[] = [
 	{ value: "system", label: "Match system" },
@@ -56,36 +56,44 @@ const STYLE_OPTIONS: { value: StylePreference; label: string }[] = [
 
 export function AppearanceSettings() {
 	return (
-		<div className="space-y-3">
-			<ThemeSetting />
-			<StyleSetting />
-			<PreferenceRow
-				preference={FONT_PREFERENCE}
-				label="Font"
-				description="The typeface for the whole app. Match style uses Manrope in Kite classic and Geist otherwise."
-			/>
-			<PreferenceRow
-				preference={TEXT_SIZE_PREFERENCE}
-				label="Text size"
-				description="Scales text and spacing across the app."
-			/>
-			<PreferenceRow
-				preference={ASSISTANT_LAYOUT_PREFERENCE}
-				label="Assistant"
-				description="Open the assistant as a resizable side panel, or as a floating chat window like a new message."
-			/>
-			<AssistantOutputSettings />
-			<PreferenceRow
-				preference={LIST_SUMMARIES_PREFERENCE}
-				label="Show AI summaries instead of previews"
-				description="In mailboxes that write one-line summaries of new mail, the message list shows them in place of the first words of the email."
-			/>
-			<p className="rounded-xl border border-neutral-200 p-4 text-sm text-neutral-700">
-				<span className="block font-semibold text-neutral-900">Preview: A fresh direction for Kite</span>
-				The updated brand files are ready. We kept things light, clear, and connected.
-				<span className="mt-1 block font-script text-2xl text-blue-600">that actually flows.</span>
-			</p>
-		</div>
+		<SettingsCard>
+			<SettingsCardSection title="Look">
+				<SettingRows>
+					<ThemeSetting />
+					<StyleSetting />
+					<PreferenceRow
+						preference={FONT_PREFERENCE}
+						label="Font"
+						description="The typeface for the whole app. Match style uses Manrope in Kite classic and Geist otherwise."
+					/>
+					<PreferenceRow
+						preference={TEXT_SIZE_PREFERENCE}
+						label="Text size"
+						description="Scales text and spacing across the app."
+					/>
+					<p className="rounded-lg border border-neutral-200 px-4 py-3 text-sm text-neutral-700">
+						<span className="block font-semibold text-neutral-900">Preview: A fresh direction for Kite</span>
+						The updated brand files are ready. We kept things light, clear, and connected.
+						<span className="mt-1 block font-script text-2xl text-blue-600">that actually flows.</span>
+					</p>
+				</SettingRows>
+			</SettingsCardSection>
+			<SettingsCardSection title="Assistant" description="Where the assistant opens and how much of its work it shows.">
+				<SettingRows>
+					<PreferenceRow
+						preference={ASSISTANT_LAYOUT_PREFERENCE}
+						label="Assistant window"
+						description="Open the assistant as a resizable side panel, or as a floating chat window like a new message."
+					/>
+					<AssistantOutputSettings />
+					<PreferenceRow
+						preference={LIST_SUMMARIES_PREFERENCE}
+						label="Show AI summaries instead of previews"
+						description="In mailboxes that write one-line summaries of new mail, the message list shows them in place of the first words of the email."
+					/>
+				</SettingRows>
+			</SettingsCardSection>
+		</SettingsCard>
 	);
 }
 
@@ -129,68 +137,63 @@ function PreferenceRow<T extends string>({
 	compact?: boolean;
 }) {
 	const [value, save] = useAppearancePreference(preference);
-	return (
-		<label
-			className={
-				compact
-					? "flex flex-wrap items-center justify-between gap-2 py-1"
-					: "flex items-start gap-3 rounded-lg bg-neutral-50 p-4"
-			}
+	const select = (
+		<Select
+			value={value}
+			aria-label={label}
+			className="py-1.5 text-sm text-neutral-900"
+			onChange={(event) => {
+				const next = preference.options.find((option) => option.value === event.target.value);
+				if (next) save(next.value);
+			}}
 		>
-			<span className="flex-1">
-				<span className="block text-sm font-medium text-neutral-900">{label}</span>
-				<span className={compact ? "sr-only" : "mt-1 block text-sm text-neutral-500"}>
-					{description} Saved in this browser.
-				</span>
-			</span>
-			<Select
-				value={value}
-				aria-label={label}
-				className="py-1.5 text-sm text-neutral-900"
-				onChange={(event) => {
-					const next = preference.options.find((option) => option.value === event.target.value);
-					if (next) save(next.value);
-				}}
-			>
-				{preference.options.map((option) => (
-					<option key={option.value} value={option.value}>
-						{option.label}
-					</option>
-				))}
-			</Select>
-		</label>
+			{preference.options.map((option) => (
+				<option key={option.value} value={option.value}>
+					{option.label}
+				</option>
+			))}
+		</Select>
 	);
+	if (compact) {
+		return (
+			<label className="flex flex-wrap items-center justify-between gap-2 py-1">
+				<span className="flex-1">
+					<span className="block text-sm font-medium text-neutral-900">{label}</span>
+					<span className="sr-only">{description} Saved in this browser.</span>
+				</span>
+				{select}
+			</label>
+		);
+	}
+	return <SettingRow label={label} description={description} control={select} />;
 }
 
 function StyleSetting() {
 	const [style, saveStylePreference] = useStylePreference();
 
 	return (
-		<label className={SETTING_ROW_CLASS}>
-			<span className="flex-1">
-				<span className="block text-sm font-medium text-neutral-900">Style</span>
-				<span className="mt-1 block text-sm text-neutral-500">
-					Kite is neutral grey with one blue accent. Kite classic uses indigo and lavender with script accents. Classic
-					uses the original blue. Saved in this browser.
-				</span>
-			</span>
-			<Select
-				value={style}
-				aria-label="Style"
-				className="py-1.5 text-sm text-neutral-900"
-				onChange={(event) => {
-					const next = event.target.value;
-					if (!isStylePreference(next)) return;
-					saveStylePreference(next);
-				}}
-			>
-				{STYLE_OPTIONS.map((option) => (
-					<option key={option.value} value={option.value}>
-						{option.label}
-					</option>
-				))}
-			</Select>
-		</label>
+		<SettingRow
+			label="Style"
+			description="Kite is neutral grey with one blue accent. Kite classic uses indigo and lavender with script accents. Classic uses the original blue."
+			control={
+				<Select
+					value={style}
+					aria-label="Style"
+					className="py-1.5 text-sm text-neutral-900"
+					onChange={(event) => {
+						const next = event.target.value;
+						if (!isStylePreference(next)) return;
+						saveStylePreference(next);
+					}}
+				>
+					{STYLE_OPTIONS.map((option) => (
+						<option key={option.value} value={option.value}>
+							{option.label}
+						</option>
+					))}
+				</Select>
+			}
+		/>
 	);
 }
 
@@ -198,29 +201,27 @@ function ThemeSetting() {
 	const preference = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, () => DEFAULT_THEME);
 
 	return (
-		<label className={SETTING_ROW_CLASS}>
-			<span className="flex-1">
-				<span className="block text-sm font-medium text-neutral-900">Theme</span>
-				<span className="mt-1 block text-sm text-neutral-500">
-					Use a light or dark interface, or follow your system setting. Saved in this browser.
-				</span>
-			</span>
-			<Select
-				value={preference}
-				aria-label="Theme"
-				className="py-1.5 text-sm text-neutral-900"
-				onChange={(event) => {
-					const next = event.target.value;
-					if (!isThemePreference(next)) return;
-					saveThemePreference(next);
-				}}
-			>
-				{OPTIONS.map((option) => (
-					<option key={option.value} value={option.value}>
-						{option.label}
-					</option>
-				))}
-			</Select>
-		</label>
+		<SettingRow
+			label="Theme"
+			description="Use a light or dark interface, or follow your system setting."
+			control={
+				<Select
+					value={preference}
+					aria-label="Theme"
+					className="py-1.5 text-sm text-neutral-900"
+					onChange={(event) => {
+						const next = event.target.value;
+						if (!isThemePreference(next)) return;
+						saveThemePreference(next);
+					}}
+				>
+					{OPTIONS.map((option) => (
+						<option key={option.value} value={option.value}>
+							{option.label}
+						</option>
+					))}
+				</Select>
+			}
+		/>
 	);
 }

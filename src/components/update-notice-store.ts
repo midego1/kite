@@ -3,17 +3,12 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { UpdateNoticeState } from "./update-available-types";
 
-/** The server's version that is waiting, kept apart from the flags so the snapshot stays small. */
-interface UpdateNoticeSnapshot extends UpdateNoticeState {
-	version: string;
-}
-
-const INITIAL: UpdateNoticeSnapshot = { available: false, dismissed: false, lists: 0, version: "" };
+const INITIAL: UpdateNoticeState = { available: false, dismissed: false, lists: 0 };
 
 let snapshot = INITIAL;
 const listeners = new Set<() => void>();
 
-function update(next: Partial<UpdateNoticeSnapshot>) {
+function update(next: Partial<UpdateNoticeState>) {
 	snapshot = { ...snapshot, ...next };
 	for (const listener of listeners) listener();
 }
@@ -26,7 +21,7 @@ function subscribe(listener: () => void) {
 }
 
 /** Shared by the host (which checks versions), the pinned list row and the toast fallback. */
-export function useUpdateNotice(): UpdateNoticeSnapshot {
+export function useUpdateNotice(): UpdateNoticeState {
 	return useSyncExternalStore(
 		subscribe,
 		() => snapshot,
@@ -34,8 +29,8 @@ export function useUpdateNotice(): UpdateNoticeSnapshot {
 	);
 }
 
-export function announceUpdate(version: string) {
-	update({ available: true, dismissed: false, version });
+export function announceUpdate() {
+	update({ available: true, dismissed: false });
 }
 
 export function dismissUpdateNotice() {

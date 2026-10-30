@@ -445,7 +445,7 @@ export function MessageFolderPage({
 					aria-label={config.title}
 					className={compact || isMobile ? "flex flex-col gap-0.5 py-1.5" : "divide-y divide-neutral-100"}
 				>
-					<UpdateNoticeRow compact={compact || isMobile} density={density} />
+					<UpdateNoticeRow compact={(compact || isMobile) && config.folder !== "drafts"} density={density} />
 					{sections.map((section) => [
 						section.label && (
 							// Decorative: the rows carry everything, and a list may only hold list items.

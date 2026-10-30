@@ -8,6 +8,7 @@ import { useSessionUserId } from "@/hooks/use-session-user-id";
 import { STALE_ASSETS_EVENT, markAppReady, takeStaleAssetsSignal } from "./asset-recovery-utils";
 import {
 	UPDATE_CHECK_INTERVAL_MS,
+	UPDATE_ROW_ANNOUNCEMENT,
 	UPDATE_TOAST_ID,
 	UPDATE_TOAST_MESSAGE,
 	chooseUpdateSurface,
@@ -86,7 +87,7 @@ export function UpdateAvailableHost() {
 				knownVersion.current = decision.known;
 				if (decision.changed && active && !shown.current) {
 					shown.current = true;
-					announceUpdate(latest);
+					announceUpdate();
 				}
 			} catch {
 				// Offline or mid-deploy: the next check tries again.
@@ -119,5 +120,10 @@ export function UpdateAvailableHost() {
 		};
 	}, [userId]);
 
-	return null;
+	// The row has no live region of its own: this one is empty until the row appears, so it is read out once.
+	return (
+		<span role="status" className="sr-only">
+			{surface === "row" ? UPDATE_ROW_ANNOUNCEMENT : ""}
+		</span>
+	);
 }

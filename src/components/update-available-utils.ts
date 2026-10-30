@@ -5,7 +5,9 @@ export const UPDATE_CHECK_INTERVAL_MS = 5 * 60_000;
 const UPDATE_CHECK_MIN_GAP_MS = 60_000;
 export const UPDATE_TOAST_ID = "kite-update-available";
 export const UPDATE_ROW_SUBJECT = "Kite was updated";
-const UPDATE_ROW_PREVIEW = "Reload to get the latest version";
+export const UPDATE_ROW_PREVIEW = "Reload to get the latest version";
+/** Read out once by the host when the notice is the list row, which has no live region of its own. */
+export const UPDATE_ROW_ANNOUNCEMENT = "A new version of Kite is available.";
 export const UPDATE_TOAST_MESSAGE = "Kite was updated. Reload to get the latest version.";
 
 /** Reads `{ version }`; anything else is an unknown version. */
@@ -29,20 +31,6 @@ export function compareDeploymentVersion(known: string, latest: string): UpdateD
 	if (!latest) return { known, changed: false };
 	if (!known) return { known: latest, changed: false };
 	return { known, changed: latest !== known };
-}
-
-/** The part of a deployment version worth showing: a Workers version id is a UUID, so its first block identifies it. */
-function shortDeploymentVersion(version: string): string {
-	const trimmed = version.trim();
-	if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(trimmed)) return trimmed.slice(0, 8);
-	const first = trimmed.split(/\s+/)[0] ?? "";
-	return first.length > 16 ? first.slice(0, 16) : first;
-}
-
-/** The pinned row's second line: what to do, then which version is waiting. */
-export function updateRowPreview(version: string): string {
-	const short = shortDeploymentVersion(version);
-	return short ? `${UPDATE_ROW_PREVIEW} · ${short}` : UPDATE_ROW_PREVIEW;
 }
 
 /**

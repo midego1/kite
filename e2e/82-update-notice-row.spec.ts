@@ -66,7 +66,7 @@ test("the notice is the first row of the list, not a message", async ({ page }) 
 	await expect(notice).toBeVisible();
 	await expect(notice).toContainText("Kite");
 	await expect(notice).toContainText("Kite was updated");
-	await expect(notice).toContainText("Reload to get the latest version · 9d8e7f60");
+	await expect(notice).toContainText("Reload to get the latest version");
 	await expect(notice.getByRole("button", { name: "Reload" })).toBeVisible();
 	await expect(notice.getByRole("button", { name: "Dismiss" })).toBeAttached();
 	// The list has a toast-free page and the notice sits above every message.
@@ -88,13 +88,47 @@ test("it is skipped by selection and the j/k keys", async ({ page }) => {
 	await expect(rows.first()).toBeVisible();
 	const messageRows = await rows.count();
 	expect(messageRows).toBeGreaterThan(0);
+	// From the top, j lands on the first message, not on the notice.
+	const firstId = await rows.first().getAttribute("data-message-row");
 	await page.keyboard.press("j");
-	await expect(page.locator("[data-message-row]:focus, [data-message-row] :focus").first()).toBeAttached();
+	await expect(page.locator("[data-message-row]:focus-within")).toHaveAttribute("data-message-row", firstId!);
 	await page.keyboard.press("k");
 	await page.keyboard.press("k");
 	// k at the top stays on a message and never lands on the notice.
 	expect(await page.evaluate(() => !!document.activeElement?.closest("[data-update-notice]"))).toBe(false);
 	await expect(rows).toHaveCount(messageRows);
+});
+
+test("clicking the row itself does not reload, only Reload does", async ({ page }) => {
+	await announceNewVersion(page, "/inbox");
+	await page.evaluate(() => {
+		(window as unknown as { __beforeReload?: boolean }).__beforeReload = true;
+	});
+	await row(page).getByText("Kite was updated", { exact: true }).click();
+	await page.waitForTimeout(500);
+	expect(await page.evaluate(() => (window as unknown as { __beforeReload?: boolean }).__beforeReload)).toBe(true);
+	await expect(row(page)).toBeVisible();
+});
+
+test("one live region announces the notice once, and the row has none of its own", async ({ page }) => {
+	await announceNewVersion(page, "/inbox");
+	await expect(row(page)).toBeVisible();
+	await expect(row(page).getByRole("status")).toHaveCount(0);
+	const live = page.getByRole("status").filter({ hasText: "A new version of Kite is available." });
+	await expect(live).toHaveCount(1);
+	await row(page).getByRole("button", { name: "Dismiss" }).click();
+	await expect(live).toHaveCount(0);
+});
+
+test("Drafts keep their wide rows, so the notice is wide there even on a phone", async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 800 });
+	await announceNewVersion(page, "/drafts");
+	const notice = row(page);
+	await expect(notice).toBeVisible();
+	const subject = await notice.getByText("Kite was updated", { exact: true }).boundingBox();
+	const preview = await notice.getByText(/Reload to get the latest version/).boundingBox();
+	// Wide rows hold subject and preview on one line.
+	expect(Math.abs(subject!.y - preview!.y)).toBeLessThan(6);
 });
 
 test("Reload reloads the page", async ({ page }) => {

@@ -25,12 +25,13 @@ const UPDATE_CHECK_MIN_GAP_MS = 60_000;
 const {
 	UPDATE_CHECK_INTERVAL_MS,
 	UPDATE_TOAST_MESSAGE,
+	UPDATE_ROW_ANNOUNCEMENT,
+	UPDATE_ROW_PREVIEW,
 	UPDATE_ROW_SUBJECT,
 	chooseUpdateSurface,
 	compareDeploymentVersion,
 	parseDeploymentVersion,
 	shouldCheckForUpdate,
-	updateRowPreview,
 } = await import(pathToFileURL(join(bundleDirectory, "update.mjs")).href);
 
 test("checks every five minutes and at most once a minute on focus", () => {
@@ -93,13 +94,9 @@ test("a dismissed notice shows nowhere, whatever the page", () => {
 	assert.equal(chooseUpdateSurface({ available: true, dismissed: true, lists: 1 }), "none");
 });
 
-test("the row names the version that is waiting, shortened to something readable", () => {
-	const preview = "Reload to get the latest version";
+test("the row's text is fixed and names no deployment id", () => {
 	assert.equal(UPDATE_ROW_SUBJECT, "Kite was updated");
-	assert.equal(updateRowPreview("3f2a9c1e-7b4d-4e6a-9c1d-0123456789ab"), `${preview} · 3f2a9c1e`);
-	assert.equal(updateRowPreview("deploy-2"), `${preview} · deploy-2`);
-	assert.equal(updateRowPreview("  deploy-2  "), `${preview} · deploy-2`);
-	assert.equal(updateRowPreview("2026.10.30 2026-10-30T10:00:00Z"), `${preview} · 2026.10.30`);
-	assert.equal(updateRowPreview("a-very-long-build-identifier-without-spaces"), `${preview} · a-very-long-buil`);
-	assert.equal(updateRowPreview(""), preview);
+	assert.equal(UPDATE_ROW_PREVIEW, "Reload to get the latest version");
+	// The live region says something else than the toast, so the two never read as one message twice.
+	assert.notEqual(UPDATE_ROW_ANNOUNCEMENT, UPDATE_TOAST_MESSAGE);
 });

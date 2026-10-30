@@ -7,7 +7,7 @@ name: Boat A/B
 on:
   push:
     branches: [ci/boat-ab]
-  workflow_dispatch:   # only usable once this file exists on main; until then use `gh run rerun`
+  workflow_dispatch: # only usable once this file exists on main; until then use `gh run rerun`
 
 concurrency:
   group: boat-ab-${{ github.ref }}

@@ -6,11 +6,8 @@ import { addDomainSchema } from "@/lib/validators";
 import { addDomainAsRequested, listUserDomains } from "@/lib/domains/service";
 import { getDomainDnsView, summariseDomainDns } from "@/lib/domains/dns-view";
 import { getDomainProvisioningError } from "@/lib/domains/errors";
+import { domainOwnerId as ownerId } from "@/lib/domains/owner-utils";
 import type { DnsStatusSummary } from "@/lib/dns-status";
-
-function ownerId(user: { id: string; canManageMailboxes: boolean; createdByUserId: string | null }) {
-	return user.canManageMailboxes && user.createdByUserId ? user.createdByUserId : user.id;
-}
 
 export async function GET(request: Request) {
 	const env = getEnv();

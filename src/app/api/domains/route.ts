@@ -8,13 +8,13 @@ import type { DnsStatusSummary } from "@/lib/dns-status";
 import { summariseDomainDns } from "@/lib/domains/dns-view";
 import { getDomainProvisioningError } from "@/lib/domains/errors";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
+import { domainOwnerId } from "@/lib/domains/owner-utils";
 
 export async function GET(request: NextRequest) {
 	const env = getEnv();
 	const { user, error } = await requireSessionUser(env, request);
 	if (error) return error;
-	const domainOwnerId = user.canManageMailboxes && user.createdByUserId ? user.createdByUserId : user.id;
-	const domains = await listUserDomains(env, domainOwnerId);
+	const domains = await listUserDomains(env, domainOwnerId(user));
 
 	const includeDns = request.nextUrl.searchParams.get("includeDns") === "true";
 

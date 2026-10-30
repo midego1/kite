@@ -153,6 +153,8 @@ test("the overview counts endpoint answers each admin only what they may read, a
 	const { context, page } = await signInFresh(browser, admin.email);
 	const theirs = (await (await page.request.get("/api/admin/overview")).json()) as typeof counts;
 	expect(theirs.accounts.total).toBe(counts.accounts.total + 1);
+	// Mailboxes are counted as /api/mailboxes lists them: a new admin has their own personal inbox and nothing shared.
+	expect(theirs.mailboxes).toEqual({ total: 1, shared: 0 });
 	expect(theirs.domains).toBeNull();
 	expect(theirs.webhooks).toBeNull();
 	expect(theirs.aiErrors).toBeNull();

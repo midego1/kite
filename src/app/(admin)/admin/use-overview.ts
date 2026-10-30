@@ -8,7 +8,7 @@ import { authFetch } from "@/lib/auth/client";
 import type { AdminOverviewCounts } from "@/lib/admin/overview-types";
 import type { OverviewData } from "./overview-types";
 
-export const OVERVIEW_COUNTS_QUERY = ["admin-overview-counts"] as const;
+const OVERVIEW_COUNTS_QUERY = ["admin-overview-counts"] as const;
 
 async function fetchOverviewCounts(): Promise<AdminOverviewCounts> {
 	const response = await authFetch("/api/admin/overview", { cache: "no-store" });

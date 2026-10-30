@@ -27,6 +27,8 @@ function Anchor({ id, children }: { id: string; children: React.ReactNode }) {
 export default function AdminOverviewPage() {
 	const user = useCurrentUser();
 	const primary = user?.isPrimaryAdmin === true;
+	// Accounts and mailboxes for every admin, domains with the grant, the database for the primary admin.
+	const expectedTiles = 2 + (primary || user?.canManageDomains ? 1 : 0) + (primary ? 1 : 0);
 	const { data, loading } = useOverview(primary, user?.role === "admin");
 	const stats = overviewStats(data);
 
@@ -38,7 +40,7 @@ export default function AdminOverviewPage() {
 			<section aria-label="At a glance">
 				{loading ? (
 					<StatGrid>
-						{Array.from({ length: primary ? 4 : 3 }, (_, index) => (
+						{Array.from({ length: expectedTiles }, (_, index) => (
 							<Skeleton key={index} className="h-24 rounded-xl" />
 						))}
 					</StatGrid>

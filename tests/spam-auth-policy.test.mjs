@@ -10,6 +10,7 @@ import { bundleModules, root } from "./support/modules-bundle.mjs";
 const {
 	analyzeSpam,
 	planAuthPolicy,
+	fromMayBeForged,
 	publishedDmarcPolicy,
 	parseDmarcRecord,
 	dmarcRecordNames,
@@ -23,7 +24,10 @@ const {
 	applyMigrations,
 } = await bundleModules("kite-spam-auth-policy-", [
 	["analyzeSpam", "src/lib/spam/engine.ts"],
-	["planAuthPolicy, publishedDmarcPolicy, parseDmarcRecord, dmarcRecordNames", "src/lib/spam/dmarc-policy-utils.ts"],
+	[
+		"planAuthPolicy, fromMayBeForged, publishedDmarcPolicy, parseDmarcRecord, dmarcRecordNames",
+		"src/lib/spam/dmarc-policy-utils.ts",
+	],
 	["dmarcPolicySource, readStrictDmarc, saveStrictDmarc", "src/lib/spam/dmarc-policy.ts"],
 	["trustedCloudflareAuthenticationResults, sesAuthenticationResults", "src/lib/spam/authentication-results-utils.ts"],
 	["createDb", "src/db/index.ts"],
@@ -129,11 +133,16 @@ test("policy matrix: published policy × known contact or stranger", async (t) =
 
 test("the policy comes from the trusted header first, then DNS, and fails safe to unknown", async (t) => {
 	const { db } = await setup(t);
-	// Google's comment form names the policy without policy.dmarc.
-	const google = "mx.cloudflare.net; dmarc=fail (p=QUARANTINE sp=NONE dis=QUARANTINE) header.from=bank.test";
+	// The DMARCbis property counts like policy.dmarc.
+	const bis = "mx.cloudflare.net; dmarc=fail header.from=bank.test policy.published-domain-policy=quarantine";
 	const fromHeader = source({ published: "none" });
-	assert.equal((await analyze(db, { trusted: google, dmarcPolicy: fromHeader })).verdict, "spam");
+	assert.equal((await analyze(db, { trusted: bis, dmarcPolicy: fromHeader })).verdict, "spam");
 	assert.deepEqual(fromHeader.calls, { strict: 0, published: [] }, "a policy in the header needs no lookup");
+	// A comment is not read (it holds the raw record, not the policy for a subdomain): DNS answers instead.
+	const comment = "mx.google.com; dmarc=fail (p=REJECT sp=NONE dis=NONE) header.from=mail.bank.test";
+	const viaComment = source({ published: "none" });
+	assert.equal((await analyze(db, { trusted: comment, dmarcPolicy: viaComment })).verdict, "inbox");
+	assert.deepEqual(viaComment.calls.published, ["bank.test"]);
 
 	const dns = source({ published: "reject" });
 	const viaDns = await analyze(db, { trusted: dmarcFail(null), dmarcPolicy: dns });
@@ -191,7 +200,7 @@ test("SPF and DKIM failing without a DMARC result count as p=quarantine", async 
 	assert.ok(!ids(spfOnly.signals).includes("previously_sent"));
 });
 
-test("a known contact keeps the trust bonus only when nothing failed", async (t) => {
+test("a known contact keeps the trust bonus unless the From may be forged", async (t) => {
 	const { db } = await setup(t);
 	const passed = await analyze(db, { trusted: FORGED_PASS, dmarcPolicy: source() });
 	assert.ok(ids(passed.signals).includes("previously_sent"));
@@ -199,6 +208,75 @@ test("a known contact keeps the trust bonus only when nothing failed", async (t)
 	assert.ok(ids(unknown.signals).includes("previously_sent"));
 	const saved = await analyze(db, { from: "Saved <saved@bank.test>", trusted: null });
 	assert.ok(ids(saved.signals).includes("manual_contact"));
+	// Forwarded: SPF fails at the forwarder, the aligned DKIM signature carries DMARC. The bonus stays.
+	const forwarded =
+		"mx.cloudflare.net; spf=fail smtp.mailfrom=list@forwarder.test; dkim=pass header.d=bank.test; dmarc=pass header.from=bank.test";
+	for (const from of ["Colleague <colleague@bank.test>", "Saved <saved@bank.test>"]) {
+		const result = await analyze(db, { from, trusted: forwarded, dmarcPolicy: source() });
+		const signalIds = ids(result.signals);
+		assert.ok(signalIds.includes("spf_failed"), from);
+		assert.ok(signalIds.includes("previously_sent") || signalIds.includes("manual_contact"), from);
+		assert.equal(result.verdict, "inbox", from);
+	}
+});
+
+test("the threat-lookup gate follows the same rule: a known contact's forwarded mail stays local", async (t) => {
+	const { db } = await setup(t);
+	const checks = [];
+	const intelligenceProvider = {
+		check: async (input) => {
+			checks.push(input.senderDomain);
+			return [];
+		},
+	};
+	const run = (trusted) =>
+		analyzeSpam(db, {
+			mailboxId: "mailbox-a",
+			userId: "owner",
+			envelopeFrom: "bounce@bank.test",
+			authenticationResults: trusted,
+			message: message("Colleague <colleague@bank.test>"),
+			intelligenceProvider,
+		});
+	await run(
+		"mx.cloudflare.net; spf=fail smtp.mailfrom=list@forwarder.test; dkim=pass header.d=bank.test; dmarc=pass header.from=bank.test",
+	);
+	await run(FORGED_PASS);
+	assert.deepEqual(checks, [], "known contact, DMARC passed: nothing is looked up");
+	await run(dmarcFail("none"));
+	await run("mx.cloudflare.net; spf=fail smtp.mailfrom=bounce@bank.test");
+	assert.deepEqual(checks, ["bank.test", "bank.test"], "a From that may be forged is looked up");
+});
+
+test("auth_policy is always kept with the exact lift, so a spam verdict carries its reason", async (t) => {
+	const { db } = await setup(t);
+	const withExtra = (score) => ({
+		check: async () => [{ id: "test_signal", score, reason: "Test signal" }],
+	});
+	const run = (score) =>
+		analyzeSpam(db, {
+			mailboxId: "mailbox-a",
+			userId: "owner",
+			envelopeFrom: "bounce@bank.test",
+			authenticationResults: dmarcFail("reject"),
+			message: message("Someone <someone@bank.test>"),
+			intelligenceProvider: withExtra(score),
+		});
+	// Already over the threshold: the signal stays, with nothing to add.
+	const high = await run(60);
+	assert.equal(high.verdict, "spam");
+	const kept = high.signals.find((signal) => signal.id === "auth_policy");
+	assert.equal(kept.score, 0);
+	assert.equal(kept.metadata.cause, "dmarc_reject");
+	// Far below it: the lift is exact, so the signals add up to the score.
+	const low = await run(-80);
+	assert.equal(low.verdict, "spam");
+	assert.equal(low.score, 70);
+	assert.equal(
+		low.signals.reduce((total, signal) => total + signal.score, 0),
+		low.score,
+	);
+	assert.ok(low.signals.find((signal) => signal.id === "auth_policy").score > 70);
 });
 
 test("a forged pass in the message's own header never hides the trusted failure", async (t) => {
@@ -242,21 +320,36 @@ test("SES failures carry the published policy", async (t) => {
 	assert.equal((await analyze(db, { trusted: value, dmarcPolicy: source() })).verdict, "spam");
 });
 
-test("publishedDmarcPolicy reads policy.dmarc, the DMARCbis property and Google's comment, strictest first", () => {
+test("publishedDmarcPolicy reads policy.dmarc and the DMARCbis property, never comments", () => {
 	assert.equal(publishedDmarcPolicy(dmarcFail("reject")), "reject");
-	assert.equal(
-		publishedDmarcPolicy("mx.google.com; dmarc=fail (p=REJECT sp=NONE dis=NONE) header.from=a.test"),
-		"reject",
-	);
-	assert.equal(publishedDmarcPolicy("x; dmarc=fail (p=NONE sp=REJECT) header.from=a.test"), "none");
+	assert.equal(publishedDmarcPolicy("mx.google.com; dmarc=fail (p=REJECT sp=NONE dis=NONE) header.from=a.test"), null);
 	assert.equal(publishedDmarcPolicy("x; dmarc=fail policy.published-domain-policy=quarantine"), "quarantine");
-	assert.equal(publishedDmarcPolicy("x; dmarc=fail policy.dmarc=none (p=reject)"), "reject");
+	assert.equal(publishedDmarcPolicy("x; dmarc=fail policy.dmarc=none (p=reject)"), "none");
+	assert.equal(
+		publishedDmarcPolicy("x; dmarc=fail policy.dmarc=none policy.published-domain-policy=reject"),
+		"reject",
+		"the stricter of the two",
+	);
 	assert.equal(publishedDmarcPolicy("x; dmarc=fail header.from=a.test"), null);
-	assert.equal(publishedDmarcPolicy("x; spf=fail (p=reject); dmarc=fail"), null, "only the dmarc clause counts");
+	assert.equal(
+		publishedDmarcPolicy("x; spf=fail policy.dmarc=reject; dmarc=fail"),
+		null,
+		"only the dmarc result counts",
+	);
 	assert.equal(publishedDmarcPolicy("x; dmarc=fail policy.dmarc=bogus"), null);
-	assert.equal(publishedDmarcPolicy('x; dmarc=fail header.from="a;b" policy.dmarc=quarantine'), "quarantine");
+	assert.equal(publishedDmarcPolicy("x; dmarc=fail policy.dmarc=REJECT"), "reject");
 	assert.equal(publishedDmarcPolicy(null), null);
 	assert.equal(publishedDmarcPolicy("x"), null);
+});
+
+test("fromMayBeForged", () => {
+	const set = (...values) => new Set(values);
+	assert.equal(fromMayBeForged(set()), false);
+	assert.equal(fromMayBeForged(set("dmarc_passed", "dkim_passed", "spf_failed")), false);
+	assert.equal(fromMayBeForged(set("dmarc_failed", "dkim_passed")), true);
+	assert.equal(fromMayBeForged(set("spf_failed", "dkim_passed")), true);
+	assert.equal(fromMayBeForged(set("dkim_failed")), true);
+	assert.equal(fromMayBeForged(set("spf_passed", "dkim_passed")), false);
 });
 
 test("planAuthPolicy", () => {
@@ -319,6 +412,22 @@ test("published policies come from DNS, walk to the organizational domain, are c
 	assert.equal(await policy.published("walk.test"), "none");
 	assert.equal(await policy.published("nothing.test"), "unknown");
 	assert.equal(await policy.published("broken.test"), "unknown");
+
+	// Concurrent lookups for one domain share a single query.
+	let release;
+	const gate = new Promise((resolve) => (release = resolve));
+	const shared = [];
+	const sharing = dmarcPolicySource({
+		RESOLVE_TXT: async (name) => {
+			shared.push(name);
+			await gate;
+			return name === "_dmarc.shared.test" ? ["v=DMARC1; p=quarantine"] : [];
+		},
+	});
+	const both = Promise.all([sharing.published("shared.test"), sharing.published("Shared.test")]);
+	release();
+	assert.deepEqual(await both, ["quarantine", "quarantine"]);
+	assert.deepEqual(shared, ["_dmarc.shared.test"]);
 
 	const slow = dmarcPolicySource({ RESOLVE_TXT: () => new Promise(() => {}) }, { timeoutMs: 50 });
 	const started = Date.now();

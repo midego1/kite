@@ -10,7 +10,7 @@ import { analyzeStructure } from "./analyzers/structure";
 import { analyzeUrls } from "./analyzers/urls";
 import { classifyTokens } from "./classifier";
 import { buildFingerprint, getDomain, prepareSpamContent, tokenizeMessage } from "./tokenizer";
-import { planAuthPolicy, publishedDmarcPolicy, type AuthPolicyDecision } from "./dmarc-policy-utils";
+import { fromMayBeForged, planAuthPolicy, publishedDmarcPolicy, type AuthPolicyDecision } from "./dmarc-policy-utils";
 import type { DmarcPolicy, PreparedSpamContent, SpamAnalysisInput, SpamAnalysisResult, SpamSignal } from "./types";
 import { SPAM_THRESHOLDS, SPAM_WEIGHTS } from "./weights";
 import { LocalSpamIntelligenceProvider } from "./providers/local";
@@ -43,10 +43,13 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 			fingerprint,
 		};
 	}
-	signals.push(...(await intelligenceSignals(input, contact?.source, signals, { sender, prepared, fingerprint })));
-	// A known contact's trust must not offset failed authentication: a spoofed colleague is the attack.
 	const authIds = new Set(authentication.map((signal) => signal.id));
-	if (![...authIds].some((id) => id.endsWith("_failed"))) signals.push(...relationshipSignals(contact?.source));
+	const mayBeForged = fromMayBeForged(authIds);
+	signals.push(
+		...(await intelligenceSignals(input, contact?.source, signals, { sender, prepared, fingerprint, mayBeForged })),
+	);
+	// A known contact's trust must not offset a From that may be forged: a spoofed colleague is the attack.
+	if (!mayBeForged) signals.push(...relationshipSignals(contact?.source));
 	const authPolicy = await enforcedAuthPolicy(input, authIds, fromDomain);
 
 	const identities = getReputationKeys(input.message, fingerprint);
@@ -98,11 +101,13 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 			metadata: { probability: Number(bayesian.probability.toFixed(3)), trainedMessages: bayesian.trainedMessages },
 		});
 
+	// Always recorded when it applies, so a spam verdict carries its reason: the exact lift to the spam threshold,
+	// or 0 when the score was already there, so the signals still add up to the score.
 	const scoreBeforePolicy = signals.reduce((total, signal) => total + signal.score, 0);
-	if (authPolicy && scoreBeforePolicy < SPAM_THRESHOLDS.spam)
+	if (authPolicy)
 		signals.push({
 			id: "auth_policy",
-			score: SPAM_THRESHOLDS.spam - scoreBeforePolicy,
+			score: Math.max(0, SPAM_THRESHOLDS.spam - scoreBeforePolicy),
 			reason: `${authPolicy.reason}; filed as spam`,
 			metadata: { cause: authPolicy.cause },
 		});
@@ -119,11 +124,14 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 	return {
 		score,
 		verdict,
-		signals: signals.filter((signal) => Math.abs(signal.score) >= 2 || signal.id === "score_boundary"),
+		signals: signals.filter((signal) => Math.abs(signal.score) >= 2 || ALWAYS_KEPT.has(signal.id)),
 		contentProbability: bayesian.probability,
 		fingerprint,
 	};
 }
+
+/** Signals kept whatever their score, because the score they explain depends on them. */
+const ALWAYS_KEPT = new Set(["score_boundary", "auth_policy"]);
 
 type ContactSource = string | null | undefined;
 
@@ -131,11 +139,11 @@ async function intelligenceSignals(
 	input: SpamAnalysisInput,
 	source: ContactSource,
 	localSignals: readonly SpamSignal[],
-	content: { sender: string; prepared: PreparedSpamContent; fingerprint: string },
+	content: { sender: string; prepared: PreparedSpamContent; fingerprint: string; mayBeForged: boolean },
 ): Promise<SpamSignal[]> {
 	// Nothing about a known correspondent's mail leaves Kite, unless authentication failed and the From may be forged.
 	const knownCorrespondent = source === "manual" || source === "outbound";
-	if (knownCorrespondent && !localSignals.some((signal) => signal.id.endsWith("_failed"))) return [];
+	if (knownCorrespondent && !content.mayBeForged) return [];
 	const provider = input.intelligenceProvider ?? new LocalSpamIntelligenceProvider();
 	return provider.check({
 		senderDomain: getDomain(content.sender),

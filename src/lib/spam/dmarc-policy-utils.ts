@@ -1,4 +1,5 @@
 import { registrableDomain } from "./analyzers/link-host-utils";
+import { parseAuthenticationResults } from "./authentication-results-utils";
 import type { DmarcPolicy } from "./types";
 
 /**
@@ -14,51 +15,20 @@ function stricter(a: DmarcPolicy | null, b: DmarcPolicy): DmarcPolicy {
 	return a && STRICTNESS[a] >= STRICTNESS[b] ? a : b;
 }
 
-/** `;`-separated clauses of an `Authentication-Results` value, keeping `(comments)` and quoted strings whole. */
-function clauses(value: string): string[] {
-	const out: string[] = [];
-	let depth = 0;
-	let quoted = false;
-	let current = "";
-	for (let index = 0; index < value.length; index += 1) {
-		const char = value[index];
-		if (char === "\\") {
-			current += value.slice(index, index + 2);
-			index += 1;
-			continue;
-		}
-		if (quoted) quoted = char !== '"';
-		else if (char === '"' && depth === 0) quoted = true;
-		else if (char === "(") depth += 1;
-		else if (char === ")" && depth > 0) depth -= 1;
-		else if (char === ";" && depth === 0) {
-			out.push(current);
-			current = "";
-			continue;
-		}
-		current += char;
-	}
-	out.push(current);
-	return out;
-}
-
 /**
- * The policy the From domain publishes, as the verifying hop reported it in the first `dmarc=` clause of a trusted
- * `Authentication-Results` value: `policy.dmarc=` (Cloudflare, Kite's own SMTP listener, SES), the DMARCbis
- * `policy.published-domain-policy=`, or `p=` in a comment (`dmarc=fail (p=REJECT sp=REJECT dis=NONE)`, Google).
- * The strictest one wins, so text that reached the clause cannot weaken it. Null when the clause names none.
+ * The policy the From domain publishes, as the verifying hop reported it in the first `dmarc=` result of a trusted
+ * `Authentication-Results` value: `policy.dmarc=` (Cloudflare, Kite's own SMTP listener, SES) or the DMARCbis
+ * `policy.published-domain-policy=`, the stricter one if both appear. Comments are not read: what a hop writes there
+ * (`p=REJECT sp=NONE`) is the raw record, not the policy that applies to a subdomain sender, so DNS answers instead.
+ * Null when the result names no policy.
  */
 export function publishedDmarcPolicy(trusted: string | null | undefined): DmarcPolicy | null {
 	if (!trusted) return null;
-	const clause = clauses(trusted)
-		.slice(1)
-		.find((entry) => /^\s*dmarc(?:\/\d+)?=/i.test(entry));
-	if (!clause) return null;
+	const dmarc = parseAuthenticationResults(trusted).results.find((entry) => entry.method === "dmarc");
 	let found: DmarcPolicy | null = null;
-	const pattern = /(?:^|[\s(])(?:policy\.dmarc|policy\.published-domain-policy|p)=([a-z]+)/gi;
-	for (const match of clause.matchAll(pattern)) {
-		const value = match[1].toLowerCase();
-		if (PUBLISHED.has(value)) found = stricter(found, value as DmarcPolicy);
+	for (const name of ["policy.dmarc", "policy.published-domain-policy"]) {
+		const value = dmarc?.properties[name]?.toLowerCase();
+		if (value && PUBLISHED.has(value)) found = stricter(found, value as DmarcPolicy);
 	}
 	return found;
 }
@@ -105,6 +75,16 @@ export function dmarcRecordNames(fromDomain: string): { name: string; inherited:
 		{ name: `_dmarc.${domain}`, inherited: false },
 		...(organizational && organizational !== domain ? [{ name: `_dmarc.${organizational}`, inherited: true }] : []),
 	];
+}
+
+/**
+ * Whether the From address may be forged, so a known sender's trust must not count: DMARC failed, or a check failed
+ * without a DMARC pass. A DMARC pass through an aligned DKIM signature outweighs a failed SPF check, which is normal
+ * for forwarded mail and mailing lists.
+ */
+export function fromMayBeForged(ids: ReadonlySet<string>): boolean {
+	if (ids.has("dmarc_failed")) return true;
+	return !ids.has("dmarc_passed") && [...ids].some((id) => id.endsWith("_failed"));
 }
 
 export type AuthPolicyDecision = {

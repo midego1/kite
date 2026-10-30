@@ -18,6 +18,7 @@ const {
 	authenticationResultsFromMailauth,
 	verifySmtpAuthentication,
 	smtpAuthservId,
+	stripOwnAuthenticationResults,
 	trustedReceivedHeader,
 	startSmtpListener,
 	analyzeAuthentication,
@@ -27,7 +28,10 @@ const {
 } = await bundleModules("kite-smtp-ingress-", [
 	["SMTP_INGRESS_LIMITS, createSessionLimiter, createDataCollector", "server/runtime/smtp-limits-utils.ts"],
 	["verifySmtpAuthentication", "server/runtime/smtp-auth.ts"],
-	["authenticationResultsFromMailauth, smtpAuthservId, trustedReceivedHeader", "server/runtime/smtp-auth-utils.ts"],
+	[
+		"authenticationResultsFromMailauth, smtpAuthservId, stripOwnAuthenticationResults, trustedReceivedHeader",
+		"server/runtime/smtp-auth-utils.ts",
+	],
 	["startSmtpListener", "server/runtime/smtp.ts"],
 	["analyzeAuthentication", "src/lib/spam/analyzers/authentication.ts"],
 	["publishedDmarcPolicy", "src/lib/spam/dmarc-policy-utils.ts"],
@@ -252,7 +256,7 @@ async function smtpClient(port) {
 	};
 }
 
-async function listener(t, { maxSize = 4096 } = {}) {
+async function listener(t, { maxSize = 4096, verifyPrivateClients = true } = {}) {
 	const sqlite = new SqliteDatabase(":memory:");
 	await applyMigrations(sqlite, join(root, "drizzle/migrations"));
 	sqlite.db.exec(`
@@ -275,6 +279,7 @@ async function listener(t, { maxSize = 4096 } = {}) {
 		hostname: "mx.kite.test",
 		tls: null,
 		resolver,
+		verifyPrivateClients,
 	});
 	await once(server.server, "listening");
 	t.after(async () => {
@@ -295,8 +300,13 @@ test("the listener verifies the sender and stamps a trusted Received field", asy
 	const client = await smtpClient(port);
 	await envelope(client);
 	assert.equal((await client.send("DATA")).code, 354);
-	// The sender's own Authentication-Results claims a pass that nobody verified.
-	const forged = `Authentication-Results: mx.kite.test; dmarc=pass header.from=bank.test\r\n${(await signed()).toString()}`;
+	// The sender's own Authentication-Results claim a pass that nobody verified, one under Kite's own name.
+	const forged = [
+		"Authentication-Results: mx.kite.test;",
+		" dmarc=pass header.from=bank.test",
+		"Authentication-Results: mail.elsewhere.test; dmarc=pass",
+		(await signed()).toString(),
+	].join("\r\n");
 	client.write(`${forged.replace(/\r\n\./g, "\r\n..")}\r\n.\r\n`);
 	assert.equal((await client.read()).code, 250);
 	await client.close();
@@ -312,7 +322,48 @@ test("the listener verifies the sender and stamps a trusted Received field", asy
 	);
 	const raw = stored.get(payload.rawR2Key).toString("latin1");
 	assert.match(raw, /^Received: from mta\.bank\.test /);
-	assert.ok(raw.includes("Authentication-Results: mx.kite.test; dmarc=pass"), "the sender's copy stays in the message");
+	assert.ok(!raw.includes("mx.kite.test;\r\n dmarc=pass"), "a copy under Kite's own authserv-id is removed");
+	assert.ok(raw.includes("Authentication-Results: mail.elsewhere.test; dmarc=pass"), "other hosts' copies stay");
+	assert.ok(raw.includes("DKIM-Signature:"));
+});
+
+test("a client on a private address is not verified, since its SPF would always fail", async (t) => {
+	const { port, queued } = await listener(t, { verifyPrivateClients: false });
+	const client = await smtpClient(port);
+	await envelope(client);
+	assert.equal((await client.send("DATA")).code, 354);
+	client.write(`${(await signed()).toString()}\r\n.\r\n`);
+	assert.equal((await client.read()).code, 250);
+	await client.close();
+	assert.equal(queued.length, 1);
+	assert.equal(queued[0].authenticationResults, null);
+	assert.match(queued[0].headers.received, /\[127\.0\.0\.1\]/);
+});
+
+test("stripOwnAuthenticationResults removes only folded copies under Kite's authserv-id", () => {
+	const message = [
+		"Received: from a",
+		"Authentication-Results: MX.Kite.Test (comment);",
+		"\tspf=pass smtp.mailfrom=x@bank.test",
+		"Subject: hi",
+		"authentication-results:mx.kite.test; dkim=pass",
+		"Authentication-Results: mx.kite.test.evil; dmarc=pass",
+		"",
+		"Authentication-Results: mx.kite.test; body text stays",
+	].join("\r\n");
+	assert.equal(
+		stripOwnAuthenticationResults(Buffer.from(message), "mx.kite.test").toString(),
+		[
+			"Received: from a",
+			"Subject: hi",
+			"Authentication-Results: mx.kite.test.evil; dmarc=pass",
+			"",
+			"Authentication-Results: mx.kite.test; body text stays",
+		].join("\r\n"),
+	);
+	const untouched = Buffer.from("Subject: x\r\n\r\nbody");
+	assert.equal(stripOwnAuthenticationResults(untouched, "mx.kite.test"), untouched);
+	assert.equal(stripOwnAuthenticationResults(Buffer.from("no header end"), "k").toString(), "no header end");
 });
 
 test("the listener refuses the 51st recipient with 452", async (t) => {

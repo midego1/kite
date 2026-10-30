@@ -52,6 +52,36 @@ gets `452`, and the sending server retries it later), and 60 seconds of
 silence before a session is closed. A message over `SMTP_MAX_SIZE` is
 refused with `552` without being kept in memory.
 
+**The listener must see each sender's real address.** SPF, DMARC and the
+per-address limit all depend on the address the connection comes from. When
+something in front of Kite replaces it with its own:
+
+- If that address is private or loopback (`172.17.0.1`, `10.x`, `127.0.0.1`),
+  Kite does not check SPF, DKIM or DMARC at all, so all mail arrives with its
+  authentication unknown, and it logs a warning once per start.
+- If it is a public address of your own (a load balancer elsewhere), SPF
+  fails for every sender, so DMARC fails for all mail without an aligned DKIM
+  signature, and a domain publishing `p=reject` or `p=quarantine` goes to Spam.
+- Either way the 10-sessions-per-address limit applies to all senders together.
+
+Check the `Received` header at the top of a delivered message's source: the
+address in brackets must be the sending server's, not your proxy's. What
+keeps it:
+
+- **Docker (rootful)** with its default iptables port publishing (`ports:
+  "25:25"`, as in `docker-compose.yml`) keeps the client address. The
+  userland proxy (`docker-proxy`) replaces it, and it handles the traffic when
+  Docker's iptables rules are off (`"iptables": false`) or the connection
+  comes from the host itself. `network_mode: host` also keeps it.
+- **Rootless Docker or Podman**: the default RootlessKit port driver replaces
+  the address. Use host networking, or the `slirp4netns` port driver
+  (`DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns`), which keeps it.
+- **Load balancers and TCP proxies**: use one that passes the client address
+  through at the network level (AWS NLB with client IP preservation,
+  Kubernetes `externalTrafficPolicy: Local`). A proxy that opens its own
+  connection to Kite (HAProxy, nginx `stream`, Traefik TCP) hides it, and the
+  listener does not read the PROXY protocol.
+
 Optional: `SMTP_TLS_KEY` and `SMTP_TLS_CERT` (paths inside the container)
 enable STARTTLS with your own certificate. Without them STARTTLS is not
 offered, which is safe but means transport encryption depends on the sender.

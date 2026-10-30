@@ -19,6 +19,7 @@ type LookupOptions = { timeoutMs?: number; now?: () => number };
 
 const logger = createLogger("spam");
 const cache = new Map<string, { policy: DmarcPolicy; expiresAt: number }>();
+const inFlight = new Map<string, Promise<DmarcPolicy>>();
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -40,28 +41,35 @@ async function lookup(domain: string, resolveTxt: ResolveTxt): Promise<DmarcPoli
 
 /**
  * The DMARC policy `domain` publishes, read from DNS when the verifying hop's `Authentication-Results` did not carry
- * it. Answers are cached per isolate (an hour; five minutes for `unknown`), and a lookup that fails or takes longer
- * than `DMARC_LOOKUP_TIMEOUT_MS` gives `unknown`, which enforces nothing.
+ * it. Answers are cached per isolate (an hour; five minutes for `unknown`), lookups for a domain already being looked
+ * up share that one, and a lookup that fails or takes longer than `DMARC_LOOKUP_TIMEOUT_MS` gives `unknown`, which
+ * enforces nothing.
  */
-async function lookupPublishedDmarcPolicy(
+function lookupPublishedDmarcPolicy(
 	domain: string,
 	resolveTxt: ResolveTxt,
 	options: LookupOptions,
 ): Promise<DmarcPolicy> {
 	const key = domain.trim().toLowerCase();
-	const now = options.now?.() ?? Date.now();
 	const cached = cache.get(key);
-	if (cached && cached.expiresAt > now) return cached.policy;
-	let policy: DmarcPolicy;
-	try {
-		policy = await withTimeout(lookup(key, resolveTxt), options.timeoutMs ?? DMARC_LOOKUP_TIMEOUT_MS);
-	} catch (error) {
-		logger.warn("spam.dmarc_lookup_failed", { error });
-		policy = "unknown";
-	}
-	if (cache.size >= MAX_CACHED_DOMAINS) cache.delete(cache.keys().next().value as string);
-	cache.set(key, { policy, expiresAt: now + (policy === "unknown" ? UNKNOWN_TTL_MS : FOUND_TTL_MS) });
-	return policy;
+	if (cached && cached.expiresAt > (options.now?.() ?? Date.now())) return Promise.resolve(cached.policy);
+	const pending = inFlight.get(key);
+	if (pending) return pending;
+	const lookupPromise = (async () => {
+		let policy: DmarcPolicy;
+		try {
+			policy = await withTimeout(lookup(key, resolveTxt), options.timeoutMs ?? DMARC_LOOKUP_TIMEOUT_MS);
+		} catch (error) {
+			logger.warn("spam.dmarc_lookup_failed", { error });
+			policy = "unknown";
+		}
+		if (cache.size >= MAX_CACHED_DOMAINS) cache.delete(cache.keys().next().value as string);
+		const now = options.now?.() ?? Date.now();
+		cache.set(key, { policy, expiresAt: now + (policy === "unknown" ? UNKNOWN_TTL_MS : FOUND_TTL_MS) });
+		return policy;
+	})().finally(() => inFlight.delete(key));
+	inFlight.set(key, lookupPromise);
+	return lookupPromise;
 }
 
 /** **Treat every DMARC failure as spam** (Admin → General); off before migration 0084 is applied. */

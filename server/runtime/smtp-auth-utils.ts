@@ -1,5 +1,6 @@
 import { hostname as osHostname } from "node:os";
 import type { AuthenticateResult } from "mailauth";
+import { parseAuthenticationResults } from "@/lib/spam/authentication-results-utils";
 
 /** A value that may go into a header as it is: no spaces, separators, comments or quotes. */
 const TOKEN = /^[^\s;()",\\]+$/;
@@ -89,4 +90,36 @@ export function trustedReceivedHeader(input: {
 	const source = reverse && reverse !== `[${address}]` ? `${reverse} [${address}]` : `[${address}]`;
 	const id = token(input.sessionId);
 	return `Received: from ${helo} (${source}) by ${token(input.by) ?? "kite"} (Kite) with ${input.secure ? "ESMTPS" : "ESMTP"}${id ? ` id ${id}` : ""}; ${traceDate(input.date ?? new Date())}`;
+}
+
+/**
+ * The message without any `Authentication-Results` field that carries Kite's own authserv-id (RFC 8601 §5): such a
+ * field can only have been written by the sender, and left in place it would look like Kite's verdict to anyone
+ * reading the source. Fields from other hosts and everything else stay byte for byte.
+ */
+export function stripOwnAuthenticationResults(raw: Buffer, authservId: string): Buffer {
+	const text = raw.toString("latin1");
+	const end = text.search(/\r?\n\r?\n/);
+	if (end < 0) return raw;
+	const own = authservId.toLowerCase();
+	const lines = text.slice(0, end).split(/(?<=\n)/);
+	const kept: string[] = [];
+	let dropping = false;
+	for (let index = 0; index < lines.length; index += 1) {
+		const line = lines[index];
+		if (/^[ \t]/.test(line)) {
+			if (!dropping) kept.push(line);
+			continue;
+		}
+		dropping = false;
+		const match = /^authentication-results[ \t]*:(.*)$/is.exec(line);
+		if (match) {
+			let value = match[1];
+			for (let next = index + 1; next < lines.length && /^[ \t]/.test(lines[next]); next += 1) value += lines[next];
+			dropping = parseAuthenticationResults(value.replace(/\r?\n/g, "")).authservId === own;
+		}
+		if (!dropping) kept.push(line);
+	}
+	if (kept.length === lines.length) return raw;
+	return Buffer.from(kept.join("") + text.slice(end), "latin1");
 }

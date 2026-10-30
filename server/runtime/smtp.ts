@@ -6,9 +6,10 @@ import { getDb } from "@/db";
 import { intakeIncomingMail } from "@/lib/email/intake";
 import { resolveInboundAddress } from "@/lib/email/routing";
 import { inboundAttachmentLimitReasonFromRaw } from "@/lib/email/inbound-attachments";
+import { isPrivateIpAddress } from "@/lib/security/outbound-url";
 import type { Mailer } from "./mailer";
 import { verifySmtpAuthentication } from "./smtp-auth";
-import { smtpAuthservId, trustedReceivedHeader } from "./smtp-auth-utils";
+import { smtpAuthservId, stripOwnAuthenticationResults, trustedReceivedHeader } from "./smtp-auth-utils";
 import { createDataCollector, createSessionLimiter, SMTP_INGRESS_LIMITS, smtpResponseError } from "./smtp-limits-utils";
 
 /**
@@ -30,6 +31,8 @@ export function startSmtpListener(
 		tls: { keyPath: string; certPath: string } | null;
 		/** Replaces DNS for SPF, DKIM and DMARC verification (tests). */
 		resolver?: DNSResolver;
+		/** Verifies clients on private and loopback addresses too (tests). */
+		verifyPrivateClients?: boolean;
 	},
 ) {
 	const authservId = smtpAuthservId(options.hostname);
@@ -90,17 +93,18 @@ export function startSmtpListener(
 				}
 				const from = session.envelope.mailFrom ? session.envelope.mailFrom.address : "";
 				// No verifying hop saw this message, so any Authentication-Results in it are the sender's own.
-				// Only the value verified here is passed on as trusted; null leaves authentication unknown.
-				const authenticationResults = await verifySmtpAuthentication(
-					received,
-					{
-						ip: session.remoteAddress,
-						helo: session.hostNameAppearsAs,
-						sender: from,
-						authservId,
-					},
-					{ resolver: options.resolver },
-				);
+				// Only the value verified here is passed on as trusted; null leaves authentication unknown. From a
+				// private address (Docker's port proxy, a load balancer without PROXY protocol) SPF would fail for
+				// every sender, so such mail is not verified at all.
+				const publicClient = options.verifyPrivateClients || !isPrivateIpAddress(session.remoteAddress);
+				if (!publicClient) warnPrivateClient(session.remoteAddress);
+				const authenticationResults = publicClient
+					? await verifySmtpAuthentication(
+							received,
+							{ ip: session.remoteAddress, helo: session.hostNameAppearsAs, sender: from, authservId },
+							{ resolver: options.resolver },
+						)
+					: null;
 				const trace = trustedReceivedHeader({
 					helo: session.hostNameAppearsAs,
 					remoteAddress: session.remoteAddress,
@@ -109,7 +113,10 @@ export function startSmtpListener(
 					secure: session.secure,
 					sessionId: session.id,
 				});
-				const raw = Buffer.concat([Buffer.from(`${trace}\r\n`, "latin1"), received]);
+				const raw = Buffer.concat([
+					Buffer.from(`${trace}\r\n`, "latin1"),
+					stripOwnAuthenticationResults(received, authservId),
+				]);
 				const headers = parseHeaders(raw);
 				let rejectReason: string | null = null;
 				for (const recipient of session.envelope.rcptTo) {
@@ -144,6 +151,18 @@ export function startSmtpListener(
 		console.log(`SMTP inbound listening on ${options.host ?? "0.0.0.0"}:${options.port}`);
 	});
 	return server;
+}
+
+let privateClientWarned = false;
+
+/** Says once per process that sender checks are off because the listener does not see real client addresses. */
+function warnPrivateClient(address: string): void {
+	if (privateClientWarned) return;
+	privateClientWarned = true;
+	console.warn(
+		`SMTP client connected from the private address ${address}: SPF, DKIM and DMARC are not checked for such clients. ` +
+			"If senders reach this server from the internet, the listener is not seeing their real address (see docs/self-hosting.md).",
+	);
 }
 
 /** Header map in the shape the Worker handler provides: lower-cased names, folded lines joined. */

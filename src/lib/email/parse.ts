@@ -5,6 +5,7 @@ import { normalizeAttachmentContent } from "@/lib/email/attachments";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { sanitizeStoredEmailHtml } from "@/lib/email/stored-html-utils";
 import { MIME_LIMITS, mimePreflightReason } from "@/lib/email/mime-preflight";
+import { decodeFlowedText } from "@/lib/email/flowed-text-utils";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 
 export type ParsedEmail = {
@@ -26,6 +27,16 @@ export type ParsedEmail = {
 	date: Date | null;
 	attachments: AttachmentContent[];
 };
+
+/**
+ * postal-mime 2.7 unfolds format=flowed text in quadratic time (a 2.4 MB message of 39,000 flowed lines took about
+ * 25 s); every parser's nodes share one prototype, so its method is replaced once with a linear one that returns the
+ * same text. postal-mime 4.x unfolds in linear time itself: drop this when upgrading.
+ */
+const mimeNodePrototype = Object.getPrototypeOf((new PostalMime() as unknown as { root: object }).root) as {
+	decodeFlowedText?: (text: string, delSp: boolean) => string;
+};
+if (typeof mimeNodePrototype.decodeFlowedText === "function") mimeNodePrototype.decodeFlowedText = decodeFlowedText;
 
 /**
  * A message that can never be parsed within `MIME_LIMITS`. Deterministic: retrying only repeats the work, so callers

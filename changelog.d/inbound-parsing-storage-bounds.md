@@ -2,6 +2,7 @@
 
 - Incoming mail is checked before it is parsed: a crafted message with a huge header block, thousands of MIME parts, deep nesting or hundreds of thousands of short lines (in a body, a text attachment or an attached message) is refused with "Message rejected: …" instead of exhausting the Worker's CPU or memory or blocking the self-hosted server. Every path that reads raw mail goes through the same bounded parser (Cloudflare, the relay, SMTP, Resend, SES, imports, JMAP `Email/import`, automatic reading), and a message over the limits that still reaches the queue is dropped instead of retried; any other parse error is retried as before (from Mailflare #214).
 - Turning HTML into text for snippets, search and automatic reading no longer slows down on unclosed `<style>`, `<script>` or `<head>` tags (from Mailflare #214).
+- A plain-text message in `format=flowed` is unfolded in linear time: a 2.4 MB message of 39,000 flowed lines took about 25 seconds to parse and now takes well under one.
 - Mail from Resend now carries its plain headers (at most 200, without any authentication or `Received` headers), so auto-replies, mailbox rules and automatic reading recognise automatic and list mail there too (from Mailflare #224).
 
 ### Changed

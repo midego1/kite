@@ -93,8 +93,10 @@ const hostile = {
 		Array.from({ length: 30 }, (_, depth) => \`Content-Type: multipart/mixed; boundary="b\${depth}"\\r\\n\\r\\n--b\${depth}\\r\\n\`).join("") +
 		"Content-Type: text/plain\\r\\n\\r\\nx\\r\\n",
 };
+// Two runs, each in its own 128 MB process: the hostile shapes, then the legitimate large ones.
+const mode = process.argv[2];
 const out = { rejected: {}, edge: {}, slowestMs: 0, ok: {} };
-for (const [name, build] of Object.entries(hostile)) {
+if (mode === "hostile") for (const [name, build] of Object.entries(hostile)) {
 	const raw = encoder.encode(build()).buffer;
 	const started = performance.now();
 	try {
@@ -106,27 +108,48 @@ for (const [name, build] of Object.entries(hostile)) {
 	out.edge[name] = await inboundAttachmentLimitReasonFromRaw(raw);
 	out.slowestMs = Math.max(out.slowestMs, performance.now() - started);
 }
+if (mode === "legit") {
 // A 25 MB-class base64 attachment is about 340,000 short lines and must still parse.
+{
 const pdf =
 	multipart("b") +
 	"--b\\r\\nContent-Type: application/pdf\\r\\nContent-Transfer-Encoding: base64\\r\\nContent-Disposition: attachment; filename=a.pdf\\r\\n\\r\\n";
 const legit = header + pdf + base64Lines(340000) + "--b--\\r\\n";
 out.ok.attachments = (await parseRawMime(encoder.encode(legit).buffer)).attachments.length;
+}
 // A base64 attachment of short lines stays cheap however many there are (a 25 MB message holds about 12 million).
+{
 let shortStarted = performance.now();
 const shortLines = header + multipart("b") + "--b\\r\\nContent-Type: application/octet-stream\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" + "A\\r\\n".repeat(3_000_000) + "--b--\\r\\n";
 out.ok.shortLines = (await parseRawMime(encoder.encode(shortLines).buffer)).attachments.length;
 out.ok.shortLinesMs = performance.now() - shortStarted;
+}
 // A comment and a second header line folded with a tab, as postal-mime unfolds them.
+{
 const commented = header + 'Content-Type: multipart/mixed; (a comment; boundary=x)\\r\\n\\tboundary="c"\\r\\n\\r\\n' + pdfPart("c") + "--c--\\r\\n";
 out.ok.commented = (await parseRawMime(encoder.encode(commented).buffer)).attachments.length;
+}
+// format=flowed text is unfolded in linear time: 39,000 flowed 60-character lines (2.4 MB) took about 25 s with
+// postal-mime 2.7's own decoder.
+{
+const flowed = header + "Content-Type: text/plain; charset=utf-8; format=flowed; delsp=yes\\r\\n\\r\\n" + ("a".repeat(59) + " \\r\\n").repeat(39_000);
+let flowedStarted = performance.now();
+const flowedText = (await parseRawMime(encoder.encode(flowed).buffer)).text ?? "";
+out.ok.flowedMs = performance.now() - flowedStarted;
+out.ok.flowedBytes = flowed.length;
+out.ok.flowedUnfolded = flowedText.length === 39_000 * 59 && !flowedText.includes("\\n");
+}
 // The boundary parameter on a folded line, as most mail clients write it.
+{
 const folded = header + 'Content-Type: multipart/mixed;\\r\\n\\tboundary="f"\\r\\n\\r\\n' + pdfPart("f") + "--f--\\r\\n";
 out.ok.folded = (await parseRawMime(encoder.encode(folded).buffer)).attachments.length;
+}
 // A forwarded message whose part is itself base64 (as some clients send it) is decoded in chunks.
+{
 const encodedForward =
 	header + multipart("b") + "--b\\r\\nContent-Type: message/rfc822\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" + base64Lines(340000) + "--b--\\r\\n";
 out.ok.encodedForward = (await parseRawMime(encoder.encode(encodedForward).buffer)).attachments.map((a) => a.type);
+}
 // Thousands of nested message headers are one leaf part, not thousands of parses.
 let nestedStarted = performance.now();
 out.ok.nested = (await parseRawMime(encoder.encode(header + "Content-Type: message/rfc822\\r\\n\\r\\n".repeat(5000)).buffer)).subject;
@@ -171,6 +194,7 @@ out.htmlBombMs = performance.now() - started;
 started = performance.now();
 htmlToReadableText("<".repeat(200000));
 out.htmlAngleMs = performance.now() - started;
+}
 console.log(JSON.stringify(out));
 `,
 );
@@ -189,15 +213,26 @@ await build({
 });
 
 test("hostile MIME is refused cheaply and legitimate mail still parses, inside a 128 MB heap", () => {
-	const out = JSON.parse(
-		execFileSync(process.execPath, ["--max-old-space-size=128", bundle], { encoding: "utf8", timeout: 120_000 }),
-	);
+	const run = (mode) =>
+		JSON.parse(
+			execFileSync(process.execPath, ["--max-old-space-size=128", bundle, mode], {
+				encoding: "utf8",
+				timeout: 120_000,
+			}),
+		);
+	const hostile = run("hostile");
+	const out = { ...run("legit"), rejected: hostile.rejected, edge: hostile.edge, slowestMs: hostile.slowestMs };
+	assert.ok(Object.keys(out.rejected).length >= 20, "every hostile shape ran");
 	for (const [name, reason] of Object.entries(out.rejected)) {
 		assert.match(String(reason), /^Message rejected:/, `${name} was not refused: ${reason}`);
 		assert.equal(out.edge[name], reason, `${name} is refused at intake with the same reason`);
 	}
 	assert.ok(out.slowestMs < 5000, `the slowest hostile message took ${Math.round(out.slowestMs)} ms`);
 	assert.equal(out.ok.attachments, 1);
+	assert.ok(out.ok.flowedBytes > 2_300_000);
+	// About 0.3 s; the quadratic decoder took about 23 s. The margin is for a loaded CI runner.
+	assert.ok(out.ok.flowedMs < 3000, `39,000 flowed lines took ${Math.round(out.ok.flowedMs)} ms`);
+	assert.equal(out.ok.flowedUnfolded, true);
 	assert.equal(out.ok.folded, 1);
 	assert.equal(out.ok.commented, 1);
 	assert.equal(out.ok.shortLines, 1);

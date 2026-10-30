@@ -42,6 +42,8 @@ export async function startFakeCloudflareR2(options = {}) {
 		delays: new Map(),
 		/** Answer the next created token without its value, as an unexpected Cloudflare answer. */
 		omitTokenValue: false,
+		/** Give each new token its own id (by default every token gets FAKE_R2.tokenId, the key the fake S3 knows). */
+		uniqueTokenIds: false,
 	};
 	const routes = [
 		["GET", /^\/client\/v4\/accounts$/, "listAccounts", (response) => ok(response, [{ id: FAKE_R2.accountId }])],
@@ -141,9 +143,10 @@ export async function startFakeCloudflareR2(options = {}) {
 			/^\/client\/v4\/accounts\/([^/]+)\/tokens$/,
 			"createToken",
 			(response, _match, _request, body) => {
-				state.tokens.push({ ...body, id: FAKE_R2.tokenId });
+				const id = state.uniqueTokenIds ? `${FAKE_R2.tokenId}-${state.tokens.length + 1}` : FAKE_R2.tokenId;
+				state.tokens.push({ ...body, id });
 				const value = state.omitTokenValue ? {} : { value: FAKE_R2.tokenValue };
-				ok(response, { id: FAKE_R2.tokenId, ...value, name: body.name, status: "active" });
+				ok(response, { id, ...value, name: body.name, status: "active" });
 			},
 		],
 		[

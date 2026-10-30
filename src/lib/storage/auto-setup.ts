@@ -10,13 +10,14 @@ import {
 	createR2Bucket,
 	createR2BucketToken,
 	deleteR2Token,
-	deleteR2TokensNamed,
+	deleteR2TokenNamed,
 	listR2Buckets,
 	R2ApiError,
 	r2ApiConfigured,
 	r2ApiTestOrigin,
 	r2S3Endpoint,
 	r2S3TestEndpoint,
+	r2TokenName,
 	resolveR2Account,
 	restoreR2BucketCors,
 	setR2BucketCors,
@@ -255,7 +256,15 @@ export type R2SetupPlan = {
 	name?: string;
 };
 
-type Context = { env: CloudflareEnv; actor: { id: string }; origin: string; timing: SetupTiming; budget: Budget };
+type Context = {
+	env: CloudflareEnv;
+	actor: { id: string };
+	origin: string;
+	timing: SetupTiming;
+	budget: Budget;
+	/** Eight characters of the attempt's id, which make the token's name unique to this attempt. */
+	attemptTag: string;
+};
 
 function storeForm(env: CloudflareEnv, plan: R2SetupPlan, accountId: string, credentials: S3Credentials) {
 	return {
@@ -271,28 +280,20 @@ function storeForm(env: CloudflareEnv, plan: R2SetupPlan, accountId: string, cre
 }
 
 /**
- * Tokens outlive stores, so a second token for a bucket Kite already has a store for is refused before one is made:
- * the existing store is edited (or deleted, with its token in the Cloudflare dashboard) instead.
+ * Tokens outlive stores, so a second token for a bucket Kite already uses is refused before one is made: the existing
+ * store is edited (or deleted, with its token in the Cloudflare dashboard) instead. Any R2 store on the same bucket
+ * and endpoint host counts (a separate one-click store too), and direct uploads also refuse while they have keys.
  */
 async function refuseDuplicate(env: CloudflareEnv, plan: R2SetupPlan, accountId: string): Promise<void> {
-	const config = await readStorageConfig(env);
-	const stores = [...config.stores.values()];
+	const stores = [...(await readStorageConfig(env)).stores.values()];
+	const refuse = (message: string) => new StepError("bucket", message, { code: "already_connected", status: 409 });
 	if (plan.sameAsBinding && stores.some((store) => store.sameAsBinding))
-		throw new StepError("bucket", "Direct uploads already have keys; edit that store instead.", {
-			code: "already_connected",
-			status: 409,
-		});
+		throw refuse("Direct uploads already have keys; edit that store instead.");
 	const host = new URL(r2S3Endpoint(env, accountId, plan.jurisdiction)).host;
-	if (
-		!plan.sameAsBinding &&
-		stores.some(
-			(store) => store.provider === "r2" && store.location.bucket === plan.bucket && store.location.endpoint === host,
-		)
-	)
-		throw new StepError("bucket", `Kite already has a store for ${plan.bucket}; edit or delete it first.`, {
-			code: "already_connected",
-			status: 409,
-		});
+	const same = stores.find(
+		(store) => store.provider === "r2" && store.location.bucket === plan.bucket && store.location.endpoint === host,
+	);
+	if (same) throw refuse(`Kite already has a store for ${plan.bucket} (${same.name}); edit or delete it first.`);
 }
 
 async function ensureBucket(ctx: Context, accountId: string, plan: R2SetupPlan): Promise<string> {
@@ -324,14 +325,25 @@ async function ensureBucket(ctx: Context, accountId: string, plan: R2SetupPlan):
 	return `Using ${plan.bucket}`;
 }
 
-/** The token for the bucket; when Cloudflare did not answer in time, any token it may have made is deleted. */
+/**
+ * The token for the bucket. When the create request was sent but got no answer in time, Cloudflare may still have
+ * made it, so the token with this attempt's own name is deleted; a timeout before the request left deletes nothing.
+ */
 async function createToken(ctx: Context, plan: R2SetupPlan, accountId: string): Promise<S3Credentials> {
 	const limits = ctx.budget.start("token", TOKEN_STEP_MS);
+	const name = r2TokenName(plan.bucket, plan.jurisdiction, ctx.attemptTag);
+	let sent = false;
 	try {
-		return await createR2BucketToken(ctx.env, accountId, plan.bucket, plan.jurisdiction, limits);
+		return await createR2BucketToken(ctx.env, accountId, plan.bucket, plan.jurisdiction, {
+			name,
+			limits,
+			onSend: () => {
+				sent = true;
+			},
+		});
 	} catch (error) {
-		if (error instanceof R2ApiError && error.timedOut)
-			await deleteR2TokensNamed(ctx.env, accountId, plan.bucket, ctx.budget.cleanup());
+		if (sent && error instanceof R2ApiError && error.timedOut)
+			await deleteR2TokenNamed(ctx.env, accountId, name, ctx.budget.cleanup());
 		throw stepErrorOf(error, "token");
 	}
 }
@@ -473,6 +485,11 @@ async function recordOutcome(
 
 const ADMIN_BUDGET_MS = 60_000;
 
+/** The last eight letters and digits of the attempt's audit row id, or of a fresh id when there is none. */
+function attemptTagOf(attemptId?: string): string {
+	return (attemptId ?? crypto.randomUUID()).replace(/[^A-Za-z0-9]/g, "").slice(-8);
+}
+
 /**
  * One click from Admin → Storage, and first-run setup: an R2 bucket (created, or an existing one) connected with a
  * token that may only use that bucket, its CORS rule set for this site, and the store checked and saved like a
@@ -488,8 +505,9 @@ export async function setUpR2(
 ): Promise<R2SetupResult> {
 	const availability = await r2AutoSetupAvailability(env);
 	const budget = new Budget(options.budgetMs ?? ADMIN_BUDGET_MS);
+	const attemptTag = attemptTagOf(options.attemptId);
 	const result: R2SetupResult = availability.available
-		? await runSetup({ env, actor, origin, timing: options.timing ?? DEFAULT_TIMING, budget }, plan)
+		? await runSetup({ env, actor, origin, timing: options.timing ?? DEFAULT_TIMING, budget, attemptTag }, plan)
 		: { ok: false, status: 409, error: availability.reason ?? "Not available", steps: [], code: "unavailable" };
 	await recordOutcome(env, actor, plan, result, options);
 	return result;

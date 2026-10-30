@@ -263,12 +263,15 @@ export async function validateStore(
 		steps.skip("endpoint", "credentials", "bucket", ...AFTER_BUCKET);
 		return reportFrom(steps.list);
 	}
+	// Past the deadline the remaining checks are skipped rather than each run at the one-second floor.
+	const late = () => options.deadline !== undefined && Date.now() >= options.deadline;
 	await checkObjects(steps, bucket, limit);
-	await steps.run("multipart", async () => {
-		const upload = await bucket.createMultipartUpload(probeKey("multipart"));
-		await upload.abort();
-	});
-	await checkCors(steps, bucket, candidate.provider, appOrigin, limit);
+	if (!late())
+		await steps.run("multipart", async () => {
+			const upload = await bucket.createMultipartUpload(probeKey("multipart"));
+			await upload.abort();
+		});
+	if (!late()) await checkCors(steps, bucket, candidate.provider, appOrigin, limit);
 	lifecycleAdvice(steps, candidate.provider);
 	steps.skip(...AFTER_BUCKET);
 	const order = Object.keys(STEP_LABELS);

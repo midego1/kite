@@ -7,6 +7,7 @@ import { APP_ORIGIN, loadStorageServices } from "./support/storage-services.mjs"
 
 const { lib, fixture } = await loadStorageServices("kite-r2-auto-setup-", ["unused"], {
 	autoSetup: "src/lib/storage/auto-setup.ts",
+	validate: "src/lib/storage/validate.ts",
 	s3: "src/lib/storage/s3-bucket.ts",
 	cloudflareRoute: "src/app/api/admin/storage/cloudflare/route.ts",
 	directRoute: "src/app/api/admin/storage/cloudflare/direct-uploads/route.ts",
@@ -44,6 +45,7 @@ async function setup(t, extraEnv = {}) {
 	cf.state.denied.clear();
 	cf.state.delays.clear();
 	cf.state.omitTokenValue = false;
+	cf.state.uniqueTokenIds = false;
 	cf.state.tokens.length = 0;
 	cf.state.deletedTokens.length = 0;
 	cf.state.requests.length = 0;
@@ -485,4 +487,93 @@ test("the bucket picker is rate limited per admin", async (t) => {
 	t.mock.method(console, "warn", (...args) => warnings.push(args.map(String).join(" ")));
 	assert.equal((await call(env, "owner", lib.cloudflareRoute, "GET")).status, 200);
 	assert.match(warnings.join("\n"), /storage.r2_listing_limiter_unavailable/);
+});
+
+test("each attempt's token has its own name: bucket, jurisdiction and the attempt's tag", async (t) => {
+	const { env } = await setup(t);
+	await lib.autoSetup.setUpDirectUploads(
+		env,
+		actor,
+		APP_ORIGIN,
+		{},
+		{ timing: FAST, attemptId: "aud_0123456789abcdef" },
+	);
+	assert.equal(cf.state.tokens[0].name, "Kite direct uploads: kite-raw (default, 89abcdef)");
+	env.DB.db.exec("DELETE FROM storage_stores");
+	lib.config.clearStorageConfigCache();
+	await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST });
+	assert.match(cf.state.tokens[1].name, /^Kite direct uploads: kite-raw \(default, [A-Za-z0-9]{8}\)$/);
+	assert.notEqual(cf.state.tokens[1].name, cf.state.tokens[0].name);
+});
+
+test("a timeout before the create request is sent deletes nothing", async (t) => {
+	const { env } = await setup(t);
+	cf.state.delays.set("permissionGroups", 10_000);
+	const result = await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST, budgetMs: 11_000 });
+	assert.equal(result.code, "timeout");
+	assert.equal(cf.state.tokens.length, 0, "no token was requested");
+	assert.ok(!cf.state.requests.some((request) => ["listTokens", "deleteToken"].includes(request.operation)));
+});
+
+test("the late-token cleanup in one jurisdiction never touches a working token in another", async (t) => {
+	const { env } = await setup(t);
+	const working = await lib.autoSetup.setUpR2(
+		env,
+		actor,
+		APP_ORIGIN,
+		{ sameAsBinding: false, bucket: "kite-media", jurisdiction: "", create: null },
+		{ timing: FAST },
+	);
+	assert.equal(working.ok, true, working.error);
+	const kept = cf.state.tokens[0];
+	// The EU bucket of the same name lives on another host; the fake S3 also answers on 127.0.0.1.
+	env.R2_S3_TEST_ENDPOINT = s3.url.replace("localhost", "127.0.0.1");
+	cf.state.buckets.set("eu:kite-media", { name: "kite-media", jurisdiction: "eu" });
+	cf.state.uniqueTokenIds = true;
+	cf.state.delays.set("createToken", 10_000);
+	const late = await lib.autoSetup.setUpR2(
+		env,
+		actor,
+		APP_ORIGIN,
+		{ sameAsBinding: false, bucket: "kite-media", jurisdiction: "eu", create: null },
+		{ timing: FAST, budgetMs: 11_000 },
+	);
+	assert.equal(late.code, "timeout");
+	const eu = cf.state.tokens[1];
+	assert.match(eu.name, /^Kite direct uploads: kite-media \(eu, /);
+	assert.deepEqual(cf.state.deletedTokens, [eu.id], "only the late EU token is deleted");
+	assert.ok(!cf.state.deletedTokens.includes(kept.id), "the working token stays");
+	assert.equal(stores(env).length, 1);
+});
+
+test("direct uploads are refused for a bucket a separate one-click store already uses", async (t) => {
+	const { env } = await setup(t);
+	const store = await lib.autoSetup.setUpR2(
+		env,
+		actor,
+		APP_ORIGIN,
+		{ sameAsBinding: false, bucket: "kite-raw", jurisdiction: "", create: null },
+		{ timing: FAST },
+	);
+	assert.equal(store.ok, true, store.error);
+	const tokens = cf.state.tokens.length;
+	const direct = await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST });
+	assert.equal(direct.code, "already_connected");
+	assert.match(direct.error, /already has a store for kite-raw \(Cloudflare R2 kite-raw\)/);
+	assert.equal(cf.state.tokens.length, tokens, "no second token");
+});
+
+test("past its deadline the checklist skips what is left instead of running it", async (t) => {
+	const { env } = await setup(t);
+	const candidate = {
+		provider: "minio",
+		location: { endpoint: s3.endpoint, scheme: "http", region: "auto", bucket: "kite-raw", addressing: "path" },
+		credentials: { accessKeyId: FAKE_R2.tokenId, secretAccessKey: FAKE_R2_SECRET },
+	};
+	const report = await lib.validate.validateStore(env, candidate, APP_ORIGIN, { deadline: Date.now() - 1 });
+	const status = (id) => report.steps.find((step) => step.id === id).status;
+	assert.equal(report.ok, false, "a skipped required check does not pass");
+	assert.equal(status("multipart"), "skipped");
+	assert.equal(status("cors_preflight"), "skipped");
+	assert.deepEqual([...s3.buckets.get("kite-raw").objects.keys()], [], "the probe is still cleaned up");
 });

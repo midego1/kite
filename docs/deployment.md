@@ -87,7 +87,7 @@ Setup applies the committed migrations through the Worker's D1 binding before cr
 Fast Drive uploads are a standard part of setup, not an extra. Without them every Drive upload passes through the Worker in 32 MiB parts; with them browsers upload straight to R2 in 64 MiB parts with signed URLs. When you create the admin account, Kite uses `CF_TOKEN` to:
 
 1. find the account (`CF_ACCOUNT_ID`; else the account of the domain you just connected, which **Zone: Read** already covers; else the one account the token can see, which needs **Account Settings: Read**, so set `CF_ACCOUNT_ID` when you skip DNS setup) and the `kite-raw` bucket,
-2. create an account API token named "Kite direct uploads: kite-raw" with only **Workers R2 Storage Bucket Item Write** on that bucket (read, write and list objects, nothing else); its id is the S3 access key ID and the SHA-256 of its value the secret, as Cloudflare's R2 documentation describes,
+2. create an account API token named "Kite direct uploads: kite-raw (default, <attempt>)" with only **Workers R2 Storage Bucket Item Write** on that bucket (read, write and list objects, nothing else); its id is the S3 access key ID and the SHA-256 of its value the secret, as Cloudflare's R2 documentation describes,
 3. set the bucket's CORS rule for the app's origin (and `APP_URL`),
 4. wait until the new keys work, check that they reach the Worker's own bucket, run the same checks as **Test connection**, and save the keys encrypted, exactly like a manual entry.
 
@@ -97,7 +97,7 @@ The whole setup has a time budget (45 seconds during registration, 60 from the S
 
 **Security trade-off.** **Account API Tokens: Edit** lets `CF_TOKEN` create new API tokens with *any* permission on your account, not just R2 ones. While `CF_TOKEN` has it, anyone who obtains that token (a leaked Worker secret, a copied `.dev.vars`) can mint a token that controls your whole Cloudflare account. Kite only uses it when setup runs or you select **Set up automatically** or **Create bucket and connect**. Grant it for the setup and then remove it from `CF_TOKEN` in the dashboard (Manage Account → Account API Tokens → edit the token); the bucket token Kite created keeps working.
 
-**Tokens outlive stores.** Each token Kite creates is named "Kite direct uploads: <bucket>" and stays in your account until you delete it: deleting a store in Kite, or turning direct uploads off, does not delete its token, so delete it under Manage Account → Account API Tokens too. Kite refuses to create a second token for a bucket it already has a store for; edit that store (or delete it and its token) instead. **Workers R2 Storage: Edit** stays useful for creating buckets later and can be removed too if you never will.
+**Tokens outlive stores.** Each token Kite creates is named "Kite direct uploads: <bucket> (<jurisdiction>, <attempt>)" and stays in your account until you delete it: deleting a store in Kite, or turning direct uploads off, does not delete its token, so delete it under Manage Account → Account API Tokens too. Kite refuses to create a second token for a bucket one of its R2 stores already uses; edit that store (or delete it and its token) instead. **Workers R2 Storage: Edit** stays useful for creating buckets later and can be removed too if you never will.
 
 ## Step 4: Connect your primary domain and create a mailbox
 

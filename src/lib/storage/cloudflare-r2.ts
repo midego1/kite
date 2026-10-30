@@ -102,6 +102,8 @@ type Call = {
 	jurisdiction?: R2Jurisdiction;
 	query?: Record<string, string>;
 	limits?: CallLimits;
+	/** Called right before the request leaves, so a caller knows whether it was sent at all. */
+	onSend?: () => void;
 };
 
 function cfUrl(env: Env, path: string, query: Record<string, string> = {}): URL {
@@ -131,6 +133,7 @@ async function cfCall<T>(
 ): Promise<{ result: T; cursor: string }> {
 	const url = cfUrl(env, path, call.query);
 	const timeoutMs = callTimeout(step, call.limits ?? {});
+	call.onSend?.();
 	let response: Response;
 	try {
 		response = await fetch(url, {
@@ -314,20 +317,28 @@ async function sha256Hex(value: string): Promise<string> {
 }
 
 /** The name every token Kite creates for a bucket carries, so a lost one can be found and deleted. */
-const r2TokenName = (bucket: string) => `Kite direct uploads: ${bucket}`;
+/**
+ * The name of the token one setup attempt creates: bucket, jurisdiction and the attempt's own tag, so it is unique
+ * per attempt, install and jurisdiction, and a cleanup by name can never reach a token another attempt made.
+ */
+export function r2TokenName(bucket: string, jurisdiction: R2Jurisdiction, attemptTag: string): string {
+	return `Kite direct uploads: ${bucket} (${jurisdiction || "default"}, ${attemptTag})`;
+}
 
 /**
  * An account-owned API token that can only read, write and list objects in this bucket, as S3 keys: the access
  * key ID is the token's id and the secret the SHA-256 of its value (Cloudflare's R2 token docs). The value itself
  * is never returned, stored or logged. A token Cloudflare reports without its value is deleted again at once.
+ * `onSend` runs right before the create request leaves, so the caller knows whether a token may exist.
  */
 export async function createR2BucketToken(
 	env: Env,
 	accountId: string,
 	bucket: string,
 	jurisdiction: R2Jurisdiction,
-	limits: CallLimits = {},
+	options: { name: string; limits?: CallLimits; onSend?: () => void },
 ): Promise<S3Credentials> {
+	const { limits = {} } = options;
 	const base = `/accounts/${encodeURIComponent(accountId)}/tokens`;
 	const groups = await cf<{ id: string; name: string }[]>(env, "token", `${base}/permission_groups`, { limits });
 	const group = groups.find((entry) => entry.name === R2_BUCKET_ITEM_WRITE);
@@ -336,7 +347,8 @@ export async function createR2BucketToken(
 	const created = await cf<{ id?: string; value?: string }>(env, "token", base, {
 		method: "POST",
 		limits,
-		body: bucketTokenBody(r2TokenName(bucket), group.id, r2BucketResource(accountId, jurisdiction, bucket)),
+		onSend: options.onSend,
+		body: bucketTokenBody(options.name, group.id, r2BucketResource(accountId, jurisdiction, bucket)),
 	});
 	if (created?.id && !created.value) await deleteR2Token(env, accountId, created.id, limits);
 	if (!created?.id || !created.value)
@@ -357,20 +369,26 @@ export async function deleteR2Token(
 	}).catch(() => undefined);
 }
 
+const TOKEN_PAGE_SIZE = 50;
+/** Pages of the account's token list read when looking for a lost token: 500 tokens. */
+const TOKEN_PAGES = 10;
+
 /**
- * When creating the token got no answer in time, Cloudflare may still have made it: the account's tokens with Kite's
- * name for this bucket are deleted. A saved store never uses one (setup refuses a bucket Kite already has a store
- * for), so this only removes tokens nobody can use; best effort.
+ * When the create request was sent but got no answer in time, Cloudflare may still have made the token. The token
+ * with exactly this attempt's name (`r2TokenName`) is deleted; no other token can carry it. Best effort, paging
+ * through at most 500 tokens.
  */
-export async function deleteR2TokensNamed(env: Env, accountId: string, bucket: string, limits: CallLimits = {}) {
+export async function deleteR2TokenNamed(env: Env, accountId: string, name: string, limits: CallLimits = {}) {
 	const base = `/accounts/${encodeURIComponent(accountId)}/tokens`;
-	const tokens = await cf<{ id: string; name: string }[]>(env, "token", base, {
-		query: { per_page: "50" },
-		limits,
-	}).catch(() => []);
-	await Promise.all(
-		tokens
-			.filter((token) => token.name === r2TokenName(bucket))
-			.map((token) => deleteR2Token(env, accountId, token.id, limits)),
-	);
+	for (let page = 1; page <= TOKEN_PAGES; page++) {
+		const tokens = await cf<{ id: string; name: string }[]>(env, "token", base, {
+			query: { page: String(page), per_page: String(TOKEN_PAGE_SIZE) },
+			limits,
+		}).catch(() => null);
+		if (!tokens) return;
+		await Promise.all(
+			tokens.filter((token) => token.name === name).map((token) => deleteR2Token(env, accountId, token.id, limits)),
+		);
+		if (tokens.length < TOKEN_PAGE_SIZE) return;
+	}
 }

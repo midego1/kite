@@ -116,7 +116,7 @@ function currentPageLinks(page: Page): Locator {
 	return page.getByRole("complementary").getByRole("navigation").locator('a[aria-current="page"]');
 }
 
-test("an admin's Settings menu has the mode switch and only the Personal, Security and Mailbox groups", async ({
+test("an admin's Settings menu has the mode switch and only the Account, Mail, Integrations and Data groups", async ({
 	page,
 }) => {
 	await page.goto("/settings/account");
@@ -133,19 +133,24 @@ test("an admin's Settings menu has the mode switch and only the Personal, Securi
 	await expect(menu.getByRole("searchbox")).toBeHidden();
 	await expect(pageSearch(page)).toBeVisible();
 	await expect(pageSearch(page)).toHaveAttribute("placeholder", "Search settings");
-	await expect(menu.getByRole("navigation")).toHaveCount(3);
-	await expect(menu.getByRole("navigation", { name: "Personal" }).getByRole("link")).toHaveText([
+	await expect(menu.getByRole("navigation")).toHaveCount(4);
+	await expect(menu.getByRole("navigation", { name: "Account" }).getByRole("link")).toHaveText([
 		"My account",
 		"Appearance",
+		"Security",
+	]);
+	await expect(menu.getByRole("navigation", { name: "Mail" }).getByRole("link")).toHaveText([
 		"Inbox",
+		"Composing",
+		"Notifications",
 		"Rules & routing",
 	]);
-	await expect(menu.getByRole("navigation", { name: "Security" }).getByRole("link")).toHaveText([
-		"Security",
+	await expect(menu.getByRole("navigation", { name: "Integrations" }).getByRole("link")).toHaveText([
+		"Connected accounts",
 		"App passwords",
 		"API keys",
 	]);
-	await expect(menu.getByRole("navigation", { name: "Mailbox" })).toBeVisible();
+	await expect(menu.getByRole("navigation", { name: "Data" })).toBeVisible();
 	await expect(menu.getByRole("link", { name: "My account" })).toHaveAttribute("aria-current", "page");
 	await expect(menu.getByText("Workspace")).toHaveCount(0);
 	for (const href of ["/admin", "/accounts", "/mailboxes", "/domains", "/branding"])
@@ -177,8 +182,8 @@ test("the menu search finds admin pages from Settings and can be cleared", async
 	await search(page, "");
 	await expect(field).toHaveAttribute("aria-expanded", "false");
 	await expect(pageResults(page)).toBeHidden();
-	await expect(menu.getByRole("navigation")).toHaveCount(3);
-	await expect(menu.getByRole("navigation", { name: "Personal" })).toBeVisible();
+	await expect(menu.getByRole("navigation")).toHaveCount(4);
+	await expect(menu.getByRole("navigation", { name: "Account" })).toBeVisible();
 
 	await search(page, "domains");
 	await expectOptions(resultGroup(page, "Admin").getByRole("option"), ["Domains"]);
@@ -294,8 +299,8 @@ test("a member sees no switch and no admin pages, even in search", async ({ brow
 	const { context, page } = await signInFresh(browser, await createAccount("user"));
 	await page.goto("/settings/account");
 	const menu = settingsMenu(page);
-	await expect(menu.getByRole("navigation", { name: "Personal" })).toBeVisible();
-	await expect(menu.getByRole("navigation", { name: "Mailbox" })).toBeVisible();
+	await expect(menu.getByRole("navigation", { name: "Account" })).toBeVisible();
+	await expect(menu.getByRole("navigation", { name: "Mail" })).toBeVisible();
 	await expect(menu.getByRole("group", { name: "Settings or admin" })).toHaveCount(0);
 
 	for (const query of ["domains", "backups", "members"]) {
@@ -393,7 +398,9 @@ test("every Admin menu link opens its page and is the only current link", async 
 test("admin detail pages highlight their parent item and do not overflow", async ({ page }) => {
 	const api = await apiContext(STORAGE_STATE);
 	const { accounts } = (await (await api.get("/api/accounts")).json()) as { accounts: { id: string }[] };
-	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as { mailboxes: { id: string }[] };
+	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as {
+		mailboxes: { id: string; localPart: string; displayName: string | null }[];
+	};
 	await api.dispose();
 
 	await page.goto(`/accounts/${accounts[0].id}`);
@@ -402,8 +409,10 @@ test("admin detail pages highlight their parent item and do not overflow", async
 	expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
 
 	await page.goto(`/mailboxes/${mailboxes[0].id}`);
-	// The page is titled after the mailbox, not "Settings".
-	await expect(page.getByRole("main").getByRole("heading", { level: 1, name: /.+/ })).not.toHaveText("Settings");
+	// The page is titled after the mailbox.
+	await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveText(
+		mailboxes[0].displayName || mailboxes[0].localPart,
+	);
 	await expectMode(adminMenu(page), "Admin", "Mailboxes");
 
 	for (const path of ["/domains", "/accounts", "/backups", "/activity", "/ai-usage"]) {
@@ -612,7 +621,7 @@ test.describe("on a phone", () => {
 		await field.fill("zzzz");
 		await expect(sheet.getByText("No pages match “zzzz”.")).toBeVisible();
 		await field.fill("");
-		await expect(sheet.getByRole("navigation", { name: "Personal" })).toBeVisible();
+		await expect(sheet.getByRole("navigation", { name: "Account" })).toBeVisible();
 
 		await field.fill("backups");
 		await sheet.getByRole("navigation", { name: "Admin: Data" }).getByRole("link", { name: "Backups" }).click();

@@ -5,14 +5,13 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
-import { SettingRow } from "@/components/ui/setting-row";
 import { Switch } from "@/components/ui/switch";
 import { saveAssistantAvailability } from "@/lib/agent/availability-client";
 import { AutoReadAdminSettings } from "@/components/agent/auto-read-admin-settings";
 import { AgentProviders } from "./agent-providers";
 import { RecentAiErrors } from "./recent-ai-errors";
 import type { AgentAdminSettingsResponse } from "./types";
-import { PageHeader } from "@/components/ui/page";
+import { PageHeader, SettingRow } from "@/components/ui/page";
 import { loadAgentAdminSettings, saveAgentEnabled } from "./utils";
 
 export default function AdminAgentPage() {
@@ -51,29 +50,31 @@ export default function AdminAgentPage() {
 			/>
 			<Card>
 				<SettingRow
-					title="Enable assistant"
+					label="Enable assistant"
 					description="Show assistant chat and allow automatic drafts for everyone."
-					className="py-0"
-				>
-					<Switch
-						checked={assistantEnabled}
-						disabled={!data || enabledSaving}
-						onCheckedChange={(checked) => {
-							setEnabledSaving(true);
-							setEnabledStatus(null);
-							void saveAgentEnabled(checked)
-								.then((saved) => {
-									setAssistantEnabled(saved.assistantEnabled);
-									saveAssistantAvailability(saved.assistantEnabled);
-								})
-								.catch((error) =>
-									setEnabledStatus(error instanceof Error ? error.message : "Could not update assistant availability"),
-								)
-								.finally(() => setEnabledSaving(false));
-						}}
-						aria-label="Enable assistant"
-					/>
-				</SettingRow>
+					control={
+						<Switch
+							checked={assistantEnabled}
+							disabled={!data || enabledSaving}
+							onCheckedChange={(checked) => {
+								setEnabledSaving(true);
+								setEnabledStatus(null);
+								void saveAgentEnabled(checked)
+									.then((saved) => {
+										setAssistantEnabled(saved.assistantEnabled);
+										saveAssistantAvailability(saved.assistantEnabled);
+									})
+									.catch((error) =>
+										setEnabledStatus(
+											error instanceof Error ? error.message : "Could not update assistant availability",
+										),
+									)
+									.finally(() => setEnabledSaving(false));
+							}}
+							aria-label="Enable assistant"
+						/>
+					}
+				/>
 				{enabledStatus && (
 					<Notice tone="error" className="mt-3">
 						{enabledStatus}

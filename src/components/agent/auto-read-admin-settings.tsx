@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SettingRow, SettingRows } from "@/components/ui/setting-row";
+import { SettingRow, SettingRows } from "@/components/ui/page";
 import { Switch } from "@/components/ui/switch";
 import type { AutoReadAdminValues, AutoReadStatus } from "./auto-read-settings-types";
 import {
@@ -80,27 +80,29 @@ export function AutoReadAdminSettings() {
 			<CardContent className="space-y-5 pt-4">
 				<SettingRows>
 					<SettingRow
-						title="Enable automatic reading"
+						label="Enable automatic reading"
 						description="Turning this off stops all automatic reading at once and skips queued work."
-					>
-						<Switch
-							checked={values?.autoReadEnabled ?? false}
-							disabled={locked}
-							onCheckedChange={(autoReadEnabled) => void save({ autoReadEnabled })}
-							aria-label="Enable automatic reading"
-						/>
-					</SettingRow>
+						control={
+							<Switch
+								checked={values?.autoReadEnabled ?? false}
+								disabled={locked}
+								onCheckedChange={(autoReadEnabled) => void save({ autoReadEnabled })}
+								aria-label="Enable automatic reading"
+							/>
+						}
+					/>
 					<SettingRow
-						title="Allow an external AI provider for automatic reading and the composer"
+						label="Allow an external AI provider for automatic reading and the composer"
 						description="Lets automatic reading, Write with Kite in the composer and summaries send message content to the configured external AI provider. Workers AI is always allowed."
-					>
-						<Switch
-							checked={values?.externalAutoReadAllowed ?? false}
-							disabled={locked}
-							onCheckedChange={(externalAutoReadAllowed) => void save({ externalAutoReadAllowed })}
-							aria-label="Allow an external AI provider for automatic reading and the composer"
-						/>
-					</SettingRow>
+						control={
+							<Switch
+								checked={values?.externalAutoReadAllowed ?? false}
+								disabled={locked}
+								onCheckedChange={(externalAutoReadAllowed) => void save({ externalAutoReadAllowed })}
+								aria-label="Allow an external AI provider for automatic reading and the composer"
+							/>
+						}
+					/>
 				</SettingRows>
 				<form onSubmit={saveCap} className="space-y-2">
 					<Label htmlFor="auto-read-install-cap">Daily spend cap for automatic reading and chat (USD)</Label>

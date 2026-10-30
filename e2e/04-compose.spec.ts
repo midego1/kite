@@ -23,7 +23,7 @@ test.describe("compose and send", () => {
 	});
 
 	test("previews before sending, can be undone, and then sends", async ({ page }) => {
-		await page.goto("/settings/inbox");
+		await page.goto("/settings/composing");
 		const preview = page.getByRole("switch", { name: "Preview before sending" });
 		await expect(preview).toBeVisible();
 		if ((await preview.getAttribute("aria-checked")) !== "true") await preview.click();

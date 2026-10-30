@@ -4,6 +4,8 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
 	["/settings/account", "My account"],
 	["/settings/appearance", "Appearance"],
 	["/settings/inbox", "Inbox settings"],
+	["/settings/composing", "Composing"],
+	["/settings/notifications", "Notifications"],
 	["/settings/rules", "Rules & routing"],
 	["/settings/security", "Security"],
 	["/settings/app-passwords", "App passwords"],

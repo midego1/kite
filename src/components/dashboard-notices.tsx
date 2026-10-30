@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertsBanner } from "./alerts-banner";
+import { ConnectedAccountsBanner } from "./connected-accounts-banner";
 import { DnsSkippedBanner } from "./dns-skipped-banner";
 import { MigrationsBanner } from "./migrations-banner";
 import { useSidebar } from "./sidebar-state";
@@ -26,6 +27,7 @@ export function DashboardNotices({ slot }: { slot: "sidebar" | "page" }) {
 			<AlertsBanner />
 			<MigrationsBanner />
 			<DnsSkippedBanner />
+			<ConnectedAccountsBanner />
 		</div>
 	);
 }

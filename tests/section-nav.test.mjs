@@ -46,17 +46,21 @@ const hrefs = (sections) => sections.flatMap((section) => section.items.map((ite
 const searchHrefs = (query, user, mode = "settings") =>
 	Object.fromEntries(searchNavAcrossModes(query, user, mode).map((group) => [group.mode, hrefs(group.sections)]));
 
-test("Settings holds the Personal, Security and Mailbox groups, and no admin page", () => {
+test("Settings holds the Account, Mail, Integrations and Data groups, and no admin page", () => {
 	assert.deepEqual(
 		settingsNavSections.map((section) => section.label),
-		["Personal", "Security", "Mailbox"],
+		["Account", "Mail", "Integrations", "Data"],
 	);
-	assert.deepEqual(hrefs(settingsNavSections.slice(0, 2)), [
+	assert.deepEqual(hrefs(settingsNavSections.slice(0, 3)), [
 		"/settings/account",
 		"/settings/appearance",
-		"/settings/inbox",
-		"/settings/rules",
 		"/settings/security",
+		"/settings/inbox",
+		"/settings/composing",
+		"/settings/notifications",
+		"/settings/rules",
+		"/settings/mailboxes",
+		"/settings/connected-accounts",
 		"/settings/app-passwords",
 		"/settings/api-keys",
 	]);
@@ -227,5 +231,5 @@ test("group landmarks always have a name", () => {
 	assert.equal(navSectionLabel("admin", overview, false), "Admin overview");
 	assert.equal(navSectionLabel("admin", overview, true), "Admin");
 	assert.equal(navSectionLabel("admin", people, true), "Admin: People");
-	assert.equal(navSectionLabel("settings", settingsNavSections[0], false), "Personal");
+	assert.equal(navSectionLabel("settings", settingsNavSections[0], false), "Account");
 });

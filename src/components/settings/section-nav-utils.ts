@@ -52,7 +52,7 @@ const settingsNavSections: NavSection[] = [
 				href: "/settings/appearance",
 				label: "Appearance",
 				icon: Palette,
-				keywords: "theme dark light style font text size kite classic assistant",
+				keywords: "theme dark light style font text size kite classic assistant dyslexia opendyslexic accessibility",
 			},
 			{ href: "/settings/security", label: "Security", icon: Shield, keywords: "password two-factor mfa totp" },
 		],

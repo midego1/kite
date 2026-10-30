@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ImageOff, Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useReaderFont } from "@/components/messages/use-reader-font";
 import {
 	buildEmailFrameDocument,
 	EMAIL_FRAME_SANDBOX,
@@ -31,7 +32,11 @@ export function EmailHtmlFrame({ html, title = "Message body", muted, className 
 	const dark = useDarkTheme();
 	const [original, setOriginal] = useState(false);
 	const designed = dark && hasOwnBackground(html);
-	const srcDoc = useMemo(() => buildEmailFrameDocument(html, { dark, muted, original }), [html, dark, muted, original]);
+	const font = useReaderFont();
+	const srcDoc = useMemo(
+		() => buildEmailFrameDocument(html, { dark, muted, original, font }),
+		[html, dark, muted, original, font],
+	);
 
 	const pendingFrame = useRef(0);
 

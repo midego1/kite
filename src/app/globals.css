@@ -619,6 +619,211 @@ pre {
 	animation: reload-flight-tail 280ms ease-in-out infinite alternate;
 }
 
+/* The kite's return after a reload to a new version (reload-return-scene.tsx, in the startup screen of
+   loading-transition.tsx). The inline script in <head> (reload-return-utils.ts) puts `kite-reload-return` on <html>
+   when the previous page left with the flight above; without it the scene is display: none and the startup
+   screen is as before. The kite sails in from the top right, then hangs on its string above the progress bar:
+   the string's hand is the pivot of a slow swing, the kite bobs on its own period, the tail ripples, a soft cloud
+   drifts and a few wind lines pass. Everything is CSS, so it moves before any chunk arrives and adds no nodes
+   for the boot watchdog (asset-recovery-utils.ts) to count as progress. */
+html.kite-reload-return {
+	--reload-return-width: clamp(7rem, 22vmin, 11rem);
+	--reload-return-cloud: rgba(173, 194, 236, 0.45);
+	--reload-return-wind: rgba(107, 134, 196, 0.55);
+	--reload-return-string: rgba(74, 85, 120, 0.5);
+	--reload-return-track: rgba(127, 162, 255, 0.22);
+}
+
+html.dark.kite-reload-return {
+	--reload-return-cloud: rgba(255, 255, 255, 0.07);
+	--reload-return-wind: rgba(255, 255, 255, 0.3);
+	--reload-return-string: rgba(232, 234, 237, 0.4);
+	--reload-return-track: rgba(127, 162, 255, 0.25);
+}
+
+.reload-return,
+.reload-return-only,
+.reload-return-static {
+	display: none;
+}
+
+html.kite-reload-return .reload-return {
+	display: block;
+	overflow: hidden;
+}
+
+html.kite-reload-return .reload-return-only {
+	display: inline;
+}
+
+html.kite-reload-return .reload-return-hidden {
+	display: none;
+}
+
+/* The screen follows the theme while the kite is back, instead of the plain light page. */
+html.kite-reload-return [data-loading-overlay] {
+	background: var(--background);
+	color: var(--foreground);
+}
+
+html.kite-reload-return .reload-return-track {
+	background: var(--reload-return-track);
+}
+
+html.kite-reload-return .reload-return-progress {
+	background: linear-gradient(90deg, #7fa2ff, #9b7bf7);
+}
+
+html.dark.kite-reload-return .loading-recovery {
+	color: #bdc1c6;
+}
+
+.reload-return-arrive {
+	position: absolute;
+	left: 50%;
+	bottom: calc(50% + 0.75rem);
+	width: var(--reload-return-width);
+	margin-left: calc(var(--reload-return-width) / -2);
+	animation: reload-return-arrive 1300ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+	will-change: transform, opacity;
+}
+
+.reload-return-swing {
+	transform-origin: 50% 100%;
+	animation: reload-return-swing 3200ms ease-in-out infinite alternate;
+}
+
+.reload-return-kite {
+	display: block;
+	width: 100%;
+	height: auto;
+	color: var(--reload-return-string);
+	animation: reload-return-bob 2100ms ease-in-out infinite alternate;
+}
+
+.reload-return-tail {
+	transform-origin: 28px 91px;
+	transform-box: view-box;
+	animation: reload-return-tail 900ms ease-in-out infinite alternate;
+}
+
+.reload-return-cloud {
+	position: absolute;
+	border-radius: 999px;
+	background: radial-gradient(ellipse at center, var(--reload-return-cloud) 0%, transparent 70%);
+	animation: reload-return-drift 18s ease-in-out infinite alternate;
+}
+
+.reload-return-cloud-1 {
+	top: 16%;
+	left: 6%;
+	width: 20rem;
+	height: 6rem;
+}
+
+.reload-return-cloud-2 {
+	top: 64%;
+	right: 4%;
+	width: 14rem;
+	height: 4.5rem;
+	animation-duration: 24s;
+	animation-direction: alternate-reverse;
+}
+
+.reload-return-wind {
+	position: absolute;
+	height: 2px;
+	border-radius: 1px;
+	background: var(--reload-return-wind);
+	opacity: 0;
+	animation: reload-return-wind 2800ms ease-in-out infinite;
+}
+
+.reload-return-wind-1 {
+	top: calc(50% - 11rem);
+	left: calc(50% + 4rem);
+	width: 3.5rem;
+	animation-delay: 1400ms;
+}
+
+.reload-return-wind-2 {
+	top: calc(50% - 8.5rem);
+	left: calc(50% + 6rem);
+	width: 2.25rem;
+	animation-delay: 2300ms;
+}
+
+.reload-return-wind-3 {
+	top: calc(50% - 13.5rem);
+	left: calc(50% + 2rem);
+	width: 2.5rem;
+	animation-delay: 3100ms;
+}
+
+@keyframes reload-return-arrive {
+	from {
+		transform: translate(55vw, -55vh) rotate(18deg) scale(0.7);
+		opacity: 0;
+	}
+	45% {
+		opacity: 1;
+	}
+	to {
+		transform: translate(0, 0) rotate(0deg) scale(1);
+		opacity: 1;
+	}
+}
+
+@keyframes reload-return-swing {
+	from {
+		transform: rotate(-3deg);
+	}
+	to {
+		transform: rotate(3deg);
+	}
+}
+
+@keyframes reload-return-bob {
+	from {
+		transform: translateY(0);
+	}
+	to {
+		transform: translateY(-0.5rem);
+	}
+}
+
+@keyframes reload-return-tail {
+	from {
+		transform: rotate(-6deg);
+	}
+	to {
+		transform: rotate(5deg);
+	}
+}
+
+@keyframes reload-return-drift {
+	from {
+		transform: translateX(-6vw);
+	}
+	to {
+		transform: translateX(6vw);
+	}
+}
+
+@keyframes reload-return-wind {
+	0% {
+		transform: translateX(2.5rem);
+		opacity: 0;
+	}
+	35% {
+		opacity: 0.9;
+	}
+	100% {
+		transform: translateX(-4rem);
+		opacity: 0;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.kite-fly-away {
 		animation: none;
@@ -629,6 +834,23 @@ pre {
 	.reload-flight-kite,
 	.reload-flight-tail {
 		animation: none;
+	}
+
+	/* The kite's return (reload-return-scene.tsx) stands still, without wind, and says what is happening. */
+	.reload-return-arrive,
+	.reload-return-swing,
+	.reload-return-kite,
+	.reload-return-tail,
+	.reload-return-cloud {
+		animation: none;
+	}
+
+	.reload-return-wind {
+		display: none;
+	}
+
+	html.kite-reload-return .reload-return-static {
+		display: block;
 	}
 
 	.dialog-overlay,

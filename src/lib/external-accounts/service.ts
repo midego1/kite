@@ -376,7 +376,7 @@ export async function updateExternalAccount(
 	if (input.mailboxId !== current.mailboxId) await assertMailbox(env, actor, input.mailboxId);
 	const changes: Partial<typeof externalAccounts.$inferInsert> = {
 		...accountColumns(input),
-		...syncSettings(body, row),
+		...syncSettings(body, current.sync.enabled),
 		...sendingSwitches(body),
 		updatedAt: new Date(),
 	};
@@ -411,7 +411,7 @@ export async function updateExternalAccount(
  */
 function syncSettings(
 	body: Record<string, unknown>,
-	row: ExternalAccountRow,
+	syncEnabled: boolean,
 ): Partial<typeof externalAccounts.$inferInsert> {
 	const changes: Partial<typeof externalAccounts.$inferInsert> = {};
 	if (body.syncIntervalMinutes !== undefined) {
@@ -419,7 +419,7 @@ function syncSettings(
 		if (minutes === null) throw new ExternalAccountRefusal(400, "Check every 5, 15 or 60 minutes");
 		changes.syncIntervalMinutes = minutes;
 	}
-	if (typeof body.syncEnabled === "boolean" && body.syncEnabled !== row.syncEnabled) {
+	if (typeof body.syncEnabled === "boolean" && body.syncEnabled !== syncEnabled) {
 		changes.syncEnabled = body.syncEnabled;
 		if (body.syncEnabled) changes.nextSyncAt = null;
 	}

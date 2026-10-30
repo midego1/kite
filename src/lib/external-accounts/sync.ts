@@ -12,7 +12,7 @@ import { externalAccountTablesReady } from "./errors";
 import { appendRecentErrors } from "./recent-errors";
 import { readInstallState } from "./settings";
 import type { ExternalAccountRow } from "./serialize-utils";
-import { runSync, SyncRefusedError, type RunOutcome } from "./sync-run";
+import { emptyOutcome, runSync, SyncRefusedError, type RunOutcome } from "./sync-run";
 import { externalSyncRefusal } from "./sync-target";
 import {
 	CHECK_NOW_COOLDOWN_MS,
@@ -137,6 +137,7 @@ export async function syncExternalAccount(
 		return { skipped: "not_allowed" };
 	}
 	const started = Date.now();
+	const outcome = emptyOutcome();
 	try {
 		if (refusal)
 			throw new SyncRefusedError(
@@ -148,12 +149,12 @@ export async function syncExternalAccount(
 				"The last check did not finish: it ran out of time or was stopped. Kite tries again later.",
 				"transient",
 			);
-		const outcome = await runSync(env, account, {
-			budgetMs: options.budgetMs ?? SYNC_RUN_BUDGET_MS,
-			clock,
-			lease,
-			limits: options.limits,
-		});
+		await runSync(
+			env,
+			account,
+			{ budgetMs: options.budgetMs ?? SYNC_RUN_BUDGET_MS, clock, lease, limits: options.limits },
+			outcome,
+		);
 		await recordSuccess(env, account, lease, outcome, clock());
 		logger.info("external.sync.checked", {
 			accountId,
@@ -174,7 +175,7 @@ export async function syncExternalAccount(
 		return { delivered: outcome.delivered, skipped: outcome.skipped, more: outcome.more };
 	} catch (error) {
 		const problem = classify(error, account);
-		await recordFailure(env, account, lease, problem, clock(), options.random ?? Math.random);
+		await recordFailure(env, account, lease, problem, clock(), options.random ?? Math.random, outcome.notes);
 		logger.warn("external.sync.failed", {
 			accountId,
 			class: problem.class,
@@ -266,6 +267,8 @@ async function recordFailure(
 	problem: SyncProblem,
 	now: Date,
 	random: () => number,
+	/** What the run noted before it failed (skipped messages), kept with the failure. */
+	notes: readonly string[] = [],
 ): Promise<void> {
 	const db = getDb(env);
 	const update = syncFailureUpdate(account, problem, now, random());
@@ -273,7 +276,7 @@ async function recordFailure(
 		lastError: update.lastError,
 		consecutiveFailures: update.consecutiveFailures,
 		nextSyncAt: update.nextSyncAt,
-		recentErrors: appendRecentErrors([update.lastError], now),
+		recentErrors: appendRecentErrors([...notes, update.lastError], now),
 		leaseUntil: null,
 		updatedAt: now,
 	};

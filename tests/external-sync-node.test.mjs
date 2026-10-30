@@ -960,3 +960,72 @@ test("a backup whose messages name an account it does not hold restores without 
 	]);
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM external_accounts").get().n, 0);
 });
+
+test("a step full of messages the server will not send still moves forward, run after run", async (t) => {
+	const server = await fake(t, { folders: { INBOX: [] } });
+	const { env, inbound, row, due, db } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	// Six refused messages and a good one, all in one planned step.
+	for (let index = 1; index <= 6; index += 1)
+		server.addMessage("INBOX", { raw: sampleMessage(index, { subject: `Bad ${index}` }), unfetchable: true });
+	server.addMessage("INBOX", sampleMessage(7, { subject: "Good" }));
+	const lastUid = () => db.db.prepare("SELECT last_uid FROM external_account_folders").get().last_uid;
+	due();
+	// Each bad message costs two reconnects; the run's eight run out at the fifth, but the cursor was saved after each.
+	assert.deepEqual(await syncExternalAccount(env, account.id, steady), { failed: "transient" });
+	assert.equal(lastUid(), 4);
+	assert.equal(JSON.parse(row().recent_errors).filter((entry) => /would not send/.test(entry.message)).length, 4);
+	due();
+	assert.deepEqual(await syncExternalAccount(env, account.id, steady), { delivered: 1, skipped: 2, more: false });
+	assert.equal(lastUid(), 7);
+	assert.deepEqual(
+		inbound.map((message) => message.rawR2Key.split("/").pop()),
+		["7.eml"],
+	);
+	// The last failed try leaves the broken connection alone: no reconnect after it when nothing follows.
+	server.addMessage("INBOX", { raw: sampleMessage(8, { subject: "Bad last" }), unfetchable: true });
+	due();
+	const logins = () => server.commands.filter((command) => /AUTHENTICATE PLAIN/.test(command.line)).length;
+	const before = logins();
+	assert.deepEqual(await syncExternalAccount(env, account.id, steady), { delivered: 0, skipped: 1, more: false });
+	assert.equal(logins() - before, 2, "the run's own sign-in and one reconnect between the two tries");
+	assert.equal(lastUid(), 8);
+});
+
+test("a refusal that starts while a step is handed on keeps the cursor before it", async (t) => {
+	let release;
+	const gate = new Promise((resolve) => (release = resolve));
+	// FETCH 0 is the summary, 1 the step's bodies.
+	const server = await fake(t, { fetchGate: (index) => (index === 1 ? gate : Promise.resolve()) });
+	const { db, env, inbound, synced, deliver, due, bucket } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	server.addMessage("INBOX", sampleMessage(110, { subject: "During the refusal" }));
+	due();
+	const running = syncExternalAccount(env, account.id);
+	await new Promise((resolve) => {
+		const timer = setInterval(() => {
+			if (server.commands.some((command) => /BODY\.PEEK/.test(command.line))) {
+				clearInterval(timer);
+				resolve();
+			}
+		}, 10);
+	});
+	await setCanConnect(env, "owner", false);
+	release();
+	assert.deepEqual(await running, { delivered: 1, skipped: 0, more: false });
+	const lastUid = () => db.db.prepare("SELECT last_uid FROM external_account_folders").get().last_uid;
+	assert.equal(lastUid(), 1, "not moved past the message handed on");
+	const [queued] = [...inbound];
+	await deliver();
+	assert.equal(synced().length, 0);
+	assert.equal(bucket.objects.has(queued.rawR2Key), false);
+	assert.equal(lastUid(), 1);
+	await setCanConnect(env, "owner", true);
+	due();
+	assert.equal((await syncExternalAccount(env, account.id)).delivered, 1);
+	await deliver();
+	assert.deepEqual(
+		synced().map((message) => message.subject),
+		["During the refusal"],
+	);
+});

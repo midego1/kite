@@ -36,6 +36,15 @@ export const RESET_LOOKBACK_MS = 2 * 24 * 60 * 60_000;
 /** A message larger than Kite receives (the Email Routing limit) is skipped and named in the account's problems. */
 export const SYNC_MAX_MESSAGE_BYTES = 25 * 1024 * 1024;
 
+/**
+ * The longest one IMAP command of a run may take: a command started while the run's budget lasts must end by
+ * `deadline` (its lease minus a margin), so the run never outlives its lease; at most the connection's own maximum,
+ * and never under 30 seconds.
+ */
+export function commandCapMs(input: { deadline: number; started: number; budgetMs: number; commandMaxMs: number }) {
+	return Math.max(30_000, Math.min(input.commandMaxMs, input.deadline - input.started - input.budgetMs));
+}
+
 /** A valid interval from a request, or null. */
 export function parseSyncInterval(value: unknown): number | null {
 	const minutes = Number(value);

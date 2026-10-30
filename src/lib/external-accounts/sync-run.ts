@@ -14,6 +14,7 @@ import type { ExternalAccountRow } from "./serialize-utils";
 import { externalSyncRefusal } from "./sync-target";
 import {
 	baselineLastUid,
+	commandCapMs,
 	externalRawKey,
 	fetchRange,
 	planFetchSteps,
@@ -45,6 +46,8 @@ export class SyncRefusedError extends Error {
 
 export type RunOutcome = { delivered: number; skipped: number; more: boolean; reset: boolean; notes: string[] };
 
+export const emptyOutcome = (): RunOutcome => ({ delivered: 0, skipped: 0, more: false, reset: false, notes: [] });
+
 export type RunOptions = {
 	budgetMs: number;
 	clock: () => Date;
@@ -53,6 +56,9 @@ export type RunOptions = {
 	/** Tests shrink the connection's limits to exercise the byte-bounded fetches. */
 	limits?: Partial<ImapLimits>;
 };
+
+/** How long before its lease runs out a run stops, so it never outlives it (another run may take over then). */
+const LEASE_MARGIN_MS = 2 * 60_000;
 
 /** Signs in with the saved password, opened only for this run. */
 async function openSession(
@@ -98,15 +104,17 @@ async function openSession(
  */
 class InboxConnection {
 	private reopened = 0;
+	/** A FETCH failed and the connection was not replaced yet: replace it before the next command. */
+	private broken = false;
 	private constructor(
 		private readonly env: CloudflareEnv,
 		private readonly account: ExternalAccountRow,
-		private readonly limits: Partial<ImapLimits> | undefined,
+		private readonly limits: Partial<ImapLimits>,
 		public session: ImapSession,
 		public readonly state: InboxState,
 	) {}
 
-	static async open(env: CloudflareEnv, account: ExternalAccountRow, limits: Partial<ImapLimits> | undefined) {
+	static async open(env: CloudflareEnv, account: ExternalAccountRow, limits: Partial<ImapLimits>) {
 		const session = await openSession(env, account, limits);
 		try {
 			return new InboxConnection(env, account, limits, session, await session.examine(INBOX));
@@ -116,12 +124,24 @@ class InboxConnection {
 		}
 	}
 
-	async reopen(): Promise<void> {
+	/** Marks the connection unusable; the next `usable()` replaces it, and nothing does if no command follows. */
+	fail(): void {
+		this.broken = true;
+	}
+
+	/** The session, replaced first when the last FETCH failed. */
+	async usable(): Promise<ImapSession> {
+		if (this.broken) await this.reopen();
+		return this.session;
+	}
+
+	private async reopen(): Promise<void> {
 		this.reopened += 1;
 		if (this.reopened > MAX_REOPENS)
-			throw new Error("The mail server kept failing to send messages; Kite will try again later");
+			throw new Error("The mail server kept failing to send messages; Kite checks again later");
 		await this.session.close().catch(() => undefined);
 		this.session = await openSession(this.env, this.account, this.limits);
+		this.broken = false;
 		const state = await this.session.examine(INBOX);
 		if (state.uidValidity !== this.state.uidValidity)
 			throw new Error("The provider rebuilt the Inbox during the check; Kite will check it again");
@@ -132,6 +152,9 @@ class InboxConnection {
 	}
 }
 
+/** Thrown to end a run early, keeping the cursor where the last saved message left it. */
+class StopRun extends Error {}
+
 /**
  * One check of INBOX (spec §6.3): the plan from the cursor, then the new messages in byte-bounded steps, each handed
  * to the inbound pipeline before the cursor moves past it. The run stops before a step when the account may no longer
@@ -141,8 +164,16 @@ export async function runSync(
 	env: CloudflareEnv,
 	account: ExternalAccountRow,
 	options: RunOptions,
+	/** Filled as the run goes, so a run that fails half way still has its notes recorded. */
+	outcome: RunOutcome = emptyOutcome(),
 ): Promise<RunOutcome> {
-	const connection = await InboxConnection.open(env, account, options.limits);
+	const started = Date.now();
+	const deadline = options.lease.getTime() - LEASE_MARGIN_MS;
+	const base = { ...imapLimits(env.KITE_RUNTIME), ...options.limits };
+	// No IMAP command started inside the budget may run past the deadline, so the run never outlives its lease.
+	const commandCap = commandCapMs({ deadline, started, budgetMs: options.budgetMs, commandMaxMs: base.commandMaxMs });
+	const limits = { ...base, commandMaxMs: commandCap, commandTimeoutMs: Math.min(base.commandTimeoutMs, commandCap) };
+	const connection = await InboxConnection.open(env, account, limits);
 	try {
 		const { state } = connection;
 		const db = getDb(env);
@@ -152,7 +183,6 @@ export async function runSync(
 			.where(and(eq(externalAccountFolders.accountId, account.id), eq(externalAccountFolders.name, INBOX)))
 			.limit(1);
 		const plan = planInboxSync(cursor ? { uidValidity: cursor.uidvalidity, lastUid: cursor.lastUid } : null, state);
-		const outcome: RunOutcome = { delivered: 0, skipped: 0, more: false, reset: false, notes: [] };
 		const save = (lastUid: number) => saveCursor(env, account.id, state, lastUid, options);
 		if (plan.kind === "baseline") {
 			const uids =
@@ -180,38 +210,56 @@ export async function runSync(
 		}
 		const { take, more } = selectNewMessages(await connection.session.fetchSummaries(range.from, range.to), lastUid);
 		outcome.more = more;
-		const limits = { ...imapLimits(env.KITE_RUNTIME), ...options.limits };
 		const steps = planFetchSteps(take, {
 			maxCount: SYNC_FETCH_CHUNK,
 			// RFC822.SIZE is the literal's size; a tenth is left for servers that count differently.
 			maxBytes: Math.floor(limits.fetchBatchBytes * 0.9),
 			maxMessageBytes: Math.min(SYNC_MAX_MESSAGE_BYTES, limits.literalBytes),
 		});
-		const started = Date.now();
-		for (const step of steps) {
-			if (Date.now() - started > options.budgetMs) {
-				outcome.more = true;
-				break;
+		const progress: Progress = {
+			outOfTime: () => Date.now() - started > options.budgetMs || Date.now() + commandCap > deadline,
+			// Checked right before the cursor moves: a refusal that began while messages were being handed on keeps
+			// them before the cursor, so delivery's refusal (which moves the cursor back) can never be overwritten.
+			save: async (uid) => {
+				await assertMayDeliver(env, account);
+				await save(uid);
+			},
+		};
+		try {
+			for (const step of steps) {
+				if (progress.outOfTime()) {
+					outcome.more = true;
+					break;
+				}
+				await assertMayDeliver(env, account);
+				if (step.kind === "skip") skipTooLarge(step.entry, outcome);
+				else await fetchStep(env, connection, account, step.entries, outcome, progress);
+				await progress.save(step.kind === "skip" ? step.entry.uid : step.entries[step.entries.length - 1].uid);
 			}
-			const refusal = await externalSyncRefusal(env, account);
-			if (refusal === "mailbox_access")
-				throw new SyncRefusedError(
-					"Kite can no longer deliver into this account's mailbox. Edit the account to choose another one.",
-				);
-			// Refused meanwhile (switch, permission, disabled owner): stop before fetching what delivery would refuse.
-			if (refusal) {
-				outcome.more = false;
-				break;
-			}
-			if (step.kind === "skip") skipTooLarge(step.entry, outcome);
-			else await fetchStep(env, connection, account, step.entries, outcome);
-			lastUid = step.kind === "skip" ? step.entry.uid : step.entries[step.entries.length - 1].uid;
-			await save(lastUid);
+		} catch (error) {
+			if (!(error instanceof StopRun)) throw error;
+			outcome.more = error.message === "out_of_time";
 		}
 		return outcome;
 	} finally {
 		await connection.close();
 	}
+}
+
+/** What a step needs from the run: whether time is up, and how to move the cursor (refusal checked first). */
+type Progress = { outOfTime: () => boolean; save: (uid: number) => Promise<void> };
+
+/**
+ * Stops the run when the account may no longer bring in mail (spec §6.4): a mailbox the owner lost access to is a
+ * configuration problem; a refusal of the switch or the permission (or a disabled owner) just ends the run.
+ */
+async function assertMayDeliver(env: CloudflareEnv, account: ExternalAccountRow): Promise<void> {
+	const refusal = await externalSyncRefusal(env, account);
+	if (refusal === "mailbox_access")
+		throw new SyncRefusedError(
+			"Kite can no longer deliver into this account's mailbox. Edit the account to choose another one.",
+		);
+	if (refusal) throw new StopRun("refused");
 }
 
 const megabytes = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`;
@@ -236,17 +284,23 @@ async function fetchStep(
 	account: ExternalAccountRow,
 	entries: ImapMessageSummary[],
 	outcome: RunOutcome,
+	progress: Progress,
 ): Promise<void> {
+	// A reconnect that fails (the server is gone, the run used up its reconnects) ends the run; only the FETCH itself
+	// failing is the message's problem.
+	const session = await connection.usable();
 	let bodies: Map<string, ImapFetchedMessage>;
 	try {
-		bodies = await connection.session.fetchMessages(entries.map((entry) => String(entry.uid)));
+		bodies = await session.fetchMessages(entries.map((entry) => String(entry.uid)));
 	} catch (error) {
-		await connection.reopen();
-		if (entries.length === 1) {
-			await fetchAlone(env, connection, account, entries[0], outcome, error);
-			return;
+		connection.fail();
+		// Each message alone, the cursor saved after each one, so a step full of bad messages still moves forward even
+		// when the run's reconnects run out half way.
+		for (const [index, entry] of entries.entries()) {
+			if (index > 0 && progress.outOfTime()) throw new StopRun("out_of_time");
+			await fetchAlone(env, connection, account, entry, outcome, entries.length === 1 ? error : null);
+			if (index < entries.length - 1) await progress.save(entry.uid);
 		}
-		for (const entry of entries) await fetchAlone(env, connection, account, entry, outcome, null);
 		return;
 	}
 	let missing = 0;
@@ -269,7 +323,8 @@ function noteMissing(count: number, outcome: RunOutcome) {
 
 /**
  * One message on its own: tried twice (with a fresh connection after a failure); a message the server still will not
- * send is skipped and named in the account's problems, and the cursor moves past it.
+ * send is skipped and named in the account's problems, and the cursor moves past it. A connection a failure left
+ * unusable is only replaced when another command follows.
  */
 async function fetchAlone(
 	env: CloudflareEnv,
@@ -281,12 +336,13 @@ async function fetchAlone(
 ): Promise<void> {
 	let failure = earlier;
 	for (let attempt = earlier ? 1 : 0; attempt < 2; attempt += 1) {
+		const session = await connection.usable();
 		let bodies: Map<string, ImapFetchedMessage>;
 		try {
-			bodies = await connection.session.fetchMessages([String(entry.uid)]);
+			bodies = await session.fetchMessages([String(entry.uid)]);
 		} catch (error) {
 			failure = error;
-			await connection.reopen();
+			connection.fail();
 			continue;
 		}
 		const message = bodies.get(String(entry.uid));

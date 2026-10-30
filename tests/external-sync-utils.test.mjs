@@ -29,6 +29,7 @@ const {
 	isFinalQueueAttempt,
 	fetchRange,
 	planFetchSteps,
+	commandCapMs,
 	externalAuthenticationResults,
 	detachMissingExternalAccount,
 	redactBackupRow,
@@ -44,7 +45,7 @@ const {
 	MailServerRefusedError,
 } = await bundleModules("kite-external-sync-utils-", [
 	[
-		"planInboxSync, baselineLastUid, resetLastUid, selectNewMessages, externalRawKey, sourceFlags, classifySyncError, failureDelayMs, syncFailureUpdate, isSyncStateChange, nextRegularSync, parseSyncInterval, isExternalSyncMessage, externalSyncMessage, MAX_SYNC_BACKOFF_MS, fetchRange, planFetchSteps",
+		"planInboxSync, baselineLastUid, resetLastUid, selectNewMessages, externalRawKey, sourceFlags, classifySyncError, failureDelayMs, syncFailureUpdate, isSyncStateChange, nextRegularSync, parseSyncInterval, isExternalSyncMessage, externalSyncMessage, MAX_SYNC_BACKOFF_MS, fetchRange, planFetchSteps, commandCapMs",
 		"src/lib/external-accounts/sync-utils.ts",
 	],
 	["parseFetchSummaries, imapSearchDate, parseExists", "src/lib/imap/protocol-utils.ts"],
@@ -298,6 +299,13 @@ test("only the topmost Authentication-Results with the preset's own authserv-id,
 		),
 		null,
 	);
+	// The documented limit (spec §6.6): a message placed in the Inbox by APPEND or an import tool with both headers
+	// made up in the right order cannot be told from delivered mail. Only someone who can write to the account can do it.
+	const crafted = [
+		field("received", "from forged by mx.google.com with ESMTPS"),
+		field("authentication-results", "mx.google.com; dmarc=pass"),
+	];
+	assert.equal(externalAuthenticationResults(crafted, "mx.google.com"), "mx.google.com; dmarc=pass");
 	// Presets without an authserv-id (custom hosts, Microsoft) get none, and nor does an unreadable header block.
 	assert.equal(externalAuthenticationResults(delivered, null), null);
 	assert.equal(externalAuthenticationResults(null, "mx.google.com"), null);
@@ -349,6 +357,17 @@ test("fetches are bounded by UIDNEXT and planned by size: one bad message cannot
 
 	assert.equal(parseExists(["* 3 EXISTS", "* OK [UIDNEXT 4] ok"]), 3);
 	assert.equal(parseExists(["* OK [UIDNEXT 4] ok"]), null);
+	// A command started inside the budget ends before the lease's margin: 15 min lease − 2 min margin − 4 min budget.
+	const minute = 60_000;
+	assert.equal(
+		commandCapMs({ deadline: 13 * minute, started: 0, budgetMs: 4 * minute, commandMaxMs: 10 * minute }),
+		9 * minute,
+	);
+	assert.equal(
+		commandCapMs({ deadline: 13 * minute, started: 0, budgetMs: 4 * minute, commandMaxMs: 3 * minute }),
+		3 * minute,
+	);
+	assert.equal(commandCapMs({ deadline: minute, started: 0, budgetMs: 4 * minute, commandMaxMs: 10 * minute }), 30_000);
 	assert.equal(isFinalQueueAttempt(3), false);
 	assert.equal(isFinalQueueAttempt(4), true);
 	assert.equal(isFinalQueueAttempt(1, 0), true);

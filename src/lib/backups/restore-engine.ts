@@ -2,7 +2,7 @@ import { clearModuleStateCache } from "@/lib/modules/state";
 import { clearStorageConfigCache } from "@/lib/storage/config";
 import type { DatabaseRecord } from "./types";
 import { fillBookingEventSlug, isDatabaseRecord } from "./utils";
-import { restoredBackupRow } from "./external-accounts-utils";
+import { detachMissingExternalAccount, restoredBackupRow } from "./external-accounts-utils";
 import { BackupDocumentScanner, INVALID_BACKUP_MESSAGE, parseJsonBytes, readSourcePages } from "./backup-reader-utils";
 import {
 	legacyBodyStatement,
@@ -27,10 +27,17 @@ import type {
 
 export const RESTORE_START: RestorePosition = { segment: 0, offset: null, rows: 0 };
 
-/** A backup row as it is inserted: older rows get the fields later releases added, credentials are dropped. */
-export function restoredRow(table: string, row: DatabaseRecord): DatabaseRecord {
+/**
+ * A backup row as it is inserted: older rows get the fields later releases added, credentials are dropped, and a
+ * message whose connected account the backup does not restore loses that link (`externalAccountIds`).
+ */
+export function restoredRow(
+	table: string,
+	row: DatabaseRecord,
+	externalAccountIds: ReadonlySet<string> | null = null,
+): DatabaseRecord {
 	if (table === "booking_events") fillBookingEventSlug(row);
-	return restoredBackupRow(table, row);
+	return detachMissingExternalAccount(table, restoredBackupRow(table, row), externalAccountIds);
 }
 
 type RangeRow = { value: unknown; end: number };
@@ -65,6 +72,8 @@ type SegmentContext = {
 	/** The furthest position whose statements have all been handed to the writer. */
 	reached: RestorePosition;
 	checkDeadline: () => void;
+	/** The connected accounts the backup restores, or null when the plan predates recording them. */
+	externalAccountIds: ReadonlySet<string> | null;
 };
 
 async function writeRows(table: PreparedRestoreTable, context: SegmentContext): Promise<void> {
@@ -87,7 +96,13 @@ async function writeRows(table: PreparedRestoreTable, context: SegmentContext): 
 	for await (const row of readRange(context.source, table.range, from.segment === index ? from.offset : null)) {
 		if (!isDatabaseRecord(row.value)) throw new Error(INVALID_BACKUP_MESSAGE);
 		rows++;
-		await emit(builder.add(restoredRow(table.name, row.value), { segment: index, offset: row.end, rows }));
+		await emit(
+			builder.add(restoredRow(table.name, row.value, context.externalAccountIds), {
+				segment: index,
+				offset: row.end,
+				rows,
+			}),
+		);
 	}
 	if (rows !== table.range.rows) throw new Error("The backup file changed or could not be read while restoring");
 	const last = builder.finish();
@@ -146,6 +161,7 @@ export async function executeDatabaseRestore(
 		checkDeadline: () => {
 			if (deadline !== undefined && Date.now() >= deadline) throw new Deadline();
 		},
+		externalAccountIds: prepared.externalAccountIds ? new Set(prepared.externalAccountIds) : null,
 	};
 	try {
 		for (; context.index < segments.length; context.index++) {

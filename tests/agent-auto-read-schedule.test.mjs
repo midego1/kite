@@ -401,7 +401,8 @@ test("both runtimes hand agent queue bodies to the shared dispatcher before modu
 	const node = readFileSync(join(root, "server/index.ts"), "utf8");
 	assert.match(
 		node,
-		/agentQueue\.setConsumer\(async \(body\) => \{\s*if \(await processAgentQueueMessage\(env, body\)\) return;\s*await dispatchModuleQueueMessage\(env, "agent", body\)/,
+		// A connected account's sync (core, never a module message) may sit between the two.
+		/agentQueue\.setConsumer\(async \(body\) => \{\s*if \(await processAgentQueueMessage\(env, body\)\) return;\s*(?:if \(isExternalSyncMessage\(body\)\) \{[^}]*\}\s*)?await dispatchModuleQueueMessage\(env, "agent", body\)/,
 	);
 	const worker = readFileSync(join(root, "worker.ts"), "utf8");
 	assert.match(worker, /else if \(await processAgentQueueMessage\(env, msg\.body\)\)/);

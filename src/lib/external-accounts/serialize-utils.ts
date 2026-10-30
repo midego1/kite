@@ -5,6 +5,9 @@ import type { ExternalAccountView } from "./types";
 
 export type ExternalAccountRow = typeof externalAccounts.$inferSelect;
 
+/** The `status_reason` values a sync failure writes (`syncFailureUpdate`). */
+const SYNC_PROBLEMS = new Set(["throttled", "transient", "config", "sync"]);
+
 /**
  * The public shape of an account, with when its SMTP sign-in last worked (`readSmtpVerified`). Fields are listed one by one, so the sealed password (and, later, OAuth tokens or
  * cursors) can never reach a response by being added to the table.
@@ -12,6 +15,7 @@ export type ExternalAccountRow = typeof externalAccounts.$inferSelect;
 export function serializeExternalAccount(
 	row: ExternalAccountRow,
 	smtpVerifiedAt: Date | null = null,
+	now = new Date(),
 ): ExternalAccountView {
 	return {
 		id: row.id,
@@ -31,6 +35,15 @@ export function serializeExternalAccount(
 		statusReason: row.statusReason,
 		lastError: row.lastError,
 		hasPassword: row.secret.length > 0,
+		sync: {
+			enabled: row.syncEnabled,
+			intervalMinutes: row.syncIntervalMinutes,
+			lastSuccessAt: row.lastSuccessAt?.toISOString() ?? null,
+			nextSyncAt: row.nextSyncAt?.toISOString() ?? null,
+			failures: row.consecutiveFailures,
+			problem: SYNC_PROBLEMS.has(row.statusReason ?? "") ? row.statusReason : null,
+			running: !!row.leaseUntil && row.leaseUntil.getTime() > now.getTime(),
+		},
 		sending: {
 			enabled: row.sendEnabled,
 			appendSent: row.appendSent,
@@ -41,20 +54,4 @@ export function serializeExternalAccount(
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};
-}
-
-/** The last 20 problems of an account, newest last, as stored in `recent_errors`. */
-export function appendRecentError(stored: string, message: string, at: Date): string {
-	let list: { at: string; message: string }[] = [];
-	try {
-		const parsed = JSON.parse(stored) as unknown;
-		if (Array.isArray(parsed))
-			list = parsed.filter(
-				(entry): entry is { at: string; message: string } =>
-					!!entry && typeof entry.at === "string" && typeof entry.message === "string",
-			);
-	} catch {
-		list = [];
-	}
-	return JSON.stringify([...list, { at: at.toISOString(), message }].slice(-20));
 }

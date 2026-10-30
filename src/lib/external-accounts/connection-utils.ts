@@ -8,9 +8,16 @@ export type ConnectionProblem = {
 const MAX_MESSAGE = 300;
 
 /** Server text is cut at 300 characters and stripped of control characters before it is stored or shown. */
-function shortServerText(text: string): string {
+export function shortServerText(text: string): string {
 	const clean = text.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
 	return clean.length > MAX_MESSAGE ? `${clean.slice(0, MAX_MESSAGE - 1)}…` : clean;
+}
+
+/** An error's message with `secrets` replaced, in case a server echoed one back. */
+export function redactedErrorMessage(error: unknown, secrets: readonly string[] = []): string {
+	let message = error instanceof Error && error.message ? error.message : "The connection failed";
+	for (const secret of secrets) if (secret) message = message.split(secret).join("•••");
+	return message;
 }
 
 /**
@@ -21,8 +28,7 @@ export function classifyConnectionError(
 	error: unknown,
 	options: { refused: boolean; secrets?: readonly string[] },
 ): ConnectionProblem {
-	let message = error instanceof Error && error.message ? error.message : "The connection failed";
-	for (const secret of options.secrets ?? []) if (secret) message = message.split(secret).join("•••");
+	const message = redactedErrorMessage(error, options.secrets);
 	const text = shortServerText(message);
 	if (options.refused) return { kind: "refused", message: text };
 	if (/sign-in failed|AUTHENTICATIONFAILED|AUTHORIZATIONFAILED|invalid credentials|LOGIN failed/i.test(message))

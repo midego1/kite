@@ -70,9 +70,9 @@ test("Direct uploads are off until Set up automatically turns them on in one cli
 	await withFakes(async ({ cf }) => {
 		const answers = recordStorageAnswers(page);
 		await page.goto("/admin");
-		await expect(page.locator("[data-direct-uploads-reminder]")).toContainText(
-			"Direct uploads are off: set up (2 min)",
-		);
+		await expect(
+			page.getByRole("region", { name: "Needs attention" }).getByTestId("attention-direct-uploads"),
+		).toContainText("Direct uploads are off: set up (2 min)");
 
 		await page.goto("/storage");
 		const reminder = page.locator("[data-direct-uploads-reminder]");
@@ -171,10 +171,12 @@ test("Add store creates a new R2 bucket in one click, and a taken name offers th
 	});
 });
 
-test("the reminder can be dismissed from the Admin overview", async ({ page }) => {
+test("the reminder is an attention item on the Admin overview, and Dismiss hides it there and on Storage", async ({
+	page,
+}) => {
 	await withFakes(async () => {
 		await page.goto("/admin");
-		const reminder = page.locator("[data-direct-uploads-reminder]");
+		const reminder = page.getByRole("region", { name: "Needs attention" }).getByTestId("attention-direct-uploads");
 		await expect(reminder.getByRole("link", { name: "Set up" })).toHaveAttribute("href", "/storage?setup=direct");
 		await reminder.getByRole("button", { name: "Dismiss" }).click();
 		await expect(reminder).toHaveCount(0);

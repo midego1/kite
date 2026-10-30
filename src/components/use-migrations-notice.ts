@@ -21,7 +21,10 @@ function subscribe(listener: () => void) {
 	return () => listeners.delete(listener);
 }
 
-async function fetchPendingMigrations(): Promise<PendingMigrationsResponse> {
+/** Shared by the mailbox banner, the database card and the admin overview; a finished run invalidates it. */
+export const PENDING_MIGRATIONS_QUERY = ["pending-migrations"] as const;
+
+export async function fetchPendingMigrations(): Promise<PendingMigrationsResponse> {
 	const response = await fetch("/api/migrations/pending", { cache: "no-store" });
 	if (!response.ok) throw new Error(`Pending migrations request failed (${response.status})`);
 	return parsePendingMigrations(await response.json());
@@ -33,7 +36,7 @@ export function useMigrationsNotice() {
 	// Also resets the shared apply state when the session changes, so a sign-out never leaks a summary or error.
 	const progress = useMigrationApply();
 	const { data, refetch } = useQuery({
-		queryKey: ["pending-migrations"],
+		queryKey: PENDING_MIGRATIONS_QUERY,
 		queryFn: fetchPendingMigrations,
 		enabled: Boolean(user),
 		refetchInterval: PENDING_MIGRATIONS_REFRESH_MS,

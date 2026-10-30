@@ -61,15 +61,21 @@ test("decodes normal flowed mail exactly as postal-mime 2.7 does, with and witho
 
 test("matches postal-mime 2.7 on random flowed-looking text", () => {
 	const alphabet = [" ", " ", "a", "b", "-", "--", "-- ", ">", "\n", "\r\n", "\r\n", "\r"];
+	// A linear congruential generator mod 2^31 in 32-bit integer arithmetic: `seed * 1103515245` in doubles loses
+	// precision past 2^53, and the old loop produced only 535 distinct inputs out of 20,000.
 	let seed = 1;
-	const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
-	for (let round = 0; round < 20_000; round++) {
+	const random = () => (seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 2147483648;
+	const inputs = new Set();
+	while (inputs.size < 20_000) {
 		const length = Math.floor(random() * 40);
 		let text = "";
 		for (let index = 0; index < length; index++) text += alphabet[Math.floor(random() * alphabet.length)];
+		inputs.add(text);
+	}
+	assert.equal(inputs.size, 20_000);
+	for (const text of inputs)
 		for (const delSp of [false, true])
 			assert.equal(decodeFlowedText(text, delSp), original(text, delSp), JSON.stringify({ text, delSp }));
-	}
 });
 
 test("stays linear: 39,000 flowed lines in well under a second", () => {

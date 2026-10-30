@@ -2,28 +2,31 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { authFetch } from "@/lib/auth/client";
+import {
+	DIRECT_UPLOADS_REMINDER_TITLE,
+	DIRECT_UPLOADS_WHY,
+	directUploadsAttemptText,
+	type DirectUploadsReminderData,
+} from "./direct-uploads-reminder-utils";
 
-export type DirectUploadsReminderData = {
-	show: boolean;
-	setup: { ok: boolean; source: "install" | "admin"; message?: string; permission?: string | null } | null;
-};
+export type { DirectUploadsReminderData };
 
 /** Shared with the Storage page's own query, so dismissing in one place hides it in the other. */
-const STORAGE_OVERVIEW_KEY = ["admin-storage"];
+export const STORAGE_OVERVIEW_KEY = ["admin-storage"];
 
-/** Why the last automatic setup did not finish, in one sentence; nothing when it never ran. */
-function lastAttempt(setup: DirectUploadsReminderData["setup"]): string | null {
-	if (!setup || setup.ok) return null;
-	const when = setup.source === "install" ? "during installation" : "last time";
-	const permission = setup.permission ? ` CF_TOKEN needs "${setup.permission}".` : "";
-	return `The automatic setup ${when} did not finish: ${setup.message ?? "it failed"}${permission}`;
+/** The storage overview (primary admin only), for the reminder's own reads. */
+export async function fetchStorageReminder(): Promise<{ directUploadsReminder?: DirectUploadsReminderData }> {
+	const response = await authFetch("/api/admin/storage");
+	if (!response.ok) throw new Error(`Storage overview failed (${response.status})`);
+	return (await response.json()) as { directUploadsReminder?: DirectUploadsReminderData };
 }
 
-async function dismiss(): Promise<void> {
+/** Hides the reminder for the install, on the Storage page and the Admin overview alike. */
+export async function dismissDirectUploadsReminder(): Promise<void> {
 	const response = await authFetch("/api/admin/storage/reminder", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
@@ -50,12 +53,12 @@ export function DirectUploadsReminder({
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	if (!reminder.show) return null;
-	const attempt = lastAttempt(reminder.setup);
+	const attempt = directUploadsAttemptText(reminder.setup);
 	async function hide() {
 		setBusy(true);
 		setError(null);
 		try {
-			await dismiss();
+			await dismissDirectUploadsReminder();
 			await queryClient.invalidateQueries({ queryKey: STORAGE_OVERVIEW_KEY });
 		} catch (caught) {
 			setError(caught instanceof Error ? caught.message : "Could not dismiss the reminder");
@@ -67,7 +70,7 @@ export function DirectUploadsReminder({
 		<div data-direct-uploads-reminder>
 			<Notice
 				tone={attempt ? "warning" : "info"}
-				title="Direct uploads are off: set up (2 min)"
+				title={DIRECT_UPLOADS_REMINDER_TITLE}
 				actions={
 					<>
 						{onSetUp ? (
@@ -85,28 +88,10 @@ export function DirectUploadsReminder({
 					</>
 				}
 			>
-				<p>
-					Large Drive uploads pass through the Worker. With direct uploads they go straight to R2: faster, and less load
-					on the Worker.
-				</p>
+				<p>{DIRECT_UPLOADS_WHY}</p>
 				{attempt && <p className="mt-1">{attempt}</p>}
 				{error && <p className="mt-1 text-red-700">{error}</p>}
 			</Notice>
 		</div>
 	);
-}
-
-/** The Admin overview's copy: reads the storage overview (primary admin only; anyone else gets nothing). */
-export function AdminDirectUploadsReminder() {
-	const overview = useQuery({
-		queryKey: STORAGE_OVERVIEW_KEY,
-		queryFn: async () => {
-			const response = await authFetch("/api/admin/storage");
-			if (!response.ok) throw new Error(`Storage overview failed (${response.status})`);
-			return (await response.json()) as { directUploadsReminder?: DirectUploadsReminderData };
-		},
-		retry: false,
-	});
-	const reminder = overview.data?.directUploadsReminder;
-	return reminder ? <DirectUploadsReminder reminder={reminder} /> : null;
 }

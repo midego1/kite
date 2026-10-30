@@ -373,11 +373,13 @@ test("admin pages use the Settings layout with the mail sidebar and the Admin me
 		"Webhooks",
 	]);
 
-	// The overview keeps its heading and the database card but no grid of link cards; the menu is the only nav.
+	// The overview keeps its heading and the database card; besides the count tiles the menu is the only nav.
 	await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
-	await expect(page.getByText("Database", { exact: true })).toBeVisible();
-	for (const href of ["/domains", "/mailboxes", "/agent", "/branding", "/accounts", "/api-keys"])
+	await expect(page.getByText("Database", { exact: true }).first()).toBeVisible();
+	for (const href of ["/agent", "/branding", "/api-keys"])
 		await expect(page.locator(`a[href="${href}"]`)).toHaveCount(1);
+	for (const href of ["/domains", "/mailboxes", "/accounts"])
+		await expect(page.locator(`a[href="${href}"]`)).toHaveCount(2);
 	await expect(menu.getByRole("link", { name: "Back to inbox" })).toHaveAttribute("href", "/inbox");
 });
 
@@ -534,6 +536,7 @@ test("a non-primary admin's Admin menu hides primary-only pages, which stay bloc
 	for (const label of [...primaryOnlyLabels, "Routing"])
 		await expect(menu.getByRole("navigation").getByRole("link", { name: label, exact: true })).toHaveCount(0);
 	await expect(page.getByText("Database", { exact: true })).toHaveCount(0);
+	await expect(page.getByTestId("stat-database")).toHaveCount(0);
 
 	for (const path of ["/backups", "/branding", "/audit-logs", "/alerts"]) {
 		await page.goto(path);

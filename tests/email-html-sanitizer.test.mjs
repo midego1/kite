@@ -16,6 +16,7 @@ await build({
 		contents: `
 			export { createEmailHtmlSanitizer } from "./src/app/(dashboard)/inbox/[messageId]/email-html-sanitizer-utils.ts";
 			export { sanitizeStoredEmailHtml } from "./src/lib/email/stored-html-utils.ts";
+			export { parseCssColour, isNearBlackNeutral, isUnreadableOnDark, paintsBackground } from "./src/components/messages/email-colour-utils.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "email-html-sanitizer-test-entry.ts",
@@ -31,9 +32,14 @@ await build({
 	packages: "external",
 	logLevel: "silent",
 });
-const { createEmailHtmlSanitizer, sanitizeStoredEmailHtml } = await import(
-	pathToFileURL(join(directory, "entry.mjs")).href
-);
+const {
+	createEmailHtmlSanitizer,
+	sanitizeStoredEmailHtml,
+	parseCssColour,
+	isNearBlackNeutral,
+	isUnreadableOnDark,
+	paintsBackground,
+} = await import(pathToFileURL(join(directory, "entry.mjs")).href);
 
 const { window } = new JSDOM("<!doctype html><html><body></body></html>", { url: "https://kite.example/inbox" });
 const sanitizeEmailHtml = createEmailHtmlSanitizer(window);
@@ -209,4 +215,140 @@ test("stored HTML drops documents' head, styles, comments and active content", (
 	assert.equal(sanitizeStoredEmailHtml("<custom-tag>kept text</custom-tag><button>Press</button>"), "kept textPress");
 	assert.equal(sanitizeStoredEmailHtml(""), null);
 	assert.equal(sanitizeStoredEmailHtml(undefined), null);
+});
+
+// Dark mode reads colours from each element's parsed inline style, never from the markup as text.
+const NO_COLOURS = () => ({ background: false, unreadable: false, neutral: false });
+function colourFacts(html, options = {}) {
+	const colours = NO_COLOURS();
+	const output = sanitizeEmailHtml(html, { colours, ...options });
+	return { colours, output };
+}
+
+test("near-black text is marked for the frame and counted; its style is kept", () => {
+	for (const value of ["black", "#000", "#222", "#333333", "rgb(34, 34, 34)", "rgba(0, 0, 0, .87)"]) {
+		const { colours, output } = colourFacts(`<p style="margin: 0; color: ${value}">Hi</p>`);
+		assert.deepEqual(colours, { background: false, unreadable: false, neutral: true }, value);
+		assert.match(output, /<p [^>]*data-kite-text="neutral"/, value);
+		assert.match(output, /style="[^"]*color:/, value);
+	}
+	// The marker sits on the element that declares the colour, not its children.
+	const { output } = colourFacts('<div><p style="color:black">a</p><p>b</p></div>');
+	assert.equal(output.match(/data-kite-text/g).length, 1);
+});
+
+test("text colours that stay unreadable on dark are counted, whatever the colour is called", () => {
+	for (const value of [
+		"#1F497D",
+		"rgb(31, 73, 125)",
+		"#555555",
+		"dimgray",
+		"darkslategray",
+		"midnightblue",
+		"indigo",
+		"brown",
+		"navy",
+		"rebeccapurple",
+	]) {
+		const { colours, output } = colourFacts(`<p style="color: ${value}">Hi</p>`);
+		assert.deepEqual(colours, { background: false, unreadable: true, neutral: false }, value);
+		assert.doesNotMatch(output, /data-kite-text/, value);
+	}
+});
+
+test("colours that read fine on dark are not counted or marked", () => {
+	for (const value of [
+		"white",
+		"#e8eaed",
+		"lightgray",
+		"#8ab4f8",
+		"rgb(200, 200, 200)",
+		"gray",
+		"var(--text)",
+		"inherit",
+	]) {
+		const { colours, output } = colourFacts(`<p style="color: ${value}">Hi</p>`);
+		assert.deepEqual(colours, NO_COLOURS(), value);
+		assert.doesNotMatch(output, /data-kite-text/, value);
+	}
+});
+
+test("a background colour is counted unless it is transparent", () => {
+	for (const html of [
+		'<div style="background-color: #fff">x</div>',
+		'<div style="background: #f4f4f4">x</div>',
+		'<table><tr><td style="background-color: rgb(0, 0, 0)">x</td></tr></table>',
+	]) {
+		assert.equal(colourFacts(html).colours.background, true, html);
+	}
+	for (const html of [
+		'<div style="background-color: transparent">x</div>',
+		'<div style="background-color: rgba(0, 0, 0, 0)">x</div>',
+		'<div style="border-color: #fff">x</div>',
+		"<div>x</div>",
+	]) {
+		assert.equal(colourFacts(html).colours.background, false, html);
+	}
+});
+
+test("text that mentions styles is text: nothing is counted, marked or changed", () => {
+	const probes = [
+		'<pre>&lt;td style="color:#000"&gt;</pre>',
+		'<p>style="color: rgb(31,73,125)"</p>',
+		"<p>background-color: red; color: #1F497D</p>",
+		'<p title="color: #1F497D">hover</p>',
+		'<p>Favourite color: blue, bgcolor="#fff"</p>',
+	];
+	for (const html of probes) {
+		const { colours, output } = colourFacts(html);
+		assert.deepEqual(colours, NO_COLOURS(), html);
+		assert.equal(output, sanitizeEmailHtml(html), `${html} comes out as without the colour pass`);
+		assert.doesNotMatch(output, /data-kite-text/, html);
+	}
+	assert.match(colourFacts(probes[0]).output, /&lt;td style="color:#000"&gt;/);
+});
+
+test("nothing is marked or counted without a colours object, or for outgoing mail", () => {
+	const html = '<p style="color: black">Hi</p>';
+	assert.doesNotMatch(sanitizeEmailHtml(html), /data-kite-text/);
+	const outgoing = NO_COLOURS();
+	assert.doesNotMatch(sanitizeEmailHtml(html, { forOutgoing: true, colours: outgoing }), /data-kite-text/);
+	assert.deepEqual(outgoing, NO_COLOURS());
+});
+
+test("a sender cannot forge the near-black marker", () => {
+	const { colours, output } = colourFacts('<p data-kite-text="neutral" style="color: white">Hi</p>');
+	assert.deepEqual(colours, NO_COLOURS());
+	assert.doesNotMatch(output, /data-kite-text/);
+});
+
+test("colour parsing knows every CSS name, system text colours and the rgb forms", () => {
+	const named = [
+		"dimgray",
+		"darkslategray",
+		"midnightblue",
+		"indigo",
+		"brown",
+		"rebeccapurple",
+		"lightgoldenrodyellow",
+		"mediumspringgreen",
+		"whitesmoke",
+		"yellowgreen",
+	];
+	for (const name of named) assert.ok(parseCssColour(name), name);
+	assert.deepEqual(parseCssColour("DimGray").rgb, [105, 105, 105]);
+	assert.deepEqual(parseCssColour("windowtext").rgb, [0, 0, 0]);
+	assert.deepEqual(parseCssColour("#1F497D").rgb, [31, 73, 125]);
+	assert.deepEqual(parseCssColour("#fff").rgb, [255, 255, 255]);
+	assert.deepEqual(parseCssColour("rgb(31 73 125 / 50%)"), { rgb: [31, 73, 125], alpha: 0.5 });
+	for (const value of ["", "inherit", "var(--x)", "hsl(0, 0%, 0%)", "notacolour"])
+		assert.equal(parseCssColour(value), null, value);
+	assert.equal(isNearBlackNeutral(parseCssColour("windowtext").rgb), true);
+	assert.equal(isNearBlackNeutral(parseCssColour("#333").rgb), true);
+	assert.equal(isNearBlackNeutral(parseCssColour("#555").rgb), false);
+	assert.equal(isNearBlackNeutral(parseCssColour("#000040").rgb), false);
+	assert.equal(isUnreadableOnDark(parseCssColour("#555").rgb), true);
+	assert.equal(isUnreadableOnDark(parseCssColour("gray").rgb), false);
+	assert.equal(paintsBackground("transparent"), false);
+	assert.equal(paintsBackground("#fff"), true);
 });

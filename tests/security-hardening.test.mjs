@@ -226,108 +226,84 @@ test("email frame sandbox never allows scripts", () => {
 	assert.match(document, /<p>Hi<\/p>/);
 	assert.match(frame.buildEmailFrameDocument("x"), /color-scheme:light/);
 });
-test("designed mail is rendered light and inverted in dark mode, with media inverted back", () => {
-	for (const html of [
-		'<table bgcolor="#ffffff"><tr><td>Hi</td></tr></table>',
-		'<div style="background-color: #fff">Hi</div>',
-		"<style>.card{background:#f5f5f5}</style><div class=card>Hi</div>",
-	]) {
-		const document = frame.buildEmailFrameDocument(html, { dark: true });
-		assert.match(document, /color-scheme:light/, html);
-		assert.match(document, /html\{background:#f2f2f0;filter:invert\(\.92\) hue-rotate\(180deg\)\}/, html);
-		assert.match(document, /img,video,picture[^{]*\{filter:invert\(1\) hue-rotate\(180deg\)\}/, html);
-		const original = frame.buildEmailFrameDocument(html, { dark: true, original: true });
-		assert.doesNotMatch(original, /filter:invert/, html);
-		assert.match(original, /html\{background:#fff\}/, html);
-	}
-	for (const html of ["<p>Plain reply</p>", '<div style="background: transparent">Hi</div>']) {
-		const document = frame.buildEmailFrameDocument(html, { dark: true });
-		assert.match(document, /color-scheme:dark/, html);
-		assert.doesNotMatch(document, /html\{background:#fff\}/, html);
-	}
-	assert.doesNotMatch(frame.buildEmailFrameDocument('<td bgcolor="#fff">x</td>'), /html\{background:#fff\}/);
-});
-test("near-black text colours are dropped in dark mode, so an ordinary reply looks like plain mail", () => {
-	for (const value of [
-		"black",
-		"windowtext",
-		"#000",
-		"#222",
-		"#333333",
-		"rgb(34, 34, 34)",
-		"rgba(0,0,0,.87)",
-		"COLOR:Black !important",
-	]) {
-		const html = `<p style="margin:0; color:${value.replace("COLOR:", "")}">Hi <span style="color:windowtext">there</span></p>`;
-		assert.equal(frame.adaptsEmailColours(html), true, `${value} offers the original colours`);
-		const document = frame.buildEmailFrameDocument(html, { dark: true });
-		assert.match(document, /color-scheme:dark/, value);
-		assert.doesNotMatch(document, /filter:invert/, value);
-		assert.doesNotMatch(document, /html\{background:#fff\}/, value);
-		// The declarations are gone, so the text takes the theme colour; everything else in the style stays.
-		assert.doesNotMatch(document, /color:\s*(black|windowtext|#000|#222|#333333|rgb)/i, value);
-		assert.match(document, /<p style="margin:0;">Hi <span style="">there<\/span><\/p>/, value);
-		// Original colours: the sender's own markup on a light canvas.
-		const original = frame.buildEmailFrameDocument(html, { dark: true, original: true });
-		assert.match(original, /color-scheme:light/, value);
-		assert.match(original, /html\{background:#fff\}/, value);
-		assert.doesNotMatch(original, /filter:invert/, value);
-		assert.match(original, /color:windowtext/, value);
-		// Light mode never touches the colours.
-		assert.equal(frame.buildEmailFrameDocument(html, { dark: false }).includes("windowtext"), true, value);
+const BACKGROUND = { background: true, unreadable: false, neutral: false };
+const UNREADABLE = { background: false, unreadable: true, neutral: false };
+const NEUTRAL = { background: false, unreadable: false, neutral: true };
+const NOTHING = { background: false, unreadable: false, neutral: false };
+const INVERT_RULE = /html\{background:#f2f2f0;filter:invert\(\.92\) hue-rotate\(180deg\)\}/;
+
+test("mail with a background or an unreadable text colour is rendered light and inverted in dark mode", () => {
+	const html = '<div style="background-color: #fff; color: #1F497D">Hi <img src="/x.png"></div>';
+	for (const colours of [BACKGROUND, UNREADABLE, { ...NEUTRAL, unreadable: true }]) {
+		const document = frame.buildEmailFrameDocument(html, { dark: true, colours });
+		assert.match(document, /color-scheme:light/);
+		assert.match(document, INVERT_RULE);
+		assert.match(document, /img,video,picture[^{]*\{filter:invert\(1\) hue-rotate\(180deg\)\}/);
+		assert.doesNotMatch(document, /data-kite-text/);
+		// The markup is the sanitizer's output, never rewritten here.
+		assert.ok(document.includes(html));
+		const original = frame.buildEmailFrameDocument(html, { dark: true, colours, original: true });
+		assert.doesNotMatch(original, /filter:invert/);
+		assert.match(original, /color-scheme:light/);
+		assert.match(original, /html\{background:#fff\}/);
+		assert.equal(frame.emailFrameColorScheme({ dark: true, colours, original: true }), "light");
+		// Light mode keeps the sender's colours on the normal canvas.
+		const light = frame.buildEmailFrameDocument(html, { dark: false, colours });
+		assert.doesNotMatch(light, /filter:invert|html\{background:#fff\}/);
 	}
 });
-test("a colour that stays unreadable on the dark canvas renders the mail light and inverted", () => {
-	for (const html of [
-		'<p style="color:#1F497D">Best regards</p>',
-		'<p style="color:black">Hi</p><p style="color: rgb(31, 73, 125)">Signature</p>',
-		'<p style="color:#555555">Grey</p>',
-		'<font style="color:navy">x</font>',
-	]) {
-		assert.equal(frame.adaptsEmailColours(html), true, html);
-		const document = frame.buildEmailFrameDocument(html, { dark: true });
-		assert.match(document, /color-scheme:light/, html);
-		assert.match(document, /html\{background:#f2f2f0;filter:invert\(\.92\) hue-rotate\(180deg\)\}/, html);
-		// Inverted as a whole: the declared colours are kept, not dropped.
-		assert.match(document, /color:\s*(#1F497D|black|#555555|navy)/i, html);
-		const original = frame.buildEmailFrameDocument(html, { dark: true, original: true });
-		assert.doesNotMatch(original, /filter:invert/, html);
-		assert.match(original, /html\{background:#fff\}/, html);
-		assert.equal(frame.emailFrameColorScheme(html, { dark: true, original: true }), "light", html);
-	}
+test("near-black text takes the theme colour in dark mode, with no inverted card", () => {
+	const html = '<p style="color:black" data-kite-text="neutral">Hi <a href="https://example.com">link</a></p>';
+	const document = frame.buildEmailFrameDocument(html, { dark: true, colours: NEUTRAL });
+	assert.match(document, /color-scheme:dark/);
+	assert.doesNotMatch(document, /filter:invert/);
+	assert.doesNotMatch(document, /html\{background:#fff\}/);
+	assert.ok(document.includes(html), "the sender's markup reaches the frame untouched");
+	// The theme's text, quote and link colours, not inherit.
+	assert.match(document, /\[data-kite-text=neutral\]\{color:#e8eaed!important\}/);
+	assert.match(document, /blockquote \[data-kite-text=neutral\]\{color:#9aa0a6!important\}/);
+	assert.match(document, /a\[data-kite-text=neutral\],a \[data-kite-text=neutral\]\{color:#8ab4f8!important\}/);
+	assert.match(
+		frame.buildEmailFrameDocument(html, { dark: true, colours: NEUTRAL, muted: true }),
+		/\[data-kite-text=neutral\]\{color:#9aa0a6!important\}/,
+	);
+	assert.equal(frame.emailColoursAdapted(NEUTRAL), true);
+	// Original colours: the sender's markup on a light canvas, without the theme rule.
+	const original = frame.buildEmailFrameDocument(html, { dark: true, colours: NEUTRAL, original: true });
+	assert.match(original, /color-scheme:light/);
+	assert.match(original, /html\{background:#fff\}/);
+	assert.doesNotMatch(original, /filter:invert|!important/);
+	// Light mode never touches the colours.
+	assert.doesNotMatch(
+		frame.buildEmailFrameDocument(html, { dark: false, colours: NEUTRAL }),
+		/data-kite-text=neutral\]\{/,
+	);
 });
-test("text colours that read fine on dark are left alone and offer nothing to restore", () => {
-	for (const html of [
-		'<p style="color:#ffffff">Hi</p>',
-		'<p style="color:#e8eaed">Hi</p>',
-		'<p style="color:rgb(200, 200, 200)">Hi</p>',
-		'<p style="color:gray">Hi</p>',
-		'<p style="color:#8ab4f8">Hi</p>',
-		'<p style="color:var(--text)">Hi</p>',
-		"<p>Favourite color: blue; the color:red one</p>",
-		'<p title="color: red">Hi</p>',
-		'<p style="border-color:#000;background-color:transparent">Hi</p>',
-		'<p style="color:inherit">Hi</p>',
-	]) {
-		assert.equal(frame.adaptsEmailColours(html), false, html);
-		const document = frame.buildEmailFrameDocument(html, { dark: true });
-		assert.match(document, /color-scheme:dark/, html);
-		assert.doesNotMatch(document, /filter:invert/, html);
-		assert.ok(document.includes(html), `${html} reaches the frame untouched`);
-		assert.equal(frame.emailFrameColorScheme(html, { dark: true, original: true }), "dark", html);
+test("mail without colour findings, or with readable ones, is left alone and offers nothing to restore", () => {
+	const html = '<p style="color:#e8eaed">Hi</p><pre>&lt;td style="color:#000" bgcolor="#fff"&gt;</pre>';
+	for (const colours of [undefined, NOTHING]) {
+		assert.equal(frame.emailColoursAdapted(colours), false);
+		const document = frame.buildEmailFrameDocument(html, { dark: true, colours });
+		assert.match(document, /color-scheme:dark/);
+		assert.doesNotMatch(document, /filter:invert|data-kite-text/);
+		assert.ok(document.includes(html), "text that looks like markup is never rewritten");
+		assert.equal(frame.emailFrameColorScheme({ dark: true, colours, original: true }), "dark");
 	}
 });
 test("the iframe element declares the same color-scheme as the frame document", () => {
-	for (const [html, options] of [
-		["<p>Plain reply</p>", { dark: true }],
-		["<p>Plain reply</p>", {}],
-		['<div style="background-color: #fff">Hi</div>', { dark: true }],
-		['<div style="background-color: #fff">Hi</div>', { dark: true, original: true }],
+	for (const options of [
+		{ dark: true, colours: NOTHING },
+		{},
+		{ dark: true, colours: BACKGROUND },
+		{ dark: true, colours: BACKGROUND, original: true },
+		{ dark: true, colours: NEUTRAL },
+		{ dark: true, colours: NEUTRAL, original: true },
+		{ dark: true, colours: UNREADABLE },
 	]) {
-		const scheme = frame.emailFrameColorScheme(html, options);
-		assert.match(frame.buildEmailFrameDocument(html, options), new RegExp(`html\\{color-scheme:${scheme}\\}`));
+		const scheme = frame.emailFrameColorScheme(options);
+		assert.match(frame.buildEmailFrameDocument("<p>x</p>", options), new RegExp(`html\\{color-scheme:${scheme}\\}`));
 	}
-	assert.equal(frame.emailFrameColorScheme("<p>Plain reply</p>", { dark: true }), "dark");
+	assert.equal(frame.emailFrameColorScheme({ dark: true }), "dark");
 });
 
 test("production CSP allows inline scripts only by nonce", () => {

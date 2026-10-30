@@ -21,6 +21,7 @@ import { QuickReply } from "@/components/message-actions/quick-reply";
 import { AssistantButton } from "@/components/agent/assistant-button";
 import { MessageReadingHeaderButton } from "@/components/messages/message-reading-header-button";
 import { EmailBody } from "@/components/messages/email-body";
+import { emptyEmailColours } from "@/components/messages/email-colour-utils";
 import { RemoteImagesNotice } from "@/components/messages/email-html-frame";
 import { LinkifiedText } from "@/components/messages/linkified-text";
 import { useLoadRemoteImages } from "@/components/messages/use-load-remote-images";
@@ -153,11 +154,19 @@ export default function MessageDetailPage() {
 		linkify: true,
 		dropFontFamily: readerFont !== undefined,
 	};
+	const bodyColours = emptyEmailColours();
+	const quotedColours = emptyEmailColours();
 	const htmlBody = collapseQuotedEmailHtml(
-		sanitizeEmailHtml(resolveInlineAttachmentUrls(bodyDisplay.htmlBody, message.id, attachments), imageOptions),
+		sanitizeEmailHtml(resolveInlineAttachmentUrls(bodyDisplay.htmlBody, message.id, attachments), {
+			...imageOptions,
+			colours: bodyColours,
+		}),
 	);
 	const quotedHtml = collapseQuotedEmailHtml(
-		sanitizeEmailHtml(resolveInlineAttachmentUrls(bodyDisplay.quotedHtml, message.id, attachments), imageOptions),
+		sanitizeEmailHtml(resolveInlineAttachmentUrls(bodyDisplay.quotedHtml, message.id, attachments), {
+			...imageOptions,
+			colours: quotedColours,
+		}),
 		true,
 	);
 	const cloudAttachmentResult = extractCloudAttachments(bodyDisplay.latestContent);
@@ -342,7 +351,9 @@ export default function MessageDetailPage() {
 							<EmailBody
 								key={message.id}
 								html={htmlBody}
+								colours={bodyColours}
 								quotedHtml={quotedHtml}
+								quotedColours={quotedColours}
 								className="email-body mx-auto"
 								fallback={
 									<pre className="whitespace-pre-wrap text-sm text mx-auto">

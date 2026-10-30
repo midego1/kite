@@ -19,7 +19,11 @@ const COLOURS_ONLY = `<table width="100%" bgcolor="#f4f4f4"><tr><td><p style="co
 const OUTLOOK = `<p style="margin:0cm;color:black">Outlook reply body</p><p style="margin:0cm;color:windowtext">Second Outlook line</p>`;
 const LIGHT = `<p style="color:#e8eaed">Light text mail body</p>`;
 
-type Kind = "designed" | "coloursOnly" | "outlook" | "light" | "plain";
+// Only the parsed styles count: text that mentions a style, a colour or a background is just text.
+const TEXTUAL = `<p>Plain text mentioning style="color: rgb(31,73,125)" and background-color: red.</p><pre>&lt;td style="color:#000"&gt;</pre>`;
+const DIMGRAY = `<p style="color:dimgray">Dimgray mail body</p>`;
+
+type Kind = "designed" | "coloursOnly" | "outlook" | "light" | "plain" | "textual" | "dimgray";
 const ids = {} as Record<Kind, string>;
 const subjects = {} as Record<Kind, string>;
 
@@ -31,6 +35,8 @@ test.beforeAll(async () => {
 		["coloursOnly", "Colours only", COLOURS_ONLY],
 		["outlook", "Outlook", OUTLOOK],
 		["light", "Light", LIGHT],
+		["textual", "Textual", TEXTUAL],
+		["dimgray", "Dimgray", DIMGRAY],
 		["plain", "Plain", "<p>Plain mail body. Favourite color: blue; color: red.</p>"],
 	] as const) {
 		subjects[key] = `${label} ${token}`;
@@ -210,6 +216,25 @@ test("Outlook-style black text: no inverted card, theme colours, and the button 
 	await expect(toggle).toHaveAttribute("aria-pressed", "true");
 	await expect(html(page)).toHaveCSS("background-color", "rgb(255, 255, 255)");
 	await expect.poll(async () => (await paintedText(page, "p")).text[0]).toBeLessThan(40);
+});
+
+test("text that only mentions a style is not adapted and is shown as written", async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await open(page, "dark", "right", ids.textual);
+	const frame = page.getByTitle("Message body").contentFrame();
+	await expect(frame.locator("pre")).toHaveText('<td style="color:#000">');
+	await expect(frame.locator("p")).toContainText('style="color: rgb(31,73,125)" and background-color: red.');
+	await expect(html(page)).toHaveCSS("filter", "none");
+	await expect(html(page)).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+	await expect(page.getByRole("button", { name: "Original colours" })).toHaveCount(0);
+});
+
+test("a named colour that is unreadable on dark (dimgray) is adapted too", async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await open(page, "dark", "right", ids.dimgray);
+	await expect(page.getByRole("button", { name: "Original colours" })).toBeVisible();
+	await expect(html(page)).toHaveCSS("filter", /invert/);
+	await expect.poll(async () => (await paintedText(page, "p")).contrast).toBeGreaterThanOrEqual(4.5);
 });
 
 test("light text on dark is left alone: no button, readable, untouched", async ({ page }) => {

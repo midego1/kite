@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Sun } from "lucide-react";
 import { EmailHtmlFrame } from "./email-html-frame";
-import { adaptsEmailColours } from "./email-html-frame-utils";
+import { emailColoursAdapted } from "./email-html-frame-utils";
 import { QuotedEmailToggle } from "./quoted-email-toggle";
 import { useDarkTheme } from "./use-dark-theme";
 import type { EmailBodyProps } from "./email-body-types";
@@ -12,10 +12,11 @@ import type { EmailBodyProps } from "./email-body-types";
  * A message's body and its quoted history. In dark mode, when either one's colours were adapted, one small
  * "Original colours" button above the body shows the sender's colours in both.
  */
-export function EmailBody({ html, quotedHtml, fallback, className }: EmailBodyProps) {
+export function EmailBody({ html, colours, quotedHtml, quotedColours, fallback, className }: EmailBodyProps) {
 	const dark = useDarkTheme();
 	const [original, setOriginal] = useState(false);
-	const adapted = dark && ((!!html && adaptsEmailColours(html)) || (!!quotedHtml && adaptsEmailColours(quotedHtml)));
+	const adapted =
+		dark && ((!!html && emailColoursAdapted(colours)) || (!!quotedHtml && emailColoursAdapted(quotedColours)));
 	return (
 		<>
 			{adapted && (
@@ -32,8 +33,8 @@ export function EmailBody({ html, quotedHtml, fallback, className }: EmailBodyPr
 					</button>
 				</div>
 			)}
-			{html ? <EmailHtmlFrame html={html} original={original} className={className} /> : fallback}
-			{quotedHtml && <QuotedEmailToggle html={quotedHtml} original={original} />}
+			{html ? <EmailHtmlFrame html={html} colours={colours} original={original} className={className} /> : fallback}
+			{quotedHtml && <QuotedEmailToggle html={quotedHtml} colours={quotedColours} original={original} />}
 		</>
 	);
 }

@@ -10,6 +10,7 @@ import type { EmailHtmlFrameProps, RemoteImagesNoticeProps } from "./email-html-
 
 export function EmailHtmlFrame({
 	html,
+	colours,
 	title = "Message body",
 	muted,
 	original = false,
@@ -18,11 +19,15 @@ export function EmailHtmlFrame({
 	const frame = useRef<HTMLIFrameElement | null>(null);
 	const [height, setHeight] = useState(0);
 	const dark = useDarkTheme();
-	const scheme = emailFrameColorScheme(html, { dark, original });
+	// The facts as primitives, so a new object with the same findings does not rebuild the document.
+	const background = colours?.background ?? false;
+	const unreadable = colours?.unreadable ?? false;
+	const neutral = colours?.neutral ?? false;
+	const scheme = emailFrameColorScheme({ dark, original, colours: { background, unreadable, neutral } });
 	const font = useReaderFont();
 	const srcDoc = useMemo(
-		() => buildEmailFrameDocument(html, { dark, muted, original, font }),
-		[html, dark, muted, original, font],
+		() => buildEmailFrameDocument(html, { dark, muted, original, font, colours: { background, unreadable, neutral } }),
+		[html, dark, muted, original, font, background, unreadable, neutral],
 	);
 
 	const pendingFrame = useRef(0);

@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.30.5] - 2026-10-30
+
+### Added
+
+- Direct Drive uploads to R2 are now part of setup on Cloudflare: creating the first admin account uses `CF_TOKEN` to create an API token that may only read and write the `kite-raw` bucket, sets the bucket's CORS rule for the app, checks and saves the keys. Add the account permissions **Workers R2 Storage: Edit** and **Account API Tokens: Edit** to `CF_TOKEN` for this (see [Direct uploads at setup](https://github.com/midego1/kite/blob/main/docs/deployment.md#direct-uploads-at-setup)); you may remove the second after setup. If it cannot, setup still finishes.
+- [Admin → Storage](/storage) and the [Admin overview](/admin) (under Needs attention) show "Direct uploads are off: set up (2 min)", with why the automatic setup failed, until direct uploads are on or the reminder is dismissed. **Enable direct uploads** starts with **Set up automatically**, which does the same in one click and names a missing permission; the guided manual steps stay below it.
+- Migration 0085 adds the `storage_state` table, which keeps the automatic setup's outcome and the dismissed reminder. Apply it from the database update banner or the [Admin overview](/admin); until then the reminder shows without a reason and **Dismiss** waits for the update.
+- **Add store** with Cloudflare R2 can create a new R2 bucket (with a suggested name, location and jurisdiction) or connect one picked from the account's buckets in one click, listing each step as it goes. A taken name offers to connect the existing bucket. Kite adds its CORS rule next to the bucket's other rules, and puts the policy back if the setup fails.
+
+### Changed
+
+- The [Admin overview](/admin) now starts with what needs attention: waiting database updates, a failed or missing backup, a restore that needs recovery, a database near its size limit, webhooks with failed deliveries, AI requests that failed in the last 24 hours and domains that are not active yet, each with a link to where to fix it, or "Nothing needs your attention". Under it, tiles count accounts, mailboxes and domains (and the database size for the primary admin) and open the matching page; the database, size and backup cards follow. Admins who are not the primary admin get the same list and tiles for what they may read, instead of an empty page.
+- Requests to a saved store no longer follow HTTP redirects (this came with the Test connection hardening): a store behind a proxy that redirects must be saved with its final endpoint.
+- A Test connection attempt refused by the limit keeps its single audit row, now marked `outcome: "rate_limited"`, and every attempt's row records its outcome.
+- A forwarded message attached inline as `message/rfc822`, and each post of a digest, now shows as an `.eml` attachment instead of being merged into the body, so it is parsed only once. Attached messages do not count toward the limit of 10 attachments (from Mailflare #214).
+- After upgrading, the daily raw mail sweep (02:00 UTC) works through the existing `inbound/` folder of the Mail store, up to 20,000 objects a day, and deletes raw mail older than a week that no message refers to. Raw mail of stored messages is never touched (see "Inbound mail limits" in `docs/operations.md`).
+
+### Fixed
+
+- A message with an oversized body, subject, address list or Message-ID is stored instead of failing and being dropped after its retries: large HTML bodies of delivered mail go to mail storage like imported ones, and the other fields are cut to fit (from Mailflare #217).
+- Two first messages from the same new sender arriving at once no longer make one of them fail.
+- Mail for an address that has no mailbox, alias or catch-all is refused with "No such recipient here" instead of being stored and then silently dropped. A failed routing lookup still stores the message, so nothing is lost (from Mailflare #219).
+- Raw mail that nothing stores (no route, a reject rule) is deleted right away, and a daily sweep removes raw mail no message references a week after it arrived (from Mailflare #219). A message whose forward failed under a forward rule without a copy goes to the rule's mailbox, or is kept in mail storage and logged, instead of being dropped.
+- When the routing lookup fails (the database is unavailable), mail is now stored for the queue even with account forwarding set up, instead of being refused with "Processing failed".
+
+### Security
+
+- `CF_TOKEN` needs **Account API Tokens: Edit** for the automatic setup, which lets it create tokens with any permission on the account (a leaked `CF_TOKEN` could then take the account over); Kite only uses it when setup runs or an admin selects Set up automatically or Create bucket and connect, and the docs and the dialog say to remove it afterwards. The setup ends within its time budget with its cleanup, never creates a second token for a bucket Kite already has a store for, and tokens it created stay in the account until deleted there. The token value and the derived S3 secret are never stored in clear, returned or logged.
+- Incoming mail is checked before it is parsed: a crafted message with a huge header block, thousands of MIME parts, deep nesting or hundreds of thousands of short lines (in a body, a text attachment or an attached message) is refused with "Message rejected: …" instead of exhausting the Worker's CPU or memory or blocking the self-hosted server. Every path that reads raw mail goes through the same bounded parser (Cloudflare, the relay, SMTP, Resend, SES, imports, JMAP `Email/import`, automatic reading), and a message over the limits that still reaches the queue is dropped instead of retried; any other parse error is retried as before (from Mailflare #214).
+- Turning HTML into text for snippets, search and automatic reading no longer slows down on unclosed `<style>`, `<script>` or `<head>` tags (from Mailflare #214).
+- A plain-text message in `format=flowed` is unfolded in linear time: a 2.4 MB message of 39,000 flowed lines took about 25 seconds to parse and now takes well under one.
+- Mail from Resend now carries its plain headers (at most 200, without any authentication or `Received` headers), so auto-replies, mailbox rules and automatic reading recognise automatic and list mail there too (from Mailflare #224).
+
 ## [2026.10.30.4] - 2026-10-30
 
 ### Added

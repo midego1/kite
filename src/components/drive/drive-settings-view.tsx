@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DirectUploadsTip } from "./direct-uploads-tip";
 import { DriveSettingsForm } from "./drive-settings-form";
 import { DriveUsageTable } from "./drive-usage-table";
 
@@ -16,6 +17,7 @@ export function DriveSettingsView() {
 					Drive on or off for everyone under Modules, and for one account under Accounts → Permissions.
 				</p>
 			</div>
+			<DirectUploadsTip />
 			<DriveSettingsForm onSaved={() => setReloadKey((key) => key + 1)} />
 			<DriveUsageTable reloadKey={reloadKey} />
 		</div>

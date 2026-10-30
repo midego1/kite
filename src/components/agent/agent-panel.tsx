@@ -808,7 +808,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 						<textarea
 							ref={inputRef}
 							rows={1}
-							className="block min-h-24 w-full resize-none rounded-xl border border-blue-200 bg-white px-3 py-3 pb-12 text-sm leading-5 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:opacity-50"
+							className="reading-font block min-h-24 w-full resize-none rounded-xl border border-blue-200 bg-white px-3 py-3 pb-12 text-sm leading-5 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:opacity-50"
 							value={input}
 							onChange={(event) => setInput(event.target.value)}
 							onKeyDown={(event) => {

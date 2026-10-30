@@ -81,10 +81,20 @@
 	src: url("/fonts/opendyslexic/opendyslexic-latin-700-italic.woff2") format("woff2");
 }
 :root[data-font="opendyslexic"] {
-	--font-ui: "OpenDyslexic", var(--font-geist-sans), system-ui, sans-serif;
+	--font-reading: "OpenDyslexic", var(--font-geist-sans), system-ui, sans-serif;
 }
-/* Reading text (plain-text mail, what you write) gets a little more room between letters, words and lines;
-   the compact chrome (labels, buttons, the list) keeps its normal spacing so nothing truncates. */
+/* "Use it for: Everywhere" (data-font-scope) makes it the interface font too. The default, Text only, leaves
+   --font-ui as the style or Font choice set it, so menus, buttons, labels and headers keep their usual look. */
+:root[data-font="opendyslexic"][data-font-scope="everywhere"] {
+	--font-ui: var(--font-reading);
+}
+/* Reading text: mail, the composer, the message list's sender, subject and preview lines, thread summaries
+   and assistant replies. .reading-font is the typeface alone, for compact rows; .reading-text (long text)
+   also gets a little more room between letters, words and lines, which the list keeps out so nothing truncates. */
+:root[data-font="opendyslexic"] .reading-font,
+:root[data-font="opendyslexic"] .reading-text {
+	font-family: var(--font-reading);
+}
 :root[data-font="opendyslexic"] .reading-text {
 	letter-spacing: 0.02em;
 	word-spacing: 0.08em;

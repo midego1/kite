@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { DataRoutes } from "./data-routes";
 import { MigrationsCard } from "./migrations-card";
-import { StepList, StoreDialog } from "./store-dialog";
+import { DirectUploadsDialog, StepList, StoreDialog } from "./store-dialog";
 import type { StorageOverview, StoreView, ValidationStep } from "./types";
 import {
 	CLASS_LABELS,
@@ -38,6 +39,7 @@ function StoreRow({
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [steps, setSteps] = useState<ValidationStep[] | null>(null);
+	const [checkedAt, setCheckedAt] = useState<Date | null>(null);
 	const badge = statusBadge(store);
 	const fromEnvironment = store.source === "environment";
 
@@ -50,6 +52,7 @@ function StoreRow({
 				{ method: "POST" },
 			);
 			setSteps(answer.report.steps);
+			setCheckedAt(new Date());
 			onChanged();
 		} catch (caught) {
 			setError(errorText(caught, "Could not test the store"));
@@ -118,7 +121,7 @@ function StoreRow({
 					{error}
 				</p>
 			)}
-			{steps && <StepList steps={steps} />}
+			{steps && <StepList steps={steps} checkedAt={checkedAt} />}
 		</li>
 	);
 }
@@ -134,6 +137,7 @@ function StoresCard({
 }) {
 	const { defaultStore } = overview;
 	const canAdd = overview.encryptionReady;
+	const recommendDirect = defaultStore.kind === "r2" && !defaultStore.directUploads;
 	return (
 		<section aria-labelledby="storage-stores" className="rounded-xl border border-neutral-200 bg-white p-5">
 			<div className="flex flex-wrap items-start justify-between gap-3">
@@ -165,7 +169,7 @@ function StoresCard({
 								: "Files in Kite's data directory. Drive uploads pass through Kite."}
 						</p>
 					</div>
-					{defaultStore.kind === "r2" && !defaultStore.directUploads && (
+					{recommendDirect && (
 						<Button
 							size="sm"
 							variant="outline"
@@ -175,6 +179,14 @@ function StoresCard({
 							Enable direct uploads
 						</Button>
 					)}
+					{recommendDirect && (
+						<div data-direct-uploads-tip className="basis-full">
+							<Notice title="Recommended: turn on direct uploads">
+								Large Drive uploads then go straight to R2: faster, and less load on the Worker. Setting it up takes
+								about two minutes.
+							</Notice>
+						</div>
+					)}
 				</li>
 				{overview.stores.map((store) => (
 					<StoreRow key={store.id} store={store} onEdit={(entry) => onDialog({ store: entry })} onChanged={onChanged} />
@@ -182,6 +194,25 @@ function StoresCard({
 			</ul>
 		</section>
 	);
+}
+
+/** `/storage?setup=direct` (linked from Drive settings) opens the direct-uploads flow once the page has loaded. */
+function useSetupLink(overview: StorageOverview | undefined, open: (state: DialogState) => void) {
+	const params = useSearchParams();
+	const router = useRouter();
+	const pathname = usePathname();
+	const wanted = params.get("setup") === "direct";
+	const possible =
+		!!overview &&
+		!overview.migrationPending &&
+		overview.encryptionReady &&
+		overview.defaultStore.kind === "r2" &&
+		!overview.defaultStore.directUploads;
+	useEffect(() => {
+		if (!wanted || !overview) return;
+		if (possible) open({ store: null, binding: true });
+		router.replace(pathname);
+	}, [wanted, overview, possible, open, router, pathname]);
 }
 
 export function StorageAdmin() {
@@ -194,6 +225,7 @@ export function StorageAdmin() {
 	});
 	const refresh = () => void queryClient.invalidateQueries({ queryKey: STORAGE_QUERY_KEY });
 	const data = overview.data;
+	useSetupLink(data, setDialog);
 
 	return (
 		<div className="space-y-6">
@@ -218,8 +250,9 @@ export function StorageAdmin() {
 					<MigrationsCard overview={data} onChanged={refresh} />
 				</>
 			)}
-			{dialog && (
-				<StoreDialog store={dialog.store} binding={dialog.binding} onClose={() => setDialog(null)} onSaved={refresh} />
+			{dialog?.binding && <DirectUploadsDialog onClose={() => setDialog(null)} onSaved={refresh} />}
+			{dialog && !dialog.binding && (
+				<StoreDialog store={dialog.store} onClose={() => setDialog(null)} onSaved={refresh} />
 			)}
 		</div>
 	);

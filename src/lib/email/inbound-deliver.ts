@@ -18,6 +18,7 @@ import { resolveThreadId } from "@/lib/email/threading";
 import { normalizeMessageId } from "@/lib/email/thread-lookup";
 import { analyzeSpam } from "@/lib/spam/engine";
 import { configuredSpamIntelligenceProvider } from "@/lib/spam/providers/abuse-ch-key";
+import { dmarcPolicySource } from "@/lib/spam/dmarc-policy";
 import { getReputationKeys } from "@/lib/spam/analyzers/reputation";
 import { recordReputationObservation } from "@/lib/spam/repository";
 import { getMailboxNotificationUserIds, notifyUsersOfNewMessage } from "@/lib/realtime/utils";
@@ -44,6 +45,8 @@ export type InboundDelivery = {
 	headers: Record<string, string> | undefined;
 	/** The intake hop's verified `Authentication-Results`, or null when no trusted hop checked the sender. */
 	authenticationResults: string | null;
+	/** The SMTP listener saw a private client address, so SPF was not checked. */
+	privateClient?: boolean;
 	external?: ExternalDelivery;
 };
 
@@ -252,8 +255,10 @@ async function placeMessage(
 				envelopeFrom: input.from,
 				headers: input.headers,
 				authenticationResults: input.authenticationResults,
+				privateClient: input.privateClient,
 				message: parsed,
 				intelligenceProvider: configuredSpamIntelligenceProvider(env),
+				dmarcPolicy: dmarcPolicySource(env),
 			});
 		} catch (error) {
 			spamAnalysisError = error instanceof Error ? error.message.slice(0, 300) : "Spam analysis failed";

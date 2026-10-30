@@ -40,6 +40,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/modules`                                   | GET, PUT               | [source](../src/app/api/admin/modules/route.ts)                                   |
 | `/api/admin/resend-key`                                | DELETE, GET, PUT       | [source](../src/app/api/admin/resend-key/route.ts)                                |
 | `/api/admin/search-index`                              | GET, POST              | [source](../src/app/api/admin/search-index/route.ts)                              |
+| `/api/admin/spam-policy`                               | GET, PUT               | [source](../src/app/api/admin/spam-policy/route.ts)                               |
 | `/api/admin/storage/migrations/[id]`                   | GET, POST              | [source](../src/app/api/admin/storage/migrations/[id]/route.ts)                   |
 | `/api/admin/storage`                                   | GET                    | [source](../src/app/api/admin/storage/route.ts)                                   |
 | `/api/admin/storage/routes/[class]`                    | PUT                    | [source](../src/app/api/admin/storage/routes/[class]/route.ts)                    |
@@ -48,6 +49,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/storage/stores/[id]`                       | DELETE, PATCH          | [source](../src/app/api/admin/storage/stores/[id]/route.ts)                       |
 | `/api/admin/storage/stores/[id]/test`                  | POST                   | [source](../src/app/api/admin/storage/stores/[id]/test/route.ts)                  |
 | `/api/admin/storage/stores`                            | POST                   | [source](../src/app/api/admin/storage/stores/route.ts)                            |
+| `/api/admin/storage/test`                              | POST                   | [source](../src/app/api/admin/storage/test/route.ts)                              |
 | `/api/admin/telemetry`                                 | GET, PUT               | [source](../src/app/api/admin/telemetry/route.ts)                                 |
 | `/api/admin/threat-lookups/key`                        | DELETE, PUT            | [source](../src/app/api/admin/threat-lookups/key/route.ts)                        |
 | `/api/admin/threat-lookups/test`                       | POST                   | [source](../src/app/api/admin/threat-lookups/test/route.ts)                       |

@@ -25,21 +25,3 @@ export function restoredBackupRow(table: string, row: DatabaseRecord): DatabaseR
 		lease_until: null,
 	};
 }
-
-/**
- * A restored message row, as far as its connected account goes. `messages.external_account_id` (mail group) points at
- * `external_accounts` (accounts group). A restore inserts both from the same document, but a message may name an
- * account the document does not hold: one connected while the backup was being read (tables are read one after the
- * other), or a document whose accounts were left out. Such a message is restored without its account, as removing the
- * account would have left it (spec §6.7), so the restore never fails on the foreign key and the mail stays.
- * `accountIds` are the accounts the backup restores; null (a restore prepared before this was recorded) keeps the row.
- */
-export function detachMissingExternalAccount(
-	table: string,
-	row: DatabaseRecord,
-	accountIds: ReadonlySet<string> | null,
-): DatabaseRecord {
-	if (table !== "messages" || !accountIds) return row;
-	const accountId = row.external_account_id;
-	return accountId != null && !accountIds.has(String(accountId)) ? { ...row, external_account_id: null } : row;
-}

@@ -148,10 +148,8 @@ test("connecting needs the Kite password, refuses Kite domains and private serve
 		const connected = await user.api.post("/api/external-accounts", { data: body });
 		expect(connected.status()).toBe(201);
 		const { account } = (await connected.json()) as { account: AccountView };
-		// An "Other" account names its own server, so its address proves nothing: connecting it again is never
-		// refused as taken (that would tell anyone running a server which addresses are connected here).
 		const again = await user.api.post("/api/external-accounts", { data: body });
-		expect(again.status()).toBe(201);
+		expect((await again.json()).code).toBe("ADDRESS_TAKEN");
 
 		// Another user cannot see, edit, test, remove or import from it.
 		const otherUser = await createSignedInAccount(admin, `co${token.slice(-8)}`);

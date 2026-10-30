@@ -30,27 +30,6 @@ export function completeRawHeaderValues(raw: ArrayBuffer, name: string): string[
 
 const MAX_COMPLETE_HEADER_BYTES = 1024 * 1024;
 
-/**
- * Every header field of a raw message in order, names lower-case and values unfolded, or null when the header block
- * does not end within 1 MiB (a field further down could be missing).
- */
-export function completeRawHeaderFields(raw: ArrayBuffer): { name: string; value: string }[] | null {
-	const block = getHeaderBlock(raw, MAX_COMPLETE_HEADER_BYTES);
-	if (!block.complete) return null;
-	const fields: { name: string; value: string }[] = [];
-	for (const line of block.text.split(/\r?\n/)) {
-		const last = fields[fields.length - 1];
-		if (/^[\t ]/.test(line)) {
-			if (last) last.value = `${last.value} ${line.trim()}`.trim();
-			continue;
-		}
-		const separator = line.indexOf(":");
-		if (separator > 0)
-			fields.push({ name: line.slice(0, separator).trim().toLowerCase(), value: line.slice(separator + 1).trim() });
-	}
-	return fields;
-}
-
 function parseHeaderBlock(block: string): Map<string, string[]> {
 	const headers = new Map<string, string[]>();
 	let currentName: string | null = null;

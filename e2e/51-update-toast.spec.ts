@@ -36,9 +36,15 @@ function updateToast(page: Page) {
 	return page.getByRole("status").filter({ hasText: MESSAGE });
 }
 
-async function openInbox(page: Page, version: { requests: number }) {
+/** The notice pinned at the top of a message list, which replaces the toast wherever a list is on screen. */
+function updateRow(page: Page) {
+	return page.locator("[data-update-notice]");
+}
+
+/** Settings has no message list, so a new deployment is announced with the toast there. */
+async function openInbox(page: Page, version: { requests: number }, path = "/settings") {
 	await page.clock.install();
-	await page.goto("/inbox");
+	await page.goto(path);
 	await expect(page.getByRole("main")).toBeVisible();
 	await expect.poll(() => version.requests).toBeGreaterThan(0);
 }
@@ -160,7 +166,7 @@ test("a chunk of the previous deployment that is gone shows the toast, and Reloa
 			window.dispatchEvent(Object.assign(new Event("vite:preloadError", { cancelable: true }), { payload: error }));
 		}
 	});
-	const toast = updateToast(page);
+	const toast = updateRow(page);
 	await expect(toast).toBeVisible();
 	// Longer than the wait before the first automatic reload.
 	await page.waitForTimeout(1_500);
@@ -176,7 +182,7 @@ test("a chunk of the previous deployment that is gone shows the toast, and Reloa
 	expect(await readMarker(page)).toBe(undefined);
 	// Once the app has rendered, the reload count starts over.
 	await expect.poll(() => page.evaluate(() => sessionStorage.getItem("kite:asset-reload"))).toBeNull();
-	await expect(updateToast(page)).toHaveCount(0);
+	await expect(updateRow(page)).toHaveCount(0);
 });
 
 test("files that never load stop the automatic reloads after four tries", async ({ page }) => {
@@ -227,12 +233,12 @@ test.describe("session changes", () => {
 		const version = await routeVersion(page, "deploy-1");
 		await signIn(page, ADMIN.email, ADMIN.password);
 		await expect(page).toHaveURL(/\/inbox/);
-		await openInbox(page, version);
+		await openInbox(page, version, "/inbox");
 		version.current = "deploy-2";
 		await returnToTab(page, version);
-		await expect(updateToast(page)).toBeVisible();
-		await updateToast(page).getByRole("button", { name: "Dismiss" }).click();
-		await expect(updateToast(page)).toHaveCount(0);
+		await expect(updateRow(page)).toBeVisible();
+		await updateRow(page).getByRole("button", { name: "Dismiss" }).click();
+		await expect(updateRow(page)).toHaveCount(0);
 		const shownAt = version.requests;
 
 		await page.evaluate(() => {
@@ -241,7 +247,7 @@ test.describe("session changes", () => {
 		await page.getByRole("button", { name: "Open account menu" }).click();
 		await page.getByRole("button", { name: "Sign out" }).click();
 		await expect(page).toHaveURL(/\/login/);
-		await expect(updateToast(page)).toHaveCount(0);
+		await expect(updateRow(page)).toHaveCount(0);
 
 		version.current = "deploy-3";
 		// Submit the existing page rather than navigating, which would reset the host.
@@ -255,7 +261,7 @@ test.describe("session changes", () => {
 
 		await page.clock.fastForward("06:00");
 		await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-		await expect(updateToast(page)).toHaveCount(0);
+		await expect(updateRow(page)).toHaveCount(0);
 		expect(version.requests).toBe(shownAt);
 	});
 });
@@ -329,6 +335,8 @@ test("toasts never cover the reader's reply box, in the bottom-right corner on d
 			subject,
 		});
 		const version = await routeVersion(page, "deploy-1");
+		// With the list beside the reader the notice is a row in it; hiding the list leaves the toast.
+		await page.addInitScript(() => localStorage.setItem("kite-message-list-visible", "false"));
 		await page.clock.install();
 		for (const size of [
 			{ width: 1400, height: 900 },

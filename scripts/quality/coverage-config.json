@@ -167,8 +167,6 @@
 		"src/lib/external-accounts/input-utils.ts",
 		"src/lib/external-accounts/presets-utils.ts",
 		"src/lib/external-accounts/serialize-utils.ts",
-		"src/lib/external-accounts/sync-utils.ts",
-		"src/components/connected-accounts-banner-utils.ts",
 		"src/lib/external-accounts/identity-utils.ts",
 		"src/lib/external-accounts/submit-utils.ts",
 		"src/components/compose/sender-options-utils.ts",

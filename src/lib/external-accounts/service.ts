@@ -16,11 +16,8 @@ import { ExternalAccountRefusal, externalAccountTablesReady } from "./errors";
 import { assertMailServerHost } from "./host-guard";
 import { AccountInputError, changesSignIn, parseAccountInput, passwordFrom } from "./input-utils";
 import { addressDomain, findPreset, presetTrustsAuthResults } from "./presets-utils";
-import { appendRecentErrors } from "./recent-errors";
-import { serializeExternalAccount, type ExternalAccountRow } from "./serialize-utils";
+import { appendRecentError, serializeExternalAccount, type ExternalAccountRow } from "./serialize-utils";
 import { readSmtpVerified, writeSmtpVerified } from "./send-state";
-import { queueSyncNow } from "./sync";
-import { DEFAULT_SYNC_INTERVAL_MINUTES, parseSyncInterval } from "./sync-utils";
 import type { ExternalAccountInput, ExternalAccountView } from "./types";
 
 /** The signed-in user a request acts for. */
@@ -116,28 +113,17 @@ async function assertNotKiteDomain(env: CloudflareEnv, address: string): Promise
 }
 
 /**
- * An address a known provider proved is connected once per install. Checked only after a successful sign-in at that
- * provider's own servers, so nobody learns whether an address is connected without its password, and the answer
- * never says by whom. An "Other" account signs in at a server its owner names, which can accept any address, so its
- * address proves nothing: it is never checked (that would answer for anyone who runs a server) and claims nothing
- * (migration 0082 leaves it out of the unique index).
+ * An address is connected once per install. Checked only after a successful sign-in, so nobody learns whether an
+ * address is connected without proving its password, and the answer never says by whom.
  */
-async function assertAddressFree(
-	env: CloudflareEnv,
-	actor: AccountActor,
-	input: Pick<ExternalAccountInput, "address" | "preset">,
-	exceptId?: string,
-) {
-	if (input.preset === "other") return;
+async function assertAddressFree(env: CloudflareEnv, actor: AccountActor, address: string, exceptId?: string) {
 	const [taken] = await getDb(env)
 		.select({ userId: externalAccounts.userId })
 		.from(externalAccounts)
 		.where(
-			and(
-				eq(externalAccounts.address, input.address),
-				ne(externalAccounts.preset, "other"),
-				exceptId ? ne(externalAccounts.id, exceptId) : undefined,
-			),
+			exceptId
+				? and(eq(externalAccounts.address, address), ne(externalAccounts.id, exceptId))
+				: eq(externalAccounts.address, address),
 		)
 		.limit(1);
 	if (taken)
@@ -256,22 +242,6 @@ const isUniqueViolation = (error: unknown) =>
 	/UNIQUE constraint failed/i.test(error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : "");
 
 /**
- * The refusal for a write the address index refused. A known provider's address is proven, so "already connected"
- * may be said. An "Other" account only meets the index before migration 0082 (which leaves Other addresses out of
- * it); saying "taken" there would tell anyone running a server which addresses are connected, so it gets the same
- * answer as any other pending update.
- */
-function addressConflict(preset: ExternalAccountInput["preset"]): ExternalAccountRefusal {
-	if (preset === "other")
-		return new ExternalAccountRefusal(
-			409,
-			"Kite cannot save this account until the pending database update is applied",
-			"MIGRATION_PENDING",
-		);
-	return new ExternalAccountRefusal(409, "This address is already connected", "ADDRESS_TAKEN");
-}
-
-/**
  * Connects an account (spec §6.3, §11): the Kite password again, the checks on the mailbox, the address and the
  * servers, a successful IMAP sign-in, then the row with the password sealed and the INBOX baseline.
  */
@@ -293,7 +263,7 @@ export async function connectExternalAccount(
 	await assertServers(env, input);
 	const test = await testImapConnection(env, loginFor(input, password));
 	if (!test.ok) throw failedTest(test.problem);
-	await assertAddressFree(env, actor, input);
+	await assertAddressFree(env, actor, input.address);
 	const now = new Date();
 	const id = newId("xacct");
 	try {
@@ -304,7 +274,6 @@ export async function connectExternalAccount(
 				userId: actor.id,
 				...accountColumns(input),
 				...fromPreset,
-				syncIntervalMinutes: parseSyncInterval(body.syncIntervalMinutes) ?? DEFAULT_SYNC_INTERVAL_MINUTES,
 				...sendingSwitches(body),
 				secret: await sealSetting(env, password),
 				status: "active",
@@ -312,7 +281,8 @@ export async function connectExternalAccount(
 				updatedAt: now,
 			});
 	} catch (error) {
-		if (isUniqueViolation(error)) throw addressConflict(input.preset);
+		if (isUniqueViolation(error))
+			throw new ExternalAccountRefusal(409, "This address is already connected", "ADDRESS_TAKEN");
 		throw error;
 	}
 	await saveBaseline(env, id, test.baseline);
@@ -320,10 +290,7 @@ export async function connectExternalAccount(
 	if (sendProblem)
 		await getDb(env)
 			.update(externalAccounts)
-			.set({
-				lastError: sendProblem.message,
-				recentErrors: JSON.stringify([{ at: now.toISOString(), message: sendProblem.message }]),
-			})
+			.set({ lastError: sendProblem.message, recentErrors: appendRecentError("[]", sendProblem.message, now) })
 			.where(eq(externalAccounts.id, id));
 	await auditExternalAccount(env, {
 		actorUserId: actor.id,
@@ -376,20 +343,14 @@ export async function updateExternalAccount(
 	if (input.mailboxId !== current.mailboxId) await assertMailbox(env, actor, input.mailboxId);
 	const changes: Partial<typeof externalAccounts.$inferInsert> = {
 		...accountColumns(input),
-		...syncSettings(body, current.sync.enabled),
 		...sendingSwitches(body),
 		updatedAt: new Date(),
 	};
 	if (signIn) Object.assign(changes, await reconnect(env, actor, { id, current, input, password, body }));
-	try {
-		await getDb(env)
-			.update(externalAccounts)
-			.set(changes)
-			.where(and(eq(externalAccounts.id, id), eq(externalAccounts.userId, actor.id)));
-	} catch (error) {
-		if (isUniqueViolation(error)) throw addressConflict(input.preset);
-		throw error;
-	}
+	await getDb(env)
+		.update(externalAccounts)
+		.set(changes)
+		.where(and(eq(externalAccounts.id, id), eq(externalAccounts.userId, actor.id)));
 	await auditExternalAccount(env, {
 		actorUserId: actor.id,
 		action: "external_account.updated",
@@ -403,27 +364,6 @@ export async function updateExternalAccount(
 		},
 	});
 	return ownView(env, actor.id, id);
-}
-
-/**
- * Pausing or resuming checks and their interval (spec §6.3): no sign-in needed. Resuming makes the next check due at
- * once; an invalid interval is refused.
- */
-function syncSettings(
-	body: Record<string, unknown>,
-	syncEnabled: boolean,
-): Partial<typeof externalAccounts.$inferInsert> {
-	const changes: Partial<typeof externalAccounts.$inferInsert> = {};
-	if (body.syncIntervalMinutes !== undefined) {
-		const minutes = parseSyncInterval(body.syncIntervalMinutes);
-		if (minutes === null) throw new ExternalAccountRefusal(400, "Check every 5, 15 or 60 minutes");
-		changes.syncIntervalMinutes = minutes;
-	}
-	if (typeof body.syncEnabled === "boolean" && body.syncEnabled !== syncEnabled) {
-		changes.syncEnabled = body.syncEnabled;
-		if (body.syncEnabled) changes.nextSyncAt = null;
-	}
-	return changes;
 }
 
 /** The sign-in part of an edit: the checks of a connect, with the new password; returns the columns to write. */
@@ -452,8 +392,7 @@ async function reconnect(
 	await assertServers(env, input);
 	const test = await testImapConnection(env, loginFor(input, password));
 	if (!test.ok) throw failedTest(test.problem);
-	if (input.address !== current.address || input.preset !== current.preset)
-		await assertAddressFree(env, actor, input, id);
+	if (input.address !== current.address) await assertAddressFree(env, actor, input.address, id);
 	// Another server or login is another mailbox: its INBOX position starts again from this test.
 	const sameInbox =
 		current.imap.host === input.imap.host &&
@@ -469,9 +408,6 @@ async function reconnect(
 		statusReason: null,
 		lastError: sendProblem?.message ?? null,
 		consecutiveFailures: 0,
-		// Checking starts again at the next tick, and Check now works at once.
-		nextSyncAt: null,
-		lastSyncAt: null,
 	};
 }
 
@@ -520,9 +456,9 @@ export async function retestExternalAccount(
 			.set({
 				...(row.status === "paused" || row.status === "disabled"
 					? {}
-					: { status: "active" as const, statusReason: null, nextSyncAt: null, lastSyncAt: null }),
+					: { status: "active" as const, statusReason: null }),
 				lastError: sendProblem?.message ?? null,
-				...(sendProblem ? { recentErrors: appendRecentErrors([sendProblem.message], now) } : {}),
+				...(sendProblem ? { recentErrors: appendRecentError(row.recentErrors, sendProblem.message, now) } : {}),
 				consecutiveFailures: 0,
 				updatedAt: now,
 			})
@@ -534,7 +470,7 @@ export async function retestExternalAccount(
 			.set({
 				...(status ? { status } : {}),
 				lastError: test.problem.message,
-				recentErrors: appendRecentErrors([test.problem.message], now),
+				recentErrors: appendRecentError(row.recentErrors, test.problem.message, now),
 				updatedAt: now,
 			})
 			.where(eq(externalAccounts.id, id));
@@ -560,31 +496,4 @@ export async function removeExternalAccount(env: CloudflareEnv, actor: AccountAc
 		mailboxId: row.mailboxId,
 		metadata: { accountId: id, address: row.address, preset: row.preset },
 	});
-}
-
-/**
- * **Check now** (spec §6.3): queues a check of the account at once, at most once a minute. Only an account that is
- * checked at all can be: not paused, not waiting for a reconnect.
- */
-export async function checkExternalAccountNow(
-	env: CloudflareEnv,
-	actor: AccountActor,
-	id: string,
-): Promise<ExternalAccountView> {
-	const row = await ownAccount(env, actor.id, id);
-	await assertAllowed(env, actor.id);
-	if (!row.secret || (row.status !== "active" && row.status !== "error"))
-		throw new ExternalAccountRefusal(409, "Reconnect the account before checking it", "RECONNECT_REQUIRED");
-	if (!row.syncEnabled)
-		throw new ExternalAccountRefusal(409, "Checking for new mail is paused. Resume it first.", "SYNC_PAUSED");
-	const queued = await queueSyncNow(env, row);
-	if (queued === "unavailable")
-		throw new ExternalAccountRefusal(503, "Checking for new mail is not available on this server", "SYNC_UNAVAILABLE");
-	if (queued === "too_soon")
-		throw new ExternalAccountRefusal(
-			429,
-			"Kite is checking this account or checked it less than a minute ago. Try again in a minute.",
-			"TOO_SOON",
-		);
-	return ownView(env, actor.id, id);
 }

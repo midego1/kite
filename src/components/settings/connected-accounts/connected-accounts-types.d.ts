@@ -37,6 +37,4 @@ export type AccountFormState = {
 	smtpHost: string;
 	smtpPort: string;
 	smtpSecurity: "tls" | "starttls";
-	/** How often Kite checks for new mail: "5", "15" or "60". */
-	syncIntervalMinutes: string;
 };

@@ -25,9 +25,12 @@ const UPDATE_CHECK_MIN_GAP_MS = 60_000;
 const {
 	UPDATE_CHECK_INTERVAL_MS,
 	UPDATE_TOAST_MESSAGE,
+	UPDATE_ROW_SUBJECT,
+	chooseUpdateSurface,
 	compareDeploymentVersion,
 	parseDeploymentVersion,
 	shouldCheckForUpdate,
+	updateRowPreview,
 } = await import(pathToFileURL(join(bundleDirectory, "update.mjs")).href);
 
 test("checks every five minutes and at most once a minute on focus", () => {
@@ -74,4 +77,29 @@ test("compareDeploymentVersion records the first version and reports a different
 test("compareDeploymentVersion never reports an unknown version as an update", () => {
 	assert.deepEqual(compareDeploymentVersion("", ""), { known: "", changed: false });
 	assert.deepEqual(compareDeploymentVersion("v1", ""), { known: "v1", changed: false });
+});
+
+test("the notice goes to a message list when one is on screen and to a toast elsewhere", () => {
+	const base = { available: true, dismissed: false };
+	assert.equal(chooseUpdateSurface({ ...base, lists: 0 }), "toast");
+	assert.equal(chooseUpdateSurface({ ...base, lists: 1 }), "row");
+	assert.equal(chooseUpdateSurface({ ...base, lists: 2 }), "row");
+	assert.equal(chooseUpdateSurface({ available: false, dismissed: false, lists: 1 }), "none");
+	assert.equal(chooseUpdateSurface({ available: false, dismissed: false, lists: 0 }), "none");
+});
+
+test("a dismissed notice shows nowhere, whatever the page", () => {
+	assert.equal(chooseUpdateSurface({ available: true, dismissed: true, lists: 0 }), "none");
+	assert.equal(chooseUpdateSurface({ available: true, dismissed: true, lists: 1 }), "none");
+});
+
+test("the row names the version that is waiting, shortened to something readable", () => {
+	const preview = "Reload to get the latest version";
+	assert.equal(UPDATE_ROW_SUBJECT, "Kite was updated");
+	assert.equal(updateRowPreview("3f2a9c1e-7b4d-4e6a-9c1d-0123456789ab"), `${preview} · 3f2a9c1e`);
+	assert.equal(updateRowPreview("deploy-2"), `${preview} · deploy-2`);
+	assert.equal(updateRowPreview("  deploy-2  "), `${preview} · deploy-2`);
+	assert.equal(updateRowPreview("2026.10.30 2026-10-30T10:00:00Z"), `${preview} · 2026.10.30`);
+	assert.equal(updateRowPreview("a-very-long-build-identifier-without-spaces"), `${preview} · a-very-long-buil`);
+	assert.equal(updateRowPreview(""), preview);
 });

@@ -10,24 +10,27 @@ import {
 	UPDATE_CHECK_INTERVAL_MS,
 	UPDATE_TOAST_ID,
 	UPDATE_TOAST_MESSAGE,
+	chooseUpdateSurface,
 	compareDeploymentVersion,
 	parseDeploymentVersion,
 	shouldCheckForUpdate,
 } from "./update-available-utils";
+import { reloadToNewVersion } from "./update-reload";
+import { announceUpdate, dismissUpdateNotice, hideUpdateNotice, useUpdateNotice } from "./update-notice-store";
 
 function showUpdateAvailableToast() {
 	toast(
 		() => (
 			<span className="flex items-center gap-3 text-sm">
 				<span>{UPDATE_TOAST_MESSAGE}</span>
-				<button type="button" className={TOAST_ACTION_CLASS} onClick={() => window.location.reload()}>
+				<button type="button" className={TOAST_ACTION_CLASS} onClick={reloadToNewVersion}>
 					Reload
 				</button>
 				<button
 					type="button"
 					aria-label="Dismiss"
 					className="shrink-0 rounded-md p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-					onClick={() => toast.dismiss(UPDATE_TOAST_ID)}
+					onClick={dismissUpdateNotice}
 				>
 					<X className="h-4 w-4" aria-hidden="true" />
 				</button>
@@ -48,6 +51,14 @@ export function UpdateAvailableHost() {
 	// The version belongs to the code this tab loaded, so it outlives sign-out and account switches.
 	const knownVersion = useRef("");
 	const shown = useRef(false);
+	const notice = useUpdateNotice();
+	const surface = chooseUpdateSurface(notice);
+
+	// A message list on screen carries the notice as its first row; everywhere else it is this toast.
+	useEffect(() => {
+		if (surface === "toast") showUpdateAvailableToast();
+		else toast.dismiss(UPDATE_TOAST_ID);
+	}, [surface]);
 
 	useEffect(() => {
 		// The first client commit has happened; see ASSET_RECOVERY_READY_FLAG for what that does and does not mean.
@@ -70,11 +81,12 @@ export function UpdateAvailableHost() {
 			try {
 				const response = await fetch("/api/version", { cache: "no-store" });
 				if (!response.ok || !active) return;
-				const decision = compareDeploymentVersion(knownVersion.current, parseDeploymentVersion(await response.json()));
+				const latest = parseDeploymentVersion(await response.json());
+				const decision = compareDeploymentVersion(knownVersion.current, latest);
 				knownVersion.current = decision.known;
 				if (decision.changed && active && !shown.current) {
 					shown.current = true;
-					showUpdateAvailableToast();
+					announceUpdate(latest);
 				}
 			} catch {
 				// Offline or mid-deploy: the next check tries again.
@@ -102,10 +114,8 @@ export function UpdateAvailableHost() {
 			window.removeEventListener("focus", onChange);
 			window.removeEventListener(STALE_ASSETS_EVENT, onStaleAssets);
 			document.removeEventListener("visibilitychange", onChange);
-			if (shown.current) {
-				// Hide on sign-out without allowing another notice in this tab.
-				toast.dismiss(UPDATE_TOAST_ID);
-			}
+			// Hide on sign-out without allowing another notice in this tab.
+			if (shown.current) hideUpdateNotice();
 		};
 	}, [userId]);
 

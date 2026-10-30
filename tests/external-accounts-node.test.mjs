@@ -23,6 +23,7 @@ const {
 	AccountInputError,
 	classifyConnectionError,
 	serializeExternalAccount,
+	appendRecentError,
 	assertMailServerHost,
 	connectExternalAccount,
 	listExternalAccounts,
@@ -50,7 +51,7 @@ const {
 	["presetForDomain, presetForMx, mxHost", "src/lib/external-accounts/presets-utils.ts"],
 	["parseAccountInput, AccountInputError", "src/lib/external-accounts/input-utils.ts"],
 	["classifyConnectionError", "src/lib/external-accounts/connection-utils.ts"],
-	["serializeExternalAccount", "src/lib/external-accounts/serialize-utils.ts"],
+	["serializeExternalAccount, appendRecentError", "src/lib/external-accounts/serialize-utils.ts"],
 	["assertMailServerHost", "src/lib/external-accounts/host-guard.ts"],
 	[
 		"connectExternalAccount, listExternalAccounts, updateExternalAccount, retestExternalAccount, removeExternalAccount",
@@ -258,11 +259,8 @@ test("connecting tests the sign-in, seals the password, stores the INBOX baselin
 	);
 	assert.deepEqual(await listExternalAccounts(env, "other"), []);
 
-	// An "Other" account's address is not proven by its sign-in (its owner names the server), so it claims nothing
-	// and a second one is never told whether the address is taken (migration 0082; tests/external-sync-node.test.mjs
-	// covers the known providers, whose addresses stay unique).
-	const again = await connectExternalAccount(env, owner, connectBody());
-	assert.notEqual(again.id, account.id);
+	// The same address cannot be connected twice, by anyone.
+	assert.equal((await refusal(connectExternalAccount(env, owner, connectBody()))).code, "ADDRESS_TAKEN");
 });
 
 test("connecting is refused without the Kite password, for a Kite domain, a foreign mailbox or a wrong password", async (t) => {
@@ -642,6 +640,25 @@ test("backups leave the password out and restore accounts waiting to be reconnec
 		}).hasPassword,
 		false,
 	);
+});
+
+test("an account's recent problems keep the last 20 and survive a damaged list", () => {
+	const at = new Date("2026-10-29T10:00:00Z");
+	assert.deepEqual(JSON.parse(appendRecentError("not json", "first", at)), [
+		{ at: at.toISOString(), message: "first" },
+	]);
+	assert.deepEqual(JSON.parse(appendRecentError('{"a":1}', "first", at)).length, 1);
+	const mixed = JSON.stringify([{ at: "x", message: "kept" }, { at: 1, message: "dropped" }, null, "dropped"]);
+	assert.deepEqual(
+		JSON.parse(appendRecentError(mixed, "new", at)).map((entry) => entry.message),
+		["kept", "new"],
+	);
+	let list = "[]";
+	for (let index = 0; index < 25; index += 1) list = appendRecentError(list, `problem ${index}`, at);
+	const parsed = JSON.parse(list);
+	assert.equal(parsed.length, 20);
+	assert.equal(parsed[0].message, "problem 5");
+	assert.equal(parsed[19].message, "problem 24");
 });
 
 test("the public shape names the SMTP server only when all of it is known, and never the password", () => {

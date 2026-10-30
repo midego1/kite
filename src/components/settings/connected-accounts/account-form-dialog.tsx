@@ -17,7 +17,6 @@ import {
 	connectAccount,
 	detectProvider,
 	emptyAccountForm,
-	SYNC_INTERVAL_OPTIONS,
 	updateAccount,
 } from "./connected-accounts-utils";
 
@@ -107,7 +106,6 @@ export function AccountFormDialog({
 						<CredentialFields form={form} setForm={setForm} preset={preset} editing={editing} />
 					)}
 					<MailboxField form={form} setForm={setForm} mailboxes={managed} />
-					<IntervalField form={form} setForm={setForm} />
 					{mailbox?.type === "shared" && (
 						<p className={WARNING_NOTICE_CLASS}>
 							Everyone with access to {mailbox.displayName || mailboxAddress(mailbox)} will see mail from this account.
@@ -324,31 +322,6 @@ function MailboxField({ form, setForm, mailboxes }: FieldsProps & { mailboxes: M
 					</option>
 				))}
 			</Select>
-		</div>
-	);
-}
-
-function IntervalField({ form, setForm }: FieldsProps) {
-	return (
-		<div className="space-y-2">
-			<Label htmlFor="external-sync-interval">Check for new mail</Label>
-			<Select
-				id="external-sync-interval"
-				containerClassName="w-full"
-				className="h-10 text-sm"
-				value={form.syncIntervalMinutes}
-				onChange={(event) => setForm({ ...form, syncIntervalMinutes: event.target.value })}
-			>
-				{SYNC_INTERVAL_OPTIONS.map((option) => (
-					<option key={option.value} value={option.value}>
-						{option.label}
-					</option>
-				))}
-			</Select>
-			<p className="text-xs text-neutral-500">
-				Kite checks the Inbox for mail that arrives after you connect. For mail the moment it arrives, also set up
-				forwarding at the provider.
-			</p>
 		</div>
 	);
 }

@@ -354,15 +354,7 @@ export async function prepareDatabaseRestore(
 	const databaseTables = await listApplicationTables(db);
 	const preserved = options.preserved ? new Set(options.preserved) : await livePreservedTables(db, databaseTables);
 	const targets = await restoreTargets(db, databaseTables, preserved);
-	// Pass one also notes the connected accounts the backup restores, so a message naming another one is restored
-	// without it instead of failing the foreign key.
-	const externalAccountIds = new Set<string>();
-	const checkRow = rowChecker(targets);
-	const { document, ranges } = await indexBackupDocument(source, (table, row) => {
-		if (table === "external_accounts" && isDatabaseRecord(row) && row.id != null)
-			externalAccountIds.add(String(row.id));
-		return checkRow(table, row);
-	});
+	const { document, ranges } = await indexBackupDocument(source, rowChecker(targets));
 	if (isPartialBackupDocument(document))
 		throw new Error(
 			"This backup contains selected table groups only. Restore requires a backup that includes every table group.",
@@ -381,7 +373,6 @@ export async function prepareDatabaseRestore(
 		legacyBodies: ranges.get("message_bodies") ?? null,
 		rowCount: tables.reduce((total, table) => total + (table.range?.rows ?? 0), 0),
 		preserved: [...preserved],
-		externalAccountIds: [...externalAccountIds],
 	};
 }
 

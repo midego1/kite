@@ -29,11 +29,8 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  *   `slowLoris` (a greeting trickled one byte at a time, forever), `silent` (no greeting at all), `silentTls` (OK to
  *   STARTTLS, then no handshake), `secondChallenge` (a second `+` during AUTHENTICATE PLAIN), `untaggedFlood` (CAPABILITY answered by
  *   an endless stream of untagged lines of that many bytes each).
- * - `omitUidNext`: EXAMINE names no UIDNEXT. `strictEmptyFetch`: UID FETCH in an empty folder is answered BAD.
- * - `folders`: `{ [name]: [message, …] }`, each a raw message or `{ raw, flags, internalDate, size, unfetchable,
- *   vanishes }` (an IMAP date-time string; `size: null` leaves RFC822.SIZE out; an `unfetchable` message makes a
- *   FETCH of its body answer NO after the others, as Gmail does; a `vanishes` one is left out of body FETCHes, as if
- *   expunged meanwhile); UIDs count up from 1 per folder. FETCH reports `FLAGS`, `INTERNALDATE` and `RFC822.SIZE` before the
+ * - `folders`: `{ [name]: [message, …] }`, each a raw message or `{ raw, flags, internalDate }` (an IMAP date-time
+ *   string); UIDs count up from 1 per folder. FETCH reports `FLAGS`, `INTERNALDATE` and `RFC822.SIZE` before the
  *   body, or after it with `attributesAfterLiteral`.
  */
 export async function startFakeImap(options = {}) {
@@ -45,10 +42,6 @@ export async function startFakeImap(options = {}) {
 	const appends = [];
 	const connections = new Set();
 	let nextLoginFails = false;
-	/** A tagged answer the next sign-in gets instead of OK (`NO [THROTTLED] …`), once. */
-	let nextLoginAnswer = null;
-	// The caller's object itself, so a test can change it while the server runs.
-	const examineRefusals = options.examineRefusals ?? {};
 
 	function addMessage(folder, message) {
 		if (!folders.has(folder)) folders.set(folder, { nextUid: 1, uidValidity: 1, messages: [] });
@@ -60,17 +53,7 @@ export async function startFakeImap(options = {}) {
 			internalDate = "27-Oct-2026 10:00:00 +0000",
 			labels = [],
 		} = typeof message === "string" || Buffer.isBuffer(message) ? { raw: message } : message;
-		const extra = typeof message === "object" && !Buffer.isBuffer(message) ? message : {};
-		entry.messages.push({
-			uid,
-			raw: Buffer.from(raw),
-			flags,
-			internalDate,
-			labels,
-			size: extra.size,
-			unfetchable: !!extra.unfetchable,
-			vanishes: !!extra.vanishes,
-		});
+		entry.messages.push({ uid, raw: Buffer.from(raw), flags, internalDate, labels });
 		return uid;
 	}
 
@@ -158,11 +141,6 @@ export async function startFakeImap(options = {}) {
 
 		const signIn = (tag, username, password) => {
 			if (!state.encrypted && options.loginDisabledWithoutTls) return send(`${tag} NO [PRIVACYREQUIRED] TLS first\r\n`);
-			if (nextLoginAnswer) {
-				const answer = nextLoginAnswer;
-				nextLoginAnswer = null;
-				return send(`${tag} ${answer}\r\n`);
-			}
 			if (nextLoginFails || users[username] !== password) {
 				nextLoginFails = false;
 				return send(`${tag} NO [AUTHENTICATIONFAILED] Invalid credentials\r\n`);
@@ -255,36 +233,29 @@ export async function startFakeImap(options = {}) {
 			}
 			if (name === "SELECT" || name === "EXAMINE") {
 				const [folder] = parseQuoted(args);
-				const refusal = examineRefusals[folder];
+				const refusal = options.examineRefusals?.[folder];
 				if (refusal) return send(`${tag} ${refusal}\r\n`);
 				const entry = folders.get(folder);
 				if (!entry) return send(`${tag} NO [NONEXISTENT] No such folder\r\n`);
 				state.selected = folder;
 				return send(
-					`* ${entry.messages.length} EXISTS\r\n* OK [UIDVALIDITY ${entry.uidValidity}] ok\r\n${options.omitUidNext ? "" : `* OK [UIDNEXT ${entry.nextUid}] ok\r\n`}${tag} OK [READ-ONLY] done\r\n`,
+					`* ${entry.messages.length} EXISTS\r\n* OK [UIDVALIDITY ${entry.uidValidity}] ok\r\n* OK [UIDNEXT ${entry.nextUid}] ok\r\n${tag} OK [READ-ONLY] done\r\n`,
 				);
 			}
 			const entry = state.selected ? folders.get(state.selected) : null;
 			if (name === "UID" && entry) {
-				const [sub, set, ...criteria] = args.split(" ");
+				const [sub, set] = args.split(" ");
 				if (sub.toUpperCase() === "SEARCH") {
-					// `UID SEARCH ALL`, `UID SEARCH SINCE <date>`, or `UID SEARCH HEADER Message-ID "<…>"` matched against the raw header.
-					const since = set?.toUpperCase() === "SINCE" ? searchDay(criteria[0]) : null;
+					// `UID SEARCH ALL`, or `UID SEARCH HEADER Message-ID "<…>"` matched against the raw header.
 					const header = /HEADER Message-ID "((?:[^"\\]|\\.)*)"/i.exec(args)?.[1];
 					const found = entry.messages.filter(
 						(message) =>
-							(since === null || messageDay(message.internalDate) >= since) &&
-							(!header || message.raw.toString("latin1").toLowerCase().includes(`message-id: ${header.toLowerCase()}`)),
+							!header || message.raw.toString("latin1").toLowerCase().includes(`message-id: ${header.toLowerCase()}`),
 					);
 					return send(`* SEARCH ${found.map((message) => message.uid).join(" ")}\r\n${tag} OK done\r\n`);
 				}
 				if (sub.toUpperCase() === "FETCH") {
-					if (options.strictEmptyFetch && entry.messages.length === 0)
-						return send(`${tag} BAD Invalid message set\r\n`);
-					const wanted = uidSet(
-						set,
-						entry.messages.map((message) => message.uid),
-					);
+					const wanted = new Set(set.split(",").map(Number));
 					if (options.hugeLiteral) return send(`* 1 FETCH (UID 1 BODY[] {4000000000}\r\n${"x".repeat(1000)}`);
 					if (options.fetchGate) {
 						const gate = typeof options.fetchGate === "function" ? options.fetchGate(fetches++) : options.fetchGate;
@@ -303,19 +274,10 @@ export async function startFakeImap(options = {}) {
 		}
 
 		function respondFetch(tag, args, entry, wanted) {
-			const withBody = /BODY/i.test(args);
-			let refused = false;
 			entry.messages.forEach((message, index) => {
 				if (!wanted.has(message.uid)) return;
-				if (withBody && message.vanishes) return;
-				if (withBody && message.unfetchable) {
-					refused = true;
-					return;
-				}
 				const labels = /X-GM-LABELS/i.test(args) ? ` X-GM-LABELS ${labelList(message.labels)}` : "";
-				const size = message.size === null ? "" : ` RFC822.SIZE ${message.size ?? message.raw.length}`;
-				const attributes = `FLAGS (${message.flags.join(" ")}) INTERNALDATE "${message.internalDate}"${size}${labels}`;
-				if (!withBody) return send(`* ${index + 1} FETCH (UID ${message.uid} ${attributes})\r\n`);
+				const attributes = `FLAGS (${message.flags.join(" ")}) INTERNALDATE "${message.internalDate}" RFC822.SIZE ${message.raw.length}${labels}`;
 				if (options.attributesAfterLiteral) {
 					send(`* ${index + 1} FETCH (BODY[] {${message.raw.length}}\r\n`);
 					send(message.raw);
@@ -326,8 +288,7 @@ export async function startFakeImap(options = {}) {
 				send(message.raw);
 				send(")\r\n");
 			});
-			// As Gmail answers when a message cannot be read: the others are sent, the command fails.
-			send(refused ? `${tag} NO Some messages could not be FETCHed (Failure)\r\n` : `${tag} OK done\r\n`);
+			send(`${tag} OK done\r\n`);
 		}
 
 		state.socket.on("data", onData);
@@ -363,19 +324,6 @@ export async function startFakeImap(options = {}) {
 		failNextLogin() {
 			nextLoginFails = true;
 		},
-		/** The next sign-in is answered with this tagged response instead (`NO [THROTTLED] Too many logins`). */
-		answerNextLogin(answer) {
-			nextLoginAnswer = answer;
-		},
-		/** Sets (or, with null, clears) the tagged answer SELECT and EXAMINE of `folder` get. */
-		refuseExamine(folder, answer) {
-			if (answer) examineRefusals[folder] = answer;
-			else delete examineRefusals[folder];
-		},
-		/** Sets an account's password, as a user changing it at the provider would. */
-		setPassword(username, password) {
-			users[username] = password;
-		},
 		async close() {
 			for (const socket of connections) socket.destroy();
 			await new Promise((resolve) => server.close(() => resolve()));
@@ -409,32 +357,6 @@ function streamUntaggedFlood(socket, lineBytes) {
 		}
 	};
 	next();
-}
-
-const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-
-/** `27-Oct-2026` (or the date part of an INTERNALDATE) as a comparable day number. */
-function searchDay(value = "") {
-	const match = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})/.exec(value.trim());
-	if (!match) return 0;
-	return Date.UTC(Number(match[3]), MONTH_NAMES.indexOf(match[2].toLowerCase()), Number(match[1])) / 86_400_000;
-}
-
-const messageDay = (internalDate) => searchDay(internalDate);
-
-/**
- * The UIDs a UID set names among `uids`: numbers, ranges and `*` (the highest UID). As RFC 9051 says, `n:*` with `n`
- * above every UID still names the highest one.
- */
-function uidSet(set = "", uids) {
-	const highest = uids.length ? Math.max(...uids) : 0;
-	const wanted = new Set();
-	for (const part of set.split(",")) {
-		const [from, to = from] = part.split(":").map((value) => (value === "*" ? highest : Number(value)));
-		const [low, high] = from <= to ? [from, to] : [to, from];
-		for (const uid of uids) if (uid >= low && uid <= high) wanted.add(uid);
-	}
-	return wanted;
 }
 
 /** The quoted (or atom) arguments of a command line, unescaped. */

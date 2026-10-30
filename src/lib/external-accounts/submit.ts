@@ -16,8 +16,7 @@ import { externalAccountTablesReady } from "./errors";
 import { SEND_BLOCK_TEXT, sendBlock } from "./identity-utils";
 import { findPreset } from "./presets-utils";
 import { readSmtpVerified, writeSmtpVerified } from "./send-state";
-import { appendRecentErrors } from "./recent-errors";
-import type { ExternalAccountRow } from "./serialize-utils";
+import { appendRecentError, type ExternalAccountRow } from "./serialize-utils";
 import {
 	APPEND_SENT_KIND,
 	appendRetryDelaySeconds,
@@ -133,7 +132,7 @@ async function markAuthFailed(env: CloudflareEnv, row: ExternalAccountRow, messa
 		.set({
 			status: "auth_failed",
 			lastError: message,
-			recentErrors: appendRecentErrors([message], now),
+			recentErrors: appendRecentError(row.recentErrors, message, now),
 			updatedAt: now,
 		})
 		.where(eq(externalAccounts.id, row.id));
@@ -309,7 +308,7 @@ export async function processAppendSent(env: CloudflareEnv, payload: AppendSentM
 		await db
 			.update(externalAccounts)
 			.set({
-				recentErrors: appendRecentErrors([`Saving a copy in Sent failed: ${reason}`], new Date()),
+				recentErrors: appendRecentError(row.recentErrors, `Saving a copy in Sent failed: ${reason}`, new Date()),
 				updatedAt: new Date(),
 			})
 			.where(eq(externalAccounts.id, row.id));

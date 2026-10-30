@@ -46,11 +46,6 @@ export type RestorePlan = {
 	rowCount: number;
 	/** The tables this restore leaves untouched (PRESERVED_ON_RESTORE), decided before anything was written. */
 	preserved: string[];
-	/**
-	 * The connected accounts the backup restores (`external_accounts.id`); a message naming another one is restored
-	 * without it (`detachMissingExternalAccount`). Absent in a plan prepared before it was recorded.
-	 */
-	externalAccountIds?: string[];
 };
 
 export type PreparedRestore = RestorePlan & { source: BackupSource };

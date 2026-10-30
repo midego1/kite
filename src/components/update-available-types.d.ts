@@ -11,3 +11,14 @@ export interface UpdateDecision {
 	known: string;
 	changed: boolean;
 }
+
+export interface UpdateNoticeState {
+	/** A newer deployment is live. */
+	available: boolean;
+	/** The user closed the notice; it stays closed for the life of the tab. */
+	dismissed: boolean;
+	/** How many message lists are on screen to carry the pinned row. */
+	lists: number;
+}
+
+export type UpdateSurface = "none" | "row" | "toast";

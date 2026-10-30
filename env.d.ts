@@ -109,6 +109,11 @@ interface CloudflareEnv {
 	/** Self-hosted only: resolves a hostname to its addresses so outbound requests can refuse private ones. */
 	RESOLVE_HOST?: (hostname: string) => Promise<string[]>;
 	/**
+	 * Self-hosted only: a name's TXT records through the system resolver, each record's strings joined. Without it
+	 * (Workers) TXT lookups go over DNS-over-HTTPS (`src/lib/dns-query.ts`).
+	 */
+	RESOLVE_TXT?: (name: string) => Promise<string[]>;
+	/**
 	 * Self-hosted only: opens TCP connections to mail servers (IMAP import) in the shape of `cloudflare:sockets`
 	 * `connect()`, resolving the host itself and refusing private addresses (`server/runtime/tcp-connect.ts`).
 	 * Unset on Workers, where `src/lib/net/connect.ts` uses `cloudflare:sockets`.

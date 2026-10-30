@@ -10,7 +10,8 @@ import { analyzeStructure } from "./analyzers/structure";
 import { analyzeUrls } from "./analyzers/urls";
 import { classifyTokens } from "./classifier";
 import { buildFingerprint, getDomain, prepareSpamContent, tokenizeMessage } from "./tokenizer";
-import type { PreparedSpamContent, SpamAnalysisInput, SpamAnalysisResult, SpamSignal } from "./types";
+import { fromMayBeForged, planAuthPolicy, publishedDmarcPolicy, type AuthPolicyDecision } from "./dmarc-policy-utils";
+import type { DmarcPolicy, PreparedSpamContent, SpamAnalysisInput, SpamAnalysisResult, SpamSignal } from "./types";
 import { SPAM_THRESHOLDS, SPAM_WEIGHTS } from "./weights";
 import { LocalSpamIntelligenceProvider } from "./providers/local";
 
@@ -18,8 +19,20 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 	const prepared = prepareSpamContent(input.message);
 	const fingerprint = buildFingerprint(input.message, prepared);
 	const sender = getEmailAddress(input.message.fromAddr ?? input.envelopeFrom).toLowerCase();
+	const fromDomain = getDomain(input.message.fromAddr);
+	const authentication = analyzeAuthentication(input.authenticationResults, fromDomain);
 	const signals: SpamSignal[] = [
-		...analyzeAuthentication(input.authenticationResults, getDomain(input.message.fromAddr)),
+		...authentication,
+		...(input.privateClient
+			? [
+					{
+						id: "auth_unverified_private_client",
+						score: 0,
+						reason:
+							"The mail server saw a private address instead of the sender's, so SPF could not be checked and DMARC counts only through DKIM",
+					},
+				]
+			: []),
 		...analyzeUrls(input.message, prepared),
 		...analyzeStructure(input.message, input.headers, prepared),
 		...analyzeAttachments(input.message, prepared),
@@ -40,8 +53,14 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 			fingerprint,
 		};
 	}
-	signals.push(...(await intelligenceSignals(input, contact?.source, signals, { sender, prepared, fingerprint })));
-	signals.push(...relationshipSignals(contact?.source));
+	const authIds = new Set(authentication.map((signal) => signal.id));
+	const mayBeForged = fromMayBeForged(authIds);
+	signals.push(
+		...(await intelligenceSignals(input, contact?.source, signals, { sender, prepared, fingerprint, mayBeForged })),
+	);
+	// A known contact's trust must not offset a From that may be forged: a spoofed colleague is the attack.
+	if (!mayBeForged) signals.push(...relationshipSignals(contact?.source));
+	const authPolicy = await enforcedAuthPolicy(input, authIds, fromDomain);
 
 	const identities = getReputationKeys(input.message, fingerprint);
 	const reputationRecords = await Promise.all(
@@ -92,6 +111,17 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 			metadata: { probability: Number(bayesian.probability.toFixed(3)), trainedMessages: bayesian.trainedMessages },
 		});
 
+	// Always recorded when it applies, so a spam verdict carries its reason: the exact lift to the spam threshold,
+	// or 0 when the score was already there, so the signals still add up to the score.
+	const scoreBeforePolicy = signals.reduce((total, signal) => total + signal.score, 0);
+	if (authPolicy)
+		signals.push({
+			id: "auth_policy",
+			score: Math.max(0, SPAM_THRESHOLDS.spam - scoreBeforePolicy),
+			reason: `${authPolicy.reason}; filed as spam`,
+			metadata: { cause: authPolicy.cause },
+		});
+
 	const rawScore = signals.reduce((total, signal) => total + signal.score, 0);
 	const score = Math.max(0, Math.min(100, rawScore));
 	if (rawScore !== score)
@@ -104,11 +134,14 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 	return {
 		score,
 		verdict,
-		signals: signals.filter((signal) => Math.abs(signal.score) >= 2 || signal.id === "score_boundary"),
+		signals: signals.filter((signal) => Math.abs(signal.score) >= 2 || ALWAYS_KEPT.has(signal.id)),
 		contentProbability: bayesian.probability,
 		fingerprint,
 	};
 }
+
+/** Signals kept whatever their score, because the score they explain depends on them. */
+const ALWAYS_KEPT = new Set(["score_boundary", "auth_policy", "auth_unverified_private_client"]);
 
 type ContactSource = string | null | undefined;
 
@@ -116,11 +149,11 @@ async function intelligenceSignals(
 	input: SpamAnalysisInput,
 	source: ContactSource,
 	localSignals: readonly SpamSignal[],
-	content: { sender: string; prepared: PreparedSpamContent; fingerprint: string },
+	content: { sender: string; prepared: PreparedSpamContent; fingerprint: string; mayBeForged: boolean },
 ): Promise<SpamSignal[]> {
 	// Nothing about a known correspondent's mail leaves Kite, unless authentication failed and the From may be forged.
 	const knownCorrespondent = source === "manual" || source === "outbound";
-	if (knownCorrespondent && !localSignals.some((signal) => signal.id.endsWith("_failed"))) return [];
+	if (knownCorrespondent && !content.mayBeForged) return [];
 	const provider = input.intelligenceProvider ?? new LocalSpamIntelligenceProvider();
 	return provider.check({
 		senderDomain: getDomain(content.sender),
@@ -131,6 +164,29 @@ async function intelligenceSignals(
 		attachments: input.message.attachments,
 		localSignals: [...localSignals],
 	});
+}
+
+/**
+ * Whether failed authentication files this message as spam (`planAuthPolicy`). The published policy comes from the
+ * trusted `Authentication-Results` when it names one, else from DNS; both are read only when DMARC failed, and a
+ * lookup that cannot answer counts as `unknown`, which enforces nothing.
+ */
+async function enforcedAuthPolicy(
+	input: SpamAnalysisInput,
+	ids: ReadonlySet<string>,
+	fromDomain: string,
+): Promise<AuthPolicyDecision | null> {
+	if (!ids.has("dmarc_failed")) return planAuthPolicy(ids, { policy: "unknown", strict: false });
+	const reported = publishedDmarcPolicy(input.authenticationResults);
+	if (reported === "reject" || reported === "quarantine")
+		return planAuthPolicy(ids, { policy: reported, strict: false });
+	const source = input.dmarcPolicy;
+	if (source && (await source.strict().catch(() => false)))
+		return planAuthPolicy(ids, { policy: reported ?? "unknown", strict: true });
+	const policy: DmarcPolicy =
+		reported ??
+		(source && fromDomain ? await source.published(fromDomain).catch((): DmarcPolicy => "unknown") : "unknown");
+	return planAuthPolicy(ids, { policy, strict: false });
 }
 
 function relationshipSignals(source: ContactSource): SpamSignal[] {

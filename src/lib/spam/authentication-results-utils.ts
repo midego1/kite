@@ -130,11 +130,11 @@ const SES_VERDICTS: Record<string, string> = {
 
 /**
  * An `Authentication-Results` value for the verdicts SES computed when it received the message
- * (`receipt.spfVerdict`, `dkimVerdict`, `dmarcVerdict`), or null without any. SES names no DKIM
- * signing domain, so a DKIM pass alone never counts as aligned.
+ * (`receipt.spfVerdict`, `dkimVerdict`, `dmarcVerdict`, and `dmarcPolicy` as `policy.dmarc` when DMARC failed), or
+ * null without any. SES names no DKIM signing domain, so a DKIM pass alone never counts as aligned.
  */
 export function sesAuthenticationResults(
-	verdicts: { spf?: string; dkim?: string; dmarc?: string },
+	verdicts: { spf?: string; dkim?: string; dmarc?: string; dmarcPolicy?: string },
 	envelopeFrom: string,
 ): string | null {
 	const results: string[] = [];
@@ -145,7 +145,9 @@ export function sesAuthenticationResults(
 	const dkim = SES_VERDICTS[verdicts.dkim ?? ""];
 	if (dkim) results.push(`dkim=${dkim}`);
 	const dmarc = SES_VERDICTS[verdicts.dmarc ?? ""];
-	if (dmarc) results.push(`dmarc=${dmarc}`);
+	const policy = verdicts.dmarcPolicy?.toLowerCase() ?? "";
+	if (dmarc)
+		results.push(`dmarc=${dmarc}${["none", "quarantine", "reject"].includes(policy) ? ` policy.dmarc=${policy}` : ""}`);
 	return results.length ? [SES_AUTHSERV_ID, ...results].join("; ") : null;
 }
 

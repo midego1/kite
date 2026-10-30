@@ -72,7 +72,7 @@ export function MessageRowParty({
 	return (
 		<span className={clsx(unread && "font-semibold", className)}>
 			{unread && <span className="sr-only">Unread </span>}
-			{party}
+			<span className="reading-font">{party}</span>
 			{threadCount > 1 && (
 				<span className={clsx("ml-1.5 text-neutral-500", countClassName)}>
 					<span aria-hidden="true">[</span>

@@ -11,6 +11,8 @@ export type IntakeInput = {
 	 * null. Never taken from `headers` or `raw`: those are whatever the sender wrote.
 	 */
 	authenticationResults?: string | null;
+	/** The SMTP listener saw a private client address, so SPF (and DMARC through SPF) could not be checked. */
+	privateClient?: boolean;
 };
 
 export type IntakeActions = {

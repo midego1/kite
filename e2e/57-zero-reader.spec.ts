@@ -376,12 +376,19 @@ test("a row's hover actions, the star first, get their own space clear of the se
 		const archive = row.getByRole("button", { name: /^Archive/ });
 		await expect(archive).toBeVisible();
 		const pill = (await archive.locator('xpath=ancestor::div[contains(@class,"shadow-sm")][1]').boundingBox())!;
-		const sender = (await row
+		// The sender's visible right edge: its text sits in a span the row truncates, so clip it to the ancestors.
+		const senderRight = await row
 			.getByText(/Inline Sender$/)
 			.first()
-			.boundingBox())!;
+			.evaluate((element) => {
+				let right = element.getBoundingClientRect().right;
+				for (let parent = element.parentElement; parent; parent = parent.parentElement)
+					if (getComputedStyle(parent).overflowX === "hidden")
+						right = Math.min(right, parent.getBoundingClientRect().right);
+				return right;
+			});
 		const rowBox = (await row.boundingBox())!;
-		expect(sender.x + sender.width, key).toBeLessThanOrEqual(pill.x);
+		expect(senderRight, key).toBeLessThanOrEqual(pill.x);
 		expect(pill.x + pill.width, key).toBeLessThanOrEqual(rowBox.x + rowBox.width);
 		// The star is the pill's first action, inside it, and the pill leaves the row's middle free for a click.
 		const star = (await row.getByRole("button", { name: "Star", exact: true }).boundingBox())!;

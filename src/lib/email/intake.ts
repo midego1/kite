@@ -67,6 +67,7 @@ export async function intakeIncomingMail(
 		rawR2Key,
 		headers: input.headers,
 		authenticationResults: input.authenticationResults ?? null,
+		...(input.privateClient ? { privateClient: true } : {}),
 	};
 	await env.INBOUND_QUEUE.send(payload);
 	return { action: "store", rawR2Key, forwardedTo };

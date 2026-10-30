@@ -30,6 +30,8 @@ export type InboundQueueMessage = {
 	 * `headers` and the raw message are the sender's and never count.
 	 */
 	authenticationResults?: string | null;
+	/** The SMTP listener saw a private client address: SPF was not checked (`intake-types.d.ts`). */
+	privateClient?: boolean;
 	/**
 	 * Set only by a connected account's sync: the message goes into that account's mailbox instead of through domain
 	 * routing, and the account's preset decides which Authentication-Results counts.
@@ -122,6 +124,7 @@ export async function processInboundMessage(
 		deliveredAddress: getEmailAddress(payload.to) || `${decision.mailbox.localPart}@${decision.mailbox.hostname}`,
 		headers: payload.headers,
 		authenticationResults: payload.authenticationResults ?? null,
+		privateClient: payload.privateClient === true,
 	});
 }
 

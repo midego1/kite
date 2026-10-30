@@ -75,6 +75,8 @@ let state: MigrationApplyState = IDLE;
 let runId = 0;
 // A run whose session ended: it finishes, but its summary or error belongs to the previous session.
 let discardedRun = -1;
+// Between the click and the answer of the up-front check no run exists yet, but a second click must not start one.
+let starting = false;
 const listeners = new Set<() => void>();
 
 function set(next: Partial<MigrationApplyState>) {
@@ -114,6 +116,19 @@ function clearRunFlag() {
 	} catch {
 		// See writeRunFlag.
 	}
+}
+
+// Locks raise no event when they are taken or released, so tabs tell each other (the lock stays the truth).
+let channel: BroadcastChannel | null | undefined;
+
+function runChannel(): BroadcastChannel | null {
+	if (channel === undefined)
+		channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(MIGRATION_RUN_LOCK);
+	return channel;
+}
+
+function tellOtherTabs() {
+	runChannel()?.postMessage("changed");
 }
 
 async function isRunningInAnotherTab(): Promise<boolean> {
@@ -201,6 +216,14 @@ export async function applyMigrations(
 	source: MigrationApplySource,
 	onSuccess?: (result: MigrationApplyResult) => void,
 ): Promise<MigrationApplyOutcome | null> {
+	if (state.applying || starting) return null;
+	// Ask before showing any steps, so a tab that is only watching another tab's run never flashes its own.
+	starting = true;
+	const elsewhere = await isRunningInAnotherTab().finally(() => (starting = false));
+	if (elsewhere) {
+		set({ remote: true });
+		return null;
+	}
 	if (state.applying) return null;
 	const run = ++runId;
 	const startedAt = Date.now();
@@ -214,12 +237,16 @@ export async function applyMigrations(
 		summary: null,
 		error: null,
 	});
-	const outcome = await withRunLock(() => execute(startNames, startedAt));
+	const outcome = await withRunLock(() => {
+		tellOtherTabs();
+		return execute(startNames, startedAt);
+	});
 	if (!outcome) {
 		// Another tab holds the run; this one shows it as busy instead.
 		set({ running: false, remote: true, source: null, startNames: [], startedAt: null });
 		return null;
 	}
+	tellOtherTabs();
 	if (outcome.ok) onSuccess?.(outcome.result);
 	const ended = { running: false, recovering: false };
 	if (discardedRun === run) set(ended);
@@ -249,7 +276,7 @@ async function execute(startNames: string[], startedAt: number): Promise<Migrati
 			if (pending) set({ remaining: mergeRemaining(state.remaining, pending) });
 			if (pending) emptySince = pending.length === 0 ? (emptySince ?? now) : null;
 			handler?.(pending);
-			if (!handler && shouldAbortPost({ emptySince, startedAt, now })) controller.abort();
+			if (!handler && shouldAbortPost({ emptySince, now })) controller.abort();
 		},
 	});
 	try {
@@ -287,11 +314,14 @@ export function useMigrationApply(): MigrationApplyState {
 		// Looking again now and then costs nothing: the lock (or the flag's age) is the truth, not a timer in this tab.
 		const recheck = setInterval(recheckNow, 5000);
 		document.addEventListener("visibilitychange", recheckNow);
+		const pings = runChannel();
+		pings?.addEventListener("message", recheckNow);
 		recheckNow();
 		return () => {
 			window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, reset);
 			window.removeEventListener("storage", onStorage);
 			document.removeEventListener("visibilitychange", recheckNow);
+			pings?.removeEventListener("message", recheckNow);
 			clearInterval(recheck);
 		};
 	}, []);

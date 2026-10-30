@@ -124,13 +124,11 @@ test("with every poll timing out the run is followed until the cap, then called 
 	assert.equal(stall.observe(null, 20 * MINUTE), true);
 });
 
-test("the POST is cut off once the list has been empty a while with it still open, or after the cap", () => {
-	const base = { startedAt: 0 };
-	assert.equal(shouldAbortPost({ ...base, emptySince: null, now: 5 * MINUTE }), false);
-	assert.equal(shouldAbortPost({ ...base, emptySince: 100_000, now: 110_000 }), false, "a normal answer is on its way");
-	assert.equal(shouldAbortPost({ ...base, emptySince: 100_000, now: 115_000 }), true);
-	assert.equal(shouldAbortPost({ ...base, emptySince: null, now: 14 * MINUTE }), false);
-	assert.equal(shouldAbortPost({ ...base, emptySince: null, now: 15 * MINUTE }), true);
+test("the POST is cut off only once the list has been empty a while with it still open, never by elapsed time", () => {
+	assert.equal(shouldAbortPost({ emptySince: null, now: 5 * MINUTE }), false);
+	assert.equal(shouldAbortPost({ emptySince: null, now: 60 * MINUTE }), false, "a slow update is left to finish");
+	assert.equal(shouldAbortPost({ emptySince: 100_000, now: 110_000 }), false, "a normal answer is on its way");
+	assert.equal(shouldAbortPost({ emptySince: 100_000, now: 115_000 }), true);
 });
 
 test("another tab's run flag counts only while it is fresh, and not when it is from the future", () => {

@@ -6,8 +6,6 @@ export const MIGRATION_STALL_MS = 3 * 60_000;
 export const MIGRATION_RECOVERY_CAP_MS = 20 * 60_000;
 /** The POST is cut off, and the run followed through the pending list, once the list has been empty this long with it still open. */
 const MIGRATION_POST_GRACE_MS = 15_000;
-/** The longest the POST is held open before it is cut off and the run followed through the pending list. */
-const MIGRATION_POST_CAP_MS = 15 * 60_000;
 
 /**
  * Statuses a proxy or the platform answers when it gave up waiting (Cloudflare's 524 comes after 100 s) while the
@@ -94,19 +92,13 @@ export function createStallTracker({
 	};
 }
 
-/** Whether the POST should be cut off: the list has been empty for a while and it still has not answered, or it ran too long. */
-export function shouldAbortPost({
-	emptySince,
-	startedAt,
-	now,
-}: {
-	emptySince: number | null;
-	startedAt: number;
-	now: number;
-}): boolean {
-	return (
-		(emptySince !== null && now - emptySince >= MIGRATION_POST_GRACE_MS) || now - startedAt >= MIGRATION_POST_CAP_MS
-	);
+/**
+ * Whether the POST should be cut off: the pending list has been empty for a while and it still has not answered.
+ * There is deliberately no time limit: on Workers a client that disconnects cancels the request, so giving up on a
+ * slow update would stop the very thing being watched.
+ */
+export function shouldAbortPost({ emptySince, now }: { emptySince: number | null; now: number }): boolean {
+	return emptySince !== null && now - emptySince >= MIGRATION_POST_GRACE_MS;
 }
 
 export const MIGRATION_RUN_FLAG = "kite-migration-apply";

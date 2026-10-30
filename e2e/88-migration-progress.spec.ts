@@ -230,3 +230,23 @@ test("a request that never answers is cut off once the list is empty, and the ru
 	await expect(notice).toContainText("The connection dropped meanwhile, so check the Backups page");
 	await expect(notice.getByRole("alert")).toHaveCount(0);
 });
+
+test("a tab that was already open reacts at once when another tab starts and ends the update", async ({ page }) => {
+	const server = await mockMigrations(page);
+	await page.goto("/admin");
+	const other = await page.context().newPage();
+	await other.goto("/admin");
+	const otherPanel = other.getByRole("region", { name: "Pending database updates" });
+	await expect(otherPanel.getByRole("button", { name: "Update database" })).toBeEnabled();
+
+	await page
+		.getByRole("region", { name: "Pending database updates" })
+		.getByRole("button", { name: "Update database" })
+		.click();
+	// Well inside the periodic re-check (5 s): the other tab was told.
+	await expect(otherPanel.getByRole("button", { name: "Updating database…" })).toBeDisabled({ timeout: 2_000 });
+	await expect(otherPanel.getByTestId("migration-progress")).toHaveCount(0);
+
+	server.finish();
+	await expect(other.getByText("The database schema is up to date.")).toBeVisible({ timeout: 4_000 });
+});

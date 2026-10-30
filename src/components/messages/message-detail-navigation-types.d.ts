@@ -31,6 +31,4 @@ export type MessageDetailNavigationContextValue = {
 export type MessageDetailNavigationState = {
 	previousId: string | null;
 	nextId: string | null;
-	unreadOrder: number;
-	totalUnread: number;
 };

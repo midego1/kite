@@ -17,7 +17,7 @@ import {
 } from "@/components/screener/screener-api";
 import type { ScreenerMode, ScreenerOverview, ScreenerSettingsPatch } from "@/lib/screener/screener-types";
 import { ScreenerSenderList } from "./screener-sender-list";
-import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
+import { SettingRow, SettingRows } from "@/components/ui/page";
 
 const MODES: { value: ScreenerMode; label: string; description: string }[] = [
 	{
@@ -137,21 +137,19 @@ export function ScreenerSettings() {
 	}
 
 	return (
-		<div className="space-y-4">
-			<label className={SETTING_ROW_CLASS}>
-				<span className="flex-1">
-					<span className="block text-sm font-medium text-neutral-900">Screen new senders for {address}</span>
-					<span className="mt-1 block text-sm text-neutral-500">
-						Only senders you approve reach the Inbox. Writing to someone approves them.
-					</span>
-				</span>
-				<Switch
-					checked={current.settings.enabled}
-					onCheckedChange={(enabled) => void update({ enabled })}
-					disabled={disabled}
-					aria-label="Screen new senders"
-				/>
-			</label>
+		<SettingRows className="space-y-3">
+			<SettingRow
+				label={`Screen new senders for ${address}`}
+				description="Only senders you approve reach the Inbox. Writing to someone approves them."
+				control={
+					<Switch
+						checked={current.settings.enabled}
+						onCheckedChange={(enabled) => void update({ enabled })}
+						disabled={disabled}
+						aria-label="Screen new senders"
+					/>
+				}
+			/>
 			{offerApproveSent && current.settings.enabled && (
 				<div className="flex flex-wrap items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-neutral-800">
 					<p className="min-w-0 flex-1">Approve everyone this mailbox has already written to?</p>
@@ -164,19 +162,22 @@ export function ScreenerSettings() {
 				</div>
 			)}
 			{current.settings.enabled && (
-				<fieldset className="space-y-2" disabled={disabled}>
+				<fieldset className="grid gap-2 sm:grid-cols-2" disabled={disabled}>
 					<legend className="mb-2 text-sm font-medium text-neutral-900">Mail from new senders</legend>
 					{MODES.map((mode) => (
-						<label key={mode.value} className="flex items-start gap-3 rounded-xl border border-neutral-200 p-3">
+						<label
+							key={mode.value}
+							className="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 px-3 py-2.5 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-blue-500/50"
+						>
 							<input
 								type="radio"
 								name="screenerMode"
 								value={mode.value}
 								checked={current.settings.mode === mode.value}
 								onChange={() => void update({ mode: mode.value })}
-								className="mt-1"
+								className="mt-1 h-4 w-4 shrink-0 accent-blue-600 outline-none"
 							/>
-							<span>
+							<span className="min-w-0">
 								<span className="block text-sm font-medium text-neutral-900">{mode.label}</span>
 								<span className="block text-sm text-neutral-500">{mode.description}</span>
 							</span>
@@ -202,24 +203,26 @@ export function ScreenerSettings() {
 					</Button>
 				</form>
 			)}
-			<ScreenerSenderList
-				title="Approved senders"
-				emptyText="No approved senders yet."
-				entries={current.approved}
-				canManage={current.canManage}
-				disabled={saving}
-				actionLabel="Remove"
-				onAction={(entry) => void forget(entry)}
-			/>
-			<ScreenerSenderList
-				title="Denied senders"
-				emptyText="No denied senders."
-				entries={current.denied}
-				canManage={current.canManage}
-				disabled={saving}
-				actionLabel="Un-deny"
-				onAction={(entry) => void forget(entry)}
-			/>
+			<div className="grid gap-3 sm:grid-cols-2">
+				<ScreenerSenderList
+					title="Approved senders"
+					emptyText="No approved senders yet."
+					entries={current.approved}
+					canManage={current.canManage}
+					disabled={saving}
+					actionLabel="Remove"
+					onAction={(entry) => void forget(entry)}
+				/>
+				<ScreenerSenderList
+					title="Denied senders"
+					emptyText="No denied senders."
+					entries={current.denied}
+					canManage={current.canManage}
+					disabled={saving}
+					actionLabel="Un-deny"
+					onAction={(entry) => void forget(entry)}
+				/>
+			</div>
 			{!current.canManage && (
 				<p className="text-sm text-neutral-500">Full access is required to change the Screener.</p>
 			)}
@@ -228,6 +231,6 @@ export function ScreenerSettings() {
 					{status}
 				</p>
 			)}
-		</div>
+		</SettingRows>
 	);
 }

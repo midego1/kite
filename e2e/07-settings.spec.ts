@@ -10,7 +10,7 @@ test.afterEach(async () => {
 });
 
 test("sending settings are saved to the account and survive a reload", async ({ page }) => {
-	await page.goto("/settings/inbox");
+	await page.goto("/settings/composing");
 	const preview = page.getByRole("switch", { name: "Preview before sending" });
 	const undoWindow = page.getByRole("combobox", { name: "Undo send window" });
 	await expect(preview).toHaveAttribute("aria-checked", "false");

@@ -153,7 +153,7 @@ test("the startup overlay is announced only while it is showing", async ({ page 
 test("pages are titled after themselves, also after a client-side navigation", async ({ page }) => {
 	await page.goto("/settings/account");
 	await expect(page).toHaveTitle(/^My account - /);
-	await page.getByRole("navigation", { name: "Security" }).getByRole("link", { name: "Security", exact: true }).click();
+	await page.getByRole("navigation", { name: "Account" }).getByRole("link", { name: "Security", exact: true }).click();
 	await expect(page).toHaveURL(/\/settings\/security$/);
 	await expect(page).toHaveTitle(/^Security - /);
 	await page.goto("/domains");

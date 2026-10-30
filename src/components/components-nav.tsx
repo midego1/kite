@@ -12,6 +12,14 @@ import { useCompose } from "./compose/compose-context";
 import { Tooltip } from "./ui/tooltip";
 import { preloadMailboxPage } from "./components-nav-utils";
 import type { NavLink } from "./components-nav-types";
+import {
+	RAIL_BADGE_CLASS,
+	RAIL_ICON_SIZE,
+	RAIL_ITEM_CLASS,
+	RAIL_TOOLTIP_CLASS,
+	railBadgeLabel,
+	railIconColor,
+} from "./sidebar-rail-utils";
 
 type Props = {
 	link: NavLink;
@@ -54,13 +62,13 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 	const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
 	const classes = cn(
 		"flex h-9 items-center gap-3 rounded-lg text-sm text-neutral-700 transition-colors max-md:min-h-11 max-md:text-base",
-		minimal && "relative mx-auto w-10 justify-center rounded-full px-0",
+		minimal && RAIL_ITEM_CLASS,
 		active ? "bg-blue-100 text-blue-900 font-medium" : "hover:bg-neutral-200/60 hover:text-neutral-900",
 		dragOver && "bg-blue-50 text-blue-900 ring-1 ring-blue-200",
 		// Zero's "New email": a full-width muted button rather than a coloured slab.
 		link.primary &&
 			"mb-2 h-9 justify-center rounded-lg border border-neutral-200 bg-neutral-100 px-3 font-medium text-neutral-900 hover:bg-neutral-200",
-		link.primary && minimal && "h-10 w-10 rounded-xl px-0",
+		link.primary && minimal && "mb-0 h-10 w-10 rounded-xl px-0",
 		wrap && !minimal && "h-auto min-h-9 items-start py-2",
 	);
 	const dropProps = link.onMessageDrop
@@ -91,7 +99,11 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 				aria-label={`Compose ${(link.label ?? "").toLowerCase()}`}
 				{...dropProps}
 			>
-				<Icon size={16} style={{ color: link.iconColor }} className={iconClassName} />
+				<Icon
+					size={minimal ? RAIL_ICON_SIZE : 16}
+					style={{ color: minimal ? undefined : link.iconColor }}
+					className={iconClassName}
+				/>
 				{!minimal && <span>{link.label}</span>}
 				{!minimal && typeof link.count === "number" && link.count > 0 && (
 					<span className="ml-auto mr-1 text-xs font-medium tabular-nums text-neutral-500">
@@ -99,14 +111,12 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 					</span>
 				)}
 				{minimal && typeof link.count === "number" && link.count > 0 && (
-					<span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-blue-600 px-1 text-center text-[10px] font-semibold leading-4 text-white">
-						{link.count > 99 ? "99+" : link.count}
-					</span>
+					<span className={RAIL_BADGE_CLASS}>{railBadgeLabel(link.count)}</span>
 				)}
 			</button>
 		);
 		return minimal && link.label ? (
-			<Tooltip label={link.label} placement="right" className="mx-auto">
+			<Tooltip label={link.label} placement="right" className={RAIL_TOOLTIP_CLASS}>
 				{composeButton}
 			</Tooltip>
 		) : (
@@ -147,8 +157,8 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 		>
 			<Icon
 				// className={minimal ? "h-4 w-4" : "h-5 w-5"}
-				style={{ color: link.iconColor }}
-				size={16}
+				style={{ color: minimal ? railIconColor(link.iconColor) : link.iconColor }}
+				size={minimal ? RAIL_ICON_SIZE : 16}
 				className={cn("max-md:h-5 max-md:w-5", wrap && !minimal && "mt-0.5 shrink-0", iconClassName)}
 			/>
 			{!minimal && (
@@ -175,9 +185,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 				</span>
 			)}
 			{minimal && typeof link.count === "number" && link.count > 0 && (
-				<span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-blue-600 px-1 text-center text-[10px] font-semibold leading-4 text-white">
-					{link.count > 99 ? "99+" : link.count}
-				</span>
+				<span className={RAIL_BADGE_CLASS}>{railBadgeLabel(link.count)}</span>
 			)}
 		</Link>
 	);
@@ -193,7 +201,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 				</div>
 			)}
 			{minimal && link.label ? (
-				<Tooltip label={link.label} placement="right" className="mx-auto">
+				<Tooltip label={link.label} placement="right" className={RAIL_TOOLTIP_CLASS}>
 					{navLink}
 				</Tooltip>
 			) : (

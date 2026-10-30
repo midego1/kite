@@ -9,8 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { MailboxAutoReplySettings } from "./types";
 import { updateMailboxAutoReply } from "./utils";
-import { Switch } from "../ui/switch";
-import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
+import { Switch } from "@/components/ui/switch";
+import { FormFooter, SettingRow } from "@/components/ui/page";
 
 const defaultSettings: MailboxAutoReplySettings = {
 	enabled: false,
@@ -73,20 +73,17 @@ export function MailboxAutoReplyForm() {
 
 	return (
 		<form onSubmit={onSubmit} className="space-y-4">
-			<label className={SETTING_ROW_CLASS}>
-				<span className="flex-1">
-					<span className="block text-sm font-medium text-neutral-900">Enable auto-reply for {address}</span>
-					<span className="mt-1 block text-sm text-neutral-500">
-						Each sender receives at most one automatic response every 24 hours.
-					</span>
-				</span>
-
-				<Switch
-					checked={settings.enabled}
-					onCheckedChange={(enabled) => setSettings({ ...settings, enabled })}
-					disabled={!canManage || saving}
-				/>
-			</label>
+			<SettingRow
+				label={`Enable auto-reply for ${address}`}
+				description="Each sender receives at most one automatic response every 24 hours."
+				control={
+					<Switch
+						checked={settings.enabled}
+						onCheckedChange={(enabled) => setSettings({ ...settings, enabled })}
+						disabled={!canManage || saving}
+					/>
+				}
+			/>
 			{settings.enabled && (
 				<>
 					<div className="space-y-2">
@@ -110,17 +107,11 @@ export function MailboxAutoReplyForm() {
 							disabled={!canManage || saving}
 						/>
 					</div>
-					<div className="flex items-center gap-3">
+					<FormFooter status={status} note={canManage ? null : "Full access is required to edit auto-reply."}>
 						<Button type="submit" disabled={!canManage || saving || !changed}>
-							{saving ? "Saving..." : "Save"}
+							{saving ? "Saving..." : "Save auto-reply"}
 						</Button>
-						{!canManage && <p className="text-sm text-neutral-500">Full access is required to edit auto-reply.</p>}
-						{status && (
-							<p role="status" className="text-sm text-neutral-500">
-								{status}
-							</p>
-						)}
-					</div>
+					</FormFooter>
 				</>
 			)}
 		</form>

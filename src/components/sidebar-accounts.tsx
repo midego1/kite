@@ -9,6 +9,7 @@ import { getMailboxAddress } from "./mailbox-selector-utils";
 import { MailboxAvatar } from "./sidebar-mailbox-switcher";
 import { AllMailboxesSquare } from "./all-mailboxes-option";
 import { useSidebar } from "./sidebar-state";
+import { RAIL_ICON_SIZE, RAIL_ITEM_CLASS, RAIL_TOOLTIP_CLASS } from "./sidebar-rail-utils";
 import { Tooltip } from "./ui/tooltip";
 
 /** Mailboxes shown as squares at the top of the sidebar; the rest stay in the switcher's list. */
@@ -21,14 +22,17 @@ function CollapseButton() {
 	if (mobile || (toggleInListHeader && !minimal)) return null;
 	const label = minimal ? "Expand menu" : "Collapse menu";
 	return (
-		<Tooltip label={label} placement="right">
+		<Tooltip label={label} placement="right" className={minimal ? RAIL_TOOLTIP_CLASS : undefined}>
 			<button
 				type="button"
 				onClick={toggle}
 				aria-label={label}
-				className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-200/60 hover:text-neutral-900"
+				className={cn(
+					"flex shrink-0 items-center justify-center text-neutral-500 hover:bg-neutral-200/60 hover:text-neutral-900",
+					minimal ? RAIL_ITEM_CLASS : "h-8 w-8 rounded-lg",
+				)}
 			>
-				<PanelLeft size={16} />
+				<PanelLeft size={minimal ? RAIL_ICON_SIZE : 16} />
 			</button>
 		</Tooltip>
 	);
@@ -46,7 +50,7 @@ export function SidebarAccounts() {
 	const router = useRouter();
 	if (minimal) {
 		return (
-			<div className="mb-3 flex flex-col items-center gap-2">
+			<div className="mb-3 flex flex-col items-center">
 				<CollapseButton />
 			</div>
 		);

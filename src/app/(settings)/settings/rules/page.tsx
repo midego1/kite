@@ -9,12 +9,8 @@ export default function SettingsRulesPage() {
 				title="Rules & routing"
 				description="Rules for the selected inbox, and how mail to your domains is delivered."
 			/>
-			<div>
-				<DomainRouting />
-			</div>
-			<div className="py-6">
-				<InboxRules />
-			</div>
+			<DomainRouting />
+			<InboxRules />
 		</div>
 	);
 }

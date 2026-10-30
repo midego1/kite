@@ -6,7 +6,9 @@ import { AdminPendingMigrationsNotice, AdminUpdateCard } from "@/components/admi
 import { PageHeader } from "@/components/ui/page";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatGrid, StatTile } from "@/components/ui/stat-tile";
+import { dismissDirectUploadsReminder, STORAGE_OVERVIEW_KEY } from "@/components/storage/direct-uploads-reminder";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useQueryClient } from "@tanstack/react-query";
 import { AttentionList } from "./attention-list";
 import { attentionItems, overviewStats } from "./overview-utils";
 import { useOverview } from "./use-overview";
@@ -31,11 +33,17 @@ export default function AdminOverviewPage() {
 	const expectedTiles = 2 + (primary || user?.canManageDomains ? 1 : 0) + (primary ? 1 : 0);
 	const { data, loading } = useOverview(primary, user?.role === "admin");
 	const stats = overviewStats(data);
+	const queryClient = useQueryClient();
+	// Only the direct-uploads reminder is dismissible; it hides on the Storage page too.
+	const dismiss = (id: string) => {
+		if (id !== "direct-uploads") return;
+		void dismissDirectUploadsReminder().then(() => queryClient.invalidateQueries({ queryKey: STORAGE_OVERVIEW_KEY }));
+	};
 
 	return (
 		<div className="space-y-8">
 			<PageHeader title="Overview" description="What needs attention, the numbers, and the database." />
-			<AttentionList items={loading ? [] : attentionItems(data, primary)} loading={loading} />
+			<AttentionList items={loading ? [] : attentionItems(data, primary)} loading={loading} onDismiss={dismiss} />
 			{!primary && <AdminPendingMigrationsNotice />}
 			<section aria-label="At a glance">
 				{loading ? (

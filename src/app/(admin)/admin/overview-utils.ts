@@ -1,3 +1,8 @@
+import {
+	DIRECT_UPLOADS_REMINDER_TITLE,
+	DIRECT_UPLOADS_WHY,
+	directUploadsAttemptText,
+} from "@/components/storage/direct-uploads-reminder-utils";
 import { formatDatabaseBytes } from "@/lib/db/size-utils";
 import type { AttentionItem, OverviewData, OverviewStat } from "./overview-types";
 
@@ -114,6 +119,25 @@ function domainsItem(counts: OverviewData["counts"]): AttentionItem | null {
 	};
 }
 
+/**
+ * Direct uploads are the default on Cloudflare: until they are on (or the owner dismissed it), the primary admin is
+ * reminded, as a warning when the automatic setup ran and failed. Dismiss hides it on the Storage page too.
+ */
+function directUploadsItem(data: OverviewData, primary: boolean): AttentionItem | null {
+	const reminder = data.directUploads;
+	if (!primary || !reminder?.show) return null;
+	const attempt = directUploadsAttemptText(reminder.setup);
+	return {
+		id: "direct-uploads",
+		tone: attempt ? "warning" : "info",
+		title: DIRECT_UPLOADS_REMINDER_TITLE,
+		detail: attempt ?? DIRECT_UPLOADS_WHY,
+		href: "/storage?setup=direct",
+		hrefLabel: "Set up",
+		dismissible: true,
+	};
+}
+
 /** What needs attention, most urgent first: errors, then warnings, then information. */
 export function attentionItems(data: OverviewData, primary: boolean): AttentionItem[] {
 	const items = [
@@ -123,6 +147,7 @@ export function attentionItems(data: OverviewData, primary: boolean): AttentionI
 		webhooksItem(data.counts),
 		aiErrorsItem(data.counts),
 		domainsItem(data.counts),
+		directUploadsItem(data, primary),
 	].filter((item): item is AttentionItem => item !== null);
 	const rank = { error: 0, warning: 1, info: 2 };
 	return items.sort((a, b) => rank[a.tone] - rank[b.tone]);

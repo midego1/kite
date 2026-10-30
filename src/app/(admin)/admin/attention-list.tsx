@@ -21,8 +21,16 @@ function ItemLink({ item }: { item: AttentionItem }) {
 	);
 }
 
-/** What needs attention, or that nothing does. */
-export function AttentionList({ items, loading }: { items: AttentionItem[]; loading: boolean }) {
+/** What needs attention, or that nothing does. A dismissible item gets Dismiss next to its link. */
+export function AttentionList({
+	items,
+	loading,
+	onDismiss,
+}: {
+	items: AttentionItem[];
+	loading: boolean;
+	onDismiss?: (id: string) => void;
+}) {
 	return (
 		<section aria-labelledby="needs-attention" className="space-y-2">
 			<h2 id="needs-attention" className="text-base font-semibold text-neutral-900">
@@ -44,7 +52,20 @@ export function AttentionList({ items, loading }: { items: AttentionItem[]; load
 					key={item.id}
 					tone={item.tone}
 					title={item.title}
-					actions={<ItemLink item={item} />}
+					actions={
+						<>
+							<ItemLink item={item} />
+							{item.dismissible && onDismiss && (
+								<button
+									type="button"
+									onClick={() => onDismiss(item.id)}
+									className="text-sm font-medium text-neutral-600 underline underline-offset-2 hover:opacity-80"
+								>
+									Dismiss
+								</button>
+							)}
+						</>
+					}
 					data-testid={`attention-${item.id}`}
 				>
 					{item.detail}

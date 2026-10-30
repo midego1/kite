@@ -24,11 +24,19 @@ const PROBE_SECONDS = 60;
 /** Every check request gets this long; a store that does not answer fails the step instead of hanging the test. */
 const CHECK_TIMEOUT_MS = 15_000;
 
-/** Browser-side probes never follow a redirect (it would go to a host nobody checked) and give up in time. */
-const probeInit = () => ({ redirect: "manual" as const, signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) });
+/** Each request's timeout: 15 seconds, or less once an overall deadline (epoch ms) is near; at least one second. */
+type Limit = () => number;
 
-const checkBucketOf = (candidate: StoreCandidate) =>
-	new S3Bucket({ ...candidate.location, ...candidate.credentials }, { timeoutMs: CHECK_TIMEOUT_MS });
+const limitFor =
+	(deadline?: number): Limit =>
+	() =>
+		deadline === undefined ? CHECK_TIMEOUT_MS : Math.max(1_000, Math.min(CHECK_TIMEOUT_MS, deadline - Date.now()));
+
+/** Browser-side probes never follow a redirect (it would go to a host nobody checked) and give up in time. */
+const probeInit = (limit: Limit) => ({ redirect: "manual" as const, signal: AbortSignal.timeout(limit()) });
+
+const checkBucketOf = (candidate: StoreCandidate, limit: Limit) =>
+	new S3Bucket({ ...candidate.location, ...candidate.credentials }, { timeoutMs: limit });
 
 function failureOf(error: unknown) {
 	const cause = error instanceof StorageTestError ? error.cause : error;
@@ -128,7 +136,7 @@ async function reachBucket(steps: Steps, bucket: S3Bucket): Promise<boolean> {
 	return true;
 }
 
-async function checkObjects(steps: Steps, bucket: S3Bucket): Promise<void> {
+async function checkObjects(steps: Steps, bucket: S3Bucket, limit: Limit): Promise<void> {
 	const probe = probeKey();
 	let deleted = false;
 	try {
@@ -150,7 +158,7 @@ async function checkObjects(steps: Steps, bucket: S3Bucket): Promise<void> {
 				disposition: "attachment",
 				contentType: "text/plain",
 			});
-			const response = await fetch(url, probeInit());
+			const response = await fetch(url, probeInit(limit));
 			if (!response.ok) {
 				const text = await response.text().catch(() => "");
 				const code = /<Code>([^<]+)<\/Code>/.exec(text)?.[1] ?? `HTTP${response.status}`;
@@ -166,12 +174,18 @@ async function checkObjects(steps: Steps, bucket: S3Bucket): Promise<void> {
 	}
 }
 
-async function checkCors(steps: Steps, bucket: S3Bucket, provider: S3Provider, appOrigin: string): Promise<void> {
+async function checkCors(
+	steps: Steps,
+	bucket: S3Bucket,
+	provider: S3Provider,
+	appOrigin: string,
+	limit: Limit,
+): Promise<void> {
 	const fix = corsFix(provider, !!presetFor(provider)?.applyCors);
 	const probe = probeKey("cors");
 	try {
 		const preflight = await fetch(bucket.objectUrl(probe), {
-			...probeInit(),
+			...probeInit(limit),
 			method: "OPTIONS",
 			headers: {
 				Origin: appOrigin,
@@ -194,7 +208,7 @@ async function checkCors(steps: Steps, bucket: S3Bucket, provider: S3Provider, a
 			contentType: "text/plain",
 		});
 		const upload = await fetch(url, {
-			...probeInit(),
+			...probeInit(limit),
 			method: "PUT",
 			headers: { Origin: appOrigin, "Content-Type": "text/plain" },
 			body,
@@ -226,13 +240,16 @@ function lifecycleAdvice(steps: Steps, provider: S3Provider) {
 /**
  * The checklist a store must pass before it is saved, and again from the Test button (spec 4.5). Each step is
  * reported with the permission or setting that fixes it. Probe objects live under `healthcheck/` and are deleted
- * again; nothing in the report carries a URL, a signature or a credential.
+ * again; nothing in the report carries a URL, a signature or a credential. With a `deadline` (epoch ms) every
+ * request's timeout shrinks so the whole checklist ends near it (the automatic R2 setup's time budget).
  */
 export async function validateStore(
 	env: StorageEnv,
 	candidate: StoreCandidate,
 	appOrigin: string,
+	options: { deadline?: number } = {},
 ): Promise<ValidationReport> {
+	const limit = limitFor(options.deadline);
 	const steps = new Steps({ provider: candidate.provider, bucket: candidate.location.bucket });
 	try {
 		await assertStoreEndpoint(env, candidate.location);
@@ -241,17 +258,20 @@ export async function validateStore(
 		steps.skip("credentials", "bucket", ...AFTER_BUCKET);
 		return reportFrom(steps.list);
 	}
-	const bucket = checkBucketOf(candidate);
+	const bucket = checkBucketOf(candidate, limit);
 	if (!(await reachBucket(steps, bucket))) {
 		steps.skip("endpoint", "credentials", "bucket", ...AFTER_BUCKET);
 		return reportFrom(steps.list);
 	}
-	await checkObjects(steps, bucket);
-	await steps.run("multipart", async () => {
-		const upload = await bucket.createMultipartUpload(probeKey("multipart"));
-		await upload.abort();
-	});
-	await checkCors(steps, bucket, candidate.provider, appOrigin);
+	// Past the deadline the remaining checks are skipped rather than each run at the one-second floor.
+	const late = () => options.deadline !== undefined && Date.now() >= options.deadline;
+	await checkObjects(steps, bucket, limit);
+	if (!late())
+		await steps.run("multipart", async () => {
+			const upload = await bucket.createMultipartUpload(probeKey("multipart"));
+			await upload.abort();
+		});
+	if (!late()) await checkCors(steps, bucket, candidate.provider, appOrigin, limit);
 	lifecycleAdvice(steps, candidate.provider);
 	steps.skip(...AFTER_BUCKET);
 	const order = Object.keys(STEP_LABELS);
@@ -265,6 +285,7 @@ export async function validateStoreCors(
 	appOrigin: string,
 ): Promise<{ ok: boolean; steps: ValidationStep[] }> {
 	const steps = new Steps({ provider: candidate.provider, bucket: candidate.location.bucket });
-	await checkCors(steps, checkBucketOf(candidate), candidate.provider, appOrigin);
+	const limit = limitFor();
+	await checkCors(steps, checkBucketOf(candidate, limit), candidate.provider, appOrigin, limit);
 	return { ok: steps.list.every((step) => step.status === "ok"), steps: steps.list };
 }

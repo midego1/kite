@@ -21,6 +21,7 @@ import { verifyTurnstileToken } from "@/lib/auth/turnstile";
 import { getDomainProvisioningError } from "@/lib/domains/errors";
 import { emitLifecycleEvent } from "@/lib/modules/lifecycle";
 import { createAuditLog } from "@/lib/mailboxes/audit";
+import { setUpDirectUploadsAtInstall } from "@/lib/storage/auto-setup";
 import { recordSetupTelemetryChoice } from "@/lib/telemetry/state";
 import { TELEMETRY_AUDIT_ACTIONS } from "@/lib/telemetry/telemetry-utils";
 
@@ -131,8 +132,10 @@ export async function POST(request: Request) {
 
 	await emitLifecycleEvent({ type: "user.created", userId });
 	await recordSetupTelemetry(env, userId, firstRunParsed.data.usageStatistics);
+	// Direct uploads are on by default on Cloudflare; a refusal never fails registration and shows up as a fix item.
+	const directUploads = await setUpDirectUploadsAtInstall(env, { id: userId }, new URL(request.url).origin);
 
-	const response = NextResponse.json({ ok: true, redirect: "/login" });
+	const response = NextResponse.json({ ok: true, redirect: "/login", ...(directUploads ? { directUploads } : {}) });
 	response.headers.set("Cache-Control", "no-store");
 	response.cookies.set(SESSION_COOKIE, "", {
 		httpOnly: true,

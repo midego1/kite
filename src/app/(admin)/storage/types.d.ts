@@ -1,3 +1,4 @@
+import type { DirectUploadsSetupRecord } from "@/lib/storage/direct-uploads-state";
 import type { StoreView } from "@/lib/storage/stores";
 import type { R2Jurisdiction } from "@/lib/storage/s3-presets-utils";
 import type { RoutableClass, S3Addressing, S3Provider } from "@/lib/storage/types";
@@ -25,6 +26,7 @@ export type MigrationView = {
 export type RouteView = { objectClass: RoutableClass; storeId: string; previousStoreId: string | null };
 
 export type StorageOverview = {
+	directUploadsReminder: { show: boolean; setup: DirectUploadsSetupRecord | null };
 	defaultStore: { id: string; name: string; kind: "r2" | "files"; directUploads: boolean };
 	stores: StoreView[];
 	routes: RouteView[];
@@ -54,8 +56,35 @@ export type StoreForm = {
 	sameAsBinding: boolean;
 };
 
-/** What a failed save, test or switch answers besides its message. */
-export type StorageFailure = { report?: ValidationReport; steps?: ValidationStep[]; field?: string };
+/** One line of a step list: a validation check, or a step of the automatic R2 setup. */
+export type ListStep = {
+	id: string;
+	label: string;
+	status: "ok" | "failed" | "skipped" | "advice";
+	detail?: string;
+	fix?: string;
+};
+
+/** What a failed save, test, switch or automatic setup answers besides its message. */
+export type StorageFailure = {
+	report?: ValidationReport;
+	steps?: ListStep[];
+	field?: string;
+	/** The automatic setup's reason, e.g. `bucket_exists` or `permission`. */
+	code?: string;
+	/** The account permission CF_TOKEN lacks. */
+	permission?: string;
+};
+
+export type R2Choices = {
+	available: boolean;
+	reason?: string;
+	defaultBucket: string;
+	accountId?: string | null;
+	buckets?: { name: string; jurisdiction: "" | "eu" | "fedramp"; location: string | null }[];
+	error?: string;
+	permission?: string;
+};
 
 export type StoreFormField =
 	"name" | "accountId" | "region" | "endpoint" | "bucket" | "accessKeyId" | "secretAccessKey";

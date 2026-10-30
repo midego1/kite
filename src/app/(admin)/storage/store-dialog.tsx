@@ -1,14 +1,10 @@
 "use client";
 
-import { useId, useState } from "react";
-import { CheckCircle2, Circle, Info, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { normalizeR2AccountId, r2TokenPage } from "@/lib/storage/s3-presets-utils";
-import { corsRuleJson } from "@/lib/storage/s3-utils";
 import { corsFailed, testSummary } from "./form-utils";
 import {
-	CopyBlock,
 	CorsRule,
 	CredentialFields,
 	CredentialsHelp,
@@ -17,80 +13,10 @@ import {
 	WhereSection,
 	appOrigin,
 } from "./store-fields";
-import type { StoreView, ValidationStep } from "./types";
+import type { StoreView } from "./types";
+import { StepList } from "./step-list";
+import { AutoDirectUploads, R2OneClick } from "./r2-auto-setup";
 import { useStoreDialog, type StoreDialogState } from "./use-store-dialog";
-
-const STEP_ICONS = {
-	ok: <CheckCircle2 aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-green-700" />,
-	failed: <XCircle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />,
-	skipped: <Circle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />,
-	advice: <Info aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />,
-};
-
-const STEP_STATUS = { ok: "passed", failed: "failed", skipped: "skipped", advice: "advice" };
-
-function checkedText(at: Date | string | null | undefined): string {
-	if (!at) return "";
-	const date = typeof at === "string" ? new Date(at) : at;
-	return ` · Checked ${date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
-}
-
-/**
- * The checks with ✓/✗, each failure with its fix; a failed browser check carries the CORS rule to copy. When
- * nothing failed, the list folds into one line with Show details; any failure keeps it open.
- */
-export function StepList({ steps, checkedAt }: { steps: ValidationStep[]; checkedAt?: Date | string | null }) {
-	const [open, setOpen] = useState(false);
-	const listId = useId();
-	const anyFailed = steps.some((step) => step.status === "failed");
-	const expanded = anyFailed || open;
-	const corsAt = steps.find((step) => step.id.startsWith("cors_") && step.status === "failed")?.id;
-	const passed = steps.filter((step) => step.status === "ok").length;
-	const tips = steps.filter((step) => step.status === "advice").length;
-	return (
-		<div className="space-y-2" data-steps={anyFailed ? "failed" : "passed"}>
-			{!anyFailed && (
-				<p className="flex flex-wrap items-center gap-x-2 text-sm text-neutral-700">
-					<CheckCircle2 aria-hidden className="h-4 w-4 shrink-0 text-green-700" />
-					<span>
-						All {passed} checks passed
-						{tips ? ` · ${tips} ${tips === 1 ? "tip" : "tips"}` : ""}
-						{checkedText(checkedAt)}
-					</span>
-					<button
-						type="button"
-						aria-expanded={open}
-						aria-controls={listId}
-						onClick={() => setOpen((value) => !value)}
-						className="font-medium text-blue-700 underline-offset-2 hover:underline"
-					>
-						{open ? "Hide details" : "Show details"}
-					</button>
-				</p>
-			)}
-			<ul id={listId} aria-label="Checks" hidden={!expanded} className="space-y-2 text-sm">
-				{steps.map((step) => (
-					<li key={step.id} data-step={step.id} data-status={step.status} className="flex gap-2">
-						{STEP_ICONS[step.status]}
-						<div className="min-w-0 flex-1">
-							<p className="text-neutral-900">
-								{step.label}
-								<span className="sr-only">: {STEP_STATUS[step.status]}</span>
-							</p>
-							{step.detail && <p className="text-neutral-600">{step.detail}</p>}
-							{step.fix && <p className="text-neutral-500">{step.fix}</p>}
-							{step.id === corsAt && (
-								<div className="mt-2" data-cors-rule>
-									<CopyBlock label="CORS rule" text={corsRuleJson([appOrigin()])} />
-								</div>
-							)}
-						</div>
-					</li>
-				))}
-			</ul>
-		</div>
-	);
-}
 
 const SUMMARY_TONES = {
 	ok: "border-green-600/30 bg-green-600/10 text-green-800",
@@ -168,6 +94,7 @@ export function StoreDialog({ store, onClose, onSaved }: Props) {
 						stored encrypted and never shown again.
 					</DialogDescription>
 				</DialogHeader>
+				{!dialog.editing && dialog.form.provider === "r2" && <R2OneClick onSaved={onSaved} onClose={onClose} />}
 				<form className="space-y-4" noValidate onSubmit={(event) => void dialog.save(event)}>
 					<Section title="Where">
 						<WhereSection {...fields} binding={false} />
@@ -209,6 +136,7 @@ export function DirectUploadsDialog({ onClose, onSaved }: Omit<Props, "store">) 
 						the bucket to sign those uploads. It takes about two minutes.
 					</DialogDescription>
 				</DialogHeader>
+				<AutoDirectUploads onSaved={onSaved} onClose={onClose} />
 				<form className="space-y-4" noValidate onSubmit={(event) => void dialog.save(event)}>
 					<Section step={1} title="Create an R2 API token">
 						<p className="text-sm text-neutral-600">

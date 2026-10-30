@@ -167,6 +167,12 @@ test("each admin may test five times a minute, and a limit that cannot be checke
 	assert.equal(limited.status, 429);
 	assert.match(limited.body.error, /wait a minute/);
 	assert.equal(fake.state.requests.length, before, "a refused test sends nothing");
+	const rows = audits(env).map((row) => JSON.parse(row.metadata));
+	assert.equal(rows.length, 6, "one audit row per attempt, the refused one included");
+	assert.deepEqual(
+		rows.map((row) => row.outcome),
+		["passed", "passed", "passed", "passed", "passed", "rate_limited"],
+	);
 	const { env: other } = await fixture(t);
 	other.DB.db.exec("DROP TABLE audit_logs");
 	const { result, logged } = await consoleOutput(t, () => call(other, "owner", form()));

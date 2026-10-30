@@ -12,7 +12,7 @@ import {
 } from "@/lib/storage/s3-presets-utils";
 import { credentialProblem } from "@/lib/storage/credential-utils";
 import type { S3Provider } from "@/lib/storage/types";
-import type { StoreForm, StoreFormErrors, StoreView, ValidationStep } from "./types";
+import type { ListStep, StoreForm, StoreFormErrors, StoreView } from "./types";
 
 /** The bucket the default `BUCKET` binding uses in wrangler.jsonc. */
 const DEFAULT_BINDING_BUCKET = "kite-raw";
@@ -202,12 +202,12 @@ export function storeFormBody(form: StoreForm, editing: boolean, storeId?: strin
 }
 
 /** Whether a report's browser checks failed, so the dialog shows the CORS rule to copy. */
-export function corsFailed(steps: ValidationStep[] | null): boolean {
+export function corsFailed(steps: ListStep[] | null): boolean {
 	return !!steps?.some((step) => step.id.startsWith("cors_") && step.status === "failed");
 }
 
 /** One line above the step list: everything passed, only the browser checks failed, or a required one did. */
-export function testSummary(steps: ValidationStep[]): { tone: "ok" | "warn" | "error"; text: string } {
+export function testSummary(steps: ListStep[]): { tone: "ok" | "warn" | "error"; text: string } {
 	const failed = steps.filter((step) => step.status === "failed");
 	if (!failed.length) return { tone: "ok", text: "Connection works. Every check passed." };
 	if (failed.every((step) => step.id.startsWith("cors_")))

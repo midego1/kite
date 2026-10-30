@@ -9,7 +9,8 @@ import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { DataRoutes } from "./data-routes";
 import { MigrationsCard } from "./migrations-card";
-import { DirectUploadsDialog, StepList, StoreDialog } from "./store-dialog";
+import { StepList } from "./step-list";
+import { DirectUploadsDialog, StoreDialog } from "./store-dialog";
 import type { StorageOverview, StoreView, ValidationStep } from "./types";
 import {
 	CLASS_LABELS,
@@ -23,6 +24,7 @@ import {
 	storageRequest,
 } from "./utils";
 import { Notice } from "@/components/ui/notice";
+import { DirectUploadsReminder } from "@/components/storage/direct-uploads-reminder";
 import { PageHeader } from "@/components/ui/page";
 
 type DialogState = { store: StoreView | null; binding?: boolean } | null;
@@ -179,14 +181,6 @@ function StoresCard({
 							Enable direct uploads
 						</Button>
 					)}
-					{recommendDirect && (
-						<div data-direct-uploads-tip className="basis-full">
-							<Notice title="Recommended: turn on direct uploads">
-								Large Drive uploads then go straight to R2: faster, and less load on the Worker. Setting it up takes
-								about two minutes.
-							</Notice>
-						</div>
-					)}
 				</li>
 				{overview.stores.map((store) => (
 					<StoreRow key={store.id} store={store} onEdit={(entry) => onDialog({ store: entry })} onChanged={onChanged} />
@@ -242,6 +236,12 @@ export function StorageAdmin() {
 			)}
 			{data && !data.migrationPending && !data.encryptionReady && (
 				<Notice>Set APP_ENCRYPTION_KEY to add stores. Store keys are only ever saved encrypted.</Notice>
+			)}
+			{data && !data.migrationPending && data.encryptionReady && (
+				<DirectUploadsReminder
+					reminder={data.directUploadsReminder}
+					onSetUp={() => setDialog({ store: null, binding: true })}
+				/>
 			)}
 			{data && !data.migrationPending && (
 				<>

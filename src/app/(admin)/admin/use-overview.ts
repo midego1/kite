@@ -4,6 +4,7 @@ import { useQueries } from "@tanstack/react-query";
 import { BACKUP_HEALTH_QUERY, fetchBackupHealth } from "@/components/admin-backup-health-query";
 import { DATABASE_SIZE_QUERY, fetchDatabaseSize } from "@/components/admin-database-size-query";
 import { fetchPendingMigrations, PENDING_MIGRATIONS_QUERY } from "@/components/use-migrations-notice";
+import { fetchStorageReminder, STORAGE_OVERVIEW_KEY } from "@/components/storage/direct-uploads-reminder";
 import { authFetch } from "@/lib/auth/client";
 import type { AdminOverviewCounts } from "@/lib/admin/overview-types";
 import type { OverviewData } from "./overview-types";
@@ -23,15 +24,17 @@ async function fetchOverviewCounts(): Promise<AdminOverviewCounts> {
  */
 export function useOverview(primary: boolean, enabled: boolean): { data: OverviewData; loading: boolean } {
 	const shared = { enabled, staleTime: 30_000, refetchOnMount: "always" as const, retry: false };
-	const [migrations, counts, databaseSize, backups] = useQueries({
+	const [migrations, counts, databaseSize, backups, storage] = useQueries({
 		queries: [
 			{ queryKey: PENDING_MIGRATIONS_QUERY, queryFn: fetchPendingMigrations, ...shared },
 			{ queryKey: OVERVIEW_COUNTS_QUERY, queryFn: fetchOverviewCounts, ...shared },
 			{ queryKey: DATABASE_SIZE_QUERY, queryFn: fetchDatabaseSize, ...shared, enabled: enabled && primary },
 			{ queryKey: BACKUP_HEALTH_QUERY, queryFn: fetchBackupHealth, ...shared, enabled: enabled && primary },
+			// The Storage page's key, so dismissing the reminder in either place refreshes both.
+			{ queryKey: STORAGE_OVERVIEW_KEY, queryFn: fetchStorageReminder, ...shared, enabled: enabled && primary },
 		],
 	});
-	const loading = [migrations, counts, databaseSize, backups].some((query) => query.isLoading);
+	const loading = [migrations, counts, databaseSize, backups, storage].some((query) => query.isLoading);
 	return {
 		loading,
 		data: {
@@ -39,6 +42,7 @@ export function useOverview(primary: boolean, enabled: boolean): { data: Overvie
 			counts: counts.data ?? null,
 			databaseSize: databaseSize.data ?? null,
 			backups: backups.data ?? null,
+			directUploads: storage.data?.directUploadsReminder ?? null,
 		},
 	};
 }

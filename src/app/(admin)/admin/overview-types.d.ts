@@ -1,6 +1,7 @@
 import type { AdminOverviewCounts } from "@/lib/admin/overview-types";
 import type { BackupHealth } from "@/lib/backups/health-types";
 import type { DatabaseSize, DatabaseUseLevel } from "@/lib/db/size-utils";
+import type { DirectUploadsReminderData } from "@/components/storage/direct-uploads-reminder-utils";
 
 /** Everything the overview reads; a part is `null` while loading, when its request failed or the viewer may not read it. */
 export type OverviewData = {
@@ -10,6 +11,8 @@ export type OverviewData = {
 	/** Primary admin only from here on, shared with the cards under the tiles. */
 	databaseSize: { size: DatabaseSize | null; level: DatabaseUseLevel } | null;
 	backups: BackupHealth | null;
+	/** Primary admin only: the storage overview's "Direct uploads are off" reminder. */
+	directUploads?: DirectUploadsReminderData | null;
 };
 
 export type AttentionTone = "warning" | "error" | "info";
@@ -22,6 +25,8 @@ export type AttentionItem = {
 	detail?: string;
 	href: string;
 	hrefLabel: string;
+	/** Offers Dismiss, which hides the item for the install until the cause comes back. */
+	dismissible?: boolean;
 };
 
 export type OverviewStat = {

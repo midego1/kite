@@ -6,6 +6,8 @@ import {
 	E2E_TELEMETRY_URL,
 	E2E_VITE_CACHE_DIR,
 	FAKE_ABUSE_CH_PORT,
+	FAKE_CLOUDFLARE_PORT,
+	FAKE_R2_S3_PORT,
 	STORAGE_STATE,
 } from "./e2e/support/constants";
 
@@ -60,6 +62,10 @@ export default defineConfig({
 			EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK: "1",
 			// Sends both abuse.ch APIs to the fake on 127.0.0.1 (e2e/support/fake-abuse-ch.ts); nothing reaches abuse.ch.
 			ABUSE_CH_TEST_ORIGIN: `http://127.0.0.1:${FAKE_ABUSE_CH_PORT}`,
+			// Sends the automatic R2 setup's Cloudflare API calls and its S3 endpoint to fakes the storage spec starts
+			// (e2e/93-storage-r2-auto-setup.spec.ts); nothing reaches Cloudflare.
+			CLOUDFLARE_API_TEST_ORIGIN: `http://127.0.0.1:${FAKE_CLOUDFLARE_PORT}`,
+			R2_S3_TEST_ENDPOINT: `http://localhost:${FAKE_R2_S3_PORT}`,
 			// Lets specs inject a database size with X-Kite-Test-Database-Size (e2e/60-database-size.spec.ts).
 			DATABASE_SIZE_TEST_HEADER: "1",
 			// A usable https address (so the usage statistics notice can be tested) where nothing listens: no e2e run

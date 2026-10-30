@@ -98,6 +98,10 @@ interface CloudflareEnv {
 	ABUSE_CH_AUTH_KEY?: string;
 	/** Dev/test only: an http://127.0.0.1 or http://localhost origin that stands in for both abuse.ch APIs (the e2e fake); ignored in production. */
 	ABUSE_CH_TEST_ORIGIN?: string;
+	/** Dev/test only: an http://127.0.0.1 or http://localhost origin that stands in for the Cloudflare API's R2 and token calls (the e2e fake); ignored in production. */
+	CLOUDFLARE_API_TEST_ORIGIN?: string;
+	/** Dev/test only: an http loopback S3 endpoint that stands in for `<account>.r2.cloudflarestorage.com` in the automatic R2 setup; ignored in production. */
+	R2_S3_TEST_ENDPOINT?: string;
 	/** When set, first-run setup and the first registration must present this token. */
 	SETUP_TOKEN?: string;
 	/** Any long random string; when set, provider secrets in app_settings are stored encrypted (AES-GCM, key derived with HKDF). */

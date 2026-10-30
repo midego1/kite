@@ -139,3 +139,39 @@ test("nothing loaded yet means nothing to show, not zeros", () => {
 	assert.deepEqual(overviewStats({ migrations: null, counts: null, databaseSize: null, backups: null }), []);
 	assert.deepEqual(attentionItems({ migrations: null, counts: null, databaseSize: null, backups: null }, true), []);
 });
+
+test("direct uploads off is a dismissible item for the primary admin, a warning when the automatic setup failed", () => {
+	const off = { ...quiet, directUploads: { show: true, setup: null } };
+	const [item] = attentionItems(off, true);
+	assert.deepEqual(
+		[item.id, item.tone, item.title, item.href, item.hrefLabel, item.dismissible],
+		["direct-uploads", "info", "Direct uploads are off: set up (2 min)", "/storage?setup=direct", "Set up", true],
+	);
+	assert.match(item.detail, /straight to R2/);
+	const failed = {
+		...quiet,
+		directUploads: {
+			show: true,
+			setup: {
+				ok: false,
+				source: "install",
+				message: "CF_TOKEN may not do this.",
+				permission: "Account API Tokens: Edit",
+			},
+		},
+	};
+	const [warning] = attentionItems(failed, true);
+	assert.equal(warning.tone, "warning");
+	assert.equal(
+		warning.detail,
+		'The automatic setup during installation did not finish: CF_TOKEN may not do this. CF_TOKEN needs "Account API Tokens: Edit".',
+	);
+	assert.deepEqual(attentionItems(off, false), [], "only the primary admin");
+	assert.deepEqual(
+		attentionItems({ ...quiet, directUploads: { show: false, setup: null } }, true),
+		[],
+		"on or dismissed",
+	);
+	const ranked = attentionItems({ ...failed, migrations: { pending: 1 } }, true).map((entry) => entry.id);
+	assert.deepEqual(ranked, ["migrations", "direct-uploads"], "after the more urgent warnings");
+});

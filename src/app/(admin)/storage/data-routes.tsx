@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
@@ -129,6 +130,12 @@ export function DataRoutes({ overview, onChanged }: { overview: StorageOverview;
 					);
 					const hasLeftovers = !!route.previousStoreId && route.previousStoreId !== route.storeId;
 					const canCopyRest = choice === route.storeId && hasLeftovers;
+					// Why Switch is unavailable, as a tooltip and for screen readers; null while it can be used.
+					const switchHint = running
+						? "Wait for the running copy to finish"
+						: choice === route.storeId && !canCopyRest
+							? "Pick another store to switch"
+							: null;
 					return (
 						<div
 							key={route.objectClass}
@@ -161,15 +168,23 @@ export function DataRoutes({ overview, onChanged }: { overview: StorageOverview;
 									</option>
 								))}
 							</Select>
-							<Button
-								type="button"
-								size="sm"
-								variant="outline"
-								disabled={running || (choice === route.storeId && !canCopyRest)}
-								onClick={() => setPending({ route, storeId: choice })}
-							>
-								{canCopyRest ? "Copy the rest" : "Switch"}
-							</Button>
+							<Tooltip label={switchHint}>
+								<Button
+									type="button"
+									size="sm"
+									variant="outline"
+									disabled={!!switchHint}
+									aria-describedby={switchHint ? `switch-hint-${route.objectClass}` : undefined}
+									onClick={() => setPending({ route, storeId: choice })}
+								>
+									{canCopyRest ? "Copy the rest" : "Switch"}
+								</Button>
+							</Tooltip>
+							{switchHint && (
+								<span id={`switch-hint-${route.objectClass}`} className="sr-only">
+									{switchHint}
+								</span>
+							)}
 						</div>
 					);
 				})}

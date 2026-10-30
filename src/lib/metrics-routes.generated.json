@@ -36,6 +36,7 @@
 	"/api/admin/storage/stores/[id]",
 	"/api/admin/storage/stores/[id]/test",
 	"/api/admin/storage/stores",
+	"/api/admin/storage/test",
 	"/api/admin/telemetry",
 	"/api/admin/threat-lookups/key",
 	"/api/admin/threat-lookups/test",

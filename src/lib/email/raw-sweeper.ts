@@ -86,7 +86,7 @@ async function writePosition(env: CloudflareEnv, after: string): Promise<void> {
 
 /**
  * The daily safety net behind the early-return cleanup in `processInboundMessage` (Mailflare #219): deletes raw MIME
- * under `inbound/` that no message references and no pending queue message names, once it is a day old (a message the
+ * under `inbound/` that no message references and no pending queue message names, once it is a week old (a message the
  * queue dropped after its last retry, a crash between storing and enqueueing). Walks the prefix in key order from where
  * the last run stopped, a capped number of pages per run, and never deletes anything else.
  */
@@ -104,6 +104,7 @@ export async function sweepOrphanedRawMail(
 	let after = await readPosition(env);
 	let scanned = 0;
 	let removed = 0;
+	const deleted: { first?: string; last?: string } = {};
 	for (let page = 0; page < (options.maxPages ?? RAW_SWEEP_MAX_PAGES); page++) {
 		const listing = await env.BUCKET.list({
 			prefix: RAW_SWEEP_PREFIX,
@@ -114,13 +115,18 @@ export async function sweepOrphanedRawMail(
 		if (!due.length) break;
 		const referenced = await referencedKeys(env, due);
 		const orphans = due.filter((key) => !referenced.has(key) && !queued.has(key));
-		if (orphans.length) await env.BUCKET.delete(orphans);
+		if (orphans.length) {
+			await env.BUCKET.delete(orphans);
+			deleted.first ??= orphans[0];
+			deleted.last = orphans[orphans.length - 1];
+		}
 		scanned += due.length;
 		removed += orphans.length;
 		after = due[due.length - 1];
 		await writePosition(env, after);
 		if (reachedYoung || !listing.truncated) break;
 	}
-	logger.info("email.raw_sweep", { scanned, removed });
+	// Keys carry a time and an id, never an address; the range is enough to find what was removed in the bucket's logs.
+	logger.info("email.raw_sweep", { scanned, removed, firstRemoved: deleted.first, lastRemoved: deleted.last });
 	return { skipped: null, scanned, removed, after };
 }

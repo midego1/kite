@@ -55,7 +55,7 @@ export async function processInboundMessage(
 	// do in the Worker email handler.
 	const decision = await resolveInboundAddress(db, payload.to, payload.from);
 
-	// Nothing is stored on these four paths, so nothing would reference the raw object (Mailflare #219), unless an
+	// Nothing is stored on these three paths, so nothing would reference the raw object (Mailflare #219), unless an
 	// earlier delivery of this queue message stored it before its mailbox changed. A thrown error never gets here:
 	// the queue retries it and needs the object.
 	const dropRaw = async () => {
@@ -83,12 +83,17 @@ export async function processInboundMessage(
 		return;
 	}
 
-	// A forward decision only reaches the queue when the rule keeps a copy; without a
-	// destination mailbox there is nothing to store.
+	// Without a copy, a forward decision only reaches the queue when the forward itself failed: the Worker and intake
+	// store the message then so it is never lost. It goes to the rule's mailbox when the rule names one; otherwise the
+	// raw object is kept (the daily sweep removes it after a week) and the failure is logged with its key.
 	if (decision.action === "forward" && !decision.keepCopy) {
-		console.info(`Forward ${payload.to} -> ${decision.forwardTo}`);
-		await dropRaw();
-		return;
+		if (!decision.mailbox) {
+			console.error(
+				`Forward ${payload.to} -> ${decision.forwardTo} failed and the rule has no mailbox; raw kept at ${payload.rawR2Key}`,
+			);
+			return;
+		}
+		console.error(`Forward ${payload.to} -> ${decision.forwardTo} failed; delivering to the rule's mailbox`);
 	}
 
 	if (!decision.mailbox) {

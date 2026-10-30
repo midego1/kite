@@ -5,10 +5,11 @@ export const RAW_SWEEP_PREFIX = "inbound/";
 export const RAW_SWEEP_STATE_KEY = "system/raw-sweep.json";
 
 /**
- * How old an unreferenced raw object must be. Its queue message is finished long before: Cloudflare Queues retry three
- * times seconds to a minute apart, and pending self-hosted queue messages are checked separately.
+ * How old an unreferenced raw object must be: a week, far beyond its queue message (Cloudflare Queues retry three
+ * times seconds to a minute apart; pending self-hosted queue messages are checked separately), so even mail delayed by
+ * an outage, or kept after a failed forward, is still there to recover for days.
  */
-const RAW_SWEEP_MIN_AGE_MS = 24 * 60 * 60 * 1000;
+const RAW_SWEEP_MIN_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Objects listed per page and pages per run: at most 20,000 objects a day, one lookup query per 500 keys. */
 export const RAW_SWEEP_PAGE_SIZE = 1000;
@@ -41,7 +42,9 @@ export function dueRawObjects(objects: RawSweepObject[], now: Date): { due: stri
 	const due: string[] = [];
 	for (const object of objects) {
 		if (!object.key.startsWith(RAW_SWEEP_PREFIX)) continue;
-		if (now.getTime() - object.uploaded.getTime() < RAW_SWEEP_MIN_AGE_MS) return { due, reachedYoung: true };
+		// An upload time that cannot be read counts as new.
+		const age = now.getTime() - object.uploaded.getTime();
+		if (!(age >= RAW_SWEEP_MIN_AGE_MS)) return { due, reachedYoung: true };
 		due.push(object.key);
 	}
 	return { due, reachedYoung: false };

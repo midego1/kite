@@ -30,6 +30,11 @@ function truncateUtf8(value: string, maxBytes: number): string {
 	return decoder.decode(bytes.subarray(0, maxBytes)).replace(/�+$/u, "");
 }
 
+/** A text body cut to what a row may hold. */
+export function boundTextBody(text: string): string {
+	return truncateUtf8(text, INBOUND_LIMITS.textBodyBytes);
+}
+
 /** `value` cut to at most `max` UTF-16 units, never between the halves of a surrogate pair. */
 export function capChars(value: string | null, max: number): string | null {
 	if (!value || value.length <= max) return value;
@@ -64,7 +69,7 @@ export function boundParsedEmail(
 	return {
 		...parsed,
 		subject: capChars(parsed.subject, INBOUND_LIMITS.subjectChars),
-		text: parsed.text === null ? null : truncateUtf8(parsed.text, INBOUND_LIMITS.textBodyBytes),
+		text: parsed.text === null ? null : boundTextBody(parsed.text),
 		html:
 			parsed.html === null || options.offloadHtml
 				? parsed.html

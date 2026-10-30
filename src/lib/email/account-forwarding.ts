@@ -15,7 +15,20 @@ export function wasForwardedByKite(header: (name: string) => string | null | und
 	);
 }
 
+/**
+ * The account forwarding address for mail to `recipient`, or null. Never throws, like `resolveIncomingMail`: when the
+ * database cannot be read the message is still stored (and not forwarded) instead of being refused.
+ */
 export async function getAccountForwardingDestination(env: CloudflareEnv, recipient: string): Promise<string | null> {
+	try {
+		return await accountForwardingDestination(env, recipient);
+	} catch (error) {
+		console.error(`Account forwarding lookup failed for ${recipient}`, error);
+		return null;
+	}
+}
+
+async function accountForwardingDestination(env: CloudflareEnv, recipient: string): Promise<string | null> {
 	const db = getDb(env);
 	const decision = await resolveInboundAddress(db, recipient);
 	if (!decision?.mailbox) return null;

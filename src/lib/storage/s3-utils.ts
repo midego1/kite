@@ -151,6 +151,15 @@ export function errorInBody(text: string): { code: string; message: string } | n
 	return { code: xmlTag(text, "Code") ?? "InternalError", message: xmlTag(text, "Message") ?? "The store failed" };
 }
 
+/**
+ * An object's LastModified, or now when it is missing or unreadable: an age-based cleanup (the raw mail sweep, old
+ * restore uploads) then treats the object as new and leaves it alone, instead of as written in 1970.
+ */
+export function parseLastModified(value: string | null | undefined, now = Date.now()): Date {
+	const time = value ? Date.parse(value) : Number.NaN;
+	return new Date(Number.isNaN(time) ? now : time);
+}
+
 export type ListedObject = { key: string; size: number; etag: string; uploaded: Date };
 
 export function parseListObjects(xml: string): { objects: ListedObject[]; truncated: boolean; cursor?: string } {
@@ -158,7 +167,7 @@ export function parseListObjects(xml: string): { objects: ListedObject[]; trunca
 		key: xmlTag(block, "Key") ?? "",
 		size: Number(xmlTag(block, "Size") ?? 0),
 		etag: stripQuotes(xmlTag(block, "ETag")),
-		uploaded: new Date(xmlTag(block, "LastModified") ?? 0),
+		uploaded: parseLastModified(xmlTag(block, "LastModified")),
 	}));
 	const truncated = xmlTag(xml, "IsTruncated") === "true";
 	const cursor = truncated ? (xmlTag(xml, "NextContinuationToken") ?? undefined) : undefined;

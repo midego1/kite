@@ -16,7 +16,10 @@ export type IntakeInput = {
 export type IntakeActions = {
 	/** Refuse the message at the edge; the SMTP listener answers 550, the relay tells the Worker to setReject. */
 	reject?: (reason: string) => Promise<void> | void;
-	/** Relay the raw message to another address; returns whether it went out. */
+	/**
+	 * Relay the raw message to another address; returns whether it went out. Absent where forwarding is impossible
+	 * (Resend, SES): a forward rule without a copy then stores nothing.
+	 */
 	forward?: (destination: string, headers: Record<string, string>) => Promise<boolean>;
 };
 

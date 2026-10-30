@@ -10,8 +10,8 @@ import { dispatchWebhooks } from "@/lib/email/webhooks";
 import { upsertContactFromAddress } from "@/lib/contacts/service";
 import { sendMailboxAutoReply } from "@/lib/email/auto-reply";
 import { storeMessageAttachments } from "@/lib/email/attachments";
-import { inboundAttachmentLimitReason, UNPARSEABLE_MESSAGE_REASON } from "@/lib/email/inbound-attachments";
-import { boundParsedEmail } from "@/lib/email/inbound-limits";
+import { inboundAttachmentLimitReason } from "@/lib/email/inbound-attachments";
+import { boundParsedEmail, boundTextBody } from "@/lib/email/inbound-limits";
 import { canOffloadHtmlBodies, putOffloadedHtmlBody, recordOffloadedHtmlBody } from "@/lib/email/bodies";
 import { planHtmlBodyOffload } from "@/lib/email/bodies-utils";
 import { inboundMessageId } from "@/lib/email/inbound-id";
@@ -53,7 +53,7 @@ export type InboundDelivery = {
 export type DeliveryOutcome =
 	| { delivered: true; messageId: string }
 	| { delivered: false; reason: "attachment_limit"; detail: string }
-	/** Over the MIME limits or not parseable at all: the same every attempt, so the raw object is deleted. */
+	/** Over the MIME limits: the same every attempt, so the raw object is deleted. */
 	| { delivered: false; reason: "unparseable"; detail: string }
 	| { delivered: false; reason: "duplicate"; duplicateOf: string }
 	| { delivered: false; reason: "stored" };
@@ -342,7 +342,8 @@ async function storeDelivered(
 				ccAddr: parsed.ccAddr,
 				subject: parsed.subject,
 				snippet: row.snippet,
-				textBody: offload ? offload.textBody : parsed.text,
+				// Text derived from offloaded HTML is capped like a text part.
+				textBody: offload ? boundTextBody(offload.textBody) : parsed.text,
 				htmlBody: offload ? null : parsed.html,
 				rawR2Key: input.rawR2Key,
 				status: placement.status,
@@ -367,7 +368,8 @@ async function storeDelivered(
 				.set({ externalAccountId: external.accountId })
 				.where(eq(messageExternalAccounts.id, row.id));
 
-		await storeMessageAttachments(env, row.id, parsed.attachments);
+		// `inboundAttachmentLimitReason` already checked them, without counting attached messages.
+		await storeMessageAttachments(env, row.id, parsed.attachments, { validate: false });
 		if (spamAnalysis) await observeReputation(env, target.mailboxId, row.id, parsed, spamAnalysis);
 		return true;
 	} catch (error) {
@@ -411,11 +413,12 @@ export async function deliverInboundMessage(env: CloudflareEnv, input: InboundDe
 	try {
 		parsed = await parseRawMime(input.raw);
 	} catch (error) {
-		// Parsing the same bytes fails the same way every time: a queue retry would only repeat the work.
-		const detail = error instanceof MimeLimitError ? error.message : UNPARSEABLE_MESSAGE_REASON;
-		console.warn(`Inbound message not parseable for ${delivery}: ${detail}`);
+		// Any other parse error is thrown, so the queue retries it with the raw object intact.
+		if (!(error instanceof MimeLimitError)) throw error;
+		// Over the limits the same way every time: a queue retry would only repeat the work.
+		console.warn(`Inbound message over the MIME limits for ${delivery}: ${error.message}`);
 		await env.BUCKET.delete(input.rawR2Key);
-		return { delivered: false, reason: "unparseable", detail };
+		return { delivered: false, reason: "unparseable", detail: error.message };
 	}
 	const offloadHtml = await canOffloadHtmlBodies(env);
 	parsed = boundParsedEmail(parsed, { offloadHtml });

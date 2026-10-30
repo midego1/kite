@@ -42,6 +42,10 @@ await build({
 		migrate: join(root, "server/runtime/migrate.ts"),
 		bucket: join(root, "server/runtime/file-bucket.ts"),
 		queue: join(root, "server/runtime/queue.ts"),
+		deliver: join(root, "src/lib/email/inbound-deliver.ts"),
+		reply: join(root, "src/lib/agent/reply.ts"),
+		s3: join(root, "src/lib/storage/s3-utils.ts"),
+		smtp: join(root, "server/runtime/smtp.ts"),
 	},
 	outdir: outDir,
 	outExtension: { ".js": ".mjs" },
@@ -74,6 +78,45 @@ const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
 const { FileBucket } = await load("bucket");
 const { ensureQueueTable } = await load("queue");
+const { deliverInboundMessage } = await load("deliver");
+const { getReplyRecipients } = await load("reply");
+const { parseListObjects } = await load("s3");
+const { startSmtpListener } = await load("smtp");
+
+// The Worker entrypoint itself, for its email handler; the app's request handler is not part of it.
+const workerDir = makeBundleDirectory("kite-inbound-storage-worker-");
+after(() => rmSync(workerDir, { recursive: true, force: true }));
+await build({
+	entryPoints: { worker: join(root, "worker.ts") },
+	outdir: workerDir,
+	outExtension: { ".js": ".mjs" },
+	bundle: true,
+	platform: "node",
+	format: "esm",
+	target: "node22",
+	logLevel: "silent",
+	packages: "external",
+	tsconfig: join(root, "tsconfig.json"),
+	plugins: [
+		{
+			name: "stub-worker-runtime",
+			setup(builder) {
+				builder.onResolve({ filter: /^vinext\/server\/fetch-handler$|^cloudflare:workers$/ }, ({ path }) => ({
+					path,
+					namespace: "stub",
+				}));
+				builder.onLoad({ filter: /.*/, namespace: "stub" }, ({ path }) => ({
+					contents:
+						path === "cloudflare:workers"
+							? "export const env = undefined; export class DurableObject { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }"
+							: "export default { fetch() { throw new Error('not in an email run'); } };",
+					loader: "js",
+				}));
+			},
+		},
+	],
+});
+const { default: worker } = await import(pathToFileURL(join(workerDir, "worker.mjs")).href);
 
 const realFetch = globalThis.fetch;
 after(() => {
@@ -339,17 +382,17 @@ test("the provider header map is bounded and carries no verification claims", ()
 	assert.equal(Object.keys(map).length, 200);
 });
 
-test("dueRawObjects stops at the first object that is not a day old", () => {
-	const now = new Date(10 * DAY);
+test("dueRawObjects stops at the first object that is not a week old", () => {
+	const now = new Date(30 * DAY);
 	const object = (key, age) => ({ key, uploaded: new Date(now.getTime() - age) });
 	assert.deepEqual(
 		sweeperUtils.dueRawObjects(
-			[object("inbound/1-a.eml", 2 * DAY), object("inbound/2-b.eml", DAY - 1), object("inbound/3-c.eml", 2 * DAY)],
+			[object("inbound/1-a.eml", 8 * DAY), object("inbound/2-b.eml", 7 * DAY - 1), object("inbound/3-c.eml", 8 * DAY)],
 			now,
 		),
 		{ due: ["inbound/1-a.eml"], reachedYoung: true },
 	);
-	assert.deepEqual(sweeperUtils.dueRawObjects([object("inbound/1-a.eml", DAY)], now), {
+	assert.deepEqual(sweeperUtils.dueRawObjects([object("inbound/1-a.eml", 7 * DAY)], now), {
 		due: ["inbound/1-a.eml"],
 		reachedYoung: false,
 	});
@@ -362,7 +405,7 @@ test("dueRawObjects stops at the first object that is not a day old", () => {
 	assert.deepEqual(sweeperUtils.queuedRawKeys('{"rawR2Key":"external/x/1/2.eml"}'), []);
 });
 
-test("the sweeper deletes only day-old inbound objects nothing references, and resumes where it stopped", async (t) => {
+test("the sweeper deletes only week-old inbound objects nothing references, and resumes where it stopped", async (t) => {
 	const { env, database, put, exists } = await setup(t);
 	const keys = [];
 	for (let index = 0; index < 7; index++)
@@ -379,7 +422,7 @@ test("the sweeper deletes only day-old inbound objects nothing references, and r
 			"INSERT INTO node_queue_messages (queue, body, attempts, available_at, created_at) VALUES ('inbound', ?, 0, 0, 0)",
 		)
 		.run(JSON.stringify({ from: "x", to: "y", rawR2Key: keys[2] }));
-	const later = new Date(Date.now() + 2 * DAY);
+	const later = new Date(Date.now() + 8 * DAY);
 
 	const first = await sweepOrphanedRawMail(env, later, { pageSize: 2, maxPages: 2 });
 	assert.deepEqual(first, { skipped: null, scanned: 4, removed: 2, after: keys[3] });
@@ -404,7 +447,7 @@ test("the sweeper deletes only day-old inbound objects nothing references, and r
 test("the sweeper waits while a Mail storage migration or a restore runs", async (t) => {
 	const { env, database, bucket, put, exists } = await setup(t);
 	const key = await put("inbound/1-orphan.eml", message(""));
-	const later = new Date(Date.now() + 2 * DAY);
+	const later = new Date(Date.now() + 8 * DAY);
 	database.db.exec(`
 		INSERT INTO storage_migrations (id, object_class, from_store_id, to_store_id, status, created_at)
 			VALUES ('job-1', 'mail', 'default', 'store-1', 'copying', 1);
@@ -417,4 +460,261 @@ test("the sweeper waits while a Mail storage migration or a restore runs", async
 	await bucket.put("system/backup-restore.json", JSON.stringify({ status: "completed" }));
 	assert.equal((await sweepOrphanedRawMail(env, later)).removed, 1);
 	assert.equal(await exists(key), false);
+});
+
+/** `database` with every query that reads `domains` failing, as when D1 is unavailable for the routing lookup. */
+function failingDomainLookups(database) {
+	const broken = {
+		bind: () => broken,
+		all: refuse,
+		raw: refuse,
+		run: refuse,
+		first: refuse,
+	};
+	async function refuse() {
+		throw new Error("D1_ERROR: the database is unavailable");
+	}
+	return new Proxy(database, {
+		get(target, property) {
+			if (property === "prepare") return (sql) => (/"domains"/.test(sql) ? broken : target.prepare(sql));
+			const value = target[property];
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+}
+
+/** A live message for the Worker's `email` handler, recording what the handler did with it. */
+function liveMessage(to, text = message("")) {
+	const outcome = { rejected: null, forwarded: [] };
+	return {
+		outcome,
+		message: {
+			from: "x@partner.test",
+			to,
+			rawSize: text.length,
+			raw: new Response(text).body,
+			headers: new Headers({ subject: "Hi" }),
+			setReject: (reason) => {
+				outcome.rejected = reason;
+			},
+			forward: async (destination) => {
+				outcome.forwarded.push(destination);
+				throw new Error("destination address is not verified");
+			},
+		},
+	};
+}
+
+test("the Worker refuses a definite no-route, and stores the message when the lookup fails", async (t) => {
+	const { env, database, bucket } = await setup(t);
+	const sent = [];
+	const queue = { send: async (body) => sent.push(body) };
+	const miss = liveMessage("nobody@example.com");
+	await worker.email(miss.message, { ...env, INBOUND_QUEUE: queue }, {});
+	assert.equal(miss.outcome.rejected, "No such recipient here");
+	assert.equal(sent.length, 0);
+	assert.equal((await bucket.list({ prefix: "inbound/" })).objects.length, 0, "nothing was stored");
+
+	const outage = liveMessage("a@example.com");
+	await worker.email(outage.message, { DB: failingDomainLookups(database), BUCKET: bucket, INBOUND_QUEUE: queue }, {});
+	assert.equal(outage.outcome.rejected, null, "a failed lookup is not a refusal");
+	assert.equal(sent.length, 1);
+	assert.ok(await bucket.head(sent[0].rawR2Key), "the message waits in storage for the queue");
+});
+
+test("a forward without a copy that failed is kept: in the rule's mailbox, or as its raw object", async (t) => {
+	const { env, database, bucket, put, exists, row } = await setup(t);
+	database.db.exec(`
+		INSERT INTO routing_rules (id, user_id, domain_id, scope, pattern, match_field, match_operator, action, forward_to, mailbox_id, keep_copy, priority, created_at)
+			VALUES ('fwd-box', 'owner', 'domain-1', 'domain', 'boxed@example.com', 'recipient', 'exact', 'forward', 'elsewhere@partner.test', 'mailbox-a', 0, 5, 1),
+			       ('fwd-none', 'owner', 'domain-1', 'domain', 'bare@example.com', 'recipient', 'exact', 'forward', 'elsewhere@partner.test', NULL, 0, 5, 1);
+	`);
+	// The Worker tried to forward, failed, and stored it for the queue.
+	const sent = [];
+	const live = liveMessage("boxed@example.com");
+	await worker.email(live.message, { ...env, INBOUND_QUEUE: { send: async (body) => sent.push(body) } }, {});
+	assert.deepEqual(live.outcome.forwarded, ["elsewhere@partner.test"]);
+	assert.equal(live.outcome.rejected, null);
+	assert.equal(sent.length, 1);
+	await processInboundMessage(env, sent[0]);
+	assert.equal(row("SELECT mailbox_id FROM messages WHERE raw_r2_key = ?", sent[0].rawR2Key)?.mailbox_id, "mailbox-a");
+
+	const bare = await put(`inbound/${Date.now()}-bare.eml`, message(""));
+	await processInboundMessage(env, { from: "x@partner.test", to: "bare@example.com", rawR2Key: bare });
+	assert.equal(await exists(bare), true, "the only copy of the message is kept");
+	assert.equal(row("SELECT count(*) AS count FROM messages WHERE raw_r2_key = ?", bare).count, 0);
+
+	// Resend and SES cannot forward: such a message is not stored at all.
+	const queued = [];
+	const providerEnv = { ...env, INBOUND_QUEUE: { send: async (body) => queued.push(body) } };
+	const input = { from: "x@partner.test", raw: encoder.encode(message("")).buffer, headers: {} };
+	assert.deepEqual(await intakeIncomingMail(providerEnv, { ...input, to: "bare@example.com" }, {}), {
+		action: "forward",
+		forwardedTo: null,
+	});
+	assert.equal(queued.length, 0);
+	// A runtime that can forward and failed stores it.
+	const failed = await intakeIncomingMail(
+		providerEnv,
+		{ ...input, to: "bare@example.com" },
+		{ forward: async () => false },
+	);
+	assert.equal(failed.action, "store");
+	assert.equal(queued.length, 1);
+	await bucket.delete(failed.rawR2Key);
+});
+
+test("a 25-post digest is delivered with every post as an attached message", async (t) => {
+	const { env, put, row } = await setup(t);
+	const posts = Array.from(
+		{ length: 25 },
+		(_, n) => `--d\r\n\r\nFrom: p${n}@list.test\r\nSubject: Post ${n}\r\n\r\nBody ${n}\r\n`,
+	).join("");
+	const raw = message(
+		'Content-Type: multipart/mixed; boundary="m"\r\n',
+		`--m\r\nContent-Type: text/plain\r\n\r\nToday's topics\r\n--m\r\nContent-Type: multipart/digest; boundary="d"\r\n\r\n${posts}--d--\r\n--m--`,
+	);
+	const rawR2Key = await put(`inbound/${Date.now()}-digest.eml`, raw);
+	await processInboundMessage(env, { from: "list-bounces@list.test", to: "a@example.com", rawR2Key });
+	const stored = row("SELECT id FROM messages WHERE raw_r2_key = ?", rawR2Key);
+	assert.ok(stored, "the digest was stored");
+	assert.equal(
+		row(
+			"SELECT count(*) AS count FROM message_attachments WHERE message_id = ? AND content_type = 'message/rfc822'",
+			stored.id,
+		).count,
+		25,
+	);
+});
+
+test("only a MIME limit drops the raw object; any other parse error is retried with it", async (t) => {
+	const { env, put, exists } = await setup(t);
+	const rawR2Key = await put(`inbound/${Date.now()}-retry.eml`, message(""));
+	const input = {
+		target: { mailboxId: "mailbox-a", userId: "owner" },
+		from: "x@partner.test",
+		to: "a@example.com",
+		rawR2Key,
+		deliveredAddress: "a@example.com",
+		headers: undefined,
+		authenticationResults: null,
+	};
+	const broken = {
+		getReader() {
+			throw new Error("the stream broke");
+		},
+	};
+	await assert.rejects(() => deliverInboundMessage(env, { ...input, raw: broken }), /the stream broke/);
+	assert.equal(await exists(rawR2Key), true);
+	const outcome = await deliverInboundMessage(env, {
+		...input,
+		raw: encoder.encode(message("", "a\r\n".repeat(50_000))).buffer,
+	});
+	assert.equal(outcome.reason, "unparseable");
+	assert.match(outcome.detail, /^Message rejected:/);
+	assert.equal(await exists(rawR2Key), false);
+});
+
+test("the sweeper looks keys up in chunks and keeps a week, and an unreadable upload time counts as new", async (t) => {
+	const { env, database, put, exists } = await setup(t);
+	const keys = [];
+	for (let index = 0; index < 600; index++)
+		keys.push(await put(`inbound/${1_000_000 + index}-k${String(index).padStart(3, "0")}.eml`, "x"));
+	database.db
+		.prepare(
+			"INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, status, raw_r2_key, created_at) VALUES ('m1', 'owner', 'mailbox-a', 'inbound', 'x@partner.test', 'a@example.com', 'received', ?, 1)",
+		)
+		.run(keys[550]);
+	const sixDays = new Date(Date.now() + 6 * DAY);
+	assert.deepEqual(await sweepOrphanedRawMail(env, sixDays), { skipped: null, scanned: 0, removed: 0, after: null });
+	assert.equal(await exists(keys[0]), true, "six days is not old enough");
+	const result = await sweepOrphanedRawMail(env, new Date(Date.now() + 8 * DAY));
+	assert.deepEqual(result, { skipped: null, scanned: 600, removed: 599, after: keys[599] });
+	assert.equal(await exists(keys[550]), true, "a key referenced in the second lookup chunk is kept");
+
+	const now = new Date(100 * DAY);
+	assert.deepEqual(sweeperUtils.dueRawObjects([{ key: "inbound/1-a.eml", uploaded: new Date(Number.NaN) }], now), {
+		due: [],
+		reachedYoung: true,
+	});
+	const listing = parseListObjects(
+		"<ListBucketResult><Contents><Key>inbound/1-a.eml</Key><Size>1</Size></Contents><Contents><Key>inbound/2-b.eml</Key><LastModified>not a date</LastModified></Contents><Contents><Key>inbound/3-c.eml</Key><LastModified>2020-01-01T00:00:00.000Z</LastModified></Contents></ListBucketResult>",
+	);
+	const ages = listing.objects.map((object) => Date.now() - object.uploaded.getTime());
+	assert.ok(ages[0] < DAY && ages[1] < DAY, "a missing or unreadable LastModified reads as now, not 1970");
+	assert.equal(listing.objects[2].uploaded.toISOString(), "2020-01-01T00:00:00.000Z");
+});
+
+test("a reply to stored mail over the MIME limits goes to the row's From", async (t) => {
+	const { env, put } = await setup(t);
+	const user = { id: "owner", role: "user", isPrimaryAdmin: false, email: "owner@example.com" };
+	const rawR2Key = await put("inbound/1-old.eml", message("Reply-To: desk@partner.test\r\n", "a\r\n".repeat(50_000)));
+	const context = { env, user, mailboxId: "mailbox-a" };
+	const source = { fromAddr: "Sender <sender@partner.test>", toAddr: "a@example.com", ccAddr: null, rawR2Key };
+	assert.deepEqual(await getReplyRecipients(context, source, false), { to: "sender@partner.test", cc: "" });
+	const fine = await put("inbound/2-ok.eml", message("Reply-To: desk@partner.test\r\n"));
+	assert.equal((await getReplyRecipients(context, { ...source, rawR2Key: fine }, false)).to, "desk@partner.test");
+});
+
+/** One SMTP session over a raw socket: each command's reply code. */
+async function smtpSession(port, commands) {
+	const { connect } = await import("node:net");
+	const socket = connect(port, "127.0.0.1");
+	socket.setEncoding("utf8");
+	let buffer = "";
+	const replies = [];
+	const waiting = [];
+	socket.on("data", (chunk) => {
+		buffer += chunk;
+		for (let end = buffer.search(/\r\n/); end !== -1; end = buffer.search(/\r\n/)) {
+			const line = buffer.slice(0, end);
+			buffer = buffer.slice(end + 2);
+			if (/^\d{3} /.test(line)) waiting.shift()?.(line);
+		}
+	});
+	const reply = () => new Promise((resolve) => waiting.push(resolve));
+	await reply();
+	for (const command of commands) {
+		const answer = reply();
+		socket.write(command);
+		replies.push((await answer).slice(0, 3));
+	}
+	socket.end();
+	return replies;
+}
+
+test("the SMTP listener answers a MIME limit with 552 and still takes good mail", async (t) => {
+	const { env } = await setup(t);
+	const queued = [];
+	env.INBOUND_QUEUE = { send: async (body) => queued.push(body) };
+	const server = startSmtpListener(
+		env,
+		{ sendRaw: async () => false },
+		{ port: 0, host: "127.0.0.1", maxSize: 36 * 1024 * 1024, tls: null },
+	);
+	t.after(() => new Promise((resolve) => server.close(resolve)));
+	await new Promise((resolve) => (server.server.listening ? resolve() : server.server.once("listening", resolve)));
+	const { port } = server.server.address();
+	const send = (body) =>
+		smtpSession(port, [
+			"EHLO partner.test\r\n",
+			"MAIL FROM:<x@partner.test>\r\n",
+			"RCPT TO:<a@example.com>\r\n",
+			"DATA\r\n",
+			`${body}\r\n.\r\n`,
+			"QUIT\r\n",
+		]);
+	assert.deepEqual(await send(message("", "a\r\n".repeat(50_000))), ["250", "250", "250", "354", "552", "221"]);
+	assert.equal(queued.length, 0);
+	assert.deepEqual(await send(message("")), ["250", "250", "250", "354", "250", "221"]);
+	assert.equal(queued.length, 1);
+	assert.deepEqual(
+		await smtpSession(port, [
+			"EHLO partner.test\r\n",
+			"MAIL FROM:<x@partner.test>\r\n",
+			"RCPT TO:<nobody@example.com>\r\n",
+			"QUIT\r\n",
+		]),
+		["250", "250", "550", "221"],
+	);
 });

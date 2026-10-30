@@ -18,33 +18,44 @@ writeFileSync(
 	entry,
 	`
 import { MimeLimitError, parseRawMime } from "${root}/src/lib/email/parse";
-import { inboundAttachmentLimitReasonFromRaw } from "${root}/src/lib/email/inbound-attachments";
+import { inboundAttachmentLimitReason, inboundAttachmentLimitReasonFromRaw } from "${root}/src/lib/email/inbound-attachments";
 import { htmlToReadableText } from "${root}/src/lib/email/reply-content-utils";
 
 const encoder = new TextEncoder();
 const header = "From: a@b.example\\r\\nTo: c@d.example\\r\\nSubject: x\\r\\n";
 const multipart = (boundary) => \`Content-Type: multipart/mixed; boundary="\${boundary}"\\r\\n\\r\\n\`;
+const base64Lines = (count) => ("QUFB".repeat(19) + "\\r\\n").repeat(count);
+const pdfPart = (boundary) =>
+	\`--\${boundary}\\r\\nContent-Type: application/pdf\\r\\nContent-Transfer-Encoding: base64\\r\\nContent-Disposition: attachment; filename=a.pdf\\r\\n\\r\\n\` +
+	base64Lines(340000);
+// A forwarded message is one leaf part to postal-mime, read line by line even where its own body is base64: these
+// exhaust a 128 MB heap, so their lines count however the inner message is encoded.
+const forwardedMessage = (inner) => header + multipart("b") + "--b\\r\\nContent-Type: message/rfc822\\r\\n\\r\\n" + header + inner + "--b--\\r\\n";
 const hostile = {
-	blankLines: header + "\\r\\n" + "\\r\\n".repeat(512 * 1024),
-	shortLines: header + "\\r\\n" + "a\\r\\n".repeat(262144),
-	spaceLines: header + "\\r\\n" + " \\r\\n".repeat(262144),
-	textLines: header + "\\r\\n" + ("a".repeat(78) + "\\r\\n").repeat(262144),
-	bareLfLines: header + "\\n" + "a\\n".repeat(262144),
+	blankLines: () => header + "\\r\\n" + "\\r\\n".repeat(512 * 1024),
+	shortLines: () => header + "\\r\\n" + "a\\r\\n".repeat(262144),
+	spaceLines: () => header + "\\r\\n" + " \\r\\n".repeat(262144),
+	textLines: () => header + "\\r\\n" + ("a".repeat(78) + "\\r\\n").repeat(262144),
+	bareLfLines: () => header + "\\n" + "a\\n".repeat(262144),
 	// A line that looks like a boundary must not leave the lines after it uncounted.
-	fakeBoundaryLines: header + "\\r\\n--x\\r\\n" + "a\\r\\n".repeat(262144),
+	fakeBoundaryLines: () => header + "\\r\\n--x\\r\\n" + "a\\r\\n".repeat(262144),
 	// Lines in a part's header block count too.
-	partHeaderLines: header + multipart("b") + "--b\\r\\n" + "X-A: 1\\r\\n".repeat(262144),
-	nestedMessages: header + "Content-Type: message/rfc822\\r\\n\\r\\n".repeat(5000),
-	parts: header + multipart("b") + "--b\\r\\nContent-Type: text/plain\\r\\n\\r\\nx\\r\\n".repeat(20000),
-	headerBlock: "X-Pad: " + "a".repeat(200 * 1024) + "\\r\\n\\r\\nbody",
-	deepMultipart:
+	partHeaderLines: () => header + multipart("b") + "--b\\r\\n" + "X-A: 1\\r\\n".repeat(262144),
+	forwardedBase64Body: () => forwardedMessage("Content-Type: application/pdf\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" + base64Lines(340000)),
+	forwardedMultipartBase64: () => forwardedMessage(multipart("i") + pdfPart("i") + "--i--\\r\\n"),
+	// A text attachment costs postal-mime what a text body does.
+	textAttachment: () =>
+		header + multipart("b") + "--b\\r\\nContent-Type: text/csv\\r\\nContent-Disposition: attachment; filename=a.csv\\r\\n\\r\\n" + "a,b\\r\\n".repeat(262144) + "--b--\\r\\n",
+	parts: () => header + multipart("b") + "--b\\r\\nContent-Type: text/plain\\r\\n\\r\\nx\\r\\n".repeat(20000),
+	headerBlock: () => "X-Pad: " + "a".repeat(200 * 1024) + "\\r\\n\\r\\nbody",
+	deepMultipart: () =>
 		header +
 		Array.from({ length: 30 }, (_, depth) => \`Content-Type: multipart/mixed; boundary="b\${depth}"\\r\\n\\r\\n--b\${depth}\\r\\n\`).join("") +
 		"Content-Type: text/plain\\r\\n\\r\\nx\\r\\n",
 };
 const out = { rejected: {}, edge: {}, slowestMs: 0, ok: {} };
-for (const [name, text] of Object.entries(hostile)) {
-	const raw = encoder.encode(text).buffer;
+for (const [name, build] of Object.entries(hostile)) {
+	const raw = encoder.encode(build()).buffer;
 	const started = performance.now();
 	try {
 		await parseRawMime(raw);
@@ -59,8 +70,37 @@ for (const [name, text] of Object.entries(hostile)) {
 const pdf =
 	multipart("b") +
 	"--b\\r\\nContent-Type: application/pdf\\r\\nContent-Transfer-Encoding: base64\\r\\nContent-Disposition: attachment; filename=a.pdf\\r\\n\\r\\n";
-const legit = header + pdf + ("QUFB".repeat(19) + "\\r\\n").repeat(340000) + "--b--\\r\\n";
+const legit = header + pdf + base64Lines(340000) + "--b--\\r\\n";
 out.ok.attachments = (await parseRawMime(encoder.encode(legit).buffer)).attachments.length;
+// The boundary parameter on a folded line, as most mail clients write it.
+const folded = header + 'Content-Type: multipart/mixed;\\r\\n\\tboundary="f"\\r\\n\\r\\n' + pdfPart("f") + "--f--\\r\\n";
+out.ok.folded = (await parseRawMime(encoder.encode(folded).buffer)).attachments.length;
+// A forwarded message whose part is itself base64 (as some clients send it) is decoded in chunks.
+const encodedForward =
+	header + multipart("b") + "--b\\r\\nContent-Type: message/rfc822\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" + base64Lines(340000) + "--b--\\r\\n";
+out.ok.encodedForward = (await parseRawMime(encoder.encode(encodedForward).buffer)).attachments.map((a) => a.type);
+// Thousands of nested message headers are one leaf part, not thousands of parses.
+let nestedStarted = performance.now();
+out.ok.nested = (await parseRawMime(encoder.encode(header + "Content-Type: message/rfc822\\r\\n\\r\\n".repeat(5000)).buffer)).subject;
+out.ok.nestedMs = performance.now() - nestedStarted;
+// A Mailman digest of 25 posts: 25 attached messages, which do not count as files.
+const posts = Array.from({ length: 25 }, (_, n) => \`--d\\r\\n\\r\\nFrom: p\${n}@list.example\\r\\nSubject: Post \${n}\\r\\n\\r\\nBody \${n}\\r\\n\`).join("");
+const digest =
+	header + multipart("m") + "--m\\r\\nContent-Type: text/plain\\r\\n\\r\\nToday's topics\\r\\n--m\\r\\n" +
+	'Content-Type: multipart/digest; boundary="d"\\r\\n\\r\\n' + posts + "--d--\\r\\n--m--\\r\\n";
+const parsedDigest = await parseRawMime(encoder.encode(digest).buffer);
+out.ok.digest = parsedDigest.attachments.filter((a) => a.type === "message/rfc822").length;
+out.ok.digestEdge = await inboundAttachmentLimitReasonFromRaw(encoder.encode(digest).buffer);
+const file = (type) => ({ filename: "f", type, content: new ArrayBuffer(10), disposition: "attachment", contentId: null });
+out.ok.ninePlusTwoForwards = inboundAttachmentLimitReason([...Array(9)].map(() => file("application/pdf")).concat([file("message/rfc822"), file("MESSAGE/RFC822")]));
+out.ok.elevenFiles = inboundAttachmentLimitReason([...Array(11)].map(() => file("application/pdf")));
+// A parse error that is not a limit (here a body stream that breaks) is thrown, so the sender or the queue tries again.
+try {
+	await inboundAttachmentLimitReasonFromRaw({ getReader() { throw new Error("the stream broke"); } });
+	out.ok.otherError = "returned";
+} catch (error) {
+	out.ok.otherError = error instanceof MimeLimitError ? "limit" : "thrown";
+}
 out.ok.plain = (await parseRawMime(encoder.encode(header + "\\r\\nhello\\r\\n").buffer)).text?.trim();
 const replyTo = await parseRawMime(encoder.encode(header + "Reply-To: Desk <desk@b.example>\\r\\n\\r\\nhi\\r\\n").buffer);
 out.ok.replyTo = replyTo.replyTo;
@@ -75,6 +115,8 @@ const parsedForward = await parseRawMime(encoder.encode(forwarded).buffer);
 out.ok.forwardAttachments = parsedForward.attachments.map((attachment) => attachment.type);
 out.ok.forwardText = parsedForward.text?.trim();
 out.htmlText = htmlToReadableText("<style>a{}</style><p>Hi &amp; bye</p>").trim();
+// Lowercasing "İ" adds a character; the closing tag is still found in the original.
+out.htmlUnicode = htmlToReadableText("<p>İİİİ</p><STYLE>x{}</STYLE><p>after</p>").replace(/\\s+/g, " ").trim();
 let started = performance.now();
 out.htmlBomb = htmlToReadableText("<style>".repeat(30000) + "<p>hi</p>").includes("hi");
 out.htmlBombMs = performance.now() - started;
@@ -108,11 +150,21 @@ test("hostile MIME is refused cheaply and legitimate mail still parses, inside a
 	}
 	assert.ok(out.slowestMs < 5000, `the slowest hostile message took ${Math.round(out.slowestMs)} ms`);
 	assert.equal(out.ok.attachments, 1);
+	assert.equal(out.ok.folded, 1);
+	assert.deepEqual(out.ok.encodedForward, ["message/rfc822"]);
+	assert.equal(out.ok.nested, "x");
+	assert.ok(out.ok.nestedMs < 2000, `nested headers took ${Math.round(out.ok.nestedMs)} ms`);
+	assert.equal(out.ok.digest, 25);
+	assert.equal(out.ok.digestEdge, null, "a 25-post digest is not refused");
+	assert.equal(out.ok.ninePlusTwoForwards, null);
+	assert.match(out.ok.elevenFiles, /more than 10 attachments/);
+	assert.equal(out.ok.otherError, "thrown");
 	assert.equal(out.ok.plain, "hello");
 	assert.equal(out.ok.replyTo, '"Desk" <desk@b.example>');
 	assert.deepEqual(out.ok.forwardAttachments, ["message/rfc822"]);
 	assert.equal(out.ok.forwardText, "see below");
 	assert.equal(out.htmlText, "Hi & bye");
+	assert.equal(out.htmlUnicode, "İİİİ after");
 	assert.equal(out.htmlBomb, true);
 	assert.ok(out.htmlBombMs < 1000, `unclosed <style> took ${Math.round(out.htmlBombMs)} ms`);
 	assert.ok(out.htmlAngleMs < 1000, `unclosed < took ${Math.round(out.htmlAngleMs)} ms`);

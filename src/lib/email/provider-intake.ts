@@ -10,10 +10,12 @@ export const MAX_PROVIDER_MESSAGE_BYTES = 25 * 1024 * 1024;
 
 /**
  * Hands a message a mail provider delivered (SES, Resend) to the normal intake,
- * once per recipient on a domain Kite manages. Routing rules, account
- * forwarding and storage then behave exactly as for Cloudflare mail. A provider
- * cannot refuse the message after it has been accepted, so a reject or a size
- * limit simply drops it. Throws on infrastructure failure so the provider retries.
+ * once per recipient on a domain Kite manages. Routing rules and storage then
+ * behave as for Cloudflare mail, but nothing can be forwarded: a forward rule
+ * without a copy drops the message. A provider cannot refuse the message after
+ * it has been accepted, so a reject or a size limit simply drops it. Throws on
+ * infrastructure failure (and a parse error that is not a MIME limit) so the
+ * provider retries.
  * `authenticationResults` is the provider's own verdict (SES builds one from its receipt), never
  * the message's Authentication-Results headers, which may be the sender's. Resend passes neither, so its header
  * map is read from the message without any header that claims a verification.
@@ -50,7 +52,7 @@ export async function intakeProviderMail(
 				headers,
 				authenticationResults: input.authenticationResults ?? null,
 			},
-			{ forward: async () => false },
+			{},
 		);
 		if (result.action === "store") delivered += 1;
 	}

@@ -8,6 +8,8 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { ModuleAdminEntry, ModuleAdminView } from "@/lib/modules/admin-types";
 import { turnOffWarning } from "@/lib/modules/admin-utils";
 import { ModuleCard } from "./module-card";
+import { Notice } from "@/components/ui/notice";
+import { PageHeader } from "@/components/ui/page";
 import { fetchModuleAdminView, MODULES_QUERY_KEY, saveModuleEnabled } from "./utils";
 
 const CORE_AREAS =
@@ -53,25 +55,17 @@ export default function ModulesPage() {
 	const view = modules.data;
 	return (
 		<div className="space-y-6">
-			<div>
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Modules</h1>
-				<p className="mt-1 text-sm text-neutral-500">
-					Turn optional parts of Kite on or off for everyone. Turning a module off hides it and removes what it adds,
-					and keeps its data.
-				</p>
-				<p className="mt-1 text-sm text-neutral-500">
-					A change can take up to 30 seconds to reach other open sessions.
-				</p>
-			</div>
+			<PageHeader
+				title="Modules"
+				description="Turn optional parts of Kite on or off for everyone. Turning a module off hides it and removes what it adds, and keeps its data. A change can take up to 30 seconds to reach other open sessions."
+			/>
 			{view?.migrationPending && (
-				<p role="status" className="rounded-xl bg-blue-50 p-6 text-sm font-medium text-blue-900">
-					Apply the pending database update to manage modules. Every module stays on until then.
-				</p>
+				<Notice>Apply the pending database update to manage modules. Every module stays on until then.</Notice>
 			)}
 			{modules.isError && (
-				<p role="alert" className="text-sm text-red-600">
+				<Notice tone="error">
 					{modules.error instanceof Error ? modules.error.message : "Failed to load modules"}
-				</p>
+				</Notice>
 			)}
 			{modules.isLoading &&
 				Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-40 w-full rounded-xl" />)}

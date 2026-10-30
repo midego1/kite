@@ -41,7 +41,7 @@ test("creates a backup that completes and can be downloaded", async ({ page }) =
 	await api.dispose();
 
 	await page.goto("/backups");
-	await expect(page.getByRole("heading", { name: "Database Backups" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Backups", level: 1 })).toBeVisible();
 	const before = await page.getByTitle("Download backup").count();
 
 	await page.getByRole("button", { name: "Back up" }).click();
@@ -84,7 +84,7 @@ test("marks an interrupted backup failed and lets it be deleted", async ({ page 
 	);
 
 	await page.goto("/backups");
-	await expect(page.getByRole("heading", { name: "Database Backups" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Backups", level: 1 })).toBeVisible();
 	// Listing recovers it, so the row shows the reason instead of running forever.
 	const row = page.getByText(STALE_BACKUP_ERROR).locator("xpath=ancestor::div[contains(@class, 'items-center')][1]");
 	await expect(row).toContainText(STALE_BACKUP_ID);
@@ -118,7 +118,7 @@ test("restores the downloaded backup", async ({ browser }) => {
 	await signIn(page, ADMIN.email, ADMIN.password);
 	await expect(page).toHaveURL(/\/inbox/);
 	await page.goto("/backups");
-	await expect(page.getByRole("heading", { name: "Database Backups" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Backups", level: 1 })).toBeVisible();
 
 	await page.getByRole("button", { name: "Backup actions" }).click();
 	const chooser = page.waitForEvent("filechooser");

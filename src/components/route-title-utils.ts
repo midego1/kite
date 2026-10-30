@@ -13,7 +13,7 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
 	["/settings/connected-accounts", "Connected accounts"],
 	["/settings/export", "Export"],
 	["/settings/import", "Import"],
-	["/admin", "Admin settings"],
+	["/admin", "Admin overview"],
 	["/domains", "Domains"],
 	["/mailboxes", "Mailboxes"],
 	["/routing", "Routing"],

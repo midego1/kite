@@ -16,6 +16,7 @@ import {
 	removeManagedMailbox,
 } from "../utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { PageHeader } from "@/components/ui/page";
 
 export default function AccountMailboxesPage() {
 	const { id } = useParams<{ id: string }>();
@@ -84,10 +85,7 @@ export default function AccountMailboxesPage() {
 
 	return (
 		<div className="space-y-6">
-			<div>
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Mailboxes</h1>
-				<p className="mt-1 text-sm text-neutral-500">Manage inboxes owned by {account?.name ?? "this account"}.</p>
-			</div>
+			<PageHeader title="Mailboxes" description={<>Manage inboxes owned by {account?.name ?? "this account"}.</>} />
 			<section className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5">
 				<h2 className="text-base font-semibold text-neutral-900">Current inboxes</h2>
 				<div className="space-y-2">

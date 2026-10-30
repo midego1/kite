@@ -6,6 +6,8 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { Badge } from "@/components/ui/badge";
+import { Notice } from "@/components/ui/notice";
+import { PageHeader } from "@/components/ui/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,6 +33,28 @@ import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { REMOVE_ACCESS_DESCRIPTION } from "@/lib/messages/draft-privacy-utils";
 import { DangerZone } from "@/components/ui/page";
 import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
+
+/** The mailbox's name over its address, with its kind beside them. */
+function MailboxHeader({
+	mailbox,
+	address,
+}: {
+	mailbox: { displayName?: string | null; localPart: string; type?: string; isPrimary?: boolean } | undefined;
+	address: string;
+}) {
+	return (
+		<PageHeader
+			title={mailbox ? mailbox.displayName || mailbox.localPart : "Mailbox"}
+			description={address ? <span className="no-font-mono">{address}</span> : <Skeleton className="mt-1 h-4 w-52" />}
+			actions={
+				<>
+					{mailbox?.type === "shared" && <Badge variant="secondary">Shared</Badge>}
+					{mailbox?.isPrimary && <Badge variant="secondary">Primary</Badge>}
+				</>
+			}
+		/>
+	);
+}
 
 export default function MailboxSettingsPage() {
 	const params = useParams<{ id: string | string[] }>();
@@ -114,28 +138,12 @@ export default function MailboxSettingsPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex items-start justify-between gap-4">
-				<div className="min-w-0">
-					<h1 className="truncate text-xl font-semibold tracking-tight text-neutral-900">Settings</h1>
-					{address ? (
-						<p className="mt-1 truncate no-font-mono text-sm text-neutral-500">{address}</p>
-					) : (
-						<Skeleton className="mt-2 h-4 w-52" />
-					)}
-				</div>
-				<div className="flex shrink-0 items-center gap-2">
-					{mailbox.data?.type === "shared" && <Badge variant="secondary">Shared</Badge>}
-					{mailbox.data?.isPrimary && <Badge variant="secondary">Primary</Badge>}
-				</div>
-			</div>
+			<MailboxHeader mailbox={mailbox.data} address={address} />
 
 			{mailbox.isError && (
-				<p
-					role="alert"
-					className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
-				>
+				<Notice tone="error">
 					{mailbox.error instanceof Error ? mailbox.error.message : "Failed to load mailbox"}
-				</p>
+				</Notice>
 			)}
 
 			<Card>

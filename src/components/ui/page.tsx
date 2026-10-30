@@ -90,20 +90,26 @@ export function SettingsCard({ children, className }: { children: ReactNode; cla
 	return <div className={cn(CARD_CLASS, "divide-y divide-neutral-200", className)}>{children}</div>;
 }
 
-/** One part of a `SettingsCard`: a small heading and line, then the controls. */
+/**
+ * One part of a `SettingsCard`: a small heading and line, then the controls. The heading is an h2 straight under
+ * the page title; pass `headingLevel={3}` inside a `PageSection` (an h2), so the outline never skips a level.
+ */
 export function SettingsCardSection({
 	title,
 	description,
+	headingLevel = 2,
 	children,
 }: {
 	title: ReactNode;
 	description?: ReactNode;
+	headingLevel?: 2 | 3;
 	children: ReactNode;
 }) {
+	const Heading = headingLevel === 3 ? "h3" : "h2";
 	return (
 		<div className="p-4 md:p-5">
 			<div className="mb-3">
-				<h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
+				<Heading className="text-sm font-semibold text-neutral-900">{title}</Heading>
 				{description && <p className="mt-0.5 text-sm text-neutral-500">{description}</p>}
 			</div>
 			{children}

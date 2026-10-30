@@ -1,6 +1,6 @@
-import PostalMime from "postal-mime";
 import { getDb } from "@/db";
 import { getEmailAddressList, normalizeEmailAddress } from "@/lib/email/address";
+import { MimeLimitError, parseRawMime } from "@/lib/email/parse";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { AgentToolContext } from "./types";
@@ -15,11 +15,14 @@ export async function getReplyRecipients(
 	if (source.rawR2Key && !context.replyTo) {
 		const object = await context.env.BUCKET.get(source.rawR2Key);
 		if (object) {
-			const parsed = await PostalMime.parse(await object.arrayBuffer());
-			const replyTo = parsed.replyTo
-				?.flatMap((item) => ("address" in item && item.address ? [item.address] : []))
-				.at(0);
-			if (replyTo) recipient = replyTo.toLowerCase();
+			// The bounded parser: the stored raw message is whatever the sender wrote, and mail stored before the limits
+			// existed may be over them. Then the reply goes to the row's From.
+			const parsed = await parseRawMime(await object.arrayBuffer()).catch((error: unknown) => {
+				if (error instanceof MimeLimitError) return null;
+				throw error;
+			});
+			const replyTo = getEmailAddressList(parsed?.replyTo).at(0);
+			if (replyTo) recipient = replyTo;
 		}
 	}
 	if (!recipient.includes("@")) throw new Error("Source has no reply address");

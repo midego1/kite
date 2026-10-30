@@ -3,6 +3,9 @@ import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { getEmailAddress } from "@/lib/email/address";
 import { resolveInboundAddress } from "@/lib/email/routing";
+import { createLogger } from "@/lib/logger.mjs";
+
+const logger = createLogger("account-forwarding");
 
 export const KITE_FORWARDED_HEADER = "X-Kite-Forwarded";
 // Set by installs from before the rename to Kite, which may still forward to this one.
@@ -15,7 +18,20 @@ export function wasForwardedByKite(header: (name: string) => string | null | und
 	);
 }
 
+/**
+ * The account forwarding address for mail to `recipient`, or null. Never throws, like `resolveIncomingMail`: when the
+ * database cannot be read the message is still stored (and not forwarded) instead of being refused.
+ */
 export async function getAccountForwardingDestination(env: CloudflareEnv, recipient: string): Promise<string | null> {
+	try {
+		return await accountForwardingDestination(env, recipient);
+	} catch (error) {
+		logger.error("email.account_forwarding_lookup_failed", { error });
+		return null;
+	}
+}
+
+async function accountForwardingDestination(env: CloudflareEnv, recipient: string): Promise<string | null> {
 	const db = getDb(env);
 	const decision = await resolveInboundAddress(db, recipient);
 	if (!decision?.mailbox) return null;

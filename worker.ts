@@ -16,7 +16,7 @@ import {
 import { processWebhookRetry, type WebhookRetryMessage } from "./src/lib/email/webhooks";
 import { processMailboxPurge } from "./src/lib/mailboxes/delete";
 import { isMailboxPurgeMessage } from "./src/lib/mailboxes/delete-utils";
-import { resolveIncomingMail, forwardMessage } from "./src/lib/email/incoming";
+import { resolveIncomingMail, forwardMessage, NO_ROUTE, NO_ROUTE_REJECT_REASON } from "./src/lib/email/incoming";
 import { getUserFromSession } from "./src/lib/auth/session";
 import { getSessionTokenFromRequest } from "./src/lib/realtime/utils";
 import { inboundAttachmentLimitReasonFromRaw } from "./src/lib/email/inbound-attachments";
@@ -38,6 +38,7 @@ import { failStaleBackups } from "./src/lib/backups/service";
 import { processAgentQueueMessage } from "./src/lib/agent/queue";
 import { runAgentMaintenance } from "./src/lib/agent/maintenance";
 import { runTrashRetention } from "./src/lib/email/trash-retention";
+import { sweepOrphanedRawMail } from "./src/lib/email/raw-sweeper";
 import { pruneMcpToolCallAudit, runDatabasePruning } from "./src/lib/maintenance/pruning";
 import { runOperationalAlerts } from "./src/lib/alerts/run";
 import { runTelemetryHeartbeat } from "./src/lib/telemetry/heartbeat";
@@ -142,6 +143,11 @@ export default {
 			// forward can only be actioned on the live ForwardableEmailMessage.
 			const decision = await resolveIncomingMail(env, message.from, message.to);
 
+			// Only a lookup that worked: when it failed (null) the message is stored and the queue resolves it again.
+			if (decision === NO_ROUTE) {
+				message.setReject(NO_ROUTE_REJECT_REASON);
+				return;
+			}
 			if (decision?.action === "reject") {
 				message.setReject(decision.rejectReason ?? "Message rejected by routing rule");
 				return;
@@ -273,6 +279,8 @@ export default {
 					logger.error("external.credentials_erase_failed", { error }),
 				),
 			);
+			// Raw MIME nothing references a day after intake (a message the queue gave up on).
+			ctx.waitUntil(sweepOrphanedRawMail(env, now).catch((error) => logger.error("email.raw_sweep_failed", { error })));
 		}
 		// Only the 5-minute trigger: both crons fire at 02:00 and a backup may still be running then.
 		if (controller.cron === "*/5 * * * *") {

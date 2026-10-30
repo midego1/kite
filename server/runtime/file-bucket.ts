@@ -176,12 +176,16 @@ export class FileBucket {
 		}
 	}
 
-	/** Keys in lexical order, as R2 lists them; `cursor` is the last key of the previous page. */
-	async list(options?: { prefix?: string; cursor?: string; limit?: number }) {
+	/** Keys in lexical order, as R2 lists them; `cursor` is the last key of the previous page, `startAfter` any key. */
+	async list(options?: { prefix?: string; cursor?: string; startAfter?: string; limit?: number }) {
 		const prefix = options?.prefix ?? "";
 		const limit = Math.min(Math.max(options?.limit ?? 1000, 1), 1000);
+		const after = [options?.cursor, options?.startAfter].reduce<string>(
+			(latest, key) => (key && key > latest ? key : latest),
+			"",
+		);
 		const keys = (await this.walkKeys(this.root))
-			.filter((key) => key.startsWith(prefix) && (!options?.cursor || key > options.cursor))
+			.filter((key) => key.startsWith(prefix) && (!after || key > after))
 			.sort();
 		const page = keys.slice(0, limit);
 		const objects = [];

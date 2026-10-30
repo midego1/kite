@@ -3,6 +3,7 @@
 import { AdminBackupHealthCard } from "@/components/admin-backup-health-card";
 import { AdminDatabaseSizeCard } from "@/components/admin-database-size-card";
 import { AdminPendingMigrationsNotice, AdminUpdateCard } from "@/components/admin-update-card";
+import { PageHeader } from "@/components/ui/page";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function AdminSettingsPage() {
@@ -10,10 +11,11 @@ export default function AdminSettingsPage() {
 
 	return (
 		<div>
-			<div className="mb-8">
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Admin settings</h1>
-				<p className="mt-1 text-sm text-neutral-500">Manage workspace-level mail infrastructure and integrations.</p>
-			</div>
+			<PageHeader
+				title="Overview"
+				description="The state of this install: database updates, size and backups."
+				className="mb-8"
+			/>
 			{user?.isPrimaryAdmin ? (
 				<div className="space-y-6">
 					{/* First, so pending database updates are the first thing the primary admin sees. */}

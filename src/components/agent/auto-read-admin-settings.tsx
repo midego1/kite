@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SettingRow, SettingRows } from "@/components/ui/setting-row";
 import { Switch } from "@/components/ui/switch";
 import type { AutoReadAdminValues, AutoReadStatus } from "./auto-read-settings-types";
 import {
@@ -16,30 +17,6 @@ import {
 	spentTodayText,
 } from "./auto-read-settings-utils";
 import { TokenAllowanceForm } from "./token-allowance-form";
-
-function SwitchRow({
-	title,
-	description,
-	checked,
-	disabled,
-	onChange,
-}: {
-	title: string;
-	description: string;
-	checked: boolean;
-	disabled: boolean;
-	onChange: (checked: boolean) => void;
-}) {
-	return (
-		<div className="flex items-center justify-between gap-4">
-			<div>
-				<p className="font-medium text-neutral-900">{title}</p>
-				<p className="mt-1 text-sm text-neutral-500">{description}</p>
-			</div>
-			<Switch checked={checked} disabled={disabled} onCheckedChange={onChange} aria-label={title} />
-		</div>
-	);
-}
 
 export function AutoReadAdminSettings() {
 	const [values, setValues] = useState<AutoReadAdminValues | null>(null);
@@ -101,20 +78,30 @@ export function AutoReadAdminSettings() {
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-5 pt-4">
-				<SwitchRow
-					title="Enable automatic reading"
-					description="Turning this off stops all automatic reading at once and skips queued work."
-					checked={values?.autoReadEnabled ?? false}
-					disabled={locked}
-					onChange={(autoReadEnabled) => void save({ autoReadEnabled })}
-				/>
-				<SwitchRow
-					title="Allow an external AI provider for automatic reading and the composer"
-					description="Lets automatic reading, Write with Kite in the composer and summaries send message content to the configured external AI provider. Workers AI is always allowed."
-					checked={values?.externalAutoReadAllowed ?? false}
-					disabled={locked}
-					onChange={(externalAutoReadAllowed) => void save({ externalAutoReadAllowed })}
-				/>
+				<SettingRows>
+					<SettingRow
+						title="Enable automatic reading"
+						description="Turning this off stops all automatic reading at once and skips queued work."
+					>
+						<Switch
+							checked={values?.autoReadEnabled ?? false}
+							disabled={locked}
+							onCheckedChange={(autoReadEnabled) => void save({ autoReadEnabled })}
+							aria-label="Enable automatic reading"
+						/>
+					</SettingRow>
+					<SettingRow
+						title="Allow an external AI provider for automatic reading and the composer"
+						description="Lets automatic reading, Write with Kite in the composer and summaries send message content to the configured external AI provider. Workers AI is always allowed."
+					>
+						<Switch
+							checked={values?.externalAutoReadAllowed ?? false}
+							disabled={locked}
+							onCheckedChange={(externalAutoReadAllowed) => void save({ externalAutoReadAllowed })}
+							aria-label="Allow an external AI provider for automatic reading and the composer"
+						/>
+					</SettingRow>
+				</SettingRows>
 				<form onSubmit={saveCap} className="space-y-2">
 					<Label htmlFor="auto-read-install-cap">Daily spend cap for automatic reading and chat (USD)</Label>
 					<div className="flex flex-wrap items-center gap-3">

@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BRANDING_ICON_ACCEPT, saveBranding } from "./utils";
+import { PageHeader } from "@/components/ui/page";
 
 export default function BrandingPage() {
 	const branding = useBranding();
@@ -43,12 +44,10 @@ export default function BrandingPage() {
 
 	return (
 		<div className="space-y-6">
-			<div>
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Branding</h1>
-				<p className="mt-1 text-sm text-neutral-500">
-					Customize the app identity shown to everyone using this installation.
-				</p>
-			</div>
+			<PageHeader
+				title="Branding"
+				description="Customize the app identity shown to everyone using this installation."
+			/>
 			<Card>
 				<CardHeader>
 					<CardTitle className="flex items-center gap-2">

@@ -33,7 +33,7 @@ import type { NavItem, NavMode, NavSearchGroup, NavSection } from "./section-nav
 // list and reader; on phones the menu is a sheet and the page fills the screen.
 export const SECTION_PANEL_CLASS = "md:rounded-xl md:border md:border-neutral-200 md:bg-white md:shadow-xs";
 
-/** Core Settings items sit among a module's by this order; Export stays after Import. */
+/** Core items sit among a module's by this order; Export stays after Import, and module settings after Modules. */
 const EXPORT_ORDER = 20;
 
 const settingsNavSections: NavSection[] = [
@@ -128,62 +128,88 @@ const adminNavSections: NavSection[] = [
 				href: "/admin",
 				label: "Overview",
 				icon: LayoutDashboard,
-				keywords: "admin dashboard database migrations general workspace",
+				keywords: "admin dashboard database migrations general workspace status health",
 				permission: "admin",
 			},
 		],
 	},
 	{
-		label: "Email",
+		label: "People",
 		items: [
-			{ href: "/domains", label: "Domains", icon: Globe2, keywords: "dns workspace", permission: "domains" },
+			{
+				href: "/accounts",
+				label: "Accounts",
+				icon: Users,
+				keywords: "members roles users permissions workspace people access",
+				permission: "admin",
+			},
+			{
+				href: "/activity",
+				label: "Activity",
+				icon: Activity,
+				// /audit-logs redirects here, so its names are searchable keywords instead of a separate item.
+				keywords: "log events audit audit logs audit log history security sign-ins system",
+				permission: "primary",
+			},
+		],
+	},
+	{
+		label: "Mail",
+		items: [
+			{ href: "/domains", label: "Domains", icon: Globe2, keywords: "dns workspace email", permission: "domains" },
 			{
 				href: "/mailboxes",
 				label: "Mailboxes",
 				icon: Mail,
-				keywords: "shared inboxes aliases workspace",
+				keywords: "shared inboxes aliases workspace email",
 				permission: "admin",
 			},
 			{
 				href: "/routing",
 				label: "Routing",
 				icon: Route,
-				keywords: "catch-all forward reject rules",
+				keywords: "catch-all forward reject rules email",
 				permission: "domains",
 			},
 		],
 	},
 	{
-		label: "People & access",
+		label: "AI",
 		items: [
-			{
-				href: "/accounts",
-				label: "Accounts",
-				icon: Users,
-				keywords: "members roles users permissions workspace",
-				permission: "admin",
-			},
+			{ href: "/agent", label: "Agent", icon: Bot, keywords: "assistant ai model provider", permission: "primary" },
+			{ href: "/ai-usage", label: "AI usage", icon: Gauge, keywords: "tokens cost assistant", permission: "primary" },
+		],
+	},
+	{
+		label: "Modules",
+		items: [
 			{
 				href: "/modules",
 				label: "Modules",
 				icon: Blocks,
-				keywords: "calendar booking templates import turn on off features",
+				keywords: "calendar booking templates import turn on off features people access",
 				permission: "primary",
+				order: 0,
 			},
 		],
 	},
 	{
-		label: "Integrations",
+		label: "Data",
 		items: [
-			{ href: "/api-keys", label: "API keys", icon: KeyRound, keywords: "token mcp jmap", permission: "primary" },
-			{ href: "/webhooks", label: "Webhooks", icon: Webhook, keywords: "events deliveries", permission: "primary" },
-		],
-	},
-	{
-		label: "AI",
-		items: [
-			{ href: "/agent", label: "Agent", icon: Bot, keywords: "assistant ai model", permission: "primary" },
-			{ href: "/ai-usage", label: "AI usage", icon: Gauge, keywords: "tokens cost assistant", permission: "primary" },
+			{
+				href: "/backups",
+				label: "Backups",
+				icon: DatabaseBackup,
+				keywords: "restore export database system",
+				permission: "primary",
+			},
+			{
+				href: "/storage",
+				label: "Storage",
+				icon: HardDrive,
+				keywords: "s3 r2 bucket minio backblaze wasabi object storage migrate cors system",
+				permission: "primary",
+			},
 		],
 	},
 	{
@@ -198,14 +224,6 @@ const adminNavSections: NavSection[] = [
 				permission: "primary",
 			},
 			{
-				href: "/storage",
-				label: "Storage",
-				icon: HardDrive,
-				keywords: "s3 r2 bucket minio backblaze wasabi object storage migrate cors",
-				permission: "primary",
-			},
-			{ href: "/backups", label: "Backups", icon: DatabaseBackup, keywords: "restore export", permission: "primary" },
-			{
 				href: "/alerts",
 				label: "Alerts",
 				icon: BellRing,
@@ -213,11 +231,17 @@ const adminNavSections: NavSection[] = [
 				permission: "primary",
 			},
 			{
-				href: "/activity",
-				label: "Activity",
-				icon: Activity,
-				// /audit-logs redirects here, so its names are searchable keywords instead of a separate item.
-				keywords: "log events audit audit logs audit log history security",
+				href: "/api-keys",
+				label: "API keys",
+				icon: KeyRound,
+				keywords: "token mcp jmap integrations",
+				permission: "primary",
+			},
+			{
+				href: "/webhooks",
+				label: "Webhooks",
+				icon: Webhook,
+				keywords: "events deliveries integrations",
 				permission: "primary",
 			},
 		],

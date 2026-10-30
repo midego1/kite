@@ -25,7 +25,7 @@ import type { AdminApiKeyScope } from "@/lib/api/scopes-types";
 import type { ApiKey } from "./types";
 import { ADMIN_KEY_PERMISSIONS, parseApiKeyScopes } from "./utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
-import { EmptyState } from "@/components/ui/page";
+import { EmptyState, PageHeader } from "@/components/ui/page";
 
 export default function ApiKeysPage() {
 	const qc = useQueryClient();
@@ -76,125 +76,128 @@ export default function ApiKeysPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex items-center justify-between gap-4">
-				<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Admin API keys</h1>
-				<Dialog
-					open={createOpen}
-					onOpenChange={(open) => {
-						if (create.isPending) return;
-						setCreateOpen(open);
-						if (!open) {
-							setNewKey(null);
-							setCopied(false);
-						}
-					}}
-				>
-					<DialogTrigger asChild>
-						<Button className={mobilePrimaryActionAboveNavClass}>
-							<Plus className="h-4 w-4" />
-							New API key
-						</Button>
-					</DialogTrigger>
-					<DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto">
-						<DialogHeader>
-							<DialogTitle>{newKey ? "API key created" : "Create API key"}</DialogTitle>
-							<DialogDescription>
-								{newKey
-									? "Copy this key now. It will only be shown once."
-									: "Name your key and choose the access it needs."}
-							</DialogDescription>
-						</DialogHeader>
-						{!newKey && (
-							<div className="space-y-4">
-								<div className="space-y-2">
-									<Label htmlFor="admin-key-name">Key name</Label>
-									<Input
-										id="admin-key-name"
-										value={name}
-										onChange={(e) => setName(e.target.value)}
-										maxLength={100}
-										placeholder="Production app"
-									/>
-								</div>
-								<label className="flex items-start gap-3 text-sm">
-									<Checkbox checked={mcpAllowed} onChange={(event) => setMcpAllowed(event.target.checked)} />
-									<span>
-										<strong>Allow MCP access</strong>
-										<span className="mt-1 block text-neutral-500">
-											Use this key with an MCP client to manage only the admin areas selected below. It cannot read or
-											send mail.
-										</span>
-									</span>
-								</label>
-								<fieldset className="space-y-2">
-									<legend className="text-sm font-medium">Permissions</legend>
+			<PageHeader
+				title="API keys"
+				description="Keys for managing domains, accounts and mailboxes from scripts or an MCP client. They never read or send mail."
+				actions={
+					<Dialog
+						open={createOpen}
+						onOpenChange={(open) => {
+							if (create.isPending) return;
+							setCreateOpen(open);
+							if (!open) {
+								setNewKey(null);
+								setCopied(false);
+							}
+						}}
+					>
+						<DialogTrigger asChild>
+							<Button className={mobilePrimaryActionAboveNavClass}>
+								<Plus className="h-4 w-4" />
+								New API key
+							</Button>
+						</DialogTrigger>
+						<DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto">
+							<DialogHeader>
+								<DialogTitle>{newKey ? "API key created" : "Create API key"}</DialogTitle>
+								<DialogDescription>
+									{newKey
+										? "Copy this key now. It will only be shown once."
+										: "Name your key and choose the access it needs."}
+								</DialogDescription>
+							</DialogHeader>
+							{!newKey && (
+								<div className="space-y-4">
 									<div className="space-y-2">
-										{ADMIN_KEY_PERMISSIONS.map((scope) => (
-											<label key={scope.value} className="flex items-start gap-3 text-sm">
-												<Checkbox
-													checked={scopes.includes(scope.value)}
-													className="mt-1"
-													onChange={(event) =>
-														setScopes((current) =>
-															event.target.checked
-																? [...current, scope.value]
-																: current.filter((item) => item !== scope.value),
-														)
-													}
-												/>
-												<span>
-													<strong>{scope.label}</strong>
-													<span className="block text-neutral-500">{scope.description}</span>
-												</span>
-											</label>
-										))}
+										<Label htmlFor="admin-key-name">Key name</Label>
+										<Input
+											id="admin-key-name"
+											value={name}
+											onChange={(e) => setName(e.target.value)}
+											maxLength={100}
+											placeholder="Production app"
+										/>
 									</div>
-								</fieldset>
-								{create.isError && (
-									<p role="alert" className="text-sm text-red-600">
-										{(create.error as Error).message}
-									</p>
-								)}
-								<Button
-									onClick={() => create.mutate()}
-									disabled={!name.trim() || scopes.length === 0 || create.isPending}
-								>
-									{create.isPending ? "Creating..." : "Create key"}
-								</Button>
-							</div>
-						)}
-						{newKey && (
-							<div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
-								<code className="block break-all rounded bg-white p-2 text-xs">{newKey}</code>
-								{createdMcpAllowed && <McpAgentInstructions mode="admin" apiKey={newKey} />}
-								<div className="flex gap-2">
+									<label className="flex items-start gap-3 text-sm">
+										<Checkbox checked={mcpAllowed} onChange={(event) => setMcpAllowed(event.target.checked)} />
+										<span>
+											<strong>Allow MCP access</strong>
+											<span className="mt-1 block text-neutral-500">
+												Use this key with an MCP client to manage only the admin areas selected below. It cannot read or
+												send mail.
+											</span>
+										</span>
+									</label>
+									<fieldset className="space-y-2">
+										<legend className="text-sm font-medium">Permissions</legend>
+										<div className="space-y-2">
+											{ADMIN_KEY_PERMISSIONS.map((scope) => (
+												<label key={scope.value} className="flex items-start gap-3 text-sm">
+													<Checkbox
+														checked={scopes.includes(scope.value)}
+														className="mt-1"
+														onChange={(event) =>
+															setScopes((current) =>
+																event.target.checked
+																	? [...current, scope.value]
+																	: current.filter((item) => item !== scope.value),
+															)
+														}
+													/>
+													<span>
+														<strong>{scope.label}</strong>
+														<span className="block text-neutral-500">{scope.description}</span>
+													</span>
+												</label>
+											))}
+										</div>
+									</fieldset>
+									{create.isError && (
+										<p role="alert" className="text-sm text-red-600">
+											{(create.error as Error).message}
+										</p>
+									)}
 									<Button
-										type="button"
-										size="sm"
-										variant="outline"
-										onClick={() => void navigator.clipboard.writeText(newKey).then(() => setCopied(true))}
+										onClick={() => create.mutate()}
+										disabled={!name.trim() || scopes.length === 0 || create.isPending}
 									>
-										<Copy className="h-4 w-4" />
-										{copied ? "Copied" : "Copy key"}
-									</Button>
-									<Button
-										type="button"
-										size="sm"
-										variant="ghost"
-										onClick={() => {
-											setCreateOpen(false);
-											setNewKey(null);
-											setCopied(false);
-										}}
-									>
-										Done
+										{create.isPending ? "Creating..." : "Create key"}
 									</Button>
 								</div>
-							</div>
-						)}
-					</DialogContent>
-				</Dialog>
-			</div>
+							)}
+							{newKey && (
+								<div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+									<code className="block break-all rounded bg-white p-2 text-xs">{newKey}</code>
+									{createdMcpAllowed && <McpAgentInstructions mode="admin" apiKey={newKey} />}
+									<div className="flex gap-2">
+										<Button
+											type="button"
+											size="sm"
+											variant="outline"
+											onClick={() => void navigator.clipboard.writeText(newKey).then(() => setCopied(true))}
+										>
+											<Copy className="h-4 w-4" />
+											{copied ? "Copied" : "Copy key"}
+										</Button>
+										<Button
+											type="button"
+											size="sm"
+											variant="ghost"
+											onClick={() => {
+												setCreateOpen(false);
+												setNewKey(null);
+												setCopied(false);
+											}}
+										>
+											Done
+										</Button>
+									</div>
+								</div>
+							)}
+						</DialogContent>
+					</Dialog>
+				}
+			/>
 			<section className="space-y-3">
 				{revoke.isError && (
 					<p role="alert" className="text-sm text-red-600">

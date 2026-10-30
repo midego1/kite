@@ -42,7 +42,7 @@ test.afterAll(() => {
 async function openUsage(page: Page, range: "7 days" | "30 days" | "90 days" = "7 days") {
 	await page.goto("/ai-usage");
 	// The first visit compiles the page on the dev server.
-	await expect(page.getByRole("heading", { name: "AI Usage", level: 1 })).toBeVisible({ timeout: 60_000 });
+	await expect(page.getByRole("heading", { name: "AI usage", level: 1 })).toBeVisible({ timeout: 60_000 });
 	const radio = page.getByRole("radiogroup", { name: "Date range" }).getByRole("radio", { name: range });
 	await radio.click();
 	await expect(radio).toHaveAttribute("aria-checked", "true");

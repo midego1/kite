@@ -111,8 +111,9 @@ test("the menu search does not find Import while Mail import is off", () => {
 test("an admin-nav item joins its Admin group for admins only, and only while its module is on", () => {
 	assert.deepEqual(labels(moduleNavItems(MODULE_MANIFESTS, "admin-nav", ALL)), ["Drive"]);
 	assert.deepEqual(moduleNavItems(MODULE_MANIFESTS, "admin-nav", ["calendar"]), []);
-	const system = navSectionsFor("admin").find((section) => section.label === "System");
-	const drive = system.items.find((item) => item.href === "/drive/settings");
+	const group = navSectionsFor("admin").find((section) => section.label === "Modules");
+	const drive = group.items.find((item) => item.href === "/drive/settings");
+	assert.equal(group.items[0].href, "/modules", "the Modules page stays first in its group");
 	assert.equal(drive.permission, "admin");
 	assert.equal(drive.moduleId, "drive");
 	const forAdmin = filterNavSections(navSectionsFor("admin"), "", admin, ALL);

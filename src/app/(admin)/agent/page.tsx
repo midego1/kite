@@ -3,13 +3,16 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
+import { SettingRow } from "@/components/ui/setting-row";
 import { Switch } from "@/components/ui/switch";
 import { saveAssistantAvailability } from "@/lib/agent/availability-client";
 import { AutoReadAdminSettings } from "@/components/agent/auto-read-admin-settings";
 import { AgentProviders } from "./agent-providers";
 import { RecentAiErrors } from "./recent-ai-errors";
 import type { AgentAdminSettingsResponse } from "./types";
+import { PageHeader } from "@/components/ui/page";
 import { loadAgentAdminSettings, saveAgentEnabled } from "./utils";
 
 export default function AdminAgentPage() {
@@ -37,25 +40,21 @@ export default function AdminAgentPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex items-start justify-between gap-4">
-				<div>
-					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Agent</h1>
-					<p className="mt-1 text-sm text-neutral-500">
-						Choose the AI provider and models used by the email assistant for chat and drafts.
-					</p>
-				</div>
-				<Button asChild variant="outline" className="shrink-0">
-					<Link href="/ai-usage">View Usage</Link>
-				</Button>
-			</div>
+			<PageHeader
+				title="Agent"
+				description="Choose the AI provider and models used by the email assistant for chat and drafts."
+				actions={
+					<Button asChild variant="outline">
+						<Link href="/ai-usage">View usage</Link>
+					</Button>
+				}
+			/>
 			<Card>
-				<CardContent className="flex items-center justify-between gap-4 p-0">
-					<div>
-						<p className="font-medium text-neutral-900">Enable assistant</p>
-						<p className="mt-1 text-sm text-neutral-500">
-							Show assistant chat and allow automatic drafts for everyone.
-						</p>
-					</div>
+				<SettingRow
+					title="Enable assistant"
+					description="Show assistant chat and allow automatic drafts for everyone."
+					className="py-0"
+				>
 					<Switch
 						checked={assistantEnabled}
 						disabled={!data || enabledSaving}
@@ -74,18 +73,14 @@ export default function AdminAgentPage() {
 						}}
 						aria-label="Enable assistant"
 					/>
-				</CardContent>
+				</SettingRow>
 				{enabledStatus && (
-					<p role="status" className="mt-3 text-sm text-red-700">
+					<Notice tone="error" className="mt-3">
 						{enabledStatus}
-					</p>
+					</Notice>
 				)}
 			</Card>
-			{loadError && (
-				<p role="status" className="text-sm text-red-700">
-					{loadError}
-				</p>
-			)}
+			{loadError && <Notice tone="error">{loadError}</Notice>}
 			{data && <AgentProviders data={data} onChange={setData} />}
 			<AutoReadAdminSettings />
 			<RecentAiErrors />

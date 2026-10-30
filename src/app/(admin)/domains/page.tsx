@@ -35,7 +35,7 @@ import { SectionRowSkeleton } from "@/components/page-skeletons";
 import { checkDomain } from "./utils";
 import { confirmMxReplacement, postJson } from "./api";
 import toast from "react-hot-toast";
-import { EmptyState } from "@/components/ui/page";
+import { EmptyState, PageHeader } from "@/components/ui/page";
 
 type DnsSetupFeedback = {
 	domainId: string;
@@ -321,109 +321,109 @@ export default function DomainsPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex items-center justify-between gap-4">
-				<div>
-					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Domains</h1>
-					<p className="mt-1 text-sm text-neutral-500">
-						{managesDns
-							? "Domains must be on your Cloudflare account, which manages their DNS. Choose per domain whether Cloudflare, Resend or Amazon SES receives and sends its mail."
-							: "Add the domains this server receives mail for. Open DNS on a domain to see the MX, SPF and DMARC records to create."}
-					</p>
-				</div>
-				<Dialog open={createOpen} onOpenChange={setCreateOpen}>
-					<DialogTrigger asChild>
-						<Button className={mobilePrimaryActionAboveNavClass}>
-							<Plus className="h-4 w-4" />
-							New domain
-						</Button>
-					</DialogTrigger>
-					<DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto">
-						<DialogHeader>
-							<DialogTitle>Add domain</DialogTitle>
-							<DialogDescription>
-								Connect a Cloudflare zone, then choose which service receives its mail and whether Kite should provision
-								Email Sending.
-							</DialogDescription>
-						</DialogHeader>
-						<div className="space-y-4">
-							<div className="space-y-2">
-								<Label htmlFor="hostname">Hostname</Label>
-								<Input
-									id="hostname"
-									value={hostname}
-									onChange={(e) => {
-										setHostname(e.target.value);
-										if (domainCheck?.hostname !== e.target.value.toLowerCase().trim()) {
-											setDomainCheck(null);
-										}
-									}}
-									onBlur={() => void inspectDomain()}
-									placeholder="example.com"
-								/>
-							</div>
-							<SkipDnsSwitch
-								id="skip-dns"
-								checked={skipDns}
-								onCheckedChange={(checked) => {
-									domainCheckRevision.current++;
-									setDomainChecking(false);
-									setSkipDns(checked);
-									setDomainCheckError(null);
-									create.reset();
-								}}
-								disabled={create.isPending}
-							/>
-							{!skipDns && (
-								<AddDomainProviderFields
-									receivingProvider={receivingProvider}
-									onReceivingProviderChange={setReceivingProvider}
-									sendingProvider={sendingProvider}
-									onSendingProviderChange={setSendingProvider}
-									checking={domainChecking}
-								/>
-							)}
-							{domainCheck && !skipDns && (
-								<div className="flex items-center gap-3 rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
-									<CheckCircle2 className="h-4 w-4" />
-									Domain found in Cloudflare as {domainCheck.zone.name}
-								</div>
-							)}
-							{domainCheckError && (
-								<p
-									role="alert"
-									className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
-								>
-									{domainCheckError}
-								</p>
-							)}
-							{create.isError && (
-								<div
-									role="alert"
-									className="space-y-3 rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
-								>
-									<p>{(create.error as Error).message}</p>
-									<div className={skipDns ? "hidden" : "space-y-2"}>
-										<p className="font-medium">Check that your Cloudflare API token has these permissions:</p>
-										<ul className="list-disc space-y-1 pl-5">
-											<li>
-												All accounts — DNS Settings:Edit, Email Routing Addresses:Edit; Email Sending:Edit for outbound
-												mail
-											</li>
-											<li>All zones — DNS Settings:Edit, Email Routing Rules:Edit, Zone Settings:Edit, DNS:Edit</li>
-										</ul>
-									</div>
-								</div>
-							)}
-							<Button
-								onClick={() => create.mutate()}
-								disabled={!hostname || (domainChecking && !skipDns) || create.isPending}
-							>
-								{create.isPending ? "Adding..." : "Add domain"}
+			<PageHeader
+				title="Domains"
+				description={
+					managesDns
+						? "Domains must be on your Cloudflare account, which manages their DNS. Choose per domain whether Cloudflare, Resend or Amazon SES receives and sends its mail."
+						: "Add the domains this server receives mail for. Open DNS on a domain to see the MX, SPF and DMARC records to create."
+				}
+				actions={
+					<Dialog open={createOpen} onOpenChange={setCreateOpen}>
+						<DialogTrigger asChild>
+							<Button className={mobilePrimaryActionAboveNavClass}>
+								<Plus className="h-4 w-4" />
+								New domain
 							</Button>
-						</div>
-					</DialogContent>
-				</Dialog>
-			</div>
+						</DialogTrigger>
+						<DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto">
+							<DialogHeader>
+								<DialogTitle>Add domain</DialogTitle>
+								<DialogDescription>
+									Connect a Cloudflare zone, then choose which service receives its mail and whether Kite should
+									provision Email Sending.
+								</DialogDescription>
+							</DialogHeader>
+							<div className="space-y-4">
+								<div className="space-y-2">
+									<Label htmlFor="hostname">Hostname</Label>
+									<Input
+										id="hostname"
+										value={hostname}
+										onChange={(e) => {
+											setHostname(e.target.value);
+											if (domainCheck?.hostname !== e.target.value.toLowerCase().trim()) {
+												setDomainCheck(null);
+											}
+										}}
+										onBlur={() => void inspectDomain()}
+										placeholder="example.com"
+									/>
+								</div>
+								<SkipDnsSwitch
+									id="skip-dns"
+									checked={skipDns}
+									onCheckedChange={(checked) => {
+										domainCheckRevision.current++;
+										setDomainChecking(false);
+										setSkipDns(checked);
+										setDomainCheckError(null);
+										create.reset();
+									}}
+									disabled={create.isPending}
+								/>
+								{!skipDns && (
+									<AddDomainProviderFields
+										receivingProvider={receivingProvider}
+										onReceivingProviderChange={setReceivingProvider}
+										sendingProvider={sendingProvider}
+										onSendingProviderChange={setSendingProvider}
+										checking={domainChecking}
+									/>
+								)}
+								{domainCheck && !skipDns && (
+									<div className="flex items-center gap-3 rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
+										<CheckCircle2 className="h-4 w-4" />
+										Domain found in Cloudflare as {domainCheck.zone.name}
+									</div>
+								)}
+								{domainCheckError && (
+									<p
+										role="alert"
+										className="rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
+									>
+										{domainCheckError}
+									</p>
+								)}
+								{create.isError && (
+									<div
+										role="alert"
+										className="space-y-3 rounded-lg border border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999] px-4 py-3 text-sm"
+									>
+										<p>{(create.error as Error).message}</p>
+										<div className={skipDns ? "hidden" : "space-y-2"}>
+											<p className="font-medium">Check that your Cloudflare API token has these permissions:</p>
+											<ul className="list-disc space-y-1 pl-5">
+												<li>
+													All accounts — DNS Settings:Edit, Email Routing Addresses:Edit; Email Sending:Edit for
+													outbound mail
+												</li>
+												<li>All zones — DNS Settings:Edit, Email Routing Rules:Edit, Zone Settings:Edit, DNS:Edit</li>
+											</ul>
+										</div>
+									</div>
+								)}
+								<Button
+									onClick={() => create.mutate()}
+									disabled={!hostname || (domainChecking && !skipDns) || create.isPending}
+								>
+									{create.isPending ? "Adding..." : "Add domain"}
+								</Button>
+							</div>
+						</DialogContent>
+					</Dialog>
+				}
+			/>
 			<section className="space-y-3">
 				{/* <div className="flex items-center justify-between">
 					<span className="text-sm text-neutral-500">{(data?.domains ?? []).length} total</span>

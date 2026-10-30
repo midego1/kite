@@ -69,7 +69,7 @@ export function ScreenerSettings() {
 	if (!current.available)
 		return (
 			<p className="rounded-lg bg-neutral-50 p-4 text-sm text-neutral-600">
-				The Screener needs database migration 0067. An admin can apply it from the database card in Admin settings.
+				The Screener needs database migration 0067. An admin can apply it from the database card on the Admin overview.
 			</p>
 		);
 

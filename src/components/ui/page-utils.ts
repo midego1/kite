@@ -4,7 +4,10 @@
 export const CARD_CLASS = "rounded-xl border border-neutral-200 bg-white";
 
 /** One setting inside a card: a label and its line beside a switch or a select, on the muted fill. */
-export const SETTING_ROW_CLASS = "flex items-start gap-3 rounded-lg bg-neutral-50 p-4";
+export const SETTING_ROW_CLASS = "flex items-start gap-4 rounded-lg bg-neutral-50 px-4 py-3";
+
+/** The line under a field explaining what it takes. */
+export const FIELD_HINT_CLASS = "text-xs leading-5 text-neutral-500";
 
 /** A table's header row: small muted labels on the muted fill. */
 export const TABLE_HEAD_CLASS = "border-b border-neutral-200 bg-[#f6f8fc] text-xs font-medium text-neutral-500";

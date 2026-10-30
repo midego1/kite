@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useShowFullRecipientAddresses } from "@/components/messages/use-show-full-recipient-addresses";
 import { Switch } from "@/components/ui/switch";
-import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
+import { FormError, SettingRow } from "@/components/ui/page";
 
 export function RecipientAddressSettings() {
 	const { enabled, error, isLoading, setEnabled } = useShowFullRecipientAddresses();
@@ -11,15 +11,10 @@ export function RecipientAddressSettings() {
 	const [saveError, setSaveError] = useState<string | null>(null);
 
 	return (
-		<div>
-			<label className={SETTING_ROW_CLASS}>
-				<span className="flex-1">
-					<span className="block text-sm font-medium text-neutral-900">Show full recipient addresses</span>
-					<span className="mt-1 block text-sm text-neutral-500">
-						On To, Cc, and Bcc, show Name &lt;user@domain.tld&gt; when the message includes a name. Off shows only the
-						email address. This follows your sign-in, on every mailbox.
-					</span>
-				</span>
+		<SettingRow
+			label="Show full recipient addresses"
+			description="On To, Cc, and Bcc, show Name <user@domain.tld> when the message includes a name. Off shows only the email address. This follows your sign-in, on every mailbox."
+			control={
 				<Switch
 					checked={enabled}
 					disabled={isLoading || saving}
@@ -36,12 +31,9 @@ export function RecipientAddressSettings() {
 					}}
 					aria-label="Show full recipient addresses"
 				/>
-			</label>
-			{(saveError || error) && (
-				<p role="alert" className="mt-2 px-4 text-sm text-red-600">
-					{saveError || error}
-				</p>
-			)}
-		</div>
+			}
+		>
+			{(saveError || error) && <FormError className="mt-2 px-4">{saveError || error}</FormError>}
+		</SettingRow>
 	);
 }

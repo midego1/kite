@@ -11,7 +11,7 @@ export const importClientData: ClientModuleData = {
 			href: "/settings/import",
 			icon: "Download",
 			placement: "settings-nav",
-			group: "Mailbox",
+			group: "Data",
 			keywords: ["imap", "migrate"],
 			order: 10,
 		},

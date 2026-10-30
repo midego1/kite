@@ -3,7 +3,6 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthMe } from "@/hooks/use-auth-me";
 import { ForwardingEmailForm } from "./forwarding-email-form";
-import { MailboxSignatureForm } from "./mailbox-signature-form";
 import { ProfileForm } from "./profile-form";
 import { TimeZoneForm } from "./time-zone-form";
 import { PageHeader, SettingsCard } from "@/components/ui/page";
@@ -32,7 +31,7 @@ export function AccountSettings() {
 
 	return (
 		<div className="space-y-8">
-			<PageHeader title="My account" description="Your profile, recovery email, time zone and sign-in." />
+			<PageHeader title="My account" description="Your profile, recovery email, time zone and forwarding." />
 
 			<section className="space-y-4">
 				<div>
@@ -54,16 +53,6 @@ export function AccountSettings() {
 							</p>
 						</div>
 						<ForwardingEmailForm initialForwardingEmail={user.forwardingEmail ?? ""} />
-					</div>
-
-					<div className="space-y-4 p-5">
-						<div>
-							<h3 className="text-sm font-semibold text-neutral-900">Email signature</h3>
-							<p className="mt-1 text-sm text-neutral-500">
-								Configure the signature for the inbox currently selected above.
-							</p>
-						</div>
-						<MailboxSignatureForm />
 					</div>
 				</SettingsCard>
 			</section>

@@ -61,8 +61,9 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 	if (!Icon) return null;
 	const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
 	const classes = cn(
-		"flex h-9 items-center gap-3 rounded-lg text-sm text-neutral-700 transition-colors max-md:min-h-11 max-md:text-base",
-		minimal && RAIL_ITEM_CLASS,
+		"flex h-9 items-center gap-3 rounded-lg text-sm text-neutral-700 transition-colors",
+		// The rail keeps its 40px squares on a narrow window; only the phone sheet (never minimal) grows its rows.
+		minimal ? RAIL_ITEM_CLASS : "max-md:min-h-11 max-md:text-base",
 		active ? "bg-blue-100 text-blue-900 font-medium" : "hover:bg-neutral-200/60 hover:text-neutral-900",
 		dragOver && "bg-blue-50 text-blue-900 ring-1 ring-blue-200",
 		// Zero's "New email": a full-width muted button rather than a coloured slab.
@@ -159,7 +160,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 				// className={minimal ? "h-4 w-4" : "h-5 w-5"}
 				style={{ color: minimal ? railIconColor(link.iconColor) : link.iconColor }}
 				size={minimal ? RAIL_ICON_SIZE : 16}
-				className={cn("max-md:h-5 max-md:w-5", wrap && !minimal && "mt-0.5 shrink-0", iconClassName)}
+				className={cn(!minimal && "max-md:h-5 max-md:w-5", wrap && !minimal && "mt-0.5 shrink-0", iconClassName)}
 			/>
 			{!minimal && (
 				<span

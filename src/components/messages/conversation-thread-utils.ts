@@ -49,18 +49,26 @@ export function getAvatarInitial(message: ThreadMessage, currentAccountName?: st
 export type ThreadParticipant = {
 	name: string;
 	address: string;
-	/** Other addresses the same display name wrote from or was sent to in the conversation. */
+	/** Other addresses of the same domain the same display name wrote from or was sent to in the conversation. */
 	otherAddresses?: string[];
 };
 
+function domainOf(address: string): string {
+	return address
+		.slice(address.lastIndexOf("@") + 1)
+		.trim()
+		.toLowerCase();
+}
+
 /**
  * The people of a conversation for the reader's chips: senders and recipients, once each, in order. A display
- * name that reappears with another address (a person writing from work and from home) stays one chip that
- * remembers the other addresses; a bare address never merges.
+ * name that reappears with another address of the same domain (a person writing from two aliases) stays one chip
+ * that remembers the other addresses. Anything else stays its own chip, because a display name proves nothing:
+ * `"Roshni at Cursor" <x@evil.test>` must never hide inside the real Roshni's chip. A bare address never merges.
  */
 export function getThreadParticipants(people: ThreadParticipant[]): ThreadParticipant[] {
 	const seen = new Set<string>();
-	const byName = new Map<string, ThreadParticipant>();
+	const byName = new Map<string, ThreadParticipant[]>();
 	const participants: ThreadParticipant[] = [];
 	for (const person of people) {
 		const address = person.address.trim();
@@ -69,14 +77,16 @@ export function getThreadParticipants(people: ThreadParticipant[]): ThreadPartic
 		if (!key || seen.has(key)) continue;
 		seen.add(key);
 		const nameKey = address && name.toLowerCase() !== address.toLowerCase() ? name.toLowerCase() : "";
-		const sameName = nameKey ? byName.get(nameKey) : undefined;
-		if (sameName && address) {
-			sameName.otherAddresses = [...(sameName.otherAddresses ?? []), address];
+		const sameDomain = nameKey
+			? byName.get(nameKey)?.find((other) => domainOf(other.address) === domainOf(address))
+			: undefined;
+		if (sameDomain) {
+			sameDomain.otherAddresses = [...(sameDomain.otherAddresses ?? []), address];
 			continue;
 		}
 		const participant: ThreadParticipant = { name, address: person.address };
 		participants.push(participant);
-		if (nameKey) byName.set(nameKey, participant);
+		if (nameKey) byName.set(nameKey, [...(byName.get(nameKey) ?? []), participant]);
 	}
 	return participants;
 }

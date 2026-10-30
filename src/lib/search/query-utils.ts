@@ -11,6 +11,20 @@ import { dateFromZonedFields, normalizeTimeZone } from "@/lib/time/utils";
  */
 const OPERATOR_RE = /(?:^|\s)(from|to|subject|title|has|is|after|before|newer|older):(?:"([^"]*)"|(\S+))/gi;
 
+/** A value that is one whole email address, which `from:` then matches exactly instead of as words. */
+function isEmailAddressValue(value: string): boolean {
+	return /^[^\s@<>"]+@[^\s@<>"]+$/.test(value);
+}
+
+/**
+ * The two shapes a stored `from_addr` takes for one address, as lower-case SQL operands: the bare address, or a
+ * header ending in `<address>` (`LIKE … ESCAPE '\'`, so `_` and `%` in an address are taken literally).
+ */
+export function exactSenderMatch(address: string): { equals: string; endsWith: string } {
+	const equals = address.trim().toLowerCase();
+	return { equals, endsWith: `%<${equals.replace(/[\\%_]/g, (char) => `\\${char}`)}>` };
+}
+
 export function parseSearchQuery(raw: string, timeZone = "UTC"): ParsedSearchQuery {
 	const parsed: ParsedSearchQuery = { text: "", needsFullText: false };
 	let rest = raw ?? "";
@@ -19,7 +33,9 @@ export function parseSearchQuery(raw: string, timeZone = "UTC"): ParsedSearchQue
 		const value = (quoted ?? bare ?? "").trim();
 		switch (key.toLowerCase()) {
 			case "from":
-				parsed.from = value;
+				// One whole address is exact: "hi@cursor.com" must not find x.hi@cursor.com or hi@cursor.com.evil.test.
+				if (isEmailAddressValue(value)) parsed.fromAddress = value.toLowerCase();
+				else parsed.from = value;
 				break;
 			case "to":
 				parsed.to = value;

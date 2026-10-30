@@ -35,34 +35,47 @@ test("own addresses match case-insensitively and an empty address never does", (
 	assert.equal(card.isOwnAddress("", [""]), false);
 });
 
-test("the tooltip shows the full address and how many others the person used", () => {
+test("the tooltip shows the full address and every other address of the person", () => {
 	assert.equal(card.participantTooltip("hi@cursor.com"), "hi@cursor.com");
-	assert.equal(card.participantTooltip("Roshni <hi@cursor.com>", ["r@cursor.com"]), "hi@cursor.com (+1 more address)");
-	assert.equal(card.participantTooltip("hi@cursor.com", ["a@x.test", "b@x.test"]), "hi@cursor.com (+2 more addresses)");
+	assert.equal(card.participantTooltip("Roshni <hi@cursor.com>", ["r@cursor.com"]), "hi@cursor.com, also r@cursor.com");
+	assert.equal(
+		card.participantTooltip("hi@cursor.com", ["a@cursor.com", "b@cursor.com"]),
+		"hi@cursor.com, also a@cursor.com, b@cursor.com",
+	);
 	assert.equal(card.participantTooltip(""), null);
 });
 
-test("the search action lists mail from the address and names the person", () => {
-	assert.equal(card.fromSearchQuery("Roshni at Cursor <hi@cursor.com>"), "from:hi@cursor.com");
-	assert.equal(card.showMailFromLabel("Roshni", "hi@cursor.com"), "Show all mail from Roshni");
-	assert.equal(card.showMailFromLabel(" ", "hi@cursor.com"), "Show all mail from hi@cursor.com");
+test("the search action lists mail from the exact address and says it searches the Inbox", () => {
+	assert.equal(card.fromSearchQuery("Roshni at Cursor <hi@cursor.com>"), 'from:"hi@cursor.com"');
+	assert.equal(card.showMailFromLabel("Roshni", "hi@cursor.com"), "Search Inbox for mail from Roshni");
+	assert.equal(card.showMailFromLabel(" ", "hi@cursor.com"), "Search Inbox for mail from hi@cursor.com");
 });
 
-test("participants: one chip per address, a name used with several addresses stays one chip", () => {
+test("read-only shares get neither New email nor Edit or Block; send-only shares can write but not edit", () => {
+	assert.deepEqual(card.contactCardAccess("read_only"), { canSend: false, canEdit: false });
+	assert.deepEqual(card.contactCardAccess("send_as"), { canSend: true, canEdit: false });
+	assert.deepEqual(card.contactCardAccess("send_on_behalf"), { canSend: true, canEdit: false });
+	assert.deepEqual(card.contactCardAccess("full_access"), { canSend: true, canEdit: true });
+	assert.deepEqual(card.contactCardAccess(null), { canSend: false, canEdit: false });
+});
+
+test("participants: one chip per address; a name merges only within one domain", () => {
 	const people = thread.getThreadParticipants([
 		{ name: "Roshni at Cursor", address: "hi@cursor.com" },
 		{ name: "Michiel", address: "me@example.com" },
 		{ name: "HI@cursor.com", address: "HI@cursor.com" },
 		{ name: "Roshni at Cursor", address: "roshni@cursor.com" },
-		{ name: "roshni at cursor", address: "r2@cursor.com" },
+		{ name: "roshni at cursor", address: "r2@CURSOR.com" },
+		{ name: "Roshni at Cursor", address: "x@evil.test" },
 		{ name: "support@a.test", address: "support@a.test" },
 		{ name: "support@b.test", address: "support@b.test" },
 	]);
 	assert.deepEqual(
 		people.map((person) => [person.name, person.address, person.otherAddresses ?? []]),
 		[
-			["Roshni at Cursor", "hi@cursor.com", ["roshni@cursor.com", "r2@cursor.com"]],
+			["Roshni at Cursor", "hi@cursor.com", ["roshni@cursor.com", "r2@CURSOR.com"]],
 			["Michiel", "me@example.com", []],
+			["Roshni at Cursor", "x@evil.test", []],
 			["support@a.test", "support@a.test", []],
 			["support@b.test", "support@b.test", []],
 		],

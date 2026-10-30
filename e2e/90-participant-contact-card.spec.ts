@@ -1,10 +1,11 @@
 import { mkdirSync } from "node:fs";
-import { expect, test, type Locator, type Page } from "@playwright/test";
-import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, deliverInbound, openMessage, uniqueToken } from "./support/helpers";
+import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
+import { BASE_URL, DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { createSharedMailbox, createSignedInAccount, selectMailbox, shareMailbox } from "./support/auto-read";
+import { apiContext, deliverInbound, openMessage, uniqueToken, waitForMessage } from "./support/helpers";
 
 // The thread header's participant chips are buttons: hover shows the full address, click opens a contact
-// card with Copy, New email, Show all mail from and the contact actions. The sender name in the message
+// card with Copy, New email, Search Inbox for mail from and the contact actions (only what the mailbox permission allows). The sender name in the message
 // opens the same card.
 
 /** Set to a directory to save the card's screenshots there (the PR's). */
@@ -15,6 +16,8 @@ const SECOND = "roshni@cursor-card.test";
 const NAME = "Roshni at Cursor";
 
 let subject: string;
+let decoySubject: string;
+let spoofSubject: string;
 
 test.beforeAll(async () => {
 	const api = await apiContext(STORAGE_STATE);
@@ -37,10 +40,35 @@ test.beforeAll(async () => {
 		messageId: `<${token}-2@e2e.test>`,
 		inReplyTo: `<${token}-1@e2e.test>`,
 	});
+	// Look-alike senders: neither may turn up in the search for the exact address.
+	decoySubject = `Decoy ${token}`;
+	await deliverInbound(api, {
+		from: `"Decoy" <x.${SECOND}>`,
+		to: SUPPORT_ADDRESS,
+		subject: decoySubject,
+		text: "A sender whose address only ends like the real one.",
+	});
+	// A reply that borrows the display name from another domain.
+	spoofSubject = `Spoof ${token}`;
+	await deliverInbound(api, {
+		from: `"${NAME}" <${FIRST}>`,
+		to: SUPPORT_ADDRESS,
+		subject: spoofSubject,
+		text: "The real one.",
+		messageId: `<${token}-s1@e2e.test>`,
+	});
+	await deliverInbound(api, {
+		from: `"${NAME}" <x@evil-card.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: `Re: ${spoofSubject}`,
+		text: "Not the real one.",
+		messageId: `<${token}-s2@e2e.test>`,
+		inReplyTo: `<${token}-s1@e2e.test>`,
+	});
 	await api.dispose();
 });
 
-async function openThread(page: Page, variant?: { style: string; theme: string }) {
+async function openThread(page: Page, variant?: { style: string; theme: string }, title = subject) {
 	if (variant) {
 		await page.addInitScript(({ style, theme }) => {
 			localStorage.setItem("kite-style", style);
@@ -48,8 +76,8 @@ async function openThread(page: Page, variant?: { style: string; theme: string }
 		}, variant);
 	}
 	await page.goto("/inbox");
-	await openMessage(page, new RegExp(`${subject}$`));
-	await expect(page.getByRole("heading", { level: 1, name: /Card / })).toBeVisible();
+	await openMessage(page, new RegExp(`${title}$`));
+	await expect(page.getByRole("heading", { level: 1, name: new RegExp(title) })).toBeVisible();
 	return page.getByRole("list", { name: "Participants" });
 }
 
@@ -63,7 +91,7 @@ async function openCard(page: Page, chip: Locator) {
 	return card;
 }
 
-test("hover and focus show the full address and how many others the person used", async ({ page }) => {
+test("hover and focus show the full address and every other address of the person", async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	const chips = await openThread(page);
 	const chip = chips.getByRole("button", { name: new RegExp(NAME) });
@@ -72,15 +100,15 @@ test("hover and focus show the full address and how many others the person used"
 	await chip.hover();
 	const tip = page.getByRole("tooltip");
 	await expect(tip).toContainText(/@cursor-card\.test/);
-	await expect(tip).toContainText("+1 more address");
+	await expect(tip).toContainText("also");
 	await page.mouse.move(5, 5);
 	await expect(tip).toHaveCount(0);
 	// Keyboard focus shows it too.
 	await chip.focus();
-	await expect(page.getByRole("tooltip")).toContainText("+1 more address");
+	await expect(page.getByRole("tooltip")).toContainText("also");
 });
 
-test("click opens the contact card: address, Copy, New email, Show all mail from, Escape", async ({
+test("click opens the contact card: address, Copy, New email, Search Inbox for mail from, Escape", async ({
 	page,
 	context,
 }) => {
@@ -94,7 +122,7 @@ test("click opens the contact card: address, Copy, New email, Show all mail from
 	const address = await card.locator("[data-contact-card-address]").innerText();
 	expect([FIRST, SECOND]).toContain(address);
 	await expect(card.getByRole("button", { name: "New email" })).toBeVisible();
-	await expect(card.getByRole("button", { name: `Show all mail from ${NAME}` })).toBeVisible();
+	await expect(card.getByRole("button", { name: `Search Inbox for mail from ${NAME}` })).toBeVisible();
 	await expect(card.getByRole("button", { name: /Add to contacts|Edit contact/ })).toBeVisible();
 	await expect(card.getByRole("button", { name: "Block contact" })).toBeVisible();
 
@@ -122,14 +150,14 @@ test("click opens the contact card: address, Copy, New email, Show all mail from
 	await page.keyboard.press("Escape");
 });
 
-test("Show all mail from searches the person's mail in the list", async ({ page }) => {
+test("Search Inbox for mail from lists exactly that address in the list", async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	const chips = await openThread(page);
 	const card = await openCard(page, chips.getByRole("button", { name: new RegExp(NAME) }));
 	const address = await card.locator("[data-contact-card-address]").innerText();
-	await card.getByRole("button", { name: `Show all mail from ${NAME}` }).click();
+	await card.getByRole("button", { name: `Search Inbox for mail from ${NAME}` }).click();
 	await expect(page).toHaveURL(/\/inbox$/);
-	await expect(page.getByRole("textbox", { name: "Search mail" })).toHaveValue(`from:${address}`);
+	await expect(page.getByRole("textbox", { name: "Search mail" })).toHaveValue(`from:"${address}"`);
 	await expect(
 		page
 			.getByRole("main")
@@ -137,7 +165,101 @@ test("Show all mail from searches the person's mail in the list", async ({ page 
 			.first(),
 	).toBeVisible();
 	await expect(page.getByRole("main").getByText(`Re: ${subject}`).first()).toBeVisible();
+	// The exact address: a sender that only ends like it is not listed, in the page or in the API.
+	await expect(page.getByRole("main").getByText(decoySubject)).toHaveCount(0);
+	const api = await apiContext(STORAGE_STATE);
+	const found = await api.get(`/api/messages?${new URLSearchParams({ q: `from:"${SECOND}"`, status: "received" })}`);
+	const { messages } = (await found.json()) as { messages: { subject: string | null }[] };
+	expect(messages.some((message) => message.subject === `Re: ${subject}`)).toBe(true);
+	expect(messages.some((message) => message.subject === decoySubject)).toBe(false);
+	const decoy = await api.get(`/api/messages?${new URLSearchParams({ q: `from:"x.${SECOND}"`, status: "received" })}`);
+	const decoys = (await decoy.json()) as { messages: { subject: string | null }[] };
+	expect(decoys.messages.map((message) => message.subject)).toContain(decoySubject);
+	expect(decoys.messages.map((message) => message.subject)).not.toContain(`Re: ${subject}`);
+	await api.dispose();
 });
+
+test("a reply that borrows the display name from another domain gets its own chip", async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const chips = await openThread(page, undefined, `Re: ${spoofSubject}`);
+	const named = chips.getByRole("button", { name: new RegExp(NAME) });
+	await expect(named).toHaveCount(2);
+	await named.nth(0).hover();
+	const tip = page.getByRole("tooltip");
+	await expect(tip).toContainText("evil-card.test");
+	await expect(tip).not.toContainText("also");
+	await page.mouse.move(5, 5);
+	await named.nth(1).hover();
+	await expect(tip).toContainText(FIRST);
+	await expect(tip).not.toContainText("evil-card.test");
+});
+
+test("Block contact shows Blocked even when the contact failed to load", async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.route(
+		(url) => url.pathname === "/api/contacts",
+		(route) => (route.request().method() === "GET" ? route.abort() : route.continue()),
+	);
+	const chips = await openThread(page, undefined, decoySubject);
+	const card = await openCard(page, chips.getByRole("button", { name: /Decoy/ }));
+	await card.getByRole("button", { name: "Block contact" }).click();
+	const confirm = card.getByRole("button", { name: "Confirm: block this contact" });
+	const blocked = page.waitForResponse((response) => response.url().endsWith("/api/contacts/block"));
+	await confirm.click();
+	expect((await blocked).ok()).toBe(true);
+	await expect(card.getByText("Blocked", { exact: true })).toBeVisible();
+	await expect(card.getByRole("button", { name: /Block contact|Confirm: block/ })).toHaveCount(0);
+});
+
+/** A member of a shared mailbox with the given permission, opening a message that arrived in it. */
+async function openSharedAs(browser: Browser, permission: "read_only" | "send_as") {
+	const admin = await apiContext(STORAGE_STATE);
+	const token = uniqueToken("cc").toLowerCase();
+	const member = await createSignedInAccount(admin, `ccm${token}`);
+	const localPart = `ccdesk${token}`;
+	const mailboxId = await createSharedMailbox(admin, localPart);
+	await shareMailbox(admin, mailboxId, member.id, permission);
+	const title = `Shared ${token}`;
+	await deliverInbound(admin, {
+		from: `"Shared Sender" <sender@cursor-card.test>`,
+		to: `${localPart}@${DOMAIN}`,
+		subject: title,
+		text: "Hello from the shared mailbox.",
+	});
+	const stored = await waitForMessage(member.api, title, { mailboxId });
+	await admin.dispose();
+	const context = await browser.newContext({ baseURL: BASE_URL, storageState: await member.api.storageState() });
+	const page = await context.newPage();
+	await selectMailbox(page, mailboxId);
+	await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), member.id);
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(`/inbox/${stored.id}`);
+	await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
+	return { context, page, member };
+}
+
+for (const { permission, newEmail } of [
+	{ permission: "read_only", newEmail: false },
+	{ permission: "send_as", newEmail: true },
+] as const) {
+	test(`a ${permission} share sees ${newEmail ? "New email" : "no New email"} and no Edit or Block`, async ({
+		browser,
+	}) => {
+		const { context, page, member } = await openSharedAs(browser, permission);
+		try {
+			const chip = page.getByRole("list", { name: "Participants" }).getByRole("button", { name: /Shared Sender/ });
+			const card = await openCard(page, chip);
+			await expect(card.getByRole("button", { name: "Copy address" })).toBeVisible();
+			await expect(card.getByRole("button", { name: /Search Inbox for mail from/ })).toBeVisible();
+			await expect(card.getByRole("button", { name: "New email" })).toHaveCount(newEmail ? 1 : 0);
+			await expect(card.getByRole("button", { name: /Add to contacts|Edit contact/ })).toHaveCount(0);
+			await expect(card.getByRole("button", { name: "Block contact" })).toHaveCount(0);
+		} finally {
+			await context.close();
+			await member.api.dispose();
+		}
+	});
+}
 
 test("the sender name in the message opens the same card", async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
@@ -159,7 +281,7 @@ test("your own address says You and offers no actions about someone else", async
 	await expect(card.locator("[data-contact-card-address]")).toHaveText(SUPPORT_ADDRESS);
 	await expect(card.getByRole("button", { name: "Copy address" })).toBeVisible();
 	await expect(card.getByRole("button", { name: "New email" })).toHaveCount(0);
-	await expect(card.getByRole("button", { name: /Show all mail from/ })).toHaveCount(0);
+	await expect(card.getByRole("button", { name: /Search Inbox for mail from/ })).toHaveCount(0);
 	await expect(card.getByRole("button", { name: "Block contact" })).toHaveCount(0);
 });
 
@@ -171,7 +293,7 @@ test("on a phone the card fits the screen", async ({ page }) => {
 	expect(box.x).toBeGreaterThanOrEqual(0);
 	expect(box.x + box.width).toBeLessThanOrEqual(390);
 	expect(box.y + box.height).toBeLessThanOrEqual(844);
-	await card.getByRole("button", { name: "Show all mail from Roshni at Cursor" }).click();
+	await card.getByRole("button", { name: "Search Inbox for mail from Roshni at Cursor" }).click();
 	await expect(page).toHaveURL(/\/inbox$/);
 });
 
@@ -190,7 +312,7 @@ if (SHOT_DIR) {
 			// The conversation loads after the header, so the other address shows once it has.
 			await expect(async () => {
 				await chip.hover();
-				await expect(page.getByRole("tooltip")).toContainText("+1 more address", { timeout: 1_500 });
+				await expect(page.getByRole("tooltip")).toContainText("also", { timeout: 1_500 });
 			}).toPass({ timeout: 20_000 });
 			await page.screenshot({
 				path: `${SHOT_DIR}/tooltip-${variant.name}.png`,

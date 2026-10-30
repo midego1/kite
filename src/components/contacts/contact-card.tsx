@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { ContactCardActions, ContactCardHeader } from "./contact-card-content";
 import { createDraftTo } from "./contact-card-api";
 import type { ContactCardProps } from "./contact-card-types";
-import { fromSearchQuery, isOwnAddress, participantTooltip } from "./contact-card-utils";
+import { contactCardAccess, fromSearchQuery, isOwnAddress, participantTooltip } from "./contact-card-utils";
 import { ContactDetailsDialog } from "./contact-details";
 import { fetchContactDetails } from "./contact-details-utils";
 import type { ContactDetailsRecord } from "./contact-details-types";
@@ -39,16 +39,19 @@ export function ContactCard({
 	const router = useRouter();
 	const { openDraftComposer } = useCompose();
 	const { setQuery } = useMailSearch();
-	const { canManage } = useMessageAccess();
+	const { mailboxOf } = useMessageAccess();
 	const [open, setOpen] = useState(false);
 	const [editing, setEditing] = useState(false);
 	const [contact, setContact] = useState<ContactDetailsRecord | null>(null);
 	const [copied, setCopied] = useState(false);
 	const [confirmBlock, setConfirmBlock] = useState(false);
+	const [blocked, setBlocked] = useState(false);
 	const [pending, setPending] = useState<"draft" | "block" | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [shownName, setShownName] = useState(name);
-	const mayManage = canManage(mailboxId);
+	// Mailboxes listed without a permission are the user's own. A mailbox that is not listed grants nothing.
+	const mailbox = mailboxOf(mailboxId);
+	const access = contactCardAccess(mailbox ? (mailbox.permission ?? "full_access") : null);
 
 	// Contact details (saved name, blocked) are read when the card opens, never for the hover.
 	useEffect(() => {
@@ -110,12 +113,12 @@ export function ContactCard({
 	}
 
 	async function block() {
-		if (!mailboxId) return;
+		if (!mailboxId || pending) return;
 		setError(null);
 		setPending("block");
 		try {
 			await blockMessageContact({ mailboxId, senderAddress: email });
-			setContact((current) => (current ? { ...current, blocked: true } : current));
+			setBlocked(true);
 			setConfirmBlock(false);
 		} catch (blockError) {
 			setError(blockError instanceof Error ? blockError.message : "Could not block contact");
@@ -126,6 +129,7 @@ export function ContactCard({
 
 	const hoverLabel = tooltip && !open ? participantTooltip(email, otherAddresses) : null;
 	const isContact = !!contact?.source;
+	const isBlocked = blocked || !!contact?.blocked;
 	const displayName = own ? name : shownName;
 
 	return (
@@ -160,6 +164,8 @@ export function ContactCard({
 							displayName={displayName}
 							own={own}
 							contact={contact}
+							blocked={isBlocked}
+							otherAddresses={otherAddresses}
 							copied={copied}
 							onCopy={() => void copyAddress()}
 						/>
@@ -167,9 +173,10 @@ export function ContactCard({
 							<ContactCardActions
 								email={email}
 								displayName={displayName}
-								canEdit={!!mailboxId && mayManage}
+								canEdit={!!mailboxId && access.canEdit}
+								canSend={access.canSend}
 								isContact={isContact}
-								blocked={!!contact?.blocked}
+								blocked={isBlocked}
 								confirmBlock={confirmBlock}
 								busy={pending !== null}
 								onNewEmail={() => void newEmail()}

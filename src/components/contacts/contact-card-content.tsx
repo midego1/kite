@@ -15,6 +15,8 @@ export function ContactCardHeader({
 	displayName,
 	own,
 	contact,
+	blocked,
+	otherAddresses = [],
 	copied,
 	onCopy,
 }: ContactCardHeaderProps) {
@@ -35,7 +37,7 @@ export function ContactCardHeader({
 							You
 						</span>
 					)}
-					{contact?.blocked && (
+					{blocked && (
 						<span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
 							Blocked
 						</span>
@@ -44,6 +46,11 @@ export function ContactCardHeader({
 				<p data-contact-card-address className="break-all text-xs text-neutral-500">
 					{email}
 				</p>
+				{otherAddresses.length > 0 && (
+					<p data-contact-card-others className="break-all text-xs text-neutral-500">
+						Also {otherAddresses.join(", ")}
+					</p>
+				)}
 			</div>
 			<button
 				type="button"
@@ -63,6 +70,7 @@ export function ContactCardActions({
 	email,
 	displayName,
 	canEdit,
+	canSend,
 	isContact,
 	blocked,
 	confirmBlock,
@@ -75,10 +83,12 @@ export function ContactCardActions({
 	return (
 		<>
 			<hr className="my-1 border-neutral-100" />
-			<button type="button" className={itemClass} disabled={busy} onClick={onNewEmail}>
-				<PenSquare className="h-4 w-4 shrink-0" aria-hidden />
-				New email
-			</button>
+			{canSend && (
+				<button type="button" className={itemClass} disabled={busy} onClick={onNewEmail}>
+					<PenSquare className="h-4 w-4 shrink-0" aria-hidden />
+					New email
+				</button>
+			)}
 			<button type="button" className={itemClass} onClick={onShowMail}>
 				<Search className="h-4 w-4 shrink-0" aria-hidden />
 				<span className="min-w-0 truncate">{showMailFromLabel(displayName, email)}</span>

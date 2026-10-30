@@ -25,6 +25,9 @@ export type ContactCardHeaderProps = {
 	displayName: string;
 	own: boolean;
 	contact: ContactDetailsRecord | null;
+	/** Blocked from this card or by the saved contact, even when the contact failed to load. */
+	blocked: boolean;
+	otherAddresses?: readonly string[];
 	copied: boolean;
 	onCopy: () => void;
 };
@@ -34,6 +37,8 @@ export type ContactCardActionsProps = {
 	displayName: string;
 	/** The user may change contacts of this mailbox (Edit contact, Block contact). */
 	canEdit: boolean;
+	/** The permission on the mailbox allows sending (not read-only), so New email would not be refused. */
+	canSend: boolean;
 	isContact: boolean;
 	blocked: boolean;
 	confirmBlock: boolean;

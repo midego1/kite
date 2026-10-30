@@ -83,8 +83,8 @@ test("client-registry resolves manifest icon names and falls back for an unknown
 
 test("Settings lists Import before Export, and hides Import, not Export, while Mail import is off", () => {
 	const settings = navSectionsFor("settings");
-	const mailbox = settings.find((section) => section.label === "Mailbox");
-	assert.deepEqual(labels(mailbox.items), ["Mailboxes", "Connected accounts", "Import", "Export"]);
+	const data = settings.find((section) => section.label === "Data");
+	assert.deepEqual(labels(data.items), ["Import", "Export"]);
 	assert.deepEqual(
 		hrefs(filterNavSections(settings, "", member, ALL)).filter((href) => /import|export/.test(href)),
 		["/settings/import", "/settings/export"],

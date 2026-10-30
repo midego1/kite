@@ -8,6 +8,7 @@ import { authFetch } from "@/lib/auth/client";
 import { dispatchProfileNameChanged } from "@/lib/profile/name-client";
 import { ProfileAvatarForm } from "./profile-avatar-form";
 import type { ProfileFormProps, ProfileFormResponse } from "./types";
+import { FormFooter, SettingsCardSection } from "@/components/ui/page";
 
 export function ProfileForm({ initialName, initialResetEmail, email }: ProfileFormProps) {
 	const [name, setName] = useState(initialName);
@@ -74,69 +75,49 @@ export function ProfileForm({ initialName, initialResetEmail, email }: ProfileFo
 
 	return (
 		<>
-			<form onSubmit={onProfileSubmit} className="space-y-6 p-5">
-				<div className="flex items-center gap-4">
-					<ProfileAvatarForm name={name} colorSeed={email} />
-					<div>
-						<p className="text-sm font-medium text-neutral-900">Profile picture</p>
-						<p className="mt-1 text-sm text-neutral-500">Choose a picture to show across your account.</p>
+			<SettingsCardSection title="Profile" description={`Signed in as ${email}.`}>
+				<form onSubmit={onProfileSubmit} className="space-y-4">
+					<div className="flex items-start gap-4">
+						<ProfileAvatarForm name={name} colorSeed={email} />
+						<div className="min-w-0 flex-1 space-y-2">
+							<Label htmlFor="name">Name</Label>
+							<Input
+								id="name"
+								autoComplete="name"
+								value={name}
+								onChange={(event) => setName(event.target.value)}
+								required
+							/>
+						</div>
 					</div>
-				</div>
+					<FormFooter status={profileStatus}>
+						<Button type="submit" disabled={savingProfile || name.trim() === savedName}>
+							{savingProfile ? "Saving..." : "Save profile"}
+						</Button>
+					</FormFooter>
+				</form>
+			</SettingsCardSection>
 
-				<div className="space-y-2">
-					<Label htmlFor="name">Name</Label>
-					<Input
-						id="name"
-						autoComplete="name"
-						value={name}
-						onChange={(event) => setName(event.target.value)}
-						required
-					/>
-				</div>
-				<div className="space-y-2">
-					<Label htmlFor="accountEmail">Current email</Label>
-					<Input
-						id="accountEmail"
-						autoComplete="email"
-						value={email}
-						type="email"
-						readOnly
-						aria-readonly="true"
-						className="bg-neutral-50"
-					/>
-				</div>
-
-				<div className="flex items-center gap-3">
-					<Button type="submit" disabled={savingProfile || name.trim() === savedName}>
-						{savingProfile ? "Saving..." : "Save profile"}
-					</Button>
-					{profileStatus && <p className="text-sm text-neutral-500">{profileStatus}</p>}
-				</div>
-			</form>
-
-			<form onSubmit={onRecoverySubmit} className="space-y-4 p-5">
-				<div>
-					<h3 className="text-sm font-semibold text-neutral-900">Recovery email</h3>
-					<p className="mt-1 text-sm text-neutral-500">Used to recover access if you cannot sign in.</p>
-				</div>
-				<div className="space-y-2">
-					<Label htmlFor="resetEmail">Email address</Label>
-					<Input
-						id="resetEmail"
-						autoComplete="email"
-						value={resetEmail}
-						onChange={(event) => setResetEmail(event.target.value)}
-						type="email"
-						placeholder="recovery@example.com"
-					/>
-				</div>
-				<div className="flex items-center gap-3">
-					<Button type="submit" disabled={savingRecovery || resetEmail.trim() === savedResetEmail}>
-						{savingRecovery ? "Saving..." : "Save recovery email"}
-					</Button>
-					{recoveryStatus && <p className="text-sm text-neutral-500">{recoveryStatus}</p>}
-				</div>
-			</form>
+			<SettingsCardSection title="Recovery email" description="Used to recover access if you cannot sign in.">
+				<form onSubmit={onRecoverySubmit} className="space-y-4">
+					<div className="space-y-2">
+						<Label htmlFor="resetEmail">Email address</Label>
+						<Input
+							id="resetEmail"
+							autoComplete="email"
+							value={resetEmail}
+							onChange={(event) => setResetEmail(event.target.value)}
+							type="email"
+							placeholder="recovery@example.com"
+						/>
+					</div>
+					<FormFooter status={recoveryStatus}>
+						<Button type="submit" disabled={savingRecovery || resetEmail.trim() === savedResetEmail}>
+							{savingRecovery ? "Saving..." : "Save recovery email"}
+						</Button>
+					</FormFooter>
+				</form>
+			</SettingsCardSection>
 		</>
 	);
 }

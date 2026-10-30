@@ -5,7 +5,7 @@ import { authFetch } from "@/lib/auth/client";
 import { TRASH_RETENTION_OPTIONS, describeTrashRetention } from "@/lib/email/trash-retention-utils";
 import type { TrashRetentionSettingsResponse } from "@/app/api/settings/trash-retention/types";
 import { Select } from "@/components/ui/select";
-import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
+import { FormError, SettingRow } from "@/components/ui/page";
 
 export function TrashRetentionSettings() {
 	const [days, setDays] = useState<number | null>(null);
@@ -56,15 +56,10 @@ export function TrashRetentionSettings() {
 			: [...TRASH_RETENTION_OPTIONS];
 
 	return (
-		<div>
-			<label className={SETTING_ROW_CLASS}>
-				<span className="flex-1">
-					<span className="block text-sm font-medium text-neutral-900">Auto-delete Trash and Spam</span>
-					<span className="mt-1 block text-sm text-neutral-500">
-						Permanently delete messages once they have been in Trash or Spam for this long. Applies to the mailboxes you
-						own.
-					</span>
-				</span>
+		<SettingRow
+			label="Auto-delete Trash and Spam"
+			description="Permanently delete messages once they have been in Trash or Spam for this long. Applies to the mailboxes you own."
+			control={
 				<Select
 					value={days ?? ""}
 					disabled={loading}
@@ -80,12 +75,9 @@ export function TrashRetentionSettings() {
 						</option>
 					))}
 				</Select>
-			</label>
-			{error && (
-				<p role="alert" className="mt-2 px-4 text-sm text-red-600">
-					{error}
-				</p>
-			)}
-		</div>
+			}
+		>
+			{error && <FormError className="mt-2 px-4">{error}</FormError>}
+		</SettingRow>
 	);
 }

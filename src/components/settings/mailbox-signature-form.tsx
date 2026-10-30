@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { updateMailboxSignature } from "./utils";
+import { FieldHint, FormFooter } from "@/components/ui/page";
 
 export function MailboxSignatureForm() {
 	const { selectedMailbox, setSelectedMailbox, isLoading } = useSelectedMailbox();
@@ -59,10 +60,7 @@ export function MailboxSignatureForm() {
 					rows={6}
 					disabled={!canManage || saving}
 				/>
-				<p className="text-xs leading-5 text-neutral-500">
-					This signature is added when composing from the selected inbox. Plain text or HTML is supported; HTML is
-					sanitized.
-				</p>
+				<FieldHint>Plain text or HTML; HTML is sanitized.</FieldHint>
 			</div>
 			{isHtmlSignature(signature) && (
 				<div className="space-y-2">
@@ -73,17 +71,11 @@ export function MailboxSignatureForm() {
 					/>
 				</div>
 			)}
-			<div className="flex items-center gap-3">
+			<FormFooter status={status} note={canManage ? null : "Full access is required to edit this signature."}>
 				<Button type="submit" disabled={!canManage || saving || signature.trim() === savedSignature}>
 					{saving ? "Saving..." : "Save signature"}
 				</Button>
-				{!canManage && <p className="text-sm text-neutral-500">Full access is required to edit this signature.</p>}
-				{status && (
-					<p role="status" className="text-sm text-neutral-500">
-						{status}
-					</p>
-				)}
-			</div>
+			</FormFooter>
 		</form>
 	);
 }

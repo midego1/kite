@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useShortcuts } from "@/components/shortcuts";
 import { Switch } from "@/components/ui/switch";
-import { SETTING_ROW_CLASS } from "@/components/ui/page-utils";
+import { FormError, SettingRow } from "@/components/ui/page";
 
 export function InboxShortcutsSettings() {
 	const { shortcutsEnabled, shortcutsPreferenceLoading, shortcutsPreferenceError, setShortcutsEnabled } =
@@ -12,14 +12,10 @@ export function InboxShortcutsSettings() {
 	const [saveError, setSaveError] = useState<string | null>(null);
 
 	return (
-		<div>
-			<label className={SETTING_ROW_CLASS}>
-				<span className="flex-1">
-					<span className="block text-sm font-medium text-neutral-900">Keyboard shortcuts</span>
-					<span className="mt-1 block text-sm text-neutral-500">
-						Use quick keys to navigate, compose, and manage messages on this account.
-					</span>
-				</span>
+		<SettingRow
+			label="Keyboard shortcuts"
+			description="Use quick keys to navigate, compose, and manage messages on this account."
+			control={
 				<Switch
 					checked={shortcutsEnabled}
 					disabled={shortcutsPreferenceLoading || saving}
@@ -34,12 +30,11 @@ export function InboxShortcutsSettings() {
 					}}
 					aria-label="Enable keyboard shortcuts"
 				/>
-			</label>
+			}
+		>
 			{(saveError || shortcutsPreferenceError) && (
-				<p role="alert" className="mt-2 px-4 text-sm text-red-600">
-					{saveError || shortcutsPreferenceError}
-				</p>
+				<FormError className="mt-2 px-4">{saveError || shortcutsPreferenceError}</FormError>
 			)}
-		</div>
+		</SettingRow>
 	);
 }

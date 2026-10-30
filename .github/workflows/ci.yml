@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    # labeled so adding boat-ci starts a run on Boat; every job skips any other label.
+    # labeled so adding boat-ci starts a run on Boat, and adding no-changelog reruns Release version;
+    # every other job skips any label but boat-ci.
     types: [opened, synchronize, reopened, labeled]
   # Dispatched on release/next by release-pr.yml, whose GITHUB_TOKEN push starts no run (docs/releasing.md).
   workflow_dispatch:
@@ -23,7 +24,7 @@ jobs:
     # never conflict on VERSION or CHANGELOG.md; release/* branches must be a complete release
     # (docs/releasing.md). The check uses only Node built-ins: no npm ci.
     name: Release version
-    if: github.event_name == 'pull_request' && (github.event.action != 'labeled' || github.event.label.name == 'boat-ci')
+    if: github.event_name == 'pull_request' && (github.event.action != 'labeled' || github.event.label.name == 'boat-ci' || github.event.label.name == 'no-changelog')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

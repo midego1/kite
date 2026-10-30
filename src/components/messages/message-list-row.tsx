@@ -201,10 +201,7 @@ function StackedMessageRow(props: RowViewProps) {
 							unread={row.unread}
 							threadCount={message.threadCount}
 							suggestions={message.agentSuggestions}
-							className={clsx(
-								"reading-font min-w-0 truncate text-sm",
-								getMessagePartyClassName(row.rowMessage, config.folder),
-							)}
+							className={clsx("min-w-0 truncate text-sm", getMessagePartyClassName(row.rowMessage, config.folder))}
 							countClassName="font-normal"
 						/>
 						<span
@@ -287,7 +284,7 @@ function WideMessageRow(props: RowViewProps) {
 					unread={row.unread}
 					threadCount={message.threadCount}
 					suggestions={message.agentSuggestions}
-					className={clsx("reading-font", getMessagePartyClassName(row.rowMessage, config.folder))}
+					className={getMessagePartyClassName(row.rowMessage, config.folder)}
 					countClassName=""
 				/>
 				<UnreadDot unread={row.unread} />
@@ -295,7 +292,7 @@ function WideMessageRow(props: RowViewProps) {
 			<span className="flex min-w-0 items-center gap-2 text-neutral-700">
 				{/* The overlay stretches the link over the whole row, so a click anywhere opens the message
 				while the row has one keyboard stop; the checkbox, star and hover actions sit above it. */}
-				<span className="reading-font min-w-[4.5rem] flex-1 truncate">
+				<span className="min-w-[4.5rem] flex-1 truncate">
 					<ScreenerRowControls message={row.rowMessage} />
 					<Link
 						href={row.href}
@@ -304,10 +301,10 @@ function WideMessageRow(props: RowViewProps) {
 						aria-current={active ? "true" : undefined}
 						className="after:absolute after:inset-0 focus-visible:outline-none"
 					>
-						<span dir="auto" className={row.unread ? "font-medium text-neutral-900" : ""}>
+						<span dir="auto" className={clsx("reading-font", row.unread && "font-medium text-neutral-900")}>
 							{row.rowMessage.subject ?? "(no subject)"}
 						</span>
-						<span dir="auto" className="text-neutral-500">
+						<span dir="auto" className="reading-font text-neutral-500">
 							{" "}
 							- <MessageRowPreview preview={row.preview} line={row.line} />
 						</span>

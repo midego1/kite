@@ -12,6 +12,7 @@ const FONT = "Dyslexia-friendly (OpenDyslexic)";
 const DEFAULT_FONT = "Match style";
 let htmlSubject: string;
 let textSubject: string;
+let threadSubject: string;
 
 test.beforeAll(async () => {
 	const api = await apiContext(STORAGE_STATE);
@@ -30,6 +31,23 @@ test.beforeAll(async () => {
 		to: SUPPORT_ADDRESS,
 		subject: textSubject,
 		text: "Plain text body.",
+	});
+	// A two-message thread: in conversation view its row carries a "[2]" count, which is interface, not text.
+	threadSubject = `Thread mail ${token}`;
+	const rootId = `<${token}-root@outside.test>`;
+	await deliverInbound(api, {
+		from: `"Font Sender" <fonts@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: threadSubject,
+		text: "First message.",
+		messageId: rootId,
+	});
+	await deliverInbound(api, {
+		from: `"Font Sender" <fonts@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: `Re: ${threadSubject}`,
+		text: "Second message.",
+		inReplyTo: rootId,
 	});
 	await api.dispose();
 });
@@ -162,19 +180,28 @@ async function scopeProbe(page: Page) {
 	await page.goto("/inbox");
 	const row = page.locator("[data-message-row]", { hasText: textSubject }).first();
 	await expect(row).toBeVisible();
+	const threadRow = page.locator("[data-message-row]", { hasText: threadSubject }).first();
+	await expect(threadRow).toBeVisible();
 	const probe = {
 		listSubject: await row.getByText(textSubject).first().evaluate(computedFont),
 		listSender: await row.getByText("Font Sender").first().evaluate(computedFont),
 		sidebar: await page.locator("aside nav a").first().evaluate(computedFont),
 		button: await page.getByRole("button", { name: "Compose" }).evaluate(computedFont),
+		// The thread count in a list row sits next to the sender but is interface.
+		threadCount: await threadRow
+			.getByText(/\[\s*2\s*\]/)
+			.first()
+			.evaluate(computedFont),
+		threadSender: await threadRow.getByText("Font Sender").first().evaluate(computedFont),
 	};
 	await page.getByRole("button", { name: "Compose" }).click();
 	const body = page.getByRole("textbox", { name: "Message body" });
 	await expect(body).toBeVisible();
 	const composer = await body.evaluate(computedFont);
+	const subjectField = await page.locator('input[placeholder="Subject"]:visible').evaluate(computedFont);
 	await page.getByRole("button", { name: "Close composer" }).click();
 	await openMessage(page, textSubject);
-	return { ...probe, composer, reader: await page.locator("main pre").first().evaluate(computedFont) };
+	return { ...probe, composer, subjectField, reader: await page.locator("main pre").first().evaluate(computedFont) };
 }
 
 function computedFont(element: Element) {
@@ -184,6 +211,7 @@ function computedFont(element: Element) {
 test("Text only keeps the interface in its own font; Everywhere sets it in OpenDyslexic too", async ({
 	page,
 }, testInfo) => {
+	await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "on"));
 	await page.goto("/settings/appearance");
 	const font = page.getByRole("combobox", { name: "Font", exact: true });
 	// The scope choice is only offered with the dyslexia-friendly font.
@@ -194,9 +222,10 @@ test("Text only keeps the interface in its own font; Everywhere sets it in OpenD
 	expect((await readOptions(scope)).map((option) => option.label)).toEqual(["Text only (recommended)", "Everywhere"]);
 
 	const textOnly = await scopeProbe(page);
-	for (const reading of ["listSubject", "listSender", "composer", "reader"] as const)
+	for (const reading of ["listSubject", "listSender", "threadSender", "composer", "subjectField", "reader"] as const)
 		expect(textOnly[reading], reading).toContain("OpenDyslexic");
-	for (const chrome of ["sidebar", "button"] as const) expect(textOnly[chrome], chrome).not.toContain("OpenDyslexic");
+	for (const chrome of ["sidebar", "button", "threadCount"] as const)
+		expect(textOnly[chrome], chrome).not.toContain("OpenDyslexic");
 	await page.screenshot({ path: testInfo.outputPath("text-only.png") });
 
 	await page.goto("/settings/appearance");

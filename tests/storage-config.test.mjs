@@ -167,7 +167,7 @@ test("the store form is parsed into a location, with preset and endpoint default
 		[{ ...storeForm, bucket: "Kite_Archive" }, /path-style/],
 		[{ ...storeForm, sameAsBinding: true }, /R2/],
 		[{ ...storeForm, secretAccessKey: "" }, /access key/],
-		[{ ...storeForm, accessKeyId: "AKIA WITH SPACE" }, /key pair/],
+		[{ ...storeForm, accessKeyId: "AKIA WITH SPACE" }, /access key ID contains a space or line break/],
 	];
 	for (const [input, error] of refusals) {
 		const result = pure.parseStoreInput(input);

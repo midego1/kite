@@ -1,8 +1,8 @@
 import { authFetch } from "@/lib/auth/client";
 import { formatDriveSize } from "@/lib/drive/name-utils";
 import { presetFor } from "@/lib/storage/s3-presets-utils";
-import type { RoutableClass, S3Provider } from "@/lib/storage/types";
-import type { MigrationView, StorageFailure, StorageOverview, StoreForm, StoreView } from "./types";
+import type { RoutableClass } from "@/lib/storage/types";
+import type { MigrationView, StorageFailure, StorageOverview, StoreView } from "./types";
 
 export const STORAGE_QUERY_KEY = ["admin-storage"];
 
@@ -35,6 +35,7 @@ export async function storageRequest<T>(path: string, init?: RequestInit & { jso
 		throw new StorageRequestError(data.error ?? `Request failed (${response.status})`, {
 			report: data.report,
 			steps: data.steps,
+			field: data.field,
 		});
 	return data;
 }
@@ -121,64 +122,4 @@ export function migrationProgress(migration: MigrationView): string {
 	const objects = total ? `${done} of ${total.toLocaleString()} objects` : `${done} objects`;
 	const errors = migration.errors ? `, ${migration.errors.toLocaleString()} errors` : "";
 	return `${objects}, ${formatDriveSize(migration.bytesDone)}${errors}`;
-}
-
-export function emptyStoreForm(provider: S3Provider = "aws", sameAsBinding = false): StoreForm {
-	return {
-		name: sameAsBinding ? "Cloudflare R2 direct uploads" : "",
-		provider,
-		endpoint: "",
-		region: presetFor(provider)?.region ?? "",
-		bucket: sameAsBinding ? "kite-raw" : "",
-		addressing: presetFor(provider)?.addressing ?? "path",
-		accessKeyId: "",
-		secretAccessKey: "",
-		sameAsBinding,
-	};
-}
-
-export function storeFormOf(store: StoreView): StoreForm {
-	return {
-		name: store.name,
-		provider: store.provider as S3Provider,
-		endpoint: store.endpoint,
-		region: store.region,
-		bucket: store.bucket,
-		addressing: store.addressing === "virtual" ? "virtual" : "path",
-		accessKeyId: "",
-		secretAccessKey: "",
-		sameAsBinding: store.sameAsBinding,
-	};
-}
-
-/** Picking a provider fills its addressing and fixed region, and its endpoint when it follows from the region. */
-export function withProvider(form: StoreForm, provider: S3Provider): StoreForm {
-	const preset = presetFor(provider);
-	const region = preset?.region ?? (presetFor(form.provider)?.region ? "" : form.region);
-	return { ...form, provider, region, addressing: preset?.addressing ?? form.addressing };
-}
-
-export function endpointHint(form: StoreForm): string {
-	const preset = presetFor(form.provider);
-	if (form.provider === "r2") return "https://<account id>.r2.cloudflarestorage.com";
-	if (preset?.endpoint) return `https://${preset.endpoint({ region: form.region || "<region>" })}`;
-	return "https://s3.example.com";
-}
-
-/** The request body; on an edit, an empty key pair keeps the saved one. */
-export function storeFormBody(form: StoreForm, editing: boolean): Record<string, unknown> {
-	const body: Record<string, unknown> = {
-		name: form.name,
-		provider: form.provider,
-		endpoint: form.endpoint,
-		region: form.region,
-		bucket: form.bucket,
-		addressing: form.addressing,
-	};
-	if (!editing) body.sameAsBinding = form.sameAsBinding;
-	if (!editing || form.accessKeyId || form.secretAccessKey) {
-		body.accessKeyId = form.accessKeyId;
-		body.secretAccessKey = form.secretAccessKey;
-	}
-	return body;
 }

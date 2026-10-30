@@ -81,9 +81,11 @@ test("a wrong secret answers 422 with the failing step and its fix, and nothing 
 	const result = await stores.createStore(env, actor, form({ secretAccessKey: "not-the-right-secret" }), APP_ORIGIN);
 	assert.equal(result.ok, false);
 	assert.equal(result.status, 422);
-	const bucket = step(result.report, "bucket");
-	assert.equal(bucket.status, "failed");
-	assert.match(`${bucket.detail} ${bucket.fix ?? ""}`, /secret|signature/i);
+	assert.equal(step(result.report, "endpoint").status, "ok", "the endpoint answered");
+	const credentials = step(result.report, "credentials");
+	assert.equal(credentials.status, "failed");
+	assert.match(`${credentials.detail} ${credentials.fix ?? ""}`, /secret|signature/i);
+	assert.equal(step(result.report, "bucket").status, "skipped");
 	assert.equal(step(result.report, "write").status, "skipped");
 	assert.equal(rows(env).length, 0);
 });

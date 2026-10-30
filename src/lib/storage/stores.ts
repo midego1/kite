@@ -35,7 +35,15 @@ import { validateStore, validateStoreCors } from "./validate";
 
 export type StoresEnv = CloudflareEnv;
 export type Actor = { id: string };
-export type Failure = { ok: false; status: number; error: string; report?: ValidationReport; steps?: ValidationStep[] };
+export type Failure = {
+	ok: false;
+	status: number;
+	error: string;
+	report?: ValidationReport;
+	steps?: ValidationStep[];
+	/** The form field a 400 is about, so the dialog shows the message under it. */
+	field?: string;
+};
 export type Result<T> = ({ ok: true } & T) | Failure;
 
 export const fail = (status: number, error: string, extra: Partial<Failure> = {}): Failure => ({
@@ -208,7 +216,7 @@ export async function createStore(
 ): Promise<Result<{ store: StoreView; report: ValidationReport }>> {
 	if (!env.APP_ENCRYPTION_KEY?.trim()) return fail(409, ENCRYPTION_REQUIRED);
 	const parsed = parseStoreInput(raw);
-	if (!parsed.ok) return fail(400, parsed.error);
+	if (!parsed.ok) return fail(400, parsed.error, parsed.field ? { field: parsed.field } : {});
 	const input = parsed.value;
 	if (!input.credentials) return fail(400, "Enter the access key ID and the secret");
 	if (input.sameAsBinding && !(await onlyOneBindingKeyPair(env, null)))
@@ -247,7 +255,7 @@ export async function createStore(
 	return { ok: true, store: await storeView(env, config, store!), report };
 }
 
-function auditMetadata(id: string, input: Pick<StoreInput, "provider" | "location" | "sameAsBinding">) {
+function auditMetadata(id: string | null, input: Pick<StoreInput, "provider" | "location" | "sameAsBinding">) {
 	return {
 		storeId: id,
 		provider: input.provider,
@@ -270,7 +278,7 @@ export async function updateStore(
 	const { store: existing } = await loadStore(env, id);
 	if (!existing) return fail(404, "Store not found");
 	const parsed = parseStoreInput(raw, existing);
-	if (!parsed.ok) return fail(400, parsed.error);
+	if (!parsed.ok) return fail(400, parsed.error, parsed.field ? { field: parsed.field } : {});
 	const input = parsed.value;
 	if (input.sameAsBinding !== existing.sameAsBinding)
 		return fail(409, "Add a new store instead of changing what this one is for");
@@ -366,6 +374,46 @@ export async function testStore(
 	}
 	const report = await validateStore(env, candidate, requestOrigin);
 	await recordCheck(env, store, report);
+	return { ok: true, report };
+}
+
+function storeIdOf(raw: unknown): string | null {
+	const id = raw && typeof raw === "object" ? (raw as { storeId?: unknown }).storeId : undefined;
+	return typeof id === "string" && id ? id : null;
+}
+
+/**
+ * Test connection: the checklist on the form as typed, without saving anything (spec 4.5). On an edit
+ * (`storeId`), a blank key pair uses the saved one. The audit row names the store's location and outcome, never
+ * a credential.
+ */
+export async function testStoreInput(
+	env: StoresEnv,
+	actor: Actor,
+	raw: unknown,
+	requestOrigin: string,
+): Promise<Result<{ report: ValidationReport }>> {
+	const storeId = storeIdOf(raw);
+	const existing = storeId ? (await loadStore(env, storeId)).store : null;
+	if (storeId && !existing) return fail(404, "Store not found");
+	const parsed = parseStoreInput(raw, existing);
+	if (!parsed.ok) return fail(400, parsed.error, parsed.field ? { field: parsed.field } : {});
+	const input = parsed.value;
+	let credentials = input.credentials;
+	if (!credentials && existing) {
+		try {
+			credentials = await openStoreCredentials(env, existing);
+		} catch {
+			return fail(409, "The saved credentials cannot be opened; enter the key pair again");
+		}
+	}
+	if (!credentials) return fail(400, "Enter the access key ID and the secret");
+	const report = await validateStore(env, { ...input, credentials }, requestOrigin);
+	await createAuditLog(env, {
+		actorUserId: actor.id,
+		action: "storage.store_tested",
+		metadata: { ...auditMetadata(storeId, input), ok: report.ok, cors: report.cors },
+	});
 	return { ok: true, report };
 }
 

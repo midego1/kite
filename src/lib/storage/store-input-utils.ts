@@ -1,4 +1,5 @@
 import type { StoreRecord } from "./config-utils";
+import { credentialProblem, type CredentialField } from "./credential-utils";
 import {
 	isS3Provider,
 	isValidBucketName,
@@ -19,20 +20,25 @@ export type StoreInput = {
 	sameAsBinding: boolean;
 };
 
-export type StoreInputResult = { ok: true; value: StoreInput } | { ok: false; error: string };
+export type StoreInputResult = { ok: true; value: StoreInput } | { ok: false; error: string; field?: CredentialField };
 
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
 function parseCredentialsInput(
 	body: Record<string, unknown>,
+	provider: S3Provider,
 	existing: StoreRecord | null,
-): S3Credentials | null | { error: string } {
+): S3Credentials | null | { error: string; field: CredentialField } {
 	const accessKeyId = text(body.accessKeyId);
 	const secretAccessKey = text(body.secretAccessKey);
 	if (!accessKeyId && !secretAccessKey && existing) return null;
-	if (!accessKeyId || !secretAccessKey) return { error: "Enter the access key ID and the secret" };
-	if (accessKeyId.length > 256 || secretAccessKey.length > 256 || /\s/.test(accessKeyId + secretAccessKey))
-		return { error: "That does not look like an access key pair" };
+	for (const [field, value] of [
+		["accessKeyId", accessKeyId],
+		["secretAccessKey", secretAccessKey],
+	] as const) {
+		const problem = credentialProblem(field, value, provider);
+		if (problem) return { error: problem, field };
+	}
 	return { accessKeyId, secretAccessKey };
 }
 
@@ -81,8 +87,8 @@ export function parseStoreInput(raw: unknown, existing: StoreRecord | null = nul
 	const sameAsBinding = body.sameAsBinding === undefined ? !!existing?.sameAsBinding : body.sameAsBinding === true;
 	if (sameAsBinding && provider !== "r2")
 		return { ok: false, error: "Direct uploads for the default store need R2 S3 API keys" };
-	const credentials = parseCredentialsInput(body, existing);
-	if (credentials && "error" in credentials) return { ok: false, error: credentials.error };
+	const credentials = parseCredentialsInput(body, provider, existing);
+	if (credentials && "error" in credentials) return { ok: false, ...credentials };
 	return { ok: true, value: { name, provider, location, credentials, sameAsBinding } };
 }
 

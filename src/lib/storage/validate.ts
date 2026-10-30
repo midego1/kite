@@ -5,6 +5,7 @@ import { S3Bucket } from "./s3-bucket";
 import { presetFor } from "./s3-presets-utils";
 import type { KiteBucket, S3Credentials, S3Location, S3Provider } from "./types";
 import {
+	bucketFailureStep,
 	corsFix,
 	describeFailure,
 	preflightProblem,
@@ -13,6 +14,7 @@ import {
 	uploadResponseProblem,
 	type ValidationReport,
 	type ValidationStep,
+	type HintContext,
 	type ValidationStepId,
 } from "./validate-utils";
 
@@ -30,12 +32,19 @@ function failureOf(error: unknown) {
 class Steps {
 	readonly list: ValidationStep[] = [];
 
+	constructor(private readonly context?: HintContext) {}
+
 	ok(id: ValidationStepId, detail?: string) {
 		this.list.push({ id, label: STEP_LABELS[id], status: "ok", ...(detail ? { detail } : {}) });
 	}
 
 	failed(id: ValidationStepId, error: unknown) {
-		this.list.push({ id, label: STEP_LABELS[id], status: "failed", ...describeFailure(id, failureOf(error)) });
+		this.list.push({
+			id,
+			label: STEP_LABELS[id],
+			status: "failed",
+			...describeFailure(id, failureOf(error), this.context),
+		});
 	}
 
 	problem(id: ValidationStepId, detail: string, fix?: string) {
@@ -66,6 +75,7 @@ class Steps {
 const AFTER_BUCKET: ValidationStepId[] = [
 	"write",
 	"read",
+	"list",
 	"presign",
 	"delete",
 	"multipart",
@@ -91,6 +101,23 @@ async function checkBucket(bucket: S3Bucket): Promise<void> {
 	}
 }
 
+/** One bucket request answers three steps: whether the endpoint answers, the key is accepted and the bucket is usable. */
+async function reachBucket(steps: Steps, bucket: S3Bucket): Promise<boolean> {
+	try {
+		await checkBucket(bucket);
+	} catch (error) {
+		const at = bucketFailureStep(failureOf(error));
+		if (at !== "endpoint") steps.ok("endpoint");
+		if (at === "bucket") steps.ok("credentials");
+		steps.failed(at, error);
+		return false;
+	}
+	steps.ok("endpoint");
+	steps.ok("credentials");
+	steps.ok("bucket");
+	return true;
+}
+
 async function checkObjects(steps: Steps, bucket: S3Bucket): Promise<void> {
 	let probe: string;
 	try {
@@ -101,6 +128,9 @@ async function checkObjects(steps: Steps, bucket: S3Bucket): Promise<void> {
 		steps.failed(error instanceof StorageTestError ? error.step : "write", error);
 		return;
 	}
+	await steps.run("list", async () => {
+		await bucket.list({ prefix: "healthcheck/", limit: 1 });
+	});
 	await steps.run("presign", async () => {
 		const url = await bucket.signer.presignGet(probe, {
 			expiresIn: PROBE_SECONDS,
@@ -185,18 +215,17 @@ export async function validateStore(
 	candidate: StoreCandidate,
 	appOrigin: string,
 ): Promise<ValidationReport> {
-	const steps = new Steps();
+	const steps = new Steps({ provider: candidate.provider, bucket: candidate.location.bucket });
 	try {
 		await assertStoreEndpoint(env, candidate.location);
-		steps.ok("endpoint");
 	} catch (error) {
 		steps.problem("endpoint", error instanceof Error ? error.message : "The endpoint is not allowed");
-		steps.skip("bucket", ...AFTER_BUCKET);
+		steps.skip("credentials", "bucket", ...AFTER_BUCKET);
 		return reportFrom(steps.list);
 	}
 	const bucket = new S3Bucket({ ...candidate.location, ...candidate.credentials });
-	if (!(await steps.run("bucket", () => checkBucket(bucket)))) {
-		steps.skip(...AFTER_BUCKET);
+	if (!(await reachBucket(steps, bucket))) {
+		steps.skip("endpoint", "credentials", "bucket", ...AFTER_BUCKET);
 		return reportFrom(steps.list);
 	}
 	await checkObjects(steps, bucket);
@@ -217,7 +246,7 @@ export async function validateStoreCors(
 	candidate: StoreCandidate,
 	appOrigin: string,
 ): Promise<{ ok: boolean; steps: ValidationStep[] }> {
-	const steps = new Steps();
+	const steps = new Steps({ provider: candidate.provider, bucket: candidate.location.bucket });
 	await checkCors(
 		steps,
 		new S3Bucket({ ...candidate.location, ...candidate.credentials }),

@@ -6,6 +6,7 @@ import { Notice } from "@/components/ui/notice";
 import { authFetch } from "@/lib/auth/client";
 
 type Overview = {
+	directUploadsReminder?: { show?: boolean };
 	defaultStore?: { kind?: string; directUploads?: boolean };
 	routes?: { objectClass: string; storeId: string }[];
 	migrationPending?: boolean;
@@ -16,6 +17,7 @@ function wantsDirectUploads(overview: Overview): boolean {
 	const drive = overview.routes?.find((route) => route.objectClass === "drive");
 	return (
 		!overview.migrationPending &&
+		overview.directUploadsReminder?.show !== false &&
 		overview.defaultStore?.kind === "r2" &&
 		overview.defaultStore.directUploads === false &&
 		(!drive || drive.storeId === "default")

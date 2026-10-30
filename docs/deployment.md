@@ -6,9 +6,9 @@ This guide covers Cloudflare deployment, runtime configuration, database backups
 
 Set up Kite in four steps:
 
-1. **Create `CF_TOKEN`:** a Cloudflare API token Kite uses at runtime to manage DNS and Email Routing for your domains.
+1. **Create `CF_TOKEN`:** a Cloudflare API token Kite uses at runtime to manage DNS and Email Routing for your domains, and once, at setup, to turn on direct Drive uploads to R2.
 2. **Deploy the app:** use the Deploy to Cloudflare button and keep the app name `kite`.
-3. **Complete setup:** open `/setup` on the deployed app to check the installation and create the first admin account.
+3. **Complete setup:** open `/setup` on the deployed app to check the installation and create the first admin account. This also turns on fast Drive uploads (direct to R2).
 4. **Connect your domain:** add a domain managed by the same Cloudflare account and choose which service receives its mail. Kite configures Email Routing and, when selected, Email Sending, then helps you create the first mailbox. Resend and Amazon SES are alternatives to Cloudflare for receiving and sending; see [Sending and receiving providers](providers.md).
 
 ### Everything you have to provide
@@ -16,7 +16,7 @@ Set up Kite in four steps:
 | Setting | Where | When | Notes |
 | --- | --- | --- | --- |
 | App (Worker) name `kite` | Deploy button's name field | Deploy | Must stay exactly `kite`. Email Routing rules and the Worker's binding to itself use that name, so a different name breaks receiving mail. The setup page warns when a `workers.dev` address does not start with `kite`. |
-| `CF_TOKEN` (secret) | Deploy button | Deploy | Account API token, see step 1. Setup makes a live call to Cloudflare and shows a red error if the token is rejected. |
+| `CF_TOKEN` (secret) | Deploy button | Deploy | Account API token, see step 1. Setup makes a live call to Cloudflare and shows a red error if the token is rejected. With the R2 and API-token permissions it also turns on direct Drive uploads. |
 | `SETUP_TOKEN` (secret) | Deploy button | Deploy | A long random string, at least 16 characters, not the example value. Opens `/setup`. |
 | `APP_ENCRYPTION_KEY` (secret) | Deploy button | Deploy | A long random string, at least 16 characters, not the example value. First-run setup in production stops until you replace the example. |
 | `APP_URL` (variable) | Worker **Settings → Variables and secrets** | After the first deploy | The public HTTPS address, for example `https://kite.<your-subdomain>.workers.dev`. The setup page shows the exact value. Needed for password reset emails and for receiving through Resend or Amazon SES. |
@@ -38,7 +38,8 @@ Cloudflare does not pass its own deployment token to the app, so Kite needs a se
    - **DNS & Zones → Zone Settings: Edit**
    - **Email & Messaging → Email Routing Rules: Edit**
 3. If Kite will send mail through Cloudflare, add a policy for the account with **Email & Messaging → Email Sending: Edit**.
-4. Create the token and copy its secret. You need it in step 2.
+4. For fast Drive uploads, which setup turns on by default, add to the account policy **Storage & databases → Workers R2 Storage: Edit** and **Account → Account API Tokens: Edit**. See [Direct uploads at setup](#direct-uploads-at-setup) for what Kite does with them and how to take the second one away afterwards.
+5. Create the token and copy its secret. You need it in step 2.
 
 Copy-paste checklist for the token:
 
@@ -46,6 +47,7 @@ Copy-paste checklist for the token:
 - [ ] Zone resources include every domain you will connect (or **All zones**).
 - [ ] Zone permissions: **DNS: Edit**, **Zone: Read**, **Zone Settings: Edit**, **Email Routing Rules: Edit**.
 - [ ] Account permission **Email Sending: Edit**, if Cloudflare will send mail.
+- [ ] Account permissions **Workers R2 Storage: Edit** and **Account API Tokens: Edit**, for direct uploads (you may remove the second after setup).
 - [ ] You copied the secret shown once at the end, not the token ID, and did not add `Bearer`.
 
 Sending through Cloudflare also needs a Workers paid plan and the domain on-boarded under **Compute → Email Service → Email Sending**. After setup, expand the domain under **Admin → Domains** to configure DKIM and DMARC.
@@ -80,6 +82,19 @@ If you installed before `APP_ENCRYPTION_KEY` was asked for at deploy time, add i
 
 Setup applies the committed migrations through the Worker's D1 binding before creating the first admin account.
 
+### Direct uploads at setup
+
+Fast Drive uploads are a standard part of setup, not an extra. Without them every Drive upload passes through the Worker in 32 MiB parts; with them browsers upload straight to R2 in 64 MiB parts with signed URLs. When you create the admin account, Kite uses `CF_TOKEN` to:
+
+1. find the account (`CF_ACCOUNT_ID`, or the one account the token belongs to) and the `kite-raw` bucket,
+2. create an account API token named "Kite direct uploads: kite-raw" with only **Workers R2 Storage Bucket Item Write** on that bucket (read, write and list objects, nothing else); its id is the S3 access key ID and the SHA-256 of its value the secret, as Cloudflare's R2 documentation describes,
+3. set the bucket's CORS rule for the app's origin (and `APP_URL`),
+4. wait until the new keys work, check that they reach the Worker's own bucket, run the same checks as **Test connection**, and save the keys encrypted, exactly like a manual entry.
+
+The token value is never stored, returned or logged; the audit log records `storage.auto_setup` with the bucket and the outcome. If any step fails (a permission is missing, Cloudflare is slow, the bucket has another name), setup still finishes: the Storage page and the Admin overview then show "Direct uploads are off: set up (2 min)" with the reason, the permission to add, **Set up automatically** to try again in one click, and the guided manual steps.
+
+**Security trade-off.** **Account API Tokens: Edit** lets `CF_TOKEN` create other tokens in your account, which is more than Kite needs day to day. Kite only uses it when setup runs or you select **Set up automatically** or **Create bucket and connect**. Grant it for the setup and then remove it from `CF_TOKEN` in the dashboard (Manage Account → Account API Tokens → edit the token); the bucket token Kite created keeps working. **Workers R2 Storage: Edit** stays useful for creating buckets later and can be removed too if you never will.
+
 ## Step 4: Connect your primary domain and create a mailbox
 
 1. Enter a domain that already uses Cloudflare DNS on the same account as your `CF_TOKEN`.
@@ -105,6 +120,7 @@ Resend and SES receive mail by calling your app, so set `APP_URL` to the app's p
 | Amber "Public address" | `APP_URL` is not set | Add the variable shown in the message. |
 | The domain step cannot find your domain | The domain is not an active zone in the token's account, or the token's zone resources leave it out | Add the zone to Cloudflare and wait until it is active, then include it in the token's zone resources. |
 | MX conflict | Another mail service already owns the domain's MX records | Confirm the replacement in the wizard, or keep the other service and do not connect that domain. |
+| "Direct uploads are off: set up (2 min)" on Admin → Storage or the Admin overview | `CF_TOKEN` lacks **Workers R2 Storage: Edit** or **Account API Tokens: Edit** (the item names which), or the Worker's bucket is not `kite-raw` | Add the permission and select **Set up automatically**, pick the right bucket, or follow the guided steps. See [Direct uploads at setup](#direct-uploads-at-setup). |
 | D1 error 7404 | `database_id` from another account | See [Troubleshooting](troubleshooting.md#d1-error-7404-database-could-not-be-found). |
 
 ## Manual deployment
@@ -138,7 +154,8 @@ Deploy the complete Worker with `npm run deploy` whenever the cron trigger is ad
 
 By default every file Kite keeps (raw mail, attachments, Drive files, backups) is in the `BUCKET` R2 binding (`kite-raw`), and nothing below is needed. **Admin → Storage** (primary admin only) can add S3-compatible stores and choose, separately for Mail, Drive and Backups, which store new objects go to. It needs `APP_ENCRYPTION_KEY`: store keys are only ever saved encrypted, and the page refuses to add a store without it.
 
-- **Direct Drive uploads to R2 (recommended).** Without S3 API keys, Drive uploads pass through the Worker in 32 MiB parts; the Default row on **Admin → Storage** and **Drive settings** recommend turning this on until it is. Select **Enable direct uploads** on the Default row: a four-step dialog links to your account's **R2 → Manage API tokens** page, says which permission to grant (**Object Read & Write**, applied to `kite-raw` only), asks for the token's Access Key ID and Secret Access Key and your Cloudflare account ID (or the bucket's S3 API URL, from which it takes the ID), builds the endpoint `https://<account id>.r2.cloudflarestorage.com` (or `.eu.` for an EU jurisdiction bucket) and offers **Test connection** before **Save and enable**. Browsers then send 64 MiB parts straight to the bucket with signed URLs, and signed-in downloads of 8 MiB or more redirect to a five-minute signed link.
+- **Direct Drive uploads to R2 (on by default).** Setup turns them on (see [Direct uploads at setup](#direct-uploads-at-setup)). Until they are on, the Storage page and the Admin overview show "Direct uploads are off: set up (2 min)" (with why the automatic setup failed, if it ran) until you set them up or select **Dismiss**, and Drive settings recommends them. **Enable direct uploads** on the Default row starts with **Set up automatically** when `CF_TOKEN` is available: one click creates a bucket-only token, sets the CORS rule, checks and saves (pick the Worker's bucket from the list if it is not `kite-raw`). A refusal names the permission `CF_TOKEN` lacks, and the four guided steps below it stay as the manual fallback: they link to your account's **R2 → Manage API tokens** page, say which permission to grant (**Object Read & Write**, applied to `kite-raw` only), ask for the token's Access Key ID and Secret Access Key and your Cloudflare account ID (or the bucket's S3 API URL, from which it takes the ID), build the endpoint `https://<account id>.r2.cloudflarestorage.com` (or `.eu.` for an EU jurisdiction bucket) and offer **Test connection** before **Save and enable**. Browsers then send 64 MiB parts straight to the bucket with signed URLs, and signed-in downloads of 8 MiB or more redirect to a five-minute signed link. On the self-hosted Node runtime files stay in the data directory and there is nothing to set up; an S3 store there uses direct transfers once its CORS rule passes.
+- **A new R2 bucket in one click.** In **Add store** with **Cloudflare R2**, **Connect R2 in one click** creates a bucket (named after what it is for, such as `kite-drive` or `kite-backups`, with an optional location and jurisdiction) or connects one picked from the account's buckets, then creates the bucket-only token, sets the CORS rule, checks and saves, with the progress listed step by step. When the name is taken in your account, **Use the existing** connects that bucket instead. It needs the same two permissions; without them the form below works as before.
 - **Another store.** **Add store** groups the form into Where, Credentials and Direct uploads. Presets fill and lock what follows from the provider: Cloudflare R2 asks only for the account ID (region `auto`, path-style); Amazon S3, Backblaze B2, Wasabi and Hetzner pick the region from a list and build the endpoint from it (**Use a custom endpoint** overrides it); MinIO and Other S3-compatible ask for every field. Each provider names the page where its keys are created and the permission they need (Amazon S3 also shows the IAM policy to copy). R2 keys have a fixed shape (a 32-character access key ID and a 64-character secret, digits and a to f), so a key that is cut short, has a space or line break, or is the wrong value is explained under its field before anything is sent.
 - **Test connection** runs the same checks as saving without saving anything: the endpoint is allowed and answers, the credentials are accepted, the bucket is found, a test object is written, read, listed and deleted, a multipart upload and a signed link work, and browsers may upload (CORS). Each check is listed with ✓ or ✗ and, on failure, the fix in the provider's words (for example "Access denied: give the R2 API token Object Read & Write on kite-raw"); when only CORS fails, the rule with this site's origin is shown with a **Copy** button. When every check passes, the list folds into one line ("All 12 checks passed · Checked 14:05") with **Show details**. **Check and add** still checks again before saving. Each test is written to the audit log as `storage.store_tested`, and an admin may run five a minute. When you edit a store, a blank key pair keeps the saved keys only while the endpoint, bucket, region, addressing and provider stay the same; change any of them and the dialog asks for the access key ID and secret again, so a saved secret never signs requests to another host.
 - **CORS.** Drive can only be routed to a store whose CORS rule lets the Kite origin `PUT` parts and read their `ETag`. **Apply CORS** sets the rule on providers whose own keys may (S3, R2, Wasabi, MinIO); for the others the dialog shows the rule to add in the provider's console, with a **Copy** button. Mail and backups do not need CORS.

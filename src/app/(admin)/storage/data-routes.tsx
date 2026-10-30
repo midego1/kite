@@ -7,8 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
 import type { RoutableClass } from "@/lib/storage/types";
-import { StepList } from "./store-dialog";
-import type { RouteView, StorageOverview, ValidationStep } from "./types";
+import { StepList } from "./step-list";
+import type { ListStep, RouteView, StorageOverview } from "./types";
 import {
 	CLASS_CONTENTS,
 	CLASS_LABELS,
@@ -40,7 +40,7 @@ function SwitchDialog({
 	const [migrate, setMigrate] = useState(true);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const [steps, setSteps] = useState<ValidationStep[] | null>(null);
+	const [steps, setSteps] = useState<ListStep[] | null>(null);
 	const from = storeName(overview, leftovers ? (route.previousStoreId ?? route.storeId) : route.storeId);
 	const to = storeName(overview, storeId);
 

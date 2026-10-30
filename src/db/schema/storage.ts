@@ -69,3 +69,13 @@ export const storageMigrations = sqliteTable(
 	},
 	(t) => [index("storage_migrations_status_idx").on(t.status)],
 );
+
+/** One row (`default`): the last automatic R2 direct-uploads setup and the dismissed reminder (migration 0084). */
+export const storageState = sqliteTable("storage_state", {
+	id: text("id").primaryKey(),
+	/** JSON `DirectUploadsState` (src/lib/storage/direct-uploads-state.ts); never a key. */
+	directUploads: text("direct_uploads"),
+	updatedAt: integer("updated_at", { mode: "timestamp" })
+		.notNull()
+		.$defaultFn(() => new Date()),
+});

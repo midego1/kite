@@ -31,7 +31,8 @@ import { presetFor } from "./s3-presets-utils";
 import { corsOrigins, locationChanged, needsRevalidation, parseStoreInput, type StoreInput } from "./store-input-utils";
 import type { RoutableClass, S3Credentials } from "./types";
 import { reportSummary, type ValidationReport, type ValidationStep } from "./validate-utils";
-import { recordStorageTest } from "./test-limit";
+import { readDirectUploadsState, type DirectUploadsState } from "./direct-uploads-state";
+import { completeStorageAttempt, recordStorageAttempt } from "./test-limit";
 import { createLogger } from "@/lib/logger.mjs";
 import { validateStore, validateStoreCors } from "./validate";
 
@@ -161,12 +162,20 @@ export async function storageOverview(env: StoresEnv) {
 	const config = await readStorageConfig(env);
 	const stores = await Promise.all([...config.stores.values()].map((store) => storeView(env, config, store)));
 	const policy = endpointPolicyFor(env);
+	const directUploads = stores.some((store) => store.sameAsBinding && !store.blocked);
+	const state = await readDirectUploadsState(env).catch(() => ({}) as DirectUploadsState);
 	return {
+		// Direct uploads are the default on Cloudflare: until they are on, the Storage page and the Admin overview
+		// remind the owner (with why the automatic setup failed, when it ran), unless dismissed.
+		directUploadsReminder: {
+			show: !isNodeRuntime(env) && !directUploads && !state.dismissedAt,
+			setup: directUploads ? null : (state.setup ?? null),
+		},
 		defaultStore: {
 			id: DEFAULT_STORE_ID,
 			name: isNodeRuntime(env) ? "Local files" : "Cloudflare R2",
 			kind: isNodeRuntime(env) ? "files" : "r2",
-			directUploads: stores.some((store) => store.sameAsBinding && !store.blocked),
+			directUploads,
 		},
 		stores,
 		routes: ROUTABLE_CLASSES.map((objectClass) => {
@@ -408,11 +417,14 @@ async function savedCredentialsFor(
 }
 
 /** Counts the attempt against the admin's budget; a limit that cannot be checked refuses the test. */
-async function withinTestLimit(env: StoresEnv, actor: Actor, storeId: string | null, input: StoreInput) {
+async function withinTestLimit(
+	env: StoresEnv,
+	actor: Actor,
+	metadata: Record<string, unknown>,
+): Promise<{ id: string } | Failure> {
 	try {
-		return (await recordStorageTest(env, actor.id, auditMetadata(storeId, input)))
-			? null
-			: fail(429, "Too many connection tests; wait a minute and try again");
+		const attempt = await recordStorageAttempt(env, actor.id, "storage.store_tested", metadata);
+		return attempt.allowed ? { id: attempt.id } : fail(429, "Too many connection tests; wait a minute and try again");
 	} catch (error) {
 		log.error("storage.test_limit_unavailable", { error });
 		return fail(503, "Could not check the test limit; try again in a moment");
@@ -440,9 +452,15 @@ export async function testStoreInput(
 	const credentials = input.credentials ?? (existing ? await savedCredentialsFor(env, existing, input) : null);
 	if (!credentials) return fail(400, "Enter the access key ID and the secret", { field: "accessKeyId" });
 	if ("ok" in credentials) return credentials;
-	const refused = await withinTestLimit(env, actor, storeId, input);
-	if (refused) return refused;
+	const metadata = auditMetadata(storeId, input);
+	const attempt = await withinTestLimit(env, actor, metadata);
+	if ("ok" in attempt) return attempt;
 	const report = await validateStore(env, { ...input, credentials }, requestOrigin);
+	await completeStorageAttempt(env, attempt.id, {
+		...metadata,
+		outcome: report.ok ? "passed" : "failed",
+		cors: report.cors,
+	});
 	log.info("storage.store_tested", {
 		storeId,
 		provider: input.provider,

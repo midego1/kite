@@ -7,6 +7,10 @@ export const E2E_PORT = Number(process.env.E2E_PORT ?? 3200);
 export const BASE_URL = `http://localhost:${E2E_PORT}`;
 /** The fake abuse.ch (e2e/support/fake-abuse-ch.ts); the dev server sends both abuse.ch APIs here. */
 export const FAKE_ABUSE_CH_PORT = Number(process.env.E2E_FAKE_ABUSE_CH_PORT ?? E2E_PORT + 97);
+/** The fake Cloudflare API for the automatic R2 setup (tests/support/fake-cloudflare-r2.mjs). */
+export const FAKE_CLOUDFLARE_PORT = Number(process.env.E2E_FAKE_CLOUDFLARE_PORT ?? E2E_PORT + 96);
+/** The fake S3 that stands in for `<account>.r2.cloudflarestorage.com` in the same setup. */
+export const FAKE_R2_S3_PORT = Number(process.env.E2E_FAKE_R2_S3_PORT ?? E2E_PORT + 95);
 export const E2E_PERSIST_DIR = ".wrangler/e2e-state";
 export const E2E_VITE_CACHE_DIR = ".wrangler/e2e-vite-cache";
 /** The e2e server's KITE_TELEMETRY_URL: https on the loopback discard port, where nothing answers. */

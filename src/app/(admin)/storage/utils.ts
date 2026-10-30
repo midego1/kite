@@ -36,6 +36,8 @@ export async function storageRequest<T>(path: string, init?: RequestInit & { jso
 			report: data.report,
 			steps: data.steps,
 			field: data.field,
+			code: data.code,
+			permission: data.permission,
 		});
 	return data;
 }

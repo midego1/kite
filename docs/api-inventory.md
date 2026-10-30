@@ -40,7 +40,11 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/modules`                                   | GET, PUT               | [source](../src/app/api/admin/modules/route.ts)                                   |
 | `/api/admin/resend-key`                                | DELETE, GET, PUT       | [source](../src/app/api/admin/resend-key/route.ts)                                |
 | `/api/admin/search-index`                              | GET, POST              | [source](../src/app/api/admin/search-index/route.ts)                              |
+| `/api/admin/storage/cloudflare/buckets`                | POST                   | [source](../src/app/api/admin/storage/cloudflare/buckets/route.ts)                |
+| `/api/admin/storage/cloudflare/direct-uploads`         | POST                   | [source](../src/app/api/admin/storage/cloudflare/direct-uploads/route.ts)         |
+| `/api/admin/storage/cloudflare`                        | GET                    | [source](../src/app/api/admin/storage/cloudflare/route.ts)                        |
 | `/api/admin/storage/migrations/[id]`                   | GET, POST              | [source](../src/app/api/admin/storage/migrations/[id]/route.ts)                   |
+| `/api/admin/storage/reminder`                          | POST                   | [source](../src/app/api/admin/storage/reminder/route.ts)                          |
 | `/api/admin/storage`                                   | GET                    | [source](../src/app/api/admin/storage/route.ts)                                   |
 | `/api/admin/storage/routes/[class]`                    | PUT                    | [source](../src/app/api/admin/storage/routes/[class]/route.ts)                    |
 | `/api/admin/storage/stores/[id]/cors`                  | POST                   | [source](../src/app/api/admin/storage/stores/[id]/cors/route.ts)                  |

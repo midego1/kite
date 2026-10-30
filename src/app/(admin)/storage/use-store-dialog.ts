@@ -3,12 +3,12 @@
 import { useState } from "react";
 import { presetFor } from "@/lib/storage/s3-presets-utils";
 import { emptyStoreForm, storeFormBody, storeFormErrors, storeFormOf } from "./form-utils";
-import type { StoreForm, StoreFormErrors, StoreFormField, StoreView, ValidationStep } from "./types";
+import type { ListStep, StoreForm, StoreFormErrors, StoreFormField, StoreView, ValidationStep } from "./types";
 import { StorageRequestError, errorText, storageRequest } from "./utils";
 
 type Options = { store: StoreView | null; binding: boolean; onSaved: () => void; onClose: () => void };
 
-type Outcome = { kind: "test" | "save"; steps: ValidationStep[]; at: Date } | null;
+type Outcome = { kind: "test" | "save"; steps: ListStep[]; at: Date } | null;
 
 const FIELD_IDS: Record<StoreFormField, string> = {
 	name: "store-name",

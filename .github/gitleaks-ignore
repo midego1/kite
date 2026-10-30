@@ -4,5 +4,7 @@
 # The path- and value-level exceptions are in .gitleaks.toml.
 # 3e09a0d (PR #117 only): the log field value "accepted_until_2027_01_31" in relay-headers.ts, not a credential; replaced in the next commit.
 3e09a0dda9266bcd8ac635fe63d218b85fbc3c64:src/lib/email/relay-headers.ts:generic-api-key:28
-# d908726 (PR #240 only): an invented 32-hex R2 access key ID in a unit test; built with repeat() from the next commit.
+# d908726 (PR #240 only): an invented 32-hex R2 access key ID in a unit test; the next commit still matched,
 d9087260e68eba9eed5d2049c1d4e5ab8146c985:tests/storage-store-form.test.mjs:generic-api-key:20
+# f8c5436 (PR #240 only): the same invented key built from a 16-character literal; a low-entropy one from the next commit.
+f8c543626f8112c9a52f7c1b4c439d6c8510fc38:tests/storage-store-form.test.mjs:generic-api-key:21

@@ -18,7 +18,7 @@ const lib = await bundleModules("kite-storage-store-form-", [
 
 const ACCOUNT = "0123456789abcdef0123456789abcdef";
 // Invented R2-shaped keys (32 and 64 hex characters), built rather than written out.
-const R2_KEY = "fedcba9876543210".repeat(2);
+const R2_KEY = "ab12".repeat(8);
 const R2_SECRET = "a".repeat(64);
 
 const form = (overrides = {}) => ({ ...lib.emptyStoreForm("aws"), ...overrides });

@@ -31,3 +31,17 @@ export function autoSetupResponse(result: R2SetupResult): Response {
 	const { ok: _ok, status, ...body } = result;
 	return storageJson(body, status);
 }
+
+/**
+ * The bucket picker asks Cloudflare on every open, so each admin gets the login limiter's budget under its own key.
+ * Reading a list changes nothing, so a limiter that errors lets the request through, and says so in the log.
+ */
+export async function allowR2Listing(env: CloudflareEnv, userId: string): Promise<boolean> {
+	if (!env.LOGIN_RATE_LIMIT) return true;
+	try {
+		return (await env.LOGIN_RATE_LIMIT.limit({ key: `storage-r2-buckets:${userId}` })).success;
+	} catch (error) {
+		log.warn("storage.r2_listing_limiter_unavailable", { error });
+		return true;
+	}
+}

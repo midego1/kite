@@ -173,8 +173,8 @@ export type S3BucketOptions = {
 	fetch?: typeof fetch;
 	/** Opens the credentials on first use, so a configured store costs nothing until something reads from it. */
 	credentials?: () => Promise<S3Credentials>;
-	/** A deadline for each request; validation sets one, data transfers do not. */
-	timeoutMs?: number;
+	/** A deadline for each request (or a function giving it, read per request); validation sets one, transfers do not. */
+	timeoutMs?: number | (() => number);
 };
 
 export class S3Bucket {
@@ -201,7 +201,7 @@ export class S3Bucket {
 			scheme: this.config.scheme,
 			path: key === null ? bucketPath(this.config) : objectPath(this.config, key),
 			fetch: this.options.fetch,
-			timeoutMs: this.options.timeoutMs,
+			timeoutMs: typeof this.options.timeoutMs === "function" ? this.options.timeoutMs() : this.options.timeoutMs,
 			...init,
 		});
 	}

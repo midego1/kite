@@ -12,4 +12,4 @@
 
 ### Security
 
-- `CF_TOKEN` needs **Account API Tokens: Edit** for the automatic setup, which lets it create other tokens; Kite only uses it when setup runs or an admin selects Set up automatically or Create bucket and connect, and the docs and the dialog recommend removing it afterwards. The token value and the derived S3 secret are never stored in clear, returned or logged.
+- `CF_TOKEN` needs **Account API Tokens: Edit** for the automatic setup, which lets it create tokens with any permission on the account (a leaked `CF_TOKEN` could then take the account over); Kite only uses it when setup runs or an admin selects Set up automatically or Create bucket and connect, and the docs and the dialog say to remove it afterwards. The setup ends within its time budget with its cleanup, never creates a second token for a bucket Kite already has a store for, and tokens it created stay in the account until deleted there. The token value and the derived S3 secret are never stored in clear, returned or logged.

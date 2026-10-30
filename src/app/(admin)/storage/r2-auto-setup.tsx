@@ -88,8 +88,10 @@ function TokenTradeOff() {
 	return (
 		<p className="text-xs text-neutral-500">
 			This needs the account permissions <strong className="font-medium">{R2_PERMISSIONS.buckets}</strong> and{" "}
-			<strong className="font-medium">{R2_PERMISSIONS.tokens}</strong> on CF_TOKEN. Creating API tokens is a powerful
-			permission: grant it for the setup and remove it afterwards. The bucket token Kite creates keeps working.
+			<strong className="font-medium">{R2_PERMISSIONS.tokens}</strong> on CF_TOKEN. The second lets CF_TOKEN create
+			tokens with any permission on your account, so a leaked CF_TOKEN could take over the account: grant it for the
+			setup and remove it afterwards. The bucket token Kite creates keeps working; it stays in your account until you
+			delete it there.
 		</p>
 	);
 }

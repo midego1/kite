@@ -27,8 +27,8 @@ const refuse = (response, status, code, message) =>
  * tokens). `denied` names operations answered with a permission error; `onCreateBucket` and `onCors` let a test
  * mirror buckets and CORS rules into a fake S3 so the checks that follow can pass.
  *
- * Operations: listAccounts, listBuckets, createBucket, getCors, putCors, deleteCors, permissionGroups, createToken,
- * deleteToken.
+ * Operations: listAccounts, getZone, listBuckets, createBucket, getCors, putCors, deleteCors, permissionGroups,
+ * listTokens, createToken, deleteToken.
  */
 export async function startFakeCloudflareR2(options = {}) {
 	const state = {
@@ -38,9 +38,31 @@ export async function startFakeCloudflareR2(options = {}) {
 		deletedTokens: [],
 		requests: [],
 		denied: new Set(),
+		/** Operation → milliseconds to wait before answering (after the effect, as a slow Cloudflare would). */
+		delays: new Map(),
+		/** Answer the next created token without its value, as an unexpected Cloudflare answer. */
+		omitTokenValue: false,
 	};
 	const routes = [
 		["GET", /^\/client\/v4\/accounts$/, "listAccounts", (response) => ok(response, [{ id: FAKE_R2.accountId }])],
+		[
+			"GET",
+			/^\/client\/v4\/zones\/([^/]+)$/,
+			"getZone",
+			(response, match) => ok(response, { id: match[1], name: "example.com", account: { id: FAKE_R2.accountId } }),
+		],
+		[
+			"GET",
+			/^\/client\/v4\/accounts\/([^/]+)\/tokens$/,
+			"listTokens",
+			(response) =>
+				ok(
+					response,
+					state.tokens
+						.filter((token) => !state.deletedTokens.includes(token.id))
+						.map((token) => ({ id: token.id, name: token.name })),
+				),
+		],
 		[
 			"GET",
 			/^\/client\/v4\/accounts\/([^/]+)\/r2\/buckets$/,
@@ -119,8 +141,9 @@ export async function startFakeCloudflareR2(options = {}) {
 			/^\/client\/v4\/accounts\/([^/]+)\/tokens$/,
 			"createToken",
 			(response, _match, _request, body) => {
-				state.tokens.push(body);
-				ok(response, { id: FAKE_R2.tokenId, value: FAKE_R2.tokenValue, name: body.name, status: "active" });
+				state.tokens.push({ ...body, id: FAKE_R2.tokenId });
+				const value = state.omitTokenValue ? {} : { value: FAKE_R2.tokenValue };
+				ok(response, { id: FAKE_R2.tokenId, ...value, name: body.name, status: "active" });
 			},
 		],
 		[
@@ -148,7 +171,17 @@ export async function startFakeCloudflareR2(options = {}) {
 		});
 		if (!route) return refuse(response, 404, 7003, "No route for that URI");
 		if (state.denied.has(route[2])) return refuse(response, 403, 10000, "Authentication error");
-		route[3](response, path.match(route[1]), request, body);
+		const delay = state.delays.get(route[2]);
+		if (!delay) return route[3](response, path.match(route[1]), request, body);
+		// The effect happens now and the answer comes late, so a client that gives up does not know it happened.
+		const later =
+			(method) =>
+			(...args) =>
+				setTimeout(() => {
+					if (!response.destroyed && !response.writableEnded) response[method](...args);
+				}, delay);
+		const late = { writeHead: later("writeHead"), end: later("end") };
+		route[3](late, path.match(route[1]), request, body);
 	}
 
 	const server = createServer((request, response) => {

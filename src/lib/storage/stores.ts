@@ -226,6 +226,7 @@ export async function createStore(
 	actor: Actor,
 	raw: unknown,
 	requestOrigin: string,
+	options: { deadline?: number } = {},
 ): Promise<Result<{ store: StoreView; report: ValidationReport }>> {
 	if (!env.APP_ENCRYPTION_KEY?.trim()) return fail(409, ENCRYPTION_REQUIRED);
 	const parsed = parseStoreInput(raw);
@@ -234,7 +235,7 @@ export async function createStore(
 	if (!input.credentials) return fail(400, "Enter the access key ID and the secret");
 	if (input.sameAsBinding && !(await onlyOneBindingKeyPair(env, null)))
 		return fail(409, "The default store already has R2 S3 API keys; edit them instead");
-	const report = await validateStore(env, { ...input, credentials: input.credentials }, requestOrigin);
+	const report = await validateStore(env, { ...input, credentials: input.credentials }, requestOrigin, options);
 	if (!report.ok) return fail(422, reportSummary(report) ?? "The store did not pass the checks", { report });
 	const sealed = await sealCredentials(env, input.credentials);
 	if (!sealed) return fail(409, ENCRYPTION_REQUIRED);

@@ -42,6 +42,8 @@ const SECRETS = [FAKE_R2.tokenValue, FAKE_R2_SECRET];
 async function setup(t, extraEnv = {}) {
 	const context = await fixture(t, { CLOUDFLARE_API_TEST_ORIGIN: cf.origin, R2_S3_TEST_ENDPOINT: s3.url, ...extraEnv });
 	cf.state.denied.clear();
+	cf.state.delays.clear();
+	cf.state.omitTokenValue = false;
 	cf.state.tokens.length = 0;
 	cf.state.deletedTokens.length = 0;
 	cf.state.requests.length = 0;
@@ -232,18 +234,23 @@ test("availability: not off Workers without Cloudflare, and not without an encry
 
 test("first-run setup turns direct uploads on, and a refusal never fails registration", async (t) => {
 	const { env } = await setup(t);
-	const done = await lib.autoSetup.setUpDirectUploadsAtInstall(env, actor, APP_ORIGIN, FAST);
+	const done = await lib.autoSetup.setUpDirectUploadsAtInstall(env, actor, APP_ORIGIN, { timing: FAST });
 	assert.deepEqual(done, { ok: true });
 	assert.equal(state(env).setup.source, "install");
 	env.DB.db.exec("DELETE FROM storage_stores");
+	cf.state.denied.add("getZone");
 	cf.state.denied.add("listAccounts");
-	const refused = await lib.autoSetup.setUpDirectUploadsAtInstall(env, actor, APP_ORIGIN, FAST);
+	const refused = await lib.autoSetup.setUpDirectUploadsAtInstall(env, actor, APP_ORIGIN, { timing: FAST });
 	assert.equal(refused.ok, false);
 	assert.match(refused.message, /Account Settings: Read/);
 	assert.equal(state(env).setup.ok, false);
 	assert.equal(state(env).setup.source, "install");
 	const { env: plain } = await setup(t, { CLOUDFLARE_API_TEST_ORIGIN: "" });
-	assert.equal(await lib.autoSetup.setUpDirectUploadsAtInstall(plain, actor, APP_ORIGIN, FAST), null, "local files");
+	assert.equal(
+		await lib.autoSetup.setUpDirectUploadsAtInstall(plain, actor, APP_ORIGIN, { timing: FAST }),
+		null,
+		"local files",
+	);
 });
 
 async function call(env, userId, route, method = "POST", body) {
@@ -357,4 +364,125 @@ test("connecting an existing bucket keeps other sites' CORS rules, and a failed 
 	await lib.autoSetup.setUpR2(env, actor, APP_ORIGIN, { ...plan, bucket: "kite-raw" }, { timing: FAST });
 	assert.equal(cf.state.cors.has("kite-raw"), false, "a bucket without a policy is left without one");
 	assert.ok(cf.state.requests.some((request) => request.operation === "deleteCors"));
+});
+
+const REAL_SLEEP = { attempts: 100, delayMs: 200, sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) };
+
+test("install-time setup ends within its budget: the token is deleted and CORS restored, nothing runs later", async (t) => {
+	const { env } = await setup(t);
+	s3.state.denied.add("HeadBucket");
+	const started = Date.now();
+	const result = await lib.autoSetup.setUpDirectUploadsAtInstall(env, actor, APP_ORIGIN, {
+		timing: REAL_SLEEP,
+		budgetMs: 12_000,
+	});
+	const elapsed = Date.now() - started;
+	assert.ok(elapsed < 12_000, `ended in ${elapsed} ms, inside the budget`);
+	assert.ok(elapsed > 4_000, "the keys were waited for until the budget ran low");
+	assert.equal(result.ok, false);
+	assert.match(result.message, /took too long/);
+	assert.deepEqual(cf.state.deletedTokens, [FAKE_R2.tokenId], "no token is left behind");
+	assert.equal(cf.state.cors.has("kite-raw"), false, "the CORS policy is back to none");
+	assert.equal(stores(env).length, 0);
+	const note = state(env).setup;
+	assert.equal(note.ok, false);
+	assert.equal(note.source, "install");
+	assert.match(note.message, /took too long/);
+	await new Promise((resolve) => setTimeout(resolve, 500));
+	assert.deepEqual(state(env).setup, note, "no late finish rewrites the note");
+});
+
+test("a token request Cloudflare answers too late is cleaned up by name", async (t) => {
+	const { env } = await setup(t);
+	cf.state.delays.set("createToken", 10_000);
+	const result = await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST, budgetMs: 11_000 });
+	assert.equal(result.ok, false);
+	assert.equal(result.code, "timeout");
+	assert.equal(result.steps.find((step) => step.status === "failed").id, "token");
+	assert.ok(cf.state.requests.some((request) => request.operation === "listTokens"));
+	assert.deepEqual(cf.state.deletedTokens, [FAKE_R2.tokenId], "the token Cloudflare made anyway is deleted");
+});
+
+test("a token answered without its value is deleted at once", async (t) => {
+	const { env } = await setup(t);
+	cf.state.omitTokenValue = true;
+	const result = await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST });
+	assert.equal(result.ok, false);
+	assert.match(result.error, /did not return the new token/);
+	assert.deepEqual(cf.state.deletedTokens, [FAKE_R2.tokenId]);
+});
+
+test("the account comes from a zone Kite manages, so GET /accounts is not needed", async (t) => {
+	const { env } = await setup(t);
+	cf.state.denied.add("listAccounts");
+	const result = await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST });
+	assert.equal(result.ok, true, result.error);
+	const zone = cf.state.requests.find((request) => request.operation === "getZone");
+	assert.equal(zone.path, "/client/v4/zones/zone-1");
+	assert.ok(!cf.state.requests.some((request) => request.operation === "listAccounts"));
+	env.CF_ACCOUNT_ID = FAKE_R2.accountId;
+	env.DB.db.exec("DELETE FROM storage_stores");
+	lib.config.clearStorageConfigCache();
+	cf.state.requests.length = 0;
+	await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST });
+	assert.ok(!cf.state.requests.some((request) => ["getZone", "listAccounts"].includes(request.operation)));
+});
+
+test("a second token for a bucket Kite already has a store for is refused before it is made", async (t) => {
+	const { env } = await setup(t);
+	assert.equal((await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST })).ok, true);
+	const plan = { sameAsBinding: false, bucket: "kite-media", jurisdiction: "", create: null };
+	assert.equal((await lib.autoSetup.setUpR2(env, actor, APP_ORIGIN, plan, { timing: FAST })).ok, true);
+	const tokens = cf.state.tokens.length;
+	const again = await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST });
+	assert.equal(again.code, "already_connected");
+	const store = await lib.autoSetup.setUpR2(env, actor, APP_ORIGIN, plan, { timing: FAST });
+	assert.equal(store.code, "already_connected");
+	assert.match(store.error, /already has a store for kite-media/);
+	assert.equal(cf.state.tokens.length, tokens, "no new token");
+});
+
+test("after a successful save, a failing audit or note write is logged, not answered", async (t) => {
+	const { env } = await setup(t);
+	env.DB.db
+		.exec(`CREATE TRIGGER fail_auto_setup_audit BEFORE INSERT ON audit_logs WHEN NEW.action = 'storage.auto_setup'
+		BEGIN SELECT RAISE(ABORT, 'audit log unavailable'); END;`);
+	const logged = [];
+	t.mock.method(console, "error", (...args) => logged.push(args.map(String).join(" ")));
+	const result = await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST });
+	assert.equal(result.ok, true);
+	assert.equal(stores(env).length, 1);
+	assert.match(logged.join("\n"), /storage.auto_setup_record_failed/);
+	noSecrets(logged.join("\n"), "the log");
+});
+
+test("the Cloudflare and R2 stand-ins are ignored in production", async (t) => {
+	const { env } = await setup(t);
+	const previous = process.env.NODE_ENV;
+	process.env.NODE_ENV = "production";
+	t.after(() => {
+		process.env.NODE_ENV = previous;
+	});
+	const availability = await lib.autoSetup.r2AutoSetupAvailability(env);
+	assert.equal(availability.available, false, "a Node install with only the stand-in set has nothing to set up");
+	assert.equal(cf.state.requests.length, 0);
+});
+
+test("the bucket picker is rate limited per admin", async (t) => {
+	const { env } = await setup(t);
+	const keys = [];
+	env.LOGIN_RATE_LIMIT = { limit: async ({ key }) => (keys.push(key), { success: false }) };
+	const limited = await call(env, "owner", lib.cloudflareRoute, "GET");
+	assert.equal(limited.status, 429);
+	assert.deepEqual(keys, ["storage-r2-buckets:owner"]);
+	assert.equal(cf.state.requests.length, 0);
+	env.LOGIN_RATE_LIMIT = {
+		limit: async () => {
+			throw new Error("limiter down");
+		},
+	};
+	const warnings = [];
+	t.mock.method(console, "warn", (...args) => warnings.push(args.map(String).join(" ")));
+	assert.equal((await call(env, "owner", lib.cloudflareRoute, "GET")).status, 200);
+	assert.match(warnings.join("\n"), /storage.r2_listing_limiter_unavailable/);
 });

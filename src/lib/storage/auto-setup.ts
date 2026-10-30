@@ -2,18 +2,25 @@ import { createAuditLog } from "@/lib/mailboxes/audit";
 import { completeStorageAttempt } from "./test-limit";
 import { isNodeRuntime } from "@/lib/runtime";
 import { createLogger } from "@/lib/logger.mjs";
-import { storageTablesReady } from "./config";
+import { ne } from "drizzle-orm";
+import { getDb } from "@/db";
+import { domains } from "@/db/schema";
+import { readStorageConfig, storageTablesReady } from "./config";
 import {
 	createR2Bucket,
 	createR2BucketToken,
 	deleteR2Token,
+	deleteR2TokensNamed,
 	listR2Buckets,
 	R2ApiError,
 	r2ApiConfigured,
+	r2ApiTestOrigin,
 	r2S3Endpoint,
+	r2S3TestEndpoint,
 	resolveR2Account,
 	restoreR2BucketCors,
 	setR2BucketCors,
+	type CallLimits,
 	type R2Bucket,
 } from "./cloudflare-r2";
 import {
@@ -51,7 +58,7 @@ type R2SetupFailure = {
 	error: string;
 	steps: R2SetupStep[];
 	/** `bucket_exists`: the name is taken in this account, and the admin may choose to use it. */
-	code?: "bucket_exists" | "permission" | "unavailable" | "checks_failed";
+	code?: "bucket_exists" | "already_connected" | "permission" | "unavailable" | "checks_failed" | "timeout";
 	/** The account permission CF_TOKEN lacks, as the dashboard names it. */
 	permission?: string;
 	report?: ValidationReport;
@@ -62,7 +69,7 @@ export type R2SetupResult =
 
 /** What the automatic setup needs before it may run; the reason is shown as is. */
 export async function r2AutoSetupAvailability(env: CloudflareEnv): Promise<{ available: boolean; reason?: string }> {
-	if (isNodeRuntime(env) && !env.CLOUDFLARE_API_TEST_ORIGIN)
+	if (isNodeRuntime(env) && !r2ApiTestOrigin(env))
 		return { available: false, reason: "Files stay in Kite's data directory on this server; there is no R2 bucket." };
 	if (!r2ApiConfigured(env))
 		return { available: false, reason: "CF_TOKEN is not set, so Kite cannot call Cloudflare." };
@@ -72,13 +79,27 @@ export async function r2AutoSetupAvailability(env: CloudflareEnv): Promise<{ ava
 	return { available: true };
 }
 
+/** Zones Kite manages, whose account is the one Kite runs in (so `GET /accounts` is rarely needed). */
+async function knownZoneIds(env: CloudflareEnv): Promise<string[]> {
+	try {
+		const rows = await getDb(env)
+			.select({ zoneId: domains.zoneId })
+			.from(domains)
+			.where(ne(domains.zoneId, "manual"))
+			.limit(3);
+		return rows.map((row) => row.zoneId).filter(Boolean);
+	} catch {
+		return [];
+	}
+}
+
 /** The account and its buckets for the picker; a refusal names the permission instead of failing the page. */
 export async function r2BucketChoices(
 	env: CloudflareEnv,
 ): Promise<{ accountId: string | null; buckets: R2Bucket[]; error?: string; permission?: string }> {
 	let accountId: string | null = null;
 	try {
-		accountId = await resolveR2Account(env);
+		accountId = await resolveR2Account(env, await knownZoneIds(env));
 		const [plain, eu] = await Promise.all([
 			listR2Buckets(env, accountId),
 			listR2Buckets(env, accountId, "eu").catch(() => [] as R2Bucket[]),
@@ -134,6 +155,7 @@ class StepError extends Error {
 function stepErrorOf(error: unknown, step: R2SetupStepId): StepError {
 	if (error instanceof StepError) return error;
 	if (error instanceof R2ApiError) {
+		if (error.timedOut) return new StepError(error.step, TOO_LONG, { code: "timeout" });
 		if (isPermissionRefusal(error))
 			return new StepError(error.step, permissionMessage(error.step), {
 				code: "permission",
@@ -144,7 +166,7 @@ function stepErrorOf(error: unknown, step: R2SetupStepId): StepError {
 	return new StepError(step, error instanceof Error ? error.message.slice(0, 200) : "The step failed.");
 }
 
-export type SetupTiming = { attempts: number; delayMs: number; sleep: (ms: number) => Promise<void> };
+type SetupTiming = { attempts: number; delayMs: number; sleep: (ms: number) => Promise<void> };
 
 const DEFAULT_TIMING: SetupTiming = {
 	attempts: 12,
@@ -152,19 +174,55 @@ const DEFAULT_TIMING: SetupTiming = {
 	sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
 
-/** A new R2 token takes a few seconds to work; HeadBucket is retried until it does. */
-async function waitForKeys(bucket: S3Bucket, timing: SetupTiming): Promise<void> {
+const TOO_LONG = "Setting up direct uploads took too long. Try again in a minute.";
+
+/**
+ * The time budget of one setup. Steps start only before `steps`; whatever happens, the cleanup after a failure
+ * (deleting the token, restoring CORS) gets its own few seconds, so it always runs inside the request.
+ */
+class Budget {
+	readonly steps: number;
+
+	constructor(totalMs: number) {
+		this.steps = Date.now() + totalMs - CLEANUP_RESERVE_MS;
+	}
+
+	left(): number {
+		return this.steps - Date.now();
+	}
+
+	/** Refuses to start a step that needs more time than is left. */
+	start(step: R2SetupStepId, needMs = 1_000): CallLimits {
+		if (this.left() < needMs) throw new StepError(step, TOO_LONG, { code: "timeout" });
+		return { deadline: this.steps };
+	}
+
+	/** Cleanup gets its own short window, even past the step deadline. */
+	cleanup(): CallLimits {
+		return { deadline: Date.now() + CLEANUP_RESERVE_MS };
+	}
+}
+
+const CLEANUP_RESERVE_MS = 5_000;
+/** Creating a token is the one call whose effect must be known, so it only starts with time to finish. */
+const TOKEN_STEP_MS = 5_000;
+
+/** A new R2 token takes a few seconds to work; HeadBucket is retried until it does, within the budget. */
+async function waitForKeys(bucket: S3Bucket, timing: SetupTiming, budget: Budget): Promise<void> {
 	for (let attempt = 1; attempt <= timing.attempts; attempt++) {
+		budget.start("keys");
 		try {
 			await bucket.headBucket();
 			return;
 		} catch {
-			if (attempt < timing.attempts) await timing.sleep(timing.delayMs);
+			if (attempt === timing.attempts || budget.left() <= timing.delayMs + 1_000) break;
+			await timing.sleep(timing.delayMs);
 		}
 	}
 	throw new StepError(
 		"keys",
-		`The new keys did not start working within ${Math.round((timing.attempts * timing.delayMs) / 1000)} seconds. Try again in a minute.`,
+		budget.left() <= timing.delayMs + 1_000 ? TOO_LONG : "The new keys did not start working. Try again in a minute.",
+		budget.left() <= timing.delayMs + 1_000 ? { code: "timeout" } : {},
 	);
 }
 
@@ -197,7 +255,7 @@ export type R2SetupPlan = {
 	name?: string;
 };
 
-type Context = { env: CloudflareEnv; actor: { id: string }; origin: string; timing: SetupTiming };
+type Context = { env: CloudflareEnv; actor: { id: string }; origin: string; timing: SetupTiming; budget: Budget };
 
 function storeForm(env: CloudflareEnv, plan: R2SetupPlan, accountId: string, credentials: S3Credentials) {
 	return {
@@ -212,10 +270,41 @@ function storeForm(env: CloudflareEnv, plan: R2SetupPlan, accountId: string, cre
 	};
 }
 
-async function ensureBucket(env: CloudflareEnv, accountId: string, plan: R2SetupPlan): Promise<string> {
+/**
+ * Tokens outlive stores, so a second token for a bucket Kite already has a store for is refused before one is made:
+ * the existing store is edited (or deleted, with its token in the Cloudflare dashboard) instead.
+ */
+async function refuseDuplicate(env: CloudflareEnv, plan: R2SetupPlan, accountId: string): Promise<void> {
+	const config = await readStorageConfig(env);
+	const stores = [...config.stores.values()];
+	if (plan.sameAsBinding && stores.some((store) => store.sameAsBinding))
+		throw new StepError("bucket", "Direct uploads already have keys; edit that store instead.", {
+			code: "already_connected",
+			status: 409,
+		});
+	const host = new URL(r2S3Endpoint(env, accountId, plan.jurisdiction)).host;
+	if (
+		!plan.sameAsBinding &&
+		stores.some(
+			(store) => store.provider === "r2" && store.location.bucket === plan.bucket && store.location.endpoint === host,
+		)
+	)
+		throw new StepError("bucket", `Kite already has a store for ${plan.bucket}; edit or delete it first.`, {
+			code: "already_connected",
+			status: 409,
+		});
+}
+
+async function ensureBucket(ctx: Context, accountId: string, plan: R2SetupPlan): Promise<string> {
+	const limits = ctx.budget.start("bucket");
 	if (plan.create) {
 		try {
-			await createR2Bucket(env, accountId, { name: plan.bucket, jurisdiction: plan.jurisdiction, ...plan.create });
+			await createR2Bucket(
+				ctx.env,
+				accountId,
+				{ name: plan.bucket, jurisdiction: plan.jurisdiction, ...plan.create },
+				limits,
+			);
 			return `Created ${plan.bucket}`;
 		} catch (error) {
 			if (error instanceof R2ApiError && !isPermissionRefusal(error) && isBucketExists(error))
@@ -226,7 +315,7 @@ async function ensureBucket(env: CloudflareEnv, accountId: string, plan: R2Setup
 			throw error;
 		}
 	}
-	const buckets = await listR2Buckets(env, accountId, plan.jurisdiction);
+	const buckets = await listR2Buckets(ctx.env, accountId, plan.jurisdiction, limits);
 	if (!buckets.some((bucket) => bucket.name === plan.bucket))
 		throw new StepError(
 			"bucket",
@@ -235,19 +324,29 @@ async function ensureBucket(env: CloudflareEnv, accountId: string, plan: R2Setup
 	return `Using ${plan.bucket}`;
 }
 
-/** Steps 3 to 7, with the token deleted again when a later step fails. */
+/** The token for the bucket; when Cloudflare did not answer in time, any token it may have made is deleted. */
+async function createToken(ctx: Context, plan: R2SetupPlan, accountId: string): Promise<S3Credentials> {
+	const limits = ctx.budget.start("token", TOKEN_STEP_MS);
+	try {
+		return await createR2BucketToken(ctx.env, accountId, plan.bucket, plan.jurisdiction, limits);
+	} catch (error) {
+		if (error instanceof R2ApiError && error.timedOut)
+			await deleteR2TokensNamed(ctx.env, accountId, plan.bucket, ctx.budget.cleanup());
+		throw stepErrorOf(error, "token");
+	}
+}
+
+/** Steps 3 to 7, with the token deleted and the CORS policy restored when a later step fails or time runs out. */
 async function connectBucket(
 	ctx: Context,
 	progress: Progress,
 	plan: R2SetupPlan,
 	accountId: string,
 ): Promise<R2SetupResult> {
-	const { env } = ctx;
+	const { env, budget } = ctx;
 	let step: R2SetupStepId = "token";
 	let previousCors: R2CorsRule[] | null = null;
-	const credentials = await createR2BucketToken(env, accountId, plan.bucket, plan.jurisdiction).catch((error) => {
-		throw stepErrorOf(error, "token");
-	});
+	const credentials = await createToken(ctx, plan, accountId);
 	progress.ok("token", "Object Read & Write on this bucket only");
 	try {
 		step = "cors";
@@ -257,30 +356,41 @@ async function connectBucket(
 			plan.bucket,
 			plan.jurisdiction,
 			corsOrigins(ctx.origin, env.APP_URL),
+			budget.start("cors"),
 		);
 		progress.ok("cors");
 		const form = storeForm(env, plan, accountId, credentials);
 		const parsed = parseStoreInput(form);
 		if (!parsed.ok) throw new StepError("checks", parsed.error);
-		const bucket = new S3Bucket({ ...parsed.value.location, ...credentials }, { timeoutMs: 10_000 });
+		const bucket = new S3Bucket(
+			{ ...parsed.value.location, ...credentials },
+			{ timeoutMs: () => Math.max(1_000, Math.min(10_000, budget.left())) },
+		);
 		step = "keys";
-		await waitForKeys(bucket, ctx.timing);
+		await waitForKeys(bucket, ctx.timing, budget);
 		progress.ok("keys");
-		if (plan.sameAsBinding && !env.R2_S3_TEST_ENDPOINT) {
+		if (plan.sameAsBinding && !r2S3TestEndpoint(env)) {
 			step = "binding";
+			budget.start("binding");
 			await checkBindingBucket(env, bucket, plan.bucket);
 			progress.ok("binding");
 		}
 		step = "checks";
-		const saved = await createStore(env, ctx.actor, form, ctx.origin);
+		budget.start("checks", 3_000);
+		const saved = await createStore(env, ctx.actor, form, ctx.origin, { deadline: budget.steps });
 		if (!saved.ok)
 			throw new StepError("checks", saved.error, { code: "checks_failed", report: saved.report, status: saved.status });
 		progress.ok("checks");
 		return { ok: true, steps: progress.steps, store: saved.store, report: saved.report };
 	} catch (error) {
-		await deleteR2Token(env, accountId, credentials.accessKeyId);
-		// The bucket's other sites keep the CORS policy they had before this attempt.
-		if (previousCors) await restoreR2BucketCors(env, accountId, plan.bucket, plan.jurisdiction, previousCors);
+		const limits = budget.cleanup();
+		await Promise.all([
+			deleteR2Token(env, accountId, credentials.accessKeyId, limits),
+			// The bucket's other sites keep the CORS policy they had before this attempt.
+			previousCors
+				? restoreR2BucketCors(env, accountId, plan.bucket, plan.jurisdiction, previousCors, limits)
+				: Promise.resolve(),
+		]);
 		throw stepErrorOf(error, step);
 	}
 }
@@ -291,10 +401,11 @@ async function runSetup(ctx: Context, plan: R2SetupPlan): Promise<R2SetupResult>
 	const progress = new Progress(plan.sameAsBinding ? PLAN : PLAN.filter((id) => id !== "binding"));
 	let step: R2SetupStepId = "account";
 	try {
-		const accountId = await resolveR2Account(ctx.env);
+		const accountId = await resolveR2Account(ctx.env, await knownZoneIds(ctx.env), ctx.budget.start("account"));
 		progress.ok("account");
 		step = "bucket";
-		progress.ok("bucket", await ensureBucket(ctx.env, accountId, plan));
+		await refuseDuplicate(ctx.env, plan, accountId);
+		progress.ok("bucket", await ensureBucket(ctx, accountId, plan));
 		return await connectBucket(ctx, progress, plan, accountId);
 	} catch (error) {
 		const failure = stepErrorOf(error, step);
@@ -305,6 +416,8 @@ async function runSetup(ctx: Context, plan: R2SetupPlan): Promise<R2SetupResult>
 
 export type SetupOptions = {
 	timing?: SetupTiming;
+	/** The whole setup's time budget, cleanup included (60 seconds; 45 at install). */
+	budgetMs?: number;
 	source?: DirectUploadsSetupRecord["source"];
 	/** The attempt's audit row (from `recordStorageAttempt`), which gets the outcome; else a new row is written. */
 	attemptId?: string;
@@ -325,19 +438,46 @@ async function auditOutcome(
 		created: !!plan.create,
 		outcome: result.ok ? "set_up" : "failed",
 		...(failed ? { failedStep: failed.id } : {}),
+		...(!result.ok && result.code ? { code: result.code } : {}),
 		...(!result.ok && result.permission ? { permission: result.permission } : {}),
 		...(result.ok ? { storeId: result.store.id } : {}),
 	};
+	log.info("storage.auto_setup", metadata);
 	if (attemptId) await completeStorageAttempt(env, attemptId, metadata);
 	else await createAuditLog(env, { actorUserId: actor.id, action: "storage.auto_setup", metadata });
-	log.info("storage.auto_setup", metadata);
-	return failed;
 }
+
+/** The audit row and the direct-uploads note; once the store is saved, a failure here is logged, never answered. */
+async function recordOutcome(
+	env: CloudflareEnv,
+	actor: { id: string },
+	plan: R2SetupPlan,
+	result: R2SetupResult,
+	options: SetupOptions,
+): Promise<void> {
+	const failed = result.ok ? null : result.steps.find((step) => step.status === "failed");
+	try {
+		await auditOutcome(env, actor, plan, result, options.attemptId);
+		if (plan.sameAsBinding)
+			await recordDirectUploadsSetup(env, {
+				ok: result.ok,
+				at: new Date().toISOString(),
+				source: options.source ?? "admin",
+				...(result.ok ? {} : { step: failed?.id, message: result.error }),
+				...(!result.ok && result.permission ? { permission: result.permission } : {}),
+			});
+	} catch (error) {
+		log.error("storage.auto_setup_record_failed", { error, ok: result.ok });
+	}
+}
+
+const ADMIN_BUDGET_MS = 60_000;
 
 /**
  * One click from Admin → Storage, and first-run setup: an R2 bucket (created, or an existing one) connected with a
  * token that may only use that bucket, its CORS rule set for this site, and the store checked and saved like a
- * manual entry. The token value is never returned, stored or logged; the audit row names the bucket and outcome.
+ * manual entry, all within a time budget that keeps the cleanup inside the request. The token value is never
+ * returned, stored or logged; the audit row names the bucket and outcome.
  */
 export async function setUpR2(
 	env: CloudflareEnv,
@@ -347,18 +487,11 @@ export async function setUpR2(
 	options: SetupOptions = {},
 ): Promise<R2SetupResult> {
 	const availability = await r2AutoSetupAvailability(env);
+	const budget = new Budget(options.budgetMs ?? ADMIN_BUDGET_MS);
 	const result: R2SetupResult = availability.available
-		? await runSetup({ env, actor, origin, timing: options.timing ?? DEFAULT_TIMING }, plan)
+		? await runSetup({ env, actor, origin, timing: options.timing ?? DEFAULT_TIMING, budget }, plan)
 		: { ok: false, status: 409, error: availability.reason ?? "Not available", steps: [], code: "unavailable" };
-	const failed = await auditOutcome(env, actor, plan, result, options.attemptId);
-	if (plan.sameAsBinding)
-		await recordDirectUploadsSetup(env, {
-			ok: result.ok,
-			at: new Date().toISOString(),
-			source: options.source ?? "admin",
-			...(result.ok ? {} : { step: failed?.id, message: result.error }),
-			...(!result.ok && result.permission ? { permission: result.permission } : {}),
-		});
+	await recordOutcome(env, actor, plan, result, options);
 	return result;
 }
 
@@ -383,36 +516,38 @@ const INSTALL_BUDGET_MS = 45_000;
 
 /**
  * First-run setup on Cloudflare: direct uploads are on by default, so registration sets them up with the setup's
- * Cloudflare credentials. It never fails registration: a refusal or timeout is recorded, and the Storage page and
- * Admin overview then offer the one-click and guided setup. Off Workers (local files) there is nothing to set up.
+ * Cloudflare credentials. It never fails registration and nothing runs after the response: the setup's own budget
+ * (45 seconds, cleanup included) ends it, and a refusal or timeout is recorded for the Storage page and the Admin
+ * overview to offer the one-click and guided setup. Off Workers (local files) there is nothing to set up.
  */
 export async function setUpDirectUploadsAtInstall(
 	env: CloudflareEnv,
 	actor: { id: string },
 	origin: string,
-	timing?: SetupTiming,
+	options: Pick<SetupOptions, "timing" | "budgetMs"> = {},
 ): Promise<{ ok: boolean; message?: string } | null> {
-	if (isNodeRuntime(env) && !env.CLOUDFLARE_API_TEST_ORIGIN) return null;
-	const record = (message: string) =>
-		recordDirectUploadsSetup(env, { ok: false, at: new Date().toISOString(), source: "install", message }).catch(
-			() => undefined,
-		);
+	if (isNodeRuntime(env) && !r2ApiTestOrigin(env)) return null;
 	try {
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		const result = await Promise.race([
-			setUpDirectUploads(env, actor, origin, {}, { timing, source: "install" }),
-			new Promise<null>((resolve) => {
-				timer = setTimeout(() => resolve(null), INSTALL_BUDGET_MS);
-			}),
-		]).finally(() => clearTimeout(timer));
-		if (!result) {
-			await record("Setting up direct uploads took too long.");
-			return { ok: false, message: "Setting up direct uploads took too long." };
-		}
+		const result = await setUpDirectUploads(
+			env,
+			actor,
+			origin,
+			{},
+			{
+				budgetMs: INSTALL_BUDGET_MS,
+				...options,
+				source: "install",
+			},
+		);
 		return { ok: result.ok, ...(result.ok ? {} : { message: result.error }) };
 	} catch (error) {
 		log.warn("storage.direct_uploads_install_failed", { error });
-		await record("Direct uploads could not be set up during installation.");
+		await recordDirectUploadsSetup(env, {
+			ok: false,
+			at: new Date().toISOString(),
+			source: "install",
+			message: "Direct uploads could not be set up during installation.",
+		}).catch(() => undefined);
 		return { ok: false, message: "Direct uploads could not be set up during installation." };
 	}
 }

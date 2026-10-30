@@ -20,8 +20,8 @@ import { MessageDetailNavigation } from "@/components/messages/message-detail-na
 import { QuickReply } from "@/components/message-actions/quick-reply";
 import { AssistantButton } from "@/components/agent/assistant-button";
 import { MessageReadingHeaderButton } from "@/components/messages/message-reading-header-button";
-import { QuotedEmailToggle } from "@/components/messages/quoted-email-toggle";
-import { EmailHtmlFrame, RemoteImagesNotice } from "@/components/messages/email-html-frame";
+import { EmailBody } from "@/components/messages/email-body";
+import { RemoteImagesNotice } from "@/components/messages/email-html-frame";
 import { LinkifiedText } from "@/components/messages/linkified-text";
 import { useLoadRemoteImages } from "@/components/messages/use-load-remote-images";
 import { ThreadMessageActions } from "@/components/messages/thread-message-actions";
@@ -332,14 +332,17 @@ export default function MessageDetailPage() {
 							{imageOptions.stats.blockedRemoteImages > 0 && (
 								<RemoteImagesNotice onShow={() => setRemoteImagesShownFor(message.id)} />
 							)}
-							{htmlBody ? (
-								<EmailHtmlFrame html={htmlBody} className="email-body mx-auto" />
-							) : (
-								<pre className="whitespace-pre-wrap text-sm text mx-auto">
-									<LinkifiedText text={cloudAttachmentResult.content} />
-								</pre>
-							)}
-							{quotedHtml && <QuotedEmailToggle html={quotedHtml} />}
+							<EmailBody
+								key={message.id}
+								html={htmlBody}
+								quotedHtml={quotedHtml}
+								className="email-body mx-auto"
+								fallback={
+									<pre className="whitespace-pre-wrap text-sm text mx-auto">
+										<LinkifiedText text={cloudAttachmentResult.content} />
+									</pre>
+								}
+							/>
 							{bodyDisplay.quotedContent.map((quotedContent) => (
 								<PreviousMessage
 									key={`${quotedContent.dateLine}-${quotedContent.content.slice(0, 24)}`}

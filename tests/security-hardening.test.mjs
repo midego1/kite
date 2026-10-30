@@ -247,36 +247,74 @@ test("designed mail is rendered light and inverted in dark mode, with media inve
 	}
 	assert.doesNotMatch(frame.buildEmailFrameDocument('<td bgcolor="#fff">x</td>'), /html\{background:#fff\}/);
 });
-test("mail with only text colours is rendered light and inverted in dark mode, like mail with a background", () => {
-	for (const html of [
-		'<p style="color:#333333">Hi</p>',
-		'<span style="font-size:12px; color: rgb(34, 34, 34)">Hi</span>',
-		"<p style='COLOR:#222'>Hi</p>",
+test("near-black text colours are dropped in dark mode, so an ordinary reply looks like plain mail", () => {
+	for (const value of [
+		"black",
+		"windowtext",
+		"#000",
+		"#222",
+		"#333333",
+		"rgb(34, 34, 34)",
+		"rgba(0,0,0,.87)",
+		"COLOR:Black !important",
 	]) {
-		assert.equal(frame.hasOwnColours(html), true, html);
+		const html = `<p style="margin:0; color:${value.replace("COLOR:", "")}">Hi <span style="color:windowtext">there</span></p>`;
+		assert.equal(frame.adaptsEmailColours(html), true, `${value} offers the original colours`);
+		const document = frame.buildEmailFrameDocument(html, { dark: true });
+		assert.match(document, /color-scheme:dark/, value);
+		assert.doesNotMatch(document, /filter:invert/, value);
+		assert.doesNotMatch(document, /html\{background:#fff\}/, value);
+		// The declarations are gone, so the text takes the theme colour; everything else in the style stays.
+		assert.doesNotMatch(document, /color:\s*(black|windowtext|#000|#222|#333333|rgb)/i, value);
+		assert.match(document, /<p style="margin:0;">Hi <span style="">there<\/span><\/p>/, value);
+		// Original colours: the sender's own markup on a light canvas.
+		const original = frame.buildEmailFrameDocument(html, { dark: true, original: true });
+		assert.match(original, /color-scheme:light/, value);
+		assert.match(original, /html\{background:#fff\}/, value);
+		assert.doesNotMatch(original, /filter:invert/, value);
+		assert.match(original, /color:windowtext/, value);
+		// Light mode never touches the colours.
+		assert.equal(frame.buildEmailFrameDocument(html, { dark: false }).includes("windowtext"), true, value);
+	}
+});
+test("a colour that stays unreadable on the dark canvas renders the mail light and inverted", () => {
+	for (const html of [
+		'<p style="color:#1F497D">Best regards</p>',
+		'<p style="color:black">Hi</p><p style="color: rgb(31, 73, 125)">Signature</p>',
+		'<p style="color:#555555">Grey</p>',
+		'<font style="color:navy">x</font>',
+	]) {
+		assert.equal(frame.adaptsEmailColours(html), true, html);
 		const document = frame.buildEmailFrameDocument(html, { dark: true });
 		assert.match(document, /color-scheme:light/, html);
 		assert.match(document, /html\{background:#f2f2f0;filter:invert\(\.92\) hue-rotate\(180deg\)\}/, html);
+		// Inverted as a whole: the declared colours are kept, not dropped.
+		assert.match(document, /color:\s*(#1F497D|black|#555555|navy)/i, html);
 		const original = frame.buildEmailFrameDocument(html, { dark: true, original: true });
 		assert.doesNotMatch(original, /filter:invert/, html);
-		assert.match(original, /color-scheme:light/, html);
 		assert.match(original, /html\{background:#fff\}/, html);
 		assert.equal(frame.emailFrameColorScheme(html, { dark: true, original: true }), "light", html);
-		// Light mode leaves the sender's colours alone.
-		assert.doesNotMatch(frame.buildEmailFrameDocument(html, { dark: false }), /filter:invert/, html);
 	}
-	// Only style values count: text that mentions a colour, other colour properties and inherited values do not.
+});
+test("text colours that read fine on dark are left alone and offer nothing to restore", () => {
 	for (const html of [
-		"<p>Plain reply</p>",
+		'<p style="color:#ffffff">Hi</p>',
+		'<p style="color:#e8eaed">Hi</p>',
+		'<p style="color:rgb(200, 200, 200)">Hi</p>',
+		'<p style="color:gray">Hi</p>',
+		'<p style="color:#8ab4f8">Hi</p>',
+		'<p style="color:var(--text)">Hi</p>',
 		"<p>Favourite color: blue; the color:red one</p>",
 		'<p title="color: red">Hi</p>',
-		'<p style="border-color:#ccc;background-color:transparent">Hi</p>',
+		'<p style="border-color:#000;background-color:transparent">Hi</p>',
 		'<p style="color:inherit">Hi</p>',
 	]) {
-		assert.equal(frame.hasOwnColours(html), false, html);
+		assert.equal(frame.adaptsEmailColours(html), false, html);
+		const document = frame.buildEmailFrameDocument(html, { dark: true });
+		assert.match(document, /color-scheme:dark/, html);
+		assert.doesNotMatch(document, /filter:invert/, html);
+		assert.ok(document.includes(html), `${html} reaches the frame untouched`);
 		assert.equal(frame.emailFrameColorScheme(html, { dark: true, original: true }), "dark", html);
-		assert.match(frame.buildEmailFrameDocument(html, { dark: true }), /color-scheme:dark/, html);
-		assert.doesNotMatch(frame.buildEmailFrameDocument(html, { dark: true }), /filter:invert/, html);
 	}
 });
 test("the iframe element declares the same color-scheme as the frame document", () => {

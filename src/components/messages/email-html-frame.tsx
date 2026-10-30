@@ -1,36 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { ImageOff, Sun } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ImageOff } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-	buildEmailFrameDocument,
-	EMAIL_FRAME_SANDBOX,
-	emailFrameColorScheme,
-	hasOwnColours,
-} from "./email-html-frame-utils";
+import { useDarkTheme } from "./use-dark-theme";
+import { buildEmailFrameDocument, EMAIL_FRAME_SANDBOX, emailFrameColorScheme } from "./email-html-frame-utils";
 import type { EmailHtmlFrameProps, RemoteImagesNoticeProps } from "./email-html-frame-types";
 
-function subscribeToTheme(onChange: () => void) {
-	const observer = new MutationObserver(onChange);
-	observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-	return () => observer.disconnect();
-}
-
-function useDarkTheme(): boolean {
-	return useSyncExternalStore(
-		subscribeToTheme,
-		() => document.documentElement.classList.contains("dark"),
-		() => false,
-	);
-}
-
-export function EmailHtmlFrame({ html, title = "Message body", muted, className }: EmailHtmlFrameProps) {
+export function EmailHtmlFrame({
+	html,
+	title = "Message body",
+	muted,
+	original = false,
+	className,
+}: EmailHtmlFrameProps) {
 	const frame = useRef<HTMLIFrameElement | null>(null);
 	const [height, setHeight] = useState(0);
 	const dark = useDarkTheme();
-	const [original, setOriginal] = useState(false);
-	const adapted = dark && hasOwnColours(html);
+	const scheme = emailFrameColorScheme(html, { dark, original });
 	const srcDoc = useMemo(() => buildEmailFrameDocument(html, { dark, muted, original }), [html, dark, muted, original]);
 
 	const pendingFrame = useRef(0);
@@ -80,28 +67,14 @@ export function EmailHtmlFrame({ html, title = "Message body", muted, className 
 
 	return (
 		<>
-			{adapted && (
-				<div className="mb-2 flex justify-end">
-					<button
-						type="button"
-						onClick={() => setOriginal((current) => !current)}
-						// One fixed label with a pressed state: "Original colours, pressed" reads as on or off.
-						aria-pressed={original}
-						className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
-					>
-						<Sun className="h-3.5 w-3.5" aria-hidden="true" />
-						Original colours
-					</button>
-				</div>
-			)}
 			<iframe
 				ref={frame}
 				title={title}
 				sandbox={EMAIL_FRAME_SANDBOX}
 				referrerPolicy="no-referrer"
 				srcDoc={srcDoc}
-				style={{ height, colorScheme: emailFrameColorScheme(html, { dark, original }) }}
-				className={cn("block w-full border-0 bg-transparent", adapted && "rounded-lg", className)}
+				style={{ height, colorScheme: scheme }}
+				className={cn("block w-full border-0 bg-transparent", dark && scheme === "light" && "rounded-lg", className)}
 			/>
 		</>
 	);

@@ -5,8 +5,8 @@ import { useSyncedState } from "@/hooks/use-synced-state";
 import { formatUserDate } from "@/lib/time/utils";
 import { ChevronsUpDown, Paperclip } from "lucide-react";
 import { ContactAvatar } from "@/components/contacts/contact-avatar";
-import { QuotedEmailToggle } from "@/components/messages/quoted-email-toggle";
-import { EmailHtmlFrame, RemoteImagesNotice } from "@/components/messages/email-html-frame";
+import { EmailBody } from "@/components/messages/email-body";
+import { RemoteImagesNotice } from "@/components/messages/email-html-frame";
 import { useLoadRemoteImages } from "@/components/messages/use-load-remote-images";
 import { runSingleMessageAction } from "@/components/message-actions/utils";
 import { sanitizeEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/email-html-sanitizer";
@@ -287,14 +287,16 @@ export function ConversationMessageCard({
 				{expanded && body && (
 					<div className="pb-6 pt-1">
 						{body.blockedRemoteImages > 0 && <RemoteImagesNotice onShow={() => setRemoteImagesShown(true)} />}
-						{body.html ? (
-							<EmailHtmlFrame html={body.html} className="email-body max-w-none" />
-						) : (
-							<pre className="whitespace-pre-wrap font-sans text-sm text-neutral-900">
-								<LinkifiedText text={body.text} />
-							</pre>
-						)}
-						{body.quotedHtml && <QuotedEmailToggle html={body.quotedHtml} />}
+						<EmailBody
+							html={body.html}
+							quotedHtml={body.quotedHtml}
+							className="email-body max-w-none"
+							fallback={
+								<pre className="whitespace-pre-wrap font-sans text-sm text-neutral-900">
+									<LinkifiedText text={body.text} />
+								</pre>
+							}
+						/>
 						{attachments.length > 0 && (
 							<ul className="mt-4 flex flex-wrap gap-2">
 								{attachments.map((attachment) => (

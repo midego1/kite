@@ -11,6 +11,8 @@ export type EmailHtmlFrameProps = {
 	html: string;
 	title?: string;
 	muted?: boolean;
+	/** Show the sender's own colours instead of adapting them to dark mode. */
+	original?: boolean;
 	className?: string;
 };
 

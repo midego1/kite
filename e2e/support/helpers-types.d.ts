@@ -40,6 +40,8 @@ export type BackupRow = {
 	trigger: string;
 	error: string | null;
 	filename: string | null;
+	objectsStatus?: "copying" | "completed" | "failed" | "restoring" | null;
+	objectsCount?: number | null;
 };
 
 /** The latest restore as `GET /api/backups/health` reports it. */

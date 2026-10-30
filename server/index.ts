@@ -22,6 +22,8 @@ import { processMailboxPurge } from "@/lib/mailboxes/delete";
 import { isMailboxPurgeMessage } from "@/lib/mailboxes/delete-utils";
 import { runDatabaseBackup } from "@/lib/backups/runner";
 import { isBackupRunMessage } from "@/lib/backups/queue-utils";
+import { processBackupObjectsMessage } from "@/lib/backups/objects";
+import { isBackupObjectsMessage } from "@/lib/backups/objects-utils";
 import { processRestoreMessage } from "@/lib/backups/restore-job";
 import { isRestoreJobMessage } from "@/lib/backups/restore-job-utils";
 import { processStorageMigration } from "@/lib/storage/migration";
@@ -73,6 +75,7 @@ async function main() {
 		if (isWebhookRetryMessage(body)) await processWebhookRetry(env, body as WebhookRetryMessage);
 		else if (isMailboxPurgeMessage(body)) await processMailboxPurge(env, body);
 		else if (isBackupRunMessage(body)) await runDatabaseBackup(env, body.backupId);
+		else if (isBackupObjectsMessage(body)) await processBackupObjectsMessage(env, body);
 		else if (isRestoreJobMessage(body)) await processRestoreMessage(env, body);
 		else if (isStorageMigrateMessage(body)) await processStorageMigration(env, body);
 		else if (isAppendSentMessage(body)) await processAppendSent(env, body);

@@ -150,16 +150,20 @@ function lengthOption(target: ObjectStore, length: number) {
 	return (target.id === DEFAULT_STORE_ID ? {} : { contentLength: length }) as R2UploadPartOptions & R2PutOptions;
 }
 
-/** Copies one object with its metadata; large objects go part by part with ranged reads. */
-async function copyObject(
+/**
+ * Copies one object with its metadata; large objects go part by part with ranged reads. The copy is written to
+ * `targetKey`, which is `key` for a move between stores and another name for the copies full backups keep.
+ */
+export async function copyObject(
 	source: KiteBucket,
 	head: R2Object,
 	target: ObjectStore,
 	key: string,
+	targetKey = key,
 ): Promise<number | null> {
 	const metadata = { httpMetadata: head.httpMetadata, customMetadata: head.customMetadata };
 	if (head.size > MULTIPART_COPY_THRESHOLD && target.bucket.createMultipartUpload) {
-		const upload = await target.bucket.createMultipartUpload(key, metadata);
+		const upload = await target.bucket.createMultipartUpload(targetKey, metadata);
 		try {
 			const parts = [];
 			for (const part of copyParts(head.size, COPY_PART_BYTES)) {
@@ -179,7 +183,7 @@ async function copyObject(
 	const object = await source.get(key);
 	if (!object) return null;
 	const body = object.size === 0 ? new Uint8Array(0) : sized(object.body, object.size);
-	await target.bucket.put(key, body, { ...metadata, ...lengthOption(target, object.size) });
+	await target.bucket.put(targetKey, body, { ...metadata, ...lengthOption(target, object.size) });
 	return object.size;
 }
 
@@ -190,7 +194,10 @@ function describeError(error: unknown): string {
 }
 
 /** The first store that holds the key: the old store, then the default store for objects that never moved. */
-async function findSource(sources: ObjectStore[], key: string): Promise<{ store: ObjectStore; head: R2Object } | null> {
+export async function findSource(
+	sources: ObjectStore[],
+	key: string,
+): Promise<{ store: ObjectStore; head: R2Object } | null> {
 	for (const store of sources) {
 		const head = await store.bucket.head(key);
 		if (head) return { store, head };

@@ -1,4 +1,5 @@
 import { authFetch } from "@/lib/auth/client";
+import type { BackupObjectsRestoreResult } from "@/lib/backups/objects-types";
 import { formatUserDate } from "@/lib/time/utils";
 import type { BackupHealth } from "@/lib/backups/health-types";
 import type { RestoreSummary } from "@/lib/backups/restore-job-types";
@@ -46,6 +47,50 @@ export async function startBackup(): Promise<void> {
 	const response = await authFetch("/api/backups", { method: "POST" });
 	const data = (await response.json()) as { error?: string };
 	if (!response.ok) throw new Error(data.error ?? "Failed to run backup");
+}
+
+/** About how many mail files, and bytes, a full backup copies now. */
+export async function fetchObjectsEstimate(): Promise<{ objects: number; bytes: number }> {
+	const response = await authFetch("/api/backups/objects");
+	const data = (await response.json()) as { objects: number; bytes: number; error?: string };
+	if (!response.ok) throw new Error(data.error ?? "Failed to estimate the mail files");
+	return data;
+}
+
+/** Puts a full backup's mail files back; files that still exist are left alone. */
+export async function restoreBackupObjects(id: string): Promise<void> {
+	const response = await authFetch(`/api/backups/${id}/objects`, { method: "POST" });
+	const data = (await response.json()) as { error?: string };
+	if (!response.ok) throw new Error(data.error ?? "Failed to restore the mail files");
+}
+
+/** Copies the mail files of a backup again after the copy failed or missed files. */
+export async function retryBackupObjects(id: string): Promise<void> {
+	const response = await authFetch(`/api/backups/${id}/objects/retry`, { method: "POST" });
+	const data = (await response.json()) as { error?: string };
+	if (!response.ok) throw new Error(data.error ?? "Failed to retry copying the mail files");
+}
+
+/** The stored result of the last restore of a backup's mail files, or null. */
+export function parseObjectsRestore(value: string | null): BackupObjectsRestoreResult | null {
+	if (!value) return null;
+	try {
+		const result = JSON.parse(value) as BackupObjectsRestoreResult;
+		return typeof result.restored === "number" ? result : null;
+	} catch {
+		return null;
+	}
+}
+
+/** True while an export, a copy of mail files or a restore of them is still going, so the list keeps polling. */
+export function isBackupBusy(backup: BackupItem): boolean {
+	return (
+		backup.status === "queued" ||
+		backup.status === "running" ||
+		(backup.objectsStatus === "pending" && backup.status === "completed") ||
+		backup.objectsStatus === "copying" ||
+		backup.objectsStatus === "restoring"
+	);
 }
 
 export async function removeBackup(id: string): Promise<void> {

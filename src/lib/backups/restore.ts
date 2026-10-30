@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { backups } from "@/db/schema";
+import { backups } from "@/db/schema/backups";
+import { selectRow } from "@/lib/db/pending-columns";
+import { isObjectsRunActive } from "./objects-utils";
 import { getMigrationStatus } from "@/lib/migrations/service";
 import { newId } from "@/lib/ids";
 import { writeBackupObject } from "./backup-writer";
@@ -12,8 +14,8 @@ import { BACKUP_UPLOAD_PREFIX } from "./utils";
 
 /** A restore is already running; only one may run at a time. */
 export class RestoreBusyError extends Error {
-	constructor() {
-		super("A restore is already running. Wait for it to finish before starting another.");
+	constructor(message = "A restore is already running. Wait for it to finish before starting another.") {
+		super(message);
 	}
 }
 
@@ -118,29 +120,34 @@ export async function startStoredRestore(
 	backupId: string,
 	userId: string | null,
 ): Promise<RestoreJob | null> {
-	const [backup] = await getDb(env)
-		.select({
-			id: backups.id,
-			status: backups.status,
-			trigger: backups.trigger,
-			r2Key: backups.r2Key,
-			filename: backups.filename,
-			size: backups.size,
-			createdByUserId: backups.createdByUserId,
-			createdAt: backups.createdAt,
-			startedAt: backups.startedAt,
-			completedAt: backups.completedAt,
-		})
-		.from(backups)
-		.where(eq(backups.id, backupId))
-		.limit(1);
+	const backup = await selectRow(getDb(env), backups, eq(backups.id, backupId));
 	if (!backup?.r2Key || backup.status !== "completed") return null;
+	// Its row is written back as it is now, so a copy or restore of its mail files must not be moving it meanwhile.
+	if (isObjectsRunActive(backup))
+		throw new RestoreBusyError("Wait until the mail files of this backup are copied or restored, then restore it.");
 	const kept: KeptBackupRecord = {
-		...backup,
+		id: backup.id,
+		trigger: backup.trigger,
 		r2Key: backup.r2Key,
+		filename: backup.filename,
+		size: backup.size,
+		createdByUserId: backup.createdByUserId,
 		createdAt: toSeconds(backup.createdAt)!,
 		startedAt: toSeconds(backup.startedAt),
 		completedAt: toSeconds(backup.completedAt),
+		objects: backup.objectsStatus
+			? {
+					status: backup.objectsStatus,
+					prefix: backup.objectsPrefix,
+					count: backup.objectsCount,
+					size: backup.objectsSize,
+					missing: backup.objectsMissing,
+					failed: backup.objectsFailed,
+					cursor: backup.objectsCursor,
+					restore: backup.objectsRestore,
+					updatedAt: toSeconds(backup.objectsUpdatedAt),
+				}
+			: null,
 	};
 	return startRestore(env, {
 		source: { key: backup.r2Key, upload: false, filename: backup.filename },

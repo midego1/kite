@@ -1,6 +1,7 @@
 import { and, count, eq, gt, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { backups, outboundJobs, webhookDeliveries } from "@/db/schema";
+import { outboundJobs, webhookDeliveries } from "@/db/schema";
+import { backups } from "@/db/schema/backups";
 import type { AlertPolicy, AlertSnapshot } from "./alerts-types";
 import { getDatabaseSize } from "@/lib/db/size";
 import { readRelaySignatureState } from "./relay-signature";

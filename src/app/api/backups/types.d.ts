@@ -7,4 +7,5 @@ export type BackupSettingsInput = {
 	retentionEnabled: boolean;
 	retentionDays: number;
 	excludedTableGroups: BackupTableGroupId[];
+	includeObjects: boolean;
 };

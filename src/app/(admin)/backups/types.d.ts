@@ -11,8 +11,12 @@ export type BackupSettings = {
 	retentionEnabled: boolean;
 	retentionDays: number;
 	excludedTableGroups: BackupTableGroupId[];
+	/** Copy the mail files (raw MIME, attachments, offloaded bodies) with every backup. */
+	includeObjects: boolean;
 	updatedAt: string;
 };
+
+export type BackupObjectsStatus = "pending" | "copying" | "completed" | "failed" | "restoring";
 
 export type BackupItem = {
 	id: string;
@@ -24,6 +28,13 @@ export type BackupItem = {
 	createdAt: string;
 	startedAt: string | null;
 	completedAt: string | null;
+	objectsStatus: BackupObjectsStatus | null;
+	objectsCount: number | null;
+	objectsSize: number | null;
+	objectsMissing: number | null;
+	objectsFailed: number | null;
+	/** JSON `BackupObjectsRestoreResult` of the last restore of the mail files. */
+	objectsRestore: string | null;
 };
 
 export type BackupsResponse = {

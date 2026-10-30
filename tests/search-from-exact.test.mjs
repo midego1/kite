@@ -32,8 +32,22 @@ test("from: with one whole address is an exact sender, quoted or not; names and 
 	assert.equal(parseSearchQuery('from:"sam okoro"').from, "sam okoro");
 	assert.equal(parseSearchQuery("from:maya").from, "maya");
 	assert.equal(parseSearchQuery("from:@cursor.com").from, "@cursor.com");
-	// The exact sender no longer needs the full-text index.
-	assert.equal(buildFtsMatch(parseSearchQuery('from:"hi@cursor.com"')), null);
+	// Partial addresses (no dot in the domain) keep the old word match.
+	assert.equal(parseSearchQuery("from:noreply@github").from, "noreply@github");
+	assert.equal(parseSearchQuery("from:maya@acme").fromAddress, undefined);
+	assert.equal(parseSearchQuery("from:a@.com").fromAddress, undefined);
+	// Only A-Z fold, as in SQLite's lower().
+	assert.equal(parseSearchQuery("from:Ünal@X.de").fromAddress, "Ünal@x.de");
+	assert.equal(exactSenderMatch("Ünal@X.de").equals, "Ünal@x.de");
+});
+
+test("an exact sender still narrows through the full-text index first", () => {
+	assert.equal(buildFtsMatch(parseSearchQuery('from:"hi@cursor.com"')), 'from_addr : ("hi cursor com")');
+	assert.match(
+		buildFtsMatch(parseSearchQuery('from:"hi@cursor.com" invoice')),
+		/"invoice"\*.*from_addr : \("hi cursor com"\)/,
+	);
+	assert.equal(parseSearchQuery('from:"hi@cursor.com"').needsFullText, true);
 });
 
 test("the exact sender predicate matches the address alone or ending a header, and nothing close to it", () => {
@@ -55,6 +69,9 @@ test("the exact sender predicate matches the address alone or ending a header, a
 		"axb@x.test",
 		"100%@x.test",
 		"1000@x.test",
+		"ÜNAL@x.de",
+		"Ünal@x.de",
+		'"Ünal" <Ünal@X.DE>',
 	];
 	const insert = db.prepare("INSERT INTO messages (from_addr) VALUES (?)");
 	for (const sender of senders) insert.run(sender);
@@ -75,4 +92,6 @@ test("the exact sender predicate matches the address alone or ending a header, a
 	assert.deepEqual(find("a.b@x.test"), ["a.b@x.test"]);
 	assert.deepEqual(find("a_b@x.test"), ["a_b@x.test"]);
 	assert.deepEqual(find("100%@x.test"), ["100%@x.test"]);
+	// SQLite folds only A-Z, as the JS side does: Ünal matches itself in any ASCII case.
+	assert.deepEqual(find("Ünal@x.de"), ["ÜNAL@x.de", "Ünal@x.de", '"Ünal" <Ünal@X.DE>']);
 });

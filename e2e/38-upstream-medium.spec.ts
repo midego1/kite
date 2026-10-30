@@ -251,7 +251,7 @@ async function memberPage(browser: Browser, address: string) {
 }
 
 function settingsNav(page: Page) {
-	return page.getByRole("navigation", { name: "Mailbox" });
+	return page.getByRole("navigation", { name: "Mail" });
 }
 
 test.describe("Settings → Mailboxes (upstream #133)", () => {

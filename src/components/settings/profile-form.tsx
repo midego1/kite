@@ -8,6 +8,7 @@ import { authFetch } from "@/lib/auth/client";
 import { dispatchProfileNameChanged } from "@/lib/profile/name-client";
 import { ProfileAvatarForm } from "./profile-avatar-form";
 import type { ProfileFormProps, ProfileFormResponse } from "./types";
+import { FormFooter } from "@/components/ui/page";
 
 export function ProfileForm({ initialName, initialResetEmail, email }: ProfileFormProps) {
 	const [name, setName] = useState(initialName);
@@ -106,12 +107,11 @@ export function ProfileForm({ initialName, initialResetEmail, email }: ProfileFo
 					/>
 				</div>
 
-				<div className="flex items-center gap-3">
+				<FormFooter status={profileStatus}>
 					<Button type="submit" disabled={savingProfile || name.trim() === savedName}>
 						{savingProfile ? "Saving..." : "Save profile"}
 					</Button>
-					{profileStatus && <p className="text-sm text-neutral-500">{profileStatus}</p>}
-				</div>
+				</FormFooter>
 			</form>
 
 			<form onSubmit={onRecoverySubmit} className="space-y-4 p-5">
@@ -130,12 +130,11 @@ export function ProfileForm({ initialName, initialResetEmail, email }: ProfileFo
 						placeholder="recovery@example.com"
 					/>
 				</div>
-				<div className="flex items-center gap-3">
+				<FormFooter status={recoveryStatus}>
 					<Button type="submit" disabled={savingRecovery || resetEmail.trim() === savedResetEmail}>
 						{savingRecovery ? "Saving..." : "Save recovery email"}
 					</Button>
-					{recoveryStatus && <p className="text-sm text-neutral-500">{recoveryStatus}</p>}
-				</div>
+				</FormFooter>
 			</form>
 		</>
 	);

@@ -45,9 +45,12 @@ test("Test connection checks a store without saving it, with a fix under each fa
 		const secret = dialog.getByLabel("Secret access key");
 		await secret.fill("not-the-right-secret");
 		await expect(secret).toHaveAttribute("type", "password");
-		await dialog.getByRole("button", { name: "Show secret" }).click();
+		const toggle = dialog.getByRole("button", { name: "Show secret" });
+		await expect(toggle).toHaveAttribute("aria-pressed", "false");
+		await toggle.click();
 		await expect(secret).toHaveAttribute("type", "text");
-		await dialog.getByRole("button", { name: "Hide secret" }).click();
+		await expect(toggle).toHaveAttribute("aria-pressed", "true");
+		await toggle.click();
 		await expect(secret).toHaveAttribute("type", "password");
 
 		// A wrong secret fails on the credentials step, with the fix.

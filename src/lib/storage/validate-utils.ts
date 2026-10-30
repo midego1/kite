@@ -97,7 +97,7 @@ const PERMISSION_FOR: Partial<Record<ValidationStepId, string>> = {
 	presign: "s3:GetObject",
 };
 
-type FailureShape = { status?: number; code?: string; message?: string; network?: boolean };
+type FailureShape = { status?: number; code?: string; message?: string; network?: boolean; timeout?: boolean };
 
 /** Who the hint is for: the provider names its own console and permission, and the bucket is named. */
 export type HintContext = { provider: S3Provider; bucket: string };
@@ -112,7 +112,7 @@ const CLOCK_CODES = /RequestTimeTooSkewed|RequestExpired/i;
  * is the bucket.
  */
 export function bucketFailureStep(failure: FailureShape): "endpoint" | "credentials" | "bucket" {
-	if (failure.network) return "endpoint";
+	if (failure.network || failure.timeout) return "endpoint";
 	const code = failure.code ?? "";
 	if (CREDENTIAL_CODES.test(code) || CLOCK_CODES.test(code) || failure.status === 401) return "credentials";
 	return "bucket";
@@ -163,6 +163,21 @@ function credentialsFix(code: string, context?: HintContext): Pick<ValidationSte
 	};
 }
 
+/** No answer at all: the network failed or the store did not answer within the check's deadline. */
+function transportFailure(failure: FailureShape): Pick<ValidationStep, "detail" | "fix"> | null {
+	if (failure.timeout)
+		return {
+			detail: "The store did not answer in time.",
+			fix: "Check the endpoint, and that the store is reachable from the server.",
+		};
+	if (failure.network)
+		return {
+			detail: "Could not reach the endpoint.",
+			fix: "Check the endpoint host and port, and that the store is reachable from the server.",
+		};
+	return null;
+}
+
 /** Turns a failed request into what went wrong and how to fix it, by the S3 error code. */
 export function describeFailure(
 	step: ValidationStepId,
@@ -170,11 +185,8 @@ export function describeFailure(
 	context?: HintContext,
 ): Pick<ValidationStep, "detail" | "fix"> {
 	const code = failure.code ?? "";
-	if (failure.network)
-		return {
-			detail: "Could not reach the endpoint.",
-			fix: "Check the endpoint host and port, and that the store is reachable from the server.",
-		};
+	const transport = transportFailure(failure);
+	if (transport) return transport;
 	if (CREDENTIAL_CODES.test(code)) return credentialsFix(code, context);
 	if (CLOCK_CODES.test(code) || /expired/i.test(failure.message ?? ""))
 		return {
@@ -189,7 +201,8 @@ export function describeFailure(
 				? `Check the bucket name (${context.bucket}), or create the bucket first.`
 				: "Check the bucket name, or create the bucket first.",
 		};
-	if (/PermanentRedirect|AuthorizationHeaderMalformed|IllegalLocationConstraint/i.test(code) || failure.status === 301)
+	const redirected = !!failure.status && failure.status >= 300 && failure.status < 400;
+	if (/PermanentRedirect|AuthorizationHeaderMalformed|IllegalLocationConstraint/i.test(code) || redirected)
 		return {
 			detail: "The bucket is in another region or needs another endpoint.",
 			fix: "Use the bucket's own region and endpoint.",
@@ -210,6 +223,7 @@ const headerList = (value: string | null) =>
 
 /** The CORS preflight answer direct uploads need, or what is missing from it. */
 export function preflightProblem(headers: Headers, status: number, origin: string): string | null {
+	if (status >= 300 && status < 400) return "The store redirected the request; use the bucket's own endpoint.";
 	const allowOrigin = headers.get("access-control-allow-origin");
 	if (status >= 400 || !allowOrigin) return "The store did not allow uploads from this site.";
 	if (allowOrigin !== "*" && allowOrigin !== origin) return `The store allows ${allowOrigin}, not ${origin}.`;

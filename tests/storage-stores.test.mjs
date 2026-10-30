@@ -127,13 +127,26 @@ test("an edit keeps the saved key pair, re-validates only what changes, and audi
 	assert.equal(renamed.ok, true);
 	assert.equal(renamed.report, null, "a rename runs no checks");
 	assert.equal(rows(env)[0].credentials, sealed);
-	const moved = await stores.updateStore(env, actor, id, { bucket: "kite-missing" }, APP_ORIGIN);
+	const keys = { accessKeyId: fake.accessKeyId, secretAccessKey: fake.secretAccessKey };
+	const before = fake.state.requests.length;
+	for (const change of [{ bucket: "kite-spare" }, { endpoint: "https://s3.example.com" }, { region: "eu-west-1" }]) {
+		const refused = await stores.updateStore(env, actor, id, change, APP_ORIGIN);
+		assert.equal(refused.status, 400, JSON.stringify(change));
+		assert.equal(refused.field, "secretAccessKey");
+		assert.match(refused.error, /again to save a different endpoint/);
+	}
+	assert.equal(fake.state.requests.length, before, "the saved secret signed nothing for the new location");
+	assert.equal(rows(env)[0].bucket, "kite-store");
+	const moved = await stores.updateStore(env, actor, id, { bucket: "kite-missing", ...keys }, APP_ORIGIN);
 	assert.equal(moved.status, 422);
 	assert.equal(rows(env)[0].bucket, "kite-store");
-	const spare = await stores.updateStore(env, actor, id, { bucket: "kite-spare" }, APP_ORIGIN);
+	const spare = await stores.updateStore(env, actor, id, { bucket: "kite-spare", ...keys }, APP_ORIGIN);
 	assert.equal(spare.ok, true);
 	assert.equal(spare.report.ok, true);
-	assert.equal(rows(env)[0].credentials, sealed, "the key pair was not re-entered");
+	const resealed = rows(env)[0].credentials;
+	const recheck = await stores.updateStore(env, actor, id, { name: "Renamed again" }, APP_ORIGIN);
+	assert.equal(recheck.report, null);
+	assert.equal(rows(env)[0].credentials, resealed, "a rename keeps the saved key pair");
 	const rekeyed = await stores.updateStore(
 		env,
 		actor,
@@ -142,10 +155,17 @@ test("an edit keeps the saved key pair, re-validates only what changes, and audi
 		APP_ORIGIN,
 	);
 	assert.equal(rekeyed.ok, true);
-	assert.notEqual(rows(env)[0].credentials, sealed, "new credentials are sealed again");
+	assert.notEqual(rows(env)[0].credentials, resealed, "new credentials are sealed again");
+	assert.notEqual(resealed, sealed);
 	assert.deepEqual(
 		audits(env).map((row) => row.action),
-		["storage.store_created", "storage.store_updated", "storage.store_updated", "storage.store_updated"],
+		[
+			"storage.store_created",
+			"storage.store_updated",
+			"storage.store_updated",
+			"storage.store_updated",
+			"storage.store_updated",
+		],
 	);
 	const half = await stores.updateStore(env, actor, id, { accessKeyId: "AKIAONLYHALF" }, APP_ORIGIN);
 	assert.equal(half.status, 400);

@@ -84,8 +84,9 @@ test("a passing test reports every check, saves nothing, cleans up and never ret
 	const [audit] = audits(env);
 	assert.equal(audit.action, "storage.store_tested");
 	const metadata = JSON.parse(audit.metadata);
-	assert.equal(metadata.ok, true);
 	assert.equal(metadata.bucket, "kite-store");
+	assert.equal(metadata.provider, "minio");
+	assert.match(logged, /"event":"storage.store_tested".*"ok":true/);
 	assert.equal(metadata.storeId, null);
 	assert.ok(!audit.metadata.includes(fake.secretAccessKey));
 	assert.ok(!audit.metadata.includes(fake.accessKeyId));
@@ -126,17 +127,101 @@ test("an edit's test uses the saved key pair when the form leaves it blank", asy
 	assert.ok(!spaced.text.includes("two words"));
 });
 
-test("the endpoint guard applies, and the test is rate limited per admin", async (t) => {
+test("an edit's test with a blank key pair is refused once the location changes, before any request", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_a", "kite-store");
+	const before = fake.state.requests.length;
+	const blank = { storeId: "sto_a", accessKeyId: "", secretAccessKey: "" };
+	for (const change of [
+		{ endpoint: "https://s3.example.com" },
+		{ bucket: "kite-other" },
+		{ region: "eu-west-1" },
+		{ addressing: "virtual", bucket: "kite-store" },
+		{ provider: "other" },
+	]) {
+		const refused = await call(env, "owner", form({ ...blank, ...change }));
+		assert.equal(refused.status, 400, JSON.stringify(change));
+		assert.equal(refused.body.field, "secretAccessKey");
+		assert.match(refused.body.error, /again to test a different endpoint, bucket or region/);
+	}
+	assert.equal(fake.state.requests.length, before, "the saved secret signed nothing");
+	assert.equal(audits(env).length, 0, "a refused test is not an attempt");
+	const typed = await call(env, "owner", form({ storeId: "sto_a", bucket: "kite-store", region: fake.region }));
+	assert.equal(typed.status, 200, "typing the keys again is fine");
+});
+
+test("the endpoint guard applies before any request", async (t) => {
 	const { env } = await fixture(t, { STORAGE_ALLOW_INSECURE_ENDPOINT: "", STORAGE_ALLOW_PRIVATE_ENDPOINTS: "" });
 	const before = fake.state.requests.length;
 	const blocked = await call(env, "owner", form());
 	assert.equal(step(blocked.body.report, "endpoint").status, "failed");
 	assert.equal(step(blocked.body.report, "credentials").status, "skipped");
 	assert.equal(fake.state.requests.length, before, "a blocked endpoint is never contacted");
-	const keys = [];
-	env.LOGIN_RATE_LIMIT = { limit: async ({ key }) => (keys.push(key), { success: false }) };
+});
+
+test("each admin may test five times a minute, and a limit that cannot be checked refuses", async (t) => {
+	const { env } = await fixture(t);
+	for (let attempt = 1; attempt <= 5; attempt++) assert.equal((await call(env, "owner", form())).status, 200);
+	const before = fake.state.requests.length;
 	const limited = await call(env, "owner", form());
 	assert.equal(limited.status, 429);
-	assert.deepEqual(keys, ["storage-test:owner"]);
-	assert.equal(fake.state.requests.length, before);
+	assert.match(limited.body.error, /wait a minute/);
+	assert.equal(fake.state.requests.length, before, "a refused test sends nothing");
+	const { env: other } = await fixture(t);
+	other.DB.db.exec("DROP TABLE audit_logs");
+	const { result, logged } = await consoleOutput(t, () => call(other, "owner", form()));
+	assert.equal(result.status, 503);
+	assert.match(logged, /storage.test_limit_unavailable/);
+	assert.ok(!logged.includes(fake.secretAccessKey));
+});
+
+/** Wraps fetch so a test can answer some store requests itself and see how every one was sent. */
+function interceptFetch(t, answer) {
+	const real = globalThis.fetch;
+	const seen = [];
+	t.mock.method(globalThis, "fetch", async (input, init = {}) => {
+		const url = String(input instanceof Request ? input.url : input);
+		seen.push({ url, method: init.method ?? "GET", redirect: init.redirect, signal: init.signal });
+		return (await answer(url, init)) ?? real(input, init);
+	});
+	return seen;
+}
+
+test("no check follows a redirect, and every check request has a deadline", async (t) => {
+	const { env } = await fixture(t);
+	let redirecting = "HEAD";
+	const seen = interceptFetch(t, (url, init) =>
+		(init.method ?? "GET") === redirecting
+			? new Response(null, { status: 302, headers: { Location: "http://169.254.169.254/latest/meta-data/" } })
+			: null,
+	);
+	const result = await call(env, "owner", form());
+	const bucket = step(result.body.report, "bucket");
+	assert.equal(bucket.status, "failed");
+	assert.match(bucket.detail, /another region or needs another endpoint/);
+	assert.ok(seen.length > 0);
+	assert.ok(!seen.some((entry) => entry.url.includes("169.254.169.254")), "the Location was never requested");
+	for (const entry of seen) {
+		assert.equal(entry.redirect, "manual", `${entry.method} ${entry.url}`);
+		assert.ok(entry.signal, `${entry.method} has a deadline`);
+	}
+	redirecting = "OPTIONS";
+	const preflight = await call(env, "owner", form());
+	assert.match(step(preflight.body.report, "cors_preflight").detail, /redirected/);
+});
+
+test("a delete that times out is retried, so no probe object is left behind", async (t) => {
+	const { env } = await fixture(t);
+	let timedOut = 0;
+	interceptFetch(t, (url, init) => {
+		if (init.method !== "DELETE" || timedOut) return null;
+		timedOut++;
+		throw new DOMException("The operation timed out.", "TimeoutError");
+	});
+	const result = await call(env, "owner", form());
+	const remove = step(result.body.report, "delete");
+	assert.equal(remove.status, "failed");
+	assert.match(remove.detail, /did not answer in time/);
+	assert.equal(timedOut, 1);
+	assert.deepEqual([...fake.buckets.get("kite-store").objects.keys()], [], "the probe was deleted afterwards");
 });

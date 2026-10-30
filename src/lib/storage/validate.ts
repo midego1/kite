@@ -21,10 +21,20 @@ import {
 export type StoreCandidate = { provider: S3Provider; location: S3Location; credentials: S3Credentials };
 
 const PROBE_SECONDS = 60;
+/** Every check request gets this long; a store that does not answer fails the step instead of hanging the test. */
+const CHECK_TIMEOUT_MS = 15_000;
+
+/** Browser-side probes never follow a redirect (it would go to a host nobody checked) and give up in time. */
+const probeInit = () => ({ redirect: "manual" as const, signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) });
+
+const checkBucketOf = (candidate: StoreCandidate) =>
+	new S3Bucket({ ...candidate.location, ...candidate.credentials }, { timeoutMs: CHECK_TIMEOUT_MS });
 
 function failureOf(error: unknown) {
 	const cause = error instanceof StorageTestError ? error.cause : error;
 	if (cause instanceof AwsError) return { status: cause.status, code: cause.code, message: cause.message };
+	if (cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError"))
+		return { timeout: true };
 	if (cause instanceof TypeError) return { network: true };
 	return { message: cause instanceof Error ? cause.message : undefined };
 }
@@ -119,35 +129,41 @@ async function reachBucket(steps: Steps, bucket: S3Bucket): Promise<boolean> {
 }
 
 async function checkObjects(steps: Steps, bucket: S3Bucket): Promise<void> {
-	let probe: string;
+	const probe = probeKey();
+	let deleted = false;
 	try {
-		probe = (await testStorage(bucket as unknown as KiteBucket, { keep: true })).key;
-		steps.ok("write");
-		steps.ok("read");
-	} catch (error) {
-		steps.failed(error instanceof StorageTestError ? error.step : "write", error);
-		return;
-	}
-	await steps.run("list", async () => {
-		await bucket.list({ prefix: "healthcheck/", limit: 1 });
-	});
-	await steps.run("presign", async () => {
-		const url = await bucket.signer.presignGet(probe, {
-			expiresIn: PROBE_SECONDS,
-			filename: "kite-check.txt",
-			disposition: "attachment",
-			contentType: "text/plain",
-		});
-		const response = await fetch(url);
-		if (!response.ok) {
-			const text = await response.text().catch(() => "");
-			const code = /<Code>([^<]+)<\/Code>/.exec(text)?.[1] ?? `HTTP${response.status}`;
-			const message = /<Message>([^<]+)<\/Message>/.exec(text)?.[1];
-			throw new AwsError(message ?? "The signed link was refused", response.status, code);
+		try {
+			await testStorage(bucket as unknown as KiteBucket, { key: probe, keep: true });
+			steps.ok("write");
+			steps.ok("read");
+		} catch (error) {
+			steps.failed(error instanceof StorageTestError ? error.step : "write", error);
+			return;
 		}
-		await response.body?.cancel();
-	});
-	await steps.run("delete", () => bucket.delete(probe));
+		await steps.run("list", async () => {
+			await bucket.list({ prefix: "healthcheck/", limit: 1 });
+		});
+		await steps.run("presign", async () => {
+			const url = await bucket.signer.presignGet(probe, {
+				expiresIn: PROBE_SECONDS,
+				filename: "kite-check.txt",
+				disposition: "attachment",
+				contentType: "text/plain",
+			});
+			const response = await fetch(url, probeInit());
+			if (!response.ok) {
+				const text = await response.text().catch(() => "");
+				const code = /<Code>([^<]+)<\/Code>/.exec(text)?.[1] ?? `HTTP${response.status}`;
+				const message = /<Message>([^<]+)<\/Message>/.exec(text)?.[1];
+				throw new AwsError(message ?? "The signed link was refused", response.status, code);
+			}
+			await response.body?.cancel();
+		});
+		deleted = await steps.run("delete", () => bucket.delete(probe));
+	} finally {
+		// A failed, timed-out or aborted step must not leave the probe behind.
+		if (!deleted) await bucket.delete(probe).catch(() => undefined);
+	}
 }
 
 async function checkCors(steps: Steps, bucket: S3Bucket, provider: S3Provider, appOrigin: string): Promise<void> {
@@ -155,6 +171,7 @@ async function checkCors(steps: Steps, bucket: S3Bucket, provider: S3Provider, a
 	const probe = probeKey("cors");
 	try {
 		const preflight = await fetch(bucket.objectUrl(probe), {
+			...probeInit(),
 			method: "OPTIONS",
 			headers: {
 				Origin: appOrigin,
@@ -177,6 +194,7 @@ async function checkCors(steps: Steps, bucket: S3Bucket, provider: S3Provider, a
 			contentType: "text/plain",
 		});
 		const upload = await fetch(url, {
+			...probeInit(),
 			method: "PUT",
 			headers: { Origin: appOrigin, "Content-Type": "text/plain" },
 			body,
@@ -223,7 +241,7 @@ export async function validateStore(
 		steps.skip("credentials", "bucket", ...AFTER_BUCKET);
 		return reportFrom(steps.list);
 	}
-	const bucket = new S3Bucket({ ...candidate.location, ...candidate.credentials });
+	const bucket = checkBucketOf(candidate);
 	if (!(await reachBucket(steps, bucket))) {
 		steps.skip("endpoint", "credentials", "bucket", ...AFTER_BUCKET);
 		return reportFrom(steps.list);
@@ -247,11 +265,6 @@ export async function validateStoreCors(
 	appOrigin: string,
 ): Promise<{ ok: boolean; steps: ValidationStep[] }> {
 	const steps = new Steps({ provider: candidate.provider, bucket: candidate.location.bucket });
-	await checkCors(
-		steps,
-		new S3Bucket({ ...candidate.location, ...candidate.credentials }),
-		candidate.provider,
-		appOrigin,
-	);
+	await checkCors(steps, checkBucketOf(candidate), candidate.provider, appOrigin);
 	return { ok: steps.list.every((step) => step.status === "ok"), steps: steps.list };
 }

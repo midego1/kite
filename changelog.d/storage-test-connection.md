@@ -8,3 +8,7 @@
 
 - A saved store's check list folds into "All N checks passed · Checked <time>" with **Show details** when nothing failed, and the **Switch** button under Where data lives explains why it is unavailable.
 - A refused access key or secret now says which one and why (a space or line break, or its length), instead of "That does not look like an access key pair".
+
+### Security
+
+- Editing a store's endpoint, bucket, region, addressing or provider now asks for its access key ID and secret again: the saved keys only ever sign requests to where they were saved for. Storage checks no longer follow redirects and give up after 15 seconds.

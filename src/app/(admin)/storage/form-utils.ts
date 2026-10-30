@@ -132,10 +132,36 @@ function bucketError(form: StoreForm): string | undefined {
 		return "This bucket name needs path-style addressing";
 }
 
-function keyErrors(form: StoreForm, editing: boolean): StoreFormErrors {
+/** Where the form points: what the server compares before it lets a saved key pair sign anything. */
+function locationOf(form: StoreForm) {
+	const endpoint = parseEndpoint(formEndpoint(form));
+	return [
+		form.provider,
+		"error" in endpoint ? formEndpoint(form) : `${endpoint.scheme}://${endpoint.endpoint}`,
+		form.region.trim(),
+		form.bucket.trim(),
+		form.addressing,
+	].join("|");
+}
+
+/**
+ * Whether an edit points the store somewhere else, so the saved keys may not be used and must be typed again.
+ * @public Exercised by the unit tests.
+ */
+export function locationMoved(form: StoreForm, saved: StoreForm | null): boolean {
+	return !!saved && locationOf(form) !== locationOf(saved);
+}
+
+function keyErrors(form: StoreForm, editing: boolean, moved: boolean): StoreFormErrors {
 	const key = form.accessKeyId.trim();
 	const secret = form.secretAccessKey.trim();
-	if (editing && !key && !secret) return {};
+	if (editing && !key && !secret) {
+		if (!moved) return {};
+		return {
+			accessKeyId: "Enter the access key ID again",
+			secretAccessKey: "Enter the secret again to use a different endpoint, bucket or region",
+		};
+	}
 	return {
 		accessKeyId: credentialProblem("accessKeyId", key, form.provider, { shape: true }) ?? undefined,
 		secretAccessKey: credentialProblem("secretAccessKey", secret, form.provider, { shape: true }) ?? undefined,
@@ -143,12 +169,15 @@ function keyErrors(form: StoreForm, editing: boolean): StoreFormErrors {
 }
 
 /** The messages shown under each field; a blank key pair is fine on an edit, which keeps the saved one. */
-export function storeFormErrors(form: StoreForm, { editing = false } = {}): StoreFormErrors {
+export function storeFormErrors(
+	form: StoreForm,
+	{ editing = false, saved = null }: { editing?: boolean; saved?: StoreForm | null } = {},
+): StoreFormErrors {
 	const errors: StoreFormErrors = {
 		name: nameError(form.name.trim()),
 		...locationErrors(form),
 		bucket: bucketError(form),
-		...keyErrors(form, editing),
+		...keyErrors(form, editing, locationMoved(form, saved)),
 	};
 	return Object.fromEntries(Object.entries(errors).filter(([, message]) => message)) as StoreFormErrors;
 }

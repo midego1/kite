@@ -8,7 +8,7 @@ const lib = await bundleModules("kite-storage-store-form-", [
 		"src/lib/storage/s3-presets-utils.ts",
 	],
 	[
-		"emptyStoreForm, storeFormOf, withProvider, formEndpoint, storeFormErrors, storeFormBody, corsFailed, testSummary, usesPresetEndpoint",
+		"emptyStoreForm, storeFormOf, withProvider, formEndpoint, storeFormErrors, storeFormBody, corsFailed, testSummary, usesPresetEndpoint, locationMoved",
 		"src/app/(admin)/storage/form-utils.ts",
 	],
 	["bucketFailureStep, accessFix, describeFailure", "src/lib/storage/validate-utils.ts"],
@@ -215,4 +215,39 @@ test("the form shows R2's key shape under the field, and the server names the fi
 	assert.equal(long.field, "accessKeyId");
 	assert.match(long.error, /too long \(257 characters\)/);
 	assert.equal(lib.parseStoreInput({ ...body, secretAccessKey: "secret" }).ok, true);
+});
+
+test("an edit asks for the keys again as soon as the store would point somewhere else", () => {
+	const saved = lib.storeFormOf({
+		id: "sto_a",
+		name: "Archive",
+		provider: "minio",
+		endpoint: "http://minio.lan:9000",
+		region: "us-east-1",
+		bucket: "kite-files",
+		addressing: "path",
+		sameAsBinding: false,
+	});
+	const errors = (form) => lib.storeFormErrors(form, { editing: true, saved });
+	assert.equal(lib.locationMoved(saved, saved), false);
+	assert.deepEqual(errors({ ...saved, name: "Renamed" }), {}, "a rename keeps the saved keys");
+	assert.equal(lib.locationMoved({ ...saved, endpoint: "HTTP://MINIO.LAN:9000/" }, saved), false, "same host");
+	for (const change of [
+		{ endpoint: "https://evil.example.com" },
+		{ endpoint: "https://minio.lan:9000" },
+		{ bucket: "kite-other" },
+		{ region: "eu-west-1" },
+		{ addressing: "virtual" },
+		{ provider: "other" },
+	]) {
+		const moved = errors({ ...saved, ...change });
+		assert.match(moved.secretAccessKey, /secret again/, JSON.stringify(change));
+		assert.match(moved.accessKeyId, /again/);
+	}
+	assert.deepEqual(
+		errors({ ...saved, bucket: "kite-other", accessKeyId: "key", secretAccessKey: "secret" }),
+		{},
+		"typed keys may go anywhere",
+	);
+	assert.equal(lib.storeFormErrors({ ...saved, bucket: "kite-other" }, { editing: true }).secretAccessKey, undefined);
 });

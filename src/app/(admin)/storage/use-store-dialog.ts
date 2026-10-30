@@ -26,9 +26,9 @@ const FIELD_IDS: Record<StoreFormField, string> = {
  */
 export function useStoreDialog({ store, binding, onSaved, onClose }: Options) {
 	const editing = !!store;
-	const [form, setFormState] = useState<StoreForm>(() =>
-		store ? storeFormOf(store) : emptyStoreForm(binding ? "r2" : "aws", binding),
-	);
+	// The saved store as the form, which the saved key pair may sign for; anywhere else needs the keys again.
+	const [saved] = useState<StoreForm | null>(() => (store ? storeFormOf(store) : null));
+	const [form, setFormState] = useState<StoreForm>(() => saved ?? emptyStoreForm(binding ? "r2" : "aws", binding));
 	const [touched, setTouched] = useState<Set<StoreFormField>>(() => new Set());
 	const [attempted, setAttempted] = useState(false);
 	const [outcome, setOutcome] = useState<Outcome>(null);
@@ -39,7 +39,7 @@ export function useStoreDialog({ store, binding, onSaved, onClose }: Options) {
 
 	// A 400 about one field (from the server's own parse), shown under it until the form changes.
 	const [serverError, setServerError] = useState<StoreFormErrors>({});
-	const allErrors = storeFormErrors(form, { editing });
+	const allErrors = storeFormErrors(form, { editing, saved });
 	const errors: StoreFormErrors = {
 		...Object.fromEntries(
 			Object.entries(allErrors).filter(([field]) => attempted || touched.has(field as StoreFormField)),

@@ -28,10 +28,14 @@ import { callStorageHook } from "./module-hooks";
 import { S3Bucket } from "./s3-bucket";
 import { corsRuleJson } from "./s3-utils";
 import { presetFor } from "./s3-presets-utils";
-import { corsOrigins, needsRevalidation, parseStoreInput, type StoreInput } from "./store-input-utils";
+import { corsOrigins, locationChanged, needsRevalidation, parseStoreInput, type StoreInput } from "./store-input-utils";
 import type { RoutableClass, S3Credentials } from "./types";
 import { reportSummary, type ValidationReport, type ValidationStep } from "./validate-utils";
+import { recordStorageTest } from "./test-limit";
+import { createLogger } from "@/lib/logger.mjs";
 import { validateStore, validateStoreCors } from "./validate";
+
+const log = createLogger("storage");
 
 export type StoresEnv = CloudflareEnv;
 export type Actor = { id: string };
@@ -284,6 +288,10 @@ export async function updateStore(
 		return fail(409, "Add a new store instead of changing what this one is for");
 	let report: ValidationReport | null = null;
 	let sealed: string | null = null;
+	if (!input.credentials && locationChanged(existing, input))
+		return fail(400, "Enter the access key ID and secret again to save a different endpoint, bucket or region", {
+			field: "secretAccessKey",
+		});
 	if (needsRevalidation(existing, input)) {
 		let credentials: S3Credentials;
 		try {
@@ -382,10 +390,40 @@ function storeIdOf(raw: unknown): string | null {
 	return typeof id === "string" && id ? id : null;
 }
 
+/** The saved key pair to test with, or why it may not be used. */
+async function savedCredentialsFor(
+	env: StoresEnv,
+	existing: StoreRecord,
+	input: StoreInput,
+): Promise<S3Credentials | Failure> {
+	if (locationChanged(existing, input))
+		return fail(400, "Enter the access key ID and secret again to test a different endpoint, bucket or region", {
+			field: "secretAccessKey",
+		});
+	try {
+		return await openStoreCredentials(env, existing);
+	} catch {
+		return fail(409, "The saved credentials cannot be opened; enter the key pair again");
+	}
+}
+
+/** Counts the attempt against the admin's budget; a limit that cannot be checked refuses the test. */
+async function withinTestLimit(env: StoresEnv, actor: Actor, storeId: string | null, input: StoreInput) {
+	try {
+		return (await recordStorageTest(env, actor.id, auditMetadata(storeId, input)))
+			? null
+			: fail(429, "Too many connection tests; wait a minute and try again");
+	} catch (error) {
+		log.error("storage.test_limit_unavailable", { error });
+		return fail(503, "Could not check the test limit; try again in a moment");
+	}
+}
+
 /**
  * Test connection: the checklist on the form as typed, without saving anything (spec 4.5). On an edit
- * (`storeId`), a blank key pair uses the saved one. The audit row names the store's location and outcome, never
- * a credential.
+ * (`storeId`), a blank key pair uses the saved one, but only for the saved location: a changed endpoint, bucket,
+ * region, addressing or provider needs the keys again, so a saved secret never signs requests to another host.
+ * Each attempt is an audit row (never a credential) and counts against `STORAGE_TESTS_PER_WINDOW`.
  */
 export async function testStoreInput(
 	env: StoresEnv,
@@ -399,20 +437,18 @@ export async function testStoreInput(
 	const parsed = parseStoreInput(raw, existing);
 	if (!parsed.ok) return fail(400, parsed.error, parsed.field ? { field: parsed.field } : {});
 	const input = parsed.value;
-	let credentials = input.credentials;
-	if (!credentials && existing) {
-		try {
-			credentials = await openStoreCredentials(env, existing);
-		} catch {
-			return fail(409, "The saved credentials cannot be opened; enter the key pair again");
-		}
-	}
-	if (!credentials) return fail(400, "Enter the access key ID and the secret");
+	const credentials = input.credentials ?? (existing ? await savedCredentialsFor(env, existing, input) : null);
+	if (!credentials) return fail(400, "Enter the access key ID and the secret", { field: "accessKeyId" });
+	if ("ok" in credentials) return credentials;
+	const refused = await withinTestLimit(env, actor, storeId, input);
+	if (refused) return refused;
 	const report = await validateStore(env, { ...input, credentials }, requestOrigin);
-	await createAuditLog(env, {
-		actorUserId: actor.id,
-		action: "storage.store_tested",
-		metadata: { ...auditMetadata(storeId, input), ok: report.ok, cors: report.cors },
+	log.info("storage.store_tested", {
+		storeId,
+		provider: input.provider,
+		bucket: input.location.bucket,
+		ok: report.ok,
+		cors: report.cors,
 	});
 	return { ok: true, report };
 }

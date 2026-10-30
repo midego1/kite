@@ -94,10 +94,17 @@ export function parseStoreInput(raw: unknown, existing: StoreRecord | null = nul
 
 /** Whether an edit changes anything the validation proves, so it must run again before saving. */
 export function needsRevalidation(existing: StoreRecord, input: StoreInput): boolean {
+	return !!input.credentials || locationChanged(existing, input);
+}
+
+/**
+ * Whether the request points the store somewhere else (endpoint, scheme, region, bucket, addressing or provider).
+ * The saved key pair may only sign requests to where it was saved for, so such a change needs the keys again.
+ */
+export function locationChanged(existing: StoreRecord, input: Pick<StoreInput, "location" | "provider">): boolean {
 	const a = existing.location;
 	const b = input.location;
 	return (
-		!!input.credentials ||
 		a.endpoint !== b.endpoint ||
 		a.scheme !== b.scheme ||
 		a.region !== b.region ||

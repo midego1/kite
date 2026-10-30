@@ -14,11 +14,15 @@ export interface MigrationProgressView {
 	/** Updates finished so far, from the pending list shrinking as each one is recorded. */
 	done: number;
 	total: number;
+	/** Shown under the steps once the connection dropped while the server may still be migrating. */
+	notice: string | null;
 	/** The text a screen reader hears; it changes only when a step does, never every second. */
 	announcement: string;
 }
 
 const NAMES_SHOWN = 3;
+
+const CONNECTION_LOST_NOTICE = "The connection timed out; the update may still be running — checking…";
 
 /** "12 s", "1 min 05 s": a live counter so a long update never looks frozen. */
 export function formatElapsed(seconds: number): string {
@@ -41,7 +45,11 @@ function updatesText(count: number): string {
  * The steps of a running update. The server applies migrations one at a time, so the pending list read
  * during the request shrinks as they land; until the first one lands the safety backup is the step in progress.
  */
-export function migrationProgressView(startNames: string[], remaining: string[] | null): MigrationProgressView {
+export function migrationProgressView(
+	startNames: string[],
+	remaining: string[] | null,
+	recovering = false,
+): MigrationProgressView {
 	const total = startNames.length;
 	const left = remaining ? remaining.filter((name) => startNames.includes(name)).length : total;
 	const done = Math.min(total, Math.max(0, total - left));
@@ -49,7 +57,7 @@ export function migrationProgressView(startNames: string[], remaining: string[] 
 	const names = total ? ` (${summarizeMigrationNames(startNames)})` : "";
 	const applying = total ? `Applying ${updatesText(total)}` : "Applying the updates";
 
-	const backupLabel = started ? "Safety backup finished" : "Saving a safety backup…";
+	const backupLabel = started ? "Safety backup finished" : "Saving a safety backup, then applying…";
 	const applyLabel = started ? `${applying}: ${done} of ${total} done…` : `${applying}${names}`;
 	return {
 		steps: [
@@ -58,7 +66,8 @@ export function migrationProgressView(startNames: string[], remaining: string[] 
 		],
 		done,
 		total,
-		announcement: started ? `${applying}, ${done} of ${total} done.` : "Saving a safety backup.",
+		notice: recovering ? CONNECTION_LOST_NOTICE : null,
+		announcement: `${started ? `${applying}, ${done} of ${total} done.` : "Saving a safety backup, then applying."}${recovering ? ` ${CONNECTION_LOST_NOTICE}` : ""}`,
 	};
 }
 
@@ -71,17 +80,19 @@ export function migrationDoneSummary(result: MigrationApplyResponse, elapsedSeco
 const RESTORE_RUNNING_MESSAGE =
 	"The database was not changed: a backup restore is running. Apply the updates once it has finished (see Backups).";
 
-/** The message for a run that did not finish, whatever form the failure took. */
-export function migrationApplyFailure(status: number | null, serverMessage: string | undefined): string {
+/** The message for a run that did not finish and was not a dropped connection. */
+export function migrationApplyFailure(status: number, serverMessage: string | undefined): string {
 	if (status === 409) return RESTORE_RUNNING_MESSAGE;
-	if (status === null) {
-		return "Could not reach Kite, so it is not known whether the updates were applied. Check the pending list in a moment.";
-	}
 	const reason = serverMessage?.trim() || `The server answered ${status}`;
-	const gateway =
-		status === 502 || status === 503 || status === 504
-			? " The update may still be running: check the pending list in a moment before trying again."
-			: "";
 	const kept = /nothing was changed/.test(reason) ? "" : " Updates that already finished stay applied.";
-	return `The database update failed. ${reason}${/[.!]$/.test(reason) ? "" : "."}${gateway}${kept}`;
+	return `The database update failed. ${reason}${/[.!]$/.test(reason) ? "" : "."}${kept}`;
+}
+
+/** After a dropped connection, the pending list stopped changing: whether it finished is not known. */
+export const MIGRATION_OUTCOME_UNKNOWN =
+	"It is not known whether the database update finished: the connection timed out and the list of waiting updates has not changed for 3 minutes. Check the Backups page and the list above, and try again later.";
+
+/** What the admin reads when the list emptied after the connection dropped, so the backup is not confirmed. */
+export function migrationRecoveredSummary(applied: string[], elapsedSeconds: number): string {
+	return `${migrationDoneSummary({ applied }, elapsedSeconds)} The connection dropped meanwhile, so check the Backups page for the safety backup.`;
 }

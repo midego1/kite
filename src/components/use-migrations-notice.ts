@@ -50,6 +50,11 @@ export function useMigrationsNotice() {
 		if (outcome) await refetch();
 	}, [names, refetch]);
 
+	// A run that ended in another tab changed what is pending.
+	useEffect(() => {
+		if (progress.refreshTick > 0) void refetch();
+	}, [progress.refreshTick, refetch]);
+
 	// The admin card owns a run it started; the notice then only shows a busy button, so nothing is said twice.
 	const owns = progress.source === "mailbox";
 	return {

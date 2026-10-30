@@ -15,7 +15,7 @@ function StepIcon({ state }: { state: MigrationStepState }) {
 /** The steps, a bar and a counter for a running update; the same in the admin card and the mailbox notice. */
 export function MigrationApplyProgress({ progress }: { progress: MigrationApplyState }) {
 	const elapsed = useElapsedSeconds(progress.startedAt);
-	const view = migrationProgressView(progress.startNames, progress.remaining);
+	const view = migrationProgressView(progress.startNames, progress.remaining, progress.recovering);
 	const determinate = view.done > 0 && view.total > 0;
 
 	return (
@@ -35,6 +35,7 @@ export function MigrationApplyProgress({ progress }: { progress: MigrationApplyS
 					</li>
 				))}
 			</ol>
+			{view.notice && <p className="mt-1.5 font-medium">{view.notice}</p>}
 			<div
 				role="progressbar"
 				aria-label="Database update progress"

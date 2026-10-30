@@ -17,9 +17,14 @@ await build({
 	platform: "node",
 	logLevel: "silent",
 });
-const { formatElapsed, migrationApplyFailure, migrationDoneSummary, migrationProgressView } = await import(
-	pathToFileURL(join(bundleDirectory, "progress.mjs")).href
-);
+const {
+	MIGRATION_OUTCOME_UNKNOWN,
+	formatElapsed,
+	migrationApplyFailure,
+	migrationDoneSummary,
+	migrationProgressView,
+	migrationRecoveredSummary,
+} = await import(pathToFileURL(join(bundleDirectory, "progress.mjs")).href);
 
 const NAMES = ["0081_a.sql", "0082_b.sql", "0083_c.sql", "0084_d.sql"];
 
@@ -40,9 +45,9 @@ test("the safety backup is the active step until the first update has landed", (
 			["apply", "waiting"],
 		],
 	);
-	assert.equal(view.steps[0].label, "Saving a safety backup…");
+	assert.equal(view.steps[0].label, "Saving a safety backup, then applying…");
 	assert.match(view.steps[1].label, /^Applying 4 updates \(0081_a\.sql, 0082_b\.sql, 0083_c\.sql and 1 more\)$/);
-	assert.equal(view.announcement, "Saving a safety backup.");
+	assert.equal(view.announcement, "Saving a safety backup, then applying.");
 	assert.equal(view.done, 0);
 });
 
@@ -76,7 +81,6 @@ test("the finished message lists what was applied, the backup and the time taken
 
 test("a restore in progress, an unreachable server and a failed update each read clearly", () => {
 	assert.match(migrationApplyFailure(409, "A backup restore is running."), /not changed: a backup restore is running/);
-	assert.match(migrationApplyFailure(null, undefined), /Could not reach Kite/);
 
 	const failed = migrationApplyFailure(
 		500,
@@ -86,5 +90,24 @@ test("a restore in progress, an unreachable server and a failed update each read
 	assert.match(failed, /A backup taken just before is listed on the Backups page\./);
 	assert.match(failed, /Updates that already finished stay applied\.$/);
 
-	assert.match(migrationApplyFailure(504, undefined), /The server answered 504\. The update may still be running/);
+	assert.match(migrationApplyFailure(500, undefined), /^The database update failed\. The server answered 500\./);
+	assert.doesNotMatch(
+		migrationApplyFailure(500, "Could not back up the database before migrating, so nothing was changed: x"),
+		/stay applied/,
+	);
+});
+
+test("a dropped connection keeps the steps and says the update may still be running", () => {
+	const view = migrationProgressView(NAMES, NAMES.slice(1), true);
+	assert.equal(view.notice, "The connection timed out; the update may still be running — checking…");
+	assert.match(view.announcement, /1 of 4 done\. The connection timed out/);
+	assert.equal(migrationProgressView(NAMES, null).notice, null);
+});
+
+test("a run that was recovered after a dropped connection does not claim the safety backup", () => {
+	assert.equal(
+		migrationRecoveredSummary(NAMES, 125),
+		"4 database updates applied. Took 2 min 05 s. The connection dropped meanwhile, so check the Backups page for the safety backup.",
+	);
+	assert.match(MIGRATION_OUTCOME_UNKNOWN, /not known whether the database update finished/);
 });

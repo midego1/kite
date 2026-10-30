@@ -122,18 +122,27 @@ export function AdminUpdateCard() {
 
 	function handleMigrate() {
 		setMigrationError("");
-		void applyMigrations(migrationStatus?.pending ?? [], "admin");
+		// The run's own answer replaces the list before the card re-renders, so the pending panel never flashes back.
+		void applyMigrations(migrationStatus?.pending ?? [], "admin", (result) =>
+			setMigrationStatus({
+				ready: true,
+				pending: result.pending ?? [],
+				unknown: result.unknown ?? [],
+				applied: result.applied,
+				backupId: result.backupId,
+			}),
+		);
 	}
 
 	// A run can end here or in the mailbox notice (it is one shared run); either way the list below is stale.
 	useEffect(() => {
-		if (!progress.summary && !progress.error) return;
+		if (!progress.summary && !progress.error && !progress.refreshTick) return;
 		getMigrationStatus()
 			.then(setMigrationStatus)
 			.catch(() => undefined);
 		// The mailbox notice reads its own status; it must not keep warning after this.
 		void queryClient.invalidateQueries({ queryKey: ["pending-migrations"] });
-	}, [progress.summary, progress.error, queryClient]);
+	}, [progress.summary, progress.error, progress.refreshTick, queryClient]);
 
 	const outcome = adminOutcome(progress, migrationError);
 	const pending = migrationStatus?.pending ?? [];

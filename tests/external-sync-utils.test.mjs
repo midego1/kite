@@ -265,6 +265,19 @@ test("only the topmost Authentication-Results with the preset's own authserv-id,
 		externalAuthenticationResults([field("authentication-results", google), received], "mx.google.com"),
 		null,
 	);
+	const fromGoogle = field(
+		"received",
+		"from mx.google.com (mx.google.com [192.0.2.9]) by relay.evil.example with SMTP",
+	);
+	assert.equal(
+		externalAuthenticationResults([fromGoogle, field("authentication-results", google)], "mx.google.com"),
+		null,
+	);
+	const trailingDot = field("received", "from a by mx.google.com. with ESMTPS");
+	assert.equal(
+		externalAuthenticationResults([trailingDot, field("authentication-results", google)], "mx.google.com"),
+		google,
+	);
 	const lookalike = field("received", "from x by mx.google.com.evil.example with SMTP");
 	assert.equal(
 		externalAuthenticationResults([lookalike, field("authentication-results", google)], "mx.google.com"),

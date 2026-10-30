@@ -149,6 +149,12 @@ export function sesAuthenticationResults(
 	return results.length ? [SES_AUTHSERV_ID, ...results].join("; ") : null;
 }
 
+/** The host a `Received` field says accepted the message (`… by mx.google.com with …`), lower-case, or null. */
+function receivedBy(value: string): string | null {
+	const host = /\bby\s+([^\s;()]+)/i.exec(stripComments(value))?.[1];
+	return host ? host.toLowerCase().replace(/\.$/, "") : null;
+}
+
 /**
  * The provider's verdict on mail a connected account synced (spec §6.6), or null. The provider's server is the hop
  * that verified the sender, so only the topmost header of the raw message counts (`fields`, every header field in
@@ -167,8 +173,9 @@ export function externalAuthenticationResults(
 	if (index < 0) return null;
 	const topmost = whitespace(fields[index].value);
 	if (parseAuthenticationResults(topmost).authservId !== authservId.toLowerCase()) return null;
-	const host = authservId.toLowerCase().replace(/\./g, "\\.");
-	const acceptedBy = new RegExp(`\\bby\\s+${host}(?![\\w.-])`, "i");
-	const received = fields.slice(0, index).some((field) => field.name === "received" && acceptedBy.test(field.value));
+	const host = authservId.toLowerCase();
+	const received = fields
+		.slice(0, index)
+		.some((field) => field.name === "received" && receivedBy(field.value) === host);
 	return received ? topmost : null;
 }

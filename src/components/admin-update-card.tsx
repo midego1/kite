@@ -11,7 +11,9 @@ import type { MigrationStatusResponse } from "./admin-update-card-types";
 import { applyMigrations, useMigrationApply, type MigrationApplyState } from "./migration-apply";
 import { MigrationApplyButton, MigrationApplyProgress } from "./migration-progress";
 import { migrationApplierText, shouldShowMigrationsBanner } from "./migrations-banner-utils";
-import { useMigrationsNotice } from "./use-migrations-notice";
+import { PENDING_MIGRATIONS_QUERY, useMigrationsNotice } from "./use-migrations-notice";
+import { BACKUP_HEALTH_QUERY } from "./admin-backup-health-query";
+import { DATABASE_SIZE_QUERY } from "./admin-database-size-query";
 import { BUILD_VERSION_LABEL } from "@/lib/build-version";
 
 const PENDING_PANEL_CLASS = "rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900";
@@ -140,8 +142,10 @@ export function AdminUpdateCard() {
 		getMigrationStatus()
 			.then(setMigrationStatus)
 			.catch(() => undefined);
-		// The mailbox notice reads its own status; it must not keep warning after this.
-		void queryClient.invalidateQueries({ queryKey: ["pending-migrations"] });
+		// The mailbox notice and the overview's attention list read the pending query; the run also took a safety
+		// backup and grew the database, so the overview's other parts are read again too.
+		for (const queryKey of [PENDING_MIGRATIONS_QUERY, BACKUP_HEALTH_QUERY, DATABASE_SIZE_QUERY])
+			void queryClient.invalidateQueries({ queryKey });
 	}, [progress.summary, progress.error, progress.refreshTick, queryClient]);
 
 	const outcome = adminOutcome(progress, migrationError);

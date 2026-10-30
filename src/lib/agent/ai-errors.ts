@@ -24,7 +24,7 @@ const logger = createLogger("agent");
 /** The audit action of a failed AI request; only Admin → Agent lists it. */
 const AI_ERROR_ACTION = "ai.error";
 /** Older failures are deleted when a new one is recorded, so the list never grows. */
-const AI_ERRORS_KEPT = 200;
+export const AI_ERRORS_KEPT = 200;
 const RECENT_AI_ERRORS = 20;
 
 export type AiFailureContext = {

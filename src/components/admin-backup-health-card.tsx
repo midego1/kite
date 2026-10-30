@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { AlertTriangle, DatabaseBackup } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminBackupRestoreStatus } from "@/components/admin-backup-restore-status";
 import type { BackupHealth } from "@/lib/backups/health-types";
+import { BACKUP_HEALTH_QUERY, fetchBackupHealth } from "./admin-backup-health-query";
 import { formatBackupDuration } from "@/lib/backups/health-utils";
 import { formatDatabaseBytes } from "@/lib/db/size-utils";
 import { formatUserDate } from "@/lib/time/utils";
@@ -29,20 +30,8 @@ function scheduleText(automatic: BackupHealth["automatic"]): string {
  * (docs/operations.md#backup-health).
  */
 export function AdminBackupHealthCard() {
-	const [health, setHealth] = useState<BackupHealth | null>(null);
-
-	useEffect(() => {
-		let active = true;
-		fetch("/api/backups/health", { cache: "no-store" })
-			.then((response) => (response.ok ? (response.json() as Promise<BackupHealth>) : null))
-			.then((next) => {
-				if (active) setHealth(next);
-			})
-			.catch(() => undefined);
-		return () => {
-			active = false;
-		};
-	}, []);
+	// The overview's attention list reads the same query, so the page asks the server once.
+	const { data: health } = useQuery({ queryKey: BACKUP_HEALTH_QUERY, queryFn: fetchBackupHealth, retry: false });
 
 	if (!health) return null;
 	const { lastSuccess, lastFailure } = health;

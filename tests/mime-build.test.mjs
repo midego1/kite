@@ -216,6 +216,12 @@ test("a comma-joined To element keeps every recipient in the header", async () =
 	assert.match(parsed.toAddr, /a@x\.com.*b@y\.com/);
 });
 
+test("From is exactly one mailbox: a list or nothing is refused", () => {
+	for (const from of ["a@x.com, b@y.com", "A <a@x.com>, B <b@y.com>", "", "   "])
+		assert.throws(() => build({ from }), /exactly one From address/, JSON.stringify(from));
+	assert.match(decode(build({ from: '"Doe, Jane" <jane@x.com>' }).raw), /^From: "Doe, Jane" <jane@x\.com>$/m);
+});
+
 test("Bcc never becomes a header, and mail with only Bcc says so", async () => {
 	const built = build({ to: [], bcc: ["hidden@example.org"], headers: { Bcc: "hidden@example.org" } });
 	const raw = decode(built.raw);

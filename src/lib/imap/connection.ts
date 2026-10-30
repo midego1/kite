@@ -9,12 +9,15 @@ import {
 	parseCapabilities,
 	parseFetchAttributes,
 	parseGreeting,
+	quoteImapString,
 } from "./protocol-utils";
 import type { ImapFetchedMessage, ImapLimits } from "./types";
 
 export type ImapConnectionOptions = Partial<ImapLimits>;
 
 const MB = 1024 * 1024;
+/** An APPEND literal is written in chunks of this size, each with its own deadline. */
+const APPEND_CHUNK_BYTES = 64 * 1024;
 
 /** One IMAP connection: tagged commands, literals, capabilities and the STARTTLS upgrade. */
 export class ImapConnection {
@@ -191,6 +194,33 @@ export class ImapConnection {
 			if (isTaggedCompletion(line, tag)) {
 				if (!isTaggedOk(line, tag)) throw new Error(`${failure}: ${line.slice(tag.length + 1)}`);
 				return lines;
+			}
+		}
+	}
+
+	/**
+	 * `APPEND` of one message to `folder` (its name as LIST returned it) with `flags`, as a synchronizing literal: the
+	 * bytes go only after the server's `+`, in chunks that each restart the deadline. Used only for the Sent copy of
+	 * send-as (spec §7.4), the one write Kite makes at the source.
+	 */
+	async appendMessage(folder: string, flags: readonly string[], raw: Uint8Array): Promise<void> {
+		const tag = this.nextTag();
+		await this.write(`${tag} APPEND ${quoteImapString(folder)} (${flags.join(" ")}) {${raw.byteLength}}\r\n`);
+		while (true) {
+			const line = await this.readLine();
+			if (line.startsWith("+")) break;
+			this.noteCapabilities(line);
+			if (isTaggedCompletion(line, tag)) throw new Error(`IMAP APPEND failed: ${line.slice(tag.length + 1)}`);
+		}
+		for (let offset = 0; offset < raw.byteLength; offset += APPEND_CHUNK_BYTES)
+			await this.writeBytes(raw.subarray(offset, offset + APPEND_CHUNK_BYTES));
+		await this.write("\r\n");
+		while (true) {
+			const line = await this.readLine();
+			this.noteCapabilities(line);
+			if (isTaggedCompletion(line, tag)) {
+				if (!isTaggedOk(line, tag)) throw new Error(`IMAP APPEND failed: ${line.slice(tag.length + 1)}`);
+				return;
 			}
 		}
 	}

@@ -69,7 +69,7 @@ export async function PATCH(request: Request, { params }: DraftRouteParams) {
 			return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid schedule" }, { status: 400 });
 		}
 	}
-	const sender = await getDraftSender(env, user.id, input);
+	const sender = await getDraftSender(env, user.id, input, { connectedAccounts: true });
 	if ("error" in sender) {
 		return NextResponse.json({ error: sender.error }, { status: 403 });
 	}

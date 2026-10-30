@@ -44,6 +44,7 @@ await build({
 				build.onLoad({ filter: /.*/, namespace: "job-claim-override" }, () => ({
 					contents: `
 						import { isJobClaimed as real } from "./src/lib/email/job-claim.ts";
+						export { renewJobClaim } from "./src/lib/email/job-claim.ts";
 						export const isJobClaimed = (db, jobId) => (globalThis.__kiteClaimCheck ?? real)(db, jobId);
 					`,
 					resolveDir: root,

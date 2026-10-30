@@ -124,9 +124,19 @@ export const externalAccountSettings = sqliteTable("app_settings", {
 });
 
 /**
- * `messages.external_account_id` (migration 0079): the connected account a synced message came from. A narrow view of
- * `messages` for the same reason as `messageBodyKeys`: whole-row reads and inserts of `messages` must not name a column
- * a deploy can run ahead of. Only written once the account tables exist.
+ * Migration 0083's send-as state of an account, a narrow view of `external_accounts` for the same reason: the account
+ * pages and the import keep working on a deploy that runs before the migration. `smtpVerifiedAt` is when the SMTP
+ * sign-in last succeeded with the saved password (spec §7.2); null means the address is not offered as a sender.
+ */
+export const externalAccountSendStates = sqliteTable("external_accounts", {
+	id: text("id").primaryKey(),
+	smtpVerifiedAt: integer("smtp_verified_at", { mode: "timestamp" }),
+});
+
+/**
+ * `messages.external_account_id` (migration 0079): the connected account a synced message came in by, or a sent copy
+ * went out through. A narrow view of `messages` for the same reason as `messageBodyKeys`: whole-row reads and inserts
+ * of `messages` must not name a column a deploy can run ahead of. Only written once the account tables exist.
  */
 export const messageExternalAccounts = sqliteTable("messages", {
 	id: text("id").primaryKey(),

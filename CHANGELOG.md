@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.29.11] - 2026-10-29
+
+### Added
+
+- Send as a connected account's address: once its SMTP sign-in works, the address of a connected Gmail, Google Workspace, iCloud Mail, Yahoo, AOL or Fastmail account is in the composer's From menu (an account at a server you entered yourself is not offered until its address can be verified), and mail sent from it goes out through the provider's own SMTP server, so it carries the provider's SPF and DKIM. Replies start from the address the mail came to, the message lands in Sent with its exact bytes, and a copy is saved in the provider's Sent folder (Gmail and Google Workspace keep their own). Undo send, scheduled sends and the sending allowance work as usual. Each account in [Settings → Connected accounts](/settings/connected-accounts) says whether you can send as it, with switches for **Send from this address** and **Save a copy in the provider's Sent folder**. Needs database migration 0083; see [Connected accounts](docs/external-accounts.md#send-as-the-accounts-address).
+- A temporary refusal from the provider (`4xx`) is tried again after a minute and then after five; a refused password sets the account to **Sign-in failed**; and a connection that breaks after the message went out fails the send as "Delivery unknown" instead of sending it twice.
+- The [admin overview](/admin) shows the latest successful backup, its size and how long it took, whether automatic backups are on, and a warning with the error when the latest backup failed.
+- Restore a backup straight from its row in [Admin → Backups](/backups), without downloading and uploading it again. The restored backup stays listed.
+
+### Changed
+
+- Restoring a backup no longer loads it into memory. The file is read from storage in pages, checked completely before anything changes, and written in batches, so a backup larger than the Worker's memory restores. The safety backup before every restore and the automatic rollback when a restore fails part way work as before, and an uploaded backup file is streamed to storage first instead of being held in the request.
+- A restore runs in the background, in steps that each save their progress, so closing the tab, a deploy or a restart no longer leaves the database half restored: the restore continues where it stopped, or rolls back. Only one restore runs at a time, and if a restore cannot be rolled back the admin overview offers to restore the data from before it with one click; no other restore can start until that is done. Database updates wait while a restore runs.
+
 ## [2026.10.29.10] - 2026-10-29
 
 ### Changed

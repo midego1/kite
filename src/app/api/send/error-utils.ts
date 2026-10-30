@@ -9,6 +9,7 @@ export function getSendErrorStatus(message: string): number {
 		message.startsWith("Headers exceed") ||
 		message.startsWith("Message exceeds Cloudflare") ||
 		message.startsWith("A message can include at most") ||
+		message.startsWith("The message is about") ||
 		message.includes("exceeds the 25 MB attachment limit")
 	)
 		return 400;
@@ -16,7 +17,9 @@ export function getSendErrorStatus(message: string): number {
 		message === "Mailbox not found" ||
 		message === "Sender account not found" ||
 		message === "You do not have permission to send from this mailbox" ||
-		message === "Sender address does not match the selected mailbox"
+		message === "Sender address does not match the selected mailbox" ||
+		message.startsWith("You cannot send from this address right now") ||
+		message.startsWith("Sending as a connected account works only from")
 	) {
 		return 403;
 	}

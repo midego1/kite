@@ -1,4 +1,5 @@
 import type { externalAccounts } from "@/db/schema/external-accounts";
+import { sendBlock } from "./identity-utils";
 import { findPreset } from "./presets-utils";
 import type { ExternalAccountView } from "./types";
 
@@ -8,10 +9,14 @@ export type ExternalAccountRow = typeof externalAccounts.$inferSelect;
 const SYNC_PROBLEMS = new Set(["throttled", "transient", "config", "sync"]);
 
 /**
- * The public shape of an account. Fields are listed one by one, so the sealed password (and, later, OAuth tokens or
+ * The public shape of an account, with when its SMTP sign-in last worked (`readSmtpVerified`). Fields are listed one by one, so the sealed password (and, later, OAuth tokens or
  * cursors) can never reach a response by being added to the table.
  */
-export function serializeExternalAccount(row: ExternalAccountRow, now = new Date()): ExternalAccountView {
+export function serializeExternalAccount(
+	row: ExternalAccountRow,
+	smtpVerifiedAt: Date | null = null,
+	now = new Date(),
+): ExternalAccountView {
 	return {
 		id: row.id,
 		label: row.label,
@@ -38,6 +43,13 @@ export function serializeExternalAccount(row: ExternalAccountRow, now = new Date
 			failures: row.consecutiveFailures,
 			problem: SYNC_PROBLEMS.has(row.statusReason ?? "") ? row.statusReason : null,
 			running: !!row.leaseUntil && row.leaseUntil.getTime() > now.getTime(),
+		},
+		sending: {
+			enabled: row.sendEnabled,
+			appendSent: row.appendSent,
+			providerSavesSent: findPreset(row.preset)?.appendSent === false,
+			verified: !!smtpVerifiedAt,
+			block: sendBlock({ ...row, hasPassword: row.secret.length > 0, smtpVerifiedAt }, null),
 		},
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),

@@ -57,7 +57,7 @@ export async function POST(request: Request) {
 	if (body.response) return body.response;
 	const { input } = body;
 	const db = getDb(env);
-	const sender = await getDraftSender(env, user.id, input);
+	const sender = await getDraftSender(env, user.id, input, { connectedAccounts: true });
 	if ("error" in sender) {
 		return NextResponse.json({ error: sender.error }, { status: 403 });
 	}

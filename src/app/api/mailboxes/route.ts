@@ -10,6 +10,7 @@ import { tracksAccountIdentity } from "@/lib/profile/identity-utils";
 import { mailboxSchema } from "@/lib/validators";
 import { ensureMailboxDomainRouting, getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
 import { listScreenerSettings, enableScreenerForNewMailbox } from "@/lib/screener/settings";
+import { listSendIdentities } from "@/lib/external-accounts/identities";
 import { ensurePersonalMailbox } from "./utils";
 
 export async function GET(request: Request) {
@@ -22,6 +23,8 @@ export async function GET(request: Request) {
 		db,
 		rows.map((mailbox) => mailbox.id),
 	);
+	// The user's own connected addresses, offered as From after each mailbox's own (spec §7.3).
+	const identities = await listSendIdentities(env, user.id);
 	return NextResponse.json({
 		mailboxes: await Promise.all(
 			rows.map(async (mailbox) => ({
@@ -30,6 +33,7 @@ export async function GET(request: Request) {
 					? { displayName: user.name, hasAvatar: !!user.avatarKey }
 					: {}),
 				senderAddresses: await getMailboxDomainAddresses(db, mailbox),
+				externalIdentities: identities.get(mailbox.id) ?? [],
 				screener: screener.get(mailbox.id) ?? null,
 			})),
 		),

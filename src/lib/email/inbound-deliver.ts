@@ -18,6 +18,7 @@ import { resolveThreadId } from "@/lib/email/threading";
 import { normalizeMessageId } from "@/lib/email/thread-lookup";
 import { analyzeSpam } from "@/lib/spam/engine";
 import { configuredSpamIntelligenceProvider } from "@/lib/spam/providers/abuse-ch-key";
+import { dmarcPolicySource } from "@/lib/spam/dmarc-policy";
 import { getReputationKeys } from "@/lib/spam/analyzers/reputation";
 import { recordReputationObservation } from "@/lib/spam/repository";
 import { getMailboxNotificationUserIds, notifyUsersOfNewMessage } from "@/lib/realtime/utils";
@@ -254,6 +255,7 @@ async function placeMessage(
 				authenticationResults: input.authenticationResults,
 				message: parsed,
 				intelligenceProvider: configuredSpamIntelligenceProvider(env),
+				dmarcPolicy: dmarcPolicySource(env),
 			});
 		} catch (error) {
 			spamAnalysisError = error instanceof Error ? error.message.slice(0, 300) : "Spam analysis failed";

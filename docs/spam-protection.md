@@ -14,7 +14,8 @@ SPF, DKIM and DMARC results count only when the server that received the message
 
 - **Cloudflare Email Routing** (Kite on Workers, or a self-hosted server behind the [email relay](self-hosting.md#receiving-mail)): passes count only from Cloudflare's own copy, the topmost `Authentication-Results` header with Cloudflare's `mx.cloudflare.net` authserv-id; any copy below it is ignored. Kite compares the header Cloudflare hands the Worker with the fields of the raw message to tell Cloudflare's copy from the sender's. Whenever that leaves any doubt, it keeps the copy only up to its first comma and counts its passes as unknown, so ambiguity can make a sender unverified but never verified. The design assumes Cloudflare always adds its header, as Email Routing does for every message it accepts. Through the relay the header counts only when the relay signed the header map (`X-Kite-Headers-Signature`), which relays deployed before that do not do; redeploy the relay to keep the results. Admins see an operational alert while such requests arrive.
 - **Amazon SES**: Kite uses the SPF, DKIM and DMARC verdicts SES reports for the message it received, never the message's own headers. They travel in the SNS notification, so they count only when SNS's signature on it verifies (certificate from `sns.<region>.amazonaws.com` for the topic's region) and the stored object is the one SES named for that message; otherwise the mail is still delivered with its authentication unknown.
-- **The built-in SMTP listener and Resend**: no hop Kite trusts checked the sender, so authentication is unknown. It neither raises nor lowers the score.
+- **The built-in SMTP listener** (self-hosted): the listener checks SPF, DKIM and DMARC itself from the connecting address, HELO name and envelope sender, and writes the result as an `Authentication-Results` value under its own authserv-id (`MAIL_HOSTNAME`), which is the only one that counts. When the checks cannot finish within 10 seconds, authentication is unknown. See [Self-hosting](self-hosting.md#receiving-mail).
+- **Resend**: no hop Kite trusts checked the sender, so authentication is unknown. It neither raises nor lowers the score.
 - **Imported mail** (Mail import) is not analyzed, so its old headers never count either.
 
 Which results count:
@@ -22,6 +23,21 @@ Which results count:
 - **SPF** is the check of the envelope sender (`smtp.mailfrom`). Cloudflare also reports a check of the sending server's HELO name, which says nothing about the sender and is ignored.
 - **A verified sender** has a passing DMARC check (a failed SPF check, common for forwarded mail, does not undo it and still shows as a warning sign), or a passing DKIM signature from the From address's own domain or a subdomain of the same organization (`mail.example.com` for `example.com`) and no failed check. Shared hosting names such as `github.io`, `myshopify.com` or `amazonaws.com` count as separate owners per subdomain. Any domain can sign its own mail, so another domain's DKIM signature alone does not verify the From address; SES does not report the signing domain, so through SES only DMARC verifies.
 - An unverified sender is what automatic reading reasons about: invitations show the unverified-sender warning, Money Watch marks the card unverified, and a saved contact, a sender marked "Not phishing" or an allowlisted sender is not trusted on the From address alone. Mail from one of this install's own domains is trusted only with a passing DMARC check.
+
+### Failed authentication
+
+A failed check adds to the score (DMARC 18, DKIM 8, SPF 6 points). What happens beyond that depends on what the sender's domain asks receivers to do with mail that fails DMARC, its published policy:
+
+- **DMARC failed and the domain publishes `p=reject` or `p=quarantine`**: the message goes to Spam, whatever the rest of the score says and even when the sender is a saved contact or someone you have written to. The reason shown is "DMARC failed and the sender's domain asks receivers to reject such mail; filed as spam".
+- **SPF and DKIM both failed and there is no DMARC result**: handled as if the domain published `p=quarantine`, so the message goes to Spam.
+- **DMARC failed and the domain publishes `p=none`, or Kite could not learn the policy**: only the points above count. Forwarding and mailing lists often break DMARC for genuine mail, and such a domain asked only to be told about failures.
+- **Any failed check** (SPF, DKIM or DMARC) cancels the trust a saved contact or someone you have written to otherwise lowers the score by, because a forged From is exactly how a phisher poses as someone you know.
+
+Kite takes the published policy from the receiving server's trusted `Authentication-Results` (`policy.dmarc=`, or `p=` in its comment) and from the SES notification. When those do not name it, Kite looks up the domain's `_dmarc` TXT record (over DNS-over-HTTPS on Workers, through the server's resolver when self-hosted, cached for an hour); a lookup that fails or takes longer than 3 seconds counts as an unknown policy. A policy still in testing (`pct` under 100, or `t=y`) counts one step gentler.
+
+The primary admin can turn on **Treat every DMARC failure as spam** under **Admin → General → Sender authentication**. With it on, every DMARC failure goes to Spam, including `p=none` domains and unknown policies. It is off by default and needs migration 0084.
+
+Mail in Spam is not read by automatic reading and gets no automatic reply or notification.
 
 Kite accepts mail before this analysis. Forward-only routing occurs before stored-message filtering and is outside the filter's v1 scope.
 

@@ -33,6 +33,8 @@ type RawNotification = {
 		spfVerdict?: { status?: string };
 		dkimVerdict?: { status?: string };
 		dmarcVerdict?: { status?: string };
+		/** Only present when DMARC failed: what the sender's domain publishes (`none`, `quarantine`, `reject`). */
+		dmarcPolicy?: string;
 		action?: { type?: string; bucketName?: string; objectKey?: string };
 	};
 };
@@ -40,7 +42,12 @@ type RawNotification = {
 function receiptAuthenticationResults(parsed: RawNotification): string | null {
 	const receipt = parsed.receipt;
 	return sesAuthenticationResults(
-		{ spf: receipt?.spfVerdict?.status, dkim: receipt?.dkimVerdict?.status, dmarc: receipt?.dmarcVerdict?.status },
+		{
+			spf: receipt?.spfVerdict?.status,
+			dkim: receipt?.dkimVerdict?.status,
+			dmarc: receipt?.dmarcVerdict?.status,
+			dmarcPolicy: receipt?.dmarcPolicy,
+		},
 		parsed.mail?.source ?? "",
 	);
 }

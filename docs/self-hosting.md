@@ -34,13 +34,23 @@ DMARC records to create. Domain routing rules work as on Cloudflare: reject
 rules answer the sender with a 550 during delivery, forward rules relay the
 message through your outbound SMTP.
 
-Kite does not check SPF, DKIM or DMARC for mail that arrives on the
-listener, and it ignores any `Authentication-Results` header already in the
-message, since the sender could have written it. Such mail counts as
-unverified, so the spam filter and automatic reading rely on its other
-signals (see [Sender authentication](spam-protection.md#sender-authentication)).
-Receive through the Cloudflare relay below if you want Cloudflare's checks to
-count.
+The listener checks SPF, DKIM and DMARC itself (with
+[mailauth](https://github.com/postalsys/mailauth)), from the connecting
+address, the HELO name and the envelope sender, and records the result as an
+`Authentication-Results` header under its own name (`MAIL_HOSTNAME`, else the
+machine's host name), which the spam filter reads the way it reads
+Cloudflare's. Any `Authentication-Results` header already in the message is
+ignored, since the sender could have written it. The checks use the
+container's DNS resolver; when they cannot finish within 10 seconds, the mail
+is delivered with its authentication unknown, as before. Kite also adds a
+`Received` header naming the connecting address (see
+[Sender authentication](spam-protection.md#sender-authentication)).
+
+The listener limits what one sender can hold: 100 open sessions in total and
+10 from one address (more get `421`), 50 recipients per message (the next one
+gets `452`, and the sending server retries it later), and 60 seconds of
+silence before a session is closed. A message over `SMTP_MAX_SIZE` is
+refused with `552` without being kept in memory.
 
 Optional: `SMTP_TLS_KEY` and `SMTP_TLS_CERT` (paths inside the container)
 enable STARTTLS with your own certificate. Without them STARTTLS is not

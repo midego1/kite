@@ -216,6 +216,7 @@
 		"src/lib/spam/analyzers/link-host-utils.ts",
 		"src/lib/spam/analyzers/urls-utils.ts",
 		"src/lib/spam/authentication-results-utils.ts",
+		"src/lib/spam/dmarc-policy-utils.ts",
 		"src/lib/spam/providers/abuse-ch-utils.ts",
 		"src/lib/spam/providers/threatfox-utils.ts",
 		"src/lib/spam/providers/urlhaus-utils.ts",

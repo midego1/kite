@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { AbuseChKeyStatus } from "@/lib/spam/providers/abuse-ch-types";
 import { ConnectedAccountsCard } from "./connected-accounts-card";
+import { SenderAuthenticationCard } from "./sender-authentication-card";
 import { TelemetryCard } from "./telemetry-card";
 import { ThreatLookupsCard } from "./threat-lookups-card";
 import { loadGeneralSettings, saveGeneralSettings } from "./utils";
@@ -106,6 +107,7 @@ export default function GeneralSettingsPage() {
 				</CardContent>
 			</Card>
 			<ThreatLookupsCard status={threatLookupKey} onStatusChange={setThreatLookupKey} />
+			<SenderAuthenticationCard />
 			<ConnectedAccountsCard />
 			<TelemetryCard />
 		</div>

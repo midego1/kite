@@ -21,7 +21,19 @@ export type SpamAnalysisInput = {
 	authenticationResults?: string | null;
 	message: ParsedEmail;
 	intelligenceProvider?: SpamIntelligenceProvider;
+	/** The owner's DMARC switch and the From domain's published policy; without it both count as unknown. */
+	dmarcPolicy?: DmarcPolicySource;
 };
+
+/** What a sender's domain asks receivers to do with mail failing DMARC; `unknown` when Kite could not learn it. */
+export type DmarcPolicy = "reject" | "quarantine" | "none" | "unknown";
+
+export interface DmarcPolicySource {
+	/** Admin → General: **Treat every DMARC failure as spam**. */
+	strict(): Promise<boolean>;
+	/** The policy the domain publishes in DNS, `unknown` when the lookup fails or times out. */
+	published(domain: string): Promise<DmarcPolicy>;
+}
 
 export type SpamAnalysisResult = {
 	score: number;

@@ -1,3 +1,0 @@
-### Fixed
-
-- Dark mode no longer leaves dark text unreadable on mail that sets its own text colours, and no longer turns ordinary replies into inverted cards. Near-black text (Outlook's `color:black`, Gmail's `#222`) simply takes the theme's text colour. Mail with a background, or with a colour that would still be unreadable on dark (a dark-blue signature), is rendered light and inverted with links still blue. Light text is left alone. "Original colours" is offered above every message dark mode changed, in every layout and at every width, and also restores its quoted history: one small button at the top right of the message body, reachable with the keyboard, with one fixed label and a pressed state.

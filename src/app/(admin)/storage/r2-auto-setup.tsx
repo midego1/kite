@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,12 +41,15 @@ type SetupState = {
 
 /** Runs one automatic setup request and keeps its step list, refusal and whether it finished. */
 function useR2Setup(onSaved: () => void) {
+	const queryClient = useQueryClient();
 	const [state, setState] = useState<SetupState>({ busy: false, steps: null, error: null, done: false });
 	async function run(path: string, body: Record<string, unknown>) {
 		setState({ busy: true, steps: null, error: null, done: false });
 		try {
 			const answer = await storageRequest<{ steps: ListStep[] }>(path, { method: "POST", json: body });
 			setState({ busy: false, steps: answer.steps, error: null, done: true });
+			// A new bucket belongs in the pickers from now on.
+			void queryClient.invalidateQueries({ queryKey: R2_CHOICES_KEY });
 			onSaved();
 		} catch (caught) {
 			const details = caught instanceof StorageRequestError ? caught.details : {};

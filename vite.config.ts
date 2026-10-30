@@ -12,6 +12,9 @@ const DEV_ONLY_VARS = [
 	"REMOTE_IMAGES_ALLOW_LOOPBACK",
 	"STORAGE_ALLOW_INSECURE_ENDPOINT",
 	"ABUSE_CH_TEST_ORIGIN",
+	// Let e2e/93-storage-r2-auto-setup.spec.ts send the automatic R2 setup to its fake Cloudflare API and fake R2.
+	"CLOUDFLARE_API_TEST_ORIGIN",
+	"R2_S3_TEST_ENDPOINT",
 	// Lets e2e/60-imap-import.spec.ts import from the fake IMAP server on 127.0.0.1 without TLS.
 	"EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK",
 	"DATABASE_SIZE_TEST_HEADER",

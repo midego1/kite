@@ -1,29 +1,22 @@
 import { ChangePasswordForm } from "@/components/settings/change-password-form";
 import { MfaSettings } from "@/components/settings/mfa-settings";
+import { PageHeader, SettingsCard, SettingsCardSection } from "@/components/ui/page";
 
 export default function SecuritySettingsPage() {
 	return (
-		<div className="space-y-8 py-4">
-			<section className="space-y-4">
-				<div>
-					<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Security</h1>
-					<p className="mt-1 text-sm text-neutral-500">Manage how you sign in to your account.</p>
-				</div>
-				<div className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5">
-					<div>
-						<h2 className="text-base font-semibold text-neutral-900">Change password</h2>
-						<p className="mt-1 text-sm text-neutral-500">Use at least 8 characters for your new password.</p>
-					</div>
+		<div className="space-y-6">
+			<PageHeader title="Security" description="How you sign in to your account." />
+			<SettingsCard>
+				<SettingsCardSection title="Password" description="Use at least 8 characters for your new password.">
 					<ChangePasswordForm />
-				</div>
-				<div className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5">
-					<div>
-						<h2 className="text-base font-semibold text-neutral-900">Two-factor authentication</h2>
-						<p className="mt-1 text-sm text-neutral-500">Require a code from an authenticator app when signing in.</p>
-					</div>
+				</SettingsCardSection>
+				<SettingsCardSection
+					title="Two-factor authentication"
+					description="Require a code from an authenticator app when signing in."
+				>
 					<MfaSettings />
-				</div>
-			</section>
+				</SettingsCardSection>
+			</SettingsCard>
 		</div>
 	);
 }

@@ -1,5 +1,5 @@
 import { registrableDomain } from "./analyzers/link-host-utils";
-import { parseAuthenticationResults } from "./authentication-results-utils";
+import { parseAuthenticationResults, type AuthenticationResult } from "./authentication-results-utils";
 import type { DmarcPolicy } from "./types";
 
 /**
@@ -10,6 +10,19 @@ import type { DmarcPolicy } from "./types";
 
 const STRICTNESS: Record<DmarcPolicy, number> = { unknown: 0, none: 1, quarantine: 2, reject: 3 };
 const PUBLISHED = new Set<string>(["none", "quarantine", "reject"]);
+
+// Named, not inline: the coverage merge keys functions by name, and inline callbacks get a different one per bundle.
+function isDmarcResult(entry: AuthenticationResult): boolean {
+	return entry.method === "dmarc";
+}
+
+function isDmarcRecord(answer: string): boolean {
+	return /^v\s*=\s*DMARC1\s*(;|$)/i.test(answer.trim());
+}
+
+function isFailure(id: string): boolean {
+	return id.endsWith("_failed");
+}
 
 function stricter(a: DmarcPolicy | null, b: DmarcPolicy): DmarcPolicy {
 	return a && STRICTNESS[a] >= STRICTNESS[b] ? a : b;
@@ -24,7 +37,7 @@ function stricter(a: DmarcPolicy | null, b: DmarcPolicy): DmarcPolicy {
  */
 export function publishedDmarcPolicy(trusted: string | null | undefined): DmarcPolicy | null {
 	if (!trusted) return null;
-	const dmarc = parseAuthenticationResults(trusted).results.find((entry) => entry.method === "dmarc");
+	const dmarc = parseAuthenticationResults(trusted).results.find(isDmarcResult);
 	let found: DmarcPolicy | null = null;
 	for (const name of ["policy.dmarc", "policy.published-domain-policy"]) {
 		const value = dmarc?.properties[name]?.toLowerCase();
@@ -44,7 +57,7 @@ function gentler(policy: DmarcPolicy): DmarcPolicy {
  * without a valid policy, give `unknown`, as RFC 7489 §6.6.3 says to ignore them.
  */
 export function parseDmarcRecord(answers: readonly string[], inherited = false): DmarcPolicy | null {
-	const records = answers.filter((answer) => /^v\s*=\s*DMARC1\s*(;|$)/i.test(answer.trim()));
+	const records = answers.filter(isDmarcRecord);
 	if (records.length === 0) return null;
 	if (records.length > 1) return "unknown";
 	const tags = new Map<string, string>();
@@ -84,7 +97,7 @@ export function dmarcRecordNames(fromDomain: string): { name: string; inherited:
  */
 export function fromMayBeForged(ids: ReadonlySet<string>): boolean {
 	if (ids.has("dmarc_failed")) return true;
-	return !ids.has("dmarc_passed") && [...ids].some((id) => id.endsWith("_failed"));
+	return !ids.has("dmarc_passed") && [...ids].some(isFailure);
 }
 
 export type AuthPolicyDecision = {

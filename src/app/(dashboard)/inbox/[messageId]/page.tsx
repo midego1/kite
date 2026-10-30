@@ -34,7 +34,7 @@ import {
 	getThreadDateRange,
 	getThreadParticipants,
 } from "@/components/messages/conversation-thread-utils";
-import { CloseMessageButton, ReaderThreadHeader } from "@/components/messages/reader-thread-header";
+import { ReaderThreadHeader } from "@/components/messages/reader-thread-header";
 import { MessageReplyButtons } from "@/components/message-actions/message-reply-buttons";
 import { InlineComposerHost, InlineReplyComposer } from "@/components/compose/inline-reply-composer";
 import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
@@ -164,9 +164,8 @@ export default function MessageDetailPage() {
 	return (
 		<InlineComposerHost messageId={message.id}>
 			<div className="sticky top-0 z-40 flex h-14 items-center gap-1 border-b border-neutral-200 bg-white px-3">
-				<CloseMessageButton />
-				<MessageDetailNavigation messageId={message.id} unread={message.direction === "inbound" && !message.read} />
 				<MessageReadingHeaderButton />
+				<MessageDetailNavigation messageId={message.id} unread={message.direction === "inbound" && !message.read} />
 				<span className="min-w-0 flex-1" />
 				<SummarizeButton controller={summary} />
 				<MessageActions

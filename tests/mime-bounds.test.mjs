@@ -109,47 +109,49 @@ if (mode === "hostile") for (const [name, build] of Object.entries(hostile)) {
 	out.slowestMs = Math.max(out.slowestMs, performance.now() - started);
 }
 if (mode === "legit") {
+// Each case runs in a function of its own: block-scoped values of the suspended module body stay alive, so the
+// large inputs of every case would add up in the 128 MB heap.
 // A 25 MB-class base64 attachment is about 340,000 short lines and must still parse.
-{
+await (async () => {
 const pdf =
 	multipart("b") +
 	"--b\\r\\nContent-Type: application/pdf\\r\\nContent-Transfer-Encoding: base64\\r\\nContent-Disposition: attachment; filename=a.pdf\\r\\n\\r\\n";
 const legit = header + pdf + base64Lines(340000) + "--b--\\r\\n";
 out.ok.attachments = (await parseRawMime(encoder.encode(legit).buffer)).attachments.length;
-}
+})();
 // A base64 attachment of short lines stays cheap however many there are (a 25 MB message holds about 12 million).
-{
+await (async () => {
 let shortStarted = performance.now();
 const shortLines = header + multipart("b") + "--b\\r\\nContent-Type: application/octet-stream\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" + "A\\r\\n".repeat(3_000_000) + "--b--\\r\\n";
 out.ok.shortLines = (await parseRawMime(encoder.encode(shortLines).buffer)).attachments.length;
 out.ok.shortLinesMs = performance.now() - shortStarted;
-}
+})();
 // A comment and a second header line folded with a tab, as postal-mime unfolds them.
-{
+await (async () => {
 const commented = header + 'Content-Type: multipart/mixed; (a comment; boundary=x)\\r\\n\\tboundary="c"\\r\\n\\r\\n' + pdfPart("c") + "--c--\\r\\n";
 out.ok.commented = (await parseRawMime(encoder.encode(commented).buffer)).attachments.length;
-}
+})();
 // format=flowed text is unfolded in linear time: 39,000 flowed 60-character lines (2.4 MB) took about 25 s with
 // postal-mime 2.7's own decoder.
-{
+await (async () => {
 const flowed = header + "Content-Type: text/plain; charset=utf-8; format=flowed; delsp=yes\\r\\n\\r\\n" + ("a".repeat(59) + " \\r\\n").repeat(39_000);
 let flowedStarted = performance.now();
 const flowedText = (await parseRawMime(encoder.encode(flowed).buffer)).text ?? "";
 out.ok.flowedMs = performance.now() - flowedStarted;
 out.ok.flowedBytes = flowed.length;
 out.ok.flowedUnfolded = flowedText.length === 39_000 * 59 && !flowedText.includes("\\n");
-}
+})();
 // The boundary parameter on a folded line, as most mail clients write it.
-{
+await (async () => {
 const folded = header + 'Content-Type: multipart/mixed;\\r\\n\\tboundary="f"\\r\\n\\r\\n' + pdfPart("f") + "--f--\\r\\n";
 out.ok.folded = (await parseRawMime(encoder.encode(folded).buffer)).attachments.length;
-}
+})();
 // A forwarded message whose part is itself base64 (as some clients send it) is decoded in chunks.
-{
+await (async () => {
 const encodedForward =
 	header + multipart("b") + "--b\\r\\nContent-Type: message/rfc822\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" + base64Lines(340000) + "--b--\\r\\n";
 out.ok.encodedForward = (await parseRawMime(encoder.encode(encodedForward).buffer)).attachments.map((a) => a.type);
-}
+})();
 // Thousands of nested message headers are one leaf part, not thousands of parses.
 let nestedStarted = performance.now();
 out.ok.nested = (await parseRawMime(encoder.encode(header + "Content-Type: message/rfc822\\r\\n\\r\\n".repeat(5000)).buffer)).subject;
@@ -212,11 +214,22 @@ await build({
 	logLevel: "silent",
 });
 
+/**
+ * The child's environment without coverage collection. A coverage run (`node --experimental-test-coverage`, c8) sets
+ * `NODE_V8_COVERAGE`, which every child inherits, so the 128 MB limit would also have to hold the instrumentation's
+ * code and counters. Measuring the parser, not the instrumentation, keeps the limit meaningful; the child bundle
+ * covers no gated file.
+ */
+const childEnv = Object.fromEntries(
+	Object.entries(process.env).filter(([name]) => name !== "NODE_V8_COVERAGE" && name !== "NODE_TEST_CONTEXT"),
+);
+
 test("hostile MIME is refused cheaply and legitimate mail still parses, inside a 128 MB heap", () => {
 	const run = (mode) =>
 		JSON.parse(
 			execFileSync(process.execPath, ["--max-old-space-size=128", bundle, mode], {
 				encoding: "utf8",
+				env: childEnv,
 				timeout: 120_000,
 			}),
 		);

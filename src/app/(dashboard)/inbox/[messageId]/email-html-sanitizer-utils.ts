@@ -1,7 +1,15 @@
 import DOMPurify from "dompurify";
 import type { Config, DOMPurify as Purifier, WindowLike } from "dompurify";
+import {
+	isNearBlackNeutral,
+	isUnreadableOnDark,
+	MIN_VISIBLE_ALPHA,
+	parseCssColour,
+	paintsBackground,
+} from "@/components/messages/email-colour-utils";
 import { linkifyTextNodes } from "@/lib/email/linkify-dom-utils";
 import { remoteImageProxyUrl } from "@/lib/remote-images/proxy-url-utils";
+import type { EmailColourFacts } from "@/components/messages/email-html-frame-types";
 import type { EmailHtmlSanitizer, SanitizeEmailHtmlOptions } from "./email-html-sanitizer-types";
 
 const ALLOWED_TAGS = [
@@ -141,6 +149,8 @@ const ALLOWED_STYLE_PROPERTIES = new Set([
 	"word-wrap",
 ]);
 const UNSAFE_STYLE_VALUE = /url\s*\(|expression\s*\(|javascript:|@import|behavior\s*:|-moz-binding/i;
+/** Near-black text, marked for the frame; the frame's CSS reads it (email-html-frame-utils.ts). */
+const NEUTRAL_TEXT_ATTRIBUTE = "data-kite-text";
 const APP_FONT_FALLBACK = "var(--font-geist-sans), system-ui, sans-serif";
 
 // Same as the links the sender wrote (target and rel), plus nofollow: nobody vouched for these.
@@ -199,7 +209,22 @@ function displayedImageUrl(src: string, origin: string, options: SanitizeEmailHt
 	return remoteImageProxyUrl(options.proxyRemoteImagesFor, url.href);
 }
 
+/** Reads the parsed `color` and `background-color`, so text that merely mentions a style never counts. */
+function noteColours(element: StyledElement, colours: EmailColourFacts): void {
+	if (paintsBackground(element.style.getPropertyValue("background-color"))) colours.background = true;
+	const text = parseCssColour(element.style.getPropertyValue("color"));
+	// Faint or transparent text is hidden on purpose (preheaders, spacers); dark mode must not reveal it.
+	if (!text || text.alpha < MIN_VISIBLE_ALPHA) return;
+	if (isNearBlackNeutral(text.rgb)) {
+		colours.neutral = true;
+		element.setAttribute(NEUTRAL_TEXT_ATTRIBUTE, "neutral");
+	} else if (isUnreadableOnDark(text.rgb)) {
+		colours.unreadable = true;
+	}
+}
+
 function sanitizeStyle(element: StyledElement, options: SanitizeEmailHtmlOptions): void {
+	if (options.colours && !options.forOutgoing) noteColours(element, options.colours);
 	const safeDeclarations: string[] = [];
 	for (const property of Array.from(element.style)) {
 		if (!ALLOWED_STYLE_PROPERTIES.has(property)) continue;

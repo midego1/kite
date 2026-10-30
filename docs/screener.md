@@ -31,7 +31,7 @@ Decisions are stored per mailbox for the lowercased address only, so approving `
 
 ## Who is approved automatically
 
-Sending from a mailbox approves every external To, Cc and Bcc address that has no decision yet, and releases their waiting mail. This install's own addresses are excluded. A denied address stays denied.
+Sending from a mailbox approves every external To, Cc and Bcc address that has no decision yet, and releases their waiting mail. This install's own addresses are excluded. A denied address stays denied. Only mail you send counts, once it was delivered: an auto-reply (an `Auto-Submitted` header other than `no`) and mail a module sends for you, such as an invitation answer or a booking notice, approve nobody.
 
 Mail claiming to come from this install's own mailboxes or aliases, or from system addresses (`mailer-daemon@`, `postmaster@`, `mail-daemon@`), still needs approval. The From header alone does not prove who sent it. The Screener is a sender preference, not a replacement for sender authentication or spam protection.
 

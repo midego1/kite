@@ -62,7 +62,7 @@ async function fixture(t, send = async () => ({ messageId: "<id@one.test>" })) {
 			.prepare("SELECT email, source FROM contacts WHERE user_id = 'admin' ORDER BY email")
 			.all()
 			.map((row) => `${row.email}:${row.source}`);
-	return { env, contacts, queued };
+	return { env, database, contacts, queued };
 }
 
 const mail = (overrides = {}) => ({
@@ -119,4 +119,27 @@ test("a scheduled send records contacts only once delivered, and a cancelled one
 	const message = queued.find((body) => body.messageId === due.messageId);
 	await m.processOutboundQueue(env, { ...message, scheduledAt: new Date(Date.now() - 1_000).toISOString() });
 	assert.deepEqual(contacts(), ["due@x.test:outbound"]);
+});
+
+test("Auto-Submitted: no is a message a person sent, so its recipients are recorded", async (t) => {
+	const { env, contacts } = await fixture(t);
+	await m.sendEmail(env, mail({ to: "person@x.test", cc: undefined, headers: { "Auto-Submitted": " No " } }));
+	assert.deepEqual(contacts(), ["person@x.test:outbound"]);
+});
+
+test("only mail the user chose approves its recipients in the Screener", async (t) => {
+	const { env, database } = await fixture(t);
+	database.db.exec(
+		"INSERT INTO screener_settings (mailbox_id, enabled, mode, created_at, updated_at) VALUES ('mb', 1, 'screener', 1, 1)",
+	);
+	const approved = () =>
+		database.db
+			.prepare("SELECT address, decision FROM screener_senders WHERE mailbox_id = 'mb' ORDER BY address")
+			.all()
+			.map((row) => `${row.address}:${row.decision}`);
+	await m.sendEmail(env, mail({ to: "organizer@x.test", cc: undefined, recordContacts: false }));
+	await m.sendEmail(env, mail({ to: "stranger@x.test", cc: undefined, headers: { "Auto-Submitted": "auto-replied" } }));
+	assert.deepEqual(approved(), []);
+	await m.sendEmail(env, mail({ to: "friend@x.test", cc: undefined }));
+	assert.deepEqual(approved(), ["friend@x.test:approved"]);
 });

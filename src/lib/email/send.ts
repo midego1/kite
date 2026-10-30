@@ -7,7 +7,7 @@ import { isJobClaimed } from "@/lib/email/job-claim";
 import { newId } from "@/lib/ids";
 import { buildSnippet } from "@/lib/email/parse";
 import { dispatchWebhooks } from "@/lib/email/webhooks";
-import { recordOutboundContacts } from "@/lib/email/outbound-contacts";
+import { isUserChosenSend, recordOutboundContacts } from "@/lib/email/outbound-contacts";
 import { getAuthorizedSenderAddress } from "@/lib/email/sender";
 import { assertWithinSendLimits } from "@/lib/email/send-limits";
 import { getEmailAddressList, joinEmailAddressList, splitEmailAddressList } from "@/lib/email/address";
@@ -368,9 +368,10 @@ async function deliverEmail(
 	await runPostDeliveryStep(`outbound contacts for ${messageId}`, () =>
 		recordOutboundContacts(env, input, [...to, ...cc, ...bcc]),
 	);
-	await runPostDeliveryStep(`screener approvals for ${messageId}`, () =>
-		approveSentRecipients(env, mailboxId, input.userId, [...to, ...cc, ...bcc]),
-	);
+	// Like contacts: module mail and auto-replies go to people the user did not choose, so they pass no Screener.
+	await runPostDeliveryStep(`screener approvals for ${messageId}`, async () => {
+		if (isUserChosenSend(input)) await approveSentRecipients(env, mailboxId, input.userId, [...to, ...cc, ...bcc]);
+	});
 	await runPostDeliveryStep(`sent job status for ${jobId}`, () =>
 		db
 			.update(outboundJobs)

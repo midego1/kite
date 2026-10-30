@@ -33,7 +33,8 @@ await build({
 			export { loadTriageContext } from "./src/lib/agent/auto-read/triage-context.ts";
 			export { buildTriagePrompt } from "./src/lib/agent/auto-read/triage-utils.ts";
 			export { previewDeletions, previewUpdates } from "./src/lib/calendar/tool-preview-utils.ts";
-			export { pruneMcpToolCallAudit } from "./src/lib/maintenance/pruning.ts";
+			export { mcpAuditSliceCondition, pruneMcpToolCallAudit, runDatabasePruning } from "./src/lib/maintenance/pruning.ts";
+			export { auditLogs } from "./src/db/schema/index.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "agent-guards-entry.ts",
@@ -531,23 +532,44 @@ test("MCP hints for module tools that send or reach outside Kite", () => {
 	assert.equal(m.markUntrusted("text"), "text");
 });
 
-test("MCP tool call audit rows are pruned after 90 days in bounded batches", async (t) => {
+test("the five-minute MCP audit pruning deletes the rows that just expired; the daily run sweeps the backlog", async (t) => {
 	const { env, database } = await fixture(t);
 	const now = new Date("2026-10-30T00:00:00Z");
-	const old = Math.floor(now.getTime() / 1000) - 91 * 86_400;
-	const recent = Math.floor(now.getTime() / 1000) - 89 * 86_400;
+	const cutoff = Math.floor(now.getTime() / 1000) - 90 * 86_400;
 	const insert = database.db.prepare(
 		"INSERT INTO audit_logs (id, actor_user_id, action, metadata, created_at) VALUES (?, 'user-1', ?, '{}', ?)",
 	);
-	for (let index = 0; index < 1_200; index += 1) insert.run(`old-${index}`, "mcp.tool_call", old);
-	insert.run("recent", "mcp.tool_call", recent);
-	insert.run("login", "auth.login", old);
-	assert.equal(await m.pruneMcpToolCallAudit(env, now), 1_200);
-	assert.deepEqual(
+	// Expired in the last 15 minutes: the slice.
+	for (let index = 0; index < 1_200; index += 1) insert.run(`slice-${index}`, "mcp.tool_call", cutoff - 60);
+	// Expired long ago (a missed run, a burst): only the daily run reaches it.
+	for (let index = 0; index < 700; index += 1) insert.run(`backlog-${index}`, "mcp.tool_call", cutoff - 86_400);
+	insert.run("recent", "mcp.tool_call", cutoff + 60);
+	insert.run("login", "auth.login", cutoff - 86_400);
+	const ids = () =>
 		database.db
-			.prepare("SELECT id FROM audit_logs ORDER BY id")
+			.prepare("SELECT id FROM audit_logs")
 			.all()
-			.map((row) => row.id),
-		["login", "recent"],
-	);
+			.map((row) => row.id.replace(/-\d+$/, ""));
+	assert.equal(await m.pruneMcpToolCallAudit(env, now), 1_200);
+	assert.deepEqual([...new Set(ids())].sort(), ["backlog", "login", "recent"]);
+	const daily = await m.runDatabasePruning(env, now);
+	assert.equal(daily.mcp_tool_call_audit_logs, 700);
+	assert.deepEqual(ids().sort(), ["login", "recent"]);
+});
+
+test("the five-minute MCP audit query reads a range of the created_at index, not the older history", async (t) => {
+	const { env, database } = await fixture(t);
+	const db = m.getDb(env);
+	const query = db
+		.select({ id: m.auditLogs.id })
+		.from(m.auditLogs)
+		.where(m.mcpAuditSliceCondition(new Date("2026-08-01T00:00:00Z")))
+		.limit(500)
+		.toSQL();
+	const plan = database.db
+		.prepare(`EXPLAIN QUERY PLAN ${query.sql}`)
+		.all(...query.params)
+		.map((row) => row.detail)
+		.join("\n");
+	assert.match(plan, /SEARCH audit_logs USING INDEX audit_logs_created_idx \(created_at>\? AND created_at<\?\)/);
 });

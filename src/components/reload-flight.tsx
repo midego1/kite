@@ -46,7 +46,8 @@ export function ReloadFlight({ active, onReload = reloadPage }: ReloadFlightProp
 
 	return (
 		<>
-			<div role="status" aria-live="assertive" aria-atomic="true" className="sr-only">
+			{/* A live region without a role: a second `status` would make every unqualified status lookup ambiguous. */}
+			<div aria-live="assertive" aria-atomic="true" className="sr-only">
 				{active ? RELOAD_FLIGHT_ANNOUNCEMENT : ""}
 			</div>
 			{active && plan.animate && createPortal(<ReloadFlightScene onEnd={() => fire.current?.()} />, document.body)}

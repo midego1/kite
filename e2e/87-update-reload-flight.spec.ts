@@ -55,7 +55,7 @@ async function watchOutgoingPage(page: Page) {
 			let announced = false;
 			new MutationObserver(() => {
 				if (document.querySelector(selector)) report("seen");
-				const status = [...document.querySelectorAll('[role="status"]')].some(
+				const status = [...document.querySelectorAll('[aria-live="assertive"]')].some(
 					(element) => element.textContent === announcement,
 				);
 				if (status && !announced) {
@@ -110,7 +110,9 @@ test("Reload in the update notice flies the kite away, announces the reload and 
 				element.getBoundingClientRect().width >= window.innerWidth &&
 				element.getBoundingClientRect().height >= window.innerHeight,
 			kiteAnimation: kite ? getComputedStyle(kite).animationName : "",
-			announced: [...document.querySelectorAll('[role="status"]')].some((node) => node.textContent === announcement),
+			announced: [...document.querySelectorAll('[aria-live="assertive"]')].some(
+				(node) => node.textContent === announcement,
+			),
 		};
 	}, ANNOUNCEMENT);
 	expect(seen.ariaHidden).toBe("true");

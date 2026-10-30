@@ -5,13 +5,17 @@ import { ImapConnection, type ImapConnectionOptions } from "./connection";
 import {
 	chooseAuthMethod,
 	imapLimits,
+	imapSearchDate,
 	IMAP_PORTS,
 	parseListLine,
 	parseListMailboxName,
 	parseStatusLine,
+	parseExists,
 	parseUidNext,
 	parseUidValidity,
 	type ImapListedMailbox,
+	type ImapMessageSummary,
+	parseFetchSummaries,
 	parseSearchUids,
 	plainAuthToken,
 	planStartTls,
@@ -22,9 +26,17 @@ import type { ImapFetchedMessage, ImapLogin } from "./types";
 export type ImapSession = {
 	/** The capabilities the server announced after sign-in (upper-case), such as `X-GM-EXT-1` on Gmail. */
 	readonly capabilities: readonly string[];
-	/** Opens `folder` read-only; `uidValidity` and `uidNext` are null when the server did not say. */
-	examine(folder: string): Promise<{ uidValidity: number | null; uidNext: number | null }>;
+	/** Opens `folder` read-only; `uidValidity`, `uidNext` and `exists` are null when the server did not say. */
+	examine(folder: string): Promise<{ uidValidity: number | null; uidNext: number | null; exists: number | null }>;
 	searchUids(): Promise<string[]>;
+	/** The UIDs of the open folder's messages received on or after `date`'s day (`UID SEARCH SINCE`). */
+	searchUidsSince(date: Date): Promise<number[]>;
+	/**
+	 * Flags, INTERNALDATE and size of the open folder's messages with UIDs from `fromUid` to `toUid` (`UID FETCH n:m …`,
+	 * or `n:*` when `toUid` is null), without bodies. A server answers `n:*` with the highest UID even when it is below
+	 * `n`; the caller drops what it has seen.
+	 */
+	fetchSummaries(fromUid: number, toUid?: number | null): Promise<ImapMessageSummary[]>;
 	fetchMessages(uids: string[], options?: { gmailLabels?: boolean }): Promise<Map<string, ImapFetchedMessage>>;
 	listMailboxNames(): Promise<string[]>;
 	/**
@@ -69,11 +81,21 @@ export async function openImapSession(
 		},
 		async examine(folder) {
 			const lines = await imap.command(`EXAMINE ${quoteImapString(folder)}`);
-			return { uidValidity: parseUidValidity(lines), uidNext: parseUidNext(lines) };
+			return { uidValidity: parseUidValidity(lines), uidNext: parseUidNext(lines), exists: parseExists(lines) };
 		},
 		async searchUids() {
 			const lines = await imap.command("UID SEARCH ALL");
 			return lines.flatMap(parseSearchUids);
+		},
+		async searchUidsSince(date) {
+			const lines = await imap.command(`UID SEARCH SINCE ${imapSearchDate(date)}`);
+			return lines.flatMap(parseSearchUids).map(Number);
+		},
+		async fetchSummaries(fromUid, toUid = null) {
+			const from = Math.max(1, Math.floor(fromUid));
+			const to = toUid === null ? "*" : Math.max(from, Math.floor(toUid));
+			const lines = await imap.command(`UID FETCH ${from}:${to} (UID FLAGS INTERNALDATE RFC822.SIZE)`);
+			return parseFetchSummaries(lines);
 		},
 		fetchMessages: (uids, options) => imap.fetchMessages(uids, options),
 		async listMailboxes() {

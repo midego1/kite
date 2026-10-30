@@ -17,8 +17,8 @@ export function SidebarScaffold({ header, footer, account, children, className }
 			<div
 				className={cn(
 					"flex min-h-0 flex-1 flex-col gap-px overflow-y-auto [&>*]:shrink-0 overscroll-contain py-3",
-					minimal ? "px-3" : "pl-1 pr-4",
-					"[scrollbar-gutter:stable] [mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)]",
+					minimal ? "px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "pl-1 pr-4 [scrollbar-gutter:stable]",
+					"[mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)]",
 				)}
 			>
 				{children}
@@ -26,7 +26,7 @@ export function SidebarScaffold({ header, footer, account, children, className }
 			{footer && (
 				<div className="max-h-[50%] min-h-0 shrink-0 overflow-y-auto overscroll-contain px-4 pb-3">{footer}</div>
 			)}
-			{account && <div className={cn("shrink-0 pb-3", minimal ? "flex justify-center px-2" : "px-3")}>{account}</div>}
+			{account && <div className={cn("shrink-0 pb-3", minimal ? "px-4" : "px-3")}>{account}</div>}
 		</nav>
 	);
 }

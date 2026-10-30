@@ -710,21 +710,6 @@ export const auditLogs = sqliteTable(
 	],
 );
 
-export const backupSettings = sqliteTable("backup_settings", {
-	id: text("id").primaryKey(),
-	enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-	scheduleType: text("schedule_type", { enum: ["daily", "weekly", "monthly"] })
-		.notNull()
-		.default("daily"),
-	scheduleValue: integer("schedule_value"),
-	retentionEnabled: integer("retention_enabled", { mode: "boolean" }).notNull().default(false),
-	retentionDays: integer("retention_days").notNull().default(30),
-	excludedTableGroups: text("excluded_table_groups").notNull().default("[]"),
-	updatedAt: integer("updated_at", { mode: "timestamp" })
-		.notNull()
-		.$defaultFn(() => new Date()),
-});
-
 export const appSettings = sqliteTable("app_settings", {
 	id: text("id").primaryKey(),
 	appName: text("app_name").notNull().default("Mailflare"),
@@ -762,28 +747,6 @@ export const appSettings = sqliteTable("app_settings", {
 		.notNull()
 		.$defaultFn(() => new Date()),
 });
-
-export const backups = sqliteTable(
-	"backups",
-	{
-		id: text("id").primaryKey(),
-		status: text("status", { enum: ["queued", "running", "completed", "failed"] })
-			.notNull()
-			.default("queued"),
-		trigger: text("trigger", { enum: ["manual", "scheduled", "pre-restore", "pre-migration"] }).notNull(),
-		r2Key: text("r2_key"),
-		filename: text("filename"),
-		size: integer("size"),
-		error: text("error"),
-		createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
-		createdAt: integer("created_at", { mode: "timestamp" })
-			.notNull()
-			.$defaultFn(() => new Date()),
-		startedAt: integer("started_at", { mode: "timestamp" }),
-		completedAt: integer("completed_at", { mode: "timestamp" }),
-	},
-	(t) => [index("backups_created_idx").on(t.createdAt), index("backups_status_idx").on(t.status)],
-);
 
 export const mailboxAgentSettings = sqliteTable("mailbox_agent_settings", {
 	mailboxId: text("mailbox_id")

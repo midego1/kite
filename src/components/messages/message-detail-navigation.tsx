@@ -99,10 +99,7 @@ export function MessageDetailNavigation({ messageId, unread }: MessageDetailNavi
 	useEffect(() => {
 		if (unread) context?.recordUnread(messageId);
 	}, [context?.recordUnread, messageId, unread]);
-	const { previousId, nextId, unreadOrder, totalUnread } = getMessageDetailNavigationState(
-		context?.entries ?? [],
-		messageId,
-	);
+	const { previousId, nextId } = getMessageDetailNavigationState(context?.entries ?? [], messageId);
 	const open = (id: string | null) => {
 		if (id && context) router.push(`${context.hrefPrefix}/${id}`);
 	};
@@ -114,11 +111,6 @@ export function MessageDetailNavigation({ messageId, unread }: MessageDetailNavi
 
 	return (
 		<div className="flex shrink-0 items-center gap-1 text-neutral-500">
-			{totalUnread > 0 && (
-				<span className="mr-2 whitespace-nowrap text-xs max-sm:sr-only" aria-live="polite">
-					{unreadOrder} of {totalUnread} unread
-				</span>
-			)}
 			<Tooltip label={shortcutsEnabled ? "Newer email (k)" : "Newer email"}>
 				<Button
 					type="button"

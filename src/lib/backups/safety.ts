@@ -56,8 +56,37 @@ function createSafetyBackupRecordStatement(record: Omit<SafetyBackup, "content">
 	return createKeptBackupRecordStatement({ ...record, startedAt: record.createdAt });
 }
 
-/** The same upsert for any completed backup a restore must keep listed, such as the one being restored. */
+/**
+ * The same upsert for any completed backup a restore must keep listed, such as the one being restored. A full
+ * backup also keeps its objects_* columns (they exist: a restore runs only on a migrated database); without them
+ * INSERT OR REPLACE would null them, hiding its mail files and orphaning their copies.
+ */
 export function createKeptBackupRecordStatement(record: KeptBackupRecord): RestoreStatement {
+	const objects = record.objects;
+	if (objects)
+		return {
+			sql: "INSERT OR REPLACE INTO backups (id, status, `trigger`, r2_key, filename, size, error, created_by_user_id, created_at, started_at, completed_at, objects_status, objects_prefix, objects_count, objects_size, objects_missing, objects_failed, objects_cursor, objects_restore, objects_updated_at) VALUES (?, 'completed', ?, ?, ?, ?, NULL, (SELECT id FROM users WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			params: [
+				record.id,
+				record.trigger,
+				record.r2Key,
+				record.filename,
+				record.size,
+				record.createdByUserId,
+				record.createdAt,
+				record.startedAt,
+				record.completedAt,
+				objects.status,
+				objects.prefix,
+				objects.count,
+				objects.size,
+				objects.missing,
+				objects.failed,
+				objects.cursor,
+				objects.restore,
+				objects.updatedAt,
+			],
+		};
 	return {
 		sql: "INSERT OR REPLACE INTO backups (id, status, `trigger`, r2_key, filename, size, error, created_by_user_id, created_at, started_at, completed_at) VALUES (?, 'completed', ?, ?, ?, ?, NULL, (SELECT id FROM users WHERE id = ?), ?, ?, ?)",
 		params: [

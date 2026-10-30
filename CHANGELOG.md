@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.30.0] - 2026-10-30
+
+### Added
+
+- **Include mail files** under [Admin → Backups](/backups): every backup can also copy the raw mail, attachments and large message bodies to its own dated folder in backup storage, with a manifest. The page shows about how many files and how much space that takes before you turn it on, each full backup shows what it copied, and **Restore mail files** puts back the files that are missing without touching the ones that exist. Off by default, and the page says how much space the copies kept at once take, since every full backup holds its own copy. Files that cannot be copied or restored are counted and shown on the backup, with a retry button for the copy. Deleting a backup, by hand or by retention, deletes its copies too. Needs migration **0081**, applied from the [admin overview](/admin).
+
+### Changed
+
+- New installs back up daily and keep the last 14 days of backups. Existing installs keep their settings. **Delete old backups automatically** now stays visible on the Backups page while automatic backups are off, because it also removes manual and safety backups.
+
 ## [2026.10.29.11] - 2026-10-29
 
 ### Added

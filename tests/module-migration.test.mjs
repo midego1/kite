@@ -49,6 +49,7 @@ const LATER_MIGRATIONS = [
 	"0078_add_ai_usage_details.sql",
 	"0079_add_external_accounts.sql",
 	"0080_add_user_preferences.sql",
+	"0081_add_backup_objects.sql",
 	"0082_external_account_address_scope.sql",
 	"0083_add_external_account_send_state.sql",
 ];

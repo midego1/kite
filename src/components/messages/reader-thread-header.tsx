@@ -1,35 +1,14 @@
 "use client";
 
-import Link from "next/link";
-import { CalendarDays, X } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import { ContactAvatar } from "@/components/contacts/contact-avatar";
-import { Tooltip } from "@/components/ui/tooltip";
 import { formatUserDate } from "@/lib/time/utils";
 import type { ThreadParticipant } from "./conversation-thread-utils";
-import { useMessageListVisibility } from "./message-list-visibility";
 
 const MAX_PARTICIPANT_CHIPS = 6;
 
 function formatDay(date: string) {
 	return formatUserDate(date, { month: "long", day: "numeric" });
-}
-
-/** Zero's × at the left of the reader toolbar: back to the list, with nothing open. */
-export function CloseMessageButton() {
-	const { singleColumn, backHref, backLabel } = useMessageListVisibility();
-	// In one column the list button already goes back.
-	if (singleColumn) return null;
-	return (
-		<Tooltip label={`Close (back to ${backLabel})`}>
-			<Link
-				href={backHref}
-				aria-label="Close message"
-				className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
-			>
-				<X size={18} />
-			</Link>
-		</Tooltip>
-	);
 }
 
 /**

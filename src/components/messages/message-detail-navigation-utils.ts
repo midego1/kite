@@ -32,8 +32,6 @@ export function getMessageDetailNavigationState(
 	return {
 		previousId: index > 0 ? ordered[index - 1].id : null,
 		nextId: index >= 0 ? (ordered[index + 1]?.id ?? null) : null,
-		unreadOrder: index >= 0 && index < unread.length ? index + 1 : 0,
-		totalUnread: unread.length,
 	};
 }
 

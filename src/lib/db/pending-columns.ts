@@ -4,8 +4,11 @@ import type { AppDatabase } from "@/db";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { canOmitMissingColumns, fillMissingColumns, isTableColumn, presentColumnKeys } from "./pending-columns-utils";
 
-/** More columns than two releases add to a table; past this the error is not about a pending migration. */
-const MAX_MISSING_COLUMNS = 8;
+/**
+ * More columns than two releases add to a table (migration 0081 alone adds nine to `backups`); past this the error
+ * is not about a pending migration. Each missing column costs one retried query, only until the migration runs.
+ */
+const MAX_MISSING_COLUMNS = 16;
 
 /**
  * The column a failed query names as missing, when retrying without it can work:
@@ -41,6 +44,7 @@ export async function selectRows<T extends SQLiteTable>(
 	table: T,
 	where?: SQL,
 	limit?: number,
+	orderBy?: SQL,
 ): Promise<T["$inferSelect"][]> {
 	const columns = getTableColumns(table) as Record<string, SQLiteColumn>;
 	const missing = new Set<string>();
@@ -55,6 +59,7 @@ export async function selectRows<T extends SQLiteTable>(
 				.from(table as SQLiteTable)
 				.where(where)
 				.$dynamic();
+			if (orderBy) query.orderBy(orderBy);
 			const rows = (await (limit === undefined ? query : query.limit(limit))) as Record<string, unknown>[];
 			return rows.map((row) => fillMissingColumns<T["$inferSelect"]>(row, columns, missing));
 		} catch (error) {

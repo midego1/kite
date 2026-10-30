@@ -1,6 +1,6 @@
 {
 	"name": "kite",
-	"version": "2026.10.29",
+	"version": "2026.10.30",
 	"private": true,
 	"scripts": {
 		"dev": "npm run bundles && vite dev --port 3000",

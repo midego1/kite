@@ -593,12 +593,19 @@
     {
       "idx": 84,
       "version": "6",
+      "when": 1788852180028,
+      "tag": "0081_add_backup_objects",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "6",
       "when": 1788852210028,
       "tag": "0082_external_account_address_scope",
       "breakpoints": true
     },
     {
-      "idx": 85,
+      "idx": 86,
       "version": "6",
       "when": 1788852240028,
       "tag": "0083_add_external_account_send_state",

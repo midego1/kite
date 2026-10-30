@@ -181,6 +181,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/messages/[messageId]/original`                   | GET                    | [source](../src/app/api/messages/[messageId]/original/route.ts)                   |
 | `/api/messages/[messageId]/read`                       | POST                   | [source](../src/app/api/messages/[messageId]/read/route.ts)                       |
 | `/api/messages/[messageId]`                            | GET                    | [source](../src/app/api/messages/[messageId]/route.ts)                            |
+| `/api/messages/[messageId]/send-now`                   | POST                   | [source](../src/app/api/messages/[messageId]/send-now/route.ts)                   |
 | `/api/messages/[messageId]/snooze`                     | DELETE, POST           | [source](../src/app/api/messages/[messageId]/snooze/route.ts)                     |
 | `/api/messages/[messageId]/star`                       | POST                   | [source](../src/app/api/messages/[messageId]/star/route.ts)                       |
 | `/api/messages/[messageId]/status`                     | POST                   | [source](../src/app/api/messages/[messageId]/status/route.ts)                     |

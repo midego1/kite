@@ -442,7 +442,21 @@ export async function processOutboundQueue(env: CloudflareEnv, payload: Outbound
 		.limit(1);
 	if (!job || job.status !== "queued") return;
 	const scheduledAt = new Date(payload.scheduledAt);
-	const input = JSON.parse(job.payload) as OutboundJobPayload;
+	const delivery = preparedDeliveryFromJob(job.payload, payload.jobId, payload.messageId, payload.attempt);
+	if (scheduledAt.getTime() > Date.now()) {
+		await enqueueScheduledDelivery(env, delivery, scheduledAt);
+		return;
+	}
+	await claimAndDeliver(env, delivery);
+}
+
+function preparedDeliveryFromJob(
+	jobPayload: string,
+	jobId: string,
+	messageId: string,
+	attempt: number | undefined,
+): PreparedDelivery {
+	const input = JSON.parse(jobPayload) as OutboundJobPayload;
 	const to = toRecipientList(input.to);
 	const cc = toRecipientList(input.cc);
 	const bcc = toRecipientList(input.bcc);
@@ -453,10 +467,10 @@ export async function processOutboundQueue(env: CloudflareEnv, payload: Outbound
 	const headers: Record<string, string> = { ...input.headers };
 	if (inReplyTo) headers["In-Reply-To"] = `<${inReplyTo}>`;
 	if (references.length > 0) headers.References = formatMessageIdHeader(references);
-	const delivery: PreparedDelivery = {
+	return {
 		input,
-		messageId: payload.messageId,
-		jobId: payload.jobId,
+		messageId,
+		jobId,
 		from: input.from,
 		mailboxId: input.mailboxId,
 		to,
@@ -465,22 +479,67 @@ export async function processOutboundQueue(env: CloudflareEnv, payload: Outbound
 		headers,
 		attachments: [],
 		externalAccountId: input.externalAccountId ?? null,
-		attempt: Math.max(1, Math.floor(Number(payload.attempt) || 1)),
+		attempt: Math.max(1, Math.floor(Number(attempt) || 1)),
 	};
-	if (scheduledAt.getTime() > Date.now()) {
-		await enqueueScheduledDelivery(env, delivery, scheduledAt);
-		return;
-	}
-	delivery.attachments = await loadMessageAttachmentContents(env, payload.messageId);
-	// Claiming the job is the single gate shared with cancelQueuedSend: whichever
-	// conditional update wins decides whether the message goes out or is undone.
+}
+
+/**
+ * Claiming the job is the single gate shared with cancelQueuedSend and sendQueuedNow: whichever
+ * conditional update wins decides whether the message goes out, is undone, or is sent early.
+ */
+async function claimAndDeliver(env: CloudflareEnv, delivery: PreparedDelivery): Promise<boolean> {
+	const db = getDb(env);
+	delivery.attachments = await loadMessageAttachmentContents(env, delivery.messageId);
 	const [claimed] = await db
 		.update(outboundJobs)
 		.set({ status: "sending", updatedAt: new Date() })
-		.where(and(eq(outboundJobs.id, payload.jobId), eq(outboundJobs.status, "queued")))
+		.where(and(eq(outboundJobs.id, delivery.jobId), eq(outboundJobs.status, "queued")))
 		.returning({ id: outboundJobs.id });
-	if (!claimed) return;
+	if (!claimed) return false;
 	await deliverEmail(env, delivery);
+	return true;
+}
+
+export type SendQueuedNowResult = { ok: true } | { ok: false; reason: "not_found" | "too_late" };
+
+/**
+ * Sends a message still waiting in the outbound queue (the undo window or a schedule) right away, for its
+ * author. It takes the same conditional claim as the queue consumer, so the later queue message finds the job
+ * claimed and does nothing: the message is never sent twice, and never both sent and undone.
+ */
+export async function sendQueuedNow(
+	env: CloudflareEnv,
+	userId: string,
+	messageId: string,
+): Promise<SendQueuedNowResult> {
+	const db = getDb(env);
+	const [message] = await db
+		.select({ id: messages.id, mailboxId: messages.mailboxId })
+		.from(messages)
+		.where(
+			and(
+				eq(messages.id, messageId),
+				eq(messages.userId, userId),
+				eq(messages.direction, "outbound"),
+				eq(messages.status, "queued"),
+			),
+		)
+		.limit(1);
+	if (!message?.mailboxId) return { ok: false, reason: "not_found" };
+	const [author] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
+	const access = author ? await getMailboxAccessLevel(db, author, message.mailboxId) : null;
+	if (!access || !(access.canManage || access.canSendAs || access.canSendOnBehalf)) {
+		return { ok: false, reason: "not_found" };
+	}
+	const [job] = await db
+		.select({ id: outboundJobs.id, status: outboundJobs.status, payload: outboundJobs.payload })
+		.from(outboundJobs)
+		.where(eq(outboundJobs.messageId, messageId))
+		.orderBy(desc(outboundJobs.createdAt))
+		.limit(1);
+	if (!job || job.status !== "queued") return { ok: false, reason: "too_late" };
+	const delivery = preparedDeliveryFromJob(job.payload, job.id, messageId, undefined);
+	return (await claimAndDeliver(env, delivery)) ? { ok: true } : { ok: false, reason: "too_late" };
 }
 
 export type CancelQueuedSendResult = { ok: true; draftId: string } | { ok: false; reason: "not_found" | "too_late" };

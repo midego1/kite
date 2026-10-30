@@ -168,6 +168,7 @@
 	"/api/messages/[messageId]/original",
 	"/api/messages/[messageId]/read",
 	"/api/messages/[messageId]",
+	"/api/messages/[messageId]/send-now",
 	"/api/messages/[messageId]/snooze",
 	"/api/messages/[messageId]/star",
 	"/api/messages/[messageId]/status",

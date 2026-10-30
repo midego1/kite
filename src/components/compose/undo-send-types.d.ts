@@ -27,6 +27,12 @@ export type SendingBarProps = {
 
 export type UndoSendBarProps = {
 	until: number;
+	/** Shown as a link to the queued message, which Sent already lists. */
+	subject: string;
+	messageId: string;
 	onUndo: () => void;
+	/** Sends the held message right away instead of waiting for the undo window to end. */
+	onSendNow: () => void;
+	sendingNow?: boolean;
 	onExpire: () => void;
 };

@@ -6,7 +6,7 @@ import { failStaleBackups } from "@/lib/backups/service";
 import { runAgentMaintenance } from "@/lib/agent/maintenance";
 import { runTrashRetention } from "@/lib/email/trash-retention";
 import { sweepOrphanedRawMail } from "@/lib/email/raw-sweeper";
-import { runDatabasePruning } from "@/lib/maintenance/pruning";
+import { pruneMcpToolCallAudit, runDatabasePruning } from "@/lib/maintenance/pruning";
 import { runOperationalAlerts } from "@/lib/alerts/run";
 import { runModuleCronTasks } from "@/lib/modules/background";
 import { runStorageMigrationMaintenance } from "@/lib/storage/migration";
@@ -38,6 +38,8 @@ export function startScheduler(env: CloudflareEnv) {
 			runStorageMigrationMaintenance(env, now).catch((error) =>
 				logger.error("storage.migration_maintenance_failed", { error }),
 			);
+			// MCP tool call audit rows, matching worker.ts.
+			pruneMcpToolCallAudit(env, now).catch((error) => logger.error("mcp.audit_pruning_failed", { error }));
 			// Connected accounts, matching worker.ts.
 			planExternalSync(env, now).catch((error) => logger.error("external.sync_plan_failed", { error }));
 			runRestoreMaintenance(env, now).catch((error) => logger.error("backup.restore_maintenance_failed", { error }));

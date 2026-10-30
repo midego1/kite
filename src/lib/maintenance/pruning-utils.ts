@@ -5,6 +5,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Rows removed per DELETE, and the most batches one table may take per run, so a backlog drains over several days. */
 export const PRUNING_BATCH_SIZE = 500;
 export const PRUNING_MAX_BATCHES_PER_TABLE = 10;
+/**
+ * MCP tool call audit rows: the five-minute run deletes only rows that crossed the retention cutoff in the last
+ * 15 minutes, a range of the `created_at` index, so it never reads the older audit history (there is no index on
+ * `action`). The daily run sweeps whatever that missed, with a larger budget.
+ */
+export const MCP_AUDIT_SLICE_MS = 15 * 60 * 1000;
+export const MCP_AUDIT_DAILY_MAX_BATCHES = 100;
 
 /**
  * Retention for operational rows that nothing reads once they are old.
@@ -25,6 +32,9 @@ export const PRUNING_POLICY: PruningPolicy = {
 	agentActionsDays: 180,
 	// Conversation summaries that have been out of date this long (a newer message arrived) are not coming back.
 	staleSummariesDays: 30,
+	// One audit row per MCP tool call; a quarter of history is enough to trace what a key did. Pruned every five
+	// minutes by pruneMcpToolCallAudit (the rows that just expired) and by the daily run (any backlog).
+	mcpToolCallAuditDays: 90,
 };
 
 export const PRUNABLE_OUTBOUND_JOB_STATUSES = ["sent", "failed", "cancelled"] as const;

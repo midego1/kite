@@ -132,6 +132,21 @@ function ProposalEmails({ proposal }: { proposal: AgentActionProposal }) {
 	);
 }
 
+/** What a module tool proposal would touch, in the words of the module's preview. */
+function ProposalItems({ proposal }: { proposal: AgentActionProposal }) {
+	if (!proposal.items?.length) return null;
+	return (
+		<ul className="space-y-1" data-agent-proposal-items="">
+			{proposal.items.map((item, index) => (
+				<li key={index} className="break-words">
+					<span className="font-medium text-neutral-800">{item.label}</span>
+					{item.detail && <p className="text-neutral-500">{item.detail}</p>}
+				</li>
+			))}
+		</ul>
+	);
+}
+
 /** An approved action: what it did, and Undo while its undo window is open. The result is kept per card. */
 function ApprovedAction({ item, proposal }: { item: AgentMessage; proposal: AgentActionProposal }) {
 	const [state, setState] = useState<"idle" | "undoing" | "undone">(proposal.status === "undone" ? "undone" : "idle");
@@ -196,6 +211,7 @@ export function AgentPendingActions({
 	return (
 		<div className="space-y-2 text-xs">
 			<ProposalEmails proposal={proposal} />
+			<ProposalItems proposal={proposal} />
 			<div className="flex flex-wrap items-center justify-end gap-3">
 				<button
 					type="button"

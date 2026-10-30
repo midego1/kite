@@ -39,7 +39,7 @@ import { processAgentQueueMessage } from "./src/lib/agent/queue";
 import { runAgentMaintenance } from "./src/lib/agent/maintenance";
 import { runTrashRetention } from "./src/lib/email/trash-retention";
 import { sweepOrphanedRawMail } from "./src/lib/email/raw-sweeper";
-import { runDatabasePruning } from "./src/lib/maintenance/pruning";
+import { pruneMcpToolCallAudit, runDatabasePruning } from "./src/lib/maintenance/pruning";
 import { runOperationalAlerts } from "./src/lib/alerts/run";
 import { runTelemetryHeartbeat } from "./src/lib/telemetry/heartbeat";
 import { eraseIdleExternalCredentials } from "./src/lib/external-accounts/retention";
@@ -295,6 +295,10 @@ export default {
 					.catch((error) => logger.error("backup.stale_recover_failed", { error }))
 					.then(() => runOperationalAlerts(env, now))
 					.catch((error) => logger.error("alerts.evaluation_failed", { error })),
+			);
+			// One audit row per MCP tool call: pruned in bounded batches every five minutes so heavy use cannot outgrow it.
+			ctx.waitUntil(
+				pruneMcpToolCallAudit(env, now).catch((error) => logger.error("mcp.audit_pruning_failed", { error })),
 			);
 			ctx.waitUntil(
 				runStorageMigrationMaintenance(env, now).catch((error) =>

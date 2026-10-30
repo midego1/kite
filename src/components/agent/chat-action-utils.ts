@@ -12,8 +12,14 @@ function emailCount(proposal: Pick<AgentActionProposal, "emailIds" | "emailId">)
 	return `${count} ${count === 1 ? "email" : "emails"}`;
 }
 
+/** Module tool proposals are worded by their effect, so core holds no per-module text. */
+function moduleActionText(proposal: AgentActionProposal, deleted: string, updated: string, sent: string): string {
+	return proposal.effect === "delete" ? deleted : proposal.effect === "send" ? sent : updated;
+}
+
 /** The text of the button that approves a proposal. */
 export function approveActionLabel(proposal: AgentActionProposal): string {
+	if (proposal.moduleId) return moduleActionText(proposal, "Approve deletion", "Approve changes", "Approve sending");
 	switch (proposal.action) {
 		case "discard_draft":
 			return "Approve discard";
@@ -34,6 +40,7 @@ export function approveActionLabel(proposal: AgentActionProposal): string {
 
 /** What an approved action did, in the words the panel shows next to Undo. */
 export function approvedActionText(proposal: AgentActionProposal): string {
+	if (proposal.moduleId) return moduleActionText(proposal, "Deleted.", "Changes saved.", "Sent.");
 	switch (proposal.action) {
 		case "discard_draft":
 			return "Draft discarded.";

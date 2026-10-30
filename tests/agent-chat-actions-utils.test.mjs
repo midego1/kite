@@ -13,7 +13,7 @@ after(() => rmSync(outDir, { recursive: true, force: true }));
 await build({
 	stdin: {
 		contents: `
-			export { appliedPlaces, chatActionPlan, chatActionState, chatProposalSchema, safeActionError, storedChatActionState, undoTargets } from "./src/lib/agent/chat-actions-utils.ts";
+			export { appliedPlaces, chatActionPlan, chatActionState, chatProposalSchema, moduleProposalSchema, safeActionError, storedChatActionState, undoTargets } from "./src/lib/agent/chat-actions-utils.ts";
 			export { FOLDER_COLOR_NAMES, folderColorValue } from "./src/lib/agent/organize-tools-utils.ts";
 			export { canSeeAction, getActionMeta, userExecuteRefusal, undoRefusal } from "./src/lib/agent/auto-read/actions-utils.ts";
 			export { approveActionLabel, approvedActionText, canUndoAction, undoneActionText } from "./src/components/agent/chat-action-utils.ts";
@@ -45,6 +45,7 @@ const {
 	canUndoAction,
 	chatActionPlan,
 	chatProposalSchema,
+	moduleProposalSchema,
 	folderColorValue,
 	getActionMeta,
 	chatActionState,
@@ -385,4 +386,26 @@ test("every proposal has approve and done text, also when optional fields are mi
 		canUndoAction({ action: "move_emails", status: "approved", actionId: "aact-1", undoUntil: null }, NOW),
 		false,
 	);
+});
+
+test("a module tool proposal is recognised, worded by its effect and never undoable", () => {
+	const proposal = {
+		action: "delete_events",
+		status: "pending_approval",
+		moduleId: "calendar",
+		effect: "delete",
+		input: { eventIds: ["evt-1"] },
+		items: [{ label: "Dentist · Tue, Nov 4, 9:00 AM", detail: null }],
+	};
+	assert.ok(moduleProposalSchema.safeParse(proposal).success);
+	assert.equal(chatProposalSchema.safeParse(proposal).success, false);
+	assert.deepEqual(agentActionProposal(JSON.stringify(proposal)), proposal);
+	assert.equal(approveActionLabel(proposal), "Approve deletion");
+	assert.equal(approveActionLabel({ ...proposal, effect: "update" }), "Approve changes");
+	assert.equal(approvedActionText({ ...proposal, status: "approved" }), "Deleted.");
+	assert.equal(approvedActionText({ ...proposal, effect: "update", status: "approved" }), "Changes saved.");
+	assert.equal(canUndoAction({ ...proposal, status: "approved" }, NOW), false);
+	// A tool result without preview items is not a proposal card.
+	const { items: _items, ...bare } = proposal;
+	assert.equal(agentActionProposal(JSON.stringify(bare)), null);
 });

@@ -160,7 +160,9 @@ function PreferenceRow<T extends string>({
 				<span className="block text-sm font-medium text-neutral-900">{label}</span>
 				<span className={compact ? "sr-only" : "mt-1 block text-sm text-neutral-500"}>
 					{description}{" "}
-					{preference.layoutKey ? "Follows your account to your other devices." : "Saved in this browser."}
+					{preference.layoutKey
+						? "Follows your account to the devices that use the same layout."
+						: "Saved in this browser."}
 				</span>
 			</span>
 			<Select

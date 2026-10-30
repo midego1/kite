@@ -4,8 +4,8 @@ import { apiContext, deliverInbound, openMessage, uniqueToken } from "./support/
 import { chooseOption, expectSelectValue } from "./support/select";
 
 // Settings → Appearance → Font → Dyslexia-friendly (OpenDyslexic): the self-hosted font takes over the app, the
-// composer and plain-text mail, HTML mail only with "Font in HTML emails", it is linked before paint on the next
-// load, and while it is not chosen no font file is requested at all.
+// composer and plain-text mail, HTML mail only with "Font in HTML emails", it is preloaded before paint on the
+// next load, and while it is not chosen no font file is requested at all.
 
 const FONT = "Dyslexia-friendly (OpenDyslexic)";
 const DEFAULT_FONT = "Match style";
@@ -30,6 +30,14 @@ test.beforeAll(async () => {
 		subject: textSubject,
 		text: "Plain text body.",
 	});
+	await api.dispose();
+});
+
+// The layout sync is off in the shared storage state, so the font choice stays in each test's own browser; the
+// account's saved layout is reset all the same, in case the API round trip below stopped halfway.
+test.afterAll(async () => {
+	const api = await apiContext(STORAGE_STATE);
+	await api.patch("/api/settings/layout", { data: { layout: { font: "auto", emailFont: "original" } } });
 	await api.dispose();
 });
 
@@ -71,16 +79,18 @@ test("the app, the composer and the reader switch to OpenDyslexic, which the nex
 	await expect
 		.poll(() => requests.filter((path) => path.endsWith(".woff2")).length, { message: "the font file is fetched" })
 		.toBeGreaterThan(0);
-	expect(requests).toContain("/fonts/opendyslexic/opendyslexic.css");
+	// The faces are in the app stylesheet; no extra stylesheet is fetched for the page itself.
+	expect(requests.filter((path) => path.endsWith(".css"))).toEqual([]);
 	// The HTML email choice appears only for the dyslexia-friendly font and starts with the mail's own fonts.
 	await expectSelectValue(page.getByRole("combobox", { name: "Font in HTML emails" }), "original");
 
-	// The next load links the stylesheet and preloads the regular weight from <head>, before React runs.
+	// The next load preloads the regular weight from <head>, before React runs.
 	await page.reload();
 	await expect(page.locator("html")).toHaveAttribute("data-font", "opendyslexic");
-	await expect(page.locator('head link[rel="stylesheet"][data-kite-font="opendyslexic"]')).toHaveCount(1);
 	await expect(
-		page.locator('head link[rel="preload"][as="font"][href="/fonts/opendyslexic/opendyslexic-latin-400-normal.woff2"]'),
+		page.locator(
+			'head link[rel="preload"][as="font"][data-kite-font="opendyslexic"][href="/fonts/opendyslexic/opendyslexic-latin-400-normal.woff2"]',
+		),
 	).toHaveCount(1);
 	await expectSelectValue(font, "opendyslexic");
 	expect(await fontFamilyOf(page, "body")).toContain("OpenDyslexic");
@@ -112,6 +122,8 @@ test("the app, the composer and the reader switch to OpenDyslexic, which the nex
 	const replaced = readerFrame(page).locator("p");
 	await expect(replaced).toHaveText(/own serif/);
 	expect(await replaced.evaluate((element) => getComputedStyle(element).fontFamily)).toContain("OpenDyslexic");
+	// The chrome keeps its normal spacing; reading text gets a little more.
+	expect(await page.locator("body").evaluate((element) => getComputedStyle(element).letterSpacing)).toBe("normal");
 	// The frame keeps its sandbox and loads the stylesheet from our own origin.
 	await expect(page.locator('iframe[title="Message body"]').first()).toHaveAttribute("sandbox", /allow-same-origin/);
 	await expect(readerFrame(page).locator('head link[href="/fonts/opendyslexic/opendyslexic.css"]')).toHaveCount(1);

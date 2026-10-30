@@ -24,8 +24,8 @@ export function LayoutSyncSetting() {
 			<span className="flex-1">
 				<span className="block text-sm font-medium text-neutral-900">Use the same layout on every device</span>
 				<span className="mt-1 block text-sm text-neutral-500">
-					The reading pane, density, conversation view and the size of the message list follow your account. Turn this
-					off to keep this browser&apos;s own layout.
+					The reading pane, density, conversation view, the size of the message list and the font follow your account.
+					Turn this off to keep this browser&apos;s own layout.
 				</span>
 			</span>
 			<Switch checked={enabled} onCheckedChange={setLayoutSyncEnabled} />

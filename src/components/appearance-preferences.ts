@@ -1,7 +1,7 @@
 // No "use client" and no React hooks: the root layout (a Server Component) imports
 // appearanceBootstrapScript as a plain string. The hook lives in use-appearance-preference.ts.
 
-import { ensureFontStylesheet, FONT_ASSETS, FONT_LINK_ATTRIBUTE, fontAsset } from "@/components/font-assets-utils";
+import { FONT_ASSETS, FONT_LINK_ATTRIBUTE, fontAsset } from "@/components/font-assets-utils";
 import type { LayoutPreferences } from "@/lib/preferences/layout-types";
 
 export type AppearancePreference<T extends string> = {
@@ -10,7 +10,7 @@ export type AppearancePreference<T extends string> = {
 	attribute: string;
 	defaultValue: T;
 	options: { value: T; label: string }[];
-	/** Values that need a stylesheet linked when chosen (`FONT_ASSETS`), so the font files load only then. */
+	/** Values that are self-hosted fonts (`FONT_ASSETS`): the bootstrap script preloads a chosen one. */
 	assets?: boolean;
 	/** Saved to the account as this layout choice as well (`/api/settings/layout`), so it follows the user. */
 	layoutKey?: keyof LayoutPreferences;
@@ -143,7 +143,6 @@ export function applyAppearancePreference<T extends string>(preference: Appearan
 	const root = document.documentElement;
 	if (value === preference.defaultValue) root.removeAttribute(`data-${preference.attribute}`);
 	else root.setAttribute(`data-${preference.attribute}`, value);
-	if (preference.assets) ensureFontStylesheet(document, value);
 }
 
 export function saveAppearancePreference<T extends string>(preference: AppearancePreference<T>, value: T): void {
@@ -164,8 +163,9 @@ export function applyStoredAppearancePreferences(): void {
 }
 
 /**
- * Runs in <head> before paint, mirroring applyStoredAppearancePreferences. A chosen self-hosted font gets
- * its stylesheet and a preload of its regular weight here, so the first frame is already set in it.
+ * Runs in <head> before paint, mirroring applyStoredAppearancePreferences. The faces of a self-hosted font
+ * are declared in globals.css; a chosen one gets a preload of its regular weight here, so the first frame
+ * is already set in it. Nothing is added for any other value.
  */
 export const appearanceBootstrapScript = `(() => {
 	try {
@@ -186,15 +186,12 @@ export const appearanceBootstrapScript = `(() => {
 			if (!asset) continue;
 			const preload = document.createElement("link");
 			preload.rel = "preload";
-			preload.as = "font";
+			preload.setAttribute("as", "font");
 			preload.type = "font/woff2";
 			preload.crossOrigin = "anonymous";
 			preload.href = asset.preload;
-			const sheet = document.createElement("link");
-			sheet.rel = "stylesheet";
-			sheet.href = asset.stylesheet;
-			sheet.setAttribute(${JSON.stringify(FONT_LINK_ATTRIBUTE)}, saved);
-			document.head.append(preload, sheet);
+			preload.setAttribute(${JSON.stringify(FONT_LINK_ATTRIBUTE)}, saved);
+			document.head.append(preload);
 		}
 	} catch {}
 })();`;

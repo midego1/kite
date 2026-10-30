@@ -290,7 +290,7 @@ export function ConversationMessageCard({
 						{body.html ? (
 							<EmailHtmlFrame html={body.html} className="email-body max-w-none" />
 						) : (
-							<pre className="whitespace-pre-wrap font-sans text-sm text-neutral-900">
+							<pre className="reading-text whitespace-pre-wrap font-sans text-sm text-neutral-900">
 								<LinkifiedText text={body.text} />
 							</pre>
 						)}

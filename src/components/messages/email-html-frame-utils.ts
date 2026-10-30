@@ -1,4 +1,4 @@
-import { readerFontStyles } from "@/components/font-assets-utils";
+import { readerFontStyles, stripInlineFontFamily } from "@/components/font-assets-utils";
 import type { EmailFrameDocumentOptions } from "./email-html-frame-types";
 
 /**
@@ -72,6 +72,7 @@ export function buildEmailFrameDocument(html: string, options: EmailFrameDocumen
 	const font = options.font
 		? `<link rel="stylesheet" href="${options.font.stylesheet}"><style>${readerFontStyles(options.font)}</style>`
 		: "";
+	const body = options.font ? stripInlineFontFamily(html) : html;
 	return [
 		'<!doctype html><html><head><meta charset="utf-8">',
 		'<meta name="referrer" content="no-referrer">',
@@ -79,7 +80,7 @@ export function buildEmailFrameDocument(html: string, options: EmailFrameDocumen
 		`<style>${BASE_STYLES}${colorStyles}${muted}</style>`,
 		font,
 		"</head><body>",
-		html,
+		body,
 		"</body></html>",
 	].join("");
 }

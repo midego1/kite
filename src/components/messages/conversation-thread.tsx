@@ -5,8 +5,10 @@ import { useSyncedState } from "@/hooks/use-synced-state";
 import { formatUserDate } from "@/lib/time/utils";
 import { ChevronsUpDown, Paperclip } from "lucide-react";
 import { ContactAvatar } from "@/components/contacts/contact-avatar";
-import { QuotedEmailToggle } from "@/components/messages/quoted-email-toggle";
-import { EmailHtmlFrame, RemoteImagesNotice } from "@/components/messages/email-html-frame";
+import { EmailBody } from "@/components/messages/email-body";
+import { emptyEmailColours } from "@/components/messages/email-colour-utils";
+import type { EmailColourFacts } from "@/components/messages/email-html-frame-types";
+import { RemoteImagesNotice } from "@/components/messages/email-html-frame";
 import { useLoadRemoteImages } from "@/components/messages/use-load-remote-images";
 import { useReaderFont } from "@/components/messages/use-reader-font";
 import { runSingleMessageAction } from "@/components/message-actions/utils";
@@ -185,7 +187,14 @@ export function ConversationMessageCard({
 	const outbound = message.direction === "outbound";
 	const attachments = message.attachments.filter((attachment) => attachment.disposition === "attachment");
 
-	let body: { html: string | null; text: string; quotedHtml: string | null; blockedRemoteImages: number } | null = null;
+	let body: {
+		html: string | null;
+		colours: EmailColourFacts;
+		text: string;
+		quotedHtml: string | null;
+		quotedColours: EmailColourFacts;
+		blockedRemoteImages: number;
+	} | null = null;
 	if (expanded) {
 		const display = getMessageBodyDisplay(message.textBody, message.htmlBody, message.snippet);
 		const imageOptions = {
@@ -195,18 +204,25 @@ export function ConversationMessageCard({
 			linkify: true,
 			dropFontFamily: readerFont !== undefined,
 		};
+		const colours = emptyEmailColours();
+		const quotedColours = emptyEmailColours();
 		body = {
 			html: collapseQuotedEmailHtml(
-				sanitizeEmailHtml(resolveInlineAttachmentUrls(display.htmlBody, message.id, message.attachments), imageOptions),
+				sanitizeEmailHtml(resolveInlineAttachmentUrls(display.htmlBody, message.id, message.attachments), {
+					...imageOptions,
+					colours,
+				}),
 			),
+			colours,
 			text: display.latestContent,
 			quotedHtml: collapseQuotedEmailHtml(
-				sanitizeEmailHtml(
-					resolveInlineAttachmentUrls(display.quotedHtml, message.id, message.attachments),
-					imageOptions,
-				),
+				sanitizeEmailHtml(resolveInlineAttachmentUrls(display.quotedHtml, message.id, message.attachments), {
+					...imageOptions,
+					colours: quotedColours,
+				}),
 				true,
 			),
+			quotedColours,
 			blockedRemoteImages: imageOptions.stats.blockedRemoteImages,
 		};
 	}
@@ -290,14 +306,18 @@ export function ConversationMessageCard({
 				{expanded && body && (
 					<div className="pb-6 pt-1">
 						{body.blockedRemoteImages > 0 && <RemoteImagesNotice onShow={() => setRemoteImagesShown(true)} />}
-						{body.html ? (
-							<EmailHtmlFrame html={body.html} className="email-body max-w-none" />
-						) : (
-							<pre className="reading-text whitespace-pre-wrap font-sans text-sm text-neutral-900">
-								<LinkifiedText text={body.text} />
-							</pre>
-						)}
-						{body.quotedHtml && <QuotedEmailToggle html={body.quotedHtml} />}
+						<EmailBody
+							html={body.html}
+							colours={body.colours}
+							quotedHtml={body.quotedHtml}
+							quotedColours={body.quotedColours}
+							className="email-body max-w-none"
+							fallback={
+								<pre className="reading-text whitespace-pre-wrap font-sans text-sm text-neutral-900">
+									<LinkifiedText text={body.text} />
+								</pre>
+							}
+						/>
 						{attachments.length > 0 && (
 							<ul className="mt-4 flex flex-wrap gap-2">
 								{attachments.map((attachment) => (

@@ -51,8 +51,19 @@ const BOOT_SECRET_PATH = /^(\/d\/|\/api\/public\/drive\/|\/api\/shared-files\/)[
 const BOOT_LONG_FRAME_MS = 1_000;
 /** Where the next load reports a load that froze (`navigator.sendBeacon`, text/plain JSON); the server logs it. */
 const BOOT_REPORT_PATH = "/api/boot-report";
-/** sessionStorage key of the kite's return marker (reload-return-utils.ts), read before that script consumes it. */
+/**
+ * sessionStorage key Reload in "Kite was updated" writes (update-reload.ts) for the trace alone: nothing on screen
+ * depends on it. The next load's trace consumes it and records `afterUpdate`, so a freeze report says whether the
+ * load followed Reload.
+ */
+const BOOT_AFTER_RELOAD_KEY = "kite-boot-after-reload";
+/**
+ * sessionStorage key of the kite's return marker (reload-return-utils.ts), read before that script consumes it: a
+ * tab still on a build from before BOOT_AFTER_RELOAD_KEY writes only this one.
+ */
 const RELOAD_RETURN_MARKER_KEY = "kite-reload-flight";
+/** A marker older than this (or from a clock that ran ahead by as much) is from some other load. */
+const AFTER_RELOAD_TTL_MS = 60_000;
 
 export type BootDetails = {
 	phase: string;
@@ -121,6 +132,35 @@ export function markBootStep(name: string): void {
 		bootTrace()?.step?.(name);
 	} catch {
 		// The trace is diagnostics only; the app never depends on it.
+	}
+}
+
+/** Reload in "Kite was updated" was chosen: the next load's trace records that it followed it. */
+export function markBootAfterReload(
+	storage: Pick<Storage, "setItem"> | null = sessionStorageOrNull(),
+	now = Date.now(),
+) {
+	try {
+		storage?.setItem(BOOT_AFTER_RELOAD_KEY, String(now));
+	} catch {
+		// Diagnostics only.
+	}
+}
+
+/** The reload did not happen: the next load is no reload after an update. */
+export function clearBootAfterReload(storage: Pick<Storage, "removeItem"> | null = sessionStorageOrNull()) {
+	try {
+		storage?.removeItem(BOOT_AFTER_RELOAD_KEY);
+	} catch {
+		// Diagnostics only.
+	}
+}
+
+function sessionStorageOrNull(): Storage | null {
+	try {
+		return typeof sessionStorage === "undefined" ? null : sessionStorage;
+	} catch {
+		return null;
 	}
 }
 
@@ -220,9 +260,14 @@ export const bootTraceScript = `(() => {
 				} catch {}
 			}
 		}
+		// This load followed Reload in "Kite was updated": the trace's own marker (consumed here), or the kite's return
+		// marker a tab on an older build writes instead. Either counts only within a minute of being written.
 		let afterUpdate = false;
 		try {
-			afterUpdate = !!sessionStorage.getItem(${JSON.stringify(RELOAD_RETURN_MARKER_KEY)});
+			const fresh = (raw) => raw !== null && Math.abs(Date.now() - Number(raw)) <= ${AFTER_RELOAD_TTL_MS};
+			const own = sessionStorage.getItem(${JSON.stringify(BOOT_AFTER_RELOAD_KEY)});
+			if (own !== null) sessionStorage.removeItem(${JSON.stringify(BOOT_AFTER_RELOAD_KEY)});
+			afterUpdate = fresh(own) || fresh(sessionStorage.getItem(${JSON.stringify(RELOAD_RETURN_MARKER_KEY)}));
 		} catch {}
 
 		const record = {

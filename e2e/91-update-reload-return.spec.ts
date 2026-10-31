@@ -212,6 +212,10 @@ test("while the return is off, Reload in the update notice loads the new version
 	await expect(page.locator(OVERLAY)).not.toHaveClass(/opacity-100/);
 	await expect(page.locator("html")).not.toHaveClass(new RegExp(`\\b${RETURN_CLASS}\\b`));
 	await expect(page.getByRole("status").filter({ hasText: MESSAGE })).toHaveCount(0);
+	// The boot trace still knows this load followed Reload (its own marker, nothing on screen depends on it).
+	const record = await page.evaluate(() => JSON.parse(sessionStorage.getItem("kite-boot-trace")!));
+	expect(record.afterUpdate).toBe(true);
+	expect(await page.evaluate(() => sessionStorage.getItem("kite-boot-after-reload"))).toBeNull();
 });
 
 test("Reload in the update notice brings the kite back on the loading screen, which gives way to the app", async ({
@@ -307,6 +311,33 @@ test("Reload in the update notice brings the kite back on the loading screen, wh
 	await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), MARKER_KEY)).toBeNull();
 	await expect(page.getByRole("status").filter({ hasText: MESSAGE })).toHaveCount(0);
 	await shot(page, "return-app");
+});
+
+test("a fresh marker left by a tab on an older build is dropped: the load is plain, and the trace notes the update", async ({
+	page,
+}) => {
+	test.skip(RELOAD_RETURN_ENABLED, "The kite's return is on");
+	await markReturn(page, 2_000);
+	const entry = await holdEntryModule(page);
+	const loaded = page.waitForEvent("load", { timeout: 60_000 });
+	await page.goto("/inbox", { waitUntil: "commit" });
+	await expect.poll(() => entry.held.length, { timeout: 30_000 }).toBeGreaterThan(0);
+	await page.waitForSelector(`${OVERLAY}[role="status"]`, { state: "attached", timeout: 20_000 });
+	expect(
+		await page.evaluate(
+			(key) => ({
+				returnClass: document.documentElement.classList.contains("kite-reload-return"),
+				marker: sessionStorage.getItem(key),
+				afterUpdate: JSON.parse(sessionStorage.getItem("kite-boot-trace")!).afterUpdate,
+			}),
+			MARKER_KEY,
+		),
+	).toEqual({ returnClass: false, marker: null, afterUpdate: true });
+	await expect(page.locator(`${SCENE} svg`)).toBeHidden();
+	await entry.release();
+	await loaded;
+	await expect(page.getByRole("main")).toBeVisible({ timeout: 30_000 });
+	await expect(page.locator("html")).not.toHaveClass(new RegExp(`\\b${RETURN_CLASS}\\b`));
 });
 
 test("an ordinary load shows the plain loading screen", async ({ page }) => {

@@ -90,7 +90,7 @@ export function getAttachmentUrl(messageId: string, attachmentId: string): strin
 export function resolveInlineAttachmentUrls(
 	htmlBody: string | null,
 	messageId: string,
-	attachments: MessageAttachment[],
+	attachments: Pick<MessageAttachment, "id" | "contentId">[],
 ): string | null {
 	if (!htmlBody) return null;
 

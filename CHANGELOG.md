@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.31.2] - 2026-10-31
+
+### Added
+
+- "Reload Kite" and "Kite couldn't load" on the loading screen have a folded **Details** section with **Copy details**, for bug reports about a start that hangs. It says how far the start got, for how long the page was visible, how often the screen was mounted, which requests are still open, the slowest files and any frame that blocked the page for more than a second. It holds paths without query strings and without the token of a Drive or shared-file link, times and counts, never message content or addresses. When a page froze, the next load of the tab names the phase it froze at in the browser console and in Details.
+- [Settings → Connected accounts](/settings/connected-accounts) has a forwarding guide for Gmail, Outlook.com and Microsoft 365, iCloud Mail, Yahoo Mail, Fastmail and other providers: the steps with your Kite address filled in, links to the provider's own forwarding settings and what to check afterwards. Choosing Outlook.com or Microsoft 365 when connecting an account, which Kite cannot connect yet, offers **Set up forwarding**.
+- Mail that came in through a connected account (or was sent as one) shows a "via" chip in the message list and the reader, such as "via Gmail" or the account's label. Choosing it in the reader lists everything from that account, and the new `via:` search operator finds mail by provider, address, label or domain (`via:gmail`, `via:me@gmail.com`, `via:"Work mail"`).
+- **Also sync the Spam folder** on a connected account (off by default) checks the provider's Spam folder too, from the moment it is turned on. That mail always lands in Kite's Spam: Kite's own spam filter still runs on it and its verdict is kept, with the provider's added, and mailbox rules and the Screener do not move it. No migration is needed.
+
+### Fixed
+
+- A loading screen that keeps being mounted again now gets "Kite couldn't load" after 30 visible seconds, even while it shows Reload Kite, and the 30-second limit holds again after **Try again** on a failed sign-in check. "Startup is taking longer than expected" counts only the time the tab was visible, so a tab opened in the background no longer shows it the moment you switch to it.
+- Some messages could freeze the browser for seconds when opened, listed or replied to: very long runs of dashes before an email address, of `<` in a sender name, of dots or spaces in an attachment name, or of blanks in a colour or before a line break. These are now handled in linear time, as are conversations with thousands of participants. Long runs of broken characters in inbound mail no longer hold up the mail queue.
+- Opening a large email, or reloading Kite while one is open, no longer freezes the page behind the loading screen. The reader prepares a message's body once instead of on every update while Kite starts, and looking for a one-time code in a long email no longer slows down on long links or long lines.
+
 ## [2026.10.31.1] - 2026-10-31
 
 ### Added

@@ -14,6 +14,7 @@ import { getUnsubscribeUrlFromRawR2Key } from "@/lib/email/unsubscribe";
 import type { SessionUser } from "@/lib/auth/types";
 import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import { loadSendStates } from "@/lib/messages/send-state";
+import { loadMessageVia } from "@/lib/external-accounts/via";
 
 /** Mail a connected account's sync fetched (spec §6.4), with the flags it had at the source. */
 export type InboundQueueSource = { kind: "external"; accountId: string; read: boolean; starred: boolean };
@@ -158,8 +159,9 @@ export async function getMessageWithBodyForUser(env: CloudflareEnv, user: Sessio
 	const attachments = await listMessageAttachments(env, messageId);
 	const unsubscribeUrl = await getUnsubscribeUrlFromRawR2Key(env, message.rawR2Key);
 	const sendState = (await loadSendStates(db, [message], user.id)).get(message.id);
+	const via = (await loadMessageVia(env, [message])).get(message.id);
 	return {
-		message: { ...message, ...contactNames, ...(sendState ? { sendState } : {}) },
+		message: { ...message, ...contactNames, ...(sendState ? { sendState } : {}), ...(via ? { via } : {}) },
 		body: message,
 		attachments,
 		unsubscribeUrl,

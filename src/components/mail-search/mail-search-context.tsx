@@ -12,6 +12,11 @@ export function useMailSearch() {
 	return ctx;
 }
 
+/** The mail search when there is one (inside the mail views), or null; for controls also shown elsewhere. */
+export function useOptionalMailSearch() {
+	return useContext(MailSearchContext);
+}
+
 const SEARCH_DEBOUNCE_MS = 250;
 
 export function MailSearchProvider({ children }: { children: ReactNode }) {

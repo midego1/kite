@@ -216,9 +216,9 @@ export function canCheckNow(account: ExternalAccountView): boolean {
 }
 
 /** Saves the send-as switches of an account; they need no password. */
-export async function saveSending(
+export async function saveAccountSwitches(
 	id: string,
-	patch: { sendEnabled?: boolean; appendSent?: boolean },
+	patch: { sendEnabled?: boolean; appendSent?: boolean; syncJunk?: boolean },
 ): Promise<ExternalAccountView> {
 	const response = await authFetch(`/api/external-accounts/${encodeURIComponent(id)}`, {
 		method: "PATCH",

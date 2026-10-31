@@ -86,6 +86,8 @@ export type ExternalAccountSyncView = {
 	problem: string | null;
 	/** A check is running now. */
 	running: boolean;
+	/** "Also sync the Spam folder": the provider's Spam folder is checked too, into Kite's Spam (off by default). */
+	junk: boolean;
 };
 
 /** Why an account's address cannot be chosen as From right now (`sendBlock`), or null when it can. */

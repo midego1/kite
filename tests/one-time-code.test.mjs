@@ -509,3 +509,53 @@ test("a notice names the sender as Name <address>, so a typed name cannot pose a
 	);
 	assert.equal(notificationSender({ from: "x@phish.example", fromName: "\u202e" }), "x@phish.example");
 });
+
+/**
+ * Hostile bodies just under the size limit. Scanning out to the ends of a candidate's token or line for every
+ * candidate took 42 s (one long token) and 28 s (one long URL) on a 70–98 KB body, blocking the reader's main
+ * thread; each now takes milliseconds. The bound is generous so slow CI machines pass.
+ */
+const HOSTILE_BUDGET_MS = 1500;
+/** MAX_ONE_TIME_CODE_SOURCE_LENGTH in one-time-code-utils.ts. */
+const MAX_ONE_TIME_CODE_SOURCE_LENGTH = 100_000;
+
+function timed(input) {
+	const started = performance.now();
+	const code = extractOneTimeCode(input);
+	return { code, ms: performance.now() - started };
+}
+
+test("one space-free token full of candidates is scanned in linear time", () => {
+	const text = `code ${"AB12CD-".repeat(Math.floor((MAX_ONE_TIME_CODE_SOURCE_LENGTH - 100) / 7))}`;
+	const { code, ms } = timed({ subject: "Your code", text });
+	assert.equal(code, "AB12CD");
+	assert.ok(ms < HOSTILE_BUDGET_MS, `took ${ms.toFixed(0)} ms`);
+});
+
+test("one long URL full of digit candidates is scanned in linear time and still rejected", () => {
+	const text = `verification code https://x.example/?${"1234&".repeat(Math.floor((MAX_ONE_TIME_CODE_SOURCE_LENGTH - 100) / 5))}`;
+	const { code, ms } = timed({ subject: "Your code", text });
+	assert.equal(code, null);
+	assert.ok(ms < HOSTILE_BUDGET_MS, `took ${ms.toFixed(0)} ms`);
+});
+
+test("one long line of lowercase candidates is scanned in linear time", () => {
+	const text = `code: ${"ab12cd ".repeat(Math.floor((MAX_ONE_TIME_CODE_SOURCE_LENGTH - 100) / 7))}`;
+	const { code, ms } = timed({ subject: "Your code", text });
+	assert.equal(code, "ab12cd");
+	assert.ok(ms < HOSTILE_BUDGET_MS, `took ${ms.toFixed(0)} ms`);
+});
+
+test("a split code next to a URL token still counts as inside the URL", () => {
+	assert.equal(extractOneTimeCode({ subject: "Your code", text: "Code www.example.test/12 34" }), null);
+	assert.equal(extractOneTimeCode({ subject: "Your code", text: "Code 12 34/x://example.test" }), null);
+	assert.equal(extractOneTimeCode({ subject: "Your code", text: "Code 12 34 www.example.test" }), "1234");
+});
+
+test("a body over the size limit is not searched", () => {
+	const padding = "Lorem ipsum dolor sit amet. ".repeat(Math.ceil(MAX_ONE_TIME_CODE_SOURCE_LENGTH / 28));
+	assert.equal(extractOneTimeCode({ subject: "Your code", text: `Code: 482193\n${padding}` }), null);
+	const { code, ms } = timed({ subject: "Your code", text: `code ${"AB12CD-".repeat(1_000_000)}` });
+	assert.equal(code, null);
+	assert.ok(ms < HOSTILE_BUDGET_MS, `took ${ms.toFixed(0)} ms`);
+});

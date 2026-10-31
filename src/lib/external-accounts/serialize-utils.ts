@@ -71,6 +71,7 @@ export function serializeExternalAccount(
 			failures: row.consecutiveFailures,
 			problem: SYNC_PROBLEMS.has(row.statusReason ?? "") ? row.statusReason : null,
 			running: !!row.leaseUntil && row.leaseUntil.getTime() > now.getTime(),
+			junk: row.syncJunk,
 		},
 		sending: {
 			enabled: row.sendEnabled,

@@ -32,7 +32,8 @@ export function parseCssColour(value: string): { rgb: Rgb; alpha: number } | nul
 	const text = value
 		.trim()
 		.toLowerCase()
-		.replace(/\s*!important$/, "");
+		// From the start of a run of blanks only, so a long run elsewhere is not rescanned from each of them.
+		.replace(/(?<!\s)\s*!important$/, "");
 	const named = NAMED_COLOURS.get(text);
 	if (named) return { rgb: named, alpha: 1 };
 	if (text === "transparent") return { rgb: [0, 0, 0], alpha: 0 };

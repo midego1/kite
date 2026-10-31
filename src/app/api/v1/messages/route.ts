@@ -8,6 +8,7 @@ import { messages, users } from "@/db/schema";
 import { loadMessageBodies } from "@/lib/email/bodies";
 import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { buildSearchConditions } from "@/lib/search/conditions";
+import { viaSearchAvailable } from "@/lib/external-accounts/via";
 import { getRequestTimeZone } from "@/lib/time/utils";
 import { decodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor-utils";
 import { afterCursor } from "@/app/api/messages/utils";
@@ -63,7 +64,12 @@ export async function GET(request: Request) {
 	if (direction === "inbound" || direction === "outbound") {
 		conditions.push(eq(messages.direction, direction));
 	}
-	if (query) conditions.push(...buildSearchConditions(query, getRequestTimeZone(request, user.timeZone)));
+	if (query)
+		conditions.push(
+			...buildSearchConditions(query, getRequestTimeZone(request, user.timeZone), {
+				connectedAccounts: await viaSearchAvailable(env, query),
+			}),
+		);
 	if (cursor) conditions.push(afterCursor(messages.createdAt, messages.id, cursor));
 
 	const rows = await loadMessageBodies(

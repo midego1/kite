@@ -50,7 +50,10 @@ const exports = [
 	["appendRecentErrors", "src/lib/external-accounts/recent-errors.ts"],
 	["getDb", "src/db/index.ts"],
 	["externalAccounts", "src/db/schema/external-accounts.ts"],
-	["eq", "drizzle-orm"],
+	["eq, and, inArray", "drizzle-orm"],
+	["buildSearchConditions", "src/lib/search/conditions.ts"],
+	["listAccessibleMailboxIds", "src/lib/mailboxes/access.ts"],
+	["messages", "src/db/schema/index.ts"],
 	["exportDatabaseRecords, restoreDatabaseRecords", "src/lib/backups/export.ts"],
 ];
 await build({
@@ -95,6 +98,11 @@ const {
 	getDb,
 	externalAccounts,
 	eq,
+	and,
+	inArray,
+	buildSearchConditions,
+	listAccessibleMailboxIds,
+	messages,
 	exportDatabaseRecords,
 	restoreDatabaseRecords,
 } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
@@ -419,6 +427,7 @@ test("errors become states: a failed sign-in stops sync until reconnecting, thro
 		failures: 2,
 		problem: "transient",
 		running: false,
+		junk: false,
 	});
 
 	// After a day of failing (three or more in a row): `error`, every 6 hours, and the notice lists it.
@@ -1029,4 +1038,328 @@ test("a refusal that starts while a step is handed on keeps the cursor before it
 		synced().map((message) => message.subject),
 		["During the refusal"],
 	);
+});
+
+test("the Spam folder is synced only while its switch is on, into Kite's Spam, after Kite's own spam filter", async (t) => {
+	const server = await fake(t, {
+		specialUse: true,
+		folderAttributes: { "[Gmail]/Spam": ["\\Junk"] },
+		folders: {
+			INBOX: [{ raw: sampleMessage(1), internalDate: today() }],
+			"[Gmail]/Spam": [sampleMessage(80, { subject: "Spam before the switch" })],
+		},
+	});
+	const { db, env, inbound, synced, deliver, due } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody());
+	assert.equal(account.sync.junk, false, "off by default");
+	const cursors = () =>
+		db.db.prepare("SELECT name, role, last_uid FROM external_account_folders ORDER BY role, name").all();
+
+	// Off: the run never lists folders or opens the Spam folder.
+	server.addMessage("[Gmail]/Spam", sampleMessage(81, { subject: "Spam while off" }));
+	due();
+	assert.deepEqual(await syncExternalAccount(env, account.id), { delivered: 0, skipped: 0, more: false });
+	assert.ok(!server.commands.some((command) => /\bLIST\b|EXAMINE "\[Gmail\]\/Spam"/.test(command.line)));
+
+	// On: the switch needs no sign-in, and the folder's cursor starts now; what collected there before stays out.
+	const turnedOn = await updateExternalAccount(env, owner, account.id, { syncJunk: true });
+	assert.equal(turnedOn.sync.junk, true);
+	due();
+	assert.deepEqual(await syncExternalAccount(env, account.id), { delivered: 0, skipped: 0, more: false });
+	assert.deepEqual(
+		cursors().map((cursor) => [cursor.name, cursor.role, cursor.last_uid]),
+		[
+			["INBOX", "inbox", 1],
+			["[Gmail]/Spam", "junk", 2],
+		],
+	);
+
+	server.addMessage("INBOX", sampleMessage(82, { subject: "Inbox mail" }));
+	server.addMessage("[Gmail]/Spam", { raw: sampleMessage(83, { subject: "False positive" }), flags: ["\\Seen"] });
+	due();
+	assert.deepEqual(await syncExternalAccount(env, account.id), { delivered: 2, skipped: 0, more: false });
+	assert.deepEqual(
+		inbound.map((message) => message.rawR2Key),
+		[`external/${account.id}/1/2.eml`, `external/${account.id}/junk/1/3.eml`],
+	);
+	await deliver();
+	const rows = synced();
+	assert.deepEqual(
+		rows.map((message) => [message.subject, message.status, message.read, message.external_account_id]),
+		[
+			["Inbox mail", "received", 0, account.id],
+			["False positive", "spam", 1, account.id],
+		],
+	);
+	// Kite's own analysis ran and is kept, with the provider's verdict on top.
+	const signals = JSON.parse(rows[1].spam_signals).map((signal) => signal.id);
+	assert.ok(signals.includes("provider_junk"), signals.join());
+	assert.equal(
+		db.db.prepare("SELECT spam_verdict FROM messages WHERE subject = 'False positive'").get().spam_verdict,
+		"spam",
+	);
+	assert.deepEqual(globalThis.__syncScheduled.length, 2);
+
+	// A Spam-folder message refused at delivery moves the Spam folder's cursor back, never INBOX's.
+	server.addMessage("[Gmail]/Spam", sampleMessage(84, { subject: "Refused for now" }));
+	due();
+	await syncExternalAccount(env, account.id);
+	await setCanConnect(env, "owner", false);
+	await deliver();
+	assert.deepEqual(
+		cursors().map((cursor) => cursor.last_uid),
+		[2, 3],
+	);
+	await setCanConnect(env, "owner", true);
+	due();
+	assert.equal((await syncExternalAccount(env, account.id)).delivered, 1);
+	await deliver();
+	assert.equal(db.db.prepare("SELECT status FROM messages WHERE subject = 'Refused for now'").get().status, "spam");
+
+	// Off again, then on: the folder starts from a new baseline, so mail from while it was off never arrives.
+	await updateExternalAccount(env, owner, account.id, { syncJunk: false });
+	server.addMessage("[Gmail]/Spam", sampleMessage(85, { subject: "Spam while off again" }));
+	due();
+	assert.equal((await syncExternalAccount(env, account.id)).delivered, 0);
+	await updateExternalAccount(env, owner, account.id, { syncJunk: true });
+	due();
+	assert.equal((await syncExternalAccount(env, account.id)).delivered, 0);
+	assert.ok(!synced().some((message) => /while off/.test(message.subject)));
+	// Read-only throughout.
+	assert.ok(!server.commands.some((command) => /\b(STORE|COPY|MOVE|EXPUNGE|APPEND|SELECT)\b/i.test(command.line)));
+});
+
+test("an account without a Spam folder syncs INBOX as before; a folder named Junk counts once it appears", async (t) => {
+	const server = await fake(t, { folders: { INBOX: [{ raw: sampleMessage(1), internalDate: today() }] } });
+	const { db, env, synced, deliver, due } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody({ syncJunk: true }));
+	assert.equal(account.sync.junk, true);
+	server.addMessage("INBOX", sampleMessage(90, { subject: "Inbox only" }));
+	due();
+	assert.deepEqual(await syncExternalAccount(env, account.id), { delivered: 1, skipped: 0, more: false });
+	await deliver();
+	assert.deepEqual(
+		synced().map((message) => message.subject),
+		["Inbox only"],
+	);
+
+	// A folder named like Spam (no special-use attributes) is found by its name.
+	server.addMessage("Junk", sampleMessage(91, { subject: "Before the baseline" }));
+	due();
+	await syncExternalAccount(env, account.id);
+	server.addMessage("Junk", sampleMessage(92, { subject: "Named Junk" }));
+	due();
+	assert.equal((await syncExternalAccount(env, account.id)).delivered, 1);
+	await deliver();
+	assert.equal(db.db.prepare("SELECT status FROM messages WHERE subject = 'Named Junk'").get().status, "spam");
+});
+
+/** What an account's state says after a check: the parts the Spam-folder failures must leave as a success. */
+function checkedFine(row) {
+	assert.equal(row.status, "active");
+	assert.equal(row.consecutive_failures, 0);
+	assert.equal(row.last_error, null);
+	assert.ok(row.next_sync_at > Date.now() / 1000, "the next regular check is due later");
+}
+
+test("a Spam folder the server will not open never fails the check: INBOX mail still arrives", async (t) => {
+	const server = await fake(t, {
+		specialUse: true,
+		folderAttributes: { Junk: ["\\Junk"] },
+		folders: { INBOX: [{ raw: sampleMessage(1), internalDate: today() }], Junk: [] },
+	});
+	const { env, synced, deliver, due, row } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody({ syncJunk: true }));
+	server.refuseExamine("Junk", "NO [NONEXISTENT] Unknown Mailbox: Junk");
+	server.addMessage("INBOX", sampleMessage(100, { subject: "Inbox despite Spam" }));
+	due();
+	assert.deepEqual(await syncExternalAccount(env, account.id, steady), { delivered: 1, skipped: 0, more: false });
+	await deliver();
+	assert.deepEqual(
+		synced().map((message) => [message.subject, message.status]),
+		[["Inbox despite Spam", "received"]],
+	);
+	checkedFine(row());
+	assert.match(
+		row().recent_errors,
+		/Kite could not check the Spam folder this time; the Inbox was checked: .*NO \[NONEXISTENT\]/,
+	);
+
+	// Once the folder opens again, its mail arrives as usual.
+	server.refuseExamine("Junk", null);
+	due();
+	await syncExternalAccount(env, account.id, steady);
+	server.addMessage("Junk", sampleMessage(101, { subject: "Spam after all" }));
+	due();
+	assert.equal((await syncExternalAccount(env, account.id, steady)).delivered, 1);
+	await deliver();
+	assert.ok(synced().some((message) => message.subject === "Spam after all" && message.status === "spam"));
+	checkedFine(row());
+});
+
+test("a LIST over the connection's limits never fails the check: INBOX mail still arrives", async (t) => {
+	const folders = { INBOX: [{ raw: sampleMessage(1), internalDate: today() }] };
+	for (let index = 0; index < 12; index += 1) folders[`Project ${index}`] = [];
+	const server = await fake(t, { folders });
+	const { env, synced, deliver, due, row } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody({ syncJunk: true }));
+	server.addMessage("INBOX", sampleMessage(110, { subject: "Inbox despite LIST" }));
+	due();
+	// Six lines are enough for every INBOX answer, not for a LIST of thirteen folders.
+	const result = await syncExternalAccount(env, account.id, { ...steady, limits: { commandResponseLines: 6 } });
+	assert.deepEqual(result, { delivered: 1, skipped: 0, more: false });
+	assert.ok(
+		server.commands.some((command) => /\bLIST\b/.test(command.line)),
+		"the Spam folder was looked for",
+	);
+	await deliver();
+	assert.deepEqual(
+		synced().map((message) => message.subject),
+		["Inbox despite LIST"],
+	);
+	checkedFine(row());
+	assert.match(row().recent_errors, /Kite could not check the Spam folder this time/);
+});
+
+test("a sign-in that stops working on the Spam folder's reconnect still fails the check", async (t) => {
+	const server = await fake(t, {
+		specialUse: true,
+		folderAttributes: { Junk: ["\\Junk"] },
+		folders: { INBOX: [{ raw: sampleMessage(1), internalDate: today() }], Junk: [] },
+	});
+	const { env, due, row } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody({ syncJunk: true }));
+	due();
+	await syncExternalAccount(env, account.id, steady);
+	// The known folder is refused, so the connection is replaced before LIST; the new sign-in is refused.
+	server.refuseExamine("Junk", "NO [NONEXISTENT] gone");
+	due();
+	const realConnect = env.TCP_CONNECT;
+	let connects = 0;
+	env.TCP_CONNECT = (address, options) => {
+		connects += 1;
+		if (connects === 2) server.setPassword(USER, "changed-at-the-provider");
+		return realConnect(address, options);
+	};
+	assert.deepEqual(await syncExternalAccount(env, account.id, steady), { failed: "auth" });
+	assert.equal(row().status, "auth_failed");
+});
+
+test("a refusal during the INBOX pass leaves the Spam folder alone", async (t) => {
+	const server = await fake(t, {
+		specialUse: true,
+		folderAttributes: { Junk: ["\\Junk"] },
+		folders: { INBOX: [{ raw: sampleMessage(1), internalDate: today() }], Junk: [] },
+		fetchGate: () => gate.promise,
+	});
+	let release;
+	const gate = { promise: new Promise((resolve) => (release = resolve)) };
+	const { env, due } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody({ syncJunk: true }));
+	server.addMessage("INBOX", sampleMessage(120, { subject: "Refused half way" }));
+	due();
+	const run = syncExternalAccount(env, account.id, steady);
+	// The permission goes while INBOX is being fetched: the run stops and never opens the Spam folder.
+	await new Promise((resolve) => setTimeout(resolve, 300));
+	await setCanConnect(env, "owner", false);
+	release();
+	await run;
+	assert.ok(!server.commands.some((command) => /EXAMINE "Junk"|\bLIST\b/.test(command.line)));
+});
+
+test("a renamed Spam folder is found again and starts from a new baseline", async (t) => {
+	const attributes = {};
+	const server = await fake(t, {
+		specialUse: true,
+		folderAttributes: attributes,
+		folders: { INBOX: [{ raw: sampleMessage(1), internalDate: today() }], Junk: [] },
+	});
+	const { db, env, synced, deliver, due } = await setup(t, server);
+	const account = await connectExternalAccount(env, owner, connectBody({ syncJunk: true }));
+	due();
+	await syncExternalAccount(env, account.id, steady);
+	server.addMessage("Junk", sampleMessage(130, { subject: "In Junk" }));
+	due();
+	assert.equal((await syncExternalAccount(env, account.id, steady)).delivered, 1);
+	const junkCursor = () =>
+		db.db.prepare("SELECT name, last_uid FROM external_account_folders WHERE role = 'junk'").all();
+	assert.deepEqual(junkCursor(), [{ name: "Junk", last_uid: 1 }]);
+
+	// The provider renames it: the old name no longer opens, a folder marked \Junk appears with mail already in it.
+	server.refuseExamine("Junk", "NO [NONEXISTENT] renamed");
+	attributes["Bulk Mail"] = ["\\Junk"];
+	server.addMessage("Bulk Mail", sampleMessage(131, { subject: "Moved with the rename" }));
+	due();
+	assert.equal(
+		(await syncExternalAccount(env, account.id, steady)).delivered,
+		0,
+		"a new folder starts from a baseline",
+	);
+	assert.deepEqual(junkCursor(), [{ name: "Bulk Mail", last_uid: 1 }]);
+	server.addMessage("Bulk Mail", sampleMessage(132, { subject: "After the rename" }));
+	due();
+	assert.equal((await syncExternalAccount(env, account.id, steady)).delivered, 1);
+	await deliver();
+	assert.deepEqual(
+		synced()
+			.filter((message) => message.status === "spam")
+			.map((message) => message.subject),
+		["In Junk", "After the rename"],
+	);
+});
+
+test("via: finds synced mail only in mailboxes the searcher can read, across two users and a shared mailbox", async (t) => {
+	const server = await fake(t);
+	const { db, env, deliver, due } = await setup(t, server);
+	// The owner's Other account delivers into the shared mailbox A; the other user's Gmail account into their own B.
+	const shared = await connectExternalAccount(env, owner, connectBody({ label: "Team inbox" }));
+	const personal = await connectExternalAccount(
+		env,
+		other,
+		connectBody({ address: "me@gmail.com", preset: "gmail", mailboxId: "mailbox-b", imap: undefined }),
+	);
+	server.addMessage("INBOX", sampleMessage(140, { subject: "Synced twice" }));
+	due();
+	await syncExternalAccount(env, shared.id, steady);
+	await syncExternalAccount(env, personal.id, steady);
+	await deliver();
+	const users = {
+		owner: { id: "owner", email: "owner@example.com", role: "user" },
+		other: { id: "other", email: "other@example.com", role: "user" },
+	};
+	const search = async (who, query) => {
+		const ids = await listAccessibleMailboxIds(getDb(env), users[who]);
+		const rows = await getDb(env)
+			.select({ mailboxId: messages.mailboxId })
+			.from(messages)
+			.where(
+				and(inArray(messages.mailboxId, ids), ...buildSearchConditions(query, "UTC", { connectedAccounts: true })),
+			);
+		return rows.map((message) => message.mailboxId).sort();
+	};
+	assert.deepEqual(
+		db.db
+			.prepare("SELECT mailbox_id FROM messages ORDER BY mailbox_id")
+			.all()
+			.map((message) => message.mailbox_id),
+		["mailbox-a", "mailbox-b"],
+	);
+	// The other user reads both mailboxes (A is shared with them).
+	assert.deepEqual(await search("other", "via:gmail"), ["mailbox-b"]);
+	assert.deepEqual(await search("other", `via:${USER}`), ["mailbox-a"]);
+	assert.deepEqual(await search("other", 'via:"team inbox"'), ["mailbox-a"]);
+	// The owner reads only A: the other user's Gmail account matches nothing they can see.
+	assert.deepEqual(await search("owner", "via:gmail"), []);
+	assert.deepEqual(await search("owner", "via:me@gmail.com"), []);
+	assert.deepEqual(await search("owner", "via:example.test"), ["mailbox-a"]);
+	assert.deepEqual(await search("owner", "via:imap"), ["mailbox-a"]);
+	// Before migration 0079 via: matches nothing at all.
+	const ids = await listAccessibleMailboxIds(getDb(env), users.other);
+	const none = await getDb(env)
+		.select({ id: messages.id })
+		.from(messages)
+		.where(
+			and(inArray(messages.mailboxId, ids), ...buildSearchConditions("via:gmail", "UTC", { connectedAccounts: false })),
+		);
+	assert.deepEqual(none, []);
 });

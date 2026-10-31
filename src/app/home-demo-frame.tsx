@@ -10,7 +10,7 @@ import type { DemoFrameProps } from "./home-demo-types";
  * and one delegated click handler. Both produce the same markup.
  */
 export function DemoFrame(props: DemoFrameProps) {
-	const { state, live, appName, onClick, onKeyDown } = props;
+	const { state, live, appName, onClick, onKeyDown, rootRef } = props;
 	const panel = isPanelView(state.view);
 	return (
 		<div
@@ -18,6 +18,7 @@ export function DemoFrame(props: DemoFrameProps) {
 			aria-label={`Live demo of the ${appName} inbox with invented data. Open messages and folders, archive, approve or reply; nothing leaves this page.`}
 			data-testid="home-product-mock"
 			data-demo={live ? "ready" : "static"}
+			ref={rootRef}
 			onClick={onClick}
 			onKeyDown={onKeyDown}
 			className="relative mx-auto h-[600px] w-full max-w-6xl overflow-hidden rounded-2xl border border-neutral-200 bg-white text-left shadow-[0_30px_80px_-40px_rgba(79,70,229,0.45)] md:h-[700px]"

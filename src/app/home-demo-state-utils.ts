@@ -131,6 +131,7 @@ function takeSuggestion(state: DemoState, id: string): DemoState {
 				subject: replySubject(message.subject),
 				body: message.suggestion.text,
 				fromAssistant: true,
+				messageId: id,
 			},
 		};
 	}
@@ -219,11 +220,20 @@ const HANDLERS: Record<DemoActionType, (state: DemoState, action: DemoAction) =>
 						subject: replySubject(message.subject),
 						body: "",
 						fromAssistant: false,
+						messageId: id,
 					},
 				}
 			: state;
 	}),
-	send: (state) => ({ ...state, composer: null, toast: { text: "Demo: nothing sent", undo: null } }),
+	send: (state) => ({
+		...state,
+		// A reviewed draft that was "sent" closes its suggestion, as taking one in the app does.
+		messages: state.composer?.fromAssistant
+			? patchMessage(state, state.composer.messageId, { suggestion: undefined })
+			: state.messages,
+		composer: null,
+		toast: { text: "Demo: nothing sent", undo: null },
+	}),
 	closeComposer: (state) => ({ ...state, composer: null }),
 	dismissUpdate: (state) => ({ ...state, updateRow: false }),
 	toggleChat: (state) => ({ ...state, chatOpen: !state.chatOpen }),

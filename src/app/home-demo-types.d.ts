@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import type { FormEvent, KeyboardEvent, MouseEvent, ReactNode } from "react";
+import type { FormEvent, KeyboardEvent, MouseEvent, ReactNode, RefObject } from "react";
 
 /*
  * The interactive demo in the hero: invented mail in a small, local model of the inbox. Everything here is
@@ -90,6 +90,8 @@ export type DemoComposer = {
 	body: string;
 	/** Says who wrote the body when it came from a suggestion, as the app's send review does. */
 	fromAssistant: boolean;
+	/** The message replied to; sending a reviewed draft closes its suggestion. */
+	messageId: string;
 };
 
 export type DemoChatTurn = {
@@ -171,9 +173,10 @@ export type DemoFrameProps = DemoPartProps & {
 	onChatInput?: (text: string) => void;
 	onChatSubmit?: (event: FormEvent<HTMLFormElement>) => void;
 	chatInput?: string;
-	/** The live demo's delegated handlers on the frame's root. */
+	/** The live demo's delegated handlers on the frame's root, and its reference for focus management. */
 	onClick?: (event: MouseEvent<HTMLDivElement>) => void;
 	onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
+	rootRef?: RefObject<HTMLDivElement | null>;
 };
 
 export type DemoRowProps = {
@@ -189,6 +192,8 @@ export type DemoHostProps = {
 
 export type HomeDemoProps = {
 	appName: string;
+	/** A click on the static frame before the demo loaded, applied to the opening state. */
+	initialAction?: DemoAction | null;
 };
 
 export type DemoPanelTeaserProps = {

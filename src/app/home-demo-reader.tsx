@@ -312,14 +312,14 @@ export function DemoComposer({ state, appName }: DemoPartProps) {
 				</button>
 			</div>
 			<div className="flex min-h-0 flex-col gap-2 overflow-y-auto px-4 py-3 text-sm">
-				<label className="flex items-center gap-2 border-b border-neutral-100 pb-2">
+				<label className="flex items-center gap-2 border-b border-neutral-200 pb-2 focus-within:border-blue-500">
 					<span className="w-14 text-neutral-500">To</span>
 					<input
 						defaultValue={composer.to}
 						className="min-w-0 flex-1 bg-transparent text-neutral-900 focus:outline-none"
 					/>
 				</label>
-				<label className="flex items-center gap-2 border-b border-neutral-100 pb-2">
+				<label className="flex items-center gap-2 border-b border-neutral-200 pb-2 focus-within:border-blue-500">
 					<span className="w-14 text-neutral-500">Subject</span>
 					<input
 						defaultValue={composer.subject}

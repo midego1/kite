@@ -97,6 +97,21 @@ test.describe("visitor", () => {
 		expect(
 			await contrastBetween(preview.getByText("Design review notes for the new onboarding"), preview),
 		).toBeGreaterThanOrEqual(4.5);
+
+		// Kite classic (the lavender style) in dark keeps the demo readable and sets the accent line in its script face.
+		await page.addInitScript(() => localStorage.setItem("kite-style", "lavender"));
+		await page.goto("/");
+		await expect(page.locator("html")).toHaveAttribute("data-style", "lavender");
+		const accent = page.locator("h1 .home-accent");
+		expect(await accent.evaluate((element) => getComputedStyle(element).fontFamily)).toMatch(/Madi|cursive/);
+		const demoAgain = await liveDemo(page);
+		await demoAgain.getByRole("button", { name: /Lena Fischer/ }).click();
+		expect(
+			await contrastBetween(demoAgain.getByText("I lean towards letting them skip it."), demoAgain),
+		).toBeGreaterThanOrEqual(4.5);
+		await demoAgain.getByRole("button", { name: "Archive" }).click();
+		const toast = demoAgain.getByRole("status");
+		expect(await contrastBetween(toast, toast)).toBeGreaterThanOrEqual(4.5);
 	});
 
 	test("fits a phone without horizontal overflow", async ({ page }) => {
@@ -133,13 +148,17 @@ test.describe("live demo", () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
 
 	test("opens messages, clears the unread dot and acts with undo, all without the network", async ({ page }) => {
-		const requests: string[] = [];
-		page.on("request", (request) => {
-			if (request.url().includes("/api/")) requests.push(request.url());
-		});
 		await page.goto("/");
 		const demo = await liveDemo(page);
-		const before = requests.length;
+		// From here on nothing but same-origin assets (the dev server's modules, the logo) may be requested.
+		const origin = new URL(page.url()).origin;
+		const offending: string[] = [];
+		page.on("request", (request) => {
+			const url = new URL(request.url());
+			const app = /^\/(api|jmap|mcp|\.well-known)(\/|$)/.test(url.pathname);
+			if (url.origin !== origin || app || request.method() !== "GET")
+				offending.push(`${request.method()} ${request.url()}`);
+		});
 
 		const lena = demo.getByRole("button", { name: /Unread Lena Fischer/ });
 		await expect(lena).toBeVisible();
@@ -171,7 +190,64 @@ test.describe("live demo", () => {
 			demo.getByRole("heading", { level: 3, name: "Design review notes for the new onboarding" }),
 		).toBeVisible();
 
-		expect(requests.length).toBe(before);
+		// Star, snooze and trash work from the toolbar, with the same undo.
+		await demo.getByRole("button", { name: "Star", exact: true }).click();
+		await expect(demo.getByRole("button", { name: "Unstar" })).toHaveAttribute("aria-pressed", "true");
+		await demo.getByRole("button", { name: "Snooze", exact: true }).click();
+		await expect(demo.getByRole("status")).toContainText("Snoozed until tomorrow");
+		await demo.getByRole("button", { name: "Snoozed" }).click();
+		await expect(
+			demo.getByRole("list", { name: "Snoozed messages" }).getByText("Design review notes for the new onboarding"),
+		).toBeVisible();
+		await demo.getByRole("button", { name: "Starred" }).click();
+		await expect(demo.getByRole("list", { name: "Starred messages" }).getByRole("listitem")).toHaveCount(2);
+		await demo.getByRole("button", { name: /^Tom Okafor/ }).click();
+		await demo.getByRole("button", { name: "Move to Trash" }).click();
+		await expect(demo.getByRole("status")).toContainText("Moved to Trash");
+		await expect(demo.getByRole("list", { name: "Starred messages" }).getByRole("listitem")).toHaveCount(1);
+		await demo.getByRole("button", { name: "Undo" }).click();
+		await expect(demo.getByRole("list", { name: "Starred messages" }).getByRole("listitem")).toHaveCount(2);
+
+		// The module glimpses.
+		await demo.getByRole("button", { name: "Calendar" }).click();
+		await expect(demo.getByText("10:00 Planning session (offsite)")).toBeVisible();
+		await demo.getByRole("button", { name: "Drive" }).click();
+		await expect(demo.getByText("offsite-photo.jpg")).toBeVisible();
+		await expect(demo.getByText("2.3 MB of 5 GB used")).toBeVisible();
+
+		expect(offending).toEqual([]);
+	});
+
+	test("works from the keyboard with visible focus, and the dialogs take and give back the focus", async ({ page }) => {
+		await page.goto("/");
+		const demo = await liveDemo(page);
+		await demo.getByRole("button", { name: /^Sofia Marchetti/ }).focus();
+		await page.keyboard.press("Tab");
+		const focused = demo.locator(":focus-visible");
+		await expect(focused).toHaveCount(1);
+		await expect(focused).toHaveAccessibleName(/^Unread Lena Fischer/);
+		expect(await focused.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
+		await page.keyboard.press("Enter");
+		await expect(
+			demo.getByRole("heading", { level: 3, name: "Design review notes for the new onboarding" }),
+		).toBeVisible();
+
+		const reply = demo.getByRole("button", { name: "Reply", exact: true });
+		await reply.click();
+		const composer = demo.getByRole("dialog", { name: "New message" });
+		await expect(composer.getByLabel("To")).toBeFocused();
+		await page.keyboard.press("Tab");
+		await expect(composer.getByLabel("Subject")).toBeFocused();
+		await page.keyboard.press("Escape");
+		await expect(composer).toHaveCount(0);
+		await expect(reply).toBeFocused();
+
+		const ai = demo.getByRole("button", { name: "Kite AI" });
+		await ai.click();
+		await expect(demo.getByRole("dialog", { name: "Kite AI" }).getByLabel("Ask about your mail")).toBeFocused();
+		await page.keyboard.press("Escape");
+		await expect(demo.getByRole("dialog", { name: "Kite AI" })).toHaveCount(0);
+		await expect(ai).toBeFocused();
 	});
 
 	test("the Screener approves and denies new senders and the counts follow", async ({ page }) => {

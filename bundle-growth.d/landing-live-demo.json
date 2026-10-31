@@ -1,4 +1,0 @@
-{
-	"reason": "The landing page's live inbox demo is one lazy chunk (about 48 KB raw, 12 KB gzip) loaded in idle time after the page is ready; measured growth is +51 KB raw, +14.2 KB gzip against the default 60 KB / 15 KB.",
-	"client": { "bytes": 15000, "gzipBytes": 4000 }
-}

@@ -53,9 +53,15 @@ jobs:
     name: Mission validation
     # Boat bills per runner start ($20 plan: ~200 starts/day), so only this job
     # uses it: on main, or on PRs labelled boat-ci. A/B showed ~2.9x faster on
-    # boat-large. Everything else stays on ubuntu-latest. The label is read when
-    # the run starts, so it applies from the next push or reopen.
-    runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || contains(github.event.pull_request.labels.*.name, 'boat-ci')) && 'boat-large' || 'ubuntu-latest' }}
+    # boat-large. The label is read when the run starts, so it applies from the
+    # next push or reopen.
+    # Boat runs jobs of a public repo only for its allowed GitHub users and never
+    # for bots (it cancels the job), so Boat is used only when the actor is in the
+    # list below (the one place to edit; runs-on cannot read env), the run was not
+    # rerun by someone else, and a PR is the actor's own. Bot merges to main
+    # (auto-merge), release/next dispatches and everything else run on
+    # ubuntu-latest, which also keeps main validated when Boat is down.
+    runs-on: ${{ (contains(fromJSON('["midego1"]'), github.actor) && github.triggering_actor == github.actor && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'boat-ci') && github.event.pull_request.user.login == github.actor))) && 'boat-large' || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

@@ -20,6 +20,8 @@ import {
 	runSingleMessageAction,
 } from "@/components/message-actions/utils";
 import { toggleMessageStar } from "./message-list-row-actions-utils";
+import { PrintMenuItems } from "./print/print-menu-items";
+import { useLoadRemoteImages } from "./use-load-remote-images";
 import { confirmReportSpam } from "./spam-report";
 import type { ThreadMessageActionsProps } from "./thread-message-actions-types";
 import type { ReplyMode } from "@/components/message-actions/types";
@@ -30,8 +32,10 @@ export function ThreadMessageActions({
 	ownAddress,
 	ownAddresses = [],
 	starOnly = false,
+	remoteImagesShown = false,
 }: ThreadMessageActionsProps) {
 	const { openDraftComposer } = useCompose();
+	const [alwaysLoadRemoteImages] = useLoadRemoteImages();
 	const [starred, setStarred] = useSyncedState(message.starred);
 	const [moreOpen, setMoreOpen] = useState(false);
 	const moreRef = useRef<HTMLDivElement>(null);
@@ -217,6 +221,15 @@ export function ThreadMessageActions({
 								>
 									<FileCode2 className="h-4 w-4" /> Show original
 								</button>
+								<PrintMenuItems
+									print={{
+										conversation: false,
+										getSources: () => [
+											{ ...message, blockRemoteImages: !alwaysLoadRemoteImages && !remoteImagesShown },
+										],
+									}}
+									onSelect={() => setMoreOpen(false)}
+								/>
 								<hr className="my-1 border-neutral-100" />
 								<button
 									type="button"

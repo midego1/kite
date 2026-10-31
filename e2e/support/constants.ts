@@ -26,3 +26,6 @@ export const DOMAIN = "example.com";
  * send-as spec recovers a mailed verification code from its stored HMAC with it (e2e/support/send-as.ts).
  */
 export const E2E_APP_ENCRYPTION_KEY = "e2e-only-invented-encryption-key-not-a-secret-0123456789";
+
+/** Matches the "Kite was updated" check, which names the tab's own build in its query string. */
+export const VERSION_ROUTE = (url: URL) => url.pathname === "/api/version";

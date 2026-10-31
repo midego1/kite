@@ -6,4 +6,6 @@ export type ThreadMessageActionsProps = {
 	ownAddress?: string | null;
 	ownAddresses?: string[];
 	starOnly?: boolean;
+	/** The reader showed this message's remote images, so Print shows them too. */
+	remoteImagesShown?: boolean;
 };

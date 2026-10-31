@@ -24,6 +24,7 @@ export function useOpenMessageBody(data: MessageDetailResponse | null, mailbox: 
 	// Connected addresses count as the mailbox's own, so a reply goes out from the address the mail came to.
 	const ownAddresses = mailbox ? mailboxSendableAddresses(mailbox) : [];
 	const ownAddress = message ? getOwnAddressForMessage(message, ownAddresses) : "";
+	const blockRemoteImages = !alwaysLoadRemoteImages && remoteImagesShownFor !== message?.id;
 	const body = useReaderBody(
 		message
 			? {
@@ -33,7 +34,7 @@ export function useOpenMessageBody(data: MessageDetailResponse | null, mailbox: 
 					snippet: message.snippet,
 					ownAddress,
 					attachments: data.attachments ?? [],
-					blockRemoteImages: !alwaysLoadRemoteImages && remoteImagesShownFor !== message.id,
+					blockRemoteImages,
 					dropFontFamily: readerFont !== undefined,
 				}
 			: null,
@@ -50,6 +51,9 @@ export function useOpenMessageBody(data: MessageDetailResponse | null, mailbox: 
 		ownAddresses,
 		cloudAttachmentResult,
 		oneTimeCode,
+		/** Whether the open message's remote images are hidden; other messages follow `alwaysLoadRemoteImages`. */
+		blockRemoteImages,
+		alwaysLoadRemoteImages,
 		showRemoteImages: () => setRemoteImagesShownFor(message?.id ?? null),
 	};
 }

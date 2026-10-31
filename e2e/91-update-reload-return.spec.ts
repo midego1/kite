@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { VERSION_ROUTE } from "./support/constants";
 import { mkdirSync } from "node:fs";
 
 const MESSAGE = "Kite was updated. Reload to get the latest version.";
@@ -19,7 +20,7 @@ test.afterEach(async ({ page }) => {
 /** Answers `/api/version` with whatever `version.current` holds and counts the requests. */
 async function routeVersion(page: Page, initial: string) {
 	const version = { current: initial, requests: 0 };
-	await page.route("**/api/version", async (route) => {
+	await page.route(VERSION_ROUTE, async (route) => {
 		version.requests += 1;
 		await route.fulfill({
 			status: 200,

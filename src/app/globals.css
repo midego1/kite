@@ -345,6 +345,16 @@ pre {
 	display: none;
 }
 
+/* The landing page's "that actually flows." stays part of the headline in every style, so the sentence is
+   never cut short: Kite classic sets it in the script face, the other styles keep the headline's own type. */
+:root[data-style="lavender"] .home-accent {
+	font-family: var(--font-script);
+	font-weight: 400;
+	letter-spacing: normal;
+	line-height: 1.1;
+	font-size: 1.15em;
+}
+
 /* Thin, quiet scrollbars in the list and the reader, as in Zero's panels. */
 [data-density],
 [data-reader-scroll] {

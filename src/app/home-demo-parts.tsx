@@ -45,7 +45,7 @@ export function DemoSidebar({ state, appName }: DemoPartProps) {
 				state.menuOpen
 					? "absolute inset-y-0 left-0 z-20 flex w-64 shadow-2xl lg:static lg:w-auto lg:shadow-none"
 					: "hidden lg:flex"
-			} min-w-0 flex-col gap-1 border-r border-neutral-200 bg-[#f6f8fc] px-3 py-4`}
+			} min-w-0 flex-col gap-1 overflow-y-auto border-r border-neutral-200 bg-[#f6f8fc] px-3 py-4`}
 		>
 			<div className="mb-3 flex items-center gap-2 px-1 text-neutral-600">
 				<button

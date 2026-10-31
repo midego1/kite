@@ -82,6 +82,10 @@ export function findMessage(state: DemoState, id: string | null | undefined): De
 	return id ? state.messages.find((m) => m.id === id) : undefined;
 }
 
+function replySubject(subject: string): string {
+	return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
+}
+
 function patchMessage(state: DemoState, id: string, patch: Partial<DemoMessage>): DemoMessage[] {
 	return state.messages.map((m) => (m.id === id ? { ...m, ...patch } : m));
 }
@@ -124,7 +128,7 @@ function takeSuggestion(state: DemoState, id: string): DemoState {
 			...state,
 			composer: {
 				to: message.from.address,
-				subject: `Re: ${message.subject}`,
+				subject: replySubject(message.subject),
 				body: message.suggestion.text,
 				fromAssistant: true,
 			},
@@ -210,7 +214,12 @@ const HANDLERS: Record<DemoActionType, (state: DemoState, action: DemoAction) =>
 		return message
 			? {
 					...state,
-					composer: { to: message.from.address, subject: `Re: ${message.subject}`, body: "", fromAssistant: false },
+					composer: {
+						to: message.from.address,
+						subject: replySubject(message.subject),
+						body: "",
+						fromAssistant: false,
+					},
 				}
 			: state;
 	}),

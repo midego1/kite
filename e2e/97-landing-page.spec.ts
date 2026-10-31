@@ -39,15 +39,17 @@ test.describe("visitor", () => {
 		await expect(heroSection.getByRole("link", { name: "Open dashboard" })).toHaveCount(0);
 		await expect(page.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
 
-		// The preview is one described image for assistive technology, built from invented demo data.
+		// The preview is a live demo on invented data; it renders on the server first and becomes interactive once its
+		// chunk has loaded, with the same markup.
 		const preview = page.getByTestId("home-product-mock");
 		await expect(preview).toBeVisible();
-		await expect(preview).toHaveAttribute("role", "img");
-		await expect(preview).toHaveAttribute("aria-label", /invented demo data/);
+		await expect(preview).toHaveAttribute("role", "region");
+		await expect(preview).toHaveAttribute("aria-label", /invented data/);
 		await expect(preview.getByText("Kite was updated")).toBeVisible();
-		await expect(preview.getByText("New sender")).toBeVisible();
+		await expect(preview.getByText("New sender").first()).toBeVisible();
 		await expect(preview.getByText("launch-plan.pdf")).toBeVisible();
 		await expect(preview.getByText("Reply drafted")).toBeVisible();
+		await expect(page.getByText("Try it — it's a live demo")).toBeVisible();
 
 		await expect(
 			page.getByRole("heading", { level: 2, name: "One quiet place for your mail and what comes with it." }),
@@ -109,11 +111,165 @@ test.describe("visitor", () => {
 		// The preview shows the message list alone, like the app on a phone.
 		const preview = page.getByTestId("home-product-mock");
 		await expect(preview.getByText("Design review notes for the new onboarding")).toBeVisible();
-		await expect(preview.getByText("Summarize")).toBeHidden();
+		await expect(preview.getByRole("button", { name: "Summarize" })).toBeHidden();
 		expect(await horizontalOverflow(page)).toBe(0);
 		await page
 			.getByRole("heading", { level: 2, name: "Your account, your server, your copy of the code." })
 			.scrollIntoViewIfNeeded();
+		expect(await horizontalOverflow(page)).toBe(0);
+	});
+});
+
+/** The live demo once its chunk has loaded (home-demo-host.tsx swaps it in during idle time or at the first hover). */
+async function liveDemo(page: Page) {
+	const demo = page.getByTestId("home-product-mock");
+	await demo.scrollIntoViewIfNeeded();
+	await demo.hover();
+	await expect(demo).toHaveAttribute("data-demo", "ready");
+	return demo;
+}
+
+test.describe("live demo", () => {
+	test.use({ storageState: { cookies: [], origins: [] } });
+
+	test("opens messages, clears the unread dot and acts with undo, all without the network", async ({ page }) => {
+		const requests: string[] = [];
+		page.on("request", (request) => {
+			if (request.url().includes("/api/")) requests.push(request.url());
+		});
+		await page.goto("/");
+		const demo = await liveDemo(page);
+		const before = requests.length;
+
+		const lena = demo.getByRole("button", { name: /Unread Lena Fischer/ });
+		await expect(lena).toBeVisible();
+		await lena.click();
+		await expect(
+			demo.getByRole("heading", { level: 3, name: "Design review notes for the new onboarding" }),
+		).toBeVisible();
+		await expect(demo.getByText("I lean towards letting them skip it.")).toBeVisible();
+		await expect(demo.getByRole("button", { name: /Unread Lena Fischer/ })).toHaveCount(0);
+		await expect(demo.getByRole("button", { name: /^Lena Fischer/ })).toHaveAttribute("aria-current", "true");
+
+		await demo.getByRole("button", { name: "Summarize" }).click();
+		await expect(demo.getByTestId("demo-summary")).toContainText("Lena's review left two open points");
+
+		await demo.getByRole("button", { name: "Archive" }).click();
+		await expect(demo.getByRole("status")).toContainText("Archived");
+		await expect(demo.getByRole("button", { name: /^Lena Fischer/ })).toHaveCount(0);
+		await expect(demo.getByText("Select a message to read")).toBeVisible();
+		await demo.getByRole("button", { name: "Undo" }).click();
+		await expect(demo.getByRole("button", { name: /^Lena Fischer/ })).toBeVisible();
+		await expect(demo.getByRole("status")).toHaveCount(0);
+
+		// j and k move through the list from the keyboard.
+		await demo.getByRole("button", { name: /^Lena Fischer/ }).focus();
+		await page.keyboard.press("j");
+		await expect(demo.getByRole("heading", { level: 3, name: "Quick question about the API" })).toBeVisible();
+		await page.keyboard.press("k");
+		await expect(
+			demo.getByRole("heading", { level: 3, name: "Design review notes for the new onboarding" }),
+		).toBeVisible();
+
+		expect(requests.length).toBe(before);
+	});
+
+	test("the Screener approves and denies new senders and the counts follow", async ({ page }) => {
+		await page.goto("/");
+		const demo = await liveDemo(page);
+		const sidebar = demo.getByRole("complementary", { name: "Folders" });
+		await expect(sidebar.getByRole("button", { name: "Screener 2" })).toBeVisible();
+		await sidebar.getByRole("button", { name: "Screener 2" }).click();
+		const rows = demo.getByRole("list", { name: "Screener messages" });
+		await expect(rows.getByRole("listitem")).toHaveCount(2);
+
+		await rows
+			.getByRole("listitem")
+			.filter({ hasText: "Ava Lindqvist" })
+			.getByRole("button", { name: "Approve" })
+			.click();
+		await expect(demo.getByRole("status")).toContainText(
+			"Approved. Mail from Ava Lindqvist now arrives in your Inbox.",
+		);
+		await expect(rows.getByRole("listitem")).toHaveCount(1);
+		await expect(sidebar.getByRole("button", { name: "Screener 1" })).toBeVisible();
+
+		await rows.getByRole("button", { name: "Deny" }).click();
+		await expect(demo.getByRole("status")).toContainText("Denied. Mail from Jules Baptiste goes to Trash.");
+		await expect(demo.getByText("Nothing here.")).toBeVisible();
+		await expect(sidebar.getByRole("button", { name: "Screener" })).toBeVisible();
+		await demo.getByRole("button", { name: "Undo" }).click();
+		await expect(rows.getByRole("listitem")).toHaveCount(1);
+
+		await sidebar.getByRole("button", { name: /^Inbox/ }).click();
+		await expect(demo.getByText("New sender")).toHaveCount(1);
+	});
+
+	test("For you reviews the drafted reply in a composer that sends nothing, and dismisses the rest", async ({
+		page,
+	}) => {
+		await page.goto("/");
+		const demo = await liveDemo(page);
+		await demo.getByRole("button", { name: "For you 3" }).click();
+		await expect(demo.getByRole("region", { name: "Replies" })).toBeVisible();
+		await demo.getByRole("button", { name: "Review draft" }).click();
+		const composer = demo.getByRole("dialog", { name: "New message" });
+		await expect(composer.getByText("Kite AI wrote this draft.")).toBeVisible();
+		await expect(composer.getByLabel("Subject")).toHaveValue("Re: Launch plan for the new inbox");
+		await expect(composer.getByLabel("Message")).toHaveValue(/Thanks Sofia, both files are in/);
+		await composer.getByRole("button", { name: "Send" }).click();
+		await expect(composer).toHaveCount(0);
+		await expect(demo.getByRole("status")).toContainText("Demo: nothing sent");
+
+		await demo.getByRole("button", { name: "Track" }).click();
+		await expect(demo.getByRole("status")).toContainText("Tracking Fabrikam");
+		await demo.getByRole("button", { name: "Accept" }).click();
+		await demo.getByRole("button", { name: "Dismiss" }).first().click();
+		await expect(demo.getByText("Nothing waiting for you.")).toBeVisible();
+		await expect(demo.getByRole("button", { name: "For you" })).toBeVisible();
+
+		await demo.getByRole("button", { name: "Subscriptions 1" }).click();
+		await expect(demo.getByText("Fabrikam Team plan")).toBeVisible();
+	});
+
+	test("search filters the list, the update row goes away and the chat answers", async ({ page }) => {
+		await page.goto("/");
+		const demo = await liveDemo(page);
+		await demo.getByRole("button", { name: "Reload" }).click();
+		await expect(demo.getByText("Kite was updated")).toHaveCount(0);
+
+		await demo.getByLabel("Search mail").fill("invoice");
+		const rows = demo.getByRole("list", { name: "Inbox messages" });
+		await expect(rows.getByRole("listitem")).toHaveCount(1);
+		await expect(rows.getByText("Fabrikam Billing")).toBeVisible();
+		await demo.getByLabel("Search mail").fill("zzz");
+		await expect(demo.getByText('No mail matches "zzz".')).toBeVisible();
+		await demo.getByLabel("Search mail").fill("");
+
+		await demo.getByRole("button", { name: "Kite AI" }).click();
+		const chat = demo.getByRole("dialog", { name: "Kite AI" });
+		await chat.getByLabel("Ask about your mail").fill("What needs a reply today?");
+		await chat.getByRole("button", { name: "Send" }).click();
+		await expect(chat.getByText("Two messages need a reply today")).toBeVisible();
+		await page.keyboard.press("Escape");
+		await expect(chat).toHaveCount(0);
+	});
+
+	test("on a phone the demo shows one pane at a time with Back and a folder sheet", async ({ page }) => {
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.goto("/");
+		const demo = await liveDemo(page);
+		await expect(demo.getByRole("button", { name: "Summarize" })).toBeHidden();
+		await demo.getByRole("button", { name: /Lena Fischer/ }).click();
+		await expect(
+			demo.getByRole("heading", { level: 3, name: "Design review notes for the new onboarding" }),
+		).toBeVisible();
+		await expect(demo.getByRole("list", { name: "Inbox messages" })).toBeHidden();
+		await demo.getByRole("button", { name: "Back to list" }).click();
+		await expect(demo.getByRole("list", { name: "Inbox messages" })).toBeVisible();
+		await demo.getByRole("button", { name: "Open menu" }).click();
+		await demo.getByRole("complementary", { name: "Folders" }).getByRole("button", { name: "Starred" }).click();
+		await expect(demo.getByRole("list", { name: "Starred messages" }).getByRole("listitem")).toHaveCount(1);
 		expect(await horizontalOverflow(page)).toBe(0);
 	});
 });

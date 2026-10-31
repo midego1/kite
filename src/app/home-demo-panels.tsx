@@ -1,10 +1,10 @@
 import {
-	ArrowLeft,
 	CalendarDays,
 	FileText,
 	Folder,
 	HardDrive,
 	Image as ImageIcon,
+	Menu,
 	Receipt,
 	Send,
 	Sparkles,
@@ -29,18 +29,28 @@ const GROUPS: { kind: DemoSuggestionKind; title: string }[] = [
 	{ kind: "subscription", title: "Subscriptions" },
 ];
 
-function PanelHeader({ title }: { title: string }) {
+function PanelHeader({ title, appName }: { title: string; appName: string }) {
 	return (
-		<div className="flex h-14 shrink-0 items-center gap-3 border-b border-neutral-200 px-4 text-base font-semibold text-neutral-900">
+		<div className="flex h-14 shrink-0 items-center justify-between border-b border-neutral-200 px-4 text-base font-semibold text-neutral-900">
+			<span className="flex items-center gap-3">
+				<button
+					type="button"
+					data-action="toggleMenu"
+					aria-label="Open menu"
+					className={`flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 lg:hidden ${FOCUS_RING}`}
+				>
+					<Menu className="h-4 w-4" aria-hidden="true" />
+				</button>
+				{title}
+			</span>
 			<button
 				type="button"
-				data-action="toggleMenu"
-				aria-label="Open menu"
-				className={`flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 lg:hidden ${FOCUS_RING}`}
+				data-action="toggleChat"
+				className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm font-normal text-neutral-600 hover:bg-neutral-100 ${FOCUS_RING}`}
 			>
-				<ArrowLeft className="h-4 w-4" aria-hidden="true" />
+				<Sparkles className="h-4 w-4" aria-hidden="true" />
+				{appName} AI
 			</button>
-			{title}
 		</div>
 	);
 }
@@ -251,7 +261,7 @@ export function DemoPanel(props: DemoPartProps) {
 			aria-label={demoViewTitles[state.view]}
 			className="flex min-w-0 flex-col overflow-hidden bg-white md:col-span-2"
 		>
-			<PanelHeader title={demoViewTitles[state.view]} />
+			<PanelHeader title={demoViewTitles[state.view]} appName={props.appName} />
 			{state.view === "for-you" && <ForYou {...props} />}
 			{state.view === "calendar" && <CalendarGlimpse />}
 			{state.view === "drive" && <DriveGlimpse />}

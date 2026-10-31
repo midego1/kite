@@ -27,8 +27,6 @@ export function HomeDemoHost({ appName, children }: DemoHostProps) {
 		}
 		const timer = window.setTimeout(load, 1200);
 		return () => window.clearTimeout(timer);
-		// `load` is stable in meaning: it reads only the ref and the module.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	if (Demo) return <Demo appName={appName} />;

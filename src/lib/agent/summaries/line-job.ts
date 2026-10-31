@@ -74,10 +74,12 @@ async function writeLine(
 		provider: selection.providerKind,
 		preset: selection.preset,
 		kind: "draft",
+		modelId: selection.modelId,
 		reasoningEffort: selection.reasoningEffort,
 	});
-	// The options' budget includes a reasoning model's headroom; keep it on top of the line's own.
-	const base = { ...options, maxOutputTokens: LINE_MAX_OUTPUT_TOKENS + Math.max(0, options.maxOutputTokens - 900) };
+	// Keep the thinking room of a request that thinks on top of the line's own budget.
+	const base = { ...options, maxOutputTokens: LINE_MAX_OUTPUT_TOKENS + options.thinkingRoom };
+	let sent = base;
 	// A failure keeps the model and provider, so the job's failure handler reports it under the shared codes.
 	const trace = {
 		feature: "line_summary" as const,
@@ -87,6 +89,7 @@ async function writeLine(
 		timeoutMs: LINE_CALL_TIMEOUT_MS,
 	};
 	const reply = await callWithFallback(base, async (current) => {
+		sent = current;
 		const model = await selectAutoReadModel(env, requested);
 		return withReservedSpend(
 			{
@@ -119,7 +122,7 @@ async function writeLine(
 	if (!reply) return { skip: "spend_cap" };
 	let text: string;
 	try {
-		text = completedText(reply);
+		text = completedText(reply, sent);
 	} catch (error) {
 		throw traceAiError(error, { ...trace, finishReason: reply.finishReason, usage: reply.usage });
 	}

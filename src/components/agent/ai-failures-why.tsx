@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -67,6 +67,12 @@ function FailureGroup({ group }: { group: AiFailureGroup }) {
 				</dd>
 				<dt className="text-neutral-500">Model</dt>
 				<dd className="min-w-0 break-all">{models}</dd>
+				{group.facts.map((fact) => (
+					<Fragment key={fact.label}>
+						<dt className="text-neutral-500">{fact.label}</dt>
+						<dd className="min-w-0 break-words">{fact.value}</dd>
+					</Fragment>
+				))}
 				{group.statuses.length > 0 && (
 					<>
 						<dt className="text-neutral-500">HTTP</dt>

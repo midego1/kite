@@ -171,3 +171,98 @@ test("the Ask AI prompt has counts, codes and Kite's sentences, never people, ma
 	);
 	assert.ok(aiFailurePrompt(groupAiFailures(many), 200, true).length <= 3_500);
 });
+
+// Production on 2026-10-31: twelve automatic-reading requests to Anthropic's claude-haiku-5-5 cut off.
+const haikuCutOff = (at, extra = {}) =>
+	row("cut_off", at, { model: "claude-haiku-5-5", provider: "anthropic", ...extra });
+
+test("Why? for a cut-off without a recorded budget names the feature's cap and the model's default thinking", () => {
+	const rows = Array.from({ length: 12 }, (_, index) =>
+		haikuCutOff(`2026-10-31T${String(index + 8).padStart(2, "0")}:00:00.000Z`),
+	);
+	const [group] = groupAiFailures(rows);
+	assert.equal(group.code, "cut_off");
+	assert.match(group.cause, /^Automatic reading caps the answer at 400 tokens for the answer, plus up to 200/);
+	assert.match(group.cause, /claude-haiku-5-5 thinks before it answers unless the request switches thinking off/);
+	assert.match(group.cause, /Thinking counts against the same cap/);
+	assert.match(group.fix, /Kite now switches thinking off for claude-haiku-5-5/);
+	assert.match(group.fix, /retries a cut-off answer once with double the cap/);
+	assert.deepEqual(group.link, { href: "/agent#automatic-reading", label: "Open automatic reading settings" });
+	assert.deepEqual(
+		group.facts.map((fact) => fact.label),
+		["Output cap", "Thinking"],
+	);
+	assert.match(group.facts[0].value, /not recorded for these failures/);
+	assert.equal(group.facts[1].value, "claude-haiku-5-5 thinks by default");
+
+	const prompt = aiFailurePrompt([group], 12, false);
+	assert.match(prompt, /1\. cut_off: 12 times/);
+	assert.match(prompt, /Provider and model: Anthropic · claude-haiku-5-5 \(12\)/);
+	assert.match(prompt, /Kite facts: Output cap: 400 tokens for the answer, plus up to 200 for module extensions/);
+	assert.match(prompt, /Thinking: claude-haiku-5-5 thinks by default/);
+	assert.match(prompt, /Kite's diagnosis: Automatic reading caps the answer at 400 tokens/);
+	assert.match(prompt, /Kite's fix: These failures were recorded by a Kite that left thinking on/);
+	assert.match(prompt, /About Automatic reading: Automatic reading makes one request per incoming message/);
+	assert.match(prompt, /Thinking tokens count against the cap/);
+	assert.match(prompt, /name the Kite setting to change/);
+	assert.ok(prompt.length <= 3_500);
+});
+
+test("Why? and Ask AI for a cut-off with a recorded budget state the cap, thinking, usage and the setting to change", () => {
+	const budget = {
+		cap: 3_120,
+		thinkingRoom: 2_200,
+		extensionRoom: 120,
+		thinking: "on",
+		effort: "medium",
+		retried: true,
+		used: 3_120,
+		thinkingUsed: 3_050,
+	};
+	const [group] = groupAiFailures([
+		haikuCutOff("2026-10-31T09:00:00.000Z"),
+		haikuCutOff("2026-10-31T10:00:00.000Z", { budget }),
+	]);
+	assert.equal(
+		group.cause,
+		"Automatic reading capped claude-haiku-5-5's answer at 3,120 tokens (800 for the answer + 2,200 for thinking + 120 for module extensions), and the model used 3,120 output tokens, 3,050 of them thinking, and stopped before the answer was finished. Thinking was on at effort medium. Kite had already retried once with double the cap.",
+	);
+	assert.match(group.fix, /^Clear claude-haiku-5-5's reasoning effort, or set it to minimal/);
+	assert.match(group.fix, /Without an effort, Kite switches thinking off\.$/);
+	assert.deepEqual(group.facts, [
+		{
+			label: "Output cap",
+			value: "3,120 tokens (800 for the answer + 2,200 for thinking + 120 for module extensions)",
+		},
+		{ label: "Thinking", value: "on at effort medium" },
+		{ label: "Used", value: "3,120 output tokens, 3,050 of them thinking" },
+		{ label: "Retry", value: "cut off again at double the cap" },
+	]);
+	const prompt = aiFailurePrompt([group], 2, false);
+	assert.match(prompt, /Kite facts: Output cap: 3,120 tokens \(800 for the answer \+ 2,200 for thinking/);
+	assert.match(prompt, /Thinking: on at effort medium; Used: 3,120 output tokens, 3,050 of them thinking/);
+	assert.match(prompt, /Kite's fix: Clear claude-haiku-5-5's reasoning effort/);
+	assert.doesNotMatch(prompt, /@/);
+
+	// A model that always thinks cannot be helped by a lower effort: the fix names another model.
+	const [opus] = groupAiFailures([
+		row("cut_off", "2026-10-31T10:00:00.000Z", {
+			model: "claude-opus-5-5",
+			provider: "anthropic",
+			budget: { ...budget, effort: "low" },
+		}),
+	]);
+	assert.match(opus.fix, /claude-opus-5-5 always thinks, even at effort low/);
+	// A provider that decides thinking itself, and an answer that ran long with thinking off.
+	const [routed] = groupAiFailures([
+		row("cut_off", "2026-10-31T10:00:00.000Z", {
+			budget: { ...budget, thinking: "default", effort: null, thinkingRoom: 0 },
+		}),
+	]);
+	assert.match(routed.fix, /^OpenAI decides whether gpt-4o-mini thinks/);
+	const [long] = groupAiFailures([
+		row("cut_off", "2026-10-31T10:00:00.000Z", { budget: { ...budget, thinking: "off", thinkingRoom: 0 } }),
+	]);
+	assert.match(long.fix, /^Thinking was already off, so the answer itself ran long, even at double the cap\./);
+	assert.match(long.fix, /turn that module's automatic reading switch off/);
+});

@@ -1,16 +1,21 @@
 import type { JSONValue } from "ai";
 import type { JsonSchemaObject } from "@/lib/modules/module-types";
 import type { AgentModelRates, AgentProviderKind, AgentProviderPreset, AgentReasoningEffort } from "../provider-types";
+import {
+	claudeThinkingDefault,
+	CUT_OFF_RETRY_FACTOR,
+	DRAFT_ANSWER_TOKENS,
+	THINKING_ROOM_TOKENS,
+	TRIAGE_ANSWER_TOKENS,
+	type AiOutputBudget,
+	type AiThinkingSetting,
+} from "../output-budget-utils";
 import { parseAgentReasoningEffort } from "../reasoning-effort-utils";
 import type { TriagePrompt, TriageResult } from "./triage-types";
 import { buildTriageRepairPrompt, parseTriageOutput } from "./triage-utils";
 
 /** The `name` given to `createOpenAICompatible`; its provider options are read from this key. */
 export const COMPATIBLE_PROVIDER_NAME = "kite";
-const TRIAGE_MAX_OUTPUT_TOKENS = 400;
-const DRAFT_MAX_OUTPUT_TOKENS = 900;
-// A reasoning model spends part of the budget thinking; 1500 fits a triage answer at minimal effort.
-const REASONING_HEADROOM_TOKENS = 1_100;
 
 type ModelCallKind = "triage" | "draft";
 
@@ -25,32 +30,55 @@ export type ModelCallOptions = {
 	provider: AgentProviderKind;
 	preset: AgentProviderPreset;
 	kind: ModelCallKind;
+	/** The model the request goes to, which decides how a Claude model's thinking is set. */
+	modelId: string | null;
 	maxOutputTokens: number;
 	providerOptions: Record<string, Record<string, JSONValue>>;
-	/** The reasoning effort actually sent, if any. */
+	/** The per-model reasoning effort hint the options were built from, if any. */
 	reasoningEffort: AgentReasoningEffort | null;
+	/** The effort actually sent, if any (Anthropic has no `minimal`; a model that always thinks gets `low`). */
+	effort: string | null;
+	/** How thinking is set: off, asked for with an effort, or left to the provider's default. */
+	thinking: AiThinkingSetting;
+	/** The part of `maxOutputTokens` added for thinking. */
+	thinkingRoom: number;
 	jsonMode: boolean;
 	/** Only present for a triage request with active module extensions. */
 	extension?: ModelCallExtension;
+	/** The second try after a cut-off answer, with `CUT_OFF_RETRY_FACTOR` times the budget. */
+	retried?: boolean;
+	/** Anthropic refused the thinking or effort parameter once, so neither is sent again. */
+	plainThinking?: boolean;
 };
 
 type ModelCallInput = {
 	provider: AgentProviderKind;
 	preset?: AgentProviderPreset;
 	kind: ModelCallKind;
+	modelId?: string | null;
 	/** The per-model hint saved with the provider settings (`rates[modelId].reasoningEffort`). */
 	reasoningEffort?: unknown;
 	extension?: ModelCallExtension;
 };
 
-type ModelCallSettings = Pick<ModelCallOptions, "provider" | "preset" | "kind" | "reasoningEffort" | "extension">;
+type ModelCallSettings = Pick<
+	ModelCallOptions,
+	"provider" | "preset" | "kind" | "modelId" | "reasoningEffort" | "extension" | "retried" | "plainThinking"
+>;
 
-export type ModelCallResult = { text: string; finishReason: string };
+export type ModelCallResult = {
+	text: string;
+	finishReason: string;
+	usage?: { outputTokens?: number; outputTokenDetails?: { reasoningTokens?: number } } | undefined;
+};
 
 export class ModelOutputTruncatedError extends Error {
-	constructor() {
+	/** The cap, thinking setting and usage of the cut-off attempt, for Why? and Ask AI. */
+	readonly budget: AiOutputBudget | null;
+	constructor(budget: AiOutputBudget | null = null) {
 		super("The model ran out of output tokens before finishing");
 		this.name = "ModelOutputTruncatedError";
+		this.budget = budget;
 	}
 }
 
@@ -68,56 +96,86 @@ function responseFormat(jsonMode: boolean, extension: ModelCallExtension | undef
 	return { response_format: { type: "json_schema", json_schema: { name: "triage", schema: extension.schema } } };
 }
 
+type ThinkingChoice = {
+	options: Record<string, JSONValue>;
+	thinking: AiThinkingSetting;
+	effort: string | null;
+	room: number;
+};
+
+/**
+ * Anthropic's thinking for one automatic request. Claude 5 models think by default when `thinking` is left out
+ * (Haiku 5.5 at effort high), and thinking counts against `max_tokens`, so a 400-token triage answer was spent
+ * thinking and cut off. Without a hint, thinking is switched off where the model allows it; a model that always
+ * thinks gets effort low and the thinking room. `minimal` has no Anthropic effort and means as little as allowed.
+ */
+function anthropicThinking(settings: ModelCallSettings): ThinkingChoice {
+	const hint = settings.reasoningEffort;
+	if (settings.plainThinking) return { options: {}, thinking: "default", effort: null, room: THINKING_ROOM_TOKENS };
+	if (hint && hint !== "minimal")
+		return { options: { effort: hint }, thinking: "on", effort: hint, room: THINKING_ROOM_TOKENS };
+	if (claudeThinkingDefault(settings.modelId) === "always")
+		return { options: { effort: "low" }, thinking: "on", effort: "low", room: THINKING_ROOM_TOKENS };
+	return { options: { thinking: { type: "disabled" } }, thinking: "off", effort: null, room: 0 };
+}
+
 function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCallOptions {
 	const extension = settings.kind === "triage" ? settings.extension : undefined;
-	const base =
-		settings.kind === "triage" ? TRIAGE_MAX_OUTPUT_TOKENS + (extension?.outputTokens ?? 0) : DRAFT_MAX_OUTPUT_TOKENS;
+	const answer =
+		settings.kind === "triage" ? TRIAGE_ANSWER_TOKENS + (extension?.outputTokens ?? 0) : DRAFT_ANSWER_TOKENS;
+	const factor = settings.retried ? CUT_OFF_RETRY_FACTOR : 1;
 	const json: Record<string, JSONValue> = jsonMode ? { response_format: { type: "json_object" } } : {};
-	const extra = extension ? { extension } : {};
+	const common = {
+		provider: settings.provider,
+		preset: settings.preset,
+		kind: settings.kind,
+		modelId: settings.modelId,
+		reasoningEffort: settings.reasoningEffort,
+		jsonMode,
+		...(extension ? { extension } : {}),
+		...(settings.retried ? { retried: true } : {}),
+		...(settings.plainThinking ? { plainThinking: true } : {}),
+	};
 	if (settings.provider === "cloudflare") {
 		// Kimi K2.5 ignores reasoning_effort; only switching thinking off keeps it fast and inside the budget.
 		const options = { chat_template_kwargs: { thinking: false }, ...json };
 		// workers-ai-provider 4 reads "workers-ai"; "workersAi" is the camel-cased key newer versions read.
 		return {
+			...common,
 			provider: "cloudflare",
-			preset: settings.preset,
-			kind: settings.kind,
-			maxOutputTokens: base,
+			maxOutputTokens: answer * factor,
 			providerOptions: { workersAi: options, "workers-ai": options },
 			reasoningEffort: null,
-			jsonMode,
-			...extra,
+			effort: null,
+			thinking: "off",
+			thinkingRoom: 0,
+		};
+	}
+	if (settings.preset === "anthropic") {
+		const choice = anthropicThinking(settings);
+		return {
+			...common,
+			maxOutputTokens: (answer + choice.room) * factor,
+			providerOptions: { anthropic: choice.options },
+			effort: choice.effort,
+			thinking: choice.thinking,
+			thinkingRoom: choice.room * factor,
 		};
 	}
 	const effort = settings.reasoningEffort;
-	if (settings.preset === "anthropic") {
-		return {
-			provider: settings.provider,
-			preset: settings.preset,
-			kind: settings.kind,
-			maxOutputTokens: effort ? base + REASONING_HEADROOM_TOKENS : base,
-			providerOptions: {
-				anthropic: effort && effort !== "minimal" ? { effort } : {},
-			},
-			reasoningEffort: effort,
-			jsonMode,
-			...extra,
-		};
-	}
+	const room = effort ? THINKING_ROOM_TOKENS : 0;
 	return {
-		provider: settings.provider,
-		preset: settings.preset,
-		kind: settings.kind,
-		maxOutputTokens: effort ? base + REASONING_HEADROOM_TOKENS : base,
+		...common,
+		maxOutputTokens: (answer + room) * factor,
 		providerOptions: {
 			[COMPATIBLE_PROVIDER_NAME]: {
 				...responseFormat(jsonMode, extension),
 				...(effort ? { reasoningEffort: effort } : {}),
 			},
 		},
-		reasoningEffort: effort,
-		jsonMode,
-		...extra,
+		effort,
+		thinking: effort ? "on" : "default",
+		thinkingRoom: room * factor,
 	};
 }
 
@@ -129,6 +187,7 @@ export function buildModelCallOptions(input: ModelCallInput): ModelCallOptions {
 			provider: input.provider,
 			preset: input.preset ?? "openai",
 			kind: input.kind,
+			modelId: input.modelId ?? null,
 			reasoningEffort,
 			extension: input.extension,
 		},
@@ -184,8 +243,11 @@ function errorText(error: unknown): string {
 export function fallbackOptionsAfterError(options: ModelCallOptions, error: unknown): ModelCallOptions | null {
 	if (errorStatus(error) !== 400) return null;
 	const text = errorText(error);
-	if (options.reasoningEffort && /reasoning/i.test(text))
+	if (options.reasoningEffort && /reasoning|effort/i.test(text))
 		return buildOptions({ ...options, reasoningEffort: null }, options.jsonMode);
+	// An Anthropic-compatible endpoint that refuses `thinking` or `effort` gets neither, with the thinking room.
+	if (options.preset === "anthropic" && !options.plainThinking && /thinking|effort/i.test(text))
+		return buildOptions({ ...options, plainThinking: true }, options.jsonMode);
 	const rejectsFormat = /response_format|json_object|json_schema|json mode/i.test(text);
 	// A provider without `json_schema` support first falls back to plain JSON mode, then to none.
 	if (options.jsonMode && rejectsFormat && options.extension?.schema && options.provider !== "cloudflare")
@@ -211,10 +273,44 @@ export async function callWithFallback<T>(
 	}
 }
 
+/** The facts of a cut-off attempt: what Kite sent and what the provider counted. */
+export function outputBudgetOf(options: ModelCallOptions, result?: ModelCallResult): AiOutputBudget {
+	const used = result?.usage?.outputTokens;
+	const thinkingUsed = result?.usage?.outputTokenDetails?.reasoningTokens;
+	return {
+		cap: options.maxOutputTokens,
+		thinkingRoom: options.thinkingRoom,
+		extensionRoom: (options.extension?.outputTokens ?? 0) * (options.retried ? CUT_OFF_RETRY_FACTOR : 1),
+		thinking: options.thinking,
+		effort: options.effort,
+		retried: !!options.retried,
+		used: typeof used === "number" ? used : null,
+		thinkingUsed: typeof thinkingUsed === "number" ? thinkingUsed : null,
+	};
+}
+
 /** A `length` finish is a failed attempt: partial JSON is never parsed or repaired. */
-export function completedText(result: ModelCallResult): string {
-	if (result.finishReason === "length") throw new ModelOutputTruncatedError();
+export function completedText(result: ModelCallResult, options?: ModelCallOptions): string {
+	if (result.finishReason === "length")
+		throw new ModelOutputTruncatedError(options ? outputBudgetOf(options, result) : null);
 	return result.text;
+}
+
+/** The same request with `CUT_OFF_RETRY_FACTOR` times the budget, for the one retry after a cut-off answer. */
+export function widenedAfterCutOff(options: ModelCallOptions): ModelCallOptions {
+	return buildOptions({ ...options, retried: true }, options.jsonMode);
+}
+
+type Generate = (prompt: TriagePrompt, options: ModelCallOptions) => Promise<ModelCallResult>;
+
+/** One request with its parameter fallbacks, and the options that were actually sent. */
+async function sentCall(prompt: TriagePrompt, options: ModelCallOptions, generate: Generate) {
+	let sent = options;
+	const result = await callWithFallback(options, (current) => {
+		sent = current;
+		return generate(prompt, current);
+	});
+	return { result, sent };
 }
 
 type TriageAttemptInput = {
@@ -224,20 +320,31 @@ type TriageAttemptInput = {
 	activeModuleIds?: readonly string[];
 	/** The request asked for the one-line summary, which the parse then keeps when it is usable. */
 	oneLine?: boolean;
-	generate: (prompt: TriagePrompt, options: ModelCallOptions) => Promise<ModelCallResult>;
+	generate: Generate;
 	now?: Date;
 };
 
-/** One triage attempt: the model call, strict parsing and at most one repair call. */
+/**
+ * One triage attempt: the model call, strict parsing and at most one repair call. A cut-off answer is asked
+ * again once with a larger budget (and the repair keeps it); a second cut-off fails the attempt.
+ */
 export async function runTriageAttempt(input: TriageAttemptInput): Promise<{ result: TriageResult; calls: number }> {
-	const run = (prompt: TriagePrompt) =>
-		callWithFallback(input.options, (options) => input.generate(prompt, options)).then(completedText);
+	let options = input.options;
+	let calls = 0;
+	const run = async (prompt: TriagePrompt): Promise<string> => {
+		calls += 1;
+		const { result, sent } = await sentCall(prompt, options, input.generate);
+		options = sent;
+		if (result.finishReason !== "length" || options.retried) return completedText(result, options);
+		options = widenedAfterCutOff(options);
+		return run(prompt);
+	};
 	const parse = (text: string) =>
 		parseTriageOutput(text, input.now, input.activeModuleIds, input.oneLine ? { oneLine: true } : {});
 	const first = await run(input.prompt);
 	const parsed = parse(first);
-	if (parsed.ok) return { result: parsed.result, calls: 1 };
+	if (parsed.ok) return { result: parsed.result, calls };
 	const repaired = parse(await run(buildTriageRepairPrompt(input.prompt, first, parsed.error)));
-	if (repaired.ok) return { result: repaired.result, calls: 2 };
+	if (repaired.ok) return { result: repaired.result, calls };
 	throw new TriageOutputError(repaired.error);
 }

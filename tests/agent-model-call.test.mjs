@@ -89,6 +89,114 @@ test("native Anthropic sends its supported effort hint without OpenAI-only optio
 	assert.equal(options.jsonMode, true);
 });
 
+test("Anthropic: thinking off where the model allows it, effort low where it always thinks", () => {
+	const anthropic = (modelId, extra = {}) =>
+		buildModelCallOptions({ provider: "compatible", preset: "anthropic", kind: "triage", modelId, ...extra });
+	// Claude 5 models think by default when `thinking` is left out, and thinking counts against max_tokens.
+	for (const modelId of [
+		"claude-haiku-5-5",
+		"claude-sonnet-5-5",
+		"claude-opus-5",
+		"claude-haiku-4-5",
+		"claude-next-9",
+	]) {
+		const options = anthropic(modelId);
+		assert.deepEqual(options.providerOptions, { anthropic: { thinking: { type: "disabled" } } }, modelId);
+		assert.equal(options.maxOutputTokens, 400, modelId);
+		assert.equal(options.thinking, "off", modelId);
+		assert.equal(options.thinkingRoom, 0, modelId);
+	}
+	// `minimal` has no Anthropic effort: as little thinking as the model allows.
+	assert.deepEqual(anthropic("claude-haiku-5-5", { reasoningEffort: "minimal" }).providerOptions, {
+		anthropic: { thinking: { type: "disabled" } },
+	});
+	for (const modelId of ["claude-opus-5-5", "claude-fable-5-1", "claude-mythos-5-1"]) {
+		const options = anthropic(modelId);
+		assert.deepEqual(options.providerOptions, { anthropic: { effort: "low" } }, modelId);
+		assert.equal(options.maxOutputTokens, 1_500, modelId);
+		assert.equal(options.thinking, "on", modelId);
+		assert.equal(options.effort, "low", modelId);
+		assert.equal(options.thinkingRoom, 1_100, modelId);
+	}
+	const hinted = anthropic("claude-haiku-5-5", { reasoningEffort: "medium" });
+	assert.deepEqual(hinted.providerOptions, { anthropic: { effort: "medium" } });
+	assert.equal(hinted.maxOutputTokens, 1_500);
+	const draft = buildModelCallOptions({
+		provider: "compatible",
+		preset: "anthropic",
+		kind: "draft",
+		modelId: "claude-haiku-5-5",
+	});
+	assert.deepEqual(draft.providerOptions, { anthropic: { thinking: { type: "disabled" } } });
+	assert.equal(draft.maxOutputTokens, 900);
+});
+
+test("Anthropic: a refused thinking or effort parameter is dropped once, with the thinking room", () => {
+	const off = buildModelCallOptions({
+		provider: "compatible",
+		preset: "anthropic",
+		kind: "triage",
+		modelId: "claude-haiku-5-5",
+	});
+	const plain = fallbackOptionsAfterError(off, apiError(400, "thinking: Extra inputs are not permitted"));
+	assert.deepEqual(plain.providerOptions, { anthropic: {} });
+	assert.equal(plain.thinking, "default");
+	assert.equal(plain.maxOutputTokens, 1_500);
+	assert.equal(fallbackOptionsAfterError(plain, apiError(400, "thinking is not supported")), null, "dropped once");
+	// A saved effort the model refuses goes first; the request then switches thinking off instead.
+	const hinted = buildModelCallOptions({
+		provider: "compatible",
+		preset: "anthropic",
+		kind: "triage",
+		modelId: "claude-haiku-4-5",
+		reasoningEffort: "high",
+	});
+	const next = fallbackOptionsAfterError(hinted, apiError(400, "effort is not supported for this model"));
+	assert.equal(next.reasoningEffort, null);
+	assert.deepEqual(next.providerOptions, { anthropic: { thinking: { type: "disabled" } } });
+	assert.equal(next.maxOutputTokens, 400);
+});
+
+test("a cut-off answer is asked once more with double the budget and recorded with its budget", async () => {
+	const caps = [];
+	const attempt = await runTriageAttempt({
+		prompt,
+		options: buildModelCallOptions({ provider: "compatible", kind: "triage", reasoningEffort: "low" }),
+		generate: async (_request, options) => {
+			caps.push([options.maxOutputTokens, options.retried ?? false]);
+			return caps.length === 1
+				? { text: "{", finishReason: "length", usage: { outputTokens: 1_500 } }
+				: { text: validTriage, finishReason: "stop" };
+		},
+	});
+	assert.equal(attempt.calls, 2);
+	assert.equal(attempt.result.category, "fyi");
+	assert.deepEqual(caps, [
+		[1_500, false],
+		[3_000, true],
+	]);
+	const error = await runTriageAttempt({
+		prompt,
+		options: buildModelCallOptions({ provider: "compatible", kind: "triage", reasoningEffort: "low" }),
+		generate: async (_request, options) => ({
+			text: "{",
+			finishReason: "length",
+			usage: { outputTokens: options.maxOutputTokens, outputTokenDetails: { reasoningTokens: 2_900 } },
+		}),
+	}).catch((caught) => caught);
+	assert.ok(error instanceof ModelOutputTruncatedError);
+	assert.deepEqual(error.budget, {
+		cap: 3_000,
+		thinkingRoom: 2_200,
+		extensionRoom: 0,
+		thinking: "on",
+		effort: "low",
+		retried: true,
+		used: 3_000,
+		thinkingUsed: 2_900,
+	});
+});
+
 test("a 400 mentioning reasoning drops the parameter and the reasoning budget", () => {
 	const hinted = buildModelCallOptions({ provider: "compatible", kind: "triage", reasoningEffort: "low" });
 	const next = fallbackOptionsAfterError(
@@ -142,14 +250,21 @@ test("a length finish is a failed attempt and is never parsed or repaired", asyn
 		runTriageAttempt({
 			prompt,
 			options: buildModelCallOptions({ provider: "compatible", kind: "triage" }),
-			generate: async (request) => {
-				requests.push(request);
+			generate: async (request, options) => {
+				requests.push([request, options.maxOutputTokens]);
 				return { text: validTriage.slice(0, 20), finishReason: "length" };
 			},
 		}),
 		(error) => error instanceof ModelOutputTruncatedError,
 	);
-	assert.equal(requests.length, 1, "no repair request after a length finish");
+	// One retry of the same request with double the budget, never a repair of the partial JSON.
+	assert.deepEqual(
+		requests.map(([request, cap]) => [request, cap]),
+		[
+			[prompt, 400],
+			[prompt, 800],
+		],
+	);
 });
 
 test("runTriageAttempt parses a valid reply in one call", async () => {
@@ -213,7 +328,8 @@ test("a length finish with complete JSON is still never parsed", async () => {
 		}),
 		(error) => error instanceof ModelOutputTruncatedError,
 	);
-	assert.equal(calls, 1);
+	// The one retry at double the budget is cut off too; neither answer is parsed.
+	assert.equal(calls, 2);
 });
 
 test("Workers AI drops JSON mode once after a 400 about json_schema", () => {

@@ -4,6 +4,8 @@
  * the provider's own error text is never shown, since it can echo the prompt. Client-safe: no server imports.
  */
 
+import { readAiOutputBudget, type AiOutputBudget } from "./output-budget-utils";
+
 const AI_ERROR_CODES = [
 	"timeout",
 	"cut_off",
@@ -59,7 +61,13 @@ export type AiErrorDetails = {
 /** The JSON body (or stream event fields) of a failed AI request. */
 export type AiErrorBody = { error: string; code: AiErrorCode; details: AiErrorDetails };
 
-export type AiErrorClass = { code: AiErrorCode; status: number | null; reason?: string };
+export type AiErrorClass = {
+	code: AiErrorCode;
+	status: number | null;
+	reason?: string;
+	/** A cut-off answer's cap, thinking setting and usage, when the code that sent it knew them. */
+	budget?: AiOutputBudget | null;
+};
 
 /** Thrown when the model answered but the answer failed Kite's checks; `reason` is plain words. */
 export class UnusableAnswerError extends Error {
@@ -231,7 +239,11 @@ const KITE_ERRORS: Record<string, (error: unknown) => AiErrorClass> = {
 		status: null,
 		reason: "it was not in the format Kite asked for",
 	}),
-	ModelOutputTruncatedError: () => ({ code: "cut_off", status: null }),
+	ModelOutputTruncatedError: (error) => ({
+		code: "cut_off",
+		status: null,
+		budget: readAiOutputBudget(record(error)?.budget),
+	}),
 	SpendCapReachedError: () => ({ code: "spend_cap", status: null }),
 	ChatSpendCapError: () => ({ code: "spend_cap", status: null }),
 	ExternalProviderNotAllowedError: () => ({ code: "external_provider_not_allowed", status: null }),

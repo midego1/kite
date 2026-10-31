@@ -1,11 +1,16 @@
 import { AI_FEATURE_LABELS, aiErrorMessage, type AiErrorCode } from "./ai-error-utils";
 import type { AiErrorRecord } from "./ai-error-types";
 import type { AiFailureGroup, AiFailureLink, AskAiState } from "./ai-failure-report-types";
+import { AI_FEATURE_NOTES, cutOffFacts, explainCutOff, type CutOffInput } from "./cut-off-utils";
 import { defaultAgentProviderName } from "./provider-connection-utils";
 import type { AgentProviderPreset } from "./provider-types";
 
 /** One recorded failure as the report reads it: the `ai.error` audit row's metadata and its time. */
-export type AiFailureRow = Pick<AiErrorRecord, "code" | "feature" | "model" | "provider" | "status"> & { at: string };
+export type AiFailureRow = Pick<AiErrorRecord, "code" | "feature" | "model" | "provider" | "status"> & {
+	at: string;
+	/** Only on cut-off failures recorded since budgets were kept. */
+	budget?: AiErrorRecord["budget"] | null;
+};
 
 const PRESETS: AgentProviderPreset[] = ["haimaker", "anthropic", "openai", "openrouter", "groq", "custom"];
 
@@ -23,7 +28,12 @@ const READING_SETTINGS: AiFailureLink = { href: "/agent#automatic-reading", labe
 const USAGE: AiFailureLink = { href: "/ai-usage", label: "Open AI usage" };
 const RECENT_ERRORS: AiFailureLink = { href: "/agent#recent-ai-errors", label: "Open Recent AI errors" };
 
-type ExplainInput = { provider: string; status: number | null };
+type ExplainInput = {
+	provider: string;
+	status: number | null;
+	/** What a cut-off explanation names: the feature, the model and the recorded budget. */
+	cutOff: Omit<CutOffInput, "provider">;
+};
 type Explanation = { cause: string; fix: string; link: AiFailureLink | null };
 
 const http = (status: number | null) => (status ? ` (HTTP ${status})` : "");
@@ -60,10 +70,9 @@ const EXPLANATIONS: Record<AiErrorCode, (input: ExplainInput) => Explanation> = 
 		fix: "If it keeps happening, pick a faster model in Admin → Agent.",
 		link: PROVIDER_SETTINGS,
 	}),
-	cut_off: () => ({
-		cause: "The model stopped before its answer was finished, usually a model that writes long or reasons at length.",
-		fix: "Pick another model, or a lower reasoning effort, in Admin → Agent.",
-		link: PROVIDER_SETTINGS,
+	cut_off: ({ provider, cutOff }) => ({
+		...explainCutOff({ provider, ...cutOff }),
+		link: cutOff.feature === "auto_triage" ? READING_SETTINGS : PROVIDER_SETTINGS,
 	}),
 	unusable_answer: () => ({
 		cause: "The model answered, but not in the format Kite asked for. Small models do this more often.",
@@ -122,9 +131,15 @@ const EXPLANATIONS: Record<AiErrorCode, (input: ExplainInput) => Explanation> = 
 	}),
 };
 
+const NO_CUT_OFF: ExplainInput["cutOff"] = { providerId: null, model: null, feature: null, budget: null };
+
 /** The cause, fix and link of one code, naming the provider when the failures came from one. */
 export function explainAiFailure(code: AiErrorCode, input: Partial<ExplainInput> = {}): Explanation {
-	return EXPLANATIONS[code]({ provider: input.provider || "The AI provider", status: input.status ?? null });
+	return EXPLANATIONS[code]({
+		provider: input.provider || "The AI provider",
+		status: input.status ?? null,
+		cutOff: input.cutOff ?? NO_CUT_OFF,
+	});
 }
 
 function tally<K>(items: K[], key: (item: K) => string): { item: K; count: number }[] {
@@ -162,6 +177,12 @@ export function groupAiFailures(rows: AiFailureRow[]): AiFailureGroup[] {
 		const statuses = [...new Set(items.flatMap((row) => (row.status ? [row.status] : [])))].sort((a, b) => a - b);
 		// The provider most of the failures came from, so "OpenAI refused the key" names the right one.
 		const provider = models.find((entry) => entry.providerLabel)?.providerLabel ?? undefined;
+		const cutOff = {
+			providerId: models[0].provider,
+			model: models[0].model,
+			feature: features[0].feature,
+			budget: items.find((row) => row.budget)?.budget ?? null,
+		};
 		return {
 			code,
 			count: items.length,
@@ -171,7 +192,8 @@ export function groupAiFailures(rows: AiFailureRow[]): AiFailureGroup[] {
 			models,
 			statuses,
 			latestMessage: aiErrorMessage(code, { status: latest.status }),
-			...explainAiFailure(code, { provider, status: latest.status }),
+			...explainAiFailure(code, { provider, status: latest.status, cutOff }),
+			facts: code === "cut_off" ? cutOffFacts({ provider: provider ?? "The AI provider", ...cutOff }) : [],
 		};
 	});
 	return groups.sort((a, b) => b.count - a.count || b.lastAt.localeCompare(a.lastAt));
@@ -235,28 +257,46 @@ const MAX_PROMPT_CHARS = 3_500;
 
 const utc = (iso: string) => `${iso.slice(0, 16).replace("T", " ")} UTC`;
 
+/** A group's models in words: "Anthropic · claude-haiku-5-5 (12)". */
+function modelsText(group: AiFailureGroup): string {
+	return group.models
+		.map(
+			(entry) =>
+				`${[entry.providerLabel, entry.model].filter(Boolean).join(" · ") || "no model chosen"} (${entry.count})`,
+		)
+		.join(", ");
+}
+
 /**
- * What Ask AI asks the assistant: counts, codes, features, providers, models, statuses and Kite's own sentences.
- * Never a person, a mailbox, a prompt, an answer or any mail.
+ * What Ask AI asks the assistant: counts, codes, features, providers, models, statuses, Kite's own sentences, its
+ * diagnosis and the facts it knows (caps, thinking settings, what each feature asks for). Never a person, a
+ * mailbox, a prompt, an answer or any mail.
  */
 export function aiFailurePrompt(groups: AiFailureGroup[], total: number, capped: boolean): string {
 	const lines = [
-		`Kite recorded ${capped ? `at least ${total}` : total} failed AI ${total === 1 ? "request" : "requests"} in the last 24 hours. Explain the likely causes and what I should change to fix them. This summary has error codes and counts only, no email content.`,
+		`Kite recorded ${capped ? `at least ${total}` : total} failed AI ${total === 1 ? "request" : "requests"} in the last 24 hours. Explain the causes and what I should change in Kite to fix them. The diagnosis, facts and feature notes below come from Kite's own records and code: build on them and name the Kite setting to change (they are in Admin → Agent) instead of giving general advice. This summary has error codes, counts and settings only, no email content.`,
 	];
+	const described = new Set<string>();
 	groups.slice(0, MAX_PROMPT_GROUPS).forEach((group, index) => {
-		const models = group.models
-			.map(
-				(entry) =>
-					`${[entry.providerLabel, entry.model].filter(Boolean).join(" · ") || "no model chosen"} (${entry.count})`,
-			)
-			.join(", ");
+		const notes = group.features.flatMap((entry) => {
+			const note = AI_FEATURE_NOTES[entry.feature];
+			if (!note || described.has(entry.feature)) return [];
+			described.add(entry.feature);
+			return [`   About ${entry.label}: ${note}`];
+		});
 		lines.push(
 			"",
 			`${index + 1}. ${group.code}: ${group.count} ${group.count === 1 ? "time" : "times"}, ${utc(group.firstAt)} to ${utc(group.lastAt)}`,
 			`   Features: ${group.features.map((entry) => `${entry.label} (${entry.count})`).join(", ")}`,
-			`   Provider and model: ${models}`,
+			`   Provider and model: ${modelsText(group)}`,
 			...(group.statuses.length ? [`   HTTP status: ${group.statuses.join(", ")}`] : []),
 			`   Kite says: ${group.latestMessage}`,
+			...(group.facts.length
+				? [`   Kite facts: ${group.facts.map((fact) => `${fact.label}: ${fact.value}`).join("; ")}`]
+				: []),
+			`   Kite's diagnosis: ${group.cause}`,
+			`   Kite's fix: ${group.fix}`,
+			...notes,
 		);
 	});
 	if (groups.length > MAX_PROMPT_GROUPS)

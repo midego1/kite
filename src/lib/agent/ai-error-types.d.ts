@@ -1,4 +1,5 @@
 import type { AiErrorCode, AiFeature } from "./ai-error-utils";
+import type { AiOutputBudget } from "./output-budget-utils";
 
 /** What one failed AI request leaves in the `ai.error` audit row: codes and numbers, never content. */
 export type AiErrorRecord = {
@@ -11,6 +12,8 @@ export type AiErrorRecord = {
 	inputTokens: number | null;
 	outputTokens: number | null;
 	finishReason: string | null;
+	/** A cut-off answer's cap, thinking setting and usage; absent for other failures and older rows. */
+	budget?: AiOutputBudget;
 };
 
 /** One row of Admin → Agent's Recent AI errors. */

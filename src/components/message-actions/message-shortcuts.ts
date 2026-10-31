@@ -12,6 +12,8 @@ type MessageShortcutInput = {
 	forward: () => unknown;
 	canReplyAll: boolean;
 	back: () => void;
+	/** Prints the open message (or its conversation) instead of the app page. */
+	print?: () => void;
 };
 
 /** The reader's single-key shortcuts for one message. */
@@ -23,11 +25,12 @@ export function messageShortcuts({
 	forward,
 	canReplyAll,
 	back,
+	print,
 }: MessageShortcutInput): ShortcutDefinition[] {
 	const archive = () => {
 		if (status !== "archived") void runAction("archive");
 	};
-	return [
+	const shortcuts: ShortcutDefinition[] = [
 		{ key: "e", label: "Archive Message", category: "Actions", action: archive },
 		{ key: "y", label: "Archive Message", category: "Actions", action: archive },
 		{
@@ -56,4 +59,14 @@ export function messageShortcuts({
 		},
 		{ key: "u", label: "Back to List", category: "Navigation", action: back },
 	];
+	// Ctrl+P on Windows and Linux, Cmd+P on a Mac: the reader prints the message, not the app around it.
+	if (print)
+		shortcuts.push({
+			key: "p",
+			modifiers: ["meta", "ctrl"],
+			label: "Print Message",
+			category: "Actions",
+			action: print,
+		});
+	return shortcuts;
 }

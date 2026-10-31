@@ -18,6 +18,9 @@ export type ConversationThreadProps = {
 	threadId?: string | null;
 	/** Hides the suggestion card's summary line while a current Summarize summary is shown. */
 	hideTriageSummary?: boolean;
+	/** Messages whose remote images the reader was asked to show; kept by the page so Print follows them too. */
+	remoteImagesShownIds: ReadonlySet<string>;
+	onShowRemoteImages: (messageId: string) => void;
 };
 
 export type ConversationMessageCardProps = {
@@ -28,6 +31,8 @@ export type ConversationMessageCardProps = {
 	ownAddresses?: string[];
 	defaultExpanded?: boolean;
 	showFullRecipientAddresses?: boolean;
+	remoteImagesShown: boolean;
+	onShowRemoteImages: () => void;
 };
 
 export type UseMessageThreadResult = {

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { ShortcutDefinition } from "./types";
-import { findSequenceMatch, isBrowserChord, isModifierKey } from "./use-hotkeys-utils";
+import { findChordMatch, findSequenceMatch, isBrowserChord, isModifierKey } from "./use-hotkeys-utils";
 
 /** Where bare-key shortcuts never fire; mark other areas that own their keys with `data-shortcuts-off`. */
 const SHORTCUT_FREE_ZONES =
@@ -97,6 +97,12 @@ export function useHotkeys(shortcuts: ShortcutDefinition[], options: UseHotkeysO
 				if (sequenceTimerRef.current) {
 					clearTimeout(sequenceTimerRef.current);
 					sequenceTimerRef.current = null;
+				}
+				// A page may claim a Cmd/Ctrl chord outright (the reader's Cmd/Ctrl+P), outside dialogs and menus.
+				const chord = findChordMatch(e, shortcutsRef.current);
+				if (chord && !(e.target instanceof HTMLElement && e.target.closest(SHORTCUT_FREE_ZONES))) {
+					e.preventDefault();
+					chord.action();
 				}
 				return;
 			}

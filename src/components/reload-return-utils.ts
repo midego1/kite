@@ -13,6 +13,14 @@
  * startup screen, with its own recovery, instead of a kite that looks as if it were still loading.
  */
 
+/**
+ * Off since 2026-10-31, as a stopgap: the startup screen froze (bar stuck at 15–21%, kite swinging, no timer
+ * running) only on the load right after Reload in "Kite was updated", while a plain refresh of the same page always
+ * started. With this off, Reload writes no marker and the inline script only removes one (a tab still on an older
+ * build writes it before reloading into this one), so that load behaves exactly like a refresh: no class, no
+ * scene. Turn it back on once the cause is known; the scene, its CSS and its specs are kept for that.
+ */
+export const RELOAD_RETURN_ENABLED = false;
 /** sessionStorage key holding the time (ms since the epoch) Reload was chosen in the update notice. */
 const RELOAD_RETURN_STORAGE_KEY = "kite-reload-flight";
 /** A marker older than this, or from a clock that ran ahead, is ignored and removed (the rule lives in the script). */
@@ -36,8 +44,13 @@ function sessionStorageOrNull(): StorageLike | null {
 	}
 }
 
-/** Reload was chosen in the update notice: the next load of this tab shows the kite's return. */
-export function markReloadReturn(storage: StorageLike | null = sessionStorageOrNull(), now = Date.now()): void {
+/** Reload was chosen in the update notice: the next load of this tab shows the kite's return (when enabled). */
+export function markReloadReturn(
+	storage: StorageLike | null = sessionStorageOrNull(),
+	now = Date.now(),
+	enabled = RELOAD_RETURN_ENABLED,
+): void {
+	if (!enabled) return;
 	try {
 		storage?.setItem(RELOAD_RETURN_STORAGE_KEY, String(now));
 	} catch {
@@ -73,12 +86,17 @@ export function endReloadReturn(): void {
  * and a timer takes the class off after RELOAD_RETURN_MAX_MS even if the app never comes up (`endReloadReturn`
  * ends it sooner once it does).
  */
-export const reloadReturnBootstrapScript = `(() => {
+export const reloadReturnBootstrapScript = reloadReturnScript(RELOAD_RETURN_ENABLED);
+
+/** The inline script; while the scene is off it only removes a marker, so the load is an ordinary one. */
+function reloadReturnScript(enabled: boolean): string {
+	return `(() => {
 	try {
 		const key = ${JSON.stringify(RELOAD_RETURN_STORAGE_KEY)};
 		const raw = sessionStorage.getItem(key);
 		if (raw === null) return;
 		sessionStorage.removeItem(key);
+		if (!${JSON.stringify(enabled)}) return;
 		const at = Number(raw);
 		if (!Number.isFinite(at) || Math.abs(Date.now() - at) > ${RELOAD_RETURN_TTL_MS}) return;
 		const root = document.documentElement;
@@ -86,3 +104,4 @@ export const reloadReturnBootstrapScript = `(() => {
 		setTimeout(() => root.classList.remove(${JSON.stringify(RELOAD_RETURN_CLASS)}), ${RELOAD_RETURN_MAX_MS});
 	} catch {}
 })();`;
+}

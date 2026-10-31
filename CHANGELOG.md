@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.31.4] - 2026-10-31
+
+### Added
+
+- Connected accounts can send as addresses their sign-in does not prove: an **Other IMAP provider** account's own address, an account whose user name is not its address, and provider aliases. In [Settings → Connected accounts](/settings/connected-accounts), **Verify** or **Send from another address** mails a 6-digit code to the address; once it is entered, the address is in the composer's From menu and mail from it goes out through the account's SMTP server. Codes work for 30 minutes and 5 tries, are stored only as a keyed hash, and are limited to 5 an hour per user (3 for one address) and 10 a day per address; an address with 10 wrong codes in a day gets no new code until the next day. Needs migration 0089 (`external_identities`), applied from the admin overview.
+
+### Changed
+
+- An unverified connected address is now listed in the From menu as **(Verify in Settings)** instead of being left out, and connecting or testing an account also tests its SMTP sign-in when its user name is not its address.
+- The loading screen now says what it is doing: under the progress bar it lists the five steps of the start (loading Kite and its version, signing you in, checking the database, loading your mail, ready) and fills each in with the facts of this start as they come in, such as the account name, "Up to date" or how many database updates wait, how many mailboxes and unread messages there are, and how long the start took. Nothing extra is requested for it, and the reload safety nets are unchanged.
+
+### Fixed
+
+- Report spam in the reader now takes the whole conversation out of the list in conversation view (the default). It used to report only the open message, so the conversation's other messages stayed in the Inbox and its row kept showing. The reader acts on what the conversation's row stands for in the list you opened it from, as the row's own actions and a selection already did: a snoozed message of the conversation stays snoozed, and in Starred only the starred ones move. Report phishing, Archive, Move to trash, Not spam, Move to a folder and Block contact in the reader's toolbar work the same way; the actions on one message inside the conversation, and Report phishing on the phishing warning, act on that message alone, and with conversation view off the reader acts on the open message only.
+- The reader closes and goes back to the empty pane as soon as the open message leaves the list, and the keyboard focus moves to the row next to it: Move to trash, Report spam or phishing, Archive, Not spam, a move to a folder, Block contact or Delete forever in the reader, the same actions on its row or in a selection, dropping it on a sidebar folder, **Mark as spam** on the phishing warning, and Snooze in the Inbox. It used to keep showing the message, selected, until the move back to the list had finished, which on a busy deployment could take long enough to look stuck. In Starred the message stays open, since Starred still lists it. **Undo** in the toast puts the message back in the list.
+- A reading layout chosen while your account's layout could not be loaded (a slow first request right after a deploy, or a dropped connection) is no longer lost: the load is tried again a few times, and the choice is saved once it loads or every attempt failed. A layout loaded just after you changed something on this device no longer puts the old choice back.
+- The automatic direct-upload setup under [Admin → Storage](/storage) says it took too long, rather than that the checks failed, when the checks were cut short by its time limit, and it cleans up a token Cloudflare created late on accounts with many API tokens.
+- Very long mail (over about 100,000 characters of text) is no longer searched for a one-time code at delivery, so its new-mail notification never carries one; the check now stops before any work on the body.
+
 ## [2026.10.31.3] - 2026-10-31
 
 ### Changed

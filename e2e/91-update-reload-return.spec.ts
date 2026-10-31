@@ -116,6 +116,10 @@ function readScreen(page: Page) {
 				// The string ends at the hand just above the progress bar and never crosses it.
 				kiteAboveBar: rect.bottom <= overlay.querySelector(".reload-return-track")!.getBoundingClientRect().top,
 				skyDisplay: displayOf(overlay.querySelector(".reload-return-sky")),
+				// The bar's box anchors the kite and holds nothing else; the status line and the step log sit outside it.
+				boxHoldsOnlyBar: !overlay
+					.querySelector(".reload-return-track")!
+					.parentElement!.querySelector("[data-startup-status], [data-startup-steps]"),
 				logoDisplay: displayOf(overlay.querySelector("img")),
 				role: overlay.getAttribute("role"),
 				// The live region says what is happening; the plain "Loading" is not in the tree.
@@ -202,6 +206,7 @@ test("Reload in the update notice brings the kite back on the loading screen, wh
 	expect(floating.kiteInViewport).toBe(true);
 	expect(floating.kiteAboveFailureBox).toBe(true);
 	expect(floating.kiteAboveBar).toBe(true);
+	expect(floating.boxHoldsOnlyBar).toBe(true);
 	expect(floating.skyDisplay).toBe("block");
 
 	// When the boot watchdog gives up it adds its "Kite couldn't load" box (asset-recovery-utils.ts); the scene
@@ -232,10 +237,21 @@ test("Reload in the update notice brings the kite back on the loading screen, wh
 	await page.evaluate(() => document.getElementById("kite-boot-failure")!.remove());
 	await expect(page.locator(`${SCENE} svg`)).toBeVisible();
 
-	// The app arrives: the screen fades out into it, the scene stops and the marker is gone.
+	// The app arrives: the screen fades out into it, the scene stops and the marker is gone. The kite is still in
+	// the tree in the first frame of the fade: the scene stops once the screen has faded, not before.
 	await entry.release();
 	await loaded;
 	await expect(page.getByRole("main")).toBeVisible({ timeout: 30_000 });
+	const fading = await page.waitForFunction(
+		({ overlay: overlaySelector, scene: sceneSelector }) => {
+			const overlay = document.querySelector(overlaySelector);
+			if (!overlay || overlay.classList.contains("opacity-100")) return null;
+			return { kiteInTree: Boolean(overlay.querySelector(`${sceneSelector} svg`)) };
+		},
+		{ overlay: OVERLAY, scene: SCENE },
+		{ polling: "raf", timeout: 30_000 },
+	);
+	expect(await fading.jsonValue()).toEqual({ kiteInTree: true });
 	await expect(page.locator(OVERLAY)).not.toHaveClass(/opacity-100/);
 	await expect(page.locator("html")).not.toHaveClass(new RegExp(`\\b${RETURN_CLASS}\\b`));
 	await expect(page.locator(`${SCENE} svg`)).toBeHidden();

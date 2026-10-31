@@ -3,16 +3,14 @@ name: CI
 on:
   push:
     branches: [main]
+  # Default types only (opened, synchronize, reopened): a labeled run would skip the required
+  # checks, which GitHub counts as passing. Labels take effect on the next push or reopen.
   pull_request:
-    # labeled so adding boat-ci starts a run on Boat, and adding no-changelog reruns Release version;
-    # every other job skips any label but boat-ci.
-    types: [opened, synchronize, reopened, labeled]
   # Dispatched on release/next by release-pr.yml, whose GITHUB_TOKEN push starts no run (docs/releasing.md).
   workflow_dispatch:
 
 concurrency:
-  # A run for an unrelated label gets a group of its own, so it never cancels the real run.
-  group: ci-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'boat-ci' && format('-{0}', github.run_id) || '' }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -24,7 +22,7 @@ jobs:
     # never conflict on VERSION or CHANGELOG.md; release/* branches must be a complete release
     # (docs/releasing.md). The check uses only Node built-ins: no npm ci.
     name: Release version
-    if: github.event_name == 'pull_request' && (github.event.action != 'labeled' || github.event.label.name == 'boat-ci' || github.event.label.name == 'no-changelog')
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -55,8 +53,8 @@ jobs:
     name: Mission validation
     # Boat bills per runner start ($20 plan: ~200 starts/day), so only this job
     # uses it: on main, or on PRs labelled boat-ci. A/B showed ~2.9x faster on
-    # boat-large. Everything else stays on ubuntu-latest.
-    if: github.event.action != 'labeled' || github.event.label.name == 'boat-ci'
+    # boat-large. Everything else stays on ubuntu-latest. The label is read when
+    # the run starts, so it applies from the next push or reopen.
     runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || contains(github.event.pull_request.labels.*.name, 'boat-ci')) && 'boat-large' || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
@@ -104,7 +102,6 @@ jobs:
     # get standard runners for free; the shard count is the only knob, kept low
     # enough that a pull request's jobs fit the account's concurrent-job limit.
     name: E2E (shard ${{ matrix.shard }} of 10)
-    if: github.event.action != 'labeled' || github.event.label.name == 'boat-ci'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -166,7 +163,6 @@ jobs:
 
   node-build:
     name: Node build
-    if: github.event.action != 'labeled' || github.event.label.name == 'boat-ci'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

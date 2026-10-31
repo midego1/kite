@@ -129,3 +129,25 @@ test("a reset clears what was shown and a pending refresh", async (t) => {
 	t.mock.timers.tick(SUGGESTION_REFRESH_DEBOUNCE_MS);
 	assert.equal(requests.length, 1);
 });
+
+test("signing in to another account reloads what is on screen; signing out only empties it", async () => {
+	const { store, requests } = scriptedStore();
+	let shown = 0;
+	store.subscribe("/s", () => (shown += 1));
+	store.subscribe("/s", () => {});
+	const loaded = store.load("/s");
+	requests[0].answer({ suggestions: ["a"] });
+	await loaded;
+	store.reset();
+	assert.equal(requests.length, 1);
+	store.reset({ reload: true });
+	assert.deepEqual(
+		requests.map((r) => r.url),
+		["/s", "/s"],
+	);
+	requests[1].answer({ suggestions: ["b"] });
+	await settle();
+	await settle();
+	assert.deepEqual(store.read("/s"), { suggestions: ["b"] });
+	assert.equal(shown, 4);
+});

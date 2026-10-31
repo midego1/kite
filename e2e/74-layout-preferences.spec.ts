@@ -123,6 +123,31 @@ test("a browser can keep its own layout, and nothing it changes reaches the acco
 	await page.context().close();
 });
 
+test("a choice made while the account's layout loads is saved when the page closes", async ({ browser }) => {
+	const email = await createUser();
+	const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+	const page = await context.newPage();
+	// The account's layout never arrives, so the choice waits for it until the page goes away.
+	await page.route(`**${LAYOUT_API}`, async (route) => {
+		if (route.request().method() !== "GET") return route.continue();
+		await new Promise(() => {});
+	});
+	await signIn(page, email, PASSWORD);
+	await expect(page).toHaveURL(/\/inbox/);
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 15_000 });
+	await chooseLayout(page, "Compact");
+	// The page going away (its `pagehide`; the page itself stays so the request can be seen) sends the waiting
+	// choice at once, with a keepalive request that would outlive a closing page.
+	const saved = page.waitForRequest((request) => request.url().endsWith(LAYOUT_API) && request.method() === "PATCH");
+	await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+	expect((await saved).postDataJSON()).toEqual({ layout: { density: "compact" } });
+
+	const account = await apiSignIn(email, PASSWORD);
+	await expect.poll(async () => (await (await account.get(LAYOUT_API)).json()).layout).toEqual({ density: "compact" });
+	await account.dispose();
+	await context.close();
+});
+
 test("before the database update the layout stays in the browser", async ({ browser }) => {
 	const email = await createUser();
 	const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });

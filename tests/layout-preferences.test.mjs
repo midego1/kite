@@ -339,3 +339,25 @@ test("signing out forgets a not-ready answer, so the next session asks again", a
 		["GET", "GET", "PATCH"],
 	);
 });
+
+test("a refusal answered after an account switch does not stop the next account's saves", async (t) => {
+	let refuse;
+	const { requests } = fakeBrowser(
+		t,
+		() => ({ json: { ready: true, layout: null } }),
+		(count) => (count === 1 ? new Promise((resolve) => (refuse = resolve)) : null),
+	);
+	await startLayoutSync("user-before");
+	queueLayoutSave({ density: "compact" });
+	const refused = flushLayoutSave();
+	stopLayoutSync();
+	await startLayoutSync("user-after");
+	refuse({ status: 409, json: { error: "pending" } });
+	await refused;
+	queueLayoutSave({ density: "comfortable" });
+	await flushLayoutSave();
+	assert.deepEqual(
+		requests.filter((r) => r.method === "PATCH").map((r) => r.body),
+		[{ layout: { density: "compact" } }, { layout: { density: "comfortable" } }],
+	);
+});

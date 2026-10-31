@@ -114,9 +114,10 @@ export function createSuggestionListStore(fetchList: (url: string) => Promise<Re
 	/**
 	 * A sign-out or account switch: nothing of the previous account may show, its responses are dropped, and its
 	 * requests are forgotten, so a reader mounting right after the switch starts a request of its own instead of
-	 * joining one whose answer will be thrown away.
+	 * joining one whose answer will be thrown away. With `reload` (signed in to another account) every URL still
+	 * being read loads again for the new account; after a sign-out nothing is asked.
 	 */
-	function reset() {
+	function reset({ reload = false }: { reload?: boolean } = {}) {
 		session += 1;
 		for (const entry of entries.values()) {
 			entry.data = undefined;
@@ -126,6 +127,7 @@ export function createSuggestionListStore(fetchList: (url: string) => Promise<Re
 			for (const listener of entry.listeners) listener();
 		}
 		for (const [key, entry] of entries) if (entry.listeners.size === 0) entries.delete(key);
+		if (reload) for (const url of entries.keys()) void load(url);
 	}
 
 	return { load, subscribe, read, scheduleRefresh, reset };

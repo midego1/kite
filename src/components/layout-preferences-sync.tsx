@@ -20,14 +20,14 @@ export function LayoutPreferencesSync() {
 		void startLayoutSync(userId);
 		const onVisibilityChange = () => {
 			if (document.visibilityState === "hidden") {
-				void flushLayoutSave();
+				void flushLayoutSave({ closing: true });
 				return;
 			}
 			if (Date.now() - loadedAt < REFRESH_AFTER_MS) return;
 			loadedAt = Date.now();
 			void startLayoutSync(userId);
 		};
-		const onPageHide = () => void flushLayoutSave();
+		const onPageHide = () => void flushLayoutSave({ closing: true });
 		document.addEventListener("visibilitychange", onVisibilityChange);
 		window.addEventListener("pagehide", onPageHide);
 		return () => {

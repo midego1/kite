@@ -33,14 +33,23 @@ let unavailable = false;
 /** Orders loads against saves, so a load answered after a save cannot put the saved choice back. */
 let tick = 0;
 const saveMarks: LayoutSaveMarks = new Map();
+/** Counts account switches and sign-outs, so a save answered afterwards leaves the next account alone. */
+let generation = 0;
 
 function markSaves(layout: LayoutPreferences, inFlight: 1 | -1): void {
 	tick += 1;
 	for (const key of Object.keys(layout)) {
 		const mark = saveMarks.get(key) ?? { touched: 0, inFlight: 0 };
-		// An answer for the previous account (marks cleared since) must not go below zero.
 		saveMarks.set(key, { touched: tick, inFlight: Math.max(0, mark.inFlight + inFlight) });
 	}
+}
+
+/** Forgets everything about the previous account: its unsaved choices and its saves in flight. */
+function forgetAccount(): void {
+	clearTimeout(timer);
+	unsaved = {};
+	saveMarks.clear();
+	generation += 1;
 }
 
 function browserStorage(): Storage | null {
@@ -81,11 +90,16 @@ export function queueLayoutSave(layout: LayoutPreferences): void {
 	timer = setTimeout(() => void flushLayoutSave(), SAVE_DELAY_MS);
 }
 
-/** Sends the unsaved choices now; `keepalive` lets it finish while the page is closing. */
-export async function flushLayoutSave(): Promise<void> {
+/**
+ * Sends the unsaved choices now; `keepalive` lets it finish while the page is closing. Choices made while
+ * the account's layout loads normally wait for it, but a page that is going away (`closing`) sends them
+ * anyway: saves merge on the server, and the save marks keep a later load from putting them back.
+ */
+export async function flushLayoutSave({ closing = false }: { closing?: boolean } = {}): Promise<void> {
 	clearTimeout(timer);
-	if (!session || session.loading || unavailable || !Object.keys(unsaved).length) return;
+	if (!session || (session.loading && !closing) || unavailable || !Object.keys(unsaved).length) return;
 	const layout = unsaved;
+	const sentFor = generation;
 	unsaved = {};
 	markSaves(layout, 1);
 	try {
@@ -98,10 +112,11 @@ export async function flushLayoutSave(): Promise<void> {
 		// The table went missing (a restore from before 0080): stay with this browser's layout.
 		if (response.status === 409) unavailable = true;
 	} catch {
-		// Offline: the choice is in this browser already and goes with the next one.
-		unsaved = { ...layout, ...unsaved };
+		// Offline: the choice is in this browser already and goes with the next one, for the same account.
+		if (sentFor === generation) unsaved = { ...layout, ...unsaved };
 	} finally {
-		markSaves(layout, -1);
+		// After an account switch the marks belong to the next account; this answer says nothing about them.
+		if (sentFor === generation) markSaves(layout, -1);
 	}
 }
 
@@ -156,15 +171,17 @@ async function loadLayout(
  * an account never takes on whichever browser happened to load first.
  */
 export async function startLayoutSync(userId: string): Promise<void> {
-	if (session?.userId !== userId) {
-		unsaved = {};
-		saveMarks.clear();
-	}
+	if (session?.userId !== userId) forgetAccount();
 	const current = { userId, loading: true };
 	session = current;
 	if (!isLayoutSyncEnabled() || unavailable) return;
 	const loaded = await loadLayout(current);
 	if (session !== current) return;
+	// Switched off on this device while the load was out: keep this browser's layout as it is.
+	if (!isLayoutSyncEnabled()) {
+		current.loading = false;
+		return;
+	}
 	if (loaded && !loaded.data.ready) {
 		unavailable = true;
 		return;
@@ -176,9 +193,12 @@ export async function startLayoutSync(userId: string): Promise<void> {
 	await flushLayoutSave();
 }
 
-/** Signed out or switched accounts: nothing more is saved for the previous one. */
+/**
+ * Signed out or switched accounts: nothing more is saved for the previous one. The next session asks the
+ * server again whether it can store a layout.
+ */
 export function stopLayoutSync(): void {
-	clearTimeout(timer);
+	forgetAccount();
 	session = null;
-	unsaved = {};
+	unavailable = false;
 }

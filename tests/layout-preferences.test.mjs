@@ -271,3 +271,71 @@ test("a not-ready answer stops loading and saving for the rest of the page load"
 		["GET"],
 	);
 });
+
+test("a load answered after sync was switched off on this device leaves the layout alone", async (t) => {
+	let answerLoad;
+	const { storage } = fakeBrowser(t, () => new Promise((resolve) => (answerLoad = resolve)));
+	const started = startLayoutSync("user-off");
+	await new Promise((resolve) => setImmediate(resolve));
+	storage.set("kite-layout-sync", "off");
+	answerLoad({ json: { ready: true, layout: { density: "compact" } } });
+	await started;
+	assert.equal(storage.get("kite-message-density"), undefined);
+});
+
+test("a page closing while the layout loads still saves the choices made meanwhile", async (t) => {
+	let answerLoad;
+	const { storage, requests } = fakeBrowser(t, () => new Promise((resolve) => (answerLoad = resolve)));
+	const started = startLayoutSync("user-closing");
+	await new Promise((resolve) => setImmediate(resolve));
+	queueLayoutSave({ density: "comfortable" });
+	await flushLayoutSave();
+	assert.deepEqual(
+		requests.map((r) => r.method),
+		["GET"],
+	);
+	await flushLayoutSave({ closing: true });
+	assert.deepEqual(
+		requests.filter((r) => r.method === "PATCH").map((r) => r.body),
+		[{ layout: { density: "comfortable" } }],
+	);
+	// The load read the layout before the save landed; it must not put the old choice back.
+	answerLoad({ json: { ready: true, layout: { density: "compact" } } });
+	await started;
+	assert.equal(storage.get("kite-message-density"), undefined);
+});
+
+test("a save answered after an account switch does not hold back the next account's layout", async (t) => {
+	let answerSave;
+	let answerLoad;
+	const { storage } = fakeBrowser(
+		t,
+		(count) =>
+			count === 1 ? { json: { ready: true, layout: null } } : new Promise((resolve) => (answerLoad = resolve)),
+		() => new Promise((resolve) => (answerSave = resolve)),
+	);
+	await startLayoutSync("user-first");
+	queueLayoutSave({ density: "comfortable" });
+	const saved = flushLayoutSave();
+	stopLayoutSync();
+	const next = startLayoutSync("user-second");
+	await new Promise((resolve) => setImmediate(resolve));
+	answerSave(null);
+	await saved;
+	answerLoad({ json: { ready: true, layout: { density: "compact" } } });
+	await next;
+	assert.equal(storage.get("kite-message-density"), "compact");
+});
+
+test("signing out forgets a not-ready answer, so the next session asks again", async (t) => {
+	const { requests } = fakeBrowser(t, (count) => ({ json: { ready: count > 1, layout: null } }));
+	await startLayoutSync("user-later");
+	stopLayoutSync();
+	await startLayoutSync("user-later");
+	queueLayoutSave({ density: "compact" });
+	await flushLayoutSave();
+	assert.deepEqual(
+		requests.map((r) => r.method),
+		["GET", "GET", "PATCH"],
+	);
+});

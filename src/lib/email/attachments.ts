@@ -2,10 +2,14 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messageAttachments, messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
+import { insertRow } from "@/lib/db/pending-columns";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import type { SessionUser } from "@/lib/auth/types";
 import { attachmentObjectKey, sanitizeFilename } from "./attachment-name-utils";
+import { ATTACHMENT_ROW_COLUMNS, openAttachment, readAttachmentBytes } from "./attachment-storage";
+import { attachmentObjectKeys } from "./attachment-storage-utils";
+import type { AttachmentRow } from "./attachment-storage-types";
 import type { AttachmentContent, AttachmentMetadata, StoredAttachment } from "./attachment-types";
 
 export const MAX_ATTACHMENT_SIZE = 25_000_000;
@@ -83,7 +87,7 @@ export async function storeMessageAttachments(
 				contentId: attachment.contentId ?? null,
 				r2Key,
 			});
-			await db.insert(messageAttachments).values({
+			await insertRow(db, messageAttachments, {
 				id,
 				messageId,
 				filename,
@@ -113,20 +117,23 @@ export async function copyMessageAttachments(
 	toMessageId: string,
 ): Promise<AttachmentMetadata[]> {
 	const db = getDb(env);
-	const rows = await db.select().from(messageAttachments).where(eq(messageAttachments.messageId, fromMessageId));
+	const rows = await db
+		.select(ATTACHMENT_ROW_COLUMNS)
+		.from(messageAttachments)
+		.where(eq(messageAttachments.messageId, fromMessageId));
 	const copied: AttachmentMetadata[] = [];
 	for (const row of rows) {
-		const object = await env.BUCKET.get(row.r2Key);
-		if (!object) continue;
+		const content = await readAttachmentBytes(env, row);
+		if (!content) continue;
 		const id = newId("att");
 		const r2Key = attachmentObjectKey(toMessageId, id);
 		// Rows stored before names were sanitised keep theirs; the copy gets a clean one.
 		const filename = sanitizeFilename(row.filename);
-		await env.BUCKET.put(r2Key, await object.arrayBuffer(), {
+		await env.BUCKET.put(r2Key, content, {
 			httpMetadata: { contentType: row.contentType },
 			customMetadata: { filename, messageId: toMessageId },
 		});
-		await db.insert(messageAttachments).values({
+		await insertRow(db, messageAttachments, {
 			id,
 			messageId: toMessageId,
 			filename,
@@ -155,16 +162,19 @@ export async function loadMessageAttachmentContents(
 	messageId: string,
 ): Promise<AttachmentContent[]> {
 	const db = getDb(env);
-	const rows = await db.select().from(messageAttachments).where(eq(messageAttachments.messageId, messageId));
+	const rows = await db
+		.select(ATTACHMENT_ROW_COLUMNS)
+		.from(messageAttachments)
+		.where(eq(messageAttachments.messageId, messageId));
 	const result: AttachmentContent[] = [];
 	for (const row of rows) {
-		const object = await env.BUCKET.get(row.r2Key);
-		if (!object) continue;
+		const content = await readAttachmentBytes(env, row);
+		if (!content) continue;
 		result.push({
 			storageId: row.id,
 			filename: row.filename,
 			type: row.contentType,
-			content: await object.arrayBuffer(),
+			content,
 			disposition: row.disposition as "attachment" | "inline",
 			contentId: row.contentId,
 		});
@@ -186,7 +196,7 @@ export async function deleteMessageAttachment(
 		.limit(1);
 	if (!row) return false;
 	await db.delete(messageAttachments).where(eq(messageAttachments.id, attachmentId));
-	await env.BUCKET.delete(row.r2Key);
+	await Promise.all(attachmentObjectKeys([row]).map((key) => env.BUCKET.delete(key)));
 	return true;
 }
 
@@ -197,12 +207,15 @@ export async function deleteMessageAttachmentObjects(env: CloudflareEnv, message
 		.select({ r2Key: messageAttachments.r2Key })
 		.from(messageAttachments)
 		.where(eq(messageAttachments.messageId, messageId));
-	await Promise.all(rows.map((row) => env.BUCKET.delete(row.r2Key)));
+	await Promise.all(attachmentObjectKeys(rows).map((key) => env.BUCKET.delete(key)));
 }
 
 export async function listMessageAttachments(env: CloudflareEnv, messageId: string): Promise<AttachmentMetadata[]> {
 	const db = getDb(env);
-	const rows = await db.select().from(messageAttachments).where(eq(messageAttachments.messageId, messageId));
+	const rows = await db
+		.select(ATTACHMENT_ROW_COLUMNS)
+		.from(messageAttachments)
+		.where(eq(messageAttachments.messageId, messageId));
 
 	return rows.map((attachment) => ({
 		id: attachment.id,
@@ -215,12 +228,13 @@ export async function listMessageAttachments(env: CloudflareEnv, messageId: stri
 	}));
 }
 
-export async function getAttachmentForUser(
+/** The attachment row when the user may read its message, by the rule every attachment reader shares; else null. */
+export async function findAttachmentForUser(
 	env: CloudflareEnv,
 	user: SessionUser,
 	messageId: string,
 	attachmentId: string,
-) {
+): Promise<AttachmentRow | null> {
 	const db = getDb(env);
 	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
 	if (!message || isHiddenDraft(message, user.id)) return null;
@@ -233,13 +247,21 @@ export async function getAttachmentForUser(
 	}
 
 	const [attachment] = await db
-		.select()
+		.select(ATTACHMENT_ROW_COLUMNS)
 		.from(messageAttachments)
 		.where(and(eq(messageAttachments.id, attachmentId), eq(messageAttachments.messageId, messageId)))
 		.limit(1);
-	if (!attachment) return null;
+	return attachment ?? null;
+}
 
-	const object = await env.BUCKET.get(attachment.r2Key);
-	if (!object) return null;
-	return { attachment, object };
+/** The attachment row and its opened content when the user may read the message; null otherwise or when not stored. */
+export async function getAttachmentForUser(
+	env: CloudflareEnv,
+	user: SessionUser,
+	messageId: string,
+	attachmentId: string,
+) {
+	const attachment = await findAttachmentForUser(env, user, messageId, attachmentId);
+	const file = attachment ? await openAttachment(env, attachment) : null;
+	return attachment && file ? { attachment, file } : null;
 }

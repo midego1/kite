@@ -7,6 +7,7 @@ import { createLogger } from "@/lib/logger.mjs";
 import { getStorage } from "@/lib/storage";
 import { copyObject, findSource } from "@/lib/storage/migration";
 import type { Storage } from "@/lib/storage/types";
+import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
 import type {
 	BackupObjectsCopyMessage,
 	BackupObjectsCopyRun,
@@ -56,7 +57,7 @@ async function beforeBodyColumn<T>(query: () => Promise<T>, whenPending: () => P
 const SOURCE_QUERIES = {
 	messages:
 		"SELECT DISTINCT raw_r2_key AS id, raw_r2_key AS key FROM messages WHERE raw_r2_key IS NOT NULL AND raw_r2_key > ?",
-	attachments: "SELECT id, r2_key AS key FROM message_attachments WHERE id > ?",
+	attachments: `SELECT id, r2_key AS key FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} AND id > ?`,
 	// Several messages can share one raw object (copies in other mailboxes), so raw keys are walked by key: each is
 	// copied and counted once across all batches, and the index on raw_r2_key serves the order.
 	// A body's key is always its own (`htmlBodyObjectKey`), whatever the column holds.
@@ -76,7 +77,7 @@ export async function estimateBackupObjects(env: CloudflareEnv): Promise<BackupO
 	const latest = `FROM messages WHERE raw_r2_key IS NOT NULL ORDER BY rowid DESC LIMIT ${ESTIMATE_SAMPLE}`;
 	const messages = await first<{ n: number }>("SELECT count(*) AS n FROM messages WHERE raw_r2_key IS NOT NULL");
 	const attachments = await first<{ n: number; bytes: number }>(
-		"SELECT count(*) AS n, coalesce(sum(size), 0) AS bytes FROM message_attachments",
+		`SELECT count(*) AS n, coalesce(sum(size), 0) AS bytes FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL}`,
 	);
 	const sample = await beforeBodyColumn(
 		() =>

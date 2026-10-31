@@ -4,6 +4,7 @@ import { inJsonArray } from "@/db/chunk-utils";
 import { messageAttachments, messages } from "@/db/schema";
 import { driveItems } from "@/db/schema/drive";
 import { getAttachmentForUser } from "@/lib/email/attachments";
+import { ATTACHMENT_ROW_COLUMNS } from "@/lib/email/attachment-storage";
 import { assessStoredAttachment } from "@/lib/email/attachment-risk-store";
 import { newId } from "@/lib/ids";
 import { listAccessibleMailboxes } from "@/lib/mailboxes/access";
@@ -46,7 +47,7 @@ export async function listDriveAttachments(
 	const at = cursor ? new Date(cursor.at * 1000) : null;
 	const rows = await db
 		.select({
-			attachment: messageAttachments,
+			attachment: ATTACHMENT_ROW_COLUMNS,
 			messageId: messages.id,
 			mailboxId: messages.mailboxId,
 			subject: messages.subject,
@@ -143,7 +144,7 @@ export async function saveAttachmentToDrive(
 	// The same gate as a download: a flagged file is copied only once the user has seen the warning.
 	const risk = await assessStoredAttachment(env, source.attachment);
 	if (risk.level !== "ok" && value.acknowledge !== true) {
-		await source.object.body.cancel().catch(() => undefined);
+		await source.file.body.cancel().catch(() => undefined);
 		return {
 			status: 409,
 			body: {
@@ -156,7 +157,7 @@ export async function saveAttachmentToDrive(
 	const store = await newDriveStore(env);
 	const id = newId("drv");
 	const now = new Date();
-	const size = source.object.size ?? source.attachment.size;
+	const size = source.file.size;
 	const file = {
 		id,
 		ownerId,
@@ -173,11 +174,11 @@ export async function saveAttachmentToDrive(
 		now,
 	};
 	if (!(await reserveDriveFile(env, file, await getQuotaLimit(env, ownerId)))) {
-		await source.object.body.cancel().catch(() => undefined);
+		await source.file.body.cancel().catch(() => undefined);
 		return fail(413, QUOTA_ERROR);
 	}
 	try {
-		await store.bucket.put(file.objectKey, sizedBody(source.object.body, size), {
+		await store.bucket.put(file.objectKey, sizedBody(source.file.body, size), {
 			httpMetadata: { contentType: file.contentType },
 		});
 		await db.update(driveItems).set({ status: "ready", updatedAt: new Date() }).where(eq(driveItems.id, id));

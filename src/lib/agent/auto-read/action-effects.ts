@@ -12,6 +12,7 @@ import { unmuteSender, untrustSender } from "./muted-senders";
 import type { AgentActionType } from "./policy-types";
 import type { UndoCounts } from "../chat-actions-types";
 import { notifySuggestionsQuietly } from "./suggestion-events";
+import { attachmentObjectKeys } from "@/lib/email/attachment-storage-utils";
 import { undoCreateFolder, undoMarkRead, undoMove, undoSetFolder } from "./organize-undo";
 
 type SuggestionStatus = (typeof agentSuggestions.$inferSelect)["status"];
@@ -142,7 +143,7 @@ export async function discardAgentDraft(env: CloudflareEnv, draftId: string): Pr
 		)
 		.returning({ rawR2Key: messages.rawR2Key });
 	if (deleted.length === 0) throw new AgentActionError("The draft changed, so Kite kept it", 409);
-	const keys = [...attachments.map((attachment) => attachment.r2Key), deleted[0]?.rawR2Key];
+	const keys = [...attachmentObjectKeys(attachments), deleted[0]?.rawR2Key];
 	await Promise.all(keys.filter((key): key is string => !!key).map((key) => env.BUCKET.delete(key)));
 }
 

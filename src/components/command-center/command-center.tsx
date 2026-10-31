@@ -37,7 +37,7 @@ const DOT_CLASS: Record<AccountLine["tone"], string> = {
 function QuickActionTile({ action }: { action: QuickAction }) {
 	const Icon = action.icon;
 	const className =
-		"flex items-center gap-2.5 rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-left text-sm font-medium text-neutral-800 transition-colors hover:border-neutral-300 hover:bg-[#f2f6fc]";
+		"flex items-center gap-2.5 rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-left text-sm font-medium text-neutral-800 transition-colors hover:border-neutral-300 hover:bg-blue-50";
 	const content = (
 		<>
 			<span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">

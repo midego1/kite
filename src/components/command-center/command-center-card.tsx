@@ -14,7 +14,7 @@ export function CommandCenterCard({
 	testId?: string;
 }) {
 	return (
-		<section aria-label={title} data-testid={testId} className="rounded-3xl bg-[#f6f8fc] px-5 py-4">
+		<section aria-label={title} data-testid={testId} className="rounded-3xl bg-blue-50 px-5 py-4">
 			<div className="mb-2 flex items-center justify-between gap-3">
 				<h3 className="text-[11px] font-bold uppercase tracking-[0.08em] text-neutral-500">{title}</h3>
 				{action && (

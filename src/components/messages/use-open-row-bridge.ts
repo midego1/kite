@@ -5,9 +5,6 @@ import type { Message } from "@/hooks/types";
 import { leavesList, MESSAGES_LEFT_VIEW_EVENT, neighbourAfterLeaving, type MessagesLeftView } from "./left-view-utils";
 import type { MessageSelectionControl } from "./types";
 
-/** How many frames the hand-off waits for a leaving row that still holds the focus (Undo may keep it). */
-const MAX_SETTLE_FRAMES = 120;
-
 type OpenRowBridgeOptions = {
 	selection: MessageSelectionControl | undefined;
 	/** The rows in the order they are shown. */
@@ -48,6 +45,8 @@ export function useOpenRowBridge({
 		latest.current = { rows, openMessageId, folder, folderId };
 	});
 	useEffect(() => {
+		// Ends the watch of a leaving row that still holds the focus; a new change or the unmount ends it too.
+		let stopWatch = () => {};
 		function onLeftView(event: Event) {
 			const change = (event as CustomEvent<MessagesLeftView>).detail;
 			const current = latest.current;
@@ -59,28 +58,55 @@ export function useOpenRowBridge({
 				change.ids,
 			);
 			// After the reader has unmounted, and only when the focus went down with it: dropped on the page, or still
-			// on a row that is leaving (Trash in the row's own actions) until that row has left the list, since the
-			// list may update a few frames after the event (a heavier empty pane makes that more likely).
+			// on a row that is leaving (Trash in the row's own actions). The list may update well after the event (a
+			// debounce and a fetch), so a focus on a leaving row is watched until that row has left; the watch ends
+			// when the focus moves elsewhere (Undo kept the row, the user went on) or another change starts.
 			const leaving = new Set([...change.ids, current.openMessageId]);
-			let frames = 0;
-			const settle = () => {
-				const active = document.activeElement;
-				const activeRow = active?.closest<HTMLElement>("[data-message-row]")?.getAttribute("data-message-row");
-				const onLeavingRow = activeRow != null && leaving.has(activeRow);
-				if (active && active !== document.body && active.isConnected && !onLeavingRow) return;
-				if (onLeavingRow && active?.isConnected) {
-					if (frames++ < MAX_SETTLE_FRAMES) requestAnimationFrame(settle);
-					return;
-				}
+			const handOff = () => {
 				const list = listRef.current;
 				const link = neighbour
 					? list?.querySelector<HTMLElement>(`[data-message-row="${CSS.escape(neighbour)}"] a[href]`)
 					: null;
 				(link ?? list)?.focus();
 			};
+			const leavingRowOf = (element: Element | null) => {
+				const row = element?.closest<HTMLElement>("[data-message-row]")?.getAttribute("data-message-row");
+				return row != null && leaving.has(row) ? row : null;
+			};
+			const settle = () => {
+				const active = document.activeElement;
+				if (!active || active === document.body || !active.isConnected) return handOff();
+				if (!leavingRowOf(active)) return;
+				watch(active);
+			};
+			const watch = (active: Element) => {
+				stopWatch();
+				const list = listRef.current;
+				if (!list) return;
+				const observer = new MutationObserver(() => {
+					if (active.isConnected) return;
+					stopWatch();
+					const now = document.activeElement;
+					if (!now || now === document.body || !now.isConnected || leavingRowOf(now)) handOff();
+				});
+				observer.observe(list, { childList: true, subtree: true });
+				const onFocusIn = (focus: FocusEvent) => {
+					if (!leavingRowOf(focus.target as Element | null)) stopWatch();
+				};
+				document.addEventListener("focusin", onFocusIn);
+				stopWatch = () => {
+					observer.disconnect();
+					document.removeEventListener("focusin", onFocusIn);
+					stopWatch = () => {};
+				};
+			};
+			stopWatch();
 			requestAnimationFrame(() => requestAnimationFrame(settle));
 		}
 		window.addEventListener(MESSAGES_LEFT_VIEW_EVENT, onLeftView);
-		return () => window.removeEventListener(MESSAGES_LEFT_VIEW_EVENT, onLeftView);
+		return () => {
+			stopWatch();
+			window.removeEventListener(MESSAGES_LEFT_VIEW_EVENT, onLeftView);
+		};
 	}, [listRef]);
 }

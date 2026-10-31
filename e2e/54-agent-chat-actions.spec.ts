@@ -207,7 +207,10 @@ test.describe("the external-provider opt-in covers chat", () => {
 			await expect(notice).toContainText(
 				/an external AI provider\. The primary admin hasn.t allowed sending mail to it/,
 			);
-			await expect(notice.getByRole("link", { name: "Allow it in Admin → Agent" })).toHaveAttribute("href", "/agent");
+			await expect(notice.getByRole("link", { name: "Allow it in Admin → Agent" })).toHaveAttribute(
+				"href",
+				"/agent#automatic-reading",
+			);
 			await expect(panel.getByRole("textbox", { name: "Message Kite AI" })).toBeDisabled();
 
 			fake.clearRequests();

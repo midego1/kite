@@ -33,7 +33,7 @@ Message content goes to the AI provider in use for the assistant (see [AI provid
 
 - **Workers AI** (Cloudflare). The content is processed on Cloudflare, which already hosts your Kite install. It is not sent anywhere else.
 - **External providers.** Anthropic receives content through its native API. Haimaker, OpenAI, OpenRouter, Groq and custom endpoints use an OpenAI-compatible API. The content is sent to the configured provider, outside your install. Sending mail to an external provider needs a separate opt-in from the primary admin, **Allow an external AI provider to read mail** in the install-wide automatic reading settings of [Admin → Agent](/agent). It is off by default and covers every AI feature that sends mail to the provider:
-  - **Assistant chat.** The chat's tools read your mail, and an open email is offered to it, so chat is off: the assistant panel says the provider is external and that the primary admin has not allowed sending mail to it (the primary admin gets a link to the switch), and a chat request answers 403 `external_provider_not_allowed`.
+  - **Assistant chat.** The chat's tools read your mail, and an open email is offered to it, so chat is off: the assistant panel says the provider is external and that the primary admin has not allowed sending mail to it (the primary admin gets a link to the switch, [Admin → Agent](/agent#automatic-reading)), and a chat request answers 403 `external_provider_not_allowed`.
   - **Automatic reading** and its reply drafts, one-line summaries and the older **Automatically draft replies** setting: Kite skips the message and says why in Activity.
   - **Write with Kite** is not offered in the composer, and **Summarize** is not offered in the reader.
 

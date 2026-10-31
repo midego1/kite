@@ -46,7 +46,7 @@ export function ChatProviderNotice({ provider }: { provider: ChatProviderState }
 				sending mail to it, so chat is off.
 			</p>
 			{primaryAdmin ? (
-				<Link href="/agent" className="font-medium text-blue-700 hover:underline">
+				<Link href="/agent#automatic-reading" className="font-medium text-blue-700 hover:underline">
 					Allow it in Admin → Agent
 				</Link>
 			) : (

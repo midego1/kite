@@ -30,8 +30,9 @@ function focusNeighbourOf(notice: HTMLElement): void {
 		return notice.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING ? "after" : "before";
 	});
 	// An element hidden with `visibility` or inside an inert subtree still has a box but refuses the focus.
+	// Without scrolling: the notice is leaving, and the page should not jump to wherever the focus lands.
 	for (const element of order) {
-		element.focus();
+		element.focus({ preventScroll: true });
 		if (document.activeElement === element) return;
 	}
 }

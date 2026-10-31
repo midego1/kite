@@ -159,7 +159,12 @@ test("trashing a deep-linked older message of a conversation hands the focus to 
 	const messageId = `<${token}-first@outside.test>`;
 	try {
 		// A message below the conversation, so the focus has a row to go to.
-		await deliverInbound(api, { from, to: SUPPORT_ADDRESS, subject: `Neighbour ${token}`, text: "Below." });
+		const neighbour = await deliverInbound(api, {
+			from,
+			to: SUPPORT_ADDRESS,
+			subject: `Neighbour ${token}`,
+			text: "Below.",
+		});
 		const first = await deliverInbound(api, { from, to: SUPPORT_ADDRESS, subject, text: "First.", messageId });
 		const reply = await deliverInbound(api, {
 			from,
@@ -180,7 +185,12 @@ test("trashing a deep-linked older message of a conversation hands the focus to 
 		await expect
 			.poll(() => Promise.all([statusOf(api, first.id), statusOf(api, reply.id)]))
 			.toEqual(["trash", "trash"]);
-		await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest("[data-message-row]"))).toBe(true);
+		// The focus lands on the row below the conversation, not just somewhere in the list.
+		await expect
+			.poll(() =>
+				page.evaluate(() => document.activeElement?.closest("[data-message-row]")?.getAttribute("data-message-row")),
+			)
+			.toBe(neighbour.id);
 	} finally {
 		await api.dispose();
 	}

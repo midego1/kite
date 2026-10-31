@@ -22,7 +22,12 @@ import { getSessionTokenFromRequest } from "./src/lib/realtime/utils";
 import { inboundAttachmentLimitReasonFromRaw } from "./src/lib/email/inbound-attachments";
 import { hasValidSessionMutationOrigin } from "./src/lib/auth/origin";
 import { checkCsrf } from "./src/lib/security/csrf";
-import { buildContentSecurityPolicy, createCspNonce, isDocumentPath } from "./src/lib/security/headers";
+import {
+	buildContentSecurityPolicy,
+	createCspNonce,
+	DOCUMENT_OPENER_POLICY,
+	isDocumentPath,
+} from "./src/lib/security/headers";
 import { getAccountForwardingDestination, wasForwardedByKite } from "./src/lib/email/account-forwarding";
 import { runDatabaseBackup, runScheduledDatabaseBackup } from "./src/lib/backups/runner";
 import { isBackupRunMessage } from "./src/lib/backups/queue-utils";
@@ -73,6 +78,7 @@ async function renderDocumentWithCsp(request: Request, env: CloudflareEnv, ctx: 
 	if (response.status === 101) return response;
 	const withPolicy = new Response(response.body, response);
 	withPolicy.headers.set("Content-Security-Policy", policy);
+	withPolicy.headers.set("Cross-Origin-Opener-Policy", DOCUMENT_OPENER_POLICY);
 	return withPolicy;
 }
 

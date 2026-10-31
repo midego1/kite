@@ -1,30 +1,18 @@
-import { and, eq, gt } from "drizzle-orm";
-import { getDb } from "@/db";
-import { messageAttachments, sharedAttachmentLinks } from "@/db/schema";
 import { getEnv } from "@/lib/cloudflare";
 import { getContentDisposition } from "@/lib/http/content-disposition-utils";
-import { getDownloadContentType } from "@/lib/http/content-type-utils";
+import { findSharedFile } from "@/lib/email/shared-attachments";
 import type { SharedFileParams } from "./types";
 
 export async function GET(_request: Request, { params }: SharedFileParams) {
 	const { id } = await params;
 	const env = getEnv();
-	const [file] = await getDb(env)
-		.select({
-			r2Key: messageAttachments.r2Key,
-			filename: messageAttachments.filename,
-			size: messageAttachments.size,
-			contentType: messageAttachments.contentType,
-		})
-		.from(sharedAttachmentLinks)
-		.innerJoin(messageAttachments, eq(sharedAttachmentLinks.attachmentId, messageAttachments.id))
-		.where(and(eq(sharedAttachmentLinks.id, id), gt(sharedAttachmentLinks.expiresAt, new Date())))
-		.limit(1);
+	const file = await findSharedFile(env, id);
 	if (!file) return new Response("Link expired or not found", { status: 404 });
 	const object = await env.BUCKET.get(file.r2Key);
 	if (!object) return new Response("File not found", { status: 404 });
 	const headers = new Headers();
-	headers.set("Content-Type", getDownloadContentType(file.contentType));
+	// Anyone with the link gets opaque bytes to save, never a type a browser would render or run.
+	headers.set("Content-Type", "application/octet-stream");
 	headers.set("Content-Length", String(file.size));
 	headers.set("Content-Disposition", getContentDisposition(file.filename, false));
 	headers.set("X-Content-Type-Options", "nosniff");

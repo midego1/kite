@@ -220,11 +220,48 @@ test("the per-user rate limit answers 429 before any fetch, and a limiter error 
 	assert.equal((await call("owner", query)).status, 200);
 });
 
-test("the self-hosted runtime refuses with 503 and never fetches", async (t) => {
-	const { call, outbound } = await fixture(t, { KITE_RUNTIME: "node" });
+test("the self-hosted runtime proxies after resolving every hop to a public address", async (t) => {
+	const resolved = [];
+	let answers = { "images.example.com": ["93.184.216.34"] };
+	const { call, outbound } = await fixture(t, {
+		KITE_RUNTIME: "node",
+		RESOLVE_HOST: async (hostname) => {
+			resolved.push(hostname);
+			return answers[hostname] ?? [];
+		},
+	});
+	const query = { message: "private-message", url: IMAGE };
+	const response = await call("owner", query);
+	assert.equal(response.status, 200);
+	assert.deepEqual(resolved, ["images.example.com"]);
+	assert.equal(outbound.length, 1);
+
+	answers = { "images.example.com": ["10.0.0.7"] };
+	const rebound = await call("owner", query);
+	assert.equal(rebound.status, 400, "a name resolving to a private address is refused");
+	assert.equal(outbound.length, 1, "nothing is fetched");
+
+	answers = { "images.example.com": [] };
+	assert.equal((await call("owner", query)).status, 400, "an unresolvable name is refused");
+	assert.equal(outbound.length, 1);
+});
+
+test("a redirect to a host that resolves privately is refused before it is fetched", async (t) => {
+	const answers = { "images.example.com": ["93.184.216.34"], "cdn.example.net": ["192.168.1.4"] };
+	const { call, outbound } = await fixture(t, {
+		KITE_RUNTIME: "node",
+		RESOLVE_HOST: async (hostname) => answers[hostname] ?? [],
+	});
+	t.mock.method(globalThis, "fetch", async (url) => {
+		outbound.push({ url: String(url) });
+		return new Response(null, { status: 302, headers: { Location: "https://cdn.example.net/logo.png" } });
+	});
 	const response = await call("owner", { message: "private-message", url: IMAGE });
-	assert.equal(response.status, 503);
-	assert.equal(outbound.length, 0);
+	assert.equal(response.status, 400);
+	assert.deepEqual(
+		outbound.map((request) => request.url),
+		[IMAGE],
+	);
 });
 
 test("the loopback allowance needs the dev flag and is ignored in production", async (t) => {

@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { heroMessages, sidebarItems } from "./utils";
-import { Inbox, Mail, Search, ShieldCheck } from "lucide-react";
 import { getHomeBranding } from "./home-server-utils";
 import { HomeAuthProvider } from "./home-auth";
 import { HomeHeaderActions } from "./home-header-actions";
 import { HomeHeroActions } from "./home-hero-actions";
+import { HomeProductMock } from "./home-product-mock";
+import { HomeFeatures, HomeFooter, HomeRuntime } from "./home-sections";
+import { heroFacts } from "./utils";
 
 export const dynamic = "force-dynamic";
 
@@ -13,162 +14,97 @@ export async function generateMetadata(): Promise<Metadata> {
 	const branding = await getHomeBranding();
 	return {
 		title: branding.appName,
+		description: `${branding.appName} is a self-hosted mail suite for your own domains: a real inbox with a Screener and spam protection, your other accounts in the same place, AI that asks before it acts, and Calendar, Drive, Booking and Money Watch as modules. Open source, in your own Cloudflare account or a Docker container.`,
 		icons: { icon: branding.hasCustomIcon ? "/api/branding/icon" : "/icon-96.png" },
 	};
 }
 
+/*
+ * The landing page of an install. A signed-in user keeps the page (the header shows their account and the
+ * hero's first button opens the dashboard); a visitor gets the ways in. Everything but the two button groups
+ * renders on the server, and the colours are the app's own palette, so the page follows the style and the
+ * dark theme like every other screen (globals.css remaps the neutral and blue scales under .dark).
+ */
 export default async function HomePage() {
 	const branding = await getHomeBranding();
+	const icon = branding.hasCustomIcon ? "/api/branding/icon" : "/kite.svg";
 
 	return (
 		<HomeAuthProvider>
 			<div className="min-h-dvh bg-[#f6f8fc] text-neutral-900">
+				<a
+					href="#main"
+					className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow"
+				>
+					Skip to content
+				</a>
 				<header className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
 					<Link href="/" className="flex items-center gap-3" aria-label={`${branding.appName} home`}>
-						<img src={branding.hasCustomIcon ? "/api/branding/icon" : "/icon-96.png"} height={32} width={32} alt="" />
+						<img src={icon} height={32} width={32} alt="" />
 						<span className="text-lg font-bold tracking-tight">{branding.appName}</span>
 					</Link>
-
-					{/* <nav className="hidden items-center gap-6 text-sm font-medium text-neutral-600 md:flex">
-					{landingNavItems.map((item) => (
-						<a key={item.href} href={item.href} className="transition-colors hover:text-neutral-950">
-							{item.label}
+					<nav
+						aria-label="Page sections"
+						className="hidden items-center gap-6 text-sm font-medium text-neutral-600 md:flex"
+					>
+						<a href="#features" className="transition-colors hover:text-neutral-950">
+							Features
 						</a>
-					))}
-				</nav> */}
-
+						<a href="#how-it-runs" className="transition-colors hover:text-neutral-950">
+							How it runs
+						</a>
+					</nav>
 					<div className="flex items-center gap-2">
 						<HomeHeaderActions />
 					</div>
 				</header>
 
-				<main>
-					<section className="mx-auto grid max-w-7xl grid-cols-1 gap-10 px-4 pb-12 pt-8 sm:px-6 md:pt-16 lg:grid-cols-[0.86fr_1.14fr] lg:px-8">
-						<div className="flex max-w-2xl flex-col justify-center">
-							<div className="mb-6 flex w-fit items-center gap-2 text-sm font-medium text-blue-800">
-								<ShieldCheck className="h-4 w-4" />
-								Cloudflare-native email operations
-							</div>
-							<h1 className="max-w-[12ch] text-5xl font-bold leading-[0.96] tracking-tight text-neutral-950 sm:text-6xl lg:text-7xl">
-								Email for your own domains,
-								<span className="mt-3 block font-script text-5xl font-normal leading-tight tracking-normal text-blue-600 sm:text-6xl">
-									that actually flows.
-								</span>
+				<main id="main">
+					<section aria-labelledby="home-hero-heading" className="relative overflow-hidden">
+						{/* The kite's own gradient, faded far back, so the hero reads as the brand without an image. */}
+						<div
+							aria-hidden="true"
+							className="pointer-events-none absolute left-1/2 top-0 -z-0 h-[480px] w-[900px] -translate-x-1/2 rounded-full opacity-40 blur-3xl"
+							style={{ background: "radial-gradient(closest-side, #9b7bf7 0%, #7fa2ff 45%, transparent 100%)" }}
+						/>
+						<div className="relative mx-auto max-w-7xl px-4 pb-12 pt-10 text-center sm:px-6 md:pt-16 lg:px-8">
+							<p className="mx-auto mb-5 w-fit rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-medium text-neutral-700 shadow-sm">
+								Self-hosted mail suite · open source · early beta
+							</p>
+							<h1
+								id="home-hero-heading"
+								className="mx-auto max-w-5xl text-5xl font-bold leading-[1.02] tracking-tight text-neutral-950 sm:text-6xl lg:text-7xl"
+							>
+								Mail for your own domains, <span className="home-accent block text-blue-600">that actually flows.</span>
 							</h1>
-							<p className="mt-6 max-w-xl text-lg leading-8 text-neutral-600">
-								Add domains, route inbound mail, send through API keys, and manage your mailboxes from one quiet
-								workspace built around the message list.
+							<p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-neutral-600">
+								{branding.appName} is a complete inbox for you@yourdomain: mail with a Screener and spam protection,
+								your Gmail, iCloud and other IMAP accounts in the same place, AI that drafts but asks before it acts,
+								and Calendar, Drive, Booking and Money Watch beside it. It runs in your own Cloudflare account or in one
+								Docker container.
 							</p>
 							<HomeHeroActions />
+							<ul className="mx-auto mt-8 flex max-w-3xl flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-neutral-600">
+								{heroFacts.map((fact) => (
+									<li key={fact} className="flex items-center gap-2">
+										<span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+										{fact}
+									</li>
+								))}
+							</ul>
 						</div>
-
-						<div className="relative min-h-[520px] overflow-hidden rounded-[2rem] border border-neutral-100 shadow-[0_24px_70px_-45px_rgba(30,64,175,0.55)]">
-							<div className="grid h-full min-h-[520px] grid-cols-[176px_1fr] bg-white">
-								<aside className="hidden flex-col gap-2 bg-[#f6f8fc] px-3 py-5 sm:flex">
-									<div className="mb-4 flex items-center gap-3 px-3 text-neutral-700">
-										<Inbox className="h-5 w-5" />
-										<span className="font-semibold">Mail</span>
-									</div>
-									<div className="mb-3 flex h-12 w-fit items-center gap-2 rounded-2xl bg-blue-100 px-5 text-sm font-semibold text-blue-950 shadow-sm">
-										<Mail className="h-4 w-4" />
-										Compose
-									</div>
-									{sidebarItems.map((item) => {
-										const Icon = item.icon;
-										return (
-											<div
-												key={item.label}
-												className={`flex h-9 items-center justify-between rounded-r-full px-3 text-sm font-medium ${
-													item.active ? "bg-blue-100 text-blue-950" : "text-neutral-600"
-												}`}
-											>
-												<span className="flex items-center gap-3">
-													<Icon className="h-4 w-4" />
-													{item.label}
-												</span>
-												{item.count && <span className="text-xs text-blue-800">{item.count}</span>}
-											</div>
-										);
-									})}
-								</aside>
-
-								<div className="col-span-2 flex min-w-0 flex-col sm:col-span-1">
-									<div className="flex h-16 items-center gap-3 bg-[#f6f8fc] px-4">
-										<div className="flex h-12 flex-1 items-center gap-3 rounded-full bg-[#eaf1fb] px-4 text-neutral-600">
-											<Search className="h-5 w-5" />
-											<span className="text-[15px]">Search mail</span>
-										</div>
-										<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
-											<Mail className="h-4 w-4" />
-										</div>
-									</div>
-
-									<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-tl-3xl bg-white">
-										<div className="flex h-14 items-center justify-between border-b border-neutral-200 px-6">
-											<div className="flex items-center gap-3">
-												<h2 className="text-xl font-medium text-neutral-800">Priority inbox</h2>
-												<span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">
-													18
-												</span>
-											</div>
-											<span className="hidden text-sm font-medium text-neutral-500 md:inline">Updated 2 min ago</span>
-										</div>
-										<div className="divide-y divide-neutral-100">
-											{heroMessages.map((message) => (
-												<div
-													key={message.sender}
-													className="grid min-h-14 grid-cols-[28px_minmax(112px,180px)_1fr_auto] items-center gap-3 px-5 text-sm hover:bg-[#f2f6fc]"
-												>
-													<message.icon className="h-4 w-4 text-neutral-300" />
-													<span className="truncate font-semibold text-neutral-900">{message.sender}</span>
-													<span className="truncate text-neutral-600">
-														<span className="font-medium text-neutral-900">{message.subject}</span>
-														<span className="hidden text-neutral-500 md:inline"> - {message.preview}</span>
-													</span>
-													<span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-														{message.badge}
-													</span>
-												</div>
-											))}
-										</div>
-									</div>
-								</div>
-							</div>
+						<div className="relative mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
+							<HomeProductMock appName={branding.appName} />
+							<p className="mt-4 text-center text-xs text-neutral-500">
+								The preview shows invented demo data, in the same look as the app.
+							</p>
 						</div>
 					</section>
 
-					{/* <section id="workflow" className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 pb-16 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:px-8">
-					<div id="api" className="rounded-[1.75rem] bg-white p-6 shadow-sm shadow-neutral-200/50">
-						<div className="mb-6 flex items-center justify-between gap-4">
-							<div>
-								<p className="text-sm font-semibold text-blue-700">Operational view</p>
-								<h2 className="mt-1 text-2xl font-semibold tracking-tight">From DNS to delivery in one place.</h2>
-							</div>
-							<Clock3 className="hidden h-6 w-6 text-neutral-400 sm:block" />
-						</div>
-						<div className="grid gap-4 sm:grid-cols-3">
-							{inboxStats.map((stat) => (
-								<div key={stat.label} className="border-t border-neutral-200 pt-4">
-									<p className="no-font-mono text-2xl font-semibold text-neutral-950">{stat.value}</p>
-									<p className="mt-1 text-sm text-neutral-500">{stat.label}</p>
-								</div>
-							))}
-						</div>
-					</div>
-
-					<div id="domains" className="rounded-[1.75rem] bg-white p-6 shadow-sm shadow-neutral-200/50">
-						<p className="text-sm font-semibold text-blue-700">Delivery signals</p>
-						<div className="mt-5 space-y-4">
-							{deliverySignals.map((signal) => (
-								<div key={signal} className="flex items-center gap-3 text-sm font-medium text-neutral-700">
-									<CheckCircle2 className="h-5 w-5 text-blue-600" />
-									<span>{signal}</span>
-								</div>
-							))}
-						</div>
-					</div>
-				</section> */}
+					<HomeFeatures appName={branding.appName} />
+					<HomeRuntime appName={branding.appName} />
 				</main>
+				<HomeFooter appName={branding.appName} />
 			</div>
 		</HomeAuthProvider>
 	);

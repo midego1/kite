@@ -2,6 +2,7 @@
 
 import { getUserTimeZone } from "@/lib/time/utils";
 import { clearUserTimeZonePreference } from "@/lib/time/client";
+import { endReloadReturn } from "@/components/reload-return-utils";
 import { clearAppBadge } from "@/lib/app-badge-utils";
 import { changesCurrentAccount } from "./client-utils";
 import type { AuthFetchOptions, AuthSessionChangedDetail, AuthSessionResponse } from "./client-types";
@@ -67,6 +68,9 @@ export async function authFetch(input: RequestInfo | URL, init: AuthFetchOptions
 
 	if (response.status === 401 && redirectOnUnauthorized && typeof window !== "undefined") {
 		clearClientSessionKey();
+		// This full navigation can beat AuthGuard's own redirect (which ends the kite's return), so the marker is
+		// cleared here too; otherwise the sign-in page would start with the scene.
+		endReloadReturn();
 		window.location.assign("/login");
 	}
 	if (response.ok && typeof window !== "undefined" && changesCurrentAccount(input, requestInit.method)) {

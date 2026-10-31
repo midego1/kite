@@ -16,6 +16,16 @@ export function releasePending(root) {
 	return hasPendingChanges(readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), readFragments(root));
 }
 
+/** The indentation `text` (a JSON document) is written with: a tab or the first line's run of spaces. */
+export function jsonIndent(text) {
+	return /^([\t ]+)\S/m.exec(text)?.[1] ?? "\t";
+}
+
+/** Serializes `value` like the JSON file `original` was written: same indentation and trailing newline. */
+export function stringifyLike(original, value) {
+	return `${JSON.stringify(value, null, jsonIndent(original))}${original.endsWith("\n") ? "\n" : ""}`;
+}
+
 /**
  * Folds the changelog.d fragments of `root` into a new CHANGELOG.md section, writes the next calendar
  * version into VERSION, package.json and package-lock.json, deletes the fragments (and the bundle growth
@@ -35,13 +45,14 @@ export async function prepareRelease({ root, now = new Date(), writeOpenApi }) {
 	const pkg = readFileSync(file("package.json"), "utf8");
 	const versionLine = /^(\t"version": )"[^"]*"/m;
 	if (!versionLine.test(pkg)) throw new Error('package.json has no top-level "version" line');
-	const lock = JSON.parse(readFileSync(file("package-lock.json"), "utf8"));
+	const lockText = readFileSync(file("package-lock.json"), "utf8");
+	const lock = JSON.parse(lockText);
 	lock.version = npmVersion;
 	lock.packages[""].version = npmVersion;
 
 	writeFileSync(file("VERSION"), `${version}\n`);
 	writeFileSync(file("package.json"), pkg.replace(versionLine, `$1"${npmVersion}"`));
-	writeFileSync(file("package-lock.json"), `${JSON.stringify(lock, null, 2)}\n`);
+	writeFileSync(file("package-lock.json"), stringifyLike(lockText, lock));
 	writeFileSync(file("CHANGELOG.md"), changelog);
 	for (const fragment of fragments) rmSync(fragment.path);
 	const allowances = file(ALLOWANCE_DIRECTORY);

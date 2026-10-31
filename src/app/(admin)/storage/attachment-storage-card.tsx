@@ -59,10 +59,10 @@ function JobStatus({ job }: { job: AttachmentStorageJobView }) {
 					aria-valuemin={0}
 					aria-valuemax={progress.total}
 					aria-valuenow={progress.done}
-					className="h-1.5 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-950"
+					className="h-1.5 overflow-hidden rounded-full bg-blue-100"
 				>
 					<div
-						className="h-full rounded-full bg-blue-600 transition-[width] dark:bg-blue-400"
+						className="h-full rounded-full bg-blue-600 transition-[width]"
 						style={{ width: `${progress.percent}%` }}
 					/>
 				</div>
@@ -170,7 +170,7 @@ function CardBody({ report, onChanged }: { report: AttachmentStorageReport; onCh
 					href={ATTACHMENT_ROLLBACK_URL}
 					target="_blank"
 					rel="noreferrer"
-					className="text-blue-700 underline underline-offset-2 dark:text-blue-300"
+					className="text-blue-700 underline underline-offset-2"
 				>
 					Rollback steps
 				</a>

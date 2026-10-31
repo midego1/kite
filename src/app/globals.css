@@ -988,6 +988,8 @@ html:has(#kite-boot-failure[data-loader-stuck]) .loading-recovery {
 }
 :root.dark[data-style="kite"] {
 	--cc-surface: var(--muted);
+	/* Its mid grey is 4.5:1 on the surface, just enough for the 11px labels; one step lighter reads better. */
+	--cc-label: var(--color-neutral-600);
 }
 
 /* The small kite in the corner of the empty reading pane (command-center/floating-kite.tsx): a slow drift and

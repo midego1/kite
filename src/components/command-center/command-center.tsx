@@ -46,7 +46,7 @@ function QuickActionTile({ action }: { action: QuickAction }) {
 			</span>
 			<span className="min-w-0 flex-1 truncate">{action.label}</span>
 			{action.shortcut && (
-				<kbd className="rounded-md border border-cc-border bg-cc-surface-hover px-1.5 py-0.5 font-mono text-[10px] text-neutral-500">
+				<kbd className="rounded-md border border-cc-border bg-cc-surface-hover px-1.5 py-0.5 font-mono text-[10px] text-neutral-600">
 					{action.shortcut}
 				</kbd>
 			)}

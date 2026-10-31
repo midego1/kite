@@ -118,6 +118,8 @@ export function DashboardNav({
 	const [folders, setFolders] = useState<CustomFolder[]>([]);
 	const [newFolderName, setNewFolderName] = useState("");
 	const [newFolderColor, setNewFolderColor] = useState<FolderColor>(DEFAULT_FOLDER_COLOR);
+	// Only a swatch the person clicked is sent: the server stores a folder without a colour as "not picked".
+	const [folderColorPicked, setFolderColorPicked] = useState(false);
 	const [addingFolder, setAddingFolder] = useState(false);
 	const [folderDialogOpen, setFolderDialogOpen] = useState(false);
 	const linksWithCounts: NavLink[] = links.map((link): NavLink => {
@@ -235,7 +237,7 @@ export function DashboardNav({
 				body: JSON.stringify({
 					mailboxId: folderMailboxId,
 					name: newFolderName,
-					color: newFolderColor,
+					...(folderColorPicked ? { color: newFolderColor } : {}),
 				}),
 			});
 			if (!response.ok) return;
@@ -244,6 +246,7 @@ export function DashboardNav({
 			window.dispatchEvent(new Event(FOLDERS_CHANGED_EVENT));
 			setNewFolderName("");
 			setNewFolderColor(DEFAULT_FOLDER_COLOR);
+			setFolderColorPicked(false);
 			setFolderDialogOpen(false);
 		} finally {
 			setAddingFolder(false);
@@ -282,7 +285,16 @@ export function DashboardNav({
 			{!minimal && (
 				<NavSectionHeader label="Folders" open={foldersSectionOpen} onToggle={toggleFoldersSection}>
 					{folderMailboxId && (
-						<Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
+						<Dialog
+							open={folderDialogOpen}
+							onOpenChange={(open) => {
+								setFolderDialogOpen(open);
+								if (open) return;
+								// A swatch clicked and then abandoned is not a pick for the next folder.
+								setNewFolderColor(DEFAULT_FOLDER_COLOR);
+								setFolderColorPicked(false);
+							}}
+						>
 							<DialogTrigger asChild>
 								<button
 									type="button"
@@ -320,7 +332,10 @@ export function DashboardNav({
 													aria-checked={newFolderColor === option.value}
 													aria-label={option.label}
 													title={option.label}
-													onClick={() => setNewFolderColor(option.value)}
+													onClick={() => {
+														setNewFolderColor(option.value);
+														setFolderColorPicked(true);
+													}}
 													className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 ${
 														newFolderColor === option.value
 															? "border-neutral-900 ring-2 ring-neutral-300 ring-offset-2"

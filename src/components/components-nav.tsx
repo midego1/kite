@@ -18,7 +18,6 @@ import {
 	RAIL_ITEM_CLASS,
 	RAIL_TOOLTIP_CLASS,
 	railBadgeLabel,
-	railIconColor,
 } from "./sidebar-rail-utils";
 
 type Props = {
@@ -158,7 +157,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 		>
 			<Icon
 				// className={minimal ? "h-4 w-4" : "h-5 w-5"}
-				style={{ color: minimal ? railIconColor(link.iconColor) : link.iconColor }}
+				style={{ color: minimal ? link.railIconColor : link.iconColor }}
 				size={minimal ? RAIL_ICON_SIZE : 16}
 				className={cn(!minimal && "max-md:h-5 max-md:w-5", wrap && !minimal && "mt-0.5 shrink-0", iconClassName)}
 			/>

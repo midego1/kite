@@ -147,7 +147,7 @@ export function RichTextEditor({
 
 	return (
 		<div className={cn("flex min-h-0 flex-1 flex-col", className)}>
-			<div className="relative min-h-0 flex-1 overflow-y-auto">
+			<div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
 				<div
 					ref={editorRef}
 					id={id}
@@ -162,13 +162,13 @@ export function RichTextEditor({
 					onPaste={onPaste}
 					onKeyDown={onKeyDown}
 					className={cn(
-						"email-body reading-text max-w-none px-4 py-3 text-sm text-neutral-900 outline-none",
+						"email-body reading-text max-w-none grow shrink-0 px-4 py-3 text-sm text-neutral-900 outline-none",
 						"min-h-32 empty:before:pointer-events-none empty:before:text-neutral-500 empty:before:content-[attr(data-placeholder)]",
 						disabled && "cursor-not-allowed opacity-60",
 					)}
 				/>
 				{quotedHtml && (
-					<div className="px-4 pb-3">
+					<div className="shrink-0 px-4 pb-3">
 						<button
 							type="button"
 							onClick={() => setShowQuoted((open) => !open)}

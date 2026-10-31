@@ -18,7 +18,8 @@ await build({
 		contents: `
 			export { SqliteDatabase } from "./server/runtime/sqlite-database.ts";
 			export { applyMigrations } from "./server/runtime/migrate.ts";
-			export { cancelQueuedSend, processOutboundQueue, sendEmail } from "./src/lib/email/send.ts";
+			export { processOutboundQueue, sendEmail } from "./src/lib/email/send.ts";
+			export { cancelQueuedSend } from "./src/lib/email/queued-send.ts";
 			export { unfamiliarRecipients } from "./src/lib/agent/approvals/utils.ts";
 		`,
 		resolveDir: root,

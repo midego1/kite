@@ -628,6 +628,13 @@
     {
       "idx": 89,
       "version": "6",
+      "when": 1793350618122,
+      "tag": "0086_add_folder_color_is_custom",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "6",
       "when": 1793350648122,
       "tag": "0087_add_audit_logs_action_index",
       "breakpoints": true

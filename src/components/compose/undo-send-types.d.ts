@@ -1,3 +1,4 @@
+import type { ComposeToastState } from "./compose-toast";
 import type { ComposeThreading } from "./types";
 
 export type PendingUndoSnapshot = {
@@ -26,7 +27,8 @@ export type SendingBarProps = {
 };
 
 export type UndoSendBarProps = {
-	until: number;
+	pending: PendingUndoSend;
 	onUndo: () => void;
-	onExpire: () => void;
+	/** The bar is done, once: the message went out (Send now answered, or the window ended), or the user dismissed a failure. */
+	onExpire: (toast: ComposeToastState) => void;
 };

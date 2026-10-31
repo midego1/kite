@@ -193,8 +193,11 @@ test("a folder created in chat can be undone while it is empty, and moves to tra
 	assert.deepEqual(proposal, { action: "create_folder", status: "pending_approval", name: "Receipts", color: "green" });
 	storeProposal(database, "tool-3", "conv-1", "create_folder", proposal);
 	const approved = await confirmAgentAction(env, OWNER, "tool-3");
-	const folder = database.db.prepare("SELECT id, color, user_id AS userId FROM folders WHERE name = 'Receipts'").get();
+	const folder = database.db
+		.prepare("SELECT id, color, color_is_custom AS custom, user_id AS userId FROM folders WHERE name = 'Receipts'")
+		.get();
 	assert.equal(folder.color, "#16a34a");
+	assert.equal(folder.custom, 1);
 	assert.equal(folder.userId, "user-1");
 	assert.equal(approved.result.folderId, folder.id);
 	assert.equal(JSON.parse(actionRow(database, approved.actionId).after).folderId, folder.id);
@@ -362,6 +365,17 @@ test("a folder name taken between the check and the insert answers already exist
 		.prepare("SELECT reason FROM agent_actions WHERE action = 'create_folder' AND status = 'failed'")
 		.get();
 	assert.equal(failed.reason, 'A folder named "Race" already exists');
+});
+
+test("a folder proposed without a colour is approved as not picked", async (t) => {
+	const { database, env } = await setup(t);
+	const chat = { env, user: OWNER, mailboxId: "mailbox-1", origin: "chat" };
+	const proposal = await runEmailTool(chat, "create_folder", { name: "Plain" });
+	assert.deepEqual(proposal, { action: "create_folder", status: "pending_approval", name: "Plain" });
+	storeProposal(database, "tool-plain", "conv-1", "create_folder", proposal);
+	await confirmAgentAction(env, OWNER, "tool-plain");
+	const folder = database.db.prepare("SELECT color, color_is_custom AS custom FROM folders WHERE name = 'Plain'").get();
+	assert.deepEqual({ ...folder }, { color: "#2563eb", custom: 0 });
 });
 
 test("a message moved by another request while the action runs keeps that move when the action is undone", async (t) => {

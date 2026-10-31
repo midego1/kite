@@ -692,13 +692,13 @@ export function ComposeForm({
 			)}
 			{pendingUndo && (
 				<UndoSendBar
-					until={pendingUndo.until}
+					pending={pendingUndo}
 					onUndo={() => {
 						void undoSend(pendingUndo);
 					}}
-					onExpire={() => {
+					onExpire={(toast) => {
 						setPendingUndo(null);
-						setToast({ type: "success", message: "Message sent" });
+						setToast(toast);
 					}}
 				/>
 			)}

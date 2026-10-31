@@ -1,8 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { folders, routingRules } from "@/db/schema";
+import { routingRules } from "@/db/schema";
 import { requireSessionUser } from "@/lib/api/auth";
+import { getFolderForMailbox } from "@/app/api/folders/utils";
 import { getEnv } from "@/lib/cloudflare";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { routingRuleSchema } from "@/lib/validators";
@@ -36,11 +37,7 @@ export async function PATCH(request: Request, { params }: RoutingRuleRouteParams
 		return NextResponse.json({ error: "Destination is required" }, { status: 400 });
 	}
 	if (folderId) {
-		const [folder] = await db
-			.select()
-			.from(folders)
-			.where(and(eq(folders.id, folderId), eq(folders.mailboxId, rule.mailboxId)))
-			.limit(1);
+		const folder = await getFolderForMailbox(db, folderId, rule.mailboxId);
 		if (!folder) {
 			return NextResponse.json({ error: "Folder not found" }, { status: 404 });
 		}

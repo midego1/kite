@@ -8,31 +8,30 @@ import { externalAccountTablesReady } from "@/lib/external-accounts/errors";
 import { findPreset } from "@/lib/external-accounts/presets-utils";
 import { appendRecentErrors } from "@/lib/external-accounts/recent-errors";
 import { externalSyncRefusal } from "@/lib/external-accounts/sync-target";
+import { parseExternalRawKey } from "@/lib/external-accounts/sync-utils";
 import { createLogger } from "@/lib/logger.mjs";
 import { externalAuthenticationResults } from "@/lib/spam/authentication-results-utils";
 import type { InboundQueueMessage, InboundQueueSource } from "@/lib/email/inbound";
 
 const logger = createLogger("external-sync");
 
-/** `external/<accountId>/<uidvalidity>/<uid>.eml`, the key a sync run wrote (`externalRawKey`). */
-const EXTERNAL_KEY = /^external\/[^/]+\/(\d+)\/(\d+)\.eml$/;
-
 /**
- * Moves the account's INBOX cursor back to just before this message, so the next check fetches it again: delivery
- * refused it for now (the owner's permission or the install switch), and once that is lifted the message arrives
- * instead of being lost; dedupe drops whatever of the rest Kite already has. Only within the same UIDVALIDITY.
+ * Moves the cursor of the folder the message came from (INBOX or the Spam folder) back to just before it, so the next
+ * check fetches it again: delivery refused it for now (the owner's permission or the install switch), and once that
+ * is lifted the message arrives instead of being lost; dedupe drops whatever of the rest Kite already has. Only
+ * within the same UIDVALIDITY.
  */
 async function rewindCursor(env: CloudflareEnv, accountId: string, key: string): Promise<void> {
-	const match = EXTERNAL_KEY.exec(key);
-	if (!match) return;
-	const [uidValidity, uid] = [Number(match[1]), Number(match[2])];
+	const source = parseExternalRawKey(key);
+	if (!source) return;
+	const { uidValidity, uid } = source;
 	await getDb(env)
 		.update(externalAccountFolders)
 		.set({ lastUid: uid - 1 })
 		.where(
 			and(
 				eq(externalAccountFolders.accountId, accountId),
-				eq(externalAccountFolders.name, "INBOX"),
+				source.role === "inbox" ? eq(externalAccountFolders.name, "INBOX") : eq(externalAccountFolders.role, "junk"),
 				eq(externalAccountFolders.uidvalidity, uidValidity),
 				gte(externalAccountFolders.lastUid, uid),
 			),
@@ -53,7 +52,8 @@ async function noteOnAccount(env: CloudflareEnv, accountId: string, message: str
  * to that mailbox; domain routing, reject rules and account forwarding belong to Kite's own domains and do not apply.
  * The message belongs to the mailbox's owner, as received mail does. A message refused for now is removed from the
  * Mail store and the account's cursor moved back so a later check fetches it again; one whose account is gone is
- * removed. Then it is delivered exactly as received mail is, with a Message-ID check against the mailbox first.
+ * removed. Then it is delivered exactly as received mail is, with a Message-ID check against the mailbox first; mail
+ * from the provider's Spam folder always lands in Spam.
  * `finalAttempt` says the queue will not retry this delivery again, so a failure is noted on the account.
  */
 export async function processExternalInbound(
@@ -127,7 +127,13 @@ async function deliverExternal(env: CloudflareEnv, payload: InboundQueueMessage,
 		deliveredAddress: account.address,
 		headers: Object.fromEntries([...parseRawHeaders(raw)].map(([name, values]) => [name, values[0] ?? ""])),
 		authenticationResults: externalAuthenticationResults(completeRawHeaderFields(raw), authservId),
-		external: { accountId: account.id, read: source.read === true, starred: source.starred === true },
+		external: {
+			accountId: account.id,
+			read: source.read === true,
+			starred: source.starred === true,
+			// The run wrote the key, so it says which folder the message came from; Spam-folder mail is filed as spam.
+			junk: parseExternalRawKey(key)?.role === "junk",
+		},
 	});
 	if (outcome.delivered) return;
 	if (outcome.reason === "duplicate")

@@ -12,6 +12,7 @@ import { MessageListRowActions } from "./message-list-row-actions";
 import { MessageNavigationProgress } from "./message-navigation";
 import { rowCheckboxHandlers } from "./message-range-selection-utils";
 import { SendStateBadge } from "./send-state-badge";
+import { ViaAccountChip } from "./via-account-chip";
 import {
 	AttachmentIndicator,
 	MessageRowBadges,
@@ -139,6 +140,7 @@ function StackedSubjectLine({ inlineStar, ...props }: RowViewProps & { inlineSta
 				{row.rowMessage.subject ?? "(no subject)"}
 			</span>
 			<SendStateBadge message={row.rowMessage} />
+			<ViaAccountChip message={row.rowMessage} />
 			<MessageRowBadges message={row.rowMessage} folder={config.folder} />
 			{inlineStar && row.starToggle && row.starred && (
 				<Icon
@@ -311,6 +313,7 @@ function WideMessageRow(props: RowViewProps) {
 					</Link>
 				</span>
 				<SendStateBadge message={row.rowMessage} />
+				<ViaAccountChip message={row.rowMessage} />
 				{props.mailboxLabel}
 			</span>
 			<span className="flex min-w-[96px] items-baseline justify-end gap-1.5 group-hover:opacity-0">

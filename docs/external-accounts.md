@@ -8,6 +8,8 @@ A connected account does three things:
 - **Existing mail can be imported.** **Import mail** copies the account's existing mail into Kite in the background (see [Importing a whole account](modules.md#importing-a-whole-account)).
 - **You can [send as its address](#send-as-the-accounts-address)** from the composer, through the provider's own mail server. That is the only thing Kite ever writes at the provider: the provider keeps the sent message, and Kite may save a copy in its Sent folder.
 
+You do not have to connect an account to get its mail into Kite: [forwarding](#forward-mail-to-kite-instead) at the provider needs no password in Kite and delivers each message the moment it arrives. It is the way for Outlook.com, Hotmail and Microsoft 365, which cannot be connected yet.
+
 ## Connect an account
 
 1. Open **Settings → Connected accounts** (`/settings/connected-accounts`) and choose **Connect account**.
@@ -21,7 +23,7 @@ A connected account does three things:
 5. Enter **your Kite password** again. Kite asks for it because it is about to store another account's password.
 6. **Connect.** Kite signs in to the account and opens its Inbox read-only. Only when that works is the account saved, and Kite notes where the Inbox stands: checking for new mail starts with mail that arrives after this moment. An address at a known provider can be connected once in this Kite. That is checked only after the provider's own server accepted the password, so nobody learns whether such an address is connected without its password, and the answer never says by whom. An **Other IMAP provider** account is never checked against other accounts and does not reserve its address, because anyone can run a server that accepts any address: someone else may connect the same address, and the answer never tells whether it is connected already. Kite then also signs in to the provider's SMTP server with the same password, without sending anything; when that works, you can send as the address. When it does not, the account is still connected and its row says why sending is not available (**Test connection** tries again).
 
-Outlook.com, Hotmail and Microsoft 365 accounts sign in only with Microsoft's own sign-in (OAuth), which Kite does not support yet, so they cannot be connected; forward their mail to your Kite address instead.
+Outlook.com, Hotmail and Microsoft 365 accounts sign in only with Microsoft's own sign-in (OAuth), which Kite does not support yet, so they cannot be connected. Choosing that provider in the dialog offers **Set up forwarding**, which opens the [forwarding guide](#forward-mail-to-kite-instead) at Outlook.
 
 After connecting, **Import existing mail** (in the confirmation, or **Import mail** on the account) opens Settings → Import with the account chosen under **Sign in with**: show the folders, adjust the mapping and start the import. The import job keeps no password of its own; every run asks for the account's login, so removing the account stops its imports at their next run ("The account was removed").
 
@@ -35,10 +37,55 @@ Every 5 minutes (or the interval you chose) Kite signs in, looks at the account'
 - A message Kite already has from this account, from an import or from sending it in Kite (the same Message-ID, for example one you imported, or one moved back into the Inbox at the provider) is not stored again. Mail that reached Kite any other way is not compared, so a forged copy sent to your Kite address cannot hide the real message; mail you also forward from the provider to Kite arrives twice.
 - New mail belongs to the mailbox it goes to. In a shared mailbox it is the mailbox owner's, like mail the mailbox receives: their spam training, rules and webhooks apply, whoever connected the account. So when you connect your account to a mailbox someone else owns, **their** webhooks are told about your synced mail (sender, recipients, subject and the account's id) and yours are not.
 - If Kite may not bring in mail for a while (your permission or connected accounts turned off), messages it had already fetched are fetched again once that changes, so nothing is lost.
-- Kite checks only the Inbox, and only fetches each message once. Deleting, moving or reading a message at the provider afterwards changes nothing in Kite, and nothing you do in Kite changes the provider. A message deleted at the provider before Kite's next check never arrives. A message larger than 25 MB, or one the provider will not send, is skipped and named in the account's problems; the messages after it still arrive.
+- Kite checks only the Inbox (and the Spam folder, [when you turn that on](#the-spam-folder)), and only fetches each message once. Deleting, moving or reading a message at the provider afterwards changes nothing in Kite, and nothing you do in Kite changes the provider. A message deleted at the provider before Kite's next check never arrives. A message larger than 25 MB, or one the provider will not send, is skipped and named in the account's problems; the messages after it still arrive.
 - If the provider rebuilds the Inbox (its UIDVALIDITY changes), Kite checks the last two days again and keeps only what it does not have yet; the account notes "The provider reset the Inbox; Kite checked the last two days again."
 
-On each account, **Check now** checks at once (at most once a minute), and **Pause** stops checking until you choose **Resume**. The account says when it was last checked and when the next check is due. For mail the moment it arrives, also set up forwarding at the provider to your Kite address.
+On each account, **Check now** checks at once (at most once a minute), and **Pause** stops checking until you choose **Resume**. The account says when it was last checked and when the next check is due. For mail the moment it arrives, [forward](#forward-mail-to-kite-instead) instead of connecting (doing both brings every message in twice).
+
+### The Spam folder
+
+**Also sync the Spam folder** on an account (off by default) checks the provider's Spam folder with the Inbox, for when you want to see what the provider filed away by mistake. Kite finds the folder by its special-use mark (`\Junk`, as Gmail's `[Gmail]/Spam` has) or, on servers without one, by its name (Spam, Junk, Junk E-mail, Bulk Mail, …).
+
+- Mail from the provider's Spam folder always lands in Kite's **Spam**, whatever Kite's own filter makes of it. Kite still runs its spam filter on it and keeps the result, with "The provider filed this message in its Spam folder" added, so the message's spam details show both. Your mailbox rules and the Screener do not move it, and it brings no notification and no `message.inbound` webhook, like any spam. Use **Not spam** to rescue a false positive.
+- It starts when you turn it on: what was already in the provider's Spam folder stays out, and so does what collected there while the switch was off. The switch needs no password and takes effect at the next check.
+- A message moved out of the provider's Spam folder into its Inbox after Kite fetched it is not fetched again (Kite already has it), and stays in Kite's Spam.
+- If the provider has no folder Kite can recognise as its Spam folder, only the Inbox is checked.
+
+## Which account mail came through
+
+Mail that came in through a connected account shows a **via** chip: in the message list next to the subject, and in the reader beside the date. It names the account's label, or its provider while the label is still the address (`via Gmail`, `via iCloud Mail`, or the domain for **Other IMAP provider**); hover it to see the address. Mail you send as the account in Kite carries the chip too. Mail that reached your Kite address any other way (forwarded mail included) has none, and once you remove the account its mail keeps its content but loses the chip.
+
+Choosing the chip in the reader searches for everything that came through the same account. You can also search with `via:` yourself, combined with anything else:
+
+| Search | Finds mail that came through |
+| --- | --- |
+| `via:gmail`, `via:icloud`, `via:fastmail`, `via:yahoo`, `via:aol` | any account at that provider (`via:google` covers Gmail and Google Workspace, `via:outlook` Microsoft) |
+| `via:me@gmail.com` | the account with that address |
+| `via:"Work mail"` | the account with that label (case does not matter) |
+| `via:example.org` | any account whose address is at that domain |
+
+`via:` needs migration 0079; before it is applied it finds nothing.
+
+## Forward mail to Kite instead
+
+Forwarding is set up at the provider, once, and needs nothing stored in Kite: each message is delivered to your Kite address the moment it arrives, like any other mail to it. **Settings → Connected accounts** has the steps for Gmail, Outlook.com and Microsoft 365, iCloud Mail, Yahoo Mail, Fastmail and other providers, with your Kite address filled in (choose another of your mailboxes under **Forward to**) and links to the provider's own forwarding settings:
+
+| Provider | Where | Notes |
+| --- | --- | --- |
+| Gmail and Google Workspace | [Settings → Forwarding and POP/IMAP](https://mail.google.com/mail/u/0/#settings/fwdandpop) → **Add a forwarding address** | Gmail mails a confirmation code to the Kite address; it arrives in Kite. Then choose **Forward a copy of incoming mail to** and keep Gmail's copy. Gmail does not forward what it filed as spam; a Workspace admin can turn forwarding off. ([help](https://support.google.com/mail/answer/10957)) |
+| Outlook.com | [Settings → Mail → Forwarding](https://outlook.live.com/mail/0/options/mail/forwarding) → **Enable forwarding**, **Keep a copy of forwarded messages** | May ask you to turn on two-step verification first. ([help](https://support.microsoft.com/office/6246987c-6c8f-4144-b255-14fc07007dad)) |
+| Microsoft 365 | [Settings → Mail → Forwarding](https://outlook.office.com/mail/options/mail/forwarding) | Many organisations block forwarding to outside addresses; forwarded mail then bounces with "Your organization does not allow external forwarding". Ask your admin to allow it for your mailbox. |
+| iCloud Mail | [iCloud Mail](https://www.icloud.com/mail) → settings button → **Settings → Mail Forwarding** → **Forward my email to** | Leave **Delete messages after forwarding** off. ([help](https://support.apple.com/guide/icloud/mm6b1a3960/icloud)) |
+| Yahoo Mail | [Yahoo Mail](https://mail.yahoo.com/) → **Settings → More Settings → Mailboxes** → your address → **Forwarding** → **Verify** | Only with Yahoo Mail Plus; on a free account, connect the account instead. Choose **Store and forward**. ([help](https://help.yahoo.com/kb/SLN29133.html)) |
+| Fastmail | [Settings → Mail rules](https://app.fastmail.com/settings/rules) → **Create rule** → **All messages** → **Send a copy to** | ([help](https://www.fastmail.help/hc/en-us/articles/360058753434)) |
+| Other providers | the webmail's settings: **Forwarding**, **Auto-forward** or **Mail rules** | Forward all incoming mail and keep a copy at the provider. |
+
+Then check that it works:
+
+- Send a test message **from another address** to the account (mail you send to yourself is often not forwarded). It should be in Kite within a minute.
+- Nothing arrived? Look in **Spam** and the **Screener**. Forwarded mail fails the original sender's SPF check, so Kite's spam filter relies on DKIM and ARC; most mail from large senders still passes.
+- Optionally, add a mailbox rule (**Settings → Rules**) that files mail whose **To** is the account's address into a folder.
+- Do not also connect the same account for its new mail: Kite does not compare forwarded mail with synced mail, so every message would arrive twice. Connecting just to import old mail or to send as the address is fine; pause its checking.
 
 ## What the list shows
 

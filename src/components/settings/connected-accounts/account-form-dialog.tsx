@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type { AccountFormState, PresetOption } from "./connected-accounts-types";
+import { forwardingProviderFor, type ForwardingProviderId } from "./forwarding-guide-utils";
 import {
 	accountForm,
 	canSubmitAccountForm,
@@ -35,11 +36,14 @@ export function AccountFormDialog({
 	account,
 	presets,
 	onSaved,
+	onForwardInstead,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	account: ExternalAccountView | null;
 	presets: PresetOption[];
+	/** Closes the dialog and opens the forwarding guide at this provider (where connecting is not possible). */
+	onForwardInstead?: (provider: ForwardingProviderId) => void;
 	onSaved: (account: ExternalAccountView, connected: boolean) => void;
 }) {
 	const { mailboxes, selectedMailbox } = useSelectedMailbox();
@@ -102,6 +106,18 @@ export function AccountFormDialog({
 						/>
 					</div>
 					<ProviderFields form={form} setForm={setForm} presets={presets} preset={preset} />
+					{preset?.passwordSignIn === false && onForwardInstead && (
+						<p className={WARNING_NOTICE_CLASS}>
+							Forward this account&apos;s mail to Kite instead: it needs no password.{" "}
+							<button
+								type="button"
+								className="font-medium underline underline-offset-2"
+								onClick={() => onForwardInstead(forwardingProviderFor(preset.id))}
+							>
+								Set up forwarding
+							</button>
+						</p>
+					)}
 					{form.preset === "other" && <ServerFields form={form} setForm={setForm} />}
 					{preset?.passwordSignIn !== false && (
 						<CredentialFields form={form} setForm={setForm} preset={preset} editing={editing} />

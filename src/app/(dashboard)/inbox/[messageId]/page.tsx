@@ -27,6 +27,7 @@ import { LinkifiedText } from "@/components/messages/linkified-text";
 import { useLoadRemoteImages } from "@/components/messages/use-load-remote-images";
 import { useReaderFont } from "@/components/messages/use-reader-font";
 import { ThreadMessageActions } from "@/components/messages/thread-message-actions";
+import { ViaAccountChip } from "@/components/messages/via-account-chip";
 import { useMessageThread } from "@/components/messages/use-message-thread";
 import { useLatestMessagesFirst } from "@/components/messages/use-latest-messages-first";
 import { useMessageListVisibility } from "@/components/messages/message-list-visibility";
@@ -323,6 +324,13 @@ export default function MessageDetailPage() {
 								</div>
 							</div>
 							<div className="flex shrink-0 items-center gap-2">
+								<ViaAccountChip
+									message={{
+										direction: message.direction,
+										via: message.via ?? thread.messages.find((entry) => entry.id === message.id)?.via,
+									}}
+									filter
+								/>
 								<p className="text-xs">
 									{formatUserDate(message.createdAt, {
 										month: "short",

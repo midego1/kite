@@ -5,11 +5,12 @@ import { dateFromZonedFields, normalizeTimeZone } from "@/lib/time/utils";
  * Gmail-style search grammar shared by the search box and the API:
  *
  *   from:maya to:"sam okoro" subject:invoice has:attachment is:unread
- *   is:starred after:2026-09-01 before:2026-09-30 "exact phrase" -excluded word
+ *   is:starred after:2026-09-01 before:2026-09-30 via:gmail "exact phrase" -excluded word
  *
+ * `via:` names a connected account (a provider, an address, a label or a domain; `viaSearchFilter`).
  * The older `title:` and bare `:unread` / `:read` forms keep working.
  */
-const OPERATOR_RE = /(?:^|\s)(from|to|subject|title|has|is|after|before|newer|older):(?:"([^"]*)"|(\S+))/gi;
+const OPERATOR_RE = /(?:^|\s)(from|to|subject|title|has|is|after|before|newer|older|via):(?:"([^"]*)"|(\S+))/gi;
 
 /** A value that is one whole email address (a dot in the domain), which `from:` then matches exactly; `maya@acme` stays a word match. */
 function isEmailAddressValue(value: string): boolean {
@@ -28,6 +29,15 @@ function asciiLower(value: string): string {
 export function exactSenderMatch(address: string): { equals: string; endsWith: string } {
 	const equals = asciiLower(address.trim());
 	return { equals, endsWith: `%<${equals.replace(/[\\%_]/g, (char) => `\\${char}`)}>` };
+}
+
+/** `has:attachment`, `is:unread`, `is:read` and `is:starred`; any other value is dropped. */
+function applyFlagOperator(parsed: ParsedSearchQuery, key: string, value: string): void {
+	if (key === "has") {
+		if (/^attachments?$/i.test(value)) parsed.hasAttachment = true;
+	} else if (/^unread$/i.test(value)) parsed.read = "unread";
+	else if (/^read$/i.test(value)) parsed.read = "read";
+	else if (/^starred$/i.test(value)) parsed.starred = true;
 }
 
 export function parseSearchQuery(raw: string, timeZone = "UTC"): ParsedSearchQuery {
@@ -50,12 +60,8 @@ export function parseSearchQuery(raw: string, timeZone = "UTC"): ParsedSearchQue
 				parsed.subject = value;
 				break;
 			case "has":
-				if (/^attachments?$/i.test(value)) parsed.hasAttachment = true;
-				break;
 			case "is":
-				if (/^unread$/i.test(value)) parsed.read = "unread";
-				else if (/^read$/i.test(value)) parsed.read = "read";
-				else if (/^starred$/i.test(value)) parsed.starred = true;
+				applyFlagOperator(parsed, key.toLowerCase(), value);
 				break;
 			case "after":
 			case "newer":
@@ -64,6 +70,9 @@ export function parseSearchQuery(raw: string, timeZone = "UTC"): ParsedSearchQue
 			case "before":
 			case "older":
 				parsed.before = parseDate(value, timeZone) ?? parsed.before;
+				break;
+			case "via":
+				if (value) parsed.via = value;
 				break;
 		}
 		return " ";

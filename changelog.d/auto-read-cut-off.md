@@ -1,6 +1,6 @@
 ### Fixed
 
-- Automatic reading with Anthropic's Claude Haiku 5.5 (and other Claude 5 models) no longer fails with "The AI's answer was cut off" (`cut_off`). These models think by default, and thinking counts against automatic reading's 400-token answer budget, so the budget was spent thinking. Kite now switches thinking off for automatic requests, agent drafts, one-line summaries and Write with Kite unless a reasoning effort is saved for the model in [Admin → Agent](/agent); a model that always thinks (Claude Opus 5.5, Fable) gets effort low with room to think. A cut-off answer is asked once more with double the budget before it fails. Agent reply suggestions with Anthropic also get these settings now. No migration.
+- Automatic reading with Anthropic's Claude Haiku 5.5 (and other Claude 5 models) no longer fails with "The AI's answer was cut off" (`cut_off`). These models think by default, and thinking counts against automatic reading's 400-token answer budget, so the budget was spent thinking. Kite now switches thinking off for automatic requests, agent drafts, summaries, one-line summaries and Write with Kite unless a reasoning effort is saved for the model in [Admin → Agent](/agent); Claude Sonnet 5.5 gets its lowest setting, and a model that always thinks (Claude Opus 5.5, Fable) gets effort low with room to think. A cut-off answer is asked once more with double the budget before it fails. Agent reply suggestions with Anthropic also get these settings now. No migration.
 
 ### Changed
 

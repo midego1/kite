@@ -82,9 +82,15 @@ export default function AdminAgentPage() {
 				)}
 			</Card>
 			{loadError && <Notice tone="error">{loadError}</Notice>}
-			{data && <AgentProviders data={data} onChange={setData} />}
-			<AutoReadAdminSettings />
-			<RecentAiErrors />
+			<div id="ai-provider" className="scroll-mt-6">
+				{data && <AgentProviders data={data} onChange={setData} />}
+			</div>
+			<div id="automatic-reading" className="scroll-mt-6">
+				<AutoReadAdminSettings />
+			</div>
+			<div id="recent-ai-errors" className="scroll-mt-6">
+				<RecentAiErrors />
+			</div>
 		</div>
 	);
 }

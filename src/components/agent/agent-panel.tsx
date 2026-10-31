@@ -28,6 +28,7 @@ import { useCompose } from "@/components/compose/compose-context";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { AgentTurnView } from "./agent-turn";
+import { useRequestedAssistantPrompt } from "./assistant-prompt-request";
 import { KiteAvatar } from "./kite-avatar";
 import { ChatContext, ChatWelcome } from "./chat-welcome";
 import { CurrentEmailChip, useCurrentEmail } from "./current-email";
@@ -576,6 +577,12 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 		setView("chat");
 		if (menuRef.current) menuRef.current.open = false;
 	};
+	// A question handed over by Ask AI (the overview's Why?) opens a new chat with it in the input, unsent.
+	useRequestedAssistantPrompt(open && !!mailboxId, (text) => {
+		startNewChat();
+		setInput(text);
+		window.requestAnimationFrame(() => inputRef.current?.focus());
+	});
 	const draftActions = uniqueAgentDraftActions(messages);
 	const activeTool = busy ? activeAgentTool(messages) : null;
 	const panelStyle = agentPanelStyle(docked);

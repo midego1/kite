@@ -59,6 +59,14 @@ export function isRawBackedMessage(message: { rawKey: string | null; status: str
 	return !!rawKey && message.status !== "draft" && IMMUTABLE_RAW_PREFIXES.some((prefix) => rawKey.startsWith(prefix));
 }
 
+/** `isRawBackedMessage` as SQL over the `messages` row aliased `alias`, for the reclaim job and its counts. */
+export function rawBackedMessagesSql(alias: string): string {
+	const prefixes = IMMUTABLE_RAW_PREFIXES.map(
+		(prefix) => `substr(${alias}.raw_r2_key, 1, ${prefix.length}) = '${prefix}'`,
+	).join(" OR ");
+	return `(${alias}.status <> 'draft' AND (${prefixes}))`;
+}
+
 /**
  * For each attachment, the part of `raw` whose decoded bytes are exactly its content, by attachment index. Anything the
  * index cannot verify (quoted-printable, uuencode, a range that decodes to other bytes) has no entry and is stored as

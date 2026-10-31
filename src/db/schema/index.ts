@@ -766,6 +766,11 @@ export const appSettings = sqliteTable("app_settings", {
 	alertWebhookKind: text("alert_webhook_kind", { enum: ["slack", "discord", "ntfy", "json"] }),
 	/** abuse.ch Auth-Key saved by the owner, sealed with APP_ENCRYPTION_KEY; a URLHAUS_AUTH_KEY or ABUSE_CH_AUTH_KEY secret wins. */
 	abuseChAuthKey: text("abuse_ch_auth_key"),
+	/**
+	 * Migration 0090. JSON: the admin attachment storage job (`src/lib/email/attachment-storage-jobs.ts`); read only
+	 * through that module, since a deploy can run before the migration.
+	 */
+	attachmentStorageJob: text("attachment_storage_job"),
 	updatedAt: integer("updated_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),

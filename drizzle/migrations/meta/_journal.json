@@ -652,6 +652,13 @@
       "when": 1793500800000,
       "tag": "0089_add_external_identities",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "6",
+      "when": 1793587200000,
+      "tag": "0090_add_attachment_storage_job",
+      "breakpoints": true
     }
   ]
 }

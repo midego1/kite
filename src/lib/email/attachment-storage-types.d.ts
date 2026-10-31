@@ -73,6 +73,18 @@ export interface AttachmentStorageCounts {
 	raw: { rows: number; bytes: number };
 }
 
+/** Objects named by more than one row, and the rows beyond the first that name them. */
+export interface SharedObjectCounts {
+	keys: number;
+	rows: number;
+}
+
+/** 'object' rows of received and imported mail: not looked at by reclaim yet, and looked at but left as they were. */
+export interface AttachmentReclaimCounts {
+	pending: { rows: number; bytes: number };
+	unmatched: { rows: number };
+}
+
 /** Referenced object keys looked up in storage, and the ones that were not there. */
 export interface AttachmentObjectsVerification {
 	checked: number;

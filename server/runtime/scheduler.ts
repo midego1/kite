@@ -10,6 +10,7 @@ import { pruneMcpToolCallAudit, runDatabasePruning } from "@/lib/maintenance/pru
 import { runOperationalAlerts } from "@/lib/alerts/run";
 import { runModuleCronTasks } from "@/lib/modules/background";
 import { runStorageMigrationMaintenance } from "@/lib/storage/migration";
+import { runAttachmentJobMaintenance } from "@/lib/email/attachment-storage-jobs";
 import { runTelemetryHeartbeat } from "@/lib/telemetry/heartbeat";
 import { eraseIdleExternalCredentials } from "@/lib/external-accounts/retention";
 import { planExternalSync } from "@/lib/external-accounts/sync";
@@ -37,6 +38,9 @@ export function startScheduler(env: CloudflareEnv) {
 			runModuleCronTasks(env, "*/5 * * * *", now).catch((error) => logger.error("modules.cron_failed", { error }));
 			runStorageMigrationMaintenance(env, now).catch((error) =>
 				logger.error("storage.migration_maintenance_failed", { error }),
+			);
+			runAttachmentJobMaintenance(env, now).catch((error) =>
+				logger.error("attachment.storage_job_maintenance_failed", { error }),
 			);
 			// MCP tool call audit rows, matching worker.ts.
 			pruneMcpToolCallAudit(env, now).catch((error) => logger.error("mcp.audit_pruning_failed", { error }));

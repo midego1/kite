@@ -641,7 +641,8 @@ pre {
 
 /* The "Database updated" notice leaving (migrations-applied-notice.tsx): the box folds up and fades while a tiny
    kite lifts off its top right corner, sways once and drifts up and out. Transforms and opacity only, so nothing
-   is laid out again until the notice is removed; the durations match applied-notice-utils.ts. */
+   is laid out again until the notice is removed. The length is --applied-notice-duration, which the notice sets from
+   its exit plan (applied-notice-utils.ts), so the durations live in one place. */
 @keyframes applied-notice-leave {
 	0% {
 		transform: none;
@@ -687,19 +688,19 @@ pre {
 }
 
 .applied-notice-leave {
-	animation: applied-notice-leave 1.2s cubic-bezier(0.4, 0, 0.3, 1) both;
+	animation: applied-notice-leave var(--applied-notice-duration) cubic-bezier(0.4, 0, 0.3, 1) both;
 	transform-origin: 50% 0;
 	pointer-events: none;
 }
 
 .applied-notice-kite {
 	transform-origin: 50% 35%;
-	animation: applied-notice-kite 1.2s cubic-bezier(0.4, 0, 0.3, 1) both;
+	animation: applied-notice-kite var(--applied-notice-duration) cubic-bezier(0.4, 0, 0.3, 1) both;
 	will-change: transform, opacity;
 }
 
 .applied-notice-fade {
-	animation: applied-notice-fade 250ms ease-out both;
+	animation: applied-notice-fade var(--applied-notice-duration) ease-out both;
 	pointer-events: none;
 }
 

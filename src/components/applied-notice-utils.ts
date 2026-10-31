@@ -4,7 +4,10 @@ import type { AppliedNoticeExit, DismissTimer, DismissTimerClock, DismissTimerOp
 export const APPLIED_NOTICE_STAY_MS = 8_000;
 /** After a hover or focus ends, the notice stays at least this long, so it never vanishes under a leaving pointer. */
 const APPLIED_NOTICE_RESUME_MIN_MS = 2_000;
-/** The kite's flight out of the notice, matched by the `applied-notice-*` keyframes in globals.css. */
+/**
+ * The kite's flight out of the notice. The `applied-notice-*` animations in globals.css take their length from the
+ * `--applied-notice-duration` the notice sets from the exit plan (`appliedNoticeExitStyle`), so this is the only copy.
+ */
 const APPLIED_NOTICE_FLIGHT_MS = 1_200;
 /** The plain fade under reduced motion. */
 const APPLIED_NOTICE_FADE_MS = 250;
@@ -74,6 +77,46 @@ export function planAppliedNoticeExit(reducedMotion: boolean): AppliedNoticeExit
 	if (reducedMotion)
 		return { kite: false, durationMs: APPLIED_NOTICE_FADE_MS, fallbackMs: APPLIED_NOTICE_FADE_MS + FALLBACK_SLACK_MS };
 	return { kite: true, durationMs: APPLIED_NOTICE_FLIGHT_MS, fallbackMs: APPLIED_NOTICE_FLIGHT_MS + FALLBACK_SLACK_MS };
+}
+
+/** The CSS custom property that times the exit animations, set on the notice and on the kite. */
+export const APPLIED_NOTICE_DURATION_PROPERTY = "--applied-notice-duration";
+
+/** The inline style that gives the exit animations their length. */
+export function appliedNoticeExitStyle(exit: AppliedNoticeExit): Record<string, string> {
+	return { [APPLIED_NOTICE_DURATION_PROPERTY]: `${exit.durationMs}ms` };
+}
+
+/**
+ * Whether a blur ends the keyboard focus hold: only when the focus moved somewhere outside the notice. Switching to
+ * another window (or app) blurs the focused button without a next target while the document itself loses the
+ * focus; the browser gives the focus back to the button on return, so the notice keeps waiting meanwhile.
+ */
+export function blurEndsFocusHold({
+	nextInside,
+	documentFocused,
+}: {
+	nextInside: boolean;
+	documentFocused: boolean;
+}): boolean {
+	return !nextInside && documentFocused;
+}
+
+/**
+ * Where the keyboard focus goes when the notice leaves while holding it: the first focusable element after the
+ * notice in document order, else the last one before it, else nowhere (null).
+ */
+export function pickFocusNeighbour<T>(
+	candidates: readonly T[],
+	place: (candidate: T) => "before" | "inside" | "after",
+): T | null {
+	let before: T | null = null;
+	for (const candidate of candidates) {
+		const where = place(candidate);
+		if (where === "after") return candidate;
+		if (where === "before") before = candidate;
+	}
+	return before;
 }
 
 /** Only the kite's own animation (or the fade without it) ends the exit; the box's fold and the tail bubble past. */

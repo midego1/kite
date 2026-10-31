@@ -327,6 +327,30 @@ test("a save answered after an account switch does not hold back the next accoun
 	assert.equal(storage.get("kite-message-density"), "compact");
 });
 
+test("signing out and back in while a save is in flight keeps a quick load from putting the old choice back", async (t) => {
+	let answerSave;
+	let answerLoad;
+	const { storage } = fakeBrowser(
+		t,
+		(count) =>
+			count === 1 ? { json: { ready: true, layout: null } } : new Promise((resolve) => (answerLoad = resolve)),
+		() => new Promise((resolve) => (answerSave = resolve)),
+	);
+	await startLayoutSync("user-again");
+	queueLayoutSave({ density: "comfortable" });
+	const saved = flushLayoutSave();
+	stopLayoutSync();
+	// The same account signs in again; the server reads the layout before it writes the save.
+	const again = startLayoutSync("user-again");
+	await new Promise((resolve) => setImmediate(resolve));
+	answerLoad({ json: { ready: true, layout: { density: "compact", readingPane: "none" } } });
+	await again;
+	answerSave(null);
+	await saved;
+	assert.equal(storage.get("kite-message-density"), undefined);
+	assert.equal(storage.get("kite-reading-pane"), "none");
+});
+
 test("signing out forgets a not-ready answer, so the next session asks again", async (t) => {
 	const { requests } = fakeBrowser(t, (count) => ({ json: { ready: count > 1, layout: null } }));
 	await startLayoutSync("user-later");

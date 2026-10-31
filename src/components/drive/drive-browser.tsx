@@ -16,6 +16,7 @@ import { DriveBreadcrumbs, DriveBulkBar, DriveCreateButtons, DriveTypeChips } fr
 import type { DriveDialog, DriveListing, DriveListingView } from "./drive-types";
 import { DriveUploadPanel } from "./drive-upload-panel";
 import {
+	attachmentNeedsReview,
 	DRIVE_COMMAND_EVENT,
 	DRIVE_VIEW_TITLES,
 	driveFileUrl,
@@ -364,9 +365,14 @@ export function DriveBrowser({ view, folderId = null }: { view: DriveListingView
 	);
 }
 
-/** Downloads each selected file in turn; folders are skipped. */
+/** Downloads each selected file in turn; folders, and mail attachments that need their risk warning, are skipped. */
 function downloadAll(items: DriveItemDto[]) {
-	const files = items.filter((item) => item.kind === "file");
+	const flagged = items.filter((item) => item.kind === "file" && attachmentNeedsReview(item));
+	if (flagged.length)
+		toast(
+			`${flagged.length === 1 ? "1 flagged attachment was" : `${flagged.length} flagged attachments were`} skipped. Open ${flagged.length === 1 ? "it" : "them"} to review the warning and download.`,
+		);
+	const files = items.filter((item) => item.kind === "file" && !attachmentNeedsReview(item));
 	files.forEach((item, index) => {
 		window.setTimeout(() => {
 			const anchor = document.createElement("a");

@@ -1,12 +1,13 @@
 import type { MessageAttachment } from "@/app/(dashboard)/inbox/[messageId]/types";
 import type { AttachmentPreviewKind } from "./message-attachment-viewer-types";
 
+/** The attachment route: `file` is the bare route (as the sender marked it), the others force preview or download. */
 export function getAttachmentFileUrl(
 	messageId: string,
 	attachmentId: string,
-	mode: "download" | "preview" = "download",
+	mode: "download" | "file" | "preview" = "download",
 ): string {
-	const suffix = mode === "preview" ? "?preview=1" : "?download=1";
+	const suffix = mode === "preview" ? "?preview=1" : mode === "download" ? "?download=1" : "";
 	return `/api/messages/${messageId}/attachments/${attachmentId}${suffix}`;
 }
 

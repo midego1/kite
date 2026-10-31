@@ -206,8 +206,8 @@ async function readImage(response: Response, maxBytes: number, signal: AbortSign
  * Fetches a remote image for the reader's same-origin proxy (`/api/remote-images`). Only the
  * image bytes and a validated type come back, so no header of the image host's response reaches
  * the browser, and the request carries nothing of the reader's. Follows at most `maxRedirects`
- * redirects, checking every hop with the same policy as the first URL, under one timeout for the
- * whole exchange including the body.
+ * redirects, checking every hop with the same policy as the first URL (and `checkHop`), under one
+ * timeout for the whole exchange including the body.
  */
 export async function fetchRemoteImage(value: string, options: RemoteImageFetchOptions): Promise<RemoteImageResult> {
 	const fetchImpl: RemoteImageFetch = options.fetch ?? ((input, init) => fetch(input, init));
@@ -217,6 +217,7 @@ export async function fetchRemoteImage(value: string, options: RemoteImageFetchO
 	const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? REMOTE_IMAGE_TIMEOUT_MS);
 	try {
 		for (let redirects = 0; ; redirects += 1) {
+			await options.checkHop?.(current);
 			const response = await requestHop(fetchImpl, current, controller.signal);
 			if (!REDIRECT_STATUSES.has(response.status))
 				return await readImage(response, options.maxBytes ?? REMOTE_IMAGE_MAX_BYTES, controller.signal);

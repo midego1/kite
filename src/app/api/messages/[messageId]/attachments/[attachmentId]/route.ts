@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
 import { getAttachmentForUser } from "@/lib/email/attachments";
+import { attachmentDownloadGate } from "@/lib/email/attachment-risk-store";
 import { getDownloadContentType, getInlineContentType } from "@/lib/http/content-type-utils";
 import type { AttachmentRouteParams } from "./types";
 import { getContentDisposition } from "@/lib/http/content-disposition-utils";
@@ -23,6 +24,9 @@ export async function GET(request: Request, { params }: AttachmentRouteParams) {
 	// next.config may be what the browser sees.
 	const inlineType = downloadRequested ? null : getInlineContentType(attachment.contentType);
 	const inline = inlineType !== null && (attachment.disposition === "inline" || previewRequested);
+	// Programs, macro documents, disguised names and archives download only after the reader has seen why.
+	const refused = await attachmentDownloadGate(env, request, attachment, object, inline);
+	if (refused) return refused;
 	const headers = new Headers();
 	object.writeHttpMetadata(headers);
 	headers.set("Content-Type", inline && inlineType ? inlineType : getDownloadContentType(attachment.contentType));

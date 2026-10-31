@@ -54,6 +54,17 @@ Besides links that show one address and open another, bare IP addresses (IPv4 an
 A link is misleading only when it opens a different domain than the one it shows. One that shows `example.com` and opens `mail.example.com`, or a newsletter service's tracking redirect whose target is the address it shows, is not.
 - **Requests to get past the filter.** Text that asks you to whitelist the sender, never block it or mark the message as safe or not spam. Asking to be added to your address book alone does not count.
 
+## Risky attachments
+
+Kite does not run an antivirus engine, and nothing here finds malware in an ordinary-looking PDF, image or Office file. What it does is stop one-click downloads of files that are dangerous by design (`src/lib/email/attachment-risk.ts`):
+
+- **What is flagged.** Programs and scripts (`.exe`, `.js`, `.lnk`, `.msi`, …) and macro-enabled Office files (`.docm`, `.xlsm`, …) are marked dangerous, as are names with hidden control or right-to-left characters, double extensions such as `invoice.pdf.exe` and files declared as a program. Web pages and SVG, disk images (`.iso`, `.img`, `.vhd`), OneNote files and archives get a warning. The same extension lists feed the spam signals above, so the two never disagree.
+- **ZIP files are looked into without unpacking them.** Kite reads the file names in a ZIP's directory with two bounded reads (the last 64 KiB of the file, then at most 1 MiB of directory and 1,000 entries) and flags a program or other risky file inside. A password-protected, oversized or unreadable archive is flagged as unchecked rather than trusted. Other archive formats get the general archive warning.
+- **The warning.** A flagged attachment shows a warning icon on its chip. Opening it shows the reasons, and **Download** stays disabled until you tick **I understand the risk**. Earlier messages in a conversation, attachments in a draft and **Save to Drive** go through the same warning, and under Drive's All attachments a flagged file downloads from its preview.
+- **Enforced by the server.** `GET /api/messages/{id}/attachments/{attachmentId}` answers 409 `ATTACHMENT_RISK` with the reasons for a flagged file that is not shown inline, unless the request adds `acknowledge=1`, so a direct link cannot skip the warning; `?risk=1` returns the assessment (`{ level, reasons }`, level `ok`, `warning` or `danger`). Drive's `GET /api/drive/attachments/{id}/content` does the same, and `POST /api/drive/attachments/{id}/save` refuses a flagged file unless the body has `"acknowledge": true`. Inline previews (images, PDF, audio, video, plain text) are not gated.
+
+If you need real malware scanning, receive through a provider that scans (Amazon SES drops mail it finds infected) or put a scanning filter such as ClamAV in front of the self-hosted SMTP listener. Adapted from upstream Mailflare #218.
+
 ## Undoing a report
 
 The toast after **Report spam** or **Report phishing** ("Reported as spam", "3 messages reported as spam", "Reported as phishing. Mail from … now goes to Trash.") has an **Undo** button for 8 seconds. **Mark as spam** on the phishing warning and a move to Spam approved in the assistant chat can be undone the same way, from their toast or the assistant's **Activity** for 7 days. Undo takes back exactly what the report did:

@@ -6,12 +6,24 @@ const SKIPPED_ANCESTORS = "a, code, kbd, samp, script, style, textarea, button";
 const TEXT_NODE = 3;
 const SHOW_TEXT = 4;
 
-function createAnchor(doc: Document, link: LinkMatch, attributes: Record<string, string>): HTMLAnchorElement {
+function createAnchor(
+	doc: Document,
+	link: Pick<LinkMatch, "href" | "text">,
+	attributes: Record<string, string>,
+): HTMLAnchorElement {
 	const anchor = doc.createElement("a");
 	anchor.setAttribute("href", link.href);
 	for (const [name, value] of Object.entries(attributes)) anchor.setAttribute(name, value);
 	anchor.textContent = link.text;
 	return anchor;
+}
+
+/**
+ * The anchor Insert link puts at the caret. The address is untrusted text, so the element is built with DOM calls and
+ * serialised: a quote or `<` in it can never close the attribute or start markup (upstream Mailflare #221).
+ */
+export function linkHtml(href: string, doc: Document = document): string {
+	return createAnchor(doc, { href, text: href }, {}).outerHTML;
 }
 
 /**

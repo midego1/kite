@@ -92,6 +92,28 @@ test("blocked hosts include local names and IP literals", () => {
 	assert.equal(outbound.isBlockedHost("93.184.216.34"), false);
 });
 
+test("blocked hosts include wildcard DNS services and names that embed a private IPv4 address", () => {
+	for (const host of [
+		"127.0.0.1.nip.io",
+		"anything.nip.io",
+		"nip.io",
+		"10-0-0-1.sslip.io",
+		"7f000001.xip.io",
+		"app.localtest.me",
+		"lvh.me",
+		"169.254.169.254.example.com",
+		"ec2-10-0-0-1.compute.example.com",
+		"192-168-1-20.example.net",
+		"x.0.0.0.0.example.org",
+	]) {
+		assert.equal(outbound.isBlockedHost(host), true, host);
+	}
+	for (const host of ["ec2-54-12-34-56.compute-1.amazonaws.com", "v1-2-3.example.com", "nip.io.example.com"]) {
+		assert.equal(outbound.isBlockedHost(host), false, host);
+	}
+	assert.equal(outbound.isPublicHttpUrl("https://127.0.0.1.nip.io/hook"), false);
+});
+
 test("webhook URLs must be public http(s)", () => {
 	assert.equal(outbound.isPublicHttpUrl("https://hooks.example.com/x"), true);
 	assert.equal(outbound.isPublicHttpUrl("http://127.0.0.1:8080/"), false);

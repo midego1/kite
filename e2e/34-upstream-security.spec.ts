@@ -78,11 +78,12 @@ test("attachments that can run script are never served inline", async () => {
 		return { type: response.headers()["content-type"], disposition: response.headers()["content-disposition"] };
 	};
 
-	await test.step("an SVG the sender marked inline downloads", async () => {
-		const svg = await fetchAttachment("logo.svg");
+	await test.step("an SVG the sender marked inline downloads, after its risk warning", async () => {
+		// An SVG can show a fake page, so its download waits for the warning (e2e/95-attachment-risk.spec.ts).
+		const svg = await fetchAttachment("logo.svg", "?acknowledge=1");
 		expect(svg.disposition).toMatch(/^attachment;/);
 		expect(svg.type).toBe("image/svg+xml");
-		expect((await fetchAttachment("logo.svg", "?preview=1")).disposition).toMatch(/^attachment;/);
+		expect((await fetchAttachment("logo.svg", "?preview=1&acknowledge=1")).disposition).toMatch(/^attachment;/);
 	});
 
 	await test.step("XML is not previewed inline", async () => {

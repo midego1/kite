@@ -1,14 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import { ArrowDownToLine, FileWarning } from "lucide-react";
+import { AttachmentRiskNotice } from "@/components/attachment-risk-notice";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReturnFocus } from "@/components/ui/use-return-focus";
 import type { MessageAttachmentViewerProps } from "./message-attachment-viewer-types";
 import { useAttachmentText } from "./use-attachment-text";
+import { acknowledgedUrl, useAttachmentRisk } from "./use-attachment-risk";
 import { useObjectUrl } from "./use-object-url";
-import { getAttachmentPreviewKind, getViewerUrls } from "./message-attachment-viewer-utils";
+import { getAttachmentFileUrl, getAttachmentPreviewKind, getViewerUrls } from "./message-attachment-viewer-utils";
 
 export function MessageAttachmentViewer({
 	attachment,
@@ -70,23 +73,51 @@ export function MessageAttachmentViewer({
 					)}
 				</div>
 
-				<div className="flex shrink-0 justify-end">
-					{downloadUrl ? (
-						<Button asChild>
-							<a href={downloadUrl} download={attachment.filename}>
-								<ArrowDownToLine className="h-4 w-4" />
-								Download
-							</a>
-						</Button>
-					) : (
-						// A local file's copy is still being made.
-						<Button disabled>
-							<ArrowDownToLine className="h-4 w-4" />
-							Download
-						</Button>
-					)}
-				</div>
+				<ViewerDownload
+					// Keyed by attachment, so ticking the warning for one file never carries over to the next.
+					key={attachment.id}
+					filename={attachment.filename}
+					downloadUrl={downloadUrl}
+					// A file that is not stored yet is the user's own; a stored one is checked by the server, ZIP contents included.
+					riskUrl={file ? null : getAttachmentFileUrl(messageId, attachment.id, "file")}
+				/>
 			</DialogContent>
 		</Dialog>
+	);
+}
+
+/** The risk warning of a flagged file and the Download button, which waits for "I understand the risk". */
+function ViewerDownload({
+	filename,
+	downloadUrl,
+	riskUrl,
+}: {
+	filename: string;
+	downloadUrl: string;
+	riskUrl: string | null;
+}) {
+	const risk = useAttachmentRisk(riskUrl);
+	const flagged = !!risk && risk.level !== "ok";
+	const [acknowledged, setAcknowledged] = useState(false);
+	return (
+		<>
+			<AttachmentRiskNotice risk={risk} acknowledged={acknowledged} onAcknowledgedChange={setAcknowledged} />
+			<div className="flex shrink-0 justify-end">
+				{downloadUrl && (!flagged || acknowledged) ? (
+					<Button asChild>
+						<a href={flagged ? acknowledgedUrl(downloadUrl) : downloadUrl} download={filename}>
+							<ArrowDownToLine className="h-4 w-4" />
+							Download
+						</a>
+					</Button>
+				) : (
+					// A local file's copy is still being made, or the warning is not acknowledged yet.
+					<Button disabled>
+						<ArrowDownToLine className="h-4 w-4" />
+						Download
+					</Button>
+				)}
+			</div>
+		</>
 	);
 }

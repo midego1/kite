@@ -14,7 +14,7 @@ import {
 	Underline,
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
-import { autolinkBeforeCaret } from "@/lib/email/linkify-dom-utils";
+import { autolinkBeforeCaret, linkHtml } from "@/lib/email/linkify-dom-utils";
 import { cn } from "@/lib/utils";
 import type { RichTextEditorProps, ToolbarCommand } from "./rich-text-editor-types";
 
@@ -109,7 +109,7 @@ export function RichTextEditor({
 			selection.addRange(savedRange.current);
 		}
 		if (selection && selection.isCollapsed) {
-			document.execCommand("insertHTML", false, `<a href="${href.replace(/"/g, "&quot;")}">${href}</a>`);
+			document.execCommand("insertHTML", false, linkHtml(href));
 		} else {
 			document.execCommand("createLink", false, href);
 		}

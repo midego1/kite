@@ -46,8 +46,9 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
 	if (!railMailboxId) return;
 	const api = await apiContext(STORAGE_STATE);
-	await api.delete(`/api/mailboxes/${railMailboxId}`);
+	const response = await api.delete(`/api/mailboxes/${railMailboxId}`);
 	await api.dispose();
+	expect(response.ok(), `deleting mailbox ${railMailboxId}: ${response.status()}`).toBe(true);
 });
 
 /** Inbox and Drafts show a count, Inbox past 99, so the rail's badge has its longest label. */

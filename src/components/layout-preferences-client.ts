@@ -1,10 +1,14 @@
 import type { LayoutPreferences, LayoutPreferencesResponse } from "@/lib/preferences/layout-types";
 import {
+	isRetryableLayoutLoad,
+	LAYOUT_LOAD_RETRY_DELAYS_MS,
 	LAYOUT_PREFERENCES_APPLIED_EVENT,
 	LAYOUT_SYNC_CHANGE_EVENT,
 	LAYOUT_SYNC_DEVICE_KEY,
+	type LayoutSaveMarks,
 	layoutStorageEntries,
 	withoutKeys,
+	withoutSavedSince,
 } from "./layout-preferences-utils";
 import { CONVERSATION_VIEW_CHANGE_EVENT } from "./messages/conversation-view-utils";
 import { READING_LAYOUT_CHANGE_EVENT } from "./messages/reading-layout-utils";
@@ -17,10 +21,27 @@ const SAVE_DELAY_MS = 600;
  * The account's layout follows it to every browser: `localStorage` stays the cache every view reads, this
  * module loads the account's choices into it once the session is known and saves each choice made here.
  * Before migration 0080, or with the device switch off, it does nothing and the layout stays in the browser.
+ *
+ * While the account's layout loads, choices made here wait (and win over the loaded ones); once it loaded,
+ * or every attempt failed, they are saved. Saves merge on the server, so saving without a load is safe.
  */
-let session: { userId: string; ready: boolean } | null = null;
+let session: { userId: string; loading: boolean } | null = null;
 let unsaved: LayoutPreferences = {};
 let timer: ReturnType<typeof setTimeout> | undefined;
+/** The server cannot store a layout (before migration 0080): nothing is loaded or saved again until a reload. */
+let unavailable = false;
+/** Orders loads against saves, so a load answered after a save cannot put the saved choice back. */
+let tick = 0;
+const saveMarks: LayoutSaveMarks = new Map();
+
+function markSaves(layout: LayoutPreferences, inFlight: 1 | -1): void {
+	tick += 1;
+	for (const key of Object.keys(layout)) {
+		const mark = saveMarks.get(key) ?? { touched: 0, inFlight: 0 };
+		// An answer for the previous account (marks cleared since) must not go below zero.
+		saveMarks.set(key, { touched: tick, inFlight: Math.max(0, mark.inFlight + inFlight) });
+	}
+}
 
 function browserStorage(): Storage | null {
 	try {
@@ -53,10 +74,9 @@ export function setLayoutSyncEnabled(enabled: boolean): void {
 
 /** Saves a choice made in this browser to the account, shortly after the last change. */
 export function queueLayoutSave(layout: LayoutPreferences): void {
-	if (!isLayoutSyncEnabled()) return;
+	if (!isLayoutSyncEnabled() || unavailable) return;
 	unsaved = { ...unsaved, ...layout };
-	// Until the account's layout has loaded the choice waits, and wins over the loaded one.
-	if (!session?.ready) return;
+	if (!session || session.loading) return;
 	clearTimeout(timer);
 	timer = setTimeout(() => void flushLayoutSave(), SAVE_DELAY_MS);
 }
@@ -64,10 +84,10 @@ export function queueLayoutSave(layout: LayoutPreferences): void {
 /** Sends the unsaved choices now; `keepalive` lets it finish while the page is closing. */
 export async function flushLayoutSave(): Promise<void> {
 	clearTimeout(timer);
-	const current = session;
-	if (!current?.ready || !Object.keys(unsaved).length) return;
+	if (!session || session.loading || unavailable || !Object.keys(unsaved).length) return;
 	const layout = unsaved;
 	unsaved = {};
+	markSaves(layout, 1);
 	try {
 		const response = await fetch(LAYOUT_API, {
 			method: "PATCH",
@@ -76,10 +96,12 @@ export async function flushLayoutSave(): Promise<void> {
 			keepalive: true,
 		});
 		// The table went missing (a restore from before 0080): stay with this browser's layout.
-		if (response.status === 409) current.ready = false;
+		if (response.status === 409) unavailable = true;
 	} catch {
 		// Offline: the choice is in this browser already and goes with the next one.
 		unsaved = { ...layout, ...unsaved };
+	} finally {
+		markSaves(layout, -1);
 	}
 }
 
@@ -102,28 +124,55 @@ function applyLayout(layout: LayoutPreferences, userId: string): void {
 		window.dispatchEvent(new Event(event));
 }
 
+function wait(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** One load, retried with backoff while the session stays the same; null when every attempt failed. */
+async function loadLayout(
+	current: NonNullable<typeof session>,
+): Promise<{ data: LayoutPreferencesResponse; loadTick: number } | null> {
+	for (let attempt = 0; ; attempt += 1) {
+		tick += 1;
+		const loadTick = tick;
+		let status: number | null = null;
+		try {
+			const response = await fetch(LAYOUT_API, { cache: "no-store" });
+			if (response.ok) return { data: (await response.json()) as LayoutPreferencesResponse, loadTick };
+			status = response.status;
+		} catch {
+			// The network: tried again below.
+		}
+		const delay = LAYOUT_LOAD_RETRY_DELAYS_MS[attempt];
+		if (delay === undefined || !isRetryableLayoutLoad(status)) return null;
+		await wait(delay);
+		if (session !== current) return null;
+	}
+}
+
 /**
  * Loads the account's layout into this browser; called again when the tab comes back. Only choices made
  * after this shipped are saved: what a browser stored before stays its own until the user changes it, so
  * an account never takes on whichever browser happened to load first.
  */
 export async function startLayoutSync(userId: string): Promise<void> {
-	const current = { userId, ready: false };
-	if (session?.userId !== userId) unsaved = {};
+	if (session?.userId !== userId) {
+		unsaved = {};
+		saveMarks.clear();
+	}
+	const current = { userId, loading: true };
 	session = current;
-	if (!isLayoutSyncEnabled()) return;
-	let data: LayoutPreferencesResponse;
-	try {
-		const response = await fetch(LAYOUT_API, { cache: "no-store" });
-		if (!response.ok) return;
-		data = (await response.json()) as LayoutPreferencesResponse;
-	} catch {
+	if (!isLayoutSyncEnabled() || unavailable) return;
+	const loaded = await loadLayout(current);
+	if (session !== current) return;
+	if (loaded && !loaded.data.ready) {
+		unavailable = true;
 		return;
 	}
-	if (session !== current || !data.ready) return;
-	current.ready = true;
+	current.loading = false;
 	// The server answers only validated choices (`parseStoredLayout`).
-	if (data.layout) applyLayout(withoutKeys(data.layout, unsaved), userId);
+	if (loaded?.data.layout)
+		applyLayout(withoutKeys(withoutSavedSince(loaded.data.layout, saveMarks, loaded.loadTick), unsaved), userId);
 	await flushLayoutSave();
 }
 

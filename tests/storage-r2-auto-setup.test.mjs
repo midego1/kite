@@ -405,6 +405,30 @@ test("a token request Cloudflare answers too late is cleaned up by name", async 
 	assert.deepEqual(cf.state.deletedTokens, [FAKE_R2.tokenId], "the token Cloudflare made anyway is deleted");
 });
 
+test("the name search after a late token answer gets the rest of the budget, not only the cleanup window", async (t) => {
+	const { env } = await setup(t);
+	cf.state.delays.set("createToken", 10_000);
+	// Longer than the five-second cleanup window, as paging through many tokens can be.
+	cf.state.delays.set("listTokens", 6_000);
+	t.after(() => cf.state.delays.clear());
+	const result = await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST, budgetMs: 13_000 });
+	assert.equal(result.code, "timeout");
+	assert.deepEqual(cf.state.deletedTokens, [FAKE_R2.tokenId], "the late token is still found and deleted");
+});
+
+test("checks that run past the budget report a timeout, not failed checks", async (t) => {
+	const { env } = await setup(t);
+	s3.state.delays.set("PutObject", 8_000);
+	t.after(() => s3.state.delays.clear());
+	const result = await lib.autoSetup.setUpDirectUploads(env, actor, APP_ORIGIN, {}, { timing: FAST, budgetMs: 11_000 });
+	assert.equal(result.ok, false);
+	assert.equal(result.code, "timeout");
+	assert.match(result.error, /took too long/);
+	assert.equal(result.steps.find((step) => step.status === "failed").id, "checks");
+	assert.ok(result.report, "the report of the checks that ran is kept");
+	assert.equal(stores(env).length, 0);
+});
+
 test("a token answered without its value is deleted at once", async (t) => {
 	const { env } = await setup(t);
 	cf.state.omitTokenValue = true;

@@ -202,11 +202,21 @@ class Budget {
 	cleanup(): CallLimits {
 		return { deadline: Date.now() + CLEANUP_RESERVE_MS };
 	}
+
+	/** For cleanup that is the last thing a setup does: whatever is left of the whole budget, at least its window. */
+	rest(): CallLimits {
+		return { deadline: Math.max(this.steps, Date.now()) + CLEANUP_RESERVE_MS };
+	}
 }
 
 const CLEANUP_RESERVE_MS = 5_000;
 /** Creating a token is the one call whose effect must be known, so it only starts with time to finish. */
 const TOKEN_STEP_MS = 5_000;
+/**
+ * How much of the steps' time the token request leaves, when it can, for finding the token by name after a late
+ * answer: that search pages through the account's tokens, more than the cleanup window allows on a busy account.
+ */
+const TOKEN_SEARCH_MS = 5_000;
 
 /** A new R2 token takes a few seconds to work; HeadBucket is retried until it does, within the budget. */
 async function waitForKeys(bucket: S3Bucket, timing: SetupTiming, budget: Budget): Promise<void> {
@@ -330,7 +340,8 @@ async function ensureBucket(ctx: Context, accountId: string, plan: R2SetupPlan):
  * made it, so the token with this attempt's own name is deleted; a timeout before the request left deletes nothing.
  */
 async function createToken(ctx: Context, plan: R2SetupPlan, accountId: string): Promise<S3Credentials> {
-	const limits = ctx.budget.start("token", TOKEN_STEP_MS);
+	ctx.budget.start("token", TOKEN_STEP_MS);
+	const limits = { deadline: Math.max(ctx.budget.steps - TOKEN_SEARCH_MS, Date.now() + TOKEN_STEP_MS) };
 	const name = r2TokenName(plan.bucket, plan.jurisdiction, ctx.attemptTag);
 	let sent = false;
 	try {
@@ -343,7 +354,7 @@ async function createToken(ctx: Context, plan: R2SetupPlan, accountId: string): 
 		});
 	} catch (error) {
 		if (sent && error instanceof R2ApiError && error.timedOut)
-			await deleteR2TokenNamed(ctx.env, accountId, name, ctx.budget.cleanup());
+			await deleteR2TokenNamed(ctx.env, accountId, name, ctx.budget.rest());
 		throw stepErrorOf(error, "token");
 	}
 }
@@ -390,6 +401,9 @@ async function connectBucket(
 		step = "checks";
 		budget.start("checks", 3_000);
 		const saved = await createStore(env, ctx.actor, form, ctx.origin, { deadline: budget.steps });
+		// Past the deadline the last checks were cut short or skipped, so the store ran out of time, not the checks.
+		if (!saved.ok && budget.left() <= 0)
+			throw new StepError("checks", TOO_LONG, { code: "timeout", report: saved.report });
 		if (!saved.ok)
 			throw new StepError("checks", saved.error, { code: "checks_failed", report: saved.report, status: saved.status });
 		progress.ok("checks");

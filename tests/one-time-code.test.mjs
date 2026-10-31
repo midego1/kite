@@ -55,7 +55,9 @@ await build({
 	logLevel: "silent",
 	alias: { "@": join(root, "src") },
 });
-const { extractOneTimeCode } = await import(pathToFileURL(join(outDir, "one-time-code-utils.mjs")).href);
+const { exceedsOneTimeCodeRawLength, extractOneTimeCode } = await import(
+	pathToFileURL(join(outDir, "one-time-code-utils.mjs")).href
+);
 const { getLatestEmailContent, htmlToReadableText } = await import(
 	pathToFileURL(join(outDir, "reply-content-utils.mjs")).href
 );
@@ -558,4 +560,15 @@ test("a body over the size limit is not searched", () => {
 	const { code, ms } = timed({ subject: "Your code", text: `code ${"AB12CD-".repeat(1_000_000)}` });
 	assert.equal(code, null);
 	assert.ok(ms < HOSTILE_BUDGET_MS, `took ${ms.toFixed(0)} ms`);
+});
+
+test("a raw body far over the size limit is refused before the whitespace pass", () => {
+	// Whitespace that compacting would shrink under the limit still counts while it is raw and over four times the cap.
+	const spaced = `Code: 482193${" ".repeat(4 * MAX_ONE_TIME_CODE_SOURCE_LENGTH)}`;
+	assert.equal(extractOneTimeCode({ subject: "Your code", text: spaced }), null);
+	const justUnder = `Code: 482193${" ".repeat(2 * MAX_ONE_TIME_CODE_SOURCE_LENGTH)}`;
+	assert.equal(extractOneTimeCode({ subject: "Your code", text: justUnder }), "482193");
+	assert.equal(exceedsOneTimeCodeRawLength(null), false);
+	assert.equal(exceedsOneTimeCodeRawLength("x".repeat(4 * MAX_ONE_TIME_CODE_SOURCE_LENGTH)), false);
+	assert.equal(exceedsOneTimeCodeRawLength("x".repeat(4 * MAX_ONE_TIME_CODE_SOURCE_LENGTH + 1)), true);
 });

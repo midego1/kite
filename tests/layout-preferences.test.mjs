@@ -142,3 +142,132 @@ test("before migration 0080 the layout reads as not ready and saving is refused"
 	assert.deepEqual(await readLayoutPreferences(db, "owner"), { ready: false, layout: null });
 	await assert.rejects(saveLayoutPreferences(db, "owner", { density: "compact" }), LayoutPreferencesPendingError);
 });
+
+const {
+	flushLayoutSave,
+	isRetryableLayoutLoad,
+	queueLayoutSave,
+	startLayoutSync,
+	stopLayoutSync,
+	withoutSavedSince,
+	LAYOUT_LOAD_RETRY_DELAYS_MS,
+} = await bundleModules("kite-layout-preferences-client-", [
+	["flushLayoutSave, queueLayoutSave, startLayoutSync, stopLayoutSync", "src/components/layout-preferences-client.ts"],
+	[
+		"isRetryableLayoutLoad, withoutSavedSince, LAYOUT_LOAD_RETRY_DELAYS_MS",
+		"src/components/layout-preferences-utils.ts",
+	],
+]);
+
+test("withoutSavedSince leaves out choices saved after the load started or still in flight", () => {
+	const layout = { readingPane: "none", density: "compact", font: "serif" };
+	const marks = new Map([
+		["readingPane", { touched: 2, inFlight: 0 }],
+		["density", { touched: 5, inFlight: 0 }],
+		["font", { touched: 1, inFlight: 1 }],
+	]);
+	assert.deepEqual(withoutSavedSince(layout, marks, 3), { readingPane: "none" });
+	assert.deepEqual(withoutSavedSince(layout, new Map(), 3), layout);
+});
+
+test("only network, server and rate-limit failures retry a layout load", () => {
+	assert.equal(isRetryableLayoutLoad(null), true);
+	assert.equal(isRetryableLayoutLoad(503), true);
+	assert.equal(isRetryableLayoutLoad(429), true);
+	assert.equal(isRetryableLayoutLoad(401), false);
+	assert.equal(isRetryableLayoutLoad(404), false);
+});
+
+/** A browser with storage and a scripted `/api/settings/layout`, for the sync client. */
+function fakeBrowser(t, answerGet, answerPatch = () => null) {
+	const storage = new Map();
+	const requests = [];
+	const previous = { window: globalThis.window, fetch: globalThis.fetch };
+	globalThis.window = {
+		localStorage: {
+			getItem: (key) => storage.get(key) ?? null,
+			setItem: (key, value) => storage.set(key, String(value)),
+			removeItem: (key) => storage.delete(key),
+		},
+		dispatchEvent: () => true,
+	};
+	globalThis.fetch = async (_url, init = {}) => {
+		const method = init.method ?? "GET";
+		requests.push({ method, body: init.body ? JSON.parse(init.body) : undefined });
+		const count = requests.filter((r) => r.method === method).length;
+		const answer = await (method === "GET" ? answerGet(count) : answerPatch(count));
+		if (answer instanceof Error) throw answer;
+		const { status = 200, json = { ready: true, layout: null } } = answer ?? {};
+		return new Response(JSON.stringify(json), { status });
+	};
+	t.after(() => {
+		stopLayoutSync();
+		globalThis.window = previous.window;
+		globalThis.fetch = previous.fetch;
+	});
+	return { storage, requests };
+}
+
+test("a failed first load is retried, and choices are saved once every attempt failed", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const { requests } = fakeBrowser(t, () => ({ status: 503, json: { error: "down" } }));
+	const started = startLayoutSync("user-retry");
+	queueLayoutSave({ density: "compact" });
+	for (const delay of LAYOUT_LOAD_RETRY_DELAYS_MS) {
+		await new Promise((resolve) => setImmediate(resolve));
+		t.mock.timers.tick(delay);
+	}
+	await started;
+	assert.equal(requests.filter((r) => r.method === "GET").length, LAYOUT_LOAD_RETRY_DELAYS_MS.length + 1);
+	assert.deepEqual(
+		requests.filter((r) => r.method === "PATCH").map((r) => r.body),
+		[{ layout: { density: "compact" } }],
+	);
+});
+
+test("a load that succeeds on a retry applies the account's layout", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const { storage } = fakeBrowser(t, (count) =>
+		count === 1 ? new TypeError("offline") : { json: { ready: true, layout: { density: "compact" } } },
+	);
+	const started = startLayoutSync("user-retry-ok");
+	await new Promise((resolve) => setImmediate(resolve));
+	t.mock.timers.tick(LAYOUT_LOAD_RETRY_DELAYS_MS[0]);
+	await started;
+	assert.equal(storage.get("kite-message-density"), "compact");
+});
+
+test("a load answered after a save does not put the saved choice back", async (t) => {
+	let answerLoad;
+	let answerSave;
+	const { storage } = fakeBrowser(
+		t,
+		(count) =>
+			count === 1 ? { json: { ready: true, layout: null } } : new Promise((resolve) => (answerLoad = resolve)),
+		() => new Promise((resolve) => (answerSave = resolve)),
+	);
+	await startLayoutSync("user-stale");
+	queueLayoutSave({ density: "comfortable" });
+	const saved = flushLayoutSave();
+	// The tab comes back while the save is in flight; the server reads the layout before it writes the save.
+	const refresh = startLayoutSync("user-stale");
+	await new Promise((resolve) => setImmediate(resolve));
+	answerSave(null);
+	await saved;
+	answerLoad({ json: { ready: true, layout: { density: "compact", readingPane: "none" } } });
+	await refresh;
+	assert.equal(storage.get("kite-message-density"), undefined);
+	assert.equal(storage.get("kite-reading-pane"), "none");
+});
+
+test("a not-ready answer stops loading and saving for the rest of the page load", async (t) => {
+	const { requests } = fakeBrowser(t, () => ({ json: { ready: false, layout: null } }));
+	await startLayoutSync("user-pending");
+	queueLayoutSave({ density: "compact" });
+	await flushLayoutSave();
+	await startLayoutSync("user-pending");
+	assert.deepEqual(
+		requests.map((r) => r.method),
+		["GET"],
+	);
+});

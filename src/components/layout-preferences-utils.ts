@@ -35,3 +35,28 @@ export function withoutKeys(layout: LayoutPreferences, unsaved: LayoutPreference
 	for (const key of Object.keys(unsaved)) delete result[key];
 	return result as LayoutPreferences;
 }
+
+/**
+ * Per layout key, the sync tick of its last save request (sent or answered) and how many are still in flight.
+ * A load that started before a save, or while one was in flight, may answer the value from before it.
+ */
+export type LayoutSaveMarks = Map<string, { touched: number; inFlight: number }>;
+
+/** The loaded layout without the choices saved since the load started (at `loadTick`), which it may predate. */
+export function withoutSavedSince(
+	layout: LayoutPreferences,
+	marks: LayoutSaveMarks,
+	loadTick: number,
+): LayoutPreferences {
+	const result: Record<string, unknown> = { ...layout };
+	for (const [key, mark] of marks) if (mark.inFlight > 0 || mark.touched > loadTick) delete result[key];
+	return result as LayoutPreferences;
+}
+
+/** Waits before each retry of the first load: a cold isolate or a blip should not leave the layout unsynced. */
+export const LAYOUT_LOAD_RETRY_DELAYS_MS = [1_000, 3_000, 10_000];
+
+/** Whether a failed load is worth trying again: the network, a server error or a rate limit. */
+export function isRetryableLayoutLoad(status: number | null): boolean {
+	return status === null || status === 429 || status >= 500;
+}

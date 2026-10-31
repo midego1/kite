@@ -639,6 +639,70 @@ pre {
 	animation: reload-flight-tail 280ms ease-in-out infinite alternate;
 }
 
+/* The "Database updated" notice leaving (migrations-applied-notice.tsx): the box folds up and fades while a tiny
+   kite lifts off its top right corner, sways once and drifts up and out. Transforms and opacity only, so nothing
+   is laid out again until the notice is removed; the durations match applied-notice-utils.ts. */
+@keyframes applied-notice-leave {
+	0% {
+		transform: none;
+		opacity: 1;
+	}
+	45% {
+		transform: translateY(-4px) scale(0.98, 0.9);
+		opacity: 0.4;
+	}
+	70%,
+	100% {
+		transform: translateY(-10px) scale(0.96, 0.7);
+		opacity: 0;
+	}
+}
+
+@keyframes applied-notice-kite {
+	0% {
+		transform: translate(0, 4px) rotate(-6deg) scale(0.6);
+		opacity: 0;
+	}
+	18% {
+		transform: translate(2px, -8px) rotate(-12deg) scale(1);
+		opacity: 1;
+	}
+	50% {
+		transform: translate(16px, -40px) rotate(8deg) scale(1);
+		opacity: 1;
+	}
+	100% {
+		transform: translate(48px, -110px) rotate(24deg) scale(0.45);
+		opacity: 0;
+	}
+}
+
+@keyframes applied-notice-fade {
+	from {
+		opacity: 1;
+	}
+	to {
+		opacity: 0;
+	}
+}
+
+.applied-notice-leave {
+	animation: applied-notice-leave 1.2s cubic-bezier(0.4, 0, 0.3, 1) both;
+	transform-origin: 50% 0;
+	pointer-events: none;
+}
+
+.applied-notice-kite {
+	transform-origin: 50% 35%;
+	animation: applied-notice-kite 1.2s cubic-bezier(0.4, 0, 0.3, 1) both;
+	will-change: transform, opacity;
+}
+
+.applied-notice-fade {
+	animation: applied-notice-fade 250ms ease-out both;
+	pointer-events: none;
+}
+
 /* The kite's return after a reload to a new version (reload-return-scene.tsx, in the startup screen of
    loading-transition.tsx). The inline script in <head> (reload-return-utils.ts) puts `kite-reload-return` on <html>
    when the previous page left with the flight above; without it both parts are display: none and the startup

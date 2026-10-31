@@ -1,4 +1,5 @@
 import { getDb } from "@/db";
+import { getContentDisposition } from "@/lib/http/content-disposition-utils";
 import { authenticateApiRequest, hasScope } from "@/lib/api/key-auth";
 import { LIMITS } from "./constants";
 import { corsHeaders, JmapError, problemResponse } from "./errors";
@@ -88,9 +89,11 @@ export async function handleJmapRequest(request: Request, env: CloudflareEnv): P
 			headers: {
 				"Content-Type": type,
 				"Content-Length": String(blob.size),
-				"Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+				"Content-Disposition": getContentDisposition(name, false),
 				"Cache-Control": "private, max-age=3600",
 				"Content-Security-Policy": "default-src 'none'; sandbox",
+				// The type comes from the client or the sender, so the browser must not sniff another one.
+				"X-Content-Type-Options": "nosniff",
 				...corsHeaders(),
 			},
 		});

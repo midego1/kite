@@ -193,3 +193,22 @@ test("Enter on Apply keeps the button's native activation without inserting a se
 	assert.equal(popup.commands.length, 1);
 	assert.equal(popup.submits(), 0);
 });
+
+test("a hostile address becomes one plain link and never markup", async (t) => {
+	const popup = await openLinkPopup(t);
+	const address = 'https://example.com/"><img src=x onerror=alert(1)>';
+	await popup.type(address);
+	await popup.clickApply();
+	assert.equal(popup.commands.length, 1);
+	const { command, value } = popup.commands[0];
+	assert.equal(command, "insertHTML");
+	const template = document.createElement("template");
+	template.innerHTML = value;
+	const nodes = [...template.content.childNodes];
+	assert.equal(nodes.length, 1, "exactly one node is inserted");
+	assert.equal(nodes[0].nodeName, "A");
+	assert.equal(nodes[0].children.length, 0, "the link holds no elements");
+	assert.equal(nodes[0].getAttribute("href"), address);
+	assert.equal(nodes[0].textContent, address);
+	assert.equal(template.content.querySelector("img"), null);
+});

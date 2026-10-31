@@ -7,7 +7,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { DriveItemDto } from "@/lib/drive/types";
 import { bulkItems, type BulkAction } from "./drive-api";
 import type { DriveDialog } from "./drive-types";
-import { driveFileUrl, emailHref, folderHref, type DriveRowAction } from "./drive-utils";
+import { attachmentNeedsReview, driveFileUrl, emailHref, folderHref, type DriveRowAction } from "./drive-utils";
 
 const DONE: Record<Exclude<BulkAction, "move">, string> = {
 	trash: "Moved to trash",
@@ -63,6 +63,8 @@ export function useDriveActions(openDialog: (dialog: DriveDialog) => void, onCha
 	const onRowAction = useCallback(
 		(item: DriveItemDto, action: DriveRowAction) => {
 			if (action === "open") return open(item);
+			// A flagged mail attachment downloads from the preview, after its warning.
+			if (action === "download" && attachmentNeedsReview(item)) return openDialog({ kind: "preview", item });
 			if (action === "download") return void window.location.assign(driveFileUrl(item, true));
 			if (action === "open-email" && item.source) return router.push(emailHref(item.source));
 			if (action === "save") return openDialog({ kind: "save", item });

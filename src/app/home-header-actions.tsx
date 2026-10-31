@@ -13,8 +13,20 @@ export function HomeHeaderActions() {
 	return (
 		<>
 			{getHomeActions(false).map((action) => (
-				<Button key={action.href} variant={action.variant} asChild>
-					<Link href={action.href}>{action.label}</Link>
+				<Button
+					key={action.href}
+					variant={action.variant}
+					asChild
+					// The deploy button has its place in the hero; the header keeps only Sign in on a phone.
+					className={action.external ? "hidden sm:inline-flex" : undefined}
+				>
+					{action.external ? (
+						<a href={action.href} target="_blank" rel="noopener noreferrer">
+							{action.label}
+						</a>
+					) : (
+						<Link href={action.href}>{action.label}</Link>
+					)}
 				</Button>
 			))}
 		</>

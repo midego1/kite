@@ -183,7 +183,11 @@ async function importParsedMessage(
 		env.BUCKET.put(rawR2Key, raw, {
 			httpMetadata: { contentType: "message/rfc822" },
 		}),
-		storeMessageAttachments(env, messageId, parsed.attachments, { validate: false }),
+		// Verified attachments are served from the raw written beside them; a failed write of either removes the message.
+		storeMessageAttachments(env, messageId, parsed.attachments, {
+			validate: false,
+			raw: { key: rawR2Key, bytes: raw, status: placement.status },
+		}),
 		// A spammer does not become a contact (and is not looked up on Gravatar).
 		placement.status === "spam"
 			? null

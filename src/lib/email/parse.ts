@@ -1,7 +1,7 @@
 import PostalMime from "postal-mime";
 import { formatPostalAddress, formatPostalAddressList } from "@/lib/email/address";
 import { normalizeMessageId, parseMessageIdList } from "@/lib/email/threading";
-import { normalizeAttachmentContent } from "@/lib/email/attachments";
+import { normalizeAttachmentContent } from "@/lib/email/attachment-content-utils";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { sanitizeStoredEmailHtml } from "@/lib/email/stored-html-utils";
 import { MIME_LIMITS, mimePreflightReason } from "@/lib/email/mime-preflight";

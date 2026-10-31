@@ -152,6 +152,7 @@ test("the estimate scales a sample and counts the attachments twice, once inside
 			sample: { size: 5, bodyBytes: 2500, offloaded: 1, offloadedBytes: 150 },
 			attachments: 2,
 			attachmentBytes: 1000,
+			rawAttachmentBytes: 1000,
 		}),
 		{ objects: 10 + 2 + 2, bytes: 10 * 2048 + 5000 + 1370 + 1000 + 300 },
 	);
@@ -161,8 +162,23 @@ test("the estimate scales a sample and counts the attachments twice, once inside
 			sample: { size: 0, bodyBytes: 0, offloaded: 0, offloadedBytes: 0 },
 			attachments: 0,
 			attachmentBytes: 0,
+			rawAttachmentBytes: 0,
 		}),
 		{ objects: 0, bytes: 0 },
+	);
+});
+
+test("the estimate counts 'raw' rows inside the raw mail only, never as objects of their own", () => {
+	// 1,000 bytes in one object row and 3,000 bytes in 'raw' rows served from their raw messages.
+	assert.deepEqual(
+		lib.estimateBackupObjectBytes({
+			messages: 4,
+			sample: { size: 4, bodyBytes: 0, offloaded: 0, offloadedBytes: 0 },
+			attachments: 1,
+			attachmentBytes: 1000,
+			rawAttachmentBytes: 4000,
+		}),
+		{ objects: 4 + 1, bytes: 4 * 2048 + 4000 * 1.37 + 1000 },
 	);
 });
 

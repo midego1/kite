@@ -4,7 +4,6 @@ import { messageAttachments, messages } from "@/db/schema";
 import { queryInChunks } from "@/db/chunk-utils";
 import { newId } from "@/lib/ids";
 import { sha256Hex } from "@/lib/aws/sigv4";
-import { insertRow } from "@/lib/db/pending-columns";
 import { createLogger } from "@/lib/logger.mjs";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
@@ -13,6 +12,8 @@ import { attachmentObjectKey, sanitizeFilename } from "./attachment-name-utils";
 import {
 	ATTACHMENT_ROW_COLUMNS,
 	deleteUnreferencedObjects,
+	insertObjectAttachmentRow,
+	insertRawAttachmentRow,
 	openAttachment,
 	readAttachmentBytes,
 	shareAttachmentObject,
@@ -21,10 +22,14 @@ import {
 import {
 	ATTACHMENT_OBJECT_ROWS_SQL,
 	attachmentObjectKeys,
+	isAttachmentRawIndexEnabled,
 	isAttachmentSharingEnabled,
 	isRawAttachmentKey,
+	isRawBackedMessage,
+	locateAttachmentParts,
+	rawAttachmentKey,
 } from "./attachment-storage-utils";
-import type { AttachmentRow, SharedAttachmentRow } from "./attachment-storage-types";
+import type { AttachmentRow, RawPartLocation, SharedAttachmentRow } from "./attachment-storage-types";
 import type { AttachmentContent, AttachmentMetadata, StoredAttachment } from "./attachment-types";
 
 const log = createLogger("attachments");
@@ -32,27 +37,6 @@ const log = createLogger("attachments");
 export const MAX_ATTACHMENT_SIZE = 25_000_000;
 export const MAX_TOTAL_ATTACHMENT_SIZE = 25_000_000;
 export const MAX_ATTACHMENT_COUNT = 10;
-
-export function decodeBase64Content(content: string): ArrayBuffer {
-	const binary = atob(content.replace(/\s/g, ""));
-	const bytes = new Uint8Array(binary.length);
-	for (let index = 0; index < binary.length; index += 1) {
-		bytes[index] = binary.charCodeAt(index);
-	}
-	return bytes.buffer;
-}
-
-export function normalizeAttachmentContent(
-	content: ArrayBuffer | Uint8Array | string,
-	encoding?: "base64" | "utf8",
-): ArrayBuffer {
-	if (content instanceof ArrayBuffer) return content;
-	if (content instanceof Uint8Array) {
-		return content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength) as ArrayBuffer;
-	}
-	if (encoding === "base64") return decodeBase64Content(content);
-	return new TextEncoder().encode(content).buffer;
-}
 
 export function validateAttachments(attachments: AttachmentContent[]): void {
 	if (attachments.length > MAX_ATTACHMENT_COUNT) {
@@ -114,13 +98,20 @@ async function writeAttachmentObject(
 		customMetadata: { filename: row.filename, messageId: row.messageId },
 	});
 	written.push(r2Key);
-	await insertRow(getDb(env), messageAttachments, {
-		...row,
-		size: content.byteLength,
-		r2Key,
-		...(sha256 ? { sha256 } : {}),
-	});
+	await insertObjectAttachmentRow(env, row, { r2Key, size: content.byteLength, sha256 });
 	return r2Key;
+}
+
+function storedMetadata(row: SharedAttachmentRow, size: number): AttachmentMetadata {
+	return {
+		id: row.id,
+		messageId: row.messageId,
+		filename: row.filename,
+		type: row.contentType,
+		size,
+		disposition: row.disposition,
+		contentId: row.contentId,
+	};
 }
 
 /** Undoes a store that failed part way: its rows first, then the objects it wrote itself, never a shared one. */
@@ -133,20 +124,52 @@ async function rollBackStoredAttachments(env: CloudflareEnv, ids: string[], writ
 	await deleteUnreferencedObjects(env, { attachmentKeys: written });
 }
 
+/** The raw message a stored message was parsed from: its Mail store key, its bytes and the message's status. */
+type RawSource = { key: string; bytes: ArrayBuffer; status: string };
+
+/**
+ * Where each attachment's verified encoded body sits in the raw message, when they may be 'raw' rows
+ * (`ATTACHMENT_RAW_INDEX` on and `isRawBackedMessage`); empty otherwise. An index that fails for any reason stores
+ * every attachment as an object, as before.
+ */
+function locateRawParts(
+	env: CloudflareEnv,
+	messageId: string,
+	attachments: AttachmentContent[],
+	raw: RawSource | undefined,
+): Map<number, RawPartLocation> {
+	if (!raw || !isAttachmentRawIndexEnabled(env.ATTACHMENT_RAW_INDEX)) return new Map();
+	if (!isRawBackedMessage({ rawKey: raw.key, status: raw.status })) return new Map();
+	try {
+		return locateAttachmentParts(raw.bytes, attachments);
+	} catch (error) {
+		log.error("attachment.raw_index_failed", { messageId, error });
+		return new Map();
+	}
+}
+
+/**
+ * Stores a message's attachments. With `raw` (received and imported mail), each attachment whose bytes the MIME index
+ * verified in the raw becomes a 'raw' row with no object of its own (`docs/specs/attachments-once.md` §5.3); the rest,
+ * and every attachment before migration 0088, are written as objects. A file read from a stored row shares its object.
+ */
 export async function storeMessageAttachments(
 	env: CloudflareEnv,
 	messageId: string,
 	attachments: AttachmentContent[],
-	options?: { validate?: boolean },
+	options?: { validate?: boolean; raw?: RawSource },
 ): Promise<StoredAttachment[]> {
 	if (options?.validate !== false) validateAttachments(attachments);
 	const stored: StoredAttachment[] = [];
 	const ids: string[] = [];
 	const written: string[] = [];
 	const sharing = isAttachmentSharingEnabled(env.ATTACHMENT_SHARING);
+	const rawParts = locateRawParts(env, messageId, attachments, options?.raw);
+	// Before migration 0088 the first 'raw' insert fails; the rest of this message is not tried again.
+	let rawRows = rawParts.size > 0;
 
 	try {
-		for (const attachment of attachments) {
+		for (const [index, attachment] of attachments.entries()) {
 			const row: SharedAttachmentRow = {
 				id: newId("att"),
 				messageId,
@@ -156,21 +179,22 @@ export async function storeMessageAttachments(
 				contentId: attachment.contentId ?? null,
 			};
 			ids.push(row.id);
+			const part = rawRows ? rawParts.get(index) : undefined;
+			const size = attachment.content.byteLength;
+			if (
+				part &&
+				(await insertRawAttachmentRow(env, row, { size, sha256: await sha256Hex(attachment.content), part }))
+			) {
+				stored.push({ ...storedMetadata(row, size), r2Key: rawAttachmentKey(row.id) });
+				continue;
+			}
+			if (part) rawRows = false;
 			// A file read from a stored row (a draft being sent) names that row's object; the bytes are written only
 			// when the source has gone meanwhile or keys cannot be shared yet.
 			const source = sharing ? storedSources.get(attachment) : undefined;
 			const shared = source ? await shareAttachmentObject(env, row, source) : null;
 			const r2Key = shared?.r2Key ?? (await writeAttachmentObject(env, row, attachment.content, written));
-			stored.push({
-				id: row.id,
-				messageId,
-				filename: row.filename,
-				type: row.contentType,
-				size: shared?.size ?? attachment.content.byteLength,
-				disposition: row.disposition,
-				contentId: row.contentId,
-				r2Key,
-			});
+			stored.push({ ...storedMetadata(row, shared?.size ?? size), r2Key });
 		}
 	} catch (error) {
 		await rollBackStoredAttachments(env, ids, written);

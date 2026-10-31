@@ -4,7 +4,7 @@ Planned work, grouped into milestones. Each milestone is sized to run as one [Fa
 
 Shipped work is listed in the [changelog](CHANGELOG.md). Suggest features and vote on them in [Ideas](https://github.com/midego1/kite/discussions/categories/ideas).
 
-Shipped specs: [automatic mail reading agent](docs/specs/auto-agent.md) ([#28](https://github.com/midego1/kite/pull/28)), [module platform](docs/specs/module-platform.md) ([#45](https://github.com/midego1/kite/pull/45)) and [Money Watch](docs/specs/money-watch.md) ([#50](https://github.com/midego1/kite/pull/50)). Next, in order: the approved [Drive and storage](docs/specs/drive-storage.md) and [storing attachments once](docs/specs/attachments-once.md). Proposed, with their open questions decided on 2026-10-26: [AI writing](docs/specs/ai-writing.md), [thread summaries](docs/specs/thread-summaries.md), [search by meaning](docs/specs/semantic-search.md) and [the assistant by email](docs/specs/assistant-by-email.md) (milestones 27 to 30).
+Shipped specs: [automatic mail reading agent](docs/specs/auto-agent.md) ([#28](https://github.com/midego1/kite/pull/28)), [module platform](docs/specs/module-platform.md) ([#45](https://github.com/midego1/kite/pull/45)), [Money Watch](docs/specs/money-watch.md) ([#50](https://github.com/midego1/kite/pull/50)) and [storing attachments once](docs/specs/attachments-once.md) ([#270](https://github.com/midego1/kite/pull/270), [#290](https://github.com/midego1/kite/pull/290), [#296](https://github.com/midego1/kite/pull/296), [#308](https://github.com/midego1/kite/pull/308) and [#312](https://github.com/midego1/kite/pull/312)). Next, in order: the approved [Drive and storage](docs/specs/drive-storage.md). Proposed, with their open questions decided on 2026-10-26: [AI writing](docs/specs/ai-writing.md), [thread summaries](docs/specs/thread-summaries.md), [search by meaning](docs/specs/semantic-search.md) and [the assistant by email](docs/specs/assistant-by-email.md) (milestones 27 to 30).
 
 ## Working on this repository
 
@@ -66,7 +66,7 @@ Make the app usable for Arabic, Hebrew, Persian and Urdu mail and users.
 ## Milestone 2: Backups and restore at scale
 
 1. **Streaming restore**: restore reads the backup from R2 in pages and inserts in batches, so a backup larger than Worker memory restores. The safety backup and rollback keep working. Test: unit tests for the page reader; e2e restore of a backup with several thousand messages.
-2. **Attachments and raw mail in backups**: optional full backup that also copies R2 objects (raw MIME and attachments) to a dated prefix, with a manifest. Restore can bring them back. Off by default, with the size shown before running.
+2. **Attachments and raw mail in backups**: optional full backup that also copies R2 objects (raw MIME and attachments) to a dated prefix, with a manifest. Restore can bring them back. Off by default, with the size shown before running. Since [storing attachments once](docs/specs/attachments-once.md), it copies each raw message and every attachment object some row names once per key, and nothing for a file served from its raw message, so a full backup of received mail is about a third smaller.
 3. **Retention on by default**: new installs keep the last 14 daily backups; the setting is visible on the Backups page. Existing installs are not changed.
 4. **Backup health**: the admin overview shows the last successful backup, its size and duration, and warns when the last run failed.
 
@@ -140,7 +140,7 @@ Google treats full Gmail access (`https://mail.google.com/`) as a restricted sco
 
 ## Milestone 7: Drive and storage
 
-Files next to mail, on storage the operator chooses. Today every object (raw MIME, attachments, backups) goes through the one `BUCKET` binding with `get`, `put` and `delete`; the Node runtime already swaps R2 for a folder (`server/runtime/file-bucket.ts`), and `src/lib/aws/` already signs S3 requests. Items 1 to 3 are specified in [docs/specs/drive-storage.md](docs/specs/drive-storage.md), whose first Mission builds Drive on the existing storage and then adds S3-compatible stores; storing attachments once ([docs/specs/attachments-once.md](docs/specs/attachments-once.md)) comes after it and cuts mail storage by about a third.
+Files next to mail, on storage the operator chooses. Today every object (raw MIME, attachments, backups) goes through the one `BUCKET` binding with `get`, `put` and `delete`; the Node runtime already swaps R2 for a folder (`server/runtime/file-bucket.ts`), and `src/lib/aws/` already signs S3 requests. Items 1 to 3 are specified in [docs/specs/drive-storage.md](docs/specs/drive-storage.md), whose first Mission builds Drive on the existing storage and then adds S3-compatible stores; storing attachments once ([docs/specs/attachments-once.md](docs/specs/attachments-once.md), shipped) came after it and cuts mail storage by about a third.
 
 1. **Storage providers**
    - R2 stays the default. An admin can add an S3-compatible store (AWS S3, Backblaze B2, Wasabi, Hetzner, MinIO, RustFS) behind the same interface. Credentials are encrypted with `APP_ENCRYPTION_KEY` and checked before saving, like the AWS settings.
@@ -232,7 +232,7 @@ One Inbox, Sent, Drafts and Archive for every mailbox you can open, so someone w
 
 ## Milestone 27: AI writing (proposed)
 
-Specified in [docs/specs/ai-writing.md](docs/specs/ai-writing.md); proposed, open questions decided on 2026-10-26. Ideas adopted from [Zero](https://github.com/Mail-0/Zero) (MIT), no code ported. Suggested order: first of milestones 27 to 30, after the approved [storing attachments once](docs/specs/attachments-once.md) and the "more chat actions" work in progress. Migration `0069` (renumber if another lands first).
+Specified in [docs/specs/ai-writing.md](docs/specs/ai-writing.md); proposed, open questions decided on 2026-10-26. Ideas adopted from [Zero](https://github.com/Mail-0/Zero) (MIT), no code ported. Suggested order: first of milestones 27 to 30, after [storing attachments once](docs/specs/attachments-once.md) (shipped) and the "more chat actions" work in progress. Migration `0069` (renumber if another lands first).
 
 1. **Editable prompts and chat spend** (2–3 days): per-mailbox and personal instruction fields for chat, drafting and the composer, and summaries, next to the existing instructions; chat reserves spend against the caps like every other AI request. Always in the system prompt below Kite's fixed rules, never inside the untrusted block, never replacing a prompt.
 2. **AI in the composer** (3–4 days): write from a short prompt and rewrite a selection (shorter, longer, more formal, more casual, fix grammar, translate with the original kept below, custom), streamed into a preview, with the quote and signature untouched. No tools, nothing stored but usage, under the spend caps, the rate limit and the external-provider opt-in (chat to follow).

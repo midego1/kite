@@ -198,6 +198,30 @@ export async function repairMissingObject(env: CloudflareEnv, attachmentId: stri
 }
 
 /**
+ * Writes verified bytes under a fresh key and repoints `row` at them while it still names its sentinel and is stored as
+ * `from`. The key is new, so only this row can name it; it goes when the row was repointed or deleted meanwhile, and
+ * only while no row names it.
+ */
+async function materializeVerified(
+	env: CloudflareEnv,
+	row: RepairableAttachment,
+	content: ArrayBuffer,
+	from: "raw" | "object",
+): Promise<void> {
+	const key = freshAttachmentObjectKey(row.messageId, row.id, newId());
+	await putObject(env, key, row, content);
+	const changed = await changedRows(
+		env,
+		`UPDATE message_attachments SET storage = 'object', r2_key = ?, raw_offset = NULL, raw_length = NULL,
+			transfer_encoding = NULL WHERE id = ? AND storage = ? AND r2_key = 'raw:' || id`,
+		[key, row.id, from],
+	);
+	if (changed !== 1 && (await loadRepairable(env, row.id))?.r2Key !== key && !(await isKeyNamed(env, key)))
+		await env.BUCKET.delete(key);
+	log.info("attachment.repaired", { attachmentId: row.id, messageId: row.messageId, storage: "object" });
+}
+
+/**
  * Materializes a 'raw' row whose range no longer decodes to its recorded bytes: postal-mime's decoding of the raw is
  * written as an object of its own when it has the recorded size and digest, and the row is repointed at it. Returns
  * those bytes, or null when nothing matching can be found (never anything unverified).
@@ -215,18 +239,39 @@ export async function materializeMismatchedRaw(
 		log.error("attachment.raw_mismatch", { attachmentId, messageId: row.messageId });
 		return null;
 	}
-	const key = freshAttachmentObjectKey(row.messageId, row.id, newId());
-	await putObject(env, key, row, source.content);
+	await materializeVerified(env, row, source.content, "raw");
+	return source.content;
+}
+
+/**
+ * Repairs a row that still names its sentinel `raw:<id>` but lost where its bytes are: an older release that restores a
+ * backup taken after raw-backed attachments into a database without migration 0088 keeps the key and drops the storage
+ * columns, which read as 'object' once 0088 is applied. postal-mime's decoding of the raw, checked against the row's
+ * size (and digest, when it has one), locates the row in the raw again, or becomes an object of its own under a fresh
+ * key while `ATTACHMENT_RAW_INDEX` is off or the range cannot be verified. Returns those bytes, or null when nothing
+ * matching can be found.
+ */
+export async function repairLostRawLocation(env: CloudflareEnv, attachmentId: string): Promise<ArrayBuffer | null> {
+	if (recentlyUnrepairable(attachmentId)) return null;
+	const row = await loadRepairable(env, attachmentId);
+	if (!row || !isRawAttachmentKey(row.r2Key) || !isRawBackedMessage(row)) return null;
+	const source = await sourceFromRaw(env, row);
+	if (!source) return markUnrepairable(attachmentId, row.messageId, "no_source");
+	const sha256 = await sha256Hex(source.content);
+	if (row.sha256 && row.sha256 !== sha256) return markUnrepairable(attachmentId, row.messageId, "digest_mismatch");
+	const part = isAttachmentRawIndexEnabled(env.ATTACHMENT_RAW_INDEX)
+		? locateAttachmentParts(source.raw, [source]).get(0)
+		: undefined;
+	if (!part) {
+		await materializeVerified(env, row, source.content, "object");
+		return source.content;
+	}
 	const changed = await changedRows(
 		env,
-		`UPDATE message_attachments SET storage = 'object', r2_key = ?, raw_offset = NULL, raw_length = NULL,
-			transfer_encoding = NULL WHERE id = ? AND storage = 'raw'`,
-		[key, row.id],
+		`UPDATE message_attachments SET storage = 'raw', raw_offset = ?, raw_length = ?, transfer_encoding = ?, sha256 = ?
+			WHERE id = ? AND storage = 'object' AND r2_key = 'raw:' || id`,
+		[part.offset, part.length, part.encoding, sha256, row.id],
 	);
-	// The key is new, so only this row can name it; it goes when the row was repointed or deleted meanwhile, and only
-	// while no row names it.
-	if (changed !== 1 && (await loadRepairable(env, attachmentId))?.r2Key !== key && !(await isKeyNamed(env, key)))
-		await env.BUCKET.delete(key);
-	log.info("attachment.repaired", { attachmentId, messageId: row.messageId, storage: "object" });
+	if (changed === 1) log.info("attachment.repaired", { attachmentId, messageId: row.messageId, storage: "raw" });
 	return source.content;
 }

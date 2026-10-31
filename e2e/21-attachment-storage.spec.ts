@@ -1,42 +1,23 @@
-import { createHash, randomBytes } from "node:crypto";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import {
+	PNG,
+	attachmentsOf,
+	download,
+	json,
+	pdfFixture,
+	runJob,
+	sha256,
+	storageCounts,
+	verifyObjects,
+	type Attachment,
+	type StorageReport,
+} from "./support/attachment-storage";
 import { createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, buildMime, deliverInbound, openMessage, setSendingSettings, uniqueToken } from "./support/helpers";
 
 // docs/specs/attachments-once.md §8 step 3: a send from a draft and a forward share the stored object instead of
 // copying it, and a delete removes an object only once no row names it any more.
-
-type Attachment = { id: string; filename: string; size: number };
-type Verification = { checked: number; missing: { key: string; messageIds: string[] }[] };
-type Job = { id: string; direction: string; status: string; done: number; converted: number; unshared: number };
-type Report = {
-	objects: { rows: number; keys: number; bytes: number; storedBytes: number };
-	raw: { rows: number; bytes: number };
-	shared: { keys: number; rows: number };
-	reclaim: { pending: { rows: number; bytes: number }; unmatched: { rows: number } } | null;
-	job: Job | null;
-};
-
-/** A PDF-looking file with random content, so a byte-exact comparison means something. */
-function pdfFixture(): Buffer {
-	return Buffer.concat([Buffer.from("%PDF-1.4\n"), randomBytes(48 * 1024), Buffer.from("\n%%EOF\n")]);
-}
-
-async function json<T>(response: Awaited<ReturnType<APIRequestContext["get"]>>): Promise<T> {
-	expect(response.ok(), `${response.url()}: ${await response.text()}`).toBe(true);
-	return (await response.json()) as T;
-}
-
-async function attachmentsOf(api: APIRequestContext, messageId: string): Promise<Attachment[]> {
-	return (await json<{ attachments: Attachment[] }>(await api.get(`/api/messages/${messageId}`))).attachments;
-}
-
-async function download(api: APIRequestContext, messageId: string, attachmentId: string): Promise<Buffer> {
-	const response = await api.get(`/api/messages/${messageId}/attachments/${attachmentId}?download=1`);
-	expect(response.status(), response.url()).toBe(200);
-	return response.body();
-}
 
 async function supportMailboxId(api: APIRequestContext): Promise<string> {
 	const { mailboxes } = await json<{ mailboxes: { id: string; localPart: string; hostname: string }[] }>(
@@ -55,16 +36,8 @@ async function createDraft(api: APIRequestContext, data: Record<string, unknown>
 	).draft;
 }
 
-async function storageCounts(api: APIRequestContext): Promise<Report> {
-	return json<Report>(await api.get("/api/admin/attachment-storage"));
-}
-
-async function objectCounts(api: APIRequestContext): Promise<Report["objects"]> {
+async function objectCounts(api: APIRequestContext): Promise<StorageReport["objects"]> {
 	return (await storageCounts(api)).objects;
-}
-
-async function verifyObjects(api: APIRequestContext): Promise<Verification> {
-	return (await json<{ verify: Verification }>(await api.get("/api/admin/attachment-storage?verify=1"))).verify;
 }
 
 /** Moves messages to Trash and then deletes them forever, the way the Trash folder's bulk delete does. */
@@ -77,13 +50,6 @@ async function deleteForever(api: APIRequestContext, messageIds: string[]) {
 }
 
 test.describe.configure({ mode: "serial" });
-
-/** A 2×2 PNG, so the reader has a real image to decode. */
-const PNG = Buffer.from(
-	"iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAF0lEQVR4nGNQTX79//9/hv///6smvwYAPKII4TwRI+AAAAAASUVORK5CYII=",
-	"base64",
-);
-const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 
 /** A JMAP client for the support mailbox: the session's download URL and a method caller. */
 async function jmapClient(api: APIRequestContext, mailboxId: string) {
@@ -331,26 +297,6 @@ test("the storage report is for admins only", async () => {
 	expect(objects.storedBytes).toBeLessThanOrEqual(objects.bytes);
 	await api.dispose();
 });
-
-/** Starts a storage job through the API and waits until it has finished. */
-async function runJob(api: APIRequestContext, action: "reclaim" | "materialize"): Promise<Job> {
-	const started = await json<{ job: Job }>(await api.post("/api/admin/attachment-storage", { data: { action } }));
-	return waitForJob(api, started.job.id);
-}
-
-async function waitForJob(api: APIRequestContext, jobId: string): Promise<Job> {
-	let job: Job | null = null;
-	await expect
-		.poll(
-			async () => {
-				job = (await storageCounts(api)).job;
-				return job?.id === jobId ? job.status : "missing";
-			},
-			{ timeout: 60_000, intervals: [250, 500, 1000] },
-		)
-		.toBe("completed");
-	return job!;
-}
 
 /** Presses one of the card's job buttons, confirms, and waits for the job to finish. */
 async function runFromCard(page: Page, button: string, confirm: string, finished: string) {

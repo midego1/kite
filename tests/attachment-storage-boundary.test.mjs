@@ -85,7 +85,7 @@ test("object copies of message_attachments skip 'raw' rows", () => {
 
 test("the accessor serves 'raw' rows only from their own range", () => {
 	const source = read(ACCESSOR);
-	assert.match(source, /eq\(messageAttachments\.storage, "raw"\)/, "a raw location requires storage = 'raw'");
+	assert.match(source, /row\.storage === "raw" \? toRawLocation\(row\)/, "a raw location requires storage = 'raw'");
 	assert.match(source, /range: \{ offset: location\.offset, length: location\.length \}/);
 	assert.doesNotMatch(source, /BUCKET\.get\(location\.rawKey\)/, "the whole raw message is never read for a row");
 });

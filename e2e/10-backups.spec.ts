@@ -1,6 +1,17 @@
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import {
+	PNG,
+	attachmentsOf,
+	download,
+	json,
+	pdfFixture,
+	runJob,
+	sha256,
+	storageCounts,
+	verifyObjects,
+} from "./support/attachment-storage";
 import { ADMIN, E2E_PERSIST_DIR, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import {
 	apiContext,
@@ -137,4 +148,79 @@ test("restores the downloaded backup", async ({ browser }) => {
 	await expect(page.getByRole("main").getByText(beforeBackupSubject, { exact: true })).toBeVisible();
 	await expect(page.getByRole("main").getByText(afterBackupSubject, { exact: true })).toHaveCount(0);
 	await context.close();
+});
+
+// docs/specs/attachments-once.md §8 step 6: a backup taken while every file had an object of its own (materialized),
+// restored after a reclaim deleted those objects. Every file still downloads byte-exact, because the lazy repair rebuilds
+// it from its raw message, and reclaim then converges.
+test("files restored from a backup taken before a reclaim download byte-exact, and reclaim converges", async () => {
+	const api = await apiContext(STORAGE_STATE);
+	const token = uniqueToken();
+	const pdf = pdfFixture();
+	const message = await deliverInbound(api, {
+		from: `"Archivist" <archivist@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: `Restored files ${token}`,
+		text: "The report and our logo.",
+		attachments: [
+			{ filename: "report.pdf", contentType: "application/pdf", content: pdf },
+			{ filename: "logo.png", contentType: "image/png", content: PNG },
+		],
+	});
+	const expected = new Map([
+		["report.pdf", pdf],
+		["logo.png", PNG],
+	]);
+	async function expectByteExact() {
+		const files = await attachmentsOf(api, message.id);
+		expect(files.map((file) => file.filename).sort()).toEqual(["logo.png", "report.pdf"]);
+		for (const file of files)
+			expect(sha256(await download(api, message.id, file.id))).toBe(sha256(expected.get(file.filename)!));
+	}
+	const ours = (verification: Awaited<ReturnType<typeof verifyObjects>>) =>
+		verification.missing.filter((entry) => entry.messageIds.includes(message.id));
+
+	// Materialize, then back up: the backup's rows name the objects materialize wrote.
+	const materialize = await runJob(api, "materialize");
+	expect((await storageCounts(api)).raw.rows).toBe(0);
+	const queued = await json<{ backupId: string }>(await api.post("/api/backups"));
+	const backup = await waitForBackup(api, queued.backupId);
+	expect(backup.status, backup.error ?? "").toBe("completed");
+
+	// Reclaim serves the files from their raw message again and deletes those objects.
+	await runJob(api, "reclaim");
+	const reclaimed = await storageCounts(api);
+	expect(reclaimed.reclaim?.pending.rows).toBe(0);
+	expect(reclaimed.raw.rows).toBeGreaterThanOrEqual(2);
+	await expectByteExact();
+
+	// Restore the backup taken before the reclaim. The suite's session is in it, so `api` answers again once it is done.
+	const started = await json<{ restoreId: string }>(await api.post(`/api/backups/${queued.backupId}/restore`));
+	const restore = await waitForRestore(api, started.restoreId);
+	expect(restore.status, restore.error ?? "").toBe("completed");
+	const restored = await storageCounts(api);
+	// Every file has an object row again, though reclaim deleted the objects; the restored job is the finished
+	// materialize and starts nothing.
+	expect(restored.raw.rows).toBe(0);
+	// Rows reclaim looked at and left (a quoted-printable file) are pending again too.
+	expect(restored.reclaim?.pending.rows).toBeGreaterThanOrEqual(reclaimed.raw.rows);
+	expect(restored.job).toMatchObject({ id: materialize.id, direction: "materialize", status: "completed" });
+	expect(ours(await verifyObjects(api))).toHaveLength(2);
+
+	// Each read repairs its file from the raw message, byte-exact, and leaves it served from there.
+	await expectByteExact();
+	expect(ours(await verifyObjects(api))).toEqual([]);
+	expect((await storageCounts(api)).raw.rows).toBe(2);
+
+	// Reclaim converts what nobody read, and nothing is missing afterwards.
+	const converged = await runJob(api, "reclaim");
+	expect(converged.converted).toBe(reclaimed.raw.rows - 2);
+	const after = await storageCounts(api);
+	expect(after.raw.rows).toBe(reclaimed.raw.rows);
+	expect(after.reclaim?.pending.rows).toBe(0);
+	expect((await verifyObjects(api)).missing).toEqual([]);
+	await expectByteExact();
+	const again = await runJob(api, "reclaim");
+	expect([again.done, again.converted]).toEqual([0, 0]);
+	await api.dispose();
 });

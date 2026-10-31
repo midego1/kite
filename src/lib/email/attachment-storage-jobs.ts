@@ -3,7 +3,7 @@ import { createLogger } from "@/lib/logger.mjs";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { runMaterializeBatch, runReclaimBatch, runUnshareBatch, type BatchContext } from "./attachment-storage-batches";
-import { getReclaimCounts, getSharedObjectCounts } from "./attachment-storage-report";
+import { getAttachmentStorageCounts, getReclaimCounts, getSharedObjectCounts } from "./attachment-storage-report";
 import { isAttachmentRawIndexEnabled, isAttachmentSharingEnabled } from "./attachment-storage-utils";
 import {
 	BATCH_BUDGET_MS,
@@ -98,11 +98,9 @@ async function storageColumnsReady(env: JobEnv): Promise<boolean> {
 	return (await getReclaimCounts(env)) !== null;
 }
 
+/** The rows materialize gives an object, counted by their sentinel key like the storage report counts them. */
 async function countRawRows(env: JobEnv): Promise<number> {
-	const row = await env.DB.prepare("SELECT count(*) AS n FROM message_attachments WHERE storage = 'raw'").first<{
-		n: number;
-	}>();
-	return Number(row?.n ?? 0);
+	return (await getAttachmentStorageCounts(env)).raw.rows;
 }
 
 async function initialTotal(env: JobEnv, direction: AttachmentStorageDirection): Promise<number> {

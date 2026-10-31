@@ -29,7 +29,7 @@ const {
 	blurEndsFocusHold,
 	createDismissTimer,
 	isAppliedNoticeExitEnd,
-	pickFocusNeighbour,
+	focusNeighbourOrder,
 	planAppliedNoticeExit,
 } = await import(pathToFileURL(join(bundleDirectory, "notice.mjs")).href);
 
@@ -206,11 +206,11 @@ test("a blur ends the focus hold only when the focus moved elsewhere in the page
 	assert.equal(blurEndsFocusHold({ nextInside: false, documentFocused: false }), false);
 });
 
-test("the focus goes to the next focusable element after the notice, else the last one before it", () => {
+test("the focus tries the focusable elements after the notice first, then those before it, nearest first", () => {
 	const places = { a: "before", b: "before", c: "inside", d: "after", e: "after" };
 	const place = (name) => places[name];
-	assert.equal(pickFocusNeighbour(["a", "b", "c", "d", "e"], place), "d");
-	assert.equal(pickFocusNeighbour(["a", "b", "c"], place), "b");
-	assert.equal(pickFocusNeighbour(["c"], place), null);
-	assert.equal(pickFocusNeighbour([], place), null);
+	assert.deepEqual(focusNeighbourOrder(["a", "b", "c", "d", "e"], place), ["d", "e", "b", "a"]);
+	assert.deepEqual(focusNeighbourOrder(["a", "b", "c"], place), ["b", "a"]);
+	assert.deepEqual(focusNeighbourOrder(["c"], place), []);
+	assert.deepEqual(focusNeighbourOrder([], place), []);
 });

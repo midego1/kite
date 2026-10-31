@@ -20,48 +20,40 @@ objects and encryption keys as confidential; see [PII handling](../pii-handling.
    directions, pending jobs and backup schedule status. Record the revision and
    operator-confirmed results; do not infer success from build status alone.
 
-## Rolling back past attachment sharing
+## Attachment storage: rollbacks and restores
 
-Since attachment sharing (`docs/specs/attachments-once.md` §5.3), a message sent
-from a draft and a forward draft name the stored file of the row they came from
-instead of copying it, and deletes remove a file only when no row names it any
-more. Every earlier release deletes a message's attachment files unconditionally.
-Running one of them against data written by a sharing release loses files: deleting
-a forward draft deletes the original's attachment, sending a draft and then
-deleting the draft deletes the sent copy's file, and deleting either of two
-messages that share a file deletes it for both.
+Two changes store mail attachments once (`docs/specs/attachments-once.md`):
 
-Prefer fixing forward: a rollback is safe only to a release that already has
-reference-checked deletion (this one or later). To run an older release, follow
-[Materialize, then roll back](#materialize-then-roll-back) first. Restoring a backup
-taken after this release into a database without migration 0088 fails on the unique
-`r2_key` index, because shared rows repeat a key: apply the pending migrations on the
-target first (Admin overview, or `AUTO_APPLY_MIGRATIONS=1`), then restore.
+- **Attachment sharing** (2026.10.31.8): a message sent from a draft and a forward
+  draft name the stored file of the row they came from instead of copying it, and
+  deletes remove a file only when no row names it any more.
+- **Raw-backed attachments** (2026.10.31.9): a file in received or imported mail whose
+  bytes Kite verified inside the raw message has no object of its own. Its row carries
+  the sentinel key `raw:<id>` and the byte range to read from the raw message
+  (migration 0088). Releases from 2026.10.31.3 on can read such rows.
 
-## Rolling back past raw-backed attachments
+Prefer fixing forward. A rollback to 2026.10.31.8 or later needs no preparation. Any
+older release needs [Materialize, then roll back](#materialize-then-roll-back) first,
+for the reasons in the next two sections.
 
-Since raw-backed attachments (`docs/specs/attachments-once.md` §8 step 4), a file
-in received or imported mail whose bytes Kite verified inside the raw message has
-no object of its own: its row carries the sentinel key `raw:<id>` and the byte range
-to read from the raw message. Releases from 2026.10.31.3 on read such rows. Earlier
-releases do not: they look the sentinel up as an object key and answer 404 for those
-files (the raw message and "Show original" are unaffected). Nothing is lost: the raw
-messages are kept unchanged, and the files download again once a current release
-runs.
+### Rolling back past attachment sharing
 
-Prefer fixing forward: a rollback to 2026.10.31.3 or later keeps every file readable
-(the attachment-sharing rules above still apply to it). To run an older release,
-follow [Materialize, then roll back](#materialize-then-roll-back) first.
+Every release before 2026.10.31.8 deletes a message's attachment files
+unconditionally. Running one of them against data written by a sharing release
+loses files: deleting a forward draft deletes the original's attachment, sending a
+draft and then deleting the draft deletes the sent copy's file, and deleting either
+of two messages that share a file deletes it for both. Materialize gives every row a
+file of its own first.
 
-- A backup taken after this release and restored into a release before 2026.10.31.3
-  has the same 404s; restore it into a current release instead, or materialize there
-  before moving the data back.
-- An old backup restored into a current release can name objects that are gone (a
-  reclaim deleted them after the backup). The next read of such a file rebuilds it
-  from its raw message (logged as `attachment.repaired`), so it needs no action;
-  **Reclaim space** converts whatever is left.
+### Rolling back past raw-backed attachments
 
-## Materialize, then roll back
+Releases before 2026.10.31.3 look the sentinel `raw:<id>` up as an object key and
+answer 404 for those files (the raw message and "Show original" are unaffected).
+Nothing is lost: the raw messages are kept unchanged, and the files download again
+once a current release runs against the same database. Releases from 2026.10.31.3 to
+2026.10.31.7 read them, but delete shared files as described above.
+
+### Materialize, then roll back
 
 The procedure before running a release older than attachment sharing or raw-backed
 attachments. Materialize never changes a raw message; it only writes objects and
@@ -93,6 +85,39 @@ repoints rows with conditional updates, so it is safe to run at any time and aga
    the same card (`{ "action": "reclaim" }`, which needs `ATTACHMENT_RAW_INDEX` on). It
    serves verified files from their raw messages again and deletes their copies;
    copies that a draft, a forward or a sent message still uses are kept.
+
+### Restoring a backup across these releases
+
+A backup holds database rows only (and, with **Include mail files**, the raw messages
+and the objects that rows name); the storage columns travel in its JSON. A current
+release refuses to restore while database updates are pending: apply them on the
+target first (Admin overview, or `AUTO_APPLY_MIGRATIONS=1`).
+
+- **An older backup into a current release** (taken before 0088, or before a reclaim
+  ran): it restores. Rows from before 0088 come back as files with a copy of their
+  own that reclaim has not looked at yet. A row whose copy a reclaim deleted after
+  the backup names an object that is gone: `?verify=1` lists it as missing, and the
+  next read rebuilds it from its raw message (logged as `attachment.repaired`), so
+  nothing needs to be done before users open their mail. Then choose **Reclaim space**:
+  it converts the rows nobody opened yet and deletes the copies the backup brought
+  back, so the counts end where they were before the restore.
+- **The job in the backup.** The restore brings back the attachment storage job as
+  the backup recorded it. The cron restarts a stopped job only within an hour of its
+  last batch, so a job from an older backup starts nothing: the card shows it as
+  interrupted (or finished), and pressing its button again resumes it on the restored
+  rows. Batches of the job that ran before the restore are dropped.
+- **A newer backup into an older release, on a database that has migration 0088**
+  (a rolled-back release): releases before 2026.10.31.3 show files served from the
+  raw message as missing, as above. Restore it into a current release instead, or
+  materialize before taking the backup.
+- **A newer backup into an older release, on a database without migration 0088** (an
+  install that never ran it): rows that share a file repeat a key, which the unique
+  index refuses, so the restore fails and is rolled back. Without shared rows the
+  restore succeeds but drops where each raw-served file sits in its raw message;
+  those files are missing until a current release runs with migration 0088 applied.
+  Then the next read finds each one in its raw message again (`attachment.repaired`),
+  and **Restore separate copies** includes them. Materialize before taking the
+  backup to avoid both.
 
 ## Backup or restore incident
 

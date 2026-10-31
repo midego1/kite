@@ -4,7 +4,7 @@ import type { AccountFormState, ConnectedAccountsState, PresetOption } from "./c
 
 export const CONNECTED_ACCOUNTS_QUERY_KEY = ["external-accounts"];
 
-async function readJson<T>(response: Response, fallback: string): Promise<T> {
+export async function readJson<T>(response: Response, fallback: string): Promise<T> {
 	const data = (await response.json().catch(() => ({}))) as T & { error?: string };
 	if (!response.ok) throw new Error(data.error ?? fallback);
 	return data;
@@ -238,9 +238,9 @@ export function sendingText(account: Pick<ExternalAccountView, "address" | "send
 		case "send_off":
 			return "Sending from this address is off.";
 		case "alias":
-			return "Kite sends only from the address the account signs in with.";
+			return "The account signs in with another user name, so Kite needs a code mailed to this address before it sends from it.";
 		case "unproven":
-			return "Sending from an address at a server you entered yourself needs a verification code, which comes in a later version.";
+			return "Kite cannot prove an address at a server you entered yourself, so it needs a code mailed to this address before it sends from it.";
 		case "not_verified":
 			return "Test the connection to send from this address.";
 		case "paused":

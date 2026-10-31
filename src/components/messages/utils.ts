@@ -13,6 +13,7 @@ import { SEND_PENDING_MOVE_MESSAGE, SEND_PENDING_MOVE_REFUSED } from "@/lib/mess
 import { postBulkMessageAction } from "./bulk-request";
 import { announcePhishingReports } from "./phishing-report";
 import { offerUndoForMove } from "./undo-utils";
+import { announceMessagesLeftView, bulkActionLeftView } from "./left-view-utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import type { EmptyFolderResponse } from "@/app/api/messages/empty/types";
 
@@ -115,6 +116,7 @@ export async function runBulkMessageAction(messageIds: string[], action: string,
 	if (action === "read" || action === "unread") markMessagesReadInCaches(messageIds, action === "read");
 	if (notify) window.dispatchEvent(new Event("kite:messages-changed"));
 	offerUndoForMove(action, data);
+	announceMessagesLeftView(bulkActionLeftView(action, messageIds, data));
 	if (action === "phishing") announcePhishingReports(data);
 	return data;
 }

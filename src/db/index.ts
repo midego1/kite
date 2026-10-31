@@ -7,7 +7,7 @@ import * as summaryTables from "@/db/schema/agent-summaries";
 import * as writingTables from "@/db/schema/agent-writing";
 import * as spamReportTables from "@/db/schema/spam-reports";
 import * as driveTables from "@/db/schema/drive";
-import { externalAccountFolders, externalAccounts } from "@/db/schema/external-accounts";
+import { externalAccountFolders, externalAccounts, externalIdentities } from "@/db/schema/external-accounts";
 import * as financeTables from "@/db/schema/finance";
 import * as moduleTables from "@/db/schema/modules";
 import * as screenerTables from "@/db/schema/screener";
@@ -31,6 +31,7 @@ const schema = {
 	...telemetryTables,
 	externalAccounts,
 	externalAccountFolders,
+	externalIdentities,
 	...userPreferenceTables,
 };
 

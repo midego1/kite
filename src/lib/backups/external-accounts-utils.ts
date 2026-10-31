@@ -8,14 +8,24 @@ const SECRET_COLUMNS = ["secret", "oauth_refresh_token", "oauth_access_token"];
  * (spec §10.2, decision 6): the row, its settings and its sync positions stay, the secret is empty.
  */
 export function redactBackupRow(table: string, row: DatabaseRecord): DatabaseRecord {
+	if (table === "external_identities") return withoutPendingCode(row);
 	if (table !== "external_accounts") return row;
 	const redacted: DatabaseRecord = { ...row };
 	for (const column of SECRET_COLUMNS) if (column in redacted) redacted[column] = column === "secret" ? "" : null;
 	return redacted;
 }
 
+/**
+ * A send-as address leaves a backup without its pending code (spec §10.3): whether and when it was verified stays, so
+ * a restored account sends as it again once reconnected; one still waiting for its code needs a new one.
+ */
+function withoutPendingCode(row: DatabaseRecord): DatabaseRecord {
+	return { ...row, code_hash: null, code_expires_at: null, attempts: 0 };
+}
+
 /** A restored connected account has no password, so it waits for its owner to reconnect it. */
 export function restoredBackupRow(table: string, row: DatabaseRecord): DatabaseRecord {
+	if (table === "external_identities") return withoutPendingCode(row);
 	if (table !== "external_accounts") return row;
 	return {
 		...redactBackupRow(table, row),

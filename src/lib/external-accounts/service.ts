@@ -18,6 +18,7 @@ import { AccountInputError, changesSignIn, parseAccountInput, passwordFrom } fro
 import { addressDomain, findPreset, presetTrustsAuthResults } from "./presets-utils";
 import { appendRecentErrors } from "./recent-errors";
 import { serializeExternalAccount, type ExternalAccountRow } from "./serialize-utils";
+import { readIdentities } from "./identity-store";
 import { readSmtpVerified, writeSmtpVerified } from "./send-state";
 import { queueSyncNow } from "./sync";
 import { accountSwitches, isSwitchesOnly, restartJunkCursor } from "./switches";
@@ -44,21 +45,21 @@ export async function listExternalAccounts(env: CloudflareEnv, userId: string): 
 		.from(externalAccounts)
 		.where(eq(externalAccounts.userId, userId))
 		.orderBy(asc(externalAccounts.createdAt));
-	const verified = await readSmtpVerified(
-		env,
-		rows.map((row) => row.id),
+	const ids = rows.map((row) => row.id);
+	const [verified, identities] = await Promise.all([readSmtpVerified(env, ids), readIdentities(env, ids)]);
+	return rows.map((row) =>
+		serializeExternalAccount(row, verified.get(row.id) ?? null, new Date(), identities.get(row.id)),
 	);
-	return rows.map((row) => serializeExternalAccount(row, verified.get(row.id) ?? null));
 }
 
 /** The account as the API returns it, with its send-as state. */
-async function ownView(env: CloudflareEnv, userId: string, id: string): Promise<ExternalAccountView> {
+export async function ownView(env: CloudflareEnv, userId: string, id: string): Promise<ExternalAccountView> {
 	const row = await ownAccount(env, userId, id);
-	const verified = await readSmtpVerified(env, [id]);
-	return serializeExternalAccount(row, verified.get(id) ?? null);
+	const [verified, identities] = await Promise.all([readSmtpVerified(env, [id]), readIdentities(env, [id])]);
+	return serializeExternalAccount(row, verified.get(id) ?? null, new Date(), identities.get(id));
 }
 
-async function ownAccount(env: CloudflareEnv, userId: string, id: string): Promise<ExternalAccountRow> {
+export async function ownAccount(env: CloudflareEnv, userId: string, id: string): Promise<ExternalAccountRow> {
 	if (!(await externalAccountTablesReady(env))) throw refusalFor("migration_pending");
 	const [row] = await getDb(env)
 		.select()
@@ -75,7 +76,7 @@ function refusalFor(reason: keyof typeof CONNECT_REFUSAL_TEXT): ExternalAccountR
 	return new ExternalAccountRefusal(status, CONNECT_REFUSAL_TEXT[reason], reason.toUpperCase());
 }
 
-async function assertAllowed(env: CloudflareEnv, userId: string): Promise<void> {
+export async function assertAllowed(env: CloudflareEnv, userId: string): Promise<void> {
 	const refusal = await connectRefusal(env, userId);
 	if (refusal) throw refusalFor(refusal);
 }
@@ -101,7 +102,7 @@ async function assertMailbox(env: CloudflareEnv, actor: AccountActor, mailboxId:
 }
 
 /** An address on one of this install's own domains already arrives here and is never connected (spec §7.2). */
-async function assertNotKiteDomain(env: CloudflareEnv, address: string): Promise<void> {
+export async function assertNotKiteDomain(env: CloudflareEnv, address: string): Promise<void> {
 	const domain = addressDomain(address)!;
 	const [kiteDomain] = await getDb(env)
 		.select({ id: domains.id })
@@ -165,17 +166,18 @@ function loginFor(input: Pick<ExternalAccountInput, "imap" | "username">, passwo
 }
 
 /**
- * Signs in to the SMTP server too, when the login address could be a send-as identity (an SMTP server, and the user
- * name is the address, spec §7.2), and records the outcome: the time it worked, or null. A failure never fails the
- * connect or the test of the IMAP side; its reason is returned for the account's last error.
+ * Signs in to the SMTP server too, when the account has one, and records the outcome: the time it worked, or null.
+ * Every account is tested, whether or not its sign-in proves its address: an address verified with a code (spec §7.2)
+ * is sent through the same server. A failure never fails the connect or the test of the IMAP side; its reason is
+ * returned for the account's last error.
  */
 async function verifySending(
 	env: CloudflareEnv,
 	id: string,
-	input: Pick<ExternalAccountInput, "smtp" | "username" | "address">,
+	input: Pick<ExternalAccountInput, "smtp" | "username">,
 	password: string,
 ): Promise<ConnectionProblem | null> {
-	if (!input.smtp || input.username.toLowerCase() !== input.address) {
+	if (!input.smtp) {
 		await writeSmtpVerified(env, id, null);
 		return null;
 	}

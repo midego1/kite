@@ -50,6 +50,11 @@ export type ExternalAccountView = {
 	hasPassword: boolean;
 	sync: ExternalAccountSyncView;
 	sending: ExternalAccountSending;
+	/**
+	 * Addresses verified with a code, or waiting for one (spec §7.2): the account's own when its sign-in does not prove
+	 * it, and aliases.
+	 */
+	identities: ExternalIdentityView[];
 	createdAt: string;
 	updatedAt: string;
 };
@@ -103,6 +108,20 @@ export type ExternalAccountSending = {
 	block: SendBlock | null;
 };
 
+/** An address an account sends as once its code was entered (`external_identities`). */
+export type ExternalIdentityView = {
+	id: string;
+	address: string;
+	/** The name in From for this address; null uses the account's. */
+	displayName: string | null;
+	/** It is the account's own address, which its sign-in does not prove. */
+	accountAddress: boolean;
+	/** `pending` while a mailed code can still be entered; `unverified` when a new code is needed. */
+	state: "verified" | "pending" | "unverified";
+	verifiedAt: string | null;
+	codeExpiresAt: string | null;
+};
+
 /** A connected address the composer can offer as From (`/api/mailboxes`, `externalIdentities`). */
 export type SendIdentity = {
 	accountId: string;
@@ -114,6 +133,6 @@ export type SendIdentity = {
 	/** False when it is listed only to say what to do ("Reconnect"); it cannot be chosen then. */
 	available: boolean;
 	/** What the owner has to do first, when it is not available. */
-	action: "reconnect" | "test_connection" | null;
+	action: "reconnect" | "test_connection" | "verify" | null;
 	hint: string | null;
 };

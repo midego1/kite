@@ -91,7 +91,7 @@ test("an address may be sent as only when it signs in, sending is on, it works a
 		["not_allowed", "no_smtp", "send_off", "alias", "unproven", "reconnect", "paused", "not_verified", null].filter(
 			listsIdentity,
 		),
-		["reconnect", "not_verified", null],
+		["alias", "unproven", "reconnect", "not_verified", null],
 	);
 	for (const text of Object.values(SEND_BLOCK_TEXT)) assert.ok(text.endsWith("."), text);
 	assert.equal(sameAddress(" A@x.com", "a@X.com "), true);

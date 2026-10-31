@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages, users } from "@/db/schema";
 import { externalAccounts } from "@/db/schema/external-accounts";
+import { getEmailAddress } from "@/lib/email/address";
 import { renewJobClaim } from "@/lib/email/job-claim";
 import { buildMimeMessage, mintMessageId } from "@/lib/email/mime-build-utils";
 import type { OutboundProviderMessage } from "@/lib/email/outbound-provider-types";
@@ -13,7 +14,8 @@ import { submitMessage } from "@/lib/smtp/session";
 import type { SmtpLogin } from "@/lib/smtp/types";
 import { connectRefusal } from "./access";
 import { externalAccountTablesReady } from "./errors";
-import { SEND_BLOCK_TEXT, sendBlock } from "./identity-utils";
+import { readIdentities, verifiedAddresses } from "./identity-store";
+import { SEND_BLOCK_TEXT, sameAddress, sendBlock } from "./identity-utils";
 import { findPreset } from "./presets-utils";
 import { readSmtpVerified, writeSmtpVerified } from "./send-state";
 import { appendRecentErrors } from "./recent-errors";
@@ -69,9 +71,10 @@ type Account = ExternalAccountRow & { password: string };
 
 /**
  * The account a send goes through, checked again when the send runs (a scheduled or undoable send may wait): it must
- * still exist, belong to the sender and be allowed to send. Its password is opened here and nowhere else.
+ * still exist, belong to the sender and be allowed to send as `from`, its own address or one it verified with a code
+ * (a removed code stops the sends still waiting). Its password is opened here and nowhere else.
  */
-async function openAccount(env: CloudflareEnv, target: SubmissionTarget): Promise<Account> {
+async function openAccount(env: CloudflareEnv, target: SubmissionTarget, from: string): Promise<Account> {
 	const removed = new SubmissionError("The account was removed", "fail");
 	if (!(await externalAccountTablesReady(env))) throw removed;
 	const db = getDb(env);
@@ -81,13 +84,17 @@ async function openAccount(env: CloudflareEnv, target: SubmissionTarget): Promis
 		.where(and(eq(externalAccounts.id, target.accountId), eq(externalAccounts.userId, target.userId)))
 		.limit(1);
 	if (!row) throw removed;
-	await assertStillSendable(env, target, row.address, row.mailboxId);
+	await assertStillSendable(env, target, from, row.mailboxId);
+	const proven = verifiedAddresses((await readIdentities(env, [row.id])).get(row.id));
+	if (!sameAddress(from, row.address) && !proven.has(from))
+		throw new SubmissionError(`Not sent from ${from}. The address is no longer verified for this account.`, "fail");
 	const verified = (await readSmtpVerified(env, [row.id])).get(row.id) ?? null;
 	const block = sendBlock(
 		{ ...row, hasPassword: row.secret.length > 0, smtpVerifiedAt: verified },
 		await connectRefusal(env, target.userId),
+		proven.has(from),
 	);
-	if (block) throw new SubmissionError(`Not sent from ${row.address}. ${SEND_BLOCK_TEXT[block]}`, "fail");
+	if (block) throw new SubmissionError(`Not sent from ${from}. ${SEND_BLOCK_TEXT[block]}`, "fail");
 	let password: string | null = null;
 	try {
 		password = await openSetting(env, row.secret);
@@ -96,7 +103,7 @@ async function openAccount(env: CloudflareEnv, target: SubmissionTarget): Promis
 	}
 	if (!password) {
 		await markAuthFailed(env, row, "The saved password can no longer be opened. Reconnect the account.");
-		throw new SubmissionError(`Not sent from ${row.address}. ${SEND_BLOCK_TEXT.reconnect}`, "fail");
+		throw new SubmissionError(`Not sent from ${from}. ${SEND_BLOCK_TEXT.reconnect}`, "fail");
 	}
 	return { ...row, password };
 }
@@ -163,8 +170,9 @@ export async function sendViaSubmission(
 	message: OutboundProviderMessage,
 	attempt = 1,
 ): Promise<{ messageId: string; rawR2Key: string; appendSent: boolean }> {
-	const account = await openAccount(env, target);
-	const built = buildMimeMessage(message, { messageId: mintMessageId(account.address, target.messageId) });
+	const from = getEmailAddress(message.from).trim().toLowerCase();
+	const account = await openAccount(env, target, from);
+	const built = buildMimeMessage(message, { messageId: mintMessageId(from, target.messageId) });
 	const preset = findPreset(account.preset);
 	if (preset?.maxMessageBytes && built.raw.byteLength > preset.maxMessageBytes)
 		throw new SubmissionError(tooLargeMessage(built.raw.byteLength, preset.maxMessageBytes, preset.label), "fail");

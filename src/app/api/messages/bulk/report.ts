@@ -27,7 +27,7 @@ export async function reportSpamBulk(
 				receiptId: result.receiptId,
 			});
 	}
-	return { ok: true, undo, ...trainingUndoFlag(undo) };
+	return { ok: true, undo, moved: undo.map((state) => state.id), ...trainingUndoFlag(undo) };
 }
 
 export async function reportPhishingBulk(
@@ -37,7 +37,13 @@ export async function reportPhishingBulk(
 ): Promise<BulkMessageResponse> {
 	const outcomes = await reportPhishingWithUndo(env, user, messageIds);
 	const undo = outcomes.map((outcome) => outcome.undo);
-	return { ok: true, reports: outcomes.map((outcome) => outcome.report), undo, ...trainingUndoFlag(undo) };
+	return {
+		ok: true,
+		reports: outcomes.map((outcome) => outcome.report),
+		undo,
+		moved: undo.map((state) => state.id),
+		...trainingUndoFlag(undo),
+	};
 }
 
 /**

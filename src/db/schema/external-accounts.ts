@@ -102,6 +102,35 @@ export const externalAccountFolders = sqliteTable(
 );
 
 /**
+ * Addresses an account may send as once proven by a code mailed to them (migration 0089, spec §7.2, §10.3): a provider
+ * alias, or the account's own address when its sign-in does not prove it ("Other" servers, a user name that is not the
+ * address). `code_hash` is an HMAC of the pending code, never the code; it and its expiry are cleared once the code is
+ * used, and a backup leaves them out.
+ */
+export const externalIdentities = sqliteTable(
+	"external_identities",
+	{
+		id: text("id").primaryKey(),
+		accountId: text("account_id")
+			.notNull()
+			.references(() => externalAccounts.id, { onDelete: "cascade" }),
+		/** Lower-case. */
+		address: text("address").notNull(),
+		displayName: text("display_name"),
+		/** When the code was entered; null while it waits for one. Only a verified address is ever sent as. */
+		verifiedAt: integer("verified_at", { mode: "timestamp" }),
+		codeHash: text("code_hash"),
+		codeExpiresAt: integer("code_expires_at", { mode: "timestamp" }),
+		/** Wrong codes entered for the current code; at the limit the code is dropped. */
+		attempts: integer("attempts").notNull().default(0),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(t) => [uniqueIndex("external_identities_account_address_idx").on(t.accountId, t.address)],
+);
+
+/**
  * The columns migration 0079 adds to `users` and `app_settings`, as narrow views of those tables. They are kept off
  * `users` and `appSettings` on purpose: Drizzle names every column of a table in whole-row selects and inserts, so a
  * deploy that runs before the migration would fail every sign-in. Only `src/lib/external-accounts/` reads them, and

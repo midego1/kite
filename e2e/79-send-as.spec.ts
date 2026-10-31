@@ -11,7 +11,8 @@ import { startFakeSmtp } from "../tests/support/fake-smtp.mjs";
 // Send-as (docs/specs/external-accounts.md §7, PR 10): a connected account's address in the composer's From menu,
 // the message going out through the account's own SMTP server (the fake on 127.0.0.1, plain text only there under
 // EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK), the Sent copy in Kite and at the provider (IMAP APPEND), a reply from
-// the address the mail came to, an alias that is never offered, and a refused sign-in that asks to reconnect.
+// the address the mail came to, an unverified alias listed only to say "Verify", and a refused sign-in that asks to
+// reconnect.
 
 const APP_PASSWORD = "fake-app-password";
 const RECIPIENT = "friend@e2e.test";
@@ -138,7 +139,9 @@ test("the From menu offers the connected address; mail goes out through its SMTP
 	}
 });
 
-test("a reply goes out from the address the mail came to; an alias is never offered", async ({ browser }) => {
+test("a reply goes out from the address the mail came to; an unverified alias cannot be chosen", async ({
+	browser,
+}) => {
 	test.setTimeout(150_000);
 	const token = uniqueToken("sareply");
 	const address = `${token}@example.test`;
@@ -151,7 +154,8 @@ test("a reply goes out from the address the mail came to; an alias is never offe
 	const { context, page } = await userPage(browser, user.api);
 	try {
 		await connectSendAs(user.api, user.mailboxId, address, fakes);
-		// An account whose user name is not its address: its address needs a verification code first (PR 11).
+		// An account whose user name is not its address: its address needs a verification code first (PR 11,
+		// e2e/99-send-as-verification.spec.ts).
 		const aliasAccount = await connectSendAs(
 			user.api,
 			user.mailboxId,
@@ -189,9 +193,11 @@ test("a reply goes out from the address the mail came to; an alias is never offe
 
 		await page.goto("/inbox");
 		await page.getByRole("button", { name: "Compose" }).click();
-		const labels = (await readOptions(page.getByRole("combobox", { name: "From" }))).map((option) => option.label);
-		expect(labels.some((label) => label.startsWith(address))).toBe(true);
-		expect(labels.some((label) => label.includes(alias))).toBe(false);
+		const options = await readOptions(page.getByRole("combobox", { name: "From" }));
+		expect(options.some((option) => option.label.startsWith(address))).toBe(true);
+		expect(options.filter((option) => option.label.includes(alias)).map((option) => option.label)).toEqual([
+			`${alias} (Verify in Settings)`,
+		]);
 		await page.keyboard.press("Escape");
 
 		await page.goto("/inbox");
@@ -201,7 +207,10 @@ test("a reply goes out from the address the mail came to; an alias is never offe
 			.getByRole("button", { name: /^Reply( \(r\))?$/ })
 			.first()
 			.click();
-		await page.getByRole("textbox", { name: "Message body" }).fill("Here are the notes.");
+		const body = page.getByRole("textbox", { name: "Message body" });
+		// The reply's draft loads first; the body is read-only until then.
+		await expect(body).toHaveAttribute("contenteditable", "true", { timeout: 30_000 });
+		await body.fill("Here are the notes.");
 		const sent = page.waitForResponse(
 			(response) => response.url().endsWith("/api/send") && response.request().method() === "POST",
 		);

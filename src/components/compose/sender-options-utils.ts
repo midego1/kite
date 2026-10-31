@@ -46,6 +46,7 @@ export function senderOptionLabel(option: { address: string; identity: SendIdent
 	if (!identity) return option.address;
 	if (identity.action === "reconnect") return `${option.address} (Reconnect in Settings)`;
 	if (identity.action === "test_connection") return `${option.address} (Test the connection in Settings)`;
+	if (identity.action === "verify") return `${option.address} (Verify in Settings)`;
 	return `${option.address} (via ${identity.presetLabel})`;
 }
 

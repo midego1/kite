@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.31.9] - 2026-10-31
+
+### Added
+
+- **Why?** next to "N AI requests failed in the last 24 hours" on the [Admin overview](/admin) and in the mailbox's command center (primary admin): the failures grouped by cause, each with the features, provider and model, how often and when, the likely cause and a link to the setting that fixes it, worked out by Kite without asking an AI. **Ask AI** in it opens the assistant with that summary (codes and counts, no email) ready to send, and says why when the assistant can't answer either. No migration.
+
+### Changed
+
+- Files in received and imported mail are no longer stored a second time: when Kite can verify a file's bytes inside the stored raw message, it is served from exactly that part of the message, so a message with attachments takes about a third less storage. Downloads, previews, inline images, large-attachment links, JMAP, Save to Drive, forwarding and sending return the same bytes as before, and "Show original" is unchanged. Files Kite cannot verify there (quoted-printable, uuencode) keep a copy of their own, and a file whose stored copy has gone missing, for example after restoring an older backup, is rebuilt from the raw message the next time it is opened. No migration is needed; while migration 0088 is still pending, new mail keeps storing copies. The new environment variable `ATTACHMENT_RAW_INDEX=off` makes new mail store a copy of each file again; it is on by default.
+- **Do not roll back to a release before 2026.10.31.3 once this one has run**: those releases cannot open files served from the raw message and show them as missing. Fix forward instead, or follow the [recovery runbook](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#rolling-back-past-raw-backed-attachments) first. The earlier warning about rolling back past attachment sharing still applies.
+- The command center in the empty reading pane now sits calmly in every style and theme: its cards are quiet raised surfaces with a hairline edge and a faint glow of the style's accent, the counts are plain pills with a coloured dot, the quick actions match them, and a warning under **Needs attention** (or a waiting database update) is one amber callout that reads well on dark and light surfaces alike, instead of the solid blue and brown blocks Kite classic showed in dark mode.
+- The switch is now called **Allow an external AI provider to read mail** in [Admin → Agent](/agent), and its description lists every feature it covers.
+
+### Fixed
+
+- A start whose page stops responding behind the loading screen (bar frozen, kite still swinging, no **Reload Kite**) now says so: after 10 seconds without a sign of life the screen shows "Kite stopped responding. Reload this page to start again." It is drawn by CSS alone, so it appears even when no script can run.
+- When a page froze while starting, the next load reports to the server how far it got and which part of the app was rendering last (`boot.previous_load_froze` in the Worker logs), with no message content or addresses, so the cause can be found without copying details by hand.
+
+### Security
+
+- The primary admin's external-provider opt-in now also covers the assistant chat and the older **Automatically draft replies** setting, as it already did for automatic reading, Write with Kite and summaries. With an external provider (anything but Workers AI) and the opt-in off, the assistant panel says the provider is external and that the primary admin has not allowed sending mail to it, with a link to [Admin → Agent](/agent) for the primary admin, and chat stays off; automatic drafts are skipped with the reason in Activity. The opt-in is checked again before every step of a chat answer. **If your install uses an external provider for chat, the primary admin has to turn on the opt-in once for chat to keep working.**
+
 ## [2026.10.31.8] - 2026-10-31
 
 ### Added

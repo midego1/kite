@@ -18,7 +18,8 @@ export const CODE_WINDOW_MS = 60 * 60_000;
  * One address and nothing else: no display name, list, comment, quoting or line break can reach the To of the code
  * mail, so the only recipient is the address being verified.
  */
-const ADDRESS = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+const ADDRESS =
+	/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
 /** The address of an add request, lower-case, or null when it is not one plain address. */
 export function parseIdentityAddress(value: unknown): string | null {
@@ -91,8 +92,7 @@ export function identityState(
 	return "unverified";
 }
 
-const escapeHtml = (value: string) =>
-	value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 
 /**
  * The code mail: a fixed text with the code and the address it confirms. Nothing the requester typed but the address

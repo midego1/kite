@@ -15,9 +15,7 @@ const readyDatabases = new WeakSet<object>();
  */
 export async function externalIdentitiesReady(env: StoreEnv): Promise<boolean> {
 	if (readyDatabases.has(env.DB)) return true;
-	const row = await env.DB.prepare(
-		"SELECT count(*) AS present FROM sqlite_master WHERE type = 'table' AND name = ?",
-	)
+	const row = await env.DB.prepare("SELECT count(*) AS present FROM sqlite_master WHERE type = 'table' AND name = ?")
 		.bind("external_identities")
 		.first<{ present: number }>();
 	const ready = Number(row?.present ?? 0) === 1;

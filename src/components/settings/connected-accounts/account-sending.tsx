@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
+import { AccountAddresses } from "./account-addresses";
 import { saveAccountSwitches, sendingText } from "./connected-accounts-utils";
 
 /**
  * The send-as part of an account row (spec §7): whether the address is in the From menu and why not, and the switches
- * "Send from this address" and "Save a copy in the provider's Sent folder".
+ * "Send from this address" and "Save a copy in the provider's Sent folder", then the addresses verified with a code.
  */
 export function AccountSending({
 	account,
@@ -64,6 +65,7 @@ export function AccountSending({
 					</label>
 				)}
 			</div>
+			<AccountAddresses account={account} usable={usable} onChanged={onChanged} />
 			{error && (
 				<p role="alert" className="text-xs text-red-600">
 					{error}

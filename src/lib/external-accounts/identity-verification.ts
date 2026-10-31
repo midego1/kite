@@ -157,7 +157,11 @@ export async function addExternalIdentity(
 	if (!account.smtpHost)
 		throw new ExternalAccountRefusal(400, "Add the account's SMTP server first: Kite sends through it.", "NO_SMTP");
 	if (address === account.address && provenBySignIn(account))
-		throw new ExternalAccountRefusal(409, "Signing in already proves this address; it needs no code.", "NO_CODE_NEEDED");
+		throw new ExternalAccountRefusal(
+			409,
+			"Signing in already proves this address; it needs no code.",
+			"NO_CODE_NEEDED",
+		);
 	if (address !== account.address) await assertNotKiteDomain(env, address);
 	const db = getDb(env);
 	const find = async () =>

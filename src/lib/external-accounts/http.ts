@@ -3,6 +3,7 @@ import { requireSessionUser } from "@/lib/api/auth";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import type { SessionUser } from "@/lib/auth/types";
 import { getEnv } from "@/lib/cloudflare";
+import { readJsonBody } from "@/lib/http/request";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { ExternalAccountRefusal, MIGRATION_PENDING_CODE } from "./errors";
 
@@ -50,4 +51,31 @@ export async function postOnAccount(
 	if (!hasValidSessionMutationOrigin(request)) return Response.json({ error: "Invalid origin" }, { status: 403 });
 	const { id } = await params;
 	return answerExternal(() => run(env, auth.user, id), options);
+}
+
+/**
+ * A request on one address of one of the signed-in user's accounts (`/api/external-accounts/[id]/identities/…`):
+ * the session and the request's origin first, then `run` with the ids and the JSON body (empty when there is none),
+ * answered through `answerExternal`.
+ */
+export async function onAccountIdentity(
+	request: Request,
+	params: Promise<{ id: string; identityId?: string }>,
+	run: (
+		env: CloudflareEnv,
+		user: SessionUser,
+		ids: { id: string; identityId: string },
+		body: Record<string, unknown>,
+	) => Promise<Record<string, unknown>>,
+	options: { status?: number } = {},
+): Promise<Response> {
+	const env = getEnv();
+	const auth = await requireSessionUser(env, request);
+	if (auth.error) return auth.error;
+	if (!hasValidSessionMutationOrigin(request)) return Response.json({ error: "Invalid origin" }, { status: 403 });
+	const body =
+		request.method === "DELETE" ? {} : await readJsonBody<Record<string, unknown>>(request, 4 * 1024).catch(() => null);
+	if (!body || typeof body !== "object") return Response.json({ error: "Invalid request" }, { status: 400 });
+	const { id, identityId = "" } = await params;
+	return answerExternal(() => run(env, auth.user, { id, identityId }, body), options);
 }

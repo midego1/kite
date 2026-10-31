@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -122,12 +122,15 @@ function AskAi({ report, onAsk }: { report: AiFailureReport; onAsk: () => void }
  */
 export function AiFailuresWhy() {
 	const [open, setOpen] = useState(false);
+	// Ask AI hands the focus to the assistant's input; closing must not pull it back to Why?.
+	const asked = useRef(false);
 	const router = useRouter();
 	const assistant = useAssistantToggle();
 	const report = useQuery({ queryKey: REPORT_QUERY, queryFn: fetchReport, enabled: open, staleTime: 0, retry: false });
 
 	const ask = () => {
 		if (!report.data) return;
+		asked.current = true;
 		requestAssistantPrompt(report.data.prompt);
 		setOpen(false);
 		// Inside the mailbox the layout opens the assistant; elsewhere the mailbox opens it on arrival.
@@ -145,6 +148,11 @@ export function AiFailuresWhy() {
 			<DialogContent
 				className="flex max-h-[calc(100vh-4rem)] w-[min(640px,calc(100vw-32px))] flex-col"
 				data-testid="ai-failures-why"
+				onCloseAutoFocus={(event) => {
+					if (!asked.current) return;
+					asked.current = false;
+					event.preventDefault();
+				}}
 			>
 				<DialogHeader>
 					<DialogTitle>Why AI requests failed</DialogTitle>

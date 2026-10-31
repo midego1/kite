@@ -130,9 +130,10 @@ test("Why? and Ask AI in the command center open the assistant in place", async 
 	await dialog.getByRole("button", { name: "Ask AI" }).click();
 	await expect(dialog).toBeHidden();
 	await expect(page).toHaveURL(/\/inbox/);
-	await expect(
-		page.getByRole("region", { name: "Email assistant" }).getByRole("textbox", { name: "Message Kite AI" }),
-	).toHaveValue(/^Kite recorded/);
+	const input = page.getByRole("region", { name: "Email assistant" }).getByRole("textbox", { name: "Message Kite AI" });
+	await expect(input).toHaveValue(/^Kite recorded/);
+	// The dialog closing in place leaves the focus in the assistant, not on Why?.
+	await expect(input).toBeFocused();
 });
 
 test("Ask AI says why it can't run instead of offering a request that would fail", async ({ page }) => {

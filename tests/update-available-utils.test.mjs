@@ -26,12 +26,14 @@ const {
 	UPDATE_CHECK_INTERVAL_MS,
 	UPDATE_TOAST_MESSAGE,
 	UPDATE_ROW_ANNOUNCEMENT,
-	UPDATE_ROW_PREVIEW,
-	UPDATE_ROW_SUBJECT,
 	chooseUpdateSurface,
 	compareDeploymentVersion,
+	isUpdateReaderOpen,
 	parseDeploymentVersion,
+	parseUpdateDetails,
 	shouldCheckForUpdate,
+	updatePreview,
+	updateSubject,
 } = await import(pathToFileURL(join(bundleDirectory, "update.mjs")).href);
 
 test("checks every five minutes and at most once a minute on focus", () => {
@@ -101,8 +103,75 @@ test("a dismissed notice shows nowhere, whatever the page", () => {
 });
 
 test("the row's text is fixed and names no deployment id", () => {
-	assert.equal(UPDATE_ROW_SUBJECT, "Kite was updated");
-	assert.equal(UPDATE_ROW_PREVIEW, "Reload to get the latest version");
+	assert.equal(updateSubject({ release: null, notes: [], summary: "" }), "Kite was updated");
+	assert.equal(updatePreview({ release: null, notes: [], summary: "" }), "Reload to get the latest version");
 	// The live region says something else than the toast, so the two never read as one message twice.
 	assert.notEqual(UPDATE_ROW_ANNOUNCEMENT, UPDATE_TOAST_MESSAGE);
+});
+
+const NOTES = [
+	{
+		name: "2026.11.01.0",
+		date: "2026-11-01",
+		sections: [{ title: "Added", items: ["**Snooze** in [Settings](/settings/inbox) lists `later`."] }],
+	},
+];
+
+test("parseUpdateDetails keeps a newer calendar release and well-formed notes", () => {
+	assert.deepEqual(
+		parseUpdateDetails({ version: "x", release: "2026.11.01.0", notes: NOTES, summary: " New " }, "2026.10.31.3"),
+		{ release: "2026.11.01.0", notes: NOTES, summary: "New" },
+	);
+	// The same release, a development build or a missing field name no release.
+	assert.equal(parseUpdateDetails({ release: "2026.10.31.3" }, "2026.10.31.3").release, null);
+	assert.equal(parseUpdateDetails({ release: "development" }, "2026.10.31.3").release, null);
+	// Only a newer release is "ready": a rolled-back server is not, and .10 follows .4.
+	assert.equal(parseUpdateDetails({ release: "2026.10.30.9" }, "2026.10.31.3").release, null);
+	assert.equal(parseUpdateDetails({ release: "2026.10.31.10" }, "2026.10.31.4").release, "2026.10.31.10");
+	assert.equal(parseUpdateDetails({ release: "2026.10.31.4" }, "2026.10.31.10").release, null);
+	assert.equal(parseUpdateDetails({ release: "2026.11.01.0" }, "development").release, null);
+	const none = { release: null, notes: [], summary: "" };
+	assert.deepEqual(parseUpdateDetails({ version: "x" }, "2026.10.31.3"), none);
+	assert.deepEqual(parseUpdateDetails(null, "2026.10.31.3"), none);
+	assert.deepEqual(parseUpdateDetails({ notes: "x", summary: 7 }, "2026.10.31.3"), none);
+});
+
+test("parseUpdateDetails drops malformed notes instead of showing them", () => {
+	const notes = [
+		{ name: "", sections: [] },
+		{
+			name: "A",
+			sections: [
+				{ title: "Fixed", items: [7, "", "One fix"] },
+				{ title: "Empty", items: [] },
+			],
+		},
+		"text",
+		{ name: "B", sections: "nope" },
+	];
+	assert.deepEqual(parseUpdateDetails({ notes }, "").notes, [
+		{ name: "A", date: null, sections: [{ title: "Fixed", items: ["One fix"] }] },
+	]);
+	const long = { name: "C", sections: [{ title: "Added", items: ["x".repeat(5_000)] }] };
+	assert.equal(parseUpdateDetails({ notes: [long] }, "").notes[0].sections[0].items[0].length, 2_000);
+});
+
+test("the subject names a known release and the preview adds the server's summary", () => {
+	const none = { release: null, notes: [], summary: "" };
+	assert.equal(updateSubject(none), "Kite was updated");
+	assert.equal(updateSubject({ ...none, release: "2026.11.01.0" }), "Kite 2026.11.01.0 is ready");
+	assert.equal(updatePreview(none), "Reload to get the latest version");
+	assert.equal(
+		updatePreview({ ...none, summary: "Snooze in Settings lists later." }),
+		"Reload to get the latest version · Snooze in Settings lists later.",
+	);
+});
+
+test("What's new stays in the reader only while the notice stands", () => {
+	const base = { available: true, dismissed: false, reloading: false, lists: 1, open: true };
+	assert.equal(isUpdateReaderOpen(base), true);
+	assert.equal(isUpdateReaderOpen({ ...base, open: false }), false);
+	assert.equal(isUpdateReaderOpen({ ...base, dismissed: true }), false);
+	assert.equal(isUpdateReaderOpen({ ...base, reloading: true }), false);
+	assert.equal(isUpdateReaderOpen({ ...base, available: false }), false);
 });

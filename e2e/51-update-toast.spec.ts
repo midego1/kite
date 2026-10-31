@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ADMIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { ADMIN, STORAGE_STATE, SUPPORT_ADDRESS, VERSION_ROUTE } from "./support/constants";
 import { contrastBetween } from "./support/contrast";
 import { apiContext, deliverInbound, signIn, uniqueToken, waitForHydration } from "./support/helpers";
 
@@ -12,7 +12,7 @@ test.afterEach(async ({ page }) => {
 /** Answers `/api/version` with whatever `version.current` holds and counts the requests. */
 async function routeVersion(page: Page, initial: string) {
 	const version = { current: initial, requests: 0 };
-	await page.route("**/api/version", async (route) => {
+	await page.route(VERSION_ROUTE, async (route) => {
 		version.requests += 1;
 		await route.fulfill({
 			status: 200,
@@ -275,9 +275,9 @@ test("an unknown version and failed checks never show the toast", async ({ page 
 	await returnToTab(page, version);
 	await expect(updateToast(page)).toHaveCount(0);
 
-	await page.unroute("**/api/version");
+	await page.unroute(VERSION_ROUTE);
 	let failures = 0;
-	await page.route("**/api/version", async (route) => {
+	await page.route(VERSION_ROUTE, async (route) => {
 		failures += 1;
 		await route.abort("failed");
 	});

@@ -1,9 +1,19 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
-import type { UpdateNoticeState } from "./update-available-types";
+import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
+import { NO_UPDATE_DETAILS, isUpdateReaderOpen } from "./update-available-utils";
+import type { UpdateDetails, UpdateNoticeState } from "./update-available-types";
 
-const INITIAL: UpdateNoticeState = { available: false, dismissed: false, lists: 0, reloading: false };
+const INITIAL: UpdateNoticeState = {
+	available: false,
+	dismissed: false,
+	lists: 0,
+	reloading: false,
+	detectedAt: null,
+	details: NO_UPDATE_DETAILS,
+	open: false,
+	read: false,
+};
 
 let snapshot = INITIAL;
 const listeners = new Set<() => void>();
@@ -29,12 +39,34 @@ export function useUpdateNotice(): UpdateNoticeState {
 	);
 }
 
-export function announceUpdate() {
-	update({ available: true, dismissed: false });
+/**
+ * Only whether "What's new" holds the reader, so the split layout re-renders when that changes and not on every
+ * other change to the notice (such as the count of lists on screen).
+ */
+export function useUpdateReaderOpen(): boolean {
+	return useSyncExternalStore(
+		subscribe,
+		() => isUpdateReaderOpen(snapshot),
+		() => false,
+	);
+}
+
+export function announceUpdate(details: UpdateDetails = NO_UPDATE_DETAILS) {
+	update({ available: true, dismissed: false, detectedAt: Date.now(), details });
 }
 
 export function dismissUpdateNotice() {
-	update({ dismissed: true });
+	update({ dismissed: true, open: false });
+}
+
+/** The row was opened: "What's new" takes the reader, and the row reads as read from now on. */
+export function openUpdateReader() {
+	update({ open: true, read: true });
+}
+
+/** A message was opened, the list was left or Back was chosen. */
+export function closeUpdateReader() {
+	if (snapshot.open) update({ open: false });
 }
 
 /** Reload was chosen on either surface; the host's one `ReloadFlight` takes it from here. */
@@ -49,7 +81,7 @@ export function cancelReload() {
 
 /** Signing out hides the notice without letting the tab announce again (the host remembers it showed). */
 export function hideUpdateNotice() {
-	update({ available: false });
+	update({ available: false, open: false });
 }
 
 /** A message list on screen takes over from the toast; returns the call that gives it back. */
@@ -61,4 +93,11 @@ function registerUpdateList(): () => void {
 /** Registers a message list for as long as it is on screen. */
 export function useRegisterUpdateList(onScreen: boolean) {
 	useEffect(() => (onScreen ? registerUpdateList() : undefined), [onScreen]);
+}
+
+/** Provided by MessageSplitLayout: the list it holds can open "What's new" in its reader. */
+export const UpdateReaderHostContext = createContext(false);
+
+export function useUpdateReaderHost(): boolean {
+	return useContext(UpdateReaderHostContext);
 }

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.31.6] - 2026-10-31
+
+### Added
+
+- With no message open, the reading pane now shows a small command center instead of "Select a message to read" alone: a greeting with today's date, the counts that matter (unread mail in the folder, messages in the Screener, open For you suggestions), your connected accounts with how each is doing (a failed sign-in gets a Reconnect link), quick actions (New email, Search, and the modules that are on), and for administrators what needs attention (the admin overview's list, with waiting database updates kept in the notice with its **Apply now** button and progress, plus a line for healthy backups and the database size). Everything comes from data the mailbox already loads or from the same requests the Settings and Admin pages make.
+
 ## [2026.10.31.5] - 2026-10-31
 
 ### Changed

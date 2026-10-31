@@ -1,6 +1,6 @@
 import type { MimeTransferEncoding } from "./mime-index-types";
 
-/** A `message_attachments` row without the storage columns of migration 0089 (`ATTACHMENT_ROW_COLUMNS`). */
+/** A `message_attachments` row without the storage columns of migration 0088 (`ATTACHMENT_ROW_COLUMNS`). */
 export interface AttachmentRow {
 	id: string;
 	messageId: string;

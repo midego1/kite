@@ -235,7 +235,10 @@ test("index and verify a 24 MiB message", async (t) => {
 	assert.equal(matches.length, 1);
 	assert.deepEqual(unmatched, []);
 	assert.ok(raw.length > 23 * 1024 * 1024, `raw is ${raw.length} bytes`);
-	// The spec's target is 100 ms; the bound here leaves room for slow, shared CI runners.
-	assert.ok(elapsed < 2_000, `index and verify took ${Math.round(elapsed)} ms`);
+	// The spec's target is 100 ms; the bound here leaves room for slow, shared CI runners. Coverage instrumentation
+	// slows the byte loops twenty-fold, so the coverage run only checks the result.
+	const instrumented =
+		Boolean(process.env.NODE_V8_COVERAGE) || process.execArgv.includes("--experimental-test-coverage");
+	if (!instrumented) assert.ok(elapsed < 2_000, `index and verify took ${Math.round(elapsed)} ms`);
 	t.diagnostic(`24 MiB index and verify: ${Math.round(elapsed)} ms`);
 });

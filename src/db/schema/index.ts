@@ -401,7 +401,7 @@ export const messageAttachments = sqliteTable(
 			.notNull()
 			.$defaultFn(() => new Date()),
 		/**
-		 * Migration 0089. 'raw' rows are served from a byte range of the message's raw MIME
+		 * Migration 0088. 'raw' rows are served from a byte range of the message's raw MIME
 		 * (`src/lib/email/attachment-storage.ts`); read these columns only through that module, since a deploy can run
 		 * before the migration (`ATTACHMENT_ROW_COLUMNS` leaves them out).
 		 */
@@ -727,6 +727,7 @@ export const auditLogs = sqliteTable(
 		index("audit_logs_actor_idx").on(t.actorUserId),
 		index("audit_logs_mailbox_idx").on(t.mailboxId),
 		index("audit_logs_created_idx").on(t.createdAt),
+		index("audit_logs_action_created_idx").on(t.action, t.createdAt),
 	],
 );
 

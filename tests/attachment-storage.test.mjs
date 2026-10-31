@@ -10,7 +10,7 @@ import { FIXTURES } from "./fixtures/mime/fixtures.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const migrationsDir = join(root, "drizzle", "migrations");
-const STORAGE_MIGRATION = "0089_attachment_raw_storage.sql";
+const STORAGE_MIGRATION = "0088_attachment_raw_storage.sql";
 const directory = makeBundleDirectory("kite-attachment-storage-test-");
 const scratch = mkdtempSync(join(tmpdir(), "kite-attachment-storage-"));
 after(() => {
@@ -146,7 +146,7 @@ test("utils: sliceByteStream keeps exactly the requested bytes across chunk edge
 	}
 });
 
-test("migration 0089 adds the storage columns, keeps rows 'object' and lets keys be shared", async () => {
+test("migration 0088 adds the storage columns, keeps rows 'object' and lets keys be shared", async () => {
 	const { database } = await setup({ migrated: false });
 	database.db.exec(
 		"INSERT INTO message_attachments (id, message_id, filename, content_type, size, r2_key, created_at) VALUES ('att-old', 'msg-in', 'a.pdf', 'application/pdf', 3, 'attachments/msg-in/att-old/a.pdf', 1)",
@@ -170,7 +170,7 @@ test("migration 0089 adds the storage columns, keeps rows 'object' and lets keys
 });
 
 for (const migrated of [false, true]) {
-	test(`object attachments store, list, load, copy and delete ${migrated ? "after" : "before"} migration 0089`, async () => {
+	test(`object attachments store, list, load, copy and delete ${migrated ? "after" : "before"} migration 0088`, async () => {
 		const { env, bucket } = await setup({ migrated });
 		const content = encoder.encode("%PDF-1.7 fixture").buffer;
 		const [stored] = await m.storeMessageAttachments(env, "msg-in", [
@@ -290,7 +290,7 @@ function restoreRow(database, row) {
 	database.db.prepare(statement.sql).run(...statement.params);
 }
 
-test("backups restore both ways across migration 0089", async () => {
+test("backups restore both ways across migration 0088", async () => {
 	const older = {
 		id: "att-a",
 		message_id: "msg-in",

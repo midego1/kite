@@ -19,7 +19,7 @@ import type {
  */
 
 /**
- * The columns of a whole attachment row. The storage columns of migration 0089 are left out so these reads keep
+ * The columns of a whole attachment row. The storage columns of migration 0088 are left out so these reads keep
  * working on a database whose schema is behind; a 'raw' row is recognised by its key and located separately.
  */
 export const ATTACHMENT_ROW_COLUMNS = {
@@ -34,7 +34,7 @@ export const ATTACHMENT_ROW_COLUMNS = {
 	createdAt: messageAttachments.createdAt,
 };
 
-/** Where a 'raw' row's encoded body is; only asked for rows with a `raw:` key, which exist only after 0089. */
+/** Where a 'raw' row's encoded body is; only asked for rows with a `raw:` key, which exist only after 0088. */
 async function rawLocation(env: CloudflareEnv, attachmentId: string): Promise<RawAttachmentLocation | null> {
 	const [row] = await getDb(env)
 		.select({

@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { VERSION_ROUTE } from "./support/constants";
+import { RELOAD_RETURN_ENABLED } from "../src/components/reload-return-utils";
 import { mkdirSync } from "node:fs";
 
 const MESSAGE = "Kite was updated. Reload to get the latest version.";
@@ -12,6 +13,8 @@ const STATIC_TEXT = "Updating Kite…";
 
 /** Set to a directory to save frames of the startup screen there (the PR's). */
 const SHOT_DIR = process.env.RETURN_SHOT_DIR;
+/** The scene is off as a stopgap (reload-return-utils.ts); its specs stay for when it comes back. */
+const SCENE_OFF = "The kite's return is off (RELOAD_RETURN_ENABLED in reload-return-utils.ts)";
 
 test.afterEach(async ({ page }) => {
 	await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -166,9 +169,55 @@ async function waitForReturnScreen(page: Page) {
 	await page.waitForSelector(`${OVERLAY}[role="status"]`, { state: "attached", timeout: 20_000 });
 }
 
+test("while the return is off, Reload in the update notice loads the new version like a refresh: no marker, no class, no kite", async ({
+	page,
+}) => {
+	test.skip(RELOAD_RETURN_ENABLED, "The kite's return is on");
+	const toast = await showUpdateToast(page);
+	const entry = await holdEntryModule(page);
+	const loaded = page.waitForEvent("load", { timeout: 60_000 });
+	await toast.getByRole("button", { name: "Reload" }).click({ noWaitAfter: true });
+
+	// The new document's server-rendered screen, React held back: the plain screen of an ordinary load.
+	await expect.poll(() => entry.held.length, { timeout: 30_000 }).toBeGreaterThan(0);
+	await page.waitForSelector(`${OVERLAY}[role="status"]`, { state: "attached", timeout: 20_000 });
+	const screen = await page.evaluate(
+		({ overlay: overlaySelector, scene: sceneSelector, marker }) => {
+			const overlay = document.querySelector(overlaySelector)!;
+			const scene = overlay.querySelector(sceneSelector);
+			const spans = [...overlay.querySelectorAll("span.sr-only")];
+			return {
+				returnClass: document.documentElement.classList.contains("kite-reload-return"),
+				marker: sessionStorage.getItem(marker),
+				sceneDisplay: scene ? getComputedStyle(scene).display : "missing",
+				skyDisplay: getComputedStyle(overlay.querySelector(".reload-return-sky")!).display,
+				logoDisplay: getComputedStyle(overlay.querySelector("img")!).display,
+				plainLoading: spans.some((span) => span.textContent === "Loading" && getComputedStyle(span).display !== "none"),
+			};
+		},
+		{ overlay: OVERLAY, scene: SCENE, marker: MARKER_KEY },
+	);
+	expect(screen).toEqual({
+		returnClass: false,
+		marker: null,
+		sceneDisplay: "none",
+		skyDisplay: "none",
+		logoDisplay: "block",
+		plainLoading: true,
+	});
+
+	await entry.release();
+	await loaded;
+	await expect(page.getByRole("main")).toBeVisible({ timeout: 30_000 });
+	await expect(page.locator(OVERLAY)).not.toHaveClass(/opacity-100/);
+	await expect(page.locator("html")).not.toHaveClass(new RegExp(`\\b${RETURN_CLASS}\\b`));
+	await expect(page.getByRole("status").filter({ hasText: MESSAGE })).toHaveCount(0);
+});
+
 test("Reload in the update notice brings the kite back on the loading screen, which gives way to the app", async ({
 	page,
 }) => {
+	test.skip(!RELOAD_RETURN_ENABLED, SCENE_OFF);
 	const toast = await showUpdateToast(page);
 	const entry = await holdEntryModule(page);
 	const loaded = page.waitForEvent("load", { timeout: 60_000 });
@@ -280,6 +329,7 @@ test("an ordinary load shows the plain loading screen", async ({ page }) => {
 });
 
 test("with reduced motion the kite stands still and the screen says Updating Kite…", async ({ page }) => {
+	test.skip(!RELOAD_RETURN_ENABLED, SCENE_OFF);
 	await page.emulateMedia({ reducedMotion: "reduce" });
 	await markReturn(page);
 	const entry = await holdEntryModule(page);
@@ -340,6 +390,7 @@ const hasReturnClass = (page: Page) =>
 test("the return shows once: refreshing /inbox while it loads gives the plain screen, then the app", async ({
 	page,
 }) => {
+	test.skip(!RELOAD_RETURN_ENABLED, SCENE_OFF);
 	await markReturn(page);
 	const entry = await holdEntryModule(page);
 	await page.goto("/inbox", { waitUntil: "commit" });
@@ -369,6 +420,7 @@ test("without the marker a refresh of /inbox loads the app with the plain screen
 test("the scene is cosmetic: a startup that never finishes drops it by itself and reaches Kite couldn't load", async ({
 	page,
 }) => {
+	test.skip(!RELOAD_RETURN_ENABLED, SCENE_OFF);
 	// Three loads of the server's screen: two boot-watchdog reloads (vite dev waits up to 30 and 15 quiet seconds),
 	// then the message.
 	test.setTimeout(180_000);
@@ -510,6 +562,7 @@ const LOOKS = [
 
 for (const look of LOOKS) {
 	test(`${look.label}: the screen follows the theme and the kite fits`, async ({ page }) => {
+		test.skip(!RELOAD_RETURN_ENABLED, SCENE_OFF);
 		await page.setViewportSize(look.viewport);
 		await page.addInitScript(
 			({ theme, style }) => {
@@ -541,6 +594,7 @@ for (const look of LOOKS) {
 }
 
 test("a startup failure ends the return: the plain failure screen shows and the marker is gone", async ({ page }) => {
+	test.skip(!RELOAD_RETURN_ENABLED, SCENE_OFF);
 	await markReturn(page);
 	await page.route("**/api/auth/me", (route) => route.abort("failed"));
 	await page.goto("/inbox");

@@ -24,12 +24,14 @@ await build({
 });
 const {
 	RELOAD_RETURN_ANNOUNCEMENT,
+	RELOAD_RETURN_ENABLED,
 	RELOAD_RETURN_STATIC_TEXT,
 	clearReloadReturnMarker,
 	endReloadReturn,
 	isReloadReturnActive,
 	markReloadReturn,
 	reloadReturnBootstrapScript,
+	reloadReturnScript,
 } = await import(pathToFileURL(join(bundleDirectory, "return.mjs")).href);
 
 /** What `reloadToNewVersion` writes and the inline script reads; the class the startup screen's CSS keys on. */
@@ -53,7 +55,7 @@ function fakeStorage(entries = {}) {
  * Runs the inline <head> script against a fake sessionStorage and <html> class list; returns the classes it left,
  * the timers it set (`[ms, callback]`) and `classList` to read after running them.
  */
-function runBootstrap({ storage = fakeStorage(), now = NOW, classes = [] } = {}) {
+function runBootstrap({ storage = fakeStorage(), now = NOW, classes = [], script = reloadReturnScript(true) } = {}) {
 	const classList = new Set(classes);
 	const timers = [];
 	const context = vm.createContext({
@@ -70,7 +72,7 @@ function runBootstrap({ storage = fakeStorage(), now = NOW, classes = [] } = {})
 			},
 		},
 	});
-	vm.runInContext(reloadReturnBootstrapScript, context);
+	vm.runInContext(script, context);
 	return { classes: [...classList], storage, timers, classList };
 }
 
@@ -79,6 +81,20 @@ function returnsFor(ageMs) {
 	const storage = fakeStorage({ [RELOAD_RETURN_STORAGE_KEY]: String(NOW - ageMs) });
 	return runBootstrap({ storage }).classes.includes(RELOAD_RETURN_CLASS);
 }
+
+test("while the return is off, Reload writes no marker and the page loads like a refresh, dropping an old tab's marker", () => {
+	assert.equal(RELOAD_RETURN_ENABLED, false);
+	const storage = fakeStorage();
+	markReloadReturn(storage, NOW);
+	assert.equal(storage.map.size, 0);
+	// A tab still running an older build writes the marker before it reloads into this one.
+	storage.setItem(RELOAD_RETURN_STORAGE_KEY, String(NOW - 500));
+	const result = runBootstrap({ storage, script: reloadReturnBootstrapScript });
+	assert.deepEqual(result.classes, []);
+	assert.deepEqual(result.timers, []);
+	assert.equal(storage.getItem(RELOAD_RETURN_STORAGE_KEY), null);
+	assert.deepEqual(runBootstrap({ script: reloadReturnBootstrapScript }).classes, []);
+});
 
 test("a marker counts for a minute, either way round the clock", () => {
 	assert.equal(returnsFor(0), true);
@@ -92,17 +108,17 @@ test("a marker counts for a minute, either way round the clock", () => {
 
 test("markReloadReturn writes the time under the key the boot script reads, and clearing removes it", () => {
 	const storage = fakeStorage();
-	markReloadReturn(storage, NOW);
+	markReloadReturn(storage, NOW, true);
 	assert.deepEqual([...storage.map], [[RELOAD_RETURN_STORAGE_KEY, String(NOW)]]);
 	clearReloadReturnMarker(storage);
 	assert.equal(storage.map.size, 0);
 	assert.deepEqual(runBootstrap({ storage, now: NOW + 5_000 }).classes, []);
-	markReloadReturn(storage, NOW);
+	markReloadReturn(storage, NOW, true);
 	assert.deepEqual(runBootstrap({ storage, now: NOW + 5_000 }).classes, [RELOAD_RETURN_CLASS]);
 });
 
 test("marking and clearing never throw without storage or with a storage that refuses", () => {
-	assert.doesNotThrow(() => markReloadReturn(null, NOW));
+	assert.doesNotThrow(() => markReloadReturn(null, NOW, true));
 	assert.doesNotThrow(() => clearReloadReturnMarker(null));
 	const refusing = {
 		getItem: () => null,
@@ -113,7 +129,7 @@ test("marking and clearing never throw without storage or with a storage that re
 			throw new Error("SecurityError");
 		},
 	};
-	assert.doesNotThrow(() => markReloadReturn(refusing, NOW));
+	assert.doesNotThrow(() => markReloadReturn(refusing, NOW, true));
 	assert.doesNotThrow(() => clearReloadReturnMarker(refusing));
 });
 
@@ -203,7 +219,7 @@ function withBrowser({ storage, classes = [] }, run) {
 test("markReloadReturn and clearReloadReturnMarker use the page's sessionStorage by default", () => {
 	const storage = fakeStorage();
 	withBrowser({ storage: () => storage }, () => {
-		markReloadReturn();
+		markReloadReturn(undefined, undefined, true);
 		assert.equal(typeof storage.getItem(RELOAD_RETURN_STORAGE_KEY), "string");
 		assert.ok(Math.abs(Number(storage.getItem(RELOAD_RETURN_STORAGE_KEY)) - Date.now()) < 5_000);
 		clearReloadReturnMarker();

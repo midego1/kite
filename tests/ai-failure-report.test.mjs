@@ -172,6 +172,30 @@ test("the Ask AI prompt has counts, codes and Kite's sentences, never people, ma
 	assert.ok(aiFailurePrompt(groupAiFailures(many), 200, true).length <= 3_500);
 });
 
+test("an oversized group frees its Ask AI slot for a later, smaller group", () => {
+	const small = (code) => ({
+		code,
+		count: 1,
+		firstAt: "2026-10-31T10:00:00.000Z",
+		lastAt: "2026-10-31T10:00:00.000Z",
+		features: [{ feature: "auto_triage", label: "Automatic reading", count: 1 }],
+		models: [{ providerLabel: "OpenAI", model: "gpt-4o-mini", count: 1 }],
+		statuses: [],
+		latestMessage: "The request failed.",
+		facts: [],
+		cause: "Something failed.",
+		fix: "Try again.",
+	});
+	const oversized = { ...small("too_big"), latestMessage: "x".repeat(3_500) };
+	const groups = [oversized, ...Array.from({ length: 8 }, (_, index) => small(`small_${index + 1}`))];
+	const prompt = aiFailurePrompt(groups, 9, false);
+	// The oversized group is skipped, and all eight small ones fit, including the ninth group in the list.
+	assert.doesNotMatch(prompt, /too_big/);
+	assert.match(prompt, /8\. small_8: 1 time/);
+	assert.match(prompt, /And 1 more kind of failure\./);
+	assert.ok(prompt.length <= 3_500);
+});
+
 // Production on 2026-10-31: twelve automatic-reading requests to Anthropic's claude-haiku-5-5 cut off.
 const haikuCutOff = (at, extra = {}) =>
 	row("cut_off", at, { model: "claude-haiku-5-5", provider: "anthropic", ...extra });

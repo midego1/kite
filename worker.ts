@@ -162,16 +162,16 @@ export default {
 
 			stage = "forward";
 			if (decision?.action === "forward" && decision.forwardTo) {
-				const forwarded = await forwardMessage(message, decision.forwardTo);
+				const forwarded = await forwardMessage(env, message, decision.forwardTo);
 				// A forward rule drops the message unless it was explicitly asked to keep a copy.
 				// If the forward itself failed we still store it, so mail is never silently lost.
 				if (forwarded && !decision.keepCopy) return;
 			}
 
-			if (!wasForwardedByKite((name) => message.headers.get(name))) {
+			if (!(await wasForwardedByKite(env, (name) => message.headers.get(name)))) {
 				const forwardingDestination = await getAccountForwardingDestination(env, message.to);
 				if (forwardingDestination) {
-					await forwardMessage(message, forwardingDestination);
+					await forwardMessage(env, message, forwardingDestination);
 				}
 			}
 			stage = "store";

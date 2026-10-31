@@ -89,3 +89,10 @@ test("participants without an address keep one chip per name", () => {
 	]);
 	assert.equal(people.length, 1);
 });
+
+test("the open card switches only to a name the user saved, never to one learned from mail (upstream #226)", () => {
+	assert.equal(card.savedContactName({ displayName: " Ashby Recruiting ", source: "manual" }), "Ashby Recruiting");
+	assert.equal(card.savedContactName({ displayName: "LiveKit Hiring Team", source: "inbound" }), null);
+	assert.equal(card.savedContactName({ displayName: "Alice", source: "outbound" }), null);
+	assert.equal(card.savedContactName({ displayName: null, source: "manual" }), null);
+});

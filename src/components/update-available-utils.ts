@@ -1,3 +1,4 @@
+import { compareCalendarVersions } from "@/lib/changelog/calendar-version-utils";
 import type { ChangelogRelease, ChangelogSection } from "@/lib/changelog/types";
 import type {
 	UpdateCheckState,
@@ -18,7 +19,6 @@ export const UPDATE_ROW_ANNOUNCEMENT = "A new version of Kite is available.";
 export const UPDATE_TOAST_MESSAGE = "Kite was updated. Reload to get the latest version.";
 export const NO_UPDATE_DETAILS: UpdateDetails = { release: null, notes: [], summary: "" };
 
-const CALENDAR_VERSION = /^\d{4}\.\d{2}\.\d{2}\.\d+$/;
 const MAX_NOTE_RELEASES = 3;
 const MAX_NOTE_TEXT = 2_000;
 
@@ -50,13 +50,14 @@ function parseRelease(value: unknown): ChangelogRelease {
 
 /**
  * Reads the release, notes and summary a server sends with a changed version. The release counts only when it is
- * a calendar version other than the one this tab runs; anything malformed is left out rather than shown.
+ * a calendar version newer than the one this tab runs (a rolled-back server is not "ready"); anything malformed is
+ * left out rather than shown.
  */
 export function parseUpdateDetails(value: unknown, ownRelease: string): UpdateDetails {
 	const { release, notes, summary } = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
 	const name = text(release, 40);
 	return {
-		release: CALENDAR_VERSION.test(name) && name !== ownRelease ? name : null,
+		release: compareCalendarVersions(name, ownRelease) === 1 ? name : null,
 		notes: list(notes, MAX_NOTE_RELEASES)
 			.map(parseRelease)
 			.filter((entry) => entry.name && entry.sections.length > 0),

@@ -1,3 +1,4 @@
+import { compareCalendarVersions, isCalendarVersion } from "./calendar-version-utils";
 import { parseInlineMarkdown } from "./changelog-utils";
 import type { ChangelogRelease } from "./types";
 
@@ -9,14 +10,18 @@ function hasItems(release: ChangelogRelease): boolean {
 }
 
 /**
- * The release notes a tab running release `have` has not had yet, newest first: the releases above it and
- * "Unreleased" when it has entries. A release this changelog does not know (a development build, or a server
- * rolled back to an older release than the tab's) gets none, so nothing old is ever shown as new.
+ * The release notes a tab running release `have` has not had yet, newest first, at most three: the releases above
+ * it and "Unreleased" when it has entries. The server keeps only its newest releases, so a calendar version older
+ * than all of them (a tab left open over several releases) gets the newest three. A version newer than every kept
+ * release (a server rolled back below the tab's release) or one that is not a calendar version (a development
+ * build) gets none, so nothing old is ever shown as new.
  */
 export function pickUpdateNotes(releases: ChangelogRelease[], have: string): ChangelogRelease[] {
 	const index = releases.findIndex((release) => release.name === have);
-	if (index < 0) return [];
-	return releases.slice(0, index).filter(hasItems).slice(0, UPDATE_NOTES_MAX_RELEASES);
+	if (index >= 0) return releases.slice(0, index).filter(hasItems).slice(0, UPDATE_NOTES_MAX_RELEASES);
+	const oldest = releases.findLast((release) => isCalendarVersion(release.name));
+	if (!oldest || compareCalendarVersions(have, oldest.name) !== -1) return [];
+	return releases.filter(hasItems).slice(0, UPDATE_NOTES_MAX_RELEASES);
 }
 
 /** The first entry of the notes as plain text, for the preview line of the "Kite was updated" row. */

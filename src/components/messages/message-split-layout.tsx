@@ -13,9 +13,8 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup, usePanelRef } fro
 import { layoutPixels, pixelsPerPercent } from "@/components/ui/resizable-utils";
 import { useSyncedPanel } from "@/components/ui/use-synced-panel";
 import { useKeyChanged } from "@/hooks/use-synced-state";
-import { isUpdateReaderOpen } from "@/components/update-available-utils";
 import { UpdateNoticeReader } from "@/components/update-notice-reader";
-import { UpdateReaderHostContext, closeUpdateReader, useUpdateNotice } from "@/components/update-notice-store";
+import { UpdateReaderHostContext, closeUpdateReader, useUpdateReaderOpen } from "@/components/update-notice-store";
 import { BulkMessageSelectionPane } from "./bulk-message-selection-pane";
 import { OpenRowContext, useRowLookupHolder } from "./open-row-context";
 import { MessageFolderPage } from "./message-folder-page";
@@ -73,7 +72,7 @@ function useUpdateReader(
 	visibleMessageId: string | undefined,
 	leave: { leaveOpenMessage: () => void; clearSelection: () => void },
 ) {
-	const open = isUpdateReaderOpen(useUpdateNotice());
+	const open = useUpdateReaderOpen();
 	const latest = useRef(leave);
 	useEffect(() => {
 		latest.current = leave;

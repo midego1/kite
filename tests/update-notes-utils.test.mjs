@@ -58,3 +58,33 @@ test("the first note line is plain text", () => {
 	assert.equal(firstUpdateNoteLine([]), "");
 	assert.equal(firstUpdateNoteLine([release("4", [])]), "");
 });
+
+const CALENDAR = [
+	release("Unreleased", ["fragment"]),
+	release("2026.10.31.10"),
+	release("2026.10.31.4"),
+	release("2026.10.31.3"),
+	release("2026.10.30.0"),
+	release("2026.10.29.2"),
+];
+
+test("a tab older than every kept release gets the newest three, comparing parts as numbers", () => {
+	assert.ok(CALENDAR.length >= 6);
+	assert.deepEqual(
+		pickUpdateNotes(CALENDAR, "2026.10.28.9").map((entry) => entry.name),
+		["Unreleased", "2026.10.31.10", "2026.10.31.4"],
+	);
+	// .9 of the oldest kept day is newer than .2, so it is not "older than all": unknown, so nothing.
+	assert.deepEqual(pickUpdateNotes(CALENDAR, "2026.10.29.9"), []);
+	// .10 follows .4: a tab on .4 gets only what is above it.
+	assert.deepEqual(
+		pickUpdateNotes(CALENDAR, "2026.10.31.4").map((entry) => entry.name),
+		["Unreleased", "2026.10.31.10"],
+	);
+});
+
+test("a rolled-back server and a development build give no notes", () => {
+	assert.deepEqual(pickUpdateNotes(CALENDAR, "2026.11.01.0"), []);
+	assert.deepEqual(pickUpdateNotes(CALENDAR, "development"), []);
+	assert.deepEqual(pickUpdateNotes([release("Unreleased")], "2026.10.28.0"), []);
+});

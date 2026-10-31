@@ -15,6 +15,18 @@ import { UPDATE_SENDER, UpdateSenderAvatar } from "./update-notice-row";
 import { closeUpdateReader, dismissUpdateNotice, useRegisterUpdateList, useUpdateNotice } from "./update-notice-store";
 import { reloadToNewVersion } from "./update-reload";
 
+/** Close and Back give the focus back to the row that opened the reader, once the list shows it again. */
+function closeAndReturnFocus() {
+	closeUpdateReader();
+	// On a phone the list mounts again first, so the row may take a frame or two to appear.
+	const focusOpener = (frames: number) => {
+		const opener = document.querySelector<HTMLElement>("[data-update-opener]");
+		if (opener) opener.focus();
+		else if (frames > 0) requestAnimationFrame(() => focusOpener(frames - 1));
+	};
+	requestAnimationFrame(() => focusOpener(5));
+}
+
 function ReleaseBody({ release }: { release: ChangelogRelease }) {
 	const headingId = `update-notes-${release.name.replace(/[^\w-]/g, "-")}`;
 	return (
@@ -23,8 +35,8 @@ function ReleaseBody({ release }: { release: ChangelogRelease }) {
 				{changelogReleaseLabel(release)}
 				{release.date && <span className="text-xs font-normal text-neutral-500">{release.date}</span>}
 			</h2>
-			{release.sections.map((section) => (
-				<div key={section.title} className="space-y-1.5">
+			{release.sections.map((section, sectionIndex) => (
+				<div key={`${section.title}:${sectionIndex}`} className="space-y-1.5">
 					<h3 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{section.title}</h3>
 					<ul className="space-y-1.5">
 						{section.items.map((item, index) => (
@@ -69,7 +81,7 @@ export function UpdateNoticeReader() {
 					<button
 						type="button"
 						className="relative z-10 shrink-0 rounded-full p-2 text-neutral-600 duration-200 hover:bg-neutral-100 hover:text-neutral-900"
-						onClick={closeUpdateReader}
+						onClick={closeAndReturnFocus}
 						aria-label={headerLabel}
 					>
 						{singleColumn ? <ArrowLeft size={18} aria-hidden="true" /> : <X size={18} aria-hidden="true" />}

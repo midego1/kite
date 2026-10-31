@@ -125,6 +125,11 @@ test("parseUpdateDetails keeps a newer calendar release and well-formed notes", 
 	// The same release, a development build or a missing field name no release.
 	assert.equal(parseUpdateDetails({ release: "2026.10.31.3" }, "2026.10.31.3").release, null);
 	assert.equal(parseUpdateDetails({ release: "development" }, "2026.10.31.3").release, null);
+	// Only a newer release is "ready": a rolled-back server is not, and .10 follows .4.
+	assert.equal(parseUpdateDetails({ release: "2026.10.30.9" }, "2026.10.31.3").release, null);
+	assert.equal(parseUpdateDetails({ release: "2026.10.31.10" }, "2026.10.31.4").release, "2026.10.31.10");
+	assert.equal(parseUpdateDetails({ release: "2026.10.31.4" }, "2026.10.31.10").release, null);
+	assert.equal(parseUpdateDetails({ release: "2026.11.01.0" }, "development").release, null);
 	const none = { release: null, notes: [], summary: "" };
 	assert.deepEqual(parseUpdateDetails({ version: "x" }, "2026.10.31.3"), none);
 	assert.deepEqual(parseUpdateDetails(null, "2026.10.31.3"), none);

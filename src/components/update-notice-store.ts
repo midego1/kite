@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
-import { NO_UPDATE_DETAILS } from "./update-available-utils";
+import { NO_UPDATE_DETAILS, isUpdateReaderOpen } from "./update-available-utils";
 import type { UpdateDetails, UpdateNoticeState } from "./update-available-types";
 
 const INITIAL: UpdateNoticeState = {
@@ -36,6 +36,18 @@ export function useUpdateNotice(): UpdateNoticeState {
 		subscribe,
 		() => snapshot,
 		() => INITIAL,
+	);
+}
+
+/**
+ * Only whether "What's new" holds the reader, so the split layout re-renders when that changes and not on every
+ * other change to the notice (such as the count of lists on screen).
+ */
+export function useUpdateReaderOpen(): boolean {
+	return useSyncExternalStore(
+		subscribe,
+		() => isUpdateReaderOpen(snapshot),
+		() => false,
 	);
 }
 

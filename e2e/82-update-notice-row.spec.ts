@@ -161,6 +161,10 @@ test("clicking the row opens What's new in the reader, without reloading", async
 	expect(await page.evaluate(() => (window as unknown as { __beforeReload?: boolean }).__beforeReload)).toBe(true);
 	await expect(row(page)).toBeVisible();
 	await page.screenshot({ path: test.info().outputPath("update-reader.png") });
+	// Close returns the focus to the row that opened it.
+	await reader(page).getByRole("button", { name: "Close", exact: true }).click();
+	await expect(reader(page)).toHaveCount(0);
+	await expect(opener(page)).toBeFocused();
 });
 
 test("a message opened afterwards takes the reader, and the notice opens over an open message", async ({ page }) => {
@@ -301,6 +305,7 @@ test("on a phone the notice is a stacked row that opens a full-screen reader wit
 	await pane.getByRole("button", { name: "Back to Inbox" }).click();
 	await expect(reader(page)).toHaveCount(0);
 	await expect(row(page)).toBeVisible();
+	await expect(opener(page)).toBeFocused();
 });
 
 for (const look of [

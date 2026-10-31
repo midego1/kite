@@ -90,6 +90,7 @@ function Opener({
 	return (
 		<button
 			type="button"
+			data-update-opener=""
 			onClick={openUpdateReader}
 			aria-current={notice.open ? "true" : undefined}
 			aria-label={`${notice.read ? "" : "Unread, "}${subject}, from ${UPDATE_SENDER}. Open what's new`}

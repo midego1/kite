@@ -33,7 +33,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/alerts/webhook`                                  | DELETE, GET, PUT       | [source](../src/app/api/admin/alerts/webhook/route.ts)                                  |
 | `/api/admin/alerts/webhook/test`                             | POST                   | [source](../src/app/api/admin/alerts/webhook/test/route.ts)                             |
 | `/api/admin/api-keys`                                        | DELETE, GET, POST      | [source](../src/app/api/admin/api-keys/route.ts)                                        |
-| `/api/admin/attachment-storage`                              | GET                    | [source](../src/app/api/admin/attachment-storage/route.ts)                              |
+| `/api/admin/attachment-storage`                              | GET, POST              | [source](../src/app/api/admin/attachment-storage/route.ts)                              |
 | `/api/admin/aws`                                             | DELETE, GET, POST, PUT | [source](../src/app/api/admin/aws/route.ts)                                             |
 | `/api/admin/database-size`                                   | GET                    | [source](../src/app/api/admin/database-size/route.ts)                                   |
 | `/api/admin/external-accounts`                               | GET, PUT               | [source](../src/app/api/admin/external-accounts/route.ts)                               |

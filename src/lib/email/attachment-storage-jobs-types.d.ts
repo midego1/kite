@@ -12,7 +12,10 @@ export type AttachmentStorageJobStatus = "running" | "completed" | "failed" | "c
 /** Why a running job stopped by itself. */
 export type AttachmentStorageStopReason = "raw_index_off";
 
-/** Counters a batch adds to its job. */
+/**
+ * Counters a batch adds to its job when it finishes. A batch killed part way records nothing, and the rows it changed
+ * are not selected again, so after such a kill the counters can be lower than what changed; the rows stay the truth.
+ */
 export interface AttachmentStorageCounters {
 	/** Rows looked at. */
 	done: number;

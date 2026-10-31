@@ -204,9 +204,14 @@ async function main() {
 	check("no row shares an object", afterMaterialize.shared.rows === 0, afterMaterialize.shared);
 	check(
 		"every raw row and every shared row got exactly one object",
-		afterMaterialize.objects.keys === before.objects.keys + before.raw.rows + before.shared.rows &&
-			materialized.converted === before.raw.rows,
-		{ before: before.objects, after: afterMaterialize.objects, job: materialized },
+		afterMaterialize.objects.keys === before.objects.keys + before.raw.rows + before.shared.rows,
+		{ before: before.objects, after: afterMaterialize.objects },
+	);
+	// The killed batch recorded nothing, so its files are missing from the counters but not from the data.
+	check(
+		"the job's counters leave out only the killed batch's files",
+		materialized.converted === before.raw.rows - 3,
+		materialized,
 	);
 	check("files download byte-exact after materialize", await filesIntact(delivered));
 	const verified = await json("/api/admin/attachment-storage?verify=1");

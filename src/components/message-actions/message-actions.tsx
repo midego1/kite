@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { MessageSourceDialog } from "@/components/messages/message-source-dialog";
 import { useMessageListHref } from "@/components/messages/message-detail-navigation";
-import { useConversationView } from "@/components/messages/use-conversation-view";
+import { useRowMessageIds } from "@/components/messages/open-row-context";
 import { SnoozeMenuItem } from "@/components/messages/snooze-picker";
 import { useMessageMenuSlots } from "./message-menu-slots";
 import { ReportPhishingItem } from "./report-phishing-item";
@@ -86,18 +86,19 @@ export function MessageActions({
 	const leaveReader = useCallback(() => {
 		if (!layoutListHref) router.push(listHref);
 	}, [layoutListHref, listHref, router]);
-	const [conversationView] = useConversationView();
+	// A move takes what the open message's row stands for: in conversation view, its conversation in this list.
+	const rowMessageIds = useRowMessageIds();
 
 	const runUnguarded = useCallback(
 		async (action: BulkMessageAction, folderId?: string) => {
 			setMoreOpen(false);
+			const rowIds = rowMessageIds(messageId);
 			// Reporting trains the filter and cannot be fully undone, so every route to it asks first.
-			if (action === "spam" && !(await confirmReportSpam(1))) return;
+			if (action === "spam" && !(await confirmReportSpam(rowIds.length))) return;
 			setPendingAction(action);
 			setError(null);
 			try {
-				// In conversation view the list shows the whole thread as one row, so a move takes all of it.
-				await runSingleMessageAction(messageId, action, folderId, conversationView);
+				await runSingleMessageAction(messageId, action, folderId, rowIds);
 				if (movesMessageOutOfList(action)) leaveReader();
 				else router.refresh();
 			} catch {
@@ -106,7 +107,7 @@ export function MessageActions({
 				setPendingAction(null);
 			}
 		},
-		[messageId, leaveReader, router, conversationView],
+		[messageId, leaveReader, router, rowMessageIds],
 	);
 
 	// In Trash and Spam the delete button removes the message for good instead of
@@ -202,7 +203,7 @@ export function MessageActions({
 		setPendingAction("block");
 		try {
 			await blockMessageContact({ mailboxId, senderAddress });
-			await runSingleMessageAction(messageId, "trash", undefined, conversationView);
+			await runSingleMessageAction(messageId, "trash", undefined, rowMessageIds(messageId));
 			leaveReader();
 		} catch (blockError) {
 			setError(blockError instanceof Error ? blockError.message : "Could not block contact");
@@ -213,7 +214,7 @@ export function MessageActions({
 
 	const reportPhishing = async () => {
 		setMoreOpen(false);
-		if (await confirmReportPhishing(1)) await runAction("phishing");
+		if (await confirmReportPhishing(rowMessageIds(messageId).length)) await runAction("phishing");
 	};
 	const shownError = error ?? replyActions.error;
 	const markAction: BulkMessageAction = read ? "unread" : "read";

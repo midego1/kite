@@ -57,8 +57,8 @@ export async function snoozeMessage(messageId: string, snoozedUntil: string) {
 	});
 	if (!response.ok) throw new Error("Unable to snooze message");
 	window.dispatchEvent(new Event("kite:messages-changed"));
-	// Snoozed mail leaves the list it was in until it wakes up.
-	announceMessagesLeftView([messageId]);
+	// Snoozed mail leaves the Inbox until it wakes up; Snoozed, Starred and folders keep listing it.
+	announceMessagesLeftView({ kind: "snooze", ids: [messageId] });
 }
 
 export function isMessageSnoozed(snoozedUntil?: string | null): boolean {
@@ -69,7 +69,7 @@ export async function unsnoozeMessage(messageId: string) {
 	const response = await authFetch(`/api/messages/${messageId}/snooze`, { method: "DELETE" });
 	if (!response.ok) throw new Error("Unable to unsnooze message");
 	window.dispatchEvent(new Event("kite:messages-changed"));
-	announceMessagesLeftView([messageId]);
+	announceMessagesLeftView({ kind: "unsnooze", ids: [messageId] });
 }
 
 export async function toggleMessageStar(messageId: string) {

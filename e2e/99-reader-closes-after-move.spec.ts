@@ -49,10 +49,14 @@ async function openFromList(page: Page, subject: string) {
 	await slowListNavigation(page);
 }
 
-/** The reader is empty well before the slow list route could have answered. */
+/**
+ * The reader is empty well before the slow list route could have answered, and the keyboard focus moved to the
+ * list instead of being dropped on the page.
+ */
 async function expectReaderEmpty(page: Page, subject: string) {
 	await expect(page.getByText(EMPTY_READER)).toBeVisible({ timeout: SLOW_NAVIGATION_MS / 2 });
 	await expect(page.getByRole("heading", { name: subject })).toHaveCount(0);
+	await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('[role="list"]'))).toBe(true);
 }
 
 for (const view of ["conversation", "list"] as const) {

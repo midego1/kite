@@ -1,6 +1,6 @@
 import type { BulkMessageAction, BulkMessageResponse } from "@/app/api/messages/bulk/types";
 import { offerUndoForMove } from "@/components/messages/undo-utils";
-import { announceMessagesLeftView, idsLeavingView } from "@/components/messages/left-view-utils";
+import { announceMessagesLeftView, bulkActionLeftView } from "@/components/messages/left-view-utils";
 import { postBulkMessageAction } from "@/components/messages/bulk-request";
 import { announcePhishingReports } from "@/components/messages/phishing-report";
 import { authFetch } from "@/lib/auth/client";
@@ -33,21 +33,17 @@ export function getMessageBackHref(direction: "inbound" | "outbound", status: st
 }
 
 /**
- * Runs `action` on one message. With `conversation` a move out of the folder takes the rest of the message's
- * conversation in that folder along, as the conversation's row in a grouped list would.
+ * Runs `action` on one message. A move out of the folder acts on `rowMessageIds` when given: everything the
+ * message's row stands for in the list (its conversation within the list's filter, in conversation view).
  */
 export async function runSingleMessageAction(
 	messageId: string,
 	action: BulkMessageAction,
 	folderId?: string,
-	conversation = false,
+	rowMessageIds?: readonly string[],
 ) {
-	const response = await postBulkMessageAction({
-		messageIds: [messageId],
-		action,
-		folderId,
-		...(conversation && movesMessageOutOfList(action) ? { conversation: true } : {}),
-	});
+	const messageIds = movesMessageOutOfList(action) && rowMessageIds?.length ? [...rowMessageIds] : [messageId];
+	const response = await postBulkMessageAction({ messageIds, action, folderId });
 	// Cancelled: the message is a draft and the user chose not to delete it.
 	if (!response) return;
 	if (!response.ok) {
@@ -55,12 +51,12 @@ export async function runSingleMessageAction(
 	}
 
 	const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
-	if (action === "read" || action === "unread") markMessagesReadInCaches([messageId], action === "read");
+	if (action === "read" || action === "unread") markMessagesReadInCaches(messageIds, action === "read");
 	window.dispatchEvent(new Event("kite:messages-changed"));
 	offerUndoForMove(action, data);
 	if (action === "phishing") announcePhishingReports(data);
 	assertNothingSkipped(action, data);
-	announceMessagesLeftView(idsLeavingView(action, [messageId], data));
+	announceMessagesLeftView(bulkActionLeftView(action, messageIds, data));
 }
 
 export function openUnsubscribeUrl(url: string) {

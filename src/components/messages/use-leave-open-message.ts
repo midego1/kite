@@ -2,24 +2,30 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { MESSAGES_LEFT_VIEW_EVENT, openMessageLeft } from "./left-view-utils";
+import { leavesList, MESSAGES_LEFT_VIEW_EVENT, type MessagesLeftView } from "./left-view-utils";
+import type { MessageFolderConfig } from "./types";
 
 /**
  * Leaves the open message for its list. The message being left stays suppressed until the
  * pathname changes, whatever happens to the selection or the list meanwhile: its detail must not
  * mount or refetch (a 404 once the message is deleted) while the route is still committing.
  *
- * It also leaves on its own once an action takes the open message out of the list (Trash, a spam report,
- * Archive, a move, Snooze, from the reader, a row, a selection or a drop): the reader goes back to the empty
- * pane at once rather than when the route has committed, and Undo puts the message back in the list.
+ * It also leaves on its own once an action takes the open message out of this list (Trash, a spam report,
+ * Archive, a move, Snooze in the Inbox, from the reader, a row, a selection, a drop or the phishing warning): the
+ * reader goes back to the empty pane at once rather than when the route has committed, and Undo puts the message
+ * back in the list.
  */
-export function useLeaveOpenMessage(selectedMessageId: string | undefined, listHref: string) {
+export function useLeaveOpenMessage(
+	selectedMessageId: string | undefined,
+	config: Pick<MessageFolderConfig, "hrefPrefix" | "folder" | "folderId">,
+) {
+	const listHref = config.hrefPrefix;
 	const router = useRouter();
 	const [leavingMessageId, setLeavingMessageId] = useState<string | null>(null);
 	// The latest values for the event listener, and the message already being left, so it is left once.
-	const latest = useRef({ selectedMessageId, listHref, leavingMessageId });
+	const latest = useRef({ selectedMessageId, config, leavingMessageId });
 	useEffect(() => {
-		latest.current = { selectedMessageId, listHref, leavingMessageId };
+		latest.current = { selectedMessageId, config, leavingMessageId };
 	});
 	useEffect(() => {
 		// eslint-disable-next-line react-hooks/set-state-in-effect
@@ -35,9 +41,10 @@ export function useLeaveOpenMessage(selectedMessageId: string | undefined, listH
 
 	useEffect(() => {
 		function onLeftView(event: Event) {
-			const ids = (event as CustomEvent<string[]>).detail ?? [];
-			const { selectedMessageId: open, listHref: href } = latest.current;
-			if (open && openMessageLeft(open, ids)) leave(open, href);
+			const change = (event as CustomEvent<MessagesLeftView>).detail;
+			const { selectedMessageId: open, config: list } = latest.current;
+			if (!open || !change?.ids.includes(open) || !leavesList(change.kind, list.folder, list.folderId)) return;
+			leave(open, list.hrefPrefix);
 		}
 		window.addEventListener(MESSAGES_LEFT_VIEW_EVENT, onLeftView);
 		return () => window.removeEventListener(MESSAGES_LEFT_VIEW_EVENT, onLeftView);

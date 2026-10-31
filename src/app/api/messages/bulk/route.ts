@@ -16,14 +16,12 @@ import {
 	SEND_PENDING_MOVE_REFUSED,
 	isMoveRefusedWhileSending,
 } from "@/lib/messages/send-state-utils";
-import { expandToConversations } from "./conversation";
 import { draftCounts, draftsOnlyResponse, settleDrafts } from "./drafts";
 import type { BulkMessagePayload } from "./types";
 import {
 	getReadValueForBulkAction,
 	getStatusForBulkAction,
 	isAllowedBulkMessageAction,
-	isConversationBulkAction,
 	isPermanentlyDeletableStatus,
 	isRestorableStatus,
 	isUndoableBulkAction,
@@ -60,19 +58,15 @@ export async function POST(request: Request) {
 		payload.action === "restore" && Array.isArray(payload.restore)
 			? payload.restore.filter((state) => typeof state?.id === "string" && isRestorableStatus(state.status))
 			: [];
-	const requestedIds =
+	const messageIds =
 		payload.action === "restore" ? restoreStates.map((state) => state.id) : (payload.messageIds?.filter(Boolean) ?? []);
-	if (requestedIds.length === 0 || !isAllowedBulkMessageAction(payload.action)) {
+	if (messageIds.length === 0 || !isAllowedBulkMessageAction(payload.action)) {
 		return NextResponse.json({ error: "Invalid bulk message action" }, { status: 400 });
 	}
 
 	const status = getStatusForBulkAction(payload.action);
 	const read = getReadValueForBulkAction(payload.action);
 	const db = getDb(env);
-	const messageIds =
-		payload.conversation === true && isConversationBulkAction(payload.action)
-			? await expandToConversations(db, requestedIds)
-			: requestedIds;
 	let folderId: string | null | undefined;
 	// A user folder belongs to one mailbox, and mail only ever moves within its own mailbox.
 	let folderMailboxId: string | null = null;
@@ -181,7 +175,10 @@ export async function POST(request: Request) {
 			(message) => allowedMessageIds.includes(message.id) && isPermanentlyDeletableStatus(message.status),
 		);
 		const deleted = await permanentlyDeleteMessages(env, db, user.id, deletable, "bulk");
-		return NextResponse.json({ ok: true, deleted, skipped: allowedMessageIds.length - deleted, ...refusals });
+		const skipped = allowedMessageIds.length - deleted;
+		// A partial delete is reported as an error by the client, so `moved` names the whole set only when it all went.
+		const moved = deleted === deletable.length ? deletable.map((message) => message.id) : [];
+		return NextResponse.json({ ok: true, deleted, skipped, moved, ...refusals });
 	}
 	if (payload.action === "spam")
 		return NextResponse.json({ ...(await reportSpamBulk(env, user, allowedMessageIds)), ...refusals });
@@ -193,7 +190,7 @@ export async function POST(request: Request) {
 			.map((message) => message.id);
 		for (const messageId of spamMessageIds) await applySpamFeedback(env, user, messageId, "ham");
 		await updateInApprovedMailboxes(db, approvedMailbox, values);
-		return NextResponse.json({ ok: true, ...refusals });
+		return NextResponse.json({ ok: true, moved: allowedMessageIds, ...refusals });
 	}
 
 	const undo = isUndoableBulkAction(payload.action)
@@ -212,5 +209,11 @@ export async function POST(request: Request) {
 		})),
 	);
 
-	return NextResponse.json({ ok: true, ...(undo ? { undo } : {}), ...draftCounts(drafts), ...refusals });
+	return NextResponse.json({
+		ok: true,
+		...(undo ? { undo } : {}),
+		...(status ? { moved: allowedMessageIds } : {}),
+		...draftCounts(drafts),
+		...refusals,
+	});
 }

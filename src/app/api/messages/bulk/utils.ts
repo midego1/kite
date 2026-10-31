@@ -29,32 +29,6 @@ export function isUndoableBulkAction(action: BulkMessageAction): boolean {
 	return action === "archive" || action === "trash";
 }
 
-/** Moves that can take a whole conversation along with `conversation: true`: every one that leaves the folder. */
-const conversationActions = new Set<BulkMessageAction>(["archive", "trash", "spam", "phishing", "inbox", "folder"]);
-
-export function isConversationBulkAction(action: BulkMessageAction): boolean {
-	return conversationActions.has(action);
-}
-
-export type ConversationScope = { mailboxId: string; threadId: string; status: string; folderId: string | null };
-
-/**
- * The conversations the given messages stand for in the folder each one is in: same mailbox, thread, status and
- * user folder, the set a grouped list row lists in `threadMessageIds`. Drafts are private to their author and
- * never widen, and a message without a thread is a conversation of its own. One scope per conversation.
- */
-export function conversationScopes(
-	rows: readonly { mailboxId: string | null; threadId: string | null; status: string; folderId: string | null }[],
-): ConversationScope[] {
-	const scopes = new Map<string, ConversationScope>();
-	for (const row of rows) {
-		if (!row.mailboxId || !row.threadId || row.status === DRAFT_STATUS) continue;
-		const scope = { mailboxId: row.mailboxId, threadId: row.threadId, status: row.status, folderId: row.folderId };
-		scopes.set(JSON.stringify([scope.mailboxId, scope.threadId, scope.status, scope.folderId]), scope);
-	}
-	return [...scopes.values()];
-}
-
 export function isAllowedBulkMessageAction(action: unknown): action is BulkMessageAction {
 	return typeof action === "string" && allowedBulkActions.has(action as BulkMessageAction);
 }

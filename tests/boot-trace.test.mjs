@@ -309,14 +309,14 @@ test("the five slowest files and frames over a second are kept, with their scrip
 		durationMs: 4_201,
 		blockingMs: 4_150,
 		scripts: [
-			{ source: "/_next/static/chunks/reader.js", invoker: `${ORIGIN}/inbox`, function: "linkify", durationMs: 4_100 },
+			{ source: "/_next/static/chunks/reader.js", invoker: "/inbox", function: "linkify", durationMs: 4_100 },
 			{ source: "/_next/static/chunks/inbox.js", invoker: "Response.json.then", function: "sanitize", durationMs: 10 },
 		],
 	});
 	assert.equal(page.details().longFrames.length, 1);
 	assert.match(
 		page.trace.text(),
-		/Long frame: 4\.2 s at 0\.3 s in \/_next\/static\/chunks\/reader\.js linkify via https:\/\/mail\.example\.com\/inbox/,
+		/Long frame: 4\.2 s at 0\.3 s in \/_next\/static\/chunks\/reader\.js linkify via \/inbox/,
 	);
 	// Without long-animation-frame entries (Firefox, Safari) the rest still works.
 	const plain = loadPage({ clock: { now: 0, noLoaf: true } });
@@ -401,4 +401,28 @@ test("Copy details copies the JSON, and without the clipboard API selects the te
 	page.clock.execCopies = true;
 	assert.equal(await page.trace.copy(pre), "copied");
 	assert.equal(await page.trace.copy(null), "failed");
+});
+
+test("a long frame's invoker that is a URL is kept like any other path: no token, another origin by its origin", () => {
+	const page = loadPage({ path: "/d/s3cretT0ken" });
+	const script = (invoker) => ({ sourceURL: "", invoker, sourceFunctionName: "", duration: 1_500 });
+	page.observe("long-animation-frame", [
+		{
+			startTime: 0,
+			duration: 2_000,
+			blockingDuration: 1_900,
+			scripts: [
+				script(`${ORIGIN}/d/s3cretT0ken?pw=1`),
+				script("https://cdn.example.net/widgets/s3cret/loader.js"),
+				script("TimerHandler:setTimeout"),
+				script("Response.json.then"),
+			],
+		},
+	]);
+	const [frame] = page.details().longFrames;
+	assert.deepEqual(
+		frame.scripts.map((entry) => entry.invoker),
+		["/d/:token", "https://cdn.example.net", "TimerHandler:setTimeout"],
+	);
+	assert.doesNotMatch(JSON.stringify(page.details()) + page.trace.text(), /s3cret|pw=/);
 });

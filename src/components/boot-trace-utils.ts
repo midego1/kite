@@ -238,7 +238,11 @@ export const bootTraceScript = `(() => {
 						.slice(0, 3)
 						.map((script) => ({
 							source: script.sourceURL ? pathOf(script.sourceURL) : "",
-							invoker: clip(script.invoker),
+							// An inline or classic script names its page or file as the invoker: a URL, kept like any other
+							// (no token, another origin by its origin). "TimerHandler:setTimeout" and the like stay as they are.
+							invoker: /^(?:https?:\\/\\/|blob:|data:)/i.test(String(script.invoker || ""))
+								? pathOf(script.invoker)
+								: clip(script.invoker),
 							function: clip(script.sourceFunctionName),
 							durationMs: Math.round(script.duration),
 						}));

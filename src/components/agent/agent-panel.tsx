@@ -28,6 +28,7 @@ import { useCompose } from "@/components/compose/compose-context";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { AgentTurnView } from "./agent-turn";
+import { useRequestedAssistantPrompt } from "./assistant-prompt-request";
 import { KiteAvatar } from "./kite-avatar";
 import { ChatContext, ChatWelcome } from "./chat-welcome";
 import { AutoDraftProviderNote, ChatProviderNotice, chatProviderState, NO_PROVIDER } from "./external-provider-notice";
@@ -358,8 +359,6 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 		const generation = queueGenerationRef.current;
 		const userMessageId = crypto.randomUUID();
 		const assistantMessageId = crypto.randomUUID();
-		// send only runs from event handlers and stream callbacks, never during render.
-		// eslint-disable-next-line react-hooks/purity
 		const startedAt = Date.now();
 		let accepted = false;
 		let streamErrored = false;
@@ -578,6 +577,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 		setView("chat");
 		if (menuRef.current) menuRef.current.open = false;
 	};
+	useRequestedAssistantPrompt(open, mailboxId, inputRef, startNewChat, setInput);
 	const draftActions = uniqueAgentDraftActions(messages);
 	const activeTool = busy ? activeAgentTool(messages) : null;
 	const panelStyle = agentPanelStyle(docked);

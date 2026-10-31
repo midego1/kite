@@ -14,7 +14,7 @@ import type { MessageFolderConfig } from "@/components/messages/types";
 import type { AccountLine, QuickAction, StatusChip } from "./command-center-types";
 import { accountLines, dateLabel, greetingFor, hourIn, statusChips } from "./command-center-utils";
 import { LazyCommandCenterAdminCard } from "./command-center-admin-card-lazy";
-import { CommandCenterCard } from "./command-center-card";
+import { COMMAND_CENTER_SURFACE_CLASS, CommandCenterCard } from "./command-center-card";
 import { CommandCenterModuleCards } from "./command-center-module-cards";
 import { FloatingKite } from "./floating-kite";
 import { useCommandCenterData } from "./use-command-center-data";
@@ -22,31 +22,31 @@ import { useCommandCenterData } from "./use-command-center-data";
 /** The modules shown as quick actions, at most. */
 const MAX_MODULE_ACTIONS = 4;
 
-const CHIP_CLASS: Record<StatusChip["tone"], string> = {
-	blue: "bg-blue-50 text-blue-900 hover:bg-blue-100 [&_i]:bg-blue-600",
-	amber: "bg-amber-50 text-amber-900 hover:bg-amber-100 [&_i]:bg-amber-600",
-	violet: "bg-violet-50 text-violet-900 hover:bg-violet-100 [&_i]:bg-violet-600",
+/** The chips are quiet pills on the shared surface; only their dot carries the tone. */
+const CHIP_DOT_CLASS: Record<StatusChip["tone"], string> = {
+	blue: "bg-cc-accent-tint",
+	amber: "bg-cc-warn",
+	violet: "bg-violet-500",
 };
 
 const DOT_CLASS: Record<AccountLine["tone"], string> = {
-	ok: "bg-green-600",
-	warn: "bg-amber-600",
+	ok: "bg-cc-ok",
+	warn: "bg-cc-warn",
 	muted: "bg-neutral-300",
 };
 
 /** The quick actions' shared look: an icon, a label and, at the right, the key that does the same. */
 function QuickActionTile({ action }: { action: QuickAction }) {
 	const Icon = action.icon;
-	const className =
-		"flex items-center gap-2.5 rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-left text-sm font-medium text-neutral-800 transition-colors hover:border-neutral-300 hover:bg-blue-50";
+	const className = `flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-neutral-800 transition-colors hover:border-cc-border-strong hover:bg-cc-surface-hover ${COMMAND_CENTER_SURFACE_CLASS}`;
 	const content = (
 		<>
-			<span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+			<span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cc-accent-tint/12 text-cc-accent-tint">
 				<Icon className="h-4 w-4" aria-hidden="true" />
 			</span>
 			<span className="min-w-0 flex-1 truncate">{action.label}</span>
 			{action.shortcut && (
-				<kbd className="rounded border border-neutral-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-neutral-500">
+				<kbd className="rounded-md border border-cc-border bg-cc-surface-hover px-1.5 py-0.5 font-mono text-[10px] text-neutral-600">
 					{action.shortcut}
 				</kbd>
 			)}
@@ -127,11 +127,11 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 						key={chip.id}
 						href={chip.href}
 						data-chip={chip.id}
-						className={`inline-flex h-8 items-center gap-2 rounded-full px-3.5 text-[13px] font-semibold transition-colors ${CHIP_CLASS[chip.tone]} ${
+						className={`inline-flex h-8 items-center gap-2 rounded-full px-3.5 text-[13px] font-medium text-neutral-800 transition-colors hover:border-cc-border-strong hover:bg-cc-surface-hover ${COMMAND_CENTER_SURFACE_CLASS} ${
 							data.countsLoading && chip.id === "unread" ? "invisible" : ""
 						}`}
 					>
-						<i aria-hidden="true" className="h-2 w-2 rounded-full" />
+						<i aria-hidden="true" className={`h-2 w-2 rounded-full ${CHIP_DOT_CLASS[chip.tone]}`} />
 						{chip.label}
 					</Link>
 				))}
@@ -157,7 +157,7 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 								Connect Gmail, iCloud or another account to read it here.
 							</Link>
 						) : (
-							<ul className="divide-y divide-neutral-200/70">
+							<ul className="divide-y divide-cc-border">
 								{accounts.map((line) => (
 									<li key={line.id} className="flex items-center gap-3 py-2 text-sm" data-account-status={line.tone}>
 										<span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${DOT_CLASS[line.tone]}`} />
@@ -168,7 +168,7 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 										{line.action ? (
 											<Link
 												href={line.action.href}
-												className="shrink-0 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-800 hover:bg-neutral-100"
+												className="shrink-0 rounded-lg border border-cc-border-strong px-2.5 py-1 text-xs font-medium text-neutral-800 transition-colors hover:bg-cc-surface-hover"
 											>
 												{line.action.label}
 											</Link>
@@ -186,7 +186,7 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 			</div>
 
 			<div className="mt-5">
-				<h3 className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-neutral-500">Quick actions</h3>
+				<h3 className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-cc-label">Quick actions</h3>
 				<div className="grid gap-2 @md:grid-cols-2 @xl:grid-cols-3">
 					{actions.map((action) => (
 						<QuickActionTile key={action.id} action={action} />

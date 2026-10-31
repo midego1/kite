@@ -25,6 +25,8 @@ export type AttentionItem = {
 	detail?: string;
 	href: string;
 	hrefLabel: string;
+	/** Offers Why?, which explains the failed AI requests by cause (`AiFailuresWhy`). */
+	why?: boolean;
 	/** Offers Dismiss, which hides the item for the install until the cause comes back. */
 	dismissible?: boolean;
 };

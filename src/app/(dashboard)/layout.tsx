@@ -8,6 +8,7 @@ import { MailSearchProvider } from "@/components/mail-search/mail-search-context
 import { MailboxProvider } from "@/components/mailbox-provider";
 import { MailboxSelector } from "@/components/mailbox-selector";
 import { LazyAgentPanel } from "@/components/agent/agent-panel-lazy";
+import { ASSISTANT_PROMPT_EVENT, hasAssistantPrompt } from "@/components/agent/assistant-prompt-request";
 import { AssistantIconButton, AssistantNavItem } from "@/components/agent/assistant-nav-item";
 import {
 	AssistantDockedContext,
@@ -78,6 +79,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 			setAssistantFullSize(false);
 		}
 	}, [assistantEnabled, assistantOpen, assistantFullSize, setAssistantOpen, setAssistantFullSize]);
+
+	// Ask AI (the overview's Why?) leaves a question for the assistant: open it so the panel can take the question.
+	useEffect(() => {
+		if (assistantEnabled !== true) return;
+		const openForRequest = () => {
+			if (hasAssistantPrompt()) setAssistantOpen(true);
+		};
+		openForRequest();
+		window.addEventListener(ASSISTANT_PROMPT_EVENT, openForRequest);
+		return () => window.removeEventListener(ASSISTANT_PROMPT_EVENT, openForRequest);
+	}, [assistantEnabled, setAssistantOpen]);
 
 	const toggleAssistant = () => {
 		setAssistantOpen((current) => !current);

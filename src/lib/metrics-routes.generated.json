@@ -8,6 +8,7 @@
 	"/api/activity",
 	"/api/admin/accounts/[id]/connected-accounts",
 	"/api/admin/accounts/[id]/modules",
+	"/api/admin/agent/errors/report",
 	"/api/admin/agent/errors",
 	"/api/admin/agent/models",
 	"/api/admin/agent/providers/[id]/activate",

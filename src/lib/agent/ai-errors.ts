@@ -1,4 +1,4 @@
-import { and, desc, eq, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, notInArray, sql } from "drizzle-orm";
 import type { LanguageModelUsage } from "ai";
 import { getDb } from "@/db";
 import { auditLogs, domains, mailboxes, users } from "@/db/schema";
@@ -18,6 +18,7 @@ import {
 	type AiFeature,
 } from "./ai-error-utils";
 import type { AiErrorRecord, RecentAiError } from "./ai-error-types";
+import type { AiFailureRow } from "./ai-failure-report-utils";
 
 const logger = createLogger("agent");
 
@@ -207,5 +208,24 @@ export async function listRecentAiErrors(env: CloudflareEnv, limit = RECENT_AI_E
 				mailbox: row.localPart ? (row.hostname ? `${row.localPart}@${row.hostname}` : row.localPart) : null,
 			},
 		];
+	});
+}
+
+/**
+ * The failures recorded since `since`, newest first and at most the kept number: the metadata and the time only,
+ * never who or which mailbox. One indexed read of `audit_logs`, which every schema version has.
+ */
+export async function listAiFailuresSince(env: CloudflareEnv, since: Date): Promise<AiFailureRow[]> {
+	const rows = await getDb(env)
+		.select({ metadata: auditLogs.metadata, createdAt: auditLogs.createdAt })
+		.from(auditLogs)
+		.where(and(eq(auditLogs.action, AI_ERROR_ACTION), gte(auditLogs.createdAt, since)))
+		.orderBy(desc(auditLogs.createdAt))
+		.limit(AI_ERRORS_KEPT);
+	return rows.flatMap((row) => {
+		const metadata = parseMetadata(row.metadata);
+		if (!metadata) return [];
+		const { code, feature, model, provider, status } = metadata;
+		return [{ code, feature, model, provider, status, at: row.createdAt.toISOString() }];
 	});
 }

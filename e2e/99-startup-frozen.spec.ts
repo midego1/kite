@@ -86,10 +86,10 @@ test("once the page stops giving signs of life, the notice fades in by itself", 
 	// The watchdog's beats stop, as on a main thread that froze (it keeps running here, so the page can be read).
 	await page.addInitScript(() => {
 		const setAttribute = Element.prototype.setAttribute;
-		Element.prototype.setAttribute = function (name: string, value: string) {
+		Element.prototype.setAttribute = function (this: Element, name: string, value: string) {
 			if (name === "data-kite-heartbeat" && this.hasAttribute(name)) return;
-			return setAttribute.call(this, name, value);
-		};
+			setAttribute.call(this, name, value);
+		} as typeof setAttribute;
 	});
 	await holdSessionCheck(page);
 	await page.goto("/inbox", { waitUntil: "commit" });

@@ -50,7 +50,7 @@ const BOOT_SECRET_PATH = /^(\/d\/|\/api\/public\/drive\/|\/api\/shared-files\/)[
 /** Only animation frames longer than this are kept. */
 const BOOT_LONG_FRAME_MS = 1_000;
 /** Where the next load reports a load that froze (`navigator.sendBeacon`, text/plain JSON); the server logs it. */
-export const BOOT_REPORT_PATH = "/api/boot-report";
+const BOOT_REPORT_PATH = "/api/boot-report";
 /** sessionStorage key of the kite's return marker (reload-return-utils.ts), read before that script consumes it. */
 const RELOAD_RETURN_MARKER_KEY = "kite-reload-flight";
 
@@ -80,7 +80,7 @@ export type BootDetails = {
  * heartbeat, its visible time, and (when known) its build and whether it was the load right after Reload in the
  * update notice. `step`, `build` and `afterUpdate` are left out when the record did not have them.
  */
-export type PreviousBootLoad = {
+type PreviousBootLoad = {
 	phase: string;
 	afterMs: number;
 	visibleMs: number;

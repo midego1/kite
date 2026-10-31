@@ -21,7 +21,7 @@ await build({
 	absWorkingDir: root,
 	logLevel: "silent",
 });
-const { BOOT_REPORT_PATH, bootTraceScript, markBootPhase, markBootStep, readBootDetails } = await import(
+const { bootTraceScript, markBootPhase, markBootStep, readBootDetails } = await import(
 	pathToFileURL(join(bundleDirectory, "trace.mjs")).href
 );
 const KEY = "kite-boot-trace";
@@ -503,7 +503,7 @@ test("the next load reports a load that froze to the server once, with its step,
 	]);
 	assert.deepEqual(beacons, [
 		{
-			url: BOOT_REPORT_PATH,
+			url: "/api/boot-report",
 			body: {
 				page: "/inbox",
 				phase: "children-rendering",

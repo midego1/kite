@@ -1,5 +1,6 @@
 import type { BulkMessageAction, BulkMessageResponse } from "@/app/api/messages/bulk/types";
 import { offerUndoForMove } from "@/components/messages/undo-utils";
+import { announceMessagesLeftView, idsLeavingView } from "@/components/messages/left-view-utils";
 import { postBulkMessageAction } from "@/components/messages/bulk-request";
 import { announcePhishingReports } from "@/components/messages/phishing-report";
 import { authFetch } from "@/lib/auth/client";
@@ -31,8 +32,22 @@ export function getMessageBackHref(direction: "inbound" | "outbound", status: st
 	return direction === "inbound" ? "/inbox" : "/sent";
 }
 
-export async function runSingleMessageAction(messageId: string, action: BulkMessageAction, folderId?: string) {
-	const response = await postBulkMessageAction({ messageIds: [messageId], action, folderId });
+/**
+ * Runs `action` on one message. With `conversation` a move out of the folder takes the rest of the message's
+ * conversation in that folder along, as the conversation's row in a grouped list would.
+ */
+export async function runSingleMessageAction(
+	messageId: string,
+	action: BulkMessageAction,
+	folderId?: string,
+	conversation = false,
+) {
+	const response = await postBulkMessageAction({
+		messageIds: [messageId],
+		action,
+		folderId,
+		...(conversation && movesMessageOutOfList(action) ? { conversation: true } : {}),
+	});
 	// Cancelled: the message is a draft and the user chose not to delete it.
 	if (!response) return;
 	if (!response.ok) {
@@ -45,6 +60,7 @@ export async function runSingleMessageAction(messageId: string, action: BulkMess
 	offerUndoForMove(action, data);
 	if (action === "phishing") announcePhishingReports(data);
 	assertNothingSkipped(action, data);
+	announceMessagesLeftView(idsLeavingView(action, [messageId], data));
 }
 
 export function openUnsubscribeUrl(url: string) {

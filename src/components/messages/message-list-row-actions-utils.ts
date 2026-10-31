@@ -1,4 +1,5 @@
 import { authFetch } from "@/lib/auth/client";
+import { announceMessagesLeftView } from "./left-view-utils";
 import type { MessageCountsDelta } from "@/hooks/types";
 import {
 	dateFromZonedFields,
@@ -56,6 +57,8 @@ export async function snoozeMessage(messageId: string, snoozedUntil: string) {
 	});
 	if (!response.ok) throw new Error("Unable to snooze message");
 	window.dispatchEvent(new Event("kite:messages-changed"));
+	// Snoozed mail leaves the list it was in until it wakes up.
+	announceMessagesLeftView([messageId]);
 }
 
 export function isMessageSnoozed(snoozedUntil?: string | null): boolean {
@@ -66,6 +69,7 @@ export async function unsnoozeMessage(messageId: string) {
 	const response = await authFetch(`/api/messages/${messageId}/snooze`, { method: "DELETE" });
 	if (!response.ok) throw new Error("Unable to unsnooze message");
 	window.dispatchEvent(new Event("kite:messages-changed"));
+	announceMessagesLeftView([messageId]);
 }
 
 export async function toggleMessageStar(messageId: string) {

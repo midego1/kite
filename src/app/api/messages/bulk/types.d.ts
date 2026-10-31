@@ -17,6 +17,12 @@ export type BulkMessagePayload = {
 	 * selection holding drafts changes nothing and answers 409 `DRAFTS_NEED_CONFIRMATION` with their count.
 	 */
 	deleteDrafts?: boolean;
+	/**
+	 * For moves out of a folder (archive, trash, spam, phishing, inbox, folder): act on every message of each
+	 * one's conversation in the same folder too, as a conversation row in a grouped list does. The reader sends
+	 * it in conversation view, so reporting the open message does not leave the rest of its thread behind.
+	 */
+	conversation?: boolean;
 };
 
 /** Where a message was before an archive or trash, as returned for undo. */

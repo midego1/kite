@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { MessageSourceDialog } from "@/components/messages/message-source-dialog";
 import { useMessageListHref } from "@/components/messages/message-detail-navigation";
+import { useConversationView } from "@/components/messages/use-conversation-view";
 import { SnoozeMenuItem } from "@/components/messages/snooze-picker";
 import { useMessageMenuSlots } from "./message-menu-slots";
 import { ReportPhishingItem } from "./report-phishing-item";
@@ -78,7 +79,14 @@ export function MessageActions({
 	const [sourceOpen, setSourceOpen] = useState(false);
 	const [snoozeExpanded, setSnoozeExpanded] = useState(false);
 	const moduleSlots = useMessageMenuSlots({ messageId, mailboxId }, moreOpen, () => setMoreOpen(false));
-	const listHref = useMessageListHref() ?? getMessageBackHref(direction, status);
+	const layoutListHref = useMessageListHref();
+	const listHref = layoutListHref ?? getMessageBackHref(direction, status);
+	// Inside a folder layout the layout closes the reader once the message leaves the list
+	// (useLeaveOpenMessage); elsewhere the reader goes back to the list itself.
+	const leaveReader = useCallback(() => {
+		if (!layoutListHref) router.push(listHref);
+	}, [layoutListHref, listHref, router]);
+	const [conversationView] = useConversationView();
 
 	const runUnguarded = useCallback(
 		async (action: BulkMessageAction, folderId?: string) => {
@@ -88,16 +96,17 @@ export function MessageActions({
 			setPendingAction(action);
 			setError(null);
 			try {
-				await runSingleMessageAction(messageId, action, folderId);
-				if (movesMessageOutOfList(action)) router.push(listHref);
-				router.refresh();
+				// In conversation view the list shows the whole thread as one row, so a move takes all of it.
+				await runSingleMessageAction(messageId, action, folderId, conversationView);
+				if (movesMessageOutOfList(action)) leaveReader();
+				else router.refresh();
 			} catch {
 				setError("Could not update message");
 			} finally {
 				setPendingAction(null);
 			}
 		},
-		[messageId, listHref, router],
+		[messageId, leaveReader, router, conversationView],
 	);
 
 	// In Trash and Spam the delete button removes the message for good instead of
@@ -117,13 +126,12 @@ export function MessageActions({
 		setError(null);
 		try {
 			await runSingleMessageAction(messageId, "delete");
-			router.push(listHref);
-			router.refresh();
+			leaveReader();
 		} catch (deleteError) {
 			setError(deleteError instanceof PartialDeleteError ? deleteError.message : "Could not delete message");
 			setPendingAction(null);
 		}
-	}, [messageId, listHref, router]);
+	}, [messageId, leaveReader]);
 	const onTrashClick = () => (canDeleteForever ? void deleteForever() : void runAction("trash"));
 	const trashLabel = canDeleteForever ? "Delete forever" : "Move to trash";
 
@@ -194,9 +202,8 @@ export function MessageActions({
 		setPendingAction("block");
 		try {
 			await blockMessageContact({ mailboxId, senderAddress });
-			await runSingleMessageAction(messageId, "trash");
-			router.push(listHref);
-			router.refresh();
+			await runSingleMessageAction(messageId, "trash", undefined, conversationView);
+			leaveReader();
 		} catch (blockError) {
 			setError(blockError instanceof Error ? blockError.message : "Could not block contact");
 		} finally {

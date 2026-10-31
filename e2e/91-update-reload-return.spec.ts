@@ -115,6 +115,10 @@ function readScreen(page: Page) {
 				// The string ends at the hand just above the progress bar and never crosses it.
 				kiteAboveBar: rect.bottom <= overlay.querySelector(".reload-return-track")!.getBoundingClientRect().top,
 				skyDisplay: displayOf(overlay.querySelector(".reload-return-sky")),
+				// The bar's box anchors the kite and holds nothing else; the status line and the step log sit outside it.
+				boxHoldsOnlyBar: !overlay
+					.querySelector(".reload-return-track")!
+					.parentElement!.querySelector("[data-startup-status], [data-startup-steps]"),
 				logoDisplay: displayOf(overlay.querySelector("img")),
 				role: overlay.getAttribute("role"),
 				// The live region says what is happening; the plain "Loading" is not in the tree.
@@ -201,6 +205,7 @@ test("Reload in the update notice brings the kite back on the loading screen, wh
 	expect(floating.kiteInViewport).toBe(true);
 	expect(floating.kiteAboveFailureBox).toBe(true);
 	expect(floating.kiteAboveBar).toBe(true);
+	expect(floating.boxHoldsOnlyBar).toBe(true);
 	expect(floating.skyDisplay).toBe("block");
 
 	// When the boot watchdog gives up it adds its "Kite couldn't load" box (asset-recovery-utils.ts); the scene

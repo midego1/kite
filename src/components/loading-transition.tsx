@@ -18,7 +18,7 @@ import { useSyncedState } from "@/hooks/use-synced-state";
 import type { LoadingTransitionProps } from "./loading-transition-types";
 import { LoadingRecovery } from "./loading-recovery";
 import { StartupSteps } from "./startup-steps";
-import { useStartupSteps } from "./use-startup-steps";
+import { useStartupSteps, useVisibleStartupTime } from "./use-startup-steps";
 
 const MINIMUM_LOADING_TIME = 600;
 const COMPLETION_TIME = 220;
@@ -26,6 +26,48 @@ const MAXIMUM_DATA_WAIT = 10_000;
 /** The overlay's opacity transition (`duration-300`): the kite's return stops once the screen has faded out. */
 const OVERLAY_FADE_TIME = 300;
 let hasShownInitialLoadingTransition = false;
+
+/**
+ * The progress bar with the running step above it and the step log below (use-startup-steps.ts), mounted only while
+ * the startup screen shows: once the app is up, nothing the stats store learns re-renders the shell. The kite of the
+ * return scene hangs from the bar's own box, which holds only the kite, the track and the reduced-motion caption.
+ */
+function StartupProgress({
+	ready,
+	progress,
+	visibleMs,
+}: {
+	ready: boolean;
+	progress: number;
+	visibleMs: number | null;
+}) {
+	const { steps, statusLabel } = useStartupSteps(ready, visibleMs);
+	return (
+		<div className="w-full">
+			<p aria-hidden="true" className="mb-2 flex w-full items-baseline justify-between gap-3 text-sm text-neutral-700">
+				<span data-startup-status className="min-w-0 truncate">
+					{statusLabel}
+				</span>
+				<span className="text-xs tabular-nums text-neutral-900">{Math.round(progress)}%</span>
+			</p>
+			<div className="relative w-full">
+				{/* The kite hangs from just above the bar, so the two never cross. */}
+				<ReloadReturnKite />
+				<div className="reload-return-track h-1.5 overflow-hidden rounded-full bg-blue-100">
+					<div
+						className="reload-return-progress h-full rounded-full bg-blue-600 transition-[width] duration-200 ease-out"
+						style={{ width: `${progress}%` }}
+					/>
+				</div>
+				{/* The reduced-motion caption, below the bar without moving it; the live region above says what happens. */}
+				<p aria-hidden="true" className="reload-return-static text-sm">
+					{RELOAD_RETURN_STATIC_TEXT}
+				</p>
+			</div>
+			<StartupSteps steps={steps} />
+		</div>
+	);
+}
 
 /** Rendered after the page: its layout effect runs once the page itself has committed (the boot trace's phase). */
 function ChildrenCommitted() {
@@ -47,9 +89,9 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 	const [dataWaitExpired, setDataWaitExpired] = useState(false);
 	const loadingIds = useRef(new Set<string>());
 	const fetchingQueries = useIsFetching();
-	// The step log under the bar (use-startup-steps.ts): no request and no timer of its own.
-	const [completedAt, setCompletedAt] = useState<number | null>(null);
-	const { steps, statusLabel } = useStartupSteps(ready, completedAt);
+	// The step log's last line: the visible time the start took, known once the screen completes.
+	const [visibleMs, setVisibleMs] = useState<number | null>(null);
+	const readVisibleMs = useVisibleStartupTime();
 
 	const reportLoading = useCallback((id: string, loading: boolean) => {
 		if (loading) loadingIds.current.add(id);
@@ -104,7 +146,7 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 		const remaining = showInitialLoader ? Math.max(0, MINIMUM_LOADING_TIME - (Date.now() - startedAt)) : 0;
 		const completeTimer = window.setTimeout(() => {
 			setProgress(100);
-			setCompletedAt(Math.round(performance.now()));
+			setVisibleMs(readVisibleMs());
 		}, remaining);
 		const revealTimer = window.setTimeout(() => {
 			if (showInitialLoader) {
@@ -125,7 +167,7 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 			window.clearTimeout(revealTimer);
 			if (returnTimer !== null) window.clearTimeout(returnTimer);
 		};
-	}, [canComplete, showInitialLoader, startedAt]);
+	}, [canComplete, showInitialLoader, startedAt, readVisibleMs]);
 
 	const showTopLoadingBar = initialLoadComplete && failure == null && (!ready || pendingLoads > 0);
 
@@ -169,31 +211,7 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 										<span className="sr-only reload-return-only">{RELOAD_RETURN_ANNOUNCEMENT}</span>
 									</>
 								)}
-								<div className="relative w-full">
-									{/* The step the screen is on, with the bar's progress: both change as facts come in. */}
-									<p
-										aria-hidden="true"
-										className="mb-2 flex items-baseline justify-between gap-3 text-sm text-neutral-700"
-									>
-										<span data-startup-status className="min-w-0 truncate">
-											{statusLabel}
-										</span>
-										<span className="text-xs tabular-nums text-neutral-900">{Math.round(progress)}%</span>
-									</p>
-									{/* The kite hangs from just above the bar, so the two never cross. */}
-									<ReloadReturnKite />
-									<div className="reload-return-track h-1.5 overflow-hidden rounded-full bg-blue-100">
-										<div
-											className="reload-return-progress h-full rounded-full bg-blue-600 transition-[width] duration-200 ease-out"
-											style={{ width: `${progress}%` }}
-										/>
-									</div>
-									{/* The reduced-motion caption, below the bar without moving it; the live region above says what happens. */}
-									<p aria-hidden="true" className="reload-return-static text-sm">
-										{RELOAD_RETURN_STATIC_TEXT}
-									</p>
-									<StartupSteps steps={steps} />
-								</div>
+								{loaderVisible && <StartupProgress ready={ready} progress={progress} visibleMs={visibleMs} />}
 								<LoadingRecovery active={loaderVisible} />
 							</>
 						)}

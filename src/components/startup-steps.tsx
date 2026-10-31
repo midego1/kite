@@ -5,11 +5,16 @@ import { startupStepCounter } from "./startup-steps-utils";
 /**
  * The five lines under the startup screen's progress bar (startup-steps-utils.ts plans them). A fixed status
  * column, a label that truncates and a detail that keeps its place at the right, so a long line never pushes the
- * others out of line. Pure markup, no effects or timers: the screen must stay cheap to mount.
+ * others out of line. Pure markup, no effects or timers: the screen must stay cheap to mount. Hidden from assistive
+ * technology: the overlay is a live status region, and every change here would be read out again.
  */
 export function StartupSteps({ steps }: { steps: StartupStep[] }) {
 	return (
-		<ol data-startup-steps className="mt-4 w-full space-y-1.5 text-left text-[13px] text-neutral-500">
+		<ol
+			data-startup-steps
+			aria-hidden="true"
+			className="mt-4 w-full space-y-1.5 text-left text-[13px] text-neutral-500"
+		>
 			{steps.map((step) => (
 				<li
 					key={step.id}
@@ -50,10 +55,7 @@ export function StartupSteps({ steps }: { steps: StartupStep[] }) {
 					</span>
 				</li>
 			))}
-			<li
-				aria-hidden="true"
-				className="flex justify-end pt-1.5 text-[10px] uppercase tracking-[0.1em] text-neutral-400"
-			>
+			<li className="flex justify-end pt-1.5 text-[10px] uppercase tracking-[0.1em] text-neutral-400">
 				<span data-startup-step-counter className="tabular-nums">
 					{startupStepCounter(steps)}
 				</span>

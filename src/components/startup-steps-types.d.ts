@@ -32,6 +32,6 @@ export type StartupStepsInput = {
 	version: string;
 	commit: string;
 	stats: StartupStats;
-	/** Visible time since the page started, for the last line. */
+	/** Visible time the start took (hidden time not counted), for the last line. */
 	elapsedMs: number;
 };

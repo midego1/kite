@@ -23,6 +23,7 @@ await build({
 			export { POST as postAgentChat } from "./src/app/api/agent/chat/route.ts";
 			export { GET as getAgentSettings } from "./src/app/api/agent/settings/route.ts";
 			export { processAgentDraftJob } from "./src/lib/agent/jobs/utils.ts";
+			export { scheduleAgentWork } from "./src/lib/agent/auto-read/schedule.ts";
 			export { interactiveRefusal } from "./src/lib/agent/interactive-model.ts";
 		`,
 		resolveDir: root,
@@ -50,6 +51,7 @@ const {
 	postAgentChat,
 	getAgentSettings,
 	processAgentDraftJob,
+	scheduleAgentWork,
 	interactiveRefusal,
 } = await import(pathToFileURL(join(bundleDirectory, "entry.mjs")).href);
 
@@ -165,6 +167,9 @@ test("turning the opt-in off stops a chat turn before its next step", async (t) 
 	});
 	allow = rest.allow;
 	allow(true);
+	// The refusal is an expected end of the turn: reported once as an AI failure, never logged with a stack trace.
+	const logged = [];
+	t.mock.method(console, "error", (...args) => void logged.push(args));
 	const response = await chat();
 	assert.equal(response.status, 200);
 	const stream = await events(response);
@@ -172,6 +177,7 @@ test("turning the opt-in off stops a chat turn before its next step", async (t) 
 	const error = stream.find((event) => event.type === "error");
 	assert.equal(error?.code, "external_provider_not_allowed");
 	assert.ok(!stream.some((event) => event.type === "text" && event.text === "Too late."));
+	assert.ok(!logged.flat().some((value) => value?.name === "InteractiveModelRefusedError"));
 });
 
 test("the assistant settings tell the panel that chat is off for the external provider", async (t) => {
@@ -198,6 +204,39 @@ test("the legacy auto-draft job is skipped without the opt-in and never calls th
 		draft_id: null,
 	});
 	assert.equal(requests.length, 0);
+});
+
+test("no legacy auto-draft job is queued while the external provider is not allowed", async (t) => {
+	const { database, env, allow } = await harness(t);
+	database.db.exec(
+		"INSERT INTO mailbox_agent_settings (mailbox_id, auto_draft_enabled, reviewer_user_id, updated_at) VALUES ('mailbox-1', 1, 'user-1', 1)",
+	);
+	const queued = [];
+	const deliver = () =>
+		scheduleAgentWork(
+			{ ...env, AGENT_QUEUE: { send: async (message) => void queued.push(message) } },
+			{
+				mailboxId: "mailbox-1",
+				sourceMessageId: "email-1",
+				ownerUserId: "user-1",
+				sender: "customer@example.net",
+				status: "received",
+				folderId: null,
+				spamVerdict: "inbox",
+			},
+		);
+	const draftJobs = () => database.db.prepare("SELECT status FROM agent_jobs WHERE kind = 'draft'").all();
+	await deliver();
+	assert.deepEqual(draftJobs(), []);
+	assert.deepEqual(queued, []);
+
+	allow(true);
+	await deliver();
+	assert.deepEqual(draftJobs(), [{ status: "pending" }]);
+	assert.deepEqual(
+		queued.map((message) => message.kind),
+		["agent.draft"],
+	);
 });
 
 test("Write with Kite and summaries share the refusal; Workers AI needs no opt-in", async (t) => {
@@ -231,6 +270,8 @@ test("every model selection goes through the opt-in", () => {
 	]);
 	for (const file of selectors.filter((file) => !file.endsWith("/model.ts")))
 		assert.match(readFileSync(join(root, file), "utf8"), /externalProviderRefused\(/, file);
+	for (const file of ["src/lib/agent/summaries/line-job.ts", "src/lib/agent/jobs/utils.ts"])
+		assert.match(readFileSync(join(root, file), "utf8"), /externalProviderRefused\(env, \(?(await )?/, file);
 	const chat = readFileSync(join(root, "src/lib/agent/chat.ts"), "utf8");
 	assert.match(chat, /selectInteractiveModel\(/);
 	assert.match(chat, /prepareStep: async[\s\S]{0,200}externalProviderRefused\(/);

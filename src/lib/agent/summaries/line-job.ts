@@ -4,6 +4,7 @@ import { getDb, type AppDatabase } from "@/db";
 import { agentJobs, mailboxes, messages } from "@/db/schema";
 import { claimAgentJob, failAndRequeueAgentJob, skipAgentJob } from "../jobs/lease";
 import { getAgentProviderConfig } from "../provider";
+import { externalProviderRefused } from "../external-provider";
 import { ExternalProviderNotAllowedError, selectAutoReadModel } from "../auto-read/auto-read-model";
 import { getAutoReadInstallSettings } from "../auto-read/install-settings";
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
@@ -58,8 +59,7 @@ async function writeLine(
 ): Promise<Outcome> {
 	const { install, settings, source, context } = ready;
 	const config = await getAgentProviderConfig(env);
-	if (config.provider === "compatible" && !install.externalAutoReadAllowed)
-		return { skip: "external_provider_not_allowed" };
+	if (await externalProviderRefused(env, config.provider)) return { skip: "external_provider_not_allowed" };
 	if (!(await allowAutoReadRequest(env, job.mailboxId))) return { skip: "rate_limited" };
 	const requested = chooseTriageModelId({
 		triageModelId: settings.triageModelId,

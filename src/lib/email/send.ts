@@ -432,17 +432,13 @@ async function enqueueScheduledDelivery(
 }
 
 /**
- * A job waiting for its retry after a refusal (queued, with that refusal as its error) holds the time the retry
- * was queued for. A queue message for another time belongs to an earlier try (the undo window's, left over after
- * Send now) that the retry already took over, and must not claim the job again. The job keeps whole seconds, and
- * retries queued before it kept the time (none) accept every message.
+ * A job waiting for its retry after a refusal (queued, with that refusal as its error) belongs to the retry's queue
+ * message, which carries the try it is on (2 or more). A message without one is an earlier try's (the undo window's,
+ * left over after Send now) that the retry already took over, and must not claim the job again at attempt 1.
+ * Judging by the attempt, not the time, keeps retries that were already queued before this check existed.
  */
-function isStaleQueueMessage(
-	job: { error: string | null; scheduledAt: Date | null },
-	messageScheduledAt: Date,
-): boolean {
-	if (!job.error || !job.scheduledAt) return false;
-	return Math.floor(job.scheduledAt.getTime() / 1000) !== Math.floor(messageScheduledAt.getTime() / 1000);
+function isStaleQueueMessage(job: { error: string | null }, attempt: number | undefined): boolean {
+	return !!job.error && (attempt ?? 1) < 2;
 }
 
 export async function processOutboundQueue(env: CloudflareEnv, payload: OutboundQueueMessage): Promise<void> {
@@ -452,14 +448,13 @@ export async function processOutboundQueue(env: CloudflareEnv, payload: Outbound
 			status: outboundJobs.status,
 			payload: outboundJobs.payload,
 			error: outboundJobs.error,
-			scheduledAt: outboundJobs.scheduledAt,
 		})
 		.from(outboundJobs)
 		.where(eq(outboundJobs.id, payload.jobId))
 		.limit(1);
 	if (!job || job.status !== "queued") return;
 	const scheduledAt = new Date(payload.scheduledAt);
-	if (isStaleQueueMessage(job, scheduledAt)) return;
+	if (isStaleQueueMessage(job, payload.attempt)) return;
 	const delivery = preparedDeliveryFromJob(job.payload, payload.jobId, payload.messageId, payload.attempt);
 	if (scheduledAt.getTime() > Date.now()) {
 		await enqueueScheduledDelivery(env, delivery, scheduledAt);

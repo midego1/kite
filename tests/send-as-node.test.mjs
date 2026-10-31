@@ -413,6 +413,24 @@ test("a 4xx after Send now queues one retry with its delay; the left-over undo-w
 	assert.equal(fakes.smtp.messages.length, 1);
 });
 
+test("a retry queued before the deploy (attempt 2, the undo window's time on its job) still delivers", async (t) => {
+	const fakes = await servers(t);
+	const { env, db, queued } = await setup(t, fakes);
+	await connectKnown(env);
+	fakes.smtp.failNext("data", 451, "4.3.0 Try again later");
+	const first = await send(env);
+	const retry = queued.find(({ message }) => message.kind === "email.scheduled").message;
+	assert.equal(retry.attempt, 2);
+	// The job as an earlier version left it: the refusal as its error, an old time (or none), unrelated to the message's.
+	db.db
+		.prepare("UPDATE outbound_jobs SET scheduled_at = ? WHERE message_id = ?")
+		.run(Math.floor(Date.now() / 1000) - 600, first.messageId);
+	assert.match(jobRow(db, first.messageId).error, /Try again later/);
+	await processOutboundQueue(env, { ...retry, scheduledAt: new Date().toISOString() });
+	assert.equal(messageRow(db, first.messageId).status, "sent");
+	assert.equal(fakes.smtp.messages.length, 1);
+});
+
 test("a refusal after Send now is thrown, marks the message failed and can be edited again", async (t) => {
 	const fakes = await servers(t);
 	const { env, db } = await setup(t, fakes);

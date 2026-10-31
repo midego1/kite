@@ -10,9 +10,10 @@ export type StatusChip = {
 };
 
 export type StatusChipsInput = {
-	/** Unread mail in the folder the pane belongs to, and that folder's title. */
+	/** Unread mail in the folder the pane belongs to, that folder's title and where it opens. */
 	unread: number;
 	folderTitle: string;
+	folderHref: string;
 	/** Messages the Screener holds, and whether the mailbox screens new senders. */
 	held: number;
 	screenerOn: boolean;

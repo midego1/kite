@@ -2,26 +2,24 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { CheckCircle2, Link2, MailPlus, Search } from "lucide-react";
+import { Link2, MailPlus, Search } from "lucide-react";
 import { useCompose } from "@/components/compose/compose-context";
 import { MigrationsNoticeCard } from "@/components/migrations-banner";
-import { useModuleSidebarLinks } from "@/components/modules/module-sidebar-links";
-import { Notice } from "@/components/ui/notice";
-import { Skeleton } from "@/components/ui/skeleton";
+import { resolveNavIcon } from "@/components/modules/client-registry";
+import { useModules } from "@/components/modules/modules-context";
+import { CLIENT_MODULES } from "@/lib/modules/client-data";
+import { moduleNavItems } from "@/lib/modules/nav-utils";
 import { getUserTimeZone } from "@/lib/time/utils";
 import type { MessageFolderConfig } from "@/components/messages/types";
 import type { AccountLine, QuickAction, StatusChip } from "./command-center-types";
-import {
-	accountLines,
-	attentionHref,
-	dateLabel,
-	greetingFor,
-	healthLines,
-	hourIn,
-	statusChips,
-} from "./command-center-utils";
+import { accountLines, dateLabel, greetingFor, hourIn, statusChips } from "./command-center-utils";
+import { LazyCommandCenterAdminCard } from "./command-center-admin-card-lazy";
+import { CommandCenterCard } from "./command-center-card";
 import { FloatingKite } from "./floating-kite";
 import { useCommandCenterData } from "./use-command-center-data";
+
+/** The modules shown as quick actions, at most. */
+const MAX_MODULE_ACTIONS = 4;
 
 const CHIP_CLASS: Record<StatusChip["tone"], string> = {
 	blue: "bg-blue-50 text-blue-900 hover:bg-blue-100 [&_i]:bg-blue-600",
@@ -64,32 +62,6 @@ function QuickActionTile({ action }: { action: QuickAction }) {
 	);
 }
 
-function Card({
-	title,
-	action,
-	children,
-	testId,
-}: {
-	title: string;
-	action?: { label: string; href: string };
-	children: React.ReactNode;
-	testId?: string;
-}) {
-	return (
-		<section aria-label={title} data-testid={testId} className="rounded-3xl bg-[#f6f8fc] px-5 py-4">
-			<div className="mb-2 flex items-center justify-between gap-3">
-				<h3 className="text-[11px] font-bold uppercase tracking-[0.08em] text-neutral-500">{title}</h3>
-				{action && (
-					<Link href={action.href} className="text-xs font-medium text-blue-700 hover:underline">
-						{action.label}
-					</Link>
-				)}
-			</div>
-			{children}
-		</section>
-	);
-}
-
 /**
  * What the empty reading pane shows instead of "Select a message to read" alone: a greeting with the date, the
  * counts that matter (unread, Screener, For you), the connected accounts and how they are doing, for admins what
@@ -100,7 +72,8 @@ function Card({
 export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 	const data = useCommandCenterData(config);
 	const { openComposer } = useCompose();
-	const moduleLinks = useModuleSidebarLinks();
+	// The modules' sidebar items, labels and icons only: their counts are the sidebar's business.
+	const { modules } = useModules();
 	// The greeting and the date are read once per mount: the pane is remounted whenever a message is closed.
 	const { greeting, date } = useMemo(() => {
 		const now = new Date();
@@ -110,7 +83,6 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 	const now = new Date();
 	const chips = statusChips(data.chips);
 	const accounts = accountLines({ accounts: data.accounts, now });
-	const health = data.overviewData ? healthLines(data.overviewData, now) : [];
 	const actions: QuickAction[] = [
 		{ id: "compose", label: "New email", icon: MailPlus, shortcut: "C", onSelect: openComposer },
 		{
@@ -124,18 +96,18 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 				input?.select();
 			},
 		},
-		...moduleLinks
-			.after([])
-			.flatMap((link): QuickAction[] =>
-				link.href && link.label && link.icon
-					? [{ id: link.href, label: link.label, icon: link.icon, href: link.href }]
-					: [],
-			)
-			.slice(0, 4),
+		...moduleNavItems(CLIENT_MODULES, "sidebar", modules)
+			.slice(0, MAX_MODULE_ACTIONS)
+			.map((item): QuickAction => ({
+				id: item.href,
+				label: item.label,
+				icon: resolveNavIcon(item.icon),
+				href: item.href,
+			})),
 	];
 
 	return (
-		<div className="relative mx-auto w-full max-w-3xl px-6 py-7 text-left" data-command-center>
+		<div className="@container relative mx-auto w-full max-w-3xl px-6 py-7 text-left" data-command-center>
 			<FloatingKite />
 			<p aria-hidden="true" className="font-script text-3xl leading-none text-blue-600">
 				{greeting},
@@ -146,7 +118,7 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 			</h2>
 			<p className="mt-1 text-sm text-neutral-500">{date}</p>
 
-			<div className="mt-4 flex flex-wrap gap-2" aria-label="Right now">
+			<div role="group" aria-label="Right now" className="mt-4 flex flex-wrap gap-2">
 				{chips.map((chip) => (
 					<Link
 						key={chip.id}
@@ -166,9 +138,9 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 				<MigrationsNoticeCard />
 			</div>
 
-			<div className="mt-5 grid gap-4 md:grid-cols-2">
+			<div className="mt-5 grid gap-4 @2xl:grid-cols-2">
 				{data.canConnect && (
-					<Card
+					<CommandCenterCard
 						title="Accounts"
 						action={{ label: "Connected accounts", href: "/settings/connected-accounts" }}
 						testId="command-center-accounts"
@@ -204,62 +176,15 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 								))}
 							</ul>
 						)}
-					</Card>
+					</CommandCenterCard>
 				)}
 
-				{data.isAdmin && (
-					<Card
-						title="Needs attention"
-						action={{ label: "Admin overview", href: "/admin" }}
-						testId="command-center-attention"
-					>
-						{data.attentionLoading ? (
-							<Skeleton className="h-10 w-full rounded-xl" />
-						) : (
-							<div className="space-y-2">
-								{data.attention.map((item) => (
-									<Notice
-										key={item.id}
-										tone={item.tone}
-										title={item.title}
-										actions={
-											<Link
-												href={attentionHref(item.href)}
-												className="text-sm font-medium underline underline-offset-2 hover:opacity-80"
-											>
-												{item.hrefLabel}
-											</Link>
-										}
-										data-testid={`command-center-attention-${item.id}`}
-									>
-										{item.detail}
-									</Notice>
-								))}
-								{data.attention.length === 0 && (
-									<p
-										className="flex items-center gap-2 py-1.5 text-sm text-neutral-700"
-										data-testid="command-center-all-clear"
-									>
-										<CheckCircle2 className="h-4 w-4 text-green-600" aria-hidden="true" />
-										Nothing else needs your attention.
-									</p>
-								)}
-								{health.map((line) => (
-									<p key={line.id} className="flex items-center gap-3 py-1 text-sm text-neutral-700">
-										<span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-green-600" />
-										<span className="min-w-0 flex-1 truncate">{line.text}</span>
-										<span className="shrink-0 text-xs text-neutral-500">{line.detail}</span>
-									</p>
-								))}
-							</div>
-						)}
-					</Card>
-				)}
+				{data.isAdmin && <LazyCommandCenterAdminCard primary={data.primary} />}
 			</div>
 
 			<div className="mt-5">
 				<h3 className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-neutral-500">Quick actions</h3>
-				<div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+				<div className="grid gap-2 @md:grid-cols-2 @xl:grid-cols-3">
 					{actions.map((action) => (
 						<QuickActionTile key={action.id} action={action} />
 					))}

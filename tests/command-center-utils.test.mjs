@@ -71,7 +71,15 @@ test("the date line names the weekday, day, month and year in the zone", () => {
 });
 
 test("status chips: unread always, Screener while it screens or holds mail, For you once known and shown", () => {
-	const base = { unread: 12, folderTitle: "Inbox", held: 0, screenerOn: false, forYou: null, forYouVisible: false };
+	const base = {
+		unread: 12,
+		folderTitle: "Inbox",
+		folderHref: "/inbox",
+		held: 0,
+		screenerOn: false,
+		forYou: null,
+		forYouVisible: false,
+	};
 	assert.deepEqual(
 		statusChips(base).map((chip) => chip.label),
 		["12 unread in Inbox"],
@@ -93,7 +101,9 @@ test("status chips: unread always, Screener while it screens or holds mail, For 
 		["12 unread in Inbox", "3 in Screener", "2 For you"],
 	);
 	assert.equal(all[2].href, "/for-you");
-	assert.equal(statusChips({ ...base, unread: 0, folderTitle: "Starred" })[0].label, "0 unread in Starred");
+	const starred = statusChips({ ...base, unread: 0, folderTitle: "Starred", folderHref: "/starred" })[0];
+	assert.equal(starred.label, "0 unread in Starred");
+	assert.equal(starred.href, "/starred");
 });
 
 test("relative time reads naturally and says nothing about the future or nothing", () => {
@@ -171,18 +181,42 @@ test("account lines: the quiet states and a check that runs now", () => {
 test("the chips' input defaults what is not known, and the accounts card shows only when it may", () => {
 	const quiet = { loaded: false, total: 0, mailboxes: [] };
 	assert.deepEqual(
-		statusChipsInput({ unread: undefined, folderTitle: "Inbox", held: undefined, screener: null, suggestions: quiet }),
-		{ unread: 0, folderTitle: "Inbox", held: 0, screenerOn: false, forYou: null, forYouVisible: false },
+		statusChipsInput({
+			unread: undefined,
+			folderTitle: "Inbox",
+			folderHref: "/inbox",
+			held: undefined,
+			screener: null,
+			suggestions: quiet,
+		}),
+		{
+			unread: 0,
+			folderTitle: "Inbox",
+			folderHref: "/inbox",
+			held: 0,
+			screenerOn: false,
+			forYou: null,
+			forYouVisible: false,
+		},
 	);
 	assert.deepEqual(
 		statusChipsInput({
 			unread: 4,
 			folderTitle: "Inbox",
+			folderHref: "/inbox",
 			held: 2,
 			screener: { enabled: true, mode: "screener" },
 			suggestions: { loaded: true, total: 3, mailboxes: [{ autonomy: "off" }, { autonomy: "suggest" }] },
 		}),
-		{ unread: 4, folderTitle: "Inbox", held: 2, screenerOn: true, forYou: 3, forYouVisible: true },
+		{
+			unread: 4,
+			folderTitle: "Inbox",
+			folderHref: "/inbox",
+			held: 2,
+			screenerOn: true,
+			forYou: 3,
+			forYouVisible: true,
+		},
 	);
 	assert.equal(
 		statusChipsInput({

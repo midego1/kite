@@ -10,17 +10,13 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
-import { attentionItems } from "@/app/(admin)/admin/overview-utils";
-import type { AttentionItem, OverviewData } from "@/app/(admin)/admin/overview-types";
-import { useOverview } from "@/app/(admin)/admin/use-overview";
 import type { MessageFolderConfig } from "@/components/messages/types";
 import { canConnectAccounts, statusChipsInput } from "./command-center-utils";
 
 /**
  * Everything the command center shows, from data the mailbox loads anyway where it can: the session, the
  * mailboxes and their counts, the open suggestions (the For you sidebar item's list), the connected accounts
- * (the Settings page's query, shared) and, for admins only, the admin overview's parts under the keys its cards
- * use, read from the cache while they are fresh instead of on every mount of the empty pane.
+ * (the Settings page's query, shared). The admin card loads its own data (command-center-admin-card.tsx).
  */
 export function useCommandCenterData(config: MessageFolderConfig) {
 	const user = useCurrentUser();
@@ -39,22 +35,17 @@ export function useCommandCenterData(config: MessageFolderConfig) {
 
 	const isAdmin = user?.role === "admin";
 	const primary = isAdmin && user.isPrimaryAdmin === true;
-	const overview = useOverview(primary, isAdmin, { refetchOnMount: true });
 
 	const chips = statusChipsInput({
 		unread: folderCount?.unread,
 		folderTitle: config.title,
+		folderHref: config.hrefPrefix,
 		held: counts.folders.screener?.total,
 		screener: selectedMailbox?.screener,
 		suggestions,
 	});
 
 	const accounts: readonly ExternalAccountView[] = connected.data?.accounts ?? [];
-	// The pane's own notice card already shows waiting database updates with Apply now; the list keeps the rest.
-	const attention: AttentionItem[] = isAdmin
-		? attentionItems(overview.data, primary).filter((item) => item.id !== "migrations")
-		: [];
-	const overviewData: OverviewData | null = isAdmin ? overview.data : null;
 
 	return {
 		user,
@@ -66,8 +57,5 @@ export function useCommandCenterData(config: MessageFolderConfig) {
 		canConnect: canConnectAccounts(connected.data),
 		isAdmin,
 		primary,
-		attention,
-		attentionLoading: isAdmin && overview.loading,
-		overviewData,
 	};
 }

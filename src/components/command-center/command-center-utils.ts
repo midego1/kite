@@ -1,3 +1,4 @@
+import { forYouVisible } from "@/lib/agent/auto-read/for-you-utils";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type { OverviewData } from "@/app/(admin)/admin/overview-types";
 import type { AccountLine, AccountLinesInput, HealthLine, StatusChip, StatusChipsInput } from "./command-center-types";
@@ -45,6 +46,7 @@ export function dateLabel(now: Date, timeZone: string, locale?: string): string 
 export function statusChipsInput(input: {
 	unread: number | undefined;
 	folderTitle: string;
+	folderHref: string;
 	held: number | undefined;
 	screener: { enabled: boolean; mode: "screener" | "inbox" } | null | undefined;
 	suggestions: { loaded: boolean; total: number; mailboxes: readonly { autonomy: string }[] };
@@ -53,10 +55,11 @@ export function statusChipsInput(input: {
 	return {
 		unread: input.unread ?? 0,
 		folderTitle: input.folderTitle,
+		folderHref: input.folderHref,
 		held: input.held ?? 0,
 		screenerOn: input.screener?.enabled === true && input.screener.mode === "screener",
 		forYou: suggestions.loaded ? suggestions.total : null,
-		forYouVisible: suggestions.loaded && suggestions.mailboxes.some((mailbox) => mailbox.autonomy !== "off"),
+		forYouVisible: suggestions.loaded && forYouVisible(suggestions.mailboxes),
 	};
 }
 
@@ -78,7 +81,7 @@ export function statusChips(input: StatusChipsInput): StatusChip[] {
 		{
 			id: "unread",
 			label: `${input.unread} unread in ${input.folderTitle}`,
-			href: "/inbox",
+			href: input.folderHref,
 			tone: "blue",
 		},
 	];

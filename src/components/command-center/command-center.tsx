@@ -69,7 +69,8 @@ function QuickActionTile({ action }: { action: QuickAction }) {
  * needs attention (the database notice with Apply now first, then the admin overview's list and what is fine),
  * and quick actions. Everything comes from data the mailbox loads anyway or from queries the Settings and Admin
  * pages share; nothing here is made up. Modules appear through their sidebar nav items as quick actions and
- * through the cards they declare as `reading-pane` slots, which core draws without naming a module.
+ * through the cards they declare as `reading-pane` slots, which core draws without naming a module, below the
+ * quick actions because they arrive last.
  */
 export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 	const data = useCommandCenterData(config);
@@ -182,7 +183,6 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 				)}
 
 				{data.isAdmin && <LazyCommandCenterAdminCard primary={data.primary} />}
-				<CommandCenterModuleCards mailboxId={data.mailboxId} />
 			</div>
 
 			<div className="mt-5">
@@ -192,6 +192,11 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 						<QuickActionTile key={action.id} action={action} />
 					))}
 				</div>
+			</div>
+
+			{/* After the quick actions, so nothing above moves when a module's card arrives; empty, it takes no room. */}
+			<div className="mt-5 grid gap-4 empty:hidden @2xl:grid-cols-2">
+				<CommandCenterModuleCards mailboxId={data.mailboxId} />
 			</div>
 
 			<p className={`mt-6 text-center text-xs text-neutral-400 ${data.countsLoading ? "invisible" : ""}`}>

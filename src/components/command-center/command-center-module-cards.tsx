@@ -7,6 +7,7 @@ import { useModules } from "@/components/modules/modules-context";
 import { useSlotEntries } from "@/components/modules/use-slot-entries";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import { listReadingPaneSlots } from "@/lib/modules/composer-slot-utils";
+import { useCommandCenterCardEvents } from "./use-card-query";
 
 const pickReadingPaneSlot = (client: ModulePaneClient, slotId: string) => client.readingPaneSlots?.[slotId];
 
@@ -27,12 +28,14 @@ class CardBoundary extends Component<{ children: ReactNode }, { failed: boolean 
  * The cards modules add to the command center (`reading-pane` slots), for the modules on for the user, in
  * declared order. Each module's pane chunk is requested once the pane has rendered, and each card fetches
  * its own data and draws nothing until it has some, so a module that is off, failing or not migrated yet
- * leaves no trace. Core names no module here.
+ * leaves no trace. Their data is kept for a minute (`useCommandCenterCardQuery`) and refreshed on a module notice
+ * or a suggestion change. Core names no module here.
  */
 export function CommandCenterModuleCards({ mailboxId }: { mailboxId: string | null }) {
 	const { modules } = useModules();
 	const slots = useMemo(() => listReadingPaneSlots(CLIENT_MODULES, modules, "reading-pane"), [modules]);
 	const loaded = useSlotEntries(slots, true, pickReadingPaneSlot, loadModulePaneClient);
+	useCommandCenterCardEvents();
 	return slots.map((slot) => {
 		const entry = loaded[slot.id];
 		if (!entry) return null;

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createSignedInAccount, okJson } from "./support/auto-read";
-import { ADMIN, BASE_URL, STORAGE_STATE } from "./support/constants";
-import { apiContext, uniqueToken } from "./support/helpers";
+import { ADMIN, BASE_URL, DOMAIN, STORAGE_STATE } from "./support/constants";
+import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 import { restoreModules, setModuleState } from "./support/modules";
 
 // The empty reading pane's command center (src/components/command-center/): a greeting with the date, the
@@ -178,7 +178,8 @@ test("Calendar and Money Watch add their cards, which leave when the module is o
 }) => {
 	const owner = await apiContext(STORAGE_STATE);
 	// A new account, so the cards list only what this test made.
-	const member = await createSignedInAccount(owner, `cc${uniqueToken("")}`);
+	const username = `cc${uniqueToken("")}`;
+	const member = await createSignedInAccount(owner, username);
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: await member.api.storageState() });
 	try {
 		const title = `Standup ${uniqueToken("")}`;
@@ -208,7 +209,21 @@ test("Calendar and Money Watch add their cards, which leave when the module is o
 			}),
 		);
 
+		const subject = `Card cache ${uniqueToken("")}`;
+		await deliverInbound(member.api, {
+			from: `"Card Sender" <${uniqueToken("cs")}@outside.test>`,
+			to: `${username}@${DOMAIN}`,
+			subject,
+			text: "Open me and close me again.",
+		});
+
 		const page = await context.newPage();
+		const cardRequests: string[] = [];
+		page.on("request", (request) => {
+			const url = new URL(request.url());
+			if (url.pathname === "/api/calendar/events" || url.pathname === "/api/finance/subscriptions")
+				cardRequests.push(`${url.pathname}${url.search}`);
+		});
 		await openInbox(page);
 		const center = pane(page);
 		const today = center.getByTestId("command-center-today");
@@ -237,6 +252,27 @@ test("Calendar and Money Watch add their cards, which leave when the module is o
 			await expect(renewals).toHaveCount(0);
 		};
 		await showsBoth();
+		// Below the quick actions, so nothing visible moves when the cards arrive.
+		expect(
+			await center.evaluate((root) => {
+				const action = root.querySelector("[data-quick-action=compose]");
+				const card = root.querySelector('[data-testid="command-center-today"]');
+				return !!action && !!card && !!(action.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING);
+			}),
+		).toBe(true);
+		// Money Watch asks only for current rows.
+		expect(cardRequests.filter((url) => url.startsWith("/api/finance/"))).toEqual([
+			"/api/finance/subscriptions?status=current",
+		]);
+
+		// Opening and closing a message brings the pane back without fetching either card again.
+		const fetched = cardRequests.length;
+		await page.getByRole("main").locator("div.group").filter({ hasText: subject }).first().click();
+		await expect(page.getByRole("heading", { name: subject })).toBeVisible();
+		await page.goBack();
+		await expect(center).toBeVisible();
+		await showsBoth();
+		expect(cardRequests).toHaveLength(fetched);
 
 		const access = (allowed: boolean) =>
 			(["calendar", "finance"] as const).map((moduleId) => ({ userId: member.id, moduleId, allowed }));

@@ -63,7 +63,7 @@ type OutboundJobPayload = SendEmailInput & { externalAccountId?: string | null }
 const MAX_RECIPIENTS = 50;
 const MAX_QUEUE_DELAY_SECONDS = 24 * 60 * 60;
 
-type PreparedDelivery = {
+export type PreparedDelivery = {
 	input: SendEmailInput;
 	messageId: string;
 	jobId: string;
@@ -431,15 +431,35 @@ async function enqueueScheduledDelivery(
 	);
 }
 
+/**
+ * A job waiting for its retry after a refusal (queued, with that refusal as its error) holds the time the retry
+ * was queued for. A queue message for another time belongs to an earlier try (the undo window's, left over after
+ * Send now) that the retry already took over, and must not claim the job again. The job keeps whole seconds, and
+ * retries queued before it kept the time (none) accept every message.
+ */
+function isStaleQueueMessage(
+	job: { error: string | null; scheduledAt: Date | null },
+	messageScheduledAt: Date,
+): boolean {
+	if (!job.error || !job.scheduledAt) return false;
+	return Math.floor(job.scheduledAt.getTime() / 1000) !== Math.floor(messageScheduledAt.getTime() / 1000);
+}
+
 export async function processOutboundQueue(env: CloudflareEnv, payload: OutboundQueueMessage): Promise<void> {
 	const db = getDb(env);
 	const [job] = await db
-		.select({ status: outboundJobs.status, payload: outboundJobs.payload })
+		.select({
+			status: outboundJobs.status,
+			payload: outboundJobs.payload,
+			error: outboundJobs.error,
+			scheduledAt: outboundJobs.scheduledAt,
+		})
 		.from(outboundJobs)
 		.where(eq(outboundJobs.id, payload.jobId))
 		.limit(1);
 	if (!job || job.status !== "queued") return;
 	const scheduledAt = new Date(payload.scheduledAt);
+	if (isStaleQueueMessage(job, scheduledAt)) return;
 	const delivery = preparedDeliveryFromJob(job.payload, payload.jobId, payload.messageId, payload.attempt);
 	if (scheduledAt.getTime() > Date.now()) {
 		await enqueueScheduledDelivery(env, delivery, scheduledAt);

@@ -3,6 +3,7 @@
 import { getUserTimeZone } from "@/lib/time/utils";
 import { clearUserTimeZonePreference } from "@/lib/time/client";
 import { endReloadReturn } from "@/components/reload-return-utils";
+import { forgetLoadedAvatars } from "@/components/progressive-avatar-image-utils";
 import { clearAppBadge } from "@/lib/app-badge-utils";
 import { changesCurrentAccount } from "./client-utils";
 import type { AuthFetchOptions, AuthSessionChangedDetail, AuthSessionResponse } from "./client-types";
@@ -39,7 +40,10 @@ export function getClientSessionKey(): string | null {
 export function setClientSessionKey(userId: string): void {
 	const previous = getClientSessionKey();
 	localStorage.setItem(SESSION_STORAGE_KEY, userId);
-	if (previous !== userId) clearUserTimeZonePreference();
+	if (previous !== userId) {
+		clearUserTimeZonePreference();
+		forgetLoadedAvatars();
+	}
 	if (previous !== userId) dispatchAuthSessionChanged(true);
 }
 
@@ -47,6 +51,7 @@ export function clearClientSessionKey(): void {
 	localStorage.removeItem(SESSION_STORAGE_KEY);
 	localStorage.removeItem(LEGACY_TOKEN_STORAGE_KEY);
 	clearUserTimeZonePreference();
+	forgetLoadedAvatars();
 	void clearAppBadge(navigator);
 	dispatchAuthSessionChanged(false);
 }

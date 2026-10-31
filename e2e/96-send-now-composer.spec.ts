@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-import { STORAGE_STATE } from "./support/constants";
-import { apiContext, setSendingSettings, uniqueToken, waitForMessage } from "./support/helpers";
+import { createSignedInAccount } from "./support/auto-read";
+import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { apiContext, deliverInbound, setSendingSettings, uniqueToken, waitForMessage } from "./support/helpers";
 
 // The undo bar while a send is held: a visible countdown, the subject as a link to the queued message in Sent, and
 // Send now, which delivers once and removes the bar. Also the composer body filling its container, so a click below
@@ -74,9 +75,9 @@ test.describe("held send", () => {
 
 		// A second press (another tab, a retry) neither sends again nor undoes the delivered message.
 		const again = await api.post(`/api/messages/${queued.id}/send-now`);
-		expect([404, 409]).toContain(again.status());
+		expect(again.status()).toBe(409);
 		const undo = await api.post("/api/send/undo", { data: { messageId: queued.id } });
-		expect([404, 409]).toContain(undo.status());
+		expect(undo.status()).toBe(404);
 		expect((await waitForMessage(api, subject, { status: "sent" })).id).toBe(queued.id);
 
 		await page.goto("/sent");
@@ -84,12 +85,34 @@ test.describe("held send", () => {
 		await api.dispose();
 	});
 
-	test("Send now refuses another user's message and unknown ids", async () => {
+	test("Send now is for the author only, and unknown ids and anonymous requests are refused", async () => {
 		const api = await apiContext(STORAGE_STATE);
-		const missing = await api.post("/api/messages/msg_does_not_exist/send-now");
-		expect(missing.status()).toBe(404);
-		const anonymous = await (await apiContext()).post("/api/messages/msg_does_not_exist/send-now");
-		expect(anonymous.status()).toBe(401);
+		const received = await deliverInbound(api, {
+			from: `"Sender" <sender@outside.test>`,
+			to: SUPPORT_ADDRESS,
+			subject: `Author only setup ${uniqueToken()}`,
+		});
+		const subject = `Author only ${uniqueToken()}`;
+		const sent = await api.post("/api/send", {
+			data: { from: SUPPORT_ADDRESS, to: RECIPIENT, subject, text: "Held", mailboxId: received.mailboxId },
+		});
+		expect(sent.ok(), await sent.text()).toBe(true);
+		const { messageId, undoUntil } = (await sent.json()) as { messageId: string; undoUntil?: string };
+		expect(undoUntil).toBeTruthy();
+
+		const other = await createSignedInAccount(api, `sendnow${uniqueToken("u")}`);
+		expect((await other.api.post(`/api/messages/${messageId}/send-now`)).status()).toBe(404);
+		expect((await waitForMessage(api, subject, { status: "queued", direction: "outbound" })).status).toBe("queued");
+
+		expect((await api.post("/api/messages/msg_does_not_exist/send-now")).status()).toBe(404);
+		const anonymous = await apiContext();
+		expect((await anonymous.post(`/api/messages/${messageId}/send-now`)).status()).toBe(401);
+		// The author can, once.
+		expect((await api.post(`/api/messages/${messageId}/send-now`)).ok()).toBe(true);
+		expect((await api.post(`/api/messages/${messageId}/send-now`)).status()).toBe(409);
+		await waitForMessage(api, subject, { status: "sent" });
+		await other.api.dispose();
+		await anonymous.dispose();
 		await api.dispose();
 	});
 });

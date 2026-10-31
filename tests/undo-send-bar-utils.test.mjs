@@ -22,6 +22,7 @@ function memoryStore() {
 	return {
 		getItem: (key) => data.get(key) ?? null,
 		setItem: (key, value) => void data.set(key, value),
+		removeItem: (key) => void data.delete(key),
 	};
 }
 
@@ -53,4 +54,23 @@ test("the remembered list is bounded and survives corrupt storage", () => {
 	avatar.rememberAvatarLoaded("/a?v=1", 2_000, store);
 	assert.equal(avatar.wasAvatarLoaded("/a?v=1", 2_001, store), true);
 	assert.equal(avatar.wasAvatarLoaded("/a?v=1", 2_000, null), false);
+});
+
+test("the stored list is parsed once until it changes, and signing out forgets it", () => {
+	let reads = 0;
+	const base = memoryStore();
+	const store = { ...base, getItem: (key) => (reads++, base.getItem(key)) };
+	avatar.rememberAvatarLoaded("/a?v=1", 1_000, store);
+	const original = JSON.parse;
+	let parses = 0;
+	JSON.parse = (...args) => (parses++, original(...args));
+	try {
+		for (let i = 0; i < 50; i++) assert.equal(avatar.wasAvatarLoaded("/a?v=1", 2_000, store), true);
+		assert.equal(parses, 0);
+	} finally {
+		JSON.parse = original;
+	}
+	avatar.forgetLoadedAvatars(store);
+	assert.equal(avatar.wasAvatarLoaded("/a?v=1", 2_000, store), false);
+	assert.equal(store.getItem(avatar.AVATAR_LOADED_STORAGE_KEY), null);
 });

@@ -16,7 +16,7 @@ const app = await bundleModules("kite-send-state-", [
 		"src/lib/messages/send-state-utils.ts",
 	],
 	["loadSendStates, statusFilterCondition", "src/lib/messages/send-state.ts"],
-	["cancelQueuedSend", "src/lib/email/queued-send.ts"],
+	["cancelQueuedSend, sendQueuedNow", "src/lib/email/queued-send.ts"],
 	["getSendBannerActions", "src/components/messages/send-state-utils.ts"],
 	["buildMessageCounts, getMessageFolder", "src/app/api/messages/counts/utils.ts"],
 	["mailboxScopeCondition", "src/lib/messages/mailbox-scope.ts"],
@@ -377,4 +377,56 @@ test("the undo hold is judged by the longest undo window a user can pick", () =>
 	const kind = (state) => app.getSendStateLabel(state, created, (value) => value, now).kind;
 	assert.equal(kind(at(30)), "sending");
 	assert.equal(kind(at(90)), "scheduled");
+});
+
+test("Send now leaves a job that waits for its retry alone", async (t) => {
+	const { database, env } = await setup(t);
+	const id = insertOutbound(database, "queued", {
+		job: { status: "queued", error: "451 Try again later", scheduledAt: SECONDS(60_000) },
+	});
+	assert.deepEqual(await app.sendQueuedNow(env, "author", id), { ok: false, reason: "retrying" });
+	assert.equal(jobStatusOf(database, id), "queued");
+	assert.equal(statusOf(database, id), "queued");
+});
+
+test("Undo and Send now exclude each other: whichever comes second is too late", async (t) => {
+	const { database, env } = await setup(t);
+	// Undo first: the message is a draft again and its job cancelled, so Send now has nothing to send.
+	const undone = insertOutbound(database, "queued", { job: { status: "queued", scheduledAt: SECONDS(30_000) } });
+	assert.deepEqual(await app.cancelQueuedSend(env, "author", undone), { ok: true, draftId: undone });
+	assert.deepEqual(await app.sendQueuedNow(env, "author", undone), { ok: false, reason: "too_late" });
+	assert.equal(statusOf(database, undone), "draft");
+	assert.equal(jobStatusOf(database, undone), "cancelled");
+	// Send now first: its claim makes Undo too late while the delivery runs, and a sent message is not found.
+	const claimed = insertOutbound(database, "queued", { job: { status: "sending" } });
+	assert.deepEqual(await app.sendQueuedNow(env, "author", claimed), { ok: false, reason: "too_late" });
+	assert.deepEqual(await app.cancelQueuedSend(env, "author", claimed), { ok: false, reason: "too_late" });
+	assert.equal(statusOf(database, claimed), "queued");
+	const sent = insertOutbound(database, "sent", { job: { status: "sent" } });
+	assert.deepEqual(await app.sendQueuedNow(env, "author", sent), { ok: false, reason: "too_late" });
+	assert.deepEqual(await app.cancelQueuedSend(env, "author", sent), { ok: false, reason: "not_found" });
+});
+
+test("only the author with send access can use Send now; a teammate with access to the mailbox cannot", async (t) => {
+	const { database, env } = await setup(t);
+	const id = insertOutbound(database, "queued", { job: { status: "queued", scheduledAt: SECONDS(30_000) } });
+	assert.deepEqual(await app.sendQueuedNow(env, "mate", id), { ok: false, reason: "not_found" });
+	database.db
+		.prepare(
+			"INSERT INTO mailbox_access (id, mailbox_id, user_id, permission, created_at) VALUES ('acc-mate', 'shared', 'mate', 'full_access', 1)",
+		)
+		.run();
+	assert.deepEqual(await app.sendQueuedNow(env, "mate", id), { ok: false, reason: "not_found" });
+	assert.deepEqual(await app.sendQueuedNow(env, "nobody", id), { ok: false, reason: "not_found" });
+	assert.deepEqual(await app.sendQueuedNow(env, "author", "no-such-message"), { ok: false, reason: "not_found" });
+	assert.equal(jobStatusOf(database, id), "queued");
+	// An author who lost send access to the mailbox is not found either.
+	const own = insertOutbound(database, "queued", {
+		userId: "mate",
+		mailboxId: "shared",
+		job: { status: "queued", scheduledAt: SECONDS(30_000) },
+	});
+	database.db.prepare("DELETE FROM mailbox_access WHERE id = 'acc-mate'").run();
+	assert.deepEqual(await app.sendQueuedNow(env, "mate", own), { ok: false, reason: "not_found" });
+	assert.equal(jobStatusOf(database, own), "queued");
 });

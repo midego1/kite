@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, lte, notExists } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages, outboundJobs, users } from "@/db/schema";
-import { claimAndDeliver, preparedDeliveryFromJob } from "@/lib/email/send";
+import { claimAndDeliver, preparedDeliveryFromJob, type PreparedDelivery } from "@/lib/email/send";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { STUCK_SENDING_AFTER_MS } from "@/lib/messages/send-state-utils";
 
@@ -14,7 +14,25 @@ async function authorCanSend(db: Db, userId: string, mailboxId: string): Promise
 	return !!access && (access.canManage || access.canSendAs || access.canSendOnBehalf);
 }
 
-export type SendQueuedNowResult = { ok: true } | { ok: false; reason: "not_found" | "too_late" | "retrying" };
+/**
+ * A failure before the job was claimed (reading the attachments) leaves it queued for the queue to send as usual:
+ * that is "held", not a failed send. Any other failure was already recorded on the message and is thrown on.
+ */
+async function claimAndDeliverOrHold(env: CloudflareEnv, db: Db, jobId: string, delivery: PreparedDelivery) {
+	try {
+		return await claimAndDeliver(env, delivery);
+	} catch (error) {
+		const [after] = await db
+			.select({ status: outboundJobs.status })
+			.from(outboundJobs)
+			.where(eq(outboundJobs.id, jobId))
+			.limit(1);
+		if (after?.status === "queued") return "held" as const;
+		throw error;
+	}
+}
+
+export type SendQueuedNowResult = { ok: true } | { ok: false; reason: "not_found" | "too_late" | "retrying" | "held" };
 
 /**
  * Sends a message still waiting in the outbound queue (the undo window or a schedule) right away, for its
@@ -30,19 +48,14 @@ export async function sendQueuedNow(
 ): Promise<SendQueuedNowResult> {
 	const db = getDb(env);
 	const [message] = await db
-		.select({ id: messages.id, mailboxId: messages.mailboxId })
+		.select({ id: messages.id, status: messages.status, mailboxId: messages.mailboxId })
 		.from(messages)
-		.where(
-			and(
-				eq(messages.id, messageId),
-				eq(messages.userId, userId),
-				eq(messages.direction, "outbound"),
-				eq(messages.status, "queued"),
-			),
-		)
+		.where(and(eq(messages.id, messageId), eq(messages.userId, userId), eq(messages.direction, "outbound")))
 		.limit(1);
 	if (!message?.mailboxId) return { ok: false, reason: "not_found" };
 	if (!(await authorCanSend(db, userId, message.mailboxId))) return { ok: false, reason: "not_found" };
+	// Undone (back in Drafts), already sent or failed: the window this button belongs to is over.
+	if (message.status !== "queued") return { ok: false, reason: "too_late" };
 	const [job] = await db
 		.select({
 			id: outboundJobs.id,
@@ -52,11 +65,17 @@ export async function sendQueuedNow(
 		})
 		.from(outboundJobs)
 		.where(eq(outboundJobs.messageId, messageId))
-		.orderBy(desc(outboundJobs.createdAt))
+		.orderBy(desc(outboundJobs.createdAt), desc(outboundJobs.id))
 		.limit(1);
 	if (!job || job.status !== "queued") return { ok: false, reason: "too_late" };
 	if (job.error) return { ok: false, reason: "retrying" };
-	const outcome = await claimAndDeliver(env, preparedDeliveryFromJob(job.payload, job.id, messageId, undefined));
+	const outcome = await claimAndDeliverOrHold(
+		env,
+		db,
+		job.id,
+		preparedDeliveryFromJob(job.payload, job.id, messageId, undefined),
+	);
+	if (outcome === "held") return { ok: false, reason: "held" };
 	if (outcome === "sent") return { ok: true };
 	return { ok: false, reason: outcome === "retrying" ? "retrying" : "too_late" };
 }
@@ -101,7 +120,7 @@ export async function cancelQueuedSend(
 			.select({ status: outboundJobs.status, updatedAt: outboundJobs.updatedAt })
 			.from(outboundJobs)
 			.where(eq(outboundJobs.messageId, messageId))
-			.orderBy(desc(outboundJobs.createdAt))
+			.orderBy(desc(outboundJobs.createdAt), desc(outboundJobs.id))
 			.limit(1);
 		if (job?.status === "sending" && job.updatedAt <= stuckBefore) {
 			takeBackJob = db

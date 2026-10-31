@@ -1,15 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { loadingRecoveryDelay } from "./loading-recovery-utils";
+import { readBootDetails } from "./boot-trace-utils";
+import { type VisibleClock, loadingRecoveryDelay, startVisibleClock, tickVisibleClock } from "./loading-recovery-utils";
+
+/**
+ * Started by the first startup screen of the page and shared by every later one, so a screen that remounts never
+ * pushes the offer back.
+ */
+let firstMount: VisibleClock | null = null;
 
 export function LoadingRecovery({ active }: { active: boolean }) {
 	const [expired, setExpired] = useState(false);
 	useEffect(() => {
 		if (!active) return;
-		// Counted from the start of the page, not from this mount: a startup screen that remounts must not push it back.
-		const timer = window.setTimeout(() => setExpired(true), loadingRecoveryDelay(performance.now()));
-		return () => window.clearTimeout(timer);
+		let timer: number | undefined;
+		// Counted in visible time: a tab opened in the background does not say "taking longer" the moment it is shown.
+		const schedule = () => {
+			const now = performance.now();
+			const visible = document.visibilityState !== "hidden";
+			firstMount = tickVisibleClock(firstMount ?? startVisibleClock(now, visible), now, visible);
+			window.clearTimeout(timer);
+			if (visible) timer = window.setTimeout(() => setExpired(true), loadingRecoveryDelay(firstMount.visibleMs));
+		};
+		schedule();
+		document.addEventListener("visibilitychange", schedule);
+		return () => {
+			window.clearTimeout(timer);
+			document.removeEventListener("visibilitychange", schedule);
+		};
 	}, [active]);
 	if (!active || !expired) return null;
 	return (
@@ -22,6 +41,43 @@ export function LoadingRecovery({ active }: { active: boolean }) {
 			>
 				Reload Kite
 			</button>
+			<BootDetails />
 		</div>
+	);
+}
+
+/** The boot trace (boot-trace-utils.ts), folded away: what to send along when reporting a start that hangs. */
+function BootDetails() {
+	const [snapshot, setSnapshot] = useState(readBootDetails);
+	const [copied, setCopied] = useState(false);
+	if (!snapshot) return null;
+	return (
+		<details
+			className="mt-3 text-left text-xs text-neutral-600"
+			onToggle={(event) => {
+				if (event.currentTarget.open) setSnapshot(readBootDetails());
+			}}
+		>
+			<summary className="cursor-pointer text-center">Details</summary>
+			<pre
+				data-boot-details
+				className="mt-2 max-h-48 overflow-auto font-mono text-[11px] break-words whitespace-pre-wrap"
+			>
+				{snapshot.text}
+			</pre>
+			<button
+				type="button"
+				className="mt-2 rounded-md border border-neutral-300 px-2.5 py-1 hover:bg-neutral-100"
+				onClick={() => {
+					const current = readBootDetails() ?? snapshot;
+					void navigator.clipboard
+						?.writeText(JSON.stringify(current.details, null, 2))
+						.then(() => setCopied(true))
+						.catch(() => undefined);
+				}}
+			>
+				{copied ? "Copied" : "Copy details"}
+			</button>
+		</details>
 	);
 }

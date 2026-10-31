@@ -1,3 +1,5 @@
+import { BOOT_TRACE_GLOBAL, markBootPhase } from "./boot-trace-utils";
+
 /**
  * sessionStorage key counting the automatic reloads of this tab: `{ count, since, stalls }`, where `stalls` counts
  * the boot watchdog's share of `count`.
@@ -43,6 +45,16 @@ const DEV_BOOT_WATCHDOG_CEILING_MS = 120_000;
 const LOADER_CEILING_MS = 30_000;
 /** Marks the failure box shown for a screen React runs, which markLoaderMounted() leaves in place. */
 const LOADER_STUCK_ATTRIBUTE = "data-loader-stuck";
+/**
+ * A startup screen whose element React replaced this often (a remount loop) counts as stuck even while it shows
+ * its own "Reload Kite", which a remount takes away again.
+ */
+const LOADER_REMOUNT_LIMIT = 3;
+/**
+ * Ticks the screen must stay down (gone, or hidden without a failure in it) before the watchdog stops for good: a
+ * failure with Retry puts the same screen back, and the outer bound must still hold then.
+ */
+const LOADER_SETTLED_TICKS = 4;
 /** Watchdog reloads per ASSET_RELOAD_WINDOW_MS (within the shared budget) before it shows "Kite couldn't load". */
 const BOOT_STALL_RELOADS = 2;
 /** Fired on `window` when a chunk fails after the app has rendered, so the update check can run at once. */
@@ -97,8 +109,14 @@ const DEV_ASSET_PREFIXES = ["/_next/static/", "/@id/", "/@fs/", "/@vite/", "/nod
  * Once React runs the screen the watchdog does not reload any more, but it keeps the outer bound: when the screen
  * is still up after LOADER_CEILING_MS of visible time and React shows none of its own ways out (the slow-start
  * recovery, a failure in the screen), it shows the same "Kite couldn't load" box, marked LOADER_STUCK_ATTRIBUTE so a
- * remounting screen cannot take it away; the box goes once the screen does. Nothing (a remount loop, a state that
- * never settles, the kite's return scene) can then keep the app hidden behind the screen for good.
+ * remounting screen cannot take it away; the box goes once the screen does. A screen whose element was replaced
+ * LOADER_REMOUNT_LIMIT times is stuck even with its own recovery showing (a remount loop keeps resetting it). A
+ * failure in the screen restarts the bound (its Retry brings the screen back), and the watchdog only stops once
+ * the screen has stayed down for LOADER_SETTLED_TICKS ticks. Nothing (a remount loop, a state that never settles,
+ * the kite's return scene) can then keep the app hidden behind the screen for good.
+ *
+ * Every tick is a heartbeat for the boot trace (boot-trace-utils.ts), which a frozen main thread stops, and the
+ * box carries the trace's Details with a Copy details button.
  */
 export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): string {
 	const prefixes = dev ? DEV_ASSET_PREFIXES : PRODUCTION_ASSET_PREFIXES;
@@ -116,6 +134,7 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	const prefixes = ${JSON.stringify(prefixes)};
 	const loaderFlag = ${JSON.stringify(LOADER_MOUNTED_FLAG)};
 	const failureId = ${JSON.stringify(BOOT_FAILURE_ID)};
+	const trace = () => window[${JSON.stringify(BOOT_TRACE_GLOBAL)}] || null;
 	let reloadPending = false;
 	let gaveUp = false;
 	let lastStaleAt = null;
@@ -159,11 +178,14 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		if (screen) return screen.getAttribute("role") === "status";
 		return !window[readyFlag];
 	};
-	// React runs the startup screen and it is still up, without a way out of its own.
+	// React runs the startup screen and it is still up, without a way out of its own (or its element keeps being
+	// replaced, which takes that way out away again).
+	let overlay = null;
+	let remounts = 0;
 	const loaderStuck = () => {
 		const screen = document.querySelector("[data-loading-overlay]");
 		if (!screen || screen.getAttribute("role") !== "status") return false;
-		return !screen.querySelector(".loading-recovery, [role=alert]");
+		return remounts >= ${LOADER_REMOUNT_LIMIT} || !screen.querySelector(".loading-recovery, [role=alert]");
 	};
 	const startOver = () => {
 		try {
@@ -185,10 +207,52 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		const button = document.createElement("button");
 		button.type = "button";
 		button.textContent = "Reload";
+		button.setAttribute("data-boot-reload", "");
 		button.style.cssText = "margin-top:12px;border:0;border-radius:8px;background:#2563eb;color:#fff;padding:8px 16px;font:inherit;cursor:pointer";
 		box.append(text, button);
+		const details = detailsSection();
+		if (details) box.append(details);
 		parent.append(box);
 		button.focus();
+	};
+	// What the boot trace knows, folded away: for a report, never needed to get going again.
+	const detailsSection = () => {
+		const current = trace();
+		if (!current || typeof current.text !== "function") return null;
+		try {
+			const section = document.createElement("details");
+			section.style.cssText = "margin-top:12px;text-align:left;font-size:12px;opacity:0.8";
+			const summary = document.createElement("summary");
+			summary.textContent = "Details";
+			summary.style.cssText = "cursor:pointer;text-align:center";
+			const lines = document.createElement("pre");
+			lines.setAttribute("data-boot-details", "");
+			lines.textContent = current.text();
+			lines.style.cssText = "margin:8px 0 0;max-height:12rem;overflow:auto;white-space:pre-wrap;word-break:break-word;font:11px/1.4 ui-monospace,monospace";
+			const copy = document.createElement("button");
+			copy.type = "button";
+			copy.textContent = "Copy details";
+			copy.setAttribute("data-boot-copy", "");
+			copy.style.cssText = "margin-top:8px;border:1px solid #d4d4d4;border-radius:6px;background:transparent;color:inherit;padding:4px 10px;font:inherit;cursor:pointer";
+			section.append(summary, lines, copy);
+			// Opened later, it shows the trace as it is then.
+			section.addEventListener("toggle", () => {
+				if (section.open) lines.textContent = current.text();
+			});
+			return section;
+		} catch {
+			return null;
+		}
+	};
+	const copyDetails = (button) => {
+		const current = trace();
+		if (!current || typeof current.details !== "function") return;
+		const json = JSON.stringify(current.details(), null, 2);
+		try {
+			navigator.clipboard.writeText(json).then(() => {
+				button.textContent = "Copied";
+			}, () => {});
+		} catch {}
 	};
 	const giveUp = (message = "[kite] The app's files could not be loaded after " + delays.length + " reloads.") => {
 		if (!gaveUp) console.error(message);
@@ -259,6 +323,8 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	// iOS, a background tab Chrome or Android froze) must not wake up to 20 seconds of "quiet" and reload at once.
 	let visibleMs = 0;
 	let quietMs = 0;
+	// Visible time since the page started or React's last failure in the screen (whose Retry brings it back).
+	let loaderMs = 0;
 	let lastTickAt = Date.now();
 	let watchdog = null;
 	const progressed = () => {
@@ -291,17 +357,45 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		}
 		return false;
 	};
-	// React runs the screen: no more reloads, only the outer bound, until the screen has gone.
+	// The watchdog is done with this page: the trace's heartbeat stops with it, which is no freeze.
+	const stopWatching = () => {
+		clearInterval(watchdog);
+		const current = trace();
+		if (current && typeof current.end === "function") current.end();
+	};
+	// React runs the screen: no more reloads, only the outer bound, until the screen has gone for good.
+	let settledTicks = 0;
 	const watchLoader = () => {
 		const screen = document.querySelector("[data-loading-overlay]");
 		if (!screen || screen.getAttribute("role") !== "status") {
 			const box = document.getElementById(failureId);
 			if (box && box.hasAttribute(${JSON.stringify(LOADER_STUCK_ATTRIBUTE)})) box.remove();
 			if (!screen && !window[readyFlag]) return;
-			return clearInterval(watchdog);
+			// React's own failure is up: its Retry brings the screen back, which then gets a bound of its own.
+			if (screen && screen.querySelector("[role=alert]")) {
+				loaderMs = 0;
+				settledTicks = 0;
+				return;
+			}
+			settledTicks += 1;
+			if (settledTicks >= ${LOADER_SETTLED_TICKS}) stopWatching();
+			return;
 		}
-		if (visibleMs < ${LOADER_CEILING_MS} || !loaderStuck()) return;
-		if (!document.getElementById(failureId)) console.error("[kite] The app did not finish starting.");
+		settledTicks = 0;
+		if (overlay && overlay !== screen) {
+			remounts += 1;
+			const current = trace();
+			if (current && typeof current.remount === "function") current.remount(remounts);
+		}
+		overlay = screen;
+		if (loaderMs < ${LOADER_CEILING_MS} || !loaderStuck()) return;
+		if (!document.getElementById(failureId)) {
+			console.error(
+				remounts >= ${LOADER_REMOUNT_LIMIT}
+					? "[kite] The app did not finish starting: its startup screen was mounted again " + remounts + " times."
+					: "[kite] The app did not finish starting.",
+			);
+		}
 		showFailure(true);
 	};
 	const tick = () => {
@@ -310,16 +404,19 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 			const elapsed = Math.min(Math.max(now - lastTickAt, 0), 1000);
 			visibleMs += elapsed;
 			quietMs += elapsed;
+			loaderMs += elapsed;
 		}
 		lastTickAt = now;
+		const current = trace();
+		if (current && typeof current.beat === "function") current.beat(visibleMs);
 		if (window[loaderFlag]) return watchLoader();
-		if (!stalled()) return clearInterval(watchdog);
+		if (!stalled()) return stopWatching();
 		if (visibleMs < ${BOOT_WATCHDOG_MS}) return;
 		const waiting = quietMs < (loading() ? quietCap : ${progressGraceMs});
 		if (waiting && visibleMs < ${ceilingMs}) return;
 		// A failed chunk's reload is already on its way.
 		if (reloadPending) return;
-		clearInterval(watchdog);
+		stopWatching();
 		if (navigator.onLine === false || !takeReload(true)) return showFailure();
 		location.reload();
 	};
@@ -330,7 +427,10 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		"click",
 		(event) => {
 			const target = event.target;
-			if (target && typeof target.closest === "function" && target.closest("#" + failureId + " button")) startOver();
+			if (!target || typeof target.closest !== "function") return;
+			if (target.closest("#" + failureId + " [data-boot-reload]")) startOver();
+			const copy = target.closest("#" + failureId + " [data-boot-copy]");
+			if (copy) copyDetails(copy);
 		},
 		true,
 	);
@@ -373,6 +473,7 @@ export function markAppReady(): void {
 /** Called by LoadingTransition when it mounts: React runs the startup screen, which ends or recovers by itself. */
 export function markLoaderMounted(): void {
 	(window as unknown as Record<string, unknown>)[LOADER_MOUNTED_FLAG] = true;
+	markBootPhase("loader-mounted");
 	clearBootRecovery();
 }
 

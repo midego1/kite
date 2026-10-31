@@ -110,7 +110,14 @@ function fakeDocument({ screen = "status", declared = [], readyState = "complete
 		activeElement: null,
 		createElement,
 		getElementById: (id) => byId.get(id) ?? null,
-		querySelector: (selector) => (selector === "[data-loading-overlay]" ? overlay : null),
+		querySelector: (selector) => (selector === "[data-loading-overlay]" ? fake.overlay : null),
+		// React replaces the startup screen's element (a remount), keeping its role and what it shows.
+		remountOverlay() {
+			const next = createElement("div");
+			next.attributes = { ...fake.overlay.attributes };
+			next.wayOut = fake.overlay.wayOut;
+			fake.overlay = next;
+		},
 		querySelectorAll: () => declared,
 		readyState,
 		visibilityState: "visible",
@@ -396,7 +403,7 @@ test("a startup screen React never took over reloads after 8 visible seconds, tw
 	// The click is handled on window, before React's listener on document could stop it.
 	assert.equal(button.listeners.click, undefined);
 	last.fire("click", {
-		target: { closest: (selector) => (selector === `#${BOOT_FAILURE_ID} button` ? button : null) },
+		target: { closest: (selector) => (selector === `#${BOOT_FAILURE_ID} [data-boot-reload]` ? button : null) },
 	});
 	// Reload starts over with a fresh budget.
 	assert.equal(last.reloads, 1);
@@ -539,6 +546,9 @@ test("a page React runs, or one that is done loading, is left alone", () => {
 	running.advance(29_500);
 	assert.deepEqual([running.reloads, running.failure(), running.watching()], [0, null, true]);
 	running.document.overlay.setAttribute("role", "");
+	// It stops once the screen has stayed down for two seconds, not at the first tick.
+	running.advance(1_500);
+	assert.equal(running.watching(), true);
 	running.advance(500);
 	assert.deepEqual([running.reloads, running.failure(), running.watching()], [0, null, false]);
 	// The root rendering is not enough while the part with the startup screen never did.
@@ -636,11 +646,14 @@ test("a startup screen React runs but never ends gets Kite couldn't load after 3
 		delete globalThis.sessionStorage;
 	}
 	// Reload starts over; and once the screen goes after all, so does the message.
-	page.fire("click", { target: { closest: (selector) => (selector === "#kite-boot-failure button" ? {} : null) } });
+	page.fire("click", {
+		target: { closest: (selector) => (selector === "#kite-boot-failure [data-boot-reload]" ? {} : null) },
+	});
 	assert.equal(page.reloads, 1);
 	page.document.overlay.setAttribute("role", "");
 	page.advance(500);
 	assert.equal(page.failure(), null);
+	page.advance(1_500);
 	assert.equal(page.watching(), false);
 });
 
@@ -693,4 +706,142 @@ test("a frozen or hidden page does not wake up to a quiet period and reload at o
 	skewed.clock.now -= 30_000;
 	skewed.advance(7_500);
 	assert.equal(skewed.reloads, 0);
+});
+
+test("a startup screen that keeps being mounted again is stuck even while it shows Reload Kite", () => {
+	const page = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true } });
+	page.document.overlay.wayOut = { className: "loading-recovery" };
+	page.advance(500);
+	// Two remounts: still its own way out.
+	for (let remount = 0; remount < 2; remount += 1) {
+		page.document.remountOverlay();
+		page.advance(500);
+	}
+	page.advance(40_000);
+	assert.equal(page.failure(), null);
+	// A third: a remount loop, which keeps taking React's "Reload Kite" away again.
+	page.document.remountOverlay();
+	page.advance(500);
+	assert.ok(page.failure());
+	assert.equal(page.failure().getAttribute("data-loader-stuck"), "");
+	assert.deepEqual(page.errors, [
+		"[kite] The app did not finish starting: its startup screen was mounted again 3 times.",
+	]);
+	assert.equal(page.reloads, 0);
+	// Before the outer bound a remount loop waits like any other stuck screen.
+	const early = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true } });
+	early.document.overlay.wayOut = { className: "loading-recovery" };
+	early.advance(500);
+	for (let remount = 0; remount < 5; remount += 1) {
+		early.document.remountOverlay();
+		early.advance(500);
+	}
+	assert.equal(early.failure(), null);
+	early.advance(26_500);
+	assert.equal(early.failure(), null);
+	early.advance(500);
+	assert.ok(early.failure());
+});
+
+test("a failure in the screen keeps the watchdog going, and Retry back to the loading screen gets a new bound", () => {
+	const page = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true } });
+	page.advance(20_000);
+	// React shows "Kite couldn't check your sign-in" in the screen: no longer a status, a way out of its own.
+	page.document.overlay.setAttribute("role", "");
+	page.document.overlay.wayOut = { role: "alert" };
+	page.advance(60_000);
+	assert.equal(page.watching(), true);
+	assert.equal(page.failure(), null);
+	// Retry: the loading screen is back, and it never finishes.
+	page.document.overlay.setAttribute("role", "status");
+	page.document.overlay.wayOut = undefined;
+	page.advance(29_500);
+	assert.equal(page.failure(), null);
+	page.advance(500);
+	assert.ok(page.failure());
+	// A screen that briefly leaves and comes back without a failure keeps its count.
+	const brief = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true } });
+	brief.advance(20_000);
+	brief.document.overlay.setAttribute("role", "");
+	brief.advance(1_000);
+	brief.document.overlay.setAttribute("role", "status");
+	brief.advance(9_000);
+	assert.ok(brief.failure());
+});
+
+/** A boot trace (boot-trace-utils.ts) on the page's window that records what the watchdog tells it. */
+function fakeTrace() {
+	const trace = {
+		beats: [],
+		remounts: [],
+		ended: 0,
+		beat: (visibleMs) => trace.beats.push(visibleMs),
+		remount: (count) => trace.remounts.push(count),
+		end: () => (trace.ended += 1),
+		text: () => "Phase: loader-mounted",
+		details: () => ({ phase: "loader-mounted" }),
+	};
+	return trace;
+}
+
+test("every tick is a heartbeat for the boot trace, which ends when the watchdog stops", () => {
+	const trace = fakeTrace();
+	const page = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace } });
+	page.advance(1_500);
+	assert.deepEqual(trace.beats, [500, 1_000, 1_500]);
+	page.document.remountOverlay();
+	page.advance(500);
+	page.document.remountOverlay();
+	page.advance(500);
+	assert.deepEqual(trace.remounts, [1, 2]);
+	page.document.overlay.setAttribute("role", "");
+	page.advance(2_000);
+	assert.equal(page.watching(), false);
+	assert.equal(trace.ended, 1);
+	// Hidden time is no visible time, but the heartbeat goes on.
+	const hidden = fakeTrace();
+	const background = loadPage({ flags: { __kiteBoot: hidden } });
+	background.document.visibilityState = "hidden";
+	background.advance(1_000);
+	assert.deepEqual(hidden.beats, [0, 0]);
+	// Without a trace (it failed to start) the watchdog works as before.
+	const plain = loadPage();
+	plain.advance(8_000);
+	assert.equal(plain.reloads, 1);
+});
+
+test("Kite couldn't load carries the trace's Details, and Copy details copies them as JSON", async () => {
+	const trace = fakeTrace();
+	const copied = [];
+	const page = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace } });
+	page.window.navigator.clipboard = { writeText: async (text) => copied.push(text) };
+	page.advance(30_000);
+	const [, button, details] = page.failure().children;
+	assert.equal(button.getAttribute("data-boot-reload"), "");
+	assert.equal(details.tagName, "details");
+	const [summary, lines, copy] = details.children;
+	assert.equal(summary.textContent, "Details");
+	assert.equal(lines.textContent, "Phase: loader-mounted");
+	assert.equal(copy.textContent, "Copy details");
+	page.fire("click", {
+		target: { closest: (selector) => (selector === `#${BOOT_FAILURE_ID} [data-boot-copy]` ? copy : null) },
+	});
+	await Promise.resolve();
+	await Promise.resolve();
+	assert.deepEqual(
+		copied.map((text) => JSON.parse(text)),
+		[{ phase: "loader-mounted" }],
+	);
+	assert.equal(copy.textContent, "Copied");
+	// Copying is no reload.
+	assert.equal(page.reloads, 0);
+	// Opened later, it shows the trace as it is then.
+	trace.text = () => "Phase: auth-ready";
+	details.open = true;
+	details.listeners.toggle();
+	assert.equal(lines.textContent, "Phase: auth-ready");
+	// Without a trace the box has no Details.
+	const plain = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true } });
+	plain.advance(30_000);
+	assert.equal(plain.failure().children.length, 2);
 });

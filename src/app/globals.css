@@ -788,6 +788,12 @@ div:has(+ .loading-recovery) > .reload-return-static {
 	display: none;
 }
 
+/* The boot watchdog's "Kite couldn't load" for a screen that keeps being mounted again (asset-recovery-utils.ts)
+   stands in for the screen's own recovery, which it would otherwise cover: one Reload and one Details. */
+html:has(#kite-boot-failure[data-loader-stuck]) .loading-recovery {
+	display: none;
+}
+
 @keyframes reload-return-arrive {
 	from {
 		transform: translate(55vw, -55vh) rotate(18deg) scale(0.7);

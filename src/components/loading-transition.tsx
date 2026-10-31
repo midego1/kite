@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useIsFetching } from "@tanstack/react-query";
 import { useBranding } from "@/components/branding-provider";
 import { markLoaderMounted } from "@/components/asset-recovery-utils";
+import { markBootPhase } from "@/components/boot-trace-utils";
 import { PageLoadingContext } from "@/components/page-loading";
 import { RouteLoadingBar } from "@/components/route-loading-bar";
 import { ReloadReturnKite, ReloadReturnSky } from "@/components/reload-return-scene";
@@ -23,6 +24,12 @@ const MAXIMUM_DATA_WAIT = 10_000;
 /** The overlay's opacity transition (`duration-300`): the kite's return stops once the screen has faded out. */
 const OVERLAY_FADE_TIME = 300;
 let hasShownInitialLoadingTransition = false;
+
+/** Rendered after the page: its layout effect runs once the page itself has committed (the boot trace's phase). */
+function ChildrenCommitted() {
+	useLayoutEffect(() => markBootPhase("children-committed"), []);
+	return null;
+}
 
 export function LoadingTransition({ children, ready, failure }: LoadingTransitionProps) {
 	const branding = useBranding();
@@ -60,6 +67,14 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 	}, [failure]);
 
 	useEffect(() => {
+		if (ready) markBootPhase("auth-ready");
+	}, [ready]);
+
+	useEffect(() => {
+		if (canComplete) markBootPhase("can-complete");
+	}, [canComplete]);
+
+	useEffect(() => {
 		if (canComplete) return;
 		const timer = window.setInterval(() => {
 			setProgress((current) => Math.min(92, current + Math.max(1, (92 - current) * 0.08)));
@@ -90,6 +105,7 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 				setContentVisible(true);
 			}
 			setInitialLoadComplete(true);
+			markBootPhase("complete");
 		}, remaining + COMPLETION_TIME);
 		// After a reload to a new version the screen showed the kite's return (reload-return-scene.tsx): the app is
 		// up, so its marker is cleared and the scene stops once the screen has faded, not before.
@@ -112,6 +128,7 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 				{ready && (
 					<div className={`min-h-dvh transition-opacity duration-300 ${contentVisible ? "opacity-100" : "opacity-0"}`}>
 						{children}
+						<ChildrenCommitted />
 					</div>
 				)}
 				<div

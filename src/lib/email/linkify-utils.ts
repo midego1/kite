@@ -86,7 +86,9 @@ function urlMatch(raw: string, index: number): LinkMatch | null {
 
 function emailMatch(raw: string, index: number): LinkMatch | null {
 	if (raw.length > MAX_LINK_LENGTH) return null;
-	const text = raw.replace(/[-_.%+]+$/, "");
+	// The lookbehind lets a match start only where a run of them starts: without it a long run that does not end
+	// the string is tried again from each of its characters (quadratic).
+	const text = raw.replace(/(?<![-_.%+])[-_.%+]+$/, "");
 	const at = text.lastIndexOf("@");
 	const domain = text.slice(at + 1);
 	const topLevel = domain.slice(domain.lastIndexOf(".") + 1);

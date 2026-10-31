@@ -140,16 +140,22 @@ export function htmlToPlainText(html: string | null | undefined): string {
 		// Repeat until stable so removing one tag cannot leave a new one behind ("<<b>b>").
 		for (let previous = ""; previous !== text;) {
 			previous = text;
-			text = text.replace(/<[^>]+>/g, "");
+			// Only up to the last `>`: a `<` after it cannot start a tag, and the regex would rescan a long run of them
+			// to the end from each one (quadratic).
+			const end = text.lastIndexOf(">") + 1;
+			text = text.slice(0, end).replace(/<[^>]+>/g, "") + text.slice(end);
 		}
 		return text;
 	}
 	const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
 	const text = renderNode(doc.body, { listDepth: 0, ordered: [] });
-	return text
-		.replace(/[ \t]+\n/g, "\n")
-		.replace(/\n{3,}/g, "\n\n")
-		.trim();
+	return (
+		text
+			// Only from the start of a run of blanks: a long run not followed by a line break would be rescanned otherwise.
+			.replace(/(?<![ \t])[ \t]+\n/g, "\n")
+			.replace(/\n{3,}/g, "\n\n")
+			.trim()
+	);
 }
 
 type RenderState = { listDepth: number; ordered: Array<number | null> };

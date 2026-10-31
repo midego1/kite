@@ -68,7 +68,8 @@ function domainOf(address: string): string {
  */
 export function getThreadParticipants(people: ThreadParticipant[]): ThreadParticipant[] {
 	const seen = new Set<string>();
-	const byName = new Map<string, ThreadParticipant[]>();
+	// The first chip of a display name at a domain, so a long list is one lookup per person, not a scan.
+	const byNameAndDomain = new Map<string, ThreadParticipant>();
 	const participants: ThreadParticipant[] = [];
 	for (const person of people) {
 		const address = person.address.trim();
@@ -77,16 +78,15 @@ export function getThreadParticipants(people: ThreadParticipant[]): ThreadPartic
 		if (!key || seen.has(key)) continue;
 		seen.add(key);
 		const nameKey = address && name.toLowerCase() !== address.toLowerCase() ? name.toLowerCase() : "";
-		const sameDomain = nameKey
-			? byName.get(nameKey)?.find((other) => domainOf(other.address) === domainOf(address))
-			: undefined;
+		const nameAndDomain = nameKey ? `${nameKey}\0${domainOf(address)}` : "";
+		const sameDomain = nameAndDomain ? byNameAndDomain.get(nameAndDomain) : undefined;
 		if (sameDomain) {
-			sameDomain.otherAddresses = [...(sameDomain.otherAddresses ?? []), address];
+			(sameDomain.otherAddresses ??= []).push(address);
 			continue;
 		}
 		const participant: ThreadParticipant = { name, address: person.address };
 		participants.push(participant);
-		if (nameKey) byName.set(nameKey, [...(byName.get(nameKey) ?? []), participant]);
+		if (nameAndDomain) byNameAndDomain.set(nameAndDomain, participant);
 	}
 	return participants;
 }

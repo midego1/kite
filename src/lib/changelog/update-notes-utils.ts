@@ -2,7 +2,7 @@ import { parseInlineMarkdown } from "./changelog-utils";
 import type { ChangelogRelease } from "./types";
 
 /** A tab many releases behind still gets a short note; the full history stays in the "What's new" dialog. */
-export const UPDATE_NOTES_MAX_RELEASES = 3;
+const UPDATE_NOTES_MAX_RELEASES = 3;
 
 function hasItems(release: ChangelogRelease): boolean {
 	return release.sections.some((section) => section.items.length > 0);

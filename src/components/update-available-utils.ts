@@ -12,8 +12,8 @@ export const UPDATE_CHECK_INTERVAL_MS = 5 * 60_000;
 /** Focus and visibility changes can come in bursts; they check again only after this gap. */
 const UPDATE_CHECK_MIN_GAP_MS = 60_000;
 export const UPDATE_TOAST_ID = "kite-update-available";
-export const UPDATE_ROW_SUBJECT = "Kite was updated";
-export const UPDATE_ROW_PREVIEW = "Reload to get the latest version";
+const UPDATE_ROW_SUBJECT = "Kite was updated";
+const UPDATE_ROW_PREVIEW = "Reload to get the latest version";
 /** Read out once by the host when the notice is the list row, which has no live region of its own. */
 export const UPDATE_ROW_ANNOUNCEMENT = "A new version of Kite is available.";
 export const UPDATE_TOAST_MESSAGE = "Kite was updated. Reload to get the latest version.";

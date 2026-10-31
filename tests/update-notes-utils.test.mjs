@@ -22,7 +22,7 @@ await build({
 	packages: "external",
 	logLevel: "silent",
 });
-const { UPDATE_NOTES_MAX_RELEASES, firstUpdateNoteLine, pickUpdateNotes } = await import(
+const { firstUpdateNoteLine, pickUpdateNotes } = await import(
 	pathToFileURL(join(bundleDirectory, "update-notes.mjs")).href
 );
 
@@ -44,7 +44,7 @@ test("a tab gets the releases above its own, newest first", () => {
 });
 
 test("a tab far behind gets the newest few, and an unknown release gets none", () => {
-	assert.equal(pickUpdateNotes(RELEASES, "0").length, UPDATE_NOTES_MAX_RELEASES);
+	assert.equal(pickUpdateNotes(RELEASES, "0").length, 3);
 	assert.equal(pickUpdateNotes(RELEASES, "0")[0].name, "4");
 	assert.deepEqual(pickUpdateNotes(RELEASES, "development"), []);
 	assert.deepEqual(pickUpdateNotes(RELEASES, "9"), []);

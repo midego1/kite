@@ -26,8 +26,6 @@ const {
 	UPDATE_CHECK_INTERVAL_MS,
 	UPDATE_TOAST_MESSAGE,
 	UPDATE_ROW_ANNOUNCEMENT,
-	UPDATE_ROW_PREVIEW,
-	UPDATE_ROW_SUBJECT,
 	chooseUpdateSurface,
 	compareDeploymentVersion,
 	isUpdateReaderOpen,
@@ -105,8 +103,8 @@ test("a dismissed notice shows nowhere, whatever the page", () => {
 });
 
 test("the row's text is fixed and names no deployment id", () => {
-	assert.equal(UPDATE_ROW_SUBJECT, "Kite was updated");
-	assert.equal(UPDATE_ROW_PREVIEW, "Reload to get the latest version");
+	assert.equal(updateSubject({ release: null, notes: [] }), "Kite was updated");
+	assert.equal(updatePreview({ release: null, notes: [] }), "Reload to get the latest version");
 	// The live region says something else than the toast, so the two never read as one message twice.
 	assert.notEqual(UPDATE_ROW_ANNOUNCEMENT, UPDATE_TOAST_MESSAGE);
 });

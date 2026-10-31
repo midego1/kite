@@ -74,6 +74,7 @@
 		"src/lib/agent/organize-tools-utils.ts",
 		"src/components/agent/chat-action-utils.ts",
 		"src/components/agent/suggestion-card-utils.ts",
+		"src/components/agent/assistant-prompt-request-utils.ts",
 		"src/lib/logger.mjs",
 		"src/lib/metrics.mjs",
 		"src/lib/metrics-route-utils.ts",

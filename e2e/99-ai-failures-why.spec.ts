@@ -150,6 +150,25 @@ test("Ask AI says why it can't run instead of offering a request that would fail
 		"href",
 		"/agent#ai-provider",
 	);
+	// Closing the dialog hands the focus back to Why?.
+	await page.keyboard.press("Escape");
+	await expect(dialog).toBeHidden();
+	await expect(page.getByTestId("attention-ai-errors").getByRole("button", { name: "Why?" })).toBeFocused();
+});
+
+test("a question Ask AI prepared long ago is dropped instead of opening the assistant", async ({ page }) => {
+	// Prepared ten minutes ago and never taken, as when the move to the mailbox failed.
+	await page.addInitScript(() => {
+		sessionStorage.setItem(
+			"kite:assistant-prompt",
+			JSON.stringify({ text: "Kite recorded 1 failed AI request", at: Date.now() - 10 * 60 * 1000 }),
+		);
+	});
+	await page.goto("/inbox");
+	await expect.poll(() => page.evaluate(() => sessionStorage.getItem("kite:assistant-prompt"))).toBeNull();
+	await expect(
+		page.getByRole("region", { name: "Email assistant" }).getByRole("textbox", { name: "Message Kite AI" }),
+	).toBeHidden();
 });
 
 test("the report is the primary admin's: other admins and members get 403 and no Why?", async ({ browser }) => {

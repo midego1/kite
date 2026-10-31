@@ -20,8 +20,22 @@ await build({
 	logLevel: "silent",
 	tsconfig: join(root, "tsconfig.json"),
 });
+await build({
+	entryPoints: [fileURLToPath(import.meta.resolve("../src/components/agent/assistant-prompt-request-utils.ts"))],
+	outfile: join(bundleDirectory, "assistant-prompt-request-utils.mjs"),
+	bundle: true,
+	sourcemap: "inline",
+	platform: "node",
+	format: "esm",
+	target: "node24",
+	logLevel: "silent",
+	tsconfig: join(root, "tsconfig.json"),
+});
 const { aiFailurePrompt, aiProviderLabel, askAiState, blockingAiFailure, explainAiFailure, groupAiFailures } =
 	await import(pathToFileURL(join(bundleDirectory, "ai-failure-report-utils.mjs")).href);
+const { ASSISTANT_PROMPT_TTL_MS, parseAssistantPrompt, serializeAssistantPrompt } = await import(
+	pathToFileURL(join(bundleDirectory, "assistant-prompt-request-utils.mjs")).href
+);
 
 const row = (code, at, extra = {}) => ({
 	code,
@@ -126,6 +140,25 @@ test("only a broken key or the default model of the assistant's own provider blo
 	const otherModel = [row("model_unavailable", "2026-10-31T10:00:00.000Z", { model: "old-model" })];
 	assert.equal(blockingAiFailure(otherModel, current), null);
 	assert.equal(blockingAiFailure(otherModel, { provider: "openai", model: "old-model" }).code, "model_unavailable");
+	// The live settings answer for a key that can't be decrypted or a missing provider, not an old failure.
+	const live = [
+		row("provider_key_unreadable", "2026-10-31T10:00:00.000Z"),
+		row("no_provider", "2026-10-31T11:00:00.000Z"),
+	];
+	assert.equal(blockingAiFailure(live, current), null);
+});
+
+test("a failure from before the provider in use was saved or switched to no longer blocks Ask AI", () => {
+	const current = { provider: "openai", model: "gpt-4o-mini" };
+	assert.equal(blockingAiFailure(ROWS, { ...current, changedAt: "2026-10-31T12:00:00.000Z" }), null);
+	// A newer failure still blocks: the new key was refused too.
+	assert.equal(
+		blockingAiFailure(ROWS, { ...current, changedAt: "2026-10-31T10:30:00.000Z" }).at,
+		"2026-10-31T11:30:00.000Z",
+	);
+	assert.equal(blockingAiFailure(ROWS, { ...current, changedAt: null }).at, "2026-10-31T11:30:00.000Z");
+	const renamed = [row("model_unavailable", "2026-10-31T10:00:00.000Z")];
+	assert.equal(blockingAiFailure(renamed, { ...current, changedAt: "2026-10-31T10:05:00.000Z" }), null);
 });
 
 test("Ask AI runs only when the assistant could, and says why and where to fix it otherwise", () => {
@@ -420,4 +453,18 @@ test("a group skipped for its size frees its slot, so a ninth group can still be
 	assert.match(prompt, /\d+\. cut_off: 1 time/);
 	assert.doesNotMatch(prompt, /\d+\. (internal|provider_error):/);
 	assert.match(prompt, /\n\nAnd 2 more kinds of failure\.$/);
+});
+
+test("a prepared Ask AI question waits a few minutes for the assistant, then is dropped", () => {
+	const at = Date.parse("2026-10-31T12:00:00.000Z");
+	const stored = serializeAssistantPrompt("Why did it fail?", at);
+	assert.equal(parseAssistantPrompt(stored, at), "Why did it fail?");
+	assert.equal(parseAssistantPrompt(stored, at + ASSISTANT_PROMPT_TTL_MS - 1), "Why did it fail?");
+	assert.equal(parseAssistantPrompt(stored, at + ASSISTANT_PROMPT_TTL_MS), null);
+	// A clock that went back, a plain string from before the expiry and junk are all dropped.
+	assert.equal(parseAssistantPrompt(stored, at - 1), null);
+	assert.equal(parseAssistantPrompt("Why did it fail?", at), null);
+	assert.equal(parseAssistantPrompt("null", at), null);
+	assert.equal(parseAssistantPrompt(JSON.stringify({ text: 1, at }), at), null);
+	assert.ok(ASSISTANT_PROMPT_TTL_MS >= 60_000 && ASSISTANT_PROMPT_TTL_MS <= 15 * 60_000);
 });

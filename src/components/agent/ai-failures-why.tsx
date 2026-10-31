@@ -6,7 +6,14 @@ import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "@/components/ui/dialog";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AiFailureGroup, AiFailureReport } from "@/lib/agent/ai-failure-report-types";
@@ -129,14 +136,12 @@ export function AiFailuresWhy() {
 
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
-			<button
-				type="button"
-				onClick={() => setOpen(true)}
-				aria-haspopup="dialog"
-				className="text-sm font-medium underline underline-offset-2 hover:opacity-80"
-			>
-				Why?
-			</button>
+			{/* A trigger, so closing the dialog returns the focus to Why?. */}
+			<DialogTrigger asChild>
+				<button type="button" className="text-sm font-medium underline underline-offset-2 hover:opacity-80">
+					Why?
+				</button>
+			</DialogTrigger>
 			<DialogContent
 				className="flex max-h-[calc(100vh-4rem)] w-[min(640px,calc(100vw-32px))] flex-col"
 				data-testid="ai-failures-why"

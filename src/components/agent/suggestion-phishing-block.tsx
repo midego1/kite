@@ -7,6 +7,7 @@ import type { CardSuggestion } from "./suggestion-card-types";
 import { announceSuggestionChange, runCardAction } from "./suggestion-card-actions";
 import { runSingleMessageAction } from "@/components/message-actions/utils";
 import { confirmReportPhishing } from "@/components/messages/phishing-report";
+import { announceMessagesLeftView } from "@/components/messages/left-view-utils";
 import { confirmReportSpam } from "@/components/messages/spam-report";
 import toast from "react-hot-toast";
 import { phishingReasonTexts } from "./suggestion-card-utils";
@@ -32,7 +33,10 @@ export function PhishingBlock({
 		setBusy(true);
 		const done = await runCardAction(suggestion, "mark_spam");
 		setBusy(false);
-		if (done) onChanged();
+		if (!done) return;
+		// The message is in Spam now, so a reader showing it from its list closes.
+		announceMessagesLeftView({ kind: "move", ids: [suggestion.messageId] });
+		onChanged();
 	}
 
 	/** Dismisses the warning and trusts the sender, so a model's suspicion alone no longer warns; undoable. */

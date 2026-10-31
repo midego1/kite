@@ -3234,6 +3234,8 @@ test.describe("reply suggestions", () => {
 			expect((await undone).status()).toBe(200);
 			await waitForMessage(account.api, mismatch.subject!, { status: "received" });
 			expect((await warningOf(mismatch.id)).status).toBe("open");
+			// The report closed the reader (the message left the Inbox); Undo put it back, and opening it shows the warning.
+			await openReader(page, mismatch);
 			await expect(phishingBlock(page)).toHaveCount(1);
 			await expect(forYouItem(page).getByRole("link")).toHaveText(new RegExp(`^For you\\s*${openBefore}$`));
 			// The warning was already known when the message was opened, so it comes back without a toast.

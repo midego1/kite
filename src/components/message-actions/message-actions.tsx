@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { MessageSourceDialog } from "@/components/messages/message-source-dialog";
 import { useMessageListHref } from "@/components/messages/message-detail-navigation";
+import { useRowMessageIds } from "@/components/messages/open-row-context";
 import { SnoozeMenuItem } from "@/components/messages/snooze-picker";
 import { useMessageMenuSlots } from "./message-menu-slots";
 import { ReportPhishingItem } from "./report-phishing-item";
@@ -78,26 +79,35 @@ export function MessageActions({
 	const [sourceOpen, setSourceOpen] = useState(false);
 	const [snoozeExpanded, setSnoozeExpanded] = useState(false);
 	const moduleSlots = useMessageMenuSlots({ messageId, mailboxId }, moreOpen, () => setMoreOpen(false));
-	const listHref = useMessageListHref() ?? getMessageBackHref(direction, status);
+	const layoutListHref = useMessageListHref();
+	const listHref = layoutListHref ?? getMessageBackHref(direction, status);
+	// Inside a folder layout the layout closes the reader once the message leaves the list
+	// (useLeaveOpenMessage); elsewhere the reader goes back to the list itself.
+	const leaveReader = useCallback(() => {
+		if (!layoutListHref) router.push(listHref);
+	}, [layoutListHref, listHref, router]);
+	// A move takes what the open message's row stands for: in conversation view, its conversation in this list.
+	const rowMessageIds = useRowMessageIds();
 
 	const runUnguarded = useCallback(
 		async (action: BulkMessageAction, folderId?: string) => {
 			setMoreOpen(false);
+			const rowIds = rowMessageIds(messageId);
 			// Reporting trains the filter and cannot be fully undone, so every route to it asks first.
-			if (action === "spam" && !(await confirmReportSpam(1))) return;
+			if (action === "spam" && !(await confirmReportSpam(rowIds.length))) return;
 			setPendingAction(action);
 			setError(null);
 			try {
-				await runSingleMessageAction(messageId, action, folderId);
-				if (movesMessageOutOfList(action)) router.push(listHref);
-				router.refresh();
+				await runSingleMessageAction(messageId, action, folderId, rowIds);
+				if (movesMessageOutOfList(action)) leaveReader();
+				else router.refresh();
 			} catch {
 				setError("Could not update message");
 			} finally {
 				setPendingAction(null);
 			}
 		},
-		[messageId, listHref, router],
+		[messageId, leaveReader, router, rowMessageIds],
 	);
 
 	// In Trash and Spam the delete button removes the message for good instead of
@@ -117,13 +127,12 @@ export function MessageActions({
 		setError(null);
 		try {
 			await runSingleMessageAction(messageId, "delete");
-			router.push(listHref);
-			router.refresh();
+			leaveReader();
 		} catch (deleteError) {
 			setError(deleteError instanceof PartialDeleteError ? deleteError.message : "Could not delete message");
 			setPendingAction(null);
 		}
-	}, [messageId, listHref, router]);
+	}, [messageId, leaveReader]);
 	const onTrashClick = () => (canDeleteForever ? void deleteForever() : void runAction("trash"));
 	const trashLabel = canDeleteForever ? "Delete forever" : "Move to trash";
 
@@ -194,9 +203,8 @@ export function MessageActions({
 		setPendingAction("block");
 		try {
 			await blockMessageContact({ mailboxId, senderAddress });
-			await runSingleMessageAction(messageId, "trash");
-			router.push(listHref);
-			router.refresh();
+			await runSingleMessageAction(messageId, "trash", undefined, rowMessageIds(messageId));
+			leaveReader();
 		} catch (blockError) {
 			setError(blockError instanceof Error ? blockError.message : "Could not block contact");
 		} finally {
@@ -206,7 +214,7 @@ export function MessageActions({
 
 	const reportPhishing = async () => {
 		setMoreOpen(false);
-		if (await confirmReportPhishing(1)) await runAction("phishing");
+		if (await confirmReportPhishing(rowMessageIds(messageId).length)) await runAction("phishing");
 	};
 	const shownError = error ?? replyActions.error;
 	const markAction: BulkMessageAction = read ? "unread" : "read";

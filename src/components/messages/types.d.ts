@@ -1,4 +1,5 @@
 import type { MouseEvent } from "react";
+import type { RowMessageIdsLookup } from "./open-row-context";
 import type { LucideIcon } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
@@ -127,6 +128,8 @@ export type MessageSelectionControl = {
 	 * unmounted (no refetch, no 404 once deleted) until the list route has committed.
 	 */
 	leaveOpenMessage?: () => void;
+	/** Filled in by the list with a lookup of the ids each row stands for, which the reader's moves act on. */
+	registerRowLookup?: (lookup: RowMessageIdsLookup | null) => void;
 };
 
 export type BulkMessageSelectionPaneProps = {

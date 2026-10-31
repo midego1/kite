@@ -629,6 +629,9 @@ for (const migrated of [false, true]) {
 		await bucket.delete(original.r2Key);
 		const { checked, missing } = await m.verifyAttachmentObjects(env);
 		assert.equal(checked, migrated ? 1 : 2);
-		assert.deepEqual(missing, [{ key: original.r2Key, messageIds: migrated ? ["msg-in", "msg-draft"] : ["msg-in"] }]);
+		assert.deepEqual(
+			missing.map((entry) => ({ ...entry, messageIds: entry.messageIds.sort() })),
+			[{ key: original.r2Key, messageIds: migrated ? ["msg-draft", "msg-in"] : ["msg-in"] }],
+		);
 	});
 }

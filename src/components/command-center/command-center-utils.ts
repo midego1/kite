@@ -3,7 +3,7 @@ import type { OverviewData } from "@/app/(admin)/admin/overview-types";
 import type { AccountLine, AccountLinesInput, HealthLine, StatusChip, StatusChipsInput } from "./command-center-types";
 
 /** How many connected accounts the card lists before pointing at Settings. */
-export const MAX_ACCOUNT_LINES = 4;
+const MAX_ACCOUNT_LINES = 4;
 
 /** The greeting for an hour of the day in the user's time zone. */
 export function greetingFor(hour: number): string {
@@ -41,8 +41,31 @@ export function dateLabel(now: Date, timeZone: string, locale?: string): string 
 	}
 }
 
-function plural(count: number, one: string, many = `${one}s`): string {
-	return `${count} ${count === 1 ? one : many}`;
+/** The chips' input from what the mailbox knows; nothing known reads as zero or not shown. */
+export function statusChipsInput(input: {
+	unread: number | undefined;
+	folderTitle: string;
+	held: number | undefined;
+	screener: { enabled: boolean; mode: "screener" | "inbox" } | null | undefined;
+	suggestions: { loaded: boolean; total: number; mailboxes: readonly { autonomy: string }[] };
+}): StatusChipsInput {
+	const { suggestions } = input;
+	return {
+		unread: input.unread ?? 0,
+		folderTitle: input.folderTitle,
+		held: input.held ?? 0,
+		screenerOn: input.screener?.enabled === true && input.screener.mode === "screener",
+		forYou: suggestions.loaded ? suggestions.total : null,
+		forYouVisible: suggestions.loaded && suggestions.mailboxes.some((mailbox) => mailbox.autonomy !== "off"),
+	};
+}
+
+/** The Accounts card shows while the user may connect accounts, or already has some to look after. */
+export function canConnectAccounts(
+	data: { refusal: string | null; accounts: readonly unknown[] } | undefined,
+): boolean {
+	if (!data) return false;
+	return data.refusal === null || data.accounts.length > 0;
 }
 
 /**
@@ -67,7 +90,7 @@ export function statusChips(input: StatusChipsInput): StatusChip[] {
 }
 
 /** "just now", "3 min ago", "2 h ago", "yesterday", "5 days ago"; empty for nothing or a date in the future. */
-export function relativeTime(iso: string | null | undefined, now: Date): string {
+function relativeTime(iso: string | null | undefined, now: Date): string {
 	if (!iso) return "";
 	const at = new Date(iso).getTime();
 	if (!Number.isFinite(at)) return "";

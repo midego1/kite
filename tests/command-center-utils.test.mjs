@@ -22,16 +22,28 @@ await build({
 	logLevel: "silent",
 });
 const {
-	MAX_ACCOUNT_LINES,
 	accountLines,
 	attentionHref,
+	canConnectAccounts,
 	dateLabel,
 	greetingFor,
 	healthLines,
 	hourIn,
-	relativeTime,
 	statusChips,
+	statusChipsInput,
 } = await import(pathToFileURL(join(bundleDirectory, "center.mjs")).href);
+
+const MAX_ACCOUNT_LINES = 4;
+/** What the Accounts card says about a working account whose last check was `iso` ago. */
+const relativeTime = (iso, now) => {
+	const [line] = accountLines({
+		accounts: [
+			{ id: "a", label: "A", address: "a@example.com", status: "active", sync: { running: false, lastSuccessAt: iso } },
+		],
+		now,
+	});
+	return line.detail === "Not checked yet" ? "" : line.detail.replace(/^Synced /, "");
+};
 
 const NOW = new Date("2026-10-31T08:14:00Z");
 
@@ -154,6 +166,38 @@ test("account lines: the quiet states and a check that runs now", () => {
 		],
 	);
 	assert.deepEqual(accountLines({ accounts: [], now: NOW }), []);
+});
+
+test("the chips' input defaults what is not known, and the accounts card shows only when it may", () => {
+	const quiet = { loaded: false, total: 0, mailboxes: [] };
+	assert.deepEqual(
+		statusChipsInput({ unread: undefined, folderTitle: "Inbox", held: undefined, screener: null, suggestions: quiet }),
+		{ unread: 0, folderTitle: "Inbox", held: 0, screenerOn: false, forYou: null, forYouVisible: false },
+	);
+	assert.deepEqual(
+		statusChipsInput({
+			unread: 4,
+			folderTitle: "Inbox",
+			held: 2,
+			screener: { enabled: true, mode: "screener" },
+			suggestions: { loaded: true, total: 3, mailboxes: [{ autonomy: "off" }, { autonomy: "suggest" }] },
+		}),
+		{ unread: 4, folderTitle: "Inbox", held: 2, screenerOn: true, forYou: 3, forYouVisible: true },
+	);
+	assert.equal(
+		statusChipsInput({
+			unread: 0,
+			folderTitle: "Inbox",
+			held: 0,
+			screener: { enabled: true, mode: "inbox" },
+			suggestions: { loaded: true, total: 0, mailboxes: [{ autonomy: "off" }] },
+		}).screenerOn,
+		false,
+	);
+	assert.equal(canConnectAccounts(undefined), false);
+	assert.equal(canConnectAccounts({ refusal: null, accounts: [] }), true);
+	assert.equal(canConnectAccounts({ refusal: "install_off", accounts: [] }), false);
+	assert.equal(canConnectAccounts({ refusal: "not_permitted", accounts: [{}] }), true);
 });
 
 test("the admin page's anchors open the admin overview from the mailbox", () => {

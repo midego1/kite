@@ -9,13 +9,12 @@ import {
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
-import { forYouVisible } from "@/lib/agent/auto-read/for-you-utils";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import { attentionItems } from "@/app/(admin)/admin/overview-utils";
 import type { AttentionItem, OverviewData } from "@/app/(admin)/admin/overview-types";
 import { useOverview } from "@/app/(admin)/admin/use-overview";
 import type { MessageFolderConfig } from "@/components/messages/types";
-import type { StatusChipsInput } from "./command-center-types";
+import { canConnectAccounts, statusChipsInput } from "./command-center-utils";
 
 /**
  * Everything the command center shows, from data the mailbox loads anyway where it can: the session, the
@@ -42,14 +41,13 @@ export function useCommandCenterData(config: MessageFolderConfig) {
 	const primary = isAdmin && user.isPrimaryAdmin === true;
 	const overview = useOverview(primary, isAdmin, { refetchOnMount: true });
 
-	const chips: StatusChipsInput = {
-		unread: folderCount?.unread ?? 0,
+	const chips = statusChipsInput({
+		unread: folderCount?.unread,
 		folderTitle: config.title,
-		held: counts.folders.screener?.total ?? 0,
-		screenerOn: selectedMailbox?.screener?.enabled === true && selectedMailbox.screener.mode === "screener",
-		forYou: suggestions.loaded ? suggestions.total : null,
-		forYouVisible: suggestions.loaded && forYouVisible(suggestions.mailboxes),
-	};
+		held: counts.folders.screener?.total,
+		screener: selectedMailbox?.screener,
+		suggestions,
+	});
 
 	const accounts: readonly ExternalAccountView[] = connected.data?.accounts ?? [];
 	// The pane's own notice card already shows waiting database updates with Apply now; the list keeps the rest.
@@ -62,10 +60,10 @@ export function useCommandCenterData(config: MessageFolderConfig) {
 		user,
 		chips,
 		countsLoading: countsLoading || mailboxesLoading,
-		unread: folderCount?.unread ?? 0,
+		unread: chips.unread,
 		accounts,
 		/** Whether the user may connect accounts at all; the card is hidden when not. */
-		canConnect: connected.data ? connected.data.refusal === null || accounts.length > 0 : false,
+		canConnect: canConnectAccounts(connected.data),
 		isAdmin,
 		primary,
 		attention,

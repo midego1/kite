@@ -36,15 +36,20 @@ export function leavesList(kind: LeftViewKind, folder: string, folderId?: string
 	return folder !== "starred";
 }
 
-/** The row the focus goes to once `leftIds` are gone: the next remaining one, else the previous, else none. */
+/**
+ * The row the focus goes to once `leftIds` are gone: the next remaining one, else the previous, else none. The open
+ * message is found by what each row stands for (`idsOfRow`), so an older message of a conversation, whose row is
+ * keyed by the newest one, still has its place in the list.
+ */
 export function neighbourAfterLeaving(
 	orderedIds: readonly string[],
 	openId: string,
 	leftIds: readonly string[],
+	idsOfRow: (rowId: string) => readonly string[] = (rowId) => [rowId],
 ): string | null {
-	const left = new Set([...leftIds, openId]);
-	const index = orderedIds.indexOf(openId);
+	const index = orderedIds.findIndex((rowId) => rowId === openId || idsOfRow(rowId).includes(openId));
 	if (index < 0) return null;
+	const left = new Set([...leftIds, openId, orderedIds[index]]);
 	return (
 		orderedIds.slice(index + 1).find((id) => !left.has(id)) ??
 		orderedIds

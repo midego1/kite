@@ -10,7 +10,10 @@ export const OpenRowContext = createContext<RowMessageIdsLookup | null>(null);
 
 /**
  * The ids a move from the reader acts on: everything the open message's row stands for in the list (its
- * conversation within the list's filter, in conversation view), else the message alone.
+ * conversation within the list's filter, in conversation view), else the message alone. Only the list knows what
+ * its filter keeps (folder, read and search filters, the user's own drafts), so a message whose row is not loaded
+ * (a link to a conversation further down than the list has loaded, or to mail the list does not show) is moved on
+ * its own rather than guessing its conversation from the thread.
  */
 export function useRowMessageIds(): (messageId: string) => string[] {
 	const lookup = useContext(OpenRowContext);

@@ -9,10 +9,28 @@ import { once, prefersReducedMotion } from "./reload-flight-utils";
 import type { AppliedNoticeExit, AppliedNoticeOrigin, DismissTimer } from "./applied-notice-types";
 import {
 	APPLIED_NOTICE_STAY_MS,
+	appliedNoticeExitStyle,
+	blurEndsFocusHold,
 	createDismissTimer,
 	isAppliedNoticeExitEnd,
+	pickFocusNeighbour,
 	planAppliedNoticeExit,
 } from "./applied-notice-utils";
+
+const FOCUSABLE =
+	'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Moves the keyboard focus out of the leaving notice to the focusable element next to it, so it is not lost. */
+function focusNeighbourOf(notice: HTMLElement): void {
+	const candidates = [...document.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+		(element) => element.getClientRects().length > 0,
+	);
+	const neighbour = pickFocusNeighbour(candidates, (element) => {
+		if (notice.contains(element)) return "inside";
+		return notice.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING ? "after" : "before";
+	});
+	neighbour?.focus();
+}
 
 const browserClock = {
 	now: () => Date.now(),
@@ -44,6 +62,8 @@ export function AppliedNotice({ summary, onDismiss, className, compact = false }
 		if (exit) return;
 		// One read of where the box is, so the kite lifts off from its corner even where the box itself is clipped.
 		const rect = section.current?.getBoundingClientRect();
+		// The close button is disabled on the way out, which would drop the keyboard focus on the page itself.
+		if (section.current?.contains(document.activeElement)) focusNeighbourOf(section.current);
 		setExit({
 			plan: planAppliedNoticeExit(prefersReducedMotion(window.matchMedia?.bind(window))),
 			origin: { top: rect?.top ?? 0, right: rect?.right ?? 0 },
@@ -74,7 +94,8 @@ export function AppliedNotice({ summary, onDismiss, className, compact = false }
 	}, [exit, onDismiss]);
 
 	const onBlur = (event: FocusEvent<HTMLElement>) => {
-		if (!event.currentTarget.contains(event.relatedTarget)) timer.current?.release("focus");
+		const nextInside = event.currentTarget.contains(event.relatedTarget);
+		if (blurEndsFocusHold({ nextInside, documentFocused: document.hasFocus() })) timer.current?.release("focus");
 	};
 	const onAnimationEnd = (animationName: string) => {
 		if (exit && isAppliedNoticeExitEnd(animationName, exit.plan)) finish.current?.();
@@ -87,6 +108,7 @@ export function AppliedNotice({ summary, onDismiss, className, compact = false }
 				ref={section}
 				aria-label="Database updates"
 				data-applied-notice={exit ? "leaving" : "shown"}
+				style={exit ? appliedNoticeExitStyle(exit.plan) : undefined}
 				className={`${compact ? SUCCESS_NOTICE_CLASS : `flex items-start gap-3 rounded-2xl bg-green-50 px-4 py-3 text-sm text-green-700 ${className ?? ""}`} ${leaving}`}
 				onPointerEnter={() => timer.current?.hold("hover")}
 				onPointerLeave={() => timer.current?.release("hover")}
@@ -111,7 +133,12 @@ export function AppliedNotice({ summary, onDismiss, className, compact = false }
 			</section>
 			{exit?.plan.kite &&
 				createPortal(
-					<AppliedNoticeKite origin={exit.origin} compact={compact} onEnd={onAnimationEnd} />,
+					<AppliedNoticeKite
+						origin={exit.origin}
+						compact={compact}
+						style={appliedNoticeExitStyle(exit.plan)}
+						onEnd={onAnimationEnd}
+					/>,
 					document.body,
 				)}
 		</>
@@ -125,10 +152,12 @@ export function AppliedNotice({ summary, onDismiss, className, compact = false }
 function AppliedNoticeKite({
 	origin,
 	compact,
+	style,
 	onEnd,
 }: {
 	origin: AppliedNoticeOrigin;
 	compact: boolean;
+	style: Record<string, string>;
 	onEnd: (animationName: string) => void;
 }) {
 	const size = compact ? 28 : 36;
@@ -137,7 +166,13 @@ function AppliedNoticeKite({
 			data-applied-notice-flight
 			aria-hidden="true"
 			className="applied-notice-kite pointer-events-none fixed z-[10000]"
-			style={{ top: origin.top - size * 0.4, left: origin.right - size * 0.9, width: size, height: size * 1.25 }}
+			style={{
+				...style,
+				top: origin.top - size * 0.4,
+				left: origin.right - size * 0.9,
+				width: size,
+				height: size * 1.25,
+			}}
 			viewBox="-20 0 136 170"
 			fill="none"
 			onAnimationEnd={(event) => onEnd(event.animationName)}

@@ -271,6 +271,23 @@ test.describe("the Database updated notice", () => {
 		await expect(notice).toHaveCount(0);
 	});
 
+	test("dismissed with the keyboard, it hands the focus to the element next to it", async ({ page }) => {
+		const notice = await applyWithClock(page);
+		await notice.getByRole("button", { name: "Dismiss" }).focus();
+		await page.keyboard.press("Enter");
+		await expect(notice).toHaveAttribute("data-applied-notice", "leaving");
+		const focused = () =>
+			page.evaluate(() => {
+				const active = document.activeElement;
+				if (!active || active === document.body) return "page";
+				return active.closest('[aria-label="Database updates"]') ? "notice" : "neighbour";
+			});
+		expect(await focused()).toBe("neighbour");
+		await page.clock.fastForward(2_000);
+		await expect(notice).toHaveCount(0);
+		expect(await focused()).toBe("neighbour");
+	});
+
 	test("with reduced motion it fades without the kite", async ({ page }) => {
 		await page.emulateMedia({ reducedMotion: "reduce" });
 		const seen = await watchExit(page);

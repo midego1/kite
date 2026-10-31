@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.31.6] - 2026-10-31
+
+### Added
+
+- With no message open, the reading pane now shows a small command center instead of "Select a message to read" alone: a greeting with today's date, the counts that matter (unread mail in the folder, messages in the Screener, open For you suggestions), your connected accounts with how each is doing (a failed sign-in gets a Reconnect link), quick actions (New email, Search, and the modules that are on), and for administrators what needs attention (the admin overview's list, with waiting database updates kept in the notice with its **Apply now** button and progress, plus a line for healthy backups and the database size). Everything comes from data the mailbox already loads or from the same requests the Settings and Admin pages make.
+
+### Changed
+
+- **What's new in Kite** loads its release notes when you open it instead of shipping them with every page, so the app downloads less.
+
+### Fixed
+
+- A reading layout chosen while your account's layout was still loading is saved when you close or leave the tab, instead of being lost. Turning off **Use the same layout on every device** in [Settings → Inbox](/settings/inbox) while the layout loads keeps this browser's layout, and signing in to another account no longer holds back that account's saved layout.
+- Dismissing the green **Database updated** notice with the keyboard moves the focus to the element next to it instead of dropping it on the page, and switching to another window while the notice has the focus no longer lets it leave while you are away.
+- After you open an older message of a conversation from a link and move it from the reader, the focus goes to the next conversation in the list instead of the list itself.
+- For you suggestions in the sidebar and the reading pane refresh with one request per change instead of one each, and they no longer stay empty when a list opens right after you switch accounts.
+
 ## [2026.10.31.5] - 2026-10-31
 
 ### Changed
@@ -33,7 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The reader closes and goes back to the empty pane as soon as the open message leaves the list, and the keyboard focus moves to the row next to it: Move to trash, Report spam or phishing, Archive, Not spam, a move to a folder, Block contact or Delete forever in the reader, the same actions on its row or in a selection, dropping it on a sidebar folder, **Mark as spam** on the phishing warning, and Snooze in the Inbox. It used to keep showing the message, selected, until the move back to the list had finished, which on a busy deployment could take long enough to look stuck. In Starred the message stays open, since Starred still lists it. **Undo** in the toast puts the message back in the list.
 - A reading layout chosen while your account's layout could not be loaded (a slow first request right after a deploy, or a dropped connection) is no longer lost: the load is tried again a few times, and the choice is saved once it loads or every attempt failed. A layout loaded just after you changed something on this device no longer puts the old choice back.
 - The automatic direct-upload setup under [Admin → Storage](/storage) says it took too long, rather than that the checks failed, when the checks were cut short by its time limit, and it cleans up a token Cloudflare created late on accounts with many API tokens.
-- Very long mail (over about 100,000 characters of text) is no longer searched for a one-time code at delivery, so its new-mail notification never carries one; the check now stops before any work on the body.
+- Very long mail is no longer searched for a one-time code at delivery, so its new-mail notification never carries one: a body of more than about 400,000 characters as received (the plain-text part, or the HTML when there is none, markup included) is skipped before any work on it, and otherwise more than about 100,000 characters of subject and readable text.
 
 ## [2026.10.31.3] - 2026-10-31
 

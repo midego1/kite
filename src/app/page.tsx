@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { MousePointerClick } from "lucide-react";
 import { getHomeBranding } from "./home-server-utils";
 import { HomeAuthProvider } from "./home-auth";
 import { HomeHeaderActions } from "./home-header-actions";
@@ -94,9 +95,13 @@ export default async function HomePage() {
 							</ul>
 						</div>
 						<div className="relative mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
+							<p className="mb-3 flex items-center justify-center gap-2 text-sm font-medium text-neutral-700">
+								<MousePointerClick className="h-4 w-4 text-blue-500" aria-hidden="true" />
+								Try it — it&apos;s a live demo
+							</p>
 							<HomeProductMock appName={branding.appName} />
 							<p className="mt-4 text-center text-xs text-neutral-500">
-								The preview shows invented demo data, in the same look as the app.
+								The demo shows invented data, in the same look as the app. Nothing you do here leaves this page.
 							</p>
 						</div>
 					</section>

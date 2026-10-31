@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.31.6] - 2026-10-31
+
+### Added
+
+- With no message open, the reading pane now shows a small command center instead of "Select a message to read" alone: a greeting with today's date, the counts that matter (unread mail in the folder, messages in the Screener, open For you suggestions), your connected accounts with how each is doing (a failed sign-in gets a Reconnect link), quick actions (New email, Search, and the modules that are on), and for administrators what needs attention (the admin overview's list, with waiting database updates kept in the notice with its **Apply now** button and progress, plus a line for healthy backups and the database size). Everything comes from data the mailbox already loads or from the same requests the Settings and Admin pages make.
+
+### Changed
+
+- **What's new in Kite** loads its release notes when you open it instead of shipping them with every page, so the app downloads less.
+
+### Fixed
+
+- A reading layout chosen while your account's layout was still loading is saved when you close or leave the tab, instead of being lost. Turning off **Use the same layout on every device** in [Settings → Inbox](/settings/inbox) while the layout loads keeps this browser's layout, and signing in to another account no longer holds back that account's saved layout.
+- Dismissing the green **Database updated** notice with the keyboard moves the focus to the element next to it instead of dropping it on the page, and switching to another window while the notice has the focus no longer lets it leave while you are away.
+- After you open an older message of a conversation from a link and move it from the reader, the focus goes to the next conversation in the list instead of the list itself.
+- For you suggestions in the sidebar and the reading pane refresh with one request per change instead of one each, and they no longer stay empty when a list opens right after you switch accounts.
+
 ## [2026.10.31.5] - 2026-10-31
 
 ### Changed

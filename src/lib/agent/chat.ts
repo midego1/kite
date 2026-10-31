@@ -4,13 +4,12 @@ import { getDb, type AppDatabase } from "@/db";
 import { agentChatMessages, agentConversations } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { newId } from "@/lib/ids";
-import { getAgentModel } from "./model";
 import { agentSystemPrompt } from "./system-prompt-utils";
 import { agentProviderErrorMessage } from "./errors";
 import { reportAiErrorClass, type AiFailureContext } from "./ai-errors";
 import { classifyAiError, type AiErrorClass } from "./ai-error-utils";
-import { InteractiveModelRefusedError } from "./interactive-model";
-import { getAgentEnabled } from "./provider";
+import { InteractiveModelRefusedError, selectInteractiveModel } from "./interactive-model";
+import { externalProviderRefused } from "./external-provider";
 import { readMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
 import { getAutoReadInstallSettings } from "./auto-read/install-settings";
 import { chatSpendCapError, createChatSpend } from "./chat-spend";
@@ -137,10 +136,9 @@ export async function createAgentChatStream(
 	const db = getDb(context.env);
 	const access = await getMailboxAccessLevel(db, context.user, context.mailboxId);
 	if (!access?.canRead) throw new Error("Mailbox not found");
-	if (!(await getAgentEnabled(context.env))) throw new InteractiveModelRefusedError("assistant_disabled");
 	const settings = await readMailboxAgentSettingsRow(db, context.mailboxId);
-	const selection = await getAgentModel(context.env, settings?.modelId);
-	if (!selection) throw new InteractiveModelRefusedError("not_configured");
+	// The assistant switch, the provider and the external-provider opt-in, as for the composer and summaries.
+	const selection = await selectInteractiveModel(context.env, settings?.modelId);
 	const currentEmailId = await resolveCurrentEmailId(context, currentMessageId);
 	let conversation = conversationId ? await getAgentConversation(context, conversationId) : null;
 	if (conversationId && !conversation) throw new Error("Conversation not found");
@@ -189,7 +187,10 @@ export async function createAgentChatStream(
 		tools,
 		stopWhen: stepCountIs(maxSteps),
 		// Every step reserves its estimate against the daily caps first; a refused step ends the turn.
+		// The opt-in is checked again before every step, so turning it off also stops a turn already running.
 		prepareStep: async ({ stepNumber, messages }) => {
+			if (await externalProviderRefused(context.env, selection.providerKind))
+				throw new InteractiveModelRefusedError("external_provider_not_allowed");
 			const step = agentStepSettings(stepNumber, maxSteps, system);
 			await spend.beforeStep(stepPromptChars(step?.instructions ?? system, messages));
 			return step;

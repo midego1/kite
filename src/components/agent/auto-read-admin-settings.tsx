@@ -92,14 +92,14 @@ export function AutoReadAdminSettings() {
 						}
 					/>
 					<SettingRow
-						label="Allow an external AI provider for automatic reading and the composer"
-						description="Lets automatic reading, Write with Kite in the composer and summaries send message content to the configured external AI provider. Workers AI is always allowed."
+						label="Allow an external AI provider to read mail"
+						description="Lets every AI feature send mail to the configured external AI provider: assistant chat, automatic reading and automatic drafts, Write with Kite in the composer and summaries. While it is off, those features are off for an external provider. Workers AI is always allowed."
 						control={
 							<Switch
 								checked={values?.externalAutoReadAllowed ?? false}
 								disabled={locked}
 								onCheckedChange={(externalAutoReadAllowed) => void save({ externalAutoReadAllowed })}
-								aria-label="Allow an external AI provider for automatic reading and the composer"
+								aria-label="Allow an external AI provider to read mail"
 							/>
 						}
 					/>

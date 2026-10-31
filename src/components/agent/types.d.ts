@@ -143,6 +143,10 @@ export type AgentSettingsResponse = {
 	provider: AgentProvider | null;
 	autoReplyEnabled: boolean;
 	reviewers: { id: string; name: string; email: string }[];
+	/** True while the provider is external and the primary admin has not allowed it to read mail; chat is off. */
+	externalProviderBlocked: boolean;
+	/** The provider's name, such as "OpenAI" or "Workers AI". */
+	providerLabel: string;
 };
 export type AgentConversationsResponse = { conversations: AgentConversation[] };
 export type AgentJobsResponse = { jobs: AgentJob[] };

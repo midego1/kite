@@ -1,6 +1,6 @@
 import { InteractiveModelRefusedError } from "../interactive-model";
 import { getAgentModel } from "../model";
-import { getAutoReadInstallSettings } from "./install-settings";
+import { externalProviderRefused } from "../external-provider";
 
 export class ExternalProviderNotAllowedError extends Error {
 	constructor() {
@@ -16,7 +16,6 @@ export class ExternalProviderNotAllowedError extends Error {
 export async function selectAutoReadModel(env: CloudflareEnv, modelId: string | null | undefined) {
 	const selection = await getAgentModel(env, modelId);
 	if (!selection) throw new InteractiveModelRefusedError("not_configured");
-	if (selection.providerKind === "compatible" && !(await getAutoReadInstallSettings(env)).externalAutoReadAllowed)
-		throw new ExternalProviderNotAllowedError();
+	if (await externalProviderRefused(env, selection.providerKind)) throw new ExternalProviderNotAllowedError();
 	return selection;
 }

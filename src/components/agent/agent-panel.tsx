@@ -31,6 +31,7 @@ import { AgentTurnView } from "./agent-turn";
 import { useRequestedAssistantPrompt } from "./assistant-prompt-request";
 import { KiteAvatar } from "./kite-avatar";
 import { ChatContext, ChatWelcome } from "./chat-welcome";
+import { AutoDraftProviderNote, ChatProviderNotice, chatProviderState, NO_PROVIDER } from "./external-provider-notice";
 import { CurrentEmailChip, useCurrentEmail } from "./current-email";
 import { useChatContentResize } from "./use-chat-content-resize";
 import { ConversationSkeleton } from "./conversation-skeleton";
@@ -95,7 +96,8 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 	const [reviewers, setReviewers] = useState<{ id: string; name: string; email: string }[]>([]);
 	const [canManage, setCanManage] = useState(false);
 	const [instructionContext, setInstructionContext] = useState<InstructionContext | null>(null);
-	const [providerConfigured, setProviderConfigured] = useState(false);
+	const [provider, setProvider] = useState(NO_PROVIDER);
+	const chatReady = provider.configured && !provider.externalBlocked;
 	const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
 	const [conversationId, setConversationId] = useState<string | null>(null);
 	const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
@@ -187,7 +189,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 			setModelNotice(modelFallbackText(data.unavailableModels?.chat));
 			setCanManage(data.canManage);
 			setInstructionContext(data.instructionContext ?? null);
-			setProviderConfigured(data.providerConfigured);
+			setProvider(chatProviderState(data));
 			setAutoReplyEnabled(data.autoReplyEnabled);
 			setReviewers(data.reviewers ?? []);
 		}
@@ -479,7 +481,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 	}
 
 	function submitMessage(text: string) {
-		if (!mailboxId || !text.trim() || !settings || !providerConfigured || loadingConversation) return;
+		if (!mailboxId || !text.trim() || !settings || !chatReady || loadingConversation) return;
 		setInput("");
 		if (runningRef.current || queuedMessagesRef.current.length) {
 			queuedMessagesRef.current = enqueueAgentMessage(queuedMessagesRef.current, text);
@@ -699,17 +701,13 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 						className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 text-sm sm:px-5"
 					>
 						<div className="mx-auto max-w-3xl space-y-5">
-							{settings && !providerConfigured && (
-								<p className="rounded-2xl border border-amber-100 bg-amber-50 p-3 text-amber-800">
-									Configure an AI provider to use chat and auto-drafts.
-								</p>
-							)}
+							{settings && <ChatProviderNotice provider={provider} />}
 							{loadingConversation && <ConversationSkeleton />}
 							{!loadingConversation && messages.length === 0 && settings && (
 								<ChatWelcome
 									selectedMessageId={selectedMessageId}
 									prompts={welcomePrompts}
-									disabled={!providerConfigured}
+									disabled={!chatReady}
 									busy={busy}
 									onSubmit={submitMessage}
 								/>
@@ -814,13 +812,13 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 							onKeyDown={(event) => {
 								if (!shouldSubmitAgentInput(event)) return;
 								event.preventDefault();
-								if (input.trim() && settings && providerConfigured && !loadingConversation)
+								if (input.trim() && settings && chatReady && !loadingConversation)
 									event.currentTarget.form?.requestSubmit();
 							}}
 							placeholder="Ask Kite AI…"
 							aria-label="Message Kite AI"
 							name="message"
-							disabled={!settings || !providerConfigured || loadingConversation}
+							disabled={!settings || !chatReady || loadingConversation}
 						/>
 						<div className="absolute bottom-11 right-5 flex justify-end gap-2">
 							{busy ? (
@@ -840,7 +838,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 									type="submit"
 									variant="ghost"
 									size="sm"
-									disabled={!input.trim() || !settings || !providerConfigured || loadingConversation}
+									disabled={!input.trim() || !settings || !chatReady || loadingConversation}
 									className="rounded-lg bg-blue-600 text-white hover:bg-blue-700"
 									aria-label="Send message"
 									title="Send message"
@@ -905,6 +903,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 							{autoReplyEnabled && (
 								<p className="text-amber-700">Disable out-of-office auto-replies to enable AI drafts.</p>
 							)}
+							<AutoDraftProviderNote enabled={settings.autoDraftEnabled} provider={provider} />
 							<MailboxInstructionsSetting
 								settings={settings}
 								canManage={canManage}

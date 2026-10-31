@@ -19,6 +19,7 @@
 	"/api/admin/alerts/webhook",
 	"/api/admin/alerts/webhook/test",
 	"/api/admin/api-keys",
+	"/api/admin/attachment-storage",
 	"/api/admin/aws",
 	"/api/admin/database-size",
 	"/api/admin/external-accounts",

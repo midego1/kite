@@ -83,6 +83,15 @@ async function generateRecordedDraft(
 	return body;
 }
 
+/**
+ * Whether an auto-draft could reach a model: the assistant is on and an external provider is allowed. Otherwise
+ * every job would only be skipped, so none is queued and Activity is not filled until the provider is allowed.
+ */
+async function autoDraftModelAllowed(env: CloudflareEnv) {
+	if (!(await getAgentEnabled(env))) return false;
+	return !(await externalProviderRefused(env, (await getAgentProviderConfig(env)).provider));
+}
+
 export async function scheduleAutoDraft(
 	env: CloudflareEnv,
 	input: {
@@ -105,9 +114,7 @@ export async function scheduleAutoDraft(
 		isAutomaticMessage(input.sender, input.headers)
 	)
 		return;
-	if (!(await getAgentEnabled(env))) return;
-	// Every job would only be skipped; nothing is queued, so Activity is not filled, until the provider is allowed.
-	if (await externalProviderRefused(env, (await getAgentProviderConfig(env)).provider)) return;
+	if (!(await autoDraftModelAllowed(env))) return;
 	const db = getDb(env);
 	const settings = await readMailboxAgentSettingsRow(db, input.mailboxId);
 	const [mailbox] = await db.select().from(mailboxes).where(eq(mailboxes.id, input.mailboxId)).limit(1);

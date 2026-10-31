@@ -58,7 +58,7 @@ export async function verifyObjects(api: APIRequestContext): Promise<Verificatio
 	return (await json<{ verify: Verification }>(await api.get("/api/admin/attachment-storage?verify=1"))).verify;
 }
 
-export async function waitForJob(api: APIRequestContext, jobId: string): Promise<StorageJob> {
+async function waitForJob(api: APIRequestContext, jobId: string): Promise<StorageJob> {
 	let job: StorageJob | null = null;
 	await expect
 		.poll(

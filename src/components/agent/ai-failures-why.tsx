@@ -24,6 +24,13 @@ async function fetchReport(): Promise<AiFailureReport> {
 
 const time = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
 
+/** When the group's failures happened: one time, or the first to the last. */
+function span(group: AiFailureGroup): string {
+	const first = time(group.firstAt);
+	const last = time(group.lastAt);
+	return first === last ? last : `${first} – ${last}`;
+}
+
 function FailureGroup({ group }: { group: AiFailureGroup }) {
 	const models = group.models
 		.map(
@@ -38,9 +45,7 @@ function FailureGroup({ group }: { group: AiFailureGroup }) {
 				<span className="font-medium text-neutral-900">
 					{group.count} {group.count === 1 ? "failure" : "failures"}
 				</span>
-				<span className="text-xs text-neutral-500 sm:ml-auto">
-					{group.count === 1 ? time(group.lastAt) : `${time(group.firstAt)} – ${time(group.lastAt)}`}
-				</span>
+				<span className="text-xs text-neutral-500 sm:ml-auto">{span(group)}</span>
 			</div>
 			<p className="text-neutral-900">{group.cause}</p>
 			<p className="text-neutral-700">

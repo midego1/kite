@@ -10,6 +10,11 @@ export type RemoteImageUrlPolicy = {
 
 export type RemoteImageFetchOptions = RemoteImageUrlPolicy & {
 	fetch?: RemoteImageFetch;
+	/**
+	 * Runs before every request, the first URL and each redirect target; throw to refuse the hop. The route resolves
+	 * the host there on the self-hosted server, which can reach its private network.
+	 */
+	checkHop?: (url: URL) => Promise<void>;
 	timeoutMs?: number;
 	maxBytes?: number;
 	maxRedirects?: number;

@@ -20,6 +20,9 @@ import {
 	resolveInlineAttachmentUrls,
 } from "@/app/(dashboard)/inbox/[messageId]/utils";
 import { getAttachmentVisual } from "@/components/message-attachment-card-utils";
+import { MessageAttachmentViewer } from "@/components/message-attachment-viewer";
+import type { MessageAttachment } from "@/app/(dashboard)/inbox/[messageId]/types";
+import { needsRiskReview } from "@/lib/email/attachment-risk";
 
 import { cn } from "@/lib/utils";
 import type { ConversationMessageCardProps, ConversationThreadProps } from "./conversation-thread-types";
@@ -138,13 +141,18 @@ export function ConversationThread({
 	);
 }
 
-/** An earlier message's attachment as the same chip as the open message's: its type, name and size. */
+/**
+ * An earlier message's attachment as the same chip as the open message's: its type, name and size. A file that
+ * needs the risk warning opens the viewer instead of downloading.
+ */
 function ThreadAttachmentChip({
 	messageId,
 	attachment,
+	onReview,
 }: {
 	messageId: string;
-	attachment: ConversationMessageCardProps["message"]["attachments"][number];
+	attachment: MessageAttachment;
+	onReview: (attachment: MessageAttachment) => void;
 }) {
 	const visual = getAttachmentVisual(attachment);
 	const Icon = visual.icon;
@@ -152,15 +160,33 @@ function ThreadAttachmentChip({
 		.split(" ")
 		.filter((name) => name.startsWith("text-"))
 		.join(" ");
+	const className =
+		"flex h-9 max-w-full items-center gap-2 rounded-lg bg-neutral-100 px-2.5 text-sm transition-colors hover:bg-neutral-200";
+	const content = (
+		<>
+			<Icon className={cn("h-4 w-4 shrink-0", iconColor)} aria-hidden="true" />
+			<span className="min-w-0 max-w-48 truncate text-neutral-900">{attachment.filename}</span>
+			<span className="shrink-0 text-neutral-500">{formatAttachmentSize(attachment.size)}</span>
+		</>
+	);
+	if (needsRiskReview(attachment))
+		return (
+			<button
+				type="button"
+				onClick={() => onReview(attachment)}
+				title={`${attachment.filename} · ${visual.label}`}
+				className={className}
+			>
+				{content}
+			</button>
+		);
 	return (
 		<a
 			href={`/api/messages/${messageId}/attachments/${attachment.id}`}
 			title={`${attachment.filename} · ${visual.label}`}
-			className="flex h-9 max-w-full items-center gap-2 rounded-lg bg-neutral-100 px-2.5 text-sm transition-colors hover:bg-neutral-200"
+			className={className}
 		>
-			<Icon className={cn("h-4 w-4 shrink-0", iconColor)} aria-hidden="true" />
-			<span className="min-w-0 max-w-48 truncate text-neutral-900">{attachment.filename}</span>
-			<span className="shrink-0 text-neutral-500">{formatAttachmentSize(attachment.size)}</span>
+			{content}
 		</a>
 	);
 }
@@ -179,6 +205,7 @@ export function ConversationMessageCard({
 	const [alwaysLoadRemoteImages] = useLoadRemoteImages();
 	const readerFont = useReaderFont();
 	const [remoteImagesShown, setRemoteImagesShown] = useState(false);
+	const [reviewAttachment, setReviewAttachment] = useState<MessageAttachment | null>(null);
 	const expanded = locallyExpanded;
 	const sender = getConversationSender(message, currentAccountName);
 	const senderEmail = getConversationSenderEmail(message);
@@ -325,7 +352,11 @@ export function ConversationMessageCard({
 							<ul className="mt-4 flex flex-wrap gap-2">
 								{attachments.map((attachment) => (
 									<li key={attachment.id}>
-										<ThreadAttachmentChip messageId={message.id} attachment={attachment} />
+										<ThreadAttachmentChip
+											messageId={message.id}
+											attachment={attachment}
+											onReview={setReviewAttachment}
+										/>
 									</li>
 								))}
 							</ul>
@@ -333,6 +364,14 @@ export function ConversationMessageCard({
 					</div>
 				)}
 			</div>
+			<MessageAttachmentViewer
+				attachment={reviewAttachment}
+				messageId={message.id}
+				open={reviewAttachment !== null}
+				onOpenChange={(open) => {
+					if (!open) setReviewAttachment(null);
+				}}
+			/>
 		</article>
 	);
 }

@@ -48,10 +48,11 @@ export function bulkItems(ids: string[], action: BulkAction, parentId?: string |
 	});
 }
 
-export function saveAttachment(attachmentId: string, parentId: string | null) {
+/** `acknowledge`: the user ticked the risk warning of a flagged file, which the server otherwise refuses with 409. */
+export function saveAttachment(attachmentId: string, parentId: string | null, acknowledge = false) {
 	return driveRequest<{ item: DriveItemDto }>(
 		`/api/drive/attachments/${encodeURIComponent(attachmentId)}/save`,
-		{ method: "POST", body: { parentId } },
+		{ method: "POST", body: acknowledge ? { parentId, acknowledge } : { parentId } },
 		"Could not save to Drive",
 	);
 }

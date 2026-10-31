@@ -315,7 +315,7 @@ A new install (migration 0081 applied while it has no account yet, which setup a
 
 ### Remote image proxy
 
-Once remote images are allowed for a message, the reader loads them through `GET /api/remote-images` (Workers only; see [Privacy](privacy.md)). It needs no configuration. The optional `REMOTE_IMAGE_RATE_LIMIT` rate limit binding (600 requests per minute per user, in `wrangler.jsonc.example`) caps it; without the binding the proxy is not rate limited. Refusals answer JSON with a status: 400 for an unsafe URL or redirect, 404 when the message does not show the image or the user cannot read it, 413 for an image over 5 MiB, 415 for anything but PNG, JPEG, GIF, WebP or AVIF, 429 over the rate limit, 502 or 504 when the image host fails or takes over 10 seconds, and 503 on Node/Docker.
+Once remote images are allowed for a message, the reader loads them through `GET /api/remote-images` (see [Privacy](privacy.md)), on Workers and on Node/Docker. On Node every hop, the first URL and each redirect, is resolved first and refused when the name points at a private, loopback or reserved address. It needs no configuration. The optional `REMOTE_IMAGE_RATE_LIMIT` rate limit binding (600 requests per minute per user, in `wrangler.jsonc.example`) caps it on Workers, without the binding the proxy is not rate limited; the self-hosted server applies the same limit in memory. Refusals answer JSON with a status: 400 for an unsafe URL or redirect, 404 when the message does not show the image or the user cannot read it, 413 for an image over 5 MiB, 415 for anything but PNG, JPEG, GIF, WebP or AVIF, 429 over the rate limit, and 502 or 504 when the image host fails or takes over 10 seconds.
 
 #### REMOTE_IMAGES_ALLOW_LOOPBACK (dev and test only)
 

@@ -20,3 +20,9 @@ export const STORAGE_STATE = "test-results/.auth/admin.json";
 export const ADMIN = { email: "admin@example.com", password: "demo-password-change-me", name: "Demo User" };
 export const SUPPORT_ADDRESS = "support@example.com";
 export const DOMAIN = "example.com";
+
+/**
+ * The e2e server's APP_ENCRYPTION_KEY: invented, e2e only. Storage credentials are only ever saved encrypted, and the
+ * send-as spec recovers a mailed verification code from its stored HMAC with it (e2e/support/send-as.ts).
+ */
+export const E2E_APP_ENCRYPTION_KEY = "e2e-only-invented-encryption-key-not-a-secret-0123456789";

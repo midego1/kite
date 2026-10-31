@@ -62,6 +62,10 @@ async function chatHarness(t) {
 		rmSync(directory, { recursive: true, force: true });
 	});
 	await applyMigrations(database, join(process.cwd(), "drizzle", "migrations"));
+	// The provider is external (AI_BASE_URL), so chat needs the primary admin's opt-in.
+	database.db.exec(
+		"INSERT OR IGNORE INTO app_settings (id, updated_at) VALUES ('default', 1); UPDATE app_settings SET agent_external_auto_read_allowed = 1;",
+	);
 	database.db.exec(`
 		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('user-1', 'owner@example.com', 'hash', 'Owner', 1);
 		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('user-2', 'other@example.com', 'hash', 'Other', 1);

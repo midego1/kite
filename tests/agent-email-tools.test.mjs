@@ -56,6 +56,10 @@ test("assistant reads mail, creates an editable reply draft, and invokes tools t
 	const database = new SqliteDatabase(join(directory, "kite.sqlite"));
 	t.after(() => database.db.close());
 	await applyMigrations(database, join(process.cwd(), "drizzle", "migrations"));
+	// The provider is external (AI_BASE_URL), so chat needs the primary admin's opt-in.
+	database.db.exec(
+		"INSERT OR IGNORE INTO app_settings (id, updated_at) VALUES ('default', 1); UPDATE app_settings SET agent_external_auto_read_allowed = 1;",
+	);
 	database.db.exec(`
 		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('user-1', 'owner@example.com', 'hash', 'Owner', 1);
 		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'user-1', 'example.com', 'zone-1', 'active', 1);
@@ -273,6 +277,10 @@ test("the assistant answers once its step limit is reached", async (t) => {
 	const database = new SqliteDatabase(join(directory, "kite.sqlite"));
 	t.after(() => database.db.close());
 	await applyMigrations(database, join(process.cwd(), "drizzle", "migrations"));
+	// The provider is external (AI_BASE_URL), so chat needs the primary admin's opt-in.
+	database.db.exec(
+		"INSERT OR IGNORE INTO app_settings (id, updated_at) VALUES ('default', 1); UPDATE app_settings SET agent_external_auto_read_allowed = 1;",
+	);
 	database.db.exec(`
 		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('user-1', 'owner@example.com', 'hash', 'Owner', 1);
 		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'user-1', 'example.com', 'zone-1', 'active', 1);
@@ -368,6 +376,10 @@ async function paginationContext(t) {
 		rmSync(directory, { recursive: true, force: true });
 	});
 	await applyMigrations(database, join(process.cwd(), "drizzle", "migrations"));
+	// The provider is external (AI_BASE_URL), so chat needs the primary admin's opt-in.
+	database.db.exec(
+		"INSERT OR IGNORE INTO app_settings (id, updated_at) VALUES ('default', 1); UPDATE app_settings SET agent_external_auto_read_allowed = 1;",
+	);
 	database.db.exec(`
 		INSERT INTO users (id, email, password_hash, name, created_at) VALUES
 			('user-1', 'owner@example.com', 'hash', 'Owner', 1),

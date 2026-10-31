@@ -3,7 +3,7 @@ import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 import { useFakeProvider } from "./support/agent";
 import { selectMailbox } from "./support/auto-read";
-import { askAssistant, openAssistantPanel } from "./support/chat";
+import { askAssistant, chatRequests, firstMailboxId, openAssistantPanel } from "./support/chat";
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
 
@@ -185,5 +185,41 @@ test.describe("assistant chat organizes mail through approval and undo", () => {
 		await expect(panel.getByText("Undone.", { exact: true })).toBeVisible();
 		expect((await listFolders()).some((folder) => folder.name === name)).toBe(false);
 		await expect(nav.getByRole("link", { name })).toHaveCount(0);
+	});
+});
+
+test.describe("the external-provider opt-in covers chat", () => {
+	test("chat is off with a notice until the primary admin allows the external provider", async ({ page }) => {
+		const mailboxId = await firstMailboxId(api);
+		const allow = async (externalAutoReadAllowed: boolean) => {
+			const response = await api.put("/api/admin/agent", { data: { externalAutoReadAllowed } });
+			expect(response.ok(), await response.text()).toBe(true);
+		};
+		await allow(false);
+		try {
+			await selectMailbox(page, mailboxId);
+			await page.addInitScript(() => localStorage.setItem("kite-assistant-layout", "floating"));
+			await page.goto("/inbox");
+			const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+			if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+			const panel = page.getByRole("region", { name: "Email assistant" });
+			const notice = panel.getByTestId("external-provider-notice");
+			await expect(notice).toContainText(
+				/an external AI provider\. The primary admin hasn.t allowed sending mail to it/,
+			);
+			await expect(notice.getByRole("link", { name: "Allow it in Admin → Agent" })).toHaveAttribute("href", "/agent");
+			await expect(panel.getByRole("textbox", { name: "Message Kite AI" })).toBeDisabled();
+
+			fake.clearRequests();
+			const refused = await api.post("/api/agent/chat", { data: { mailboxId, text: "Hello" } });
+			expect(refused.status()).toBe(403);
+			expect(await refused.json()).toMatchObject({ code: "external_provider_not_allowed" });
+			expect(chatRequests(fake)).toHaveLength(0);
+		} finally {
+			await allow(true);
+		}
+		await page.reload();
+		const panel = await openAssistantPanel(page);
+		await expect(panel.getByTestId("external-provider-notice")).toHaveCount(0);
 	});
 });

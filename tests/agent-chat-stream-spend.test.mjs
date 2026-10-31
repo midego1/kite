@@ -62,7 +62,7 @@ async function setup(t) {
 	`);
 	db.db
 		.prepare(
-			"UPDATE app_settings SET agent_enabled = 1, agent_provider = 'compatible', agent_preset = 'custom', agent_base_url = 'https://model.test/v1', agent_api_key = 'test-key', agent_model = 'priced', agent_model_rates = ?",
+			"UPDATE app_settings SET agent_enabled = 1, agent_provider = 'compatible', agent_preset = 'custom', agent_base_url = 'https://model.test/v1', agent_api_key = 'test-key', agent_model = 'priced', agent_model_rates = ?, agent_external_auto_read_allowed = 1",
 		)
 		.run(JSON.stringify({ priced: { input: 1, output: 2 } }));
 	const env = { DB: db, AGENT_QUEUE: { send: async () => undefined } };

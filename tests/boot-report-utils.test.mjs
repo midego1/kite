@@ -13,6 +13,7 @@ await build({
 	entryPoints: [join(root, "src/lib/boot/report-utils.ts")],
 	outfile: join(bundleDirectory, "report.mjs"),
 	bundle: true,
+	sourcemap: "inline",
 	platform: "node",
 	format: "esm",
 	target: "node24",
@@ -20,7 +21,7 @@ await build({
 	absWorkingDir: root,
 	logLevel: "silent",
 });
-const { BOOT_REPORT_MAX_BYTES, parseBootFreezeReport } = await import(
+const { BOOT_REPORT_MAX_BYTES, parseBootFreezeReport, readBootReportBody } = await import(
 	pathToFileURL(join(bundleDirectory, "report.mjs")).href
 );
 
@@ -60,4 +61,32 @@ test("anything that is not a report is refused, free text included", () => {
 		JSON.stringify({ ...report, build: "x".repeat(BOOT_REPORT_MAX_BYTES) }),
 	];
 	for (const text of refused) assert.equal(parseBootFreezeReport(text), null, text.slice(0, 80));
+});
+
+test("the body is read up to the limit whatever Content-Length says, and a longer one is refused unread", async () => {
+	const post = (body) => new Request("https://mail.example.com/api/boot-report", { method: "POST", body });
+	assert.equal(await readBootReportBody(post(JSON.stringify(report))), JSON.stringify(report));
+	assert.equal(await readBootReportBody(new Request("https://mail.example.com/api/boot-report")), "");
+	assert.equal(
+		await readBootReportBody(post("é".repeat(BOOT_REPORT_MAX_BYTES / 2))),
+		"é".repeat(BOOT_REPORT_MAX_BYTES / 2),
+	);
+	assert.equal(await readBootReportBody(post("x".repeat(BOOT_REPORT_MAX_BYTES + 1))), null);
+	// A stream that never ends is cancelled once it passes the limit.
+	let cancelled = false;
+	const endless = new ReadableStream({
+		pull(controller) {
+			controller.enqueue(new Uint8Array(512));
+		},
+		cancel() {
+			cancelled = true;
+		},
+	});
+	const streamed = new Request("https://mail.example.com/api/boot-report", {
+		method: "POST",
+		body: endless,
+		duplex: "half",
+	});
+	assert.equal(await readBootReportBody(streamed), null);
+	assert.equal(cancelled, true);
 });

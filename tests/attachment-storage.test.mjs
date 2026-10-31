@@ -665,3 +665,24 @@ test("ATTACHMENT_SHARING=off makes sends and forwards write their own copies", a
 	);
 	assert.equal(second.length, first.length);
 });
+
+test("a forward that fails part way removes its copies, never the original's files", async () => {
+	const { env, bucket, database } = await setup();
+	const raws = await rawFixture(env, database, "related inside alternative inside mixed, with an inline cid image");
+	assert.equal(raws.length, 2);
+	const put = bucket.put.bind(bucket);
+	let puts = 0;
+	bucket.put = async (...args) => {
+		if (++puts === 2) throw new Error("storage down");
+		return put(...args);
+	};
+	await assert.rejects(
+		silenced(() => m.copyMessageAttachments(env, "msg-in", "msg-draft")),
+		/storage down/,
+	);
+	bucket.put = put;
+	assert.deepEqual(keysOf(database, "msg-draft"), [], "no copied row stays on the draft");
+	assert.equal(puts, 2);
+	assert.equal((await m.getAttachmentStorageCounts(env)).objects.keys, 0);
+	for (const row of raws) assert.deepEqual(bytesOf(await m.readAttachmentBytes(env, row)), row.content);
+});

@@ -277,34 +277,38 @@ function modelsText(group: AiFailureGroup): string {
  * mailbox, a prompt, an answer or any mail.
  */
 export function aiFailurePrompt(groups: AiFailureGroup[], total: number, capped: boolean): string {
-	const lines = [
-		`Kite recorded ${capped ? `at least ${total}` : total} failed AI ${total === 1 ? "request" : "requests"} in the last 24 hours. Explain the causes and what I should change in Kite to fix them. The diagnosis, facts and feature notes below come from Kite's own records and code: build on them and name the Kite setting to change (they are in Admin → Agent) instead of giving general advice. This summary has error codes, counts and settings only, no email content.`,
-	];
+	const header = `Kite recorded ${capped ? `at least ${total}` : total} failed AI ${total === 1 ? "request" : "requests"} in the last 24 hours. Explain the causes and what I should change in Kite to fix them. The diagnosis, facts and feature notes below come from Kite's own records and code: build on them and name the Kite setting to change (they are in Admin → Agent) instead of giving general advice. This summary has error codes, counts and settings only, no email content.`;
 	const described = new Set<string>();
-	groups.slice(0, MAX_PROMPT_GROUPS).forEach((group, index) => {
-		const notes = group.features.flatMap((entry) => {
-			const note = AI_FEATURE_NOTES[entry.feature];
-			if (!note || described.has(entry.feature)) return [];
-			described.add(entry.feature);
-			return [`   About ${entry.label}: ${note}`];
-		});
-		lines.push(
-			"",
-			`${index + 1}. ${group.code}: ${group.count} ${group.count === 1 ? "time" : "times"}, ${utc(group.firstAt)} to ${utc(group.lastAt)}`,
-			`   Features: ${group.features.map((entry) => `${entry.label} (${entry.count})`).join(", ")}`,
-			`   Provider and model: ${modelsText(group)}`,
-			...(group.statuses.length ? [`   HTTP status: ${group.statuses.join(", ")}`] : []),
-			`   Kite says: ${group.latestMessage}`,
-			...(group.facts.length
-				? [`   Kite facts: ${group.facts.map((fact) => `${fact.label}: ${fact.value}`).join("; ")}`]
-				: []),
-			`   Kite's diagnosis: ${group.cause}`,
-			`   Kite's fix: ${group.fix}`,
-			...notes,
-		);
-	});
-	if (groups.length > MAX_PROMPT_GROUPS)
-		lines.push("", `And ${groups.length - MAX_PROMPT_GROUPS} more kinds of failure.`);
-	const text = lines.join("\n");
+	const more = (count: number) => (count > 0 ? `\n\nAnd ${count} more kinds of failure.` : "");
+	let text = header;
+	let kept = 0;
+	for (const group of groups.slice(0, MAX_PROMPT_GROUPS)) {
+		const fresh = group.features.filter((entry) => AI_FEATURE_NOTES[entry.feature] && !described.has(entry.feature));
+		const block = groupBlock(group, kept + 1, fresh);
+		// Whole groups only: one that does not fit, with the count of the rest, is left out rather than cut.
+		if ((text + block + more(groups.length - kept - 1)).length > MAX_PROMPT_CHARS) break;
+		text += block;
+		kept += 1;
+		for (const entry of fresh) described.add(entry.feature);
+	}
+	text += more(groups.length - kept);
 	return text.length > MAX_PROMPT_CHARS ? `${text.slice(0, MAX_PROMPT_CHARS - 1)}…` : text;
+}
+
+/** One group of the Ask AI summary, with the notes of features no earlier group described. */
+function groupBlock(group: AiFailureGroup, index: number, fresh: AiFailureGroup["features"]): string {
+	const lines = [
+		`${index}. ${group.code}: ${group.count} ${group.count === 1 ? "time" : "times"}, ${utc(group.firstAt)} to ${utc(group.lastAt)}`,
+		`   Features: ${group.features.map((entry) => `${entry.label} (${entry.count})`).join(", ")}`,
+		`   Provider and model: ${modelsText(group)}`,
+		...(group.statuses.length ? [`   HTTP status: ${group.statuses.join(", ")}`] : []),
+		`   Kite says: ${group.latestMessage}`,
+		...(group.facts.length
+			? [`   Kite facts: ${group.facts.map((fact) => `${fact.label}: ${fact.value}`).join("; ")}`]
+			: []),
+		`   Kite's diagnosis: ${group.cause}`,
+		`   Kite's fix: ${group.fix}`,
+		...fresh.map((entry) => `   About ${entry.label}: ${AI_FEATURE_NOTES[entry.feature]}`),
+	];
+	return `\n\n${lines.join("\n")}`;
 }

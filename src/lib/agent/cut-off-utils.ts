@@ -70,10 +70,21 @@ function featureLabel(input: CutOffInput): string {
 function budgetFix(input: CutOffInput, budget: AiOutputBudget): string {
 	const model = modelName(input);
 	const anthropic = input.providerId === "anthropic";
-	if (budget.thinking === "on" && anthropic && claudeThinkingDefault(input.model) === "always")
+	// Only effort low, the lowest Kite sends, leaves no setting to lower; a saved higher effort can be cleared.
+	if (
+		budget.thinking === "on" &&
+		budget.effort === "low" &&
+		anthropic &&
+		claudeThinkingDefault(input.model) === "always"
+	)
 		return `${model} always thinks, even at effort low, which is the lowest Kite sends. Choose a model that can answer without thinking (Claude Haiku 5.5, for example) as the triage model under automatic reading in Admin → Agent.`;
-	if (budget.thinking === "on")
-		return `Clear ${model}'s reasoning effort, or set it to minimal, under the provider's models in Admin → Agent. Without an effort, Kite switches thinking off${anthropic ? "" : " where the provider allows it"}.`;
+	if (budget.thinking === "on") {
+		const without =
+			anthropic && claudeThinkingDefault(input.model) === "always"
+				? "sends effort low, the least this model allows"
+				: `switches thinking off${anthropic ? "" : " where the provider allows it"}`;
+		return `Clear ${model}'s reasoning effort, or set it to minimal, under the provider's models in Admin → Agent. Without an effort, Kite ${without}.`;
+	}
 	if (budget.thinking === "default")
 		return `${input.provider} decides whether ${model} thinks, and Kite cannot switch that off there. If it is a reasoning model, set its reasoning effort to minimal in Admin → Agent, or choose a model that does not reason as the triage model.`;
 	const retried = budget.retried ? ", even at double the cap" : "";

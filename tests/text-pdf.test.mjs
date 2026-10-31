@@ -66,6 +66,26 @@ test("lines wrap at spaces, keep line breaks and split words only when they do n
 	assert.equal(lines.slice(1).join(""), link);
 	for (const line of lines) assert.ok(measureText(line, 10) <= 120);
 	assert.deepEqual(wrapText("abc", 1, 10), ["a", "b", "c"]);
+	// Leading spaces (indented text) count towards the width and survive; a word that does not fit after them
+	// starts the next line without a blank one before it.
+	assert.deepEqual(wrapText("    code", 500, 10), ["    code"]);
+	assert.deepEqual(wrapText("  wide", measureText("wide", 10), 10), ["wide"]);
+	assert.deepEqual(wrapText("ab cd  ", measureText("ab cd", 10), 10), ["ab cd"]);
+	assert.deepEqual(wrapText(`${"a".repeat(30)} b`, measureText("a".repeat(12), 10), 10), [
+		"a".repeat(12),
+		"a".repeat(12),
+		"a".repeat(6) + " b",
+	]);
+});
+
+test("a very long word wraps in linear time", () => {
+	const word = "?".repeat(1_000_000);
+	const started = performance.now();
+	const lines = wrapText(word, 483, 10.5);
+	assert.ok(performance.now() - started < 2000, `took ${Math.round(performance.now() - started)} ms`);
+	assert.equal(lines.join(""), word);
+	assert.ok(lines.every((line) => measureText(line, 10.5) <= 483));
+	assert.ok(measureText(lines[0] + "?", 10.5) > 483);
 });
 
 test("strings are escaped for PDF", () => {
@@ -107,6 +127,13 @@ test("a text PDF is a well-formed file whose cross-reference table points at eve
 	const length = Number(/\/Length (\d+) >>\nstream\n/.exec(text)[1]);
 	const streamStart = text.indexOf("stream\n") + "stream\n".length;
 	assert.equal(text.slice(streamStart + length), text.slice(text.indexOf("\nendstream", streamStart)));
+});
+
+test("line breaks inside a block become separate lines of text", () => {
+	const text = latin1(buildTextPdf({ title: "Breaks", blocks: [{ text: "Kind regards,\nJohn" }] }).bytes);
+	assert.match(text, /\(Kind regards,\) Tj/);
+	assert.match(text, /\(John\) Tj/);
+	assert.doesNotMatch(text, /regards,John/);
 });
 
 test("long text flows onto further pages and lost characters are reported", () => {

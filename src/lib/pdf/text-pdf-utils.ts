@@ -134,13 +134,18 @@ function winAnsiByte(char: string): number | null {
 /**
  * Text as WinAnsi characters (each one a byte, kept as a one-byte string for the writer). A character outside it is
  * replaced by its nearest typographic stand-in, its unaccented letter, nothing (emoji and invisible characters) or
- * `?`, and counted in `lost`. Tabs become spaces; other control characters are dropped.
+ * `?`, and counted in `lost`. Line breaks are kept (`wrapText` splits on them), tabs become spaces and other control
+ * characters are dropped.
  * @public Exercised by the unit tests.
  */
 export function toWinAnsi(text: string): { text: string; lost: number } {
 	let out = "";
 	let lost = 0;
 	for (const char of text) {
+		if (char === "\n") {
+			out += char;
+			continue;
+		}
 		if (char === "\t") {
 			out += "    ";
 			continue;
@@ -173,22 +178,24 @@ function baseLetter(char: string): string {
 	return char.normalize("NFD").charAt(0);
 }
 
-/** The width of WinAnsi text (as `toWinAnsi` returns it) in points at `size`.
+/** The advance width of one WinAnsi byte in 1/1000 em. */
+function charUnits(byte: string, widths: number[]): number {
+	const char = byte.charCodeAt(0) < 0x80 ? byte : decodeWinAnsi(byte);
+	const ascii = char.charCodeAt(0);
+	if (ascii >= 0x20 && ascii <= 0x7e) return widths[ascii - 0x20];
+	if (char in WIDE_SYMBOLS) return WIDE_SYMBOLS[char];
+	const base = baseLetter(char).charCodeAt(0);
+	return base >= 0x20 && base <= 0x7e ? widths[base - 0x20] : 556;
+}
+
+/**
+ * The width of WinAnsi text (as `toWinAnsi` returns it) in points at `size`.
  * @public Exercised by the unit tests.
  */
 export function measureText(text: string, size: number, bold = false): number {
 	const widths = bold ? HELVETICA_BOLD : HELVETICA;
 	let total = 0;
-	for (const byte of text) {
-		const char = byte.charCodeAt(0) < 0x80 ? byte : decodeWinAnsi(byte);
-		const ascii = char.charCodeAt(0);
-		if (ascii >= 0x20 && ascii <= 0x7e) total += widths[ascii - 0x20];
-		else if (char in WIDE_SYMBOLS) total += WIDE_SYMBOLS[char];
-		else {
-			const base = baseLetter(char).charCodeAt(0);
-			total += base >= 0x20 && base <= 0x7e ? widths[base - 0x20] : 556;
-		}
-	}
+	for (const byte of text) total += charUnits(byte, widths);
 	return (total * size) / 1000;
 }
 
@@ -199,32 +206,63 @@ function decodeWinAnsi(byte: string): string {
 	return WIN_ANSI_DECODE.get(code) ?? byte;
 }
 
+/** Splits a word wider than the line into pieces that fit, measuring each character once. */
+function splitWord(
+	word: string,
+	limit: number,
+	widths: number[],
+): { pieces: string[]; rest: string; restUnits: number } {
+	const pieces: string[] = [];
+	let start = 0;
+	let units = 0;
+	for (let index = 0; index < word.length; index += 1) {
+		const next = charUnits(word[index], widths);
+		if (units + next > limit && index > start) {
+			pieces.push(word.slice(start, index));
+			start = index;
+			units = 0;
+		}
+		units += next;
+	}
+	return { pieces, rest: word.slice(start), restUnits: units };
+}
+
 /**
  * Breaks WinAnsi text into lines no wider than `width`, at spaces where it can and inside a word only when the
- * word alone is too wide (a long link). Explicit line breaks are kept; an empty input is one empty line.
+ * word alone is too wide (a long link). Explicit line breaks are kept; an empty input is one empty line. Each
+ * character is measured once, so a very long word (a run of `?` from a script the fonts lack) stays linear.
  * @public Exercised by the unit tests.
  */
 export function wrapText(text: string, width: number, size: number, bold = false): string[] {
+	const widths = bold ? HELVETICA_BOLD : HELVETICA;
+	const limit = (width * 1000) / size;
+	const spaceUnits = widths[0];
 	const lines: string[] = [];
 	for (const paragraph of text.split("\n")) {
 		const first = lines.length;
 		let line = "";
+		// The line's width without its trailing spaces, and how many trailing spaces it has.
+		let lineUnits = 0;
+		let trailing = 0;
 		for (const word of paragraph.split(/(?<= )/)) {
-			const candidate = line + word;
-			if (measureText(candidate.trimEnd(), size, bold) <= width) {
-				line = candidate;
+			const bare = word.trimEnd();
+			const spaces = word.length - bare.length;
+			let bareUnits = 0;
+			for (const byte of bare) bareUnits += charUnits(byte, widths);
+			const before = line ? lineUnits + trailing * spaceUnits : 0;
+			if (before + bareUnits <= limit) {
+				if (bare) lineUnits = before + bareUnits;
+				trailing = bare ? spaces : trailing + spaces;
+				line += word;
 				continue;
 			}
-			if (line) lines.push(line.trimEnd());
-			line = "";
-			let rest = word;
-			while (measureText(rest.trimEnd(), size, bold) > width) {
-				let cut = 1;
-				while (cut < rest.length && measureText(rest.slice(0, cut + 1), size, bold) <= width) cut += 1;
-				lines.push(rest.slice(0, cut));
-				rest = rest.slice(cut);
-			}
-			line = rest;
+			if (line.trimEnd()) lines.push(line.trimEnd());
+			const split =
+				bareUnits > limit ? splitWord(bare, limit, widths) : { pieces: [], rest: bare, restUnits: bareUnits };
+			lines.push(...split.pieces);
+			line = split.rest + " ".repeat(spaces);
+			lineUnits = split.restUnits;
+			trailing = spaces;
 		}
 		// A paragraph whose last word was split ends with that word's last piece, not an empty line.
 		if (line.trimEnd() || lines.length === first) lines.push(line.trimEnd());

@@ -3,7 +3,7 @@ import { ATTACHMENT_OBJECT_ROWS_SQL } from "./attachment-storage-utils";
 import type { AttachmentStorageCounts, AttachmentObjectsVerification } from "./attachment-storage-types";
 
 /** Referenced object keys `verifyAttachmentObjects` looks up, newest first (`docs/specs/attachments-once.md` §5.5). */
-export const VERIFY_SAMPLE_KEYS = 200;
+const VERIFY_SAMPLE_KEYS = 200;
 /** HEAD requests in flight at once. */
 const VERIFY_CONCURRENCY = 20;
 

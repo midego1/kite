@@ -4,6 +4,7 @@ import { useCallback, useEffect, useSyncExternalStore, type RefObject } from "re
 import { useQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { applyMigrations, useMigrationApply } from "./migration-apply";
+import { publishStartupStats } from "./startup-stats";
 import type { PendingMigrationsResponse } from "./migrations-banner-types";
 import { PENDING_MIGRATIONS_REFRESH_MS, parsePendingMigrations } from "./migrations-banner-utils";
 
@@ -45,6 +46,12 @@ export function useMigrationsNotice() {
 		refetchOnWindowFocus: false,
 		retry: false,
 	});
+
+	// The startup screen's database line reads this answer; it asks for nothing itself.
+	const pending = data?.pending;
+	useEffect(() => {
+		if (pending !== undefined) publishStartupStats({ pendingMigrations: pending });
+	}, [pending]);
 
 	const names = data?.names;
 	const apply = useCallback(async () => {

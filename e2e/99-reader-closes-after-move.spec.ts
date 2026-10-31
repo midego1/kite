@@ -149,3 +149,39 @@ test("the focus hand-off waits for a row that is still in the list after the mov
 		await api.dispose();
 	}
 });
+
+test("trashing a deep-linked older message of a conversation hands the focus to the next row", async ({ page }) => {
+	await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "on"));
+	const api = await apiContext(STORAGE_STATE);
+	const token = uniqueToken("deep");
+	const subject = `Deep link ${token}`;
+	const from = `"Reader Sender" <${token}@outside.test>`;
+	const messageId = `<${token}-first@outside.test>`;
+	try {
+		// A message below the conversation, so the focus has a row to go to.
+		await deliverInbound(api, { from, to: SUPPORT_ADDRESS, subject: `Neighbour ${token}`, text: "Below." });
+		const first = await deliverInbound(api, { from, to: SUPPORT_ADDRESS, subject, text: "First.", messageId });
+		const reply = await deliverInbound(api, {
+			from,
+			to: SUPPORT_ADDRESS,
+			subject: `Re: ${subject}`,
+			text: "Second.",
+			inReplyTo: messageId,
+		});
+		expect(reply.threadId).toBe(first.threadId);
+
+		// The row stands for the conversation and is keyed by the reply; the link opens the older message.
+		await page.goto(`/inbox/${first.id}`);
+		await expect(rows(page, `Re: ${subject}`)).toHaveCount(1);
+		await expect(page.getByText(EMPTY_READER)).toHaveCount(0);
+		await page.getByRole("button", { name: /^Move to trash/ }).click();
+		await expect(page.getByText(EMPTY_READER)).toBeVisible();
+		await expect(rows(page, `Re: ${subject}`)).toHaveCount(0);
+		await expect
+			.poll(() => Promise.all([statusOf(api, first.id), statusOf(api, reply.id)]))
+			.toEqual(["trash", "trash"]);
+		await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest("[data-message-row]"))).toBe(true);
+	} finally {
+		await api.dispose();
+	}
+});

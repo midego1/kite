@@ -40,9 +40,9 @@ export function useOpenRowBridge({
 		return () => registerRowLookup(null);
 	});
 
-	const latest = useRef({ rows, openMessageId, folder, folderId });
+	const latest = useRef({ rows, rowMessageIds, openMessageId, folder, folderId });
 	useEffect(() => {
-		latest.current = { rows, openMessageId, folder, folderId };
+		latest.current = { rows, rowMessageIds, openMessageId, folder, folderId };
 	});
 	useEffect(() => {
 		// Ends the watch of a leaving row that still holds the focus; a new change or the unmount ends it too.
@@ -52,11 +52,11 @@ export function useOpenRowBridge({
 			const current = latest.current;
 			if (!change || !current.openMessageId || !change.ids.includes(current.openMessageId)) return;
 			if (!leavesList(change.kind, current.folder, current.folderId)) return;
-			const neighbour = neighbourAfterLeaving(
-				current.rows.map((message) => message.id),
-				current.openMessageId,
-				change.ids,
-			);
+			const rowById = new Map(current.rows.map((message) => [message.id, message]));
+			const neighbour = neighbourAfterLeaving([...rowById.keys()], current.openMessageId, change.ids, (rowId) => {
+				const row = rowById.get(rowId);
+				return row ? current.rowMessageIds(row) : [rowId];
+			});
 			// After the reader has unmounted, and only when the focus went down with it: dropped on the page, or still
 			// on a row that is leaving (Trash in the row's own actions). The list may update well after the event (a
 			// debounce and a fetch), so a focus on a leaving row is watched until that row has left; the watch ends

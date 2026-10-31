@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -21,9 +21,17 @@ await build({
 	absWorkingDir: root,
 	logLevel: "silent",
 });
-const { APPLIED_NOTICE_STAY_MS, createDismissTimer, isAppliedNoticeExitEnd, planAppliedNoticeExit } = await import(
-	pathToFileURL(join(bundleDirectory, "notice.mjs")).href
-);
+/** The custom property the exit plan sets and the CSS animations read (applied-notice-utils.ts). */
+const APPLIED_NOTICE_DURATION_PROPERTY = "--applied-notice-duration";
+const {
+	APPLIED_NOTICE_STAY_MS,
+	appliedNoticeExitStyle,
+	blurEndsFocusHold,
+	createDismissTimer,
+	isAppliedNoticeExitEnd,
+	pickFocusNeighbour,
+	planAppliedNoticeExit,
+} = await import(pathToFileURL(join(bundleDirectory, "notice.mjs")).href);
 
 /** A clock whose timers fire only when the test advances it. */
 function fakeClock() {
@@ -172,4 +180,37 @@ test("only the kite's animation (or the fade without it) ends the exit", () => {
 	const fade = planAppliedNoticeExit(true);
 	assert.equal(isAppliedNoticeExitEnd("applied-notice-fade", fade), true);
 	assert.equal(isAppliedNoticeExitEnd("applied-notice-kite", fade), false);
+});
+
+test("the exit plan times the CSS animations, which hold no durations of their own", () => {
+	assert.deepEqual(appliedNoticeExitStyle(planAppliedNoticeExit(false)), {
+		[APPLIED_NOTICE_DURATION_PROPERTY]: "1200ms",
+	});
+	assert.deepEqual(appliedNoticeExitStyle(planAppliedNoticeExit(true)), {
+		[APPLIED_NOTICE_DURATION_PROPERTY]: "250ms",
+	});
+	const css = readFileSync(join(root, "src/app/globals.css"), "utf8");
+	for (const name of ["applied-notice-leave", "applied-notice-kite", "applied-notice-fade"]) {
+		const rule = css.match(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`))?.[1];
+		assert.ok(rule, `.${name} is in globals.css`);
+		const animation = rule.match(/animation:([^;]*);/)?.[1] ?? "";
+		assert.match(animation, new RegExp(`^\\s*${name} var\\(${APPLIED_NOTICE_DURATION_PROPERTY}\\) `));
+		assert.doesNotMatch(animation, /\d(ms|s)\b/, `.${name} takes its length from the exit plan`);
+	}
+});
+
+test("a blur ends the focus hold only when the focus moved elsewhere in the page", () => {
+	assert.equal(blurEndsFocusHold({ nextInside: false, documentFocused: true }), true);
+	assert.equal(blurEndsFocusHold({ nextInside: true, documentFocused: true }), false);
+	// Switching to another window: no next target and the document lost the focus.
+	assert.equal(blurEndsFocusHold({ nextInside: false, documentFocused: false }), false);
+});
+
+test("the focus goes to the next focusable element after the notice, else the last one before it", () => {
+	const places = { a: "before", b: "before", c: "inside", d: "after", e: "after" };
+	const place = (name) => places[name];
+	assert.equal(pickFocusNeighbour(["a", "b", "c", "d", "e"], place), "d");
+	assert.equal(pickFocusNeighbour(["a", "b", "c"], place), "b");
+	assert.equal(pickFocusNeighbour(["c"], place), null);
+	assert.equal(pickFocusNeighbour([], place), null);
 });

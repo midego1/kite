@@ -14,7 +14,7 @@ import {
 	releaseAnchorId,
 	visibleReleases,
 } from "@/lib/changelog/changelog-nav-utils";
-import { changelogReleaseLabel } from "@/lib/changelog/changelog-utils";
+import { changelogReleaseLabel, parseChangelog } from "@/lib/changelog/changelog-utils";
 import type { ChangelogRelease } from "@/lib/changelog/types";
 import { InlineText } from "./changelog-inline-text";
 
@@ -293,9 +293,13 @@ export function ChangelogDialog({
 	useEffect(() => {
 		if (!open || releases || typeof window === "undefined") return;
 		let active = true;
-		void import("@/lib/changelog/changelog-bundle")
-			.then((module) => {
-				if (active) setReleases(module.loadChangelogReleases());
+		// The release notes are a static asset (`scripts/generate-changelog-bundle.mjs`), fetched only when
+		// the dialog first opens so they never weigh on the page's JavaScript.
+		void fetch("/changelog.json", { cache: "no-cache" })
+			.then(async (response) => {
+				if (!response.ok) throw new Error(`HTTP ${response.status}`);
+				const { markdown } = (await response.json()) as { markdown: string };
+				if (active) setReleases(parseChangelog(markdown));
 			})
 			.catch(() => {
 				if (active) setFailed(true);

@@ -152,9 +152,7 @@ test("the What's new bundle lists pending fragments under Unreleased", () => {
 
 test("the generated bundle includes the fragments in changelog.d", () => {
 	execFileSync("node", ["scripts/generate-changelog-bundle.mjs"], { cwd: new URL("..", import.meta.url) });
-	const { markdown } = JSON.parse(
-		readFileSync(new URL("../src/lib/changelog/changelog.json", import.meta.url), "utf8"),
-	);
+	const { markdown } = JSON.parse(readFileSync(new URL("../public/changelog.json", import.meta.url), "utf8"));
 	const fragments = readFragments(new URL("..", import.meta.url).pathname);
 	assert.equal(changelogSection(markdown, "Unreleased"), foldFragments(fragments));
 });

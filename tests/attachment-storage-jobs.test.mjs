@@ -401,10 +401,14 @@ test("stale messages are dropped, cancel stops the job, and a stopped job resume
 	);
 
 	// A job whose batches stopped arriving resumes from its cursor and counters.
+	// The job walks attachment ids in order; the lowest one stands for a row an earlier batch already did.
+	const [first] = rows(database)
+		.map((row) => row.id)
+		.sort();
 	const stalled = {
 		...jobOf(database),
 		status: "running",
-		cursor: rows(database)[0].id,
+		cursor: first,
 		done: 1,
 		heartbeatAt: Date.now() - utils.STALL_MS - 1,
 	};
@@ -416,12 +420,13 @@ test("stale messages are dropped, cancel stops the job, and a stopped job resume
 	await drain(env);
 	const done = jobOf(database);
 	assert.equal(done.status, "completed");
-	assert.equal(rows(database)[0].storage, "raw", "the row before the cursor was not looked at again");
-	assert.ok(
-		rows(database)
-			.slice(1)
-			.every((row) => row.storage === "object"),
+	const after = rows(database);
+	assert.equal(
+		after.find((row) => row.id === first).storage,
+		"raw",
+		"the row up to the cursor was not looked at again",
 	);
+	assert.ok(after.filter((row) => row.id !== first).every((row) => row.storage === "object"));
 });
 
 test("the cron sends a stopped job's batch again within the hour", async () => {

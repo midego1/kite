@@ -123,8 +123,8 @@ export function objectsStepAction(
 
 /**
  * Sample-based, so it never reads every message body: the latest messages stand for the rest. The raw messages carry
- * every attachment row's file encoded (`rawAttachmentBytes`, 'raw' rows included); `attachments` and
- * `attachmentBytes` are the objects of their own that rows name, once per key.
+ * their attachments' files encoded (`rawAttachmentBytes`, 'raw' rows included); `attachments` and `attachmentBytes`
+ * are the objects of their own that rows name, once per key.
  */
 export function estimateBackupObjectBytes(input: {
 	messages: number;

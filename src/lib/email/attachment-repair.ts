@@ -152,7 +152,8 @@ export async function materializeMismatchedRaw(
 			transfer_encoding = NULL WHERE id = ? AND storage = 'raw'`,
 		[key, row.id],
 	);
-	if (changed !== 1) await env.BUCKET.delete(key);
+	// Another read may have repointed the row at this same key first; the object is only ours to remove otherwise.
+	if (changed !== 1 && (await loadRepairable(env, attachmentId))?.r2Key !== key) await env.BUCKET.delete(key);
 	log.info("attachment.repaired", { attachmentId, messageId: row.messageId, storage: "object" });
 	return source.content;
 }

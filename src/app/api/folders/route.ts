@@ -4,6 +4,8 @@ import { getDb } from "@/db";
 import { folders } from "@/db/schema";
 import { requireSessionUser } from "@/lib/api/auth";
 import { getEnv } from "@/lib/cloudflare";
+import { DEFAULT_FOLDER_COLOR } from "@/lib/folders/colors";
+import { insertFolder } from "@/lib/folders/insert";
 import { newId } from "@/lib/ids";
 import { folderSchema } from "@/lib/validators";
 import { getMailboxFolderAccess, listFoldersForMailbox } from "./utils";
@@ -45,7 +47,7 @@ export async function POST(request: Request) {
 
 	const name = parsed.data.name.trim();
 	const [existing] = await db
-		.select()
+		.select({ id: folders.id })
 		.from(folders)
 		.where(and(eq(folders.mailboxId, parsed.data.mailboxId), eq(folders.name, name)))
 		.limit(1);
@@ -54,13 +56,16 @@ export async function POST(request: Request) {
 	}
 
 	const id = newId("fld");
-	await db.insert(folders).values({
+	const color = parsed.data.color ?? DEFAULT_FOLDER_COLOR;
+	const colorIsCustom = parsed.data.color !== undefined;
+	await insertFolder(db, {
 		id,
 		userId: access.mailboxUserId,
 		mailboxId: parsed.data.mailboxId,
 		name,
-		color: parsed.data.color,
+		color,
+		colorIsCustom,
 	});
 
-	return NextResponse.json({ id, mailboxId: parsed.data.mailboxId, name, color: parsed.data.color });
+	return NextResponse.json({ id, mailboxId: parsed.data.mailboxId, name, color, colorIsCustom });
 }

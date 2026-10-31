@@ -57,7 +57,7 @@ export async function POST(request: Request) {
 
 	if (folderId) {
 		const [folder] = await db
-			.select()
+			.select({ id: folders.id })
 			.from(folders)
 			.where(and(eq(folders.id, folderId), eq(folders.mailboxId, mailbox.id)))
 			.limit(1);

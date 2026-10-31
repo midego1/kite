@@ -37,7 +37,7 @@ export async function PATCH(request: Request, { params }: RoutingRuleRouteParams
 	}
 	if (folderId) {
 		const [folder] = await db
-			.select()
+			.select({ id: folders.id })
 			.from(folders)
 			.where(and(eq(folders.id, folderId), eq(folders.mailboxId, rule.mailboxId)))
 			.limit(1);

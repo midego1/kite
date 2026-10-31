@@ -2,6 +2,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { folders, messages } from "@/db/schema";
 import { DEFAULT_FOLDER_COLOR } from "@/lib/folders/colors";
+import { insertFolder } from "@/lib/folders/insert";
 import { newId } from "@/lib/ids";
 import { createAuditLog, createAuditLogs } from "@/lib/mailboxes/audit";
 import { updateMessageStatusForUser } from "@/lib/user";
@@ -141,12 +142,13 @@ async function createFolder(context: AgentToolContext, input: Input) {
 	if (context.origin === "chat") return { action: "create_folder", status: "pending_approval", name, color: colorName };
 	const folderId = context.folderId ?? newId("fld");
 	try {
-		await getDb(context.env).insert(folders).values({
+		await insertFolder(getDb(context.env), {
 			id: folderId,
 			userId: access.mailbox.userId,
 			mailboxId: context.mailboxId,
 			name,
 			color,
+			colorIsCustom: input.color !== undefined,
 		});
 	} catch (error) {
 		// Another request created the same name since the check above; the unique index refused this one.

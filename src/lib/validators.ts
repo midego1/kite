@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getEmailAddress, splitEmailAddressList } from "@/lib/email/address";
-import { DEFAULT_FOLDER_COLOR, FOLDER_COLOR_VALUES } from "@/lib/folders/colors";
+import { FOLDER_COLOR_VALUES } from "@/lib/folders/colors";
 import { isUndoSendSeconds } from "@/lib/email/undo-send-utils";
 import { AGENT_MAX_STEPS_MAX, AGENT_MAX_STEPS_MIN } from "@/lib/agent/step-limit-utils";
 import { TASK_INSTRUCTIONS_MAX_CHARS } from "@/lib/agent/instruction-utils";
@@ -273,7 +273,8 @@ export const updateMailboxSchema = z.object({
 export const folderSchema = z.object({
 	mailboxId: z.string().min(1),
 	name: z.string().trim().min(1).max(80),
-	color: z.enum(FOLDER_COLOR_VALUES).default(DEFAULT_FOLDER_COLOR),
+	/** Sent only when a person picked a colour; leaving it out stores the default blue as "not picked". */
+	color: z.enum(FOLDER_COLOR_VALUES).optional(),
 });
 
 export const updateProfileSchema = z.object({

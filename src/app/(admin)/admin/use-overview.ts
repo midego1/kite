@@ -22,8 +22,18 @@ async function fetchOverviewCounts(): Promise<AdminOverviewCounts> {
  * update, backup or restore that invalidates the key refreshes the list as well. Primary-only parts are never
  * requested for other admins.
  */
-export function useOverview(primary: boolean, enabled: boolean): { data: OverviewData; loading: boolean } {
-	const shared = { enabled, staleTime: 30_000, refetchOnMount: "always" as const, retry: false };
+export function useOverview(
+	primary: boolean,
+	enabled: boolean,
+	options: { refetchOnMount?: boolean | "always" } = {},
+): { data: OverviewData; loading: boolean } {
+	// The admin page refetches on every mount; the mailbox's command center only when the cached answer is stale.
+	const shared = {
+		enabled,
+		staleTime: 30_000,
+		refetchOnMount: options.refetchOnMount ?? ("always" as const),
+		retry: false,
+	};
 	const [migrations, counts, databaseSize, backups, storage] = useQueries({
 		queries: [
 			{ queryKey: PENDING_MIGRATIONS_QUERY, queryFn: fetchPendingMigrations, ...shared },

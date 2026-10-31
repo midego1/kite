@@ -922,7 +922,48 @@ html:has(#kite-boot-failure[data-loader-stuck]) .loading-recovery {
 	}
 }
 
+/* The small kite in the corner of the empty reading pane (command-center/floating-kite.tsx): a slow drift and
+   a rippling tail, CSS only; still under reduced motion. */
+.command-center-kite {
+	filter: drop-shadow(0 6px 14px rgba(120, 107, 242, 0.28));
+	transform-origin: 50% 60%;
+	animation: command-center-float 7s ease-in-out infinite;
+}
+
+.command-center-tail {
+	transform-origin: 28px 91px;
+	transform-box: view-box;
+	animation: command-center-tail 2600ms ease-in-out infinite alternate;
+}
+
+@keyframes command-center-float {
+	0%,
+	100% {
+		transform: translateY(0) rotate(0deg);
+	}
+	30% {
+		transform: translateY(-5px) rotate(3deg);
+	}
+	65% {
+		transform: translateY(-2px) rotate(-2.5deg);
+	}
+}
+
+@keyframes command-center-tail {
+	from {
+		transform: rotate(-6deg);
+	}
+	to {
+		transform: rotate(5deg);
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
+	.command-center-kite,
+	.command-center-tail {
+		animation: none;
+	}
+
 	.kite-fly-away {
 		animation: none;
 	}

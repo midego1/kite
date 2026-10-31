@@ -528,3 +528,101 @@ test("the account view counts its own verified address as proven, and never show
 	assert.equal(verified.sending.block, null);
 	assert.equal(verified.identities[0].codeExpiresAt, null);
 });
+
+test("the account view covers its sync, sending and address states", () => {
+	const now = new Date(1_000_000);
+	const row = {
+		id: "x",
+		label: "Work",
+		address: "me@gmail.com",
+		displayName: null,
+		preset: "gmail",
+		mailboxId: "m",
+		imapHost: "imap.gmail.com",
+		imapPort: 993,
+		imapSecurity: "tls",
+		smtpHost: "smtp.gmail.com",
+		smtpPort: 465,
+		smtpSecurity: "tls",
+		username: "me@gmail.com",
+		secret: "",
+		sendEnabled: true,
+		appendSent: false,
+		syncEnabled: true,
+		syncIntervalMinutes: 5,
+		syncJunk: false,
+		consecutiveFailures: 2,
+		status: "auth_failed",
+		statusReason: "throttled",
+		lastError: "x",
+		lastSuccessAt: new Date(500_000),
+		nextSyncAt: new Date(2_000_000),
+		leaseUntil: new Date(1_500_000),
+		createdAt: new Date(0),
+		updatedAt: new Date(0),
+	};
+	const view = serializeExternalAccount(row, null, now, [
+		{
+			id: "a",
+			address: "me@gmail.com",
+			displayName: null,
+			verifiedAt: new Date(10),
+			codeHash: null,
+			codeExpiresAt: null,
+		},
+		{
+			id: "b",
+			address: "alias@gmail.com",
+			displayName: "Al",
+			verifiedAt: null,
+			codeHash: "h",
+			codeExpiresAt: new Date(2_000_000),
+		},
+		{
+			id: "c",
+			address: "old@gmail.com",
+			displayName: null,
+			verifiedAt: null,
+			codeHash: "h",
+			codeExpiresAt: new Date(10),
+		},
+	]);
+	assert.deepEqual(
+		view.identities.map(({ address, state, accountAddress, verifiedAt, codeExpiresAt }) => [
+			address,
+			state,
+			accountAddress,
+			!!verifiedAt,
+			!!codeExpiresAt,
+		]),
+		[
+			["me@gmail.com", "verified", true, true, false],
+			["alias@gmail.com", "pending", false, false, true],
+			["old@gmail.com", "unverified", false, false, false],
+		],
+	);
+	assert.equal(view.sync.running, true);
+	assert.equal(view.sync.problem, "throttled");
+	assert.equal(view.sync.lastSuccessAt, new Date(500_000).toISOString());
+	assert.equal(view.sending.providerSavesSent, true);
+	assert.equal(view.sending.block, "reconnect");
+	assert.equal(view.hasPassword, false);
+	const plain = serializeExternalAccount(
+		{
+			...row,
+			preset: "retired",
+			smtpHost: null,
+			leaseUntil: null,
+			lastSuccessAt: null,
+			nextSyncAt: null,
+			statusReason: null,
+		},
+		null,
+		now,
+	);
+	assert.deepEqual(
+		[plain.presetLabel, plain.smtp, plain.sync.running, plain.sync.problem, plain.identities],
+		["IMAP", null, false, null, []],
+	);
+	assert.equal(plain.sync.nextSyncAt, null);
+});

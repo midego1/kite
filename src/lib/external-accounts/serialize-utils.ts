@@ -33,6 +33,22 @@ export type ExternalAccountRow = typeof externalAccounts.$inferSelect;
 /** The `status_reason` values a sync failure writes (`syncFailureUpdate`). */
 const SYNC_PROBLEMS = new Set(["throttled", "transient", "config", "sync"]);
 
+/** Whether `address` is among the verified ones. */
+function hasVerified(identities: readonly IdentityFields[], address: string): boolean {
+	for (const identity of identities) if (identity.address === address && identity.verifiedAt) return true;
+	return false;
+}
+
+function serializeIdentities(
+	identities: readonly IdentityFields[],
+	accountAddress: string,
+	now: Date,
+): ExternalIdentityView[] {
+	const views: ExternalIdentityView[] = [];
+	for (const identity of identities) views.push(serializeIdentity(identity, accountAddress, now));
+	return views;
+}
+
 /**
  * The public shape of an account, with when its SMTP sign-in last worked (`readSmtpVerified`) and its addresses that
  * need or have a code (`external_identities`). Fields are listed one by one, so the sealed password (and, later, OAuth
@@ -44,7 +60,7 @@ export function serializeExternalAccount(
 	now = new Date(),
 	identities: readonly IdentityFields[] = [],
 ): ExternalAccountView {
-	const addressVerified = identities.some((identity) => identity.address === row.address && identity.verifiedAt);
+	const addressVerified = hasVerified(identities, row.address);
 	return {
 		id: row.id,
 		label: row.label,
@@ -80,7 +96,7 @@ export function serializeExternalAccount(
 			verified: !!smtpVerifiedAt,
 			block: sendBlock({ ...row, hasPassword: row.secret.length > 0, smtpVerifiedAt }, null, addressVerified),
 		},
-		identities: identities.map((identity) => serializeIdentity(identity, row.address, now)),
+		identities: serializeIdentities(identities, row.address, now),
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};

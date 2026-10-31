@@ -172,12 +172,15 @@ const RANK: Record<AttachmentRiskLevel, number> = { ok: 0, warning: 1, danger: 2
  */
 function fileExtensions(filename: string): string[] {
 	const base = (filename.split(/[/\\]/).pop() ?? "").split(":", 1)[0];
-	return base
-		.toLowerCase()
-		.replace(/[.\s]+$/, "")
-		.split(".")
-		.slice(1)
-		.map((part) => part.trim());
+	return (
+		base
+			.toLowerCase()
+			// From the start of a run only, so a long run of dots inside a name is not rescanned from each of them.
+			.replace(/(?<![.\s])[.\s]+$/, "")
+			.split(".")
+			.slice(1)
+			.map((part) => part.trim())
+	);
 }
 
 function lastExtension(filename: string): string {

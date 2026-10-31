@@ -55,6 +55,13 @@ const LOADER_REMOUNT_LIMIT = 3;
  * failure with Retry puts the same screen back, and the outer bound must still hold then.
  */
 const LOADER_SETTLED_TICKS = 4;
+/**
+ * Flipped between "a" and "b" on <html> on every watchdog tick: each flip restarts the animation that reveals the
+ * startup screen's frozen-thread notice (`.loader-frozen` in globals.css), so it only shows once the ticks stop.
+ */
+const HEARTBEAT_ATTRIBUTE = "data-kite-heartbeat";
+/** On <html> while the tab is hidden: ticks are throttled there, so the notice's animation is paused. */
+const HIDDEN_ATTRIBUTE = "data-kite-hidden";
 /** Watchdog reloads per ASSET_RELOAD_WINDOW_MS (within the shared budget) before it shows "Kite couldn't load". */
 const BOOT_STALL_RELOADS = 2;
 /** Fired on `window` when a chunk fails after the app has rendered, so the update check can run at once. */
@@ -135,6 +142,18 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	const loaderFlag = ${JSON.stringify(LOADER_MOUNTED_FLAG)};
 	const failureId = ${JSON.stringify(BOOT_FAILURE_ID)};
 	const trace = () => window[${JSON.stringify(BOOT_TRACE_GLOBAL)}] || null;
+	// The frozen-thread notice (globals.css) starts over on every beat; once the beats stop it shows by itself.
+	const root = document.documentElement;
+	const heartbeat = () => {
+		root.setAttribute(${JSON.stringify(HEARTBEAT_ATTRIBUTE)}, root.getAttribute(${JSON.stringify(HEARTBEAT_ATTRIBUTE)}) === "a" ? "b" : "a");
+	};
+	const followVisibility = () => {
+		if (document.visibilityState === "hidden") return root.setAttribute(${JSON.stringify(HIDDEN_ATTRIBUTE)}, "");
+		root.removeAttribute(${JSON.stringify(HIDDEN_ATTRIBUTE)});
+		heartbeat();
+	};
+	followVisibility();
+	addEventListener("visibilitychange", followVisibility);
 	let reloadPending = false;
 	let gaveUp = false;
 	let lastStaleAt = null;
@@ -397,6 +416,7 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		showFailure(true);
 	};
 	const tick = () => {
+		heartbeat();
 		const now = Date.now();
 		if (document.visibilityState !== "hidden") {
 			const elapsed = Math.min(Math.max(now - lastTickAt, 0), 1000);

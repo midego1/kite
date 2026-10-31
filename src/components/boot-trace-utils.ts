@@ -1,10 +1,14 @@
+import { BUILD_VERSION_LABEL } from "@/lib/build-version";
+
 /**
  * A record of how far the last page load got, kept in sessionStorage so it survives a page whose main thread froze.
  * The inline `bootTraceScript` starts it in <head>; the app adds its phases with `markBootPhase`, and the boot
  * watchdog (asset-recovery-utils.ts) writes a heartbeat on every tick. A load that ends normally reaches
  * `complete`, is ended by the watchdog, or leaves through `pagehide` soon after its last heartbeat. One whose
- * heartbeat simply stopped while the tab was visible froze, and the next load of the tab says so in the console
- * and in the Details of "Kite couldn't load" and "Reload Kite".
+ * heartbeat simply stopped while the tab was visible froze, and the next load of the tab says so in the console,
+ * in the Details of "Kite couldn't load" and "Reload Kite", and to the server (BOOT_REPORT_PATH), which logs it:
+ * a frozen page can show nothing, and the load after it usually starts fine, so this is the one place a freeze
+ * leaves a record. Within the phases, `markBootStep` names the part of the app that was rendering last.
  *
  * Nothing personal is kept or shown: paths without query strings or fragments (another origin only by its
  * origin), the first segment of the page's own path, times and counts. No message content, no addresses.
@@ -14,12 +18,19 @@
 const BOOT_TRACE_STORAGE_KEY = "kite-boot-trace";
 /** Set on `window` by the inline script: `{ phase, beat, remount, end, details, text }`. */
 export const BOOT_TRACE_GLOBAL = "__kiteBoot";
-/** The phases of a start, in order; the furthest one reached is the phase a stuck or frozen load stopped at. */
+/**
+ * The phases of a start, in the order they happen; the furthest one reached is the phase a stuck or frozen load
+ * stopped at. `auth-answered` is the session check's answer arriving, `children-rendering` React starting to render
+ * the app behind the screen with it, `children-committed` that render's layout effects and `auth-ready` its
+ * effects having run.
+ */
 const BOOT_PHASES = [
 	"inline",
 	"loader-mounted",
-	"auth-ready",
+	"auth-answered",
+	"children-rendering",
 	"children-committed",
+	"auth-ready",
 	"can-complete",
 	"complete",
 ] as const;
@@ -38,6 +49,10 @@ const BOOT_DETAILS_LIMIT = 5;
 const BOOT_SECRET_PATH = /^(\/d\/|\/api\/public\/drive\/|\/api\/shared-files\/)[^/]+/;
 /** Only animation frames longer than this are kept. */
 const BOOT_LONG_FRAME_MS = 1_000;
+/** Where the next load reports a load that froze (`navigator.sendBeacon`, text/plain JSON); the server logs it. */
+export const BOOT_REPORT_PATH = "/api/boot-report";
+/** sessionStorage key of the kite's return marker (reload-return-utils.ts), read before that script consumes it. */
+const RELOAD_RETURN_MARKER_KEY = "kite-reload-flight";
 
 export type BootDetails = {
 	phase: string;
@@ -56,11 +71,27 @@ export type BootDetails = {
 		blockingMs: number;
 		scripts: { source: string; invoker: string; function: string; durationMs: number }[];
 	}[];
-	previousLoad: { phase: string; afterMs: number; visibleMs: number } | null;
+	step: { name: string; atMs: number } | null;
+	previousLoad: PreviousBootLoad | null;
+};
+
+/**
+ * A load of this tab that froze, as the next load found it: the phase and the last step it reached, its last
+ * heartbeat, its visible time, and (when known) its build and whether it was the load right after Reload in the
+ * update notice. `step`, `build` and `afterUpdate` are left out when the record did not have them.
+ */
+export type PreviousBootLoad = {
+	phase: string;
+	afterMs: number;
+	visibleMs: number;
+	step?: string;
+	build?: string;
+	afterUpdate?: true;
 };
 
 type BootTrace = {
 	phase?: (name: BootPhase) => void;
+	step?: (name: string) => void;
 	copy?: (pre: HTMLElement | null) => Promise<BootCopyResult>;
 	details?: () => BootDetails;
 	text?: () => string;
@@ -76,6 +107,18 @@ function bootTrace(): BootTrace | null {
 export function markBootPhase(phase: BootPhase): void {
 	try {
 		bootTrace()?.phase?.(phase);
+	} catch {
+		// The trace is diagnostics only; the app never depends on it.
+	}
+}
+
+/**
+ * Records the part of the app that is rendering (or committing) now, overwriting the last one: placed in render
+ * bodies and effects along the start, so a load that froze names where. Short, fixed names only.
+ */
+export function markBootStep(name: string): void {
+	try {
+		bootTrace()?.step?.(name);
 	} catch {
 		// The trace is diagnostics only; the app never depends on it.
 	}
@@ -161,9 +204,26 @@ export const bootTraceScript = `(() => {
 					afterMs: previous.beat,
 					visibleMs: typeof previous.visibleMs === "number" ? previous.visibleMs : 0,
 				};
-				console.error("[kite] previous load froze at phase " + previousLoad.phase + " after " + previousLoad.afterMs + " ms");
+				if (previous.step && typeof previous.step.s === "string") previousLoad.step = clip(previous.step.s).slice(0, 40);
+				if (typeof previous.build === "string") previousLoad.build = previous.build.slice(0, 60);
+				if (previous.afterUpdate === true) previousLoad.afterUpdate = true;
+				console.error(
+					"[kite] previous load froze at phase " + previousLoad.phase +
+						(previousLoad.step ? " (step " + previousLoad.step + ")" : "") +
+						" after " + previousLoad.afterMs + " ms",
+				);
+				// The server logs it: the one record of a freeze that leaves nobody a way to copy its details.
+				try {
+					if (navigator.sendBeacon) {
+						navigator.sendBeacon(${JSON.stringify(BOOT_REPORT_PATH)}, JSON.stringify(Object.assign({ page: typeof previous.page === "string" ? previous.page.slice(0, 40) : "" }, previousLoad)));
+					}
+				} catch {}
 			}
 		}
+		let afterUpdate = false;
+		try {
+			afterUpdate = !!sessionStorage.getItem(${JSON.stringify(RELOAD_RETURN_MARKER_KEY)});
+		} catch {}
 
 		const record = {
 			v: 1,
@@ -175,7 +235,10 @@ export const bootTraceScript = `(() => {
 			visibleMs: 0,
 			visible: visible(),
 			stall: null,
+			step: null,
+			build: ${JSON.stringify(BUILD_VERSION_LABEL)},
 		};
+		if (afterUpdate) record.afterUpdate = true;
 		let ended = false;
 		const save = () => {
 			try {
@@ -290,6 +353,7 @@ export const bootTraceScript = `(() => {
 				loaderMounted: window.__kiteLoaderMounted === true,
 				ready: window.__kiteAppReady === true,
 				longestStall: record.stall,
+				step: record.step ? { name: record.step.s, atMs: record.step.t } : null,
 				inFlight: Array.from(inFlight.values())
 					.sort((a, b) => a.start - b.start)
 					.slice(0, limit)
@@ -304,9 +368,14 @@ export const bootTraceScript = `(() => {
 			const d = details();
 			const lines = [];
 			if (d.previousLoad) {
-				lines.push("Previous load froze at " + d.previousLoad.phase + " after " + seconds(d.previousLoad.afterMs));
+				lines.push(
+					"Previous load froze at " + d.previousLoad.phase +
+						(d.previousLoad.step ? " (step " + d.previousLoad.step + ")" : "") +
+						" after " + seconds(d.previousLoad.afterMs),
+				);
 			}
 			lines.push("Phase: " + d.phase + " (" + d.phases.map((entry) => entry.phase + " " + seconds(entry.atMs)).join(", ") + ")");
+			if (d.step) lines.push("Last step: " + d.step.name + " at " + seconds(d.step.atMs));
 			lines.push("Visible: " + seconds(d.visibleMs));
 			lines.push("Loader mounts: " + d.loaderMounts + ", overlay remounts: " + d.overlayRemounts);
 			lines.push("Loader mounted: " + (d.loaderMounted ? "yes" : "no") + ", app ready: " + (d.ready ? "yes" : "no"));
@@ -357,6 +426,11 @@ export const bootTraceScript = `(() => {
 				}
 				record.phases.push({ p: name, t: now() });
 				if (name === "complete") return end();
+				save();
+			},
+			step: (name) => {
+				if (ended) return;
+				record.step = { s: clip(name).slice(0, 40), t: now() };
 				save();
 			},
 			// The watchdog's tick: visible time so far, and how long the page went without a tick while visible.

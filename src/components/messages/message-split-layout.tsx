@@ -34,6 +34,7 @@ import { getEffectiveReadingPaneMode } from "./reading-layout-utils";
 import { useReadingPaneMode, useWideReadingViewport } from "./use-reading-layout";
 import { getSelectionToolbarFolder } from "./utils";
 import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
+import { BootStep } from "@/components/boot-step";
 
 // The list and the reader are separate rounded panels on the page background, a few pixels apart.
 const PANEL_CLASS = "rounded-xl border border-neutral-200 shadow-xs";
@@ -298,6 +299,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 						aria-hidden={!listVisible}
 						inert={!listVisible}
 					>
+						<BootStep name="message-list" />
 						<MessageFolderPage
 							config={config}
 							compact={!below}
@@ -327,6 +329,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 					)}
 				/>
 				<ResizablePanel id="kite-reader-panel" minSize={listLimits.reserved}>
+					<BootStep name="reading-pane" />
 					{detail}
 				</ResizablePanel>
 			</ResizablePanelGroup>

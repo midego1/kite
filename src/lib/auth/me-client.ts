@@ -1,5 +1,6 @@
 "use client";
 
+import { markBootPhase } from "@/components/boot-trace-utils";
 import { authFetch } from "@/lib/auth/client";
 import type { AuthMeResponse } from "./me-client-types";
 import { AUTH_ME_TIMEOUT_MS } from "./me-client-utils";
@@ -22,7 +23,13 @@ export async function fetchAuthMe(timeoutMs = AUTH_ME_TIMEOUT_MS): Promise<AuthM
 		cache: "no-store",
 		signal: AbortSignal.timeout(timeoutMs),
 	});
-	if (response.status === 401) return null;
+	if (response.status === 401) {
+		markBootPhase("auth-answered");
+		return null;
+	}
 	if (!response.ok) throw new AuthMeRequestError(response.status);
-	return (await response.json()) as AuthMeResponse;
+	const session = (await response.json()) as AuthMeResponse;
+	// The boot trace's phase: from here React renders the app with the answer.
+	markBootPhase("auth-answered");
+	return session;
 }

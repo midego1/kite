@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSessionUser } from "@/lib/api/auth";
 import { getEnv } from "@/lib/cloudflare";
-import { cancelQueuedSend } from "@/lib/email/send";
+import { cancelQueuedSend } from "@/lib/email/queued-send";
 import { undoSendSchema } from "@/lib/validators";
 
 export async function POST(request: Request) {

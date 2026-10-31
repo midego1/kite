@@ -28,6 +28,7 @@ const {
 	sendEmail,
 	processOutboundQueue,
 	cancelQueuedSend,
+	sendQueuedNow,
 	processAppendSent,
 	parseRawMime,
 } = await bundleModules("kite-send-as-node-", [
@@ -42,7 +43,8 @@ const {
 	["setInstallEnabled", "src/lib/external-accounts/settings.ts"],
 	["setCanConnect", "src/lib/external-accounts/access.ts"],
 	["listSendIdentities", "src/lib/external-accounts/identities.ts"],
-	["sendEmail, processOutboundQueue, cancelQueuedSend", "src/lib/email/send.ts"],
+	["sendEmail, processOutboundQueue", "src/lib/email/send.ts"],
+	["cancelQueuedSend, sendQueuedNow", "src/lib/email/queued-send.ts"],
 	["processAppendSent", "src/lib/external-accounts/submit.ts"],
 	["parseRawMime", "src/lib/email/parse.ts"],
 ]);
@@ -345,6 +347,102 @@ test("nothing is sent as an account while connected accounts are off, revoked, s
 	assert.equal(fakes.smtp.messages.length, 0);
 });
 
+/** The retry's time has come: the job and its queue message both name the same moment, now. */
+async function runDueRetry(env, db, messageId, message) {
+	const now = new Date();
+	db.db
+		.prepare("UPDATE outbound_jobs SET scheduled_at = ? WHERE message_id = ?")
+		.run(Math.floor(now / 1000), messageId);
+	await processOutboundQueue(env, { ...message, scheduledAt: now.toISOString() });
+}
+
+test("Send now delivers once: the queue message left over from the undo window finds the job claimed", async (t) => {
+	const fakes = await servers(t);
+	const { env, db, queued } = await setup(t, fakes);
+	await connectKnown(env);
+	const held = await send(env, { scheduledAt: new Date(Date.now() + 30_000) });
+	const leftover = queued.find(({ message }) => message.kind === "email.scheduled").message;
+
+	assert.deepEqual(await sendQueuedNow(env, "owner", held.messageId), { ok: true });
+	assert.equal(messageRow(db, held.messageId).status, "sent");
+	assert.equal(fakes.smtp.messages.length, 1);
+
+	// The window ends: the left-over message does nothing, and nothing can be taken back or hurried any more.
+	await processOutboundQueue(env, { ...leftover, scheduledAt: new Date().toISOString() });
+	assert.equal(fakes.smtp.messages.length, 1);
+	assert.deepEqual(await sendQueuedNow(env, "owner", held.messageId), { ok: false, reason: "too_late" });
+	assert.deepEqual(await cancelQueuedSend(env, "owner", held.messageId), { ok: false, reason: "not_found" });
+	assert.equal(fakes.smtp.messages.length, 1);
+});
+
+test("a 4xx after Send now queues one retry with its delay; the left-over undo-window message cannot start a second chain", async (t) => {
+	const fakes = await servers(t);
+	const { env, db, queued } = await setup(t, fakes);
+	await connectKnown(env);
+	const held = await send(env, { scheduledAt: new Date(Date.now() + 30_000) });
+	const leftover = queued.find(({ message }) => message.kind === "email.scheduled").message;
+	queued.length = 0;
+
+	fakes.smtp.failNext("data", 451, "4.3.0 Try again later");
+	assert.deepEqual(await sendQueuedNow(env, "owner", held.messageId), { ok: false, reason: "retrying" });
+	assert.equal(messageRow(db, held.messageId).status, "queued");
+	const job = jobRow(db, held.messageId);
+	assert.equal(job.status, "queued");
+	assert.match(job.error, /Try again later/);
+	const retries = queued.filter(({ message }) => message.kind === "email.scheduled");
+	assert.equal(retries.length, 1);
+	assert.equal(retries[0].message.attempt, 2);
+	assert.equal(retries[0].options.delaySeconds, 60);
+	// The job names the retry's time, not the undo window's.
+	assert.equal(job.scheduled_at, Math.floor(Date.parse(retries[0].message.scheduledAt) / 1000));
+
+	// The undo window's message arrives now (its time has passed): it must not claim the job at attempt 1.
+	await processOutboundQueue(env, { ...leftover, scheduledAt: new Date(Date.now() - 1000).toISOString() });
+	assert.equal(queued.filter(({ message }) => message.kind === "email.scheduled").length, 1);
+	assert.equal(jobRow(db, held.messageId).status, "queued");
+	assert.equal(fakes.smtp.messages.length, 0);
+	// Send now does not restart the attempt count of a job waiting for its retry either.
+	assert.deepEqual(await sendQueuedNow(env, "owner", held.messageId), { ok: false, reason: "retrying" });
+	assert.equal(fakes.smtp.messages.length, 0);
+
+	// The real retry, at its time, still delivers exactly once.
+	await runDueRetry(env, db, held.messageId, retries[0].message);
+	assert.equal(messageRow(db, held.messageId).status, "sent");
+	assert.equal(fakes.smtp.messages.length, 1);
+	await processOutboundQueue(env, { ...retries[0].message, scheduledAt: new Date().toISOString() });
+	assert.equal(fakes.smtp.messages.length, 1);
+});
+
+test("a retry queued before the deploy (attempt 2, the undo window's time on its job) still delivers", async (t) => {
+	const fakes = await servers(t);
+	const { env, db, queued } = await setup(t, fakes);
+	await connectKnown(env);
+	fakes.smtp.failNext("data", 451, "4.3.0 Try again later");
+	const first = await send(env);
+	const retry = queued.find(({ message }) => message.kind === "email.scheduled").message;
+	assert.equal(retry.attempt, 2);
+	// The job as an earlier version left it: the refusal as its error, an old time (or none), unrelated to the message's.
+	db.db
+		.prepare("UPDATE outbound_jobs SET scheduled_at = ? WHERE message_id = ?")
+		.run(Math.floor(Date.now() / 1000) - 600, first.messageId);
+	assert.match(jobRow(db, first.messageId).error, /Try again later/);
+	await processOutboundQueue(env, { ...retry, scheduledAt: new Date().toISOString() });
+	assert.equal(messageRow(db, first.messageId).status, "sent");
+	assert.equal(fakes.smtp.messages.length, 1);
+});
+
+test("a refusal after Send now is thrown, marks the message failed and can be edited again", async (t) => {
+	const fakes = await servers(t);
+	const { env, db } = await setup(t, fakes);
+	await connectKnown(env);
+	const held = await send(env, { scheduledAt: new Date(Date.now() + 30_000) });
+	fakes.smtp.failNext("rcpt", 550, "5.1.1 No such user");
+	assert.match(await rejection(sendQueuedNow(env, "owner", held.messageId)), /550 5\.1\.1 No such user/);
+	assert.equal(messageRow(db, held.messageId).status, "failed");
+	assert.equal(jobRow(db, held.messageId).status, "failed");
+	assert.deepEqual(await cancelQueuedSend(env, "owner", held.messageId), { ok: true, draftId: held.messageId });
+});
+
 test("a 4xx is tried again later with the same Message-ID; a 5xx fails with the server's reply", async (t) => {
 	const fakes = await servers(t);
 	const { env, db, queued } = await setup(t, fakes);
@@ -358,7 +456,7 @@ test("a 4xx is tried again later with the same Message-ID; a 5xx fails with the 
 	const retry = queued.find(({ message }) => message.kind === "email.scheduled");
 	assert.equal(retry.message.attempt, 2);
 	assert.equal(retry.options.delaySeconds, 60);
-	await processOutboundQueue(env, { ...retry.message, scheduledAt: new Date().toISOString() });
+	await runDueRetry(env, db, first.messageId, retry.message);
 	assert.equal(messageRow(db, first.messageId).status, "sent");
 	assert.equal(fakes.smtp.messages.length, 1);
 	assert.match(fakes.smtp.messages[0].raw.toString(), new RegExp(`Message-ID: <kite\\.${first.messageId}@`));

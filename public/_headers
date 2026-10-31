@@ -3,3 +3,6 @@
 
 /fonts/*
   Cache-Control: public,max-age=2592000
+
+/kite-sw.js
+  Cache-Control: no-cache

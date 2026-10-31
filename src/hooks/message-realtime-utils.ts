@@ -65,7 +65,7 @@ export function ensureNotificationServiceWorker(): Promise<ServiceWorkerRegistra
 	if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return Promise.resolve(null);
 	if (!notificationServiceWorkerPromise) {
 		notificationServiceWorkerPromise = navigator.serviceWorker
-			.register(NOTIFICATION_SERVICE_WORKER_URL, { scope: "/" })
+			.register(NOTIFICATION_SERVICE_WORKER_URL, { scope: "/", updateViaCache: "none" })
 			.catch(() => {
 				// The plain Notification constructor fallback still works without one.
 				notificationServiceWorkerPromise = null;

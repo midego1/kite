@@ -40,6 +40,11 @@ const nextConfig: NextConfig = {
 				source: "/(.*)",
 				headers: getSecurityHeaders(),
 			},
+			// The service worker is revalidated on every load so a new version is picked up without waiting a day.
+			{
+				source: "/kite-sw.js",
+				headers: [{ key: "Cache-Control", value: "no-cache" }],
+			},
 			// Documents get a nonce-based policy per request from worker.ts / server/index.ts.
 			...["/api/(.*)", "/jmap/(.*)", "/mcp", "/.well-known/(.*)"].map((source) => ({
 				source,

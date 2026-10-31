@@ -4,7 +4,7 @@ import { calendarEvents } from "@/db/schema";
 import { agentActions } from "@/db/schema/agent-auto-read";
 import type { SessionUser } from "@/lib/auth/types";
 import { emitCalendarWrites } from "@/lib/calendar/webhook-events";
-import { cancelQueuedSend } from "@/lib/email/send";
+import { cancelQueuedSend } from "@/lib/email/queued-send";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import { AgentActionError } from "./action-error";

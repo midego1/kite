@@ -79,22 +79,14 @@ test("Why? on the admin overview groups the failures with a cause, a fix and a s
 		"/agent#ai-provider",
 	);
 	await expect(dialog.locator('[data-ai-failure-group="timeout"]')).toContainText("pick a faster model");
-	// A cut-off answer lists the facts Kite recorded, and the fix names the setting.
+	// A cut-off answer lists the facts Kite recorded. Other specs' cut-off rows (summaries, triage) may be newer
+	// than this seeded one and supply the quoted budget, so the rows are checked and the wording is unit-tested.
 	const cutOff = dialog.locator('[data-ai-failure-group="cut_off"]');
-	for (const [label, value] of [
-		["Output cap", "1,500 tokens (400 for the answer + 1,100 for thinking)"],
-		["Thinking", "on at effort medium"],
-		["Used", "1,500 output tokens, 1,460 of them thinking"],
-		["Retry", "none"],
-	]) {
+	await expect(cutOff).toContainText(claude);
+	for (const label of ["Output cap", "Thinking", "Used", "Retry"])
 		await expect(cutOff.locator("dt", { hasText: label })).toBeVisible();
-		await expect(cutOff.locator("dd", { hasText: value })).toBeVisible();
-	}
-	await expect(cutOff).toContainText(`Clear ${claude}'s reasoning effort, or set it to minimal`);
-	await expect(cutOff.getByRole("link", { name: "Open automatic reading settings" })).toHaveAttribute(
-		"href",
-		"/agent#automatic-reading",
-	);
+	await expect(cutOff.locator("dt", { hasText: "Output cap" }).locator("+ dd")).toHaveText(/^[\d,]+ tokens/);
+	await expect(cutOff).toContainText(/capped \S+'s answer at [\d,]+ tokens/);
 	// Nobody is named: no account, no mailbox.
 	await expect(dialog).not.toContainText(ADMIN.email);
 	await expect(dialog).not.toContainText(`@${DOMAIN}`);
@@ -119,7 +111,8 @@ test("Ask AI from the overview opens the mailbox's assistant with the summary, u
 	const input = page.getByRole("region", { name: "Email assistant" }).getByRole("textbox", { name: "Message Kite AI" });
 	await expect(input).toHaveValue(/^Kite recorded \d+ failed AI requests in the last 24 hours\./);
 	await expect(input).toHaveValue(new RegExp(`provider_auth: \\d+ times[\\s\\S]*OpenAI · ${model}`));
-	await expect(input).toHaveValue(/Kite facts: Output cap: 1,500 tokens \(400 for the answer \+ 1,100 for thinking\)/);
+	await expect(input).toHaveValue(/cut_off: \d+ times?[\s\S]*Kite facts: Output cap: [\d,]+ tokens/);
+	await expect(input).toHaveValue(/Kite's diagnosis: [^\n]*capped \S+'s answer at [\d,]+ tokens/);
 	await expect(input).toHaveValue(/About Automatic reading: /);
 	await expect(input).not.toHaveValue(new RegExp(`@${DOMAIN}`));
 	await expect(input).toBeFocused();

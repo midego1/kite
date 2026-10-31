@@ -8,6 +8,7 @@ import { apiContext, deliverInbound, setSendingSettings, uniqueToken } from "./s
 
 type Attachment = { id: string; filename: string; size: number };
 type Verification = { checked: number; missing: { key: string; messageIds: string[] }[] };
+type Report = { objects: { rows: number; keys: number; bytes: number; storedBytes: number } };
 
 /** A PDF-looking file with random content, so a byte-exact comparison means something. */
 function pdfFixture(): Buffer {
@@ -46,6 +47,10 @@ async function createDraft(api: APIRequestContext, data: Record<string, unknown>
 	).draft;
 }
 
+async function objectCounts(api: APIRequestContext): Promise<Report["objects"]> {
+	return (await json<Report>(await api.get("/api/admin/attachment-storage"))).objects;
+}
+
 async function verifyObjects(api: APIRequestContext): Promise<Verification> {
 	return (await json<{ verify: Verification }>(await api.get("/api/admin/attachment-storage?verify=1"))).verify;
 }
@@ -69,6 +74,7 @@ test("sent and forwarded files share their object and survive deleting the draft
 
 	// Upload to a draft, send it, then delete the draft as the composer does: the Sent copy still downloads.
 	const uploaded = pdfFixture();
+	const beforeSend = await objectCounts(api);
 	const draft = await createDraft(api, { mailboxId, subject: `Shared upload ${token}`, text: "See the file." });
 	const stored = await json<{ attachments: Attachment[] }>(
 		await api.post(`/api/drafts/${draft.id}/attachments`, {
@@ -88,6 +94,9 @@ test("sent and forwarded files share their object and survive deleting the draft
 			},
 		}),
 	);
+	// The draft and the Sent copy are two rows naming one object.
+	const afterSend = await objectCounts(api);
+	expect([afterSend.rows - beforeSend.rows, afterSend.keys - beforeSend.keys]).toEqual([2, 1]);
 	await json(await api.delete(`/api/drafts/${draft.id}`));
 	const [sentFile] = await attachmentsOf(api, sent.messageId);
 	expect(sentFile).toMatchObject({ filename: "plan.pdf", size: uploaded.length });
@@ -103,12 +112,15 @@ test("sent and forwarded files share their object and survive deleting the draft
 		attachments: [{ filename: "report.pdf", contentType: "application/pdf", content: received }],
 	});
 	const [originalFile] = await attachmentsOf(api, original.id);
+	const beforeForward = await objectCounts(api);
 	const forward = await createDraft(api, {
 		mailboxId,
 		subject: `Fwd: Shared forward ${token}`,
 		forwardOfMessageId: original.id,
 	});
 	expect(forward.attachments).toMatchObject([{ filename: "report.pdf", size: received.length }]);
+	const afterForward = await objectCounts(api);
+	expect([afterForward.rows - beforeForward.rows, afterForward.keys - beforeForward.keys]).toEqual([1, 0]);
 	expect((await download(api, forward.id, forward.attachments[0].id)).equals(received)).toBe(true);
 	await json(await api.delete(`/api/drafts/${forward.id}`));
 	expect((await download(api, original.id, originalFile.id)).equals(received)).toBe(true);
@@ -136,10 +148,8 @@ test("the storage report is for admins only", async () => {
 	expect((await anonymous.get("/api/admin/attachment-storage")).status()).toBe(401);
 	await anonymous.dispose();
 	const api = await apiContext(STORAGE_STATE);
-	const report = await json<{ objects: { rows: number; keys: number; bytes: number; storedBytes: number } }>(
-		await api.get("/api/admin/attachment-storage"),
-	);
-	expect(report.objects.keys).toBeLessThanOrEqual(report.objects.rows);
-	expect(report.objects.storedBytes).toBeLessThanOrEqual(report.objects.bytes);
+	const objects = await objectCounts(api);
+	expect(objects.keys).toBeLessThanOrEqual(objects.rows);
+	expect(objects.storedBytes).toBeLessThanOrEqual(objects.bytes);
 	await api.dispose();
 });

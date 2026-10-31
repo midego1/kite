@@ -17,6 +17,8 @@ import {
 import { useSyncedState } from "@/hooks/use-synced-state";
 import type { LoadingTransitionProps } from "./loading-transition-types";
 import { LoadingRecovery } from "./loading-recovery";
+import { StartupSteps } from "./startup-steps";
+import { useStartupSteps, useVisibleStartupTime } from "./use-startup-steps";
 
 const MINIMUM_LOADING_TIME = 600;
 const COMPLETION_TIME = 220;
@@ -24,6 +26,49 @@ const MAXIMUM_DATA_WAIT = 10_000;
 /** The overlay's opacity transition (`duration-300`): the kite's return stops once the screen has faded out. */
 const OVERLAY_FADE_TIME = 300;
 let hasShownInitialLoadingTransition = false;
+
+/**
+ * The progress bar with the running step above it and the step log below (use-startup-steps.ts), mounted from the
+ * server's screen until the overlay has faded out (`progressMounted`): the icon block never jumps during the fade,
+ * the return scene's kite stays until the fade ends (#234), and afterwards nothing the stats store learns re-renders
+ * the shell. The kite hangs from the bar's own box, which holds only the kite, the track and the reduced-motion caption.
+ */
+function StartupProgress({
+	ready,
+	progress,
+	visibleMs,
+}: {
+	ready: boolean;
+	progress: number;
+	visibleMs: number | null;
+}) {
+	const { steps, statusLabel } = useStartupSteps(ready, visibleMs);
+	return (
+		<div className="w-full">
+			<p aria-hidden="true" className="mb-2 flex w-full items-baseline justify-between gap-3 text-sm text-neutral-700">
+				<span data-startup-status className="min-w-0 truncate">
+					{statusLabel}
+				</span>
+				<span className="text-xs tabular-nums text-neutral-900">{Math.round(progress)}%</span>
+			</p>
+			<div className="relative w-full">
+				{/* The kite hangs from just above the bar, so the two never cross. */}
+				<ReloadReturnKite />
+				<div className="reload-return-track h-1.5 overflow-hidden rounded-full bg-blue-100">
+					<div
+						className="reload-return-progress h-full rounded-full bg-blue-600 transition-[width] duration-200 ease-out"
+						style={{ width: `${progress}%` }}
+					/>
+				</div>
+				{/* The reduced-motion caption, below the bar without moving it; the live region above says what happens. */}
+				<p aria-hidden="true" className="reload-return-static text-sm">
+					{RELOAD_RETURN_STATIC_TEXT}
+				</p>
+			</div>
+			<StartupSteps steps={steps} />
+		</div>
+	);
+}
 
 /** Rendered after the page: its layout effect runs once the page itself has committed (the boot trace's phase). */
 function ChildrenCommitted() {
@@ -45,6 +90,11 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 	const [dataWaitExpired, setDataWaitExpired] = useState(false);
 	const loadingIds = useRef(new Set<string>());
 	const fetchingQueries = useIsFetching();
+	// The step log's last line: the visible time the start took, known once the screen completes.
+	const [visibleMs, setVisibleMs] = useState<number | null>(null);
+	const readVisibleMs = useVisibleStartupTime();
+	// The bar, the step log and the return kite stay until the overlay has faded out; then they leave the tree.
+	const [progressMounted, setProgressMounted] = useState(showInitialLoader);
 
 	const reportLoading = useCallback((id: string, loading: boolean) => {
 		if (loading) loadingIds.current.add(id);
@@ -97,7 +147,10 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 	useEffect(() => {
 		if (!canComplete) return;
 		const remaining = showInitialLoader ? Math.max(0, MINIMUM_LOADING_TIME - (Date.now() - startedAt)) : 0;
-		const completeTimer = window.setTimeout(() => setProgress(100), remaining);
+		const completeTimer = window.setTimeout(() => {
+			setProgress(100);
+			setVisibleMs(readVisibleMs());
+		}, remaining);
 		const revealTimer = window.setTimeout(() => {
 			if (showInitialLoader) {
 				hasShownInitialLoadingTransition = true;
@@ -112,12 +165,17 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 		const returnTimer = isReloadReturnActive()
 			? window.setTimeout(endReloadReturn, remaining + COMPLETION_TIME + OVERLAY_FADE_TIME)
 			: null;
+		const unmountTimer = window.setTimeout(
+			() => setProgressMounted(false),
+			remaining + COMPLETION_TIME + OVERLAY_FADE_TIME,
+		);
 		return () => {
 			window.clearTimeout(completeTimer);
 			window.clearTimeout(revealTimer);
+			window.clearTimeout(unmountTimer);
 			if (returnTimer !== null) window.clearTimeout(returnTimer);
 		};
-	}, [canComplete, showInitialLoader, startedAt]);
+	}, [canComplete, showInitialLoader, startedAt, readVisibleMs]);
 
 	const showTopLoadingBar = initialLoadComplete && failure == null && (!ready || pendingLoads > 0);
 
@@ -141,13 +199,18 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 				>
 					{/* Shown only after a reload from the "Kite was updated" notice; otherwise display: none. */}
 					<ReloadReturnSky />
-					<div className={`relative flex flex-col items-center gap-6 ${failure == null ? "w-64" : "w-80"}`}>
-						<img
-							src={iconUrl}
-							onError={() => setIconUrl("/icon-96.png")}
-							alt=""
-							className="reload-return-hidden h-20 w-20 rounded-2xl object-contain"
-						/>
+					<div className="relative flex w-80 flex-col items-center gap-6">
+						<div className="reload-return-hidden flex flex-col items-center gap-3">
+							<img
+								src={iconUrl}
+								onError={() => setIconUrl("/icon-96.png")}
+								alt=""
+								className="reload-return-hidden h-20 w-20 rounded-2xl object-contain"
+							/>
+							<span aria-hidden="true" className="text-xl font-bold tracking-tight text-neutral-900">
+								{branding.appName}
+							</span>
+						</div>
 						{failure ?? (
 							<>
 								{loaderVisible && (
@@ -156,20 +219,7 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 										<span className="sr-only reload-return-only">{RELOAD_RETURN_ANNOUNCEMENT}</span>
 									</>
 								)}
-								<div className="relative w-full">
-									{/* The kite hangs from just above the bar, so the two never cross. */}
-									<ReloadReturnKite />
-									<div className="reload-return-track h-1.5 overflow-hidden rounded-full bg-blue-100">
-										<div
-											className="reload-return-progress h-full rounded-full bg-blue-600 transition-[width] duration-200 ease-out"
-											style={{ width: `${progress}%` }}
-										/>
-									</div>
-									{/* The reduced-motion caption, below the bar without moving it; the live region above says what happens. */}
-									<p aria-hidden="true" className="reload-return-static text-sm">
-										{RELOAD_RETURN_STATIC_TEXT}
-									</p>
-								</div>
+								{progressMounted && <StartupProgress ready={ready} progress={progress} visibleMs={visibleMs} />}
 								<LoadingRecovery active={loaderVisible} />
 							</>
 						)}

@@ -32,7 +32,10 @@ test("the sidebar footer shows when this build was made and opens the release no
 	// The label is filled in after mount, in the browser's locale and time zone.
 	await expect(updated).not.toHaveText(/…/);
 	await expect(page.getByRole("link", { name: "Source code" })).toBeVisible();
-	await expect(page.getByText(new RegExp(`Kite v${RELEASE_VERSION.replaceAll(".", "\\.")}`))).toBeVisible();
+	// In the sidebar: the loading screen's own "Loading Kite v…" line can still be in the tree while the app fades in.
+	await expect(
+		page.locator("aside").getByText(new RegExp(`Kite v${RELEASE_VERSION.replaceAll(".", "\\.")}`)),
+	).toBeVisible();
 
 	await updated.click();
 	const dialog = page.getByRole("dialog", { name: /What's new in Kite/ });

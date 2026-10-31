@@ -236,30 +236,37 @@ export async function copyMessageAttachments(
 		.from(messageAttachments)
 		.where(eq(messageAttachments.messageId, fromMessageId));
 	const copied: AttachmentMetadata[] = [];
+	const ids: string[] = [];
 	const written: string[] = [];
-	for (const source of rows) {
-		const row: SharedAttachmentRow = {
-			id: newId("att"),
-			messageId: toMessageId,
-			// Rows stored before names were sanitised keep theirs; the copy gets a clean one.
-			filename: sanitizeFilename(source.filename),
-			contentType: source.contentType,
-			disposition: source.disposition,
-			contentId: source.contentId,
-		};
-		const size = isRawAttachmentKey(source.r2Key)
-			? await copyRawAttachment(env, source, row, written)
-			: await copyObjectAttachment(env, source, row, written);
-		if (size === null) continue;
-		copied.push({
-			id: row.id,
-			messageId: toMessageId,
-			filename: row.filename,
-			type: row.contentType,
-			size,
-			disposition: row.disposition,
-			contentId: row.contentId,
-		});
+	try {
+		for (const source of rows) {
+			const row: SharedAttachmentRow = {
+				id: newId("att"),
+				messageId: toMessageId,
+				// Rows stored before names were sanitised keep theirs; the copy gets a clean one.
+				filename: sanitizeFilename(source.filename),
+				contentType: source.contentType,
+				disposition: source.disposition,
+				contentId: source.contentId,
+			};
+			ids.push(row.id);
+			const size = isRawAttachmentKey(source.r2Key)
+				? await copyRawAttachment(env, source, row, written)
+				: await copyObjectAttachment(env, source, row, written);
+			if (size === null) continue;
+			copied.push({
+				id: row.id,
+				messageId: toMessageId,
+				filename: row.filename,
+				type: row.contentType,
+				size,
+				disposition: row.disposition,
+				contentId: row.contentId,
+			});
+		}
+	} catch (error) {
+		await rollBackStoredAttachments(env, ids, written);
+		throw error;
 	}
 	return copied;
 }

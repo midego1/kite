@@ -23,3 +23,11 @@ export const FOLDER_COLOR_OPTIONS: FolderColorOption[] = [
 	{ value: "#16a34a", label: "Green" },
 	{ value: "#0d9488", label: "Teal" },
 ];
+
+/**
+ * Whether someone picked a folder's colour. The flag says so for the default blue too; any other colour was picked
+ * whatever the flag says, which keeps folders coloured before migration 0086 (and while it is pending) tinted.
+ */
+export function isPickedFolderColor(color: string, colorIsCustom?: boolean): boolean {
+	return colorIsCustom === true || color.toLowerCase() !== DEFAULT_FOLDER_COLOR;
+}

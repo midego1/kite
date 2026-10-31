@@ -3,6 +3,7 @@ import { confirmReportSpam } from "@/components/messages/spam-report";
 import { offerUndoForMove } from "@/components/messages/undo-utils";
 import { postBulkMessageAction } from "@/components/messages/bulk-request";
 import type { MessageCounts, MessageFolder } from "@/hooks/types";
+import { isPickedFolderColor } from "@/lib/folders/colors";
 import { Folder } from "lucide-react";
 import type { NavLink } from "./components-nav-types";
 import type { CustomFolder } from "./dashboard-nav-types";
@@ -38,6 +39,7 @@ export function customFolderNavLink(folder: CustomFolder, unread: number | undef
 		icon: Folder,
 		preloadMessages: true,
 		iconColor: folder.color,
+		railIconColor: isPickedFolderColor(folder.color, folder.colorIsCustom) ? folder.color : undefined,
 		count: unread,
 		onMessageDrop: (messageIds: string[]) => void moveMessagesToCustomFolder(messageIds, folder.id),
 	};

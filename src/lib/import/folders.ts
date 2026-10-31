@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { folders } from "@/db/schema";
+import { insertRow } from "@/lib/db/pending-columns";
 import { newId } from "@/lib/ids";
 
 /**
@@ -25,10 +26,12 @@ export async function ensureImportFolder(
 	const existing = await find();
 	if (existing) return existing;
 	// A concurrent run may create it first; the unique (mailbox, name) index keeps one.
-	await db
-		.insert(folders)
-		.values({ id: newId("fld"), userId: mailbox.userId, mailboxId: mailbox.id, name: wanted })
-		.onConflictDoNothing();
+	await insertRow(
+		db,
+		folders,
+		{ id: newId("fld"), userId: mailbox.userId, mailboxId: mailbox.id, name: wanted },
+		{ ignoreConflict: true },
+	);
 	const created = await find();
 	if (!created) throw new Error(`Could not create the folder ${wanted}`);
 	return created;

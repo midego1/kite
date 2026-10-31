@@ -1,6 +1,7 @@
 import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { queryInChunks } from "@/db/chunk-utils";
 import { folders, messages } from "@/db/schema";
+import { insertRow } from "@/lib/db/pending-columns";
 import { newId } from "@/lib/ids";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { visibleDraftsCondition } from "@/lib/messages/mailbox-scope";
@@ -222,7 +223,7 @@ export const mailboxSet: JmapMethodHandler = async (ctx, args) => {
 		}
 		const id = newId("fld");
 		try {
-			await ctx.db.insert(folders).values({ id, userId: mailbox.userId, mailboxId: mailbox.id, name });
+			await insertRow(ctx.db, folders, { id, userId: mailbox.userId, mailboxId: mailbox.id, name });
 		} catch {
 			notCreated[creationId] = {
 				type: "invalidProperties",

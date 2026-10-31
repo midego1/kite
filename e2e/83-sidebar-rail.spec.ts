@@ -6,8 +6,10 @@ import { STORAGE_STATE } from "./support/constants";
 /** Set to a directory to save the rail's screenshots there (the PR's before and after). */
 const SHOT_DIR = process.env.RAIL_SHOT_DIR;
 
-const FOLDER_COLORS = [
-	{ name: "Rail default", color: "#2563eb" },
+/** No colour is how the create dialog sends a folder whose swatch nobody clicked; a colour, even the default blue, is a pick. */
+const FOLDER_COLORS: { name: string; color?: string }[] = [
+	{ name: "Rail default" },
+	{ name: "Rail blue", color: "#2563eb" },
 	{ name: "Rail custom", color: "#dc2626" },
 ];
 
@@ -33,7 +35,9 @@ test.beforeAll(async () => {
 	expect(created.ok(), await created.text()).toBe(true);
 	railMailboxId = ((await created.json()) as { id: string }).id;
 	for (const { name, color } of FOLDER_COLORS) {
-		const folder = await api.post("/api/folders", { data: { mailboxId: railMailboxId, name, color } });
+		const folder = await api.post("/api/folders", {
+			data: { mailboxId: railMailboxId, name, ...(color ? { color } : {}) },
+		});
 		expect(folder.ok(), await folder.text()).toBe(true);
 	}
 	await api.dispose();
@@ -137,6 +141,7 @@ for (const variant of VARIANTS) {
 		// An even rhythm inside a group: the gap between the folder links equals the gap between the main links.
 		const gap = (a: string, b: string) => named(b).box.y - (named(a).box.y + named(a).box.height);
 		expect(Math.abs(gap("Starred", "Snoozed") - gap("Snoozed", "Sent"))).toBeLessThanOrEqual(0.5);
+		expect(Math.abs(gap("Rail blue", "Rail custom") - gap("Starred", "Snoozed"))).toBeLessThanOrEqual(0.5);
 		expect(Math.abs(gap("Rail custom", "Rail default") - gap("Starred", "Snoozed"))).toBeLessThanOrEqual(0.5);
 
 		// The "99+" badge is a small pill at the top right that stays clear of the glyph.
@@ -155,13 +160,14 @@ for (const variant of VARIANTS) {
 		expect(badgeBox.y + badgeBox.height / 2).toBeLessThan(named("Inbox").box.y + 12);
 		expect(badgeBox.x + badgeBox.width / 2).toBeGreaterThan(centres[0]);
 
-		// The default folder colour is not a choice, so it stays as neutral as the system folders; a chosen one tints.
+		// A folder nobody coloured stays as neutral as the system folders; any picked colour tints, the default blue too.
 		const iconColor = (name: string) =>
 			nav
 				.getByRole("link", { name })
 				.locator("svg")
 				.evaluate((svg) => getComputedStyle(svg).color);
 		expect(await iconColor("Rail default")).toBe(await iconColor("Starred"));
+		expect(await iconColor("Rail blue")).toBe("rgb(37, 99, 235)");
 		expect(await iconColor("Rail custom")).toBe("rgb(220, 38, 38)");
 
 		// The active item is the same square as the others.

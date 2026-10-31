@@ -110,7 +110,7 @@ async function initialTotal(env: JobEnv, direction: AttachmentStorageDirection):
 	return (await getReclaimCounts(env))?.pending.rows ?? 0;
 }
 
-export type JobFailure = { ok: false; status: number; code: string; error: string };
+type JobFailure = { ok: false; status: number; code: string; error: string };
 export type JobAnswer = { ok: true; job: AttachmentStorageJobView } | JobFailure;
 
 const failure = (status: number, code: string, error: string): JobFailure => ({ ok: false, status, code, error });

@@ -14,17 +14,29 @@ import type {
  * which phase runs, where its keyset cursor is and what it has counted, so a killed batch is simply run again.
  */
 
-export const ATTACHMENT_STORAGE_JOB_KIND = "attachments.storage";
+const ATTACHMENT_STORAGE_JOB_KIND = "attachments.storage";
 
-/** How long a delivery holds the job for one batch; a batch stops starting items after `BATCH_BUDGET_MS`. */
+/**
+ * How long a delivery holds the job for one batch; a batch stops starting items after `BATCH_BUDGET_MS`.
+ * @public Exercised by the unit tests.
+ */
 export const LEASE_MS = 60_000;
 /** Wall-clock time a batch may spend before it queues the next one (the mailbox purge's 20 s). */
 export const BATCH_BUDGET_MS = 20_000;
-/** A running job with no claim or batch for this long has stopped (a lost message, a deploy, a killed isolate). */
+/**
+ * A running job with no claim or batch for this long has stopped (a lost message, a deploy, a killed isolate).
+ * @public Exercised by the unit tests.
+ */
 export const STALL_MS = 2 * 60_000;
-/** The cron revives a stopped job only this soon after its last batch, so an old restored backup starts nothing. */
+/**
+ * The cron revives a stopped job only this soon after its last batch, so an old restored backup starts nothing.
+ * @public Exercised by the unit tests.
+ */
 export const REVIVE_WINDOW_MS = 60 * 60_000;
-/** Consecutive failed batches before the job is marked failed. */
+/**
+ * Consecutive failed batches before the job is marked failed.
+ * @public Exercised by the unit tests.
+ */
 export const MAX_BATCH_FAILURES = 5;
 /** Seconds before a failed batch is tried again. */
 export const FAILED_BATCH_RETRY_SECONDS = 60;

@@ -301,6 +301,6 @@ test("line breaks in an HTML body reach the PDF as separate lines", () => {
 	});
 	const text = Buffer.from(pdf.bytes).toString("latin1");
 	for (const line of ["Thanks for the update.", "Kind regards,", "John", "ACME"])
-		assert.match(text, new RegExp(`\\(${line.replace(/\./g, "\\.")}\\) Tj`));
+		assert.ok(text.includes(`(${line}) Tj`), `${line} is its own line`);
 	assert.doesNotMatch(text, /regards,John/);
 });

@@ -118,6 +118,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 	const queueGenerationRef = useRef(0);
 	const menuRef = useRef<HTMLDetailsElement | null>(null);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
+	const focusInputWhenReady = useRef(false);
 	const chatScrollRef = useRef<HTMLDivElement | null>(null);
 	const stickToBottomRef = useRef(true);
 	useChatContentResize(chatScrollRef, stickToBottomRef, view === "chat");
@@ -581,8 +582,15 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 	useRequestedAssistantPrompt(open && !!mailboxId, (text) => {
 		startNewChat();
 		setInput(text);
-		window.requestAnimationFrame(() => inputRef.current?.focus());
+		focusInputWhenReady.current = true;
 	});
+	// The input is disabled until the settings load; it takes the focus once it can.
+	useEffect(() => {
+		const field = inputRef.current;
+		if (!focusInputWhenReady.current || !field || field.disabled) return;
+		focusInputWhenReady.current = false;
+		field.focus();
+	}, [settings, providerConfigured, loadingConversation, input]);
 	const draftActions = uniqueAgentDraftActions(messages);
 	const activeTool = busy ? activeAgentTool(messages) : null;
 	const panelStyle = agentPanelStyle(docked);

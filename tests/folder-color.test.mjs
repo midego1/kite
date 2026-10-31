@@ -20,7 +20,7 @@ await build({
 			export { selectRows } from "./src/lib/db/pending-columns.ts";
 			export { insertFolder } from "./src/lib/folders/insert.ts";
 			export { folderSchema } from "./src/lib/validators.ts";
-			export { customFolderNavLink } from "./src/components/dashboard-nav-utils.ts";
+			export { isPickedFolderColor } from "./src/lib/folders/colors.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "folder-color-entry.ts",
@@ -92,12 +92,10 @@ test("the create request marks a colour as picked only when it is sent", () => {
 });
 
 test("the rail shows a picked colour, including the default blue, and nothing otherwise", () => {
-	const link = (folder) => kite.customFolderNavLink({ id: "f", name: "F", ...folder }, undefined);
-	assert.equal(link({ color: "#2563eb", colorIsCustom: true }).railIconColor, "#2563eb");
-	assert.equal(link({ color: "#dc2626", colorIsCustom: true }).railIconColor, "#dc2626");
-	assert.equal(link({ color: "#2563eb", colorIsCustom: false }).railIconColor, undefined);
+	assert.equal(kite.isPickedFolderColor("#2563eb", true), true);
+	assert.equal(kite.isPickedFolderColor("#dc2626", true), true);
+	assert.equal(kite.isPickedFolderColor("#2563eb", false), false);
+	assert.equal(kite.isPickedFolderColor("#2563EB"), false);
 	// Coloured before the flag existed: still picked.
-	assert.equal(link({ color: "#dc2626", colorIsCustom: false }).railIconColor, "#dc2626");
-	assert.equal(link({ color: "#2563eb" }).railIconColor, undefined);
-	assert.equal(link({ color: "#2563eb" }).iconColor, "#2563eb");
+	assert.equal(kite.isPickedFolderColor("#dc2626", false), true);
 });

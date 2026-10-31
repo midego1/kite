@@ -3,7 +3,7 @@ import { confirmReportSpam } from "@/components/messages/spam-report";
 import { offerUndoForMove } from "@/components/messages/undo-utils";
 import { postBulkMessageAction } from "@/components/messages/bulk-request";
 import type { MessageCounts, MessageFolder } from "@/hooks/types";
-import { DEFAULT_FOLDER_COLOR } from "@/lib/folders/colors";
+import { isPickedFolderColor } from "@/lib/folders/colors";
 import { Folder } from "lucide-react";
 import type { NavLink } from "./components-nav-types";
 import type { CustomFolder } from "./dashboard-nav-types";
@@ -31,14 +31,6 @@ function moveMessagesToCustomFolder(messageIds: string[], folderId: string) {
 	return moveMessages({ messageIds, action: "folder", folderId });
 }
 
-/**
- * Whether someone picked a folder's colour. The flag says so for the default blue too; any other colour was picked
- * whatever the flag says, which keeps folders coloured before migration 0086 (and while it is pending) tinted.
- */
-function isPickedFolderColor(folder: CustomFolder): boolean {
-	return folder.colorIsCustom === true || folder.color.toLowerCase() !== DEFAULT_FOLDER_COLOR;
-}
-
 /** A user folder's sidebar link; dropping mail on it files the mail there (within the folder's own mailbox). */
 export function customFolderNavLink(folder: CustomFolder, unread: number | undefined): NavLink {
 	return {
@@ -47,7 +39,7 @@ export function customFolderNavLink(folder: CustomFolder, unread: number | undef
 		icon: Folder,
 		preloadMessages: true,
 		iconColor: folder.color,
-		railIconColor: isPickedFolderColor(folder) ? folder.color : undefined,
+		railIconColor: isPickedFolderColor(folder.color, folder.colorIsCustom) ? folder.color : undefined,
 		count: unread,
 		onMessageDrop: (messageIds: string[]) => void moveMessagesToCustomFolder(messageIds, folder.id),
 	};

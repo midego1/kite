@@ -1,4 +1,4 @@
-import { BOOT_TRACE_GLOBAL, markBootPhase } from "./boot-trace-utils";
+import { BOOT_TRACE_GLOBAL, bootCopyLabel, markBootPhase } from "./boot-trace-utils";
 
 /**
  * sessionStorage key counting the automatic reloads of this tab: `{ count, since, stalls }`, where `stalls` counts
@@ -246,13 +246,11 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	};
 	const copyDetails = (button) => {
 		const current = trace();
-		if (!current || typeof current.details !== "function") return;
-		const json = JSON.stringify(current.details(), null, 2);
-		try {
-			navigator.clipboard.writeText(json).then(() => {
-				button.textContent = "Copied";
-			}, () => {});
-		} catch {}
+		if (!current || typeof current.copy !== "function") return;
+		const box = document.getElementById(failureId);
+		current.copy(box && box.querySelector("[data-boot-details]")).then((result) => {
+			button.textContent = ${JSON.stringify(Object.fromEntries((["copied", "selected", "failed"] as const).map((result) => [result, bootCopyLabel(result)])))}[result] || "Copy details";
+		});
 	};
 	const giveUp = (message = "[kite] The app's files could not be loaded after " + delays.length + " reloads.") => {
 		if (!gaveUp) console.error(message);

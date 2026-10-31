@@ -31,6 +31,11 @@ export type BootPhase = (typeof BOOT_PHASES)[number];
 const BOOT_FREEZE_GAP_MS = 2_000;
 /** How many in-flight requests, slow files and long frames the details list. */
 const BOOT_DETAILS_LIMIT = 5;
+/**
+ * Paths whose next segment is a bearer token (Drive public links and shared attachment links): it is replaced with
+ * `:token` before anything is kept. Reset and invitation tokens travel in query strings, which are never kept.
+ */
+const BOOT_SECRET_PATH = /^(\/d\/|\/api\/public\/drive\/|\/api\/shared-files\/)[^/]+/;
 /** Only animation frames longer than this are kept. */
 const BOOT_LONG_FRAME_MS = 1_000;
 
@@ -56,6 +61,7 @@ export type BootDetails = {
 
 type BootTrace = {
 	phase?: (name: BootPhase) => void;
+	copy?: (pre: HTMLElement | null) => Promise<BootCopyResult>;
 	details?: () => BootDetails;
 	text?: () => string;
 };
@@ -72,6 +78,25 @@ export function markBootPhase(phase: BootPhase): void {
 		bootTrace()?.phase?.(phase);
 	} catch {
 		// The trace is diagnostics only; the app never depends on it.
+	}
+}
+
+/** What Copy details did: copied the JSON, or (without the clipboard API) selected the text for the user to copy. */
+export type BootCopyResult = "copied" | "selected" | "failed";
+
+/** The label Copy details shows after `result`. */
+export function bootCopyLabel(result: BootCopyResult): string {
+	if (result === "copied") return "Copied";
+	if (result === "selected") return "Text selected, copy it";
+	return "Copy details";
+}
+
+/** Copy details: the JSON on the clipboard, or `pre`'s text selected where the clipboard API is missing. */
+export async function copyBootDetails(pre: HTMLElement | null): Promise<BootCopyResult> {
+	try {
+		return (await bootTrace()?.copy?.(pre)) ?? "failed";
+	} catch {
+		return "failed";
 	}
 }
 
@@ -102,12 +127,14 @@ export const bootTraceScript = `(() => {
 		const limit = ${BOOT_DETAILS_LIMIT};
 		const now = () => Math.round(performance.now());
 		const visible = () => document.visibilityState !== "hidden";
-		// A path of ours without its query string or fragment; another origin only by its origin.
+		// A path of ours without its query string or fragment, and without the token of a link that grants access by
+		// itself; another origin only by its origin.
 		const pathOf = (url) => {
 			try {
 				const parsed = new URL(String(url), location.href);
 				if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return parsed.protocol;
-				return parsed.origin === location.origin ? parsed.pathname.slice(0, 200) : parsed.origin;
+				if (parsed.origin !== location.origin) return parsed.origin;
+				return parsed.pathname.replace(${BOOT_SECRET_PATH}, "$1:token").slice(0, 200);
 			} catch {
 				return "?";
 			}
@@ -187,16 +214,23 @@ export const bootTraceScript = `(() => {
 			list.sort((a, b) => b[by] - a[by]);
 			if (list.length > limit) list.length = limit;
 		};
-		try {
-			new PerformanceObserver((list) => {
-				for (const entry of list.getEntries()) {
-					if (ended) return;
-					keepTop(slowest, { path: pathOf(entry.name), startMs: Math.round(entry.startTime), durationMs: Math.round(entry.duration) }, "durationMs");
-				}
-			}).observe({ type: "resource", buffered: true });
-		} catch {}
-		try {
-			new PerformanceObserver((list) => {
+		const observers = [];
+		const observe = (type, callback) => {
+			try {
+				const observer = new PerformanceObserver(callback);
+				observer.observe({ type, buffered: true });
+				observers.push(observer);
+			} catch {}
+		};
+		observe("resource", (list) => {
+			for (const entry of list.getEntries()) {
+				keepTop(slowest, { path: pathOf(entry.name), startMs: Math.round(entry.startTime), durationMs: Math.round(entry.duration) }, "durationMs");
+			}
+		});
+		// Only where the browser has them: Safari and Firefox warn in the console about an unknown entry type.
+		const types = typeof PerformanceObserver === "undefined" ? null : PerformanceObserver.supportedEntryTypes;
+		if (types && types.includes("long-animation-frame")) {
+			observe("long-animation-frame", (list) => {
 				for (const entry of list.getEntries()) {
 					if (entry.duration <= ${BOOT_LONG_FRAME_MS}) continue;
 					const scripts = Array.from(entry.scripts || [])
@@ -219,8 +253,8 @@ export const bootTraceScript = `(() => {
 						"durationMs",
 					);
 				}
-			}).observe({ type: "long-animation-frame", buffered: true });
-		} catch {}
+			});
+		}
 
 		addEventListener("visibilitychange", () => {
 			if (ended) return;
@@ -239,6 +273,7 @@ export const bootTraceScript = `(() => {
 			ended = true;
 			record.ended = now();
 			save();
+			for (const observer of observers) observer.disconnect();
 		};
 		const details = () => {
 			const at = now();
@@ -284,6 +319,30 @@ export const bootTraceScript = `(() => {
 			return lines.join("\\n");
 		};
 
+		// Copies the details as JSON; without the clipboard API (plain http) or permission, it selects the text shown in
+		// \`pre\` and asks the browser to copy that. Resolves to "copied", "selected" or "failed".
+		const copy = (pre) => {
+			const select = () => {
+				if (!pre) return "failed";
+				try {
+					const range = document.createRange();
+					range.selectNodeContents(pre);
+					const selection = getSelection();
+					selection.removeAllRanges();
+					selection.addRange(range);
+					return document.execCommand("copy") ? "copied" : "selected";
+				} catch {
+					return "failed";
+				}
+			};
+			try {
+				if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+					return navigator.clipboard.writeText(JSON.stringify(details(), null, 2)).then(() => "copied", select);
+				}
+			} catch {}
+			return Promise.resolve(select());
+		};
+
 		window[${JSON.stringify(BOOT_TRACE_GLOBAL)}] = {
 			phase: (name) => {
 				if (ended) return;
@@ -309,6 +368,7 @@ export const bootTraceScript = `(() => {
 				record.visible = visible();
 				save();
 			},
+			copy,
 			remount: (count) => {
 				if (ended) return;
 				record.remounts = count;

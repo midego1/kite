@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { readBootDetails } from "./boot-trace-utils";
+import { useEffect, useRef, useState } from "react";
+import { type BootCopyResult, bootCopyLabel, copyBootDetails, readBootDetails } from "./boot-trace-utils";
 import { type VisibleClock, loadingRecoveryDelay, startVisibleClock, tickVisibleClock } from "./loading-recovery-utils";
 
 /**
@@ -49,7 +49,8 @@ export function LoadingRecovery({ active }: { active: boolean }) {
 /** The boot trace (boot-trace-utils.ts), folded away: what to send along when reporting a start that hangs. */
 function BootDetails() {
 	const [snapshot, setSnapshot] = useState(readBootDetails);
-	const [copied, setCopied] = useState(false);
+	const [copied, setCopied] = useState<BootCopyResult>("failed");
+	const lines = useRef<HTMLPreElement>(null);
 	if (!snapshot) return null;
 	return (
 		<details
@@ -60,6 +61,7 @@ function BootDetails() {
 		>
 			<summary className="cursor-pointer text-center">Details</summary>
 			<pre
+				ref={lines}
 				data-boot-details
 				className="mt-2 max-h-48 overflow-auto font-mono text-[11px] break-words whitespace-pre-wrap"
 			>
@@ -68,15 +70,9 @@ function BootDetails() {
 			<button
 				type="button"
 				className="mt-2 rounded-md border border-neutral-300 px-2.5 py-1 hover:bg-neutral-100"
-				onClick={() => {
-					const current = readBootDetails() ?? snapshot;
-					void navigator.clipboard
-						?.writeText(JSON.stringify(current.details, null, 2))
-						.then(() => setCopied(true))
-						.catch(() => undefined);
-				}}
+				onClick={() => void copyBootDetails(lines.current).then(setCopied)}
 			>
-				{copied ? "Copied" : "Copy details"}
+				{bootCopyLabel(copied)}
 			</button>
 		</details>
 	);

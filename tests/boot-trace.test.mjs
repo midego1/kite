@@ -35,9 +35,19 @@ const ORIGIN = "https://mail.example.com";
 function loadPage({ storage = new Map(), path = "/inbox/abc?q=secret", clock = { now: 100 } } = {}) {
 	const listeners = new Map();
 	const observers = new Map();
+	const disconnected = [];
+	const selections = [];
 	const fetches = [];
 	const errors = [];
-	const document = { visibilityState: "visible" };
+	const document = {
+		visibilityState: "visible",
+		createRange: () => ({
+			selectNodeContents(node) {
+				this.node = node;
+			},
+		}),
+		execCommand: () => clock.execCopies ?? false,
+	};
 	const sandbox = {
 		location: { href: `${ORIGIN}${path}`, origin: ORIGIN, pathname: path.split("?")[0] },
 		performance: { now: () => clock.now },
@@ -49,14 +59,26 @@ function loadPage({ storage = new Map(), path = "/inbox/abc?q=secret", clock = {
 		URL,
 		document,
 		PerformanceObserver: class {
+			// Safari and Firefox have no long-animation-frame entries.
+			static supportedEntryTypes = clock.noLoaf ? ["resource"] : ["resource", "long-animation-frame"];
 			constructor(callback) {
 				this.callback = callback;
 			}
 			observe({ type }) {
 				if (type === "long-animation-frame" && clock.noLoaf) throw new TypeError("unsupported");
+				this.type = type;
 				observers.set(type, this.callback);
 			}
+			disconnect() {
+				disconnected.push(this.type);
+			}
 		},
+		navigator: {},
+		// Copy details without the clipboard API: the text shown is selected and the browser asked to copy it.
+		getSelection: () => ({
+			removeAllRanges: () => selections.push("cleared"),
+			addRange: (range) => selections.push(range.node),
+		}),
 		addEventListener: (type, listener) => listeners.set(type, [...(listeners.get(type) ?? []), listener]),
 		fetch(input, init) {
 			let resolve;
@@ -80,6 +102,8 @@ function loadPage({ storage = new Map(), path = "/inbox/abc?q=secret", clock = {
 		clock,
 		errors,
 		fetches,
+		disconnected,
+		selections,
 		record: () => JSON.parse(storage.get(KEY)),
 		// As plain objects of this realm, so deepEqual compares them.
 		details: () => JSON.parse(JSON.stringify(trace.details())),
@@ -326,4 +350,55 @@ test("the details name the flags the watchdog reads, and the app's helpers do no
 	} finally {
 		delete globalThis.window;
 	}
+});
+
+test("the token of a link that grants access by itself is never kept", () => {
+	const page = loadPage({ path: "/d/s3cretT0ken?pw=1" });
+	assert.equal(page.record().page, "/d");
+	page.window.fetch("/api/public/drive/s3cretT0ken/content?download=1");
+	page.window.fetch("/api/public/drive/s3cretT0ken");
+	page.window.fetch(`${ORIGIN}/api/shared-files/link-s3cret`);
+	page.window.fetch("/api/drive/items/abc");
+	page.observe("resource", [{ name: `${ORIGIN}/d/s3cretT0ken`, startTime: 0, duration: 900 }]);
+	assert.deepEqual(
+		page.details().inFlight.map((entry) => entry.path),
+		[
+			"/api/public/drive/:token/content",
+			"/api/public/drive/:token",
+			"/api/shared-files/:token",
+			"/api/drive/items/abc",
+		],
+	);
+	assert.deepEqual(
+		page.details().slowestResources.map((entry) => entry.path),
+		["/d/:token"],
+	);
+	assert.doesNotMatch(JSON.stringify(page.details()) + page.trace.text(), /s3cret|pw=|download/);
+});
+
+test("ending the trace disconnects its observers, and none for long frames is made where the browser has none", () => {
+	const page = loadPage();
+	page.trace.end();
+	assert.deepEqual(page.disconnected, ["resource", "long-animation-frame"]);
+	const plain = loadPage({ clock: { now: 0, noLoaf: true } });
+	plain.trace.end();
+	assert.deepEqual(plain.disconnected, ["resource"]);
+});
+
+test("Copy details copies the JSON, and without the clipboard API selects the text shown", async () => {
+	const page = loadPage();
+	const copied = [];
+	page.window.navigator.clipboard = { writeText: async (text) => copied.push(text) };
+	assert.equal(await page.trace.copy({ id: "pre" }), "copied");
+	assert.equal(JSON.parse(copied[0]).phase, "inline");
+	// Permission refused: the text is selected instead.
+	page.window.navigator.clipboard = { writeText: async () => Promise.reject(new Error("denied")) };
+	const pre = { id: "pre" };
+	assert.equal(await page.trace.copy(pre), "selected");
+	assert.deepEqual(page.selections, ["cleared", pre]);
+	// Plain http: no clipboard API; the browser's own copy command still works.
+	delete page.window.navigator.clipboard;
+	page.clock.execCopies = true;
+	assert.equal(await page.trace.copy(pre), "copied");
+	assert.equal(await page.trace.copy(null), "failed");
 });

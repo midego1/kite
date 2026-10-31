@@ -1,6 +1,6 @@
 ### Added
 
-- "Reload Kite" and "Kite couldn't load" on the loading screen have a folded **Details** section with **Copy details**, for bug reports about a start that hangs. It says how far the start got, for how long the page was visible, how often the screen was mounted, which requests are still open, the slowest files and any frame that blocked the page for more than a second. It holds paths without query strings, times and counts, never message content or addresses. When a page froze, the next load of the tab names the phase it froze at in the browser console and in Details.
+- "Reload Kite" and "Kite couldn't load" on the loading screen have a folded **Details** section with **Copy details**, for bug reports about a start that hangs. It says how far the start got, for how long the page was visible, how often the screen was mounted, which requests are still open, the slowest files and any frame that blocked the page for more than a second. It holds paths without query strings and without the token of a Drive or shared-file link, times and counts, never message content or addresses. When a page froze, the next load of the tab names the phase it froze at in the browser console and in Details.
 
 ### Fixed
 

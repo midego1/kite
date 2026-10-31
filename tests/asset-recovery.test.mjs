@@ -82,7 +82,13 @@ function fakeDocument({ screen = "status", declared = [], readyState = "complete
 			return name in this.attributes;
 		},
 		// The startup screen's own way out (the slow-start recovery or a failure), when the test puts one in it.
-		querySelector() {
+		querySelector(selector) {
+			// The failure box's Details text, which Copy details selects without the clipboard API.
+			if (selector === "[data-boot-details]") {
+				const find = (element) =>
+					element.attributes?.["data-boot-details"] === "" ? element : (element.children ?? []).map(find).find(Boolean);
+				return find(this) ?? null;
+			}
 			return this.wayOut ?? null;
 		},
 		addEventListener(type, listener) {
@@ -780,6 +786,11 @@ function fakeTrace() {
 		end: () => (trace.ended += 1),
 		text: () => "Phase: loader-mounted",
 		details: () => ({ phase: "loader-mounted" }),
+		copied: [],
+		copy: async (pre) => {
+			trace.copied.push(pre);
+			return trace.result ?? "copied";
+		},
 	};
 	return trace;
 }
@@ -810,11 +821,9 @@ test("every tick is a heartbeat for the boot trace, which ends when the watchdog
 	assert.equal(plain.reloads, 1);
 });
 
-test("Kite couldn't load carries the trace's Details, and Copy details copies them as JSON", async () => {
+test("Kite couldn't load carries the trace's Details, and Copy details copies them", async () => {
 	const trace = fakeTrace();
-	const copied = [];
 	const page = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace } });
-	page.window.navigator.clipboard = { writeText: async (text) => copied.push(text) };
 	page.advance(30_000);
 	const [, button, details] = page.failure().children;
 	assert.equal(button.getAttribute("data-boot-reload"), "");
@@ -828,11 +837,16 @@ test("Kite couldn't load carries the trace's Details, and Copy details copies th
 	});
 	await Promise.resolve();
 	await Promise.resolve();
-	assert.deepEqual(
-		copied.map((text) => JSON.parse(text)),
-		[{ phase: "loader-mounted" }],
-	);
+	// The trace copies, given the box's text to select where the clipboard API is missing.
+	assert.deepEqual(trace.copied, [lines]);
 	assert.equal(copy.textContent, "Copied");
+	trace.result = "selected";
+	page.fire("click", {
+		target: { closest: (selector) => (selector === `#${BOOT_FAILURE_ID} [data-boot-copy]` ? copy : null) },
+	});
+	await Promise.resolve();
+	await Promise.resolve();
+	assert.equal(copy.textContent, "Text selected, copy it");
 	// Copying is no reload.
 	assert.equal(page.reloads, 0);
 	// Opened later, it shows the trace as it is then.

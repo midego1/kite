@@ -31,6 +31,7 @@
 		"src/lib/storage/credential-utils.ts",
 		"src/lib/storage/cloudflare-r2-utils.ts",
 		"src/lib/drive/name-utils.ts",
+		"src/lib/pdf/text-pdf-utils.ts",
 		"src/lib/drive/upload-utils.ts",
 		"src/lib/drive/quota-utils.ts",
 		"src/lib/drive/link-utils.ts",

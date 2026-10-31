@@ -24,6 +24,27 @@ export function isBrowserChord(event: Pick<KeyboardEvent, "key" | "metaKey" | "c
 }
 
 /**
+ * The Cmd/Ctrl shortcut a chord presses, such as `p` with `["meta", "ctrl"]` for either. Alt never matches, and
+ * Shift only when the shortcut asks for it, so Ctrl+Shift+P (a new private window in Firefox) stays the browser's.
+ */
+export function findChordMatch(
+	event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">,
+	shortcuts: readonly ShortcutDefinition[],
+): ShortcutDefinition | undefined {
+	if (event.altKey || !(event.metaKey || event.ctrlKey)) return undefined;
+	const key = event.key.toLowerCase();
+	return shortcuts.find((shortcut) => {
+		const modifiers = shortcut.modifiers ?? [];
+		if (shortcut.key.toLowerCase() !== key || modifiers.includes("alt")) return false;
+		if (event.shiftKey !== modifiers.includes("shift")) return false;
+		const wantsMeta = modifiers.includes("meta");
+		const wantsCtrl = modifiers.includes("ctrl");
+		if (wantsMeta && wantsCtrl) return event.metaKey || event.ctrlKey;
+		return wantsMeta ? event.metaKey && !event.ctrlKey : wantsCtrl && event.ctrlKey && !event.metaKey;
+	});
+}
+
+/**
  * The shortcut the recent keys complete. A multi-key sequence such as `g i` matches when it ends the
  * buffer, so a stray key pressed just before it does not spoil it; a single key matches only when it is
  * the whole buffer, so the last key of an unfinished sequence does not trigger a one-key shortcut.

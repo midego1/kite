@@ -42,6 +42,8 @@ import { SendStateBanner } from "@/components/messages/send-state-banner";
 import { ScreenerBanner } from "@/components/screener/screener-banner";
 import { RecipientList } from "@/components/messages/recipient-list";
 import { useShowFullRecipientAddresses } from "@/components/messages/use-show-full-recipient-addresses";
+import { useConversationView } from "@/components/messages/use-conversation-view";
+import { orderForPrint } from "@/components/messages/print/print-document-utils";
 import type { MessageAttachment, MessageDetailResponse } from "./types";
 import {
 	fetchMessageDetail,
@@ -64,6 +66,8 @@ export default function MessageDetailPage() {
 	const [loading, setLoading] = useState(true);
 	const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
 	const [threadExpanded, setThreadExpanded] = useState(false);
+	// Earlier and later messages whose remote images were shown; the open message keeps its own in useOpenMessageBody.
+	const [remoteImagesShownIds, setRemoteImagesShownIds] = useState<ReadonlySet<string>>(() => new Set());
 	const [latestMessagesFirst] = useLatestMessagesFirst();
 	const { enabled: showFullRecipientAddresses } = useShowFullRecipientAddresses();
 	const { visible: messageListVisible } = useMessageListVisibility();
@@ -106,7 +110,11 @@ export default function MessageDetailPage() {
 		};
 	}, [messageId]);
 
-	if (useKeyChanged(messageId)) setThreadExpanded(false);
+	if (useKeyChanged(messageId)) {
+		setThreadExpanded(false);
+		setRemoteImagesShownIds(new Set());
+	}
+	const showThreadRemoteImages = (id: string) => setRemoteImagesShownIds((current) => new Set(current).add(id));
 
 	const messageMailbox = mailboxes.find((mailbox) => mailbox.id === data?.message?.mailboxId) ?? selectedMailbox;
 	// Prepared before the early returns so the body is memoized, not sanitized again on every render.
@@ -116,8 +124,11 @@ export default function MessageDetailPage() {
 		ownAddresses,
 		cloudAttachmentResult,
 		oneTimeCode,
+		blockRemoteImages,
+		alwaysLoadRemoteImages,
 		showRemoteImages,
 	} = useOpenMessageBody(data, messageMailbox);
+	const [conversationView] = useConversationView();
 
 	if (loading) {
 		return <MessageDetailSkeleton />;
@@ -142,6 +153,22 @@ export default function MessageDetailPage() {
 	// The thread may or may not list the open message itself.
 	const threadSize = new Set([message.id, ...thread.messages.map((threadMessage) => threadMessage.id)]).size;
 	const bodyDisplay = readerBody.display;
+	const printSource = { ...currentThreadMessage, blockRemoteImages };
+	// In conversation view the toolbar prints the whole conversation; each message's own menu prints just that one.
+	const printConversation = conversationView && threadSize > 1;
+	const print = {
+		conversation: printConversation,
+		getSources: () =>
+			printConversation
+				? orderForPrint([
+						...thread.messages.map((threadMessage) => ({
+							...threadMessage,
+							blockRemoteImages: !alwaysLoadRemoteImages && !remoteImagesShownIds.has(threadMessage.id),
+						})),
+						printSource,
+					])
+				: [printSource],
+	};
 	return (
 		<InlineComposerHost messageId={message.id}>
 			<div className="sticky top-0 z-40 flex h-14 items-center gap-1 border-b border-neutral-200 bg-white px-3">
@@ -165,6 +192,7 @@ export default function MessageDetailPage() {
 					messageMeta={message}
 					bodyHtml={body?.htmlBody}
 					onSummarizeMessage={summary.summarizeMessage}
+					print={print}
 				/>
 				<AssistantButton testId="assistant-button-reader" />
 			</div>
@@ -224,6 +252,8 @@ export default function MessageDetailPage() {
 					expandedAll={threadExpanded}
 					onExpandedAllChange={setThreadExpanded}
 					hideTriageSummary={hideTriageSummary}
+					remoteImagesShownIds={remoteImagesShownIds}
+					onShowRemoteImages={showThreadRemoteImages}
 				/>
 				{/* Every message of the conversation is a section under a hairline, as in Zero's reader. */}
 				<article className="border-t border-neutral-200 px-4 py-6 sm:px-7">
@@ -317,6 +347,7 @@ export default function MessageDetailPage() {
 										!thread.messages.some((threadMessage) => threadMessage.id === message.id) ||
 										!thread.messages.some((threadMessage) => threadMessage.id !== message.id)
 									}
+									remoteImagesShown={!blockRemoteImages}
 								/>
 							</div>
 						</div>
@@ -414,6 +445,8 @@ export default function MessageDetailPage() {
 					expandedAll={threadExpanded}
 					onExpandedAllChange={setThreadExpanded}
 					hideTriageSummary={hideTriageSummary}
+					remoteImagesShownIds={remoteImagesShownIds}
+					onShowRemoteImages={showThreadRemoteImages}
 				/>
 				<MessageAttachmentViewer
 					attachment={previewAttachment}

@@ -22,6 +22,8 @@ import { MessageSourceDialog } from "@/components/messages/message-source-dialog
 import { useMessageListHref } from "@/components/messages/message-detail-navigation";
 import { useRowMessageIds } from "@/components/messages/open-row-context";
 import { SnoozeMenuItem } from "@/components/messages/snooze-picker";
+import { printShortcutAction } from "@/components/messages/print/print-actions";
+import { PrintMenuItems } from "@/components/messages/print/print-menu-items";
 import { useMessageMenuSlots } from "./message-menu-slots";
 import { ReportPhishingItem } from "./report-phishing-item";
 import { confirmReportPhishing } from "@/components/messages/phishing-report";
@@ -69,6 +71,7 @@ export function MessageActions({
 	messageMeta,
 	bodyHtml,
 	onSummarizeMessage,
+	print,
 }: MessageActionsProps) {
 	const router = useRouter();
 	const isMobile = useIsMobile();
@@ -189,6 +192,7 @@ export function MessageActions({
 		forward: handleForward,
 		canReplyAll,
 		back: () => router.back(),
+		print: printShortcutAction(print),
 	});
 	useHotkeys(shortcuts, { enabled: shortcutsEnabled });
 
@@ -449,6 +453,7 @@ export function MessageActions({
 							<FileCode2 className="h-4 w-4" />
 							Show original
 						</button>
+						<PrintMenuItems print={print} onSelect={() => setMoreOpen(false)} />
 						<hr className="my-1 border-neutral-100" />
 						{moduleSlots.items}
 						<p className="mt-1 px-3 pb-1 pt-2 text-sm font-medium text-neutral-500">Move to</p>

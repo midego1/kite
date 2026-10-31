@@ -34,6 +34,7 @@ function mailKeyHints(): ShortcutHint[] {
 			forward: noop,
 			canReplyAll: true,
 			back: noop,
+			print: noop,
 		}),
 	];
 	const seen = new Set<string>();

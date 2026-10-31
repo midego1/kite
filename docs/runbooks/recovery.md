@@ -31,47 +31,68 @@ a forward draft deletes the original's attachment, sending a draft and then
 deleting the draft deletes the sent copy's file, and deleting either of two
 messages that share a file deletes it for both.
 
-1. Prefer fixing forward. A rollback is safe only to a release that already has
-   reference-checked deletion (this one or later).
-2. If an older release must run, first set `ATTACHMENT_SHARING=off` on the
-   current release (Worker variable, or the Node environment) so no new rows
-   share an object, and deploy that.
-3. Give every shared row its own copy before the rollback. The admin
-   "materialize" job (`docs/specs/attachments-once.md` §8 step 5) does this once it
-   exists: it copies each object that more than one row names to a new key per
-   extra row. Until it exists, do not roll back past this release; if you must,
-   expect files of forwarded and sent mail to go missing when drafts or messages
-   are deleted, and use `GET /api/admin/attachment-storage?verify=1` afterwards to
-   list the messages whose files are gone.
-4. Restoring a backup taken after this release into a database without migration
-   0088 fails on the unique `r2_key` index, because shared rows repeat a key. Apply
-   the pending migrations on the target first (Admin overview, or
-   `AUTO_APPLY_MIGRATIONS=1`), then restore.
+Prefer fixing forward: a rollback is safe only to a release that already has
+reference-checked deletion (this one or later). To run an older release, follow
+[Materialize, then roll back](#materialize-then-roll-back) first. Restoring a backup
+taken after this release into a database without migration 0088 fails on the unique
+`r2_key` index, because shared rows repeat a key: apply the pending migrations on the
+target first (Admin overview, or `AUTO_APPLY_MIGRATIONS=1`), then restore.
 
 ## Rolling back past raw-backed attachments
 
 Since raw-backed attachments (`docs/specs/attachments-once.md` §8 step 4), a file
 in received or imported mail whose bytes Kite verified inside the raw message has
-no object of its own: its row carries the sentinel key `raw:<id>` and the byte
-range to read from the raw message. Releases from 2026.10.31.3 on read such rows.
-Earlier releases do not: they look the sentinel up as an object key and answer
-404 for those files (the raw message and "Show original" are unaffected).
+no object of its own: its row carries the sentinel key `raw:<id>` and the byte range
+to read from the raw message. Releases from 2026.10.31.3 on read such rows. Earlier
+releases do not: they look the sentinel up as an object key and answer 404 for those
+files (the raw message and "Show original" are unaffected). Nothing is lost: the raw
+messages are kept unchanged, and the files download again once a current release
+runs.
 
-1. Prefer fixing forward. A rollback to 2026.10.31.3 or later keeps every file
-   readable; the attachment-sharing rules above still apply to it.
-2. Before running an older release, set `ATTACHMENT_RAW_INDEX=off` on the current
-   release (Worker variable, or the Node environment) and deploy that, so new mail
-   stores a copy of each file again.
-3. Give every raw-backed row an object of its own. The admin "materialize" job
-   (`docs/specs/attachments-once.md` §8 step 5) does this once it exists. Until it
-   exists, files of mail received while raw-backed attachments were on do not
-   download on an older release; nothing is lost, since the raw messages are kept
-   unchanged, and they download again once a current release runs.
-4. A backup taken after this release and restored into a release before
-   2026.10.31.3 has the same 404s; restore it into a current release instead.
-5. An old backup restored into a current release can name objects that are gone.
-   The next read of such a file rebuilds it from its raw message (logged as
-   `attachment.repaired`), so it needs no action.
+Prefer fixing forward: a rollback to 2026.10.31.3 or later keeps every file readable
+(the attachment-sharing rules above still apply to it). To run an older release,
+follow [Materialize, then roll back](#materialize-then-roll-back) first.
+
+- A backup taken after this release and restored into a release before 2026.10.31.3
+  has the same 404s; restore it into a current release instead, or materialize there
+  before moving the data back.
+- An old backup restored into a current release can name objects that are gone (a
+  reclaim deleted them after the backup). The next read of such a file rebuilds it
+  from its raw message (logged as `attachment.repaired`), so it needs no action;
+  **Reclaim space** converts whatever is left.
+
+## Materialize, then roll back
+
+The procedure before running a release older than attachment sharing or raw-backed
+attachments. Materialize never changes a raw message; it only writes objects and
+repoints rows with conditional updates, so it is safe to run at any time and again.
+
+1. On the current release, set `ATTACHMENT_SHARING=off` and `ATTACHMENT_RAW_INDEX=off`
+   (Worker variables, or the Node environment) and deploy that. New sends and
+   forwards then store their own copy of each file, and new mail stores a copy of
+   each attachment again.
+2. As the primary admin, open **Admin → Storage → Attachment storage** and choose
+   **Restore separate copies** (`POST /api/admin/attachment-storage` with
+   `{ "action": "materialize" }`). The job gives every file served from its raw
+   message an object of its own, then copies every object that more than one row
+   names to a new key for each row after the first. It runs in the background in
+   batches and the card shows its progress. A job that stopped (a deploy, a lost
+   queue message) is restarted by the five-minute cron within the hour, or resumes
+   from where it was when you press the button again.
+3. Wait until the card says **Separate copies restored** and shows 0 files from the
+   raw message and 0 shared copies (`raw.rows` and `shared.rows` in
+   `GET /api/admin/attachment-storage`). Files whose raw message or object was already
+   gone are counted as "could not be processed" and stay as they were; they are
+   missing on every release.
+4. Check `GET /api/admin/attachment-storage?verify=1`: `verify.missing` lists the
+   messages whose files are gone, and should be empty.
+5. Take a database backup (with **Include mail files** if you use full backups), then
+   roll back. With both switches off nothing new shares a file or is served from a
+   raw message, so the counts stay at 0 until you upgrade again.
+6. Back on a current release, remove the two variables and choose **Reclaim space** on
+   the same card (`{ "action": "reclaim" }`, which needs `ATTACHMENT_RAW_INDEX` on). It
+   serves verified files from their raw messages again and deletes their copies;
+   copies that a draft, a forward or a sent message still uses are kept.
 
 ## Backup or restore incident
 

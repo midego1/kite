@@ -6,7 +6,7 @@ import type { AttachmentStorageReport } from "./attachment-storage-types";
 export const ATTACHMENT_STORAGE_QUERY_KEY = ["admin-attachment-storage"];
 
 /** The runbook section that says what to do before running an older release. */
-export const ATTACHMENT_ROLLBACK_URL = `${SOURCE_CODE_URL}/blob/main/docs/runbooks/recovery.md#rolling-back-past-raw-backed-attachments`;
+export const ATTACHMENT_ROLLBACK_URL = `${SOURCE_CODE_URL}/blob/main/docs/runbooks/recovery.md#materialize-then-roll-back`;
 
 const files = (count: number) => `${count.toLocaleString()} ${count === 1 ? "file" : "files"}`;
 

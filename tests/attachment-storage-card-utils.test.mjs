@@ -116,5 +116,5 @@ test("the stats and the rollback link", () => {
 	assert.equal(stats[2].hint, "of 1 file");
 	assert.equal(card.attachmentStorageStats(report({ shared: { keys: 0, rows: 0 } }))[2].hint, "None");
 	assert.equal(card.attachmentStorageStats(report({ reclaim: null }))[3].hint, "After the database update");
-	assert.match(card.ATTACHMENT_ROLLBACK_URL, /recovery\.md#rolling-back-past-raw-backed-attachments$/);
+	assert.match(card.ATTACHMENT_ROLLBACK_URL, /recovery\.md#materialize-then-roll-back$/);
 });

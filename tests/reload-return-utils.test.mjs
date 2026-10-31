@@ -31,8 +31,15 @@ const {
 	isReloadReturnActive,
 	markReloadReturn,
 	reloadReturnBootstrapScript,
-	reloadReturnScript,
 } = await import(pathToFileURL(join(bundleDirectory, "return.mjs")).href);
+
+/**
+ * The inline script as it is with the return on: the shipped one only differs by the early return the flag adds,
+ * which this removes (and the assertion makes sure it is still there to remove).
+ */
+const OFF_GUARD = "if (!false) return;";
+assert.ok(reloadReturnBootstrapScript.includes(OFF_GUARD));
+const enabledScript = reloadReturnBootstrapScript.replace(OFF_GUARD, "");
 
 /** What `reloadToNewVersion` writes and the inline script reads; the class the startup screen's CSS keys on. */
 const RELOAD_RETURN_STORAGE_KEY = "kite-reload-flight";
@@ -55,7 +62,7 @@ function fakeStorage(entries = {}) {
  * Runs the inline <head> script against a fake sessionStorage and <html> class list; returns the classes it left,
  * the timers it set (`[ms, callback]`) and `classList` to read after running them.
  */
-function runBootstrap({ storage = fakeStorage(), now = NOW, classes = [], script = reloadReturnScript(true) } = {}) {
+function runBootstrap({ storage = fakeStorage(), now = NOW, classes = [], script = enabledScript } = {}) {
 	const classList = new Set(classes);
 	const timers = [];
 	const context = vm.createContext({

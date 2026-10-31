@@ -89,7 +89,7 @@ export function endReloadReturn(): void {
 export const reloadReturnBootstrapScript = reloadReturnScript(RELOAD_RETURN_ENABLED);
 
 /** The inline script; while the scene is off it only removes a marker, so the load is an ordinary one. */
-export function reloadReturnScript(enabled: boolean): string {
+function reloadReturnScript(enabled: boolean): string {
 	return `(() => {
 	try {
 		const key = ${JSON.stringify(RELOAD_RETURN_STORAGE_KEY)};

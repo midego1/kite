@@ -13,7 +13,9 @@ import type {
 } from "@/lib/modules/host-types";
 import { pickMessageHeaders, utf8Excerpt } from "@/lib/modules/host-utils";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
-import { getAttachmentForUser } from "./attachments";
+import { findAttachmentForUser } from "./attachments";
+import { ATTACHMENT_ROW_COLUMNS, readAttachmentBytes } from "./attachment-storage";
+import type { AttachmentRow } from "./attachment-storage-types";
 import { loadMessageBody } from "./bodies";
 import { encodeRawMime } from "./module-import-utils";
 import { readRawHeaders } from "./raw-headers";
@@ -22,7 +24,6 @@ import { htmlToReadableText } from "./reply-content-utils";
 const TEXT_TYPE = /^text\/|calendar|json|xml/i;
 
 type MessageRow = typeof messages.$inferSelect;
-type AttachmentRow = typeof messageAttachments.$inferSelect;
 
 export function actingUser(ctx: CapabilityCallContext): Pick<SessionUser, "id" | "role"> {
 	if (!ctx.viewer) throw new Error("Reading mail needs an acting user");
@@ -37,7 +38,7 @@ export async function attachmentsByMessage(
 	const byMessage = new Map<string, AttachmentRow[]>();
 	if (messageIds.length === 0) return byMessage;
 	const rows = await getDb(env)
-		.select()
+		.select(ATTACHMENT_ROW_COLUMNS)
 		.from(messageAttachments)
 		.where(inArray(messageAttachments.messageId, messageIds));
 	for (const row of rows) byMessage.set(row.messageId, [...(byMessage.get(row.messageId) ?? []), row]);
@@ -108,14 +109,16 @@ export async function readModuleAttachment(
 	options: { maxBytes: number },
 ): Promise<HostAttachmentContent | null> {
 	const user = actingUser(ctx);
-	const found = await getAttachmentForUser(env, user as SessionUser, messageId, attachmentId);
-	if (!found) return null;
-	const { attachment, object } = found;
+	const attachment = await findAttachmentForUser(env, user as SessionUser, messageId, attachmentId);
+	if (!attachment) return null;
 	const truncated = attachment.size > options.maxBytes;
-	const source = truncated
-		? ((await env.BUCKET.get(attachment.r2Key, { range: { offset: 0, length: options.maxBytes } })) ?? object)
-		: object;
-	const bytes = new Uint8Array(await source.arrayBuffer()).subarray(0, options.maxBytes);
+	const source = await readAttachmentBytes(
+		env,
+		attachment,
+		truncated ? { range: { offset: 0, length: options.maxBytes } } : {},
+	);
+	if (!source) return null;
+	const bytes = new Uint8Array(source).subarray(0, options.maxBytes);
 	if (TEXT_TYPE.test(attachment.contentType))
 		return { encoding: "text", content: new TextDecoder().decode(bytes), truncated };
 	return { encoding: "base64", content: encodeRawMime(bytes), truncated };

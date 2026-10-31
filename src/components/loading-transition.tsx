@@ -243,6 +243,7 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 									<>
 										<span className="sr-only reload-return-hidden">Loading</span>
 										<span className="sr-only reload-return-only">{RELOAD_RETURN_ANNOUNCEMENT}</span>
+										<FrozenNotice />
 									</>
 								)}
 								{progressMounted && <StartupProgress ready={ready} progress={progress} visibleMs={visibleMs} />}
@@ -250,7 +251,6 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 							</>
 						)}
 					</div>
-					{loaderVisible && failure == null && <FrozenNotice />}
 				</div>
 			</div>
 		</PageLoadingContext.Provider>
